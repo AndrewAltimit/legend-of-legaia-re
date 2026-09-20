@@ -2,6 +2,7 @@
 //! state-resume, inventory-compare, menu-control) dispatched out of the main
 //! instruction decoder.
 
+use super::decode::rel_target;
 use super::*;
 
 pub(super) fn decode_actor_ctrl(
@@ -337,7 +338,7 @@ pub(super) fn decode_inventory_cmp(
             need(6)?;
             let arg = u16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]);
             let skip_delta = u16::from_le_bytes([bytecode[operand + 4], bytecode[operand + 5]]);
-            let skip_target = (pc + header_size + 4).wrapping_add(skip_delta as usize);
+            let skip_target = rel_target(pc + header_size + 4, skip_delta);
             mk(
                 header_size + 6,
                 InventoryCmpKind::Compare {
@@ -354,7 +355,7 @@ pub(super) fn decode_inventory_cmp(
             let lo2 = u16::from_le_bytes([bytecode[operand + 6], bytecode[operand + 7]]) as u32;
             let scaled = (lo1 | (lo2 << 16)) as i32;
             let skip_delta = u16::from_le_bytes([bytecode[operand + 4], bytecode[operand + 5]]);
-            let skip_target = (pc + header_size + 4).wrapping_add(skip_delta as usize);
+            let skip_target = rel_target(pc + header_size + 4, skip_delta);
             mk(
                 header_size + 8,
                 InventoryCmpKind::PartyBank {

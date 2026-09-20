@@ -522,3 +522,18 @@ fn inventory_cmp_sub_ops_4_through_8_decode_as_the_7_byte_compare() {
         }
     ));
 }
+
+#[test]
+fn jmp_rel_high_bit_delta_is_a_backward_jump() {
+    // The `[21] [26 FE FF]` wait loop: retail's script PC is a 16-bit field,
+    // so delta 0xFFFE is -2 and the jump at pc 1 parks on the halt at pc 0.
+    let bc = [0x21, 0x26, 0xFE, 0xFF];
+    let insn = decode(&bc, 1).unwrap();
+    match insn.info {
+        InsnInfo::JmpRel { delta, target } => {
+            assert_eq!(delta, 0xFFFE);
+            assert_eq!(target, 0);
+        }
+        _ => panic!("expected JmpRel"),
+    }
+}

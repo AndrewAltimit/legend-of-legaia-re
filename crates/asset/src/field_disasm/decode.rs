@@ -3,6 +3,19 @@
 
 use super::*;
 
+/// Resolve a relative-jump target. Retail keeps each script's PC in a 16-bit
+/// field (`*(short *)(ctx + 0x9e)`), so a branch lands at
+/// `(base + delta) mod 0x10000` and a delta with the high bit set is a
+/// **backward** jump - `0xFFFE` = -2 is the per-frame "park here" wait loop
+/// (`[21] [26 FE FF]`; see `docs/subsystems/script-vm.md`). Decoding works in
+/// buffer-absolute offsets and a record's script never spans 32 KiB, so the
+/// sign-extended delta is that wrap expressed in absolute coordinates; a
+/// plain unsigned add turned every wait loop into a `+0xFFxx` overrun past
+/// the buffer.
+pub(crate) fn rel_target(base: usize, delta: u16) -> usize {
+    base.wrapping_add(delta as i16 as isize as usize)
+}
+
 /// Decode a single instruction starting at `pc`. Returns the instruction
 /// and the byte offset of the next instruction.
 ///
@@ -66,7 +79,7 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
         0x26 => {
             need(2)?;
             let delta = u16::from_le_bytes([bytecode[operand], bytecode[operand + 1]]);
-            let target = (pc + header_size).wrapping_add(delta as usize);
+            let target = rel_target(pc + header_size, delta);
             mk(header_size + 2, InsnInfo::JmpRel { delta, target })
         }
         0x2B..=0x2D => {
@@ -334,7 +347,7 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
             let mode = bytecode[operand];
             let op1 = bytecode[operand + 1];
             let delta = u16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]);
-            let target = (pc + header_size + 2).wrapping_add(delta as usize);
+            let target = rel_target(pc + header_size + 2, delta);
             mk(
                 header_size + 4,
                 InsnInfo::CondJmp {
@@ -410,7 +423,7 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
         0x4D => {
             need(6)?;
             let skip_delta = u16::from_le_bytes([bytecode[operand + 4], bytecode[operand + 5]]);
-            let skip_target = (pc + header_size + 4).wrapping_add(skip_delta as usize);
+            let skip_target = rel_target(pc + header_size + 4, skip_delta);
             mk(
                 header_size + 6,
                 InsnInfo::BBoxTest {
@@ -452,7 +465,7 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
             if route == 0x70 {
                 need(3)?;
                 let delta = u16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
-                let target = (pc + header_size + 1).wrapping_add(delta as usize);
+                let target = rel_target(pc + header_size + 1, delta);
                 mk(
                     header_size + 3,
                     InsnInfo::SystemFlag {

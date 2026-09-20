@@ -164,6 +164,19 @@ struct RelJump {
     target: usize,
 }
 
+/// Byte offset of a relative jump's delta field, recovered from its resolved
+/// target: the inverse of `field_disasm`'s `rel_target`. Deltas are 16-bit
+/// **two's-complement** (retail's script PC is a 16-bit field), so a backward
+/// jump - the `[21] [26 FE FF]` wait loop - must invert with the sign-extended
+/// delta. Subtracting the raw `u16` put such a base at `target - 0xFFFE`,
+/// and the phantom target (past the buffer) then shifted with *every* later
+/// splice while the base did not, rewriting the loop into a forward jump -
+/// invisibly, because the preservation check saw an unresolvable target on
+/// both sides.
+fn rel_base(target: usize, delta: u16) -> usize {
+    target.wrapping_sub(delta as i16 as isize as usize)
+}
+
 /// Collect the relative jumps in `[start+pc0, end)` via a clean fall-through
 /// decode. Every control-flow field the field VM stores is a delta relative to
 /// its own offset, so this is the whole fixup set. A decode error ends the clean
@@ -180,11 +193,11 @@ fn scan_record_refs(man: &[u8], start: usize, pc0: usize, end: usize) -> Vec<Rel
         }
         match &insn.info {
             InsnInfo::JmpRel { delta, target } => jumps.push(RelJump {
-                base: target.wrapping_sub(*delta as usize),
+                base: rel_base(*target, *delta),
                 target: *target,
             }),
             InsnInfo::CondJmp { delta, target, .. } => jumps.push(RelJump {
-                base: target.wrapping_sub(*delta as usize),
+                base: rel_base(*target, *delta),
                 target: *target,
             }),
             InsnInfo::BBoxTest {
@@ -192,7 +205,7 @@ fn scan_record_refs(man: &[u8], start: usize, pc0: usize, end: usize) -> Vec<Rel
                 skip_target,
                 ..
             } => jumps.push(RelJump {
-                base: skip_target.wrapping_sub(*skip_delta as usize),
+                base: rel_base(*skip_target, *skip_delta),
                 target: *skip_target,
             }),
             InsnInfo::SystemFlag {
@@ -200,7 +213,7 @@ fn scan_record_refs(man: &[u8], start: usize, pc0: usize, end: usize) -> Vec<Rel
                 target: Some(t),
                 ..
             } => jumps.push(RelJump {
-                base: t.wrapping_sub(*d as usize),
+                base: rel_base(*t, *d),
                 target: *t,
             }),
             InsnInfo::InventoryCmp {
@@ -217,7 +230,7 @@ fn scan_record_refs(man: &[u8], start: usize, pc0: usize, end: usize) -> Vec<Rel
                     },
                 ..
             } => jumps.push(RelJump {
-                base: skip_target.wrapping_sub(*skip_delta as usize),
+                base: rel_base(*skip_target, *skip_delta),
                 target: *skip_target,
             }),
             _ => {}

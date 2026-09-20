@@ -561,3 +561,53 @@ fn text_edit_refuses_section_region_offset() {
     .unwrap_err();
     assert!(matches!(err, ManEditError::RecordNotFound { .. }));
 }
+
+#[test]
+fn text_edit_after_a_wait_loop_leaves_the_backward_jump_alone() {
+    // Record script (pc0 = 6): the per-frame park loop `[21] [26 FE FF]`
+    // (a backward jump of -2 onto the halt), then the dialog op, then a halt.
+    // Growing the dialog must not touch the loop: both its endpoints sit
+    // before the edit. Reading the delta as unsigned put the loop's target
+    // past the buffer, where every later splice shifted it while the base
+    // stayed - rewriting the loop into a forward jump that no round-trip
+    // check could see (an unresolvable target on both sides compares equal).
+    let mut rec = p2_prefix(); // pc0 = 6
+    rec.push(0x21); // rel 6: halt the loop parks on
+    rec.extend_from_slice(&jmp_rel(0xFFFE)); // rel 7..10: jump back to rel 6
+    rec.extend_from_slice(&mes_run(b"hi"));
+    rec.push(0x21);
+    let man = build_man(&[rec]);
+    let mf = man_section::parse(&man).unwrap();
+    let d = mf.data_region_offset;
+
+    let loop_jmp = field_disasm::decode(&man, d + 7).unwrap();
+    match loop_jmp.info {
+        field_disasm::InsnInfo::JmpRel { delta, target } => {
+            assert_eq!(delta, 0xFFFE);
+            assert_eq!(target, d + 6, "the loop parks on its own halt");
+        }
+        _ => panic!("expected JmpRel"),
+    }
+
+    let seg_1f = man[d..].iter().position(|&b| b == 0x1F).unwrap() + d;
+    let text_off = seg_1f + 1;
+    let term = man[text_off..].iter().position(|&b| b == 0x00).unwrap() + text_off;
+    let edit = TextEdit {
+        offset: text_off,
+        old_len: term - text_off,
+        new_bytes: b"hello there, stranger".to_vec(),
+    };
+    let out = apply_text_edits(&man, &[edit]).unwrap();
+
+    // The loop's bytes are untouched and it still decodes onto its halt.
+    assert_eq!(&out[d + 7..d + 10], &[0x26, 0xFE, 0xFF]);
+    let loop_jmp2 = field_disasm::decode(&out, d + 7).unwrap();
+    match loop_jmp2.info {
+        field_disasm::InsnInfo::JmpRel { delta, target } => {
+            assert_eq!(delta, 0xFFFE);
+            assert_eq!(target, d + 6);
+        }
+        _ => panic!("expected JmpRel"),
+    }
+    assert!(text_edits_preserve_scripts(&man, &out));
+}

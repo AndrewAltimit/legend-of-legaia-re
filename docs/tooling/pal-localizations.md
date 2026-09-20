@@ -363,6 +363,20 @@ The 22 scene MANs the generalized rewriter cannot grow at all (an absolute-ref o
 back to abbreviation - a limitation of the in-MAN rewriter, orthogonal to the
 relayout, which supplies the room but cannot produce grown bytes for them.
 
+The `raw:` corpus has no such residual. Every raw line on the disc lives in the
+record region of the uncompressed MAN that leads one of the ten streaming
+dungeon scenes (`data_field_streaming`: `dolk2`, `rikuroa`, `rayman`,
+`station`, `balden2`, `ropeway2`, `taiku`, `doman`, `taiku2`, `nilboa2` -
+[`data-field.md`](../formats/data-field.md)), so the importer rewrites that
+MAN with the same relocator, re-headers the chunk and shifts the chunks behind
+it (`translation::stream_man`). Growth lands in the entry's own trailing sector
+slack when it fits - a same-size-image write, PPF-safe - and otherwise in the
+relayout. The bound is the loader's `0x62C00`-byte asset arena the entry is
+block-copied into, whose top the VDF morph applier borrows as scratch; the
+importer keeps a 64 KiB headroom under it. Unlike the LZS MANs there is no
+mastered precedent: the Spanish disc's text for these ten scenes fits the USA
+footprints, so none of them grew at mastering.
+
 ### In the browser
 
 The site's [ROM patcher](../../site/_content/tooling/rom-patcher.html) exposes

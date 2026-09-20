@@ -35,6 +35,7 @@ pub mod lift;
 pub mod markup;
 pub mod pack;
 pub mod segments;
+pub mod stream_man;
 pub mod ui;
 
 pub use export::export_pack;

@@ -10,8 +10,11 @@
 //!   compressed bytes over budget (the extra it would need, which the PAL disc
 //!   supplied by growing the entry one sector).
 //!
-//! Raw event-script carriers are uncompressed in place, so they have no growth
-//! path and stay per-string bounded; they are reported separately.
+//! Raw carriers are uncompressed in place and are reported separately under
+//! the per-string model only. (The importer does grow the streaming dungeon
+//! scenes' MAN chunk - `super::stream_man` - but that growth is bounded by
+//! the entry's sector slack or the disc relayout, not by an LZS footprint,
+//! so the per-MAN fit model above has nothing to measure for them.)
 //!
 //! This is the honest measurement behind `docs/tooling/pal-localizations.md`'s
 //! fit-rate section: it runs the real rewriter, so a "fits" verdict means the

@@ -63,6 +63,13 @@ fixups (all offsets per [`man_section`](../../crates/asset/src/man_section.rs)):
 4. **External descriptor** (`scene_asset_table`): the MAN's *decompressed* size
    is stored only in the scene-bundle descriptor word `(type<<24)|size`. Rewrite
    it with `scene_asset_table::encode_size_word` after recompressing.
+   Deltas are 16-bit two's-complement: retail keeps the script PC in a 16-bit
+   field, so a high-bit delta is a **backward** jump - the `[21] [26 FE FF]`
+   park loop (`script-vm.md`). The fixup inverts the target with the
+   sign-extended delta; reading it unsigned placed the loop's target past the
+   buffer, where every later splice shifted it while its base stayed put, so
+   the rewrite turned the loop into a forward jump that the preservation
+   check could not see (an unresolvable target on both sides compares equal).
 
 `data_region_offset` is derived (`0x2B + 3*total_records`) and does not move.
 
