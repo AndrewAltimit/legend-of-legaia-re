@@ -37,7 +37,7 @@ with `SceneAssets::seq_in_stream_entries` / `bgm_seq_offset`.
 - [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [VAB attr accessors](#vab-attribute-accessors--utility-note-triggers) · [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [per-channel event handlers](#per-channel-event-handlers-over-_dat_801cd2c0-the-0x80060a1c0x80061bf8-family) · [further libsnd leaves](#further-libsnd--libspu-leaves) · [renderer-citation correction](#renderer-citation-correction)
 - [libspu / SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) - [SPU globals](#spu-globals) · [primitives](#libspu-primitives) · [init / reset / key](#spu-init--reset--key-registers) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb model](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)
 - [Engine-audio: Sequencer port](#engine-audio-model---sequencer-port) · [from-scratch SPU port](#engine-audio-model---from-scratch-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
-- [Battle arts-voice shout path](#battle-arts-voice-shout-path-engine) · [Audio-trace parity oracle](#audio-trace-parity-oracle) · [What's left](#whats-left)
+- [Battle arts-voice shout path](#battle-arts-voice-shout-path-engine) · [Audio-trace parity oracle](#audio-trace-parity-oracle) - [which channel differs first](#which-channel-differs-first-on-the-per-vsync-comparand) · [comparing per voice](#comparing-per-voice) · [What's left](#whats-left)
 
 ## Path-string cluster
 
@@ -1488,6 +1488,8 @@ The trace record carries `env_level`, `vol_left`, `vol_right`, `adsr_control`
 and `reverb_send` per voice, filled by all three emitters - the engine
 sampler, the mednafen `.mc` loader, and the PCSX-Redux extractor - so these
 questions can be asked of the artifact directly.
+
+### The Field↔Battle swap is not on this axis
 
 The **Field↔Battle BGM-swap** is *not* yet observable through this
 voice-activity oracle. The audible path itself is no longer blocked: the
