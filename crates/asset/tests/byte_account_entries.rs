@@ -640,7 +640,7 @@ fn pinned_overlay_tables_are_claimed_outside_every_code_extent() {
                 w[1].2
             );
         }
-        for &(a, b, what) in &spans {
+        for &(_, b, what) in &spans {
             assert!(
                 b <= bytes.len(),
                 "PROT {idx:04}: {what} runs past the entry"

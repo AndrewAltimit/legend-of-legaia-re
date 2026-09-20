@@ -2870,8 +2870,8 @@ fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_index: u32) {
 /// a `pub const` of the module named in the detail, so nothing here is a new
 /// claim about the disc and nothing here can be tuned to buy percentage points
 /// - widening a row means widening the parser that reads it. The rows are
-/// asserted against the parsers' constants in this module's unit tests, so a
-/// parser that re-pins a table moves this table with it or the test fails.
+///   asserted against the parsers' constants by the disc-gated tests, so a
+///   parser that re-pins a table moves this table with it or the test fails.
 ///
 /// What this closes is the gap the sweep kept reporting as unwalked format: an
 /// overlay's code is credited from the dump corpus and its data segment from
