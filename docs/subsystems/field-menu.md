@@ -1621,6 +1621,25 @@ character records, descriptions via `MenuTextTables` /
 Quarter bit `0x10` shaves 25%, Half winning when both are set) is applied to
 the displayed cost, matching the retail info window and the battle cast path.
 
+### The two target flows
+
+A confirmed spell opens one of two sub-screens, and the spell's own stats `+2`
+byte picks which: bit `0x20` set routes to the no-pick **group** flow (`0x10`,
+`FUN_801D9280` - no target rows at all, `FUN_801D688C` called with `count = 0`,
+confirm or cancel only), clear routes to the per-member **target picker**
+(`0x11`, `FUN_801D9594`). The group screen keeps the spell list and its info
+window drawn; cancel returns to the list.
+
+Engine port: `engine-core::spell_menu::spell_targets_group` is the predicate,
+run over the flag bits `SpellTarget::retail_target_flag_bits` materialises from
+the catalog's decoded shape, and `SpellMenuPhase::GroupConfirm` is the flow it
+opens. A group commit resolves `spells::cast_spell` once per party row - which
+is what the `HealAll` arm asks its caller for, since it returns the grant for
+the one member it was handed - and carries the per-member grants out as
+`SpellOutcome::MultiHeal`. `field_menu_dispatch::apply_spell_outcome` bills the
+MP once to the caster, applies every grant, and credits the multi-target XP arm
+per member.
+
 ### Menu-cast spell leveling + the window-7 notice
 
 Casting a heal from the Magic screen trains the spell, exactly like the

@@ -446,34 +446,56 @@ pub fn apply_spell_outcome(
         hms.mp_cur = hms.mp_cur.saturating_sub(mp_cost as u16);
         caster.set_hp_mp_sp(hms);
     }
-    let mut healed: Option<u16> = None;
-    if let Some(target) = world.party.roster.members.get_mut(target_slot as usize) {
-        let mut hms = target.hp_mp_sp();
-        match outcome {
-            crate::spells::SpellOutcome::Heal { amount, .. } => {
-                hms.hp_cur = hms.hp_cur.saturating_add(amount).min(hms.hp_max);
-                healed = Some(amount);
-            }
-            crate::spells::SpellOutcome::Revive { hp, .. } => {
-                hms.hp_cur = hp.min(hms.hp_max);
-            }
-            _ => {}
-        }
-        target.set_hp_mp_sp(hms);
-    }
     // Menu-cast spell-XP arm: only the HP-heal effect classes accrue
     // (FUN_800402F4's revive / cure / MP arms carry no `+0x5D0` code).
-    let healed = healed?;
-    let (nominal, group_cast) = match def.as_ref().map(|d| &d.effect) {
-        Some(crate::spells::SpellEffect::Heal { amount }) => (*amount, false),
-        Some(crate::spells::SpellEffect::HealAll { amount }) => (*amount, true),
-        _ => return None,
-    };
+    //
     // Retail "full power": the deficit covered the spell's whole heal cap;
     // a clipped heal is the partial grant. The engine's cap analogue is the
     // catalog's nominal amount ([`crate::spells::cast_spell`] returns
-    // `min(nominal, deficit)`).
-    let gain = crate::magic_xp::menu_heal_xp_gain(group_cast, healed == nominal);
+    // `min(nominal, deficit)`), and the group arm credits it per member -
+    // `+3` full / `+1` clipped each, against the single cast's `+12` / `+4`.
+    let nominal_heal = match def.as_ref().map(|d| &d.effect) {
+        Some(crate::spells::SpellEffect::Heal { amount }) => Some((*amount, false)),
+        Some(crate::spells::SpellEffect::HealAll { amount }) => Some((*amount, true)),
+        _ => None,
+    };
+    // The group flow (retail sub-screen `0x10`) picks no row, so its outcome
+    // carries the per-member grants instead of one `target_slot`.
+    let gain = if let crate::spells::SpellOutcome::MultiHeal { targets } = &outcome {
+        let (nominal, _) = nominal_heal?;
+        let mut total = 0u32;
+        for (slot, amount) in targets {
+            if let Some(member) = world.party.roster.members.get_mut(*slot as usize) {
+                let mut hms = member.hp_mp_sp();
+                hms.hp_cur = hms.hp_cur.saturating_add(*amount).min(hms.hp_max);
+                member.set_hp_mp_sp(hms);
+            }
+            total += crate::magic_xp::menu_heal_xp_gain(true, *amount == nominal);
+        }
+        if total == 0 {
+            return None;
+        }
+        total
+    } else {
+        let mut healed: Option<u16> = None;
+        if let Some(target) = world.party.roster.members.get_mut(target_slot as usize) {
+            let mut hms = target.hp_mp_sp();
+            match outcome {
+                crate::spells::SpellOutcome::Heal { amount, .. } => {
+                    hms.hp_cur = hms.hp_cur.saturating_add(amount).min(hms.hp_max);
+                    healed = Some(amount);
+                }
+                crate::spells::SpellOutcome::Revive { hp, .. } => {
+                    hms.hp_cur = hp.min(hms.hp_max);
+                }
+                _ => {}
+            }
+            target.set_hp_mp_sp(hms);
+        }
+        let healed = healed?;
+        let (nominal, group_cast) = nominal_heal?;
+        crate::magic_xp::menu_heal_xp_gain(group_cast, healed == nominal)
+    };
     let thresholds = world.tables.magic_xp_thresholds;
     let record = world.party.roster.members.get_mut(caster_slot as usize)?;
     let up = crate::magic_xp::accrue_and_level(

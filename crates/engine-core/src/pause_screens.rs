@@ -945,7 +945,9 @@ pub struct MagicInfoModel {
 /// Phase map: `CharSelect` = caster focus (the hovered caster's list
 /// shows white), `SpellSelect` = list focus (rows grey, hovered spell
 /// staged into the info window), `TargetSelect` = the host overlays the
-/// target picker. `text` fills descriptions; names fall back
+/// target picker, `GroupConfirm` = the no-pick group flow, which draws the
+/// list exactly as `SpellSelect` does and no picker at all. `text` fills
+/// descriptions; names fall back
 /// catalog -> spell-name table -> `Spell XX`.
 pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -> MagicScreenModel {
     let casters: Vec<(String, u8, u16, u16)> = s
@@ -961,6 +963,11 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
         }
         SpellMenuPhase::TargetSelect { caster, cursor, .. } => {
             (*caster as usize, true, *cursor as usize, true)
+        }
+        // Retail's group sub-screen `0x10` draws no target rows: the spell
+        // list keeps the hand and the info window keeps the staged spell.
+        SpellMenuPhase::GroupConfirm { caster, cursor, .. } => {
+            (*caster as usize, true, *cursor as usize, false)
         }
         SpellMenuPhase::Done(_) => (0, false, 0, false),
     };
