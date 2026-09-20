@@ -35,7 +35,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result};
 
-use legaia_asset::man_edit::{self, TextEdit};
+use legaia_asset::man_edit::{self, TextEdit, TextSite};
 use legaia_asset::{item_names, new_game, scene_asset_table};
 
 use crate::disc::DiscPatcher;
@@ -549,6 +549,58 @@ fn prepare_segment(
     }
 }
 
+/// Diagnostic for a keyed line whose `0x1F` framing is a coincidental byte
+/// run inside a decoded instruction's operands.
+const OPERAND_RUN_MSG: &str = "the text framing at this offset is a coincidence inside a \
+     decoded instruction's operands (an actor index followed by printable bytes), not a \
+     dialog segment - skipped (a write here would corrupt the script)";
+
+/// Same-size lines pre-applied into a decompressed MAN: `(offset, previous
+/// bytes, entry)`, the rollback shape the same-size path uses.
+type PreApplied<'a> = Vec<(usize, Vec<u8>, &'a Entry)>;
+
+/// Partition the ready lines of one decompressed MAN by [`TextSite`]: lines on
+/// a clean-walk text segment come back as the relocatable `ready` set; a line
+/// whose framing is an instruction's operand bytes is refused with a
+/// diagnostic; a line the walk does not reach is same-size only - applied into
+/// `decoded` here (space-padded) when it fits, and reported when it does not.
+/// The pre-applied `(offset, previous bytes, entry)` triples are returned so
+/// the caller counts them once a write happens and can roll them back.
+fn gate_text_sites<'a>(
+    decoded: &mut [u8],
+    ready: Vec<ReadyMan<'a>>,
+    report: &mut ImportReport,
+) -> (Vec<ReadyMan<'a>>, PreApplied<'a>) {
+    let mut walked = Vec::with_capacity(ready.len());
+    let mut applied = Vec::new();
+    for r in ready {
+        match man_edit::text_site(decoded, r.off) {
+            TextSite::Segment => walked.push(r),
+            TextSite::Operand => report.issue(&r.entry.key, OPERAND_RUN_MSG),
+            TextSite::Unreached | TextSite::NoRecord => {
+                if r.translated.len() > r.old_len {
+                    report.issue(
+                        &r.entry.key,
+                        format!(
+                            "translation needs {} bytes but the in-place budget is {} and \
+                             the script walk does not reach this line, so it cannot be \
+                             relocated (shorten this line)",
+                            r.translated.len(),
+                            r.old_len
+                        ),
+                    );
+                    continue;
+                }
+                let before = decoded[r.off..r.off + r.old_len].to_vec();
+                decoded[r.off..r.off + r.old_len]
+                    .copy_from_slice(&pad_segment(&r.translated, r.old_len));
+                applied.push((r.off, before, r.entry));
+            }
+        }
+    }
+    (walked, applied)
+}
+
 /// Attempt the **generalized rewriter** path for one scene MAN: grow/shrink
 /// every ready segment to its exact translated bytes, relocate all crossing
 /// references ([`man_edit::apply_text_edits`]), verify the rewrite is the same
@@ -859,7 +911,14 @@ pub fn import_pack_phase(
                 });
             }
         }
-        if ready.is_empty() {
+        // Structural gate: a line is dialog only when its `0x1F` lead is the
+        // text an instruction on the record's clean script walk carries. A
+        // coincidental `1F .. 00` inside an instruction's operands is refused
+        // on every path (writing "text" there corrupts the script); a line the
+        // walk does not reach is written same-size only, pre-applied here so
+        // the grown MAN carries it and the same-size rollback covers it.
+        let (ready, mut applied) = gate_text_sites(&mut man.decoded, ready, &mut report);
+        if ready.is_empty() && applied.is_empty() {
             continue;
         }
 
@@ -875,10 +934,13 @@ pub fn import_pack_phase(
                     man.man_descriptor_off as u64,
                     &scene_asset_table::encode_size_word(0x03, new_size).to_le_bytes(),
                 )?;
-                report.applied += ready.len();
+                report.applied += ready.len() + applied.len();
                 report
                     .applied_keys
                     .extend(ready.iter().map(|r| r.entry.key.clone()));
+                report
+                    .applied_keys
+                    .extend(applied.iter().map(|(_, _, en)| en.key.clone()));
                 continue;
             }
             // The full-length dialog overflows the MAN's compressed footprint.
@@ -891,7 +953,11 @@ pub fn import_pack_phase(
                 pending_growth.insert(entry_idx, payload);
                 pending_meta.push((
                     entry_idx,
-                    ready.iter().map(|r| r.entry.key.clone()).collect(),
+                    ready
+                        .iter()
+                        .map(|r| r.entry.key.clone())
+                        .chain(applied.iter().map(|(_, _, en)| en.key.clone()))
+                        .collect(),
                     grown_sectors,
                 ));
                 continue;
@@ -902,7 +968,6 @@ pub fn import_pack_phase(
         // place, report the over-budget ones (the MAN couldn't be grown to fit
         // them), then recompress with a longest-first rollback if the scene's
         // dialog no longer fits its compressed footprint.
-        let mut applied: Vec<(usize, Vec<u8>, &Entry)> = Vec::new();
         for r in &ready {
             if r.translated.len() > r.old_len {
                 report.issue(
@@ -1027,9 +1092,45 @@ pub fn import_pack_phase(
             continue;
         }
 
+        // Streaming dungeon MAN: the same structural gate as the LZS MANs
+        // (keyed offsets are entry offsets; the MAN sits at `man_range()`),
+        // and any line the walk does not reach stays same-size only.
+        let sm = StreamManText::locate(&window);
+        let (ready, blind) = match &sm {
+            Some(sm) => {
+                let start = sm.man_range().start;
+                let mut walked = Vec::new();
+                let mut blind = Vec::new();
+                for r in ready {
+                    match r
+                        .off
+                        .checked_sub(start)
+                        .map(|o| man_edit::text_site(&sm.man, o))
+                    {
+                        Some(TextSite::Segment) => walked.push(r),
+                        Some(TextSite::Operand) => report.issue(&r.entry.key, OPERAND_RUN_MSG),
+                        _ => blind.push(r),
+                    }
+                }
+                (walked, blind)
+            }
+            None => (Vec::new(), ready),
+        };
+
         // Escape hatch: a line longer than its span grows the streaming MAN.
         // In the entry's own slack it is a same-size-image write (PPF-safe);
-        // past it, a whole-sector grow staged for the relayout pass.
+        // past it, a whole-sector grow staged for the relayout pass. The
+        // same-size (blind) lines are written first so the grown payload,
+        // built from a fresh read of the entry, carries them too.
+        for r in &blind {
+            if r.translated.len() <= r.old_len {
+                let padded = pad_segment(&r.translated, r.old_len);
+                window[r.off..r.off + r.old_len].copy_from_slice(&padded);
+                patcher.patch_prot_entry(entry_idx, r.off as u64, &padded)?;
+                report.applied += 1;
+                report.applied_keys.push(r.entry.key.clone());
+            }
+        }
         if ready.iter().any(|r| r.translated.len() > r.old_len)
             && let Some(sm) = StreamManText::locate(&window)
             && let Some((payload, grown_sectors)) =
@@ -1056,7 +1157,10 @@ pub fn import_pack_phase(
 
         // Same-size path: the fitting lines in place, space-padded; the rest
         // reported (the carrier couldn't be grown to fit them).
-        for r in &ready {
+        for r in ready
+            .iter()
+            .chain(blind.iter().filter(|r| r.translated.len() > r.old_len))
+        {
             if r.translated.len() > r.old_len {
                 report.issue(
                     &r.entry.key,

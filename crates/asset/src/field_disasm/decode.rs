@@ -2,6 +2,7 @@
 //! decoded instruction plus the offset of the next instruction.
 
 use super::*;
+use decode_subops::walk_mes_bytecode;
 
 /// Resolve a relative-jump target. Retail keeps each script's PC in a 16-bit
 /// field (`*(short *)(ctx + 0x9e)`), so a branch lands at
@@ -56,7 +57,43 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
     };
 
     let decoded = match opcode {
+        // Inline text segment (bare form only - the field corpus stores the
+        // lead without the cross-context prefix). Size covers the lead, the
+        // glyphs and the terminator byte, which must be present.
+        0x1F if extended.is_none() => {
+            let len = walk_mes_bytecode(&bytecode[operand.min(bytecode.len())..]);
+            need(len + 1)?;
+            mk(header_size + len + 1, InsnInfo::TextSegment { len })
+        }
         0x21 | 0x24 | 0x25 | 0x48 => mk(header_size, InsnInfo::Nop),
+        // Picker open byte + N x i16 jump table. Each entry's delta is
+        // relative to the entry's own offset (`FUN_80038050`, mirrored by
+        // `legaia_mes::picker`); the continuation byte and the option labels
+        // that follow the table are ordinary stream elements.
+        0x27..=0x2A if extended.is_none() => {
+            let count: u8 = match opcode {
+                0x27 | 0x2A => 2,
+                0x28 => 3,
+                _ => 4,
+            };
+            need(count as usize * 2)?;
+            let mut deltas = [0i16; 4];
+            let mut targets = [0usize; 4];
+            for i in 0..count as usize {
+                let base = operand + i * 2;
+                let d = i16::from_le_bytes([bytecode[base], bytecode[base + 1]]);
+                deltas[i] = d;
+                targets[i] = rel_target(base, d as u16);
+            }
+            mk(
+                header_size + count as usize * 2,
+                InsnInfo::Picker {
+                    count,
+                    deltas,
+                    targets,
+                },
+            )
+        }
         0x22 => {
             need(1)?;
             mk(
@@ -174,13 +211,20 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
                     )
                 }
                 2 => {
-                    need(2)?;
+                    // Two bytes (`[34, 2N]`): the fall-through advance is
+                    // `PC += 2` (port `op_34`, `code_r0x801df098`). `b1` is
+                    // the byte *after* the op, peeked, never consumed: when it
+                    // is `0x40` the arm captures the forward PC for the actor
+                    // - and that `0x40` is the `DATA_BLOCK` op carrying the
+                    // captured payload, which the dispatcher skips on its own
+                    // once the capture has yielded. Consuming it here made
+                    // the walk land inside the data block's bytes.
                     mk(
-                        header_size + 2,
+                        header_size + 1,
                         InsnInfo::Effect {
                             op0,
                             kind: EffectKind::CaptureYield {
-                                b1: bytecode[operand + 1],
+                                b1: bytecode.get(operand + 1).copied().unwrap_or(0),
                             },
                         },
                     )
@@ -496,4 +540,30 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
     let mut insn = decoded?;
     insn.extended = extended;
     Ok(insn)
+}
+
+/// Offset of the `0x1F` lead of the text an instruction carries, if it carries
+/// one: the [`InsnInfo::TextSegment`] pseudo-op itself, a `0x49` sub-0 state
+/// resume whose inline MES starts with a lead, or a `0x4C` nibble-E sub-1
+/// text balloon whose packet does. This is what makes a `0x1F <text> 0x00`
+/// run *dialog* rather than a coincidence: the same framing occurs inside
+/// instruction operands (an actor index `0x1F` followed by two printable
+/// bytes and a zero), and only a clean walk can tell the two apart.
+pub fn text_lead(bytecode: &[u8], insn: &Insn) -> Option<usize> {
+    let operand = insn.pc + if insn.extended.is_some() { 2 } else { 1 };
+    let lead_at = |at: usize| (bytecode.get(at) == Some(&0x1F)).then_some(at);
+    match &insn.info {
+        InsnInfo::TextSegment { .. } => Some(insn.pc),
+        InsnInfo::StateResume {
+            sub_op: 0,
+            kind: StateResumeKind::DoneSub0Mes { length, .. },
+        } => lead_at(operand + 2 + *length as usize),
+        InsnInfo::MenuCtrl {
+            kind: MenuCtrlKind::HighNibble {
+                outer: 0xE, sub: 1, ..
+            },
+            ..
+        } => lead_at(operand + 1),
+        _ => None,
+    }
 }

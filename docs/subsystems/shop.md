@@ -499,8 +499,10 @@ in the scene's field-VM script** (the MAN, asset type `0x03`), as field-VM op
 `count` over-counts the purchasable stock by a trailing run of unsellable,
 price-`0` *template* ids (the `Ra-Seru Meta $N` placeholders `0x01/0x02/0x03`, or
 a lone `0x03`) that the on-screen shop skips - see the sellable-mask note below.
-The shared scanner [`legaia_asset::shop_stock`] (a byte-scan, robust to the
-dialogue-picker jump tables a linear walk desyncs on) locates these records;
+The shared scanner [`legaia_asset::shop_stock`] (a byte-scan, independent of
+how the script reaches the op) locates these records - the largest, `rayman2`'s
+"Items Shop 1", declares seventeen ids (fourteen sellable plus the three-id
+template tail), so a record bound of sixteen hid one shop from every consumer;
 [`legaia_engine_core::shop_catalog`] pairs them with item prices to build a priced
 [`ShopInventory`]. `SceneHost::enter_field_scene` populates `World::shops.scene_shops`
 for the active scene, and `World::scene_shop_session(idx)` hands a host a

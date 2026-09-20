@@ -250,8 +250,11 @@ capped by `budget`:
   references (partition tables, `u24_at_28`, straddling relative jumps -
   `man_edit::apply_text_edits`), verified as the same program by re-walking
   both buffers (`text_edits_preserve_scripts`). The budget then becomes the
-  MAN's own footprint, not each string. See
-  [`man-relocation.md`](../formats/man-relocation.md).
+  MAN's own footprint, not each string. Each line is first placed on its
+  record's clean script walk (`man_edit::text_site`): a keyed run that turns
+  out to be a coincidence inside an instruction's operands is skipped on every
+  path with a diagnostic, and a run the walk never reaches is written same-size
+  only. See [`man-relocation.md`](../formats/man-relocation.md).
 - A whole scene's edits must additionally recompress into the MAN's original
   LZS footprint at the same LBA. Text compresses well, and the repack falls
   back to an optimal-parse LZS encoder (`legaia_lzs::compress_optimal` - exact

@@ -85,11 +85,14 @@ fn relayout_imports_official_dialog_byte_faithfully() {
     );
     assert!(report.relayout_sectors_added >= report.relayout_entries as u32);
 
-    // The relayout eliminated the overflow-class abbreviations.
+    // The relayout eliminated the overflow-class abbreviations - every one:
+    // with text segments, pickers and the per-partition record header
+    // decoded, each record's clean walk reaches every genuine line, so no
+    // scene is left to the same-size fallback.
     let relayout_abbrev = abbreviation_issues(&report);
-    assert!(
-        relayout_abbrev < plain_abbrev,
-        "relayout should reduce abbreviation: {relayout_abbrev} vs {plain_abbrev}"
+    assert_eq!(
+        relayout_abbrev, 0,
+        "relayout left {relayout_abbrev} lines abbreviated (same-size import: {plain_abbrev})"
     );
 
     let patched = patcher.into_image();

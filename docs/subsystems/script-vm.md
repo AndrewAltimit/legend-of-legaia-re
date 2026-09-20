@@ -74,6 +74,29 @@ script-table teleport. Op `0x44` SPAWN_RECORD is the exception that proves it:
 its operand is also flat, and the dispatcher re-bases it into partition 2
 (`- N0 - N1`) itself. Engine: `man_field_scripts::flat_record_span`.
 
+### Text segments and pickers are strides of the stream
+
+Field dialogue has no opcode (see [§ Field dialogue](#field-dialogue-has-no-opcode)),
+but the bytes are still in the script stream, between the ops: a bare `0x1F
+<glyphs> <terminator>` text segment where the actor-dialog SM parks the VM, and
+a picker open byte `0x27 / 0x28 / 0x29 / 0x2A` followed by its N-entry `i16`
+jump table ([`mes.md`](../formats/mes.md#picker-control-region-layout)). A
+linear walk that treats the `0x1F` as an unknown opcode ends at the first line
+of every record, and everything behind it - the picker jump tables, the branch
+handlers, the closing park loop, the shop record - is never reached. The
+disassembler (`legaia_asset::field_disasm`) therefore decodes both as
+pseudo-instructions of the stream: `TextSegment` spans the lead, the glyphs
+(two-byte tokens per the MES stride table) and the terminator; `Picker` spans
+the open byte and its table, each entry's target being `entry_offset + delta`
+(`FUN_80038050`). Neither is a dispatcher arm; both are what a walk must step
+over, and what the MAN relocator must fix up when text between an entry and its
+handler changes length ([`man-relocation.md`](../formats/man-relocation.md)).
+
+The same walk is what tells dialogue from a coincidence. `1F <printable> 00`
+occurs inside instruction operands too - `CC 1F 50 4B 00` is a cross-context
+MENU_CTRL whose bytes read `1F "PK" 00` - and only the instruction boundary
+says which is which (`man_edit::text_site`).
+
 ### Placement header: model + animation resolution
 
 The 4-byte header after the locals block is `[model][anim_id][bx][bz]`
@@ -350,7 +373,7 @@ These are sub-dispatchers - the operand byte selects a sub-command.
 |---|---|---|
 | 0 | `[34, op0, r, g, b, intensity_lo, intensity_hi]` (7 bytes) | Effect-global colour + intensity setup. Rewrites `_DAT_8007BCCC..BCE0` colour-mode globals. Fade pipeline gated on `_DAT_1F800394 & 0x800000`. |
 | 1 | base 13 bytes; +2+payload when peek-at-`pc+13` byte is 0x40 | Effect / sprite spawn with optional captured-PC. Walks actor list at `_DAT_8007C354`; if found, skips spawn. Otherwise calls `FUN_801E5668(ctx, ..., pos, packed24, mode)`; `mode = 1 + (op0 & 1)`. When `capture_flag == 0x40`, captures payload bytes onto the spawned actor's `+0x94`. |
-| 2 | 3 bytes | Actor-pool capture-and-yield. Walks list looking for entry whose `+0x90 == ctx`; if found AND `b1 == 0x40`, captures forward-PC and emits `caseD_4` (STATE_RESUME → Yield). |
+| 2 | 2 bytes (`[34, 2N]`); the byte after is peeked, not consumed | Actor-pool capture-and-yield. Walks list looking for entry whose `+0x90 == ctx`; if found AND the next byte is `0x40`, captures the forward PC and emits `caseD_4` (STATE_RESUME → Yield). That `0x40` is the `DATA_BLOCK` op carrying the captured payload, which the dispatcher skips on its own once the capture has yielded; the fall-through advance is `PC += 2` (`code_r0x801df098`). A decoder that consumed it as an operand landed inside the data block. |
 | 3 | 4 bytes | Play 3D animation via `func_0x800252EC(operand1+1, ctx+0x14, ctx+0x24)`. Looks up an offset in the buffer at `_DAT_8007B8D0` (in the field that is the scene's `efect.dat` prescript window, `*(0x1F8003EC) + 0x12800`; the `bse.dat` battle bank is the *other* occupant of the same pointer - see [`bse-dat.md`](../formats/bse-dat.md)) using `*(u16*)(buf + 2 + idx*2)`, then spawns an actor via `FUN_80021B04(pos, ?, buf+ofs, 0x1000)`. Buffer layout matches the [ANM container shape](../formats/anm.md). |
 | 4..=15 | - | No `case` arm in `FUN_801de840`; falls through `if (bVar35 != 2) { if (bVar35 != 3) { return param_2; } }` - halts at PC. |
 
@@ -871,6 +894,15 @@ A tristate state machine on `_DAT_8007B450`, with sub-cases 0..0xD:
 Done sub-6/8/9/C/D jump through `LAB_801df898` (PC += 5). Done sub-0 walks an inline
 MES-shape payload via `func_0x8003CA38` (`length = pbVar47[2]`, PC +=
 `5 + length + walked`).
+
+The town-shop form of the sub-0 payload - `[count][ids..][ASCII name\0]`
+([`shop.md`](shop.md#gold-shop-stock-source), parser `legaia_asset::shop_stock`)
+- is **not** measured by that walk: its count byte is a terminator to the glyph
+walker, so the arithmetic above stops at zero. The menu overlay that runs the
+shop is what moves the script past the record. The disassembler recognises the
+record by shape (the same validation the shop scanner uses) and sizes it to the
+name's terminator, so a linear walk reaches the shop's "Welcome" / "Thank you"
+dialogue behind it.
 
 The Armed park is the town01 name-entry hand-off (P2[3] `+0x02C6`); see
 [`playthrough-coverage.md`](../tooling/playthrough-coverage.md#s3-captured-the-town01-opening-is-the-name-entry-screen).

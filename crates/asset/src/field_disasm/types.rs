@@ -147,6 +147,23 @@ pub enum InsnInfo {
         delta: Option<u16>,
         target: Option<usize>,
     },
+    /// `0x1F` inline text segment: `[1F][glyphs..][terminator <= 0x1E]`.
+    /// Not a dispatcher opcode - the actor-dialog SM (`FUN_80039B7C`) parks
+    /// the VM on the lead and the pager consumes the glyphs (see
+    /// `docs/formats/mes.md`) - but it is one stride of the script stream,
+    /// so a linear walk must step over it to reach the ops behind it (the
+    /// picker jump tables, the branch handlers, the park loop). `len` is the
+    /// glyph byte count between the lead and the terminator.
+    TextSegment { len: usize },
+    /// `0x27 / 0x28 / 0x29 / 0x2A` picker open byte followed by its N-entry
+    /// jump table (`i16` deltas, each relative to its own entry offset -
+    /// `FUN_80038050`). `count` is 2 / 3 / 4 / 2; only the first `count`
+    /// slots of `deltas` / `targets` are meaningful.
+    Picker {
+        count: u8,
+        deltas: [i16; 4],
+        targets: [usize; 4],
+    },
     /// One opaque byte. Used as a fallback when the decoder cannot make
     /// sense of the leading byte; the caller resumes one byte later.
     Byte { value: u8 },
@@ -221,6 +238,9 @@ pub enum InventoryCmpKind {
 pub enum StateResumeKind {
     /// Done arm, sub-op 0 - inline MES bytecode walker.
     DoneSub0Mes { length: u8, mes_bytes: usize },
+    /// Sub-op 0 carrying a town-shop stock record (`crate::shop_stock`):
+    /// `[count][ids..][ASCII name\0]` - `count` item ids then the shop title.
+    DoneSub0Shop { count: u8, name_len: u8 },
     /// Done arm, sub-ops 1/3/7 (PC += 3).
     DoneSubShort,
     /// Done arm, sub-ops 2/4 (PC += 7).

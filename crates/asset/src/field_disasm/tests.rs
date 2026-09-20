@@ -537,3 +537,138 @@ fn jmp_rel_high_bit_delta_is_a_backward_jump() {
         _ => panic!("expected JmpRel"),
     }
 }
+
+#[test]
+fn text_segment_is_a_stride_of_lead_glyphs_and_terminator() {
+    // `1F "Hi" 00` then a Nop: the walk steps over the whole segment.
+    let buf = [0x1F, b'H', b'i', 0x00, 0x21];
+    let t = decode(&buf, 0).unwrap();
+    assert!(matches!(t.info, InsnInfo::TextSegment { len: 2 }));
+    assert_eq!(t.size, 4);
+    assert!(matches!(decode(&buf, 4).unwrap().info, InsnInfo::Nop));
+    // A `C1 00` name substitution does not terminate the line.
+    let buf = [0x1F, 0xC1, 0x00, b'!', 0x00, 0x21];
+    let t = decode(&buf, 0).unwrap();
+    assert!(matches!(t.info, InsnInfo::TextSegment { len: 3 }));
+    assert_eq!(t.size, 5);
+    // No terminator before the buffer ends: truncated, not a segment.
+    assert!(decode(&[0x1F, b'H', b'i'], 0).is_err());
+}
+
+#[test]
+fn picker_jump_entries_are_relative_to_their_own_offset() {
+    // 4-option picker at pc 0: entry i sits at 1 + i*2, target = entry + delta.
+    let mut buf = vec![0x29];
+    for d in [10i16, 20, -4, 30] {
+        buf.extend_from_slice(&d.to_le_bytes());
+    }
+    buf.push(0x21);
+    let p = decode(&buf, 0).unwrap();
+    assert_eq!(p.size, 9);
+    let InsnInfo::Picker {
+        count,
+        deltas,
+        targets,
+    } = p.info
+    else {
+        panic!("not a picker: {:?}", p.info);
+    };
+    assert_eq!(count, 4);
+    assert_eq!(deltas, [10, 20, -4, 30]);
+    assert_eq!(targets, [11, 23, 1, 37]);
+    assert!(matches!(decode(&buf, 9).unwrap().info, InsnInfo::Nop));
+    for (open, n) in [(0x27u8, 2usize), (0x28, 3), (0x2A, 2)] {
+        let mut b = vec![open];
+        b.extend(std::iter::repeat_n(0u8, n * 2));
+        let i = decode(&b, 0).unwrap();
+        assert_eq!(i.size, 1 + n * 2, "open {open:#x}");
+        assert!(matches!(i.info, InsnInfo::Picker { count, .. } if count as usize == n));
+    }
+}
+
+#[test]
+fn effect_capture_yield_is_two_bytes_and_leaves_the_data_block_to_the_walk() {
+    // `34 20` then the `40 01 00` DATA_BLOCK the capture forwards, then a Nop.
+    let buf = [0x34, 0x20, 0x40, 0x01, 0x00, 0x21];
+    let e = decode(&buf, 0).unwrap();
+    assert_eq!(e.size, 2);
+    assert!(matches!(
+        e.info,
+        InsnInfo::Effect {
+            op0: 0x20,
+            kind: EffectKind::CaptureYield { b1: 0x40 }
+        }
+    ));
+    let d = decode(&buf, 2).unwrap();
+    assert!(matches!(d.info, InsnInfo::DataBlock { len: 1 }));
+    assert_eq!(d.size, 3);
+    assert!(matches!(decode(&buf, 5).unwrap().info, InsnInfo::Nop));
+}
+
+#[test]
+fn state_resume_sub0_shop_record_spans_the_ids_and_the_name() {
+    let mut buf = vec![0x49, 0x00, 0x00, 0x03, 0x22, 0x28, 0x03];
+    buf.extend_from_slice(b"Arms Shop\0");
+    buf.push(0x21);
+    let s = decode(&buf, 0).unwrap();
+    assert!(matches!(
+        s.info,
+        InsnInfo::StateResume {
+            sub_op: 0,
+            kind: StateResumeKind::DoneSub0Shop {
+                count: 3,
+                name_len: 9
+            }
+        }
+    ));
+    assert_eq!(s.size, buf.len() - 1);
+    assert!(matches!(decode(&buf, s.size).unwrap().info, InsnInfo::Nop));
+    // The MES form is unchanged: `49 00 00 1F "hi" 00 00` is 8 bytes.
+    let buf = [0x49, 0x00, 0x00, 0x1F, b'h', b'i', 0x00, 0x00, 0x21];
+    let m = decode(&buf, 0).unwrap();
+    assert_eq!(m.size, 8);
+    assert!(matches!(
+        m.info,
+        InsnInfo::StateResume {
+            sub_op: 0,
+            kind: StateResumeKind::DoneSub0Mes { .. }
+        }
+    ));
+}
+
+#[test]
+fn menu_ctrl_14_is_the_eight_byte_form_of_nibble_1() {
+    let buf = [0x4C, 0x14, 1, 2, 3, 4, 5, 6, 0x21];
+    assert_eq!(decode(&buf, 0).unwrap().size, 8);
+    assert!(matches!(decode(&buf, 8).unwrap().info, InsnInfo::Nop));
+    let buf = [0x4C, 0x13, 1, 2, 3, 4, 5, 0x21];
+    assert_eq!(decode(&buf, 0).unwrap().size, 7);
+    assert!(matches!(decode(&buf, 7).unwrap().info, InsnInfo::Nop));
+}
+
+#[test]
+fn menu_ctrl_d2_carries_its_channel_byte() {
+    let buf = [0x4C, 0xD2, 0x0F, 0x4C, 0xD2, 0x10, 0x21];
+    assert_eq!(decode(&buf, 0).unwrap().size, 3);
+    assert_eq!(decode(&buf, 3).unwrap().size, 3);
+    assert!(matches!(decode(&buf, 6).unwrap().info, InsnInfo::Nop));
+}
+
+#[test]
+fn text_lead_names_the_lead_byte_of_every_text_carrying_shape() {
+    let bare = [0x21, 0x1F, b'h', 0x00];
+    assert_eq!(text_lead(&bare, &decode(&bare, 1).unwrap()), Some(1));
+    assert_eq!(text_lead(&bare, &decode(&bare, 0).unwrap()), None);
+    let mes = [0x49, 0x00, 0x00, 0x1F, b'h', 0x00, 0x00];
+    assert_eq!(text_lead(&mes, &decode(&mes, 0).unwrap()), Some(3));
+    let balloon = [0x4C, 0xE1, 0x1F, b'h', b'i', 0x00, 0x21];
+    let b = decode(&balloon, 0).unwrap();
+    assert_eq!(b.size, 6);
+    assert_eq!(text_lead(&balloon, &b), Some(2));
+    // An operand `1F` inside an instruction is not a lead: `CC 1F 50 4B 00`
+    // is a cross-context MENU_CTRL whose bytes happen to read `1F "PK" 00`.
+    let op = [0xCC, 0x1F, 0x50, 0x4B, 0x00];
+    let i = decode(&op, 0).unwrap();
+    assert_eq!(i.size, 5);
+    assert_eq!(text_lead(&op, &i), None);
+}

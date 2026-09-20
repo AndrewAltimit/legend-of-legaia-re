@@ -653,6 +653,8 @@ fn continues_entry_slice(insn: &InsnInfo) -> bool {
         | InsnInfo::WaitFrames { .. }
         | InsnInfo::SceneChange { .. }
         | InsnInfo::WarpOrInteract { .. }
+        | InsnInfo::TextSegment { .. }
+        | InsnInfo::Picker { .. }
         | InsnInfo::DataBlock { .. } => false,
         InsnInfo::LFlag { kind, .. }
         | InsnInfo::GFlag { kind, .. }

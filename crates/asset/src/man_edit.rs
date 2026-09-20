@@ -71,6 +71,15 @@ pub enum ManEditError {
     BadName { len: usize },
     /// The MAN failed to parse.
     Parse,
+    /// A text edit's `0x1F` framing lies inside a decoded instruction's
+    /// operands - a coincidental byte run (an actor index `0x1F`, two
+    /// printable bytes, a zero), not a dialog segment. Writing "text" there
+    /// would corrupt the script.
+    NotTextSegment { offset: usize },
+    /// A text edit sits past the point where the record's clean walk ends,
+    /// so the references that may cross it are unknown and a byte shift
+    /// cannot be relocated safely.
+    UnwalkedText { offset: usize },
 }
 
 impl std::fmt::Display for ManEditError {
@@ -85,6 +94,14 @@ impl std::fmt::Display for ManEditError {
             }
             Self::BadName { len } => write!(f, "bad destination name length {len}"),
             Self::Parse => write!(f, "MAN failed to parse"),
+            Self::NotTextSegment { offset } => write!(
+                f,
+                "0x{offset:X} is inside an instruction's operands, not a text segment"
+            ),
+            Self::UnwalkedText { offset } => write!(
+                f,
+                "0x{offset:X} lies past the end of the record's clean script walk"
+            ),
         }
     }
 }
@@ -138,6 +155,23 @@ fn partition_of(mf: &ManFile, start: usize) -> Option<usize> {
     None
 }
 
+/// First-opcode offset (relative to the record start) of a record in
+/// partition `p`. Every partition prefixes its script with a different header
+/// (`docs/subsystems/script-vm.md`, "Record headers are per-partition"):
+/// partition 0 (objects / doors / props) `[u8 n][n*2 SJIS][u8 attr]`,
+/// partition 1 (actor placements) `[u8 N][N*2 locals][4-byte placement]`,
+/// partition 2 (named / cutscene) name + three condition blocks. Reading a
+/// partition-0 record with the partition-1 formula starts the walk three
+/// bytes late - mid-op - so the walk desyncs and the record's own text is
+/// never reached.
+fn record_pc0(man: &[u8], p: usize, start: usize) -> Option<usize> {
+    match p {
+        0 => Some(1 + *man.get(start)? as usize * 2 + 1),
+        1 => Some(1 + *man.get(start)? as usize * 2 + 4),
+        _ => p2_pc0(man, start),
+    }
+}
+
 /// `(record_start, pc0, record_end)` for the record containing `op_pc`.
 fn record_for(mf: &ManFile, man: &[u8], op_pc: usize) -> Option<(usize, usize, usize)> {
     let starts = record_starts(mf);
@@ -148,13 +182,62 @@ fn record_for(mf: &ManFile, man: &[u8], op_pc: usize) -> Option<(usize, usize, u
         .find(|&s| s > start)
         .unwrap_or(man.len());
     let p = partition_of(mf, start)?;
-    let pc0 = if p == 2 {
-        p2_pc0(man, start)?
-    } else {
-        let locals = *man.get(start)? as usize;
-        1 + locals * 2 + 4
-    };
+    let pc0 = record_pc0(man, p, start)?;
     Some((start, pc0, end))
+}
+
+/// Where a `0x1F`-framed text run at `offset` (the first glyph byte, the
+/// lead at `offset - 1`) sits relative to its record's clean script walk -
+/// the structural test that separates dialog from a coincidental byte run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextSite {
+    /// The lead is the text an instruction on the clean walk carries (a bare
+    /// segment, a `0x49` inline MES, a `0x4C` balloon): dialog.
+    Segment,
+    /// The clean walk ended (a decode error, or the record's end) before
+    /// reaching the lead: unknown - a byte shift here cannot be relocated,
+    /// but a same-size write cannot desync anything either.
+    Unreached,
+    /// An instruction on the clean walk spans the lead as operand bytes:
+    /// not text at all.
+    Operand,
+    /// `offset` is outside every partition record (section chain / header).
+    NoRecord,
+}
+
+/// Classify the text run whose first glyph byte is at `offset`. See
+/// [`TextSite`].
+pub fn text_site(man: &[u8], offset: usize) -> TextSite {
+    let Ok(mf) = man_section::parse(man) else {
+        return TextSite::NoRecord;
+    };
+    let sec0_abs = mf.data_region_offset + mf.header.u24_at_28 as usize;
+    let Some(lead) = offset.checked_sub(1) else {
+        return TextSite::NoRecord;
+    };
+    let Some((rstart, pc0, rend)) = record_for(&mf, man, lead) else {
+        return TextSite::NoRecord;
+    };
+    if rstart >= sec0_abs || lead < rstart + pc0 {
+        return TextSite::NoRecord;
+    }
+    let mut pc = rstart + pc0;
+    while pc < rend {
+        let Ok(insn) = field_disasm::decode(man, pc) else {
+            break;
+        };
+        if insn.size == 0 {
+            break;
+        }
+        if field_disasm::text_lead(man, &insn) == Some(lead) {
+            return TextSite::Segment;
+        }
+        if pc <= lead && lead < pc + insn.size {
+            return TextSite::Operand;
+        }
+        pc += insn.size;
+    }
+    TextSite::Unreached
 }
 
 /// A relative jump found in an edited record: the byte offset of its u16 LE
@@ -216,6 +299,17 @@ fn scan_record_refs(man: &[u8], start: usize, pc0: usize, end: usize) -> Vec<Rel
                 base: rel_base(*t, *d),
                 target: *t,
             }),
+            // A picker's N jump entries: each delta is relative to its own
+            // entry offset, and the branch handlers they name lie past the
+            // option labels - so growing a label straddles every one.
+            InsnInfo::Picker { count, targets, .. } => {
+                for (i, &target) in targets.iter().take(*count as usize).enumerate() {
+                    jumps.push(RelJump {
+                        base: insn.pc + 1 + i * 2,
+                        target,
+                    });
+                }
+            }
             InsnInfo::InventoryCmp {
                 kind:
                     InventoryCmpKind::Compare {
@@ -815,7 +909,17 @@ pub fn apply_text_edits(man: &[u8], edits: &[TextEdit]) -> Result<Vec<u8>, ManEd
         if rstart >= sec0_abs || e.offset < rstart + pc0 || e.offset + e.old_len > rend {
             return Err(ManEditError::RecordNotFound { op_pc: e.offset });
         }
-        // Scan each edited record's control flow exactly once (rejects abs refs).
+        // The run must be text an instruction on the record's clean walk
+        // carries: a coincidental `1F .. 00` inside an operand is refused
+        // outright, and a run past the walk's end is refused for a *shift*
+        // (the references crossing it are unknown).
+        match text_site(man, e.offset) {
+            TextSite::Segment => {}
+            TextSite::Operand => return Err(ManEditError::NotTextSegment { offset: e.offset }),
+            TextSite::Unreached => return Err(ManEditError::UnwalkedText { offset: e.offset }),
+            TextSite::NoRecord => return Err(ManEditError::RecordNotFound { op_pc: e.offset }),
+        }
+        // Scan each edited record's control flow exactly once.
         if scanned.insert(rstart) {
             jump_fixups.extend(scan_record_refs(man, rstart, pc0, rend));
         }
@@ -844,6 +948,7 @@ fn control_targets(insn: &InsnInfo) -> Vec<usize> {
         InsnInfo::SystemFlag {
             target: Some(t), ..
         } => vec![*t],
+        InsnInfo::Picker { count, targets, .. } => targets[..*count as usize].to_vec(),
         InsnInfo::InventoryCmp {
             kind:
                 InventoryCmpKind::Compare { skip_target, .. }
@@ -918,13 +1023,7 @@ pub fn text_edits_preserve_scripts(original: &[u8], rebuilt: &[u8]) -> bool {
             if start_a >= original.len() || start_b >= rebuilt.len() {
                 return false;
             }
-            let pc0 = |man: &[u8], start: usize| -> Option<usize> {
-                if p == 2 {
-                    p2_pc0(man, start)
-                } else {
-                    man.get(start).map(|&l| 1 + l as usize * 2 + 4)
-                }
-            };
+            let pc0 = |man: &[u8], start: usize| -> Option<usize> { record_pc0(man, p, start) };
             let (Some(pc0a), Some(pc0b)) = (pc0(original, start_a), pc0(rebuilt, start_b)) else {
                 return false;
             };

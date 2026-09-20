@@ -950,10 +950,12 @@ already records, where every `0x37` / `0x41` byte in dialog text reads as a hit.
 [`field-op-census.md`](field-op-census.md) is the missing instrument, keyed on
 an arbitrary opcode and broken out by sub-arm, and it answers both rows:
 
-- **`4C EA`** has exactly **one** coherent occurrence disc-wide, in the
-  world-map bundle `map03`, partition 2 record 9 - a named scene change, a
-  self-looping jump, the op, then a wait and another self-loop. A scripted
-  hand-off that never returns.
+- **`4C EA`** has **three** coherent occurrences disc-wide, one per kingdom
+  world-map bundle (`map01` / `map02` / `map03`); the `map03` one, partition 2
+  record 9, is the reference shape - a named scene change, a self-looping
+  jump, the op, then a wait and another self-loop. A scripted hand-off that
+  never returns. (An earlier census counted one: its walk ended at each
+  record's first text segment.)
 - **`4C 52`** has **three**, in `geremi` and in the two variants of the
   `ropeway` scene, which carry the same confiscating script.
 
