@@ -4641,7 +4641,7 @@ row and the measurement are on
 What is left is only what its bytes *do*: with a base committed, the image's
 36,864 bytes stay residue for byte accounting, because a code image's parser is
 the dump corpus and no dump of this one exists
-([`byte-accounting.md`](../tooling/byte-accounting.md#a-base-fits-and-the-residue-stays-anyway)).
+([`byte-accounting.md`](../tooling/byte-accounting.md#a-base-is-not-a-dump-and-a-dump-is-not-a-caller)).
 
 
 ### SCUS recomp gap - render/GTE + boot/init clusters
