@@ -616,6 +616,22 @@ impl LegaiaRuntime {
         self.play_menu.is_some()
     }
 
+    /// Whether a pause-menu **sub-screen** owns the pad (Items, Magic,
+    /// Status, Equip, Options, Load / Save, the Arts editor), as opposed to
+    /// the root row list.
+    ///
+    /// The page reads it to decide what Start means. In the native window a
+    /// sub-session gets the raw pressed mask and the root list never sees the
+    /// press at all (`window/boot_cutscene.rs` returns out of the sub arm), so
+    /// Start inside a sub-screen is that screen's business and at most walks
+    /// back to the root list. The page treated Start as "close the menu"
+    /// unconditionally, which threw away the open sub-session - a half-typed
+    /// rebind, a staged equip pick - from a button that does nothing at all
+    /// in the window.
+    pub fn play_menu_sub_is_open(&self) -> bool {
+        self.play_menu.as_ref().is_some_and(|m| m.sub.is_some())
+    }
+
     /// Whether the current scene permits a menu Save
     /// ([`legaia_engine_core::world::PartyState::scene_save_allowed`](legaia_engine_core::world::PartyState::scene_save_allowed),
     /// seeded at scene load from the MAN header bit retail copies into

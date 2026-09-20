@@ -1311,8 +1311,21 @@ void main() {
         }
         return false;
       }
-      /* Menu up: Start toggles it shut; every other edge is the engine's. */
-      if (startEdge) {
+      /* Menu up: Start toggles it shut - but only from the ROOT row list.
+       * The native window never lets Start reach the close: while a
+       * sub-screen owns the pad its session gets the raw mask and the root
+       * list is not ticked at all, so Start there is the sub-screen's own
+       * business and at most walks back to the root. Closing the whole menu
+       * from inside one threw away a half-typed rebind or a staged equip
+       * pick on a button that is inert in the window. Guarded so a cached
+       * WASM without the export keeps the old behaviour rather than
+       * trapping. */
+      let inSubScreen = false;
+      try {
+        inSubScreen = typeof rt.play_menu_sub_is_open === 'function'
+          && rt.play_menu_sub_is_open();
+      } catch (e) {}
+      if (startEdge && !inSubScreen) {
         try { rt.play_menu_close(); } catch (e) {}
         this.sfxEvent('menu_cancel');
       } else {
