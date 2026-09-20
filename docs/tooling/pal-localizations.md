@@ -19,15 +19,21 @@ legaia-patcher translate diff-disc --input <USA.bin> --other <PAL.bin>
 
 ## Region ids
 
-| Region | Boot exe (`SYSTEM.CNF`) | exe `t_addr` |
-|---|---|---|
-| USA (NTSC, reference) | `SCUS_942.54` | `0x80010000` |
-| France (PAL) | `SCES_019.44` | `0x80010000` |
-| Germany (PAL) | `SCES_019.45` | `0x80010000` |
-| Italy (PAL) | `SCES_019.46` | `0x80010000` |
+| Region | Boot exe (`SYSTEM.CNF`) | exe `t_addr` | Name-table bases |
+|---|---|---|---|
+| USA (NTSC, reference) | `SCUS_942.54` | `0x80010000` | the coordinate space itself |
+| France (PAL) | `SCES_019.44` | `0x80010000` | measured, pinned |
+| Germany (PAL) | `SCES_019.45` | `0x80010000` | measured, pinned |
+| Italy (PAL) | `SCES_019.46` | `0x80010000` | measured, pinned |
+| Spain (PAL) | `SCES_019.47` | - | unmeasured, located at run time |
+| Europe, English (PAL) | `SCES_017.52` | - | unmeasured, located at run time |
 
-All are `PS-X EXE`; the PAL exes are 2-4 KB larger (extra code), so `pc0` and
-the data segment shift up relative to USA.
+All measured builds are `PS-X EXE`; the PAL exes are 2-4 KB larger (extra
+code), so `pc0` and the data segment shift up relative to USA. The Spanish and
+EU-English discs were not available when this page was measured; the lift
+accepts them and finds their tables by search (below), and a fan-patched disc
+of any of these builds - the USA disc included - is lifted the same way. The JP
+discs (`SCPS_*`) are refused: their text is not the Latin codec.
 
 ### Mastering-metadata quirks
 
@@ -176,15 +182,32 @@ concrete form of the "accented scripts need a font patch" caveat in
 -o <pack.yaml>` re-keys the official localized text onto the USA coordinate space
 the importer patches (`legaia_patcher::translation::lift`):
 
-1. Detect the source region from `SYSTEM.CNF`'s `BOOT` line (SCES_019.44/.45/.46
-   = FR/DE/IT).
-2. *Locate* each of the five name-table bases in the SCES exe, verified against
-   the **USA-populated id set** (a candidate base is accepted when the same ids
-   the USA table names also resolve to name-shaped strings on the PAL exe - a
-   count-agnostic, language-independent check with a windowed-search fallback).
-3. Re-key positionally: name tables id-for-id (`usa_string_va -> pal_string`),
+1. Detect the source build from `SYSTEM.CNF`'s `BOOT` line (the table under
+   [Region ids](#region-ids)); a measured build brings pinned bases, an
+   unmeasured one none.
+2. *Locate* each of the five name-table bases in the source exe. A pinned base
+   is accepted when it validates against the **USA-populated id set** (the same
+   ids the USA table names also resolve to name-shaped strings on the source
+   exe - a count-agnostic, language-independent check), else a `+-0x2000`
+   window around it is searched. An unpinned base is searched from the USA VA
+   (`-0x1000..=+0x4000`, covering the measured PAL drifts and the JP shift).
+   Pointer validity alone does not pick a base: the item table's
+   `[ptr, ptr, meta]` records read as the accessory table's `[meta, ptr, ptr]`
+   four bytes in, and one record off the true base validates on every populated
+   id but the first. A search therefore ranks the validating candidates by how
+   many of their **meta bytes** (every record byte outside the pointer words:
+   stats, ids, scope) equal the USA table's - the same on every build - and the
+   measured PAL discs vouch for it: the unpinned search lands on every pinned
+   base (`translate_lift_official_real.rs`). The party template is found by
+   the same fingerprint (its eight stats per record).
+3. Re-key positionally: name tables id-for-id (`usa_string_va -> source_string`),
    dialog by the `diff-disc` Nth-segment-per-entry pairing, party names by fixed
-   field.
+   field. Both discs are scanned with the accent-tolerant segment gate: the
+   pack's strict-gate offsets index the tolerant list (a qualifying run never
+   contains a segment start), and only the same gate on both sides sees the
+   same coincidental high-byte hits in the binary regions both discs share. A
+   strict scan on one side shifted every ordinal after such a hit, which a
+   retail disc lifted onto itself exposed as other lines' text.
 
 `--fold-accents` additionally rewrites the accent cells onto plain ASCII, so the
 lifted text renders on an unmodified NTSC font (see
@@ -224,6 +247,33 @@ system labels) are **not** lifted. They are pinned by USA-coordinate VA windows
 (`translation::ui`) and the PAL overlays place their pools elsewhere, so a lift
 leaves those entries empty and the labels stay English. The name tables, the
 party roster, and the whole `0x1F` dialog corpus are covered.
+
+### Lifting a fan translation
+
+A community translation shipped as a **binary patch** (xdelta, PPF) cannot be
+turned into a pack by reading the patch - a patch is bytes, not text. The disc
+it produces can: apply the patch to the disc it was built for (the patch's own
+header names it - an xdelta's `printhdr` prints the source filename and an
+adler32 over its first window, which the USA and the three measured PAL images
+fail when the patch was built on the Spanish disc), then
+
+```bash
+legaia-patcher translate lift-official --from <patched.bin> --target <USA.bin> \
+    --language pt-BR -o <pack.yaml>
+```
+
+`--language` stamps the pack: a patch's language is not on the disc, so the
+lift would otherwise use the build's own code (`es` for a patched Spanish
+disc, `en` for a patched USA one). Everything else is the official-lift path:
+a patched USA disc keeps the USA bases (drift `0`, found by the same search), a
+patched PAL disc keeps its build's. Lines the patch left untranslated lift as
+the underlying build's text - Spanish under a partial Portuguese patch - and a
+patched font atlas' custom glyph cells come through as raw `{xx}` escapes that
+`--fold-accents` leaves alone (it folds only the CP437 accent block), both
+reported, neither silent. A translation that rewrote the game's structure
+(moved PROT entries, re-laid the ISO) still lifts as long as the PROT TOC on
+the patched disc is consistent - the walk is by entry index, and the entry
+sizes come from that disc's own TOC.
 
 ## Fit rate against the USA target
 

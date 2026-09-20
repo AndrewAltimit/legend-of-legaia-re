@@ -302,9 +302,12 @@ pub(crate) const USA_EXE: &str = "SCUS_942.54";
 pub(crate) fn describe_exe(exe: &str) -> String {
     match exe {
         USA_EXE => format!("{exe} (USA)"),
+        "SCES_017.52" => format!("{exe} (Europe, English, PAL)"),
         "SCES_019.44" => format!("{exe} (France, PAL)"),
         "SCES_019.45" => format!("{exe} (Germany, PAL)"),
         "SCES_019.46" => format!("{exe} (Italy, PAL)"),
+        "SCES_019.47" => format!("{exe} (Spain, PAL)"),
+        "SCPS_100.59" => format!("{exe} (Japan, NTSC-J)"),
         other => format!("{other} (unrecognized build)"),
     }
 }

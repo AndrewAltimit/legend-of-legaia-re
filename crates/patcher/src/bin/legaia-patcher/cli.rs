@@ -691,16 +691,24 @@ pub(crate) enum TranslateCmd {
         #[arg(long)]
         other: PathBuf,
     },
-    /// Lift an **official PAL localization** (FR/DE/IT SCES disc) into a
-    /// USA-keyed working pack: name tables id-for-id, dialog by positional
-    /// segment pairing. Emits a filled pack (source = USA text, translation =
-    /// official localized text) to `-o`.
+    /// Lift the text of **another Latin-script disc** into a USA-keyed working
+    /// pack: name tables id-for-id, dialog by positional segment pairing. Emits
+    /// a filled pack (source = USA text, translation = the other disc's text)
+    /// to `-o`.
+    ///
+    /// The source is an official PAL localization (FR/DE/IT measured, ES and
+    /// EU-English located at run time) or a **fan-patched** disc of any Latin
+    /// build - a patched USA disc included. That is how a community translation
+    /// shipped as a binary patch (xdelta / PPF) becomes an editable pack: apply
+    /// the patch to the disc it was built for, then lift from the result.
+    /// The JP discs are refused (different text encoding).
     ///
     /// The output carries the game's copyrighted text - keep it local, never
     /// commit it. Only `translate strip`-ed distributable packs are shareable.
     LiftOfficial {
-        /// The official-localization disc to lift from (`.bin`, a PAL SCES
-        /// build - SCES_019.44 FR / .45 DE / .46 IT).
+        /// The disc to lift from (`.bin`): a PAL SCES build (SCES_019.44 FR /
+        /// .45 DE / .46 IT / .47 ES, SCES_017.52 EN) or a fan-patched disc,
+        /// USA (SCUS_942.54) included.
         #[arg(long)]
         from: PathBuf,
         /// The USA target disc whose coordinate space the pack is keyed to.
@@ -714,6 +722,11 @@ pub(crate) enum TranslateCmd {
         /// which render blank until the font atlas is patched.
         #[arg(long)]
         fold_accents: bool,
+        /// Language code to stamp the pack with (`pt-BR`, ...). Defaults to
+        /// the source build's own language; a fan patch's language is not in
+        /// the exe name, so pass it here.
+        #[arg(long)]
+        language: Option<String>,
     },
     /// Measure how much of an official localization fits the USA target under
     /// the per-string vs per-MAN (generalized rewriter) budget, and how many

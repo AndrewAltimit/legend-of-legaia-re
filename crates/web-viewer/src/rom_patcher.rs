@@ -1973,13 +1973,17 @@ pub fn validate_lang_pack(image: Vec<u8>, pack_yaml: &str) -> Result<JsValue, Js
     Ok(out.into())
 }
 
-/// Lift the **official** French / German / Italian localization off a PAL disc
-/// the user also owns, re-keyed onto their USA disc's coordinate space.
+/// Lift the text of **another Latin-script disc** the user also owns - an
+/// official PAL localization (FR / DE / IT measured; ES / EU-English located at
+/// run time) or a fan-patched disc of any Latin build, a patched USA disc
+/// included - re-keyed onto their USA disc's coordinate space.
 ///
 /// Same user-supplied-asset model as the base disc: `source_image` is the
-/// user's own PAL `.bin` (`SCES_019.44` FR / `.45` DE / `.46` IT), it is read
-/// in this tab, and neither image is uploaded anywhere. The result is a
-/// **working** pack (`source:` = USA text, `translation:` = official text) that
+/// user's own second `.bin`, it is read in this tab, and neither image is
+/// uploaded anywhere. `language`, when given, restamps the pack (a fan patch's
+/// language is not in the exe name; the build's own code is the default). The
+/// result is a **working** pack (`source:` = USA text, `translation:` = the
+/// other disc's text) that
 /// the page feeds straight back into [`patch_rom`]'s `lang_pack` argument, so
 /// the official text goes through the exact same two-phase import - and the
 /// same per-section coverage report - as any community pack. Both discs are
@@ -1994,8 +1998,8 @@ pub fn validate_lang_pack(image: Vec<u8>, pack_yaml: &str) -> Result<JsValue, Js
 /// accent bytes are kept, which is byte-faithful but renders blank until the
 /// font atlas is patched; either way the count is reported, never silent.
 ///
-/// Returns `{ yaml, language, exe, summary, tables: [{name, located, pal_base,
-/// valid_pct, paired}], names_filled, names_unmapped, party_filled,
+/// Returns `{ yaml, language, exe, build, summary, tables: [{name, located,
+/// pal_base, valid_pct, paired}], names_filled, names_unmapped, party_filled,
 /// party_total, man_total, man_paired, raw_total, raw_paired, folded,
 /// unfolded }`.
 #[wasm_bindgen]
@@ -2003,13 +2007,21 @@ pub fn lift_official_pack(
     target_image: Vec<u8>,
     source_image: Vec<u8>,
     fold_accents: bool,
+    language: Option<String>,
 ) -> Result<JsValue, JsValue> {
     let target =
         DiscPatcher::open(target_image).map_err(|e| err(format!("parse USA disc: {e}")))?;
     let source =
-        DiscPatcher::open(source_image).map_err(|e| err(format!("parse PAL disc: {e}")))?;
-    let (mut pack, rep) =
+        DiscPatcher::open(source_image).map_err(|e| err(format!("parse source disc: {e}")))?;
+    let (mut pack, mut rep) =
         lift::lift_official(&target, &source).map_err(|e| err(format!("lift: {e}")))?;
+    if let Some(lang) = language
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+    {
+        pack.language = lang.clone();
+        rep.language = lang;
+    }
     // Free the source disc as early as possible - two full images plus the pack
     // is the peak allocation of the whole page.
     drop(source);
@@ -2027,6 +2039,7 @@ pub fn lift_official_pack(
     Reflect::set(&out, &"yaml".into(), &yaml.as_str().into())?;
     Reflect::set(&out, &"language".into(), &rep.language.as_str().into())?;
     Reflect::set(&out, &"exe".into(), &rep.exe_name.as_str().into())?;
+    Reflect::set(&out, &"build".into(), &rep.build_label.as_str().into())?;
     let tables = js_sys::Array::new();
     for t in &rep.tables {
         let row = Object::new();
@@ -2059,8 +2072,8 @@ pub fn lift_official_pack(
 
     // A short text block for the status panel. Counts only - no game text.
     let mut summary = format!(
-        "lifted the official {} localization from {}\n",
-        rep.language, rep.exe_name
+        "lifted {} text from {} ({})\n",
+        rep.language, rep.exe_name, rep.build_label
     );
     for t in &rep.tables {
         summary.push_str(&if t.located {

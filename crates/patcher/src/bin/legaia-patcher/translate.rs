@@ -346,10 +346,15 @@ pub(crate) fn cmd_lift_official(
     target: &Path,
     output: &Path,
     fold_accents: bool,
+    language: Option<&str>,
 ) -> Result<()> {
-    let source = DiscPatcher::open(load_image(from)?).context("parse source (PAL) disc image")?;
+    let source = DiscPatcher::open(load_image(from)?).context("parse source disc image")?;
     let usa = DiscPatcher::open(load_image(target)?).context("parse target (USA) disc image")?;
-    let (mut pack, rep) = lift::lift_official(&usa, &source)?;
+    let (mut pack, mut rep) = lift::lift_official(&usa, &source)?;
+    if let Some(lang) = language {
+        pack.language = lang.to_string();
+        rep.language = lang.to_string();
+    }
     if fold_accents {
         let f = lift::fold_pack_accents(&mut pack);
         println!(
@@ -359,7 +364,10 @@ pub(crate) fn cmd_lift_official(
     }
     write_pack(&pack, output)?;
 
-    println!("lifted {} localization from {}", rep.language, rep.exe_name);
+    println!(
+        "lifted {} text from {} ({})",
+        rep.language, rep.exe_name, rep.build_label
+    );
     println!("name tables:");
     for t in &rep.tables {
         if t.located {
@@ -371,11 +379,24 @@ pub(crate) fn cmd_lift_official(
                 t.paired
             );
         } else {
-            println!(
-                "  {:<20} NOT located (pinned base failed validation)",
-                t.name
-            );
+            println!("  {:<20} NOT located (no candidate base validated)", t.name);
         }
+    }
+    match rep.party_base {
+        Some(b) if rep.party_fingerprint_ok => {
+            println!(
+                "  {:<20} located @ 0x{b:08x} (stat fingerprint matched)",
+                "party template"
+            )
+        }
+        Some(b) => println!(
+            "  {:<20} pinned @ 0x{b:08x} (stat fingerprint did NOT match - names read blind)",
+            "party template"
+        ),
+        None => println!(
+            "  {:<20} NOT located (no stat-fingerprint hit)",
+            "party template"
+        ),
     }
     println!(
         "  scus strings: {} filled, {} unmapped; party names: {} / {} filled",
