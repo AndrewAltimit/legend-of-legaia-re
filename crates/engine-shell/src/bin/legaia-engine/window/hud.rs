@@ -1026,11 +1026,20 @@ impl PlayWindowApp {
             let ly2 = self.font.layout_ascii(&ml2);
             out.extend(text_draws_for(&ly2, (8, 80), dim));
         }
+        // Shop / inn / prize / coin-counter overlay group. Every builder
+        // below places in the retail 320x240 STAGE, so the group is collected
+        // apart from the surface-pixel HUD above and scaled through the one
+        // `pause_menu::stage_transform` both hosts share. Drawing it straight
+        // into `out` left the whole shop UI at 1/3 size in the 960x720 window
+        // while the browser play page scaled the same builders' output; the
+        // pinned `SHOP_OVERLAY_PEN` / `play_shop::SHOP_PEN` pair could not see
+        // it, because the split is in the transform, not the pen.
+        let mut stage: Vec<TextDraw> = Vec::new();
         // Casino coin counter (op-0x49 sub-6): the submode screen's digit
         // entry, drawn off the world's live counter cells whenever the
         // screen is open on the coin slot. Not a menu-runtime state - the
         // field VM owns the park.
-        out.extend(self.coin_counter_window_draws());
+        stage.extend(self.coin_counter_window_draws());
         // Shop / inn overlay: rendered at the bottom of the screen when the menu
         // runtime is in any shop, inn, or confirmation state.
         if self.menu_runtime.is_open() {
@@ -1039,7 +1048,7 @@ impl PlayWindowApp {
             // graph, so it is checked before the shop states. Windows
             // 43/44/45/46 through the shared engine-ui composition.
             if let Some(session) = &self.menu_runtime.prize_session {
-                out.extend(self.prize_window_draws(session));
+                stage.extend(self.prize_window_draws(session));
             }
             if let Some(shop) = &self.menu_runtime.shop_session {
                 let state = MenuState::from_byte(self.menu_runtime.ctx_state());
@@ -1053,7 +1062,7 @@ impl PlayWindowApp {
                     Some(MenuState::ShopTrade) | Some(MenuState::ShopTradeConfirm)
                 );
                 if trade_state {
-                    self.draw_shop_trade(&mut out, state, cursor);
+                    self.draw_shop_trade(&mut stage, state, cursor);
                 }
                 // Row labels are owned so item names can be resolved from the
                 // disc item table; the ink is the retail `_DAT_8007B454` pen
@@ -1183,12 +1192,12 @@ impl PlayWindowApp {
                 } else {
                     None
                 };
-                out.extend(retail_windows);
+                stage.extend(retail_windows);
                 // The equipment-buy recipient flow's windows (36 / 25 / 41)
                 // ride over the parked buy list while the picker owns the
                 // pad - the same compositing order the browser play page
                 // uses in `play_overlay_draws_json`.
-                out.extend(self.recipient_window_draws());
+                stage.extend(self.recipient_window_draws());
                 if !rows_spec.is_empty() {
                     let rows: Vec<ShopRow<'_>> = rows_spec
                         .iter()
@@ -1206,7 +1215,7 @@ impl PlayWindowApp {
                         show_gold,
                         SHOP_OVERLAY_PEN,
                     );
-                    out.extend(shop_draws);
+                    stage.extend(shop_draws);
                 }
             } else if self.menu_runtime.inn_session.is_some() {
                 // Inn overlay: cost prompt with Yes / No cursor.
@@ -1231,24 +1240,29 @@ impl PlayWindowApp {
                             Some(gold),
                             SHOP_OVERLAY_PEN,
                         );
-                        out.extend(inn_draws);
+                        stage.extend(inn_draws);
                     }
                     Some(MenuState::InnSleep) => {
                         let layout = self.font.layout_ascii("Resting...");
-                        out.extend(text_draws_for(&layout, SHOP_OVERLAY_PEN, white));
+                        stage.extend(text_draws_for(&layout, SHOP_OVERLAY_PEN, white));
                     }
                     _ => {
                         let menu_label = format!("[{}]", label);
                         let ml_layout = self.font.layout_ascii(&menu_label);
-                        out.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
+                        stage.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
                     }
                 }
             } else {
                 // Non-shop, non-inn menu: show current mode label.
                 let menu_label = format!("[{}]", label);
                 let ml_layout = self.font.layout_ascii(&menu_label);
-                out.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
+                stage.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
             }
+        }
+        if !stage.is_empty() {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            legaia_engine_render::scale_stage_text_draws(&mut stage, stage_origin, stage_scale);
+            out.extend(stage);
         }
         // Battle-event log: the engine's own typed battle stream
         // (`Pose(...)`, `RecomputeBattleOrder`, per-strike `slot N -M HP`)
