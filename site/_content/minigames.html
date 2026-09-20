@@ -3235,7 +3235,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       fishingAnnounce(events, st);
     }
     const hud = JSON.parse(api.fishing_pond_hud_json());
-    if (fishR) fishR.draw(st, hud);
+    /* The shared effect-part pool (the strike splash's three parts). Same
+     * model, bound and fade ramp as the play page and the native window. */
+    let fx = [];
+    try { fx = JSON.parse(api.minigame_fx_json()); } catch (e) { fx = []; }
+    if (fishR) fishR.draw(st, hud, fx);
     /* HUD spans. */
     const PHASE_LABEL = {
       idle: 'at the shore', windup: 'winding up', power: 'power meter',

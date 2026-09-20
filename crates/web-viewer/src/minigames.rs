@@ -131,6 +131,12 @@ pub struct LegaiaMinigames {
     fishing_exchange: Option<legaia_asset::fishing_exchange::FishingExchange>,
     /// The pond session's HUD banner timers (engine-ui's retail animators).
     fishing_banners: legaia_engine_ui::FishingBanners,
+    /// This page's **effect-part pool** - the standalone twin of
+    /// `World::minigames.fx`, which this page cannot use because it drives
+    /// the session types directly and holds no `World`. Same model
+    /// ([`legaia_engine_core::minigame_fx`]), same draw builder, ticked from
+    /// whichever per-minigame tick is running.
+    fx: legaia_engine_core::minigame_fx::MinigameFxPool,
     /// Prizes collected through the point exchange this session
     /// (`item_id -> qty`; the browser has no live inventory to grant into).
     fishing_prizes: std::collections::HashMap<u32, u32>,
@@ -288,6 +294,7 @@ impl LegaiaMinigames {
             fishing_cadence: None,
             fishing_exchange: None,
             fishing_banners: Default::default(),
+            fx: Default::default(),
             fishing_prizes: Default::default(),
             fishing_scene: None,
             fishing_angler_facing: 0,
@@ -745,6 +752,33 @@ impl LegaiaMinigames {
     }
 
     // ---------------------------------------------------------- baka fighter
+
+    /// This frame's live **effect parts**, for the page to draw:
+    ///
+    /// ```json
+    /// [ { "x": 152, "y": 112, "sprite": 256, "fade": 255 }, ... ]
+    /// ```
+    ///
+    /// `x` / `y` are stage pixels in the retail 320x240 frame and `fade` is
+    /// `0..=255`. The pool, its bound and its ramp are
+    /// [`legaia_engine_core::minigame_fx`], the same model the play page and
+    /// the native window drain - so a part spawned by a ported kernel ages
+    /// identically on all three surfaces.
+    pub fn minigame_fx_json(&self) -> String {
+        let rows = self
+            .fx
+            .frames()
+            .iter()
+            .map(|p| {
+                format!(
+                    r#"{{"x":{},"y":{},"sprite":{},"fade":{}}}"#,
+                    p.x, p.y, p.sprite, p.fade
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("[{rows}]")
+    }
 
     /// The parsed roster, for the opponent picker. The disc carries no names for
     /// these fighters - only their numbers - so each row is the record's own
