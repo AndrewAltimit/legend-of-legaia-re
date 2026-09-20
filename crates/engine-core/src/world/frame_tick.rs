@@ -1336,6 +1336,12 @@ impl World {
         self.drain_staged_menu_warp();
         // A minigame the player can enter must be one the player can leave.
         self.poll_minigame_escape();
+        // Age the minigame effect-part pool. Here rather than in a host's own
+        // frame step: a pool a host owns ages only on that host, and the
+        // fishing splash spent its whole life native-only for exactly that
+        // reason (see [`crate::minigame_fx`]). Unconditional, like the ramps
+        // above - a pool with no live part costs a length test.
+        self.minigames.fx.tick(1);
         match self.mode {
             SceneMode::Battle => {
                 // Battle animation advance. This is SIMULATION, not
@@ -2246,11 +2252,16 @@ impl World {
         use crate::fishing::{FishingPhase, ReelInput};
         /// Per-frame casting-meter step (see the method note - not byte-pinned).
         const FISHING_CAST_STEP: i32 = 0x80;
+        /// Packed spread argument the strike splash fans its three parts by.
+        /// Direct form (bit [`crate::fishing_chrome::SPLASH_SUB_BLOCK_BIT`]
+        /// clear); the value is the play window's, carried over unchanged.
+        const SPLASH_SPREAD: i32 = 0x40;
         let Some(phase) = self.minigames.fishing.as_ref().map(|s| s.phase()) else {
             // Mode is Fishing but no session installed - drop back to a sane mode.
             self.mode = self.minigames.fishing_return_mode;
             return;
         };
+        let entry_phase = phase;
         match phase {
             FishingPhase::Casting => {
                 if let Some(s) = self.minigames.fishing.as_mut() {
@@ -2285,6 +2296,21 @@ impl World {
                     s.recast();
                 }
             }
+        }
+        // The strike edge spawns the three-part splash into the shared effect
+        // pool. The producer is the session's own phase edge, not a venue
+        // actor, so every host that ticks the world gets the burst - the play
+        // window used to spawn it from its fishing-actor frame, which is why
+        // it was the only surface that had one.
+        let now = self.minigames.fishing.as_ref().map(|s| s.phase());
+        if entry_phase == FishingPhase::Casting && now == Some(FishingPhase::Fighting) {
+            let parts = crate::fishing_chrome::splash_burst(
+                crate::fishing_actors::SCREEN_CENTRE.0,
+                crate::fishing_actors::SCREEN_CENTRE.1,
+                crate::minigame_fx::SPLASH_SPRITE_ID,
+                SPLASH_SPREAD,
+            );
+            self.minigames.fx.spawn_splash(&parts);
         }
     }
 

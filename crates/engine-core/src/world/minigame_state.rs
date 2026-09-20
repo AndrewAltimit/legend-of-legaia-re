@@ -155,6 +155,17 @@ pub struct MinigameState {
     /// per-host it would be two predicates over two spellings of "did the
     /// upload work", which is the shape a silent one-host regression hides in.
     pub dance_hud_art_staged: bool,
+    /// The **effect-part pool** every minigame overlay's one-shot
+    /// presentation spawns land in (the fishing venue's splash, ripples and
+    /// catch bursts). Aged once per world tick, so every host that ticks the
+    /// world drains the same parts - see [`crate::minigame_fx`] for why the
+    /// pool is world state rather than a host's.
+    ///
+    /// The dance run keeps its own pool inside
+    /// [`crate::dance::DanceGame`], because its spawns are gameplay
+    /// (the sequence-clear banner fires from the judge) rather than
+    /// presentation the host drives.
+    pub fx: crate::minigame_fx::MinigameFxPool,
 }
 
 impl MinigameState {
@@ -206,6 +217,7 @@ impl MinigameState {
             dance_tutorial_frame: None,
             pending_sfx: Vec::new(),
             dance_hud_art_staged: false,
+            fx: crate::minigame_fx::MinigameFxPool::new(),
         }
     }
 }
