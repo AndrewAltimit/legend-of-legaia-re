@@ -557,6 +557,30 @@ CANONICAL_LADDERS = [
     ("w1g_seru_capture_ladder", "legaia-engine-core"),
     ("w1g_save_subscreen_ladder", "legaia-engine-core"),
     ("w1g_fishing_tackle_pick_ladder", "legaia-engine-core"),
+    # --- lane W3-C: the boot chain ----------------------------------------
+    #
+    # `w3c_boot_logos_ladder` opens the stage BEFORE the title card. Every
+    # other member starts at a scene, a battle, or the title - the composition
+    # ladder's own first rung calls `boot_title_start`, which is one stage
+    # late - so the publisher-logo sequencer (`FUN_801CEFD4`), its retail play
+    # order and the per-logo quad tables had no driver at all. It is pad-only:
+    # `boot_logos_start` is the browser play page's own boot entry, and the
+    # only other input is the pad word `boot_logos_step` takes.
+    #
+    # Disc-gated (PROT 0895 `init.pak`); export WITHOUT `--release`.
+    ("w3c_boot_logos_ladder", "legaia-web-viewer"),
+    #
+    # `w1f2_field_vm_op_arms_disc` is the other exit this page records: an
+    # existing honest driver promoted into the set rather than a new fixture.
+    # It is the op census's two rows' own fixture - the scripted game over
+    # (`4C EA`, `8003c7ec`) and the take-item unequip fallback (`4C 52`,
+    # `800430ac`) - and it takes both arms' bytecode from the disc corpus at
+    # DECODED instruction boundaries, then steps the record in a real `World`
+    # and asserts on world state. Like the L3 members above it is
+    # record-seated rather than pad-driven, and the take-item arm is driven
+    # twice (bag hit and bag miss) because one byte sequence has two host
+    # paths. Disc-gated on `LEGAIA_DISC_BIN` + `extracted/`.
+    ("w1f2_field_vm_op_arms_disc", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

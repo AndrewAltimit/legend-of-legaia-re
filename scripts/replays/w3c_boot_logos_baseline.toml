@@ -1,0 +1,13 @@
+# Ratchet for `crates/web-viewer/tests/w3c_boot_logos_ladder.rs`.
+#
+# `reached` is the highest rung the publisher-logo boot ladder has cleared.
+# The test asserts `score >= reached` and never writes this file: raising it
+# is a reviewed edit, the same contract the other replay baselines use.
+#
+# Rungs (see the test's module docs for what each proves):
+#   1 the PROT 0895 atlas decodes and the logo phase opens
+#   2 the sequence plays SCEA -> Contrail -> PROKION on a neutral pad, for
+#     exactly the frame budget `RETAIL_SEQUENCE` names, with the quads landing
+#     on their retail destinations and the fade level ramping
+#   3 Start skips the rest of the phase
+reached = 3
