@@ -31,6 +31,9 @@
 //!   live window's `+0x28`.
 //! * [`ui_title_save`] - title menu, 9-slice window chrome, save-select,
 //!   save-slot grid + info panel, "Now checking" dialog.
+//! * [`minigame_fx`] - the minigame effect-part pool's draw builder (the
+//!   pool itself is `legaia_engine_core::minigame_fx`) plus the dance run's
+//!   own sprite-part emit, both shared by every host.
 //! * [`screen_prim`] - screen-space PSX primitives (`POLY_FT4`/`POLY_GT4`
 //!   corners, CLUT/texpage, ABR mode, ordering-table bucket) plus the shared
 //!   OT sort and vertex builder. The one draw record here that is *not* a
@@ -64,6 +67,7 @@ mod battle_tutorial_box;
 pub mod billboard;
 pub mod field_party_hud;
 pub mod gte;
+pub mod minigame_fx;
 pub mod other_game_hud;
 pub mod pause_menu;
 pub mod screen_prim;

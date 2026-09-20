@@ -96,6 +96,10 @@ shared leaf:
 - `screen_prim` - screen-space PSX primitives (`ScreenPrim` / `ScreenQuad` /
   `FlatQuad`), the four ABR blend classes, and `build_geometry`, the one
   ordering-table walk either host consumes.
+- `minigame_fx` - the draw builder for `engine-core`'s effect-part pool and
+  for the dance run's own sprite-part emits: one placeholder-cell
+  materialisation, so a part looks the same on the native HUD, the play
+  page's overlay and the minigames page's canvas.
 - `gte` - fixed-point GTE arithmetic (`q3.12` rotation, `q19.12`
   translation, the UNR divide, NCLIP/AVSZ, register-transfer + memory ops,
   the from-scratch `psx_sin` / `psx_cos` trig LUT).

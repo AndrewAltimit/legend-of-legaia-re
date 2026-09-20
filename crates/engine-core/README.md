@@ -432,6 +432,11 @@ presentation left to the host:
 - `minigame_actor` - the per-entity record the hub-band overlays spawn through
   the shared part-spawn API and read every frame, named by retail byte offset.
   Not the field actor; see the module docs for why they stay apart.
+- `minigame_fx` - the **effect-part pool** the minigame overlays' one-shot
+  presentation spawns land in (the fishing venue's splash, ripples and catch
+  bursts), on `World::minigames.fx` and aged by `World::tick` so every host
+  drains the same parts. The dance run keeps its own pool, because its spawns
+  come from the judge rather than from a host.
 - `baka_fighter` - the Baka Fighter duel, driven by the parsed roster +
   action tables.
 - `muscle_dome` - the Muscle Dome, in two layers because retail has two state
