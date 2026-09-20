@@ -78,7 +78,7 @@ not one of this routine's own). The record is a two-seat pair ([`memory-map.md`]
 | `8002A9CC` | Channel-delta keyframe codec (the `"ME"` bit-15 decompressor). Header `(b0 & 0xC0) == 0x40` + u16 offsets to nibble / byte streams; selector bits pick 12-bit literal / previous-part-delta ± nibble / literal-nibble per channel; frame 0 accumulates spatially down the parts, later frames temporally; emits the packed `[parts][frames][9-byte TRS]` stream via scratchpad tables. Ported as `legaia_asset::me_archive::decode_channel_delta`. `8002a9cc.txt`. |
 | `800558FC` / `80055A5C` / `800559EC` / `80055AC8` | Dual-mode stream-file API (open / seek / read / close). Retail (`_DAT_8007B8C2 != 0`, verified live) ignores the path string: open consumes its 4th argument as a **retail PROT TOC index** (`FUN_8003E8A8`), seek converts a byte offset to sectors relative to the entry base (`FUN_8003E964`), read issues `FUN_8003E800`. The debug branch (`FUN_800608F0` ISO9660 by path) is a trap stub in retail. See [`formats/summon-readef.md`](../../formats/summon-readef.md). |
 | `80050E2C` | Generic linear pointer-table first-byte search: `(table, tag, count) -> idx_or_0xFF`. The battle-action SM resolves monster attack anims with it (tags `0x20`/`1`/`0x21`/`0x22` over the `+0x4C` action-record array); also battle UI lookups. First-match (not last) and the `0xFF` sentinel are confirmed against `SCUS_942.54` directly - the dump reports `0 instructions` and carries only decompiled C. |
-| `801D0748` | Battle / level-up main tick (battle overlay). 11 KB / 2781 instructions / 26 outgoing. Per-frame driver for the battle + post-battle sequence. Reads sub-state byte at `_DAT_8007BD24[6]`; sub-states `0x1E`/`0x32`/`0x6E`/`0xFE` update camera yaw `_DAT_8007B792` from pad `DAT_1f800393`. Checks `_DAT_800846C8` (battle-active flag) and `_DAT_8007BD24[0x275]` (party-member count). After input handling calls `FUN_801D3444` + `FUN_801D9BBC`. Character-select input (L1/R1 = pad bits `0x2000`/`0x4000`/`0x1000`/`0x8000`) writes highlight byte to `(actor_table[n] + 0x1D)`. Captured as `overlay_magic_level_up_801d0748.txt`. |
+| `801D0748` | Battle / level-up main tick (battle overlay). 11 KB / 2781 instructions / 26 outgoing. Per-frame driver for the battle + post-battle sequence. Reads sub-state byte at `_DAT_8007BD24[6]`; sub-states `0x1E`/`0x32`/`0x6E`/`0xFE` update camera yaw `_DAT_8007B792` from pad `DAT_1f800393`. Checks `_DAT_800846C8` (battle-active flag) and `_DAT_8007BD24[0x275]` (party-member count). After input handling calls `FUN_801D3444` + `FUN_801D9BBC`. Character-select input (L1/R1 = pad bits `0x2000`/`0x4000`/`0x1000`/`0x8000`) writes highlight byte to `(actor_table[n] + 0x1D)`. **One `jal` disc-wide**: `0x80047014` in `FUN_80046A20`, unconditional - every battle frame steps it, dome or not. Captured as `overlay_magic_level_up_801d0748.txt`. |
 | `801D388C` | Battle actor animation dispatcher (battle overlay). 7.8 KB / 39 callers. `(animation_type, param_2)`. Switch on `animation_type` (0..0x31+): cases 0/2 call `FUN_801DB318` and fall through; case 3 clears `actor[0x1E7]` and `actor[0x1DE]` for all 3 party slots; cases 5/7 compute `_DAT_80076D3A = FUN_80035F04(actor[0x1BC])` - the rendered-string-**width** of the actor's display-name buffer, i.e. the name plaque's width (nothing animation-related). Increments the battle frame counter at `_DAT_8007BD24[0x6B2]`. Actor pointers read from `DAT_801C9370/74/78`. Captured as `overlay_magic_level_up_801d388c.txt`. |
 | `801D5854` | Battle per-pose **camera/presentation driver** (battle overlay). 6.5 KB / 47 callers. `(actor_slot, pose_id)`. Switch on `pose_id` (0..9) via the 10-entry jump table at `0x801CEA00`, each arm building three `i16[3]` tween-target vectors on its own frame and converging on the shared tail `0x801D7130` (a label, not an entry), which calls the tween builder `FUN_801D829C`; secondary dispatch on `actor[+0x1DB]` (`0x11..0x18`, per-art camera variants). It never writes the anim fields (`+0x1D9/+0x1DA`) - the anim system proper is the `FUN_80047430` → `FUN_8004AD80` → `FUN_8004998C` chain. Poses update `_DAT_8007BD24[0x87C]` via pad accumulator and clamp `_DAT_8007BD24[0x26E/270]` at 200. Captured as `overlay_0898_801d5854.txt`. |
 | `801D8DE8` | **HUD element renderer** (battle overlay; 3 KB / 77 incoming refs - the hottest battle helper). `(elem_id, mode, ...)`. Switches on `elem_id` through an 80-entry jump table at `0x801CEB68`, one case per on-screen element. Shared by the battle HUD and the Muscle Dome minigame: `0x0A/0x0B/0x0E` Spirit name / heading panels, `0x16..0x19` the 4-slot hand-card portraits, `0x1A` a formatted number, `0x52/0x53` player/opponent HP-bar values (`actor+0x170`), `0x58` opponent Spirit name, `0x59` (`mode==0`) the victory reward banner. The `(elem_id, mode)` pairs are the ones `PTR_DAT_801f4d34` indexes; see [`subsystems/minigame-muscle-dome.md`](../../subsystems/minigame-muscle-dome.md). `see ghidra/scripts/funcs/overlay_muscle_dome_801d8de8.txt`. |
@@ -155,7 +155,7 @@ image a dump was taken from, never a second routine
 
 | Address | Capture-mode role of the routine documented above |
 |---|---|
-| `801D0748` | The round driver in capture mode. Same body, same `ctx+6` sub-states `0x1E`/`0x32`/`0x6E`/`0xFE` updating camera yaw. |
+| `801D0748` | The round driver in capture mode. Same body, same `ctx+6` sub-states `0x1E`/`0x32`/`0x6E`/`0xFE` updating camera yaw - and the same single caller `0x80047014`, which is why a dome capture and a field-encounter capture are the same routine. |
 | `801D388C` | The battle actor animation dispatcher, unchanged. |
 | `801D5854` | The per-pose camera/presentation driver, unchanged. |
 | `801D8DE8` | The HUD element renderer, unchanged - 757 instructions, the 80-entry jump table at `0x801CEB68`. |
@@ -654,6 +654,17 @@ indexes the grid, and `0x80070614` appears in no image in any form.
 All four addresses are filed under the ignore list's `unreferenced` section
 ([`worklist-classification.md`](../../tooling/worklist-classification.md#the-reachability-claim)),
 except `8005126C`, which was ported before the sweep ran.
+
+Re-run across all 1234 images, the reference scan still finds nothing for
+`8005126C` in any of the five forms, which is what moves the port's row from
+the wiring worklist to `REPLACED-BY`: a worklist row names a host that should
+call the port, and here there is no caller to find. `80042FE8`
+([`menus.md`](menus.md)) and `801D5C2C` measure the same way. The sibling
+`8005567C` is not in that class - it has callers - but its port is a
+replacement too, for the other reason: the engine resolves a battle through a
+typed `FormationDef` lookup, so there is no four-byte formation cell for the
+`[4, 4, 4, 4]` arm to fall back into, and the id arm's global has no writer
+anywhere in retail ([`encounter.md`](../../formats/encounter.md)).
 
 ## Function details
 

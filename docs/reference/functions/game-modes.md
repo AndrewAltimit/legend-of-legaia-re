@@ -44,6 +44,11 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `801F03F0` / `801F0ADC` | **Field-overlay 5-state actor handlers** (0897, 1772 B / 1628 B). Both switch on `actor[+0x54]` through a 5-slot jump table (`0x801CF71C` and `0x801CF734`). `801F0ADC` divides two words of the live game-state window `0x80084140` (`+0x45C`, `+0x464`) by 100 through the `0x51EB851F` reciprocal and latches them back, so it presents a counter held in the SC block, not actor state. Both drive the SCUS sprite/text helpers `FUN_80035B50` / `FUN_80035BD0` and the overlay's own `FUN_801E9B3C`. `overlay_field_0897_<addr>.txt`. |
 | `80038158` | **Per-actor motion / bytecode VM** (second motion VM; dispatched by `FUN_8003BC08` when actor `+0x10 & 0x80`), stream at `actor+0x80` + PC `+0x84`. Op-`7` **sets** / op-`8` **clears** the story-flag bank `DAT_80085758` (flag = `operand[1] \| operand[2] << 8`). Carrier = **MAN tail-section 1** (installer `FUN_8003A9D4`, parser `legaia_asset::man_motion`); full layout + op-width table in [`motion-vm.md`](../../subsystems/motion-vm.md#the-second-motion-vm---fun_80038158). Disc-wide census `man-scripts --motion-flag-census`: no spine gate appears in any motion stream - `0x142`/`0x482`/`0x1BE` are field-VM script bytes in the streaming variant MAN carriers ([script-vm.md](../../subsystems/script-vm.md)); `549` remains a direct code path. `see ghidra/scripts/funcs/80038158.txt`. |
 
+The port's counterpart to that last write is `Camera::reset_globals_for_scene_entry`,
+run on every field entry. It used to seed the window once, at camera
+construction, which let a scene that scripted a wide window hand it to the next
+scene's clamp - the primer is what makes "per entry" true.
+
 ## Game-mode state machine
 
 The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § Game-mode state machine](../../subsystems/boot.md#game-mode-state-machine). The full index → handler/param/name map is recovered from the disc by [`legaia_asset::mode_table`](../../../crates/asset/src/mode_table.rs) (`asset mode-table SCUS_942.54`; disc-gated `mode_table_real`).
