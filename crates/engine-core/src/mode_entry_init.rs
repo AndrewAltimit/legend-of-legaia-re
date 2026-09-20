@@ -479,19 +479,29 @@ pub struct FieldDrawContext {
 ///
 /// PORT: FUN_801DE37C (`0x801de37c..0x801de3dc`)
 ///
-/// NOT WIRED: the host that should call it is the scene-entry path in
-/// `world/frame_tick.rs`, and there is nothing yet for it to write into - the
-/// port's renderer draws the whole scene (`SCENE_FAR`, no distance or frustum
-/// culling), so no draw list is bounded by a tile window and no camera reads
-/// the `0x800840B8` block. The record becomes reachable when the renderer
-/// grows a per-camera cell window; until then it is what the emitters would
-/// be handed.
+/// WIRED: through the camera's scene-entry reset
+/// ([`crate::camera::Camera::reset_globals_for_scene_entry`]), which both
+/// hosts run on every field entry - the native window on the `SceneEntered`
+/// tick, the browser play page from `reset_for_scene_entry` after
+/// `enter_field_scene`. The consumer is [`Self::view_window`]: it seeds the
+/// camera's visible-tile window, which the focus edge clamp
+/// (`crate::camera_zone::clamp_focus`) widens the latched walk region by, and
+/// which field-VM op `0x46` and a camera-region record's mask-kind side-write
+/// then replace. Re-stamping it per entry is what stops one scene's scripted
+/// window leaking into the next.
 ///
 /// The window matters even so, because it is the quantity retail's own
 /// per-cell terrain emitters loop over - `FUN_801F89B8` reads these four bytes
 /// at `0x801f89fc..0x801f8a18` and derives both loop counts from them - and
 /// because field-VM op `0x46` overwrites it. A scene whose script never runs
 /// that op draws with exactly this box.
+///
+/// The record's other two fields have no consumer yet and are not a second
+/// disclosure: the port's renderer draws the whole scene (`SCENE_FAR`, no
+/// distance or frustum culling), so nothing bounds a draw list by a cell
+/// window, and no engine state mirrors the `0x800840B8` camera block or the
+/// `0x8007B790` screen triple. They are what the emitters would be handed
+/// when the renderer grows a per-camera cell window.
 pub const fn field_draw_context() -> FieldDrawContext {
     FieldDrawContext {
         camera_block: (0, 0x200, 0x4000),

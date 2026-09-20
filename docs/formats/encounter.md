@@ -944,10 +944,17 @@ override `_DAT_8007B628` / `_DAT_8007B62A` still unwired (no port-side writer).
 
 One divergence remains: a scripted shot handing the camera back snaps, as a backstop for a
 script that ends a shot without a `[4C 39]` / `[4C 3E]` arm. The visible-tile window the
-clamp widens the walk region by now follows retail's own order - seeded from
-`mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW` at scene entry, then replaced by whichever of
-a camera-region record's mask-kind side-write or field-VM op `0x46` the scene runs
-(`Camera::route_camera_events` consumes both op-`0x46` forms into `ZoneFollow::view_window`).
+clamp widens the walk region by follows retail's own order - re-stamped from the field
+draw-context primer `FUN_801DE37C` (`mode_entry_init::field_draw_context`) on every field
+entry, then replaced by whichever of a camera-region record's mask-kind side-write or
+field-VM op `0x46` the scene runs (`Camera::route_camera_events` consumes both op-`0x46`
+forms into `ZoneFollow::view_window`).
+
+The seam is `Camera::reset_globals_for_scene_entry`, which both hosts run per entry. Saying
+the window was seeded "at scene entry" understated where the port actually stood: it was
+seeded once at camera construction and only ever overwritten afterwards, so a scene that
+scripted a wide window handed it to the next scene's clamp. The primer is what makes the
+sentence true.
 
 The disc-gated oracle
 `crates/engine-shell/tests/field_camera_zone_oracle.rs` grades the port per walkable save
