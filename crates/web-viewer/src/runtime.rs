@@ -40,17 +40,6 @@ use crate::play::{FieldRender, NpcClip, NpcRender, PlayerRig};
 #[cfg(target_arch = "wasm32")]
 const BGM_DEFAULT_GAIN: f32 = 1.0;
 
-/// What one slider unit is worth on the output `GainNode`, i.e. the page's
-/// "1x" = a quarter of the native cpal path's unity level. The history of
-/// this scale is a walk down the loudness curve by ear: an earlier revision
-/// baked in `5.0` on the theory that the mixer is "near-inaudible at unity",
-/// listening said the opposite and it clipped on peaks; unity itself then
-/// proved loud as a browser-tab default, and so did half of it. The scale
-/// lives here rather than in the page so "1x" stays the label of the shipped
-/// level and only one place holds the number.
-#[cfg(target_arch = "wasm32")]
-const BGM_SLIDER_UNIT_GAIN: f32 = 0.25;
-
 /// Bridge object the play page instantiates once. Holds a `World` +
 /// `MenuRuntime` for the disc-free path, and - once `load_disc` has run - a
 /// `SceneHost` plus the render state for the scene it is running.
@@ -1207,9 +1196,8 @@ impl LegaiaRuntime {
     /// routes the field VM's op-`0x35` music events through the same port-side
     /// VAB + SEQ + SPU path the audio audition page uses. This call also stages
     /// the current scene's VAB bank (so a scene-local track has a bank) and
-    /// parks the default level ([`BGM_DEFAULT_GAIN`] slider units through
-    /// [`BGM_SLIDER_UNIT_GAIN`]) on the output node so the level
-    /// matches the page's slider. Browsers often open the `AudioContext`
+    /// parks the default level ([`BGM_DEFAULT_GAIN`] slider units) on the
+    /// output node so the level matches the page's slider. Browsers often open the `AudioContext`
     /// suspended even inside a
     /// gesture - call [`Self::audio_resume`] right after this to make it audible.
     pub fn audio_init(&mut self) -> bool {
@@ -1217,7 +1205,7 @@ impl LegaiaRuntime {
         {
             match WebAudioOut::new() {
                 Ok(out) => {
-                    out.set_gain(BGM_DEFAULT_GAIN * BGM_SLIDER_UNIT_GAIN);
+                    out.set_gain(BGM_DEFAULT_GAIN);
                     self.audio_out = Some(out);
                     // If a scene is already up, stage its VAB now so a
                     // scene-local BGM start resolves against a live bank.
@@ -1278,13 +1266,21 @@ impl LegaiaRuntime {
     }
 
     /// Set the BGM output gain in page-slider units: `1.0` is the page
-    /// default ([`BGM_DEFAULT_GAIN`]) and maps to [`BGM_SLIDER_UNIT_GAIN`]
-    /// of the native cpal path's unity level; the slider spans 0x (mute) to
-    /// 10x. No-op when audio isn't up.
+    /// default ([`BGM_DEFAULT_GAIN`]); the slider spans 0x (mute) to 10x.
+    /// No-op when audio isn't up.
+    ///
+    /// The site's browser master trim
+    /// ([`legaia_engine_audio::webaudio::WEB_MASTER_TRIM`] - the same `0.25`
+    /// `site/js/layout.js` publishes as `window.LEGAIA_MASTER_TRIM`) is
+    /// applied by `WebAudioOut::set_gain` itself, so the slider value passes
+    /// through untouched. This page used to multiply by its own copy of that
+    /// factor first, applying the site trim TWICE and leaving the play page a
+    /// factor of four - about 12 dB - under the minigames page, whose
+    /// `site/js/minigame-bgm.js` output stage applies it once.
     #[cfg(target_arch = "wasm32")]
     pub fn audio_set_gain(&self, gain: f32) {
         if let Some(out) = self.audio_out.as_ref() {
-            out.set_gain(gain * BGM_SLIDER_UNIT_GAIN);
+            out.set_gain(gain);
         }
     }
 
