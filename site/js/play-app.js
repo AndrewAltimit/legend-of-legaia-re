@@ -2423,7 +2423,10 @@ void main() {
         const m = fieldVp;
         const cy = m[1] * px + m[5] * py + m[9] * pz + m[13];
         const cw = m[3] * px + m[7] * py + m[11] * pz + m[15];
-        rt.set_field_player_screen_y(cw > 0 ? Math.round((1 - cy / cw) * 120) : -1);
+        /* -2147483648 is the engine's NO_FIELD_PROJECTION sentinel. A plain
+         * negative will not do: a lead projected above the top of the stage
+         * has a negative stage Y and is a number the kernel compares. */
+        rt.set_field_player_screen_y(cw > 0 ? Math.round((1 - cy / cw) * 120) : -2147483648);
       }
 
       /* Script-spawned actors (field-VM 0x4C 0xD8): the engine hands over

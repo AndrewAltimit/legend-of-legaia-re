@@ -846,6 +846,17 @@ impl LegaiaRuntime {
     /// touched, exactly the native exit contract.
     pub(crate) fn exit_battle_render(&mut self) {
         self.battle_render = None;
+        // Release the host-side summon seat. `World::finish_battle` restores
+        // the engine actor table, but the slot index is this host's and used
+        // to survive into the next fight, where the second cast would reuse a
+        // seat the new battle had already handed out.
+        if let Some(slot) = self.summon_actor_slot.take()
+            && let Some(host) = self.scene_host.as_mut()
+            && let Some(a) = host.world.actors.get_mut(slot)
+        {
+            a.active = false;
+            a.tmd_binding = None;
+        }
     }
 
     /// Drive the shared phase-scripted battle camera one sim tick: derive

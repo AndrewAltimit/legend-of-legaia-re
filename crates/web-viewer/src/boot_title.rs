@@ -178,7 +178,6 @@ impl LegaiaRuntime {
         // countdown reaches the same state the native window reaches; the
         // movie itself plays through the FMV lane - see `boot_title_step`.
         session.attract_enabled = true;
-        session.skip_fade_in();
         self.boot_title = Some(session);
         self.boot_title_attract_skips = 0;
     }
@@ -517,7 +516,14 @@ impl LegaiaRuntime {
             } else {
                 phase
             };
-            let blink_on = matches!(session.phase(), TitlePhase::PressStart { blink_phase } if blink_phase < 30);
+            // The duty is HALF the session's own period, not a literal:
+            // `blink_phase` is `(phase + 1) % blink_period` and the period is
+            // 30, so a literal 30 made this predicate a tautology and the
+            // prompt never blinked on this host.
+            let blink_on = matches!(
+                session.phase(),
+                TitlePhase::PressStart { blink_phase } if blink_phase < session.blink_period / 2
+            );
             let mut d = ui::title_draws_for(font, phase, cursor, false, blink_on, false, (96, 96));
             ui::scale_stage_text_draws(&mut d, origin, scale);
             texts.extend(d);

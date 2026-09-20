@@ -368,6 +368,12 @@ pub struct LegaiaRuntime {
     bgm_last_started: Option<u16>,
 }
 
+/// Sentinel [`LegaiaRuntime::set_field_player_screen_y`] reads as "the lead
+/// did not project this frame" (behind the near plane, or no view-projection
+/// built yet). Out of band on purpose - every in-range stage Y, negative
+/// included, is a number the kernel is entitled to compare.
+pub const NO_FIELD_PROJECTION: i32 = i32::MIN;
+
 #[wasm_bindgen]
 impl LegaiaRuntime {
     #[wasm_bindgen(constructor)]
@@ -377,6 +383,7 @@ impl LegaiaRuntime {
         world.spawn_actor(0).default_pos = legaia_engine_vm::Position::new(0, 0);
         world.mode = SceneMode::Title;
         let menu = MenuRuntime::new("/saves");
+        let options_state = load_persisted_options();
         Self {
             world,
             menu,
@@ -397,6 +404,11 @@ impl LegaiaRuntime {
             camera: {
                 let mut c = legaia_engine_core::camera::Camera::new();
                 c.render_yaw_bias = legaia_engine_core::camera_view::retail_field_render_yaw_bias();
+                // The follow distance is an OPTION, and the window applies it
+                // at startup (`window/run.rs`). `Camera::new()`'s own default
+                // is `Retail`, so a page that never read the option framed
+                // every field frame ~35% closer than the window did.
+                c.distance = options_state.camera_distance;
                 c
             },
             cutscene_cam: Default::default(),
@@ -438,7 +450,7 @@ impl LegaiaRuntime {
             dev_menu: None,
             dev_menu_records: false,
             dev_menu_enabled: false,
-            options_state: load_persisted_options(),
+            options_state,
             play_clock_secs: 0,
             play_clock_origin_ms: None,
             live_battles: true,
@@ -679,6 +691,13 @@ impl LegaiaRuntime {
         self.boot_logos_atlas = None;
         self.boot_logos_failed = false;
         self.menu_glyph_atlas = None;
+        // A freshly installed world starts at `World::default()`'s toggles,
+        // which are NOT the player's persisted options. The native window
+        // re-asserts all four every tick precisely because a scene / New Game
+        // transition reseeds world state; this page only pushed them on
+        // Options-close, so a persisted "Run" or flash-guard-off never
+        // applied at page load and was lost again after a door.
+        self.apply_options_side_effects();
         Ok(count)
     }
 
@@ -846,12 +865,19 @@ impl LegaiaRuntime {
     }
 
     /// The lead's projected screen Y this frame in 240-line stage space, or
-    /// a negative value for "not projectable" - the browser twin of the
-    /// native window's `field_hud_projected_player_y`. The field party HUD's
-    /// decision kernel reads it (retail compares the projected player
+    /// [`NO_FIELD_PROJECTION`] for "not projectable" - the browser twin of
+    /// the native window's `field_hud_projected_player_y`. The field party
+    /// HUD's decision kernel reads it (retail compares the projected player
     /// against a band before the readout returns).
+    ///
+    /// The sentinel is an out-of-band value rather than "negative": a lead
+    /// projected ABOVE the top of the stage has a negative stage Y, and the
+    /// native window reports it as a number. Folding that into "no
+    /// projection" narrowed the channel on this host only, which is exactly
+    /// the shape `docs/tooling/host-drift.md` names.
     pub fn set_field_player_screen_y(&mut self, stage_y: i32) {
-        self.field_hud_projected_y = (stage_y >= 0).then(|| stage_y.min(i16::MAX as i32) as i16);
+        self.field_hud_projected_y = (stage_y != NO_FIELD_PROJECTION)
+            .then(|| stage_y.clamp(i16::MIN as i32, i16::MAX as i32) as i16);
     }
 
     /// Establish a fresh New Game slate - the browser twin of the native
@@ -2179,12 +2205,14 @@ impl LegaiaRuntime {
         if let Some((spell_id, _origin)) = summon {
             self.spawn_summon_creature_web(spell_id);
         }
+        // The full ring value goes through: `enqueue_sfx` takes
+        // `impl Into<u16>`, and the `u8::try_from` this used to narrow
+        // through dropped cue id `0`, whose ring value is `0xFFFF`.
         if let Some(cue) = cue
             && let legaia_engine_audio::CueDispatch::Ring { ring_value, .. } =
                 legaia_engine_audio::classify_cue(cue as u32)
-            && let Ok(id) = u8::try_from(ring_value)
         {
-            self.enqueue_sfx(id, 0);
+            self.enqueue_sfx(ring_value, 0);
         }
     }
 
@@ -2259,5 +2287,8 @@ impl LegaiaRuntime {
             // straight to the target cursor, or straight to the arts entry.
             host.world.toggles.select_attack = self.options_state.battle_select_attack;
         }
+        // The follow-camera distance preset, the same host knob the native
+        // window re-asserts each tick (`window/event_handler/redraw.rs`).
+        self.camera.distance = self.options_state.camera_distance;
     }
 }
