@@ -72,67 +72,71 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
-- **The field view matrix is built per field *frame*, not three times a
-  vsync, and two of the builder's five sites are not a camera at all.** Over a
-  world-map-to-town entry, 749 of 1800 captured vsyncs carried any build; of
-  those, 389 ran the full three-site order and 313 only the last two. The two
-  sites a sweep over `SCUS_942.54` and the slot-A images cannot reach are one
-  bracket inside PROT 0901's `FUN_801F73E4`, which zeroes the yaw word in the
-  first call's delay slot, draws one screen-fixed band and rebuilds
-  ([falsified](re-do-not-re-walk.md#rendering--camera)).
-- **The last build before the draw does not win - it frames no geometry at
-  all.** A link count already put 16810 of 31046 ordering-table links under the
-  first build and 14 under the last; splitting by GPU command code gives the
-  real figure, because that count was mixing attribute packets and 2D rects in
-  with polygons. Of 4289 polygons over three runs, 3861 are under the first
-  build, 428 under the second and none under the last
-  ([settled](re-settled-threads.md#rendering--camera)).
-- **A captured SPU voice is audible by its envelope level, not its phase
-  word.** Mednafen's `ADSR.Phase` has no `Off` member - a key-off parks a voice
-  in Release - so a phase test counts every voice a state has ever keyed. It is
-  why retail snapshots read 20 to 24 of 24 voices live and why an oracle rule
-  looked unsatisfiable; against the level, retail holds 4 to 9 audible voices
-  and the engine 4 to 8
+- **`FUN_801D0748` is the round state machine every battle runs, not the
+  Muscle Dome's.** It has exactly one `jal` disc-wide - `0x80047014` in the
+  SCUS battle frame driver `FUN_80046A20`, with no test in front of it - and
+  three non-dome battle states enter it hundreds of times over 700 vsyncs,
+  every entry returning to `0x8004701C`. Reading it as a dome controller was
+  reading one caller's context for the routine
+  ([settled](re-settled-threads.md#battle--arts--level-up)).
+- **The audio oracle's "reverb" channel was the SPU *control* register.** A
+  PCSX-Redux SPU-ports blob is the hardware window `0x1F801C00..` verbatim, so
+  the offset being compared was `SPUCNT`: the `0xC081` that read as "retail
+  routes voices 0, 7, 14 and 15" is enable | unmute | reverb-master | CD. The
+  real `EON` two words earlier reads `0x00FFFFFF` - all 24 voices - on every
+  frame of the same capture, and the engine's own `0` came from an oracle
+  building a bare `Spu` where the shipped host builds one through
+  `set_retail_reverb`
   ([falsified](re-do-not-re-walk.md#audio--sound-driver)).
-- **The slot-B stage selector `_DAT_8007B64A` does have a writer.** The field
-  entity tick `FUN_801DA51C` clears it at `0x801DA69C` and raises `1` at
-  `0x801DA6A8` when system flag `0x19` is set; battle latches `3` at
-  `0x801E6D2C`. Every access is `gp`-relative, which is why an
-  absolute-address sweep reported none
-  ([settled](re-settled-threads.md#battle--arts--level-up)).
-- **The cast-cue band's door is an item, not a spell.** `FUN_801F3990` has one
-  caller, action-SM state `0x3D`, entered only from `0x3C`; the Item category
-  arm stores `0x3C` unconditionally while the Magic arm stores it only for
-  spell ids below `0x65`, which the player Seru block cannot satisfy - so a
-  cast-driven sweep could never reach the band
-  ([settled](re-settled-threads.md#battle--arts--level-up)).
-- **PROT 0981 is the world-map top-view debug image, not a monster-test
-  harness.** The `monster_test` label is CDNAME inheritance from the block that
-  opens at extraction 0978; the image's own operands are the world-map location
-  table, the kingdom filter and the camera pair
+- **"The engine runs half retail's voices" compared two pieces of music.** An
+  engine `town01` trace plays the id that scene's prescript selects, global
+  `2016`; the retail `town01` capture it was paired against holds
+  `_DAT_8007BAC8 = 2000`, because that save walked in from the world map. On
+  one track over a comparable stretch the two sides land in the same place -
+  and the sequencer drops no notes at all across the window
+  ([falsified](re-do-not-re-walk.md#audio--sound-driver)).
+- **PROT 0896 has a load base, and it is `0x801D4DF0`.** "No base fits" rested
+  on a resolution ratio over the image's `lui` pairs, which is one-sided: a
+  base that catches few pairs scores perfectly on all of them, and on this
+  image the metric ranks the refuted slot-A base first. The call-graph
+  recovery lands, and three independent signals agree with it
   ([falsified](re-do-not-re-walk.md#measurement-readings)).
-- **`FUN_801EA9B0`'s `BGM CALL` arm plays a track; it does not cycle the
-  index.** Cycling is `FUN_801E9F64`'s job. The arm installs a sound-test row's
-  global id, which is what makes it the fourth disc-wide writer of the BGM
-  request word ([falsified](re-do-not-re-walk.md#audio--sound-driver)).
-- **The equip compare panel's `0x40` no-passive sentinel is not a free
-  substitution.** Every class-`1` equipment row carries it, so the sentinel
-  reproduces that arm exactly and nothing else; 80 of the 151 non-equipment ids
-  carry a real passive index on the other arm, and a host feeding the sentinel
-  unconditionally loses two of the three row sets
-  ([falsified](re-do-not-re-walk.md#menus--ui)).
-- **The browser play page's frame path does short-circuit.** Its early-out is
-  in the page's JavaScript rather than in the Rust runtime, so a guarded frame
-  runs none of the per-frame kernels and still draws
+- **The dome panel still has a draw site; it just never materialises `384`.**
+  A textured primitive addresses VRAM through a packed page index, so the
+  emitter's constants are `0x106` and `0x109` rather than `0x180`. It is
+  `FUN_801D00F8` in the contest hub PROT 0977 - a mode later than the upload,
+  in an image that is not resident when the load runs
+  ([settled](re-settled-threads.md#battle--arts--level-up)).
+- **A frame kernel paired by name can be an empty body.** The host-drift
+  gate's tier-11 alias row paired the native `tick_field_prop_anims` with the
+  browser's `drive_npc_clips` and asserted both "advance the scene's posed
+  actors"; the native body was `{}`, and a `{}` body pairs with anything. The
+  window does that work inline, which is a different claim
   ([falsified](re-do-not-re-walk.md#measurement-readings)).
-- **Two minigame citations were off by bytes rather than by reading.** The Baka
-  Fighter editor's actor prototype and its sibling start four bytes lower than
-  cited - the cited words are each record's `0xFFFF0000` field, not its head -
-  the fishing bite tick's two per-frame map reads are unrelated (the water gate
-  is the cell halfword's `0x4000` bit, while the walk-grid probe drifts the
-  lure), and the halfword read as the lure's z is its **height** - the store
-  takes the spawning actor's `+0x16` less `0x80`
+- **The port's camera visible-tile window was seeded once at camera
+  construction, not at scene entry.** A scene that scripted a wide window
+  handed it to the next scene's clamp. Retail's window is per *region*: a
+  `town01` walk alternates between two windows as the player crosses regions,
+  and neither is the field default
   ([falsified](re-do-not-re-walk.md#field--locomotion)).
+- **The wall-slide oracle was not asserting the defect.** The blocker on
+  `resolve_field_slide` said its rests were pinned against captures taken on
+  the non-sliding stepper. Both pinned wall-press legs are slide-*neutral* -
+  the resolver hands back the held cardinal at each - so the test measured
+  points where the two models agree, and retail's slide fires in ordinary
+  free-roam ([settled](re-settled-threads.md#field--locomotion)).
+- **`0x1000` on the BGM request word is a park sentinel, not a track.** The
+  resolver compares `_DAT_8007BAC8` against `0x1000` at `0x8002454C` and
+  copies the pending index onto the loaded-index barrier, so the load is
+  skipped; the second streaming slot carries the same test. The states that
+  read `4096` are the ending ones, not the duel ones
+  ([settled](re-settled-threads.md#audio)).
+- **Field-VM `4C D8`'s two `u16` immediates are envelope rates, not a
+  `(kind, variant)` pair.** The opcode spawns from the morph-weight descriptor
+  `0x8007068C`, whose handler reads `actor[+0x3C]` / `+0x3E` as the rise and
+  fall steps of the morph weight at `+0x6E`. The port's field names are the
+  allocator's, not this spawner's
+  ([settled](re-settled-threads.md#field--locomotion)).
 
 ---
 
@@ -142,6 +146,7 @@ cheapest place to look for a claim that is still wrong.
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
 | Is `juui1` dark in retail outside its `ColorIntensity` tint beats? | open - the donor door is named; the state to drive it from is not | No library state is inside the scene, and the name-hijack probe cannot answer it from a world-map door: the rewritten name loads the bundle through retail's loader, but every frame is black, and a hijack into the brightly-drawn `bylon` is equally black - the entry path makes the frame, not the scene. A disc-wide census now names the door: of 368 op-`0x3F` doors, 250 are field-to-field and 41 carry a five-letter destination across 17 source scenes, and `conc2` -> `juui1` is a direct one (index 587, MAN `0x7F12`). Only `teien` of those 17 has a catalogued state, and 900 vsyncs there cross no door - so what is owed is a `conc2` state one press from it. |
+| Does a scripted camera tile window survive into the next scene? | open - the per-region half is measured, the cross-scene half is not | The window at scratchpad `0x1F8003E8..EB` is a property of where the player stands, not of the scene: a 3000-vsync pad-driven `town01` walk never holds it constant and never holds the field default, alternating between `(-8, -6, 8, 12)` and `(-10, -6, 8, 14)` four times each as the player crosses regions. What no capture has crossed is a **door**: whether the next scene's entry re-stamps the window or inherits the last region's. The port re-stamps it per field entry, so a measurement that finds retail inheriting would falsify the port rather than the page. Closing it needs the same per-vsync poll run across a scene change. |
 
 **Does retail's equip screen offer a Goods-slot candidate** closed here: yes,
 out of the item class-`2` id space, through three builder cases the browse step
@@ -264,10 +269,33 @@ process-matching helpers in
 
 ## Battle / rendering
 
-| Thread | Status | What would close it |
-|---|---|---|
-| Does any shipped actor ever raise `actor[+0x42]`, the mesh-renderer gate? | open - the gate is pinned and nothing in the sampled corpus sets it | The zero-entry result has its mechanism: each of `FUN_8002735C`'s `jal` sites is the far arm of an `lh`/`lhu r, 0x42(s0)` then `bne` pair, and the near arm takes `FUN_80029888` or `FUN_80043390` instead. Across 720 vsyncs of four states and three game modes the gate is read 5089 times and reads **zero** every time, so both table-driven renderers are unreachable in everything sampled so far. What would close it: a write watch on `+0x42` across a longer playthrough, or a static census of the writers of that displacement - either says whether retail ever takes the far arm at all. |
-| Is `FUN_801D0748` entered by an ordinary, non-dome battle at runtime? | open - its arms are general battle features, and no capture has caught it in one | The routine is documented as the Muscle Dome match state machine, and its arms are not dome-specific: the Attack confirm at `0x801D15C8` after `sb 3, +0x1DE`, the arts-input entry at phase `0x50` (`0x801D1734`), the Run confirm `0x32`, and the auto-command write-back at `0x801D22BC`. All five differently-prefixed dumps of it are the same 2781 instructions of PROT 0898. What is missing is the runtime half: one PCSX-Redux exec breakpoint hit during a field encounter settles whether an ordinary battle drives it. |
+No open threads. The last two closed together, and both were questions about
+whether a routine no capture had caught is reachable at all.
+
+**Does any shipped actor raise `actor[+0x42]`, the mesh-renderer gate** closed
+with a `yes` that splits in two. The actor allocator `FUN_80020DE0` stamps `2`
+into the halfword at `0x80020EC0` when `_DAT_8007B6D0 & 2` - but that global is
+the world-map **dev** counter, booted clear by `sw zero,0x3b8(gp)` at
+`0x80015F64` and raised only by the debug menu and a pad-driven ring, so that
+leg is dev-reachable rather than retail-reachable. The content-driven raiser is
+move-VM opcode `0x10`, which writes its own `u16` operand straight into the
+field (`sh $v0,0x42($s2)` at `0x8002342C`), and shipped move programs do issue
+it with non-zero operands. What the 5089-zero census establishes is narrower
+than "nothing raises it": across the sampled modes no *drawn* actor had the bit
+up ([settled](re-settled-threads.md#rendering--camera),
+[falsified](re-do-not-re-walk.md#rendering--camera)). Whether an actor a
+shipped program raises it on is then drawn through one of the three brackets is
+unmeasured - the residual the census leaves, and too narrow for a row.
+
+**Is `FUN_801D0748` entered by an ordinary, non-dome battle** closed on the
+bytes before the capture landed, and then again on the capture. The routine has
+exactly **one** `jal` across `SCUS_942.54`, every based overlay image and every
+raw PROT entry - `0x80047014`, inside the SCUS battle frame driver
+`FUN_80046A20`, unconditional - so every battle frame steps it. Three non-dome
+battle states enter it 350, 313 and 255 times over 700 vsyncs each, every entry
+with `ra = 0x8004701C`. It is the general battle round / command SM, and the
+dome is one of its callers' contexts
+([settled](re-settled-threads.md#battle--arts--level-up)).
 
 The last one - **what stages the dance widgets' second
 texture page at VRAM `(960, 256)`** - closed on the disc rather than on a
@@ -364,45 +392,57 @@ performs either cast ([settled](re-settled-threads.md#battle--arts--level-up)).
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which voices does the engine's score allocate, against retail's? | open - the comparand decides, and the two masks differ in content | [details ↓](#which-voices-the-score-allocates) |
-| Why is the engine's mix quieter than retail's? | open (sharpened - master volume is exonerated, reverb routing is not) | Seeding the captured envelope-control word and level moved the PCM oracle's retail reference from `rms 2..87` to `579..16633`, and three scenarios then read much quieter on the engine side. Master volume is not the cause: both sides hold `(0x3FFF, 0x3FFF)` over `town01`. The first real divergence is **reverb routing** - the engine's `EON` mask is `0` against retail's `0xC081`, which routes voices 0, 7, 14 and 15 - and the engine runs fewer voices (mean 4.83, max 9) than retail (mean 9.78, max 19). What blocks the next step: the trace record carries only `active` and `pitch`, so per-voice volume and envelope level cannot be asked of it until the record is widened. |
+| Why does the port sustain more sounding voices than retail on the same track? | open (narrowed - comparand, track and window are all controlled for) | [details ↓](#the-sounding-voice-residual) |
 
-The last thread here - a supposed second `bse.dat` record family -
-resolved as a neighbouring file's tone rows left in the sector
-([falsified](re-do-not-re-walk.md#bsedat-carries-a-second-record-family-with-a-resident-consumer)).
+Two threads closed here at once, and both closed by fixing the instrument
+rather than the engine. **Which voices the score allocates** is now an ordinary
+comparison: the trace record carries envelope level, per-side volume, the
+packed ADSR config word and the reverb send per voice from all three emitters,
+and `legaia-engine audio-trace --per-voice` asks the question directly. On a
+track-aligned pairing the two sides share every pitch the port plays and all
+seven of its tones ([settled](re-settled-threads.md#audio)). **Why the engine's
+mix is quieter** closed on that oracle's own criterion: the two channels it
+named as divergences were an instrument reading the SPU *control* register for
+`EON`, and a pairing of two different tracks
+([falsified](re-do-not-re-walk.md#audio--sound-driver)). What survives of the
+level question is not a routing or allocation difference at all - the engine
+renders a track from tick 0 where a retail state is frozen somewhere inside
+one, which is a window difference, and it is the residual the row above
+carries.
 
-The previous thread here - op-`0x35` sub-op `0xA`, the "unhalt-pause toggle" -
-resolved as the track-swap **commit** and moved to
-[`re-settled-threads.md`](re-settled-threads.md#op-0x35-sub-op-0xa-is-the-track-swap-commit).
+Before them, a supposed second `bse.dat` record family resolved as a
+neighbouring file's tone rows left in the sector
+([falsified](re-do-not-re-walk.md#bsedat-carries-a-second-record-family-with-a-resident-consumer)),
+and op-`0x35` sub-op `0xA`, the "unhalt-pause toggle", resolved as the
+track-swap **commit**
+([settled](re-settled-threads.md#op-0x35-sub-op-0xa-is-the-track-swap-commit)).
 
-### Which voices the score allocates
+### The sounding-voice residual
 
-*Status:* open - the comparand decides; what it decides is not yet a match
+*Status:* open - narrowed to one statistic on a pairing that controls for
+everything else
 
-Two questions were tangled here and both have moved. The engine half is closed:
-a driver that drops into a scene from cold owes three separate steps, and
-skipping any one reads from outside as silence
-([`audio.md`](../subsystems/audio.md#the-cold-scene-entry-sequence-and-what-each-missing-step-sounds-like)).
-And the comparand's own half turned out to be an instrument defect rather than a
-property of save states - a phase-keyed audibility test reported every voice a
-state had ever keyed, which is what made the superset rule look unsatisfiable
-([falsified](re-do-not-re-walk.md#audio--sound-driver)).
+Three confounds had to go first, and each was worth more than the number it
+produced. The comparand: a captured voice is audible by its **envelope level**,
+not its phase word. The register: `EON`, not `SPUCNT`. And the **track** - a
+state's scene does not decide what it is playing, `_DAT_8007BAC8` does, so a
+`town01` save walked in from the world map still holds the overworld track.
 
-Against the envelope level the comparison is ordinary: retail holds 4 to 9
-audible voices across the 19 audio-trace scenarios and the engine 4 to 8. A
-per-vsync PCSX-Redux retail trace of a `town01` entry, fed back through
-`--retail-jsonl`, puts the engine at 4 voices against retail's 8 on the first
-compared frame - comparable, not converged.
+With all three controlled - a per-vsync retail capture from
+`s3_rimelm_freeroam`, whose `_DAT_8007BAC8` holds the `2016` that `town01`'s
+own prescript selects, against an engine trace of the same scene - the two
+sides agree on reverb routing, depth and work area frame for frame, and on
+slots-per-note retail reads `1.002` against the port's `1.037` to `1.061`. The
+one figure that does not close: over a matched 120-frame window the port
+sustains a mean of `6.11` sounding voices against retail's `4.12`, while
+sharing all twelve of the port's pitches and all seven of its tones. Same
+score, same voices, more of them held at once.
 
-So what is left is **which** voices the score allocates, not whether the
-comparand can decide. Two things narrow it. `VoiceStartAddrMismatch` is not a
-fidelity axis on this comparand at all: retail's voices start in
-`0x8008..0xC968` and the engine's staged bank in `0x1000..0x1BD70`, two
-independent SPU-RAM allocators, so the addresses cannot agree and are not
-supposed to. `MasterVolumeMismatch` stays a hard failure. What would close it is
-a per-voice comparison on one scenario - program, pitch and envelope per slot -
-saying whether the engine is short of voices, playing different ones, or
-allocating the same score across fewer slots.
+Two explanations are open and the artifact can separate them: the port's
+release tail may run longer than the SPU's, leaving drained voices counted as
+sounding, or the port may key a note on a fresh slot where retail re-uses one.
+A per-voice envelope-level histogram over the matched window decides it, and
+the record already carries the field ([`audio.md`](../subsystems/audio.md#comparing-per-voice)).
 
 ## Title / boot / overlays
 
@@ -445,9 +485,6 @@ PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
 | Thread | Status | What would close it |
 |---|---|---|
 | What actually breaks a rebuilt PROT 0874 container at battle load? | mostly resolved - the entry question is answered; one leg is untested | [details ↓](#what-breaks-a-rebuilt-prot-0874-container) |
-| What draws VRAM `(384, 0)` 320x256 (the dome panel still)? | open (emit only; arming, staging and the upload all resolved) | [details ↓](#what-draws-the-dome-panel-still) |
-| Is the `0x801E43E8` byte run one table or two? | open - its tail repeats the gear-slot indices exactly | The equip browse column reads rows `1` and up out of `0x801E43E8`, `00 01 00 04 05 06 07`. Bytes `[7..10]` of the same run are `00 01 02 04` - precisely the four gear-slot indices - so the run either continues into a second, differently-shaped table or the browse map is a prefix of one longer array. Six other sites in PROT 0899 index the same base, and reading what each of them takes out of it is what decides the shape. |
-| Where does PROT 0896 link? | mostly resolved - no base fits, and a residency capture is owed | Scoring the image's own `lui`+`addiu` operands against every candidate base gives a best of 398 resolvable out of 462, where a control image scores 1147 of 1148 - so the head is not a slot-A or slot-B image at either window. It is not featureless, which an earlier reading of the same measurement said: the head is a Shift-JIS label table and the image carries a format string unique on the disc. Identity evidence and a load base are separate questions, and only the second is still open. What is left is a residency capture - a state with the entry's bytes in RAM gives the base by subtraction - and the identity work says the USA build never loads it. |
 
 **Which image holds the dev-menu row strings** closed here: PROT 0897, the field
 overlay, at file offset `0xB2C`. The argument is formed by `lui`/`addiu` pairs
@@ -455,6 +492,45 @@ inside the renderer's own body, and a live `map03` window is byte-identical to
 0897's head. PROT 0981 aliases the same VA as the other slot-A occupant and the
 two are never co-resident, which is the whole of why the address read as
 unattributable ([settled](re-settled-threads.md#world-map--kingdom-bundles)).
+
+
+**Where PROT 0896 links** closed here, and with it the reading that no base
+could. The image's call graph recovers `0x801D4DF0` on ten corroborating
+targets; all 218 internal `j` instructions land inside the file at that base,
+ten of eleven `jal` targets land on an `addiu sp, sp, -X` prologue, and three
+runs of consecutive in-image VA words resolve every word - one of them holding
+the base itself. The measurement that said otherwise was a resolution ratio
+over `lui` pairs, which ranks a base catching few pairs first
+([falsified](re-do-not-re-walk.md#measurement-readings)). The residency capture
+the row asked for is not owed either: **zero** of the image's 322 SCUS-range
+calls land on a function entry of this disc's `SCUS_942.54`, where the two
+slot-A controls score 1203 of 1307 and 793 of 884, so it is linked against an
+executable this disc does not carry and no USA loader reaches it
+([settled](re-settled-threads.md#title--boot--overlays)).
+
+**What draws VRAM `(384, 0)`** closed on a search that had been looking for the
+wrong constant. The emitter is `FUN_801D00F8` in the contest hub PROT 0977, and
+it never materialises `384`: a textured primitive addresses VRAM through the
+packed `tpage` halfword, where x is a page index, so the constants in the code
+are `0x106` and `0x109`. It writes two `POLY_FT4` quads covering `(0,-20)` to
+`(320,220)`, fading on `*(0x801D1A7C)`, and the fork `_DAT_801D1AE0` that
+selects them is raised by the **arena init** on re-entry rather than by the
+match teardown - which is why a census bracketed on one teardown, in a mode
+where the hub image is not even resident, could not see it
+([settled](re-settled-threads.md#battle--arts--level-up),
+[`ringside-still.md`](../formats/ringside-still.md#what-draws-it)). The still
+arm has been driven and its packets read, but only under a forced latch; no
+catalogued save is parked on an arena re-entry, so the natural arm is observed
+in the arming disassembly rather than in a frame.
+
+**Whether the `0x801E43E8` byte run is one table or two** closed as neither:
+it is **three** tables and a pad byte. The browse map is seven bytes and stops;
+`0x801E43EF` has no word, no `lui`/`addiu` pair and no branch in any image;
+`0x801E43F0` is a four-byte character equip mask with three materialisation
+sites of its own, and `0x801E43F4` is eight halfwords of slot pictograms with
+three more. The "bytes `[7..10]` repeat the gear-slot indices" observation was
+a coincidence of the pad byte plus the mask table's first three entries
+([settled](re-settled-threads.md#field--locomotion)).
 
 ### What breaks a rebuilt PROT 0874 container
 
@@ -515,48 +591,57 @@ path, so closing this needs the container written by hand and booted cold,
 rather than a probe on retail.
 
 
-### What draws the dome panel still
-
-*Status:* open - the **emit** is the only unresolved leg
-
-The still is staged by PROT 0978 and armed by `ctx[+0xC] = 1` at `0x800474CC`
-in the generic battle-end teardown `FUN_80047430`
-([settled](re-settled-threads.md#the-dome-panel-still-arming)). Three candidate
-consumers are excluded: no draw site exists statically (33 sites disc-wide
-materialise `0x180`, none paired with `y = 0`); the `INTERVAL` intermission is
-a live `koin1` render whose ordering table samples nothing at `x = 384`; and an
-1800-VSync GPU-call census across a teardown records no display-origin flip, no
-`MoveImage` and no blit at `x = 384`
-([falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
-
-The **upload** is now measured, and it is not the shape the doc described: **four** `LoadImage` calls of 64x256 at `x = 384 / 448 / 512 / 576`
-- texture pages 6..9 - keyed on raw TOC `0x36C`. The "320x64, y-stepped"
-geometry belongs to the `int.tim` family (`0x4C7` / `0x4C8`), which did not run
-in the census, so it is not this still's upload.
-
-Why it did not run is now known, and it moves the bracket. `FUN_801F6B24` holds
-**two** dispatchers, not one walk: `_DAT_8007BAC0` picks between a 19-arm
-field-restore table at `0x801F6AD8` and a 12-arm `int.tim` panel-still table at
-`0x801F6AA8`. An ordinary battle teardown takes the field-restore table - four
-uploads, one hit each - and the panel-still table records zero hits, which is
-the census result rather than a missing consumer. The residency gate is
-load-bearing in that measurement: an ungated breakpoint at the same VA counts
-hundreds of thousands of phantom hits from whatever else occupies slot B.
-
-**What would close it:** a GPU-FIFO capture bracketed on `ctx[+0xC]` going
-`1 -> 2` during a **played** Muscle Dome match. No state in the library sits
-inside a dome match - the one that looks playable is the course card with a null
-battle context - and a load-transition state never pages 0978 in, so the capture
-needs a match driven far enough to reach a teardown with `_DAT_8007BAC0` set.
-
 ## Measurement + tooling
 
 | Thread | Status | What would close it |
 |---|---|---|
-| What does retail's equip **item-info** panel look like? | open - the capture library holds no frame that draws one | Both library states parked on the equip screen sit at slot-pick with the panel blank, so the port's version of window 24's item panel has no reference frame to be graded against - not a disagreement, an absent oracle. Closing it needs a driven capture: a pad ladder past slot pick into the candidate list, with VRAM taken on a frame where the panel is populated. Until then, the panel's geometry is the port's reading of the window record rather than a measured match. |
-| Does the port's Equip screen ask the compare-category question of the wrong row? | open - the port's slot index runs one step past retail's above footwear | Retail's browse column is a two-table slot map - weapon, helmet, body, footwear, then three Goods - and its `slti v0, s0, 4` guard silences the four gear rows, so a compare category is resolved for the Goods rows only. The port's `EquipSlot::HandGuard` sits at index `3`, which pushes every later index one step past retail's row, so the screen asks the question of footwear where retail does not. Both hosts share the kernel, so this is a fidelity gap rather than drift; a driven capture of the retail screen on each of the seven rows settles what each should show. |
-| Which list does the root picker's row 3 select, and where is retail's own entry to sub-screen `0x15`? | open - the port reaches the screen by a route retail may not use | The reorder screen's mechanism is pinned - a two-press latch in one cursor word - but the port enters it from the Magic screen with Square, and retail's own entry (the record screen's character picker) is not. Nor is it settled which of the three per-character lists the root picker's row 3 selects. What would close both: the window-script program that opens window `0x15`'s descriptor, read out of the widget-script scanner (`legaia_asset::widget_script`), which names the screen that raises it. |
-| Which per-frame kernels do the two hosts' frame paths actually share? | open - the pairing is by name, and two families are known not to pair | The host-drift gate pairs a frame path's kernels across the native window and the browser page by **name**. Two families are known to break that: the minigame extras / UI ticks do not carry equal content across the hosts, and the battle event drain empties cue lanes the presentation tick does not name. Neither is a missing call, so no tier flags either. What would close it is a per-kernel content comparison of the two paths - the pairing evidence a name-keyed tier cannot generate. |
+| Which model owns the field screen-effect fade? | open - the port carries two representations and the renderers read the one nothing fills | Field-VM op `0x34` sub-0 is not a missing caller: `World::op34_sub0_color_intensity_setup` is live on both hosts. The port holds the fade twice over - an `effect_tint` float ramp the renderers read, and a `screen_tint_pushes` pool nothing reads - where retail has one, the ColorIntensity tint its effect actor drives. So one representation has to become the other: either the renderers consume the pushes, or the op spawns the tween that fills the ramp. What decides it is a retail beat measured rather than more reading of the port: a `juui1` tint or a prologue vignette, with the tint word logged per frame. |
+
+Four rows closed here at once, three of them the Equip screen's.
+
+**What retail's equip item-info panel looks like** closed by driving one. Every
+library state parked on the screen sits at slot-pick with the panel blank, so
+the oracle was absent rather than disagreeing; a pad ladder that seeks the
+browse cursor to each row, confirms into sub-screen `0x14` and waits for a
+staged id gives one frame per row, and all seven rows - the three Goods rows
+included - open a populated list. The candidate step opens both windows through
+one script, `0x801E4DC8`, so the frame carries three stacked panels: the
+character's name and one stat-row set, the hovered item's name / count /
+description / bonuses, and a reserved passive box at `(WX, WY + 0x38)` that
+only a hovered item with a passive fills
+([settled](re-settled-threads.md#field--locomotion)).
+
+**Whether the port asks the compare-category question of the wrong row** closed
+as yes, and the defect is fixed. Retail's `slti v0, s0, 4` guard at
+`0x801D137C` silences the four gear rows, so only the three Goods rows resolve
+a category - and they do not agree with each other, because the category
+follows the **hovered item**: an HP-boost accessory draws MAX HP / MAX MP while
+an accessory outside the two banded ranges draws the same ATK / UDF / LDF
+triple the gear rows show. The port was passing its own `EquipSlot` index as
+window 25's row, which put footwear inside the guard; both hosts share the
+kernel, so one fix moved both
+([settled](re-settled-threads.md#field--locomotion)).
+
+**Which list the root picker's row 3 selects, and where retail enters
+sub-screen `0x15`** closed on one address: `0x801D6C4C`, in `FUN_801D6B20`'s
+row-3 arm, is the only site in PROT 0899 that writes `0x15` into `DAT_801E46A4`
+- so the door is the pause menu's **Status** row, and the port's Magic-screen
+Square entry was its own. The scan that looked for "window `0x15`" was in a
+different id space: window `0x15` is the Equip screen's party window. Inside
+the screen only steps `3` and `4` are reachable; nothing writes step `2`, so
+the abilities list is decoded and has no door
+([settled](re-settled-threads.md#field--locomotion)).
+
+**Which per-frame kernels the hosts share** closed by building the instrument
+the row asked for: a tier that compares, per paired kernel, the set of engine
+functions each host's body reaches, host helpers followed transitively. The
+first thing it found was the pairing's own failure mode - a native body that
+was literally `{}`, aliased to a browser kernel that drains cue lanes and
+advances every NPC clip ([falsified](re-do-not-re-walk.md#measurement-readings)).
+The tier's blind spot is stated rather than closed: the join is by name, so
+names that are also ordinary std methods are excluded wholesale and a divergent
+engine call spelled `insert` is invisible
+([`host-drift.md`](../tooling/host-drift.md#tier-12---content-do-two-paired-kernels-call-the-same-engine)).
 
 Closed here: **which shipped scenes carry field-VM ops `4C EA` and `4C 52`** -
 one and three respectively, `map03` for the first and `geremi` / `ropeway` /
