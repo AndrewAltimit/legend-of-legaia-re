@@ -8,7 +8,13 @@
 -- (~600 KiB) and contains everything the AudioTraceFrame oracle needs:
 --
 --   - 512 KiB SPU RAM
---   - 512-byte raw SPU register file (incl. MainVol_L / MainVol_R / Reverb_Mode)
+--   - 512-byte raw SPU register file: the hardware window
+--     0x1F801C00..0x1F801DFF verbatim, so a register's byte offset into it
+--     is `addr - 0x1F801C00`. MainVol at 0x180/0x182, reverb depth at
+--     0x184/0x186, the per-voice reverb-enable mask EON at 0x198/0x19A,
+--     the work-area base at 0x1A2, SPUCNT at 0x1AA. There is no "reverb
+--     mode" register: 0x1AA is the control word, and reading it as one is
+--     what once made a capture look like it routed four voices.
 --   - 24 × Channel sub-messages (Chan::Data + ADSRInfo + ADSRInfoEx)
 --
 -- The probe walks the slice via FFI pointer arithmetic to find field 6,
@@ -29,7 +35,16 @@
 --
 -- Env vars:
 --   LEGAIA_SSTATE     save state to load (must be parked mid-BGM for a
---                     useful trace; default sstate1)
+--                     useful trace; default sstate1). Pick it by the track
+--                     it has LOADED, not by its scene: a state carries
+--                     whatever the playthrough left in `_DAT_8007BAC8`
+--                     (corroborated by the resolved index at 0x8007BA9C
+--                     against the pool base at 0x8007BC64), while an engine
+--                     trace of the same scene plays the id that scene's own
+--                     prescript selects with op 0x35. A town state reached
+--                     by walking in from the world map still holds the
+--                     overworld track, and comparing the two traces then
+--                     compares two different pieces of music.
 --   LEGAIA_OUT        output stream file (default audio_trace.bin)
 --   LEGAIA_FRAMES     captures to take (default 60)
 --   LEGAIA_INTERVAL   vsyncs between captures (default 1 = every vsync)
