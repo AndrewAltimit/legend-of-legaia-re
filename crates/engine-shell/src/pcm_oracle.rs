@@ -128,6 +128,13 @@ pub fn engine_spu_from_retail(psx_spu: &PsxSpu<'_>) -> Option<Spu> {
             spu.set_reverb_mode(mode);
         }
     }
+    // The depth the tank is mixed back in at. `vLOUT`/`vROUT` live at
+    // `0x1F801D84`/`0x86`, outside the 32-register preset block, so
+    // identifying the preset above says nothing about them; without this the
+    // retail reference renders Studio C at the engine's placeholder depth.
+    if let Some((l, r)) = psx_spu.reverb_output_volume() {
+        spu.reverb.set_output_volume(l, r);
+    }
     let reverb_mask = psx_spu.voice_reverb_mask().unwrap_or(0);
 
     let retail_voices = psx_spu.voices();

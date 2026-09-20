@@ -263,6 +263,19 @@ impl<'a> PsxSpu<'a> {
         Some((lo | (hi << 16)) & 0x00FF_FFFF)
     }
 
+    /// Reverb **output depth** `(vLOUT, vROUT)` - SPU registers
+    /// `0x1F801D84`/`0x1F801D86`, the wet-signal output volumes libspu's
+    /// `SpuSetReverbDepth` writes. These are *not* part of the 32-register
+    /// preset block ([`Self::reverb_registers`] starts at `0x1F801DC0`), so a
+    /// preset match says nothing about how loud the tank is mixed back in.
+    /// Signed Q15 in the SPU's usual voice-volume shape. `None` if the
+    /// register shadow wasn't captured.
+    pub fn reverb_output_volume(&self) -> Option<(i16, i16)> {
+        let l = self.reg_u16_at(0x1F80_1D84)? as i16;
+        let r = self.reg_u16_at(0x1F80_1D86)? as i16;
+        Some((l, r))
+    }
+
     /// Master volume `(left, right)` as the current accumulated output of
     /// mednafen's global sweep registers. Distinct from the libspu MVOL
     /// write that *drives* the sweep target - this is the post-sweep value
@@ -524,6 +537,30 @@ mod tests {
         let payload = build_save_with_spu(&[("SPUControl", 0x4000u16.to_le_bytes().to_vec())]);
         let save = SaveState::from_decompressed(payload).unwrap();
         assert_eq!(PsxSpu::new(&save).reverb_master_enabled(), Some(false));
+    }
+
+    /// The depth registers sit at `0x1F801D84`/`0x86` = `Regs[194]`/`[195]`,
+    /// well below the preset block that starts at `Regs[224]` - so a
+    /// coefficient match cannot be standing in for them.
+    #[test]
+    fn reverb_output_volume_reads_the_depth_registers() {
+        let mut regs = vec![0u8; 512];
+        regs[194 * 2..194 * 2 + 2].copy_from_slice(&0x3264u16.to_le_bytes());
+        regs[195 * 2..195 * 2 + 2].copy_from_slice(&0x3264u16.to_le_bytes());
+        // A preset-block word, to show the two windows do not overlap.
+        regs[224 * 2..224 * 2 + 2].copy_from_slice(&0x00E3u16.to_le_bytes());
+        let payload = build_save_with_spu(&[("Regs", regs)]);
+        let save = SaveState::from_decompressed(payload).unwrap();
+        let spu = PsxSpu::new(&save);
+        assert_eq!(spu.reverb_output_volume(), Some((0x3264, 0x3264)));
+        assert_eq!(spu.reverb_registers().unwrap()[0], 0x00E3);
+    }
+
+    #[test]
+    fn reverb_output_volume_absent_regs_returns_none() {
+        let payload = build_save_with_spu(&[("SPUControl", 0xC080u16.to_le_bytes().to_vec())]);
+        let save = SaveState::from_decompressed(payload).unwrap();
+        assert!(PsxSpu::new(&save).reverb_output_volume().is_none());
     }
 
     #[test]
