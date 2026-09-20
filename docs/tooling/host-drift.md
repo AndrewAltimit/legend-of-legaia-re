@@ -1630,6 +1630,55 @@ The generalisation: when two hosts share a builder whose output *degrades*
 rather than errors, the honest oracle runs the builder twice - once the right
 way, once the suspected wrong way - and asserts they differ.
 
+## Five shapes a side-by-side read finds that no tier fails on
+
+A domain-by-domain read of the three hosts' per-frame steps *and* draw passes,
+taken with every tier above green, sorts its findings into five shapes. Each
+is named here for the shape, with one worked anchor, because the shape is what
+the next sweep should look for - and because four of the five are invisible to
+every gate by construction.
+
+### One animation, two clocks
+
+The same kernel advanced on the simulation tick by one host and on the
+animation frame by the other. The two agree exactly at 60 fps and nowhere
+else, so nothing about the code is wrong to read and the difference only
+exists at run time. The name-entry caret is the plain case - native
+`window/hud.rs` steps it per sim tick, `crates/web-viewer/src/play_name_entry.rs`
+per animation frame - and the battle move-FX streak schedule and the
+target-cursor pulse phase are the same shape.
+
+### One decision, two inputs
+
+A per-frame predicate both hosts run, fed from different state. The
+camera-occlusion fade's arming gate is the anchor: the native window excludes
+the boot UI, the world map, the cutscene camera and the debug orbit, while
+`site/js/play-app.js` excludes only battle, the minigames and VR. Tier 3 pairs
+the *kernel*; the operand set is per host, so the gate is silent.
+
+### A GL state word the engine does not own
+
+The page sets some frame state in JS where the native window takes it from the
+world - the battle clear colour (`site/js/webgl-tmd.js`) is the sky on one
+host and a hard-coded near-black on the other, and the winding cull that
+retail's NCLIP performs is `disable(CULL_FACE)` there unconditionally. No Rust
+symbol is missing, so no tier can name it.
+
+### A whole pass one host has no uploader for
+
+Not wiring: a surface that exists on one host only, because the other has
+nothing to draw it with. These are the project-sized ones - the world-map
+entity and player-marker line overlay, the retail dance HUD frame on the play
+page, the Baka cabinet's digit strips and payout sheet.
+
+### A host-side handle the world does not hold
+
+A per-battle or per-scene resource each host allocates for itself, which the
+engine's own teardown cannot release because it never knew about it. The
+browser's summon actor seat is the worked example: `World::finish_battle`
+restores the engine actor table, the host-side slot index survives it, and the
+next fight hands the same seat out twice.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
