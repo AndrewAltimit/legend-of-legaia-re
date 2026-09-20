@@ -721,6 +721,55 @@ the readout's suppression exactly (see `ghidra/scripts/funcs/overlay_0897_801d0d
 Each host now answers only the term the world cannot: whether a host-side panel
 with no `World` state behind it owns the frame.
 
+## Tier 12 - content: do two paired kernels call the same engine?
+
+`check_frame_content` / `frame_kernel_pairs` in the same file,
+`[[frame_content]]` rows in `scripts/ci/ui-host-drift-waivers.toml`.
+
+Tier 11 pairs a frame path's kernels by **name** (or by an alias row). That
+answers "does each host take this step", and it is silent on what the step
+does on each side - which is exactly the question the pairing invites a reader
+to assume it answered. The case that proves the point was on the surface the
+whole time: the native window's `tick_field_prop_anims` was an **empty body**,
+`pub(super) fn tick_field_prop_anims(&mut self) {}`, aliased to the browser's
+`drive_npc_clips`, which drains the op-`0x4B` ANIMATE cues, advances every NPC
+clip player and drains the player move cues. A `{}` body pairs perfectly with
+anything, and the alias row's reason asserted that both sides "advance the
+scene's posed actors" - a sentence no line of native code supported. The
+window does that work; it does it inline in its own tick loop, which is a
+different claim, and the one the row makes now.
+
+This tier asks the next question with the only evidence a source scan carries:
+for each paired kernel, the set of **engine functions** each host's body
+reaches. Engine means the four wgpu-free crates both hosts link
+(`engine-core`, `engine-vm`, `engine-ui`, `engine-audio`). A host's own
+helpers are followed transitively, so a step spelled as five private methods
+is compared against a twin that inlines them.
+
+### What it proves, and the blind spot it is built on
+
+It proves that two paired bodies reach the same engine surface, or that the
+difference is written down with a reason and both lists. It does **not** prove
+they call it with the same arguments, in the same order, or under the same
+guard - those are tier 3's question and the side-by-side audit's, and a
+difference this tier cannot see is not evidence of agreement.
+
+The join is by name, and that carries one deliberate hole: nothing here can
+tell `world.clear()` from `Vec::clear()`. Names that are also ordinary std /
+collection / iterator methods are therefore excluded wholesale
+(`STD_METHOD_NAMES`), so a genuinely divergent engine call spelled `insert`
+is invisible. Stating the hole is the point - the alternative is a report
+where two thirds of every row is `len`, which is a report nobody reads.
+
+### The ratchet is the difference, not the pair
+
+A `[[frame_content]]` row carries the exact `native_only` / `web_only` lists
+it was written against. When the difference moves - a call added to either
+side, or one half closed - the row goes stale and fails, which is what stops a
+content waiver from outliving the thing it described. A row is not a licence
+for the difference; it is a statement of **where the other host does the same
+work**, in the form the waiver rules above require.
+
 ## Gaps the tiers were blind to, closed by reading the two hosts side by side
 
 One pass over both hosts, domain by domain, with every tier above green,
@@ -937,44 +986,68 @@ about these is contested.
 | Gap | Shape |
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
-| minigame effect pool | Only the native window owns one, so three side-channel steps have no browser twin. See [below](#the-minigame-side-channel-step-is-paired-its-contents-are-not). |
 
 ### The minigame side-channel step is paired; its contents are not
 
 Tier 11 pairs `tick_minigame_extras` (native) with `tick_minigame_ui` (page) as
 one frame kernel, which is true of the *step* and says nothing about the work
-inside it. Taken sub-step by sub-step, most of that work does reach both hosts,
-and the two that do not share one cause.
+inside it. Tier 12 is what measures the inside, and the pair carries a
+`[[frame_content]]` row with both difference lists. Taken sub-step by sub-step,
+most of that work does reach both hosts.
 
 | Native sub-step | Browser play page | Minigames page |
 |---|---|---|
 | `drain_minigame_sfx_cues` | `drain_minigame_sfx_cues_web` | per-game cue drain |
 | `stage_dance_hud_art` | `sync_dance_hud_residency` + `ensure_minigame_art` | `dance_art_*` exports |
-| `tick_dance_side` | **absent** (see below) | **absent** |
+| `tick_dance_side` | n/a - the spawns are the run's | n/a - the spawns are the run's |
 | `tick_fishing_actors` | pond session only | pond session only |
 | `tick_baka_chrome` | **absent** | **absent** |
 | `tick_muscle_hub` | `tick_muscle_hub` | `muscle_*` exports |
-| `minigame_fx.tick()` | **absent** | **absent** |
+| effect-pool ageing | `World::tick` | `World::tick` |
 
-The dance **count-in** banner is not one of the gaps, and the waiver row that
-said it was is corrected: it lives in world state
-(`World::minigames.dance_countin_banner`) and both browser surfaces draw it
-through the shared `engine_ui::ui_dance` kernels. The cast **lure** is not one
-either - the venue-attached `PondSession` runs it on every host, so the drift
-that makes the lure move is engine-side.
+The **effect-part pool** is no longer a native-only sink. It is
+`legaia_engine_core::minigame_fx::MinigameFxPool` on
+`World::minigames.fx`, aged inside `World::tick` (so every host that ticks
+the world drains the same parts), drawn through one builder
+(`engine-ui::minigame_fx::fx_part_draws`) that the native HUD, the play page's
+overlay composition and the minigames page's fishing canvas all run. The
+minigames page keeps its **own instance** of the same type rather than sharing
+the world's, because that page drives the session types directly and holds no
+`World` at all - same model, same bound, same ramp, one more owner.
 
-What is genuinely native-only is the **effect-part pool**
-(`window/minigame_fx.rs`), a host-side sink with no browser counterpart, plus
-the two producers that feed it: the dance sequence-clear banner and stars
-(`tick_dance_side`, via `dance::good_banner_spawn`) and the fishing venue's
-wander / line presentation actors. `tick_baka_chrome` is a third absence of the
-same shape - the chrome frame itself comes from
-`engine_core::baka_fighter_chrome`, so it is portable, but the draws it resolves
-want a pool to age them in.
+Three things the move settled that the old row had wrong:
 
-Closing this is a port of the pool, not a wiring change, which is why it is
-recorded here rather than waived: a waiver names a builder or a hook, and a
-pool is neither.
+**The dance sequence banner was never the pool's.** `DanceGame::judge_press`
+issues the three `FUN_801d3fd0` spawns into the **run's own** part pool when
+the human closes a chain, which is gameplay rather than host presentation. The
+native window spawned the same set a *second* time into its host pool and drew
+both lists, so every cleared sequence painted `GOOD!` and its two stars twice
+at one seat. The duplicate is gone; the run's parts are the only ones, and the
+play page draws them now - it had no emit site for them at all, while the
+minigames page had been drawing them from retail's own widget cells the whole
+time.
+
+**The fishing splash is a session edge, not a venue actor.** The strike splash
+spawns from the `Casting -> Fighting` phase edge, which every host sees, so
+`World::tick_fishing` spawns it and the venue's wander / line actors are not a
+prerequisite. What genuinely still needs those actors is the wander-retarget
+ripple and the catch-celebration bursts, because their *seats* come from
+actors only the play window installs - they spawn into the shared pool from
+there.
+
+**The pool does not borrow the dance's emit dispatch.**
+`legaia_engine_core::dance::sprite_part_emit` (`FUN_801d387c`) is the *dance*
+overlay's routine, and running the fishing overlay's parts through it would
+assert a shared draw dispatch the dump corpus does not show. A pool part's
+pair is stage pixels, already through whatever shift its own producer applies.
+The fade ramp is shared, because that ramp is the port's decision either way.
+
+`tick_baka_chrome` is the one sub-step with no browser twin. The chrome frame
+itself is portable (`engine_core::baka_fighter_chrome`); what it has no
+resolver for is the **draw**, which wants the animator `FUN_801D6310` to pick
+a clip index out of the runtime sprite archives `_DAT_8007B888` /
+`_DAT_8007B840` that no minigame host loads. The pool was named as that work's
+prerequisite and is now in place; the archives are not.
 
 ### A `web-ahead` builder is not by itself a gap
 

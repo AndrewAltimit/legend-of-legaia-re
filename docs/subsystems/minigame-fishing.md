@@ -763,8 +763,8 @@ The same host also runs the overlay's **actor-side frame**
 - a free-swimming fish (`fishing_actors::FishWander` - the `FUN_801d2278`
   facing step / wander re-roll / camera publish as one advancing object),
   steered by the held D-pad while the cast is idle and spawning its
-  retarget ripple (`fishing_chrome::ripple_spawn`) into the window's
-  minigame effect pool;
+  retarget ripple (`fishing_chrome::ripple_spawn`) into the shared minigame
+  effect pool (`engine-core::minigame_fx`, on `World::minigames.fx`);
 - the venue floor solve: the scene's `.MAP` extended footprint is read at
   entry (the `_DAT_1F8003EC` buffer) and the actor settles onto it each
   frame through `fishing_chrome::float_actor_tick` ->
