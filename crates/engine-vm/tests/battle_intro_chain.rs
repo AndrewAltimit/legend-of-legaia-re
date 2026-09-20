@@ -6,8 +6,10 @@
 //! `battle_intro_transition::tick_transition` is wired -
 //! `legaia_engine_core::World::tick_battle_intro` runs it once per frame for
 //! as long as the encounter session sits in its `Transition` phase. The five
-//! style kernels underneath it are not, and each carries a `NOT WIRED:` note
-//! naming what has to exist first.
+//! style kernels underneath it are not, and each carries an inertness
+//! disclosure naming what has to exist first. (Those markers live on the
+//! kernels; this file spells the token out nowhere, so a grep-driven wiring
+//! sweep does not pick a test up as a worklist row.)
 //!
 //! Those notes assert something checkable: that the missing pieces are the
 //! *working-set owner* and the *per-frame draw emitter*, and **not** the

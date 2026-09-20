@@ -32,6 +32,12 @@ pub struct MinigameState {
     /// ([`crate::world::World::fishing_exchange_buy`]). Hosts seed a new session's
     /// [`crate::fishing::FishingRecord`] from this cell.
     pub fishing_points: i32,
+    /// Persistent rod index (`0..`[`crate::fishing::ROD_KINDS`]), mirroring
+    /// retail's `_DAT_80084454`: the cell the rod / lure select screen writes
+    /// and the tension gauge divides by. The fishing bring-up re-points a
+    /// stale value at an owned rod before a session reads it - see
+    /// [`crate::world::World::resolve_fishing_entry_rod`].
+    pub fishing_rod: u32,
     /// Persistent lifetime cast counter, mirroring retail's `_DAT_80084460`.
     /// The band-4 gate reads it, and its low bit picks the sign of the cast
     /// lure's walk-grid drift
@@ -194,6 +200,7 @@ impl MinigameState {
             fishing: None,
             fishing_return_mode: SceneMode::Field,
             fishing_points: 0,
+            fishing_rod: 0,
             fishing_casts: 0,
             fishing_prizes_purchased: 0,
             fishing_exchange: None,

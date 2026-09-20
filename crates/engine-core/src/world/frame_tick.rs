@@ -2156,6 +2156,31 @@ impl World {
         self.mode = SceneMode::Fishing;
     }
 
+    /// Re-point the persistent rod cell at a rod the party actually holds, and
+    /// return it as a session's `rod_stat`.
+    ///
+    /// This is the fishing bring-up's own scan
+    /// ([`crate::fishing::entry_rod_index`], retail `FUN_801CF070` at
+    /// `0x801cf35c..0x801cf39c`) run against the live bag: it keeps
+    /// [`crate::world::MinigameState::fishing_rod`] when that rod is held,
+    /// otherwise steps forward with wrap, and lands on `0` for a party holding
+    /// no rod at all - so a stale save index never divides the tension gauge.
+    /// The result is written back, exactly as retail leaves it in
+    /// `_DAT_80084454`, which is the same cell the persistent HUD's rod row
+    /// reads.
+    ///
+    /// Both hosts reach this through the mode-24 door warp
+    /// (`SceneHost::enter_fishing_from_overlay`); the two debug launchers that
+    /// open a session without a field scene keep their own fixed stat.
+    pub fn resolve_fishing_entry_rod(&mut self) -> i32 {
+        let bag = &self.party.inventory;
+        let rod = crate::fishing::entry_rod_index(self.minigames.fishing_rod, |id| {
+            i32::from(bag.get(&(id as u8)).copied().unwrap_or(0))
+        });
+        self.minigames.fishing_rod = rod;
+        rod as i32
+    }
+
     /// Leave the fishing minigame and restore the interrupted mode, returning
     /// the session so the host can read the final [`FishingRecord`]. The
     /// record's point total is banked into the persistent
