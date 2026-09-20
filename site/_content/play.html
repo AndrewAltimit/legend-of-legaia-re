@@ -238,6 +238,7 @@
 }
 .play-save-status button:hover { border-color: var(--accent); }
 </style>
+<script src="js/audio-toggle.js"></script>
 <script src="js/rom-cache.js"></script>
 <script src="js/disc-info.js"></script>
 <script src="js/load-progress.js"></script>
@@ -1729,8 +1730,9 @@
 
   /* BGM volume. The engine's SPU mixer feeds a WebAudio `GainNode` inside
    * `WebAudioOut`; `audio_set_gain` is the live handle on it, in SLIDER
-   * units - what "1x" is worth on the node (`BGM_SLIDER_UNIT_GAIN`) lives
-   * WASM-side, so this page never holds the loudness number. The slider's
+   * units - the site's master trim (`window.LEGAIA_MASTER_TRIM`, applied
+   * once inside `WebAudioOut::set_gain`) is WASM-side, so this page never
+   * holds the loudness number. The slider's
    * HTML `value` is the same number the engine parks at `audio_init`
    * (`BGM_DEFAULT_GAIN`), so the control starts where the audio actually is
    * instead of jumping on first drag. Re-applied whenever the runtime is
@@ -1740,13 +1742,30 @@
   function applyVolume() {
     const v = parseFloat(volEl.value);
     volValEl.textContent = v === 0 ? 'mute' : `${v}x`;
+    /* The site-wide sound toggle (js/audio-toggle.js) gates every other
+     * browser audio path - the minigames page's BGM and cues, the media
+     * browser, the arts viewer. This page's engine output was the one that
+     * ignored it, so muting the site here left the scene's music playing.
+     * A mute is a zero on the same output node the slider drives; the
+     * slider keeps its own value, so un-muting restores the level. */
+    const on = !window.LegaiaSound || window.LegaiaSound.isSoundOn();
     const rt = window.__playRuntime;
     if (rt && typeof rt.audio_set_gain === 'function') {
-      try { rt.audio_set_gain(v); } catch (e) { /* audio not up yet */ }
+      try { rt.audio_set_gain(on ? v : 0); } catch (e) { /* audio not up yet */ }
     }
   }
   volEl.addEventListener('input', applyVolume);
   window.__playApplyVolume = applyVolume;
+  if (window.LegaiaSound) {
+    window.LegaiaSound.onChange(applyVolume);
+    /* The toggle button itself, beside the volume control, so the gate has a
+     * control on this page and not only on the pages that mount their own. */
+    const volLabel = volEl.closest('label');
+    if (volLabel && volLabel.parentNode) {
+      const btn = window.LegaiaSound.button();
+      if (btn) { btn.style.marginLeft = '0.4rem'; volLabel.parentNode.insertBefore(btn, volLabel.nextSibling); }
+    }
+  }
 
   /* Developer menu (the browser twin of the native window's LEGAIA_DEV_MENU
    * opt-in). Session-only by design: the checkbox starts unchecked on every
