@@ -678,6 +678,24 @@ Where to look next is in the entry's own strings: PROT 0978 opens with
 `f_read %d size %d KB` and **`FIELD BACK READ NOW`**, which reads as a
 background-read cover rather than an arena screen.
 
+#### The panel-still consumer is in the hub, not the battle overlay
+
+It is `FUN_801D00F8` in **PROT 0977** at file `+0x18E0`, and it emits two
+`POLY_FT4` quads that between them cover the whole 320x240 screen out of
+VRAM `(384, 0)..(704, 240)` - tpage `0x106` for the left 192 columns and
+`0x109` for the right 128. The full geometry, the ordering-table path and the
+fade byte are on
+[`ringside-still.md`](../formats/ringside-still.md#what-draws-it).
+
+Two things that search missed follow from where it turned out to be. The
+sampling primitives are `tp = 2` (16-bit direct), not the `tpage 0x0006` 4bpp
+family the sweep above found, so the two consumers of the page are different
+primitive kinds addressing the same VRAM. And the emitter sits in the
+**contest hub**, which is the screen a finished match returns to - so the
+still is armed by the battle-end teardown and drawn a mode later, by an image
+that is not resident when the arming runs. A census bracketed on one teardown
+cannot see it for that reason alone.
+
 ### Object 1 is trimmed by the loader (`_DAT_8007B64B`)
 
 Nothing in the arena's own code touches the backdrop. `_DAT_8007B864` - the

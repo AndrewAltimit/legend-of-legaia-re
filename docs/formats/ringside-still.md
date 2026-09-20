@@ -84,6 +84,46 @@ scan loses: the index is formed by `addiu` **in the `jal`'s delay slot**, and
 the comparison reads the character record through `lhu` at a `gp`-free absolute
 pair rather than through any table.
 
+## What draws it
+
+The upload puts the still in VRAM at `(384, 0)`; what puts it on screen is two
+textured quads in the contest hub, PROT `0977` (`arena_init`, slot-A base
+`0x801CE818`), emitted by `FUN_801D00F8` at file `+0x18E0`.
+
+That routine is a fork. `_DAT_801D1AE0` - zeroed in the hub's init at
+`0x801CEB54`, stored non-zero at `0x801CEC04` - selects between rebuilding the
+hub's live scene (six tiled prims through `FUN_801D08EC`, then a 320x240 fill)
+and re-presenting the still. On the still arm it writes two `POLY_FT4`
+primitives (GPU code `0x2C`, tag length 9 words) into the ordering table whose
+base it takes from the scratchpad block at `0x1F800314` (`+0xE0` = OT,
+`+0x8C` = the running primitive cursor), one `jal 0x8003D2C4` each:
+
+| | tpage | screen `(x0,y0)-(x3,y3)` | `u` span | VRAM `x` |
+|---|---|---|---|---|
+| quad 1 | `0x106` | `(0,-20) - (192,220)` | `0..192` | `384..576` |
+| quad 2 | `0x109` | `(192,-20) - (320,220)` | `0..128` | `576..704` |
+
+Both carry `v` `0..240`. Together they cover the whole 320x240 screen and
+sample VRAM `(384, 0)..(704, 240)` - the still's own rectangle, minus the
+bottom 16 rows the upload writes and the draw does not read.
+
+The routine's `a0` is clamped to `0..0xFF` and broadcast into all three colour
+bytes of each primitive's `code+rgb` word, so the caller's
+`*(0x801D1A7C)` is a **fade level** on the still rather than a selector; the
+call is skipped entirely when that word is zero.
+
+### Why a search for the rectangle did not find it
+
+Three consumers were excluded earlier on the finding that 33 sites disc-wide
+materialise `0x180` and none pairs it with `y = 0`. Both halves are true and
+the conclusion does not follow: **this emitter never materialises 384**. A
+textured primitive addresses VRAM through the packed `tpage` halfword, where
+the x coordinate is a *page index* - `384 / 64 = 6`, `576 / 64 = 9` - so the
+constants in the code are `0x106` and `0x109`, the `0x100` being `tp = 2`
+(16-bit direct colour). Searching the disc for those five words instead
+(`0x106..0x10A`, pages 6..10 at page-y 0) leaves one image holding more than
+one of them, and it is this one.
+
 ## Why it has no magic
 
 Nothing in the entry identifies it. Length is the only structural statement it
@@ -98,5 +138,7 @@ bytes.
 - [`tim.md`](tim.md) - the headered form the same pixels take everywhere else.
 - [`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md) - the
   owning module and the rest of its bundle.
+- [`renderer.md`](../subsystems/renderer.md) - the primitive vocabulary the two
+  quads above are written in.
 - [`byte-accounting.md`](../tooling/byte-accounting.md) - `asset account 1221`
   credits the four bands.
