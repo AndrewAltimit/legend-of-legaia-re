@@ -694,9 +694,17 @@ sampling primitives are `tp = 2` (16-bit direct), not the `tpage 0x0006` 4bpp
 family the sweep above found, so the two consumers of the page are different
 primitive kinds addressing the same VRAM. And the emitter sits in the
 **contest hub**, which is the screen a finished match returns to - so the
-still is armed by the battle-end teardown and drawn a mode later, by an image
-that is not resident when the arming runs. A census bracketed on one teardown
-cannot see it for that reason alone.
+still is drawn a mode later than it is loaded, by an image that is not
+resident when the load runs. A census bracketed on one teardown cannot see it
+for that reason alone.
+
+The arming is the hub's own, not the teardown's: `FUN_801CEA6C` forks on the
+arena word `_DAT_8007BAC0` and stores the still latch `_DAT_801D1AE0` zero on
+the first entry (where op `0x3E` left the word at zero) and `1` on every
+re-entry. A probe run that walks into the arena from `koin1` enters the
+emitter 79 times over 3600 vsyncs and takes the six-tile arm every time; the
+still arm needs a second visit. See
+[`ringside-still.md`](../formats/ringside-still.md#measured-live).
 
 ### Object 1 is trimmed by the loader (`_DAT_8007B64B`)
 

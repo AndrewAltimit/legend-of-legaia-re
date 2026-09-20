@@ -114,6 +114,46 @@ bytes of each primitive's `code+rgb` word, so the caller's
 `*(0x801D1A7C)` is a **fade level** on the still rather than a selector; the
 call is skipped entirely when that word is zero.
 
+### Measured live
+
+`scripts/pcsx-redux/autorun_w3b_dome_still.lua` taps the emitter entry, both
+fork arms and the two packet-fill sites (at each of which `a1` still holds
+that packet's base, so the `0x28` bytes are read straight out of the pool),
+and gates every hit on the image's own word at `0x801D00F8` so a run before
+`0977` pages in reports nothing rather than counting a stranger's code.
+
+On `minigame_muscle_dome_pcsx` the emitter is entered 79 times over 3600
+vsyncs, **every one on the six-tile arm**: `_DAT_801D1AE0` is zero for the
+whole first arena visit, so the still arm never runs and no primitive in the
+frame carries a 15-bit texture page. The one catalogued save with `0977`
+resident (`minigame_muscle_dome`) is in the same position - fork zero, fade
+`0x80` - and its ordering table decodes with no `tp = 2` family at all. The
+still is not a first-visit draw.
+
+Forcing the latch to `1` at the entry tap and letting the same run continue
+gives the arm 190 entries, and every one emits exactly the two packets this
+page describes: tpage `0x106` at screen `(0,-20)-(192,220)` and `0x109` at
+`(192,-20)-(320,220)`, `code+rgb` words `0x2C` with the fade byte in all
+three colour lanes (`0x2C040404` up to `0x2C808080` as the level ramps), and
+one caller throughout - `ra = 0x801D00B4`, the hub's `jal` at `0x801D00AC`.
+
+### When the latch is raised
+
+`_DAT_801D1AE0` is not written by the match teardown. It is written by the
+arena init `FUN_801CEA6C`, which tests the arena word `_DAT_8007BAC0`
+(`lw v1, -0x4540(s1)`, `s1 = 0x80080000`) and forks: on zero - the state
+field-VM op `0x3E` leaves when it warps into the minigame - it stores zero to
+the latch at `0x801CEB54` and `1` to the arena word; on non-zero it stores
+`s2 = 1` to the latch at `0x801CEC04`. So the still is a **re-entry** draw:
+the hub presents it when a finished round returns to a hub that has already
+been initialised once.
+
+`*(0x801D1A7C)` is a countdown as well as a level. The hub tail at
+`0x801D002C..0x801D0040` subtracts `2 x *(0x1F800393)` from it each frame and
+clamps at zero, and the call site guards on it (`beqz a0, 0x801D00B8` at
+`0x801D00A4`), so the still fades out over a bounded number of frames rather
+than holding for the whole hub screen.
+
 ### Why a search for the rectangle did not find it
 
 Three consumers were excluded earlier on the finding that 33 sites disc-wide
