@@ -1124,7 +1124,6 @@ pub(super) fn cmd_play_window_with_record(
         fishing_banners: Default::default(),
         fishing_banner_draws: Vec::new(),
         fishing_prev_phase: None,
-        dance_fx_score: 0,
         fish_wander: None,
         fish_line: None,
         fishing_floor: None,

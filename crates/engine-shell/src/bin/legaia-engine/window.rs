@@ -848,8 +848,6 @@ struct PlayWindowApp {
     // frames and the **door-warp** entry gets a count-in at all. The HUD
     // builder reads `dance_countin_banner` / `dance_tutorial_frame` off the
     // world.
-    /// Score high-water mark the sequence-banner spawn edges against.
-    dance_fx_score: u32,
     /// The fishing venue's free-swimming fish actor (idle/cast phases).
     fish_wander: Option<legaia_engine_core::fishing_actors::FishWander>,
     /// The reeling-line actor sim (hook -> fight -> celebration).

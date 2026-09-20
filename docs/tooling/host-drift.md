@@ -999,11 +999,13 @@ most of that work does reach both hosts.
 |---|---|---|
 | `drain_minigame_sfx_cues` | `drain_minigame_sfx_cues_web` | per-game cue drain |
 | `stage_dance_hud_art` | `sync_dance_hud_residency` + `ensure_minigame_art` | `dance_art_*` exports |
-| `tick_dance_side` | n/a - the spawns are the run's | n/a - the spawns are the run's |
 | `tick_fishing_actors` | pond session only | pond session only |
 | `tick_baka_chrome` | **absent** | **absent** |
 | `tick_muscle_hub` | `tick_muscle_hub` | `muscle_*` exports |
-| effect-pool ageing | `World::tick` | `World::tick` |
+| effect-pool ageing | `World::tick` | own pool, own tick |
+
+The native `tick_dance_side` sub-step is not in the table because it no
+longer exists: everything it did was the duplicate spawn below.
 
 The **effect-part pool** is no longer a native-only sink. It is
 `legaia_engine_core::minigame_fx::MinigameFxPool` on

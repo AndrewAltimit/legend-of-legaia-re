@@ -204,7 +204,6 @@ impl PlayWindowApp {
                 // its own, which is why the door-warp entry - the one a player
                 // reaches - had no count-in on either host.
                 self.session.host.world.enter_dance(game);
-                self.dance_fx_score = 0;
                 true
             }
             None => {
@@ -314,27 +313,6 @@ impl PlayWindowApp {
                 Ok(v) => self.uploaded_vram = Some(v),
                 Err(e) => log::error!("play-window: dance VRAM upload: {e:#}"),
             }
-        }
-    }
-
-    /// The dance side-channel frame.
-    ///
-    /// It has nothing left to spawn. The sequence-clear banner and its two
-    /// stars are **gameplay**, not host presentation: the judge itself issues
-    /// the three `FUN_801d3fd0` spawns into the run's own part pool
-    /// ([`legaia_engine_core::dance::DanceGame::judge_press`] ->
-    /// [`legaia_engine_core::dance::good_banner_spawn`]), which every host
-    /// draws off [`legaia_engine_core::dance::DanceGame::sprite_part_emits`].
-    /// This window used to spawn the same set a **second** time into its own
-    /// host-side pool and draw both lists, so every cleared sequence painted
-    /// `GOOD!` and its stars twice at one seat.
-    ///
-    /// The Disco King tutorial actor runs inside `World::tick_dance`, beside
-    /// the session, so both hosts step it from one kernel; its cues come out
-    /// through `drain_minigame_sfx_cues`.
-    pub(super) fn tick_dance_side(&mut self) {
-        if self.session.host.world.mode != SceneMode::Dance {
-            self.dance_fx_score = 0;
         }
     }
 
@@ -584,7 +562,6 @@ impl PlayWindowApp {
     pub(super) fn tick_minigame_extras(&mut self) {
         self.drain_minigame_sfx_cues();
         self.stage_dance_hud_art();
-        self.tick_dance_side();
         self.tick_fishing_actors();
         self.tick_baka_chrome();
         self.tick_muscle_hub();
