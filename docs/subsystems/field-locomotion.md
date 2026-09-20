@@ -477,6 +477,23 @@ For each probe the byte/sub-cell is derived as: `zc = (z>>6) + 2`, `xc = ((x + 0
 | `2` Z+ | `(−32,−63) (0,−63) (+32,−63)` |
 | `3` X+ | `(+64,−32) (+64,0) (+64,+32)` |
 
+**How far `DAT_801f21b4` runs, and what the rest of it is.** The locomotion
+reads four rows; the table carries **twelve**, `0x801F21B4..0x801F2274`, 192
+bytes. Its end is not a guess: `0x801F2274` is the next address in the image
+that anything references independently (a `lw`/`sw` variable at file
+`+0x2104` / `+0x2110`), and the row content stops being a footprint at exactly
+the same halfword. The twelve rows are three families of the same shape -
+rows `0..3` the cardinal footprint above; rows `4..5` two mixed rows pairing a
+`+64` lead with a `±32` lateral on the other axis; rows `6..9` the same four
+directions at a **smaller radius** (`±16` lateral, `48` ahead, `47` behind);
+rows `10..11` an eight-point `±64` ring with no lateral narrowing. Only the
+first family has a caller in the locomotion path.
+
+Do not read the enclosing byte run as one table. `0x801F21B4` is the head of
+the field overlay's **data segment** - file `0x2399C..0x25000`, 5732 bytes -
+and 231 distinct sites inside PROT 0897 form addresses in it. The probe table
+is the first 192 bytes of that segment, not its shape.
+
 `FUN_801cfc40(actor, scene, Δx, Δz, ex, ez)` walks the **collision candidate table** `DAT_801c93c8` (count `_DAT_8007b6b8`) and box-tests the probe point against each other actor.
 A **static entity** (`flags+0x10 & 0x1020000 == 0`) anchors at its **MAN object record** (`_DAT_1f8003ec + rec_idx[+0x60]*0x20`; anchor `= tile*128 + sub*16` from record bytes `+6`/`+7` and `+0xE`/`+0xF`, with a `flags+0x52 & 8` offset correction from record halfwords `+0`/`+4`) plus the actor's live `+0x14`/`+0x18`, and blocks within `±(0x40+0x10)` = **80 units** per axis (strict).
 A **moving actor** uses its live position with caller extents `±(0x40 + ex−0x18)` (the locomotion passes `ex = ez = 0` → ±40).
