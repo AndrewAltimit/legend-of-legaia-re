@@ -162,6 +162,16 @@ pub fn victory_message_count(overlay: &[u8]) -> usize {
     n
 }
 
+/// File offsets of the victory-message strings [`VICTORY_MSG_TABLE_VA`] points
+/// at, in table order - the pointers [`victory_message_count`] counts, resolved
+/// to offsets inside the supplied overlay image.
+pub fn victory_message_offsets(overlay: &[u8]) -> Vec<usize> {
+    (0..victory_message_count(overlay))
+        .filter_map(|n| read_va(overlay, VICTORY_MSG_TABLE_VA + (n as u32) * 4))
+        .filter_map(|p| p.checked_sub(MUSCLE_OVERLAY_BASE_VA).map(|o| o as usize))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

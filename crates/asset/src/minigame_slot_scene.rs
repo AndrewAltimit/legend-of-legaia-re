@@ -94,6 +94,12 @@ pub const LAMP_TABLE_OFFSET: usize = 0x4EE0;
 /// `DAT_801d3720` - the marquee panel + the two mascots (`FUN_801d08e4`).
 pub const MARQUEE_TABLE_OFFSET: usize = 0x4F08;
 
+/// Byte stride of one medallion / lamp record: a bare `SVECTOR`, which is how
+/// far apart the two tables sit (`MEDALLION_TABLE_OFFSET` to
+/// `LAMP_TABLE_OFFSET` to `MARQUEE_TABLE_OFFSET` is `0x28` each, and each holds
+/// [`LAMP_COUNT`] records).
+pub const LAMP_RECORD_STRIDE: usize = 8;
+
 /// Paylines: 3 horizontal + 2 diagonal.
 pub const PAYLINE_COUNT: usize = 5;
 /// Payline medallions / lamps: one per payline.

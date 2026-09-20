@@ -404,6 +404,17 @@ RANGES = {
     # and `overlay_0897_*`; the first is the same bytes under a capture-derived
     # name, the second is a VA collision with entirely different functions.
     "overlay_battle_action_0898": [("801f1ed4", "801f2160"), ("801f2160", "801f2410")],
+    # PROT 0977's arena init and its settlement routine, dumped from the BASED
+    # image. Both VAs already had a dump and neither was usable as a byte claim:
+    # the 0x801CEA6C one is a header-less "raw window" (no entry, no size), and
+    # the two dumps that DID carry headers inside its body - 0x801CEAC4 and
+    # 0x801CEF6C - assert entries that do not exist. Frame matching says so: the
+    # prologue at 0x801CEA6C (`addiu sp,sp,-0x50`) runs to the `jr ra` whose
+    # delay slot restores the same frame at 0x801CF070, so both of those VAs are
+    # interior, and the 1124 bytes between them carry no prologue and no
+    # `jr ra` at all. 0x801D0F60 is the opposite case - a real entry under a
+    # `jr ra` + delay slot, with only a header-less window over it.
+    "overlay_arena_init_0977": [("801cea6c", "801cf074"), ("801d0f60", "801d1184")],
     # The menu overlay's save sub-screen leaf, dumped from the BASED PROT 0899
     # image because the corpus's three existing dumps of this VA are capture-
     # named and carry no image the byte-attribution CSV can key on. That was

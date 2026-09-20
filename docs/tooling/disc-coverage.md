@@ -1155,6 +1155,24 @@ discriminating case - an image whose floor is still short after every
 unattributed extent is taken out has lost attributed coverage, and no amount of
 CSV lag explains it.
 
+#### Replacing a dump moves every image that aliases its VA
+
+The lag is stated above as a property of a dump that *lands*, and it is equally
+a property of one that is **replaced**. Superseding an interior-label dump with
+the frame-matched function that encloses it changes the extent set at that VA
+twice over: an extent leaves the corpus and a longer one arrives with no CSV
+row. The image the work was done on gains, and the images that merely *alias*
+those addresses see their extent set change under them - so the first `--check`
+after such a pass can report a regression on images the pass never touched, and
+the triage will not always absorb it, because the extents that moved belong to
+another image.
+
+The rule is the same one and it is cheap: regenerate the attribution before
+reading any figure after a dump pass, and only then decide whether a drop is
+real. Read the other way round, a floor that rises on the image whose dumps
+changed while neighbours fall is the signature of this shape rather than of lost
+coverage.
+
 ## Refreshing the landing-page tiles
 
 The site's homepage tiles are rendered from `scripts/ci/progress-metrics.json`,

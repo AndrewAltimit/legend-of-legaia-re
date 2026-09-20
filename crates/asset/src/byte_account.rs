@@ -2861,6 +2861,98 @@ fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_index: u32) {
         }
         sink.claim(off, end, owner, what);
     }
+    if prot_index == 898 {
+        claim_effect_proto_records(buf, sink);
+        claim_battle_overlay_strings(buf, sink);
+    }
+}
+
+/// The battle overlay's NUL-terminated UI strings, whose extents no fixed
+/// `count * stride` row can express.
+///
+/// Every address here is a `pub const` (or a pointer read from one), so this is
+/// the same kind of binding as [`pinned_overlay_tables`] - what differs is only
+/// that a C string's length is in its own bytes rather than in a table, so the
+/// extent is NUL-scanned from the pinned start instead of computed. Without
+/// that these read as `ascii_text` residue while the parser that consumes them
+/// names the exact byte they start at.
+fn claim_battle_overlay_strings(buf: &[u8], sink: &mut Sink) {
+    use crate::{battle_ui_strings as bui, muscle_dome as dome};
+    let base = bui::OVERLAY_BASE_VA;
+    let claim_cstr = |off: usize, what: String, sink: &mut Sink| {
+        let Some(tail) = buf.get(off..) else { return };
+        // A string with no terminator in the image is not a string - claim
+        // nothing rather than run to the end of the entry.
+        let Some(len) = tail.iter().position(|&b| b == 0) else {
+            sink.note(format!("{what}: no NUL terminator at {off:#x}"));
+            return;
+        };
+        sink.claim(off, off + len + 1, OWNER_STRING, what);
+    };
+    for (va, label) in bui::OVERLAY_LABELS {
+        let Some(off) = va.checked_sub(base).map(|o| o as usize) else {
+            continue;
+        };
+        claim_cstr(
+            off,
+            format!("battle UI label {label:?} (battle_ui_strings)"),
+            sink,
+        );
+    }
+    for (i, off) in dome::victory_message_offsets(buf).into_iter().enumerate() {
+        claim_cstr(
+            off,
+            format!("muscle-dome victory message {i} (muscle_dome)"),
+            sink,
+        );
+    }
+}
+
+/// The battle overlay's **effect-prototype record pool** - the bytes the
+/// `0x801F6324` pointer table points INTO, as distinct from the table itself.
+///
+/// The table has a pinned constant and a row in [`pinned_overlay_tables`], so
+/// the 61 pointers were credited while the 54 unique records they name were
+/// not: the pool read as one unbroken `low_entropy` residue run, which is how a
+/// fully decoded structure looks when only its index is claimed.
+/// [`crate::move_power::parse_effect_proto_records`] already decodes it to
+/// `[i16 model_sel][u16 reserved][move-VM bytecode]` part records
+/// ([`move-power.md`](../../../docs/formats/move-power.md)); this walks the same
+/// offsets and claims each record's extent.
+///
+/// A record ends where the next one begins - the pool is packed, with the last
+/// record bounded by the table itself rather than by the end of the entry, which
+/// is the one place `parse_records_at`'s generic bound is too generous for a
+/// byte claim.
+fn claim_effect_proto_records(buf: &[u8], sink: &mut Sink) {
+    use crate::move_power as mp;
+    let Some(aux) = mp::EffectAuxTables::parse(buf) else {
+        sink.note("no effect-prototype table: PROT 0898 structural guard failed");
+        return;
+    };
+    let table = mp::EFFECT_PROTO_TABLE_FILE_OFFSET;
+    let mut offs: Vec<usize> = (0..mp::EFFECT_AUX_TABLE_LEN as u8)
+        .filter_map(|i| aux.proto_record_offset(i))
+        .filter(|&f| f + 4 <= table)
+        .collect();
+    offs.sort_unstable();
+    offs.dedup();
+    for (i, &f) in offs.iter().enumerate() {
+        let end = offs.get(i + 1).copied().unwrap_or(table);
+        let model_sel = i16::from_le_bytes([buf[f], buf[f + 1]]);
+        sink.claim(
+            f,
+            end,
+            OWNER_RECORD,
+            format!("move-FX part record, model_sel {model_sel} (move_power)"),
+        );
+    }
+    sink.note(format!(
+        "{} unique effect-prototype record(s) behind the {}-entry \
+         0x801F6324 table (move_power::parse_effect_proto_records)",
+        offs.len(),
+        mp::EFFECT_AUX_TABLE_LEN
+    ));
 }
 
 /// Data-segment tables an overlay image carries at an offset a parser in this
@@ -2881,8 +2973,8 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
     use crate::{
         baka_opponents as baka, battle_attack_camera_table as atkcam, battle_camera_table as camh,
         battle_ui_strings as bui, dance_art, dance_cast, dance_chart, element_affinity as elem,
-        menu_windows as menu, minigame_slot_scene as slot, move_power as mp, muscle_dome as dome,
-        seru_side_effect as seru, slot_payout as payout,
+        menu_windows as menu, minigame_art as art, minigame_slot_scene as slot, move_power as mp,
+        muscle_dome as dome, seru_side_effect as seru, slot_payout as payout,
     };
     const SLOT_A: u32 = 0x801C_E818;
     let at = |va: u32| (va - SLOT_A) as usize;
@@ -3050,6 +3142,24 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
                 OWNER_RECORD,
                 "marquee cell table (minigame_slot_scene)",
             ),
+            (
+                slot::MEDALLION_TABLE_OFFSET,
+                slot::LAMP_COUNT * slot::LAMP_RECORD_STRIDE,
+                OWNER_RECORD,
+                "payline medallion positions (minigame_slot_scene)",
+            ),
+            (
+                slot::LAMP_TABLE_OFFSET,
+                slot::LAMP_COUNT * slot::LAMP_RECORD_STRIDE,
+                OWNER_RECORD,
+                "payline lamp positions (minigame_slot_scene)",
+            ),
+            (
+                art::SLOT_HUD_TABLE_OFFSET,
+                art::SLOT_HUD_RECORDS * art::SLOT_HUD_STRIDE,
+                OWNER_RECORD,
+                "slot-machine HUD sprite records (minigame_art)",
+            ),
         ],
         976 => vec![
             (
@@ -3069,6 +3179,18 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
                 baka::OPPONENT_COUNT * baka::OPPONENT_RECORD_STRIDE,
                 OWNER_RECORD,
                 "Baka Fighter opponent roster (baka_opponents)",
+            ),
+            (
+                (baka::ACTION_PTR_TABLE_VA - SLOT_A) as usize,
+                baka::OPPONENT_COUNT * 4,
+                OWNER_TOC,
+                "Baka Fighter per-fighter action-table pointers (baka_opponents)",
+            ),
+            (
+                baka::BLIT_RECT_TABLE_FILE_OFFSET,
+                baka::BLIT_RECT_COUNT * baka::BLIT_RECT_STRIDE,
+                OWNER_RECORD,
+                "Baka Fighter blit source rects (baka_opponents)",
             ),
         ],
         980 => vec![

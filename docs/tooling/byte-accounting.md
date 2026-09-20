@@ -345,22 +345,57 @@ the payload's magic is `pQES`. The owner comes from the **magic** where the two
 disagree: a type byte selects the runtime's handler, and an owner names what the
 bytes are.
 
-### A base fits, and the residue stays anyway
+### A base is not a dump, and a dump is not a caller
 
-PROT `0896` is the class's largest single unwalked run, and the reason it used
-to be given here was wrong. "No load base makes the image self-consistent" was
-a reading of one metric - a ratio over the image's `lui`+`addiu` pairs, which
-is blind to the call graph and which ranks a refuted base first on this image
+PROT `0896` produced two wrong readings in a row here, one about its base and
+one about what a base buys, and the second outlived the first.
+
+"No load base makes the image self-consistent" was a reading of one metric - a
+ratio over the image's `lui`+`addiu` pairs, which is blind to the call graph and
+which ranks a refuted base first on this image
 ([`static-overlay-pipeline.md`](static-overlay-pipeline.md#a-resolution-ratio-is-not-a-base-test)).
-The call-graph recovery lands on `0x801D4DF0`, and the entry now has a map row.
+The call-graph recovery lands on `0x801D4DF0`, and the entry has a map row.
 
-The residue does not move, and that is the point worth keeping. The parser for
-a code image's code is the dump corpus, and this image's code is linked against
-an executable this disc does not carry - zero of its 322 SCUS-range calls land
-on a `SCUS_942.54` function entry - so no dump of it exists and none can be
-taken from a capture. A base answers *where the bytes go*; it says nothing
-about whether anything has read them. The entry's 36,864 bytes stay
-`plausible_mips` residue with a walker selected and a base committed.
+What this page then said was that the residue does not move: a base answers
+*where the bytes go* and says nothing about whether anything has read them, so
+the whole entry would stay `plausible_mips` residue. The first half is true and
+the conclusion was not. The parser for a code image's code is the **dump
+corpus**, and a base is exactly what lets the image be imported and dumped -
+which is a separate step from recovering the base, and the step nobody had
+taken. Imported at `0x801D4DF0` the image's whole code region dumps, and the
+entry's accounted share rises accordingly; what remains is its data segment and
+byte-curve tail, not its code.
+
+The part of the old reading that survives is about *callers*, not about
+coverage: this image's code is linked against an executable this disc does not
+carry - none of its SCUS-range calls lands on a `SCUS_942.54` function entry -
+so no capture can show it resident and no port is owed for any of it. A dump
+credits bytes; it does not make them reachable.
+
+### A pointer table is not its pool
+
+`pinned_overlay_tables` binds a table by `offset + count * stride`, and a table
+of **pointers** then reads as fully accounted while everything it points at
+stays residue. The battle overlay's effect-prototype table `0x801F6324` was that
+case: its sixty-one `u32`s were claimed and the fifty-four unique records behind
+them - three and a half kilobytes, packed, ending at the table itself - ranked as
+one unbroken `low_entropy` run, which is what a completely decoded structure
+looks like when only its index is claimed.
+[`move_power::parse_effect_proto_records`](../formats/move-power.md#effect-prototype-records---the-spawn-path)
+had been decoding them the whole time.
+
+Two properties of the pool make the claim exact rather than a guess about
+lengths: the records are packed, so each one ends where the next begins, and the
+last is bounded by the table rather than by the end of the entry - which is the
+one place the shared record walker's generic bound is too generous for a byte
+claim.
+
+The sibling shape is a **NUL-terminated string**, where the length is in the
+bytes rather than in any table. The battle overlay's UI labels and the Muscle
+Dome victory messages each have a pinned start and no stride at all, so the
+walker NUL-scans from the pinned offset and claims nothing when there is no
+terminator in the image. Same rule as the tables: the start is a `pub const` of
+the module that reads it, and only the extent comes from the disc.
 
 #### A filename is not corroboration on its own
 
