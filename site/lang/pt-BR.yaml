@@ -1,7 +1,7 @@
 format: 'legaia-text-pack-v1'
 language: 'pt-BR'
 game: 'Legend of Legaia (USA) SCUS-94254'
-notes: 'Brazilian Portuguese (Portugues do Brasil) community pack: the fan translation by somentedan (published by joao13traducoes as a patch for the Spanish disc), lifted onto USA coordinates with translate lift-official. Item, magic and art names abbreviated to their byte budgets; pause / battle menu labels added. Holds every name and the scene/event dialog lines that fit the USA disc''s sector-packed scenes in place (about two fifths of the script) - the other lines stay English. ASCII fold (the retail font has no accent glyphs); source-free distributable shape.'
+notes: 'Brazilian Portuguese (Portugues do Brasil) community pack: the fan translation by somentedan (published by joao13traducoes as a patch for the Spanish disc), lifted onto USA coordinates with translate lift-official. Item, magic, art and accessory names and descriptions abbreviated to their byte budgets; pause / battle menu labels added. Holds every name and the scene/event dialog lines that fit the USA disc''s sector-packed scenes in place (about two fifths of the script) - the other lines stay English. ASCII fold (the retail font has no accent glyphs); source-free distributable shape.'
 contributors:
 - 'somentedan (translation)'
 - 'joao13traducoes (publication)'
@@ -612,15 +612,45 @@ sections:
   - key: 'scus:str:0x80011240'
     translation: 'Ganha pontos por|5% do preco de compra.'
     budget: 51
+  - key: 'scus:str:0x800115f8'
+    translation: 'Abre a Sala do Seru Mau|sob o Castelo Ratayu.'
+    budget: 47
   - key: 'scus:str:0x80011638'
     translation: 'Bomba com poderes.|Use em Nivora.'
     budget: 43
   - key: 'scus:str:0x80011674'
     translation: 'Chave que abre a|porta para Uru Mais.'
     budget: 39
+  - key: 'scus:str:0x800116a8'
+    translation: 'Ingrediente da|Bomba Espaco-Tempo.'
+    budget: 35
+  - key: 'scus:str:0x800116dc'
+    translation: 'Partitura de uma|cancao especial.'
+    budget: 39
+  - key: 'scus:str:0x80011710'
+    translation: 'Espada magica de|um Seru morto.'
+    budget: 35
+  - key: 'scus:str:0x80011744'
+    translation: 'Em forma de ovo, para o|Ra-Seru se proteger.'
+    budget: 51
+  - key: 'scus:str:0x80011778'
+    translation: 'Flauta simples|usada pelos Soren.'
+    budget: 35
+  - key: 'scus:str:0x800117a8'
+    translation: 'Achado na Praca|Guerreiro.'
+    budget: 27
+  - key: 'scus:str:0x800117d8'
+    translation: 'Lampada estranha que|guarda a Chama Seru.'
+    budget: 43
   - key: 'scus:str:0x80011810'
     translation: 'Joia estranha que|contem energia negativa.'
     budget: 43
+  - key: 'scus:str:0x80011848'
+    translation: 'Chave do Portao|Oeste de Ratayu'
+    budget: 35
+  - key: 'scus:str:0x8001187c'
+    translation: 'Chave da porta|do Monte Letona'
+    budget: 39
   - key: 'scus:str:0x800118b0'
     translation: 'Pao saboroso preferido|pelos sabios.'
     budget: 47
@@ -642,6 +672,12 @@ sections:
   - key: 'scus:str:0x800119f0'
     translation: 'Um pingente de Mei.'
     budget: 19
+  - key: 'scus:str:0x80011a14'
+    translation: 'Achado no Bosque|Voz Oeste.'
+    budget: 27
+  - key: 'scus:str:0x80011a3c'
+    translation: 'Arranca o mato que|bloqueia o caminho.'
+    budget: 39
   - key: 'scus:str:0x80011a70'
     translation: 'Acelera o crescimento de|uma planta especifica.'
     budget: 47
@@ -651,15 +687,24 @@ sections:
   - key: 'scus:str:0x80011adc'
     translation: 'Chave que abre a|Porta da Montanha.'
     budget: 35
+  - key: 'scus:str:0x80011b10'
+    translation: 'Chave que abre a|Porta Estelar.'
+    budget: 31
   - key: 'scus:str:0x80011b3c'
     translation: 'Chave que abre a|Porta do Raio.'
     budget: 39
+  - key: 'scus:str:0x80011b74'
+    translation: 'Chave da Porta|do Amanhecer.'
+    budget: 35
   - key: 'scus:str:0x80011bb4'
     translation: 'Vara de pesca que|faz milagres.'
     budget: 43
   - key: 'scus:str:0x80011bf0'
     translation: 'Vara de pesca cara|e de marca.'
     budget: 39
+  - key: 'scus:str:0x80011c44'
+    translation: 'Pesca em|aguas profundas.'
+    budget: 31
   - key: 'scus:str:0x80011c70'
     translation: 'Equip. de pesca p/|aguas normais.'
     budget: 39
@@ -681,15 +726,72 @@ sections:
   - key: 'scus:str:0x80011e18'
     translation: 'Livro de hiperartes.|Para Ozma.'
     budget: 31
+  - key: 'scus:str:0x80011e68'
+    translation: 'Livro de Hiperartes|para Terra.'
+    budget: 31
   - key: 'scus:str:0x80011eb4'
     translation: 'Livro de hiperartes.|Para Meta.'
     budget: 31
+  - key: 'scus:str:0x80011ee0'
+    translation: 'Sobe todos os status|na batalha. Aliado.'
+    budget: 43
+  - key: 'scus:str:0x80011f1c'
+    translation: 'Sobe a velocidade|na batalha. Aliado.'
+    budget: 39
+  - key: 'scus:str:0x80011f54'
+    translation: 'Sobe a defesa|na batalha. Aliado.'
+    budget: 39
+  - key: 'scus:str:0x80011f8c'
+    translation: 'Sobe o poder de ataque|na batalha. Aliado.'
+    budget: 47
   - key: 'scus:str:0x80011fcc'
     translation: 'Diminui a taxa de|encontros por um tempo.'
     budget: 47
+  - key: 'scus:str:0x80011ffc'
+    translation: 'Teleporta a|outra cidade.'
+    budget: 27
+  - key: 'scus:str:0x80012028'
+    translation: 'Teleporta|para fora.'
+    budget: 27
+  - key: 'scus:str:0x80012074'
+    translation: 'INT +4. Aliado.'
+    budget: 23
+  - key: 'scus:str:0x8001209c'
+    translation: 'VEL +4. Aliado.'
+    budget: 15
   - key: 'scus:str:0x800120b8'
     translation: 'Defesa +4. Aliado.'
     budget: 19
+  - key: 'scus:str:0x8001211c'
+    translation: 'Barra de acao maior|na batalha. Aliado.'
+    budget: 43
+  - key: 'scus:str:0x80012154'
+    translation: 'Revive. Aliado.'
+    budget: 19
+  - key: 'scus:str:0x80012168'
+    translation: 'Cura status.|Aliado.'
+    budget: 23
+  - key: 'scus:str:0x800121ac'
+    translation: 'Recupera 200PM.|Aliado.'
+    budget: 23
+  - key: 'scus:str:0x800121d0'
+    translation: '+50 PM. Aliado.'
+    budget: 19
+  - key: 'scus:str:0x800121f0'
+    translation: '+800 PS.|Todos aliados.'
+    budget: 27
+  - key: 'scus:str:0x8001221c'
+    translation: '+200 PS.|Todos aliados.'
+    budget: 27
+  - key: 'scus:str:0x80012248'
+    translation: 'PS ao maximo.|Aliado.'
+    budget: 23
+  - key: 'scus:str:0x80012270'
+    translation: '+800 PS. Aliado.'
+    budget: 23
+  - key: 'scus:str:0x80012298'
+    translation: '+200 PS. Aliado.'
+    budget: 23
   - key: 'scus:str:0x80012300'
     translation: 'Acessorio'
     budget: 11
@@ -702,12 +804,18 @@ sections:
   - key: 'scus:str:0x800123bc'
     translation: 'Ovo Ra-Seru de Terra.|Parece uma joia.'
     budget: 43
+  - key: 'scus:str:0x800123f4'
+    translation: 'Status +4. Aliado.'
+    budget: 19
   - key: 'scus:str:0x80012418'
     translation: 'Anel com o emblema|real de Conkram.'
     budget: 35
   - key: 'scus:str:0x8001245c'
     translation: 'Carta p/ a familia|de Zalan em Vidna.'
     budget: 39
+  - key: 'scus:str:0x800124d0'
+    translation: 'Sobe os status.'
+    budget: 19
   spells:
   - key: 'scus:str:0x80012aec'
     translation: 'Esporo venenoso'
@@ -1061,7 +1169,7 @@ sections:
     translation: 'Ilusao Onirica|Ataca todos.'
     budget: 35
   - key: 'scus:str:0x8001339c'
-    translation: 'Olhos Sagrados|Cura HP dos aliados.'
+    translation: 'Olhos Sagrados|Cura PS dos aliados.'
     budget: 35
   - key: 'scus:str:0x800133f4'
     translation: 'Blaster Final|Mata ou ataca.'
@@ -1242,30 +1350,66 @@ sections:
     translation: 'Golpe Fogo'
     budget: 11
   accessory_passives:
+  - key: 'scus:str:0x80014290'
+    translation: 'Carta Secr.'
+    budget: 11
   - key: 'scus:str:0x8001429c'
     translation: 'Ganhe pontos de 10% do|preco de compra.'
     budget: 51
+  - key: 'scus:str:0x800142d0'
+    translation: 'Reembolso'
+    budget: 11
   - key: 'scus:str:0x800142dc'
     translation: 'So encontros Seru.'
     budget: 23
   - key: 'scus:str:0x800142f4'
     translation: 'Encontros Seru'
     budget: 15
+  - key: 'scus:str:0x80014304'
+    translation: 'Menos encontros|aleatorios.'
+    budget: 27
   - key: 'scus:str:0x80014320'
     translation: 'Menos encontros'
     budget: 15
+  - key: 'scus:str:0x80014330'
+    translation: 'Mais encontros|aleatorios.'
+    budget: 27
   - key: 'scus:str:0x8001434c'
     translation: 'Mais encontros'
     budget: 15
+  - key: 'scus:str:0x8001435c'
+    translation: 'Ganha PA ao andar|pelo campo.'
+    budget: 35
+  - key: 'scus:str:0x80014380'
+    translation: 'Recupera PM ao|andar no campo.'
+    budget: 31
+  - key: 'scus:str:0x800143a0'
+    translation: 'Recupera PS ao|andar no campo.'
+    budget: 31
+  - key: 'scus:str:0x800143c0'
+    translation: 'Fuga garantida (menos|inimigos fortes).'
+    budget: 39
   - key: 'scus:str:0x800143f8'
     translation: 'Impede que o inimigo|fuja.'
     budget: 31
+  - key: 'scus:str:0x80014418'
+    translation: 'Sem Fuga'
+    budget: 11
   - key: 'scus:str:0x80014424'
     translation: 'Aumenta a defesa ao|fugir.'
     budget: 31
+  - key: 'scus:str:0x80014450'
+    translation: 'Aumenta a chance|de fugir.'
+    budget: 39
   - key: 'scus:str:0x80014488'
     translation: 'Diminui a chance do inimigo|te emboscar.'
     budget: 47
+  - key: 'scus:str:0x800144c4'
+    translation: 'Aliados atacam|primeiro mais vezes.'
+    budget: 43
+  - key: 'scus:str:0x800144f0'
+    translation: '1o Ataque'
+    budget: 11
   - key: 'scus:str:0x800144fc'
     translation: 'Aumenta o indice de obter|itens pos-batalha.'
     budget: 47
@@ -1278,6 +1422,15 @@ sections:
   - key: 'scus:str:0x8001456c'
     translation: 'Obtem mais experiencia|pos-batalha.'
     budget: 35
+  - key: 'scus:str:0x8001459c'
+    translation: 'Acumula mais|magia.'
+    budget: 23
+  - key: 'scus:str:0x800145c0'
+    translation: 'Conduta|imprevisivel.'
+    budget: 23
+  - key: 'scus:str:0x800145d8'
+    translation: 'Aumenta o ataque|das Artes.'
+    budget: 35
   - key: 'scus:str:0x80014608'
     translation: 'Consome 50% de PA'
     budget: 19
@@ -1287,6 +1440,15 @@ sections:
   - key: 'scus:str:0x80014640'
     translation: 'PM maximos'
     budget: 11
+  - key: 'scus:str:0x8001464c'
+    translation: 'Acumulo de PA +25%'
+    budget: 23
+  - key: 'scus:str:0x80014670'
+    translation: 'Acumulo de PA +10%'
+    budget: 23
+  - key: 'scus:str:0x80014694'
+    translation: 'PS ao maximo|quando chegam a 0.'
+    budget: 35
   - key: 'scus:str:0x800146b8'
     translation: 'Cura final'
     budget: 11
@@ -1302,21 +1464,96 @@ sections:
   - key: 'scus:str:0x80014718'
     translation: 'PS depois'
     budget: 11
+  - key: 'scus:str:0x80014724'
+    translation: 'Aumenta a defesa|contra todo poder.'
+    budget: 39
+  - key: 'scus:str:0x8001474c'
+    translation: 'Guarda Tudo'
+    budget: 11
+  - key: 'scus:str:0x80014758'
+    translation: 'Aumenta a defesa|contra as Trevas.'
+    budget: 39
+  - key: 'scus:str:0x80014780'
+    translation: 'Anti-Trevas'
+    budget: 11
   - key: 'scus:str:0x8001478c'
     translation: 'Aumenta a defesa contra|poderes de luz.'
     budget: 39
+  - key: 'scus:str:0x800147b4'
+    translation: 'Anti-Luz'
+    budget: 11
   - key: 'scus:str:0x800147c0'
     translation: 'Aumenta a defesa contra|poderes de raio.'
     budget: 43
   - key: 'scus:str:0x800147ec'
     translation: 'Guarda do raio'
     budget: 15
+  - key: 'scus:str:0x800147fc'
+    translation: 'Aumenta a defesa|contra o Vento.'
+    budget: 39
+  - key: 'scus:str:0x80014824'
+    translation: 'Anti-Vento'
+    budget: 11
+  - key: 'scus:str:0x80014830'
+    translation: 'Aumenta a defesa|contra o Fogo.'
+    budget: 39
+  - key: 'scus:str:0x80014858'
+    translation: 'Anti-Fogo'
+    budget: 11
+  - key: 'scus:str:0x80014864'
+    translation: 'Aumenta a defesa|contra a Agua.'
+    budget: 39
+  - key: 'scus:str:0x8001488c'
+    translation: 'Anti-Agua'
+    budget: 11
+  - key: 'scus:str:0x80014898'
+    translation: 'Aumenta a defesa|contra a Terra.'
+    budget: 39
+  - key: 'scus:str:0x800148c0'
+    translation: 'Anti-Terra'
+    budget: 11
+  - key: 'scus:str:0x800148cc'
+    translation: 'Anula todos os|status anormais.'
+    budget: 31
   - key: 'scus:str:0x800148ec'
     translation: 'Guarda mestre'
     budget: 15
+  - key: 'scus:str:0x800148fc'
+    translation: 'Anula ataques de|paralisia.'
+    budget: 27
+  - key: 'scus:str:0x80014918'
+    translation: 'Anti-Paral.'
+    budget: 11
+  - key: 'scus:str:0x80014924'
+    translation: 'Anula ataques|de pedra.'
+    budget: 27
+  - key: 'scus:str:0x80014940'
+    translation: 'Anti-Pedra'
+    budget: 11
+  - key: 'scus:str:0x8001494c'
+    translation: 'Anula ataques|de maldicao.'
+    budget: 27
+  - key: 'scus:str:0x80014968'
+    translation: 'Anti-Praga'
+    budget: 11
+  - key: 'scus:str:0x80014974'
+    translation: 'Anula ataques|de apodrecer.'
+    budget: 27
+  - key: 'scus:str:0x80014990'
+    translation: 'Anti-Podre'
+    budget: 11
   - key: 'scus:str:0x8001499c'
     translation: 'Anula ataques de veneno|e toxinas.'
     budget: 39
+  - key: 'scus:str:0x800149c4'
+    translation: 'Anti-Veneno 2'
+    budget: 15
+  - key: 'scus:str:0x800149d4'
+    translation: 'Anula ataques|de veneno.'
+    budget: 27
+  - key: 'scus:str:0x800149f0'
+    translation: 'Anti-Veneno 1'
+    budget: 15
   - key: 'scus:str:0x80014a00'
     translation: 'Nem voce nem seu inimigo|podem bloquear.'
     budget: 47
@@ -1344,6 +1581,9 @@ sections:
   - key: 'scus:str:0x80014b68'
     translation: 'Penetra na defesa|do inimigo.'
     budget: 31
+  - key: 'scus:str:0x80014b88'
+    translation: 'Ataque Guarda'
+    budget: 15
   - key: 'scus:str:0x80014b98'
     translation: 'Ataca 2x seguidas.'
     budget: 23
@@ -1356,6 +1596,12 @@ sections:
   - key: 'scus:str:0x80014bfc'
     translation: 'Aumenta VEL em 20%'
     budget: 19
+  - key: 'scus:str:0x80014c1c'
+    translation: 'DFS e DFI +20%'
+    budget: 23
+  - key: 'scus:str:0x80014c34'
+    translation: 'Impulso DFS/DFI'
+    budget: 15
   - key: 'scus:str:0x80014c44'
     translation: 'Aumenta DFI em 20%'
     budget: 19
@@ -1370,6 +1616,18 @@ sections:
     budget: 19
   - key: 'scus:str:0x80014cc8'
     translation: 'Consome 25% de PM'
+    budget: 19
+  - key: 'scus:str:0x80014cec'
+    translation: 'PM maximo +25%'
+    budget: 19
+  - key: 'scus:str:0x80014d0c'
+    translation: 'PM maximo +10%'
+    budget: 19
+  - key: 'scus:str:0x80014d2c'
+    translation: 'PS maximo +25%'
+    budget: 19
+  - key: 'scus:str:0x80014d4c'
+    translation: 'PS maximo +10%'
     budget: 19
   scene_dialog:
   - key: 'man:4:0x210'
@@ -32965,7 +33223,7 @@ sections:
     translation: 'Imediato'
     budget: 11
   - key: 'ui:899:0x801ce83c'
-    translation: 'Exibir HP no campo'
+    translation: 'Exibir PS no campo'
     budget: 19
   - key: 'ui:899:0x801ce850'
     translation: '  Encontros'
@@ -33139,7 +33397,7 @@ sections:
     translation: '@Melhor equip.'
     budget: 15
   - key: 'ui:899:0x801ceaec'
-    translation: '@MP gasto'
+    translation: '@PM gasto'
     budget: 11
   - key: 'ui:899:0x801ceaf8'
     translation: '@Condicao'
@@ -33160,7 +33418,7 @@ sections:
     translation: '@   Sem magias.'
     budget: 23
   - key: 'ui:899:0x801ceb58'
-    translation: '@AP gasto'
+    translation: '@PA gasto'
     budget: 11
   - key: 'ui:899:0x801ceb64'
     translation: '@Comando:'
