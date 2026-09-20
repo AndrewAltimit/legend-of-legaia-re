@@ -280,6 +280,55 @@ fn apply_spell_outcome_zeroes_caster_mp_after_heal() {
     }
 }
 
+/// The group flow (retail sub-screen `0x10`, `FUN_801D9280`): a spell whose
+/// stats `+2` byte carries bit `0x20` skips the target picker entirely and
+/// heals **every** party row on one confirm. Before the flow existed the same
+/// cast went through the picker and healed one member.
+#[test]
+fn a_group_heal_skips_the_picker_and_heals_the_whole_party() {
+    let mut world = fresh_world();
+    // Wound every member by a different amount so a single-target heal
+    // cannot be mistaken for the group one.
+    for (i, member) in world.party.roster.members.iter_mut().enumerate() {
+        let mut hms = member.hp_mp_sp();
+        hms.hp_cur = 10 + i as u16 * 5;
+        member.set_hp_mp_sp(hms);
+    }
+    // Caster 0 knows the vanilla "Heal All" (id 0x11, AllAllies / HealAll 60).
+    let mut spells = world.party.roster.members[0].spell_list();
+    spells.count = 1;
+    spells.ids[0] = 0x11;
+    world.party.roster.members[0].set_spell_list(spells);
+
+    let mut sub = build(FieldMenuRow::Magic, &world, &OptionsState::default());
+    sub.tick_pad_edge(PadButton::Cross.mask()); // pick caster 0
+    sub.tick_pad_edge(PadButton::Cross.mask()); // confirm the spell -> group flow
+    let FieldMenuSubsession::Spells(s) = &sub else {
+        panic!("expected Spells sub");
+    };
+    assert!(
+        !s.is_done(),
+        "the group flow is its own confirm screen, not an instant commit"
+    );
+    sub.tick_pad_edge(PadButton::Cross.mask()); // commit the group cast
+    let FieldMenuSubsession::Spells(s) = &sub else {
+        panic!("expected Spells sub");
+    };
+    assert!(s.is_done(), "the group confirm resolves the cast");
+    apply_spell_outcome(s, &mut world);
+
+    for (i, member) in world.party.roster.members.iter().enumerate() {
+        let hms = member.hp_mp_sp();
+        assert_eq!(
+            hms.hp_cur,
+            10 + i as u16 * 5 + 60,
+            "member {i} takes the whole 60-point grant"
+        );
+    }
+    // MP is billed once, to the caster, not once per member.
+    assert_eq!(world.party.roster.members[0].hp_mp_sp().mp_cur, 12 - 8);
+}
+
 /// The menu-cast leveling arm (`FUN_800402F4` HP-heal arms): a full-power
 /// menu heal accrues +12 spell XP into the caster record's `+0x8` array,
 /// crosses the `0x8007656C` threshold, bumps the `+0x161` level byte and

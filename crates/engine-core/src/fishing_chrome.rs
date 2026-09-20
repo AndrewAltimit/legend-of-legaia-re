@@ -195,9 +195,11 @@ pub const SPLASH_SUB_BLOCK_BIT: i32 = 0x1000;
 /// Mask that carries the spread in the low bits of the same argument.
 pub const SPLASH_SPREAD_MASK: i32 = 0xFFF;
 
-// Wired: the play window's minigame effect pool hosts the burst - the hook
-// edge spawns the three parts at the strike point and the pool ages / draws
-// them (`window/minigame_fx.rs`).
+// Wired: the SESSION's own hook edge spawns the burst -
+// `World::tick_fishing` on the `Casting -> Fighting` transition, and the
+// minigames page on its `PondEvent::Splash` - into
+// [`crate::minigame_fx::MinigameFxPool`], which ages the three parts and
+// hands them to whichever host is drawing.
 /// PORT: FUN_801D7A5C - the three-part splash burst.
 ///
 /// `(x, y, sprite_id, packed)` spawns the same part three times at one point
@@ -332,7 +334,9 @@ pub struct RippleSpawn {
 }
 
 // Wired: the play window spawns the wander actor's retarget ripple through
-// this into its minigame effect pool (`window/minigames.rs`).
+// this into the shared [`crate::minigame_fx::MinigameFxPool`]
+// (`window/minigames.rs`). The seat is the wander actor's, and only that
+// host installs one, so the SPAWN stays native while the pool does not.
 /// PORT: FUN_801D7C30 - the ripple spawn wrapper.
 ///
 /// `(actor, mode)`: a non-zero `mode` does nothing at all. Mode zero spawns

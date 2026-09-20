@@ -103,6 +103,26 @@ It also lifts one of the structural exclusions below: `engine-render` is a hard
 wgpu link the browser composition ladder cannot carry, and the native window
 *is* that link, so a spawned `play-window` run reports executed regions there.
 
+### A ladder that fails and a ladder nobody exported are the same line
+
+`replay-port-coverage.py` opens its report with a `PARTIAL UNION` line naming
+every `CANONICAL_LADDERS` member with no `cov-*.json`, and that line cannot
+tell the two reasons apart. A member nobody exported and a member whose run
+**failed** both leave no export behind, so both arrive in the same list, and
+the second reads as an export somebody forgot rather than as a red test.
+
+The remedies are opposite. An unexported ladder is one command away from
+joining the union. A failing one silences its whole contribution until the
+failure is fixed - every row it was written to convert keeps reading *never
+entered*, and the page's verdict for those rows ("a ladder reaches it") is
+true of the source and false of the measurement.
+
+So a union taken while a member is red is a different number, not a smaller
+one, in the same way the module docstring already says a union over a subset
+is. Read the `PARTIAL UNION` line against the export run's own log before
+reading the never-entered set: a member that appears there *and* has a failing
+run is the one to fix first.
+
 ### A tag between two functions is scored by the next function that has regions
 
 `FileCoverage.verdict_at` resolves a `// PORT:` line to the enclosing function
@@ -526,6 +546,39 @@ already taken this exit is not work a ladder can convert. The whole `cd_dma` /
 `stream_file` replacement above shows up that way, as do the `sound_state` /
 `scene_bundle` pair and the party-panel trio below.
 
+### A third way a row closes: promote the oracle that already drove it
+
+The exits above are "a ladder reaches it", "the wiring lands" and "the static
+verdict moves". There is a fourth, it is the cheapest of the four, and the
+page's own framing keeps hiding it: **the fixture already exists and is not in
+`CANONICAL_LADDERS`.**
+
+`crates/engine-core/tests/w1f2_field_vm_op_arms_disc.rs` is the worked case. It
+walks every CDNAME scene's MAN carriers through the field-VM disassembler,
+takes each arm's sites at decoded instruction boundaries behind the census
+tools' own clean-resync run, and executes the carrying record in a real
+`World` - which is exactly the fixture the `4C EA` and `4C 52` rows above
+specified, written before they were written up. It was green the whole time
+and exported nothing, because membership of the union is the list and not the
+test.
+
+So the first thing to do with an (a) row is not to design a fixture: it is to
+grep the test corpus for the row's address. A test that names it is either the
+fixture (promote it, in the same commit as the row's closure) or an oracle
+that measures something else (say which, so the next pass does not re-check).
+The cost of the mistake is asymmetric - a fixture written next to an existing
+one is wasted work, while a promotion is one line.
+
+Two cautions came with this one. A promoted oracle changes what the union
+*means* when it is not pad-driven, so it belongs in the list with the L3
+members' disclosure - record-seated, driven through the ordinary engine path -
+rather than silently among the pad ladders. And a record-walking oracle counts
+**sites**, not disc occurrences: the op-arm oracle reports two `4C EA` sites
+against [the census's](#the-op-census-names-both-carriers) one coherent
+occurrence, which its own per-arm cap of two makes an *at least*, and a scene
+with two MAN carriers presents one record twice. The two counts are not
+comparable without settling that, and neither number is wrong on its own terms.
+
 ### The mode-driver seat, and why `scene_mode` cannot be the bridge
 
 "The hosts bypass the mode table" reads like architectural drift - the port
@@ -653,9 +706,8 @@ listed so the bucket count is the whole of what no host reaches.
 
 | group | n | addresses | why |
 |---|---|---|---|
-| `save_subscreen.rs` | 8 | `801e4f40` `801dd12c` `801dd26c` `801d98f0` `801dae24` `801daef4` `801dafd4` `801dbc5c` | All eight entered. `save_screen::SaveScreenFlow` constructs a `SaveScreenMachine` on its first card-rack frame and ticks it around the session, which reaches three; `w1g_save_subscreen_ladder` opens the other five, and its gate was the **entry context** rather than a pad stream - see [below](#the-five-sub-screens-were-behind-an-entry-context-no-host-constructs). The wiring claim underneath is unchanged: no host opens a shop through this machine. |
 | `card_bu_io.rs` | 4 | `801e0598` `801e3d68` `801e380c` `801e435c` | **`REPLACED-BY`** `legaia_save::emu::CardView` + `legaia_save::card` - out of the wiring denominator, not owed a host. |
-| `cutscene_script_elements.rs` | 3 | `801d5d60` `801d6058` `801d27e0` | The seat exists now - `World::tick_cutscene_elements` runs the channel from the frame tick on both hosts - but nothing in production **spawns** an element into the pool, so a replay still enters none of the three `step` bodies. |
+| `cutscene_script_elements.rs` | 2 | `801d5d60` `801d6058` | The seat exists now - `World::tick_cutscene_elements` runs the channel from the frame tick on both hosts - but nothing in production **spawns** an element into the pool, so a replay still enters none of the three `step` bodies. |
 | `shop.rs` | 2 | `801db7f4` `801dbd94` | Retail's quantity **steppers** - not a list, and not the engine's list screen. |
 | `camera_rel_glide.rs` | 1 | `8002149c` | No producer for the family's 20-halfword spawn record. |
 | `card_flow.rs` | 1 | `801e13b8` | **`REPLACED-BY`** `legaia_save`'s synchronous card writer - out of the wiring denominator. |
@@ -663,7 +715,15 @@ listed so the bucket count is the whole of what no host reaches.
 | `field_save_screen_actor.rs` | 1 | `80024190` | **`REPLACED-BY`** the save screen as host screen state - out of the wiring denominator, not owed a host. |
 | `scene_transition_actor.rs` | 1 | `80021934` | Scenes load as `Scene` resources, not as a streamed raw bundle, so nothing seats the actor. |
 | `morph_weight_apply.rs` | 1 | `8002174c` | Both anchors disclosed; `MorphWeightEnvelope` is test-only. |
-| `world/field_movement.rs` | 1 | `800467e8` | Declined with proof - see below. |
+
+Two groups have left this table by being **entered**, and neither was wired to
+get there. All eight `save_subscreen.rs` bodies run - three from
+`SaveScreenFlow`'s own card-rack ticking and five from `w1g_save_subscreen_ladder`,
+whose gate was the entry context rather than a pad stream (see
+[below](#the-five-sub-screens-were-behind-an-entry-context-no-host-constructs)) -
+and `world/field_movement.rs`'s `800467e8` runs from the driven walks. The
+wiring claim underneath the first is unchanged: no host opens a shop through
+that machine, which is `--live-audit`'s row and not this page's.
 
 #### Per-row wiring verdicts for this table
 
@@ -742,52 +802,22 @@ installs. Wiring it would be a provable identity, which is worse than the gap.
 
 Wired, and reached in real play on a host the ladder harness cannot execute.
 The composition ladder converted the rows whose host is the browser *play
-page* (the shop panel kernels, the fishing prize rows, the demo tile board);
-`w5_native_minigame_ladder` converted the rows whose host is the native
-window. What remains here is reached only on the standalone browser minigame
-pages or on the browser cards page - hosts still outside the union - or needs
-a game state no ladder puts the world in.
+page*; `w5_native_minigame_ladder` converted the rows whose host is the native
+window; `w1l4_page_compose_ladder` converted the browser cards page's
+directory walk and the dance page's sting rows; `w2b_dialog_picker_ladder` and
+`w2b_fmv_handoff_ladder` converted the two native rows whose blocker was scene
+content rather than an entry point.
 
 | group | n | addresses | host |
 |---|---|---|---|
-| `save_select.rs` (card directory) | 3 | `801e1208` `801e3af0` `801e3ba0` | browser `web-viewer::cards` |
-| `dance.rs` (sting + clip gate) | 2 | `801d3d78` `801d4098` | browser dance page |
-| `pause_screens.rs` / `save_select.rs` (panel modes) | 2 | `801d6a54` `801e3f74` | both rendering hosts |
-| `shop.rs` (panel kernel remainder) | 1 | `801d5510` | both rendering hosts, at the buy-quantity phase; see below |
-| `baka_fighter.rs` (widget quad) | 1 | `801d5ed0` | browser `minigames_baka`, deliberately one-host |
-| `dialog.rs` | 1 | `80038050` | native keyboard handler, behind a live option-picker conversation |
-| `cutscene.rs` | 1 | `801cea3c` | the `play` subcommand's post-FMV hand-off |
 | `other_game_overlay.rs` + `engine-audio::sfx.rs` | 2 | `801d1288` `80065034` | the Muscle Dome **INTERVAL tally**, with a live audio device. One gate, not two: `arena_voice_cue` resolves a per-lane voice attr off `ScoreTallyRamp::tick` and `key_on_voice_attr` is the only thing that takes it, and the two callers of that pair are the native window's minigame side-channel (a `bin/` target, so only a spawned `play-window` rung reaches it - and `w5_native_minigame_ladder` has no dome rung) and the standalone browser minigames page, which is outside the union. No ladder mentions `ScoreTallyRamp` at all |
 
-`801d5510`'s host column has now been wrong twice, and the second correction
-is a wire rather than a re-reading. It first named a fixture that could not
-exist: `shop_buy_quantity_panel` had exactly one caller in the workspace -
-`web-viewer::play_shop::buy_quantity_panel_draws` - while the native window's
-descriptor draw path painted windows 32 / 33 / 34 / 37 and carried no buy-side
-block at all, so no native ladder could reach it however it drove the shop.
-The missing native window-35 painter that column called for is written, so the
-kernel is a both-hosts panel now and the row is a reach gap rather than a host
-gap: what enters it is either host driven to the buy-quantity phase.
-
-The gap was player-visible while it lasted, which is the part worth keeping.
-Window 35 carries the held count, the unit price and the running total, so a
-native-window buyer sized a stack with none of the three numbers the decision
-needs on screen - and every gate was green throughout, because a panel only one
-host draws is invisible to a builder-reachability check when the kernel it
-composes lives in `engine-core` rather than in `engine-ui`. Window 35 is also
-the shop's only pens-returning renderer (no `MenuWindowPainter` variant
-resolves `FUN_801D5510`), so both hosts filter the id on the descriptor's own
-`renderer_va`; that constant is pinned against the disc's table by
-`crates/engine-shell/tests/menu_window_dispatch_real.rs`.
-
-The two remaining native rows both need a game state rather than an entry
-point. `80038050` is the inline-dialogue option picker, reachable from the
-keyboard handler (and now scriptable) but only while a conversation with a
-*menu* is open - a scripted walk-and-talk to a specific branching NPC, which
-is a scene-content fixture rather than a harness one. `801cea3c` is the
-post-FMV hand-off in the `play` subcommand's cutscene arm, which fires only
-when the field VM triggers an FMV; a 1200-frame headless run of the prologue
-scene never reaches one, so the fixture needs a scene + story state that does.
+One row moved rather than converting. `801d5510` (the shop's buy-quantity
+panel) is no longer a *host* gap: the missing native window-35 painter that
+its column called for is written, so the kernel is a both-hosts panel and
+what enters it is either host driven to the buy-quantity phase. It sits in
+[the `engine-ui` table](#engine-ui) with its history, which is worth reading -
+the column was wrong twice, and the second correction was a wire.
 
 ### Converted by `w5_native_minigame_ladder`
 
@@ -841,13 +871,17 @@ about the cells that outlived their own fixtures.
 | `world/narration.rs` | 1 | `8003cf7c` | Closed: the same ladder drives the inline field-VM conversation path, as opposed to the pre-decoded dialog panel every other ladder drives |
 | `world/battle/stats.rs` + `battle_formulas/escape.rs` | 1 | `801e791c` | Closed: `battle_flee_ladder` is a canonical member now, and its first rung is an **assured** escape that leaves the battle |
 | `fade.rs` | 1 | `80020b00` | Closed with it: `victory.rs`'s `BattleEndCause::Escaped` arm loads `escape_fade_template()` on the teardown that same rung reaches |
-| `world/vm_hosts.rs` (op `4C EA`) | 1 | `8003c7ec` | A scene script that issues the **scripted game-over** op. The handler is on the live dispatch path of both hosts (`engine-vm`'s `nibble_e` arm calls it unconditionally at the op); what no ladder drives is a carrier. The [op census](#the-op-census-names-both-carriers) now names it: one record of one world-map scene. The fixture shape exists - `w2b_fmv_handoff_ladder` slices a record at its op and runs it |
-| `equipment.rs` + `world/vm_hosts.rs` (op `4C 52`) | 1 | `800430ac` | The TAKE_ITEM op's **fallback**: `party_unequip_accessory_by_id`'s only production caller is the op arm, and the op reaches it only when the bag misses, so the row is gated twice over - a script that confiscates, on a party wearing rather than carrying. The [op census](#the-op-census-names-both-carriers) names three carriers; the second gate is what is left |
-| `publisher_logos.rs` | 1 | `801cefd4` | The **boot chain**. `PublisherLogosSession` is constructed on both hosts (`window/run.rs`; `web-viewer::boot_title::boot_logos_start`), and every union ladder starts at a scene or a battle rather than at boot. One rung would do it: open the logo phase and step the sequencer to its end |
+| `world/vm_hosts.rs` (op `4C EA`) | 1 | `8003c7ec` | Closed, and by the third exit rather than by a new fixture: `w1f2_field_vm_op_arms_disc` already drove the op from the disc's own bytecode and was simply not in `CANONICAL_LADDERS`. See [the promoted-oracle note](#a-third-way-a-row-closes-promote-the-oracle-that-already-drove-it) |
+| `equipment.rs` + `world/vm_hosts.rs` (op `4C 52`) | 1 | `800430ac` | Closed by the same promotion, and it is the sharper of the two: the op's **fallback** leg only runs when the bag misses, so the row was gated twice over, and the oracle drives the same real instruction under both bag states rather than once. See [the promoted-oracle note](#a-third-way-a-row-closes-promote-the-oracle-that-already-drove-it) |
+| `publisher_logos.rs` | 1 | `801cefd4` | Closed: `w3c_boot_logos_ladder` (`crates/web-viewer/tests/`) opens the logo phase on the browser play page and steps the sequencer to its end on a neutral pad, then again with Start. It is the only union member that starts **before** the title card, which is why one rung was enough |
+| `menu_arrange.rs` | 1 | `801d64a8` | The Items screen's **Arrange** command. `arrange_bag_slots` is called from `PauseItemsScreen::arrange`, which is command-window row 2, and the union's pause rungs open the list and the Use / Throw Out rows but never that one. A rung that opens Items, enters the command window and picks row 2 converts it |
+| `save_subscreen.rs` (sub-`0x15` list source) | 1 | `801da2a0` | The **list-order page**. `sub15_list_source` is what `ListOrderSession::open` asks which of the three lists it is showing, and the session is opened over the Magic screen's spell rows on both hosts - so the gate is a rung that opens the reorder page, not a missing wire |
+| `ui_menu_window_painters.rs` (window 37) | 1 | `801d5944` | The shop's **sell** quantity step. `sell_quantity_draws_for` is live on the browser play page (`play_shop.rs`), which is inside the union, and the union's shop rungs drive the **buy** branch; nothing sells an item and stops on the quantity window. Its native twin is a separate question - the painter has no native call site, which is a host-drift row rather than a reach one |
+| `ui_menu/records_screen.rs` | 1 | `801ed710` | The **battle-records** screen, reached from the dev menu on both hosts (`window/dev_menu.rs`; `play_dev_menu.rs`). `w1d_dev_menu_equip_ladder` opens the dev menu already, so the missing step is one row selection, not a host |
 
-Nine of those eleven rows were converted by ladders that already existed and
-were already canonical, and the table went on naming the fixture each one
-needed. A coverage export over the full canonical union confirms it at the
+All but the fog row are converted, and most were converted by ladders that
+already existed and were already canonical while the table went on naming the
+fixture each one needed. A coverage export over the full canonical union confirms it at the
 level the rows are written at - **every address in the table that a headless
 ladder can reach at all is entered**, the last two being the fishing menu pair,
 where the cell claimed a screen the ladder never opened until one was written
@@ -860,7 +894,7 @@ names work. The cheap guard is to re-read a cell against
 `CANONICAL_LADDERS` before quoting it - membership is one grep - and the
 expensive one is the coverage export, which is what actually moves a row.
 
-Two of the nine also close *differently* from the way their cell predicted, and
+Two of them also close *differently* from the way their cell predicted, and
 both distinctions survive the row:
 
 - `801d14b0` is not a second routine. `FUN_801D6710` (the Baka tally drain) and
@@ -923,9 +957,11 @@ an arbitrary opcode and broken out by sub-arm, and it answers both rows:
 - **`4C 52`** has **three**, in `geremi` and in the two variants of the
   `ropeway` scene, which carry the same confiscating script.
 
-Both stay `(a)`, and the reason has changed: it is no longer "no instrument
-says whether a carrier exists" but "the carrier is known and reaching it is a
-story-state fixture". The `4C 52` row keeps its second gate as well - the op
+Both rows are closed now - by
+[promoting the oracle](#a-third-way-a-row-closes-promote-the-oracle-that-already-drove-it)
+that was already driving both arms off the disc corpus - and the census is
+what made them specifiable: before it, neither row could say whether a carrier
+existed at all. The `4C 52` row keeps its second gate as well - the op
 only falls through to the unequip leg when the bag misses, so the fixture has
 to put the item on a character rather than in the bag.
 
@@ -1141,7 +1177,7 @@ the browser host.
 ## Per-crate verdicts
 
 Rows are grouped by module: one address is rarely a distinct decision from its
-neighbour in the same file, and a table of 243 one-line rows would hide that.
+neighbour in the same file, and a flat table of one-line rows would hide that.
 The `reach` column names the ladder that would enter an (a) row, the gate that
 blocks a (b) row, or the disclosure state of a (c) row.
 
@@ -1150,41 +1186,46 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
 | `actor_alloc.rs` | 3 | (a) | field-actors | `80024c88` `80024d78` `80024dfc` |
-| `baka_hub_actors.rs` | 13 | (a) | `w1b_hub_ladder` - built; see [below](#the-op-0x49-submode-screens) | `801f0adc` `801f1138` `801f16c0` `801f17d8` `801f1890` `801f1950` `801f1a1c` `801f1ab0` `801f1b64` `801f1d90` `801f1e48` `801f1fdc` `801f20b0` |
+| `battle_action.rs` | 1 | - | a `//!` module anchor, not a routine verdict - see [the added rows' note](#two-of-the-added-rows-were-the-anchor-mechanism-not-a-gap) | `801d5854` |
 | `battle_action/overlay_rng.rs` | 1 | (c) | disclosed | `801d0290` |
-| `battle_action/pool_ops.rs` | 3 | (a) | battle-target | `801d8a88` `801d8d00` `801db124` |
 | `battle_burst.rs` | 1 | (c) | disclosed | `801f30c4` |
-| `battle_cast_dispatch.rs` | 3 | (c) | disclosed | `801dba90` `801f1ed4` `801f2160` |
 | `battle_cursor_pose.rs` | 4 | (c) | disclosed, and the strongest case of it on this page: a strict caller scan finds **no** reference to any of the module's four public items anywhere under `crates/`, `#[cfg(test)]` bodies included. Three carry `NOT WIRED` with a named prerequisite each; `801d9ae8` carries `REPLACED-BY` and owes no host - see [below](#the-cursor-pose-module-is-four-leaves-with-no-caller-at-all) | `801d32bc` `801d57e8` `801d5778` `801d9ae8` |
-| `battle_formulas/stat_init.rs` | 1 | (a) | minigames-page | `80053cb8` |
-| `battle_gauge_rearm.rs` | 1 | (a) | wired - `BattleHud::push_popup` delegates to the ring; any driven fight's popup enters it | `801f44a0` |
 | `battle_helpers.rs` | 1 | (c) | disclosed | `80046870` |
-| `battle_intro_particles.rs` | 2 | (a) | battle-render | `801cfbb4` `801d0164` |
-| `battle_intro_styles.rs` | 1 | (a) | battle-render | `801d11d0` |
-| `battle_intro_swirl.rs` | 2 | (a) | battle-render | `801d1564` `801d1888` |
-| `battle_intro_transition.rs` | 1 | (a) | battle-render | `801cf1b0` |
-| `battle_party_panel.rs` | 0 | (c) | Left this page: `panel_labels` and the cross-out mark are disclosed `NOT WIRED` and the label-actor lifecycle is `REPLACED-BY` the immediate-mode HUD, so all three addresses read inert and belong to `--live-audit`. The reason they are worth knowing about is the [anchor note](#the-address-is-wired-and-its-anchor-is-not) | - |
 | `battle_stream_slot.rs` | 2 | (c) | disclosed | `80055b4c` `801f17f8` |
-| `battle_target_group.rs` | 1 | (a) | battle-target | `801dceac` |
-| `camera_mover.rs` | 1 | (a) | field-render | `801dd310` |
 | `code_lock_actor.rs` | 1 | (c) | disclosed | `801eed58` |
-| `dev_equip_commit.rs` | 1 | (a) | dev-menu | `801e5a08` |
 | `effect_vm/pool.rs` | 1 | (a) | field-actors | `801de914` |
 | `field_actor_timers.rs` | 2 | (a) | a scene script issuing the field-VM op that **spawns** the timer - `0x43 0C` for the cinematic wipe (`op43_alloc_scripted_actor`) and `0x43 09` for the three-axis tween (`op43_sub9_tween`). Both `step` bodies already run from the production world tick (`world/frame_tick.rs`), and the in-crate oracle that drives them (`world/tests/field_timer_actors.rs`) can never be a union member. The [op census](#the-op-census-names-both-carriers) finds **no coherent carrier for either op**, so this row is close to `(d)` - see the note under that section | `801dd4c4` `801dd784` |
 | `field_party_cursor.rs` | 1 | (c) | disclosed | `801f1278` |
 | `field_passive_hud.rs` | 1 | (b) | a party member holding one of the six HUD-badge ability bits. `hud_anchor_offsets` is reached only through `World::passive_hud_points`, itself behind `World::passive_hud_active()`, and a cold-start party holds none of the six - so the badge column never anchors and the offsets never resolve | `801d095c` |
-| `lib.rs` | 7 | (c) | **actor VM** (pseudo-entered - see the attribution note above) | `800319a8` `800326ac` `80035334` `800357fc` `80035978` `80035a4c` `801d6628` |
 | `scus_battle_helpers.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
-| `scus_core_helpers.rs` | 5 | (c) | disclosed | `8001fa68` `800203ec` `80020424` `80020454` `800204a4` |
+| `scus_core_helpers.rs` | 4 | (c) | disclosed. Read with the note below: these were on the page's *unmeasured* list, and the full union has a record for every one of them | `800203ec` `80020424` `80020454` `800204a4` |
 | `vram_rect_copy.rs` | 1 | (a) | a scene script issuing op `0x43` sub-`0x12`. `build_packet` is reached from `enqueue`, which `FieldHost::op43_vram_rect_copy` drives on both hosts; the [op census](field-op-census.md) puts a dozen clean carriers across nine scenes, every one of them in the ending band (`edteien`, `edbylon`, `edbalden`, `edretoin`, `edkorout`, `edbubu`, `eddoman`, `edson`, `edstati3`), which no ladder enters | `80057914` |
-| `world_map.rs` | 1 | (a) | world-map | `801e3e00` |
+| `world_map.rs` | 1 | (a) | world-map, and specifically a **composed** overworld frame: the atmospheric fog tick is a render-pass consumer of the same shape as [the fog emitter](#a-render-pass-row-needs-a-composing-ladder-not-a-deeper-one) | `801e3e00` |
 | `world_map_clut_fade.rs` | 1 | (a) | world-map | `801e4d8c` |
-| `world_map_dim.rs` | 1 | (a) | world-map | `801e75dc` |
-| `world_map_horizon.rs` | 2 | (a) | world-map | `801c9688` `801d7ea0` |
-| `world_map_overlay.rs` | 1 | (a) | dev-menu | `801e5b4c` |
-| `world_map_panel.rs` | 3 | (a) | world-map-panel | `801e9b3c` `801e9dc8` `801ea9b0` |
-| `world_map_panel_actors.rs` | 5 | (a) | world-map-panel | `801ed590` `801edf00` `801ee5d4` `801ee90c` `801ef014` |
 | `world_map_particle_burst.rs` | 1 | (a) | world-map | `801e5338` |
+
+Seven module rows this table used to carry are closed by ladders that are now
+canonical, and the shape of what closed them is the useful part rather than
+the count. The `baka_hub_actors.rs` cluster (thirteen addresses, the page's
+largest single (a) group) went with `w1b_hub_ladder`; the `lib.rs` actor-VM
+seven went with the widget-script resolver and the composition ladder; the
+`battle_intro_*` / `battle_target_group` / `pool_ops` render rows went with
+`w1c_battle_render_ladder`; `world_map_dim`, `world_map_horizon`,
+`world_map_overlay`, `world_map_panel` and `world_map_panel_actors` went with
+`w1d_world_map_render_ladder` and the dev-menu ladder; `camera_mover`,
+`dev_equip_commit`, `battle_gauge_rearm`, `battle_cast_dispatch` and
+`battle_formulas/stat_init` went with the driven fights and the page ladders.
+
+**The `(c)` rows are measured now, which they were not.** The page's
+[unmeasured bucket](#a-row-can-also-be-neither-entered-nor-never-entered)
+named `scus_core_helpers.rs`, `overlay_rng.rs`, `world_map_clut_fade.rs`,
+`battle_stream_slot.rs`, `battle_helpers.rs` and `code_lock_actor.rs` as
+addresses no binary in the union carried a record for - outside both counts,
+so their verdict was *unmeasured* rather than never-entered. Over the full
+union every one of them has a record and reads **never entered**, which is
+what the link-time-removal reading predicted would happen once a binary
+linked the crate. The verdicts below stand; what has changed is that they
+now rest on a measurement as well as on the caller scan.
 
 The `disclosed` rows carry a `NOT WIRED` disclosure at their own tag, so they
 are inert by the source's own account; they appear here only because the
@@ -1276,44 +1317,45 @@ rule](#a-row-can-leave-this-page-without-a-ladder-reaching-it) allows.
 
 ### engine-ui
 
-The crate used to be the largest one-reason cluster on this page: with no
-rendering host in the union, every anchored builder read never-entered at
-once. The composition ladder dissolved that bulk - the pause-menu screens,
-field panels, window painters, name entry, dev-menu list, records screen and
-the fishing HUD's live rows all execute under it now. What remains is no
-longer one reason; each surviving row names the content or host still outside
-the union.
-
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
-| `battle_intro.rs` | 5 | (a) | the intro styles + curtain trail the driven fights did not roll | `801cfda0` `801d0370` `801d1a20` `801d1cfc` `801d1d9c` |
-| `battle_trail.rs` | 1 | (b) | the weapon-trail gate, the same one `801e1ab0` names: a move-FX scene whose move-power record carries a non-zero trail texture page (`+0x0b`). `weapon_trail_prims` is called on **both** hosts' battle render passes (`redraw_passes.rs`, `play_battle.rs`), so this is content, not a host gap. Read it with the [module-anchor caveat](#a-tag-between-two-functions-is-scored-by-the-next-function-that-has-regions) - the tag is a `//!` block | `800485bc` |
-| `other_game_hud.rs` | 4 | (a) | native / minigames-page muscle-dome HUD | `801d02f0` `801d050c` `801d08ec` `801d15c8` |
-| `ui_fishing.rs` | 5 | (a) | catch / miss / strike event banners a short session does not land | `801d6f10` `801d71d4` `801d7528` `801d75dc` `801d78ec` |
-| `ui_menu/system_menus.rs` | 2 | (a) | the special-use confirm prompts; the bag must hold Door of Light (`0x88`) or Incense (`0x8A`), which no host grants and no pad ladder acquires | `801d1dac` `801d1f10` |
-| `ui_menu/target_panel.rs` | 1 | (a) | the field item-use target panel. The gate is retail's own: `item_has_valid_target` (`FUN_8003043C`) omits a heal while every living ally is at full HP, so a ladder that boots into town has no confirmable Use row. It needs a fight played to its finish first | `801d0520` |
-| `ui_menu_window_painters.rs` | 3 | (a) | the entry-context pair + the spell-level notice | `801d61b0` `801d6360` `801dccb4` |
-| `ui_title_save/save_select.rs` | 1 | (a) | deeper Load beats | `801e3ff0` |
-| `ui_title_save/slot_grid.rs` | 2 | (a) | the block-grid render beat | `801e06c0` `801e0fd0` |
-| `ui_title_save/slot_info.rs` | 1 | (a) | the slot-info caption | `801e3ee0` |
+| `battle_trail.rs` | 1 | (b) | the weapon-trail gate, the same one `801e1ab0` names: a move-FX scene whose move-power record carries a non-zero trail texture page (`+0x0b`). `weapon_trail_prims` is called on **both** hosts' battle render passes (`redraw_passes.rs`, `play_battle.rs`), so this is content, not a host gap. Read it with the [module-anchor caveat](#a-tag-between-two-functions-is-scored-by-the-next-function-that-has-regions) - the tag is a `//!` block |  `800485bc` |
+| `ui_menu_window_painters.rs` | 2 | (a) | the shop's buy-quantity panel at its own phase (`801d5510`, see below) and the casino prize-exchange confirm (`801d603c`, disclosed inert - its tag anchors to `choice_panel_draws_for` itself, so the executed-disclosure misreport the pseudo-entry note records is resolved and the row reads unexecuted, as the disclosure says) | `801d5510` `801d603c` |
 | `gte/math.rs` | 1 | (c) | disclosed | `8004629c` |
 
-The casino prize-exchange confirm window (`801d603c`) stays disclosed-inert;
-its tag anchors to `choice_panel_draws_for` itself, so the executed-disclosure
-misreport the pseudo-entry note above records is resolved and the row reads
-unexecuted, as the disclosure says.
+The crate used to be the largest one-reason cluster on this page: with no
+rendering host in the union, every anchored builder read never-entered at
+once. That bulk is gone rather than narrowed. The composition ladder took the
+pause-menu screens, field panels, window painters, name entry, dev-menu list,
+records screen and the live fishing HUD rows; `w1f1_fishing_banner_ladder`
+took the five one-shot banner animators; `w1c_battle_render_ladder` took the
+five `battle_intro.rs` styles; `w5_native_minigame_ladder` took the
+`other_game_hud.rs` dome rows; `w1f1_pause_special_use_ladder` and
+`w1f2_menu_depth_ladder` took the special-use confirms, the item target panel,
+the entry-context pair, the spell-level notice and the title/save screens.
 
-Six of the surviving `engine-ui` rows are **not** unported builders and not a
-wiring gap - `crates/engine-ui/tests/pause_menu_compose.rs` executes every one
-of them today. That library oracle composes each pause screen in process with
-a synthetic descriptor table, including the two entry-context windows, both
-special-use confirm variants, the item target panel and the spell-level
-notice; a coverage export of it alone enters `801d0520` `801d1dac` `801d1f10`
-`801d61b0` `801d6360` `801dccb4`. What they lack is a **pad-driven** path, and
-the union is a union of pad ladders, so the export is deliberately not folded
-into it - a library oracle in the denominator would change what the headline
-number means. Each row's own gate is named in the table above; the oracle is
-why "never entered" here is a statement about reach and not about the port.
+`801d5510`'s host column has now been wrong twice, and the second correction
+is a wire rather than a re-reading. It first named a fixture that could not
+exist: `shop_buy_quantity_panel` had exactly one caller in the workspace -
+`web-viewer::play_shop::buy_quantity_panel_draws` - while the native window's
+descriptor draw path painted windows 32 / 33 / 34 / 37 and carried no buy-side
+block at all, so no native ladder could reach it however it drove the shop.
+The missing native window-35 painter that column called for is written, so the
+kernel is a both-hosts panel now and the row is a reach gap rather than a host
+gap: what enters it is either host driven to the buy-quantity phase. Its
+`engine-core` session siblings `801db7f4` / `801dbd94` are the same gap one
+layer down and sit in the engine-core tables above.
+
+The gap was player-visible while it lasted, which is the part worth keeping.
+Window 35 carries the held count, the unit price and the running total, so a
+native-window buyer sized a stack with none of the three numbers the decision
+needs on screen - and every gate was green throughout, because a panel only one
+host draws is invisible to a builder-reachability check when the kernel it
+composes lives in `engine-core` rather than in `engine-ui`. Window 35 is also
+the shop's only pens-returning renderer (no `MenuWindowPainter` variant
+resolves `FUN_801D5510`), so both hosts filter the id on the descriptor's own
+`renderer_va`; that constant is pinned against the disc's table by
+`crates/engine-shell/tests/menu_window_dispatch_real.rs`.
 
 One near-miss is worth recording because the grep that finds it is wrong. The
 window-25 / window-41 stat-compare chain in `ui_menu_window_painters_large.rs`
@@ -1331,82 +1373,58 @@ that half is disclosed at its tag and waived by the drift gate.
 |---|---|---|---|---|
 | `anim_cue.rs` | 1 | (c) | disclosed | `800508dc` |
 | `sfx.rs` | 1 | (a) | the Muscle Dome interval tally's key-on, paired with its producer `801d1288` - see [the harness-blind table](#no-ladder-harness-blind) | `80065034` |
-| `seq_calc.rs` | 5 | (d) | differential | `80062f98` `8006320c` `8006352c` `80063aa8` `800649b0` |
-| `seq_events.rs` | 5 | (d) | differential | `800638d8` `80063974` `800639a0` `80063cec` `8006418c` |
-| `seq_slots.rs` | 1 | (a) | no owner | `8001ff58` |
-| `shout.rs` | 1 | (a) | arts-swing | `8004c140` |
-
-The ten `seq_calc` / `seq_events` addresses are the SsAPI per-frame calc tier.
-`Sequencer` is the engine's from-scratch replacement and drives playback on its
-own clock, so nothing on the audio output path calls these kernels; their host
-is the `note-trace` differential CLI, which is what makes a divergence localise
-to one kernel. That is stated at their own tags, and it makes them (d) rather
-than a wiring gap.
 
 The footstep cadence and the SFX delay ring left this table through the
 composition ladder - both tick on the browser play page's frame path, which is
 exactly the host asymmetry the footstep module doc records against the native
-window.
+window. The seven `sequencer` / `sfx` / `vab_bind` rows left it through the
+audio session ladder: what they needed was a mixer-attached tick, which
+`legaia_engine_audio::TestAudioSink` supplies without a device by driving the
+same mixing core the cpal callback drives.
 
-The seven `sequencer` / `sfx` / `vab_bind` rows left it through the audio
-session ladder. What they needed was a mixer-attached tick - SFX enqueue, VAB
-upload and voice allocation only run when something is pulling frames - and
-`legaia_engine_audio::TestAudioSink` supplies one without a device by driving
-the same mixing core the cpal callback drives. The ladder stages a real bank,
-plays a real track, and matures a real cue through the frame scheduler, each
-asserted on the PCM that came out rather than on the call being made.
+The ten `seq_calc` / `seq_events` addresses were filed `(d) differential` - the
+SsAPI per-frame calc tier, whose host is the `note-trace` CLI rather than the
+audio output path - and the full union **enters every one of them**. The
+verdict was about the production route and the measurement is about the
+binaries: the audio session ladder links the crate and runs the tier. Read
+their tags for what calls them; the reach column no longer has anything to
+say, so the rows are gone.
 
-`seq_slots.rs`'s `8001ff58` is the one that stays, and the reason is an
-**owner**, not a tick. It is the SEQ resource-slot release keyed on the
-12-byte-stride table at `0x80091508`, and `SeqResourceTable` is instantiated
-nowhere in the workspace: the two hosts holding an open VAB
-(`AudioBgmDirector::bank`; the browser runtime's `bgm_bank` / `sfx_vabs`) model
-no slot table, and there is no `VabBank` close for the release to call. Both
-halves are within reach - `SpuAllocator::free` exists and `VabBank::samples`
-retains each `UploadedVag`'s `(addr, size)`, so a faithful `FUN_80068C80` has
-its primitives - but wiring it is a three-host change, and until an owner
-exists a release call would hand back resources nothing holds.
+`seq_slots.rs`'s `8001ff58` has also left, and its exit is the useful one to
+record because its cell named an **owner** rather than a tick:
+`SeqResourceTable` was instantiated nowhere in the workspace. Whatever now
+references it, the row is a statement about the tree rather than about the
+ladders, so re-read it from `target/port-catalog/catalog.csv` before quoting
+the old blocker.
 
 ### asset
 
-| module | n | bucket | reach | addresses |
-|---|---|---|---|---|
-| `boot_overlay.rs` | 4 | (d) | cli | `8001eef0` `8002574c` `80025ba0` `8003e360` |
-| `character_pack.rs` | 1 | (a) | field-render | `8001ebec` |
-| `face_anim.rs` | 1 | (a) | battle-render | `8004c7b4` |
-| `minigame_slot_scene.rs` | 5 | - | Closed, and the row was stale rather than open: `w1l4_slot_bonus_marquee` and `w1l4_slot_bonus_marquee_ladder` are both canonical and a full-union export enters all five. See [the gates table](#gates-behind-the-b-rows) | `801cec94` `801cfff0` `801d069c` `801d0fa8` `801d3230` |
-| `save_icon.rs` | 1 | (a) | menu-render | `801e1934` |
-| `summon_readef.rs` | 2 | (a) | battle-render | `801f12d0` `801f19ec` |
+No row. Every address this table carried is entered over the full union, and
+the split is worth keeping because the table's own reading was that the
+*render-facing* half of the crate was structurally out of reach: mesh
+assembly (`character_pack_real`), the pose decoders and face animator
+(`w1c_arts_swing_ladder`), the save-icon sheet (`w1f2_menu_depth_ladder`),
+the summon side-band slots (`w1c_battle_render_ladder`) and the boot-overlay
+resolver (`boot_overlay_disc`) each found a driver. `8002574c` is the one
+that did not convert the way the others did - it is a **const** anchor now
+and resolves through references, so it sits in the report's
+*not observable (const)* bucket rather than in either count.
 
-The `summon_readef` rows moved from the summon-cast gate to the render
-ladder: a live Seru cast now stages its spawn request on the playthrough path
-(`World::request_summon_spawn`, ladder `seru_cast_magic_xp_ladder`), and what
-consumes the side-band slots is the render half - the native window's
-`spawn_summon_creature` (`bin/`, structurally test-unreachable) and the
-browser summon page (`web-viewer::summon_view`, outside the union). The parse
-layer has its own disc oracle (`crates/asset/tests/summon_readef_real.rs`).
-
-`asset` is not bulk-classifiable and the bulk reading would have been wrong: 72
-of its 114 files in the coverage data do execute, because the ladders resolve
-scene bundles and battle records through them. What never executes is the
-*render-facing* half - mesh assembly, texture uploads, the save-icon sheet, the
-pose decoders - which is a consequence of the headless harness, not of the
-parsers. `boot_overlay` is the only genuinely tooling-only module here; its sole
-consumer is the `asset boot-overlay` subcommand.
+`boot_overlay` was also called "the only genuinely tooling-only module here",
+and that stands as a statement about its host (`asset boot-overlay`); what
+changed is that a ladder spawns the subcommand, and a spawned bin's profile
+merges into the export.
 
 ### mdec
 
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
-| `lib.rs` | 2 | (a) | fmv | `801d0378` `801d0604` |
-| `st_ring.rs` | 7 | (a) | fmv | `8005bbf8` `8005ecd4` `8005edc4` `8005ee4c` `8005ef40` `8005f004` `8005f024` |
-| `str_player.rs` | 8 | (a) | fmv | `801cf098` `801cf56c` `801cf740` `801cf8b0` `801cf988` `801cfa14` `801cfd84` `801cfebc` |
 | `strv2_table.rs` | 1 | (d) | no-input | `801f1a00` |
 
-Seventeen of the eighteen are one fact: no pad-only ladder plays a movie. They
-are not untested - `av_decode_oracle`, `fmv_table_roundtrip`, `w5_fmv_handoff`
-and the `mdec` crate's own `str_player_segment` / `st_ring_real_str` all drive
-them - those oracles are simply not in the coverage union.
+Seventeen of the eighteen rows this table held were one fact - no pad-only
+ladder plays a movie - and `w1a_fmv_ladder` is that ladder: it plays every
+retail `fmv_id` through the dispatch slot / `StrPlayer` / `MdecDecoder`
+chain and spawns `CARGO_BIN_EXE_mdec` for the hardware half.
 
 `strv2_table` is the exception, and it is (d) on disc evidence rather than on
 harness evidence. Retail's play loop does expand this table once per FMV, but
@@ -1418,54 +1436,42 @@ reach it. The `strv2_decode` module states the same prerequisite chain.
 
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
-| `afterimage.rs` | 1 | (a) | battle-render | `801e1ab0` |
 | `attach_swap.rs` | 1 | (c) | disclosed | `8004ccd4` |
-| `battle_intro.rs` | 5 | (a) | battle-render | `80026988` `801cfda0` `801d0370` `801d1a20` `801d1cfc` |
-| `gte/math.rs` | 1 | (c) | disclosed | `8004629c` |
-| `lib.rs` | 5 | (a) | menu-render | `8002b994` `800349ec` `80034e4c` `80035ea8` `8003c1f8` |
+| `lib.rs` | 2 | (a) | menu-render | `80034e4c` `8003c1f8` |
 
 The `lib.rs` rows are module-scope tags whose real bodies are the `engine-ui`
 menu-ink and sprite builders the crate re-exports, so they close with the same
-draw ladder as the `engine-ui` table above.
+draw ladder as the `engine-ui` table above; three of the five have, and the
+crate's `afterimage` and `battle_intro` rows went with
+`w1c_battle_render_ladder`. `engine-render` itself is still the hard wgpu link
+the browser composition ladder cannot carry - what reports executed regions in
+it is the spawned `play-window` of `w5_native_minigame_ladder`.
 
 ### save
 
-| module | n | bucket | reach | addresses |
-|---|---|---|---|---|
-| `card.rs` | 1 | (d) | cli | `801e38d8` |
-| `retail_inventory.rs` | 6 | (d) | cli | `800421d4` `80042310` `800423e0` `80042f4c` `80043048` `8004313c` |
-
-Bulk-classified, on the module's own statement plus a caller scan that agrees
-with it: nothing on the engine's frame path constructs a `RetailInventory`,
-deliberately, because the gameplay inventory is `engine-core`'s typed item list
-and swapping in a bug-compatible fixed window would be a regression. The
-preservation host is `save-tool items`; the SC block checksum's is `save-tool`
-and the memory-card round-trip oracle.
+No row. The `card.rs` checksum and the six `retail_inventory.rs` accessors
+were bulk-classified `(d) cli` on the module's own statement plus a caller
+scan, and `w2c_card_inventory_ladder` runs the whole family over a real
+memory card's SC block. The classification stands - nothing on the engine's
+frame path constructs a `RetailInventory`, deliberately - and the reach column
+has nothing left to say.
 
 ### engine-shell
 
-| module | n | bucket | reach | addresses |
-|---|---|---|---|---|
-| `bin/legaia-engine/window/field_render.rs` | 1 | (a) | native-bin | `8001ada4` |
-| `xa_clip.rs` | 1 | (a) | arts-swing | `8003d53c` |
-
-The ocean-animation row was the worked example of the `bin/` exclusion above,
-and it is now the worked example of what that exclusion actually bounds. It
-has a disc-gated oracle of its own (`ocean_anim_real`), no `#[test]` can
-*enter* the module it is tagged in - and `w5_native_minigame_ladder` covers it
-several thousand times per run, because `advance_ocean_animation` is on the
-window's per-tick path and a spawned `play-window` writes its own profile.
-"Unreachable by call" and "unreachable by coverage" were never the same claim.
+No row. The ocean-animation row (`8001ada4`) was the worked example of the
+`bin/` exclusion and is now the worked example of what that exclusion
+actually bounds: `w5_native_minigame_ladder` covers it several thousand times
+per run, because `advance_ocean_animation` is on the window's per-tick path
+and a spawned `play-window` writes its own profile. "Unreachable by call" and
+"unreachable by coverage" were never the same claim. `xa_clip.rs`'s
+`8003d53c` went with `w1c_arts_swing_ladder`.
 
 ### prot
 
-| module | n | bucket | reach | addresses |
-|---|---|---|---|---|
-| `cdname.rs` | 1 | (d) | cli | `8001d8fc` |
-
-`retail_name_table` is deliberately the *lossy* CDNAME reader and must never sit
-on a resolution path; its two consumers are the disc-gated parity oracle and
-`prot-extract retail-names`.
+No row. `retail_name_table` (`8001d8fc`) is deliberately the *lossy* CDNAME
+reader and must never sit on a resolution path; `cdname_retail_parse_disc`
+runs it over the real file, which is its `(d) cli` host doing exactly what
+the verdict said it would.
 
 ## The actor VM: a resolved bytecode source
 
@@ -1543,9 +1549,9 @@ remaining proposal would still move:
 | Baka Fighter hub | *built* | `w1b_hub_ladder` opens the op-`0x49` submode screens; no `baka_hub_actors.rs` row is left |
 | audio | *built* | `w1e_audio_session_ladder` attaches the mixer; one `engine-audio` row is left |
 | world-map panels | *built* | `w1d_world_map_render_ladder` and the dev-menu ladder between them; the panel-actor cluster is gone |
-| world map | 2 | the overworld render pass - what is left is the horizon/dim leaf and the particle burst |
-| field actors | 3 | an effect that spawns a child actor through the allocator (`actor_alloc.rs`) |
-| field render | 1 | a posed field character's camera mover |
+| boot chain | *built* | `w3c_boot_logos_ladder` opens the publisher-logo phase - the one stage every other member starts after |
+| composed overworld | 3 | a **drawing** host parked on the overworld: the CLUT fade, the particle burst and the atmospheric fog tick are render-pass consumers, so a deeper headless walk reaches none of them |
+| field actors | 3 | an effect that spawns a child actor through the allocator (`actor_alloc.rs`), plus the effect pool's own `init` |
 
 Quote that table's *rows* column against a fresh
 `replay-port-coverage.py` run rather than as a standing figure: it is the count
@@ -1751,10 +1757,22 @@ when someone guesses.
 
 | address | crate | anchor |
 |---|---|---|
-| *(empty - every row a refresh had added has a verdict below)* | | |
+| `801da2a0` | engine-core | `list_order::tick` |
+| `801d64a8` | engine-core | `menu_arrange::arrange_bag_slots` |
+| `801d5944` | engine-ui | `ui_menu_window_painters::sell_quantity_draws_for` |
+| `801ed710` | engine-ui | `ui_menu/records_screen.rs` (`//!` module anchor) |
 
-The set this section last held is bucketed, and where each went is the part
-worth keeping rather than the fact that it emptied:
+Three of the four are pause-menu screens the composition and menu-depth
+ladders open without reaching the row's own step - the Arrange display-order
+sort, the reorder page's tick and the shop's **sell**-side quantity panel,
+whose buy-side twin `801d5510` is its own row above. The fourth is the
+records-screen module anchor, which is the
+[anchor-mechanism shape](#two-of-the-added-rows-were-the-anchor-mechanism-not-a-gap)
+this section has seen twice already: read it against the routine before
+reading it as a gap.
+
+The set this section held before them is bucketed, and where each went is the
+part worth keeping rather than the fact that it emptied:
 
 | addresses | verdict | where it went |
 |---|---|---|
@@ -1768,6 +1786,26 @@ worth keeping rather than the fact that it emptied:
 | `801d9ae8` | - | leaves the page: `REPLACED-BY`, no host owed |
 | `801dd4c4` `801dd784` | (a) | the [`engine-vm` table](#engine-vm), on the op that spawns each timer |
 | `8004fe5c` `801d5854` | measurement | neither is a gap - see below |
+
+A later refresh added four more, and all four read the same way once the port
+is read rather than the address: each is wired on a host inside the union and
+each waits on a **rung nobody wrote**, so all four are (a) and all four are in
+[content not driven](#no-ladder-content-not-driven).
+
+| addresses | verdict | the step that would convert it |
+|---|---|---|
+| `801d64a8` | (a) | pick command-window row 2 (Arrange) on the Items screen |
+| `801da2a0` | (a) | open the list-order page over the Magic screen's spell rows |
+| `801d5944` | (a) | drive a shop **sell** to its quantity window, not a buy |
+| `801ed710` | (a) | select the records row in the dev menu a ladder already opens |
+
+The one thing worth separating out is `801d5944`'s second question. Its painter
+is called from the browser play page and from no native site, so "no ladder
+entered it" and "one host cannot enter it" are both true of that address and
+only the first is a reach verdict. A reach bucket answers what a fixture would
+do; whether the other host owes a call is
+[`host-drift.md`](host-drift.md)'s question, and conflating them would let a
+drift row be closed by writing a ladder.
 
 The pairing was the verdict-shaped part of the set, and it held: `801d1288` is
 the Muscle Dome tally's per-lane voice resolve and `80065034` is the audio side

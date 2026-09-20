@@ -271,8 +271,10 @@ of the 28 seeds - 26 `lw …,0x1014(…)` derefs plus the two base
 materialisations - produced at least one hit, so no deref is unaccounted for,
 and widening the propagation window to 4000 instructions changes nothing (the
 holding register is always clobbered within a few instructions). Denominators:
-84 based images, 2.07 MB, 30 memory operations enumerated across 12 distinct
-displacements.
+`SCUS_942.54` plus every based overlay image, roughly two megabytes, with 30
+memory operations enumerated across 12 distinct displacements. The image count
+tracks how much of the disc is mapped rather than the disc, so the sweep prints
+it and this page does not.
 
 `+0x0d` is not in the same position: it **is** read, exactly once, as a byte -
 `lbu a0,0xd(v0)` at `0x801E184C`, feeding the cue dispatcher

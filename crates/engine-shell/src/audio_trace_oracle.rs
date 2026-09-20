@@ -64,9 +64,34 @@ pub struct VoiceTraceFrame {
     /// Latched loop-back address.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub loop_addr: Option<u32>,
-    /// Pitch register (libspu `0x1000` = unity).
+    /// Pitch register (libspu `0x1000` = unity). Allocator-independent -
+    /// unlike `start_addr` this *is* comparable across the two sides, since
+    /// it encodes (note, tone centre, tone shift) and nothing about where a
+    /// sample landed in SPU RAM.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub pitch: Option<u16>,
+    /// Live ADSR envelope level, `0..=0x7FFF`. This is the word `active` is
+    /// derived from on all three emitters; carrying it too turns "is this
+    /// voice sounding" into "how loudly".
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub env_level: Option<u16>,
+    /// Per-voice output volume, left. Retail: the `0x1F801Cn0` register
+    /// (PCSX ports blob) or mednafen's `Sweep[0].Current`. Engine:
+    /// `Voice::vol_left`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub vol_left: Option<i16>,
+    /// Per-voice output volume, right.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub vol_right: Option<i16>,
+    /// The two libspu ADSR config words packed `adsr1 | adsr2 << 16`. Two
+    /// voices carrying the same word were programmed from the same VAB tone,
+    /// which is the closest thing the SPU keeps to a program id.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub adsr_control: Option<u32>,
+    /// `EON` bit for this voice - `true` when its output feeds the reverb
+    /// tank.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub reverb_send: Option<bool>,
 }
 
 /// One sample of the SPU's voice-activity state.
@@ -94,10 +119,38 @@ pub struct AudioTraceFrame {
     /// `(GlobalSweep[0/1]).Current` accumulator.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub master_volume: Option<(i16, i16)>,
-    /// Reverb mode register. Engine: `Spu::reverb_mode_raw`. Retail:
-    /// `Reverb_Mode` SPU sub-entry (raw 4-byte value, not libspu mode byte).
+    /// libspu reverb **mode** selector (`0 = Off`, `4 = Studio C`, ...).
+    /// Engine-only: `Spu::reverb_mode_raw`. Neither retail emitter can fill
+    /// it - the hardware keeps no mode number, only the 32 coefficient
+    /// registers a mode expands to - so it is `None` on both retail paths.
+    ///
+    /// **This field used to carry three different quantities under one
+    /// name**: the engine's mode byte, mednafen's `Reverb_Mode` sub-entry
+    /// (which is really `EON`), and the PCSX-Redux extractor's read of
+    /// SPU offset `0x1AA` (which is really `SPUCNT`). Comparing them
+    /// produced the "engine 0 vs retail 0xC081, so retail routes voices 0, 7,
+    /// 14 and 15" reading. The three quantities now have three fields:
+    /// [`Self::reverb_eon`], [`Self::spu_control`] and this one.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub reverb_mode: Option<u32>,
+    /// Per-voice reverb-enable mask (`EON`, SPU `0x1F801D98`/`0x9A`), 24
+    /// significant bits. Engine: derived from `Voice::reverb_send`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub reverb_eon: Option<u32>,
+    /// Reverb output depth `(vLOUT, vROUT)` - SPU `0x1F801D84`/`0x86`, what
+    /// libspu `SpuSetReverbDepth` writes. Not part of a mode preset.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub reverb_depth: Option<(i16, i16)>,
+    /// Reverb work-area base in bytes (`mBASE * 8`). The work-area size is
+    /// `0x80000 - base`, which identifies the preset independently of the
+    /// coefficient block.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub reverb_work_area: Option<u32>,
+    /// `SPUCNT` (SPU `0x1F801DAA`): bit 15 SPU enable, bit 14 unmute, bit 7
+    /// reverb master enable, bit 0 CD audio. Retail-only - the engine models
+    /// no control register.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub spu_control: Option<u16>,
     /// 24-bit mask: bit N set iff voice N is `active`. Convergence-axis
     /// shorthand for the per-voice array; the array is canonical, the mask
     /// is for fast comparison and human-readable diffs.
@@ -116,6 +169,10 @@ impl AudioTraceFrame {
             sequencer_finished: None,
             master_volume: None,
             reverb_mode: None,
+            reverb_eon: None,
+            reverb_depth: None,
+            reverb_work_area: None,
+            spu_control: None,
             active_voice_mask: 0,
             voices: vec![VoiceTraceFrame::default(); NUM_VOICES],
         }
@@ -190,8 +247,16 @@ pub struct TraceBgmDirector {
 
 impl TraceBgmDirector {
     pub fn new() -> Self {
+        // Configure the private SPU exactly as the shipped cpal host
+        // configures its own (`StreamResampler::new`): Studio C, every voice
+        // routed, retail depth. A bare `Spu::new()` here left the oracle
+        // measuring an engine that differs from the one the port ships - the
+        // trace's reverb channel read `Off` / no voices routed on every
+        // frame while the live engine ran the retail configuration.
+        let mut spu = Spu::new();
+        spu.set_retail_reverb();
         Self {
-            spu: Spu::new(),
+            spu,
             bank: None,
             sequencer: None,
             master_vol: 100,
@@ -514,10 +579,14 @@ fn sample_engine_frame(
     use legaia_engine_audio::spu::adsr::Phase;
     let mut voices = Vec::with_capacity(NUM_VOICES);
     let mut mask = 0u32;
+    let mut eon = 0u32;
     for (i, v) in spu.voices.iter().enumerate() {
         let active = !matches!(v.adsr.phase, Phase::Off);
         if active {
             mask |= 1 << i;
+        }
+        if v.reverb_send {
+            eon |= 1 << i;
         }
         voices.push(VoiceTraceFrame {
             active,
@@ -528,6 +597,11 @@ fn sample_engine_frame(
             },
             loop_addr: v.loop_addr,
             pitch: if v.pitch != 0 { Some(v.pitch) } else { None },
+            env_level: Some(v.adsr.level),
+            vol_left: Some(v.vol_left),
+            vol_right: Some(v.vol_right),
+            adsr_control: Some(v.adsr_cfg.raw.0 as u32 | ((v.adsr_cfg.raw.1 as u32) << 16)),
+            reverb_send: Some(v.reverb_send),
         });
     }
     AudioTraceFrame {
@@ -536,6 +610,12 @@ fn sample_engine_frame(
         sequencer_finished: sequencer.map(|s| s.is_finished()),
         master_volume: Some((spu.master_left, spu.master_right)),
         reverb_mode: Some(spu.reverb_mode_raw),
+        reverb_eon: Some(eon),
+        reverb_depth: Some(spu.reverb.output_volume()),
+        reverb_work_area: Some(spu.reverb.work_area_base_bytes()),
+        // The engine models no SPU control register - reverb master enable
+        // is implicit in the active `ReverbMode`.
+        spu_control: None,
         active_voice_mask: mask,
         voices,
     }
@@ -575,6 +655,10 @@ pub fn load_runtime_audio_trace_from_save(save: &Path) -> Result<AudioTraceFrame
         .with_context(|| format!("load mednafen save {}", save.display()))?;
     let spu = PsxSpu::new(&state);
     let mednafen_voices = spu.voices();
+    // `Reverb_Mode` is mednafen's name for the per-voice reverb-enable mask,
+    // not a libspu mode byte; the register shadow's own `EON` is the same
+    // value and is the one the field is named for here.
+    let eon = spu.voice_reverb_mask().or_else(|| spu.reverb_mode());
     let mut voices = Vec::with_capacity(NUM_VOICES);
     let mut mask = 0u32;
     for (i, v) in mednafen_voices.iter().enumerate() {
@@ -587,6 +671,11 @@ pub fn load_runtime_audio_trace_from_save(save: &Path) -> Result<AudioTraceFrame
             start_addr: v.start_addr,
             loop_addr: v.loop_addr,
             pitch: v.pitch,
+            env_level: v.adsr_env_level,
+            vol_left: v.vol_left,
+            vol_right: v.vol_right,
+            adsr_control: v.adsr_control,
+            reverb_send: eon.map(|m| m & (1u32 << i) != 0),
         });
     }
     Ok(AudioTraceFrame {
@@ -594,7 +683,14 @@ pub fn load_runtime_audio_trace_from_save(save: &Path) -> Result<AudioTraceFrame
         sequencer_playhead_ticks: None,
         sequencer_finished: None,
         master_volume: spu.master_volume(),
-        reverb_mode: spu.reverb_mode(),
+        // Retail keeps no mode *number* anywhere - only the coefficient
+        // registers a mode expands to - so this stays `None` on the retail
+        // side and `reverb_work_area` carries the preset-identifying size.
+        reverb_mode: None,
+        reverb_eon: eon,
+        reverb_depth: spu.reverb_output_volume(),
+        reverb_work_area: spu.reverb_work_area().map(|wa| wa.wrapping_mul(2)),
+        spu_control: spu.spu_control(),
         active_voice_mask: mask,
         voices,
     })
@@ -768,6 +864,162 @@ pub fn engine_trace_from_paths(
     build_engine_audio_trace(extracted_root, disc, &opts)
 }
 
+/// Per-side summary of what a trace's *sounding* voices were doing, in the
+/// two currencies that survive the two sides' independent SPU-RAM
+/// allocators: pitch (a hardware register computed from note + tone, so
+/// directly comparable) and the packed ADSR config word (the closest thing
+/// the SPU keeps to "which tone programmed this voice").
+///
+/// `start_addr` is deliberately **not** a comparand here - retail's samples
+/// sit wherever `SsSpuMalloc` put them and the engine's wherever
+/// `SpuAllocator` put them, so the addresses cannot agree and are not
+/// supposed to.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct VoiceAllocationStats {
+    /// Frames the summary was computed over.
+    pub frames: usize,
+    /// Mean sounding voices per frame.
+    pub mean_active: f64,
+    /// Largest number of voices sounding on any one frame.
+    pub max_active: usize,
+    /// Mean count of distinct `(start_addr, pitch)` pairs per frame - the
+    /// number of distinct *notes* sounding, as opposed to slots used.
+    pub mean_distinct_notes: f64,
+    /// `mean_active / mean_distinct_notes`: how many slots the side spends
+    /// per distinct note. Exactly `1.0` means it never doubles a note
+    /// across two voices.
+    pub doubling: f64,
+    /// Every pitch seen on a sounding voice anywhere in the trace.
+    pub pitches: std::collections::BTreeSet<u16>,
+    /// Every packed ADSR config word seen on a sounding voice.
+    pub tones: std::collections::BTreeSet<u32>,
+    /// Every sample start address seen on a sounding voice. Reported for
+    /// counting distinct instruments, never for equality against the other
+    /// side.
+    pub samples: std::collections::BTreeSet<u32>,
+}
+
+/// Which of the three readings the per-voice comparison supports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoiceAllocationVerdict {
+    /// The two sides' pitch sets barely intersect: they are sounding
+    /// different notes. On one track that means different moments in it;
+    /// across two tracks it means the pairing itself is wrong.
+    DifferentNotes,
+    /// Overlapping pitches, but the engine sounds materially fewer at once.
+    ShortOfVoices,
+    /// Overlapping pitches and comparable slot counts.
+    Comparable,
+}
+
+/// Engine-vs-retail per-voice comparison.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VoiceAllocationComparison {
+    pub engine: VoiceAllocationStats,
+    pub retail: VoiceAllocationStats,
+    /// Pitches both sides sounded at some point in their windows.
+    pub shared_pitches: usize,
+    /// Packed ADSR config words both sides used.
+    pub shared_tones: usize,
+    pub verdict: VoiceAllocationVerdict,
+}
+
+/// Share of the *smaller* pitch vocabulary the two sides hold in common,
+/// below which the windows are judged to be sounding different notes. The
+/// denominator is the smaller of the two sets rather than the engine's, so a
+/// longer engine window is not penalised for hearing more of the track than
+/// the retail freeze did.
+const PITCH_OVERLAP_FLOOR: f64 = 0.25;
+/// Fraction of retail's concurrent-voice count below which the engine is
+/// judged short of voices rather than comparable.
+const VOICE_COUNT_FLOOR: f64 = 0.75;
+
+fn summarise_allocation(frames: &[AudioTraceFrame]) -> VoiceAllocationStats {
+    use std::collections::BTreeSet;
+    let mut out = VoiceAllocationStats {
+        frames: frames.len(),
+        ..Default::default()
+    };
+    let (mut act_sum, mut note_sum, mut counted) = (0usize, 0usize, 0usize);
+    for f in frames {
+        let sounding: Vec<&VoiceTraceFrame> = f.voices.iter().filter(|v| v.active).collect();
+        if sounding.is_empty() {
+            // A silent frame is not evidence about allocation; averaging it
+            // in measures how much of the window the trace spent before the
+            // track started, which is a different question.
+            continue;
+        }
+        counted += 1;
+        act_sum += sounding.len();
+        out.max_active = out.max_active.max(sounding.len());
+        let notes: BTreeSet<(Option<u32>, Option<u16>)> =
+            sounding.iter().map(|v| (v.start_addr, v.pitch)).collect();
+        note_sum += notes.len();
+        for v in sounding {
+            if let Some(p) = v.pitch {
+                out.pitches.insert(p);
+            }
+            if let Some(t) = v.adsr_control {
+                out.tones.insert(t);
+            }
+            if let Some(a) = v.start_addr {
+                out.samples.insert(a);
+            }
+        }
+    }
+    if counted > 0 {
+        out.mean_active = act_sum as f64 / counted as f64;
+        out.mean_distinct_notes = note_sum as f64 / counted as f64;
+        out.doubling = if note_sum > 0 {
+            act_sum as f64 / note_sum as f64
+        } else {
+            0.0
+        };
+    }
+    out
+}
+
+/// Compare what the engine's score allocated against retail's, per voice.
+///
+/// This is the axis [`first_audio_trace_divergence_multi`] cannot decide:
+/// that walk asks whether some engine frame's mask *covers* a retail frame's,
+/// which a pair of traces taken at different moments of a 2-minute track can
+/// fail while playing identically. The comparison here is of what the voices
+/// were *doing* - pitches, tones, and how many slots each side spends per
+/// distinct note - and it is meaningful only when both sides are on the same
+/// track. Check that first: a scene's engine trace starts the track its own
+/// prescript selects (op `0x35`), while a retail save carries whatever track
+/// the playthrough left loaded, and the two are routinely different.
+pub fn compare_voice_allocation(
+    engine: &[AudioTraceFrame],
+    retail: &[AudioTraceFrame],
+) -> VoiceAllocationComparison {
+    let e = summarise_allocation(engine);
+    let r = summarise_allocation(retail);
+    let shared_pitches = e.pitches.intersection(&r.pitches).count();
+    let shared_tones = e.tones.intersection(&r.tones).count();
+    let smaller = e.pitches.len().min(r.pitches.len());
+    let overlap = if smaller == 0 {
+        0.0
+    } else {
+        shared_pitches as f64 / smaller as f64
+    };
+    let verdict = if overlap < PITCH_OVERLAP_FLOOR {
+        VoiceAllocationVerdict::DifferentNotes
+    } else if e.mean_active < r.mean_active * VOICE_COUNT_FLOOR {
+        VoiceAllocationVerdict::ShortOfVoices
+    } else {
+        VoiceAllocationVerdict::Comparable
+    };
+    VoiceAllocationComparison {
+        engine: e,
+        retail: r,
+        shared_pitches,
+        shared_tones,
+        verdict,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -776,20 +1028,78 @@ mod tests {
         VoiceTraceFrame {
             active,
             start_addr,
-            loop_addr: None,
-            pitch: None,
+            ..Default::default()
         }
+    }
+
+    fn voice_at(pitch: u16, tone: u32) -> VoiceTraceFrame {
+        VoiceTraceFrame {
+            active: true,
+            pitch: Some(pitch),
+            adsr_control: Some(tone),
+            ..Default::default()
+        }
+    }
+
+    fn alloc_frame(voices: Vec<VoiceTraceFrame>) -> AudioTraceFrame {
+        let mut mask = 0u32;
+        for (i, v) in voices.iter().enumerate() {
+            if v.active {
+                mask |= 1 << i;
+            }
+        }
+        AudioTraceFrame {
+            active_voice_mask: mask,
+            voices,
+            ..AudioTraceFrame::quiescent(0)
+        }
+    }
+
+    /// Disjoint pitch sets read as "different notes" however close the
+    /// voice counts are - the reading that a same-count comparison of two
+    /// different tracks would otherwise pass off as convergence.
+    #[test]
+    fn voice_allocation_disjoint_pitches_read_as_different_notes() {
+        let engine = vec![alloc_frame(vec![voice_at(1000, 1), voice_at(1100, 1)])];
+        let retail = vec![alloc_frame(vec![voice_at(500, 1), voice_at(600, 1)])];
+        let c = compare_voice_allocation(&engine, &retail);
+        assert_eq!(c.shared_pitches, 0);
+        assert_eq!(c.verdict, VoiceAllocationVerdict::DifferentNotes);
+    }
+
+    /// Overlapping pitches with the engine sounding far fewer at once is
+    /// the "short of voices" reading.
+    #[test]
+    fn voice_allocation_fewer_overlapping_notes_reads_as_short() {
+        let engine = vec![alloc_frame(vec![voice_at(500, 1)])];
+        let retail = vec![alloc_frame(vec![
+            voice_at(500, 1),
+            voice_at(500, 1),
+            voice_at(500, 1),
+            voice_at(600, 1),
+        ])];
+        let c = compare_voice_allocation(&engine, &retail);
+        assert_eq!(c.shared_pitches, 1);
+        assert_eq!(c.verdict, VoiceAllocationVerdict::ShortOfVoices);
+    }
+
+    /// Retail doubling a `(sample, pitch)` pair across two slots shows up
+    /// as a doubling factor above one; the engine playing each note once
+    /// sits at exactly one.
+    #[test]
+    fn voice_allocation_doubling_factor_counts_duplicate_slots() {
+        let retail = vec![alloc_frame(vec![voice_at(500, 1), voice_at(500, 1)])];
+        let engine = vec![alloc_frame(vec![voice_at(500, 1)])];
+        let c = compare_voice_allocation(&engine, &retail);
+        assert!((c.retail.doubling - 2.0).abs() < 1e-9);
+        assert!((c.engine.doubling - 1.0).abs() < 1e-9);
     }
 
     fn frame_with(mask: u32, voices: Vec<VoiceTraceFrame>) -> AudioTraceFrame {
         AudioTraceFrame {
-            frame: 0,
-            sequencer_playhead_ticks: None,
-            sequencer_finished: None,
-            master_volume: None,
-            reverb_mode: None,
             active_voice_mask: mask,
             voices,
+            ..AudioTraceFrame::quiescent(0)
         }
     }
 
@@ -797,30 +1107,36 @@ mod tests {
     fn jsonl_roundtrip_engine_shape() {
         let frames = vec![
             AudioTraceFrame {
-                frame: 0,
                 sequencer_playhead_ticks: Some(0),
                 sequencer_finished: Some(false),
                 master_volume: Some((0x3FFF, 0x3FFF)),
                 reverb_mode: Some(0),
+                reverb_eon: Some(0x00FF_FFFF),
+                reverb_depth: Some((0x3264, 0x3264)),
+                reverb_work_area: Some(0x7_9020),
                 active_voice_mask: 0b0000_0011,
                 voices: vec![
                     voice(true, Some(0x1000)),
                     voice(true, Some(0x1200)),
                     voice(false, None),
                 ],
+                ..AudioTraceFrame::quiescent(0)
             },
             AudioTraceFrame {
-                frame: 1,
                 sequencer_playhead_ticks: Some(480),
                 sequencer_finished: Some(false),
                 master_volume: Some((0x3FFF, 0x3FFF)),
                 reverb_mode: Some(0),
+                reverb_eon: Some(0x00FF_FFFF),
+                reverb_depth: Some((0x3264, 0x3264)),
+                reverb_work_area: Some(0x7_9020),
                 active_voice_mask: 0b0000_0010,
                 voices: vec![
                     voice(false, Some(0x1000)),
                     voice(true, Some(0x1200)),
                     voice(false, None),
                 ],
+                ..AudioTraceFrame::quiescent(1)
             },
         ];
         let jsonl = audio_trace_to_jsonl(&frames);
@@ -831,14 +1147,16 @@ mod tests {
 
     #[test]
     fn jsonl_roundtrip_retail_shape() {
+        // Retail shape: no mode number (hardware keeps none), but the
+        // routing mask, depth and control word a capture does carry.
         let f = AudioTraceFrame {
-            frame: 0,
-            sequencer_playhead_ticks: None,
-            sequencer_finished: None,
             master_volume: Some((0x3F00, 0x3F00)),
-            reverb_mode: Some(0x17FFFF),
+            reverb_eon: Some(0x17FFFF),
+            reverb_depth: Some((0x3264, 0x3264)),
+            spu_control: Some(0xC081),
             active_voice_mask: 0b0000_0111,
             voices: vec![voice(true, Some(0x2000)); 3],
+            ..AudioTraceFrame::quiescent(0)
         };
         let jsonl = audio_trace_to_jsonl(std::slice::from_ref(&f));
         let round = parse_audio_trace_jsonl(&jsonl).unwrap();

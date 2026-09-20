@@ -96,6 +96,47 @@ fn enter_dance_suspends_mode_and_exit_restores_it() {
     assert!(world.minigames.dance.is_none());
 }
 
+/// Both hosts poll `exit_dance` from their frame path on every non-`Dance`
+/// frame, so the poll has to be inert when no run is installed. It was not:
+/// the teardown ran the dance stager's PAD-LATCH CLEAR every frame, which
+/// forces `pad_prev = pad` and hides every edge from whatever the host reads
+/// after the poll (on the play page, the developer menu).
+#[test]
+fn exit_dance_without_a_run_does_not_eat_the_frame_s_pad_edges() {
+    use crate::input::PadButton;
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.set_pad(0);
+    world.set_pad(PadButton::Down.mask());
+    assert!(
+        world.input.just_pressed(PadButton::Down),
+        "the fixture itself has to present an edge"
+    );
+    assert!(world.exit_dance().is_none(), "no run to tear down");
+    assert!(
+        world.input.just_pressed(PadButton::Down),
+        "the no-run poll must leave the frame's pad edges alone"
+    );
+}
+
+/// The real teardown still performs the stager's clear: the press that leaves
+/// the hall must not carry into the restored field mode.
+#[test]
+fn exit_dance_with_a_run_still_clears_the_pad_latch() {
+    use crate::input::PadButton;
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    world.set_pad(0);
+    world.set_pad(PadButton::Cross.mask());
+    assert!(world.input.just_pressed(PadButton::Cross));
+    assert!(world.exit_dance().is_some());
+    assert!(
+        !world.input.just_pressed(PadButton::Cross),
+        "the hall's exit press must not be delivered to the field"
+    );
+}
+
 #[test]
 fn dance_tick_judges_a_correct_press() {
     let mut world = World::new();

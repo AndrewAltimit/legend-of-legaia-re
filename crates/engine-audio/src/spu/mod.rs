@@ -156,17 +156,22 @@ impl Spu {
     }
 
     /// Install the global reverb configuration retail actually runs: the
-    /// `Studio C` preset, with every voice routed into the reverb send.
-    /// Pinned from the save-state corpus (the SPU reverb network is master-on
-    /// in every captured state, the coefficient registers are byte-identical
-    /// Studio C everywhere, and the per-voice `EON` mask routes nearly all
-    /// voices). See `docs/subsystems/audio.md`. Reverb is a fixed global in
-    /// this game, not a per-cue effect, so the engine selects it once. (Output
-    /// depth - `SpuSetReverbDepth` - is a fixed approximation; tune with
-    /// [`Reverb::set_output_volume`] if needed.)
+    /// `Studio C` preset, every voice routed into the reverb send, at the
+    /// measured output depth.
+    ///
+    /// Pinned from two independent captures. The mednafen save-state corpus
+    /// gives reverb master-on in every state and a byte-identical Studio C
+    /// coefficient block; a per-vsync PCSX-Redux capture of a town scene adds
+    /// the two registers the coefficient block does not contain - `EON` reads
+    /// `0x00FFFFFF` (**all 24 voices**, every frame) and `vLOUT`/`vROUT` read
+    /// [`reverb::RETAIL_OUTPUT_VOL`]. Reverb is a fixed global in this game,
+    /// not a per-cue effect, so the engine selects it once.
+    /// See `docs/subsystems/audio.md`.
     pub fn set_retail_reverb(&mut self) {
         self.reverb_mode_raw = 4; // libspu SPU_REV_MODE_STUDIO_C
         self.set_reverb_mode(ReverbMode::StudioC);
+        self.reverb
+            .set_output_volume(reverb::RETAIL_OUTPUT_VOL, reverb::RETAIL_OUTPUT_VOL);
         for v in &mut self.voices {
             v.set_reverb_send(true);
         }

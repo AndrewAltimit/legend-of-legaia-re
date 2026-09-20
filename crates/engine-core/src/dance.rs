@@ -1431,12 +1431,14 @@ impl DanceGame {
     }
 }
 
-// Wired: [`good_banner_spawn`] composes three of these records, and the play
-// window's minigame effect pool (`window/minigame_fx.rs`) hosts the spawns -
-// the sequence-clear banner + stars are spawned into it on the human's scoring
-// judge and aged / drawn per frame. The overlay's own sprite page is still not
-// uploaded, so the pool draws each part through its placeholder glyph rather
-// than the `sprite_id` cell.
+// Wired: [`good_banner_spawn`] composes three of these records, and the RUN's
+// own part pool hosts them - [`DanceGame::judge_press`] issues the spawns on
+// the human's scoring judge, and every host draws what
+// [`DanceGame::sprite_part_emits`] emits. Not the shared
+// [`crate::minigame_fx`] pool: these spawns come from the judge, which is
+// gameplay rather than host presentation. The overlay's own sprite page is
+// still not uploaded on two of the three surfaces, so those draw each part
+// through a placeholder cell rather than the `sprite_id` one.
 /// PORT: FUN_801d3fd0 - the dance overlay's cell-placed effect spawn (the
 /// step-mark flash): retail zero-fills a spawn record, spawns through the
 /// shared part-spawn API `FUN_80021B04` at scale `0x1000`, stamps
@@ -1651,11 +1653,12 @@ pub struct GoodBannerSpawns {
     pub weight: u16,
 }
 
-// Wired: the play window spawns this on the human's scoring judge
-// (`Judge::Sequence`) into its minigame effect pool
-// (`window/minigame_fx.rs`), which ages and draws the three parts. The dance
-// overlay's sprite ids `0xb` / `0x16` are still not resident, so the pool's
-// placeholder glyphs stand in for the banner art.
+// Wired: [`DanceGame::judge_press`] spawns this on the human's scoring judge
+// (`Judge::Sequence`) into the run's own part pool, which ages the three
+// parts; every host draws them off [`DanceGame::sprite_part_emits`]. The
+// dance overlay's sprite ids `0xb` / `0x16` are not resident on the native
+// window or the play page, so their placeholder cells stand in for the
+// banner art; the minigames page draws the widget cells themselves.
 /// PORT: FUN_801d40dc - spawn the sequence-clear banner + two stars. Retail
 /// issues three `FUN_801d3fd0` spawns - `(0xa0, 0x90, sprite 0xb)` for the banner
 /// and `(0x68, 0x90, sprite 0x16)` / `(0xd8, 0x90, sprite 0x16)` for the stars
@@ -1858,19 +1861,19 @@ pub fn dance_clip_driver_gate(clip_id: i16, flags: u32) -> bool {
     clip_id > 0 || (flags & crate::minigame_actor::FLAG_DRIVE_CLIP) != 0
 }
 
-// NOT WIRED, AND REDUNDANT RATHER THAN MISSING - read the second paragraph
-// before treating this as wirable work.
+// REPLACED-BY: the browser dance page's cast-kind rig resolution - `castRigs()`
+// in `site/js/minigame-dance.js` maps the mode's spawn records to their
+// `dance_cast` kinds and hands those to `drawFace`, i.e.
+// `LegaiaMinigames::dance_face_rgba(rig, pose)`.
 //
-// No host needs the *selector*, because every host that stamps a face already
-// holds a rig id and never holds a slot index. The browser dance page resolves
-// its rigs from the disc **cast table** - `castRigs()` in
-// `site/js/minigame-dance.js` maps the mode's spawn records to their
-// `dance_cast` kinds and passes those straight to `drawFace`, which is
-// `LegaiaMinigames::dance_face_rgba(rig, pose)` - and on the qualifier floor
-// those kinds are already `0/2/3`, the exact output of the overlay's hard-coded
-// slot -> rig remap. The two arrive at the same rig from different data, so a
-// caller appears only if a host ever drives the floor by slot index instead of
-// by cast kind. Nothing does today, and nothing needs to.
+// No host is owed the *selector*, because every host that stamps a face
+// already holds a rig id and never holds a slot index. On the qualifier floor
+// the disc's cast kinds are already `0/2/3` - the exact output of the
+// overlay's hard-coded slot -> rig remap - so the two mechanisms arrive at the
+// same rig from different data. A caller appears only if a host ever drives
+// the floor by slot index instead of by cast kind. Nothing does, and the disc
+// table is the better source either way: it carries every mode, where the
+// remap is hard-coded for one.
 //
 // (The blockers an *earlier* reason named here - "no face pages resident, no
 // blit pass" - are indeed long gone: `legaia_asset::dance_art::FACE_RIGS`

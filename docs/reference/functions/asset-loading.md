@@ -107,8 +107,12 @@ Nothing in the loader bounds the top of the band it can page in: the index is
 matters for the two highest images, because the one site that reaches them,
 `0x8005269C`, passes `_DAT_8007B64A + 71` - so selector byte `2` and `3` page in
 PROT `0968` and `0969` respectively, while `0` skips the load entirely. Those
-two entries are therefore reachable content rather than orphans; what writes the
-selector is an [open thread](../open-rev-eng-threads.md#containers--data-blobs).
+two entries are therefore reachable content rather than orphans, and what writes
+the selector is settled: the field entity tick `FUN_801DA51C` clears it at
+`0x801DA69C` and raises `1` at `0x801DA6A8` under system flag `0x19`, while
+battle latches `3` at `0x801E6D2C`. Every access is `gp`-relative, which is why
+an absolute-address sweep reported none
+([settled](../re-settled-threads.md#battle--arts--level-up)).
 
 ### `8003EF14`
 

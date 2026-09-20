@@ -841,11 +841,6 @@ struct PlayWindowApp {
     /// The fishing phase seen on the previous frame, so the redraw handler can
     /// detect the hook / landed / snapped / recast edges that seed the banners.
     fishing_prev_phase: Option<legaia_engine_core::fishing::FishingPhase>,
-    /// The minigame effect-part pool (`window/minigame_fx.rs`): the host sink
-    /// for the overlays' part spawns - dance sequence banner, fishing strike
-    /// splash, wander ripples, catch-celebration bursts. Ticked per frame in
-    /// `tick_minigame_extras`; drawn by the HUD builder.
-    minigame_fx: minigame_fx::MinigameFxPool,
     // The dance pre-song count-in and the Disco King how-to tutorial used to
     // live here, as a host phase holding the parsed game pending. They are
     // `World::minigames.dance_countin` / `dance_tutorial` now, stepped by the
@@ -853,8 +848,6 @@ struct PlayWindowApp {
     // frames and the **door-warp** entry gets a count-in at all. The HUD
     // builder reads `dance_countin_banner` / `dance_tutorial_frame` off the
     // world.
-    /// Score high-water mark the sequence-banner spawn edges against.
-    dance_fx_score: u32,
     /// The fishing venue's free-swimming fish actor (idle/cast phases).
     fish_wander: Option<legaia_engine_core::fishing_actors::FishWander>,
     /// The reeling-line actor sim (hook -> fight -> celebration).

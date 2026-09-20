@@ -444,6 +444,16 @@ retail** with all battles resolving through `FUN_801DA51C`. Whether any retail
 encounter exercises the `FUN_8005567c` battle-id path at all is now the open
 question; the writer (if one exists) still sits outside the static corpus.
 
+**Port status.** `legaia_asset`-side, the decode of this path lives in
+`legaia_engine_core::encounter_record::expand_battle_id`, and no host calls it.
+That is a replacement rather than a wiring gap on both of its arms: the engine
+resolves a battle through a typed `FormationDef` looked up in
+`World::tables.formation_table`, so there is no four-byte cell that can be found
+empty and no fallback point for the `[4, 4, 4, 4]` arm to occupy; and the id arm
+depends on a global with no writer anywhere in retail, so wiring it would mean
+*adding* a hook rather than finding a missing caller. The live encounter path is
+`EncounterRecord::parse`, the `actor[+0x94]` record path above.
+
 ## Random-encounter trigger path
 
 The script-VM install opcodes above describe **scripted** encounter
@@ -944,10 +954,17 @@ override `_DAT_8007B628` / `_DAT_8007B62A` still unwired (no port-side writer).
 
 One divergence remains: a scripted shot handing the camera back snaps, as a backstop for a
 script that ends a shot without a `[4C 39]` / `[4C 3E]` arm. The visible-tile window the
-clamp widens the walk region by now follows retail's own order - seeded from
-`mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW` at scene entry, then replaced by whichever of
-a camera-region record's mask-kind side-write or field-VM op `0x46` the scene runs
-(`Camera::route_camera_events` consumes both op-`0x46` forms into `ZoneFollow::view_window`).
+clamp widens the walk region by follows retail's own order - re-stamped from the field
+draw-context primer `FUN_801DE37C` (`mode_entry_init::field_draw_context`) on every field
+entry, then replaced by whichever of a camera-region record's mask-kind side-write or
+field-VM op `0x46` the scene runs (`Camera::route_camera_events` consumes both op-`0x46`
+forms into `ZoneFollow::view_window`).
+
+The seam is `Camera::reset_globals_for_scene_entry`, which both hosts run per entry. Saying
+the window was seeded "at scene entry" understated where the port actually stood: it was
+seeded once at camera construction and only ever overwritten afterwards, so a scene that
+scripted a wide window handed it to the next scene's clamp. The primer is what makes the
+sentence true.
 
 The disc-gated oracle
 `crates/engine-shell/tests/field_camera_zone_oracle.rs` grades the port per walkable save
@@ -1001,6 +1018,18 @@ present in any instruction, and the five-form scan cannot see the access at all.
 base-plus-displacement walk in
 [`find-gp-relative-refs.py`](../../scripts/ghidra-analysis/find-gp-relative-refs.py) is
 what makes the readers visible ([`address-reference-scan.md`](../tooling/address-reference-scan.md#the-gp-relative-and-luiload-forms)).
+
+**Polled live.** `scripts/pcsx-redux/autorun_w3b_view_window.lua` reads the four
+signed bytes each vsync alongside the scene name and game mode, and logs a row per
+change. Over a 3000-vsync pad-driven walk of `town01` the window is never constant
+and never the field default: it alternates between `(-8, -6, 8, 12)` and
+`(-10, -6, 8, 14)`, four visits each, switching as the player crosses between
+regions. That is the camera-region side-write working as this section describes -
+the window is a property of where the player stands, not of the scene, so an engine
+that seeds it once per scene and leaves it there under-draws in the wide regions.
+The walk stayed inside `town01`, so the cross-scene half of the question - does a
+scene's window survive into the next scene - is still owed a capture that changes
+scene.
 
 ## What this doesn't tell us
 

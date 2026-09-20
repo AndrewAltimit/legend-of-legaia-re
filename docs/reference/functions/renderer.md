@@ -161,6 +161,8 @@ leaf whose setup is not visible as a call or is vestigial. Recorded as an
 [open thread](../open-rev-eng-threads.md#battle--rendering) rather than as a
 finding: a `cop2` read census over the frame following the write settles it.
 
+Its case `4` is a three-way pick the disc only ever resolves one way: `actor[+0x9E] & 0x4000` selects `FUN_8002A5A4`, `& 0x2000` the battle overlay's ribbon builder `FUN_801CFA48`, and `& 0x6000 == 0` the default `FUN_80028158`. The allocator zeroes `+0x9E`, and no store in `SCUS_942.54`, the 86 based images or the 1233 PROT entries writes either bit into it, so the ribbon arm has no shipped program behind it ([`effect-vm.md`](../../subsystems/effect-vm.md#the-three-render-mode-4-emitters-and-which-one-the-disc-uses)).
+
 The same routine hands `actor+0x24` **whole** to `FUN_80026988` (`addiu
 a0,s0,0x24` / `jal 0x80026988` at `0x8001AF04`, the `jal` at `0x8001AF08` with
 its `addiu` in the preceding slot), so pitch at `+0x24` and roll at `+0x28`
@@ -306,6 +308,8 @@ See [`formats/world-map-overlay.md`](../../formats/world-map-overlay.md#dat_8007
 Overlay-resident actor allocator (alt to `FUN_80021B04`). Script-VM `4C D8` host hook (9-byte opcode). Takes `(vdf_idx: i16, tmd_idx: i16, kind: u16, variant: u16)`. Allocates actor slot via `FUN_80020DE0(0x8007068C, _DAT_8007C34C)`; resolves TMD from `DAT_8007C018[(i16)tmd_idx]` and VDF body from `_DAT_8007B7DC + body_offsets[(i16)vdf_idx]`. Two-pass vertex-pool build: sum `TMD_groups[record.idx].vertex_count * 8` into `_DAT_8007BA74`, malloc via `FUN_80017888`, then copy each referenced group's vertices into the pool. Populates `actor[+0x3C]=kind, [+0x3E]=variant, [+0x48]=TMD_ptr, [+0x4C]=VDF_body_ptr, [+0x90]=vertex_pool` (and zeros `+0x56/+0x5C/+0x68/+0x6E`).
 
 Dev printf strings `"tmd"`/`"otbl"`/`"vdf_n"` (preserved in the cutscene_dialogue overlay dump) confirm the structure. 125 instr / 500 B.
+
+The descriptor it allocates from, `0x8007068C`, is the **morph-weight** one - its `+0x8` handler word is `0x8002174C` - so this is not a generic allocator with a generic `(kind, variant)` pair. That handler reads `+0x3C` at `0x80021890` and `+0x3E` at `0x800218B4`, on the `+0x40` direction gate, as the rise and fall steps of the morph weight it drives at `+0x6E`. The two `u16` immediates of `4C D8` are therefore envelope **rates**, and the `+0x90` pool is a rest-pose snapshot of the live vertices rather than an asset - which is why no disc asset answers to it. See [`script-vm-menuctrl.md`](../../subsystems/script-vm-menuctrl.md#what-the-0x4c-0xd8-spawner-builds).
 
 ### `8001EBEC`
 

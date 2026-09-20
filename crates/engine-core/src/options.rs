@@ -39,8 +39,10 @@
 //!   footprint runs into its neighbour, so everything from file offset
 //!   `0x9000` on is the *field* overlay's bytes, which is what fixes the
 //!   whole-file base recovery to `0x801CE818 - 0x9000` by construction. PROT
-//!   0896's own link base is unrecovered (see
-//!   `crates/asset/data/static-overlays.toml`);
+//!   0896's own link base is `0x801D4DF0`, recovered over the corrected entry
+//!   (see `crates/asset/data/static-overlays.toml`), and it is not a runtime
+//!   address here: none of the image's SCUS-range calls reaches a function
+//!   entry of this disc's executable;
 //! - the retail rows this module implements all trace to the **menu overlay
 //!   PROT 0899** functions listed above, which *is* RAM-verified.
 //!

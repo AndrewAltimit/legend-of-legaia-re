@@ -53,6 +53,59 @@
 //! disassembly-grounded and deliberately not rationalised further: what the
 //! remaining `0x60`-per-vertex reservation is for is not established.
 //!
+//! ## The retail spawn chain, end to end
+//!
+//! The row's prerequisite used to read as "a spawn site allocating from
+//! descriptor `0x8007068C`", which understates what is already known: that
+//! site exists, it is shipped content, and the engine already hosts it.
+//!
+//! | Link | Where |
+//! |---|---|
+//! | Field-VM instruction `4C D8` | outer `0x4C` table `0x801CEE60[0xD]` -> `0x801E2AB8`, sub-table `0x801CEFC8[8]` -> arm `0x801E2DD4` |
+//! | The arm's call | `jal 0x801D77F4` at `0x801E2E18`, PC += 9 |
+//! | The spawner | `FUN_801D77F4` (PROT 0897 file `+0x8FDC`) forms `0x8007068C` at `0x801D7808`/`0x801D7814` and calls `FUN_80020DE0` |
+//! | The handler | `0x8007068C + 8` reads `0x8002174C` straight off `SCUS_942.54` |
+//!
+//! The opcode ships at **17 sites in 5 scenes** (`balden`, `balden2`,
+//! `garmel`, `jagaroom`, `juui2`), all in partition 1 record 0 of a scene MAN;
+//! the census lives in `engine-core/tests/field_actor_spawn_disc_e2e.rs` and
+//! is written up in
+//! [`script-vm-menuctrl.md`](../../../docs/subsystems/script-vm-menuctrl.md#where-0x4c-0xd8-occurs-on-the-disc).
+//! `FieldHost::op4c_n_d_sub8_call_d77f4` is the live engine hook for it.
+//!
+//! ### The two buffers, and what fills them
+//!
+//! `FUN_801D77F4`'s tail (`0x801D7848..0x801D79BC`) is the part the port does
+//! not have. The writes themselves are already in the function directory
+//! ([`functions/renderer.md` § 801D77F4](../../../docs/reference/functions/renderer.md#801d77f4));
+//! what this section adds is which of them this module's two arguments are, so
+//! the row names a buffer to build rather than a caller to find:
+//!
+//! - `actor+0x4C` <- the **morph block**, and it is a **VDF** body: the
+//!   instruction's first operand indexes the VDF buffer at the global
+//!   `0x8007B7DC` (asset-dispatcher case 7), `block = base + u32_at(base + 4 +
+//!   idx*4)`, and the block opens with its own `u32` record count followed by
+//!   the 12-byte record headers this module parses. That is why the record
+//!   type here is [`legaia_engine_vm::vdf_morph::VdfMorphRecord`] and not a
+//!   shape of its own - one buffer, two walkers.
+//! - `actor+0x48` <- the TMD base, read from the resident-object table at
+//!   `0x8007C018` by the instruction's second operand (the same table
+//!   `FUN_801D8280` walks).
+//! - `actor+0x90` <- the **rest-pose stream**, and it is a *snapshot*, not an
+//!   asset. The spawner sums `n_vert` over the block's records through the
+//!   object table's `0x1C` stride, allocates `sum * 8` bytes through
+//!   `FUN_80017888`, and copies each named group's live vertices into it
+//!   with unaligned `lwl`/`lwr` + `swl`/`swr` pairs. So the rest pose is
+//!   whatever the mesh holds at spawn time - which is why nothing on the disc
+//!   carries one.
+//! - `actor+0x3C` / `actor+0x3E` <- the instruction's two `u16` immediates,
+//!   straight through. The port's field-VM host calls them `kind` and
+//!   `variant`; `FUN_8002174C` reads them as this module's `up_rate` and
+//!   `down_rate`, so for this spawn they are the envelope's rise and fall
+//!   rates and nothing else.
+//! - `actor+0x56` (render mode), `+0x68` and `+0x6E` (the live weight) are
+//!   all zeroed, so a freshly spawned morph actor starts at rest.
+//!
 //! ## The weight envelope
 //!
 //! The tail (`0x80021880..0x8002190C`) is a ping-pong ramp, not a one-shot:
@@ -155,8 +208,10 @@ pub fn parse_apply_records<'a>(
 ///
 /// NOT WIRED: no engine actor carries a morph block (`actor+0x4C`) or a
 /// rest-pose stream (`actor+0x90`) - the ported morph path is the per-group
-/// VDF slot list instead. A spawn site allocating from descriptor
-/// `0x8007068C` is the prerequisite; see the module docs.
+/// VDF slot list instead. Those two buffers are the whole gap, and the module
+/// heading now traces where retail fills them: the spawn site is not missing,
+/// its host hook is already live, and what it does not do is build the two
+/// buffers.
 pub fn apply_morph_weights(
     block: &[u8],
     groups: &mut [Vec<u8>],

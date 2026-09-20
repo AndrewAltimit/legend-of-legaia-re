@@ -215,14 +215,17 @@ impl LegaiaRuntime {
     }
 
     /// Fire one of the minigame rules engines' SFX cues through the page's
-    /// scheduler. The engine's cue ids are the static descriptor rows
-    /// (`< 0x100`); a runtime-bank id (`>= 0x200`) has no page-side voice
-    /// yet and is dropped, the same silence the native window keeps when no
-    /// audio is attached.
+    /// scheduler.
+    ///
+    /// The full `u16` goes through. [`Self::enqueue_sfx`] already takes
+    /// `impl Into<u16>` and classifies at fire time, so the `u8::try_from`
+    /// this used to narrow through dropped every runtime-bank id
+    /// (`>= 0x200`, e.g. the dance count-in's `COUNTIN_INTRO_CUE`) before any
+    /// counter could see it - the same width trap the strike-SFX scheduler
+    /// was caught by once already. A cue with no page-side voice is still
+    /// silent; it is now silent where the miss is counted.
     pub(crate) fn minigame_sfx(&mut self, id: u16) {
-        if let Ok(id) = u8::try_from(id) {
-            self.enqueue_sfx(id, 0);
-        }
+        self.enqueue_sfx(id, 0);
     }
 
     /// Fire the minigame sessions' queued SFX cue ids (the dance count-in's
@@ -243,6 +246,19 @@ impl LegaiaRuntime {
     /// Per-tick presentation step. Cheap no-op outside a minigame mode.
     pub(crate) fn tick_minigame_ui(&mut self) {
         self.drain_minigame_sfx_cues_web();
+        // The dance's song-over arm restores the interrupted mode but leaves
+        // the run installed so a host can read the final score; closing it is
+        // the host's job, and `World::exit_dance` is what gives the hall its
+        // own track back (`restore_minigame_bgm`) and clears the session.
+        // The native window has always closed that loop in its frame path;
+        // this page never called `exit_dance` at all, so a finished song kept
+        // playing the chart's track over the field and the run stayed
+        // installed until the player pressed Start.
+        if let Some(host) = self.scene_host.as_mut()
+            && host.world.mode != legaia_engine_core::world::SceneMode::Dance
+        {
+            host.world.exit_dance();
+        }
         let now = self
             .scene_host
             .as_ref()
@@ -308,9 +324,6 @@ impl LegaiaRuntime {
         surface_w: u32,
         surface_h: u32,
     ) -> (Vec<SpriteDraw>, Vec<TextDraw>) {
-        let Some(game) = self.minigame_ui.game else {
-            return (Vec::new(), Vec::new());
-        };
         // The dance's status rows are withheld while the pre-song count-in
         // banner is up, off the same shared phase predicate the native HUD
         // reads - the rule lives with the phase, not with either draw list.
@@ -318,19 +331,81 @@ impl LegaiaRuntime {
             .scene_host
             .as_ref()
             .is_some_and(|h| h.world.minigames.dance_status_visible());
-        let mut texts = match game {
-            ActiveGame::Slot => self.slot_status_draws(font),
-            ActiveGame::Baka => self.baka_status_draws(font),
-            ActiveGame::Muscle => self.muscle_status_draws(font),
-            ActiveGame::Dance if !dance_status => Vec::new(),
-            ActiveGame::Dance => self.dance_status_draws(font),
+        let mut texts = match self.minigame_ui.game {
+            Some(ActiveGame::Slot) => self.slot_status_draws(font),
+            Some(ActiveGame::Baka) => self.baka_status_draws(font),
+            Some(ActiveGame::Muscle) => self.muscle_status_draws(font),
+            Some(ActiveGame::Dance) if !dance_status => Vec::new(),
+            Some(ActiveGame::Dance) => self.dance_status_draws(font),
+            None => Vec::new(),
         };
-        if game == ActiveGame::Dance {
+        if self.minigame_ui.game == Some(ActiveGame::Dance) {
             texts.extend(self.dance_countin_and_tutorial_draws(font));
         }
+        // The effect parts. OUTSIDE the `game` gate deliberately: the pool's
+        // busiest producer is the fishing venue, and fishing is not one of
+        // this page's `ActiveGame` screens - it draws from `play_fishing`.
+        // A part also outlives its mode by the length of its fade ramp.
+        texts.extend(self.minigame_fx_stage_draws(font));
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
         ui::scale_stage_text_draws(&mut texts, origin, scale);
         (Vec::new(), texts)
+    }
+
+    /// The minigame effect parts this frame, in **stage** space.
+    ///
+    /// Two pools, one builder. The shared
+    /// [`legaia_engine_core::minigame_fx::MinigameFxPool`] on
+    /// `World::minigames.fx` carries the fishing venue's splash, ripples and
+    /// catch bursts; the dance run carries its own, because its sequence-clear
+    /// banner is spawned by the judge rather than by a host. Both used to be
+    /// drawn only by the native window - the pool because it lived inside
+    /// that window, the dance parts because this page had no emit site for
+    /// them at all.
+    fn minigame_fx_stage_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+        use legaia_engine_core::dance::SpritePartEmit;
+        use legaia_engine_ui::minigame_fx as fx;
+        let Some(host) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        let mg = &host.world.minigames;
+        let parts: Vec<fx::FxPartView> = mg
+            .fx
+            .frames()
+            .into_iter()
+            .map(|p| fx::FxPartView {
+                x: p.x as i32,
+                y: p.y as i32,
+                sprite: p.sprite,
+                fade: p.fade,
+            })
+            .collect();
+        let mut out = fx::fx_part_draws(font, &parts, (0, 0), 1);
+        if let Some(g) = mg.dance.as_ref() {
+            let dance_parts: Vec<fx::DanceSpritePartView> = g
+                .sprite_part_emits()
+                .into_iter()
+                .filter_map(|f| {
+                    let (x, y, shadow) = match f.emit {
+                        SpritePartEmit::Shadowed { x, y, .. } => (x, y, true),
+                        SpritePartEmit::Plain { x, y, .. }
+                        | SpritePartEmit::Marker { x, y, .. } => (x, y, false),
+                        SpritePartEmit::CopyTemplate
+                        | SpritePartEmit::SetTemplateZ
+                        | SpritePartEmit::None => return None,
+                    };
+                    Some(fx::DanceSpritePartView {
+                        x: x as i32,
+                        y: y as i32,
+                        sprite: f.sprite,
+                        fade: f.fade,
+                        shadow,
+                    })
+                })
+                .collect();
+            out.extend(fx::dance_sprite_part_draws(font, &dance_parts, (0, 0), 1));
+        }
+        out
     }
 
     /// The dance's pre-song count-in banner and the Disco King how-to

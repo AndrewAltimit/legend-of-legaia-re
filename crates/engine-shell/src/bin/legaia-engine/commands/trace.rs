@@ -708,13 +708,19 @@ pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
                 anyhow::bail!("engine trace is empty (need at least one frame)");
             };
             eprintln!(
-                "  engine[last] mask=0b{:024b} master={:?} reverb_mode={:?}",
-                last.active_voice_mask, last.master_volume, last.reverb_mode,
+                "  engine[last] mask=0b{:024b} master={:?} eon={:?} depth={:?}",
+                last.active_voice_mask, last.master_volume, last.reverb_eon, last.reverb_depth,
             );
             eprintln!(
-                "  retail       mask=0b{:024b} master={:?} reverb_mode={:?}",
-                retail.active_voice_mask, retail.master_volume, retail.reverb_mode,
+                "  retail       mask=0b{:024b} master={:?} eon={:?} depth={:?}",
+                retail.active_voice_mask,
+                retail.master_volume,
+                retail.reverb_eon,
+                retail.reverb_depth,
             );
+            if args.per_voice {
+                print_voice_allocation(&trace, std::slice::from_ref(retail));
+            }
             first_audio_trace_divergence(&trace, retail)
         }
         Some(ResolvedRetail::Multi(retail_frames)) => {
@@ -727,6 +733,9 @@ pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
                 retail_frames.len(),
                 retail_active,
             );
+            if args.per_voice {
+                print_voice_allocation(&trace, retail_frames);
+            }
             first_audio_trace_divergence_multi(&trace, retail_frames)
         }
     };
@@ -746,6 +755,31 @@ pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Render the per-voice allocation comparison for `--per-voice`.
+fn print_voice_allocation(engine: &[AudioTraceFrame], retail: &[AudioTraceFrame]) {
+    use legaia_engine_shell::audio_trace_oracle::compare_voice_allocation;
+    let c = compare_voice_allocation(engine, retail);
+    for (label, s) in [("engine", &c.engine), ("retail", &c.retail)] {
+        eprintln!(
+            "  [per-voice] {label}: sounding frames mean={:.2} max={} | distinct notes/frame={:.2} | slots per note={:.3} | pitches={} tones={} samples={}",
+            s.mean_active,
+            s.max_active,
+            s.mean_distinct_notes,
+            s.doubling,
+            s.pitches.len(),
+            s.tones.len(),
+            s.samples.len(),
+        );
+    }
+    eprintln!(
+        "  [per-voice] shared pitches={} shared tones={} -> {:?}",
+        c.shared_pitches, c.shared_tones, c.verdict,
+    );
+    eprintln!(
+        "  [per-voice] NOTE: only meaningful if both sides play the same track - an engine trace plays the scene prescript's op-0x35 id, a retail capture whatever `0x8007BAC8` held."
+    );
 }
 
 struct ResolvedPcmTrace {

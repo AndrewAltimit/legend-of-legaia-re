@@ -477,6 +477,14 @@ impl PlayWindowApp {
                 spell_id,
                 cursor,
             } => (Some(*caster), Some(*spell_id), 2u8, *cursor),
+            // Retail sub-screen `0x10`, the no-pick group flow: it draws no
+            // target rows at all, so the screen is the spell list with the
+            // confirmed spell staged in the info window - phase `1`, not `2`.
+            SpellMenuPhase::GroupConfirm {
+                caster,
+                spell_id,
+                cursor,
+            } => (Some(*caster), Some(*spell_id), 1u8, *cursor),
             SpellMenuPhase::Done(_) => return PauseMenuDraws::default(),
         };
         let args = legaia_engine_render::SpellMenuDrawArgs {

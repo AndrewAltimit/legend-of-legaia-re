@@ -7,7 +7,8 @@ by a per-mode descriptor table at `DAT_8007326C` that says how each primitive
 group is laid out and which GP0 packet shape to emit. `SCUS_942.54` also carries
 a light-source sibling, `FUN_80029888`, over the same table. Neither is the leaf
 a measured retail frame's geometry comes out of: both sit behind a gate on the
-drawn actor's `+0x42` / `+0x7A` that no sampled mode raises, and the polygons
+drawn actor's `+0x42` / `+0x7A` that no sampled mode's drawn actors raise (the
+disc does ship writers - [see below](#the-disc-does-ship-writers-of-0x42)), and the polygons
 come from the [per-prim dispatcher `FUN_80043390`](#which-mesh-leaf-a-frame-actually-enters)
 instead.
 
@@ -106,11 +107,13 @@ one at all, and `NCS` / `NCT` / `NCDS` / `NCDT` occur nowhere.
 Two numbers make that a bounded answer rather than an absence. `MVMVA` can also
 select the light matrix, through its `mx` field - the one consumer a normal-
 colour census would miss - and disc-wide **no** `MVMVA` does: 29 select the
-rotation matrix, one the colour matrix, none the light matrix. And the sweep's
-denominator is non-empty by its own count, 238 GTE command words in code across
-84 based images (2,074,624 bytes). So the consumer set is exactly the four
-handlers, and the capture evidence above says no observed field frame enters
-them.
+rotation matrix, one the colour matrix, none the light matrix. And the sweep
+prints its own denominator with the answer, which is non-empty: 238 GTE command
+words in code over roughly two megabytes of `SCUS_942.54` plus every based
+overlay image. How many images that is depends on how much of the disc is
+mapped, not on the disc, so the number belongs in the sweep's output rather
+than on this page. So the consumer set is exactly the four handlers, and the
+capture evidence above says no observed field frame enters them.
 
 The sweep's own trap is worth carrying: a GTE command word is four bytes with no
 relocation, so it occurs in data at the rate any four-byte pattern does. Raw
@@ -573,7 +576,10 @@ no `j`, no PC-relative branch, no `lui`+`addiu` materialisation - across
 [`battle.md` § Unreferenced SCUS entry points](../reference/functions/battle.md#unreferenced-scus-entry-points)).
 So "what does retail do with a `0`" has an answer, and it is *nothing*: no pass
 consults this verdict. The port's lack of a cull here is parity, not a gap
-waiting on a caller.
+waiting on a caller - which is why the port carries it as a
+[`REPLACED-BY`](../tooling/port-catalog.md#replaced-by) row rather than in the
+wiring worklist: a worklist row states a gap a host closes, and this one has no
+host to find.
 
 ## Which mesh leaf a frame actually enters
 
@@ -611,9 +617,42 @@ so a swing is the frame that would exercise it. Its gate is the same `+0x42`
 test either way. That is what earlier field captures were
 seeing when they recorded zero renderer entries beside thousands of drawn town
 polygons: the per-prim dispatcher below is the leaf, and the two table-driven
-renderers are the arms retail's shipped actor data does not select. The gate is
-a property of the actor, not of the mode, so a state that does raise `+0x42`
-would enter `FUN_8002735C` in any mode; none has been found.
+renderers are the arms the sampled modes' actor data does not select. The gate
+is a property of the actor, not of the mode, so a state that does raise
+`+0x42` would enter `FUN_8002735C` in any mode.
+
+### The disc does ship writers of `+0x42`
+
+Read the zero as a statement about the sampled modes, not about the disc: two
+writer families put a non-zero value in that halfword, and reading the census
+as "nothing raises it" overstates what four states measured.
+
+- **The actor allocator stamps it.** `FUN_80020DE0` clears `+0x42` at
+  `0x80020EAC` and then, when `_DAT_8007B6D0 & 2`, writes `2` at `0x80020EC0`
+  (`lui v1,0x8008` / `lw v1,-0x4930(v1)` at `0x80020E88`..`0x80020E8C`,
+  `andi 2` / `beq` at `0x80020EB0`..`0x80020EB4`). Every actor allocated while
+  that bit is up therefore draws through `FUN_8002735C`. The global is the
+  **dev** counter, though: `sw zero,0x3b8(gp)` at `0x80015F64` boots it clear,
+  and its only non-zero writers disc-wide are the debug menu's store at
+  `0x801CED54` (PROT 0971) and the pad-driven 12-bit ring at `0x801EA00C` /
+  `0x801EA030` in the field overlay, which increments on pad bit `0x2000` and
+  decrements on `0x8000`. So this leg is dev-reachable, not retail-reachable -
+  the same shape as `FUN_801DBE9C`'s parameter-block leg.
+- **A move program can raise it.** Move-VM opcode `0x10` writes its own u16
+  operand straight into the field: `lhu $v0,2($s0)` / `sh $v0,0x42($s2)` at
+  `0x80023420`..`0x8002342C` ([`move-vm.md`](move-vm.md)). A cast or summon
+  record that issues it with a non-zero operand raises the gate for its own
+  actor for as long as the program leaves it up, and that is content, not a
+  dev switch. Which shipped records do so, and whether any of them is drawn
+  through one of the three brackets, is the open half.
+
+What the census does establish is narrower and still useful: across the four
+sampled states no *drawn* actor had the bit up, so those modes' geometry comes
+out of `FUN_80043390` and a port that reproduces them needs no table-driven
+renderer. The `sh $v0, 0x42(...)` pairs inside the brackets themselves
+(`0x8001B4C8`, `0x80048F24`) are not counter-examples - their base register is
+the scratchpad packet block at `0x1F80xxxx`, a different struct that reuses the
+displacement.
 
 This corrects two readings on [`world-map.md`](world-map.md): that the case-5
 landmark walk passes each landmark TMD "once per frame through `FUN_8002735C`",
@@ -667,9 +706,14 @@ word is the packet-length code (`0x05000000` / `0x08000000`). See
 
 The field camera's ten globals are turned into GTE control registers once a
 frame by **`FUN_800172C0`** - the routine the field per-frame controller
-`FUN_801D1344` ends its tail on (`0x801D1854`), and the one every minigame overlay and the world-map
-renderer call too (15 `jal` sites disc-wide). It is five calls long, and the
-last of them is what pins the field `TR`:
+`FUN_801D1344` ends its tail on (`0x801D1854`), and the one every minigame
+overlay and the world-map renderer call too. Its callers are four `jal` sites in
+`SCUS_942.54` and thirteen more across the based overlay images - field `0897`
+(three, including that tail call), fishing `0972` (four), world-map renderer
+`0901` (two), monster test `0981` (two), slot machine `0975` and Baka Fighter
+`0976` (one each); the six further monster-test siblings `0982`..`0987` repeat
+the `0981` site over the same bytes. It runs eight `jal`s in five steps, and the
+last step is what pins the field `TR`:
 
 1. `FUN_80026988(gp+0x468, 0x1F8003A8)` builds a rotation from the *light*
    angle trio `0x8007B780..84` (with a half-turn added on X) and

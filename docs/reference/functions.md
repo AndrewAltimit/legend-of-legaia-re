@@ -12,6 +12,8 @@ Every row is `| Address | Role |`, grouped into sections by subsystem. Conventio
 - **A row whose write-up outgrew its cell** keeps a one-liner plus a **[details ↓]** link into the Function details section at the bottom of its page.
 - **Some addresses in the dump corpus are not addresses at all.** A dump can print a real body beside a virtual address no runtime image ever used, because the printed VA is a property of the import's load base and footprint. Before treating an unfamiliar `0x801E…`/`0x8020…` address as a new function, check [`overlay-va-aliases.md`](overlay-va-aliases.md) - it carries the measured deltas and the re-keying for the known cases.
 
+- **PROT 0896 contributes no rows, and that is not an omission.** The image links at `0x801D4DF0` - the base is recovered from its own call graph, not from a capture - but nothing on the disc calls into it (zero of its 322 SCUS-range calls land on a `SCUS_942.54` function entry) and the corpus holds no dump taken at that base, so its roughly fifty function entries have addresses and no write-ups. A `overlay_0896_*` filename in the dump corpus is usually another image's bytes; see [`overlay-va-aliases.md`](overlay-va-aliases.md#prot-0896-two-programs-one-law-each).
+
 Not finding an address here does not mean it is unknown - this directory covers the functions that anchor an explanation. [`tooling/port-catalog.md`](../tooling/port-catalog.md) tracks per-function dumped / documented / ported status across the whole corpus.
 
 ## Pages

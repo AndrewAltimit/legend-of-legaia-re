@@ -98,6 +98,8 @@ A disc-wide walk of every scene MAN puts every dome door in `koin1` P1[9] - thre
 
 The match SM `FUN_801D0748` is the exception to that shape, and the reason is the one this page already makes: the arena reuses the battle engine, so the match runs as an ordinary battle and its driver is reached through the **battle** overlay's own template (`0x800767DC`, tick `FUN_80046A20`), not through the 0977 slot. `FUN_80046A20` is also the second of only two writers of game mode 24 on the disc: with `_DAT_8007BAC0 & 0x100` set it stores `0x18` rather than the field's `0x2`, which is what returns a finished round to the arena instead of to the field.
 
+The bytes say the same thing without a capture. `FUN_801D0748` has **exactly one** `jal` disc-wide - `0x80047014`, inside `FUN_80046A20`, with no test in front of it and the fall-through rejoining at `0x8004701C` - across `SCUS_942.54`, every based overlay image and every raw PROT entry. So every battle frame steps it, and reading the routine as a dome-specific match controller was reading one of its callers' contexts for the routine.
+
 ## Two state machines, not one
 
 The dome runs **two** state machines stacked, and confusing them for one is
@@ -677,6 +679,32 @@ on whatever arm loads `int.tim` / `int2.tim`.
 Where to look next is in the entry's own strings: PROT 0978 opens with
 `f_read %d size %d KB` and **`FIELD BACK READ NOW`**, which reads as a
 background-read cover rather than an arena screen.
+
+#### The panel-still consumer is in the hub, not the battle overlay
+
+It is `FUN_801D00F8` in **PROT 0977** at file `+0x18E0`, and it emits two
+`POLY_FT4` quads that between them form one 320x240 image out of VRAM
+`(384, 0)..(704, 240)` - tpage `0x106` for the left 192 columns and `0x109`
+for the right 128. The full geometry, the ordering-table path and the
+fade byte are on
+[`ringside-still.md`](../formats/ringside-still.md#what-draws-it).
+
+Two things that search missed follow from where it turned out to be. The
+sampling primitives are `tp = 2` (16-bit direct), not the `tpage 0x0006` 4bpp
+family the sweep above found, so the two consumers of the page are different
+primitive kinds addressing the same VRAM. And the emitter sits in the
+**contest hub**, which is the screen a finished match returns to - so the
+still is drawn a mode later than it is loaded, by an image that is not
+resident when the load runs. A census bracketed on one teardown cannot see it
+for that reason alone.
+
+The arming is the hub's own, not the teardown's: `FUN_801CEA6C` forks on the
+arena word `_DAT_8007BAC0` and stores the still latch `_DAT_801D1AE0` zero on
+the first entry (where op `0x3E` left the word at zero) and `1` on every
+re-entry. A probe run that walks into the arena from `koin1` enters the
+emitter 79 times over 3600 vsyncs and takes the six-tile arm every time; the
+still arm needs a second visit. See
+[`ringside-still.md`](../formats/ringside-still.md#measured-live).
 
 ### Object 1 is trimmed by the loader (`_DAT_8007B64B`)
 

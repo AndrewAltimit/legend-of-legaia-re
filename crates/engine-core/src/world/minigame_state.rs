@@ -32,6 +32,12 @@ pub struct MinigameState {
     /// ([`crate::world::World::fishing_exchange_buy`]). Hosts seed a new session's
     /// [`crate::fishing::FishingRecord`] from this cell.
     pub fishing_points: i32,
+    /// Persistent rod index (`0..`[`crate::fishing::ROD_KINDS`]), mirroring
+    /// retail's `_DAT_80084454`: the cell the rod / lure select screen writes
+    /// and the tension gauge divides by. The fishing bring-up re-points a
+    /// stale value at an owned rod before a session reads it - see
+    /// [`crate::world::World::resolve_fishing_entry_rod`].
+    pub fishing_rod: u32,
     /// Persistent lifetime cast counter, mirroring retail's `_DAT_80084460`.
     /// The band-4 gate reads it, and its low bit picks the sign of the cast
     /// lure's walk-grid drift
@@ -155,6 +161,17 @@ pub struct MinigameState {
     /// per-host it would be two predicates over two spellings of "did the
     /// upload work", which is the shape a silent one-host regression hides in.
     pub dance_hud_art_staged: bool,
+    /// The **effect-part pool** every minigame overlay's one-shot
+    /// presentation spawns land in (the fishing venue's splash, ripples and
+    /// catch bursts). Aged once per world tick, so every host that ticks the
+    /// world drains the same parts - see [`crate::minigame_fx`] for why the
+    /// pool is world state rather than a host's.
+    ///
+    /// The dance run keeps its own pool inside
+    /// [`crate::dance::DanceGame`], because its spawns are gameplay
+    /// (the sequence-clear banner fires from the judge) rather than
+    /// presentation the host drives.
+    pub fx: crate::minigame_fx::MinigameFxPool,
 }
 
 impl MinigameState {
@@ -183,6 +200,7 @@ impl MinigameState {
             fishing: None,
             fishing_return_mode: SceneMode::Field,
             fishing_points: 0,
+            fishing_rod: 0,
             fishing_casts: 0,
             fishing_prizes_purchased: 0,
             fishing_exchange: None,
@@ -206,6 +224,7 @@ impl MinigameState {
             dance_tutorial_frame: None,
             pending_sfx: Vec::new(),
             dance_hud_art_staged: false,
+            fx: crate::minigame_fx::MinigameFxPool::new(),
         }
     }
 }

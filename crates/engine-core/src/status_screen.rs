@@ -107,11 +107,16 @@ pub struct StatusInput {
     pub r1: bool,
     pub circle: bool,
     pub start: bool,
+    /// Confirm. Retail's sub-screen `0x15` character picker takes a confirm
+    /// and opens one of the character's three lists
+    /// ([`StatusScreenSession::spell_rows_for_cursor`]).
+    pub cross: bool,
 }
 
 impl StatusInput {
     pub fn from_pad_edge(pressed: u16) -> Self {
         Self {
+            cross: pressed & PadButton::Cross.mask() != 0,
             left: pressed & PadButton::Left.mask() != 0,
             right: pressed & PadButton::Right.mask() != 0,
             l1: pressed & PadButton::L1.mask() != 0,
@@ -134,6 +139,15 @@ pub enum StatusEvent {
 pub struct StatusScreenSession {
     snapshots: Vec<StatusSnapshot>,
     phase: StatusPhase,
+    /// Per-snapshot reorder rows for the character's spell list - the
+    /// payload the screen's confirm hands to the list page.
+    ///
+    /// Retail's record screen (menu-overlay sub-screen `0x15`,
+    /// `FUN_801DA2A0`) is one body serving three per-character lists, and
+    /// the only one whose step carries the exchange arm is the spell list
+    /// (`crate::save_subscreen::Sub15ListSource::Magic`). A host that
+    /// builds the session without rows keeps the browse-only screen.
+    spell_rows: Vec<Vec<crate::list_order::ListOrderRow>>,
 }
 
 impl StatusScreenSession {
@@ -141,7 +155,24 @@ impl StatusScreenSession {
         Self {
             snapshots,
             phase: StatusPhase::Browsing { cursor: 0 },
+            spell_rows: Vec::new(),
         }
+    }
+
+    /// Install the per-snapshot spell rows the confirm opens the reorder
+    /// page over. Index-parallel with [`Self::snapshots`].
+    pub fn with_spell_rows(mut self, rows: Vec<Vec<crate::list_order::ListOrderRow>>) -> Self {
+        self.spell_rows = rows;
+        self
+    }
+
+    /// The shown character's reorder rows, empty when none were installed
+    /// or the list is empty (retail's reject arm).
+    pub fn spell_rows_for_cursor(&self) -> &[crate::list_order::ListOrderRow] {
+        self.spell_rows
+            .get(self.cursor() as usize)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     pub fn snapshots(&self) -> &[StatusSnapshot] {

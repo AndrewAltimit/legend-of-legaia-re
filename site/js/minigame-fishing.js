@@ -463,9 +463,32 @@ window.MgFishing = (function () {
       }
     }
 
+    /* Placeholder letterform per effect-part sprite id. The ids and the
+     * table are the engine's (legaia_engine_core::minigame_fx); the overlay's
+     * own sprite page is not staged on this page, so a part draws as its
+     * glyph the same way it does on the other two hosts. */
+    const FX_GLYPH = { 11: 'GOOD!', 22: '*', 256: '~', 257: 'o', 258: '*' };
+
+    /* The minigame effect-part pool's live parts, in retail 320x240 coords.
+     * The pool is shared with the play page and the native window; this page
+     * keeps its own instance because it drives the session types directly
+     * and holds no World. */
+    function drawFxParts(parts) {
+      if (!parts || !parts.length) return;
+      for (const p of parts) {
+        const glyph = FX_GLYPH[p.sprite] || '+';
+        hudText(glyph, p.x, p.y, {
+          color: 'rgba(255,255,204,' + Math.max(0, Math.min(1, p.fade / 255)) + ')',
+          bold: true,
+          align: 'center',
+        });
+      }
+    }
+
     /* One full frame: 3D pass below, HUD + overlay above. `hud` is the
-     * ported draw-item list for this frame (already JSON-parsed). */
-    function draw(st, hud) {
+     * ported draw-item list for this frame (already JSON-parsed) and `fx` the
+     * effect pool's parts. */
+    function draw(st, hud, fx) {
       const W = canvas.width, H = canvas.height;
       if (scene) {
         if (st && st.live && st.venue !== scene.venue) applyVenue(st.venue);
@@ -482,6 +505,7 @@ window.MgFishing = (function () {
       }
       drawWaterOverlay(st);
       if (hud) for (const it of hud) drawHudItem(it);
+      drawFxParts(fx);
     }
 
     return {

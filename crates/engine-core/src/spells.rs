@@ -109,6 +109,37 @@ pub enum SpellTarget {
     SelfOnly,
 }
 
+impl SpellTarget {
+    /// The two target bits of retail's spell-table `+2` stats byte for this
+    /// shape: `0x02` = ally side, `0x20` = all targets. The inverse of
+    /// [`legaia_asset::spell_names::SpellStats::target_shape`], which is how
+    /// [`crate::retail_magic`] fills the shape in the first place.
+    ///
+    /// It exists so the screens that branch on that byte can run retail's own
+    /// predicate over it rather than re-deciding on the typed shape. The
+    /// menu's `FUN_801D9110` confirm dispatch is one
+    /// ([`crate::spell_menu::spell_targets_group`]); the byte's other bits
+    /// (element / usability) belong to different readers and are not
+    /// reconstructed here.
+    ///
+    /// `SelfOnly` has no retail encoding of its own - it is the engine's
+    /// label for a single-ally spell whose only sensible row is the caster -
+    /// so it carries the single-ally bits.
+    pub const fn retail_target_flag_bits(self) -> u8 {
+        match self {
+            SpellTarget::OneEnemy => 0,
+            SpellTarget::AllEnemies => legaia_asset::spell_names::TARGET_ALL_BIT,
+            SpellTarget::OneAlly | SpellTarget::SelfOnly => {
+                legaia_asset::spell_names::TARGET_ALLY_BIT
+            }
+            SpellTarget::AllAllies => {
+                legaia_asset::spell_names::TARGET_ALLY_BIT
+                    | legaia_asset::spell_names::TARGET_ALL_BIT
+            }
+        }
+    }
+}
+
 /// Buffable / debuffable stat. The retail engine modifies a small set of
 /// per-actor scalars during a magic phase; this enum mirrors them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

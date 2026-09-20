@@ -26,6 +26,10 @@ use legaia_engine_core::fishing::{
 use legaia_engine_ui as ui_fishing;
 use legaia_engine_ui::{BarAxis, CatchHudState, HudCaption, HudDraw};
 
+/// Packed spread argument the strike splash fans its three parts by - the
+/// same value the other two hosts pass in `World::tick_fishing`.
+const SPLASH_SPREAD: i32 = 0x40;
+
 /// Default rod stat for the browser entry point (the native dev launcher's
 /// `DEV_ROD_STAT`; the save-block fishing record isn't loaded here).
 const WEB_ROD_STAT: i32 = 4;
@@ -493,6 +497,7 @@ impl LegaiaMinigames {
         let Some(p) = self.fishing_pond.as_mut() else {
             return "[]".to_string();
         };
+        self.fx.tick(1);
         let was = p.phase();
         p.tick(
             PondInput {
@@ -512,6 +517,17 @@ impl LegaiaMinigames {
             match *e {
                 PondEvent::Splash => {
                     self.fishing_banners.splash.start();
+                    // The three-part strike splash, into this page's own
+                    // effect pool - the twin of the spawn
+                    // `World::tick_fishing` makes for the other two hosts
+                    // off the same strike edge.
+                    let parts = legaia_engine_core::fishing_chrome::splash_burst(
+                        legaia_engine_core::fishing_actors::SCREEN_CENTRE.0,
+                        legaia_engine_core::fishing_actors::SCREEN_CENTRE.1,
+                        legaia_engine_core::minigame_fx::SPLASH_SPRITE_ID,
+                        SPLASH_SPREAD,
+                    );
+                    self.fx.spawn_splash(&parts);
                     out.push(r#"{"e":"splash"}"#.to_string());
                 }
                 PondEvent::Hooked(id) => {

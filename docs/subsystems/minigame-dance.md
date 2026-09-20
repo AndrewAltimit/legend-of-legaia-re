@@ -457,8 +457,11 @@ Three further pieces of the retail frame run in the same host
   of this frame.
 - **Effect spawns**: the human's scoring judge spawns the sequence-clear
   banner + stars (`good_banner_spawn` -> `step_mark_effect_spawn`) into the
-  window's minigame effect pool (`window/minigame_fx.rs`), which ages the
-  parts and draws them as placeholder glyphs.
+  **run's own** part pool, inside `DanceGame::judge_press` - gameplay, not
+  host presentation - and every host draws them off
+  `DanceGame::sprite_part_emits`. They are not in the shared
+  `engine-core::minigame_fx` pool, which carries the spawns of the overlays
+  that have no session to hold them.
 
 The `U` key starts the how-to floor with the Disco King tutorial runner
 (`DanceTutorial`, below) ticking beside the session.

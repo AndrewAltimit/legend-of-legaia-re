@@ -1311,8 +1311,21 @@ void main() {
         }
         return false;
       }
-      /* Menu up: Start toggles it shut; every other edge is the engine's. */
-      if (startEdge) {
+      /* Menu up: Start toggles it shut - but only from the ROOT row list.
+       * The native window never lets Start reach the close: while a
+       * sub-screen owns the pad its session gets the raw mask and the root
+       * list is not ticked at all, so Start there is the sub-screen's own
+       * business and at most walks back to the root. Closing the whole menu
+       * from inside one threw away a half-typed rebind or a staged equip
+       * pick on a button that is inert in the window. Guarded so a cached
+       * WASM without the export keeps the old behaviour rather than
+       * trapping. */
+      let inSubScreen = false;
+      try {
+        inSubScreen = typeof rt.play_menu_sub_is_open === 'function'
+          && rt.play_menu_sub_is_open();
+      } catch (e) {}
+      if (startEdge && !inSubScreen) {
         try { rt.play_menu_close(); } catch (e) {}
         this.sfxEvent('menu_cancel');
       } else {
@@ -2423,7 +2436,10 @@ void main() {
         const m = fieldVp;
         const cy = m[1] * px + m[5] * py + m[9] * pz + m[13];
         const cw = m[3] * px + m[7] * py + m[11] * pz + m[15];
-        rt.set_field_player_screen_y(cw > 0 ? Math.round((1 - cy / cw) * 120) : -1);
+        /* -2147483648 is the engine's NO_FIELD_PROJECTION sentinel. A plain
+         * negative will not do: a lead projected above the top of the stage
+         * has a negative stage Y and is a number the kernel compares. */
+        rt.set_field_player_screen_y(cw > 0 ? Math.round((1 - cy / cw) * 120) : -2147483648);
       }
 
       /* Script-spawned actors (field-VM 0x4C 0xD8): the engine hands over

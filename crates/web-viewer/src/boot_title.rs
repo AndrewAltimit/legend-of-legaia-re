@@ -146,6 +146,35 @@ impl LegaiaRuntime {
                 legaia_engine_core::menu_glyph_atlas::build_atlas_from_prot_dat_slice(&b).ok()
             });
     }
+
+    /// A picked title row whose pause-menu door would not open returns the
+    /// player to the TITLE, not into a new game.
+    ///
+    /// `play_menu_open_row` fails whenever the row is unavailable on this
+    /// world - a standing op-`0x49` entry-context park blocks Load, and a
+    /// menu that will not open blocks both - and this page used to answer
+    /// that with `"new_game"`, so a player who pressed Continue could find
+    /// themselves in the opening cutscene with their save untouched. The
+    /// native window never has this door: `TitleOutcome::Continue` installs
+    /// `BootUiState::SaveSelect` and `Options` installs `BootUiState::Options`
+    /// directly, and neither can decay into New Game
+    /// (`window/boot_cutscene.rs`).
+    ///
+    /// Returns `""` (the "title still running" answer), having put a fresh
+    /// title session back up with its attract countdown armed.
+    fn reopen_title_after_failed_row(&mut self, row: &str) -> String {
+        crate::console_log(&format!(
+            "boot title: the {row} row would not open on this world; returning to the title"
+        ));
+        let mut session = if self.boot_title_has_save_data() {
+            TitleSession::new()
+        } else {
+            TitleSession::without_save_data()
+        };
+        session.attract_enabled = true;
+        self.boot_title = Some(session);
+        String::new()
+    }
 }
 
 #[wasm_bindgen]
@@ -178,7 +207,6 @@ impl LegaiaRuntime {
         // countdown reaches the same state the native window reaches; the
         // movie itself plays through the FMV lane - see `boot_title_step`.
         session.attract_enabled = true;
-        session.skip_fade_in();
         self.boot_title = Some(session);
         self.boot_title_attract_skips = 0;
     }
@@ -305,14 +333,14 @@ impl LegaiaRuntime {
                         if self.play_menu_open_row("Load") {
                             "continue".to_string()
                         } else {
-                            "new_game".to_string()
+                            self.reopen_title_after_failed_row("Load")
                         }
                     }
                     TitleOutcome::Options => {
                         if self.play_menu_open_row("Options") {
                             "options".to_string()
                         } else {
-                            "new_game".to_string()
+                            self.reopen_title_after_failed_row("Options")
                         }
                     }
                 }
@@ -517,7 +545,14 @@ impl LegaiaRuntime {
             } else {
                 phase
             };
-            let blink_on = matches!(session.phase(), TitlePhase::PressStart { blink_phase } if blink_phase < 30);
+            // The duty is HALF the session's own period, not a literal:
+            // `blink_phase` is `(phase + 1) % blink_period` and the period is
+            // 30, so a literal 30 made this predicate a tautology and the
+            // prompt never blinked on this host.
+            let blink_on = matches!(
+                session.phase(),
+                TitlePhase::PressStart { blink_phase } if blink_phase < session.blink_period / 2
+            );
             let mut d = ui::title_draws_for(font, phase, cursor, false, blink_on, false, (96, 96));
             ui::scale_stage_text_draws(&mut d, origin, scale);
             texts.extend(d);

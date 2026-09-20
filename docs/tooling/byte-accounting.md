@@ -308,6 +308,28 @@ The general rule this instrument wants: when the sweep finds something, check
 whether a constant for it already exists. A `scan` claim beside a named offset
 is a missing binding, not a discovery.
 
+#### The same gap, without a magic to find it
+
+A sub-asset at a pinned offset at least announces itself to the sweep. A
+**table** does not: a stride of small integers carries no magic, so it never
+becomes a `scan` claim and never reads as "found by guessing" - it reads as
+residue, and ranks in the worklist beside a format nobody has opened. Six of
+the disc's larger `low_entropy` / `mixed` runs were that: the move-power and
+attack-camera tables, the element-affinity matrix, the menu window
+descriptors, the Baka Fighter roster, the slot-machine and dance tables. Each
+already had a parser with a `pub const` offset and a decoded record layout.
+
+`byte_account::pinned_overlay_tables` is the binding, one row per table,
+carrying the offset and the `count * stride` **from the owning module's own
+constants** - so a row cannot be widened here without widening the parser that
+reads it, and re-pinning a table in the parser moves the claim with it. The
+rows are asserted against the disc: every row is in bounds, the rows are
+disjoint from each other, and no row overlaps a dump extent the bytes confirm
+in that image. That last one is the real guard, because an overlap is
+invisible in the accounted total - the sink merges ranges before reporting,
+and a merged range keeps no owner, so a table wrongly placed inside a function
+would silently agree with the number.
+
 The last instance on the disc was entry `1062`, and it was the same shape: a
 single-chunk DATA_FIELD stream carrying a SEQ - one `(0x02 << 24) | len` header,
 the sequence, a zero terminator, sector padding - classed `overlay_data_blob`
@@ -323,18 +345,76 @@ the payload's magic is `pQES`. The owner comes from the **magic** where the two
 disagree: a type byte selects the runtime's handler, and an owner names what the
 bytes are.
 
-### When no load base fits, the image stays residue
+### A base is not a dump, and a dump is not a caller
 
-PROT `0896` is the class's largest single unwalked run and it is not a walker
-gap: no load base makes the image self-consistent. The measurement is the
-image's own operands - every `lui`+`addiu` pair and every `j`/`jal` target in
-the overlay band - slid against a window the width of the file. The best window
-holds a bit over four fifths of them, where a pinned control (the menu overlay
-`0899` at the slot-A base) holds all but two of more than twelve hundred. The
-image also carries no printable string long enough to anchor, because its label
-table is Shift-JIS. So its references are mostly external, there is no base to
-extract it at, and its bytes stay `plausible_mips` residue until a capture shows
-it resident. The map's own note says the same thing from the loader side.
+PROT `0896` produced two wrong readings in a row here, one about its base and
+one about what a base buys, and the second outlived the first.
+
+"No load base makes the image self-consistent" was a reading of one metric - a
+ratio over the image's `lui`+`addiu` pairs, which is blind to the call graph and
+which ranks a refuted base first on this image
+([`static-overlay-pipeline.md`](static-overlay-pipeline.md#a-resolution-ratio-is-not-a-base-test)).
+The call-graph recovery lands on `0x801D4DF0`, and the entry has a map row.
+
+What this page then said was that the residue does not move: a base answers
+*where the bytes go* and says nothing about whether anything has read them, so
+the whole entry would stay `plausible_mips` residue. The first half is true and
+the conclusion was not. The parser for a code image's code is the **dump
+corpus**, and a base is exactly what lets the image be imported and dumped -
+which is a separate step from recovering the base, and the step nobody had
+taken. Imported at `0x801D4DF0` the image's whole code region dumps, and the
+entry's accounted share rises accordingly; what remains is its data segment and
+byte-curve tail, not its code.
+
+The part of the old reading that survives is about *callers*, not about
+coverage: this image's code is linked against an executable this disc does not
+carry - none of its SCUS-range calls lands on a `SCUS_942.54` function entry -
+so no capture can show it resident and no port is owed for any of it. A dump
+credits bytes; it does not make them reachable.
+
+### A pointer table is not its pool
+
+`pinned_overlay_tables` binds a table by `offset + count * stride`, and a table
+of **pointers** then reads as fully accounted while everything it points at
+stays residue. The battle overlay's effect-prototype table `0x801F6324` was that
+case: its sixty-one `u32`s were claimed and the fifty-four unique records behind
+them - three and a half kilobytes, packed, ending at the table itself - ranked as
+one unbroken `low_entropy` run, which is what a completely decoded structure
+looks like when only its index is claimed.
+[`move_power::parse_effect_proto_records`](../formats/move-power.md#effect-prototype-records---the-spawn-path)
+had been decoding them the whole time.
+
+Two properties of the pool make the claim exact rather than a guess about
+lengths: the records are packed, so each one ends where the next begins, and the
+last is bounded by the table rather than by the end of the entry - which is the
+one place the shared record walker's generic bound is too generous for a byte
+claim.
+
+The sibling shape is a **NUL-terminated string**, where the length is in the
+bytes rather than in any table. The battle overlay's UI labels and the Muscle
+Dome victory messages each have a pinned start and no stride at all, so the
+walker NUL-scans from the pinned offset and claims nothing when there is no
+terminator in the image. Same rule as the tables: the start is a `pub const` of
+the module that reads it, and only the extent comes from the disc.
+
+#### A filename is not corroboration on its own
+
+Committing that row surfaced a second gap, in the walker rather than on the
+disc. An extent whose printed instructions are outside the encodable grammar is
+*unverifiable*, and the walker credits it when the dump's filename names this
+entry. That is sound where other extents in the same image confirm by bytes -
+the filename is then one claim among corroborated ones. Where **nothing** in an
+image confirms, the filename is the whole of the evidence, and that is exactly
+the case in which the dump program's base was wrong: the extents then land at
+arbitrary offsets in a file that never held them. Three such extents landed
+inside `0896` and were credited as code; re-disassembling the file at those
+offsets shows different instructions.
+
+So a label-credited extent needs at least one byte confirmation elsewhere in
+the same image. The rule costs nothing where the corpus is real - the field,
+battle, menu and minigame images all confirm hundreds of extents by bytes - and
+it is reported rather than silently dropped: the entry's note says how many
+label-matching extents were left uncredited and why.
 
 ### The multi-bank VAB
 
@@ -516,13 +596,13 @@ the same figure, so no part of the accounted share rests on a guessed magic.
 | Class | What its unclaimed bytes are | Verdict |
 |---|---|---|
 | `vab_multi_bank` (`0891`) | Nothing: the bank index, each bank's two chunks and each bank's sector slack are claimed from lengths the container states. | Closed. Layout in [`vab.md`](../formats/vab.md#the-multi-bank-archive-monstersnd). |
-| `overlay_data_blob` | The whole class's remaining work, and most of it is entry `0896`, whose extent reads `plausible_mips` although its head is a length-prefixed Shift-JIS label table. The rest is per-image data segments beside code the dump corpus reached. | `0896` is the JP-build menu image, resident in no USA state. |
+| `overlay_data_blob` | The whole class's remaining work, and most of it is entry `0896`, whose extent reads `plausible_mips` although its head is a length-prefixed Shift-JIS label table. The rest is per-image data segments beside code the dump corpus reached. | `0896` links at `0x801D4DF0` and calls no function entry of this disc's executable - a foreign-build image, resident in no state here. |
 | `overlay_ptr_table`, `mips_overlay` | `low_entropy` runs with a `plausible_mips` minority - the tables beside code the dump corpus has not reached. | Dump worklist; agrees with [`disc-coverage.md`](disc-coverage.md)'s gap list. |
 | `init_pak` (`0895`) | The head pointer table, the SCUS-name string, and a tail past the last logo. | Closed but for those three; see the composition rule below. |
 | `lzs_container` | Per-entry tails of a few hundred bytes past the last descriptor's stream, plus `0981` entire - the one class member that is a code image rather than a container. | Walker tails plus one mis-classed entry. |
 | `scene_asset_table`, `pack` | Short `mixed` / `low_entropy` runs at the tail of records the walker did reach, plus one `high_entropy` minority in `scene_asset_table`. | Walker tails, not unwalked format. |
 | `scene_vab_stream`, `scene_tmd_stream`, `data_field_streaming` | Nothing: the chunk walk reaches the terminator and what is left of the entry's last sector is claimed as slack. This class's residue used to be its single largest figure and read as "walker tails". | Closed; see the fixed-stride section above. |
-| `battle_data_pack` | Nothing but `zero_pad`. | The disc's own slack. |
+| `battle_data_pack` | Nothing but inter-record alignment: all four entries account whole. | Closed; the table-to-data gap is declared slack. |
 | `bse_bank`, `scene_event_scripts` | Kilobyte-scale `low_entropy` / `ascii_text` tails behind a walker that reached the records. | Walker tails. |
 | `efect_pack` (`0873`) | Nothing: the header, the inline sprite atlas, and both packs' members account fully. | Closed. |
 | `pochi_filler`, `all_zeros`, `scene_v12_table` | Nothing, or `zero_pad`. | The disc's own slack. Not work. |
@@ -636,6 +716,25 @@ figure by a rounding error, and "the total fell 0.3 points" does not say which p
 Slack shapes stay out of `work_bytes` for the reason the rollup keeps them apart: `zero_pad`,
 `alignment` and `repeated_fill` are the disc's own padding, most of the residue by bytes, and
 counting them as work produces a worklist nobody can act on.
+
+### A stale binary is the same failure, one layer down
+
+The sweep's CSV is a cache and the page says so below. The `asset` binary the
+sweep runs is a cache too, and that one fails more quietly, because nothing
+about a built binary announces which tree it came from. A committed CSV and a
+"fresh" per-entry run disagreed on two entries - `0970` at 5.6% against 20.5%,
+`0895` at 98.1% against 46.5% - and the natural reading, that the CSV was
+stale, was backwards. Both "fresh" figures are this page's own *historical*
+numbers: 20.5% is `0970` before the zero-match rule stopped crediting an
+all-zero extent, and 46.5% is `0895` before the `init_pak` walker took the
+entry back from the code-walker override. A binary built before those two
+fixes reproduces both exactly, against the current tree and the current disc.
+
+Two habits follow. Build the binary from the tree you are measuring, in that
+tree - a `target/` from another checkout is not a tool, it is a previous
+answer. And when two figures disagree, check whether the lower one is a number
+this page already explains, because a documented historical figure reappearing
+is a stale *instrument*, not a finding about the disc.
 
 ### The input is a cache, and a stale one passes
 

@@ -261,6 +261,14 @@ const VRIN: usize = 31;
 /// depth. Roughly half-scale Q15 - audible without swamping the dry signal.
 const DEFAULT_OUTPUT_VOL: i16 = 0x4000;
 
+/// The depth retail actually runs. `vLOUT` and `vROUT` both read `0x3264`
+/// on every frame of a per-vsync PCSX-Redux capture of a town scene (SPU
+/// registers `0x1F801D84`/`0x86`), and the same pair comes back from the
+/// mednafen save-state corpus. It is *not* part of a reverb mode preset -
+/// libspu writes it separately through `SpuSetReverbDepth` - so matching the
+/// Studio C coefficient block says nothing about it.
+pub const RETAIL_OUTPUT_VOL: i16 = 0x3264;
+
 /// `(a * vol) / 0x8000`, the SPU's reverb multiply. `vol` is signed Q15, so
 /// `0x8000` (= -1.0) inverts phase exactly as the hardware does.
 #[inline]
@@ -356,6 +364,23 @@ impl Reverb {
     pub fn set_output_volume(&mut self, left: i16, right: i16) {
         self.out_vol_l = left;
         self.out_vol_r = right;
+    }
+
+    /// Current reverb output volume `(vLOUT, vROUT)` - the depth the host
+    /// last installed, or [`RETAIL_OUTPUT_VOL`] / [`DEFAULT_OUTPUT_VOL`].
+    pub fn output_volume(&self) -> (i16, i16) {
+        (self.out_vol_l, self.out_vol_r)
+    }
+
+    /// Work-area base address in SPU-RAM bytes (`mBASE * 8` on hardware):
+    /// `0x80000 - size`, since the tank always sits at the top of SPU RAM.
+    /// `0` when the mode is [`ReverbMode::Off`] (no work area at all), which
+    /// is how retail's `mBASE` reads with reverb disabled.
+    pub fn work_area_base_bytes(&self) -> u32 {
+        match self.mode.preset() {
+            None => 0,
+            Some(p) => 0x8_0000u32.saturating_sub(p.size),
+        }
     }
 
     /// Resolve an absolute buffer index from a halfword offset relative to

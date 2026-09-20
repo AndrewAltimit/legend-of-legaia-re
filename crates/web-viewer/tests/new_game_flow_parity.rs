@@ -44,6 +44,12 @@ fn loaded() -> Option<LegaiaRuntime> {
 /// Drive the title session to its main menu (skip fade-in, Start, then read).
 fn to_main_menu(rt: &mut LegaiaRuntime) {
     rt.boot_title_start();
+    // The page runs the title's fade-in like the native window does, and a
+    // Start pressed inside it is swallowed - step the fade out first (the
+    // session's default is 90 frames; the bound is generous, not a claim).
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+    }
     // Start (0x0008) leaves PressStart for MainMenu.
     rt.boot_title_step(0x0008);
 }

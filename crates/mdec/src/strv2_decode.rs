@@ -65,16 +65,19 @@
 //!
 //! See [`docs/subsystems/cutscene.md`](../../../../docs/subsystems/cutscene.md#bitstream-decode--mdec-feed-overlay).
 //!
-//! # NOT WIRED
+//! # No host is owed
 //!
-//! No engine path can select this decoder, and no retail data would make it
-//! do so. The overlay's master dispatch picks a bitstream per `fmv_id` and
-//! only slots 9 and 10 - `MV1A.STR` and `MOV15.STR` - clear the Iki flag; both
-//! files are dev leftovers that are **not on the released disc**, so
-//! `legaia_engine_core::cutscene::fmv_bitstream` returns `Iki` for every
-//! reachable id and the STR player's [`Bitstream::Strv2`] arm never comes up.
-//! What must exist first is an input: an STRv2/v3 stream to decode, together
-//! with the runtime unpack of the VLC table that stream needs
+//! REPLACED-BY: nothing is owed a port - the released disc carries no stream
+//! that selects this decoder. The overlay's master dispatch picks a bitstream
+//! per `fmv_id` and only slots 9 and 10 - `MV1A.STR` and `MOV15.STR` - clear
+//! the Iki flag; the disc's `MOV` directory holds `MV1.STR`..`MV6.STR` and
+//! neither of those two, so `legaia_engine_core::cutscene::fmv_bitstream`
+//! returns `Iki` for every reachable id and the STR player's
+//! [`Bitstream::Strv2`] arm never comes up. Retail's own playback path never
+//! runs this either, which is what puts the row in the replaced class rather
+//! than the wiring worklist (`docs/tooling/port-catalog.md` - What may carry
+//! it, fourth shape): the input it waits on is not late, it is absent, and so
+//! is the VLC-table runtime unpack that stream would need
 //! ([`crate::strv2_table`], itself only exercised by tests). Both are
 //! preservation artefacts of the two cut slots, not gaps in the shipping
 //! playback path.
@@ -248,6 +251,9 @@ fn v3_channel(block: u32) -> (usize, bool) {
 /// produces. The returned vector begins with `frame[0..2]` copied verbatim and
 /// ends with [`END_PAD_CODES`] end-of-block codes, exactly as the overlay emits.
 // PORT: FUN_801d070c
+// REPLACED-BY: nothing is owed a port - no stream on the released disc selects
+// this decoder (see the module heading; the two `fmv_id` slots that clear the
+// Iki flag name files the disc does not carry).
 pub fn decode_frame(frame: &[u16], table: &[u16]) -> Result<Vec<u16>> {
     if frame.len() < 6 {
         bail!("STRv2 frame is {} words, need at least 6", frame.len());

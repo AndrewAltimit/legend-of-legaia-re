@@ -92,12 +92,15 @@ installs the fixed zone-miss set instead.
 ### Who else loads the block
 
 Nothing re-queries on a bare tile crossing. Disc-wide, `FUN_801DE3E0` has
-seven `jal` sites: the three arms above plus `[4C C4]`, the player
-**seat / warp** path at `0x801D1FE8..0x801D2014` (which runs the `[4C 39]`
-sequence in code - query, `FUN_80019278`, `FUN_801DB8EC`, `FUN_801DAA50`),
-its sibling at `0x801D2BCC`, and the SCUS field-init call at `0x8003B800`.
-The field **per-frame** controller `FUN_801D1344` has one more, at
-`0x801D17FC..0x801D1830`, and it is gated: `_DAT_1F800394 & 0x400000` (scratchpad flag bit `22`) must
+seven `jal` sites, and the per-frame one is the seventh rather than an eighth:
+**two** of the arms above call it (`[4C 38]` at `0x801E1068` and `[4C 39]` at
+`0x801E109C` - `[4C 3D]` calls `FUN_800180EC` instead, and `[4C 3E]` has no
+call of its own because it is `[4C 39]`'s tail), plus `[4C C4]` at
+`0x801E2884`, the player **seat / warp** path at `0x801D1FF4` (which runs the
+`[4C 39]` sequence in code - query, `FUN_80019278`, `FUN_801DB8EC`,
+`FUN_801DAA50`), its sibling at `0x801D2BCC`, and the SCUS field-init call at
+`0x8003B800`. The seventh is in the field **per-frame** controller
+`FUN_801D1344`, at `0x801D182C`, and it is gated: `_DAT_1F800394 & 0x400000` (scratchpad flag bit `22`) must
 be set, or the frame only eases (`FUN_801DB510`) and clamps
 (`FUN_801DAA50`). That bit is not in the per-mode seed of the flag word - the
 seed copies a `u16` - so it starts clear every time the game mode changes and
@@ -221,7 +224,7 @@ Party state + inverted-Y mirror cluster.
   (`legaia_engine_vm::escape_timer::EscapeTimer`).
 - **Sub-6** mutates `ctx.field_74`: 3-byte `[4C, 0xD6, b1]`, if `b1 == 4` clears top bit only, else sets bit 0x80000000 + shifts `b1` into the top byte; halts at PC.
 - **Sub-7** (1-byte) registers a `FUN_801DC0BC` list-walk callback then halts at PC.
-- **Sub-8** (9-byte) is a synchronous-spawn actor allocator: `[4C, 0xD8, vdf_idx, tmd_lo, tmd_hi, kind_lo, kind_hi, var_lo, var_hi]` decodes to `(vdf_idx: u8, tmd_idx: i16, kind: u16, variant: u16)` and routes through host hook [`FieldHost::op4c_n_d_sub8_call_d77f4`] (overlay-resident `FUN_801D77F4`, see `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt`); host writes `actor[+0x3C] = kind` and `actor[+0x3E] = variant` on the allocated slot. Unlike the queue-based `0x4C 0x80` halt-acquire path, the spawn is synchronous - the host emits `FieldEvent::ActorSpawned` directly, with no intervening `pending_actor_spawns` queueing. PC always += 9.
+- **Sub-8** (9-byte) is a synchronous-spawn actor allocator: `[4C, 0xD8, vdf_idx, tmd_lo, tmd_hi, kind_lo, kind_hi, var_lo, var_hi]` decodes to `(vdf_idx: u8, tmd_idx: i16, kind: u16, variant: u16)` and routes through host hook [`FieldHost::op4c_n_d_sub8_call_d77f4`] (overlay-resident `FUN_801D77F4`, see `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt`); host writes `actor[+0x3C] = kind` and `actor[+0x3E] = variant` on the allocated slot. Unlike the queue-based `0x4C 0x80` halt-acquire path, the spawn is synchronous - the host emits `FieldEvent::ActorSpawned` directly, with no `pending_actor_spawns` queueing. PC always += 9. What the spawner actually builds, and why `kind` / `variant` are narrower than their names, is [below](#what-the-0x4c-0xd8-spawner-builds).
 - **Sub-0xB** (13-byte) calls `FUN_801E57F0(operand)` then PC += 13 (the call site falls through to `LAB_801E2EA0: return param_2 + 0xD`); the helper itself was not decompilable (Ghidra's dump for that address shows data masquerading as code).
 - **Sub-0xC** (5-byte) and sub-0xE (5-byte) both call [`small_table_search`](script-vm.md#helper-functions) on a 1-byte needle, then loop over the active party records (stride `0x414`, byte at `+0x196`); on hit, both advance via the `LAB_801E360C` ce9c-jump path; sub-0xC additionally writes the matching slot. Both miss with PC += 5.
 
@@ -323,6 +326,37 @@ queues each one into `World::pending_actor_spawns`, and emits a `FieldEvent::Act
 Materializing the queued records into actor slots is a separate engine-side step. [`World::materialize_actor_spawns(start_slot)`] drains `pending_actor_spawns`, allocates the first inactive slot from `actors[start_slot..MAX_ACTORS]`, populates `Actor::spawn_record` with the raw bytecode bytes, and emits one `FieldEvent::ActorSpawned { slot, kind, variant, record }` per allocation. The retail allocator for this opcode (`overlay_world_map_801de840.txt:7080-7123`, case `8 sub-0`) allocates from pool `0x801f28a0` and writes `actor[+0x90]` (bytecode start), `actor[+0x94]` (parent back-pointer) and `actor[+0x54] = 0`; it does **not** write `actor[+0x3C]` (kind) or `actor[+0x3E]` (variant), so the event's `kind = 0` / `variant = 0` match retail - this is a faithful zero, not a placeholder.
 The `0x4C 0xD8` path is the one that decodes explicit `(kind, variant)` u16 immediates and routes through `FUN_801D77F4`; the `0x4C 0x80` path is bytecode-only by design. When the slot range is exhausted, a `FieldEvent::ActorSpawnFailed { record }` event surfaces the dropped request instead.
 
+#### What the `0x4C 0xD8` spawner builds
+
+`FUN_801D77F4` ([`functions/renderer.md`](../reference/functions/renderer.md#801d77f4)
+decodes the routine) is not a generic allocator: it allocates from the
+**morph-weight descriptor** `0x8007068C`, whose `+0x8` handler word is `0x8002174C`
+(`legaia_engine_core::morph_weight_apply`), so every actor this opcode spawns
+is a mesh-morph actor. Its tail (`0x801D7848..0x801D79BC`, PROT 0897 file
+`+0x8FDC`) wires four fields from the instruction's own operands:
+
+| Actor field | Filled from |
+|---|---|
+| `+0x4C` morph block | a **VDF** body: the VDF buffer at `0x8007B7DC`, indexed by operand 1 as `base + u32_at(base + 4 + idx*4)`, opening with its own `u32` record count |
+| `+0x48` TMD base | the resident-object table `0x8007C018`, indexed by operand 2 (the table `FUN_801D8280` walks) |
+| `+0x90` rest pose | a **snapshot**, not an asset - see below |
+| `+0x3C` / `+0x3E` | the two `u16` immediates, verbatim |
+
+The rest pose is built, not loaded: the spawner sums `n_vert` over the
+block's records through the object table's `0x1C` stride, allocates `sum * 8`
+bytes via `FUN_80017888`, and copies each named group's live vertices into it
+with `lwl`/`lwr` + `swl`/`swr` pairs.
+
+The `+0x3C` / `+0x3E` row is the correction the field names hide. `FUN_8002174C`
+reads them at `0x80021890` and `0x800218B4`, on the `+0x40` direction gate, as
+the two per-frame steps of the morph weight envelope it drives at `+0x6E` - its
+**rise and fall rates**, so
+for this opcode the port's `kind` / `variant` are ramp speeds and carry no
+actor-class meaning. `+0x56` (render mode), `+0x68` and `+0x6E` (live weight)
+are all zeroed, so a freshly spawned morph actor starts at rest. Because the
+rest pose is snapshotted at spawn, nothing on the disc carries one - which is
+why a search for a rest-pose asset finds nothing.
+
 #### Where `0x4C 0xD8` occurs on the disc
 
 Retail uses the synchronous spawn sparingly and in one structural position. Disc-wide there are **17 sites in 5 scenes** - `balden` (4), `balden2` (4), `garmel` (2), `jagaroom` (6), `juui2` (1) - and every one of them sits in **partition 1 record 0** of a scene MAN, the scene-entry system script `Scene::field_man_entry_script` resolves. No per-actor interaction script and no cutscene-timeline record uses it. Within a scene the sites chain contiguously at the 9-byte stride, walking successive `vdf_idx` values.
@@ -375,12 +409,24 @@ the change, and only in one scene mode:
 the actor is counter-rotated by exactly the octant the pad gained.
 
 **The octant is scene-authored, not camera-derived.** Nothing anywhere computes
-it from a camera azimuth. Its complete writer set disc-wide is this arm's `sw`
-at `0x801E0ED0`, a `sw zero` clear at `0x801E5664`, and the tile-board walker's
-three stores (see [tile-board.md](tile-board.md#the-walkers-octant-store)); its
-only readers are this arm's own compare at `0x801E0EBC` and the walker's
-save/restore at `0x801EF320`. A port that derives the octant from its camera is
-making a port decision, and should say so.
+it from a camera azimuth. Its complete write set disc-wide is six stores, all
+in the field overlay: this arm's `sw` at `0x801E0ED0`, a `sw zero` clear at
+`0x801E5664`, the tile-board walker's delay-slot clear and two banded stores at
+`0x801EF8B0` / `0x801EF8B8` / `0x801EF8CC` (see
+[tile-board.md](tile-board.md#the-walkers-octant-store)), and the walker's
+restore at `0x801EFE7C`.
+
+The read set is four, and two of them are the point: the **pad remapper**
+`func_0x800467E8` loads the word twice in `SCUS_942.54`, at `0x800467E8` and
+`0x80046840`, which is what makes the octant a rotation at all. The other two
+are this arm's own compare at `0x801E0EBC` and the walker's save at
+`0x801EF320`. (An earlier sentence here listed only the two field-overlay
+reads, which reads as though the value never leaves the overlay that writes
+it; it is the SCUS remapper that consumes it. Measured with
+`find-gp-relative-refs.py --va 0x8007b5f0` over `SCUS_942.54` and every based
+overlay image - the absolute-word scan is blind to both forms here.) A port
+that derives the octant from its camera is making a port decision, and should
+say so.
 
 ### 0x4C nibble-0x50..0x5F - the five sub-op table
 

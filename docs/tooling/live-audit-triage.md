@@ -1266,9 +1266,11 @@ into four:
   whose endpoints are model-space and want a GTE projection pass first.
 - **No minigame effect-part pool.** `step_mark_effect_spawn`,
   `good_banner_spawn`, `splash_burst`, `ripple_spawn`,
-  `dance_hit_sting_voices`. Partly closed: the dance's two spawn wrappers feed
-  `engine-core::minigame_actor::MinigameActorPool` through
-  `DanceGame::spawn_sprite_part`, and both hosts draw what it emits.
+  `dance_hit_sting_voices`. Closed for the spawn wrappers: the dance's two
+  feed the run's own `MinigameActorPool` through
+  `DanceGame::spawn_sprite_part`, and the splash / ripple wrappers feed
+  `engine-core::minigame_fx::MinigameFxPool` on `World::minigames.fx`. Every
+  host draws both pools.
 - **No dancer / fish actor records.** Closed for the dance -
   `engine-core::minigame_actor::MinigameActor` is the record and `DanceGame`
   holds two pools of it (the floor cast, and the sprite parts). Still open for

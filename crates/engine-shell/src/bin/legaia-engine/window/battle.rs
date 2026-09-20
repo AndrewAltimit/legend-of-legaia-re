@@ -297,6 +297,15 @@ impl PlayWindowApp {
             }
             (Some(SceneMode::Battle), _) => {
                 self.encounter_banner = None;
+                // Retire this fight's floating numerals and reset the status
+                // CLUT's pristine-palette copy + Stone latch at the battle
+                // boundary, where retail rebuilds its context. Both are
+                // host-side state that outlives the engine object; without
+                // them a numeral could survive the mode edge and a petrified
+                // member in the next fight restaged the previous fight's
+                // palette. The browser play page already did both.
+                self.battle_hud.clear_popups();
+                self.battle_hud.status_clut.reset();
                 self.exit_battle_render();
             }
             _ => {}

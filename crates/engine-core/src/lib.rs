@@ -99,6 +99,7 @@ pub mod menu_widget;
 pub mod minigame_actor;
 pub mod minigame_entry;
 pub mod minigame_floor;
+pub mod minigame_fx;
 pub mod mode;
 pub mod model_bank;
 pub mod monster_ai;

@@ -17,10 +17,19 @@
 //! Coverage export (what wires this into the reach report):
 //!
 //! ```text
-//! cargo llvm-cov --release -p legaia-engine-core \
-//!     --test w1d_world_map_render_ladder \
-//!     --json --output-path target/cov-w1d_world_map_render_ladder.json
+//! cargo llvm-cov clean --profraw-only
+//! cargo llvm-cov -p legaia-engine-core \
+//!     --test w1d_world_map_render_ladder --no-report
+//! cargo llvm-cov report --json \
+//!     --output-path target/cov-w1d_world_map_render_ladder.json
 //! ```
+//!
+//! No `--release`, and the report step is unscoped: an optimised build leaves
+//! an inlined function's coverage record at zero, which this join cannot tell
+//! from never-called, and `-p` scopes the REPORT to that package's own
+//! sources. Both traps are written up in
+//! `docs/tooling/reach-triage.md`; this recipe is the one
+//! `scripts/ci/replay-port-coverage.py` documents.
 //!
 //! ## The pad layout this file is about
 //!

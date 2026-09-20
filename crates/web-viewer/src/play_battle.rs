@@ -725,7 +725,15 @@ impl LegaiaRuntime {
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
     /// green `MP` label cells) for the page's system-UI atlas array, plus
     /// the command menu's chip plates + D-pad glyph when a menu is up.
-    /// Empty outside battle.
+    ///
+    /// Outside battle this narrows to one surface: the FRAME of the message
+    /// banner carrying a level-up / Seru-capture line, which the port raises
+    /// after the fight has already handed the frame back to the field. Its
+    /// text half rides the glyph array in
+    /// [`crate::play_shop`]'s `banner_stage_draws`. The native window has
+    /// drawn that frame all along; this page returned empty here and dropped
+    /// the banner's text in the same breath, so a field-side level-up showed
+    /// nothing at all.
     pub(crate) fn battle_chrome_sprite_draws(
         &self,
         assets: &crate::play_menu::PlayMenuAssets,
@@ -737,7 +745,20 @@ impl LegaiaRuntime {
             .as_ref()
             .is_some_and(|h| h.world.mode == SceneMode::Battle);
         if !in_battle {
-            return Vec::new();
+            let (Some(rects), Some(message)) =
+                (assets.chrome_rects(), self.battle_banner_message(assets))
+            else {
+                return Vec::new();
+            };
+            let (origin, scale) =
+                crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+            use legaia_engine_ui::battle_hud_chrome as bhc;
+            return bhc::message_banner_chrome_draws_for(
+                rects,
+                bhc::message_banner_content(assets.font_ref(), &message),
+                origin,
+                scale,
+            );
         }
         let mut out = self
             .battle_hud_frame_draws(assets, surface_w, surface_h)

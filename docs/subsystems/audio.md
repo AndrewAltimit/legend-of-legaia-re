@@ -37,7 +37,7 @@ with `SceneAssets::seq_in_stream_entries` / `bgm_seq_offset`.
 - [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [VAB attr accessors](#vab-attribute-accessors--utility-note-triggers) · [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [per-channel event handlers](#per-channel-event-handlers-over-_dat_801cd2c0-the-0x80060a1c0x80061bf8-family) · [further libsnd leaves](#further-libsnd--libspu-leaves) · [renderer-citation correction](#renderer-citation-correction)
 - [libspu / SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) - [SPU globals](#spu-globals) · [primitives](#libspu-primitives) · [init / reset / key](#spu-init--reset--key-registers) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb model](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)
 - [Engine-audio: Sequencer port](#engine-audio-model---sequencer-port) · [from-scratch SPU port](#engine-audio-model---from-scratch-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
-- [Battle arts-voice shout path](#battle-arts-voice-shout-path-engine) · [Audio-trace parity oracle](#audio-trace-parity-oracle) · [What's left](#whats-left)
+- [Battle arts-voice shout path](#battle-arts-voice-shout-path-engine) · [Audio-trace parity oracle](#audio-trace-parity-oracle) - [which channel differs first](#which-channel-differs-first-on-the-per-vsync-comparand) · [comparing per voice](#comparing-per-voice) · [What's left](#whats-left)
 
 ## Path-string cluster
 
@@ -143,6 +143,7 @@ See [`subsystems/script-vm.md`](script-vm.md) → "BGM lookup table" for the res
 |---|---|---|
 | `bgm_id < 2000` (scene-local) | `*(0x80084540) + 6 + bgm_id` | `0x80084540` = scene block base |
 | `bgm_id >= 2000` (global pool) | `*(0x8007BC64) + (bgm_id - 2000)` | `0x8007BC64` = `music_01` bank base |
+| `bgm_id == 0x1000` | none - the load is suppressed | see below |
 
 The result is stored to `0x8007BAB8` and compared against the currently-loaded
 index at `0x8007BA9C`, so a re-select of the playing track is a no-op. Both
@@ -153,6 +154,24 @@ so the bank's low range sits at extraction `988`; the engine maps a sound-test
 index to its extraction entry through the piecewise
 `legaia_engine_core::music_labels::prot_entry_for_bgm_id` (a 2-entry gap at
 extraction `1056`/`1057` splits it, see [`../reference/music-tracks.md`](../reference/music-tracks.md)).
+
+#### `0x1000` is a park sentinel, not a track
+
+`4096` is outside the `2000..=2077` pool and resolves to no entry, and the
+resolver never tries: at `0x8002454C` it loads `_DAT_8007BAC8`, compares it
+against `li v0, 0x1000`, and on equality falls into `0x80024560`, which copies
+the pending index `_DAT_8007BAB8` straight onto the loaded-index barrier
+`_DAT_8007BA9C`. The equality test four instructions later then reads them as
+equal and skips the whole load. So the id means **leave this slot parked**,
+and it is the shared sentinel of *both* streaming slots: the block at
+`0x800244C0` applies the same `0x1000` test to the second slot's id
+`_DAT_8007BABC`, copying it onto its own barrier `_DAT_8007BAA0`.
+
+Across the catalogued mednafen corpus the sentinel appears only in the ending
+states - three carry it on the BGM slot and three on the second slot - which
+is where a save would be parked with no field track owed. Every other state
+carries a `2000..=2068` id. A state's *scene* still does not decide this; the
+globals do.
 
 ### Which track a scene plays
 
@@ -749,9 +768,10 @@ A pure-Rust sweep of the save-state corpus (`mednafen-state spu <state>`, readin
 
 - **The reverb network is master-enabled in every captured state** (`SPUCNT` bit 7 set) - field, town, battle, summon, title, minigames. There is no scene or cue that toggles it on.
 - **The mode is `Studio C` everywhere.** The 32 reverb coefficient/address registers (`0x1F801DC0..0x1F801DFF`) are byte-identical across all 45 mednafen states and match the `StudioC` libspu preset exactly (`dAPF1=0x00E3`, `dAPF2=0x00A9`, work area `0x6FE0`). [`ReverbMode::identify`](../../crates/engine-audio/src/spu/reverb.rs) resolves the captured block to `StudioC`.
-- **Per-voice reverb-send (`EON`) is broad and always populated** - typically 15–22 of the 24 voices in any given state, including BGM and SFX voices, not a handful of "echo" voices. So reverb is the *default* routing, applied to nearly every keyed-on voice, not a per-cue effect.
+- **Per-voice reverb-send (`EON`) is broad and always populated** - typically 15–22 of the 24 voices in a mednafen state, including BGM and SFX voices, not a handful of "echo" voices. A per-vsync PCSX-Redux capture of a town scene reads the whole register: `EON` = `0x00FFFFFF`, **all 24 voices**, on every one of its 90 frames. So reverb is the *default* routing - the membership varies with what a given moment has keyed, but the ceiling is the whole voice file, not a handful of "echo" voices.
+- **The output depth is `0x3264` on both sides of the same capture.** `vLOUT` / `vROUT` (SPU `0x1F801D84` / `0x86`) are what libspu's `SpuSetReverbDepth` writes, and they sit *outside* the 32-register preset block, so matching the Studio C coefficients says nothing about them. `mBASE` reads `0xF204`, i.e. a work area at `0x79020` of size `0x6FE0`, which is Studio C's own size - a second, independent confirmation of the preset.
 
-So the C7-REVERB blocker dissolves: there is no per-cue reverb-enable source to trace. The live engine matches retail by calling [`Spu::set_retail_reverb`](../../crates/engine-audio/src/spu/mod.rs) once at SPU init (the `StreamResampler` in [`engine-audio`](../../crates/engine-audio/src/lib.rs) does this) - it selects `ReverbMode::StudioC` and routes every voice into the reverb send. (Output depth - `vLIN`/`vROUT`, set separately by `SpuSetReverbDepth` - is the one piece not fixed by the preset; the engine applies a fixed half-scale depth, overridable via `Reverb::set_output_volume`. The EON mask's exact per-voice membership varies per frame with which voices happen to be sounding; the engine routes all voices, a faithful approximation of the broad mask.)
+So the C7-REVERB blocker dissolves: there is no per-cue reverb-enable source to trace. The live engine matches retail by calling [`Spu::set_retail_reverb`](../../crates/engine-audio/src/spu/mod.rs) once at SPU init (the `StreamResampler` in [`engine-audio`](../../crates/engine-audio/src/lib.rs) does this) - it selects `ReverbMode::StudioC`, routes every voice into the reverb send, and installs the measured depth `reverb::RETAIL_OUTPUT_VOL`. The earlier "the engine applies a fixed half-scale depth, a faithful approximation of the broad mask" caveat is retired on both halves: the mask is exactly all-voices and the depth is measured, not approximated.
 
 Boundaries:
 - Mode selection via `Spu::write_reverb_mode_byte(raw)` matches the libspu byte API (1=Room, 2=StudioA, …, 9=Pipe). Out-of-range bytes fall back to `Off`. This is the engine half of `SpuSetReverbModeParam` (`FUN_8006B1B4`, the 30-attribute commit).
@@ -1373,7 +1393,9 @@ Mirror of the VRAM-byte and mode-trace parity oracles on a third axis: per-frame
 1. **Single-cycle snapshot** lifted from a mednafen save state's `SPU` section via `legaia_mednafen::PsxSpu` (24 voice records, master volume sweep, voice-on/-off masks, reverb mode, 512 KiB SPU RAM). One `.mc{slot}` save → one retail `AudioTraceFrame`. Convergence is "did any engine frame in the window match retail's voice mask?".
 2. **Multi-frame trace** captured by [`autorun_audio_trace.lua`](../tooling/pcsx-redux-automation.md#runtime-probes-lua-autorun) running inside PCSX-Redux: per-vsync `PCSX.createSaveState()` calls, the SPU sub-message sliced out via FFI pointer arithmetic, decoded offline into JSONL by [`extract_audio_trace_from_sstates.py`](../../scripts/pcsx-redux/extract_audio_trace_from_sstates.py). Convergence becomes "for every retail vsync with audio playing, did the engine ever match?", applied frame-by-frame via [`first_audio_trace_divergence_multi`](../../crates/engine-shell/src/audio_trace_oracle.rs).
 
-The engine side runs a standalone `legaia_engine_audio::Spu` + optional `Sequencer` alongside a headless `BootSession::tick`, sampling voice / master / reverb state after each frame. JSONL records: `AudioTraceFrame { frame, sequencer_playhead_ticks, sequencer_finished, master_volume, reverb_mode, active_voice_mask, voices[24] }`. Convergence rule per retail frame: at least one engine frame's `active_voice_mask` is a superset of retail's mask AND for every retail-active voice the engine matches `start_addr` (when both sides report it).
+The engine side runs a standalone `legaia_engine_audio::Spu` + optional `Sequencer` alongside a headless `BootSession::tick`, sampling voice / master / reverb state after each frame. The private SPU is configured through `set_retail_reverb` exactly as the shipped cpal host configures its own - an oracle whose engine differs from the engine cannot report a difference. Convergence rule per retail frame: at least one engine frame's `active_voice_mask` is a superset of retail's mask AND for every retail-active voice the engine matches `start_addr` (when both sides report it).
+
+JSONL record: `AudioTraceFrame { frame, sequencer_playhead_ticks, sequencer_finished, master_volume, reverb_mode, reverb_eon, reverb_depth, reverb_work_area, spu_control, active_voice_mask, voices[24] }`, each voice `{ active, start_addr, loop_addr, pitch, env_level, vol_left, vol_right, adsr_control, reverb_send }`. Every field is optional and omitted when its emitter cannot fill it, so the three emitters produce one shape without claiming to know things they do not. Two fields exist only on one side each: `reverb_mode` is a libspu mode *number*, which no hardware capture holds, and `spu_control` is a hardware register the engine models no equivalent of.
 
 PCSX-Redux's Lua API does not expose the SPU register file directly
 (`SPUInterface::lockSPURAM` is C++-internal, not bound). The probe leans on
@@ -1408,37 +1430,105 @@ A mednafen save is a mid-playthrough freeze, so the set of voices it reports aud
 
 The audible set is the **envelope**: `SpuVoiceState::is_active` reads `ADSR.EnvLevel`, which is the retail analogue of the line the engine's own trace draws at `Phase::Off`, and the PCSX-Redux extractor reads `ADSRInfoEx.EnvelopeVol` for the same reason (its `on || stop` predicate had the same defect - `stop` stays set after the tail drains). That puts the two sides in the same range: a median of seven or eight audible voices per retail state against the engine's own single-digit concurrent score. What survives of the old caveat is narrower and still real - a freeze frame and a cold scene-entry window are different moments, so the superset rule can still miss on timing alone, and `0 converged` remains a weak signal rather than a fidelity verdict.
 
-What the `.mc` axis still decides is the floor: with the scene's track playing, the engine's mask must be non-empty. That is what an actual scene-entry BGM regression looks like - the field VM never reaching op `0x35`, the director declining a global-pool start, an entry-script pause parking the track - and each of those otherwise reads as one more ordinary drift row. Deciding *which* voices belong to the score needs the per-vsync PCSX-Redux trace (`--retail-jsonl`) captured from the same scene entry.
+What the `.mc` axis still decides is the floor: with the scene's track playing, the engine's mask must be non-empty. That is what an actual scene-entry BGM regression looks like - the field VM never reaching op `0x35`, the director declining a global-pool start, an entry-script pause parking the track - and each of those otherwise reads as one more ordinary drift row. Deciding *which* voices belong to the score needs the per-vsync PCSX-Redux trace (`--retail-jsonl`) - and, as the section below records, a retail capture whose loaded track is the one the engine side plays. A save's scene does not settle that: `0x8007BAC8` does.
 
 ### Which channel differs first on the per-vsync comparand
 
-Once the PCM oracle's retail reference stopped being vacuous, three scenarios
-read as "the engine is much the quieter of the two", and the trace answers part
-of that directly. Over one `town01` scene entry - 241 engine frames against the
-90-frame PCSX-Redux retail capture - the three channels the trace format carries
-rank like this:
+Both channels this section used to name as divergences were instrument
+defects, and neither survives a corrected read.
+
+**Reverb was the wrong register.** The trace record's `reverb_mode` carried
+three different quantities under one name: the engine's libspu mode byte, the
+mednafen side's `Reverb_Mode` sub-entry (which is really `EON`), and, on the
+PCSX-Redux side, whatever sat at SPU-ports offset `0x1AA`. That offset is
+**`SPUCNT`**, the SPU control register - the ports blob is the hardware window
+`0x1F801C00..0x1F801DFF` verbatim, so `0x1AA` is `0x1F801DAA`. The value that
+read as "retail routes voices 0, 7, 14 and 15" is `0xC081` = SPU enabled,
+unmuted, reverb master on, CD audio on. The real `EON` register two words
+earlier (`0x198`/`0x19A`) reads `0x00FFFFFF` on every frame of the same
+capture. The engine's own `0` was a second, independent defect: the trace and
+PCM oracles built a bare `Spu` where the shipped cpal host builds one through
+`set_retail_reverb`, so the oracle was measuring an engine the port does not
+ship. With both fixed the engine reports `EON = 0x00FFFFFF`, depth
+`(0x3264, 0x3264)` and work area `0x79020` on every frame, which is what that
+capture reports on every frame of its own.
+
+**The voice-count gap was two different pieces of music.** An engine
+`--scene town01` trace plays the id that scene's own prescript selects with op
+`0x35`, which is global `2016` (Rim Elm's theme). The retail `town01` capture
+it was compared against holds `_DAT_8007BAC8 = 2000` - the overworld track -
+because that save reached the town by chaining forward from the world map, and
+`0x8007BA9C` / `0x8007BC64` both read `990`, so the resolver's
+`base + (id - 2000)` confirms the loaded entry is the pool's first. Paired
+instead against an engine trace of a scene that *does* select `2000`
+(`map01`), and run long enough to cover a comparable stretch of a 131-second
+track, the two sides land in the same place.
 
 | Channel | Engine | Retail | Verdict |
 |---|---|---|---|
-| master volume | `(0x3FFF, 0x3FFF)` on every frame | identical | not the difference |
-| reverb | `0` on every frame | `0xC081` on every frame | **first divergence** |
-| concurrent voices | mean 4.83, max 9 | mean 9.78, max 19 | roughly half |
+| master volume | `(0x3FFF, 0x3FFF)` every frame | identical | not a difference |
+| reverb `EON` / depth / work area | `0x00FFFFFF` / `0x3264` / `0x79020` | identical | not a difference |
+| concurrent voices, same track | mean 9.67, max 18 | mean 9.78, max 19 | not a difference |
+| concurrent voices, 4-second window | mean 7.03, max 8 | mean 9.78, max 19 | window, not engine |
 
-So master volume is exonerated, and the first channel that differs is reverb.
-That field is the SPU's per-voice **reverb-enable mask** (`EON`), not a libspu
-mode byte - the same register whose name misled the PCM oracle's retail side
-into running dry - so `0xC081` means retail routes voices `0`, `7`, `14` and
-`15` through the reverb tank while the engine routes none. The voice-count gap
-sits behind it and is the next thing to attribute.
+The last row is the one worth keeping, because it is what the old headline
+measured. The engine trace starts a track at tick 0; a retail save is frozen
+somewhere inside it. Track `2000`'s own score answers how much of the gap that
+accounts for: decoded straight from the SEQ, its note concurrency peaks at
+**9** over the first 4.3 seconds, 14 by 15 seconds, and **19** over the whole
+piece - the same 19 the retail capture shows as its maximum. Over a 60-second
+engine window the port reaches 18. Nothing is being dropped on the way there:
+with trace logging on, the sequencer's three note-drop paths (no tone for the
+program/key, tone not playable, no voice free) fire **zero** times across the
+window, so the allocator is not the gap either.
 
-The trace cannot be pushed further than that on its own: a `voices[]` record
-carries `active` and `pitch` and nothing else, so neither per-voice volume nor
-ADSR level is in the artifact, and "which voices the score allocates" needs the
-record widened before it can be asked. The masks themselves already say the two
-sides allocate differently - the engine's live voices sit in the low slots
-(`0x04`, `0x08`, `0x0E`, `0x12`, `0x24`) while retail's span the file
-(`0x088121`, `0x08A962`) - which is the allocator difference the `.mc`
-comparand's start-address mismatch shows from the other end.
+### Comparing per voice
+
+`first_audio_trace_divergence_multi` asks whether some engine frame's mask
+*covers* a retail frame's, which two windows taken at different moments of the
+same track can fail while playing identically. The per-voice comparison
+([`compare_voice_allocation`](../../crates/engine-shell/src/audio_trace_oracle.rs),
+`legaia-engine audio-trace --per-voice`) asks a different question: what were
+the sounding voices *doing*.
+
+Its currencies are the ones that survive the two sides' independent SPU-RAM
+allocators. **Pitch** is a hardware register computed from note against the
+tone's centre, so it compares directly. The packed **ADSR config word** is the
+closest thing the SPU keeps to "which tone programmed this voice". A voice's
+`start_addr` is not a comparand at all and is only counted, never equated.
+
+The statistic that moves between pairings is the **slots-per-note** factor -
+sounding voices divided by distinct `(sample, pitch)` pairs. It is a property
+of the arrangement, not a fixed difference between the two sides, and reading
+it as one is what the first pairing did.
+
+| Pairing | Retail | Engine |
+|---|---|---|
+| track `2000` (`map01`), retail capture taken in town01 | `1.158` | `1.002` |
+| track `2016` (`town01`), retail capture taken in town01 | `1.002` | `1.037` - `1.061` |
+
+The second row is a per-vsync capture from `s3_rimelm_freeroam`, whose
+`_DAT_8007BAC8` holds `2016` - the id `town01`'s own prescript selects - so
+both sides play the same piece. On it **retail is the side that never doubles
+a note** and the port is the one running a few percent over, the reverse of
+the first row. That also disposes of the first row's open caveat: the doubling
+could not be town SFX in the retail window, because a second retail capture
+taken in the same town, walking the same streets, reports `1.002`. The `0.156`
+belongs to track `2000`'s own arrangement.
+
+What the aligned pairing leaves is a different residual: over a matched
+120-frame window the port sustains a mean of `6.11` sounding voices against
+retail's `4.12`, sharing every one of the port's twelve pitches and all seven
+of its tones. Pitch and tone *vocabulary* counts are not comparable across
+these two windows at all - a 2-second retail window and a 60-second engine
+window see different amounts of the same piece.
+
+The trace record carries `env_level`, `vol_left`, `vol_right`, `adsr_control`
+and `reverb_send` per voice, filled by all three emitters - the engine
+sampler, the mednafen `.mc` loader, and the PCSX-Redux extractor - so these
+questions can be asked of the artifact directly.
+
+### The Field↔Battle swap is not on this axis
 
 The **Field↔Battle BGM-swap** is *not* yet observable through this
 voice-activity oracle. The audible path itself is no longer blocked: the

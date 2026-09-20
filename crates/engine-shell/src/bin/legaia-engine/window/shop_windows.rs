@@ -736,18 +736,23 @@ impl PlayWindowApp {
         )
     }
 
-    /// ASCII stand-in for a painter's cursor / marker sprite request.
-    /// (`pub(super)`: the window-7 spell level-up notice in `menu_draws`
-    /// shares it.)
-    pub(super) fn painter_cursor_stand_in(
+    /// ASCII stand-in for a painter's cursor / marker sprite request - the
+    /// twin of the browser play page's `painter_glyph_stand_in(font, ">", ..)`
+    /// at the same six call sites.
+    ///
+    /// It used to withhold the glyph whenever the system-UI atlas was
+    /// resident, on the reasoning that "the sprite pass owns the hand cursor
+    /// then". No sprite pass does: `PainterSprite` has no consumer outside
+    /// this function anywhere in the workspace, and the one pass that draws a
+    /// hand from that atlas (`field_menu_chrome_sprite_draws`) runs only
+    /// under `BootUiState::FieldMenu`, which is not the state any of these
+    /// windows draw in. So on every disc run - the only run where the atlas
+    /// IS resident - the shop, prize-exchange and equip-recipient windows had
+    /// no cursor at all in this window while the page drew one.
+    fn painter_cursor_stand_in(
         &self,
         sprite: legaia_engine_render::ui_menu_window_painters::PainterSprite,
     ) -> Vec<TextDraw> {
-        if self.save_menu.is_some() {
-            // The sprite pass owns the hand cursor whenever the atlas is
-            // resident; drawing both would double it.
-            return Vec::new();
-        }
         legaia_engine_render::text_draws_for(
             &self.font.layout_ascii(">"),
             (sprite.x, sprite.y),

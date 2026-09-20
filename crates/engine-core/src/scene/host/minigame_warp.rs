@@ -105,23 +105,24 @@ impl SceneHost {
 
     /// PROT 0972's per-species table -> a live [`crate::fishing::FishingSession`].
     ///
-    /// The rod stat is the venue default; the record resumes the world's
-    /// persistent point pool, which `exit_fishing` banks back.
+    /// The rod stat comes from the bring-up's own ownership scan over the live
+    /// bag ([`crate::world::World::resolve_fishing_entry_rod`]); the record
+    /// resumes the world's persistent point pool, which `exit_fishing` banks
+    /// back. Wiring the scan here rather than at each host's launcher is what
+    /// makes the session's rod agree with the one the persistent HUD's rod row
+    /// shows - both now read the same cell, as they do in retail.
     fn enter_fishing_from_overlay(&mut self, loaded: &[u8]) -> bool {
-        /// Default rod stat until the save block's rod is wired.
-        const DEFAULT_ROD_STAT: i32 = 4;
         let Some(species) = legaia_asset::fishing_species::parse(loaded) else {
             return false;
         };
+        let rod_stat = self.world.resolve_fishing_entry_rod();
         let record = crate::fishing::FishingRecord {
             points: self.world.minigames.fishing_points,
             ..Default::default()
         };
         self.world
             .enter_fishing(crate::fishing::FishingSession::new(
-                species,
-                DEFAULT_ROD_STAT,
-                record,
+                species, rod_stat, record,
             ));
         true
     }

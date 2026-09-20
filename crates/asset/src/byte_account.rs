@@ -1919,12 +1919,39 @@ fn walk_battle_data_pack(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, dep
         sink.note("record[0] LZS decode failed");
     }
     let n = pack.records.len();
+    let table_end = pack.table_offset + (n + 1) * 12;
     sink.claim(
         pack.table_offset,
-        pack.table_offset + (n + 1) * 12,
+        table_end,
         OWNER_TOC,
         format!("{n} [id, offset, size] entries + terminator"),
     );
+    // Between the descriptor table's terminator and the compressed-data
+    // section the file carries zero fill, and both ends of it are declared:
+    // the table ends where its own terminator does, and the data section
+    // begins where the pack's `data_base` plus the first descriptor's offset
+    // says. Nothing reads between them - the loader seeks each slot by
+    // descriptor - so it is slack the container states, not an unwalked
+    // region. Claimed only when every byte of it is zero, which is the guard
+    // that stops a short walk from buying the gap.
+    let data_start = pack
+        .records
+        .iter()
+        .map(|r| pack.data_base + r.data_offset as usize)
+        .min()
+        .unwrap_or(table_end);
+    if data_start > table_end
+        && buf
+            .get(table_end..data_start)
+            .is_some_and(|g| g.iter().all(|&b| b == 0))
+    {
+        sink.claim(
+            table_end,
+            data_start,
+            OWNER_PAD,
+            "descriptor-table to data-section slack",
+        );
+    }
     for (i, r) in pack.records.iter().enumerate() {
         let off = pack.data_base + r.data_offset as usize;
         sink.claim(off, off + 4, OWNER_HEADER, format!("slot {i} dec_size"));
@@ -2721,6 +2748,8 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     };
     let (mut confirmed, mut refuted, mut ambiguous, mut credited_by_label) = (0, 0, 0, 0);
     let mut fill_extents = 0usize;
+    let mut uncorroborated_labels = 0usize;
+    let mut by_label: Vec<(usize, usize, u32)> = Vec::new();
     for d in &dumps {
         if (d.entry_va as u64) < base as u64 || (d.entry_va as u64) >= hi {
             continue;
@@ -2747,20 +2776,35 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
             Attribution::Refuted => refuted += 1,
             Attribution::Unverifiable => {
                 if label_ok(&d.label) {
-                    credited_by_label += 1;
-                    sink.claim(
-                        start,
-                        end,
-                        OWNER_CODE,
-                        format!("FUN_{:08x} (by label)", d.entry_va),
-                    );
+                    by_label.push((start, end, d.entry_va));
                 } else {
                     ambiguous += 1;
                 }
             }
         }
     }
-    sink.ambiguous_dumps = ambiguous;
+    // A label-credited extent is the one claim here that rests on a filename,
+    // and a filename says where a dump was TAKEN, not which image the bytes
+    // are. In an image where some other extent re-encodes to this image's own
+    // words the label is corroborated by those; in an image where NOTHING
+    // confirms, it is the whole of the evidence - and that is exactly the case
+    // where the dump program's base was wrong, so the extents land at arbitrary
+    // offsets in a file that never held them. Credit the label only alongside a
+    // byte confirmation.
+    if confirmed > 0 {
+        for (start, end, entry_va) in by_label {
+            credited_by_label += 1;
+            sink.claim(
+                start,
+                end,
+                OWNER_CODE,
+                format!("FUN_{entry_va:08x} (by label)"),
+            );
+        }
+    } else {
+        uncorroborated_labels = by_label.len();
+    }
+    sink.ambiguous_dumps = ambiguous + uncorroborated_labels;
     sink.refuted_dumps = refuted;
     sink.note(format!(
         "base {:#010x} ({}); {confirmed} extents confirmed by bytes, \
@@ -2768,6 +2812,13 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
          {refuted} refuted (aliased sibling), {fill_extents} land on fill",
         base, rec.label
     ));
+    if uncorroborated_labels > 0 {
+        sink.note(format!(
+            "{uncorroborated_labels} label-matching extent(s) left uncredited: \
+             no dump in this image confirms by bytes, so a filename is the whole \
+             of their evidence"
+        ));
+    }
     claim_pinned_overlay_assets(buf, sink, idx);
 }
 
@@ -2781,25 +2832,388 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
 /// and the extents come from the TIM headers rather than from this table.
 fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_index: u32) {
     const MENU_OVERLAY: u32 = 899;
-    if prot_index != MENU_OVERLAY {
-        return;
-    }
-    for (off, what) in [
-        (
-            crate::title_pak::OVERLAY_SAVE_MENU_TIM_OFFSET,
-            "save-menu UI atlas",
-        ),
-        (crate::save_icon::PROT_ENTRY_OFFSET, "save-slot icon sheet"),
-    ] {
-        match crate::tim_scan::parse_at(buf, off) {
-            Some(h) => sink.claim(
-                off,
-                (off + h.byte_len).min(buf.len()),
-                OWNER_TIM,
-                format!("{what}, {}x{} {}bpp", h.width, h.height, h.bpp),
+    if prot_index == MENU_OVERLAY {
+        for (off, what) in [
+            (
+                crate::title_pak::OVERLAY_SAVE_MENU_TIM_OFFSET,
+                "save-menu UI atlas",
             ),
-            None => sink.note(format!("no TIM at the pinned {what} offset {off:#x}")),
+            (crate::save_icon::PROT_ENTRY_OFFSET, "save-slot icon sheet"),
+        ] {
+            match crate::tim_scan::parse_at(buf, off) {
+                Some(h) => sink.claim(
+                    off,
+                    (off + h.byte_len).min(buf.len()),
+                    OWNER_TIM,
+                    format!("{what}, {}x{} {}bpp", h.width, h.height, h.bpp),
+                ),
+                None => sink.note(format!("no TIM at the pinned {what} offset {off:#x}")),
+            }
         }
+    }
+    for (off, len, owner, what) in pinned_overlay_tables(prot_index) {
+        let end = off + len;
+        if end > buf.len() {
+            sink.note(format!(
+                "pinned {what} at {off:#x} + {len} runs past this entry"
+            ));
+            continue;
+        }
+        sink.claim(off, end, owner, what);
+    }
+    if prot_index == 898 {
+        claim_effect_proto_records(buf, sink);
+        claim_battle_overlay_strings(buf, sink);
+    }
+}
+
+/// The battle overlay's NUL-terminated UI strings, whose extents no fixed
+/// `count * stride` row can express.
+///
+/// Every address here is a `pub const` (or a pointer read from one), so this is
+/// the same kind of binding as [`pinned_overlay_tables`] - what differs is only
+/// that a C string's length is in its own bytes rather than in a table, so the
+/// extent is NUL-scanned from the pinned start instead of computed. Without
+/// that these read as `ascii_text` residue while the parser that consumes them
+/// names the exact byte they start at.
+fn claim_battle_overlay_strings(buf: &[u8], sink: &mut Sink) {
+    use crate::{battle_ui_strings as bui, muscle_dome as dome};
+    let base = bui::OVERLAY_BASE_VA;
+    let claim_cstr = |off: usize, what: String, sink: &mut Sink| {
+        let Some(tail) = buf.get(off..) else { return };
+        // A string with no terminator in the image is not a string - claim
+        // nothing rather than run to the end of the entry.
+        let Some(len) = tail.iter().position(|&b| b == 0) else {
+            sink.note(format!("{what}: no NUL terminator at {off:#x}"));
+            return;
+        };
+        sink.claim(off, off + len + 1, OWNER_STRING, what);
+    };
+    for (va, label) in bui::OVERLAY_LABELS {
+        let Some(off) = va.checked_sub(base).map(|o| o as usize) else {
+            continue;
+        };
+        claim_cstr(
+            off,
+            format!("battle UI label {label:?} (battle_ui_strings)"),
+            sink,
+        );
+    }
+    for (i, off) in dome::victory_message_offsets(buf).into_iter().enumerate() {
+        claim_cstr(
+            off,
+            format!("muscle-dome victory message {i} (muscle_dome)"),
+            sink,
+        );
+    }
+}
+
+/// The battle overlay's **effect-prototype record pool** - the bytes the
+/// `0x801F6324` pointer table points INTO, as distinct from the table itself.
+///
+/// The table has a pinned constant and a row in [`pinned_overlay_tables`], so
+/// the 61 pointers were credited while the 54 unique records they name were
+/// not: the pool read as one unbroken `low_entropy` residue run, which is how a
+/// fully decoded structure looks when only its index is claimed.
+/// [`crate::move_power::parse_effect_proto_records`] already decodes it to
+/// `[i16 model_sel][u16 reserved][move-VM bytecode]` part records
+/// ([`move-power.md`](../../../docs/formats/move-power.md)); this walks the same
+/// offsets and claims each record's extent.
+///
+/// A record ends where the next one begins - the pool is packed, with the last
+/// record bounded by the table itself rather than by the end of the entry, which
+/// is the one place `parse_records_at`'s generic bound is too generous for a
+/// byte claim.
+fn claim_effect_proto_records(buf: &[u8], sink: &mut Sink) {
+    use crate::move_power as mp;
+    let Some(aux) = mp::EffectAuxTables::parse(buf) else {
+        sink.note("no effect-prototype table: PROT 0898 structural guard failed");
+        return;
+    };
+    let table = mp::EFFECT_PROTO_TABLE_FILE_OFFSET;
+    let mut offs: Vec<usize> = (0..mp::EFFECT_AUX_TABLE_LEN as u8)
+        .filter_map(|i| aux.proto_record_offset(i))
+        .filter(|&f| f + 4 <= table)
+        .collect();
+    offs.sort_unstable();
+    offs.dedup();
+    for (i, &f) in offs.iter().enumerate() {
+        let end = offs.get(i + 1).copied().unwrap_or(table);
+        let model_sel = i16::from_le_bytes([buf[f], buf[f + 1]]);
+        sink.claim(
+            f,
+            end,
+            OWNER_RECORD,
+            format!("move-FX part record, model_sel {model_sel} (move_power)"),
+        );
+    }
+    sink.note(format!(
+        "{} unique effect-prototype record(s) behind the {}-entry \
+         0x801F6324 table (move_power::parse_effect_proto_records)",
+        offs.len(),
+        mp::EFFECT_AUX_TABLE_LEN
+    ));
+}
+
+/// Data-segment tables an overlay image carries at an offset a parser in this
+/// workspace already reads, with the extent that parser's own `count * stride`.
+///
+/// Every row is a **binding**, not a discovery: each offset and each length is
+/// a `pub const` of the module named in the detail, so nothing here is a new
+/// claim about the disc and nothing here can be tuned to buy percentage points
+/// - widening a row means widening the parser that reads it. The rows are
+///   asserted against the parsers' constants by the disc-gated tests, so a
+///   parser that re-pins a table moves this table with it or the test fails.
+///
+/// What this closes is the gap the sweep kept reporting as unwalked format: an
+/// overlay's code is credited from the dump corpus and its data segment from
+/// nothing, so a table with a named constant and a decoded record layout ranked
+/// beside a format nobody had opened.
+pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str, &'static str)> {
+    use crate::{
+        baka_opponents as baka, battle_attack_camera_table as atkcam, battle_camera_table as camh,
+        battle_ui_strings as bui, dance_art, dance_cast, dance_chart, element_affinity as elem,
+        menu_windows as menu, minigame_art as art, minigame_slot_scene as slot, move_power as mp,
+        muscle_dome as dome, seru_side_effect as seru, slot_payout as payout,
+    };
+    const SLOT_A: u32 = 0x801C_E818;
+    let at = |va: u32| (va - SLOT_A) as usize;
+    match prot_index {
+        898 => vec![
+            (
+                at(dome::DECK_TABLE_VA),
+                dome::HAND_SLOTS,
+                OWNER_RECORD,
+                "muscle-dome deck move-index table (muscle_dome)",
+            ),
+            (
+                at(dome::HAND_SPRITE_TABLE_VA),
+                dome::HAND_SLOTS,
+                OWNER_RECORD,
+                "muscle-dome hand sprite-id table (muscle_dome)",
+            ),
+            (
+                at(bui::RASERU_LABEL_TABLE_VA),
+                (bui::RASERU_LABEL_MAX as usize + 1) * bui::RASERU_LABEL_STRIDE as usize,
+                OWNER_STRING,
+                "Ra-Seru magic-command labels (battle_ui_strings)",
+            ),
+            (
+                camh::CAMERA_HEIGHT_FILE_OFFSET,
+                camh::CAMERA_HEIGHT_LEN * 2,
+                OWNER_RECORD,
+                "battle camera-height table (battle_camera_table)",
+            ),
+            (
+                at(dome::SUBDRAW_PTR_TABLE_VA),
+                dome::SUBDRAW_PTR_TABLE_LEN * 4,
+                OWNER_TOC,
+                "muscle-dome sub-draw record pointers (muscle_dome)",
+            ),
+            (
+                at(dome::VICTORY_MSG_TABLE_VA),
+                dome::VICTORY_MSG_TABLE_LEN * 4,
+                OWNER_TOC,
+                "muscle-dome victory-message pointers (muscle_dome)",
+            ),
+            (
+                atkcam::ATTACK_CAMERA_FILE_OFFSET,
+                atkcam::ATTACK_CAMERA_LEN,
+                OWNER_RECORD,
+                "per-art attack-camera tracks (battle_attack_camera_table)",
+            ),
+            (
+                mp::MOVE_ID_INDEX_MAP_FILE_OFFSET,
+                mp::MOVE_ID_INDEX_MAP_LEN,
+                OWNER_RECORD,
+                "move-id to record-index map (move_power)",
+            ),
+            (
+                mp::MOVE_POWER_TABLE_FILE_OFFSET,
+                mp::MOVE_POWER_TABLE_LEN * mp::MOVE_POWER_RECORD_STRIDE,
+                OWNER_RECORD,
+                "move power + behaviour table (move_power)",
+            ),
+            (
+                mp::IMPACT_EFFECT_TABLE_FILE_OFFSET,
+                mp::IMPACT_EFFECT_TABLE_LEN * 4,
+                OWNER_RECORD,
+                "impact-effect config table (move_power)",
+            ),
+            (
+                elem::AFFINITY_MATRIX_FILE_OFFSET,
+                elem::ELEMENT_COUNT * elem::ELEMENT_COUNT,
+                OWNER_RECORD,
+                "element-affinity matrix (element_affinity)",
+            ),
+            (
+                elem::SUMMON_POWER_PCT_FILE_OFFSET,
+                elem::SUMMON_POWER_PCT_ROWS * elem::ELEMENT_COUNT,
+                OWNER_RECORD,
+                "summon power-percent table (element_affinity)",
+            ),
+            (
+                elem::CHARACTER_ELEMENTS_FILE_OFFSET,
+                elem::CHARACTER_ELEMENTS_LEN,
+                OWNER_RECORD,
+                "per-character element table (element_affinity)",
+            ),
+            (
+                mp::EFFECT_PROTO_TABLE_FILE_OFFSET,
+                mp::EFFECT_AUX_TABLE_LEN * 4,
+                OWNER_TOC,
+                "move effect-prototype pointers (move_power)",
+            ),
+            (
+                mp::EFFECT_CLUT_TABLE_FILE_OFFSET,
+                mp::EFFECT_AUX_TABLE_LEN,
+                OWNER_RECORD,
+                "move effect CLUT ids (move_power)",
+            ),
+            (
+                mp::CUE_GROUP_TABLE_FILE_OFFSET,
+                mp::CUE_GROUP_TABLE_LEN * mp::CUE_GROUP_STRIDE,
+                OWNER_RECORD,
+                "move cue-group table (move_power)",
+            ),
+            (
+                seru::SIDE_EFFECT_TABLE_FILE_OFFSET,
+                seru::SIDE_EFFECT_ELEMENTS
+                    * seru::SIDE_EFFECT_BANDS
+                    * seru::SIDE_EFFECT_RECORD_STRIDE,
+                OWNER_RECORD,
+                "Seru-magic side-effect table (seru_side_effect)",
+            ),
+        ],
+        899 => vec![
+            (
+                menu::EQUIP_BROWSE_MAP_OFFSET,
+                menu::EQUIP_BROWSE_MAP_LEN,
+                OWNER_RECORD,
+                "equip browse-row to equip-byte map (menu_windows)",
+            ),
+            (
+                menu::EQUIP_BROWSE_MAP_OFFSET + menu::EQUIP_BROWSE_MAP_LEN,
+                1,
+                OWNER_PAD,
+                "pad byte between the browse map and the equip mask",
+            ),
+            (
+                menu::CHARACTER_EQUIP_MASK_OFFSET,
+                menu::CHARACTER_EQUIP_MASK_LEN,
+                OWNER_RECORD,
+                "per-character equip mask (menu_windows)",
+            ),
+            (
+                menu::SLOT_PICTOGRAM_OFFSET,
+                menu::SLOT_PICTOGRAM_LEN * 2,
+                OWNER_RECORD,
+                "equip slot pictogram ids (menu_windows)",
+            ),
+            (
+                menu::MENU_WINDOW_TABLE_OFFSET,
+                menu::MENU_WINDOW_COUNT * menu::MENU_WINDOW_RECORD_STRIDE,
+                OWNER_RECORD,
+                "pause-menu window descriptor table (menu_windows)",
+            ),
+        ],
+        975 => vec![
+            (
+                slot::MESSAGE_TABLE_OFFSET,
+                slot::MESSAGE_COUNT * slot::MESSAGE_STRIDE,
+                OWNER_RECORD,
+                "slot-machine message table (minigame_slot_scene)",
+            ),
+            (
+                payout::SLOT_PAYOUT_FILE_OFFSET,
+                payout::SLOT_SYMBOL_COUNT,
+                OWNER_RECORD,
+                "per-symbol payout ladder (slot_payout)",
+            ),
+            (
+                slot::PAYLINE_TABLE_OFFSET,
+                slot::PAYLINE_COUNT * 16,
+                OWNER_RECORD,
+                "payline geometry table (minigame_slot_scene)",
+            ),
+            (
+                slot::MARQUEE_TABLE_OFFSET,
+                slot::MARQUEE_COUNT * 16,
+                OWNER_RECORD,
+                "marquee cell table (minigame_slot_scene)",
+            ),
+            (
+                slot::MEDALLION_TABLE_OFFSET,
+                slot::LAMP_COUNT * slot::LAMP_RECORD_STRIDE,
+                OWNER_RECORD,
+                "payline medallion positions (minigame_slot_scene)",
+            ),
+            (
+                slot::LAMP_TABLE_OFFSET,
+                slot::LAMP_COUNT * slot::LAMP_RECORD_STRIDE,
+                OWNER_RECORD,
+                "payline lamp positions (minigame_slot_scene)",
+            ),
+            (
+                art::SLOT_HUD_TABLE_OFFSET,
+                art::SLOT_HUD_RECORDS * art::SLOT_HUD_STRIDE,
+                OWNER_RECORD,
+                "slot-machine HUD sprite records (minigame_art)",
+            ),
+        ],
+        976 => vec![
+            (
+                baka::HUD_WIDGET_TABLE_FILE_OFFSET,
+                baka::HUD_WIDGET_COUNT * baka::HUD_WIDGET_STRIDE,
+                OWNER_RECORD,
+                "Baka Fighter HUD widget table (baka_opponents)",
+            ),
+            (
+                baka::ACTOR_PROTOTYPE_TABLE_FILE_OFFSET,
+                baka::ACTOR_PROTOTYPE_COUNT * baka::ACTOR_PROTOTYPE_STRIDE,
+                OWNER_RECORD,
+                "Baka Fighter actor prototypes (baka_opponents)",
+            ),
+            (
+                baka::OPPONENT_TABLE_FILE_OFFSET,
+                baka::OPPONENT_COUNT * baka::OPPONENT_RECORD_STRIDE,
+                OWNER_RECORD,
+                "Baka Fighter opponent roster (baka_opponents)",
+            ),
+            (
+                (baka::ACTION_PTR_TABLE_VA - SLOT_A) as usize,
+                baka::OPPONENT_COUNT * 4,
+                OWNER_TOC,
+                "Baka Fighter per-fighter action-table pointers (baka_opponents)",
+            ),
+            (
+                baka::BLIT_RECT_TABLE_FILE_OFFSET,
+                baka::BLIT_RECT_COUNT * baka::BLIT_RECT_STRIDE,
+                OWNER_RECORD,
+                "Baka Fighter blit source rects (baka_opponents)",
+            ),
+        ],
+        980 => vec![
+            (
+                (dance_art::WIDGET_TABLE_VA - SLOT_A) as usize,
+                dance_art::WIDGET_COUNT * dance_art::WIDGET_STRIDE,
+                OWNER_RECORD,
+                "dance widget table (dance_art)",
+            ),
+            (
+                (dance_cast::KIND_TABLE_VA - SLOT_A) as usize,
+                dance_cast::KIND_COUNT * dance_cast::KIND_STRIDE,
+                OWNER_RECORD,
+                "dance cast kind table (dance_cast)",
+            ),
+            (
+                dance_chart::DANCE_CHART_FILE_OFFSET,
+                dance_chart::DANCE_CHART_ROWS * dance_chart::BEATS_PER_ROW,
+                OWNER_RECORD,
+                "dance step chart (dance_chart)",
+            ),
+        ],
+        _ => Vec::new(),
     }
 }
 

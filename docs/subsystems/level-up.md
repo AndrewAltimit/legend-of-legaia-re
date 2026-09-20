@@ -543,10 +543,11 @@ never reaches it - `0x80084140 + 0x74D` **is** record `+0x185`, and `+0x74E` is
 This is an item-use path, not a battle event: the arm is entered from the pause
 menu's Item command (`jal 0x800402F4` at `0x801D8538` in the **menu** overlay
 PROT 0899 - not field code, despite the VA band - passing the descriptor's
-`(class, tier)` byte pair as arguments 0 and 1). `FUN_800402F4` has ten `jal`
-sites disc-wide: four in 0899 (this one and `0x801D818C` / `0x801D8EAC` /
-`0x801D9438`), five in the battle overlay 0898, and exactly one in the field
-overlay 0897 - the field-VM arm at `0x801E28E4`. Which character it writes comes from the class alone - see
+`(class, tier)` byte pair as arguments 0 and 1). `FUN_800402F4` has eleven `jal`
+sites disc-wide: **five** in 0899 (this one and `0x801D818C` / `0x801D8EAC` /
+`0x801D9438` / `0x801D97A4` - an earlier count of four missed the last), five
+in the battle overlay 0898, and exactly one in the field overlay 0897 - the
+field-VM arm at `0x801E28E4`. Which character it writes comes from the class alone - see
 [item-effect-table.md](../formats/item-effect-table.md#arts-books-class-111213-the-tier-is-an-art-id)
 for the roster-slot derivation and for why the picked target is ignored.
 

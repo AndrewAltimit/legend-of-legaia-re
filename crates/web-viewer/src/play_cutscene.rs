@@ -54,7 +54,24 @@ impl LegaiaRuntime {
     /// ```
     /// `grade` / `cue` mirror `World::scene_color_grade` /
     /// `World::scene_depth_cue` - the prologue sepia multiply + gold DPCS
-    /// depth-cue ramp the native window stages into its renderer each frame.
+    /// depth-cue ramp the native window stages into its renderer each frame -
+    /// **already composed with the scripted screen tint**
+    /// (`World::scene_screen_tint`, the op-`4C 12` scene-entry fade), the way
+    /// the native window's staging match composes it
+    /// (`window/event_handler/redraw.rs`):
+    ///
+    /// * no prologue grade + a tint -> `grade = { gold: tint, strength: 1 }`,
+    ///   which is the native `(None, Some(t))` arm verbatim;
+    /// * a prologue grade -> `grade` stays the untinted gold and the tint
+    ///   rides `palette_grade`, the native `(Some(g), t)` arm;
+    /// * either way the depth cue's far colour is multiplied by the tint, so
+    ///   a fade-to-black reaches full black on far-cued geometry.
+    ///
+    /// Before this, `tint` reached the page's engine-built geometry (the
+    /// field-FX parts are coloured engine-side) and nothing else, so an
+    /// ordinary town's scene-entry fade darkened the smoke puffs over a town
+    /// that never faded. `palette_grade` has no consumer in
+    /// `site/js/webgl-tmd.js` yet - see `docs/tooling/host-drift.md`.
     /// Abandon a live opening cutscene chain before a **user-initiated**
     /// scene entry (the page's scene picker, a card load, the title's
     /// re-entry) - [`legaia_engine_core::world::World::abandon_opening_chain`].
@@ -74,12 +91,30 @@ impl LegaiaRuntime {
         };
         let narration = w.cutscene_narration_active();
         let card = w.cutscene.card.is_some();
-        let grade = w
-            .scene_color_grade()
-            .map(|g| serde_json::json!({ "gold": g.gold, "strength": g.strength }));
+        // The three staging arms of the native window's redraw, resolved
+        // here so the page's renderer takes the same two calls it does.
+        let tint = w.scene_screen_tint();
+        let (grade, palette_grade) = match (w.scene_color_grade(), tint) {
+            (Some(g), t) => (
+                Some(serde_json::json!({ "gold": g.gold, "strength": g.strength })),
+                serde_json::json!({ "mul": t.unwrap_or([1.0; 3]), "on": true }),
+            ),
+            (None, Some(t)) => (
+                Some(serde_json::json!({ "gold": t, "strength": 1.0 })),
+                serde_json::json!({ "mul": [1.0f32, 1.0, 1.0], "on": false }),
+            ),
+            (None, None) => (
+                None,
+                serde_json::json!({ "mul": [1.0f32, 1.0, 1.0], "on": false }),
+            ),
+        };
         let cue = w.scene_depth_cue().map(|c| {
+            let far = match tint {
+                Some(t) => [c.far[0] * t[0], c.far[1] * t[1], c.far[2] * t[2]],
+                None => c.far,
+            };
             serde_json::json!({
-                "far": c.far, "near_z": c.near_z, "far_z": c.far_z,
+                "far": far, "near_z": c.near_z, "far_z": c.far_z,
                 "max_ir0": c.max_ir0,
             })
         });
@@ -94,6 +129,7 @@ impl LegaiaRuntime {
                 0.0
             },
             "grade": grade,
+            "palette_grade": palette_grade,
             "cue": cue,
         })
         .to_string()

@@ -349,10 +349,6 @@ key = "module-orphan:crates/engine-core/src/slot_machine.rs:801e6f70"
 reason = "Disassembly: eight digit cells at 0x801F35F0 accumulated x10 per cell, cost = coins*100, gold gate 0x8008459C, stock gate 0x8007BB90, both recolouring to ink 9. The coin-exchange counter."
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/field_menu.rs:801d6d38"
-reason = "Same routine as the save_subscreen row and the same disassembly; it runs under two entry contexts, which is why two modules model it. Window 0x801E4BD4, FUN_801d688c(&0x801E46D0, 2, 1), next-screen word 0x801E46A4 written 0 unconditionally then overwritten with 1 on the default row."
-
-[[waiver]]
 key = "doc-citation:docs/reference/functions/audio.md:8001d230:801ce628"
 reason = """
 0x801CE628 is not this routine's; the row cites it as a section link. The
@@ -1093,20 +1089,6 @@ conflict.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/muscle_dome.rs:80026018"
-reason = """
-Verified against the disassembly, and the tag's sub-range is exact.
-0x80026054 is `addiu s0,v0,0x4140` (the live game-state window 0x80084140);
-0x80026058..0x80026068 is `lw v0,0x464(s0)` / `lw v1,0x300(s0)` / `addu` /
-`sw v0,0x464(s0)`, i.e. the coin bank 0x800845A4 credited by the tally at
-0x80084440; 0x8002606C..0x80026078 clamps it at `lui a0,0x98` / `ori a0,a0,0x967f`
-= 9,999,999, which is the port's COIN_BANK_MAX. That is `credit_casino_coins`
-exactly. The module's siblings are the dome / hub state machines, which never
-touch the coin bank - the venue rules and the payout kernel are separate
-routines in retail too.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/overlay_loader.rs:8003ebe4"
 reason = """
 The two loaders are twins that deliberately share NO datum, which makes the
@@ -1378,4 +1360,21 @@ never appears in any 801d1290 dump. Verified by bytes in the audit of the
 equip-browse correction: the run reads 00 01 00 04 05 06 07 (weapon row 0
 comes from the per-character halfword 0x8007B42C instead), which is what
 makes the browse order weapon, helmet, body, footwear, Goods x3.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801d0f60:801ce818+801c0000"
+reason = """
+Both cited addresses are named in the row as BASES, not as data the routine
+touches, which is why no dump of it forms either. 0x801CE818 is PROT 0977's own
+slot-A load base - the row states the routine's position as "base 0x801CE818,
+file +0x2748" - and 0x801C0000 is the base of the mis-based import whose
+printed 0x801C2748 the row exists to correct. The disassembly agrees: the
+1544-byte body at 0x801D0F60 forms 0x80084440, 0x801D1860, 0x801D1A90 and
+0x801D1A94 and nothing in 0x801C____ at all.
+
+The row only became checkable now. Its citation names a header-less "dump
+target" window, which carries no entry or size and so was never parsed as a
+dump of this address; the address has a based dump for the first time
+(overlay_arena_init_0977_801d0f60.txt), and the checker compared against it.
 """

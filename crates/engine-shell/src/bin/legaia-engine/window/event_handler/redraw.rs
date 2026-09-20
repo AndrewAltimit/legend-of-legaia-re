@@ -323,12 +323,13 @@ impl PlayWindowApp {
             // the swapped mesh uploaded; the world holds the new id and the
             // draw holds the old one.
             self.rebind_live_npc_models();
-            // Placed-prop animation: advance every posed prop's clip and post
-            // the player's contact edges, so walking into a Rim Elm house door
-            // resumes its bind script and swings it open (retail's per-actor
-            // anim tick `FUN_800204F8`, driven by the body-contact script
-            // resume `FUN_801D5B5C`).
-            self.tick_field_prop_anims();
+            // (Placed-prop animation and the touch/interact dispatch are
+            // the world's own - `World::tick_prop_interactions`, inside
+            // `World::tick`'s field arm - so this loop has no step for them.
+            // It used to call an empty `tick_field_prop_anims` shim, which
+            // the drift gate then PAIRED with the browser's real NPC-clip
+            // kernel: a `{}` body pairs perfectly by name. The browser twin's
+            // two drains are done below, inline in this loop.)
             // Baka Fighter duel: drain the exchange-hit SFX cue the rules
             // kernel queued this tick and enqueue it into the SFX scheduler
             // (the per-frame `tick_sfx_frame` below fires it against the

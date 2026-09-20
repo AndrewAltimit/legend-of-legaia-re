@@ -734,12 +734,14 @@ impl RetailInventory {
     /// reached two ways.
     ///
     /// PORT: FUN_80042FE8
-    /// NOT WIRED: no reference of any form reaches `FUN_80042FE8` in any image
-    /// on the disc - not a word, `jal`, `j`, branch, or `lui`/`addiu` pair - so
-    /// retail never calls it either. It is reproduced because it is where the
-    /// 99 cap is written most plainly, and because the byte-denominated
-    /// coverage sweep surfaced it; the engine grants items through
-    /// `legaia_engine_core`'s bounded list, which has no slot-addressed add.
+    /// REPLACED-BY: nothing is owed a port - no reference of any form reaches
+    /// `FUN_80042FE8` in any image on the disc (not a word, `jal`, `j`, branch
+    /// or `lui`/`addiu` pair), so retail never calls it either and no host can
+    /// be found by looking harder. `legaia_engine_core`'s bounded list is what
+    /// grants items in the port, and it has no slot-addressed add; this stays
+    /// because it is where retail writes the 99 cap most plainly, and because
+    /// the byte-denominated coverage sweep surfaced it. See
+    /// `docs/tooling/port-catalog.md` - What may carry it, fourth shape.
     pub fn add_to_slot(&mut self, slot: usize, delta: u8) -> Option<u8> {
         let cell = self.slots.get_mut(slot)?;
         if cell.0 == 0 {

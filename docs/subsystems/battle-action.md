@@ -2550,7 +2550,7 @@ priority ladder tests them in order, and by the appliers that set them.
 |---|---|---|
 | `0x0001` | Venom | weak-DoT applier, 1/8 |
 | `0x0002` | Toxic | strong-DoT applier, 1/8 |
-| `0x0004` | Stone | petrify applier (`0x80041CEC` `ori 0x4`) |
+| `0x0004` | Stone | petrify applier (`ori $v0,$v0,4` at `0x80041CF4`, over the `lhu` at `0x80041CEC`) |
 | `0x0008` / `0x0010` / `0x0020` | Rot, one rolled limb | `1 << (rand % 3 + 3)` |
 | `0x0040` | inside the Rot group, never set | - |
 | `0x0080` / `0x0100` / `0x0200` | AI delegation, always as the group `0x0380` | `FUN_80047430`, from accessory passive bit 45 |

@@ -1336,6 +1336,12 @@ impl World {
         self.drain_staged_menu_warp();
         // A minigame the player can enter must be one the player can leave.
         self.poll_minigame_escape();
+        // Age the minigame effect-part pool. Here rather than in a host's own
+        // frame step: a pool a host owns ages only on that host, and the
+        // fishing splash spent its whole life native-only for exactly that
+        // reason (see [`crate::minigame_fx`]). Unconditional, like the ramps
+        // above - a pool with no live part costs a length test.
+        self.minigames.fx.tick(1);
         match self.mode {
             SceneMode::Battle => {
                 // Battle animation advance. This is SIMULATION, not
@@ -2008,7 +2014,23 @@ impl World {
     /// still `Dance` (a mid-song abort); when the song already auto-ended
     /// [`tick_dance`](Self::tick_dance) has restored the mode but left the game
     /// installed for one frame so the host can read it - this take clears it.
+    ///
+    /// **Nothing happens without a run to tear down.** Both hosts poll this
+    /// from their frame path with the same `mode != Dance` test, which is
+    /// true on every ordinary field frame, so an unguarded body ran the whole
+    /// teardown - `restore_minigame_bgm` (self-gating, harmless) and the
+    /// stager's PAD-LATCH CLEAR (not harmless) - sixty times a second. The
+    /// clear forces `pad_prev = pad`, so every edge consumer that runs after
+    /// the poll in its host's frame order saw no edges at all: on the browser
+    /// play page, where the poll sits in `tick_minigame_ui` ahead of
+    /// `tick_dev_menu`, the developer menu stopped taking input entirely.
+    /// `enter_dance` is the only writer of `minigames.dance`, so "a run is
+    /// installed, or the mode is still the hall" is exactly the set of frames
+    /// with something to tear down.
     pub fn exit_dance(&mut self) -> Option<crate::dance::DanceGame> {
+        if self.mode != SceneMode::Dance && self.minigames.dance.is_none() {
+            return None;
+        }
         if self.mode == SceneMode::Dance {
             self.mode = self.minigames.dance_return_mode;
         }
@@ -2150,6 +2172,31 @@ impl World {
         self.mode = SceneMode::Fishing;
     }
 
+    /// Re-point the persistent rod cell at a rod the party actually holds, and
+    /// return it as a session's `rod_stat`.
+    ///
+    /// This is the fishing bring-up's own scan
+    /// ([`crate::fishing::entry_rod_index`], retail `FUN_801CF070` at
+    /// `0x801cf35c..0x801cf39c`) run against the live bag: it keeps
+    /// [`crate::world::MinigameState::fishing_rod`] when that rod is held,
+    /// otherwise steps forward with wrap, and lands on `0` for a party holding
+    /// no rod at all - so a stale save index never divides the tension gauge.
+    /// The result is written back, exactly as retail leaves it in
+    /// `_DAT_80084454`, which is the same cell the persistent HUD's rod row
+    /// reads.
+    ///
+    /// Both hosts reach this through the mode-24 door warp
+    /// (`SceneHost::enter_fishing_from_overlay`); the two debug launchers that
+    /// open a session without a field scene keep their own fixed stat.
+    pub fn resolve_fishing_entry_rod(&mut self) -> i32 {
+        let bag = &self.party.inventory;
+        let rod = crate::fishing::entry_rod_index(self.minigames.fishing_rod, |id| {
+            i32::from(bag.get(&(id as u8)).copied().unwrap_or(0))
+        });
+        self.minigames.fishing_rod = rod;
+        rod as i32
+    }
+
     /// Leave the fishing minigame and restore the interrupted mode, returning
     /// the session so the host can read the final [`FishingRecord`]. The
     /// record's point total is banked into the persistent
@@ -2246,11 +2293,16 @@ impl World {
         use crate::fishing::{FishingPhase, ReelInput};
         /// Per-frame casting-meter step (see the method note - not byte-pinned).
         const FISHING_CAST_STEP: i32 = 0x80;
+        /// Packed spread argument the strike splash fans its three parts by.
+        /// Direct form (bit [`crate::fishing_chrome::SPLASH_SUB_BLOCK_BIT`]
+        /// clear); the value is the play window's, carried over unchanged.
+        const SPLASH_SPREAD: i32 = 0x40;
         let Some(phase) = self.minigames.fishing.as_ref().map(|s| s.phase()) else {
             // Mode is Fishing but no session installed - drop back to a sane mode.
             self.mode = self.minigames.fishing_return_mode;
             return;
         };
+        let entry_phase = phase;
         match phase {
             FishingPhase::Casting => {
                 if let Some(s) = self.minigames.fishing.as_mut() {
@@ -2285,6 +2337,21 @@ impl World {
                     s.recast();
                 }
             }
+        }
+        // The strike edge spawns the three-part splash into the shared effect
+        // pool. The producer is the session's own phase edge, not a venue
+        // actor, so every host that ticks the world gets the burst - the play
+        // window used to spawn it from its fishing-actor frame, which is why
+        // it was the only surface that had one.
+        let now = self.minigames.fishing.as_ref().map(|s| s.phase());
+        if entry_phase == FishingPhase::Casting && now == Some(FishingPhase::Fighting) {
+            let parts = crate::fishing_chrome::splash_burst(
+                crate::fishing_actors::SCREEN_CENTRE.0,
+                crate::fishing_actors::SCREEN_CENTRE.1,
+                crate::minigame_fx::SPLASH_SPRITE_ID,
+                SPLASH_SPREAD,
+            );
+            self.minigames.fx.spawn_splash(&parts);
         }
     }
 

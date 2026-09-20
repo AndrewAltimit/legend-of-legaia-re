@@ -336,9 +336,12 @@ pub const BATTLE_ID_FALLBACK_MONSTER: u8 = 4;
 /// only diverges if `0x8007B7FC` ever holds a value above `0xFF`, in
 /// which case retail's band tests would fail where this port's succeed.
 ///
-/// NOT WIRED: retail's own caller is a battle-init stage the engine does not
-/// have, and half of this routine is unreachable in retail too - so "nothing
-/// dispatches to it *yet*" overstates the case.
+/// REPLACED-BY: [`EncounterRecord::parse`] plus the typed `FormationDef`
+/// lookup in `World::tables.formation_table`, which is how the port resolves a
+/// battle's formation - and no host is owed the other half either, because
+/// half of this routine is unreachable in retail. Both reasons are spelled out
+/// below; together they mean "nothing dispatches to it *yet*" was the wrong
+/// class, not just the wrong emphasis.
 ///
 /// The single retail caller is the battle-init formation resolve
 /// `FUN_80055B6C`, on two arms (`0x80055C14` / `0x80055C6C`): a non-zero

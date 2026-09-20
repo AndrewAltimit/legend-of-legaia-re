@@ -1041,6 +1041,18 @@ impl Camera {
         }
         self.mover = None;
         self.script_owns_focus = false;
+        // The field draw context (`FUN_801DE37C`) re-stamps the visible-tile
+        // window every field entry runs through, *before* the new scene's
+        // script can retune it with op `0x46`. Without the re-stamp the
+        // window was seeded once at `Camera::new` and then only ever
+        // overwritten, so a scene that scripts a wide window handed it to
+        // the next scene and widened that scene's focus edge clamp - the
+        // primer `route_camera_events` already names in its op-`0x46` arm.
+        // Both hosts reach this through their scene-entry reset.
+        self.zone.view_window = {
+            let (x0, z0, x1, z1) = crate::mode_entry_init::field_draw_context().view_window;
+            [x0, z0, x1, z1]
+        };
         // The arrival actor (`FUN_801DBE9C`) re-pins the focus and snaps the
         // composed shot in on the first frame of the new scene.
         self.zone.arm_arrival();
@@ -1254,13 +1266,20 @@ pub enum CameraZoneArrival {
 /// 0x801dc0b8` (the committed `FUN_801DBEC4` name is a mid-function
 /// label of this body, not its entry).
 ///
-/// NOT WIRED: this is the dev-only leg. The engine's arrival snap is
-/// [`ZoneFollow::arm_arrival`] (armed by
-/// [`Camera::reset_globals_for_scene_entry`], consumed by the zone follow
-/// tick), which is the retail leg's job; the tile query itself runs from
-/// the same tick through [`crate::field_regions::zone_query`]. There is no
-/// per-actor `+0x54` countdown and no `_DAT_8007B868` dev word in the
-/// engine, so nothing selects this leg.
+/// REPLACED-BY: [`ZoneFollow::arm_arrival`] and the zone-follow tick that
+/// consumes it, which do the retail leg's job - re-pin the focus to the
+/// player and snap the composed shot in - and run the tile query from the
+/// same tick through [`crate::field_regions::zone_query`].
+///
+/// This is the stronger claim, not "nothing calls it". The body ported here
+/// is the leg the entry gate selects when `_DAT_8007B868` is **non-zero**
+/// (`lw v0,-0x4798(v0)` / `beq v0,zero,0x801dbff8` at `0x801dbe9c`), and that
+/// word is the dev / dual-mode gate retail boots clear - the same gate that
+/// closes the world-map dev menu's MAP_CHANGE row and selects the `h:\`
+/// host-file asset arm. Retail therefore always takes the `0x801dbff8` leg,
+/// which never touches the camera parameter block. A call site here would
+/// host a leg the retail machine does not run, beside the leg the engine
+/// already runs.
 pub fn camera_zone_arrival_tick(
     countdown: &mut i16,
     player_pos: (i16, i16),
@@ -1633,6 +1652,26 @@ mod tests {
         assert_eq!(c.globals.tr_eye(), [0, -256, 16420]);
         assert_eq!(c.globals.0[6..=8], [7, 8, 9], "focus is not a reset axis");
         assert_eq!(c.globals.h(), 10, "H keeps the register's live value");
+    }
+
+    /// The field draw context (`FUN_801DE37C`) re-stamps the visible-tile
+    /// window on every field entry, so a scene that scripted a wide window
+    /// through op `0x46` cannot hand it to the next scene's focus edge clamp.
+    #[test]
+    fn scene_entry_restamps_the_field_draw_context_view_window() {
+        let mut c = Camera::new();
+        let default = {
+            let (x0, z0, x1, z1) = crate::mode_entry_init::field_draw_context().view_window;
+            [x0, z0, x1, z1]
+        };
+        assert_eq!(c.zone.view_window, default, "boot seeds the field box");
+        // A script (op `0x46`) widens the window in the departing scene.
+        c.zone.view_window = [-30, -30, 30, 30];
+        c.reset_globals_for_scene_entry();
+        assert_eq!(
+            c.zone.view_window, default,
+            "the next scene starts from the draw context's own box"
+        );
     }
 
     /// A camera that never carried an `H` (the boot default, or a headless

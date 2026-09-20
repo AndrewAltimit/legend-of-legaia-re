@@ -40,17 +40,6 @@ use crate::play::{FieldRender, NpcClip, NpcRender, PlayerRig};
 #[cfg(target_arch = "wasm32")]
 const BGM_DEFAULT_GAIN: f32 = 1.0;
 
-/// What one slider unit is worth on the output `GainNode`, i.e. the page's
-/// "1x" = a quarter of the native cpal path's unity level. The history of
-/// this scale is a walk down the loudness curve by ear: an earlier revision
-/// baked in `5.0` on the theory that the mixer is "near-inaudible at unity",
-/// listening said the opposite and it clipped on peaks; unity itself then
-/// proved loud as a browser-tab default, and so did half of it. The scale
-/// lives here rather than in the page so "1x" stays the label of the shipped
-/// level and only one place holds the number.
-#[cfg(target_arch = "wasm32")]
-const BGM_SLIDER_UNIT_GAIN: f32 = 0.25;
-
 /// Bridge object the play page instantiates once. Holds a `World` +
 /// `MenuRuntime` for the disc-free path, and - once `load_disc` has run - a
 /// `SceneHost` plus the render state for the scene it is running.
@@ -368,6 +357,12 @@ pub struct LegaiaRuntime {
     bgm_last_started: Option<u16>,
 }
 
+/// Sentinel [`LegaiaRuntime::set_field_player_screen_y`] reads as "the lead
+/// did not project this frame" (behind the near plane, or no view-projection
+/// built yet). Out of band on purpose - every in-range stage Y, negative
+/// included, is a number the kernel is entitled to compare.
+pub const NO_FIELD_PROJECTION: i32 = i32::MIN;
+
 #[wasm_bindgen]
 impl LegaiaRuntime {
     #[wasm_bindgen(constructor)]
@@ -377,6 +372,7 @@ impl LegaiaRuntime {
         world.spawn_actor(0).default_pos = legaia_engine_vm::Position::new(0, 0);
         world.mode = SceneMode::Title;
         let menu = MenuRuntime::new("/saves");
+        let options_state = load_persisted_options();
         Self {
             world,
             menu,
@@ -397,6 +393,11 @@ impl LegaiaRuntime {
             camera: {
                 let mut c = legaia_engine_core::camera::Camera::new();
                 c.render_yaw_bias = legaia_engine_core::camera_view::retail_field_render_yaw_bias();
+                // The follow distance is an OPTION, and the window applies it
+                // at startup (`window/run.rs`). `Camera::new()`'s own default
+                // is `Retail`, so a page that never read the option framed
+                // every field frame ~35% closer than the window did.
+                c.distance = options_state.camera_distance;
                 c
             },
             cutscene_cam: Default::default(),
@@ -438,7 +439,7 @@ impl LegaiaRuntime {
             dev_menu: None,
             dev_menu_records: false,
             dev_menu_enabled: false,
-            options_state: load_persisted_options(),
+            options_state,
             play_clock_secs: 0,
             play_clock_origin_ms: None,
             live_battles: true,
@@ -679,6 +680,13 @@ impl LegaiaRuntime {
         self.boot_logos_atlas = None;
         self.boot_logos_failed = false;
         self.menu_glyph_atlas = None;
+        // A freshly installed world starts at `World::default()`'s toggles,
+        // which are NOT the player's persisted options. The native window
+        // re-asserts all four every tick precisely because a scene / New Game
+        // transition reseeds world state; this page only pushed them on
+        // Options-close, so a persisted "Run" or flash-guard-off never
+        // applied at page load and was lost again after a door.
+        self.apply_options_side_effects();
         Ok(count)
     }
 
@@ -846,12 +854,19 @@ impl LegaiaRuntime {
     }
 
     /// The lead's projected screen Y this frame in 240-line stage space, or
-    /// a negative value for "not projectable" - the browser twin of the
-    /// native window's `field_hud_projected_player_y`. The field party HUD's
-    /// decision kernel reads it (retail compares the projected player
+    /// [`NO_FIELD_PROJECTION`] for "not projectable" - the browser twin of
+    /// the native window's `field_hud_projected_player_y`. The field party
+    /// HUD's decision kernel reads it (retail compares the projected player
     /// against a band before the readout returns).
+    ///
+    /// The sentinel is an out-of-band value rather than "negative": a lead
+    /// projected ABOVE the top of the stage has a negative stage Y, and the
+    /// native window reports it as a number. Folding that into "no
+    /// projection" narrowed the channel on this host only, which is exactly
+    /// the shape `docs/tooling/host-drift.md` names.
     pub fn set_field_player_screen_y(&mut self, stage_y: i32) {
-        self.field_hud_projected_y = (stage_y >= 0).then(|| stage_y.min(i16::MAX as i32) as i16);
+        self.field_hud_projected_y = (stage_y != NO_FIELD_PROJECTION)
+            .then(|| stage_y.clamp(i16::MIN as i32, i16::MAX as i32) as i16);
     }
 
     /// Establish a fresh New Game slate - the browser twin of the native
@@ -1181,9 +1196,8 @@ impl LegaiaRuntime {
     /// routes the field VM's op-`0x35` music events through the same port-side
     /// VAB + SEQ + SPU path the audio audition page uses. This call also stages
     /// the current scene's VAB bank (so a scene-local track has a bank) and
-    /// parks the default level ([`BGM_DEFAULT_GAIN`] slider units through
-    /// [`BGM_SLIDER_UNIT_GAIN`]) on the output node so the level
-    /// matches the page's slider. Browsers often open the `AudioContext`
+    /// parks the default level ([`BGM_DEFAULT_GAIN`] slider units) on the
+    /// output node so the level matches the page's slider. Browsers often open the `AudioContext`
     /// suspended even inside a
     /// gesture - call [`Self::audio_resume`] right after this to make it audible.
     pub fn audio_init(&mut self) -> bool {
@@ -1191,7 +1205,7 @@ impl LegaiaRuntime {
         {
             match WebAudioOut::new() {
                 Ok(out) => {
-                    out.set_gain(BGM_DEFAULT_GAIN * BGM_SLIDER_UNIT_GAIN);
+                    out.set_gain(BGM_DEFAULT_GAIN);
                     self.audio_out = Some(out);
                     // If a scene is already up, stage its VAB now so a
                     // scene-local BGM start resolves against a live bank.
@@ -1252,13 +1266,21 @@ impl LegaiaRuntime {
     }
 
     /// Set the BGM output gain in page-slider units: `1.0` is the page
-    /// default ([`BGM_DEFAULT_GAIN`]) and maps to [`BGM_SLIDER_UNIT_GAIN`]
-    /// of the native cpal path's unity level; the slider spans 0x (mute) to
-    /// 10x. No-op when audio isn't up.
+    /// default ([`BGM_DEFAULT_GAIN`]); the slider spans 0x (mute) to 10x.
+    /// No-op when audio isn't up.
+    ///
+    /// The site's browser master trim
+    /// ([`legaia_engine_audio::webaudio::WEB_MASTER_TRIM`] - the same `0.25`
+    /// `site/js/layout.js` publishes as `window.LEGAIA_MASTER_TRIM`) is
+    /// applied by `WebAudioOut::set_gain` itself, so the slider value passes
+    /// through untouched. This page used to multiply by its own copy of that
+    /// factor first, applying the site trim TWICE and leaving the play page a
+    /// factor of four - about 12 dB - under the minigames page, whose
+    /// `site/js/minigame-bgm.js` output stage applies it once.
     #[cfg(target_arch = "wasm32")]
     pub fn audio_set_gain(&self, gain: f32) {
         if let Some(out) = self.audio_out.as_ref() {
-            out.set_gain(gain * BGM_SLIDER_UNIT_GAIN);
+            out.set_gain(gain);
         }
     }
 
@@ -2179,12 +2201,14 @@ impl LegaiaRuntime {
         if let Some((spell_id, _origin)) = summon {
             self.spawn_summon_creature_web(spell_id);
         }
+        // The full ring value goes through: `enqueue_sfx` takes
+        // `impl Into<u16>`, and the `u8::try_from` this used to narrow
+        // through dropped cue id `0`, whose ring value is `0xFFFF`.
         if let Some(cue) = cue
             && let legaia_engine_audio::CueDispatch::Ring { ring_value, .. } =
                 legaia_engine_audio::classify_cue(cue as u32)
-            && let Ok(id) = u8::try_from(ring_value)
         {
-            self.enqueue_sfx(id, 0);
+            self.enqueue_sfx(ring_value, 0);
         }
     }
 
@@ -2259,5 +2283,8 @@ impl LegaiaRuntime {
             // straight to the target cursor, or straight to the arts entry.
             host.world.toggles.select_attack = self.options_state.battle_select_attack;
         }
+        // The follow-camera distance preset, the same host knob the native
+        // window re-asserts each tick (`window/event_handler/redraw.rs`).
+        self.camera.distance = self.options_state.camera_distance;
     }
 }

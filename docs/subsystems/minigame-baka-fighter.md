@@ -1017,7 +1017,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d5c7c` | round-result banner fly-in / hold / fly-out animator (horizontal slide offset + brightness ramp, draws widget 3 through `FUN_801d5ed0` / `FUN_801d69a8`) |
 | `FUN_801d59d4` | title / logo flash animator (widget `0x28`, brightness `iVar << 3` ramp + the two XA stings) |
 | `FUN_801d69a8` | stage-digit draw helper: patches widget 5's `u` (`DAT_801d71cc = stage * 0x18`) then draws widget 5 through `FUN_801d5ed0` |
-| `FUN_801d6cbc` | "How to Play Baka Fighter" instructions-screen text drawer (11 lines from `PTR_..._801d7134`, `0xd` px apart) |
+| `FUN_801d6cbc` | "How to Play Baka Fighter" instructions-screen text drawer (11 lines from `PTR_..._801d7134`, `0xd` px apart). See [the pointer table](#the-help-panels-pointer-table) below. |
 | `FUN_801d2a28` | per-exchange score accumulator (see [Score-bonus tables](#score-bonus-tables)) |
 | `FUN_801ceb84` | scratchpad GPU packet-template initializer (fills the OT / primitive scratch `0x1f800034+` with gouraud packet words) - render-track |
 | `FUN_801d6480` / `FUN_801d6770` | raw GPU quad emitters into the OT scratch `_DAT_1f8003a0` (gouraud code `0x3a` / flat `0x28`; `FUN_801d6770` links through `FUN_8003d2c4`) - render-track |
@@ -1031,6 +1031,26 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d65f8` | VRAM blit helper: builds a `RECT` from table `&DAT_801dbe84` (index `arg * 4`) - `x = 0x340 + (byte0 >> 2)`, `y = 0x80 + byte1`, `w = 6`, `h = 0x18` - and blits it to `(0x340, 0x86)` via `FUN_80058490` (`MoveImage`) |
 
 Provenance: each row corresponds to `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt`.
+
+### The help panel's pointer table
+
+`PTR_..._801D7134` (file `+0x891C`) is eleven words, and their being both
+**descending** and low enough to look like they leave the image is the whole
+of what made them look unusual. They do not leave it: the run is
+`0x801CE948` down to `0x801CE818`, and `0x801CE818` **is** the slot-A base -
+the words address this image's own head string pool at `+0x00..+0x130`,
+emitted in reading order over a pool the compiler laid out backwards. The
+lowest word points at the image's leading NUL, so the panel's eleventh line is
+a deliberate blank.
+
+`FUN_801D6CBC(x, y)` stages widget kind `0xC` into `DAT_80073F20`, walks the
+table drawing each line through the glyph renderer `FUN_80036888(str, 0, 0,
+x - 0x10, y)` with `y` advancing `0xD` per line, and closes with the widget
+dispatcher `FUN_8002C69C(x - 0x10, y, 0xF0, 0x8F)` - a 240x143 frame. Its one
+caller is the cabinet SM `FUN_801CF388` at `0x801D1638`, the state `0xC0`
+"How to Play" arm. The body's `0x801D7134` is formed by a `lui` / `addiu`
+pair split across an unrelated store, which is why a backward-only scan from
+the table finds no reference to it.
 
 ### Score-bonus tables
 

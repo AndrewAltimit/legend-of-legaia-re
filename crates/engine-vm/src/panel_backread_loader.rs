@@ -72,10 +72,27 @@
 //! The gap is two links deep, and both are named. `FUN_80025358`'s own caller
 //! is decoded: `legaia_engine_render::battle_sideband` ports `FUN_80056208`
 //! and surfaces the call as the `SubOverlayTick` effect its intro phase 3
-//! emits - but that port is itself `NOT WIRED` (no host owns a
+//! emits - but that port is itself inert (no host owns a
 //! `BattleSidebandState`), and `FUN_80025358` between the two is not ported at
 //! all. So this row does not close by finding a host for the loader; it closes
 //! only after the sequencer above it is ported and the sideband pass has one.
+//!
+//! ## And the drawer is a third gap, not the same one
+//!
+//! Neither host draws the still, and the parser for it exists
+//! ([`legaia_asset::ringside_still`], reached today only by the byte-account
+//! walker), so it would be easy to read this row as "a screen the port owes".
+//! It is not that yet, because what this routine does is an **upload**: four
+//! `0x140 x 0x40` `LoadImage` rects into VRAM at `(384, 0)`. Which on-screen
+//! pass then samples that region is not settled on the retail side either -
+//! [`ringside-still.md`](../../../docs/formats/ringside-still.md) grades the
+//! loader, the index arithmetic, the variant selector and the geometry as
+//! confirmed and the panel's *use* as inferred, and a live teardown has ruled
+//! out the obvious candidate (the between-match `INTERVAL` / `ROUND` screens
+//! are a live `koin1` render, not this rect). So a host wired today would put
+//! 320x256 pixels somewhere nothing reads - which is why the load is not
+//! worth wiring ahead of the answer, and why this row is blocked on three
+//! things rather than two.
 
 /// Phase counter the loader indexes on (`_DAT_8007B6C8`).
 pub const BACKREAD_PHASE_GLOBAL: u32 = 0x8007_B6C8;

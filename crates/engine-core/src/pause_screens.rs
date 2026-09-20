@@ -945,7 +945,9 @@ pub struct MagicInfoModel {
 /// Phase map: `CharSelect` = caster focus (the hovered caster's list
 /// shows white), `SpellSelect` = list focus (rows grey, hovered spell
 /// staged into the info window), `TargetSelect` = the host overlays the
-/// target picker. `text` fills descriptions; names fall back
+/// target picker, `GroupConfirm` = the no-pick group flow, which draws the
+/// list exactly as `SpellSelect` does and no picker at all. `text` fills
+/// descriptions; names fall back
 /// catalog -> spell-name table -> `Spell XX`.
 pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -> MagicScreenModel {
     let casters: Vec<(String, u8, u16, u16)> = s
@@ -961,6 +963,11 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
         }
         SpellMenuPhase::TargetSelect { caster, cursor, .. } => {
             (*caster as usize, true, *cursor as usize, true)
+        }
+        // Retail's group sub-screen `0x10` draws no target rows: the spell
+        // list keeps the hand and the info window keeps the staged spell.
+        SpellMenuPhase::GroupConfirm { caster, cursor, .. } => {
+            (*caster as usize, true, *cursor as usize, false)
         }
         SpellMenuPhase::Done(_) => (0, false, 0, false),
     };
@@ -2221,20 +2228,23 @@ pub fn equip_screen_model(
             candidate: menu_stat_block(&trial, session.equipment(), hp_mp.hp_max, hp_mp.mp_max),
             hp_max: hp_mp.hp_max,
             mp_max: hp_mp.mp_max,
-            // This passes an `EquipSlot` index where retail passes a browse
-            // ROW, and the two part company at index 3. Retail's rows resolve
-            // through the same two-table map the armament writer uses: row 0
-            // takes the per-character weapon halfword off `0x8007B42C`
-            // (`2, 3, 2`, indexed by the roster slot), rows 1 and up take
-            // `0x801E43E8` = `00 01 00 04 05 06 07`, so the browse order is
-            // weapon, helmet, body, footwear, Goods x3. `EquipSlot` inserts
-            // `HandGuard` at 3, so from there on this index is one step out.
-            // It matters for the `slti v0, s0, 4` guard the row feeds: retail
-            // resolves a compare category only for its three Goods rows,
-            // while this asks it of footwear as well. Realigning them is a
-            // screen-order change, so the divergence is recorded rather than
-            // patched here.
-            slot_row: i32::from(active_slot),
+            // Retail's browse ROW, not the engine's `EquipSlot` index. The
+            // two part company at index 3: retail's rows resolve through the
+            // two-table map the armament writer uses - row 0 takes the
+            // per-character weapon halfword off `0x8007B42C` (`2, 3, 2`,
+            // indexed by the roster slot), rows 1 and up take `0x801E43E8` =
+            // `00 01 00 04 05 06 07` - so the browse order is weapon,
+            // helmet, body, footwear, Goods x3, while `EquipSlot` inserts a
+            // `HandGuard` the disc has no byte for. Feeding the slot index
+            // straight through made footwear row `4`, and the `slti v0, s0,
+            // 4` guard at `0x801D137C` then resolved a compare category
+            // there - a retail capture of that row shows the ATK / UDF / LDF
+            // triple, the `CATEGORY_DEFAULT` fallback, on every candidate.
+            // The engine-only Hand Guard row has no retail row at all, so it
+            // reports `-1`: below the guard, and not a row number retail
+            // would ever pass.
+            slot_row: crate::equip_session::retail_slot_row_for_engine_slot(active_slot)
+                .unwrap_or(-1),
             staged_id: i32::from(staged),
             staged_category: compare_category_for_item(staged, ctx),
             equipped_id,
@@ -3163,6 +3173,79 @@ mod tests {
         assert_eq!(inside[2], 33, "AGL is the record word, never equipment-fed");
         assert_eq!(inside[3], 17, "slot 4 is inside the walk");
         assert_eq!(outside[3], 10, "slot 5 is past it");
+    }
+
+    /// Window 25's `slot_row` is retail's **browse row**, not the engine's
+    /// `EquipSlot` index.
+    ///
+    /// A driven capture of the retail screen on each of its seven rows
+    /// (`captures/w1a-0919/equip_panel_astral`, one save state + frame per
+    /// row) settles the split: rows 1..4 - weapon, helmet, body, footwear -
+    /// all print the ATK / UDF / LDF triple whatever is hovered, because
+    /// `slti v0, s0, 4` at `0x801D137C` skips the category lookup for them;
+    /// only the three Goods rows resolve one, and the first of them draws
+    /// MAX HP / MAX MP for an HP-boost accessory. The engine's extra Hand
+    /// Guard slot has no retail row at all, so it reports `-1`.
+    #[test]
+    fn compare_slot_row_is_the_retail_browse_row_not_the_engine_slot() {
+        use crate::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
+        use crate::equip_session::{EquipInput, EquipSession, EquipState};
+
+        // Engine slot -> the row retail's browse column would be on. Rows
+        // `>= 4` are the three Goods rows, the only ones that resolve a
+        // compare category.
+        const WANT: [(u8, i32); 8] = [
+            (0, 0), // weapon
+            (1, 1), // helmet
+            (2, 2), // body
+            (3, -1),
+            (4, 3), // footwear - retail row 3, below the `slti 4` guard
+            (5, 4), // Goods 1
+            (6, 5), // Goods 2
+            (7, 6), // Goods 3
+        ];
+
+        let record = legaia_save::CharacterRecord::zeroed();
+        let names = vec!["Vahn".to_string()];
+        for (engine_slot, want_row) in WANT {
+            let mut inv = crate::world::ItemBag::new();
+            // One owned candidate whose legacy `id >> 5` slot is this row,
+            // so the picker has something to stage.
+            let id = (engine_slot << 5) | 1;
+            inv.insert(id, 1);
+            let mut session = EquipSession::new(
+                StatRecord::default(),
+                inv,
+                EquipmentTable::new(),
+                StatusModifiers::default(),
+                Vec::new(),
+            );
+            for _ in 0..=engine_slot {
+                session.input(EquipInput {
+                    down: true,
+                    ..Default::default()
+                });
+            }
+            session.input(EquipInput {
+                cross: true,
+                ..Default::default()
+            });
+            assert!(
+                matches!(session.state(), EquipState::ItemPicker { slot, .. } if slot == engine_slot),
+                "engine slot {engine_slot} did not open its picker"
+            );
+            let ctx = EquipCompareCtx {
+                record: &record,
+                equip_info: None,
+                item_effects: None,
+            };
+            let model = equip_screen_model(&session, 0, &names, None, Some(ctx));
+            let compare = model.compare.expect("candidate step publishes window 25");
+            assert_eq!(
+                compare.slot_row, want_row,
+                "engine slot {engine_slot} should report retail browse row {want_row}"
+            );
+        }
     }
 
     /// The class byte picks the table, and both tables are indexed by the

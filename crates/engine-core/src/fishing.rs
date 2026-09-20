@@ -799,12 +799,12 @@ pub const ENTRY_ROD_PROBES: u32 = 6;
 ///
 /// PORT: FUN_801CF070 (`0x801cf35c..0x801cf39c`)
 ///
-/// NOT WIRED: both hosts that open a fishing session pass a fixed placeholder
-/// rod stat - `window/minigames.rs`'s `DEV_ROD_STAT` and `play_fishing.rs`'s
-/// `WEB_ROD_STAT` - because neither carries the live bag into the fishing
-/// entry, so there is nothing to run the scan against. The host that should
-/// call it is whichever of those first takes an inventory: the result is
-/// exactly the `rod_stat` argument of [`FishingSession::new`].
+/// WIRED: [`crate::world::World::resolve_fishing_entry_rod`] runs it over the
+/// party's live bag and writes the result back to the persistent rod cell, and
+/// `SceneHost::enter_fishing_from_overlay` - the mode-24 door warp both hosts
+/// take into a fishing venue - passes that as the session's `rod_stat`.
+/// Each host's *debug* launcher still opens a session with a fixed stat of its
+/// own, which is a dev entry point rather than a player path.
 pub fn entry_rod_index(saved: u32, mut count_of: impl FnMut(u32) -> i32) -> u32 {
     let mut rod = saved;
     for _ in 0..ENTRY_ROD_PROBES {

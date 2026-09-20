@@ -640,3 +640,188 @@ fn npc_press_pins_moving_actor_arm() {
         "the engine stepper rests at the captured press position"
     );
 }
+
+// ==== wall-slide resolver (`FUN_80046494`) on the captured live grid ======
+
+/// The four cardinal direction bits, in the resolver's own table order.
+const SLIDE_DIRS: [(&str, u16); 4] = [
+    ("Z-", 0x4000),
+    ("X-", 0x8000),
+    ("Z+", 0x1000),
+    ("X+", 0x2000),
+];
+
+/// Count, per cardinal, the standable points of a window around `(cx, cz)`
+/// at which the slide resolver returns a mask wider than the held bit.
+/// Returns `(per-direction counts, standable points scanned)`.
+fn slide_survey(world: &World, cx: i32, cz: i32, half: i32, step: i32) -> ([usize; 4], usize) {
+    let mut counts = [0usize; 4];
+    let mut standable = 0usize;
+    let mut x = cx - half;
+    while x <= cx + half {
+        let mut z = cz - half;
+        while z <= cz + half {
+            if !world.field_tile_is_wall(x as i16, z as i16) {
+                standable += 1;
+                for (i, (_, bit)) in SLIDE_DIRS.iter().enumerate() {
+                    if world.resolve_field_slide(*bit, x as i16, z as i16) != *bit {
+                        counts[i] += 1;
+                    }
+                }
+            }
+            z += step;
+        }
+        x += step;
+    }
+    (counts, standable)
+}
+
+/// The blocker the `resolve_field_slide` port carried - "wiring it changes
+/// where the player rests against every wall, and the rest positions are
+/// pinned against captures taken on the non-sliding stepper" - does not
+/// hold for these two captures: **both pinned rest positions are
+/// slide-neutral**. At each one the resolver hands back exactly the held
+/// cardinal, so the wired stepper walks the same path the pinned legs
+/// above measured. The same grid does carry the skid in quantity, so the
+/// resolver is not merely inert either.
+#[test]
+fn wall_slide_leaves_the_pinned_rests_alone() {
+    for (label, press) in [
+        ("rimelm_wall_press_left", 0x8000u16),
+        ("rimelm_wall_press_down", 0x4000u16),
+    ] {
+        let Some(wp) = load_wall_press(label) else {
+            return;
+        };
+        let at_rest = wp
+            .world
+            .resolve_field_slide(press, wp.px as i16, wp.pz as i16);
+        eprintln!(
+            "[{label}] press {press:#06x} at the captured rest ({},{}) -> {at_rest:#06x}",
+            wp.px, wp.pz
+        );
+        assert_eq!(
+            at_rest, press,
+            "the captured rest position is slide-neutral, so wiring \
+             `resolve_field_slide` cannot move the pinned wall-press legs"
+        );
+
+        // ... and the skid is genuinely present on this grid.
+        let (counts, standable) = slide_survey(&wp.world, wp.px, wp.pz, 2048, 8);
+        for (i, (name, _)) in SLIDE_DIRS.iter().enumerate() {
+            eprintln!(
+                "[{label}] dir {name}: {} sliding of {standable} standable points",
+                counts[i]
+            );
+        }
+        assert!(
+            counts.iter().all(|n| *n > 0),
+            "every cardinal finds sliding positions on the live grid"
+        );
+    }
+}
+
+/// Retail's slide is WIRED: the pad-driven locomotion path
+/// (`World::step_field_locomotion`, which now runs the held mask through
+/// `World::resolve_field_slide`) skids along the wall, while the bare
+/// per-axis stepper fed the raw held mask - the pre-wire behaviour - stays
+/// on its row.
+///
+/// Driven from the first row of [`RETAIL_SLIDE_ROWS`], the position where
+/// the retail capture itself starts skidding, so the contrast is anchored
+/// on retail's own trajectory: over those 15 frames retail walked
+/// `(3248, 3520) -> (3102, 3296)`, losing ground on BOTH axes under a
+/// held `X-`.
+#[test]
+fn wall_slide_wire_skids_where_the_bare_stepper_sticks() {
+    let Some(wp) = load_wall_press("rimelm_wall_press_left") else {
+        return;
+    };
+    let (sx, sz, press, resolved_want) = RETAIL_SLIDE_ROWS[0];
+    let resolved = wp.world.resolve_field_slide(press, sx as i16, sz as i16);
+    assert_eq!(resolved, resolved_want, "the retail row still resolves");
+
+    let press_rest = |wired: bool| -> (i16, i16) {
+        let mut world = World::new();
+        world.install_field_player(0);
+        world.load_field_collision_grid(&wp.live_grid);
+        world.locomotion.leading_edge_wall_probes = true;
+        world.actors[0].move_state.world_x = sx as i16;
+        world.actors[0].move_state.world_z = sz as i16;
+        if wired {
+            world.set_pad(PadButton::Left.mask());
+            for _ in 0..60 {
+                world.step_field_locomotion();
+            }
+        } else {
+            for _ in 0..60 {
+                world.advance_with_collision(0, press, 8);
+            }
+        }
+        let ms = &world.actors[0].move_state;
+        (ms.world_x, ms.world_z)
+    };
+
+    let bare = press_rest(false);
+    let wired = press_rest(true);
+    eprintln!("[slide] start ({sx},{sz}) -> bare {bare:?} wired {wired:?}");
+    assert_eq!(
+        bare.1, sz as i16,
+        "the bare stepper on the raw held mask never leaves the Z row"
+    );
+    assert!(
+        wired.1 < sz as i16,
+        "the wired pad path skids toward Z- like retail (start {sz}, rest {})",
+        wired.1
+    );
+    assert!(
+        wired.0 < sx as i16,
+        "the wired pad path still makes ground on the held X- axis"
+    );
+}
+
+/// Retail rows for `FUN_80046494`, captured by
+/// `scripts/pcsx-redux/autorun_w3b_field_slide.lua` on `s3_rimelm_freeroam`
+/// with no pokes - the probe taps the resolver's return landing
+/// (`0x801D03F4`) inside `FUN_801D01B0` and records `(player +0x14, +0x18,
+/// remapped held mask, returned mask)` per call. Over 276 calls the run
+/// answers the held mask 261 times and widens it 15 times, every widening on
+/// one held-LEFT run down the town01 exterior wall: `0x8000` -> `0xC000`,
+/// the player skidding `X-` **and** `Z-` while the pad asks only for `X-`.
+///
+/// `(x, z, held, resolved)`; the last two rows are the negative controls -
+/// the same held mask elsewhere on the same walk, answered unchanged.
+const RETAIL_SLIDE_ROWS: [(i32, i32, u16, u16); 8] = [
+    (3248, 3520, 0x8000, 0xC000),
+    (3246, 3472, 0x8000, 0xC000),
+    (3230, 3424, 0x8000, 0xC000),
+    (3182, 3392, 0x8000, 0xC000),
+    (3134, 3344, 0x8000, 0xC000),
+    (3102, 3296, 0x8000, 0xC000),
+    (2830, 3280, 0x8000, 0x8000),
+    (4160, 11866, 0x1000, 0x1000),
+];
+
+/// The port's resolver answers what retail's did, row for row, on the
+/// captured live grid - including the six frames where retail widened a
+/// held `X-` into `X- | Z-`. This is the leg that makes the wire a
+/// retail-pinned behaviour rather than an engine-internal one.
+#[test]
+fn wall_slide_matches_retail_resolver_rows() {
+    let Some(wp) = load_wall_press("rimelm_wall_press_left") else {
+        return;
+    };
+    let mut mismatched = Vec::new();
+    for (x, z, held, want) in RETAIL_SLIDE_ROWS {
+        let got = wp.world.resolve_field_slide(held, x as i16, z as i16);
+        eprintln!("[retail-row] ({x},{z}) {held:#06x} -> retail {want:#06x} engine {got:#06x}");
+        if got != want {
+            mismatched.push((x, z, held, want, got));
+        }
+    }
+    assert!(
+        mismatched.is_empty(),
+        "the ported resolver reproduces retail's returned mask at every \
+         captured row (mismatches: {mismatched:?})"
+    );
+}

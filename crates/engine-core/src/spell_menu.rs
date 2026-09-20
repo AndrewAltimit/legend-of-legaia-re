@@ -37,10 +37,15 @@
 //!
 //! PORT: FUN_801d8f10 (CharSelect phase incl. both confirm gates)
 //! PORT: FUN_801d9110 (SpellSelect phase + [`spell_targets_group`])
-//! PORT: FUN_801d9280 (group-target confirm/cancel shape)
-//! PORT: FUN_801d9594 (TargetSelect + resolve; the engine folds the two
-//! retail target flows into one `TargetSelect` phase and resolves group
-//! spells against every live row - see `dispatch` on the outcome side)
+//! PORT: FUN_801d9280 (the group flow: [`SpellMenuPhase::GroupConfirm`],
+//! confirm/cancel with no rows, resolving against every party row at once)
+//! PORT: FUN_801d9594 (TargetSelect + resolve)
+//!
+//! The two retail target flows are two phases here, as they are two
+//! sub-screens in retail. An earlier note claimed one folded phase that
+//! "resolves group spells against every live row"; nothing did, and a
+//! party-wide heal cast from the field Magic screen healed only the row the
+//! picker landed on.
 //! REF: FUN_801d688c (cursor navigator) / FUN_8003fb10 (relevance probe)
 //! / FUN_80035394 (MP-cost kernel) / FUN_800402f4 (field applier)
 
@@ -135,6 +140,18 @@ pub enum SpellMenuPhase {
         spell_id: u8,
         cursor: u8,
     },
+    /// Retail sub-screen `0x10` (`FUN_801D9280`) - the no-pick **group**
+    /// flow a confirmed spell routes to when its stats `+2` byte carries
+    /// bit `0x20` ([`spell_targets_group`]). It draws no target rows
+    /// (`FUN_801D688C` with `count = 0`): Cross commits against the whole
+    /// party, Circle returns to the spell list.
+    GroupConfirm {
+        caster: u8,
+        spell_id: u8,
+        /// The spell list's hand position, kept so the screen keeps drawing
+        /// the confirmed row and Circle lands back on it.
+        cursor: u8,
+    },
     Done(SpellMenuOutcome),
 }
 
@@ -186,6 +203,19 @@ pub enum SpellMenuEvent {
         caster: u8,
         spell_id: u8,
     },
+    /// The confirmed spell routed to the no-pick group flow instead of the
+    /// target picker - retail's sub-screen `0x10`.
+    EnteredGroupConfirm {
+        caster: u8,
+        spell_id: u8,
+    },
+    /// A group cast committed. `targets` is the number of party rows the
+    /// resolve produced an effect for.
+    CastGroup {
+        caster_slot: u8,
+        spell_id: u8,
+        targets: u8,
+    },
     Cast {
         caster_slot: u8,
         spell_id: u8,
@@ -222,20 +252,21 @@ pub enum InvalidReason {
 /// PORT: FUN_801d9110 (the state-2 confirm dispatch,
 /// `0x801d9220..0x801d9260`: `lbu 0x2(spell_stats); andi 0x20`)
 ///
-/// NOT WIRED: the session has no group flow to route into, and skipping
-/// the picker without one would be a regression rather than a fix.
-/// [`SpellMenuOutcome::Cast`] names exactly one `target_slot`, and the
-/// applier that consumes it -
-/// [`crate::field_menu_dispatch::apply_spell_outcome`] - heals exactly
-/// that one roster member; [`crate::spells::cast_spell`]'s `HealAll` arm
-/// asks its caller to re-run it per ally and nothing does. So a confirmed
-/// group spell entering the no-pick flow today would heal nobody. The
-/// prerequisite is a multi-target outcome **and** a matching applier -
-/// two changes to the outcome contract, both of which ripple into the two
-/// hosts that match on it (the native window driver and the browser play
-/// page), not a change to this predicate. The catalog already carries the
-/// flag as [`crate::spells::SpellTarget`] - see `crate::retail_magic` for
-/// the `0x02` ally / `0x20` all bit decode.
+/// WIRED: the state-2 confirm in [`SpellMenuSession::handle`] routes on it,
+/// over the flag bits [`crate::spells::SpellTarget::retail_target_flag_bits`]
+/// materialises from the catalog's decoded shape. Set opens
+/// [`SpellMenuPhase::GroupConfirm`] (retail sub-screen `0x10`, no rows);
+/// clear opens the per-member picker as before. Both hosts reach it through
+/// the one field Magic session.
+///
+/// The prerequisite this row used to name - "a multi-target outcome **and** a
+/// matching applier" - needed no new outcome variant in the end:
+/// [`crate::spells::SpellOutcome::MultiHeal`] already carried the per-member
+/// grants, and [`crate::field_menu_dispatch::apply_spell_outcome`] now has an
+/// arm for it. Before that arm a party-wide heal picked one member and healed
+/// only them, because [`crate::spells::cast_spell`]'s `HealAll` arm returns
+/// the grant for the **one** member it was handed and asks the caller to
+/// re-run it per ally - which the group flow now does.
 pub fn spell_targets_group(stats_flag_byte: u8) -> bool {
     stats_flag_byte & 0x20 != 0
 }
@@ -312,6 +343,7 @@ impl SpellMenuSession {
         let caster_idx = match self.phase {
             SpellMenuPhase::SpellSelect { caster, .. } => caster as usize,
             SpellMenuPhase::TargetSelect { caster, .. } => caster as usize,
+            SpellMenuPhase::GroupConfirm { caster, .. } => caster as usize,
             _ => return Vec::new(),
         };
         let Some(c) = self.party.get(caster_idx) else {
@@ -344,6 +376,9 @@ impl SpellMenuSession {
             SpellMenuPhase::CharSelect { cursor } => cursor,
             SpellMenuPhase::SpellSelect { cursor, .. } => cursor,
             SpellMenuPhase::TargetSelect { cursor, .. } => cursor,
+            // No rows of its own: the hand stays where the spell list left
+            // it, which is what the screen keeps drawing.
+            SpellMenuPhase::GroupConfirm { cursor, .. } => cursor,
             SpellMenuPhase::Done(_) => 0,
         }
     }
@@ -465,6 +500,20 @@ impl SpellMenuSession {
                         });
                         return events;
                     }
+                    // Retail's state-2 confirm dispatch: the spell's own
+                    // stats `+2` byte decides which target flow opens.
+                    if spell_targets_group(def.target.retail_target_flag_bits()) {
+                        self.phase = SpellMenuPhase::GroupConfirm {
+                            caster,
+                            spell_id: row.spell_id,
+                            cursor: new_cursor,
+                        };
+                        events.push(SpellMenuEvent::EnteredGroupConfirm {
+                            caster,
+                            spell_id: row.spell_id,
+                        });
+                        return events;
+                    }
                     self.phase = SpellMenuPhase::TargetSelect {
                         caster,
                         spell_id: row.spell_id,
@@ -475,6 +524,70 @@ impl SpellMenuSession {
                         spell_id: row.spell_id,
                     });
                 }
+            }
+            SpellMenuPhase::GroupConfirm {
+                caster,
+                spell_id,
+                cursor,
+            } => {
+                // `FUN_801D9280`: confirm / cancel only. Cancel returns to
+                // the spell list; confirm resolves against every party row
+                // at once and finishes the session.
+                if input.circle {
+                    self.phase = SpellMenuPhase::SpellSelect { caster, cursor };
+                    events.push(SpellMenuEvent::Backed);
+                    return events;
+                }
+                if !input.cross {
+                    return events;
+                }
+                let Some(def) = self.catalog.get(spell_id) else {
+                    events.push(SpellMenuEvent::InvalidConfirm {
+                        reason: InvalidReason::UnknownSpell,
+                    });
+                    return events;
+                };
+                let Some(c) = self.party.get(caster as usize) else {
+                    return events;
+                };
+                let caster_slot = c.slot;
+                let caster_mp = c.mp;
+                // One `cast_spell` per party row, which is what the
+                // `HealAll` arm asks its caller for: it returns the amount
+                // the formula grants *that* member, clipped by that
+                // member's own deficit.
+                let mut healed: Vec<(u8, u16)> = Vec::new();
+                for row in &self.targets {
+                    let snap = crate::spells::SpellSnapshot {
+                        caster_mp,
+                        target_hp: row.hp,
+                        target_hp_max: row.hp_max,
+                        target_alive: row.alive(),
+                        ..Default::default()
+                    };
+                    if let SpellOutcome::Heal { target, amount } =
+                        crate::spells::cast_spell(def, row.slot, &snap)
+                        && amount > 0
+                    {
+                        healed.push((target, amount));
+                    }
+                }
+                let targets = healed.len().min(u8::MAX as usize) as u8;
+                self.phase = SpellMenuPhase::Done(SpellMenuOutcome::Cast {
+                    caster_slot,
+                    spell_id,
+                    // The group flow picks no row; retail's sub-screen
+                    // `0x10` has no cursor at all. The caster is the seat
+                    // the applier bills the MP to, and the per-member
+                    // grants travel in the outcome.
+                    target_slot: caster_slot,
+                    outcome: SpellOutcome::MultiHeal { targets: healed },
+                });
+                events.push(SpellMenuEvent::CastGroup {
+                    caster_slot,
+                    spell_id,
+                    targets,
+                });
             }
             SpellMenuPhase::TargetSelect {
                 caster,
@@ -563,6 +676,117 @@ impl SpellMenuSession {
 mod tests {
     use super::*;
     use crate::spells::SpellEffect;
+    use crate::spells::SpellTarget;
+
+    /// The `+2` stats bit is what picks the flow, and the two shapes the
+    /// field screen can reach disagree on it.
+    #[test]
+    fn the_all_bit_is_what_routes_a_confirmed_spell() {
+        assert!(spell_targets_group(
+            SpellTarget::AllAllies.retail_target_flag_bits()
+        ));
+        assert!(!spell_targets_group(
+            SpellTarget::OneAlly.retail_target_flag_bits()
+        ));
+        // The side bit alone must not read as "all".
+        assert!(!spell_targets_group(
+            SpellTarget::OneEnemy.retail_target_flag_bits()
+        ));
+    }
+
+    /// A group spell opens the no-pick flow and its commit carries one grant
+    /// per party row - the live row's deficit, clipped like any other heal.
+    #[test]
+    fn a_group_spell_opens_the_no_pick_flow_and_grants_every_row() {
+        let party = vec![CasterSlot {
+            slot: 0,
+            name: "Vahn".into(),
+            hp: 60,
+            mp: 30,
+            spells: vec![0x11], // vanilla "Heal All" (AllAllies / HealAll 60)
+            ..Default::default()
+        }];
+        let targets = vec![
+            TargetRow {
+                slot: 0,
+                name: "Vahn".into(),
+                hp: 60,
+                hp_max: 100,
+            },
+            TargetRow {
+                slot: 1,
+                name: "Noa".into(),
+                hp: 90,
+                hp_max: 100,
+            },
+        ];
+        let mut s = SpellMenuSession::new(party, targets, crate::spells::SpellCatalog::vanilla());
+        let _ = s.tick(SpellMenuInput {
+            cross: true,
+            ..Default::default()
+        });
+        let ev = s.tick(SpellMenuInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert!(matches!(s.phase(), SpellMenuPhase::GroupConfirm { .. }));
+        assert!(
+            ev.iter()
+                .any(|e| matches!(e, SpellMenuEvent::EnteredGroupConfirm { .. }))
+        );
+        let _ = s.tick(SpellMenuInput {
+            cross: true,
+            ..Default::default()
+        });
+        match s.outcome() {
+            Some(SpellMenuOutcome::Cast {
+                outcome: SpellOutcome::MultiHeal { targets },
+                caster_slot,
+                ..
+            }) => {
+                assert_eq!(*caster_slot, 0);
+                // 40 of deficit on row 0, 10 on row 1 - both clipped by the
+                // member's own gap, not by a single picked row.
+                assert_eq!(targets.as_slice(), &[(0, 40), (1, 10)]);
+            }
+            other => panic!("expected a group heal, got {other:?}"),
+        }
+    }
+
+    /// Cancel on the group screen returns to the spell list, as retail's
+    /// `0x10` cancel does.
+    #[test]
+    fn cancel_on_the_group_screen_returns_to_the_spell_list() {
+        let party = vec![CasterSlot {
+            slot: 0,
+            name: "Vahn".into(),
+            hp: 60,
+            mp: 30,
+            spells: vec![0x11],
+            ..Default::default()
+        }];
+        let targets = vec![TargetRow {
+            slot: 0,
+            name: "Vahn".into(),
+            hp: 60,
+            hp_max: 100,
+        }];
+        let mut s = SpellMenuSession::new(party, targets, crate::spells::SpellCatalog::vanilla());
+        let _ = s.tick(SpellMenuInput {
+            cross: true,
+            ..Default::default()
+        });
+        let _ = s.tick(SpellMenuInput {
+            cross: true,
+            ..Default::default()
+        });
+        let _ = s.tick(SpellMenuInput {
+            circle: true,
+            ..Default::default()
+        });
+        assert!(matches!(s.phase(), SpellMenuPhase::SpellSelect { .. }));
+        assert!(!s.is_done());
+    }
 
     fn party() -> Vec<CasterSlot> {
         vec![

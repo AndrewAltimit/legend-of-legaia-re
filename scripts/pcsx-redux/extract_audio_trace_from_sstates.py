@@ -37,9 +37,35 @@ voices per frame and `state != Stopped` 13-24, against 3-19 for the
 envelope - and `stop` in particular stays set after the release tail has
 run to zero, so a finished voice keeps reading as audible.
 
-Master volume is read from the SPUPorts blob at offset 0x180/0x182
-(MainVol_L / MainVol_R = registers 0x1F801D80/0x1F801D82, signed i16,
-0x4000 = unity in libspu's representation). Reverb_Mode lives at 0x1AA.
+The SPUPorts blob is the PSX register window `0x1F801C00..0x1F801DFF`
+verbatim, so a register's byte offset into it is `addr - 0x1F801C00`. That
+mapping is corroborated three ways in a real capture: `0x180` holds `0x3FFF`
+(the master volume the mednafen side reports independently), `0x188..0x18E`
+carry the sparse transient writes a key-on / key-off register has and nothing
+else does, and `0x1A2` (`mBASE`) resolves to the Studio C work-area size.
+
+Global registers lifted here, each by its hardware address:
+
+  0x180/0x182  MainVol L/R        master volume (signed i16)
+  0x184/0x186  vLOUT/vROUT        reverb output depth (SpuSetReverbDepth)
+  0x198/0x19A  EON                per-voice reverb-enable mask (24 bits)
+  0x1A2        mBASE              reverb work-area base, in 8-byte units
+  0x1AA        SPUCNT             SPU control (bit 15 enable, 14 unmute,
+                                  7 reverb master, 0 CD audio)
+
+**`0x1AA` is SPUCNT, not a reverb register.** This extractor used to publish it
+as `reverb_mode`, which put the SPU control word into a field the oracle read
+as a reverb-routing mask: `0xC081` decoded as "retail routes voices 0, 7, 14
+and 15" when it is really "SPU enabled, unmuted, reverb master on, CD audio
+on". The real `EON` register two words earlier reads `0x00FFFFFF` on every
+frame of the same capture - retail routes **all 24 voices** - which is what the
+mednafen save-state corpus says as well.
+
+Per-voice registers live at `n * 0x10` within the same blob: `+0`/`+2` volume
+L/R, `+4` pitch, `+6` start address (8-byte units), `+8`/`+0xA` the two ADSR
+config words. The per-voice **envelope level** is not mirrored there (it reads
+zero for every voice in a capture), so it comes from the protobuf
+`ADSRInfoEx.EnvelopeVol` instead.
 
 Usage:
     extract_audio_trace_from_sstates.py STREAM.bin OUT.jsonl
@@ -71,9 +97,19 @@ ADSR_EX_ENVELOPE_VOL = 11
 # master volume" - taken at face value as i16 LE.
 SPU_REG_MAINVOL_L = 0x180
 SPU_REG_MAINVOL_R = 0x182
-SPU_REG_REVERB_MODE = 0x1AA  # u32 split across 0x1AA/0x1AE? mednafen
-                              # treats it as 32-bit; lift the raw u16 from
-                              # the canonical register and zero-extend.
+SPU_REG_REVERB_OUT_L = 0x184
+SPU_REG_REVERB_OUT_R = 0x186
+SPU_REG_EON_LO = 0x198
+SPU_REG_EON_HI = 0x19A
+SPU_REG_REVERB_MBASE = 0x1A2
+SPU_REG_SPUCNT = 0x1AA
+
+# Per-voice register block stride and the offsets within it.
+SPU_VOICE_STRIDE = 0x10
+SPU_VOICE_VOL_L = 0x00
+SPU_VOICE_VOL_R = 0x02
+SPU_VOICE_ADSR1 = 0x08
+SPU_VOICE_ADSR2 = 0x0A
 
 
 def read_varint(buf: bytes, pos: int) -> tuple[int, int]:
@@ -118,9 +154,14 @@ def iter_fields(buf: bytes) -> Iterator[tuple[int, int, bytes | int]]:
             raise ValueError(f"unsupported wire type {wt} for field {field}")
 
 
-def parse_channel(channel_bytes: bytes) -> dict:
+def parse_channel(channel_bytes: bytes, idx: int, ports: bytes | None,
+                  eon: int | None) -> dict:
     """Parse one PCSX-Redux Channel sub-message; return a dict shaped to
-    feed VoiceTraceFrame fields."""
+    feed VoiceTraceFrame fields.
+
+    `ports` supplies the per-voice register block (volume + ADSR config),
+    which the Channel sub-message does not carry, and `eon` the voice's
+    reverb-send bit."""
     data_payload: bytes | None = None
     adsr_ex_payload: bytes | None = None
     for field, wt, payload in iter_fields(channel_bytes):
@@ -181,13 +222,27 @@ def parse_channel(channel_bytes: bytes) -> dict:
         # raw_pitch is the 14-bit PSX pitch register; clamp to u16 for the
         # JSON envelope.
         voice["pitch"] = raw_pitch & 0xFFFF
+    # The envelope level is the one field that says how loudly the voice is
+    # actually sounding, so it travels with `active` rather than deciding it
+    # and then being discarded.
+    voice["env_level"] = env_vol & 0xFFFF
+    if ports is not None and len(ports) >= (idx + 1) * SPU_VOICE_STRIDE:
+        base = idx * SPU_VOICE_STRIDE
+        vl, vr = struct.unpack_from("<hh", ports, base + SPU_VOICE_VOL_L)
+        a1 = struct.unpack_from("<H", ports, base + SPU_VOICE_ADSR1)[0]
+        a2 = struct.unpack_from("<H", ports, base + SPU_VOICE_ADSR2)[0]
+        voice["vol_left"] = vl
+        voice["vol_right"] = vr
+        voice["adsr_control"] = a1 | (a2 << 16)
+    if eon is not None:
+        voice["reverb_send"] = bool(eon & (1 << idx))
     return voice
 
 
 def parse_spu_section(spu_bytes: bytes) -> dict:
     """Walk one SPU sub-message; return a partial AudioTraceFrame dict
     (without `frame`, which the caller assigns)."""
-    voices: list[dict] = []
+    channel_payloads: list[bytes] = []
     ports: bytes | None = None
     for field, wt, payload in iter_fields(spu_bytes):
         if wt != 2:
@@ -195,8 +250,19 @@ def parse_spu_section(spu_bytes: bytes) -> dict:
         if field == 2:
             ports = payload
         elif field == 6:
-            voices.append(parse_channel(payload))
+            channel_payloads.append(payload)
 
+    have_ports = ports is not None and len(ports) >= 0x200
+    eon: int | None = None
+    if have_ports:
+        lo = struct.unpack_from("<H", ports, SPU_REG_EON_LO)[0]
+        hi = struct.unpack_from("<H", ports, SPU_REG_EON_HI)[0]
+        eon = (lo | (hi << 16)) & 0x00FFFFFF
+
+    voices = [
+        parse_channel(p, i, ports if have_ports else None, eon)
+        for i, p in enumerate(channel_payloads)
+    ]
     # PCSX-Redux's SPU should always have 24 channels but pad if missing.
     while len(voices) < 24:
         voices.append({"active": False})
@@ -206,23 +272,21 @@ def parse_spu_section(spu_bytes: bytes) -> dict:
         if v.get("active"):
             active_mask |= 1 << i
 
-    master_volume: tuple[int, int] | None = None
-    reverb_mode: int | None = None
-    if ports and len(ports) >= 0x200:
-        ml, mr = struct.unpack_from("<hh", ports, SPU_REG_MAINVOL_L)
-        master_volume = (ml, mr)
-        rm = struct.unpack_from("<H", ports, SPU_REG_REVERB_MODE)[0]
-        reverb_mode = rm  # u16 zero-extended; mednafen sometimes reports
-                          # the 4-byte block - see audio_trace_oracle.
-
     out: dict = {
         "active_voice_mask": active_mask,
         "voices": voices,
     }
-    if master_volume is not None:
-        out["master_volume"] = master_volume
-    if reverb_mode is not None:
-        out["reverb_mode"] = reverb_mode
+    if have_ports:
+        ml, mr = struct.unpack_from("<hh", ports, SPU_REG_MAINVOL_L)
+        out["master_volume"] = (ml, mr)
+        rl, rr = struct.unpack_from("<hh", ports, SPU_REG_REVERB_OUT_L)
+        out["reverb_depth"] = (rl, rr)
+        out["spu_control"] = struct.unpack_from("<H", ports, SPU_REG_SPUCNT)[0]
+        out["reverb_work_area"] = (
+            struct.unpack_from("<H", ports, SPU_REG_REVERB_MBASE)[0] * 8
+        )
+    if eon is not None:
+        out["reverb_eon"] = eon
     return out
 
 

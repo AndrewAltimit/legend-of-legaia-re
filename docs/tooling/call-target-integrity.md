@@ -104,7 +104,7 @@ retail executable's layout under any single offset.
 |---|---|
 | Is `0x8002CDD0` a function entry? | No. Interior address of `FUN_8002C69C`. |
 | Do the `jal`s to it exist in the bytes? | Yes, and they decode correctly. |
-| Are they evidence of an entry? | No. They originate in a window whose link base is unrecovered. |
+| Are they evidence of an entry? | No. They originate in a window printed at an import base that is not the image's own (`0x801D4DF0`), in an image whose calls address another build's executable. |
 | Are `overlay_0896` targets trustworthy at or above `0x801CE818`? | Yes. |
 | Are they trustworthy below `0x801CE818`? | No. |
 | Is the wider corpus affected? | No. The failures are confined to that window. |

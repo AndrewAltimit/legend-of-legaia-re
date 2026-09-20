@@ -61,8 +61,22 @@ pub const HAND_COMMAND_MAX: u8 = 0x0F;
 /// VA of the per-step sub-draw script-record pointer table (`PTR_DAT_801f4d34`).
 pub const SUBDRAW_PTR_TABLE_VA: u32 = 0x801F_4D34;
 
+/// Entries in the sub-draw pointer table.
+///
+/// Two bounds agree on 50. The table ends where [`VICTORY_MSG_TABLE_VA`]
+/// begins, which is a pinned constant rather than a count word; and every one
+/// of those 50 words is an address inside the overlay image, while the run of
+/// in-image words past the boundary is the victory table's own three entries.
+pub const SUBDRAW_PTR_TABLE_LEN: usize = 50;
+
 /// VA of the victory-message string-pointer table.
 pub const VICTORY_MSG_TABLE_VA: u32 = 0x801F_4DFC;
+
+/// Entries in the victory-message table on the retail image - one per Ra-Seru.
+/// [`victory_message_count`] re-derives it from the bytes; this is the value it
+/// returns, kept as a constant so the table has a declared extent without a
+/// buffer in hand.
+pub const VICTORY_MSG_TABLE_LEN: usize = 3;
 
 /// The match-controller prologue signature: `lui v0,0x8008; lw v0,-0x42dc(v0);
 /// addiu sp,sp,-0x48` (little-endian machine code). The `lui`/`lw` pair loads
@@ -146,6 +160,16 @@ pub fn victory_message_count(overlay: &[u8]) -> usize {
         n += 1;
     }
     n
+}
+
+/// File offsets of the victory-message strings [`VICTORY_MSG_TABLE_VA`] points
+/// at, in table order - the pointers [`victory_message_count`] counts, resolved
+/// to offsets inside the supplied overlay image.
+pub fn victory_message_offsets(overlay: &[u8]) -> Vec<usize> {
+    (0..victory_message_count(overlay))
+        .filter_map(|n| read_va(overlay, VICTORY_MSG_TABLE_VA + (n as u32) * 4))
+        .filter_map(|p| p.checked_sub(MUSCLE_OVERLAY_BASE_VA).map(|o| o as usize))
+        .collect()
 }
 
 #[cfg(test)]

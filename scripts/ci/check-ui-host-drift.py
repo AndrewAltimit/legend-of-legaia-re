@@ -497,6 +497,26 @@ WEB_FIELD_SCENE = "crates/web-viewer/src/field_scene.rs"
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "shop / inn / prize / coin overlay stage transform, native "
+        "vs play page - every builder in that group places in the retail "
+        "320x240 stage, so a host that composites its output has to scale it "
+        "through the shared `pause_menu::stage_transform` before it reaches a "
+        "surface-pixel draw list. The native window did not: it extended the "
+        "group straight into `build_hud`'s list, so the whole shop UI drew at "
+        "a third its size in a 960x720 window while the identical builders "
+        "filled the browser tab. The pinned `SHOP_OVERLAY_PEN` / `SHOP_PEN` "
+        "pair is blind to it by construction - the two pens ARE equal and the "
+        "split is in the transform applied after them, which is the general "
+        "lesson: a paired constant pins a value, not the space it lands in. "
+        "Both composition sites must reach the transform and the scale pass",
+        "sites": {
+            "native": (NATIVE_HUD, "build_hud"),
+            "web": (WEB_PLAY_SHOP, "play_overlay_draws_json"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["stage_transform", "scale_stage_text_draws"],
+    },
+    {
         "what": "field / overworld / cutscene camera, native vs play page - "
         "which camera owns a frame and what its retail GTE inputs are is one "
         "engine question (`camera_view::resolve_field_camera`), and the "
@@ -1676,6 +1696,13 @@ def run_selftest() -> int:
         else:
             failures += 1
             print(f"  FAIL  frame path: {label} - skips {got}, expected {want}")
+    for label, kernel, src, api, want in SELFTEST_CONTENT:
+        got = _selftest_content_case(kernel, src, api)
+        if got == want:
+            print(f"  ok    frame content: {label}")
+        else:
+            failures += 1
+            print(f"  FAIL  frame content: {label} - reached {got}, expected {want}")
     total = (
         len(SELFTEST_WORDS)
         + len(SELFTEST_SCREENS)
@@ -1690,6 +1717,7 @@ def run_selftest() -> int:
         + len(SELFTEST_VARIANT_USE)
         + len(SELFTEST_CALL_FORM)
         + len(SELFTEST_FRAME)
+        + len(SELFTEST_CONTENT)
     )
     if failures:
         print(
@@ -3381,6 +3409,290 @@ def _selftest_frame_case(
             return arm["skips"]
     return ["<arm not found>"]
 
+# --------------------------------------------------------------------------
+# Tier 12 - content: do two PAIRED frame kernels call the same engine?
+#
+# Tier 11 pairs a frame path's kernels by NAME (or by an alias row). That
+# answers "does each host take this step", and says nothing about what the
+# step does on each side - which is the whole of the question the pairing
+# invites a reader to assume it answered. A kernel whose native body is
+# `{}` pairs perfectly with a browser twin that drains a cue queue and
+# advances every clip player.
+#
+# This tier asks the next question with the only evidence a source scan can
+# carry: for each paired kernel, the set of ENGINE functions each host's body
+# reaches. Engine = the four wgpu-free crates both hosts link
+# (`engine-core` / `engine-vm` / `engine-ui` / `engine-audio`); a host's own
+# helpers are followed transitively, so a step spelled as five private
+# methods is compared against a twin that inlines them.
+#
+# What it proves: two paired bodies reach the same engine surface, or the
+# difference is written down with a reason. What it does NOT prove: that they
+# call it with the same arguments, in the same order, or under the same
+# guard. Those are tier 3's question and the audits' - a difference this tier
+# cannot see is not evidence of agreement.
+#
+# The join is by NAME, which carries one deliberate blind spot: nothing here
+# can tell `world.clear()` from `Vec::clear()`. Names that are also ordinary
+# std / collection / iterator methods are therefore excluded wholesale
+# ([`STD_METHOD_NAMES`]) rather than guessed at, and a genuinely divergent
+# engine call that happens to be spelled `insert` is invisible. Stating the
+# hole is the point: the alternative is a report where two thirds of every
+# row is `len`, which is a report nobody reads.
+ENGINE_API_CRATES = ("engine-core", "engine-vm", "engine-ui", "engine-audio")
+
+# Names a `.name(` call cannot be attributed to the engine by name alone.
+# Ordinary std / core / collection / iterator methods that an engine type
+# also happens to define.
+STD_METHOD_NAMES = {
+    "abs", "add", "all", "and_then", "any", "append", "as_deref", "as_mut",
+    "as_ref", "as_slice", "as_str", "bytes", "chain", "chars", "checked_add",
+    "checked_sub", "chunks", "clamp", "clear", "clone", "cloned", "cmp",
+    "collect", "contains", "contains_key", "copied", "count", "default",
+    "deref", "div", "drain", "encode", "ends_with", "entry", "enumerate",
+    "eq", "expect", "extend", "fill", "filter", "filter_map", "find",
+    "first", "flat_map", "flatten", "fmt", "format", "from", "from_le_bytes",
+    "get", "get_mut", "hash", "index", "index_mut", "insert", "into",
+    "into_iter", "is_empty", "is_none", "is_some", "iter", "iter_mut",
+    "join", "keys", "last", "len", "lines", "load", "map", "max", "min",
+    "mul", "ne", "neg", "new", "next", "not", "ok", "ok_or", "or_else",
+    "or_insert", "or_insert_with", "parse", "partial_cmp", "pop", "position",
+    "print", "println", "push", "read", "rem", "remove", "replace",
+    "reserve", "resize", "retain", "rev", "saturating_add", "saturating_sub",
+    "set", "slice", "sort", "sort_by", "sort_by_key", "splice", "split",
+    "starts_with", "step_by", "store", "sub", "sum", "swap", "swap_remove",
+    "take", "to_le_bytes", "to_lowercase", "to_owned", "to_string",
+    "to_uppercase", "to_vec", "trim", "truncate", "unwrap", "unwrap_or",
+    "unwrap_or_default", "unwrap_or_else", "values", "values_mut",
+    "windows", "with_capacity", "wrapping_add", "wrapping_sub", "write",
+    "zip",
+}
+
+CONTENT_PUB_FN_RE = re.compile(
+    r"\bpub(?:\s*\([^)]*\))?\s+(?:async\s+)?(?:const\s+)?(?:unsafe\s+)?fn\s+"
+    r"([a-z_][a-z_0-9]*)"
+)
+CONTENT_FN_RE = re.compile(r"\bfn\s+([a-z_][a-z_0-9]*)")
+METHOD_CALL_RE = re.compile(r"[.:]\s*([a-z_][a-z_0-9]*)\s*\(")
+SELF_METHOD_RE = re.compile(r"\bself\.([a-z_][a-z_0-9]*)\s*\(")
+
+# How far a host helper chain is followed out of a kernel body.
+CONTENT_DEPTH = 8
+
+
+def engine_api_names() -> set[str]:
+    """Every `pub fn` name the four shared engine crates define, minus the
+    std-collision set."""
+    out: set[str] = set()
+    for crate in ENGINE_API_CRATES:
+        root = REPO / "crates" / crate / "src"
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*.rs")):
+            if is_test_source(path):
+                continue
+            text = strip_comments(path.read_text(encoding="utf-8"))
+            out |= set(CONTENT_PUB_FN_RE.findall(text))
+    return out - STD_METHOD_NAMES
+
+
+def host_fn_bodies(host: str) -> dict[str, list[str]]:
+    """Every `fn` body this host's shipped sources define, by name."""
+    out: dict[str, list[str]] = {}
+    for root in HOSTS[host]:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*.rs")):
+            if is_test_source(path):
+                continue
+            text = strip_comments(path.read_text(encoding="utf-8"))
+            for m in CONTENT_FN_RE.finditer(text):
+                brace = signature_end(text, m.start())
+                if brace < 0:
+                    continue
+                start, end = brace_block(text, brace)
+                out.setdefault(m.group(1), []).append(text[start:end])
+    return out
+
+
+def kernel_engine_calls(
+    kernel: str, bodies: dict[str, list[str]], api: set[str]
+) -> tuple[set[str], int, bool]:
+    """`(engine call names, host fns walked, kernel body found)`.
+
+    Follows `self.<helper>(` edges inside the host's own sources, so a kernel
+    that delegates is compared by what its whole subtree reaches.
+    """
+    own = set(bodies)
+    seen: set[str] = set()
+    calls: set[str] = set()
+    stack = [(kernel, 0)]
+    found = False
+    while stack:
+        name, depth = stack.pop()
+        if name in seen or depth > CONTENT_DEPTH:
+            continue
+        seen.add(name)
+        for body in bodies.get(name, []):
+            if name == kernel:
+                found = True
+            for c in METHOD_CALL_RE.findall(body):
+                if c in api and c not in own:
+                    calls.add(c)
+            for c in SELF_METHOD_RE.findall(body):
+                if c in own:
+                    stack.append((c, depth + 1))
+    return calls, len(seen), found
+
+
+def load_content_waivers() -> list[dict]:
+    if not WAIVERS.is_file():
+        return []
+    return tomllib.loads(WAIVERS.read_text(encoding="utf-8")).get("frame_content", [])
+
+
+def frame_kernel_pairs() -> list[tuple[str, str]]:
+    """Every paired kernel across the two frame paths: same name on both, or
+    an alias row. Derived, so a new pair joins by existing."""
+    native = {n for n, _ in frame_path_scan("native")[0]}
+    web = {n for n, _ in frame_path_scan("web")[0]}
+    pairs = [(n, n) for n in sorted(native & web)]
+    for entry in load_frame_waivers()[1]:
+        if entry.get("host_only"):
+            continue
+        a, b = str(entry.get("native")), str(entry.get("web"))
+        if a in native and b in web:
+            pairs.append((a, b))
+    return sorted(set(pairs))
+
+
+def check_frame_content() -> tuple[list[str], list[str], int]:
+    """Every paired frame kernel: equal engine call sets, or a waiver."""
+    problems: list[str] = []
+    notes: list[str] = []
+    api = engine_api_names()
+    if len(api) < 100:
+        problems.append(
+            "FRAME CONTENT: the engine API scan found almost no `pub fn` - "
+            "the comparison below would report every pair clean for the "
+            "wrong reason. Check `ENGINE_API_CRATES`."
+        )
+        return problems, notes, 0
+    bodies = {host: host_fn_bodies(host) for host in FRAME_PATHS}
+    waivers = load_content_waivers()
+    used: set[int] = set()
+    pairs = frame_kernel_pairs()
+    for a, b in pairs:
+        ca, walked_a, found_a = kernel_engine_calls(a, bodies["native"], api)
+        cb, walked_b, found_b = kernel_engine_calls(b, bodies["web"], api)
+        for host, name, found in (("native", a, found_a), ("web", b, found_b)):
+            if not found:
+                problems.append(
+                    f"FRAME CONTENT: the {host} frame path calls "
+                    f"`{name}` but no body for it was found in that host's "
+                    f"sources - the pair below cannot be compared."
+                )
+        only_a = sorted(ca - cb)
+        only_b = sorted(cb - ca)
+        if not only_a and not only_b:
+            notes.append(
+                f"content pair `{a}` <-> `{b}`: identical engine call set "
+                f"({len(ca)} calls, {walked_a}/{walked_b} host fns walked)"
+            )
+            continue
+        entry = None
+        for n, row in enumerate(waivers):
+            if str(row.get("native")) == a and str(row.get("web")) == b:
+                entry, index = row, n
+                break
+        if entry is None:
+            problems.append(
+                f"FRAME CONTENT `{a}` <-> `{b}`: the two bodies reach "
+                f"different engine calls - native-only {only_a}, web-only "
+                f"{only_b}. Wire the missing half, or declare the difference "
+                f"with a `[[frame_content]]` row naming both lists and a "
+                f"reason."
+            )
+            continue
+        used.add(index)
+        want_a = sorted(str(x) for x in entry.get("native_only", []))
+        want_b = sorted(str(x) for x in entry.get("web_only", []))
+        if want_a != only_a or want_b != only_b:
+            problems.append(
+                f"STALE FRAME-CONTENT WAIVER `{a}` <-> `{b}`: the difference "
+                f"moved. Now native-only {only_a}, web-only {only_b}; the row "
+                f"says {want_a} / {want_b}. Re-derive it, or close the gap."
+            )
+        elif not str(entry.get("reason", "")).strip():
+            problems.append(
+                f"FRAME-CONTENT WAIVER `{a}` <-> `{b}`: needs a non-empty "
+                f"`reason`."
+            )
+        else:
+            notes.append(
+                f"content pair `{a}` <-> `{b}`: "
+                f"{len(only_a)} native-only / {len(only_b)} web-only, "
+                f"declared - {entry['reason']}"
+            )
+    for n, row in enumerate(waivers):
+        if n not in used:
+            problems.append(
+                f"STALE FRAME-CONTENT WAIVER `{row.get('native')}` <-> "
+                f"`{row.get('web')}`: the pair is gone or its two bodies now "
+                f"reach the same engine calls. Drop the row."
+            )
+    return problems, notes, len(pairs)
+
+
+# Control suite for the content scan. Each case is
+# `(label, kernel, host source, engine api, expected calls)`; the first pair
+# is the shape this tier was written for - an empty body paired with one that
+# does the work - and the last two are the two ways the scan can go blind
+# (a helper chain not followed, a std-named call counted as engine).
+SELFTEST_CONTENT: list[tuple[str, str, str, set[str], set[str]]] = [
+    (
+        "an empty body reaches nothing",
+        "tick_props",
+        "fn tick_props(&mut self) {}",
+        {"advance_clips"},
+        set(),
+    ),
+    (
+        "a body that calls the engine reaches it",
+        "tick_props",
+        "fn tick_props(&mut self) { self.world.advance_clips(1); }",
+        {"advance_clips"},
+        {"advance_clips"},
+    ),
+    (
+        "a helper chain is followed",
+        "tick_props",
+        "fn tick_props(&mut self) { self.inner(); }\n"
+        "fn inner(&mut self) { self.world.advance_clips(1); }",
+        {"advance_clips"},
+        {"advance_clips"},
+    ),
+    (
+        "a std-named call is not credited to the engine",
+        "tick_props",
+        "fn tick_props(&mut self) { self.rows.clear(); }",
+        {"clear"} - STD_METHOD_NAMES,
+        set(),
+    ),
+]
+
+
+def _selftest_content_case(kernel: str, src: str, api: set[str]) -> set[str]:
+    bodies: dict[str, list[str]] = {}
+    for m in CONTENT_FN_RE.finditer(src):
+        brace = signature_end(src, m.start())
+        if brace < 0:
+            continue
+        start, end = brace_block(src, brace)
+        bodies.setdefault(m.group(1), []).append(src[start:end])
+    return kernel_engine_calls(kernel, bodies, api)[0]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--quiet", action="store_true", help="findings only")
@@ -3494,6 +3806,16 @@ def main() -> int:
                 "ERROR: built-in variant-use control failed; a rule that "
                 "accepts an unqualified mention reports every host as "
                 "answering every variant. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+    for _label, kernel, src, api, want in SELFTEST_CONTENT:
+        if _selftest_content_case(kernel, src, api) != want:
+            print(
+                "ERROR: built-in frame-content control failed; a scan that "
+                "cannot tell an empty kernel from one that calls the engine "
+                "reports every pair identical, which is the silence tier 12 "
+                "exists to break. Run --selftest.",
                 file=sys.stderr,
             )
             return 2
@@ -3632,6 +3954,12 @@ def main() -> int:
     frame_problems, frame_notes, frame_counts = check_frame_paths()
     problems.extend(frame_problems)
 
+    # The content half: a pair of frame kernels that reach different engine
+    # calls is a simulation the two hosts do not share, however well their
+    # names pair.
+    content_problems, content_notes, content_pairs = check_frame_content()
+    problems.extend(content_problems)
+
     if not args.quiet:
         print(
             f"[ui-drift] engine-ui draw builders: {len(builders)} "
@@ -3701,6 +4029,13 @@ def main() -> int:
         # from "an arm gained a skip and another lost one".
         for note in frame_notes:
             print(f"[ui-drift] frame path: {note}")
+        print(
+            f"[ui-drift] paired frame kernels compared by CONTENT: "
+            f"{content_pairs} (engine call sets; see the tier-12 note for "
+            f"what a name join cannot see)"
+        )
+        for note in content_notes:
+            print(f"[ui-drift] {note}")
         if web_ahead:
             print(f"[ui-drift] web-ahead (informational): {', '.join(web_ahead)}")
         # Name every native-only builder, waived or not, for the same reason
