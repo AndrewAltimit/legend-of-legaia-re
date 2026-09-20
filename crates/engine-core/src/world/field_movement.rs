@@ -958,19 +958,22 @@ impl World {
     ///    sum of exactly zero (symmetric dead end) adds nothing. The original
     ///    direction bit is ORed in regardless.
     ///
-    /// This is a pure resolver over the collision grid; wiring it into the
-    /// live pad path is separate (the default [`World::decode_field_direction`]
-    /// stops at a blocked axis rather than sliding).
+    /// Live on the pad path: [`Self::step_field_locomotion`] resolves the
+    /// camera-remapped mask through this function and feeds the result to
+    /// [`Self::advance_with_collision`], the same order retail uses
+    /// (`jal 0x80046494` at `0x801D03EC` inside `FUN_801D01B0`, result kept
+    /// in `s0` at `0x801D0404`). Only the step reads the resolved mask - the
+    /// heading and the diagonal speed cut stay on the held one. The precise
+    /// free-angle path keeps its own vector step and does not resolve.
     ///
-    /// NOT WIRED: the returned mask composes directly with
-    /// [`Self::advance_with_collision`], so the call itself is one line - but
-    /// turning it on changes where the player comes to rest against **every**
-    /// wall, and the engine's wall-contact parity is currently pinned by the
-    /// disc-gated `engine-shell/tests/field_collision_discriminator.rs`
-    /// against captures measured on the non-sliding stepper. Wiring it needs
-    /// that oracle re-pinned against wall-press captures that exercise the
-    /// skid (an asymmetric wall the sweep's sign test resolves), so the
-    /// slide bits are validated rather than merely enabled.
+    /// The "wiring it moves every pinned wall rest" worry was measured and
+    /// is false for the oracle that carried it: on the live grid of both
+    /// wall-press captures the resolver hands back exactly the held cardinal
+    /// at the captured rest position, so the pinned legs of
+    /// `engine-shell/tests/field_collision_discriminator.rs` are
+    /// slide-neutral. The same grid carries thousands of sliding positions,
+    /// and `wall_slide_wire_skids_where_the_bare_stepper_sticks` drives one
+    /// of them through this path against the bare stepper.
     pub fn resolve_field_slide(&self, held: u16, x: i16, z: i16) -> u16 {
         // No-clip pad bit: pass the raw mask through untouched.
         if held & 0x2 != 0 {
@@ -2708,7 +2711,15 @@ impl World {
         if let Some(((wx, wz), _, _)) = precise {
             self.advance_with_collision_vector(slot, wx, wz, speed);
         } else {
-            self.advance_with_collision(slot, dir_bits, speed);
+            // Retail runs the camera-remapped mask through the wall-slide
+            // resolver before the step loop (`jal 0x80046494` at
+            // `0x801D03EC`, result kept in `s0` at `0x801D0404`), so the
+            // mask the per-axis loop walks can carry a perpendicular bit
+            // the pad never asked for - the skid along a wall. The heading
+            // and the diagonal speed cut stay on the HELD mask; only the
+            // step reads the resolved one.
+            let step_bits = self.resolve_field_slide(dir_bits, before.0, before.1);
+            self.advance_with_collision(slot, step_bits, speed);
         }
         // Walk-regen accumulator (retail `_DAT_801F2274`): a frame in which
         // the step actually committed counts as walked.

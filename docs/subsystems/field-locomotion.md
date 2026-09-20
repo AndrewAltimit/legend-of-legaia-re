@@ -394,10 +394,40 @@ candidate point (centre plus ±0x21 lateral - two different axes, not one
 figure: 62 is the look-ahead *along* travel from `DAT_800766bc`, `0x21`
 the body-width spread *perpendicular* to it, an immediate in the
 function body), the seven-entry perpendicular sweep, and the strict-sign
-slide-bit selection. It is a
-standalone resolver: the default `World::decode_field_direction` still
-stops at a blocked axis rather than sliding, so wiring the resolver into
-the live pad path is a separate step.
+slide-bit selection.
+
+The port runs it where retail does: `World::step_field_locomotion` resolves
+the camera-remapped mask through `World::resolve_field_slide` and feeds the
+result to `World::advance_with_collision`, matching the `jal 0x80046494` at
+`0x801D03EC` whose result `FUN_801D01B0` keeps in `s0` at `0x801D0404`. Only
+the step reads the resolved mask; the heading and the diagonal speed cut stay
+on the held one, and the opt-in precise free-angle path keeps its own vector
+step. All three hosts share that one kernel, so there is no per-host wiring.
+
+#### The skid, measured on retail
+
+`scripts/pcsx-redux/autorun_w3b_field_slide.lua` taps the resolver's return
+landing `0x801D03F4` and records `(player +0x14, +0x18, remapped held mask,
+returned mask)` per call, driving the pad with `probe.pad_force` and poking
+nothing. On `s3_rimelm_freeroam` the run answers the held mask on 261 of 276
+calls and widens it on 15 - every widening on one held-`LEFT` run down the
+town01 exterior wall, `0x8000` becoming `0xC000`, the player losing ground on
+`Z-` as well as the `X-` the pad asked for, `(3248, 3520)` to
+`(3102, 3296)` over those fifteen frames. Six of those rows plus two
+unwidened controls are the retail pin in
+`engine-shell/tests/field_collision_discriminator.rs`
+(`wall_slide_matches_retail_resolver_rows`), which asserts the ported
+resolver answers the same mask at the same coordinates on the captures'
+live grid.
+
+That test file also retires the blocker the port's own marker used to carry.
+"Wiring it moves where the player rests against every wall, and the rests are
+pinned against captures taken on the non-sliding stepper" is false for the
+captures that carried it: at both pinned wall-press rest positions the
+resolver hands back exactly the held cardinal, so those legs are
+slide-neutral, while the same grid carries thousands of sliding positions per
+cardinal. The oracle was not asserting the defect - it was measured at points
+where the two models agree.
 
 The camera-relative pad remap that feeds it (`func_0x800467e8`, the
 `gp+0x2d8` eighth-turn rotation over the 8-direction ring `DAT_800766fc`)
