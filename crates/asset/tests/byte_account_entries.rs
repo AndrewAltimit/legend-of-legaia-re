@@ -588,3 +588,156 @@ fn zero_padding_in_a_real_entry_classifies_as_padding() {
         assert_eq!(classify_residue(tail), ResidueShape::ZeroPad);
     }
 }
+
+/// The overlay data-segment tables a parser here already reads are claimed
+/// structurally, and each claim sits where no dumped function does.
+///
+/// Both halves matter. The first is the binding: a table with a `pub const`
+/// offset in this workspace must not rank in the residue worklist beside a
+/// format nobody has opened. The second is the guard on it - a pinned table
+/// inside a dumped function's extent would mean the offset or the length is
+/// wrong, and that overlap is invisible in the accounted total, because the
+/// sink merges ranges before reporting and a merged range keeps no owner.
+#[test]
+fn pinned_overlay_tables_are_claimed_outside_every_code_extent() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let dumps = legaia_asset::byte_account::read_dump_extents(&funcs).expect("read dumps");
+    let map = legaia_asset::static_overlay::overlay_map();
+    // Per entry: how many pinned-table rows, and their total bytes.
+    let want: [(u32, usize, usize); 5] = [
+        (898, 15, 2128),
+        (899, 5, 860),
+        (975, 4, 306),
+        (976, 3, 3048),
+        (980, 3, 1416),
+    ];
+    let mut checked = 0usize;
+    for (idx, n_rows, n_bytes) in want {
+        let Some(path) = entry_path(&dir, idx) else {
+            continue;
+        };
+        let bytes = std::fs::read(&path).expect("read entry");
+        let rec = map.by_prot_index(idx).expect("overlay map row");
+        let rows = legaia_asset::byte_account::pinned_overlay_tables(idx);
+        assert_eq!(rows.len(), n_rows, "PROT {idx:04}: pinned-table row count");
+        assert_eq!(
+            rows.iter().map(|r| r.1).sum::<usize>(),
+            n_bytes,
+            "PROT {idx:04}: pinned-table bytes"
+        );
+        // In bounds, and disjoint from each other.
+        let mut spans: Vec<(usize, usize, &str)> =
+            rows.iter().map(|r| (r.0, r.0 + r.1, r.3)).collect();
+        spans.sort();
+        for w in spans.windows(2) {
+            assert!(
+                w[0].1 <= w[1].0,
+                "PROT {idx:04}: {} overlaps {}",
+                w[0].2,
+                w[1].2
+            );
+        }
+        for &(a, b, what) in &spans {
+            assert!(
+                b <= bytes.len(),
+                "PROT {idx:04}: {what} runs past the entry"
+            );
+        }
+        // Disjoint from every dump extent the bytes confirm in this image.
+        let hi = rec.base_va as u64 + bytes.len() as u64;
+        for d in &dumps {
+            if (d.entry_va as u64) < rec.base_va as u64 || (d.entry_va as u64) >= hi {
+                continue;
+            }
+            if !matches!(
+                legaia_asset::byte_account::attribute(d, &bytes, rec.base_va),
+                legaia_asset::byte_account::Attribution::Confirmed
+            ) {
+                continue;
+            }
+            let cs = (d.entry_va - rec.base_va) as usize;
+            let ce = (cs + d.bytes as usize).min(bytes.len());
+            for &(a, b, what) in &spans {
+                assert!(
+                    b <= cs || a >= ce,
+                    "PROT {idx:04}: {what} overlaps confirmed FUN_{:08x}",
+                    d.entry_va
+                );
+            }
+        }
+        // And the account really carries them.
+        let opts = AccountOptions {
+            prot_index: Some(idx),
+            label: path.file_name().unwrap().to_str().unwrap().to_string(),
+            funcs_dir: Some(funcs.clone()),
+            depth: 0,
+            ..Default::default()
+        };
+        let acc = account(&bytes, &opts);
+        assert_invariants(&acc);
+        let table_bytes: usize = acc
+            .by_owner
+            .iter()
+            .filter(|o| o.owner != "code" && o.owner != "tim")
+            .map(|o| o.bytes)
+            .sum();
+        assert_eq!(
+            table_bytes, n_bytes,
+            "PROT {idx:04}: accounted pinned-table bytes"
+        );
+        checked += 1;
+    }
+    assert!(checked >= 4, "expected the overlay entries on disc");
+    eprintln!("[ok] {checked} overlay entries: pinned tables claimed, none inside a code extent");
+}
+
+/// Every player battle file accounts whole, and the one region that used to be
+/// left over is claimed from bounds the container states rather than from the
+/// shape of its bytes.
+///
+/// The gap sits between the descriptor table's terminator and the first
+/// descriptor's data offset. Reading it as slack is only legitimate while it
+/// is empty, so this asserts the bytes directly off the file instead of
+/// through the parser - a walker that stopped early inside live content would
+/// otherwise buy the difference.
+#[test]
+fn battle_data_pack_table_to_data_slack_is_empty() {
+    let Some(dir) = extracted_root() else {
+        eprintln!("extracted/PROT not present - skipping");
+        return;
+    };
+    let mut checked = 0usize;
+    for idx in [863u32, 864, 865, 866] {
+        let Some(path) = entry_path(&dir, idx) else {
+            continue;
+        };
+        let bytes = std::fs::read(&path).expect("read entry");
+        let pack = legaia_asset::battle_data_pack::detect(&bytes).expect("battle data pack");
+        let table_end = pack.table_offset + (pack.records.len() + 1) * 12;
+        let data_start = pack
+            .records
+            .iter()
+            .map(|r| pack.data_base + r.data_offset as usize)
+            .min()
+            .expect("at least one descriptor");
+        assert!(data_start > table_end, "PROT {idx:04}: no gap to claim");
+        assert!(
+            bytes[table_end..data_start].iter().all(|&b| b == 0),
+            "PROT {idx:04}: the table-to-data gap is not empty"
+        );
+        let acc = account_entry(&dir, idx, 0).expect("account");
+        assert_invariants(&acc);
+        // What is left is inter-record alignment, nothing a shape test names.
+        assert!(
+            acc.residue_bytes < 16,
+            "PROT {idx:04}: {} bytes of residue left",
+            acc.residue_bytes
+        );
+        checked += 1;
+    }
+    assert!(checked >= 3, "expected the player battle files on disc");
+    eprintln!("[ok] {checked} battle data packs account whole");
+}

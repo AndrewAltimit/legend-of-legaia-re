@@ -308,6 +308,28 @@ The general rule this instrument wants: when the sweep finds something, check
 whether a constant for it already exists. A `scan` claim beside a named offset
 is a missing binding, not a discovery.
 
+#### The same gap, without a magic to find it
+
+A sub-asset at a pinned offset at least announces itself to the sweep. A
+**table** does not: a stride of small integers carries no magic, so it never
+becomes a `scan` claim and never reads as "found by guessing" - it reads as
+residue, and ranks in the worklist beside a format nobody has opened. Six of
+the disc's larger `low_entropy` / `mixed` runs were that: the move-power and
+attack-camera tables, the element-affinity matrix, the menu window
+descriptors, the Baka Fighter roster, the slot-machine and dance tables. Each
+already had a parser with a `pub const` offset and a decoded record layout.
+
+`byte_account::pinned_overlay_tables` is the binding, one row per table,
+carrying the offset and the `count * stride` **from the owning module's own
+constants** - so a row cannot be widened here without widening the parser that
+reads it, and re-pinning a table in the parser moves the claim with it. The
+rows are asserted against the disc: every row is in bounds, the rows are
+disjoint from each other, and no row overlaps a dump extent the bytes confirm
+in that image. That last one is the real guard, because an overlap is
+invisible in the accounted total - the sink merges ranges before reporting,
+and a merged range keeps no owner, so a table wrongly placed inside a function
+would silently agree with the number.
+
 The last instance on the disc was entry `1062`, and it was the same shape: a
 single-chunk DATA_FIELD stream carrying a SEQ - one `(0x02 << 24) | len` header,
 the sequence, a zero terminator, sector padding - classed `overlay_data_blob`
@@ -545,7 +567,7 @@ the same figure, so no part of the accounted share rests on a guessed magic.
 | `lzs_container` | Per-entry tails of a few hundred bytes past the last descriptor's stream, plus `0981` entire - the one class member that is a code image rather than a container. | Walker tails plus one mis-classed entry. |
 | `scene_asset_table`, `pack` | Short `mixed` / `low_entropy` runs at the tail of records the walker did reach, plus one `high_entropy` minority in `scene_asset_table`. | Walker tails, not unwalked format. |
 | `scene_vab_stream`, `scene_tmd_stream`, `data_field_streaming` | Nothing: the chunk walk reaches the terminator and what is left of the entry's last sector is claimed as slack. This class's residue used to be its single largest figure and read as "walker tails". | Closed; see the fixed-stride section above. |
-| `battle_data_pack` | Nothing but `zero_pad`. | The disc's own slack. |
+| `battle_data_pack` | Nothing but inter-record alignment: all four entries account whole. | Closed; the table-to-data gap is declared slack. |
 | `bse_bank`, `scene_event_scripts` | Kilobyte-scale `low_entropy` / `ascii_text` tails behind a walker that reached the records. | Walker tails. |
 | `efect_pack` (`0873`) | Nothing: the header, the inline sprite atlas, and both packs' members account fully. | Closed. |
 | `pochi_filler`, `all_zeros`, `scene_v12_table` | Nothing, or `zero_pad`. | The disc's own slack. Not work. |
@@ -659,6 +681,25 @@ figure by a rounding error, and "the total fell 0.3 points" does not say which p
 Slack shapes stay out of `work_bytes` for the reason the rollup keeps them apart: `zero_pad`,
 `alignment` and `repeated_fill` are the disc's own padding, most of the residue by bytes, and
 counting them as work produces a worklist nobody can act on.
+
+### A stale binary is the same failure, one layer down
+
+The sweep's CSV is a cache and the page says so below. The `asset` binary the
+sweep runs is a cache too, and that one fails more quietly, because nothing
+about a built binary announces which tree it came from. A committed CSV and a
+"fresh" per-entry run disagreed on two entries - `0970` at 5.6% against 20.5%,
+`0895` at 98.1% against 46.5% - and the natural reading, that the CSV was
+stale, was backwards. Both "fresh" figures are this page's own *historical*
+numbers: 20.5% is `0970` before the zero-match rule stopped crediting an
+all-zero extent, and 46.5% is `0895` before the `init_pak` walker took the
+entry back from the code-walker override. A binary built before those two
+fixes reproduces both exactly, against the current tree and the current disc.
+
+Two habits follow. Build the binary from the tree you are measuring, in that
+tree - a `target/` from another checkout is not a tool, it is a previous
+answer. And when two figures disagree, check whether the lower one is a number
+this page already explains, because a documented historical figure reappearing
+is a stale *instrument*, not a finding about the disc.
 
 ### The input is a cache, and a stale one passes
 

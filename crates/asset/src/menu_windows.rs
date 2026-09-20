@@ -72,6 +72,37 @@ pub const MENU_WINDOW_TABLE_OFFSET: usize = (MENU_WINDOW_TABLE_VA - MENU_OVERLAY
 /// Number of descriptor records (the record after the last one fails the
 /// rect/renderer validity envelope - a structural bound, not a count word).
 pub const MENU_WINDOW_COUNT: usize = 52;
+/// Bytes per descriptor record.
+pub const MENU_WINDOW_RECORD_STRIDE: usize = 0x10;
+
+/// VA of the equip screen's browse-row to equip-byte map (`DAT_801E43E8`).
+///
+/// The equip browse column reads rows `1` and up out of it. It is the first of
+/// three adjacent tables, not the head of one long array: the run's `[7]` byte
+/// is an unreferenced pad and the two tables after it have their own indexing
+/// sites and their own strides.
+pub const EQUIP_BROWSE_MAP_VA: u32 = 0x801E_43E8;
+/// File offset of [`EQUIP_BROWSE_MAP_VA`] inside the as-loaded image.
+pub const EQUIP_BROWSE_MAP_OFFSET: usize = (EQUIP_BROWSE_MAP_VA - MENU_OVERLAY_BASE_VA) as usize;
+/// Rows in the browse map - the seven equip rows (four gear + three Goods).
+pub const EQUIP_BROWSE_MAP_LEN: usize = 7;
+
+/// VA of the per-character equip mask (`DAT_801E43F0`), one byte per roster
+/// slot; the shop's buy-and-equip path tests the hovered item against it.
+pub const CHARACTER_EQUIP_MASK_VA: u32 = 0x801E_43F0;
+/// File offset of [`CHARACTER_EQUIP_MASK_VA`] inside the as-loaded image.
+pub const CHARACTER_EQUIP_MASK_OFFSET: usize =
+    (CHARACTER_EQUIP_MASK_VA - MENU_OVERLAY_BASE_VA) as usize;
+/// Bytes in the equip mask - one per party character.
+pub const CHARACTER_EQUIP_MASK_LEN: usize = 4;
+
+/// VA of the equip slot pictogram ids (`DAT_801E43F4`), halfwords indexed by
+/// gear slot (weapon fist / helmet / armour / boot, then the Goods rows).
+pub const SLOT_PICTOGRAM_VA: u32 = 0x801E_43F4;
+/// File offset of [`SLOT_PICTOGRAM_VA`] inside the as-loaded image.
+pub const SLOT_PICTOGRAM_OFFSET: usize = (SLOT_PICTOGRAM_VA - MENU_OVERLAY_BASE_VA) as usize;
+/// Halfwords in the pictogram table.
+pub const SLOT_PICTOGRAM_LEN: usize = 8;
 
 /// One window descriptor: content rect + content-renderer dispatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
