@@ -444,6 +444,16 @@ retail** with all battles resolving through `FUN_801DA51C`. Whether any retail
 encounter exercises the `FUN_8005567c` battle-id path at all is now the open
 question; the writer (if one exists) still sits outside the static corpus.
 
+**Port status.** `legaia_asset`-side, the decode of this path lives in
+`legaia_engine_core::encounter_record::expand_battle_id`, and no host calls it.
+That is a replacement rather than a wiring gap on both of its arms: the engine
+resolves a battle through a typed `FormationDef` looked up in
+`World::tables.formation_table`, so there is no four-byte cell that can be found
+empty and no fallback point for the `[4, 4, 4, 4]` arm to occupy; and the id arm
+depends on a global with no writer anywhere in retail, so wiring it would mean
+*adding* a hook rather than finding a missing caller. The live encounter path is
+`EncounterRecord::parse`, the `actor[+0x94]` record path above.
+
 ## Random-encounter trigger path
 
 The script-VM install opcodes above describe **scripted** encounter

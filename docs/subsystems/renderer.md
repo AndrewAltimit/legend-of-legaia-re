@@ -573,7 +573,10 @@ no `j`, no PC-relative branch, no `lui`+`addiu` materialisation - across
 [`battle.md` § Unreferenced SCUS entry points](../reference/functions/battle.md#unreferenced-scus-entry-points)).
 So "what does retail do with a `0`" has an answer, and it is *nothing*: no pass
 consults this verdict. The port's lack of a cull here is parity, not a gap
-waiting on a caller.
+waiting on a caller - which is why the port carries it as a
+[`REPLACED-BY`](../tooling/port-catalog.md#replaced-by) row rather than in the
+wiring worklist: a worklist row states a gap a host closes, and this one has no
+host to find.
 
 ## Which mesh leaf a frame actually enters
 

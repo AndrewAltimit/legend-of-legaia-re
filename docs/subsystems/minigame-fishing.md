@@ -12,6 +12,18 @@ The pond is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` wi
 
 The op is the *only* way in - there is no menu, no dedicated opcode, and the fishing venue bundle (`other1`) carries essentially no field-VM script of its own. A disc-wide walk of every scene MAN finds the fishing door at exactly two sites, both signboard placements on the overworld: `map02` P1[7] and `map03` P1[19]. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
 
+**The rod a session runs on.** The same init runs an ownership scan before
+anything else reads the rod: it keeps the persistent index `_DAT_80084454` when
+the party holds that rod, otherwise steps forward with wrap, and lands on `0`
+for a party holding none (`0x801cf35c..0x801cf39c`, parser
+`legaia_engine_core::fishing::entry_rod_index`). The port runs it in
+`World::resolve_fishing_entry_rod` on the way through the door warp, writes the
+corrected index back to the same cell, and passes it as the session's
+`rod_stat`, so the [tension divisors](#tension--reeling-mechanic) and the
+persistent HUD's rod row read one value. Each host's debug launcher still opens
+a session with a fixed stat of its own; those bypass the field scene and are
+dev entry points, not this path.
+
 **Why `FUN_801cf3bc` has no caller.** It is not called; it is the `+0x08` tick word of the static 24-byte actor template at `0x801D8FF4`. The sub-id-0 init `FUN_801CF070` materialises that template and spawns an actor from it (`jal FUN_80020DE0` at `0x801CF22C`), and the per-frame pool walk then reaches it through `jalr actor[+0x0C]` in `FUN_8002519C`. A `jal` search for the driver's address returns zero by construction, which is the correct answer rather than a corpus gap.
 
 ## State machine

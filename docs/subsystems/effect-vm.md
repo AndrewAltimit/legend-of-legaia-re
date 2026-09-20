@@ -92,6 +92,34 @@ stray geometry rather than as mis-blended sprites. Port: `effect_sprite_tsb` in 
 native window's `geometry.rs`, pinned by
 `every_effect_billboard_corner_is_semi_transparent`.
 
+### The three render-mode-4 emitters, and which one the disc uses
+
+The pool's quads are not the only primitive path an effect actor can take. The
+per-actor render dispatcher `FUN_8001ADA4` switches on `actor[+0x56]` (loaded at
+`0x8001AE60`), and its case `4` - multi-target - picks one of three emitters off
+the separate flag halfword `actor[+0x9E]`: `0x4000` selects `FUN_8002A5A4`,
+`0x2000` selects the battle overlay's random-walk **ribbon** builder
+`FUN_801CFA48` (lightning bolts, beams, whips; parser
+`legaia_engine_core::effect_ribbon`), and `& 0x6000 == 0` falls through to the
+default `FUN_80028158`.
+
+Only the default arm is reachable on the shipped disc. `actor[+0x9E]` is zeroed
+for every actor by the allocator `FUN_80020DE0` at `0x80020ECC`, and a byte
+census over `SCUS_942.54`, all 86 base-mapped overlay images and all 1233
+extracted `PROT.DAT` entries - covering `sh` at `+0x9E`, `sb` at `+0x9E`/`+0x9F`,
+`sw` at `+0x9C`, and any store at `+0x1C`/`+0x1E` through a register formed as
+`actor + 0x80`, the base the dispatcher itself reads through - finds no site
+that writes a value carrying `0x2000` or `0x4000`. The stores that do exist
+write small literals, a motion-script cursor (paired with the program base at
+`actor+0x90`) or the field VM's own return value; the nine near misses are
+pad-button masks in a field-overlay cursor loop on a different struct.
+
+That is a statement about the static writers, not a proof: a value loaded out
+of an effect record could carry the bit, and no parser decodes the five `src`
+fields the ribbon builder reads (`+0x0C` / `+0x18` / `+0x1A` / `+0x1C` /
+`+0x1E` off `actor+0x9C`). It does mean an engine-side ribbon emitter has no
+shipped program to drive it.
+
 ## Lifetime + render bridge (engine port)
 
 The algebra above is executed by `Pool::tick_retail` (pass 1: master spawn
