@@ -1431,12 +1431,14 @@ impl DanceGame {
     }
 }
 
-// Wired: [`good_banner_spawn`] composes three of these records, and the play
-// window's minigame effect pool (`window/minigame_fx.rs`) hosts the spawns -
-// the sequence-clear banner + stars are spawned into it on the human's scoring
-// judge and aged / drawn per frame. The overlay's own sprite page is still not
-// uploaded, so the pool draws each part through its placeholder glyph rather
-// than the `sprite_id` cell.
+// Wired: [`good_banner_spawn`] composes three of these records, and the RUN's
+// own part pool hosts them - [`DanceGame::judge_press`] issues the spawns on
+// the human's scoring judge, and every host draws what
+// [`DanceGame::sprite_part_emits`] emits. Not the shared
+// [`crate::minigame_fx`] pool: these spawns come from the judge, which is
+// gameplay rather than host presentation. The overlay's own sprite page is
+// still not uploaded on two of the three surfaces, so those draw each part
+// through a placeholder cell rather than the `sprite_id` one.
 /// PORT: FUN_801d3fd0 - the dance overlay's cell-placed effect spawn (the
 /// step-mark flash): retail zero-fills a spawn record, spawns through the
 /// shared part-spawn API `FUN_80021B04` at scale `0x1000`, stamps
@@ -1651,11 +1653,12 @@ pub struct GoodBannerSpawns {
     pub weight: u16,
 }
 
-// Wired: the play window spawns this on the human's scoring judge
-// (`Judge::Sequence`) into its minigame effect pool
-// (`window/minigame_fx.rs`), which ages and draws the three parts. The dance
-// overlay's sprite ids `0xb` / `0x16` are still not resident, so the pool's
-// placeholder glyphs stand in for the banner art.
+// Wired: [`DanceGame::judge_press`] spawns this on the human's scoring judge
+// (`Judge::Sequence`) into the run's own part pool, which ages the three
+// parts; every host draws them off [`DanceGame::sprite_part_emits`]. The
+// dance overlay's sprite ids `0xb` / `0x16` are not resident on the native
+// window or the play page, so their placeholder cells stand in for the
+// banner art; the minigames page draws the widget cells themselves.
 /// PORT: FUN_801d40dc - spawn the sequence-clear banner + two stars. Retail
 /// issues three `FUN_801d3fd0` spawns - `(0xa0, 0x90, sprite 0xb)` for the banner
 /// and `(0x68, 0x90, sprite 0x16)` / `(0xd8, 0x90, sprite 0x16)` for the stars
