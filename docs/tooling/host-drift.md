@@ -156,7 +156,11 @@ normaliser that collapsed everything to `""` would report every pair equal.
 
 Proves the two named constants carry equal values and that neither was renamed
 out from under the pairing. Proves nothing about how either host *uses* them,
-nor about any unpaired literal.
+nor about any unpaired literal - and nothing about the **space** a paired value
+lands in. The shop pen pair stayed equal while one host extended the builders'
+stage-placed rows into a surface-pixel list and the other scaled them: a paired
+constant pins a value, not the transform applied after it. That split is a
+tier-3 `SIM_PAIRS` question (the `build_hud` / `play_overlay_draws_json` row).
 
 ### A deleted pair is not always lost coverage
 
