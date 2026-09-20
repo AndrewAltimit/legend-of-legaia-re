@@ -42,6 +42,40 @@
 //! which is why one is not added: the geometry is correct and the inputs do
 //! not exist.
 //!
+//! ## What the disc puts in the selector
+//!
+//! A byte census settles how far the first half is from existing, and the
+//! answer is "further than a host". The render mode itself is
+//! `actor[+0x56]`, loaded as the switch variable at `0x8001AE60`; mode `4`
+//! is written
+//! at four sites, three of them in the move VM (`0x80023460`, `0x800237E4`,
+//! `0x80023F98`) and one at `0x8004D574`, so mode-4 actors *are* shipped
+//! content. The emitter select is the separate halfword `actor[+0x9E]`,
+//! zeroed for every actor by the allocator `FUN_80020DE0` at `0x80020ECC`.
+//!
+//! Scanning `SCUS_942.54`, all 86 base-mapped overlay images and all 1233
+//! extracted `PROT.DAT` entries for every store that can reach that halfword
+//! (`sh` at `+0x9E`, `sb` at `+0x9E`/`+0x9F`, `sw` at `+0x9C`, and any store
+//! at `+0x1C`/`+0x1E` through a register formed as `actor + 0x80`, which is
+//! the base the dispatcher itself reads through) finds **no site that writes
+//! a value carrying bit `0x2000` or `0x4000`**. The totals: 21 `sh` sites in
+//! SCUS, 81 in PROT 0897, 5 in 0900, 2 in 0980, one each in 0208 / 0408 /
+//! 0874 / 0894, one `sb` pair in 0898, zero `actor + 0x80`-relative stores
+//! anywhere. Every literal stored is small; the computed ones are a motion
+//! script cursor (paired with the program base at `actor+0x90`) or the field
+//! VM's own return value, and the only `0x2000` immediates near any of them
+//! are pad-button masks, read out of a pad-state word at `+0xBB84` of that
+//! loop's own base register, in a field-overlay cursor that is not this
+//! struct at all.
+//!
+//! So on the shipped disc `FUN_8001ADA4` case 4 always finds `& 0x6000 == 0`
+//! and takes the default emitter `FUN_80028158`; the `0x2000` arm is a call
+//! site the flag never opens. That is a statement about the *static* writers,
+//! not a proof - a value loaded from an effect record could carry the bit,
+//! and the record parser that would show it is the same one this row's second
+//! half is missing. It does mean a host wired today would have no shipped
+//! program to drive it.
+//!
 //! This is absent on **both** hosts, native and browser, so it is not a
 //! host-drift case - `check-ui-host-drift.py` has nothing to pair. What would
 //! close it is an effect-record parser for the five fields plus a render-mode
