@@ -185,7 +185,7 @@ sections:
   <table>
     <thead><tr><th>Command</th><th>Does</th></tr></thead>
     <tbody>
-      <tr><td><code>translate lift-official --from OTHER.bin --target USA.bin -o pack.yaml</code></td><td>Detects the build, re-keys every table and line into a filled working pack. <code>--language pt-BR</code> stamps a fan patch's language. <code>--fold-accents</code> (browser default) maps <code>&eacute;</code>&rarr;<code>e</code>, <code>&szlig;</code>&rarr;<code>ss</code>.</td></tr>
+      <tr><td><code>translate lift-official --from OTHER.bin --target USA.bin -o pack.yaml</code></td><td>Detects the build, re-keys every table and line into a filled working pack. <code>--language pt-BR</code> stamps a fan patch's language; <code>--baseline RETAIL.bin</code> blanks every line the patch left as the retail disc had it, so only the translator's own text remains. <code>--fold-accents</code> (browser default) maps <code>&eacute;</code>&rarr;<code>e</code>, <code>&szlig;</code>&rarr;<code>ss</code>.</td></tr>
       <tr><td><code>translate diff-disc</code></td><td>Alignment counts between two discs, text-free.</td></tr>
       <tr><td><code>translate fit-report</code></td><td>Per-string vs per-MAN fit, text-free.</td></tr>
     </tbody>

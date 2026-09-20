@@ -727,6 +727,13 @@ pub(crate) enum TranslateCmd {
         /// the exe name, so pass it here.
         #[arg(long)]
         language: Option<String>,
+        /// The retail disc a fan patch was built on (`.bin`). Every line whose
+        /// text that disc also carries is blanked, so the pack holds only the
+        /// translator's own text and the lines the patch left alone stay
+        /// vanilla on import - the shape a fan-patch lift needs before
+        /// `translate strip` may publish it.
+        #[arg(long)]
+        baseline: Option<PathBuf>,
     },
     /// Measure how much of an official localization fits the USA target under
     /// the per-string vs per-MAN (generalized rewriter) budget, and how many

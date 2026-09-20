@@ -253,27 +253,40 @@ party roster, and the whole `0x1F` dialog corpus are covered.
 A community translation shipped as a **binary patch** (xdelta, PPF) cannot be
 turned into a pack by reading the patch - a patch is bytes, not text. The disc
 it produces can: apply the patch to the disc it was built for (the patch's own
-header names it - an xdelta's `printhdr` prints the source filename and an
-adler32 over its first window, which the USA and the three measured PAL images
-fail when the patch was built on the Spanish disc), then
+header names it - an xdelta's `printhdr` prints the source filename; its
+adler32 is over the *target* window, so it verifies the output, not the
+source), then
 
 ```bash
-legaia-patcher translate lift-official --from <patched.bin> --target <USA.bin> \
-    --language pt-BR -o <pack.yaml>
+legaia-patcher translate lift-official --from <patched.bin> --baseline <retail.bin> \
+    --target <USA.bin> --language pt-BR --fold-accents -o <pack.yaml>
 ```
 
 `--language` stamps the pack: a patch's language is not on the disc, so the
 lift would otherwise use the build's own code (`es` for a patched Spanish
-disc, `en` for a patched USA one). Everything else is the official-lift path:
-a patched USA disc keeps the USA bases (drift `0`, found by the same search), a
-patched PAL disc keeps its build's. Lines the patch left untranslated lift as
-the underlying build's text - Spanish under a partial Portuguese patch - and a
-patched font atlas' custom glyph cells come through as raw `{xx}` escapes that
-`--fold-accents` leaves alone (it folds only the CP437 accent block), both
-reported, neither silent. A translation that rewrote the game's structure
-(moved PROT entries, re-laid the ISO) still lifts as long as the PROT TOC on
-the patched disc is consistent - the walk is by entry index, and the entry
-sizes come from that disc's own TOC.
+disc, `en` for a patched USA one). `--baseline` names the retail disc the
+patch was built on and blanks every line whose text that disc also carries -
+at the same key, or anywhere in the same PROT entry, because a patch that adds
+or removes a line shifts the positional pairing of the rest of that entry, so
+one USA key can pair a retail line on the patched disc and its neighbour on
+the retail one. Without it, lines the patch left untranslated lift as the
+underlying build's official text (Spanish under a partial Portuguese patch)
+and the pack is not publishable; with it, what survives is the translator's
+own text and those lines stay vanilla on import. Everything else is the
+official-lift path: a patched USA disc keeps the USA bases (drift `0`, found
+by the same search), a patched PAL disc keeps its build's. A patched font
+atlas' custom glyph cells come through as raw `{xx}` escapes that
+`--fold-accents` leaves alone (it folds only the CP437 accent block) - both
+counts are reported, and a line still carrying one after the fold is best
+dropped than shipped, since the USA atlas draws nothing there. A translation
+that rewrote the game's structure (moved PROT entries, re-laid the ISO) still
+lifts as long as the PROT TOC on the patched disc is consistent - the walk is
+by entry index, and the entry sizes come from that disc's own TOC.
+
+The Spanish disc measured this way: every table locates at 100% pointer
+validity with a `+0xDF4` drift (between Italy's and Germany's), the party
+template fingerprint matches, and the dialog corpus pairs at 97.8% (MAN) /
+99.1% (raw) - the same band as the measured three.
 
 ## Fit rate against the USA target
 

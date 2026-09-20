@@ -236,12 +236,14 @@ fn main() -> Result<()> {
                 output,
                 fold_accents,
                 language,
+                baseline,
             } => translate::cmd_lift_official(
                 &from,
                 &target,
                 &output,
                 fold_accents,
                 language.as_deref(),
+                baseline.as_deref(),
             ),
             cli::TranslateCmd::FitReport { from, target } => {
                 translate::cmd_fit_report(&from, &target)

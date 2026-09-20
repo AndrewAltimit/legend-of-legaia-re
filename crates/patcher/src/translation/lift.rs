@@ -737,6 +737,57 @@ pub fn lift_official(
     Ok((pack, report))
 }
 
+/// Blank every `translation` in `pack` that the `baseline` pack also carries -
+/// the same text at the same key, or anywhere in the same PROT entry (a patch
+/// that adds or removes a line shifts the positional pairing of the rest of
+/// that entry, so the same USA key can pair one retail line on the patched
+/// disc and its neighbour on the retail one). This is what makes a lift off a
+/// **fan-patched** disc distributable: with the retail disc it was built on as
+/// the baseline, what survives is the translator's own text, and the lines the
+/// patch left alone stay empty (vanilla on import) instead of carrying the
+/// underlying build's official text. Returns the number of entries blanked.
+pub fn drop_baseline_text(pack: &mut LanguagePack, baseline: &LanguagePack) -> usize {
+    use std::collections::{BTreeMap, BTreeSet};
+    let group_of = |key: &str| -> String {
+        match key_entry_index(key) {
+            Some(idx) if key.starts_with("man:") => format!("man:{idx}"),
+            Some(idx) if key.starts_with("raw:") => format!("raw:{idx}"),
+            _ => key.to_string(),
+        }
+    };
+    let mut blanked = 0usize;
+    // Both walks are in serialization order, so the sections pair up.
+    for (section, (_, base_entries)) in pack
+        .sections
+        .each_mut()
+        .into_iter()
+        .zip(baseline.sections.iter())
+    {
+        let mut groups: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
+        for e in base_entries {
+            if !e.translation.is_empty() {
+                groups
+                    .entry(group_of(&e.key))
+                    .or_default()
+                    .insert(e.translation.as_str());
+            }
+        }
+        for e in section.iter_mut() {
+            if e.translation.is_empty() {
+                continue;
+            }
+            let shared = groups
+                .get(&group_of(&e.key))
+                .is_some_and(|set| set.contains(e.translation.as_str()));
+            if shared {
+                e.translation.clear();
+                blanked += 1;
+            }
+        }
+    }
+    blanked
+}
+
 /// ASCII-fold every lifted `translation` in `pack`, in place.
 ///
 /// The official PAL text uses accented glyph cells the NTSC font leaves empty,
@@ -833,6 +884,42 @@ fn fill_dialog(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn baseline_filter_blanks_shared_text_per_entry() {
+        use super::super::pack::Entry;
+        let entry = |key: &str, t: &str| Entry {
+            key: key.to_string(),
+            context: String::new(),
+            source: String::new(),
+            translation: t.to_string(),
+            budget: 8,
+        };
+        let mut pack = LanguagePack::new("xx");
+        pack.sections.scene_dialog = vec![
+            entry("man:5:0x10", "same key"), // blanked: baseline has it at this key
+            entry("man:5:0x20", "shifted line"), // blanked: baseline has it elsewhere in entry 5
+            entry("man:5:0x30", "translated"), // kept
+            entry("man:6:0x10", "shifted line"), // kept: entry 6 never carried it
+        ];
+        pack.sections.items = vec![entry("scus:str:0x80011230", "Potion")];
+        let mut base = LanguagePack::new("xx");
+        base.sections.scene_dialog = vec![
+            entry("man:5:0x10", "same key"),
+            entry("man:5:0x28", "shifted line"),
+            entry("man:5:0x30", "retail text"),
+        ];
+        base.sections.items = vec![entry("scus:str:0x80011230", "Potion")];
+        assert_eq!(drop_baseline_text(&mut pack, &base), 3);
+        let t: Vec<&str> = pack
+            .sections
+            .scene_dialog
+            .iter()
+            .map(|e| e.translation.as_str())
+            .collect();
+        assert_eq!(t, ["", "", "translated", "shifted line"]);
+        assert_eq!(pack.sections.items[0].translation, "");
+    }
 
     #[test]
     fn source_build_map_covers_every_latin_build() {

@@ -347,6 +347,7 @@ pub(crate) fn cmd_lift_official(
     output: &Path,
     fold_accents: bool,
     language: Option<&str>,
+    baseline: Option<&Path>,
 ) -> Result<()> {
     let source = DiscPatcher::open(load_image(from)?).context("parse source disc image")?;
     let usa = DiscPatcher::open(load_image(target)?).context("parse target (USA) disc image")?;
@@ -360,6 +361,20 @@ pub(crate) fn cmd_lift_official(
         println!(
             "accents: {} folded to ASCII, {} high glyph(s) left raw (need a font patch)",
             f.folded, f.unmapped
+        );
+    }
+    if let Some(base_path) = baseline {
+        let base_disc =
+            DiscPatcher::open(load_image(base_path)?).context("parse baseline disc image")?;
+        let (mut base_pack, _) = lift::lift_official(&usa, &base_disc)?;
+        drop(base_disc);
+        if fold_accents {
+            lift::fold_pack_accents(&mut base_pack);
+        }
+        let blanked = lift::drop_baseline_text(&mut pack, &base_pack);
+        println!(
+            "baseline: {blanked} line(s) the baseline disc also carries blanked; {} translated line(s) remain",
+            pack.sections.filled()
         );
     }
     write_pack(&pack, output)?;
