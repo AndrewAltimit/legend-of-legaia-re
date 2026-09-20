@@ -4,18 +4,17 @@
 //!
 //! PORT: FUN_8005126C
 //!
-//! NOT WIRED: retail-unreachable, so there is nothing to wire it to. A sweep
-//! of `SCUS_942.54`, every based overlay image and the raw bytes of every
-//! extracted `PROT.DAT` entry finds `0x8005126C` in **none** of the five
-//! reference forms - no literal address word (so it sits in no dispatch table
-//! and on no actor template), no `jal`, no `j`, no PC-relative branch, no
-//! `lui`+`addiu` materialisation. No pass in retail asks this question, so
-//! none can be found by looking harder: the row is a documented negative
-//! rather than wiring work (`docs/tooling/worklist-classification.md`, "The
-//! reachability claim"), and it stays inert however much of the engine grows
-//! around it. Evidence: `docs/reference/functions/battle.md` § Unreferenced
-//! SCUS entry points, `docs/tooling/address-reference-scan.md` § The
-//! retail-unreachable set.
+//! REPLACED-BY: nothing is owed a port - no pass in retail asks this
+//! question. A five-form sweep over `SCUS_942.54`, every based overlay image
+//! and the raw bytes of all 1233 extracted `PROT.DAT` entries finds
+//! `0x8005126C` as no literal address word (so it sits in no dispatch table
+//! and on no actor template), no `jal`, no `j`, no PC-relative branch and no
+//! `lui`+`addiu` materialisation. A host built on this verdict would be an
+//! invention rather than a port, so the row belongs in the replaced class -
+//! `docs/tooling/port-catalog.md` § What may carry it, fourth shape - and
+//! not in the wiring worklist, where it can never close. Evidence:
+//! `docs/reference/functions/battle.md` § Unreferenced SCUS entry points,
+//! `docs/tooling/address-reference-scan.md` § The retail-unreachable set.
 //!
 //! Two consequences worth keeping apart from that:
 //!
@@ -104,9 +103,10 @@ pub struct BattleActorOnScreen {
 ///
 /// PORT: FUN_8005126C - see the module docs for the per-step mapping.
 ///
-/// NOT WIRED: retail-unreachable, so there is nothing to wire it to. Nothing
-/// on the disc references `FUN_8005126C` in any form; see the module's
-/// NOT WIRED section and `docs/tooling/address-reference-scan.md`.
+/// REPLACED-BY: nothing is owed a port - nothing on the disc references
+/// `FUN_8005126C` in any of the five reference forms, so retail runs no pass
+/// that asks this question either. See the module heading and
+/// `docs/tooling/address-reference-scan.md`.
 ///
 /// `seat_position` is the `SVECTOR` at `+0x3C` of `(&DAT_801C9370)[actor +
 /// 0x5A]`; `half_size` is `actor[+0x58]`, which retail passes as **both** the

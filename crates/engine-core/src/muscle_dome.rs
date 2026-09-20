@@ -2079,12 +2079,13 @@ pub fn cursor_next_leg(word: u32) -> u32 {
 /// course 0 / 2.
 ///
 /// PORT: FUN_801cf870 (`0x801D00B8..0x801D00E4`)
-/// NOT WIRED: retail re-derives `(course, round)` from the word every frame
-/// because the word is its only storage. [`DomeContest`] holds both as fields
-/// and advances with [`cursor_next_leg`], so nothing in the port needs the
-/// repack. It stays as the inverse of [`cursor_course`] / [`cursor_round`],
-/// and as the proof that the high bytes survive a contest - wiring it would
-/// mean re-introducing retail's packed storage for its own sake.
+/// REPLACED-BY: [`DomeContest`], which holds `course` and `round` as typed
+/// fields and advances them with [`cursor_next_leg`]. Retail re-derives the
+/// pair from the packed word every frame because that word is its only
+/// storage; the port replaced the storage, so the repack has no job left and
+/// no host is owed one - wiring it would mean re-introducing retail's packed
+/// cursor for its own sake. It stays as the inverse of [`cursor_course`] /
+/// [`cursor_round`] and as the proof that the high bytes survive a contest.
 pub fn cursor_repack(word: u32, course: usize, round: u32) -> u32 {
     (word & !0xFF).wrapping_add(1) + ((course as u32) << 4) + round
 }

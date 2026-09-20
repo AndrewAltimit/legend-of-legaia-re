@@ -85,15 +85,17 @@ fn lerp12(delta: i32, t: i32) -> i32 {
 /// outcome the reject path produces.
 ///
 /// PORT: FUN_801d5c2c
-// NOT WIRED, AND UNWIREABLE: **retail reaches this routine from nowhere.** A
-// five-form reference sweep - literal LE word at every alignment, `lui`+`addiu`
-// / `ori` materialisation, `jal`, `j`, PC-relative branch - over `SCUS_942.54`,
-// every base-mapped overlay image and every raw PROT entry finds zero
-// references to `0x801D5C2C` in any form, and the fishing overlay holds exactly
+// REPLACED-BY: nothing is owed a port - **retail reaches this routine from
+// nowhere.** A five-form reference sweep (literal LE word at every alignment,
+// `lui`+`addiu` / `ori` materialisation, `jal`, `j`, PC-relative branch) over
+// `SCUS_942.54`, every base-mapped overlay image and every raw PROT entry
+// finds zero references to `0x801D5C2C`, and the fishing overlay holds exactly
 // one literal pointer anywhere in the surrounding `0x801D5000..0x801D63FF`
 // band, so it is not reached as `table_base + index` either. It is a real
 // prologue entry point (`locate-entry-image.py` frames it in PROT 0972 and in
-// no other image) that nothing calls - dead code the linker kept.
+// no other image) that nothing calls - dead code the linker kept, and so a
+// row the wiring worklist can never close (`docs/tooling/port-catalog.md` -
+// What may carry it, fourth shape).
 //
 // So this is not the same row as [`clip_segment_2d`] below, which is live
 // retail code with one caller. Naming a missing line primitive here would imply

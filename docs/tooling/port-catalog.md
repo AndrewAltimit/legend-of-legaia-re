@@ -278,18 +278,30 @@ Two strictnesses keep the class from becoming an escape hatch:
 
 ##### What may carry it
 
-The test is not "no caller exists" - that is what `NOT WIRED:` says. The test
+The usual test is not "no caller exists" - that is what `NOT WIRED:` says. It
 is that the *behaviour* is either produced already by a named live Rust
 mechanism, or unobservable in the port's output because the port has no such
 layer at all. Wiring such a port would re-host retail plumbing rather than add
-anything a player or a test could see. Three shapes qualify, and the boot / CD
-/ card / menu-infra drain carries all three:
+anything a player or a test could see. Four shapes qualify; the boot / CD /
+card / menu-infra drain carries the first three:
 
 | Shape | Retail | The port instead |
 |---|---|---|
 | Device / BIOS layer the port does not model | libcd sector DMA, MDEC channel status, the PSX kernel `bu` memory-card device | reads the disc image synchronously, decodes MDEC in software, patches card blocks in place |
 | Retail memory management the Rust types do by construction | fixed-arena node pools, free-stack allocators, `0x20`-block copiers | `Vec`, slices, ownership, borrow-in-place walks |
 | Retail residency / representation the port replaced | mode-table overlay cache pairs, GPU packet queues, the `gp+0x148` drawable node list | on-demand PROT resolution, typed draw lists, per-screen window models |
+| Routine retail itself never reaches | a real prologue entry point with **zero** references in all five forms across SCUS, every based overlay image and every raw PROT entry | nothing - retail runs no pass that asks the question either |
+
+The fourth shape is the one exception to "not `no caller exists`", and it is
+narrower than it looks. `NOT WIRED:` states a gap a future host closes; a
+routine no retail path reaches has no such future, so leaving it in the wiring
+worklist states a gap that can never close - the same lie the class exists to
+stop, pointing the other way. It may only be claimed on the evidence of a
+[five-form reference scan](address-reference-scan.md) reported in the tag, and
+the mechanism text must say so; "I grepped for `jal`" is not that scan, because
+it is blind to a table-driven caller. `fishing::DEV_ENTRY_POINT_BONUS` is the
+same shape reached from the other side - a branch retail ships behind a clear
+debug flag.
 
 ##### What may *not*
 
