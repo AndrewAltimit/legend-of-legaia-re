@@ -24,7 +24,7 @@
       <div class="rom-group-body">
         <p class="rom-legend-item" style="margin:0 0 .6rem">
           Off by default; composes with every option below.
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The shipped packs cover the item / magic / arts / menu tables plus recurring system messages; the bulk story dialog is not translated yet. The retail font is plain ASCII, so the packs are accent-folded.</p><p>Packs are community-authored YAML; you can import your own or export a starter pack from your disc to begin one. Full details: <a href="translation.html">translation packs</a>.</p></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The shipped packs cover the item / magic / arts / menu tables plus recurring system messages; the bulk story dialog is not translated yet. The retail font is plain ASCII, so the packs are accent-folded.</p><p>Packs are community-authored YAML; you can import your own or export a starter pack from your disc to begin one. The Brazilian Portuguese pack is <strong>somentedan</strong>'s fan translation (published by joao13traducoes), lifted from their patch onto the USA disc; about half of its dialogue fits the USA disc's sector-packed scenes in place, and the rest of those lines stay English - the coverage report says which. Full details: <a href="translation.html">translation packs</a>.</p></span></span>
         </p>
         <label class="rom-row">
           <span class="rom-label">Language</span>
@@ -35,8 +35,9 @@
             <option value="de">German / Deutsch</option>
             <option value="it">Italian / Italiano</option>
             <option value="pl">Polish / Polski</option>
+            <option value="pt-BR">Brazilian Portuguese / Portugues do Brasil (by somentedan)</option>
             <option value="__custom">Import my own pack (.yaml) ...</option>
-            <option value="__official">Official translation from my own PAL disc ...</option>
+            <option value="__official">Translation from another disc I own (official PAL, or fan-patched) ...</option>
           </select>
         </label>
         <label class="rom-row" id="rom-lang-file-row" hidden>
@@ -47,12 +48,17 @@
         <!-- ---- Official-localization transfer (second user-supplied disc) ---- -->
         <div class="rom-group-body" id="rom-lang-official-row" hidden>
           <p class="rom-legend-item" style="margin:0 0 .6rem">
-            Transfers the translation from a European disc you own onto your USA disc - read here, never uploaded.
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Both discs are read in your browser; the official text is yours, from your own disc, and is never bundled with this site.</p><p><strong>Not all of it will fit.</strong> The USA disc's scenes are packed to the sector with no spare room, so the shorter lines transfer and the rest stay English. The coverage report after patching says how many landed and why the others did not.</p><p>Full details: <a href="translation.html#official-pal">official PAL translations</a>.</p></span></span>
+            Transfers the text of another disc you own onto your USA disc - read here, never uploaded.
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Both discs are read in your browser; the text is yours, from your own disc, and is never bundled with this site.</p><p>The other disc can be an official European release (French, German, Italian, Spanish or English) or a <strong>fan-translated</strong> disc: apply the community patch to the disc it was made for, then hand the result in here and it becomes an editable pack for the USA disc. Japanese discs are not readable this way.</p><p><strong>Not all of it will fit.</strong> The USA disc's scenes are packed to the sector with no spare room, so the shorter lines transfer and the rest stay English. The coverage report after patching says how many landed and why the others did not.</p><p>Full details: <a href="translation.html#official-pal">translations from another disc</a>.</p></span></span>
           </p>
           <label class="rom-row">
-            <span class="rom-label">PAL disc image (<code>.bin</code> - French, German or Italian)</span>
+            <span class="rom-label">Other disc image (<code>.bin</code> - a European release, or a fan-patched disc)</span>
             <input type="file" id="rom-lang-pal-file" accept=".bin,application/octet-stream">
+          </label>
+          <label class="rom-row">
+            <span class="rom-label">Language code
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Stamps the pack (<code>pt-BR</code>, <code>es</code>, ...). Leave empty for an official disc - its own language is used. A fan patch's language is not on the disc, so name it here.</span></span></span>
+            <input type="text" id="rom-lang-code" placeholder="auto" size="8" maxlength="16">
           </label>
           <label class="rom-check-row">
             <input type="checkbox" id="rom-lang-fold" checked>
@@ -60,7 +66,7 @@
               <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><code>Epee</code> for <code>&Eacute;p&eacute;e</code>. The USA font has no accent glyphs, so unfolded accents draw blank - untick only if you are also patching the font.</span></span></span>
           </label>
           <div class="rom-row">
-            <button type="button" id="rom-lang-lift" class="rom-button rom-button-ghost">Read the official text from my PAL disc</button>
+            <button type="button" id="rom-lang-lift" class="rom-button rom-button-ghost">Read the text from my other disc</button>
             <button type="button" id="rom-lang-lift-save" class="rom-button rom-button-ghost" hidden>Download the lifted pack (.yaml)</button>
           </div>
         </div>

@@ -75,7 +75,7 @@ size gains `+G*2048`; the PVD volume-space size gains `+G`.** The structures:
 | PVD volume space | LBA 16, off 80 (LE) + 84 (BE) | `+= G` |
 | Path table (LE @18 + BE @20, incl. optional copies @19/@21) | dir extents | extents `> prot_lba` `+= G` |
 | Directory records (root + every subdirectory extent) | rec off `+2` LBA / `+10` size | LBA `> prot_lba` `+= G`; `PROT.DAT` size `+= G*2048` |
-| PROT internal TOC | `PROT.DAT` byte `8+(j+2)*4` | entries after a grown one `+= cumulative G` (PROT-relative) |
+| PROT internal TOC | `PROT.DAT` byte `8+(j+2)*4` | entries after a grown one `+= cumulative G` (PROT-relative); every non-zero word past the last entry's start (its end bound + the monotone tail) `+= total G`, since the reader sizes an entry by the gap to the next word and an unshifted bound drops the last entry |
 
 Subdirectory extents that live **after** `PROT.DAT` (on the retail disc `MOV` and
 `XA`) relocate too, so their self `.` record and file records are patched at the

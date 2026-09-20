@@ -1,11 +1,15 @@
 //! Disc-gated oracle for `translate lift-official`.
 //!
-//! With only the USA disc (`LEGAIA_DISC_BIN`) it exercises region detection:
-//! the boot exe is `SCUS_942.54`, which is not a liftable PAL localization.
+//! With only the USA disc (`LEGAIA_DISC_BIN`) it exercises region detection
+//! and the **identity lift**: a retail USA disc lifted onto itself is the path
+//! a fan-patched USA disc takes (bases located from the USA VAs, not pinned),
+//! and it must pair everything and reproduce every string verbatim.
 //! When a PAL disc is *also* supplied via `LEGAIA_PAL_DISC_BIN` it runs the
 //! full lift and asserts the name tables locate, the party names fill, and the
 //! dialog corpus pairs at the ~99% the alignment doc claims - all keyed to the
-//! USA coordinate space so the pack imports back onto the USA disc.
+//! USA coordinate space so the pack imports back onto the USA disc - and that
+//! the **unpinned** search (the path an unmeasured build such as the Spanish
+//! disc takes) lands on the hand-pinned bases of that measured build.
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset (no disc committed / CI).
 
@@ -25,11 +29,16 @@ fn lift_official_pairs_and_locates() {
     };
     let usa = DiscPatcher::open(usa_bytes).expect("open USA disc");
 
-    // Region detection on the USA disc: SCUS boot exe is not liftable.
+    // Region detection on the USA disc.
     let exe = lift::boot_exe_name(&usa).expect("read SYSTEM.CNF");
     assert!(
         exe.starts_with("SCUS_942"),
         "expected the USA boot exe, got {exe}"
+    );
+    assert_eq!(
+        lift::source_build_for_exe(&exe).map(|b| b.lang),
+        Some("en"),
+        "the USA build is a liftable (fan-patchable) Latin source"
     );
 
     let Some(pal_bytes) = load("LEGAIA_PAL_DISC_BIN") else {
@@ -148,4 +157,104 @@ fn count_high_escapes(pack: &legaia_patcher::translation::LanguagePack) -> usize
         }
     }
     n
+}
+
+/// The unpinned search - what an unmeasured build (Spain, EU English, any
+/// fan-patched disc) gets - must land exactly on the hand-pinned bases of a
+/// measured PAL build, tables and party template alike.
+#[test]
+fn unpinned_search_recovers_the_pinned_pal_bases() {
+    let (Some(usa_bytes), Some(pal_bytes)) = (load("LEGAIA_DISC_BIN"), load("LEGAIA_PAL_DISC_BIN"))
+    else {
+        eprintln!("[skip] LEGAIA_DISC_BIN / LEGAIA_PAL_DISC_BIN unset");
+        return;
+    };
+    let usa = DiscPatcher::open(usa_bytes).expect("open USA disc");
+    let pal = DiscPatcher::open(pal_bytes).expect("open PAL disc");
+    let exe = lift::boot_exe_name(&pal).expect("read SYSTEM.CNF");
+    let Some((pinned_tables, pinned_party)) = lift::pinned_bases_for_exe(&exe) else {
+        eprintln!("[skip] {exe} is not a hand-pinned build - nothing to vouch against");
+        return;
+    };
+    let usa_exe = usa.read_named_file("SCUS_942.54").expect("USA exe");
+    let pal_exe = pal.read_named_file(&exe).expect("PAL exe");
+
+    let found = lift::locate_unpinned(&usa_exe, &pal_exe);
+    assert_eq!(found.tables.len(), pinned_tables.len());
+    for ((name, hit), pinned) in found.tables.iter().zip(pinned_tables) {
+        assert_eq!(
+            *hit,
+            Some(pinned),
+            "{exe} table {name}: unpinned search landed on {hit:x?}, pinned 0x{pinned:08x}"
+        );
+    }
+    assert_eq!(
+        found.party,
+        Some(pinned_party),
+        "{exe} party template: fingerprint search landed on {:x?}, pinned 0x{pinned_party:08x}",
+        found.party
+    );
+}
+
+/// A retail USA disc lifted onto itself takes the located (unpinned) path and
+/// must be the identity: every table found at its USA VA, every name and both
+/// dialog domains paired 100%, every `translation` equal to its `source`. This
+/// is the path a fan-patched USA disc takes, minus the patch.
+#[test]
+fn usa_disc_lifts_onto_itself_as_the_identity() {
+    let Some(usa_bytes) = load("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let usa = DiscPatcher::open(usa_bytes.clone()).expect("open USA disc");
+    let again = DiscPatcher::open(usa_bytes).expect("open USA disc again");
+    let (pack, rep) = lift::lift_official(&usa, &again).expect("identity lift");
+
+    assert_eq!(rep.language, "en");
+    for t in &rep.tables {
+        assert!(
+            t.located,
+            "table {} not located on the USA exe itself",
+            t.name
+        );
+        assert!(
+            (t.valid_fraction - 1.0).abs() < 1e-9,
+            "table {} valid fraction {}",
+            t.name,
+            t.valid_fraction
+        );
+    }
+    assert_eq!(rep.names_unmapped, 0, "every USA string maps to itself");
+    assert!(
+        rep.party_fingerprint_ok,
+        "party template fingerprint on itself"
+    );
+    assert_eq!(rep.party_filled, rep.party_total);
+    assert_eq!(
+        rep.man_paired, rep.man_total,
+        "MAN dialog pairs 100% with itself"
+    );
+    assert_eq!(
+        rep.raw_paired, rep.raw_total,
+        "raw dialog pairs 100% with itself"
+    );
+
+    let mut checked = 0usize;
+    for (section, entries) in pack.sections.iter() {
+        if section == "ui_menu" {
+            continue; // overlay-resident pools are never lifted (see the doc)
+        }
+        for e in entries {
+            assert_eq!(
+                e.translation, e.source,
+                "{}: identity lift changed the text",
+                e.key
+            );
+            checked += 1;
+        }
+    }
+    assert!(
+        checked > 1000,
+        "identity lift covered only {checked} entries"
+    );
 }

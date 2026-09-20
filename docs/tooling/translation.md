@@ -103,10 +103,13 @@ an *import my own pack* path and an *export a starter pack from my disc* button.
 It applies the language pack in **two phases around** the randomizer passes
 (see the ordering note below) via `patch_rom`'s `lang_pack` argument, and
 validates a chosen pack against the user's disc with `validate_lang_pack`
-before patching. A third path, *official translation from my own PAL disc*,
-takes a second user-supplied disc (`SCES_019.44`/`.45`/`.46`) and runs
-`translate lift-official` in the tab via `lift_official_pack` - neither disc is
-uploaded - then feeds the lifted pack through the same `lang_pack` argument. It
+before patching. A third path, *translation from another disc I own*,
+takes a second user-supplied disc - an official PAL localization or a
+fan-patched disc of any Latin build (see
+[`pal-localizations.md`](pal-localizations.md#lifting-a-fan-translation)) - and
+runs `translate lift-official` in the tab via `lift_official_pack` - neither
+disc is uploaded - then feeds the lifted pack through the same `lang_pack`
+argument. It
 is honest about the fit: most of the official dialog does **not** fit the USA
 disc's sector-aligned scenes, and the coverage report says how much landed and
 why the rest did not. See [`pal-localizations.md`](pal-localizations.md#in-the-browser).

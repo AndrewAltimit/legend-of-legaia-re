@@ -1,19 +1,30 @@
-//! Lift an official PAL localization into a **USA-keyed working pack**.
+//! Lift the text of another Latin-script Legaia disc into a **USA-keyed
+//! working pack**.
 //!
-//! The three official PAL discs (`SCES_019.44`/`.45`/`.46` = FR/DE/IT) are 1:1
-//! with the USA disc at the container level (see
-//! `docs/tooling/pal-localizations.md`): a USA PROT coordinate names the same
-//! logical asset on every disc, the five SCUS name tables exist id-for-id at
-//! language-shifted VAs, and the `0x1F`-segment dialog corpus pairs by position
-//! within each PROT entry. This module re-keys the official localized text onto
-//! the USA coordinate space the [importer](super::import) patches:
+//! Every Latin-script release is 1:1 with the USA disc at the container level
+//! (see `docs/tooling/pal-localizations.md`): a USA PROT coordinate names the
+//! same logical asset on every disc, the five SCUS name tables exist id-for-id
+//! at build-shifted VAs, and the `0x1F`-segment dialog corpus pairs by position
+//! within each PROT entry. This module re-keys the source disc's text onto the
+//! USA coordinate space the [importer](super::import) patches. The source may be
+//!
+//! - one of the three **measured** official PAL localizations
+//!   (`SCES_019.44`/`.45`/`.46` = FR/DE/IT), whose name-table bases are pinned;
+//! - an **unmeasured** official build (`SCES_019.47` Spain, `SCES_017.52` EU
+//!   English), whose bases are located by scanning out from the USA VAs;
+//! - a **fan-patched** disc of any of the above - including a patched USA disc
+//!   (`SCUS_942.54`) - which is how a community translation shipped as a binary
+//!   patch becomes an editable pack: patch the disc it was built for, then lift.
+//!
+//! The Japanese builds are not lifted: their text is not the Latin codec.
 //!
 //! - **Name tables** (item / spell / arts / accessory / party): id-for-id. The
 //!   USA pack keys each pooled string by its *USA* virtual address; the same id
-//!   on the PAL exe points at the localized string, so the map is
-//!   `usa_string_va -> pal_string`. The PAL base is *located* (verified against
-//!   the pinned VA by following its pointers, with a windowed search fallback),
-//!   never trusted blind.
+//!   on the source exe points at the localized string, so the map is
+//!   `usa_string_va -> source_string`. The source base is *located* (a pinned
+//!   VA is verified by following its pointers, with a windowed search fallback;
+//!   an unpinned build is searched from the USA VA outright), never trusted
+//!   blind.
 //! - **Dialog** (`man:` scene-bundle MANs, `raw:` event-script carriers):
 //!   positional. The Nth qualifying segment of PROT entry `i` on USA pairs with
 //!   the Nth on the PAL disc (byte offsets differ - the localized MAN repacks -
@@ -53,8 +64,15 @@ struct TableSpec {
     stride: u32,
     /// Number of records to walk.
     count: u32,
-    /// Pointer-field byte offsets within a record (relative to `usa_base`).
+    /// Pointer-field byte offsets within a record (relative to `usa_base`)
+    /// whose strings the lift carries.
     fields: &'static [u32],
+    /// Every pointer word in the record, lifted or not. The bytes outside
+    /// these words are the record's **meta columns** (stats, ids, scope), the
+    /// same on every build, and they fingerprint the base: a same-shaped
+    /// alias (any item-table record read four bytes in has the accessory
+    /// record's `[meta, ptr, ptr]` shape) validates as names but not as meta.
+    ptr_words: &'static [u32],
 }
 
 /// The five pooled-string tables (party names are a fixed field, handled apart).
@@ -67,6 +85,7 @@ const TABLES: &[TableSpec] = &[
         stride: 0x0C,
         count: 256,
         fields: &[0, 4],
+        ptr_words: &[0, 4], // +8 = packed price / id / type
     },
     TableSpec {
         name: "spells",
@@ -74,6 +93,7 @@ const TABLES: &[TableSpec] = &[
         stride: 0x0C,
         count: 256,
         fields: &[8],
+        ptr_words: &[8], // +0..+8 = stats + description index
     },
     TableSpec {
         name: "arts",
@@ -81,6 +101,7 @@ const TABLES: &[TableSpec] = &[
         stride: 0x14,
         count: 256,
         fields: &[0xC],
+        ptr_words: &[8, 0xC, 0x10], // +8 glyphs, +0x10 description; +0..+8 = char / index / AP
     },
     TableSpec {
         name: "accessory_passives",
@@ -88,12 +109,14 @@ const TABLES: &[TableSpec] = &[
         stride: 0x0C,
         count: 0x40,
         fields: &[4, 8],
+        ptr_words: &[4, 8], // +0 = scope word
     },
 ];
 
 /// Per-language PAL base VAs for [`TABLES`], in table order, plus the new-game
 /// party-template base. Located, not shift-computed - the pointer-table region
 /// drifts locally per language (see `docs/tooling/pal-localizations.md`).
+#[derive(Debug, Clone, Copy)]
 struct PalBases {
     /// Pinned base of each [`TABLES`] entry, same order.
     table_bases: [u32; 4],
@@ -101,31 +124,70 @@ struct PalBases {
     party_base: u32,
 }
 
-/// Boot exe name -> `(language code, pinned PAL bases)`. `None` for the USA exe
-/// (there is nothing to lift from an NTSC-against-NTSC pairing).
-fn region_for_exe(exe: &str) -> Option<(&'static str, PalBases)> {
+/// Where a source build's table bases come from.
+#[derive(Debug, Clone, Copy)]
+enum SourceBases {
+    /// A measured official localization: pinned VAs, validated then windowed.
+    Pinned(PalBases),
+    /// An unmeasured Latin build: every base is located by scanning out from
+    /// its USA VA ([`SEARCH_BELOW`] / [`SEARCH_ABOVE`]).
+    Located,
+}
+
+/// What the lift knows about a source disc from its boot exe name.
+#[derive(Debug, Clone, Copy)]
+pub struct SourceBuild {
+    /// Default language code the lifted pack is stamped with (the CLI's
+    /// `--language` overrides it - a fan patch's language is not in the exe name).
+    pub lang: &'static str,
+    /// Human label for reports.
+    pub label: &'static str,
+    bases: SourceBases,
+}
+
+/// How far below / above a table's USA VA an unpinned search looks. The three
+/// measured PAL builds drift `+0x8E0..=+0xFF4`; the JP shift is `+0x1B90`; a
+/// patched USA exe drifts `0`. The window covers all of those with margin.
+const SEARCH_BELOW: i64 = 0x1000;
+const SEARCH_ABOVE: i64 = 0x4000;
+
+/// Boot exe name -> source build. `None` for anything that is not a Latin-script
+/// retail build (the JP `SCPS_*` discs, demos): there is nothing this lift can
+/// read there.
+///
+/// The USA exe **is** accepted: a retail-against-retail lift is the identity
+/// (every `translation` equals its `source`), but a *patched* USA disc carrying
+/// a fan translation lifts into the pack that reproduces it.
+pub fn source_build_for_exe(exe: &str) -> Option<SourceBuild> {
+    let build = |lang, label, bases| SourceBuild { lang, label, bases };
     match exe {
-        "SCES_019.44" => Some((
+        "SCUS_942.54" => Some(build("en", "USA", SourceBases::Located)),
+        "SCES_017.52" => Some(build("en", "Europe, English (PAL)", SourceBases::Located)),
+        "SCES_019.44" => Some(build(
             "fr",
-            PalBases {
+            "France (PAL)",
+            SourceBases::Pinned(PalBases {
                 table_bases: [0x8007_4C4C, 0x8007_5DA8, 0x8007_67A4, 0x8007_6B3C],
                 party_base: 0x8007_9508,
-            },
+            }),
         )),
-        "SCES_019.45" => Some((
+        "SCES_019.45" => Some(build(
             "de",
-            PalBases {
+            "Germany (PAL)",
+            SourceBases::Pinned(PalBases {
                 table_bases: [0x8007_5360, 0x8007_64BC, 0x8007_6EB8, 0x8007_7250],
                 party_base: 0x8007_9C78,
-            },
+            }),
         )),
-        "SCES_019.46" => Some((
+        "SCES_019.46" => Some(build(
             "it",
-            PalBases {
+            "Italy (PAL)",
+            SourceBases::Pinned(PalBases {
                 table_bases: [0x8007_5130, 0x8007_628C, 0x8007_6C88, 0x8007_7020],
                 party_base: 0x8007_9A14,
-            },
+            }),
         )),
+        "SCES_019.47" => Some(build("es", "Spain (PAL)", SourceBases::Located)),
         _ => None,
     }
 }
@@ -173,24 +235,26 @@ fn base_valid_fraction(
     pal_base: u32,
     stride: u32,
     count: u32,
-    field: u32,
+    fields: &[u32],
 ) -> (f64, usize) {
     let mut ok = 0usize;
     let mut seen = 0usize;
     for id in 0..count {
-        let Some(usa_ptr) = read_ptr(usa_exe, usa_base + id * stride + field) else {
-            continue;
-        };
-        if usa_ptr == 0 || !read_cstr(usa_exe, usa_ptr).is_some_and(|s| looks_like_name(&s)) {
-            continue; // USA slot isn't a real name - no evidence either way
-        }
-        seen += 1;
-        if read_ptr(pal_exe, pal_base + id * stride + field)
-            .filter(|&p| p != 0)
-            .and_then(|p| read_cstr(pal_exe, p))
-            .is_some_and(|s| looks_like_name(&s))
-        {
-            ok += 1;
+        for &field in fields {
+            let Some(usa_ptr) = read_ptr(usa_exe, usa_base + id * stride + field) else {
+                continue;
+            };
+            if usa_ptr == 0 || !read_cstr(usa_exe, usa_ptr).is_some_and(|s| looks_like_name(&s)) {
+                continue; // USA slot isn't a real name - no evidence either way
+            }
+            seen += 1;
+            if read_ptr(pal_exe, pal_base + id * stride + field)
+                .filter(|&p| p != 0)
+                .and_then(|p| read_cstr(pal_exe, p))
+                .is_some_and(|s| looks_like_name(&s))
+            {
+                ok += 1;
+            }
         }
     }
     let f = if seen == 0 {
@@ -201,40 +265,199 @@ fn base_valid_fraction(
     (f, seen)
 }
 
-/// Locate a table's PAL base: accept the pinned VA if it validates against the
-/// USA-populated id set, else search a record-aligned window for the offset
-/// with the highest valid fraction. Returns `(base, valid_fraction)` or `None`
-/// when nothing clears the threshold with a meaningful sample.
+/// Fraction of the table's **meta bytes** (every record byte outside
+/// `ptr_words`) equal between the USA table and the candidate. Language- and
+/// build-independent columns, so the true base scores ~1.0; a same-shaped
+/// neighbour or a one-record-off alias scores like noise. Byte-wise rather
+/// than record-wise so one unexpectedly shifted word cannot zero the signal.
+fn meta_match_fraction(
+    usa_exe: &[u8],
+    src_exe: &[u8],
+    usa_base: u32,
+    cand: u32,
+    stride: u32,
+    count: u32,
+    ptr_words: &[u32],
+) -> f64 {
+    let is_meta = |off: u32| !ptr_words.iter().any(|&p| (p..p + 4).contains(&off));
+    let mut same = 0usize;
+    let mut total = 0usize;
+    for id in 0..count {
+        let rec = id * stride;
+        let (Some(u), Some(c)) = (
+            item_names::file_offset_for_va(usa_exe, usa_base + rec),
+            item_names::file_offset_for_va(src_exe, cand + rec),
+        ) else {
+            continue;
+        };
+        for off in (0..stride).filter(|&o| is_meta(o)) {
+            let (Some(&a), Some(&b)) =
+                (usa_exe.get(u + off as usize), src_exe.get(c + off as usize))
+            else {
+                continue;
+            };
+            total += 1;
+            same += usize::from(a == b);
+        }
+    }
+    if total == 0 {
+        0.0
+    } else {
+        same as f64 / total as f64
+    }
+}
+
+/// Locate a table's base on the source exe. With a pinned VA: accept it if its
+/// pointers validate against the USA-populated id set, else search `+-0x2000`
+/// around it. Without one: search [`SEARCH_BELOW`] / [`SEARCH_ABOVE`] around
+/// the USA VA. A search keeps, among the 4-byte-aligned candidates whose
+/// pointers validate, the one whose meta columns match the USA table best
+/// (then the higher pointer-valid fraction, then the nearest to the USA VA).
+/// Pointer validity alone is not enough: the item table's `[ptr, ptr, meta]`
+/// records read as the accessory table's `[meta, ptr, ptr]` at a 4-byte
+/// offset, and one record off the true base validates on every populated id
+/// but the first. Returns `(base, pointer_valid_fraction)` or `None` when
+/// nothing clears the threshold with a meaningful sample.
 fn locate_base(
     usa_exe: &[u8],
     pal_exe: &[u8],
-    usa_base: u32,
-    pinned: u32,
-    stride: u32,
-    count: u32,
-    field: u32,
+    spec: &TableSpec,
+    pinned: Option<u32>,
 ) -> Option<(u32, f64)> {
     const THRESHOLD: f64 = 0.75;
     const MIN_SAMPLE: usize = 6;
-    let check =
-        |cand: u32| base_valid_fraction(usa_exe, pal_exe, usa_base, cand, stride, count, field);
-    let (pinned_frac, pinned_n) = check(pinned);
-    if pinned_frac >= THRESHOLD && pinned_n >= MIN_SAMPLE {
-        return Some((pinned, pinned_frac));
-    }
-    // Fall back to a windowed search (4-byte-aligned steps).
-    let mut best = (pinned, pinned_frac, pinned_n);
-    let window = 0x2000i64;
-    let mut d = -window;
-    while d <= window {
-        let cand = (pinned as i64 + d) as u32;
-        let (f, n) = check(cand);
-        if f > best.1 && n >= MIN_SAMPLE {
-            best = (cand, f, n);
+    let usa_base = spec.usa_base;
+    let check = |cand: u32| {
+        base_valid_fraction(
+            usa_exe,
+            pal_exe,
+            usa_base,
+            cand,
+            spec.stride,
+            spec.count,
+            spec.fields,
+        )
+    };
+    let meta = |cand: u32| {
+        meta_match_fraction(
+            usa_exe,
+            pal_exe,
+            usa_base,
+            cand,
+            spec.stride,
+            spec.count,
+            spec.ptr_words,
+        )
+    };
+    let (centre, lo, hi) = match pinned {
+        Some(p) => {
+            let (frac, n) = check(p);
+            if frac >= THRESHOLD && n >= MIN_SAMPLE {
+                return Some((p, frac));
+            }
+            (p, -0x2000i64, 0x2000i64)
         }
+        None => (usa_base, -SEARCH_BELOW, SEARCH_ABOVE),
+    };
+    let dist = |cand: u32| (cand as i64 - usa_base as i64).abs();
+    // (candidate, pointer-valid fraction, meta fraction)
+    let mut best: Option<(u32, f64, f64)> = None;
+    let mut d = lo;
+    while d <= hi {
+        let cand = (centre as i64 + d) as u32;
         d += 4;
+        let (f, n) = check(cand);
+        if f < THRESHOLD || n < MIN_SAMPLE {
+            continue;
+        }
+        let m = meta(cand);
+        let better = match best {
+            None => true,
+            Some((b, bf, bm)) => {
+                m > bm || (m == bm && (f > bf || (f == bf && dist(cand) < dist(b))))
+            }
+        };
+        if better {
+            best = Some((cand, f, m));
+        }
     }
-    (best.1 >= THRESHOLD && best.2 >= MIN_SAMPLE).then_some((best.0, best.1))
+    best.map(|(b, f, _)| (b, f))
+}
+
+/// Locate the new-game party template on the source exe by fingerprint: the
+/// eight `u16` stats of each of the four roster records (everything but the
+/// 10-byte name) must equal the USA template's, at once. A pinned VA is tried
+/// first and kept even when the fingerprint fails (the three measured builds
+/// were pinned by hand); an unpinned build is searched [`SEARCH_BELOW`] /
+/// [`SEARCH_ABOVE`] around the USA VA at 2-byte steps, nearest hit first.
+/// Returns `(base, fingerprint_matched)`.
+fn locate_party_base(usa_exe: &[u8], src_exe: &[u8], pinned: Option<u32>) -> Option<(u32, bool)> {
+    const STATS_LEN: usize = new_game::RECORD_STRIDE - new_game::NAME_LEN;
+    let usa_va = new_game::PARTY_TEMPLATE_VA;
+    let matches = |cand: u32| -> bool {
+        (0..new_game::PARTY_RECORDS).all(|rec| {
+            let rec_off = (rec * new_game::RECORD_STRIDE) as u32;
+            let (Some(u), Some(s)) = (
+                item_names::file_offset_for_va(usa_exe, usa_va + rec_off),
+                item_names::file_offset_for_va(src_exe, cand + rec_off),
+            ) else {
+                return false;
+            };
+            match (usa_exe.get(u..u + STATS_LEN), src_exe.get(s..s + STATS_LEN)) {
+                (Some(a), Some(b)) => a == b,
+                _ => false,
+            }
+        })
+    };
+    if let Some(p) = pinned {
+        return Some((p, matches(p)));
+    }
+    let mut hits: Vec<u32> = Vec::new();
+    let mut d = -SEARCH_BELOW;
+    while d <= SEARCH_ABOVE {
+        let cand = (usa_va as i64 + d) as u32;
+        if matches(cand) {
+            hits.push(cand);
+        }
+        d += 2;
+    }
+    hits.into_iter()
+        .min_by_key(|&c| (c as i64 - usa_va as i64).abs())
+        .map(|c| (c, true))
+}
+
+/// Every base the unpinned search finds on `src_exe`: the [`TABLES`] bases in
+/// table order and the party template. This is the path an unmeasured build
+/// takes; it is public so the measured builds can vouch for it - on a pinned
+/// build it must land on the pinned VAs (`translate_lift_official_real.rs`).
+#[derive(Debug, Clone)]
+pub struct LocatedBases {
+    /// `(table name, located base)` per [`TABLES`] entry.
+    pub tables: Vec<(&'static str, Option<u32>)>,
+    /// Party-template base whose stat fingerprint matches the USA template.
+    pub party: Option<u32>,
+}
+
+/// Locate every table base + the party template on `src_exe` without a pin.
+pub fn locate_unpinned(usa_exe: &[u8], src_exe: &[u8]) -> LocatedBases {
+    let tables = TABLES
+        .iter()
+        .map(|spec| {
+            let hit = locate_base(usa_exe, src_exe, spec, None);
+            (spec.name, hit.map(|(b, _)| b))
+        })
+        .collect();
+    let party = locate_party_base(usa_exe, src_exe, None).map(|(b, _)| b);
+    LocatedBases { tables, party }
+}
+
+/// The hand-pinned bases of a measured build (`([table bases], party base)`),
+/// `None` for a build that is located at run time.
+pub fn pinned_bases_for_exe(exe: &str) -> Option<([u32; 4], u32)> {
+    match source_build_for_exe(exe)?.bases {
+        SourceBases::Pinned(p) => Some((p.table_bases, p.party_base)),
+        SourceBases::Located => None,
+    }
 }
 
 /// Per-table outcome for the lift report.
@@ -253,7 +476,13 @@ pub struct TableStat {
 pub struct LiftReport {
     pub language: String,
     pub exe_name: String,
+    /// Human label of the source build (`France (PAL)`, `USA`, ...).
+    pub build_label: String,
     pub tables: Vec<TableStat>,
+    /// Where the party template was read on the source exe, if anywhere.
+    pub party_base: Option<u32>,
+    /// Whether the template's stat bytes matched the USA fingerprint there.
+    pub party_fingerprint_ok: bool,
     /// `scus:str:*` pack entries filled / left empty (no PAL string mapped).
     pub names_filled: usize,
     pub names_unmapped: usize,
@@ -350,31 +579,42 @@ fn key_party_slot(key: &str) -> Option<usize> {
     key.strip_prefix("scus:party:")?.parse().ok()
 }
 
-/// Lift the official localization on `source` onto `target`'s coordinate space.
-/// Returns a filled working pack + a counts-only report.
+/// Lift the text on `source` onto `target`'s coordinate space. Returns a
+/// filled working pack + a counts-only report. The pack's language is the
+/// build's default ([`SourceBuild::lang`]); a fan translation's caller restamps
+/// it (`pack.language`) - nothing in the exe name says what language a patch
+/// carries.
 pub fn lift_official(
     target: &DiscPatcher,
     source: &DiscPatcher,
 ) -> Result<(LanguagePack, LiftReport)> {
     let exe_name = boot_exe_name(source)?;
-    let Some((lang, pal)) = region_for_exe(&exe_name) else {
+    let Some(build) = source_build_for_exe(&exe_name) else {
         bail!(
-            "source boot exe {exe_name:?} is not a known PAL localization \
-             (expected SCES_019.44/.45/.46)"
+            "source boot exe {exe_name:?} is not a Latin-script Legaia build this lift can read \
+             (known: SCUS_942.54, SCES_017.52, SCES_019.44/.45/.46/.47; the JP discs use a \
+             different text encoding)"
         );
+    };
+    let lang = build.lang;
+    let (pinned_tables, pinned_party) = match build.bases {
+        SourceBases::Pinned(p) => (p.table_bases.map(Some), Some(p.party_base)),
+        SourceBases::Located => ([None; 4], None),
     };
 
     // Start from the USA source pack: correct keys, budgets, and `source` text.
     let mut pack = export_pack(target)?;
     pack.language = lang.to_string();
     pack.notes = format!(
-        "Official {lang} localization lifted from {exe_name} onto USA coordinates \
-         (translate lift-official). Contains the game's text - scratchpad only, never commit."
+        "Text lifted from {exe_name} ({label}) onto USA coordinates (translate \
+         lift-official). Contains the game's text - scratchpad only, never commit.",
+        label = build.label
     );
 
     let mut report = LiftReport {
         language: lang.to_string(),
         exe_name: exe_name.clone(),
+        build_label: build.label.to_string(),
         ..Default::default()
     };
 
@@ -387,21 +627,14 @@ pub fn lift_official(
         .with_context(|| format!("{exe_name} not found on source disc"))?;
 
     let mut str_map: BTreeMap<u32, Vec<u8>> = BTreeMap::new();
-    for (spec, &pinned) in TABLES.iter().zip(&pal.table_bases) {
-        // Validate/locate against field 0 (the primary name pointer).
-        let located = locate_base(
-            &usa_exe,
-            &pal_exe,
-            spec.usa_base,
-            pinned,
-            spec.stride,
-            spec.count,
-            spec.fields[0],
-        );
+    for (spec, &pinned) in TABLES.iter().zip(&pinned_tables) {
+        // Validate/locate against every pointer field the table owns, then
+        // the meta columns.
+        let located = locate_base(&usa_exe, &pal_exe, spec, pinned);
         let mut stat = TableStat {
             name: spec.name,
             located: located.is_some(),
-            pal_base: located.map(|(b, _)| b).unwrap_or(pinned),
+            pal_base: located.map(|(b, _)| b).or(pinned).unwrap_or(spec.usa_base),
             valid_fraction: located.map(|(_, f)| f).unwrap_or(0.0),
             paired: 0,
         };
@@ -453,14 +686,20 @@ pub fn lift_official(
 
     // ---- Party names: fixed 10-byte fields, id-for-id ----
     report.party_total = pack.sections.party_names.len();
+    let party = locate_party_base(&usa_exe, &pal_exe, pinned_party);
+    report.party_base = party.map(|(b, _)| b);
+    report.party_fingerprint_ok = party.is_some_and(|(_, ok)| ok);
     for e in pack.sections.party_names.iter_mut() {
+        let Some((party_base, _)) = party else {
+            break;
+        };
         let Some(slot) = key_party_slot(&e.key) else {
             continue;
         };
         if slot >= new_game::PARTY_RECORDS {
             continue;
         }
-        let va = pal.party_base + (slot * new_game::RECORD_STRIDE) as u32 + 16;
+        let va = party_base + (slot * new_game::RECORD_STRIDE) as u32 + 16;
         let Some(off) = item_names::file_offset_for_va(&pal_exe, va) else {
             continue;
         };
@@ -496,6 +735,57 @@ pub fn lift_official(
     )?;
 
     Ok((pack, report))
+}
+
+/// Blank every `translation` in `pack` that the `baseline` pack also carries -
+/// the same text at the same key, or anywhere in the same PROT entry (a patch
+/// that adds or removes a line shifts the positional pairing of the rest of
+/// that entry, so the same USA key can pair one retail line on the patched
+/// disc and its neighbour on the retail one). This is what makes a lift off a
+/// **fan-patched** disc distributable: with the retail disc it was built on as
+/// the baseline, what survives is the translator's own text, and the lines the
+/// patch left alone stay empty (vanilla on import) instead of carrying the
+/// underlying build's official text. Returns the number of entries blanked.
+pub fn drop_baseline_text(pack: &mut LanguagePack, baseline: &LanguagePack) -> usize {
+    use std::collections::{BTreeMap, BTreeSet};
+    let group_of = |key: &str| -> String {
+        match key_entry_index(key) {
+            Some(idx) if key.starts_with("man:") => format!("man:{idx}"),
+            Some(idx) if key.starts_with("raw:") => format!("raw:{idx}"),
+            _ => key.to_string(),
+        }
+    };
+    let mut blanked = 0usize;
+    // Both walks are in serialization order, so the sections pair up.
+    for (section, (_, base_entries)) in pack
+        .sections
+        .each_mut()
+        .into_iter()
+        .zip(baseline.sections.iter())
+    {
+        let mut groups: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
+        for e in base_entries {
+            if !e.translation.is_empty() {
+                groups
+                    .entry(group_of(&e.key))
+                    .or_default()
+                    .insert(e.translation.as_str());
+            }
+        }
+        for e in section.iter_mut() {
+            if e.translation.is_empty() {
+                continue;
+            }
+            let shared = groups
+                .get(&group_of(&e.key))
+                .is_some_and(|set| set.contains(e.translation.as_str()));
+            if shared {
+                e.translation.clear();
+                blanked += 1;
+            }
+        }
+    }
+    blanked
 }
 
 /// ASCII-fold every lifted `translation` in `pack`, in place.
@@ -552,9 +842,16 @@ fn fill_dialog(
         else {
             continue;
         };
-        // USA side scanned exactly as export did (Latin build: high-gate is a
-        // no-op), so `usa_list[k]` is the pack entry at ordinal `k`.
-        let usa_list = seg_texts(&usa_entry, false);
+        // Both sides are scanned with the accent-tolerant gate. The pack was
+        // exported with the strict gate, but every strict segment is also a
+        // tolerant one at the same offset (the gate only relaxes the glyph
+        // test, and a qualifying run never contains a `0x1F` start), so the
+        // pack's offsets index the tolerant list - and only the tolerant list
+        // sees the *same* coincidental high-byte hits on both discs. Scanning
+        // the USA side strict skipped those hits on one side only and shifted
+        // every ordinal after the first one in the entry: a retail disc lifted
+        // onto itself came back with other lines' text.
+        let usa_list = seg_texts(&usa_entry, true);
         let pal_list = seg_texts(&pal_entry, true);
         // Map USA text offset -> ordinal.
         let ord_of: BTreeMap<usize, usize> = usa_list
@@ -589,11 +886,63 @@ mod tests {
     use super::*;
 
     #[test]
-    fn region_map_covers_the_three_pal_exes() {
-        assert_eq!(region_for_exe("SCES_019.44").unwrap().0, "fr");
-        assert_eq!(region_for_exe("SCES_019.45").unwrap().0, "de");
-        assert_eq!(region_for_exe("SCES_019.46").unwrap().0, "it");
-        assert!(region_for_exe("SCUS_942.54").is_none());
+    fn baseline_filter_blanks_shared_text_per_entry() {
+        use super::super::pack::Entry;
+        let entry = |key: &str, t: &str| Entry {
+            key: key.to_string(),
+            context: String::new(),
+            source: String::new(),
+            translation: t.to_string(),
+            budget: 8,
+        };
+        let mut pack = LanguagePack::new("xx");
+        pack.sections.scene_dialog = vec![
+            entry("man:5:0x10", "same key"), // blanked: baseline has it at this key
+            entry("man:5:0x20", "shifted line"), // blanked: baseline has it elsewhere in entry 5
+            entry("man:5:0x30", "translated"), // kept
+            entry("man:6:0x10", "shifted line"), // kept: entry 6 never carried it
+        ];
+        pack.sections.items = vec![entry("scus:str:0x80011230", "Potion")];
+        let mut base = LanguagePack::new("xx");
+        base.sections.scene_dialog = vec![
+            entry("man:5:0x10", "same key"),
+            entry("man:5:0x28", "shifted line"),
+            entry("man:5:0x30", "retail text"),
+        ];
+        base.sections.items = vec![entry("scus:str:0x80011230", "Potion")];
+        assert_eq!(drop_baseline_text(&mut pack, &base), 3);
+        let t: Vec<&str> = pack
+            .sections
+            .scene_dialog
+            .iter()
+            .map(|e| e.translation.as_str())
+            .collect();
+        assert_eq!(t, ["", "", "translated", "shifted line"]);
+        assert_eq!(pack.sections.items[0].translation, "");
+    }
+
+    #[test]
+    fn source_build_map_covers_every_latin_build() {
+        let lang = |exe| source_build_for_exe(exe).map(|b| b.lang);
+        assert_eq!(lang("SCES_019.44"), Some("fr"));
+        assert_eq!(lang("SCES_019.45"), Some("de"));
+        assert_eq!(lang("SCES_019.46"), Some("it"));
+        assert_eq!(lang("SCES_019.47"), Some("es"));
+        assert_eq!(lang("SCES_017.52"), Some("en"));
+        assert_eq!(lang("SCUS_942.54"), Some("en"));
+        // The measured three are pinned; the rest are located from the USA VAs.
+        for (exe, pinned) in [
+            ("SCES_019.44", true),
+            ("SCES_019.46", true),
+            ("SCES_019.47", false),
+            ("SCUS_942.54", false),
+        ] {
+            let b = source_build_for_exe(exe).unwrap();
+            assert_eq!(matches!(b.bases, SourceBases::Pinned(_)), pinned, "{exe}");
+        }
+        // Not Latin-script: the JP original and the demos.
+        assert!(source_build_for_exe("SCPS_100.59").is_none());
+        assert!(source_build_for_exe("SCUS_943.66").is_none());
     }
 
     #[test]

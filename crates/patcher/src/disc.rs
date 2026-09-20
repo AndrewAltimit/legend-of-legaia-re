@@ -246,6 +246,21 @@ impl DiscPatcher {
             }
             cum += growth[j];
         }
+        // The words past the last entry's start are its end bound and the
+        // TOC's monotone tail - every non-zero one names a sector past every
+        // grown entry, so all move by the total growth. The reader sizes an
+        // entry by the gap to the next word (`toc[p+3] - toc[p+2]`, retail's
+        // own arithmetic); leaving the bound behind shrank the last entry by
+        // the total growth and, once that wrapped, dropped it from the index.
+        // Zero words are TOC padding (LBA 0 is the header) and stay zero.
+        let mut off = 8 + (n + 2) * 4;
+        while off + 4 <= start0 {
+            let word = u32::from_le_bytes(new_prot[off..off + 4].try_into().unwrap());
+            if word != 0 {
+                new_prot[off..off + 4].copy_from_slice(&(word + cum).to_le_bytes());
+            }
+            off += 4;
+        }
 
         // Disc-level relayout: grow PROT.DAT + cascade every LBA reference.
         let new_image = legaia_iso::relayout::grow_prot_dat(

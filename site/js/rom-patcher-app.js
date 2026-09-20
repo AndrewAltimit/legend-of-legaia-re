@@ -18,9 +18,10 @@
  * -> Promise<{ data, summary, seed, lang }>`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
  * `export_lang_pack(image, language) -> yaml_string`, and
- * `lift_official_pack(usa_image, pal_image, fold_accents) -> { yaml, language,
- * exe, summary, tables, ... }` (the official-localization transfer: the user
- * supplies their OWN PAL disc as a second file, it is read in this tab, and the
+ * `lift_official_pack(usa_image, other_image, fold_accents, language?) -> { yaml,
+ * language, exe, build, summary, tables, ... }` (the other-disc transfer: the
+ * user supplies their OWN second disc - an official PAL localization or a
+ * fan-patched disc - it is read in this tab, and the
  * lifted YAML is fed back through the normal `lang_pack` path so it gets the
  * same two-phase ordering and the same coverage report). `lang` / `report`
  * carry the per-section language-patch coverage: `{ language, applied,
@@ -102,9 +103,9 @@ function readFileText(file) {
   });
 }
 
-// The pack lifted from the user's own PAL disc this session (YAML string), or
-// null. Held in memory only - it carries the official localized script, so it
-// is never persisted and only leaves the tab if the user downloads it.
+// The pack lifted from the user's own other disc this session (YAML string),
+// or null. Held in memory only - it carries that disc's script, so it is never
+// persisted and only leaves the tab if the user downloads it.
 let liftedPack = null;
 
 // The YAML for the currently-selected language, or '' for none. `customFile`
@@ -119,7 +120,7 @@ async function resolveLangPack(langSel, customFile) {
   }
   if (v === '__official') {
     if (!liftedPack) {
-      throw new Error('read the official text from your PAL disc first (button above)');
+      throw new Error('read the text from your other disc first (button above)');
     }
     return liftedPack;
   }
@@ -2455,6 +2456,7 @@ function init() {
   const langOfficialRow = $('rom-lang-official-row');
   const langPalFile = $('rom-lang-pal-file');
   const langFoldChk = $('rom-lang-fold');
+  const langCodeInput = $('rom-lang-code');
   const langLiftBtn = $('rom-lang-lift');
   const langLiftSaveBtn = $('rom-lang-lift-save');
   const langValidateBtn = $('rom-lang-validate');
@@ -2544,8 +2546,9 @@ function init() {
     }
   });
 
-  // "Read the official text from my PAL disc": the official-localization
-  // transfer. The user supplies a SECOND disc they own (a PAL SCES build); it
+  // "Read the text from my other disc": the other-disc transfer. The user
+  // supplies a SECOND disc they own (an official PAL SCES build, or a
+  // fan-patched disc of any Latin build - a patched USA disc included); it
   // is read in this tab exactly like the USA one, lifted onto USA coordinates,
   // and kept in memory as an ordinary language pack. Patching then goes through
   // the normal lang_pack path, so the ordering and the coverage report are the
@@ -2556,7 +2559,7 @@ function init() {
   langLiftBtn.addEventListener('click', async () => {
     const palFile = langPalFile.files && langPalFile.files[0];
     if (!palFile) {
-      setLangStatus('Choose your PAL disc image (.bin) first.', 'err');
+      setLangStatus('Choose your other disc image (.bin) first.', 'err');
       return;
     }
     langLiftBtn.disabled = true;
@@ -2565,14 +2568,15 @@ function init() {
       const mod = await ensureWasm(setStatus);
       const usa = await discBytes();
       const pal = new Uint8Array(await palFile.arrayBuffer());
-      setLangStatus('Reading the official text (this takes a moment) ...');
+      setLangStatus('Reading the text (this takes a moment) ...');
       await new Promise((r) => setTimeout(r, 30));
-      const r = mod.lift_official_pack(usa, pal, langFoldChk.checked);
+      const code = langCodeInput ? langCodeInput.value.trim() : '';
+      const r = mod.lift_official_pack(usa, pal, langFoldChk.checked, code || undefined);
       liftedPack = r.yaml;
       langLiftSaveBtn.hidden = false;
       langLiftSaveBtn.dataset.lang = r.language;
       setLangStatus(
-        `Official ${r.language.toUpperCase()} text read from ${r.exe}. ` +
+        `${r.language.toUpperCase()} text read from ${r.exe} (${r.build}). ` +
         'Now press "Patch my disc" below - the coverage report will say how much of it fits.',
         'ok');
       summaryEl.textContent = r.summary || '';
@@ -2588,11 +2592,12 @@ function init() {
   langLiftSaveBtn.addEventListener('click', () => {
     if (!liftedPack) return;
     const code = langLiftSaveBtn.dataset.lang || 'xx';
-    triggerDownload(new TextEncoder().encode(liftedPack), `legaia_${code}.official.yaml`);
-    setLangStatus(`Downloaded legaia_${code}.official.yaml - it holds the game's script, so keep it to yourself.`, 'ok');
+    triggerDownload(new TextEncoder().encode(liftedPack), `legaia_${code}.lifted.yaml`);
+    setLangStatus(`Downloaded legaia_${code}.lifted.yaml - it holds the game's script, so keep it to yourself.`, 'ok');
   });
 
-  // Re-lifting is required when the PAL disc or the accent choice changes.
+  // Re-lifting is required when the other disc, the language code or the
+  // accent choice changes.
   const invalidateLift = () => {
     liftedPack = null;
     langLiftSaveBtn.hidden = true;
@@ -2600,6 +2605,7 @@ function init() {
   };
   langPalFile.addEventListener('change', invalidateLift);
   langFoldChk.addEventListener('change', invalidateLift);
+  if (langCodeInput) langCodeInput.addEventListener('change', invalidateLift);
 
   // "Export a starter pack from my disc": dump a source-bearing working pack the
   // user can edit. Uses the chosen language code as the header stamp (or en).

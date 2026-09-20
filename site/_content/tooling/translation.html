@@ -13,7 +13,7 @@
     <dt>The one rule</dt><dd>Every edit is same-size in place. Each line has a byte <em>budget</em>; a line over budget is reported and left English.</dd>
     <dt>Sharing</dt><dd>A pack is safe to publish once its <code>source:</code> text is stripped - what remains is your text keyed by disc coordinates.</dd>
     <dt>Code</dt><dd><code>crates/patcher/src/translation/</code>; writes go through <code>DiscPatcher</code> (EDC/ECC re-encoded, no LBA moves).</dd>
-    <dt>Own a PAL disc?</dt><dd>Its official French / German / Italian text can be <a href="#official-pal">lifted onto the USA disc</a> from your own two discs.</dd>
+    <dt>Own another disc?</dt><dd>An official European disc's text, or a fan-translated disc's, can be <a href="#official-pal">lifted onto the USA disc</a> from your own two discs.</dd>
   </dl>
 </section>
 
@@ -179,12 +179,13 @@ sections:
 </section>
 
 <section class="doc-section" id="official-pal">
-  <h2>Official PAL translations</h2>
-  <p>Sony shipped French, German and Italian discs (<code>SCES_019.44</code> / <code>.45</code> / <code>.46</code>). They are structurally 1:1 with the USA disc, so their text lifts onto USA coordinates id-for-id and line-for-line - from your own two discs, in the browser or on the CLI. The official text is never bundled with this site.</p>
+  <h2>Translations from another disc</h2>
+  <p>Sony shipped French, German and Italian discs (<code>SCES_019.44</code> / <code>.45</code> / <code>.46</code>), plus Spanish (<code>.47</code>) and an English European release (<code>SCES_017.52</code>). They are structurally 1:1 with the USA disc, so their text lifts onto USA coordinates id-for-id and line-for-line - from your own two discs, in the browser or on the CLI. The official text is never bundled with this site. The three measured discs have their name tables pinned; the others are found by search at run time.</p>
+  <p><strong>Fan translations too.</strong> A community translation published as a binary patch (xdelta, PPF) becomes an editable pack the same way: apply the patch to the disc it was made for, then lift from the result with <code>--language</code> naming the language (the disc does not say). A patched USA disc works as well as a patched PAL one. Lines the patch left untouched lift as the underlying disc's text; Japanese discs are not readable this way.</p>
   <table>
     <thead><tr><th>Command</th><th>Does</th></tr></thead>
     <tbody>
-      <tr><td><code>translate lift-official --from PAL.bin --target USA.bin -o pack.yaml</code></td><td>Detects the language, re-keys every table and line into a filled working pack. <code>--fold-accents</code> (browser default) maps <code>&eacute;</code>&rarr;<code>e</code>, <code>&szlig;</code>&rarr;<code>ss</code>.</td></tr>
+      <tr><td><code>translate lift-official --from OTHER.bin --target USA.bin -o pack.yaml</code></td><td>Detects the build, re-keys every table and line into a filled working pack. <code>--language pt-BR</code> stamps a fan patch's language; <code>--baseline RETAIL.bin</code> blanks every line the patch left as the retail disc had it, so only the translator's own text remains. <code>--fold-accents</code> (browser default) maps <code>&eacute;</code>&rarr;<code>e</code>, <code>&szlig;</code>&rarr;<code>ss</code>.</td></tr>
       <tr><td><code>translate diff-disc</code></td><td>Alignment counts between two discs, text-free.</td></tr>
       <tr><td><code>translate fit-report</code></td><td>Per-string vs per-MAN fit, text-free.</td></tr>
     </tbody>
