@@ -685,7 +685,37 @@ order a second way. So the retail array is
 `[body, head, weapon, weapon, footwear, goods x3]` - **not** weapon-first.
 The engine's `EquipSlot` enum is its own model, and a record has to be
 re-ordered before a routine that indexes in retail's space walks it
-(`field_submode_screen::hub_panel_slots`).
+(`field_submode_screen::hub_panel_slots`). The port's window-25 panel takes
+the **browse row**, not the slot index
+(`equip_session::retail_slot_row_for_engine_slot`); feeding the slot index
+straight through put footwear on row `4` and so resolved a compare category
+for it, which retail does not (see
+[the candidate step](#what-the-candidate-step-draws-measured)).
+
+#### The `0x801E43E8` run is three tables, not one
+
+`0x801E43E8` is seven bytes and stops there. What follows it in the data
+segment are two separate arrays, and the byte between them is padding:
+
+| VA | shape | read by |
+|---|---|---|
+| `0x801E43E8` | 7 bytes, the browse row -> equip-byte map (entry `0` unused - row 0 takes the per-character weapon halfword instead) | ten `lui`/`addiu` sites in PROT 0899 |
+| `0x801E43EF` | one alignment byte | nothing, in any image |
+| `0x801E43F0` | 4 bytes `01 02 04 00` - the per-character equip **mask bits**, `and`ed with the equipment record's `+6` character mask | `0x801CFA0C`, `0x801D5808`, `0x801DB580` |
+| `0x801E43F4` | 8 halfwords - the per-row slot **pictogram ids** (four gear codes, `0x46` three times for the Goods rows, `0` terminator) | `lh` at `0x801D22B4`, `0x801D252C`, `0x801D3F44` |
+
+So bytes `[7..10]` of the run are not "the four gear-slot indices": byte 7
+is padding and bytes 8..10 are the first three entries of the character-mask
+table, whose fourth entry is its `0` terminator. The address scan is the
+evidence - `0x801E43EF` has no word, no `lui`/`addiu` pair and no branch in
+any image, while `0x801E43F0` and `0x801E43F4` each have three
+materialisation sites of their own.
+
+Nine of the ten sites inline the same two-arm resolver: row `0` reads `lh`
+from `DAT_8007B42C + char*2`, rows `1`+ read `lbu` from `0x801E43E8 + row`,
+and the resulting byte indexes `0x80084140 + char*0x414 + 0x75E` - the
+record's `+0x196` equip array seen through the live game-state window. The
+tenth (`0x801D3C14`) skips the arms and reads the fixed entry `1`.
 
 ### Which candidate list a slot row opens
 
@@ -724,6 +754,38 @@ item-effect table, because the equipment stat table - which is where every
 other restriction in that struct comes from - contains none of them.
 `EquipSession` asks the Goods question for engine slots `Ring1` / `Ring2` /
 `Accessory` and the armament question for the rest.
+
+### What the candidate step draws, measured
+
+Every library state parked on the Equip screen sits at slot-pick with the
+item panel blank, so window 24 and window 25 had no reference frame. A pad
+ladder driven off one of them - seek the browse cursor to each row, confirm
+into sub-screen `0x14`, wait for a staged id, capture - gives one frame per
+row (`scripts/pcsx-redux/autorun_equip_item_panel_capture.lua`). All seven
+rows open a populated list, the three Goods rows included.
+
+The candidate step opens both windows through one script,
+`0x801E4DC8` = `[05 00] [01 02] [06 17] [0A 17] [01 18] [01 19]`, so the
+frame carries three stacked panels down the left column:
+
+- **window 25** (top) - the character's display name, then one stat row set.
+- **window 24** (middle) - the hovered item's name with its owned count, its
+  description line, and for an equipment item the bonus values that item
+  carries.
+- **window 24's reserved box** (bottom, `(WX, WY + 0x38)` sized
+  `0x90 x 0x28`) - the accessory-passive name and its description, drawn
+  only when the hovered item has a passive. The four gear rows leave it
+  empty; the Goods rows fill it.
+
+The row set in window 25 is what the `slti v0, s0, 4` guard at `0x801D137C`
+decides. On rows 1..4 - weapon, helmet, body, **footwear** - the captured
+frames all print the ATK / UDF / LDF triple whatever is hovered, because the
+guard skips the category lookup and `a1` keeps its pre-loaded `0x40`. Only
+the three Goods rows resolve a category, and they do not agree with each
+other: an HP-boost accessory draws the MAX HP / MAX MP pair, while an
+accessory whose effect row falls outside the two banded ranges draws the
+same ATK / UDF / LDF triple as the gear rows. So "the Goods rows show HP/MP"
+is a property of the hovered item, not of the row.
 
 ### Best Equipment: how the candidates are picked
 
