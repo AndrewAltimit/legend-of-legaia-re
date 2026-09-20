@@ -58,11 +58,15 @@ pub enum FieldMenuSubsession {
         char_slot: u8,
     },
     Spells(SpellMenuSession),
-    /// The per-character list page with the spell list's **reorder**
-    /// (menu-overlay sub-screen `0x15`). Not a pause-menu row of its own:
-    /// retail reaches the page from the record screen's character picker,
-    /// and the engine reaches it from the Magic screen's spell list, which
-    /// lists exactly the rows the page permutes.
+    /// The per-character list page with the spell list's **reorder**.
+    ///
+    /// Not a pause-menu row of its own. It is the list half of menu-overlay
+    /// sub-screen `0x15` (`FUN_801DA2A0`), and `0x15` is what the root
+    /// picker's **row 3 - Status** routes to: `0x801D6C4C` is the only site
+    /// in PROT 0899 that writes `0x15` into the submenu word `DAT_801E46A4`,
+    /// and it sits in the root picker `FUN_801D6B20`'s row-3 arm. So the
+    /// screen this page hangs off is the Status screen, and a confirm there
+    /// is retail's own entry to it.
     ListOrder(ListOrderSession),
     Arts(ChainEditor),
     Status(StatusScreenSession),
@@ -103,7 +107,10 @@ impl FieldMenuSubsession {
                 }
             }
             FieldMenuRow::Magic => Self::Spells(build_spell_session(world, spell_catalog)),
-            FieldMenuRow::Status => Self::Status(StatusScreenSession::new(status_snapshots(world))),
+            FieldMenuRow::Status => Self::Status(
+                StatusScreenSession::new(status_snapshots(world))
+                    .with_spell_rows(status_spell_rows(world, spell_catalog)),
+            ),
             FieldMenuRow::Load => {
                 Self::Save(SaveSelectSession::for_rack(SaveSelectMode::Load, save_rack))
             }
@@ -120,9 +127,9 @@ impl FieldMenuSubsession {
             Self::Items(_) => FieldMenuRow::Items,
             Self::Equip { .. } => FieldMenuRow::Equip,
             Self::Spells(_) => FieldMenuRow::Magic,
-            // The reorder page is the Magic screen's, so a resume drops the
-            // hand back on the row it was opened from.
-            Self::ListOrder(_) => FieldMenuRow::Magic,
+            // The page hangs off the Status screen (retail's sub-screen
+            // `0x15`), so a resume drops the hand back on that row.
+            Self::ListOrder(_) => FieldMenuRow::Status,
             // The Arts chain editor is an engine extension with no
             // retail pause-menu row; park the resume cursor on Status
             // (the retail surface that lists a character's arts).
@@ -195,17 +202,6 @@ impl FieldMenuSubsession {
                 });
             }
             Self::Spells(s) => {
-                // Square over a caster's spell list opens the reorder page
-                // (retail reaches the same page from the record screen's
-                // character picker; the engine has no such screen, and the
-                // rows here are the ones it permutes). An empty list takes
-                // the reject arm and the press does nothing.
-                if pressed & PadButton::Square.mask() != 0
-                    && let Some(order) = open_list_order(s)
-                {
-                    *self = Self::ListOrder(order);
-                    return;
-                }
                 let _ = s.tick(SpellMenuInput::from_pad_edge(pressed));
             }
             Self::ListOrder(s) => {
@@ -229,6 +225,17 @@ impl FieldMenuSubsession {
                 });
             }
             Self::Status(s) => {
+                // Confirm on the shown character opens the reorder page -
+                // retail's own route, the confirm arm of sub-screen `0x15`'s
+                // character picker (`0x801DA3C8`). An empty list takes the
+                // reject arm (`ListOrderSession::open` answers `None`) and
+                // the press does nothing, exactly as retail buzzes and stays.
+                if pressed & PadButton::Cross.mask() != 0
+                    && let Some(order) = open_status_list_order(s)
+                {
+                    *self = Self::ListOrder(order);
+                    return;
+                }
                 let _ = s.tick(StatusInput::from_pad_edge(pressed));
             }
             Self::Save(s) => {
@@ -1108,30 +1115,44 @@ fn stat_record_from_character(c: &legaia_save::CharacterRecord) -> StatRecord {
     }
 }
 
-/// Open the list-reorder page over a caster's spell rows.
+/// Per-roster-member reorder rows for the Status screen's confirm, in the
+/// order [`status_snapshots`] publishes them.
+///
+/// The rows are the character's own spell list in **record order** - the
+/// same `+0x13D` / `+0x161` pair the Magic screen lists and
+/// [`crate::save_subscreen::sub15_swap_rows`] exchanges - so a swap made on
+/// the page is a swap on the Magic screen.
+fn status_spell_rows(world: &World, catalog: &SpellCatalog) -> Vec<Vec<ListOrderRow>> {
+    world
+        .party
+        .roster
+        .members
+        .iter()
+        .filter(|m| m.hp_mp_sp().hp_max != 0)
+        .map(|member| {
+            let list = member.spell_list();
+            list.ids[..(list.count as usize).min(list.ids.len())]
+                .iter()
+                .map(|&id| ListOrderRow {
+                    id,
+                    label: catalog
+                        .get(id)
+                        .map(|d| d.name.clone())
+                        .unwrap_or_else(|| format!("Spell {id}")),
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Open the list-reorder page over the Status screen's shown character.
 ///
 /// The step is the spell list's running twin, which is the one step of the
-/// three that carries the swap arm; the rows are the ones the Magic screen
-/// is already drawing, in record order, so the page permutes what the
-/// screen behind it lists.
-fn open_list_order(session: &SpellMenuSession) -> Option<ListOrderSession> {
-    let caster = match session.phase() {
-        crate::spell_menu::SpellMenuPhase::SpellSelect { caster, .. } => *caster,
-        _ => return None,
-    };
-    let rows: Vec<ListOrderRow> = session
-        .current_spell_rows()
-        .into_iter()
-        .map(|r| ListOrderRow {
-            id: r.spell_id,
-            label: r.name,
-        })
-        .collect();
-    let slot = session
-        .party()
-        .get(caster as usize)
-        .map(|c| c.slot)
-        .unwrap_or(caster);
+/// three that carries the swap arm
+/// ([`crate::save_subscreen::sub15_list_source`]).
+fn open_status_list_order(session: &StatusScreenSession) -> Option<ListOrderSession> {
+    let slot = session.current().map(|s| s.slot)?;
+    let rows = session.spell_rows_for_cursor().to_vec();
     ListOrderSession::open(LIST_ORDER_STEP_MAGIC, slot, rows)
 }
 

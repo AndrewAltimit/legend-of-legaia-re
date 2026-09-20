@@ -1666,6 +1666,30 @@ the Ra-Seru gate is the one the Magic caster picker applies - retail reads
 count when that byte is non-zero, so spells with no Seru equipped report an
 **empty** list rather than a populated one.
 
+### Which screen raises it, and which of the three lists it can reach
+
+Retail's own entry is the **root picker's row 3**. `0x801D6C4C` - in
+`FUN_801D6B20`'s row-3 arm - is the only site in PROT 0899 that writes
+`0x15` into the submenu word `DAT_801E46A4`, so the screen behind this page
+is the pause menu's Status row and nothing else opens it. (A scan for
+"window `0x15`" answers a different question: window `0x15` is the Equip
+screen's party window, opened by the Equip slot-browse's own script
+`0x801E4DA0` at `0x801D9ACC`. The window id space and the sub-screen id
+space are not the same space.)
+
+Inside the screen, the character picker's confirm arm at
+`0x801DA3C8..0x801DA448` folds the second cursor word
+(`DAT_801E46C0 & 0xFFF`, two columns of four that the Left / Right arms wrap
+as `{0,1,2,3}` and `{5,6,7,8}`) by subtracting `5` from anything `>= 6`, and
+then dispatches: folded `0` and `5` only hop the cursor to the other column,
+folded `1` buzzes `0x23`, folded `2` writes step `3` and folded `3` writes
+step `4`. **Nothing writes step `2`.** Tracking every store into
+`DAT_801E46AC` inside the routine's own extent (`0x801DA2A0..0x801DA9F4`)
+leaves three constants - `1` from the empty-list reject, `3` and `4` from
+the two arms above - plus the settle's `step + 3`. So the abilities list of
+steps `2` / `5` is decoded but has no entry in the shipped screen; the two
+lists a player can reach are the spell list and the `+0x185` one.
+
 Three details the arm chain at `0x801DA650..0x801DA6D0` makes explicit:
 
 - **Empty rejects before it settles.** The `len == 0` test runs ahead of the
@@ -1700,18 +1724,20 @@ Ported as `engine-core::save_subscreen::{sub15_list_source, sub15_list_len,
 sub15_frame, sub15_swap_rows}` (the record arithmetic) plus
 `engine-core::list_order::ListOrderSession` (the page: the clamping row
 picker, the seven-row window with retail's own Left/Right page arithmetic,
-and the latch/exchange confirm). Both hosts reach it with Square over a
-caster's spell list and draw it through one `engine-ui` builder; closing it
-runs `field_menu_dispatch::apply_list_order_outcome`, which re-derives the
-live row count from the record and replays the page's exchanges onto the
+and the latch/exchange confirm). Both hosts reach it by confirming on the
+pause menu's **Status** screen - retail's own route, since Status is the
+root picker's row `3` - and draw it through one `engine-ui` builder; closing
+it runs `field_menu_dispatch::apply_list_order_outcome`, which re-derives
+the live row count from the record and replays the page's exchanges onto the
 character's own bytes, so a cancelled visit changes nothing and an exchange
 naming a row the record no longer carries is dropped.
 
-The entry is the engine's, not retail's: retail opens the page from this
-screen's own character picker, which the port does not have. The Magic
-screen lists exactly the rows the page permutes, in record order, which is
-why that is the door. Which of the three lists the root command picker's row
-`3` selects is still open.
+The rows the confirm hands over are the shown character's spell list in
+record order (`status_screen::StatusScreenSession::spell_rows_for_cursor`,
+filled by `field_menu_dispatch::build`), which is the list retail's own
+reachable exchange arm permutes. What the port does not yet have is the
+screen's two-column second cursor, so the `+0x185` list - retail's other
+reachable step - has no door in the port either.
 
 ## See also
 

@@ -4,10 +4,14 @@
 //! Disc-free. The page is the port of sub-screen `0x15`'s browse half: a
 //! clamping row picker over a seven-row window with a latch-then-exchange
 //! confirm on the spell list. What this pins is the whole chain both hosts
-//! share - Square over a caster's spell rows opens the page, the exchange
-//! permutes the page, and closing it replays the exchange onto the
-//! character's own `0x414` bytes so the Magic screen behind it lists the new
+//! share - a confirm on the **Status** screen's character opens the page,
+//! the exchange permutes the page, and closing it replays the exchange onto
+//! the character's own `0x414` bytes so the Magic screen lists the new
 //! order.
+//!
+//! Status is retail's own route: `0x801D6C4C`, in the root picker
+//! `FUN_801D6B20`'s row-3 arm, is the only site in PROT 0899 that writes
+//! `0x15` into the submenu word `DAT_801E46A4`.
 
 use legaia_engine_core::battle_stats::EquipmentTable;
 use legaia_engine_core::field_menu::FieldMenuRow;
@@ -52,9 +56,9 @@ fn world_with_spells() -> World {
     world
 }
 
-fn magic_session(world: &World) -> FieldMenuSubsession {
+fn row_session(world: &World, row: FieldMenuRow) -> FieldMenuSubsession {
     FieldMenuSubsession::build(
-        FieldMenuRow::Magic,
+        row,
         world,
         &OptionsState::default(),
         &SaveRack::Blocks((0..3).map(SlotSnapshot::empty).collect()),
@@ -64,17 +68,16 @@ fn magic_session(world: &World) -> FieldMenuSubsession {
     )
 }
 
-/// Open the Magic screen's spell list for the lead caster, then the reorder
-/// page over it.
+/// Open the Status screen on the lead character, then confirm into the
+/// reorder page over that character's spell list.
 fn open_page(world: &World) -> FieldMenuSubsession {
-    let mut sub = magic_session(world);
-    sub.tick_pad_edge(PadButton::Cross.mask()); // char picker -> spell list
-    sub.tick_pad_edge(PadButton::Square.mask()); // spell list -> reorder page
+    let mut sub = row_session(world, FieldMenuRow::Status);
+    sub.tick_pad_edge(PadButton::Cross.mask()); // status char -> list page
     sub
 }
 
 fn screen_ids(world: &World) -> Vec<u8> {
-    let mut sub = magic_session(world);
+    let mut sub = row_session(world, FieldMenuRow::Magic);
     sub.tick_pad_edge(PadButton::Cross.mask());
     let FieldMenuSubsession::Spells(s) = &sub else {
         panic!("Magic builds a spell sub-session");
@@ -83,11 +86,11 @@ fn screen_ids(world: &World) -> Vec<u8> {
 }
 
 #[test]
-fn square_over_the_spell_list_opens_the_page_with_its_rows() {
+fn a_confirm_on_the_status_screen_opens_the_page_with_its_rows() {
     let world = world_with_spells();
     let sub = open_page(&world);
     let FieldMenuSubsession::ListOrder(page) = &sub else {
-        panic!("Square opens the reorder page");
+        panic!("the Status confirm opens the reorder page");
     };
     let ids: Vec<u8> = page.rows().iter().map(|r| r.id).collect();
     assert_eq!(ids, SPELLS.to_vec(), "the page lists the record's order");
