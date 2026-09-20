@@ -681,9 +681,9 @@ background-read cover rather than an arena screen.
 #### The panel-still consumer is in the hub, not the battle overlay
 
 It is `FUN_801D00F8` in **PROT 0977** at file `+0x18E0`, and it emits two
-`POLY_FT4` quads that between them cover the whole 320x240 screen out of
-VRAM `(384, 0)..(704, 240)` - tpage `0x106` for the left 192 columns and
-`0x109` for the right 128. The full geometry, the ordering-table path and the
+`POLY_FT4` quads that between them form one 320x240 image out of VRAM
+`(384, 0)..(704, 240)` - tpage `0x106` for the left 192 columns and `0x109`
+for the right 128. The full geometry, the ordering-table path and the
 fade byte are on
 [`ringside-still.md`](../formats/ringside-still.md#what-draws-it).
 

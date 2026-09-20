@@ -103,9 +103,11 @@ base it takes from the scratchpad block at `0x1F800314` (`+0xE0` = OT,
 | quad 1 | `0x106` | `(0,-20) - (192,220)` | `0..192` | `384..576` |
 | quad 2 | `0x109` | `(192,-20) - (320,220)` | `0..128` | `576..704` |
 
-Both carry `v` `0..240`. Together they cover the whole 320x240 screen and
-sample VRAM `(384, 0)..(704, 240)` - the still's own rectangle, minus the
-bottom 16 rows the upload writes and the draw does not read.
+Both carry `v` `0..240`, so the pair is one 320x240 image split down the
+middle, and between them they sample VRAM `(384, 0)..(704, 240)` - the still's
+own rectangle, minus the bottom 16 rows the upload writes and the draw does
+not read. The screen `y` span is `-20..220` rather than `0..240`; where that
+lands is the draw environment's offset, which this routine does not set.
 
 The routine's `a0` is clamped to `0..0xFF` and broadcast into all three colour
 bytes of each primitive's `code+rgb` word, so the caller's

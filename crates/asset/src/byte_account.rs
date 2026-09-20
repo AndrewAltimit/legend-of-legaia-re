@@ -2913,6 +2913,18 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
                 "battle camera-height table (battle_camera_table)",
             ),
             (
+                at(dome::SUBDRAW_PTR_TABLE_VA),
+                dome::SUBDRAW_PTR_TABLE_LEN * 4,
+                OWNER_TOC,
+                "muscle-dome sub-draw record pointers (muscle_dome)",
+            ),
+            (
+                at(dome::VICTORY_MSG_TABLE_VA),
+                dome::VICTORY_MSG_TABLE_LEN * 4,
+                OWNER_TOC,
+                "muscle-dome victory-message pointers (muscle_dome)",
+            ),
+            (
                 atkcam::ATTACK_CAMERA_FILE_OFFSET,
                 atkcam::ATTACK_CAMERA_LEN,
                 OWNER_RECORD,

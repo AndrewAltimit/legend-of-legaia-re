@@ -608,7 +608,7 @@ fn pinned_overlay_tables_are_claimed_outside_every_code_extent() {
     let map = legaia_asset::static_overlay::overlay_map();
     // Per entry: how many pinned-table rows, and their total bytes.
     let want: [(u32, usize, usize); 5] = [
-        (898, 15, 2128),
+        (898, 17, 2340),
         (899, 5, 860),
         (975, 4, 306),
         (976, 3, 3048),
