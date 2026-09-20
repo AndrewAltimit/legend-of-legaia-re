@@ -192,7 +192,17 @@ impl LegaiaRuntime {
     /// Build the shop panel's text draws in **stage** pixels, or `None` when
     /// no shop is up. Row labels + prices come from the live session; the
     /// geometry is `engine-ui`'s.
-    fn shop_stage_draws(&self, font: &legaia_font::Font) -> Option<Vec<TextDraw>> {
+    ///
+    /// `purse_drawn` is whether the retail descriptor windows are drawing
+    /// this frame: window 34 IS the gold readout, so the engine panel drops
+    /// its own footer whenever it draws, the way the native window's arm does
+    /// (`window/hud.rs` recomputes `show_gold` off `retail_windows`). Without
+    /// it this page printed the purse twice.
+    fn shop_stage_draws(
+        &self,
+        font: &legaia_font::Font,
+        purse_drawn: bool,
+    ) -> Option<Vec<TextDraw>> {
         let shop = self.menu.shop_session.as_ref()?;
         let state = MenuState::from_byte(self.menu.ctx_state());
         let cursor = self.menu.cursor() as usize;
@@ -310,6 +320,7 @@ impl LegaiaRuntime {
             })
             .collect();
         let title = self.menu.current_label();
+        let show_gold = if purse_drawn { None } else { show_gold };
         Some(ui::shop_draws_for(
             font, title, &rows, cursor, show_gold, SHOP_PEN,
         ))
@@ -356,6 +367,27 @@ impl LegaiaRuntime {
             )),
             _ => None,
         }
+    }
+
+    /// `[Label]` stand-in for a menu-runtime state neither the shop arm nor
+    /// the inn arm renders - the native window's `else` arm (and the inn's
+    /// own `_` arm) in `window/hud.rs`.
+    ///
+    /// It is a diagnostic row, and it is the difference between "this screen
+    /// has no draw yet" and a black frame with the pad captured. The native
+    /// window has always drawn it; this page drew nothing, so a menu state
+    /// with no renderer looked like a hang. A live SHOP session is excluded
+    /// on purpose: `ShopQuantity` legitimately contributes no rows, because
+    /// the retail descriptor windows carry that screen.
+    fn menu_label_stand_in(&self, font: &legaia_font::Font) -> Option<Vec<TextDraw>> {
+        if !self.menu.is_open() || self.menu.shop_session.is_some() {
+            return None;
+        }
+        Some(ui::text_draws_for(
+            &font.layout_ascii(&format!("[{}]", self.menu.current_label())),
+            SHOP_PEN,
+            ui::MENU_TEXT_WHITE,
+        ))
     }
 
     /// The shop menu's **seru-trade** screens: the offer list (`ShopTrade`)
@@ -1049,21 +1081,28 @@ impl LegaiaRuntime {
             return out;
         };
         // The native window's arm (`window/hud.rs`): with the system-UI
-        // chrome loaded the message rides the framed banner - in battle
-        // `battle_hud_draws_for` already emitted it, outside battle the
-        // spoils report frames it - so the loose pens only fire on a
-        // chrome-less host. This page drew both, stacking a loose "LEVEL
-        // UP!" run on the battle HUD's own row at the same pen.
-        if self
+        // chrome loaded the message rides retail's framed top-of-screen
+        // banner, and the loose pens only fire on a chrome-less host. The
+        // two framed paths are mutually exclusive by mode - in battle
+        // `battle_hud_draws_for` already emitted the banner (and yielded the
+        // plaque's seat to it), outside battle the rows are emitted here,
+        // because the port raises both messages a mode-tick after the fight
+        // has handed the frame back to the field.
+        //
+        // This arm used to `return` on the framed case, which drew the
+        // message in battle and NOTHING at all outside it: every level-up
+        // and every Seru capture on the field was silent on this page while
+        // the native window framed both.
+        let framed = self
             .menu_assets
             .as_ref()
-            .is_some_and(|a| a.chrome_rects().is_some())
-            && self
-                .menu_assets
-                .as_ref()
-                .and_then(|a| self.battle_banner_message(a))
-                .is_some()
-        {
+            .and_then(|a| self.battle_banner_message(a));
+        if let Some(message) = framed {
+            if world.mode != legaia_engine_core::world::SceneMode::Battle {
+                out.extend(ui::battle_hud_chrome::message_banner_text_draws_for(
+                    font, &message,
+                ));
+            }
             return out;
         }
         if let Some(b) = world.party.current_level_up_banner.as_ref() {
@@ -1275,12 +1314,11 @@ impl LegaiaRuntime {
         // context byte) and both draw through `shop_draws_for` at the same
         // pen, which is what the native window's `if shop … else if inn …`
         // arm expresses.
-        let shop = self
-            .shop_stage_draws(font)
-            .or_else(|| self.inn_stage_draws(font));
         // The retail descriptor windows ride alongside the engine's own
         // interactive list, exactly as they do in the native window: the list
-        // is the control, these are the readouts around it.
+        // is the control, these are the readouts around it. Built FIRST
+        // because whether they draw decides whether the panel keeps its own
+        // gold footer (window 34 is the purse).
         let mut windows = match self.menu.shop_session.as_ref() {
             Some(session) => self.shop_window_draws(
                 font,
@@ -1290,6 +1328,10 @@ impl LegaiaRuntime {
             ),
             None => Vec::new(),
         };
+        let shop = self
+            .shop_stage_draws(font, !windows.is_empty())
+            .or_else(|| self.inn_stage_draws(font))
+            .or_else(|| self.menu_label_stand_in(font));
         // The equipment-buy recipient flow's windows (36 / 25 / 41) ride
         // over the parked buy list while the picker owns the pad.
         if self.menu.recipient_session.is_some() {
