@@ -4638,9 +4638,10 @@ resident" a property of the link rather than an absence in the corpus. The map
 row and the measurement are on
 [`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md#a-resolution-ratio-is-not-a-base-test).
 
-What is left is only what its bytes *do*: with a base committed, the image's
-36,864 bytes stay residue for byte accounting, because a code image's parser is
-the dump corpus and no dump of this one exists
+What is left is only what its bytes *do*: a base is what lets an image be
+imported and dumped, and the dump corpus is a code image's parser, so with the
+base committed the image's code region is dumped and accounted - the base bought
+coverage, not a caller
 ([`byte-accounting.md`](../tooling/byte-accounting.md#a-base-is-not-a-dump-and-a-dump-is-not-a-caller)).
 
 
