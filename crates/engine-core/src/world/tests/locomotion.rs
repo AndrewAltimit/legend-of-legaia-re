@@ -142,7 +142,7 @@ fn precise_movement_stops_at_wall() {
     world.locomotion.precise_movement = true;
     world.actors[0].move_state.world_x = 200;
     world.actors[0].move_state.world_z = 250;
-    // Same wall band as `locomotion_stops_at_wall` - the precise stepper
+    // Same wall band as `locomotion_stops_at_wall_and_slides_along_it` - the precise stepper
     // routes through the same per-axis collision probes.
     world.paint_field_collision(1, (1, 2), (3, 4), 0);
     world.set_pad(input::PadButton::Up.mask());
@@ -152,7 +152,7 @@ fn precise_movement_stops_at_wall() {
 }
 
 #[test]
-fn locomotion_stops_at_wall() {
+fn locomotion_stops_at_wall_and_slides_along_it() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.install_field_player(0);
@@ -167,7 +167,13 @@ fn locomotion_stops_at_wall() {
     // Player advances 250 -> 254, then the candidate 256 lands in the
     // blocked tile and is rejected. Without the wall it would reach 258.
     assert_eq!(world.actors[0].move_state.world_z, 254);
-    assert_eq!(world.actors[0].move_state.world_x, 200);
+    // ... and the wall-slide resolver `FUN_80046494`, which
+    // `step_field_locomotion` now runs the held mask through, skids the
+    // player along that wall: the painted band is finite, so the resolver's
+    // perpendicular sweep finds more open ground on the `+X` side and ORs
+    // that bit into the mask the step loop walks. The pre-wire stepper
+    // stopped dead at `x = 200`.
+    assert_eq!(world.actors[0].move_state.world_x, 208);
 }
 
 #[test]
