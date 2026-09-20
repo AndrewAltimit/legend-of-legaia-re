@@ -874,6 +874,10 @@ about the cells that outlived their own fixtures.
 | `world/vm_hosts.rs` (op `4C EA`) | 1 | `8003c7ec` | Closed, and by the third exit rather than by a new fixture: `w1f2_field_vm_op_arms_disc` already drove the op from the disc's own bytecode and was simply not in `CANONICAL_LADDERS`. See [the promoted-oracle note](#a-third-way-a-row-closes-promote-the-oracle-that-already-drove-it) |
 | `equipment.rs` + `world/vm_hosts.rs` (op `4C 52`) | 1 | `800430ac` | Closed by the same promotion, and it is the sharper of the two: the op's **fallback** leg only runs when the bag misses, so the row was gated twice over, and the oracle drives the same real instruction under both bag states rather than once. See [the promoted-oracle note](#a-third-way-a-row-closes-promote-the-oracle-that-already-drove-it) |
 | `publisher_logos.rs` | 1 | `801cefd4` | Closed: `w3c_boot_logos_ladder` (`crates/web-viewer/tests/`) opens the logo phase on the browser play page and steps the sequencer to its end on a neutral pad, then again with Start. It is the only union member that starts **before** the title card, which is why one rung was enough |
+| `menu_arrange.rs` | 1 | `801d64a8` | The Items screen's **Arrange** command. `arrange_bag_slots` is called from `PauseItemsScreen::arrange`, which is command-window row 2, and the union's pause rungs open the list and the Use / Throw Out rows but never that one. A rung that opens Items, enters the command window and picks row 2 converts it |
+| `save_subscreen.rs` (sub-`0x15` list source) | 1 | `801da2a0` | The **list-order page**. `sub15_list_source` is what `ListOrderSession::open` asks which of the three lists it is showing, and the session is opened over the Magic screen's spell rows on both hosts - so the gate is a rung that opens the reorder page, not a missing wire |
+| `ui_menu_window_painters.rs` (window 37) | 1 | `801d5944` | The shop's **sell** quantity step. `sell_quantity_draws_for` is live on the browser play page (`play_shop.rs`), which is inside the union, and the union's shop rungs drive the **buy** branch; nothing sells an item and stops on the quantity window. Its native twin is a separate question - the painter has no native call site, which is a host-drift row rather than a reach one |
+| `ui_menu/records_screen.rs` | 1 | `801ed710` | The **battle-records** screen, reached from the dev menu on both hosts (`window/dev_menu.rs`; `play_dev_menu.rs`). `w1d_dev_menu_equip_ladder` opens the dev menu already, so the missing step is one row selection, not a host |
 
 All but the fog row are converted, and most were converted by ladders that
 already existed and were already canonical while the table went on naming the
@@ -1782,6 +1786,26 @@ part worth keeping rather than the fact that it emptied:
 | `801d9ae8` | - | leaves the page: `REPLACED-BY`, no host owed |
 | `801dd4c4` `801dd784` | (a) | the [`engine-vm` table](#engine-vm), on the op that spawns each timer |
 | `8004fe5c` `801d5854` | measurement | neither is a gap - see below |
+
+A later refresh added four more, and all four read the same way once the port
+is read rather than the address: each is wired on a host inside the union and
+each waits on a **rung nobody wrote**, so all four are (a) and all four are in
+[content not driven](#no-ladder-content-not-driven).
+
+| addresses | verdict | the step that would convert it |
+|---|---|---|
+| `801d64a8` | (a) | pick command-window row 2 (Arrange) on the Items screen |
+| `801da2a0` | (a) | open the list-order page over the Magic screen's spell rows |
+| `801d5944` | (a) | drive a shop **sell** to its quantity window, not a buy |
+| `801ed710` | (a) | select the records row in the dev menu a ladder already opens |
+
+The one thing worth separating out is `801d5944`'s second question. Its painter
+is called from the browser play page and from no native site, so "no ladder
+entered it" and "one host cannot enter it" are both true of that address and
+only the first is a reach verdict. A reach bucket answers what a fixture would
+do; whether the other host owes a call is
+[`host-drift.md`](host-drift.md)'s question, and conflating them would let a
+drift row be closed by writing a ladder.
 
 The pairing was the verdict-shaped part of the set, and it held: `801d1288` is
 the Muscle Dome tally's per-lane voice resolve and `80065034` is the audio side
