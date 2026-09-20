@@ -221,7 +221,7 @@ Party state + inverted-Y mirror cluster.
   (`legaia_engine_vm::escape_timer::EscapeTimer`).
 - **Sub-6** mutates `ctx.field_74`: 3-byte `[4C, 0xD6, b1]`, if `b1 == 4` clears top bit only, else sets bit 0x80000000 + shifts `b1` into the top byte; halts at PC.
 - **Sub-7** (1-byte) registers a `FUN_801DC0BC` list-walk callback then halts at PC.
-- **Sub-8** (9-byte) is a synchronous-spawn actor allocator: `[4C, 0xD8, vdf_idx, tmd_lo, tmd_hi, kind_lo, kind_hi, var_lo, var_hi]` decodes to `(vdf_idx: u8, tmd_idx: i16, kind: u16, variant: u16)` and routes through host hook [`FieldHost::op4c_n_d_sub8_call_d77f4`] (overlay-resident `FUN_801D77F4`, see `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt`); host writes `actor[+0x3C] = kind` and `actor[+0x3E] = variant` on the allocated slot. Unlike the queue-based `0x4C 0x80` halt-acquire path, the spawn is synchronous - the host emits `FieldEvent::ActorSpawned` directly, with no intervening `pending_actor_spawns` queueing. PC always += 9.
+- **Sub-8** (9-byte) is a synchronous-spawn actor allocator: `[4C, 0xD8, vdf_idx, tmd_lo, tmd_hi, kind_lo, kind_hi, var_lo, var_hi]` decodes to `(vdf_idx: u8, tmd_idx: i16, kind: u16, variant: u16)` and routes through host hook [`FieldHost::op4c_n_d_sub8_call_d77f4`] (overlay-resident `FUN_801D77F4`, see `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt`); host writes `actor[+0x3C] = kind` and `actor[+0x3E] = variant` on the allocated slot. Unlike the queue-based `0x4C 0x80` halt-acquire path, the spawn is synchronous - the host emits `FieldEvent::ActorSpawned` directly, with no `pending_actor_spawns` queueing. PC always += 9. What the spawner actually builds, and why `kind` / `variant` are narrower than their names, is [below](#what-the-0x4c-0xd8-spawner-builds).
 - **Sub-0xB** (13-byte) calls `FUN_801E57F0(operand)` then PC += 13 (the call site falls through to `LAB_801E2EA0: return param_2 + 0xD`); the helper itself was not decompilable (Ghidra's dump for that address shows data masquerading as code).
 - **Sub-0xC** (5-byte) and sub-0xE (5-byte) both call [`small_table_search`](script-vm.md#helper-functions) on a 1-byte needle, then loop over the active party records (stride `0x414`, byte at `+0x196`); on hit, both advance via the `LAB_801E360C` ce9c-jump path; sub-0xC additionally writes the matching slot. Both miss with PC += 5.
 
@@ -322,6 +322,34 @@ queues each one into `World::pending_actor_spawns`, and emits a `FieldEvent::Act
 
 Materializing the queued records into actor slots is a separate engine-side step. [`World::materialize_actor_spawns(start_slot)`] drains `pending_actor_spawns`, allocates the first inactive slot from `actors[start_slot..MAX_ACTORS]`, populates `Actor::spawn_record` with the raw bytecode bytes, and emits one `FieldEvent::ActorSpawned { slot, kind, variant, record }` per allocation. The retail allocator for this opcode (`overlay_world_map_801de840.txt:7080-7123`, case `8 sub-0`) allocates from pool `0x801f28a0` and writes `actor[+0x90]` (bytecode start), `actor[+0x94]` (parent back-pointer) and `actor[+0x54] = 0`; it does **not** write `actor[+0x3C]` (kind) or `actor[+0x3E]` (variant), so the event's `kind = 0` / `variant = 0` match retail - this is a faithful zero, not a placeholder.
 The `0x4C 0xD8` path is the one that decodes explicit `(kind, variant)` u16 immediates and routes through `FUN_801D77F4`; the `0x4C 0x80` path is bytecode-only by design. When the slot range is exhausted, a `FieldEvent::ActorSpawnFailed { record }` event surfaces the dropped request instead.
+
+#### What the `0x4C 0xD8` spawner builds
+
+`FUN_801D77F4` is not a generic allocator: it allocates from the **morph-weight
+descriptor** `0x8007068C`, whose `+0x8` handler word is `0x8002174C`
+(`legaia_engine_core::morph_weight_apply`), so every actor this opcode spawns
+is a mesh-morph actor. Its tail (`0x801D7848..0x801D79BC`, PROT 0897 file
+`+0x8FDC`) wires four fields from the instruction's own operands:
+
+| Actor field | Filled from |
+|---|---|
+| `+0x4C` morph block | the pack based at the global `0x8007B7DC`, indexed by operand 1: `block = base + u32_at(base + 4 + idx*4)`, opening with its own `u32` record count |
+| `+0x48` TMD base | the resident-object table `0x8007C018`, indexed by operand 2 (the table `FUN_801D8280` walks) |
+| `+0x90` rest pose | a **snapshot**, not an asset - see below |
+| `+0x3C` / `+0x3E` | the two `u16` immediates, verbatim |
+
+The rest pose is built, not loaded: the spawner sums `n_vert` over the
+block's records through the object table's `0x1C` stride, allocates `sum * 8`
+bytes via `FUN_80017888`, and copies each named group's live vertices into it
+with `lwl`/`lwr` + `swl`/`swr` pairs.
+
+The `+0x3C` / `+0x3E` row is the correction the field names hide. `FUN_8002174C` reads
+`+0x3C` and `+0x3E` as the morph weight envelope's **rise and fall rates**, so
+for this opcode the port's `kind` / `variant` are ramp speeds and carry no
+actor-class meaning. `+0x56` (render mode), `+0x68` and `+0x6E` (live weight)
+are all zeroed, so a freshly spawned morph actor starts at rest. Because the
+rest pose is snapshotted at spawn, nothing on the disc carries one - which is
+why a search for a rest-pose asset finds nothing.
 
 #### Where `0x4C 0xD8` occurs on the disc
 
