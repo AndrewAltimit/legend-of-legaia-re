@@ -68,16 +68,20 @@ pub enum MenuOpenEffect {
 ///
 /// PORT: FUN_801DAD6C
 ///
-/// NOT WIRED: **retail-unreachable**, so this is not a wiring gap and no
-/// host will ever close it. The engine's menu host does open its screens
-/// directly rather than running the sequence - but retail does not run it
-/// either. A five-form sweep of `SCUS_942.54`, all 31 based overlay images
-/// and the raw bytes of every extracted `PROT.DAT` entry finds no literal
-/// address word, no `jal`, no `j`, no branch and no `lui`+`addiu`
-/// materialisation for `FUN_801DAD6C` anywhere on the disc
-/// (`docs/tooling/address-reference-scan.md`). The routine is a real entry -
+/// REPLACED-BY: the menu host's direct screen open - each engine screen is a
+/// typed model the host constructs and enters in one step
+/// (`World::open_field_submode_screen`, the pause-menu screen stack), with no
+/// per-frame staging sequence to run.
+///
+/// That mechanism is the whole answer here, because the routine is
+/// **retail-unreachable** as well: a five-form sweep of `SCUS_942.54`, all 31
+/// based overlay images and the raw bytes of every extracted `PROT.DAT` entry
+/// finds no literal address word, no `jal`, no `j`, no branch and no
+/// `lui`+`addiu` materialisation for `FUN_801DAD6C` anywhere on the disc
+/// (`docs/tooling/address-reference-scan.md`). It is a real entry -
 /// `locate-entry-image.py` resolves it in PROT 0899 with its own frame - that
-/// nothing in the menu overlay or outside it reaches.
+/// nothing in the menu overlay or outside it reaches, so the port is not
+/// missing an observable behaviour and no host is owed a call.
 pub fn menu_open_step(step_no: &mut u32, busy: bool) -> MenuOpenEffect {
     match *step_no {
         0 => {

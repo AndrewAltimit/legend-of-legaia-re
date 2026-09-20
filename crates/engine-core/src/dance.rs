@@ -1858,19 +1858,19 @@ pub fn dance_clip_driver_gate(clip_id: i16, flags: u32) -> bool {
     clip_id > 0 || (flags & crate::minigame_actor::FLAG_DRIVE_CLIP) != 0
 }
 
-// NOT WIRED, AND REDUNDANT RATHER THAN MISSING - read the second paragraph
-// before treating this as wirable work.
+// REPLACED-BY: the browser dance page's cast-kind rig resolution - `castRigs()`
+// in `site/js/minigame-dance.js` maps the mode's spawn records to their
+// `dance_cast` kinds and hands those to `drawFace`, i.e.
+// `LegaiaMinigames::dance_face_rgba(rig, pose)`.
 //
-// No host needs the *selector*, because every host that stamps a face already
-// holds a rig id and never holds a slot index. The browser dance page resolves
-// its rigs from the disc **cast table** - `castRigs()` in
-// `site/js/minigame-dance.js` maps the mode's spawn records to their
-// `dance_cast` kinds and passes those straight to `drawFace`, which is
-// `LegaiaMinigames::dance_face_rgba(rig, pose)` - and on the qualifier floor
-// those kinds are already `0/2/3`, the exact output of the overlay's hard-coded
-// slot -> rig remap. The two arrive at the same rig from different data, so a
-// caller appears only if a host ever drives the floor by slot index instead of
-// by cast kind. Nothing does today, and nothing needs to.
+// No host is owed the *selector*, because every host that stamps a face
+// already holds a rig id and never holds a slot index. On the qualifier floor
+// the disc's cast kinds are already `0/2/3` - the exact output of the
+// overlay's hard-coded slot -> rig remap - so the two mechanisms arrive at the
+// same rig from different data. A caller appears only if a host ever drives
+// the floor by slot index instead of by cast kind. Nothing does, and the disc
+// table is the better source either way: it carries every mode, where the
+// remap is hard-coded for one.
 //
 // (The blockers an *earlier* reason named here - "no face pages resident, no
 // blit pass" - are indeed long gone: `legaia_asset::dance_art::FACE_RIGS`

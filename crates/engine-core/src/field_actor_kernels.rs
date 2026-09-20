@@ -241,15 +241,31 @@ pub struct ColourTweenStep {
 /// sites), landing at `+0xD6` as the draw's screen-effect selector - it is
 /// *not* template `[0]`, which lands at `+0xD2` as the blend.
 ///
-/// NOT WIRED: the two retail call sites are inside the field VM's
-/// screen-effect fade arm (`FUN_801DE840` at `0x801DFD68` and `0x801DFEE8`),
-/// and `engine-core` has no host hook for that sub-op - the `FieldHost` trait
-/// that would carry one lives in `engine-vm`. Every other input this needs is
-/// present: the descriptor's handler is [`ActorHandler::ColourTween`], the
-/// pool slot comes from `World::spawn_colour_tween`, and the template type is
-/// already ported.
+/// NOT WIRED: the blocker is a **representation conflict**, not a missing
+/// hook, and the earlier reading here ("`engine-core` has no host hook for
+/// that sub-op") does not survive a look at the host side. The hook exists
+/// and is live: both retail call sites are the field VM's op `0x34` sub-0 arm
+/// (`FUN_801DE840`, `jal 0x801DE2B0` at `0x801DFD68` and `0x801DFEE8`, on the
+/// `_DAT_1F800394 & 0x800000` default side of the fork), and that arm reaches
+/// `World::op34_sub0_color_intensity_setup` on both hosts.
+///
+/// What that impl does instead is ramp `World::presentation.effect_tint`, a
+/// float factor the renderers already read - while the pool side of this
+/// kernel emits [`ScreenTintPush`] triples that
+/// [`World::screen_tint_pushes`] collects and **nothing outside tests
+/// reads**. So spawning the tween from that arm today would step a correct
+/// tween whose pushes draw nothing, beside a ramp that keeps applying: two
+/// models of one observable, one of them invisible. Wiring it is the swap -
+/// the arm builds a [`crate::fade::FadeTemplate`], spawns through
+/// `World::spawn_colour_tween`, and the frame's pushes become the tint the
+/// renderers consume - not a second call bolted onto the ramp. Every other
+/// input is present: the descriptor's handler is
+/// [`ActorHandler::ColourTween`], the pool slot comes from
+/// `World::spawn_colour_tween`, the per-frame step runs in
+/// `World::tick_handler_actors`, and the template type is already ported.
 ///
 /// [`ActorHandler::ColourTween`]: crate::actor_handler::ActorHandler::ColourTween
+/// [`World::screen_tint_pushes`]: crate::world::World::screen_tint_pushes
 pub fn tween_from_fade_template(t: &crate::fade::FadeTemplate, kind: i16) -> ColourTween {
     let c = |v: [i16; 3]| (v[0] as u16, v[1] as u16, v[2] as u16);
     ColourTween {
