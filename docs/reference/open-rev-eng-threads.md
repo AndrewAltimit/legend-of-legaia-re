@@ -595,6 +595,7 @@ rather than a probe on retail.
 
 | Thread | Status | What would close it |
 |---|---|---|
+| Does the disc carry one `4C EA` occurrence or more than one? | open - the census and the op-arm oracle disagree by one | `field-op-census.md` counts exactly one coherent occurrence disc-wide; the promoted reach ladder `w1f2_field_vm_op_arms_disc` drives **two** `4C EA` sites at its own per-arm cap of two. A scene with two MAN carriers presents one record twice, so the oracle's figure is an *at least* and the census a count of records - settle it by checking whether `scene_man_carriers` aliases one `map03` record ([`reach-triage.md`](../tooling/reach-triage.md)). |
 | Which model owns the field screen-effect fade? | open - the port carries two representations and the renderers read the one nothing fills | Field-VM op `0x34` sub-0 is not a missing caller: `World::op34_sub0_color_intensity_setup` is live on both hosts. The port holds the fade twice over - an `effect_tint` float ramp the renderers read, and a `screen_tint_pushes` pool nothing reads - where retail has one, the ColorIntensity tint its effect actor drives. So one representation has to become the other: either the renderers consume the pushes, or the op spawns the tween that fills the ramp. What decides it is a retail beat measured rather than more reading of the port: a `juui1` tint or a prologue vignette, with the tint word logged per frame. |
 
 Four rows closed here at once, three of them the Equip screen's.
