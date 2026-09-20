@@ -1,7 +1,7 @@
 format: 'legaia-text-pack-v1'
 language: 'pt-BR'
 game: 'Legend of Legaia (USA) SCUS-94254'
-notes: 'Brazilian Portuguese (Portugues do Brasil) community pack: the fan translation by somentedan (published by joao13traducoes as a patch for the Spanish disc), lifted onto USA coordinates with translate lift-official. Item names abbreviated to their byte budgets; pause / battle menu labels added. Holds every name and the scene/event dialog lines that fit the USA disc''s sector-packed scenes in place (about two fifths of the script) - the other lines stay English. ASCII fold (the retail font has no accent glyphs); source-free distributable shape.'
+notes: 'Brazilian Portuguese (Portugues do Brasil) community pack: the fan translation by somentedan (published by joao13traducoes as a patch for the Spanish disc), lifted onto USA coordinates with translate lift-official. Item, magic and art names abbreviated to their byte budgets; pause / battle menu labels added. Holds every name and the scene/event dialog lines that fit the USA disc''s sector-packed scenes in place (about two fifths of the script) - the other lines stay English. ASCII fold (the retail font has no accent glyphs); source-free distributable shape.'
 contributors:
 - 'somentedan (translation)'
 - 'joao13traducoes (publication)'
@@ -715,6 +715,12 @@ sections:
   - key: 'scus:str:0x80012afc'
     translation: 'Chute veloz'
     budget: 15
+  - key: 'scus:str:0x80012b1c'
+    translation: 'Circulo Pedra'
+    budget: 15
+  - key: 'scus:str:0x80012b3c'
+    translation: 'Juizo Final'
+    budget: 11
   - key: 'scus:str:0x80012b48'
     translation: 'Onda Lapis'
     budget: 11
@@ -724,11 +730,38 @@ sections:
   - key: 'scus:str:0x80012b64'
     translation: 'Canhao Genocid'
     budget: 19
+  - key: 'scus:str:0x80012b78'
+    translation: 'Chama Rogue'
+    budget: 11
   - key: 'scus:str:0x80012b84'
     translation: 'Trovao de Rogue'
     budget: 15
+  - key: 'scus:str:0x80012b94'
+    translation: 'Vento Rogue'
+    budget: 11
+  - key: 'scus:str:0x80012ba0'
+    translation: 'Troca Elemento'
+    budget: 15
+  - key: 'scus:str:0x80012bc0'
+    translation: 'Quebra Sombria'
+    budget: 15
+  - key: 'scus:str:0x80012bd0'
+    translation: 'Tufao Trevas'
+    budget: 15
+  - key: 'scus:str:0x80012be0'
+    translation: 'Estrondo Giro'
+    budget: 15
+  - key: 'scus:str:0x80012bf0'
+    translation: 'Peso Pedra'
+    budget: 11
   - key: 'scus:str:0x80012bfc'
     translation: 'Neolio de vento'
+    budget: 15
+  - key: 'scus:str:0x80012c0c'
+    translation: 'Neo Corte Astro'
+    budget: 15
+  - key: 'scus:str:0x80012c2c'
+    translation: 'Prensa Gigaton'
     budget: 15
   - key: 'scus:str:0x80012c3c'
     translation: 'Agulha Trovao'
@@ -742,11 +775,17 @@ sections:
   - key: 'scus:str:0x80012c6c'
     translation: '{ce:1f}Terra'
     budget: 11
+  - key: 'scus:str:0x80012c84'
+    translation: 'Magia Seru Mau'
+    budget: 15
   - key: 'scus:str:0x80012cb8'
     translation: '{ce:15}Gilium'
     budget: 11
   - key: 'scus:str:0x80012cc4'
     translation: '{ce:1a}Puera'
+    budget: 11
+  - key: 'scus:str:0x80012cd0'
+    translation: '{ce:17}Escorreg.'
     budget: 11
   - key: 'scus:str:0x80012cdc'
     translation: '{ce:19}Colher'
@@ -790,21 +829,42 @@ sections:
   - key: 'scus:str:0x80012d7c'
     translation: '{ce:14}Gimard'
     budget: 11
+  - key: 'scus:str:0x80012d88'
+    translation: 'Salto de Ra'
+    budget: 11
   - key: 'scus:str:0x80012d94'
     translation: 'Lingua toxica'
     budget: 15
   - key: 'scus:str:0x80012da4'
     translation: 'Lingua venenosa'
     budget: 19
+  - key: 'scus:str:0x80012db8'
+    translation: 'Bicada'
+    budget: 11
   - key: 'scus:str:0x80012dd0'
     translation: 'Soco de plasma'
+    budget: 15
+  - key: 'scus:str:0x80012de0'
+    translation: 'Prensa Megaton'
+    budget: 15
+  - key: 'scus:str:0x80012df0'
+    translation: 'Corte Ardente'
     budget: 15
   - key: 'scus:str:0x80012e00'
     translation: 'Corte astral'
     budget: 15
+  - key: 'scus:str:0x80012e10'
+    translation: 'Tempestade Elet'
+    budget: 15
   - key: 'scus:str:0x80012e20'
     translation: 'Jogo mortal'
     budget: 11
+  - key: 'scus:str:0x80012e2c'
+    translation: 'Onda Paralisia'
+    budget: 15
+  - key: 'scus:str:0x80012e3c'
+    translation: 'Explosao Trovao'
+    budget: 15
   - key: 'scus:str:0x80012e4c'
     translation: 'Acessorios vazios'
     budget: 19
@@ -814,9 +874,15 @@ sections:
   - key: 'scus:str:0x80012e70'
     translation: 'Perigo d''agua'
     budget: 15
+  - key: 'scus:str:0x80012e90'
+    translation: 'Spray Fusao'
+    budget: 11
   - key: 'scus:str:0x80012e9c'
     translation: 'Beijo da morte'
     budget: 15
+  - key: 'scus:str:0x80012eac'
+    translation: 'Spray Mofo'
+    budget: 11
   - key: 'scus:str:0x80012eb8'
     translation: 'Orvalho veneno'
     budget: 15
@@ -826,9 +892,15 @@ sections:
   - key: 'scus:str:0x80012ed4'
     translation: 'Cortador vacuo'
     budget: 15
+  - key: 'scus:str:0x80012ee4'
+    translation: 'Raio Ocular'
+    budget: 11
   - key: 'scus:str:0x80012ef0'
     translation: 'Sopro venenoso'
     budget: 19
+  - key: 'scus:str:0x80012f04'
+    translation: 'Terramoto'
+    budget: 11
   - key: 'scus:str:0x80012f20'
     translation: 'Gde Garra'
     budget: 11
@@ -838,12 +910,18 @@ sections:
   - key: 'scus:str:0x80012f38'
     translation: 'Rajada Trovao'
     budget: 15
+  - key: 'scus:str:0x80012f48'
+    translation: 'Cauda Flama'
+    budget: 11
   - key: 'scus:str:0x80012f54'
     translation: 'Escudo Branco'
     budget: 15
   - key: 'scus:str:0x80012f64'
     translation: 'Decisao Fatal'
     budget: 15
+  - key: 'scus:str:0x80012f74'
+    translation: 'Carga Touro'
+    budget: 11
   - key: 'scus:str:0x80012f80'
     translation: 'Soco Besta'
     budget: 11
@@ -859,14 +937,29 @@ sections:
   - key: 'scus:str:0x80012fb8'
     translation: 'Cristais Agua'
     budget: 15
+  - key: 'scus:str:0x80012fc8'
+    translation: 'Raio Cruz'
+    budget: 11
+  - key: 'scus:str:0x80012fd4'
+    translation: 'Vento em V'
+    budget: 11
   - key: 'scus:str:0x80012fe0'
     translation: 'Onda Grand'
+    budget: 11
+  - key: 'scus:str:0x80012fec'
+    translation: 'Onda Apelo'
     budget: 11
   - key: 'scus:str:0x80012ff8'
     translation: 'Coluna d''agua'
     budget: 15
+  - key: 'scus:str:0x80013008'
+    translation: 'Maldiz Tudo'
+    budget: 11
   - key: 'scus:str:0x80013014'
     translation: 'Mais Pode'
+    budget: 11
+  - key: 'scus:str:0x80013020'
+    translation: 'Gas Esporos'
     budget: 11
   - key: 'scus:str:0x8001302c'
     translation: 'Sopro do caos'
@@ -874,6 +967,18 @@ sections:
   - key: 'scus:str:0x8001304c'
     translation: 'Hiperraio'
     budget: 15
+  - key: 'scus:str:0x8001305c'
+    translation: 'Hiperesmago'
+    budget: 11
+  - key: 'scus:str:0x80013074'
+    translation: 'Motosserra'
+    budget: 11
+  - key: 'scus:str:0x80013080'
+    translation: 'Golpe Infernal'
+    budget: 15
+  - key: 'scus:str:0x80013090'
+    translation: 'Sopro Lava'
+    budget: 11
   - key: 'scus:str:0x800130a8'
     translation: 'Pirueta'
     budget: 11
@@ -889,12 +994,18 @@ sections:
   - key: 'scus:str:0x800130ec'
     translation: 'Cortavento'
     budget: 11
+  - key: 'scus:str:0x800130f8'
+    translation: 'Ferrao Tox.'
+    budget: 11
   - key: 'scus:str:0x80013104'
     translation: 'Ferrao Venenoso'
     budget: 15
   - key: 'scus:str:0x80013114'
     translation: 'Cruz Culpada'
     budget: 15
+  - key: 'scus:str:0x80013124'
+    translation: 'Chama Caos'
+    budget: 11
   - key: 'scus:str:0x80013130'
     translation: 'Terra Irregular'
     budget: 15
@@ -904,39 +1015,111 @@ sections:
   - key: 'scus:str:0x8001314c'
     translation: 'Sopro Mofado'
     budget: 15
+  - key: 'scus:str:0x8001315c'
+    translation: 'Vene. Peixe'
+    budget: 11
   - key: 'scus:str:0x80013168'
     translation: 'Contra-Raio'
     budget: 15
+  - key: 'scus:str:0x80013184'
+    translation: 'Raio Joia'
+    budget: 11
   - key: 'scus:str:0x80013190'
     translation: 'Trovao de Gelo'
     budget: 15
+  - key: 'scus:str:0x800131a0'
+    translation: 'Garra Fogo'
+    budget: 11
   - key: 'scus:str:0x800131b8'
     translation: 'Gas Venenoso'
     budget: 15
   - key: 'scus:str:0x800131c8'
     translation: 'Bolhas Venenosas'
     budget: 19
+  - key: 'scus:str:0x800131dc'
+    translation: 'Cauda Fogo'
+    budget: 11
   - key: 'scus:str:0x800131e8'
     translation: 'Raio'
+    budget: 11
+  - key: 'scus:str:0x800131f4'
+    translation: 'Sopro Fogo'
+    budget: 11
+  - key: 'scus:str:0x80013200'
+    translation: 'Cura Estado'
     budget: 11
   - key: 'scus:str:0x8001320c'
     translation: 'Efeitos Desconh.'
     budget: 19
+  - key: 'scus:str:0x80013264'
+    translation: 'Inferno|Ataca todos.'
+    budget: 27
+  - key: 'scus:str:0x800132c8'
+    translation: 'Chuva Meteoros|Ataca todos.'
+    budget: 35
+  - key: 'scus:str:0x80013334'
+    translation: 'Ilusao Onirica|Ataca todos.'
+    budget: 35
+  - key: 'scus:str:0x8001339c'
+    translation: 'Olhos Sagrados|Cura HP dos aliados.'
+    budget: 35
+  - key: 'scus:str:0x800133f4'
+    translation: 'Blaster Final|Mata ou ataca.'
+    budget: 35
+  - key: 'scus:str:0x8001345c'
+    translation: 'Vento Violento|Ataca.'
+    budget: 27
+  - key: 'scus:str:0x800134c0'
+    translation: 'Onda Sonica|Ataca inimigo.'
+    budget: 27
+  - key: 'scus:str:0x80013528'
+    translation: 'Musica Infernal|Mata ou confunde.'
+    budget: 35
+  - key: 'scus:str:0x80013590'
+    translation: 'Laser Giratorio|Ataca + area.'
+    budget: 35
+  - key: 'scus:str:0x80013b5c'
+    translation: 'Lanca Miragem'
+    budget: 15
   - key: 'scus:str:0x80013bc4'
     translation: 'Artes. Giro para tras seguido|por dois pisoes fortes.'
     budget: 55
+  - key: 'scus:str:0x80013c38'
+    translation: 'Golpe Cisne'
+    budget: 11
   - key: 'scus:str:0x80013c8c'
     translation: 'Artes. Elegante chute no ar,|em tres fases.'
     budget: 43
+  - key: 'scus:str:0x80013d0c'
+    translation: 'Quebra Tempest.'
+    budget: 15
   - key: 'scus:str:0x80013d78'
     translation: 'Hiperartes do vento.|Golpe forte e veloz.'
     budget: 51
+  - key: 'scus:str:0x80013dfc'
+    translation: 'Chute Furacao'
+    budget: 15
   - key: 'scus:str:0x80013e6c'
     translation: 'Artes. Cotovelada |no corpo do inimigo.'
     budget: 51
   - key: 'scus:str:0x80013f2c'
     translation: 'Artes. Chute devastador no |ar.'
     budget: 35
+  - key: 'scus:str:0x80013f98'
+    translation: 'Soco Poder'
+    budget: 11
+  - key: 'scus:str:0x80013ffc'
+    translation: 'Artes. Soco superior|em duas fases, veloz.'
+    budget: 43
+  - key: 'scus:str:0x80014074'
+    translation: 'Combo Giro'
+    budget: 11
+  - key: 'scus:str:0x800140dc'
+    translation: 'Artes. Chute descendente|com giro frontal.'
+    budget: 43
+  - key: 'scus:str:0x800141a4'
+    translation: 'Hiperartes de fogo. Esmaga|a cabeca com chamas.'
+    budget: 47
   - key: 'scus:str:0x80014220'
     translation: 'Chama ardente'
     budget: 15
@@ -964,6 +1147,12 @@ sections:
   - key: 'scus:str:0x8007b574'
     translation: 'Broca'
     budget: 7
+  - key: 'scus:str:0x8007b58c'
+    translation: 'Praga'
+    budget: 7
+  - key: 'scus:str:0x8007b594'
+    translation: 'Brilho'
+    budget: 7
   - key: 'scus:str:0x8007b5a4'
     translation: 'Reviver'
     budget: 7
@@ -971,27 +1160,57 @@ sections:
   - key: 'scus:str:0x8001360c'
     translation: 'Chute Voador'
     budget: 19
+  - key: 'scus:str:0x8001369c'
+    translation: 'Cabecada'
+    budget: 11
+  - key: 'scus:str:0x800136dc'
+    translation: 'Soco Costas'
+    budget: 11
   - key: 'scus:str:0x8001371c'
     translation: 'Guilhotina'
     budget: 11
   - key: 'scus:str:0x80013764'
     translation: 'Decapitacao'
     budget: 15
+  - key: 'scus:str:0x800137b4'
+    translation: 'Chute Lado'
+    budget: 11
   - key: 'scus:str:0x80013800'
     translation: 'Chuva negra'
     budget: 11
   - key: 'scus:str:0x80013890'
     translation: 'Eletropaliza'
     budget: 15
+  - key: 'scus:str:0x800138e8'
+    translation: 'Chifrada'
+    budget: 11
   - key: 'scus:str:0x8001393c'
     translation: 'Soco do trovao'
+    budget: 15
+  - key: 'scus:str:0x8001397c'
+    translation: 'Tempestade Raio'
     budget: 15
   - key: 'scus:str:0x800139d0'
     translation: 'Punho Explosiv'
     budget: 15
+  - key: 'scus:str:0x80013a44'
+    translation: 'Rabo Reptil'
+    budget: 11
+  - key: 'scus:str:0x80013a80'
+    translation: 'Carga Acrobata'
+    budget: 15
   - key: 'scus:str:0x80013ac0'
     translation: 'Jabalina Sonica'
     budget: 15
+  - key: 'scus:str:0x80013b14'
+    translation: 'Golpe Nevasca'
+    budget: 15
+  - key: 'scus:str:0x80013ba8'
+    translation: 'Ataque Golfinho'
+    budget: 15
+  - key: 'scus:str:0x80013bfc'
+    translation: 'Passo Ave'
+    budget: 11
   - key: 'scus:str:0x80013c70'
     translation: 'Amor Forte'
     budget: 11
@@ -1001,11 +1220,26 @@ sections:
   - key: 'scus:str:0x80013d5c'
     translation: 'Brisa Gelada'
     budget: 15
+  - key: 'scus:str:0x80013dac'
+    translation: 'Lamina Abutre'
+    budget: 15
+  - key: 'scus:str:0x80013f50'
+    translation: 'Chute Corte'
+    budget: 11
+  - key: 'scus:str:0x80013fe4'
+    translation: 'Chute-Cruz'
+    budget: 11
   - key: 'scus:str:0x800140c4'
     translation: 'Comb. PP'
     budget: 11
   - key: 'scus:str:0x80014108'
     translation: 'Furacao'
+    budget: 11
+  - key: 'scus:str:0x80014188'
+    translation: 'Chama Tornado'
+    budget: 15
+  - key: 'scus:str:0x800141d4'
+    translation: 'Golpe Fogo'
     budget: 11
   accessory_passives:
   - key: 'scus:str:0x8001429c'
