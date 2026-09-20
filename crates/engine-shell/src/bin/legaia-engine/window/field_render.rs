@@ -421,12 +421,6 @@ impl PlayWindowApp {
         rebuilds
     }
 
-    /// Shim kept for the redraw loop: prop clips + touch/interact dispatch
-    /// are stepped by the world itself (`World::tick_prop_interactions`,
-    /// which runs inside `World::tick`'s field arm - collision drops and the
-    /// message sequencing live there). Nothing to do host-side.
-    pub(super) fn tick_field_prop_anims(&mut self) {}
-
     /// Build this frame's posed-prop draws. A prop resting on frame 0 replays
     /// its baked rest mesh (the cheap path - and where every prop sits until it
     /// is touched); one whose clip has moved is re-posed from the raw TMD at its

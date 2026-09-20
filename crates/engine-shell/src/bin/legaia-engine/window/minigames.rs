@@ -317,39 +317,25 @@ impl PlayWindowApp {
         }
     }
 
-    /// The dance side-channel frame: spawn the sequence-clear banner + stars
-    /// into the effect pool on the human's scoring judge
-    /// ([`legaia_engine_core::dance::good_banner_spawn`]), and run the Disco
-    /// King tutorial actor beside a how-to run.
+    /// The dance side-channel frame.
+    ///
+    /// It has nothing left to spawn. The sequence-clear banner and its two
+    /// stars are **gameplay**, not host presentation: the judge itself issues
+    /// the three `FUN_801d3fd0` spawns into the run's own part pool
+    /// ([`legaia_engine_core::dance::DanceGame::judge_press`] ->
+    /// [`legaia_engine_core::dance::good_banner_spawn`]), which every host
+    /// draws off [`legaia_engine_core::dance::DanceGame::sprite_part_emits`].
+    /// This window used to spawn the same set a **second** time into its own
+    /// host-side pool and draw both lists, so every cleared sequence painted
+    /// `GOOD!` and its stars twice at one seat.
+    ///
+    /// The Disco King tutorial actor runs inside `World::tick_dance`, beside
+    /// the session, so both hosts step it from one kernel; its cues come out
+    /// through `drain_minigame_sfx_cues`.
     pub(super) fn tick_dance_side(&mut self) {
-        use legaia_engine_core::dance::{self, Judge};
-        let in_dance = self.session.host.world.mode == SceneMode::Dance;
-        if !in_dance {
+        if self.session.host.world.mode != SceneMode::Dance {
             self.dance_fx_score = 0;
-            return;
         }
-        let score = self
-            .session
-            .host
-            .world
-            .minigames
-            .dance
-            .as_ref()
-            .map(|g| g.score())
-            .unwrap_or(0);
-        // Sequence-clear banner on the score edge of a scoring judge.
-        if in_dance && score > self.dance_fx_score {
-            if let Some(Judge::Sequence { weight }) =
-                self.session.host.world.minigames.dance_last_judge
-            {
-                self.minigame_fx
-                    .spawn_good_banner(&dance::good_banner_spawn(weight.min(0xFFFF) as u16));
-            }
-            self.dance_fx_score = score;
-        }
-        // The Disco King tutorial actor runs inside `World::tick_dance` now,
-        // beside the session, so both hosts step it from one kernel; its
-        // cues come out through `drain_minigame_sfx_cues`.
     }
 
     /// The venue scene's `.MAP` extended footprint - the engine's
@@ -436,7 +422,7 @@ impl PlayWindowApp {
                 && let Some(w) = self.fish_wander.as_ref()
                 && let Some(r) = fc::ripple_spawn(w.x, w.z, 0)
             {
-                self.minigame_fx.spawn_ripple(&r);
+                self.session.host.world.minigames.fx.spawn_ripple(&r);
             }
         }
         // Settle the actor onto the venue floor (the `.MAP` height grid
@@ -469,12 +455,8 @@ impl PlayWindowApp {
             .and_then(|s| s.last_outcome());
         match (self.fishing_prev_phase, phase) {
             (Some(FishingPhase::Casting), FishingPhase::Fighting) => {
-                self.minigame_fx.spawn_splash(&fc::splash_burst(
-                    fa::SCREEN_CENTRE.0,
-                    fa::SCREEN_CENTRE.1,
-                    0,
-                    0x40,
-                ));
+                // The strike splash is spawned by `World::tick_fishing` off
+                // the session's own phase edge, so every host gets it.
                 self.fish_line = Some(fa::LineActorSim::hooked());
                 // The cast lands: the lure spawns a fixed radius ahead of the
                 // venue anchor along the angler's facing, the same
@@ -523,7 +505,7 @@ impl PlayWindowApp {
                 cues.push(cue);
             }
             for b in &f.bursts {
-                self.minigame_fx.spawn_burst(b, origin);
+                self.session.host.world.minigames.fx.spawn_burst(b, origin);
                 if let Some(cue) = b.cue {
                     cues.push(cue);
                 }
@@ -596,9 +578,9 @@ impl PlayWindowApp {
     }
 
     /// Per-frame driver for every minigame side-channel this window hosts:
-    /// the minigame cue queue, the dance effect spawns, the fishing venue
-    /// actors, the Baka round chrome, the Muscle Dome hub-screen timers, and
-    /// the shared effect pool's ageing.
+    /// the minigame cue queue, the fishing venue actors, the Baka round
+    /// chrome and the Muscle Dome hub-screen timers. The effect pool itself
+    /// is aged by `World::tick`, where every host reaches it.
     pub(super) fn tick_minigame_extras(&mut self) {
         self.drain_minigame_sfx_cues();
         self.stage_dance_hud_art();
@@ -606,7 +588,6 @@ impl PlayWindowApp {
         self.tick_fishing_actors();
         self.tick_baka_chrome();
         self.tick_muscle_hub();
-        self.minigame_fx.tick();
     }
 
     /// Advance the Muscle Dome hub-screen timers one frame, off the world's
@@ -637,6 +618,17 @@ impl PlayWindowApp {
     /// [`MusclePhase::ends_turn`]: legaia_engine_core::muscle_dome::MusclePhase::ends_turn
     pub(super) fn tick_muscle_hub(&mut self) {
         use legaia_engine_core::muscle_dome::HubScreen;
+        // A dome leg the player WALKED into (the mode-24 door warp, drained
+        // by the shared scene host) carries no contest: the warp arm opens
+        // the leg and deliberately stages no `(course, round)`, because a
+        // door warp does not carry one. The debug launcher below opened the
+        // contest and loaded the hub page itself, so until now the window
+        // showed a contest line and a hub screen only for a fight started
+        // from a hotkey. Do what the browser play page does on every entry.
+        if self.session.host.world.minigames.muscle_dome.is_some() {
+            self.open_muscle_contest();
+            self.load_muscle_hub_assets();
+        }
         // The pad edges the skippable holds read (retail's `DAT_801D1A9C`
         // snapshot of `_DAT_8007B874 | _DAT_8007B938`).
         let pad = self.session.host.world.input.retail_pad().pressed as u16;
@@ -746,6 +738,29 @@ impl PlayWindowApp {
     /// descriptor table the shared emitters place every hub screen from.
     /// No-op when already loaded; logs and leaves `muscle_hub` empty when the
     /// disc or renderer is absent.
+    /// Stage the dome contest (`(course, round)` off the arena overlay and
+    /// the party's story flags) unless one is already open.
+    ///
+    /// The mode-24 door warp opens a leg without one on purpose - the warp
+    /// operand names an overlay, not a ladder position - so whichever host
+    /// runs the dome has to do this. The browser play page has always done it
+    /// on entry; this window used to do it only inside its `M` launcher.
+    pub(super) fn open_muscle_contest(&mut self) {
+        if self.session.host.world.minigames.muscle_contest.is_some() {
+            return;
+        }
+        let Ok(raw) =
+            self.session.host.index.entry_bytes_extended(
+                legaia_engine_core::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32,
+            )
+        else {
+            return;
+        };
+        let flags = self.session.host.world.muscle_contest_flags();
+        self.session.host.world.minigames.muscle_contest =
+            legaia_engine_core::muscle_dome::DomeContest::from_overlay(&raw, &flags);
+    }
+
     pub(super) fn load_muscle_hub_assets(&mut self) {
         use legaia_engine_render::other_game_hud as hud;
         if self.muscle_hub.is_some() {
