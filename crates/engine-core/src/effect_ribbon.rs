@@ -63,10 +63,12 @@
 //! 0874 / 0894, one `sb` pair in 0898, zero `actor + 0x80`-relative stores
 //! anywhere. Every literal stored is small; the computed ones are a motion
 //! script cursor (paired with the program base at `actor+0x90`) or the field
-//! VM's own return value, and the only `0x2000` immediates near any of them
-//! are pad-button masks, read out of a pad-state word at `+0xBB84` of that
-//! loop's own base register, in a field-overlay cursor that is not this
-//! struct at all.
+//! VM's own return value. Nine stores have a `0x2000`-class immediate within
+//! 24 instructions and none of them is a write of one: eight are pad-button
+//! tests (`lw ...,0xBB84(rX)` then `andi 0x2000` / `0x4000` / `0x8000`) in a
+//! field-overlay cursor whose `+0x9E` is a counter, and the ninth is a
+//! `0xDFFF_FFFF` clear mask applied to a different word (`+0x10`) that the
+//! proximity window swept in.
 //!
 //! So on the shipped disc `FUN_8001ADA4` case 4 always finds `& 0x6000 == 0`
 //! and takes the default emitter `FUN_80028158`; the `0x2000` arm is a call

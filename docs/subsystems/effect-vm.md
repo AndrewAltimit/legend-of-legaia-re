@@ -111,8 +111,11 @@ extracted `PROT.DAT` entries - covering `sh` at `+0x9E`, `sb` at `+0x9E`/`+0x9F`
 `actor + 0x80`, the base the dispatcher itself reads through - finds no site
 that writes a value carrying `0x2000` or `0x4000`. The stores that do exist
 write small literals, a motion-script cursor (paired with the program base at
-`actor+0x90`) or the field VM's own return value; the nine near misses are
-pad-button masks in a field-overlay cursor loop on a different struct.
+`actor+0x90`) or the field VM's own return value. Nine stores carry a
+`0x2000`-class immediate within 24 instructions and none of them writes one:
+eight are pad-button tests (`lw ...,0xBB84(rX)` then `andi`) in a field-overlay
+cursor whose `+0x9E` is a counter, and the ninth is a `0xDFFF_FFFF` clear mask
+on a different word that the proximity window swept in.
 
 That is a statement about the static writers, not a proof: a value loaded out
 of an effect record could carry the bit, and no parser decodes the five `src`
