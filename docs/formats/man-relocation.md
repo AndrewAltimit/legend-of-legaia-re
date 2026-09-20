@@ -63,6 +63,13 @@ fixups (all offsets per [`man_section`](../../crates/asset/src/man_section.rs)):
 4. **External descriptor** (`scene_asset_table`): the MAN's *decompressed* size
    is stored only in the scene-bundle descriptor word `(type<<24)|size`. Rewrite
    it with `scene_asset_table::encode_size_word` after recompressing.
+   Deltas are 16-bit two's-complement: retail keeps the script PC in a 16-bit
+   field, so a high-bit delta is a **backward** jump - the `[21] [26 FE FF]`
+   park loop (`script-vm.md`). The fixup inverts the target with the
+   sign-extended delta; reading it unsigned placed the loop's target past the
+   buffer, where every later splice shifted it while its base stayed put, so
+   the rewrite turned the loop into a forward jump that the preservation
+   check could not see (an unresolvable target on both sides compares equal).
 
 `data_region_offset` is derived (`0x2B + 3*total_records`) and does not move.
 
@@ -110,12 +117,21 @@ record-offset tables, `u24_at_28`, and straddling intra-record relative jumps ar
 all fixed, and the external descriptor decompressed-size word is the caller's to
 rewrite after recompressing.
 
-A dialog segment is a field-VM `0x49 0x00` message op whose text run is framed
-`0x1F <text> 0x00`; the decoder recovers the op's width by walking the message
-bytes to the `<= 0x1E` terminator, so a grown run keeps the fall-through decode
-in sync and every relative jump after it is still found + relocated.
+A dialog segment is a `0x1F <text> 0x00` run in the script stream - most often
+a bare segment the actor-dialog SM parks on, otherwise the inline MES of a
+`0x49 0x00` state-resume or a `0x4C E1` balloon. The decoder treats the bare
+segment and the `0x27..0x2A` picker jump table as strides of the stream
+([`script-vm.md`](../subsystems/script-vm.md#text-segments-and-pickers-are-strides-of-the-stream)),
+so a record's clean walk crosses its dialogue instead of ending at the first
+line, a grown run keeps the fall-through decode in sync, and every reference
+behind it is still found + relocated: the relative-jump family, and a picker's
+`i16` entries, each relative to its own offset with its handler past the option
+labels - the case a label edit straddles every time. The walk starts at each
+partition's own `pc0` (partition 0 `[n][2n][attr]`, partition 1 `[N][2N][4]`,
+partition 2 parsed); the partition-1 formula applied to a partition-0 record
+starts mid-op and never reaches the record's text.
 
-Two invariants keep this safe:
+Three invariants keep this safe:
 
 1. **Record-region gate.** Every edit must lie strictly before section 0 (the
    record region), inside a partition record. Dialog is field-VM script =
@@ -127,6 +143,13 @@ Two invariants keep this safe:
    resolving to the same instruction ordinal. A mis-relocated jump diverges the
    ordinal and is caught; the caller drops the growth and falls back to same-size
    abbreviation for that scene.
+3. **Text-site gate.** `man_edit::text_site` classifies a run by where it sits
+   on its record's clean walk: `Segment` (the lead is the text an instruction
+   carries - dialog), `Operand` (an instruction spans it - `CC 1F 50 4B 00`
+   reads `1F "PK" 00` but is a cross-context MENU_CTRL), or `Unreached` (the
+   walk ended first). `apply_text_edits` refuses an `Operand` run outright and
+   refuses to *shift* an `Unreached` one; the importer skips the former on
+   every path and writes the latter same-size only.
 
 **Budget = the MAN's on-disc footprint.** The recompressed grown MAN must still
 fit the gap from its compressed stream to the next asset descriptor (same LBA, no

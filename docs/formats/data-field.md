@@ -36,7 +36,7 @@ terminator
 
 The two heads of the run are homogeneous instead: `1204` is five `TMD2` chunks (the battle-form party meshes) and `1205` is eight `TIM` chunks of `0x8220` bytes each (their atlases) - which is what makes the atlas stride `0x8224`, chunk header included.
 
-**Scene bundles** - `MAN / MES / MOVE / VDF`, four chunks (`dolk2`, `rikuroa`, `rikuroa2`, `rayman`, `station`, `taiku`, `taiku2`, `doman`, `nilboa2`, `edbalden`, `eddoman`). Shorter variants drop the trailing `VDF` (`balden2`, `ropeway2`) or lead with a bare `TMD` where a `MAN` would sit (`balden`, `bubu1`, `edbubu`). Two entries are neither family: `init_data` is `TIM_LIST + TMD`, and `0890_sound_data2` is two `TIM`s.
+**Scene bundles** - `MAN / MES / MOVE / VDF`, four chunks (`dolk2`, `rikuroa`, `rikuroa2`, `rayman`, `station`, `taiku`, `taiku2`, `doman`, `nilboa2`, `edbalden`, `eddoman`). Shorter variants drop the trailing `VDF` (`balden2`, `ropeway2`) or lead with a bare `TMD` where a `MAN` would sit (`balden`, `bubu1`, `edbubu`). The leading MAN is uncompressed and the walker steps `4 + size` per chunk, so an editor may grow it in place: rewrite the chunk header, shift the later chunks verbatim - the translation importer's `stream_man` does exactly that, bounded by the `0x62C00`-byte arena the field init block-copies the whole entry into ([`asset-loader.md`](../subsystems/asset-loader.md)). Two entries are neither family: `init_data` is `TIM_LIST + TMD`, and `0890_sound_data2` is two `TIM`s.
 
 The chunk layouts are **single assets** in the `other5` family (one TIM, one TMD2, one MOVE2), not packs. Other clusters elsewhere in the corpus do use pack-shaped TIM_LIST / TMD chunks; the [pack format](pack.md) handles that case.
 

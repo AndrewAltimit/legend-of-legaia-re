@@ -561,3 +561,196 @@ fn text_edit_refuses_section_region_offset() {
     .unwrap_err();
     assert!(matches!(err, ManEditError::RecordNotFound { .. }));
 }
+
+#[test]
+fn text_edit_after_a_wait_loop_leaves_the_backward_jump_alone() {
+    // Record script (pc0 = 6): the per-frame park loop `[21] [26 FE FF]`
+    // (a backward jump of -2 onto the halt), then the dialog op, then a halt.
+    // Growing the dialog must not touch the loop: both its endpoints sit
+    // before the edit. Reading the delta as unsigned put the loop's target
+    // past the buffer, where every later splice shifted it while the base
+    // stayed - rewriting the loop into a forward jump that no round-trip
+    // check could see (an unresolvable target on both sides compares equal).
+    let mut rec = p2_prefix(); // pc0 = 6
+    rec.push(0x21); // rel 6: halt the loop parks on
+    rec.extend_from_slice(&jmp_rel(0xFFFE)); // rel 7..10: jump back to rel 6
+    rec.extend_from_slice(&mes_run(b"hi"));
+    rec.push(0x21);
+    let man = build_man(&[rec]);
+    let mf = man_section::parse(&man).unwrap();
+    let d = mf.data_region_offset;
+
+    let loop_jmp = field_disasm::decode(&man, d + 7).unwrap();
+    match loop_jmp.info {
+        field_disasm::InsnInfo::JmpRel { delta, target } => {
+            assert_eq!(delta, 0xFFFE);
+            assert_eq!(target, d + 6, "the loop parks on its own halt");
+        }
+        _ => panic!("expected JmpRel"),
+    }
+
+    let seg_1f = man[d..].iter().position(|&b| b == 0x1F).unwrap() + d;
+    let text_off = seg_1f + 1;
+    let term = man[text_off..].iter().position(|&b| b == 0x00).unwrap() + text_off;
+    let edit = TextEdit {
+        offset: text_off,
+        old_len: term - text_off,
+        new_bytes: b"hello there, stranger".to_vec(),
+    };
+    let out = apply_text_edits(&man, &[edit]).unwrap();
+
+    // The loop's bytes are untouched and it still decodes onto its halt.
+    assert_eq!(&out[d + 7..d + 10], &[0x26, 0xFE, 0xFF]);
+    let loop_jmp2 = field_disasm::decode(&out, d + 7).unwrap();
+    match loop_jmp2.info {
+        field_disasm::InsnInfo::JmpRel { delta, target } => {
+            assert_eq!(delta, 0xFFFE);
+            assert_eq!(target, d + 6);
+        }
+        _ => panic!("expected JmpRel"),
+    }
+    assert!(text_edits_preserve_scripts(&man, &out));
+}
+
+/// Build a synthetic MAN with records in all three partitions (each the
+/// *full* record bytes), the offset table in `[P0..P1..P2]` order, section 0
+/// right after the records and six zero-length terminator sections.
+fn build_man_parts(p0: &[Vec<u8>], p1: &[Vec<u8>], p2: &[Vec<u8>]) -> Vec<u8> {
+    let (n0, n1, n2) = (p0.len(), p1.len(), p2.len());
+    let data_region = RECORDS_BEGIN_OFFSET + 3 * (n0 + n1 + n2);
+    let mut blob = Vec::new();
+    let mut offsets = Vec::new();
+    for rec in p0.iter().chain(p1).chain(p2) {
+        offsets.push(blob.len() as u32);
+        blob.extend_from_slice(rec);
+    }
+    let u24_at_28 = blob.len() as u32;
+    let mut man = vec![0u8; data_region];
+    for (at, n) in [(0x22, n0), (0x24, n1), (0x26, n2)] {
+        man[at] = (n & 0xFF) as u8;
+        man[at + 1] = ((n >> 8) & 0xFF) as u8;
+    }
+    man[0x28] = (u24_at_28 & 0xFF) as u8;
+    man[0x29] = ((u24_at_28 >> 8) & 0xFF) as u8;
+    man[0x2A] = ((u24_at_28 >> 16) & 0xFF) as u8;
+    let mut cur = RECORDS_BEGIN_OFFSET;
+    for off in &offsets {
+        man[cur] = (off & 0xFF) as u8;
+        man[cur + 1] = ((off >> 8) & 0xFF) as u8;
+        man[cur + 2] = ((off >> 16) & 0xFF) as u8;
+        cur += 3;
+    }
+    man.extend_from_slice(&blob);
+    man.extend_from_slice(&[0u8; 18]);
+    man
+}
+
+/// A bare text segment `1F <text> 00`.
+fn text_seg(text: &[u8]) -> Vec<u8> {
+    let mut v = vec![0x1F];
+    v.extend_from_slice(text);
+    v.push(0x00);
+    v
+}
+
+fn find(hay: &[u8], needle: &[u8]) -> usize {
+    hay.windows(needle.len())
+        .position(|w| w == needle)
+        .expect("needle present")
+}
+
+#[test]
+fn partition0_record_walk_starts_after_the_attr_byte() {
+    // Partition-0 header `[n=1]["AB"][attr]`: pc0 = 4. Script: two nops, a
+    // sign text, then the park loop jumping back to the text lead.
+    let mut rec = vec![0x01, b'A', b'B', 0x00, 0x25, 0x21];
+    rec.extend(text_seg(b"Hi")); // script offsets 2..6
+    rec.extend(jmp_rel(0xFFFB)); // base 7 -> target 2 (the `1F`)
+    let man = build_man_parts(&[rec], &[], &[]);
+    let off = find(&man, b"\x1FHi\0") + 1;
+    // With the partition-1 formula (pc0 = 7) the walk would start inside
+    // the text; the record's own header puts it on the first opcode.
+    assert_eq!(text_site(&man, off), TextSite::Segment);
+    let out = apply_text_edits(
+        &man,
+        &[TextEdit {
+            offset: off,
+            old_len: 2,
+            new_bytes: b"Hello".to_vec(),
+        }],
+    )
+    .expect("grow");
+    assert!(text_edits_preserve_scripts(&man, &out));
+    // The backward jump now spans three more bytes: -5 becomes -8.
+    let jmp = find(&out, b"\x1FHello\0") + 7;
+    assert_eq!(&out[jmp..jmp + 3], &[0x26, 0xF8, 0xFF]);
+}
+
+#[test]
+fn picker_jump_entries_relocate_across_a_grown_label() {
+    // prompt, 2-option picker, two labels, then the two branch handlers.
+    let mut script = text_seg(b"Q?"); // 0..3
+    script.push(0x27); // open at 4; entries at 5..6 and 7..8
+    script.extend_from_slice(&(13i16).to_le_bytes()); // 5 + 13 = 18
+    script.extend_from_slice(&(12i16).to_le_bytes()); // 7 + 12 = 19
+    script.extend(text_seg(b"Yes")); // 9..13
+    script.extend(text_seg(b"No")); // 14..17
+    script.push(0x21); // handler 0 at 18
+    script.extend_from_slice(&[0x2B, 0x00]); // handler 1 at 19
+    script.push(0x21);
+    let man = build_man_parts(&[], &[p1_record(&script)], &[]);
+    let label = find(&man, b"\x1FYes\0") + 1;
+    assert_eq!(text_site(&man, label), TextSite::Segment);
+    let out = apply_text_edits(
+        &man,
+        &[TextEdit {
+            offset: label,
+            old_len: 3,
+            new_bytes: b"Sim!!".to_vec(),
+        }],
+    )
+    .expect("grow");
+    assert!(text_edits_preserve_scripts(&man, &out));
+    let open = find(&out, b"\x1FQ?\0") + 4;
+    let p = field_disasm::decode(&out, open).unwrap();
+    let InsnInfo::Picker { targets, .. } = p.info else {
+        panic!("not a picker");
+    };
+    // Both handlers moved two bytes; the entries did not, so every delta grew.
+    assert_eq!(&out[targets[0]..targets[0] + 1], &[0x21]);
+    assert_eq!(&out[targets[1]..targets[1] + 2], &[0x2B, 0x00]);
+    assert_eq!(targets[0], open + 1 + 15);
+    assert_eq!(targets[1], open + 3 + 14);
+}
+
+#[test]
+fn text_site_separates_dialog_from_operand_runs_and_unwalked_text() {
+    // `CC 1F 50 4B 00`: a cross-context MENU_CTRL whose operand bytes read
+    // `1F "PK" 00`; then a real segment; then an undecodable byte that ends
+    // the clean walk; then a segment the walk never reaches.
+    let mut script = vec![0xCC, 0x1F, 0x50, 0x4B, 0x00];
+    script.extend(text_seg(b"Hi"));
+    script.push(0x00);
+    script.extend(text_seg(b"Yo"));
+    let man = build_man_parts(&[], &[p1_record(&script)], &[]);
+    let pk = find(&man, b"\x1FPK\0") + 1;
+    let hi = find(&man, b"\x1FHi\0") + 1;
+    let yo = find(&man, b"\x1FYo\0") + 1;
+    assert_eq!(text_site(&man, pk), TextSite::Operand);
+    assert_eq!(text_site(&man, hi), TextSite::Segment);
+    assert_eq!(text_site(&man, yo), TextSite::Unreached);
+    let edit = |offset: usize| TextEdit {
+        offset,
+        old_len: 2,
+        new_bytes: b"Bem!".to_vec(),
+    };
+    assert_eq!(
+        apply_text_edits(&man, &[edit(pk)]),
+        Err(ManEditError::NotTextSegment { offset: pk })
+    );
+    assert_eq!(
+        apply_text_edits(&man, &[edit(yo)]),
+        Err(ManEditError::UnwalkedText { offset: yo })
+    );
+    assert!(apply_text_edits(&man, &[edit(hi)]).is_ok());
+}

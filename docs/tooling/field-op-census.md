@@ -91,18 +91,24 @@ counts a coherence gate could have moved and did not.
 
 ## What the census settled
 
-### `[4C EA]` - the scripted game-over - has exactly one carrier
+### `[4C EA]` - the scripted game-over - has one carrier per kingdom map
 
-One clean occurrence disc-wide, in the world-map bundle `map03` (PROT 0392),
-partition 2 record 9. Its neighbourhood is well-formed on both sides: a named
-scene change, a self-looping `JmpRel`, the `4C EA`, then a 12-frame wait and
-another self-loop - the shape of a scripted hand-off that never returns. A
-second occurrence in `map01` (PROT 0086) sits past that record's first decode
-error and is residue.
+Three clean occurrences disc-wide, one in each kingdom world-map bundle:
+`map01` (PROT 0086) partition 2 record 39, `map02` (PROT 0245) partition 1
+record 2, `map03` (PROT 0392) partition 2 record 9. The `map03` neighbourhood
+is the reference shape: a named scene change, a self-looping `JmpRel`, the
+`4C EA`, then a 12-frame wait and another self-loop - a scripted hand-off that
+never returns - and `map01` repeats it. The `map02` site sits between two
+`0x1F` lines of the debug menu's "Sound Test" / "Event Test" pool.
 
-So the runtime-reach row for the handler is not "no carrier exists": the
-carrier is one record of one world-map scene, and driving it is a story-state
-fixture rather than a missing instrument.
+The `map01` and `map02` sites once read as residue past a decode error. They
+were not: the walk had stopped at the record's first text segment (the
+disassembler treated a bare `0x1F` as an unknown opcode) or started three bytes
+late (the partition-1 header formula applied to a partition-0 record). With
+text segments and pickers decoded as strides of the stream, both records walk
+cleanly to their end. So the runtime-reach row for the handler is not "no
+carrier exists": the carrier is one record per world-map scene, and driving it
+is a story-state fixture rather than a missing instrument.
 
 ### `[4C 52]` - `TAKE_ITEM` - has three
 
@@ -113,7 +119,7 @@ system flag immediately before confiscating. The op's *fallback* leg - unequip
 when the bag misses - still needs the item worn rather than carried, so the row
 stays gated; what it no longer lacks is a carrier to point a fixture at.
 
-### `[4C CF]` - the script camera-focus override - has 46, all in one scene
+### `[4C CF]` - the script camera-focus override - has 50, all in one scene
 
 Every clean occurrence is in `uru` (PROT 0435), and the neighbourhoods place
 them beside `0x45 C0` camera applies and `CamCfg` writes. See

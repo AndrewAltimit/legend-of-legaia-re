@@ -32,6 +32,17 @@ fn render_mnemonic(insn: &Insn) -> String {
     };
     let body = match &insn.info {
         Nop => "Nop".into(),
+        TextSegment { len } => format!("Text len={len}"),
+        Picker {
+            count,
+            deltas,
+            targets,
+        } => {
+            let entries: Vec<String> = (0..*count as usize)
+                .map(|i| format!("{:+} -> 0x{:04X}", deltas[i], targets[i]))
+                .collect();
+            format!("Picker n={count} [{}]", entries.join(", "))
+        }
         ExecMove { move_id } => format!("ExecMove move_id={move_id}"),
         MoveTo { xb, zb } => format!("MoveTo xb=0x{xb:02X} zb=0x{zb:02X}"),
         JmpRel { delta, target } => {

@@ -85,7 +85,11 @@ a time rather than dropping the whole scene - or, with
 `import --allow-relayout`, grows the overflowing scene MAN by whole sectors via
 a full-ISO relayout so the dialog imports byte-faithfully (the image grows, so
 this writes `--output`, not a same-size `--patch`; built for the official PAL
-lifts, see [`pal-localizations.md`](pal-localizations.md)).
+lifts, see [`pal-localizations.md`](pal-localizations.md)). The ten streaming
+dungeon scenes (`raw:` keys - an uncompressed MAN leading a typed-chunk stream)
+take the same growth path: the MAN chunk is relocated like a scene MAN, the
+chunks after it shift, and the entry grows into its own sector slack or, with
+relayout, by whole sectors (`translation::stream_man`).
 
 ### What may / may not be committed
 
@@ -189,7 +193,7 @@ Sections and their patch mechanisms:
 | `accessory_passives` | Goods-menu passive names + descriptions | `scus:str:0x<va>` | same |
 | `party_names` | new-game roster names (Vahn/Noa/Gala/Terra) | `scus:party:<n>` | fixed 10-byte NUL-padded field (9-byte budget) |
 | `scene_dialog` | NPC/event dialog in the scene-bundle MANs | `man:<prot>:0x<off>` | edit the `0x1F`-segment inside the LZS-decompressed MAN (space-padded to its exact length), recompress, must fit the original compressed footprint |
-| `inline_text` | dialog/narration in raw carriers (v12 event-script prescripts, streaming-MAN dungeon scenes) | `raw:<prot>:0x<off>` | space-padded same-size overwrite directly in the PROT entry |
+| `inline_text` | dialog/narration in raw carriers (v12 event-script prescripts, streaming-MAN dungeon scenes) | `raw:<prot>:0x<off>` | space-padded same-size overwrite directly in the PROT entry; in a streaming dungeon scene a longer line grows the uncompressed MAN chunk instead (relocated like a scene MAN, later chunks shifted) - within the entry's sector slack, or by whole sectors with `--allow-relayout` |
 | `ui_menu` | overlay-resident UI strings: pause-menu / options / shop / equip / status command labels + in-battle system messages | `ui:<prot>:0x<va>` | overwrite the NUL-terminated string in the PROT **overlay** entry in place at `file offset = va - base_va`, re-terminate (short writes zero-fill the old span) |
 
 Strings pointer-shared by several table slots export once (the `context`
@@ -246,8 +250,11 @@ capped by `budget`:
   references (partition tables, `u24_at_28`, straddling relative jumps -
   `man_edit::apply_text_edits`), verified as the same program by re-walking
   both buffers (`text_edits_preserve_scripts`). The budget then becomes the
-  MAN's own footprint, not each string. See
-  [`man-relocation.md`](../formats/man-relocation.md).
+  MAN's own footprint, not each string. Each line is first placed on its
+  record's clean script walk (`man_edit::text_site`): a keyed run that turns
+  out to be a coincidence inside an instruction's operands is skipped on every
+  path with a diagnostic, and a run the walk never reaches is written same-size
+  only. See [`man-relocation.md`](../formats/man-relocation.md).
 - A whole scene's edits must additionally recompress into the MAN's original
   LZS footprint at the same LBA. Text compresses well, and the repack falls
   back to an optimal-parse LZS encoder (`legaia_lzs::compress_optimal` - exact

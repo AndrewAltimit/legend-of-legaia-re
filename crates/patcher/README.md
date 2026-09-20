@@ -1487,6 +1487,15 @@ space so index-keyed randomizer edits still resolve. Grows the image, so it writ
 `--output`, not a same-size `--patch`. See
 [`docs/tooling/pal-localizations.md`](../../docs/tooling/pal-localizations.md).
 
+The streaming dungeon scenes (`raw:` keys - an uncompressed MAN leading a
+`MAN / MES / MOVE / VDF` chunk stream) grow the same way through
+`translation::stream_man`: the MAN chunk is relocated with the scene-MAN
+rewriter, re-headered, the chunks after it shifted verbatim, and the entry
+grows into its own sector slack (a same-size-image write) or, under
+`--allow-relayout`, by whole sectors. The bound is the loader's `0x62C00`-byte
+asset arena the entry is copied into; the importer keeps a 64 KiB headroom
+under it for the VDF morph scratch window at the arena's top.
+
 Two pack shapes: a **working** pack carries `source:` (the game's own text - the
 translator's reference, gitignored, never committed) while a **distributable**
 pack (`translate strip`) drops the source and keeps only `key -> translation`,

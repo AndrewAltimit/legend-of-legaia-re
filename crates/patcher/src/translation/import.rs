@@ -9,7 +9,11 @@
 //!   and space-padded (`0x20`) to its exact original length (the pager walks
 //!   segments byte-by-byte, so the framing must not move), then the whole
 //!   MAN is recompressed and must fit its original compressed footprint;
-//! - `raw:*` - same space-padded overwrite, directly in the PROT entry.
+//! - `raw:*` - same space-padded overwrite, directly in the PROT entry; the
+//!   ten streaming dungeon scenes (an uncompressed MAN leading a typed-chunk
+//!   stream - [`super::stream_man`]) also get the generalized rewriter: a
+//!   longer line grows the MAN chunk, shifts the chunks after it, and either
+//!   fits the entry's own sector slack or (with relayout) grows the entry.
 //!
 //! Before writing, each target is verified:
 //!
@@ -31,7 +35,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result};
 
-use legaia_asset::man_edit::{self, TextEdit};
+use legaia_asset::man_edit::{self, TextEdit, TextSite};
 use legaia_asset::{item_names, new_game, scene_asset_table};
 
 use crate::disc::DiscPatcher;
@@ -40,6 +44,7 @@ use super::export::SceneManText;
 use super::markup::{self, Target};
 use super::pack::{Entry, LanguagePack};
 use super::segments;
+use super::stream_man::StreamManText;
 use super::ui;
 
 /// Import outcome counters + per-entry diagnostics.
@@ -477,63 +482,6 @@ fn plan_ui(
     Some((off, bytes))
 }
 
-/// One segment edit in the domain the key addresses (a decompressed MAN, or a
-/// raw PROT entry), measured and verified against the bytes actually there.
-///
-/// The segment's byte budget is its own `0x1F <text> 0x00` framing on this
-/// disc - never a number the pack asserts - so a bad pack can't overrun the
-/// text pool it edits. `Some(byte_len)` = written; `None` = nothing to write
-/// (already applied, or a diagnostic was recorded).
-fn apply_segment_edit(
-    buf: &mut [u8],
-    entry: &Entry,
-    off: usize,
-    source: Option<&[u8]>,
-    translated: &[u8],
-    report: &mut ImportReport,
-) -> Option<usize> {
-    // Framing, read off the disc: the 0x1F lead immediately before the keyed
-    // text offset, and the segment's own terminator after it.
-    let framed = off > 0
-        && buf.get(off - 1) == Some(&0x1F)
-        && segments::walk_to_terminator(buf, off).is_some_and(|t| buf[t] == 0x00);
-    if !framed {
-        report.issue(
-            &entry.key,
-            "segment framing not found at the keyed offset - skipped",
-        );
-        return None;
-    }
-    let term = segments::walk_to_terminator(buf, off).expect("framing checked");
-    let len = term - off;
-
-    let padded = pad_segment(translated, len);
-    if &buf[off..term] == padded.as_slice() {
-        report.already_applied += 1;
-        report.already_keys.push(entry.key.clone());
-        return None;
-    }
-    match source {
-        Some(src) => {
-            if &buf[off..term] != src {
-                report.issue(
-                    &entry.key,
-                    "disc bytes don't match the pack source (different disc revision or \
-                     a conflicting patch) - skipped",
-                );
-                return None;
-            }
-        }
-        None if !hint_agrees(entry, len, report) => return None,
-        None => {}
-    }
-    if !fits(entry, translated, len, report) {
-        return None;
-    }
-    buf[off..term].copy_from_slice(&padded);
-    Some(len)
-}
-
 /// A dialog segment inside a scene MAN, validated against the disc and ready
 /// to write: its decompressed-domain offset, current on-disc byte length (the
 /// `0x1F .. 0x00` framing span), and the encoded translated bytes.
@@ -554,11 +502,12 @@ enum SegPrep {
     Skip,
 }
 
-/// Validate a dialog segment against the bytes actually on the disc (framing,
-/// already-applied, wrong-disc guard) *without* mutating - the same checks as
-/// [`apply_segment_edit`], but returning the current framing span so the caller
-/// can choose the same-size or grow path. See [`apply_segment_edit`] for the
-/// budget rationale.
+/// Validate a dialog segment (in a decompressed MAN or a raw PROT entry)
+/// against the bytes actually on the disc - framing, already-applied,
+/// wrong-disc guard - *without* mutating, returning the current framing span
+/// so the caller can choose the same-size or grow path. The segment's byte
+/// budget is its own `0x1F <text> 0x00` framing on this disc, never a number
+/// the pack asserts, so a bad pack can't overrun the text pool it edits.
 fn prepare_segment(
     buf: &[u8],
     entry: &Entry,
@@ -598,6 +547,58 @@ fn prepare_segment(
         None if !hint_agrees(entry, old_len, report) => SegPrep::Skip,
         _ => SegPrep::Ready { old_len },
     }
+}
+
+/// Diagnostic for a keyed line whose `0x1F` framing is a coincidental byte
+/// run inside a decoded instruction's operands.
+const OPERAND_RUN_MSG: &str = "the text framing at this offset is a coincidence inside a \
+     decoded instruction's operands (an actor index followed by printable bytes), not a \
+     dialog segment - skipped (a write here would corrupt the script)";
+
+/// Same-size lines pre-applied into a decompressed MAN: `(offset, previous
+/// bytes, entry)`, the rollback shape the same-size path uses.
+type PreApplied<'a> = Vec<(usize, Vec<u8>, &'a Entry)>;
+
+/// Partition the ready lines of one decompressed MAN by [`TextSite`]: lines on
+/// a clean-walk text segment come back as the relocatable `ready` set; a line
+/// whose framing is an instruction's operand bytes is refused with a
+/// diagnostic; a line the walk does not reach is same-size only - applied into
+/// `decoded` here (space-padded) when it fits, and reported when it does not.
+/// The pre-applied `(offset, previous bytes, entry)` triples are returned so
+/// the caller counts them once a write happens and can roll them back.
+fn gate_text_sites<'a>(
+    decoded: &mut [u8],
+    ready: Vec<ReadyMan<'a>>,
+    report: &mut ImportReport,
+) -> (Vec<ReadyMan<'a>>, PreApplied<'a>) {
+    let mut walked = Vec::with_capacity(ready.len());
+    let mut applied = Vec::new();
+    for r in ready {
+        match man_edit::text_site(decoded, r.off) {
+            TextSite::Segment => walked.push(r),
+            TextSite::Operand => report.issue(&r.entry.key, OPERAND_RUN_MSG),
+            TextSite::Unreached | TextSite::NoRecord => {
+                if r.translated.len() > r.old_len {
+                    report.issue(
+                        &r.entry.key,
+                        format!(
+                            "translation needs {} bytes but the in-place budget is {} and \
+                             the script walk does not reach this line, so it cannot be \
+                             relocated (shorten this line)",
+                            r.translated.len(),
+                            r.old_len
+                        ),
+                    );
+                    continue;
+                }
+                let before = decoded[r.off..r.off + r.old_len].to_vec();
+                decoded[r.off..r.off + r.old_len]
+                    .copy_from_slice(&pad_segment(&r.translated, r.old_len));
+                applied.push((r.off, before, r.entry));
+            }
+        }
+    }
+    (walked, applied)
 }
 
 /// Attempt the **generalized rewriter** path for one scene MAN: grow/shrink
@@ -723,6 +724,44 @@ fn build_grown_entry_payload(
     debug_assert_eq!(new.len(), foot.len() + insert);
     debug_assert_eq!(new.len() % SECTOR, 0);
     Some((new, grown_sectors as u32))
+}
+
+/// Build a streaming scene entry's new **full-footprint payload** with its
+/// leading MAN chunk grown to carry every ready line at full length (see
+/// [`StreamManText`]). `ready` offsets are entry offsets (the `raw:` key
+/// space); each must lie inside the MAN chunk. Returns `(payload,
+/// grown_sectors)` - `grown_sectors == 0` when the entry's own trailing sector
+/// slack absorbs the growth, so the payload can be written in place - or
+/// `None` when the rewrite can't be done safely (a line outside the MAN, a
+/// record the relocator refuses, a program the round-trip doesn't preserve,
+/// or the loader arena bound).
+fn build_grown_stream_payload(
+    patcher: &DiscPatcher,
+    entry_idx: usize,
+    sm: &StreamManText,
+    ready: &[ReadyMan],
+) -> Option<(Vec<u8>, u32)> {
+    let range = sm.man_range();
+    let mut edits = Vec::with_capacity(ready.len());
+    for r in ready {
+        if r.off < range.start || r.off + r.old_len > range.end {
+            return None;
+        }
+        edits.push(TextEdit {
+            offset: r.off - range.start,
+            old_len: r.old_len,
+            new_bytes: r.translated.clone(),
+        });
+    }
+    let grown = man_edit::apply_text_edits(&sm.man, &edits).ok()?;
+    if !man_edit::text_edits_preserve_scripts(&sm.man, &grown) {
+        return None;
+    }
+    let foot = patcher.read_entry_footprint(entry_idx).ok()?;
+    let payload = sm.rebuild(&foot, &grown)?;
+    const SECTOR: usize = 2048;
+    let grown_sectors = (payload.len() / SECTOR).checked_sub(foot.len() / SECTOR)?;
+    Some((payload, grown_sectors as u32))
 }
 
 /// Apply `pack` to the patcher's image. Untranslated entries are untouched.
@@ -872,7 +911,14 @@ pub fn import_pack_phase(
                 });
             }
         }
-        if ready.is_empty() {
+        // Structural gate: a line is dialog only when its `0x1F` lead is the
+        // text an instruction on the record's clean script walk carries. A
+        // coincidental `1F .. 00` inside an instruction's operands is refused
+        // on every path (writing "text" there corrupts the script); a line the
+        // walk does not reach is written same-size only, pre-applied here so
+        // the grown MAN carries it and the same-size rollback covers it.
+        let (ready, mut applied) = gate_text_sites(&mut man.decoded, ready, &mut report);
+        if ready.is_empty() && applied.is_empty() {
             continue;
         }
 
@@ -888,10 +934,13 @@ pub fn import_pack_phase(
                     man.man_descriptor_off as u64,
                     &scene_asset_table::encode_size_word(0x03, new_size).to_le_bytes(),
                 )?;
-                report.applied += ready.len();
+                report.applied += ready.len() + applied.len();
                 report
                     .applied_keys
                     .extend(ready.iter().map(|r| r.entry.key.clone()));
+                report
+                    .applied_keys
+                    .extend(applied.iter().map(|(_, _, en)| en.key.clone()));
                 continue;
             }
             // The full-length dialog overflows the MAN's compressed footprint.
@@ -904,7 +953,11 @@ pub fn import_pack_phase(
                 pending_growth.insert(entry_idx, payload);
                 pending_meta.push((
                     entry_idx,
-                    ready.iter().map(|r| r.entry.key.clone()).collect(),
+                    ready
+                        .iter()
+                        .map(|r| r.entry.key.clone())
+                        .chain(applied.iter().map(|(_, _, en)| en.key.clone()))
+                        .collect(),
                     grown_sectors,
                 ));
                 continue;
@@ -915,7 +968,6 @@ pub fn import_pack_phase(
         // place, report the over-budget ones (the MAN couldn't be grown to fit
         // them), then recompress with a longest-first rollback if the scene's
         // dialog no longer fits its compressed footprint.
-        let mut applied: Vec<(usize, Vec<u8>, &Entry)> = Vec::new();
         for r in &ready {
             if r.translated.len() > r.old_len {
                 report.issue(
@@ -976,30 +1028,12 @@ pub fn import_pack_phase(
         }
     }
 
-    // Apply all staged whole-sector MAN grows in one disc relayout, so the PROT
-    // index space (and every later index-keyed edit) is preserved. Same-size
-    // edits above are already in the image and carried through the rebuild.
-    if !pending_growth.is_empty() {
-        match patcher.grow_prot_entries(&pending_growth) {
-            Ok(()) => {
-                for (_, keys, grown_sectors) in &pending_meta {
-                    report.relayout_entries += 1;
-                    report.relayout_sectors_added += grown_sectors;
-                    report.applied += keys.len();
-                    report.applied_keys.extend(keys.iter().cloned());
-                }
-            }
-            Err(e) => {
-                for (entry_idx, keys, _) in &pending_meta {
-                    for k in keys {
-                        report.issue(k, format!("scene {entry_idx}: disc relayout failed: {e}"));
-                    }
-                }
-            }
-        }
-    }
-
-    // Raw carriers: direct same-size in-place writes, one read per PROT entry.
+    // Raw carriers: one read per PROT entry. A streaming dungeon scene (an
+    // uncompressed MAN leading a typed-chunk stream) gets the generalized
+    // rewriter - grow the MAN chunk, shift the later chunks, fit the entry's
+    // own sector slack or (with relayout) grow the entry by whole sectors;
+    // anything else, and any line the rewriter can't carry, is a same-size
+    // in-place write.
     for (entry_idx, edits) in raw_work {
         let mut window = match patcher.read_entry(entry_idx) {
             Ok(b) => b,
@@ -1028,24 +1062,145 @@ pub fn import_pack_phase(
             }
             continue;
         }
-        for (off, en) in edits {
+        // Validate each segment against the disc once (framing / already-applied
+        // / wrong-disc guard), collecting the ready set with its current span.
+        let mut ready: Vec<ReadyMan> = Vec::new();
+        for (off, en) in &edits {
             let Ok(source) = encode_source(en, Target::Segment, &mut report) else {
                 continue;
             };
             let Some(translated) = encode_translation(en, Target::Segment, &mut report) else {
                 continue;
             };
-            if let Some(len) = apply_segment_edit(
-                &mut window,
+            if let SegPrep::Ready { old_len } = prepare_segment(
+                &window,
                 en,
-                off,
+                *off,
                 source.as_deref(),
                 &translated,
                 &mut report,
             ) {
-                patcher.patch_prot_entry(entry_idx, off as u64, &window[off..off + len])?;
+                ready.push(ReadyMan {
+                    off: *off,
+                    old_len,
+                    translated,
+                    entry: en,
+                });
+            }
+        }
+        if ready.is_empty() {
+            continue;
+        }
+
+        // Streaming dungeon MAN: the same structural gate as the LZS MANs
+        // (keyed offsets are entry offsets; the MAN sits at `man_range()`),
+        // and any line the walk does not reach stays same-size only.
+        let sm = StreamManText::locate(&window);
+        let (ready, blind) = match &sm {
+            Some(sm) => {
+                let start = sm.man_range().start;
+                let mut walked = Vec::new();
+                let mut blind = Vec::new();
+                for r in ready {
+                    match r
+                        .off
+                        .checked_sub(start)
+                        .map(|o| man_edit::text_site(&sm.man, o))
+                    {
+                        Some(TextSite::Segment) => walked.push(r),
+                        Some(TextSite::Operand) => report.issue(&r.entry.key, OPERAND_RUN_MSG),
+                        _ => blind.push(r),
+                    }
+                }
+                (walked, blind)
+            }
+            None => (Vec::new(), ready),
+        };
+
+        // Escape hatch: a line longer than its span grows the streaming MAN.
+        // In the entry's own slack it is a same-size-image write (PPF-safe);
+        // past it, a whole-sector grow staged for the relayout pass. The
+        // same-size (blind) lines are written first so the grown payload,
+        // built from a fresh read of the entry, carries them too.
+        for r in &blind {
+            if r.translated.len() <= r.old_len {
+                let padded = pad_segment(&r.translated, r.old_len);
+                window[r.off..r.off + r.old_len].copy_from_slice(&padded);
+                patcher.patch_prot_entry(entry_idx, r.off as u64, &padded)?;
                 report.applied += 1;
-                report.applied_keys.push(en.key.clone());
+                report.applied_keys.push(r.entry.key.clone());
+            }
+        }
+        if ready.iter().any(|r| r.translated.len() > r.old_len)
+            && let Some(sm) = StreamManText::locate(&window)
+            && let Some((payload, grown_sectors)) =
+                build_grown_stream_payload(patcher, entry_idx, &sm, &ready)
+        {
+            if grown_sectors == 0 {
+                patcher.patch_prot_entry(entry_idx, 0, &payload)?;
+                report.applied += ready.len();
+                report
+                    .applied_keys
+                    .extend(ready.iter().map(|r| r.entry.key.clone()));
+                continue;
+            }
+            if allow_relayout {
+                pending_growth.insert(entry_idx, payload);
+                pending_meta.push((
+                    entry_idx,
+                    ready.iter().map(|r| r.entry.key.clone()).collect(),
+                    grown_sectors,
+                ));
+                continue;
+            }
+        }
+
+        // Same-size path: the fitting lines in place, space-padded; the rest
+        // reported (the carrier couldn't be grown to fit them).
+        for r in ready
+            .iter()
+            .chain(blind.iter().filter(|r| r.translated.len() > r.old_len))
+        {
+            if r.translated.len() > r.old_len {
+                report.issue(
+                    &r.entry.key,
+                    format!(
+                        "translation needs {} bytes but the in-place budget is {} and the \
+                         scene MAN could not be grown to fit it (shorten this line)",
+                        r.translated.len(),
+                        r.old_len
+                    ),
+                );
+                continue;
+            }
+            let padded = pad_segment(&r.translated, r.old_len);
+            window[r.off..r.off + r.old_len].copy_from_slice(&padded);
+            patcher.patch_prot_entry(entry_idx, r.off as u64, &padded)?;
+            report.applied += 1;
+            report.applied_keys.push(r.entry.key.clone());
+        }
+    }
+
+    // Apply all staged whole-sector grows (scene-bundle MANs and streaming
+    // carriers alike) in one disc relayout, so the PROT index space (and every
+    // later index-keyed edit) is preserved. Same-size edits above are already
+    // in the image and carried through the rebuild.
+    if !pending_growth.is_empty() {
+        match patcher.grow_prot_entries(&pending_growth) {
+            Ok(()) => {
+                for (_, keys, grown_sectors) in &pending_meta {
+                    report.relayout_entries += 1;
+                    report.relayout_sectors_added += grown_sectors;
+                    report.applied += keys.len();
+                    report.applied_keys.extend(keys.iter().cloned());
+                }
+            }
+            Err(e) => {
+                for (entry_idx, keys, _) in &pending_meta {
+                    for k in keys {
+                        report.issue(k, format!("scene {entry_idx}: disc relayout failed: {e}"));
+                    }
+                }
             }
         }
     }

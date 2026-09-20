@@ -12,7 +12,11 @@
 //!     sector's MSF header matches its new position;
 //!   - the man-dialog abbreviation count drops sharply vs the same-size import;
 //!   - every filled dialog line in a relayout-grown entry is present at **full
-//!     length** in the patched decompressed MAN (no abbreviation).
+//!     length** in the patched decompressed MAN (no abbreviation);
+//!   - the streaming dungeon scenes (an uncompressed MAN leading a typed-chunk
+//!     stream, keyed `raw:`) grow the same way: their rebuilt streams still
+//!     terminate, the chunks after the MAN survive byte-for-byte, and every
+//!     applied `inline_text` line is present at full length.
 //!
 //! Needs the USA disc (`LEGAIA_DISC_BIN`) + a PAL disc (`LEGAIA_PAL_DISC_BIN`);
 //! skips + passes when either is unset (no Sony bytes are committed; CI has no
@@ -23,6 +27,7 @@ use legaia_iso::write::{is_form2, mode2_form1_sector_is_valid};
 use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::translation::export::SceneManText;
 use legaia_patcher::translation::markup::{self, Target};
+use legaia_patcher::translation::stream_man::StreamManText;
 use legaia_patcher::translation::{import_pack, import_pack_relayout, lift};
 
 fn load(var: &str) -> Option<Vec<u8>> {
@@ -37,7 +42,7 @@ fn abbreviation_issues(report: &legaia_patcher::translation::ImportReport) -> us
         .issues
         .iter()
         .filter(|(k, m)| {
-            k.starts_with("man:")
+            (k.starts_with("man:") || k.starts_with("raw:"))
                 && (m.contains("could not be grown to fit") || m.contains("rolled back"))
         })
         .count()
@@ -80,11 +85,14 @@ fn relayout_imports_official_dialog_byte_faithfully() {
     );
     assert!(report.relayout_sectors_added >= report.relayout_entries as u32);
 
-    // The relayout eliminated the overflow-class abbreviations.
+    // The relayout eliminated the overflow-class abbreviations - every one:
+    // with text segments, pickers and the per-partition record header
+    // decoded, each record's clean walk reaches every genuine line, so no
+    // scene is left to the same-size fallback.
     let relayout_abbrev = abbreviation_issues(&report);
-    assert!(
-        relayout_abbrev < plain_abbrev,
-        "relayout should reduce abbreviation: {relayout_abbrev} vs {plain_abbrev}"
+    assert_eq!(
+        relayout_abbrev, 0,
+        "relayout left {relayout_abbrev} lines abbreviated (same-size import: {plain_abbrev})"
     );
 
     let patched = patcher.into_image();
@@ -163,6 +171,66 @@ fn relayout_imports_official_dialog_byte_faithfully() {
     assert!(
         checked_entries >= 20 && checked_lines > 100,
         "expected to verify many grown lines: {checked_entries} entries / {checked_lines} lines"
+    );
+
+    // Streaming dungeon scenes: the uncompressed MAN chunk grew (in the
+    // entry's own slack or by a relayout sector), the rebuilt stream still
+    // terminates with every later chunk intact, and every applied `raw:` line
+    // is present at full length.
+    let mut stream_entries = 0usize;
+    let mut stream_lines = 0usize;
+    for idx in 0..usa.entry_count() {
+        let (Ok(orig_entry), Ok(new_entry)) = (usa.read_entry(idx), re.read_entry(idx)) else {
+            continue;
+        };
+        let (Some(orig_sm), Some(new_sm)) = (
+            StreamManText::locate(&orig_entry),
+            StreamManText::locate(&new_entry),
+        ) else {
+            continue;
+        };
+        if new_sm.man_len <= orig_sm.man_len {
+            continue; // not a grown carrier
+        }
+        stream_entries += 1;
+        // The chunks after the MAN shift verbatim.
+        let orig_tail = &orig_entry[orig_sm.man_range().end..orig_sm.stream_end];
+        let new_tail = &new_entry[new_sm.man_range().end..new_sm.stream_end];
+        assert_eq!(
+            orig_tail, new_tail,
+            "streaming entry {idx}: chunks after the MAN changed"
+        );
+        let prefix = format!("raw:{idx}:");
+        for e in pack.sections.inline_text.iter().filter(|e| {
+            e.is_filled() && e.key.starts_with(&prefix) && applied.contains(e.key.as_str())
+        }) {
+            let Ok(encoded) = markup::encode(&e.translation, Target::Segment) else {
+                continue;
+            };
+            if encoded.is_empty() {
+                continue;
+            }
+            assert!(
+                contains_subslice(&new_sm.man, &encoded),
+                "streaming entry {idx}: applied line {} not present at full length",
+                e.key
+            );
+            stream_lines += 1;
+        }
+    }
+    assert!(
+        stream_entries >= 1 && stream_lines > 20,
+        "expected grown streaming carriers: {stream_entries} entries / {stream_lines} lines"
+    );
+    // No raw line in a streaming carrier was left to the same-size fallback.
+    let raw_abbrev = report
+        .issues
+        .iter()
+        .filter(|(k, m)| k.starts_with("raw:") && m.contains("could not be grown to fit"))
+        .count();
+    assert_eq!(
+        raw_abbrev, 0,
+        "{raw_abbrev} raw lines still fell back to abbreviation under relayout"
     );
 }
 

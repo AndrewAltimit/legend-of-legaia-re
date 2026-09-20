@@ -14,7 +14,7 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers:
 | Outer nibble | Range | Theme |
 |---|---|---|
 | 0 | 0x00..0x0F | Party-leader change |
-| 1 | 0x10..0x1F | Complex sub-switch on whole byte (menu sub-dispatcher) |
+| 1 | 0x10..0x1F | Complex sub-switch on whole byte (menu sub-dispatcher). `addiu s8,s8,0x7` on entry, then `op0 - 0x10 < 5` selects an arm through the table at `0x801CEEA0`; the `0x14` arm (`0x801E0E80`) reads a seventh payload byte and adds one more, so `4C 14` is the one 8-byte form. |
 | 2 | 0x20..0x2F | **Camera-octant / pad-rotation setter** - one arm, no sub-table. Full body: [nibble-2 camera-octant setter](#0x4c-nibble-2---the-camera-octant--pad-rotation-setter). |
 | 3 | 0x30..0x3F | Sub-3 cluster (the [ambient-particle master gate](#0x4c-nibble-0x300x3f---the-ambient-particle-master-gate), no-op cluster, player-resync chain, party-state-clear, etc.) |
 | 4 | 0x40..0x4F | Immediate-or-ramp cluster (write or ramp ctx slots / globals) |
@@ -204,7 +204,7 @@ scenes.
 Party state + inverted-Y mirror cluster.
 - **Sub-0** (round 18, 6-byte) is a field SE trigger with a conditional u16 pair: `[4C, 0xD0, a_lo, a_hi, b_lo, b_hi]` decodes both via [`load_u16_le`](script-vm.md#helper-functions); the original gates `func_0x8002B994(a, b)` on three flag globals (`_DAT_8007B874`, `_DAT_800846D0`, `_DAT_800846D4`); PC always += 6.
 - **Sub-1** (1-byte) is a linked-list lookup gate via `FUN_8003CF04(_DAT_8007C34C, FUN_801DC0BC)` - host returns `Some(new_pc)` for the `LAB_801E360C` ce9c-jump path or `None` for PC += 4 on miss.
-- **Sub-2** (2-byte) calls the channel resolver `func_0x8003C83C` and conditionally spawns a script context, then halts at PC.
+- **Sub-2** (`[4C, D2, channel]`) hands the byte after the sub-op to the channel resolver `func_0x8003C83C` and conditionally spawns a script context, then halts at PC - the spawned context is what moves the parent on. The stream footprint is three bytes (`rugi` runs `4C D2 0F .. 4C D2 16` back to back), which is the width a linear walk must take.
 - **Sub-3** (14-byte) is `SCHEDULE_TIMED_FLAGS` - a timed-flag scheduler:
   `[4C, 0xD3, expiry_flag: u16, below_flag: u16, duration: u32, threshold: u32]`
   writes `_DAT_800845C0 = (expiry << 16) | below`, duration into

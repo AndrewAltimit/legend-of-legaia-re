@@ -61,7 +61,10 @@ const MAN_TYPE: u8 = 0x03;
 const SHOP_OPCODE: u8 = 0x49;
 /// Max item count a shop record is allowed to declare (a sanity bound that
 /// rejects a non-shop `0x49` payload whose first byte happens to be large).
-const MAX_SHOP_ITEMS: usize = 16;
+/// The largest shipped record is `rayman2`'s "Items Shop 1" at 17 (fourteen
+/// sellable ids plus the three-id template tail); a bound of 16 hid that one
+/// shop from the scanner - and from every consumer built on it.
+const MAX_SHOP_ITEMS: usize = 20;
 /// Max trailing unsellable template-id padding a shop record's `count` may carry
 /// past the purchasable stock (see the module docs). Observed values are 0, 1, or
 /// 3 disc-wide; the bound rejects a non-shop payload whose only valid-looking

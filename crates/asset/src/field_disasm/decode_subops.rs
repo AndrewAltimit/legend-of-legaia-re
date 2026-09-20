@@ -2,6 +2,7 @@
 //! state-resume, inventory-compare, menu-control) dispatched out of the main
 //! instruction decoder.
 
+use super::decode::rel_target;
 use super::*;
 
 pub(super) fn decode_actor_ctrl(
@@ -265,6 +266,23 @@ pub(super) fn decode_state_resume(
     // The decoder reports the encoded-Done-arm width; control flow through
     // Idle / Armed states is irrelevant for linear disassembly.
     match sub_op {
+        // Town-shop stock record: `[49, 0, length, ..args.., count, ids[count],
+        // name\0]` (`crate::shop_stock`). The MES walk below measures zero
+        // bytes over it (the count byte is a terminator), so it must be
+        // recognised by shape first - `parse_record` is the validation the
+        // shop scanner and the engine's shop arm share.
+        0 if let Some(rec) = crate::shop_stock::parse_record(bytecode, operand - 1, None) => {
+            let count = rec.id_offsets.len();
+            let name_len = rec.name.len();
+            let end = rec.count_off + 1 + count + name_len + 1;
+            mk(
+                end - pc,
+                StateResumeKind::DoneSub0Shop {
+                    count: count as u8,
+                    name_len: name_len as u8,
+                },
+            )
+        }
         0 => {
             // [49, 0, length, ...length args..., ...mes_bytes]
             need(2)?;
@@ -337,7 +355,7 @@ pub(super) fn decode_inventory_cmp(
             need(6)?;
             let arg = u16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]);
             let skip_delta = u16::from_le_bytes([bytecode[operand + 4], bytecode[operand + 5]]);
-            let skip_target = (pc + header_size + 4).wrapping_add(skip_delta as usize);
+            let skip_target = rel_target(pc + header_size + 4, skip_delta);
             mk(
                 header_size + 6,
                 InventoryCmpKind::Compare {
@@ -354,7 +372,7 @@ pub(super) fn decode_inventory_cmp(
             let lo2 = u16::from_le_bytes([bytecode[operand + 6], bytecode[operand + 7]]) as u32;
             let scaled = (lo1 | (lo2 << 16)) as i32;
             let skip_delta = u16::from_le_bytes([bytecode[operand + 4], bytecode[operand + 5]]);
-            let skip_target = (pc + header_size + 4).wrapping_add(skip_delta as usize);
+            let skip_target = rel_target(pc + header_size + 4, skip_delta);
             mk(
                 header_size + 8,
                 InventoryCmpKind::PartyBank {
@@ -404,7 +422,13 @@ pub(super) fn decode_menu_ctrl(
             MenuCtrlKind::PartyLeader { leader_id: op0 & 7 },
         ),
         1 => {
-            need(6)?;
+            // `addiu s8,s8,0x7` on entry (`0x801E0C8C`), then a 5-way switch
+            // on `op0 - 0x10` through the table at `0x801CEEA0`; `0x14`'s
+            // arm (`0x801E0E80`) reads a seventh payload byte (`lbu
+            // a0,0x6(s6)`) and adds one more (`_addiu s8,s8,0x1` at
+            // `0x801E0EB4`), so it is the one 8-byte form.
+            let extra = usize::from(op0 == 0x14);
+            need(6 + extra)?;
             let payload = [
                 bytecode[operand + 1],
                 bytecode[operand + 2],
@@ -412,7 +436,7 @@ pub(super) fn decode_menu_ctrl(
                 bytecode[operand + 4],
                 bytecode[operand + 5],
             ];
-            mk(header_size + 6, MenuCtrlKind::Menu1 { payload })
+            mk(header_size + 6 + extra, MenuCtrlKind::Menu1 { payload })
         }
         2 => mk(
             header_size + 1,
@@ -852,8 +876,13 @@ pub(super) fn decode_menu_ctrl(
         0xD => {
             let sub = op0 & 0x0F;
             let encoded = match sub {
-                2 | 6 | 7 | 0xA => 1,
-                0xD | 0xF => 2,
+                6 | 7 | 0xA => 1,
+                // Sub-2 (`[4C, D2, channel]`): the arm hands `operand + 1`
+                // to the channel resolver (port `op4c_n_d_sub_2_channel_spawn`)
+                // and halts at PC - the spawned context is what moves the
+                // parent on. The linear-walk width is the 3-byte footprint:
+                // `rugi` runs `4C D2 0F .. 4C D2 16` back to back.
+                2 | 0xD | 0xF => 2,
                 1 | 9 => 3,
                 0xC | 0xE => 4,
                 0 | 4 | 5 => 5,
@@ -966,13 +995,15 @@ fn decode_menu_nibble4(
 
 /// Walker mirroring the field VM's private `walk_mes_bytecode`.
 /// Keeps running until a terminator (`<= 0x1E`) or end-of-buffer.
-fn walk_mes_bytecode(buf: &[u8]) -> usize {
+pub(super) fn walk_mes_bytecode(buf: &[u8]) -> usize {
     let mut i = 0;
     while let Some(&b) = buf.get(i) {
         if b <= 0x1E {
             break;
         }
-        if b & 0xF0 == 0xC0 {
+        // Two-byte tokens: the `0xC0..=0xCF` substitution / spacing block plus
+        // the authoring-time aliases `0x5E` and `0xFF` (`docs/formats/mes.md`).
+        if b & 0xF0 == 0xC0 || b == 0x5E || b == 0xFF {
             if buf.get(i + 1).is_none() {
                 i += 1;
                 break;

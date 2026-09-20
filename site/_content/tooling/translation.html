@@ -108,7 +108,7 @@ sections:
       <tr><td><code>accessory_passives</code></td><td>Goods-menu passive names + descriptions</td><td><code>scus:str:…</code></td><td>same</td></tr>
       <tr><td><code>party_names</code></td><td>new-game roster names</td><td><code>scus:party:&lt;n&gt;</code></td><td>fixed 10-byte field, 9-byte budget</td></tr>
       <tr><td><code>scene_dialog</code></td><td>NPC / event dialogue in scene MANs</td><td><code>man:&lt;prot&gt;:0x&lt;off&gt;</code></td><td>edit inside the decompressed MAN, recompress into the original footprint</td></tr>
-      <tr><td><code>inline_text</code></td><td>dialogue / narration in raw carriers</td><td><code>raw:&lt;prot&gt;:0x&lt;off&gt;</code></td><td>space-padded same-size overwrite in the PROT entry</td></tr>
+      <tr><td><code>inline_text</code></td><td>dialogue / narration in raw carriers</td><td><code>raw:&lt;prot&gt;:0x&lt;off&gt;</code></td><td>space-padded same-size overwrite in the PROT entry; in the streaming dungeon scenes a longer line grows the uncompressed MAN chunk instead (within the entry's sector slack, or by whole sectors with <code>--allow-relayout</code>)</td></tr>
       <tr><td><code>ui_menu</code></td><td>pause-menu / shop / status labels, battle messages</td><td><code>ui:&lt;prot&gt;:0x&lt;va&gt;</code></td><td>overwrite in the overlay entry at <code>va - base_va</code></td></tr>
     </tbody>
   </table>

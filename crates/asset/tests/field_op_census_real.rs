@@ -126,11 +126,15 @@ fn the_scripted_game_over_and_take_item_arms_have_carriers() {
         return;
     };
 
+    // One per kingdom world-map bundle (`map01` / `map02` / `map03`). The
+    // `map01` and `map02` sites were once read as residue: the walk reached
+    // them only after the decoder learned to step over bare text segments,
+    // pickers and the partition-0 record header.
     let game_over = key(0x4C, Some(0xEA));
     assert_eq!(
         c.census.clean_count(game_over),
-        1,
-        "[4C EA] has exactly one coherent occurrence disc-wide"
+        3,
+        "[4C EA] has one coherent occurrence per kingdom world-map bundle"
     );
     assert_eq!(
         c.carriers.get(&game_over).map(|s| s.len()),
@@ -160,7 +164,7 @@ fn the_camera_focus_override_is_confined_to_one_scene() {
         return;
     };
     let k = key(0x4C, Some(0xCF));
-    assert_eq!(c.census.clean_count(k), 46, "[4C CF] clean occurrences");
+    assert_eq!(c.census.clean_count(k), 50, "[4C CF] clean occurrences");
     assert_eq!(
         c.carriers.get(&k).map(|s| s.len()),
         Some(1),
@@ -184,7 +188,7 @@ fn the_camera_arm_counts_agree_with_the_per_arm_instrument() {
         return;
     };
     let total = |k: OpKey| c.census.total.get(&k).copied().unwrap_or(0);
-    assert_eq!(total(key(0x4C, Some(0x38))), 250, "[4C 38] sites");
+    assert_eq!(total(key(0x4C, Some(0x38))), 258, "[4C 38] sites");
     assert_eq!(total(key(0x4C, Some(0x39))), 323, "[4C 39] sites");
     assert_eq!(total(key(0x4C, Some(0xC4))), 44, "[4C C4] sites");
     assert_eq!(total(key(0x4C, Some(0x3E))), 5, "[4C 3E] sites");

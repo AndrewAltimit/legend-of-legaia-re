@@ -358,10 +358,32 @@ sector is EDC/ECC-valid + MSF-correct, and every applied line is present at full
 length. See [disc.md](../formats/disc.md#full-iso-relayout) for the reference
 graph.
 
-The 22 scene MANs the generalized rewriter cannot grow at all (an absolute-ref op
-/ section-region segment / validate divergence in `apply_text_edits`) still fall
-back to abbreviation - a limitation of the in-MAN rewriter, orthogonal to the
-relayout, which supplies the room but cannot produce grown bytes for them.
+What the rewriter still refuses is not a scene but a handful of keyed lines
+whose `0x1F <text> 0x00` framing is a coincidence inside an instruction's
+operands (an actor index `0x1F` followed by printable bytes and a zero -
+`man_edit::text_site` reports them `Operand`); the exporter emits them like any
+segment, the lift pairs them with whatever the other disc has at the same
+place, and the importer skips them on every path with a diagnostic. Every
+genuine line is relocatable: a clean walk of its record reaches it, so the
+references that cross it are known. A scene that once read as "structural" was
+one of three decoder gaps - a bare text segment ending the walk, a partition-0
+record walked from the partition-1 header formula, or a mis-sized op (`34 2x`,
+the shop form of `49 00`, `4C 14`, `4C D2`) - and each is closed in
+[`man-relocation.md`](../formats/man-relocation.md#generalized-interior-text-growth).
+
+The `raw:` corpus has no such residual. Every raw line on the disc lives in the
+record region of the uncompressed MAN that leads one of the ten streaming
+dungeon scenes (`data_field_streaming`: `dolk2`, `rikuroa`, `rayman`,
+`station`, `balden2`, `ropeway2`, `taiku`, `doman`, `taiku2`, `nilboa2` -
+[`data-field.md`](../formats/data-field.md)), so the importer rewrites that
+MAN with the same relocator, re-headers the chunk and shifts the chunks behind
+it (`translation::stream_man`). Growth lands in the entry's own trailing sector
+slack when it fits - a same-size-image write, PPF-safe - and otherwise in the
+relayout. The bound is the loader's `0x62C00`-byte asset arena the entry is
+block-copied into, whose top the VDF morph applier borrows as scratch; the
+importer keeps a 64 KiB headroom under it. Unlike the LZS MANs there is no
+mastered precedent: the Spanish disc's text for these ten scenes fits the USA
+footprints, so none of them grew at mastering.
 
 ### In the browser
 
@@ -387,7 +409,7 @@ non-recompressing rather than dropped quietly.
 2. `translate fit-report --from <PAL.bin> --target <USA.bin>` -> the residual
    budget picture.
 3. `translate import --input <USA.bin> --pack <pack.yaml> --allow-relayout
-   --output <patched.bin>` -> byte-faithful dialog for every non-structural MAN
+   --output <patched.bin>` -> byte-faithful dialog for every scene MAN
    (no `--patch`: a relayout grows the image, so it is not a same-size PPF
    overlay).
 4. Font patch (separate deliverable) so accents render instead of folding to
