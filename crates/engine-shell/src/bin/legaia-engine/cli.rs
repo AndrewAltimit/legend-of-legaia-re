@@ -487,6 +487,17 @@ pub(crate) enum Cmd {
         /// `--retail-jsonl` mode.
         #[arg(long, default_value_t = false)]
         strict: bool,
+        /// Also print the per-voice allocation comparison: mean/max
+        /// sounding voices, distinct notes per frame, the slots-per-note
+        /// doubling factor, and how much of each side's pitch and tone
+        /// vocabulary the other one shares.
+        ///
+        /// Only meaningful when both sides are on the **same track**. An
+        /// engine trace plays whatever the scene's own prescript selects
+        /// with op `0x35`; a retail capture plays whatever the playthrough
+        /// left loaded (`0x8007BAC8`), and the two routinely differ.
+        #[arg(long, default_value_t = false)]
+        per_voice: bool,
     },
     /// PCM-window parity oracle - the I2 sibling of `audio-trace`.
     ///

@@ -213,6 +213,7 @@ fn main() -> Result<()> {
             out,
             retail_jsonl,
             strict,
+            per_voice,
         } => cmd_audio_trace(AudioTraceArgs {
             scene: scene.as_deref(),
             extracted_root: &extracted_root,
@@ -224,6 +225,7 @@ fn main() -> Result<()> {
             out: &out,
             retail_jsonl: retail_jsonl.as_deref(),
             strict,
+            per_voice,
         }),
         Cmd::PcmTrace {
             scene,
@@ -500,6 +502,7 @@ struct AudioTraceArgs<'a> {
     out: &'a Path,
     retail_jsonl: Option<&'a Path>,
     strict: bool,
+    per_voice: bool,
 }
 
 struct PcmTraceArgs<'a> {
