@@ -201,7 +201,14 @@ fn opening_chain_stages_grade_and_skips_to_town01() {
     let st: serde_json::Value = serde_json::from_str(&rt.play_cutscene_state_json()).unwrap();
     assert_eq!(st["chain"], false, "the chain ends at Rim Elm");
     assert_eq!(st["locked"], false, "free-roam play is unlocked");
-    assert!(st["grade"].is_null(), "the sepia grade drops on the field");
+    // `grade` is the RESOLVED `set_color_grade` argument now - it also
+    // carries an ordinary scene's op-`4C 12` fade tint - so the prologue
+    // sepia is identified by its own signature instead: `palette_grade.on`
+    // is raised only by the `World::scene_color_grade` arm.
+    assert_eq!(
+        st["palette_grade"]["on"], false,
+        "the sepia grade drops on the field"
+    );
 }
 
 #[test]
