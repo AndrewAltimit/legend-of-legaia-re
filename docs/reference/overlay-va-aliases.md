@@ -263,10 +263,10 @@ no exceptions, no ambiguous rows:
 
 | Program | Header tag | Printed `- 0x801C0000` | Bytes are | Re-key |
 |---|---|---|---|---|
-| untagged | none | `< 0x9000` | 0896 own content | file = printed `- 0x801C0000`; **no true VA** - 0896's link base is unrecovered |
+| untagged | none | `< 0x9000` | 0896 own content | file = printed `- 0x801C0000`; add `0x801D4DF0` for the image's own VA |
 | untagged | none | `0x9000 ..< 0x2E000` | field (0897) | true = printed `+ 0x5818` |
 | untagged | none | `>= 0x2E000` | battle (0898) | true = printed `- 0x1F7E8` |
-| tagged | `base=0x801C5818` | any | 0896 own content | file = printed `- 0x801C5818`; no true VA |
+| tagged | `base=0x801C5818` | any | 0896 own content | file = printed `- 0x801C5818`; add `0x801D4DF0` for the image's own VA |
 
 The byte-level partition and the header tags identify the same split
 independently: exactly the twelve dumps that resolve into 0896's own content
@@ -282,6 +282,19 @@ printed at `0x801C0D1C` (`overlay_0896_bat_back_dat`, untagged) and at
 `0x801C6534` (tagged). And the one `0x9000` step this section once carried as
 an isolated measurement - `0x801EFF30` re-keying to `801D0748` - is now an
 instance of the untagged battle band (`- 0x1F7E8`).
+
+**The image's link base is `0x801D4DF0`**, recovered from its own call graph
+(ten corroborating `jal` targets, all 218 internal `j` landing in-file, three
+in-image VA word runs), so a printed address in either program re-keys to a
+real VA by way of the file offset: `file + 0x801D4DF0`. That is what makes the
+two cross-checks below one function rather than two - file `+0xD1C` is
+`0x801D5B0C`. It is **not** a runtime address on this disc: nothing here loads
+the image, and zero of its 322 SCUS-range calls reach a `SCUS_942.54` function
+entry, so these VAs name places in a foreign build's address space and the
+corpus holds no dump taken at the base
+([`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md#a-resolution-ratio-is-not-a-base-test)).
+Its functions therefore have addresses and no write-ups, which is why
+[`functions.md`](functions.md) carries a note about the image instead of rows.
 
 The trap the split creates: five tagged dumps print in
 `0x801C9000..0x801CE818`, where the untagged law reads "`+ 0x5818` = field" -
