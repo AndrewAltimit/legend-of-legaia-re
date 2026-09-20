@@ -1097,13 +1097,9 @@ mod tests {
 
     fn frame_with(mask: u32, voices: Vec<VoiceTraceFrame>) -> AudioTraceFrame {
         AudioTraceFrame {
-            frame: 0,
-            sequencer_playhead_ticks: None,
-            sequencer_finished: None,
-            master_volume: None,
-            reverb_mode: None,
             active_voice_mask: mask,
             voices,
+            ..AudioTraceFrame::quiescent(0)
         }
     }
 
@@ -1111,30 +1107,36 @@ mod tests {
     fn jsonl_roundtrip_engine_shape() {
         let frames = vec![
             AudioTraceFrame {
-                frame: 0,
                 sequencer_playhead_ticks: Some(0),
                 sequencer_finished: Some(false),
                 master_volume: Some((0x3FFF, 0x3FFF)),
                 reverb_mode: Some(0),
+                reverb_eon: Some(0x00FF_FFFF),
+                reverb_depth: Some((0x3264, 0x3264)),
+                reverb_work_area: Some(0x7_9020),
                 active_voice_mask: 0b0000_0011,
                 voices: vec![
                     voice(true, Some(0x1000)),
                     voice(true, Some(0x1200)),
                     voice(false, None),
                 ],
+                ..AudioTraceFrame::quiescent(0)
             },
             AudioTraceFrame {
-                frame: 1,
                 sequencer_playhead_ticks: Some(480),
                 sequencer_finished: Some(false),
                 master_volume: Some((0x3FFF, 0x3FFF)),
                 reverb_mode: Some(0),
+                reverb_eon: Some(0x00FF_FFFF),
+                reverb_depth: Some((0x3264, 0x3264)),
+                reverb_work_area: Some(0x7_9020),
                 active_voice_mask: 0b0000_0010,
                 voices: vec![
                     voice(false, Some(0x1000)),
                     voice(true, Some(0x1200)),
                     voice(false, None),
                 ],
+                ..AudioTraceFrame::quiescent(1)
             },
         ];
         let jsonl = audio_trace_to_jsonl(&frames);
@@ -1145,14 +1147,16 @@ mod tests {
 
     #[test]
     fn jsonl_roundtrip_retail_shape() {
+        // Retail shape: no mode number (hardware keeps none), but the
+        // routing mask, depth and control word a capture does carry.
         let f = AudioTraceFrame {
-            frame: 0,
-            sequencer_playhead_ticks: None,
-            sequencer_finished: None,
             master_volume: Some((0x3F00, 0x3F00)),
-            reverb_mode: Some(0x17FFFF),
+            reverb_eon: Some(0x17FFFF),
+            reverb_depth: Some((0x3264, 0x3264)),
+            spu_control: Some(0xC081),
             active_voice_mask: 0b0000_0111,
             voices: vec![voice(true, Some(0x2000)); 3],
+            ..AudioTraceFrame::quiescent(0)
         };
         let jsonl = audio_trace_to_jsonl(std::slice::from_ref(&f));
         let round = parse_audio_trace_jsonl(&jsonl).unwrap();
