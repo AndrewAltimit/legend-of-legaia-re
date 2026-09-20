@@ -126,19 +126,56 @@ reproducibility test from asserting a recovery that is known to be wrong. A
 one-vote recovery is not evidence of a base; below the map's `--min-votes`
 floor, read the operands instead.
 
-### When no base fits at all
+### A resolution ratio is not a base test
 
-There is a second failure mode, and it is a *result* rather than a gap. Take
+There is a second failure mode, and the reading it produced was wrong. Take
 every address the image's own `lui`+`addiu` pairs and `j` / `jal` targets form
-inside the overlay band, and slide a window the width of the file across them:
-the best window position is the best any base could do. A pinned control - the
-menu overlay at the slot-A base - holds all but two of more than twelve hundred
-such addresses. PROT `0896` tops out a little above four fifths, at every
-position, and it has no printable string long enough to anchor because its
-label table is Shift-JIS. So its references are mostly external, no base makes
-it self-consistent, and it stays out of the map until a capture shows it
-resident - which is the same conclusion the cautionary tale above reaches from
-the loader side, reached without an emulator.
+inside the overlay band, and slide a window the width of the file across them;
+the best window position is then read as the best any base could do. A pinned
+control - the menu overlay at the slot-A base - holds all but two of more than
+twelve hundred such addresses, PROT `0896` topped out a little above four
+fifths at every position, and the conclusion drawn was that no base makes it
+self-consistent.
+
+That conclusion does not follow, and on this image it is false.
+
+A ratio over `lui` pairs is not a base test. It is one-sided in the direction
+that matters here: a base whose two high halves catch **few** pairs scores
+perfectly on all of them. `pointer_resolution` on `0896` reports 65 of 65 at
+the refuted slot-A base `0x801CE818` and 110 of 177 at the base the call graph
+recovers - so on this image the metric ranks the wrong answer first. It also
+cannot see the call graph at all, and the call graph is where an image's own
+structure is.
+
+`recover_base` does see it, and it lands. Over the corrected `0x9000`-byte
+entry it reports `0x801D4DF0` on ten corroborating targets of eleven distinct
+internal `jal` targets, above the map's default `--min-votes` floor - so
+`asset overlay scan --from 896 --to 896` has been printing the answer with no
+flag at all. Three further signals, each independent of that vote:
+
+- All 218 internal `j` instructions (122 distinct targets) land inside the file
+  at that base, and none does at the two bases previously cited for it.
+- Ten of the eleven `jal` targets land on an `addiu sp, sp, -X` prologue; the
+  eleventh lands on the image's first frameless leaf at file `+0x424`.
+- Three runs of consecutive in-image VA words - file `0x2b0..0x424`,
+  `0x84a8..0x8504`, `0x8960..0x89b4` - resolve every word into the image, and
+  one of them holds the base itself as a word.
+- The corpus already holds dumps of this image taken under two different
+  phantom import bases, and the base reconciles them: re-disassembling the file
+  at `printed_va - 0x801C5818` reproduces the tagged program's opening
+  instructions exactly, and the function the two programs print at `0x801C6534`
+  and `0x801C0D1C` is one function at file `+0xD1C`, i.e. `0x801D5B0C`
+  ([`phantom-print-index.md`](phantom-print-index.md)).
+
+The image is in the map now, and what makes it unusual is not its base. Of its
+322 calls into the SCUS address range, **zero** land on a function entry of
+this disc's `SCUS_942.54`, where the two slot-A controls score 1203 of 1307
+(`0897`) and 793 of 884 (`0899`) under the same entry test; no constant shift
+of the executable within +-`0x20000` brings more than 7 of its 42 distinct SCUS
+targets onto an entry. It is a foreign-build image: internally consistent,
+externally linked against an executable this disc does not carry. That is why
+no USA capture finds it resident, and it is a conclusion about the *loader*
+that the image's own operands reach without an emulator.
 
 ## The committed map
 

@@ -2721,6 +2721,8 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     };
     let (mut confirmed, mut refuted, mut ambiguous, mut credited_by_label) = (0, 0, 0, 0);
     let mut fill_extents = 0usize;
+    let mut uncorroborated_labels = 0usize;
+    let mut by_label: Vec<(usize, usize, u32)> = Vec::new();
     for d in &dumps {
         if (d.entry_va as u64) < base as u64 || (d.entry_va as u64) >= hi {
             continue;
@@ -2747,20 +2749,35 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
             Attribution::Refuted => refuted += 1,
             Attribution::Unverifiable => {
                 if label_ok(&d.label) {
-                    credited_by_label += 1;
-                    sink.claim(
-                        start,
-                        end,
-                        OWNER_CODE,
-                        format!("FUN_{:08x} (by label)", d.entry_va),
-                    );
+                    by_label.push((start, end, d.entry_va));
                 } else {
                     ambiguous += 1;
                 }
             }
         }
     }
-    sink.ambiguous_dumps = ambiguous;
+    // A label-credited extent is the one claim here that rests on a filename,
+    // and a filename says where a dump was TAKEN, not which image the bytes
+    // are. In an image where some other extent re-encodes to this image's own
+    // words the label is corroborated by those; in an image where NOTHING
+    // confirms, it is the whole of the evidence - and that is exactly the case
+    // where the dump program's base was wrong, so the extents land at arbitrary
+    // offsets in a file that never held them. Credit the label only alongside a
+    // byte confirmation.
+    if confirmed > 0 {
+        for (start, end, entry_va) in by_label {
+            credited_by_label += 1;
+            sink.claim(
+                start,
+                end,
+                OWNER_CODE,
+                format!("FUN_{entry_va:08x} (by label)"),
+            );
+        }
+    } else {
+        uncorroborated_labels = by_label.len();
+    }
+    sink.ambiguous_dumps = ambiguous + uncorroborated_labels;
     sink.refuted_dumps = refuted;
     sink.note(format!(
         "base {:#010x} ({}); {confirmed} extents confirmed by bytes, \
@@ -2768,6 +2785,13 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
          {refuted} refuted (aliased sibling), {fill_extents} land on fill",
         base, rec.label
     ));
+    if uncorroborated_labels > 0 {
+        sink.note(format!(
+            "{uncorroborated_labels} label-matching extent(s) left uncredited: \
+             no dump in this image confirms by bytes, so a filename is the whole \
+             of their evidence"
+        ));
+    }
     claim_pinned_overlay_assets(buf, sink, idx);
 }
 

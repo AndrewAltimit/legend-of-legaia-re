@@ -51,8 +51,8 @@ something real.
 | `overlay_0897_*`, `overlay_0897_xxx_dat_*`, untagged `801d….txt` | `+0xE818` | field, PROT 0897 |
 | `overlay_0896_*` untagged, printed `- 0x801C0000` in `0x9000..0x2E000` | `+0x5818` | field, PROT 0897 |
 | `overlay_0896_*` untagged, printed `- 0x801C0000 >= 0x2E000` | `-0x1F7E8` | battle_action, PROT 0898 |
-| `overlay_0896_*` untagged, printed `- 0x801C0000 < 0x9000` | - | PROT 0896's own content; link base unrecovered |
-| `overlay_0896_*` tagged `base=0x801C5818` | - | PROT 0896's own content at file `printed - 0x801C5818`; link base unrecovered |
+| `overlay_0896_*` untagged, printed `- 0x801C0000 < 0x9000` | `+0x14DF0` | PROT 0896's own content, at its link base |
+| `overlay_0896_*` tagged `base=0x801C5818` | `+0xF5D8` | PROT 0896's own content, at its link base |
 | `overlay_0899_xxx_dat_*` | `+0xE818` | menu, PROT 0899 |
 | `overlay_0971_*` | `+0xE818` / `+0xD018` | debug_menu 0971 / fishing 0972 |
 | `overlay_0977_*`, printed `- 0x801C0000 < 0x3800` | `+0xE818` | arena_init, PROT 0977 |
@@ -323,16 +323,24 @@ index: `0x801C6268` and `0x801C6CF8` (`overlay_0977_other_game` second dumps)
 now re-key at `+0xA018` into the field-battle-intro overlay 0979
 (`0x801D0280` / `0x801D0D10`) - the strata decode in the re-key table above.
 
-The six `overlay_0896` rows are the only ones in the band that cannot be
-re-keyed to a runtime VA even in principle. The byte-level sweep attributes
-each to a PROT 0896 **file offset** (the sweep also separates the family's two
-import programs - untagged `0x801C0000` and tagged `base=0x801C5818`, which is
-how `0x801C6534` and `0x801C0D1C` print the same function; see
-[`overlay-va-aliases.md`](../reference/overlay-va-aliases.md#prot-0896-two-programs-one-law-each)) -
-but PROT 0896's link base is unrecovered, so no printed VA in the family's
-own-content strata names a runtime address - see
-[call-target integrity](call-target-integrity.md#scope-the-overlay_0896-window-below-0x801ce818).
-The routines themselves are only reachable by recovering that base.
+The six `overlay_0896` rows were long the only ones in the band that could not
+be re-keyed to a VA even in principle. The byte-level sweep attributes each to
+a PROT 0896 **file offset** (the sweep also separates the family's two import
+programs - untagged `0x801C0000` and tagged `base=0x801C5818`, which is how
+`0x801C6534` and `0x801C0D1C` print the same function; see
+[`overlay-va-aliases.md`](../reference/overlay-va-aliases.md#prot-0896-two-programs-one-law-each)).
+The file offset is now enough: PROT 0896 links at `0x801D4DF0`
+([`static-overlay-pipeline.md`](static-overlay-pipeline.md#a-resolution-ratio-is-not-a-base-test)),
+so each own-content row's link-time VA is that base plus its file offset, which
+is what the two deltas in the table above encode.
+
+What those VAs are **not** is addresses this disc's runtime ever holds. The
+image calls no function entry of this `SCUS_942.54`, so its link-time VAs name
+positions in another build's address space, and a `0x801D4DF0`-keyed VA from
+this family must never be read as a slot-A address - the slot-A window's
+occupant at those addresses is a different image entirely. The
+[call-target integrity](call-target-integrity.md#scope-the-overlay_0896-window-below-0x801ce818)
+scope note covers the same window from the target side.
 
 ## Two real entries this resolution turned up
 

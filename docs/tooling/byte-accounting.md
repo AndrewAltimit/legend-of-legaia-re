@@ -323,18 +323,41 @@ the payload's magic is `pQES`. The owner comes from the **magic** where the two
 disagree: a type byte selects the runtime's handler, and an owner names what the
 bytes are.
 
-### When no load base fits, the image stays residue
+### A base fits, and the residue stays anyway
 
-PROT `0896` is the class's largest single unwalked run and it is not a walker
-gap: no load base makes the image self-consistent. The measurement is the
-image's own operands - every `lui`+`addiu` pair and every `j`/`jal` target in
-the overlay band - slid against a window the width of the file. The best window
-holds a bit over four fifths of them, where a pinned control (the menu overlay
-`0899` at the slot-A base) holds all but two of more than twelve hundred. The
-image also carries no printable string long enough to anchor, because its label
-table is Shift-JIS. So its references are mostly external, there is no base to
-extract it at, and its bytes stay `plausible_mips` residue until a capture shows
-it resident. The map's own note says the same thing from the loader side.
+PROT `0896` is the class's largest single unwalked run, and the reason it used
+to be given here was wrong. "No load base makes the image self-consistent" was
+a reading of one metric - a ratio over the image's `lui`+`addiu` pairs, which
+is blind to the call graph and which ranks a refuted base first on this image
+([`static-overlay-pipeline.md`](static-overlay-pipeline.md#a-resolution-ratio-is-not-a-base-test)).
+The call-graph recovery lands on `0x801D4DF0`, and the entry now has a map row.
+
+The residue does not move, and that is the point worth keeping. The parser for
+a code image's code is the dump corpus, and this image's code is linked against
+an executable this disc does not carry - zero of its 322 SCUS-range calls land
+on a `SCUS_942.54` function entry - so no dump of it exists and none can be
+taken from a capture. A base answers *where the bytes go*; it says nothing
+about whether anything has read them. The entry's 36,864 bytes stay
+`plausible_mips` residue with a walker selected and a base committed.
+
+#### A filename is not corroboration on its own
+
+Committing that row surfaced a second gap, in the walker rather than on the
+disc. An extent whose printed instructions are outside the encodable grammar is
+*unverifiable*, and the walker credits it when the dump's filename names this
+entry. That is sound where other extents in the same image confirm by bytes -
+the filename is then one claim among corroborated ones. Where **nothing** in an
+image confirms, the filename is the whole of the evidence, and that is exactly
+the case in which the dump program's base was wrong: the extents then land at
+arbitrary offsets in a file that never held them. Three such extents landed
+inside `0896` and were credited as code; re-disassembling the file at those
+offsets shows different instructions.
+
+So a label-credited extent needs at least one byte confirmation elsewhere in
+the same image. The rule costs nothing where the corpus is real - the field,
+battle, menu and minigame images all confirm hundreds of extents by bytes - and
+it is reported rather than silently dropped: the entry's note says how many
+label-matching extents were left uncredited and why.
 
 ### The multi-bank VAB
 
@@ -516,7 +539,7 @@ the same figure, so no part of the accounted share rests on a guessed magic.
 | Class | What its unclaimed bytes are | Verdict |
 |---|---|---|
 | `vab_multi_bank` (`0891`) | Nothing: the bank index, each bank's two chunks and each bank's sector slack are claimed from lengths the container states. | Closed. Layout in [`vab.md`](../formats/vab.md#the-multi-bank-archive-monstersnd). |
-| `overlay_data_blob` | The whole class's remaining work, and most of it is entry `0896`, whose extent reads `plausible_mips` although its head is a length-prefixed Shift-JIS label table. The rest is per-image data segments beside code the dump corpus reached. | `0896` is the JP-build menu image, resident in no USA state. |
+| `overlay_data_blob` | The whole class's remaining work, and most of it is entry `0896`, whose extent reads `plausible_mips` although its head is a length-prefixed Shift-JIS label table. The rest is per-image data segments beside code the dump corpus reached. | `0896` links at `0x801D4DF0` and calls no function entry of this disc's executable - a foreign-build image, resident in no state here. |
 | `overlay_ptr_table`, `mips_overlay` | `low_entropy` runs with a `plausible_mips` minority - the tables beside code the dump corpus has not reached. | Dump worklist; agrees with [`disc-coverage.md`](disc-coverage.md)'s gap list. |
 | `init_pak` (`0895`) | The head pointer table, the SCUS-name string, and a tail past the last logo. | Closed but for those three; see the composition rule below. |
 | `lzs_container` | Per-entry tails of a few hundred bytes past the last descriptor's stream, plus `0981` entire - the one class member that is a code image rather than a container. | Walker tails plus one mis-classed entry. |

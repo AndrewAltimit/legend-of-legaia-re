@@ -33,18 +33,21 @@
 # function-signature byte-search corrected a historical label: the options/menu
 # overlay is **PROT 0899** at base 0x801CE818 (its `FUN_801CF650` equip
 # aggregator lands at base+0xe38; 101/139 menu-dump functions align; jal-recovery
-# agrees, 30 votes), NOT PROT 0896. PROT 0896 (CDNAME `bat_back_dat`) stays out
-# of this map: its widely-cited base 0x801C5818 (60 whole-file votes) is an
-# OVER-READ ARTIFACT -- the file carries the field overlay's bytes from +0x9000
-# (consecutive entries' footprints over-read), and that code's self-consistency
-# at 0x801CE818 fixes the whole-file recovery to 0x801CE818 - 0x9000 by
-# construction; head-only recovery yields no landslide, so 0896's true link
-# base is unrecovered. The "0896 = mode-24 OTHER overlay" hypothesis is also
-# REFUTED by a live mode-24 entry capture (Baka Fighter): the SCUS-resident
-# OTHER INIT streams the per-minigame overlay directly into slot A and 0896's
-# bytes appear nowhere in RAM across the entry window or any parked library
-# state (probe scripts/pcsx-redux/autorun_minigame_overlay_capture.lua +
-# overlay_residency.py; see open-rev-eng-threads.md).
+# agrees, 30 votes), NOT PROT 0896. PROT 0896's widely-cited base 0x801C5818
+# (60 whole-file votes) is an OVER-READ ARTIFACT -- that measurement was taken
+# on the pre-correction footprint, which carries the field overlay's bytes from
+# +0x9000, and that code's self-consistency at 0x801CE818 fixes the whole-file
+# recovery to 0x801CE818 - 0x9000 by construction. Head-only recovery over the
+# corrected 0x9000-byte entry DOES land, at 0x801D4DF0 (its row is below); the
+# earlier "no landslide, so 0896's true link base is unrecovered" reading is
+# falsified by `asset overlay scan`, which reports that base at the default
+# vote floor. The "0896 = mode-24 OTHER overlay" hypothesis stands REFUTED by a
+# live mode-24 entry capture (Baka Fighter): the SCUS-resident OTHER INIT
+# streams the per-minigame overlay directly into slot A and 0896's bytes appear
+# nowhere in RAM across the entry window or any parked library state (probe
+# scripts/pcsx-redux/autorun_minigame_overlay_capture.lua + overlay_residency.py;
+# see open-rev-eng-threads.md) -- and the row below says why no USA capture can
+# find them.
 # PROT 0899 and the field overlay (0897) are
 # VA-ALIAS siblings in slot A (both base 0x801CE818, resident at different times):
 # 0x801CF650 is a "Give" string in 0897 but the equip aggregator in 0899 -- the
@@ -284,6 +287,19 @@ base_source = "cross_ref"
 anchor_va = 0x801CE844
 fingerprint_sha256 = "7082f84593357111b573a516eb7e6a154d5ca8cdb70da4a664e718588f1e7148"
 notes = "GAME OVER overlay (game-mode 18/19 GAMEOVER INIT/MODE -- retail-unreachable dev harness; a party wipe routes to the CARD/CONTINUE title flow instead, see docs/subsystems/battle.md). A SLOT-A overlay: the mode-18 handler FUN_80025B30 is overlay_loader_a(7,0) -> PROT 902 followed by jal 0x801CE844 = file +0x2C, the first prologue (the anchor). String anchors corroborate the base: in-file pointers 0x801CE820 -> the 'gameover.pak' source-path string at +0x8 and 0x801CEC48 -> the 'GAME OVER' caption at +0x430 decode to string starts only under 0x801CE818 (static_overlay::string_anchor_votes: 2 at slot A, 0 at slot B). Its high-band jals (0x801D5854..0x801F8B84) are external calls into the co-resident battle-band images, which is what mis-scored the old slot-B row: pointer_resolution counted 44/48 external references to fixed 0x801F7724..0x801F90FC structures as in-file self-pointers under the slot-B base. Sparse internal jal graph -- base is loader-chain cross_ref, not jal-recovered."
+[[overlays]]
+prot_index = 896
+label = "jp_options_status"
+base_va = 0x801D4DF0
+form = "raw"
+content_bytes = 0x9000
+content_source = "prot_entry_extent"
+eligibility = "static"
+base_source = "jal"
+anchor_va = 0x801D52D0
+fingerprint_sha256 = "a8f9f61fde979f9998c176663b6029a797e657c065358d79c31f004f195b4a66"
+notes = "A Japanese-language options + character-status menu module, and the one row in this map whose image THIS BUILD never loads. Base recovered from the entry's own call graph over the corrected 0x9000-byte extent: ten of its eleven distinct internal jal targets land on `addiu sp,sp,-X` prologues at base+0x4e0 / 0x610 / 0x728 / 0xbd8 / 0x1d5c / 0x32d0 / 0x3b7c / 0x3df0 / 0x6ff8 / 0x7398 and the eleventh on the frameless leaf at base+0x424; all 218 internal `j` targets (122 distinct) land in file; and three in-image pointer tables (file 0x2b0..0x424, 0x84a8..0x8504, 0x8960..0x89b4) resolve every word into the image, one of them containing the base itself. Layout: length-prefixed Shift-JIS label pool plus those jump tables 0x0..0x424, code 0x424..0x8470, data segment 0x8470..0x8a18, byte-curve tail to 0x9000. It is a FOREIGN-BUILD image: of its 322 calls into the SCUS address range (42 distinct targets) ZERO land on a USA `SCUS_942.54` function entry, where the two slot-A controls score 1203/1307 (0897) and 793/884 (0899) on the same entry test, and no constant shift of the USA executable over +-0x20000 brings more than 7 of the 42 onto one. Nothing on the USA disc materialises 0x801D4DF0 (`find-address-word-refs.py --prot`: one word hit, inside this entry's own pointer table), so no USA loader reaches it and no USA capture can show it resident. Its data references below the base cluster in 0x801CF5F4..0x801D09B8 -- a companion image occupying 0x801CE818..0x801D4DF0 -- and its status page indexes a 0x414-stride record array there, the same per-character record stride the USA build keeps at 0x80084708 (docs/formats/save-record.md). Do not read this row's base as a slot: it is where the image LINKS, and the USA slot-A window's occupant is a different image. The CDNAME label on the extracted filename (`bat_back_dat`) is the +2 skew, not this entry's block: under `legaia_prot::cdname::block_for_extraction_index` `bat_back_dat` names extraction 893/894 and this entry falls in the `xxx_dat` placeholder block with 0897/0898/0899."
+
 [[overlays]]
 prot_index = 895
 label = "boot_init_pak"
