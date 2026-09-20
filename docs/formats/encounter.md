@@ -1019,6 +1019,18 @@ base-plus-displacement walk in
 [`find-gp-relative-refs.py`](../../scripts/ghidra-analysis/find-gp-relative-refs.py) is
 what makes the readers visible ([`address-reference-scan.md`](../tooling/address-reference-scan.md#the-gp-relative-and-luiload-forms)).
 
+**Polled live.** `scripts/pcsx-redux/autorun_w3b_view_window.lua` reads the four
+signed bytes each vsync alongside the scene name and game mode, and logs a row per
+change. Over a 3000-vsync pad-driven walk of `town01` the window is never constant
+and never the field default: it alternates between `(-8, -6, 8, 12)` and
+`(-10, -6, 8, 14)`, four visits each, switching as the player crosses between
+regions. That is the camera-region side-write working as this section describes -
+the window is a property of where the player stands, not of the scene, so an engine
+that seeds it once per scene and leaves it there under-draws in the wide regions.
+The walk stayed inside `town01`, so the cross-scene half of the question - does a
+scene's window survive into the next scene - is still owed a capture that changes
+scene.
+
 ## What this doesn't tell us
 
 - **Per-opcode encoding of the trailing operand bytes.** Each install
