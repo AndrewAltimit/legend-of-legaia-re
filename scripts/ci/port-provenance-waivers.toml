@@ -349,10 +349,6 @@ key = "module-orphan:crates/engine-core/src/slot_machine.rs:801e6f70"
 reason = "Disassembly: eight digit cells at 0x801F35F0 accumulated x10 per cell, cost = coins*100, gold gate 0x8008459C, stock gate 0x8007BB90, both recolouring to ink 9. The coin-exchange counter."
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/field_menu.rs:801d6d38"
-reason = "Same routine as the save_subscreen row and the same disassembly; it runs under two entry contexts, which is why two modules model it. Window 0x801E4BD4, FUN_801d688c(&0x801E46D0, 2, 1), next-screen word 0x801E46A4 written 0 unconditionally then overwritten with 1 on the default row."
-
-[[waiver]]
 key = "doc-citation:docs/reference/functions/audio.md:8001d230:801ce628"
 reason = """
 0x801CE628 is not this routine's; the row cites it as a section link. The

@@ -404,6 +404,15 @@ RANGES = {
     # and `overlay_0897_*`; the first is the same bytes under a capture-derived
     # name, the second is a VA collision with entirely different functions.
     "overlay_battle_action_0898": [("801f1ed4", "801f2160"), ("801f2160", "801f2410")],
+    # The menu overlay's save sub-screen leaf, dumped from the BASED PROT 0899
+    # image because the corpus's three existing dumps of this VA are capture-
+    # named and carry no image the byte-attribution CSV can key on. That was
+    # invisible until PROT 0896 was imported: 0896 links a 502-instruction
+    # routine over the same VA, and with only ITS dump carrying a keyable image
+    # the consensus in check-port-provenance.py narrowed to the wrong body and
+    # reported this module's port tag as an orphan. A VA that two images own
+    # needs a base-attributed dump from EACH of them, not a waiver.
+    "overlay_menu_0899": [("801d6d38", "801d6e18")],
 }
 
 # {program label: [(start VA, end VA exclusive), ...]} for images that DO have
@@ -442,6 +451,16 @@ WALK_RANGES = {
     # VA `0x801CE934`) holds its address, so it is a table-named frameless leaf
     # of the same shape as PROT 0901's draw family.
     "overlay_cutscene_str_0970": [("801cf02c", "801cf098")],
+    # PROT 0896, the foreign-build Japanese options / character-status image
+    # (base 0x801D4DF0, docs/tooling/static-overlay-pipeline.md). Its code is
+    # one contiguous run - file +0x424 .. +0x8470 - so the whole region is one
+    # walk row. Analysis reaches 51 of its function entries; the four it misses
+    # (0x801DAC90 / 0x801DAFC8 / 0x801DB35C / 0x801DB70C) each open four
+    # instructions ABOVE their `addiu sp,sp,-X` prologue, which is why a
+    # prologue scan does not see them, and each is named by the image's own
+    # 21-word handler table at file +0x8960 - so the walk's `jr ra` + delay-slot
+    # split lands on exactly those four heads rather than fabricating any.
+    "overlay_jp_options_status_0896": [("801d5214", "801dd260")],
 }
 
 # `walk_range` FABRICATES AN ENTRY POINT when the run it is given does not start

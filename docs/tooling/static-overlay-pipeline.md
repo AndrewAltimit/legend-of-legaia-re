@@ -444,6 +444,15 @@ cp extracted/overlays/*.bin extracted/     # -> /data/<bin> inside the container
 bash extracted/overlays/import_static_overlays.sh
 ```
 
+A long-lived container can have a **stale** `/data` - the bind is resolved when
+the service starts, so a container started before the host directory was
+re-created sees an empty `/data` no matter what is in `extracted/` now, and the
+`cp` above then reaches nothing. Check with `docker compose exec ghidra ls
+/data` before trusting the driver. The route that does not depend on the bind is
+`docker compose cp <blob> ghidra:/tmp/<blob>` followed by an `-import
+/tmp/<blob>`; `/data` is mounted read-only, so a `docker compose cp` **into it**
+is refused rather than silently dropped.
+
 Each overlay imports at its recovered base with the program named
 `overlay_<label>`, so functions land at their real addresses with identity
 attached from the source PROT entry. The Jython scripts carry the
@@ -477,6 +486,58 @@ completely and 0926 in eight bytes, which is all the code that module has.
 
 When a row is added to the map, import its image in the same pass. The tell that
 one was missed is a `code_floor` of `0.0%` on a row whose image is on disk.
+
+### PROT 0896: the image with a map row and no loader
+
+The map's one foreign-build row is also the last one to be imported, and its
+function map is worth recording because nothing else on this disc will ever
+reach it. The image (`overlay_jp_options_status_0896.bin`, base `0x801D4DF0`)
+lays out as a length-prefixed Shift-JIS label pool and jump tables at file
+`0x0..0x424`, code at `0x424..0x8470`, a data segment to `0x8a18` and a
+byte-curve tail to the end of the `0x9000` entry.
+
+Analysis at that base creates fifty-one functions spanning `0x801D5214` to
+`0x801DD260` and leaves two holes. The larger, file `+0x5EA0..+0x6FF8`, holds
+four more: `0x801DAC90`, `0x801DAFC8`, `0x801DB35C` and `0x801DB70C`, each named
+by the image's own twenty-one-word handler table at file `+0x8960` and each
+opening four instructions **above** its `addiu sp, sp, -X`, which is why a
+prologue scan does not see them and why the walk's `jr ra` + delay-slot split
+lands on all four (`WALK_RANGES` row in `ghidra/scripts/dump_static_overlay.py`).
+The smaller hole, file `+0x7E08`, is a lone `jr ra; nop` - a null routine whose
+address the image holds as a word at file `+0x8708`.
+
+`FUN_801DC410` is the page dispatcher: `lw v0, -0x28B0(at)` with
+`at = 0x801E0000 + page*4` reads the handler table at `0x801DD750` and `jalr`s
+the arm, after caching the page index at `0x801DD304`/`0x801DD308` and loading
+the argument word from `0x80083124`. Its head prints the image's `FWIN ERR %d`
+string (file `+0x3D4`) when the word at `0x801DD2F4` is set.
+
+The code splits in two, and the split is visible in the call graph rather than
+in the strings:
+
+- **Character-status pages**, file `+0x424..+0x3B7C`. `FUN_801D5214` is their
+  record loader - it scales its argument by `0x414` and reads a record array at
+  `0x801CF86C`, i.e. **below** this image's own base, in the companion image
+  occupying `0x801CE818..0x801D4DF0` - copying the halfwords at record `+0x00`,
+  `+0x04`, `+0x0C`, `+0x0E`, `+0x10`, `+0x12`, `+0x14` and `+0x16` into the
+  eight-word scratch at `0x801DD7B0`. `0x414` is the USA build's per-character
+  record stride too ([`save-record.md`](../formats/save-record.md)), but the USA
+  build keeps that array at `0x80084708`, not in the overlay window.
+- **Options / config pages**, file `+0x3B7C..+0x8470`. Every one of them runs
+  through the image's two shared leaves `FUN_801D896C` and `FUN_801D8BE0` and a
+  single SCUS-range draw call at `0x8003D38C`.
+
+Nothing here is a port target, and the reason is stronger than "no host calls
+it": **no address this image names in the SCUS range denotes anything on this
+disc.** Of the twenty-nine SCUS-range `jal` targets its dumps cite, not one is a
+function entry in this disc's `SCUS_942.54` - none opens a frame and none
+follows a `jr ra` + delay slot; every one lands mid-body, which is what a
+foreign build's link edits look like read through the wrong executable. The
+same caution applies to its SCUS-range *data* references: `0x8007AA14` and
+`0x8007B124` are heavily used here and are not evidence about the USA globals at
+those addresses. The rows are filed in
+`scripts/ci/port-catalog-ignore.toml` under `[jp_options_status_overlay]` and
+`[worklist_foreign_build_scus]`.
 
 ### The link-time tables are corroboration, not a discriminator
 
