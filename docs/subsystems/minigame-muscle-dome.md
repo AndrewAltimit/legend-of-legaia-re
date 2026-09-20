@@ -98,6 +98,8 @@ A disc-wide walk of every scene MAN puts every dome door in `koin1` P1[9] - thre
 
 The match SM `FUN_801D0748` is the exception to that shape, and the reason is the one this page already makes: the arena reuses the battle engine, so the match runs as an ordinary battle and its driver is reached through the **battle** overlay's own template (`0x800767DC`, tick `FUN_80046A20`), not through the 0977 slot. `FUN_80046A20` is also the second of only two writers of game mode 24 on the disc: with `_DAT_8007BAC0 & 0x100` set it stores `0x18` rather than the field's `0x2`, which is what returns a finished round to the arena instead of to the field.
 
+The bytes say the same thing without a capture. `FUN_801D0748` has **exactly one** `jal` disc-wide - `0x80047014`, inside `FUN_80046A20`, with no test in front of it and the fall-through rejoining at `0x8004701C` - across `SCUS_942.54`, every based overlay image and every raw PROT entry. So every battle frame steps it, and reading the routine as a dome-specific match controller was reading one of its callers' contexts for the routine.
+
 ## Two state machines, not one
 
 The dome runs **two** state machines stacked, and confusing them for one is
