@@ -2014,7 +2014,23 @@ impl World {
     /// still `Dance` (a mid-song abort); when the song already auto-ended
     /// [`tick_dance`](Self::tick_dance) has restored the mode but left the game
     /// installed for one frame so the host can read it - this take clears it.
+    ///
+    /// **Nothing happens without a run to tear down.** Both hosts poll this
+    /// from their frame path with the same `mode != Dance` test, which is
+    /// true on every ordinary field frame, so an unguarded body ran the whole
+    /// teardown - `restore_minigame_bgm` (self-gating, harmless) and the
+    /// stager's PAD-LATCH CLEAR (not harmless) - sixty times a second. The
+    /// clear forces `pad_prev = pad`, so every edge consumer that runs after
+    /// the poll in its host's frame order saw no edges at all: on the browser
+    /// play page, where the poll sits in `tick_minigame_ui` ahead of
+    /// `tick_dev_menu`, the developer menu stopped taking input entirely.
+    /// `enter_dance` is the only writer of `minigames.dance`, so "a run is
+    /// installed, or the mode is still the hall" is exactly the set of frames
+    /// with something to tear down.
     pub fn exit_dance(&mut self) -> Option<crate::dance::DanceGame> {
+        if self.mode != SceneMode::Dance && self.minigames.dance.is_none() {
+            return None;
+        }
         if self.mode == SceneMode::Dance {
             self.mode = self.minigames.dance_return_mode;
         }
