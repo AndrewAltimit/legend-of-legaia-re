@@ -143,6 +143,7 @@ See [`subsystems/script-vm.md`](script-vm.md) → "BGM lookup table" for the res
 |---|---|---|
 | `bgm_id < 2000` (scene-local) | `*(0x80084540) + 6 + bgm_id` | `0x80084540` = scene block base |
 | `bgm_id >= 2000` (global pool) | `*(0x8007BC64) + (bgm_id - 2000)` | `0x8007BC64` = `music_01` bank base |
+| `bgm_id == 0x1000` | none - the load is suppressed | see below |
 
 The result is stored to `0x8007BAB8` and compared against the currently-loaded
 index at `0x8007BA9C`, so a re-select of the playing track is a no-op. Both
@@ -153,6 +154,24 @@ so the bank's low range sits at extraction `988`; the engine maps a sound-test
 index to its extraction entry through the piecewise
 `legaia_engine_core::music_labels::prot_entry_for_bgm_id` (a 2-entry gap at
 extraction `1056`/`1057` splits it, see [`../reference/music-tracks.md`](../reference/music-tracks.md)).
+
+#### `0x1000` is a park sentinel, not a track
+
+`4096` is outside the `2000..=2077` pool and resolves to no entry, and the
+resolver never tries: at `0x8002454C` it loads `_DAT_8007BAC8`, compares it
+against `li v0, 0x1000`, and on equality falls into `0x80024560`, which copies
+the pending index `_DAT_8007BAB8` straight onto the loaded-index barrier
+`_DAT_8007BA9C`. The equality test four instructions later then reads them as
+equal and skips the whole load. So the id means **leave this slot parked**,
+and it is the shared sentinel of *both* streaming slots: the block at
+`0x800244C0` applies the same `0x1000` test to the second slot's id
+`_DAT_8007BABC`, copying it onto its own barrier `_DAT_8007BAA0`.
+
+Across the catalogued mednafen corpus the sentinel appears only in the ending
+states - three carry it on the BGM slot and three on the second slot - which
+is where a save would be parked with no field track owed. Every other state
+carries a `2000..=2068` id. A state's *scene* still does not decide this; the
+globals do.
 
 ### Which track a scene plays
 
@@ -1478,16 +1497,31 @@ tone's centre, so it compares directly. The packed **ADSR config word** is the
 closest thing the SPU keeps to "which tone programmed this voice". A voice's
 `start_addr` is not a comparand at all and is only counted, never equated.
 
-The one statistic that separates the two sides on a matched track is the
-**slots-per-note** factor - sounding voices divided by distinct
-`(sample, pitch)` pairs. Retail runs `1.158`; the engine runs `1.002`. Retail
-doubles a note across two voices roughly one time in six and the port
-essentially never does, which is the remaining per-voice difference once track
-and window are controlled for. One caveat the available pairing cannot
-remove: the retail window is a town scene, so some of its voices may be
-scene SFX rather than the score, and only a capture taken where the engine
-side has no SFX either would settle how much of the `0.156` belongs to the
-sequencer.
+The statistic that moves between pairings is the **slots-per-note** factor -
+sounding voices divided by distinct `(sample, pitch)` pairs. It is a property
+of the arrangement, not a fixed difference between the two sides, and reading
+it as one is what the first pairing did.
+
+| Pairing | Retail | Engine |
+|---|---|---|
+| track `2000` (`map01`), retail capture taken in town01 | `1.158` | `1.002` |
+| track `2016` (`town01`), retail capture taken in town01 | `1.002` | `1.037` - `1.061` |
+
+The second row is a per-vsync capture from `s3_rimelm_freeroam`, whose
+`_DAT_8007BAC8` holds `2016` - the id `town01`'s own prescript selects - so
+both sides play the same piece. On it **retail is the side that never doubles
+a note** and the port is the one running a few percent over, the reverse of
+the first row. That also disposes of the first row's open caveat: the doubling
+could not be town SFX in the retail window, because a second retail capture
+taken in the same town, walking the same streets, reports `1.002`. The `0.156`
+belongs to track `2000`'s own arrangement.
+
+What the aligned pairing leaves is a different residual: over a matched
+120-frame window the port sustains a mean of `6.11` sounding voices against
+retail's `4.12`, sharing every one of the port's twelve pitches and all seven
+of its tones. Pitch and tone *vocabulary* counts are not comparable across
+these two windows at all - a 2-second retail window and a 60-second engine
+window see different amounts of the same piece.
 
 The trace record carries `env_level`, `vol_left`, `vol_right`, `adsr_control`
 and `reverb_send` per voice, filled by all three emitters - the engine
