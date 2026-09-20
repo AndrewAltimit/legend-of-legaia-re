@@ -325,15 +325,16 @@ The `0x4C 0xD8` path is the one that decodes explicit `(kind, variant)` u16 imme
 
 #### What the `0x4C 0xD8` spawner builds
 
-`FUN_801D77F4` is not a generic allocator: it allocates from the **morph-weight
-descriptor** `0x8007068C`, whose `+0x8` handler word is `0x8002174C`
+`FUN_801D77F4` ([`functions/renderer.md`](../reference/functions/renderer.md#801d77f4)
+decodes the routine) is not a generic allocator: it allocates from the
+**morph-weight descriptor** `0x8007068C`, whose `+0x8` handler word is `0x8002174C`
 (`legaia_engine_core::morph_weight_apply`), so every actor this opcode spawns
 is a mesh-morph actor. Its tail (`0x801D7848..0x801D79BC`, PROT 0897 file
 `+0x8FDC`) wires four fields from the instruction's own operands:
 
 | Actor field | Filled from |
 |---|---|
-| `+0x4C` morph block | the pack based at the global `0x8007B7DC`, indexed by operand 1: `block = base + u32_at(base + 4 + idx*4)`, opening with its own `u32` record count |
+| `+0x4C` morph block | a **VDF** body: the VDF buffer at `0x8007B7DC`, indexed by operand 1 as `base + u32_at(base + 4 + idx*4)`, opening with its own `u32` record count |
 | `+0x48` TMD base | the resident-object table `0x8007C018`, indexed by operand 2 (the table `FUN_801D8280` walks) |
 | `+0x90` rest pose | a **snapshot**, not an asset - see below |
 | `+0x3C` / `+0x3E` | the two `u16` immediates, verbatim |
@@ -343,8 +344,10 @@ block's records through the object table's `0x1C` stride, allocates `sum * 8`
 bytes via `FUN_80017888`, and copies each named group's live vertices into it
 with `lwl`/`lwr` + `swl`/`swr` pairs.
 
-The `+0x3C` / `+0x3E` row is the correction the field names hide. `FUN_8002174C` reads
-`+0x3C` and `+0x3E` as the morph weight envelope's **rise and fall rates**, so
+The `+0x3C` / `+0x3E` row is the correction the field names hide. `FUN_8002174C`
+reads them at `0x80021890` and `0x800218B4`, on the `+0x40` direction gate, as
+the two per-frame steps of the morph weight envelope it drives at `+0x6E` - its
+**rise and fall rates**, so
 for this opcode the port's `kind` / `variant` are ramp speeds and carry no
 actor-class meaning. `+0x56` (render mode), `+0x68` and `+0x6E` (live weight)
 are all zeroed, so a freshly spawned morph actor starts at rest. Because the

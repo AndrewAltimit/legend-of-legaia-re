@@ -76,13 +76,18 @@
 //! ### The two buffers, and what fills them
 //!
 //! `FUN_801D77F4`'s tail (`0x801D7848..0x801D79BC`) is the part the port does
-//! not have, and every field it writes is named by its own operands:
+//! not have. The writes themselves are already in the function directory
+//! ([`functions/renderer.md` § 801D77F4](../../../docs/reference/functions/renderer.md#801d77f4));
+//! what this section adds is which of them this module's two arguments are, so
+//! the row names a buffer to build rather than a caller to find:
 //!
-//! - `actor+0x4C` <- the **morph block**. The instruction's first operand is
-//!   an index into the pack whose base pointer is the global at
-//!   `0x8007B7DC`: `block = base + u32_at(base + 4 + idx*4)`, and the block
-//!   opens with its own `u32` record count followed by the 12-byte record
-//!   headers this module parses.
+//! - `actor+0x4C` <- the **morph block**, and it is a **VDF** body: the
+//!   instruction's first operand indexes the VDF buffer at the global
+//!   `0x8007B7DC` (asset-dispatcher case 7), `block = base + u32_at(base + 4 +
+//!   idx*4)`, and the block opens with its own `u32` record count followed by
+//!   the 12-byte record headers this module parses. That is why the record
+//!   type here is [`legaia_engine_vm::vdf_morph::VdfMorphRecord`] and not a
+//!   shape of its own - one buffer, two walkers.
 //! - `actor+0x48` <- the TMD base, read from the resident-object table at
 //!   `0x8007C018` by the instruction's second operand (the same table
 //!   `FUN_801D8280` walks).
