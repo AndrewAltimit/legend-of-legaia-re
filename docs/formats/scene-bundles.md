@@ -395,8 +395,11 @@ TIM list normally occupies:
 The odd one out is not authoring residue and not a scene-specific consumer
 outside the walk: it is a **second copy of a live asset**. Decompressing
 `0455`'s descriptor 0 and hashing it against `0456_urudre1.BIN` gives the same
-SHA-256 over all 343,480 bytes - the uncompressed entry is 344,064 bytes, the
-difference being sector padding. The scene's texture pack ships as its own PROT
+SHA-256 over all 343,480 bytes - which is where the pack ends, its last member's
+TIM closing on exactly that byte. Entry `0456` is 344,064 bytes, and the 584
+above the pack are **not** zero fill: they are high-entropy residue in the
+entry's final sector, so "sector padding" is the wrong word for them even
+though that is where they sit. The scene's texture pack ships as its own PROT
 entry, which the asset-loader chain streams; the bundle's copy of it is
 switched off by its type byte and nothing ever reads it.
 

@@ -2904,8 +2904,10 @@ runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
   (`puVar5[0]` = count, `puVar5[1..n]` = mesh pointers) and per
   entry calls:
   - `FUN_8002735C(...)` - the 60-GTE table-driven Legaia TMD renderer, taken
-    when `actor[+0x42] != 0` (`bne $s7` at `0x8001B454`). Measured as the arm
-    retail never takes, landmarks included.
+    when `actor[+0x42] != 0` (`bne $s7` at `0x8001B454`). No sampled state's
+    drawn actor has that bit up, landmarks included - but the disc does ship
+    writers of it, so that is a statement about the sample
+    ([renderer.md](renderer.md#the-disc-does-ship-writers-of-0x42)).
   - `FUN_80029888(...)` - environment-mapped TMD when `+0x42 == 0` and
     `actor[+0x7a] != 0`. Also unentered in every sampled state.
   - `FUN_80043390(mesh, color, tpage)` - textured TMD, the fall-through and the

@@ -92,12 +92,15 @@ installs the fixed zone-miss set instead.
 ### Who else loads the block
 
 Nothing re-queries on a bare tile crossing. Disc-wide, `FUN_801DE3E0` has
-seven `jal` sites: the three arms above plus `[4C C4]`, the player
-**seat / warp** path at `0x801D1FE8..0x801D2014` (which runs the `[4C 39]`
-sequence in code - query, `FUN_80019278`, `FUN_801DB8EC`, `FUN_801DAA50`),
-its sibling at `0x801D2BCC`, and the SCUS field-init call at `0x8003B800`.
-The field **per-frame** controller `FUN_801D1344` has one more, at
-`0x801D17FC..0x801D1830`, and it is gated: `_DAT_1F800394 & 0x400000` (scratchpad flag bit `22`) must
+seven `jal` sites, and the per-frame one is the seventh rather than an eighth:
+**two** of the arms above call it (`[4C 38]` at `0x801E1068` and `[4C 39]` at
+`0x801E109C` - `[4C 3D]` calls `FUN_800180EC` instead, and `[4C 3E]` has no
+call of its own because it is `[4C 39]`'s tail), plus `[4C C4]` at
+`0x801E2884`, the player **seat / warp** path at `0x801D1FF4` (which runs the
+`[4C 39]` sequence in code - query, `FUN_80019278`, `FUN_801DB8EC`,
+`FUN_801DAA50`), its sibling at `0x801D2BCC`, and the SCUS field-init call at
+`0x8003B800`. The seventh is in the field **per-frame** controller
+`FUN_801D1344`, at `0x801D182C`, and it is gated: `_DAT_1F800394 & 0x400000` (scratchpad flag bit `22`) must
 be set, or the frame only eases (`FUN_801DB510`) and clamps
 (`FUN_801DAA50`). That bit is not in the per-mode seed of the flag word - the
 seed copies a `u16` - so it starts clear every time the game mode changes and
@@ -406,12 +409,24 @@ the change, and only in one scene mode:
 the actor is counter-rotated by exactly the octant the pad gained.
 
 **The octant is scene-authored, not camera-derived.** Nothing anywhere computes
-it from a camera azimuth. Its complete writer set disc-wide is this arm's `sw`
-at `0x801E0ED0`, a `sw zero` clear at `0x801E5664`, and the tile-board walker's
-three stores (see [tile-board.md](tile-board.md#the-walkers-octant-store)); its
-only readers are this arm's own compare at `0x801E0EBC` and the walker's
-save/restore at `0x801EF320`. A port that derives the octant from its camera is
-making a port decision, and should say so.
+it from a camera azimuth. Its complete write set disc-wide is six stores, all
+in the field overlay: this arm's `sw` at `0x801E0ED0`, a `sw zero` clear at
+`0x801E5664`, the tile-board walker's delay-slot clear and two banded stores at
+`0x801EF8B0` / `0x801EF8B8` / `0x801EF8CC` (see
+[tile-board.md](tile-board.md#the-walkers-octant-store)), and the walker's
+restore at `0x801EFE7C`.
+
+The read set is four, and two of them are the point: the **pad remapper**
+`func_0x800467E8` loads the word twice in `SCUS_942.54`, at `0x800467E8` and
+`0x80046840`, which is what makes the octant a rotation at all. The other two
+are this arm's own compare at `0x801E0EBC` and the walker's save at
+`0x801EF320`. (An earlier sentence here listed only the two field-overlay
+reads, which reads as though the value never leaves the overlay that writes
+it; it is the SCUS remapper that consumes it. Measured with
+`find-gp-relative-refs.py --va 0x8007b5f0` over `SCUS_942.54` and every based
+overlay image - the absolute-word scan is blind to both forms here.) A port
+that derives the octant from its camera is making a port decision, and should
+say so.
 
 ### 0x4C nibble-0x50..0x5F - the five sub-op table
 
