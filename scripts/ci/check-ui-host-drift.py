@@ -497,6 +497,26 @@ WEB_FIELD_SCENE = "crates/web-viewer/src/field_scene.rs"
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "shop / inn / prize / coin overlay stage transform, native "
+        "vs play page - every builder in that group places in the retail "
+        "320x240 stage, so a host that composites its output has to scale it "
+        "through the shared `pause_menu::stage_transform` before it reaches a "
+        "surface-pixel draw list. The native window did not: it extended the "
+        "group straight into `build_hud`'s list, so the whole shop UI drew at "
+        "a third its size in a 960x720 window while the identical builders "
+        "filled the browser tab. The pinned `SHOP_OVERLAY_PEN` / `SHOP_PEN` "
+        "pair is blind to it by construction - the two pens ARE equal and the "
+        "split is in the transform applied after them, which is the general "
+        "lesson: a paired constant pins a value, not the space it lands in. "
+        "Both composition sites must reach the transform and the scale pass",
+        "sites": {
+            "native": (NATIVE_HUD, "build_hud"),
+            "web": (WEB_PLAY_SHOP, "play_overlay_draws_json"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["stage_transform", "scale_stage_text_draws"],
+    },
+    {
         "what": "field / overworld / cutscene camera, native vs play page - "
         "which camera owns a frame and what its retail GTE inputs are is one "
         "engine question (`camera_view::resolve_field_camera`), and the "

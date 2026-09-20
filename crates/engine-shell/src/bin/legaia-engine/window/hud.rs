@@ -1029,7 +1029,7 @@ impl PlayWindowApp {
         // Shop / inn / prize / coin-counter overlay group. Every builder
         // below places in the retail 320x240 STAGE, so the group is collected
         // apart from the surface-pixel HUD above and scaled through the one
-        // `pause_menu::stage_transform` both hosts share. Drawing it straight
+        // stage transform both hosts share. Drawing it straight
         // into `out` left the whole shop UI at 1/3 size in the 960x720 window
         // while the browser play page scaled the same builders' output; the
         // pinned `SHOP_OVERLAY_PEN` / `play_shop::SHOP_PEN` pair could not see
@@ -1260,7 +1260,12 @@ impl PlayWindowApp {
             }
         }
         if !stage.is_empty() {
-            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            // The shared kernel by its own name rather than through the
+            // `save_select_stage` wrapper, so `check-ui-host-drift.py` can
+            // pin this composition against the browser page's: this is the
+            // only such call in `build_hud`, and losing it fails the gate.
+            let (stage_origin, stage_scale) =
+                legaia_engine_render::pause_menu::stage_transform(w, h);
             legaia_engine_render::scale_stage_text_draws(&mut stage, stage_origin, stage_scale);
             out.extend(stage);
         }
