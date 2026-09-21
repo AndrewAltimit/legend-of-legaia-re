@@ -990,6 +990,72 @@ about these is contested.
 | Gap | Shape |
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
+| world-map line overlay | A whole pass the page has no uploader for. See [below](#the-world-map-line-overlay-has-no-browser-uploader). |
+| derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
+| who owns the frame | The native window re-derives it instead of consuming the resolver. See [below](#the-native-window-re-derives-which-camera-owns-the-frame). |
+| boot Options second copy | A native-only unframed duplicate of a framed screen. See [below](#the-boot-options-screen-draws-twice-natively). |
+
+### The world-map line overlay has no browser uploader
+
+The native window draws the overworld's entity markers and the player marker
+as screen-space **lines** (`window/event_handler/redraw_passes.rs`), through
+the renderer's line pipeline. The browser play page has no line pass at all -
+its whole 3D surface is the textured / colour TMD program plus the sprite and
+font blitters - so this is not a missing call site.
+
+Blocking capability: a line-primitive path on the page. Either a wasm export
+that hands back the markers as screen-space quads the existing sprite blitter
+can draw (two triangles per segment, built engine-side so the two hosts emit
+the same marker set), or a second GL program with its own buffer. Until one
+exists there is nothing on the page for a wired call to reach.
+
+### Derived scene point lights are native-only
+
+`--dynamic-lighting` stages per-scene derived point lights plus their PCF
+shadow maps into the wgpu renderer. It is the enhancement layer, not retail -
+the faithful path is pixel-identical with it off, which is the default - and
+the page's GLSL program has neither a light array nor a shadow sampler.
+
+Blocking capability: a point-light + shadow layer in
+[`site/js/webgl-shaders.js`](../../site/js/webgl-shaders.js), and a per-frame
+export of the picked light set. Both are real work, and neither buys retail
+fidelity: this is the one row here where the *native* host is the one running
+a non-retail path, so the page being without it is a feature gap rather than
+a correctness gap.
+
+### The native window re-derives which camera owns the frame
+
+`camera_view::resolve_field_camera` answers which camera owns a field frame,
+and the browser play page consumes exactly that. The native window's
+`compute_scene_camera` answers it again from its own `match`, reaching the
+resolver only for the world-map arm.
+
+Nothing diverges today - both arms compose the same views - so this is latent
+rather than live. It is listed because the *shape* is the one every other row
+on this page comes from: one decision, two implementations, and no gate that
+can pair them (tier 3 pairs a kernel both hosts call, and here only one host
+calls it).
+
+Blocking capability: the native window's battle and boot arms have no
+`FieldCameraFrame` variant to resolve to - the resolver's five arms are field,
+cutscene and the two world-map vantages. Folding the window in means either
+extending the enum to cover the battle phase cameras (which live in
+`window/battle_cam.rs` and read a battle-only model) or accepting a
+half-resolved frame, and neither is a wiring change.
+
+### The boot Options screen draws twice natively
+
+The retail options screen is a framed pause-menu sub-screen, and both hosts
+open it from the title's Options row through the same menu runtime. The native
+window additionally paints an unframed copy of the same rows at a fixed pen
+(`window/boot_cutscene.rs`), left from before the framed screen existed.
+
+This is the inverse of every other row here: the *extra* draw is the native
+one, and the fix is a deletion rather than a wire. It stays recorded rather
+than done because the fixed-pen copy is what the window's own boot-UI tests
+read back, so removing it is a test change as well as a draw change - and
+because a boot Options screen with no framed window resident (no disc menu
+table parsed) currently falls back to exactly that copy.
 
 ### The minigame side-channel step is paired; its contents are not
 
@@ -1647,26 +1713,64 @@ every gate by construction.
 The same kernel advanced on the simulation tick by one host and on the
 animation frame by the other. The two agree exactly at 60 fps and nowhere
 else, so nothing about the code is wrong to read and the difference only
-exists at run time. The name-entry caret is the plain case - native
-`window/hud.rs` steps it per sim tick, `crates/web-viewer/src/play_name_entry.rs`
-per animation frame - and the battle move-FX streak schedule and the
-target-cursor pulse phase are the same shape.
+exists at run time - which is also why the *symptom* names the display and
+not the code: the name-entry caret blinks at half speed on a 120 Hz monitor
+and at double on a throttled tab.
+
+That caret is the plain case, and the fix is the shape's general one: a modal
+overlay freezes the field tick, so the host has to spend the frame's sim
+steps on the frozen clock instead of letting the overlay ride the refresh.
+[`site/js/play-app.js`](../../site/js/play-app.js) drains its fixed-timestep
+accumulator once per display frame, above the overlay arms rather than
+inside the tick branch, and hands the count to the name-entry step - the
+press lands on the first step and the rest only advance `World::frame`, which
+is exactly what the native window's catch-up ticks do. The battle move-FX
+streak schedule and the target-cursor pulse phase are the same shape and are
+still on the worklist.
 
 ### One decision, two inputs
 
-A per-frame predicate both hosts run, fed from different state. The
-camera-occlusion fade's arming gate is the anchor: the native window excludes
-the boot UI, the world map, the cutscene camera and the debug orbit, while
-`site/js/play-app.js` excludes only battle, the minigames and VR. Tier 3 pairs
+A per-frame predicate both hosts run, fed from different state. Tier 3 pairs
 the *kernel*; the operand set is per host, so the gate is silent.
+
+The camera-occlusion fade's arming gate is the anchor, and it shows what the
+fix has to look like: splitting the predicate into the half the **world** can
+answer and the half only the **host** can. `field_occlusion::fade_armed` holds
+the world half (field mode, no scripted shot owning the camera) beside
+`player_body_centre`, which is the point the gate ray-casts to *and* the focus
+the shader takes - one kernel, so the two cannot name different points. What
+stays per host is genuinely per host: a master toggle, a boot or pause UI
+owning the screen, a debug vantage, a VR first-person eye.
+
+Leaving the world half per host is what produced the divergence: the native
+window excluded the boot UI, the world map, the cutscene camera and the debug
+orbit, while the page excluded only battle and the minigames, so a pause menu
+or a scripted shot kept dissolving the walls behind it.
 
 ### A GL state word the engine does not own
 
 The page sets some frame state in JS where the native window takes it from the
-world - the battle clear colour (`site/js/webgl-tmd.js`) is the sky on one
-host and a hard-coded near-black on the other, and the winding cull that
-retail's NCLIP performs is `disable(CULL_FACE)` there unconditionally. No Rust
-symbol is missing, so no tier can name it.
+world. No Rust symbol is missing, so no tier can name it, and the only
+durable fix is to move the *decision* into the engine and leave the GL call
+as the thing that applies it.
+
+Retail's GTE **NCLIP** winding rejection is the worked case:
+`camera_view::nclip_cull_mode` is the one place that says when it arms (the
+in-engine cutscene camera, off the overworld), the native window hands the
+word to `Renderer::set_backface_cull` and the page hands the same word to
+`TmdRenderer.setNclipCull`. Before that the page's assembled pass called
+`disable(CULL_FACE)` unconditionally. The battle clear colour - the sky on one
+host, a hard-coded near-black in
+[`site/js/webgl-tmd.js`](../../site/js/webgl-tmd.js) on the other - is the
+same shape and is still open.
+
+The page's prologue grade was a third instance and the subtlest, because
+nothing was missing that a reader would look for: the grade's *multiply* half
+reached the page, and its **palette-collapse** half - the law retail applies
+to the scene's uploaded CLUT entries and TMD packet words at load - had no
+uniform in [`site/js/webgl-shaders.js`](../../site/js/webgl-shaders.js) to
+land on. The engine had composed both arms and exported both; one of the two
+had no consumer, which reads in a diff as a fully wired feature.
 
 ### A whole pass one host has no uploader for
 
@@ -1682,6 +1786,47 @@ engine's own teardown cannot release because it never knew about it. The
 browser's summon actor seat is the worked example: `World::finish_battle`
 restores the engine actor table, the host-side slot index survives it, and the
 next fight hands the same seat out twice.
+
+## Two shapes a "the page is missing it" reading gets backwards
+
+A side-by-side read produces sentences of the form "the native window does X
+and the page does not". Two live cases were the other way round, and both
+were only visible from the *event* or the *sign*, never from the two call
+sites.
+
+### The feature was dead on both hosts
+
+The native window carried an arm for `apply == 0` Camera Configure beats - the
+snap beats retail's mover commits immediately - and the page carried none, so
+it read as a page gap. It was neither: `Camera::route_camera_events` consumes
+every `FieldEvent::CameraConfigure` off the world queue during the session
+tick and does **not** restore it to `pending_field_events`, and the window's
+arm sat in its own later drain of that same queue. The arm could not fire, the
+bank it filled was always empty, and the replay it fed was a no-op.
+
+The lesson generalises past cameras: where a host watches a queue another
+layer already drained, "one host has the arm" says nothing about whether
+either host has the behaviour. Follow the event to the drain that consumes
+it - the bank now lives on `Camera` itself, beside the consumer, which is
+what makes both hosts' replay reach it.
+
+### The hand-off was the bug
+
+The `F3` debug orbit is one vantage on both hosts, and only the page handed
+the engine camera anything on the way out of it - which reads as the page
+compensating for something the window does not need. It was: the window
+composes its vantage as `fixed diagonal + Camera::manual_orbit` and its drag
+writes that same field in both modes, so nothing drifts and nothing needs
+reconciling. The page kept a private yaw while the toggle was on and then
+wrote its **negation** into `manual_orbit` - and since the two track together
+with the toggle off, cycling `F3` flipped the orbit by twice its value.
+
+`Camera::debug_orbit_by` is the shared setter now (un-gated by the cutscene,
+because a dev vantage ignores whoever owns the scripted camera, but still
+field-only so a drag on the overworld cannot rewrite the locomotion compass).
+A host-side hand-off between two representations of one quantity is worth
+reading as a defect report rather than as parity work: the fix is usually to
+delete the second representation.
 
 ## Adding coverage
 
