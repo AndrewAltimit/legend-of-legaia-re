@@ -40,65 +40,62 @@ fn op_4c_n_8_sub_1_truncated_buffer_returns_unknown() {
 }
 
 #[test]
-fn op_4c_n_8_sub_6_actor_set_rotation_advances_15() {
-    // [4C, 0x86, ... 12 bytes for 6 LE16 ..., actor_id]
+fn op_4c_n_8_sub_6_installs_a_reflection_and_advances_15() {
+    // The literal `concnow` p1[1] instruction: no X mirror, a Z mirror
+    // plane at `0x37A0`, the tracking rect 30..38 x 90..110, and `0xF8` -
+    // the player - as the actor to reflect.
     let bytecode = [
-        0x4Cu8, 0x86, // opcode + sub-op
-        0x10, 0x00, 0x20, 0x00, 0x30, 0x00, // x, y, z = 0x10, 0x20, 0x30
-        0x40, 0x00, 0x50, 0x00, 0x60, 0x00, // rx, ry, rz = 0x40, 0x50, 0x60
-        0x07, // actor_id = 7
+        0x4Cu8, 0x86, 0x00, 0x00, 0xA0, 0x37, 0x1E, 0x00, 0x5A, 0x00, 0x26, 0x00, 0x6E, 0x00, 0xF8,
     ];
     let mut host = TestHost {
-        n_8_sub_6_actor_present: true,
+        n8_sub6_source_present: true,
         ..Default::default()
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 15 });
-    assert_eq!(host.n_8_sub_6_actor_set_rotation_calls.len(), 1);
-    let (actor_id, position, rotation) = host.n_8_sub_6_actor_set_rotation_calls[0];
-    assert_eq!(actor_id, 7);
-    assert_eq!(position, [0x10, 0x20, 0x30]);
-    assert_eq!(rotation, [0x40, 0x50, 0x60]);
+    assert_eq!(host.n8_sub6_reflection_installs.len(), 1);
+    let (source_id, words) = host.n8_sub6_reflection_installs[0];
+    assert_eq!(source_id, 0xF8);
+    assert_eq!(words, [0x0000, 0x37A0, 0x001E, 0x005A, 0x0026, 0x006E]);
 }
 
 #[test]
-fn op_4c_n_8_sub_6_advances_15_even_when_actor_missing() {
-    // The original short-circuits to `return param_2 + 0xF` when the
-    // actor lookup fails - PC still advances by 15.
+fn op_4c_n_8_sub_6_advances_15_even_when_the_source_is_missing() {
+    // Retail's `addiu s8,s8,0xf` rides the resolve's delay slot, so the
+    // miss branch leaves with the PC already past the instruction.
     let bytecode = [
         0x4Cu8, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF,
     ];
     let mut host = TestHost {
-        n_8_sub_6_actor_present: false, // actor lookup fails
+        n8_sub6_source_present: false,
         ..Default::default()
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 15 });
-    // Hook still fires (the host records the call); the actor_present
-    // bool just controls the return value.
-    assert_eq!(host.n_8_sub_6_actor_set_rotation_calls.len(), 1);
+    assert_eq!(host.n8_sub6_reflection_installs.len(), 1);
 }
 
 #[test]
 fn op_4c_n_8_sub_6_signed_decode_round_trip() {
-    // Negative LE16 should decode through `as i16` correctly.
+    // `FUN_8003CE9C`'s result is sign-extended through `sll`/`sra` before
+    // it reaches the spawner, so a mirror line left of the origin survives.
     let bytecode = [
-        0x4Cu8, 0x86, 0xFF, 0xFF, // x = -1
-        0x00, 0x80, // y = -32768
-        0xFE, 0xFF, // z = -2
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // rx/ry/rz = 0
+        0x4Cu8, 0x86, 0xFF, 0xFF, // w0 = -1
+        0x00, 0x80, // w1 = -32768
+        0xFE, 0xFF, // w2 = -2
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // w3..w5 = 0
         0x00,
     ];
     let mut host = TestHost {
-        n_8_sub_6_actor_present: true,
+        n8_sub6_source_present: true,
         ..Default::default()
     };
     let mut ctx = FieldCtx::default();
     step(&mut host, &mut ctx, &bytecode, 0);
-    let (_, position, _) = host.n_8_sub_6_actor_set_rotation_calls[0];
-    assert_eq!(position, [-1, -32768, -2]);
+    let (_, words) = host.n8_sub6_reflection_installs[0];
+    assert_eq!(words, [-1, -32768, -2, 0, 0, 0]);
 }
 
 #[test]

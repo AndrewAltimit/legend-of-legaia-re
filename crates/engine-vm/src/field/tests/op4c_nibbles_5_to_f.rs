@@ -494,28 +494,28 @@ fn op_4c_n_a_sub_3_through_f_skip_5() {
 }
 
 #[test]
-fn op_4c_n9_sub_f_registers_callback_and_halts() {
-    // [4C, 0x9F] - register `LAB_801DA930` callback then halt at PC.
-    // Same dispatch pattern as nibble-8 sub-7 (callback target differs).
+fn op_4c_n9_sub_f_retires_the_ladder_and_advances_two() {
+    // [4C, 0x9F] - the floor-height-ladder retire sweep. Its arm tail-jumps
+    // to `0x801E2DC4`, whose `addiu s8,s8,2` rides the `jal 0x8003CF40`
+    // delay slot, so the op never parks. Fifteen shipped scenes issue it,
+    // 140 times in all; a park here stalls every one of them.
     let bytecode = [0x4Cu8, 0x9F];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert_eq!(r, StepResult::Advance { next_pc: 2 });
     assert_eq!(host.n9_callback_regs, 1);
 }
 
 #[test]
-fn op_4c_n8_sub_7_registers_callback_and_halts() {
-    // [4C, 0x87] - register actor-list callback (LAB_801E5154) then halt
-    // at PC. The original goes through `switchD_801e00f4::default()`,
-    // which for opcode 0x4C (`& 0x70 = 0x40`) returns `param_2` -
-    // halt at PC. Our hook is one-shot per dispatch entry.
+fn op_4c_n8_sub_7_retires_reflections_and_advances_two() {
+    // [4C, 0x87] - the reflection-controller retire sweep, the same shape
+    // through the same shared exit with a different handler VA.
     let bytecode = [0x4Cu8, 0x87];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert_eq!(r, StepResult::Advance { next_pc: 2 });
     assert_eq!(host.n8_callback_regs, 1);
 }
 

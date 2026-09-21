@@ -7,8 +7,8 @@ use super::*;
 // (actor model + anim, 9-byte), sub-2 (mirror write, 2-byte),
 // sub-4 (b630 write, 2-byte), sub-5/E/F (halt-acquire idiom,
 // 2-byte - the original at lines 6550-6570 shares one body),
-// sub-6 (actor set rotation, 15-byte), sub-7 (callback
-// register + halt), sub-8 (globals write, 6-byte), sub-9
+// sub-6 (reflection-controller install, 15-byte), sub-7
+// (the matching teardown, 2-byte), sub-8 (globals write, 6-byte), sub-9
 // (DAT_80073F00 write, 4-byte), sub-0xA (write quad, 11-byte),
 // sub-0xB (actor-type conditional jump, 5-byte), sub-0xC
 // (field_68 conditional jump, 4-byte), sub-0xD (char actor
@@ -53,29 +53,24 @@ pub(super) fn op_4c_n8<H: FieldHost>(
                 next_pc: pc + header_size + 2,
             }
         }
-        // Sub-6: 15-byte `[4C, 0x86, x_lo..rz_hi, actor_id]`.
-        // Six 16-bit LE values for position+rotation matrix
-        // axes, then a 1-byte actor selector at the tail.
-        // Dispatcher lines 6571-6585: actor lookup misses fall
-        // through to PC + 15 with no side effect; on hit, host
-        // applies the rotation matrix. PC always advances by
-        // 15.
+        // Sub-6: 15-byte `[4C, 0x86, w0..w5, source_id]` - the
+        // **reflection controller install** (`0x801E21E0` ->
+        // `FUN_801E573C`). The six `s16` are the controller's
+        // mirror line and tracking rect; the last byte is the
+        // cross-context id of the actor to reflect. A resolve
+        // miss still advances, because the arm's
+        // `addiu s8,s8,0xf` sits in the resolve's delay slot.
+        // PC always advances by 15.
         6 => {
             if operand + 14 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let position = [
-                crate::field_helpers::load_u16_le(&bytecode[operand + 1..]) as i16,
-                crate::field_helpers::load_u16_le(&bytecode[operand + 3..]) as i16,
-                crate::field_helpers::load_u16_le(&bytecode[operand + 5..]) as i16,
-            ];
-            let rotation = [
-                crate::field_helpers::load_u16_le(&bytecode[operand + 7..]) as i16,
-                crate::field_helpers::load_u16_le(&bytecode[operand + 9..]) as i16,
-                crate::field_helpers::load_u16_le(&bytecode[operand + 11..]) as i16,
-            ];
-            let actor_id = bytecode[operand + 13];
-            host.op4c_n_8_sub_6_actor_set_rotation(ctx, actor_id, position, rotation);
+            let mut words = [0i16; 6];
+            for (i, w) in words.iter_mut().enumerate() {
+                *w = crate::field_helpers::load_u16_le(&bytecode[operand + 1 + i * 2..]) as i16;
+            }
+            let source_id = bytecode[operand + 13];
+            host.op4c_n8_sub6_install_reflection(ctx, source_id, words);
             StepResult::Advance {
                 next_pc: pc + header_size + 14,
             }
@@ -90,15 +85,17 @@ pub(super) fn op_4c_n8<H: FieldHost>(
             }
         }
         7 => {
-            // Register callback then halt at PC. The original
-            // calls `switchD_801e00f4::default()` (= halt for
-            // 0x4C since `0x4C & 0x70 = 0x40`); script resumes
-            // when the registered callback fires. Distinct from
-            // an Advance - a re-entry of the dispatcher at the
-            // same PC re-registers, so the host's hook should
-            // be idempotent.
-            host.op4c_n8_sub7_register_callback();
-            StepResult::Halt { final_pc: pc }
+            // Sub-6's teardown: `FUN_8003CF40(_DAT_8007C34C,
+            // 0x801E5154)` retires every live reflection
+            // controller, and the arm's own `addiu s8,s8,2`
+            // rides the call's delay slot at `0x801E2DC4`. The
+            // sweep registers nothing and the script does not
+            // park - a halt here would stall any scene that
+            // issued it.
+            host.op4c_n8_sub7_retire_reflections();
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
         }
         8 => {
             if operand + 5 > bytecode.len() {

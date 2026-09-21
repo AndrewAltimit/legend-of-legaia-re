@@ -78,13 +78,21 @@
 //! the more familiar `0x800 - a` are the same value; retail writes the former
 //! because it materialises `-0x800` as a single `addiu v0, zero, -0x800`.
 //!
-//! # Not wired
+//! # Who forms the pair
 //!
-//! The engine has no actor-callback table to hang this off - the descriptor
-//! record at `0x801F2950` that holds the pointer is not parsed yet, and the
-//! actor fields it reads (`+0x64`, `+0x68`, `+0x6A`, `+0x80..+0x8A`, `+0x90`,
-//! `+0x94`) have no counterpart on `engine_core::world`'s actor. Wiring it
-//! means editing `engine-core/src/world/**`, owned by another change.
+//! [`spawn_controller`] is the other half - `FUN_801E573C`, reached from the
+//! field VM's `4C 86` arm at `0x801E21E0`. The arm resolves the
+//! instruction's **last** operand byte through `FUN_8003C83C` and hands the
+//! spawner that actor as `a1` and its own executing context as `a0`, so the
+//! `+0x90` end is the script's actor and the `+0x94` end is the named one.
+//! `4C 87` is the matching teardown - `FUN_8003CF40` over
+//! [`REFLECT_HANDLER`], a retire sweep rather than a registration.
+//!
+//! Ten instructions of `4C 86` ship, in `concnow`, `conc2`, `urudre2` and
+//! `opurud`; each sits in a talk record whose text is a single
+//! parenthesised beat, which is what a mirror answers when addressed. Their
+//! operands are all the `(0, zz)` arm: no X mirror, a Z plane a tile or two
+//! past the rect's far edge, and a rect eight or nine tiles wide.
 
 /// Actor `+0x10` flag bits this routine tests or moves.
 pub mod flags {
@@ -101,6 +109,54 @@ pub mod flags {
 pub const FULL_TURN: i32 = 0x1000;
 /// Half turn - the point-reflection facing offset.
 pub const HALF_TURN: i16 = 0x0800;
+
+/// Spawn descriptor the controller is allocated from - field overlay VA
+/// `0x801F2948`, file `0x024130`. Its `+0x04` is the `0xFFFF0000` marker and
+/// its `+0x08` is [`REFLECT_HANDLER`]; naming the handler word itself "the
+/// descriptor" is off by the two leading words.
+pub const REFLECT_DESCRIPTOR: u32 = 0x801F_2948;
+
+/// The descriptor's `+0x08` handler word - [`tick_reflection`]'s own VA, and
+/// the value the retire sweep behind `4C 87` matches on.
+pub const REFLECT_HANDLER: u32 = 0x801E_5154;
+
+/// The controller's `+0x54`, written by the spawner as a halfword zero.
+pub const REFLECT_INITIAL_STATE: u16 = 0;
+
+/// Build the controller `FUN_801E573C` seats, from the six halfwords the
+/// dispatcher arm decoded.
+///
+/// PORT: FUN_801E573C
+/// REF: FUN_80020DE0 (the allocation off `_DAT_8007C34C`),
+/// REF: FUN_8003C83C (the id resolve the `4C 86` arm runs first)
+///
+/// Forty-five instructions at field-overlay file `0x16F24`. It takes eight
+/// arguments - `a0`, `a1` and six stacked halfwords - allocates from
+/// [`REFLECT_DESCRIPTOR`], and on a non-null node writes `+0x90 = a0`,
+/// `+0x94 = a1`, `+0x54 = 0` and `+0x80 .. +0x8A = w0 .. w5` in that order.
+/// A null allocation writes none of it, which is why the caller cannot
+/// observe a partial controller.
+///
+/// The two pointers are **not** interchangeable, and the tick is what
+/// decides which is which: [`tick_reflection`] reads `+0x94` (`a1`, the
+/// actor the arm resolved from the instruction's last operand byte) and
+/// writes `+0x90` (`a0`, the executing script's own context). So the script
+/// that issues `4C 86` makes *itself* the mirror image of the actor it
+/// names.
+///
+/// The endpoints are the caller's to resolve; this kernel is the six-field
+/// half, which is the whole of what the spawner decides.
+pub fn spawn_controller(words: [i16; 6]) -> ReflectController {
+    ReflectController {
+        flags: 0,
+        mirror_x: words[0],
+        mirror_z: words[1],
+        min_tile_x: words[2],
+        min_tile_z: words[3],
+        max_tile_x: words[4],
+        max_tile_z: words[5],
+    }
+}
 
 /// The subset of an actor this routine reads or writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -169,42 +225,18 @@ pub fn tile_of(v: i16) -> i16 {
 /// Run one tick of the reflection callback.
 ///
 /// PORT: FUN_801e5154
-// NOT WIRED: no engine path forms a reflection pair. The blocker is the
-// **spawner**, and it is named rather than absent - an earlier reading here
-// said retail pairs nothing either, and that does not survive a reference
-// sweep.
-//
-// Retail's spawner is `FUN_801E573C` (field overlay file `0x16F24`, 45
-// instructions). It allocates from the spawn descriptor at **`0x801F2948`**
-// - whose `+0x04` is the `0xFFFF0000` marker and whose `+0x08` handler word
-// is `0x801F2950`, holding this routine's VA; naming `0x801F2950` itself
-// "the descriptor" was off by the two leading words - against the generic
-// effect-actor list `_DAT_8007C34C`, then writes `+0x90 = source actor`,
-// `+0x94 = destination actor`, `+0x54 = 0` and the six halfwords
-// `+0x80 / +0x82 / +0x84 / +0x86 / +0x88 / +0x8A` from its trailing
-// arguments - the mirror/bounds block this tick reads as the tile rect. A
-// null allocation writes none of it.
-//
-// Its caller is **field-VM op `0x4C` sub-op `0x86`**, the arm at
-// `0x801E2250..0x801E2278`; the arm decodes the last two of those halfwords
-// with `FUN_8003CE9C` at operand `+9` and `+0xB`. The pinning is three
-// steps: the `0x4C` outer table at `0x801CEE60` sends nibble 8 to
-// `0x801E1EA0`, that arm bounds `op0 & 0xF` at `0x10` and indexes the
-// sub-table at `0x801CEF48` (`lui`/`addiu` pair at `0x801E1EAC`), and slot 6
-// of it is `0x801E21E0`, whose body runs into this call.
-//
-// Slot 7 - `4C 87` - is the matching teardown:
-// `FUN_8003CF40(_DAT_8007C34C, 0x801E5154)`, a retire sweep keyed on this
-// handler. So install and retire are consecutive sub-ops of one nibble.
-//
-// The engine parses neither the descriptor nor that arm, so no actor is ever
-// given this tick and no pair is ever formed. The per-actor storage is
-// largely present already: `Actor`'s `move_state` is `move_vm::ActorState`,
-// carrying `+0x10` flags, the `+0x14/16/18` position, the `+0x26` facing,
-// the `+0x5C/68/6A` animation triple and the `+0x80..8A` mirror/bounds block
-// at those exact offsets; only the `+0x64` animation-set word has no slot.
-// Wiring is a port of `FUN_801E573C` plus the dispatcher arm that calls it,
-// not a new representation.
+/// REF: FUN_801E573C (the spawner, [`spawn_controller`]),
+/// REF: FUN_8003CF40 (the `4C 87` retire sweep keyed on [`REFLECT_HANDLER`])
+///
+/// Live on both hosts through `legaia_engine_core::world::World::tick_handler_actors`,
+/// which runs it over every pool actor seated by the field VM's `4C 86` arm.
+/// The seat resolves the pair's two endpoints - the executing script's own
+/// actor for `+0x90` and the instruction's last operand byte for `+0x94` -
+/// and marshals each end's pose in and out; see `World::spawn_reflection_controller`.
+///
+/// Called with the *controller* in `ctrl`, the `+0x90` end in `dst` and the
+/// `+0x94` end in `src`. The asymmetry is retail's: `+0x94` is read and its
+/// tile position gates the whole tick, `+0x90` is written.
 pub fn tick_reflection(
     ctrl: &mut ReflectController,
     dst: &mut ReflectActor,
@@ -449,5 +481,44 @@ mod tests {
             (differ.anim_cursor, differ.anim_frame, differ.anim_timer),
             (0, 0, 0)
         );
+    }
+
+    #[test]
+    fn the_spawner_lays_the_six_words_out_in_operand_order() {
+        // `concnow` p1[1]: mirror plane on Z only, rect 30..38 x 90..110.
+        let c = spawn_controller([0x0000, 0x37A0, 0x001E, 0x005A, 0x0026, 0x006E]);
+        assert_eq!(c.mirror_x, 0);
+        assert_eq!(c.mirror_z, 0x37A0);
+        assert_eq!(
+            (c.min_tile_x, c.min_tile_z, c.max_tile_x, c.max_tile_z),
+            (0x1E, 0x5A, 0x26, 0x6E)
+        );
+        assert_eq!(c.flags, 0);
+    }
+
+    #[test]
+    fn the_shipped_mirror_plane_sits_just_past_the_rects_far_edge() {
+        // What makes the operand block coherent: the Z plane is outside the
+        // tracking rect, so the image stands beyond the wall the source
+        // walks up to rather than inside the room with it.
+        let c = spawn_controller([0x0000, 0x37A0, 0x001E, 0x005A, 0x0026, 0x006E]);
+        assert!(tile_of(c.mirror_z) > c.max_tile_z);
+
+        // And the reflection of a source at the rect's far edge lands past
+        // the plane, on the far side.
+        let mut ctrl = c;
+        let s = ReflectActor {
+            x: 0x1000,
+            z: c.max_tile_z * 128,
+            facing: 0x200,
+            ..Default::default()
+        };
+        let mut d = ReflectActor::default();
+        assert_eq!(
+            tick_reflection(&mut ctrl, &mut d, &s),
+            ReflectOutcome::Reflected
+        );
+        assert!(d.z > c.mirror_z);
+        assert_eq!(d.x, s.x);
     }
 }

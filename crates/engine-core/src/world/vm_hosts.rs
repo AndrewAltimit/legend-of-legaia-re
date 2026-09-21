@@ -1435,21 +1435,36 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             });
     }
 
-    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) -> bool {
+    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) {
         // `4C 9F` is `FUN_8003CF40(_DAT_8007C34C, LAB_801DA930)`, a **retire
         // sweep** over the `0x801F27EC` handler - so it cancels every live
         // floor-height-ladder oscillator this scene spawned (sub-`0..2`),
         // and registers nothing. Retiring the engine's records is the whole
-        // of that half.
+        // of that half; the VM advances past the op either way.
         self.world.terrain.floor_tier_bobs.clear();
         self.world.retire_floor_ladder_oscillators();
-        // During the New-Game opening chain the sweep's script effect (the
-        // park at PC) resolves within a frame in retail - the whole opening
-        // auto-advances with zero input - so model it as already satisfied
-        // and let the entry script proceed to its op-0x44 record spawn.
-        // Outside the opening the faithful halt-until-callback park is kept
-        // (returning `false`).
-        self.world.cutscene.opening_chain_active
+    }
+
+    // `4C 86` / `4C 87` - the reflection controller's install and teardown,
+    // consecutive slots of the nibble-8 sub-table.
+    // REF: FUN_801E573C, FUN_8003CF40
+    fn op4c_n8_sub6_install_reflection(
+        &mut self,
+        ctx: &mut FieldCtx,
+        source_id: u8,
+        words: [i16; 6],
+    ) -> bool {
+        // Retail's `a0` is the executing context itself - `FUN_801DE840`'s
+        // third argument - so the script that issues the op is the mirror
+        // image, and the operand byte names what it reflects.
+        let ctx_is_player = ctx.flags & 0x0100_0000 != 0;
+        self.world
+            .spawn_reflection_controller(ctx_is_player, source_id, words)
+            .is_some()
+    }
+
+    fn op4c_n8_sub7_retire_reflections(&mut self) {
+        self.world.retire_reflection_controllers();
     }
 
     // -- the three frame-delta timer templates ---------------------------

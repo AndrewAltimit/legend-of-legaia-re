@@ -22,7 +22,7 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers:
 | 6 | 0x60..0x6F | 6-word emitter (`func_0x80058490`) + 16-byte halt-acquire |
 | 7 | 0x70..0x7F | **Collision-grid rectangular wall paint** (handler `0x801e1c64`); writes the per-scene walkability grid at `_DAT_1f8003ec + 0x4000`. Full body: [nibble-7 wall paint](#0x4c-nibble-0x700x7f---collision-grid-rectangular-wall-paint). |
 | 8 | 0x80..0x8F | Large multi-purpose dispatcher (party-slot full heal, conditional jump on `+0x68`, actor model/anim set, actor-search jumps, …). Full body: [nibble-8 multi-purpose dispatcher](#0x4c-nibble-0x800x8f---large-multi-purpose-dispatcher). |
-| 9 | 0x90..0x9F | **Floor-height ladder.** Sub-`0xE` installs all sixteen rungs (`-words[i]` into `0x1F80035C + i*2`); sub-`0..2` sets one rung oscillating via `FUN_801DDE34`; sub-`0xF` retires every oscillator (`func_0x8003CF40(_DAT_8007C34C, &LAB_801DA930)` then halt at PC - a retire sweep, not a callback registration). See [the detail below](#nibble-9-is-the-floor-height-ladder-not-a-fade). |
+| 9 | 0x90..0x9F | **Floor-height ladder.** Sub-`0xE` installs all sixteen rungs (`-words[i]` into `0x1F80035C + i*2`); sub-`0..2` sets one rung oscillating via `FUN_801DDE34`; sub-`0xF` retires every oscillator (`func_0x8003CF40(_DAT_8007C34C, &LAB_801DA930)`, then PC += 2 - a retire sweep, not a callback registration, and it does not park). See [the detail below](#nibble-9-is-the-floor-height-ladder-not-a-fade). |
 | A | 0xA0..0xAF | Conditional jump on flag bit. Sub-0 reads `ctx.flags`, sub-1 reads `ctx.local_flags`, sub-2 reads the global story flag word. Bit SET → take absolute jump from operand[2..4]; bit CLEAR (or sub-3..=0xF) → skip 5 bytes. (The asm dispatches on sub-op first at 0x801e2568, so sub-3..=0xF skip both the per-bank check and the take-jump path.) |
 | B | 0xB0..0xBF | No valid sub-op: every one falls into retail's error printer (`jal 0x8001A068` at `0x801E3558`, arm `0x801E3550`). No shipped script carries any `4C Bx` - zero occurrences, clean **or** total, across the whole opcode census. |
 | C | 0xC0..0xCF | Small per-actor / per-scene writes (slot table, camera-zone query at a named tile, sound trigger, `field_74` XOR, [camera-focus override](#4c-cf-is-the-script-camera-focus-override)). **All 16 sub-ops are now ported.** Full body: [nibble-C small per-actor / per-scene writes](#0x4c-nibble-0xc00xcf---small-per-actor--per-scene-writes). |
@@ -174,11 +174,26 @@ That spawner allocates from the descriptor at `0x801F2948` - whose `+0x08`
 handler word is `0x801E5154`, the reflection tick - and writes
 `+0x90 = executing ctx`, `+0x94 = resolved actor`, `+0x54 = 0` and the six
 halfwords into `+0x80 .. +0x8A`. So the six words are the **controller's**
-bounds block, not a transform for the named actor, and the named actor is the
-**destination** of a mirror pair whose source is the script's own context.
-The tick then copies the source's pose to the destination while the source
-stands inside the controller's tile rect
-(`legaia_engine_vm::field_actor_reflect`).
+mirror line plus tracking rect, not a transform for the named actor.
+
+Which end is which is decided by the tick, not by the spawner's argument
+order: `FUN_801E5154` loads `+0x90` into `a3` and `+0x94` into `a2`, then
+reads `a2` (`lhu 0x14(a2)`, `lhu 0x5c(a2)`, and the tile test on its
+position) and writes `a3` (`sw 0x10(a3)`, `sh 0x14(a3)`, `sh 0x26(a3)`). So
+`+0x94` - the **named** actor - is the source, and `+0x90` - the executing
+script's own context - is the destination. A script that issues `4C 86`
+makes itself the mirror image of the actor it names, which is what its
+placement is: each of the ten sites sits in a talk record whose text is a
+single parenthesised beat, the answer a reflection gives when addressed.
+The image tracks only while the named actor stands inside the rect
+(`legaia_engine_vm::field_actor_reflect`; engine seat
+`World::spawn_reflection_controller`).
+
+All ten shipped operand blocks take the `(0, zz)` arm - `w0 = 0`, so no X
+mirror - and put the Z plane one or two tiles past the rect's own
+`max_tile_z`, so the image stands beyond the far wall rather than inside the
+room. `concnow`'s `p1[1]` is `w = (0, 0x37A0, 30, 90, 38, 110)` against
+`0xF8`, the player; its `p1[4]` and `p1[5]` name two further actors.
 
 `4C 87`'s arm at `0x801E2284` loads the same handler VA and the actor list
 `_DAT_8007C34C` and tail-jumps to the shared exit `0x801E2DC4`, which is
@@ -186,6 +201,14 @@ stands inside the controller's tile rect
 **retires** rather than registers - the same mislabel `4C 9F` carries for the
 floor-ladder oscillator - so the op stops every running reflection controller
 and advances two bytes.
+
+`4C 9F`'s arm at `0x801E2548` is the same five instructions against
+`0x801DA930` and jumps to that same exit, so it too advances two bytes
+unconditionally. Neither op parks: the `addiu s8,s8,2` is *in the call's
+delay slot*, which means it has already run before `FUN_8003CF40` is
+entered, and the shared tail returns the advanced cursor. Reading either as
+a halt-until-callback strands every carrier - fifteen scenes issue `4C 9F`,
+140 times in all.
 
 Four shipped scenes issue `4C 86` - `concnow`, `conc2`, `urudre2`, `opurud`,
 ten occurrences in all. No shipped scene issues `4C 87`; those scenes drop

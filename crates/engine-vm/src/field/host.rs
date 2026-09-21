@@ -1496,16 +1496,20 @@ pub trait FieldHost {
         let _ = (col_start, row_start, col_end, row_end, value);
     }
 
-    /// Op 0x4C outer-nibble-8 sub-7 - register `LAB_801E5154` callback.
+    /// Op 0x4C outer-nibble-8 sub-7 - **retire** every reflection
+    /// controller.
     ///
-    /// 2-byte instruction `[4C, 0x87]`. The original calls
-    /// `func_0x8003CF40(_DAT_8007C34C, &LAB_801E5154)` to register a callback
-    /// on the actor list, then exits via `switchD_801e00f4::default()`.
-    /// Since `0x4C & 0x70 = 0x40` (not in {0x50, 0x60, 0x70}), the dispatcher
-    /// default returns `param_2` - i.e. **halts at PC**, waiting for the
-    /// registered callback to release the script. The dispatch wrapper
-    /// applies the halt; the host hook only needs to register the callback.
-    fn op4c_n8_sub7_register_callback(&mut self) {}
+    /// 2-byte instruction `[4C, 0x87]`, the install's teardown sibling. The
+    /// arm at `0x801E2284` materialises `_DAT_8007C34C` and the handler VA
+    /// `0x801E5154` and tail-jumps to the shared exit `0x801E2DC4`, which is
+    /// `jal 0x8003CF40` with `addiu s8,s8,2` in its delay slot.
+    /// `FUN_8003CF40` walks the list and ORs the kill bit into every node
+    /// whose `+0x0C` matches - it **retires**, it does not register, it has
+    /// no return value, and the arm does not halt.
+    ///
+    /// No shipped scene issues it; the four `4C 86` carriers drop their
+    /// controllers on the scene boundary instead.
+    fn op4c_n8_sub7_retire_reflections(&mut self) {}
 
     /// Op 0x4C outer-nibble-8 sub-8 - write 3 globals.
     ///
@@ -1621,20 +1625,19 @@ pub trait FieldHost {
         let _ = words;
     }
 
-    /// Op 0x4C outer-nibble-9 sub-0xF - register `LAB_801DA930` callback.
+    /// Op 0x4C outer-nibble-9 sub-0xF - **retire** every floor-height-ladder
+    /// oscillator.
     ///
-    /// 2-byte instruction `[4C, 0x9F]`. The original calls
-    /// `func_0x8003CF40(_DAT_8007C34C, &LAB_801DA930)` (same as nibble-8 sub-7,
-    /// but with a different callback target), then exits via
-    /// `switchD_801e00f4::default()` - halts at PC for opcode 0x4C; the script
-    /// resumes when the registered callback fires. Return `true` when the
-    /// host models the callback as already satisfied - the VM then advances
-    /// past the 2-byte op instead of parking (used by the opening-chain
-    /// scripts, whose registered completion fires within a frame in retail).
-    /// Default `false` keeps the faithful halt-until-callback park.
-    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) -> bool {
-        false
-    }
+    /// 2-byte instruction `[4C, 0x9F]`, the exact shape of nibble-8 sub-7
+    /// with a different handler VA. Its arm at `0x801E2548` is five
+    /// instructions - `lw a0,-0x3cb4(0x8008)` (`_DAT_8007C34C`),
+    /// `a1 = 0x801DA930`, `j 0x801E2DC4` - and that shared exit is
+    /// `jal 0x8003CF40` with `addiu s8,s8,2` in its delay slot.
+    ///
+    /// So it neither registers nor parks: the sweep ORs the kill bit into
+    /// every node running that handler and the PC moves on two bytes,
+    /// unconditionally. Fifteen shipped scenes issue it.
+    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) {}
 
     /// Op 0x4C outer-nibble-A - conditional jump on a flag bit.
     ///
@@ -2326,34 +2329,37 @@ pub trait FieldHost {
         let _ = (ctx, model_id, anim_frame, tween_frames);
     }
 
-    /// Look up an actor and apply a 6-axis rotation matrix (op 0x4C n8 sub-6,
-    /// 15 bytes).
+    /// Install the **reflection controller** (op 0x4C n8 sub-6, 15 bytes).
     ///
-    /// `[4C, 0x86, x_lo, x_hi, y_lo, y_hi, z_lo, z_hi, rx_lo, rx_hi, ry_lo,
-    /// ry_hi, rz_lo, rz_hi, actor_id]`. Six 16-bit LE values for the rotation
-    /// matrix axes (decoded via `load_u16_le`), then a 1-byte actor selector
-    /// at the tail.
+    /// `[4C, 0x86, w0_lo, w0_hi, .., w5_lo, w5_hi, source_id]`. The six
+    /// `s16` are decoded through `FUN_8003CE9C` at operand `+1`, `+3`, `+5`,
+    /// `+7`, `+9`, `+0xB`; the **last** byte is a cross-context actor id.
     ///
-    /// The original at lines 6571-6585 first calls `func_0x8003C83C(actor_id)`
-    /// to resolve the actor pointer; if 0 (not found), falls through to
-    /// `return param_2 + 0xF` (advance PC by 15 with no side effect).
-    /// Otherwise calls `FUN_801E573C(ctx, target, x, y, z, rx, ry, rz)` to
-    /// apply, then yields via the standard switch-default.
+    /// The arm at `0x801E21E0` resolves that id through `FUN_8003C83C` and,
+    /// on a hit, calls `FUN_801E573C(executing_ctx, resolved_actor, w0..w5)`,
+    /// the spawner that allocates one controller off descriptor
+    /// `0x801F2948` and writes `+0x90 = executing ctx`, `+0x94 = resolved
+    /// actor`, `+0x54 = 0` and `+0x80 .. +0x8A = w0 .. w5`. Its per-frame
+    /// body is `FUN_801E5154`
+    /// ([`crate::field_actor_reflect::tick_reflection`]), which mirrors the
+    /// `+0x94` end's pose onto the `+0x90` end while the `+0x94` end stands
+    /// inside the tile rect `w2..w4` x `w3..w5`. So the six words are the
+    /// controller's mirror line plus tracking rect, **not** a transform for
+    /// the named actor, and the script's own actor is the image.
     ///
-    /// This hook returns `true` if the actor was found (host applied the
-    /// rotation); `false` if the actor lookup missed. PC advances by 15 in
-    /// both cases - the only observable difference is whether the host's
-    /// rotation pipeline ran.
+    /// This hook returns `true` when the host resolved the source; PC
+    /// advances by 15 either way, because the arm's `addiu s8,s8,0xf` sits
+    /// in the resolve call's delay slot and has already run when the miss
+    /// branch is taken.
     ///
     /// The default impl returns `false` (no actor pool).
-    fn op4c_n_8_sub_6_actor_set_rotation(
+    fn op4c_n8_sub6_install_reflection(
         &mut self,
         ctx: &mut FieldCtx,
-        actor_id: u8,
-        position: [i16; 3],
-        rotation: [i16; 3],
+        source_id: u8,
+        words: [i16; 6],
     ) -> bool {
-        let _ = (ctx, actor_id, position, rotation);
+        let _ = (ctx, source_id, words);
         false
     }
 

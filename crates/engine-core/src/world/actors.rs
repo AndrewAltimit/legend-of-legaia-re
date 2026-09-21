@@ -1680,6 +1680,55 @@ impl World {
         Some(slot_idx)
     }
 
+    /// Seat the **reflection controller** the field VM's `4C 86` installs:
+    /// a pool actor that mirrors one addressable actor's pose onto another
+    /// across an axis-aligned plane, while the mirrored actor stands inside
+    /// a tile rect.
+    ///
+    /// PORT: FUN_801E573C (the plan kernel is
+    /// [`legaia_engine_vm::field_actor_reflect::spawn_controller`])
+    /// REF: FUN_8003C83C (the arm's id resolve), FUN_80020DE0 (the allocation),
+    /// REF: FUN_801E5154 (the tick [`Self::tick_handler_actors`] then runs)
+    ///
+    /// `ctx_is_player` is the executing context's `+0x10 & 0x01000000`, the
+    /// same bit the eased-move arm reads; it and
+    /// [`crate::world::FieldVmState::executing_channel`] between them resolve
+    /// retail's `a0` - the script's own actor, which becomes the image. The
+    /// `source_id` byte resolves in the cross-context target space (`0xF8` is
+    /// the player), and an id that names nothing seats nothing, which is the
+    /// arm's own `beqz s7` skip.
+    ///
+    /// Returns the seated slot.
+    pub fn spawn_reflection_controller(
+        &mut self,
+        ctx_is_player: bool,
+        source_id: u8,
+        words: [i16; 6],
+    ) -> Option<usize> {
+        use crate::world::EasedMoveTarget;
+        let destination = if ctx_is_player {
+            EasedMoveTarget::Player
+        } else {
+            EasedMoveTarget::Placement(self.field_vm.executing_channel?)
+        };
+        let source = if source_id == 0xF8 {
+            EasedMoveTarget::Player
+        } else {
+            let ci = crate::field_channels::resolve_target(&self.field_vm.channels, source_id)?;
+            EasedMoveTarget::Placement(self.field_vm.channels[ci].placement_index as u8)
+        };
+        let slot = self.spawn_handler_actor(crate::actor_handler::ActorHandler::Reflection)?;
+        let controller = legaia_engine_vm::field_actor_reflect::spawn_controller(words);
+        let a = &mut self.actors[slot];
+        a.state_54 = legaia_engine_vm::field_actor_reflect::REFLECT_INITIAL_STATE;
+        a.reflection = Some(crate::world::ReflectionLink {
+            destination,
+            source,
+            controller,
+        });
+        Some(slot)
+    }
+
     /// The source-actor fields the clone helper reads, resolved from a
     /// cross-context target byte.
     // REF: FUN_8003C83C

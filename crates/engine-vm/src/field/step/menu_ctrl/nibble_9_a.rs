@@ -55,20 +55,16 @@ pub(super) fn op_4c_n9<H: FieldHost>(
                     next_pc: pc + header_size + 33,
                 }
             }
-            // Sub-0xF: register `LAB_801DA930` callback then halt
-            // at PC. The original goes through
-            // `switchD_801e00f4::default()`, which for opcode 0x4C
-            // (`& 0x70 = 0x40`) returns `param_2` - halt at PC.
-            // The script resumes when the registered callback
-            // fires; a host that models the callback as already
-            // satisfied advances past the 2-byte op instead.
+            // Sub-0xF: retire every floor-height-ladder
+            // oscillator. The arm at `0x801E2548` tail-jumps to
+            // the shared exit `0x801E2DC4`, which is
+            // `jal 0x8003CF40` with `addiu s8,s8,2` in the delay
+            // slot - a retire sweep and a two-byte advance, with
+            // no registration and no park.
             0xF => {
-                if host.op4c_n9_sub_f_retire_ladder_oscillators() {
-                    StepResult::Advance {
-                        next_pc: pc + header_size + 1,
-                    }
-                } else {
-                    StepResult::Halt { final_pc: pc }
+                host.op4c_n9_sub_f_retire_ladder_oscillators();
+                StepResult::Advance {
+                    next_pc: pc + header_size + 1,
                 }
             }
             _ => StepResult::Halt { final_pc: pc },

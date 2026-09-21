@@ -200,6 +200,12 @@ impl World {
             a.physics.status_flags = step.flags;
             a.tint_push = step.push;
         }
+        // The third pool-resident kernel: the reflection pairs the field
+        // VM's `4C 86` arm installs. It runs after the physics writes of
+        // this frame rather than inside the loop above, because it reads
+        // one seat and writes another and so cannot borrow a single slot.
+        // REF: FUN_801E5154
+        self.tick_reflection_controllers();
         // The second `jalr node[+0x0C]` class with a ported body: the op-0x49
         // submode driver (`ActorHandler::SubmodeDriver`, spawned by
         // `man_load_actor_reset`). Its body is the dispatcher `FUN_801F159C`
@@ -226,6 +232,133 @@ impl World {
             }
         }
         n
+    }
+
+    /// Step every live **reflection pair**.
+    ///
+    /// PORT driver for FUN_801E5154 (the kernel is
+    /// [`legaia_engine_vm::field_actor_reflect::tick_reflection`])
+    ///
+    /// One pass per game tick, over the pool slots the `4C 86` arm seated
+    /// through [`Self::spawn_reflection_controller`]. Each pair reads its
+    /// `+0x94` end, runs the retail tick, and writes the mirrored pose back
+    /// to its `+0x90` end.
+    ///
+    /// A seat that no longer resolves is retail's dead actor: the tick's own
+    /// first test is `either end's +0x10 & 8`, and it answers by setting the
+    /// controller's kill bit, so the end-of-pass sweep collects the slot.
+    /// The engine reaches the same state by treating an unresolvable seat as
+    /// that dead end.
+    ///
+    /// What the engine mirrors is the **pose**: the position triple and the
+    /// facing angle, which is what both hosts draw an actor from. Retail
+    /// additionally copies the source's clip cursor (`+0x5C`, `+0x68`,
+    /// `+0x6A`) under the `+0x64` equality gate; a scene NPC placement has
+    /// no per-seat clip cursor here, so that copy has nowhere to land and
+    /// the gate's only input is the live model id.
+    fn tick_reflection_controllers(&mut self) {
+        use legaia_engine_vm::field_actor_reflect::{ReflectOutcome, flags, tick_reflection};
+
+        let live: Vec<(usize, crate::world::ReflectionLink)> = self
+            .actors
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.active && a.handler == ActorHandler::Reflection)
+            .filter_map(|(slot, a)| a.reflection.map(|link| (slot, link)))
+            .collect();
+
+        for (slot, mut link) in live {
+            let ends = self
+                .reflect_seat_read(link.source)
+                .zip(self.reflect_seat_read(link.destination));
+            let Some((src, mut dst)) = ends else {
+                link.controller.flags |= flags::TEARDOWN;
+                self.actors[slot].physics.status_flags |= ACTOR_FLAG_YIELD;
+                self.actors[slot].reflection = Some(link);
+                continue;
+            };
+            if tick_reflection(&mut link.controller, &mut dst, &src) == ReflectOutcome::Reflected {
+                self.reflect_seat_write(link.destination, &dst);
+            }
+            if link.controller.flags & flags::TEARDOWN != 0 {
+                self.actors[slot].physics.status_flags |= ACTOR_FLAG_YIELD;
+            }
+            self.actors[slot].reflection = Some(link);
+        }
+    }
+
+    /// The fields the reflection tick reads off one end of a pair.
+    ///
+    /// `None` is "this end is gone", which the tick treats as the retail
+    /// kill bit.
+    fn reflect_seat_read(
+        &self,
+        seat: crate::world::EasedMoveTarget,
+    ) -> Option<legaia_engine_vm::field_actor_reflect::ReflectActor> {
+        use legaia_engine_vm::field_actor_reflect::ReflectActor;
+        match seat {
+            crate::world::EasedMoveTarget::Player => {
+                let slot = self.player_actor_slot? as usize;
+                let a = self.actors.get(slot).filter(|a| a.active)?;
+                Some(ReflectActor {
+                    flags: a.physics.status_flags,
+                    x: a.move_state.world_x,
+                    y: a.physics.world_y,
+                    z: a.move_state.world_z,
+                    facing: a.move_state.render_26,
+                    ..ReflectActor::default()
+                })
+            }
+            crate::world::EasedMoveTarget::Placement(p) => {
+                let (x, z) = self.npcs.positions.get(&p).copied()?;
+                Some(ReflectActor {
+                    x,
+                    z,
+                    facing: self.npcs.headings.get(&p).copied().unwrap_or(0),
+                    anim_set: self.npcs.models.get(&p).copied().unwrap_or(0),
+                    ..ReflectActor::default()
+                })
+            }
+        }
+    }
+
+    /// Write the mirrored pose back to the `+0x90` end.
+    fn reflect_seat_write(
+        &mut self,
+        seat: crate::world::EasedMoveTarget,
+        mirrored: &legaia_engine_vm::field_actor_reflect::ReflectActor,
+    ) {
+        match seat {
+            crate::world::EasedMoveTarget::Player => {
+                let Some(slot) = self.player_actor_slot.map(usize::from) else {
+                    return;
+                };
+                let Some(a) = self.actors.get_mut(slot) else {
+                    return;
+                };
+                a.move_state.world_x = mirrored.x;
+                a.move_state.world_z = mirrored.z;
+                a.move_state.render_26 = mirrored.facing;
+                a.physics.world_x = mirrored.x;
+                a.physics.world_y = mirrored.y;
+                a.physics.world_z = mirrored.z;
+            }
+            crate::world::EasedMoveTarget::Placement(p) => {
+                self.npcs.positions.insert(p, (mirrored.x, mirrored.z));
+                self.npcs.headings.insert(p, mirrored.facing);
+            }
+        }
+    }
+
+    /// Retire every live reflection controller - the field VM's `4C 87`.
+    ///
+    /// REF: FUN_8003CF40 against `0x801E5154`
+    ///
+    /// The install's teardown sibling, and a retire sweep like every other
+    /// `FUN_8003CF40` caller: it registers nothing and returns nothing but
+    /// the count of slots it marked.
+    pub fn retire_reflection_controllers(&mut self) -> usize {
+        self.retire_actors_by_handler(ActorHandler::Reflection)
     }
 
     /// Scene-transition teardown sweep over the whole pool.

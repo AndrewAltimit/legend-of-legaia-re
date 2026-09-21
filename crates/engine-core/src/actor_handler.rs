@@ -120,6 +120,12 @@ pub const VA_SCRIPTED_SCENE: u32 = 0x801D_4A60;
 /// `0x14` clone helper `FUN_801D835C` is its only allocation site on the disc.
 pub const VA_CLIP_FADE: u32 = crate::field_actor_clone::CLONE_HANDLER;
 
+/// `FUN_801E5154` - the **reflection controller** tick, the handler on the
+/// field-overlay descriptor `0x801F2948` that the field VM's `4C 86` spawner
+/// `FUN_801E573C` allocates from (and that `4C 87` retires). Its body is
+/// [`legaia_engine_vm::field_actor_reflect::tick_reflection`].
+pub const VA_REFLECTION: u32 = legaia_engine_vm::field_actor_reflect::REFLECT_HANDLER;
+
 /// `FUN_801DBE9C` - the handler on the fixed scene-actor template
 /// `0x801F2810` that `FUN_801DE478` spawns from (field `0x023FF8`, word `+8`).
 pub const VA_SCENE_ACTOR: u32 = 0x801D_BE9C;
@@ -172,6 +178,8 @@ pub enum ActorHandler {
     ScriptedScene,
     /// [`VA_CLIP_FADE`].
     ClipFade,
+    /// [`VA_REFLECTION`].
+    Reflection,
     /// [`VA_SCREEN_SPRITE`].
     ScreenSprite,
     /// [`VA_SCREEN_MASK`].
@@ -219,6 +227,10 @@ pub enum HandlerKernel {
     /// [`crate::world::World::tick_handler_actors`] over the clones the field
     /// VM's op `0x4C` sub-1 sub-op `0x14` spawns.
     ClipFade,
+    /// [`legaia_engine_vm::field_actor_reflect::tick_reflection`], run by
+    /// [`crate::world::World::tick_handler_actors`] over the mirror pairs the
+    /// field VM's `4C 86` arm installs.
+    Reflection,
     /// No ported body. The handler still participates in every identity
     /// test; it just has nothing to run.
     Unported,
@@ -230,7 +242,10 @@ impl HandlerKernel {
     /// are reached from their own host channels instead, which is why this
     /// is narrower than "is ported".
     pub fn runs_in_actor_loop(self) -> bool {
-        matches!(self, HandlerKernel::ColourTween | HandlerKernel::ClipFade)
+        matches!(
+            self,
+            HandlerKernel::ColourTween | HandlerKernel::ClipFade | HandlerKernel::Reflection
+        )
     }
 }
 
@@ -250,6 +265,7 @@ impl ActorHandler {
             VA_SCENE_ACTOR => ActorHandler::SceneActor,
             VA_SCRIPTED_SCENE => ActorHandler::ScriptedScene,
             VA_CLIP_FADE => ActorHandler::ClipFade,
+            VA_REFLECTION => ActorHandler::Reflection,
             VA_SCREEN_SPRITE => ActorHandler::ScreenSprite,
             VA_SCREEN_MASK => ActorHandler::ScreenMask,
             VA_SCREEN_PANEL => ActorHandler::ScreenPanel,
@@ -277,6 +293,7 @@ impl ActorHandler {
             ActorHandler::SceneActor => VA_SCENE_ACTOR,
             ActorHandler::ScriptedScene => VA_SCRIPTED_SCENE,
             ActorHandler::ClipFade => VA_CLIP_FADE,
+            ActorHandler::Reflection => VA_REFLECTION,
             ActorHandler::ScreenSprite => VA_SCREEN_SPRITE,
             ActorHandler::ScreenMask => VA_SCREEN_MASK,
             ActorHandler::ScreenPanel => VA_SCREEN_PANEL,
@@ -295,6 +312,7 @@ impl ActorHandler {
             ActorHandler::CameraMover => HandlerKernel::CameraMover,
             ActorHandler::ScriptedScene => HandlerKernel::ScriptedScene,
             ActorHandler::ClipFade => HandlerKernel::ClipFade,
+            ActorHandler::Reflection => HandlerKernel::Reflection,
             ActorHandler::ScreenSprite
             | ActorHandler::ScreenMask
             | ActorHandler::ScreenPanel
@@ -353,6 +371,7 @@ mod tests {
             ActorHandler::FloorLadder,
             ActorHandler::SceneActor,
             ActorHandler::ScriptedScene,
+            ActorHandler::Reflection,
             ActorHandler::ScreenSprite,
             ActorHandler::ScreenMask,
             ActorHandler::ScreenPanel,
@@ -415,6 +434,7 @@ mod tests {
             ActorHandler::TextBalloon,
             ActorHandler::CameraMover,
             ActorHandler::ClipFade,
+            ActorHandler::Reflection,
             ActorHandler::ScreenMask,
         ]
         .into_iter()
@@ -422,7 +442,11 @@ mod tests {
         .collect();
         assert_eq!(
             in_loop,
-            vec![ActorHandler::ColourTween, ActorHandler::ClipFade]
+            vec![
+                ActorHandler::ColourTween,
+                ActorHandler::ClipFade,
+                ActorHandler::Reflection
+            ]
         );
     }
 

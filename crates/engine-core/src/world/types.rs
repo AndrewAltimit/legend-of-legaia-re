@@ -135,6 +135,28 @@ pub enum EasedMoveTarget {
     Placement(u8),
 }
 
+/// One live **reflection pair** - the engine's form of the controller actor
+/// `FUN_801E573C` seats, hung off the pool slot that carries
+/// [`ActorHandler::Reflection`](crate::actor_handler::ActorHandler::Reflection).
+///
+/// The two ends are not interchangeable. Retail's tick reads `+0x94` (and
+/// gates the whole frame on *its* tile position) and writes `+0x90`; the
+/// `4C 86` arm hands the spawner the executing script's own context as
+/// `+0x90` and the actor named by the instruction's last operand byte as
+/// `+0x94`. So a script installs **itself** as the mirror image of the actor
+/// it names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReflectionLink {
+    /// `+0x90` - the end the tick writes: the installing script's actor.
+    pub destination: EasedMoveTarget,
+    /// `+0x94` - the end the tick reads, and whose tile position decides
+    /// whether the mirror tracks this frame.
+    pub source: EasedMoveTarget,
+    /// `+0x80 .. +0x8A` - the mirror line and the tracking rect, as the
+    /// spawner laid them out.
+    pub controller: legaia_engine_vm::field_actor_reflect::ReflectController,
+}
+
 /// Render-agnostic snapshot of one live effect-pool master slot, produced by
 /// [`World::active_effect_markers`] - one entry per effect (effect origin +
 /// age). [`World::active_effect_sprites`] is the richer per-child billboard
@@ -531,6 +553,12 @@ pub struct Actor {
     /// [`ActorHandler::ColourTween`](crate::actor_handler::ActorHandler::ColourTween).
     /// Stepped once per game tick by [`World::tick_handler_actors`].
     pub colour_tween: Option<crate::field_actor_kernels::ColourTween>,
+
+    /// `+0x80 .. +0x94` - the reflection pair, present only on actors whose
+    /// [`Self::handler`] is
+    /// [`ActorHandler::Reflection`](crate::actor_handler::ActorHandler::Reflection).
+    /// Stepped once per game tick by [`World::tick_handler_actors`].
+    pub reflection: Option<ReflectionLink>,
 
     /// This frame's `FUN_80024EE4` full-screen colour push, if the actor's
     /// handler emitted one. Cleared at the top of every

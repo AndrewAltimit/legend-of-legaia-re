@@ -198,7 +198,7 @@
     <div class="disclosure-body">
       <ul class="bullets">
         <li><code>4C 49</code> selects a write variant on two bits of <code>_DAT_1F800394</code> (bit 25 delta, bit 24 player-relative <code>+0x4A = value + anchor[+0x16]</code>, else default), always advancing 6 bytes. The field-overlay dump's absolute-jump arm never applies on the opening path.</li>
-        <li><code>4C 9F</code> (register callback) sets a bit on an already-live actor whose entry equals the callback; it is inert during the opening and fires zero times under a live probe.</li>
+        <li><code>4C 9F</code> is a retire sweep, not a callback registration: it sets the kill bit on every live actor whose per-frame handler matches, then advances the script two bytes. It is inert during the opening and fires zero times under a live probe.</li>
         <li><code>FUN_8003CF04</code> is a list finder over <code>0x8007C34C</code>, not a kill function.</li>
       </ul>
     </div>
