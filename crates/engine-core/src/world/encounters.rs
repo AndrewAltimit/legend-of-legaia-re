@@ -832,7 +832,9 @@ impl World {
     ///   (the [`Self::install_man_encounter`] scene-entry install - this drops
     ///   any text-desync phantom site), and
     /// - park-gate flag (the record's own head `SysFlag.Test`, e.g. `0x142`)
-    ///   is still clear (the beaten-boss one-shot),
+    ///   is still clear (the beaten-boss one-shot), and
+    /// - placement slot is **not** already a scripted-encounter carrier slot
+    ///   (the talk-first sparring partner; see the rule at the skip below),
     ///
     /// this registers the placement slot in [`crate::world::FieldPropState::boss_stagers`] and
     /// stations its approach point - the record's own `0x4C 0x51` NPC-run
@@ -877,6 +879,35 @@ impl World {
             let Ok(slot) = u8::try_from(site.placement_index) else {
                 continue;
             };
+            // **One placement, one dispatch owner.** A placement the carrier
+            // install already claimed as a
+            // [`crate::world::FieldCarrierConfig::ScriptedEncounter`] is a
+            // talk-first NPC whose `3E FF <row>` sits *behind* its dialogue
+            // and its inline picker - retail's Rim Elm sparring partner
+            // (`town01` P1[10], MAN formation row 4). Its interaction must
+            // open the box and let the player choose the fight option; the
+            // stager binding instead installs the whole record as a modal
+            // timeline in [`Self::run_boss_stager_record`], which
+            // [`Self::trigger_field_interact`] consults *first*, so the
+            // dialogue and the picker never appear and the fight never
+            // starts. It also overwrites the placement's probe position with
+            // the record's station leg, moving the talk box off the
+            // partner's tile.
+            //
+            // A genuine stager (`rikuroa` P1[3]'s Caruban, the `cave01` /
+            // `rugi` ambushes) carries no scripted-encounter carrier entry,
+            // so this skips exactly one placement in the retail corpus - the
+            // one whose two models collide. Ordering matters and is
+            // documented above: this install runs after
+            // [`Self::install_field_carriers_from_man`], which is what fills
+            // `carriers.slots`.
+            if self.carriers.slots.contains_key(&slot) {
+                log::debug!(
+                    "field: P1[{slot}] is a scripted-encounter carrier; not arming it as a boss \
+                     stager (the carrier owns the interaction)"
+                );
+                continue;
+            }
             let station = match site.station_world {
                 Some(w) => w,
                 None if !site.spawn_parked => site.spawn_world,
