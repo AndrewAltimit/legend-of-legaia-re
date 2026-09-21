@@ -85,6 +85,7 @@ pub mod move_power;
 pub mod muscle_dome;
 pub mod new_game;
 pub mod ocean;
+pub mod other3_roster;
 pub mod overlay_ptr_table;
 pub mod pack;
 pub mod party_swap;
