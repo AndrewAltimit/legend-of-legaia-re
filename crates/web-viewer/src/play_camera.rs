@@ -51,6 +51,19 @@ impl LegaiaRuntime {
         }
     }
 
+    /// Does a scripted shot own this frame's camera? The gate
+    /// [`Self::resolve_camera_frame`] runs, without its side effects: that
+    /// one advances the cutscene glide and drains the snap-beat bank, so an
+    /// export that only needs the verdict must not call it.
+    pub(crate) fn cutscene_owns_frame(&self) -> bool {
+        let Some(host) = self.scene_host.as_ref() else {
+            return false;
+        };
+        let world = &host.world;
+        world.cutscene_timeline_active()
+            && (world.mode != SceneMode::WorldMap || !world.camera.state.params.is_empty())
+    }
+
     /// The scene AABB the world map's top-view debug camera frames: the
     /// **world-space** union of the scene's static env draws, through the
     /// shared kernel `engine_core::field_env::env_draws_world_aabb` the
@@ -87,15 +100,28 @@ impl LegaiaRuntime {
     /// camera, except on the world map, where it only takes it when a beat
     /// actually staged a param (a world-map beat record with no camera beats -
     /// the Drake mist-wall force-walk bands - keeps the walk camera).
+    ///
+    /// Read-only sibling: [`Self::cutscene_owns_frame`] answers the gate
+    /// alone, for the exports that need the answer without advancing the
+    /// glide - this one is a per-frame STEP, not a query.
     fn resolve_camera_frame(&mut self) -> FieldCameraFrame {
-        let Some(host) = self.scene_host.as_ref() else {
+        if self.scene_host.is_none() {
             return FieldCameraFrame::HostDebugOrbit;
+        }
+        // The host's fallback focus: the loaded scene's own centre, the same
+        // quantity the native window passes (`scene_aabb` mid X/Z). It backs
+        // a cutscene beat that stages no focus slot with no lead actor live,
+        // and the overworld walk arm's player position; a pinned `[0, 0]`
+        // framed the world origin instead of the map.
+        let centre = {
+            let (lo, hi) = self.scene_aabb();
+            [(lo[0] + hi[0]) * 0.5, (lo[2] + hi[2]) * 0.5]
         };
+        let scripted = self.cutscene_owns_frame();
+        let host = self.scene_host.as_ref().expect("checked above");
         let world = &host.world;
-        let scripted = world.cutscene_timeline_active()
-            && (world.mode != SceneMode::WorldMap || !world.camera.state.params.is_empty());
         let cutscene = if scripted {
-            let target = camera_view::cutscene_view(world, [0.0, 0.0]);
+            let target = camera_view::cutscene_view(world, centre);
             let apply = u32::from(world.camera.state.apply_trigger);
             let mode = world.camera.state.mode;
             let now = world.clock.display_frames;
@@ -103,13 +129,25 @@ impl LegaiaRuntime {
                 .unwrap_or(u32::MAX)
                 .max(1);
             self.cutscene_cam_frames = now;
+            // Retail snaps the live globals to an `apply == 0` beat
+            // immediately, so a snap+glide pair committed in ONE world tick
+            // glides FROM the snapped pose. The beats are banked on the
+            // engine camera (`Camera::take_camera_snap_beats`) because
+            // `route_camera_events` is what consumes them off the world
+            // queue; the native window replays the same bank.
+            for comps in self.camera.take_camera_snap_beats() {
+                self.cutscene_cam.snap_components(&comps);
+            }
             Some(self.cutscene_cam.glide_view(target, apply, mode, steps))
         } else {
             self.cutscene_cam.reset();
+            // Nothing is interpolating, so a banked snap would move a pose
+            // no draw reads.
+            self.camera.clear_camera_snap_beats();
             None
         };
         let world = &self.scene_host.as_ref().expect("checked above").world;
-        camera_view::resolve_field_camera(world, &self.camera, cutscene, [0.0, 0.0])
+        camera_view::resolve_field_camera(world, &self.camera, cutscene, centre)
     }
 }
 
@@ -192,6 +230,99 @@ impl LegaiaRuntime {
         }
     }
 
+    /// This frame's retail GTE **NCLIP** winding-rejection mode for the
+    /// scene pass - the word the page hands `TmdRenderer.setNclipCull`, from
+    /// the shared [`camera_view::nclip_cull_mode`] the native window's
+    /// `Renderer::set_backface_cull` call also reads. `2` only while the
+    /// in-engine cutscene camera owns a non-overworld frame; `0` otherwise,
+    /// which is both-sided drawing.
+    pub fn play_render_nclip_mode(&self) -> u32 {
+        let in_world_map = self
+            .scene_host
+            .as_ref()
+            .is_some_and(|h| h.world.mode == SceneMode::WorldMap);
+        camera_view::nclip_cull_mode(self.cutscene_owns_frame(), in_world_map)
+    }
+
+    /// The camera-occlusion fade's focus point for this frame, in the page's
+    /// **Y-up draw frame**, or empty when the engine side of the arming gate
+    /// says no ([`legaia_engine_core::field_occlusion::fade_armed`] + a live
+    /// player actor).
+    ///
+    /// It is the same point [`Self::field_player_occluded`] ray-casts to -
+    /// the shared `player_body_centre` kernel - which is the whole reason it
+    /// is an export rather than three lines of JS: the page used to stage the
+    /// actor's own `world_y` while the gate tested the floor tier under it,
+    /// so on any tile where those differ the dissolve hole sat off the
+    /// character. The host's own terms (its master toggle, a pause menu or
+    /// name-entry overlay owning the screen, the `F3` debug vantage, a VR
+    /// first-person eye) stay on the page.
+    pub fn play_occlusion_focus(&self) -> Vec<f32> {
+        let cutscene = self.cutscene_owns_frame();
+        let Some(host) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        if !legaia_engine_core::field_occlusion::fade_armed(&host.world, cutscene) {
+            return Vec::new();
+        }
+        match legaia_engine_core::field_occlusion::player_body_centre(&host.world) {
+            // Retail Y-down -> the page's Y-up draw frame.
+            Some(c) => vec![c[0], -c[1], c[2]],
+            None => Vec::new(),
+        }
+    }
+
+    /// Project the lead onto the 240-line stage and hand the result to the
+    /// field party HUD's decision kernel - the browser twin of the native
+    /// window's `field_hud_projected_player_y`, and now the same derivation:
+    /// the actor origin raised `0x80` (retail's own `addiu v0,v0,-0x80`)
+    /// through **this frame's camera with the cutscene arm suppressed**.
+    ///
+    /// The page used to project in JS through the live draw VP, so under a
+    /// scripted shot the readout's band test ran against the cutscene
+    /// framing while the native window's ran against the follow camera.
+    /// `[`Self::set_field_player_screen_y`]` stays for the headless oracles.
+    pub fn play_field_hud_project(&mut self, view_w: f32, view_h: f32) {
+        let aspect = view_w.max(1.0) / view_h.max(1.0);
+        // The HUD band is the FOLLOW camera's reading: a scripted shot must
+        // not decide where the readout sits.
+        let aabb = self.scene_aabb();
+        let centre = [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5];
+        let Some(host) = self.scene_host.as_ref() else {
+            self.set_field_player_screen_y(crate::runtime::NO_FIELD_PROJECTION);
+            return;
+        };
+        let world = &host.world;
+        let pos = world
+            .player_actor_slot
+            .map(usize::from)
+            .and_then(|s| world.actors.get(s))
+            .filter(|a| a.active || a.tmd_binding.is_some())
+            .map(|a| {
+                [
+                    a.move_state.world_x as f32,
+                    a.move_state.world_y as f32 - 128.0,
+                    a.move_state.world_z as f32,
+                ]
+            });
+        let frame = camera_view::resolve_field_camera(world, &self.camera, None, centre);
+        let out = match (pos, camera_view::frame_vp(&frame, aabb, aspect)) {
+            (Some(p), Some(m)) => {
+                // Column-major 4x4: row 1 is the Y row, row 3 the W row.
+                let cy = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13];
+                let cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+                if cw > 0.0 {
+                    // NDC has +Y up; the stage is 240 lines with +Y down.
+                    ((1.0 - cy / cw) * 120.0).clamp(-4096.0, 4096.0) as i32
+                } else {
+                    crate::runtime::NO_FIELD_PROJECTION
+                }
+            }
+            _ => crate::runtime::NO_FIELD_PROJECTION,
+        };
+        self.set_field_player_screen_y(out);
+    }
+
     /// The GTE `H` the engine camera is projecting through this frame - the
     /// live camera global with `camera_view`'s field fallback applied. The
     /// parity test compares the page's resolved frame against this rather
@@ -235,6 +366,25 @@ impl LegaiaRuntime {
     /// Current drag-orbit, radians.
     pub fn play_camera_orbit(&self) -> f32 {
         self.camera.manual_orbit
+    }
+
+    /// Swing the orbit by `radians` from the page's **debug orbit** vantage
+    /// (`F3`), through the shared
+    /// [`legaia_engine_core::camera::Camera::debug_orbit_by`] the native
+    /// window's own `F3` drag calls. Un-gated by the cutscene (the debug
+    /// vantage is a dev viewpoint) but field-only.
+    ///
+    /// Both hosts compose that vantage as `fixed diagonal + manual_orbit`, so
+    /// steering the one field is what makes leaving the toggle continuous.
+    /// The page used to steer a private yaw while `F3` was on and then write
+    /// its NEGATION into `manual_orbit` on the way out - which, since the two
+    /// track together with `F3` off, flipped the orbit by twice its value
+    /// every time the toggle was cycled.
+    pub fn play_camera_debug_orbit_by(&mut self, radians: f32) -> bool {
+        match self.scene_host.as_ref() {
+            Some(h) => self.camera.debug_orbit_by(&h.world, radians),
+            None => false,
+        }
     }
 
     /// Whether the user's follow-camera knobs steer this frame

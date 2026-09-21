@@ -1534,24 +1534,24 @@ impl LegaiaRuntime {
         // Retail draws every pill while browsing, but shows only the picked
         // one - relocated up under the Load panel - once a card is committed,
         // sliding it there over 16 frames (FUN_801E1C1C mode 2).
-        let (pills, pill_anchor): (Vec<u8>, (i32, i32)) = match phase {
-            SelectPhase::NowChecking { slot, .. }
-            | SelectPhase::SlotPreview { slot }
-            | SelectPhase::ConfirmOverwrite { slot, .. }
-            | SelectPhase::ConfirmDelete { slot, .. } => {
-                // Slide start = the pill's Browsing position (retail
-                // mode-2 start (160, 96) minus the inlined -0x18
-                // x-shift = the Browsing pill quad).
-                let pos = s.interpolate(
-                    ui::SAVE_SELECT_SLOT1_POS,
-                    ui::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
-                );
-                (vec![slot], pos)
-            }
-            _ => (
+        // Which pills, which cursor, which overlays - the shared decision
+        // (`save_select::phase_layout`) the native window also reads, so a
+        // phase cannot mean two screens.
+        let layout = legaia_engine_core::save_select::phase_layout(phase);
+        let (pills, pill_anchor): (Vec<u8>, (i32, i32)) = if layout.single_pill {
+            // Slide start = the pill's Browsing position (retail mode-2
+            // start (160, 96) minus the inlined -0x18 x-shift = the
+            // Browsing pill quad).
+            let pos = s.interpolate(
+                ui::SAVE_SELECT_SLOT1_POS,
+                ui::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
+            );
+            (vec![s.current_slot()], pos)
+        } else {
+            (
                 (0..s.slots().len().min(2) as u8).collect(),
                 ui::SAVE_SELECT_SLOT1_POS,
-            ),
+            )
         };
         sprites.extend(ui::save_select_chrome_draws_for(
             rects,
@@ -1562,7 +1562,7 @@ impl LegaiaRuntime {
         ));
         // The pill cursor is suppressed once a card is committed: the dialog
         // covers the pill row and the grid emits its own cursor.
-        if matches!(phase, SelectPhase::Browsing { .. }) && !s.slots().is_empty() {
+        if layout.pill_cursor && !s.slots().is_empty() {
             sprites.push(ui::save_select_cursor_draw_for(
                 rects,
                 (card as usize).min(1),
@@ -1572,7 +1572,7 @@ impl LegaiaRuntime {
         }
 
         match phase {
-            SelectPhase::NowChecking { .. } => {
+            _ if layout.now_checking => {
                 // Panel + text slide in together from the right, matching
                 // retail mode-0's (416, 112) -> (160, 112).
                 let pos_x = legaia_engine_core::save_select::interpolate_anim(
@@ -1587,9 +1587,7 @@ impl LegaiaRuntime {
                 ));
                 d.extend(ui::now_checking_text_draws_for(font, origin, scale, slide));
             }
-            SelectPhase::SlotPreview { .. }
-            | SelectPhase::ConfirmOverwrite { .. }
-            | SelectPhase::ConfirmDelete { .. } => {
+            _ if layout.preview => {
                 // The picked card's fifteen blocks as retail's 5x3 grid, plus
                 // the focused block's info panel sliding up underneath. The
                 // blocks come off the card read's cache - see
@@ -1653,11 +1651,12 @@ impl LegaiaRuntime {
 
         // The confirm prompt rides on top of everything, sliding up from
         // below the stage (retail mode 3, (160, 344) -> (160, 88)).
-        let confirm: Option<(&str, u8)> = match phase {
-            SelectPhase::ConfirmOverwrite { cursor, .. } => Some(("Do you wish to save?", cursor)),
-            SelectPhase::ConfirmDelete { cursor, .. } => Some(("Delete this save?", cursor)),
-            _ => None,
+        let prompt: (&str, u8) = match phase {
+            SelectPhase::ConfirmOverwrite { cursor, .. } => ("Do you wish to save?", cursor),
+            SelectPhase::ConfirmDelete { cursor, .. } => ("Delete this save?", cursor),
+            _ => ("", 0),
         };
+        let confirm: Option<(&str, u8)> = layout.confirm.then_some(prompt);
         if let Some((prompt, cursor)) = confirm {
             let y = legaia_engine_core::save_select::interpolate_anim(
                 (0, ui::CONFIRM_DIALOG_SLIDE_START_Y),

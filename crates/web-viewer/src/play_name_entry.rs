@@ -118,9 +118,12 @@ impl LegaiaRuntime {
     /// entry closes, the name is in the party record, and the op-`0x49` gate
     /// releases the suspended opening script on its next step.
     ///
-    /// The world frame counter is advanced here (and only here) while the
-    /// overlay is up, because the field tick is frozen under it and the
-    /// caret blink is derived from that counter.
+    /// Input only: the caret clock is [`Self::name_entry_advance_frames`].
+    /// The two are separate because they run on different clocks - one edge
+    /// per display frame, but `World::frame` per SIM tick (the native window
+    /// advances it once per tick while the field is frozen under the
+    /// overlay). Folding the counter in here made the blink period a
+    /// property of the monitor's refresh rate.
     pub fn name_entry_input(&mut self, edge: u16) -> bool {
         let Some(h) = self.scene_host.as_mut() else {
             return false;
@@ -136,9 +139,22 @@ impl LegaiaRuntime {
             confirm: edge & 0x4000 != 0, // Cross
             cancel: edge & 0x1000 != 0,  // Triangle
         };
-        let committed = h.world.step_name_entry(input);
-        h.world.frame = h.world.frame.wrapping_add(1);
-        committed
+        h.world.step_name_entry(input)
+    }
+
+    /// Advance the world frame counter `steps` sim ticks while the overlay is
+    /// up - the caret blink's clock, and the only thing running under a
+    /// modal overlay that freezes the field tick. The page hands it this
+    /// display frame's fixed-timestep step count, which is exactly what the
+    /// native window's catch-up ticks spend on the same counter.
+    pub fn name_entry_advance_frames(&mut self, steps: u32) {
+        let Some(h) = self.scene_host.as_mut() else {
+            return;
+        };
+        if !h.world.name_entry_active() {
+            return;
+        }
+        h.world.frame = h.world.frame.wrapping_add(u64::from(steps.min(64)));
     }
 
     /// Live overlay state for the page's status line (and headless checks):

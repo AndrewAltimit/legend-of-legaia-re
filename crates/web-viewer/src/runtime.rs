@@ -869,6 +869,15 @@ impl LegaiaRuntime {
             .then(|| stage_y.clamp(i16::MIN as i32, i16::MAX as i32) as i16);
     }
 
+    /// Read back the value [`Self::set_field_player_screen_y`] holds, or
+    /// [`NO_FIELD_PROJECTION`] for "not projectable" - for the page's
+    /// diagnostics and the parity ladder, which needs the number the
+    /// decision kernel is about to compare rather than the draw it produces.
+    pub fn field_player_screen_y(&self) -> i32 {
+        self.field_hud_projected_y
+            .map_or(NO_FIELD_PROJECTION, i32::from)
+    }
+
     /// Establish a fresh New Game slate - the browser twin of the native
     /// `BootSession::begin_new_game`: `World::begin_new_game` (flags, money,
     /// bag, clock, pending transitions) plus the SCUS starting party + bag.
@@ -1637,6 +1646,34 @@ impl LegaiaRuntime {
                     ));
                     break;
                 }
+                if self.field_vram_anim.is_none() {
+                    // Slot 5 absent / unparseable: the legacy single-cell
+                    // ocean-head cycle, the same fallback the native
+                    // `resolve_ocean_anim` keeps for a modified or damaged
+                    // bundle. Every retail kingdom ships slot 5, so this
+                    // never fires on a stock disc - and without it this host
+                    // froze the sea where the native window kept it moving.
+                    for entry in &scene.entries {
+                        let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&entry.bytes, 0)
+                        else {
+                            continue;
+                        };
+                        if let Some(ocean) = legaia_asset::ocean::find_ocean_assets(&slot0)
+                            && ocean.animation_frames.len() >= 32
+                        {
+                            crate::console_log(
+                                "play: no slot-5 CLUT-walk table in the kingdom bundle; \
+                                 falling back to the legacy ocean-head cycle",
+                            );
+                            self.field_vram_anim =
+                                Some(crate::field_scene::FieldSceneAnim::ocean_only(
+                                    ocean.animation_frames,
+                                    frame_step,
+                                ));
+                            break;
+                        }
+                    }
+                }
             } else {
                 for entry in &scene.entries {
                     let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes) else {
@@ -1675,6 +1712,10 @@ impl LegaiaRuntime {
         };
         let mut dirty = false;
         if let Some(anim) = self.field_vram_anim.as_mut() {
+            // Live divisor, not the value this scene was rebuilt at - the
+            // native animator reads `clock.frame_step` off the world on
+            // every frame.
+            anim.set_frame_step(host.world.clock.frame_step);
             dirty |= anim.tick(1, &mut res.vram);
         }
         dirty |= host.world.apply_script_vram_moves(&mut res.vram);
