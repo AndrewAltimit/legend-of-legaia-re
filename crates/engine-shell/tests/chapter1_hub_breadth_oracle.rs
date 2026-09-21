@@ -789,24 +789,35 @@ fn part_e_flag_census_setters_disc_wide() {
 
     // (4) 0x142 - the Caruban-beat / dolk->dolk2 switch - IS script-SET:
     // the retail-frame census surfaces the writers the bundle-only shifted
-    // sweep missed. The setters live in the rikuroa streaming-carrier MAN
-    // (P1[10..12] + the post-victory record P2[50], the self-latching C1
-    // one-shot the firehose caught live: `51 42`, `ra 0x801E3598`) and in
-    // dolk2's own streaming MAN (P1[0]/P1[1], re-asserting on entry). The
+    // sweep missed. Two records write it as a story beat - the rikuroa
+    // streaming carrier's post-victory record P2[50] (the self-latching C1
+    // one-shot the firehose caught live: `51 42`, `ra 0x801E3598`) and
+    // dolk2's own streaming MAN P1[0], re-asserting on entry. The
     // wave-earlier "no SET site disc-wide -> battle-path write" reading is
-    // falsified. dolk's bundle still carries the P1[26] Clear.
+    // falsified.
+    //
+    // Every other site this flag holds is a **developer flag-menu arm**
+    // (`man_field_scripts::debug_flag_menu_arm`): an option of an in-record
+    // debug picker, two or more flag-op-then-`JmpRel` arms side by side.
+    // `map01` P1[2] labels itself `Clear all flags`; `rikuroa` P1[10..12]
+    // are `Clear`-labelled nine-flag Set/Clear ladders; `dolk` P1[26],
+    // `dolk2` P1[1], `keikoku`, `suimon`, `town0b` and `town0c` carry the
+    // `On` / `Off` / `=Back=` toggle. See `docs/subsystems/script-vm.md`
+    // "Shipped scene scripts carry developer flag-setting menus".
     let s142 = census.get(&0x142).expect("0x142 has census sites");
+    let story_set_sites_142: BTreeSet<(String, usize, usize)> = s142
+        .iter()
+        .filter(|h| h.kind == FlagKind::Set && !h.debug_menu)
+        .map(|h| (h.scene_name.clone(), h.partition, h.record))
+        .collect();
     assert_eq!(
-        set_sites(0x142),
-        BTreeSet::from([
-            ("dolk2".to_string(), 1, 0),
-            ("dolk2".to_string(), 1, 1),
-            ("rikuroa".to_string(), 1, 10),
-            ("rikuroa".to_string(), 1, 11),
-            ("rikuroa".to_string(), 1, 12),
-            ("rikuroa".to_string(), 2, 50),
-        ]),
-        "flag 0x142 setters: rikuroa post-Caruban records + dolk2 re-assert"
+        story_set_sites_142,
+        BTreeSet::from([("dolk2".to_string(), 1, 0), ("rikuroa".to_string(), 2, 50),]),
+        "flag 0x142 story setters: the rikuroa post-Caruban latch + dolk2's entry re-assert"
+    );
+    assert!(
+        s142.iter().any(|h| h.debug_menu),
+        "the 0x142 debug-menu arms are still surfaced (a classifier that          stops firing would empty the pin above without failing it)"
     );
     assert!(
         s142.iter().any(|h| h.scene_name == "dolk"

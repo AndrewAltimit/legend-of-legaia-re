@@ -996,3 +996,76 @@ fn battle_entry_arm_needs_a_scripted_entry_within_the_window() {
     let (mf, man) = man_with_placement_script(&[0x50, 0x19, 0x3E, 103, 0, 0, 0, 0, 0x21]);
     assert!(walk_battle_entry_arms(&mf, &man).is_empty());
 }
+
+// ---- developer flag-menu arms (`debug_flag_menu_arm`) ----
+
+/// The shipped two-option toggle: the picker's last label, the `0x21` stop,
+/// then `Set <flag> / JmpRel` and `Clear <same flag> / JmpRel`. Byte-for-byte
+/// the `keikoku` / `suimon` / `town0b` / `town0c` `0x142` arms and the
+/// `doman` P1[2] / `kor5` P1[22] / `jou` P1[6] arms of `0x370` / `0x44D`.
+#[test]
+fn a_set_clear_toggle_pair_reads_as_a_debug_menu_arm() {
+    let mut body = Vec::new();
+    body.extend_from_slice(b"\x1fOn\x00\x1fOff\x00\x1fExit\x00");
+    body.extend_from_slice(&[0x21]);
+    let set_pc = body.len();
+    body.extend_from_slice(&[0x51, 0x42, 0x26, 0x07, 0x00]);
+    let clear_pc = body.len();
+    body.extend_from_slice(&[0x61, 0x42, 0x26, 0x02, 0x00]);
+    body.extend_from_slice(b"\x1fThe thick Mist\x00");
+    assert!(debug_flag_menu_arm(&body, set_pc), "the ON arm");
+    assert!(debug_flag_menu_arm(&body, clear_pc), "the OFF arm");
+}
+
+/// `map01` P1[2]'s shape: a "Clear all flags" picker whose arms are single
+/// flag ops with **backward** jumps, four in a row.
+#[test]
+fn a_backward_jumping_flag_ladder_reads_as_a_debug_menu_arm() {
+    let mut body = Vec::new();
+    body.extend_from_slice(b"\x1fClear all flags\x00");
+    body.extend_from_slice(&[0x21, 0x21, 0x26, 0xAD, 0xFD]);
+    let first = body.len();
+    for (op, operand) in [(0x51u8, 0x41u8), (0x51, 0x42), (0x52, 0xFA), (0x51, 0x9A)] {
+        body.extend_from_slice(&[op, operand, 0x26, 0xF8, 0xFF]);
+    }
+    assert!(debug_flag_menu_arm(&body, first), "the first ladder arm");
+    assert!(debug_flag_menu_arm(&body, first + 5), "the second");
+}
+
+/// `geremi` P1[1]: the arms carry ordinary ops between the flag writes - an
+/// `0x39` in the "Set all flags" arm, a `4C 52` `TAKE_ITEM` in the "Clear"
+/// one - so the block can only be walked with the decoder's own widths.
+#[test]
+fn a_menu_arm_carrying_ordinary_ops_still_reads_as_one() {
+    let mut body = Vec::new();
+    body.extend_from_slice(b"\x1fSet all flags\x00\x1fClear\x00\x1fExit\x00");
+    body.extend_from_slice(&[0x21]);
+    let set_pc = body.len();
+    body.extend_from_slice(&[
+        0x51, 0xBE, 0x51, 0xC9, 0x51, 0xC7, 0x51, 0xBF, 0x39, 0x6A, 0x51, 0xC0, 0x26, 0xE1, 0xFE,
+    ]);
+    let clear_pc = body.len();
+    body.extend_from_slice(&[
+        0x61, 0xBE, 0x61, 0xC9, 0x4C, 0x52, 0x6A, 0x61, 0xC0, 0x26, 0xC6, 0xFE,
+    ]);
+    assert!(debug_flag_menu_arm(&body, set_pc), "the Set-all arm");
+    assert!(debug_flag_menu_arm(&body, clear_pc), "the Clear arm");
+}
+
+/// A story writer is **not** a menu arm even when it loops back to its own
+/// gate test: `doman` P1[15]'s `53 70 21 26 FA CF` is one arm, and one arm is
+/// a beat. The `rikuroa` P2[50] post-victory latch (`51 42 62 89` followed by
+/// choreography, no jump) is not an arm at all.
+#[test]
+fn a_lone_set_then_jump_is_not_a_debug_menu_arm() {
+    // doman P1[15]: no option-label list, so no picker head to anchor on.
+    let mut body = vec![0x4C, 0xCD];
+    let set_pc = body.len();
+    body.extend_from_slice(&[0x53, 0x70, 0x21, 0x26, 0xFA, 0xCF]);
+    body.extend_from_slice(b"\x1fDr. Usha: Do \x00");
+    assert!(!debug_flag_menu_arm(&body, set_pc));
+
+    // rikuroa P2[50]: SET, CLEAR, then a cross-context actor command.
+    let body2 = [0x51u8, 0x42, 0x62, 0x89, 0xB2, 0x16, 0x1D, 0xCC, 0x16];
+    assert!(!debug_flag_menu_arm(&body2, 0));
+}

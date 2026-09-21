@@ -104,26 +104,61 @@ fn spine_flag_writers_surface_in_the_carrier_census() {
     let scenes = index.cdname_scene_names();
     let census = system_flag_census(&index, &scenes);
 
-    // 0x142: rikuroa carrier SETs (incl. the P2[50] post-victory one-shot
-    // the firehose caught live) + dolk2 carrier re-asserts.
+    // 0x142: the story writers are the `dolk2` carrier's entry re-assert
+    // (P1[0]) and the `rikuroa` carrier's post-victory latch (P2[50] - the
+    // C1 self-latch the firehose caught live, `51 42`, `ra 0x801E3598`).
+    //
+    // Everything else the census holds for this flag is a **developer
+    // flag-menu arm** (`man_field_scripts::debug_flag_menu_arm`): a picker
+    // option whose body is a flag-op run ending in an unconditional
+    // `JmpRel` back to the picker, two or more side by side. Those decode
+    // cleanly and their operands are real, so `clean` and `text_alias` both
+    // pass them - the arm block is what separates them. `map01` P1[2] names
+    // itself (`Clear all flags`), `rikuroa` P1[10..12] are `Clear`-labelled
+    // nine-flag Set/Clear ladders, and the `keikoku` / `suimon` / `town0b` /
+    // `town0c` / `dolk2` P1[1] arms are the `On` / `Off` / `=Back=` toggle.
+    // See `docs/subsystems/script-vm.md`
+    // "Shipped scene scripts carry developer flag-setting menus".
     let s142: BTreeSet<(String, bool, usize, usize)> = census
         .get(&0x142)
         .expect("0x142 sites")
         .iter()
-        .filter(|h| h.kind == FlagKind::Set)
+        .filter(|h| h.kind == FlagKind::Set && !h.debug_menu)
         .map(|h| (h.scene_name.clone(), h.variant, h.partition, h.record))
         .collect();
     assert_eq!(
         s142,
         BTreeSet::from([
             ("dolk2".to_string(), true, 1, 0),
-            ("dolk2".to_string(), true, 1, 1),
-            ("rikuroa".to_string(), true, 1, 10),
-            ("rikuroa".to_string(), true, 1, 11),
-            ("rikuroa".to_string(), true, 1, 12),
             ("rikuroa".to_string(), true, 2, 50),
         ]),
-        "0x142 SET sites (all in streaming variant carriers)"
+        "0x142 story SET sites (both in streaming variant carriers)"
+    );
+    // Non-vacuous the other way: the menu arms are still surfaced, and they
+    // are the scenes below (`cave01` contributes a TEST arm rather than a
+    // write). If this set empties, the classifier stopped firing and the pin
+    // above stopped meaning anything.
+    let menu142: BTreeSet<String> = census
+        .get(&0x142)
+        .expect("0x142 sites")
+        .iter()
+        .filter(|h| h.debug_menu)
+        .map(|h| h.scene_name.clone())
+        .collect();
+    assert_eq!(
+        menu142,
+        BTreeSet::from([
+            "cave01".to_string(),
+            "dolk".to_string(),
+            "dolk2".to_string(),
+            "keikoku".to_string(),
+            "map01".to_string(),
+            "rikuroa".to_string(),
+            "suimon".to_string(),
+            "town0b".to_string(),
+            "town0c".to_string(),
+        ]),
+        "scenes whose 0x142 sites are developer flag-menu arms"
     );
 
     // 0x482 (Drake mist walls): every census site is desync NOISE - the
@@ -197,12 +232,13 @@ fn spine_flag_writers_surface_in_the_carrier_census() {
     );
 
     // 0x1BE: geremi's arrival one-shot (P2[0] self-latch) - the flag the
-    // earlier misattributed frame read as a rikuroa/Zeto gate.
+    // earlier misattributed frame read as a rikuroa/Zeto gate. `geremi`
+    // P1[1] carries the op too, as a developer flag-menu arm.
     let s1be: BTreeSet<(String, usize, usize, bool)> = census
         .get(&0x1BE)
         .expect("0x1BE sites")
         .iter()
-        .filter(|h| h.kind == FlagKind::Set)
+        .filter(|h| h.kind == FlagKind::Set && !h.debug_menu)
         .map(|h| (h.scene_name.clone(), h.partition, h.record, h.variant))
         .collect();
     assert_eq!(
@@ -1275,22 +1311,40 @@ fn chapter3_koin_family_and_writer_pins() {
             "expected a clean SET of 0x{flag:03X} at {scene} P{partition}[{record}]"
         );
     }
-    // Writer-less gates (code-path leads, like 549): no clean script SET
-    // anywhere on disc.
-    for flag in [0x50Au16, 0x5D6] {
-        let clean_sets = census
-            .get(&flag)
-            .map(|hits| {
-                hits.iter()
-                    .filter(|h| h.kind == FlagKind::Set && h.clean)
-                    .count()
-            })
-            .unwrap_or(0);
-        assert_eq!(
-            clean_sets, 0,
-            "0x{flag:03X} has no clean script writer (code-path lead)"
-        );
-    }
+    // `0x50A` stays writer-less in script space (a code-path lead, like
+    // 549): its writers are the mode-24 minigame overlays' native code.
+    let clean_sets_50a = census
+        .get(&0x50Au16)
+        .map(|hits| {
+            hits.iter()
+                .filter(|h| h.kind == FlagKind::Set && h.clean)
+                .count()
+        })
+        .unwrap_or(0);
+    assert_eq!(
+        clean_sets_50a, 0,
+        "0x50A has no clean script writer (code-path lead)"
+    );
+    // `0x5D6` DOES have one, and it is a self-latch: `koin4` P1[15] is both
+    // the record the flag gates (its dialog/position variant) and the record
+    // that sets it. Behind the "If you have money, go inside / and buy
+    // something." line the walk reads `48` (a one-byte no-op) then `55 D6`,
+    // and the ops after it are a coherent cross-context actor run - the same
+    // shape as the town01 P2[3] and flag-549 self-latches. P2[3] carries the
+    // same block. The earlier "no writer in any enumerable space" reading
+    // was a walk that stopped at the record's first text segment.
+    let sets_5d6: BTreeSet<(String, usize, usize)> = census
+        .get(&0x5D6u16)
+        .expect("0x5D6 sites")
+        .iter()
+        .filter(|h| h.kind == FlagKind::Set && h.clean && !h.text_alias && !h.debug_menu)
+        .map(|h| (h.scene_name.clone(), h.partition, h.record))
+        .collect();
+    assert_eq!(
+        sets_5d6,
+        BTreeSet::from([("koin4".to_string(), 1, 15), ("koin4".to_string(), 2, 3)]),
+        "0x5D6's script writers are the koin4 self-latch pair"
+    );
 }
 
 /// The Conkram (`conc*`) gate families - the chapter-3 "past" arc around
@@ -2058,7 +2112,7 @@ fn flag_0x370_writer_is_the_doman_p1_15_usha_latch() {
     let sites = census.get(&0x370).expect("0x370 sites");
     let sets: BTreeSet<(String, bool, usize, usize)> = sites
         .iter()
-        .filter(|h| h.kind == FlagKind::Set && h.clean && !h.text_alias)
+        .filter(|h| h.kind == FlagKind::Set && h.clean && !h.text_alias && !h.debug_menu)
         .map(|h| (h.scene_name.clone(), h.variant, h.partition, h.record))
         .collect();
     assert_eq!(
@@ -2090,32 +2144,45 @@ fn flag_0x370_writer_is_the_doman_p1_15_usha_latch() {
     }
 }
 
-/// The two koin gates stay genuinely writer-less in script space even under
-/// the fully-pinned nibble widths: the census holds clean TESTs only
-/// (`koin3` P2[9]/P2[10] for `0x50A`, `koin4` P1[15] for `0x5D6`) and NO
-/// genuine SET/CLEAR disc-wide. Their writers are code paths or the
-/// C1-passes-anyway shape - the capture-target class (Track A). If this
-/// test ever fails on the SET side, a static writer has surfaced -
-/// re-verify it (the 549/0x370 pattern) before scheduling a capture.
+/// The two koin gates, one writer-less and one not. `0x50A` holds clean
+/// TESTs only (`koin3` P2[9]/P2[10]) and no SET/CLEAR anywhere: its writers
+/// are the mode-24 minigame overlays' native code, the capture-target class.
+/// `0x5D6` reads the same way until the walk crosses the record's text -
+/// behind it `koin4` P1[15] (and its P2[3] twin) SET the very flag P1[15]
+/// gates on, the self-latch shape. Both are pinned below; a change on either
+/// side wants re-verifying (the 549 / `0x370` pattern) before it is trusted.
 #[test]
-fn koin_gates_0x50a_0x5d6_remain_script_writer_less() {
+fn koin_gates_0x50a_writer_less_0x5d6_self_latched() {
     let Some(index) = open_index() else { return };
     let scenes = index.cdname_scene_names();
     let census = system_flag_census(&index, &scenes);
 
-    for (flag, scene, sites_want) in [
-        (0x50Au16, "koin3", vec![(2usize, 9usize), (2, 10)]),
-        (0x5D6, "koin4", vec![(1, 15), (1, 15)]),
+    for (flag, scene, sites_want, writers_want) in [
+        (
+            0x50Au16,
+            "koin3",
+            vec![(2usize, 9usize), (2, 10)],
+            Vec::<(String, usize, usize)>::new(),
+        ),
+        (
+            0x5D6,
+            "koin4",
+            vec![(1, 15), (1, 15)],
+            vec![
+                ("koin4".to_string(), 1usize, 15usize),
+                ("koin4".to_string(), 2, 3),
+            ],
+        ),
     ] {
         let sites = census.get(&flag).expect("gate sites");
         let writers: Vec<_> = sites
             .iter()
-            .filter(|h| h.kind != FlagKind::Test && h.clean && !h.text_alias)
+            .filter(|h| h.kind != FlagKind::Test && h.clean && !h.text_alias && !h.debug_menu)
             .map(|h| (h.scene_name.clone(), h.partition, h.record))
             .collect();
-        assert!(
-            writers.is_empty(),
-            "0x{flag:X} gained a genuine script writer {writers:?} - re-verify"
+        assert_eq!(
+            writers, writers_want,
+            "0x{flag:X} script writers changed - re-verify"
         );
         let tests: Vec<(usize, usize)> = sites
             .iter()

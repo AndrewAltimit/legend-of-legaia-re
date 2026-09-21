@@ -422,12 +422,34 @@ fn part_j_census_pins_gate_setters_disc_wide() {
     // P1[0] (a scene-state dispatch test); set only by jou's walk-on beat
     // P2[4].
     //
+    // `kor5` P1[22] and `jou` P1[6] also write it, and they are **developer
+    // flag-menu arms** - an in-record debug picker labelled `On` / `Off` /
+    // `Exit` whose two arms SET and CLEAR the flag five bytes apart, each
+    // ending in a `JmpRel` back to the picker. They decode cleanly and their
+    // operands are real, so only the arm block separates them from a beat
+    // (`man_field_scripts::debug_flag_menu_arm`; see
+    // `docs/subsystems/script-vm.md`).
+    //
     // The P0 hits are what the partition-0 record header
     // (`[u8 n][n*2 name][u8 attr]`, three bytes shorter than partition-1's
     // placement header) buys: decoding a P0 script from the P1 offset starts
     // it mid-op, so the walk resyncs somewhere arbitrary and drops ops. jou
     // P0[12] is one of them.
-    let s44d = sites(0x44D);
+    let s44d: Vec<(String, usize, usize, FlagKind)> = census
+        .get(&0x44D)
+        .map(|hits| {
+            hits.iter()
+                .filter(|h| !h.debug_menu)
+                .map(|h| (h.scene_name.clone(), h.partition, h.record, h.kind))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        census
+            .get(&0x44D)
+            .is_some_and(|hits| hits.iter().any(|h| h.debug_menu)),
+        "the 0x44D debug-menu arms are still surfaced"
+    );
     assert_eq!(
         s44d,
         vec![

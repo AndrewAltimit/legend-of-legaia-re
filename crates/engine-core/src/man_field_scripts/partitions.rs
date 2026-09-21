@@ -90,6 +90,12 @@ pub struct GFlagSite {
     /// genuine flag op that happens to sit inside a text-dense window
     /// self-identifies for hand verification.
     pub text_alias: bool,
+    /// `true` iff the site is an arm of a **developer flag-setting menu**
+    /// embedded in the record (see [`debug_flag_menu_arm`]). Such a site is a
+    /// genuine, cleanly decoded instruction of the stream, so `clean` and
+    /// `text_alias` both leave it looking like a story writer; it is reached
+    /// only by picking that option in a debug picker.
+    pub debug_menu: bool,
 }
 
 /// Bytes inspected on each side of a flag opcode by [`text_alias_suspect`]'s
@@ -152,6 +158,91 @@ pub fn text_alias_suspect(body: &[u8], pc: usize, header_size: usize) -> bool {
         .windows(2)
         .any(|p| p[0].is_ascii_lowercase() && p[1].is_ascii_lowercase());
     best >= TEXT_ALIAS_MIN_RUN && lowercase_pair
+}
+
+/// Bytes before a flag site [`debug_flag_menu_arm`] will look back over for
+/// the picker's `0x00 0x21` head - the last option label's terminator and
+/// the record's stop. `rikuroa`'s nine-flag ladders are the widest observed
+/// block and fit inside this.
+const MENU_BLOCK_LOOKBACK: usize = 160;
+
+/// Instructions [`debug_flag_menu_arm`] will decode from a candidate block
+/// head before giving up.
+const MENU_BLOCK_INSNS: usize = 96;
+
+/// How many consecutive arms make a menu. One flag-op run ending in a jump
+/// is an ordinary story beat looping back to its gate (`doman` P1[15]); two
+/// or more side by side are a picker's options.
+const MENU_ARM_MIN: usize = 2;
+
+/// Is the flag op at `pc` an arm of a **developer flag-setting menu** rather
+/// than a story writer?
+///
+/// Several shipped scene scripts carry a debug picker whose options write the
+/// scene's own story flags. The option labels are in the record's own text
+/// (`"Set all flags"` / `"Clear"` / `"Exit"` in `geremi` P1[1], `"Clear all
+/// flags"` in `map01` P1[2], the `"On"` / `"Off"` / `"Exit"` triple in
+/// `doman` P1[2], `kor5` P1[22] and `jou` P1[6]), and each option's body is
+/// a run of flag ops ending in an unconditional `JmpRel` back to the picker.
+///
+/// These decode cleanly and their operands are the scene's real flags, so
+/// neither [`GFlagSite::clean`] nor [`GFlagSite::text_alias`] separates them
+/// from a story beat. What does is the **block**: the label list's `0x00`
+/// terminator and the record's `0x21` stop, then [`MENU_ARM_MIN`] or more
+/// flag-op arms each ending in a `JmpRel`. A beat that sets a flag and
+/// clears the same flag two instructions later is a toggle, not a latch; a
+/// story writer's own `SET … JmpRel` back to its gate test (the `doman`
+/// P1[15] Usha latch) is a single arm behind no label list and stays
+/// unflagged.
+///
+/// The walk is the decoder's, not a byte stride, because an arm carries
+/// ordinary ops too - `geremi`'s Set arm runs an `0x39` and its Clear arm a
+/// `4C 52` `TAKE_ITEM` between the flag writes.
+pub fn debug_flag_menu_arm(body: &[u8], pc: usize) -> bool {
+    let lo = pc.saturating_sub(MENU_BLOCK_LOOKBACK).max(1);
+    (lo..pc)
+        .rev()
+        .filter(|&i| body[i] == 0x21 && body[i - 1] == 0x00)
+        .any(|head| menu_block_covers(body, head, pc))
+}
+
+/// Walk the arm block at `head` (the picker's stop byte) and report whether
+/// `pc` is a flag op inside a block of [`MENU_ARM_MIN`] or more arms.
+fn menu_block_covers(body: &[u8], head: usize, pc: usize) -> bool {
+    let mut arms = 0usize;
+    let mut flags_this_arm = 0usize;
+    let mut covers = false;
+    for insn in LinearWalker::new(body, head)
+        .flatten()
+        .take(MENU_BLOCK_INSNS)
+    {
+        match insn.info {
+            // Text ends the block: the arms run between the label list and
+            // the continuation prose.
+            InsnInfo::TextSegment { .. } | InsnInfo::Picker { .. } => break,
+            InsnInfo::GFlag { .. } | InsnInfo::SystemFlag { .. } => {
+                flags_this_arm += 1;
+                if insn.pc == pc {
+                    covers = true;
+                }
+            }
+            InsnInfo::JmpRel { .. } => {
+                if flags_this_arm > 0 {
+                    arms += 1;
+                }
+                flags_this_arm = 0;
+            }
+            _ => {}
+        }
+        if arms >= MENU_ARM_MIN && covers {
+            return true;
+        }
+        // Walked past the site without it landing on a flag op in an arm.
+        if insn.pc > pc && !covers {
+            break;
+        }
+    }
+    false
 }
 
 /// Consecutive error-free instructions the linear walk must decode before a
@@ -445,6 +536,7 @@ pub fn walk_partition_gflag_sites(
             ok_run += 1;
             let header_size = if insn.extended.is_some() { 2 } else { 1 };
             let text_alias = text_alias_suspect(body, insn.pc, header_size);
+            let debug_menu = debug_flag_menu_arm(body, insn.pc);
             match insn.info {
                 // Scratchpad global flag (`0x2E` set / `0x2F` clear). The VM
                 // has no scratchpad TEST op reaching this variant, but guard
@@ -461,6 +553,7 @@ pub fn walk_partition_gflag_sites(
                     flag: u16::from(bit),
                     clean,
                     text_alias,
+                    debug_menu,
                 }),
                 // Wide SYSTEM-flag bank (`0x5x` set / `0x6x` clear / `0x7x`
                 // test). `idx` is the full `u16` flag number; `bit` keeps the
@@ -477,6 +570,7 @@ pub fn walk_partition_gflag_sites(
                     flag: idx,
                     clean,
                     text_alias,
+                    debug_menu,
                 }),
                 _ => {}
             }
@@ -683,6 +777,10 @@ pub struct FlagCensusSite {
     /// that decode error-free and so pass `clean` (e.g. `"ta"` = `74 61` =
     /// `Test 0x461`). See [`GFlagSite::text_alias`] / [`text_alias_suspect`].
     pub text_alias: bool,
+    /// Developer flag-menu arm: a cleanly decoded, genuine flag op that is
+    /// one option of an in-record debug picker rather than a story writer.
+    /// See [`debug_flag_menu_arm`].
+    pub debug_menu: bool,
 }
 
 /// Disc-wide SYSTEM-flag census: walk every scene's MAN across all three
@@ -735,6 +833,7 @@ where
                         kind: site.kind,
                         clean: site.clean,
                         text_alias: site.text_alias,
+                        debug_menu: site.debug_menu,
                     });
                 }
             }

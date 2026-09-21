@@ -1052,13 +1052,61 @@ An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but t
 
 CLI: `legaia-engine man-scripts --scene <name> --gflag-partition <N>` lists both banks for one scene; `legaia-engine man-scripts --system-flag-census` runs the disc-wide census. The flag-index arithmetic mirrors the dispatchers above, and the engine's own bit helpers are `World::system_flag_set`/`_clear`/`_test`.
 
+#### Shipped scene scripts carry developer flag-setting menus
+
+Not every clean SET in a scene's MAN is a story writer. Several shipped
+records hold a **debug picker whose options write that scene's own story
+flags**, and once the walk crosses text
+([above](#text-segments-and-pickers-are-strides-of-the-stream)) the census
+surfaces them alongside the beats. They are genuine instructions - they
+decode at real boundaries and their operands are the scene's real flags - so
+neither the decode-coherence bit nor the text-alias marker separates them.
+
+Their own text names them. `map01` P1[2]'s option labels read `???` and
+`Clear all flags`; `geremi` P1[1]'s read `Set all flags` / `Clear` / `Exit`;
+`keikoku` / `suimon` / `town0b` / `town0c` label theirs `=Exit=` / `=Back=`
+and `End flag setting`; `doman` P1[2], `kor5` P1[22] and `jou` P1[6] use the
+plain triple `On` / `Off` / `Exit`. The shape behind the labels is uniform:
+the label list's `0x00` terminator and the record's `0x21` stop, then one
+**arm** per option - a run of flag ops terminated by an unconditional `0x26`
+`JmpRel` back to the picker. An arm carries ordinary ops between its writes
+(`geremi`'s Set arm runs an `0x39`, its Clear arm a `4C 52` `TAKE_ITEM`), so
+the block is walked with the decoder's own widths rather than a byte stride.
+
+```text
+1F "On" 00  1F "Off" 00  1F "Exit" 00  21
+51 42  26 07 00      <- ON  : SET   0x142, jump past the OFF arm
+61 42  26 02 00      <- OFF : CLEAR 0x142, jump to the continuation
+```
+
+Two arms side by side is the discriminator, because a beat that sets a flag
+and clears the same flag two instructions later is a toggle, not a latch.
+A story writer's own `SET … JmpRel` back to its gate test is a *single* arm -
+`doman` P1[15]'s Usha briefing latch is exactly that - and stays unflagged.
+Engine: `man_field_scripts::debug_flag_menu_arm`, surfaced as
+`GFlagSite::debug_menu` / `FlagCensusSite::debug_menu`; the census consumers
+drop those sites before attributing a gate.
+
+The widest of them is `rikuroa`'s streaming carrier, whose P1[10..12] each
+carry a `Clear`-labelled picker with a nine-flag Set ladder
+(`0x281..0x286`, `0x142`) and its mirrored Clear ladder (plus `0x2C9`) -
+the beat-state editor for that dungeon. Those three records are **not** the
+Caruban-beat writer, which is the post-victory record P2[50]: one `51 42`
+followed by the staged-marker clear `62 89` and ordinary choreography, no
+jump and no second arm.
+
+This is the second debug affordance in the flag bank - the first is the
+pad-driven flag editor resident in the field overlay
+([below](#native-flag-bank-writers-the-minigame-result-toggle-0x50a--the-0x5d6-negative)),
+which can write any index. These menus are per-scene and write named flags.
+
 ### A second script-byte carrier: the streaming variant MAN
 
 A live whole-playthrough capture (PCSX-Redux exec-bps on `0x8003CE08`/`0x8003CE34`, probe `autorun_flag_firehose.lua`) shows every story-flag write across the chapter-1 scenes returning to the dispatcher's own `0x5x`/`0x6x` arms (`ra 0x801E3598` / `0x801E35C0`, field overlay resident) - the ops above are the **only** story-flag writers observed. The remaining callers touch only low system indices: `0`/`3` staged by the world-map entity SM (`FUN_801DA51C`), `0x35` set at battle-end victory (`FUN_8004E568`) and cleared by the entity SM, `0xB`/`0xC`/`0x18` interaction/engagement locks, `0xE` by two dispatcher spawn ops.
 That result is chapter-1-scoped: the mode-24 minigame overlays add native story-flag writers that are simply not resident in chapter 1 ([below](#native-flag-bank-writers-the-minigame-result-toggle-0x50a--the-0x5d6-negative)).
 
 The executed script bytes at the Mt. Rikuroa post-Caruban beat live in a heap-resident carrier that is **not** the scene's asset-table bundle MAN: it is a second, plain MAN shipped as the type-3 chunk of a standalone `data_field_streaming` PROT entry (the chunk header is the ordinary sub-asset descriptor `[u24 size][u8 type=0x03]`; the payload parses with `legaia_asset::man_section` like any MAN).
-The resident copy byte-matches PROT `0157_rikuroa`'s chunk, and it carries the story-flag `0x142` SET (`51 42`) at four record sites - `P1[10..12]` plus the post-victory cutscene record `P2[50]`, whose C1 gate is `0x142` itself (the self-latching one-shot).
+The resident copy byte-matches PROT `0157_rikuroa`'s chunk, and the story-flag `0x142` SET (`51 42`) it carries as a *beat* is the post-victory cutscene record `P2[50]`, whose C1 gate is `0x142` itself (the self-latching one-shot). The carrier's `P1[10..12]` hold the same `51 42`, but each is one arm of a `Clear`-labelled developer flag menu ([above](#shipped-scene-scripts-carry-developer-flag-setting-menus)) - a nine-flag Set ladder and its mirrored Clear ladder, not the beat.
 The carrier's records also pin **how** `P2[50]` runs: the boss stager `P1[3]` SETs the transient marker `0x289` (`52 89`) right before its battle-entry op (`3E FF 11`),
 and the scene-entry system script `P1[0]` tests that marker on the post-battle scene re-entry (`72 89` at `+0x13A`) - its taken arm (`+0x7E6`: fade, BGM, `44 5C`) issues the op-`0x44` spawn of global record `0x5C` = `P2[50]`, C1-gate-checked by the dispatcher.
 The same shape sits one branch level up: `P1[0]`'s first-arrival arm spawns `P2[43]` (`44 55`) while flag `0x2FB` is clear, and that record's own `52 FB` latches it.
@@ -1115,11 +1163,11 @@ This is why one scene is both the Muscle Dome's host (the 0977 mastering path
 `h:\prot\field\koin1\efect.dat`) and "the casino floor" whose BGM id `2018` is
 named *Sol casino*: they are two doors off the same room.
 
-On return from mode 24 the venue scene re-enters and its gates re-evaluate: `koin1 P2[9]` (C2=`[0x50A]`, spawns while set) is the returned-victorious beat, `P2[10]` (C1=`[0x50A]`) the default arrangement, and `koin3`'s `P2[9]`/`P2[10]` clean TESTs branch the same way. This is why the script census correctly reports no script writer: the writers are native code, resident only while the minigame overlay occupies slot A. Anchor test: `man_variant_carrier_census_disc.rs::koin_gates_0x50a_0x5d6_remain_script_writer_less` (still true as stated - *script*-writer-less).
+On return from mode 24 the venue scene re-enters and its gates re-evaluate: `koin1 P2[9]` (C2=`[0x50A]`, spawns while set) is the returned-victorious beat, `P2[10]` (C1=`[0x50A]`) the default arrangement, and `koin3`'s `P2[9]`/`P2[10]` clean TESTs branch the same way. This is why the script census correctly reports no script writer: the writers are native code, resident only while the minigame overlay occupies slot A. Anchor test: `man_variant_carrier_census_disc.rs::koin_gates_0x50a_writer_less_0x5d6_self_latched` (`0x50A` stays *script*-writer-less).
 
-**`0x5D6` (the `koin4` C1 gate + `P1[15]` dialog/position variant) has no writer in any enumerable space:**
+**`0x5D6` (the `koin4` C1 gate + `P1[15]` dialog/position variant) is a script self-latch**, and the earlier "no writer in any enumerable space" verdict was a walk that stopped at the record's first text segment. `koin4` P1[15] sets the flag it gates on: behind the "If you have money, go inside / and buy something." line sit `48` (a one-byte no-op) and `55 D6`, followed by a coherent cross-context actor run - the same shape as the town01 P2[3] latch and flag 549. Its P2[3] twin carries the same block. The native-space sweep below still stands as a *negative* for native writers; what it cannot settle is script space, which is where the writer turned out to be.
 
-- Script ops: the census holds only the two `koin4 P1[15]` clean TESTs; a raw scan of every decompressed MAN for the LE operand bytes `D6 05` finds nothing else but text/offset-table noise.
+- Script ops: two clean SETs (`koin4` P1[15] and P2[3]) plus the two `P1[15]` TESTs. The earlier raw scan looked for the LE operand bytes `D6 05`, which is not how a flag op encodes its id - the op is `55 D6`, opcode then operand.
 - Native code: zero constant-operand call sites disc-wide. Every computed-operand site is bounded elsewhere: the dispatcher's own `0x5x`/`0x6x`/`0x7x` arms (script space),
   the move-VM overlay-extension flag sub-ops `0x13`/`0x14`/`0x1C`/`0x1D` (operand = u16 at op `+4` in the move-record stream; disc-wide scan of that space is negative for both flags),
   the motion-VM op-7/8 census (negative), the party-select family (`0x10`+`n`, `n` in `0..=2`, at `0x801D2B1C`/`0x801D2E80`),
@@ -1128,7 +1176,7 @@ On return from mode 24 the venue scene re-enters and its gates re-evaluate: `koi
   and a menu-overlay record-driven SET (`0x801DC580`) whose operand table is PROT 0899 static data that contains neither flag id anywhere in the file.
 - The one remaining writer is the debug flag editor resident in the field overlay: a pad-driven index cell at `0x801F2AA0` (steps `±0x80`/`±8`/`±1`, clamped to `0..=0xFFF`) with SET/CLEAR of the indexed flag on demand (`0x801EA52C`/`0x801EA4F8`) - it can write any flag, including these two, but only under the debug gate.
 
-Verdict: `0x5D6` is the `0x482` class - dev residue whose gated content (`koin4 P2[3]` beat; the `P1[15]` `MoveTo`/camera/dialog variant) is unreachable in retail play without the debug editor.
+Verdict: `0x5D6` is a `koin4`-local self-latch, not the `0x482` class. The gated content (the `P2[3]` beat; the `P1[15]` `MoveTo`/camera/dialog variant) is reached by talking to the record that raises it - no debug editor required. The editor can still write it, as it can write any index.
 
 ### Door-choreography record families: the `0x00F` busy-mutex + the jouind per-visit band
 

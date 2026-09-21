@@ -1178,11 +1178,13 @@ landed:
   spine flag-writer capture harness is the closer. See
   [`functions.md`](../reference/functions.md).
 - **`0x142`** (the Caruban beat / dolk-dolk2 switch): writer **pinned**.
-  The SETs are plain field-VM `51 42` script bytes in the rikuroa
-  streaming-carrier MAN (extraction 157) - `P1[10..12]` plus the
-  post-victory record `P2[50]` (C1 = `0x142` itself, the self-latching
-  one-shot) - re-asserted by dolk2's carrier `P1[0..1]` and cleared by
-  dolk's bundle `P1[26]`. The firehose capture caught the write live
+  The SET is plain field-VM `51 42` script bytes in the rikuroa
+  streaming-carrier MAN (extraction 157) - the post-victory record
+  `P2[50]` (C1 = `0x142` itself, the self-latching one-shot) - re-asserted
+  on entry by dolk2's carrier `P1[0]`. That carrier's `P1[10..12]`, dolk2's
+  `P1[1]` and dolk's `P1[26]` also carry the op, but each is an arm of a
+  developer flag menu
+  ([script-vm.md](script-vm.md#shipped-scene-scripts-carry-developer-flag-setting-menus)). The firehose capture caught the write live
   (`ra 0x801E3598`, the dispatcher's own `0x5x` SET arm) and the resident
   script heap byte-matches the carrier. The old corpus-negative stood
   because no census walked the streaming variant MANs (and the earlier
