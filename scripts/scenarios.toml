@@ -2543,3 +2543,61 @@ expected_game_mode = 0x03
 expected_active_scene = "teien"
 description = "Free field run inside the Sebucus garden (scene teien), captured a minute of field frames past the transition fade the corpus's only other teien field state sits in. The frame's live object grid at *(0x1F8003EC)+0x8000 holds 451 non-zero cells - 400 with the ground-draw bit 0x1000, 53 with 0x2000, 45 with 0x0800 and no 0x1000 - and PROT 0900 is byte-resident at slot B, so the ground pass FUN_801F6D48 can be breakpointed straight from the load."
 topics = ["field", "teien", "object grid", "ground pass", "FUN_801F6D48", "PROT 0900", "probe state"]
+
+# ----------------------------------------------------------------------
+# Memory-card cold-boot field anchors (the "card tier" states).
+#
+# These four are not save-state derivatives: each was produced by booting
+# the disc from power-on, driving the title front end through CONTINUE
+# into the memory-card load screen, loading one save off a progression
+# card and checkpointing on the first field-run frame
+# (scripts/pcsx-redux/autorun_boot_continue.lua). Everything the loader
+# builds at load time therefore comes off the disc under test, which a
+# state-derived anchor cannot promise.
+#
+# The card is staged down to a single save first, AND that save's
+# product-code suffix is re-stamped to `-00`. The load grid places a save
+# by its own slot number - the suffix - not by the card block it occupies,
+# so without the re-stamp only a `...PRO-00` save lands under the cursor
+# and the calibrated input ladder misses every other one.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "vozz_field_card_boot"
+backup_fingerprint = "d57b7ca197ecc34e23c6cfccff36b3e6d0942f362ea1bcce338fdbb8040e8ec5"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+description = "Voz Forest free field run, reached by a cold boot + memory-card load rather than from another state. Player at world (13606, 8760). The scene is one of the six that issue the field-VM actor clone (`4C 14`), and its sixteen sites are the disc's only ones at rate 0x0199."
+topics = ["field", "vozz", "card boot", "actor clone", "4C 14", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "conc_field_card_boot"
+backup_fingerprint = "085ec69470c8ef854acf5876f8132351a9fa97ab37fe113465b71dd39d309704"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc"
+description = "Conkram town free field run at the late-game save, reached by a cold boot + memory-card load. Player at world (2274, 12506). The nearest catalogued state to the `conc2` -> `juui1` door, which is the one op-0x3F crossing into the Juggernaut interior."
+topics = ["field", "conc", "Conkram", "card boot", "juui1", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "chitei2_field_card_boot"
+backup_fingerprint = "5ea350dfb89735177c628ab1a30f2424fc5ddfc0556e1a853f02a0dfeedcf5c0"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "chitei2"
+description = "Underground Octam free field run, reached by a cold boot + memory-card load. Player at world (6272, 4826). One of the Karisto spokes no capture had ever entered, so the region story-flag families it latches were unobserved."
+topics = ["field", "chitei2", "Karisto", "story flags", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "retona_field_card_boot"
+backup_fingerprint = "cb69ed5a9435041e9dabc83d29627aa7b7111446896305e9494178ffa63fcca3"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "retona"
+description = "Mt. Letona free field run, reached by a cold boot + memory-card load. Player at world (8536, 12638). The save one step before the `retock` beats, so a play-forward from here fires that region's entry family organically instead of finding it pre-latched."
+topics = ["field", "retona", "retock", "story flags", "card boot", "probe state"]
