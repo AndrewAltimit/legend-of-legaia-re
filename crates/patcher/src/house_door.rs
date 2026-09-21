@@ -282,10 +282,9 @@ fn door_warp_sites(man: &[u8]) -> (Vec<HouseDoorSite>, usize) {
 }
 
 /// Walk one record's bytecode from `pc` to `end`, returning the op offsets of
-/// every cross-context player MOVE_TO (`0xA3 0xF8`). A decode error AT a `0x1F`
-/// byte is an inline-dialogue segment - skip past its terminating `0x00` and
-/// resume (the [`crate::chest`] walk rule); any other decode error ends the
-/// walk.
+/// every cross-context player MOVE_TO (`0xA3 0xF8`). An inline-dialogue
+/// segment decodes as one `TextSegment` stride and is stepped over like any
+/// other instruction; a decode error ends the walk.
 fn player_warps_in_script(man: &[u8], mut pc: usize, end: usize) -> Vec<usize> {
     let script = &man[..end.min(man.len())];
     let mut out = Vec::new();
@@ -304,29 +303,10 @@ fn player_warps_in_script(man: &[u8], mut pc: usize, end: usize) -> Vec<usize> {
                 }
                 pc += insn.size;
             }
-            Ok(_) => break,
-            Err(_) if script.get(pc) == Some(&0x1F) => {
-                pc = skip_dialogue_segment(script, pc);
-            }
-            Err(_) => break,
+            Ok(_) | Err(_) => break,
         }
     }
     out
-}
-
-/// Skip one inline-dialogue `0x1F` segment beginning at `pc`, returning the
-/// offset just past its terminating `0x00`. `0xC?` top-nibble bytes are 2-byte
-/// escapes whose argument byte can't terminate the segment.
-fn skip_dialogue_segment(script: &[u8], mut pc: usize) -> usize {
-    pc += 1;
-    while pc < script.len() {
-        let b = script[pc];
-        if b == 0x00 {
-            return pc + 1;
-        }
-        pc += if b & 0xF0 == 0xC0 { 2 } else { 1 };
-    }
-    pc
 }
 
 /// Classify a partition-0 record's SJIS name into a door side. The retail

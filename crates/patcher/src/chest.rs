@@ -49,7 +49,7 @@
 //! is recompressed and written back exactly like the [encounter](crate::encounter)
 //! path.
 
-use legaia_asset::field_disasm;
+use legaia_asset::field_disasm::{self, InsnInfo};
 use legaia_asset::{man_section, scene_asset_table};
 
 const MAN_TYPE: u8 = 0x03;
@@ -314,9 +314,11 @@ pub fn give_sites_and_display_tokens(man: &[u8]) -> (Vec<usize>, Vec<Vec<usize>>
 /// Walk one record's interaction script from `pc0` to `end` (both relative to
 /// `rec`), returning the absolute offsets of each `0x39` give-item operand byte
 /// and the `(offset, id)` of each item-name display token ([`ITEM_NAME_ESCAPE`])
-/// seen inside the record's inline-dialogue segments. A decode error at a `0x1F`
-/// byte scans that dialogue segment (collecting its tokens) and continues; any
-/// other error stops the walk.
+/// seen inside the record's inline-dialogue segments. A bare `0x1F` segment
+/// decodes as one [`InsnInfo::TextSegment`] stride; its glyph bytes are
+/// scanned for tokens and the walk resumes past its terminator. Any decode
+/// error stops the walk (a `0x1F` the decoder rejects is one with no
+/// terminator before the buffer ends).
 fn walk_record(man: &[u8], rec: usize, pc0: usize, end: usize) -> (Vec<usize>, Vec<(usize, u8)>) {
     let script = &man[rec..end.min(man.len())];
     let mut gives = Vec::new();
@@ -333,6 +335,14 @@ fn walk_record(man: &[u8], rec: usize, pc0: usize, end: usize) -> (Vec<usize>, V
                 if insn.size == 0 {
                     break;
                 }
+                // An inline dialogue segment (glyph text, not bytecode): scan it
+                // for item-name tokens; the scan ends where the stride does.
+                if matches!(insn.info, InsnInfo::TextSegment { .. }) {
+                    let next = scan_dialogue_segment(script, pc, rec, &mut tokens);
+                    debug_assert_eq!(next, pc + insn.size);
+                    pc = next;
+                    continue;
+                }
                 // GIVE_ITEM is [0x39, item_id]; the id is the operand byte after
                 // the opcode. Skip the cross-context (extended) form.
                 if insn.opcode == 0x39 && insn.extended.is_none() {
@@ -342,12 +352,6 @@ fn walk_record(man: &[u8], rec: usize, pc0: usize, end: usize) -> (Vec<usize>, V
                     }
                 }
                 pc += insn.size;
-            }
-            // A decode error AT a 0x1F byte is the start of an inline dialogue
-            // segment (glyph text, not bytecode) - scan it for item-name tokens
-            // and resume decoding past it.
-            Err(_) if script.get(pc) == Some(&0x1F) => {
-                pc = scan_dialogue_segment(script, pc, rec, &mut tokens);
             }
             Err(_) => break,
         }
