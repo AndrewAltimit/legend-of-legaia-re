@@ -393,11 +393,13 @@ impl FishingFight {
             return self.outcome;
         }
         self.gauge.apply_reel(input, base_pull, frame_step);
-        // Line depth (`DAT_801d9298`): the fish sinks it by the run-state term
-        // `pull * sink_factor / 150` and reeling pays it back up, reel A twice
-        // as fast as reel B - the same law and the same two rates
-        // [`PondSession::tick`] runs, so the one minigame does not have two
-        // depth models. The clamp is retail's `[0, 0x1000]`.
+        // Line depth (`DAT_801d9298`). The sink term is retail's
+        // (`FUN_801d4004`: `pull * sink_factor / 150`, the `/ 0x96` in the
+        // run-state arm) and so is the clamp; applying it every fight frame
+        // rather than only in the run state is this engine's reconstruction,
+        // because a `FishingFight` has no behaviour sub-state machine, and the
+        // reel-back rates are [`PondSession`]'s glue, reused so the one
+        // minigame does not end up with two depth models.
         let sink = (base_pull.max(0).saturating_mul(self.species.sink_factor)) / SINK_DIVISOR;
         let reeled = match input {
             ReelInput::ReelA => 2 * frame_step.max(1),
