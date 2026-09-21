@@ -1953,6 +1953,19 @@ the session. The cue queue is *not* part of this and was fixed: the minigames
 page never drained `BakaFight::cues`, so its duel was silent while the queue
 grew for the length of a run.
 
+### The standalone page has no World to tick through
+
+The same page advances `DanceGame` directly (`dance_tick` -> `advance`)
+rather than through `World::tick_dance`, which also runs the pre-song
+count-in, the cue SFX and the mode fallback. It is not a missed call: that
+page has no `World` and no `SceneHost` in its loop at all - it drives
+standalone rules engines against JS state. Blocking capability: a `World` on
+the minigames page, which is the whole play-page runtime, so the practical
+answer is the reverse - fold the standalone games into the play page and
+retire the second host. Until then, a kernel that hangs off `World` reaches
+two hosts and not three, and that is what a `host_only` row on this page
+means.
+
 ## The fishing point-exchange sub-screen is a mode on one host
 
 `World::minigames.fishing_exchange` is a live `Option<PrizeExchange>` with its
