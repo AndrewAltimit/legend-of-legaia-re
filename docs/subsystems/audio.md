@@ -37,7 +37,7 @@ with `SceneAssets::seq_in_stream_entries` / `bgm_seq_offset`.
 - [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [VAB attr accessors](#vab-attribute-accessors--utility-note-triggers) · [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [per-channel event handlers](#per-channel-event-handlers-over-_dat_801cd2c0-the-0x80060a1c0x80061bf8-family) · [further libsnd leaves](#further-libsnd--libspu-leaves) · [renderer-citation correction](#renderer-citation-correction)
 - [libspu / SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) - [SPU globals](#spu-globals) · [primitives](#libspu-primitives) · [init / reset / key](#spu-init--reset--key-registers) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb model](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)
 - [Engine-audio: Sequencer port](#engine-audio-model---sequencer-port) · [from-scratch SPU port](#engine-audio-model---from-scratch-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
-- [Battle arts-voice shout path](#battle-arts-voice-shout-path-engine) · [Audio-trace parity oracle](#audio-trace-parity-oracle) - [which channel differs first](#which-channel-differs-first-on-the-per-vsync-comparand) · [comparing per voice](#comparing-per-voice) · [What's left](#whats-left)
+- [Battle arts-voice shout path](#battle-arts-voice-shout-path-engine) · [Audio-trace parity oracle](#audio-trace-parity-oracle) - [which channel differs first](#which-channel-differs-first-on-the-per-vsync-comparand) · [comparing per voice](#comparing-per-voice) - [align the windows](#align-the-windows-before-comparing-them) · [the envelope channel is not on emulated time](#the-envelope-channel-is-not-on-emulated-time) · [What's left](#whats-left)
 
 ## Path-string cluster
 
@@ -1468,7 +1468,7 @@ track, the two sides land in the same place.
 |---|---|---|---|
 | master volume | `(0x3FFF, 0x3FFF)` every frame | identical | not a difference |
 | reverb `EON` / depth / work area | `0x00FFFFFF` / `0x3264` / `0x79020` | identical | not a difference |
-| concurrent voices, same track | mean 9.67, max 18 | mean 9.78, max 19 | not a difference |
+| concurrent voices, same track | mean 9.67, max 18 | mean 9.78, max 19 | not a comparand - see below |
 | concurrent voices, 4-second window | mean 7.03, max 8 | mean 9.78, max 19 | window, not engine |
 
 The last row is the one worth keeping, because it is what the old headline
@@ -1516,17 +1516,106 @@ could not be town SFX in the retail window, because a second retail capture
 taken in the same town, walking the same streets, reports `1.002`. The `0.156`
 belongs to track `2000`'s own arrangement.
 
-What the aligned pairing leaves is a different residual: over a matched
-120-frame window the port sustains a mean of `6.11` sounding voices against
-retail's `4.12`, sharing every one of the port's twelve pitches and all seven
-of its tones. Pitch and tone *vocabulary* counts are not comparable across
-these two windows at all - a 2-second retail window and a 60-second engine
-window see different amounts of the same piece.
+The sounding-voice **count** is not one of those currencies either, and the
+residual it used to carry was two instrument defects stacked. Both are below;
+what survives them is that the two sides play the same notes.
+
+Pitch and tone *vocabulary* counts are likewise not comparable across two
+windows of different length - a two-second retail window and a sixty-second
+engine window see different amounts of the same piece.
 
 The trace record carries `env_level`, `vol_left`, `vol_right`, `adsr_control`
 and `reverb_send` per voice, filled by all three emitters - the engine
 sampler, the mednafen `.mc` loader, and the PCSX-Redux extractor - so these
 questions can be asked of the artifact directly.
+
+### Align the windows before comparing them
+
+An engine trace opens its track at tick `0`; a capture sits wherever the
+playthrough parked it. Pairing frame 0 of each therefore compares two
+different bars of one piece and reports the difference between the bars as a
+difference between the sides.
+
+[`best_alignment_offset`](../../crates/engine-shell/src/audio_trace_oracle.rs)
+slides the retail window over the engine trace and scores each offset by the
+mean per-frame **Jaccard** of the two frames' sounding-pitch multisets. The
+symmetry matters: an intersection-only score ranks the busiest engine window
+first whatever it is playing, because a window with more voices contains more
+of retail's pitches by construction.
+[`compare_voice_allocation_aligned`](../../crates/engine-shell/src/audio_trace_oracle.rs)
+is `compare_voice_allocation` over the window that scores highest, and
+`audio-trace --per-voice` reports the offset it used.
+
+On the track-`2016` pairing the alignment is unambiguous and it is nowhere
+near frame 0: the retail window from `s3_rimelm_freeroam` lands at engine
+frame `3111` of a 3601-frame trace, and both scores - symmetric and
+intersection-only - peak there. What the aligned windows then show is
+agreement in every channel that is a property of the score:
+
+- the **same ten packed ADSR words**, with neither side carrying one the
+  other does not;
+- the **same key-on count per tone** - `8, 13, 4, 12, 2, 8, 4, 6, 2` on both
+  sides across nine of the ten tones, the tenth reading twelve engine key-ons
+  against eight retail ones - and `71` engine key-ons against `67` retail
+  over the 120 frames;
+- **the same note lengths wherever the tone's release is instant**: the one
+  tone in the window whose `adsr2` selects a *linear* release at shift `7`
+  (packed `0x0D07AAD9`, which drains from peak inside one frame) sounds a
+  mean of `22.62` frames per key-on on the engine against `22.38` on retail.
+
+Every tone that does *not* drain instantly sounds two to six times longer on
+the engine side of the same window - `0xCDAC80FF` `29.00` frames against
+`5.25`, `0xCDAA80FF` `13.08` against `4.85`. A difference that appears only
+where the envelope has to run, on windows whose key-ons agree, is a statement
+about the envelope, not about the score.
+
+### The envelope channel is not on emulated time
+
+The engine's envelope is the one that matches the hardware model. Measured
+straight off its own trace, a voice on `0xCDAA80FF` (exponential release,
+shift `10`, so one step of `-16 x level / 32768` per sample) falls by a
+factor of `0.68` per frame, a time constant near `1900` samples against the
+formula's `2048`; a voice on `0xCDAC80FF` (shift `12`, one step of
+`-8 x level / 32768` per two samples) falls by `0.907` per frame, near `7500`
+samples against the formula's `8192`. The residue of the run is the `>> 15`
+floor turning the tail linear at `-1` per step, which is the hardware's
+behaviour too.
+
+The PCSX-Redux side of a per-vsync capture does not advance that envelope on
+the emulated clock at all. That emulator's SPU runs on **its own thread**
+(`PCSX::SPU::impl::MainThread`), and the thread is paced by the audio device
+accepting samples - `m_audioOut.feedStreamData` - not by the emulated CPU's
+cycle budget, while `PCSX::SPU::ADSR::mix` steps the envelope once per sample
+the thread produces. A capture that writes a ~19 MiB save state every vsync
+runs the emulator far below real time, so each captured "frame" carries an
+uncontrolled amount of envelope motion. Two measurements pin it:
+
+- across a 250-frame capture the wall-clock gap between consecutive captured
+  vsyncs averages `169` ms (min `61`, max `282`) against the emulated
+  `16.67` ms, and the observed per-frame envelope decay rises across the
+  quartiles of that gap rather than staying flat;
+- two captures of **the same save state with no pad input**, over the same
+  250 emulated vsyncs, differing only in a host-side delay after each
+  snapshot (mean gap `169` ms against `260` ms), agree on the voice *pitch*
+  register - written by the emulated CPU - for `5285` of `6000` voice-frames
+  but on `env_level` for only `404` of the `1000` voice-frames either side
+  reports non-zero, with a median absolute difference of `8190` out of
+  `32767`; the `active_voice_mask` is identical on `109` of `250` vsyncs, and
+  the mean sounding-voice count itself reads `4.041` against `3.694`.
+
+A statistic that moves by nine percent when the host gets slower is not a
+parity comparand. What is left on this axis is the **key-on rate**
+(`VoiceAllocationStats::onsets_per_frame`, and `onset_ratio` on the
+comparison): a key-on is a register write the score performs from the game's
+own vsync handler, so it is on the emulated clock on both sides, and on the
+aligned window the two sides' rates agree. The capture probe that carries the
+wall-clock stamp is
+[`autorun_w1a_audio_clock.lua`](../../scripts/pcsx-redux/autorun_w1a_audio_clock.lua),
+and `scripts/pcsx-redux/analyze_audio_clock.py` is the offline half.
+
+The mednafen axis is not affected the same way - a `.mc` save is a single
+frozen SPU cycle, so there is no per-frame rate to distort - but it cannot
+measure a rate either.
 
 ### The Field↔Battle swap is not on this axis
 
