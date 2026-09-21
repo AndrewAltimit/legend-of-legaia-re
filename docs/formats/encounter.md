@@ -1027,9 +1027,25 @@ and never the field default: it alternates between `(-8, -6, 8, 12)` and
 regions. That is the camera-region side-write working as this section describes -
 the window is a property of where the player stands, not of the scene, so an engine
 that seeds it once per scene and leaves it there under-draws in the wide regions.
-The walk stayed inside `town01`, so the cross-scene half of the question - does a
-scene's window survive into the next scene - is still owed a capture that changes
-scene.
+#### The window is not cleared with the scene
+
+The cross-scene half is now measured, with the same probe run across a real
+`map01` -> `town0c` door. The scene name word flips at vsync **37**; the four
+window bytes do not move with it. They keep the *previous* scene's values for
+78 more vsyncs and are re-stamped at vsync **115** to `(-7, -6, 5, 7)`, after
+which the per-region writes take over as they do inside a scene. So the window
+is neither inherited for the whole of the next scene nor cleared at the
+boundary: the incoming scene stamps it on its own beat, late enough that a
+frame drawn in between is drawn against the window of the scene the player has
+already left.
+
+Two consequences for a port. Re-stamping the window on field entry is right -
+the measurement does not falsify that - but the value matters: retail's entry
+stamp here is `(-7, -6, 5, 7)`, and the engine's `FIELD_DEFAULT_VIEW_WINDOW`
+`(-8, -6, 6, 10)` is one of the *later* region windows rather than the one
+retail writes on entry. And a fixture for this question has to cross a scene:
+a Rim Elm **house door** does not, because an intra-town interior is an
+intra-scene warp - the scene word stays `town0c` across it.
 
 ## What this doesn't tell us
 
