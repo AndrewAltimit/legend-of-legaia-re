@@ -580,6 +580,35 @@ SCUS-range `jal` targets land on a `SCUS_942.54` function head, where PROT
 `0896` - the image that really is from another build - scores 0 of 42. The dev
 modules were simply never localised.
 
+### What the overlay residue that is left actually is
+
+With the zero regions and the two data-segment structures above claimed, what
+remains in the overlay entries is a short list, and none of it is an unopened
+format. Each row is measured from the image's own bytes; none is claimed,
+because a claim needs a parser or a table with a named constant behind it and
+these have neither yet.
+
+| Entry | Run | What it is | Why it is not claimed |
+|---|---|---|---|
+| `0897` | `0x2399C`, 4988 B | the field overlay's data segment; its first twelve rows are the collision probe table `FUN_801CFE4C` indexes at `0x801F21B4` | no parser binds the table, and the rest of the segment is unsorted globals |
+| `0897` | `0x0`, 3900 B | head string pool plus the pointer table that reaches it | the pointers are not read by anything here |
+| `0898` | `0x0`, 3512 B | the battle overlay's own head: UI strings (eleven of which `battle_ui_strings` already claims by pointer) and, from `0x9B4`, a run of in-image VA words with repeats - a `switch` jump table | the table has no named constant and the strings past the eleven have no pointer to follow |
+| `0899` | `0x1EB28`, 3552 B | the unclaimed part of a 16 KB data-segment hole | one address formed at one site, which is below the uninitialised-data bar above |
+| `0899` | `0x0`, 3512 B | the menu overlay's option-label string pool | same as `0898`: no pointer table this workspace reads |
+| `0899` | `0x2050C`, 844 B | the save-screen message slots on a `0x80` stride, and the memory-card filename prefix behind them | the stride is measured off the slots, not off a consumer |
+| `0899` | `0x15BEC`, 820 B | unidentified data-segment words; the leading rows read as `[u16][u16]` pairs but the shape does not hold across the run | nothing identified |
+| `0967` | `0xC50`, 2992 B | un-dumped **code** - the tutorial module's own bodies | see below |
+| `0967` | `0x0`, 408 B | the slot-B head jump table, the same shape `slot-b-module-layout.md` describes | see below |
+| `0970` | `0x2534`, 3152 B | the STR overlay's initialised data segment: the one-shot init flag at `0x801D0D4C` and the MDEC hardware-register pointers `FUN_801CFFDC` loads from `0x801D0E60`..`0x801D0E98` | a pointer block, not a table with a stride |
+
+`0967`'s two rows are one gap rather than two findings. The image is a slot-B
+module at `0x801F69D8` with a map row, but the `slot_b_module` walker is
+selected on the **index** band `0903..=0966`
+([above](#the-slot-b-module-band)), so `0967` - like `0968` and `0969` - takes
+the overlay-code walker instead and gets no head-table claim. Extending the
+band is a decision about what the band *is*, not a walker fix, so it stays a
+reported gap; the 2992-byte code run is a dump worklist row either way.
+
 ### A residue run that is another image's code
 
 PROT `0975`'s 1760-byte `plausible_mips` run at file `0x5920` has no prologue, no
