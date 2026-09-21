@@ -860,13 +860,30 @@ all of it executes under one ladder now.
 |---|---|---|---|
 | `dance.rs` (HUD + banner) | 7 | `801d231c` `801d3e28` `801d32f8` `801d2524` `801d2d98` `801d2f38` `801d387c` | `40:K`, then judged face-button presses |
 | `fishing_chrome.rs` | 6 | `801d03b0` `801d78c0` `801d74b0` `801d7a5c` `801d70ec` `801d7c30` | `40:L` + a cast; the venue panel needs `P` |
-| `fishing_actors.rs` | 4 | `801d2050` `801d765c` `801d2278` `801d4948` | the same run's wander / line / celebration actors |
+| `fishing_actors.rs` | 3 | `801d2050` `801d2278` `801d4948` | the same run's wander / line / celebration actors. A fourth address was credited here and is not converted - see the note below |
 | `minigame_floor.rs` | 2 | `801d2a10` `801d6028` | the fishing venue's floor solve |
 | `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | a duel played to a **player win** - a lost match installs no tally and two of the three stay dark |
 | `dance_tutorial.rs` | 1 | `801d0750` | `40:U`, the Disco King how-to |
 | `slot_machine.rs` | 1 | `801e6f70` | `40:O` - the empty coin bank sends the entry through the exchange counter |
 | `fishing.rs` (prize row remainder) | 1 | `801d092c` | a **committed** prize purchase; the panel alone stops one gate short |
 | `bin/.../window/field_render.rs` | 1 | `8001ada4` | any spawned `play-window` frame loop |
+
+**`801d765c` was credited to this ladder and is never entered.** The rung opens
+the fishing minigame and the wander actor runs, but
+`tracked_point_separation` is not on that path: its only production caller is
+the native window's fishing **developer readout**, behind
+`debug_readout_visible(dev_menu.is_some(), held)` - the dev menu open *and*
+the pack-debug modifier held on the same frame the HUD draws. Neither is
+something opening a minigame does, so the address is `(a)` with that gate
+named, and `--key-script` plus a held `--pad-script` word is the rung that
+would convert it.
+
+The way it was mis-credited is the general one: the cell named the *screen*
+the address is drawn on, and a rung that reaches a screen is not a rung that
+reaches every routine on it - the same distinction the two rows below draw
+for the duel tally and the prize cap. Three addresses in the group did
+convert, which is what makes a group cell dangerous: it reads as one verdict
+and is four.
 
 Two of these are worth reading as a pattern rather than as rows. `801d6a18` /
 `801d6f44` and `801d092c` were not blocked by the entry at all - the duel HUD
@@ -1542,13 +1559,14 @@ reach it. The `strv2_decode` module states the same prerequisite chain.
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
 | `attach_swap.rs` | 1 | (c) | disclosed | `8004ccd4` |
-| `lib.rs` | 2 | (a) | menu-render | `80034e4c` `8003c1f8` |
 
-The `lib.rs` rows are module-scope tags whose real bodies are the `engine-ui`
-menu-ink and sprite builders the crate re-exports, so they close with the same
-draw ladder as the `engine-ui` table above; three of the five have, and the
-crate's `afterimage` and `battle_intro` rows went with
-`w1c_battle_render_ladder`. `engine-render` itself is still the hard wgpu link
+One row is left and the `lib.rs` pair is not it. `80034e4c` and `8003c1f8`
+are module-scope tags whose real bodies are the `engine-ui` menu-ink and
+sprite builders the crate re-exports - the zero-padded decimal field and the
+separator glyph - and both are entered, by the dev menu's records page and by
+the shop's sell quantity row respectively. They closed with a draw ladder,
+the way the cell said they would, and the crate's `afterimage` and
+`battle_intro` rows went with `w1c_battle_render_ladder` before them. `engine-render` itself is still the hard wgpu link
 the browser composition ladder cannot carry - what reports executed regions in
 it is the spawned `play-window` of `w5_native_minigame_ladder`.
 
