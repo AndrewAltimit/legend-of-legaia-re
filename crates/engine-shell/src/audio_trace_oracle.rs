@@ -889,6 +889,17 @@ pub struct VoiceAllocationStats {
     /// per distinct note. Exactly `1.0` means it never doubles a note
     /// across two voices.
     pub doubling: f64,
+    /// Key-on **edges**: per voice slot, transitions from not-sounding to
+    /// sounding across the window. This is the one activity statistic that
+    /// is a property of the emulated CPU on both sides - the sequencer
+    /// writes the key-on register from the game's own vsync handler - so it
+    /// survives a retail capture whose frames carry an uncontrolled amount
+    /// of SPU time (see [`crate::audio_trace_oracle`] docs and
+    /// `docs/subsystems/audio.md`, "The envelope channel is not on emulated
+    /// time").
+    pub onsets: usize,
+    /// [`Self::onsets`] over [`Self::frames`].
+    pub onsets_per_frame: f64,
     /// Every pitch seen on a sounding voice anywhere in the trace.
     pub pitches: std::collections::BTreeSet<u16>,
     /// Every packed ADSR config word seen on a sounding voice.
@@ -921,6 +932,15 @@ pub struct VoiceAllocationComparison {
     pub shared_pitches: usize,
     /// Packed ADSR config words both sides used.
     pub shared_tones: usize,
+    /// Engine key-on edges per frame over retail's. This is the comparand
+    /// that survives a capture whose frames carry an uncontrolled amount of
+    /// SPU time: both sides' key-ons are written by the score, on the
+    /// emulated CPU's own clock, while how long a voice then stays above
+    /// zero is the host's SPU thread's business on the retail side.
+    pub onset_ratio: f64,
+    /// Engine-frame offset the retail window was compared at, when the
+    /// comparison was run through [`compare_voice_allocation_aligned`].
+    pub alignment_offset: Option<usize>,
     pub verdict: VoiceAllocationVerdict,
 }
 
@@ -941,7 +961,20 @@ fn summarise_allocation(frames: &[AudioTraceFrame]) -> VoiceAllocationStats {
         ..Default::default()
     };
     let (mut act_sum, mut note_sum, mut counted) = (0usize, 0usize, 0usize);
+    // Key-on edges per slot. `prev` is indexed by voice slot and carries the
+    // previous frame's sounding flag, so a slot that stays sounding across a
+    // frame boundary counts once, not once per frame.
+    let mut prev = vec![false; NUM_VOICES];
     for f in frames {
+        for (i, v) in f.voices.iter().enumerate() {
+            if i >= prev.len() {
+                prev.resize(i + 1, false);
+            }
+            if v.active && !prev[i] {
+                out.onsets += 1;
+            }
+            prev[i] = v.active;
+        }
         let sounding: Vec<&VoiceTraceFrame> = f.voices.iter().filter(|v| v.active).collect();
         if sounding.is_empty() {
             // A silent frame is not evidence about allocation; averaging it
@@ -976,7 +1009,74 @@ fn summarise_allocation(frames: &[AudioTraceFrame]) -> VoiceAllocationStats {
             0.0
         };
     }
+    if !frames.is_empty() {
+        out.onsets_per_frame = out.onsets as f64 / frames.len() as f64;
+    }
     out
+}
+
+/// Score how well engine frame `off + i` lines up with retail frame `i`,
+/// as the mean per-frame Jaccard of the two frames' sounding-pitch
+/// multisets. Symmetric, so a window where the engine simply sounds more
+/// voices does not outscore one where the notes actually agree - an
+/// intersection-only score ranks the busiest engine window first whatever
+/// it is playing.
+fn alignment_score(engine: &[AudioTraceFrame], retail: &[AudioTraceFrame], off: usize) -> f64 {
+    use std::collections::BTreeMap;
+    fn pitches(f: &AudioTraceFrame) -> BTreeMap<u16, usize> {
+        let mut m = BTreeMap::new();
+        for v in f.voices.iter().filter(|v| v.active) {
+            if let Some(p) = v.pitch {
+                *m.entry(p).or_insert(0) += 1;
+            }
+        }
+        m
+    }
+    let mut sum = 0.0;
+    for (i, r) in retail.iter().enumerate() {
+        let Some(e) = engine.get(off + i) else {
+            return 0.0;
+        };
+        let (rm, em) = (pitches(r), pitches(e));
+        let mut inter = 0usize;
+        let mut union = 0usize;
+        for k in rm
+            .keys()
+            .chain(em.keys())
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            let (a, b) = (
+                rm.get(k).copied().unwrap_or(0),
+                em.get(k).copied().unwrap_or(0),
+            );
+            inter += a.min(b);
+            union += a.max(b);
+        }
+        if union > 0 {
+            sum += inter as f64 / union as f64;
+        }
+    }
+    sum / retail.len().max(1) as f64
+}
+
+/// Find the engine-frame offset at which the retail window best lines up.
+///
+/// The per-voice comparison is only meaningful when the two windows cover
+/// the *same stretch* of the same piece. An engine trace starts its track at
+/// tick 0; a retail capture is parked wherever the playthrough left it, so
+/// the naive "first N frames of each" pairing compares two different bars
+/// and reports the difference between them as an engine difference. Returns
+/// `None` when the engine trace is shorter than the retail window.
+pub fn best_alignment_offset(
+    engine: &[AudioTraceFrame],
+    retail: &[AudioTraceFrame],
+) -> Option<(usize, f64)> {
+    if retail.is_empty() || engine.len() < retail.len() {
+        return None;
+    }
+    (0..=engine.len() - retail.len())
+        .map(|off| (off, alignment_score(engine, retail, off)))
+        .max_by(|a, b| a.1.total_cmp(&b.1))
 }
 
 /// Compare what the engine's score allocated against retail's, per voice.
@@ -1011,12 +1111,42 @@ pub fn compare_voice_allocation(
     } else {
         VoiceAllocationVerdict::Comparable
     };
+    let onset_ratio = if r.onsets_per_frame > 0.0 {
+        e.onsets_per_frame / r.onsets_per_frame
+    } else {
+        0.0
+    };
     VoiceAllocationComparison {
         engine: e,
         retail: r,
         shared_pitches,
         shared_tones,
+        onset_ratio,
+        alignment_offset: None,
         verdict,
+    }
+}
+
+/// [`compare_voice_allocation`] over the engine window that best lines up
+/// with the retail one ([`best_alignment_offset`]), rather than over the
+/// engine trace's first frames.
+///
+/// Comparing frame 0 of each is what turned "the engine holds more voices
+/// at once" into a standing residual: a cold engine trace opens at the
+/// track's first bar while the capture sits wherever the playthrough parked
+/// it, and the two bars have different note densities. Aligned, the two
+/// sides' key-on counts land on top of each other.
+pub fn compare_voice_allocation_aligned(
+    engine: &[AudioTraceFrame],
+    retail: &[AudioTraceFrame],
+) -> VoiceAllocationComparison {
+    match best_alignment_offset(engine, retail) {
+        Some((off, _)) => {
+            let mut c = compare_voice_allocation(&engine[off..off + retail.len()], retail);
+            c.alignment_offset = Some(off);
+            c
+        }
+        None => compare_voice_allocation(engine, retail),
     }
 }
 
@@ -1093,6 +1223,92 @@ mod tests {
         let c = compare_voice_allocation(&engine, &retail);
         assert!((c.retail.doubling - 2.0).abs() < 1e-9);
         assert!((c.engine.doubling - 1.0).abs() < 1e-9);
+    }
+
+    /// A slot that stays sounding across frames is one key-on, not one per
+    /// frame - the statistic counts edges, which is what makes it a
+    /// property of the score rather than of how long a voice rings.
+    #[test]
+    fn onsets_count_key_on_edges_not_sounding_frames() {
+        let on = vec![voice_at(500, 1)];
+        let off = vec![VoiceTraceFrame::default()];
+        let frames = vec![
+            alloc_frame(on.clone()),
+            alloc_frame(on.clone()),
+            alloc_frame(on.clone()),
+            alloc_frame(off.clone()),
+            alloc_frame(on.clone()),
+        ];
+        let s = summarise_allocation(&frames);
+        assert_eq!(s.onsets, 2, "two key-ons, four sounding frames");
+        assert!((s.onsets_per_frame - 0.4).abs() < 1e-9);
+    }
+
+    /// Two sides playing the same phrase at the same rate agree on key-ons
+    /// per frame even when one holds each note far longer - which is the
+    /// shape a capture whose frames carry extra envelope time produces.
+    #[test]
+    fn onset_ratio_is_blind_to_how_long_a_note_rings() {
+        // Engine: one key-on, sounding for four frames.
+        let engine = vec![
+            alloc_frame(vec![voice_at(500, 1)]),
+            alloc_frame(vec![voice_at(500, 1)]),
+            alloc_frame(vec![voice_at(500, 1)]),
+            alloc_frame(vec![voice_at(500, 1)]),
+        ];
+        // Retail: the same one key-on, drained after a single frame.
+        let retail = vec![
+            alloc_frame(vec![voice_at(500, 1)]),
+            alloc_frame(vec![VoiceTraceFrame::default()]),
+            alloc_frame(vec![VoiceTraceFrame::default()]),
+            alloc_frame(vec![VoiceTraceFrame::default()]),
+        ];
+        let c = compare_voice_allocation(&engine, &retail);
+        assert_eq!(c.engine.onsets, 1);
+        assert_eq!(c.retail.onsets, 1);
+        assert!((c.onset_ratio - 1.0).abs() < 1e-9);
+        // The count statistic, by contrast, reads 4x.
+        assert!((c.engine.mean_active / c.retail.mean_active - 1.0).abs() < 1e-9);
+    }
+
+    /// The retail window is matched against the engine frames that play the
+    /// same notes, not against the engine trace's opening bar.
+    #[test]
+    fn alignment_finds_the_engine_window_playing_the_same_notes() {
+        let quiet = alloc_frame(vec![voice_at(100, 1)]);
+        let phrase = [
+            alloc_frame(vec![voice_at(700, 1), voice_at(800, 1)]),
+            alloc_frame(vec![voice_at(900, 1)]),
+        ];
+        let mut engine = vec![quiet.clone(), quiet.clone(), quiet.clone()];
+        engine.extend(phrase.iter().cloned());
+        engine.push(quiet.clone());
+        let retail = phrase.to_vec();
+        let (off, score) = best_alignment_offset(&engine, &retail).expect("alignable");
+        assert_eq!(off, 3);
+        assert!(score > 0.9, "exact phrase match, got {score}");
+        let c = compare_voice_allocation_aligned(&engine, &retail);
+        assert_eq!(c.alignment_offset, Some(3));
+        assert_eq!(c.verdict, VoiceAllocationVerdict::Comparable);
+    }
+
+    /// An engine window that simply sounds *more* voices must not outscore
+    /// the window whose notes actually match: the score is symmetric, so a
+    /// busy window carrying none of retail's pitches scores zero.
+    #[test]
+    fn alignment_score_is_not_won_by_the_busiest_engine_window() {
+        let busy = alloc_frame(vec![
+            voice_at(10, 1),
+            voice_at(20, 1),
+            voice_at(30, 1),
+            voice_at(40, 1),
+            voice_at(50, 1),
+        ]);
+        let match_frame = alloc_frame(vec![voice_at(700, 1)]);
+        let engine = vec![busy.clone(), busy.clone(), match_frame.clone()];
+        let retail = vec![match_frame];
+        let (off, _) = best_alignment_offset(&engine, &retail).expect("alignable");
+        assert_eq!(off, 2);
     }
 
     fn frame_with(mask: u32, voices: Vec<VoiceTraceFrame>) -> AudioTraceFrame {

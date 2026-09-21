@@ -759,26 +759,35 @@ pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
 
 /// Render the per-voice allocation comparison for `--per-voice`.
 fn print_voice_allocation(engine: &[AudioTraceFrame], retail: &[AudioTraceFrame]) {
-    use legaia_engine_shell::audio_trace_oracle::compare_voice_allocation;
-    let c = compare_voice_allocation(engine, retail);
+    use legaia_engine_shell::audio_trace_oracle::compare_voice_allocation_aligned;
+    let c = compare_voice_allocation_aligned(engine, retail);
     for (label, s) in [("engine", &c.engine), ("retail", &c.retail)] {
         eprintln!(
-            "  [per-voice] {label}: sounding frames mean={:.2} max={} | distinct notes/frame={:.2} | slots per note={:.3} | pitches={} tones={} samples={}",
+            "  [per-voice] {label}: sounding frames mean={:.2} max={} | distinct notes/frame={:.2} | slots per note={:.3} | key-ons/frame={:.3} | pitches={} tones={} samples={}",
             s.mean_active,
             s.max_active,
             s.mean_distinct_notes,
             s.doubling,
+            s.onsets_per_frame,
             s.pitches.len(),
             s.tones.len(),
             s.samples.len(),
         );
     }
     eprintln!(
-        "  [per-voice] shared pitches={} shared tones={} -> {:?}",
-        c.shared_pitches, c.shared_tones, c.verdict,
+        "  [per-voice] shared pitches={} shared tones={} key-on ratio={:.3} aligned at engine frame {} -> {:?}",
+        c.shared_pitches,
+        c.shared_tones,
+        c.onset_ratio,
+        c.alignment_offset
+            .map_or_else(|| "n/a".to_owned(), |o| o.to_string()),
+        c.verdict,
     );
     eprintln!(
         "  [per-voice] NOTE: only meaningful if both sides play the same track - an engine trace plays the scene prescript's op-0x35 id, a retail capture whatever `0x8007BAC8` held."
+    );
+    eprintln!(
+        "  [per-voice] NOTE: on a PCSX-Redux capture the sounding-voice COUNT is not a comparand - that emulator's SPU runs on its own audio-paced thread, so a captured frame carries an uncontrolled amount of envelope time. Read the key-on ratio."
     );
 }
 
