@@ -370,7 +370,7 @@ impl PlayWindowApp {
                 // movie owns the screen the title is frozen, exactly as
                 // retail's master mode 0x1A takes the front-end off the
                 // dispatcher until the STR overlay unloads.
-                let attract = Self::service_title_attract(session, cutscene_live, pressed as u16);
+                let attract = Self::service_title_attract(session, cutscene_live, pressed);
                 if let TitleAttractAction::Start(id) = attract {
                     start_attract = Some(id);
                 }
