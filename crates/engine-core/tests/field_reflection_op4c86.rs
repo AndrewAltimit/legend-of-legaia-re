@@ -149,17 +149,31 @@ fn an_unresolvable_source_seats_nothing_but_still_advances_fifteen() {
 
 #[test]
 fn a_named_channel_resolves_to_its_placement() {
+    // A second channel is the source: naming the executing placement itself
+    // would pair one actor with itself, which seats nothing.
     let mut w = world_with_mirror_actor();
-    w.npcs.positions.insert(5, IN_RECT);
+    w.field_vm.channels.push(FieldChannel {
+        placement_index: 6,
+        ctx: FieldCtx {
+            script_id: 0x2B,
+            ..FieldCtx::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    });
+    w.npcs.positions.insert(6, IN_RECT);
     let mut bytes = INSTALL;
-    bytes[14] = 0x2A; // the channel seated at placement 5
+    bytes[14] = 0x2B; // the channel seated at placement 6
     w.field_bytecode = bytes.to_vec();
     w.field_pc = 0;
     w.step_field().expect("the script stepped");
     let link = w.actors[controllers(&w)[0]]
         .reflection
         .expect("a pair was formed");
-    assert_eq!(link.source, EasedMoveTarget::Placement(5));
+    assert_eq!(link.destination, EasedMoveTarget::Placement(5));
+    assert_eq!(link.source, EasedMoveTarget::Placement(6));
 }
 
 #[test]
@@ -192,5 +206,58 @@ fn a_dead_end_tears_the_controller_down() {
     // no longer resolve is that dead actor.
     w.npcs.positions.remove(&5);
     assert_eq!(w.tick_handler_actors(1), 1);
+    assert!(controllers(&w).is_empty());
+}
+
+#[test]
+fn a_player_raised_record_still_mirrors_onto_its_own_placement() {
+    // Every shipped `4C 86` sits in a talk record the player raised, so the
+    // executing context carries the `+0x10` player bit - and names `0xF8`.
+    // Retail's `a0` is still that record's own context, not the player: read
+    // the bit as "the context IS the player" and the pair is the player with
+    // themself, and the tick walks them onto the mirror line every frame.
+    let mut w = world_with_mirror_actor();
+    w.field_ctx.flags |= 0x0100_0000;
+    w.field_bytecode = INSTALL.to_vec();
+    w.field_pc = 0;
+    w.step_field().expect("the script stepped");
+    assert_eq!(w.field_pc, 15);
+
+    let seated = controllers(&w);
+    assert_eq!(seated.len(), 1);
+    let link = w.actors[seated[0]].reflection.expect("a pair was formed");
+    assert_eq!(link.destination, EasedMoveTarget::Placement(5));
+    assert_eq!(link.source, EasedMoveTarget::Player);
+
+    let before = (
+        w.actors[0].move_state.world_x,
+        w.actors[0].move_state.world_z,
+    );
+    for _ in 0..8 {
+        w.tick_handler_actors(1);
+    }
+    // The image moved; the player did not.
+    assert_eq!(w.npcs.positions[&5].1, 2 * MIRROR_Z - IN_RECT.1);
+    assert_eq!(
+        (
+            w.actors[0].move_state.world_x,
+            w.actors[0].move_state.world_z
+        ),
+        before
+    );
+}
+
+#[test]
+fn a_pair_whose_two_ends_are_one_actor_seats_nothing() {
+    // No executing channel and the player bit up: the only seat left for the
+    // image is the player, which is also the named source. Retail forms no
+    // such record; the engine refuses it rather than strand the player.
+    let mut w = world_with_mirror_actor();
+    w.field_vm.executing_channel = None;
+    w.field_ctx.flags |= 0x0100_0000;
+    w.field_bytecode = INSTALL.to_vec();
+    w.field_pc = 0;
+    w.step_field().expect("the script stepped");
+    assert_eq!(w.field_pc, 15);
     assert!(controllers(&w).is_empty());
 }

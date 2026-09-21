@@ -1691,9 +1691,9 @@ impl World {
     /// REF: FUN_801E5154 (the tick [`Self::tick_handler_actors`] then runs)
     ///
     /// `ctx_is_player` is the executing context's `+0x10 & 0x01000000`, the
-    /// same bit the eased-move arm reads; it and
-    /// [`crate::world::FieldVmState::executing_channel`] between them resolve
-    /// retail's `a0` - the script's own actor, which becomes the image. The
+    /// same bit the eased-move arm reads; [`crate::world::FieldVmState::executing_channel`]
+    /// resolves retail's `a0` - the script's own actor, which becomes the
+    /// image - and the bit only stands in when no channel is executing. The
     /// `source_id` byte resolves in the cross-context target space (`0xF8` is
     /// the player), and an id that names nothing seats nothing, which is the
     /// arm's own `beqz s7` skip.
@@ -1706,10 +1706,19 @@ impl World {
         words: [i16; 6],
     ) -> Option<usize> {
         use crate::world::EasedMoveTarget;
-        let destination = if ctx_is_player {
-            EasedMoveTarget::Player
-        } else {
-            EasedMoveTarget::Placement(self.field_vm.executing_channel?)
+        // Retail's `a0` is the executing context STRUCT, and a talk record's
+        // context is the record's own actor even when its `+0x10` player bit
+        // is up (the bit says who raised the record, not whose pose the
+        // context carries). Every shipped `4C 86` sits in such a record and
+        // names `0xF8`, so reading the bit as "the context is the player"
+        // pairs the player with itself and the tick teleports them onto the
+        // mirror line - the `other1` / `ropeway2` cold-spawn regression. The
+        // record's placement is the image; the player bit only decides the
+        // seat when there is no executing channel at all.
+        let destination = match (self.field_vm.executing_channel, ctx_is_player) {
+            (Some(placement), _) => EasedMoveTarget::Placement(placement),
+            (None, true) => EasedMoveTarget::Player,
+            (None, false) => return None,
         };
         let source = if source_id == 0xF8 {
             EasedMoveTarget::Player
@@ -1717,6 +1726,12 @@ impl World {
             let ci = crate::field_channels::resolve_target(&self.field_vm.channels, source_id)?;
             EasedMoveTarget::Placement(self.field_vm.channels[ci].placement_index as u8)
         };
+        if source == destination {
+            // A pair whose two ends are one actor would write that actor's
+            // own mirrored pose back onto it every frame; no retail record
+            // forms one, and seating it can only strand the player.
+            return None;
+        }
         let slot = self.spawn_handler_actor(crate::actor_handler::ActorHandler::Reflection)?;
         let controller = legaia_engine_vm::field_actor_reflect::spawn_controller(words);
         let a = &mut self.actors[slot];
