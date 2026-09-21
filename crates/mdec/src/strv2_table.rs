@@ -83,12 +83,33 @@ const DISTANCE_END: u32 = 0xF00;
 /// like a bitstream bug rather than a table bug.
 // PORT: FUN_801f1a00
 pub fn unpack_lz(packed: &[u8]) -> Result<Vec<u8>> {
+    unpack_lz_tracked(packed).map(|(out, _)| out)
+}
+
+/// [`unpack_lz`] plus the number of source bytes the control-byte walk
+/// consumed, terminator included.
+///
+/// The length is what [byte accounting](../../../docs/tooling/byte-accounting.md)
+/// claims the packed blob's extent with - measured by the walk the way an LZS
+/// span is, rather than inferred from where the next thing starts. Nothing
+/// else on the disc states where this stream ends: it sits at the top of the
+/// overlay image with the entry's last-sector slack behind it.
+// REF: FUN_801f1a00
+pub fn unpack_lz_tracked(packed: &[u8]) -> Result<(Vec<u8>, usize)> {
     let mut out: Vec<u8> = Vec::with_capacity(STRV2_TABLE_BYTES);
     let mut src = packed.iter().copied();
+    let mut read = 0usize;
+    let mut next = |src: &mut std::iter::Copied<std::slice::Iter<'_, u8>>| {
+        let b = src.next();
+        if b.is_some() {
+            read += 1;
+        }
+        b
+    };
     // `v1` - the sticky match distance. Zero selects literal mode.
     let mut distance: usize = 0;
     loop {
-        let Some(ctl) = src.next() else {
+        let Some(ctl) = next(&mut src) else {
             bail!("STRv2 table stream ended without the 0xFF 0xFF terminator");
         };
         if ctl < MODE_LITERAL {
@@ -97,7 +118,7 @@ pub fn unpack_lz(packed: &[u8]) -> Result<Vec<u8>> {
             let run = ctl as usize + 1;
             if distance == 0 {
                 for _ in 0..run {
-                    let Some(b) = src.next() else {
+                    let Some(b) = next(&mut src) else {
                         bail!("STRv2 table stream ended mid literal run");
                     };
                     out.push(b);
@@ -113,13 +134,13 @@ pub fn unpack_lz(packed: &[u8]) -> Result<Vec<u8>> {
         } else if ctl == MODE_LITERAL {
             distance = 0;
         } else {
-            let Some(lo) = src.next() else {
+            let Some(lo) = next(&mut src) else {
                 bail!("STRv2 table stream ended mid distance escape");
             };
             let word = ((ctl as u32) << 8) | lo as u32;
             let d = word.wrapping_sub(DISTANCE_BIAS);
             if d == DISTANCE_END {
-                return Ok(out);
+                return Ok((out, read));
             }
             distance = d as usize;
         }
