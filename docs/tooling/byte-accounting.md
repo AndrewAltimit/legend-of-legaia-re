@@ -568,7 +568,9 @@ the shape. Three quarters of the entry is a fixed-stride table, and the stride
 is in the drawing loop's index arithmetic rather than in the bytes: `(i << 5) + i`
 then `<< 2` is `i * 0x84`, the base comes from `801cee00 addiu s3,v0,-0x10c0`,
 and the reciprocal divide at `801cee2c`..`801cee54` wraps the cursor `mod 81`,
-which is the record count. Ten rows are drawn per page. Parser
+which is the record count. Ten rows are drawn per page. The loop is inside
+`FUN_801CED68`
+(`see ghidra/scripts/funcs/overlay_other3_dev_0974_801ced68.txt`). Parser
 [`legaia_asset::other3_roster`](../../crates/asset/src/other3_roster.rs);
 `claim_other3_roster` claims each record at the stride, padding included, because
 the stride is what the loop advances by.

@@ -9,8 +9,10 @@
 //!
 //! ## What the code states
 //!
-//! The roster walk is one loop, and every constant below is one of its
-//! operands rather than a shape read off the bytes:
+//! The roster walk is one loop inside `FUN_801CED68`
+//! (`see ghidra/scripts/funcs/overlay_other3_dev_0974_801ced68.txt`), and every
+//! constant below is one of its operands rather than a shape read off the
+//! bytes:
 //!
 //! ```text
 //! 801cedfc  lui   v0, 0x801d
