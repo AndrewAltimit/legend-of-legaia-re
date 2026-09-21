@@ -11,9 +11,10 @@
 //! exactly where the chapter-1 story-spine writers turned out to live:
 //!
 //!   - `0x142` (Caruban beat / dolk->dolk2 switch): SET by the rikuroa
-//!     carrier's P1[10..12] + post-victory record P2[50] (the C1 self-latch
-//!     the firehose caught live, `51 42`, `ra 0x801E3598`), re-asserted by
-//!     dolk2's carrier P1[0..1], CLEARed by dolk's bundle P1[26].
+//!     carrier's post-victory record P2[50] (the C1 self-latch the firehose
+//!     caught live, `51 42`, `ra 0x801E3598`), re-asserted by dolk2's
+//!     carrier P1[0]. The same carriers' P1[10..12] / P1[1] / dolk P1[26]
+//!     hold the op as developer flag-menu arms, not as the beat.
 //!   - `0x482` (Drake mist walls): NO genuine script site. The earlier
 //!     "SET by the other7 script pool, CLEARed by the edbalden/eddoman
 //!     epilogue carriers" reading is falsified - every census site for

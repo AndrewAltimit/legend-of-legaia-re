@@ -627,7 +627,9 @@ pub fn step<H: FieldHost>(
         // - sub-0: party leader change. `[4C, op0]` (2 bytes). leader_id =
         //   op0 & 7.
         // - sub-1: menu/effect sub-dispatcher. `[4C, op0, ...5 more bytes]`
-        //   (7 bytes). Inner sub-ops 0x10/0x12/0x13/0x14 are host-delegated.
+        //   (7 bytes) - except `4C 14`, the actor clone, whose arm reads a
+        //   sixth payload byte and adds one more in its branch delay slot, so
+        //   it is 8. Inner sub-ops 0x10/0x12/0x13/0x14 are host-delegated.
         // - sub-3 sub-5: `[4C, 0x35]` (2 bytes). `ctx.local_flags = (lf &
         //   0xFF7F) | 0x20A`.
         // - sub-3 sub-6: `[4C, 0x36]` (2 bytes). `ctx.local_flags |= 0x28A`.
