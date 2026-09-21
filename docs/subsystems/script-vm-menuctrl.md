@@ -14,7 +14,7 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers:
 | Outer nibble | Range | Theme |
 |---|---|---|
 | 0 | 0x00..0x0F | Party-leader change |
-| 1 | 0x10..0x1F | Complex sub-switch on whole byte (menu sub-dispatcher). `addiu s8,s8,0x7` on entry, then `op0 - 0x10 < 5` selects an arm through the table at `0x801CEEA0`; the `0x14` arm (`0x801E0E80`) reads a seventh payload byte and adds one more, so `4C 14` is the one 8-byte form. |
+| 1 | 0x10..0x1F | Five-entry sub-table (global writes, screen tint, and the [actor clone](#0x4c-nibble-1-sub-4---the-actor-clone)). `addiu s8,s8,0x7` on entry, then `op0 - 0x10 < 5` selects an arm through the table at `0x801CEEA0`; the `0x14` arm (`0x801E0E80`) reads a sixth payload byte and adds one more, so `4C 14` is the one 8-byte form. |
 | 2 | 0x20..0x2F | **Camera-octant / pad-rotation setter** - one arm, no sub-table. Full body: [nibble-2 camera-octant setter](#0x4c-nibble-2---the-camera-octant--pad-rotation-setter). |
 | 3 | 0x30..0x3F | Sub-3 cluster (the [ambient-particle master gate](#0x4c-nibble-0x300x3f---the-ambient-particle-master-gate), no-op cluster, player-resync chain, party-state-clear, etc.) |
 | 4 | 0x40..0x4F | Immediate-or-ramp cluster (write or ramp ctx slots / globals) |
@@ -292,7 +292,7 @@ The 0x4C cluster is the longest-tail opcode in the field VM - most outer nibbles
 | Outer | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | 8   | 9   | A   | B   | C   | D   | E   | F   |
 |-------|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|
 | 0     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
-| 1     | ✓   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   |
+| 1     | ✓   | -   | ✓   | ✓   | ✓   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
 | 2     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 | 3     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 | 4     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
@@ -310,6 +310,8 @@ The 0x4C cluster is the longest-tail opcode in the field VM - most outer nibbles
 
 All 16x16 cells are now either fully ported (`✓`) or fall through to the dispatcher's default arm (`-`). The previously-`P` cells resolved as follows:
 
+- **Outer nibble 1 as a whole.** Its fifteen `P` cells were not fifteen unread arms: the entry bound is `sltiu v0,v1,5` at `0x801E0CA4`, so only `0x10`..`0x14` index the table at `0x801CEEA0` at all, and slot 1 of that table is the common exit `0x801E3624` - `0x11` and `0x15`..`0x1F` therefore advance seven bytes and do nothing, which is the `-` column, not a pending capture. The four real arms are `0x10` (`_DAT_8007B7B0`), `0x12` (screen tint), `0x13` (its sibling triple) and `0x14`, the [actor clone](#0x4c-nibble-1-sub-4---the-actor-clone).
+
 - **`n3 sub-4` / `sub-B` / `sub-C`**: the original at `0x801df208` (in `overlay_0897_801de840.txt`) jumps with delay slot `_addiu s8, s8, 0x2` to `LAB_801df09c switchD_801e00f4::default()` - a 2-byte advance with no side effect (the inline `_DAT_8007b5f0 = uVar31` write is a no-op because `uVar31` was read from the same slot). The Rust port matches: `next_pc = pc + header_size + 1`, no host hook fires.
 - **`n3 sub-D`**: the walk-region **attribute refresh** `FUN_800180EC`, hooked as [`FieldHost::region_attributes_refresh_at_player`]. It shares only the tile arithmetic with `sub-8`, which is a camera-zone query ([below](#0x4c-nibble-0x380x3e---the-camera-zone-arms)); routing both through one hook keyed on the sub-op byte hid that they call different routines.
 - **`n4 sub-5`**: 11-byte instruction `[4C, 0x45, b1, w94_lo, w94_hi, w96_lo, w96_hi, w98_lo, w98_hi, ticks_lo, ticks_hi]`. The dispatcher splits on `ticks == 0` between [`FieldHost::op4c_n4_sub5_write_immediate`] (direct write) and [`FieldHost::op4c_n4_sub5_ramp`] (STATE_RESUME ramp).
@@ -325,6 +327,52 @@ queues each one into `World::pending_actor_spawns`, and emits a `FieldEvent::Act
 
 Materializing the queued records into actor slots is a separate engine-side step. [`World::materialize_actor_spawns(start_slot)`] drains `pending_actor_spawns`, allocates the first inactive slot from `actors[start_slot..MAX_ACTORS]`, populates `Actor::spawn_record` with the raw bytecode bytes, and emits one `FieldEvent::ActorSpawned { slot, kind, variant, record }` per allocation. The retail allocator for this opcode (`overlay_world_map_801de840.txt:7080-7123`, case `8 sub-0`) allocates from pool `0x801f28a0` and writes `actor[+0x90]` (bytecode start), `actor[+0x94]` (parent back-pointer) and `actor[+0x54] = 0`; it does **not** write `actor[+0x3C]` (kind) or `actor[+0x3E]` (variant), so the event's `kind = 0` / `variant = 0` match retail - this is a faithful zero, not a placeholder.
 The `0x4C 0xD8` path is the one that decodes explicit `(kind, variant)` u16 immediates and routes through `FUN_801D77F4`; the `0x4C 0x80` path is bytecode-only by design. When the slot range is exhausted, a `FieldEvent::ActorSpawnFailed { record }` event surfaces the dropped request instead.
+
+#### 0x4C nibble 1 sub-4 - the actor clone
+
+`4C 14` is the field VM's after-image: it duplicates one actor's transform
+onto a fresh pool node that fades itself out and retires. It is the **only**
+eight-byte instruction in outer nibble 1 and the only allocation site on the
+disc for the static actor template at SCUS `0x80070644`.
+
+```text
+4C 14 <r> <g> <b> <rate_lo> <rate_hi> <src_id>
+```
+
+The arm at `0x801E0E80` reads `lbu a0,6(s6)` - a byte past the five every
+other arm of this nibble uses - resolves it through the cross-context walk
+`FUN_8003C83C`, and calls `FUN_801D835C(src, u24, s16)` with the two operands
+the nibble's own prologue and this arm decode: `FUN_8003CEB8(&operand[1])`
+(the 24-bit colour word) and `FUN_8003CE9C(&operand[4])` (the signed rate).
+Its exit is `j 0x801E3624` with `addiu s8,s8,1` in the **branch delay slot**,
+so the eighth byte is consumed on the unresolved-source path too.
+
+`FUN_801D835C` (48 instructions, field overlay file `0x9B44`) stores the
+source's `+0x64` into the descriptor's `+0x04` **low halfword** (`sh`, so the
+`0xFFFF` marker half survives), allocates through `FUN_80020DE0` against the
+generic effect-actor list, then copies `src[+0x14..+0x1B]` (position) and
+`src[+0x24..+0x2B]` (rotation) through `lwl`/`lwr` pairs, copies `src[+0x4C]`
+(the bound model word) and `src[+0x68]`, and writes `dst[+0x54] = rate`,
+`dst[+0x74] = colour`. A null allocation ends the routine with nothing else
+written.
+
+The clone's own per-frame body is the descriptor's `+0x08` word,
+`FUN_801D820C`: `+0x78 += (i16)+0x54 * DAT_1F800393` each frame, and at
+`0x1000` it pins `+0x78` to `0xFFF` and sets the retire bit `+0x10 |= 8`.
+So the rate is the clone's lifetime - `0x199` is about ten vsyncs - and
+`+0x74` is the modulation colour the sprite / widget family reads as packed
+RGB (`FUN_801F7A9C` draws from it, `FUN_801F8004` writes it; see
+[`move-vm.md`](move-vm.md)).
+
+Six shipped scenes issue the opcode - `vozz`, `retona`, `urudre3`, `kor5`,
+`nilboa`, `noaru` - always as a short burst against one target. `vozz` runs
+three eight frames apart with the colour stepping `(0x32,0x28,0x1E)`,
+`(0x37,0x2D,0x23)`, `(0x3C,0x32,0x28)`.
+
+Port: `legaia_engine_core::field_actor_clone` (the plan kernel),
+`World::spawn_actor_clone` (the allocation and the id resolve), and
+`World::tick_handler_actors` (the clone's tick, through
+`ActorHandler::ClipFade`).
 
 #### What the `0x4C 0xD8` spawner builds
 
