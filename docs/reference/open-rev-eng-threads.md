@@ -610,6 +610,9 @@ a coincidence of the pad byte plus the mask table's first three entries
 
 | Thread | Status | What would close it |
 |---|---|---|
+| Does any host actually draw the field screen-effect fade? | open - the pool has a producer on both hosts and a reader on neither | The representation question closed on the push (below), and the op's tween is simulated on both hosts now - but `World::screen_tint_pushes` has zero production references, so the beat is stepped and drawn by nothing. What closes it is a renderer read on each host plus a rung that enters it; the parity question underneath is what retail's `kind` and `blend` select once something consumes them, because the capture pins the triple and not the raster. |
+| Do the field effect handlers `0x801E3E00` / `0x801E4D8C` / `0x801E5338` have a spawner? | open - each is ported and none has a production constructor | The three handler words sit in the field overlay's effect-descriptor run at `0x801F291C+`, beside the reflection controller's, and each has a Rust tick that nothing on either host constructs an actor for. The walk that would close it is the one that turned `0x801E5154` from an unreachable tick into field-VM `4C 86`: find the descriptor each word is the `+0x08` of, then the shipped script arm that allocates from that descriptor. A tick with no spawner is a question about the opcode table, not about the port. |
+| Do the camera-snap and ocean-only kernels run on any host? | open - both are shared kernels no ladder enters | `Camera::take_camera_snap_beats` and `FieldSceneAnim::ocean_only` are reached by no ladder on either host, so the drift tiers that pair them pass on structure while nothing exercises either body. What closes it is a rung that reaches each - a scripted camera-configure beat for the first, a world-map scene entry for the second - and, for the first, the retail beat to compare the replayed snap against. |
 | Does any shipped beat take op `0x34` sub-0's second arm? | open - the fork is decoded, the disc is not known to raise its gate | The sub-0 arm forks on `_DAT_1F800394 & 0x800000` into `FUN_80024E80` instead of the push spawner `FUN_80024EE4`, and the bit reads **clear** on every vsync of the one capture that drives the arm, so the port implements the default leg and discloses the other. The gate is a field-VM transient flag, so a script can raise it; what is owed is a census of the writers of bit 23 over every scene carrier, and then a capture of a beat that runs with it up. Until that exists the forked arm is a decoded body with no known caller rather than dead code. |
 | Does the morph-weight spawner ever seat its handler? | open - the opcode is parsed on both hosts and the seat is never taken | Field-VM `4C D8` spawns from the morph-weight descriptor `0x8007068C`, whose handler reads `actor[+0x3C]` / `+0x3E` as the rise and fall steps of the weight at `+0x6E`. The port parses the op and never sets `ActorHandler::MorphWeights`, so nothing steps a weight and no mesh path reads one. Three pieces are owed together, which is why this is a thread and not a wiring row: the `+0x90` rest-pose snapshot the handler blends against, the pool kernel that steps it, and a per-actor morph read in **both** hosts' dynamic-actor mesh paths. |
 
@@ -626,7 +629,8 @@ was a third of one - retail's sub-0 is a walk-out / walk-in **pair** whose blend
 and push kind come out of the sub-op byte, and whose all-zero operand clears the
 live actor rather than ramping to black
 ([settled](re-settled-threads.md#field--locomotion),
-[falsified](re-do-not-re-walk.md#field--locomotion)).
+[falsified](re-do-not-re-walk.md#field--locomotion)). What the closure does not
+settle is whether anything **draws** the surviving model - the first row above.
 
 Four rows closed here before them, three of them the Equip screen's.
 
