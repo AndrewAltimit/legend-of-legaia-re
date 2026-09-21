@@ -1061,8 +1061,8 @@ located via `block_offset = 0x200 + (ram_addr - 0x80084340)`.
 |---|---|---|
 | `+0x000` | 0x24 | Current location name (ASCII, NUL-terminated), e.g. `Rim Elm` - retail's `0x24`-byte copy of the scene MAN's banner name ([place-names](../formats/place-names.md)), so the bytes after the NUL are whatever followed it in the MAN |
 | `+0x054` | 12 | Primary character display name (for save-select screen) |
-| `+0x208` | 0x10 | CDNAME label of most-recently-visited scene (e.g. `town0b`), NUL-padded - the scene the loader resumes into |
-| `+0x218` | 0x10 | CDNAME label of previous scene (e.g. `town01`) |
+| `+0x208` | 0x10 | CDNAME label of most-recently-visited scene (e.g. `town0b`), NUL-padded - the scene the loader resumes into. Absolute offset in the block: `0x408`, which is what a card-reading script measures when it looks for "which scene is this save in" without going through the header base |
+| `+0x218` | 0x10 | CDNAME label of previous scene (e.g. `town01`); absolute `0x418` |
 | `+0x25C` | 4 | Party gold (mirrors RAM `0x8008459C`) |
 
 **Character records**: `CHARACTER_RECORD_SIZE` (0x414) bytes each. The SC block is a
