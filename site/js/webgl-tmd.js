@@ -121,6 +121,13 @@ class TmdRenderer {
     this.locOcclFocus  = gl.getUniformLocation(this.program, 'u_occl_focus');
     this.locOcclParams = gl.getUniformLocation(this.program, 'u_occl_params');
     this.locOcclAllow  = gl.getUniformLocation(this.program, 'u_occl_allow');
+    /* What the 3D pass clears to, as linear RGBA. The default is the dark
+     * ground every viewer page draws on; the play page overwrites it per
+     * frame from the engine (`play_scene_clear_color`), because in a battle
+     * the stage dome is a FRONT HALF and the open band above it is read as
+     * sky. Hard-coding one clear here made every browser battle draw that
+     * band black while the native window showed sky. */
+    this.clearColor = [0.04, 0.05, 0.08, 1.0];
     /* Prologue colour grade + depth-cue ramp, staged per frame by the play
      * page (identity / off by default - no other page is affected). */
     this.gradeParams = { rgb: null, strength: 0 };
@@ -743,7 +750,7 @@ class TmdRenderer {
     } else {
       gl.disable(gl.CULL_FACE);
     }
-    gl.clearColor(0.04, 0.05, 0.08, 1.0);
+    gl.clearColor(this.clearColor[0], this.clearColor[1], this.clearColor[2], this.clearColor[3]);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     if (this.indexCount === 0) return;
@@ -1011,7 +1018,7 @@ class TmdRenderer {
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
     gl.disable(gl.CULL_FACE);
-    gl.clearColor(0.04, 0.05, 0.08, 1.0);
+    gl.clearColor(this.clearColor[0], this.clearColor[1], this.clearColor[2], this.clearColor[3]);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     /* Orbit-3D vs legacy ortho top-down: a cam carrying a `yaw` field

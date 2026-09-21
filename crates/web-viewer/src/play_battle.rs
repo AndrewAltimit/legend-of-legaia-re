@@ -506,6 +506,14 @@ impl LegaiaRuntime {
     /// Sibling of the native window's `arts_input_chrome_sprite_draws` -
     /// same shared builders, same baked atlas, same stage transform, so
     /// the two hosts cannot drift.
+    ///
+    /// An in-battle dialogue box owns the screen while it is up, and the
+    /// native window drops the whole entry chrome under one. The suppression
+    /// lives **inside this builder** rather than at the call site because it
+    /// was at the call site on one host only: the plain-text `arts_menu` list
+    /// below carried the gate and this retail-model chrome did not, so a
+    /// browser fight drew the command buffer, the AP gauge and the chip row
+    /// straight through the narration box.
     pub(crate) fn arts_input_stage_draws(
         &self,
         font: &legaia_font::Font,
@@ -519,6 +527,9 @@ impl LegaiaRuntime {
         let Some(bw) = self.scene_host.as_ref().map(|h| &h.world) else {
             return empty;
         };
+        if bw.dialogue_owns_input() {
+            return empty;
+        }
         let Some(view) = bw.arts_input_view() else {
             return empty;
         };
@@ -870,7 +881,7 @@ impl LegaiaRuntime {
         // open, so it takes priority over the command menu. While an
         // in-battle dialogue box owns the frame (the tutorial text), the
         // menus are hidden - retail shows no command chrome under it.
-        let dialogue_up = bw.dialog.current.is_some() || bw.dialog.inline.is_some();
+        let dialogue_up = bw.dialogue_owns_input();
         if dialogue_up {
             // Dialogue box up: no menu chrome.
         } else if let Some(arts) = &bw.battle.arts_menu {
@@ -2126,21 +2137,17 @@ impl LegaiaRuntime {
     /// bit the selector reads), and the scene's PROT base (`DAT_80084540`).
     fn arm_battle_intro(&self, formation_id: u16, total: i32) -> BattleIntro {
         use legaia_engine_vm::battle_intro_particles::IntroEnv;
-        use legaia_engine_vm::battle_intro_styles::{IntroStyleInputs, select_intro_style};
+        use legaia_engine_vm::battle_intro_styles::select_intro_style;
 
         let host = self.scene_host.as_ref().expect("caller checked");
-        let def = host.world.tables.formation_table.formation(formation_id);
-        let slot0 = def
-            .and_then(|d| d.slots.first())
-            .map(|s| s.monster_id as u8)
-            .unwrap_or(formation_id as u8);
-        let battle_flags = def.map(|d| d.per_battle_flags()).unwrap_or(0);
-        let scene_index = host.scene.as_ref().map(|s| s.start).unwrap_or(0);
-        let choice = select_intro_style(&IntroStyleInputs {
-            battle_flags,
-            formation_slot0: slot0,
-            scene_index,
-        });
+        // One engine-side resolver for all three inputs
+        // (`SceneHost::battle_intro_style_inputs`). This host used to resolve
+        // them inline and went straight from the formation-table lookup to
+        // the bare row index for `formation_slot0`, with no live-monster-table
+        // leg - so an in-battle re-arm, where the row is not the authority,
+        // fed the selector a row index and drew the default style.
+        let inputs = host.battle_intro_style_inputs(formation_id);
+        let choice = select_intro_style(&inputs);
         // The curtain's descriptor table + the tile seeder's corner table,
         // both decoded off the PROT 0979 intro overlay at its load base; the
         // disc-free fallbacks are the same ones the native window uses.

@@ -245,8 +245,12 @@ fn derive_battle_cam(
         },
         // `_DAT_8007B792` is one global shared with the field camera, and
         // nothing on the battle-entry path zeroes it - a fight inherits the
-        // live azimuth (see `BattleCamInputs::entry_yaw`).
-        entry_yaw: f32::from(world.locomotion.camera_azimuth & 0xFFF),
+        // live azimuth (see `BattleCamInputs::entry_yaw`). Through the shared
+        // guard, which this host used to skip: the port's compass publishes a
+        // constant `0` while nobody is orbiting, and `0` is the one azimuth
+        // that puts the eye down the seat axis, so every browser fight that
+        // opened without a manual orbit framed both rows at the same screen X.
+        entry_yaw: script::battle_entry_yaw(world.locomotion.camera_azimuth),
         shake_amplitude: world.camera.shake_amplitude,
         attack: attack_channels(world, world.battle_ctx.active_actor),
         // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's
@@ -415,6 +419,17 @@ pub(crate) struct BattleRender {
 }
 
 impl BattleRender {
+    /// Whether this fight has a stage dome - the browser twin of the native
+    /// window's `battle_stage_mesh.is_some()`.
+    ///
+    /// The dome is what makes the open band above it sky, so it is the
+    /// selector behind [`LegaiaRuntime::play_scene_clear_color`]. A battle
+    /// whose stage failed to build still gets its monsters, and still gets
+    /// the ordinary scene clear behind them.
+    pub(crate) fn stage_present(&self) -> bool {
+        self.backdrop.is_some() || self.ground.is_some()
+    }
+
     /// World actor-table slot of each bound mesh, in mesh order. The FX
     /// exports key their per-actor rows off this so they stay
     /// index-parallel with `play_battle_actor_transforms`.
@@ -1189,6 +1204,24 @@ impl LegaiaRuntime {
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// What this frame's 3D pass should clear to: four linear RGBA floats
+    /// from the shared
+    /// [`legaia_engine_ui::battle_stage_clear`] selector, the one the native
+    /// window renders with.
+    ///
+    /// The stage dome is a front half, so the open band above it is read as
+    /// sky and the clear colour *is* that sky. This page's WebGL path cleared
+    /// every mode to one hard-coded near-black, which put a black ceiling
+    /// over every browser battle while the native window showed sky.
+    pub fn play_scene_clear_color(&self) -> Vec<f32> {
+        let stage_battle = self.play_battle_active()
+            && self
+                .battle_render
+                .as_ref()
+                .is_some_and(|b| b.stage_present());
+        legaia_engine_ui::battle_stage_clear::scene_clear(false, stage_battle).to_vec()
+    }
+
     /// `true` while a battle 3D render is built and the world is in
     /// [`SceneMode::Battle`] - the page's per-frame branch gate.
     pub fn play_battle_active(&self) -> bool {
@@ -1650,6 +1683,37 @@ mod battle_cam_web_tests {
     use super::*;
     use legaia_engine_core::world::World;
     use legaia_engine_vm::battle_cam_script as script;
+
+    /// **Cross-host entry-azimuth pin, browser half.** The twin of the
+    /// native window's `battle_entry_yaw_tests` (`engine-shell`
+    /// `window/camera.rs`): both hosts must hand `drive` the *guarded*
+    /// azimuth, not the raw compass word. This host handed over the raw word,
+    /// and since the port's fixed follow camera publishes a constant `0`
+    /// while nobody orbits, that is the seat-axis azimuth on which the two
+    /// combatant rows project to the same screen X.
+    #[test]
+    fn web_an_on_axis_entry_azimuth_is_replaced() {
+        for az in [0u16, 8, 160, 191, 2048, 2100, 4090] {
+            let mut world = World::default();
+            world.locomotion.camera_azimuth = az;
+            assert_eq!(
+                derive_battle_cam(&world).entry_yaw,
+                script::BATTLE_ENTRY_YAW_SAMPLE,
+                "azimuth {az} frames both rows at the same screen X"
+            );
+        }
+    }
+
+    /// A real orbit sample survives untouched - the five captured retail
+    /// battle yaws.
+    #[test]
+    fn web_a_real_orbit_azimuth_survives() {
+        for az in [224u16, 2632, 3136, 3808, 3882] {
+            let mut world = World::default();
+            world.locomotion.camera_azimuth = az;
+            assert_eq!(derive_battle_cam(&world).entry_yaw, f32::from(az));
+        }
+    }
 
     /// **Cross-host heading pin, browser half.** The identical world recipe
     /// as the native `the_camera_reads_the_battle_heading_not_the_field_heading`

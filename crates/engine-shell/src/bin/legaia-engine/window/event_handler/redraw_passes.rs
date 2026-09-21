@@ -87,15 +87,11 @@ impl PlayWindowApp {
             .unwrap_or_else(|| self.camera_mvp(aspect).to_cols_array());
             Mat4::from_cols_array(&vp) * FIELD_WORLD_FLIP
         } else if self.session.host.world.mode == SceneMode::Battle {
-            if self.battle_stage_mesh.is_some() {
-                // Stage-dome battle: low front-facing shot into the
-                // dome (grass foreground, mountains on the horizon).
-                self.battle_dome_camera_mvp(aspect)
-            } else {
-                // No stage: frame the animated enemies (the battle
-                // actors live at the world origin).
-                self.battle_camera_mvp(aspect)
-            }
+            // Stage-dome battle: low front-facing shot into the dome (grass
+            // foreground, mountains on the horizon); with no stage, frame the
+            // animated enemies instead (the battle actors live at the world
+            // origin). One selector, shared with the FX passes below.
+            self.battle_scene_mvp(aspect)
         } else if self.field_debug_camera {
             // Wide debug orbit vantage (`C` toggles), in the same
             // one-world-negation field frame as the follow camera.
@@ -499,13 +495,18 @@ impl PlayWindowApp {
             return Vec::new();
         };
         let (w, h) = r.surface_size();
-        let mvp = self.battle_camera_mvp(w as f32 / h.max(1) as f32);
+        let mvp = self.battle_scene_mvp(w as f32 / h.max(1) as f32);
         // The retail emitter schedule keys on the counter word and on the
         // acting side: party = afterimage shrinking toward the ribbon,
         // monster = ribbon throughout (`FUN_801E09F8`).
         let party = world.battle_ctx.active_actor < 3;
-        let quads =
-            streak_quads_scheduled(&src, &mvp, self.tick_no as u32, block.counter_word, party);
+        // The schedule's own clock is the world's display-frame counter, the
+        // same one the browser play page feeds it. It used to be this
+        // window's redraw counter, which advances on frames the simulation
+        // did not take - so the emitter phase was a property of how fast the
+        // host happened to be drawing.
+        let frame = world.clock.display_frames as u32;
+        let quads = streak_quads_scheduled(&src, &mvp, frame, block.counter_word, party);
         log::debug!(
             "move-FX streak: launch {:?} counter {:#x} half-width {} -> {} quad(s)",
             block.launch,
@@ -592,7 +593,7 @@ impl PlayWindowApp {
             return Vec::new();
         }
         let (w, h) = r.surface_size();
-        let mvp = self.battle_camera_mvp(w as f32 / h.max(1) as f32);
+        let mvp = self.battle_scene_mvp(w as f32 / h.max(1) as f32);
         let mut out = Vec::new();
         for d in draws {
             let Some(actor) = world.actors.get(d.actor_slot as usize) else {

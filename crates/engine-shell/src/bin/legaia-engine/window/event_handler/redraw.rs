@@ -1862,8 +1862,16 @@ impl PlayWindowApp {
                         // scale; the tint rides the per-draw GTE depth-cue
                         // seam (a saturated `DrawCue` ramp = a flat blend
                         // toward the cue colour) - the pointed-at monster
-                        // pulses bright, the others dim. The pulse phase is
-                        // the host tick.
+                        // pulses bright, the others dim.
+                        //
+                        // The pulse phase is the **world display-frame**
+                        // clock, not this window's redraw counter: the
+                        // browser play page runs the same formula off
+                        // `World::clock.display_frames`, and a redraw
+                        // counter advances on frames the simulation did not
+                        // take (a movie, a paused world, a resize storm), so
+                        // the two hosts' cursors drifted apart the moment
+                        // either host's redraw rate left its tick rate.
                         let model = self.actor_model(i);
                         let mut cue = None;
                         if in_battle {
@@ -1871,7 +1879,11 @@ impl PlayWindowApp {
                             let b = &actor.battle;
                             match b.render_flag {
                                 ba::CURSOR_FLAG_SELECTED => {
-                                    let pulse = 0.30 + 0.20 * (self.tick_no as f32 * 0.25).sin();
+                                    let pulse = 0.30
+                                        + 0.20
+                                            * (self.session.host.world.clock.display_frames as f32
+                                                * 0.25)
+                                                .sin();
                                     log::trace!(
                                         "target cursor: actor {i} SELECTED pulse {pulse:.2}"
                                     );
@@ -2151,15 +2163,12 @@ impl PlayWindowApp {
             // stage-dome battle clear to a sky blue so the gaps the
             // front-half dome leaves open read as sky (like retail)
             // rather than the bare grey clear.
-            let scene_clear = if self.boot_ui.is_active() && !game_over_hold {
-                Some([0.0, 0.0, 0.0, 1.0])
-            } else if self.session.host.world.mode == SceneMode::Battle
-                && self.battle_stage_mesh.is_some()
-            {
-                Some([0.32, 0.46, 0.66, 1.0])
-            } else {
-                None
-            };
+            let boot_ui_clear = self.boot_ui.is_active() && !game_over_hold;
+            let stage_battle = self.session.host.world.mode == SceneMode::Battle
+                && self.battle_stage_mesh.is_some();
+            let scene_clear = (boot_ui_clear || stage_battle).then(|| {
+                legaia_engine_render::battle_stage_clear::scene_clear(boot_ui_clear, stage_battle)
+            });
 
             // Slot 1: logos OR title-art bands (title still
             // emits during SaveSelect, dimmed). Slot 2: either

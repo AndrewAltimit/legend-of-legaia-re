@@ -62,6 +62,7 @@ pub mod battle_intro;
 pub mod battle_item_ui;
 pub mod battle_name_banner;
 pub mod battle_numerals;
+pub mod battle_stage_clear;
 pub mod battle_trail;
 mod battle_tutorial_box;
 pub mod billboard;
