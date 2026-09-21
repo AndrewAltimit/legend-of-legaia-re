@@ -94,18 +94,25 @@ pub const CHARACTER_NAME_OFFSET: usize = 0x2A7;
 ///
 /// Locate the arts-name record for `(char_id, art_id)`.
 ///
-/// NOT WIRED: nothing consumes a record index into the raw table. The walk is
-/// over the static SCUS arts-name table `DAT_80075EC4` (20-byte records,
-/// `0x63` sentinel), which `legaia_art::arts_table::parse_from_scus` already
-/// decodes; what is missing is a reason to reach it as bytes. The live label
-/// comes from `engine-core::battle_hud::battle_move_name` via the typed
-/// catalog and is seated by [`banner_x`], so the placement law runs without
-/// this step. It acquires a caller only when a host stages the raw `0x14`-
-/// stride bytes to read a record's marked name - the `0xCF` nudge and the
-/// `0xC1` character-name prefix fire on lead bytes the curated names do not
-/// carry, so both arms here are unexercised until then. `engine-ui` does not
-/// depend on `legaia-art`, so the slice would have to be handed in by the
-/// host.
+/// REPLACED-BY: `legaia_art::arts_table::parse_from_scus`, which decodes the
+/// same static table `DAT_80075EC4` into the typed arts catalog, and
+/// `engine-core::battle_hud::battle_move_name`, which is where the live
+/// banner label comes from on both hosts. No host is owed a call.
+///
+/// This routine's whole product is a **record index into the raw table** -
+/// the step a host takes only if it means to read the `0x14`-stride bytes
+/// itself. The port does not: the catalog is parsed once and addressed by
+/// `(char, art)` directly, and the placement law [`banner_x`] is seated from
+/// the resolved name, so the banner is drawn without an index ever existing.
+/// `engine-ui` does not even depend on `legaia-art`, so reaching this walk
+/// would mean handing the slice in from outside to recompute what the
+/// catalog already answered.
+///
+/// One residual, and it belongs to the catalog rather than here: the `0xCF`
+/// nudge and the `0xC1` character-name prefix are **lead bytes of the stored
+/// name**, and whether the typed catalog preserves them decides whether
+/// [`banner_x`]'s two marker arms can ever fire. That is a question about
+/// what `parse_from_scus` keeps, not a missing caller for this lookup.
 ///
 /// `table` is the raw `0x14`-stride table starting at record 0. The walk
 /// stops at the first record whose byte `+0x0` is [`ARTS_TABLE_SENTINEL`];
