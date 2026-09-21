@@ -169,18 +169,39 @@ pub fn tile_of(v: i16) -> i16 {
 /// Run one tick of the reflection callback.
 ///
 /// PORT: FUN_801e5154
-// NOT WIRED: the actor-callback descriptor at `0x801F2950` is not parsed -
-// nothing in the workspace reads that VA - so no actor is ever given this
-// tick as its callback, and no reflection pair is ever formed.
+// NOT WIRED: no engine path forms a reflection pair. The blocker is the
+// **spawner**, and it is named rather than absent - an earlier reading here
+// said retail pairs nothing either, and that does not survive a reference
+// sweep.
 //
-// That is the whole blocker. An earlier reading added "and `engine-core`'s
-// actor carries none of the fields this reads", which is false: `Actor`'s
-// `move_state` is `move_vm::ActorState`, which already carries `+0x10`
-// flags, the `+0x14/16/18` position, the `+0x26` facing, the `+0x5C/68/6A`
-// animation triple and the `+0x80..8A` mirror/bounds block at those exact
-// offsets. Only the `+0x64` animation-set word has no slot. So the storage
-// is largely there; what does not exist is the descriptor that would pair a
-// source actor with a reflection actor in the first place.
+// Retail's spawner is `FUN_801E573C` (field overlay file `0x16F24`, 45
+// instructions). It allocates from the spawn descriptor at **`0x801F2948`**
+// - whose `+0x04` is the `0xFFFF0000` marker and whose `+0x08` handler word
+// is `0x801F2950`, holding this routine's VA; naming `0x801F2950` itself
+// "the descriptor" was off by the two leading words - against the generic
+// effect-actor list `_DAT_8007C34C`, then writes `+0x90 = source actor`,
+// `+0x94 = destination actor`, `+0x54 = 0` and the six halfwords
+// `+0x80 / +0x82 / +0x84 / +0x86 / +0x88 / +0x8A` from its trailing
+// arguments - the mirror/bounds block this tick reads as the tile rect. A
+// null allocation writes none of it.
+//
+// Its caller is a field-VM dispatcher arm at `0x801E2250..0x801E2278`,
+// reached through the sub-table word at `0x801CEF60`; the arm decodes the
+// last two of those halfwords with `FUN_8003CE9C` at operand `+9` and
+// `+0xB`. The very next slot, `0x801CEF64`, is the matching teardown:
+// `FUN_8003CF40(_DAT_8007C34C, 0x801E5154)`, a retire sweep keyed on this
+// handler - so install and retire are consecutive sub-ops of one opcode.
+// Which opcode owns that sub-table is not pinned here; it is not the `0x4C`
+// nibble tables, whose bases are `0x801CEE60` / `0x801CEEA0` / `0x801CEEB8`.
+//
+// The engine parses neither the descriptor nor that arm, so no actor is ever
+// given this tick and no pair is ever formed. The per-actor storage is
+// largely present already: `Actor`'s `move_state` is `move_vm::ActorState`,
+// carrying `+0x10` flags, the `+0x14/16/18` position, the `+0x26` facing,
+// the `+0x5C/68/6A` animation triple and the `+0x80..8A` mirror/bounds block
+// at those exact offsets; only the `+0x64` animation-set word has no slot.
+// Wiring is a port of `FUN_801E573C` plus the dispatcher arm that calls it,
+// not a new representation.
 pub fn tick_reflection(
     ctrl: &mut ReflectController,
     dst: &mut ReflectActor,

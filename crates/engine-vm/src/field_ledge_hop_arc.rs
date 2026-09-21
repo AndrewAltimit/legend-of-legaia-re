@@ -297,14 +297,19 @@ pub struct HopSpawn {
 ///   straight from the `+0x9E` store to the epilogue.
 ///
 /// PORT: FUN_801d5780
-// NOT WIRED, AND UNWIRABLE: **retail never calls this function either.** It is
-// not the engine that is missing a consumer - `FUN_801D5780` has zero
-// references of any form in the shipped data: no `jal`, no `j`, and no literal
-// address word, across `SCUS_942.54`, every base-mapped overlay image and every
-// extracted PROT entry. Its three siblings in this module are the controls that
-// make that a real zero rather than a scan artifact: `FUN_801D2404` and
-// `FUN_801D25EC` are each found by `jal` in the field overlay, and
-// `FUN_801D2298` is found as a table word at VA `0x801F229C`.
+// REPLACED-BY: nothing is owed a port - **retail never calls this function
+// either**, so there is no call site for a host to stand in for. A
+// five-reference-form sweep over every shipped image (literal LE word at every
+// alignment, `lui`+`addiu` / `ori` materialisation, `jal`, `j`, PC-relative
+// branch; `scripts/ghidra-analysis/find-address-word-refs.py 801d5780 --prot
+// --home 0897`, 1234 images) returns nothing, and the two forms that sweep is
+// blind to are empty as well (`find-gp-relative-refs.py 801d5780`: no
+// `imm(gp)`, no `lui`+load pair, no base+displacement, 88 images).
+//
+// Its three siblings in this module are the controls that make that a real
+// zero rather than a scan artifact: `FUN_801D2404` and `FUN_801D25EC` are each
+// found by `jal` in the field overlay, and `FUN_801D2298` is found as a table
+// word at VA `0x801F229C`.
 //
 // The obvious rescue - "it is a pool-actor tick, so no `jal` is expected" -
 // does not apply either: a tick's disc reference is its template's `+0x08`
@@ -315,9 +320,11 @@ pub struct HopSpawn {
 // The bytes are a complete, well-formed routine - field overlay `0897_xxx_dat`
 // at file `0x6F68` opens `addiu sp, sp, -0x28` and the null-`a0` bail at
 // `0x801D57A4` is `bne s0, zero, +3`, exactly as ported - so this is dead code
-// shipped in the image, not a mis-read address. Read the row as "retail reaches
-// it from nowhere", and do not write a call site to satisfy an audit: there is
-// no production path to put one on.
+// shipped in the image, not a mis-read address. The arithmetic it carries is
+// [`build_hop_arc`], which is live for the player hop; what this entry adds
+// over that is a start point taken from an arbitrary `a0` actor, and nothing
+// on the disc ever asks for one. Do not write a call site to satisfy an audit:
+// there is no production path to put one on.
 //
 // Re-checking this from `ghidra/scripts/funcs/801d5780.txt` will mislead. That
 // dump is a wrong-image import - its header resolves `entry=801d56fc`, so it
