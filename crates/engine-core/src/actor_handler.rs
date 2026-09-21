@@ -107,6 +107,12 @@ pub const VA_FLOOR_LADDER: u32 = 0x801D_A930;
 /// descriptor `0x801F26D8` (field `0x023EC0`), allocated by `FUN_801D5A24`.
 pub const VA_SCRIPTED_SCENE: u32 = 0x801D_4A60;
 
+/// `FUN_801D820C` - the **clip-fraction fade** tick. Its descriptor is the
+/// static SCUS template `0x80070644` ([`crate::field_actor_clone::CLONE_DESCRIPTOR`]),
+/// whose `+0x08` word carries this VA; the field VM op `0x4C` sub-1 sub-op
+/// `0x14` clone helper `FUN_801D835C` is its only allocation site on the disc.
+pub const VA_CLIP_FADE: u32 = crate::field_actor_clone::CLONE_HANDLER;
+
 /// `FUN_801DBE9C` - the handler on the fixed scene-actor template
 /// `0x801F2810` that `FUN_801DE478` spawns from (field `0x023FF8`, word `+8`).
 pub const VA_SCENE_ACTOR: u32 = 0x801D_BE9C;
@@ -157,6 +163,8 @@ pub enum ActorHandler {
     SceneActor,
     /// [`VA_SCRIPTED_SCENE`].
     ScriptedScene,
+    /// [`VA_CLIP_FADE`].
+    ClipFade,
     /// [`VA_SCREEN_SPRITE`].
     ScreenSprite,
     /// [`VA_SCREEN_MASK`].
@@ -200,6 +208,10 @@ pub enum HandlerKernel {
     /// [`crate::field_actor_program::step_scene_program`] - ported, but not yet run by the
     /// actor loop; see that function's disclosure.
     ScriptedScene,
+    /// [`legaia_engine_vm::actor_tick::clip_fraction_step`], run by
+    /// [`crate::world::World::tick_handler_actors`] over the clones the field
+    /// VM's op `0x4C` sub-1 sub-op `0x14` spawns.
+    ClipFade,
     /// No ported body. The handler still participates in every identity
     /// test; it just has nothing to run.
     Unported,
@@ -211,7 +223,7 @@ impl HandlerKernel {
     /// are reached from their own host channels instead, which is why this
     /// is narrower than "is ported".
     pub fn runs_in_actor_loop(self) -> bool {
-        matches!(self, HandlerKernel::ColourTween)
+        matches!(self, HandlerKernel::ColourTween | HandlerKernel::ClipFade)
     }
 }
 
@@ -230,6 +242,7 @@ impl ActorHandler {
             VA_FLOOR_LADDER => ActorHandler::FloorLadder,
             VA_SCENE_ACTOR => ActorHandler::SceneActor,
             VA_SCRIPTED_SCENE => ActorHandler::ScriptedScene,
+            VA_CLIP_FADE => ActorHandler::ClipFade,
             VA_SCREEN_SPRITE => ActorHandler::ScreenSprite,
             VA_SCREEN_MASK => ActorHandler::ScreenMask,
             VA_SCREEN_PANEL => ActorHandler::ScreenPanel,
@@ -256,6 +269,7 @@ impl ActorHandler {
             ActorHandler::FloorLadder => VA_FLOOR_LADDER,
             ActorHandler::SceneActor => VA_SCENE_ACTOR,
             ActorHandler::ScriptedScene => VA_SCRIPTED_SCENE,
+            ActorHandler::ClipFade => VA_CLIP_FADE,
             ActorHandler::ScreenSprite => VA_SCREEN_SPRITE,
             ActorHandler::ScreenMask => VA_SCREEN_MASK,
             ActorHandler::ScreenPanel => VA_SCREEN_PANEL,
@@ -273,6 +287,7 @@ impl ActorHandler {
             ActorHandler::TextBalloon => HandlerKernel::TextBalloon,
             ActorHandler::CameraMover => HandlerKernel::CameraMover,
             ActorHandler::ScriptedScene => HandlerKernel::ScriptedScene,
+            ActorHandler::ClipFade => HandlerKernel::ClipFade,
             ActorHandler::ScreenSprite
             | ActorHandler::ScreenMask
             | ActorHandler::ScreenPanel
@@ -381,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn only_the_colour_tween_runs_inside_the_actor_loop() {
+    fn only_the_pool_resident_kernels_run_inside_the_actor_loop() {
         // The other ported kernels are hosted off the pool (narration and
         // balloon are world channels, the camera mover is the camera's, the
         // widgets are `screen_fx`'s). Asserting this keeps a later variant
@@ -392,12 +407,16 @@ mod tests {
             ActorHandler::NarrationRoller,
             ActorHandler::TextBalloon,
             ActorHandler::CameraMover,
+            ActorHandler::ClipFade,
             ActorHandler::ScreenMask,
         ]
         .into_iter()
         .filter(|h| h.kernel().runs_in_actor_loop())
         .collect();
-        assert_eq!(in_loop, vec![ActorHandler::ColourTween]);
+        assert_eq!(
+            in_loop,
+            vec![ActorHandler::ColourTween, ActorHandler::ClipFade]
+        );
     }
 
     #[test]

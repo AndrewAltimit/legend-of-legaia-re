@@ -1624,6 +1624,100 @@ impl World {
         }
     }
 
+    /// Seat the **actor clone** field-VM op `0x4C` sub-1 sub-op `0x14` asks
+    /// for: a fading, tinted copy of `src_id`'s transform on a pool slot
+    /// whose handler is the clip-fraction fade.
+    ///
+    /// PORT: FUN_801D835C (the helper; the plan kernel is
+    /// [`crate::field_actor_clone::clone_plan`])
+    /// REF: FUN_8003C83C (the id resolve), FUN_80020DE0 (the allocation),
+    /// REF: FUN_801D820C (the tick [`Self::tick_handler_actors`] then runs)
+    ///
+    /// `src_id` is resolved in the cross-context target space: `0xF8` is the
+    /// player anchor, any other id is matched against the scene's script
+    /// channels and read at its **live** position
+    /// (`World::npcs.positions`, which the walk legs update) rather than at
+    /// its MAN spawn point. An unresolvable id seats nothing, which is
+    /// retail's `beqz s5` skip; so does an exhausted pool.
+    ///
+    /// Returns the seated slot.
+    pub fn spawn_actor_clone(&mut self, src_id: u8, modulation: u32, rate: i16) -> Option<usize> {
+        let src = self.clone_source(src_id)?;
+        let plan = crate::field_actor_clone::clone_plan(src, modulation, rate);
+        let start = FIELD_SPAWN_START_SLOT as usize;
+        let slot_idx = self
+            .actors
+            .iter()
+            .enumerate()
+            .skip(start)
+            .find(|(_, a)| !a.active)
+            .map(|(i, _)| i)?;
+        // Retail's `FUN_80020DE0` hands back a zeroed node stamped from the
+        // descriptor, so the clone starts from a default record rather than
+        // from whatever the slot last held.
+        let mut actor = Actor {
+            active: true,
+            handler: crate::actor_handler::ActorHandler::ClipFade,
+            state_54: crate::field_actor_clone::CLONE_DESCRIPTOR_INITIAL_STATE,
+            ..Actor::default()
+        };
+        actor.physics.world_x = plan.pos.0;
+        actor.physics.world_y = plan.pos.1;
+        actor.physics.world_z = plan.pos.2;
+        actor.physics.motion_x = plan.rot.0;
+        actor.physics.motion_y = plan.rot.1;
+        actor.physics.motion_z = plan.rot.2;
+        actor.physics.timer = plan.rate;
+        actor.physics.focal_envelope = plan.fraction;
+        actor.move_state.world_x = plan.pos.0;
+        actor.move_state.world_y = plan.pos.1;
+        actor.move_state.world_z = plan.pos.2;
+        actor.move_state.render_24 = plan.rot.0;
+        actor.move_state.render_26 = plan.rot.1;
+        actor.move_state.render_28 = plan.rot.2;
+        actor.modulation_rgb = Some(crate::field_actor_clone::modulation_rgb(plan.modulation));
+        self.actors[slot_idx] = actor;
+        Some(slot_idx)
+    }
+
+    /// The source-actor fields the clone helper reads, resolved from a
+    /// cross-context target byte.
+    // REF: FUN_8003C83C
+    fn clone_source(&self, src_id: u8) -> Option<crate::field_actor_clone::CloneSource> {
+        use crate::field_actor_clone::CloneSource;
+        if src_id == 0xF8 {
+            let slot = self.player_actor_slot? as usize;
+            let a = self.actors.get(slot)?;
+            return Some(CloneSource {
+                pos: (
+                    a.move_state.world_x,
+                    a.move_state.world_y,
+                    a.move_state.world_z,
+                ),
+                rot: (
+                    a.move_state.render_24,
+                    a.move_state.render_26,
+                    a.move_state.render_28,
+                ),
+                ..CloneSource::default()
+            });
+        }
+        let ci = crate::field_channels::resolve_target(&self.field_vm.channels, src_id)?;
+        let ch = &self.field_vm.channels[ci];
+        let placement = ch.placement_index as u8;
+        let (x, z) = self
+            .npcs
+            .positions
+            .get(&placement)
+            .copied()
+            .unwrap_or((ch.ctx.world_x as i16, ch.ctx.world_z as i16));
+        Some(CloneSource {
+            pos: (x, ch.ctx.world_y as i16, z),
+            rot: (ch.ctx.field_24, ch.ctx.field_26 as i16, ch.ctx.field_28),
+            ..CloneSource::default()
+        })
+    }
+
     /// Allocate a field actor in the auto-spawn slot range
     /// ([`FIELD_SPAWN_START_SLOT`]..), resolving its mesh from the global
     /// TMD pool (`tmd_idx`) and its spawn record from the VDF buffer

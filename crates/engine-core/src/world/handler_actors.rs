@@ -155,7 +155,8 @@ impl World {
     /// splits that: [`Self::tick_actor_physics`] is the inline arm (it runs for
     /// every active slot, matching the retail special case), and this is the
     /// `jalr` arm for the handler classes with a ported body that lives on the
-    /// pool - today exactly [`crate::actor_handler::HandlerKernel::ColourTween`], per
+    /// pool - the per-actor colour tween and the clip-fraction fade the field
+    /// VM's actor clone spawns, per
     /// [`crate::actor_handler::HandlerKernel::runs_in_actor_loop`].
     ///
     /// `frame_delta` is retail's `DAT_1F800393`, the same scalar the physics
@@ -171,6 +172,17 @@ impl World {
         for a in self.actors.iter_mut() {
             a.tint_push = None;
             if !a.active {
+                continue;
+            }
+            // The clip-fraction fade is the second pool-resident kernel: one
+            // multiply-accumulate against the cadence byte, and the retire bit
+            // when the 12-bit accumulator fills. Its actors are the clones the
+            // field VM's op `0x4C` sub-1 sub-op `0x14` spawns
+            // (`crate::field_actor_clone`), and the end-of-pass retire below is
+            // what collects them.
+            // REF: FUN_801D820C
+            if a.handler.kernel() == crate::actor_handler::HandlerKernel::ClipFade {
+                vm::actor_tick::clip_fraction_step(&mut a.physics, frame_delta);
                 continue;
             }
             if !a.handler.kernel().runs_in_actor_loop() {

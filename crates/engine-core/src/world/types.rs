@@ -695,6 +695,17 @@ pub struct Actor {
     /// carries the nominal addresses again. `None` for non-monster actors.
     pub battle_tex_slot: Option<u8>,
 
+    /// `+0x74` - the actor's **modulation colour**, when one was installed.
+    ///
+    /// Retail keeps a packed word here and the sprite / widget family reads
+    /// its low 24 bits as RGB (`FUN_801F7A9C` draws from it, `FUN_801F8004`
+    /// writes it). The engine stores the three lanes the writer produced.
+    /// `None` is an actor nothing has tinted, which draws unmodulated.
+    ///
+    /// Written today by the field VM's actor clone
+    /// ([`World::spawn_actor_clone`], retail `FUN_801D835C`).
+    pub modulation_rgb: Option<[u8; 3]>,
+
     /// Index into `SceneResources::tmds` for this actor's bound mesh.
     /// `None` means no TMD is bound - the actor has no visible 3D model.
     /// Set via [`World::set_actor_tmd_binding`].
