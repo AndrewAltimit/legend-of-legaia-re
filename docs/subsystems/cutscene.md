@@ -1363,15 +1363,18 @@ label, not a separate function) ramps the **effect-layer global colour** (neutra
 the operand RGB over the trailing word's frame count. The opening timeline drives it in the crawl
 gaps (`34 05 00 00 00 D2 00` = to black over 210 frames, `34 01 FF FF FF 00 00` = instant
 neutral, `34 01 FF FF FF 78 00` = up over 120 frames); the timeline's first op
-(`34 05 FF FF FF 00 00`, instant neutral) is a colour *reset*, not a white flash, and an all-zero
-colour is a ramp target, not a clear. **It is not a screen fade**: the retail cold-boot capture
+(`34 05 FF FF FF 00 00`, instant neutral) is a colour *reset*, not a white flash. An all-zero
+operand **is** a clear - the arm drops the effect pointer and never reaches the spawner, which
+corrects the earlier "ramp target, not a clear" reading. **It is not a screen fade**: the retail cold-boot capture
 holds the lit villager tableau across the whole span where the timeline's `34 01 00 00 00 28 00`
 → `34 05 FF FF FF 5A 00` pair would black a full-screen fade, falsifying the earlier
 "between-beat black fade" reading (and the older "white flash + 50% wash" model before it). The
 value feeds the effect layer - the creation-glow planes are the likely consumer, still an open
-thread. Engine model: the same ramp type in `World::presentation.effect_tint` (scene-local, kept out of
-`scene_screen_tint`). Disc-gated `opening_fade_from_black` pins both value models against the
-real `opdeene` bytecode.
+thread. Engine model: a pool colour tween per spawn, read back as this frame's
+`World::screen_tint_pushes` and kept out of `scene_screen_tint`. Disc-gated
+`opening_fade_from_black` pins it against the real `opdeene` bytecode, and
+`field_screen_effect_op34` pins the template and the push beats against the
+capture below.
 
 #### What the beat looks like, measured
 
@@ -1406,14 +1409,36 @@ Breakpoints on the spawner, the per-frame step and the draw
   neutral `0x80` on every vsync of the capture, so this beat is not an op
   `0x4C 0x12` fade at all.
 
-The engine's two representations are
-[`World::presentation.effect_tint`](../../crates/engine-core/src/fade.rs), a
-float factor the renderers already read, and the
+The port used to carry the beat twice - a float `effect_tint` ramp beside the
 [`ScreenTintPush`](../../crates/engine-core/src/field_actor_kernels.rs) triples
-[`step_colour_tween`] emits into `World::screen_tint_pushes`. The measured
-beat is a `(kind, blend, packed)` triple per frame, which is the push's shape
-exactly - `kind` and `blend` are live selectors here, not constants a scalar
-factor could stand in for.
+[`step_colour_tween`] emits - with nothing reading either. The measured beat is
+a `(kind, blend, packed)` triple per frame, which is the push's shape exactly,
+so the push is the surviving model: the op seats its tween through
+`World::spawn_colour_tween`, `World::tick_handler_actors` steps it, and
+`World::screen_tint_pushes` is the one read. `kind` and `blend` are live
+selectors here, not constants a scalar factor could stand in for.
+
+##### The arm is a pair, and the sub-op byte carries both selectors
+
+Reading `0x801DFCD4..0x801DFEF8` off the field overlay, one instruction does
+up to two spawns:
+
+1. If `_DAT_8007B62C` names a live effect actor, retire it (`+0x10 |= 8`) and
+   spawn a **walk-out** whose start RGB is the *previous* target
+   (`_DAT_8007BCCD/CE/CF`, read before they are overwritten), end RGB black,
+   and hold **1** - one frame, then it retires itself.
+2. Recompute the two selectors from the sub-op byte: the template's `+0x00`
+   blend word (`_DAT_8007BCE0`) is `(op0 & 1) != 0 ? 2 : 1`, and the
+   spawner's `a1` push kind (`_DAT_8007BCCC`) is `8` when `op0 & 2`, else `0`
+   when `op0 & 4`, else `2`. Latch the operand RGB as the new target.
+3. An **all-zero target clears the effect**: retail stores zero into
+   `_DAT_8007B62C` and leaves without spawning. It is not a ramp to black.
+4. Otherwise spawn the **walk-in**, black up to the target, hold `-1`.
+
+One conditional touches the duration: a pure-white target under blend `2`
+loses an eighth (`sra v0,s1,3` / `subu s1,s1,v0` at `0x801DFE60`), which is
+why the captured template reads `57` where the instruction's own word is
+`0x41`.
 
 [`step_colour_tween`]: ../../crates/engine-core/src/field_actor_kernels.rs
 

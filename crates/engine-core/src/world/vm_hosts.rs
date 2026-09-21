@@ -1790,35 +1790,81 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn op34_sub0_color_intensity_setup(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
-        // Op 0x34 sub-0 = the EFFECT-layer global colour (`FUN_801E1FB0`):
-        // ramp toward the operand RGB (neutral 0xFF) over `intensity` frames.
-        // The opening timeline drives it in the crawl gaps (`34 05 00 00 00
-        // D2 00` = to black over 210 frames, `34 01 FF FF FF 00 00` =
-        // instant neutral). The value ramps are modelled faithfully, but
-        // this is NOT a whole-screen fade: the retail cold-boot capture
-        // holds the lit villager tableau across the span where a screen
-        // fade would run black, so the colour feeds the effect layer (the
-        // creation-glow planes - consumer still an open thread) and is kept
-        // out of `World::scene_screen_tint`. All-zero RGB is a ramp target,
-        // not a clear.
-        let target = [
-            rgb[0] as f32 / 255.0,
-            rgb[1] as f32 / 255.0,
-            rgb[2] as f32 / 255.0,
-        ];
-        let frames = intensity.max(0) as u16;
-        let current = self
-            .world
-            .presentation
-            .effect_tint
-            .as_ref()
-            .map(|t| t.factor());
-        self.world.presentation.effect_tint = Some(crate::fade::SceneTintRamp::to_target(
-            current, target, frames,
-        ));
+        // Op `0x34` sub-0 is the **screen-effect colour tween**, and it is a
+        // walk-out / walk-in pair rather than a value ramp. Reading the arm
+        // at `0x801DFCD4..0x801DFEF8` off the field overlay:
+        //
+        // 1. If `_DAT_8007B62C` names a live effect actor, retire it
+        //    (`+0x10 |= 8`) and spawn a tween that runs from the *previous*
+        //    target colour down to black with a **one**-frame hold, using
+        //    the blend and kind selectors as they stood.
+        // 2. Recompute both selectors from the sub-op byte and latch the new
+        //    target RGB into `_DAT_8007BCCD/CE/CF`.
+        // 3. An all-zero target **clears** the effect: retail stores zero
+        //    into `_DAT_8007B62C` and leaves without spawning anything.
+        // 4. Otherwise spawn the walk-in tween, black -> target, hold `-1`.
+        //
+        // REF: FUN_801DE2B0 (the spawner, ported at
+        // `crate::field_actor_kernels::tween_from_fade_template`)
+        use crate::fade::FadeTemplate;
+        use crate::field_actor_kernels::{ACTOR_FLAG_YIELD, tween_from_fade_template};
+
+        if let Some(slot) = self.world.presentation.effect_tween_slot.take() {
+            if let Some(a) = self.world.actors.get_mut(slot) {
+                a.physics.status_flags |= ACTOR_FLAG_YIELD;
+            }
+            let walk_out = FadeTemplate {
+                kind: self.world.presentation.effect_blend,
+                duration: intensity,
+                start_rgb: self.world.presentation.effect_target_rgb,
+                end_rgb: [0; 3],
+                mode: [0, 1, 0],
+            };
+            let kind = self.world.presentation.effect_kind;
+            self.world
+                .spawn_colour_tween(tween_from_fade_template(&walk_out, kind));
+        }
+
+        let blend: i16 = if op0 & 1 != 0 { 2 } else { 1 };
+        let kind: i16 = if op0 & 2 != 0 {
+            8
+        } else if op0 & 4 != 0 {
+            0
+        } else {
+            2
+        };
+        let target = [i16::from(rgb[0]), i16::from(rgb[1]), i16::from(rgb[2])];
+        self.world.presentation.effect_blend = blend;
+        self.world.presentation.effect_kind = kind;
+        self.world.presentation.effect_target_rgb = target;
+
         self.world
             .pending_field_events
             .push(FieldEvent::ColorFade { op0, rgb });
+
+        if target == [0; 3] {
+            return;
+        }
+
+        // The one conditional on the operand: a pure-white target under
+        // blend `2` shortens the ramp by an eighth (`sra v0,s1,3` /
+        // `subu s1,s1,v0` at `0x801DFE60`). The shipped `0x41`-frame
+        // instruction is what a capture sees as a 57-frame template.
+        let duration = if blend == 2 && target == [0xFF; 3] {
+            intensity - (intensity >> 3)
+        } else {
+            intensity
+        };
+        let walk_in = FadeTemplate {
+            kind: blend,
+            duration,
+            start_rgb: [0; 3],
+            end_rgb: target,
+            mode: [0, crate::field_actor_kernels::TWEEN_HOLD_FOREVER, 0],
+        };
+        self.world.presentation.effect_tween_slot = self
+            .world
+            .spawn_colour_tween(tween_from_fade_template(&walk_in, kind));
     }
 
     fn effect_anim_trigger(&mut self, ctx: &mut FieldCtx, arg: u8) {

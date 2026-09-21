@@ -1,19 +1,4 @@
-//! Disc-gated: the New-Game opening fades in from black, driven by real disc
-//! bytecode.
-//!
-//! Retail opens the prologue with a fade-from-black (cold-boot capture: the
-//! screen ramps up from black before the creation crawl begins). The fade is
-//! authored in every field scene's `P1[0]` entry script as the arrival arm of
-//! the `0x52F`/`0x530`/`0x531` scene-transition fade handshake:
-//! `4C 12 00 00 00 00 00` (global multiply tint -> black, instant) then
-//! `4C 12 80 80 80 44 00` (ramp to neutral `0x80` over 68 frames). New Game
-//! arms the handshake (`begin_new_game` sets sysflag `0x52F`, the boot-side
-//! stage), and `opdeene`'s entry script fires the arm through the field VM's
-//! `menu_ctrl_sub1` host hook into `World::presentation.tint`.
-//!
-//! Also pins the opening timeline's op-`0x34` sub-0 effect-layer colour ramps
-//! (e.g. `34 05 00 00 00 D2 00` = ramp to black over 210 frames) firing into
-//! `World::presentation.effect_tint` during the crawl. NB that value is NOT a screen fade
+//! `World::screen_tint_pushes` during the crawl. NB that value is NOT a screen fade
 //! (the retail capture holds the lit tableau across its black spans); the
 //! test pins the ramp value model only.
 //!
@@ -133,14 +118,17 @@ fn opdeene_timeline_fires_between_beat_black_fades() {
     let mut saw_recover = false;
     for _ in 0..4000u32 {
         let _ = host.tick();
+        // The op-0x34 effect is a pool colour tween now, so the observable
+        // is the frame's `FUN_80024EE4` push rather than a float factor.
+        // "Dark" is a push whose red lane sits below half.
         match host
             .world
-            .presentation
-            .effect_tint
-            .as_ref()
-            .map(|t| t.factor())
+            .screen_tint_pushes()
+            .iter()
+            .map(|p| (p.packed & 0xFF) as u8)
+            .max()
         {
-            Some(t) if t[0] < 0.5 => saw_dark = true,
+            Some(r) if r < 0x80 => saw_dark = true,
             _ => {
                 if saw_dark {
                     saw_recover = true;
@@ -156,7 +144,7 @@ fn opdeene_timeline_fires_between_beat_black_fades() {
     }
     assert!(
         saw_dark,
-        "the opening timeline's op-0x34 black fade darkens the effect tint below half"
+        "the opening timeline's op-0x34 walk-out pushes a colour below half"
     );
     assert!(
         saw_recover,

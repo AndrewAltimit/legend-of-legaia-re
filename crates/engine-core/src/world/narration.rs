@@ -153,13 +153,14 @@ impl World {
     /// creation crawl scrolls over the fade). `None` when no tint is active -
     /// the identity path, byte-identical to a build without this feature.
     ///
-    /// [`crate::World::effect_tint`] (op `0x34` sub-0) is deliberately NOT
-    /// composed in: the retail cold-boot capture holds the lit villager
-    /// tableau across the whole span where the opening timeline's
+    /// The op `0x34` sub-0 screen effect is deliberately NOT composed in:
+    /// the retail cold-boot capture holds the lit villager tableau across
+    /// the whole span where the opening timeline's
     /// `34 01 00 00 00 28 00` → `34 05 FF FF FF 5A 00` pair would black a
-    /// full-screen fade, which falsifies the "op 0x34 = screen fade" reading.
-    /// That op ramps the effect-layer colour (`FUN_801E1FB0`); its consumer
-    /// (the creation-glow effect planes) is a separate open thread.
+    /// full-screen fade, which falsifies the "op 0x34 = screen fade"
+    /// reading. That op spawns a colour tween whose per-frame
+    /// `FUN_80024EE4` push is its own layer - read it off
+    /// [`crate::world::World::screen_tint_pushes`].
     pub fn scene_screen_tint(&self) -> Option<[f32; 3]> {
         self.presentation.tint.as_ref().map(|t| t.factor())
     }

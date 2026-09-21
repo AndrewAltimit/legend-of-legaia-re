@@ -17,18 +17,27 @@ pub struct ScreenFxState {
     /// [`crate::world::World::tick`]; dropped when the ramp completes. Hosts draw an
     /// overlay from [`crate::fade::FadeState::rgb`] while this is `Some`.
     pub fade: Option<crate::fade::FadeState>,
-    /// Effect-layer global colour (op `0x34` sub-0, `FUN_801E1FB0`; neutral
-    /// operand `0xFF`, stored normalized). The opening timeline ramps it in
-    /// the crawl gaps (`34 05 00 00 00 D2 00` = to black over 210 frames,
-    /// `34 01 FF FF FF 00 00` = instant neutral). Stepped once per
-    /// [`crate::world::World::tick`]; dropped once it lands on the neutral identity.
-    /// **Not a screen fade**: the retail cold-boot capture holds the lit
-    /// villager tableau across the span where the timeline's black ramp
-    /// would blank a full-screen fade, so this value feeds the effect layer
-    /// (the creation-glow planes; consumer still an open thread) and stays
-    /// out of [`crate::world::World::scene_screen_tint`]. Scene-local: reset on scene
-    /// entry. Distinct from [`crate::world::ScreenFxState::fade`] (the battle escape ramp).
-    pub effect_tint: Option<crate::fade::SceneTintRamp>,
+    /// The live **screen-effect colour tween** the field VM's op `0x34`
+    /// sub-0 arm installs - the pool slot retail keeps in `_DAT_8007B62C`.
+    ///
+    /// The op is a walk-out/walk-in pair, not a value ramp: it retires
+    /// whatever slot this names, spawns a tween from the *previous* target
+    /// down to black with a one-frame hold, and then spawns the new one from
+    /// black up to its operand RGB with a `-1` hold. Both tweens emit
+    /// `FUN_80024EE4` pushes, which is the one representation of this
+    /// effect - see [`crate::world::World::screen_tint_pushes`].
+    pub effect_tween_slot: Option<usize>,
+    /// The target RGB the last op `0x34` sub-0 latched - retail's
+    /// `_DAT_8007BCCD/CE/CF`, read by the *next* instruction as the walk-out
+    /// tween's start colour.
+    pub effect_target_rgb: [i16; 3],
+    /// Template `[0]`, the tween's **blend** - retail `_DAT_8007BCE0`,
+    /// written `(op0 & 1) != 0 ? 2 : 1` at `0x801DFD7C..0x801DFD8C`.
+    pub effect_blend: i16,
+    /// The spawner's `a1`, the push's screen-effect **kind** - retail
+    /// `_DAT_8007BCCC`, written `8` when `op0 & 2`, else `0` when `op0 & 4`,
+    /// else `2` (`0x801DFD90..0x801DFDBC`).
+    pub effect_kind: i16,
     /// Global multiply screen tint (op `0x4C 0x12` → `DAT_8007BCB8/B9/BA`,
     /// neutral operand `0x80`, stored normalized; ramp via `FUN_8003C5F0`).
     /// The scene-entry fade-in from black - every field scene `P1[0]`'s
@@ -63,7 +72,10 @@ impl ScreenFxState {
         Self {
             pending_fade: None,
             fade: None,
-            effect_tint: None,
+            effect_tween_slot: None,
+            effect_target_rgb: [0; 3],
+            effect_blend: 0,
+            effect_kind: 0,
             tint: None,
             fx: Default::default(),
             fx_frame: Default::default(),

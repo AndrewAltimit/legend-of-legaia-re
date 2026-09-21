@@ -1119,20 +1119,17 @@ impl World {
         {
             self.presentation.fade = None;
         }
-        // Step the two scripted scene-tint channels (op 0x34 sub-0 effect
-        // tint + op 0x4C 0x12 global screen tint). A ramp that lands on a
-        // non-neutral target HOLDS there (a screen faded to black stays
-        // black until a new op replaces it); one that lands on the neutral
-        // identity is dropped so the render path returns to untouched.
-        for tint in [
-            &mut self.presentation.effect_tint,
-            &mut self.presentation.tint,
-        ] {
-            if let Some(t) = tint {
-                t.step();
-                if t.is_identity() {
-                    *tint = None;
-                }
+        // Step the scripted global multiply tint (op `0x4C 0x12`). A ramp
+        // that lands on a non-neutral target HOLDS there (a screen faded to
+        // black stays black until a new op replaces it); one that lands on
+        // the neutral identity is dropped so the render path returns to
+        // untouched. The op-`0x34` sub-0 screen effect is **not** a second
+        // channel here - it is a pool colour tween emitting
+        // `FUN_80024EE4` pushes, stepped by `tick_handler_actors`.
+        if let Some(t) = self.presentation.tint.as_mut() {
+            t.step();
+            if t.is_identity() {
+                self.presentation.tint = None;
             }
         }
         // Consume a pending FMV transition the field VM signalled last frame
