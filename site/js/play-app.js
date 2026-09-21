@@ -1403,6 +1403,15 @@ void main() {
          * it over the frame it appears. */
         let scene = '';
         try { scene = rt.play_menu_take_load_scene(); } catch (e) {}
+        if (scene) {
+          /* Hand the score from whatever was playing (the title theme, on a
+           * load out of the boot chooser) to the save's own op-0x35 track -
+           * the native window's `bgm.stop(); restore_field_bgm();` pair. The
+           * field VM does not re-emit a start for music that was already
+           * playing when the save was written, so without this the title
+           * theme simply keeps going under the loaded scene. */
+          try { rt.play_bgm_title_handoff(); } catch (e) { /* audio down */ }
+        }
         if (scene && typeof this.opts.onCardLoad === 'function') {
           this.opts.onCardLoad(scene);
         }
@@ -2578,6 +2587,7 @@ void main() {
         try { mode = rt.play_render_nclip_mode(); } catch (_) { mode = 0; }
         this.renderer.setNclipCull(mode);
       }
+      this._applySceneClear(rt);
       this._draws = draws;
       /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw
        * once per eye with the XR view matrices. */
@@ -2841,9 +2851,30 @@ void main() {
         }
       } catch (e) { /* keep the previous camera */ }
 
+      this._applySceneClear(rt);
       this._draws = draws;
       if (!skipDraw) this.renderer.renderAssembled(draws, this._ext, this.cam);
       return true;
+    }
+
+    /* The clear colour is part of what a battle looks like, not a renderer
+     * preference: the stage dome is a FRONT HALF, so the band it leaves open
+     * above the horizon is what the player reads as sky. The engine picks it
+     * (`battle_stage_clear::scene_clear`, the same selector the native window
+     * renders with) and this page only applies it.
+     *
+     * Called on BOTH draw paths, not only the battle one: the renderer holds
+     * the colour until something changes it, so setting it on battle entry
+     * alone would leave the field drawing on battle sky for the rest of the
+     * session. Guarded against a cached WASM with no such export, which keeps
+     * the renderer's default. */
+    _applySceneClear(rt) {
+      try {
+        if (typeof rt.play_scene_clear_color === 'function') {
+          const c = rt.play_scene_clear_color();
+          if (c && c.length === 4) this.renderer.clearColor = Array.from(c);
+        }
+      } catch (e) { /* keep the default clear */ }
     }
 
     /* Battle effect layer: append this frame's FX draws to `draws`.
