@@ -1867,6 +1867,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         });
     }
 
+    // Sub-op 0x14: the actor clone. The whole body is
+    // `World::spawn_actor_clone` (retail `FUN_801D835C` plus the arm's own
+    // `FUN_8003C83C` resolve); the clone then ticks itself out through
+    // `World::tick_handler_actors`.
+    // REF: FUN_801D835C
+    fn menu_ctrl_clone_actor(&mut self, src_id: u8, tint_rgb: u32, fade_rate: i16) {
+        self.world.spawn_actor_clone(src_id, tint_rgb, fade_rate);
+    }
+
     fn menu_refresh(&mut self) {
         self.world
             .pending_field_events
