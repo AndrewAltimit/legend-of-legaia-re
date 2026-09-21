@@ -943,8 +943,9 @@ fn placement_yield_step_rejects_far_walk_to_tile() {
 
 /// The retail shape of the sparring arm: dialogue bytes, a wait, three
 /// system SETs, then the `3E FF <row>` entry - the SET -> entry pairing is
-/// what [`walk_battle_entry_arms`] keys on, so the `0x19` write pairs with
-/// row 4 although the linear walk is still resynchronising after the text.
+/// what [`walk_battle_entry_arms`] keys on. The dialogue is one `0x1F` text
+/// segment to the walk, so the SET behind it is a clean site too; the
+/// pairing does not depend on that.
 #[test]
 fn battle_entry_arm_pairs_the_flag_set_with_the_entry_row() {
     let mut script = vec![0x1F];
@@ -966,13 +967,16 @@ fn battle_entry_arm_pairs_the_flag_set_with_the_entry_row() {
         arms.iter().all(|a| a.partition == 1 && a.record == 1),
         "every arm is in the placement record: {arms:?}"
     );
-    // The gflag census reports the same site as not-yet-coherent, which is
-    // why the arm census cannot key on it.
+    // The gflag census reports the same site, and - the text segment being
+    // one decoded stride rather than a run the walk resyncs through - as a
+    // clean one. (Before the disassembler decoded bare `0x1F` segments the
+    // site sat inside the resync window and read as non-clean, which is why
+    // the arm census keys on the SET -> entry pairing instead of this bit.)
     let site = walk_partition_gflag_sites(&mf, &man, 1)
         .into_iter()
         .find(|s| s.bank == FlagBank::System && s.flag == 0x19)
         .expect("the census still lists the SET");
-    assert!(!site.clean, "the SET sits inside the resync window");
+    assert!(site.clean, "the SET follows a decoded text segment");
 }
 
 /// A SET with no battle entry behind it, one whose entry lies past the

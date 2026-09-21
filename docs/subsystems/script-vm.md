@@ -1302,7 +1302,10 @@ either sweep marked is invisible to the open's find.
 Ports: `engine-core::World::{find_actor_by_handler, retire_actors_by_handler}`,
 over the handler identity `engine-core::actor_handler::ActorHandler`.
 
-**ASCII dialogue aliases survive the `clean` tag.** The US build's dialogue is plain ASCII, and the wide
+**ASCII text aliases survive the `clean` tag - outside a framed segment.** A `0x1F <text> 0x00` dialogue
+line is one decoded stride to the walk ([above](#text-segments-and-pickers-are-strides-of-the-stream)), so
+its letters mint nothing; what follows applies to text the walk *lands in* - unframed prose, a data table,
+a record the walk entered mid-op. The US build's text is plain ASCII, and the wide
 flag ops land exactly on the letter ranges: `Set` leads `0x53..0x57` = `S..W`, `Clear` leads `0x61..0x67` =
 `a..g`, `Test` leads `0x71..0x77` = `q..w`, each followed by one operand byte. So common English bigrams
 mint flag ops - `ta` = `Test 0x461`, `s,` = `Test 0x32C`, `Sp` = `Set 0x370` - and because every such
