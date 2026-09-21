@@ -1193,8 +1193,15 @@ Two things the port keeps deliberately unshared, and they are not drift:
   the export reports the miss rather than keying static row `0` by truncation -
   the width trap the play page's `u8` scheduler was caught by once already.
 
-The in-world dome on the **play** page was never the host this gap named: it
-sits beside a live SPU (`play_sfx`) already.
+The in-world dome on the **play** page was named by the same row and needed
+the same thing. Sitting beside a live SPU is not the same as having a door
+into it: `play_sfx` keyed cues by id and nothing else, so that host's tally
+ran its ramp and drew its rows in silence. It has `key_on_voice_attr` now,
+resolving the attr set's VAB id as an SFX slot with the scene BGM bank behind
+it - the native director's own two-step. All three hosts narrow the cue's
+eight arguments through one kernel (`VoiceAttr::from_cue_words`), because the
+voice-slot clamp is not cosmetic: a slot at or above `NUM_VOICES` keys
+nothing and reports success.
 
 ### Scripted mesh re-bind (op `0x0E`), and what it took
 
@@ -1776,8 +1783,14 @@ had no consumer, which reads in a diff as a fully wired feature.
 
 Not wiring: a surface that exists on one host only, because the other has
 nothing to draw it with. These are the project-sized ones - the world-map
-entity and player-marker line overlay, the retail dance HUD frame on the play
-page, the Baka cabinet's digit strips and payout sheet.
+entity and player-marker line overlay, the Baka cabinet's digit strips and
+payout sheet. The retail dance HUD frame was on this list and is not any
+more, and what took it off was not a new uploader: the frame is text, and
+every decision in it (digits, `Lv.` label, which beat cells) had simply been
+spelled out inside one host's draw block. Moving the resolution into
+`DanceGame::hud_frame_rows` left each host three lines of layout. Before
+calling a one-host surface a project, check whether the other host is missing
+the *paint* or only the *decision*.
 
 ### A host-side handle the world does not hold
 
@@ -1790,9 +1803,10 @@ next fight hands the same seat out twice.
 ## Two shapes a "the page is missing it" reading gets backwards
 
 A side-by-side read produces sentences of the form "the native window does X
-and the page does not". Two live cases were the other way round, and both
-were only visible from the *event* or the *sign*, never from the two call
-sites.
+and the page does not". Several live cases were the other way round, and each
+was only visible from the *event*, the *sign* or the *sink* - never from the
+two call sites. Two are written out below; three more are in
+[what a one-host feature can also mean](#what-a-one-host-feature-can-also-mean).
 
 ### The feature was dead on both hosts
 
@@ -1827,6 +1841,136 @@ field-only so a drag on the overworld cannot rewrite the locomotion compass).
 A host-side hand-off between two representations of one quantity is worth
 reading as a defect report rather than as parity work: the fix is usually to
 delete the second representation.
+
+## What a one-host feature can also mean
+
+Three more rows of a side-by-side audit turned out not to be page gaps. The
+pattern each one breaks is worth naming, because all three read identically
+from the two call sites.
+
+### The native was the host projecting through the wrong camera
+
+The move-FX streak and the weapon trail were listed as "native projects them
+through the fallback orbit camera, the page through the phase camera". True,
+and the native is the side that was wrong: its *scene* pass already chose
+between `battle_dome_camera_mvp` (a stage-dome fight) and `battle_camera_mvp`
+(an auto-framed orbit for a stage-less one), while both FX passes called the
+orbit unconditionally. In every scripted fight that projected the swing ribbon
+through one framing and the swordsman holding it through another.
+
+`battle_scene_mvp` is the one selector now, and all three native passes take
+it. A trail is attached to a body; where the body's camera is chosen is where
+the trail's has to be chosen too - and a second call site that "happens to
+agree today" is the shape to look for, not a second value.
+
+The same row had a sibling: the native gated its phase-camera *tick* on
+`battle_stage_mesh.is_some()`. That puts a host render resource in the arming
+condition of a simulation kernel, so the two hosts stepped the same script on
+different frames and a fight whose stage failed to build ran with no camera
+state at all. The gate is `world.mode` on both hosts now; which matrix a
+stage-less battle renders with stays a draw-side question.
+
+### The sink was already dead
+
+The dance HUD's *quad* half reads as a native-only layer, and the native's own
+materialiser opens with `let Some(src) = solid_src else { return Vec::new() }`
+- and the one call site passes `None`, because no host stages the dance 4bpp
+page into an atlas source. So the layer draws nothing on the host that has it.
+Wiring it into the second host would have produced a second empty list and a
+green row.
+
+The blocking capability is the art, not the draw: a dance sprite page resident
+in a host atlas, with a solid-texel rect to point `solid_src` at. Until that
+exists this is one disclosure, not two.
+
+The Muscle Dome hub has the same shape one level up. `HUB_TITLE_ART` and
+`HubScreen::opponent_card()` read as minigames-page-only features, and both
+sit behind generic screen-index accessors that page's draw loop never selects:
+it calls the quad export with screens 0, 2, 3 and 4 and the envelope export
+with 0, 1 and 3, so the title art (quad screen 1) and the opponent card
+(envelope screen 2) are reachable from a test and from nothing else. Adding
+them to a second host would have added a second unreached arm. A one-host
+*export* is not a one-host *screen* - check which arguments the draw loop
+actually passes.
+
+### The two hosts were running different engines
+
+`catch_hud_draws` takes a `depth`, and two of three hosts passed a literal `0`
+- which reads as a shortcut until you notice that those two drive a
+`FishingSession` and the third drives a `PondSession`. Both model the same
+minigame; only the second carried retail's line depth `DAT_801d9298`. The
+"missing" value had nowhere to come from.
+
+`FishingFight` carries it now, sunk by the hooked species' own `+0x10` factor
+(`pull * sink_factor / 150`, the run-state term) and paid back by the reel at
+the two rates the pond model already used, clamped to retail's `[0, 0x1000]`.
+The rest of that split is unfixed and is a real one: see
+[below](#one-minigame-two-session-types).
+
+## One minigame, two session types
+
+Fishing is modelled twice in `engine-core`. `FishingSession` (native window +
+browser play page) sequences cast -> fight -> done over a deterministic pull;
+`PondSession` (minigames page) runs the full retail loop - shore idle, cast
+wind-up, lure flight, the pre-hook band roll, the fish behaviour sub-state
+machine off `BiosRand`, line record and depth.
+
+Two consequences a gate cannot see, because both hosts are internally
+consistent:
+
+- **A phase one engine has and the other does not is not drift.** The
+  minigames page wraps its catch-HUD block in `phase() != PondPhase::Idle`;
+  the other two hosts do not, and should not, because `FishingPhase` has no
+  shore-idle state - a `FishingSession` exists only while a cast is in
+  progress. The hook gate retail actually applies (`DAT_801d91b4`) is the
+  `gauges_visible` field, and all three hosts set it.
+- **`World::minigames.fishing_casts` is written by one host** (the native
+  lure's walk-grid drift reads it) and `PondSession::casts` by another. They
+  are different counters with the same meaning.
+
+Blocking capability: one session type. `PondSession` is the retail-shaped one,
+so the merge direction is `FishingSession`'s hosts adopting it - which means a
+venue/lure model and an RNG on the play page's fishing entry, and a migration
+for the two-host `fishing_*` world fields the save block already carries.
+
+## The Baka cabinet runs a ladder on one host only
+
+`legaia_engine_core::baka_fighter::LadderRun` - the rung ladder, the NEXT GAME
+/ PAY OUT choice and the coin bank - is reached from the standalone minigames
+page alone. The native window and the browser play page run a bare `BakaFight`
+with no ladder wrapper, which is why neither draws the payout sheet, and why
+the native's digit-strip helpers have no run to print.
+
+This is not a missing draw call: the two other hosts enter the duel from a
+**field warp** (`World::tick_baka_fighter` on the scene the player walked
+into), and the ladder is a cabinet session that outlives one duel. Wiring it
+means giving the world a ladder that survives the warp back, and deciding what
+a mid-ladder save does.
+
+Blocking capability: a `LadderRun` on `World::minigames` with a save
+representation, plus the warp-out arm that settles a rung instead of ending
+the session. The cue queue is *not* part of this and was fixed: the minigames
+page never drained `BakaFight::cues`, so its duel was silent while the queue
+grew for the length of a run.
+
+## The fishing point-exchange sub-screen is a mode on one host
+
+`World::minigames.fishing_exchange` is a live `Option<PrizeExchange>` with its
+own cursor: the native window opens it, draws it as a sub-screen over the
+fishing HUD, and closes it. Both browser hosts answer one-shot JSON snapshots
+(`play_fishing_prizes_json`, `fishing_exchange_json`) that page-side JS lays
+out itself, and the play page opens the world sub-mode only transiently,
+inside a single buy call.
+
+The rows themselves are shared and correct - including the one-time latch,
+which each host used to re-derive its own way and which is
+`PrizeExchange::is_latched` now. What differs is that one host holds the
+sub-mode open as a rendered mode and two do not.
+
+Blocking capability: a page-side cursor surface that drives the world's own
+`PrizeExchange` cursor (arrow keys into `fishing_exchange`, not into a JS
+list), so the sub-screen is one session with one cursor rather than a mode on
+one host and a query on two.
 
 ## Adding coverage
 

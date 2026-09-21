@@ -494,12 +494,66 @@ NATIVE_REDRAW_PASSES = (
 )
 NATIVE_CAMERA_MOD = "crates/engine-shell/src/bin/legaia-engine/window/camera.rs"
 WEB_PLAY_CAMERA = "crates/web-viewer/src/play_camera.rs"
+NATIVE_BATTLE = "crates/engine-shell/src/bin/legaia-engine/window/battle.rs"
+WEB_PLAY_ARENA = "crates/web-viewer/src/play_minigame_arena.rs"
+WEB_PLAY_FISHING = "crates/web-viewer/src/play_fishing.rs"
 WEB_FIELD_SCENE = "crates/web-viewer/src/field_scene.rs"
 NATIVE_TITLE_SAVE = (
     "crates/engine-shell/src/bin/legaia-engine/window/title_save_draws.rs"
 )
 
 SIM_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "battle-intro style inputs, native vs play page - the style "
+        "selector reads three retail globals (`DAT_8007BD60`, `DAT_8007BD0C`, "
+        "`DAT_80084540`) and not one of them is a host choice: they are "
+        "properties of the rolled formation row and the loaded scene. Both "
+        "hosts resolved them inline and disagreed on `formation_slot0`, which "
+        "is the input EVERY id-keyed style override keys on - the page went "
+        "straight from the formation-table lookup to the bare row index, with "
+        "no live-monster-table leg, so an in-battle re-arm fed the selector a "
+        "row index and drew the default style. Both sites must read "
+        "`SceneHost::battle_intro_style_inputs`",
+        "sites": {
+            "native": (NATIVE_BATTLE, "arm_battle_intro"),
+            "web": (WEB_PLAY_BATTLE, "arm_battle_intro"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["battle_intro_style_inputs"],
+    },
+    {
+        "what": "dance HUD frame rows, native vs play page - which rows the "
+        "frame carries, at which 320x240 seats, in which pen, is the engine's "
+        "decision (`DanceGame::hud_frame_rows`, the presentation half of "
+        "`FUN_801d231c`): digit suppression, the `Lv.` label and the rival "
+        "track's chart sampling are all retail's, not a host's. The whole "
+        "resolution was written out longhand inside the native window's dance "
+        "block, so the play page - same run, same `DanceGame` - drew a plain "
+        "status line and no frame at all. Both sites must read the rows",
+        "sites": {
+            "native": (NATIVE_HUD, "build_hud"),
+            "web": (WEB_PLAY_ARENA, "dance_status_draws"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["hud_frame_rows"],
+    },
+    {
+        "what": "fishing prize one-time latch, native vs play page - "
+        "`is_available` folds three independent refusals together (price, "
+        "owned cap, one-time latch), so a host that reads it as the latch "
+        "labels every unaffordable one-time prize on a fresh save as already "
+        "taken. Each host answered the latch its own way - one re-tested "
+        "availability with the other two gates forced open, one shifted the "
+        "purchased mask by hand, and the play page never asked at all and "
+        "exposed only the folded bool. Both sites must read "
+        "`PrizeExchange::is_latched`",
+        "sites": {
+            "native": (NATIVE_HUD, "build_hud"),
+            "web": (WEB_PLAY_FISHING, "play_fishing_prizes_json"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["is_latched"],
+    },
     {
         "what": "camera-occlusion fade focus + arming, native vs play page - "
         "the fade has two halves that must name the SAME world point: the "
