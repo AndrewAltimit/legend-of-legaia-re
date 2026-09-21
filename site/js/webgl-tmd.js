@@ -115,7 +115,9 @@ class TmdRenderer {
     this.locGrade   = gl.getUniformLocation(this.program, 'u_grade');
     this.locCue     = gl.getUniformLocation(this.program, 'u_cue');
     this.locCueFar  = gl.getUniformLocation(this.program, 'u_cue_far');
+    this.locPalette = gl.getUniformLocation(this.program, 'u_palette');
     this.locPairFront = gl.getUniformLocation(this.program, 'u_pair_front');
+    this.locNclipCull = gl.getUniformLocation(this.program, 'u_nclip_cull');
     this.locOcclFocus  = gl.getUniformLocation(this.program, 'u_occl_focus');
     this.locOcclParams = gl.getUniformLocation(this.program, 'u_occl_params');
     this.locOcclAllow  = gl.getUniformLocation(this.program, 'u_occl_allow');
@@ -123,6 +125,14 @@ class TmdRenderer {
      * page (identity / off by default - no other page is affected). */
     this.gradeParams = { rgb: null, strength: 0 };
     this.cueParams = { far: null, nearZ: 0, farZ: 0, maxIr0: 0 };
+    /* Prologue palette-collapse grade (the native renderer's
+     * `set_palette_grade`): `mul` = the op-`4C 12` screen tint, `on` = the
+     * mode flag. Off by default, so every other page draws unchanged. */
+    this.paletteParams = { mul: null, on: false };
+    /* Retail NCLIP winding rejection mode (the native renderer's
+     * `set_backface_cull`), staged per frame by the play page. 0 = both
+     * sides, the default every other page keeps. */
+    this.nclipCull = 0;
     /* Camera-occlusion fade focus: the player's WORLD-space body centre
      * (draw frame, i.e. the Y-flipped coords every placement uses), staged
      * per frame by the play page via setOcclusionFocus / cleared with
@@ -396,6 +406,29 @@ class TmdRenderer {
       : { far: null, nearZ: 0, farZ: 0, maxIr0: 0 };
   }
 
+  /* Prologue PALETTE-COLLAPSE grade: `mul` = the op-`4C 12` global screen
+   * tint in 0..1 (or null for none), `on` = whether the collapse law runs.
+   * The twin of the native renderer's `set_palette_grade`, and the page's
+   * half of the native window's two-call staging match: with a prologue
+   * grade live, `setColorGrade` carries the GOLD coefficients for the packet
+   * collapse and this carries the tint; without one it stays off and the
+   * tint rides `setColorGrade` as an ordinary multiply. Identity when off,
+   * which is the default on every page. */
+  setPaletteGrade(mul, on) {
+    this.paletteParams = on
+      ? { mul: (mul || [1, 1, 1]).slice(0, 3), on: true }
+      : { mul: null, on: false };
+  }
+
+  /* Retail GTE NCLIP winding rejection for the assembled scene pass: `mode`
+   * is the native renderer's `set_backface_cull` word (0 = both sides,
+   * 2 = reject the retail back faces). The play page stages it from the
+   * shared `camera_view::nclip_cull_mode` kernel; every other page leaves
+   * it at 0. */
+  setNclipCull(mode) {
+    this.nclipCull = (mode | 0);
+  }
+
   /* Set the context-global `a_flat_rgba` constant that a draw with no bound
    * colour stream reads.
    *
@@ -419,6 +452,11 @@ class TmdRenderer {
     const g = this.gradeParams;
     if (g.rgb) gl.uniform4f(this.locGrade, g.rgb[0], g.rgb[1], g.rgb[2], g.strength);
     else gl.uniform4f(this.locGrade, 1, 1, 1, 0);
+    if (this.locPalette) {
+      const p = this.paletteParams;
+      if (p && p.on) gl.uniform4f(this.locPalette, p.mul[0], p.mul[1], p.mul[2], 1);
+      else gl.uniform4f(this.locPalette, 1, 1, 1, 0);
+    }
     this._setCue(this.cueParams);
   }
 
@@ -1076,6 +1114,9 @@ class TmdRenderer {
      * Y flip (two reflections), which inverts gl_FrontFacing - a pair's
      * visible copy is the back-facing one here (see u_pair_front). */
     gl.uniform1i(this.locPairFront, 0);
+    /* Retail NCLIP winding rejection (0 unless the play page staged a
+     * cutscene-camera frame this tick). */
+    if (this.locNclipCull) gl.uniform1i(this.locNclipCull, this.nclipCull);
     /* Prologue grade + depth cue (identity / off unless the play page
      * staged them this frame). */
     this._applyGradeCue();

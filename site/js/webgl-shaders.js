@@ -285,6 +285,18 @@ uniform vec4 u_grade;
  * * max_ir0 over the perspective view depth. REF: FUN_8002735C */
 uniform vec4 u_cue;
 uniform vec3 u_cue_far;   /* DPCS far colour, linear 0..1 */
+/* Prologue PALETTE-COLLAPSE grade: rgb = the op-4C 12 global screen tint,
+ * w = enable (0 = off, the GL default, so every existing draw is untouched).
+ * The twin of the native renderer's set_palette_grade
+ * (crates/engine-render/src/shaders.rs palette_law_word /
+ * palette_collapse_prim) - the gold grade's true altitude: retail rewrites
+ * the scene's uploaded CLUT entries and TMD packet words at load, so the law
+ * applies per decoded texel and per packet colour rather than as a pixel
+ * multiply. While it is on, u_grade.rgb carries the gold coefficients for
+ * the packet collapse (not a multiply), the screen tint is the whole-pixel
+ * term, and the view-depth cue ramp is inert - every render node holds
+ * IR0 = 0 across the retail prologue. */
+uniform vec4 u_palette;
 /* Double-sided prim pairs (CBA bit 15, set by the Rust mesh post-pass
  * legaia_tmd::mesh::mark_double_sided_pairs): two coincident copies of one
  * surface with opposite winding. Retail's NCLIP rasterises only the
@@ -295,6 +307,17 @@ uniform vec3 u_cue_far;   /* DPCS far colour, linear 0..1 */
  * front (1); the assembled views add the retail screen-X mirror on top (two
  * reflections), which inverts gl_FrontFacing, so they keep back (0). */
 uniform int u_pair_front;
+/* Retail GTE **NCLIP** winding rejection, as a fragment test. 0 (the GL
+ * default) draws both sides - the engine's rasterizer pipelines do the same,
+ * because winding parity differs per render frame. 2 discards the fragments
+ * whose gl_FrontFacing matches the parity that carries retail's BACK faces on
+ * this page's assembled view chain - the same u_pair_front = 0 parity the
+ * double-sided-pair rule above encodes, and the same predicate the native
+ * renderer's set_backface_cull(2) applies. Staged only while the in-engine
+ * cutscene camera owns the frame (camera_view::nclip_cull_mode): the
+ * opdeene prologue's tableau shot sits INSIDE the scene's closed cave-wall
+ * backdrop mesh and NCLIP is what discards its near wall. */
+uniform int u_nclip_cull;
 /* Camera-occlusion fade (see-through walls enhancement, NON-RETAIL - the
  * GLSL twin of the native scene shaders' occl_keep/occl_bayer, see
  * crates/engine-render/src/occlusion_fade.rs). xy = the player's projected
@@ -347,6 +370,38 @@ float cue_ir0(float z) {
 /* Prologue grade multiply on the near term (identity at strength 0). */
 vec3 grade_near(vec3 c) {
   return mix(c, c * u_grade.rgb, u_grade.a);
+}
+
+/* The prologue grade's ASSET half, on the raw BGR555 texel word: retail
+ * rewrote every uploaded CLUT entry from (r, g, b) to
+ *     L = max(r, g, b);  (L, max(L - 1, 0), L >> 1)
+ * in 5-bit space with the STP bit preserved. A 4/8bpp texel IS a palette
+ * entry, so applying the law to the decoded word is exactly equivalent - and
+ * it leaves 0 at 0, so the transparency test below is unaffected. Byte-equal
+ * to the native shader's palette_law_word. */
+uint palette_law_word(uint w) {
+  uint r = w & 31u;
+  uint g = (w >> 5u) & 31u;
+  uint b = (w >> 10u) & 31u;
+  uint l = max(r, max(g, b));
+  uint g2 = max(l, 1u) - 1u;
+  return (w & 0x8000u) | ((l >> 1u) << 10u) | (g2 << 5u) | l;
+}
+
+/* The packet-colour half: retail's prologue draw list carries an amber family
+ * of modulation words, each the collapse of an authored full-colour TMD word
+ * to max(rgb) scaled by the gold ratio (u_grade.rgb), while the ground
+ * kernel's runtime-emitted neutral 0x80,0x80,0x80 words stay neutral.
+ * prim is normalised 0..1 here (the native twin works in 0..255 colour-byte
+ * units), so neutral is 128/255. */
+vec3 palette_collapse_prim(vec3 prim) {
+  const float NEUTRAL = 128.0 / 255.0;
+  if (abs(prim.r - NEUTRAL) < (0.5 / 255.0)
+      && abs(prim.g - NEUTRAL) < (0.5 / 255.0)
+      && abs(prim.b - NEUTRAL) < (0.5 / 255.0)) {
+    return prim;
+  }
+  return u_grade.rgb * max(prim.r, max(prim.g, prim.b));
 }
 
 /* 4x4 Bayer threshold in [0, 1) for the occlusion fade's screen-door
@@ -425,6 +480,10 @@ void main() {
    * this view's parity (see u_pair_front). The CLUT decode below masks the
    * flag bit out ((cba >> 6) & 511 covers CBA bits 6..14 only). */
   if ((cba & 0x8000u) != 0u && gl_FrontFacing != (u_pair_front != 0)) discard;
+  /* Retail NCLIP: on this page's assembled chain the camera-facing (retail
+   * front) copy is the BACK-facing one, which is exactly what u_pair_front
+   * encodes - so the rejected half is gl_FrontFacing. */
+  if (u_nclip_cull >= 2 && gl_FrontFacing) discard;
   /* Camera-occlusion fade: screen-door discard of fragments between the
    * camera and the player. Placed before the untextured early-return so
    * both prim families fade; identity while u_occl_focus.w is zero, and
@@ -463,8 +522,22 @@ void main() {
     if (u_semi_pass == 0 && prim_semi) discard;
     if (u_semi_pass == 1 && !prim_semi) discard;
     /* Untextured prims pull to the DPCS far colour directly (retail: the
-     * cue runs on the packet colour and there is no texel multiply). */
-    vec3 flat_lit = apply_distance_fog(v_flat_rgba.rgb);
+     * cue runs on the packet colour and there is no texel multiply).
+     *
+     * In prologue palette mode the authored colour word collapses to the
+     * gold family first (no neutral exemption here - an untextured prim IS
+     * its colour word), the screen tint is the whole-pixel term and the cue
+     * ramp is inert. Byte-for-byte the native COLOR_MESH shader's arm. */
+    bool flat_palette = u_palette.w > 0.5;
+    vec3 flat_base = v_flat_rgba.rgb;
+    if (flat_palette) {
+      flat_base = u_grade.rgb * max(flat_base.r, max(flat_base.g, flat_base.b));
+    }
+    vec3 flat_lit = apply_distance_fog(flat_base);
+    if (flat_palette) {
+      o_color = vec4(flat_lit * u_palette.rgb, 1.0);
+      return;
+    }
     flat_lit = grade_near(flat_lit);
     o_color = vec4(mix(flat_lit, u_cue_far, cue_ir0(v_view_z)), 1.0);
     return;
@@ -497,6 +570,12 @@ void main() {
     int vy = int(tpage_y + v_pix);
     raw = texelFetch(u_vram, ivec2(vx, vy), 0).r;
   }
+  /* Prologue palette-collapse grade, asset half: retail rewrites the scene's
+   * uploaded CLUTs at load, so the law runs on the decoded texel word here
+   * (exactly equivalent). Applied BEFORE the transparency test, which the
+   * law preserves (0 -> 0, STP kept). */
+  bool palette_on = u_palette.w > 0.5;
+  if (palette_on) raw = palette_law_word(raw);
   vec4 color = bgr555_to_rgba(raw);
   /* PSX per-texel semi-transparency gate: inside an ABE prim, only texels
    * with the STP bit set blend; STP=0 texels stay opaque. */
@@ -542,7 +621,9 @@ void main() {
    * (0.45 + 0.55 * dot(n, -u_light)) off the screen-space geometric normal of
    * v_world - a bare-geometry viewer aid, not retail, and the last of it on
    * this host. See docs/tooling/host-drift.md. */
-  vec3 lit = clamp(color.rgb * v_flat_rgba.rgb * (255.0 / 128.0),
+  vec3 prim_color = palette_on ? palette_collapse_prim(v_flat_rgba.rgb)
+                               : v_flat_rgba.rgb;
+  vec3 lit = clamp(color.rgb * prim_color * (255.0 / 128.0),
                    vec3(0.0), vec3(1.0));
 
   lit = apply_distance_fog(lit);
@@ -550,8 +631,14 @@ void main() {
   /* Prologue grade + depth-cue ramp (identity when unset). Retail order:
    * the grade tints the NEAR term; the far term is texel * far colour
    * (texture detail survives the crush - DPCS runs on the packet colour
-   * before the GPU texel multiply). */
-  {
+   * before the GPU texel multiply).
+   *
+   * Palette mode replaces the pixel multiply with the texel + packet
+   * collapse above (grade_near would double-grade), carries the global
+   * screen tint whole-pixel, and holds the cue ramp inert. */
+  if (palette_on) {
+    lit = clamp(lit * u_palette.rgb, vec3(0.0), vec3(1.0));
+  } else {
     float ir0 = cue_ir0(v_view_z);
     /* The far term is the far colour MODULATED by the texel, on the same
      * / 128 scale as the near term (native: psx_modulate(texel,

@@ -1119,11 +1119,13 @@ void main() {
         if (!this.canvas.matches(':focus-within') && document.activeElement !== this.canvas) return;
         e.preventDefault();
         this.debugCamera = !this.debugCamera;
-        if (!this.debugCamera && typeof this.rt.play_camera_set_orbit === 'function') {
-          /* Hand the engine camera back the vantage the debug orbit was left
-           * at, so flipping the toggle does not snap the view a half turn. */
-          try { this.rt.play_camera_set_orbit(-this.cam.yaw); } catch (_) {}
-        }
+        /* No hand-off on the way out. Both hosts compose the debug vantage
+         * as `fixed diagonal + Camera::manual_orbit`, and the drag below
+         * steers that one field in either mode - so the two vantages never
+         * drift apart and there is nothing to reconcile. What used to be
+         * here wrote the page-local yaw's NEGATION into `manual_orbit`, and
+         * since the two track together with the toggle off, cycling `F3`
+         * flipped the orbit by twice its value. */
       };
       window.addEventListener('keydown', this._onDebugCam);
       /* Blur drops every held key - otherwise tabbing away mid-walk leaves the
@@ -1175,6 +1177,14 @@ void main() {
         this.cam.pitch = Math.max(0.12, Math.min(1.35, this.cam.pitch + dy));
         if (engineKnobs()) {
           try { this.rt.play_camera_orbit_by(dx); this.rt.play_camera_tilt_by(dy); } catch (_) {}
+        } else if (this.debugCamera
+                   && typeof this.rt.play_camera_debug_orbit_by === 'function') {
+          /* Under `F3` the drag steers the SAME `Camera::manual_orbit` the
+           * follow camera reads, through the un-gated engine setter the
+           * native window's own `F3` drag calls
+           * (`Camera::debug_orbit_by`) - the page's `cam.yaw` above is just
+           * its local copy of that angle. */
+          try { this.rt.play_camera_debug_orbit_by(dx); } catch (_) {}
         } else if (!this.debugCamera && typeof this.rt.play_camera_set_orbit === 'function') {
           /* A cached WASM that predates the gated setters: orbit only. */
           try { this.rt.play_camera_set_orbit(this.rt.play_camera_orbit() + dx); } catch (_) {}
@@ -1412,13 +1422,17 @@ void main() {
      * name into the party record and the suspended opening script resumes. So
      * there is nothing to toggle - just forward edges while it is up.
      *
-     * One tick per frame is right: the overlay steps exactly one cell / glyph per
-     * press, and the only frame-counted thing on it (the caret blink) is advanced
-     * inside `name_entry_input` because the field tick is frozen under it.
+     * One INPUT step per frame is right: the overlay steps exactly one cell /
+     * glyph per press. The caret blink is not - it is frame-counted off
+     * `World::frame`, which the native window advances once per SIM tick
+     * while the field is frozen under the overlay. Driving it off the display
+     * refresh instead made the blink period a property of the monitor (half
+     * speed at 120 Hz, double on a throttled tab), so this host spends the
+     * frame's `simSteps` on the counter the same way.
      *
      * Returns `true` while the overlay is up, so `_frame` freezes the field -
      * the naming prompt is modal, as it is natively. */
-    _updateNameEntry() {
+    _updateNameEntry(simSteps) {
       const rt = this.rt;
       if (typeof rt.name_entry_is_active !== 'function') return false;
       let open;
@@ -1428,7 +1442,15 @@ void main() {
       let edge = 0;
       edge |= padMaskOf(this.pulse);
       let committed = false;
+      /* One edge per display frame - that is the rate the page collects
+       * presses at - and the caret clock separately, on this frame's SIM
+       * step count, so the blink period is the retail one at any refresh
+       * rate. A cached bundle without the split keeps the old coupled call,
+       * which advanced both per frame. */
       try { committed = rt.name_entry_input(edge); } catch (e) {}
+      if (typeof rt.name_entry_advance_frames === 'function') {
+        try { rt.name_entry_advance_frames(simSteps | 0); } catch (e) {}
+      }
       if (committed && typeof this.opts.onNamed === 'function') {
         let name = '';
         try { name = rt.party_display_name(0); } catch (e) {}
@@ -1989,37 +2011,29 @@ void main() {
         catch (e) { console.warn('play fmv', e); }
       }
 
-      /* Field pause menu (Start): consumes this frame's edges and, while up,
-       * freezes the field. Must run before the tick reads the pad. */
-      const menuOpen = this._updateFieldMenu();
-      /* Field merchant (field-VM op 0x49 sub-0). The shop suspends the script
-       * on the engine side, so the field must not advance under it either. */
-      const shopOpen = menuOpen ? false : this._updateFieldShop();
-      /* Opening name-entry prompt (the `town01` timeline's op 0x49). Suspends
-       * the script the same way, and is modal over everything else. */
-      const namingOpen = (menuOpen || shopOpen) ? false : this._updateNameEntry();
-
-      if (advance && !menuOpen && !shopOpen && !namingOpen) {
-        /* Run the engine at a fixed 60 Hz regardless of the display refresh
-         * (see the `_simAccum` note in the constructor). `Step 1 frame` forces
-         * exactly one tick; free play consumes the real elapsed time.
-         *
-         * THE DENOMINATION LAW, and it is shared with the native host: one
-         * `World::tick` advances the simulation by exactly ONE RETAIL DISPLAY
-         * FRAME. `TICK_DT` is therefore not a tuning knob - it is the retail
-         * vsync period, and `engine-core`'s frame tick assumes it
-         * (`SIM_HZ == RETAIL_FPS`, `field_frame_step == 1` every tick). The
-         * native window states the same constant as `TICK_DT = 1.0/60.0` in
-         * `EngineWindow::drain_ticks`, with the same 4-tick backlog cap below.
-         * Change one and the two hosts run the same engine at different
-         * speeds, which is invisible in a diff - see
-         * `docs/tooling/host-drift.md` and the units-per-second oracle
-         * `crates/engine-core/tests/sim_cadence_wall_speed.rs`
-         * (retail walk = 480 world units/second, run = 720). */
+      /* Drain this display frame's SIM steps once, before anything reads
+       * them. Whichever arm owns the frame spends them - the field tick
+       * below, or a modal overlay that freezes it - which is the native
+       * window's own shape: it drains its ticks first and each tick routes
+       * to whichever arm is active.
+       *
+       * THE DENOMINATION LAW, and it is shared with the native host: one
+       * `World::tick` advances the simulation by exactly ONE RETAIL DISPLAY
+       * FRAME. `TICK_DT` is therefore not a tuning knob - it is the retail
+       * vsync period, and `engine-core`'s frame tick assumes it
+       * (`SIM_HZ == RETAIL_FPS`, `field_frame_step == 1` every tick). The
+       * native window states the same constant as `TICK_DT = 1.0/60.0` in
+       * `EngineWindow::drain_ticks`, with the same 4-tick backlog cap below.
+       * Change one and the two hosts run the same engine at different
+       * speeds, which is invisible in a diff - see
+       * `docs/tooling/host-drift.md` and the units-per-second oracle
+       * `crates/engine-core/tests/sim_cadence_wall_speed.rs`
+       * (retail walk = 480 world units/second, run = 720). */
+      let simSteps = 0;
+      if (advance) {
         const TICK_DT = 1000 / 60;
-        let steps;
         if (stepping) {
-          steps = 1;
+          simSteps = 1;
           this._simAccum = 0;
           this._simLast = performance.now();
         } else {
@@ -2030,9 +2044,23 @@ void main() {
            * unleash a burst of catch-up ticks - the native window caps at
            * 4 ticks/frame the same way. */
           if (this._simAccum > TICK_DT * 4) this._simAccum = TICK_DT * 4;
-          steps = Math.floor(this._simAccum / TICK_DT);
-          this._simAccum -= steps * TICK_DT;
+          simSteps = Math.floor(this._simAccum / TICK_DT);
+          this._simAccum -= simSteps * TICK_DT;
         }
+      }
+
+      /* Field pause menu (Start): consumes this frame's edges and, while up,
+       * freezes the field. Must run before the tick reads the pad. */
+      const menuOpen = this._updateFieldMenu();
+      /* Field merchant (field-VM op 0x49 sub-0). The shop suspends the script
+       * on the engine side, so the field must not advance under it either. */
+      const shopOpen = menuOpen ? false : this._updateFieldShop();
+      /* Opening name-entry prompt (the `town01` timeline's op 0x49). Suspends
+       * the script the same way, and is modal over everything else. */
+      const namingOpen = (menuOpen || shopOpen) ? false : this._updateNameEntry(simSteps);
+
+      if (advance && !menuOpen && !shopOpen && !namingOpen) {
+        const steps = simSteps;
         for (let s = 0; s < steps; s++) {
           /* Retail prologue intro-skip (FUN_801D1344): while the opening
            * chain plays, a Cross press skips the whole remaining opening to
@@ -2234,7 +2262,30 @@ void main() {
        * The staged focus is the player's body centre (the same point the
        * dead cull below used - draw frame, +90 up from the feet); the
        * renderer projects it with the frame's own camera. */
-      if (this.occlusionFade && !fpLive) {
+      /* The host's own arming terms, beside the engine's. The native window
+       * excludes its boot UI, the world map, a scripted shot and its `F3`
+       * debug vantage; this page excluded only battle and the minigames, so
+       * a pause menu, a name-entry prompt or a cutscene kept dissolving the
+       * walls behind them. The world-side half (field mode, no cutscene
+       * camera, a live player, the body centre itself) is the engine's
+       * `play_occlusion_focus`. */
+      const occlHostOk = this.occlusionFade && !fpLive && !this.debugCamera
+        && !menuOpen && !shopOpen && !namingOpen;
+      let occlFocus = null;
+      if (occlHostOk) {
+        if (typeof rt.play_occlusion_focus === 'function') {
+          try {
+            const f = rt.play_occlusion_focus();
+            if (f && f.length === 3) occlFocus = [f[0], f[1], f[2]];
+          } catch (_) { occlFocus = null; }
+        } else {
+          /* Cached-bundle fallback: the actor origin, which is the reading
+           * that put the hole off the character on any tile whose floor tier
+           * differs from the actor's own Y. */
+          occlFocus = [pt[0], -pt[1] + HALF_CHAR_HEIGHT, pt[2]];
+        }
+      }
+      if (occlFocus) {
         let hidden = true;
         if (typeof rt.field_player_occluded === 'function') {
           const eye = this._eye();
@@ -2244,12 +2295,12 @@ void main() {
         this._occlStrength += (target - this._occlStrength) * 0.25;
         if (Math.abs(this._occlStrength - target) < 0.01) this._occlStrength = target;
         if (this._occlStrength > 0.01) {
-          /* 65 must match HALF_CHAR_HEIGHT in crates/web-viewer/src/play.rs,
-           * which is the point field_player_occluded() above tested. Staging
-           * the fade at a different height than the gate proved occluded put
-           * the hole ~37px above the character's body centre. */
-          this.renderer.setOcclusionFocus(
-            [pt[0], -pt[1] + HALF_CHAR_HEIGHT, pt[2]], this._occlStrength);
+          /* The focus IS the point `field_player_occluded` tested - the one
+           * `engine-core::field_occlusion::player_body_centre` kernel, which
+           * is why it arrives from the engine rather than being rebuilt
+           * here. Staging the fade at a different height than the gate proved
+           * occluded put the hole ~37px above the character's body centre. */
+          this.renderer.setOcclusionFocus(occlFocus, this._occlStrength);
         }
       } else {
         this._occlStrength = 0;
@@ -2431,7 +2482,13 @@ void main() {
        * `field_hud_projected_player_y`). Project the same point the native
        * pass projects - the actor origin raised 128 units - through this
        * frame's VP into 240-line stage space, and hand it to the engine. */
-      if (fieldVp && typeof rt.set_field_player_screen_y === 'function') {
+      if (typeof rt.play_field_hud_project === 'function') {
+        const c = this.renderer.canvas;
+        try { rt.play_field_hud_project(c.width, Math.max(c.height, 1)); } catch (_) {}
+      } else if (fieldVp && typeof rt.set_field_player_screen_y === 'function') {
+        /* Cached-bundle fallback only. The live path is the export above:
+         * retail's band test reads the FOLLOW camera, and projecting through
+         * this frame's draw VP put it under the cutscene shot instead. */
         const px = pt[0], py = -(pt[1] - 128), pz = pt[2];
         const m = fieldVp;
         const cy = m[1] * px + m[5] * py + m[9] * pz + m[13];
@@ -2496,6 +2553,30 @@ void main() {
         const c = this._cut && this._cut.cue;
         this.renderer.setDepthCue(c ? c.far : null,
           c ? c.near_z : 0, c ? c.far_z : 0, c ? c.max_ir0 : 0);
+      }
+      /* The prologue grade's PALETTE-COLLAPSE half (the native window's
+       * second staging call, `set_palette_grade`): with a prologue grade
+       * live, `setColorGrade` above carries the gold coefficients for the
+       * packet collapse and this carries the op-`4C 12` screen tint. The
+       * engine composed both arms already - the page just stages what
+       * `play_cutscene_state_json` hands back. Without this the tint reached
+       * the engine-built field-FX geometry and nothing else, so an ordinary
+       * town's scene-entry fade darkened the smoke puffs over a town that
+       * never faded. */
+      if (this.renderer.setPaletteGrade) {
+        const pg = this._cut && this._cut.palette_grade;
+        this.renderer.setPaletteGrade(pg ? pg.mul : null, !!(pg && pg.on));
+      }
+      /* Retail GTE NCLIP winding rejection, from the shared engine kernel
+       * (`camera_view::nclip_cull_mode`) the native window's
+       * `set_backface_cull` also reads: armed only while the in-engine
+       * cutscene camera owns a non-overworld frame. The opdeene prologue's
+       * tableau shot sits INSIDE the scene's closed cave-wall backdrop mesh
+       * and NCLIP is what discards its near wall. */
+      if (this.renderer.setNclipCull && typeof rt.play_render_nclip_mode === 'function') {
+        let mode = 0;
+        try { mode = rt.play_render_nclip_mode(); } catch (_) { mode = 0; }
+        this.renderer.setNclipCull(mode);
       }
       this._draws = draws;
       /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw
