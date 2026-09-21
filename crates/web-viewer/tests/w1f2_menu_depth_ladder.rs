@@ -344,7 +344,53 @@ fn rung3_equip_depth(rt: &mut LegaiaRuntime) -> Result<(), String> {
 /// screen's outcome when the hand leaves the command window, and the port
 /// keeps that ordering (`apply_inventory_outcome` runs on `is_done`).
 /// Measuring before the unwind reads every discard as a no-op.
+///
+/// ## Arrange runs before the discard, and the order is load-bearing
+///
+/// Retail's command dispatch scans the bag first and buzzes on an empty one,
+/// so **every** row's confirm is a no-op once the bag runs dry - including
+/// Arrange. Driven after the discard leg, a cold-boot bag small enough to
+/// empty takes that buzz, the sort never runs, and the idempotence check
+/// below passes for the wrong reason: a sort that did not happen leaves the
+/// drawn list identical to itself. A coverage export measured exactly that,
+/// with `arrange_bag_slots` at zero executions while this rung was green.
+///
+/// So Arrange is driven on the untouched bag, and the confirm is guarded by
+/// the row count the screen is drawing - which is the condition retail's own
+/// dispatch tests. An idempotence assertion cannot tell "stable sort" from
+/// "no sort"; only its precondition can.
 fn rung4_items_depth(rt: &mut LegaiaRuntime) -> Result<(), String> {
+    // --- Row 2: Arrange, on the bag as the boot left it. ---
+    //
+    // The sort has no state the page exposes directly, so it is scored on
+    // the property a sort has and a shuffle does not: applying it twice must
+    // leave the drawn list identical to applying it once.
+    if bag_total(rt) <= 0 {
+        return Err("the bag is empty before Arrange - the command dispatch \
+                    buzzes and the sort cannot run"
+            .into());
+    }
+    if !rt.play_menu_open_row("Items") {
+        return Err("Items did not open for Arrange".into());
+    }
+    rt.play_menu_input(PadButton::Down.mask());
+    rt.play_menu_input(PadButton::Down.mask());
+    rt.play_menu_input(PadButton::Cross.mask());
+    let once = rt.play_menu_draws_json(W, H);
+    if text_count(&json(&once)) == 0 {
+        return Err("the Items list drew nothing after Arrange".into());
+    }
+    rt.play_menu_input(PadButton::Cross.mask());
+    let twice = rt.play_menu_draws_json(W, H);
+    if once != twice {
+        return Err(
+            "Arrange is not idempotent - a second sort re-ordered the drawn \
+             list, so the kernel is not sorting by a stable rank"
+                .into(),
+        );
+    }
+    unwind_menu(rt);
+
     // --- Row 1: Throw Out, to its discard confirm. ---
     let before = bag_total(rt);
     if !rt.play_menu_open_row("Items") {
@@ -370,31 +416,6 @@ fn rung4_items_depth(rt: &mut LegaiaRuntime) -> Result<(), String> {
         ));
     }
 
-    // --- Row 2: Arrange. ---
-    //
-    // The sort has no state the page exposes directly, so it is scored on
-    // the property a sort has and a shuffle does not: applying it twice must
-    // leave the drawn list identical to applying it once.
-    if !rt.play_menu_open_row("Items") {
-        return Err("Items did not re-open for Arrange".into());
-    }
-    rt.play_menu_input(PadButton::Down.mask());
-    rt.play_menu_input(PadButton::Down.mask());
-    rt.play_menu_input(PadButton::Cross.mask());
-    let once = rt.play_menu_draws_json(W, H);
-    if text_count(&json(&once)) == 0 {
-        return Err("the Items list drew nothing after Arrange".into());
-    }
-    rt.play_menu_input(PadButton::Cross.mask());
-    let twice = rt.play_menu_draws_json(W, H);
-    if once != twice {
-        return Err(
-            "Arrange is not idempotent - a second sort re-ordered the drawn \
-             list, so the kernel is not sorting by a stable rank"
-                .into(),
-        );
-    }
-    unwind_menu(rt);
     Ok(())
 }
 
