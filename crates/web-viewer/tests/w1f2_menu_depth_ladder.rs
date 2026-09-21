@@ -15,6 +15,7 @@
 //! |---|---|---|
 //! | 1 | equipment shop -> buy list -> **recipient picker** | `FUN_801DB21C` buy-list confirm dispatch, `FUN_801DB380` recipient sub-screen, and the three windows it paints: 36 (`FUN_801D56FC`), 41 (`FUN_801D4C28`), the compare chain (`FUN_801D1290`) and its seeder (`FUN_801CF5D0`) |
 //! | 2 | shop vendor plate | window 33 (`FUN_801DCF14`) - needs a scene shop with a resolvable vendor name |
+//! | 5 | shop **sell** driven to its quantity window | window 37 (`FUN_801D5944`) - the buy side's stepper is a different window with a different painter, so a buy rung never paints it |
 //! | 3 | Equip screen driven to a **candidate list + commit** | `FUN_801D9C14` trial-equip preview, `FUN_801CF760` Best Equipment applier |
 //! | 4 | Items screen driven past the command window | the throw-out discard confirm (`FUN_801D1B20`) and the Arrange sort (`FUN_801D64A8`) |
 //!
@@ -252,6 +253,100 @@ fn close_shop(rt: &mut LegaiaRuntime) {
 }
 
 // ---------------------------------------------------------------------------
+// Rung 5 - the shop's SELL side, driven to its quantity window
+// ---------------------------------------------------------------------------
+
+/// Window 37 (`FUN_801D5944`), the sell quantity stepper.
+///
+/// Every shop rung in the union drives the **buy** branch, and the two sides
+/// are different screens with different painters: the buy stepper is window
+/// 35 and the sell stepper window 37, each filtered on the live
+/// `QuantityPicker`'s own `buying` flag by both hosts. So a ladder that buys
+/// however deeply never paints the sell panel, which is what left
+/// `sell_quantity_draws_for` never-entered while its buy twin was covered.
+///
+/// The route is retail's: the root picker's Sell row opens the price-gated
+/// slot walk (`MenuRuntime::sell_list_rows`), a confirm on a sellable row
+/// routes the widget VM to `ShopQuantity`, and the runtime installs a
+/// `SellQuantitySession` on the frame after. A row the shop cannot buy
+/// (price zero - retail's quest-item arm) opens no picker at all, so the
+/// rung sweeps rows rather than assuming row 0 sells.
+fn rung5_sell_quantity(rt: &mut LegaiaRuntime) -> Result<(), String> {
+    const SHOP_SELL: u8 = 0x1A;
+    const SHOP_QUANTITY: u8 = 0x1B;
+
+    close_shop(rt);
+    if !rt.debug_open_test_shop() {
+        return Err("test shop did not open for the sell rung".into());
+    }
+    // Top picker: row 0 Buy, row 1 Sell.
+    rt.play_shop_input(PadButton::Down.mask());
+    rt.play_shop_input(PadButton::Cross.mask());
+    if rt.debug_menu_state_byte() != SHOP_SELL {
+        let got = rt.debug_menu_state_byte();
+        close_shop(rt);
+        return Err(format!(
+            "the Sell row did not open the sell list (menu state {got:#04x})"
+        ));
+    }
+    // Baseline: the parked sell list alone, before any stepper window.
+    let list_quads = overlay_quads(rt);
+    if list_quads == 0 {
+        return Err("the sell list composed no glyph quads".into());
+    }
+
+    let mut staged = false;
+    for _ in 0..8u32 {
+        rt.play_shop_input(PadButton::Cross.mask());
+        // The VM routes on the confirm; the picker installs on the next
+        // frame, which is what the neutral step below delivers.
+        rt.play_shop_input(0);
+        if rt.debug_menu_state_byte() == SHOP_QUANTITY {
+            staged = true;
+            break;
+        }
+        rt.play_shop_input(PadButton::Down.mask());
+    }
+    if !staged {
+        let got = rt.debug_menu_state_byte();
+        close_shop(rt);
+        return Err(format!(
+            "no sell row reached the quantity screen (menu state {got:#04x})"
+        ));
+    }
+
+    // The stepper screen is not additive over the sell list - it parks the
+    // list and draws in its place - so the panel is scored on a *change*
+    // rather than on a delta: a non-empty frame that differs from the list
+    // frame, and a composed frame that moves when the count does. The second
+    // half is what an idempotent readout cannot fake: only a painter reading
+    // the live `QuantityPicker` re-lays its quantity, separator, held count
+    // and right-packed total.
+    let with_panel = rt.play_overlay_draws_json(W, H);
+    let panel_quads = text_count(&json(&with_panel));
+    if panel_quads == 0 {
+        close_shop(rt);
+        return Err("the sell quantity screen composed no glyph quads".into());
+    }
+    if panel_quads == list_quads {
+        close_shop(rt);
+        return Err(format!(
+            "the quantity screen drew the same {list_quads} quads as the \
+             parked sell list - window 37 painted nothing"
+        ));
+    }
+    // The picker opens at its bound, so Down is the step that has room.
+    rt.play_shop_input(PadButton::Down.mask());
+    let stepped = rt.play_overlay_draws_json(W, H);
+    if stepped == with_panel {
+        close_shop(rt);
+        return Err("stepping the sell count did not change the composed panel".into());
+    }
+    close_shop(rt);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Rung 3 - the Equip screen, driven to a commit
 // ---------------------------------------------------------------------------
 
@@ -460,9 +555,10 @@ fn w1f2_menu_depth_ladder() {
     }
 
     type Rung = (&'static str, fn(&mut LegaiaRuntime) -> Result<(), String>);
-    let rungs: [Rung; 4] = [
+    let rungs: [Rung; 5] = [
         ("shop-recipient-picker", rung1_recipient_picker),
         ("shop-vendor-plate", rung2_vendor_plate),
+        ("shop-sell-quantity", rung5_sell_quantity),
         ("equip-depth", rung3_equip_depth),
         ("items-depth", rung4_items_depth),
     ];
