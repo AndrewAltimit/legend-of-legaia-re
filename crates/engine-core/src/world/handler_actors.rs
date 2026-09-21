@@ -150,6 +150,25 @@ impl World {
             .collect()
     }
 
+    /// The same frame's pushes as the `(layer, blend, packed)` argument
+    /// triples retail's emitter takes, ready for
+    /// `legaia_engine_ui::screen_prim::screen_effect_push_prims`.
+    ///
+    /// REF: FUN_80024EE4 - its `a0`/`a1`/`a2`, in that order.
+    ///
+    /// Both hosts composite through this rather than reading
+    /// [`Self::screen_tint_pushes`] field by field. `ScreenTintPush::kind`
+    /// and `ScreenTintPush::blend` are two `i16`s a call site can swap
+    /// silently, and they mean entirely different things - the first is the
+    /// ordering-table bucket, the second the ABR equation - so the order is
+    /// fixed once, here, where the retail argument list is the authority.
+    pub fn screen_tint_push_args(&self) -> Vec<(i16, i16, u32)> {
+        self.screen_tint_pushes()
+            .into_iter()
+            .map(|p| (p.kind, p.blend, p.packed))
+            .collect()
+    }
+
     /// Run the per-frame handler kernels over the actor pool, then retire the
     /// actors that asked to go.
     ///

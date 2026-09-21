@@ -525,6 +525,40 @@ fn w3b_wave_wires_run_on_real_scene_bytecode() {
             "{}: the tween emitted no matching screen push",
             site.label()
         );
+        // ... and the push reaches a host's draw list in retail's own
+        // argument order. `screen_tint_push_args` is what both renderers
+        // read; for as long as the pool had a producer and no consumer the
+        // whole effect was simulated and drawn by nobody.
+        let args = w.screen_tint_push_args();
+        assert_eq!(
+            args.len(),
+            pushes.len(),
+            "{}: the draw-argument view lost a push",
+            site.label()
+        );
+        assert!(
+            args.iter()
+                .zip(pushes.iter())
+                .all(|(a, p)| *a == (p.kind, p.blend, p.packed)),
+            "{}: the draw arguments are not `(layer, blend, packed)`",
+            site.label()
+        );
+        // The walk-in half ramps from black, so frame one of a fresh tween
+        // can legitimately be black; what may never happen is a push whose
+        // colour word is black for the whole ramp.
+        let mut lit = args.iter().any(|a| a.2 & 0x00FF_FFFF != 0);
+        for _ in 0..i32::from(site.word(5)).unsigned_abs().min(600) {
+            w.tick_handler_actors(1);
+            lit |= w
+                .screen_tint_push_args()
+                .iter()
+                .any(|a| a.2 & 0x00FF_FFFF != 0);
+        }
+        assert!(
+            lit,
+            "{}: the tween never pushed a non-black colour word",
+            site.label()
+        );
         pushed_at_least_one = true;
     }
     assert!(

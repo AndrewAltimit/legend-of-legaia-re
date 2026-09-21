@@ -504,6 +504,25 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "field screen-effect washes, native vs play page - the field "
+        "VM's op `0x34` sub-0 arm spawns colour-tween actors whose per-frame "
+        "`FUN_80024EE4(layer, blend, packed)` push IS the scene-entry "
+        "fade-from-black and the door prologue's fade-to-black. Both hosts "
+        "ticked the tween and NEITHER drew it: the pool had a producer and no "
+        "consumer, so every scene entry simulated a fade in the clear. The "
+        "three arguments are also three separate ways to get it backwards - "
+        "`layer` is an ordering-table bucket and `blend` an ABR equation "
+        "(two `i16`s a call site can swap), and `packed` is a GP0 colour word "
+        "with red LOW, the opposite of every other kernel here. Both sites "
+        "must emit through `screen_effect_push_prims`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (WEB_PLAY_BATTLE, "tick_battle_intro"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["screen_effect_push_prims"],
+    },
+    {
         "what": "battle-intro style inputs, native vs play page - the style "
         "selector reads three retail globals (`DAT_8007BD60`, `DAT_8007BD0C`, "
         "`DAT_80084540`) and not one of them is a host choice: they are "

@@ -1959,6 +1959,15 @@ impl LegaiaRuntime {
         {
             prims.push(legaia_engine_ui::screen_prim::fade_prim(rgb, abr, ot));
         }
+        // The field overlay's screen-effect washes (op `0x34` sub-0 ->
+        // `FUN_80024EE4`): the scene-entry fade-from-black and the door
+        // prologue's fade-to-black, through the same shared emitter the
+        // native window composites them with.
+        if let Some(host) = self.scene_host.as_ref() {
+            prims.extend(legaia_engine_ui::screen_prim::screen_effect_push_prims(
+                &host.world.screen_tint_push_args(),
+            ));
+        }
         // The field overlay's cinematic wipe (`0x43 0C` -> `FUN_801DD784`).
         // Same shared emitter as the native window's screen-prim pass, so
         // the two bars are one kernel across the two hosts rather than two
@@ -2231,6 +2240,20 @@ impl LegaiaRuntime {
         // they sample the intermediate the moment the page re-uploads.
         let _ = intro.refresh_captured_page();
         self.battle_intro = Some(intro);
+    }
+
+    /// How many field screen-effect washes the world published this frame
+    /// (`World::screen_tint_push_args`), i.e. how many of this frame's
+    /// screen primitives are op-`0x34`-sub-0 colour-tween pushes.
+    ///
+    /// The page-side twin of `play_fog_stats`: a diagnostic read of the
+    /// producer, so a ladder can tell "the pass carries N prims" apart from
+    /// "the pass carries the wash".
+    pub fn play_screen_effect_push_count(&self) -> u32 {
+        self.scene_host
+            .as_ref()
+            .map(|h| h.world.screen_tint_push_args().len() as u32)
+            .unwrap_or(0)
     }
 
     /// How many screen-space PSX primitives this frame carries. `0` is the

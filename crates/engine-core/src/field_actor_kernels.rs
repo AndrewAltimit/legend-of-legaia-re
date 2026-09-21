@@ -183,17 +183,35 @@ pub struct ColourTween {
 ///
 /// PORT: FUN_801DDC20 (`0x801dde14..0x801dde1c`, the argument set-up)
 ///
-/// The engine keeps the triple rather than resolving it to a tint factor:
-/// `kind` and `blend` select which of retail's screen-effect quads is pushed,
-/// and that mapping belongs to whoever draws it. Hosts read the frame's pushes
-/// off the actor pool via [`crate::world::World::screen_tint_pushes`].
+/// The engine keeps the triple rather than resolving it to a tint factor,
+/// because the three arguments are a draw, not a tint: one full-display
+/// `POLY_F4` under a `GP0(0xE1)` draw-mode packet. What each selects is read
+/// off `FUN_80024EE4` itself, and **`kind` is not a quad selector** - the
+/// emitter has exactly one quad, whose corners are the scratchpad display
+/// rect (`0x80024F68..0x80024F98`):
+///
+/// - `a0` clamps to `0` when negative and to `OT_len - 1` above, then names
+///   the **ordering-table bucket** the packet links at (`OT + a0*4`, twice,
+///   at `0x80024FA4` / `0x80024FDC`).
+/// - `a1` becomes `(a1 << 5) | 0xE`, the draw-mode word whose bits 5..6 are
+///   the **ABR equation** (`0x80024FB0`).
+/// - `a2` is a **GP0 colour word** (red low), masked to 24 bits under the
+///   `0x2B` command byte at `0x80024F54`.
+///
+/// Hosts draw the frame's pushes through
+/// [`crate::world::World::screen_tint_push_args`] and the shared emitter
+/// `legaia_engine_ui::screen_prim::screen_effect_push_prims`, which is where
+/// the clamp, the mask and the channel swap live.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScreenTintPush {
-    /// `a0` - screen-effect kind (actor `+0xD6`).
+    /// `a0` - the ordering-table bucket (actor `+0xD6`). Named `kind` for
+    /// the spawner argument it comes from; what the emitter does with it is
+    /// depth, not style.
     pub kind: i16,
-    /// `a1` - blend mode (actor `+0xD2`).
+    /// `a1` - the ABR blend equation (actor `+0xD2`).
     pub blend: i16,
-    /// `a2` - the packed colour from [`pack_colour`].
+    /// `a2` - the packed colour from [`pack_colour`], in GP0 channel order
+    /// (red in bits 0..7).
     pub packed: u32,
 }
 

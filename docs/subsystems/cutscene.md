@@ -1399,12 +1399,12 @@ Breakpoints on the spawner, the per-frame step and the draw
   hold-forever sentinel. The actor's selectors read `+0xD2 = 2` (blend) and
   `+0xD6 = 0` (kind) throughout.
 - **The observable is the push.** `FUN_80024EE4` is called once per step with
-  `a0 = 0` (kind), `a1 = 2` (blend) and a grey packed colour climbing
-  `0x000000 -> 0x0D0D0D -> 0x1A1A1A -> ... -> 0xFFFFFF` in steps near `13`,
-  reaching neutral at the frame the clock reaches `57` and repeating neutral
-  while the tween holds. Walking back out of the scene runs the mirror
-  envelope with `a0 = 1`, the packed colour falling from `0xE5E5E5` toward
-  black in steps near `17`.
+  `a0 = 0` (the ordering-table bucket), `a1 = 2` (the ABR equation) and a grey
+  packed colour climbing `0x000000 -> 0x0D0D0D -> 0x1A1A1A -> ... -> 0xFFFFFF`
+  in steps near `13`, reaching neutral at the frame the clock reaches `57` and
+  repeating neutral while the tween holds. Walking back out of the scene runs
+  the mirror envelope with `a0 = 1`, the packed colour falling from `0xE5E5E5`
+  toward black in steps near `17`.
 - **The global multiply tint is not involved.** `DAT_8007BCB8/B9/BA` reads
   neutral `0x80` on every vsync of the capture, so this beat is not an op
   `0x4C 0x12` fade at all.
@@ -1412,11 +1412,39 @@ Breakpoints on the spawner, the per-frame step and the draw
 The port used to carry the beat twice - a float `effect_tint` ramp beside the
 [`ScreenTintPush`](../../crates/engine-core/src/field_actor_kernels.rs) triples
 [`step_colour_tween`] emits - with nothing reading either. The measured beat is
-a `(kind, blend, packed)` triple per frame, which is the push's shape exactly,
-so the push is the surviving model: the op seats its tween through
+a `(a0, a1, packed)` triple per frame, which is the push's shape exactly, so
+the push is the surviving model: the op seats its tween through
 `World::spawn_colour_tween`, `World::tick_handler_actors` steps it, and
-`World::screen_tint_pushes` is the one read. `kind` and `blend` are live
-selectors here, not constants a scalar factor could stand in for.
+`World::screen_tint_pushes` is the one read. Both arguments are live selectors
+here, not constants a scalar factor could stand in for.
+
+##### What the three arguments are, and what draws them
+
+`FUN_80024EE4` builds **one** primitive pair and nothing else: a
+semi-transparent `POLY_F4` (`GP0 0x2B`) over the scratchpad display rect
+(`0x80024F68..0x80024F98`), plus the `GP0(0xE1)` draw-mode packet that
+precedes it. There is no quad family to select between, which settles what
+each argument does:
+
+| arg | actor field | what it is |
+|---|---|---|
+| `a0` | `+0xD6` | the **ordering-table bucket**; floored at `0` (`bgez s1`, `0x80024F00`), capped at `OT_len - 1`, then `AddPrim(OT + a0*4, ..)` twice |
+| `a1` | `+0xD2` | the **ABR equation**: `(a1 << 5) \| 0xE` is the draw-mode word, whose bits 5..6 are the semi-transparency mode. `2` = `B - F` (darken), `1` = `B + F` (brighten) |
+| `a2` | packed tween colour | a **GP0 colour word** - red in bits 0..7 - masked to 24 bits under the `0x2B` command byte at `0x80024F54` |
+
+The port names `a0` `ScreenTintPush::kind`, after the spawner argument it
+arrives on. That name is not a claim about a quad family: earlier prose here
+read it as one, and the bytes above do not support it.
+
+Both hosts composite the frame's pushes through one emitter -
+`World::screen_tint_push_args` into
+`legaia_engine_ui::screen_prim::screen_effect_push_prims`, which applies the
+floor, the two-bit mask and the red/blue swap the rest of the screen-prim
+kernels do not need. For as long as the pool had a producer and no consumer,
+every field scene entry ran this envelope and drew nothing; the page-side
+consumer is pinned by `crates/web-viewer/tests/w4b_screen_effect_page_prims.rs`
+(the `town0e` entry script issues the instruction), the native call site by the
+`SIM_PAIRS` row in `scripts/ci/check-ui-host-drift.py`.
 
 ##### The arm is a pair, and the sub-op byte carries both selectors
 

@@ -2415,6 +2415,19 @@ impl PlayWindowApp {
             // flashes, the escape white-out), drawn through the same kernel
             // the intro fades use so the ABR mode is honoured.
             screen_prims.extend(self.screen_fade_screen_prim());
+            // The field overlay's **screen-effect** washes: the colour-tween
+            // actors the field VM's op `0x34` sub-0 arm spawns, each emitting
+            // one `FUN_80024EE4(layer, blend, packed)` push per frame. This is
+            // the scene-entry fade-from-black and the door prologue's
+            // fade-to-black - simulated on both hosts for as long as neither
+            // drew it. Through the same shared emitter the browser play page
+            // composites them with, so the ordering-table bucket, the ABR
+            // equation and the GP0 channel order are decided once.
+            screen_prims.extend(
+                legaia_engine_render::screen_overlay::screen_effect_push_prims(
+                    &self.session.host.world.screen_tint_push_args(),
+                ),
+            );
             // The field overlay's cinematic wipe (`0x43 0C` -> `FUN_801DD784`),
             // through the same shared emitter the browser play page uses so
             // the two bars cannot drift between hosts.

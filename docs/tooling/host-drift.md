@@ -1521,6 +1521,43 @@ script word on both hosts (`World::fog.gate`, written by
 `crates/engine-shell/tests/w1h_fog_gate_census.rs` (native) and
 `crates/web-viewer/tests/w1h_fog_page_prims.rs` (page).
 
+#### The field screen-effect wash had a producer and no consumer
+
+The field VM's op `0x34` sub-0 arm spawns a colour-tween actor
+([`cutscene.md`](../subsystems/cutscene.md#what-the-beat-looks-like-measured)),
+and the tween's per-frame `FUN_80024EE4(a0, a1, packed)` call is retail's
+scene-entry fade-from-black and its door prologue's fade-to-black. The port
+simulated that envelope on **both** hosts and drew it on neither: the pool
+published a push per frame, the arm was ported, tagged, entered by a ladder
+and pinned by a disc-gated oracle, and no render surface read the pool.
+
+None of the tiers could fail on it, and the reason is worth keeping: every
+tier here compares two hosts. A feature absent from both is symmetric, so a
+drift gate reports parity - correctly - while the frame stays blank. What
+finds this shape is the reach export's producer/consumer join
+([`reach-triage.md`](reach-triage.md)), not a parity gate.
+
+Both hosts now composite it through one emitter:
+
+| host | call site | source |
+|---|---|---|
+| native window | `handle_redraw`'s `screen_prims` assembly, `window/event_handler/redraw.rs` | `World::screen_tint_push_args` |
+| play page | `tick_battle_intro`'s prim assembly, `play_battle.rs` | the same |
+
+The emitter is `screen_prim::screen_effect_push_prims`, and it exists as a
+named kernel because the three arguments are three separate ways to get the
+wash wrong and two of them look right in a diff: `a0` is an ordering-table
+bucket and `a1` an ABR equation - two `i16`s a call site can swap and still
+compile - and `packed` is a **GP0** colour word with red in the low byte,
+the opposite channel order from every other kernel in this module. A
+scene-entry fade ramps through grey, where a lost swap is invisible.
+
+Ladders: `crates/web-viewer/tests/w4b_screen_effect_page_prims.rs` enters a
+shipped scene whose own entry script issues the instruction and reads the
+page's uploaded primitives back (count, blended run, non-black colour); the
+native call site is held by the tier-3 row, its draw section living in a
+`bin/` target no integration test links.
+
 ### The two hosts do not share a shading law
 
 The 3D geometry is shared - the same TMD, the same mesh builders in

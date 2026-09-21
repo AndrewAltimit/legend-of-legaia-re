@@ -1911,14 +1911,22 @@ the reflection tick's *spawner* register only through the ladder written for
 them, because a scene walk that never parks in the beat those instructions sit
 in never reaches the frame that steps the actor they seat.
 
-**The screen-effect tween's consumer does not exist.** The `34 0x` arm now
-seats a `ScreenTintPush` per frame, and a workspace scan with `#[cfg(test)]`
-bodies excluded finds **no reader on either host** - the field pushes are
-produced and nothing draws them. So the arm's reach row would close and the
-feature would still be invisible to a player, which is the distinction between
-this page's question and [`host-drift.md`](host-drift.md)'s. The ladder asserts
-the push because that is the port's own seam; what is owed is a renderer that
-takes it.
+**The screen-effect tween's consumer is the case this page exists for.** The
+`34 0x` arm seats a `ScreenTintPush` per frame, and for a while a workspace
+scan with `#[cfg(test)]` bodies excluded found **no reader on either host**:
+the field pushes were produced and nothing drew them. The arm's reach row
+would have closed with the feature still invisible to a player, which is the
+distinction between this page's question and
+[`host-drift.md`](host-drift.md)'s. Both hosts now composite the frame's
+pushes through `legaia_engine_ui::screen_prim::screen_effect_push_prims`, and
+the ladder that says so is a **draw-list** assertion rather than a pool one:
+`crates/web-viewer/tests/w4b_screen_effect_page_prims.rs` enters a shipped
+scene whose entry script issues the instruction and reads the page's uploaded
+primitives back.
+
+The shape to keep from it: a producer can be live, tagged, entered by a
+ladder and pinned by a disc-gated oracle, and still be drawn by nobody. Reach
+answers "is this code executed", not "does a frame change".
 
 ### A shared kernel has no address, so this instrument is silent about it
 
