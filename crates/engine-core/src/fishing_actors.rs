@@ -623,9 +623,10 @@ pub const CELEBRATION_BURSTS: [CelebrationBurst; 4] = [
 ///
 /// PORT: FUN_801d4948 (celebration gate)
 // Wired: [`LineActorSim::tick`]'s celebrate arm resolves the unlocked tiers
-// at the first stage frame, and the play window spawns them into its effect
-// pool (offset from the wander actor's catch position) and fires each `cue`
-// through the SFX scheduler (`window/minigames.rs`).
+// at the first stage frame; `World::tick_fishing` queues each `cue` on the
+// world's SFX channel at the session's catch edge (so all three hosts hear
+// it), and the play window spawns the bursts into its effect pool (offset
+// from the wander actor's catch position) in `window/minigames.rs`.
 pub fn celebration_bursts(score: i32) -> impl Iterator<Item = &'static CelebrationBurst> {
     CELEBRATION_BURSTS.iter().filter(move |b| score > b.above)
 }
