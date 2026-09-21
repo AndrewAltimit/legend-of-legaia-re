@@ -2350,6 +2350,40 @@ impl World {
                 SPLASH_SPREAD,
             );
             self.minigames.fx.spawn_splash(&parts);
+            // The hook cue rides the same edge. It is `_DAT_8007B6DA` and it
+            // lived on `LineActorSim::tick`'s arm phase, which only the play
+            // window drives - so the strike was audible on one surface and
+            // silent on the two that share this tick. The cue queue is
+            // drained by every host, which is the point of putting it here:
+            // the splash and its sound come from one producer.
+            self.minigames
+                .pending_sfx
+                .push(u16::from(crate::fishing_actors::HOOK_CUE));
+        }
+        // The catch edge raises the celebration cue plus whichever of the four
+        // score-gated burst cues the catch unlocked (`FUN_801d4948`). Same
+        // argument as the hook: the tiers were resolved inside the native-only
+        // line actor, so only that host heard them.
+        if entry_phase == FishingPhase::Fighting && now == Some(FishingPhase::Done) {
+            let landed = self
+                .minigames
+                .fishing
+                .as_ref()
+                .and_then(|s| s.last_outcome())
+                .and_then(|o| match o {
+                    crate::fishing::FightOutcome::Landed { points } => Some(points),
+                    _ => None,
+                });
+            if let Some(points) = landed {
+                self.minigames
+                    .pending_sfx
+                    .push(u16::from(crate::fishing_actors::CELEBRATE_CUE));
+                for burst in crate::fishing_actors::celebration_bursts(points) {
+                    if let Some(cue) = burst.cue {
+                        self.minigames.pending_sfx.push(u16::from(cue));
+                    }
+                }
+            }
         }
     }
 

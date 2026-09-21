@@ -478,20 +478,14 @@ impl PlayWindowApp {
                 .map(|(l, _)| (l.x(), l.z))
                 .or_else(|| self.fish_wander.as_ref().map(|w| (w.x, w.z)))
                 .unwrap_or((0, 0));
-            let mut cues: Vec<u8> = Vec::new();
-            if let Some(cue) = f.cue {
-                cues.push(cue);
-            }
+            // The bursts' *visuals* are this actor's: they hang off the lure,
+            // which only this host simulates. Their **cues** are not - the
+            // hook cue and the celebration tiers are queued by
+            // `World::tick_fishing` off the session's own phase edges, where
+            // all three hosts drain them (`drain_minigame_sfx_cues`). Firing
+            // them here as well would play each one twice on this host alone.
             for b in &f.bursts {
                 self.session.host.world.minigames.fx.spawn_burst(b, origin);
-                if let Some(cue) = b.cue {
-                    cues.push(cue);
-                }
-            }
-            if let Some(bgm) = self.session.bgm.as_mut() {
-                for cue in cues {
-                    bgm.enqueue_sfx(cue as u16, 0, 0, 0);
-                }
             }
             if !f.done {
                 self.fish_line = Some(line);
@@ -685,16 +679,12 @@ impl PlayWindowApp {
                 let cues = step.cues.clone();
                 if let Some(bgm) = self.session.bgm.as_mut() {
                     for cue in cues {
-                        bgm.key_on_voice_attr(legaia_engine_audio::VoiceAttr {
-                            voice: cue.voice.min(23) as u8,
-                            vab_id: cue.vab_program_tone.0 as i16,
-                            program: cue.vab_program_tone.1 as u8,
-                            tone: cue.vab_program_tone.2 as u8,
-                            note: cue.note_and_fine.0 as u8,
-                            fine: cue.note_and_fine.1 as i16,
-                            vol_l: cue.volume.0 as i16,
-                            vol_r: cue.volume.1 as i16,
-                        });
+                        bgm.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
+                            cue.voice,
+                            cue.vab_program_tone,
+                            cue.note_and_fine,
+                            cue.volume,
+                        ));
                     }
                 }
             }

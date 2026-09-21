@@ -597,6 +597,39 @@ impl VoiceAttr {
         let mean = (i32::from(self.vol_l) + i32::from(self.vol_r)) / 2;
         mean.clamp(0, 127) as u8
     }
+
+    /// Narrow one resolved voice-attr call - the eight arguments retail's
+    /// `FUN_80065034` takes, in the widths its callers compute them at - into
+    /// this struct.
+    ///
+    /// The arena tally cue (`legaia_engine_core::other_game_overlay`) resolves
+    /// its arguments as `u32` / `i32` because that is how the overlay computes
+    /// them; every host then has to narrow the same eight slots the same way
+    /// before it can key a voice. Three hosts each spelled that narrowing out
+    /// by hand, which is three places for the voice-slot clamp to drift - and
+    /// the clamp is not cosmetic: retail rejects a voice slot at or above
+    /// [`NUM_VOICES`](crate::spu::NUM_VOICES), so a host that let one through
+    /// would key nothing and report success.
+    ///
+    /// The tuples are grouped as the cue carries them: `(vab_id, program,
+    /// tone)`, `(note, fine)`, `(vol_l, vol_r)`.
+    pub fn from_cue_words(
+        voice: u32,
+        vab_program_tone: (i32, i32, i32),
+        note_and_fine: (i32, i32),
+        volume: (i32, i32),
+    ) -> Self {
+        Self {
+            voice: voice.min(crate::spu::NUM_VOICES as u32 - 1) as u8,
+            vab_id: vab_program_tone.0 as i16,
+            program: vab_program_tone.1 as u8,
+            tone: vab_program_tone.2 as u8,
+            note: note_and_fine.0 as u8,
+            fine: note_and_fine.1 as i16,
+            vol_l: volume.0 as i16,
+            vol_r: volume.1 as i16,
+        }
+    }
 }
 
 /// Key one voice from an explicit [`VoiceAttr`] set.
@@ -622,6 +655,24 @@ pub fn key_on_voice_attr(attr: &VoiceAttr, spu: &mut Spu, vab: &VabBank) -> bool
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The eight cue arguments narrow in ONE place, and the voice-slot clamp
+    /// is the reason: retail rejects a slot at or above `NUM_VOICES`, so a
+    /// host that let one through would key nothing and report success. Three
+    /// hosts each spelled this out by hand before.
+    #[test]
+    fn cue_words_narrow_and_clamp_the_voice_slot() {
+        let a = VoiceAttr::from_cue_words(7, (1, 2, 3), (60, 0x40), (100, 100));
+        assert_eq!(a.voice, 7);
+        assert_eq!((a.vab_id, a.program, a.tone), (1, 2, 3));
+        assert_eq!((a.note, a.fine), (60, 0x40));
+        assert_eq!((a.vol_l, a.vol_r), (100, 100));
+        // An out-of-range slot lands on the last real voice rather than
+        // wrapping through `as u8` into a slot the SPU does have.
+        let b = VoiceAttr::from_cue_words(999, (0, 0, 0), (0, 0), (0, 0));
+        assert_eq!(b.voice, crate::spu::NUM_VOICES as u8 - 1);
+        assert!(usize::from(b.voice) < crate::spu::NUM_VOICES);
+    }
 
     #[test]
     fn bank_insert_and_get_round_trip() {

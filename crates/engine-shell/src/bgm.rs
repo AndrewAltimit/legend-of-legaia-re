@@ -754,8 +754,20 @@ impl BgmDirector for AudioBgmDirector {
         self.audio.set_sequencer_paused(false);
     }
 
+    /// Detach the track **and reopen the gate**.
+    ///
+    /// The pause state is one quantity with two representations here - this
+    /// director's own `paused` latch and the output's `sequencer_paused`
+    /// gate - and every other arm writes both (`pause`, `resume`,
+    /// `unhalt_pause`, `start_inner`). This one wrote only the latch, so a
+    /// stop issued while paused left the two disagreeing: latch clear, gate
+    /// closed. Nothing audible followed, because `start_inner` happens to
+    /// reopen the gate unconditionally - but "the defect is masked by the
+    /// next call" is not a body, and the browser play page's `stop` (which
+    /// documents itself as doing what this one does) always wrote both.
     fn stop(&mut self) {
         self.audio.detach_sequencer();
+        self.audio.set_sequencer_paused(false);
         self.paused = false;
         self.last_started = None;
     }
