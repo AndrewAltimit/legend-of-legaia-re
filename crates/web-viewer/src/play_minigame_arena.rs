@@ -199,14 +199,17 @@ impl LegaiaRuntime {
                 ui.round_banner = None;
             }
         }
+        // Each drained lane keys a voice directly, with no cue id in sight
+        // (`FUN_801D1288` builds the whole attr set), so nothing in the
+        // id-keyed scheduler could sound it. Collected here and keyed below,
+        // once the `minigame_ui` borrow is done.
+        let mut voice_cues = Vec::new();
         if let Some(interval) = ui.interval.as_mut() {
             interval.tick(1, pad);
             if let Some((ramp, tally)) = ui.tally.as_mut() {
-                // The tally cues key voices directly by attribute set (no
-                // cue id); the page's scheduler has no such door, so the
-                // roll plays silently here.
                 let step = ramp.tick(1, false, volume_word);
                 *tally += step.tally_gain;
+                voice_cues.extend(step.cues.iter().copied());
             }
             if interval.done() {
                 ui.interval = None;
@@ -215,6 +218,14 @@ impl LegaiaRuntime {
         }
         ui.prev_leg_open = leg_open;
         ui.prev_contest_open = contest_open;
+        for cue in voice_cues {
+            self.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
+                cue.voice,
+                cue.vab_program_tone,
+                cue.note_and_fine,
+                cue.volume,
+            ));
+        }
     }
 
     /// This frame's hub-screen quads, the native `muscle_hub_sprite_draws`
@@ -339,7 +350,14 @@ impl LegaiaRuntime {
                 let [taken, dealt] = s.last_turn_damage();
                 format!("turn: dealt {dealt}, took {taken}")
             }
-            MusclePhase::Won => "LEG WON!  (Cross = next leg)".to_string(),
+            // The caption names a spell; it awards nothing (the contest's
+            // payout lands when the ladder settles). This host dropped the id
+            // and printed the bare banner, so the one piece of information
+            // the Won caption carries was visible on the native window only.
+            MusclePhase::Won => format!(
+                "LEG WON! caption spell {:#x}  (Cross = next leg)",
+                s.reward_spell_id()
+            ),
             MusclePhase::Lost => "you lose the leg  (Cross = leave)".to_string(),
         };
         let l2 = format!(
@@ -569,6 +587,27 @@ impl LegaiaRuntime {
                     },
                 ));
             }
+        }
+        // The retail-coordinate HUD frame - the three dancers' score
+        // readouts, their box brackets, the Lv gauges and the rivals' beat
+        // tracks - laid out by the engine
+        // (`DanceGame::hud_frame_rows`, the presentation half of
+        // `FUN_801d231c`). This host drew none of it: the frame's whole
+        // resolution lived inside the native window's dance block, so the
+        // browser showed the two plain status lines above and nothing else,
+        // for a run driven by the same `DanceGame`.
+        //
+        // These rows are in retail's 320x240 stage coordinates and the two
+        // lines above are in this page's own pen space; both go through the
+        // caller's single `scale_stage_text_draws`, which is the transform
+        // the native window also applies to this block.
+        for r in g.hud_frame_rows(g.rival_hud_visible()) {
+            out.extend(row(
+                font,
+                &r.text,
+                (r.x, r.y),
+                if r.dim { DIM } else { WHITE },
+            ));
         }
         out
     }

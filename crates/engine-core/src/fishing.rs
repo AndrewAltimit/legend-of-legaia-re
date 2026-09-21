@@ -47,8 +47,13 @@
 
 use legaia_asset::fishing_species::FishingSpecies;
 
-/// Tension-gauge ceiling (`FUN_801d4004`: clamp high at `0x1000`).
+/// Tension-gauge ceiling (`FUN_801d4004`: clamp high at `0x1000`). The line
+/// depth `DAT_801d9298` is clamped to the same range.
 pub const TENSION_MAX: i32 = 0x1000;
+
+/// Divisor of the per-frame pull and line-sink terms (`FUN_801d4004`:
+/// `pull * factor / 150`).
+pub const SINK_DIVISOR: i32 = 150;
 /// Tension-gauge floor (`FUN_801d4004`: clamp low at `0`).
 pub const TENSION_MIN: i32 = 0;
 
@@ -303,6 +308,16 @@ pub struct FishingFight {
     strength: i32,
     /// Accumulated reel progress toward landing.
     progress: i32,
+    /// Line depth (`DAT_801d9298`), `0..=`[`TENSION_MAX`].
+    ///
+    /// The hooked fish sinks the line by its record's `+0x10` sink factor and
+    /// reeling pulls it back up - the same two terms
+    /// [`PondSession`](crate::fishing::PondSession) runs, which is the point:
+    /// both model the same minigame and only one of them carried a depth.
+    /// The catch HUD's depth gauge read a literal `0` on the two hosts that
+    /// drive a `FishingSession`, so the gauge sat empty for a whole fight
+    /// while the minigames page's filled.
+    depth: i32,
     outcome: FightOutcome,
 }
 
@@ -314,6 +329,7 @@ impl FishingFight {
             gauge: TensionGauge::new(rod_stat),
             strength: 0,
             progress: 0,
+            depth: 0,
             outcome: FightOutcome::Fighting,
         }
     }
@@ -333,6 +349,12 @@ impl FishingFight {
     /// `record < f + 300` gate on. The catch HUD's length readout reads it.
     pub fn progress(&self) -> i32 {
         self.progress
+    }
+
+    /// Live line depth (`DAT_801d9298`) - what the catch HUD's depth gauge
+    /// draws.
+    pub fn depth(&self) -> i32 {
+        self.depth
     }
 
     /// The hooked species.
@@ -371,6 +393,18 @@ impl FishingFight {
             return self.outcome;
         }
         self.gauge.apply_reel(input, base_pull, frame_step);
+        // Line depth (`DAT_801d9298`): the fish sinks it by the run-state term
+        // `pull * sink_factor / 150` and reeling pays it back up, reel A twice
+        // as fast as reel B - the same law and the same two rates
+        // [`PondSession::tick`] runs, so the one minigame does not have two
+        // depth models. The clamp is retail's `[0, 0x1000]`.
+        let sink = (base_pull.max(0).saturating_mul(self.species.sink_factor)) / SINK_DIVISOR;
+        let reeled = match input {
+            ReelInput::ReelA => 2 * frame_step.max(1),
+            ReelInput::ReelB => frame_step.max(1),
+            ReelInput::Idle => 0,
+        };
+        self.depth = (self.depth + sink - reeled).clamp(0, TENSION_MAX);
         // Working the fish (reeling) accrues fight strength + landing progress;
         // a stronger pull banks more strength (a better score) but risks tension.
         if input != ReelInput::Idle {
@@ -647,6 +681,20 @@ impl PrizeExchange {
         }
     }
 
+    /// Whether `row`'s **one-time bit is latched** in `purchased_mask` - i.e.
+    /// the prize has already been taken.
+    ///
+    /// Not the same question as [`Self::is_available`], which folds three
+    /// independent refusals together (price, owned cap, latch). Reading
+    /// availability as the latch labels every unaffordable one-time prize on
+    /// a fresh save "sold". The three hosts each answered this differently -
+    /// one re-tested availability with the other two gates forced open, one
+    /// shifted the mask by hand, and one never asked at all - so it lives
+    /// here, once.
+    pub fn is_latched(&self, row: usize, purchased_mask: u32) -> bool {
+        (purchased_mask >> self.purchase_bit(row)) & 1 != 0
+    }
+
     /// Row availability (drawn white vs grey; `FUN_801d6f90`): affordable,
     /// the owned count is not at [`legaia_asset::fishing_exchange::OWNED_CAP`],
     /// and a one-time row is not already latched in `purchased_mask`.
@@ -657,7 +705,7 @@ impl PrizeExchange {
         };
         (r.price as i64) <= points as i64
             && owned != legaia_asset::fishing_exchange::OWNED_CAP
-            && (purchased_mask >> self.purchase_bit(row)) & 1 == 0
+            && !self.is_latched(row, purchased_mask)
     }
 
     /// Max purchasable quantity for `row` (`FUN_801d092c`):
@@ -1549,7 +1597,7 @@ impl FishAi {
             sink: 0,
         };
         match self.state {
-            FishMove::Run => out.sink = (pull * sp.sink_factor) / 150,
+            FishMove::Run => out.sink = (pull * sp.sink_factor) / SINK_DIVISOR,
             FishMove::Dive => out.sink = (pull * sp.sink_factor) / 75,
             FishMove::DartLeft | FishMove::DartRight => {
                 let push = (((fs) >> 2) + 0x20) * sp.dart_factor / 100;
@@ -2030,6 +2078,78 @@ mod tests {
             roll_cutoff_c: 90,
             strike_gate,
         }
+    }
+
+    /// The line depth `DAT_801d9298` is live on a `FishingFight`, not a
+    /// literal `0`: the hooked fish sinks it by its own `+0x10` factor and
+    /// the reel pays it back, reel A twice as fast as reel B. Two of the
+    /// three hosts drew the catch HUD's depth gauge off this, and drew it
+    /// empty for a whole fight because the value did not exist.
+    #[test]
+    fn the_fight_carries_a_line_depth_the_fish_sinks_and_the_reel_lifts() {
+        let sp = species(0, 100, 4000);
+        let mut f = FishingFight::new(sp, 4);
+        let mut record = FishingRecord::default();
+        assert_eq!(f.depth(), 0, "a fresh hook starts at the surface");
+        // Idling lets the fish run: pull 300 * sink_factor 4 / 150 = 8 a
+        // frame, nothing paid back.
+        for _ in 0..4 {
+            f.tick(ReelInput::Idle, 300, 1, &mut record);
+        }
+        assert_eq!(f.depth(), 4 * (300 * 4 / SINK_DIVISOR));
+        let sunk = f.depth();
+        // Reel A lifts 2 per frame against the same 8 of sink, so the line
+        // keeps sinking - but more slowly than it did.
+        f.tick(ReelInput::ReelA, 300, 1, &mut record);
+        assert_eq!(f.depth(), sunk + (300 * 4 / SINK_DIVISOR) - 2);
+        // With no pull at all the reel is pure lift, and the surface is a
+        // floor (retail clamps to `[0, 0x1000]`).
+        for _ in 0..200 {
+            f.tick(ReelInput::ReelA, 0, 1, &mut record);
+        }
+        assert_eq!(f.depth(), 0);
+        assert!(f.depth() <= TENSION_MAX);
+    }
+
+    /// `is_available` folds three refusals together; `is_latched` asks only
+    /// about the one-time bit. Reading availability as the latch is what
+    /// printed "sold" beside every unaffordable one-time prize on a fresh
+    /// save.
+    #[test]
+    fn the_one_time_latch_is_not_the_same_question_as_availability() {
+        let rows = vec![
+            PrizeRow {
+                row: 0,
+                limit: 1,
+                price: 500,
+                item_id: 0x70,
+                name: None,
+            },
+            PrizeRow {
+                row: 1,
+                limit: 99,
+                price: 100,
+                item_id: 0x71,
+                name: None,
+            },
+        ];
+        let ex = PrizeExchange {
+            venue: 0,
+            rows,
+            cursor: 0,
+        };
+        // Broke, nothing bought: row 0 is unavailable and NOT latched.
+        assert!(!ex.is_available(0, 0, 0, 0));
+        assert!(!ex.is_latched(0, 0));
+        // Rich, nothing bought: available, still not latched.
+        assert!(ex.is_available(0, 10_000, 0, 0));
+        assert!(!ex.is_latched(0, 0));
+        // Bought: latched, and unavailable however rich the player is.
+        let mask = 1u32 << ex.purchase_bit(0);
+        assert!(ex.is_latched(0, mask));
+        assert!(!ex.is_available(0, 10_000, 0, mask));
+        // Its neighbour's bit is untouched.
+        assert!(!ex.is_latched(1, mask));
     }
 
     #[test]

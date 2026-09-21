@@ -260,6 +260,28 @@ pub fn fmv_is_skippable(fmv_id: i16) -> bool {
     fmv_id == 0
 }
 
+/// The buttons retail's `0x1F0` packed-mask test covers, in the standard PSX
+/// layout: Triangle / Circle / Cross / Square / Select.
+pub const FMV_SKIP_BUTTONS: [crate::input::PadButton; 5] = [
+    crate::input::PadButton::Triangle,
+    crate::input::PadButton::Circle,
+    crate::input::PadButton::Cross,
+    crate::input::PadButton::Square,
+    crate::input::PadButton::Select,
+];
+
+/// Retail's abort test over a just-pressed PSX pad word: a skippable
+/// `fmv_id` and any of [`FMV_SKIP_BUTTONS`].
+///
+/// Here rather than in a host because it is retail's decision, and only one
+/// host was making it - the browser aborted the attract movie on a pad press
+/// and the native window played it to its last frame whatever the player did,
+/// which is a difference a visitor notices in the first ten seconds.
+// REF: FUN_801cea3c
+pub fn fmv_skip_edge_hit(fmv_id: i16, edge: u16) -> bool {
+    fmv_is_skippable(fmv_id) && FMV_SKIP_BUTTONS.iter().any(|b| edge & (*b as u16) != 0)
+}
+
 /// One `ClearImage` rect the master dispatch blanks before playback, in VRAM
 /// coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

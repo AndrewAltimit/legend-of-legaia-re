@@ -2512,6 +2512,108 @@ pub enum DanceHudDraw {
     BeatTrack { slot: usize, x: i16, y: i16 },
 }
 
+/// One laid-out row of the dance HUD frame: a string, its 320x240 stage seat,
+/// and which of the caller's two pens it takes.
+///
+/// [`DanceHudDraw`] describes *what* retail's HUD driver emits; this is the
+/// resolved presentation of it - digits already suppressed, the `Lv.` label
+/// already formed, the rival track already sampled against the chart. Every
+/// one of those decisions lived inside the native window's dance block, so
+/// the browser play page - running the same `DanceGame` - had no way to draw
+/// the frame and showed a plain status line instead.
+///
+/// A row carries a `String` rather than draws because `legaia-engine-ui` does
+/// not depend on this crate: the host lays the string out with its own font
+/// and pens, which is three lines, and nothing about *which* string is the
+/// host's to decide.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DanceHudRow {
+    /// The text to draw.
+    pub text: String,
+    /// Stage-space pen, in retail's 320x240 coordinates.
+    pub x: i32,
+    pub y: i32,
+    /// `true` for the dim pen (box brackets, gauges, rival tracks), `false`
+    /// for the bright one (the score readouts).
+    pub dim: bool,
+}
+
+impl DanceGame {
+    /// Whether the rival half of the HUD frame draws: retail's
+    /// `_DAT_8007B6D0`, raised in the two versus modes. Both hosts stood in
+    /// for this global with their own copy of the same `matches!`.
+    pub fn rival_hud_visible(&self) -> bool {
+        matches!(self.mode(), DanceMode::Qualifier | DanceMode::Finals)
+    }
+
+    /// The HUD frame as laid-out rows - the presentation half of
+    /// [`Self::hud_draws`] (`FUN_801d231c`).
+    ///
+    /// The human dancer's own beat track (`slot == 0`) is skipped: both hosts
+    /// already carry the full player track in their own status block, at a
+    /// pen of their choosing rather than at retail's anchor.
+    pub fn hud_frame_rows(&self, rival_hud: bool) -> Vec<DanceHudRow> {
+        let beat = self.beat_index();
+        let mut out = Vec::new();
+        for d in self.hud_draws(rival_hud) {
+            match d {
+                DanceHudDraw::Score { x, y, value, .. } => {
+                    let text: String = dance_number_digits(value)
+                        .iter()
+                        .filter_map(|d| d.map(|v| char::from(b'0' + v)))
+                        .collect();
+                    out.push(DanceHudRow {
+                        text,
+                        x: x as i32,
+                        y: y as i32,
+                        dim: false,
+                    });
+                }
+                DanceHudDraw::ScoreBox { x, y } => {
+                    // The frame itself is the quad layer's; a bracket marks
+                    // its slot in the text layer.
+                    out.push(DanceHudRow {
+                        text: "[".to_string(),
+                        x: x as i32 - 12,
+                        y: y as i32,
+                        dim: true,
+                    });
+                }
+                DanceHudDraw::Gauge { x, y, value, .. } => {
+                    out.push(DanceHudRow {
+                        text: format!("Lv.{}", value / GAUGE_STEP),
+                        x: x as i32,
+                        y: y as i32,
+                        dim: true,
+                    });
+                }
+                DanceHudDraw::BeatTrack { slot, x, y } => {
+                    if slot == 0 {
+                        continue;
+                    }
+                    if let Some(row) = self.chart_row(self.dancer_lane(slot)) {
+                        let text: String = (0..8u32)
+                            .map(|i| match row[((beat + i) % row.len() as u32) as usize] {
+                                1 => '<',
+                                2 => '>',
+                                3 => '^',
+                                _ => '.',
+                            })
+                            .collect();
+                        out.push(DanceHudRow {
+                            text,
+                            x: x as i32,
+                            y: y as i32,
+                            dim: true,
+                        });
+                    }
+                }
+            }
+        }
+        out
+    }
+}
+
 // Wired: the free-function half of [`DanceGame::hud_draws`], reached through
 // it from the play window's dance block every frame (see the note there for
 // how the host stands in for `_DAT_8007B6D0`).
@@ -3403,6 +3505,49 @@ mod tests {
             x: 0x18,
             y: 0xD4
         }));
+    }
+
+    /// The HUD frame's **presentation** is the engine's, not a host's: which
+    /// rows exist, at which 320x240 seats, in which pen. It used to live
+    /// inside the native window's dance block, so the browser play page drew
+    /// a plain status line and no frame at all.
+    #[test]
+    fn the_hud_frame_resolves_its_own_rows() {
+        let g = DanceGame::new(chart(), false);
+        assert!(g.rival_hud_visible(), "Qualifier is a versus mode");
+        let solo = g.hud_frame_rows(false);
+        let versus = g.hud_frame_rows(true);
+        assert!(
+            versus.len() > solo.len(),
+            "the rival flag adds the rivals' gauges and tracks"
+        );
+        // Every seat the emitter names survives into a row, and the score
+        // readouts take the bright pen while the chrome takes the dim one.
+        let gauge = solo
+            .iter()
+            .find(|r| r.text.starts_with("Lv."))
+            .expect("the human's groove gauge is always in the frame");
+        assert_eq!(
+            (gauge.x, gauge.y),
+            (DANCE_GAUGE_XY.0 as i32, DANCE_GAUGE_XY.1 as i32)
+        );
+        assert!(gauge.dim);
+        assert!(
+            solo.iter().any(|r| !r.dim),
+            "a score readout takes the bright pen"
+        );
+        // The human's own beat track is the host's row, not the frame's: the
+        // frame carries the rivals' only.
+        let rival_tracks = versus
+            .iter()
+            .filter(|r| r.text.len() == 8 && r.text.chars().all(|c| "<>^.".contains(c)))
+            .count();
+        assert_eq!(rival_tracks, 2);
+        assert!(
+            !solo
+                .iter()
+                .any(|r| r.text.len() == 8 && r.text.chars().all(|c| "<>^.".contains(c)))
+        );
     }
 
     #[test]

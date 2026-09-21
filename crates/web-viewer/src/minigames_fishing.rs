@@ -710,7 +710,7 @@ impl LegaiaMinigames {
             .iter()
             .map(|r| {
                 let owned = *self.fishing_prizes.get(&(r.item_id as u32)).unwrap_or(&0);
-                let latched = (mask >> ex.purchase_bit(r.row)) & 1 != 0;
+                let latched = ex.is_latched(r.row, mask);
                 format!(
                     concat!(
                         r#"{{"row":{},"limit":{},"price":{},"item_id":{},"name":{},"#,

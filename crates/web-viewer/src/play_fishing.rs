@@ -181,15 +181,16 @@ impl LegaiaRuntime {
                 0
             },
         );
-        // Two retail globals have no engine analogue and stay zero, exactly as
-        // on the native host: the cast line-projection term (`DAT_801d9178`)
-        // and the line depth (`DAT_801d9298`).
+        // One retail global still has no engine analogue and stays zero,
+        // exactly as on the native host: the cast line-projection term
+        // (`DAT_801d9178`). The line depth `DAT_801d9298` is live -
+        // `FishingFight` carries it.
         let fight = s.fight();
         items.extend(ui::catch_hud_draws(&CatchHudState {
             record: fight.map(|f| f.progress()).unwrap_or(0),
             line_extent: 0,
             cast_power: s.cast_power(),
-            depth: 0,
+            depth: fight.map(|f| f.depth()).unwrap_or(0),
             tension: fight.map(|f| f.tension()).unwrap_or(0),
             gauges_visible: s.phase() == FishingPhase::Fighting,
         }));
@@ -382,7 +383,7 @@ impl LegaiaRuntime {
     /// ```json
     /// { "venue": 0, "points": 0, "rows": [
     ///     { "name": "...", "price": 0, "one_time": false, "available": true,
-    ///       "owned": 0 } ] }
+    ///       "owned": 0, "latched": false } ] }
     /// ```
     ///
     /// `null` when the venue pages did not decode.
@@ -411,6 +412,12 @@ impl LegaiaRuntime {
                         owned,
                         world.minigames.fishing_prizes_purchased,
                     ),
+                    // The one-time latch, on its own. `available` folds the
+                    // price and owned-cap refusals in with it, so this page
+                    // - which exposed only `available` - could not tell a
+                    // prize already taken from one the player cannot yet
+                    // afford, and the JS had no way to label either.
+                    "latched": ex.is_latched(i, world.minigames.fishing_prizes_purchased),
                 })
             })
             .collect();

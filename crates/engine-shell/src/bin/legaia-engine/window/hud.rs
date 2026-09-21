@@ -448,53 +448,21 @@ impl PlayWindowApp {
             // two versus modes, so the rivals' score boxes, gauges and beat
             // tracks draw there and nowhere else.
             {
-                use legaia_engine_core::dance::{DanceHudDraw, DanceMode};
-                let rival_hud = matches!(g.mode(), DanceMode::Qualifier | DanceMode::Finals);
+                // Which rows, at which seats, in which pen is the engine's
+                // decision (`DanceGame::hud_frame_rows`); this host only lays
+                // the strings out. It used to be written out longhand here,
+                // which is why the browser play page - same `DanceGame`, same
+                // run - drew a plain status line instead of the frame.
+                let rival_hud = g.rival_hud_visible();
                 let (stage_origin, stage_scale) = self.save_select_stage(w, h);
                 let mut stage_draws: Vec<TextDraw> = Vec::new();
-                for d in g.hud_draws(rival_hud) {
-                    match d {
-                        DanceHudDraw::Score { x, y, value, .. } => {
-                            let digits: String =
-                                legaia_engine_core::dance::dance_number_digits(value)
-                                    .iter()
-                                    .filter_map(|d| d.map(|v| char::from(b'0' + v)))
-                                    .collect();
-                            let ly = self.font.layout_ascii(&digits);
-                            stage_draws.extend(text_draws_for(&ly, (x as i32, y as i32), white));
-                        }
-                        DanceHudDraw::ScoreBox { x, y } => {
-                            // The frame itself is the quad layer's; a dim
-                            // bracket marks its slot in the text layer.
-                            let ly = self.font.layout_ascii("[");
-                            stage_draws.extend(text_draws_for(&ly, (x as i32 - 12, y as i32), dim));
-                        }
-                        DanceHudDraw::Gauge { x, y, value, .. } => {
-                            let lv = value / legaia_engine_core::dance::GAUGE_STEP;
-                            let ly = self.font.layout_ascii(&format!("Lv.{lv}"));
-                            stage_draws.extend(text_draws_for(&ly, (x as i32, y as i32), dim));
-                        }
-                        DanceHudDraw::BeatTrack { slot, x, y } => {
-                            // The rival tracks draw their own lane's next
-                            // cells at the retail anchor; the human's full
-                            // track is the pen-space row above.
-                            if slot == 0 {
-                                continue;
-                            }
-                            if let Some(row) = g.chart_row(g.dancer_lane(slot)) {
-                                let cells: String = (0..8u32)
-                                    .map(|i| match row[((beat + i) % row.len() as u32) as usize] {
-                                        1 => '<',
-                                        2 => '>',
-                                        3 => '^',
-                                        _ => '.',
-                                    })
-                                    .collect();
-                                let ly = self.font.layout_ascii(&cells);
-                                stage_draws.extend(text_draws_for(&ly, (x as i32, y as i32), dim));
-                            }
-                        }
-                    }
+                for r in g.hud_frame_rows(rival_hud) {
+                    let ly = self.font.layout_ascii(&r.text);
+                    stage_draws.extend(text_draws_for(
+                        &ly,
+                        (r.x, r.y),
+                        if r.dim { dim } else { white },
+                    ));
                 }
                 legaia_engine_render::scale_stage_text_draws(
                     &mut stage_draws,
@@ -690,17 +658,17 @@ impl PlayWindowApp {
             // out: the length / extent / cast-power readouts, plus the depth
             // and tension gauge block once the fish is on. `record` is the
             // fight's reel progress - the engine's analogue of the retail line
-            // record the land gate compares. Two retail globals have no engine
-            // analogue and stay zero: the cast line-projection term
-            // (`DAT_801d9178`) and the line depth (`DAT_801d9298`), so the
-            // extent readout reads 0 and the depth bar sits empty.
+            // record the land gate compares, and `depth` is `DAT_801d9298`,
+            // which `FishingFight` now carries. One retail global still has no
+            // engine analogue and stays zero: the cast line-projection term
+            // `DAT_801d9178`, so the extent readout reads 0.
             let fight = s.fight();
             items.extend(legaia_engine_render::catch_hud_draws(
                 &legaia_engine_render::CatchHudState {
                     record: fight.map(|f| f.progress()).unwrap_or(0),
                     line_extent: 0,
                     cast_power: s.cast_power(),
-                    depth: 0,
+                    depth: fight.map(|f| f.depth()).unwrap_or(0),
                     tension: fight.map(|f| f.tension()).unwrap_or(0),
                     gauges_visible: s.phase() == FishingPhase::Fighting,
                 },
@@ -769,10 +737,10 @@ impl PlayWindowApp {
                 // refusals together (price, owned cap, latch), so reading it
                 // as the latch printed "sold" beside every unaffordable
                 // one-time prize on a fresh save - the row a player has never
-                // seen reads as the row they already bought. Ask the latch on
-                // its own by re-testing with the two other gates open.
-                let sold = r.is_one_time()
-                    && !ex.is_available(i, i32::MAX, 0, world.minigames.fishing_prizes_purchased);
+                // seen reads as the row they already bought. `is_latched` is
+                // the question on its own, shared with both browser hosts.
+                let sold =
+                    r.is_one_time() && ex.is_latched(i, world.minigames.fishing_prizes_purchased);
                 let tag = if r.is_one_time() {
                     if sold { "sold" } else { "one-time" }
                 } else {
@@ -1335,7 +1303,7 @@ impl PlayWindowApp {
             // text; the battle tick parks the SM and the camera holds the
             // dialogue close-up), the menus are hidden - retail shows no
             // command chrome under the tutorial box.
-            let dialogue_up = bw.dialog.current.is_some() || bw.dialog.inline.is_some();
+            let dialogue_up = bw.dialogue_owns_input();
             if dialogue_up {
                 // Dialogue box up: no menu chrome.
             } else if let Some(view) = bw.arts_input_view() {
