@@ -953,6 +953,191 @@ pub fn attribute(dump: &DumpExtent, image: &[u8], base_va: u32) -> Attribution {
 }
 
 // ---------------------------------------------------------------------------
+// An image's own uninitialised data region
+// ---------------------------------------------------------------------------
+
+/// Shortest all-zero run considered as an image's uninitialised data region.
+pub const BSS_RUN_MIN: usize = 256;
+
+/// Sites that must form one single address inside a zero run for it to count
+/// as addressed, when no second distinct address does.
+pub const BSS_MIN_SITES: usize = 4;
+
+/// How many instructions after a `lui` its half may be completed in.
+///
+/// A MIPS address materialises as `lui rt, hi` plus a second instruction that
+/// uses `rt` as its base, and the assembler is free to put anything in
+/// between - including the `jal` whose delay slot carries the pair's low half,
+/// which is where the STR overlay hands the VLC unpacker its destination
+/// (`0x801CF214` / `0x801CF218`). The window is walked forward and abandoned
+/// the moment something redefines `rt`, so a stale high half can never be
+/// paired with an unrelated low one; a backward-only scan from the second
+/// instruction misses the delay-slot form entirely.
+const LUI_PAIR_WINDOW: usize = 16;
+
+/// The register a MIPS word writes, or `None` for the forms that write none.
+fn defines(w: u32) -> Option<u32> {
+    let op = w >> 26;
+    let rt = (w >> 16) & 0x1F;
+    match op {
+        // SPECIAL: `rd`, except the two jump-register forms.
+        0x00 => match w & 0x3F {
+            0x08 => None,     // jr
+            0x09 => Some(31), // jalr (retail always links to ra)
+            _ => Some((w >> 11) & 0x1F),
+        },
+        0x01 | 0x04..=0x07 => None, // branches
+        0x02 => None,               // j
+        0x03 => Some(31),           // jal
+        0x08..=0x0F => Some(rt),    // immediate ALU + lui
+        0x20..=0x25 => Some(rt),    // loads
+        0x28..=0x2B => None,        // stores
+        0x10 | 0x12 => match (w >> 21) & 0x1F {
+            0x00 | 0x02 => Some(rt), // mfc0 / mfc2
+            _ => None,
+        },
+        _ => Some(rt),
+    }
+}
+
+/// Every `(site_va, target_va)` the image's own code forms with a `lui` pair.
+///
+/// This is the structural half of the uninitialised-data claim below: a zero
+/// run is only that image's own declared buffer if the image's own code
+/// computes an address inside it. Shape cannot say so - zero fill looks the
+/// same whoever wrote it - which is why the test is a pointer-forming
+/// instruction and not a byte statistic.
+pub fn formed_addresses(image: &[u8], base_va: u32) -> Vec<(u32, u32)> {
+    let mut out = Vec::new();
+    let word = |off: usize| -> Option<u32> {
+        image
+            .get(off..off + 4)
+            .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
+    };
+    let mut off = 0usize;
+    while off + 4 <= image.len() {
+        let Some(w) = word(off) else { break };
+        if w >> 26 != 0x0F {
+            off += 4;
+            continue;
+        }
+        let rt = (w >> 16) & 0x1F;
+        let hi = (w & 0xFFFF) << 16;
+        for k in 1..=LUI_PAIR_WINDOW {
+            let at = off + 4 * k;
+            let Some(v) = word(at) else { break };
+            let op = v >> 26;
+            let rs = (v >> 21) & 0x1F;
+            let low = v & 0xFFFF;
+            if rs == rt {
+                let target = match op {
+                    // ori: the low half is zero-extended.
+                    0x0D => Some(hi | low),
+                    // addiu and every load/store form: sign-extended.
+                    0x09 | 0x20..=0x25 | 0x28..=0x2B => Some(hi.wrapping_add(low as i16 as u32)),
+                    _ => None,
+                };
+                if let Some(t) = target {
+                    out.push((base_va + at as u32, t));
+                }
+            }
+            if defines(v) == Some(rt) {
+                break;
+            }
+        }
+        off += 4;
+    }
+    out
+}
+
+/// Maximal all-zero runs of at least `min` bytes, as `(start, end)`.
+pub fn zero_runs(buf: &[u8], min: usize) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < buf.len() {
+        if buf[i] != 0 {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < buf.len() && buf[i] == 0 {
+            i += 1;
+        }
+        if i - start >= min {
+            out.push((start, i));
+        }
+    }
+    out
+}
+
+/// Claim the zero runs an overlay image's own code addresses.
+///
+/// An overlay is streamed by a **fixed-length** transfer: `FUN_8003EBE4` asks
+/// `FUN_8003E8A8` for the entry's sector count - `toc[i+3] - toc[i+2]`, the
+/// gap to the next entry - and hands it straight to `FUN_8003E800`. So the
+/// whole extent reaches RAM whatever is in it, and a linked image's
+/// uninitialised data region travels with its code as zero fill. Those bytes
+/// are not a format nobody has walked; they are the buffers the image's own
+/// code writes at runtime, and the disc's largest single unclaimed run (PROT
+/// `0970`, 131172 bytes) is one.
+///
+/// Two rules keep this from being a way to buy percentage points, and both are
+/// asserted against the raw file rather than against the parser:
+///
+/// * the claim is exactly one maximal **all-zero** run - it can never grow
+///   into live content, and a run interrupted by a single non-zero byte is two
+///   runs;
+/// * the image's own code must address the run, and once is not enough. A
+///   single `lui` pair landing somewhere in a multi-kilobyte window is a
+///   coincidence an image with thousands of pairs will produce; two distinct
+///   addresses, or one formed at [`BSS_MIN_SITES`] separate sites, is a
+///   structure. A zero region below that bar stays residue, which is what keeps
+///   a donor's zero tail - and a zero hole inside a sparse data segment - out of
+///   the figure. Entry `0970`'s post-blob slack and its 256-byte data-segment
+///   hole are refused for having no site at all; the menu overlay's largest
+///   data-segment hole is refused on the bar.
+///
+/// The claim's `detail` reports both counts, so the reader can weigh a run
+/// addressed twice against one addressed hundreds of times.
+fn claim_uninitialised_data(buf: &[u8], sink: &mut Sink, base_va: u32) {
+    let formed = formed_addresses(buf, base_va);
+    let mut claimed = 0usize;
+    let mut runs = 0usize;
+    for (start, end) in zero_runs(buf, BSS_RUN_MIN) {
+        let lo = base_va.wrapping_add(start as u32);
+        let hi = base_va.wrapping_add(end as u32);
+        let sites = formed.iter().filter(|(_, t)| *t >= lo && *t < hi).count();
+        let distinct = formed
+            .iter()
+            .filter(|(_, t)| *t >= lo && *t < hi)
+            .map(|(_, t)| *t)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
+        if distinct < 2 && sites < BSS_MIN_SITES {
+            continue;
+        }
+        sink.claim(
+            start,
+            end,
+            OWNER_PAD,
+            format!(
+                "uninitialised data region {lo:#010x}..{hi:#010x}, \
+                 {distinct} address(es) formed inside it at {sites} site(s)"
+            ),
+        );
+        claimed += end - start;
+        runs += 1;
+    }
+    if runs > 0 {
+        sink.note(format!(
+            "{runs} uninitialised data region(s), {claimed} bytes: \
+             zero fill the loader transfers because the read length is the \
+             entry's own sector extent, addressed by this image's own code"
+        ));
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Walkers
 // ---------------------------------------------------------------------------
 
@@ -2819,6 +3004,7 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
              of their evidence"
         ));
     }
+    claim_uninitialised_data(buf, sink, base);
     claim_pinned_overlay_assets(buf, sink, idx);
 }
 
@@ -2864,6 +3050,131 @@ fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_index: u32) {
     if prot_index == 898 {
         claim_effect_proto_records(buf, sink);
         claim_battle_overlay_strings(buf, sink);
+    }
+    if prot_index == STR_OVERLAY_PROT_INDEX {
+        claim_str_overlay_tables(buf, sink);
+    }
+    if prot_index == crate::other3_roster::OVERLAY_PROT_INDEX {
+        claim_other3_roster(buf, sink);
+    }
+}
+
+/// The `OTHER3` dev module's 81-record selection roster (PROT `0974`).
+///
+/// Three quarters of that entry is one fixed-stride table of NUL-padded
+/// labels, and a shape test can only call the whole thing `ascii_text` - the
+/// stride is in the drawing loop's index arithmetic, not in the bytes
+/// ([`crate::other3_roster`]). Claiming each record at the stride covers its
+/// padding too, because the stride is what the loop advances by.
+fn claim_other3_roster(buf: &[u8], sink: &mut Sink) {
+    use crate::other3_roster as roster;
+    if roster::records(buf).is_none() {
+        sink.note("no OTHER3 roster at the pinned offset in PROT 0974");
+        return;
+    }
+    for i in 0..roster::RECORD_COUNT {
+        let Some((off, len)) = roster::record_extent(i) else {
+            break;
+        };
+        sink.claim(
+            off,
+            (off + len).min(buf.len()),
+            OWNER_STRING,
+            format!("OTHER3 roster label {i} (other3_roster)"),
+        );
+    }
+    sink.note(format!(
+        "{} roster labels on a {:#x} stride at {:#010x} (other3_roster)",
+        roster::RECORD_COUNT,
+        roster::RECORD_STRIDE,
+        roster::ROSTER_VA
+    ));
+}
+
+/// PROT index of the STR/MDEC cutscene overlay.
+const STR_OVERLAY_PROT_INDEX: u32 = 970;
+
+/// The STR/MDEC overlay's two data-segment structures: the per-`fmv_id`
+/// dispatch table with the movie paths it points at, and the compressed blob
+/// the VLC lookup table is unpacked from.
+///
+/// Both are consumed by modules in this workspace at pinned constants
+/// ([`crate::fmv_dispatch`], `legaia_mdec::strv2_table`) and neither was
+/// claimed: the dispatch table and its path strings read as `plausible_mips` /
+/// `ascii_text` residue, and the blob - the second-largest overlay residue run
+/// on the disc - read as `mixed`, which is what a compressed stream looks like
+/// to a shape test.
+///
+/// The blob's extent is **measured**, not assumed: `unpack_lz_tracked` walks
+/// the control bytes to the `0xFF 0xFF` terminator and reports what it
+/// consumed, the same way [`take_lzs`] measures an LZS span. What is left of
+/// the entry's last sector past that terminator is the builder's sector
+/// buffer, and takes the same one-sector-wide slack rule the streaming classes
+/// take.
+fn claim_str_overlay_tables(buf: &[u8], sink: &mut Sink) {
+    use crate::fmv_dispatch as fmv;
+    use legaia_mdec::strv2_table as vlc;
+
+    let base = fmv::STR_OVERLAY_BASE_VA;
+    let table_off = (fmv::FMV_TABLE_VA - base) as usize;
+    let table_len = fmv::FMV_SLOT_COUNT * fmv::SLOT_STRIDE;
+    match fmv::FmvTable::from_str_overlay(buf) {
+        Some(_) => {
+            sink.claim(
+                table_off,
+                (table_off + table_len).min(buf.len()),
+                OWNER_TOC,
+                format!(
+                    "FMV dispatch table, {} x {} bytes (fmv_dispatch)",
+                    fmv::FMV_SLOT_COUNT,
+                    fmv::SLOT_STRIDE
+                ),
+            );
+            // Each slot's `+0x00` is a pointer to its ISO9660 movie path; the
+            // strings sit in the image's own head pool, so the extents come
+            // from the pointers plus a NUL scan rather than from a table.
+            for i in 0..fmv::FMV_SLOT_COUNT {
+                let at = table_off + i * fmv::SLOT_STRIDE;
+                let Some(w) = buf.get(at..at + 4) else { break };
+                let ptr = u32::from_le_bytes(w.try_into().unwrap());
+                let Some(off) = ptr.checked_sub(base).map(|o| o as usize) else {
+                    continue;
+                };
+                let Some(tail) = buf.get(off..) else { continue };
+                let Some(len) = tail.iter().position(|&b| b == 0) else {
+                    continue;
+                };
+                sink.claim(
+                    off,
+                    off + len + 1,
+                    OWNER_STRING,
+                    format!("movie path for fmv_id {i} (fmv_dispatch)"),
+                );
+            }
+        }
+        None => sink.note("no FMV dispatch table at the pinned offset in PROT 0970"),
+    }
+
+    let src = (vlc::STRV2_PACKED_VA - base) as usize;
+    match buf.get(src..).map(vlc::unpack_lz_tracked) {
+        Some(Ok((table, consumed))) => {
+            let end = (src + consumed).min(buf.len());
+            sink.claim(
+                src,
+                end,
+                OWNER_LZS,
+                format!(
+                    "STRv2 VLC table source, mode-switched LZ77 -> {} bytes at {:#010x} \
+                     (legaia_mdec::strv2_table, FUN_801f1a00)",
+                    table.len(),
+                    vlc::STRV2_TABLE_VA
+                ),
+            );
+            // Past the terminator, inside the entry's last sector: the
+            // builder's buffer, the same slack the streaming classes declare.
+            claim_last_sector_slack(buf, sink, end, "slack past the VLC blob terminator");
+        }
+        _ => sink.note("the VLC blob at the pinned offset does not terminate"),
     }
 }
 

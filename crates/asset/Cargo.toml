@@ -23,6 +23,10 @@ legaia-lzs = { path = "../lzs" }
 # `byte_account`'s MES walker: a scene bundle's type-0x04 section is a MES
 # dialog container, and its record extents are what the accounting claims.
 legaia-mes = { path = "../mes" }
+# `byte_account`'s STR/MDEC overlay claims: the VLC table's packed blob is the
+# entry's second-largest residue run, and `strv2_table` already walks it - the
+# accounting measures the extent with that walk rather than re-implementing it.
+legaia-mdec = { path = "../mdec" }
 legaia-prot = { path = "../prot" }
 legaia-tim = { path = "../tim" }
 legaia-tmd = { path = "../tmd" }

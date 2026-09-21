@@ -57,10 +57,10 @@ pub const STR_OVERLAY_PROT_INDEX: u32 = 970;
 /// `(start_frame - 1) * SECTORS_PER_FRAME` into the file.
 pub const SECTORS_PER_FRAME: u32 = 10;
 /// VA of the per-`fmv_id` dispatch table the play-loop selector indexes.
-const FMV_TABLE_VA: u32 = 0x801D_0A6C;
+pub const FMV_TABLE_VA: u32 = 0x801D_0A6C;
 /// Per-`fmv_id` slot stride (`fmv_id * 0x20` - the `sll v0,v0,0x5` selector at
 /// overlay VA `0x801CEC9C`).
-const SLOT_STRIDE: usize = 0x20;
+pub const SLOT_STRIDE: usize = 0x20;
 /// Number of `fmv_id` slots in the table (9 retail + 14 dev).
 pub const FMV_SLOT_COUNT: usize = 23;
 

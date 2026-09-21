@@ -741,3 +741,249 @@ fn battle_data_pack_table_to_data_slack_is_empty() {
     assert!(checked >= 3, "expected the player battle files on disc");
     eprintln!("[ok] {checked} battle data packs account whole");
 }
+
+/// The uninitialised-data-region claim is exactly one maximal all-zero run,
+/// and only where the image's own code addresses it.
+///
+/// Three things have to hold together or the rule is a way to buy percentage
+/// points: every claim's bytes are all zero (so it can never grow into live
+/// content), its bounds are the zero run's own (so it is not a tuned window),
+/// and the runs the rule refuses stay in the residue. The STR overlay carries
+/// all three cases in one entry - a 131172-byte region addressed at many
+/// sites, a post-blob tail addressed at none, and a data-segment hole
+/// addressed at none.
+#[test]
+fn uninitialised_data_claims_are_whole_zero_runs_the_image_addresses() {
+    use legaia_asset::byte_account::{BSS_RUN_MIN, formed_addresses, zero_runs};
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let map = legaia_asset::static_overlay::overlay_map();
+    let mut checked = 0usize;
+    for idx in [970u32, 899, 980, 975] {
+        let (Some(path), Some(rec)) = (
+            entry_path(&dir, idx),
+            map.overlays.iter().find(|r| r.prot_index == idx),
+        ) else {
+            continue;
+        };
+        let bytes = std::fs::read(&path).expect("read entry");
+        let opts = AccountOptions {
+            prot_index: Some(idx),
+            label: format!("{idx:04}"),
+            funcs_dir: Some(funcs.clone()),
+            depth: 0,
+            keep_claims: true,
+            ..Default::default()
+        };
+        let acc = account(&bytes, &opts);
+        assert_invariants(&acc);
+        let runs = zero_runs(&bytes, BSS_RUN_MIN);
+        let formed = formed_addresses(&bytes, rec.base_va);
+        let claims: Vec<_> = acc
+            .claims
+            .iter()
+            .filter(|c| c.detail.starts_with("uninitialised data region"))
+            .collect();
+        assert!(
+            !claims.is_empty(),
+            "PROT {idx:04}: no uninitialised-data claim"
+        );
+        for c in &claims {
+            assert!(
+                bytes[c.start..c.end].iter().all(|&b| b == 0),
+                "PROT {idx:04}: claim {:#x}..{:#x} is not all zero",
+                c.start,
+                c.end
+            );
+            assert!(
+                runs.contains(&(c.start, c.end)),
+                "PROT {idx:04}: claim {:#x}..{:#x} is not a maximal zero run",
+                c.start,
+                c.end
+            );
+            let (lo, hi) = (rec.base_va + c.start as u32, rec.base_va + c.end as u32);
+            assert!(
+                formed.iter().any(|(_, t)| *t >= lo && *t < hi),
+                "PROT {idx:04}: claim {:#x}..{:#x} is addressed by nothing",
+                c.start,
+                c.end
+            );
+        }
+        checked += 1;
+        eprintln!(
+            "[ok] PROT {idx:04}: {} uninitialised-data claim(s) of {} zero run(s), \
+             structural {:.1}%",
+            claims.len(),
+            runs.len(),
+            acc.structural_pct
+        );
+    }
+    assert!(checked >= 3, "expected the mapped overlays on disc");
+
+    // The refused runs: entry 0970's post-blob tail and its data-segment hole
+    // carry no formed address, and both stay out of the claim set.
+    let Some(path) = entry_path(&dir, 970) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let base = map
+        .overlays
+        .iter()
+        .find(|r| r.prot_index == 970)
+        .expect("0970 row")
+        .base_va;
+    let formed = formed_addresses(&bytes, base);
+    let runs = zero_runs(&bytes, BSS_RUN_MIN);
+    let addressed = runs
+        .iter()
+        .filter(|(s, e)| {
+            let (lo, hi) = (base + *s as u32, base + *e as u32);
+            formed.iter().any(|(_, t)| *t >= lo && *t < hi)
+        })
+        .count();
+    assert_eq!(
+        addressed, 1,
+        "PROT 0970: exactly one of its zero runs is addressed"
+    );
+    eprintln!(
+        "[ok] PROT 0970: 1 of {} zero runs is addressed by the image's own code",
+        runs.len()
+    );
+}
+
+/// The STR overlay's dispatch table, its movie paths and its VLC blob are all
+/// claimed, and the blob's extent is the one the unpacker's walk consumed.
+#[test]
+fn the_str_overlay_data_segment_is_claimed_structurally() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 970) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let opts = AccountOptions {
+        prot_index: Some(970),
+        label: "0970".into(),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        keep_claims: true,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+
+    use legaia_asset::fmv_dispatch as fmv;
+    use legaia_mdec::strv2_table as vlc;
+    let base = fmv::STR_OVERLAY_BASE_VA;
+    let src = (vlc::STRV2_PACKED_VA - base) as usize;
+    let (table, consumed) = vlc::unpack_lz_tracked(&bytes[src..]).expect("the blob terminates");
+    assert_eq!(table.len(), vlc::STRV2_TABLE_BYTES, "decoded table length");
+    let blob = acc
+        .claims
+        .iter()
+        .find(|c| c.detail.starts_with("STRv2 VLC table source"))
+        .expect("the VLC blob is claimed");
+    assert_eq!((blob.start, blob.end - blob.start), (src, consumed));
+    // The blob is the last content in the entry: what follows is inside one
+    // sector and is claimed as slack, not left as residue.
+    assert!(bytes[blob.end..].iter().all(|&b| b == 0));
+    assert!(bytes.len() - blob.end < 2048);
+
+    let paths = acc
+        .claims
+        .iter()
+        .filter(|c| c.detail.starts_with("movie path for fmv_id"))
+        .count();
+    assert_eq!(paths, fmv::FMV_SLOT_COUNT, "one path string per slot");
+    assert!(
+        acc.claims
+            .iter()
+            .any(|c| c.detail.starts_with("FMV dispatch table")),
+        "the dispatch table is claimed"
+    );
+    eprintln!(
+        "[ok] PROT 0970: VLC blob {consumed} bytes -> {} table bytes, {paths} movie paths, \
+         structural {:.1}%",
+        table.len(),
+        acc.structural_pct
+    );
+}
+
+/// The `OTHER3` dev module's roster is one 81-record table on a `0x84` stride,
+/// and claiming it at the stride leaves the entry near whole.
+#[test]
+fn the_other3_roster_accounts_the_dev_module() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 974) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    use legaia_asset::other3_roster as roster;
+    let recs = roster::records(&bytes).expect("the roster parses");
+    assert_eq!(recs.len(), roster::RECORD_COUNT);
+    // A roster of 81 identical records would pass the lead-byte guard and mean
+    // nothing; the labels differ, and most of each record is its NUL padding.
+    let distinct: std::collections::BTreeSet<&[u8]> = recs.iter().copied().collect();
+    assert!(distinct.len() > 60, "{} distinct labels", distinct.len());
+
+    let opts = AccountOptions {
+        prot_index: Some(974),
+        label: "0974".into(),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+    assert!(
+        acc.structural_pct > 95.0,
+        "PROT 0974 structural {:.1}%",
+        acc.structural_pct
+    );
+    eprintln!(
+        "[ok] PROT 0974: {} roster labels, structural {:.1}%",
+        recs.len(),
+        acc.structural_pct
+    );
+}
+
+/// PROT `0975`'s trailing `plausible_mips` residue is PROT `0972`'s code at
+/// the same file offset - an inherited tail, not this image's own bytes.
+///
+/// The run has no prologue, no `jr ra` and no caller, which invites reading it
+/// as a jump-table body or the interior of a neighbour. Byte equality settles
+/// it, and this test is the standing form of that measurement: byte accounting
+/// does not cut inherited tails the way `disc-coverage.py` does, so a
+/// `plausible_mips` run in an overlay entry is only un-dumped code once it has
+/// been checked against the other entries at the same offset.
+#[test]
+fn the_slot_machine_tail_is_the_fishing_overlays_code() {
+    let Some(dir) = extracted_root() else {
+        eprintln!("extracted/PROT not present - skipping");
+        return;
+    };
+    let (Some(a), Some(b)) = (entry_path(&dir, 975), entry_path(&dir, 972)) else {
+        return;
+    };
+    let slot = std::fs::read(a).expect("read 0975");
+    let fishing = std::fs::read(b).expect("read 0972");
+    const TAIL: usize = 0x5920;
+    assert!(fishing.len() > slot.len());
+    assert_eq!(
+        &slot[TAIL..],
+        &fishing[TAIL..slot.len()],
+        "0975's tail is not 0972's bytes at the same offset"
+    );
+    eprintln!(
+        "[ok] PROT 0975 file {TAIL:#x}..{:#x} ({} bytes) == PROT 0972 at the same offset",
+        slot.len(),
+        slot.len() - TAIL
+    );
+}
