@@ -95,12 +95,19 @@ pub const VA_SUBMODE_DRIVER: u32 = crate::field_submode::SUBMODE_DRIVER_HANDLER;
 /// [`legaia_engine_vm::field_actor_timers`] and
 /// `docs/subsystems/script-vm-menuctrl.md`.
 ///
-/// Two mislabels fall out together: the field VM's `4C 9F` and `4C 87`
-/// "register callback" ops call `FUN_8003CF40(_DAT_8007C34C, LAB_801DA930)`,
-/// and `FUN_8003CF40` **retires** rather than registers, so those ops stop
+/// The field VM's `4C 9F` "register callback" op is really a teardown:
+/// `0x801E2548` loads `_DAT_8007C34C` and `0x801DA930` and tail-jumps into
+/// `FUN_8003CF40`, which **retires** rather than registers, so the op stops
 /// every running rung oscillator. The MAN loader's first inlined sweep
 /// (`FUN_8003AEB0` at `0x8003B3C8..0x8003B3F0`) is the same sweep on scene
 /// load.
+///
+/// `4C 87` was named alongside it and is a different teardown: its arm
+/// `0x801E2284` materialises `0x801E5154`, the reflection-callback tick
+/// ([`legaia_engine_vm::field_actor_reflect`]), not this handler. The two
+/// ops share only the tail at `0x801E2DC4`. Its install sibling is `4C 86`
+/// (`0x801E2250`, through the spawner `FUN_801E573C`) - the nibble-8
+/// sub-table at `0x801CEF48` puts the pair at consecutive slots 6 and 7.
 pub const VA_FLOOR_LADDER: u32 = 0x801D_A930;
 
 /// `FUN_801D4A60` - the four-program **scripted-scene** actor. Spawn

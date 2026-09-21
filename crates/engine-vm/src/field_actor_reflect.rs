@@ -185,14 +185,17 @@ pub fn tile_of(v: i16) -> i16 {
 // arguments - the mirror/bounds block this tick reads as the tile rect. A
 // null allocation writes none of it.
 //
-// Its caller is a field-VM dispatcher arm at `0x801E2250..0x801E2278`,
-// reached through the sub-table word at `0x801CEF60`; the arm decodes the
-// last two of those halfwords with `FUN_8003CE9C` at operand `+9` and
-// `+0xB`. The very next slot, `0x801CEF64`, is the matching teardown:
+// Its caller is **field-VM op `0x4C` sub-op `0x86`**, the arm at
+// `0x801E2250..0x801E2278`; the arm decodes the last two of those halfwords
+// with `FUN_8003CE9C` at operand `+9` and `+0xB`. The pinning is three
+// steps: the `0x4C` outer table at `0x801CEE60` sends nibble 8 to
+// `0x801E1EA0`, that arm bounds `op0 & 0xF` at `0x10` and indexes the
+// sub-table at `0x801CEF48` (`lui`/`addiu` pair at `0x801E1EAC`), and slot 6
+// of it is `0x801E21E0`, whose body runs into this call.
+//
+// Slot 7 - `4C 87` - is the matching teardown:
 // `FUN_8003CF40(_DAT_8007C34C, 0x801E5154)`, a retire sweep keyed on this
-// handler - so install and retire are consecutive sub-ops of one opcode.
-// Which opcode owns that sub-table is not pinned here; it is not the `0x4C`
-// nibble tables, whose bases are `0x801CEE60` / `0x801CEEA0` / `0x801CEEB8`.
+// handler. So install and retire are consecutive sub-ops of one nibble.
 //
 // The engine parses neither the descriptor nor that arm, so no actor is ever
 // given this tick and no pair is ever formed. The per-actor storage is
