@@ -423,14 +423,52 @@ RGB (`FUN_801F7A9C` draws from it, `FUN_801F8004` writes it; see
 [`move-vm.md`](move-vm.md)).
 
 Six shipped scenes issue the opcode - `vozz`, `retona`, `urudre3`, `kor5`,
-`nilboa`, `noaru` - always as a short burst against one target. `vozz` runs
-three eight frames apart with the colour stepping `(0x32,0x28,0x1E)`,
-`(0x37,0x2D,0x23)`, `(0x3C,0x32,0x28)`.
+`nilboa`, `noaru` - always as a short burst, joined by the `WaitFrames`
+between the instructions. The census below is what the disc actually asks
+for.
 
 Port: `legaia_engine_core::field_actor_clone` (the plan kernel),
 `World::spawn_actor_clone` (the allocation and the id resolve), and
 `World::tick_handler_actors` (the clone's tick, through
 `ActorHandler::ClipFade`).
+
+##### What the disc asks for
+
+Ninety-four clean sites across those six scenes, every one eight bytes wide,
+walked off each scene's MAN carriers with the field-VM disassembler
+(`legaia-engine-core` test `field_actor_clone_burst_disc`).
+
+Three rates, five `(colour, rate)` pairs, and the rate is the clone's life:
+
+| colour word (`r`,`g`,`b`) | rate | vsyncs alive | where |
+|---|---|---|---|
+| `0x32,0x28,0x1E` / `0x37,0x2D,0x23` / `0x3C,0x32,0x28` | `0x0199` | 11 | `vozz` only - one word per ramp step |
+| `0x3C,0x3C,0x28` | `0x00B2` | 24 | every other scene's bursts |
+| `0x2A,0x2A,0x3F` | `0x0080` | 32 | `noaru` only |
+
+Nothing on the disc sets the word's top byte, so the `sw` at `0x801D83FC` is
+a 24-bit write in practice, and every shipped rate is positive - a clone
+always retires.
+
+**Depth is the cadence against the lifetime**, not a property of the opcode.
+`vozz`'s clones outlive their spacing by three frames, so its trail is two
+copies deep; every other scene's rate is less than half `vozz`'s and its
+trails run five or six deep. Replaying all ninety-four through the port's
+own pool seats all ninety-four, so none of those depths is a pool clamp.
+
+Two shorthands to retire. `vozz`'s first burst is **four** clones, not three:
+it issues the ramp's foot twice (`0x32,0x28,0x1E` at `+0x0A2E` and `+0x0A39`)
+before stepping, so "three, stepping the word" describes the ramp and not the
+burst. And only two of its five bursts run at eight frames - the other three
+run at six. The full shape of `vozz` P2[13] is one burst of four at eight
+frames, then three, six, three, eight, three, six and three, six.
+
+The **source id is per burst, not per scene**: `nilboa`'s P2 record switches
+from `0x25` to `0x23` partway through, so a reader (or a test fixture) that
+resolves one cross-context actor for a whole record silently loses every
+clone the rest of the record asks for - the arm's `beqz s5` skips the helper
+for an id nothing resolves, and the instruction still advances its eight
+bytes.
 
 #### What the `0x4C 0xD8` spawner builds
 
