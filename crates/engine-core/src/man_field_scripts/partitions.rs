@@ -66,7 +66,9 @@ pub struct GFlagSite {
     /// least [`CLEAN_RESYNC_INSNS`] instructions decoded without error
     /// between the walker's last decode error (or the record start) and this
     /// site. `false` means the walker was desynced or freshly resyncing -
-    /// typically inside unframed Shift-JIS dialogue or an inline data table,
+    /// typically inside unframed Shift-JIS text or an inline data table (a
+    /// `0x1F`-framed dialogue segment is one decoded stride and desyncs
+    /// nothing),
     /// where operand/text bytes alias the `0x50..=0x7F` flag opcodes: e.g.
     /// the full-width digit run `82 54 82 4F` yields a phantom
     /// `SysFlag.Set idx=0x482`. Non-clean sites are byte noise until
@@ -412,10 +414,11 @@ pub fn walk_partition_gflag_sites(
     let mut out = Vec::new();
     for index in 0..count {
         // `partition_record_span` applies the partition-correct header shape:
-        // the `[u8 N][N*2 locals][4-byte header]` prefix for partitions 0/1,
-        // the named-record header (`FUN_8003BDE0`) for partition 2. Walking
-        // partition 2 with the generic prefix starts one byte late on a
-        // typical named record and can misdecode the leading instructions.
+        // `[u8 n][n*2 SJIS][attr]` for partition 0, `[u8 N][N*2 locals]
+        // [4-byte header]` for partition 1, the named-record header
+        // (`FUN_8003BDE0`) for partition 2. Walking partition 2 with the
+        // generic prefix starts one byte late on a typical named record and
+        // can misdecode the leading instructions.
         let Some((script_start, pc0, body_len)) =
             partition_record_span(man_file, man, partition, index)
         else {
@@ -496,11 +499,12 @@ pub fn walk_partition_gflag_sites(
 /// the entry without the record) needs to replay
 /// (`World::replay_scripted_battle_arm`).
 ///
-/// The forward re-walk is the coherence test, not [`GFlagSite::clean`]: the
-/// SET sits a few ops past the record's dialogue bytes, where the linear
-/// walk is still resynchronising, so the clean bit is structurally `false`
-/// there - but a phantom SET inside text is not followed by a decodable
-/// `3E FF` within a handful of instructions, and a real one is.
+/// The forward re-walk is the coherence test, not [`GFlagSite::clean`]: a
+/// phantom SET inside unframed text or a data table is not followed by a
+/// decodable `3E FF` within a handful of instructions, and a real one is.
+/// (The clean bit was once structurally `false` behind a record's dialogue,
+/// the walk resynchronising through the text; a bare `0x1F` segment is now
+/// one decoded stride, so the SET behind it is clean as well.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BattleEntryArm {
     /// Partition the carrying record lives in (`0..3`).

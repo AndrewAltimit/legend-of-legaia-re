@@ -118,7 +118,8 @@ fn run() -> Option<Census> {
 }
 
 /// The two arms whose runtime-reach rows turned on "does a carrier exist".
-/// Both do, and both are rare enough that the exact count is the finding.
+/// Both do; the exact counts are the finding, and both moved when the walk
+/// learned to cross a record's text segments.
 #[test]
 fn the_scripted_game_over_and_take_item_arms_have_carriers() {
     let Some(c) = run() else {
@@ -138,21 +139,33 @@ fn the_scripted_game_over_and_take_item_arms_have_carriers() {
     );
     assert_eq!(
         c.carriers.get(&game_over).map(|s| s.len()),
-        Some(1),
-        "[4C EA]'s one carrier is one entry"
+        Some(3),
+        "[4C EA]'s three carriers are three entries"
     );
-    assert!(
-        c.carriers[&game_over].contains(&392),
-        "[4C EA]'s carrier is the map03 bundle at extraction entry 392"
-    );
+    for entry in [86, 245, 392] {
+        assert!(
+            c.carriers[&game_over].contains(&entry),
+            "[4C EA]'s carriers are the map01/map02/map03 bundles (missing {entry})"
+        );
+    }
 
+    // TAKE_ITEM is the chest script's item consume, one line into its record
+    // ("...Treasure Chest!", Nop, `4C 52 <item>`, fades) - so a walk that
+    // ended at the first text segment saw three sites; crossing text it sees
+    // them all.
     let take_item = key(0x4C, Some(0x52));
-    assert_eq!(c.census.clean_count(take_item), 3, "[4C 52] has three");
+    assert_eq!(c.census.clean_count(take_item), 70, "[4C 52] sites");
     assert_eq!(
         c.carriers.get(&take_item).map(|s| s.len()),
-        Some(3),
-        "[4C 52]'s three occurrences are in three separate carriers"
+        Some(25),
+        "[4C 52] carriers"
     );
+    for entry in [166, 208, 339, 183] {
+        assert!(
+            c.carriers[&take_item].contains(&entry),
+            "[4C 52] carrier {entry} (geremi / ropeway / ropeway2 / balden) missing"
+        );
+    }
 }
 
 /// The script camera-focus override, whose one-scene concentration is the

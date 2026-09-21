@@ -1362,13 +1362,15 @@ fn part_c_captured_scenes_are_scenes_the_engine_can_enter() {
 /// (flag test, `B1 F8 13`, white fade, the `0x3F`, the park pair) with no text
 /// to desync on.
 ///
-/// `urudre1` / `urudre2` / `urudre3` have the second only: the clean walk
-/// finds no `0x3F` anywhere in the MAN, in any partition, because each of
-/// their exits sits `0x2DC` / `0x124C` / `0x2034` bytes into a partition-2
-/// record, past kilobytes of inline `0x1F` text pages. Their destinations are
-/// recovered only by the destination-table pass, so those three BFS edges rest
-/// on a weaker footing than the rest of the graph - but the doors themselves
-/// are real and Part E walks onto two of them.
+/// `urudre1` / `urudre2` / `urudre3` have both, and they agree: each exit
+/// sits `0x2DC` / `0x124C` / `0x2034` bytes into a partition-2 record, past
+/// kilobytes of inline `0x1F` text pages, which the clean walk once could not
+/// cross (a bare `0x1F` read as an unknown opcode and ended the walk at the
+/// record's first line), so for a while their destinations came from the
+/// destination-table pass alone and those three BFS edges rested on a weaker
+/// footing. With text segments decoded as strides of the stream the clean
+/// walk reaches the same `0x3F` the table names, and Part E walks onto two
+/// of the doors.
 ///
 /// `jouine` is a fourth shape: no decoder finds a named scene change, because
 /// there is none. Its exit is the FMV hand-off op `4C E2 08` at MAN `0x03E90`,
@@ -1401,18 +1403,20 @@ fn part_d_which_decoder_sees_each_of_the_five_doors() {
         eprintln!("[doors] {name:<8} clean-walk ops {clean:?} | destination table {table:?}");
     }
 
-    // The three dream rooms: no clean-walk `0x3F` at all, but the destination
-    // table names the chain.
-    for name in ["urudre1", "urudre2", "urudre3"] {
+    // The three dream rooms: the clean walk crosses the text pages and finds
+    // the partition-2 `0x3F`, and the destination table names the same
+    // scene - two decoders, one answer.
+    for (name, dest) in [("urudre1", "uru"), ("urudre2", "map01"), ("urudre3", "uru")] {
         let (clean, table) = decoders(&host, name);
-        assert!(
-            clean.is_empty(),
-            "{name} now decodes a 0x3F op ({clean:?}) - the exit-site join can reach \
-             it and rung 6 should be re-measured for this scene"
+        assert_eq!(
+            clean,
+            vec![(2, dest.to_string())],
+            "{name}'s clean-walk door is the partition-2 op naming {dest}"
         );
-        assert!(
-            !table.is_empty(),
-            "{name}'s destinations must still come from the destination-table pass"
+        assert_eq!(
+            table,
+            vec![dest.to_string()],
+            "{name}'s destination table names the same scene"
         );
     }
 
@@ -1447,8 +1451,8 @@ fn part_d_which_decoder_sees_each_of_the_five_doors() {
         "jouine's exit is the `4C E2 08` FMV trigger; decoded triggers {fmvs:?}"
     );
     eprintln!(
-        "[ok] Part D: uru's door is a decoded P2 op; urudre1/2/3's are \
-         destination-table-only; jouine's is an FMV trigger, not a 0x3F"
+        "[ok] Part D: uru's and urudre1/2/3's doors are decoded P2 ops the \
+         destination table agrees with; jouine's is an FMV trigger, not a 0x3F"
     );
 }
 

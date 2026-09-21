@@ -346,12 +346,15 @@ looks like), the recovering destination-table pass (what a door *entry* looks
 like), and the ladder's own `.MAP` gate-1 trigger → partition-2 record →
 `0x3F` join (what a door the player can *walk onto* looks like).
 
-Ordinary interiors have all three, and so does `uru` - its `MAP03` exit record
-`P2[42]` is 41 bytes with no text to desync on. `urudre1` / `urudre2` /
-`urudre3` have only the destination-table pass, because each of their exits
-sits `0x2DC` / `0x124C` / `0x2034` bytes into a partition-2 record behind
-kilobytes of inline `0x1F` text; `jouine` has none of the three, because its
-exit is not a named scene change at all but the FMV hand-off `4C E2 08`.
+Ordinary interiors have all three, and so do `uru` and the three dream rooms.
+`urudre1` / `urudre2` / `urudre3` once had the destination-table pass alone,
+because each of their exits sits `0x2DC` / `0x124C` / `0x2034` bytes into a
+partition-2 record behind kilobytes of inline `0x1F` text the clean walk could
+not cross; with a text segment decoded as one stride of the stream
+([`script-vm.md`](../subsystems/script-vm.md#text-segments-and-pickers-are-strides-of-the-stream))
+the walk reaches the same `0x3F` the table names. `jouine` has none of the
+three, because its exit is not a named scene change at all but the FMV
+hand-off `4C E2 08`.
 
 Part E answers the question the decoders cannot: it steps onto **every** gate-1
 tile the five carry - the `.MAP` table and the `.PCH` sidecar both - and all
