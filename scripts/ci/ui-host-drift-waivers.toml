@@ -643,7 +643,7 @@ native = "tick_field_party_hud"
 web = "tick_field_party_hud"
 native_only = ["field_follow_view", "frame_vp", "is_open", "pose", "resolve_field_camera", "scale", "vp"]
 web_only = ["pad"]
-reason = "One kernel with the projection on opposite sides of the wasm boundary. The native window projects the lead through resolve_field_camera + frame_vp inside the step; the page draw pass holds no camera and no mutable self, so site/js/play-app.js projects the same point through the same frame VP in JS and pushes the answer back through set_field_player_screen_y before the tick. `pad` sits on the page side only because the window reads the pad word off its own field instead of off World::input."
+reason = "One kernel with the projection on opposite sides of the wasm boundary. The native window projects the lead through resolve_field_camera + frame_vp inside the step; the page draw pass holds no camera and no mutable self, so the projection is its own export, play_camera::play_field_hud_project, which the page calls before the tick - same resolver, same frame_vp, same 0x80 torso offset, and with the CUTSCENE arm suppressed the way the native step suppresses it. It used to be JS math over this frame draw VP, so a scripted shot decided where the readout sat. `pad` sits on the page side only because the window reads the pad word off its own field instead of off World::input."
 
 [[frame_content]]
 native = "tick_minigame_extras"

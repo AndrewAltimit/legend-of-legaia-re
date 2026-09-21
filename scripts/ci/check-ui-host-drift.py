@@ -492,10 +492,64 @@ WEB_PLAY = "crates/web-viewer/src/play.rs"
 NATIVE_REDRAW_PASSES = (
     "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw_passes.rs"
 )
+NATIVE_CAMERA_MOD = "crates/engine-shell/src/bin/legaia-engine/window/camera.rs"
 WEB_PLAY_CAMERA = "crates/web-viewer/src/play_camera.rs"
 WEB_FIELD_SCENE = "crates/web-viewer/src/field_scene.rs"
+NATIVE_TITLE_SAVE = (
+    "crates/engine-shell/src/bin/legaia-engine/window/title_save_draws.rs"
+)
 
 SIM_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "camera-occlusion fade focus + arming, native vs play page - "
+        "the fade has two halves that must name the SAME world point: the "
+        "visibility gate ray-casts to it and the host stages it as the "
+        "shader's focus. Each host spelled the point out locally, and the "
+        "page's focus read the actor's own `world_y` while its gate read the "
+        "floor tier under it, so on any tile where those differ the dissolve "
+        "hole sat off the character. Its arming operands had drifted the same "
+        "way - the native window excludes the boot UI, the world map, a "
+        "scripted shot and the debug orbit, the page excluded only battle and "
+        "the minigames. Both sites must reach the shared kernels",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (WEB_PLAY_CAMERA, "play_occlusion_focus"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["player_body_centre"],
+    },
+    {
+        "what": "`apply == 0` Camera Configure snap beats, native vs play "
+        "page - retail's mover snaps the live camera globals to a snap beat "
+        "immediately, and the field VM runs until yield, so a snap+glide pair "
+        "committed in ONE tick must glide FROM the snapped pose. The beats "
+        "are banked by `Camera::route_camera_events`, which is the only thing "
+        "that drains `FieldEvent::CameraConfigure` off the world queue - a "
+        "host watching its own later event drain for them sees none. Both "
+        "cutscene interps must replay the shared bank",
+        "sites": {
+            "native": (NATIVE_CAMERA_MOD, "replay_camera_snap_beats"),
+            "web": (WEB_PLAY_CAMERA, "resolve_camera_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["take_camera_snap_beats"],
+    },
+    {
+        "what": "save-select phase layout, native vs play page - which pills "
+        "draw, whether the pill cursor shows, and whether the block grid and "
+        "its info panel stay up are one decision per `SelectPhase`, and the "
+        "two hosts answered it differently for exactly one phase pair: retail "
+        "raises the overwrite / delete prompt FROM the preview (see "
+        "docs/subsystems/save-screen.md), so a confirm is a `SlotPreview` "
+        "wearing a messagebox. The native window drew neither the grid nor "
+        "the panel under it. Both sites must read `save_select::phase_layout`",
+        "sites": {
+            "native": (NATIVE_TITLE_SAVE, "save_select_chrome_sprite_draws"),
+            "web": (WEB_PLAY_MENU, "build_save_select"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["phase_layout"],
+    },
     {
         "what": "shop / inn / prize / coin overlay stage transform, native "
         "vs play page - every builder in that group places in the retail "
