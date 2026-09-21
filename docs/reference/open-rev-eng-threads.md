@@ -644,8 +644,9 @@ engine call spelled `insert` is invisible
 ([`host-drift.md`](../tooling/host-drift.md#tier-12---content-do-two-paired-kernels-call-the-same-engine)).
 
 Closed here: **which shipped scenes carry field-VM ops `4C EA` and `4C 52`** -
-one and three respectively, `map03` for the first and `geremi` / `ropeway` /
-`ropeway2` for the second. The row asked for an instrument rather than an
+one per kingdom map bundle for the first, and for the second every chest
+script that consumes an item - seventy sites in twenty-five scenes, each one
+text line into its record. The row asked for an instrument rather than an
 answer, and the instrument is the general one it predicted: a disc-wide opcode
 census over every scene MAN and event-script carrier, whose zeros separate "no
 fixture drives this arm" from "the disc contains nothing to drive it"

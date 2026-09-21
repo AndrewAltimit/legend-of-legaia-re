@@ -110,14 +110,18 @@ cleanly to their end. So the runtime-reach row for the handler is not "no
 carrier exists": the carrier is one record per world-map scene, and driving it
 is a story-state fixture rather than a missing instrument.
 
-### `[4C 52]` - `TAKE_ITEM` - has three
+### `[4C 52]` - `TAKE_ITEM` - is the chest script's item consume
 
-Three clean occurrences in three scenes: `geremi` (PROT 0166) partition 2
-record 16, and `ropeway` (PROT 0208) / `ropeway2` (PROT 0339) partition 1,
-which carry the same script in the two variants of one scene and both set a
-system flag immediately before confiscating. The op's *fallback* leg - unequip
-when the bag misses - still needs the item worn rather than carried, so the row
-stays gated; what it no longer lacks is a carrier to point a fixture at.
+Seventy clean occurrences across twenty-five scenes, and the shape is the
+same everywhere: a `0x1F` line ("...Treasure Chest!"), a `0x25`, the
+`4C 52 <item>`, then the scene-fade pair - the chest / key-item scripts of
+`balden`, `dolk`, `geremi`, `retock`, the two `ropeway` variants and the rest
+consuming the item the player just used. The census once counted three
+(`geremi` partition 2 record 16 and the two `ropeway` variants), the only
+sites a walk reached before ending at the record's first text segment; the
+other sixty-seven all sit one line into their record. The op's *fallback*
+leg - unequip when the bag misses - still needs the item worn rather than
+carried, so the reach row stays gated; what it never lacked was a carrier.
 
 ### `[4C CF]` - the script camera-focus override - has 50, all in one scene
 

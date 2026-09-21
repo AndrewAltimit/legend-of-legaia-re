@@ -956,8 +956,10 @@ an arbitrary opcode and broken out by sub-arm, and it answers both rows:
   jump, the op, then a wait and another self-loop. A scripted hand-off that
   never returns. (An earlier census counted one: its walk ended at each
   record's first text segment.)
-- **`4C 52`** has **three**, in `geremi` and in the two variants of the
-  `ropeway` scene, which carry the same confiscating script.
+- **`4C 52`** has **seventy**, across twenty-five scenes: it is the chest
+  script's item consume, one `0x1F` line into every record that carries it.
+  (The census first counted three - `geremi` and the two `ropeway` variants -
+  the only sites a walk that ended at the first text segment could reach.)
 
 Both rows are closed now - by
 [promoting the oracle](#a-third-way-a-row-closes-promote-the-oracle-that-already-drove-it)
