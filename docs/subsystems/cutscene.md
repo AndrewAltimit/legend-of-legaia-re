@@ -1363,6 +1363,50 @@ thread. Engine model: the same ramp type in `World::presentation.effect_tint` (s
 `scene_screen_tint`). Disc-gated `opening_fade_from_black` pins both value models against the
 real `opdeene` bytecode.
 
+#### What the beat looks like, measured
+
+A live capture of one retail beat - an overworld state walked through a town
+portal, so the destination scene's entry fade-from-black runs - settles which
+of the two shapes the port carries is the one retail draws, and it is the
+**push**, not a tint word.
+
+Breakpoints on the spawner, the per-frame step and the draw
+([`autorun_w1a_tint_beat.lua`](../../scripts/pcsx-redux/autorun_w1a_tint_beat.lua)):
+
+- **The spawn is the op `0x34` sub-0 arm.** `FUN_801DE2B0` is entered once in
+  the beat with `ra = 0x801DFEF0`, the instruction after the second of the two
+  `jal 0x801DE2B0` sites inside `FUN_801DE840`. Its 13-halfword template reads
+  `kind = 2`, `duration = 57`, start RGB `(0, 0, 0)`, end RGB
+  `(255, 255, 255)`, `delay = 0`, `hold = 0xFFFF` - fade **up from black over
+  fifty-seven frames, then hold forever**.
+- **The step runs on one actor.** `FUN_801DDC20` is entered with the same `a0`
+  every time, its clock climbing by one per vsync (the breakpoint fires every
+  third vsync with a frame delta of three) from `0` to `57`, where it stops and
+  stays for the rest of the capture - `delay + duration`, then the
+  hold-forever sentinel. The actor's selectors read `+0xD2 = 2` (blend) and
+  `+0xD6 = 0` (kind) throughout.
+- **The observable is the push.** `FUN_80024EE4` is called once per step with
+  `a0 = 0` (kind), `a1 = 2` (blend) and a grey packed colour climbing
+  `0x000000 -> 0x0D0D0D -> 0x1A1A1A -> ... -> 0xFFFFFF` in steps near `13`,
+  reaching neutral at the frame the clock reaches `57` and repeating neutral
+  while the tween holds. Walking back out of the scene runs the mirror
+  envelope with `a0 = 1`, the packed colour falling from `0xE5E5E5` toward
+  black in steps near `17`.
+- **The global multiply tint is not involved.** `DAT_8007BCB8/B9/BA` reads
+  neutral `0x80` on every vsync of the capture, so this beat is not an op
+  `0x4C 0x12` fade at all.
+
+The engine's two representations are
+[`World::presentation.effect_tint`](../../crates/engine-core/src/fade.rs), a
+float factor the renderers already read, and the
+[`ScreenTintPush`](../../crates/engine-core/src/field_actor_kernels.rs) triples
+[`step_colour_tween`] emits into `World::screen_tint_pushes`. The measured
+beat is a `(kind, blend, packed)` triple per frame, which is the push's shape
+exactly - `kind` and `blend` are live selectors here, not constants a scalar
+factor could stand in for.
+
+[`step_colour_tween`]: ../../crates/engine-core/src/field_actor_kernels.rs
+
 ### Full-scene sepia grade (the gold prologue look)
 
 The whole prologue-cutscene leg of the opening renders in a **persistent warm gold/amber
