@@ -1800,7 +1800,7 @@ browser's summon actor seat is the worked example: `World::finish_battle`
 restores the engine actor table, the host-side slot index survives it, and the
 next fight hands the same seat out twice.
 
-## Two shapes a "the page is missing it" reading gets backwards
+## Shapes a "the page is missing it" reading gets backwards
 
 A side-by-side read produces sentences of the form "the native window does X
 and the page does not". Several live cases were the other way round, and each
