@@ -595,7 +595,7 @@ these have neither yet.
 |---|---|---|---|
 | `0897` | `0x2399C`, 4988 B | the field overlay's data segment; its first twelve rows are the collision probe table `FUN_801CFE4C` indexes at `0x801F21B4` | no parser binds the table, and the rest of the segment is unsorted globals |
 | `0897` | `0x0`, 3900 B | head string pool plus the pointer table that reaches it | the pointers are not read by anything here |
-| `0898` | `0x0`, 3512 B | the battle overlay's own head: UI strings (eleven of which `battle_ui_strings` already claims by pointer) and, from `0x9B4`, a run of in-image VA words with repeats - a `switch` jump table | the table has no named constant and the strings past the eleven have no pointer to follow |
+| `0898` | `0x0`, 3512 B | the battle overlay's own head: UI strings (eleven of which `battle_ui_strings` already claims by pointer) and **nine** runs of in-image VA words - `switch` jump tables, not one ([below](#the-0898-head-is-nine-jump-tables)) | no named constant binds any of the nine, and the strings past the eleven have no pointer to follow |
 | `0899` | `0x1EB28`, 3552 B | the unclaimed part of a 16 KB data-segment hole | one address formed at one site, which is below the uninitialised-data bar above |
 | `0899` | `0x0`, 3512 B | the menu overlay's option-label string pool | same as `0898`: no pointer table this workspace reads |
 | `0899` | `0x2050C`, 844 B | the save-screen message slots on a `0x80` stride, and the memory-card filename prefix behind them | the stride is measured off the slots, not off a consumer |
@@ -613,6 +613,44 @@ are one leaf routine ending `jr ra` at `0xCA4`, and everything from `0xCAC` up
 is ASCII. Reading the whole run as code was the shape classifier's verdict over
 a window that was mostly another module's bytes; `disc-coverage.py`, which cuts
 the tail, reports **no** un-dumped code run in this image at all.
+
+### The `0898` head is nine jump tables
+
+The row above used to read "a `switch` jump table" from file `0x9B4`. There are
+nine runs of in-image VA words below `0xDF8`, and the singular was an artifact
+of looking at one of them:
+
+```text
+file 0x0068..0x01E4   VA 0x801CE880    95 words
+file 0x01E8..0x02B4   VA 0x801CEA00    51 words
+file 0x02B8..0x034C   VA 0x801CEAD0    37 words
+file 0x0350..0x0490   VA 0x801CEB68    80 words
+file 0x0494..0x0500   VA 0x801CECAC    27 words
+file 0x052C..0x09B0   VA 0x801CED44   289 words
+file 0x09B4..0x0C80   VA 0x801CF1CC   179 words
+file 0x0C84..0x0C98   VA 0x801CF49C     5 words
+file 0x0C9C..0x0DF8   VA 0x801CF4B4    87 words
+```
+
+Two of them have their consumer, and both consumers form the table address the
+way the [address-reference scan](address-reference-scan.md) says to look for -
+a `lui`/`addiu` pair, which is why a literal-word sweep finds neither.
+
+`0x801CF1CC` (179 words) is dispatched by the `jr` at `0x801EA9FC`. The index is
+a byte, not a state word: `lbu` from `0x8007BD0C + $s7` (the per-seat byte the
+same body writes back at `+0x1DE`), less 4, and the bound is the `sltiu $v0,
+$v1, 0xB3` at `0x801EA9D8` - **179**, the table's own word count exactly, which
+is what makes the extent a measurement rather than a scan. 37 distinct arms;
+`0x801EBDAC` is the default and fills every unused slot.
+
+`0x801CF49C` (5 words) is dispatched by the `jr` after `0x801EB558`, indexed by
+the battle context's `+0x28A` phase byte under `sltiu $v0, $v1, 5` at
+`0x801EB540`, with the same `0x801EBDAC` default on the out-of-range arm.
+
+Neither is claimed. A [pinned table row](#a-pinned-offset-is-not-a-magic-sweep)
+has to be a binding to a parser's own `pub const`, and no module here reads
+either table; what is written down above is the extent, the index expression and
+the bound, so a parser that wants them has the three facts it needs.
 
 ### A residue run that is another image's code
 
