@@ -951,9 +951,19 @@ impl LegaiaRuntime {
             self.world.tick();
             return Ok(String::new());
         };
-        let event = host
-            .tick()
-            .map_err(|e| JsValue::from_str(&format!("tick: {e:#}")))?;
+        // A movie owns the frame. The native window freezes every world tick
+        // under one (`run_ticks = 0` while its decoder handle is live) and
+        // this host did not, so a cutscene's field VM, actors, effect pool
+        // and clocks all kept running behind the picture - and the world
+        // arrived at the far side of a 40-second movie 2400 ticks ahead of
+        // where the native window leaves it. The FMV service below still
+        // runs: it is what advances the picture and ends the cutscene.
+        let event = if self.fmv.armed_for().is_some() {
+            SceneTickEvent::Stepped
+        } else {
+            host.tick()
+                .map_err(|e| JsValue::from_str(&format!("tick: {e:#}")))?
+        };
         // FMV beats: the movie path lives in [`crate::play_fmv`]; it hands
         // back the scene label when the post-movie hand-off entered one.
         let fmv_handoff_scene = self.service_cutscene_fmv();
@@ -977,9 +987,6 @@ impl LegaiaRuntime {
         // Fishing HUD one-shot banners ride the sim clock, not the page's
         // animation frame, so a heavy scene does not slow them down.
         self.tick_fishing_banners();
-        // Sound-effect channel: feed the footstep cadence this tick's movement
-        // magnitude, advance the delay scheduler, key whatever matured.
-        self.tick_sfx();
         // Field VRAM effects: CLUT-walk shimmer + ambient palette cyclers +
         // scripted CLUT fx, drained against the scene VRAM; the page re-reads
         // `field_vram_bytes` when `field_vram_take_dirty` reports a change.
@@ -991,6 +998,18 @@ impl LegaiaRuntime {
         // In-world minigame presentation (casino / dance / arena sessions
         // the scene host installed): the draw-side state the page reads.
         self.tick_minigame_ui();
+        // Sound-effect channel: feed the footstep cadence this tick's movement
+        // magnitude, advance the delay scheduler, key whatever matured.
+        //
+        // **After** the two queue drains above, not before them. The native
+        // window enqueues a battle tick's cues and calls `tick_sfx_frame` in
+        // the same pass (`drain_and_log_battle_events`), so a cue whose
+        // `timing_frames` is `0` - every strike impact, every minigame blip -
+        // sounds on the tick that raised it. Advancing the scheduler first
+        // made this host's copy of that cue wait a whole frame, which is not
+        // a delay anyone can hear on its own but puts the impact one frame
+        // off the animation it is supposed to land on.
+        self.tick_sfx();
         // The field-to-battle intro emitter: armed while the encounter
         // session sits in `Transition`, dropped when it leaves; caches this
         // frame's screen-prim geometry for the page's pass. Cheap no-op
