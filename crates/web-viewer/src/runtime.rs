@@ -353,8 +353,13 @@ pub struct LegaiaRuntime {
     /// the playhead. Reset on a deliberate [`Self::enter_field`] so re-booting
     /// a scene restarts its music; preserved across door transitions so an
     /// unchanged track keeps playing.
+    ///
+    /// `pub(crate)` because the BGM director's own module reaches it too:
+    /// [`crate::play_bgm`] owns the title -> load hand-off, which is a
+    /// `stop` plus a replay of the world's track and so has to touch the
+    /// same latch this module's starts do.
     #[cfg(target_arch = "wasm32")]
-    bgm_last_started: Option<u16>,
+    pub(crate) bgm_last_started: Option<u16>,
 }
 
 /// Sentinel [`LegaiaRuntime::set_field_player_screen_y`] reads as "the lead
