@@ -1284,17 +1284,27 @@ whole vocabulary, and they differ only in their tail:
 | `FUN_8003CF04` | walk `+0x00`; skip `+0x0C != handler`; skip `+0x10 & 8`; return the first survivor, `0` on exhaustion | **finder**. The kill-bit skip is what stops a find-or-spawn API adopting an actor retired earlier the same frame. |
 | `FUN_8003CF40` | walk `+0x00`; `+0x10 \|= 8` on every `+0x0C == handler`; no return value | **retire sweep**. Not a registration of any kind - it writes nothing but the flag word. |
 
-That matters for the ops long labelled "register callback" - `4C 9F` and
-`4C 87`, both `func_0x8003CF40(_DAT_8007C34C, LAB_801DA930)`. `LAB_801DA930`
-is the handler on spawn descriptor `0x801F27EC`, the one `FUN_801DDE34`
-allocates from, so those ops **retire every live floor-height-ladder
-oscillator** - see
+That matters for the two ops long labelled "register callback", `4C 9F` and
+`4C 87` - but they do not sweep the same handler, and pairing them on one
+address was itself wrong. Each arm is five instructions that load
+`_DAT_8007C34C` and one handler VA and jump to the shared exit `0x801E2DC4`
+(`jal 0x8003CF40` with `addiu s8,s8,2` in its delay slot), and the VA is where
+they differ: `4C 9F` at `0x801E2548` forms `LAB_801DA930`, while `4C 87` at
+`0x801E2284` forms `0x801E5154` - the reflection controller's tick, on
+descriptor `0x801F2948`
+([`script-vm-menuctrl.md`](script-vm-menuctrl.md#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown)).
+
+`LAB_801DA930` is the handler on spawn descriptor `0x801F27EC`, the one
+`FUN_801DDE34` allocates from, so `4C 9F` **retires every live
+floor-height-ladder oscillator** - see
 [`runtime-libs.md`](../reference/functions/runtime-libs.md#three-timer-driven-templates-0x801f27ec--0x801f2840--0x801f2858)
 for what that tick drives (it is not a fade: it animates one rung of the
 scene's 16-entry elevation LUT at `0x1F80035C`, the array `4C 9E` installs).
 Nothing is registered and nothing waits: with no rung running the sweep is
 entirely inert, which is exactly what a live opening-chain probe measured
-(zero hits on the "callback"). The scene MAN loader `FUN_8003AEB0` inlines the
+(zero hits on the "callback"). Nor does either op park - the advance runs in
+the call's delay slot, before `FUN_8003CF40` is even entered.
+The scene MAN loader `FUN_8003AEB0` inlines the
 same sweep twice at `0x8003B3C8` and `0x8003B414`, against `LAB_801DA930` and
 `FUN_80037018`, immediately before it opens the submode - so a driver actor
 either sweep marked is invisible to the open's find.

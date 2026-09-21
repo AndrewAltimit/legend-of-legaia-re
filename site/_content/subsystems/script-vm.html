@@ -169,14 +169,14 @@
     <thead><tr><th>Nibble</th><th>Theme</th></tr></thead>
     <tbody>
       <tr><td><code>0</code></td><td>Party-leader change</td></tr>
-      <tr><td><code>1</code></td><td>Menu sub-dispatcher on the whole byte (fade <code>12</code>, widgets)</td></tr>
+      <tr><td><code>1</code></td><td>A five-entry sub-table, not sixteen arms: only <code>10</code>..<code>14</code> index it and slot 1 is the common exit, so <code>11</code> and <code>15</code>..<code>1F</code> advance seven bytes and do nothing. The four real arms are a global write (<code>10</code>), the screen tint (<code>12</code>) and its sibling triple (<code>13</code>), and the <strong>actor clone</strong> (<code>14</code>) - the VM's after-image, and the one eight-byte form in the nibble</td></tr>
       <tr><td><code>2</code></td><td>Camera-octant / pad-rotation setter (<code>gp+0x2D8 = sub_op &amp; 7</code>)</td></tr>
       <tr><td><code>3</code></td><td>Input lock, player resync, party-state clear</td></tr>
       <tr><td><code>4</code></td><td>Immediate-or-ramped writes: render scale (<code>40</code>), scalar, mirrored Y</td></tr>
       <tr><td><code>5</code></td><td>Model select, NPC move-to-tile, <strong>TAKE_ITEM</strong> (sub 2), dialogue polls</td></tr>
       <tr><td><code>6</code></td><td>Emitter setup, halt-acquire</td></tr>
       <tr><td><code>7</code></td><td>Rectangular wall paint into the walkability grid - story-conditional collision (<a href="field-locomotion.html">locomotion</a>)</td></tr>
-      <tr><td><code>8</code></td><td>Party full heal, guard-slot jump, actor model + anim set, actor-search jumps</td></tr>
+      <tr><td><code>8</code></td><td>Party full heal, guard-slot jump, actor model + anim set, actor-search jumps, and the <strong>reflection controller</strong> (<code>86</code> installs it, <code>87</code> retires every live one). <code>86</code> names the actor to mirror and makes the executing script the image - ten sites, all in talk records whose text is a single parenthesised beat</td></tr>
       <tr><td><code>9</code></td><td>Floor-height ladder: sub-<code>0xE</code> installs all sixteen elevation rungs at <code>0x1F80035C</code>, sub-<code>0..2</code> sets one rung oscillating, sub-<code>0xF</code> retires the oscillators. Not a fade family &mdash; the tick's destination is the scene elevation LUT.</td></tr>
       <tr><td><code>A</code></td><td>Conditional jump on a ctx / local / global flag bit</td></tr>
       <tr><td><code>B</code></td><td>Undefined - the default arm halts</td></tr>

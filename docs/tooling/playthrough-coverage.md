@@ -268,7 +268,7 @@ Save states are gitignored Sony RAM - cite the `backup_fingerprint` from
 | S1 | cold boot -> title -> NEW GAME -> opening prologue (`opdeene`) | `s1_newgame_field` (from cold boot, `-fastboot`) | [Driving from boot](#driving-from-boot-segment-s1) |
 | S2 | opening prologue -> Rim Elm (`town01`) | `s2_rimelm_town01` (from the S1 checkpoint) | The town scene-load callees |
 | S3 | first free walk (Rim Elm) | `s3_rimelm_freeroam` (from the S2 checkpoint) | [The town01 opening is the name-entry screen](#s3-captured-the-town01-opening-is-the-name-entry-screen) |
-| S4 | first scene transition / house door | `s4_rimelm_door_transition` (from the S3 checkpoint) | [Grid-BFS door-nav out of Vahn's house](#s4-captured-the-grid-bfs-door-nav-walks-out-of-vahns-house) |
+| S4 | first door warp (Vahn's house) - **intra-scene**, not a scene change | `s4_rimelm_door_transition` (from the S3 checkpoint) | [Grid-BFS door-nav out of Vahn's house](#s4-captured-the-grid-bfs-door-nav-walks-out-of-vahns-house) |
 | S5 | first battle | `s5_tetsu_battle` (from the S4 end state) | [It is the scripted Tetsu spar, not a random encounter](#s5-the-first-battle-is-the-scripted-tetsu-spar-not-a-random-encounter) - reached by record-then-replay of a human playthrough. [Trace ↓](#s5-battle-trace-the-on-screen-element-family--new-0898-draw-functions) |
 | S6 | first non-tutorial boss (Queen Bee ambush, `town01`) | `rim_elm_queen_bee_battle` (field mode `0x3`; the fight auto-starts into the trace) | [Command-menu persistence + the field->battle transition](#s6-first-non-tutorial-battle-command-menu-persistence--the-context-multiplexed-effect-overlay-slot) |
 

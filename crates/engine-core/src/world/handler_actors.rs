@@ -72,9 +72,12 @@ impl World {
     /// touches nothing but the flag word, so with no matching actor live it is
     /// entirely inert. Returns how many slots it marked.
     ///
-    /// Live: [`Self::man_load_actor_reset`], and the field VM's `4C 9F` /
-    /// `4C 87` ladder-oscillator retire ops through
-    /// [`Self::retire_floor_ladder_oscillators`].
+    /// Live: [`Self::man_load_actor_reset`], the field VM's `4C 9F`
+    /// ladder-oscillator retire through
+    /// [`Self::retire_floor_ladder_oscillators`], and its `4C 87` reflection
+    /// retire through [`Self::retire_reflection_controllers`]. The two ops
+    /// share the exit, not the handler: `4C 9F` forms `LAB_801DA930`,
+    /// `4C 87` forms `0x801E5154`.
     pub fn retire_actors_by_handler(&mut self, handler: ActorHandler) -> usize {
         let mut n = 0;
         for a in self.actors.iter_mut() {
@@ -87,8 +90,10 @@ impl World {
     }
 
     /// Retire every pool actor running `LAB_801DA930` - the field VM's
-    /// `4C 9F` / `4C 87` ops, and the first of the MAN loader's two inlined
-    /// sweeps.
+    /// `4C 9F` op, and the first of the MAN loader's two inlined sweeps.
+    /// (`4C 87` is the neighbouring op that shares the same exit but forms
+    /// the reflection handler `0x801E5154` instead - see
+    /// [`Self::retire_reflection_controllers`].)
     ///
     /// REF: FUN_8003CF40 against `LAB_801DA930`
     ///
