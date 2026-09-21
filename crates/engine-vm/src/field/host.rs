@@ -478,13 +478,42 @@ pub trait FieldHost {
     /// - `0x12`: writes `DAT_8007BCB8/B9/BA = b1/b2/b3` (with optional
     ///   `func_0x8003C5F0` ramp via `LE_u16(b4..b5)`).
     /// - `0x13`: writes `DAT_8007B636/B635/B634 = b1/b2/b3` (with optional ramp).
-    /// - `0x14`: actor-lookup `func_0x8003C83C(b5)` then `FUN_801D835C(actor, ...)`.
+    /// - `0x14`: the **actor clone** - see [`Self::menu_ctrl_clone_actor`],
+    ///   which is the hook that carries it and the one sub-op of this nibble
+    ///   whose instruction is eight bytes rather than seven.
     ///
-    /// PC always advances by 7 (= `param_2 + 7` non-extended). Hosts model the
-    /// per-sub-op behaviour internally; the VM just hands them the operand
-    /// bytes.
+    /// PC advances by 7 (= `param_2 + 7` non-extended) for every sub-op but
+    /// `0x14`. Hosts model the per-sub-op behaviour internally; the VM just
+    /// hands them the operand bytes.
     fn menu_ctrl_sub1(&mut self, op0: u8, payload: &[u8; 5]) {
         let _ = (op0, payload);
+    }
+
+    /// Op `0x4C` sub-1 sub-op `0x14` - clone the actor named by the
+    /// instruction's **sixth** payload byte.
+    ///
+    /// The whole nibble enters on `addiu s8,s8,7` (`0x801E0C8C`) and the
+    /// five-entry table at `0x801CEEA0` sends `op0 - 0x10` to its arm; slot 4
+    /// is `0x801E0E80`, which reads `lbu a0,6(s6)` - a byte past the five the
+    /// other arms use - resolves it through the context walk `FUN_8003C83C`,
+    /// and calls `FUN_801D835C(src, u24, s16)`. Its exit
+    /// `j 0x801E3624 / addiu s8,s8,1` puts the extra advance in the branch
+    /// delay slot, so the eighth byte is consumed on the miss path too.
+    ///
+    /// * `tint_rgb` is `FUN_8003CEB8(&operand[1])`, the 24-bit LE word retail
+    ///   stores into the clone's `+0x74` modulation colour.
+    /// * `fade_rate` is `FUN_8003CE9C(&operand[4])`, the sign-extended `s16`
+    ///   that lands in the clone's `+0x54` - the per-vsync rate the clone's
+    ///   own tick [`crate::actor_tick::clip_fraction_step`] multiplies.
+    /// * `src_id` is `operand[6]`, resolved in the same id space every
+    ///   cross-context target byte uses.
+    ///
+    /// A host that cannot resolve `src_id` does nothing: retail's
+    /// `beqz s5,0x801e0eb0` skips straight to the exit.
+    // REF: FUN_801D835C (the clone helper), FUN_8003C83C (id resolve),
+    // REF: FUN_8003CEB8 (u24 operand), FUN_8003CE9C (s16 operand)
+    fn menu_ctrl_clone_actor(&mut self, src_id: u8, tint_rgb: u32, fade_rate: i16) {
+        let _ = (src_id, tint_rgb, fade_rate);
     }
 
     /// Op 0x4C sub-3 sub-3 (refresh helper).

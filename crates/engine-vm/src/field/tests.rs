@@ -63,6 +63,7 @@ struct TestHost {
     party_bank: std::collections::HashMap<u8, i32>,
     // 0x4C sub-1 menu sub-dispatcher recordings.
     menu_sub1_calls: Vec<(u8, [u8; 5])>,
+    clone_actor_calls: Vec<(u8, u32, i16)>,
     // 0x4C sub-3 cleanups.
     menu_refresh_calls: u32,
     depth_copy_calls: u32,
@@ -361,6 +362,9 @@ impl FieldHost for TestHost {
     }
     fn menu_ctrl_sub1(&mut self, op0: u8, payload: &[u8; 5]) {
         self.menu_sub1_calls.push((op0, *payload));
+    }
+    fn menu_ctrl_clone_actor(&mut self, src_id: u8, tint_rgb: u32, fade_rate: i16) {
+        self.clone_actor_calls.push((src_id, tint_rgb, fade_rate));
     }
     fn menu_refresh(&mut self) {
         self.menu_refresh_calls += 1;

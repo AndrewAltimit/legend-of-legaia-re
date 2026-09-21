@@ -1050,12 +1050,15 @@ pub const CLIP_FRACTION_FULL: u16 = 0x1000;
 /// template's only materialisation site is `FUN_801D835C` at `0x801D8370`,
 /// the actor-clone helper behind field-VM op `0x4C` sub-1 sub-op `0x14`.
 ///
-/// PORT: FUN_801D820C NOT WIRED: the host that should call it is the field
-/// actor-list walk in `engine-core`'s `World`, once something spawns the
-/// cloned actor - `FieldHost::menu_ctrl_sub1` sub-op `0x14` is still a
-/// pass-through in `World` (it only handles the `0x12` screen tint and
-/// forwards the rest as a `FieldEvent::MenuCtrl`), so no clone exists to
-/// tick.
+/// PORT: FUN_801D820C
+///
+/// Live on both hosts through that same chain: the field VM's `0x4C` sub-1
+/// arm calls `FieldHost::menu_ctrl_clone_actor`, `World::spawn_actor_clone`
+/// seats the clone on a pool slot carrying
+/// `engine_core::actor_handler::ActorHandler::ClipFade`, and
+/// `World::tick_handler_actors` runs this every frame until the accumulator
+/// fills and the retire bit collects it. Six shipped scenes issue the
+/// opcode (`vozz`, `retona`, `urudre3`, `kor5`, `nilboa`, `noaru`).
 /// REF: FUN_801D835C
 pub fn clip_fraction_step(p: &mut ActorPhysics, dt: u8) -> bool {
     let step = (p.timer as i32).wrapping_mul(dt as i32);
