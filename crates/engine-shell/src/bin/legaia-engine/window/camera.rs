@@ -585,36 +585,20 @@ impl PlayWindowApp {
         (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye)
     }
 
-    /// Replay this frame's drained `apply == 0` Camera Configure beats as
-    /// snaps onto the cutscene camera interp (see `pending_camera_snaps`).
-    /// Slot decode mirrors [`Self::cutscene_view`] exactly - same negations,
-    /// same angle scale, same `CUTSCENE_WORLD_SCALE` reduction, same
-    /// degenerate-value filters - so a snapped component's value equals the
-    /// glide target `cutscene_view` computes for it (no spurious re-arm).
+    /// Replay this frame's `apply == 0` Camera Configure beats as snaps onto
+    /// the cutscene camera interp.
+    ///
+    /// The beats come off `Camera::take_camera_snap_beats`, decoded by the
+    /// shared `CutsceneCameraInterp::snap_components_for`, because that is
+    /// where the events are: `Camera::route_camera_events` consumes every
+    /// `FieldEvent::CameraConfigure` off the world queue during the session
+    /// tick and does not restore it, so this window's own later
+    /// `drain_and_route_field_events` never saw one and the arm that watched
+    /// for them there was unreachable. The browser play page drains the same
+    /// bank, so a same-tick snap+glide pair glides from the snapped pose on
+    /// both hosts.
     pub(super) fn replay_camera_snap_beats(&mut self) {
-        use legaia_engine_core::camera_view::CUTSCENE_WORLD_SCALE;
-        use std::f32::consts::TAU;
-        let beats = std::mem::take(&mut self.pending_camera_snaps);
-        for params in beats {
-            let mut comps: Vec<(usize, f32)> = Vec::with_capacity(params.len());
-            for p in &params {
-                let v = p.value as i16 as f32;
-                match p.slot {
-                    0 => comps.push((3, v / 4096.0 * TAU)),
-                    1 => comps.push((4, v / 4096.0 * TAU)),
-                    // Roll rides packed component 9 (see
-                    // `CutsceneCameraInterp::ROLL`).
-                    2 => comps.push((9, v / 4096.0 * TAU)),
-                    3 => comps.push((6, v / CUTSCENE_WORLD_SCALE)),
-                    4 => comps.push((7, v / CUTSCENE_WORLD_SCALE)),
-                    5 if v.abs() > 1.0 => comps.push((8, v / CUTSCENE_WORLD_SCALE)),
-                    6 => comps.push((0, -v)),
-                    7 => comps.push((1, v)),
-                    8 => comps.push((2, -v)),
-                    9 if v > 1.0 => comps.push((5, v)),
-                    _ => {}
-                }
-            }
+        for comps in self.session.camera.take_camera_snap_beats() {
             self.cutscene_cam_interp.snap_components(&comps);
         }
     }

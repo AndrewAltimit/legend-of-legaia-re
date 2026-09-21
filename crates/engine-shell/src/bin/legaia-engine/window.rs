@@ -1146,14 +1146,6 @@ struct PlayWindowApp {
     /// interp advances in retail DISPLAY frames (the op-`0x45` `apply` unit),
     /// so the step count is this counter's delta, not the sim-tick count.
     cutscene_cam_frames: u64,
-    /// `apply == 0` Camera Configure beats drained from this frame's field
-    /// events, replayed as snaps onto the interp before the glide arms. The
-    /// field VM runs until yield, so a snap beat + glide beat pair with no
-    /// yield between (map01's fly-in aerial snap -> apply-900 descent)
-    /// commits in ONE tick and the merged `camera_state` only shows the
-    /// glide's targets; the snap replays keep the glide's start pose retail
-    /// (the captured fly-in trajectory starts exactly at the snapped pose).
-    pending_camera_snaps: Vec<Vec<legaia_engine_vm::field::CameraParam>>,
     /// Active dialog box, mirroring `World::dialog.current`. Opened from the
     /// scene's MES container the frame a dialog request appears (field-VM
     /// op `0x3F` or the overworld talk-to), ticked for its typewriter reveal,

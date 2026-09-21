@@ -80,7 +80,7 @@ impl PlayWindowApp {
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
-        use legaia_engine_core::save_select::{SaveSelectSession, SelectPhase};
+        use legaia_engine_core::save_select::SaveSelectSession;
         // The save-select session (or field-menu Save sub-session) that
         // drives both pill chrome and any retail Load-mode overlays.
         let session: &SaveSelectSession = match &self.boot_ui {
@@ -112,22 +112,25 @@ impl PlayWindowApp {
         // `(24, 40)` over 16 frames, driven by `DAT_801ef194`. We
         // interpolate against `session.slide_anim_t()` so the engine
         // matches retail's slide-in.
-        let (pills, pill_anchor): (Vec<u8>, (i32, i32)) = match session.phase() {
-            SelectPhase::NowChecking { slot, .. } | SelectPhase::SlotPreview { slot } => {
-                // Slide start = the pill's Browsing position (retail
-                // mode-2 start `(160, 96)` minus the `-0x18` x-shift
-                // = the Browsing pill quad, i.e. the pill slides away
-                // from where it already sat).
-                let pos = session.interpolate(
-                    legaia_engine_render::SAVE_SELECT_SLOT1_POS,
-                    legaia_engine_render::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
-                );
-                (vec![slot], pos)
-            }
-            _ => (
+        // Which pills, which cursor, which overlays - the shared decision
+        // (`save_select::phase_layout`) both hosts read, so a phase cannot
+        // mean two screens.
+        let layout = legaia_engine_core::save_select::phase_layout(session.phase());
+        let (pills, pill_anchor): (Vec<u8>, (i32, i32)) = if layout.single_pill {
+            // Slide start = the pill's Browsing position (retail mode-2
+            // start `(160, 96)` minus the `-0x18` x-shift = the Browsing
+            // pill quad, i.e. the pill slides away from where it already
+            // sat).
+            let pos = session.interpolate(
+                legaia_engine_render::SAVE_SELECT_SLOT1_POS,
+                legaia_engine_render::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
+            );
+            (vec![session.current_slot()], pos)
+        } else {
+            (
                 (0..slot_count as u8).collect(),
                 legaia_engine_render::SAVE_SELECT_SLOT1_POS,
-            ),
+            )
         };
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
         let mut draws = legaia_engine_render::save_select_chrome_draws_for(
@@ -140,14 +143,10 @@ impl PlayWindowApp {
         // Pointing-finger cursor sprite - retail's small white hand
         // pointing at the selected slot pill, byte-pinned to CLUT row
         // 7 of the system-UI TIM. Emit last so it draws on top of
-        // the pills. Suppress during NowChecking (dialog covers the
-        // pill row) and SlotPreview (the grid emits its own cursor
-        // on the focused cell).
-        let emit_pill_cursor = !matches!(
-            session.phase(),
-            SelectPhase::NowChecking { .. } | SelectPhase::SlotPreview { .. }
-        );
-        if slot_count > 0 && emit_pill_cursor {
+        // the pills. Suppressed once a card is committed: the dialog
+        // covers the pill row and the grid emits its own cursor on the
+        // focused cell.
+        if slot_count > 0 && layout.pill_cursor {
             draws.push(legaia_engine_render::save_select_cursor_draw_for(
                 &assets.rects,
                 cursor_row,
@@ -159,7 +158,10 @@ impl PlayWindowApp {
         // bottom info panel; NowChecking shows a centered dialog box
         // with the "Now checking. Do not remove MEMORY CARD" message.
         match session.phase() {
-            SelectPhase::SlotPreview { .. } => {
+            // Every preview phase, the two confirms included - retail raises
+            // the overwrite / delete prompt FROM the preview, so the block
+            // grid and the info panel stay under the messagebox.
+            _ if layout.preview => {
                 // The grid is the picked PORT's fifteen blocks, focused by
                 // the shared flow's cursor - NOT the pill row, which in a
                 // two-stage rack lists the card ports instead.
@@ -197,7 +199,7 @@ impl PlayWindowApp {
                     stage_scale,
                 ));
             }
-            SelectPhase::NowChecking { .. } => {
+            _ if layout.now_checking => {
                 // Slide the panel left-from-right alongside the text,
                 // matching retail mode-0's `pos = (416, 112) -> (160,
                 // 112)` interpolation.
@@ -215,20 +217,19 @@ impl PlayWindowApp {
                     slide_offset,
                 ));
             }
-            SelectPhase::ConfirmOverwrite { .. } | SelectPhase::ConfirmDelete { .. } => {
-                // Retail raises the confirm as its own centred
-                // messagebox pair (prompt bar + stacked Yes/No box,
-                // mode 3 of FUN_801E1C1C), sliding up from below the
-                // stage. Text half lives in
-                // `save_select_phase_text_draws`.
-                draws.extend(legaia_engine_render::confirm_dialog_panel_draws_for(
-                    &assets.rects,
-                    confirm_dialog_slide_y(session),
-                    stage_origin,
-                    stage_scale,
-                ));
-            }
             _ => {}
+        }
+        // Retail raises the confirm as its own centred messagebox pair
+        // (prompt bar + stacked Yes/No box, mode 3 of FUN_801E1C1C),
+        // sliding up from below the stage ON TOP of the preview. Text half
+        // lives in `save_select_phase_text_draws`.
+        if layout.confirm {
+            draws.extend(legaia_engine_render::confirm_dialog_panel_draws_for(
+                &assets.rects,
+                confirm_dialog_slide_y(session),
+                stage_origin,
+                stage_scale,
+            ));
         }
         draws
     }

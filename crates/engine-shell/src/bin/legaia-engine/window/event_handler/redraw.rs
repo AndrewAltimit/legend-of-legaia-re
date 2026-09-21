@@ -672,7 +672,10 @@ impl PlayWindowApp {
             Some(out)
         } else {
             self.cutscene_cam_interp.reset();
-            self.pending_camera_snaps.clear();
+            // Nothing is interpolating this frame, so a banked snap would
+            // move a pose no draw reads - drop them rather than let them
+            // land on the next shot.
+            self.session.camera.clear_camera_snap_beats();
             None
         };
         // VDF vertex morphs (jou's flesh-ground pulse, rikuroa's generator
@@ -788,7 +791,10 @@ impl PlayWindowApp {
             // winding parity is the world-map pass's, not the field pass's,
             // so the field-tuned cull would eat the ground tiles.
             let in_world_map_now = self.session.host.world.mode == SceneMode::WorldMap;
-            let nclip_mode = u32::from(cutscene_cam.is_some() && !in_world_map_now) * 2;
+            let nclip_mode = legaia_engine_core::camera_view::nclip_cull_mode(
+                cutscene_cam.is_some(),
+                in_world_map_now,
+            );
             r.set_backface_cull(nclip_mode);
             if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
                 r.set_semi_blend(false);
@@ -862,28 +868,24 @@ impl PlayWindowApp {
             // anchors to) lifted half a character height (~130-unit mesh;
             // field world is retail Y-down, so up is negative).
             const OCCL_STRENGTH_EASE: f32 = 0.25;
+            // The world half of the gate is the shared kernel
+            // (`field_occlusion::fade_armed`: field mode, no scripted shot);
+            // what stays here is genuinely this host's - its master toggle,
+            // a boot / pause panel owning the screen, and the `F3` debug
+            // vantage. The browser play page reads the same split.
             let occl_focus = (self.occlusion_fade
                 && !self.boot_ui.is_active()
-                && !in_world_map
-                && self.session.host.world.mode == SceneMode::Field
-                && cutscene_cam.is_none()
-                && !self.field_debug_camera)
-                .then(|| {
-                    let w = &self.session.host.world;
-                    w.player_actor_slot
-                        .and_then(|s| w.actors.get(s as usize))
-                        .map(|a| (a.move_state.world_x, a.move_state.world_z))
-                })
-                .flatten();
+                && !self.field_debug_camera
+                && legaia_engine_core::field_occlusion::fade_armed(
+                    &self.session.host.world,
+                    cutscene_cam.is_some(),
+                ))
+            .then(|| {
+                legaia_engine_core::field_occlusion::player_body_centre(&self.session.host.world)
+            })
+            .flatten();
             let mut occl_staged = false;
-            if let Some((wx, wz)) = occl_focus {
-                const HALF_CHAR_HEIGHT: f32 = 65.0;
-                let floor_y = self
-                    .session
-                    .host
-                    .world
-                    .sample_field_floor_height(wx as i32, wz as i32);
-                let centre = [wx as f32, floor_y as f32 - HALF_CHAR_HEIGHT, wz as f32];
+            if let Some(centre) = occl_focus {
                 let fully_hidden = self
                     .field_follow_camera_eye()
                     .map(|eye| {

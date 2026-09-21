@@ -115,6 +115,7 @@ pub(crate) fn save_select_phase_text_draws(
 ) -> Vec<TextDraw> {
     use legaia_engine_core::save_select::{SelectPhase, SlotInfoMode};
     let mut out = Vec::new();
+    let layout = legaia_engine_core::save_select::phase_layout(session.phase());
     match session.phase() {
         SelectPhase::NowChecking { .. } => {
             // Retail slide: dialog x slides from
@@ -134,7 +135,12 @@ pub(crate) fn save_select_phase_text_draws(
                 slide_offset,
             ));
         }
-        SelectPhase::SlotPreview { .. } => {
+        // Every phase the shared layout marks as a preview draws the info
+        // panel - which includes the two confirms: retail raises the
+        // overwrite / delete prompt FROM the preview, not from the pill row
+        // (`docs/subsystems/save-screen.md`), so the block grid and its
+        // caption stay under the messagebox. This window used to drop both.
+        _ if layout.preview => {
             // The grid previews the picked PORT's blocks, not the pill row -
             // the two are different lists in the two-stage rack, and reading
             // the pills here captioned the info panel with the card instead
@@ -167,31 +173,26 @@ pub(crate) fn save_select_phase_text_draws(
                 ));
             }
         }
-        // The confirm prompt is retail's centred messagebox (mode 3 of
-        // the slide-in primitive), NOT an inline row under the pills:
-        // a near-full-width prompt bar + a small box with the Yes / No
-        // rows stacked, sliding up from below the stage.
-        SelectPhase::ConfirmOverwrite { cursor, .. } => {
-            out.extend(legaia_engine_render::confirm_dialog_text_draws_for(
-                font,
-                "Do you wish to save?",
-                cursor,
-                confirm_dialog_slide_y(session),
-                stage_origin,
-                stage_scale,
-            ));
-        }
-        SelectPhase::ConfirmDelete { cursor, .. } => {
-            out.extend(legaia_engine_render::confirm_dialog_text_draws_for(
-                font,
-                "Delete this save?",
-                cursor,
-                confirm_dialog_slide_y(session),
-                stage_origin,
-                stage_scale,
-            ));
-        }
         _ => {}
+    }
+    // The confirm prompt is retail's centred messagebox (mode 3 of the
+    // slide-in primitive), NOT an inline row under the pills: a near-full
+    // width prompt bar + a small box with the Yes / No rows stacked, sliding
+    // up from below the stage. It rides ON TOP of the preview drawn above.
+    if layout.confirm {
+        let (prompt, cursor) = match session.phase() {
+            SelectPhase::ConfirmOverwrite { cursor, .. } => ("Do you wish to save?", cursor),
+            SelectPhase::ConfirmDelete { cursor, .. } => ("Delete this save?", cursor),
+            _ => ("", 0),
+        };
+        out.extend(legaia_engine_render::confirm_dialog_text_draws_for(
+            font,
+            prompt,
+            cursor,
+            confirm_dialog_slide_y(session),
+            stage_origin,
+            stage_scale,
+        ));
     }
     out
 }
