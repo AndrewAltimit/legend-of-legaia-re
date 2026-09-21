@@ -302,6 +302,16 @@ Three ping-pongs run at different rates and are easy to conflate: the **MDEC cod
 (`ctx+0x00`/`+0x04`) flip once per frame, the **frame rects** (`ctx+0x18`/`+0x20`) once per frame
 buffer, and the **slice staging buffers** (`ctx+0x0C`/`+0x10`) once per 16-pixel column.
 
+`ctx` itself is the `0x50`-byte structure at **`0x801D19A0`**, a fixed address in the overlay's own
+uninitialised data region rather than an allocation - `801cf10c addiu a0,v0,0x19a0` materialises it
+as `FUN_801CF8B0`'s first argument and every helper below takes the same pointer. The two halves of
+each ping-pong sit on opposite sides of that region's ownership: the MDEC code buffers are
+`_DAT_8007B85C + 0x10000` and `+ 0x38000`, in the shared streaming asset buffer, while the two
+slice staging buffers are `0x801D19F0` and `0x801D91F0`, `0x7800` bytes each, inside the overlay
+image. The whole region is zero on the disc and reaches RAM only because the overlay loader's
+transfer length is the PROT entry's own sector extent; its map is in
+[`byte-accounting.md`](../tooling/byte-accounting.md#the-str-overlays-hole-region-by-region).
+
 The slice cursor itself is a small state machine: each MDEC-out completion advances `ctx+0x2C` by
 one column (`0x18` VRAM cells at 24bpp, `0x10` at 16bpp), and when the cursor passes the active
 rect's right edge the two frame rects flip and the cursor restarts on the new origin. A buffer

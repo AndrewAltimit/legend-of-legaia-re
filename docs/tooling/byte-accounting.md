@@ -483,6 +483,121 @@ instrument, while bracketing a run between two declared bounds reads the
 container. Anything a sector or more past the terminator stays residue, so the
 rule cannot swallow a region.
 
+### An overlay's uninitialised data region travels with its code
+
+The same fixed-length argument settles the largest zero runs in the overlay
+images, and it is the loader itself that makes it: `FUN_8003EBE4` asks
+`FUN_8003E8A8` for the entry's sector count - `toc[i+3] - toc[i+2]`, the gap to
+the next entry, which is `FUN_8003E68C`'s own expression - and hands it straight
+to `FUN_8003E800`. The transfer length is therefore the whole PROT extent, and a
+linked image's **uninitialised data region** rides into RAM with its code as
+zero fill. Those bytes are not a format nobody has walked; they are the buffers
+the image writes at runtime.
+
+Shape cannot establish that, because zero fill looks the same whoever wrote it.
+The claim rests on the image's own code instead, and the walker
+(`claim_uninitialised_data`) applies two rules:
+
+- the claim is exactly one maximal **all-zero** run of at least 256 bytes, so it
+  can never grow into live content and a single non-zero byte splits it in two;
+- the image's own code must address the run, and once is not enough. A lone
+  `lui` pair landing somewhere in a multi-kilobyte window is a coincidence an
+  image with thousands of pairs produces; two distinct addresses, or one address
+  formed at four separate sites, is a structure. Each claim's `detail` carries
+  both counts.
+
+The second rule is what keeps a donor's zero tail and a zero hole inside a
+sparse data segment out of the figure. Three runs in the worked entry below are
+refused by it, and so is the menu overlay's largest data-segment hole - one
+address, one site.
+
+The pair scan walks **forward** from each `lui` for sixteen instructions and
+abandons the window the moment something redefines the register. Forward matters:
+the STR overlay hands its VLC unpacker the destination in a `jal` **delay slot**
+(`801cf214 jal 0x801f1a00` / `801cf218 _addiu a0,a0,0xa00`), which a backward-only
+scan from the second instruction never sees.
+
+Like the slot fill above, this moves only the *structural* share. The bytes were
+already `zero_pad`, which `work_bytes` never counted; what changes is that the
+instrument stops ranking the disc's own `.bss` as the largest unwalked region on
+it.
+
+#### The STR overlay's hole, region by region
+
+PROT `0970` carried the disc's largest single unclaimed run, 131172 bytes of
+zeros between the overlay's initialised data and the unpacker at the top of the
+image. Every boundary inside it is an address the overlay's own code forms, and
+the six regions sum to the run exactly:
+
+| VA | bytes | what addresses it |
+|---|---:|---|
+| `0x801D199C` | 4 | alignment below the descriptor |
+| `0x801D19A0` | `0x50` | the play loop's decode context: `801cf10c addiu a0,v0,0x19a0` is the argument to the ring/rect init `FUN_801CF8B0`, and every play-loop helper takes the same pointer - this is the `ctx` whose fields [`cutscene.md`](../subsystems/cutscene.md#play-loop---fun_801cf098-overlay) tabulates |
+| `0x801D19F0` | `0x7800` | slice staging buffer 0, stored to `ctx+0x0C` by `801cf904 addiu v0,v0,0x19f0` |
+| `0x801D91F0` | `0x7800` | slice staging buffer 1, stored to `ctx+0x10` by `801cf910 addiu v0,v0,-0x6e10`; the pair ping-pongs on `ctx+0x14` (`801cf344 lw a0,0xc(a2)`) |
+| `0x801E09F0` | `0x10` | four overlay globals, among them the demuxer's end-frame latch `DAT_801E09F8` and the decoder selector `DAT_801E09FC` |
+| `0x801E0A00` | `0x11000` | the [STRv2 VLC lookup table](../subsystems/cutscene.md#strv2-vlc-lookup-table-fun_801f1a00) destination, ending flush against the unpacker `FUN_801F1A00` |
+
+Two other zero runs in the same entry are **refused**: the 1827-byte tail past
+the compressed blob (claimed instead as last-sector slack) and a 256-byte hole
+inside the data segment. Neither carries a formed address, which is the answer
+the rule is supposed to give.
+
+### A compressed table whose extent nothing else states
+
+The rest of `0970`'s residue was its second-largest run, 3597 `mixed` bytes at
+file `0x232D0` - and `mixed` is what a compressed stream looks like to a shape
+test. It is the source the VLC table above is unpacked from, which
+[`legaia_mdec::strv2_table`](../../crates/mdec/src/strv2_table.rs) already
+walks; the accounting measures the extent with that walk rather than
+re-implementing it, so `unpack_lz_tracked` reports what the control-byte walk
+**consumed** the way `decompress_tracked` does for an LZS span.
+
+Measuring it is the only option here. The blob sits at the top of the image with
+nothing after it but the entry's last-sector slack, so no next-offset bounds it,
+and its own stream carries no length - only the `0xFF 0xFF` terminator. What the
+bytes do state twice over is the *output*: the unpacker's `ori a2, zero, 0x87ff`
+bound says `0x8800` halfwords, the retail blob decodes to exactly that many, and
+the destination plus that length lands on the unpacker's own entry.
+
+### A dev module's roster is one stride, not one string pool
+
+PROT `0974`, the `OTHER3` dev module, read as 10904 bytes of `ascii_text` in two
+runs - which invites the verdict "a text blob nobody claims" and is wrong about
+the shape. Three quarters of the entry is a fixed-stride table, and the stride
+is in the drawing loop's index arithmetic rather than in the bytes: `(i << 5) + i`
+then `<< 2` is `i * 0x84`, the base comes from `801cee00 addiu s3,v0,-0x10c0`,
+and the reciprocal divide at `801cee2c`..`801cee54` wraps the cursor `mod 81`,
+which is the record count. Ten rows are drawn per page. Parser
+[`legaia_asset::other3_roster`](../../crates/asset/src/other3_roster.rs);
+`claim_other3_roster` claims each record at the stride, padding included, because
+the stride is what the loop advances by.
+
+The labels are Japanese, stored as little-endian `u16` Shift-JIS code units
+(four lead bytes in use: `0x81` / `0x82` fullwidth, `0x83` katakana, `0x88` /
+`0x8F` kanji), and that is **not** evidence of a foreign build: 34 of `0974`'s 37 distinct
+SCUS-range `jal` targets land on a `SCUS_942.54` function head, where PROT
+`0896` - the image that really is from another build - scores 0 of 42. The dev
+modules were simply never localised.
+
+### A residue run that is another image's code
+
+PROT `0975`'s 1760-byte `plausible_mips` run at file `0x5920` has no prologue, no
+`jr ra` and no caller, and it runs to the last byte of the entry. None of the
+three readings that invites - a jump-table body, data, or the interior of a
+neighbouring function - is right: those bytes are **PROT `0972`'s**, byte-identical
+at the same file offset, and `0972` is nearly twice as long. It is an
+[inherited tail](disc-coverage.md#content_bytes-is-longer-than-the-images-own-code-the-inherited-tail) - the packer wrote
+the shorter module into a buffer it did not clear, and the residue is whatever
+the longer module left there. The run is a mid-function slice of the fishing
+overlay, which is exactly why it has no entry and no exit.
+
+`disc-coverage.py` cuts those bytes out of an image's own denominator; this
+instrument does not, so a tail still counts against the entry that inherited it.
+Reading a `plausible_mips` residue run here as un-dumped code is therefore only
+safe once the run has been checked against the other entries at the same file
+offset - one `==` over the extracted set answers it.
+
 ### The residue run **count** was capped, and read as a measurement
 
 Three entries reported "64 runs" in the sweep, which is not a coincidence: the
