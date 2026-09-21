@@ -476,6 +476,16 @@ impl CutsceneCameraInterp {
     /// Roll (op-`0x45` slot 2) rides at the end of the packed pose so the
     /// historical index numbering of the other nine is unchanged.
     pub const ROLL: usize = 9;
+    /// Packed indices of the look-at trio (op-`0x45` focus slots 6 / 7 / 8).
+    const FOCUS_X: usize = 0;
+    const FOCUS_Y: usize = 1;
+    const FOCUS_Z: usize = 2;
+    /// Packed index of GTE `H` (op-`0x45` slot 9).
+    const H: usize = 5;
+    /// Packed indices of the eye-space translation trio (offset slots 3/4/5).
+    const TR_X: usize = 6;
+    const TR_Y: usize = 7;
+    const TR_Z: usize = 8;
 
     pub fn new() -> Self {
         Self::default()
@@ -484,6 +494,48 @@ impl CutsceneCameraInterp {
     /// Drop the held pose so the next [`Self::glide`] snaps to its target.
     pub fn reset(&mut self) {
         self.initialized = false;
+    }
+
+    /// Decode one `apply == 0` Configure beat's op-`0x45` params into the
+    /// packed-component snaps [`Self::snap_components`] takes.
+    ///
+    /// The slot decode mirrors `camera_view::cutscene_view` exactly - same
+    /// negations (retail stores the focus X / Z negated), same 12-bit angle
+    /// scale, same 6x world-scale reduction on the eye-space trio, same
+    /// degenerate-value filters on the eye depth and `H` - so a snapped
+    /// component's value equals the glide target that builder computes for
+    /// it and the follow-up glide does not read it as a re-stage.
+    ///
+    /// Shared because both hosts own a [`CutsceneCameraInterp`] and a host
+    /// that spells the decode out locally can get a negation right on one
+    /// side and wrong on the other, which reads as a camera bug rather than
+    /// as drift.
+    ///
+    /// REF: FUN_801DE084
+    pub fn snap_components_for(params: &[(u8, u16)]) -> Vec<(usize, f32)> {
+        use std::f32::consts::TAU;
+        /// The 6x world scale retail folds into its camera rotation; the
+        /// engine renders at 1x. Spelled here rather than imported so this
+        /// leaf crate keeps no dependency on `engine-core`.
+        const WORLD_SCALE: f32 = 6.0;
+        let mut out: Vec<(usize, f32)> = Vec::with_capacity(params.len());
+        for &(slot, raw) in params {
+            let v = raw as i16 as f32;
+            match slot {
+                0 => out.push((Self::PITCH, v / 4096.0 * TAU)),
+                1 => out.push((Self::YAW, v / 4096.0 * TAU)),
+                2 => out.push((Self::ROLL, v / 4096.0 * TAU)),
+                3 => out.push((Self::TR_X, v / WORLD_SCALE)),
+                4 => out.push((Self::TR_Y, v / WORLD_SCALE)),
+                5 if v.abs() > 1.0 => out.push((Self::TR_Z, v / WORLD_SCALE)),
+                6 => out.push((Self::FOCUS_X, -v)),
+                7 => out.push((Self::FOCUS_Y, v)),
+                8 => out.push((Self::FOCUS_Z, -v)),
+                9 if v > 1.0 => out.push((Self::H, v)),
+                _ => {}
+            }
+        }
+        out
     }
 
     /// Snap individual packed components (0..2 look_at, 3 pitch, 4 yaw, 5 H,

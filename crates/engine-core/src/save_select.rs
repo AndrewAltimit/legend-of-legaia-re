@@ -1150,6 +1150,70 @@ pub enum SelectPhase {
     Done(SelectOutcome),
 }
 
+/// What a save-select phase puts on screen, for the host that composes the
+/// draws.
+///
+/// The two shipped hosts each answered this from their own `match` over
+/// [`SelectPhase`], and the answers disagreed on exactly one phase pair -
+/// the overwrite / delete confirms. Retail raises that prompt **from the
+/// preview**: under `SaveRack::CardPorts` a Save crosses the same
+/// `NowChecking` beat a Load does and the Yes/No messagebox (mode 3 of
+/// `FUN_801E1C1C`) slides up over the block grid the player picked the cell
+/// on, not over the pill row (see `docs/subsystems/save-screen.md`). So a
+/// confirm is a `SlotPreview` wearing a messagebox, which is what this says
+/// and what both hosts now draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SaveSelectPhaseLayout {
+    /// Draw only the committed card's pill, relocated up under the panel
+    /// (retail's mode-2 slide), instead of the whole pill row.
+    pub single_pill: bool,
+    /// Emit the pointing-finger cursor on the pill row. Suppressed once a
+    /// card is committed: the dialog covers the row and the grid emits its
+    /// own cursor on the focused cell.
+    pub pill_cursor: bool,
+    /// Draw the picked card's 5x3 block grid + the sliding info panel.
+    pub preview: bool,
+    /// Draw the "Now checking" panel.
+    pub now_checking: bool,
+    /// Draw the Yes/No confirm messagebox on top of everything.
+    pub confirm: bool,
+}
+
+/// The layout [`SelectPhase`] implies - see [`SaveSelectPhaseLayout`].
+pub fn phase_layout(phase: SelectPhase) -> SaveSelectPhaseLayout {
+    let base = SaveSelectPhaseLayout {
+        single_pill: false,
+        pill_cursor: true,
+        preview: false,
+        now_checking: false,
+        confirm: false,
+    };
+    match phase {
+        SelectPhase::NowChecking { .. } => SaveSelectPhaseLayout {
+            single_pill: true,
+            pill_cursor: false,
+            now_checking: true,
+            ..base
+        },
+        SelectPhase::SlotPreview { .. } => SaveSelectPhaseLayout {
+            single_pill: true,
+            pill_cursor: false,
+            preview: true,
+            ..base
+        },
+        SelectPhase::ConfirmOverwrite { .. } | SelectPhase::ConfirmDelete { .. } => {
+            SaveSelectPhaseLayout {
+                single_pill: true,
+                pill_cursor: false,
+                preview: true,
+                confirm: true,
+                ..base
+            }
+        }
+        _ => base,
+    }
+}
+
 /// Final outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelectOutcome {

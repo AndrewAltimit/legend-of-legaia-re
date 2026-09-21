@@ -338,6 +338,24 @@ pub struct Camera {
     /// the target it composes and the ease that walks the globals toward
     /// it. See [`crate::camera_zone`] and [`Self::zone_follow_tick`].
     pub zone: ZoneFollow,
+    /// This frame's `apply_trigger == 0` Configure beats, as packed-component
+    /// snaps for the host's [`legaia_engine_vm::psx_camera::CutsceneCameraInterp`].
+    ///
+    /// Retail's mover snaps the live camera globals to an `apply == 0` beat
+    /// immediately. The field VM runs until yield, so a snap beat followed by
+    /// a glide beat in the same tick (`map01`'s fly-in: the aerial snap, then
+    /// the descent with no yield between) commits both before any host looks,
+    /// and the merged [`Self::globals`] only carries the glide beat's
+    /// targets, so a host that reads the merged state alone glides from the
+    /// wrong pose.
+    ///
+    /// Filled by [`Self::route_camera_events`] and drained by
+    /// [`Self::take_camera_snap_beats`]. It lives here because this is where
+    /// the beats are: `route_camera_events` consumes every
+    /// `FieldEvent::CameraConfigure` off the world queue and does not restore
+    /// it, so a host looking for them in its own later drain of
+    /// `pending_field_events` finds none.
+    pub camera_snap_beats: Vec<Vec<(u8, u16)>>,
 }
 
 /// The state of the **zone-driven field follow camera** - the engine side
@@ -466,6 +484,7 @@ impl Default for Camera {
             last_field_frame: 0,
             script_owns_focus: false,
             zone: ZoneFollow::default(),
+            camera_snap_beats: Vec::new(),
         }
     }
 }
@@ -483,6 +502,25 @@ impl Camera {
     /// The op-`0x45` Configure slot→camera mapping mirrors the retail apply
     /// handler; the GTE rotation build it feeds is `FUN_8001CF50`.
     ///
+    /// Take this frame's `apply_trigger == 0` Configure beats as packed
+    /// component snaps, ready for
+    /// [`legaia_engine_vm::psx_camera::CutsceneCameraInterp::snap_components`].
+    /// Both hosts call it once per frame, right before arming the glide;
+    /// empty on every frame no snap beat executed. See
+    /// [`Self::camera_snap_beats`].
+    pub fn take_camera_snap_beats(&mut self) -> Vec<Vec<(usize, f32)>> {
+        std::mem::take(&mut self.camera_snap_beats)
+            .iter()
+            .map(|b| legaia_engine_vm::psx_camera::CutsceneCameraInterp::snap_components_for(b))
+            .collect()
+    }
+
+    /// Drop any banked snap beats - the host's cutscene interp is not live
+    /// this frame, so replaying them would snap a pose nothing reads.
+    pub fn clear_camera_snap_beats(&mut self) {
+        self.camera_snap_beats.clear();
+    }
+
     /// REF: FUN_801DE084
     pub fn route_camera_events(&mut self, world: &mut World) -> usize {
         // The camera-zone arms of op `0x4C` (nibble-3 sub-8/9/D/E and
@@ -499,6 +537,14 @@ impl Camera {
                     apply_trigger,
                     mode,
                 } => {
+                    // An `apply == 0` beat is retail's immediate snap. Bank
+                    // it for the host's cutscene interp before the merge
+                    // below folds it into one `camera_state` - see
+                    // [`Self::camera_snap_beats`].
+                    if apply_trigger == 0 {
+                        self.camera_snap_beats
+                            .push(params.iter().map(|p| (p.slot, p.value)).collect());
+                    }
                     // Op-0x45 slot layout, pinned from the Camera Configure
                     // apply handler `FUN_801DE084` (writes the camera globals)
                     // + the GTE rotation build `FUN_8001CF50` (RotMatrixX/Y/Z
@@ -1114,6 +1160,25 @@ impl Camera {
     /// knobs are live. Returns whether the gesture was taken.
     pub fn orbit_by(&mut self, world: &World, radians: f32) -> bool {
         if !self.follow_knobs_live(world) {
+            return false;
+        }
+        self.manual_orbit = (self.manual_orbit + radians).rem_euclid(std::f32::consts::TAU);
+        true
+    }
+
+    /// Swing [`Self::manual_orbit`] by `radians` from the host's **debug
+    /// orbit** vantage (the `F3` toggle both hosts carry).
+    ///
+    /// The debug orbit is not a second yaw: both hosts compose their vantage
+    /// as `fixed diagonal + manual_orbit`, so the drag has to land on the
+    /// same field the follow camera reads, or leaving the toggle snaps the
+    /// view by however far the two drifted apart. Unlike [`Self::orbit_by`]
+    /// this is NOT cutscene-gated - the debug vantage is a dev viewpoint and
+    /// ignores whoever owns the scripted camera - but it is still field-only,
+    /// so a drag on the world map or in battle cannot rewrite the compass the
+    /// locomotion remap reads. Returns whether the gesture was taken.
+    pub fn debug_orbit_by(&mut self, world: &World, radians: f32) -> bool {
+        if !matches!(world.mode, crate::world::SceneMode::Field) {
             return false;
         }
         self.manual_orbit = (self.manual_orbit + radians).rem_euclid(std::f32::consts::TAU);
