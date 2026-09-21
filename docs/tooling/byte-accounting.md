@@ -83,6 +83,7 @@ An owner says what kind of thing consumes the bytes, not which module claimed th
 | `clut` | A palette region. |
 | `string` | A NUL-terminated string a parser resolves a pointer to. |
 | `pad` | Declared slack inside a fixed-stride slot that the container's own size math covers, and dev fill a slot is entirely made of. |
+| `inherited_tail` | Another mapped image's bytes, at the same file offset - the run from where this overlay stops being its own content. |
 | `scan` | Found by a magic sweep over the residue, not by a structural walk. |
 
 ### The `lzs_container` class fits a count it never reads
@@ -599,17 +600,19 @@ these have neither yet.
 | `0899` | `0x0`, 3512 B | the menu overlay's option-label string pool | same as `0898`: no pointer table this workspace reads |
 | `0899` | `0x2050C`, 844 B | the save-screen message slots on a `0x80` stride, and the memory-card filename prefix behind them | the stride is measured off the slots, not off a consumer |
 | `0899` | `0x15BEC`, 820 B | unidentified data-segment words; the leading rows read as `[u16][u16]` pairs but the shape does not hold across the run | nothing identified |
-| `0967` | `0xC50`, 2992 B | un-dumped **code** - the tutorial module's own bodies | see below |
-| `0967` | `0x0`, 408 B | the slot-B head jump table, the same shape `slot-b-module-layout.md` describes | see below |
+| `0967` | `0xCAC`, 1757 B | the tutorial module's own ASCII prompt pool - 1689 of its bytes are printable, in thirty runs | no pointer table or consumer traced to it yet |
 | `0970` | `0x2534`, 3152 B | the STR overlay's initialised data segment: the one-shot init flag at `0x801D0D4C` and the MDEC hardware-register pointers `FUN_801CFFDC` loads from `0x801D0E60`..`0x801D0E98` | a pointer block, not a table with a stride |
 
-`0967`'s two rows are one gap rather than two findings. The image is a slot-B
-module at `0x801F69D8` with a map row, but the `slot_b_module` walker is
-selected on the **index** band `0903..=0966`
-([above](#the-slot-b-module-band)), so `0967` - like `0968` and `0969` - takes
-the overlay-code walker instead and gets no head-table claim. Extending the
-band is a decision about what the band *is*, not a walker fix, so it stays a
-reported gap; the 2992-byte code run is a dump worklist row either way.
+`0967`'s run is smaller than it first measured, and the difference is two
+instrument gaps rather than a finding about the image. Selecting the slot-B
+walk on the link base ([above](#the-slot-b-images)) claims its 408-byte head
+table, and cutting the inherited tail removes the 1143 bytes above file
+`0x1389` that are PROT `0966`'s. What is left of the old "2992 bytes of
+un-dumped code" is 92 bytes of code and a string pool: the 23 words at `0xC50`
+are one leaf routine ending `jr ra` at `0xCA4`, and everything from `0xCAC` up
+is ASCII. Reading the whole run as code was the shape classifier's verdict over
+a window that was mostly another module's bytes; `disc-coverage.py`, which cuts
+the tail, reports **no** un-dumped code run in this image at all.
 
 ### A residue run that is another image's code
 
@@ -623,11 +626,39 @@ the shorter module into a buffer it did not clear, and the residue is whatever
 the longer module left there. The run is a mid-function slice of the fishing
 overlay, which is exactly why it has no entry and no exit.
 
-`disc-coverage.py` cuts those bytes out of an image's own denominator; this
-instrument does not, so a tail still counts against the entry that inherited it.
-Reading a `plausible_mips` residue run here as un-dumped code is therefore only
-safe once the run has been checked against the other entries at the same file
-offset - one `==` over the extracted set answers it.
+Both instruments cut those bytes now, and they cut them by the same
+measurement. `legaia_asset::inherited_tail` is the Rust side of
+`scripts/ghidra-analysis/inherited_tail.py`: the same suffix comparison, the
+same `0x40` minimum, the same gated equal-extent leg and the same
+cut / own-content fixpoint, run over the images named by
+`crates/asset/data/static-overlays.toml`. Every row there is `form = "raw"`
+with `content_source = "prot_entry_extent"` and each row's `content_bytes`
+equals its extracted entry's file length exactly, so the entry file **is** the
+as-loaded image and the walk needs no `extracted/overlays/` tree - only
+`--prot-dir`, which `asset account` already takes. Without it the report says
+so in a note rather than silently counting a donor's code as this entry's
+residue.
+
+The two sides are held to each other cut for cut
+(`crates/asset/tests/inherited_tail_real.rs`) and they agree on every mapped
+image but PROT `0944`. What disagrees there is not either tail implementation
+but the own-content figure they both call: this side bounds `0944`'s top
+pointer-credited record and chains fourteen more above it to file `0x1EC8`, the
+Python side leaves that record unbounded and stops at `0x1948`. The bytes say
+the cut is `0x199C` with `0942` as donor - `0944` and `0942` are identical from
+there to the end and differ immediately below it, and `0942`'s own content
+reaches above it - so this side's cut is 1412 bytes too high, which
+under-claims the tail rather than crediting a neighbour's bytes to a parser
+here. Settling it is a slot-B record-walk question, not a tail one.
+
+The claim is made before any walker runs, so a walker that reaches into the
+tail loses nothing (claims merge) while the residue classifier no longer sees
+the run. On the slot-B images it is also fed back into the walk:
+`slot_b_module::parse_with_tail` drops every spawn record at or above the cut,
+because a spawn call site up there belongs to the donor and so does the record
+pointer it forms. Four band images report slightly *more* residue for that
+reason - the record chain used to run past the cut and claim the donor's
+bytes - and that is the instrument getting stricter, not worse.
 
 ### The residue run **count** was capped, and read as a measurement
 
@@ -639,14 +670,29 @@ first before it is truncated. The report has always carried the true count in
 its own `residue_runs` field; the sweep reads that field now. A capped list is
 a reporting bound - never derive a statistic from its length.
 
-### The slot-B module band
+### The slot-B images
 
-The 64 entries `0903..=0966` are selected on their **index**, not on a class and
-not on the presence of a dump directory: they are code images, but their
-structural regions come out of the image itself, so `asset account 0923` walks
-them with or without `--funcs` (it delegates to the overlay-code walker when one
-is given). Walker `slot_b_module`; parser
-[`legaia_asset::slot_b_module`](../formats/slot-b-module-layout.md).
+An image is walked this way when its `static-overlays.toml` row is **linked at
+the slot-B base** `0x801F69D8` - not when its index falls in a range, and not on
+a class or on the presence of a dump directory. The three regions this walk
+recovers are each resolved by comparing a word against that base, so the base is
+what makes the walk apply; the structural regions come out of the image itself,
+so `asset account 0923` walks them with or without `--funcs` (it delegates to
+the overlay-code walker when one is given). Walker `slot_b_module`; parser
+[`legaia_asset::slot_b_module`](../formats/slot-b-module-layout.md),
+predicate `is_slot_b_image`.
+
+Seventy mapped images sit at that base. Sixty-four are the cast / summon band
+`0903..=0966` the three PROT 0898 entry tables reach
+([`cast-module.md`](../subsystems/cast-module.md)) - which is what
+`is_slot_b_module` still names, because "which images does the cast dispatcher
+reach" is a different question from "which images does this layout describe".
+The other six are the two render occupants (`0900` `summon_render`, `0901`
+`world_map_render`), the battle tutorial and the two battle stage modules
+(`0967` / `0968` / `0969`) and the staged texture loader (`0978`
+`field_back_read`). Selecting on the index band left all six measured as if they
+had no head table, which is what kept `0967`'s 408-byte table of in-window VAs
+in the residue and `0968`'s seven spawn records with it.
 
 | Claim | Owner | What it is |
 |---|---|---|
@@ -662,15 +708,15 @@ image's **highest** record is bounded by its own program's terminator, and on
 retail every image that has one is bounded; where a walk does not terminate the
 record stays residue and the walker's note names the offset.
 
-What the band measures, and why it is the cleanest class on the disc: all 64
-entries select this walker, over 616448 bytes, and every claim is structural -
-`scan_bytes` is **zero** across the band, so nothing in the figure rests on a
-magic guess. Residue is 65836 bytes (10.68%), of which only 440 bytes are
-`zero_pad`: the unaccounted share is almost entirely each image's inherited
-tail, not slack. Per entry the accounted share runs 71.2% to 100.0% with a
-median of 89.3%. The three classes the entries carry (`overlay_ptr_table` 39,
-`mips_overlay` 20, `overlay_data_blob` 5) are a statistic over the bytes and do
-**not** select the walker - the index does.
+What the set measures, and why it is the cleanest class on the disc: all 70
+images select this walker, over 653312 bytes, and every claim is structural -
+`scan_bytes` is **zero** across the set, so nothing in the figure rests on a
+magic guess. Residue is 11216 bytes (1.72%), and 2618 of those bytes are
+`zero_pad`. Per entry the accounted share runs 69.2% to 100.0% with a median of
+99.1%; the floor is `0967`, whose own content above its code is a string pool no
+consumer has been traced to yet. The classes the entries carry
+(`overlay_ptr_table` 42, `mips_overlay` 22, `overlay_data_blob` 6) are a
+statistic over the bytes and do **not** select the walker - the link base does.
 
 ## Interpreting a report
 

@@ -123,9 +123,31 @@ const A2_WINDOW_INSNS: usize = 22;
 /// Widest head jump table in the band (PROT 0958 fills file `0x0..0x400`).
 pub const MAX_HEAD_TABLE_WORDS: usize = 256;
 
-/// `true` when `entry` is one of the 64 band entries.
+/// `true` when `entry` is one of the 64 band entries - the cast / summon images
+/// the three PROT 0898 entry tables reach.
 pub fn is_slot_b_module(entry: u32) -> bool {
     (SLOT_B_PROT_FIRST..=SLOT_B_PROT_LAST).contains(&entry)
+}
+
+/// `true` when `entry` is a mapped image **linked at the slot-B base**.
+///
+/// The band above is an index range, and it answers "which images does the cast
+/// dispatcher reach". This answers the different question the layout walk asks:
+/// the three regions this module recovers - a head table of in-window VAs, the
+/// frame-matched code partition, and a spawn-record band addressed by the
+/// consumer's own `lui`/`addiu` - are properties of the **link base**, not of an
+/// index range, because each is recovered by resolving words against
+/// [`SLOT_B_LINK_BASE`]. Six mapped images sit at that base outside the band:
+/// the two render occupants (PROT 0900 `summon_render`, 0901
+/// `world_map_render`), the three battle stage / tutorial modules (0967 / 0968
+/// / 0969) and the staged texture loader (0978 `field_back_read`). Selecting
+/// this walk on the index band left every one of them measured as if it had no
+/// head table, which is what kept 0967's 408-byte table of in-window VAs in the
+/// residue.
+pub fn is_slot_b_image(entry: u32) -> bool {
+    crate::static_overlay::overlay_map()
+        .by_prot_index(entry)
+        .is_some_and(|r| r.base_va == SLOT_B_LINK_BASE)
 }
 
 /// One frame-matched function body: `addiu sp, sp, -frame` through the first

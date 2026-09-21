@@ -264,7 +264,7 @@ Two instruments consume the claims.
 - `asset account <entry>` credits the head table as `toc` and each record as
   `record`, so a band entry's residue report shows what is left rather than
   reporting the module's whole data half as unwalked
-  ([byte-accounting.md](../tooling/byte-accounting.md#the-slot-b-module-band)).
+  ([byte-accounting.md](../tooling/byte-accounting.md#the-slot-b-images)).
 - `scripts/ci/disc-coverage.py` carries the records as the `spawn_record_band`
   shape and takes them out of the **code** denominator
   ([disc-coverage.md](../tooling/disc-coverage.md#spawn_record_band-a-shape-a-parser-names)).

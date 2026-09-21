@@ -59,6 +59,7 @@ pub mod fishing_species;
 pub mod fmv_dispatch;
 pub mod formation_census;
 pub mod gltf_color;
+pub mod inherited_tail;
 pub mod init_pak;
 pub mod inn_costs;
 pub mod interior_page;

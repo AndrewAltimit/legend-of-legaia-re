@@ -106,6 +106,9 @@ pub const OWNER_STRING: &str = "string";
 /// Bytes a container's own size math covers but that carry no content
 /// (declared slack inside a fixed-stride slot).
 pub const OWNER_PAD: &str = "pad";
+/// Another image's bytes, at the same file offset: the run from where this
+/// overlay stops being its own content. See [`crate::inherited_tail`].
+pub const OWNER_INHERITED_TAIL: &str = "inherited_tail";
 /// Found by a magic sweep over the residue, not by a structural walk.
 pub const OWNER_SCAN: &str = "scan";
 
@@ -128,6 +131,10 @@ pub const OWNERS: &[(&str, &str)] = &[
     (OWNER_CLUT, "palette / CLUT region"),
     (OWNER_STRING, "NUL-terminated string reached by a pointer"),
     (OWNER_PAD, "declared slack inside a fixed-stride slot"),
+    (
+        OWNER_INHERITED_TAIL,
+        "another image's bytes at the same file offset (mastering-buffer residue)",
+    ),
     (
         OWNER_SCAN,
         "magic sweep over the residue, not a structural walk",
@@ -436,6 +443,12 @@ pub struct AccountOptions {
     /// Directory of Ghidra dumps (`ghidra/scripts/funcs`). Required for
     /// [`Walker::OverlayCode`].
     pub funcs_dir: Option<PathBuf>,
+    /// Directory of extracted PROT entries (`extracted/PROT`). An overlay
+    /// image's **inherited tail** is a comparison against its siblings, so the
+    /// cut is only available when the sibling entries can be read; without this
+    /// the walker says so in a note rather than counting another module's code
+    /// as this one's residue silently. See [`crate::inherited_tail`].
+    pub prot_dir: Option<PathBuf>,
     /// Nesting depth budget. `0` accounts the outer buffer only.
     pub depth: u8,
     /// Sweep the residue for TIM / TMD / VAB / SEQ magics and claim the hits
@@ -455,6 +468,7 @@ impl Default for AccountOptions {
             label: String::new(),
             prot_index: None,
             funcs_dir: None,
+            prot_dir: None,
             depth: 1,
             rescan: true,
             min_residue: 64,
@@ -3008,6 +3022,82 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     claim_pinned_overlay_assets(buf, sink, idx);
 }
 
+/// Link base of the image being accounted, from its `static-overlays.toml` row.
+/// Falls back to the slot-B base, which is the only base a slot-B walk is ever
+/// selected for.
+fn base_for(opts: &AccountOptions) -> u32 {
+    opts.prot_index
+        .and_then(|i| crate::static_overlay::overlay_map().by_prot_index(i))
+        .map(|r| r.base_va)
+        .unwrap_or(crate::slot_b_module::SLOT_B_LINK_BASE)
+}
+
+/// File offset at which this image stops being its own content, when it is a
+/// mapped overlay and the sibling entries can be read. See
+/// [`crate::inherited_tail`].
+fn inherited_tail_start(buf: &[u8], opts: &AccountOptions) -> Option<usize> {
+    let idx = opts.prot_index?;
+    let dir = opts.prot_dir.as_ref()?;
+    let t = crate::inherited_tail::tails_cached(dir)
+        .get(&idx)
+        .cloned()?;
+    (t.image_bytes == buf.len() && t.start < buf.len()).then_some(t.start)
+}
+
+/// Claim the run at which this overlay image stops being its own content.
+///
+/// The packer wrote every overlay into a buffer it did not clear, so a module
+/// shorter than the buffer flushes its own bytes and then the previous, longer
+/// module's residue - inside the entry, at the file offsets that module
+/// occupies. Those bytes are that module's, so no parser of THIS entry can ever
+/// consume them: counting them as residue puts work on the worklist that no
+/// work can close, and gives the run the shape of un-dumped code.
+/// `scripts/ci/disc-coverage.py` has cut tails out of its denominator since the
+/// rule was found; this is the byte account's side of the same cut, and
+/// [`crate::inherited_tail`] is the shared measurement.
+///
+/// The claim is made before any walker runs, so a walker that reaches into the
+/// tail (a slot-B record chain walking on into the donor's residue) loses no
+/// claim of its own - claims merge - while the residue classifier no longer
+/// sees the run.
+fn claim_inherited_tail(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
+    let Some(idx) = opts.prot_index else {
+        return;
+    };
+    if crate::static_overlay::overlay_map()
+        .by_prot_index(idx)
+        .is_none()
+    {
+        return;
+    }
+    let Some(dir) = opts.prot_dir.as_ref() else {
+        sink.note(
+            "inherited-tail cut unavailable: an overlay's tail is a comparison \
+             against its sibling entries, and no --prot-dir was given",
+        );
+        return;
+    };
+    let tails = crate::inherited_tail::tails_cached(dir);
+    let Some(t) = tails.get(&idx) else {
+        return;
+    };
+    // A nested pass (a decoded LZS payload) carries the outer entry's index but
+    // not its bytes, and a file offset measured on the image means nothing in
+    // it.
+    if t.image_bytes != buf.len() || t.start >= buf.len() {
+        return;
+    }
+    sink.claim(
+        t.start,
+        buf.len(),
+        OWNER_INHERITED_TAIL,
+        format!(
+            "PROT {:04} ({})'s bytes at the same file offset",
+            t.donor_prot_index, t.donor_label
+        ),
+    );
+}
+
 /// Sub-assets an overlay image carries at an offset this workspace has pinned.
 ///
 /// The dump corpus is the parser for a code image's code and says nothing about
@@ -3536,7 +3626,11 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
 /// `FUN_80050ED4`. See [`crate::slot_b_module`] and
 /// [`docs/formats/slot-b-module-layout.md`](https://andrewaltimit.github.io/legend-of-legaia-re/formats/slot-b-module-layout.html).
 fn walk_slot_b_module(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
-    let layout = crate::slot_b_module::parse(buf);
+    // The record walk is cut at the inherited tail for the same reason the
+    // band-level measurement is: a spawn call site up there belongs to the
+    // donor whose bytes those are, and so does the record pointer it forms.
+    let layout =
+        crate::slot_b_module::parse_with_tail(buf, base_for(opts), inherited_tail_start(buf, opts));
     if let Some(h) = layout.head_table.clone() {
         sink.claim(
             h.start,
@@ -3650,12 +3744,15 @@ pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
     {
         return Walker::RingsideStill;
     }
-    // The module band is selected on the index alone: its structural regions
-    // are recovered from the image, so the walker runs with or without a dump
-    // directory (it delegates to the code walker when one is given).
+    // Every mapped image at the slot-B link base, not just the 0903..=0966 cast
+    // band: the walk's three regions are recovered by resolving words against
+    // that base, so the base is what makes the walk apply (see
+    // `slot_b_module::is_slot_b_image`). Its structural regions come out of the
+    // image, so the walker runs with or without a dump directory (it delegates
+    // to the code walker when one is given).
     if opts
         .prot_index
-        .is_some_and(crate::slot_b_module::is_slot_b_module)
+        .is_some_and(crate::slot_b_module::is_slot_b_image)
     {
         return Walker::SlotBModule;
     }
@@ -3725,6 +3822,7 @@ fn walks_as_chunk_stream(buf: &[u8]) -> bool {
 }
 
 fn dispatch(buf: &[u8], walker: Walker, sink: &mut Sink, opts: &AccountOptions, depth: u8) {
+    claim_inherited_tail(buf, sink, opts);
     match walker {
         Walker::SceneAssetTable => walk_scene_asset_table(buf, sink, opts, depth),
         Walker::DescriptorBundle => walk_descriptor_bundle(buf, sink, opts, depth),
