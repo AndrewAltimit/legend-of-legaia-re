@@ -399,8 +399,17 @@ decode-done flag `ctx+0x34` and, on timeout, prints `time out in decoding` and f
 the code buffer (`ctx+0x28`); `FUN_801CFE00` is an 8-instruction thunk to the DMA-0 code
 upload `FUN_801D0070` (the `FUN_801CFFDC` family); `FUN_801CFC18` wraps the MDEC reset
 `FUN_801CFEE0`, adding a DMA reset (`func_0x8005FD88`) when its argument is `0`; and
-`FUN_801CFCDC` stages the two double-buffered output rects into `&DAT_801D0D5C` /
-`&DAT_801D0D9C`. The frame-poll wrapper `FUN_801CF740` is the logic sibling that stays
+`FUN_801CFCDC` is the MDEC table upload. It copies the caller's 128-byte quant
+table pair - luma `a0[0..0x40]` into `0x801D0D5C`, chroma `a0[0x40..0x80]` into
+`0x801D0D9C`, sixteen words each - into the body of the command packet whose header
+`0x4000_0001` (MDEC command 2, set quant table, colour bit) sits at `0x801D0D58`, then
+hands that packet and the static IDCT scale-table packet (header `0x6000_0000`, command
+3, at `0x801D0DDC`) to `FUN_801CFFDC` with `a1 = 0x20`. `FUN_801CFFDC` writes the
+header word to the MDEC command register (the pointer at `0x801D0E90` holds
+`0x1F801820`) and DMA-0s the `0x20`-word body (`MADR = pkt + 4`, `BCR = 0x20 | (len >> 5)
+<< 16`, `CHCR = 0x01000201`). An earlier reading had it staging two double-buffered
+output rects into `0x801D0D5C` / `0x801D0D9C`; those addresses are the quant packet's
+two matrix halves, not rects, and nothing here touches the output side. The frame-poll wrapper `FUN_801CF740` is the logic sibling that stays
 *inside* the port: it loops `StGetNext` (`FUN_8005EF40`, up to 2000 spins), sets the
 inclusive end-frame latch `DAT_801E09F8` when the demuxed frame number reaches the slot's
 `+0x0C`, and re-programs the decode rects from the sector header's own dimensions - both
