@@ -603,7 +603,7 @@ table with a named constant behind it and these have neither yet.
 | `0977` | `0x3108`, 232 B | twenty-nine `[label pointer, u32]` pairs at `0x801D1920` naming the head label pool | no instruction in the image forms an address in the table, directly or `lui`/`addu`-indexed |
 | `0929` | `0x26CC`, 216 B | a `[-1][0][bytecode]` spawn-record-shaped run between the code end and the first credited record | no spawn site and no chain reaches it |
 | `0981` | `0xED2`, 82 B | three `0x10`-stride records formed by `addiu` at `0x801CF70C` / `71C` / `72C`, then zeros to the inherited tail | base-only consumers again |
-| `0970` | `0x2648` up, about 3 KB | the STR overlay's initialised data above its two MDEC command packets: the MDEC register-pointer block at `0x801D0E60`..`0x801D0E98` and a block of `[u16][u16]` lookup words from `0x801D0EA0` that no `lui` pair addresses | no consumer forms an address into the lookup block; it is initialised data, not code (no `jal` lands in the run, a third of it is zero) |
+| `0970` | `0x2648` up, about 3 KB | the STR overlay's initialised data above its two MDEC command packets: the MDEC / DMA register-pointer block (fifteen pointers, `0x801D0E60`..`0x801D0E9B`) and a block of `[u16][u16]` lookup words from `0x801D0E9C` (the first is `0x1400_0002`, not a pointer) that no `lui` pair addresses | no consumer forms an address into the lookup block; it is initialised data, not code (no `jal` lands in the run, a third of it is zero) |
 
 The `0970` row used to start at `0x2534` and was taken by one reading for
 uninitialised data and by the shape classifier for code; it is neither. Its
@@ -611,10 +611,13 @@ head is the one-shot init flag at `0x801D0D4C` and then two **MDEC command
 packets** the table upload builds and sends: `FUN_801CFCDC` copies the caller's
 luma and chroma quantisation matrices into `0x801D0D5C` / `0x801D0D9C` (sixteen
 words each) behind the header `0x4000_0001` at `0x801D0D58`, and hands
-`0x801D0D58` to `FUN_801CFFDC` with `a1 = 0x20`; the IDCT matrix at
-`0x801D0DE0` rides the same way behind `0x6000_0000` at `0x801D0DDC`. Both are
-claimed off `legaia_asset::fmv_dispatch::MDEC_*_PACKET_VA`, each after its
-header word checks.
+`0x801D0D58` to `FUN_801CFFDC` with `a1 = 0x20`. The IDCT packet does not ride
+the same way: nothing copies into it. `0x6000_0000` at `0x801D0DDC` and the
+matrix behind it at `0x801D0DE0` are static initialised data, and the same
+routine's second `FUN_801CFFDC` call (`a1 = 0x20` again, at `0x801CFD58`) sends
+them as linked. Both are claimed off
+`legaia_asset::fmv_dispatch::MDEC_*_PACKET_VA`, each after its header word
+checks.
 
 The `0897` row's head is claimed now. Its first 192 bytes are **three**
 tables, not one twelve-row block: the actor-collision probes at `0x801F21B4`
