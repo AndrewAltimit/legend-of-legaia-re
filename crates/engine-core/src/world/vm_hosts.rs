@@ -1806,6 +1806,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         //
         // REF: FUN_801DE2B0 (the spawner, ported at
         // `crate::field_actor_kernels::tween_from_fade_template`)
+        //
+        // Both spawns fork on scratchpad global `_DAT_1F800394` bit 23
+        // (`lui v1,0x80; and` at `0x801DFD1C` / `0x801DFEB0`): set, retail
+        // spawns through `FUN_80024E80` instead of `FUN_801DE2B0`. Only the
+        // clear arm is modelled here because no script the disc carries
+        // raises that bit - neither a field-VM `0x2E` (`asset
+        // field-op-census --only 2E`) nor a motion-VM `0x10`/`0x11` (none is
+        // authored in any bank), pinned by
+        // `crates/asset/tests/scratch_global_bit_writers_real.rs`.
         use crate::fade::FadeTemplate;
         use crate::field_actor_kernels::{ACTOR_FLAG_YIELD, tween_from_fade_template};
 
