@@ -2305,6 +2305,24 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
             r"\b(?:digit_run_prims|combo_cluster_prims|digit_quad|readout_quad)\b",
         ],
     },
+    {
+        "kernel": "retained field ground pass gated off in battle",
+        "why": "the WebGL renderer draws its field ground heightfield "
+        "(`uploadGround`) as a RETAINED pass inside `renderAssembled`, ahead "
+        "of whatever the frame's draw list holds - so a surface that uploads "
+        "a field ground and also draws a battle frame through the same "
+        "renderer paints the field terrain through the battle camera, "
+        "sampling the battle VRAM, unless it turns the pass off. The play "
+        "page did exactly that: town01's ground cells showed up as flat "
+        "yellow strips and stray grass/gravel patches around the monster in "
+        "every forced battle, while the native window only draws its "
+        "heightfield in the non-battle branch",
+        # Both halves in one file: the uploader of a field ground AND a
+        # battle frame driver. An `\A`-anchored lookahead keeps it one
+        # `trigger` and one scan (unanchored, it re-scans per position).
+        "trigger": r"(?s)\A(?=.*\buploadGround\s*\().*\bplay_battle_active\b",
+        "requires": [r"\bsetGroundEnable\s*\(\s*false\s*\)"],
+    },
     # RETIRED: "screen-space fade quad" (resolving `intro_fade(...)` requires
     # `fade_prim`). The whole transition emission - fade included - became
     # single-assembler when the `battle_intro` emitter moved to `engine-ui`
@@ -2431,6 +2449,20 @@ def check_render_kernels() -> tuple[list[str], list[str], list[tuple[str, int, i
 # surface clean, which is the failure mode this whole file exists to refuse -
 # so each case pins one direction of one detector against a synthetic source.
 SELFTEST_RENDER: list[tuple[str, dict, str, bool]] = [
+    (
+        "requires (lookahead trigger): battle surface that never gates the ground pass",
+        {"trigger": r"(?s)\A(?=.*\buploadGround\s*\().*\bplay_battle_active\b",
+         "requires": [r"\bsetGroundEnable\s*\(\s*false\s*\)"]},
+        "this.renderer.uploadGround(p, u, c, i);\nif (rt.play_battle_active()) draw();",
+        True,
+    ),
+    (
+        "requires (lookahead trigger): battle surface that gates it, either order",
+        {"trigger": r"(?s)\A(?=.*\buploadGround\s*\().*\bplay_battle_active\b",
+         "requires": [r"\bsetGroundEnable\s*\(\s*false\s*\)"]},
+        "if (rt.play_battle_active()) this.renderer.setGroundEnable(false);\nthis.renderer.uploadGround(p, u, c, i);",
+        False,
+    ),
     (
         "requires: triggering file that reaches the kernel",
         {"trigger": r"\bresolve_env_draws\b", "requires": [r"\bcoplanar_draw_offsets\b"]},

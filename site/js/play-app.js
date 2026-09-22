@@ -2708,6 +2708,12 @@ void main() {
          * recovery). The field branch re-stages its own `cam.vp` from the
          * engine camera the same frame. */
         if (this.cam.vp) this.cam.vp = null;
+        /* The field ground heightfield is the renderer's own retained pass
+         * (`uploadGround`), not a member of the draw list: hand it back on
+         * every non-battle frame, not only on the teardown edge below - a
+         * scene swap out of a fight clears `_battle` in `_rebuild` first,
+         * and the edge then never fires. */
+        this.renderer.groundEnable = true;
         if (this._battle) {
           /* Battle just ended: drop the battle scene and restore the field
            * VRAM texture. The engine's field-side VRAM was never touched -
@@ -2724,6 +2730,16 @@ void main() {
       }
       const gen = rt.play_battle_generation();
       if (!this._battle || this._battle.gen !== gen) this._uploadBattleScene(rt, gen);
+      /* The field scene's ground heightfield (`uploadGround` in `_rebuild`)
+       * is a RETAINED renderer pass that `renderAssembled` draws before any
+       * placement, whatever the draw list holds - so a battle over a field
+       * scene with ground cells drew that field terrain through the battle
+       * camera, textured from the battle VRAM: the flat yellow strips and
+       * the stray grass / gravel patches around the monster. The native
+       * battle pass draws the stage dome, the ground grid, the actors and
+       * the FX only. Gate the field pass off for as long as the battle
+       * draws; the non-battle branch above turns it back on. */
+      this.renderer.setGroundEnable(false);
       const b = this._battle;
       if (!b) return false;
       /* Mid-battle VRAM re-stamps (facial animation, status-effect actor
