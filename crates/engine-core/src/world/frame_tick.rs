@@ -1826,8 +1826,10 @@ impl World {
     /// op-49 consumers) when a board is already up or the header is
     /// malformed.
     ///
-    /// PORT: overlay_0897_801e0b1c (board alloc + fill; cells only - the
-    /// per-cell tile-actor spawns are a renderer concern)
+    /// PORT: FUN_801ef2b0 (the board alloc + fill arm at `0x801EF334`, an
+    /// interior label of the walk SM; cells only - the per-cell tile-actor
+    /// spawns are a renderer concern. `0x801E0B1C` is that arm printed
+    /// `0xE818` low, not a function.)
     /// REF: overlay_0897_801de840 (op 0x49 arm, `_DAT_8007b450 = pbVar47`)
     pub fn try_install_tile_board(&mut self, instr: &[u8]) -> bool {
         if self.board.armed || self.board.grid.is_some() {

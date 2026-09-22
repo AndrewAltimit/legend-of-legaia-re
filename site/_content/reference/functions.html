@@ -277,7 +277,7 @@
       <tr><td>FUN_801CFC40</td><td>Top-view sprite batcher</td></tr>
       <tr><td>FUN_80016444</td><td>Per-frame render tick (SCUS); <code>jal 0x801D7EA0</code> gated by <code>_DAT_8007BC3C == 2</code></td></tr>
       <tr><td>FUN_801D7EA0 / FUN_801D8258</td><td>POLY_FT4 batch emitter, one-shot gated by <code>_DAT_801F351C</code>; its gate setter</td></tr>
-      <tr><td>FUN_801D1344 + FUN_801C2B2C</td><td>Gate-arm wrapper, relocated pair (world-map / 0897); the dialog overlay's <code>FUN_801D1344</code> is different code at the same address</td></tr>
+      <tr><td>FUN_801D1344</td><td>Gate-arm wrapper (field overlay 0897's player master frame handler); <code>0x801C2B2C</code> is the same body printed <code>0xE818</code> low, not a relocated copy</td></tr>
     </tbody>
   </table>
   <details class="disclosure">

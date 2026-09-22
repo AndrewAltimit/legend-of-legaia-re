@@ -2942,12 +2942,12 @@ function called from a 1332-byte parameter-prep wrapper:
 |---|---|
 | `FUN_801D1344` | The field overlay's **player master frame handler** (1332 bytes; function-pointer-only entry, Ghidra `incoming=0`) - the gate-arm forward is one early leg of it: when `_DAT_8007BCD0` or `_D4` is non-zero it forwards the three globals `_DAT_8007BCD0/_D4/_D8` to `FUN_801D8258` as the scale / step / OT-layer params at PC `0x801D1470: jal 0x801D8258`. Every capture at this VA (world_map / world_map_walk / cutscene_dialogue / dialog) holds this same instruction-identical body - the walk view runs the field overlay; an earlier note here that "the dialog overlay holds a different function at this VA" is falsified by the dump diff. Engine counterpart: the Field arm of `World::tick` (scoped `PORT: FUN_801d1344`). |
 | `FUN_801D8258` | 40-byte gate setter. Writes `_DAT_801F351C = 1`, then `_DAT_801F3520 = param_2`, `_DAT_801F3524 = param_3`, `_DAT_801F3528 = param_4` - the inputs the emitter consumes on its next run. |
-| `FUN_801C2B2C` | Code-identical relocation copy of `FUN_801D1344` in the 0897 field overlay. Same body, different load address; calls `jal 0x801D8258` at PC `0x801C2C58`. Active during field-mode entry transitions. |
+| `0x801C2B2C` (phantom VA) | **Not a relocation copy.** It is `FUN_801D1344` printed `0xE818` low (PROT 0897 bases at `0x801CE818`; the dump was imported at `0x801C0000`), so its "`jal 0x801D8258` at `0x801C2C58`" is the same call `FUN_801D1344` makes at `0x801D1470`. PSX overlays are not relocated. See [`overlay-va-aliases.md`](../reference/overlay-va-aliases.md). |
 
 The gate flag `_DAT_801F351C` is in the persistent `0x801F0000+` region,
-so it survives overlay swaps. The flag is shared - both the world-map
-overlay's `FUN_801D7EA0` and the 0897 field overlay's
-`FUN_801C9688` read + clear it.
+so it survives overlay swaps. One routine reads and clears it,
+`FUN_801D7EA0`; the "0897 sibling `FUN_801C9688`" earlier pages named is the
+same body printed `0xE818` low, compared with itself.
 
 ## Globals used
 
@@ -2963,7 +2963,7 @@ overlay's `FUN_801D7EA0` and the 0897 field overlay's
 | `_DAT_8007B6B8` | Game-mode discriminator (value `0x20` = alternate sprite path). |
 | `_DAT_80083808` | World-map entity activation gate. |
 | `_DAT_8007BC3C` | World-map submode register. `FUN_80016444` gates its `jal 0x801D7EA0` on this being `2`. Six SCUS writers (`FUN_80016230` / `FUN_80025980` / `FUN_80025DA0` / `FUN_8001D424`). |
-| `_DAT_801F351C` | One-shot gate flag for the POLY_FT4 batch emitter. `FUN_801D8258` sets it to `1`; `FUN_801D7EA0` (and the 0897 sibling `FUN_801C9688`) clear it after one emission. Lives in the persistent `0x801F0000+` region and survives overlay swaps. |
+| `_DAT_801F351C` | One-shot gate flag for the POLY_FT4 batch emitter. `FUN_801D8258` sets it to `1`; `FUN_801D7EA0` clears it after one emission (`0x801C9688` is the same body at a phantom VA, not a sibling). Lives in the persistent `0x801F0000+` region and survives overlay swaps. |
 | `_DAT_801F3518` | Running camera angle. Advanced by `DAT_1F800393 * _DAT_801F3524` per `FUN_801D7EA0` call; masked to 4096 entries when indexing the **sine** LUT at `0x8007B81C`. |
 | `_DAT_801F3520` | Render scale / range. Sourced from `_DAT_8007BCD4` via `FUN_801D8258`'s `param_2`. The emitter uses it both as `local_3c` and `local_3c / 5`. |
 | `_DAT_801F3524` | Angle step per frame tick. Sourced from `_DAT_8007BCD8` via `FUN_801D8258`'s `param_3`. |

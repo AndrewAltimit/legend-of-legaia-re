@@ -22,8 +22,9 @@
 //! (`lw a0,0x1c(v0)` / `lw a1,0xc(v0)` immediately before the `jal`), which
 //! appears in twelve overlay dumps - dialog, dialog typing, world map, the
 //! world-map top view, the cutscene dialogue family and the 0897 door
-//! overlay - and **`FUN_801C2B2C`** at `801C2E40`, overlay 0897's relocated
-//! copy of the same routine. `FUN_801D1344` is already ported, as
+//! overlay. (`FUN_801C2B2C` at `801C2E40` is not a second caller: it is
+//! `FUN_801D1344` printed `0xE818` low, and `801C2E40 + 0xE818` is
+//! `801D1658`.) `FUN_801D1344` is already ported, as
 //! `legaia_engine_core::world::frame_tick`; what it does *not* do there is
 //! build a capped visible-actor table, because the port has no cull. So the
 //! gap is the consumer described above, not a caller.

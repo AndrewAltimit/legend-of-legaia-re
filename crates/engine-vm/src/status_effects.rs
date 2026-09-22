@@ -1,6 +1,8 @@
 //! Per-actor status-effect tracker.
 //!
-//! PORT: FUN_801E295C
+//! REF: FUN_801E295C (the action state machine - this module ports none of
+//!      it; its case-`0x64` escape HP floor is ported in `battle_action` and
+//!      cited on [`StatusEffectTracker::cure_stone_on_escape`])
 //! PORT: FUN_801E752C (per-round Venom / Toxic DoT ticker - the exact
 //!       tick arithmetic in [`toxic_tick_damage`] / [`venom_tick_damage`])
 //! REF: FUN_801E7320 (Confuse retarget; ported as
