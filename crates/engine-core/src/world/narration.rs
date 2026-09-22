@@ -878,6 +878,10 @@ impl World {
         self.cutscene.in_timeline = modal;
         self.field_vm.in_spawned_record_slice = true;
         let mut channels = std::mem::take(&mut self.field_vm.channels);
+        // Host hooks resolve cross-context ids against the channel set while
+        // one of these is executing; the live vector is moved out for the
+        // borrow, so they read this copy (`World::channel_view`).
+        self.field_vm.stepping_view = channels.clone();
         let channel_pre_pos: Vec<(u16, u16)> = channels
             .iter()
             .map(|c| (c.ctx.world_x, c.ctx.world_z))
@@ -899,6 +903,7 @@ impl World {
                     wait.frames += 1;
                     tl.channel_wait = Some(wait);
                     self.field_vm.channels = channels;
+                    self.field_vm.stepping_view.clear();
                     self.cutscene.in_timeline = false;
                     self.field_vm.in_spawned_record_slice = false;
                     return false;
@@ -931,6 +936,7 @@ impl World {
             if tl.player_move_frames > 0 {
                 tl.player_wait = Some(width);
                 self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
                 self.cutscene.in_timeline = false;
                 self.field_vm.in_spawned_record_slice = false;
                 return false;
@@ -994,6 +1000,7 @@ impl World {
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 tl.walk_wait = Some(walk);
                 self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
                 self.cutscene.in_timeline = false;
                 self.field_vm.in_spawned_record_slice = false;
                 // A walk park is real playout progress, not a hang: don't let
@@ -1048,6 +1055,7 @@ impl World {
             if r != vm::motion_vm::StepResult::Done && fw.frames < WALK_PARK_TIMEOUT {
                 tl.facing_wait = Some(fw);
                 self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
                 self.cutscene.in_timeline = false;
                 self.field_vm.in_spawned_record_slice = false;
                 // Like the walk park: a rotate park is real playout progress,
@@ -1647,6 +1655,7 @@ impl World {
             }
         }
         self.field_vm.channels = channels;
+        self.field_vm.stepping_view.clear();
         self.cutscene.in_timeline = false;
         self.field_vm.in_spawned_record_slice = false;
         true
@@ -1953,6 +1962,10 @@ impl World {
             return;
         };
         let mut channels = std::mem::take(&mut self.field_vm.channels);
+        // Host hooks resolve cross-context ids against the channel set while
+        // one of these is executing; the live vector is moved out for the
+        // borrow, so they read this copy (`World::channel_view`).
+        self.field_vm.stepping_view = channels.clone();
         let pre_pos: Vec<(u16, u16)> = channels
             .iter()
             .map(|c| (c.ctx.world_x, c.ctx.world_z))
@@ -2128,6 +2141,7 @@ impl World {
             self.npcs.positions.insert(slot, (nx as i16, nz as i16));
         }
         self.field_vm.channels = channels;
+        self.field_vm.stepping_view.clear();
     }
 
     /// Seed the per-actor field-VM channels for **ordinary free-roam** scene

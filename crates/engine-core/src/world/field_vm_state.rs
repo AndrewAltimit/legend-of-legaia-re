@@ -64,6 +64,14 @@ pub struct FieldVmState {
     /// per-actor contexts - the opening prologue's vignette mechanism.
     /// Stepped run-until-yield per frame by [`crate::world::World::step_field_channels`].
     pub channels: Vec<crate::field_channels::FieldChannel>,
+    /// A copy of [`Self::channels`] taken when a stepping pass moves the live
+    /// vector out (`std::mem::take` in the channel and spawned-record
+    /// steppers), so a host hook that resolves a cross-context id while a
+    /// channel is executing - `FUN_8003C83C`'s actor-list walk, which in
+    /// retail always sees every actor - still finds the other channels.
+    /// Empty outside a stepping pass. Read it through
+    /// [`crate::world::World::channel_view`], never directly.
+    pub stepping_view: Vec<crate::field_channels::FieldChannel>,
     /// The MAN payload the channels' bytecode slices from (each channel's
     /// buffer base is its `record_offset` into this).
     pub channels_man: Option<std::sync::Arc<Vec<u8>>>,
@@ -111,6 +119,7 @@ impl FieldVmState {
             free_roam_staging: false,
             free_roam_entry_frame: 0,
             channels: Vec::new(),
+            stepping_view: Vec::new(),
             channels_man: None,
             executing_channel: None,
             in_spawned_record_slice: false,

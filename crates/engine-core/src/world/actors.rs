@@ -1765,8 +1765,9 @@ impl World {
         let source = if source_id == 0xF8 {
             EasedMoveTarget::Player
         } else {
-            let ci = crate::field_channels::resolve_target(&self.field_vm.channels, source_id)?;
-            EasedMoveTarget::Placement(self.field_vm.channels[ci].placement_index as u8)
+            let view = self.channel_view();
+            let ci = crate::field_channels::resolve_target(view, source_id)?;
+            EasedMoveTarget::Placement(view[ci].placement_index as u8)
         };
         if source == destination {
             // A pair whose two ends are one actor would write that actor's
@@ -1784,6 +1785,27 @@ impl World {
             controller,
         });
         Some(slot)
+    }
+
+    /// The scene's channel set as a cross-context resolve should see it: the
+    /// live vector, or - while a stepping pass has moved it out to execute one
+    /// of its channels - the copy that pass took
+    /// ([`crate::world::FieldVmState::stepping_view`]).
+    ///
+    /// Retail's resolver (`FUN_8003C83C`) walks the whole actor list whatever
+    /// is executing, and a `4C 86` / `4C 14` / talk op that names another
+    /// actor resolves it from inside a running script by construction. Read
+    /// against the live vector alone, every such id resolved to nothing during
+    /// a step: `conc2` seated one of its three entry-time mirrors (the one
+    /// naming the player, which bypasses the walk) where a retail capture of
+    /// the same entry seats all three.
+    // REF: FUN_8003C83C
+    pub fn channel_view(&self) -> &[crate::field_channels::FieldChannel] {
+        if self.field_vm.channels.is_empty() {
+            &self.field_vm.stepping_view
+        } else {
+            &self.field_vm.channels
+        }
     }
 
     /// The source-actor fields the clone helper reads, resolved from a
@@ -1808,8 +1830,9 @@ impl World {
                 ..CloneSource::default()
             });
         }
-        let ci = crate::field_channels::resolve_target(&self.field_vm.channels, src_id)?;
-        let ch = &self.field_vm.channels[ci];
+        let view = self.channel_view();
+        let ci = crate::field_channels::resolve_target(view, src_id)?;
+        let ch = &view[ci];
         let placement = ch.placement_index as u8;
         let (x, z) = self
             .npcs

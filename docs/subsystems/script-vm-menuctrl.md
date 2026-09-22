@@ -214,6 +214,33 @@ Four shipped scenes issue `4C 86` - `concnow`, `conc2`, `urudre2`, `opurud`,
 ten occurrences in all. No shipped scene issues `4C 87`; those scenes drop
 their controllers on the scene boundary instead.
 
+**Every one of the ten is installed at scene entry, not on a talk.** Each sits
+in its record's spawn prologue - after the leading `0x25` and before the
+record's first `0x21` park, where the `(Silence)`-style talk loop begins - so
+the controller is seated by the entry pass that seats the actor, and
+addressing the image only replays its line. A retail capture of a
+`conc` -> `conc2` crossing (exec breakpoints on `FUN_801E573C` and
+`FUN_801E5154`, `scripts/pcsx-redux/autorun_w6c_spoke_walk.lua` with
+`LEGAIA_MIRROR=1`) shows all three of `conc2`'s controllers spawned on one
+frame of the entry with no pad input, each returning into the arm
+(`ra` `0x801E227C`), each with the words `(0, 0x3700, 37, 98, 46, 110)`:
+`P1[1]` reflects the player, `P1[4]` / `P1[5]` reflect the actors placed at
+`P1[2]` / `P1[3]` (targets `0x2A` / `0x2B`, the scene's global record
+indices). With the player held by tile poke, every tick whose source stood
+inside the rect wrote the destination to `(x, y, 2*zz - z)` facing
+`-0x800 - a` (132 of 132 tick pairs) and every tick outside it left the image
+where it was (194 of 194). The rect test quantises with `(v + 0x40) >> 7`, half
+a tile the other way from the walk-on trigger compare - a player poked to the
+centre of tile 41 reads as tile 42 here.
+
+The two actor-sourced installs are also what exposed an engine defect: the
+field channel steppers move the channel vector out while one channel
+executes, so a cross-context id resolved from inside a running script found
+no channels at all, and the port seated only the player-sourced mirror of the
+three. `World::channel_view` resolves against the stepping pass's copy
+instead; `crates/engine-core/tests/field_reflection_conc2_capture_disc.rs`
+pins the three seats and the captured poses.
+
 #### 0x4C nibble 0xC0..0xCF - small per-actor / per-scene writes
 
 Small per-actor / per-scene writes (slot table, camera-zone query, sound trigger, `field_74` XOR). **All 16 sub-ops are now ported.** Sub-0 is a 2-byte move-table cancel via `func_0x800204F8`; the host gates on whether a move is currently active.
