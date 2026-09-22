@@ -113,6 +113,44 @@ pub fn ringside_still_quads(level: i32) -> [HudQuad; 2] {
     [left, right]
 }
 
+/// Sprite-table record the first-visit backdrop tiles (`li a2,0x2` at
+/// `0x801D0164`) - the brick wall behind the title card.
+pub const FIRST_VISIT_TILE_RECORD: i32 = 2;
+
+/// The other arm of the same emitter - the one a **first** visit takes, with
+/// the re-entry latch `_DAT_801D1AE0` still zero: a `3 x 2` grid of the
+/// sprite-table record [`FIRST_VISIT_TILE_RECORD`] through the corner-anchored
+/// emitter `FUN_801D08EC`, top-left `(i << 7, j << 7)`, at scale `0x1000` and
+/// the caller's fade level, rows outermost (`0x801D0148..0x801D0194`).
+///
+/// The draws carry no brightness: [`crate::other_game_hud::hub_screen_quads`]
+/// takes the level, which is the same `*(0x801D1A7C)` the still arm reads.
+/// The arm's last packet - a full-screen `0x3A` gouraud quad through
+/// `FUN_801D1610(0, 0, 0x140, 0xF0)` at OT slot `0x384`, top corners shaded
+/// `0x64`, bottom `0` - is not built here: it is semi-transparent, and its
+/// blend mode is set by the draw-mode word `FUN_801D1610` appends, which the
+/// hub's one-colour sprite path has no seat for.
+///
+/// PORT: FUN_801d00f8 (the `_DAT_801D1AE0 == 0` arm's tile grid,
+/// `0x801D0148..0x801D0194`)
+pub fn first_visit_tile_draws() -> Vec<crate::other_game_hud::HubDraw> {
+    use crate::other_game_hud::{HubAnchor, HubDraw};
+    let mut out = Vec::with_capacity(6);
+    for j in 0..2i16 {
+        for i in 0..3i16 {
+            out.push(HubDraw {
+                sel: FIRST_VISIT_TILE_RECORD,
+                x: i << 7,
+                y: j << 7,
+                anchor: HubAnchor::Corner,
+                scale: 0x1000,
+                call_site: 0x801D_0170,
+            });
+        }
+    }
+    out
+}
+
 /// Whether a hub quad samples a 15-bit direct-colour page (`tp = 2`, tpage
 /// bits 7-8) - which on the hub is only ever the still: every sprite-table
 /// record names a 4bpp page.
@@ -203,6 +241,21 @@ pub fn still_sheet_rgba(entry: &[u8]) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_first_visit_wall_is_a_three_by_two_grid_of_record_two_rows_outermost() {
+        let draws = first_visit_tile_draws();
+        let seats: Vec<(i16, i16)> = draws.iter().map(|d| (d.x, d.y)).collect();
+        assert_eq!(
+            seats,
+            [(0, 0), (128, 0), (256, 0), (0, 128), (128, 128), (256, 128)]
+        );
+        assert!(draws.iter().all(|d| {
+            d.sel == FIRST_VISIT_TILE_RECORD
+                && d.scale == 0x1000
+                && d.anchor == crate::other_game_hud::HubAnchor::Corner
+        }));
+    }
 
     #[test]
     fn the_pair_is_one_320x240_image_split_at_192() {

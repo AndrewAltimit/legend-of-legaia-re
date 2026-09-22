@@ -191,9 +191,9 @@ impl SceneHost {
         /// Flat favored-class swing cost, until the lead's equipped swing
         /// records are threaded through the warp.
         const FAVORED_COST: u16 = 0x1E;
-        /// Stand-in turn budget / HP for both fighters - the arena stages its
-        /// own `(course, round)` from story flags, which a door warp does not
-        /// carry.
+        /// Stand-in turn budget for both fighters, and HP for the opponent -
+        /// the arena stages its own `(course, round)` from story flags, which
+        /// a door warp does not carry.
         const STANDIN_BUDGET: u16 = 120;
         const STANDIN_HP: i32 = 400;
         /// The victory caption's Seru index. It names a *string*, not a prize.
@@ -225,18 +225,33 @@ impl SceneHost {
                 command_id: commands[i],
                 cost: FAVORED_COST,
             });
-        let mut session = MuscleDomeSession::new(
-            hand,
-            hand,
-            [STANDIN_BUDGET; 2],
-            [STANDIN_HP; 2],
-            CAPTION_SERU_INDEX,
-        );
+        // The lead fighter is the lead party record, as retail's battle load
+        // copies it: live HP `+0x106` and its effective maximum `+0x104`.
+        // The opponent keeps the stand-in until the warp carries a ladder
+        // round. A record with no HP (a hand-built party) keeps it too.
+        let lead_hp = self
+            .world
+            .party
+            .roster
+            .members
+            .first()
+            .map(|r| r.hp_mp_sp())
+            .filter(|h| h.hp_cur > 0 && h.hp_max > 0);
+        let hp = [
+            lead_hp.map_or(STANDIN_HP, |h| i32::from(h.hp_cur)),
+            STANDIN_HP,
+        ];
+        let lead_combatant = DomeCombatant {
+            hp_max: lead_hp.map_or(STANDIN_COMBATANT.hp_max, |h| h.hp_max),
+            ..STANDIN_COMBATANT
+        };
+        let mut session =
+            MuscleDomeSession::new(hand, hand, [STANDIN_BUDGET; 2], hp, CAPTION_SERU_INDEX);
         let seed = 0x4D55_5343 ^ self.world.frame as u32;
         if let Some(model) = DomeDamageModel::from_battle_overlay(
             &raw,
-            [STANDIN_COMBATANT; 2],
-            [STANDIN_HP; 2],
+            [lead_combatant, STANDIN_COMBATANT],
+            hp,
             seed,
         ) {
             session.install_damage_model(model);

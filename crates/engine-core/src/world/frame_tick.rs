@@ -2770,19 +2770,28 @@ impl World {
         // displaced it (no-op when it did not).
         self.restore_minigame_bgm();
         let session = self.minigames.muscle_dome.take();
-        // The battle end's background read: retail streams one of the two
-        // ringside stills into VRAM here, picked off the lead's live HP
-        // against the record's maximum (`+0x106` vs `+0x11C`, not the live
-        // `+0x104`). The fighter's live HP is the session's; the maximum is
-        // the lead record's.
+        // The battle end writes the fighter's HP back into the lead record
+        // (`+0x106`), and the background read that follows streams one of the
+        // two ringside stills into VRAM, picked off that record: live HP
+        // `+0x106` against the base maximum `+0x11C`, not the effective
+        // `+0x104` (`FUN_801F6B24`, `0x801F6B8C..0x801F6BAC`).
         if let Some(s) = session.as_ref() {
-            let hp_max = self
-                .party
-                .roster
-                .members
-                .first()
-                .map_or(0, |r| r.record_stats().hp_max);
-            let hp_cur = s.hp(0).clamp(0, i32::from(u16::MAX)) as u16;
+            let fought = s.hp(0).clamp(0, i32::from(u16::MAX)) as u16;
+            let (hp_cur, hp_max) = match self.party.roster.members.first_mut() {
+                Some(rec) => {
+                    let mut hms = rec.hp_mp_sp();
+                    // A hand-built record with no maximum has nothing to
+                    // write back into; the pick reads the fight's HP.
+                    if hms.hp_max > 0 {
+                        hms.hp_cur = fought.min(hms.hp_max);
+                        rec.set_hp_mp_sp(hms);
+                    } else {
+                        hms.hp_cur = fought;
+                    }
+                    (hms.hp_cur, rec.record_stats().hp_max)
+                }
+                None => (fought, 0),
+            };
             self.minigames.muscle_ringside_still =
                 Some(crate::muscle_ringside::still_prot_index(hp_cur, hp_max));
         }

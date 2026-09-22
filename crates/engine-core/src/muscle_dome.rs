@@ -2948,9 +2948,18 @@ impl HubScreen {
         )
     }
 
-    /// The ROUND banner: arm `4` fades it in at the slow rate, arm `5` holds
-    /// it [`HUB_ROUND_BANNER_HOLD_TICKS`] ticks (pad-skippable), arm `6`
-    /// fades out at the fast rate.
+    /// The leg-open banner's envelope: arm `4`'s slow fade-in, arm `5`'s
+    /// [`HUB_ROUND_BANNER_HOLD_TICKS`]-tick pad-skippable hold, arm `6`'s
+    /// fast fade-out.
+    ///
+    /// Those arms are not the ROUND banner's on the disc. Arm `4` fades the
+    /// **course card** `FUN_801D042C` in over the title art, arm `5` holds
+    /// both and clears the card on exit (`sw zero,0x1a84` at `0x801CFC00`),
+    /// and arm `6`'s `4 dt` drain is the first-visit backdrop level
+    /// (`0x801CFC54`), with nothing else drawn. The ROUND banner
+    /// (`FUN_801D02F0`) is arm `0x15`'s, under [`Self::opponent_card`]. The
+    /// hosts draw the ROUND card on this envelope at a leg's opening, which
+    /// is disclosed in `docs/formats/ringside-still.md`.
     pub const fn round_banner() -> Self {
         Self::new(
             HUB_FADE_STEP_SLOW,

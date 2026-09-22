@@ -179,6 +179,29 @@ clamps at zero, and the call site guards on it (`beqz a0, 0x801D00B8` at
 `0x801D00A4`), so the still fades out over a bounded number of frames rather
 than holding for the whole hub screen.
 
+### The first visit's arm
+
+With the latch zero the same emitter draws something else
+(`0x801D0148..0x801D01B4`): it sets the OT depth `*(0x801D1AA8) = 0x3E8`,
+tiles sprite-table record `2` - a brick wall - as a `3 x 2` grid through the
+corner-anchored emitter `FUN_801D08EC` at `(i << 7, j << 7)`, scale `0x1000`,
+at the same level, and ends with a full-screen `0x3A` gouraud quad through
+`FUN_801D1610(0, 0, 0x140, 0xF0)` at OT slot `0x384`, top corners shaded
+`0x64`, bottom corners `0`. The level that arm runs at comes from the hub's
+first-visit arms (jump table `0x801CE990`):
+
+| arm | level `*(0x801D1A7C)` | what else runs |
+|---|---|---|
+| `0` / `1` | `0` | the intro card fades in at `4 dt` and holds `0x7B` ticks |
+| `2` | `+= 4 dt` to `0x80` (`0x801CF9E4..0x801CFA2C`) | the intro card fades out at the same `4 dt` |
+| `3` | held | the title art zooms from scale `0x1640` to `0x1000` |
+| `4` | held | the course card `FUN_801D042C` (records `5 + course` and `8`) fades in at `2 dt` |
+| `5` | held | a `0xB4`-tick hold, ended early by a `0xF4` pad bit; the course card clears on exit |
+| `6` | `-= 4 dt` to `0` (`0x801CFC48..0x801CFC78`) | nothing else draws; at zero the battle load is kicked and the arm becomes `0x14` |
+
+The `shot_00500_m19` frame of the `captures/w1e/dome_vram` run is arm `4` or
+`5`: the wall behind "Muscle Dome!" and the course name.
+
 ### Why a search for the rectangle did not find it
 
 Three consumers were excluded earlier on the finding that 33 sites disc-wide
@@ -210,12 +233,29 @@ native window bakes both stills into its hub atlas, and the play page serves
 them as hub sheet `8`. The frame-sliced read schedule itself is not ported as a
 schedule - the port reads the whole entry at once.
 
-Two differences are disclosed rather than hidden. The fighter's HP is the
-door warp's stand-in, not the record's, until the warp threads the lead's
-own HP through; and a first visit's backdrop (the latch-`0` arm: six tiled
-prims and a 320x240 fill) is not drawn by either host. The standalone
-minigames page does not draw the still at all
+The pick reads the lead record the way the loader does: the dome door warp
+seeds the lead fighter from the record's live HP `+0x106` (and its maximum
+`+0x104`), and `World::exit_muscle_dome` writes the fight's HP back into
+`+0x106` before it picks `+0x106 < +0x11C / 2`.
+
+The first visit's wall is drawn too, by both play hosts
+(`legaia_engine_ui::ringside_backdrop::first_visit_tile_draws`), under the
+two screens the port stages when a leg opens on a fresh contest. Its level is
+`muscle_ringside::first_visit_backdrop_level`: `0x80` less the intro card
+while the card fades out (arm `2`), `0x80` while the leg-open banner is up,
+and the banner's own level while it fades out - which works because that
+banner runs arms `4` / `5` / `6`'s envelope exactly. Three differences
+remain, and are disclosed rather than hidden: the banner draws the ROUND
+card where retail's arms `3..5` draw the title art and the course card, the
+arm's closing gouraud quad is not drawn (it is semi-transparent, and its
+blend is set by a draw-mode word the hub's sprite path has no seat for), and
+the standalone minigames page draws neither arm
 ([`host-drift.md`](../tooling/host-drift.md#ringside-still-on-the-standalone-dome-page)).
+
+The ROUND card itself runs once per leg, as retail's arms `0x15` / `0x16`
+run it once. A re-entered hub plays it over the still, and the leg the player
+then walks into through the dome door no longer raises it a second time
+(`muscle_ringside::leg_open_raises_round_card`).
 
 ## Why it has no magic
 
