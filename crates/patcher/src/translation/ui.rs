@@ -134,12 +134,25 @@ pub const SCUS_POOL_BASE_VA: u32 = 0x8000_F800;
 /// pinned VA window and the importer rewrites in place like any other
 /// `scus:str:` entry (span + alignment padding). Coordinates only.
 ///
+/// - the pause menu's **empty-list messages** and equipment-slot names
+///   (`You do not have|any items.`, `No magic skills.`, `No items to equip.`,
+///   `Nowhere you can go.`, `{ce:13} Legs.` ...), the strings the menu
+///   overlay draws from the executable when a list has nothing to show. The
+///   window stops before the per-character `... For {c1:00}.` variants: a
+///   NUL-to-NUL scan would cut those at the token's `0x00` argument;
 /// - the battle **steal / spoils result** lines (`Took the stolen`,
 ///   `Recovered the stolen`, `Stole the`, `Recovered all stolen items.`);
 /// - the sparring-tutorial opener the new-game template trails (`I will show
 ///   you how to fight ...`, `docs/formats/new-game-table.md`);
 /// - the equip-screen `Remove` and the `Save` label near the config strings.
 pub const SCUS_STRING_POOLS: &[UiStringPool] = &[
+    UiStringPool {
+        prot_index: usize::MAX,
+        base_va: SCUS_POOL_BASE_VA,
+        va_start: 0x8001_0C18,
+        va_end: 0x8001_0CC8,
+        label: "pause-menu empty-list messages",
+    },
     UiStringPool {
         prot_index: usize::MAX,
         base_va: SCUS_POOL_BASE_VA,

@@ -58562,7 +58562,7 @@ sections:
     translation: '@Pontos rest.'
     budget: 15
   - key: 'ui:899:0x801cea40'
-    translation: '@{c2:fe}ganhou'
+    translation: '@{c2:fe} ganhou'
     budget: 15
   - key: 'ui:899:0x801cea50'
     translation: '@ ponto(s).'
@@ -58607,19 +58607,19 @@ sections:
     translation: '@ATR:'
     budget: 7
   - key: 'ui:899:0x801ceb20'
-    translation: '@PA usados'
+    translation: '@Voce nao tem magias.'
     budget: 31
   - key: 'ui:899:0x801ceb40'
     translation: '@   Sem magias.'
     budget: 23
   - key: 'ui:899:0x801ceb58'
-    translation: '@Sair'
+    translation: '@PA usados'
     budget: 11
   - key: 'ui:899:0x801ceb64'
     translation: '@Comando:'
     budget: 11
   - key: 'ui:899:0x801ceb70'
-    translation: '@Nao pode equipar'
+    translation: '@Nao aprendeu golpes.'
     budget: 35
   - key: 'ui:899:0x801ceb94'
     translation: '@Compra'
@@ -58634,7 +58634,7 @@ sections:
     translation: '@Equipado'
     budget: 11
   - key: 'ui:899:0x801cebb8'
-    translation: 'Possui'
+    translation: '@Nao equipa'
     budget: 15
   - key: 'ui:899:0x801cebc8'
     translation: '@Possui'
@@ -58664,7 +58664,7 @@ sections:
     translation: '@Preco'
     budget: 7
   - key: 'ui:899:0x801cec5c'
-    translation: '@Preco'
+    translation: '@Nao vende'
     budget: 15
   - key: 'ui:899:0x801cec6c'
     translation: '@Trocar'
@@ -58726,9 +58726,51 @@ sections:
   - key: 'ui:898:0x801f4d24'
     translation: 'Fugir'
     budget: 7
+  - key: 'ui:897:0x801cf048'
+    translation: 'VEL'
+    budget: 3
+  - key: 'ui:897:0x801cf04c'
+    translation: 'AGL'
+    budget: 3
+  - key: 'ui:897:0x801cf050'
+    translation: 'DFI'
+    budget: 3
+  - key: 'ui:897:0x801cf054'
+    translation: 'DFS'
+    budget: 3
+  - key: 'ui:897:0x801cf058'
+    translation: 'ATQ'
+    budget: 3
+  - key: 'ui:897:0x801cf05c'
+    translation: 'Nao equipavel'
+    budget: 15
+  - key: 'ui:897:0x801cf07c'
+    translation: '{cf:07}Venda'
+    budget: 7
   - key: 'ui:897:0x801cf08c'
     translation: 'Anadir a itens'
     budget: 15
+  - key: 'ui:897:0x801cf09c'
+    translation: 'Digite a senha.'
+    budget: 27
+  - key: 'ui:897:0x801cf0b8'
+    translation: 'Ir ao andar'
+    budget: 11
+  - key: 'ui:897:0x801cf0c4'
+    translation: 'Descer'
+    budget: 7
+  - key: 'ui:897:0x801cf0d4'
+    translation: 'Suas moedas'
+    budget: 11
+  - key: 'ui:897:0x801cf0e0'
+    translation: 'Comprar moedas'
+    budget: 15
+  - key: 'ui:897:0x801cf0f0'
+    translation: 'Seu ouro'
+    budget: 11
+  - key: 'ui:897:0x801cf0fc'
+    translation: 'Custo total'
+    budget: 11
   - key: 'ui:897:0x801cf108'
     translation: 'OK?'
     budget: 3
@@ -58738,9 +58780,36 @@ sections:
   - key: 'ui:897:0x801cf110'
     translation: 'N.'
     budget: 3
+  - key: 'ui:897:0x801cf114'
+    translation: 'Com o poder da Arvore Genesis,'
+    budget: 35
+  - key: 'ui:897:0x801cf138'
+    translation: 'Curar'
+    budget: 7
+  - key: 'ui:897:0x801cf140'
+    translation: 'Salv./Carr.'
+    budget: 11
+  - key: 'ui:897:0x801cf14c'
+    translation: 'A equipe de {c1:63} se recuperou.'
+    budget: 35
+  - key: 'ui:897:0x801cf170'
+    translation: '{c1:63} se recuperou.'
+    budget: 31
+  - key: 'ui:897:0x801cf190'
+    translation: 'Voltar'
+    budget: 7
+  - key: 'ui:897:0x801cf198'
+    translation: 'Encerrar'
+    budget: 11
+  - key: 'ui:897:0x801cf1a4'
+    translation: '{c2:8a} perdeu o efeito.'
+    budget: 31
   - key: 'ui:897:0x801cf6ac'
     translation: 'Nome nao permitido.'
     budget: 23
+  - key: 'ui:897:0x801cf6c4'
+    translation: 'Sou um monge guerreiro de Biron.|Meu nome?'
+    budget: 43
   - key: 'ui:897:0x801cf6f0'
     translation: '|Diga meu nome.'
     budget: 19
@@ -58834,10 +58903,40 @@ sections:
   - key: 'ui:967:0x801f7ca8'
     translation: 'Hiperartes sao aprendidas inserindo|comandos no modo [Comando] ou com|um instrutor. Ao aprender, use-as|no modo [Auto] ou [Comando].'
     budget: 179
+  - key: 'ui:941:0x801f83a0'
+    translation: 'Nada foi roubado.'
+    budget: 19
+  - key: 'ui:941:0x801f83b4'
+    translation: ''' foi roubado.'
+    budget: 15
   - key: 'ui:941:0x801f83c4'
     translation: 'No has robado ningun item.'
     budget: 27
+  - key: 'ui:941:0x801f83e0'
+    translation: 'Roubou `'
+    budget: 11
+  - key: 'ui:954:0x801f8f30'
+    translation: 'Recupera PS e todo status'
+    budget: 27
+  - key: 'ui:954:0x801f8f58'
+    translation: 'PM zero'
+    budget: 7
+  - key: 'ui:954:0x801f8f80'
+    translation: 'Perde itens'
+    budget: 11
+  - key: 'ui:954:0x801f8fa8'
+    translation: 'Perde ouro'
+    budget: 11
   system_text:
+  - key: 'scus:str:0x80010c34'
+    translation: 'Sem magias.'
+    budget: 19
+  - key: 'scus:str:0x80010c48'
+    translation: 'Nada p/ equipar.'
+    budget: 19
+  - key: 'scus:str:0x80010c78'
+    translation: 'Nenhum lugar p/ ir.'
+    budget: 23
   - key: 'scus:str:0x80077a38'
     translation: 'Obtencao de: '''
     budget: 19
@@ -58854,7 +58953,7 @@ sections:
     translation: 'Vou te ensinar a lutar como numa batalha real!'
     budget: 67
   - key: 'scus:str:0x8007b41c'
-    translation: 'Sair'
+    translation: 'Tirar'
     budget: 7
   - key: 'scus:str:0x8007b444'
     translation: 'Salvar'
