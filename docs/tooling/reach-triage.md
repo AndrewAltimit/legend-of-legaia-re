@@ -28,8 +28,8 @@ can and cannot execute at all.
 The report opens with three counts over the canonical union: the `// PORT:`
 anchors the static graph calls **live**, how many of those some run
 **entered**, and how many **no run entered** - the third being the set this
-page verdicts. Over the current union they are **810 live / 705 entered / 51
-never entered, across 62 ladders**, with both defect lists empty.
+page verdicts. Over the current union they are **814 live / 711 entered / 50
+never entered, across 66 ladders**, with both defect lists empty.
 
 The ladder count belongs in the same breath as the other three, because none
 of them is a property of the port: every ladder that lands moves all three,
@@ -46,13 +46,17 @@ the larger of the two and moves with the ladder set rather than with the port,
 so an address list joined against the never-entered set alone will read those
 as converted.
 
-One caveat travels with the current figure and should travel with the next
-one: a member of the union was **red** when it was taken (`v0_1_playthrough`
-exits non-zero, contributing whatever it ran before it failed). A union taken
-while a member fails is a different number rather than a smaller one - see
-[the partial-union note](#a-ladder-that-fails-and-a-ladder-nobody-exported-are-the-same-line)
-- and re-deriving with a bare `replay-port-coverage.py` is cheaper than
-trusting this line.
+One caveat travels with every figure and should be checked for the next
+one: whether each member of the union exited zero when it was taken. This
+one was a clean export of the whole list with every member green; an earlier
+figure on this page was taken while `v0_1_playthrough` exited non-zero, and a
+union taken while a member fails is a different number rather than a smaller
+one - see
+[the partial-union note](#a-ladder-that-fails-and-a-ladder-nobody-exported-are-the-same-line).
+The export must also be **clean** of any source edit made while it ran: an
+export built partly before and partly after an edit to a file mixes two line
+maps for it, and the reader scores an anchor against both. Re-deriving with a
+bare `replay-port-coverage.py` is cheaper than trusting this line.
 
 ## Buckets
 
@@ -1979,6 +1983,31 @@ call but only inside a frame a scripted shot owns, and the ocean-head
 animation fallback, which needs a kingdom bundle with no CLUT-walk table. Both
 are ordinary `(a)` content gaps; neither can ever be a row here, because
 neither has an address for the report to key on.
+
+### A wire is two halves, and a refresh can enter only one of them
+
+A wave that lands a producer on both hosts lands two things a reach refresh
+scores separately: the engine seat that makes the state, and each host's
+draw of it. The refresh after such a wave entered every producer and **none of
+the draws**, and only one of the gaps could show up as a row at all - the
+others are untagged host functions, which the report cannot key on:
+
+| wire | producer entered by | host draw | what closes it |
+|---|---|---|---|
+| morph-weight actor (`4C D8`, `FUN_801D77F4`) | `chapter1_frontier_ladder`, `w1a_narration_ladder` | page `play_dynamic_actor_mesh` -> `World::morph_weight_posed_tmd`: entered by none | `w6c_morph_page_ladder` - all three seating carriers issue the op from `P1[0]`, so a plain field entry is the fixture |
+| Arts banner (`FUN_801E2524` tick, `FUN_801E2650` quads) | the tick, by every battle ladder (stage `0` every frame) | `flash_quads` (`801e2650`): entered by none, because no ladder's battle commits a SpecialStarter | `w6c_arts_banner_ladder` - the pad-typed Super drive, reading `battle_arts_banner_quads` per frame where both hosts read it |
+| live position anchor (`sync_field_ctx_player_anchor`) | every field ladder | not a draw - a flag that flips as the player crosses a `CD F8` box | `conc_flag_6de_position_latch_disc`, promoted: it walks the player across `conc`'s box both ways |
+| Baka digit strips (E11) | `w5_native_minigame_ladder` (native) | page `baka_status_draws`: entered by none in the union | `play_minigames_host`, promoted - its duel door-warp rung reads the page HUD |
+| fishing point exchange (E14) | `w5_native_minigame_ladder` (native) | page `fishing_exchange_draws`: entered by two ladders and **returns empty every time** | nothing a ladder can do: the page opens the sub-mode only inside `play_fishing_prize_buy`, so no HUD compose ever sees it open ([`host-drift.md`](host-drift.md#the-fishing-point-exchange-sub-screen-a-screen-on-one-host-a-query-on-two)). An entered function is not a drawn screen |
+| save-commit refusal (C12) | `SaveScreenFlow::refusal` read by four ladders | `save_refusal_panel_draws_for` / `save_refusal_text_draws_for`: entered by none on either host | (a) a rung that drives a save commit the flow refuses; no ladder in the union makes one |
+| title art behind the boot save-select (C11) | - | page `boot_title_backdrop_draws_json`: entered by none | (a) a boot CONTINUE with a card inserted, which the page ladders never take (`w1l4_page_compose_ladder` inserts cards from the pause menu, not from the title) |
+
+The banner rung also measures something the tick alone hides: in the
+disc-free drive the banner draws for **one** frame. The next commit on the
+same actor takes the prologue's retire arm (`0x8004ADBC..0x8004ADE8`), and a
+disc-free world has no clips, so that commit lands a frame later. Whether
+retail's slide runs its full clock depends on the SpecialStarter clip's length
+on the disc, which is a capture question, not a reach one.
 
 ## Rows a refresh added, and nobody has bucketed yet
 
