@@ -53,11 +53,11 @@
 //!
 //! ## Where the engine runs it
 //!
-//! [`crate::fade::FadeState`] - the engine's one live full-screen fade, staged
+//! The engine's one live full-screen fade, [`crate::fade::FadeState`] - staged
 //! by the battle-escape teardown and stepped once per frame by the world tick
-//! - **is** this block, and [`crate::fade::FadeState::step_vsyncs`] is only the
-//! representation shim around [`tick_fade_ramp`]: retail counts the duration
-//! down inside the block, the engine keeps `elapsed` / `duration` so
+//! - **is** this block, and [`crate::fade::FadeState::step_vsyncs`] is only a
+//! representation shim around [`tick_fade_ramp`]. Retail counts the duration
+//! down inside the block while the engine keeps `elapsed` / `duration` so
 //! `progress()` and `finished()` read naturally, so the two views are
 //! converted around the call. Both hosts draw the result through
 //! `legaia_engine_ui::screen_prim::screen_fade_prim`.
