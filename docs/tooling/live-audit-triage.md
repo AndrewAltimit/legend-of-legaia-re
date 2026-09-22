@@ -2243,3 +2243,18 @@ scan. The six call sites (the round reset and `FUN_801D388C`'s cases `0x10`,
 cursor, and its backward arms are the one thing the port's command session
 has no counterpart for: there is no way back from a later member's ring to an
 earlier one's.
+
+## Singles re-read against their retail call sites
+
+Each row was re-read to the end of its tag and against the `jal` sites that
+reach the address; the verdict is what the call site supports.
+
+| anchor | verdict | the call site, and why |
+|---|---|---|
+| `8001fa00` `init_identity_index_list` | live | MAIN_INIT's `jal` at `0x801D7384` seeds the fog-particle pool's free stack (`pool, pool + 4, 0x50`); `FogPool::reset` now seeds through it |
+| `800265e8` `seed_boot_offset_table` | `REPLACE` | boot `jal` at `0x8001601C`; the audio host keeps one flat `SpuRam`, no slot-indexed base map |
+| `8001d7f8` / `8001d424` scene-name sync | `REPLACE` | `0x8001FDC0` (the op-`0x3F` packet) and the dev-arm boot read at `0x80016024`; the port carries the destination as a label |
+| `8003cb54` `mes_append_escape` / `mes_string_end_offset` | held | its three sites compose the steal-result captions; the port's battle flow runs no steal (`apply_steal` has no production caller) |
+| `801d0748` `timed_fight_turns_left` | held | the formation gate is readable; the strip's draw is what no host has |
+| `8003bc08` `rotate_toward_clamped` | held | the player's vertical glide runs the same arithmetic, but calling this from it would mark the NPC height arm live while no NPC runs it |
+| `8001cf50` / `800461a4` / `8004638c` | held | the camera composes `Rx·Ry·Rz` in `glam` f32; adopting the q3.12 product is a precision decision, and the `+0x52` skip bits have no engine seat |

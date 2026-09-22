@@ -23,7 +23,7 @@
 //!
 //! | Kernel | Retail caller | Call site | Port of the caller |
 //! |---|---|---|---|
-//! | [`mes_append_escape`] | `FUN_8004AD80` | `8004B2F8`, `8004B338`, … | no engine message **composer** |
+//! | [`mes_append_escape`] | `FUN_8004AD80` | `8004B2F8`, `8004B338`, `8004B60C` | the battle flow runs no steal |
 //! | [`advance_gauge`] | `FUN_800402F4` | `800421A0` | ported piecewise, no single-function port |
 //! | [`ease_quad_interp`] | unidentified - see below | - | - |
 //!
@@ -55,12 +55,16 @@
 //!   buffer this appends to. The one dumped caller settles it:
 //!   `FUN_8004AD80`, the battle staged-animation commit, copies a template
 //!   into a string scratch at `0x800779A8` / `0x800779DC` / `0x80077A08` and
-//!   then appends `{0xC2, id}` - the item-name substitution token. So the
-//!   blocker is not "no raw action buffer": the engine **decodes** these
-//!   escapes (`legaia_mes`, `engine-core::dialog`, `world::prop_interact`) but
-//!   never **composes** a marked-up string, because every engine message is
-//!   assembled as resolved text. Nothing holds a byte buffer mid-compose for
-//!   the append to land in.
+//!   then appends `{0xC2, id}` - the item-name substitution token. The three
+//!   templates (`0x80077A38` / `0x80077A4C` / `0x80077A64`, each closed by a
+//!   two-byte tail at `0x8007B690` / `0x8007B694` / `0x8007B698`) are the
+//!   **steal-result captions** - the three outcomes of a steal, shown through
+//!   the battle caption record `FUN_801D8DE8(0x5B)`. So the blocker is the
+//!   event, not the composer: `World::apply_steal` has no production caller,
+//!   so no steal happens in the port's battle flow for a caption to report.
+//!   Once one does, a caption built from typed state would do this
+//!   routine's job; a translation pack that lifts the SCUS pool is the reason
+//!   to prefer composing retail's own buffer here.
 //! - `FUN_80046870` ([`advance_gauge`]) ramps the `gp + 0x2E8` word, which the
 //!   validator's arm-`0x82` gate `FUN_80046898` tests against `0xE0`. **That
 //!   word's identity is now settled, and it is not an inventory count.**

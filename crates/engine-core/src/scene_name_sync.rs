@@ -25,12 +25,13 @@
 //! name table itself is built from the user's disc at runtime (CDNAME), so
 //! no Sony bytes live here. Tests use synthetic tables.
 //!
-//! NOT WIRED: this module tag names the same address as
-//! [`sync_scene_name`], whose own tag already discloses the gap - the engine
-//! changes scene by label through the scene host and carries no staged-name /
-//! active-buffer / scene-index-word triple to resolve between, so the only
-//! callers are this file's tests. The disclosure is repeated here because the
-//! module tag is what carries the address's liveness verdict.
+//! REPLACED-BY: the port's label-keyed scene change - op `0x3F` records the
+//! destination as a label in `World::pending_named_scene_transition`, and
+//! `SceneHost::tick` loads that label through the CDNAME block map. There is
+//! no staged / active buffer pair to reconcile and no scene-index word to
+//! resolve, so no host is owed this bridge. Retail calls it from the
+//! packet API `FUN_8001FD44` (`jal` at `0x8001FDC0`) and from
+//! `0x8001D7C4` / `0x80025CBC`.
 
 /// Both scene-name buffers are 8 bytes in retail (`0x8007050C` /
 /// `0x80084548`), NUL-terminated.
@@ -78,10 +79,9 @@ impl SceneNameEntry {
 ///    trailing bytes of `active` keep their previous content, as retail's
 ///    BIOS strcpy does).
 // PORT: FUN_8001D7F8
-// NOT WIRED: the engine changes scene by label through the scene host and
-// carries no staged-name / active-buffer / scene-index-word triple for this
-// bridge to resolve between. Wiring it needs a name-based scene-change
-// packet path, which the dialog port routes around.
+// REPLACED-BY: `World::pending_named_scene_transition`, drained by
+// `SceneHost::tick` into a label-keyed scene load - the same replacement as
+// the module heading, whose tag carries the address.
 pub fn sync_scene_name(
     staged: &mut [u8; SCENE_NAME_LEN],
     table: &[SceneNameEntry],
@@ -125,11 +125,11 @@ pub const INITMAP_NAME_FIELD_LEN: usize = 0x10;
 /// GTE-scratchpad / work-table init and calls into already-ported helpers -
 /// see the crate notes, it is not game-state logic and is not ported here)
 ///
-/// NOT WIRED: the sanitizer exists to clean a line read out of the dev
-/// `initmap.txt` boot override. The engine takes its boot scene from the CLI
-/// / session config as an already-parsed label, and no host reads a raw
-/// 16-byte override field off disc, so there is no terminator-bearing buffer
-/// to sanitize. Wiring it needs an `initmap.txt` reader in the boot path.
+/// REPLACED-BY: the boot scene label the engine takes from the CLI / session
+/// config, already parsed - the job the dev `initmap.txt` override does. No
+/// host reads a raw 16-byte override field off disc, so there is no
+/// terminator-bearing buffer to clean. Retail's one call is the boot path's
+/// `jal` at `0x80016024`, on the dev arm only.
 ///
 /// Retail reads the override line into the 16-byte field at `0x8007050C`
 /// (via `FUN_8001A8B0(&DAT_8007050C, line, 0x10)`), then walks all 16 bytes
