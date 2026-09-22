@@ -459,6 +459,34 @@ if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/check-ui-host-drift.p
     fi
 fi
 
+# wasm32 type-check. Every cargo gate above builds for the HOST triple, so a
+# `#[cfg(target_arch = "wasm32")]` block - which is most of the browser play
+# page's own code - is never compiled by fmt, clippy, test or build. A page
+# feature written inside one has shipped with a private-field error past all
+# four; the first thing that compiled it was a wasm build. CI does build the
+# wasm target, but its `ci` job carries `if: github.event_name != 'pull_request'`,
+# so that build lands AFTER merge - this hook is the only pre-merge compiler
+# the browser host has.
+#
+# Spent only when a staged file belongs to a crate that carries such a block,
+# and it is a `cargo check`, not a build: warm, it costs about one crate's
+# type-check.
+WASM_CFG_TOUCHED=0
+while IFS= read -r path; do
+    case "$path" in
+        crates/web-viewer/*|crates/engine-core/*|crates/engine-audio/*|crates/save/*|crates/engine-shell/*)
+            WASM_CFG_TOUCHED=1; break ;;
+    esac
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+if [[ "$WASM_CFG_TOUCHED" == "1" ]] && [[ -x "scripts/ci/check-wasm-target.sh" ]]; then
+    printf '[pre-commit] wasm32 type-check (the browser host no native gate compiles)\n'
+    if ! scripts/ci/check-wasm-target.sh; then
+        printf '[pre-commit] the wasm32 target does not type-check (see above).\n' >&2
+        printf '[pre-commit] A cfg(target_arch = "wasm32") block is invisible to every other cargo gate here (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 # Trait-override symmetry. The sibling of the drift check, for the half of the
 # host surface that is a trait rather than a draw builder: engine-core traits
 # whose methods all carry default bodies let a host forget a hook with no
