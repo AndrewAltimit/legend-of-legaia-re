@@ -2165,9 +2165,11 @@ mod tests {
             z: 0,
             id: 0,
         };
-        let bc = [0x41]; // TranslateX without target byte
+        // 0x41 compass walk: direction 6 (+X), div 4, two units (total 8
+        // speed units); speed 2 at rate 0x40 moves X by 0x40*2/4 = 32.
+        let bc = [0x41, 0x06, 0x02];
         let r1 = c.tick_script(&bc);
         assert_eq!(r1, StepResult::Yield);
-        assert_eq!(c.motion_state.world_x, 2);
+        assert_eq!(c.motion_state.world_x, 32);
     }
 }

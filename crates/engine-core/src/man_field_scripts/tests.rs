@@ -881,7 +881,7 @@ fn boss_stager_placements_decodes_gate_station_and_row() {
 /// for `0x41` (half-speed arm) and `0x80` for `0x37` / `0x47`.
 #[test]
 fn placement_yield_step_decodes_0x41_axis_glide() {
-    // 0x41 TranslateX (numerator 0x40). Operands: b0 = 0x00 (bit 7 clear ->
+    // 0x41 compass walk (numerator 0x40). Operands: b0 = 0x00 (bit 7 clear ->
     // hi selector 0), b1 = 0x40 (bits 7:6 = 01 -> lo selector 1) => bits = 1.
     // speed = 0x40 >> (2 + 1) = 8.
     let (mf, man) = man_with_placement_script(&[0x41, 0x00, 0x40, 0x21]);
@@ -898,7 +898,7 @@ fn placement_yield_step_decodes_0x41_axis_glide() {
 
 #[test]
 fn placement_yield_step_decodes_0x37_axis_glide() {
-    // 0x37 TranslateY (numerator 0x80). Operands: b0 = 0x00 (hi selector 0),
+    // 0x37 compass walk (numerator 0x80). Operands: b0 = 0x00 (hi selector 0),
     // b1 = 0xC0 (bits 7:6 = 11 -> lo selector 3) => bits = 3.
     // speed = 0x80 >> (2 + 3) = 4.
     let (mf, man) = man_with_placement_script(&[0x37, 0x00, 0xC0, 0x21]);
