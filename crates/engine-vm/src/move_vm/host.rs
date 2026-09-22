@@ -106,10 +106,11 @@ pub trait MoveHost {
         0
     }
 
-    /// Extension sub-op 0x0E - `FUN_801E45BC(out_xy, sub_a, sub_b, mode)` -
-    /// computes a midpoint-style position; the VM passes the three i16
-    /// triples plus the mode word read from `actor[+0x50]`. Default no-op
-    /// (the VM still writes the result fields if the host returns them).
+    /// Extension sub-ops 0x0E / 0x12 - observation hook ahead of
+    /// `FUN_801E45BC(C, P0, P2, t)`, the quadratic Bezier the VM evaluates
+    /// itself (`ext::write_bezier_world`); it receives P0 (`a`), P2 (`b`),
+    /// the control-point offset and `t = actor[+0x50]`. Default no-op. The
+    /// VM overwrites the world coords after this returns.
     fn ext_midpoint_set(
         &mut self,
         _state: &mut ActorState,

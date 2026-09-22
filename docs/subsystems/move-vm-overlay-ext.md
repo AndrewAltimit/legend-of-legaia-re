@@ -95,7 +95,7 @@ The 16-slot, 8-byte-stride scratch table at `&DAT_801F3498` is shared across act
 - `0x31`/`0x32` round-trip the render-bank section at `+0x24..+0x2C`.
 - `0x34`/`0x35` round-trip `actor[+0x72]`.
 
-Sub-op `0x0C` sets `actor[+0x50]` (the midpoint blend / sub-state byte consumed by the `FUN_801E45BC` mid-point helper from sub-ops `0x0E` / `0x12`); sub-op `0x0D` is the additive variant.
+Sub-op `0x0C` sets `actor[+0x50]` (the curve parameter `t` that the `FUN_801E45BC` quadratic Bezier consumes for sub-ops `0x0E` / `0x12`); sub-op `0x0D` is the additive variant.
 
 ### Move-VM globals + cycle counter
 
@@ -117,12 +117,14 @@ Sub-ops `0x06` / `0x07` are the bbox-vs-player branch variants. Both are 7 halfw
 
 The canonicalisation is a bytecode write, not a local: `sh v1,0x4(s3)` / `sh a0,0x4(s0)` at `0x801D3784` swap `op[2]` with `op[4]` when `op[4] < op[2]`, and the sibling pair swaps `op[3]` with `op[5]`. That puts these two in the self-modifying family with `0x04` / `0x1B` / `0x1E`.
 
-### Midpoint-to-actor (`0x0E` / `0x12`) + player-relative predicates
+### Curve-to-actor (`0x0E` / `0x12`) + player-relative predicates
 
-Sub-ops `0x0E` / `0x12` share a "midpoint to actor world" idiom backed by `FUN_801E45BC`:
+Sub-ops `0x0E` / `0x12` place the actor on a **quadratic Bezier**. Each arm builds a control point `C = offset + ((P0 + P2) >> 1)` on the stack and calls `FUN_801E45BC(a0 = &C, a1 = &P0, a2 = &P2, a3 = actor[+0x50])`, which evaluates `((0x1000-t)^2 P0 + 2t(0x1000-t) C + t^2 P2) / 0x1000^2` per axis (integer and fractional halves of each basis coefficient summed separately, so the result floors) and writes it back into `C`; the arm then copies that triple to `actor[+0x14..]` with a `swl`/`swr` pair (`0x801D39B4..0x801D39D0`, `0x801D3B34..0x801D3B50`). `t` is read `lhu` and never clamped.
 
-- `0x0E` is the all-operand form (size 11): `actor.world = op[5..7] + ((op[2..4] + op[8..10]) >> 1)` then the helper applies `actor[+0x50]` blend mode.
-- `0x12` (size 8) is the slot-indexed variant: the `a` triple comes from `slot_table[actor[+0x86] & 0xFF]` instead of operand u16s, and only `op[2..4]` (offset) and `op[5..7]` (b) live in bytecode.
+- `0x0E` is the all-operand form (size 11): P0 = `op[2..4]`, offset = `op[5..7]`, P2 = `op[8..10]`.
+- `0x12` (size 8) is the slot-indexed variant: P0 comes from `slot_table[actor[+0x86] & 0xFF]` instead of operand u16s, and only `op[2..4]` (offset) and `op[5..7]` (P2) live in bytecode.
+
+The "midpoint" reading this section used to carry - the actor lands on `C` with `+0x50` as a "blend mode" - is the curve's value at `t = 0x800` only when the offset is zero; the port wrote `C` for every `t`. The eight-byte copy also stores an uninitialised stack halfword into `+0x1A`, which the port does not model.
 
 Other player-relative predicates:
 

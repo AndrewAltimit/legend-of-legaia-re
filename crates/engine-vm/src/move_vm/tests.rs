@@ -1118,20 +1118,37 @@ fn actor_tick_pretick_then_tick_models_retail_frame() {
 }
 
 #[test]
-fn op2f_subop_0e_advances_pc_by_eleven_and_writes_world_average() {
+fn op2f_subop_0e_advances_pc_by_eleven_and_writes_the_curve_point() {
     let mut host = TestHost::default();
     let mut state = ActorState::new();
-    // a = (10, 20, 30), off = (1, 2, 3), b = (40, 60, 90)
-    // mid = ((10+40)/2 + 1, (20+60)/2 + 2, (30+90)/2 + 3) = (26, 42, 63)
+    // a = P0 = (10, 20, 30), off = (1, 2, 3), b = P2 = (40, 60, 90)
+    // control C = ((10+40)/2 + 1, (20+60)/2 + 2, (30+90)/2 + 3) = (26, 42, 63)
+    // FUN_801E45BC at t = actor[+0x50] = 0x800: (P0 + 2C + P2) / 4, floored
+    // = (102/4, 164/4, 246/4) = (25, 41, 61).
+    state.field_50 = 0x800;
     let bc = program(&[0x2F, 0x0E, 10, 20, 30, 1, 2, 3, 40, 60, 90]);
     step(&mut host, &mut state, &bc);
-    assert_eq!(state.world_x, 26);
-    assert_eq!(state.world_y, 42);
-    assert_eq!(state.world_z, 63);
+    assert_eq!(state.world_x, 25);
+    assert_eq!(state.world_y, 41);
+    assert_eq!(state.world_z, 61);
     assert_eq!(
         state.pc, 11,
         "0x0E must advance past the entire 11-word instruction"
     );
+}
+
+#[test]
+fn op2f_subop_0e_curve_endpoints_are_p0_and_p2() {
+    // t = 0 lands on P0 and t = 0x1000 on P2 - the control point (the old
+    // port's answer for every t) is never reached at either end.
+    for (t, want) in [(0u16, (10i16, 20i16, 30i16)), (0x1000, (40, 60, 90))] {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.field_50 = t;
+        let bc = program(&[0x2F, 0x0E, 10, 20, 30, 1, 2, 3, 40, 60, 90]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!((state.world_x, state.world_y, state.world_z), want);
+    }
 }
 
 #[test]
@@ -1142,15 +1159,16 @@ fn op2f_subop_12_uses_slot_indexed_by_field_86_low_byte() {
     // Pre-populate slot 5 with a = (50, 60, 70).
     host.move_slot_save_u32(5, 0, (50u16 as u32) | ((60u16 as u32) << 16));
     host.move_slot_save_u32(5, 4, (70u16 as u32) | ((0u16 as u32) << 16));
-    // off = (1, 2, 3), b = (50, 60, 70)
-    // mid_x = ((50 + 50)/2) + 1 = 51
-    // mid_y = ((60 + 60)/2) + 2 = 62
-    // mid_z = ((70 + 70)/2) + 3 = 73
+    // off = (1, 2, 3), b = P2 = (50, 60, 70); P0 = slot = (50, 60, 70)
+    // control C = ((50 + 50)/2 + 1, (60 + 60)/2 + 2, (70 + 70)/2 + 3)
+    //           = (51, 62, 73)
+    // at t = 0x800: (P0 + 2C + P2) / 4 = (50, 61, 71) (floored)
+    state.field_50 = 0x800;
     let bc = program(&[0x2F, 0x12, 1, 2, 3, 50, 60, 70]);
     step(&mut host, &mut state, &bc);
-    assert_eq!(state.world_x, 51);
-    assert_eq!(state.world_y, 62);
-    assert_eq!(state.world_z, 73);
+    assert_eq!(state.world_x, 50);
+    assert_eq!(state.world_y, 61);
+    assert_eq!(state.world_z, 71);
     assert_eq!(state.pc, 8, "0x12 must advance past the 8-word instruction");
 }
 

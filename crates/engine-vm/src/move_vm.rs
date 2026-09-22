@@ -2,7 +2,9 @@
 //! `SCUS_942.54`) and `FUN_801D362C` (extension VM in the town overlay).
 //!
 //! PORT: FUN_80023070, FUN_801D362C, FUN_8001A6C8, FUN_8001A78C, FUN_8001A8DC
-//! PORT: FUN_80024C80, FUN_801E45BC
+//! PORT: FUN_80024C80
+//! REF: FUN_801E45BC (the ext `0x0E` / `0x12` Bezier evaluator, ported as
+//!      `ext::write_bezier_world`)
 //!
 //! See `docs/subsystems/move-vm.md` for the byte-level reference. The VM drives
 //! per-actor animation, motion, and combat moves (Tactical Arts) - distinct
