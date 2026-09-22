@@ -782,7 +782,8 @@
     const m = parse(() => rt.play_mg_muscle_hub_quads_json());
     const quads = (m && m.ok && m.quads) || [];
     if (!quads.length) {
-      if (S.game !== 'slot') showLayer(view, false);
+      /* Only hide a layer that is up: this runs on every field frame too. */
+      if (S.game !== 'slot' && S.layer && !S.layer.hidden) showLayer(view, false);
       return false;
     }
     const layer = showLayer(view, true);
@@ -795,6 +796,13 @@
       const s = hubSheet(rt, q.sheet, q.pal);
       if (!s) continue;
       g.drawImage(s, q.u, q.v, q.w, q.h, q.x * sx, q.y * sy, q.dw * sx, q.dh * sy);
+      /* The ringside still is an opaque packet modulated by its fade level
+       * (`texel * c / 128`): below neutral that is the image darkened
+       * toward black, which a black fill at `1 - c/128` reproduces. */
+      if (typeof q.bright === 'number' && q.bright < 128) {
+        g.fillStyle = 'rgba(0,0,0,' + (1 - q.bright / 128) + ')';
+        g.fillRect(q.x * sx, q.y * sy, q.dw * sx, q.dh * sy);
+      }
     }
     return true;
   }
@@ -1246,6 +1254,10 @@
     const info = parse(() => rt.play_mg_game_json());
     if (!info || !info.game) {
       if (S.game) teardown(rt, view);
+      /* The arena hub outlives the leg: the INTERVAL + tally screen and the
+       * re-entered hub's ringside still play after the dome has handed the
+       * field back, so they are drawn over it here. */
+      drawHubQuads(rt, view);
       if (typeof rt.play_mg_take_vram_restore === 'function' && rt.play_mg_take_vram_restore()
           && view.renderer && typeof rt.field_vram_bytes === 'function') {
         try { view.renderer.uploadVram(rt.field_vram_bytes()); } catch (e) { /* keep going */ }

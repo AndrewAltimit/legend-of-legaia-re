@@ -2101,6 +2101,26 @@ retire the second host. Until then, a kernel that hangs off `World` reaches
 two hosts and not three, and that is what a `host_only` row on this page
 means.
 
+### Ringside still on the standalone dome page
+
+The Muscle Dome hub's ringside still
+([`ringside-still.md`](../formats/ringside-still.md#in-the-port)) is drawn by
+the native window and the browser play page, and not by the standalone
+minigames page. The two play hosts share every piece of it -
+`muscle_ringside::HubBackdrop` for the level, `ringside_backdrop::ringside_still_quads`
+for the packets, `still_sheet_rgba` for the sheet - and both arm it off
+`MinigameState::muscle_ringside_still`, which `World::exit_muscle_dome` writes
+at the leg's end. That is the blocking capability: the standalone page has no
+`World`, so no leg of its ends through the pick, and its INTERVAL screen is a
+stateless per-tick sample (`muscle_hub_screen_json`) with no backdrop clock to
+ride. The same answer as above applies - a `World` on the minigames page, or
+the page folded into the play page.
+
+The play page also had a second gap under the first: its hub screens drew only
+inside the arena's own frame, which ends when the leg does, so the INTERVAL +
+tally screen - a between-legs screen - never reached the page at all. The page
+now draws the hub list on the field frames that follow a leg too.
+
 ## The fishing point-exchange sub-screen: a screen on one host, a query on two
 
 `World::minigames.fishing_exchange` is a live `Option<PrizeExchange>` with its
