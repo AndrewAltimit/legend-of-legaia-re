@@ -749,24 +749,49 @@ donor, or not at all. All-zero slack stays the `zero_pad` it already is. It
 applies to every entry with no `static-overlays.toml` row, because those
 entries' parsers state their content end outright; it closed the fifteen
 `lzs_container` tails, the `pack` tail and the `bse_bank` tail by the same
-measurement. A mapped overlay keeps the sibling comparison above, because its
-own-content end is itself a measurement the cut feeds back into - but where no
-mapped sibling reproduces its tail, the same prediction is asked of its last
-sector (`buffer_suffix_start`, at least `0x40` bytes, word-aligned), which is
-how PROT `0898`'s last 1604 bytes (from file `0x281BC`, four bytes below the
-slot-B base `0x801F69D8`) and PROT `0895`'s last 344 are found to be PROT
-`0894`'s bytes - a donor the overlay-only comparison cannot see.
+measurement. A mapped overlay is cut by the same rule both instruments share
+([`inherited_tail::tails_in`](../../crates/asset/src/inherited_tail.rs), the
+Python `tail_cuts` in `disc-coverage.py`): the sibling comparison above, then
+the buffer suffix (`buffer_suffix_start`, at least `0x40` bytes) wherever it
+cuts lower or no sibling cuts at all. That is how PROT `0898`'s last 1605 bytes
+(from file `0x281BB`, just below the slot-B base `0x801F69D8`) and PROT
+`0895`'s last 344 are found to be PROT `0894`'s bytes - a donor the
+overlay-only comparison cannot see. The suffix search is not confined to the
+last sector: PROT `0976`'s tail starts `0x98C` bytes below its end and is PROT
+`0970`'s code at the same offsets, so the packer's extent for an overlay can
+exceed its content by more than a sector.
 
-The same prediction reproduces the sibling comparison's cut offset for offset
-on every mapped overlay but one, and differs from it only in **naming**: the
-comparison names the image that first wrote the bytes, the buffer the image it
-last held them from. The one offset that differs is PROT `0901`
-(`world_map_render`): the buffer puts its tail at `0x252A` with PROT `0900` as
-donor, the comparison at `0x26B0`, because `0901`'s only frame-matched function
-(`0x2550..0x2608`) sits inside that run, identical to `0900`'s at the same
-offset, and the own-content gate reads it as `0901`'s. Two render modules at one
-base can share a linked function at one offset, so the bytes alone do not
-settle which reading is right, and the comparison's cut stands.
+The buffer reproduces the sibling comparison's cut offset for offset on 82 of
+its 83 cuts, and differs from it only in **naming**: the comparison names the
+image that first wrote the bytes, the buffer the image it last held them from.
+Where both cut at one offset the sibling's donor is kept.
+
+#### PROT 0901: the consumer settles it
+
+The one offset that differs is PROT `0901` (`world_map_render`): the buffer
+puts its tail at `0x252A` with PROT `0900` as donor, the comparison at
+`0x26B0` (donor `0899`), because `0900` is an equal-extent sibling and the
+own-content gate declines it - `0901`'s one frame-matched function
+(`0x2550..0x2608`) sits inside the disputed run, identical to `0900`'s at the
+same offset. The bytes around the boundary settle it, not the gate:
+
+- `0901`'s own code ends with `jr ra` at file `0x24DC` and a data word at
+  `0x24E4`, then zero words to `0x2528`.
+- The run from `0x252C` opens **mid-routine**: `sra v0,a1,0xc; sh v0,0x26(v1);
+  lw ra,0x20(sp) ... jr ra; addiu sp,sp,0x28` - an epilogue with no prologue
+  in `0901`. In `0900` the same bytes close the routine at `0x801F8E6C`
+  (prologue at file `0x2494`), whose `beqz v1` at `0x24D4` targets the
+  epilogue's `lw ra` at `0x801F8F0C`.
+- An address-reference sweep over `0x801F8F00..0x801F9090`
+  (`find-address-word-refs.py --prot`) finds `0900` code forming addresses in
+  the run from well below it (the `beqz` above; `lui`/`addiu` pairs at file
+  `0xF64`, `0x1638`, `0x1F30`, `0x23C8`), and **no** `0901` instruction below
+  the run forming any of them - `0901`'s only hits are branches inside the run
+  itself.
+
+So the run is `0900`'s bytes in the buffer, and the cut is the buffer's. The
+routine at `0x801F8F28` is `0900`'s alone; the dump-extent attribution now
+reads it `unique` to `0900` rather than `identical` to both.
 
 ### The residue run **count** was capped, and read as a measurement
 

@@ -300,11 +300,32 @@ the forever-`WAIT` fallback and the stop at eight zero bytes
 ([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#the-chain-stops-at-zero-padding)).
 Before them the record chain walked an image's zero padding as a record and on
 into its donor, which kept PROT 0944's cut 1412 bytes too high on the Rust side.
-The rule has an independent check that needs no own-content measurement at all:
-the packer wrote every entry from one buffer in TOC order, so the byte at offset
-`k` of a tail is the byte of the nearest earlier entry reaching `k`. That
-prediction reproduces this gate's cut offset for offset on every mapped image
-but PROT 0901 ([`byte-accounting.md`](byte-accounting.md#a-bundles-last-sector-is-the-packers-buffer)).
+#### The packer-buffer leg
+
+The sibling comparison has a second leg that needs no own-content measurement
+at all: the packer wrote every entry from one buffer in TOC order, so the byte
+at offset `k` of a tail is the byte of the **nearest earlier entry reaching
+`k`** - overlay or not. `inherited_tail.tail_cuts` runs the sibling fixpoint and
+then takes that prediction's suffix wherever it cuts lower or the sibling cuts
+nothing; the byte account (`legaia_asset::inherited_tail::tails_in`), this gate
+and the [attribution sweep](#byte-level-attribution) all use it, and
+`crates/asset/tests/inherited_tail_real.rs` holds the Rust and Python sides to
+each other cut for cut.
+
+The prediction reproduces 82 of the sibling rule's 83 cuts offset for offset,
+and changes three images:
+
+- PROT 0898 and PROT 0895 end in PROT 0894's bytes, which no overlay
+  comparison can see because 0894 is not an overlay.
+- PROT 0901's cut moves from `0x26B0` to `0x252A`, donor PROT 0900: the run
+  opens mid-routine on 0900's epilogue, and no 0901 instruction below it forms
+  an address inside it
+  ([`byte-accounting.md`](byte-accounting.md#prot-0901-the-consumer-settles-it)).
+
+Under the combined rule 85 of the 87 mapped images end in a tail, 96,986 bytes
+in all; the sibling rule alone is the 83 and 94,647 above. No row's coverage
+figure moves - every added byte was already classed data - so the baseline is
+unchanged.
 
 What it moves, and why the moves go both ways: the tail is subtracted from the
 denominator, which raises a row, while an extent that used to be credited to

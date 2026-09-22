@@ -3199,12 +3199,10 @@ fn claim_inherited_tail(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
         return;
     };
     let tails = crate::inherited_tail::tails_cached(dir);
+    // The map carries both legs of the rule - sibling comparison and the
+    // packer's buffer - so a tail whose donor is not an overlay (PROT 0898's
+    // and 0895's are PROT 0894's bytes) is in it too.
     let Some(t) = tails.get(&idx) else {
-        // No mapped sibling reproduces the tail - but the donor need not be an
-        // overlay at all. The packer's one buffer predicts the slack from
-        // whichever entry held those offsets last; PROT 0898's last sector
-        // above the slot-B base and PROT 0895's are PROT 0894's bytes.
-        claim_buffer_suffix(buf, sink, dir, idx);
         return;
     };
     // A nested pass (a decoded LZS payload) carries the outer entry's index but
@@ -3217,10 +3215,17 @@ fn claim_inherited_tail(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
         t.start,
         buf.len(),
         OWNER_INHERITED_TAIL,
-        format!(
-            "PROT {:04} ({})'s bytes at the same file offset",
-            t.donor_prot_index, t.donor_label
-        ),
+        if t.donor_label.is_empty() {
+            format!(
+                "PROT {:04}'s bytes at the same file offset (packer buffer)",
+                t.donor_prot_index
+            )
+        } else {
+            format!(
+                "PROT {:04} ({})'s bytes at the same file offset",
+                t.donor_prot_index, t.donor_label
+            )
+        },
     );
 }
 
@@ -3257,27 +3262,6 @@ fn claim_buffer_slack(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
         return;
     }
     let Some(pieces) = crate::inherited_tail::buffer_run(dir, idx, buf, end) else {
-        return;
-    };
-    for p in pieces {
-        let detail = match p.donor {
-            Some(d) => format!("PROT {d:04}'s bytes at the same file offset (packer buffer)"),
-            None => "zero - no earlier entry reached this offset (packer buffer)".to_string(),
-        };
-        sink.claim(p.start, p.end, OWNER_INHERITED_TAIL, detail);
-    }
-}
-
-/// A mapped overlay's last-sector slack when its donor is not a mapped
-/// overlay: the suffix [`crate::inherited_tail::buffer_suffix_start`] finds,
-/// word-aligned up (the image's own content is word-granular, so a byte or
-/// three of coincidental agreement below the true end is not a tail).
-fn claim_buffer_suffix(buf: &[u8], sink: &mut Sink, dir: &std::path::Path, idx: u32) {
-    let Some(start) = crate::inherited_tail::buffer_suffix_start(dir, idx, buf) else {
-        return;
-    };
-    let start = (start + 3) & !3;
-    let Some(pieces) = crate::inherited_tail::buffer_run(dir, idx, buf, start) else {
         return;
     };
     for p in pieces {

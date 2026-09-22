@@ -25,13 +25,20 @@
 //! order, so the residue at file offset `k` is the byte the **nearest earlier
 //! entry whose extent reaches `k`** holds there ([`buffer_run`]). That is a
 //! prediction with no free parameter, and it reproduces every overlay cut the
-//! sibling comparison below makes, offset for offset; where the two name
-//! different donors, the comparison has named the image that first wrote the
-//! bytes and the prediction the one the buffer last held them from. The
-//! sibling comparison stays the overlays' cut because an overlay's own-content
-//! end is itself a measurement the cut feeds back into; every other entry's
-//! parser states its content end outright, and the byte account tests the
-//! slack above it against [`buffer_run`] directly.
+//! sibling comparison below makes, offset for offset, but one; where the two
+//! name different donors, the comparison has named the image that first wrote
+//! the bytes and the prediction the one the buffer last held them from.
+//!
+//! [`tails_in`] is both legs: the sibling fixpoint, then the buffer suffix
+//! ([`buffer_suffix_start`]) wherever it cuts lower or the sibling cuts
+//! nothing. That adds PROT 0898 and PROT 0895 (donor PROT 0894, not an
+//! overlay) and moves PROT 0901's cut from `0x26B0` to `0x252A` - where the
+//! bytes open mid-routine on PROT 0900's epilogue, a routine 0901's own code
+//! never branches or jumps into. `scripts/ghidra-analysis/inherited_tail.py`'s
+//! `tail_cuts` is the same rule for `disc-coverage.py` and the dump-extent
+//! attribution. Every other entry's parser states its content end outright,
+//! and the byte account tests the slack above it against [`buffer_run`]
+//! directly.
 //!
 //! ## Why the byte account needs it
 //!
@@ -222,7 +229,23 @@ pub fn tails_in(prot_dir: &Path) -> BTreeMap<u32, Tail> {
         .iter()
         .map(|i| (i.prot_index, i.data.len()))
         .collect();
-    let (cuts, _rounds) = tail_starts_fixpoint(&images, MIN_TAIL_BYTES);
+    let (mut cuts, _rounds) = tail_starts_fixpoint(&images, MIN_TAIL_BYTES);
+    // The packer-buffer leg: the buffer is one buffer for all of PROT.DAT in
+    // TOC order, so it also cuts where no sibling can (PROT 0898 / 0895, whose
+    // donor 0894 is not an overlay) and where the sibling's own-content gate
+    // stops short (PROT 0901, whose run opens mid-routine on PROT 0900's
+    // epilogue at 0x801F8F04). It wins only where it cuts lower; on an equal
+    // offset the sibling's donor is kept - it names the image that first wrote
+    // the bytes, the buffer the one it last held them from. Same rule as
+    // `inherited_tail.tail_cuts` on the Python side.
+    for img in &images {
+        let Some((start, donor)) = buffer_suffix_start(prot_dir, img.prot_index, &img.data) else {
+            continue;
+        };
+        if cuts.get(&img.prot_index).is_none_or(|c| start < c.0) {
+            cuts.insert(img.prot_index, (start, donor));
+        }
+    }
     cuts.into_iter()
         .map(|(idx, (start, donor))| {
             (
@@ -336,24 +359,34 @@ pub fn buffer_run(prot_dir: &Path, idx: u32, buf: &[u8], start: usize) -> Option
     (predicted == buf[start..]).then_some(pieces)
 }
 
-/// Lowest offset from which [`buffer_run`] reproduces `buf` through its end,
-/// searched inside the last sector only, or `None` when fewer than
-/// [`MIN_TAIL_BYTES`] match.
+/// Lowest offset from which the packer-buffer prediction reproduces `buf`
+/// through its end, and the entry the buffer held at that offset - or `None`
+/// when fewer than [`MIN_TAIL_BYTES`] match, or the run opens on buffer no
+/// earlier entry ever reached (zeros).
 ///
 /// This is the form for an entry whose own-content end no parser states - a
-/// code image whose data segment runs past its last dumped function. The run is
-/// a suffix match, so a coincidental agreement just below the true end (a few
-/// zero bytes) can move the start down by that much; the caller rounds to its
-/// own alignment if it has one.
-pub fn buffer_suffix_start(prot_dir: &Path, idx: u32, buf: &[u8]) -> Option<usize> {
-    let lo = buf.len().saturating_sub(SECTOR_BYTES - 1);
-    let (_, predicted) = predict(prot_dir, idx, buf.len(), lo)?;
-    let own = &buf[lo..];
-    let mut i = own.len();
-    while i > 0 && own[i - 1] == predicted[i - 1] {
+/// code image whose data segment runs past its last dumped function. The
+/// search is **not** confined to the last sector: PROT 0976's run starts
+/// `0x98C` bytes below its end and is PROT 0970's code at the same file
+/// offsets, so the packer's extent for an overlay can exceed its content by
+/// more than a sector, and a sector bound would only hide such a run. The run
+/// is a suffix match, so a coincidental agreement just below the true end (a
+/// zero byte or two) moves the start down by that much - exactly as the
+/// sibling comparison's does, which is what keeps the two cut for cut.
+pub fn buffer_suffix_start(prot_dir: &Path, idx: u32, buf: &[u8]) -> Option<(usize, u32)> {
+    let (pieces, predicted) = predict(prot_dir, idx, buf.len(), 0)?;
+    let mut i = buf.len();
+    while i > 0 && buf[i - 1] == predicted[i - 1] {
         i -= 1;
     }
-    (own.len() - i >= MIN_TAIL_BYTES).then_some(lo + i)
+    if buf.len() - i < MIN_TAIL_BYTES {
+        return None;
+    }
+    pieces
+        .iter()
+        .find(|p| p.start <= i && i < p.end)
+        .and_then(|p| p.donor)
+        .map(|d| (i, d))
 }
 
 /// The buffer's bytes at `[start, len)` just before entry `idx` (of length

@@ -889,7 +889,8 @@ def overlay_reports(extracted, extents, attrib=None):
         if not candidates:
             continue
         with open(candidates[0], "rb") as fh:
-            tail_inputs.append((label, base, fh.read()[:span]))
+            tail_inputs.append((row.get("prot_index"), base, fh.read()[:span]))
+    labels_by_index = {row.get("prot_index"): row.get("label") for row in rows}
     # An equal-extent sibling can be the donor too - `content_bytes` is the
     # sector extent, not the module's content - but only where the bytes say
     # which of the two owns the shared suffix. `own_ends` is that measurement:
@@ -899,9 +900,17 @@ def overlay_reports(extracted, extents, attrib=None):
     # the cut is what makes that walk stop at this module's own content, so the
     # first estimate overshoots on the images whose record chain runs into the
     # residue. `tail_starts_fixpoint` re-measures against each round's cut.
-    tails = inherited_tail.tail_starts_fixpoint(
-        tail_inputs,
-        lambda _label, base, data: slot_b_band.content_end(data, base))
+    # Then the packer-buffer leg (`inherited_tail.tail_cuts`): the buffer is
+    # one buffer for the whole of PROT.DAT in TOC order, so it also cuts the
+    # images whose donor is not an overlay (PROT 0898 / 0895, donor 0894) and
+    # the one the sibling gate stops short on (PROT 0901). The byte account
+    # applies the same rule (`legaia_asset::inherited_tail::tails_in`).
+    by_index = inherited_tail.tail_cuts(
+        [t for t in tail_inputs if t[0] is not None],
+        lambda _key, base, data: slot_b_band.content_end(data, base),
+        prot_dir=os.path.join(extracted, "PROT"))
+    tails = {labels_by_index[k]: (off, labels_by_index.get(d, "prot_%04d" % d))
+             for k, (off, d) in by_index.items()}
 
     spans = []
     for row in rows:

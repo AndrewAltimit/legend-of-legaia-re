@@ -84,7 +84,8 @@ fn every_mapped_overlays_entry_file_is_its_as_loaded_image() {
     assert!(checked > 0, "no mapped overlay entries found");
 }
 
-/// Cut for cut against `scripts/ghidra-analysis/inherited_tail.py`.
+/// Cut for cut against `scripts/ghidra-analysis/inherited_tail.py`'s
+/// `tail_cuts` - both legs, sibling comparison and packer buffer.
 #[test]
 fn rust_and_python_tails_agree() {
     let Some(dir) = prot_dir() else { return };
@@ -115,8 +116,9 @@ for row in rows:
     if not hits:
         continue
     imgs.append((row["prot_index"], row["base_va"], open(hits[0], "rb").read()))
-cuts = inherited_tail.tail_starts_fixpoint(
-    imgs, lambda _k, base, data: slot_b_band.content_end(data, base))
+cuts = inherited_tail.tail_cuts(
+    imgs, lambda _k, base, data: slot_b_band.content_end(data, base),
+    prot_dir={dir:?})
 print(json.dumps({{str(k): [v[0], v[1]] for k, v in cuts.items()}}))
 "#,
         script_dir = script_dir.to_string_lossy(),
@@ -171,6 +173,20 @@ print(json.dumps({{str(k): [v[0], v[1]] for k, v in cuts.items()}}))
     );
     let t944 = rust.get(&944).expect("PROT 0944 has a tail");
     assert_eq!((t944.start, t944.donor_prot_index), (0x199C, 942));
+
+    // The packer-buffer leg. 0898 and 0895 have no overlay donor - the buffer
+    // held PROT 0894 there - and 0901's run opens mid-routine on PROT 0900's
+    // epilogue, below where the sibling gate (which declines 0900) would cut.
+    for (idx, start, donor) in [(898, 0x281BB, 894), (895, 0x256A8, 894), (901, 0x252A, 900)] {
+        let t = rust
+            .get(&idx)
+            .unwrap_or_else(|| panic!("PROT {idx} has a tail"));
+        assert_eq!(
+            (t.start, t.donor_prot_index),
+            (start, donor),
+            "PROT {idx}'s packer-buffer cut"
+        );
+    }
 }
 
 /// `content_bytes = 0x...` for one row of the map TOML.
