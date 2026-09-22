@@ -50,13 +50,21 @@ impl World {
     ///
     /// This loop is the engine's form of the retail actor-list iterator
     /// `FUN_8002519C` - the walker `FUN_80016444` runs over each of the
-    /// five `_DAT_8007C34C..0x36C` list heads: per node it either `jalr`s
-    /// the node's own tick fn (`node[+0x0C]`) or, for standard actors whose
-    /// fn is `FUN_80021DF4`, runs the inline physics tick, with flag bit
-    /// `0x200` as the "already ticked this frame" dedupe. The engine keeps
-    /// one pool with an `active` flag instead of five lists, and the
-    /// special-fn nodes are the dedicated ticks `World::tick` sequences
-    /// around this loop, so the dedupe bit has no counterpart. Node layout
+    /// five `_DAT_8007C34C..0x36C` list heads. Per node it first snapshots
+    /// the previous position (`+0x14` -> `+0x1C`, `+0x18` -> `+0x20`,
+    /// `0x800251D4..0x800251F0`); a live node (`+0x10 & 8` clear) then gets
+    /// `jalr node[+0x0C]` (`0x800252B4`) - for a standard actor that is
+    /// `FUN_80021DF4`, reached through the same pointer as every other
+    /// handler. A retired node (`& 8`) instead gets a one-time teardown
+    /// guarded by bit `0x02000000` (not `0x200`): `FUN_80024DFC`,
+    /// `FUN_800204A4`, and - when its handler is `FUN_80021DF4` - the frees of
+    /// `+0xA8` / `+0x4C` and `FUN_800250D4` (`0x800251F4..0x80025294`). An
+    /// earlier version of this doc described an inline physics tick with a
+    /// `0x200` "ticked this frame" dedupe, which is not these bytes. The
+    /// engine keeps one pool with an `active` flag instead of five lists, and
+    /// the special-fn nodes are the dedicated ticks `World::tick` sequences
+    /// around this loop. Neither the previous-position snapshot nor the
+    /// retire teardown is modelled here. Node layout
     /// and observed tick fns: `docs/subsystems/world-map.md`
     /// ("per-frame render-pass iterator").
     ///

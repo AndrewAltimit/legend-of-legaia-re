@@ -720,9 +720,15 @@ impl World {
         std::mem::take(&mut self.audio.pending_sound_release)
     }
 
-    /// Run the one-shot sound detach (`FUN_8002689C`). Returns `true` only on
+    /// Run the one-shot sound setup `FUN_8002689C`. Returns `true` only on
     /// the first call - retail's `gp+0x804` latch gates every later one out,
     /// which is why the mode-INIT chain can call it freely.
+    ///
+    /// Nothing is detached: behind the latch retail makes two volume calls,
+    /// the cmd-6 SPU command `FUN_80065440(0x32, 0x32)` and the master
+    /// volume `SsSetMVol` `FUN_80062AA0(0x7F, 0x7F)`. This port models the
+    /// latch only; the two volume writes are left to the audio host's own
+    /// defaults. (The function keeps the name an earlier reading gave it.)
     ///
     /// PORT: FUN_8002689c
     pub fn detach_sound(&mut self) -> bool {

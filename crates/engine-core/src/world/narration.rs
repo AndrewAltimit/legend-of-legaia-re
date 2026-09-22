@@ -399,9 +399,12 @@ impl World {
     /// op-`0x44` spawn ([`Self::install_spawned_record`]) and the walk-on
     /// tile trigger.
     // PORT: FUN_8003BDE0 (record resolve + name/C0 skip + C1-any/C2-all gate
-    // eval + context install; the retail ctx[+0x50] seat-position seed from
-    // the header +0x22/+0x24 coords is carried by the walk-on trigger path's
-    // spawn tile instead of a context field)
+    // eval + context install). Retail also stores ctx[+0x50] =
+    // hdr[+0x22] + hdr[+0x24] + record index (0x8003C050..0x8003C094): the
+    // MAN header's partition counts, so +0x50 is the record's **global**
+    // index across partitions - not a seat-position seed from coords, as
+    // this note used to say. The port keeps the record index on the
+    // timeline instead of a context field.
     pub fn install_gated_p2_record(
         &mut self,
         man_file: &legaia_asset::man_section::ManFile,
