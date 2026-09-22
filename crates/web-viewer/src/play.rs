@@ -1321,13 +1321,41 @@ impl LegaiaRuntime {
             .collect()
     }
 
+    /// Actor slots carrying a live morph-weight blend (the same `0x4C 0xD8`
+    /// allocator, seated by `World::spawn_morph_weight_actor`). The page
+    /// re-stages each one through [`Self::play_dynamic_actor_mesh`] every
+    /// frame, exactly as the native window re-uploads it in its redraw pass:
+    /// retail re-blends inside the handler call, and the envelope is a
+    /// ping-pong ramp that moves on every frame, so no upload stays current.
+    pub fn play_morph_weight_slots(&self) -> Vec<u32> {
+        self.scene_host
+            .as_ref()
+            .map(|h| {
+                h.world
+                    .morph_weight_actor_weights()
+                    .into_iter()
+                    .map(|(slot, _)| u32::from(slot))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Stage actor `slot`'s spawned mesh (its `tmd_ref` from the global
     /// pool) for the `play_dynamic_mesh_*` reads. `false` when the slot
     /// carries no drawable mesh.
+    ///
+    /// A morph-weight actor stages its **blended** mesh instead - through
+    /// `World::morph_weight_posed_tmd`, the one engine-side kernel the
+    /// native window poses from too, so the blend itself lives on neither
+    /// host.
     pub fn play_dynamic_actor_mesh(&mut self, slot: u32) -> bool {
         let Ok(slot) = u8::try_from(slot) else {
             return false;
         };
+        let posed = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.morph_weight_posed_tmd(slot as usize));
         let Some(gtmd) = self
             .scene_host
             .as_ref()
@@ -1336,8 +1364,10 @@ impl LegaiaRuntime {
         else {
             return false;
         };
-        let (mesh, object_ids, shading) =
-            legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&gtmd.tmd, &gtmd.raw);
+        let (mesh, object_ids, shading) = match posed.as_ref() {
+            Some((tmd, raw, _)) => legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(tmd, raw),
+            None => legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&gtmd.tmd, &gtmd.raw),
+        };
         if mesh.indices.is_empty() {
             return false;
         }

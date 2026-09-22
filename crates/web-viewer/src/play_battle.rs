@@ -1946,6 +1946,17 @@ impl LegaiaRuntime {
         // `N HIT` / `TOTAL` counter cluster - off the resident effect atlas,
         // through the same `battle_numerals` builder the native window emits.
         prims.extend(self.battle_value_readout_prims());
+        // The Arts announcement banner (`<word> ARTS!!`) off the same page,
+        // through the same `battle_numerals` builder the native window emits
+        // it with. Engine state end to end - this host only appends.
+        prims.extend(legaia_engine_ui::battle_numerals::arts_banner_prims(
+            &self
+                .scene_host
+                .as_ref()
+                .map(|h| h.world.battle_arts_banner_quads())
+                .unwrap_or_default(),
+            legaia_engine_ui::battle_numerals::VALUE_READOUT_OT,
+        ));
         // The dance count-in banner's retail sprite (`crate::play_dance_art`),
         // off the dance hall's own HUD page while a dance owns the frame.
         prims.extend(self.dance_countin_prims());

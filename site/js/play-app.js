@@ -2514,8 +2514,17 @@ void main() {
        * drains the same queue in its redraw pass. */
       if (typeof rt.play_take_dynamic_mesh_slots === 'function') {
         const fresh = rt.play_take_dynamic_mesh_slots();
-        for (let i = 0; i < fresh.length; i++) {
-          const slot = fresh[i];
+        /* Morph-weight actors (the same opcode) re-stage every frame: the
+         * engine's envelope ramps on every tick, so their blended mesh is
+         * never the one already uploaded. The native window re-uploads the
+         * same slots in its redraw pass. */
+        let restage = fresh;
+        if (typeof rt.play_morph_weight_slots === 'function') {
+          const morph = rt.play_morph_weight_slots();
+          if (morph.length) restage = Array.from(new Set([...fresh, ...morph]));
+        }
+        for (let i = 0; i < restage.length; i++) {
+          const slot = restage[i];
           try {
             if (!rt.play_dynamic_actor_mesh(slot)) continue;
             const pos = rt.play_dynamic_mesh_positions();

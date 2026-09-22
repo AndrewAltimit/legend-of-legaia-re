@@ -1017,6 +1017,54 @@ impl PlayWindowApp {
                     Err(e) => log::warn!("spawn mesh upload: {e:#}"),
                 }
             }
+            // Morph-weight actors (the same `0x4C 0xD8` allocator, seated by
+            // `World::spawn_morph_weight_actor`): re-pose and re-upload each
+            // one every frame. Retail re-blends in the handler call itself
+            // (`FUN_8002174C` restores the `+0x90` rest pose and re-applies
+            // the deltas at the live `+0x6E` weight before every draw), and
+            // the envelope is a ping-pong ramp that moves on every frame, so
+            // there is no frame where a cached upload would still be current.
+            // The blend is the engine's - `World::morph_weight_posed_tmd` is
+            // the one kernel, shared with the browser play page.
+            for (slot, _weight) in self.session.host.world.morph_weight_actor_weights() {
+                let Some(mesh_idx) = self
+                    .session
+                    .host
+                    .world
+                    .actors
+                    .get(slot as usize)
+                    .and_then(|a| a.tmd_binding)
+                else {
+                    continue;
+                };
+                let Some((posed, raw, _)) = self
+                    .session
+                    .host
+                    .world
+                    .morph_weight_posed_tmd(slot as usize)
+                else {
+                    continue;
+                };
+                let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&posed, &raw);
+                if vmesh.indices.is_empty() {
+                    continue;
+                }
+                match r.upload_vram_mesh(
+                    &vmesh.positions,
+                    &vmesh.uvs,
+                    &vmesh.cba_tsb,
+                    &vmesh.normals,
+                    &vmesh.colors,
+                    &vmesh.indices,
+                ) {
+                    Ok(m) => {
+                        if let Some(entry) = self.meshes.get_mut(mesh_idx) {
+                            *entry = m;
+                        }
+                    }
+                    Err(e) => log::warn!("morph mesh upload: {e:#}"),
+                }
+            }
             // For each active actor with a tmd_binding and a current
             // pose_frame, regenerate and re-upload the posed mesh.
             // posed_overrides[i] replaces meshes[i] when present.
@@ -2447,6 +2495,15 @@ impl PlayWindowApp {
             // Only the seat is per-host: it needs the struck actor's projected
             // screen position, which only a host holding the camera has.
             screen_prims.extend(self.battle_value_readout_prims(fx_cam));
+            // The Arts announcement banner (`<word> ARTS!!`), off the same
+            // page through the same shared builder the browser play page
+            // emits it with. The whole banner - stage machine, slide clock,
+            // ghost-trail layers, quad geometry - is engine state stepped in
+            // `World::tick`, so this host contributes nothing but the append.
+            screen_prims.extend(legaia_engine_render::battle_numerals::arts_banner_prims(
+                &self.session.host.world.battle_arts_banner_quads(),
+                legaia_engine_render::battle_numerals::VALUE_READOUT_OT,
+            ));
             // The dance count-in banner, as retail's own 160x32 sprite off the
             // hall's HUD page rather than placeholder text. Same shared
             // builder the browser play page emits through
