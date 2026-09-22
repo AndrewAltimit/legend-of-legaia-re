@@ -199,7 +199,11 @@ What the rows pin, field by field:
   `s5 = ctx + 0x11` from `0x801E2994`), the delay slot of the arm at
   `0x801E3A70` that moves an actor's strike loop (`0x1E`) on to its recovery
   wait (`0x1F`). It fires at the end of **every** strike chain, the
-  monster's included (twice in each run above before Vahn's kill). So each
+  monster's included (twice in each run above before Vahn's kill). In a
+  second retail state (`arts_input_start_gala_nail`, two Gobu Gobus at HP
+  `1`, capture `steal_multi`) Gala's kill sets the latch at vsync 1037 and
+  the same store clears it - old value `1`, new `0` - at vsync 2363, when
+  the next strike chain ends. So each
   attacking action gets one roll - on the first monster it fells - not each
   battle. A byte scan for a store to `+0x27` cannot see this writer: the
   displacement in the instruction is `0x16`, off a base register that
