@@ -107,6 +107,7 @@ pub mod monster_catalog;
 pub mod move_buffer_host;
 pub mod move_power;
 pub mod muscle_dome;
+pub mod muscle_ringside;
 pub mod music_labels;
 pub mod name_entry;
 pub mod new_game;

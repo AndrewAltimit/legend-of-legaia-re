@@ -2758,7 +2758,24 @@ impl World {
         // Give the venue its own music back when the arena's battle theme
         // displaced it (no-op when it did not).
         self.restore_minigame_bgm();
-        self.minigames.muscle_dome.take()
+        let session = self.minigames.muscle_dome.take();
+        // The battle end's background read: retail streams one of the two
+        // ringside stills into VRAM here, picked off the lead's live HP
+        // against the record's maximum (`+0x106` vs `+0x11C`, not the live
+        // `+0x104`). The fighter's live HP is the session's; the maximum is
+        // the lead record's.
+        if let Some(s) = session.as_ref() {
+            let hp_max = self
+                .party
+                .roster
+                .members
+                .first()
+                .map_or(0, |r| r.record_stats().hp_max);
+            let hp_cur = s.hp(0).clamp(0, i32::from(u16::MAX)) as u16;
+            self.minigames.muscle_ringside_still =
+                Some(crate::muscle_ringside::still_prot_index(hp_cur, hp_max));
+        }
+        session
     }
 
     /// Report the finished leg to the open contest and step the between-leg

@@ -464,11 +464,14 @@ Both stills are finished pre-rendered scenes of characters at the ring's
 rope-and-mesh fence, and the `int2` variant differs by their reaction, which is
 consistent with the HP test that selects it. **Confirmed** (disassembly) for
 the loader, the index arithmetic, the variant selector and the upload geometry.
-What the panel is used for on screen is still **Inferred**, and capture has
-now ruled out the obvious candidate: the between-match `INTERVAL` / `ROUND`
-screens show a ringside scene that looks exactly like the stills, but they are
-a **live `koin1` render**, not the rect - see
-[what a live teardown shows](#what-a-live-teardown-shows).
+What the panel is used for on screen is **Confirmed** too (disassembly +
+capture): it is the backdrop of a **re-entered** hub - the `INTERVAL` +
+tally screen and the `ROUND` card that follow a finished leg - drawn by the
+hub's `FUN_801D00F8` at the backdrop level `*(0x801D1A7C)`. See
+[the INTERVAL screen](#the-interval-screen-draws-the-still-on-a-re-entered-hub)
+and [`ringside-still.md`](../formats/ringside-still.md#on-a-natural-re-entry);
+an earlier reading of the capture below took those screens for a live
+`koin1` render alone.
 
 #### What arms the load
 
@@ -613,11 +616,30 @@ table and `2..=18` on the field-restore one, which is the walk a capture sees
 reaching `18`. Neither bound is the other's: "a 12-arm phase machine" is the
 panel-still half named as the whole.
 
-#### The `INTERVAL` screen is a live render, not the still
+<a id="the-interval-screen-is-a-live-render-not-the-still"></a>
 
-The `INTERVAL` scoreboard and the `ROUND 2` card sit over a ringside scene that
-matches the stills' decoded content closely enough to look like the answer. It
-is not. Walking the frame's **real ordering table** - `mednafen-state
+#### The `INTERVAL` screen draws the still on a re-entered hub
+
+An earlier reading of this section held that the `INTERVAL` screen is a live
+`koin1` render and that nothing samples `(384, 0)` after the first battle
+end. The checkpoints that sweep wrote contradict its second half: at the
+first `0x19` checkpoint of the **second** and **third** hub visits (vsyncs
+4824 and 7867 of the same `autorun_muscle_hud_capture.lua` run), the
+re-entry latch `_DAT_801D1AE0` reads `1`, the hub arm `*(0x801D1A78)` reads
+`0x0A` and the backdrop level `*(0x801D1A7C)` reads `8` - two ticks into
+arm `0x0A`'s `+= 4` climb, in lockstep with the heading level
+`*(0x801D1A84)`, also `8` - and the frame's primitive pool holds both
+`POLY_FT4` still packets, tpage `0x106` at screen `(0,-20)-(192,220)` and
+`0x109` at `(192,-20)-(320,220)`, code word `0x2C080808`. So the `INTERVAL`
+screen of a re-entered hub **is** drawn over the still, exactly as
+`FUN_801CF870`'s arms read; what the sweep below measured is the live scene
+geometry in the same frames, and whether its ordering-table walk reached the
+still's far-end slot (`OT + 0xFA0`) is not re-derived here. The envelope the
+still is drawn at, arm by arm, is on
+[`ringside-still.md`](../formats/ringside-still.md#on-a-natural-re-entry).
+
+The rest of this section is the original sweep, kept for its method notes.
+Walking the frame's **real ordering table** - `mednafen-state
 display-list` over the main-RAM dump each checkpoint of
 `autorun_muscle_hud_capture.lua` writes - decodes 1822 packets of live `koin1`
 geometry (971 `POLY_GT4`, 406 `POLY_GT3`) across 22 texture families, and none

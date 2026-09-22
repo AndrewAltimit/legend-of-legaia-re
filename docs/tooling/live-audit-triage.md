@@ -2187,3 +2187,28 @@ per-action camera snap does not have; the pool flag-word scrub needs an
 `actor+0x8` word only it would ever read. Adding either structure for one
 caller is a wire that draws nothing, which is the failure mode the
 `REPLACED-BY` rule exists to keep out of the denominator.
+
+## The ringside still: one loader, three verdicts
+
+`801f6b24` x5 (`panel_backread_loader`) was one disclosure over three jobs,
+and each job has its own answer.
+
+| anchor | job | verdict |
+|---|---|---|
+| `backread_texture_variant` | which still (`sltu` over the lead's HP pair) | live - `World::exit_muscle_dome` runs it at the dome leg's end through `muscle_ringside::still_prot_index` |
+| `backread_slice_rect` | the four upload rects | live - `ringside_backdrop::still_sheet_rgba` lays the bands down at them, and both play hosts build the still's sheet through it |
+| `BackreadStep` / `for_phase` / `backread_tick` | the frame-sliced read schedule | `REPLACE` - the scene host's synchronous whole-entry read; no sector read is in flight to poll |
+
+The disclosure had named two blockers: the sequencer above the loader
+(`FUN_80025358`, unported) and a hub pass that samples the rect. The first was
+only a blocker for the *schedule*: the pick and the rects do not need the
+sequencer, because the port's battle end for a dome leg is a single call and
+the port reads the entry whole. The second was real and is now built - the
+contest hub's backdrop level (`muscle_ringside::HubBackdrop`) and its still
+arm (`ringside_backdrop::ringside_still_quads`, `FUN_801D00F8`), drawn on both
+play hosts.
+
+The capture that settled *when* the arm runs was already on disk: the
+checkpoint RAM of a three-visit dome run holds the still's two packets on the
+second and third visits, at the level arm `0x0A` had reached
+([`ringside-still.md`](../formats/ringside-still.md#on-a-natural-re-entry)).

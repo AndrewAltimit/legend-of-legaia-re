@@ -84,6 +84,13 @@ pub struct MinigameState {
     /// The last Muscle Dome contest's settlement, kept after the contest
     /// itself is gone so a host can put the payout on screen.
     pub muscle_settlement: Option<crate::muscle_dome::ContestSettlement>,
+    /// The **ringside still** the last dome leg left resident in VRAM
+    /// (`(384, 0)`), as an extraction PROT index - `1221` or `1222`, picked
+    /// off the lead's HP at the leg's end by
+    /// [`crate::muscle_ringside::still_prot_index`]. `None` until a leg
+    /// ends. A re-entered hub draws it as its backdrop
+    /// ([`crate::muscle_ringside::HubBackdrop`]).
+    pub muscle_ringside_still: Option<u32>,
     /// The casino coin bank (`_DAT_800845A4`, the GameShark "Infinite
     /// Coins" cell). Read to seed the slot machine's playing balance and
     /// **assigned** its final balance on cash-out (the retail state-100
@@ -212,6 +219,7 @@ impl MinigameState {
             muscle_return_mode: SceneMode::Field,
             muscle_contest: None,
             muscle_settlement: None,
+            muscle_ringside_still: None,
             casino_coins: 0,
             point_card: 0,
             scene_backup: None,

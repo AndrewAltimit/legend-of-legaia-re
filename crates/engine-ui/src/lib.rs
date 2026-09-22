@@ -71,6 +71,7 @@ pub mod gte;
 pub mod minigame_fx;
 pub mod other_game_hud;
 pub mod pause_menu;
+pub mod ringside_backdrop;
 pub mod screen_prim;
 pub mod streak_pass;
 mod text_balloon_box;
