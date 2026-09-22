@@ -609,6 +609,30 @@ CANONICAL_LADDERS = [
     # is driven past its spawn into the pool tick that consumes it, because a
     # seat nothing steps is indistinguishable from a seat that never ran.
     ("w3b_wave_wires_disc", "legaia-engine-core"),
+    # --- lane W6-C ---
+    # Two new ladders and two promotions, each for a wire the union reached
+    # only halfway.
+    #
+    # `w6c_arts_banner_ladder` types a Super Art through the live battle and
+    # reads `World::battle_arts_banner_quads` once per frame, where both hosts
+    # read it. Every battle ladder already stepped the banner tick; none
+    # committed a SpecialStarter, so the quad emitter `flash_quads`
+    # (`801e2650`) had never run. `w6c_morph_page_ladder` enters the three
+    # `4C D8` carriers on the play page and stages the blended mesh through
+    # the page's own export - the spawner was entered, the page draw was not.
+    #
+    # The promotions were green and unlisted, and neither adds an anchor the
+    # union lacked - what each adds is an untagged host draw or a state flip,
+    # which this report cannot key on and the triage page records by name:
+    # `play_minigames_host` drives the four door-warp minigames on the page
+    # (the Baka digit strips are its only driver of `baka_status_draws`), and
+    # `conc_flag_6de_position_latch_disc` walks the player across `conc`'s
+    # `CD F8` box both ways, which makes `sync_field_ctx_player_anchor`
+    # observable as a flip rather than as a call.
+    ("w6c_arts_banner_ladder", "legaia-engine-core"),
+    ("w6c_morph_page_ladder", "legaia-web-viewer"),
+    ("play_minigames_host", "legaia-web-viewer"),
+    ("conc_flag_6de_position_latch_disc", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
