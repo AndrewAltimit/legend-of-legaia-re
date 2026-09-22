@@ -1360,6 +1360,12 @@ impl World {
                 // idle loop for that whole window and un-freeze it on confirm.
                 // REF: FUN_8002519C
                 self.tick_battle_animations();
+                // The Arts announcement banner's slide clock. Retail steps it
+                // from the battle DRAW tick (`FUN_800480D8`); the engine steps
+                // it here so every host advances it, and reads the quads back
+                // at draw time (`World::battle_arts_banner_quads`).
+                // REF: FUN_800480D8
+                self.tick_arts_banner(cadence);
                 // In-battle dialogue box (the tutorial text the engage script
                 // opened across the transition): the box owns the frame -
                 // retail parks the battle under it (the camera holds the

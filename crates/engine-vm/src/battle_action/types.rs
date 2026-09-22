@@ -528,8 +528,11 @@ pub struct BattleActor {
     /// each art the build loop accepted (`0x801EF788`) and
     /// [`SUPER_STARTER_MARK`](crate::battle_action::SUPER_STARTER_MARK) at
     /// each `0x1A` the Super tail-replace wrote (`0x801EFBA8`) - and the
-    /// difference is load-bearing exactly once, at the Attack x2 refill
-    /// (`0x801E3A4C`), which demotes only the former.
+    /// difference is load-bearing in two places, not one: the Attack x2
+    /// refill (`0x801E3A4C`) demotes only the former, and the staged-anim
+    /// commit reads the mark straight out as the **banner position**
+    /// (`0x8004B804`), where `1` is `NEW ARTS!!` and `4` is `SUPER ARTS!!`
+    /// ([`crate::battle_action::flash_ramp`]).
     ///
     /// `None` means no builder ran for this actor's queue (a monster, a
     /// synthetic host); the refill then reconstructs the build-loop marks
@@ -984,6 +987,19 @@ pub struct BattleActionCtx {
     /// whose gate passed). Cleared by [`crate::battle_action::done_cleanup`]
     /// via [`crate::battle_gauge_rearm::rearm_gauge`].
     pub gauge_rearm_latch: u8,
+    /// `[+0x28B]` - the **Arts announcement banner**: `0` idle, `1..=4` a
+    /// live banner, `5..=8` a cancel request. Raised by the staged-animation
+    /// commit's SpecialStarter arm and stepped once per battle frame; see
+    /// [`crate::battle_action::flash_ramp`] for both halves.
+    pub arts_banner_stage: u8,
+    /// `[+0x28C]` - the banner's **slide clock**, `0..=0xF0`. Cleared by
+    /// every raise and by the cancel, walked up by
+    /// [`crate::battle_action::flash_ramp::step_flash_ramp`].
+    pub arts_banner_level: u8,
+    /// `[+0x28D + slot]` - the per-seat flag the Super / Miracle trigger arm
+    /// raises (`FUN_801EED1C` at `0x801EF5A8`), read by the commit's banner
+    /// block as the first of its three picks.
+    pub arts_banner_seat_flags: [u8; 8],
     /// `[+0x249]` - exit gate read at `MagicExit`.
     pub magic_exit_gate: u8,
     /// `[+0x24A]` - item-target byte A (read at `MagicCastBegin` for

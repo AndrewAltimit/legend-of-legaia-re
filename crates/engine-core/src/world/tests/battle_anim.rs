@@ -943,3 +943,101 @@ fn impact_tint_decays_to_neutral_and_clears() {
         ifx::IMPACT_NEUTRAL_STATE + 0x20
     );
 }
+
+/// The same SpecialStarter commit raises the **Arts announcement banner**
+/// (`FUN_8004AD80` `0x8004B754..0x8004BB44`), the per-frame ramp walks its
+/// slide clock, and the shared render read hands both hosts the quad pair.
+///
+/// The three things a wire can each be missing on their own: the raise, the
+/// step, and the emit. Asserted in that order.
+#[test]
+fn special_starter_commit_raises_the_arts_banner_and_the_ramp_emits_quads() {
+    use vm::battle_action::{BANNER_DEFAULT, BANNER_SEAT_FLAG, LEVEL_MAX};
+    let mut world = pose_test_world();
+    world.mode = SceneMode::Battle;
+    let mut bank: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    bank[0xA] = Some(pose_test_clip(0x1A, 60, 0));
+    world.set_actor_battle_art_bank(0, std::sync::Arc::new(bank));
+    assert_eq!(
+        world.battle_ctx.arts_banner_stage, 0,
+        "idle before the commit"
+    );
+    assert!(world.battle_arts_banner_quads().is_empty());
+
+    world.actors[0].battle.queued_anim = 0x1A;
+    world.commit_staged_battle_anim(0);
+    assert_eq!(
+        world.battle_ctx.arts_banner_stage, BANNER_DEFAULT,
+        "with no seat flag and no table pick the commit falls back to banner 2"
+    );
+    assert_eq!(
+        world.battle_ctx.arts_banner_level, 0,
+        "a raise restarts the slide"
+    );
+
+    // Four layers at a zero clock: the three gated trail layers plus the
+    // opaque one, two quads each.
+    let quads = world.battle_arts_banner_quads();
+    assert_eq!(quads.len(), 8, "four layers, a quad pair each");
+    assert!(
+        quads.iter().any(|q| q.code == 0x2C),
+        "the ungated layer is the opaque one"
+    );
+    assert!(
+        quads.iter().any(|q| q.code == 0x2E),
+        "the trail layers are semi-transparent"
+    );
+
+    // The ramp walks the clock (`frame_delta << 3`) and saturates; by then the
+    // trail has retracted to the one opaque pair.
+    world.tick_arts_banner(1);
+    assert_eq!(world.battle_ctx.arts_banner_level, 8);
+    for _ in 0..64 {
+        world.tick_arts_banner(1);
+    }
+    assert_eq!(world.battle_ctx.arts_banner_level, LEVEL_MAX);
+    assert_eq!(
+        world.battle_arts_banner_quads().len(),
+        2,
+        "a landed banner is a single opaque pair"
+    );
+
+    // The queue-builder's own side array is the middle pick, and its two
+    // marks land on their own banner positions: the build loop's `1` is
+    // `NEW ARTS!!`, the Super tail-replace's `4` is `SUPER ARTS!!`.
+    for (mark, banner) in [
+        (vm::battle_action::BUILD_STARTER_MARK, 1u8),
+        (vm::battle_action::SUPER_STARTER_MARK, 4),
+    ] {
+        let mut marks = [0u32; vm::battle_action::ACTION_QUEUE_CAP];
+        marks[0] = mark;
+        world.actors[0].battle.starter_marks = Some(marks);
+        world.actors[0].battle.strike_index = 1;
+        world.actors[0].battle.current_anim = 0;
+        world.actors[0].battle.queued_anim = 0x1A;
+        world.commit_staged_battle_anim_at_boundary(0);
+        assert_eq!(world.battle_ctx.arts_banner_stage, banner);
+    }
+    world.actors[0].battle.starter_marks = None;
+    world.actors[0].battle.strike_index = 0;
+
+    // A seat flag picks banner 3 instead, and the re-commit of the context's
+    // own actor cancels whatever is in flight.
+    world.battle_ctx.arts_banner_seat_flags[0] = 1;
+    world.actors[0].battle.current_anim = 0;
+    world.actors[0].battle.queued_anim = 0x1A;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert_eq!(world.battle_ctx.arts_banner_stage, BANNER_SEAT_FLAG);
+
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.current_anim = 0;
+    world.actors[0].battle.queued_anim = 0x1A;
+    world.commit_staged_battle_anim_at_boundary(0);
+    // The prologue cancel ran first (3 -> 7), then the raise re-seated 3.
+    assert_eq!(world.battle_ctx.arts_banner_stage, BANNER_SEAT_FLAG);
+    // A cancel with no raise behind it retires on the next frame.
+    world.battle_ctx.arts_banner_stage = BANNER_SEAT_FLAG + 4;
+    assert!(!world.tick_arts_banner(1));
+    assert_eq!(world.battle_ctx.arts_banner_stage, 0);
+    assert!(world.battle_arts_banner_quads().is_empty());
+}

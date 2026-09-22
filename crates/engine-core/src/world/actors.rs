@@ -792,6 +792,20 @@ impl World {
             return;
         };
         let q = actor.battle.queued_anim;
+        // The commit prologue's Arts-banner cancel (`0x8004ADBC..0x8004ADE8`,
+        // ahead of every other write in the routine, idle re-commit included):
+        // a banner in flight whose own actor commits again moves into the
+        // `5..=8` retire band and restarts its clock.
+        // REF: FUN_8004AD80
+        if let Some((stage, level)) = vm::battle_action::banner_cancel_on_commit(
+            self.battle_ctx.arts_banner_stage,
+            i as u8,
+            self.battle_ctx.active_actor,
+        ) {
+            self.battle_ctx.arts_banner_stage = stage;
+            self.battle_ctx.arts_banner_level = level;
+        }
+        let actor = &mut self.actors[i];
         if q == actor.battle.current_anim {
             if let Some(p) = actor.battle_animation.as_mut() {
                 p.rewind();
@@ -830,6 +844,34 @@ impl World {
                         a.battle.anim_rate = rl::AnimRate(rl::RATE_FROZEN);
                     }
                     self.actors[i].battle.anim_rate = rl::AnimRate(rl::RATE_QUARTER);
+                    // The same arm raises the Arts announcement banner. Retail
+                    // reaches it only for a party seat, which is the engine's
+                    // `battle_monster_id == None` (`is_party` above), and the
+                    // rate arm has already established both that and the
+                    // staged id. The middle pick is the queue-builder's own
+                    // side array `0x801F6990[ctx[+0x15] - 1]`, which the
+                    // engine models per actor as `starter_marks` - so the
+                    // banner the player sees comes off the very marks the
+                    // build loop and the Super tail-replace left behind.
+                    // REF: FUN_8004AD80 (`0x8004B754..0x8004BB44`)
+                    if is_party {
+                        let seat = self
+                            .battle_ctx
+                            .arts_banner_seat_flags
+                            .get(i)
+                            .copied()
+                            .unwrap_or(0)
+                            != 0;
+                        let b = &self.actors[i].battle;
+                        let pick = usize::from(b.strike_index)
+                            .checked_sub(1)
+                            .and_then(|k| b.starter_marks.and_then(|m| m.get(k).copied()))
+                            .map(|w| w as u8);
+                        let (stage, level) =
+                            vm::battle_action::banner_on_starter_commit(seat, pick);
+                        self.battle_ctx.arts_banner_stage = stage;
+                        self.battle_ctx.arts_banner_level = level;
+                    }
                 }
                 rl::CommitRateEffect::StrikeSlow { rate } => {
                     for a in self.actors.iter_mut() {
@@ -1827,6 +1869,59 @@ impl World {
             Some(record_bytes)
         };
         Some(slot_idx)
+    }
+
+    /// Step the **Arts announcement banner** one battle frame.
+    ///
+    /// PORT: FUN_801E2524 (driver; the kernel is
+    /// [`legaia_engine_vm::battle_action::step_flash_ramp`])
+    ///
+    /// Retail calls the ramp unconditionally from the battle draw tick
+    /// (`FUN_800480D8`, `jal 0x801E2524` at `0x80048140`) and lets the stage
+    /// byte gate it. The engine splits simulation from presentation, so the
+    /// *step* runs here - inside the battle frame tick, where every host
+    /// reaches it - and the quads come off the resulting state at draw time
+    /// ([`Self::battle_arts_banner_quads`]). Returns `true` when the frame
+    /// drew something, which is what a test can assert without a renderer.
+    pub fn tick_arts_banner(&mut self, frame_delta: u8) -> bool {
+        use legaia_engine_vm::battle_action as fr;
+        let frame = fr::step_flash_ramp(
+            self.battle_ctx.arts_banner_stage,
+            self.battle_ctx.arts_banner_level,
+            frame_delta,
+        );
+        if let Some(stage) = frame.stage_out {
+            self.battle_ctx.arts_banner_stage = stage;
+        }
+        if let Some(level) = frame.level_out {
+            self.battle_ctx.arts_banner_level = level;
+        }
+        !frame.layers.is_empty()
+    }
+
+    /// This frame's banner quads, in retail emit order - the shared read both
+    /// hosts build their screen primitives from
+    /// (`legaia_engine_ui::battle_numerals::arts_banner_prims`).
+    ///
+    /// Retail re-reads `ctx[+0x28C]` per layer *inside* the emitter, so a
+    /// layer emitted later in the frame still sees the pre-walk value; the
+    /// step above writes the walked value back, so this read has to recompute
+    /// the layer set from the pre-walk clock rather than reuse the stepped
+    /// one. Empty outside battle and on an idle banner.
+    pub fn battle_arts_banner_quads(&self) -> Vec<legaia_engine_vm::battle_action::FlashQuad> {
+        use legaia_engine_vm::battle_action as fr;
+        if self.mode != SceneMode::Battle {
+            return Vec::new();
+        }
+        let level = self.battle_ctx.arts_banner_level;
+        // `frame_delta = 0`: the layer set for this clock, with no walk.
+        let frame = fr::step_flash_ramp(self.battle_ctx.arts_banner_stage, level, 0);
+        frame
+            .layers
+            .iter()
+            .filter_map(|l| fr::flash_quads(l, level))
+            .flatten()
+            .collect()
     }
 
     /// The field VM's `0x4C 0xD8` allocator, whole: [`Self::spawn_field_actor`]
