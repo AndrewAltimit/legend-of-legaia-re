@@ -1774,7 +1774,9 @@ function. `see ghidra/scripts/funcs/overlay_0897_801da0f0.txt`.
 ### The `overlay_0897_801dbc30` dump is a chimera of two PROT entries
 
 `0x801DBC30` and `0x801DBB8C` are real entries - in **PROT 0898**, where they
-are the party-name panel's cross-out blit and its open half, ported as
+are the command ring's chip cross-out mark and the battle message box's open
+half (the "party-name panel" reading is
+[falsified](../reference/re-do-not-re-walk.md#battle--arts--level-up)), ported as
 `engine-vm::battle_party_panel` ([`functions/battle.md`](../reference/functions/battle.md)).
 What is not real is the *routine the `overlay_0897_*` dumps print at those
 addresses*. Resolved from the bytes, that listing is stitched out of two

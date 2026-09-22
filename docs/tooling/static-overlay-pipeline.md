@@ -337,8 +337,9 @@ and `*DAT_80010390`; see [`prot.md`](../formats/prot.md#overlay-loaders-parallel
 
 ### A slot-B image is based by its own operands, not by `scan`
 
-Slot-B images carry no internal `jal`, so `asset overlay scan` recovers nothing
-for any of them and reports a blank base - which reads as "no base" and is only
+The cast-band images carry no internal `jal`, so `asset overlay scan` recovers
+nothing for any of them and reports a blank base (PROT 0967, at the same base, is
+the exception: it calls its own leaf `FUN_801F7628` from two sites) - which reads as "no base" and is only
 "no votes in the form this sweep counts". Two other forms in the image's own
 operands do decide it, and both are properties of the bytes rather than of the
 load base, which is what makes them evidence.
