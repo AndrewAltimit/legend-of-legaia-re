@@ -465,6 +465,14 @@ naming `coplanar_draw_offsets` is prose, not a wiring, and under-counting
 | packet-colour stream fill | a packet-colour stream may not be filled with white |
 | placement tilt composition | reading `placement_rot_y` requires `rot_x` + `rot_z` |
 | shared value layout -> shared quad emitter | resolving `battle_value_readout` requires `battle_numerals` + one of its prim builders |
+| retained field ground pass gated off in battle | a file that both uploads a field ground (`uploadGround`) and drives a battle frame (`play_battle_active`) requires `setGroundEnable(false)` |
+
+**The ground-pass rule is about a retained pass, which no draw list shows.**
+The WebGL renderer draws `uploadGround`'s mesh inside `renderAssembled`
+before the placements, so a draw-list bisect that filters every battle draw
+out still paints it. Its trigger is an `\A`-anchored lookahead over both
+halves (the uploader and the battle driver) so one scan decides it; the
+unanchored form re-scans the file from every position.
 
 **The heightfield rule triggers on the emitter, not the type.** An early draft
 keyed on `WalkHeightfield` / `walk_heightfield` and reported four files that
@@ -865,14 +873,26 @@ same frame and pills over black, because it drops its title session on
 screens are otherwise identical, which is exactly why no gate fails: the
 backdrop is a session the page released, not a draw it spells differently.
 
-One candidate the pair raises and does not settle: in the battle command
-phase the page carries a run of **flat yellow strips** along the ground and
-around the monster that the native frame does not, at three sampled page
-frames about 350 apart. The page's battle-FX billboard path
-(`crates/web-viewer/src/play_battle_fx.rs`) emits untextured strips with
-alpha `0` as its "untextured" flag, which is the shape a billboard whose
-atlas page is not resident takes. The two captures are not frame-matched, so
-this is an observation to reproduce with a paired capture, not a finding.
+The yellow strips the pair raised - in the battle command phase the page
+carried a run of **flat yellow strips** along the ground and a grass-and-gravel
+patch around the monster that the native frame does not - are the page's
+**field ground heightfield**, not a battle draw. `renderAssembled` in
+`site/js/webgl-tmd.js` draws the ground uploaded by `uploadGround` as a
+*retained* pass ahead of the placements, whatever the frame's draw list holds,
+and `_rebuild` uploads the field scene's ground cells there; the battle frame
+never turned that pass off, so town01's terrain drew through the battle camera,
+sampling the battle VRAM. The bisect that pins it: with the whole battle draw
+list filtered out of `renderAssembled`, the strips and the patch still draw.
+The native window draws its heightfield only in the non-battle branch of
+`window/event_handler/redraw.rs`, and a retail command-phase frame of the same
+stage (`v0_1_battle_command_menu`, `mednafen-state vram-dump --display-crop`)
+shows bare gravel. The page now turns the pass off while a battle draws and
+back on for every non-battle frame; the billboard-outline candidate the first
+reading suspected (`play_battle_fx.rs`, alpha `0` as the untextured flag) was
+off on both hosts throughout and draws nothing in this frame. Tier 7 carries
+the rule, **retained field ground pass gated off in battle**: a render
+surface that uploads a field ground and drives a battle frame through the
+same renderer must reach `setGroundEnable(false)`.
 
 ## Gaps the tiers were blind to, closed by reading the two hosts side by side
 
