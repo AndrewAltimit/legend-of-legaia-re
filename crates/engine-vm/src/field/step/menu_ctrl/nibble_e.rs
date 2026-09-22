@@ -118,26 +118,43 @@ pub(super) fn op_4c_ne<H: FieldHost>(
                 next_pc: pc + header_size + 9,
             }
         }
-        // Sub-4: 8-byte `[4C, 0xE4, x0, z0, x1, z1, ?, ?]` (retail
-        // `iVar45 = param_2 + 8`). BBox collision query. Each
-        // operand byte goes through the standard tile-center
-        // conversion (`(b & 0x7F) * 0x80 + 0x40`, plus 0x40 if
-        // the high bit is set). When the host predicate says
-        // "outside", the original calls the halt helper
-        // FUN_801E3614; we model that as Halt at PC. When
-        // inside, advance PC by 8 total.
+        // Sub-4: 8-byte `[4C, 0xE4, x0, z0, x1, z1, lo, hi]`, a
+        // world-unit AABB branch (`0x801E31C0..0x801E3288`). `s8`
+        // is bumped to `pc + 8` first; the box is
+        //   min = (b & 0x7F) * 0x80 + (0x60 if b & 0x80 else 0x20)
+        //   max = (b & 0x7F) * 0x80 + (0xA0 if b & 0x80 else 0x60)
+        // for `x0`/`z0` (min) and `x1`/`z1` (max), tested against the
+        // actor's signed world X / Z (`+0x14` / `+0x18`). Inside ->
+        // `pc + 8`. Outside -> the `0x801E3614` exit label adds
+        // `LE16(lo, hi) - 2`, i.e. a relative skip to
+        // `pc + 6 + skip` - not a halt (the port once halted here
+        // and used the `+0x40` tile-centre formula for all four
+        // corners).
         4 => {
+            use crate::field::helpers::rel_jump;
             if operand + 7 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
+            let lo_corner = |b: u8| -> i16 {
+                ((i16::from(b & 0x7F)) << 7) + if b & 0x80 != 0 { 0x60 } else { 0x20 }
+            };
+            let hi_corner = |b: u8| -> i16 {
+                ((i16::from(b & 0x7F)) << 7) + if b & 0x80 != 0 { 0xA0 } else { 0x60 }
+            };
             let bbox = [
-                crate::field_helpers::tile_center(bytecode[operand + 1]),
-                crate::field_helpers::tile_center(bytecode[operand + 2]),
-                crate::field_helpers::tile_center(bytecode[operand + 3]),
-                crate::field_helpers::tile_center(bytecode[operand + 4]),
+                lo_corner(bytecode[operand + 1]),
+                lo_corner(bytecode[operand + 2]),
+                hi_corner(bytecode[operand + 3]),
+                hi_corner(bytecode[operand + 4]),
             ];
             if host.op4c_n_e_sub_4_bbox_outside(ctx, bbox) {
-                StepResult::Halt { final_pc: pc }
+                StepResult::Advance {
+                    next_pc: rel_jump(
+                        pc + header_size + 5,
+                        bytecode[operand + 5],
+                        bytecode[operand + 6],
+                    ),
+                }
             } else {
                 StepResult::Advance {
                     next_pc: pc + header_size + 7,

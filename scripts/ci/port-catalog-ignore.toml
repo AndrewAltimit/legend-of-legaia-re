@@ -647,6 +647,7 @@
 "8006e544" = "Transmit-byte source under handlers 3 and 4: with the cursor ctx[+0x45] - 3, returns 0 while the first six per-slot enable bytes at ctx[+0x57] are clear, otherwise the cursor-th byte of the buffer at ctx[+0x28] bounded by ctx[+0x34]; for command ctx[+0x36] == 0x4D it reads ctx[+0x2C] bounded by ctx[+0x35] and pads with 0xFF past the end. Pure serial-frame marshalling. see ghidra/scripts/funcs/8006e544.txt"
 
 [field_vm_labels]
+"801e3614" = "FUN_801de840 intra-function exit label: `addiu v0,v0,-2; j 0x801e3624; addu s8,s8,v0` - the relative skip the 0x4D and 4C E4 arms take (s8 = arm end, plus LE16 skip - 2). Reached by `j`, never `jal`; ported inline in field::step (rel_jump)."
 "801e3620" = "FUN_801de840 intra-function label (`code_r0x801e3620`): `param_2 + 4; break;` -> PC += 4"
 
 

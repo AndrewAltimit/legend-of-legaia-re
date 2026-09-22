@@ -11,7 +11,7 @@ use super::*;
 // mutation, halts at PC), sub-7 (list-walk register + halt,
 // 1-byte), sub-8 (`FUN_801D77F4` 4-arg call, 9-byte), sub-9
 // (inverted-Y mirror set, 4-byte), sub-0xA (clear mirror +
-// collision-Y refresh, 2-byte), sub-0xB (FUN_801E57F0 yield,
+// collision-Y refresh, 2-byte), sub-0xB (FUN_801E57F0 CLUT-fade spawn,
 // 13-byte), sub-0xC (party search-and-set, 5-byte), sub-0xD
 // (field_58 write, 3-byte), sub-0xE (party search query,
 // 5-byte), sub-0xF (scene byte write, 3-byte).
@@ -168,7 +168,9 @@ pub(super) fn op_4c_nd<H: FieldHost>(
                 next_pc: pc + header_size + 2,
             }
         }
-        // Sub-B: 13-byte. Call FUN_801E57F0(operand) then PC += 13.
+        // Sub-B: 13-byte. Call FUN_801E57F0(operand) - it spawns the CLUT
+        // blend fade (descriptor 0x801F2930, handler FUN_801E4D8C) with
+        // the operand pointer at +0x90 - then PC += 13.
         // Total instruction = opcode (1) + 12 operand bytes; the
         // helper receives the 12-byte operand slice starting at
         // the sub-op byte.

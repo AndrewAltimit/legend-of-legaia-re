@@ -267,9 +267,10 @@ pub trait FieldHost {
 
     /// Bounding-box test result (op 0x4D). When the active ctx is INSIDE
     /// `[x_min..=x_max] × [z_min..=z_max]` (in tile units), the VM advances
-    /// PC; when OUTSIDE, the original calls `FUN_801e3614` which reads a
-    /// 2-byte offset from operand+4..6 and computes a forward-skip target.
-    /// Until that helper is captured the outside-box path returns `Pending`.
+    /// PC; when OUTSIDE, the arm reads a 2-byte offset from operand+4..6 and
+    /// jumps through the dispatcher's `0x801E3614` exit label (an interior
+    /// `addiu v0,v0,-2; j 0x801E3624; addu s8,s8,v0`, not a routine) - a
+    /// relative skip the VM computes itself.
     ///
     /// `world_to_tile_use_alt` controls the tile derivation: `false` → the
     /// default `(world - 0x40) >> 7`, `true` → the alternate `(world << 16) >> 23`
@@ -299,8 +300,11 @@ pub trait FieldHost {
     /// scratch struct. No operands.
     fn camera_save(&mut self) {}
 
-    /// Camera op 0x45 APPLY. The original calls `FUN_801dab90` (apply) +
-    /// `FUN_801daa50` (read-back), then hands the unaligned `s16` at
+    /// Camera op 0x45 APPLY. The original calls `FUN_801dab90` (compose the
+    /// camera from the player into the staging block `0x801C6EA8`) +
+    /// `FUN_801daa50` (clamp the focus `0x80089118` / `0x80089120` to the
+    /// visible tile window `0x1F800384..87` / `0x1F8003E8..EB`, then apply
+    /// the `0x8007B628` / `0x8007B62A` overrides), then hands the unaligned `s16` at
     /// `operand + 1` to `FUN_801de084` as the apply trigger and advances the
     /// PC by four. It is NOT a jump: the `s16` is a trigger, not a target.
     fn camera_apply(&mut self) {}
@@ -518,9 +522,12 @@ pub trait FieldHost {
 
     /// Op 0x4C sub-3 sub-3 (refresh helper).
     ///
-    /// The original calls `FUN_801de190()` then writes `DAT_8007B648 = 0`
-    /// (a "needs refresh" flag). Hosts likely re-rasterize the inventory or
-    /// menu UI here. PC += 2.
+    /// The original calls `FUN_801de190()` then writes `DAT_8007B648 = 0`.
+    /// `FUN_801de190` is the **party-roster rebuild**: it clears the four
+    /// bytes at `0x8007BD10`, writes `member id + 1` for each of the
+    /// `0x80084594` active members listed at `0x80084598` (at most three),
+    /// and adds member 4 when system flag `0x13` is set (`FUN_8003CE64`).
+    /// (An earlier note here guessed an inventory / menu re-raster.) PC += 2.
     fn menu_refresh(&mut self) {}
 
     /// Op 0x4C sub-3 sub-A (dialog-depth copy to player ctx).
@@ -680,8 +687,10 @@ pub trait FieldHost {
     /// Op 0x43 sub-E (mark currently-iterating actor with flag bit 0x8).
     ///
     /// 2-byte instruction `[43, 0xE]`. The original walks the actor list
-    /// via `func_0x8003CF04(_DAT_8007C34C, FUN_801DD9D4)` looking for a
-    /// match; if found, sets `actor[+0x10] |= 0x8`. The VM passes the
+    /// via `func_0x8003CF04(_DAT_8007C34C, FUN_801DD9D4)` - the first live
+    /// node (`+0x10 & 8` clear) whose handler word `+0xC` equals the key
+    /// `FUN_801DD9D4` (a compare, not a call) - and if found sets
+    /// `actor[+0x10] |= 0x8`. The VM passes the
     /// active ctx so hosts can correlate. PC += 2.
     fn op43_mark_actor_flag_8(&mut self, ctx: &mut FieldCtx) {
         let _ = ctx;
@@ -944,9 +953,11 @@ pub trait FieldHost {
     /// `0x801E1FB0+`:
     ///
     /// - reads `intensity = signed_16(operand[3..5])` (after the 3 colour bytes),
-    /// - if `_DAT_8007B62C != 0`: emits a "previous fade complete" event for
-    ///   the slot (calls `FUN_801de2b0` or `func_0x80024e80` depending on
-    ///   `_DAT_1F800394 & 0x800000`, the active-cutscene flag),
+    /// - if `_DAT_8007B62C != 0` (a fade actor is live): retires it
+    ///   (`+0x10 |= 8`) and spawns a fade-out tween starting from its colour
+    ///   (`FUN_801de2b0`: descriptor `0x801F2888`, handler `0x801DDC20`,
+    ///   colour block copied into `+0xB8..+0xC6`) or calls
+    ///   `func_0x80024e80`, depending on `_DAT_1F800394 & 0x800000`,
     /// - rewrites the `_DAT_8007BCCC..BCE0` colour-mode globals from the
     ///   operand: `BCE0 = 1` (or 2 if `op0 & 1`), `BCCC = 0x02` (or `0x00`
     ///   if `op0 & 4`, or `0x08` if `op0 & 2`), `BCCD..BCCF = r, g, b`,
@@ -1476,10 +1487,12 @@ pub trait FieldHost {
     /// trailer, but those bytes are the *next* arm (sub-4, `0x801E2134`),
     /// which this arm's unconditional jump never reaches.
     ///
-    /// `FUN_801D5630` itself (`ghidra/scripts/funcs/overlay_0897_801d5630.txt`)
-    /// is the tile-resolver helper: 9-instruction body that on hit returns
-    /// a tile-record pointer and on miss sets `ctx.flags |= 0x8` and
-    /// re-enters the dispatcher wait loop. The port exposes the
+    /// `FUN_801D5630(kind, x, z)` (field overlay `0x801D5630..0x801D56C0`)
+    /// is a .MAP trigger-block lookup: it calls `FUN_801D5AE0(kind, x, z,
+    /// *(0x1F8003EC) + 0x10000)` and, on a null result, retries against
+    /// `+0x12000`, returning the record pointer. It writes no ctx flags and
+    /// re-enters nothing - an earlier note here described a 9-instruction
+    /// resolver that set `ctx.flags |= 8`, which is not these bytes. The port exposes the
     /// rectangle via the host hook and lets the engine implement its tile
     /// pool however it wants.
     ///
@@ -1601,7 +1614,10 @@ pub trait FieldHost {
         let _ = (x_global, z_global);
     }
 
-    /// Op 0x4C outer-nibble-9 sub-0/1/2 - fade/effect dispatch via FUN_801DDE34.
+    /// Op 0x4C outer-nibble-9 sub-0/1/2 - floor-wave actor spawn via
+    /// FUN_801DDE34, which spawns descriptor `0x801F27EC` (handler
+    /// `0x801DA930`) to animate the scratchpad floor-height ladder entry
+    /// `0x1F80035C[b1]` (not a fade dispatch).
     ///
     /// 9-byte instruction `[4C, 0x9N, b1, lo0, hi0, lo1, hi1, lo2, hi2]` where
     /// `N ∈ {0, 1, 2}`. Reads `b1 = operand[1]`, three signed-16-bit words from
@@ -1752,7 +1768,11 @@ pub trait FieldHost {
     /// - `_DAT_800845A0 = packed_cd` (mirror)
     /// - `_DAT_80073ED4 = _DAT_80084570` (snapshot)
     ///
-    /// Then calls `FUN_801D596C()` which kicks off a party-related state init.
+    /// Then calls `FUN_801D596C()`, the scripted countdown actor's
+    /// install / remove: it finds the live actor whose handler is
+    /// `0x801D2EBC` (the escape-timer HUD) through `FUN_8003CF04`; with
+    /// `_DAT_800845B8 == 0` it retires it, otherwise (when none is live) it
+    /// spawns descriptor `0x801F22DC` at `(+0x14, +0x16) = (0xC0, 0x10)`.
     /// PC += 14.
     fn op4c_n_d_sub3_party_setup(&mut self, ab: u32, cd: u32, ef: u32) {
         let _ = (ab, cd, ef);
@@ -1965,7 +1985,7 @@ pub trait FieldHost {
     ///
     /// 2-byte instruction `[4C, 0xD1]`. The original walks the global
     /// list-head at `_DAT_8007C34C` via `FUN_8003CF04(head, FUN_801DC0BC)`
-    /// (the linked-list "search by predicate match" helper) and:
+    /// (first live node whose handler word `+0xC` equals the key) and:
     /// - if the search returns null OR the matched entry's `[+0x10] & 8 != 0`
     ///   (the "deleted" bit) → `return param_2 + 4` (PC += 4),
     /// - else → `pbVar43 = pbVar47 + 1; goto LAB_801E360C` which calls
@@ -2015,11 +2035,13 @@ pub trait FieldHost {
     /// 13-byte instruction (the original's call site at line 7085 passes
     /// `pbVar47` and falls through to `LAB_801E2EA0: return param_2 + 0xD`).
     ///
-    /// `FUN_801E57F0` was not successfully decompiled - Ghidra's dump (see
-    /// `ghidra/scripts/funcs/overlay_0897_801e57f0.txt`) shows ~441
-    /// instructions of `lb s8, 0x6814(zero)` data masquerading as code,
-    /// indicating Ghidra mis-parsed the function's start. The actual call
-    /// target at `0x801E57F0` is overlay-resident and not currently dumpable.
+    /// `FUN_801E57F0` (field overlay, 17 instructions) spawns descriptor
+    /// `0x801F2930` through `FUN_80020DE0`, stores the operand pointer at
+    /// `+0x90` and clears `+0x54`. The descriptor's handler is `0x801E4D8C`,
+    /// the CLUT blend-to-target fade ([`crate::world_map_clut_fade`]), which
+    /// reads its 12-byte record through `+0x90`. (The Ghidra dump filed
+    /// under this address is data rendered as code; the bytes in PROT 0897
+    /// at this VA are the routine above.)
     ///
     /// `bytecode` is the operand stream starting at `operand + 0` (the same
     /// `pbVar47` the original passes); hosts that model this opcode read
@@ -2140,8 +2162,8 @@ pub trait FieldHost {
     /// Op 0x4C outer-nibble-C sub-D - script-context allocation gate, halt.
     ///
     /// 2-byte instruction `[4C, 0xCD]`. The original calls
-    /// `func_0x8003CF04(_DAT_8007C34C, FUN_801DC0BC)` (the linked-list-walk
-    /// "find by predicate"), tests the resolved entry's flag bit `0x8`, and:
+    /// `func_0x8003CF04(_DAT_8007C34C, FUN_801DC0BC)` (first live node whose
+    /// handler word `+0xC` equals the key), tests the resolved entry's flag bit `0x8`, and:
     /// - if the entry exists AND the bit is set → halt acquired, PC stays at
     ///   start-of-instruction (we model this as `Halt { final_pc: pc }`),
     /// - else → yield via `LAB_801DEE50` (also `Halt { final_pc: pc }` in our
@@ -2155,26 +2177,25 @@ pub trait FieldHost {
     /// Op 0x4C outer-nibble-E sub-4 - bounding-box collision query against
     /// the actor's world position.
     ///
-    /// 9-byte instruction `[4C, 0xE4, x_lo, z_lo, x_hi, z_hi, scale, ?, ?]`.
-    /// The original (dispatcher dump 7228-7255) builds 4 corners by mapping
-    /// each operand byte through the standard tile-center formula
-    /// (`(b & 0x7F) * 0x80 + 0x40`, plus 0x40 when the high bit is set), then
-    /// tests whether the actor's `(world_x, world_z)` lies inside that AABB.
-    /// On the **outside** path the original calls `FUN_801E3614()` which is
-    /// the standard halt helper.
+    /// 8-byte instruction `[4C, 0xE4, x0, z0, x1, z1, skip_lo, skip_hi]`
+    /// (`0x801E31C0..0x801E3288`). The corners are world units:
+    /// `min = (b & 0x7F) * 0x80 + 0x20` (`+0x60` when the high bit is set)
+    /// for `x0` / `z0`, `max = (b & 0x7F) * 0x80 + 0x60` (`+0xA0`) for
+    /// `x1` / `z1`. The actor is outside when `x < min_x`, `z < min_z`,
+    /// `max_x < x` or `max_z < z` (signed compares on `+0x14` / `+0x18`).
+    /// Outside, the dispatcher takes the relative skip through the
+    /// `0x801E3614` exit label (`pc + 6 + skip`); inside, PC advances by 8.
+    /// `0x801E3614` is an interior label of the dispatcher (`addiu v0,v0,-2;
+    /// j 0x801E3624; addu s8,s8,v0`), not a halt helper as this doc used to
+    /// say.
     ///
-    /// We expose the pure-arithmetic predicate here and let the dispatcher
-    /// emit the halt directly: the host returns `true` when the actor is
-    /// **outside** the bbox (the original's "fail" path). When the actor is
-    /// inside, PC advances by 8.
-    ///
-    /// `bbox` is `[x0, z0, x1, z1]` with each coordinate already converted
-    /// from operand byte to world-space tile center. Default impl returns
-    /// `false` (= "always inside"), so the dispatcher always advances -
-    /// engines that don't model the world position can skip the test.
+    /// `bbox` is `[min_x, min_z, max_x, max_z]`, already converted. The
+    /// default implementation is retail's test against the ctx's world
+    /// position; hosts override only to observe or substitute it.
     fn op4c_n_e_sub_4_bbox_outside(&self, ctx: &FieldCtx, bbox: [i16; 4]) -> bool {
-        let _ = (ctx, bbox);
-        false
+        let x = ctx.world_x as i16;
+        let z = ctx.world_z as i16;
+        x < bbox[0] || z < bbox[1] || bbox[2] < x || bbox[3] < z
     }
 
     /// Op 0x4C outer-nibble-E sub-5 - add to the casino coin bank.
@@ -2485,9 +2506,15 @@ pub trait FieldHost {
 
     /// Dialog wait poll (op 0x4C n5 sub-3, 2 bytes).
     ///
-    /// `[4C, 0x53]`. The original at lines 6295-6298 calls
-    /// `FUN_801D65D8(1)` (dialog "is finished?" query) and falls through to
-    /// `joined_r0x801E28C4`. The dispatch ends in either case - this is a
+    /// `[4C, 0x53]`. The original calls `FUN_801D65D8(1)` and falls through
+    /// to `joined_r0x801E28C4`. `FUN_801D65D8(target)` is not a dialog query:
+    /// it is a staged two-way mode switch. It returns 0 at once when the mode
+    /// word `0x8007BA3C` already equals `target`; otherwise it steps
+    /// `0x8007B9C0` - raise `0x8007B648 = 0x80`, wait out the CD read poll
+    /// `FUN_8003DE7C(1)`, then for `target = 1` save `0x8007B9CC` to
+    /// `0x8007BA38` and set its `0x28000` bits (and `0x8007B72C =
+    /// 0x8007B85C`), for `target = 0` restore both - and finally stores
+    /// `target` to `0x8007BA3C`, returning 1 while a step is in flight. The dispatch ends in either case - this is a
     /// halt-style instruction - but PC has been incremented to `pc + 2`
     /// before the joined block runs.
     ///
@@ -2500,11 +2527,12 @@ pub trait FieldHost {
 
     /// Dialog advance poll (op 0x4C n5 sub-4, 2 bytes).
     ///
-    /// `[4C, 0x54]`. The original at lines 6299-6310 calls
-    /// `FUN_801D65D8(0)` (dialog "advance one frame" query) and:
-    /// - Returns non-zero (dialog still active) → halt at the standard
+    /// `[4C, 0x54]`. The original calls `FUN_801D65D8(0)` - the restore
+    /// direction of the staged mode switch described on
+    /// [`Self::op4c_n_5_sub_3_dialog_wait`], not a dialog query - and:
+    /// - Returns non-zero (switch still stepping) → halt at the standard
     ///   switch-default (PC unchanged for this pump cycle).
-    /// - Returns zero (dialog done) → clear `DAT_8007B648`, copy 6 bytes
+    /// - Returns zero (switch done) → clear `DAT_8007B648`, copy 6 bytes
     ///   from the directional-sound state globals, and advance PC by 2.
     ///
     /// The hook returns `true` when the dialog is still active (VM halts at

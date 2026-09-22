@@ -330,7 +330,7 @@ Misc scene writes + emitter helpers. Ported sub-ops:
   superseded "syncs to the active camera" reading). Raw asm `0x801E3108..0x801E31B0` in
   `ghidra/scripts/funcs/overlay_0897_801de840.txt`; PC += 3 - advances in the `j 0x801E00BC`
   branch-delay slot on the player path and via the `0x801E00B8` +3 entry on the NPC path)
-- **4** (9-byte BBox collision query - each operand byte goes through [`tile_center`](script-vm.md#helper-functions); halts via `FUN_801E3614` when the actor is outside the bbox, otherwise PC += 9)
+- **4** (8-byte world-unit AABB branch `[4C E4 x0 z0 x1 z1 lo hi]`, `0x801E31C0..0x801E3288`: min corner `(b & 0x7F) * 0x80 + 0x20` (`+0x60` with the high bit) from `x0`/`z0`, max corner `+0x60` (`+0xA0`) from `x1`/`z1`, signed compares against the actor's `+0x14` / `+0x18`. Inside -> PC += 8; outside -> relative skip to `pc + 6 + LE16(lo, hi)` through the dispatcher's `0x801E3614` exit label. An earlier reading here used the `tile_center` formula for all four corners, a 9-byte length, and called `0x801E3614` a halt helper - it is an interior `addiu v0,v0,-2; j 0x801E3624; addu s8,s8,v0` label, the same skip the `0x4D` arm takes)
 - **5** (5-byte XP add - reads a 24-bit signed delta via [`load_u24_le`](script-vm.md#helper-functions) + `sign_extend_24`, then host clamps to `[0, 9999999]` and triggers party-stats refresh)
 - **6** (FUN_801D8280, 8-byte)
 - **7** (round 18, 7-byte camera animate: 24-bit LE target + 16-bit LE duration; host schedules `func_0x8003C5F0` tween or instant-write when duration is 0)

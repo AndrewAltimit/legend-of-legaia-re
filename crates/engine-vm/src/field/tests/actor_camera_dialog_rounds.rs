@@ -347,18 +347,17 @@ fn op_4c_n_5_sub_4_dialog_advance_halts_when_active() {
 }
 
 #[test]
-fn op_4c_n_e_sub_4_uses_shared_tile_center_helper() {
-    // Verifies the round-18 tile_center helper is wired in: 0x10 → 0x840,
-    // 0x90 → 0x880, 0x00 → 0. This is the same case the round-17 inline
-    // closure verified - confirm round-18's lift to a shared helper
-    // didn't change semantics.
+fn op_4c_n_e_sub_4_min_and_max_corners_differ() {
+    // Retail's min corners (x0, z0) and max corners (x1, z1) use different
+    // offsets - `+0x20` / `+0x60` and `+0x60` / `+0xA0` by the high bit -
+    // not the shared `tile_center` formula this arm once used.
     let bytecode = [0x4Cu8, 0xE4, 0x10, 0x90, 0x00, 0x10, 0x00, 0x00, 0x00];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     step(&mut host, &mut ctx, &bytecode, 0);
     let bboxes = host.n_e_sub_4_bboxes.borrow();
     assert_eq!(bboxes.len(), 1);
-    assert_eq!(bboxes[0], [0x840, 0x880, 0, 0x840]);
+    assert_eq!(bboxes[0], [0x820, 0x860, 0x60, 0x860]);
 }
 
 #[test]
