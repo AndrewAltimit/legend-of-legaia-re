@@ -207,6 +207,20 @@ impl WorldMapEntityCtx {
 /// `FUN_801E3E00` (overlay_world_map.bin base `0x801C0000`; dump
 /// `ghidra/scripts/funcs/overlay_world_map_801e3e00.txt`).
 ///
+/// NOT WIRED: `World::tick_world_map` is the pass that
+/// would drive it, and the thing it lacks is not the tick but the **actor**.
+/// Retail reaches this body through the world-map object-effect dispatch,
+/// which writes this address into a spawned actor's `+0x0C` tick slot and its
+/// keyframe script into `+0x94`; the port's overworld pass installs
+/// `WorldMapEntityCtx` state machines per classified placement
+/// (`install_world_map_entities_at`) and carries no per-actor tick pointer at
+/// all, so nothing constructs this interpreter outside its own tests. The
+/// site's world-overview viewer is not that consumer either: it takes the fog
+/// colour as a per-kingdom constant read out of a save state at
+/// `actor[+0x74]`, keyed on this very address
+/// (`legaia_web_viewer::sentinel_placements::ATMOSPHERIC_TICK`), which is a
+/// snapshot of one frame of this script rather than a run of it.
+///
 /// PORT: FUN_801E3E00 - atmospheric-actor tick: keyframe script driving the
 /// fog color word at actor `+0x74` (the GTE far-color / haze source) plus a
 /// secondary color word at `+0x88` and three 16-bit aux params.

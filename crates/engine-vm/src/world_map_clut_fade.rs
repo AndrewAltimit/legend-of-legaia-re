@@ -181,7 +181,16 @@ pub enum FadeStep {
 
 /// The single-source blend-to-target CLUT fade state.
 ///
-/// PORT: FUN_801E4D8C
+/// PORT: FUN_801E4D8C NOT WIRED: the overworld frame in
+/// `engine-core`'s `World::tick_world_map` is the pass that owes it. Retail
+/// spawns this as a world-map actor whose `+0x90` points at the six-byte fade
+/// record and whose `+0x98` holds the `0x60`-byte scratch, and the port's
+/// overworld pass has neither an actor-effect spawner nor a VRAM CLUT cell to
+/// read a source row out of - `tick` hands back a `FadeStep::Row` its caller
+/// would `StoreImage`, and no host owns that upload on the world map. The
+/// sibling two-cell cross-fade (`legaia_engine_core::clut_fx`) IS wired, on
+/// the field path, through field-VM `4C 61`; this actor has no field-VM
+/// opcode of its own, so a scene script cannot reach it either.
 #[derive(Debug, Clone)]
 pub struct ClutBlendFade {
     texels: [FadeTexel; CLUT_ENTRIES],

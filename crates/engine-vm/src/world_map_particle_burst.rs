@@ -4,6 +4,15 @@
 //!
 //! PORT: FUN_801E5338
 //!
+//! NOT WIRED: `World::tick_world_map` would drive it, and what is missing is
+//! the spawner above it. Retail reaches this body from the world-map
+//! object-effect dispatch, which allocates the actor and seeds its burst
+//! duration at `+0x9C`; the port's overworld pass installs only
+//! `WorldMapEntityCtx` encounter / portal state machines and has no
+//! actor-effect allocation at all, so nothing constructs a `ParticleBurst`
+//! outside this module's own tests. Its `BurstFrame` is a sprite draw list as
+//! well, and no world-map draw path on either host consumes one.
+//!
 //! ## What the retail function does
 //!
 //! It is a per-actor "sparkle burst" animator: a small state machine on the
