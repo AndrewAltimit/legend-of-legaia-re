@@ -75,6 +75,7 @@ pub mod field_regions;
 pub mod fishing;
 pub mod fishing_actors;
 pub mod fishing_chrome;
+pub mod fishing_exchange_input;
 pub mod fog_particles;
 pub mod game_over;
 pub mod glb_export;
