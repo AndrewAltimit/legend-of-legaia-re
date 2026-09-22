@@ -502,24 +502,77 @@ impl LegaiaRuntime {
         )
     }
 
-    /// Buy prize row `row` at `venue` with the live point pool. Returns the
-    /// remaining points, or `-1` when the row is unavailable (too few points,
-    /// a latched one-time prize, or a full stack).
-    pub fn play_fishing_prize_buy(&mut self, venue: u32, row: usize) -> i32 {
+    /// Drive the point-exchange sub-screen through the shared engine kernel
+    /// ([`World::fishing_exchange_input`]): `code` `0` toggle, `1` up, `2`
+    /// down, `3` switch venue, `4` buy at the cursor. The screen stays open
+    /// on the world between calls, which is what lets this page's HUD compose
+    /// ([`Self::fishing_exchange_draws`]) draw it every frame the way the
+    /// native window does. Returns the remaining points after a buy, `-1`
+    /// for a refused input, `0` otherwise.
+    ///
+    /// [`World::fishing_exchange_input`]: legaia_engine_core::world::World::fishing_exchange_input
+    pub fn play_fishing_exchange_input(&mut self, code: u32) -> i32 {
+        use legaia_engine_core::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
+        let Some(input) = ExchangeInput::from_code(code) else {
+            return -1;
+        };
         let Some(venues) = self.fishing_venues.as_ref() else {
             return -1;
         };
-        let exchange = venues[(venue as usize).min(1)].clone();
         let Some(host) = self.scene_host.as_mut() else {
             return -1;
         };
-        host.world.open_fishing_exchange(exchange);
-        let ok = host.world.fishing_exchange_buy(row, 1).is_some();
-        host.world.close_fishing_exchange();
-        if ok {
-            host.world.minigames.fishing_points
-        } else {
-            -1
+        match host.world.fishing_exchange_input(venues, input) {
+            ExchangeOutcome::Bought(_) => host.world.minigames.fishing_points,
+            ExchangeOutcome::Refused => -1,
+            _ => 0,
+        }
+    }
+
+    /// The point-exchange sub-screen's live state as JSON - `{ "open": bool,
+    /// "venue": n, "cursor": n }` - so the page's side panel can mirror what
+    /// the canvas draws.
+    pub fn play_fishing_exchange_state_json(&self) -> String {
+        let ex = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.minigames.fishing_exchange.as_ref());
+        match ex {
+            Some(e) => serde_json::json!({ "open": true, "venue": e.venue, "cursor": e.cursor }),
+            None => serde_json::json!({ "open": false }),
+        }
+        .to_string()
+    }
+
+    /// Buy prize row `row` at `venue` with the live point pool, through the
+    /// same kernel: opens the sub-screen on `venue` when it is not already
+    /// showing it, puts the cursor on `row`, buys, and **leaves the screen
+    /// open** - it used to open, buy and close inside this one call, so the
+    /// screen the HUD compose draws was never open when a frame composed.
+    /// Returns the remaining points, or `-1` when the row is unavailable (too
+    /// few points, a latched one-time prize, or a full stack).
+    pub fn play_fishing_prize_buy(&mut self, venue: u32, row: usize) -> i32 {
+        use legaia_engine_core::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
+        let Some(venues) = self.fishing_venues.as_ref() else {
+            return -1;
+        };
+        let Some(host) = self.scene_host.as_mut() else {
+            return -1;
+        };
+        let world = &mut host.world;
+        let want = (venue as usize).min(1);
+        if world.minigames.fishing_exchange.is_none() {
+            world.fishing_exchange_input(venues, ExchangeInput::Toggle);
+        }
+        if world.minigames.fishing_exchange.as_ref().map(|e| e.venue) != Some(want) {
+            world.fishing_exchange_input(venues, ExchangeInput::SwitchVenue);
+        }
+        if let Some(ex) = &mut world.minigames.fishing_exchange {
+            ex.cursor = row.min(ex.rows.len().saturating_sub(1));
+        }
+        match world.fishing_exchange_input(venues, ExchangeInput::Buy) {
+            ExchangeOutcome::Bought(_) => world.minigames.fishing_points,
+            _ => -1,
         }
     }
 }

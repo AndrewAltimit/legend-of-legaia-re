@@ -1137,10 +1137,15 @@
   }
 
   /* ================================================================== */
-  /* Fishing prize exchange: a click-driven panel over the page's exports
-   * (`play_fishing_prizes_json` / `play_fishing_prize_buy`), shown while a
-   * fishing session is live. Retail reaches the exchange through the venue
-   * clerk; the page offers it as a button beside the frame. */
+  /* Fishing prize exchange. The sub-screen is ENGINE state
+   * (`World::minigames.fishing_exchange`) the HUD compose draws on the
+   * canvas every frame it is open - the same screen the native window draws
+   * - and this click panel is only its input surface: the button toggles it
+   * through the shared input kernel (`play_fishing_exchange_input`), the
+   * venue tabs switch its page, Buy puts the cursor on a row and buys
+   * (`play_fishing_prize_buy`, which leaves the screen open). Retail reaches
+   * the exchange through the venue clerk; the page offers it as a button
+   * beside the frame. */
 
   function ensurePrizePanel(view) {
     if (S.prize) return S.prize;
@@ -1162,9 +1167,34 @@
     wrap.appendChild(btn);
     wrap.appendChild(panel);
     const p = { btn, panel, open: false, venue: 0, rt: null };
-    btn.addEventListener('click', () => { p.open = !p.open; renderPrizePanel(p); });
+    btn.addEventListener('click', () => {
+      /* Toggle the engine's sub-screen; the panel follows it (prizeFrame). */
+      if (p.rt && typeof p.rt.play_fishing_exchange_input === 'function') {
+        try { p.rt.play_fishing_exchange_input(0); } catch (e) { /* refused */ }
+        syncPrizeOpen(p);
+      } else {
+        p.open = !p.open;
+      }
+      renderPrizePanel(p);
+    });
     S.prize = p;
     return p;
+  }
+
+  /* Mirror the engine's open / venue state into the panel. Returns true when
+   * it changed (the panel then re-renders). A bundle predating the export
+   * keeps the panel's own flag. */
+  function syncPrizeOpen(p) {
+    const rt = p.rt;
+    if (!rt || typeof rt.play_fishing_exchange_state_json !== 'function') return false;
+    const st = parse(() => rt.play_fishing_exchange_state_json());
+    if (!st) return false;
+    const open = !!st.open;
+    const venue = open ? (st.venue | 0) : p.venue;
+    const changed = open !== p.open || venue !== p.venue;
+    p.open = open;
+    p.venue = venue;
+    return changed;
   }
 
   function renderPrizePanel(p) {
@@ -1197,14 +1227,30 @@
     }
     p.panel.innerHTML = h.join('');
     p.panel.querySelectorAll('button[data-venue]').forEach(b => b.addEventListener('click', () => {
-      p.venue = +b.dataset.venue; renderPrizePanel(p);
+      const want = +b.dataset.venue;
+      if (want !== p.venue && typeof rt.play_fishing_exchange_input === 'function') {
+        try { rt.play_fishing_exchange_input(3); } catch (e) { /* refused */ }
+        syncPrizeOpen(p);
+      } else {
+        p.venue = want;
+      }
+      renderPrizePanel(p);
     }));
     p.panel.querySelectorAll('button[data-buy]').forEach(b => b.addEventListener('click', () => {
       try { rt.play_fishing_prize_buy(p.venue, +b.dataset.buy); } catch (e) { /* refused */ }
+      syncPrizeOpen(p);
       renderPrizePanel(p);
     }));
     const close = p.panel.querySelector('button[data-close]');
-    if (close) close.addEventListener('click', () => { p.open = false; renderPrizePanel(p); });
+    if (close) close.addEventListener('click', () => {
+      if (typeof rt.play_fishing_exchange_input === 'function') {
+        try { rt.play_fishing_exchange_input(0); } catch (e) { /* refused */ }
+        syncPrizeOpen(p);
+      } else {
+        p.open = false;
+      }
+      renderPrizePanel(p);
+    });
   }
 
   function prizeFrame(rt, view) {
@@ -1215,7 +1261,8 @@
     let active = false;
     try { active = !!rt.play_fishing_active(); } catch (e) { active = false; }
     p.btn.style.display = active ? 'block' : 'none';
-    if (!active && p.open) { p.open = false; renderPrizePanel(p); }
+    if (!active && p.open) { p.open = false; renderPrizePanel(p); return; }
+    if (syncPrizeOpen(p)) renderPrizePanel(p);
   }
 
   /* ================================================================== */
