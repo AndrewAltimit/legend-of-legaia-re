@@ -19,17 +19,18 @@ pub trait EffectHost {
         0
     }
 
-    /// Returns `true` if `effect_id` should be routed to the streaming-
-    /// summon handler (`func_0x80050ed4`) instead of the generic spawn
-    /// path. Retail special-cases `id == 4` and `id == 0x13`. Engines
-    /// override to route their summon IDs.
+    /// Returns `true` if `effect_id` makes the side call to
+    /// `func_0x80050ed4` before the generic spawn (retail special-cases
+    /// `id == 4` and `id == 0x13`; the effect is still spawned after it).
+    /// Engines override to route their ids.
     fn is_summon_effect(&self, _effect_id: u8) -> bool {
         false
     }
 
-    /// Equivalent of `func_0x80050ed4(world_pos, &stack_buf, summon_table,
-    /// 0x1000)` - the streaming-summon handler. Buffer size per slot is
-    /// `0x10800 = 67584` bytes. Default no-op.
+    /// Equivalent of `func_0x80050ed4(world_pos, &{0, angle, 0}, descriptor,
+    /// 0x1000)` with descriptor `0x801F5D90` (id 4) or `0x801F5CF8` (id
+    /// `0x13`) - the move-VM actor spawner, run as a side call ahead of the
+    /// ordinary effect spawn. Default no-op.
     fn handle_summon(&mut self, _effect_id: u8, _world_pos: [i16; 3], _angle: u16) {}
 
     /// Per-child-sprite random offset, computed by [`Pool::spawn`](super::Pool::spawn)

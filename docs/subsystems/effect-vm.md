@@ -29,7 +29,7 @@ Three functions:
 | Function | Span | Role |
 |---|---|---|
 | `0x801DE914` | 0x13C | Init / pack-fixup. Called from `FUN_800520F0` case `0xE` with `(id=0x1000, param=0xA00)`. |
-| `0x801DFDF8` | 0x280 | Public spawn-effect API: `(byte effect_id, short* world_pos, ushort angle)`. |
+| `0x801DFDF0` | 0x288 | Public spawn-effect API: `(byte effect_id, short* world_pos, ushort angle)`. Pages that cite `0x801DFDF8` name its prologue word: the entry is two words earlier, where the pool-ready byte `0x8007BD58` is loaded, and every `jal` to the routine on the disc names `0x801DFDF0`. Ids `4` and `0x13` make a side call to `0x80050ED4` (descriptor `0x801F5D90` / `0x801F5CF8`) and then take the ordinary spawn path. |
 | `0x801E0088` | 0x970 | Per-frame walker (update + render). |
 
 The on-disc input format is the [runtime 2-pack wrapper](../formats/effect.md) (PROT entry 873, `data\battle\efect.dat`). Each pack0 entry is a frame-batch animation record; each pack1 entry is an effect-ID script.
