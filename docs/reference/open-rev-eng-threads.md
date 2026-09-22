@@ -611,11 +611,36 @@ a coincidence of the pad byte plus the mask table's first three entries
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Does any host actually draw the field screen-effect fade? | open - the pool has a producer on both hosts and a reader on neither | The representation question closed on the push (below), and the op's tween is simulated on both hosts now - but `World::screen_tint_pushes` has zero production references, so the beat is stepped and drawn by nothing. What closes it is a renderer read on each host plus a rung that enters it; the parity question underneath is what retail's `kind` and `blend` select once something consumes them, because the capture pins the triple and not the raster. |
-| Do the field effect handlers `0x801E3E00` / `0x801E4D8C` / `0x801E5338` have a spawner? | open - each is ported and none has a production constructor | The three handler words sit in the field overlay's effect-descriptor run at `0x801F291C+`, beside the reflection controller's, and each has a Rust tick that nothing on either host constructs an actor for. The walk that would close it is the one that turned `0x801E5154` from an unreachable tick into field-VM `4C 86`: find the descriptor each word is the `+0x08` of, then the shipped script arm that allocates from that descriptor. A tick with no spawner is a question about the opcode table, not about the port. |
-| Do the camera-snap and ocean-only kernels run on any host? | open - both are shared kernels no ladder enters | `Camera::take_camera_snap_beats` and `FieldSceneAnim::ocean_only` are reached by no ladder on either host, so the drift tiers that pair them pass on structure while nothing exercises either body. What closes it is a rung that reaches each - a scripted camera-configure beat for the first, a world-map scene entry for the second - and, for the first, the retail beat to compare the replayed snap against. |
+| Which slot-B record walk bounds PROT 0944's top record? | open - two instruments disagree on one image | `legaia_asset::slot_b_module::content_end` chains fourteen records above the top pointer-credited one to `0x1EC8`; `scripts/ghidra-analysis/slot_b_band.py` stops at `0x1948`. The bytes side with the script: 0944 and 0942 are byte-identical from `0x199C` up and differ just below it, and 0942's own content reaches above `0x199C`, so the Rust tail cut on 0944 sits 1,412 bytes too high (an under-claim, not a credit of another module's bytes). What closes it is the record-bounding rule the Rust walk should stop on, pinned as the single named divergence in `crates/asset/tests/inherited_tail_real.rs`. |
 | Does any shipped beat take op `0x34` sub-0's second arm? | open - the fork is decoded, the disc is not known to raise its gate | The sub-0 arm forks on `_DAT_1F800394 & 0x800000` into `FUN_80024E80` instead of the push spawner `FUN_80024EE4`, and the bit reads **clear** on every vsync of the one capture that drives the arm, so the port implements the default leg and discloses the other. The gate is a field-VM transient flag, so a script can raise it; what is owed is a census of the writers of bit 23 over every scene carrier, and then a capture of a beat that runs with it up. Until that exists the forked arm is a decoded body with no known caller rather than dead code. |
 | Does the morph-weight spawner ever seat its handler? | open - the opcode is parsed on both hosts and the seat is never taken | Field-VM `4C D8` spawns from the morph-weight descriptor `0x8007068C`, whose handler reads `actor[+0x3C]` / `+0x3E` as the rise and fall steps of the weight at `+0x6E`. The port parses the op and never sets `ActorHandler::MorphWeights`, so nothing steps a weight and no mesh path reads one. Three pieces are owed together, which is why this is a thread and not a wiring row: the `+0x90` rest-pose snapshot the handler blends against, the pool kernel that steps it, and a per-actor morph read in **both** hosts' dynamic-actor mesh paths. |
+
+**Does any host draw the field screen-effect fade** closed here, and the
+answer was no until it was wired: the op-`0x34` sub-0 tween published a
+`ScreenTintPush` per frame on both hosts and no render surface read it. Both
+hosts now composite it through one emitter,
+`screen_prim::screen_effect_push_prims`, driven by a page draw-list ladder and
+the native frame path. What the push's three words are is settled on the
+bytes: `FUN_80024EE4` builds exactly one full-display quad, its first argument
+is the ordering-table bucket, the second the ABR blend equation and the third a
+GP0 colour word with red in the low byte
+([settled](re-settled-threads.md#rendering--camera),
+[falsified](re-do-not-re-walk.md#rendering--camera)).
+
+**Do the field effect handlers `0x801E3E00` / `0x801E4D8C` / `0x801E5338`
+have a spawner** closed as no host builds one: `World::tick_world_map` installs
+entity state machines and carries no per-actor tick pointer, which is what
+retail's object-effect dispatch writes at `+0x0C`. The three ports are disclosed
+on that pass; the site's world-overview fog is a per-kingdom snapshot of
+`actor[+0x74]`, not a run of the script.
+
+**Do the camera-snap and ocean-only kernels run on any host** closed in two
+halves: `Camera::take_camera_snap_beats` was a ladder gap and is entered now
+(`opdeene` publishes the cutscene camera arm, the only page branch that reads
+the bank); `FieldSceneAnim::ocean_only` is the damaged-bundle fallback and no
+shipped kingdom reaches it - all three install the slot-5 CLUT walker
+([falsified](re-do-not-re-walk.md#world-map--kingdom-bundles)).
+
 
 **Which model owns the field screen-effect fade** closed here, and the answer is
 the **push**. Retail's beat, driven and logged frame by frame, is
