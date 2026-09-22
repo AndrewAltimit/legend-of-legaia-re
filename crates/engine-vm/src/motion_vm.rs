@@ -22,16 +22,18 @@
 //! ```text
 //!   +0  u8 op_byte         ; bit 0x7F = opcode, bit 0x80 = "select target"
 //!   +1  u8 target_id       ; only present if bit 0x80 set in op_byte;
-//!                          ;   special ids: 0xF8 (self), 0xFB (linked)
+//!                          ;   special ids: 0xF8 (player), 0xFB (linked)
 //!   +N  u8 operand[...]    ; opcode-specific operands
 //! ```
 //!
-//! When the high bit is set, the VM resolves a target actor before applying
-//! the body. `0xF8` resolves to "this actor" (the retail engine reads
-//! `_DAT_8007c364` - current player ptr), `0xFB` follows a linked list at
-//! `_DAT_8007c34c` looking for a matching record-class signature, and any
-//! other id linearly scans the actor list at `_DAT_8007c354` matching against
-//! the actor's id field at `+0x14`.
+//! When the high bit is set (and the id differs from the running actor's own
+//! `+0x50`), the VM resolves a target actor and applies the body **to that
+//! actor** (`0x8003774C..0x80037858`). `0xF8` resolves to the **player**
+//! (`_DAT_8007c364`), not "this actor"; `0xFB` walks the list at
+//! `_DAT_8007c34c` for the first node whose handler word `+0xC` is
+//! `0x801DA51C` (the world-map entity SM); any other id scans the list at
+//! `_DAT_8007c354` for a node whose `+0x50` equals it (an earlier reading
+//! said `+0x14`). An unresolved target ends the call returning 0.
 //!
 //! ## Opcodes implemented
 //!
@@ -40,10 +42,10 @@
 //!
 //! | byte | case body  | name             | semantics                                |
 //! |------|------------|------------------|------------------------------------------|
-//! | 0x37 | 0x8003789C | TranslateY       | accumulate Y axis by per-frame speed     |
+//! | 0x37 | 0x8003789C | CompassWalkFast  | walk X/Z along one of 8 compass directions for a frame budget, rate `0x80` |
 //! | 0x38 | 0x800379FC | RotateToAngle    | ramp yaw to a compass LUT entry over a frame budget |
-//! | 0x41 | 0x8003789C | TranslateX       | accumulate X axis by per-frame speed     |
-//! | 0x43 | 0x80037FF0 | NoOp             | tick budget consumed, no actor mutation  |
+//! | 0x41 | 0x8003789C | CompassWalkSlow  | the same arm at rate `0x40`              |
+//! | 0x43 | 0x80037FF0 | Hold             | never completes: jumps to the epilogue with the done flag clear |
 //! | 0x47 | 0x80037B84 | MoveTowardTarget | step actor XZ toward `(tx, tz)`, snapping facing per step-direction change |
 //! | 0x4C | 0x80037DE0 | FaceTarget       | ramp yaw to the target's live bearing over a frame budget |
 //! |      | 0x80037FEC | (default arm)    | terminate with `done=true`               |
@@ -136,16 +138,21 @@ pub struct MotionState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MotionOp {
-    /// `0x37` - translate along Y axis at per-frame speed.
-    TranslateY = 0x37,
+    /// `0x37` - compass walk at rate `0x80`: see [`compass_walk`]. (Formerly
+    /// read as "translate Y toward the target"; the arm at `0x8003789C`
+    /// never reads a target position or `+0x16`.)
+    CompassWalkFast = 0x37,
     /// `0x38` - ramp yaw toward an absolute compass angle (an index into the
     /// eight-entry heading LUT, [`heading_lut_engine`]) over a frame budget,
     /// shortest-path (`body0 & 0x80`) or forced-direction (`body1 & 0x80`).
     RotateToAngle = 0x38,
-    /// `0x41` - translate along X axis at per-frame speed.
-    TranslateX = 0x41,
-    /// `0x43` - no-op (tick consumed, no mutation).
-    NoOp = 0x43,
+    /// `0x41` - compass walk at rate `0x40` (same arm as `0x37`; the rate is
+    /// picked by `op == 0x37` at `0x80037904`).
+    CompassWalkSlow = 0x41,
+    /// `0x43` - hold: the jump-table slot is the shared epilogue
+    /// `0x80037FF0` entered with the done flag `s3 = 0`, so the op never
+    /// completes and the script parks on it.
+    Hold = 0x43,
     /// `0x47` - move actor's (X, Z) toward the target's (X, Z). Used by NPC
     /// pursue / camera-follow scripts.
     MoveTowardTarget = 0x47,
@@ -160,10 +167,10 @@ pub enum MotionOp {
 impl MotionOp {
     pub fn from_byte(b: u8) -> Option<Self> {
         Some(match b & 0x7F {
-            0x37 => Self::TranslateY,
+            0x37 => Self::CompassWalkFast,
             0x38 => Self::RotateToAngle,
-            0x41 => Self::TranslateX,
-            0x43 => Self::NoOp,
+            0x41 => Self::CompassWalkSlow,
+            0x43 => Self::Hold,
             0x47 => Self::MoveTowardTarget,
             0x4C => Self::FaceTarget,
             _ => return None,
@@ -266,15 +273,20 @@ pub fn rotate_step(current: u16, target: u16, decreasing: bool, speed: u32, rema
     }
 }
 
-/// Bind-record class byte that suppresses a touch post.
+/// The "no move installed" sentinel in byte 0 of an actor's
+/// `DAT_801C6470[+0x50]` record, and the value that suppresses a touch post.
 ///
-/// Read as an unsigned byte in retail (`lbu` against the immediate
-/// `0x8C`); the Ghidra C renders the comparison as the signed `-0x74`,
-/// which is the same bit pattern.
+/// It is not a class. The motion VM's prologue stamps it into bytes 0 and 1
+/// of the record (`li v1,0x8c; sb v1,0x0(v0); sb v1,0x1(v0)` at
+/// `0x800382C8..0x800382D0`), its arms restamp the record from byte 0 or 1
+/// whenever byte 0 is not `0x8C`, and `FUN_8003D038` drops the touch post
+/// for a record holding it. Read as an unsigned byte (`lbu` against the
+/// immediate `0x8C`); the Ghidra C renders the comparison as the signed
+/// `-0x74`, the same bit pattern.
 pub const TOUCH_POST_SUPPRESS_CLASS: u8 = 0x8C;
 
-/// Stride of the bind-record table at `DAT_801C6470`, in bytes. The class
-/// byte the filter tests is the record's first byte.
+/// Stride of the bind-record table at `DAT_801C6470`, in bytes. The byte the
+/// filter tests is the record's first byte.
 pub const BIND_RECORD_STRIDE: usize = 4;
 
 /// Post a collision touch to the motion VM's pending-touch slot - port of
@@ -286,10 +298,10 @@ pub const BIND_RECORD_STRIDE: usize = 4;
 /// one-slot mailbox the motion VM's wait-for-touch opcode
 /// (`0x8003882C`, inside `FUN_80038158`) consumes and resets.
 ///
-/// The guard reads the class byte of `bind_records[index]` and drops the
-/// post when it is [`TOUCH_POST_SUPPRESS_CLASS`] - so a record of that
-/// class can be walked into without ever waking a script waiting on a
-/// touch. Returns the value to store, or `None` when the post is
+/// The guard reads byte 0 of `bind_records[index]` and drops the post when
+/// it is [`TOUCH_POST_SUPPRESS_CLASS`], the motion VM's "no move installed"
+/// sentinel - so an actor whose record carries no installed move can be
+/// walked into without ever waking a script waiting on a touch. Returns the value to store, or `None` when the post is
 /// suppressed and the previous mailbox contents must be left alone.
 ///
 /// Retail does **no** bounds check on `index`; an out-of-range index reads
@@ -322,6 +334,52 @@ pub fn post_touch(bind_records: &[u8], index: usize) -> Option<u32> {
         return None;
     }
     Some(index as u32)
+}
+
+/// Axis-sign bits per compass index, the 8-byte table at `0x80073F14` the
+/// compass walk indexes with `body0 & 7`: bit 0 = `+Z`, bit 1 = `-Z`,
+/// bit 2 = `+X`, bit 3 = `-X`. Index 0 is `-Z` and the index turns
+/// clockwise through `-X`, `+Z`, `+X`.
+pub const COMPASS_AXIS_SIGNS: [u8; 8] = [0x2, 0xA, 0x8, 0x9, 0x1, 0x5, 0x4, 0x6];
+
+/// One tick of the compass walk shared by ops `0x37` / `0x41` (the arm at
+/// `0x8003789C..0x800379F8`). Returns `true` when the leg completes.
+///
+/// `body0 & 7` picks the direction ([`COMPASS_AXIS_SIGNS`]);
+/// `sel = ((body0 >> 5) & 4) | (body1 >> 6)` picks a divisor `div = 4 << sel`,
+/// and the leg lasts `(body1 & 0x3F) * div` speed units. Each tick spends
+/// `s = min(speed, remaining)` of them (`remaining` measured off `+0x54`,
+/// read signed) and moves every flagged axis by `rate * s / div` (a signed
+/// divide; `rate` is `0x80` for `0x37`, `0x40` for `0x41`), with 16-bit
+/// wrapping stores to `+0x14` / `+0x18`. The leg ends when the signed
+/// `+0x54` reaches the total; the shared epilogue then zeroes `+0x54`.
+///
+/// PORT: FUN_8003774C (the `0x37` / `0x41` arm)
+pub fn compass_walk(state: &mut MotionState, body0: u8, body1: u8, rate: i32) -> bool {
+    let sel = ((body0 >> 5) & 4) | (body1 >> 6);
+    let div = 4i32 << sel;
+    let total = i32::from(body1 & 0x3F) * div;
+    let mut spend = state.speed as i32;
+    let remaining = total - i32::from(state.op_accum as i16);
+    if remaining < spend {
+        spend = remaining;
+    }
+    let dir = COMPASS_AXIS_SIGNS[usize::from(body0 & 7)];
+    let step = ((rate * spend) / div) as i16;
+    if dir & 1 != 0 {
+        state.world_z = state.world_z.wrapping_add(step);
+    }
+    if dir & 2 != 0 {
+        state.world_z = state.world_z.wrapping_sub(step);
+    }
+    if dir & 4 != 0 {
+        state.world_x = state.world_x.wrapping_add(step);
+    }
+    if dir & 8 != 0 {
+        state.world_x = state.world_x.wrapping_sub(step);
+    }
+    state.op_accum = state.op_accum.wrapping_add(spend as u16);
+    i32::from(state.op_accum as i16) >= total
 }
 
 /// Convert a 2D displacement `(dx, dz)` to a 12-bit fixed-point yaw
@@ -370,36 +428,25 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
     // past the body. Engines reset PC themselves when starting a new
     // script.
     match op {
-        MotionOp::TranslateY => {
-            let cur = state.world_y as i32;
-            let dy = target.y as i32 - cur;
-            let step = dy.signum() * speed.min(dy.abs());
-            // `cur + step` lies between `cur` and `target.y` (both i16), so it
-            // fits i16 without wrapping.
-            state.world_y = (cur + step) as i16;
-            if state.world_y == target.y {
-                state.pc = body_off as u16;
+        MotionOp::CompassWalkFast | MotionOp::CompassWalkSlow => {
+            let (Some(&b0), Some(&b1)) = (bytecode.get(body_off), bytecode.get(body_off + 1))
+            else {
+                return StepResult::Done;
+            };
+            let rate = if op == MotionOp::CompassWalkFast {
+                0x80
+            } else {
+                0x40
+            };
+            if compass_walk(state, b0, b1, rate) {
+                state.op_accum = 0;
+                state.pc = (body_off + 2) as u16;
                 StepResult::Done
             } else {
                 StepResult::Yield
             }
         }
-        MotionOp::TranslateX => {
-            let cur = state.world_x as i32;
-            let dx = target.x as i32 - cur;
-            let step = dx.signum() * speed.min(dx.abs());
-            state.world_x = (cur + step) as i16;
-            if state.world_x == target.x {
-                state.pc = body_off as u16;
-                StepResult::Done
-            } else {
-                StepResult::Yield
-            }
-        }
-        MotionOp::NoOp => {
-            state.pc = body_off as u16;
-            StepResult::Yield
-        }
+        MotionOp::Hold => StepResult::Yield,
         MotionOp::MoveTowardTarget => {
             let cur_x = state.world_x as i32;
             let cur_z = state.world_z as i32;
@@ -577,8 +624,8 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
 /// Unlike [`rotate_step`] (which distributes an arc over a frame budget and
 /// wraps the write-back), this takes the raw signed difference
 /// `target - current`, clamps it, and adds it back. `rate` is
-/// `_DAT_1F800393 * 6` (the per-frame pad-held magnitude times six) at the
-/// retail call site. The arithmetic is 16-bit truncating, matching the
+/// `_DAT_1F800393 * 6` (the frame-time scalar - vsyncs per game tick - times
+/// six) at the retail call site. The arithmetic is 16-bit truncating, matching the
 /// halfword store to `+0x16`; there is no `& 0xFFF` normalisation, which is
 /// consistent with a height and was the loose end under the heading reading.
 ///
@@ -951,59 +998,40 @@ mod tests {
     }
 
     #[test]
-    fn step_translate_x_walks_toward_target() {
-        let mut s = st(0, 0, 4);
-        let t = tgt(10, 0, 0);
-        // 0x41 TranslateX with high bit (target select), target id = 0xF8 (self).
-        let bc = [0x41 | 0x80, 0xF8];
-        // First two steps yield (each moves 4 units; PC stays on op).
-        for _ in 0..2 {
-            assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
+    fn step_compass_walk_moves_along_the_table_direction_for_its_budget() {
+        // [0x37, b0, b1]: direction 5 (+Z +X), sel = 0 (div 4), 2 units of
+        // budget -> total 8 speed units; speed 3 per tick, rate 0x80.
+        let mut s = st(0, 0, 3);
+        let bc = [0x37, 0x05, 0x02];
+        // Tick 1: spend 3 -> step 0x80*3/4 = 96 on both axes.
+        assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Yield);
+        assert_eq!((s.world_x, s.world_z, s.op_accum), (96, 96, 3));
+        assert_eq!(s.pc, 0);
+        // Tick 2: spend 3 more (6).
+        assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Yield);
+        // Tick 3: only 2 remain -> step 0x80*2/4 = 64, leg done.
+        assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Done);
+        assert_eq!((s.world_x, s.world_z), (96 * 2 + 64, 96 * 2 + 64));
+        assert_eq!((s.op_accum, s.pc), (0, 3));
+    }
+
+    #[test]
+    fn step_compass_walk_slow_rate_and_negative_axes() {
+        // 0x41 at rate 0x40, direction 1 (-Z -X), sel from body1 >> 6 = 1
+        // (div 8), one unit -> total 8.
+        let mut s = st(100, 100, 8);
+        let bc = [0x41, 0x01, 0x41];
+        assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Done);
+        // step = 0x40 * 8 / 8 = 0x40.
+        assert_eq!((s.world_x, s.world_z), (100 - 0x40, 100 - 0x40));
+    }
+
+    #[test]
+    fn compass_axis_signs_cover_the_eight_directions() {
+        // Each entry names exactly one sign per moving axis.
+        for bits in COMPASS_AXIS_SIGNS {
+            assert!(bits & 3 != 3 && bits & 0xC != 0xC && bits != 0);
         }
-        assert_eq!(s.world_x, 8);
-        assert_eq!(s.pc, 0, "PC should stay on op while yielding");
-        // Third step moves remaining 2 units; arrives -> Done. PC moves past op.
-        assert_eq!(step(&mut s, t, &bc), StepResult::Done);
-        assert_eq!(s.world_x, 10);
-        assert_eq!(s.pc, 2);
-    }
-
-    #[test]
-    fn step_translate_handles_extreme_coords_and_huge_speed() {
-        let bc = [0x41 | 0x80, 0xF8]; // TranslateX, self target
-
-        // Target at i16::MIN with the actor at a positive position: the i16
-        // displacement would be i16::MIN, whose `.abs()` overflow-panics in
-        // debug. The i32 path must move toward it without panicking.
-        let mut s = st(100, 0, 4);
-        let t = tgt(i16::MIN, 0, 0);
-        assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
-        assert_eq!(s.world_x, 96, "moved 4 toward i16::MIN, no panic");
-
-        // A speed > 0x7FFF would flip the step's sign if cast to i16, sending the
-        // actor the WRONG way. It must still move toward the target and clamp.
-        let mut s2 = st(-100, 0, 0xFFFF);
-        let t2 = tgt(200, 0, 0);
-        assert_eq!(step(&mut s2, t2, &bc), StepResult::Done);
-        assert_eq!(
-            s2.world_x, 200,
-            "huge speed clamps at the target in the correct direction"
-        );
-    }
-
-    #[test]
-    fn step_translate_y_clamps_at_target() {
-        let mut s = MotionState {
-            world_y: 5,
-            speed: 100,
-            ..Default::default()
-        };
-        let t = tgt(0, 7, 0);
-        // 0x37 TranslateY without target byte (no high bit).
-        let bc = [0x37];
-        // First step: move 2 units (clamped - speed > dy).
-        assert_eq!(step(&mut s, t, &bc), StepResult::Done);
-        assert_eq!(s.world_y, 7);
     }
 
     #[test]
@@ -1022,12 +1050,16 @@ mod tests {
     }
 
     #[test]
-    fn step_no_op_consumes_tick_only() {
+    fn step_hold_never_completes() {
+        // 0x43's jump-table slot is the epilogue with the done flag clear:
+        // retail parks on it (the port used to advance past it).
         let mut s = st(2, 3, 1);
         let bc = [0x43];
-        assert_eq!(step(&mut s, tgt(99, 99, 99), &bc), StepResult::Yield);
+        for _ in 0..3 {
+            assert_eq!(step(&mut s, tgt(99, 99, 99), &bc), StepResult::Yield);
+        }
         assert_eq!((s.world_x, s.world_z), (2, 3));
-        assert_eq!(s.pc, 1);
+        assert_eq!(s.pc, 0);
     }
 
     #[test]
