@@ -2127,6 +2127,12 @@ impl PlayWindowApp {
                 save_chrome_draw_vec.extend(self.battle_spoils_chrome_sprite_draws(w, h));
             }
             save_chrome_draw_vec.extend(self.field_menu_chrome_sprite_draws(w, h));
+            // The shop / inn panel's gold 9-slice frame, sized off the same
+            // stage text `build_hud` scales. The browser play page has framed
+            // this panel since it gained the chrome atlas; the window drew the
+            // rows bare because the frame belongs to this `&self` sprite pass
+            // and nothing here could size it.
+            save_chrome_draw_vec.extend(self.shop_overlay_chrome_sprite_draws(w, h));
             // Dialog-window chrome (gradient fill + gold frame + hand
             // cursors) shares the system-UI atlas slot; a dialog box
             // and the boot/menu chrome are mutually exclusive states.

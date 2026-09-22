@@ -195,6 +195,47 @@ pub(crate) fn nine_slice_border_into(
     }
 }
 
+/// Inset of the shop / inn panel's frame from the panel's own pen, and the
+/// padding its height carries past the last row.
+///
+/// The panel is not a retail window descriptor - the shop UI lives in the
+/// menu overlay's own windows and this is the port's bottom-of-screen stand
+/// in - so these are the port's numbers, kept in one place because two hosts
+/// draw the same box and the frame is sized from the text.
+pub const SHOP_PANEL_INSET: i32 = 8;
+/// Width of the shop / inn panel frame, in stage pixels.
+pub const SHOP_PANEL_WIDTH: i32 = 200;
+/// Row pitch the shop row builder lays its rows out at.
+pub const SHOP_PANEL_ROW_PITCH: i32 = 14;
+/// Slack the frame's height carries past the last row.
+pub const SHOP_PANEL_HEIGHT_PAD: i32 = 12;
+
+/// How many rows a shop / inn panel's text occupies - the count of distinct
+/// baselines in its draw list.
+///
+/// Sizing the frame off the text rather than off the session means a screen
+/// that grows a row grows its frame, on both hosts, without either one
+/// re-deriving the row count from a session shape it does not share.
+pub fn shop_panel_rows(draws: &[TextDraw]) -> i32 {
+    draws
+        .iter()
+        .map(|d| d.dst.1)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        .max(1) as i32
+}
+
+/// Stage rect of the gold 9-slice frame around a shop / inn panel whose text
+/// starts at `pen` and occupies `rows` rows.
+pub fn shop_panel_frame_rect(pen: (i32, i32), rows: i32) -> (i32, i32, i32, i32) {
+    (
+        pen.0 - SHOP_PANEL_INSET,
+        pen.1 - SHOP_PANEL_INSET,
+        SHOP_PANEL_WIDTH,
+        rows * SHOP_PANEL_ROW_PITCH + SHOP_PANEL_HEIGHT_PAD,
+    )
+}
+
 /// Compose the retail 9-slice window chrome (interior fill + border) for
 /// **any** menu window at an arbitrary `(x, y, w, h)` stage rect.
 ///

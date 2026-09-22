@@ -1398,18 +1398,15 @@ impl LegaiaRuntime {
         let mut texts: Vec<TextDraw> = Vec::new();
         if let Some(draws) = shop {
             // Frame the panel in the same gold 9-slice the pause menu uses,
-            // sized to the row count (title row + one row per entry at the
-            // builder's 14-px pitch).
+            // sized off the text through the shared `shop_panel_rows` /
+            // `shop_panel_frame_rect` pair - the same two calls the native
+            // window's sprite pass makes, so the inset, the width and the row
+            // pitch are one set of numbers rather than two.
             if let Some(rects) = chrome {
-                let rows = draws
-                    .iter()
-                    .map(|d| d.dst.1)
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .len()
-                    .max(1) as i32;
+                let rows = ui::shop_panel_rows(&draws);
                 sprites.extend(ui::menu_window_chrome_draws_for(
                     rects,
-                    (SHOP_PEN.0 - 8, SHOP_PEN.1 - 8, 200, rows * 14 + 12),
+                    ui::shop_panel_frame_rect(SHOP_PEN, rows),
                     origin,
                     scale,
                 ));
