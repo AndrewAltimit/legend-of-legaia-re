@@ -586,6 +586,31 @@ outside the window and survives a window with no signal.
 whole: a body that opens with a run of `nop`s is rejected as
 `zero_window_head`, because nothing at its entry corroborates its printed base.
 
+The byte account lacked the rule for one path: an extent no re-encoding
+confirms, credited because its filename names the image. Two dumps entered by
+that door - `FUN_801D84B4` as dumped from the fishing (`0972`) and the Baka
+Fighter (`0976`) images, both opening on eight or more `nop`s, neither holding a
+frame prologue or a `jr ra` - and together credited over 22 KB of data as code.
+It refuses a fill-headed label credit now
+([`byte-accounting.md`](byte-accounting.md#a-dump-that-opens-on-fill-is-not-code-either)).
+
+### Other data signatures find nothing more
+
+The `$zero`-absolute signature is the one data shape the attribution sweep
+refuses (the `data` class). A sweep of every image-attributed extent for the
+other shapes data takes when printed as code - runs of eight or more
+consecutive words that decode to reserved R3000 opcodes, invalid `SPECIAL` /
+`REGIMM` / COP0 forms, COP2 words with no GTE function, or four-byte ASCII -
+finds none: over the attributed extents the longest such run is two words. Over
+the dump *text*, runs of eight or more lines whose mnemonic the R3000A lacks
+(`movf`, `movz`, `beql`, `cache`, `jalr.hb`, `.byte`, and the like) occur in
+six files, and none is a per-function dump crediting code: two are `data_*`
+windows, one is the muscle-dome DATA WINDOW note, two are function-inventory
+listings whose name column parses as a mnemonic, and one is a probe listing
+printing an undecoded region as `.byte`. The data-over-code dumps that matter
+are the two shapes above: tables that open on the `$zero`-absolute signature,
+and extents that open on fill.
+
 ### Own content, not the extracted file
 
 The cut matters more than the comparison. An extraction is the entry's
