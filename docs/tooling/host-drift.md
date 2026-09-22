@@ -799,6 +799,69 @@ content waiver from outliving the thing it described. A row is not a licence
 for the difference; it is a statement of **where the other host does the same
 work**, in the form the waiver rules above require.
 
+## What a screenshot pair adds to a green row, and what it does not
+
+Every tier here is a source measurement, and a row closed by one is a claim
+about code, not about pixels. The two hosts can be paired by a gate, reach a
+kernel by a ladder, and still put different frames on screen - so a closed
+row deserves a pair of pictures at the same state at least once.
+
+The recipe, because it took several wrong turns to find:
+
+| host | driver |
+|---|---|
+| browser play page | headless Chromium through `playwright-core`, against `python3 -m http.server` over `site/`, with `--use-angle=swiftshader`; the page's `window.__playRuntime` / `window.__playState` hooks say what state the frame is in, and `#play-canvas` is the element to screenshot |
+| native window | `legaia-engine play-window --screenshot <png> --screenshot-tick N`, with `--pad-script` / `--key-script` for input - an offscreen readback, not a screen-scrape |
+
+Three traps, each of which cost a run:
+
+- **`--pad-script` cannot confirm a boot-title row.** `Down` moves the title
+  cursor; neither `Cross` nor `Start` confirms it. The title's confirm lives
+  in the keyboard handler, so the entry is `--key-script "<tick>:Z"` - the
+  same split the flag's own help warns about for the minigame entries.
+- **A multi-save `.mcr` does not insert itself.** The page's import raises a
+  block picker whose buttons live in `#save-status`, and until one is
+  clicked no `kind: "card"` session exists, the card rack stays hidden and
+  `boot_title_has_save_data()` stays false - so the title's CONTINUE row is
+  dim and the boot save-select is unreachable. That is the page working as
+  designed, not a defect; a driver that clicks the rack instead measures a
+  dim row and concludes wrongly.
+- **Two hosts at the same tick are not at the same frame.** The window is
+  960x699 on this display where the page canvas is 960x720, so the vertical
+  field of view differs and the native framing reads as "closer". A framing
+  difference between the two is not evidence of a camera drift unless the
+  surfaces match: both hosts read the same
+  `options_state.camera_distance` (`window/run.rs`, `runtime.rs`), so that
+  knob is not the difference.
+
+### What the pairs showed
+
+Four states captured on both hosts: a field scene at spawn, a battle at its
+command phase, the boot title card and the boot save-select.
+
+Confirmed matching, for rows that until now were only test-asserted: the
+battle's sky clear colour and stage (B3), the command ring and its two
+labels, the party HUD block's content and pen, the title card's bands and
+its glyph-atlas menu rows, and the field scene's geometry, textures and
+player placement.
+
+One row the pair makes visible rather than settles: **C11, the dimmed title
+art behind the boot save-select.** The native draws the Load frame and the
+SLOT pills over the title card at reduced brightness; the page draws the
+same frame and pills over black, because it drops its title session on
+`TitleOutcome::Continue` (`crates/web-viewer/src/boot_title.rs`). The two
+screens are otherwise identical, which is exactly why no gate fails: the
+backdrop is a session the page released, not a draw it spells differently.
+
+One candidate the pair raises and does not settle: in the battle command
+phase the page carries a run of **flat yellow strips** along the ground and
+around the monster that the native frame does not, at three sampled page
+frames about 350 apart. The page's battle-FX billboard path
+(`crates/web-viewer/src/play_battle_fx.rs`) emits untextured strips with
+alpha `0` as its "untextured" flag, which is the shape a billboard whose
+atlas page is not resident takes. The two captures are not frame-matched, so
+this is an observation to reproduce with a paired capture, not a finding.
+
 ## Gaps the tiers were blind to, closed by reading the two hosts side by side
 
 One pass over both hosts, domain by domain, with every tier above green,
