@@ -616,7 +616,14 @@ impl PlayWindowApp {
                 .muscle_contest
                 .as_ref()
                 .map_or(1, |c| c.round() as i32 + 1);
-            self.muscle_round_banner = Some((round, HubScreen::round_banner()));
+            // The card runs once per leg: a re-entered hub already played it
+            // over the still, so the leg that opens after it does not.
+            if legaia_engine_core::muscle_ringside::leg_open_raises_round_card(
+                self.muscle_card_round.take(),
+                round,
+            ) {
+                self.muscle_round_banner = Some((round, HubScreen::round_banner()));
+            }
             if contest_open && !self.muscle_prev_contest_open {
                 self.muscle_intro_card = Some(HubScreen::intro_card());
             }
@@ -680,6 +687,17 @@ impl PlayWindowApp {
                 ramp.fade[0] >= legaia_engine_core::other_game_overlay::LANE_FADE_FULL
             });
             backdrop.tick(1, pad, self.muscle_interval.map(|i| i.stage()), lane0_full);
+            if backdrop.card_brightness().is_some() {
+                self.muscle_card_round = Some(
+                    self.session
+                        .host
+                        .world
+                        .minigames
+                        .muscle_contest
+                        .as_ref()
+                        .map_or(1, |c| c.round() as i32 + 1),
+                );
+            }
             if backdrop.done() {
                 self.muscle_backdrop = None;
             }
@@ -925,6 +943,20 @@ impl PlayWindowApp {
         // brightness.
         let mut quads: Vec<hud::HudQuad> = Vec::new();
         if in_dome {
+            // A first visit's brick wall (the emitter's latch-0 arm) under
+            // the two leg-open screens, at the level retail's arms 2..6 give
+            // it - drawn first, so it sits behind the cards.
+            let wall = legaia_engine_core::muscle_ringside::first_visit_backdrop_level(
+                self.muscle_intro_card.as_ref(),
+                self.muscle_round_banner.as_ref().map(|(_, b)| b),
+            );
+            if wall > 0 {
+                quads.extend(hud::hub_screen_quads(
+                    &mut table,
+                    &legaia_engine_render::ringside_backdrop::first_visit_tile_draws(),
+                    wall,
+                ));
+            }
             if let Some(card) = self.muscle_intro_card {
                 quads.extend(hud::hub_screen_quads(
                     &mut table,

@@ -888,6 +888,10 @@ struct PlayWindowApp {
     /// The ROUND banner: `(displayed round number, envelope)`, armed on
     /// every leg entry (after the intro card on a fresh contest).
     muscle_round_banner: Option<(i32, legaia_engine_core::muscle_dome::HubScreen)>,
+    /// The round a re-entered hub's backdrop last drew its ROUND card for, so
+    /// the leg that opens after it does not replay the card
+    /// (`muscle_ringside::leg_open_raises_round_card`).
+    muscle_card_round: Option<i32>,
     /// The between-legs INTERVAL + score-tally screen's envelope, armed when
     /// a leg closes while its contest is (or just was) open.
     muscle_interval: Option<legaia_engine_core::muscle_dome::HubScreen>,

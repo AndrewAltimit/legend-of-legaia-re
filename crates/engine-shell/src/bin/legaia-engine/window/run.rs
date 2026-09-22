@@ -1158,6 +1158,7 @@ pub(super) fn cmd_play_window_with_record(
         muscle_hub: None,
         muscle_intro_card: None,
         muscle_round_banner: None,
+        muscle_card_round: None,
         muscle_interval: None,
         muscle_tally: None,
         muscle_backdrop: None,
