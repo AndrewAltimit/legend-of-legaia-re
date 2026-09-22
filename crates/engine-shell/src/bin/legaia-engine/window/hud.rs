@@ -1556,7 +1556,6 @@ impl PlayWindowApp {
     pub(super) fn shop_overlay_stage_draws(&self) -> Vec<TextDraw> {
         let mut stage: Vec<TextDraw> = Vec::new();
         let white = [1.0f32, 1.0, 1.0, 1.0];
-        let dim = [0.7f32, 0.85, 1.0, 1.0];
         // Casino coin counter (op-0x49 sub-6): the submode screen's digit
         // entry, drawn off the world's live counter cells whenever the
         // screen is open on the coin slot. Not a menu-runtime state - the
