@@ -285,6 +285,18 @@ fn high_glyph_fold(b: u8) -> Option<&'static str> {
         0xA3 => "u", // u-acute
         0xA4 => "n", // n-tilde
         0xA5 => "N", // N-tilde
+        // The CP850 cells a Portuguese font patch redraws over CP437's box
+        // drawing block: the ordinal indicators, the inverted punctuation
+        // and the accented capitals a Latin localization needs. Left raw,
+        // each one draws blank on the NTSC atlas - a missing letter, not a
+        // wrong one, which is why they fold rather than stay.
+        0xA6 => "a", // feminine ordinal
+        0xA7 => "o", // masculine ordinal
+        0xA8 => "?", // inverted question mark
+        0xAD => "!", // inverted exclamation mark
+        0xB5 => "A", // A-acute
+        0xB6 => "A", // A-circumflex
+        0xB7 => "A", // A-grave
         0xD0 => "A", // game-specific capital block
         0xD1 => "A",
         0xD2 => "E",
@@ -292,7 +304,19 @@ fn high_glyph_fold(b: u8) -> Option<&'static str> {
         0xD4 => "E", // Italian E-grave
         0xD5 => "I",
         0xD6 => "I",
+        0xD7 => "I",  // I-circumflex
+        0xD8 => "I",  // I-diaeresis
+        0xDE => "I",  // I-grave
+        0xE0 => "O",  // O-acute
         0xE1 => "ss", // sharp s - the one fold that grows the line
+        0xE2 => "O",  // O-circumflex
+        0xE3 => "O",  // O-grave
+        0xE4 => "o",  // o-tilde
+        0xE5 => "O",  // O-tilde
+        0xE9 => "U",  // U-acute
+        0xEA => "U",  // U-circumflex
+        0xEB => "U",  // U-grave
+        0xED => "Y",  // Y-acute
         _ => return None,
     })
 }
@@ -371,6 +395,12 @@ mod tests {
         let (s, st) = fold_high_glyphs("x{b3}");
         assert_eq!(s, "x{b3}");
         assert_eq!(st.unmapped, 1);
+        // The CP850 cells a Portuguese font patch draws: capitals, ordinals,
+        // inverted punctuation. "{b5}gua" (A-acute) and "N{e3}o"-style caps.
+        let (s, st) = fold_high_glyphs("{b5}gua {e0}{a7} {ad}{a8}");
+        assert_eq!(s, "Agua Oo !?");
+        assert_eq!(st.folded, 5);
+        assert_eq!(st.unmapped, 0);
     }
 
     #[test]

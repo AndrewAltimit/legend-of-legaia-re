@@ -194,7 +194,9 @@ Sections and their patch mechanisms:
 | `party_names` | new-game roster names (Vahn/Noa/Gala/Terra) | `scus:party:<n>` | fixed 10-byte NUL-padded field (9-byte budget) |
 | `scene_dialog` | NPC/event dialog in the scene-bundle MANs | `man:<prot>:0x<off>` | edit the `0x1F`-segment inside the LZS-decompressed MAN (space-padded to its exact length), recompress, must fit the original compressed footprint |
 | `inline_text` | dialog/narration in raw carriers (v12 event-script prescripts, streaming-MAN dungeon scenes) | `raw:<prot>:0x<off>` | space-padded same-size overwrite directly in the PROT entry; in a streaming dungeon scene a longer line grows the uncompressed MAN chunk instead (relocated like a scene MAN, later chunks shifted) - within the entry's sector slack, or by whole sectors with `--allow-relayout` |
-| `ui_menu` | overlay-resident UI strings: pause-menu / options / shop / equip / status command labels + in-battle system messages | `ui:<prot>:0x<va>` | overwrite the NUL-terminated string in the PROT **overlay** entry in place at `file offset = va - base_va`, re-terminate (short writes zero-fill the old span) |
+| `ui_menu` | overlay-resident UI strings: pause-menu / options / shop / equip / status command labels, in-battle system messages, the field overlay's shop / inn / name-select prompts, the sparring-tutorial prompts, the steal and fatal-decision result lines | `ui:<prot>:0x<va>` | overwrite the NUL-terminated string in the PROT **overlay** entry in place at `file offset = va - base_va`, re-terminate (short writes zero-fill the old span) |
+| `system_text` | `SCUS_942.54` system strings outside the name tables: battle steal / spoils result lines, the sparring-tutorial opener, the equip-screen `Remove` / `Save` labels | `scus:str:0x<va>` | same as the name tables (span + alignment padding), from pinned VA windows (`translation::ui::SCUS_STRING_POOLS`) |
+| `place_names` | world-map quick-travel place names (`legaia_asset::worldmap_menu`) | `scus:cell:0x<va>` | fixed `0x20`-byte NUL-padded cell (31-byte budget) |
 
 Strings pointer-shared by several table slots export once (the `context`
 lists the referencing ids); interior pointers clamp the `budget`. Duplicate
@@ -305,18 +307,30 @@ targets are structurally addressed, not scanned.
 Covered: the SCUS name tables (items, item types, spells, Tactical Arts,
 accessory passives, party names), the `0x1F`-segment dialog corpus (scene
 bundles + raw event-script carriers) - NPC dialog, cutscene dialog and
-narration, picker labels, chest flavor text - and the overlay-resident UI menu
-strings (`ui_menu`): the pause-menu / options / shop / equip / status command
-labels and the in-battle system messages, which are NUL-terminated C strings in
-the menu (PROT 0899) and battle (PROT 0898) overlay data segments rather than in
-any table or dialog segment. These are pinned by disc-coordinate VA windows in
-`legaia_patcher::translation::ui` (menu pool `0x801CE81C..`, battle pool
-`0x801F4B98..`, both load base `0x801CE818`; see
-[`field-menu.md`](../subsystems/field-menu.md)). They are tight: the pool is
-4-byte aligned with little slack, so a same-size translation of a short label
-(`@Items` is six bytes) can be shorter than English but rarely much longer - the
-in-battle `Attack` / `Arts` / `Magic` / `Item` command ring is drawn as
-UI-icon sprites (no text string to translate).
+narration, picker labels, chest flavor text - the overlay-resident UI strings
+(`ui_menu`), the SCUS system strings outside the name tables (`system_text`)
+and the world-map place-name cells (`place_names`).
+
+The `ui_menu` pools are NUL-terminated C strings in overlay data segments
+rather than in any table or dialog segment, pinned by disc-coordinate VA
+windows in `legaia_patcher::translation::ui` (every load base is the slot the
+overlay occupies; see [`field-menu.md`](../subsystems/field-menu.md) and
+[`static-overlay-pipeline.md`](static-overlay-pipeline.md)):
+
+| Overlay | Pool | Holds |
+|---|---|---|
+| menu, PROT 0899 | `0x801CE81C..` | options-screen choices, `@`-marked command labels, stat labels, shop / equip / status strings |
+| battle, PROT 0898 | `0x801F4B98..` | `Spirit` / `Defense` / `Escape` / `Begin`, the victory / defeat / escape / ambush messages |
+| field, PROT 0897 | `0x801CF048..` | stat labels, `Cannot equip`, the shop (`Sell` / `Buy` / `Your Gold` / `Total Cost` / `OK?`), the Genesis Tree heal prompt, `Resume` / `End Game` |
+| field, PROT 0897 | `0x801CF6AC..` | the new-game name-select prompts |
+| battle tutorial, PROT 0967 | `0x801F7684..` | the sparring-tutorial prompts (`docs/subsystems/battle.md`) |
+| cast modules 0941 / 0954 | `0x801F83A0..` / `0x801F8F30..` | steal results; `MP zero` / `Items lost` / `Gold lost` |
+
+They are tight: a pool is 4-byte aligned with little slack, so a same-size
+translation of a short label (`@Items` is six bytes) can be shorter than English
+but rarely much longer, and a lifted line that overflows stays English until a
+translator abbreviates it - the in-battle `Attack` / `Arts` / `Magic` / `Item`
+command ring is drawn as UI-icon sprites (no text string to translate).
 
 Not covered (out of scope for this pipeline):
 
@@ -324,6 +338,9 @@ Not covered (out of scope for this pipeline):
   in-battle command ring); these are enumerated with their footprint
   constraints under [Textures with baked-in text](#textures-with-baked-in-text)
   below;
+- the world-map label table trailing each kingdom MAN and each scene MAN's
+  section-2 banner name (`docs/formats/place-names.md`) - two of the three
+  carriers a place name has; only the SCUS quick-travel cells are in the pack;
 - the segment scanner is conservative by design - a dialog line that fails
   its quality gate is simply not exported and stays English. Junk entries the
   scanner does export (dev-debug strings, the odd data run that reads as

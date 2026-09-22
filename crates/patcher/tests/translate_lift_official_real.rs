@@ -239,14 +239,37 @@ fn usa_disc_lifts_onto_itself_as_the_identity() {
         "raw dialog pairs 100% with itself"
     );
 
+    // Structural pairing on the same disc is the identity: nothing shifts.
+    assert_eq!(
+        rep.man_pairing.shifted, 0,
+        "MAN lines shifted against itself"
+    );
+    assert_eq!(
+        rep.raw_pairing.shifted, 0,
+        "raw lines shifted against itself"
+    );
+    assert_eq!(
+        rep.ui_paired, rep.ui_total,
+        "overlay pools pair with themselves"
+    );
+    assert_eq!(
+        rep.system_paired, rep.system_total,
+        "SCUS pools pair with themselves"
+    );
+    assert_eq!(
+        rep.cells_paired, rep.cells_total,
+        "place-name cells pair with themselves"
+    );
+    assert!(rep.ui_total > 100 && rep.cells_total == 16 && rep.system_total >= 6);
+
     let mut checked = 0usize;
-    for (section, entries) in pack.sections.iter() {
-        if section == "ui_menu" {
-            continue; // overlay-resident pools are never lifted (see the doc)
-        }
+    for (_, entries) in pack.sections.iter() {
         for e in entries {
+            // The lift drops trailing pad spaces (they draw nothing and cost
+            // budget), so the identity holds up to that normalization.
             assert_eq!(
-                e.translation, e.source,
+                e.translation,
+                e.source.trim_end_matches(' '),
                 "{}: identity lift changed the text",
                 e.key
             );

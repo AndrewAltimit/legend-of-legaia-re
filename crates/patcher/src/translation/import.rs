@@ -36,7 +36,7 @@ use std::collections::BTreeMap;
 use anyhow::{Context, Result};
 
 use legaia_asset::man_edit::{self, TextEdit, TextSite};
-use legaia_asset::{item_names, new_game, scene_asset_table};
+use legaia_asset::{item_names, new_game, scene_asset_table, worldmap_menu};
 
 use crate::disc::DiscPatcher;
 
@@ -163,11 +163,28 @@ pub enum ImportPhase {
 
 /// Parsed provenance key.
 enum Key {
-    ScusStr { va: u32 },
-    ScusParty { slot: usize },
-    Man { entry: usize, off: usize },
-    Raw { entry: usize, off: usize },
-    Ui { prot: usize, va: u32 },
+    ScusStr {
+        va: u32,
+    },
+    ScusParty {
+        slot: usize,
+    },
+    /// A fixed `0x20`-byte NUL-padded SCUS cell (world-map place names).
+    ScusCell {
+        va: u32,
+    },
+    Man {
+        entry: usize,
+        off: usize,
+    },
+    Raw {
+        entry: usize,
+        off: usize,
+    },
+    Ui {
+        prot: usize,
+        va: u32,
+    },
 }
 
 fn parse_key(key: &str) -> Option<Key> {
@@ -183,6 +200,12 @@ fn parse_key(key: &str) -> Option<Key> {
             "party" => Some(Key::ScusParty {
                 slot: it.next()?.parse().ok()?,
             }),
+            "cell" => {
+                let va = it.next()?.strip_prefix("0x")?;
+                Some(Key::ScusCell {
+                    va: u32::from_str_radix(va, 16).ok()?,
+                })
+            }
             _ => None,
         },
         kind @ ("man" | "raw") => {
@@ -414,6 +437,57 @@ fn plan_scus_party(
     }
     let mut bytes = translated;
     bytes.resize(new_game::NAME_LEN, 0);
+    Some((off, bytes))
+}
+
+/// Plan one fixed-cell write: a `0x20`-byte NUL-padded `SCUS_942.54` field
+/// (the world-map quick-travel place names, `legaia_asset::worldmap_menu`).
+/// The write is bounded by the cell itself, like a party-name field.
+fn plan_scus_cell(
+    scus: &[u8],
+    entry: &Entry,
+    va: u32,
+    report: &mut ImportReport,
+) -> Option<(usize, Vec<u8>)> {
+    const CELL: usize = worldmap_menu::NAME_STRIDE;
+    let source = encode_source(entry, Target::CString, report).ok()?;
+    let translated = encode_translation(entry, Target::CString, report)?;
+    if !fits(entry, &translated, entry.budget.min(CELL - 1), report) {
+        return None;
+    }
+    let table_end = worldmap_menu::NAME_TABLE_ADDR + (worldmap_menu::NAME_COUNT * CELL) as u32;
+    if va < worldmap_menu::NAME_TABLE_ADDR
+        || va >= table_end
+        || !((va - worldmap_menu::NAME_TABLE_ADDR) as usize).is_multiple_of(CELL)
+    {
+        report.issue(&entry.key, "not a place-name cell address - skipped");
+        return None;
+    }
+    let Some(off) = item_names::file_offset_for_va(scus, va) else {
+        report.issue(&entry.key, "cell outside the SCUS data segment");
+        return None;
+    };
+    let Some(field) = scus.get(off..off + CELL) else {
+        report.issue(&entry.key, "cell past end of SCUS");
+        return None;
+    };
+    let cur_len = field.iter().position(|&b| b == 0).unwrap_or(field.len());
+    if &field[..cur_len] == translated.as_slice() {
+        report.already_applied += 1;
+        report.already_keys.push(entry.key.clone());
+        return None;
+    }
+    if let Some(src) = &source
+        && &field[..cur_len] != src.as_slice()
+    {
+        report.issue(
+            &entry.key,
+            "disc bytes don't match the pack source - skipped",
+        );
+        return None;
+    }
+    let mut bytes = translated;
+    bytes.resize(CELL, 0);
     Some((off, bytes))
 }
 
@@ -758,6 +832,8 @@ fn build_grown_stream_payload(
         return None;
     }
     let foot = patcher.read_entry_footprint(entry_idx).ok()?;
+    // The rebuilt payload is never shorter than the footprint (a shrunken
+    // MAN keeps its sectors), so the difference is the whole-sector growth.
     let payload = sm.rebuild(&foot, &grown)?;
     const SECTOR: usize = 2048;
     let grown_sectors = (payload.len() / SECTOR).checked_sub(foot.len() / SECTOR)?;
@@ -814,7 +890,10 @@ pub fn import_pack_phase(
                 (_, ImportPhase::All) => true,
                 (Some(Key::Man { .. }) | Some(Key::Raw { .. }), ImportPhase::DialogOnly) => true,
                 (
-                    Some(Key::ScusStr { .. }) | Some(Key::ScusParty { .. }) | Some(Key::Ui { .. }),
+                    Some(Key::ScusStr { .. })
+                    | Some(Key::ScusParty { .. })
+                    | Some(Key::ScusCell { .. })
+                    | Some(Key::Ui { .. }),
                     ImportPhase::NamesOnly,
                 ) => true,
                 // Unrecognized keys are diagnosed once, in the names (last)
@@ -830,7 +909,9 @@ pub fn import_pack_phase(
                 continue;
             }
             match key {
-                Some(Key::ScusStr { .. }) | Some(Key::ScusParty { .. }) => scus_work.push(e),
+                Some(Key::ScusStr { .. })
+                | Some(Key::ScusParty { .. })
+                | Some(Key::ScusCell { .. }) => scus_work.push(e),
                 Some(Key::Man { entry, off }) => {
                     man_work.entry(entry).or_default().push((off, e));
                 }
@@ -855,6 +936,7 @@ pub fn import_pack_phase(
             let plan = match parse_key(&e.key) {
                 Some(Key::ScusStr { va }) => plan_scus_str(&scus, e, va, &mut report),
                 Some(Key::ScusParty { slot }) => plan_scus_party(&scus, e, slot, &mut report),
+                Some(Key::ScusCell { va }) => plan_scus_cell(&scus, e, va, &mut report),
                 _ => unreachable!(),
             };
             if let Some((off, bytes)) = plan {

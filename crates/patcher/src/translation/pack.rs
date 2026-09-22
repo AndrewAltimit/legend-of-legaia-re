@@ -114,6 +114,16 @@ pub struct Sections {
     /// status command labels + in-battle system messages). See [`super::ui`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ui_menu: Vec<Entry>,
+    /// `SCUS_942.54`-resident system strings outside the name tables: the
+    /// battle steal / spoils result lines, the sparring-tutorial opener, the
+    /// equip-screen `Remove` / `Save` labels. NUL-terminated C strings in
+    /// pinned VA windows (see [`super::ui::SCUS_STRING_POOLS`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub system_text: Vec<Entry>,
+    /// World-map quick-travel place-name cells: fixed `0x20`-byte NUL-padded
+    /// fields in `SCUS_942.54` (`legaia_asset::worldmap_menu`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub place_names: Vec<Entry>,
 }
 
 impl Sections {
@@ -129,12 +139,14 @@ impl Sections {
             ("scene_dialog", self.scene_dialog.as_slice()),
             ("inline_text", self.inline_text.as_slice()),
             ("ui_menu", self.ui_menu.as_slice()),
+            ("system_text", self.system_text.as_slice()),
+            ("place_names", self.place_names.as_slice()),
         ]
         .into_iter()
     }
 
     /// Mutable view of every section, in serialization order.
-    pub fn each_mut(&mut self) -> [&mut Vec<Entry>; 9] {
+    pub fn each_mut(&mut self) -> [&mut Vec<Entry>; 11] {
         [
             &mut self.items,
             &mut self.item_types,
@@ -145,6 +157,8 @@ impl Sections {
             &mut self.scene_dialog,
             &mut self.inline_text,
             &mut self.ui_menu,
+            &mut self.system_text,
+            &mut self.place_names,
         ]
     }
 

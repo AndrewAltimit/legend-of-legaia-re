@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Context, Result};
 
 use legaia_asset::scene_asset_table;
-use legaia_asset::{accessory_passive, item_names, new_game, spell_names};
+use legaia_asset::{accessory_passive, item_names, new_game, spell_names, worldmap_menu};
 
 use crate::disc::DiscPatcher;
 
@@ -352,6 +352,44 @@ fn collect_ui_sections(patcher: &DiscPatcher, pack: &mut LanguagePack) {
     }
 }
 
+/// `SCUS_942.54` system strings outside the name tables (`scus:str:` keys in
+/// the `system_text` section) and the world-map quick-travel place-name cells
+/// (`scus:cell:` keys, fixed `0x20`-byte fields). See [`ui::SCUS_STRING_POOLS`]
+/// and `legaia_asset::worldmap_menu`.
+fn collect_scus_system_sections(scus: &[u8], pack: &mut LanguagePack) {
+    for pool in ui::SCUS_STRING_POOLS {
+        for s in ui::scan_pool(scus, pool) {
+            pack.sections.system_text.push(Entry {
+                key: format!("scus:str:0x{:08x}", s.va),
+                context: format!("{} (SCUS system string)", pool.label),
+                source: markup::decode(&s.bytes),
+                translation: String::new(),
+                budget: s.budget,
+            });
+        }
+    }
+    for n in 0..worldmap_menu::NAME_COUNT {
+        let va = worldmap_menu::NAME_TABLE_ADDR + (n * worldmap_menu::NAME_STRIDE) as u32;
+        let Some(off) = item_names::file_offset_for_va(scus, va) else {
+            continue;
+        };
+        let Some(cell) = scus.get(off..off + worldmap_menu::NAME_STRIDE) else {
+            continue;
+        };
+        let len = cell.iter().position(|&b| b == 0).unwrap_or(cell.len());
+        if len == 0 {
+            continue;
+        }
+        pack.sections.place_names.push(Entry {
+            key: format!("scus:cell:0x{va:08x}"),
+            context: format!("world-map quick-travel place name {n} (0x20-byte cell)"),
+            source: markup::decode(&cell[..len]),
+            translation: String::new(),
+            budget: worldmap_menu::NAME_STRIDE - 1,
+        });
+    }
+}
+
 /// Per-PROT-entry scan length: the entry's footprint clamped to the next
 /// entry's start, so overlapping extended footprints don't export the same
 /// disc bytes twice under two keys.
@@ -387,6 +425,7 @@ pub fn export_pack(patcher: &DiscPatcher) -> Result<LanguagePack> {
         .context("SCUS_942.54 not found in disc image")?;
     collect_scus_sections(&scus, &mut pack)?;
     collect_ui_sections(patcher, &mut pack);
+    collect_scus_system_sections(&scus, &mut pack);
 
     let cdname = patcher.cdname();
     let scene_of = |idx: usize| -> String {

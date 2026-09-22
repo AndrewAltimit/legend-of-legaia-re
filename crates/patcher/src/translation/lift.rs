@@ -25,10 +25,18 @@
 //!   VA is verified by following its pointers, with a windowed search fallback;
 //!   an unpinned build is searched from the USA VA outright), never trusted
 //!   blind.
-//! - **Dialog** (`man:` scene-bundle MANs, `raw:` event-script carriers):
-//!   positional. The Nth qualifying segment of PROT entry `i` on USA pairs with
-//!   the Nth on the PAL disc (byte offsets differ - the localized MAN repacks -
-//!   but line *order* is the script's, not the text's).
+//! - **Dialog** (`man:` scene-bundle MANs, `raw:` streaming-scene MANs):
+//!   structural. Each MAN is walked record by record with the field-VM
+//!   disassembler and a line is keyed `(record ordinal, ordinal among that
+//!   record's text leads)` - the same coordinate on every build, because the
+//!   script is one program with different strings (byte offsets differ - the
+//!   localized MAN repacks). A line the walk does not place falls back to the
+//!   scan ordinal (the Nth qualifying segment of the entry), which is what a
+//!   line the other disc's quality gate drops would otherwise shift.
+//! - **String pools** (`ui:` overlay pools, `system_text` SCUS strings,
+//!   `place_names` cells): NUL-chunk lists of the same window on both builds,
+//!   anchored on byte-identical chunks and paired by ordinal inside each
+//!   partition ([`pair_chunk_lists`]).
 //!
 //! The result is a **working pack** (`source:` = USA text, `translation:` =
 //! official PAL text) carrying the USA per-string byte budgets. It is filled
@@ -41,13 +49,15 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
 
-use legaia_asset::{item_names, new_game};
+use legaia_asset::field_disasm;
+use legaia_asset::{item_names, man_section, new_game, worldmap_menu};
 
 use crate::disc::DiscPatcher;
 
 use super::export::{SceneManText, export_pack};
 use super::pack::LanguagePack;
-use super::{markup, segments};
+use super::stream_man::StreamManText;
+use super::{markup, segments, ui};
 
 /// Longest string the pooled-name reader follows before calling a pointer bogus.
 const MAX_STRLEN: usize = 512;
@@ -471,6 +481,22 @@ pub struct TableStat {
     pub paired: usize,
 }
 
+/// How one dialog domain's lines were paired (counts only).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PairStats {
+    /// Lines paired **structurally**: the same `(record, ordinal)` on both
+    /// discs' clean script walks ([`walk_texts`]).
+    pub structural: usize,
+    /// Lines the walk does not reach on the USA side (operand runs, text
+    /// past a record's first decode error) or whose entry has a different
+    /// record shape on the source disc, paired by scan ordinal instead.
+    pub positional: usize,
+    /// Of the structural pairs, how many the scan-ordinal pairing would have
+    /// matched to a **different** source line - the lines an added, removed
+    /// or gate-failing segment earlier in the same entry shifted.
+    pub shifted: usize,
+}
+
 /// Whole-lift outcome (counts only - no text).
 #[derive(Debug, Clone, Default)]
 pub struct LiftReport {
@@ -495,6 +521,27 @@ pub struct LiftReport {
     /// `raw:` carriers: same three.
     pub raw_total: usize,
     pub raw_paired: usize,
+    /// How the `man:` / `raw:` pairs were made.
+    pub man_pairing: PairStats,
+    pub raw_pairing: PairStats,
+    /// Overlay `ui:` pool strings paired / total, and per pool.
+    pub ui_paired: usize,
+    pub ui_total: usize,
+    pub ui_pools: Vec<PoolStat>,
+    /// `system_text` SCUS strings paired / total.
+    pub system_paired: usize,
+    pub system_total: usize,
+    /// World-map place-name cells paired / total.
+    pub cells_paired: usize,
+    pub cells_total: usize,
+}
+
+/// One string pool's pairing outcome.
+#[derive(Debug, Clone)]
+pub struct PoolStat {
+    pub label: String,
+    pub paired: usize,
+    pub total: usize,
 }
 
 impl LiftReport {
@@ -668,8 +715,17 @@ pub fn lift_official(
         report.tables.push(stat);
     }
 
-    // Fill scus:str entries from the map.
-    for entries in pack.sections.each_mut() {
+    // Fill the name-table `scus:str` entries from the map (the `system_text`
+    // pools are SCUS strings too, but not pointer-addressed - they pair by
+    // pool below).
+    let sections = &mut pack.sections;
+    for entries in [
+        &mut sections.items,
+        &mut sections.item_types,
+        &mut sections.spells,
+        &mut sections.arts,
+        &mut sections.accessory_passives,
+    ] {
         for e in entries.iter_mut() {
             let Some(va) = key_scus_va(&e.key) else {
                 continue;
@@ -714,27 +770,139 @@ pub fn lift_official(
         report.party_filled += 1;
     }
 
-    // ---- Dialog: positional pairing per PROT entry ----
+    // ---- Dialog: structural pairing per PROT entry ----
     // Group MAN / raw pack entries by PROT index (they are already in scan
     // order within a group, matching the USA scan the pack was built from).
-    fill_dialog(
+    let man_stats = fill_dialog(
         target,
         source,
         &mut pack.sections.scene_dialog,
-        man_seg_texts,
+        DialogDomain {
+            seg_texts: man_seg_texts,
+            man_of: man_of_scene,
+        },
         &mut report.man_total,
         &mut report.man_paired,
     )?;
-    fill_dialog(
+    report.man_pairing = man_stats;
+    let raw_stats = fill_dialog(
         target,
         source,
         &mut pack.sections.inline_text,
-        raw_seg_texts,
+        DialogDomain {
+            seg_texts: raw_seg_texts,
+            man_of: man_of_stream,
+        },
         &mut report.raw_total,
         &mut report.raw_paired,
     )?;
+    report.raw_pairing = raw_stats;
+
+    // ---- Overlay UI pools, SCUS system strings, place-name cells ----
+    lift_ui_pools(target, source, &mut pack, &mut report);
+    let drift = report
+        .tables
+        .iter()
+        .zip(TABLES)
+        .filter(|(t, _)| t.located)
+        .map(|(t, spec)| t.pal_base as i64 - spec.usa_base as i64)
+        .next_back()
+        .unwrap_or(0);
+    lift_scus_pools(&usa_exe, &pal_exe, drift, &mut pack, &mut report);
+    lift_place_cells(&usa_exe, &pal_exe, drift, &mut pack, &mut report);
+
+    // The source-side text is written to fit its own slots, padded with
+    // trailing spaces where a translator kept a line same-size; those spaces
+    // draw nothing and only cost budget on the target, so they are dropped.
+    for entries in pack.sections.each_mut() {
+        for e in entries.iter_mut() {
+            let trimmed = e.translation.trim_end_matches(' ');
+            if !trimmed.is_empty() && trimmed.len() != e.translation.len() {
+                e.translation.truncate(trimmed.len());
+            }
+        }
+    }
 
     Ok((pack, report))
+}
+
+/// Every text lead a MAN's clean script walk reaches, in walk order: the
+/// structural coordinate of a dialog line. Records are enumerated the way the
+/// census does (partition-then-record), and a line's coordinate is `(record
+/// ordinal, ordinal among that record's text leads)` - the same on every
+/// build, because the script is the same program with different strings.
+struct WalkTexts {
+    /// The MAN's record shape - a lift only trusts the coordinates when both
+    /// discs' MANs have the same one.
+    shape: (usize, [i16; 3]),
+    /// Text offset (first glyph byte) -> coordinate.
+    by_off: BTreeMap<usize, (usize, usize)>,
+    /// Coordinate -> text offset.
+    by_ord: BTreeMap<(usize, usize), usize>,
+}
+
+/// Walk every record of `man` and collect its text leads. `None` when the
+/// buffer is not a MAN.
+fn walk_texts(man: &[u8]) -> Option<WalkTexts> {
+    let mf = man_section::parse(man).ok()?;
+    let spans = field_disasm::man_script_spans(&mf, man);
+    let mut w = WalkTexts {
+        shape: (spans.len(), mf.header.partition_counts),
+        by_off: BTreeMap::new(),
+        by_ord: BTreeMap::new(),
+    };
+    for (rec, (_partition, _index, start, pc0, len)) in spans.into_iter().enumerate() {
+        let end = start + len;
+        let mut pc = start + pc0;
+        let mut k = 0usize;
+        while pc < end {
+            let Ok(insn) = field_disasm::decode(man, pc) else {
+                break;
+            };
+            if insn.size == 0 {
+                break;
+            }
+            if let Some(lead) = field_disasm::text_lead(man, &insn) {
+                let off = lead + 1;
+                w.by_off.insert(off, (rec, k));
+                w.by_ord.insert((rec, k), off);
+                k += 1;
+            }
+            pc += insn.size;
+        }
+    }
+    Some(w)
+}
+
+/// The text bytes of the `0x1F`-framed line whose first glyph is at `off`:
+/// up to (not including) its `0x00` terminator. `None` for an empty or
+/// unterminated run.
+fn text_at(man: &[u8], off: usize) -> Option<&[u8]> {
+    // Token-walk, not a byte scan: a two-byte token such as `{c1:00}` carries
+    // a `0x00` operand that is not the terminator.
+    let term = segments::walk_to_terminator(man, off)?;
+    (man[term] == 0x00 && term > off && term - off <= MAX_STRLEN).then(|| &man[off..term])
+}
+
+/// The MAN a dialog domain's keys index into: `(entry offset of the MAN's
+/// byte 0, MAN bytes)`. `man:` keys are decompressed-MAN offsets (base 0);
+/// `raw:` keys are entry offsets into a streaming scene whose MAN chunk sits
+/// four bytes in.
+type ManOf = fn(&[u8]) -> Option<(usize, Vec<u8>)>;
+
+fn man_of_scene(entry: &[u8]) -> Option<(usize, Vec<u8>)> {
+    SceneManText::locate(entry).map(|m| (0, m.decoded))
+}
+
+fn man_of_stream(entry: &[u8]) -> Option<(usize, Vec<u8>)> {
+    StreamManText::locate(entry).map(|m| (m.man_range().start, m.man))
+}
+
+/// One dialog domain: how to list its scan-ordered segments (the positional
+/// fallback) and how to reach its MAN (the structural pairing).
+struct DialogDomain {
+    seg_texts: SegTexts,
+    man_of: ManOf,
 }
 
 /// Blank every `translation` in `pack` that the `baseline` pack also carries -
@@ -818,17 +986,27 @@ pub fn fold_pack_accents(pack: &mut LanguagePack) -> markup::FoldStats {
 /// dialog domain (MAN or raw), given the PAL-tolerant `allow_high` flag.
 type SegTexts = fn(&[u8], bool) -> Vec<(usize, Vec<u8>)>;
 
-/// Fill a dialog section's translations by positional pairing. `seg_texts`
-/// extracts the ordered segment texts of a PROT entry in the section's domain.
+/// Fill a dialog section's translations. A line is paired **structurally**
+/// first - the same `(record, ordinal)` on both discs' clean script walks
+/// ([`walk_texts`]) - and by scan ordinal only where the walk does not place
+/// it (an operand run, text past a record's first decode error, or an entry
+/// whose MAN has a different record shape on the source disc).
+///
+/// The structural coordinate is what makes the pairing robust to the source
+/// disc adding, removing or re-shaping a line: a fan patch that rewrites
+/// `Yes` as `S.` drops that line out of the scan's quality gate, and every
+/// scan ordinal after it in the scene then names the *previous* line - a
+/// shift the counts never show. The walk does not care what the text is.
 fn fill_dialog(
     target: &DiscPatcher,
     source: &DiscPatcher,
     entries: &mut [super::pack::Entry],
-    seg_texts: SegTexts,
+    domain: DialogDomain,
     total: &mut usize,
     paired: &mut usize,
-) -> Result<()> {
+) -> Result<PairStats> {
     use std::collections::BTreeMap;
+    let mut stats = PairStats::default();
     // Group entry-vec indices by PROT index.
     let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for (i, e) in entries.iter().enumerate() {
@@ -851,14 +1029,22 @@ fn fill_dialog(
         // the USA side strict skipped those hits on one side only and shifted
         // every ordinal after the first one in the entry: a retail disc lifted
         // onto itself came back with other lines' text.
-        let usa_list = seg_texts(&usa_entry, true);
-        let pal_list = seg_texts(&pal_entry, true);
+        let usa_list = (domain.seg_texts)(&usa_entry, true);
+        let pal_list = (domain.seg_texts)(&pal_entry, true);
         // Map USA text offset -> ordinal.
         let ord_of: BTreeMap<usize, usize> = usa_list
             .iter()
             .enumerate()
             .map(|(k, (off, _))| (*off, k))
             .collect();
+        // The structural coordinates, when both MANs are the same program.
+        let walks = match ((domain.man_of)(&usa_entry), (domain.man_of)(&pal_entry)) {
+            (Some((ub, um)), Some((pb, pm))) => match (walk_texts(&um), walk_texts(&pm)) {
+                (Some(uw), Some(pw)) if uw.shape == pw.shape => Some((ub, uw, pb, pm, pw)),
+                _ => None,
+            },
+            _ => None,
+        };
         for &m in &members {
             let key = entries[m].key.clone();
             // Offset from the key.
@@ -869,16 +1055,386 @@ fn fill_dialog(
             else {
                 continue;
             };
-            let Some(&k) = ord_of.get(&off) else {
-                continue;
+            let positional = ord_of
+                .get(&off)
+                .and_then(|&k| pal_list.get(k))
+                .map(|(o, t)| (*o, t.as_slice()));
+            let structural = walks.as_ref().and_then(|(ub, uw, pb, pm, pw)| {
+                let man_off = off.checked_sub(*ub)?;
+                let coord = uw.by_off.get(&man_off)?;
+                let pal_off = *pw.by_ord.get(coord)?;
+                text_at(pm, pal_off).map(|t| (pal_off + pb, t))
+            });
+            let chosen = match (structural, positional) {
+                (Some((pal_off, text)), pos) => {
+                    stats.structural += 1;
+                    if pos.is_none_or(|(o, _)| o != pal_off) {
+                        stats.shifted += 1;
+                    }
+                    Some(text)
+                }
+                (None, Some((_, text))) => {
+                    stats.positional += 1;
+                    Some(text)
+                }
+                (None, None) => None,
             };
-            if let Some((_, text)) = pal_list.get(k) {
+            if let Some(text) = chosen {
                 entries[m].translation = markup::decode(text);
                 *paired += 1;
             }
         }
     }
-    Ok(())
+    Ok(stats)
+}
+
+/// NUL-to-NUL chunks of `buf[lo..hi)`: `(offset, bytes)` of every non-empty
+/// run, junk included - the raw material the pool pairing anchors on.
+fn nul_chunks(buf: &[u8], lo: usize, hi: usize) -> Vec<(usize, Vec<u8>)> {
+    let hi = hi.min(buf.len());
+    let mut out = Vec::new();
+    let mut pos = lo;
+    while pos < hi {
+        if buf[pos] == 0 {
+            pos += 1;
+            continue;
+        }
+        let mut e = pos;
+        while e < hi && buf[e] != 0 {
+            e += 1;
+        }
+        // A string pool's first string can trail the code that addresses it
+        // with no NUL between: key the chunk on its first glyph, not on the
+        // control bytes ahead of it, so the two builds' chunks compare.
+        let start = pos + buf[pos..e].iter().take_while(|&&b| b < 0x20).count();
+        // A run that is control bytes only is kept whole: the build-invariant
+        // byte runs between two strings are what anchor the pairing.
+        let start = if start < e { start } else { pos };
+        out.push((start, buf[start..e].to_vec()));
+        pos = e;
+    }
+    out
+}
+
+/// Pair two NUL-chunk lists of the *same* string pool on two builds:
+/// `usa offset -> source bytes`.
+///
+/// Identical chunks that occur once on each side (a stat label, a proper
+/// noun, a run of pointer bytes the two builds share) are **anchors**; they
+/// partition both lists, and inside a partition the chunks pair by ordinal
+/// when the two sides count the same. Where they do not - the source build
+/// carries an extra string, or a window edge cut a run - the partition
+/// retries on the prose-shaped chunks only (`segments::qualifies_ext`), and
+/// an edge partition aligns on its anchor side. Nothing pairs across a
+/// disagreement: an unpaired label stays vanilla on import, which is the
+/// safe failure.
+fn pair_chunk_lists(
+    usa: &[(usize, Vec<u8>)],
+    src: &[(usize, Vec<u8>)],
+) -> BTreeMap<usize, Vec<u8>> {
+    use std::collections::HashMap;
+    fn count(list: &[(usize, Vec<u8>)]) -> HashMap<&[u8], usize> {
+        let mut m: HashMap<&[u8], usize> = HashMap::new();
+        for (_, b) in list {
+            *m.entry(b.as_slice()).or_default() += 1;
+        }
+        m
+    }
+    let (cu, cs) = (count(usa), count(src));
+    let src_index: HashMap<&[u8], usize> = src
+        .iter()
+        .enumerate()
+        .map(|(i, (_, b))| (b.as_slice(), i))
+        .collect();
+    // Anchors, monotonic in both lists.
+    let mut anchors: Vec<(usize, usize)> = Vec::new();
+    let mut last = 0usize;
+    for (i, (_, b)) in usa.iter().enumerate() {
+        if cu.get(b.as_slice()) == Some(&1)
+            && cs.get(b.as_slice()) == Some(&1)
+            && let Some(&j) = src_index.get(b.as_slice())
+            && (anchors.is_empty() || j > last)
+        {
+            anchors.push((i, j));
+            last = j;
+        }
+    }
+    let mut out = BTreeMap::new();
+    let mut bounds = vec![(0usize, 0usize)];
+    bounds.extend(anchors.iter().map(|&(i, j)| (i + 1, j + 1)));
+    let ends: Vec<(usize, usize)> = anchors
+        .iter()
+        .map(|&(i, j)| (i, j))
+        .chain(std::iter::once((usa.len(), src.len())))
+        .collect();
+    for (p, (&(ui, sj), &(ue, se))) in bounds.iter().zip(&ends).enumerate() {
+        let (u, s) = (&usa[ui..ue], &src[sj..se]);
+        if u.len() == s.len() {
+            for (a, b) in u.iter().zip(s) {
+                out.insert(a.0, b.1.clone());
+            }
+            continue;
+        }
+        // The source window is widened past the pool on purpose (its strings
+        // run longer), so a partition's surplus is run-in before or run-out
+        // after the pool. A partition anchored on one side aligns on that
+        // side; a window with no anchor tries the head first. Either way the
+        // aligned pairs must agree pairwise in shape (prose against prose,
+        // pointer bytes against pointer bytes, comparable length), and the
+        // same is retried over the prose-shaped chunks only, so a run of
+        // one-byte junk on one side cannot displace a line.
+        let head_first = p + 1 == bounds.len();
+        let prose = |c: &(usize, Vec<u8>)| segments::qualifies_ext(&c.1, true);
+        let up: Vec<&(usize, Vec<u8>)> = u.iter().filter(|c| prose(c)).collect();
+        let sp: Vec<&(usize, Vec<u8>)> = s.iter().filter(|c| prose(c)).collect();
+        let u_all: Vec<&(usize, Vec<u8>)> = u.iter().collect();
+        let s_all: Vec<&(usize, Vec<u8>)> = s.iter().collect();
+        let pairs =
+            align_chunks(&u_all, &s_all, head_first).or_else(|| align_chunks(&up, &sp, head_first));
+        if let Some(pairs) = pairs {
+            for (a, b) in pairs {
+                out.insert(a.0, b.1.clone());
+            }
+        }
+    }
+    for &(i, j) in &anchors {
+        out.insert(usa[i].0, src[j].1.clone());
+    }
+    out
+}
+
+/// Two chunks of the same pool slot on two builds look alike: both prose or
+/// both not, and when prose, within a length ratio a translation stays inside.
+fn chunks_agree(a: &[u8], b: &[u8]) -> bool {
+    let (pa, pb) = (
+        segments::qualifies_ext(a, true),
+        segments::qualifies_ext(b, true),
+    );
+    if pa != pb {
+        return false;
+    }
+    if !pa {
+        return true;
+    }
+    let (la, lb) = (a.len().max(1), b.len().max(1));
+    la * 2 <= lb * 5 && lb * 2 <= la * 5
+}
+
+/// A NUL-delimited chunk of a string pool: `(offset, bytes)`.
+type Chunk = (usize, Vec<u8>);
+
+/// Align two chunk lists of unequal length by their head or their tail,
+/// whichever the caller prefers, accepting an alignment only when every
+/// pair [`chunks_agree`]s. `None` when neither does.
+fn align_chunks<'a>(
+    u: &[&'a Chunk],
+    s: &[&'a Chunk],
+    head_first: bool,
+) -> Option<Vec<(&'a Chunk, &'a Chunk)>> {
+    let n = u.len().min(s.len());
+    if n == 0 {
+        return None;
+    }
+    let head: Vec<_> = u[..n].iter().zip(&s[..n]).map(|(a, b)| (*a, *b)).collect();
+    let tail: Vec<_> = u[u.len() - n..]
+        .iter()
+        .zip(&s[s.len() - n..])
+        .map(|(a, b)| (*a, *b))
+        .collect();
+    let order = if head_first {
+        [head, tail]
+    } else {
+        [tail, head]
+    };
+    order
+        .into_iter()
+        .find(|pairs| pairs.iter().all(|(a, b)| chunks_agree(&a.1, &b.1)))
+}
+
+/// Fill the `ui:` entries: each pinned overlay pool is read on both discs,
+/// the pool window on the source side widened (its strings are longer or
+/// shorter, the pool moves), and the two NUL-chunk lists paired by anchors
+/// ([`pair_chunk_lists`]).
+fn lift_ui_pools(
+    target: &DiscPatcher,
+    source: &DiscPatcher,
+    pack: &mut LanguagePack,
+    report: &mut LiftReport,
+) {
+    for pool in ui::UI_STRING_POOLS {
+        let (Ok(usa_entry), Ok(src_entry)) = (
+            target.read_entry(pool.prot_index),
+            source.read_entry(pool.prot_index),
+        ) else {
+            continue;
+        };
+        let lo = (pool.va_start - pool.base_va) as usize;
+        let hi = (pool.va_end - pool.base_va) as usize;
+        let span = hi - lo;
+        let usa_chunks = nul_chunks(&usa_entry, lo.saturating_sub(0x40), hi + 0x40);
+        let src_chunks = nul_chunks(&src_entry, lo.saturating_sub(0x40), hi + span + 0x200);
+        let map = pair_chunk_lists(&usa_chunks, &src_chunks);
+        if std::env::var("LEGAIA_LIFT_DEBUG_POOL").ok().as_deref()
+            == Some(&pool.prot_index.to_string())
+        {
+            for (o, b) in &usa_chunks {
+                eprintln!(
+                    "U 0x{o:05x} {:?} -> {:?}",
+                    String::from_utf8_lossy(b),
+                    map.get(o).map(|m| String::from_utf8_lossy(m).into_owned())
+                );
+            }
+            for (o, b) in &src_chunks {
+                eprintln!("S 0x{o:05x} {:?}", String::from_utf8_lossy(b));
+            }
+        }
+        let mut stat = PoolStat {
+            label: format!("{} (PROT {})", pool.label, pool.prot_index),
+            paired: 0,
+            total: 0,
+        };
+        let prefix = format!("ui:{}:0x", pool.prot_index);
+        for e in pack.sections.ui_menu.iter_mut() {
+            let Some(hex) = e.key.strip_prefix(&prefix) else {
+                continue;
+            };
+            let Ok(va) = u32::from_str_radix(hex, 16) else {
+                continue;
+            };
+            if va < pool.va_start || va >= pool.va_end {
+                continue;
+            }
+            stat.total += 1;
+            let off = (va - pool.base_va) as usize;
+            // A pool's first string can trail the code that addresses it with
+            // no NUL between (the tutorial pool opens six code bytes ahead of
+            // its first line): the chunk pairs as a whole, and the string is
+            // its tail past the shared prefix.
+            let hit = map.get(&off).cloned().or_else(|| {
+                let (start, _) = usa_chunks
+                    .iter()
+                    .find(|(start, chunk)| *start < off && off < start + chunk.len())?;
+                let prefix = off - start;
+                map.get(start)
+                    .filter(|src| src.len() > prefix)
+                    .map(|src| src[prefix..].to_vec())
+            });
+            if let Some(bytes) = hit {
+                e.translation = markup::decode(&bytes);
+                stat.paired += 1;
+            }
+        }
+        report.ui_paired += stat.paired;
+        report.ui_total += stat.total;
+        report.ui_pools.push(stat);
+    }
+}
+
+/// Fill the `system_text` entries: the SCUS pools have no located base of
+/// their own, so the source window is the USA window carried by the data
+/// segment's `drift` (the located name tables' displacement) with a margin,
+/// and the chunks pair as for an overlay pool.
+fn lift_scus_pools(
+    usa_exe: &[u8],
+    src_exe: &[u8],
+    drift: i64,
+    pack: &mut LanguagePack,
+    report: &mut LiftReport,
+) {
+    for pool in ui::SCUS_STRING_POOLS {
+        let lo = (pool.va_start - pool.base_va) as usize;
+        let hi = (pool.va_end - pool.base_va) as usize;
+        let span = hi - lo;
+        // Both windows carry the same run-in and run-out (the debug labels
+        // and pointer bytes around the pool are build-invariant), which is
+        // what anchors the pairing where the pool's own strings all differ.
+        let usa_chunks = nul_chunks(usa_exe, lo.saturating_sub(0x40), hi + 0x80);
+        let s_lo = (lo as i64 + drift - 0x40).max(0) as usize;
+        let s_hi = (hi as i64 + drift + span as i64 + 0x80).max(0) as usize;
+        let src_chunks = nul_chunks(src_exe, s_lo, s_hi);
+        let map = pair_chunk_lists(&usa_chunks, &src_chunks);
+        if std::env::var("LEGAIA_LIFT_DEBUG_POOL").ok().as_deref() == Some("scus") {
+            for (o, b) in &usa_chunks {
+                eprintln!(
+                    "U 0x{o:05x} {:?} -> {:?}",
+                    String::from_utf8_lossy(b),
+                    map.get(o).map(|m| String::from_utf8_lossy(m).into_owned())
+                );
+            }
+            for (o, b) in &src_chunks {
+                eprintln!("S 0x{o:05x} {:?}", String::from_utf8_lossy(b));
+            }
+        }
+        for e in pack.sections.system_text.iter_mut() {
+            let Some(va) = key_scus_va(&e.key) else {
+                continue;
+            };
+            if va < pool.va_start || va >= pool.va_end {
+                continue;
+            }
+            report.system_total += 1;
+            let off = (va - pool.base_va) as usize;
+            if let Some(bytes) = map.get(&off) {
+                e.translation = markup::decode(bytes);
+                report.system_paired += 1;
+            }
+        }
+    }
+}
+
+/// Fill the `place_names` cells: the source exe's cell table is found by
+/// its first cell (the home town's name, a proper noun every build shares)
+/// near the drifted USA address, and the cells pair id-for-id.
+fn lift_place_cells(
+    usa_exe: &[u8],
+    src_exe: &[u8],
+    drift: i64,
+    pack: &mut LanguagePack,
+    report: &mut LiftReport,
+) {
+    const STRIDE: usize = worldmap_menu::NAME_STRIDE;
+    let usa_va = worldmap_menu::NAME_TABLE_ADDR;
+    let Some(usa_off) = item_names::file_offset_for_va(usa_exe, usa_va) else {
+        return;
+    };
+    let Some(first) = usa_exe.get(usa_off..usa_off + STRIDE) else {
+        return;
+    };
+    let centre = (usa_off as i64 + drift).max(0) as usize;
+    let lo = centre.saturating_sub(0x1000);
+    let hi = (centre + 0x1000).min(src_exe.len().saturating_sub(STRIDE));
+    let hit = (lo..=hi)
+        .filter(|&o| o.is_multiple_of(4) && &src_exe[o..o + STRIDE] == first)
+        .min_by_key(|&o| o.abs_diff(centre));
+    let Some(src_off) = hit else {
+        report.cells_total += pack.sections.place_names.len();
+        return;
+    };
+    for e in pack.sections.place_names.iter_mut() {
+        let Some(hex) = e.key.strip_prefix("scus:cell:0x") else {
+            continue;
+        };
+        let Ok(va) = u32::from_str_radix(hex, 16) else {
+            continue;
+        };
+        report.cells_total += 1;
+        let Some(n) = va
+            .checked_sub(usa_va)
+            .map(|d| d as usize / STRIDE)
+            .filter(|&n| n < worldmap_menu::NAME_COUNT)
+        else {
+            continue;
+        };
+        let Some(cell) = src_exe.get(src_off + n * STRIDE..src_off + (n + 1) * STRIDE) else {
+            continue;
+        };
+        let len = cell.iter().position(|&b| b == 0).unwrap_or(cell.len());
+        if len == 0 || cell[..len].iter().any(|&b| b < 0x20) {
+            continue;
+        }
+        e.translation = markup::decode(&cell[..len]);
+        report.cells_paired += 1;
+    }
 }
 
 #[cfg(test)]
