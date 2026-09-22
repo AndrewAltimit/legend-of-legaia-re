@@ -2171,8 +2171,17 @@ transiently, inside a single buy call.
 
 The **composition** is no longer split: `legaia_engine_ui::ui_fishing_exchange`
 holds the header, the row columns, the ink rule and the one-time tag, and the
-native window and the browser play page both draw the open sub-screen through
-it. The standalone minigames page still lays its own list out from the JSON.
+native window draws the open sub-screen through it. The browser play page
+carries the same call (`fishing_exchange_draws` inside `play_fishing_hud_json`),
+but that arm has nothing to draw: the page's only opener is
+`play_fishing_prize_buy`, which opens the world sub-mode, commits the buy and
+closes it again inside one call, so no HUD compose ever finds
+`World::minigames.fishing_exchange` set, and what the player sees is the DOM
+prize panel `site/js/play-minigames.js` lays out from `play_fishing_prizes_json`.
+So the composition is shared and the *screen* is still native-only; no ladder in
+the reach union enters the page arm, and none can until the page holds the
+sub-mode open across frames. The standalone minigames page still lays its own
+list out from the JSON.
 
 The tag is the part that has to stay separated from the ink.
 `PrizeExchange::is_available` folds three independent refusals together -
