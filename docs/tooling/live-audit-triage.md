@@ -2266,3 +2266,27 @@ reach the address; the verdict is what the call site supports.
 | `801d0748` `timed_fight_turns_left` | held | the gate and the draw are one `FUN_8003541C` registration (key `1`, `288 x 12` at `(16, 14)`) plus two digit records; the actor's teardown and its precedence over the plaque on the same seat are not pinned, and no capture holds the Koru fight |
 | `8003bc08` `rotate_toward_clamped` | held | the player's vertical glide runs the same arithmetic, but calling this from it would mark the NPC height arm live while no NPC runs it |
 | `8001cf50` / `800461a4` / `8004638c` | `REPLACE` | the hosts compose the same `Rx·Ry·Rz` in `glam` f32 (`camera_view::frame_vp`, the native `psx_camera_mvp`); the q3.12 product differs only by retail's `1/4096` quantisation and no parity oracle shows it on a frame, so the finer product stays the default and these owe no host |
+
+## The minigame and field-actor remainder, re-read
+
+The rows the previous pass left unaudited, each read to the end of its tag and
+against the retail site that reaches it. Three tags were wrong about the
+structure they blamed and are rewritten; every row stays held.
+
+| anchor | verdict | the call site, and the structure |
+|---|---|---|
+| `801cf00c` `duel_overlay_init` | held | the mode-24 door warp's `enter_baka_from_overlay` is the overlay-entry host the tag said did not exist; of the seeds only the win target and fighter slots have a consumer (both already the rules engine's constants), and the stage seed, arena camera, `6 x 6` window and the two stream ids have no duel-side counterpart |
+| `801d6704` `field_bgm_plan` | held | the slot arithmetic is live elsewhere (`SceneHost::bgm_seq_bytes`); the two-part arm and its one-shot latch have no scene-entry analogue |
+| `801d4a60` `step_scene_program` / `lift_step` / `entry_successor` | held | spawned by `World::man_load_actor_reset`, never ticked: the BGM request/acknowledge pair it parks on has no counterpart in a synchronous director |
+| `801d72a0` `help_panel_layout` | held | every row is the overlay's own string-pointer tables `0x801D8130` / `0x801D8168`, and no fishing help page exists to open |
+| `801d26cc` `bite_pad_nudge` | held | the engine does see `_DAT_8007B874` (`retail_pad().pressed`); only the standalone minigames page ticks the bite band, and its script counts the credit itself with a different mask, while the play hosts' fishing runs no band |
+| `801d56e4` `clip_segment_2d` | held | its one caller clips a GPU line packet (`0x801D3D00`); no screen-space two-point primitive exists on either host |
+| `801dc6b4` `CONTEXT_LOCKED_ENTRY_SUBSCREEN` / `801dcd58` `notify_window_operands` | held | entry-context kind `0xD` is routed nowhere; no staged notify-window template exists for the operands to patch |
+| `80017bec` `refresh_object_grid_marks` / `801d7b50` `window_rebuild_spawns` | held | the `.MAP` object-descriptor region is dropped after scene load, and no windowed placement actor list exists to rebuild |
+| `801cef54` `dance_scene_entry` | held | the dance suspends the current mode instead of loading the venue bundle, so the scene seeds have no seat |
+| `801d6e5c` `keyframe_in_range` | held | the action record's `+0x26` frame column is not parsed, so nothing can build the slice |
+| `8003c9ac` `motion_pause_kick` | held | every input has a home; the requested-move write target (`+0x5C` / `+0x88`) does not |
+| `801d25ec` `spawn_arc_with_emitter` | held | op `0x43` sub-`0`/`1`/`0xA`/`0xB` reaches it at `0x801DF5AC`; the engine's arc channel is the player's alone |
+| `801e4470` `sprite_rect` / `attached_sprite_tick` | held | no engine actor kind carries the `+0x90` back-link its one filler (`FUN_801D25EC`'s emitter) sets |
+| `80021248` `normalize_camera_relative_params` | held | the producer is ported; the actor family (`DAT_8007071C`, list `_DAT_8007C34C`) has no engine counterpart |
+| `801ead98` `decode_camera_readout` | held | the "camera word" is the scratchpad region box `0x1F800384..87`; its field half is published, but on the world map - the one menu that draws the row - the render overlay restamps its low two bytes from globals whose meaning is not pinned |
