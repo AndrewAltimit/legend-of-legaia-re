@@ -231,6 +231,11 @@ pub enum HandlerKernel {
     /// [`crate::world::World::tick_handler_actors`] over the mirror pairs the
     /// field VM's `4C 86` arm installs.
     Reflection,
+    /// [`crate::morph_weight_apply::MorphWeightEnvelope::tick`], run by
+    /// [`crate::world::World::tick_handler_actors`] over the actors the
+    /// field VM's `4C D8` allocator
+    /// ([`crate::world::World::spawn_morph_weight_actor`]) seated.
+    MorphWeights,
     /// No ported body. The handler still participates in every identity
     /// test; it just has nothing to run.
     Unported,
@@ -244,7 +249,10 @@ impl HandlerKernel {
     pub fn runs_in_actor_loop(self) -> bool {
         matches!(
             self,
-            HandlerKernel::ColourTween | HandlerKernel::ClipFade | HandlerKernel::Reflection
+            HandlerKernel::ColourTween
+                | HandlerKernel::ClipFade
+                | HandlerKernel::Reflection
+                | HandlerKernel::MorphWeights
         )
     }
 }
@@ -313,12 +321,12 @@ impl ActorHandler {
             ActorHandler::ScriptedScene => HandlerKernel::ScriptedScene,
             ActorHandler::ClipFade => HandlerKernel::ClipFade,
             ActorHandler::Reflection => HandlerKernel::Reflection,
+            ActorHandler::MorphWeights => HandlerKernel::MorphWeights,
             ActorHandler::ScreenSprite
             | ActorHandler::ScreenMask
             | ActorHandler::ScreenPanel
             | ActorHandler::ScreenLetterbox => HandlerKernel::ScreenWidget,
             ActorHandler::None
-            | ActorHandler::MorphWeights
             | ActorHandler::SubmodeDriver
             | ActorHandler::FloorLadder
             | ActorHandler::SceneActor

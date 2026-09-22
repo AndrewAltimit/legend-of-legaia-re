@@ -1828,4 +1828,135 @@ impl World {
         };
         Some(slot_idx)
     }
+
+    /// The field VM's `0x4C 0xD8` allocator, whole: [`Self::spawn_field_actor`]
+    /// plus the tail the port used to stop short of - the `actor+0x90`
+    /// rest-pose snapshot, the `+0x3C`/`+0x3E` envelope rates and the
+    /// `+0x0C` handler identity that makes the slot a morph actor at all.
+    ///
+    /// PORT: FUN_801D77F4
+    ///
+    /// The two immediates the instruction carries are the envelope's rise
+    /// and fall rates in that order (`sh s5,0x3c` / `sh s6,0x3e` at
+    /// `0x801D79A4`), and the weight, direction and render-mode halfwords
+    /// are zeroed, so a fresh morph actor starts at the rest pose and rises.
+    /// A spawn that resolves no morph block or no mesh seats no morph state
+    /// and behaves exactly like the plain allocator - retail's own
+    /// bail-through, where the snapshot allocation is a zero-byte request
+    /// and the copy loop never runs.
+    ///
+    /// The tile-board install keeps calling [`Self::spawn_field_actor`]: its
+    /// actors are not this opcode's, and the template id it passes as a VDF
+    /// index would otherwise seat a morph block that retail never installs.
+    pub(crate) fn spawn_morph_weight_actor(
+        &mut self,
+        tmd_idx: i16,
+        vdf_idx: u8,
+        up_rate: u16,
+        down_rate: u16,
+    ) -> Option<usize> {
+        let slot_idx = self.spawn_field_actor(tmd_idx, vdf_idx, up_rate, down_rate)?;
+        let block = match self.actors[slot_idx].spawn_record.clone() {
+            Some(b) if b.len() >= 4 => b,
+            _ => return Some(slot_idx),
+        };
+        let Some(gtmd) = self.actors[slot_idx].tmd_ref.as_ref().map(Arc::clone) else {
+            return Some(slot_idx);
+        };
+        let groups = Self::tmd_group_vertex_bytes(&gtmd.tmd);
+        let refs: Vec<&[u8]> = groups.iter().map(Vec::as_slice).collect();
+        let rest_pose = crate::morph_weight_apply::rest_pose_snapshot(&block, &refs);
+        let actor = &mut self.actors[slot_idx];
+        actor.handler = crate::actor_handler::ActorHandler::MorphWeights;
+        actor.morph_weights = Some(crate::morph_weight_apply::MorphWeightActor {
+            block,
+            rest_pose,
+            envelope: crate::morph_weight_apply::MorphWeightEnvelope {
+                weight: 0,
+                up_rate: up_rate as i16,
+                down_rate: down_rate as i16,
+                descending: false,
+            },
+        });
+        Some(slot_idx)
+    }
+
+    /// Every TMD object's vertex block as the 8-byte GTE vertices retail's
+    /// object table points at (`[i16 x][i16 y][i16 z][i16 pad]`).
+    fn tmd_group_vertex_bytes(tmd: &legaia_tmd::Tmd) -> Vec<Vec<u8>> {
+        tmd.objects
+            .iter()
+            .map(|o| {
+                let mut out = Vec::with_capacity(o.vertices.len() * 8);
+                for v in &o.vertices {
+                    out.extend_from_slice(&v.x.to_le_bytes());
+                    out.extend_from_slice(&v.y.to_le_bytes());
+                    out.extend_from_slice(&v.z.to_le_bytes());
+                    out.extend_from_slice(&v._pad.to_le_bytes());
+                }
+                out
+            })
+            .collect()
+    }
+
+    /// Actor slots carrying live morph-weight state, with each one's current
+    /// blend weight - the host-side change detector: re-pose and re-upload a
+    /// slot whose weight has moved since the last upload.
+    pub fn morph_weight_actor_weights(&self) -> Vec<(u8, i16)> {
+        self.actors
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.active)
+            .filter_map(|(i, a)| {
+                let m = a.morph_weights.as_ref()?;
+                Some((u8::try_from(i).ok()?, m.envelope.weight))
+            })
+            .collect()
+    }
+
+    /// The **one** engine-side morph kernel both hosts draw through: actor
+    /// `slot`'s mesh with its rest pose restored and its morph deltas
+    /// re-blended at the live `+0x6E` weight, returned as a posed TMD
+    /// alongside the raw bytes a VRAM-mesh build needs and the weight it was
+    /// posed at.
+    ///
+    /// This is [`crate::morph_weight_apply::apply_morph_weights`] run over
+    /// the engine's own vertex representation, so neither host owns any part
+    /// of the blend. `None` when the slot carries no morph state, no mesh,
+    /// or a block that names nothing the mesh has.
+    pub fn morph_weight_posed_tmd(
+        &self,
+        slot: usize,
+    ) -> Option<(legaia_tmd::Tmd, Arc<Vec<u8>>, i16)> {
+        let actor = self.actors.get(slot)?;
+        if !actor.active {
+            return None;
+        }
+        let m = actor.morph_weights.as_ref()?;
+        let gtmd = actor.tmd_ref.as_ref()?;
+        let mut groups = Self::tmd_group_vertex_bytes(&gtmd.tmd);
+        let weight = m.envelope.weight;
+        if crate::morph_weight_apply::apply_morph_weights(
+            &m.block,
+            &mut groups,
+            &m.rest_pose,
+            weight,
+        ) == 0
+        {
+            return None;
+        }
+        let mut posed = gtmd.tmd.clone();
+        for (obj, bytes) in posed.objects.iter_mut().zip(groups.iter()) {
+            for (i, v) in obj.vertices.iter_mut().enumerate() {
+                let o = i * 8;
+                if o + 6 > bytes.len() {
+                    break;
+                }
+                v.x = i16::from_le_bytes([bytes[o], bytes[o + 1]]);
+                v.y = i16::from_le_bytes([bytes[o + 2], bytes[o + 3]]);
+                v.z = i16::from_le_bytes([bytes[o + 4], bytes[o + 5]]);
+            }
+        }
+        Some((posed, Arc::new(gtmd.raw.clone()), weight))
+    }
 }

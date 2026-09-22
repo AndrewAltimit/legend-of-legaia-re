@@ -554,6 +554,15 @@ pub struct Actor {
     /// Stepped once per game tick by [`World::tick_handler_actors`].
     pub colour_tween: Option<crate::field_actor_kernels::ColourTween>,
 
+    /// `+0x4C` / `+0x90` / `+0x3C..+0x40` / `+0x6E` - the **morph-weight**
+    /// block, present only on actors whose [`Self::handler`] is
+    /// [`ActorHandler::MorphWeights`](crate::actor_handler::ActorHandler::MorphWeights),
+    /// i.e. the ones the field VM's `4C D8` allocator seated
+    /// ([`World::spawn_morph_weight_actor`]). Its envelope is stepped once
+    /// per game tick by [`World::tick_handler_actors`]; hosts read the
+    /// blended mesh back through [`World::morph_weight_posed_tmd`].
+    pub morph_weights: Option<crate::morph_weight_apply::MorphWeightActor>,
+
     /// `+0x80 .. +0x94` - the reflection pair, present only on actors whose
     /// [`Self::handler`] is
     /// [`ActorHandler::Reflection`](crate::actor_handler::ActorHandler::Reflection).

@@ -655,3 +655,179 @@ fn balden2_natural_drive_reaches_4c_d8_cluster_via_entry_script() {
         "balden2's entry script reaches the 0x4C 0xD8 spawn cluster naturally"
     );
 }
+
+/// Every shipped `0x4C 0xD8` morph block is **one record**, and that is what
+/// makes retail's three disagreeing record pitches unobservable.
+///
+/// `FUN_801D77F4` walks the block twice - `0xC` per record for its size sum
+/// (`0x801D78D0..0x801D7900`), `n_vert * 8` per record for its copy pass
+/// (`0x801D792C..0x801D799C`) - and the apply pass `FUN_8002174C` walks it a
+/// third time at `n_vert * 0x60`. Three strides over one buffer can only
+/// agree where no stride is ever consumed, i.e. at a count of `1`. This
+/// census is the measurement that says the disc never leaves that case, so
+/// the port can reproduce each loop's own stride without any shipped content
+/// diverging - and so that a future block with two records is recognised as
+/// new territory rather than assumed covered.
+#[test]
+fn morph_weight_disc_blocks_are_single_record() {
+    let Some(extracted) = skip_if_no_disc() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let sites = collect_0x4c_d8_sites(&extracted);
+    assert!(!sites.is_empty(), "census should find the shipped sites");
+
+    let mut resolved = 0usize;
+    let mut counts: BTreeMap<u32, usize> = BTreeMap::new();
+    let mut groups: BTreeMap<u32, usize> = BTreeMap::new();
+    let mut by_scene: BTreeMap<String, usize> = BTreeMap::new();
+    for name in index.cdname_scene_names() {
+        let scene_sites: Vec<&SpawnOpSite> = sites.iter().filter(|s| s.scene == name).collect();
+        if scene_sites.is_empty() {
+            continue;
+        }
+        let Ok(scene) = Scene::load(&index, &name) else {
+            continue;
+        };
+        let mut world = World::default();
+        world.set_vdf_buffer(legaia_engine_core::scene_bundle::find_vdf_buffer(&scene));
+        for s in scene_sites {
+            let Some(block) = world.vdf_record_bytes(s.bytes[2]).map(<[u8]>::to_vec) else {
+                continue;
+            };
+            assert!(
+                block.len() >= 16,
+                "{name}: a morph block must hold its count word and one 12-byte header"
+            );
+            resolved += 1;
+            *by_scene.entry(name.clone()).or_default() += 1;
+            let count = u32::from_le_bytes(block[0..4].try_into().unwrap());
+            *counts.entry(count).or_default() += 1;
+            *groups
+                .entry(u32::from_le_bytes(block[4..8].try_into().unwrap()))
+                .or_default() += 1;
+        }
+    }
+    eprintln!(
+        "[disc] {resolved} of {} 0x4C 0xD8 sites resolve a morph block; \
+         record counts {counts:?}, leading group ids {groups:?}, per scene {by_scene:?}",
+        sites.len()
+    );
+    assert_eq!(
+        resolved,
+        sites.len(),
+        "every shipped synchronous-spawn site should resolve its VDF morph block"
+    );
+    assert_eq!(
+        counts.keys().copied().collect::<Vec<_>>(),
+        vec![1],
+        "every shipped morph block holds exactly one record - the only shape \
+         retail's three record pitches agree on"
+    );
+    assert_eq!(
+        groups.keys().copied().collect::<Vec<_>>(),
+        vec![0],
+        "every shipped morph record names TMD object 0"
+    );
+}
+
+/// The whole `4C D8` chain on real disc bytes: the allocator seats a
+/// morph-weight actor with a rest-pose snapshot, the pool tick ramps its
+/// weight, and the shared render read poses the mesh off it.
+///
+/// Drives the scene's own opcode bytes rather than a synthetic encoding, so
+/// a change in the operand layout fails here rather than passing against a
+/// fixture that agrees with the port by construction.
+#[test]
+fn morph_weight_actor_seats_and_blends_on_a_shipped_carrier() {
+    let Some(extracted) = skip_if_no_disc() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let sites = collect_0x4c_d8_sites(&extracted);
+
+    let slot = FIELD_SPAWN_START_SLOT as usize;
+    let mut seated = 0usize;
+    for scene in ["jagaroom", "garmel", "juui2", "balden", "balden2"] {
+        let Some(site) = sites.iter().find(|s| s.scene == scene) else {
+            continue;
+        };
+        // One host per scene: a second `enter_field_scene` on the same host
+        // leaves the previous scene's pool actors in the auto-spawn slots, so
+        // the slot this drive lands in would not be this scene's.
+        let mut host = legaia_engine_core::scene::SceneHost::open_extracted(&extracted)
+            .expect("open SceneHost");
+        if host.load_scene(scene).is_err() || host.enter_field_scene(scene, 0).is_err() {
+            continue;
+        }
+        let mut bytecode = site.bytes.clone();
+        bytecode.push(0x00);
+        host.world.mode = SceneMode::Field;
+        host.world.load_field_record(&bytecode);
+        let _ = host.world.tick();
+
+        let actor = &host.world.actors[slot];
+        if actor.tmd_ref.is_none() {
+            // The site's TMD index is outside the seeded global pool for this
+            // scene: retail's own bail-through, and nothing to pose.
+            eprintln!("[disc] {scene}: site's TMD index not resident; no morph seat");
+            continue;
+        }
+        assert_eq!(
+            actor.handler,
+            legaia_engine_core::actor_handler::ActorHandler::MorphWeights,
+            "{scene}: the 4C D8 allocator stamps the morph handler"
+        );
+        let morph = actor
+            .morph_weights
+            .as_ref()
+            .expect("a seated morph actor carries its block + snapshot");
+        assert!(
+            !morph.rest_pose.is_empty(),
+            "{scene}: the spawner's rest-pose snapshot must be non-empty"
+        );
+        assert_eq!(morph.envelope.weight, 0, "{scene}: spawns at the rest pose");
+        assert!(
+            !morph.envelope.descending,
+            "{scene}: the direction halfword is zeroed, so the ramp rises"
+        );
+        let up = morph.envelope.up_rate;
+
+        // At weight 0 the posed mesh is the rest pose exactly.
+        let Some((rest_posed, _, w0)) = host.world.morph_weight_posed_tmd(slot) else {
+            eprintln!("[disc] {scene}: block names no object this mesh has; nothing to pose");
+            continue;
+        };
+        assert_eq!(w0, 0);
+
+        // Ramp it and the pose moves - unless the scene authored a zero rise
+        // rate, which is a legal envelope and not this test's business.
+        for _ in 0..8 {
+            host.world.tick_handler_actors(1);
+        }
+        let (moved, _, w1) = host
+            .world
+            .morph_weight_posed_tmd(slot)
+            .expect("still seated after the ramp");
+        eprintln!("[disc] {scene}: up_rate={up} weight {w0} -> {w1}");
+        if up > 0 {
+            assert!(
+                w1 > w0,
+                "{scene}: a positive rise rate must move the weight"
+            );
+            let before: Vec<i16> = rest_posed.objects[0].vertices.iter().map(|v| v.x).collect();
+            let after: Vec<i16> = moved.objects[0].vertices.iter().map(|v| v.x).collect();
+            assert_ne!(
+                before, after,
+                "{scene}: a moved weight must move the posed geometry"
+            );
+        }
+        seated += 1;
+    }
+    assert!(
+        seated > 0,
+        "at least one shipped carrier should seat a morph-weight actor"
+    );
+    eprintln!("[disc] {seated} shipped carriers seated + blended a morph-weight actor");
+}

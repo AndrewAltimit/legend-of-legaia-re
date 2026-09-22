@@ -2360,7 +2360,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .vdf_record_bytes(b1)
             .map(|s| s.to_vec())
             .unwrap_or_default();
-        match self.world.spawn_field_actor(words[0], b1, kind, variant) {
+        match self
+            .world
+            .spawn_morph_weight_actor(words[0], b1, kind, variant)
+        {
             Some(slot_idx) => {
                 self.world
                     .pending_field_events

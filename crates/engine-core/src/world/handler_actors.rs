@@ -209,6 +209,20 @@ impl World {
                 vm::actor_tick::clip_fraction_step(&mut a.physics, frame_delta);
                 continue;
             }
+            // The morph-weight envelope: the ping-pong ramp in the tail of
+            // `FUN_8002174C`, over the actors the field VM's `4C D8`
+            // allocator seated (`World::spawn_morph_weight_actor`). Retail
+            // runs the ramp in the same per-frame handler call as the apply
+            // pass; the engine splits them because the blend is a render-time
+            // read the hosts make (`World::morph_weight_posed_tmd`) and only
+            // the envelope is simulation state.
+            // REF: FUN_8002174C
+            if a.handler.kernel() == crate::actor_handler::HandlerKernel::MorphWeights {
+                if let Some(m) = a.morph_weights.as_mut() {
+                    m.envelope.tick(frame_delta);
+                }
+                continue;
+            }
             if !a.handler.kernel().runs_in_actor_loop() {
                 continue;
             }
@@ -251,6 +265,7 @@ impl World {
             if a.active && a.physics.status_flags & ACTOR_FLAG_YIELD != 0 {
                 a.active = false;
                 a.colour_tween = None;
+                a.morph_weights = None;
                 a.tint_push = None;
                 n += 1;
             }

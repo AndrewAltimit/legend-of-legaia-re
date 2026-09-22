@@ -43,15 +43,23 @@
 //! ([`legaia_engine_vm::vdf_morph::VdfMorphRecord`]), which is why this
 //! module reuses that record type rather than declaring its own.
 //!
-//! The **cursor advance** is not the body length. Both passes step the
-//! cursor by `group.n_vert * 0x60` (`0x800217B4..0x800217C4`, and again at
-//! `0x80021860..0x8002187C`) - a fixed slot sized off the *object's* vertex
-//! count, not off `delta_count`. Since `0xC + delta_count*8` is bounded by
-//! `0xC + n_vert*8`, the slot always contains its record with room to spare;
-//! it is a fixed-pitch slab, not a packed stream. Both passes use the same
-//! expression, so they stay in phase whatever the slack means. This is
-//! disassembly-grounded and deliberately not rationalised further: what the
-//! remaining `0x60`-per-vertex reservation is for is not established.
+//! The **cursor advance** is not the body length. Both passes of this routine
+//! step the cursor by `group.n_vert * 0x60` (`0x800217B4..0x800217C4`, and
+//! again at `0x80021860..0x8002187C`) - a slot sized off the *object's*
+//! vertex count, not off `delta_count`. Since `0xC + delta_count*8` is
+//! bounded by `0xC + n_vert*8`, the slot always contains its record with room
+//! to spare. Both passes use the same expression, so they stay in phase
+//! whatever the slack means.
+//!
+//! What that pitch is **not** is a property of the buffer. The spawner walks
+//! the same block twice more with two further strides - `0xC` for its size
+//! sum and `n_vert * 8` for its copy - so three loops over one buffer
+//! disagree about where record `n + 1` begins, and only a block of a single
+//! record makes them agree (no stride is consumed at all). Every block the
+//! disc ships is exactly that: see [`rest_pose_snapshot`] for the census.
+//! So the `0x60` reservation is real in the instruction stream and
+//! unobservable in the shipped game, and nothing here rationalises it
+//! further.
 //!
 //! ## The retail spawn chain, end to end
 //!
@@ -75,11 +83,12 @@
 //!
 //! ### The two buffers, and what fills them
 //!
-//! `FUN_801D77F4`'s tail (`0x801D7848..0x801D79BC`) is the part the port does
-//! not have. The writes themselves are already in the function directory
+//! `FUN_801D77F4`'s tail (`0x801D7848..0x801D79BC`) is the part the port used
+//! to stop short of; it is now [`crate::world::World::spawn_morph_weight_actor`]
+//! and [`rest_pose_snapshot`]. The writes themselves are in the function
+//! directory
 //! ([`functions/renderer.md` § 801D77F4](../../../docs/reference/functions/renderer.md#801d77f4));
-//! what this section adds is which of them this module's two arguments are, so
-//! the row names a buffer to build rather than a caller to find:
+//! what this section adds is which of them this module's two arguments are:
 //!
 //! - `actor+0x4C` <- the **morph block**, and it is a **VDF** body: the
 //!   instruction's first operand indexes the VDF buffer at the global
@@ -116,19 +125,23 @@
 //! direction `1` (falling). So an actor left alone oscillates between the
 //! rest pose and the full morph at two independent rates.
 //!
-//! ## NOT WIRED
+//! ## Where the engine runs it
 //!
-//! The engine's [`crate::world::Actor`] has no morph-block pointer
-//! (`actor+0x4C`) and no rest-pose stream (`actor+0x90`): the only morph
-//! path it carries is the *other* one - per-group VDF staging through
-//! [`crate::world::World::stage_actor_group_morph`], which resolves records
-//! from the scene VDF table and ramps its weights in the move-VM envelope
-//! (`FUN_80020740`), not from this actor's `+0x3C/+0x3E/+0x40` triple. What
-//! has to exist first is an actor whose morph set is a *block* rather than a
-//! slot list, and the spawn site that allocates from descriptor
-//! `0x8007068C` to fill it; until then there is no live block to walk.
-//! [`crate::actor_handler::ActorHandler::MorphWeights`] already carries the
-//! identity, so wiring is one dispatch arm once a producer exists.
+//! The seat is [`crate::world::World::spawn_morph_weight_actor`], which the
+//! `4C D8` host arm calls in place of the plain allocator: it builds the
+//! snapshot, stamps
+//! [`crate::actor_handler::ActorHandler::MorphWeights`] and seats a
+//! [`MorphWeightActor`] on the slot. [`crate::world::World::tick_handler_actors`]
+//! steps the envelope once per game tick, and both hosts read the blended
+//! mesh back through [`crate::world::World::morph_weight_posed_tmd`] - the
+//! one place [`apply_morph_weights`] runs, so neither renderer owns any part
+//! of the blend.
+//!
+//! This is a different path from the engine's *other* morph route - per-group
+//! VDF staging through [`crate::world::World::stage_actor_group_morph`],
+//! which resolves records from the scene VDF table and ramps its weights in
+//! the move-VM envelope (`FUN_80020740`). One buffer shape, two producers:
+//! that one takes a slot list, this one a block.
 
 pub use legaia_engine_vm::vdf_morph::VdfMorphRecord;
 use legaia_engine_vm::vdf_morph::apply_weighted_deltas;
@@ -206,12 +219,8 @@ pub fn parse_apply_records<'a>(
 ///
 /// PORT: FUN_8002174C
 ///
-/// NOT WIRED: no engine actor carries a morph block (`actor+0x4C`) or a
-/// rest-pose stream (`actor+0x90`) - the ported morph path is the per-group
-/// VDF slot list instead. Those two buffers are the whole gap, and the module
-/// heading now traces where retail fills them: the spawn site is not missing,
-/// its host hook is already live, and what it does not do is build the two
-/// buffers.
+/// Reached on both hosts through [`crate::world::World::morph_weight_posed_tmd`],
+/// the render-time read each one poses a `4C D8` actor's mesh with.
 pub fn apply_morph_weights(
     block: &[u8],
     groups: &mut [Vec<u8>],
@@ -266,8 +275,9 @@ impl MorphWeightEnvelope {
     ///
     /// PORT: FUN_8002174C
     ///
-    /// NOT WIRED: shares the apply pass's gap - nothing spawns the actor
-    /// whose `+0x3C/+0x3E/+0x40` triple this ramps. See the module docs.
+    /// Stepped once per game tick by
+    /// [`crate::world::World::tick_handler_actors`] over every actor the
+    /// `4C D8` allocator seated.
     pub fn tick(&mut self, dt: u8) {
         let dt = i32::from(dt);
         // `lhu` the weight, add/subtract the 32-bit product, `sh` it back:
@@ -292,6 +302,100 @@ impl MorphWeightEnvelope {
             self.descending = true;
         }
     }
+}
+
+/// Everything `FUN_801D77F4` installs on the slot it allocates for a morph
+/// actor, held as owned bytes because the engine's pool owns no retail heap:
+/// the `actor+0x4C` block, the `actor+0x90` snapshot the spawner builds, and
+/// the `+0x3C` / `+0x3E` / `+0x40` / `+0x6E` envelope quad.
+///
+/// The engine seats one of these from
+/// [`crate::world::World::spawn_morph_weight_actor`] and steps it from
+/// [`crate::world::World::tick_handler_actors`]; hosts read the blended
+/// vertex set back through
+/// [`crate::world::World::morph_weight_actor_groups`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MorphWeightActor {
+    /// `actor+0x4C` - the VDF morph block the instruction's first operand
+    /// resolved to (`0x8007B7DC` + the `+4` offset word).
+    pub block: Vec<u8>,
+    /// `actor+0x90` - the rest pose, captured from the live mesh at spawn.
+    pub rest_pose: Vec<u8>,
+    /// `+0x3C` / `+0x3E` / `+0x40` / `+0x6E`.
+    pub envelope: MorphWeightEnvelope,
+}
+
+/// Build the `actor+0x90` rest-pose snapshot the spawner allocates and fills
+/// (`0x801D78B8..0x801D799C`).
+///
+/// `groups[g]` is object `g`'s **live** vertex buffer as 8-byte GTE vertices:
+/// retail reads the object-table entry's `+0` pointer, so what lands in the
+/// snapshot is whatever the mesh holds at spawn time, which is why nothing on
+/// the disc carries a rest pose.
+///
+/// PORT: FUN_801D77F4
+///
+/// ## Three record pitches, one buffer
+///
+/// Retail walks this block three times with three different record strides,
+/// and the port reproduces each loop's own:
+///
+/// | loop | stride |
+/// |---|---|
+/// | the spawner's size sum (`0x801D78D0..0x801D7900`) | `0xC` - the record header |
+/// | the spawner's copy pass (`0x801D792C..0x801D799C`) | `n_vert * 8` |
+/// | the apply pass ([`apply_morph_weights`], both halves) | `n_vert * 0x60` |
+///
+/// They can only agree on a block of **one** record, where no stride is ever
+/// consumed - and that is every block the disc ships: all seventeen `4C D8`
+/// sites across `balden` / `balden2` / `garmel` / `jagaroom` / `juui2`
+/// resolve to a block whose leading count word is `1`, each naming group `0`
+/// (the census is `morph_weight_disc_blocks_are_single_record` in
+/// `engine-core/tests/field_actor_spawn_disc_e2e.rs`). So the pitch
+/// disagreement is real in the bytes and unobservable in the shipped game;
+/// no reading of it is load-bearing, and none is invented here.
+pub fn rest_pose_snapshot(block: &[u8], groups: &[&[u8]]) -> Vec<u8> {
+    let vertex_count = |gid: u32| -> usize {
+        groups
+            .get(gid as usize)
+            .map(|g| g.len() / VERTEX_BYTES)
+            .unwrap_or(0)
+    };
+    let group_at = |off: usize| -> Option<u32> {
+        if off + 4 > block.len() {
+            return None;
+        }
+        Some(u32::from_le_bytes(block[off..off + 4].try_into().unwrap()))
+    };
+    if block.len() < 4 {
+        return Vec::new();
+    }
+    let count = u32::from_le_bytes(block[0..4].try_into().unwrap());
+
+    // Sum pass: `0xC` per record.
+    let mut total = 0usize;
+    let mut off = 4usize;
+    for _ in 0..count {
+        let Some(gid) = group_at(off) else { break };
+        total = total.saturating_add(vertex_count(gid) * VERTEX_BYTES);
+        off = off.saturating_add(RECORD_HEADER_BYTES);
+    }
+
+    // Copy pass: `n_vert * 8` per record, one continuous destination cursor.
+    let mut out = vec![0u8; total];
+    let mut off = 4usize;
+    let mut dst = 0usize;
+    for _ in 0..count {
+        let Some(gid) = group_at(off) else { break };
+        let n = vertex_count(gid);
+        if let Some(src) = groups.get(gid as usize) {
+            let take = (n * VERTEX_BYTES).min(src.len()).min(out.len() - dst);
+            out[dst..dst + take].copy_from_slice(&src[..take]);
+            dst = dst.saturating_add(take);
+        }
+        off = off.saturating_add(n * VERTEX_BYTES);
+    }
+    out
 }
 
 #[cfg(test)]
