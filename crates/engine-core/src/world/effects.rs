@@ -1099,8 +1099,8 @@ impl World {
     /// Stepped against the host's software VRAM by [`Self::step_clut_fx`].
     /// A record shorter than twelve bytes is dropped.
     ///
-    /// PORT: FUN_801E57F0 (the spawn: `FUN_80020DE0(0x801F2930, ..)`, then
-    /// `+0x90 = record`, `+0x54 = 0`)
+    /// PORT: FUN_801E57F0 (the spawn: descriptor `0x801F2930` through the
+    /// actor allocator, then `+0x90 = record`, `+0x54 = 0`)
     pub fn spawn_clut_blend_fx(&mut self, record: &[u8]) {
         if record.len() < 12 {
             return;

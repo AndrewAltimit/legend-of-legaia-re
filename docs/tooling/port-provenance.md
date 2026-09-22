@@ -46,7 +46,7 @@ visible between them.
 
 ## The signals
 
-All four are cheap enough to run on the whole corpus in seconds. For every
+All five are cheap enough to run on the whole corpus in seconds. For every
 PORT-tagged address the checker recovers, from the **disassembly only**, the
 data addresses the routine forms and the `jal` targets it calls.
 
@@ -56,6 +56,7 @@ data addresses the routine forms and the `jal` targets it calls.
 | `dual-label` | Is this routine given a defining description on two unrelated docs pages? |
 | `absent-citation` | Does a `PORT:` line cite evidence its routine's dump does not carry? |
 | `doc-citation` | Same, for `docs/reference/functions/` rows. |
+| `non-entry` | Does the rest of the repo already say no routine starts at this `PORT:` address? |
 
 `module-orphan` is the one that reproduces the shop defect. It flags a routine
 that shares no distinctive data address, no distinctive callee and no call edge
@@ -301,6 +302,7 @@ findings raised in one full pass:
 | `dual-label` | 4 / 35 | **Yes.** Every one of the four was a byte-settleable contradiction between two pages, and the residue is the documented shapes - a coarse directory row beside a fine write-up, two topic pages of the same directory, a section about one arm of a dispatcher. |
 | `doc-citation` | 1 / 12 | **Yes.** The remaining shapes are enumerable - a callee's global, a field reached by `addu` off a formed base, a contrastive "not this pool", a caller's store site - and each new row is genuinely worth one read. |
 | `module-orphan` | 0 / 24 | **No, and the reason is structural.** |
+| `non-entry` | 7 / 9 | **Yes.** Every row is a contradiction between two committed files, and the two benign shapes (a `worklist_va_aliased` or other-image row beside a tag on the image it ports) are waived by name. |
 
 The four `dual-label` defects are the argument for that row: `FUN_8003E8A8`
 returning a sector count rather than an LBA, `FUN_8003E800`'s `a1` being that
@@ -316,6 +318,78 @@ among a different set of dumps, and three addresses reported a different feature
 set. A signal that moves when a *neighbouring instrument* is corrected is
 reporting the corpus, and a gate on it fails commits that changed nothing it
 measures.
+
+## Reading the tags against the bytes
+
+The signals rank suspicion; the measurement they are ranked against is a
+person reading a tag's Rust beside the routine's disassembly. One such pass
+read every live, dumped tag in the engine's VM, world, audio, camera,
+locomotion and scene-host code - 316 addresses - and sorted each into four
+verdicts:
+
+| Verdict | Share | What it means |
+|---|---|---|
+| match | 222 / 316 | The Rust implements the routine and its prose fits the operands. |
+| misnamed | 45 / 316 | Right routine, wrong description - wrong subsystem, wrong noun, a table read as something else, a call graph written backwards. |
+| partial | 43 / 316 | Right routine, arms missing; some change behaviour against retail. |
+| wrong routine | 6 / 316 | The tagged address is not what the Rust implements. |
+
+The misnamed rows are the expensive ones to leave: the prose is what the next
+reader builds on. And a wrong reading rarely stays in the prose - several of
+the partial and wrong rows were behaviour the port implemented faithfully to
+a misreading: a Bezier evaluated as its control point, a skip branch ported as
+a halt, a compass walk ported as a one-axis chase, a volume slide that clamped
+where retail wraps.
+
+### What the wrong addresses have in common
+
+Every wrong-address row, plus two misnamed rows that turned out to name no
+routine at all, fell into one of these:
+
+- **A print at the wrong base.** `0x801C9688` is `FUN_801D7EA0` printed
+  `0xE818` low; `0x801E0B1C` is an arm inside `FUN_801EF2B0` printed the same
+  way; `0x801F90DC` is the menu's item-info panel `FUN_801D0F1C` printed
+  `0x281C0` high.
+- **A word that is not an entry.** `0x801DFDF8` is the effect-spawn API's
+  prologue word, two words after the entry every `jal` names; `0x801E3614` is
+  the field VM's relative-skip exit label.
+- **A module tag over code the module does not port.** A bare `PORT:` on a
+  file whose items only call a hook, or only share one arm with the routine.
+- **The composite for the leaf.** A single-point sampler tagged with the
+  per-direction routine that inlines it three times.
+
+The first two shapes already had a verdict somewhere in the repo that the tag
+never met - an ignore row, a `misbased` attribution row, a doc page's own
+address note. That is what `non-entry` reads.
+
+### `non-entry`
+
+For every `PORT:` address the checker asks three questions, each answerable
+from committed files:
+
+- Is the address filed in `port-catalog-ignore.toml` under a section whose
+  whole claim is "no routine starts here" - interior words, shared tails,
+  Ghidra labels, misbased prints, data?
+- Is it an overlay-band VA below `0x801CE818`, the lowest slot-A base, which
+  no overlay image can contain?
+- Is every `dump-extent-attribution.csv` row for it `misbased`?
+
+Run against the tree the audit started from, it raised nine rows and none of
+them was a tag the audit had read as a match. Three were wrong tags (the three wrong-base prints
+above), four were ignore rows gone stale - written against a different image's
+bytes at the same VA, or before the slot-B entries they file as data were
+ported - and two were the benign alias shape, now waived by name. It does not
+see the other shapes: a prologue word Ghidra promoted to a function, a label
+with no ignore row, a module tag, a composite. Those still need a reader.
+
+### A waiver can check the operands and miss the owner
+
+`0x801F90DC` had a `module-orphan` finding, and the signal was right: the code
+is the menu overlay's, not the Baka hub's. It had been waived with "the
+routine identity holds" after a careful read of its operands - which were
+correct, because the misbased print is byte-for-byte the real routine. A
+waiver that reviews what a routine does without asking which image holds it
+answers the question `module-orphan` did not ask.
 
 ## A caller-site citation is checkable from the bytes
 
