@@ -2,7 +2,7 @@
 
 What the player steals from an enemy with the **Evil God Icon** equipped - once
 per battle, from the first monster a party member fells, see
-[the steal attack](#the-steal-attack---fun_8004ad80) - is
+[the steal attack](#the-steal-attack) - is
 looked up in a static per-monster table inside `SCUS_942.54` - **not** in the
 PROT 867 `battle_data` monster record. An exhaustive offset scan of the decoded
 record (correlated against ground-truth steal data) finds no steal field there:
@@ -54,11 +54,12 @@ Two routines on the disc read the table, and nothing else does: the
 `SCUS_942.54` and every PROT entry (`find-gp-relative-refs.py --va 0x80077828
 --prot`), at `0x8004B53C` in `SCUS_942.54` and at `0x801F79F0` in PROT 0941.
 
-### The steal attack - `FUN_8004AD80`
+### The steal attack
 
 The player's steal is **not** a command and does not happen on the hit. It
 lives in one arm of the battle anim commit `FUN_8004AD80`
-(`0x8004B29C..0x8004B65C`, see `ghidra/scripts/funcs/8004ad80.txt`), which
+(`0x8004B29C..0x8004B65C`, see `ghidra/scripts/funcs/8004ad80.txt`; the
+routine's whole row is in [`functions/battle.md`](../reference/functions/battle.md)), which
 runs when a monster seat (`>= 3`) commits the end of its **knockdown** clip -
 the installed entry's tag byte is `4` (`0x8004B0A4`) - with live HP
 `+0x14C == 0`. So the steal lands as the slain monster finishes falling, and
