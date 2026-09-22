@@ -209,25 +209,11 @@ pub(crate) fn heightfield_to_vram_mesh(
     hf: &legaia_asset::field_objects::WalkHeightfield,
 ) -> legaia_tmd::mesh::VramMesh {
     let n = hf.positions.len();
-    // The heightfield is ENGINE-synthesised geometry (no retail winding to
-    // preserve), and its builder happens to wind opposite to the scene TMDs
-    // under the field frame. Reverse each triangle so the ground survives
-    // the cutscene-camera NCLIP pass (`Renderer::set_backface_cull`) with
-    // the same parity as the disc meshes. A no-op for every both-sided pass
-    // (the default `cull_mode: None` pipelines draw either winding).
-    let mut indices = hf.indices.clone();
-    for tri in indices.chunks_exact_mut(3) {
-        tri.swap(1, 2);
-    }
-    // Sink the ground below the env pack's authored floor art (see
-    // `coplanar_draws::GROUND_SINK`): the two surfaces share a plane with
-    // different tessellations, and coincident planes z-fight at any depth
-    // precision. Render-side only - the heightfield struct keeps its
-    // authored heights.
-    let mut positions = hf.positions.clone();
-    for p in &mut positions {
-        p[1] += legaia_engine_core::coplanar_draws::GROUND_SINK;
-    }
+    // Winding reversed onto the scene TMDs' parity + the GROUND_SINK: the
+    // shared render kernel the browser play page's ground exports also run
+    // (`legaia_engine_core::field_ground`).
+    let indices = legaia_engine_core::field_ground::render_indices(hf);
+    let positions = legaia_engine_core::field_ground::render_positions(hf);
     legaia_tmd::mesh::VramMesh {
         positions,
         uvs: hf.uvs.clone(),
