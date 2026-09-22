@@ -1075,6 +1075,14 @@
         if (md && md.open) {
           ctx.fillStyle = '#000';
           ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
+          /* Retail keeps the title art up behind the save-select at a dim,
+           * so the Load screen is composed over the card and not over black.
+           * The engine parks the title session as a backdrop at the Continue
+           * hand-off and answers with the same bands the card itself draws. */
+          let bd = null;
+          try { bd = JSON.parse(runtime.boot_title_backdrop_draws_json(menuCanvas.width, menuCanvas.height)); }
+          catch (e) { bd = null; }
+          if (bd && bd.active && titleBlit) titleBlit.blit(ctx, bd.sprites);
           /* By here a pause-menu row is open, so the engine has built its
              menu assets and the atlas is finally answerable for. */
           const cb = ensureChrome();

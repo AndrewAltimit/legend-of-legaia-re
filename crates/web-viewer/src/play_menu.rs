@@ -572,10 +572,39 @@ impl LegaiaRuntime {
             .is_some_and(|m| matches!(m.sub, Some(PlaySub::Session(_))))
     }
 
+    /// Whether the open sub-screen is the save-select **and** it is in a
+    /// phase retail composes over the title art rather than over black.
+    ///
+    /// Retail pivots to black once a slot is confirmed (`NowChecking` /
+    /// `SlotPreview`): the dialog, the portrait grid and the info panel are
+    /// drawn against black, never the title card. The native window makes the
+    /// same test inside `title_screen_sprite_draws`; this is the page's half,
+    /// kept here because `PlaySub` is private to this module.
+    pub(crate) fn play_menu_save_select_over_title(&self) -> bool {
+        use legaia_engine_core::save_select::SelectPhase;
+        let Some(menu) = self.play_menu.as_ref() else {
+            return false;
+        };
+        match &menu.sub {
+            Some(PlaySub::Session(sub)) => match sub.as_ref() {
+                FieldMenuSubsession::Save(s) => !matches!(
+                    s.phase(),
+                    SelectPhase::NowChecking { .. } | SelectPhase::SlotPreview { .. }
+                ),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     /// Close the menu (and any open sub-screen), restoring the scene mode the
     /// world ran when it opened - the browser twin of
     /// `BootSession::close_field_menu`.
     pub fn play_menu_close(&mut self) {
+        // The boot Continue hand-off parks its title session as the
+        // save-select backdrop; the menu closing is what ends it, whether the
+        // player loaded a save or backed out to the title card.
+        self.boot_title_backdrop = None;
         let Some(menu) = self.play_menu.take() else {
             return;
         };

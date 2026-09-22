@@ -189,6 +189,12 @@ pub struct LegaiaRuntime {
     /// Boot-chain title-screen session; `Some` while the title runs before a
     /// scene is entered ([`crate::boot_title`]).
     pub(crate) boot_title: Option<legaia_engine_core::title::TitleSession>,
+    /// The title session **parked as a backdrop** while the boot Continue
+    /// hand-off's save-select owns the screen. Retail keeps the title art up
+    /// behind the Load panel at a dim; this page used to release the session
+    /// at the hand-off and compose the panel over black
+    /// ([`crate::boot_title::LegaiaRuntime::boot_title_backdrop_draws_json`]).
+    pub(crate) boot_title_backdrop: Option<legaia_engine_core::title::TitleSession>,
     /// How many attract hand-offs the title has skipped this session. The
     /// countdown fires the same way it does natively, but this page has no
     /// STR/MDEC playback on the play path, so the movie is skipped and the
@@ -428,6 +434,7 @@ impl LegaiaRuntime {
             menu_assets: None,
             play_menu: None,
             boot_title: None,
+            boot_title_backdrop: None,
             boot_title_attract_skips: 0,
             title_atlas: None,
             boot_logos: None,
@@ -680,6 +687,7 @@ impl LegaiaRuntime {
         self.menu_assets = None;
         self.play_menu = None;
         self.boot_title = None;
+        self.boot_title_backdrop = None;
         self.title_atlas = None;
         self.boot_logos = None;
         self.boot_logos_atlas = None;
