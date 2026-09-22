@@ -2332,7 +2332,20 @@ fn walk_scene_v12(buf: &[u8], sink: &mut Sink) {
 }
 
 fn walk_scene_event_scripts(buf: &[u8], sink: &mut Sink) {
-    let Some(ranges) = crate::scene_event_scripts::record_ranges(buf) else {
+    // The walker is selected by the entry's class, so the entry has already
+    // been placed as a prescript; the standalone record-count floor exists for
+    // context-free buffers only. `edteien` (PROT 0780) holds two records and
+    // is the one carrier the floor rejects - the positional read is the one
+    // `scene_v12_table` and the engine's scene loader use for it.
+    let ranges = crate::scene_event_scripts::record_ranges(buf).or_else(|| {
+        let r = crate::scene_event_scripts::record_ranges_positional(buf)?;
+        sink.note(format!(
+            "{} record(s): below the standalone count floor, read positionally",
+            r.len()
+        ));
+        Some(r)
+    });
+    let Some(ranges) = ranges else {
         sink.note("scene_event_scripts::record_ranges returned None");
         return;
     };

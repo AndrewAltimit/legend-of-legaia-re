@@ -598,6 +598,11 @@ table with a named constant behind it and these have neither yet.
 | `0899` | `0x1EB28`, 3552 B | zero fill between the save-menu atlas's end and the save-slot icon sheet at `0x1F908` | not uninitialised data: no instruction in any image forms an address inside it (`find-gp-relative-refs.py --prot`, zero hits), so it is inter-asset slack, and it already classifies `zero_pad` |
 | `0899` | `0x163A7`, about 1 KB | data-segment words above the window descriptor table (`0x801E4738`, 52 records) | nothing identified |
 | `0899` | `0x2050C` band | what is left of the save-screen message slots once their formed strings are claimed - the NUL tails of the `0x80`-stride slots | the stride is measured off the slots, not off a consumer |
+| `0976` | `0x95B0`, 1772 B | a `0x20`-stride table of three-halfword camera points at `0x801D7DC8` (formed at `0x801D464C`, read four points per record into `0x801D6910` / `0x801D693C`), then zeros | its index is the actor halfword `+0x5A`, so no consumer states the count |
+| `0954` | `0x237D`, about 700 B | a `0x28`-stride status-label table at `0x801F8D50` (formed at `0x801F7C50`, indexed `idx * 0x28` at `0x801F7C7C..0x801F7C8C`) whose first slot is claimed as a formed string | the index is loaded from a runtime array, so the stride is pinned and the count is not |
+| `0977` | `0x3108`, 232 B | twenty-nine `[label pointer, u32]` pairs at `0x801D1920` naming the head label pool | no instruction in the image forms an address in the table, directly or `lui`/`addu`-indexed |
+| `0929` | `0x26CC`, 216 B | a `[-1][0][bytecode]` spawn-record-shaped run between the code end and the first credited record | no spawn site and no chain reaches it |
+| `0981` | `0xED2`, 82 B | three `0x10`-stride records formed by `addiu` at `0x801CF70C` / `71C` / `72C`, then zeros to the inherited tail | base-only consumers again |
 | `0970` | `0x2648` up, about 3 KB | the STR overlay's initialised data above its two MDEC command packets: the MDEC register-pointer block at `0x801D0E60`..`0x801D0E98` and a block of `[u16][u16]` lookup words from `0x801D0EA0` that no `lui` pair addresses | no consumer forms an address into the lookup block; it is initialised data, not code (no `jal` lands in the run, a third of it is zero) |
 
 The `0970` row used to start at `0x2534` and was taken by one reading for
@@ -965,20 +970,20 @@ Read the classes in three groups; only the first is work.
 The `entries` and `bytes` columns are the disc; the `non-slack residue` column is
 a **snapshot of the instrument** and moves with every parser that binds - re-derive
 it rather than quoting it. Its denominator is the whole TOC: 1233 entries,
-121006080 bytes. At the state below, 0.20% of that is residue, and 0.16 of those
-0.20 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 0.03%
+121006080 bytes. At the state below, 0.19% of that is residue, and 0.17 of those
+0.19 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 0.02%
 non-slack. The magic sweep contributes nothing: `accounted` and `structural` are
 the same figure, so no part of the accounted share rests on a guessed magic.
 
 | Class | entries | bytes | non-slack residue |
 |---|---:|---:|---:|
-| `overlay_data_blob` | 25 | 17164288 | 32871 |
-| `scene_event_scripts` | 101 | 329728 | 2048 |
-| `overlay_ptr_table` | 42 | 407552 | 1871 |
-| `mips_overlay` | 22 | 194560 | 1216 |
-| `init_pak` | 1 | 153600 | 980 |
-| `lzs_container` | 18 | 4098048 | 196 |
+| `overlay_data_blob` | 25 | 17164288 | 23806 |
+| `overlay_ptr_table` | 42 | 407552 | 1430 |
+| `mips_overlay` | 22 | 194560 | 960 |
+| `init_pak` | 1 | 153600 | 781 |
+| `lzs_container` | 18 | 4098048 | 82 |
 | `summon_readef` | 2 | 12232704 | 20 |
+| `scene_event_scripts` | 101 | 329728 | 0 |
 | `scene_asset_table` | 90 | 22577152 | 0 |
 | `pack` | 7 | 1634304 | 0 |
 | `bse_bank` | 2 | 6144 | 0 |
@@ -996,7 +1001,7 @@ the same figure, so no part of the accounted share rests on a guessed magic.
 | Class | What its unclaimed bytes are | Verdict |
 |---|---|---|
 | `vab_multi_bank` (`0891`) | Nothing: the bank index, each bank's two chunks and each bank's sector slack are claimed from lengths the container states. | Closed. Layout in [`vab.md`](../formats/vab.md#the-multi-bank-archive-monstersnd). |
-| `overlay_data_blob` | The whole class's remaining work: per-image data segments beside code the dump corpus reached, the field (`0897`) and menu (`0899`) overlays' the largest, and entry `0896`, whose extent reads `plausible_mips` although its head is a length-prefixed Shift-JIS label table. | Data segments with no parser yet; `0896` links at `0x801D4DF0` and calls no function entry of this disc's executable - a foreign-build image, resident in no state here. |
+| `overlay_data_blob` | The whole class's remaining work: per-image data segments beside code the dump corpus reached, the field (`0897`) and menu (`0899`) overlays' the largest. What is left is arrays whose base only an `addiu` forms - a consumer that pins a base and a stride but not a count ([below](#what-the-overlay-residue-that-is-left-actually-is)). | Data segments with no bounded consumer yet; `0896` (a foreign build linked at `0x801D4DF0`) is down to such arrays, its `[count][SJIS][NUL]` label head claimed as strings. |
 | `overlay_ptr_table`, `mips_overlay` | `low_entropy` runs with a `plausible_mips` minority - the tables beside code the dump corpus has not reached. | Dump worklist; agrees with [`disc-coverage.md`](disc-coverage.md)'s gap list. |
 | `init_pak` (`0895`) | The head pointer table, the SCUS-name string, and a tail past the last logo. | Closed but for those three; see the composition rule below. |
 | `lzs_container` | `0981` alone - the one class member that is a code image rather than a container. The per-entry tails past the last descriptor's stream were the packer's buffer ([below](#a-bundles-last-sector-is-the-packers-buffer)) and are claimed. | One mis-classed entry. |
@@ -1004,7 +1009,7 @@ the same figure, so no part of the accounted share rests on a guessed magic.
 | `scene_vab_stream`, `scene_tmd_stream`, `data_field_streaming` | Nothing: the chunk walk reaches the terminator and what is left of the entry's last sector is claimed as slack. This class's residue used to be its single largest figure and read as "walker tails". | Closed; see the fixed-stride section above. |
 | `battle_data_pack` | Nothing but inter-record alignment: all four entries account whole. | Closed; the table-to-data gap is declared slack. |
 | `bse_bank` | Nothing but `zero_pad`; its non-slack tail was the packer's buffer. | Closed. |
-| `scene_event_scripts` | One sector of `ascii_text` behind a walker that reached the records. | Walker tail. |
+| `scene_event_scripts` | Nothing. The one sector that used to rank here was PROT `0780` (`edteien`) whole: its prescript holds two records, the standalone count floor rejected it, and the walker - selected by the class, so the entry is already placed - now reads it positionally, as the scene loader does. | Closed. "Walker tail" was the wrong verdict: the walker never started. |
 | `efect_pack` (`0873`) | Nothing: the header, the inline sprite atlas, and both packs' members account fully. | Closed. |
 | `pochi_filler`, `all_zeros`, `scene_v12_table` | Nothing, or `zero_pad`. | The disc's own slack. Not work. |
 | `summon_readef` | Tens of bytes of inter-record alignment. Each slot's fill is claimed out to the stride the stream SM transfers. | Closed. |
