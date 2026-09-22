@@ -48,12 +48,14 @@
 //!
 //! # The raiser
 //!
-//! `ctx[+0x28B]` has exactly one writer on the disc, and it is not in the
-//! battle overlay at all - it is **`FUN_8004AD80` in `SCUS_942.54`**, the
-//! staged-animation commit (`see ghidra/scripts/funcs/8004ad80.txt`; the four
-//! `sb ..,0x28b(..)` sites are `0x8004ADDC`, `0x8004B774`, `0x8004B80C` and
-//! `0x8004B87C`, and a disc-wide grep for the offset finds no other). That is
-//! why an overlay sweep for it came back empty.
+//! Every write that raises or retires a banner is in **`FUN_8004AD80` in
+//! `SCUS_942.54`**, the staged-animation commit
+//! (`see ghidra/scripts/funcs/8004ad80.txt`; the four `sb ..,0x28b(..)` sites
+//! are `0x8004ADDC`, `0x8004B774`, `0x8004B80C` and `0x8004B87C`), not in the
+//! battle overlay - which is why an overlay sweep for the raiser came back
+//! empty. The one overlay write is the tick's own clear, `sb zero,0x28b(v0)`
+//! at `0x801E263C` in `FUN_801E2524` (the `5..=8` arm [`step_flash_ramp`]
+//! ports), so the byte has five writers disc-wide, not four.
 //!
 //! The commit reaches the banner block only for a **party** actor
 //! (`actor[+0x5A] < 3`) whose staged id `actor[+0x1DA]` is the SpecialStarter

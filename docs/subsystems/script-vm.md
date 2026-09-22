@@ -1053,7 +1053,10 @@ indistinguishable from a single mid-visit save.
 `conc`'s `0x6DE` is the worked case, measured with a bank-byte write watch plus
 exec breakpoints on the SET / CLEAR helpers armed from the memory-card load
 screen across a cold entry (`scripts/pcsx-redux/autorun_w5a_flag_watch.lua`;
-the VM's own bytecode cursor `s8` names the record behind each write):
+each write is placed by the dispatcher's **pc offset** in `s8` at the helper
+call - `FUN_801DE840` keeps the offset in `s8` (`move s8,a1`) and the op
+pointer in `s0` (`addu s0,a0,s8`), so `s8` is an offset into the executing
+record, not an address - matched against the record disassembly):
 
 1. the save block's restore seeds the bank while the load screen is still up;
 2. the scene load clears `0x6DE` **twice** before the field mode word settles -

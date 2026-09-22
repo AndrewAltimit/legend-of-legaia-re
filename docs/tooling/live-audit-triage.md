@@ -2157,11 +2157,13 @@ them.
 ### The banner: the raiser was in `SCUS_942.54`
 
 `801e2524` / `801e2650` (`flash_ramp`) named their blocker as the *raiser* of
-`ctx[+0x28B]` and looked for it in the battle overlay. Every write of that
+`ctx[+0x28B]` and looked for it in the battle overlay. Every *raise* of that
 byte on the disc is in `FUN_8004AD80`, which is SCUS-resident, so an overlay
-sweep for it returns nothing and reads as a negative result. The routine's
-commit body was already ported and already live; the raise is four
-instructions beside the slow-motion arm the port had.
+sweep for the raiser returns nothing and reads as a negative result; the only
+overlay write is the tick's own clear, `sb zero,0x28b(v0)` at `0x801E263C`
+inside `FUN_801E2524` itself. The routine's commit body was already ported and
+already live; the raise is one arm (`0x8004B754..0x8004BB44`) beside the
+slow-motion arm the port had.
 
 The lesson for a blocker sentence: "unfound in *X*" is a claim about where
 the search ran, and it ages into "does not exist" unless the scope is written
