@@ -8,11 +8,11 @@
 //! font glyph at the ported cell x instead: the layout is retail's, the glyph
 //! source is not.
 //!
-//! The layout lives in `engine_core::baka_fighter_chrome::hud_digit_placements`
-//! - which strips draw, and at which pen. This is the other half: the glyph
-//! quads. Splitting them is deliberate; a shared *layout* is not a shared
-//! draw, and the two hosts drew different things off one layout until the
-//! quad emitter sat under both as well.
+//! The layout lives in `engine_core::baka_fighter_chrome::hud_digit_placements`,
+//! which decides which strips draw and at which pen. This module is the other
+//! half: the glyph quads. Splitting them is deliberate; a shared *layout* is
+//! not a shared draw, and the two hosts drew different things off one layout
+//! until the quad emitter sat under both as well.
 
 use crate::*;
 
@@ -51,7 +51,7 @@ mod tests {
         let out = baka_digit_strip_draws_for(&font, &[(10, 20, 4), (26, 20, 2)], [1.0; 4]);
         assert!(out.len() >= 2);
         let xs: std::collections::BTreeSet<i32> = out.iter().map(|d| d.dst.0).collect();
-        assert!(xs.iter().any(|&x| x >= 10 && x < 26));
+        assert!(xs.iter().any(|&x| (10..26).contains(&x)));
         assert!(xs.iter().any(|&x| x >= 26));
     }
 

@@ -573,6 +573,30 @@ impl LegaiaRuntime {
         })
         .to_string()
     }
+
+    /// The **save-screen backdrop**: the title art kept behind the Load /
+    /// Save chrome at retail's dim, rather than the screen being composed
+    /// over black.
+    ///
+    /// The page reaches retail's save-select through the pause menu's own
+    /// Load row, and used to drop its title session at that hand-off, so the
+    /// art went with it. The session is parked in `boot_title_backdrop`
+    /// instead and drawn through the same `ui::title_band_sprites` kernel the
+    /// live card uses, with `ui::TitleBandState::backdrop`'s dim. Retail
+    /// pivots to pure black once a slot is confirmed, which is why the
+    /// confirm phases draw nothing.
+    pub fn boot_title_backdrop_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
+        if !self.boot_title_backdrop_visible() {
+            return r#"{"active":false,"sprites":[]}"#.to_string();
+        }
+        let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
+        let sprites = ui::title_band_sprites(ui::TitleBandState::backdrop(), origin, scale);
+        serde_json::json!({
+            "active": true,
+            "sprites": sprites.iter().map(quad_json).collect::<Vec<_>>(),
+        })
+        .to_string()
+    }
 }
 
 impl LegaiaRuntime {
@@ -649,30 +673,6 @@ impl LegaiaRuntime {
             state.menu = Some((cursor, true));
         }
         ui::title_band_sprites(state, origin, scale)
-    }
-
-    /// The **save-screen backdrop**: the title art kept behind the Load /
-    /// Save chrome at retail's dim, rather than the screen being composed
-    /// over black.
-    ///
-    /// The page reaches retail's save-select through the pause menu's own
-    /// Load row, and used to drop its title session at that hand-off, so the
-    /// art went with it. The session is parked in `boot_title_backdrop`
-    /// instead and drawn through the same `ui::title_band_sprites` kernel the
-    /// live card uses, with `ui::TitleBandState::backdrop`'s dim. Retail
-    /// pivots to pure black once a slot is confirmed, which is why the
-    /// confirm phases draw nothing.
-    pub fn boot_title_backdrop_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
-        if !self.boot_title_backdrop_visible() {
-            return r#"{"active":false,"sprites":[]}"#.to_string();
-        }
-        let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
-        let sprites = ui::title_band_sprites(ui::TitleBandState::backdrop(), origin, scale);
-        serde_json::json!({
-            "active": true,
-            "sprites": sprites.iter().map(quad_json).collect::<Vec<_>>(),
-        })
-        .to_string()
     }
 
     /// Whether the parked backdrop session owns the frame behind the menu.
