@@ -2601,3 +2601,25 @@ expected_game_mode = 0x03
 expected_active_scene = "retona"
 description = "Mt. Letona free field run, reached by a cold boot + memory-card load. Player at world (8536, 12638). The save one step before the `retock` beats, so a play-forward from here fires that region's entry family organically instead of finding it pre-latched."
 topics = ["field", "retona", "retock", "story flags", "card boot", "probe state"]
+
+# ----------------------------------------------------------------------
+# Pre-entry card-boot anchor.
+#
+# The card-tier anchors above are checkpointed on the first FIELD frame,
+# which is already past everything the scene entry did. A question about
+# what the entry itself writes needs an anchor BEFORE it, so this one is
+# checkpointed on the memory-card load screen with the CONTINUE ladder's
+# confirm already pressed: loading it replays the save block's restore,
+# the scene load and the entry script under whatever watches a probe arms
+# first.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "conc_pre_entry_card_boot"
+backup_fingerprint = "b0eef610f26d37763fdf8c375137969e28733a8b1eee11d4fa3a7ab8ea21dfe5"
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "opdeene"
+description = "Memory-card load screen with the `conc` save's confirm already taken, ~450 vsyncs before the scene settles into field mode. The pre-entry sibling of `conc_field_card_boot`: a watch armed on this state sees the save-block restore, both of conc's entry-time story-flag clears and the entry script's first re-arm passes."
+topics = ["field", "conc", "card boot", "story flags", "scene entry", "probe state"]
