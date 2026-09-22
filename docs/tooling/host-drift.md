@@ -2148,6 +2148,13 @@ stateless per-tick sample (`muscle_hub_screen_json`) with no backdrop clock to
 ride. The same answer as above applies - a `World` on the minigames page, or
 the page folded into the play page.
 
+The first visit's brick wall (the emitter's other arm,
+`ringside_backdrop::first_visit_tile_draws` at the level
+`muscle_ringside::first_visit_backdrop_level` reads off the intro card and the
+leg-open banner) is in the same position: both play hosts draw it under those
+two screens, and the standalone page, which samples its screens by index
+rather than running their envelopes, does not.
+
 The dome's command ring has the same shape one level down. Its chip marks
 (the red cross-out X is `FUN_801DBC30`, placed by the engine as
 `battle_party_panel::cross_out_mark`) are drawn by the standalone page only,

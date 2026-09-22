@@ -68,6 +68,10 @@ pub(crate) struct MuscleUi {
     pub(crate) char_slot: u32,
     intro_card: Option<HubScreen>,
     round_banner: Option<(i32, HubScreen)>,
+    /// The round the re-entered hub's backdrop last drew its ROUND card for
+    /// (`muscle_ringside::leg_open_raises_round_card`), the native window's
+    /// `muscle_card_round`.
+    card_round: Option<i32>,
     interval: Option<HubScreen>,
     tally: Option<(ScoreTallyRamp, i32)>,
     /// The re-entered hub's backdrop: the ringside still the leg left
@@ -182,7 +186,13 @@ impl LegaiaRuntime {
         let still = world.minigames.muscle_ringside_still;
         let ui = &mut self.minigame_ui.muscle;
         if leg_open && !ui.prev_leg_open {
-            ui.round_banner = Some((round, HubScreen::round_banner()));
+            // Once per leg: not again after a re-entered hub's own card.
+            if legaia_engine_core::muscle_ringside::leg_open_raises_round_card(
+                ui.card_round.take(),
+                round,
+            ) {
+                ui.round_banner = Some((round, HubScreen::round_banner()));
+            }
             if contest_open && !ui.prev_contest_open {
                 ui.intro_card = Some(HubScreen::intro_card());
             }
@@ -220,6 +230,9 @@ impl LegaiaRuntime {
                 .as_ref()
                 .is_some_and(|(ramp, _)| ramp.fade[0] >= LANE_FADE_FULL);
             backdrop.tick(1, pad, ui.interval.map(|i| i.stage()), lane0_full);
+            if backdrop.card_brightness().is_some() {
+                ui.card_round = Some(round);
+            }
             if backdrop.done() {
                 ui.backdrop = None;
             }
@@ -263,6 +276,19 @@ impl LegaiaRuntime {
         let mut table = table.clone();
         let mut quads = Vec::new();
         if in_dome {
+            // A first visit's brick wall under the two leg-open screens - the
+            // native window's `muscle_hub_sprite_draws` twin.
+            let wall = legaia_engine_core::muscle_ringside::first_visit_backdrop_level(
+                ui.intro_card.as_ref(),
+                ui.round_banner.as_ref().map(|(_, b)| b),
+            );
+            if wall > 0 {
+                quads.extend(hud::hub_screen_quads(
+                    &mut table,
+                    &legaia_engine_ui::ringside_backdrop::first_visit_tile_draws(),
+                    wall,
+                ));
+            }
             if let Some(card) = ui.intro_card {
                 quads.extend(hud::hub_screen_quads(
                     &mut table,
