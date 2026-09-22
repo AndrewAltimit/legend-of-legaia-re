@@ -3206,10 +3206,33 @@ fn cstring_end(buf: &[u8], off: usize) -> Option<usize> {
     if len == 0 {
         return None;
     }
-    let printable = tail[..len]
-        .iter()
-        .filter(|&&b| (0x20..0x7F).contains(&b))
-        .count();
+    // The dialog font's `0xCE` escape (`docs/formats/dialog-font.md`) and the
+    // index byte after it are text too: a label that opens on a glyph escape
+    // is still a label. So is a Shift-JIS pair - PROT 0896 is a Japanese
+    // build, and its labels are `[count][SJIS pairs][NUL]`.
+    // A Shift-JIS reading is only offered to a run with no control byte in it
+    // other than a leading count: `8C 8D 8E 8F 1A ...` pairs up as two SJIS
+    // characters, but a `0x1A` mid-run says it is a byte table.
+    let body = &tail[..len];
+    let sjis_ok = body.iter().skip(1).all(|&b| b >= 0x20);
+    let mut printable = 0usize;
+    let mut i = 0usize;
+    while i < len {
+        let sjis = sjis_ok
+            && matches!(body[i], 0x81..=0x9F | 0xE0..=0xEF)
+            && body
+                .get(i + 1)
+                .is_some_and(|&t| matches!(t, 0x40..=0x7E | 0x80..=0xFC));
+        if (body[i] == 0xCE && i + 1 < len) || sjis {
+            printable += 2;
+            i += 2;
+            continue;
+        }
+        if (0x20..0x7F).contains(&body[i]) {
+            printable += 1;
+        }
+        i += 1;
+    }
     (printable * FORMED_STRING_PRINTABLE_DEN >= len * FORMED_STRING_PRINTABLE_NUM)
         .then_some(off + len + 1)
 }
@@ -3881,6 +3904,7 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
         menu_windows as menu, minigame_art as art, minigame_slot_scene as slot, move_power as mp,
         muscle_dome as dome, seru_side_effect as seru, slot_payout as payout,
     };
+    use crate::{fishing_exchange as fex, fishing_species as fish};
     const SLOT_A: u32 = 0x801C_E818;
     let at = |va: u32| (va - SLOT_A) as usize;
     match prot_index {
@@ -4128,6 +4152,74 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
                 dance_chart::DANCE_CHART_ROWS * dance_chart::BEATS_PER_ROW,
                 OWNER_RECORD,
                 "dance step chart (dance_chart)",
+            ),
+            (
+                (dance_chart::DANCE_BONUS_VA - SLOT_A) as usize,
+                dance_chart::DANCE_SKILL_ROWS * dance_chart::DANCE_BONUS_LANES * 4,
+                OWNER_RECORD,
+                "dance sequence-bonus table (dance_chart)",
+            ),
+            (
+                (dance_chart::DANCE_TRIANGLE_SCHEDULE_VA - SLOT_A) as usize,
+                dance_chart::DANCE_SKILL_ROWS * dance_chart::DANCE_SCHEDULE_SLOTS * 4,
+                OWNER_RECORD,
+                "dance AI triangle schedule (dance_chart)",
+            ),
+            (
+                (dance_cast::SPAWN_QUALIFIER_VA - SLOT_A) as usize,
+                3 * 0x10,
+                OWNER_RECORD,
+                "dance qualifier spawn table (dance_cast)",
+            ),
+            (
+                (dance_cast::SPAWN_FINALS_VA - SLOT_A) as usize,
+                3 * 0x10,
+                OWNER_RECORD,
+                "dance finals spawn table (dance_cast)",
+            ),
+            (
+                (dance_cast::SPAWN_FREEPLAY_VA - SLOT_A) as usize,
+                6 * 0x10,
+                OWNER_RECORD,
+                "dance free-play spawn table (dance_cast)",
+            ),
+        ],
+        972 => vec![
+            (
+                fish::SPECIES_TABLE_FILE_OFFSET,
+                fish::SPECIES_COUNT * fish::SPECIES_RECORD_STRIDE,
+                OWNER_RECORD,
+                "fishing species table (fishing_species)",
+            ),
+            (
+                (fish::SPAWN_TABLE_VA_PAGE0 - SLOT_A) as usize,
+                fish::SPAWN_RODS * fish::SPAWN_BANDS * 4,
+                OWNER_RECORD,
+                "fishing venue-0 spawn table (fishing_species)",
+            ),
+            (
+                (fish::SPAWN_TABLE_VA_PAGE1 - SLOT_A) as usize,
+                fish::SPAWN_RODS * fish::SPAWN_BANDS * 4,
+                OWNER_RECORD,
+                "fishing venue-1 spawn table (fishing_species)",
+            ),
+            (
+                (fish::CADENCE_TEMPLATE_VA - SLOT_A) as usize,
+                fish::CADENCE_TEMPLATE_COUNT * fish::CADENCE_TEMPLATE_STRIDE,
+                OWNER_RECORD,
+                "fishing reel-cadence templates (fishing_species)",
+            ),
+            (
+                (fex::EXCHANGE_TABLE_VA_PAGE0 - SLOT_A) as usize,
+                fex::EXCHANGE_ROWS * fex::EXCHANGE_ROW_STRIDE,
+                OWNER_RECORD,
+                "fishing point-exchange page 0 (fishing_exchange)",
+            ),
+            (
+                (fex::EXCHANGE_TABLE_VA_PAGE1 - SLOT_A) as usize,
+                fex::EXCHANGE_ROWS * fex::EXCHANGE_ROW_STRIDE,
+                OWNER_RECORD,
+                "fishing point-exchange page 1 (fishing_exchange)",
             ),
         ],
         _ => Vec::new(),

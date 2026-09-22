@@ -651,6 +651,14 @@ formed address holds two or more in-image words that each point at such a
 string (or at an empty or one-byte one - the options screen names its button
 glyph that way), the words are a pointer table and are claimed with the strings.
 
+"Printable" is the dialog font's alphabet, not only ASCII: a `0xCE` escape and
+the index byte after it count as text (a label may open on a glyph escape - the
+`0976` head pool's third label does, which used to stop its eleven-word pointer
+table at two entries), and so does a Shift-JIS pair when the run holds no
+control byte past its first. PROT `0896` is a Japanese build whose labels are
+`[count][SJIS pairs][NUL]` records padded to a word; the menu overlay carries
+two SJIS glyph strings of its own.
+
 Two guards keep a coincidence out. A target already inside a claim is left to
 that claim, and a pair issued from the image's inherited tail is ignored,
 because that is the donor's code forming the donor's addresses. The rule is
