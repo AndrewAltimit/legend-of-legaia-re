@@ -1189,8 +1189,18 @@ fn pair_chunk_lists(
         let sp: Vec<&(usize, Vec<u8>)> = s.iter().filter(|c| prose(c)).collect();
         let u_all: Vec<&(usize, Vec<u8>)> = u.iter().collect();
         let s_all: Vec<&(usize, Vec<u8>)> = s.iter().collect();
-        let pairs =
-            align_chunks(&u_all, &s_all, head_first).or_else(|| align_chunks(&up, &sp, head_first));
+        // The source window is the widened one, so its surplus is expected;
+        // a surplus on the USA side means the gate ate source strings, and
+        // aligning what survived would put a different line on a slot -
+        // the one failure an unpaired label never is.
+        let pairs = (s.len() >= u.len())
+            .then(|| align_chunks(&u_all, &s_all, head_first))
+            .flatten()
+            .or_else(|| {
+                (sp.len() >= up.len())
+                    .then(|| align_chunks(&up, &sp, head_first))
+                    .flatten()
+            });
         if let Some(pairs) = pairs {
             for (a, b) in pairs {
                 out.insert(a.0, b.1.clone());
@@ -1349,22 +1359,23 @@ fn lift_scus_pools(
         // and pointer bytes around the pool are build-invariant), which is
         // what anchors the pairing where the pool's own strings all differ.
         let usa_chunks = nul_chunks(usa_exe, lo.saturating_sub(0x40), hi + 0x80);
-        let s_lo = (lo as i64 + drift - 0x40).max(0) as usize;
-        let s_hi = (hi as i64 + drift + span as i64 + 0x80).max(0) as usize;
-        let src_chunks = nul_chunks(src_exe, s_lo, s_hi);
-        let map = pair_chunk_lists(&usa_chunks, &src_chunks);
-        if std::env::var("LEGAIA_LIFT_DEBUG_POOL").ok().as_deref() == Some("scus") {
-            for (o, b) in &usa_chunks {
-                eprintln!(
-                    "U 0x{o:05x} {:?} -> {:?}",
-                    String::from_utf8_lossy(b),
-                    map.get(o).map(|m| String::from_utf8_lossy(m).into_owned())
-                );
-            }
-            for (o, b) in &src_chunks {
-                eprintln!("S 0x{o:05x} {:?}", String::from_utf8_lossy(b));
-            }
-        }
+        // The data segment does not drift uniformly: the pools ahead of the
+        // name tables sit at the same offsets on every build, the ones
+        // behind them carry the tables' displacement. Try both and keep the
+        // window that pairs more of the pool's own strings.
+        let pool_offs: Vec<usize> = ui::scan_pool(usa_exe, pool)
+            .iter()
+            .map(|s| (s.va - pool.base_va) as usize)
+            .collect();
+        let map = [0i64, drift]
+            .into_iter()
+            .map(|d| {
+                let s_lo = (lo as i64 + d - 0x40).max(0) as usize;
+                let s_hi = (hi as i64 + d + span as i64 + 0x80).max(0) as usize;
+                pair_chunk_lists(&usa_chunks, &nul_chunks(src_exe, s_lo, s_hi))
+            })
+            .max_by_key(|m| pool_offs.iter().filter(|o| m.contains_key(o)).count())
+            .unwrap_or_default();
         for e in pack.sections.system_text.iter_mut() {
             let Some(va) = key_scus_va(&e.key) else {
                 continue;

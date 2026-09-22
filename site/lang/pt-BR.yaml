@@ -58937,6 +58937,18 @@ sections:
   - key: 'scus:str:0x80010c78'
     translation: 'Nenhum lugar p/ ir.'
     budget: 23
+  - key: 'scus:str:0x80010c90'
+    translation: '{ce:13}Pernas.'
+    budget: 11
+  - key: 'scus:str:0x80010c9c'
+    translation: '{ce:12}Corpo.'
+    budget: 11
+  - key: 'scus:str:0x80010ca8'
+    translation: '{ce:11}Cabeca.'
+    budget: 11
+  - key: 'scus:str:0x80010cb4'
+    translation: '{ce:10}Arma. Para todos.'
+    budget: 19
   - key: 'scus:str:0x80077a38'
     translation: 'Obtencao de: '''
     budget: 19
