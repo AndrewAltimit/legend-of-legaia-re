@@ -439,7 +439,7 @@ pub struct BattleActor {
     /// Writers: the anim commit `FUN_8004AD80` drives the arts slow-motion
     /// (see [`crate::battle_anim_rate`]), and `FUN_801E93C8` restores every
     /// slot to `8` once the art clip has ended
-    /// ([`crate::battle_gauge_rearm::rearm_gauge`]).
+    /// ([`crate::battle_gauge_rearm::restore_anim_rates`]).
     pub anim_rate: AnimRate,
     /// `+0x21F` - the 1-based **impact-effect selector**: which entry of
     /// the 5-entry impact-config table (`0x801F53D4`) currently owns this
@@ -985,7 +985,7 @@ pub struct BattleActionCtx {
     /// `[+0x243]` - the byte the gauge re-arm clears once it has run
     /// (`FUN_801E93C8`'s tail store at `0x801E94F8`, reached only on the arm
     /// whose gate passed). Cleared by [`crate::battle_action::done_cleanup`]
-    /// via [`crate::battle_gauge_rearm::rearm_gauge`].
+    /// via [`crate::battle_gauge_rearm::restore_anim_rates`].
     pub gauge_rearm_latch: u8,
     /// `[+0x28B]` - the **Arts announcement banner**: `0` idle, `1..=4` a
     /// live banner, `5..=8` a cancel request. Raised by the staged-animation

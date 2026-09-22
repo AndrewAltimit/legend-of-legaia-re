@@ -29,7 +29,7 @@
 //!   half-speed beat each art strike plays under.
 //!
 //! The restore is `FUN_801E93C8` (ported as
-//! [`crate::battle_gauge_rearm::rearm_gauge`]), called from the action SM's
+//! [`crate::battle_gauge_rearm::restore_anim_rates`]), called from the action SM's
 //! Done arm: once the acting actor's art clip has ended (party: current anim
 //! id `< 0x10`; monster: committed record flag `+0x87 == 0`) every slot
 //! returns to `8`.

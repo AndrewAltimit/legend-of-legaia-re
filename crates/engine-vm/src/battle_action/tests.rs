@@ -1107,10 +1107,10 @@ fn done_cleanup_rearms_the_command_gauge_slots() {
         a.anim_rate = crate::battle_anim_rate::AnimRate(0);
     }
     step(&mut host, &mut ctx);
-    for i in 0..crate::battle_gauge_rearm::GAUGE_SLOTS {
+    for i in 0..crate::battle_gauge_rearm::ANIM_RATE_SLOTS {
         assert_eq!(
             host.actors[i].anim_rate.get(),
-            crate::battle_gauge_rearm::ARM_WIDTH_SEED,
+            crate::battle_gauge_rearm::ANIM_RATE_SEED,
             "slot {i} arm width seeded"
         );
         let expect_latch = if i % 2 == 0 { 0 } else { 200 };
@@ -1154,7 +1154,7 @@ fn done_cleanup_rearm_gate_for_a_monster_slot_uses_the_record_flag() {
     step(&mut host, &mut ctx);
     assert_eq!(
         host.actors[0].anim_rate.get(),
-        crate::battle_gauge_rearm::ARM_WIDTH_SEED
+        crate::battle_gauge_rearm::ANIM_RATE_SEED
     );
 }
 

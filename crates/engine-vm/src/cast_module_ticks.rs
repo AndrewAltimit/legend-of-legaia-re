@@ -86,7 +86,7 @@
 //! (`docs/subsystems/cast-module.md#the-entry-tables-and-where-the-addresses-live`).
 
 use crate::battle_damage_wrappers::{
-    WrapperAttacker, WrapperDefender, physical_wrapper_predamage, spell_wrapper_predamage,
+    WrapperAttacker, WrapperDefender, atk_wrapper_predamage, int_wrapper_predamage,
     wrapper_net_damage,
 };
 
@@ -574,7 +574,7 @@ pub fn roll_module_hit(
 ) -> i32 {
     let power = u32::from(shape.powers.get(site).copied().unwrap_or(0));
     let (atk, def) = match shape.wrapper {
-        CastWrapper::Bypass => spell_wrapper_predamage(
+        CastWrapper::Bypass => atk_wrapper_predamage(
             power,
             attacker,
             defender,
@@ -587,7 +587,7 @@ pub fn roll_module_hit(
         // arm, which `battle_formulas` owns; routing it here keeps the baked
         // power and the clamp right even where the bonus arm is the other
         // kernel's.
-        CastWrapper::Respect | CastWrapper::SharedSummon => physical_wrapper_predamage(
+        CastWrapper::Respect | CastWrapper::SharedSummon => int_wrapper_predamage(
             power,
             attacker,
             defender,
@@ -2416,9 +2416,9 @@ pub const BLOODY_HORNS_POWER: u16 = 0x1D0;
 /// clamps shape A at `0x801F796C`, accumulates `+0x10`, writes `+0x14C`,
 /// stages `+0x1F1` with `+0x1DC = 1` and faces the victim away.
 ///
-/// `FUN_801DD6B4` is the physical wrapper - the one that folds the defender's
-/// two defence stats - which is what makes this body's `0x1D0` a physical
-/// figure rather than a spell one.
+/// `FUN_801DD6B4` is the ATK wrapper - it mixes the caster's `+0x158` and
+/// folds the defender's two defence stats - which is what makes this body's
+/// `0x1D0` a physical figure rather than a spell one.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///

@@ -1680,10 +1680,10 @@ Two sibling **damage kernels** the action path calls to resolve one hit. Each
 draws an attacker roll and a defender roll from the two battle-actor records
 (`(&DAT_801C9370)[slot]`), calls the affinity scale `FUN_801DD864` and then the
 closed-form finisher `FUN_801DDB30`, and returns `attacker_roll - defender_roll`
-as the net damage. They differ in two ways: `FUN_801DD4B0` mixes the physical
-attack/defence stat `+0x168` into both rolls and passes finisher **`param_5 = 0`**
+as the net damage. They differ in two ways: `FUN_801DD4B0` mixes the INT-working
+stat `+0x168` into both rolls and passes finisher **`param_5 = 0`**
 (the equipment resist ladder - jewels / elemental guards / All Guard - runs);
-`FUN_801DD6B4` uses the spell-power stat `+0x158` and passes **`param_5 = 1`**,
+`FUN_801DD6B4` uses the ATK-working stat `+0x158` and passes **`param_5 = 1`**,
 which makes the finisher **skip the whole party-defender resist block**. The
 `param_5 = 1` path is the **resist-BYPASS** wrapper: a hit routed through it
 takes no Earth/Luminous-Jewel or All-Guard reduction even when the defender is

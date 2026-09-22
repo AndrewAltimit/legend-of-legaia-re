@@ -19,7 +19,7 @@ The popular description is "an off-class weapon **doubles** the arm command." Th
 - [Measured arm cost](#measured-arm-cost)
 - [How the gauge consumes it](#how-the-gauge-consumes-it)
 - [Where the gauge pool comes from](#where-the-gauge-pool-comes-from)
-- [Re-arming the gauge at art start](#re-arming-the-gauge-at-art-start)
+- [Restoring the animation rate after an action](#restoring-the-animation-rate-after-an-action)
 - [Status limb gating](#status-limb-gating)
 - [Weapon classes and favored mapping](#weapon-classes-and-favored-mapping)
 - [Execution path](#execution-path)
@@ -118,17 +118,17 @@ The **enemy analogue** is the AGL action-budget in `FUN_801E9FD4`: a monster fil
 
 > A separate `+2` in the same case (`icon = DAT_801F4B94[i] + 2`, gated on an *empty* equip slot, `equip[cmd] == 0`) is an empty-slot icon tweak, **not** the class penalty - a fully-equipped off-class character still shows the widened arm via the `+0x74` cost above.
 
-## Re-arming the gauge at art start
+## Restoring the animation rate after an action
 
 `FUN_801e93c8` (battle overlay, PROT 0898;
 `see ghidra/scripts/funcs/overlay_battle_action_801e93c8.txt`) resets the
-per-actor gauge slot flags when a committed action **finishes** - its only call
-site is the Done/cleanup arm (`0x50`) at `0x801E5F64`, right after the
-`0x50 -> 0x51` advance - so the next art draws
-its arrows from a clean state. It reads the active actor
+per-actor animation rates when a committed action **finishes** - its only
+call site is the Done/cleanup arm (`0x50`) at `0x801E5F64`, right after the
+`0x50 -> 0x51` advance. It was once read as re-arming the arts gauge; the byte
+it seeds is the anim-rate scalar, not a gauge field. It reads the active actor
 (`_DAT_8007bd24 + 0x13` indexes the actor-pointer table `DAT_801C9370`), then
 gates on **what** was staged: the actor's last-staged action id `+0x1D9`. For a
-party slot (index `< 3`) the re-arm runs only while `+0x1D9 < 0x10` - i.e. the
+party slot (index `< 3`) the restore runs only while `+0x1D9 < 0x10` - i.e. the
 staged id is a plain direction (`0x0C..=0x0F`), not a materialized art or
 starter (`>= 0x10`). For a monster (index `>= 3`) it resolves the materialized
 art record (`+0x4C`) instead and bails when the record's `+0x87` flag byte is
@@ -691,7 +691,7 @@ The cheat-database labels "weapon = `+0x198`" are Vahn's and Gala's layout.
 | `FUN_801EC3E4` | battle overlay (0898) | Arms execution resolver; called from SCUS `0x800478A0`; folds equipment ATK into `actor+0x158` per command via jump table `PTR_801CF4B4` |
 | `FUN_801EED1C` | battle overlay (0898) | Party arts queue builder; computes a named art's Spirit cost (`li t4` at `0x801EF328 / 0x801EF32C / 0x801EF33C`, halving at `0x801EF378`) |
 | `FUN_801E9FD4` | battle overlay (0898) | Enemy action-queue filler; spends move `+0x74` costs from the monster's AGL |
-| `FUN_801E93C8` | battle overlay (0898) | Gauge re-arm after an action completes (called from `0x801E5F64`) |
+| `FUN_801E93C8` | battle overlay (0898) | Animation-rate restore (`+0x21D = 8` on all seven slots) after an action completes (called from `0x801E5F64`) - not a gauge re-arm |
 | `FUN_801D33D8` | menu overlay (0899) | Status-panel renderer; the one reader of the menu's per-art AP byte (`lbu a0,0x2(s2)` at `0x801D4524`) |
 
 ### Static tables in `SCUS_942.54`

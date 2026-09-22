@@ -842,7 +842,7 @@ impl World {
         // acting actor at quarter speed; an art constant (`>= 0x1B`) drops
         // the whole battle to half speed (quarter under an armed
         // `ctx[+0x243]`). The restore back to normal is the SM's Done arm
-        // (`FUN_801E93C8` via `battle_gauge_rearm::rearm_gauge`).
+        // (`FUN_801E93C8` via `battle_gauge_rearm::restore_anim_rates`).
         {
             use vm::battle_anim_rate as rl;
             let decayed = rl::commit_rate_decay(self.actors[i].battle.anim_rate);

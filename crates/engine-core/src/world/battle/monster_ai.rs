@@ -1076,9 +1076,13 @@ impl World {
     /// re-rolling the deterministic RNG until it lands on a living actor on the
     /// matching side:
     ///
-    /// - **class `0..2`** → a living **monster** slot (`rand % monster_count +
-    ///   party_count`); if it lands on self, clears `action_category` and keeps
-    ///   self as the target.
+    /// - **class `0..2`** → a living **monster** slot (`rand % ctx[+1] + 3`,
+    ///   `0x801E73B8`); if it lands on self, clears `action_category` and
+    ///   keeps self as the target. The `3` is a constant, not the party count:
+    ///   retail's monster band always opens at seat 3. The engine seats its
+    ///   monsters from `party_count` instead, so the same band origin is
+    ///   `party_count` here, and `ctx[+1]` is the seated monster count - not
+    ///   the actor table's length, whose tail slots would only burn re-rolls.
     /// - **class `3..6`** → a living **party** slot (`rand % party_count`).
     /// - **class `8`** → 1-in-3 keeps the all-target code `9`, else self.
     /// - **class `7` / other** → 1-in-3 sets the all-target code `8`, else self.
@@ -1098,7 +1102,14 @@ impl World {
     /// REF: FUN_801E295C
     pub(in crate::world) fn resolve_monster_target(&mut self, slot: u8) {
         let pc = self.party.party_count.max(1);
-        let mc = (self.actors.len() as u8).saturating_sub(pc).max(1);
+        // `ctx[+1]`: the seats battle load filled on the monster side.
+        let mc = self
+            .actors
+            .iter()
+            .skip(usize::from(pc))
+            .take_while(|a| a.battle.max_hp > 0 || a.battle_monster_id.is_some())
+            .count()
+            .max(1) as u8;
         let class = match self.actors.get(slot as usize) {
             Some(a) => a.battle.active_target,
             None => return,

@@ -16,7 +16,7 @@
 //! Selector `0x82` is not an arm either in any real sense: its slot points at
 //! `0x800421A0`, two instructions above the epilogue, which is one
 //! `jal 0x80046870` - the brightness ramp already ported as
-//! [`crate::battle_helpers::advance_gauge`].
+//! [`crate::battle_helpers::top_up_cooldown`].
 //!
 //! So the applier's whole behavioural surface is selectors `0x00..=0x0E`, and
 //! `0x0B` / `0x0C` / `0x0D` share one arm - fourteen bodies over fifteen
