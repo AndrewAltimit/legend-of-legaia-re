@@ -2088,6 +2088,17 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.spawn_clut_cell_fx(&payload);
     }
 
+    /// Op `0x4C 0xDB` - spawn the single-source CLUT blend fade
+    /// (`FUN_801E57F0` -> handler `FUN_801E4D8C`). `bytecode` starts at the
+    /// `0xDB` byte, the record pointer retail parks at actor `+0x90`; the
+    /// fade runs on [`World::step_clut_fx`]'s game-tick bank against the
+    /// host's software VRAM.
+    ///
+    /// REF: FUN_801E57F0
+    fn op4c_n_d_sub_b_call_e57f0(&mut self, bytecode: &[u8]) {
+        self.world.spawn_clut_blend_fx(bytecode);
+    }
+
     /// Op `0x4C 0x60` - literal-operand VRAM `MoveImage`. The six words are
     /// `[src_x, src_y, w, h, dst_x, dst_y]`; retail's handler arm hands them
     /// straight to the libgpu `MoveImage` wrapper. Queued on the world;
