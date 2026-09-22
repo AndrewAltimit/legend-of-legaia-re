@@ -1160,6 +1160,7 @@ pub(super) fn cmd_play_window_with_record(
         muscle_round_banner: None,
         muscle_interval: None,
         muscle_tally: None,
+        muscle_backdrop: None,
         muscle_prev_leg_open: false,
         muscle_prev_contest_open: false,
         summon_actor_slot: None,

@@ -621,6 +621,7 @@ impl PlayWindowApp {
                 self.muscle_intro_card = Some(HubScreen::intro_card());
             }
             self.muscle_interval = None;
+            self.muscle_backdrop = None;
         }
         if !leg_open && self.muscle_prev_leg_open && self.muscle_prev_contest_open {
             // The leg boundary the arena hub sees. Whether it shows the tally
@@ -637,6 +638,13 @@ impl PlayWindowApp {
                     .last()
                     .unwrap_or(&0) as i32;
             self.muscle_interval = raises.then(|| HubScreen::interval(roll));
+            // A hub re-entered after a leg draws the still that leg's end
+            // left resident as its backdrop (retail's `_DAT_801D1AE0` arm).
+            self.muscle_backdrop = world
+                .minigames
+                .muscle_ringside_still
+                .filter(|_| raises)
+                .map(legaia_engine_core::muscle_ringside::HubBackdrop::reentry);
             // Arm the tally roll with the screen: the contest is already
             // settled, so the roll only decides what the six rows read while
             // the screen is up, and it ends on the settled values.
@@ -663,6 +671,17 @@ impl PlayWindowApp {
             banner.tick(1, pad);
             if banner.done() {
                 self.muscle_round_banner = None;
+            }
+        }
+        // The backdrop rides the INTERVAL screen's arms, then runs its own
+        // return + ROUND-card arms once the screen has gone.
+        if let Some(backdrop) = self.muscle_backdrop.as_mut() {
+            let lane0_full = self.muscle_tally.as_ref().is_some_and(|(ramp, _)| {
+                ramp.fade[0] >= legaia_engine_core::other_game_overlay::LANE_FADE_FULL
+            });
+            backdrop.tick(1, pad, self.muscle_interval.map(|i| i.stage()), lane0_full);
+            if backdrop.done() {
+                self.muscle_backdrop = None;
             }
         }
         if let Some(interval) = self.muscle_interval.as_mut() {
@@ -800,6 +819,9 @@ impl PlayWindowApp {
         if atlas_w == 0 {
             return;
         }
+        // The two ringside stills share the atlas: each is a 320-wide sheet
+        // (the VRAM region `(384, 0)` the battle end's loader fills).
+        let atlas_w = atlas_w.max(legaia_asset::ringside_still::WIDTH as u32);
         let mut blocks: Vec<(u8, u8, u32)> = Vec::new();
         let mut rgba: Vec<u8> = Vec::new();
         let mut atlas_h = 0u32;
@@ -823,6 +845,28 @@ impl PlayWindowApp {
             log::warn!("muscle hub: no page/palette block decoded");
             return;
         }
+        let mut stills: Vec<(u32, u32)> = Vec::new();
+        for variant in 0..2u32 {
+            let index = legaia_asset::ringside_still::PROT_INDEX_DEFAULT + variant;
+            let Some(sheet) = self
+                .session
+                .host
+                .index
+                .entry_bytes_extended(index)
+                .ok()
+                .and_then(|b| legaia_engine_render::ringside_backdrop::still_sheet_rgba(&b))
+            else {
+                log::warn!("muscle hub: ringside still {index} did not decode");
+                continue;
+            };
+            let sw = legaia_asset::ringside_still::WIDTH as u32;
+            for row in sheet.chunks_exact(sw as usize * 4) {
+                rgba.extend_from_slice(row);
+                rgba.resize(rgba.len() + ((atlas_w - sw) * 4) as usize, 0);
+            }
+            stills.push((variant, atlas_h));
+            atlas_h += legaia_asset::ringside_still::HEIGHT as u32;
+        }
         match renderer.upload_sprite_atlas(&rgba, atlas_w, atlas_h) {
             Ok(atlas) => {
                 log::info!(
@@ -833,6 +877,7 @@ impl PlayWindowApp {
                     blocks,
                     table,
                     atlas,
+                    stills,
                 });
             }
             Err(e) => log::warn!("muscle hub: atlas upload skipped: {e:#}"),
@@ -918,10 +963,46 @@ impl PlayWindowApp {
             };
             quads.extend(hud::score_tally_quads(&mut table, values, row_bright));
         }
-        if quads.is_empty() {
-            return Vec::new();
+        // The re-entered hub's ROUND card (arms 0x15 / 0x16) over the still.
+        if !in_dome
+            && self.muscle_interval.is_none()
+            && let Some(card) = self.muscle_backdrop.and_then(|b| b.card_brightness())
+        {
+            let round = world
+                .minigames
+                .muscle_contest
+                .as_ref()
+                .map_or(1, |c| c.round() as i32 + 1);
+            quads.extend(hud::hub_screen_quads(
+                &mut table,
+                &hud::round_banner_draws(round),
+                card,
+            ));
         }
         let mut out: Vec<legaia_engine_render::SpriteDraw> = Vec::new();
+        // The backdrop goes first: retail links the still's two packets at
+        // the ordering table's far end (`OT + 0xFA0`), behind every sprite.
+        if !in_dome
+            && let Some(b) = self.muscle_backdrop.filter(|b| b.visible())
+            && let Some(&(_, still_y)) = assets.stills.iter().find(|(v, _)| *v == b.variant())
+        {
+            use legaia_engine_render::ringside_backdrop as rb;
+            for q in rb::ringside_still_quads(b.level()) {
+                let Some(d) = rb::StillDraw::from_quad(&q) else {
+                    continue;
+                };
+                // A flat packet colour: texture modulation `texel * c / 128`.
+                let c = f32::from(d.level) / 128.0;
+                out.push(legaia_engine_render::SpriteDraw {
+                    dst: d.dst,
+                    src: (d.src.0, still_y + d.src.1, d.src.2, d.src.3),
+                    color: [c, c, c, 1.0],
+                });
+            }
+        }
+        if quads.is_empty() && out.is_empty() {
+            return Vec::new();
+        }
         for q in &quads {
             let sheet = u8::from(q.tpage & 0x10 != 0);
             let pal = (q.clut & 0x3F) as u8;
