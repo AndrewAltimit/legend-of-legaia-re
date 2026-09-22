@@ -77,6 +77,7 @@ mod text_balloon_box;
 pub mod ui_boot_logos;
 pub mod ui_dance;
 mod ui_fishing;
+pub mod ui_fishing_exchange;
 mod ui_menu;
 pub mod ui_menu_window_dispatch;
 pub mod ui_menu_window_painters;

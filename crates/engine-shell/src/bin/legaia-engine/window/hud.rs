@@ -711,53 +711,57 @@ impl PlayWindowApp {
             let (px, py) = panel
                 .map(|p| (p.x as i32 + sway.0 as i32, p.y as i32 + sway.1 as i32))
                 .unwrap_or((8, 98));
-            let venue_name = if ex.venue == 0 { "Buma" } else { "Vidna" };
-            let head = format!(
-                "PRIZE EXCHANGE ({venue_name})  points {}   (Enter = trade, Left/Right = venue, P = close)",
-                world.minigames.fishing_points
-            );
-            let ly = self.font.layout_ascii(&head);
-            out.extend(text_draws_for(&ly, (px, py), white));
-            let first = ex.first_visible(world.minigames.fishing_points);
-            for (i, r) in ex.rows.iter().enumerate().skip(first) {
-                let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
-                let avail = ex.is_available(
-                    i,
-                    world.minigames.fishing_points,
-                    owned,
-                    world.minigames.fishing_prizes_purchased,
-                );
-                let cursor = if i == ex.cursor { ">" } else { " " };
-                let name = r
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| format!("item {:#04x}", r.item_id));
-                // "sold" means the one-time bit is LATCHED, not "you cannot
-                // afford it right now". `avail` folds three independent
-                // refusals together (price, owned cap, latch), so reading it
-                // as the latch printed "sold" beside every unaffordable
-                // one-time prize on a fresh save - the row a player has never
-                // seen reads as the row they already bought. `is_latched` is
-                // the question on its own, shared with both browser hosts.
-                let sold =
-                    r.is_one_time() && ex.is_latched(i, world.minigames.fishing_prizes_purchased);
-                let tag = if r.is_one_time() {
-                    if sold { "sold" } else { "one-time" }
-                } else {
-                    "each"
-                };
-                let line = format!(
-                    "{cursor} {name:<18} {:>6} pts  {tag}  (own {owned})",
-                    r.price
-                );
-                let ly = self.font.layout_ascii(&line);
-                let y = py + 18 + 18 * (i - first) as i32;
-                out.extend(text_draws_for(
-                    &ly,
-                    (px, y),
-                    if avail { white } else { dim },
-                ));
-            }
+            let names: Vec<String> = ex
+                .rows
+                .iter()
+                .map(|r| {
+                    r.name
+                        .clone()
+                        .unwrap_or_else(|| format!("item {:#04x}", r.item_id))
+                })
+                .collect();
+            // The screen itself is `legaia_engine_ui::ui_fishing_exchange`,
+            // shared with the browser play page: the row layout, the ink
+            // rule and the one-time tag are decided once. This host supplies
+            // the pen (the swaying panel above), its own key legend, and the
+            // live bag reads the view needs.
+            use legaia_engine_render::ui_fishing_exchange as fx;
+            let rows: Vec<fx::ExchangeRowView<'_>> = ex
+                .rows
+                .iter()
+                .enumerate()
+                .map(|(i, r)| {
+                    let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
+                    fx::ExchangeRowView {
+                        name: names[i].as_str(),
+                        price: r.price,
+                        owned,
+                        available: ex.is_available(
+                            i,
+                            world.minigames.fishing_points,
+                            owned,
+                            world.minigames.fishing_prizes_purchased,
+                        ),
+                        one_time: r.is_one_time(),
+                        latched: ex.is_latched(i, world.minigames.fishing_prizes_purchased),
+                    }
+                })
+                .collect();
+            let view = fx::ExchangeView {
+                venue: ex.venue as u8,
+                points: world.minigames.fishing_points,
+                cursor: ex.cursor,
+                first_visible: ex.first_visible(world.minigames.fishing_points),
+                rows: &rows,
+            };
+            out.extend(fx::exchange_screen_draws_for(
+                &self.font,
+                &view,
+                "   (Enter = trade, Left/Right = venue, P = close)",
+                (px, py),
+                white,
+                dim,
+            ));
         }
         // Slot-machine minigame HUD: the three payline symbols, the balance /
         // bet readout, and the phase-specific prompt.

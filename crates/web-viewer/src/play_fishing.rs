@@ -364,6 +364,13 @@ impl LegaiaRuntime {
             (0, 0),
         );
         texts.extend(self.fishing_status_draws(font));
+        // The venue's point-exchange sub-screen, when one is open. This page
+        // used to answer the rows as a JSON side-channel only
+        // (`play_fishing_prizes_json`), so the screen the native window
+        // draws over the pond existed on one host and a data feed on the
+        // other. Both now compose it through
+        // `legaia_engine_ui::ui_fishing_exchange`.
+        texts.extend(self.fishing_exchange_draws(font));
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
         ui::scale_stage_text_draws(&mut texts, origin, scale);
         serde_json::json!({
@@ -428,6 +435,71 @@ impl LegaiaRuntime {
             "rows": rows,
         })
         .to_string()
+    }
+
+    /// The open point-exchange sub-screen's draws, through the shared
+    /// composition.
+    ///
+    /// The panel anchor is the same one the native window resolves - retail's
+    /// menu-picker rect (`FUN_801d74b0`) - minus the idle sway, which is an
+    /// overlay actor this host does not install; the rows sit at the panel's
+    /// resting top-left instead of swaying with it.
+    fn fishing_exchange_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+        use legaia_engine_ui::ui_fishing_exchange as fx;
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return Vec::new();
+        };
+        let Some(ex) = world.minigames.fishing_exchange.as_ref() else {
+            return Vec::new();
+        };
+        let names: Vec<String> = ex
+            .rows
+            .iter()
+            .map(|r| {
+                r.name
+                    .clone()
+                    .unwrap_or_else(|| format!("item {:#04x}", r.item_id))
+            })
+            .collect();
+        let rows: Vec<fx::ExchangeRowView<'_>> = ex
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
+                fx::ExchangeRowView {
+                    name: names[i].as_str(),
+                    price: r.price,
+                    owned,
+                    available: ex.is_available(
+                        i,
+                        world.minigames.fishing_points,
+                        owned,
+                        world.minigames.fishing_prizes_purchased,
+                    ),
+                    one_time: r.is_one_time(),
+                    latched: ex.is_latched(i, world.minigames.fishing_prizes_purchased),
+                }
+            })
+            .collect();
+        let view = fx::ExchangeView {
+            venue: ex.venue as u8,
+            points: world.minigames.fishing_points,
+            cursor: ex.cursor,
+            first_visible: ex.first_visible(world.minigames.fishing_points),
+            rows: &rows,
+        };
+        let pen = legaia_engine_core::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50)
+            .map(|p| (p.x as i32, p.y as i32))
+            .unwrap_or((8, 98));
+        fx::exchange_screen_draws_for(
+            font,
+            &view,
+            "   (Enter = trade, Left/Right = venue, P = close)",
+            pen,
+            [1.0, 1.0, 1.0, 1.0],
+            [0.65, 0.72, 0.8, 1.0],
+        )
     }
 
     /// Buy prize row `row` at `venue` with the live point pool. Returns the
