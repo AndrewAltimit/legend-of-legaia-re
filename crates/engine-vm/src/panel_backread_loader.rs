@@ -77,22 +77,29 @@
 //! all. So this row does not close by finding a host for the loader; it closes
 //! only after the sequencer above it is ported and the sideband pass has one.
 //!
-//! ## And the drawer is a third gap, not the same one
+//! ## And the drawer is a third gap - which is now a port gap, not an RE one
 //!
 //! Neither host draws the still, and the parser for it exists
 //! ([`legaia_asset::ringside_still`], reached today only by the byte-account
 //! walker), so it would be easy to read this row as "a screen the port owes".
-//! It is not that yet, because what this routine does is an **upload**: four
-//! `0x140 x 0x40` `LoadImage` rects into VRAM at `(384, 0)`. Which on-screen
-//! pass then samples that region is not settled on the retail side either -
-//! [`ringside-still.md`](../../../docs/formats/ringside-still.md) grades the
-//! loader, the index arithmetic, the variant selector and the geometry as
-//! confirmed and the panel's *use* as inferred, and a live teardown has ruled
-//! out the obvious candidate (the between-match `INTERVAL` / `ROUND` screens
-//! are a live `koin1` render, not this rect). So a host wired today would put
-//! 320x256 pixels somewhere nothing reads - which is why the load is not
-//! worth wiring ahead of the answer, and why this row is blocked on three
-//! things rather than two.
+//! What this routine does is an **upload**: four `0x140 x 0x40` `LoadImage`
+//! rects into VRAM at `(384, 0)`. Who samples that region afterwards used to
+//! be the open half of the question, and this tag used to say so. It is
+//! settled: the contest hub's `FUN_801D00F8` (PROT `0977`, file `+0x18E0`)
+//! writes two `POLY_FT4` packets addressing tpages `0x106` and `0x109` -
+//! VRAM `x = 384` and `576` as *page* indices, which is why a search for the
+//! literal `0x180` never found the consumer - and a live tap on both fork arms
+//! has caught it emitting exactly that pair.
+//! [`ringside-still.md`](../../../docs/formats/ringside-still.md) carries the
+//! packets, the `_DAT_801D1AE0` re-entry latch that selects the arm and the
+//! `*(0x801D1A7C)` fade level that gates the call.
+//!
+//! So the blockers are two, not three, and they are both on the port side:
+//! the sequencer above this loader, and a hub draw pass that would sample the
+//! rect. The second is the nearer of the two - the hub is live on all three
+//! hosts - but it is not this module's: wiring it means giving the muscle-dome
+//! hub a re-entry latch and a two-quad textured pass, and this module would
+//! then be the thing that fills the rect it samples.
 
 /// Phase counter the loader indexes on (`_DAT_8007B6C8`).
 pub const BACKREAD_PHASE_GLOBAL: u32 = 0x8007_B6C8;
