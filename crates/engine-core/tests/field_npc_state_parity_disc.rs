@@ -154,6 +154,17 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         note: "walker captured mid-route 896 units off its prologue seat (both placed)",
     },
     KnownDivergence {
+        label: "conc_field_card_boot",
+        key: "flag:1758",
+        class: "c",
+        note: "the engine's cold entry runs conc's `66 DE` clear of flag 0x6DE (P0[34] / \
+               P0[36] at record +0x59, behind a `26 09` jump over the tint push) while the \
+               card-boot bank retail captured after its own entry still holds 1. Either \
+               retail's entry never reaches that record (a C1/C2 header gate the engine \
+               reads differently) or a later beat re-sets the flag before mode 3; which \
+               one is an open thread - see open-rev-eng-threads.md, Field / locomotion",
+    },
+    KnownDivergence {
         label: "chapter2_garmel_pre_zeto",
         key: "vis:3",
         class: "c",
