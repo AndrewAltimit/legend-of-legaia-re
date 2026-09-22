@@ -273,6 +273,44 @@ fn acting_member_raises_the_active_actor_bar() {
     );
 }
 
+/// The death-spoils caption (placement record 91) takes the active-actor
+/// bar's own seat: its plate lands where the bar's would, its glyphs start on
+/// the bar's name pen, and the acting member's readout does not draw under
+/// it (`player_steal_skeleton_banner` shows the caption alone on the row).
+#[test]
+fn the_message_bar_takes_the_active_actor_bars_seat() {
+    let font = legaia_font::synthetic_for_tests();
+    let slot = slot_view("Vahn", true, true, 250, 300, 12, 30);
+    let draws = battle_hud_draws_for(
+        &font,
+        &BattleHudFrame {
+            slots: &[slot],
+            solid_src: Some(SOLID),
+            surface: SURFACE,
+            active_slot: Some(0),
+            message_bar: Some("Line"),
+            ..Default::default()
+        },
+        PEN,
+    )
+    .text;
+    assert_eq!(
+        boxes_of(&draws, BAR_W, BAR_H),
+        vec![(BAR_X, BAR_Y)],
+        "one plate, on the bar's seat"
+    );
+    let on_pen: Vec<_> = draws
+        .iter()
+        .filter(|d| d.src != SOLID && d.dst.1 == BAR_NAME_Y * STAGE_SCALE)
+        .collect();
+    assert_eq!(
+        on_pen.len(),
+        4,
+        "the caption's four glyphs, and nothing else"
+    );
+    assert_eq!(on_pen[0].dst.0, 16 * STAGE_SCALE);
+}
+
 /// The two party surfaces are **mutually exclusive**. While the acting
 /// member's bar owns the screen retail parks the whole roster cluster at
 /// `y = 230`, under its 228-line display window; the port's stage is 240
