@@ -53,10 +53,10 @@
 //!
 //! ## Where the engine runs it
 //!
-//! The engine's one live full-screen fade, [`crate::fade::FadeState`] - staged
-//! by the battle-escape teardown and stepped once per frame by the world tick
-//! - **is** this block, and [`crate::fade::FadeState::step_vsyncs`] is only a
-//! representation shim around [`tick_fade_ramp`]. Retail counts the duration
+//! The engine's one live full-screen fade, [`crate::fade::FadeState`] (staged
+//! by the battle-escape teardown and stepped once per frame by the world
+//! tick), **is** this block, and [`crate::fade::FadeState::step_vsyncs`] is
+//! only a representation shim around [`tick_fade_ramp`]. Retail counts the duration
 //! down inside the block while the engine keeps `elapsed` / `duration` so
 //! `progress()` and `finished()` read naturally, so the two views are
 //! converted around the call. Both hosts draw the result through
