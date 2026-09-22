@@ -42,7 +42,7 @@ There is **one** pack format and two readers for it. `pack.md` reads it at offse
 | Page | Confidence | What it covers |
 |---|---|---|
 | [PSX TIM](tim.md) | Confirmed | Texture format. 4/8/16/24bpp. CLUT-aware. PNG export round-trips. |
-| [Headerless 16bpp stills](ringside-still.md) | Confirmed | Extraction 1221 / 1222: `0x28000` bytes of raw BGR555 with no header, uploaded as four 320x64 bands to VRAM `(384, 0)`. The rectangle is four immediates in the consumer, not a field; the index is computed from the lead character's live HP. |
+| [Headerless 16bpp stills](ringside-still.md) | Confirmed | Extraction 1221 / 1222: `0x28000` bytes of raw BGR555 with no header, uploaded as four 320x64 bands to VRAM `(384, 0)`. The rectangle is four immediates in the consumer, not a field; the index is computed from the lead character's live HP. Drawn as two textured quads behind every **re-entered** Muscle Dome hub (`FUN_801D00F8`, PROT 0977). |
 | [Legaia TMD](tmd.md) | Confirmed | Custom PSX TMD variant (magic `0x80000002`). 8-byte group header, `count × ilen*4` stride. Renderer at `FUN_8002735C`. |
 | [VAB sound bank](vab.md) | Confirmed | Sony's standard SPU instrument bank - `VABp` magic, 128 program × 16 tone slots, SPU-ADPCM bodies. |
 | [PsyQ SEQ](seq.md) | Confirmed | PsyQ's MIDI-derived sequence format (`pQES` magic). 13-byte header, delta-time + MIDI events with running status. Drives `SsSeqOpen` / `SsSeqPlay`. |
@@ -107,7 +107,7 @@ World-map slot 4 is likewise not what it was first read as - twice. It is neithe
 |---|---|---|
 | [MIPS overlay code](mips-overlay.md) | Inferred | PROT entries that carry runtime code blobs (recognized by `addiu sp, sp, -X` prologue) |
 | [Overlay pointer-table code](overlay-ptr-table.md) | Inferred | Sister format - entries whose first chunk is a function/jump-table header pointing into `0x801C0000..=0x801FFFFF` |
-| [Slot-B module image layout](slot-b-module-layout.md) | Confirmed (band shape + extent); Inferred (the highest record's end) | The file layout of the 64 cast / summon images `0903..=0966`: head table, code, the `[i16 model_sel][u16 reserved][move-VM bytecode]` **spawn-record band**, and the inherited tail every image ends in. Records are recovered from the consumer's own `lui`/`addiu` pointer, not from a directory; the topmost has no consumer above it and is bounded instead by walking its own move-VM program to a terminator and rounding up to 4, which stalls short on a few records and never overruns. Parser `legaia_asset::slot_b_module` |
+| [Slot-B module image layout](slot-b-module-layout.md) | Confirmed (band shape + extent); Inferred (the highest record's end) | The file layout of the 64 cast / summon images `0903..=0966`: head table, code, the `[i16 model_sel][u16 reserved][move-VM bytecode]` **spawn-record band**, and the inherited tail every image ends in. Records are recovered from the consumer's own `lui`/`addiu` pointer, not from a directory; the topmost has no consumer above it and is bounded instead by walking its own move-VM program to a terminator and rounding up to 4, which stalls short on a few records and never overruns; a chain of records stops at eight zero bytes. Parser `legaia_asset::slot_b_module` |
 
 ## Audio path-strings
 
