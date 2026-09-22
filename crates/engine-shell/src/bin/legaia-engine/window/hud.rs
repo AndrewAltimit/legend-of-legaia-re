@@ -2262,6 +2262,7 @@ impl PlayWindowApp {
         let plaque = bh::battle_active_actor(w_ref);
         let target_plaque = bh::battle_target_plaque(w_ref);
         let move_name = bh::battle_move_name(w_ref);
+        let message_bar = bh::battle_message_bar(w_ref);
         let badges = self.battle_badge_rects();
         let banner = self.battle_banner_message();
         battle_hud_draws_for(
@@ -2302,6 +2303,7 @@ impl PlayWindowApp {
                 begin_tab: bh::battle_begin_tab_visible(w_ref),
                 move_name: move_name.as_deref(),
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
+                message_bar: message_bar.as_deref(),
                 ap_plate_value: bh::battle_ring_ap_plate_value(w_ref),
                 diag: legaia_engine_render::diag_hud_enabled(),
             },
