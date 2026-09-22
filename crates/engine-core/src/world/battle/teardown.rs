@@ -17,6 +17,9 @@ pub struct BattleSpoilsBanner {
     /// off the `noa_levelup_banner` framebuffer; the new level is not on
     /// that line (the status screen carries it).
     pub level_ups: Vec<String>,
+    /// Who the victory line names: the lead alone when the second party seat
+    /// is empty, else the lead's team (`FUN_801D84C0`'s two build arms).
+    pub subject: vm::battle_party_panel::ResultSubject,
 }
 
 impl World {
@@ -66,11 +69,21 @@ impl World {
                 format!("{name}\'s level increased!")
             })
             .collect();
+        // Participant ids in panel order, `0` for an empty seat - the
+        // shape of retail's `0x8007BD10` list the build arms key on.
+        let seats: [u8; 3] = std::array::from_fn(|i| {
+            if i < usize::from(self.party.party_count) {
+                (self.party_roster_slot(i) as u8).wrapping_add(1)
+            } else {
+                0
+            }
+        });
         Some(BattleSpoilsBanner {
             xp: r.xp,
             gold: r.gold,
             drops,
             level_ups,
+            subject: vm::battle_party_panel::result_subject(seats),
         })
     }
     /// Resolve a finished battle and return to the field.

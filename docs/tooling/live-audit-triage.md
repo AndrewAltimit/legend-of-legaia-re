@@ -2212,3 +2212,34 @@ The capture that settled *when* the arm runs was already on disk: the
 checkpoint RAM of a three-visit dome run holds the still's two packets on the
 second and third visits, at the level arm `0x0A` had reached
 ([`ringside-still.md`](../formats/ringside-still.md#on-a-natural-re-entry)).
+
+## The battle panel cluster: two wired, one re-framed, two held
+
+| anchor | verdict | what it rests on |
+|---|---|---|
+| `801d84c0` `result_subject` (was `panel_labels`) | live | the four buffers are the battle-result messages, not panel labels; the solo / team build arm now words the post-battle report's victory line on both play hosts |
+| `801dbc30` `cross_out_mark` | live | the standalone minigames page places the dome ring's forbidden-chip X from it (`mark_quad`); the play hosts draw the ring as text and have no chip to mark |
+| `801d32bc` `step_actor_cursor` | held | a command-input cursor, not a turn order - the missing piece is the port's backward member step |
+| `801d57e8` / `801d5778` | held | the mutable placement-table seat array below `engine-vm`, and its other two writers |
+
+### `panel_labels` read the wrong thing out of the right bytes
+
+The row's old blocker - "a four-label buffer on `engine-ui` plus three
+un-lifted caption strings" - described buffers that do not exist. Resolving
+the six pool addresses the two arms copy and append (`0x801F4C2C..0x801F4CC4`
+in the `0898` image) gives a victory line with its spoils sentence, a defeat
+line, and the two escape outcomes; `FUN_8003CBF8(buf, 0xC1, 1)` is not a
+width measurement but the locator for the `0xC1` name escape, whose operand
+the roster arm then patches. And every one of the four patches reads the
+**first** seat, so the old model's per-seat participant ids were wrong too.
+The port's victory line had been naming a team of one for a lone lead.
+
+### `step_actor_cursor` is not a turn-order choice
+
+The row read as "adopt retail's cursor order over initiative". Initiative is
+the execution order, and the port's command order is already retail's slot
+scan. The six call sites (the round reset and `FUN_801D388C`'s cases `0x10`,
+`0x11`, `0x21` and its shared tail) make it the command window's member
+cursor, and its backward arms are the one thing the port's command session
+has no counterpart for: there is no way back from a later member's ring to an
+earlier one's.

@@ -1,8 +1,9 @@
-//! The battle party-name panels: open, cross-out mark, and teardown.
+//! The battle party panels' anchors, the cross-out mark, the arts-list
+//! text actor, and the battle-result messages.
 //!
 //! REF: FUN_801DBB8C (label-actor open) -> [`LabelState::opened`]
 //! REF: FUN_801DBC30 (cross-out mark blit) -> [`cross_out_mark`]
-//! REF: FUN_801D84C0 (panel build + teardown) -> [`panel_labels`]
+//! REF: FUN_801D84C0 (result messages + panel publish + teardown) -> [`result_subject`]
 //!
 //! Each `PORT` tag sits on the routine it names rather than here. At module
 //! scope the reach report's anchor fallback resolves all three to *the next
@@ -66,12 +67,18 @@
 //! kernel's values. A packet walk of retail's own display list confirms
 //! the anchors and says what they anchor - they are the panel's
 //! **name pen**, five pixels inside a 102x48 panel plate, not the plate's
-//! own edge ([`crate::battle_chrome::panel_seats`]). [`panel_labels`]
-//! resolves which of the four buffers takes a name and which takes a
-//! caption, so the buffer layout is modelled rather than guessed at.
+//! own edge ([`crate::battle_chrome::panel_seats`]).
+//!
+//! **Wired, and re-read.** [`result_subject`] is the port of
+//! `FUN_801D84C0`'s two build arms, and the four buffers they fill are the
+//! **battle-result messages** - victory with its spoils sentence, defeat,
+//! escaped, escape failed - not panel labels, which is what this module
+//! called them until the six pool strings the arms copy were resolved. The
+//! engine's post-battle report words its victory line from it on both play
+//! hosts (`engine-ui::battle_spoils_windows`).
 //!
 //! **Mis-attributed, now corrected.** [`cross_out_mark`] was read as the
-//! panels' name-plate blit and `engine-ui` draws a filled rect at its
+//! panels' name-plate blit and `engine-ui` drew a filled rect at its
 //! geometry. Resolving its two texture constants shows it samples the `etim`
 //! effect page's red cross-out X instead, so the plate under a battle name
 //! has no retail source at that rect at all - the real name plates are the
@@ -79,8 +86,10 @@
 //!
 //! **No engine analogue: the text-actor handle.** `FUN_801DBB8C` opens a SCUS
 //! *text actor* (`FUN_8003541C` register-and-draw) and stashes its handle at
-//! `0x801F4E0C`; `FUN_8003CA78` / `FUN_8003CAC4` set and append that actor's
-//! string, `FUN_8003CBF8` measures it, and `FUN_801D84C0` closes the handle.
+//! `0x801F4E0C`, and `FUN_801D84C0` closes the handle as its last act. (The
+//! string helpers `FUN_801D84C0` also calls - `FUN_8003CA78` copy,
+//! `FUN_8003CAC4` append, `FUN_8003CBF8` escape locator - write its own
+//! result buffers in the battle context, not that actor.)
 //! That is a retained-mode registry: the caller hands a string to a
 //! persistent object which redraws itself every frame until torn down.
 //! `engine-ui` is immediate-mode - `battle_hud_draws_for` rebuilds every
@@ -90,11 +99,13 @@
 //! lifecycle, not a port waiting on a caller: wiring them would mean adding a
 //! retained text-actor layer the port has deliberately not got.
 //!
-//! **Still open.** The roster arm's three fixed caption strings are
-//! overlay-resident text and are not lifted, so [`PanelLabel::Caption`]
-//! carries the participant id without the caption; and the layout arguments
-//! `FUN_801DBB8C` passes the register call encode the panel band's *vertical*
-//! placement, which is why `engine-ui`'s panel Y is still an approximation.
+//! **Still open.** The result text itself is the pool's, and the port does
+//! not replay it: the report sentence is built from typed state, so a
+//! translation that lifts the `0898` pool does not reach it, and the defeat
+//! and escape messages have no engine caption at all. The layout arguments
+//! `FUN_801DBB8C` passes the register call encode the panel band's
+//! *vertical* placement, which is why `engine-ui`'s panel Y is still an
+//! approximation.
 
 /// Battle-context byte offsets of the four label buffers `FUN_801D84C0` fills.
 pub const LABEL_BUFFERS: [usize; 4] = [0xA9, 0x129, 0x159, 0x189];
@@ -263,12 +274,13 @@ pub const fn strip_draws(ctx_6ce: i16) -> bool {
 /// decoding those texels out of a battle VRAM dump. The battle name plates
 /// come off a different sheet entirely; see [`crate::battle_chrome`].
 ///
-/// NOT WIRED: the one surface that wants this mark - the muscle dome's
-/// forbidden-command chip - already draws it, as an `engine-ui` rect built
-/// from that crate's own constants rather than from an `etim` CLUT and
-/// texture page. So the blocker is a representation, not an absent screen:
-/// nothing on any host consumes a `StripQuad` carrying retail's tpage/CLUT
-/// pair, and wiring this means moving that chip onto the textured path.
+/// The one surface that wants this mark is the Muscle Dome's command ring,
+/// whose phase-`0x28` arm calls it on a forbidden chip's anchor
+/// (`0x801D12D4` / `0x801D12F0`). The standalone minigames page draws that
+/// ring and places the X from this quad (`minigames_muscle`'s chip rows carry
+/// it as `mark_quad`, sampling the `etim` page through the CLUT's
+/// sub-palette); the two play hosts draw the dome's ring as text rows and
+/// carry no chip sprites to mark.
 ///
 /// PORT: FUN_801DBC30
 pub fn cross_out_mark(x: i16, y: i16) -> StripQuad {
@@ -334,9 +346,10 @@ pub const fn portrait_cell(participant_id: u8) -> u8 {
 /// Which build arm `FUN_801D84C0` takes.
 ///
 /// The discriminator is the **second** party slot's participant id
-/// (`DAT_8007BD11`): zero takes the solo arm, which sources every buffer from
-/// the *first* slot's name record; non-zero takes the roster arm, which sources
-/// three of the four from fixed strings and measures each with `FUN_8003CBF8`.
+/// (`lbu 1(0x8007BD10)` at `0x801D8504`): zero takes the solo arm, which
+/// opens every buffer with the first slot's display name; non-zero takes the
+/// roster arm, which opens them with a fixed string carrying a `0xC1` name
+/// escape instead.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuildArm {
     /// `DAT_8007BD11 == 0`.
@@ -354,73 +367,82 @@ pub const fn build_arm(second_slot_id: u8) -> BuildArm {
     }
 }
 
-/// Measurement request the roster arm issues per buffer
-/// (`FUN_8003CBF8(buffer, 0xC1, 1)`), then stores `participant_id - 1` at the
-/// returned offset plus one.
-pub const MEASURE_WIDTH: i32 = 0xC1;
+/// The escape byte the roster arm locates in each buffer
+/// (`FUN_8003CBF8(buffer, 0xC1, 1)` - `a1` is the byte searched for, not a
+/// width). `0xC1` is the text engine's character-name escape; the arm writes
+/// its operand, the byte after it, as `participant_id - 1`.
+pub const NAME_ESCAPE: u8 = 0xC1;
 
-/// The buffer order the roster arm measures in - note it is **not** the
-/// declaration order: the third buffer is measured before the second.
+/// The buffer order the roster arm patches in - not the declaration order:
+/// the defeat buffer is patched last.
 pub const MEASURE_ORDER: [usize; 4] = [0xA9, 0x159, 0x189, 0x129];
 
-/// What one of the four label buffers holds after the build.
+/// Which battle-end message a buffer holds.
 ///
-/// The solo arm fills every buffer from the **first** party slot's name
-/// record; the roster arm gives the first buffer that slot's name and sources
-/// the other three from fixed strings, measuring each with `FUN_8003CBF8` and
-/// storing `participant_id - 1` at the returned offset plus one. The fixed
-/// strings themselves are overlay-resident text and are not lifted here -
-/// what the port carries is *which* buffer takes a name and which takes a
-/// caption, which is the part a UI needs.
+/// The four buffers are the **battle-result messages**, not panel labels:
+/// resolving the six pool strings the two arms copy and append
+/// (`0x801F4C2C`, `0x801F4C38`, `0x801F4C78`, `0x801F4C94`, `0x801F4CAC`,
+/// `0x801F4CC4` in the `0898` image) shows a victory line with its spoils
+/// sentence, a defeat line, and an escape line in its two outcomes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PanelLabel {
-    /// The buffer receives the participant's display name, read through
-    /// [`name_field_ptr`].
-    Name(u8),
-    /// The buffer receives a fixed caption string, measured to
-    /// [`MEASURE_WIDTH`] with the participant id appended.
-    Caption { participant_id: u8 },
+pub enum ResultMessage {
+    /// `+0xA9` - the win and the spoils that follow it.
+    Victory,
+    /// `+0x129` - the party is beaten. The solo arm appends a suffix to the
+    /// name (`0x801F4C94`); the roster arm copies one whole team string
+    /// (`0x801F4C78`) instead.
+    Defeated,
+    /// `+0x159` - a successful escape.
+    Escaped,
+    /// `+0x189` - an escape that failed.
+    EscapeFailed,
 }
 
-/// Resolve the four label buffers for a build.
+/// The four buffers, in [`LABEL_BUFFERS`] order, and what each holds.
+pub const RESULT_BUFFERS: [(usize, ResultMessage); 4] = [
+    (0xA9, ResultMessage::Victory),
+    (0x129, ResultMessage::Defeated),
+    (0x159, ResultMessage::Escaped),
+    (0x189, ResultMessage::EscapeFailed),
+];
+
+/// Who a battle-result message names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResultSubject {
+    /// The solo arm: the lead's display name, read straight out of its
+    /// record through [`name_field_ptr`].
+    Lead(u8),
+    /// The roster arm: the fixed team string, whose `0xC1` escape operand is
+    /// patched to the **lead's** index - every one of the four patches reads
+    /// the first slot (`lbu -0x42f0(s2)` at `0x801D86B4` / `0x801D86DC` /
+    /// `0x801D8704` / `0x801D8728`), so the team is always named after the
+    /// lead, never after the member in that seat.
+    LeadsTeam { escape_operand: u8 },
+}
+
+impl Default for ResultSubject {
+    /// A party of more than one - the roster arm, naming slot `1`'s team.
+    fn default() -> Self {
+        ResultSubject::LeadsTeam { escape_operand: 0 }
+    }
+}
+
+/// Who the four battle-result messages name, for a party in panel order
+/// (`DAT_8007BD10..`, an absent seat `0`).
 ///
-/// `slots` is the party's participant ids in panel order (`DAT_8007BD10..`);
-/// an absent slot is `0`, which is exactly the discriminator
-/// [`build_arm`] keys on. Returns the buffers in [`LABEL_BUFFERS`] order.
+/// This is the whole of the two build arms' decision; the text itself is the
+/// pool's. The engine's post-battle report (`engine-ui::battle_spoils_windows`)
+/// words its victory line from it, which is what makes a lone lead's win read
+/// "<name> won the battle!" rather than naming a team of one.
 ///
-/// NOT WIRED: `engine-ui`'s battle HUD does not model four label buffers at
-/// all - it draws the party names straight from the live roster, seated at the
-/// [`panel_anchors`] name pens (its `party_panel_stage_x` calls this module's
-/// kernel directly), so there is no buffer set for this to resolve into.
-/// Wiring it needs two things in order: the buffer model on `engine-ui`, and
-/// the roster arm's three caption strings, which are overlay-resident text
-/// that is not lifted yet.
-///
-/// PORT: FUN_801D84C0 (the two build arms)
-pub const fn panel_labels(slots: [u8; 3]) -> [PanelLabel; 4] {
-    let first = slots[0];
+/// PORT: FUN_801D84C0 (the two build arms, `0x801D8504..0x801D8734`)
+pub const fn result_subject(slots: [u8; 3]) -> ResultSubject {
+    let lead = slots[0];
     match build_arm(slots[1]) {
-        // Solo: every buffer is the first slot's name record.
-        BuildArm::Solo => [
-            PanelLabel::Name(first),
-            PanelLabel::Name(first),
-            PanelLabel::Name(first),
-            PanelLabel::Name(first),
-        ],
-        // Roster: buffer 0 is the name, the rest are measured captions
-        // carrying each further participant's id.
-        BuildArm::Roster => [
-            PanelLabel::Name(first),
-            PanelLabel::Caption {
-                participant_id: slots[1],
-            },
-            PanelLabel::Caption {
-                participant_id: slots[2],
-            },
-            PanelLabel::Caption {
-                participant_id: first,
-            },
-        ],
+        BuildArm::Solo => ResultSubject::Lead(lead),
+        BuildArm::Roster => ResultSubject::LeadsTeam {
+            escape_operand: lead.wrapping_sub(1),
+        },
     }
 }
 
@@ -604,45 +626,36 @@ mod tests {
     }
 
     #[test]
-    fn the_roster_arm_measures_out_of_declaration_order() {
-        assert_eq!(MEASURE_ORDER, [0xA9, 0x159, 0x189, 0x129]);
-        // Same set as the declared buffers, different order.
+    fn the_roster_arm_patches_out_of_declaration_order() {
         let mut declared = LABEL_BUFFERS;
         let mut measured = MEASURE_ORDER;
         declared.sort_unstable();
         measured.sort_unstable();
         assert_eq!(declared, measured);
         assert_ne!(LABEL_BUFFERS, MEASURE_ORDER);
+        assert_eq!(RESULT_BUFFERS.map(|(b, _)| b), LABEL_BUFFERS);
     }
 
     #[test]
-    fn solo_arm_sources_every_buffer_from_the_first_slot() {
-        let labels = panel_labels([2, 0, 0]);
-        assert!(labels.iter().all(|l| *l == PanelLabel::Name(2)));
-    }
-
-    #[test]
-    fn roster_arm_names_the_first_slot_and_captions_the_rest() {
-        let labels = panel_labels([1, 2, 3]);
-        assert_eq!(labels[0], PanelLabel::Name(1));
+    fn a_lone_lead_is_named_and_a_party_is_the_leads_team() {
+        assert_eq!(result_subject([2, 0, 0]), ResultSubject::Lead(2));
+        // Every patch reads the FIRST seat, whoever sits in the others.
         assert_eq!(
-            &labels[1..],
-            &[
-                PanelLabel::Caption { participant_id: 2 },
-                PanelLabel::Caption { participant_id: 3 },
-                PanelLabel::Caption { participant_id: 1 },
-            ]
+            result_subject([1, 2, 3]),
+            ResultSubject::LeadsTeam { escape_operand: 0 }
         );
-        // The arm discriminator is the SECOND slot, not the party size.
-        assert_eq!(panel_labels([1, 0, 3])[1], PanelLabel::Name(1));
+        assert_eq!(
+            result_subject([3, 1, 2]),
+            ResultSubject::LeadsTeam { escape_operand: 2 }
+        );
+        // The discriminator is the SECOND seat, not the party size.
+        assert_eq!(result_subject([1, 0, 3]), ResultSubject::Lead(1));
     }
 
     #[test]
-    fn a_named_buffer_resolves_to_the_records_display_name() {
-        // The one buffer that takes a name resolves through the same pointer
-        // both build arms hand the string helpers.
-        let PanelLabel::Name(id) = panel_labels([3, 1, 2])[0] else {
-            panic!("buffer 0 always takes a name");
+    fn a_named_lead_resolves_to_the_records_display_name() {
+        let ResultSubject::Lead(id) = result_subject([3, 0, 0]) else {
+            panic!("a lone lead is named");
         };
         assert_eq!(
             name_field_ptr(id),

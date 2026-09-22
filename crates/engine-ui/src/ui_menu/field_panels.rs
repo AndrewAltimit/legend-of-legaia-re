@@ -38,9 +38,12 @@ pub struct BattleSpoilsView<'a> {
     /// Item names the loot roll surfaced, resolved by the shell against the
     /// item catalog.
     pub drops: &'a [String],
-    /// The party leader, whose name opens the spoils line ("<leader>'s team
-    /// won the battle!").
+    /// The party leader, whose name opens the spoils line.
     pub leader: &'a str,
+    /// Who the victory line names - the lead alone, or the lead's team -
+    /// off the result-message build arms
+    /// ([`legaia_engine_vm::battle_party_panel::result_subject`]).
+    pub subject: legaia_engine_vm::battle_party_panel::ResultSubject,
 }
 
 /// Row pitch of the post-battle report - the dialog font's own line height,
@@ -104,8 +107,18 @@ pub fn battle_spoils_windows(view: &BattleSpoilsView<'_>) -> Vec<SpoilsWindow> {
             lines: view.level_ups.to_vec(),
         });
     }
+    // Retail's two build arms word this line differently: a lone lead is
+    // named, a party is the lead's team (`FUN_801D84C0`).
+    let opening = match view.subject {
+        legaia_engine_vm::battle_party_panel::ResultSubject::Lead(_) => {
+            format!("{} won the battle!", view.leader)
+        }
+        legaia_engine_vm::battle_party_panel::ResultSubject::LeadsTeam { .. } => {
+            format!("{}'s team won the battle!", view.leader)
+        }
+    };
     let mut lines = vec![
-        format!("{}'s team won the battle!", view.leader),
+        opening,
         // The two figures are placed by column, not by this string - the
         // builder lays the sentence out in three runs. Kept whole here so a
         // caller that only wants the text reads a sentence.
@@ -1396,5 +1409,36 @@ mod health_tier_ink_tests {
         for hp in [0u16, 1, 10, 11, 20, 21, 40] {
             assert_eq!(menu_hp_ink(hp, max), menu_hp_ink_with_status(hp, max, 0));
         }
+    }
+}
+
+#[cfg(test)]
+mod spoils_subject_tests {
+    use super::*;
+    use legaia_engine_vm::battle_party_panel::{ResultSubject, result_subject};
+
+    fn opening(subject: ResultSubject) -> String {
+        let view = BattleSpoilsView {
+            xp: 12,
+            gold: 13,
+            level_ups: &[],
+            drops: &[],
+            leader: "Vahn",
+            subject,
+        };
+        battle_spoils_windows(&view)
+            .last()
+            .and_then(|w| w.lines.first().cloned())
+            .unwrap_or_default()
+    }
+
+    /// `FUN_801D84C0`'s two arms: an empty second seat names the lead, a
+    /// filled one names the lead's team.
+    #[test]
+    fn the_victory_line_follows_the_build_arm() {
+        let solo = opening(result_subject([1, 0, 0]));
+        let party = opening(result_subject([1, 2, 0]));
+        assert!(solo.starts_with("Vahn won"), "{solo}");
+        assert!(party.starts_with("Vahn's team won"), "{party}");
     }
 }

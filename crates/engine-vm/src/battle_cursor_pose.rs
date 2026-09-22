@@ -14,18 +14,27 @@
 //! NOT WIRED, with a concrete prerequisite each - except the last, which is
 //! replaced rather than pending:
 //!
-//! * `FUN_801D32BC` is where retail's round reset picks whose turn it is:
-//!   `FUN_801D88CC` seeds `ctx[+0x13]` and `ctx[+0x1F]` to `0xFF` and calls it
-//!   forward (`0x801D88CC..0x801D8914`), so the wrap lands the cursor on the
-//!   lowest selectable slot. The engine's round boundary
-//!   (`engine-core::battle_round::BattleRound::boundary`) picks by a different
-//!   model - `World::next_combatant_by_initiative` - and its port of
-//!   `FUN_801D88CC` (`battle_formulas::round::round_reset_agility`) covers the
-//!   AGL arm only, deliberately leaving the ctx header writes with retail's
-//!   caller. Wiring is therefore a choice, not a gap-fill: it means
-//!   `BattleActionCtx` gaining the `+0x1F` step counter and the `+0x20`/`+0x21`
-//!   history pair, *and* the boundary adopting retail's cursor order over the
-//!   initiative one.
+//! * `FUN_801D32BC` is the **command-input** cursor, not a turn order. Six
+//!   `jal`s reach it, all in the battle overlay: the round reset
+//!   `FUN_801D88CC` (`0x801D8910`, forward after seeding `ctx[+0x13]` and
+//!   `ctx[+0x1F]` to `0xFF`) and the command-window controller
+//!   `FUN_801D388C` - case `0x11` forward (`0x801D4128`), cases `0x10` and
+//!   `0x21` backward (`0x801D4010`, `0x801D4750`), and a forward / backward
+//!   pair in its shared tail (`0x801D5690`, `0x801D56A0`). Case `0x21` is the
+//!   one `FUN_801D0748` names at `0x801D3088`, behind a pad test (the word
+//!   at `0x800846D4` or bit `0x2000`, `0x801D3040..0x801D304C`): it keys cue
+//!   `0x23`, re-scans from the first member (`FUN_801DBA04`) and sends the
+//!   flow back to the ring (`ctx[+0x06] = 0x28`) - a way back into command
+//!   entry from a later state. So "retail's cursor order over the initiative one" is not the
+//!   choice this row poses: initiative is the *execution* order
+//!   (`World::next_combatant_by_initiative`), and the port's command order is
+//!   already retail's slot scan (`World::next_member_owing_command`, the
+//!   `FUN_801DB81C` / `FUN_801DBA04` ports). What the port lacks is the
+//!   **backward** step - `BattleCommandSession` has no path from one
+//!   member's ring back to an earlier member's, so a committed member cannot
+//!   be revised. Wiring this means that path: an un-commit on the round flow
+//!   and the controller's case-`0x10` / `0x21` triggers decoded, with
+//!   `BattleActionCtx` gaining `+0x1F` / `+0x20` / `+0x21` for it to write.
 //! * `FUN_801D57E8` / `FUN_801D5778` copy records inside the **screen-element
 //!   placement table** at `0x80076C10` (`docs/reference/memory-map.md`). The
 //!   old reason - "the engine allocates no such table" - is withdrawn: the
