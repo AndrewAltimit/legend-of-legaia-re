@@ -1043,6 +1043,47 @@ state through the Karisto era. Such gates simply pass forever; see the
 minigame-overlay code the script census cannot see
 ([below](#native-flag-bank-writers-the-minigame-result-toggle-0x50a--the-0x5d6-negative)).
 
+### A system flag can be a live position test, not progress
+
+A flag the census reports as "set in one scene, tested in another" is usually a
+progress latch, but the same ops build a **continuously re-evaluated predicate**
+when the entry script's per-frame body owns them, and the two are
+indistinguishable from a single mid-visit save.
+
+`conc`'s `0x6DE` is the worked case, measured with a bank-byte write watch plus
+exec breakpoints on the SET / CLEAR helpers armed from the memory-card load
+screen across a cold entry (`scripts/pcsx-redux/autorun_w5a_flag_watch.lua`;
+the VM's own bytecode cursor `s8` names the record behind each write):
+
+1. the save block's restore seeds the bank while the load screen is still up;
+2. the scene load clears `0x6DE` **twice** before the field mode word settles -
+   from `P1[1]`'s spawn prologue at `+0x0010` and from the `P1[0]` entry script
+   at `+0x0018`;
+3. from the first field frame on, `P1[0]`'s per-frame body re-runs its
+   `CD F8 0A 0E 33 48` player bounding-box test at `+0x0100` and takes the
+   outside arm's `56 DE` SET at `+0x010B`, once every other frame, for as long
+   as the player stands outside tiles `10..=51` x `14..=72`.
+
+Forcing the player inside that box mid-run stops the SET on the next pass and
+nothing writes the flag again, which is what makes it a predicate rather than a
+latch: the flag's value is a property of where the party is standing. It is the
+`C2` gate on `conc`'s door records, so what it really encodes is "the party is
+not in the plaza". A capture therefore cannot be read as evidence about what the
+entry *ran* - `conc`'s entry both clears and re-arms it - and the engine's own
+cold entry at entry point 0 stands inside the box, where retail writes nothing
+either. Pinned both ways by
+`crates/engine-core/tests/conc_flag_6de_position_latch_disc.rs`.
+
+The port consequence is the anchor these tests read. Retail resolves the
+cross-context target `0xF8` to the live player object on every evaluation; the
+engine's ctx-`0xFB` system context has no position of its own, so
+`World::sync_field_ctx_player_anchor` re-seats it from the player actor before
+each frame slice. Seeding it once at scene load is not equivalent: the script
+buffer's install resets the context to the origin, tile `(-1, -1)` is outside
+every authored box, and every `CD F8` gate in every scene's per-frame body -
+`0x6DE` here, the camera-parameter gates elsewhere - then answers "outside" for
+the whole visit.
+
 ### Disc-wide SYSTEM-flag census tooling
 
 An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but the **setter** that opens it (`0x5x` SET / `0x6x` CLEAR) almost always lives in a *different* scene's MAN. To resolve a gate to its writer, `legaia_engine_core::man_field_scripts` walks the flag ops out of the decoded MAN:
