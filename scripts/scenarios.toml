@@ -2623,3 +2623,96 @@ expected_game_mode = 0x17
 expected_active_scene = "opdeene"
 description = "Memory-card load screen with the `conc` save's confirm already taken, ~450 vsyncs before the scene settles into field mode. The pre-entry sibling of `conc_field_card_boot`: a watch armed on this state sees the save-block restore, both of conc's entry-time story-flag clears and the entry script's first re-arm passes."
 topics = ["field", "conc", "card boot", "story flags", "scene entry", "probe state"]
+
+# ----------------------------------------------------------------------
+# Story-ladder card-boot anchors (playthrough-ladder-pro00-14.mcr blocks
+# 8 / 10 / 11 / 12 / 13, endgame-7saves block 2). Same cold boot +
+# memory-card CONTINUE as the anchors above, one per save, so each
+# chapter-2 spoke has a state standing just before its own story beats:
+# `retock` (block 8), `kor5` (block 10 - the 0x43A -> 0x436 -> 0x6C4
+# chain is still all clear here), `korb2` (block 11 - 0x3FB still clear,
+# the save before `doman` sets it), `doman` (block 12) and the late-game
+# `rugi` (endgame block 2). The three `_pre_entry` rows are the
+# load-screen siblings (checkpointed with the CONTINUE confirm taken), for
+# watches that must see the scene entry itself.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "retock_field_card_boot"
+backup_fingerprint = "ec0b6122f9b1ea9173ed288562eaf40afa72cff6d12afb3fd46c92a06df331e2"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "retock"
+description = "Retock free field run from the story-ladder card (block 8), cold boot + memory-card load. Player at world (15280, 10960). The spoke whose entry script latches 0x493 / 0x01F / 0x52A and clears 0x19B..0x1AA."
+topics = ["field", "retock", "story flags", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "kor5_field_card_boot"
+backup_fingerprint = "1f81d55a7fe5f8ae9bf4a85a8ad95be1f3b270572780a6883d4499e93e36ca5b"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor5"
+description = "Biron Monastery (kor5) free field run from the story-ladder card (block 10), cold boot + memory-card load. Player at world (3674, 4214). Flags 0x43A / 0x436 / 0x464 / 0x6C4 all clear: the whole partition-2 chain P2[3] -> P2[4] -> P2[5] -> P2[8] is still ahead."
+topics = ["field", "kor5", "story flags", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "korb2_field_card_boot"
+backup_fingerprint = "a598c9057396248355089ec287132f3bc39b912e801de4efd7dbe548ff455ba4"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "korb2"
+description = "korb2 free field run from the story-ladder card (block 11), cold boot + memory-card load. Player at world (9536, 13146). kor5's chain is complete here (0x6C4 set) and doman's 0x3FB is still clear - the save before doman P2[4] sets it."
+topics = ["field", "korb2", "doman", "story flags", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "doman_field_card_boot"
+backup_fingerprint = "0ef4316a9350a4300ff142ef94143cb574746283378f0ea6b523c9dcb03962a2"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "doman"
+description = "Doman free field run from the story-ladder card (block 12), cold boot + memory-card load. Player at world (9818, 14846). 0x3FB is already set, so doman P2[4] (walk-on tiles (67, 108..110), C1 {0x3FB}) no longer spawns without a flag poke."
+topics = ["field", "doman", "story flags", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "rugi_field_card_boot"
+backup_fingerprint = "081f939ef49276ce28eeb752d7ca81be94795f2f70522b2e4ee9f37c161fbdab"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "rugi"
+description = "Rugi free field run from the endgame card (playthrough-endgame-7saves block 2), cold boot + memory-card load. Player at world (10918, 8416). The organic route to juui1 from here passes the Rogue boss (rugi P2[39])."
+topics = ["field", "rugi", "juui1", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "retock_pre_entry_card_boot"
+backup_fingerprint = "eb14d449287e8a73f2ea13c87c489e60c6b8fce6e98c891b84a2d56532d9716c"
+phase = "field"
+expected_game_mode = 0x02
+expected_active_scene = "opdeene"
+description = "Memory-card load with the story-ladder block-8 save's CONTINUE confirm taken; the scene settles into `retock` about 40 vsyncs after load. Pre-entry sibling of retock_field_card_boot."
+topics = ["field", "retock", "card boot", "story flags", "scene entry", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "doman_pre_entry_card_boot"
+backup_fingerprint = "319f004170bca04dba9ce7f6f81b281a6810810d0ae1aa21d515e3a7d272406e"
+phase = "field"
+expected_game_mode = 0x02
+expected_active_scene = "opdeene"
+description = "Memory-card load with the story-ladder block-12 save's CONTINUE confirm taken; the scene settles into `doman` about 40 vsyncs after load. Pre-entry sibling of doman_field_card_boot."
+topics = ["field", "doman", "card boot", "story flags", "scene entry", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "nilboa_pre_entry_card_boot"
+backup_fingerprint = "3fe32661b85a44aa044586d410089f2047357de52bf0799918fbb8fd7d47d5c5"
+phase = "field"
+expected_game_mode = 0x02
+expected_active_scene = "opdeene"
+description = "Memory-card load with the story-ladder block-13 save's CONTINUE confirm taken; the scene settles into `nilboa` about 40 vsyncs after load."
+topics = ["field", "nilboa", "card boot", "story flags", "scene entry", "probe state"]
