@@ -16,6 +16,7 @@ mod command_flow;
 mod initiative;
 mod locomotion;
 mod loop_driver;
+mod member_step;
 mod monster_ai;
 mod selectable;
 mod stage;
