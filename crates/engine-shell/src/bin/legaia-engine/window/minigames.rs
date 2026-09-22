@@ -1056,9 +1056,24 @@ impl PlayWindowApp {
             // colours are a vertical two-stop gradient, flattened here to
             // the stops' mean.
             let tint = |k: usize| (q.rgb[0][k] as f32 + q.rgb[2][k] as f32) / 2.0 / 128.0;
+            // The retail display is the 320x240 frame and the GPU clips to
+            // it; the first visit's wall tiles run past it (three 128-wide
+            // columns, two 128-high rows), so clip here - the texel window
+            // shrinks with the same ratio - or the stage transform carries
+            // the overhang onto the window beside the frame.
+            let (dx, dy) = (q.xy[0].0 as i64, q.xy[0].1 as i64);
+            let (x0, x1) = (dx.max(0), (dx + dw as i64).min(320));
+            let (y0, y1) = (dy.max(0), (dy + dh as i64).min(240));
+            if x1 <= x0 || y1 <= y0 {
+                continue;
+            }
+            let sx = q.uv[0].0 as i64 + (x0 - dx) * sw as i64 / dw as i64;
+            let sy = q.uv[0].1 as i64 + (y0 - dy) * sh as i64 / dh as i64;
+            let csw = ((x1 - x0) * sw as i64 / dw as i64).max(1) as u32;
+            let csh = ((y1 - y0) * sh as i64 / dh as i64).max(1) as u32;
             out.push(legaia_engine_render::SpriteDraw {
-                dst: (q.xy[0].0 as i32, q.xy[0].1 as i32, dw, dh),
-                src: (q.uv[0].0 as u32, block_y + q.uv[0].1 as u32, sw, sh),
+                dst: (x0 as i32, y0 as i32, (x1 - x0) as u32, (y1 - y0) as u32),
+                src: (sx as u32, block_y + sy as u32, csw, csh),
                 color: [tint(0), tint(1), tint(2), 1.0],
             });
         }
@@ -1417,10 +1432,17 @@ impl PlayWindowApp {
             legaia_asset::monster_archive::record(&archive, r.monster_id as u16).ok()?
         });
         let lead = self.session.host.world.party.roster.members.first();
-        let player_hp = lead
+        // The fighter enters at the lead record's live HP (`+0x106`), as the
+        // arena door does - the battle end writes the fight's HP back there
+        // and the ringside pick reads it.
+        let player_hp_max = lead
             .map(|r| r.hp_mp_sp().hp_max as i32)
             .filter(|&hp| hp > 0)
             .unwrap_or(500);
+        let player_hp = lead
+            .map(|r| r.hp_mp_sp().hp_cur as i32)
+            .filter(|&hp| hp > 0)
+            .unwrap_or(player_hp_max);
         let player_budget = lead
             .map(|r| r.live_stats().agl)
             .filter(|&agl| agl > 0)
@@ -1468,7 +1490,7 @@ impl PlayWindowApp {
             .map(|r| {
                 let live = r.live_stats();
                 legaia_engine_core::muscle_dome::DomeCombatant {
-                    hp_max: player_hp.clamp(0, u16::MAX as i32) as u16,
+                    hp_max: player_hp_max.clamp(0, u16::MAX as i32) as u16,
                     int: live.int,
                     udf: live.udf,
                     ldf: live.ldf,
