@@ -2072,6 +2072,16 @@ into), and the ladder is a cabinet session that outlives one duel. Wiring it
 means giving the world a ladder that survives the warp back, and deciding what
 a mid-ladder save does.
 
+The digit strips themselves are not part of that block and are wired on both
+of those hosts: `baka_fighter_chrome::hud_digit_placements` places the round
+digit, the 8 px right-aligned score field and the `0x10` px "GET COIN" strip,
+and `legaia_engine_ui::ui_baka_strips` emits the quads. The split is
+deliberate - a shared *layout* under two host-written emitters is what let the
+window draw retail's cells while the play page printed one prose line of the
+same two numbers. What is still native-only above them is the round chrome
+(`BakaChrome`: intro card, ROUND banner, countdown), which the browser hosts
+do not install.
+
 Blocking capability: a `LadderRun` on `World::minigames` with a save
 representation, plus the warp-out arm that settles a rung instead of ending
 the session. The cue queue is *not* part of this and was fixed: the minigames
@@ -2091,24 +2101,112 @@ retire the second host. Until then, a kernel that hangs off `World` reaches
 two hosts and not three, and that is what a `host_only` row on this page
 means.
 
-## The fishing point-exchange sub-screen is a mode on one host
+## The fishing point-exchange sub-screen: a screen on one host, a query on two
 
 `World::minigames.fishing_exchange` is a live `Option<PrizeExchange>` with its
-own cursor: the native window opens it, draws it as a sub-screen over the
-fishing HUD, and closes it. Both browser hosts answer one-shot JSON snapshots
-(`play_fishing_prizes_json`, `fishing_exchange_json`) that page-side JS lays
-out itself, and the play page opens the world sub-mode only transiently,
-inside a single buy call.
+own cursor. The native window opens it, draws it as a sub-screen over the
+fishing HUD, and closes it. Both browser hosts also answer one-shot JSON
+snapshots (`play_fishing_prizes_json`, `fishing_exchange_json`) that page-side
+JS lays out itself, and the play page opens the world sub-mode only
+transiently, inside a single buy call.
 
-The rows themselves are shared and correct - including the one-time latch,
-which each host used to re-derive its own way and which is
-`PrizeExchange::is_latched` now. What differs is that one host holds the
-sub-mode open as a rendered mode and two do not.
+The **composition** is no longer split: `legaia_engine_ui::ui_fishing_exchange`
+holds the header, the row columns, the ink rule and the one-time tag, and the
+native window and the browser play page both draw the open sub-screen through
+it. The standalone minigames page still lays its own list out from the JSON.
 
-Blocking capability: a page-side cursor surface that drives the world's own
-`PrizeExchange` cursor (arrow keys into `fishing_exchange`, not into a JS
-list), so the sub-screen is one session with one cursor rather than a mode on
-one host and a query on two.
+The tag is the part that has to stay separated from the ink.
+`PrizeExchange::is_available` folds three independent refusals together -
+price, the owned-stack cap and the one-time latch - so a host that reads it as
+"already bought" prints `sold` beside every one-time prize a fresh save cannot
+yet afford. `exchange_row_tag` reads `is_latched` on its own, and a test pins
+the three cases.
+
+What still differs is the cursor. Blocking capability: a page-side cursor
+surface that drives the world's own `PrizeExchange` cursor (arrow keys into
+`fishing_exchange`, not into a JS list), so the sub-screen is one session with
+one cursor rather than a rendered mode on two hosts and a query on the third.
+
+The panel's pen also differs by one term: the native adds the venue overlay's
+idle sway (`FUN_801d03b0`), an actor the browser hosts do not install, so the
+page draws the panel at its resting top-left.
+
+## A screen can be one host's frame and the other host's borrow
+
+Three of the parity rows this page tracks were not a missing feature on either
+host. They were the same screen composed in two places, and what kept them
+apart was a borrow, a hand-off or a stale sentence.
+
+### The frame belonged to a pass that could not size it
+
+The shop / inn panel drew bare on the native window and framed on the browser
+play page for three programs running. Nobody chose that. The window builds its
+HUD text in one `&self` pass and its chrome sprites in another, and the panel
+was assembled inline inside the text pass - so the sprite pass had no row count
+to size a frame from, and adding one meant either duplicating the panel build
+or moving it.
+
+The fix is the move: `shop_overlay_stage_draws` is a `&self` builder both
+passes call, and the rect comes from `shop_panel_rows` (distinct baselines in
+the text) plus `shop_panel_frame_rect` (pen, inset, width, row pitch), both in
+engine-ui and both called by both hosts. Sizing off the text rather than off
+the session is what lets a screen that grows a row grow its frame on both
+hosts, without either re-deriving a row count from a session shape the other
+does not hold.
+
+The general form: when a host splits its frame into passes with different
+borrows, a feature can be absent from one pass for a reason that has nothing to
+do with the feature. Ask which pass owns the geometry before reading the
+absence as a decision.
+
+### The hand-off released the thing the next screen needed
+
+Retail composes the boot save-select over the title art at a dim. The native
+window keeps it because its boot state machine holds the title session
+alongside the save-select state. The browser play page reached the same screen
+through the pause menu's own Load row and released the title session at that
+hand-off, so the panel was composed over black.
+
+The session is parked instead of dropped, and both hosts draw the bands through
+one `title_band_sprites` kernel with a `TitleBandState`. Two gates on the
+parked session are the native window's own: it is live only while the
+save-select is the open sub-screen, and it is suppressed for `NowChecking` /
+`SlotPreview`, the two phases retail pivots to black for.
+
+### A declaration is a claim, and claims go stale
+
+Two `[[frame_content]]` declarations said something no longer true of the code
+they described.
+
+One said the play page "has no Records page at all". It ships one, behind the
+same Square toggle, through the same `records_screen_draws_for` builder, with
+its model pinned to the native one by a `SIM_PAIRS` row. The real difference is
+where each host builds the list - the window caches its dev-menu draws at tick
+time, the page builds them in the draw pass where it holds the surface size -
+which is the `tick_field_party_hud` shape, not a missing screen.
+
+The other said the native window "does that same work" for all thirty-two
+web-only engine calls in the battle-presentation pair. Thirty-one have a native
+call site, most of them in `window/battle.rs`. The thirty-second is
+`packet_color::hybrid`, and it is not presentation work the window skips: it is
+the CPU-side per-vertex colour stream the page owes WebGL, which the wgpu
+renderer resolves in its fragment shader instead.
+
+Neither correction changes a byte of engine behaviour, and that is the point.
+The gate ratchets the two *lists* and fails when they move; it cannot check the
+prose, so a reason that was true when written outlives the thing it described.
+Re-derive a declaration's reason whenever you touch the pair it names.
+
+### A refusal the player cannot see is not a refusal
+
+A save commit the host cannot honour - writing into a mounted card image the
+native window has no writer for, or a browser card write that fails - used to
+answer with a log line. The screen closed and nothing had happened, which from
+the player's seat is indistinguishable from a save that worked.
+`SaveScreenFlow::refuse` raises a shared notice instead, drawn by one pair of
+engine-ui builders over the menu root. It is the port's own screen: retail's
+save UI only ever talks to a card and reports a card it cannot use through the
+card driver's result word, which does not model a second backend's failures.
 
 ## Adding coverage
 
