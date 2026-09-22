@@ -78,6 +78,18 @@ says the opposite ("so PR builds catch regressions before merge"); the `if` is
 what runs. Until the two agree, the hook is the browser host's only pre-merge
 compiler.
 
+### A wasm export is a property of its impl block, and no compiler reads that
+
+Compiling the browser host is still not the same as exporting from it. A
+method the page calls through `wasm-bindgen` exists in JavaScript only if it
+sits in the `#[wasm_bindgen] impl` block; the same method in a plain
+`impl LegaiaRuntime` compiles, type-checks for `wasm32`, passes clippy and the
+drift tiers, and is `not a function` in the browser. That is how the play
+page's save-select backdrop accessor shipped undrawn - the page's call sat
+behind a `try` that fell back to `null`, so nothing reported it. The only
+instrument that sees this is a headless run of the **built** bundle, which is
+therefore the check a new page export owes before it counts as wired.
+
 ## Tier 1 - reachability: does a screen reach both hosts?
 
 [`scripts/ci/check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py).
