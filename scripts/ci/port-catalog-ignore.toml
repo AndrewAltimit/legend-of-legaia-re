@@ -501,7 +501,7 @@
 "800684cc" = "SsVabClose (by VAB-ID search)"
 "80068b98" = "SsSeqOpen (slot/track-count bounds-check)"
 "80068c5c" = "SsSeq auto-poll on (_DAT_801CE330 = 1)"
-"80068c80" = "SsSeqClose (calls SpuFree on resident addr)"
+"80068c80" = "SsVabClose, not SsSeqClose: ids below 16, open-state byte 0x801CE368[id], SpuFree (8006a728) of the resident body at 0x801CE3C8[id], open-bank count 0x801CE3C0 decremented"
 "80068d34" = "SsSeqPlay 1-shot wrapper"
 "80068d94" = "SsSepOpen / SEP loader core (988 bytes; 'VAP' magic validate + write to SPU)"
 "80069170" = "SsSeqPlayResolved (final play-start stage)"

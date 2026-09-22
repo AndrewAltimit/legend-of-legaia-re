@@ -523,21 +523,29 @@ pub fn volume_slide_tick(ch: &mut SeqChannel, dir: SlideDir, vol: (u16, u16)) ->
             // the slide's own progress budget.
             let elapsed = ch.slide_total.wrapping_sub(ch.slide_remaining as u32) as i32;
             if elapsed.wrapping_mul(i32::from(mag)) < i32::from(ch.slide_span) {
+                // Descending (`FUN_8006352C` `0x80063760..0x800637E4`): a
+                // side already at zero clears the slide flag and commits
+                // nothing; otherwise `(v + step) & 0xFFFF` is committed with
+                // no clamp. (The port once committed `(0, 0)` without
+                // clearing the flag, and clamped each side at zero.)
                 let inc = match dir {
-                    SlideDir::Up => reach,
+                    SlideDir::Up => Some(reach),
                     SlideDir::Down => {
                         if vol.0 == 0 || vol.1 == 0 {
-                            (0, 0)
+                            ch.flags &= !dir.flag_bit();
+                            None
                         } else {
-                            (
-                                (vol.0 as i32 + i32::from(step)).max(0) as u16,
-                                (vol.1 as i32 + i32::from(step)).max(0) as u16,
-                            )
+                            Some((
+                                vol.0.wrapping_add(step as u16),
+                                vol.1.wrapping_add(step as u16),
+                            ))
                         }
                     }
                 };
-                out.commit = Some(inc);
-                committed = inc;
+                if let Some(inc) = inc {
+                    out.commit = Some(inc);
+                    committed = inc;
+                }
             }
         }
     } else {
@@ -982,6 +990,41 @@ mod tests {
         // elapsed = 10 - 8 = 2; 2*8 = 16 < 0x400 -> commits the ramp.
         let t = volume_slide_tick(&mut c, SlideDir::Up, (0x10, 0x11));
         assert_eq!(t.commit, Some((0x18, 0x19)));
+    }
+
+    #[test]
+    fn volume_fast_descent_with_a_side_at_zero_clears_the_flag_and_commits_nothing() {
+        let mut c = SeqChannel {
+            flags: flag::VOL_DOWN,
+            slide_remaining: 9,
+            slide_total: 10,
+            slide_span: 0x400,
+            slide_step: -8,
+            slide_level: 0x400,
+            ..Default::default()
+        };
+        // r + step > 0, so the saturation arm does not fire; the incremental
+        // arm sees l == 0.
+        let t = volume_slide_tick(&mut c, SlideDir::Down, (0, 0x20));
+        assert_eq!(t.commit, None);
+        assert_eq!(c.flags & flag::VOL_DOWN, 0);
+    }
+
+    #[test]
+    fn volume_fast_descent_commits_unclamped() {
+        let mut c = SeqChannel {
+            flags: flag::VOL_DOWN,
+            slide_remaining: 9,
+            slide_total: 10,
+            slide_span: 0x400,
+            slide_step: -8,
+            slide_level: 0x400,
+            ..Default::default()
+        };
+        // l + step = -3 wraps to 0xFFFD (retail `andi 0xffff`, no clamp);
+        // r + step = 0x18 keeps the saturation arm from firing.
+        let t = volume_slide_tick(&mut c, SlideDir::Down, (5, 0x20));
+        assert_eq!(t.commit, Some((0xFFFD, 0x18)));
     }
 
     #[test]
