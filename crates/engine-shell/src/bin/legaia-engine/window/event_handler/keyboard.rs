@@ -422,81 +422,41 @@ impl PlayWindowApp {
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
         {
+            use legaia_engine_core::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
             let world = &mut self.session.host.world;
-            match code {
-                KeyCode::KeyP => {
-                    if world.minigames.fishing_exchange.is_some() {
-                        world.close_fishing_exchange();
-                    } else if let Some(venues) = &self.fishing_prize_venues {
-                        // Bank the LIVE session's points before opening the
-                        // counter. Retail credits its point pool
-                        // (`_DAT_8008444C`) as each catch lands, so the
-                        // counter spends what this session just earned; the
-                        // port credits `World::minigames.fishing_points` only inside
-                        // `exit_fishing`, and the counter is reachable only
-                        // while fishing is still active - so without this it
-                        // always reads the PREVIOUS session's total (0 on a
-                        // fresh world) and no row is ever affordable however
-                        // much the player caught. `fishing_exchange_buy`
-                        // pushes the spent total back into the session
-                        // record, so the round trip stays consistent.
-                        if let Some(points) =
-                            world.minigames.fishing.as_ref().map(|s| s.record().points)
-                        {
-                            world.minigames.fishing_points = points;
+            let open = world.minigames.fishing_exchange.is_some();
+            // The key -> input map is this host's; what each input DOES
+            // (the points bank on open, the cursor floor, the venue flip, the
+            // buy at the cursor) is the shared engine kernel the browser
+            // play page's exchange panel drives too.
+            let input = match code {
+                KeyCode::KeyP => Some(ExchangeInput::Toggle),
+                KeyCode::ArrowUp if open => Some(ExchangeInput::Up),
+                KeyCode::ArrowDown if open => Some(ExchangeInput::Down),
+                KeyCode::ArrowLeft | KeyCode::ArrowRight if open => {
+                    Some(ExchangeInput::SwitchVenue)
+                }
+                KeyCode::Enter if open => Some(ExchangeInput::Buy),
+                _ => None,
+            };
+            if let Some(input) = input {
+                match &self.fishing_prize_venues {
+                    Some(venues) => match world.fishing_exchange_input(venues, input) {
+                        ExchangeOutcome::Bought(p) => log::info!(
+                            "fishing exchange: bought item {:#04x} x{} for {} points ({} left)",
+                            p.item_id,
+                            p.qty,
+                            p.cost,
+                            world.minigames.fishing_points
+                        ),
+                        ExchangeOutcome::Refused if input == ExchangeInput::Buy => {
+                            log::info!("fishing exchange: row unavailable (points/limit/one-time)")
                         }
-                        world.open_fishing_exchange(venues[0].clone());
-                    } else {
-                        log::info!("fishing: no exchange tables decoded (disc-free run?)");
-                    }
-                    return;
+                        _ => {}
+                    },
+                    None => log::info!("fishing: no exchange tables decoded (disc-free run?)"),
                 }
-                KeyCode::ArrowUp | KeyCode::ArrowDown
-                    if world.minigames.fishing_exchange.is_some() =>
-                {
-                    let points = world.minigames.fishing_points;
-                    if let Some(ex) = &mut world.minigames.fishing_exchange {
-                        let floor = ex.first_visible(points);
-                        let last = ex.rows.len().saturating_sub(1);
-                        ex.cursor = if matches!(code, KeyCode::ArrowUp) {
-                            ex.cursor.saturating_sub(1).max(floor)
-                        } else {
-                            (ex.cursor + 1).min(last)
-                        };
-                    }
-                    return;
-                }
-                KeyCode::ArrowLeft | KeyCode::ArrowRight
-                    if world.minigames.fishing_exchange.is_some() =>
-                {
-                    if let (Some(open), Some(venues)) = (
-                        &world.minigames.fishing_exchange,
-                        &self.fishing_prize_venues,
-                    ) {
-                        let other = venues[1 - open.venue.min(1)].clone();
-                        world.open_fishing_exchange(other);
-                    }
-                    return;
-                }
-                KeyCode::Enter if world.minigames.fishing_exchange.is_some() => {
-                    let row = world.minigames.fishing_exchange.as_ref().map(|e| e.cursor);
-                    if let Some(row) = row {
-                        match world.fishing_exchange_buy(row, 1) {
-                            Some(p) => log::info!(
-                                "fishing exchange: bought item {:#04x} x{} for {} points ({} left)",
-                                p.item_id,
-                                p.qty,
-                                p.cost,
-                                world.minigames.fishing_points
-                            ),
-                            None => log::info!(
-                                "fishing exchange: row {row} unavailable (points/limit/one-time)"
-                            ),
-                        }
-                    }
-                    return;
-                }
-                _ => {}
+                return;
             }
         }
         // `O`: toggle the casino slot-machine minigame. Loads the slot
