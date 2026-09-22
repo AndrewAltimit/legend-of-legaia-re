@@ -16,8 +16,7 @@
  *   - NPCs         - one scene mesh each, posed from the scene's ANM bundle and
  *                    drawn at the world's live NPC position / heading.
  *
- * Requires webgl-math.js + webgl-shaders.js + webgl-tmd.js + field-scene-view.js
- * (for the shared sky-mesh classifier) to be loaded first.
+ * Requires webgl-math.js + webgl-shaders.js + webgl-tmd.js to be loaded first.
  */
 (function () {
   'use strict';
@@ -912,11 +911,9 @@ void main() {
           rt.field_mesh_cba_tsb(), idx, flat.length ? flat : null);
         return true;
       };
-      const isSky = (window.FieldSceneView && window.FieldSceneView.isSkyMesh)
-        || (() => false);
       /* `floorBase` is where this list starts inside the concatenated
        * floor-wave offset array (`rt.field_floor_wave_offsets()`, terrain then
-       * placements), so a draw the loop below SKIPS - a sky dome, a mesh with
+       * placements), so a draw the loop below SKIPS - a mesh with
        * no renderable prims - does not shift every later draw's rung. */
       const push = (slots, pos, rots, anims, rotsX, rotsZ, floorBase) => {
         for (let i = 0; i < slots.length; i++) {
@@ -932,14 +929,13 @@ void main() {
             meshId = ensure(slots[i], 0);
             if (meshId < 0) continue;
           }
-          /* Sky domes and kilometre-wide horizon planes read as sky only from
-           * the retail in-world camera; from a follow camera inside them they
-           * are a wall in front of the lens. Same classifier the full-map view
-           * uses. */
+          /* Sky domes and kilometre-wide horizon planes are scene geometry
+           * like any other placement: retail draws them, and so does the
+           * native window, whose field pass has no sky classifier. The page
+           * used to drop them here (the full-map viewer's classifier), which
+           * left the opdeene prologue's sepia sky and ridge line a navy void
+           * behind the tableau. */
           const aabb = this.renderer.getMeshAabb(meshId);
-          const verts = this.renderer.getMeshVertexCount
-            ? this.renderer.getMeshVertexCount(meshId) : 0;
-          if (isSky(aabb, verts)) continue;
           const draw = {
             meshId,
             x: pos[i * 3], y: -pos[i * 3 + 1], z: pos[i * 3 + 2],
