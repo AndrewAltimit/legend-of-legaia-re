@@ -401,9 +401,12 @@ impl FogPool {
     /// Re-seed the free stack and clear every record - what the field reset
     /// does on every scene entry.
     pub fn reset(&mut self) {
-        // PORT: FUN_8001FA00 - `table[i] = i` for `i < n`, then `top = n - 1`.
-        self.free_table = (0..FOG_POOL_SLOTS as i16).collect();
-        self.free_top = FOG_POOL_SLOTS as i16 - 1;
+        // MAIN_INIT's `jal 0x8001FA00` at `0x801D7384` seeds this stack:
+        // `table[i] = i` for `i < n`, then `top = n - 1`.
+        let mut seeded = [0u16; FOG_POOL_SLOTS];
+        self.free_top =
+            crate::scus_leaf_kernels::init_identity_index_list(&mut seeded, FOG_POOL_SLOTS as i16);
+        self.free_table = seeded.iter().map(|&i| i as i16).collect();
         for (i, r) in self.records.iter_mut().enumerate() {
             *r = FogParticle {
                 slot: i as u8,
