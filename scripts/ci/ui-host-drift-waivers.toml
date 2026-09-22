@@ -629,14 +629,14 @@ native = "drain_and_log_battle_events"
 web = "tick_battle_presentation"
 native_only = []
 web_only = ["action_id", "armed", "battle_monster_slots", "battle_stage_entry_for_scene", "build_targeted_with_options", "clear_popups", "current_frame", "drain_battle_clut_stages", "drive", "enqueue", "equipment", "far_colour_for_prot_index", "hybrid", "install_art_bank_records", "party_roster_slot", "play_xa_shout", "read_span_sectors", "reset", "scale", "set_actor_battle_action_clips", "set_actor_battle_animation", "set_actor_battle_art_bank", "shout", "slot", "stage_effect_clut", "system_ui_bundle", "tmd_bytes", "upload", "upload_battle_stage_tims_into_vram", "upload_flame_atlas_into_vram", "with_actors", "with_spu"]
-reason = "The page folds its whole battle presentation frame into this one named step: stage and atlas upload, per-actor clip and art-bank staging, the CLUT stage drain, the shout XA request, and the popup retire. The native window does that same work, but spread across its draw section and window/battle.rs rather than inside the kernel its frame path names, so the difference is where the code sits and not whether the host does it. The empty native-only side is the check on that claim: nothing the window reaches here is missing from the page."
+reason = "The page folds its whole battle presentation frame into this one named step: stage and atlas upload, per-actor clip and art-bank staging, the CLUT stage drain, the shout XA request, and the popup retire. The native window does that same work, but spread across its draw section and window/battle.rs rather than inside the kernel its frame path names, so the difference is where the code sits and not whether the host does it. Checked name by name: thirty-one of the thirty-two have a call site in the native sources (most of them in window/battle.rs). The exception is packet_color::hybrid, which is not presentation work the window skips - it is the CPU-side per-vertex colour stream the page has to hand WebGL, and the wgpu renderer resolves the same packet colour in its fragment shader instead. The empty native-only side is the other half of the check: nothing the window reaches here is missing from the page."
 
 [[frame_content]]
 native = "tick_dev_menu"
 web = "tick_dev_menu"
 native_only = ["records_screen_draws_for"]
 web_only = []
-reason = "The dev menu Records page. The native window resolves its rows inside the per-frame step; the browser play page ships the sound-test and flag pages and has no Records page at all. That is a screen-sized gap on the audit worklist, not a step the page takes differently, and this row does not close it."
+reason = "The dev menu Records page, built on opposite sides of the frame. Both hosts ship it - the page has `dev_records_draws` / `dev_records_model` behind the same Square toggle, pinned to the native model by a SIM_PAIRS row - and both resolve its rows through `records_screen_draws_for`. The native window caches its whole dev-menu draw list at tick time, so the builder sits inside this kernel; the page builds its list in the draw pass (`play_dev_menu_draws_json`), where it holds the surface size the stage transform needs. Same shape as the `tick_field_party_hud` row: one screen, one builder, two sides of the wasm boundary."
 
 [[frame_content]]
 native = "tick_field_party_hud"

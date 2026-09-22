@@ -1753,7 +1753,18 @@ impl PlayWindowApp {
             out.extend(draws);
         }
         // Opt-in developer menu: its row list draws over everything else.
-        out.extend(self.dev_menu_draws.iter().copied());
+        //
+        // Through the canonical 320x240 stage, like every other retail screen
+        // the window composes. `DEV_MENU_PEN` / `DEV_RECORDS_PEN` are retail
+        // framebuffer coords, so drawing them raw pinned the whole overlay
+        // into the top-left ninth of a 960x720 window while the browser play
+        // page - which has always scaled them - filled the stage.
+        if !self.dev_menu_draws.is_empty() {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            let mut dev = self.dev_menu_draws.clone();
+            legaia_engine_render::scale_stage_text_draws(&mut dev, stage_origin, stage_scale);
+            out.extend(dev);
+        }
         out
     }
 
