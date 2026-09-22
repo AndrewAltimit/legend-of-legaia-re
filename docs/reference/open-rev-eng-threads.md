@@ -72,68 +72,40 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
-- **A per-vsync save state is not a per-vsync clock.** PCSX-Redux runs its SPU
-  on an audio-paced thread and steps the envelope per sample that thread
-  produces, so a capture that writes a 19 MiB state every vsync carries an
-  uncontrolled amount of envelope motion. Two captures of one state with no
-  input agree on the voice *pitch* register - written by the emulated CPU - and
-  disagree on `env_level` for six of ten voice-frames
-  ([falsified](re-do-not-re-walk.md#audio--sound-driver)).
-- **Two field-VM ops long read as "register a callback" retire instead, and
-  they do not retire the same thing.** `4C 9F` sweeps the floor-height-ladder
-  oscillator, `4C 87` sweeps the reflection controller, and neither parks - the
-  `addiu s8,s8,2` sits in the retire call's own delay slot, so the advance has
-  already run. Reading either as a halt strands every carrier that issues one,
-  which for `4C 9F` is fifteen scenes
+- **A story flag can be a live position test.** `conc`'s `0x6DE` is SET every
+  other frame by the entry script's own bounding-box test while the party stands
+  outside the plaza, so a save holding it set says where the party stood, not
+  what the entry ran. The two "entry clears" the parity row blamed are walk-on
+  trigger scripts a cold entry never reaches
   ([falsified](re-do-not-re-walk.md#field--locomotion)).
-- **An instruction's width can be wrong with every decoder agreeing.** The
-  disassembler always decoded `4C 14` as eight bytes; the *executing* VM slid
-  seven, so the two never disagreed on any listing and 94 sites in six scenes
-  ran one byte out from their first occurrence. The eighth byte is the id of
-  the actor to clone, and `0x08` is not an opcode the VM has an arm for
+- **A named routine was named for the wrong half of its work, three times.**
+  `FUN_801D84C0` builds the battle-result messages rather than party panel
+  labels, `FUN_801D32BC` is the command window's member cursor rather than a
+  turn order, and `FUN_8001FA00`'s one caller seeds the fog-particle free stack
+  rather than a cutscene sprite list. Each port was tagged, live and green
+  ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
+- **A re-entered Muscle Dome hub does draw the ringside still.** The row that
+  called the `INTERVAL` screen a live render read the first visit; on the second
+  and third the latch is `1` and both still packets sit in the primitive pool
+  ([reversed](re-do-not-re-walk.md#containers--placeholder-slots)).
+- **The bytes after an entry's own content belong to an earlier entry, not to
+  the walker that stopped short of them.** Every scene bundle's last-sector
+  residue, and the `lzs_container` / `pack` / `bse_bank` tails, are the packer
+  buffer's copy of the nearest earlier entry reaching that offset - and the
+  donor need not be an overlay, nor the run confined to the last sector
+  ([falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
+- **The PROT 0898 head is twenty-two jump tables, not nine** - and the image's
+  read-only data carries two more above the head. A table is read off its `jr`
+  dispatch, which also stopped a 3,264-byte data run printing as a function
+  ([falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
+- **`4C D8`'s model operand is a scene-bank index.** Read as a global-pool slot,
+  it bound battle effect models on seven of eight sites in two scenes and made
+  the balden carriers look unseatable
   ([falsified](re-do-not-re-walk.md#field--locomotion)).
-- **A multi-kilobyte zero run inside an overlay is usually the overlay's own
-  uninitialised data.** PROT 0970's 131,172-byte hole decomposes exactly into a
-  decode context, two slice staging buffers, four globals and the STRv2 VLC
-  table's destination - all named by the image's own operands, all transferred
-  by a loader that moves the whole sector extent
-  ([settled](re-settled-threads.md#title--boot--overlays)).
-- **A shipped scene script can carry a developer flag-setting menu.** Nine
-  scenes ship one - "Clear all flags", "Set all flags" / "Clear" / "Exit" -
-  whose arms are ordinary `51`/`61` ops over nine-flag ladders. A census that
-  counts arms therefore credits story beats to records that are menu rows,
-  which is how spine flag `0x142` came to be attributed to six records instead
-  of two ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
-- **A context's `+0x10` player bit says who *raised* the record, not whose pose
-  the context carries.** Reading it the second way paired the player with
-  themself on every shipped `4C 86`, and the reflection tick then walked them
-  onto the mirror line each frame - a cold-spawn regression two scenes' worth
-  of tests caught only after the fact
-  ([falsified](re-do-not-re-walk.md#field--locomotion)).
-- **PROT 0896 has a load base, and it is `0x801D4DF0`.** "No base fits" rested
-  on a resolution ratio over the image's `lui` pairs, which is one-sided: a
-  base that catches few pairs scores perfectly on all of them, and on this
-  image the metric ranks the refuted slot-A base first. The call-graph
-  recovery lands, and three independent signals agree with it
-  ([falsified](re-do-not-re-walk.md#measurement-readings)).
-- **A frame kernel paired by name can be an empty body.** The host-drift
-  gate's tier-11 alias row paired the native `tick_field_prop_anims` with the
-  browser's `drive_npc_clips` and asserted both "advance the scene's posed
-  actors"; the native body was `{}`, and a `{}` body pairs with anything. The
-  window does that work inline, which is a different claim
-  ([falsified](re-do-not-re-walk.md#measurement-readings)).
-- **`0x1000` on the BGM request word is a park sentinel, not a track.** The
-  resolver compares `_DAT_8007BAC8` against `0x1000` at `0x8002454C` and
-  copies the pending index onto the loaded-index barrier, so the load is
-  skipped; the second streaming slot carries the same test. The states that
-  read `4096` are the ending ones, not the duel ones
-  ([settled](re-settled-threads.md#audio)).
-- **Field-VM `4C D8`'s two `u16` immediates are envelope rates, not a
-  `(kind, variant)` pair.** The opcode spawns from the morph-weight descriptor
-  `0x8007068C`, whose handler reads `actor[+0x3C]` / `+0x3E` as the rise and
-  fall steps of the morph weight at `+0x6E`. The port's field names are the
-  allocator's, not this spawner's
-  ([settled](re-settled-threads.md#field--locomotion)).
+- **The ctx `+0x28B` banner raiser was always in `SCUS_942.54`**, and its three
+  raise sites run in sequence - the side-array pick overwrites the seat flag's
+  write - rather than as alternatives
+  ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
 
 ---
 
@@ -141,9 +113,27 @@ cheapest place to look for a claim that is still wrong.
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes, a shrunken residual set still owed | [details ↓](#region-story-flag-gate-families) |
-| Does retail's cold entry into `conc` run the `66 DE` clear of flag `0x6DE`? | open - one card-boot capture disagrees with the engine's entry | The engine's fresh entry executes `conc` P0[34] / P0[36], whose body at `+0x59` (behind a `26 09` jump over a black `ColorIntensity` push) clears system flag `0x6DE`, while the `conc_field_card_boot` state - captured after retail's own entry from a memory card - still holds the flag set. Either retail's entry never reaches that record (a record-header C1/C2 gate the engine evaluates differently on this bank) or a later beat re-sets it before the field mode word settles. A flag-write watch on `0x6DE` from the same card boot decides it; the parity oracle carries the divergence as a class-c row until then. |
-| Is `juui1` dark in retail outside its `ColorIntensity` tint beats? | open (narrowed) - both doors are located, an anchor sits one scene short of them, and the hijack's own failure is explained | The "no library state is inside" premise was false: a progression card's `conc` block is one, and the save browser places a save by its product-code **suffix** rather than by the card block it occupies, so a re-stamped copy reaches any card save from the calibrated CONTINUE ladder. The ladder is `conc` P2[11] `+0x001E` into `conc2`, then `conc2` P2[20] `+0x0078` into `juui1`. Why the name hijack draws black is now on the bytes too - see the closing paragraph below. What is owed is the two-scene walk itself. |
+| Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready | [details ↓](#region-story-flag-gate-families) |
+| Is `juui1` dark in retail outside its `ColorIntensity` tint beats? | open (narrowed) - the route is pinned; a record gate on the one card save that reaches it blocks the walk | The route is `conc` P2[11] - walk-on tiles `(29,66)` / `(30,66)` / `(31,66)` / `(96,98)` from the `.MAP` fallback block at `+0x12000` - into `conc2`, then `conc2` P2[20] `+0x78` into `juui1`. That second door is a Yes/No picker, whose Yes arm `44 74` reaches the scene change, so a tile poke alone parks on the prompt. The walk is blocked by data, not by budget: P2[20] and the spawners P2[23..30] carry `C1 = [0x3E1]` / `C2 = [0x3E5]`, and the only card save that reaches `conc2` already holds `0x3E1` set. A card block from before the `0x3E1` beat, crossed by tile poke plus a confirm press, closes it. |
+
+**Does retail's cold entry into `conc` run the `66 DE` clear** closed as yes -
+twice - and the flag turned out not to be progress at all. A single-flag write
+watch armed from the memory-card load screen sees the scene load clear `0x6DE`
+from `P1[1]`'s spawn prologue (`+0x10`) and from the `P1[0]` entry script
+(`+0x18`), not from `P0[34]` / `P0[36]`, which are walk-on trigger scripts a
+cold entry never reaches. From the first field frame `P1[0]`'s per-frame body
+re-runs a `CD F8 0A 0E 33 48` player bounding-box test at `+0x100` and takes the
+outside arm's `56 DE` SET at `+0x10B` every other frame; poking the player
+inside tiles `10..=51` x `14..=72` stops it dead. So `0x6DE` is a **live
+position predicate** - "the party is not in the plaza" - and the card-boot
+state held it set because its save stands at tile `(17, 97)`. The engine side
+of the same read was a defect: the ctx-`0xFB` system context kept its position
+anchor at the origin outside three opening scenes, so every scene's per-frame
+`CD F8` tests answered "outside"; `World::sync_field_ctx_player_anchor` now
+re-seats it each frame slice
+([settled](re-settled-threads.md#field--locomotion),
+[falsified](re-do-not-re-walk.md#field--locomotion),
+[`script-vm.md`](../subsystems/script-vm.md#a-system-flag-can-be-a-live-position-test-not-progress)).
 
 **Does a scripted camera tile window survive into the next scene** closed here:
 it does, by 78 vsyncs. A per-vsync poll across a real `map01` -> `town0c` door
@@ -307,6 +297,20 @@ card block exists for each spoke rather than of whether a probe can reach one:
 `retock`, `doman`, `nilboa`, `son` and the `kor5` tail are all walkable from a
 catalogued card block, and the residual spokes are the ones no card has.
 
+**A door no longer needs a walk.** A walk-on door is an exact tile match in the
+`.MAP` kind-1 trigger table, so writing the player object's position onto a
+door tile crosses it in about ninety vsyncs
+([`autorun_w5a_poke_walk.lua`](../../scripts/pcsx-redux/autorun_w5a_poke_walk.lua);
+door tiles come from each `.MAP`'s `+0x10000` / `+0x12000` gate rows), and a
+door that opens a Yes/No picker takes one confirm press on top. Paired with the
+single-flag write watch
+([`autorun_w5a_flag_watch.lua`](../../scripts/pcsx-redux/autorun_w5a_flag_watch.lua)),
+that turns each residual spoke into one run from a card block that reaches its
+region. It measures arrival, never the walk. Read what it logs with the `conc`
+lesson in hand: a flag written every other frame from an entry script's
+per-frame body is a position predicate, not a beat
+([`script-vm.md`](../subsystems/script-vm.md#a-system-flag-can-be-a-live-position-test-not-progress)).
+
 *What this needs is capture time, not a new instrument.*
 [`scripts/pcsx-redux/autorun_flag_firehose.lua`](../../scripts/pcsx-redux/autorun_flag_firehose.lua)
 is already the right probe and already logs exactly what the residual asks
@@ -326,7 +330,13 @@ process-matching helpers in
 
 ## Battle / rendering
 
-No open threads. The last two closed together, and both were questions about
+| Thread | Status | What would close it |
+|---|---|---|
+| Does the port run retail's in-battle steal? | open - the captions and the roll are decoded, and no host reaches the grant | Retail composes the steal-result captions inside `FUN_8004AD80` - templates `0x80077A38` / `0x80077A4C` / `0x80077A64` copied by `FUN_8003CA78`, name escape appended by `FUN_8003CB54` at `0x8004B2F8` / `0x8004B338` / `0x8004B60C` - and shows them through `FUN_801D8DE8(0x5B)`. The port's `World::apply_steal` has no production caller, so no battle on either host steals. What closes it is the trigger chain from the command, art or cast that reaches the steal-table read ([`steal-table.md`](../formats/steal-table.md)) wired into the round both hosts run, with a disc-gated test that grants the item through the live round. |
+| How does the port step back to an earlier member in the command window? | open - retail's cursor is decoded; the port has no backward step | `FUN_801D32BC` is the command window's **member cursor**, not a turn order: its six call sites are the round reset `0x801D8910` and `FUN_801D388C`'s cases `0x10` (back, `0x801D4010`), `0x11` (forward, `0x801D4128`), `0x21` (back, `0x801D4750`) and the tail pair `0x801D5690` / `0x801D56A0`. The port's command session has no way from a later member's ring back to an earlier one's, which is why `step_actor_cursor` stays disclosed. The backward arm in the command session on both hosts, with a ladder that steps back, closes it. |
+| Which host draws Koru's timed-fight `Turns Left / HP Left` strip? | open - the strip is decoded and deliberately kept out of the dome | The strip prints `4 - ctx[+0x28A]` and the first enemy's HP percent through the format string at PROT 0898 file `0x0`, gated on the formation cell holding the timed-fight monster. `timed_fight_turns_left` is disclosed rather than wired because a dome leg ends on a knockout and must not consult a turn limit ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-four-turn-strip-belongs-to-koru-not-the-dome)). A host that draws this one fight's strip behind a formation-cell gate the engine does not yet carry closes it ([`live-audit-triage.md`](../tooling/live-audit-triage.md)). |
+
+Two threads closed here before these opened, and both were questions about
 whether a routine no capture had caught is reachable at all.
 
 **Does any shipped actor raise `actor[+0x42]`, the mesh-renderer gate** closed
@@ -532,10 +542,36 @@ PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
 
 ## Containers / data blobs
 
-| Thread | Status | What would close it |
-|---|---|---|
-| Is PROT 0967 part of the slot-B module band? | open - the image has the band's shape and the band's selector does not admit it | 0967 is a slot-B image at `0x801F69D8` carrying the 408-byte head jump table [`slot-b-module-layout.md`](../formats/slot-b-module-layout.md) describes, but `slot_b_module` is selected on the `0903..=0966` index band, so nothing parses it: the head table and 2,992 bytes of its own un-dumped code stay in the byte-account worklist and on the dump worklist. Widening the band is a definitional change - 0967/0968/0969 are stage modules the three PROT 0898 entry tables do not reach - so what closes it is a decision recorded with the bodies dumped behind it, not a parser edit on its own. |
-| Should byte accounting cut an inherited tail the way disc coverage does? | open - the two instruments disagree by construction | An overlay's extracted bytes end in another image's bytes at the same file offset, because the packer's buffer is indexed by file offset and never cleared. `disc-coverage.py` cuts that run out of the image's own denominator; `byte_account` does not, so a run like PROT 0975's `0x5920..0x6000` - byte-identical to PROT 0972's code at the same offset - reads as unexplained residue on one instrument and as no one's bytes on the other. Closing it means either teaching `byte_account` the `inherited_tail` shape or stating why the two denominators should differ, and then re-baselining whichever figure moves. |
+No open threads. The last three closed on one mechanism - the packer's buffer.
+
+**Should byte accounting cut an inherited tail the way disc coverage does**
+closed as yes, with **one** rule under both instruments. The packer writes every
+entry through one buffer indexed by file offset and never cleared, so an
+entry's last sector past its own content holds the bytes of the nearest
+**earlier** TOC entry whose extent reaches that offset - an overlay, but also a
+non-overlay donor (PROT 0898's last 1,604 bytes and 0895's last 344 are
+0894's). Searching that suffix over the whole entry rather than only its last
+sector reproduces the sibling cut on 82 of 83 images, and `tail_cuts` now feeds
+`disc-coverage.py`, the attribution sweep and the byte account alike. The same
+leg explains every scene bundle's last-sector residue (90 of 90 bundles) and
+the `lzs_container`, `pack` and `bse_bank` tails that read as walker residue
+([settled](re-settled-threads.md#measurement--corpus),
+[falsified](re-do-not-re-walk.md#containers--placeholder-slots),
+[`disc-coverage.md`](../tooling/disc-coverage.md#the-packer-buffer-leg)).
+PROT 0901 was the last disagreement, and its consumer settles it: 0901's code
+ends at `jr ra` on file `0x24DC`, and the run from `0x252A` opens mid-routine on
+PROT 0900's epilogue, referenced only from 0900.
+
+**Is PROT 0967 part of the slot-B module band** closed on the layout question
+rather than the band one. The slot-B layout walk is selected by the **link
+base**, which admits 0967 at 96.6%; its prompt pool is consumed - 28 strings
+formed at 41 sites by its own code - and its 92-byte leaf `FUN_801F7628` is
+reached by `jal` from `0x801F7184` and `0x801F7460` inside the image, which
+also retires "a slot-B image never calls itself"
+([settled](re-settled-threads.md#title--boot--overlays),
+[falsified](re-do-not-re-walk.md#containers--placeholder-slots)). The cast
+band - which images the cast dispatcher reaches - is a separate predicate and
+stays `0903..=0966`.
 
 **What actually breaks a rebuilt PROT 0874 container at battle load** closed
 here: nothing a rebuild can do reaches the registrar, and the symptom is the
@@ -556,8 +592,13 @@ safe. The leg the row kept open is not constructible either: its "header size
 word" and its "section-0 decoded length" are **one** field - the descriptor's
 own `+0x08` size word, which both sizes the buffer and drives the length-driven
 decode - so a hand-built container cannot make the two disagree, only truncate.
-What is still worth a probe is a different question from this row's: clobber the
-resident pack after the load and enter the register-only arm over it
+The probe the row left over has run, and it cannot trip the guard from RAM:
+forcing the load word to `2` reaches the sum arm and a genuine mismatch enters
+`0x8001EA08` and self-heals in about 45 vsyncs (clear the word, `j 0x8001E900`,
+re-read from CD, `gp+0x6AC := 1` at `0x8001EB0C`), but four XOR'd words of the
+resident container leave the sum byte-identical - it is taken over a
+`StoreImage` VRAM read-back. Only VRAM at `(0x180 + 0x40i, 0)` or the boot sum
+at `gp+0x6B8` can break it
 ([settled](re-settled-threads.md#battle--arts--level-up),
 [falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
 
@@ -611,9 +652,37 @@ a coincidence of the pad byte plus the mask table's first three entries
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which slot-B record walk bounds PROT 0944's top record? | open - two instruments disagree on one image | `legaia_asset::slot_b_module::content_end` chains fourteen records above the top pointer-credited one to `0x1EC8`; `scripts/ghidra-analysis/slot_b_band.py` stops at `0x1948`. The bytes side with the script: 0944 and 0942 are byte-identical from `0x199C` up and differ just below it, and 0942's own content reaches above `0x199C`, so the Rust tail cut on 0944 sits 1,412 bytes too high (an under-claim, not a credit of another module's bytes). What closes it is the record-bounding rule the Rust walk should stop on, pinned as the single named divergence in `crates/asset/tests/inherited_tail_real.rs`. |
-| Does any shipped beat take op `0x34` sub-0's second arm? | open - the fork is decoded, the disc is not known to raise its gate | The sub-0 arm forks on `_DAT_1F800394 & 0x800000` into `FUN_80024E80` instead of the push spawner `FUN_80024EE4`, and the bit reads **clear** on every vsync of the one capture that drives the arm, so the port implements the default leg and discloses the other. The gate is a field-VM transient flag, so a script can raise it; what is owed is a census of the writers of bit 23 over every scene carrier, and then a capture of a beat that runs with it up. Until that exists the forked arm is a decoded body with no known caller rather than dead code. |
-| Does the morph-weight spawner ever seat its handler? | open - the opcode is parsed on both hosts and the seat is never taken | Field-VM `4C D8` spawns from the morph-weight descriptor `0x8007068C`, whose handler reads `actor[+0x3C]` / `+0x3E` as the rise and fall steps of the weight at `+0x6E`. The port parses the op and never sets `ActorHandler::MorphWeights`, so nothing steps a weight and no mesh path reads one. Three pieces are owed together, which is why this is a thread and not a wiring row: the `+0x90` rest-pose snapshot the handler blends against, the pool kernel that steps it, and a per-actor morph read in **both** hosts' dynamic-actor mesh paths. |
+| Which references does the indexed form `lui at, hi; addu at, at, rX; lw rY, lo(at)` hide? | open - invisible to the byte account's scanner, probably to the reference sweeps too | An array whose base only an indexed load forms reads as unreferenced; a Python scan finds 23 such sites in PROT 0897 and 44 in PROT 0899 that `legaia_asset`'s formed-address scanner misses. The five-form sweep pairs a `lui` only with `addiu` / `ori`, and `find-gp-relative-refs.py`'s register walk stops at the `addu` that rewrites the base, so both should be blind too (inferred from their rules, not measured). The form ported into the Rust scanner and the reference sweep and every `unreferenced` ignore row re-checked under it closes it ([`address-reference-scan.md`](../tooling/address-reference-scan.md)). |
+
+**Which slot-B record walk bounds PROT 0944's top record** closed on the
+walker, not the image: nothing in any consumer loop bounds the record band, and
+the Rust walk had chained zero padding as a `[model_sel 0]` record. Both walkers
+now stop the chain at eight zero bytes, which moves twelve images and puts
+0944's cut at `0x199C` with donor 0942 on both instruments
+([settled](re-settled-threads.md#measurement--corpus),
+[`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#the-chain-stops-at-zero-padding)).
+
+**Does any shipped beat take op `0x34` sub-0's second arm** closed as no. The
+arm forks on `_DAT_1F800394 & 0x800000` (`lui v1, 0x80` at `0x801DFD1C` and
+`0x801DFEB0` in PROT 0897; set runs `FUN_80024E80`, clear runs
+`FUN_801DE2B0`), and a writer census of bit 23 over every image and scene
+carrier finds no store the disc executes; the port models the clear arm, and
+its `FUN_80024E80` port stays live as `spawn_screen_fade`. The motion VM's ops
+`0x10` / `0x11` fell with it - no section-1 stream authors either
+([settled](re-settled-threads.md#field--locomotion)). One caveat stays on the
+row it closed: a block copy into the scratchpad is not excluded by a store
+census.
+
+**Does the morph-weight spawner ever seat its handler** closed by taking the
+seat, and a premise fell on the way. The spawner snapshots the rest pose and the
+pool envelope steps the weight on both hosts, and the `4C D8` model operand is a
+**scene-bank** index - the arm adds `*(u16 *)0x8007B6F8` at
+`0x801E2DE0..0x801E2DE8` - not a global-pool slot, which is why the balden
+carriers looked unseatable: all five carriers now seat, 17 of 17 blocks fit
+their mesh vertex for vertex
+([settled](re-settled-threads.md#field--locomotion),
+[falsified](re-do-not-re-walk.md#field--locomotion),
+[`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#the-model-operand-is-a-scene-bank-index)).
 
 **Does any host draw the field screen-effect fade** closed here, and the
 answer was no until it was wired: the op-`0x34` sub-0 tween published a
