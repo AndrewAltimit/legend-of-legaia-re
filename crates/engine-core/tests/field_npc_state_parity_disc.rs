@@ -156,13 +156,16 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
     KnownDivergence {
         label: "conc_field_card_boot",
         key: "flag:1758",
-        class: "c",
-        note: "the engine's cold entry runs conc's `66 DE` clear of flag 0x6DE (P0[34] / \
-               P0[36] at record +0x59, behind a `26 09` jump over the tint push) while the \
-               card-boot bank retail captured after its own entry still holds 1. Either \
-               retail's entry never reaches that record (a C1/C2 header gate the engine \
-               reads differently) or a later beat re-sets the flag before mode 3; which \
-               one is an open thread - see open-rev-eng-threads.md, Field / locomotion",
+        class: "b",
+        note: "0x6DE is a live player-POSITION latch, so its value is a property of \
+               where the capture stands, not of what the entry ran. A flag-write watch \
+               across retail's own cold conc entry shows the clear running twice \
+               (P1[1]'s spawn prologue +0x10, the P1[0] entry script +0x18) and then \
+               P1[0]'s park loop re-arming it from +0x10B on every pass the player is \
+               outside tiles 10..=51 x 14..=72 - the capture's player stands at tile \
+               (17, 97), outside. A cold entry at entry point 0 stands at tile (29, 53), \
+               inside, where retail writes nothing either. Pinned both ways by \
+               conc_flag_6de_position_latch_disc.rs",
     },
     KnownDivergence {
         label: "chapter2_garmel_pre_zeto",
