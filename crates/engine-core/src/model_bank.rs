@@ -209,6 +209,16 @@ pub enum ModelSource {
     },
     /// A type-`0x09` single TMD carried as a DATA_FIELD chunk.
     StreamSingle { entry_idx: u32, chunk_header: usize },
+    /// A member of a type-`0x02` pack in a descriptor table the strict
+    /// bundle detector does not accept - the MAN-less count-`5` table a
+    /// v12-family scene such as `balden2` carries in its `lzs_container`
+    /// entry, read with the retail walk
+    /// ([`legaia_asset::scene_asset_table::descriptor_bundle_walk`]).
+    WalkedPack {
+        entry_idx: u32,
+        descriptor: usize,
+        member: usize,
+    },
 }
 
 /// One scene's model bank: the pool ids `SCENE_BANK_BASE..` in registration
@@ -268,7 +278,43 @@ impl SceneModelBank {
             }
             Some(entry_idx)
         } else {
-            None
+            // No bundle the strict detector accepts. A v12-family scene
+            // (`balden2`) still ships its models in a descriptor table - the
+            // count-5, MAN-less one its `lzs_container` entry opens with,
+            // since its MAN rides the streaming variant - and `FUN_80020224`
+            // walks it with no count constraint. Read it the same way.
+            let mut walked = None;
+            for entry in &scene.entries {
+                if entry.class != legaia_asset::categorize::Class::LzsContainer {
+                    continue;
+                }
+                let Some(descs) =
+                    legaia_asset::scene_asset_table::descriptor_bundle_walk(&entry.bytes)
+                else {
+                    continue;
+                };
+                let before = sources.len();
+                for (i, d) in descs.iter().enumerate() {
+                    if AssetType::from_byte(d.type_byte) != AssetType::Tmd {
+                        continue;
+                    }
+                    let Some(members) = walked_pack(&entry.bytes, d).map(|p| p.len()) else {
+                        continue;
+                    };
+                    for member in 0..members {
+                        sources.push(ModelSource::WalkedPack {
+                            entry_idx: entry.idx,
+                            descriptor: i,
+                            member,
+                        });
+                    }
+                }
+                if sources.len() > before {
+                    walked = Some(entry.idx);
+                    break;
+                }
+            }
+            walked
         };
 
         for entry in &scene.entries {
@@ -396,7 +442,117 @@ impl SceneModelBank {
                 let (data, size) = stream_chunk_body(&entry.bytes, chunk_header)?;
                 entry.bytes.get(data..data + size).map(<[u8]>::to_vec)
             }
+            ModelSource::WalkedPack {
+                entry_idx,
+                descriptor,
+                member,
+            } => walked_member(scene, entry_idx, descriptor, member),
         }
+    }
+}
+
+/// Decode one walked table's type-`0x02` descriptor and split its pack:
+/// `(decoded payload, member spans)`.
+fn walked_pack(
+    entry: &[u8],
+    d: &legaia_asset::scene_asset_table::DescriptorRecord,
+) -> Option<Vec<(usize, usize)>> {
+    let decoded =
+        legaia_lzs::decompress(entry.get(d.data_offset as usize..)?, d.size as usize).ok()?;
+    let entries = legaia_asset::pack::parse_pack(&decoded).ok()?;
+    Some(entries.iter().map(|e| (e.byte_offset, e.size)).collect())
+}
+
+/// One [`ModelSource::WalkedPack`] member's bytes.
+fn walked_member(
+    scene: &Scene,
+    entry_idx: u32,
+    descriptor: usize,
+    member: usize,
+) -> Option<Vec<u8>> {
+    let entry = scene.entries.iter().find(|e| e.idx == entry_idx)?;
+    let descs = legaia_asset::scene_asset_table::descriptor_bundle_walk(&entry.bytes)?;
+    let d = descs.get(descriptor)?;
+    let decoded =
+        legaia_lzs::decompress(entry.bytes.get(d.data_offset as usize..)?, d.size as usize).ok()?;
+    let entries = legaia_asset::pack::parse_pack(&decoded).ok()?;
+    let e = entries.get(member)?;
+    decoded
+        .get(e.byte_offset..e.byte_offset + e.size)
+        .map(<[u8]>::to_vec)
+}
+
+impl SceneModelBank {
+    /// Every scene-bank model's TMD bytes, in registration order - index `i`
+    /// is pool slot [`SCENE_BANK_BASE`]` + i`. Each pack is decoded once
+    /// (where [`Self::tmd_bytes`] decodes per call), so this is the form to
+    /// take when the whole bank is wanted. `None` where a source's bytes do
+    /// not materialise.
+    pub fn materialise(&self, scene: &Scene) -> Vec<Option<Vec<u8>>> {
+        let mut packs: std::collections::HashMap<(u32, usize, bool), Vec<u8>> =
+            std::collections::HashMap::new();
+        let bundle = find_bundle(scene);
+        let member = |body: &[u8], m: usize| -> Option<Vec<u8>> {
+            let entries = legaia_asset::pack::parse_pack(body).ok()?;
+            let e = entries.get(m)?;
+            body.get(e.byte_offset..e.byte_offset + e.size)
+                .map(<[u8]>::to_vec)
+        };
+        self.sources
+            .iter()
+            .map(|src| match *src {
+                ModelSource::BundlePack {
+                    entry_idx,
+                    descriptor,
+                    member: m,
+                } => {
+                    let key = (entry_idx, descriptor, true);
+                    if let std::collections::hash_map::Entry::Vacant(slot) = packs.entry(key) {
+                        let b = bundle.as_ref()?;
+                        let d = b.descriptors()[descriptor];
+                        let start = b.table_offset().saturating_add(d.data_offset as usize);
+                        let decoded =
+                            legaia_lzs::decompress(b.bytes().get(start..)?, d.size as usize)
+                                .ok()?;
+                        slot.insert(decoded);
+                    }
+                    member(packs.get(&key)?, m)
+                }
+                ModelSource::StreamPack {
+                    entry_idx,
+                    chunk_header,
+                    member: m,
+                } => {
+                    let entry = scene.entries.iter().find(|e| e.idx == entry_idx)?;
+                    let (data, size) = stream_chunk_body(&entry.bytes, chunk_header)?;
+                    member(entry.bytes.get(data..data + size)?, m)
+                }
+                ModelSource::WalkedPack {
+                    entry_idx,
+                    descriptor,
+                    member: m,
+                } => {
+                    let key = (entry_idx, descriptor, false);
+                    if let std::collections::hash_map::Entry::Vacant(slot) = packs.entry(key) {
+                        let entry = scene.entries.iter().find(|e| e.idx == entry_idx)?;
+                        let descs =
+                            legaia_asset::scene_asset_table::descriptor_bundle_walk(&entry.bytes)?;
+                        let d = descs.get(descriptor)?;
+                        let decoded = legaia_lzs::decompress(
+                            entry.bytes.get(d.data_offset as usize..)?,
+                            d.size as usize,
+                        )
+                        .ok()?;
+                        slot.insert(decoded);
+                    }
+                    member(packs.get(&key)?, m)
+                }
+                ModelSource::BundleSingle { .. } | ModelSource::StreamSingle { .. } => {
+                    let index = self.sources.iter().position(|s| s == src)?;
+                    self.tmd_bytes(scene, index as i16)
+                }
+            })
+            .collect()
     }
 }
 

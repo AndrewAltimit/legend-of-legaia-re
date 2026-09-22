@@ -1150,6 +1150,22 @@ impl SceneHost {
             Some(sc) => crate::model_bank::SceneModelBank::build(sc),
             None => crate::model_bank::SceneModelBank::default(),
         };
+        // The same bank, materialised for the world: the field VM's
+        // `0x4C 0xD8` allocator resolves its model operand here.
+        let field_bank = match self.scene.as_ref() {
+            Some(sc) => self
+                .model_bank
+                .materialise(sc)
+                .into_iter()
+                .map(|bytes| {
+                    let raw = bytes?;
+                    let tmd = legaia_tmd::parse(&raw).ok()?;
+                    Some(std::sync::Arc::new(crate::world::GlobalTmd { tmd, raw }))
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        self.world.install_field_scene_bank(field_bank);
         // Opening-prologue hand-off arm. When entering the cutscene scene
         // `opdeene`, derive the `town01` hand-off arm from the scene's own MAN
         // bytecode instead of a blind constant: walk the cutscene-timeline

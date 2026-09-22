@@ -768,12 +768,22 @@ fn morph_weight_actor_seats_and_blends_on_a_shipped_carrier() {
         let _ = host.world.tick();
 
         let actor = &host.world.actors[slot];
-        if actor.tmd_ref.is_none() {
-            // The site's TMD index is outside the seeded global pool for this
-            // scene: retail's own bail-through, and nothing to pose.
-            eprintln!("[disc] {scene}: site's TMD index not resident; no morph seat");
-            continue;
-        }
+        // The operand is a scene-bank index (the arm adds `0x8007B6F8`), so
+        // every shipped site resolves - balden's 99..=110 included.
+        let mesh = actor
+            .tmd_ref
+            .as_ref()
+            .unwrap_or_else(|| panic!("{scene}: the site's scene-bank model must resolve"));
+        // Structural proof the index space is right: the morph record's
+        // `first_vertex + delta_count` is exactly the object's vertex count.
+        let block = actor.spawn_record.as_ref().expect("a morph block");
+        let rd = |o: usize| u32::from_le_bytes(block[o..o + 4].try_into().unwrap()) as usize;
+        let (group, first, deltas) = (rd(4), rd(8), rd(12));
+        assert_eq!(
+            mesh.tmd.objects[group].vertices.len(),
+            first + deltas,
+            "{scene}: the morph record covers its mesh's object {group} exactly"
+        );
         assert_eq!(
             actor.handler,
             legaia_engine_core::actor_handler::ActorHandler::MorphWeights,
@@ -825,9 +835,9 @@ fn morph_weight_actor_seats_and_blends_on_a_shipped_carrier() {
         }
         seated += 1;
     }
-    assert!(
-        seated > 0,
-        "at least one shipped carrier should seat a morph-weight actor"
+    assert_eq!(
+        seated, 5,
+        "every shipped carrier seats a morph-weight actor on its scene-bank mesh"
     );
     eprintln!("[disc] {seated} shipped carriers seated + blended a morph-weight actor");
 }

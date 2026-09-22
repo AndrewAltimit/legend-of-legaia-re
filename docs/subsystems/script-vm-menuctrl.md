@@ -482,7 +482,7 @@ is a mesh-morph actor. Its tail (`0x801D7848..0x801D79BC`, PROT 0897 file
 | Actor field | Filled from |
 |---|---|
 | `+0x4C` morph block | a **VDF** body: the VDF buffer at `0x8007B7DC`, indexed by operand 1 as `base + u32_at(base + 4 + idx*4)`, opening with its own `u32` record count |
-| `+0x48` TMD base | the resident-object table `0x8007C018`, indexed by operand 2 (the table `FUN_801D8280` walks) |
+| `+0x48` TMD base | the resident-object table `0x8007C018` at operand 2 **plus the scene-bank base** `*(u16*)0x8007B6F8` - see [below](#the-model-operand-is-a-scene-bank-index) |
 | `+0x90` rest pose | a **snapshot**, not an asset - see below |
 | `+0x3C` / `+0x3E` | the two `u16` immediates, verbatim |
 
@@ -500,6 +500,26 @@ actor-class meaning. `+0x56` (render mode), `+0x68` and `+0x6E` (live weight)
 are all zeroed, so a freshly spawned morph actor starts at rest. Because the
 rest pose is snapshotted at spawn, nothing on the disc carries one - which is
 why a search for a rest-pose asset finds nothing.
+
+#### The model operand is a scene-bank index
+
+The operand is not a raw pool slot. The `0x4C` arm reads it and adds the
+scene-bank base before the call - `lhu s0,-0x4908(v1)` (`0x8007B6F8`) then
+`addu s0,s0,v0` at `0x801E2DE0..0x801E2DE8` - and `FUN_801D77F4` reads
+`DAT_8007C018[slot]` with no further adjustment (`0x801D7854..0x801D7878`).
+With the base at `5` (the five player meshes ahead of the scene's own, see
+`engine-core::model_bank`), operand `n` names the scene's `n`th registered
+model.
+
+The disc agrees structurally. Every shipped morph block is one record
+`[group][first_vertex][delta_count]`, and on all seventeen sites
+`first_vertex + delta_count` equals the vertex count of object `0` of scene
+model `n` exactly - `balden`'s operands `99` / `100` / `109` / `110` included,
+through `balden2`'s count-`5` MAN-less table that the strict bundle detector
+does not accept. Read as raw pool slots against the battle effect-model
+library the engine keeps resident, `balden`'s operands resolve nothing and
+`jagaroom` / `garmel` bind effect models whose vertex counts disagree on seven
+of their eight sites; that reading is what left two carriers unseated.
 
 #### Three record pitches over one morph block
 
@@ -522,7 +542,10 @@ disagreement is real in the instruction stream and unobservable in the shipped
 game; the port reproduces each loop at its own stride and pins the census, so a
 block with two records reads as new territory rather than as covered ground.
 
-The engine seats the whole chain: `World::spawn_morph_weight_actor` builds the
+The engine seats the whole chain on all five carriers:
+`World::spawn_morph_weight_actor` resolves the model through
+`World::field_pool_tmd` (the scene bank `SceneHost::enter_field_scene`
+installs from its `SceneModelBank`), builds the
 snapshot and stamps the `+0x0C` handler, `World::tick_handler_actors` steps the
 `+0x3C`/`+0x3E`/`+0x40`/`+0x6E` envelope once per game tick, and both hosts
 read the blended mesh back through `World::morph_weight_posed_tmd`.

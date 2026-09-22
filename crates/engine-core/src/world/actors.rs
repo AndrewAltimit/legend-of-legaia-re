@@ -1951,6 +1951,12 @@ impl World {
         down_rate: u16,
     ) -> Option<usize> {
         let slot_idx = self.spawn_field_actor(tmd_idx, vdf_idx, up_rate, down_rate)?;
+        // The operand is a scene-bank index, not a raw pool slot: the arm
+        // adds `*(u16*)0x8007B6F8` before the call (see
+        // [`Self::field_pool_tmd`]). Resolving it against the pool the
+        // engine seeds with the battle effect library bound jagaroom's and
+        // garmel's morph actors to effect models and left balden's unbound.
+        self.actors[slot_idx].tmd_ref = self.field_pool_tmd(tmd_idx).cloned();
         let block = match self.actors[slot_idx].spawn_record.clone() {
             Some(b) if b.len() >= 4 => b,
             _ => return Some(slot_idx),
