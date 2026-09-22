@@ -441,9 +441,11 @@ pub const SOFT_RESET_RELOAD_AT: i32 = 0x78;
 /// PORT: FUN_801edf00
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SoftResetEffect {
-    /// `FUN_80042558(0x20)` - the arm call in state 0.
+    /// `FUN_80042558(actor)` - the arm call in state 0 (`jal` at
+    /// `0x801EDF58`, `a0` = the actor; the `0x20` belongs to the state 1-3
+    /// paths).
     ArmReset,
-    /// `_DAT_8007B792 += 1` then `FUN_801ED710(actor, y)` - the records-screen
+    /// `_DAT_8007B792 += 1` then `FUN_801ED710(0x20, y)` - the records-screen
     /// renderer, driven at the slide counter's current value.
     DrawRecords { y: i32 },
     /// `FUN_801D58F0(2, 0, 0xFFFFFF, 0, 0x78, -1)` - the white fade.

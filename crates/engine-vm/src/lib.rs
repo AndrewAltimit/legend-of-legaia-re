@@ -334,24 +334,35 @@ pub trait Host {
     /// [`actor_exists`]: Host::actor_exists
     fn spawn(&mut self, actor_id: u8, default_position: Position);
 
-    /// Equivalent of `FUN_800357fc(actor_id, x, y)` - snap actor position.
+    /// Equivalent of `FUN_800357fc(actor_id, x, y)`. Despite this method's
+    /// name, retail **starts an animated move**: the tail at `0x80035874`
+    /// copies the window node's current `(+0xA, +0xC)` into the motion
+    /// sub-object's `+6` / `+8`, writes `(x, y)` to its `+0xA` / `+0xC`, and
+    /// sets node `+0x20 = 1`.
     fn set_position(&mut self, actor_id: u8, position: Position);
 
-    /// Equivalent of `FUN_800358c0(actor_id, x, y)` - start a motion / glide
-    /// to the supplied position.
+    /// Equivalent of `FUN_800358c0(actor_id, x, y)`. Despite this method's
+    /// name, retail **snaps**: the tail at `0x80035938` writes `(x, y)` to
+    /// node `+0xA` / `+0xC` and to the sub-object's `+6` / `+8` / `+0xA` /
+    /// `+0xC`, and clears node `+0x20`. (The two names are swapped relative
+    /// to the bytes; the bytecode-side call sites are right.)
     fn start_motion(&mut self, actor_id: u8, target: Position);
 
-    /// Equivalent of `FUN_80035978(actor_id)` - delete the sprite associated
-    /// with this actor.
+    /// Equivalent of `FUN_80035978(actor_id)` - **begin the window's close
+    /// animation** (node `+0x20 = -1`, `+0x1E` reset or reversed at
+    /// `0x80035A2C`). Nothing is freed here; the node is torn down when the
+    /// close completes.
     fn delete_sprite(&mut self, actor_id: u8);
 
-    /// Equivalent of `FUN_80035a4c()` - tick whatever global sprite-system
-    /// state advances per VM `GlobalUpdate` instruction.
+    /// Equivalent of `FUN_80035a4c()` - begin the close animation on
+    /// **every** window on the `gp+0x148` list (the `FUN_80035978` body
+    /// applied per node).
     fn global_update(&mut self);
 
-    /// Equivalent of `FUN_800319a8(actor_id)` - trigger the actor's effect
-    /// (visual flash / ripple / spawn sound - the original handler is in the
-    /// effect subsystem, undecoded so far).
+    /// Equivalent of `FUN_800319a8(actor_id)` - **destroy the window
+    /// immediately**: free the node's `+0x18` / `+0x24` / `+0x2C` buffers
+    /// (`FUN_80017B94`), unlink it, and free the list head when the list
+    /// empties (`gp+0x148 = 0`). Not an effect trigger.
     fn actor_effect(&mut self, actor_id: u8);
 
     /// Opaque write to the actor's `field1d` byte (`SetField1d`).

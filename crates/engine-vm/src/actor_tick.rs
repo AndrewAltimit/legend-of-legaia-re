@@ -418,7 +418,8 @@ impl ListenerState {
 pub struct ActorPhysics {
     /// `+0x10` - actor status flags. Bits the dispatcher tests:
     /// - `0x00008` - kill-on-next-tick.
-    /// - `0x00002` - needs un-link from sprite list.
+    /// - `0x00002` - outside the camera's visible tile window (set / cleared
+    ///   by the field cull `FUN_801D79E8`; not an un-link request).
     /// - `0x10000` - emitter "stop" request (PathAlt arm clears it).
     pub status_flags: u32,
     /// `+0x14 / +0x16 / +0x18` - world-space position.
@@ -446,7 +447,10 @@ pub struct ActorPhysics {
     pub render_flags: u16,
     /// `+0x54` - countdown timer. Common pre-update drains it.
     pub timer: i16,
-    /// `+0x56` - non-zero kicks the move VM (`FUN_800204F8`).
+    /// `+0x56` - non-zero calls the clip selector / cursor clock
+    /// `FUN_800204F8` (`jal` at `0x80022EF4`; ported as
+    /// `move_buffer::cursor_advance`). That is not the move-table VM
+    /// `FUN_80023070`, which the tick reaches on the `+0x54 < 0` path.
     pub move_vm_kick: i16,
     /// `+0x5A` - dispatch byte the tick reads at the start.
     pub dispatch_byte: u16,
@@ -576,10 +580,16 @@ impl ActorPhysics {
 /// host runtime (audio mixer, scene graph, move-VM driver).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TickEvent {
-    /// Move VM (`FUN_800204F8`) should be invoked for this actor.
+    /// `+0x56 != 0`: the clip selector / cursor clock `FUN_800204F8` should
+    /// run for this actor (`0x80022EF4`). The name predates that reading -
+    /// this is not the move-table VM `FUN_80023070`.
     MoveVmKick,
-    /// Visibility-flag bit `0x2000` is set; the un-link helper at
-    /// `FUN_801D79E8` should fire.
+    /// Visibility-flag bit `0x2000` is set; the field cull `FUN_801D79E8`
+    /// should run. That routine is not an un-link helper: it compares the
+    /// actor's tile against the camera's visible window (`0x1F800384..87`
+    /// and `0x1F8003E8..EB`, widened by `+0x58`), sets `+0x10 |= 2` when
+    /// outside (`0x801D7B10`), and otherwise clears the bit and, when
+    /// `+0x52 & 0x40`, snaps `+0x16` to the floor through `FUN_80019278`.
     UnlinkRequest,
     /// SFX emitter wants its volume/pan pair sent to the audio mixer.
     SfxUpdate {
@@ -953,6 +963,11 @@ pub fn common_late_update(
         p.anim_z_bias = 0;
     }
 
+    // Retail (`0x80022B94..0x80022BB8`): `+0x54 < 0` first steps the
+    // move-table VM `FUN_80023070` on this actor, and only then leaves early
+    // when `+0x10 & 8`. This port reports the flag test as
+    // `kill_requested` and does not step the move VM here; no host reads
+    // `kill_requested`.
     if p.timer < 0 {
         out.kill_requested = true;
         if (p.status_flags & 0x8) != 0 {

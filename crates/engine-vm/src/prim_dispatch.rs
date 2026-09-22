@@ -81,7 +81,8 @@
 //! prim_mode  ∈ 0..20 ; mirrors the per-mode descriptor table at
 //!                       DAT_8007326C (the Legaia TMD renderer's
 //!                       cmd-byte table).
-//! alpha_off  ∈ 0,0x50,0xA0,0xF0 ; PSX semi-transparency state.
+//! alpha_off  ∈ 0,0x50,0xA0,0xF0 ; handler bank the dispatcher writes to
+//!                       0x1F800028 (not the ABR blend mode).
 //! ```
 //!
 //! ## Engine integration
@@ -190,19 +191,27 @@ pub enum Variant {
     Overlay,
 }
 
-/// The four PSX semi-transparency states `FUN_80043390` cycles
-/// through on the SCUS path. The overlay path ignores alpha and uses
-/// only `Off`.
+/// The four handler banks `FUN_80043390` selects on the SCUS path, keyed
+/// by the byte it **writes** to `_DAT_1F800028` (`0x1F800314 - 0x2EC`).
+///
+/// The bank is an output of the dispatcher, not an input state, and it is
+/// not a PSX blend equation. With the blend argument `a2 == 0` the byte is
+/// `0` (`sw zero` at `0x80043488`); otherwise it starts at `0x50`, becomes
+/// `0xA0` when the tint word `a1` has bit `0x04000000`, and `0xF0` when it
+/// has bit `0x20000000` (`0x800434D8..0x80043500`). The blend equation
+/// itself is separate: `((a1 >> 24) & 3) << 21` is stored to `0x1F800030`.
+/// (The variants were named `Half` / `Additive` / `Subtractive`, reading the
+/// bank index as the ABR mode.) The overlay path ignores the bank.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AlphaState {
-    /// `_DAT_1F800028 == 0x00`. Standard opaque blend (alpha bank 0).
+    /// `_DAT_1F800028 == 0x00`: no blend argument (bank 0).
     Off,
-    /// `_DAT_1F800028 == 0x50`. 50% / 50% semi-transparency (bank 1).
-    Half,
-    /// `_DAT_1F800028 == 0xA0`. Additive (B + F) (bank 2).
-    Additive,
-    /// `_DAT_1F800028 == 0xF0`. Subtractive (B - F) (bank 3).
-    Subtractive,
+    /// `_DAT_1F800028 == 0x50`: blended, neither tint bit (bank 1).
+    Blend,
+    /// `_DAT_1F800028 == 0xA0`: blended with tint bit `0x04000000` (bank 2).
+    BlendTint04,
+    /// `_DAT_1F800028 == 0xF0`: blended with tint bit `0x20000000` (bank 3).
+    BlendTint20,
 }
 
 impl AlphaState {
@@ -210,18 +219,18 @@ impl AlphaState {
     pub fn raw_byte(self) -> u8 {
         match self {
             AlphaState::Off => 0x00,
-            AlphaState::Half => 0x50,
-            AlphaState::Additive => 0xA0,
-            AlphaState::Subtractive => 0xF0,
+            AlphaState::Blend => 0x50,
+            AlphaState::BlendTint04 => 0xA0,
+            AlphaState::BlendTint20 => 0xF0,
         }
     }
     /// Decode from a raw `_DAT_1F800028` byte; unknown values fall
     /// back to `Off` (matching `FUN_80043390`'s default branch).
     pub fn from_raw(b: u8) -> Self {
         match b {
-            0x50 => AlphaState::Half,
-            0xA0 => AlphaState::Additive,
-            0xF0 => AlphaState::Subtractive,
+            0x50 => AlphaState::Blend,
+            0xA0 => AlphaState::BlendTint04,
+            0xF0 => AlphaState::BlendTint20,
             _ => AlphaState::Off,
         }
     }
@@ -230,9 +239,9 @@ impl AlphaState {
     pub fn row_index(self) -> usize {
         match self {
             AlphaState::Off => 0,
-            AlphaState::Half => 1,
-            AlphaState::Additive => 2,
-            AlphaState::Subtractive => 3,
+            AlphaState::Blend => 1,
+            AlphaState::BlendTint04 => 2,
+            AlphaState::BlendTint20 => 3,
         }
     }
 }
@@ -260,7 +269,7 @@ impl RenderMode {
 
     /// Returns `true` when the handler runs a GTE `DPCS`/`DPCT` depth
     /// cue. The overlay variant always does; on the SCUS path only the
-    /// semi-transparent alpha banks (1/2/3 = Half/Additive/Subtractive)
+    /// blended handler banks (1/2/3 = Blend/BlendTint04/BlendTint20)
     /// do - bank 0 (opaque) emits no colour op. This mirrors the SCUS
     /// table `0x8007657C`, whose banks 1/2/3 point at the DPCS/DPCT
     /// handler bodies for slots 12..19. (The engine's mesh shader may
@@ -503,7 +512,7 @@ mod tests {
         assert!(r.is_lit());
         // ...and the lit handlers stay lit on the overlay variant too
         // (they are bank-invariant / shared).
-        let r = resolve(8, AlphaState::Half, Variant::Overlay).unwrap();
+        let r = resolve(8, AlphaState::Blend, Variant::Overlay).unwrap();
         assert_eq!(r.lit, NccMode::Nccs);
         assert!(r.is_lit());
         // Unlit slot.
@@ -535,9 +544,9 @@ mod tests {
     fn alpha_state_round_trips_raw_byte() {
         for s in [
             AlphaState::Off,
-            AlphaState::Half,
-            AlphaState::Additive,
-            AlphaState::Subtractive,
+            AlphaState::Blend,
+            AlphaState::BlendTint04,
+            AlphaState::BlendTint20,
         ] {
             assert_eq!(AlphaState::from_raw(s.raw_byte()), s, "{s:?}");
         }
@@ -550,9 +559,9 @@ mod tests {
     fn alpha_row_indices_are_unique_and_ordered() {
         let rows: Vec<usize> = [
             AlphaState::Off,
-            AlphaState::Half,
-            AlphaState::Additive,
-            AlphaState::Subtractive,
+            AlphaState::Blend,
+            AlphaState::BlendTint04,
+            AlphaState::BlendTint20,
         ]
         .iter()
         .map(|a| a.row_index())
@@ -564,16 +573,16 @@ mod tests {
     fn resolve_returns_none_for_unused_slots() {
         for s in 0..8 {
             assert_eq!(resolve(s, AlphaState::Off, Variant::Scus), None);
-            assert_eq!(resolve(s, AlphaState::Half, Variant::Overlay), None);
+            assert_eq!(resolve(s, AlphaState::Blend, Variant::Overlay), None);
         }
     }
 
     #[test]
     fn resolve_scus_preserves_alpha() {
-        let r = resolve(12, AlphaState::Half, Variant::Scus).unwrap();
+        let r = resolve(12, AlphaState::Blend, Variant::Scus).unwrap();
         assert_eq!(r.kind, PolyKind::F3);
         assert_eq!(r.variant, Variant::Scus);
-        assert_eq!(r.alpha, AlphaState::Half);
+        assert_eq!(r.alpha, AlphaState::Blend);
         assert!(!r.applies_fog());
     }
 
@@ -583,9 +592,9 @@ mod tests {
         // add: every overlay-table lookup goes through row 0 only.
         for alpha in [
             AlphaState::Off,
-            AlphaState::Half,
-            AlphaState::Additive,
-            AlphaState::Subtractive,
+            AlphaState::Blend,
+            AlphaState::BlendTint04,
+            AlphaState::BlendTint20,
         ] {
             let r = resolve(13, alpha, Variant::Overlay).unwrap();
             assert_eq!(r.kind, PolyKind::F4);
@@ -657,9 +666,9 @@ mod tests {
         for slot in LOW_MODE_START..HIGH_MODE_END {
             for alpha in [
                 AlphaState::Off,
-                AlphaState::Half,
-                AlphaState::Additive,
-                AlphaState::Subtractive,
+                AlphaState::Blend,
+                AlphaState::BlendTint04,
+                AlphaState::BlendTint20,
             ] {
                 let r = resolve(slot, alpha, Variant::Scus).unwrap();
                 assert!(
@@ -681,9 +690,9 @@ mod tests {
             "opaque SCUS prim: no depth cue"
         );
         for alpha in [
-            AlphaState::Half,
-            AlphaState::Additive,
-            AlphaState::Subtractive,
+            AlphaState::Blend,
+            AlphaState::BlendTint04,
+            AlphaState::BlendTint20,
         ] {
             let r = resolve(15, alpha, Variant::Scus).unwrap();
             assert!(

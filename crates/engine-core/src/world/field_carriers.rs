@@ -445,8 +445,14 @@ impl World {
         true
     }
 
-    /// Port-side interaction probe - retail `FUN_801cf9f4`, the action-button
-    /// adjacency test that talks to a nearby field NPC.
+    /// Port-side interaction input tick: the action-button handling that
+    /// opens / dismisses a field NPC's dialogue around the retail probe.
+    /// The probe itself is `FUN_801cf9f4` - a pure geometry leaf (no pad
+    /// read, no `jal`) that box-tests the actor list against a probe point
+    /// at `0x1F800020`, links both nodes' `+0x98`, and returns bit 1 for a
+    /// `0x40020000`-class hit, bit 4 for any other hit and bit 2 for a
+    /// walk-grid wall - ported as [`Self::field_interact_probe_slot`]. Its
+    /// bit-2 grid-wall result is not modelled there.
     ///
     /// Mirrors [`Self::tick_world_map_npc_dialog`] for field mode: a single
     /// handler for both opening and dismissing a field dialogue on player input,
@@ -465,8 +471,7 @@ impl World {
     /// field VM's `0x4C` dialog poll from both acting on the same button edge.
     /// No-op without a player actor or installed NPC positions.
     ///
-    /// PORT: FUN_801cf9f4
-    /// REF: FUN_8003A1E4, FUN_80024C88
+    /// REF: FUN_801cf9f4, FUN_8003A1E4, FUN_80024C88
     pub(crate) fn tick_field_interaction_probe(&mut self) {
         use crate::input::PadButton;
         let confirm = self.input.just_pressed(PadButton::Cross);

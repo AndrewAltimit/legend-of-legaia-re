@@ -167,9 +167,11 @@ impl std::error::Error for NestedFrameDataError {}
 ///
 /// ## Provenance
 ///
-/// - Header byte `+0` is the per-frame loop count: see `FUN_80048A08`
-///   (`ghidra/scripts/funcs/80048a08.txt` line 749, the rendering loop's
-///   bound is `**buf`).
+/// - Header byte `+0` is the bones-per-frame count `B`: the pose decoder
+///   `FUN_8004998C` loads it (`lbu v0,0x0(s4)` at `0x800499CC`) to form
+///   the frame stride below. (An earlier note cited the draw routine
+///   `FUN_80048A08` for this byte; the draw reaches it only through the
+///   decoder.)
 /// - Header byte `+1` is the frame count: see `FUN_8004AD80`
 ///   (`ghidra/scripts/funcs/8004ad80.txt` line 1367,
 ///   `(buf[1] - 1) * 16` is stamped into the actor's frame counter as

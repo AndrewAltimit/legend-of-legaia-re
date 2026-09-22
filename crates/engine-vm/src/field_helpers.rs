@@ -4,11 +4,12 @@
 //!
 //! PORT: FUN_8003CA38, FUN_8003CE64, FUN_80042EE0, FUN_8003CE9C, FUN_8003CEB8, FUN_8003CED8
 //!
-//! These three helpers are referenced from many of the still-Pending sub-ops
-//! in `FUN_801DE840`'s `case 0x4C` cluster. They are pure arithmetic - no
-//! globals, no overlay calls - so a port can match the original
-//! byte-for-byte and the dispatcher arms can call into them directly without
-//! a `FieldHost` round-trip.
+//! These helpers are referenced from many sub-ops in `FUN_801DE840`'s
+//! `case 0x4C` cluster. All but one are pure arithmetic over the bytecode;
+//! the exception is [`small_table_search`], whose retail body reads the item
+//! bag at `0x80085958` and the active-window bounds at `gp+0x2D2` /
+//! `gp+0x2D4` (the port takes those as arguments). No overlay calls, so the
+//! dispatcher arms call them directly without a `FieldHost` round-trip.
 //!
 //! | Helper                  | Original          | Used by                      |
 //! | ----------------------- | ----------------- | ---------------------------- |
@@ -60,16 +61,18 @@ pub fn party_flag_test(idx: u32, flags: &[u8]) -> u8 {
 /// in the table. Matches the original's `return 0x100` for "not found".
 pub const SEARCH_NOT_FOUND: u32 = 0x100;
 
-/// Search a stride-2 byte table for the first index containing `needle`.
+/// The item-bag **find-by-id**: the first slot of the active window whose
+/// item byte equals `needle`.
 ///
-/// Ported from `FUN_80042EE0` (see `ghidra/scripts/funcs/80042ee0.txt`). The
-/// original searches a `short[]` table (treated as bytes via the low byte of
-/// each short) at `0x80085958`, scanning indices `[lo, hi)` where `lo` is
-/// `*(short *)(gp + 0x2d2)` and `hi` is `*(short *)(gp + 0x2d4)`.
+/// Ported from `FUN_80042EE0` (see `ghidra/scripts/funcs/80042ee0.txt`), one
+/// of the five SCUS bag helpers (`docs/subsystems/inventory.md`). The table
+/// is the 256-slot bag at `0x80084140 + 0x1818 = 0x80085958` (2-byte slots,
+/// item id in the low byte), scanned over the active window
+/// `[gp+0x2D2, gp+0x2D4)`.
 ///
-/// The function returns the matching `i`-index (zero-based offset into the
-/// scanned range, i.e., the original's `(short)iVar2 - 1`-after-increment).
-/// On miss it returns [`SEARCH_NOT_FOUND`] (`0x100`).
+/// Returns the **absolute** slot index (`move v0,v1` at `0x80042F24`, the
+/// loop counter itself), not an offset into the window as this doc used to
+/// say; on a miss, [`SEARCH_NOT_FOUND`] (`0x100`).
 ///
 /// `table` is the raw byte slice; the helper indexes `table[i * 2]` to
 /// extract each entry's low byte, matching the original's `*(byte *)(idx *
@@ -93,16 +96,16 @@ pub fn small_table_search(needle: u8, table: &[u8], lo: i16, hi: i16) -> u32 {
     SEARCH_NOT_FOUND
 }
 
-/// Load a little-endian unsigned 16-bit value from the head of a byte buffer.
+/// Load a little-endian 16-bit value from the head of a byte buffer.
 ///
-/// Ported from `FUN_8003CE9C` (see `ghidra/scripts/funcs/8003ce9c.txt`). The
-/// original is a 2-instruction `lbu / lbu / sll / or / jr` sequence that the
-/// PSX MIPS toolchain emits for unaligned 16-bit loads - the field VM stores
-/// 16-bit operand fields as raw byte pairs, so most call sites pass a pointer
-/// somewhere into the bytecode stream.
-///
-/// Returns the byte at `buf[0]` as the low 8 bits and `buf[1] << 8` as the
-/// high 8 bits, exactly matching the original's `(b0 | (b1 << 8))` formula.
+/// Ported from `FUN_8003CE9C` (see `ghidra/scripts/funcs/8003ce9c.txt`): two
+/// `lbu`s, `b0 + (b1 << 8)`, then `sll 16` / `sra 16` (`0x8003CEAC`,
+/// `0x8003CEB4`) - so retail returns the value **sign-extended**. This port
+/// returns the same sixteen bits as a `u16`; a caller that widens the result
+/// must go through `as i16` to match retail for values `>= 0x8000`. (An
+/// earlier doc here described an unsigned `lbu/lbu/sll/or` load.) The field
+/// VM stores 16-bit operand fields as raw byte pairs, so most call sites pass
+/// a pointer somewhere into the bytecode stream.
 ///
 /// On a buffer shorter than 2 bytes this returns the partial value extending
 /// missing bytes as zero - matching the `try_get`-style guard the dispatcher

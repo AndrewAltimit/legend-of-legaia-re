@@ -3,6 +3,15 @@
 //! PORT: FUN_80024CFC, FUN_8004AD80, FUN_80047430, FUN_80048A08
 //! PORT: FUN_80049348, FUN_8004998C, FUN_8004E13C
 //!
+//! Scope: `FUN_80024CFC` is modelled only as far as `+0x68 = 100`
+//! (its allocation through `FUN_80020DE0`, the `+0x4C` record pointer
+//! resolved off `*(0x8007B7C8)` and the `+0x56 = 0xB` store are not), and
+//! the other five are host hooks with no-op defaults on
+//! [`Host`] - their retail roles are written on each hook. The
+//! pose unpack `FUN_8004998C` performs is ported in
+//! `legaia_asset::monster_archive`; the afterimage draw in
+//! `legaia_engine_core::battle_afterimage`.
+//!
 //! ## Background
 //!
 //! `FUN_80024CFC` in `SCUS_942.54` is the only static-binary entry point

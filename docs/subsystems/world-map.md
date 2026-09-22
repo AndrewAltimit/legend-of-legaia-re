@@ -156,8 +156,13 @@ three `sb zero, 4/5/6` stores at `0x801E7674` leave its colour black.
 `tpage = 0x1E` selects semi-transparency mode `ABR = (0x1E >> 5) & 3 = 0`,
 i.e. `0.5*back + 0.5*front`; against a black front that halves the
 framebuffer. So the pass is a **50% screen darken** drawn behind the top-view
-debug panels, not an animation step. The two `DR_MODE` packets exist to take
-dither off across the blend quad and restore it after.
+debug panels, not an animation step. The table is **posting** order (the
+three `jal 0x8003D2C4` at `0x801E7620`, `0x801E7684`, `0x801E76B8`), and
+`AddPrim` `FUN_8003D2C4` inserts at the head of the OT entry, so the GPU runs
+them in reverse: the `dtd = 1` `DR_MODE`, the quad, then the `dtd = 0` one.
+The quad is drawn **with dither on** and dither is left off behind it - not
+"off across the quad and restored after", which read posting order as draw
+order.
 
 The quad's four vertices are literals at `0x801E764C..0x801E7670`: `(0, -4)`,
 `(320, -4)`, `(0, 224)`, `(320, 224)` - the full NTSC draw area, started four
@@ -379,7 +384,7 @@ including the default arm, so a record is always consumed exactly once.
 | 5 | Close every panel (`FUN_80035A4C`). |
 | 6 | Zero the window object's `+0x20` halfword. |
 | 8 | Retire the panel's actor (`FUN_800319A8`). |
-| 9 | Slide (`FUN_800358C0`) to the operand position, or to the descriptor position when the operand is zero. |
+| 9 | Snap (`FUN_800358C0` writes source and target alike and clears `+0x20`) to the operand position, or to the descriptor position when the operand is zero. |
 | 10 | Retire and respawn, sliding back to the live object's own `+0x0A` / `+0x0C`. |
 | 12 | Resize the party panel, then recurse into the nested script at `0x801F3170`. |
 | 7, 11, 13, `> 13` | Shared default - the record is consumed and nothing happens. |
