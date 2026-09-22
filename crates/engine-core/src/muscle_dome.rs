@@ -135,14 +135,22 @@ pub const TIMED_FIGHT_TURN_LIMIT: u32 = 4;
 ///
 /// PORT: FUN_801d0748 phase 0x14 (`DAT_801f6958 = 4 - ctx[+0x28a]`)
 ///
-/// NOT WIRED: deliberately. [`MuscleDomeSession`] does not read it and must
-/// not - the strip is Koru's timed fight, gated on formation slot 0 being
-/// [`TIMED_FIGHT_MONSTER_ID`], and a dome round is an ordinary battle that
-/// ends on a knockout. A caller appears when a host draws that one fight's
-/// `Turns Left / HP Left` HUD strip. The gate itself is readable -
-/// `World::battle_monster_slots` names the formation's first monster - so
-/// what is missing is the strip's draw on the battle HUD of both hosts, not
-/// state.
+/// NOT WIRED: the strip's lifetime is the missing piece, not its state or its
+/// draw. [`MuscleDomeSession`] does not read this and must not - the strip is
+/// Koru's timed fight, and a dome round is an ordinary battle that ends on a
+/// knockout. The gate is readable (`World::battle_monster_slots` names the
+/// formation's first monster) and the draw is one registration: phase
+/// `0x14` calls `FUN_8003541C(1, 0, 0x801CE818, 0x10, 0x0E, 0x120, 0x0C,
+/// 0x44)` - text actor key `1`, the format string at the head of PROT
+/// `0898`, a `288 x 12` box at `(16, 14)` - and two `FUN_8003563C` records
+/// on the same key, this digit at x `0x68` (one digit) and the HP percent at
+/// x `0xD2` (three), `0x801D0F7C..0x801D1020`; phase `0x6E` re-stamps them.
+/// What neither host can say is when that actor goes: nothing in the `0x14`
+/// / `0x6E` arms or the dumped corpus names the `FUN_800355F0` sweep that
+/// closes key `1` for this fight, no capture holds the Koru battle, and the
+/// box's seat is the actor-name plaque's own (placement record 68,
+/// `(16, 14)`), so a host draw would also have to decide which of the two
+/// wins. A caller appears with a Koru-fight capture that pins both.
 pub fn timed_fight_turns_left(turn: u32) -> u32 {
     TIMED_FIGHT_TURN_LIMIT.saturating_sub(turn)
 }
