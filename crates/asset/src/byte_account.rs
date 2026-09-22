@@ -111,6 +111,9 @@ pub const OWNER_PAD: &str = "pad";
 pub const OWNER_INHERITED_TAIL: &str = "inherited_tail";
 /// Found by a magic sweep over the residue, not by a structural walk.
 pub const OWNER_SCAN: &str = "scan";
+/// A scalar variable in an overlay's data segment, at an address the image's
+/// own code loads or stores directly, sized by that access's width.
+pub const OWNER_GLOBAL: &str = "global";
 
 /// The owner vocabulary, `(owner, meaning)`. `docs/tooling/byte-accounting.md`
 /// documents the same list; keep the two in step.
@@ -127,6 +130,10 @@ pub const OWNERS: &[(&str, &str)] = &[
     (OWNER_GRID, "dense per-tile grid"),
     (OWNER_SCRIPT, "bytecode / script body"),
     (OWNER_CODE, "MIPS instructions in a dumped function extent"),
+    (
+        OWNER_GLOBAL,
+        "scalar variable the image's code loads / stores directly",
+    ),
     (OWNER_TEXTURE, "raw texture page"),
     (OWNER_CLUT, "palette / CLUT region"),
     (OWNER_STRING, "NUL-terminated string reached by a pointer"),
@@ -1053,6 +1060,52 @@ pub fn formed_addresses(image: &[u8], base_va: u32) -> Vec<(u32, u32)> {
                 };
                 if let Some(t) = target {
                     out.push((base_va + at as u32, t));
+                }
+            }
+            if defines(v) == Some(rt) {
+                break;
+            }
+        }
+        off += 4;
+    }
+    out
+}
+
+/// Every `(site_va, target_va, width)` where the image's own code forms an
+/// address with a `lui` pair whose second instruction is a **load or store**
+/// (`lb`/`lbu`/`sb` = 1, `lh`/`lhu`/`sh` = 2, `lw`/`sw` = 4), so the access
+/// itself states the datum's width. `lwl`/`lwr` are left out: they read an
+/// unaligned word through two instructions and pin no width alone.
+pub fn accessed_addresses(image: &[u8], base_va: u32) -> Vec<(u32, u32, u32)> {
+    let mut out = Vec::new();
+    let word = |off: usize| -> Option<u32> {
+        image
+            .get(off..off + 4)
+            .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
+    };
+    let mut off = 0usize;
+    while off + 4 <= image.len() {
+        let Some(w) = word(off) else { break };
+        if w >> 26 != 0x0F {
+            off += 4;
+            continue;
+        }
+        let rt = (w >> 16) & 0x1F;
+        let hi = (w & 0xFFFF) << 16;
+        for k in 1..=LUI_PAIR_WINDOW {
+            let at = off + 4 * k;
+            let Some(v) = word(at) else { break };
+            let op = v >> 26;
+            if (v >> 21) & 0x1F == rt {
+                let width = match op {
+                    0x20 | 0x24 | 0x28 => Some(1),
+                    0x21 | 0x25 | 0x29 => Some(2),
+                    0x23 | 0x2B => Some(4),
+                    _ => None,
+                };
+                if let Some(width) = width {
+                    let t = hi.wrapping_add((v & 0xFFFF) as i16 as u32);
+                    out.push((base_va + at as u32, t, width));
                 }
             }
             if defines(v) == Some(rt) {
@@ -2947,6 +3000,7 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     };
     let (mut confirmed, mut refuted, mut ambiguous, mut credited_by_label) = (0, 0, 0, 0);
     let mut fill_extents = 0usize;
+    let mut data_headed = 0usize;
     let mut uncorroborated_labels = 0usize;
     let mut by_label: Vec<(usize, usize, u32)> = Vec::new();
     for d in &dumps {
@@ -2965,6 +3019,17 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
             .is_some_and(|w| w.iter().all(|&b| b == 0))
         {
             fill_extents += 1;
+            continue;
+        }
+        // A dump whose opening window is the `$zero`-absolute data signature
+        // is a table decoded as opcodes - pointer words read as `lb ra,
+        // 0xNNNN(zero)` - and re-encoding it to this image's bytes confirms
+        // only that the bytes are these bytes. The attribution sweep already
+        // calls such an extent `data`; crediting it as code here claimed PROT
+        // 0898's rodata (two switch tables and a string pool) as
+        // `FUN_801cf5d0`.
+        if zero_absolute_head(&buf[start..end]) {
+            data_headed += 1;
             continue;
         }
         match attribute(d, buf, base) {
@@ -3008,7 +3073,8 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     sink.note(format!(
         "base {:#010x} ({}); {confirmed} extents confirmed by bytes, \
          {credited_by_label} credited by filename label, {ambiguous} unverifiable, \
-         {refuted} refuted (aliased sibling), {fill_extents} land on fill",
+         {refuted} refuted (aliased sibling), {fill_extents} land on fill, \
+         {data_headed} open on the data signature",
         base, rec.label
     ));
     if uncorroborated_labels > 0 {
@@ -3021,6 +3087,109 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     claim_uninitialised_data(buf, sink, base);
     claim_pinned_overlay_assets(buf, sink, idx);
     claim_formed_strings(buf, sink, base);
+    claim_switch_tables(buf, sink, base, opts);
+    claim_accessed_globals(buf, sink, base, opts);
+}
+
+/// Claim every scalar the image's own code loads or stores directly.
+///
+/// An overlay's initialised data segment has no header, no count and no
+/// stride - it is whatever globals the linker laid out. What pins one of them
+/// is its consumer: a `lui` pair whose second instruction is a load or store
+/// forms the address *and* states the width it reads. So each such access
+/// claims exactly `[target, target + width)`, and nothing between two
+/// accessed words is claimed on their account.
+///
+/// Three guards. The forming site must lie inside a `code` claim (a dumped
+/// function of this image), so a `lui`-shaped word in data forms nothing; the
+/// site and the target must both lie below the inherited tail, so a donor's
+/// code claims nothing here; and the target must be aligned to its width, as
+/// every R3000 load and store requires.
+fn claim_accessed_globals(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOptions) {
+    let own_end = inherited_tail_start(buf, opts).unwrap_or(buf.len());
+    let mut code: Vec<(usize, usize)> = sink
+        .claims
+        .iter()
+        .filter(|c| c.owner == OWNER_CODE)
+        .map(|c| (c.start, c.end))
+        .collect();
+    code.sort_unstable();
+    let in_code = |off: usize| {
+        let i = code.partition_point(|&(s, _)| s <= off);
+        i > 0 && off < code[i - 1].1
+    };
+    let mut seen: std::collections::BTreeMap<(usize, u32), usize> =
+        std::collections::BTreeMap::new();
+    for (site, target, width) in accessed_addresses(&buf[..own_end], base) {
+        let site_off = (site - base) as usize;
+        if !in_code(site_off) || target < base || target % width != 0 {
+            continue;
+        }
+        let off = (target - base) as usize;
+        if off + width as usize > own_end {
+            continue;
+        }
+        *seen.entry((off, width)).or_default() += 1;
+    }
+    let n = seen.len();
+    for ((off, width), sites) in seen {
+        sink.claim(
+            off,
+            off + width as usize,
+            OWNER_GLOBAL,
+            format!("{width}-byte global, loaded / stored directly at {sites} site(s)"),
+        );
+    }
+    if n > 0 {
+        sink.note(format!(
+            "{n} data-segment global(s) sized by the load / store that reads them"
+        ));
+    }
+}
+
+/// Every `switch` jump table this image's own code dispatches through, each
+/// read off its dispatch: base from the `lui` pair, extent from the `sltiu`
+/// bound ([`crate::switch_tables`]). Cut at the inherited tail, so a dispatch
+/// in the donor's residue claims nothing here.
+fn claim_switch_tables(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOptions) {
+    let own_end = inherited_tail_start(buf, opts).unwrap_or(buf.len());
+    let tables = crate::switch_tables::find(buf, base, own_end);
+    for t in &tables {
+        let off = (t.va - base) as usize;
+        sink.claim(
+            off,
+            off + t.byte_len(),
+            OWNER_TOC,
+            format!("switch table, {} arms (jr {:#010x})", t.arms, t.jr),
+        );
+    }
+    if !tables.is_empty() {
+        sink.note(format!(
+            "{} switch table(s) read off their dispatch (lui base, sltiu bound)",
+            tables.len()
+        ));
+    }
+}
+
+/// Does this window open on the `$zero`-absolute data signature - at least
+/// half of its first 24 words a load or store off `$zero`? Real code reaches
+/// statics through `gp` or a `lui` pair, so a run of `lb rN,0xNNNN(zero)` is a
+/// table of `0x80`-high words decoded as instructions. The Rust side of
+/// `looks_like_data` in `scripts/ghidra-analysis/attribute-dump-extents.py`.
+fn zero_absolute_head(window: &[u8]) -> bool {
+    let words: Vec<u32> = window
+        .chunks_exact(4)
+        .take(24)
+        .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
+        .collect();
+    if words.is_empty() {
+        return false;
+    }
+    let hits = words
+        .iter()
+        .filter(|&&w| matches!(w >> 26, 0x20..=0x26 | 0x28..=0x2B | 0x2E) && (w >> 21) & 0x1F == 0)
+        .count();
+    hits * 2 >= words.len()
 }
 
 /// Shortest share of printable ASCII (`0x20..=0x7E`) a NUL-terminated run
@@ -3327,12 +3496,46 @@ fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_index: u32) {
         claim_effect_proto_records(buf, sink);
         claim_battle_overlay_strings(buf, sink);
         claim_battle_jump_tables(buf, sink);
+        claim_side_effect_banners(buf, sink);
     }
     if prot_index == STR_OVERLAY_PROT_INDEX {
         claim_str_overlay_tables(buf, sink);
     }
+    if prot_index == crate::field_probe_tables::OVERLAY_PROT_INDEX {
+        claim_field_probe_tables(buf, sink);
+    }
     if prot_index == crate::other3_roster::OVERLAY_PROT_INDEX {
         claim_other3_roster(buf, sink);
+    }
+}
+
+/// The field overlay's three probe-offset tables at the head of its data
+/// segment, each bound to the `lui` pairs that form its base
+/// ([`crate::field_probe_tables`]). Claimed only when
+/// [`crate::field_probe_tables::check`] re-derives every base from this
+/// image's own instructions.
+fn claim_field_probe_tables(buf: &[u8], sink: &mut Sink) {
+    use crate::field_probe_tables as fpt;
+    let errs = fpt::check(buf);
+    if !errs.is_empty() {
+        sink.note(format!(
+            "field probe tables not claimed: {} row(s) disagree with this image ({})",
+            errs.len(),
+            errs[0]
+        ));
+        return;
+    }
+    for (va, rows, sites) in fpt::TABLES {
+        let off = (va - fpt::OVERLAY_BASE_VA) as usize;
+        sink.claim(
+            off,
+            off + rows * fpt::ROW_BYTES,
+            OWNER_RECORD,
+            format!(
+                "field probe table {va:#010x}, {rows} x (dx, dz) rows, formed at {} site(s)",
+                sites.len()
+            ),
+        );
     }
 }
 
@@ -3522,6 +3725,50 @@ fn claim_battle_jump_tables(buf: &[u8], sink: &mut Sink) {
                 format!("head string, address formed at {:#010x}", s.site),
             );
         }
+    }
+}
+
+/// The banner strings the Seru-magic side-effect table names.
+///
+/// Each 8-byte `[element][band]` record's `+4` word is the banner-string
+/// pointer the stager `FUN_801F3D3C` copies to `0x800775B4`
+/// ([`crate::seru_side_effect`]), so the table - already claimed at its
+/// pinned offset - is the consumer that pins each string's start, and the
+/// string's own NUL pins its end. A pointer outside the image claims nothing.
+fn claim_side_effect_banners(buf: &[u8], sink: &mut Sink) {
+    use crate::seru_side_effect as seru;
+    let base = seru::OVERLAY_LINK_BASE;
+    let mut n = 0usize;
+    let mut seen = std::collections::BTreeSet::new();
+    for r in 0..seru::SIDE_EFFECT_ELEMENTS * seru::SIDE_EFFECT_BANDS {
+        let at = seru::SIDE_EFFECT_TABLE_FILE_OFFSET + r * seru::SIDE_EFFECT_RECORD_STRIDE + 4;
+        let Some(w) = buf
+            .get(at..at + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        else {
+            continue;
+        };
+        let Some(off) = w.checked_sub(base).map(|o| o as usize) else {
+            continue;
+        };
+        if off >= buf.len() || !seen.insert(off) {
+            continue;
+        }
+        let Some(len) = buf[off..].iter().position(|&b| b == 0) else {
+            continue;
+        };
+        sink.claim(
+            off,
+            off + len + 1,
+            OWNER_STRING,
+            format!("Seru side-effect banner, record {r} +4"),
+        );
+        n += 1;
+    }
+    if n > 0 {
+        sink.note(format!(
+            "{n} Seru side-effect banner string(s) named by the side-effect table's +4 words"
+        ));
     }
 }
 

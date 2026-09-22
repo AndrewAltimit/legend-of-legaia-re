@@ -83,7 +83,8 @@ An owner says what kind of thing consumes the bytes, not which module claimed th
 | `clut` | A palette region. |
 | `string` | A NUL-terminated string a parser resolves a pointer to. |
 | `pad` | Declared slack inside a fixed-stride slot that the container's own size math covers, and dev fill a slot is entirely made of. |
-| `inherited_tail` | Another mapped image's bytes, at the same file offset - the run from where this overlay stops being its own content. |
+| `global` | A scalar in an overlay's data segment, at an address the image's own code loads or stores directly, sized by that access. |
+| `inherited_tail` | Another entry's bytes, at the same file offset - the run from where this overlay stops being its own content. |
 | `scan` | Found by a magic sweep over the residue, not by a structural walk. |
 
 ### The `lzs_container` class fits a count it never reads
@@ -593,7 +594,7 @@ table with a named constant behind it and these have neither yet.
 
 | Entry | Run | What it is | Why it is not claimed |
 |---|---|---|---|
-| `0897` | `0x2399C`, about 5 KB | the field overlay's data segment; its first twelve rows are the collision probe table `FUN_801CFE4C` indexes at `0x801F21B4` | no parser binds the table, and the rest of the segment is unsorted globals |
+| `0897` | `0x23A5C` up, about 4.5 KB | the field overlay's data segment above its three probe tables, less every scalar a load or store sizes | arrays whose base only an `addiu` forms (dozens of distinct bases), so no consumer states their extent |
 | `0899` | `0x1EB28`, 3552 B | zero fill between the save-menu atlas's end and the save-slot icon sheet at `0x1F908` | not uninitialised data: no instruction in any image forms an address inside it (`find-gp-relative-refs.py --prot`, zero hits), so it is inter-asset slack, and it already classifies `zero_pad` |
 | `0899` | `0x163A7`, about 1 KB | data-segment words above the window descriptor table (`0x801E4738`, 52 records) | nothing identified |
 | `0899` | `0x2050C` band | what is left of the save-screen message slots once their formed strings are claimed - the NUL tails of the `0x80`-stride slots | the stride is measured off the slots, not off a consumer |
@@ -609,6 +610,17 @@ words each) behind the header `0x4000_0001` at `0x801D0D58`, and hands
 `0x801D0DE0` rides the same way behind `0x6000_0000` at `0x801D0DDC`. Both are
 claimed off `legaia_asset::fmv_dispatch::MDEC_*_PACKET_VA`, each after its
 header word checks.
+
+The `0897` row's head is claimed now. Its first 192 bytes are **three**
+tables, not one twelve-row block: the actor-collision probes at `0x801F21B4`
+(six rows, formed at `0x801CFE74` in `FUN_801CFE4C` and `0x801D5A70` in
+`FUN_801D5A68`), the leading-edge wall probes at `0x801F2214` (four rows,
+formed at `0x801CFEE8`, `0x801CFFC0`, `0x801D009C`) and the interact facing
+compass at `0x801F2254` (eight points, formed at `0x801D0834`); each extent
+runs to the next formed base, and the last ends at the `lw`/`sw` scalar
+`0x801F2274`. The bases are
+[`legaia_asset::field_probe_tables`](../../crates/asset/src/field_probe_tables.rs)
+consts, claimed only when `check` re-derives each from its `lui` pairs.
 
 Three rows left this table on one rule each. `0898`'s 3512-byte head is
 twenty-two jump tables and a string pool
@@ -672,6 +684,59 @@ from the image's own instructions, and a disc-gated test
 (`crates/asset/tests/battle_jump_tables_real.rs`) holds each table to the dump
 corpus: all 850 arms land inside the dumped extent that also holds the table's
 own `jr`, per `scripts/ghidra-analysis/dump-extent-attribution.csv`.
+
+The head is not the whole of the rodata, though. Two more tables sit just
+above it, below the first real function at `0x801CFA48`: nine arms at
+`0x801CF614` (after the head's closing zero word, `jr` at `0x801F3AC0`) and
+seven at `0x801CFA2C` (`jr` at `0x801F3EB4`), with the Seru side-effect banner
+pool between them - the strings the side-effect table's `+4` words name. All of
+it was credited as **code**: the dump `FUN_801CF5D0` walks 3264 bytes from
+inside the head and prints the table words as `lb ra,0xNNNN(zero)`. The
+attribution sweep already called that extent `data`; the byte account now
+refuses it too ([below](#a-dump-over-data-is-not-code)), and the generic
+switch-table rule finds all twenty-four.
+
+### A switch table is read off its dispatch
+
+The `0898` idiom is the compiler's, not the overlay's, so it is also a rule:
+[`legaia_asset::switch_tables`](../../crates/asset/src/switch_tables.rs) walks
+back from every `jr` that is not `$ra` to the `lw` that loads its target, the
+`addu` that forms the slot, and the two operands of that `addu` - a `lui`
+(`+ addiu`, or the `lw`'s own displacement) for the base, an `sll` by two (or
+an `sllv` by a register just set to two) for the index - and then to the
+`sltiu` that bounds that index. The table is `[base, base + 4 * bound)`, and it
+is kept only when every arm is a word-aligned VA inside the image's own content
+and the dispatch sits below the inherited tail. On `0898` it reproduces every
+row `battle_jump_tables` pins by hand plus the two above
+(`crates/asset/tests/overlay_data_consumers_real.rs`); across the mapped
+overlays it claims the field overlay's thirty-one tables, the menu's, the
+minigame images' and the slot-B modules' `switch`es by the same measurement.
+
+### A global is sized by its load
+
+What is left of an initialised data segment is mostly scalars, and a scalar
+has no header either. What pins one is its reader: a `lui` pair whose second
+instruction is a load or store (`lb`/`lbu`/`sb`, `lh`/`lhu`/`sh`, `lw`/`sw`)
+forms the address and states the width in the same instruction. Each such
+access claims exactly `[target, target + width)` under owner `global`, and
+nothing between two accessed words is claimed on their account - an `addiu`
+that only forms an array's base pins no extent, and stays residue until a
+parser gives the array one. The forming site must be inside a dumped
+function of this image, both site and target below the inherited tail, and
+the target aligned to its width.
+
+#### A dump over data is not code
+
+The overlay walker credits a dump's extent as `code` when its instructions
+re-encode to the image's bytes - and a dump taken over a table re-encodes
+perfectly, because its "instructions" are those bytes. Such a dump opens on
+the `$zero`-absolute signature: pointer words read as `lb rN,0xNNNN(zero)`,
+which real code never issues (it reaches statics through `gp` or a `lui`
+pair). An extent whose first 24 words are at least half loads or stores off
+`$zero` is now refused, the same test `attribute-dump-extents.py`'s
+`looks_like_data` applies; the report counts them as "open on the data
+signature". On `0898` that is 68 extents, one of which (`FUN_801CF5D0`)
+covered two switch tables and a string pool.
 
 ### A residue run that is another image's code
 
