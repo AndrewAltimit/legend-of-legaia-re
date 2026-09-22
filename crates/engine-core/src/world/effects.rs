@@ -1033,6 +1033,16 @@ pub struct ClutCellFx {
     pub phase: ClutCellFxPhase,
 }
 
+/// One live single-source CLUT blend fade - the actor field-VM `4C DB`
+/// spawns (`FUN_801E57F0`: descriptor `0x801F2930`, handler `0x801E4D8C`,
+/// record pointer at `+0x90`). `fade` is `None` until the first game tick
+/// loads the cell out of VRAM (the handler's `+0x54 == 0` init block).
+#[derive(Debug, Clone)]
+pub struct ClutBlendFx {
+    pub record: legaia_engine_vm::world_map_clut_fade::FadeRecord,
+    pub fade: Option<legaia_engine_vm::world_map_clut_fade::ClutBlendFade>,
+}
+
 /// Read one 16x1 CLUT cell out of software VRAM (the `StoreImage`
 /// equivalent).
 fn read_cell(vram: &legaia_tim::Vram, x: i16, y: i16) -> [u16; CLUT_CELL_ENTRIES] {
@@ -1082,6 +1092,25 @@ impl World {
         self.ambient.clut_fx.push(ClutCellFx { op, phase });
     }
 
+    /// Spawn the single-source CLUT blend fade from field-VM `4C DB`'s
+    /// operand stream (`record` starts at the `0xDB` byte, the pointer
+    /// retail stores at actor `+0x90`; offsets `+1..=+0xB` are the record
+    /// [`legaia_engine_vm::world_map_clut_fade::FadeRecord`] decodes).
+    /// Stepped against the host's software VRAM by [`Self::step_clut_fx`].
+    /// A record shorter than twelve bytes is dropped.
+    ///
+    /// PORT: FUN_801E57F0 (the spawn: `FUN_80020DE0(0x801F2930, ..)`, then
+    /// `+0x90 = record`, `+0x54 = 0`)
+    pub fn spawn_clut_blend_fx(&mut self, record: &[u8]) {
+        if record.len() < 12 {
+            return;
+        }
+        let record = legaia_engine_vm::world_map_clut_fade::FadeRecord::from_bytes(record);
+        self.ambient
+            .clut_blend_fx
+            .push(ClutBlendFx { record, fade: None });
+    }
+
     /// Drive the live scripted CLUT-cell effects against `vram` (the host's
     /// software VRAM - play-window's `cpu_vram_base`, a test's scratch
     /// [`legaia_tim::Vram`]). One-shots apply immediately; fades consume the
@@ -1100,11 +1129,11 @@ impl World {
     /// PORT: FUN_801E4794
     pub fn step_clut_fx(&mut self, vram: &mut legaia_tim::Vram) -> bool {
         let ticks = std::mem::take(&mut self.ambient.clut_pending_game_ticks);
-        if self.ambient.clut_fx.is_empty() {
+        if self.ambient.clut_fx.is_empty() && self.ambient.clut_blend_fx.is_empty() {
             return false;
         }
         let dt = self.clock.frame_step.max(1);
-        let mut wrote = false;
+        let mut wrote = self.step_clut_blend_fx(vram, ticks, dt);
         let mut clear_halt = false;
         let mut still: Vec<ClutCellFx> = Vec::new();
         for fx in std::mem::take(&mut self.ambient.clut_fx) {
@@ -1158,6 +1187,46 @@ impl World {
         if clear_halt {
             self.field_ctx.flags &= !0x400;
         }
+        wrote
+    }
+
+    /// The `4C DB` blend fades' share of [`Self::step_clut_fx`]: per game
+    /// tick, load the cell on the first one, advance the accumulator by `dt`
+    /// vsyncs and write the returned row back to the same cell; a
+    /// [`legaia_engine_vm::world_map_clut_fade::FadeStep::Done`] row is
+    /// written and the fade retires (retail sets `+0x10 |= 8`).
+    ///
+    /// REF: FUN_801E4D8C (the per-tick handler the kernel ports)
+    fn step_clut_blend_fx(&mut self, vram: &mut legaia_tim::Vram, ticks: u32, dt: u8) -> bool {
+        use legaia_engine_vm::world_map_clut_fade::{ClutBlendFade, FadeStep};
+        let mut wrote = false;
+        let mut still = Vec::new();
+        for mut fx in std::mem::take(&mut self.ambient.clut_blend_fx) {
+            let (cx, cy) = fx.record.cell;
+            let mut done = false;
+            for _ in 0..ticks {
+                let record = fx.record;
+                let fade = fx
+                    .fade
+                    .get_or_insert_with(|| ClutBlendFade::new(&read_cell(vram, cx, cy), &record));
+                match fade.tick(dt) {
+                    FadeStep::Row(row) => {
+                        write_cell(vram, cx, cy, &row);
+                        wrote = true;
+                    }
+                    FadeStep::Done(row) => {
+                        write_cell(vram, cx, cy, &row);
+                        wrote = true;
+                        done = true;
+                        break;
+                    }
+                }
+            }
+            if !done {
+                still.push(fx);
+            }
+        }
+        self.ambient.clut_blend_fx = still;
         wrote
     }
 }

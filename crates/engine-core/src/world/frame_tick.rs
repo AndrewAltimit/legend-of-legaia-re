@@ -1076,7 +1076,9 @@ impl World {
         // `frame_step` of them; [`Self::step_clut_fx`] drains the bank
         // against the host's VRAM. Only accumulates while effects are live
         // (capped so an undrained host can't wind up a backlog).
-        if self.clock.display_frame_step == 1 && !self.ambient.clut_fx.is_empty() {
+        if self.clock.display_frame_step == 1
+            && !(self.ambient.clut_fx.is_empty() && self.ambient.clut_blend_fx.is_empty())
+        {
             self.ambient.clut_vsync_accum += 1;
             if self.ambient.clut_vsync_accum >= self.clock.frame_step.max(1) {
                 self.ambient.clut_vsync_accum = 0;

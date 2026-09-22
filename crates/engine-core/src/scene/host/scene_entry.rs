@@ -380,6 +380,7 @@ impl SceneHost {
         // and the overworld kingdom scenes (`mapNN`) at 3 (20 fps). See
         // `World::clock.frame_step`.
         self.world.ambient.clut_fx.clear();
+        self.world.ambient.clut_blend_fx.clear();
         self.world.ambient.clut_vsync_accum = 0;
         self.world.ambient.clut_pending_game_ticks = 0;
         // Ambient move-VM effect parts (jou's flesh cyclers / lightning) are

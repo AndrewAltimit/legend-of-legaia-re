@@ -1,14 +1,19 @@
-//! World-map single-source CLUT blend-to-target fade actor, ported
-//! from `FUN_801E4D8C`.
+//! Single-source CLUT blend-to-target fade actor, ported from
+//! `FUN_801E4D8C` (field overlay PROT 0897; the module name predates that
+//! attribution - the routine is field code, reached from scripts).
 //!
 //! PORT: FUN_801E4D8C
 //! REF: FUN_8003CE9C (misaligned-LE16 operand reads), FUN_8005842C
-//! (`LoadImage`), FUN_800583C8 (`StoreImage`), FUN_80058104 (`DrawSync`)
+//! (`StoreImage`, the VRAM read), FUN_800583C8 (`LoadImage`, the upload),
+//! FUN_80058104 (`DrawSync`)
 //!
 //! ## What it is, and how it differs from the `4C 61` cross-fade
 //!
-//! This is a **second, distinct** CLUT-fade actor in the world-map / field
-//! overlay band (`overlay_world_map_top_801e4d8c.txt`, base `0x801C0000`). The
+//! This is a **second, distinct** CLUT-fade actor in the field overlay
+//! (`dump-extent-attribution.csv`: `unique field(897)`). A scene script
+//! reaches it through field-VM `4C DB`: that arm calls `FUN_801E57F0`, which
+//! spawns descriptor `0x801F2930` (handler word `0x801E4D8C`) with the
+//! operand pointer at `+0x90` - jouine's MAN issues it four times. The
 //! already-ported `FUN_801E4794` family ([`legaia_engine_core::clut_fx`])
 //! fades one VRAM cell **A -> B** into a destination. `FUN_801E4D8C` instead
 //! reads a **single** source CLUT out of VRAM and fades it toward a **flat
@@ -40,7 +45,7 @@
 //!
 //! ## First tick (init, `+0x54 == 0`)
 //!
-//! `LoadImage`s the 16x1 CLUT row from VRAM, then for each of the 16 entries
+//! `StoreImage`s (reads) the 16x1 CLUT row out of VRAM, then for each of the 16 entries
 //! decodes the BGR555 pixel into three 8-bit-scaled channel bytes
 //! (`chan5 << 3`), stashes the STP bit at `+0x80+i`, and precomputes the
 //! **endpoint** channel bytes as a partial blend toward the target:
@@ -53,7 +58,7 @@
 //! `acc += speed` (the scratchpad frame-step byte `DAT_1F800393`, vsyncs per
 //! game tick). While `acc < duration`, each entry interpolates
 //! `base + (end - base) * acc / duration` per channel and repacks to BGR555
-//! with its STP bit; the row is `StoreImage`d back. On `acc >= duration` the
+//! with its STP bit; the row is `LoadImage`d back. On `acc >= duration` the
 //! row is repacked straight from the endpoint bytes, the scratch is freed and
 //! flag bit `0x8` is set (the actor retires).
 //!
@@ -172,7 +177,7 @@ fn repack_end(t: &FadeTexel) -> u16 {
 /// Result of one [`ClutBlendFade::tick`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FadeStep {
-    /// Mid-fade: `StoreImage` this row back to the source cell.
+    /// Mid-fade: `LoadImage` this row back to the source cell.
     Row([u16; CLUT_ENTRIES]),
     /// `acc >= duration`: the completion row - the caller uploads it, frees
     /// the scratch and retires the actor (retail sets flag bit `0x8`).
@@ -181,16 +186,12 @@ pub enum FadeStep {
 
 /// The single-source blend-to-target CLUT fade state.
 ///
-/// PORT: FUN_801E4D8C NOT WIRED: the overworld frame in
-/// `engine-core`'s `World::tick_world_map` is the pass that owes it. Retail
-/// spawns this as a world-map actor whose `+0x90` points at the six-byte fade
-/// record and whose `+0x98` holds the `0x60`-byte scratch, and the port's
-/// overworld pass has neither an actor-effect spawner nor a VRAM CLUT cell to
-/// read a source row out of - `tick` hands back a `FadeStep::Row` its caller
-/// would `StoreImage`, and no host owns that upload on the world map. The
-/// sibling two-cell cross-fade (`legaia_engine_core::clut_fx`) IS wired, on
-/// the field path, through field-VM `4C 61`; this actor has no field-VM
-/// opcode of its own, so a scene script cannot reach it either.
+/// PORT: FUN_801E4D8C
+///
+/// Spawned by field-VM `4C DB` (`FUN_801E57F0`); `engine-core`'s
+/// `World::step_clut_fx` loads the cell, ticks this and writes each row back
+/// against the host's software VRAM, on both play hosts. The record's
+/// `+0x90` pointer and the `0x60`-byte `+0x98` scratch are this struct.
 #[derive(Debug, Clone)]
 pub struct ClutBlendFade {
     texels: [FadeTexel; CLUT_ENTRIES],
