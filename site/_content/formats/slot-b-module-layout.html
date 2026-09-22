@@ -80,6 +80,12 @@
   whose last instruction is non-terminating, the shape the rule was written for - a handful stop below it, and
   fourteen step past it before dying on a halfword that is no opcode, having mis-stepped a width somewhere inside
   the record. "Every miss stalls below the end" describes the first two groups only.</p>
+  <p>Above the highest pointer-credited record the bytes often keep reading as <code>[header][program]</code>, and the
+  walk chains them. It stops at <strong>eight zero bytes</strong>: a zero header is a legal mesh-0 record and a zero
+  halfword a legal opcode, so the padding below an image's inherited tail walks as a record and the chain runs on
+  into the donor's. No pointer-credited record on the disc opens with eight zeros, and twelve chained ones did -
+  every one of them that padding. PROT 0944 is the worked case: its chain used to walk on through PROT 0942's
+  records, which put its tail cut 1412 bytes too high.</p>
 </section>
 
 <section class="doc-section" id="why">

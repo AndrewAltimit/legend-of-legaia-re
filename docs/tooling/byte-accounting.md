@@ -585,72 +585,93 @@ modules were simply never localised.
 
 ### What the overlay residue that is left actually is
 
-With the zero regions and the two data-segment structures above claimed, what
-remains in the overlay entries is a short list, and none of it is an unopened
-format. Each row is measured from the image's own bytes; none is claimed,
-because a claim needs a parser or a table with a named constant behind it and
-these have neither yet.
+With the zero regions, the data-segment structures above, the formed-address
+strings and the jump tables below claimed, what remains in the overlay entries
+is a short list, and none of it is an unopened format. Each row is measured from
+the image's own bytes; none is claimed, because a claim needs a parser or a
+table with a named constant behind it and these have neither yet.
 
 | Entry | Run | What it is | Why it is not claimed |
 |---|---|---|---|
-| `0897` | `0x2399C`, 4988 B | the field overlay's data segment; its first twelve rows are the collision probe table `FUN_801CFE4C` indexes at `0x801F21B4` | no parser binds the table, and the rest of the segment is unsorted globals |
-| `0897` | `0x0`, 3900 B | head string pool plus the pointer table that reaches it | the pointers are not read by anything here |
-| `0898` | `0x0`, 3512 B | the battle overlay's own head: UI strings (eleven of which `battle_ui_strings` already claims by pointer) and **nine** runs of in-image VA words - `switch` jump tables, not one ([below](#the-0898-head-is-nine-jump-tables)) | no named constant binds any of the nine, and the strings past the eleven have no pointer to follow |
-| `0899` | `0x1EB28`, 3552 B | the unclaimed part of a 16 KB data-segment hole | one address formed at one site, which is below the uninitialised-data bar above |
-| `0899` | `0x0`, 3512 B | the menu overlay's option-label string pool | same as `0898`: no pointer table this workspace reads |
-| `0899` | `0x2050C`, 844 B | the save-screen message slots on a `0x80` stride, and the memory-card filename prefix behind them | the stride is measured off the slots, not off a consumer |
-| `0899` | `0x15BEC`, 820 B | unidentified data-segment words; the leading rows read as `[u16][u16]` pairs but the shape does not hold across the run | nothing identified |
-| `0967` | `0xCAC`, 1757 B | the tutorial module's own ASCII prompt pool - 1689 of its bytes are printable, in thirty runs | no pointer table or consumer traced to it yet |
-| `0970` | `0x2534`, 3152 B | the STR overlay's initialised data segment: the one-shot init flag at `0x801D0D4C` and the MDEC hardware-register pointers `FUN_801CFFDC` loads from `0x801D0E60`..`0x801D0E98` | a pointer block, not a table with a stride |
+| `0897` | `0x2399C`, about 5 KB | the field overlay's data segment; its first twelve rows are the collision probe table `FUN_801CFE4C` indexes at `0x801F21B4` | no parser binds the table, and the rest of the segment is unsorted globals |
+| `0899` | `0x1EB28`, 3552 B | zero fill between the save-menu atlas's end and the save-slot icon sheet at `0x1F908` | not uninitialised data: no instruction in any image forms an address inside it (`find-gp-relative-refs.py --prot`, zero hits), so it is inter-asset slack, and it already classifies `zero_pad` |
+| `0899` | `0x163A7`, about 1 KB | data-segment words above the window descriptor table (`0x801E4738`, 52 records) | nothing identified |
+| `0899` | `0x2050C` band | what is left of the save-screen message slots once their formed strings are claimed - the NUL tails of the `0x80`-stride slots | the stride is measured off the slots, not off a consumer |
+| `0970` | `0x2648` up, about 3 KB | the STR overlay's initialised data above its two MDEC command packets: the MDEC register-pointer block at `0x801D0E60`..`0x801D0E98` and a block of `[u16][u16]` lookup words from `0x801D0EA0` that no `lui` pair addresses | no consumer forms an address into the lookup block; it is initialised data, not code (no `jal` lands in the run, a third of it is zero) |
 
-`0967`'s run is smaller than it first measured, and the difference is two
-instrument gaps rather than a finding about the image. Selecting the slot-B
-walk on the link base ([above](#the-slot-b-images)) claims its 408-byte head
-table, and cutting the inherited tail removes the 1143 bytes above file
-`0x1389` that are PROT `0966`'s. What is left of the old "2992 bytes of
-un-dumped code" is 92 bytes of code and a string pool: the 23 words at `0xC50`
-are one leaf routine ending `jr ra` at `0xCA4`, and everything from `0xCAC` up
-is ASCII. Reading the whole run as code was the shape classifier's verdict over
-a window that was mostly another module's bytes; `disc-coverage.py`, which cuts
-the tail, reports **no** un-dumped code run in this image at all.
+The `0970` row used to start at `0x2534` and was taken by one reading for
+uninitialised data and by the shape classifier for code; it is neither. Its
+head is the one-shot init flag at `0x801D0D4C` and then two **MDEC command
+packets** the table upload builds and sends: `FUN_801CFCDC` copies the caller's
+luma and chroma quantisation matrices into `0x801D0D5C` / `0x801D0D9C` (sixteen
+words each) behind the header `0x4000_0001` at `0x801D0D58`, and hands
+`0x801D0D58` to `FUN_801CFFDC` with `a1 = 0x20`; the IDCT matrix at
+`0x801D0DE0` rides the same way behind `0x6000_0000` at `0x801D0DDC`. Both are
+claimed off `legaia_asset::fmv_dispatch::MDEC_*_PACKET_VA`, each after its
+header word checks.
 
-### The `0898` head is nine jump tables
+Three rows left this table on one rule each. `0898`'s 3512-byte head is
+twenty-two jump tables and a string pool
+([below](#the-0898-head-is-twenty-two-jump-tables)). `0899`'s 3512-byte option
+string pool and its 820-byte options block are strings whose addresses the
+overlay forms, the pointer table that names them, and three tables bound to
+their consumers - the display layout at `0x801E4404`, the row-node list at
+`0x801E44B8` measured to its own zero-word terminator, and the casino prize
+table at `0x801E4518` ([`field-menu.md`](../subsystems/field-menu.md#options-screen)).
+`0967`'s 1757-byte prompt pool is twenty-eight strings the tutorial module's own
+code forms, at forty-one sites between file `0x278` and `0xA7C` - the consumer
+the row used to say nobody had traced. The 92 bytes of code below the pool
+(file `0xC50..0xCAC`) are one frameless leaf, `FUN_801F7628`, which the frame
+scan cannot find; unlike the cast band, this module calls it with an internal
+`jal` (at `0x801F7184` and `0x801F7460`), and it is dumped
+(`see ghidra/scripts/funcs/overlay_battle_tutorial_0967_801f7628.txt`).
 
-The row above used to read "a `switch` jump table" from file `0x9B4`. There are
-nine runs of in-image VA words below `0xDF8`, and the singular was an artifact
-of looking at one of them:
+### A string is claimed by the address its image forms
 
-```text
-file 0x0068..0x01E4   VA 0x801CE880    95 words
-file 0x01E8..0x02B4   VA 0x801CEA00    51 words
-file 0x02B8..0x034C   VA 0x801CEAD0    37 words
-file 0x0350..0x0490   VA 0x801CEB68    80 words
-file 0x0494..0x0500   VA 0x801CECAC    27 words
-file 0x052C..0x09B0   VA 0x801CED44   289 words
-file 0x09B4..0x0C80   VA 0x801CF1CC   179 words
-file 0x0C84..0x0C98   VA 0x801CF49C     5 words
-file 0x0C9C..0x0DF8   VA 0x801CF4B4    87 words
-```
+An overlay's rodata string pool has no header and no count, so no walker can
+reach it the way a container walker reaches a record. What makes a byte run a
+string *of this image* is that the image's own code computes its address - the
+same `lui`-pair test ([`formed_addresses`](../../crates/asset/src/byte_account.rs))
+the uninitialised-data claim rests on - and what bounds it is its own NUL. The
+walker claims a NUL-terminated run at every formed address when three quarters
+of its bytes are printable ASCII, and follows one level of indirection: where a
+formed address holds two or more in-image words that each point at such a
+string (or at an empty or one-byte one - the options screen names its button
+glyph that way), the words are a pointer table and are claimed with the strings.
 
-Two of them have their consumer, and both consumers form the table address the
-way the [address-reference scan](address-reference-scan.md) says to look for -
-a `lui`/`addiu` pair, which is why a literal-word sweep finds neither.
+Two guards keep a coincidence out. A target already inside a claim is left to
+that claim, and a pair issued from the image's inherited tail is ignored,
+because that is the donor's code forming the donor's addresses. The rule is
+what closed the largest ASCII runs in the overlay set: `0967`'s prompt pool
+(1893 to 206 bytes of residue), `0899`'s option strings, and the name tables of
+`0980` and `0976`.
 
-`0x801CF1CC` (179 words) is dispatched by the `jr` at `0x801EA9FC`. The index is
-a byte, not a state word: `lbu` from `0x8007BD0C + $s7` (the per-seat byte the
-same body writes back at `+0x1DE`), less 4, and the bound is the `sltiu $v0,
-$v1, 0xB3` at `0x801EA9D8` - **179**, the table's own word count exactly, which
-is what makes the extent a measurement rather than a scan. 37 distinct arms;
-`0x801EBDAC` is the default and fills every unused slot.
+### The `0898` head is twenty-two jump tables
 
-`0x801CF49C` (5 words) is dispatched by the `jr` after `0x801EB558`, indexed by
-the battle context's `+0x28A` phase byte under `sltiu $v0, $v1, 5` at
-`0x801EB540`, with the same `0x801EBDAC` default on the out-of-range arm.
+The battle overlay's first `0xDF8` bytes are a short C-string pool and then
+**twenty-two** `switch` jump tables, back to back, with a zero word of alignment
+between a few of them. An earlier reading counted **nine**, and the count was an
+artifact: it measured runs of in-image VA words, and tables with no padding
+between them merge into one run. What separates them is their consumers, not
+their bytes.
 
-Neither is claimed. A [pinned table row](#a-pinned-offset-is-not-a-magic-sweep)
-has to be a binding to a parser's own `pub const`, and no module here reads
-either table; what is written down above is the extent, the index expression and
-the bound, so a parser that wants them has the three facts it needs.
+Every consumer has the same five-instruction shape - `sltiu $v0,$vN,arms`,
+`beqz` to the default arm, `lui`/`addiu` forming the table base, `sll` by two,
+load, `jr` - so each table's extent is the `sltiu` immediate times four, read
+off the dispatch rather than scanned out of the data. Twenty-two consumers form
+twenty-two distinct bases, and the bases tile the region: each `base + 4*arms`
+is the next table's base or a zero pad word below it. `0x801CF1CC` (179 arms,
+index `lbu(0x8007BD0C + $s7) - 4`, `jr` at `0x801EA9FC`) and `0x801CF49C` (5
+arms, the battle context's `+0x28A` phase byte) are two of them; the other
+twenty, and the seven head strings whose addresses the overlay forms, are
+`pub const` rows in [`legaia_asset::battle_jump_tables`](../../crates/asset/src/battle_jump_tables.rs),
+each carrying its base-forming site, its `jr` and its index expression.
+
+The rows are claimed only when `battle_jump_tables::check` re-derives every one
+from the image's own instructions, and a disc-gated test
+(`crates/asset/tests/battle_jump_tables_real.rs`) holds each table to the dump
+corpus: all 850 arms land inside the dumped extent that also holds the table's
+own `jr`, per `scripts/ghidra-analysis/dump-extent-attribution.csv`.
 
 ### A residue run that is another image's code
 
@@ -679,15 +700,16 @@ residue.
 
 The two sides are held to each other cut for cut
 (`crates/asset/tests/inherited_tail_real.rs`) and they agree on every mapped
-image but PROT `0944`. What disagrees there is not either tail implementation
-but the own-content figure they both call: this side bounds `0944`'s top
-pointer-credited record and chains fourteen more above it to file `0x1EC8`, the
-Python side leaves that record unbounded and stops at `0x1948`. The bytes say
-the cut is `0x199C` with `0942` as donor - `0944` and `0942` are identical from
-there to the end and differ immediately below it, and `0942`'s own content
-reaches above it - so this side's cut is 1412 bytes too high, which
-under-claims the tail rather than crediting a neighbour's bytes to a parser
-here. Settling it is a slot-B record-walk question, not a tail one.
+image. PROT `0944` used to be the one exception, and the disagreement was in the
+own-content figure both sides call, not in either tail implementation: this
+side chained `0944`'s top record's **zero padding** (`0x1988..0x199C`) as a
+`[model_sel 0]` record whose program is `0x00` opcodes, then walked on through
+PROT `0942`'s records to `0x1EC8`, while the Python walker, which lacked the
+`WAIT 0x0FFF` bound, left that top record unbounded and stopped at `0x1948`.
+Both walkers now carry the same two rules - the forever-`WAIT` fallback and
+"eight zero bytes are padding, never a record header" - and both cut `0944` at
+`0x199C` with `0942` as donor ([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#the-chain-stops-at-zero-padding)).
+The byte account claims 1636 bytes of tail there where it used to claim 224.
 
 The claim is made before any walker runs, so a walker that reaches into the
 tail loses nothing (claims merge) while the residue classifier no longer sees
@@ -697,6 +719,54 @@ because a spawn call site up there belongs to the donor and so does the record
 pointer it forms. Four band images report slightly *more* residue for that
 reason - the record chain used to run past the cut and claim the donor's
 bytes - and that is the instrument getting stricter, not worse.
+
+### A bundle's last sector is the packer's buffer
+
+Every `scene_asset_table` bundle on the disc carried exactly one residue run,
+between about 30 bytes and 2 KB, and together they were the largest class on
+the worklist - 77420 bytes of it, half `high_entropy`, the rest `mixed` or
+`low_entropy`. None of it is a format. Each run starts where the last
+descriptor's LZS stream stops being consumed (`decompress_tracked`'s end - not
+the last descriptor's *offset*, and no descriptor points into it) and runs to
+the entry's end, always inside its last sector. The loader transfers the whole
+sector extent and the walk never reads past the stream, so no consumer reads
+those bytes.
+
+They are an earlier entry's bytes. The packer used **one** buffer for all of
+`PROT.DAT`, in extraction order, and never cleared it, so file offset `k` of an
+entry's slack holds the byte that the **nearest earlier entry whose extent
+reaches `k`** holds at `k`. That prediction has no free parameter - the donor is
+fixed by TOC order and entry lengths, not chosen as the best-matching sibling -
+and it reproduces every byte of the slack in all 90 bundles (80337 bytes). The
+first bundle, `0004`, has no earlier entry long enough, and its slack is zero,
+the buffer as first allocated. The donors are ordinary neighbours: PROT `0013`'s
+slack is PROT `0005`'s bytes, `0061`'s is `0053`'s.
+
+The claim is [`inherited_tail::buffer_run`](../../crates/asset/src/inherited_tail.rs):
+after the walkers run, the slack above an entry's highest claim is tested
+**whole** against the prediction, and claimed `inherited_tail` naming each
+donor, or not at all. All-zero slack stays the `zero_pad` it already is. It
+applies to every entry with no `static-overlays.toml` row, because those
+entries' parsers state their content end outright; it closed the fifteen
+`lzs_container` tails, the `pack` tail and the `bse_bank` tail by the same
+measurement. A mapped overlay keeps the sibling comparison above, because its
+own-content end is itself a measurement the cut feeds back into - but where no
+mapped sibling reproduces its tail, the same prediction is asked of its last
+sector (`buffer_suffix_start`, at least `0x40` bytes, word-aligned), which is
+how PROT `0898`'s last 1604 bytes (from file `0x281BC`, four bytes below the
+slot-B base `0x801F69D8`) and PROT `0895`'s last 344 are found to be PROT
+`0894`'s bytes - a donor the overlay-only comparison cannot see.
+
+The same prediction reproduces the sibling comparison's cut offset for offset
+on every mapped overlay but one, and differs from it only in **naming**: the
+comparison names the image that first wrote the bytes, the buffer the image it
+last held them from. The one offset that differs is PROT `0901`
+(`world_map_render`): the buffer puts its tail at `0x252A` with PROT `0900` as
+donor, the comparison at `0x26B0`, because `0901`'s only frame-matched function
+(`0x2550..0x2608`) sits inside that run, identical to `0900`'s at the same
+offset, and the own-content gate reads it as `0901`'s. Two render modules at one
+base can share a linked function at one offset, so the bytes alone do not
+settle which reading is right, and the comparison's cut stands.
 
 ### The residue run **count** was capped, and read as a measurement
 
@@ -749,10 +819,12 @@ record stays residue and the walker's note names the offset.
 What the set measures, and why it is the cleanest class on the disc: all 70
 images select this walker, over 653312 bytes, and every claim is structural -
 `scan_bytes` is **zero** across the set, so nothing in the figure rests on a
-magic guess. Residue is 11216 bytes (1.72%), and 2618 of those bytes are
-`zero_pad`. Per entry the accounted share runs 69.2% to 100.0% with a median of
-99.1%; the floor is `0967`, whose own content above its code is a string pool no
-consumer has been traced to yet. The classes the entries carry
+magic guess. Residue is 8187 bytes (1.25%), and 3262 of those bytes are
+`zero_pad`. Per entry the accounted share runs 91.2% to 100.0% with a median of
+99.2%; the floor is `0954`, whose largest run is a mostly-zero `ascii_text`
+stretch below its tail. `0967` used to be the floor at 69.2%, on a string pool
+whose consumer is the module's own code
+([above](#a-string-is-claimed-by-the-address-its-image-forms)). The classes the entries carry
 (`overlay_ptr_table` 42, `mips_overlay` 22, `overlay_data_blob` 6) are a
 statistic over the bytes and do **not** select the walker - the link base does.
 
@@ -795,23 +867,23 @@ Read the classes in three groups; only the first is work.
 The `entries` and `bytes` columns are the disc; the `non-slack residue` column is
 a **snapshot of the instrument** and moves with every parser that binds - re-derive
 it rather than quoting it. Its denominator is the whole TOC: 1233 entries,
-121006080 bytes. At the state below, 0.55% of that is residue, and 0.31 of those
-0.55 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 0.24%
+121006080 bytes. At the state below, 0.20% of that is residue, and 0.16 of those
+0.20 points are slack (`zero_pad` / `alignment` / `repeated_fill`), leaving 0.03%
 non-slack. The magic sweep contributes nothing: `accounted` and `structural` are
 the same figure, so no part of the accounted share rests on a guessed magic.
 
 | Class | entries | bytes | non-slack residue |
 |---|---:|---:|---:|
-| `overlay_data_blob` | 25 | 17164288 | 127022 |
-| `scene_asset_table` | 90 | 22577152 | 77420 |
-| `overlay_ptr_table` | 42 | 407552 | 46428 |
-| `mips_overlay` | 22 | 194560 | 21836 |
-| `lzs_container` | 18 | 4098048 | 12889 |
-| `init_pak` | 1 | 153600 | 2940 |
+| `overlay_data_blob` | 25 | 17164288 | 32871 |
 | `scene_event_scripts` | 101 | 329728 | 2048 |
-| `bse_bank` | 2 | 6144 | 1716 |
-| `pack` | 7 | 1634304 | 948 |
+| `overlay_ptr_table` | 42 | 407552 | 1871 |
+| `mips_overlay` | 22 | 194560 | 1216 |
+| `init_pak` | 1 | 153600 | 980 |
+| `lzs_container` | 18 | 4098048 | 196 |
 | `summon_readef` | 2 | 12232704 | 20 |
+| `scene_asset_table` | 90 | 22577152 | 0 |
+| `pack` | 7 | 1634304 | 0 |
+| `bse_bank` | 2 | 6144 | 0 |
 | `data_field_streaming` | 49 | 9052160 | 0 |
 | `scene_vab_stream` | 218 | 22450176 | 0 |
 | `scene_tmd_stream` | 182 | 14632960 | 0 |
@@ -826,14 +898,15 @@ the same figure, so no part of the accounted share rests on a guessed magic.
 | Class | What its unclaimed bytes are | Verdict |
 |---|---|---|
 | `vab_multi_bank` (`0891`) | Nothing: the bank index, each bank's two chunks and each bank's sector slack are claimed from lengths the container states. | Closed. Layout in [`vab.md`](../formats/vab.md#the-multi-bank-archive-monstersnd). |
-| `overlay_data_blob` | The whole class's remaining work, and most of it is entry `0896`, whose extent reads `plausible_mips` although its head is a length-prefixed Shift-JIS label table. The rest is per-image data segments beside code the dump corpus reached. | `0896` links at `0x801D4DF0` and calls no function entry of this disc's executable - a foreign-build image, resident in no state here. |
+| `overlay_data_blob` | The whole class's remaining work: per-image data segments beside code the dump corpus reached, the field (`0897`) and menu (`0899`) overlays' the largest, and entry `0896`, whose extent reads `plausible_mips` although its head is a length-prefixed Shift-JIS label table. | Data segments with no parser yet; `0896` links at `0x801D4DF0` and calls no function entry of this disc's executable - a foreign-build image, resident in no state here. |
 | `overlay_ptr_table`, `mips_overlay` | `low_entropy` runs with a `plausible_mips` minority - the tables beside code the dump corpus has not reached. | Dump worklist; agrees with [`disc-coverage.md`](disc-coverage.md)'s gap list. |
 | `init_pak` (`0895`) | The head pointer table, the SCUS-name string, and a tail past the last logo. | Closed but for those three; see the composition rule below. |
-| `lzs_container` | Per-entry tails of a few hundred bytes past the last descriptor's stream, plus `0981` entire - the one class member that is a code image rather than a container. | Walker tails plus one mis-classed entry. |
-| `scene_asset_table`, `pack` | Short `mixed` / `low_entropy` runs at the tail of records the walker did reach, plus one `high_entropy` minority in `scene_asset_table`. | Walker tails, not unwalked format. |
+| `lzs_container` | `0981` alone - the one class member that is a code image rather than a container. The per-entry tails past the last descriptor's stream were the packer's buffer ([below](#a-bundles-last-sector-is-the-packers-buffer)) and are claimed. | One mis-classed entry. |
+| `scene_asset_table`, `pack` | Nothing but `zero_pad`. The one run per bundle that used to rank here - every class member's single largest - is an earlier entry's bytes at the same file offsets, above the last descriptor's LZS stream ([below](#a-bundles-last-sector-is-the-packers-buffer)). | Closed. "Walker tails" was the wrong verdict: the walker reached the end of the content. |
 | `scene_vab_stream`, `scene_tmd_stream`, `data_field_streaming` | Nothing: the chunk walk reaches the terminator and what is left of the entry's last sector is claimed as slack. This class's residue used to be its single largest figure and read as "walker tails". | Closed; see the fixed-stride section above. |
 | `battle_data_pack` | Nothing but inter-record alignment: all four entries account whole. | Closed; the table-to-data gap is declared slack. |
-| `bse_bank`, `scene_event_scripts` | Kilobyte-scale `low_entropy` / `ascii_text` tails behind a walker that reached the records. | Walker tails. |
+| `bse_bank` | Nothing but `zero_pad`; its non-slack tail was the packer's buffer. | Closed. |
+| `scene_event_scripts` | One sector of `ascii_text` behind a walker that reached the records. | Walker tail. |
 | `efect_pack` (`0873`) | Nothing: the header, the inline sprite atlas, and both packs' members account fully. | Closed. |
 | `pochi_filler`, `all_zeros`, `scene_v12_table` | Nothing, or `zero_pad`. | The disc's own slack. Not work. |
 | `summon_readef` | Tens of bytes of inter-record alignment. Each slot's fill is claimed out to the stride the stream SM transfers. | Closed. |
@@ -992,6 +1065,12 @@ One of those replaced a test that **asserted the defect**: it required entries `
 report walker `generic`, which was a true statement about the instrument and a false one about the
 disc, and it would have failed the moment a walker landed. Pin the absence of a binding only where
 the absence is itself the finding.
+
+`crates/asset/tests/packer_buffer_slack_real.rs` holds the packer-buffer prediction to every
+scene bundle: each bundle's content ends inside its last sector, and the slack above it is
+reproduced byte for byte or the test names the bundle. `crates/asset/tests/battle_jump_tables_real.rs`
+re-derives every `0898` head-table row from the image's instructions and holds every arm to the
+dumped extent of its own dispatcher.
 
 `crates/asset/tests/slot_b_module_layout_real.rs` covers the module band over all 64 entries: no
 claimed record overlaps a framed function, every claimed record's start is an address some spawn

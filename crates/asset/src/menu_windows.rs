@@ -104,6 +104,57 @@ pub const SLOT_PICTOGRAM_OFFSET: usize = (SLOT_PICTOGRAM_VA - MENU_OVERLAY_BASE_
 /// Halfwords in the pictogram table.
 pub const SLOT_PICTOGRAM_LEN: usize = 8;
 
+/// VA of the options screen's display-layout table (`DAT_801E4404`): one
+/// `[u16 row_id][u16 advance]` entry per displayed row. The row renderer
+/// `FUN_801D2910` forms the base at `0x801D2968`; its window-48 wrapper passes
+/// rows `0..=9`, so the table is [`OPTIONS_LAYOUT_ROWS`] entries.
+pub const OPTIONS_LAYOUT_VA: u32 = 0x801E_4404;
+/// File offset of [`OPTIONS_LAYOUT_VA`] inside the as-loaded image.
+pub const OPTIONS_LAYOUT_OFFSET: usize = (OPTIONS_LAYOUT_VA - MENU_OVERLAY_BASE_VA) as usize;
+/// Entries in the layout table.
+pub const OPTIONS_LAYOUT_ROWS: usize = 10;
+/// Bytes per layout entry.
+pub const OPTIONS_LAYOUT_STRIDE: usize = 4;
+
+/// VA of the options row-descriptor list (`DAT_801E44B8`): 8-byte nodes
+/// `[u32 config_word_ptr][u8 value_count][u8 label_ink][u8 row_id]
+/// [u8 string_index]`. `FUN_801D2910` walks it from `0x801D29E4` and stops at
+/// the first node whose `+0` word is zero (`lw` / `bnez` at `0x801D2A0C`), so
+/// the extent is measured by [`options_node_list_len`], terminator included.
+pub const OPTIONS_NODE_LIST_VA: u32 = 0x801E_44B8;
+/// File offset of [`OPTIONS_NODE_LIST_VA`] inside the as-loaded image.
+pub const OPTIONS_NODE_LIST_OFFSET: usize = (OPTIONS_NODE_LIST_VA - MENU_OVERLAY_BASE_VA) as usize;
+/// Bytes per option node.
+pub const OPTIONS_NODE_STRIDE: usize = 8;
+
+/// Byte length of the option-node list in `image` (the menu overlay), the
+/// zero-word terminator node included, or `None` when no terminator is found.
+pub fn options_node_list_len(image: &[u8]) -> Option<usize> {
+    let mut off = OPTIONS_NODE_LIST_OFFSET;
+    loop {
+        let w = u32_le(image, off)?;
+        off += OPTIONS_NODE_STRIDE;
+        if w == 0 {
+            return Some(off - OPTIONS_NODE_LIST_OFFSET);
+        }
+    }
+}
+
+/// VA of the casino prize table (`0x801E4518`): blocks of `0x60` bytes, each
+/// eight `[u16 item_id][u16 gate][u32 price]` records. `FUN_801D5DE0` indexes
+/// it `block * 0x60` with the block byte the op-`0x49` sub-op-7 script operand
+/// supplies, so no instruction bounds the block count; [`PRIZE_TABLE_BLOCKS`]
+/// is the extent the table's own bytes carry (the next word above the last
+/// block is a menu global) and the one `legaia_patcher::casino` and the
+/// engine's prize-exchange parser both read.
+pub const PRIZE_TABLE_VA: u32 = 0x801E_4518;
+/// File offset of [`PRIZE_TABLE_VA`] inside the as-loaded image.
+pub const PRIZE_TABLE_OFFSET: usize = (PRIZE_TABLE_VA - MENU_OVERLAY_BASE_VA) as usize;
+/// Bytes per prize block.
+pub const PRIZE_BLOCK_BYTES: usize = 0x60;
+/// Blocks in the retail table.
+pub const PRIZE_TABLE_BLOCKS: usize = 4;
+
 /// One window descriptor: content rect + content-renderer dispatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MenuWindowDescriptor {

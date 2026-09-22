@@ -339,7 +339,7 @@ RANGES = {
                                 ("801cee80", "801cef24")],
     "overlay_slot_machine_0975": [("801cf0d8", "801cfff0")],
     "overlay_field_battle_intro_0979": [("801ce8cc", "801cf1b0")],
-    "overlay_battle_tutorial_0967": [("801f747c", "801f7628")],
+    "overlay_battle_tutorial_0967": [("801f747c", "801f7628"), ("801f7628", "801f7684")],
     # The two battle-stage modules the slot-B pager reaches through
     # `FUN_8003EC70(_DAT_8007B64A + 0x47)`. Both are ONE function over the whole
     # of their own code: the frame scan finds a single prologue each and the

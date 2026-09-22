@@ -16,11 +16,22 @@
 //! states the rule in full and records what each earlier restriction lost. The
 //! two are held to each other cut for cut:
 //! `rust_and_python_tails_agree` in `crates/asset/tests/inherited_tail_real.rs`
-//! runs the Python module over the same corpus and diffs the result. They agree
-//! on every mapped image but PROT 0944, where the *own-content* measurement the
-//! two sides share - `slot_b_module::content_end` here, `slot_b_band.py`'s
-//! there - disagrees; the test names that one and fails on any other, and its
-//! comment carries which answer the bytes support.
+//! runs the Python module over the same corpus and diffs the result, and they
+//! agree on every mapped image.
+//!
+//! ## One buffer, in TOC order
+//!
+//! The buffer is one buffer for the whole of `PROT.DAT`, filled in extraction
+//! order, so the residue at file offset `k` is the byte the **nearest earlier
+//! entry whose extent reaches `k`** holds there ([`buffer_run`]). That is a
+//! prediction with no free parameter, and it reproduces every overlay cut the
+//! sibling comparison below makes, offset for offset; where the two name
+//! different donors, the comparison has named the image that first wrote the
+//! bytes and the prediction the one the buffer last held them from. The
+//! sibling comparison stays the overlays' cut because an overlay's own-content
+//! end is itself a measurement the cut feeds back into; every other entry's
+//! parser states its content end outright, and the byte account tests the
+//! slack above it against [`buffer_run`] directly.
 //!
 //! ## Why the byte account needs it
 //!
@@ -244,6 +255,153 @@ pub fn tails_cached(prot_dir: &Path) -> TailMap {
         c.insert(key, built.clone());
     }
     built
+}
+
+/// Byte length of the sector-granular slack an entry can inherit: the part of
+/// its **last sector** above its own content. A run reaching a whole sector
+/// below the entry end is not residue of the buffer - the packer wrote those
+/// sectors from this file.
+pub const SECTOR_BYTES: usize = 0x800;
+
+/// Every extracted entry's path and length, in extraction (= mastering) order.
+type EntryIndex = std::sync::Arc<BTreeMap<u32, (PathBuf, usize)>>;
+
+fn entry_index_cached(prot_dir: &Path) -> EntryIndex {
+    static CACHE: OnceLock<Mutex<BTreeMap<PathBuf, EntryIndex>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(BTreeMap::new()));
+    let key = prot_dir.to_path_buf();
+    if let Some(hit) = cache.lock().ok().and_then(|c| c.get(&key).cloned()) {
+        return hit;
+    }
+    let mut map = BTreeMap::new();
+    if let Ok(rd) = std::fs::read_dir(prot_dir) {
+        for e in rd.flatten() {
+            let path = e.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let Some(idx) = crate::byte_account::prot_index_from_name(name) else {
+                continue;
+            };
+            let Ok(meta) = e.metadata() else { continue };
+            // First name wins, the same tie-break `entry_path` applies.
+            map.entry(idx)
+                .and_modify(|cur: &mut (PathBuf, usize)| {
+                    if path < cur.0 {
+                        *cur = (path.clone(), meta.len() as usize);
+                    }
+                })
+                .or_insert((path.clone(), meta.len() as usize));
+        }
+    }
+    let built = std::sync::Arc::new(map);
+    if let Ok(mut c) = cache.lock() {
+        c.insert(key, built.clone());
+    }
+    built
+}
+
+/// One contiguous piece of a [mastering-buffer run](buffer_run): `[start, end)`
+/// of the recipient, reproduced by entry `donor` at the same file offsets
+/// (`None` = no earlier entry reached that far, and the bytes are zero).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BufferPiece {
+    pub start: usize,
+    pub end: usize,
+    pub donor: Option<u32>,
+}
+
+/// Is `buf[start..]` exactly what the packer's buffer held there before entry
+/// `idx` was written?
+///
+/// The packer that built `PROT.DAT` used **one** buffer for every entry, in
+/// extraction order, and never cleared it: an entry's last sector is its own
+/// bytes and then whatever the buffer held above them. So the byte at file
+/// offset `k` of that slack is the byte at offset `k` of the **nearest earlier
+/// entry whose extent reaches `k`** - or zero where no earlier entry reached
+/// that far, which is the buffer as first allocated. That is a prediction with
+/// no free parameter: the donor is fixed by the TOC order and the entry
+/// lengths, not chosen as the best-matching sibling.
+///
+/// Returns the run split by donor when every byte of `buf[start..]` matches the
+/// prediction, and `None` when any byte does not, when `start` is a whole
+/// sector or more below the end (a sector the packer wrote from this file is
+/// not slack), or when an entry the prediction needs cannot be read. `buf` must
+/// be entry `idx` itself - a buffer of another length is refused.
+pub fn buffer_run(prot_dir: &Path, idx: u32, buf: &[u8], start: usize) -> Option<Vec<BufferPiece>> {
+    if start >= buf.len() || buf.len() - start >= SECTOR_BYTES {
+        return None;
+    }
+    let (pieces, predicted) = predict(prot_dir, idx, buf.len(), start)?;
+    (predicted == buf[start..]).then_some(pieces)
+}
+
+/// Lowest offset from which [`buffer_run`] reproduces `buf` through its end,
+/// searched inside the last sector only, or `None` when fewer than
+/// [`MIN_TAIL_BYTES`] match.
+///
+/// This is the form for an entry whose own-content end no parser states - a
+/// code image whose data segment runs past its last dumped function. The run is
+/// a suffix match, so a coincidental agreement just below the true end (a few
+/// zero bytes) can move the start down by that much; the caller rounds to its
+/// own alignment if it has one.
+pub fn buffer_suffix_start(prot_dir: &Path, idx: u32, buf: &[u8]) -> Option<usize> {
+    let lo = buf.len().saturating_sub(SECTOR_BYTES - 1);
+    let (_, predicted) = predict(prot_dir, idx, buf.len(), lo)?;
+    let own = &buf[lo..];
+    let mut i = own.len();
+    while i > 0 && own[i - 1] == predicted[i - 1] {
+        i -= 1;
+    }
+    (own.len() - i >= MIN_TAIL_BYTES).then_some(lo + i)
+}
+
+/// The buffer's bytes at `[start, len)` just before entry `idx` (of length
+/// `len`) was written, split by donor.
+fn predict(
+    prot_dir: &Path,
+    idx: u32,
+    len: usize,
+    start: usize,
+) -> Option<(Vec<BufferPiece>, Vec<u8>)> {
+    use std::io::{Read, Seek, SeekFrom};
+    let entries = entry_index_cached(prot_dir);
+    let (_, own_len) = entries.get(&idx)?;
+    if *own_len != len || start >= len {
+        return None;
+    }
+    let mut pieces: Vec<BufferPiece> = Vec::new();
+    let mut bytes = Vec::with_capacity(len - start);
+    let mut k = start;
+    while k < len {
+        // Nearest earlier entry whose extent covers offset `k`.
+        let donor = entries
+            .range(..idx)
+            .rev()
+            .find(|(_, (_, l))| *l > k)
+            .map(|(i, (p, l))| (*i, p.clone(), *l));
+        let end = match &donor {
+            Some((_, _, l)) => (*l).min(len),
+            None => len,
+        };
+        match &donor {
+            Some((_, path, _)) => {
+                let mut f = std::fs::File::open(path).ok()?;
+                f.seek(SeekFrom::Start(k as u64)).ok()?;
+                let mut want = vec![0u8; end - k];
+                f.read_exact(&mut want).ok()?;
+                bytes.extend_from_slice(&want);
+            }
+            None => bytes.resize(bytes.len() + (end - k), 0),
+        }
+        pieces.push(BufferPiece {
+            start: k,
+            end,
+            donor: donor.map(|d| d.0),
+        });
+        k = end;
+    }
+    Some((pieces, bytes))
 }
 
 /// Path of extraction entry `idx` under `prot_dir`, by the `NNNN_` prefix the

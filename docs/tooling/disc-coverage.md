@@ -274,7 +274,8 @@ So the pair is iterated rather than estimated once:
 `inherited_tail.tail_starts_fixpoint` re-measures every image's own-content end
 over the image **cut at the previous round's tail**, until the cuts stop moving.
 The band settles in two rounds, and the result is worth stating exactly because
-it is a negative: **no tail cut moves** - 79 images and 88,150 bytes either way.
+it is a negative: **no tail cut moves** - 83 of the 87 mapped images and 94,647
+bytes either way.
 What changes is the standing of the claim. The asymmetry this used to rest on
 (an overshoot can only make an image look less like a recipient, never invent a
 tail) was an argument; it is now a measurement, and the residue paragraph it
@@ -287,13 +288,23 @@ could alternate. `tail_starts_fixpoint_rounds` reports how many were spent, and
 a run that reaches the cap is reporting round eight of an oscillation, not a
 fixpoint.
 
-Quote a tail figure with the rule it was measured under. Same base + strictly
-longer reports 66 of the 83 mapped images and 61,597 B; any base + strictly
-longer reports 79 and 76,916 B; adding the gated equal-extent leg - what this
-gate uses - reports 79 and 88,150 B. An unguarded "any base, any length `>=`"
-variant reports 79 and 104,700 B and is not this rule: it names a donor wherever
-a suffix matches, including the pairs where neither image can be shown to own
-the bytes.
+Quote a tail figure with the rule it was measured under. Over the 87 mapped
+images, any base + strictly longer reports 83 images and 80,302 B; adding the
+gated equal-extent leg - what this gate uses - reports 83 and 94,647 B. An
+unguarded "any base, any length `>=`" variant is not this rule: it names a donor
+wherever a suffix matches, including the pairs where neither image can be shown
+to own the bytes.
+
+The gated figure depends on the own-content walk, and two rules in it moved it:
+the forever-`WAIT` fallback and the stop at eight zero bytes
+([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#the-chain-stops-at-zero-padding)).
+Before them the record chain walked an image's zero padding as a record and on
+into its donor, which kept PROT 0944's cut 1412 bytes too high on the Rust side.
+The rule has an independent check that needs no own-content measurement at all:
+the packer wrote every entry from one buffer in TOC order, so the byte at offset
+`k` of a tail is the byte of the nearest earlier entry reaching `k`. That
+prediction reproduces this gate's cut offset for offset on every mapped image
+but PROT 0901 ([`byte-accounting.md`](byte-accounting.md#a-bundles-last-sector-is-the-packers-buffer)).
 
 What it moves, and why the moves go both ways: the tail is subtracted from the
 denominator, which raises a row, while an extent that used to be credited to

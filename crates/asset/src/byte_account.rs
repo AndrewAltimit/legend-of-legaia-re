@@ -3020,6 +3020,127 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     }
     claim_uninitialised_data(buf, sink, base);
     claim_pinned_overlay_assets(buf, sink, idx);
+    claim_formed_strings(buf, sink, base);
+}
+
+/// Shortest share of printable ASCII (`0x20..=0x7E`) a NUL-terminated run
+/// must reach to be read as a string - three quarters, so the dialog escape
+/// bytes some labels carry do not disqualify them.
+const FORMED_STRING_PRINTABLE_NUM: usize = 3;
+const FORMED_STRING_PRINTABLE_DEN: usize = 4;
+
+/// End (one past the NUL) of the C string at `off`, or `None` when the bytes
+/// there are not one.
+fn cstring_end(buf: &[u8], off: usize) -> Option<usize> {
+    let tail = buf.get(off..)?;
+    let len = tail.iter().position(|&b| b == 0)?;
+    if len == 0 {
+        return None;
+    }
+    let printable = tail[..len]
+        .iter()
+        .filter(|&&b| (0x20..0x7F).contains(&b))
+        .count();
+    (printable * FORMED_STRING_PRINTABLE_DEN >= len * FORMED_STRING_PRINTABLE_NUM)
+        .then_some(off + len + 1)
+}
+
+/// Strings - and tables of pointers to strings - whose address the image's own
+/// code forms with a `lui` pair.
+///
+/// An overlay's rodata string pool has no header and no count; what bounds a
+/// string is its own NUL, and what makes a byte run a *string of this image*
+/// rather than text-shaped data is that this image's code computes its address
+/// ([`formed_addresses`], the same pointer-forming test the uninitialised-data
+/// claim rests on). One level of indirection is followed: where the formed
+/// address holds a run of two or more in-image words that each point at a
+/// string (or at an empty / one-byte one), the words are a pointer table and
+/// are claimed with the strings they name. A target already inside a claim (code, a pinned table, the inherited
+/// tail) is left to that claim.
+fn claim_formed_strings(buf: &[u8], sink: &mut Sink, base: u32) {
+    let in_claim =
+        |sink: &Sink, off: usize| sink.claims.iter().any(|c| c.start <= off && off < c.end);
+    let to_off = |va: u32| -> Option<usize> {
+        let o = va.checked_sub(base)? as usize;
+        (o < buf.len()).then_some(o)
+    };
+    // A pair issued from the inherited tail is the donor's code forming the
+    // donor's addresses; it names nothing of this image.
+    let tail: Vec<(usize, usize)> = sink
+        .claims
+        .iter()
+        .filter(|c| c.owner == OWNER_INHERITED_TAIL)
+        .map(|c| (c.start, c.end))
+        .collect();
+    let mut targets: Vec<u32> = formed_addresses(buf, base)
+        .into_iter()
+        .filter(|&(site, _)| {
+            let s = site.wrapping_sub(base) as usize;
+            !tail.iter().any(|&(a, b)| a <= s && s < b)
+        })
+        .map(|(_, t)| t)
+        .collect();
+    targets.sort_unstable();
+    targets.dedup();
+    let (mut strings, mut tables) = (0usize, 0usize);
+    for t in targets {
+        let Some(off) = to_off(t) else { continue };
+        if in_claim(sink, off) {
+            continue;
+        }
+        if let Some(end) = cstring_end(buf, off) {
+            sink.claim(
+                off,
+                end,
+                OWNER_STRING,
+                format!("string, address formed by this image ({t:#010x})"),
+            );
+            strings += 1;
+            continue;
+        }
+        if off % 4 != 0 {
+            continue;
+        }
+        let mut k = off;
+        let mut named: Vec<(usize, usize)> = Vec::new();
+        while let Some(w) = legaia_bytes::u32_le(buf, k) {
+            let Some(s) = to_off(w) else { break };
+            // Inside a table an entry may be empty or one glyph byte (the
+            // options screen's button-glyph choice): the neighbours already
+            // say what the table is, so the printable test is not asked of a
+            // string too short to carry it.
+            let short = buf
+                .get(s..s + 2)
+                .and_then(|b| b.iter().position(|&x| x == 0));
+            let Some(e) = cstring_end(buf, s).or(short.map(|n| s + n + 1)) else {
+                break;
+            };
+            named.push((s, e));
+            k += 4;
+        }
+        if named.len() >= 2 {
+            sink.claim(
+                off,
+                k,
+                OWNER_TOC,
+                format!(
+                    "string pointer table, {} words (formed at {t:#010x})",
+                    named.len()
+                ),
+            );
+            for (s, e) in named {
+                if !in_claim(sink, s) {
+                    sink.claim(s, e, OWNER_STRING, "string named by a formed pointer table");
+                }
+            }
+            tables += 1;
+        }
+    }
+    if strings + tables > 0 {
+        sink.note(format!(
+            "{strings} string(s) and {tables} string-pointer table(s) at addresses this image's own code forms"
+        ));
+    }
 }
 
 /// Link base of the image being accounted, from its `static-overlays.toml` row.
@@ -3079,6 +3200,11 @@ fn claim_inherited_tail(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     };
     let tails = crate::inherited_tail::tails_cached(dir);
     let Some(t) = tails.get(&idx) else {
+        // No mapped sibling reproduces the tail - but the donor need not be an
+        // overlay at all. The packer's one buffer predicts the slack from
+        // whichever entry held those offsets last; PROT 0898's last sector
+        // above the slot-B base and PROT 0895's are PROT 0894's bytes.
+        claim_buffer_suffix(buf, sink, dir, idx);
         return;
     };
     // A nested pass (a decoded LZS payload) carries the outer entry's index but
@@ -3098,6 +3224,71 @@ fn claim_inherited_tail(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     );
 }
 
+/// Claim the last-sector slack above a parser's measured content end when the
+/// packer's buffer reproduces it byte for byte.
+///
+/// The mapped overlays get the same cut from [`claim_inherited_tail`], where
+/// the own-content end is itself a measurement the cut feeds back into. Every
+/// other entry has a parser whose claims already *are* the content end - a
+/// scene bundle's last descriptor stops where `legaia_lzs::decompress_tracked`
+/// stopped consuming - so the slack above the highest claim is tested whole
+/// against [`crate::inherited_tail::buffer_run`]: the nearest earlier entry
+/// reaching each offset must hold the same byte there. All or nothing; a run
+/// with one byte the prediction does not reproduce stays residue, and an
+/// all-zero run stays the `zero_pad` it already is.
+///
+/// This is the whole of the `scene_asset_table` class's residue: every bundle
+/// on the disc ends its last LZS stream inside its last sector, and the bytes
+/// above are an earlier entry's, at the same file offsets.
+fn claim_buffer_slack(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
+    let (Some(idx), Some(dir)) = (opts.prot_index, opts.prot_dir.as_ref()) else {
+        return;
+    };
+    if crate::static_overlay::overlay_map()
+        .by_prot_index(idx)
+        .is_some()
+    {
+        return;
+    }
+    let Some(end) = sink.claims.iter().map(|c| c.end).max() else {
+        return;
+    };
+    if end >= buf.len() || buf[end..].iter().all(|&b| b == 0) {
+        return;
+    }
+    let Some(pieces) = crate::inherited_tail::buffer_run(dir, idx, buf, end) else {
+        return;
+    };
+    for p in pieces {
+        let detail = match p.donor {
+            Some(d) => format!("PROT {d:04}'s bytes at the same file offset (packer buffer)"),
+            None => "zero - no earlier entry reached this offset (packer buffer)".to_string(),
+        };
+        sink.claim(p.start, p.end, OWNER_INHERITED_TAIL, detail);
+    }
+}
+
+/// A mapped overlay's last-sector slack when its donor is not a mapped
+/// overlay: the suffix [`crate::inherited_tail::buffer_suffix_start`] finds,
+/// word-aligned up (the image's own content is word-granular, so a byte or
+/// three of coincidental agreement below the true end is not a tail).
+fn claim_buffer_suffix(buf: &[u8], sink: &mut Sink, dir: &std::path::Path, idx: u32) {
+    let Some(start) = crate::inherited_tail::buffer_suffix_start(dir, idx, buf) else {
+        return;
+    };
+    let start = (start + 3) & !3;
+    let Some(pieces) = crate::inherited_tail::buffer_run(dir, idx, buf, start) else {
+        return;
+    };
+    for p in pieces {
+        let detail = match p.donor {
+            Some(d) => format!("PROT {d:04}'s bytes at the same file offset (packer buffer)"),
+            None => "zero - no earlier entry reached this offset (packer buffer)".to_string(),
+        };
+        sink.claim(p.start, p.end, OWNER_INHERITED_TAIL, detail);
+    }
+}
+
 /// Sub-assets an overlay image carries at an offset this workspace has pinned.
 ///
 /// The dump corpus is the parser for a code image's code and says nothing about
@@ -3109,6 +3300,17 @@ fn claim_inherited_tail(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
 fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_index: u32) {
     const MENU_OVERLAY: u32 = 899;
     if prot_index == MENU_OVERLAY {
+        // The option-node list's extent is its own zero-word terminator, so
+        // it is measured here rather than carried as a fixed row.
+        if let Some(len) = crate::menu_windows::options_node_list_len(buf) {
+            let off = crate::menu_windows::OPTIONS_NODE_LIST_OFFSET;
+            sink.claim(
+                off,
+                off + len,
+                OWNER_RECORD,
+                "options row-descriptor list (menu_windows)",
+            );
+        }
         for (off, what) in [
             (
                 crate::title_pak::OVERLAY_SAVE_MENU_TIM_OFFSET,
@@ -3140,6 +3342,7 @@ fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_index: u32) {
     if prot_index == 898 {
         claim_effect_proto_records(buf, sink);
         claim_battle_overlay_strings(buf, sink);
+        claim_battle_jump_tables(buf, sink);
     }
     if prot_index == STR_OVERLAY_PROT_INDEX {
         claim_str_overlay_tables(buf, sink);
@@ -3245,6 +3448,32 @@ fn claim_str_overlay_tables(buf: &[u8], sink: &mut Sink) {
         None => sink.note("no FMV dispatch table at the pinned offset in PROT 0970"),
     }
 
+    // The two MDEC command packets the table upload sends, each checked by
+    // its own header word before it is claimed.
+    for (va, header, what) in [
+        (
+            fmv::MDEC_QUANT_PACKET_VA,
+            fmv::MDEC_QUANT_PACKET_HEADER,
+            "MDEC quant-table packet: header + luma + chroma matrices (fmv_dispatch)",
+        ),
+        (
+            fmv::MDEC_IDCT_PACKET_VA,
+            fmv::MDEC_IDCT_PACKET_HEADER,
+            "MDEC IDCT-table packet: header + 64-halfword matrix (fmv_dispatch)",
+        ),
+    ] {
+        let off = (va - base) as usize;
+        if legaia_bytes::u32_le(buf, off) == Some(header)
+            && off + fmv::MDEC_PACKET_BYTES <= buf.len()
+        {
+            sink.claim(off, off + fmv::MDEC_PACKET_BYTES, OWNER_RECORD, what);
+        } else {
+            sink.note(format!(
+                "no MDEC packet header {header:#010x} at {va:#010x}"
+            ));
+        }
+    }
+
     let src = (vlc::STRV2_PACKED_VA - base) as usize;
     match buf.get(src..).map(vlc::unpack_lz_tracked) {
         Some(Ok((table, consumed))) => {
@@ -3265,6 +3494,50 @@ fn claim_str_overlay_tables(buf: &[u8], sink: &mut Sink) {
             claim_last_sector_slack(buf, sink, end, "slack past the VLC blob terminator");
         }
         _ => sink.note("the VLC blob at the pinned offset does not terminate"),
+    }
+}
+
+/// The battle overlay's head: twenty-two `switch` jump tables and the C
+/// strings in front of them, each bound to the instruction pair that forms its
+/// address ([`crate::battle_jump_tables`]).
+///
+/// A table's extent is its consumer's `sltiu` bound times four - read off the
+/// dispatch, not scanned out of the bytes - so the claims are structural. They
+/// are made only when [`crate::battle_jump_tables::check`] re-derives every row
+/// from this image's own instructions; an image that disagrees gets a note and
+/// no claim.
+fn claim_battle_jump_tables(buf: &[u8], sink: &mut Sink) {
+    use crate::battle_jump_tables as bjt;
+    let errs = bjt::check(buf);
+    if !errs.is_empty() {
+        sink.note(format!(
+            "battle jump tables not claimed: {} row(s) disagree with this image ({})",
+            errs.len(),
+            errs[0]
+        ));
+        return;
+    }
+    for t in &bjt::JUMP_TABLES {
+        sink.claim(
+            t.offset(),
+            t.offset() + t.byte_len(),
+            OWNER_TOC,
+            format!(
+                "jump table, {} arms on {} (jr {:#010x})",
+                t.arms, t.index, t.jr
+            ),
+        );
+    }
+    for s in &bjt::HEAD_STRINGS {
+        let off = s.offset();
+        if let Some(len) = buf.get(off..).and_then(|t| t.iter().position(|&b| b == 0)) {
+            sink.claim(
+                off,
+                off + len + 1,
+                OWNER_STRING,
+                format!("head string, address formed at {:#010x}", s.site),
+            );
+        }
     }
 }
 
@@ -3516,6 +3789,18 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
                 menu::MENU_WINDOW_COUNT * menu::MENU_WINDOW_RECORD_STRIDE,
                 OWNER_RECORD,
                 "pause-menu window descriptor table (menu_windows)",
+            ),
+            (
+                menu::OPTIONS_LAYOUT_OFFSET,
+                menu::OPTIONS_LAYOUT_ROWS * menu::OPTIONS_LAYOUT_STRIDE,
+                OWNER_RECORD,
+                "options display-layout table (menu_windows)",
+            ),
+            (
+                menu::PRIZE_TABLE_OFFSET,
+                menu::PRIZE_TABLE_BLOCKS * menu::PRIZE_BLOCK_BYTES,
+                OWNER_RECORD,
+                "casino prize table (menu_windows)",
             ),
         ],
         975 => vec![
@@ -3915,6 +4200,9 @@ fn run(
 ) -> Account {
     let mut sink = Sink::new();
     dispatch(buf, walker, &mut sink, opts, depth);
+    if depth == opts.depth {
+        claim_buffer_slack(buf, &mut sink, opts);
+    }
 
     let size = buf.len();
     let mut merged = merge_ranges(&sink.claims, size);

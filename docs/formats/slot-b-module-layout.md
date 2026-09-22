@@ -257,6 +257,31 @@ That asymmetry is what makes the figure usable by the two consumers below. An
 over-claim would retire real code from the dump worklist; a stall only leaves
 an extent for the pointer bound that already exists.
 
+### The chain stops at zero padding
+
+A chained record needs no pointer, so the only thing that stops the chain is
+bytes that no longer read as `[header][program]` - and zero bytes do read that
+way. A zero header is a legal `[model_sel 0][reserved 0]` (mesh selector 0 is a
+dispatchable library index) and a zero halfword is a legal opcode `0x00`, four
+halfwords wide, so the padding between an image's last record and whatever the
+packer's buffer left above it walks as a record, and the chain runs on into the
+[inherited tail](../tooling/disc-coverage.md#content_bytes-is-longer-than-the-images-own-code-the-inherited-tail)
+claiming the donor's records.
+
+The band's own pointers settle it: **no pointer-credited record on the disc
+opens with eight zero bytes**, and twelve chained ones did, across PROT 0919,
+0932, 0933, 0934, 0944, 0947, 0948, 0950, 0957 and 0960 - every one of them
+the gap between an image's last record and its tail. So the chain stops at
+eight zero bytes, in both walkers (`legaia_asset::slot_b_module::parse_with_tail`
+and `scripts/ghidra-analysis/slot_b_band.py`, which now also carries the
+forever-`WAIT` fallback above). PROT 0944 is the worked case: its top record
+ends at `0x1988` on a `0x09 0x0FFF`, zeros run to `0x199C`, and from there to
+the end the bytes are PROT 0942's records at the same file offsets. The old
+chain claimed fourteen records up to `0x1EC8`, which kept the tail cut 1412
+bytes too high; with the stop, both walkers cut 0944 at `0x199C` with 0942 as
+donor, which is also the cut the packer-buffer prediction makes from TOC order
+alone ([`byte-accounting.md`](../tooling/byte-accounting.md#a-bundles-last-sector-is-the-packers-buffer)).
+
 ## What this is for
 
 Two instruments consume the claims.

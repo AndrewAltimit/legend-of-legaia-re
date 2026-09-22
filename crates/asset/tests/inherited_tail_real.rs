@@ -146,22 +146,13 @@ print(json.dumps({{str(k): [v[0], v[1]] for k, v in cuts.items()}}))
     );
     assert_eq!(rust.len(), py.len(), "different number of tails");
 
-    // The one image the two sides read differently, and the reason is NOT in
-    // either tail implementation: it is the own-content measurement they both
-    // call. `legaia_asset::slot_b_module::content_end` and
-    // `slot_b_band.content_end` are documented as the same figure and disagree
-    // here - the Rust side bounds PROT 0944's top pointer-credited record and
-    // chains fourteen more above it to file `0x1EC8`, the Python side leaves
-    // that record unbounded and stops at `0x1948`. The bytes settle which
-    // answer the *tail* wants: 0944 and 0942 are byte-identical from `0x199C`
-    // to the end and differ immediately below it, and 0942's own content
-    // reaches above `0x199C`, so `0x199C` (donor 0942) is the cut and the
-    // chain that reaches `0x1EC8` is walking 0942's records. The Rust cut is
-    // the conservative side of the error - it claims 224 bytes of tail where
-    // 1636 are owed - so the byte account under-claims rather than crediting a
-    // neighbour's bytes to a parser here. Fixing it means settling which
-    // record walk is right, which is a slot-B band question, not a tail one.
-    const KNOWN_DIVERGENCE: u32 = 944;
+    // Every image, PROT 0944 included. 0944 used to be the one divergence:
+    // this side chained its top record's zero padding (`0x1988..0x199C`) as a
+    // `[model_sel 0]` record and walked on through PROT 0942's records to
+    // `0x1EC8`, while the Python walker, lacking the `WAIT 0x0FFF` bound, left
+    // the top record unbounded. Both walkers now carry the same two rules -
+    // the forever-`WAIT` fallback and "eight zero bytes are padding, not a
+    // record" - and both cut 0944 at `0x199C` with 0942 as donor.
 
     let mut diverged = Vec::new();
     for (idx, tail) in &rust {
@@ -174,11 +165,12 @@ print(json.dumps({{str(k): [v[0], v[1]] for k, v in cuts.items()}}))
         }
     }
     eprintln!("[inherited-tail] divergences: {diverged:?}");
-    assert_eq!(
-        diverged.iter().map(|d| d.0).collect::<Vec<_>>(),
-        vec![KNOWN_DIVERGENCE],
-        "the Rust and Python inherited-tail cuts agree on every image but the          one known own-content divergence: {diverged:#?}",
+    assert!(
+        diverged.is_empty(),
+        "the Rust and Python inherited-tail cuts disagree: {diverged:#?}",
     );
+    let t944 = rust.get(&944).expect("PROT 0944 has a tail");
+    assert_eq!((t944.start, t944.donor_prot_index), (0x199C, 942));
 }
 
 /// `content_bytes = 0x...` for one row of the map TOML.

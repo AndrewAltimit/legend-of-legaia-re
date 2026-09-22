@@ -530,6 +530,23 @@ fn armed_idle_loop(op: u16, loop_a: u16, loop_b: u16) -> bool {
     counter & MOVE_LOOP_FOREVER != 0
 }
 
+/// `true` when the eight bytes at `p` are zero - the module's padding between
+/// its last record and whatever the packer's buffer left above it, never a
+/// record.
+///
+/// A zero header is a legal `[model_sel 0][reserved 0]` and a zero halfword is
+/// a legal opcode `0x00`, so the chain would otherwise walk the padding as a
+/// four-halfword record and run on into the inherited tail. The evidence is the
+/// band's own pointers: no pointer-credited record on the disc opens with eight
+/// zero bytes, and every chained one that did sat in that gap. PROT 0944 is the
+/// worked case - its top record ends at `0x1988`, the padding runs to `0x199C`,
+/// and from there the bytes are PROT 0942's records at the same file offsets.
+fn is_record_padding(bytes: &[u8], p: usize) -> bool {
+    bytes
+        .get(p..p + 8)
+        .is_some_and(|w| w.iter().all(|&b| b == 0))
+}
+
 /// `true` when `sel` is a value `FUN_80021B04` dispatches on.
 fn dispatchable_model_sel(sel: i16) -> bool {
     sel == crate::summon_overlay::MODEL_SEL_TRANSFORM_NODE
@@ -669,6 +686,7 @@ pub fn parse_with_tail(bytes: &[u8], link_base: u32, tail_start: Option<usize>) 
                 records.push(span_at(f, end));
                 let mut p = end;
                 while p + 4 <= cap
+                    && !is_record_padding(bytes, p)
                     && dispatchable_model_sel(i16::from_le_bytes([bytes[p], bytes[p + 1]]))
                 {
                     match move_program_end(bytes, p + 4).bounded() {
