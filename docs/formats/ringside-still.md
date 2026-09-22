@@ -236,7 +236,10 @@ schedule - the port reads the whole entry at once.
 The pick reads the lead record the way the loader does: the dome door warp
 seeds the lead fighter from the record's live HP `+0x106` (and its maximum
 `+0x104`), and `World::exit_muscle_dome` writes the fight's HP back into
-`+0x106` before it picks `+0x106 < +0x11C / 2`.
+`+0x106` before it picks `+0x106 < +0x11C / 2`. The warp's opponent is the
+contest's own ladder rung - the arena overlay's `(course, round)` naming an
+ordinary PROT 867 record - so a real lead meets a real rung rather than a
+400-HP stand-in.
 
 The first visit's wall is drawn too, by both play hosts
 (`legaia_engine_ui::ringside_backdrop::first_visit_tile_draws`), under the
