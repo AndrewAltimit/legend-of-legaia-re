@@ -130,7 +130,7 @@ impl PlayWindowApp {
             })
             .collect();
         let party_ap: Vec<u16> = snaps.iter().map(|s| s.ap as u16).collect();
-        pause_screen_draws(
+        let mut out = pause_screen_draws(
             &self.menu_ctx(surface_w, surface_h),
             PauseScreen::TopLevel(TopLevelView {
                 rows: &rows,
@@ -140,7 +140,43 @@ impl PlayWindowApp {
                 party: &party,
                 party_ap: &party_ap,
             }),
-        )
+        );
+        // A refused save commit lands the player back here, so this is where
+        // the notice is owed. Both hosts draw it from the same two builders.
+        out.extend(self.save_refusal_draws(surface_w, surface_h));
+        out
+    }
+
+    /// The **save-refusal notice**, when one is up: the messagebox that says
+    /// a commit did not happen.
+    ///
+    /// `SaveScreenFlow::refuse` is raised by whichever commit applier could
+    /// not honour the request; the sub-screen has closed by the time it
+    /// draws, which is why the notice rides over the menu root rather than
+    /// over the save screen. The browser play page draws the same two
+    /// builders from its own root composition.
+    pub(super) fn save_refusal_draws(&self, surface_w: u32, surface_h: u32) -> PauseMenuDraws {
+        let Some(reason) = self.save_flow.refusal() else {
+            return PauseMenuDraws::default();
+        };
+        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+        let sprites = match self.save_menu.as_ref() {
+            Some(menu) => legaia_engine_render::save_refusal_panel_draws_for(
+                &menu.rects,
+                stage_origin,
+                stage_scale,
+            ),
+            None => Vec::new(),
+        };
+        PauseMenuDraws {
+            sprites,
+            texts: legaia_engine_render::save_refusal_text_draws_for(
+                &self.font,
+                reason.message(),
+                stage_origin,
+                stage_scale,
+            ),
+        }
     }
 
     /// Build the draw lists for an active field-menu sub-session. Each

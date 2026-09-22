@@ -179,16 +179,23 @@ impl PlayWindowApp {
     ) -> bool {
         use legaia_engine_core::save_screen::SaveCommitKind;
         let cell = commit.cell;
+        use legaia_engine_core::save_screen::SaveRefusal;
         let Some(card) = self.card.as_ref() else {
             log::warn!("save screen: port 2 holds no card; nothing read");
+            self.save_flow.refuse(SaveRefusal::CardReadFailed);
             return false;
         };
         if matches!(commit.kind, SaveCommitKind::Save) {
             log::warn!("save screen: writing into a mounted card image is not supported");
+            // Refused, and said so: the screen used to close on a log line
+            // the player never sees, so a Save into the mounted card looked
+            // exactly like a Save that worked.
+            self.save_flow.refuse(SaveRefusal::CardWriteUnsupported);
             return false;
         }
         let Some((sf, resume)) = card.save_at(cell) else {
             log::warn!("save screen: card block {} holds no save", cell + 1);
+            self.save_flow.refuse(SaveRefusal::CardReadFailed);
             return false;
         };
         if !resume.scene.is_empty()
@@ -280,6 +287,13 @@ impl PlayWindowApp {
         // BEFORE the session sees this edge. It runs ahead of the match
         // because the match borrows `self.boot_ui` for the rest of the tick.
         let pressed = self.service_save_flow(pressed);
+        // A refusal notice owns the pad while it is up: the edge that
+        // dismisses it must not also drive the menu behind it.
+        let pressed = if self.save_flow.tick_refusal(pressed) {
+            0
+        } else {
+            pressed
+        };
         // Read-only copy for the commit below, taken for the same reason.
         let save_flow = self.save_flow.clone();
         let cross = pressed & 0x4000 != 0;

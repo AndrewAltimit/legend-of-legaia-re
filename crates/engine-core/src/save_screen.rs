@@ -155,7 +155,49 @@ pub struct SaveScreenFlow {
     machine: Option<SaveScreenMachine>,
     /// The effects the machine's last frame asked for.
     machine_effects: Vec<SubScreenEffect>,
+    /// A commit the host could not honour, and how many frames its notice
+    /// still owns the screen. See [`SaveScreenFlow::refuse`].
+    refusal: Option<(SaveRefusal, u16)>,
 }
+
+/// Why a finished save-screen commit did not happen.
+///
+/// Retail has no such state: its save screen only ever talks to a memory
+/// card, and a card it cannot write is a card it reports through the card
+/// driver's own result word. The port's two hosts each carry a *second*
+/// backend - the native shell's save directory and the browser's imported
+/// `.mcr` - and a commit against that backend can fail for reasons retail's
+/// result word does not model. Both hosts used to answer such a failure with
+/// a log line, which is not an answer to the player: the screen closed and
+/// nothing had happened.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SaveRefusal {
+    /// The host mounts a card image it can read but not write. Writing a
+    /// block means claiming directory frames against the card's own
+    /// free-block budget, which the native window has no writer for.
+    CardWriteUnsupported,
+    /// The write was attempted against the mounted card and failed.
+    CardWriteFailed,
+    /// The read was attempted against the mounted card and failed.
+    CardReadFailed,
+}
+
+impl SaveRefusal {
+    /// The one line the notice box carries. Short enough for the confirm
+    /// messagebox's width, which is the panel both hosts reuse.
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::CardWriteUnsupported => "This MEMORY CARD cannot be written.",
+            Self::CardWriteFailed => "Could not save to this MEMORY CARD.",
+            Self::CardReadFailed => "Could not load from this MEMORY CARD.",
+        }
+    }
+}
+
+/// How long a refusal notice holds the screen, in frames (about two seconds
+/// at 60 Hz). The port's own beat - there is no retail counterpart to pin it
+/// against - chosen to outlast the confirm dialog's own slide.
+pub const SAVE_REFUSAL_FRAMES: u16 = 120;
 
 /// How much of the outer fade one frame burns.
 ///
@@ -262,6 +304,46 @@ impl SaveScreenFlow {
     /// answering with readable blocks - retail's "no card" verdict.
     pub fn card_absent(&self) -> bool {
         self.io_result == -1
+    }
+
+    /// Record that the host could not honour the commit it was handed, so
+    /// the screen can say so instead of closing silently.
+    ///
+    /// Both hosts call this from their own commit appliers; the notice it
+    /// raises is drawn by one shared builder
+    /// (`legaia_engine_ui::save_refusal_box_draws_for`), so neither host can
+    /// answer a refused write with a log line the player never sees.
+    pub fn refuse(&mut self, reason: SaveRefusal) {
+        self.refusal = Some((reason, SAVE_REFUSAL_FRAMES));
+    }
+
+    /// The refusal notice currently owning the screen, if any.
+    pub fn refusal(&self) -> Option<SaveRefusal> {
+        self.refusal.map(|(r, _)| r)
+    }
+
+    /// Age the notice by one frame, and clear it when its time is up or the
+    /// player acknowledges it with a face button.
+    ///
+    /// Returns `true` while the notice is up, which is the caller's cue to
+    /// swallow the edge: a Cross that dismisses the box must not also drive
+    /// whatever sits behind it.
+    pub fn tick_refusal(&mut self, edge: u16) -> bool {
+        let Some((_, frames)) = self.refusal.as_mut() else {
+            return false;
+        };
+        // Cross / Circle / Start dismiss it early.
+        let acked = edge & 0x6008 != 0;
+        *frames = frames.saturating_sub(1);
+        if acked || *frames == 0 {
+            self.refusal = None;
+        }
+        true
+    }
+
+    /// Drop any refusal notice outright (the screen is leaving).
+    pub fn clear_refusal(&mut self) {
+        self.refusal = None;
     }
 
     /// This frame's poll status for the card behind `port`, derived from what
@@ -767,5 +849,61 @@ mod tests {
         flow.before_tick(&s, 0);
         assert!(flow.blocks().is_empty(), "the card read went with the grid");
         assert_eq!(flow.grid_cursor(), 0);
+    }
+}
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::*;
+
+    #[test]
+    fn a_refusal_owns_the_screen_until_it_is_acknowledged() {
+        let mut flow = SaveScreenFlow::new();
+        assert_eq!(flow.refusal(), None);
+        assert!(!flow.tick_refusal(0), "nothing up, nothing swallowed");
+        flow.refuse(SaveRefusal::CardWriteUnsupported);
+        assert_eq!(flow.refusal(), Some(SaveRefusal::CardWriteUnsupported));
+        // It holds the pad for as long as it is up.
+        for _ in 0..8 {
+            assert!(flow.tick_refusal(0));
+        }
+        assert!(flow.refusal().is_some());
+        // Cross dismisses it, and that edge is swallowed rather than passed on.
+        assert!(flow.tick_refusal(0x4000));
+        assert_eq!(flow.refusal(), None);
+    }
+
+    #[test]
+    fn a_refusal_ages_out_on_its_own() {
+        let mut flow = SaveScreenFlow::new();
+        flow.refuse(SaveRefusal::CardWriteFailed);
+        for _ in 0..SAVE_REFUSAL_FRAMES {
+            flow.tick_refusal(0);
+        }
+        assert_eq!(flow.refusal(), None);
+        assert!(!flow.tick_refusal(0));
+    }
+
+    #[test]
+    fn every_reason_carries_a_line_short_enough_for_the_prompt_bar() {
+        for r in [
+            SaveRefusal::CardWriteUnsupported,
+            SaveRefusal::CardWriteFailed,
+            SaveRefusal::CardReadFailed,
+        ] {
+            let msg = r.message();
+            assert!(!msg.is_empty());
+            // The bar is 284 stage px; the dialog font runs well under 8 px
+            // per glyph, so this is the bound that matters.
+            assert!(msg.len() <= 40, "{msg}");
+        }
+    }
+
+    #[test]
+    fn clearing_drops_it_outright() {
+        let mut flow = SaveScreenFlow::new();
+        flow.refuse(SaveRefusal::CardReadFailed);
+        flow.clear_refusal();
+        assert_eq!(flow.refusal(), None);
     }
 }

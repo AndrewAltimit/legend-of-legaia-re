@@ -83,7 +83,7 @@ use legaia_engine_core::input::PadButton;
 use legaia_engine_core::inventory_use::{InventoryUseSession, InventoryUseState};
 use legaia_engine_core::options::OptionsSession;
 use legaia_engine_core::save_menu_atlas::{SaveMenuAtlas, build_atlas};
-use legaia_engine_core::save_screen::{SaveCommitKind, SaveScreenFlow};
+use legaia_engine_core::save_screen::{SaveCommitKind, SaveRefusal, SaveScreenFlow};
 use legaia_engine_core::save_select::{
     SaveRack, SaveSelectMode, SaveSelectSession, SelectPhase, SlotInfoMode,
 };
@@ -774,6 +774,14 @@ impl LegaiaRuntime {
         if self.play_menu.is_none() {
             return;
         }
+        // A save-refusal notice owns the pad while it is up - the same
+        // pre-empt the native window makes, so the edge that dismisses the
+        // box does not also drive the menu behind it.
+        if let Some(m) = self.play_menu.as_mut()
+            && m.save_flow.tick_refusal(edge)
+        {
+            return;
+        }
         // Window 7 (spell level-up notice) owns the pad while armed: retail's
         // cast sub-screens stall on the confirm | cancel masks after the
         // widget-VM `[open window 7]` script (`0x801E4D50` / `0x801E4D78`),
@@ -1218,6 +1226,19 @@ impl LegaiaRuntime {
         );
         sprites.extend(out.sprites);
         texts.extend(out.texts);
+        // A refused save commit lands the player back here, so this is where
+        // the notice is owed. Same two builders the native window draws.
+        if let Some(reason) = menu.save_flow.refusal() {
+            if let Some(rects) = assets.chrome_rects() {
+                sprites.extend(ui::save_refusal_panel_draws_for(rects, origin, scale));
+            }
+            texts.extend(ui::save_refusal_text_draws_for(
+                assets.font_ref(),
+                reason.message(),
+                origin,
+                scale,
+            ));
+        }
     }
 
     /// Status sub-screen: the main panel + the three satellite windows + the
@@ -1488,12 +1509,23 @@ impl LegaiaRuntime {
                             m.pending_load_scene = Some(scene);
                         }
                     }
-                    Err(e) => crate::console_log(&format!("play menu: card load failed: {e}")),
+                    Err(e) => {
+                        crate::console_log(&format!("play menu: card load failed: {e}"));
+                        if let Some(m) = self.play_menu.as_mut() {
+                            m.save_flow.refuse(SaveRefusal::CardReadFailed);
+                        }
+                    }
                 }
             }
             SaveCommitKind::Save => {
                 if let Err(e) = self.write_session_into_card(commit.port as usize, block) {
                     crate::console_log(&format!("play menu: card save failed: {e}"));
+                    // A console line is not an answer to the player: the
+                    // screen closed and nothing had happened. Raise the
+                    // shared refusal notice the native window raises.
+                    if let Some(m) = self.play_menu.as_mut() {
+                        m.save_flow.refuse(SaveRefusal::CardWriteFailed);
+                    }
                 }
             }
         }
