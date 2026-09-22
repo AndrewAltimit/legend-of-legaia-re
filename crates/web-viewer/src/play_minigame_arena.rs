@@ -499,10 +499,20 @@ impl LegaiaRuntime {
         let l2 = format!("{status}   Left/Right/Up attack, Down special (Start = quit)");
         let mut out = row(font, &l1, PEN_STATUS, WHITE);
         out.extend(row(font, &l2, PEN_PROMPT, DIM));
-        if let Some(t) = f.tally() {
-            let l3 = format!("tally {}   coins {}", t.total(), t.gold_remaining());
-            out.extend(row(font, &l3, PEN_EXTRA, DIM));
-        }
+        // The duel's three retail number drawers - the round digit, the
+        // right-aligned score field and the `0x10` px "GET COIN" strip - at
+        // the ported cell layout the native window draws. This page printed
+        // `tally N   coins N` as one prose line instead, so the two hosts
+        // showed the same numbers in different places and at different
+        // strides. Layout from `baka_fighter_chrome::hud_digit_placements`,
+        // quads from `ui_baka_strips`, both shared.
+        let placed = legaia_engine_core::baka_fighter_chrome::hud_digit_placements(
+            f.round() as i32,
+            f.tally().map(|t| (t.total(), t.gold_remaining())),
+        );
+        out.extend(
+            legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for(font, &placed, DIM),
+        );
         out
     }
 }

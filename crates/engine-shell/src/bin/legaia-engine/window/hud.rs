@@ -851,27 +851,23 @@ impl PlayWindowApp {
 
             // The duel's three number drawers, at their ported cell layouts:
             // the one-glyph round digit, the 8 px right-aligned score field,
-            // and the 0x10 px "GET COIN" numeral strip for the prize. The HUD
-            // widget descriptors these cells patch (`DAT_801d7160`) index a
-            // sprite page the engine does not upload, so each cell is drawn as
-            // a font glyph at its ported x offset instead of as a textured
-            // quad - the layout is retail's, the glyph source is not.
-            use legaia_engine_core::baka_fighter::{
-                DigitCell, coin_digit_cells, right_aligned_number_cells, single_digit_cell,
-            };
-            let mut cell_row = |cells: &[DigitCell], base_x: i32, y: i32| {
-                for c in cells {
-                    let s = [b'0' + c.digit.min(9)];
-                    let text = core::str::from_utf8(&s).unwrap_or("0");
-                    let ly = self.font.layout_ascii(text);
-                    out.extend(text_draws_for(&ly, (base_x + c.x_offset as i32, y), dim));
-                }
-            };
-            cell_row(&[single_digit_cell((f.round() + 1).min(9) as u8)], 8, 98);
-            if let Some(t) = f.tally() {
-                cell_row(&right_aligned_number_cells(t.total()), 40, 98);
-                cell_row(&coin_digit_cells(t.gold_remaining()), 140, 98);
-            }
+            // and the 0x10 px "GET COIN" numeral strip for the prize. The
+            // placement is `baka_fighter_chrome::hud_digit_placements` and
+            // the glyph quads are `ui_baka_strips` - both shared with the
+            // browser play page, which printed a summary line here instead.
+            // The HUD widget descriptors these cells patch (`DAT_801d7160`)
+            // index a sprite page no host uploads, so each cell draws as a
+            // font glyph at its ported x: the layout is retail's, the glyph
+            // source is not.
+            let placed = legaia_engine_core::baka_fighter_chrome::hud_digit_placements(
+                f.round() as i32,
+                f.tally().map(|t| (t.total(), t.gold_remaining())),
+            );
+            out.extend(
+                legaia_engine_render::ui_baka_strips::baka_digit_strip_draws_for(
+                    &self.font, &placed, dim,
+                ),
+            );
 
             // The round chrome's resolved draws (`BakaChrome` - the intro
             // title, round banner and countdown timelines): each widget at

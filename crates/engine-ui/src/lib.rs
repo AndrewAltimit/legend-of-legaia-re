@@ -74,6 +74,7 @@ pub mod pause_menu;
 pub mod screen_prim;
 pub mod streak_pass;
 mod text_balloon_box;
+pub mod ui_baka_strips;
 pub mod ui_boot_logos;
 pub mod ui_dance;
 mod ui_fishing;
