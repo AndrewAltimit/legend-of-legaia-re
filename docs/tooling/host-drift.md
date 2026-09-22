@@ -2116,6 +2116,13 @@ stateless per-tick sample (`muscle_hub_screen_json`) with no backdrop clock to
 ride. The same answer as above applies - a `World` on the minigames page, or
 the page folded into the play page.
 
+The dome's command ring has the same shape one level down. Its chip marks
+(the red cross-out X is `FUN_801DBC30`, placed by the engine as
+`battle_party_panel::cross_out_mark`) are drawn by the standalone page only,
+because only that page draws the ring as chips: the native window and the play
+page present the dome's selection as text rows. Blocking capability: a chip
+ring on the play hosts' dome HUD.
+
 The play page also had a second gap under the first: its hub screens drew only
 inside the arena's own frame, which ends when the leg does, so the INTERVAL +
 tally screen - a between-legs screen - never reached the page at all. The page

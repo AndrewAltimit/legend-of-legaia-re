@@ -1558,8 +1558,19 @@ window.MgMuscle = (function () {
     function chipMarks(state) {
       const out = { item: null, attack: null, raseru: null, spirit: null };
       const on = { item: true, attack: true, raseru: true, spirit: true };
-      (state.chips || []).forEach((c) => { out[c.chip] = c.mark; on[c.chip] = !!c.enabled; });
-      return { mark: out, enabled: on };
+      const quad = { item: null, attack: null, raseru: null, spirit: null };
+      (state.chips || []).forEach((c) => {
+        out[c.chip] = c.mark; on[c.chip] = !!c.enabled; quad[c.chip] = c.mark_quad || null;
+      });
+      return { mark: out, enabled: on, quad };
+    }
+    /* A chip's mark. The red cross-out X comes placed by the engine's port of
+     * its emitter (`mark_quad`, FUN_801DBC30); the page keeps its own seat
+     * only for a mark whose emitter is not ported. */
+    function drawChipMark(gates, name, fx, fy) {
+      const q = gates.quad[name];
+      if (q) blit(3, q.pal, q.u, q.v, q.w, q.h, q.x, q.y, q.dw, q.dh);
+      else hudWord('red_x', fx, fy);
     }
 
     /* The retail command cluster: Item on top; Attack + D-pad + Ra-Seru;
@@ -1583,7 +1594,7 @@ window.MgMuscle = (function () {
         /* The red cross-out X is retail's course restriction, and nothing
          * else: a command that is merely unavailable keeps a bare plate. */
         rChip('Item', item.x, item.y - 6, 'blue', item.w);
-        if (gates.mark.item) hudWord('red_x', item.x - 8, item.y - 4);
+        if (gates.mark.item) drawChipMark(gates, 'item', item.x - 8, item.y - 4);
         /* Attack + the D-pad glyph between it and the Ra-Seru chip. */
         rChip('Attack', atk.x, atk.y - 6, inAttack ? 'gold' : 'blue', atk.w);
         blit(0, hudMeta.pieces.dpad.pal,
@@ -1593,7 +1604,7 @@ window.MgMuscle = (function () {
          * draws when the member carries none, and no mark rides with it. */
         rChip(gates.enabled.raseru ? raSeru : '-',
           ras.x, ras.y - 6, selectSub === 'magic' ? 'gold' : 'blue', ras.w);
-        if (gates.mark.raseru) hudWord('red_x', ras.x - 8, ras.y - 4);
+        if (gates.mark.raseru) drawChipMark(gates, 'raseru', ras.x - 8, ras.y - 4);
         /* Spirit - ends selection. */
         rChip('Spirit', spi.x, spi.y - 6, 'blue', spi.w);
         if (!inAttack && !banner) {

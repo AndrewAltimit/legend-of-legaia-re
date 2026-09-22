@@ -451,6 +451,7 @@ impl LegaiaRuntime {
             level_ups: &banner.level_ups,
             drops: &banner.drops,
             leader: &leader,
+            subject: banner.subject,
         };
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
         ui::battle_spoils_windows(&view)
@@ -487,6 +488,7 @@ impl LegaiaRuntime {
                 level_ups: &banner.level_ups,
                 drops: &banner.drops,
                 leader: &leader,
+                subject: banner.subject,
             };
             let windows = ui::battle_spoils_windows(&view);
             let (origin, scale) =

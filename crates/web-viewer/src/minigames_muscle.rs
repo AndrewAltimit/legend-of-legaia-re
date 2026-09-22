@@ -1191,12 +1191,31 @@ impl LegaiaMinigames {
     /// `blocked` = `FUN_801DBD04`, `sealed` = `FUN_801DBEC4`), or `null` for
     /// a chip that draws none. A chip can be disabled with **no** mark: a
     /// fighter carrying no Ra-Seru gets the `-` label, not an X.
+    ///
+    /// A `forbidden` chip also carries `mark_quad`, the red cross-out X as
+    /// `FUN_801DBC30` itself places it (the phase-`0x28` arm calls it with the
+    /// chip's anchor at `0x801D12D4` / `0x801D12F0`): `x`/`y`/`dw`/`dh` the
+    /// screen rect, `u`/`v`/`w`/`h` the texels on the `etim` page, `pal` the
+    /// sub-palette its CLUT word names.
     fn muscle_chip_json(s: &MuscleDomeSession) -> Vec<serde_json::Value> {
         use legaia_engine_core::muscle_dome::{ChipMark, DomeRingChip};
         DomeRingChip::RING
             .iter()
             .map(|chip| {
                 let (x, y) = chip.anchor();
+                let mark_quad = (s.chip_mark(0, *chip) == Some(ChipMark::Forbidden)).then(|| {
+                    let q = legaia_engine_vm::battle_party_panel::cross_out_mark(x, y);
+                    serde_json::json!({
+                        "x": q.xy[0].0, "y": q.xy[0].1,
+                        "dw": i32::from(q.xy[1].0) - i32::from(q.xy[0].0) + 1,
+                        "dh": i32::from(q.xy[2].1) - i32::from(q.xy[0].1) + 1,
+                        "u": q.uv[0].0, "v": q.uv[0].1,
+                        "w": i32::from(q.uv[1].0) - i32::from(q.uv[0].0) + 1,
+                        "h": i32::from(q.uv[2].1) - i32::from(q.uv[0].1) + 1,
+                        "pal": q.clut & 0x3F,
+                        "tpage": q.tpage,
+                    })
+                });
                 let mark = s.chip_mark(0, *chip).map(|m| match m {
                     ChipMark::Forbidden => "forbidden",
                     ChipMark::Blocked => "blocked",
@@ -1213,6 +1232,7 @@ impl LegaiaMinigames {
                     "y": y,
                     "enabled": s.chip_enabled(0, *chip),
                     "mark": mark,
+                    "mark_quad": mark_quad,
                 })
             })
             .collect()
@@ -2583,5 +2603,38 @@ impl LegaiaMinigames {
             "advance": self.hud_font_advances(),
         })
         .to_string()
+    }
+}
+
+#[cfg(test)]
+mod chip_mark_tests {
+    use super::*;
+    use legaia_engine_core::muscle_dome::{self as md, MuscleCard};
+
+    fn session(special: u32) -> MuscleDomeSession {
+        let card = MuscleCard {
+            command_id: 0x0C,
+            cost: 0x1E,
+        };
+        let mut s = MuscleDomeSession::new([card; 4], [card; 4], [120, 120], [400, 400], 1);
+        s.set_special_word(special);
+        s
+    }
+
+    /// The forbidden Item chip's X comes placed by `FUN_801DBC30`'s port:
+    /// a 64x16 blit at `(anchor.x - 8, anchor.y - 4)` off the `etim` page's
+    /// red X, CLUT `0x7704` = sub-palette 4.
+    #[test]
+    fn a_forbidden_chip_carries_the_cross_out_quad() {
+        let rows = LegaiaMinigames::muscle_chip_json(&session(md::SPECIAL_ITEM_FORBIDDEN));
+        let item = rows.iter().find(|r| r["chip"] == "item").unwrap();
+        assert_eq!(item["mark"], "forbidden");
+        let q = &item["mark_quad"];
+        assert_eq!((q["x"].as_i64(), q["y"].as_i64()), (Some(196), Some(30)));
+        assert_eq!((q["dw"].as_i64(), q["dh"].as_i64()), (Some(64), Some(16)));
+        assert_eq!((q["u"].as_i64(), q["v"].as_i64()), (Some(0), Some(96)));
+        assert_eq!(q["pal"].as_i64(), Some(4));
+        let spirit = rows.iter().find(|r| r["chip"] == "spirit").unwrap();
+        assert!(spirit["mark_quad"].is_null());
     }
 }
