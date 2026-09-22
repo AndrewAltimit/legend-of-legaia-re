@@ -70,6 +70,17 @@
 //! `0xDFFF_FFFF` clear mask applied to a different word (`+0x10`) that the
 //! proximity window swept in.
 //!
+//! There is no disc-side census to set against that, because the render mode
+//! is not a disc field. `actor[+0x56]` has **no carrier in any asset**: no MAN
+//! placement or actor record contains it, and every write of `4` is code - the
+//! three move-VM arms above and the one SCUS site - each of which also sets the
+//! physics dispatch byte `+0x5A = 2` and clears `+0x10 & 2`. So "does a scene
+//! ship a mode-4 actor" is not a question the bytes of a scene can answer; it
+//! is a question about which move-VM programs run. The port names the same
+//! halfword from its other reader - `legaia_engine_vm::move_vm`'s
+//! `+0x56` is the "move-table sub-state" cleared by ops `0x13` / `0x42` - which
+//! is the usual shape of one word with two readers, not a disagreement.
+//!
 //! So on the shipped disc `FUN_8001ADA4` case 4 always finds `& 0x6000 == 0`
 //! and takes the default emitter `FUN_80028158`; the `0x2000` arm is a call
 //! site the flag never opens. That is a statement about the *static* writers,

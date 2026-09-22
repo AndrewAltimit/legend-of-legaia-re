@@ -2130,3 +2130,60 @@ Wiring the sell list also closed a divergence the row had hidden: the drawn
 rows were built id-sorted and the sell commit rebuilt them as a slot walk, so
 on any bag whose slot order is not ascending by id the hand and the sale were
 on different rows. Both sides read `MenuRuntime::sell_list_rows` now.
+
+## The three structures the drain was blocked on
+
+W-shaped wiring rows come in two kinds, and the ones that survive several
+passes are almost always the second: a call is missing because a *structure*
+is. Three of them, and what each turned out to cost.
+
+### The morph seat: two buffers, not a caller
+
+`8002174c` x2 (`morph_weight_apply`) read as "no spawn site allocates from
+descriptor `0x8007068C`", which was the wrong half of the sentence: the site
+is shipped content, the host hook for it is live, and what it did not do is
+build the two buffers the handler walks (`actor+0x4C` block, `actor+0x90`
+rest pose). Both are now built by `World::spawn_morph_weight_actor`, the rest
+of `FUN_801D77F4` ported - so the row cost one routine's tail and a pool-tick
+arm, not a producer hunt.
+
+The census that came with it is the reusable part. Retail walks the morph
+block with **three different record strides** across two routines, and a
+block of one record is the only shape on which they agree. Every block the
+disc ships is that shape, so the disagreement is unobservable - which is a
+different claim from "the strides are the same", and only a census separates
+them.
+
+### The banner: the raiser was in `SCUS_942.54`
+
+`801e2524` / `801e2650` (`flash_ramp`) named their blocker as the *raiser* of
+`ctx[+0x28B]` and looked for it in the battle overlay. Every write of that
+byte on the disc is in `FUN_8004AD80`, which is SCUS-resident, so an overlay
+sweep for it returns nothing and reads as a negative result. The routine's
+commit body was already ported and already live; the raise is four
+instructions beside the slow-motion arm the port had.
+
+The lesson for a blocker sentence: "unfound in *X*" is a claim about where
+the search ran, and it ages into "does not exist" unless the scope is written
+down next to it.
+
+### The fade: two models of one block
+
+`80020c14` x2 / `80025000` (`fade_ramp`) were the byte-exact transcription of
+a block the engine *also* modelled, live, with different arithmetic
+(`fade::FadeState`). That is the shape a `REPLACED-BY:` marker is for, and it
+would have been wrong here: the two disagreed on the last frames of a ramp -
+the engine latched on the target, retail keeps accumulating and clamps on the
+delta's sign. A marker saying "a Rust mechanism already does this" would have
+hidden a measurable difference. The wire was to delegate the live model's
+step to the transcription, which removes both the difference and the row.
+
+### And two that stay
+
+`801db318` / `801db9c4` (`pool_ops`) are the counter-examples, and their
+blockers survive a re-read. The formation squash is case `0` of the battle
+flow SM and its second half shifts camera-focus accumulators the engine's
+per-action camera snap does not have; the pool flag-word scrub needs an
+`actor+0x8` word only it would ever read. Adding either structure for one
+caller is a wire that draws nothing, which is the failure mode the
+`REPLACED-BY` rule exists to keep out of the denominator.

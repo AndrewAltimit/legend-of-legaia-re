@@ -501,6 +501,32 @@ are all zeroed, so a freshly spawned morph actor starts at rest. Because the
 rest pose is snapshotted at spawn, nothing on the disc carries one - which is
 why a search for a rest-pose asset finds nothing.
 
+#### Three record pitches over one morph block
+
+Retail walks the `+0x4C` block three times, and the three loops disagree about
+where record `n + 1` begins:
+
+| Loop | Stride | Where |
+|---|---|---|
+| the spawner's size sum | `0xC` - the record header | `0x801D78D0..0x801D7900` |
+| the spawner's rest-pose copy | `n_vert * 8` | `0x801D792C..0x801D799C` |
+| the apply pass `FUN_8002174C`, both halves | `n_vert * 0x60` | `0x800217B4`, `0x80021860` |
+
+None of the three can be inferred from the others, and only a block of a
+**single** record makes them agree, because then no stride is ever consumed.
+That is every block the disc ships: all seventeen sites below resolve a VDF
+block whose leading count word is `1`, each naming TMD object `0`
+(`morph_weight_disc_blocks_are_single_record` in
+`crates/engine-core/tests/field_actor_spawn_disc_e2e.rs`). So the pitch
+disagreement is real in the instruction stream and unobservable in the shipped
+game; the port reproduces each loop at its own stride and pins the census, so a
+block with two records reads as new territory rather than as covered ground.
+
+The engine seats the whole chain: `World::spawn_morph_weight_actor` builds the
+snapshot and stamps the `+0x0C` handler, `World::tick_handler_actors` steps the
+`+0x3C`/`+0x3E`/`+0x40`/`+0x6E` envelope once per game tick, and both hosts
+read the blended mesh back through `World::morph_weight_posed_tmd`.
+
 #### Where `0x4C 0xD8` occurs on the disc
 
 Retail uses the synchronous spawn sparingly and in one structural position. Disc-wide there are **17 sites in 5 scenes** - `balden` (4), `balden2` (4), `garmel` (2), `jagaroom` (6), `juui2` (1) - and every one of them sits in **partition 1 record 0** of a scene MAN, the scene-entry system script `Scene::field_man_entry_script` resolves. No per-actor interaction script and no cutscene-timeline record uses it. Within a scene the sites chain contiguously at the 9-byte stride, walking successive `vdf_idx` values.
