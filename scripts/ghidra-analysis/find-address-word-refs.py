@@ -82,6 +82,8 @@ import struct
 import sys
 from pathlib import Path
 
+from mips_walk import walk
+
 REPO = Path(__file__).resolve().parents[2]
 OVERLAY_MAP = REPO / "crates" / "asset" / "data" / "static-overlays.toml"
 OVERLAY_DIR = REPO / "extracted" / "overlays"
@@ -311,22 +313,19 @@ def lui_pair_hits(image: Image, target: int) -> list[tuple[int, int, str]]:
             at = m.start()
             if at % 4:
                 continue
-            reg = image.data[at + 2]
-            for k in range(1, LUI_PAIR_WINDOW + 1):
-                nxt = image.word(at + 4 * k)
-                if nxt is None:
-                    break
+            # Follow the register through copies, one indexing `addu` and
+            # branches, and drop it at any other writer (`mips_walk.walk`).
+            for pos, nxt, state in walk(image.word, at, LUI_PAIR_WINDOW, image.base):
                 op = nxt >> 26
-                rs, rt, low = (nxt >> 21) & 0x1F, (nxt >> 16) & 0x1F, nxt & 0xFFFF
-                if op == 0x0F and rt == reg:
-                    break  # the register is reloaded; the pair cannot span this
-                if rs != reg or low != lo:
+                rs, low = (nxt >> 21) & 0x1F, nxt & 0xFFFF
+                if rs not in state or low != lo or state[rs][0] != imm << 16:
                     continue
+                indexed = state[rs][1] is not None
                 if op == 0x09 and imm == hi_addiu:
-                    out.append((at, at + 4 * k, "addiu"))
+                    out.append((at, pos, "addiu+index" if indexed else "addiu"))
                     break
-                if op == 0x0D and imm == hi_ori:
-                    out.append((at, at + 4 * k, "ori"))
+                if op == 0x0D and imm == hi_ori and not indexed:
+                    out.append((at, pos, "ori"))
                     break
     return sorted(out)
 
