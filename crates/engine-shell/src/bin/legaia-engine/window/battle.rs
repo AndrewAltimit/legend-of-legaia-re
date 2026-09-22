@@ -2068,6 +2068,7 @@ impl PlayWindowApp {
             level_ups: &banner.level_ups,
             drops: &banner.drops,
             leader: &leader,
+            subject: banner.subject,
         };
         let windows = legaia_engine_render::battle_spoils_windows(&view);
         let (origin, scale) = self.save_select_stage(surface_w, surface_h);
@@ -2109,6 +2110,7 @@ impl PlayWindowApp {
             level_ups: &banner.level_ups,
             drops: &banner.drops,
             leader: &leader,
+            subject: banner.subject,
         };
         let (origin, scale) = self.save_select_stage(surface_w, surface_h);
         legaia_engine_render::battle_spoils_windows(&view)
