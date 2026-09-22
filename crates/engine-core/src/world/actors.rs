@@ -205,6 +205,12 @@ impl World {
                 }
                 Some((4, false)) => {
                     // Knockdown finished on a dead actor: hold the downed pose.
+                    // On a monster this is the death commit that hands over
+                    // its spoils - a thief's loot, or the killer's steal
+                    // attack (`FUN_8004AD80` `0x8004B0A4`: tag 4, HP 0).
+                    if i >= usize::from(self.party.party_count) {
+                        self.resolve_monster_death_spoils(i);
+                    }
                 }
                 Some((_, _)) => {
                     // Flinch / get-up / block finished: resume idle.

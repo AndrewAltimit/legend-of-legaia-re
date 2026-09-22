@@ -393,6 +393,10 @@ impl World {
         self.battle_ctx.active_actor = 0;
         // Fresh battle: clear the monster-AI cooldowns / phase counter / ring.
         self.battle.monster_ai_state.reset();
+        // ...and the stolen band + steal latch, which retail zeroes with the
+        // same battle-load sweep (`crate::battle_steal`).
+        self.battle.steal = crate::battle_steal::StealBand::default();
+        self.battle.steal_caption = None;
         // Seed the turn-order initiative keys for this battle. When real SPD is
         // present the next-actor selector runs the initiative scheme from the
         // very first turn (see the opener pick below). A no-SPD battle leaves

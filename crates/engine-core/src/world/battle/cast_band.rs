@@ -1571,6 +1571,9 @@ impl World {
                     if let Some(arms::StealOutcome::FromBag { item }) = taken {
                         let _removed = self.take_one_from_bag(item);
                     }
+                    if let Some(outcome) = taken {
+                        self.stash_cast_steal(caster_slot, outcome);
+                    }
                     Some(step)
                 }
                 (941, Some(arms::STEAL_SWEEP_TICK)) => {

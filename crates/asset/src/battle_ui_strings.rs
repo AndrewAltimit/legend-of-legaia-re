@@ -67,9 +67,36 @@ pub const SCUS_RESELECT: u32 = 0x8001_52D4;
 /// monster seat.
 pub const SCUS_SPARRING_INTRO: u32 = 0x8007_8CB4;
 
+/// Head of the **steal-attack** caption - the line `FUN_8004AD80` copies
+/// into `0x80077A08` (`FUN_8003CA78` at `0x8004B5EC`) before appending the
+/// `{0xC2, item}` item-name token and [`SCUS_STEAL_STOLE_TAIL`], then raises
+/// HUD element `0x5B` on it. The Evil God Icon wearer's killing swing.
+pub const SCUS_STEAL_STOLE: u32 = 0x8007_7A64;
+/// Head of the caption for a slain thief whose loot it had taken from
+/// **another monster** (`[seat + 5]` of the stolen band non-zero) - copied
+/// into `0x800779A8` at `0x8004B2E8`.
+pub const SCUS_STEAL_TOOK: u32 = 0x8007_7A38;
+/// Head of the caption for a slain thief whose loot it had taken from the
+/// **party** - copied into `0x800779DC` at `0x8004B328`.
+pub const SCUS_STEAL_RECOVERED: u32 = 0x8007_7A4C;
+/// The whole-line caption that replaces a recovery line when element `0x5B`
+/// is already the last message raised (`ctx[+0x18] == 0x5B`, the pointer
+/// store at `0x8004B378`).
+pub const SCUS_STEAL_RECOVERED_ALL: u32 = 0x8007_7A70;
+/// Two-byte tail [`SCUS_STEAL_TOOK`] closes with (`0x8004B304`).
+pub const SCUS_STEAL_TOOK_TAIL: u32 = 0x8007_B690;
+/// Two-byte tail [`SCUS_STEAL_RECOVERED`] closes with (`0x8004B348`).
+pub const SCUS_STEAL_RECOVERED_TAIL: u32 = 0x8007_B694;
+/// Two-byte tail [`SCUS_STEAL_STOLE`] closes with (`0x8004B618`).
+pub const SCUS_STEAL_STOLE_TAIL: u32 = 0x8007_B698;
+
 /// Every SCUS-resident battle label, in address order.
-pub const SCUS_LABELS: [(u32, BattleUiLabel); 8] = [
+pub const SCUS_LABELS: [(u32, BattleUiLabel); 15] = [
     (SCUS_RESELECT, BattleUiLabel::Reselect),
+    (SCUS_STEAL_TOOK, BattleUiLabel::StealTook),
+    (SCUS_STEAL_RECOVERED, BattleUiLabel::StealRecovered),
+    (SCUS_STEAL_STOLE, BattleUiLabel::StealStole),
+    (SCUS_STEAL_RECOVERED_ALL, BattleUiLabel::StealRecoveredAll),
     (SCUS_SPARRING_INTRO, BattleUiLabel::SparringIntro),
     (SCUS_AUTO, BattleUiLabel::Auto),
     (SCUS_COMMAND, BattleUiLabel::Command),
@@ -77,6 +104,9 @@ pub const SCUS_LABELS: [(u32, BattleUiLabel); 8] = [
     (SCUS_ITEM, BattleUiLabel::Item),
     (SCUS_RUN, BattleUiLabel::Run),
     (SCUS_BEGIN, BattleUiLabel::Begin),
+    (SCUS_STEAL_TOOK_TAIL, BattleUiLabel::StealTookTail),
+    (SCUS_STEAL_RECOVERED_TAIL, BattleUiLabel::StealRecoveredTail),
+    (SCUS_STEAL_STOLE_TAIL, BattleUiLabel::StealStoleTail),
 ];
 
 // ------------------------------------------------------------ overlay labels
@@ -154,6 +184,20 @@ pub enum BattleUiLabel {
     /// The sparring fight's opening caption (SCUS, raised by the battle
     /// side-band tick `FUN_80056208` through HUD element `0x5A`).
     SparringIntro,
+    /// Steal-attack caption head (HUD element `0x5B`).
+    StealStole,
+    /// Its closing tail.
+    StealStoleTail,
+    /// Slain-thief caption head, loot taken from another monster.
+    StealTook,
+    /// Its closing tail.
+    StealTookTail,
+    /// Slain-thief caption head, loot taken from the party.
+    StealRecovered,
+    /// Its closing tail.
+    StealRecoveredTail,
+    /// The whole-line "every stolen item is back" caption.
+    StealRecoveredAll,
 }
 
 /// The battle UI labels read off one image pair.

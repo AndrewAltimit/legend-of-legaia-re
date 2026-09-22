@@ -23,7 +23,6 @@
 //!
 //! | Kernel | Retail caller | Call site | Port of the caller |
 //! |---|---|---|---|
-//! | [`mes_append_escape`] | `FUN_8004AD80` | `8004B2F8`, `8004B338`, `8004B60C` | the battle flow runs no steal |
 //! | [`advance_gauge`] | `FUN_800402F4` | `800421A0` | ported piecewise, no single-function port |
 //! | [`ease_quad_interp`] | unidentified - see below | - | - |
 //!
@@ -46,25 +45,15 @@
 //! [`docs/tooling/phantom-print-index.md`](../../../docs/tooling/phantom-print-index.md).
 //!
 //! - `FUN_8003CB54` ([`mes_string_end_offset`] / [`mes_append_escape`]) is
-//!   **not an action-queue splice**, and the reason built on that reading is
-//!   withdrawn. Its buffer is a **MES-markup text string**: the `< 0x1f` stop
-//!   is the terminator/control range and the `(b & 0xF0) == 0xC0` two-byte
-//!   stride is the escape-token range, both exactly as
-//!   [`docs/formats/mes.md`](../../../docs/formats/mes.md) tabulates them, and
-//!   its sibling `FUN_8003CA78` is the marked-up string copy that seeds the
-//!   buffer this appends to. The one dumped caller settles it:
-//!   `FUN_8004AD80`, the battle staged-animation commit, copies a template
-//!   into a string scratch at `0x800779A8` / `0x800779DC` / `0x80077A08` and
-//!   then appends `{0xC2, id}` - the item-name substitution token. The three
-//!   templates (`0x80077A38` / `0x80077A4C` / `0x80077A64`, each closed by a
-//!   two-byte tail at `0x8007B690` / `0x8007B694` / `0x8007B698`) are the
-//!   **steal-result captions** - the three outcomes of a steal, shown through
-//!   the battle caption record `FUN_801D8DE8(0x5B)`. So the blocker is the
-//!   event, not the composer: `World::apply_steal` has no production caller,
-//!   so no steal happens in the port's battle flow for a caption to report.
-//!   Once one does, a caption built from typed state would do this
-//!   routine's job; a translation pack that lifts the SCUS pool is the reason
-//!   to prefer composing retail's own buffer here.
+//!   **wired**, and so off this list. Its buffer is a **MES-markup text
+//!   string**: the `< 0x1f` stop is the terminator/control range and the
+//!   `(b & 0xF0) == 0xC0` two-byte stride is the escape-token range, both
+//!   exactly as [`docs/formats/mes.md`](../../../docs/formats/mes.md)
+//!   tabulates them. Its one dumped caller, the battle anim commit
+//!   `FUN_8004AD80`, appends `{0xC2, id}` - the item-name token - to the
+//!   death-spoils captions (steal attack / thief's loot, HUD element `0x5B`),
+//!   and `legaia_engine_core::battle_steal::compose_caption` makes the same
+//!   call when a slain monster's knockdown ends.
 //! - `FUN_80046870` ([`advance_gauge`]) ramps the `gp + 0x2E8` word, which the
 //!   validator's arm-`0x82` gate `FUN_80046898` tests against `0xE0`. **That
 //!   word's identity is now settled, and it is not an inventory count.**
@@ -107,6 +96,9 @@
 ///
 // PORT: FUN_8003cb54
 ///
+/// WIRED: `legaia_engine_core::battle_steal::compose_caption`, from the
+/// death-spoils arm `World::resolve_monster_death_spoils` both hosts run.
+///
 /// The buffer is dialog bytecode, so the walk is the standard glyph-stride
 /// walk of [`docs/formats/mes.md`](../../../docs/formats/mes.md):
 ///
@@ -142,6 +134,9 @@ pub fn mes_string_end_offset(s: &[u8]) -> usize {
 /// re-terminate it, returning the write offset.
 ///
 // PORT: FUN_8003cb54
+///
+/// WIRED: `legaia_engine_core::battle_steal::compose_caption`, from the
+/// death-spoils arm `World::resolve_monster_death_spoils` both hosts run.
 ///
 /// `tag` is a `0xC0..=0xCF` escape opcode and `arg` its argument - retail's one
 /// dumped caller (`FUN_8004AD80`, `0x8004B2F8`) appends `{0xC2, item_id}`, the

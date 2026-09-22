@@ -224,6 +224,12 @@ pub struct BattleState {
     /// ring) read & written by the per-monster-id scripted-cast picker
     /// ([`crate::monster_ai::decide`]). Reset on each battle enter.
     pub monster_ai_state: crate::monster_ai::MonsterAiState,
+    /// The stolen band + the once-per-battle steal-attack latch
+    /// (`0x801C8FE0`, `ctx[+0x27]`) - see [`crate::battle_steal`]. Zeroed
+    /// at battle load beside [`Self::monster_ai_state`].
+    pub steal: crate::battle_steal::StealBand,
+    /// The death-spoils caption on screen (HUD element `0x5B`), if any.
+    pub steal_caption: Option<crate::battle_steal::StealCaption>,
     /// The field-to-battle transition entity, live only while the encounter
     /// session sits in [`crate::encounter::EncounterPhase::Transition`].
     /// `None` outside that window.
@@ -472,6 +478,8 @@ impl BattleState {
             intro_effects: Vec::new(),
             intro_mode_handoff: false,
             monster_ai_state: crate::monster_ai::MonsterAiState::new(),
+            steal: crate::battle_steal::StealBand::default(),
+            steal_caption: None,
             player_driven: false,
             command: None,
             item_menu: None,

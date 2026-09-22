@@ -20,6 +20,7 @@ mod monster_ai;
 mod selectable;
 mod stage;
 mod stats;
+mod steal_attack;
 mod teardown;
 mod tutorial;
 mod validator_host;

@@ -70,6 +70,12 @@
   </details>
 </section>
 
+<section class="doc-section" id="when-a-steal-happens">
+  <h2>When a steal happens</h2>
+  <p>The steal is not a command and does not happen on the hit. The battle animation commit <code>FUN_8004AD80</code> rolls it as a slain monster finishes its knockdown fall, and only for the <strong>first</strong> monster a party member fells in the battle: a one-shot latch is set before the killer is even looked at, so a kill by someone without the Evil God Icon spends the battle's only attempt. The killer must have used Attack and wear the icon; the roll is <code>rand() % 100 &lt; chance</code>, doubled when any living party member has the Bronze Book's <em>Items Up</em>; and a stack already at 99 drops the steal silently. The caption goes up in the full-width bottom bar, composed from a template in the executable plus the item name.</p>
+  <p>The same arm also returns loot: a monster whose Steal spell took something hands it back when it dies. Both halves run in the port (<code>legaia_engine_core::battle_steal</code>), on both the native window and the browser play page.</p>
+</section>
+
 <section class="doc-section" id="parser">
   <h2>Parser</h2>
   <p><code>legaia_asset::steal_table::StealTable::from_scus</code> resolves the table from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map, identical to the <a href="item-table.html">item-name table</a> resolver). <code>entry(monster_id)</code> returns the <code>[chance, item]</code> pair; <code>steal_item(monster_id)</code> returns the item only when the entry is stealable. The disc-gated <code>steal_table_real</code> test pins the Skeleton&rarr;Incense anchor plus a span of ids against the real executable. CLI: <code>asset steal-table &lt;SCUS&gt; [--all] [--json]</code>, with the item id joined to its name.</p>
