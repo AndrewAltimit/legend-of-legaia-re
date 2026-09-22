@@ -133,6 +133,78 @@ to its name).
 The randomizer (`legaia_patcher::steal`) edits this table on a user-supplied disc
 to reassign steal items; see [`randomizer.md`](../tooling/randomizer.md).
 
+## Retail steal capture
+
+The player's steal is not a battle command and does not happen on the hit.
+It is a side branch of the SCUS anim commit `FUN_8004AD80`
+(`0x8004B29C..0x8004B660`, see `ghidra/scripts/funcs/8004ad80.txt`), taken
+when an enemy seat's death clip commits with live HP `+0x14C == 0`. A
+PCSX-Redux probe
+([`autorun_w7c_steal_oracle.lua`](../../scripts/pcsx-redux/autorun_w7c_steal_oracle.lua))
+exec-breaks every step of that branch in the retail
+`party_basic_attack_vs_gobu_gobu` battle (Vahn alone against one Gobu Gobu,
+monster id `4`, steal row `[30, 0x78]`), with read-watches on the table and
+write-watches on the bag and on the latch.
+
+Every run below writes two synthetic gates, and every result rests on them:
+the enemy's HP is set to `1` so Vahn's queued Attack kills it, and Vahn's
+record word `+0xF4` gets bit `0x10000` (passive `0x10`, Steal Attack - the
+bit an equipped Evil God Icon provides) because the state's party carries no
+steal accessory. Where a row says *forced*, the probe overwrites the
+`rand() % 100` value in `v0` at the compare (`0x8004B580`) to probe the
+boundary; *natural* rows leave the BIOS `rand()` alone and vary only the
+vsync the Begin press lands on.
+
+| Capture (`captures/w7c-0921/`) | Gates | `rand()` | `% 100` | threshold | Outcome |
+|---|---|---|---|---|---|
+| `steal_a` | steal bit | 7694 | 94 | 30 | no steal, no caption, bag untouched |
+| `steal_nat25` | steal bit, Begin 15 vsyncs later | 22937 | 37 | 30 | no steal |
+| `steal_nat40` | steal bit, Begin 30 vsyncs later | 23717 | 17 | 30 | **stole `0x78`**: caption, bag slot 1 := `[0x78, 1]` |
+| `steal_b` | steal bit, forced | 7694 | 29 | 30 | stole (caption + grant) |
+| `steal_c` | steal bit, forced | 7694 | 30 | 30 | no steal |
+| `steal_d` | steal + Items Up bits, forced | 7694 | 59 | 60 | stole |
+| `steal_e` | steal + Items Up bits, forced | 7694 | 60 | 60 | no steal |
+| `steal_nobit` | none | - | - | - | branch exits at the `+0xF4` test; `rand()` is never called |
+
+What the rows pin, field by field:
+
+- **Where.** The branch is entered at `0x8004B2AC` on the vsync the enemy's
+  HP reads `0`, first from `ra 0x8004AE70` and then from `ra 0x80047B5C`
+  every other vsync for the rest of the death fall (33 entries in `steal_a`).
+  Only the first entry rolls; the others stop at the latch.
+- **Who.** The acting seat `ctx[+0x13]` is `0` (Vahn), `ctx` being
+  `*(gp + 0xA0C)` = `*(0x8007BD24)`; the killer's `+0x1DE` reads `3`.
+- **The roll.** One BIOS `rand()` (`A0:2F`), reduced `% 100` through the
+  `0x51EB851F` reciprocal, compared **strictly** (`sltu`) against
+  `chance * mult`: `29 < 30` steals, `30 < 30` does not. `mult` is `2` with
+  record `+0xF8` bit `0x20000` (passive `0x31`, Items Up) on a living member,
+  and the threshold doubles to `60` exactly (`steal_d` / `steal_e`). The
+  table is read twice per roll - chance at `0x8004B54C`, item at
+  `0x8004B5B8` - and a third time at `0x8004B608` for the caption's item
+  token; nothing else reads it during the battle.
+- **The bag.** `FUN_80042F4C` receives the item id and answers `0` for an
+  item the bag does not hold (not `99`, so the steal proceeds).
+  `FUN_800421D4(0x78, 1)` then writes the first empty slot's id byte and
+  count byte (`0x800422BC`, `0x80042300`) - slot 1 here, since slot 0 was the
+  only occupied one. The battle's ordinary drop lands in the next slot
+  later, from `ra 0x8004F610`.
+- **The caption.** HUD element `0x5B` is raised (`FUN_801D8DE8(0x5B, 0)`)
+  with its payload pointer `0x800774AC` aimed at the composed buffer
+  `0x80077A08`.
+- **The latch re-arms per strike chain, not per battle.** `ctx[+0x27]` is
+  set to `1` at `0x8004B3E4` before any other gate - so a kill by a killer
+  without the passive also spends it (`steal_nobit`) - but it is also
+  **cleared**: a write-watch on the byte catches `sb zero,0x16(s5)` at
+  `0x801E3A84` in the battle-action state machine `FUN_801E295C` (PROT 0898,
+  `s5 = ctx + 0x11` from `0x801E2994`), the delay slot of the arm at
+  `0x801E3A70` that moves an actor's strike loop (`0x1E`) on to its recovery
+  wait (`0x1F`). It fires at the end of **every** strike chain, the
+  monster's included (twice in each run above before Vahn's kill). So each
+  attacking action gets one roll - on the first monster it fells - not each
+  battle. A byte scan for a store to `+0x27` cannot see this writer: the
+  displacement in the instruction is `0x16`, off a base register that
+  already carries `+0x11`.
+
 ## See also
 
 - [Item-name table](item-table.md) - the id space this table's `steal_item_id` indexes.

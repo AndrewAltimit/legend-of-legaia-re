@@ -82,6 +82,12 @@
   <p>The randomizer (<code>legaia_patcher::steal</code>) edits this table on a user-supplied disc to reassign steal items.</p>
 </section>
 
+<section class="doc-section" id="retail-steal-capture">
+  <h2>What a steal looks like in the retail game</h2>
+  <p>The steal is not a command and does not happen on the hit: it is rolled once, on the frame the slain monster's death animation starts (a side branch of the battle anim commit <code>FUN_8004AD80</code>). An emulator probe that breaks on every step of that branch, in a real battle with the Evil God Icon's passive bit written in, shows the roll is one BIOS <code>rand()</code> taken <code>% 100</code> and compared <em>strictly</em> against the table's chance: a 29 steals at 30%, a 30 does not. The Bronze Book's Items Up passive doubles the threshold to 60, exactly.</p>
+  <p>The one-roll latch that stops the death animation from rolling again every frame is <strong>re-armed at the end of every attack chain</strong> (the battle state machine clears it when a strike loop hands over to its recovery wait), so each attacking action gets a roll on the first monster it fells - not one roll per battle. A plain byte search for writes to that latch misses the clear, because the instruction reaches it through a base register that already carries part of the offset.</p>
+</section>
+
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
