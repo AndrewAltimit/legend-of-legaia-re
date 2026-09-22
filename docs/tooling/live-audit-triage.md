@@ -2216,13 +2216,13 @@ checkpoint RAM of a three-visit dome run holds the still's two packets on the
 second and third visits, at the level arm `0x0A` had reached
 ([`ringside-still.md`](../formats/ringside-still.md#on-a-natural-re-entry)).
 
-## The battle panel cluster: two wired, one re-framed, two held
+## The battle panel cluster: three wired, one re-framed, one held
 
 | anchor | verdict | what it rests on |
 |---|---|---|
 | `801d84c0` `result_subject` (was `panel_labels`) | live | the four buffers are the battle-result messages, not panel labels; the solo / team build arm now words the post-battle report's victory line on both play hosts |
 | `801dbc30` `cross_out_mark` | live | the standalone minigames page places the dome ring's forbidden-chip X from it (`mark_quad`); the play hosts draw the ring as text and have no chip to mark |
-| `801d32bc` `step_actor_cursor` | held | a command-input cursor, not a turn order - the missing piece is the port's backward member step |
+| `801d32bc` `step_actor_cursor` | live | the ring's cancel arm (`0x801D11B4`) runs it backward through `World::step_back_battle_command`, on both play hosts' pads |
 | `801d57e8` / `801d5778` | held | the mutable placement-table seat array below `engine-vm`, and its other two writers |
 
 ### `panel_labels` read the wrong thing out of the right bytes
@@ -2243,9 +2243,13 @@ The row read as "adopt retail's cursor order over initiative". Initiative is
 the execution order, and the port's command order is already retail's slot
 scan. The six call sites (the round reset and `FUN_801D388C`'s cases `0x10`,
 `0x11`, `0x21` and its shared tail) make it the command window's member
-cursor, and its backward arms are the one thing the port's command session
-has no counterpart for: there is no way back from a later member's ring to an
-earlier one's.
+cursor, and its backward arms were the one thing the port's command session
+had no counterpart for. The ring's cancel now is that counterpart: counter
+zero reopens the round prompt, anything else steps back to the previous
+selectable member's ring and refunds an item commit - see
+[battle.md](../subsystems/battle.md#the-rings-cancel-steps-back-a-member). The
+commit-confirm screen's `Reselect` (case `0x21`) stays seatless, because the
+port stages no `0x6E` screen.
 
 ## Singles re-read against their retail call sites
 
@@ -2257,7 +2261,7 @@ reach the address; the verdict is what the call site supports.
 | `8001fa00` `init_identity_index_list` | live | MAIN_INIT's `jal` at `0x801D7384` seeds the fog-particle pool's free stack (`pool, pool + 4, 0x50`); `FogPool::reset` now seeds through it |
 | `800265e8` `seed_boot_offset_table` | `REPLACE` | boot `jal` at `0x8001601C`; the audio host keeps one flat `SpuRam`, no slot-indexed base map |
 | `8001d7f8` / `8001d424` scene-name sync | `REPLACE` | `0x8001FDC0` (the op-`0x3F` packet) and the dev-arm boot read at `0x80016024`; the port carries the destination as a label |
-| `8003cb54` `mes_append_escape` / `mes_string_end_offset` | held | its three sites compose the steal-result captions; the port's battle flow runs no steal (`apply_steal` has no production caller) |
+| `8003cb54` `mes_append_escape` / `mes_string_end_offset` | live | its three sites compose the death-spoils captions; the knockdown-end commit now runs `FUN_8004AD80`'s arm (`engine-core::battle_steal`) and composes them the same way - see [steal-table.md](../formats/steal-table.md#the-steal-attack---fun_8004ad80) |
 | `80050e74` `halt_part_actor` / `flush_part_actor_pool` | `REPLACE` | 89 `jal`s, all in the stager overlays PROT 0911..0969; `World::tick_summon` drops the whole `SummonScene` once it finishes, so no seat outlives the cast |
 | `801d0748` `timed_fight_turns_left` | held | the formation gate is readable; the strip's draw is what no host has |
 | `8003bc08` `rotate_toward_clamped` | held | the player's vertical glide runs the same arithmetic, but calling this from it would mark the NPC height arm live while no NPC runs it |
