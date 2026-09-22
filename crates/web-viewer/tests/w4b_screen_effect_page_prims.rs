@@ -131,3 +131,79 @@ fn play_page_draws_the_field_screen_effect_wash() {
          entry script no longer reaches op 0x34 sub-0"
     );
 }
+
+/// Two shared kernels an earlier wave added that **no ladder on either host
+/// entered** - the reach export finds them live and never executed. Each gets
+/// a rung, and the second rung's answer is a negative one.
+///
+/// `Camera::take_camera_snap_beats` runs once per frame from the page's
+/// `resolve_camera_frame`, but only inside the scripted branch, so a ladder
+/// that never parks in a cutscene never reaches it. The published camera
+/// frame names the arm it took, which is the assertion.
+#[test]
+fn a_cutscene_scene_drives_the_pages_snap_beat_bank() {
+    let Some(mut rt) = loaded_runtime() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    // The opening prologue's first tableau - a scene whose timeline owns the
+    // camera, rather than a town where the follow arm always wins.
+    rt.enter_field("opdeene").expect("enter the prologue scene");
+    let mut arms: Vec<String> = Vec::new();
+    for _ in 0..900u32 {
+        let _ = rt.tick_frame();
+        let v: serde_json::Value =
+            serde_json::from_str(&rt.play_camera_view_json()).expect("camera json");
+        let arm = v["arm"].as_str().unwrap_or("").to_string();
+        if !arms.contains(&arm) {
+            arms.push(arm.clone());
+        }
+        if arm == "cutscene" {
+            eprintln!("[w4b snap beats] opdeene reached the cutscene camera arm");
+            return;
+        }
+    }
+    panic!("opdeene never published a cutscene camera frame - arms seen: {arms:?}");
+}
+
+/// `FieldSceneAnim::ocean_only` is the **damaged-bundle** arm: it installs
+/// only when a kingdom bundle's slot-5 CLUT-walk table fails to parse. This
+/// rung enters the kingdom scenes and asserts the page installed the
+/// *walker*, which is the measurement behind the disclosure that no shipped
+/// content reaches the fallback - a ladder cannot enter it without a
+/// modified disc.
+#[test]
+fn a_kingdom_scene_installs_the_walker_not_the_ocean_fallback() {
+    let Some(mut rt) = loaded_runtime() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    let mut seen = 0u32;
+    for scene in ["map01", "map02", "map03"] {
+        if rt.enter_field(scene).is_err() {
+            continue;
+        }
+        for _ in 0..60u32 {
+            let _ = rt.tick_frame();
+        }
+        let kind = rt.play_field_anim_kind();
+        if kind == 0 {
+            continue;
+        }
+        seen += 1;
+        assert_eq!(
+            kind & 2,
+            0,
+            "{scene}: the page installed the legacy ocean-head fallback, so \
+             its slot-5 CLUT-walk table stopped parsing"
+        );
+        assert_eq!(kind & 1, 1, "{scene}: no CLUT walker installed");
+    }
+    eprintln!(
+        "[w4b ocean fallback] {seen} kingdom scene(s) installed the walker, none the fallback"
+    );
+    assert!(
+        seen > 0,
+        "no kingdom scene installed a VRAM animator - the rung measured nothing"
+    );
+}

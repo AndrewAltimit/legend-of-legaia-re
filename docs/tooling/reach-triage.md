@@ -1928,6 +1928,28 @@ The shape to keep from it: a producer can be live, tagged, entered by a
 ladder and pinned by a disc-gated oracle, and still be drawn by nobody. Reach
 answers "is this code executed", not "does a frame change".
 
+### A kernel a ladder cannot enter, and one that nothing shipped can
+
+Two of the shared kernels above were live on both hosts and entered by no
+ladder on either, and the two have different answers.
+
+**The snap-beat bank is a ladder gap.** `Camera::take_camera_snap_beats` runs
+once per frame from each host's cutscene camera interp, and only there, so a
+ladder that never parks in a scripted beat never reaches it - every rung this
+tree had opened on a town or an arena. `crates/web-viewer/tests/w4b_screen_effect_page_prims.rs`
+adds the rung, and the assertion is the published camera frame's own `arm`
+word: `"cutscene"` is the branch that calls the bank, so the rung cannot pass
+by entering a scene that never leaves the follow arm.
+
+**The ocean fallback is a content gap, and no ladder closes it.**
+`FieldSceneAnim::ocean_only` installs only when a kingdom bundle's slot-5
+CLUT-walk table fails to parse, and all three retail kingdoms ship one - the
+rung beside it enters each and reads the walker every time. So the arm is
+reachable only from a modified disc, and the rung's value is that negative:
+it measures that the fallback is not shipped content rather than leaving
+"never entered" to read as neglect. A ladder that entered it would have to
+fabricate a damaged bundle, which is a fixture, not a playthrough.
+
 ### A shared kernel has no address, so this instrument is silent about it
 
 The same wave replaced five per-frame decisions each play host had been making

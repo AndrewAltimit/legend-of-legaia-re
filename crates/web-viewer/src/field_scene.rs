@@ -239,6 +239,13 @@ impl FieldSceneAnim {
         }
     }
 
+    /// Which halves of the animator are installed, as a bitmask: bit 0 the
+    /// CLUT walker, bit 1 the legacy ocean-head cycle. Read by
+    /// `LegaiaRuntime::play_field_anim_kind`.
+    pub(crate) fn kind_code(&self) -> u32 {
+        u32::from(self.walker.is_some()) | (u32::from(self.ocean.is_some()) << 1)
+    }
+
     /// Re-point the animator at the world's **live** vsyncs-per-game-tick
     /// (`World::clock.frame_step`, retail `DAT_1F800393`).
     ///

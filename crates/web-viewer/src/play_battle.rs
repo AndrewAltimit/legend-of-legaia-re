@@ -2242,6 +2242,22 @@ impl LegaiaRuntime {
         self.battle_intro = Some(intro);
     }
 
+    /// Which VRAM animator the scene rebuild installed:
+    /// `0` none, `1` the slot-5 CLUT **walker**, `2` the legacy **ocean-head**
+    /// fallback, `3` both.
+    ///
+    /// A diagnostic, and specifically a *negative* one: the ocean fallback is
+    /// the arm for a kingdom bundle whose slot-5 walker table does not parse,
+    /// and every retail kingdom ships one - so a ladder that enters a kingdom
+    /// scene and reads `1` here is measuring that no shipped content reaches
+    /// `FieldSceneAnim::ocean_only` at all.
+    pub fn play_field_anim_kind(&self) -> u32 {
+        self.field_vram_anim
+            .as_ref()
+            .map(|a| a.kind_code())
+            .unwrap_or(0)
+    }
+
     /// How many field screen-effect washes the world published this frame
     /// (`World::screen_tint_push_args`), i.e. how many of this frame's
     /// screen primitives are op-`0x34`-sub-0 colour-tween pushes.
