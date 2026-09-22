@@ -253,14 +253,13 @@ pub const PART_ACTOR_HALT_FLAG: u32 = 0x8;
 ///
 /// PORT: FUN_80050e74 (`0x80050E90..0x80050EB8`)
 ///
-/// NOT WIRED: the engine has no `DAT_801C90F0`. The counterpart is **not**
-/// the field-FX list an earlier note named - the 89 `jal` sites are all in the
-/// summon / special-attack stager overlays, so the engine list holding the
-/// same population is `World::casting.active_summon`
-/// (`legaia_engine_core::summon::SummonScene::parts`). That scene is replaced
-/// or dropped whole when a cast ends, not emptied seat by seat, so nothing
-/// holds a seat set for this to walk and no actor is left needing the halt
-/// bit raised on it.
+/// REPLACED-BY: `World::casting.active_summon`
+/// (`legaia_engine_core::summon::SummonScene::parts`), the engine list that
+/// holds the population `DAT_801C90F0` seats - the 89 `jal` sites to the flush
+/// are all in the summon / special-attack stager overlays (PROT 0911..0969).
+/// That scene is replaced or dropped whole when a cast ends, so every part is
+/// retired at once with no seat left to walk and no actor left needing the
+/// halt bit that tells the battle teardown pass to collect it.
 pub fn halt_part_actor(actor: &mut crate::move_vm::ActorState) {
     actor.wait_timer = 0;
     actor.field_8c = 0;
@@ -283,10 +282,8 @@ pub fn halt_part_actor(actor: &mut crate::move_vm::ActorState) {
 ///
 /// PORT: FUN_80050e74
 ///
-/// NOT WIRED: the engine has no `DAT_801C90F0` seat table to empty - the same
-/// missing pool as [`halt_part_actor`], one level up. The population lives in
-/// `World::casting.active_summon` and is dropped whole at the end of a cast,
-/// so there is no seat set to walk.
+/// REPLACED-BY: `World::casting.active_summon`, dropped whole at the end of a
+/// cast - the same replacement as [`halt_part_actor`], one level up.
 pub fn flush_part_actor_pool(slots: &mut [Option<&mut crate::move_vm::ActorState>]) -> usize {
     let mut retired = 0;
     for slot in slots.iter_mut().take(PART_POOL_SLOTS) {

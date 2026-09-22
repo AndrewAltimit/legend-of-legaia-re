@@ -2255,6 +2255,7 @@ reach the address; the verdict is what the call site supports.
 | `800265e8` `seed_boot_offset_table` | `REPLACE` | boot `jal` at `0x8001601C`; the audio host keeps one flat `SpuRam`, no slot-indexed base map |
 | `8001d7f8` / `8001d424` scene-name sync | `REPLACE` | `0x8001FDC0` (the op-`0x3F` packet) and the dev-arm boot read at `0x80016024`; the port carries the destination as a label |
 | `8003cb54` `mes_append_escape` / `mes_string_end_offset` | held | its three sites compose the steal-result captions; the port's battle flow runs no steal (`apply_steal` has no production caller) |
+| `80050e74` `halt_part_actor` / `flush_part_actor_pool` | `REPLACE` | 89 `jal`s, all in the stager overlays PROT 0911..0969; `World::tick_summon` drops the whole `SummonScene` once it finishes, so no seat outlives the cast |
 | `801d0748` `timed_fight_turns_left` | held | the formation gate is readable; the strip's draw is what no host has |
 | `8003bc08` `rotate_toward_clamped` | held | the player's vertical glide runs the same arithmetic, but calling this from it would mark the NPC height arm live while no NPC runs it |
 | `8001cf50` / `800461a4` / `8004638c` | held | the camera composes `Rx·Ry·Rz` in `glam` f32; adopting the q3.12 product is a precision decision, and the `+0x52` skip bits have no engine seat |
