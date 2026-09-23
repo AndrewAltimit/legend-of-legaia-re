@@ -126,11 +126,33 @@ fn real_tables_drive_a_decided_match_and_bank_the_gold() {
     assert_eq!(f.round_wins(0), baka_opponents::ROUND_WIN_TARGET);
     assert!(f.hp(1) < HP_START || matches!(f.phase(), MatchPhase::MatchOver(0)));
 
-    // Cross leaves the decided match through the world tick path, banking the
-    // parsed coin prize into the casino coin bank via the mode-24 return warp
-    // (play-window's B key exit goes through the same `exit_baka_fighter`).
-    world.set_pad(PadButton::Cross.mask());
-    let _ = world.tick();
+    // Leave the decided match the cabinet's way: its tally runs into the
+    // "NEXT GAME / PAY OUT" choice, PAY OUT (Right, then Cross) runs the exit
+    // state, and the exit's fade end is the mode-24 return warp that banks
+    // the parsed coin prize into the casino coin bank.
+    for _ in 0..5_000 {
+        let f = world
+            .minigames
+            .baka_fighter
+            .as_ref()
+            .expect("fight installed");
+        if f.cabinet().choice_sheet().is_some() {
+            break;
+        }
+        world.set_pad(0);
+        let _ = world.tick();
+    }
+    for mask in [PadButton::Right.mask(), 0, PadButton::Cross.mask()] {
+        world.set_pad(mask);
+        let _ = world.tick();
+    }
+    for _ in 0..0x100 {
+        if world.mode != SceneMode::BakaFighter {
+            break;
+        }
+        world.set_pad(0);
+        let _ = world.tick();
+    }
     assert_eq!(world.mode, SceneMode::Field, "return mode restored");
     assert!(
         world.minigames.baka_fighter.is_none(),
