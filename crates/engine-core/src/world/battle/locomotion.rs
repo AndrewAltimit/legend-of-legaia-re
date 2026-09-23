@@ -91,11 +91,25 @@ impl World {
     /// state: attacker **live** pair vs target **seat** pair, party reach
     /// offsets by character, monster size classes from the catalog. `1` for
     /// a slot that carries no actor (retail's head gate returns 1 for any
-    /// slot `>= 8`, which is also how the all-target sentinel `8` reads).
+    /// slot `>= 8`, which is also how the all-target sentinel `8` reads), and
+    /// `1` once the battle has ended.
+    ///
+    /// The party / monster split is the port's seat layout: retail tests
+    /// `slot < 3` (`sltiu v0,a2,3` at `0x8004E338`) because its actor table
+    /// keeps the party at fixed seats `0..=2`, where the engine seats the
+    /// monsters straight after the party, so the same question is
+    /// `slot < party_count` here.
     pub(crate) fn battle_range_metric(&self, attacker: u8, target: u8) -> u16 {
-        // Retail head gate: any slot `>= 8` reads out-of-range 1 (`sltiu
-        // a2,0x8` on both arguments) - which is also how the all-target
-        // sentinel `8` reads.
+        // Retail's first test is the battle-end byte: `lbu v1,-0x428f(v1)`
+        // (`0x8007BD71`) against `0xFF` at `0x8004E2F4..0x8004E310` sends every
+        // call to the out-of-range `1` exit once the wipe / escape teardowns
+        // have stored `0xFE` there. The engine's end signal is
+        // `battle.end`.
+        if self.battle.end.is_some() {
+            return 1;
+        }
+        // Then any slot `>= 8` reads out-of-range 1 (`sltiu a2,0x8` on both
+        // arguments) - which is also how the all-target sentinel `8` reads.
         if attacker >= 8 || target >= 8 {
             return 1;
         }

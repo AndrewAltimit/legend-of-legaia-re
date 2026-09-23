@@ -1965,6 +1965,11 @@ Engine mirror: [`engine-core::battle_seats`](../../crates/engine-core/src/battle
 
 ## Range / line-of-sight (`FUN_8004E2F0`)
 
+Its first test is the battle-end byte `0x8007BD71`: anything but `0xFF` - the
+wipe and escape teardowns store `0xFE` - returns the out-of-range `1` before
+any slot is read (`0x8004E2F4..0x8004E310`); the port reads `battle.end` for
+it.
+
 `FUN_8004E2F0(actor_a_id, actor_b_id) -> i16 distance` is the canonical battle range check, called 5+ times from the per-actor state machine. Reads `[DAT_801C9370 + id*4]` for both actors, computes a euclidean distance from `+0x34/+0x38` (or `+0x3C/+0x40` for the b-actor), then sums the two `+0x1F` size bytes (party-member size table at `0x80078878`, monster size byte read from the live actor) to get the hit radius. Final value is clamped to a per-actor cap and `0xF` per `param_2 < 3` party tier.
 
 ## Monster init (`FUN_80054CB0`)
@@ -2834,10 +2839,10 @@ byte `*(_DAT_8007BD24)[0]`:
    `_DAT_801F53D4` / `_DAT_801F53D8` into the **target's** `+0x04` tint and
    `+0x21F` selector. Gala's clip-`0x18` arm additionally **freezes the
    target's pose** (`+0x21D = 0`, cursor window `0x40..=0x80`; restored by
-   `FUN_801E93C8`); Vahn's clip-`0x18` arm is tint-only (`0x90..=0xA0`). The
-   overlay ribbon `FUN_801E1D98` is called by the clip-`0x67` arm, not the
-   `0x18` one. Both arms also stamp `+0x0C = 0x1000` (`sw v0,0xc(s1)` at
-   `0x8004D1DC` / `0x8004D294`). Port: `engine-vm::battle_impact_fx` +
+   `FUN_801E93C8`); Vahn's clip-`0x18` arm is tint-only (`0x90..=0xA0`).
+   Every tint arm also stamps `+0x0C = 0x1000`. The rest of the pass, from
+   `0x8004D01C` to `0x8004D32C`, is [tabulated below](#the-other-clip-tag-arms).
+   Port: `engine-vm::battle_impact_fx` +
    `World::tick_battle_impact_fx`; the tint decays through the per-actor
    presentation SM `FUN_80050120` (arm 0: `FUN_80050F30` ease to neutral,
    then the `+0x0C` blend drains, then the `+0x21F` selector retires - port
@@ -2855,6 +2860,7 @@ byte `*(_DAT_8007BD24)[0]`:
    status-proc arm; the class rides the clip as
    `MonsterAnimation::impact_class`. How the words reach the pixel is in
    [tint pass and draw pass](#how-the-tint-words-reach-the-pixel).
+   See [the other clip-tag arms](#the-other-clip-tag-arms) for the table.
 3. **Per-encounter boss hooks.** Gated on `DAT_8007BD0C` - the **monster /
    formation id**, not a sequence sub-phase byte, and `0x8A`/`0xA7`/`0xAA`/`0xB4`
    (138/167/170/180) are **boss ids**, not phase bands. Each arm applies
@@ -2902,6 +2908,37 @@ byte `*(_DAT_8007BD24)[0]`:
    [battle-formulas.md](battle-formulas.md#status-application-the-art--move-record-status-byte)),
    which the monster-cast fold calls and which lands the `+0x16E` bit on a
    party seat.
+
+### The other clip-tag arms
+
+Pass 2 keys every arm on the acting actor's committed record `+0x77` and the
+anim-player node's cursor `+0x68` (sixteenths of a keyframe), and writes the
+target named by the acting actor's `+0x1DD`. The whole pass, from the
+disassembly (`see ghidra/scripts/funcs/8004ce2c.txt`):
+
+| Who acts | Tag | Cursor | Writes |
+|---|---|---|---|
+| Gala | `0x16` | `>= 0x20` | target tint, entry 1, selector `2`, blend `0x1000` |
+| Gala | `0x17` | `>= 0x40` | the same tint |
+| Gala | `0x18` | `0x40..=0x80` | the same tint plus the pose freeze; acting `+0x21F = 2` on the tag alone |
+| Gala | `0x67` | `0xB0..=0xF0` | the same tint plus `FUN_801E1D98(&target[+0x3C], 0xC)` |
+| Vahn | `0x18` | `0x90..=0xA0` | target tint, entry 0, selector `1` |
+| Vahn | `0x2B` | any | acting `+0x21C = 3` below `0x51`, `0` from there |
+| Noa | `0x29` / `0x2D` | any | target `+0x16E` takes bits `0x380`, gated below |
+| a monster | `0x3B` | any | acting `+0x21C = 3`, target `4` while acting `+0x21B == 0x13`; both `0` when it reads `0` |
+
+The two Gala tint-only arms are open-ended: `slti v0,v0,0x20` / `0x40` at
+`0x8004D14C` / `0x8004D168` gate the start and nothing gates the end. Noa's
+arm needs a landed hit (acting `+0x1F4 != 0`), an ordinary fight
+(`ctx[+0x287] == 0`), an even `rand()` (`0x8004D0EC`) and a first monster
+other than `0xA7` - the byte it reads is `gp+0x9F4`, which with
+`gp = 0x8007B318` is the formation cell `0x8007BD0C`. `+0x21C` is the
+presentation arm the tint SM `FUN_80050120` dispatches on.
+
+Every row is ported in `engine-vm::battle_impact_fx` and applied by
+`World::tick_battle_impact_fx`, except the tag-`0x67` ribbon: its
+`FUN_801E1D98` call is surfaced as `ClipImpactWrite::effect_at_target`
+and the streak pass does not yet raise a ribbon from it.
 
 Calls the actor-spawn/move-VM invoker `FUN_80021B04` and helpers
 `FUN_8004FE5C` / `FUN_800583C8` / `FUN_80031D00` / RNG `FUN_80056798`.

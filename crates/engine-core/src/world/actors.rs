@@ -594,32 +594,64 @@ impl World {
                     vm::battle_action::ActorFlags(vm::battle_action::ActorFlags::WINDUP_DONE);
             }
         }
-        // The per-clip arms: acting party actor's committed record key +
-        // cursor window select the write onto its target.
+        // The per-clip arms: the acting actor's committed record key + cursor
+        // window select the writes onto it and its target.
         let acting = self.battle_ctx.active_actor as usize;
         let Some(actor) = self.actors.get(acting) else {
             return;
         };
-        if actor.battle_monster_id.is_some() {
-            // Party arms only (the monster arm - tag 0x3B - is decoded in
-            // `8004ce2c.txt` but not ported).
-            return;
-        }
         let Some(player) = &actor.battle_animation else {
             return;
         };
         let key = player.attach_key();
         let cursor = player.cursor_sixteenths();
-        let char_id = self.party_roster_slot(acting) as u8 + 1;
         let target = actor.battle.active_target as usize;
+        if actor.battle_monster_id.is_some() {
+            // The monster arm (tag `0x3B`, `0x8004D2DC..0x8004D32C`).
+            if let Some((own, tgt)) = ifx::monster_render_arm(key, actor.battle.hit_count_bound) {
+                if let Some(t) = self.actors.get_mut(target) {
+                    t.battle.render_flag = tgt;
+                }
+                if let Some(a) = self.actors.get_mut(acting) {
+                    a.battle.render_flag = own;
+                }
+            }
+            return;
+        }
+        let char_id = self.party_roster_slot(acting) as u8 + 1;
+        let hit_index = actor.battle.input_cursor;
         if let Some(sel) = ifx::clip_impact_acting_selector(char_id, key)
             && let Some(a) = self.actors.get_mut(acting)
         {
             a.battle.impact_state = sel;
         }
+        // Vahn's tag-`0x2B` arm writes the acting actor's `+0x21C`.
+        if let Some(flag) = ifx::vahn_render_arm(char_id, key, cursor)
+            && let Some(a) = self.actors.get_mut(acting)
+        {
+            a.battle.render_flag = flag;
+        }
+        // Noa's tag-`0x29` / `0x2D` status arm.
+        let first_monster = self
+            .battle_monster_slots()
+            .into_iter()
+            .find(|&(_, _, slot)| slot == 0)
+            .map_or(0, |(_, id, _)| id as u8);
+        let scripted = self.battle.scripted_fight;
+        if ifx::noa_status_arm(char_id, key, hit_index, scripted, first_monster, || {
+            self.next_rng()
+        }) && let Some(t) = self.actors.get_mut(target)
+        {
+            t.battle.field_flags |= ifx::NOA_STATUS_BITS;
+        }
         let Some(w) = ifx::clip_impact(char_id, key, cursor) else {
             return;
         };
+        // `w.effect_at_target` is tag `0x67`'s per-frame
+        // `FUN_801E1D98(&target[+0x3C], 0xC)` - the chained streak ribbon
+        // (`legaia_engine_ui::afterimage`), drawn at the target's seat. The
+        // streak pass has no per-arm seat source yet, so the ribbon is not
+        // raised from here; the tint below is.
         let tint = self
             .tables
             .move_power
@@ -636,9 +668,9 @@ impl World {
             t.battle.render_color = word;
         }
         // The selector + full blend arm even without disc data (the freeze
-        // is data-free; the tint word just has nothing to carry). Both arms
-        // stamp `+0x0C = 0x1000` (`sw v0,0xc(s1)` at `0x8004D1DC` /
-        // `0x8004D294`).
+        // is data-free; the tint word just has nothing to carry). Every tint
+        // arm stamps `+0x0C = 0x1000` (`sw v0,0xc(s1)` at `0x8004D180` /
+        // `0x8004D1DC` / `0x8004D234` / `0x8004D294`).
         t.battle.impact_state = w.impact_selector;
         t.battle.render_blend = vm::battle_formulas::TINT_BLEND_FULL;
     }
