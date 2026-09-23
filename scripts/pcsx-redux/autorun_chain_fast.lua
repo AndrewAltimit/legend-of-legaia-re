@@ -136,7 +136,10 @@ local function on_vsync()
         log(string.format("vsync %d: mode 0x%02X scene=%s", v, m, sc))
         last_mode, last_scene = m, sc
     end
-    if (v % 600) == 0 then log(string.format("...vsync %d mode 0x%02X scene=%s", v, m, sc)) end
+    if (v % 300) == 0 then
+        local x, z = player_xz()
+        log(string.format("...vsync %d mode 0x%02X scene=%s player (%s,%s)", v, m, sc, tostring(x), tostring(z)))
+    end
     if HOLD ~= "" and not since then pad.force(pad.BTN[HOLD]) end
     if not NO_MASH then
         if (v % EVERY) == 0 then
