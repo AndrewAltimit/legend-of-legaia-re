@@ -19,8 +19,9 @@
 //!   world's leg / contest edges, ported from the native window's
 //!   `tick_muscle_hub`; the quads come out of the PROT 0977 sprite table
 //!   through the shared `other_game_hud` emitters.
-//! - **Baka Fighter** (`World::tick_baka_fighter`): Left / Right / Up commit
-//!   attack types 1 / 2 / 3, Down the special; the result screen's tally
+//! - **Baka Fighter** (`World::tick_baka_fighter`): Square / Circle / Cross
+//!   commit attack types 1 / 2 / 3 (retail's face-button read), Triangle the
+//!   port's chargeable special; the result screen's tally
 //!   banks into the mode-24 winnings the return warp pays out. The opponent
 //!   the scene host rotated in is reproduced here (the same frame-keyed pick,
 //!   cross-checked against the fight's prize) so the page draws the fighter
@@ -66,7 +67,11 @@ pub(crate) struct MuscleUi {
     pub(crate) monster_id: Option<u16>,
     /// Player battle-file slot the fighter mesh assembles from (0 = Vahn).
     pub(crate) char_slot: u32,
-    intro_card: Option<HubScreen>,
+    /// The hub's first visit on a fresh contest, the native window's
+    /// `muscle_first_visit`.
+    first_visit: Option<legaia_engine_core::muscle_ringside::FirstVisitHub>,
+    /// A leg-open ROUND card no hub screen introduced (arms `0x15` /
+    /// `0x16`), the native window's `muscle_round_banner`.
     round_banner: Option<(i32, HubScreen)>,
     /// The round the re-entered hub's backdrop last drew its ROUND card for
     /// (`muscle_ringside::leg_open_raises_round_card`), the native window's
@@ -187,14 +192,14 @@ impl LegaiaRuntime {
         let ui = &mut self.minigame_ui.muscle;
         if leg_open && !ui.prev_leg_open {
             // Once per leg: not again after a re-entered hub's own card.
-            if legaia_engine_core::muscle_ringside::leg_open_raises_round_card(
+            let raise = legaia_engine_core::muscle_ringside::leg_open_raises_round_card(
                 ui.card_round.take(),
                 round,
-            ) {
-                ui.round_banner = Some((round, HubScreen::round_banner()));
-            }
+            );
             if contest_open && !ui.prev_contest_open {
-                ui.intro_card = Some(HubScreen::intro_card());
+                ui.first_visit = Some(legaia_engine_core::muscle_ringside::FirstVisitHub::new());
+            } else if raise {
+                ui.round_banner = Some((round, HubScreen::opponent_card()));
             }
             ui.interval = None;
             ui.backdrop = None;
@@ -205,13 +210,13 @@ impl LegaiaRuntime {
             ui.interval = raises.then(|| HubScreen::interval(roll));
             ui.tally = if raises { roll_seed } else { None };
             ui.backdrop = still.filter(|_| raises).map(HubBackdrop::reentry);
-            ui.intro_card = None;
+            ui.first_visit = None;
             ui.round_banner = None;
         }
-        if let Some(card) = ui.intro_card.as_mut() {
-            card.tick(1, pad);
-            if card.done() {
-                ui.intro_card = None;
+        if let Some(hub) = ui.first_visit.as_mut() {
+            hub.tick(1, pad);
+            if hub.done() {
+                ui.first_visit = None;
             }
         } else if let Some((_, banner)) = ui.round_banner.as_mut() {
             banner.tick(1, pad);
@@ -261,9 +266,11 @@ impl LegaiaRuntime {
         }
     }
 
-    /// This frame's hub-screen quads, the native `muscle_hub_sprite_draws`
-    /// selection over the shared emitters.
-    fn muscle_hub_quads(&self) -> Vec<HudQuad> {
+    /// This frame's hub-screen rows, the native `muscle_hub_sprite_draws`
+    /// selection over the shared emitters: blit rows for the quads, plus a
+    /// `shade` row for the first visit's backdrop shade between the wall
+    /// tiles and the screens drawn over them.
+    fn muscle_hub_rows(&self) -> Vec<serde_json::Value> {
         let ui = &self.minigame_ui.muscle;
         let Some(table) = ui.sprite_table.as_ref() else {
             return Vec::new();
@@ -275,26 +282,31 @@ impl LegaiaRuntime {
         let in_dome = world.mode == legaia_engine_core::world::SceneMode::MuscleDome;
         let mut table = table.clone();
         let mut quads = Vec::new();
+        let mut shade_row: Option<(usize, serde_json::Value)> = None;
         if in_dome {
-            // A first visit's brick wall under the two leg-open screens - the
-            // native window's `muscle_hub_sprite_draws` twin.
-            let wall = legaia_engine_core::muscle_ringside::first_visit_backdrop_level(
-                ui.intro_card.as_ref(),
-                ui.round_banner.as_ref().map(|(_, b)| b),
-            );
-            if wall > 0 {
-                quads.extend(hud::hub_screen_quads(
-                    &mut table,
-                    &legaia_engine_ui::ringside_backdrop::first_visit_tile_draws(),
-                    wall,
-                ));
-            }
-            if let Some(card) = ui.intro_card {
-                quads.extend(hud::hub_screen_quads(
-                    &mut table,
-                    hud::HUB_INTRO_CARD,
-                    card.brightness(),
-                ));
+            // A first visit's frame: wall + shade behind the arm's screens,
+            // through the shared kernel the native window draws with.
+            if let Some(hub) = ui.first_visit {
+                use legaia_engine_ui::ringside_backdrop as rb;
+                let f = hub.frame();
+                let levels = rb::FirstVisitLevels {
+                    backdrop: f.backdrop,
+                    intro: f.intro,
+                    title_scale: f.title_scale,
+                    course_card: f.course_card,
+                    round_card: f.round_card,
+                };
+                let (course, round) = world
+                    .minigames
+                    .muscle_contest
+                    .as_ref()
+                    .map_or((0, 1), |c| (c.course() as i32, c.round() as i32 + 1));
+                let d = rb::first_visit_hub_draw(&mut table, &levels, course, round);
+                quads.extend(d.tiles);
+                if let Some(sh) = d.shade {
+                    shade_row = Some((quads.len(), shade_json(&sh)));
+                }
+                quads.extend(d.hud);
             } else if let Some((round, banner)) = ui.round_banner {
                 quads.extend(hud::hub_screen_quads(
                     &mut table,
@@ -338,11 +350,15 @@ impl LegaiaRuntime {
                 card,
             ));
         }
-        quads
+        let mut rows: Vec<serde_json::Value> = quads.iter().map(hub_quad_json).collect();
+        if let Some((at, row)) = shade_row {
+            rows.insert(at.min(rows.len()), row);
+        }
+        rows
     }
 
     /// The re-entered hub's backdrop as blit rows, drawn under
-    /// [`Self::muscle_hub_quads`]: the two still quads, resolved through
+    /// [`Self::muscle_hub_rows`]: the two still quads, resolved through
     /// their texture pages onto the still sheet (`sheet` [`STILL_SHEET`],
     /// `pal` = the still variant). Empty unless a still is up.
     fn muscle_still_rows(&self) -> Vec<serde_json::Value> {
@@ -733,6 +749,21 @@ fn hub_quad_json(q: &HudQuad) -> serde_json::Value {
     })
 }
 
+/// The first visit's backdrop shade (`FUN_801D1610`) as a page row:
+/// `{ shade: true, x, y, dw, dh, top, bottom }` - a vertical ramp the page
+/// draws as bands of black at alpha `f / 255`, the native window's
+/// `shade_band_draws` stand-in for retail's subtractive blend.
+fn shade_json(sh: &legaia_engine_ui::ringside_backdrop::BackdropShade) -> serde_json::Value {
+    serde_json::json!({
+        "shade": true,
+        "x": sh.xy[0].0, "y": sh.xy[0].1,
+        "dw": sh.xy[1].0 as i32 - sh.xy[0].0 as i32,
+        "dh": sh.xy[2].1 as i32 - sh.xy[0].1 as i32,
+        "top": sh.rgb[0][0],
+        "bottom": sh.rgb[2][0],
+    })
+}
+
 #[wasm_bindgen]
 impl LegaiaRuntime {
     // ------------------------------------------------------ Muscle Dome
@@ -795,7 +826,7 @@ impl LegaiaRuntime {
     /// `bright` the packet colour (`0x80` = neutral modulation).
     pub fn play_mg_muscle_hub_quads_json(&self) -> String {
         let mut rows = self.muscle_still_rows();
-        rows.extend(self.muscle_hub_quads().iter().map(hub_quad_json));
+        rows.extend(self.muscle_hub_rows());
         serde_json::json!({
             "ok": self.minigame_ui.muscle.sprite_table.is_some(),
             "quads": rows,

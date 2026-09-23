@@ -2385,6 +2385,84 @@ impl LegaiaMinigames {
         serde_json::Value::Array(rows).to_string()
     }
 
+    /// The hub's **first visit** at `tick` ticks in (no pad input), as
+    /// retail-placed rows: `{ ok, arm, done, rows }`.
+    ///
+    /// The arms are `legaia_engine_core::muscle_ringside::FirstVisitHub` -
+    /// the intro strip, the brick wall rising under it, the course-title
+    /// zoom, the course card (`FUN_801D042C`, course `course`), the wall
+    /// draining and the ROUND card (`round` is the displayed number) - and
+    /// the frame is composed by
+    /// `legaia_engine_ui::ringside_backdrop::first_visit_hub_draw`, the
+    /// kernel both play hosts draw it with. `rows` are in paint order and in
+    /// [`Self::muscle_hub_quads_json`]'s row shape, plus one
+    /// `{ shade: true, x, y, dw, dh, top, bottom }` row for the backdrop
+    /// shade between the wall and the screens. `arm` is the arm name
+    /// (`intro`, `title`, `card`, `drain`, `round`, `done`).
+    pub fn muscle_first_visit_json(&self, tick: i32, course: i32, round: i32) -> String {
+        use legaia_engine_core::muscle_ringside::{FirstVisitArm as A, FirstVisitHub};
+        use legaia_engine_ui::other_game_hud as hud;
+        use legaia_engine_ui::ringside_backdrop as rb;
+        let Some(raw) = entry_bytes(&self.prot, &self.entries, 977) else {
+            return r#"{"ok":false}"#.to_string();
+        };
+        let mut table = hud::parse_sprite_table(raw);
+        if table.is_empty() {
+            return r#"{"ok":false}"#.to_string();
+        }
+        // The walk is deterministic and bounded; replay it to `tick`.
+        let mut hub = FirstVisitHub::new();
+        for _ in 0..tick.clamp(0, 4096) {
+            if hub.done() {
+                break;
+            }
+            hub.tick(1, 0);
+        }
+        let f = hub.frame();
+        let levels = rb::FirstVisitLevels {
+            backdrop: f.backdrop,
+            intro: f.intro,
+            title_scale: f.title_scale,
+            course_card: f.course_card,
+            round_card: f.round_card,
+        };
+        let d = rb::first_visit_hub_draw(&mut table, &levels, course, round);
+        let quad_row = |q: &hud::HudQuad| {
+            serde_json::json!({
+                "sheet": if q.tpage & 0x10 != 0 { 5 } else { 4 },
+                "pal": q.clut & 0x3F,
+                "u": q.uv[0].0, "v": q.uv[0].1,
+                "w": q.uv[1].0 as i32 - q.uv[0].0 as i32 + 1,
+                "h": q.uv[2].1 as i32 - q.uv[0].1 as i32 + 1,
+                "x": q.xy[0].0, "y": q.xy[0].1,
+                "dw": q.xy[1].0 as i32 - q.xy[0].0 as i32 + 1,
+                "dh": q.xy[2].1 as i32 - q.xy[0].1 as i32 + 1,
+                "semi": q.semi_transparent,
+            })
+        };
+        let mut rows: Vec<serde_json::Value> = d.tiles.iter().map(quad_row).collect();
+        if let Some(sh) = d.shade {
+            rows.push(serde_json::json!({
+                "shade": true,
+                "x": sh.xy[0].0, "y": sh.xy[0].1,
+                "dw": sh.xy[1].0 as i32 - sh.xy[0].0 as i32,
+                "dh": sh.xy[2].1 as i32 - sh.xy[0].1 as i32,
+                "top": sh.rgb[0][0],
+                "bottom": sh.rgb[2][0],
+            }));
+        }
+        rows.extend(d.hud.iter().map(quad_row));
+        let arm = match hub.arm() {
+            A::IntroIn | A::IntroHold | A::IntroOut => "intro",
+            A::TitleZoom => "title",
+            A::CardIn | A::CardHold => "card",
+            A::Drain | A::Return => "drain",
+            A::RoundIn | A::RoundOut => "round",
+            A::Done => "done",
+        };
+        serde_json::json!({ "ok": true, "arm": arm, "done": hub.done(), "rows": rows }).to_string()
+    }
+
     /// One PROT 0977 **hub screen** as retail-placed quads.
     ///
     /// `screen`: 0 = intro card, 1 = course-title art, 2 = INTERVAL
@@ -2408,7 +2486,7 @@ impl LegaiaMinigames {
         }
         let quads = match screen {
             0 => hud::hub_screen_quads(&mut table, hud::HUB_INTRO_CARD, brightness),
-            1 => hud::hub_screen_quads(&mut table, hud::HUB_TITLE_ART, hud::TITLE_ART_BRIGHTNESS),
+            1 => hud::title_art_quads(&mut table, hud::TITLE_ART_ZOOM_END),
             2 => hud::hub_screen_quads(&mut table, hud::HUB_INTERVAL_HEADING, brightness),
             3 => hud::hub_screen_quads(&mut table, &hud::round_banner_draws(round), brightness),
             // The six rows are the roll's, not the settled totals: the three

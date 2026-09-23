@@ -1358,8 +1358,9 @@ The **hub screens** draw on both hosts through the shared
 `muscle_hub_quads_json` (screen-selected by the page); the native
 play-window bakes the two hub page TIMs per referenced sub-palette into a
 sprite atlas and runs the same builders itself (`window/minigames.rs`,
-`muscle_hub_sprite_draws`): the intro card + ROUND banner over an open leg,
-the INTERVAL heading + six-row score tally between legs, the tally fed the
+`muscle_hub_sprite_draws`): the hub's first visit (intro strip, wall, title
+zoom, course card, ROUND card) over a fresh contest's first leg, the INTERVAL
+heading + six-row score tally between legs, the tally fed the
 same `DomeContest` rows / tally / coin-bank model on both hosts. *Between
 legs* is the whole of it - see [The intermission is per fight, not per
 turn](#the-intermission-is-per-fight-not-per-turn) for why a turn boundary
@@ -1393,13 +1394,20 @@ it at *twice* retail's brightness.
 | Opponent / ROUND-n card | `0x15` / `0x16` | `+dt*2`, 64 ticks | `0x3D` = 61 ticks (`slti 0x3d`, `0x801CFFB8`) | yes | `-dt*2` |
 | INTERVAL + score tally | `0x0A` / `0x0B` / `0x0C` | `+dt*4`, 32 ticks | the tally roll (data-dependent) | no | `-dt*2` to the `0x40` floor (`slti 0x40`, `0x801CFDAC`), then `-dt*4` |
 
-The `4` / `5` / `6` row was read as the ROUND banner for a while, and the
-port's leg-open banner still runs its envelope (`HubScreen::round_banner`).
-The draws say otherwise: arms `4` and `5` call the course card `FUN_801D042C`
-(records `5 + course` at `(8, 0x78)`, record `8` at `(0xB8, 0x7B)`) at
+The `4` / `5` / `6` row was read as the ROUND banner for a while. The draws
+say otherwise: arms `4` and `5` call the course card `FUN_801D042C` at
 `*(0x801D1A84)` beside the title art at a fixed `0x80`, and arm `6` draws
 nothing but the backdrop it drains. The ROUND banner `FUN_801D02F0` is drawn
-only by arm `0x15`, the opponent-card row.
+only by arm `0x15`, the opponent-card row. `FUN_801D042C` is six
+corner-anchored draws: the course-name strip (record `5 + course`,
+`*(0x801D1A90)`) as variant 1 at `(8, 0x78)`, variant 2 at the same seat and
+variant 2 again at `(0x10, 0x80)`, then record `8` the same way at
+`(0xB8, 0x7B)` / `(0xC0, 0x83)` - a subtractive shadow, an under-layer and an
+additive face once painted in OT order. Arm `3` also starts the card's level
+climbing (`0x801CFA74`, `+dt*2`) while the title zooms, so the card enters
+arm `4` part-lit. Port: `other_game_hud::course_card_draws`; the first visit
+as a whole is `muscle_ringside::FirstVisitHub`
+([`ringside-still.md`](../formats/ringside-still.md#in-the-port)).
 
 A skippable hold reads the arm's pad-edge snapshot `DAT_801D1A9C`
 (`_DAT_8007B874 | _DAT_8007B938`, stored at `0x801CF8C4`) and leaves on any

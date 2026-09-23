@@ -493,6 +493,9 @@ struct MuscleHubAssets {
     /// the same atlas (`0` = extraction 1221, `1` = 1222), laid out as the
     /// VRAM region `(384, 0)` the loader uploads it to.
     stills: Vec<(u32, u32)>,
+    /// Atlas y of a small all-white block - the texel the untextured
+    /// backdrop shade (`FUN_801D1610`) is drawn with.
+    white_y: u32,
 }
 
 /// One placed NPC's skinned mesh halves for one clip frame: the textured
@@ -888,11 +891,12 @@ struct PlayWindowApp {
     baka_chrome_frame: Vec<ResolvedChromeDraw>,
     /// Muscle Dome hub-screen atlas + sprite table (see [`MuscleHubAssets`]).
     muscle_hub: Option<MuscleHubAssets>,
-    /// The "Welcome to the Muscle Dome!" intro card's retail fade / hold
-    /// envelope, armed when a leg opens on a freshly staged contest.
-    muscle_intro_card: Option<legaia_engine_core::muscle_dome::HubScreen>,
-    /// The ROUND banner: `(displayed round number, envelope)`, armed on
-    /// every leg entry (after the intro card on a fresh contest).
+    /// The hub's first visit (intro strip, wall, title zoom, course card,
+    /// ROUND card - `legaia_engine_core::muscle_ringside::FirstVisitHub`),
+    /// armed when a leg opens on a freshly staged contest.
+    muscle_first_visit: Option<legaia_engine_core::muscle_ringside::FirstVisitHub>,
+    /// A leg-open ROUND card `(displayed round number, envelope)` for a leg
+    /// no hub screen has introduced - retail arms `0x15` / `0x16`.
     muscle_round_banner: Option<(i32, legaia_engine_core::muscle_dome::HubScreen)>,
     /// The round a re-entered hub's backdrop last drew its ROUND card for, so
     /// the leg that opens after it does not replay the card

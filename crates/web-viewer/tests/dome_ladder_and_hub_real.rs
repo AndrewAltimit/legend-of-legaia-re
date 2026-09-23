@@ -134,6 +134,12 @@ fn every_hub_draw_row_still_names_its_call_site() {
         ("interval", hud::HUB_INTERVAL_HEADING.to_vec()),
         ("round", hud::round_banner_draws(12)),
         ("tally", hud::HUB_SCORE_TALLY_LABELS.to_vec()),
+        // `FUN_801D042C`'s six calls, and the backdrop's six wall tiles.
+        ("course", hud::course_card_draws(1)),
+        (
+            "wall",
+            legaia_engine_ui::ringside_backdrop::first_visit_tile_draws(),
+        ),
     ];
     for (name, draws) in &screens {
         for d in draws {

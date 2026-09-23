@@ -793,6 +793,21 @@
     g.imageSmoothingEnabled = false;
     g.clearRect(0, 0, layer.width, layer.height);
     for (const q of quads) {
+      /* The first visit's backdrop shade (FUN_801D1610): a subtractive
+       * Gouraud ramp, drawn - like the native window - as 16 bands of
+       * black at alpha f / 255 over whatever is already down. */
+      if (q.shade) {
+        const bands = 16;
+        for (let b = 0; b < bands; b++) {
+          const y0 = q.y + Math.floor(q.dh * b / bands);
+          const y1 = q.y + Math.floor(q.dh * (b + 1) / bands);
+          const f = q.top + (q.bottom - q.top) * ((b + 0.5) / bands);
+          if (y1 <= y0 || f <= 0) continue;
+          g.fillStyle = 'rgba(0,0,0,' + (f / 255) + ')';
+          g.fillRect(q.x * sx, y0 * sy, q.dw * sx, (y1 - y0) * sy);
+        }
+        continue;
+      }
       const s = hubSheet(rt, q.sheet, q.pal);
       if (!s) continue;
       g.drawImage(s, q.u, q.v, q.w, q.h, q.x * sx, q.y * sy, q.dw * sx, q.dh * sy);

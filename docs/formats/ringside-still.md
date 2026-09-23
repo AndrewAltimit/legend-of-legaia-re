@@ -241,19 +241,37 @@ contest's own ladder rung - the arena overlay's `(course, round)` naming an
 ordinary PROT 867 record - so a real lead meets a real rung rather than a
 400-HP stand-in.
 
-The first visit's wall is drawn too, by both play hosts
-(`legaia_engine_ui::ringside_backdrop::first_visit_tile_draws`), under the
-two screens the port stages when a leg opens on a fresh contest. Its level is
-`muscle_ringside::first_visit_backdrop_level`: `0x80` less the intro card
-while the card fades out (arm `2`), `0x80` while the leg-open banner is up,
-and the banner's own level while it fades out - which works because that
-banner runs arms `4` / `5` / `6`'s envelope exactly. Three differences
-remain, and are disclosed rather than hidden: the banner draws the ROUND
-card where retail's arms `3..5` draw the title art and the course card, the
-arm's closing gouraud quad is not drawn (it is semi-transparent, and its
-blend is set by a draw-mode word the hub's sprite path has no seat for), and
-the standalone minigames page draws neither arm
-([`host-drift.md`](../tooling/host-drift.md#ringside-still-on-the-standalone-dome-page)).
+The first visit runs as retail runs it, on all three hosts. The arms are
+`legaia_engine_core::muscle_ringside::FirstVisitHub` - intro strip, wall
+rising under it, title zoom, course card (`FUN_801D042C`), wall draining, then
+arms `0x14..0x16`, where a first visit's `0x14` raises nothing (it tests the
+latch, `0x801CFEEC`, and passes straight to `0x15`), so the first ROUND card
+plays over black. Each frame is composed by one kernel,
+`legaia_engine_ui::ringside_backdrop::first_visit_hub_draw`: the wall tiles,
+then the shade (`backdrop_shade`, the `FUN_801D1610` port), then the arm's
+screens in paint order. The native window and the play page draw that frame
+off the world's leg edges; the standalone minigames page replays the same
+walk through `muscle_first_visit_json` and hands over to its own ROUND banner
+at arm `0x15`.
+
+The shade is the one stand-in. It is subtractive (`B - F`, draw-mode tpage
+`0x46`), and neither hub path blends subtractively, so both draw it as
+sixteen horizontal bands of black at alpha `f / 255` - scaling what is under
+it by `1 - f/255` where retail subtracts `f`.
+
+### The hub screens share one OT slot
+
+Every hub emitter links at slot `3` (`DAT_801D1AA8` is reset to `3` after
+each packet), and the link `FUN_8003D2C4` pushes onto the slot's head, so the
+last packet emitted is the first drawn. The course card, the title art and the
+ROUND banner each draw a variant-2 copy (subtractive; `clut + 1`) and a
+variant-1 copy (additive) of the same record: emitted variant 1 first, they
+paint variant 2 underneath. `other_game_hud::hub_screen_quads` takes draws in
+emit order and returns paint order. Before this, the hosts painted in emit
+order - the subtractive shadow over the additive face - and the title art was
+listed shadow-first, which left the face inheriting the shadow's write-back
+into record 4 (`semi = 1`, page `2`); retail clears that byte before each face
+draw (`sb zero,0x176b` at `0x801CFAF8`), and `title_art_quads` does too.
 
 The ROUND card itself runs once per leg, as retail's arms `0x15` / `0x16`
 run it once. A re-entered hub plays it over the still, and the leg the player

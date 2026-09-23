@@ -507,23 +507,22 @@ pub const HUB_INTRO_CARD: &[HubDraw] = &[HubDraw {
 }];
 
 /// The **course-title card**: record 4's 218x64 art centred high in the
-/// frame with its variant-2 twin offset `(+8, +8)` as a drop shadow. Both
-/// are drawn at a fixed brightness `0x80`; the retail arm animates the
-/// *scale* instead, ramping `DAT_801D1A88` down from
-/// [`TITLE_ART_ZOOM_START`] to [`TITLE_ART_ZOOM_END`].
+/// frame, then its variant-2 twin offset `(+8, +8)` as a drop shadow - in
+/// retail **emit** order. Both are drawn at a fixed brightness `0x80`; the
+/// retail arm animates the face's *scale* instead, ramping `DAT_801D1A88`
+/// down from [`TITLE_ART_ZOOM_START`] to [`TITLE_ART_ZOOM_END`], while the
+/// shadow is always at `0x1000` ([`title_art_draws`] carries the zoom).
+///
+/// The face goes first because the emitters write their variant back into
+/// the shared record: the shadow's variant 2 marks record 4 semi-transparent,
+/// and a face drawn after it would inherit that. Retail also clears the
+/// record's transparency byte (`sb zero,0x176b` at `0x801CFAF8`) before each
+/// face draw, which [`title_art_quads`] repeats.
 ///
 /// The shadow's arguments are set at `0x801CFB04` and the arm then `j`s into
 /// the screen's shared emit tail, so its `call_site` is that tail's `jal` -
 /// which several draws of this screen share.
 pub const HUB_TITLE_ART: &[HubDraw] = &[
-    HubDraw {
-        sel: 0x804,
-        x: 0xA8,
-        y: 0x48,
-        anchor: HubAnchor::Centre,
-        scale: 0x1000,
-        call_site: 0x801C_FED0,
-    },
     HubDraw {
         sel: 4,
         x: 0xA0,
@@ -532,7 +531,76 @@ pub const HUB_TITLE_ART: &[HubDraw] = &[
         scale: 0x1000,
         call_site: 0x801C_FAFC,
     },
+    HubDraw {
+        sel: 0x804,
+        x: 0xA8,
+        y: 0x48,
+        anchor: HubAnchor::Centre,
+        scale: 0x1000,
+        call_site: 0x801C_FED0,
+    },
 ];
+
+/// [`HUB_TITLE_ART`] with the face at the zoom scale `face_scale`
+/// (`*(0x801D1A88)`); the shadow keeps `0x1000` (`li v0,0x1000` at
+/// `0x801CFECC`, the emit tail).
+pub fn title_art_draws(face_scale: i32) -> Vec<HubDraw> {
+    let mut d = HUB_TITLE_ART.to_vec();
+    d[0].scale = face_scale;
+    d
+}
+
+/// The title art's quads at `face_scale`, in paint order, with retail's
+/// per-frame clear of record 4's transparency byte before the face.
+pub fn title_art_quads(table: &mut [HudSprite], face_scale: i32) -> Vec<HudQuad> {
+    if let Some(rec) = table.get_mut(4) {
+        rec.semi_transparent = 0;
+    }
+    hub_screen_quads(table, &title_art_draws(face_scale), TITLE_ART_BRIGHTNESS)
+}
+
+/// Sprite-table record of the course card's second strip (`li a0,0x8` into
+/// the `sel` of the last three calls, `0x801D04B8..0x801D04E8`).
+pub const COURSE_CARD_LABEL_RECORD: i32 = 8;
+
+/// First sprite-table record of the course-name strips: record `5 + course`
+/// (`addiu a2,a2,5` over `*(0x801D1A90)`).
+pub const COURSE_NAME_RECORD_BASE: i32 = 5;
+
+/// The **course card**: the course-name strip (record `5 + course`) at
+/// `(8, 0x78)` and record [`COURSE_CARD_LABEL_RECORD`] at `(0xB8, 0x7B)`,
+/// each drawn as variant 1 at its seat, then variant 2 at the same seat and
+/// variant 2 again `(+8, +8)` off it - six corner-anchored draws at scale
+/// `0x1000`, in retail emit order. The level is the caller's
+/// (`*(0x801D1A84)`, the hub's arms `4` / `5`).
+///
+/// Painted back to front (the emit order reversed - they share OT slot 3),
+/// variant 2 is a subtractive drop shadow and an under-layer the additive
+/// variant 1 lands on, the same two-pass lettering the ROUND banner uses.
+///
+/// PORT: FUN_801d042c (PROT 0977; hub arms 4 and 5 call it, `0x801CFB78`
+/// and `0x801CFBBC`). Drawn by both play hosts through
+/// `ringside_backdrop::first_visit_hub_draw`.
+pub fn course_card_draws(course: i32) -> Vec<HubDraw> {
+    let name = course.wrapping_add(COURSE_NAME_RECORD_BASE);
+    let label = COURSE_CARD_LABEL_RECORD;
+    let seat = |sel: i32, x: i16, y: i16, call_site: u32| HubDraw {
+        sel,
+        x,
+        y,
+        anchor: HubAnchor::Corner,
+        scale: 0x1000,
+        call_site,
+    };
+    vec![
+        seat(name | 0x400, 8, 0x78, 0x801D_0464),
+        seat(name | 0x800, 8, 0x78, 0x801D_0484),
+        seat(name | 0x800, 0x10, 0x80, 0x801D_04A4),
+        seat(label | 0x400, 0xB8, 0x7B, 0x801D_04BC),
+        seat(label | 0x800, 0xB8, 0x7B, 0x801D_04D4),
+        seat(label | 0x800, 0xC0, 0x83, 0x801D_04EC),
+    ]
+}
 
 /// Brightness both [`HUB_TITLE_ART`] draws are issued at.
 pub const TITLE_ART_BRIGHTNESS: i32 = 0x80;
@@ -756,6 +824,14 @@ pub const SCORE_TALLY_VALUE_PALETTES: [(i16, i16); SCORE_TALLY_ROWS] =
 /// the next call sees it - reproducing that is the point. A draw naming a
 /// record the table does not hold is skipped.
 ///
+/// `draws` are taken in retail **emit** order and the quads come back in
+/// **paint** order - reversed. Every hub emitter links at the same ordering
+/// table slot (`DAT_801D1AA8`, reset to `3` after each packet), and the
+/// link `FUN_8003D2C4` pushes onto the slot's head, so the last packet
+/// emitted is the first drawn. That is what puts each variant-2
+/// (subtractive) under-layer beneath the variant-1 (additive) face drawn
+/// over it; a host painting emit order lands the shadow on top.
+///
 /// PORT: FUN_801d15c8 (the [`HubAnchor::RoundDigit`] arm)
 pub fn hub_screen_quads(
     table: &mut [HudSprite],
@@ -780,6 +856,7 @@ pub fn hub_screen_quads(
             _ => hud_quad_centred(rec, d.x, d.y, variant, brightness, d.scale),
         });
     }
+    out.reverse();
     out
 }
 
@@ -793,6 +870,9 @@ pub fn hub_screen_quads(
 /// `values` are the contest's own rows: the four lanes
 /// `legaia_engine_core::muscle_dome::LegScoreRows` carries, then the running
 /// tally and the coin bank they settle into.
+///
+/// Like [`hub_screen_quads`], the result is in paint order: the whole
+/// screen shares one ordering-table slot, so the emit order reversed.
 pub fn score_tally_quads(
     table: &mut [HudSprite],
     values: [i32; SCORE_TALLY_ROWS],
@@ -828,6 +908,7 @@ pub fn score_tally_quads(
             ));
         }
     }
+    out.reverse();
     out
 }
 

@@ -618,14 +618,19 @@ impl PlayWindowApp {
                 .map_or(1, |c| c.round() as i32 + 1);
             // The card runs once per leg: a re-entered hub already played it
             // over the still, so the leg that opens after it does not.
-            if legaia_engine_core::muscle_ringside::leg_open_raises_round_card(
+            let raise = legaia_engine_core::muscle_ringside::leg_open_raises_round_card(
                 self.muscle_card_round.take(),
                 round,
-            ) {
-                self.muscle_round_banner = Some((round, HubScreen::round_banner()));
-            }
+            );
             if contest_open && !self.muscle_prev_contest_open {
-                self.muscle_intro_card = Some(HubScreen::intro_card());
+                // A fresh contest opens on the hub's first visit, whose own
+                // arms end in the ROUND card (`FirstVisitHub`).
+                self.muscle_first_visit =
+                    Some(legaia_engine_core::muscle_ringside::FirstVisitHub::new());
+            } else if raise {
+                // Retail's ROUND card is arms 0x15 / 0x16 - the opponent-card
+                // envelope.
+                self.muscle_round_banner = Some((round, HubScreen::opponent_card()));
             }
             self.muscle_interval = None;
             self.muscle_backdrop = None;
@@ -664,15 +669,15 @@ impl PlayWindowApp {
                         .map(|c| c.tally_roll())
                 })
                 .flatten();
-            self.muscle_intro_card = None;
+            self.muscle_first_visit = None;
             self.muscle_round_banner = None;
         }
-        // Retail runs one screen at a time: the intro strip's cross-fade is
-        // its own arm, and the ROUND banner's arm only follows it.
-        if let Some(card) = self.muscle_intro_card.as_mut() {
-            card.tick(1, pad);
-            if card.done() {
-                self.muscle_intro_card = None;
+        // Retail runs one arm at a time: the first visit's arms walk intro,
+        // title, course card and ROUND card in turn.
+        if let Some(hub) = self.muscle_first_visit.as_mut() {
+            hub.tick(1, pad);
+            if hub.done() {
+                self.muscle_first_visit = None;
             }
         } else if let Some((_, banner)) = self.muscle_round_banner.as_mut() {
             banner.tick(1, pad);
@@ -863,6 +868,14 @@ impl PlayWindowApp {
             log::warn!("muscle hub: no page/palette block decoded");
             return;
         }
+        // A small white block: the texel the untextured backdrop shade draws
+        // with.
+        let white_y = atlas_h;
+        for _ in 0..4 {
+            rgba.extend(std::iter::repeat_n(0xFF, 4 * 4));
+            rgba.resize(rgba.len() + ((atlas_w - 4) * 4) as usize, 0);
+        }
+        atlas_h += 4;
         let mut stills: Vec<(u32, u32)> = Vec::new();
         for variant in 0..2u32 {
             let index = legaia_asset::ringside_still::PROT_INDEX_DEFAULT + variant;
@@ -896,6 +909,7 @@ impl PlayWindowApp {
                     table,
                     atlas,
                     stills,
+                    white_y,
                 });
             }
             Err(e) => log::warn!("muscle hub: atlas upload skipped: {e:#}"),
@@ -907,9 +921,10 @@ impl PlayWindowApp {
     /// ([`legaia_engine_render::other_game_hud::hub_screen_quads`] /
     /// [`legaia_engine_render::other_game_hud::score_tally_quads`] - the browser
     /// dome page reaches the same functions via
-    /// `minigames_muscle::muscle_hub_quads_json`): the intro card and ROUND
-    /// banner over an open leg, the INTERVAL heading + six-row score tally
-    /// between legs. Every quad's extent and screen seat come out of the
+    /// `minigames_muscle::muscle_hub_quads_json`): the hub's first visit
+    /// (`ringside_backdrop::first_visit_hub_draw` - wall, shade, intro strip,
+    /// title zoom, course card, ROUND card) over a fresh contest's first leg,
+    /// the INTERVAL heading + six-row score tally between legs. Every quad's extent and screen seat come out of the
     /// PROT 0977 descriptor table and recovered draw lists; the host places
     /// nothing itself.
     ///
@@ -942,27 +957,34 @@ impl PlayWindowApp {
         // to pass 0x100, which drew every hub screen at twice retail's
         // brightness.
         let mut quads: Vec<hud::HudQuad> = Vec::new();
+        // The first visit's shade and the screens drawn over it: the shade
+        // sits between the wall tiles (`quads`) and these.
+        let mut shade: Option<legaia_engine_render::ringside_backdrop::BackdropShade> = None;
+        let mut front: Vec<hud::HudQuad> = Vec::new();
         if in_dome {
-            // A first visit's brick wall (the emitter's latch-0 arm) under
-            // the two leg-open screens, at the level retail's arms 2..6 give
-            // it - drawn first, so it sits behind the cards.
-            let wall = legaia_engine_core::muscle_ringside::first_visit_backdrop_level(
-                self.muscle_intro_card.as_ref(),
-                self.muscle_round_banner.as_ref().map(|(_, b)| b),
-            );
-            if wall > 0 {
-                quads.extend(hud::hub_screen_quads(
-                    &mut table,
-                    &legaia_engine_render::ringside_backdrop::first_visit_tile_draws(),
-                    wall,
-                ));
-            }
-            if let Some(card) = self.muscle_intro_card {
-                quads.extend(hud::hub_screen_quads(
-                    &mut table,
-                    hud::HUB_INTRO_CARD,
-                    card.brightness(),
-                ));
+            // A first visit's frame: the brick wall + shade (the backdrop
+            // emitter's latch-0 arm) behind the arm's screens, all composed
+            // by the shared kernel the play page draws with.
+            if let Some(hub) = self.muscle_first_visit {
+                let f = hub.frame();
+                let levels = legaia_engine_render::ringside_backdrop::FirstVisitLevels {
+                    backdrop: f.backdrop,
+                    intro: f.intro,
+                    title_scale: f.title_scale,
+                    course_card: f.course_card,
+                    round_card: f.round_card,
+                };
+                let (course, round) = world
+                    .minigames
+                    .muscle_contest
+                    .as_ref()
+                    .map_or((0, 1), |c| (c.course() as i32, c.round() as i32 + 1));
+                let d = legaia_engine_render::ringside_backdrop::first_visit_hub_draw(
+                    &mut table, &levels, course, round,
+                );
+                quads.extend(d.tiles);
+                shade = d.shade;
+                front.extend(d.hud);
             } else if let Some((round, banner)) = self.muscle_round_banner {
                 quads.extend(hud::hub_screen_quads(
                     &mut table,
@@ -1032,10 +1054,17 @@ impl PlayWindowApp {
                 });
             }
         }
-        if quads.is_empty() && out.is_empty() {
+        if quads.is_empty() && out.is_empty() && front.is_empty() {
             return Vec::new();
         }
-        for q in &quads {
+        let shade_at = quads.len();
+        quads.extend(front);
+        for (i, q) in quads.iter().enumerate() {
+            if i == shade_at
+                && let Some(sh) = shade
+            {
+                out.extend(shade_band_draws(&sh, assets.white_y));
+            }
             let sheet = u8::from(q.tpage & 0x10 != 0);
             let pal = (q.clut & 0x3F) as u8;
             let Some(&(_, _, block_y)) = assets
@@ -1076,6 +1105,11 @@ impl PlayWindowApp {
                 src: (sx as u32, block_y + sy as u32, csw, csh),
                 color: [tint(0), tint(1), tint(2), 1.0],
             });
+        }
+        if shade_at >= quads.len()
+            && let Some(sh) = shade
+        {
+            out.extend(shade_band_draws(&sh, assets.white_y));
         }
         // The quads sit in the retail 320x240 frame; map them through the
         // same stage transform every minigame chrome layer uses.
@@ -1600,4 +1634,43 @@ fn sway_sine_table() -> &'static [i16] {
             })
             .collect()
     })
+}
+
+/// Rows the backdrop shade's vertical Gouraud ramp is cut into for the
+/// sprite pipeline, which carries one colour per draw.
+const SHADE_BANDS: u32 = 16;
+
+/// The first visit's backdrop shade (`FUN_801D1610`, a subtractive `B - F`
+/// Gouraud quad, `0x64` at the top fading to `0` at the bottom) as sprite
+/// draws over the atlas's white block.
+///
+/// Disclosed stand-in: the sprite pipeline blends with ordinary alpha, so
+/// the ramp is cut into [`SHADE_BANDS`] flat bands of black at alpha
+/// `f / 255` - "scale the background by `1 - f/255`" in place of retail's
+/// "subtract `f`". The browser play page draws the same bands.
+fn shade_band_draws(
+    sh: &legaia_engine_render::ringside_backdrop::BackdropShade,
+    white_y: u32,
+) -> Vec<legaia_engine_render::SpriteDraw> {
+    let (x0, y0) = (i32::from(sh.xy[0].0), i32::from(sh.xy[0].1));
+    let w = (i32::from(sh.xy[1].0) - x0).max(0) as u32;
+    let h = (i32::from(sh.xy[2].1) - y0).max(0);
+    let top = f32::from(sh.rgb[0][0]);
+    let bottom = f32::from(sh.rgb[2][0]);
+    let mut out = Vec::new();
+    for b in 0..SHADE_BANDS as i32 {
+        let by0 = y0 + h * b / SHADE_BANDS as i32;
+        let by1 = y0 + h * (b + 1) / SHADE_BANDS as i32;
+        let t = (b as f32 + 0.5) / SHADE_BANDS as f32;
+        let f = top + (bottom - top) * t;
+        if by1 <= by0 || f <= 0.0 {
+            continue;
+        }
+        out.push(legaia_engine_render::SpriteDraw {
+            dst: (x0, by0, w, (by1 - by0) as u32),
+            src: (0, white_y, 1, 1),
+            color: [0.0, 0.0, 0.0, f / 255.0],
+        });
+    }
+    out
 }

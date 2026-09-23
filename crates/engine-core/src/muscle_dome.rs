@@ -2966,8 +2966,10 @@ impl HubScreen {
     /// and arm `6`'s `4 dt` drain is the first-visit backdrop level
     /// (`0x801CFC54`), with nothing else drawn. The ROUND banner
     /// (`FUN_801D02F0`) is arm `0x15`'s, under [`Self::opponent_card`]. The
-    /// hosts draw the ROUND card on this envelope at a leg's opening, which
-    /// is disclosed in `docs/formats/ringside-still.md`.
+    /// play hosts run those arms through
+    /// `crate::muscle_ringside::FirstVisitHub` and raise any other leg-open
+    /// ROUND card on [`Self::opponent_card`]; this envelope stays for the
+    /// standalone page's sampled screen `1`.
     pub const fn round_banner() -> Self {
         Self::new(
             HUB_FADE_STEP_SLOW,

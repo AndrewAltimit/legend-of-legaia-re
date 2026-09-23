@@ -27,7 +27,7 @@
 //! more sheet. What makes it the still and not an arbitrary picture is that
 //! the quads name it by texture page, exactly as retail's do.
 
-use crate::other_game_hud::HudQuad;
+use crate::other_game_hud::{HudQuad, HudSprite};
 use legaia_asset::ringside_still as still;
 use legaia_engine_vm::panel_backread_loader::{BACKREAD_RECT_X, backread_slice_rect};
 
@@ -125,11 +125,7 @@ pub const FIRST_VISIT_TILE_RECORD: i32 = 2;
 ///
 /// The draws carry no brightness: [`crate::other_game_hud::hub_screen_quads`]
 /// takes the level, which is the same `*(0x801D1A7C)` the still arm reads.
-/// The arm's last packet - a full-screen `0x3A` gouraud quad through
-/// `FUN_801D1610(0, 0, 0x140, 0xF0)` at OT slot `0x384`, top corners shaded
-/// `0x64`, bottom `0` - is not built here: it is semi-transparent, and its
-/// blend mode is set by the draw-mode word `FUN_801D1610` appends, which the
-/// hub's one-colour sprite path has no seat for.
+/// The arm's last packet, the full-screen shade, is [`first_visit_shade`].
 ///
 /// PORT: FUN_801d00f8 (the `_DAT_801D1AE0 == 0` arm's tile grid,
 /// `0x801D0148..0x801D0194`)
@@ -148,6 +144,152 @@ pub fn first_visit_tile_draws() -> Vec<crate::other_game_hud::HubDraw> {
             });
         }
     }
+    out
+}
+
+/// GP0 command byte of the backdrop shade: `0x3A`, a Gouraud-shaded,
+/// untextured, semi-transparent four-point polygon (`lui t0,0x3a10` at
+/// `0x801D1624`).
+pub const GP0_POLY_G4_SEMI: u8 = 0x3A;
+
+/// The shade's top-corner colour (`li v0,0x64` at `0x801D1654`, stored in
+/// all three lanes of vertices 0 and 1); the bottom corners are `0`.
+pub const SHADE_TOP: u8 = 0x64;
+
+/// The tpage word of the draw-mode packet the shade appends
+/// (`li a3,0x46` at `0x801D16CC`): ABR bits `(0x46 >> 5) & 3 = 2`, the
+/// subtractive `B - F` equation.
+pub const SHADE_DRAW_MODE_TPAGE: u16 = 0x46;
+
+/// Ordering-table slot the first visit links its shade at (`li v0,0x384`
+/// at `0x801D0198`), in front of the wall tiles at `0x3E8`.
+pub const SHADE_OT: u32 = 0x384;
+
+/// Ordering-table slot the first visit's wall tiles link at (`li s3,0x3e8`,
+/// stored to `DAT_801D1AA8` before each tile at `0x801D016C`).
+pub const TILE_OT: u32 = 0x3E8;
+
+/// One `FUN_801D1610` packet: an untextured Gouraud quad over
+/// `(x, y, w, h)`, top corners [`SHADE_TOP`], bottom corners black, drawn
+/// subtractively. Its colour does not follow the backdrop level: whenever
+/// the backdrop runs at all, the shade darkens the top of the frame by the
+/// full `0x64` and nothing at the bottom.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BackdropShade {
+    /// Vertices in retail `v0..v3` order.
+    pub xy: [(i16, i16); 4],
+    /// Per-vertex colour.
+    pub rgb: [[u8; 3]; 4],
+    /// ABR equation of the appended draw-mode packet (`2`, `B - F`).
+    pub abr: u8,
+    /// Ordering-table slot.
+    pub ot: u32,
+}
+
+/// Build the shade packet over `(x, y, w, h)` at OT slot `ot`.
+///
+/// PORT: FUN_801d1610 (PROT 0977; the first-visit arm of `FUN_801D00F8`
+/// calls it once, `0x801D01AC`)
+pub fn backdrop_shade(x: i16, y: i16, w: i16, h: i16, ot: u32) -> BackdropShade {
+    let (x1, y1) = (x.wrapping_add(w), y.wrapping_add(h));
+    let top = [SHADE_TOP; 3];
+    BackdropShade {
+        xy: [(x, y), (x1, y), (x, y1), (x1, y1)],
+        rgb: [top, top, [0; 3], [0; 3]],
+        abr: ((SHADE_DRAW_MODE_TPAGE >> 5) & 3) as u8,
+        ot,
+    }
+}
+
+/// The first visit's shade: `FUN_801D1610(0, 0, 0x140, 0xF0)` at
+/// [`SHADE_OT`] (`0x801D0198..0x801D01B0`).
+pub fn first_visit_shade() -> BackdropShade {
+    backdrop_shade(0, 0, 0x140, 0xF0, SHADE_OT)
+}
+
+/// The levels the first visit's hub draws a frame at - one per screen, or
+/// `None` for a screen that arm does not draw. The engine's
+/// `muscle_ringside::FirstVisitHub::frame` produces them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FirstVisitLevels {
+    /// The wall's level `*(0x801D1A7C)`; `0` draws no backdrop at all.
+    pub backdrop: i32,
+    /// The intro strip's level.
+    pub intro: Option<i32>,
+    /// The title art's face scale.
+    pub title_scale: Option<i32>,
+    /// The course card's level.
+    pub course_card: Option<i32>,
+    /// The ROUND card's level.
+    pub round_card: Option<i32>,
+}
+
+/// One first-visit hub frame, back to front: the wall tiles, the shade over
+/// them, then the hub screens' quads in paint order.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FirstVisitDraw {
+    /// The `3 x 2` wall tiles at [`TILE_OT`].
+    pub tiles: Vec<HudQuad>,
+    /// The shade at [`SHADE_OT`], present whenever the tiles are.
+    pub shade: Option<BackdropShade>,
+    /// Every hub-screen quad at slot `3`, in paint order.
+    pub hud: Vec<HudQuad>,
+}
+
+/// Compose a first-visit hub frame from the sprite table: the backdrop
+/// emitter's latch-`0` arm (tiles + shade) when `levels.backdrop` is
+/// non-zero, then the arm's screens in the order its emitter calls run -
+/// intro strip; or course card, title face, title shadow; or the ROUND card
+/// - reversed into paint order, since they all share one OT slot.
+///
+/// `course` is `*(0x801D1A90)`, `round` the displayed round number.
+pub fn first_visit_hub_draw(
+    table: &mut [HudSprite],
+    levels: &FirstVisitLevels,
+    course: i32,
+    round: i32,
+) -> FirstVisitDraw {
+    use crate::other_game_hud as hud;
+    let mut out = FirstVisitDraw::default();
+    if levels.backdrop != 0 {
+        out.tiles = hud::hub_screen_quads(table, &first_visit_tile_draws(), levels.backdrop);
+        out.shade = Some(first_visit_shade());
+    }
+    // Each call returns its own quads in paint order; flip them back to
+    // emit order, concatenate the arm's calls, and flip the whole slot once.
+    let emit_order = |mut q: Vec<HudQuad>| {
+        q.reverse();
+        q
+    };
+    let mut emit: Vec<HudQuad> = Vec::new();
+    if let Some(level) = levels.intro {
+        emit.extend(emit_order(hud::hub_screen_quads(
+            table,
+            hud::HUB_INTRO_CARD,
+            level,
+        )));
+    }
+    if let Some(level) = levels.course_card {
+        emit.extend(emit_order(hud::hub_screen_quads(
+            table,
+            &hud::course_card_draws(course),
+            level,
+        )));
+    }
+    if let Some(scale) = levels.title_scale {
+        // `title_art_quads` repeats retail's per-frame clear of record 4's
+        // transparency byte before the face.
+        emit.extend(emit_order(hud::title_art_quads(table, scale)));
+    }
+    if let Some(level) = levels.round_card {
+        emit.extend(emit_order(hud::hub_screen_quads(
+            table,
+            &hud::round_banner_draws(round),
+            level,
+        )));
+    }
+    emit.reverse();
+    out.hud = emit;
     out
 }
 
@@ -240,6 +382,80 @@ pub fn still_sheet_rgba(entry: &[u8]) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_shade_darkens_the_top_and_leaves_the_bottom() {
+        let s = first_visit_shade();
+        assert_eq!(s.xy, [(0, 0), (0x140, 0), (0, 0xF0), (0x140, 0xF0)]);
+        assert_eq!(s.rgb[0], [0x64; 3]);
+        assert_eq!(s.rgb[1], [0x64; 3]);
+        assert_eq!(s.rgb[2], [0; 3]);
+        assert_eq!(s.abr, 2, "draw-mode tpage 0x46 selects B - F");
+        assert_eq!(s.ot, 0x384);
+    }
+
+    fn table() -> Vec<HudSprite> {
+        (0..17)
+            .map(|i| HudSprite {
+                size: 0x1000,
+                tpage: if (4..=8).contains(&i) { 0x15 } else { 0x5 },
+                clut: 0x7DC0,
+                u0: 0,
+                v0: 0,
+                w: 32,
+                h: 16,
+                rgb_top: [0x80; 3],
+                semi_transparent: 0,
+                rgb_bottom: [0x80; 3],
+                page: 0,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_first_visit_frame_puts_the_card_shadows_under_their_faces() {
+        let mut t = table();
+        let levels = FirstVisitLevels {
+            backdrop: 0x80,
+            course_card: Some(0x80),
+            title_scale: Some(0x1000),
+            ..Default::default()
+        };
+        let d = first_visit_hub_draw(&mut t, &levels, 1, 1);
+        assert_eq!(d.tiles.len(), 6);
+        assert!(d.shade.is_some());
+        assert_eq!(
+            d.hud.len(),
+            8,
+            "six course-card draws + title face + shadow"
+        );
+        // Painted first: the title's subtractive shadow; painted last: the
+        // course name's additive face at (8, 0x78).
+        assert_eq!(d.hud[0].tpage & 0x60, 0x40, "variant 2 = ABR 2 first");
+        assert_eq!(d.hud[7].xy[0], (8, 0x78));
+        assert_eq!(d.hud[7].tpage & 0x60, 0x20, "variant 1 = ABR 1 last");
+        // The title face sits between and is opaque despite the shadow's
+        // write-back into record 4.
+        let face = d
+            .hud
+            .iter()
+            .find(|q| q.tpage & 0x60 == 0 && q.tpage & 0x10 != 0)
+            .unwrap();
+        assert!(!face.semi_transparent);
+    }
+
+    #[test]
+    fn no_backdrop_level_draws_no_wall_or_shade() {
+        let mut t = table();
+        let levels = FirstVisitLevels {
+            round_card: Some(0x40),
+            ..Default::default()
+        };
+        let d = first_visit_hub_draw(&mut t, &levels, 0, 3);
+        assert!(d.tiles.is_empty());
+        assert!(d.shade.is_none());
+        assert!(!d.hud.is_empty());
+    }
+
     use super::*;
 
     #[test]

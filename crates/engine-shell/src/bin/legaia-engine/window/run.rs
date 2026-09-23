@@ -1183,7 +1183,7 @@ pub(super) fn cmd_play_window_with_record(
         baka_hud_widgets: None,
         baka_chrome_frame: Vec::new(),
         muscle_hub: None,
-        muscle_intro_card: None,
+        muscle_first_visit: None,
         muscle_round_banner: None,
         muscle_card_round: None,
         muscle_interval: None,

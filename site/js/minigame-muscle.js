@@ -1015,10 +1015,10 @@ window.MgMuscle = (function () {
       magicRows = null;
       magicWhy = '';
       const n = contest ? contest.round + 1 : 1;
-      /* The ROUND banner's life is retail's own envelope length (fade-in +
-       * hold + fade-out off `HubScreen::round_banner`), not a page constant;
-       * its brightness comes from the same envelope below. */
-      setBanner('ROUND ' + n, null, hubEnv(1, 0).total || 70);
+      /* The ROUND banner's life is retail's own envelope length - arms
+       * 0x15 / 0x16, `HubScreen::opponent_card` - not a page constant; its
+       * brightness comes from the same envelope below. */
+      setBanner('ROUND ' + n, null, hubEnv(2, 0).total || 70);
     }
 
     function commit(slot) {
@@ -1505,9 +1505,54 @@ window.MgMuscle = (function () {
      * cursive strip - the 240x18 hub sprite (PROT 0977 record 3) off the
      * dome data file (extraction 1220), drawn 1:1 (its glow is baked into
      * the texels). Falls back to a system cursive without disc chrome. */
+    /* The hub's whole first visit (FirstVisitHub): intro strip, the brick
+     * wall rising under it with its shade, the course-title zoom and the
+     * course card (FUN_801D042C), then the wall draining. Rows come back
+     * placed and in paint order from the kernel both play hosts draw with;
+     * the page hands over to its ROUND banner - retail's arms 0x15/0x16 -
+     * when the walk reaches them. */
+    const firstVisitCache = new Map();
+    function drawFirstVisit() {
+      if (!api || !api.muscle_first_visit_json || !contest) return null;
+      const key = introT + ':' + contest.course + ':' + contest.round;
+      let m = firstVisitCache.get(key);
+      if (m === undefined) {
+        try {
+          m = JSON.parse(api.muscle_first_visit_json(introT, contest.course | 0, (contest.round | 0) + 1));
+        } catch (e) { m = { ok: false }; }
+        firstVisitCache.set(key, m);
+      }
+      if (!m.ok) return null;
+      for (const q of m.rows || []) {
+        if (q.shade) {
+          /* Subtractive Gouraud ramp, drawn as 16 bands of black at alpha
+           * f / 255 - the native window's stand-in too. */
+          const bands = 16;
+          for (let b = 0; b < bands; b++) {
+            const y0 = q.y + Math.floor(q.dh * b / bands);
+            const y1 = q.y + Math.floor(q.dh * (b + 1) / bands);
+            const f = q.top + (q.bottom - q.top) * ((b + 0.5) / bands);
+            if (y1 <= y0 || f <= 0) continue;
+            g.fillStyle = 'rgba(0,0,0,' + (f / 255) + ')';
+            g.fillRect(q.x * 2, y0 * 2, q.dw * 2, (y1 - y0) * 2);
+          }
+          continue;
+        }
+        blit(q.sheet, q.pal, q.u, q.v, q.w, q.h, q.x, q.y, q.dw, q.dh);
+      }
+      return m;
+    }
+
     function drawIntro() {
       g.fillStyle = '#000';
       g.fillRect(0, 0, hudCanvas.width, hudCanvas.height);
+      if (hudOk()) {
+        const fv = drawFirstVisit();
+        if (fv) {
+          if (fv.arm === 'round' || fv.done) beginSelect();
+          return true;
+        }
+      }
       const env = hubEnv(0, introT);
       g.save();
       /* The strip's own fade counter drives the emitter; the canvas alpha
@@ -2177,7 +2222,7 @@ window.MgMuscle = (function () {
        * record 1, not the decimal readout's record 9, and its column is
        * digit*24 (FUN_801D15C8). */
       const round = /^ROUND (\d+)$/.exec(banner.text);
-      const roundEnv = hubEnv(1, banner.t);
+      const roundEnv = hubEnv(2, banner.t);
       /* The retail art carries the fade in its own emitter brightness, so the
        * canvas alpha steps out of the way for it - two ramps would compound. */
       if (round) g.globalAlpha = 1;
