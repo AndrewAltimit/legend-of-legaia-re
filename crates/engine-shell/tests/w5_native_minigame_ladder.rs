@@ -388,13 +388,15 @@ fn rung4_dance_how_to_runs_its_tutorial() {
 /// *different* one loses. A cycling `Left,Right,Up` pattern entered on the
 /// same tick loses 0-2, which is why the win below has to be asserted rather
 /// than assumed.
-const BAKA_ATTACKS: &str = "80:Up,100:Up,120:Up,140:Up,160:Up,180:Up,200:Up,220:Up,240:Up,\
-260:Up,280:Up,300:Up,320:Up,340:Up,360:Up,380:Up,400:Up,420:Up,440:Up,460:Up,480:Up,500:Up,\
-520:Up,540:Up,560:Up,580:Up,600:Up,620:Up,640:Up,660:Up,680:Up,700:Up,720:Up,740:Up,760:Up,\
-780:Up,800:Up";
+const BAKA_ATTACKS: &str = "80:Square,100:Square,120:Square,140:Square,160:Square,180:Square,200:Square,220:Square,240:Square,\
+260:Square,280:Square,300:Square,320:Square,340:Square,360:Square,380:Square,400:Square,420:Square,440:Square,460:Square,480:Square,500:Square,\
+520:Square,540:Square,560:Square,580:Square,600:Square,620:Square,640:Square,660:Square,680:Square,700:Square,720:Square,740:Square,760:Square,\
+780:Square,800:Square";
 
 /// The Baka Fighter duel played to a **player win** - which is the only thing
-/// that installs the end-of-match tally.
+/// that installs the end-of-match tally. The attacks are thrown with Square,
+/// the face button retail reads for attack type 1 (`andi 0x80` at
+/// `0x801D43B4`); the d-pad throws nothing.
 ///
 /// The tally is what the two number drawers on this page read: the
 /// right-aligned score field and the "GET COIN" numeral strip are drawn under
