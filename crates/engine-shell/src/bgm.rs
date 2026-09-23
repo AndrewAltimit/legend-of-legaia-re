@@ -26,6 +26,7 @@ use legaia_engine_audio::{
     VabBank, XaClipBank,
 };
 use legaia_engine_core::scene::BgmDirector;
+use legaia_engine_core::world::{SfxRingOp, SideBandBank};
 use legaia_seq::Seq;
 
 /// The pause menu's cursor-step cue: `FUN_80032A44`'s ring write
@@ -117,6 +118,20 @@ pub struct AudioBgmDirector {
     /// `duck_level` mirrors the cell; `duck_target` the arm's clamp.
     duck_level: u8,
     duck_target: u8,
+    /// The current field scene's prescript bundle - the retail
+    /// current-bundle slot `_DAT_8007B8D0` - whose record 0 is the runtime
+    /// half (`>= 0x200`) of the SFX descriptor table. Mirrored from the world
+    /// by [`Self::sync_field_sfx`].
+    runtime_sfx_bundle: Vec<u8>,
+    /// The side-band bank staged behind the BGM, `None` while none is.
+    side_band: Option<SideBandBank>,
+    /// The last `(request, bgm generation)` a side-band stage was attempted
+    /// for, so a bank that does not fit is not re-read every frame; a BGM
+    /// restage (which moves the free tail) makes it worth trying again.
+    side_band_attempt: Option<(i32, u64)>,
+    /// Bumped on every BGM-region restage ([`Self::set_bank`] /
+    /// [`Self::stage_owned_vab`]).
+    bgm_gen: u64,
 }
 
 /// `_DAT_8007B910`'s reference value (`0xD7`, `FUN_8001FFA4`): the un-ducked
@@ -128,6 +143,14 @@ pub const DUCK_LEVEL_REF: u8 = 0xD7;
 /// `FUN_8001E54C(0xB, ...)`), and the port stages it transiently the same
 /// way ([`AudioBgmDirector::stage_transient_sfx_vab`]).
 pub const TRANSIENT_REWARD_SLOT: u8 = 11;
+
+/// One ring cue resolved to what it keys, for [`AudioBgmDirector::tick_sfx_frame`].
+enum RingFire<'a> {
+    /// A static-table id (`< 0x200`) and its category's bank.
+    Static(u8, &'a VabBank),
+    /// A runtime-bank row (`>= 0x200`) and the bank its `+4` names.
+    Runtime([u8; 8], &'a VabBank),
+}
 
 /// The disc side of lazy CD-XA staging: the image path and every
 /// `XA<n>.XA`'s `(lba, sectors)` keyed by clip slot `n - 1`.
@@ -230,6 +253,10 @@ impl AudioBgmDirector {
             xa_lazy: None,
             duck_level: DUCK_LEVEL_REF,
             duck_target: DUCK_LEVEL_REF,
+            runtime_sfx_bundle: Vec::new(),
+            side_band: None,
+            side_band_attempt: None,
+            bgm_gen: 0,
         }
     }
 
@@ -427,21 +454,11 @@ impl AudioBgmDirector {
             return false;
         };
         // The BGM region runs from the reserved head up to the SFX region;
-        // the resident bank's samples end where the free tail begins.
+        // the resident bank's samples - and any other bank already borrowing
+        // the tail - end where the free tail begins.
         let region_end = crate::boot::SPU_RAM_BYTES - crate::boot::SFX_BANK_SPU_BYTES;
-        let used_end = self
-            .bank
-            .as_ref()
-            .map(|b| {
-                b.samples
-                    .iter()
-                    .flatten()
-                    .map(|s| s.addr + s.size)
-                    .max()
-                    .unwrap_or(crate::boot::SPU_RESERVED_BYTES)
-            })
-            .unwrap_or(crate::boot::SPU_RESERVED_BYTES);
-        let base = used_end.div_ceil(16) * 16;
+        self.sfx_vabs.remove(&slot);
+        let base = self.bgm_tail_used_end().div_ceil(16) * 16;
         if base >= region_end {
             return false;
         }
@@ -562,7 +579,40 @@ impl AudioBgmDirector {
         }
         let bank = &self.sfx_bank;
         let mut fired = Vec::new();
+        // Resolve the ring's ids before borrowing the SPU: below `0x200` a
+        // static-table id keyed through its category's bank, at or above it a
+        // runtime row keyed through the bank its own `+4` category names.
+        let ring: Vec<(u16, RingFire<'_>)> = batch
+            .ring
+            .iter()
+            .filter_map(|&id| {
+                let fire = match u8::try_from(id) {
+                    Ok(small) => {
+                        RingFire::Static(small, self.sfx_vab_for_cue(small).or(self.bank.as_ref())?)
+                    }
+                    Err(_) => {
+                        let row = legaia_engine_core::world::runtime_sfx_descriptor_in(
+                            &self.runtime_sfx_bundle,
+                            id,
+                        )?;
+                        // No fallback: a runtime row's program indexes the
+                        // bank its category names, and no other bank.
+                        RingFire::Runtime(row, self.sfx_vabs.get(&row[4])?)
+                    }
+                };
+                Some((id as u16, fire))
+            })
+            .collect();
         self.audio.with_spu(|spu| {
+            for (id, fire) in &ring {
+                let voice = match fire {
+                    RingFire::Static(small, vab) => bank.play_one_shot(*small, spu, vab),
+                    RingFire::Runtime(row, vab) => SfxBank::play_descriptor(row, spu, vab),
+                };
+                if let Some(v) = voice {
+                    fired.push((*id, v));
+                }
+            }
             for cue in &batch.fired {
                 // The queue is a `u16` because the battle cue space is - the
                 // action SM's cast cues run to `0x20E` - while the SFX
@@ -613,6 +663,117 @@ impl AudioBgmDirector {
         fired
     }
 
+    /// One past the highest sample the BGM region's occupants use: the BGM
+    /// bank itself plus every bank borrowing its tail (the reward bank and a
+    /// side-band bank). An empty region reads as its floor.
+    fn bgm_tail_used_end(&self) -> u32 {
+        let side = self.side_band.map(|b| b.slot);
+        let ends = |b: &VabBank| b.samples.iter().flatten().map(|s| s.addr + s.size).max();
+        let mut end = self
+            .bank
+            .as_ref()
+            .and_then(ends)
+            .unwrap_or(crate::boot::SPU_RESERVED_BYTES);
+        for (slot, bank) in &self.sfx_vabs {
+            if *slot == TRANSIENT_REWARD_SLOT || Some(*slot) == side {
+                end = end.max(ends(bank).unwrap_or(0));
+            }
+        }
+        end
+    }
+
+    /// Forget every bank borrowing the BGM region's tail - the region is
+    /// being re-owned.
+    fn drop_bgm_tail_banks(&mut self) {
+        self.sfx_vabs.remove(&TRANSIENT_REWARD_SLOT);
+        if let Some(b) = self.side_band.take() {
+            self.sfx_vabs.remove(&b.slot);
+        }
+        self.bgm_gen = self.bgm_gen.wrapping_add(1);
+    }
+
+    /// Replay the world's SFX ring producer calls onto the retail ring half
+    /// of the scheduler, and install the step the ring ages by per
+    /// [`Self::tick_sfx_frame`] - the vsyncs one call spans (retail ages by
+    /// `DAT_1F800393` once per game tick of that many vsyncs; a host that
+    /// ticks per vsync ages by 1). Call once per sim tick, after the world tick and
+    /// before [`Self::tick_sfx_frame`] - the order retail's frame runs the
+    /// producers and the drainer in.
+    // REF: FUN_80035B50, FUN_80035BAC, FUN_80035BD0
+    pub fn apply_sfx_ring_ops(&mut self, ops: &[SfxRingOp], frame_step: u8) {
+        self.sfx_sched.set_frame_step(frame_step);
+        for op in ops {
+            match *op {
+                SfxRingOp::Push(id) => {
+                    self.sfx_sched.push_ring_cue(id);
+                }
+                SfxRingOp::SetLastDelay(d) => self.sfx_sched.set_ring_cue_delay(d),
+                SfxRingOp::ReplaceLast(id) => self.sfx_sched.replace_ring_cue(id),
+            }
+        }
+    }
+
+    /// Mirror the field-side SFX sources the ring's cues resolve against:
+    /// the scene's prescript bundle (the runtime descriptor rows, cue ids
+    /// `>= 0x200`) and the side-band bank the scripts' op-`0x36` sub-`1`
+    /// requests hold in VAB slot `3` (or `6`). `side_band` is
+    /// [`legaia_engine_core::world::World::side_band_bank`] in a field-family
+    /// mode and `None` elsewhere - retail has slot 3 open only in the field
+    /// (`docs/formats/sfx-table.md`). `read_entry` reads an extraction-frame
+    /// PROT entry. The bank is staged behind the BGM, in the free tail of its
+    /// region, the way the reward bank is.
+    // REF: FUN_800243F0, FUN_8001E54C
+    pub fn sync_field_sfx(
+        &mut self,
+        bundle: &[u8],
+        side_band: Option<SideBandBank>,
+        read_entry: impl FnOnce(u32) -> Option<Vec<u8>>,
+    ) {
+        if self.runtime_sfx_bundle.as_slice() != bundle {
+            self.runtime_sfx_bundle = bundle.to_vec();
+        }
+        let Some(want) = side_band else {
+            if let Some(b) = self.side_band.take() {
+                self.sfx_vabs.remove(&b.slot);
+            }
+            return;
+        };
+        if self.side_band == Some(want) {
+            return;
+        }
+        if self.side_band_attempt == Some((want.request, self.bgm_gen)) {
+            return;
+        }
+        self.side_band_attempt = Some((want.request, self.bgm_gen));
+        if let Some(b) = self.side_band.take() {
+            self.sfx_vabs.remove(&b.slot);
+        }
+        let Some(bytes) = read_entry(want.prot_entry) else {
+            log::debug!("side-band bank PROT {} unreadable", want.prot_entry);
+            return;
+        };
+        if self.stage_transient_sfx_vab(want.slot, &bytes) {
+            self.side_band = Some(want);
+            log::debug!(
+                "side-band bank {} (PROT {}) staged in slot {} behind the BGM",
+                want.request,
+                want.prot_entry,
+                want.slot
+            );
+        } else {
+            log::debug!(
+                "side-band bank {} (PROT {}) does not fit behind the BGM",
+                want.request,
+                want.prot_entry
+            );
+        }
+    }
+
+    /// The side-band bank currently staged, if any.
+    pub fn side_band(&self) -> Option<SideBandBank> {
+        self.side_band
+    }
+
     /// Drop every queued SFX cue (scene transition / battle abort).
     pub fn clear_sfx(&mut self) {
         self.sfx_sched.clear();
@@ -624,8 +785,8 @@ impl AudioBgmDirector {
     /// is uploaded into the SPU and stored here for subsequent SEQ starts.
     pub fn set_bank(&mut self, bank: VabBank) {
         // The BGM region is re-owned wholesale; a transient reward bank in
-        // its tail is gone with it.
-        self.sfx_vabs.remove(&TRANSIENT_REWARD_SLOT);
+        // its tail is gone with it, and so is a side-band bank.
+        self.drop_bgm_tail_banks();
         self.bank = Some(bank);
     }
 
@@ -664,7 +825,7 @@ impl AudioBgmDirector {
         });
         // A restaged track reclaims the whole BGM region, transient tail
         // included.
-        self.sfx_vabs.remove(&TRANSIENT_REWARD_SLOT);
+        self.drop_bgm_tail_banks();
         self.bank = Some(bank);
         Some(entry_bytes[vab_off + seq_rel..].to_vec())
     }

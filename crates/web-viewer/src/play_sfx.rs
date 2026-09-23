@@ -367,6 +367,20 @@ pub struct PlaySfx {
     /// The CD-XA lane: arts-voice shouts + battle one-shot clips
     /// ([`crate::play_xa`]).
     pub xa: crate::play_xa::PlayXa,
+    /// The current field scene's prescript bundle (retail `_DAT_8007B8D0`),
+    /// whose record 0 holds the runtime descriptor rows ring cues `>= 0x200`
+    /// resolve against. Mirrored from the world each tick.
+    pub runtime_bundle: Vec<u8>,
+    /// The side-band bank staged behind the BGM (op-`0x36` sub-`1`'s
+    /// request, VAB slot `3` or `6`), with the SPU base it was placed at.
+    pub side_band: Option<(legaia_engine_core::world::SideBandBank, u32)>,
+    /// The last `(request, BGM sample end)` a side-band stage was attempted
+    /// for, so a bank that does not fit is not re-read every frame.
+    pub side_band_attempt: Option<(i32, Option<u32>)>,
+    /// Ring cues (field-VM op `0x36` sub-`0`, ambient motion op `0x09`) that
+    /// came due since the page loaded, whether or not a voice keyed - the
+    /// producer-side count the off-wasm tests read.
+    pub ring_due: u32,
 }
 
 impl Default for PlaySfx {
@@ -390,6 +404,10 @@ impl Default for PlaySfx {
             reward_bank_base: None,
             voice_cues_dropped: 0,
             xa: Default::default(),
+            runtime_bundle: Vec::new(),
+            side_band: None,
+            side_band_attempt: None,
+            ring_due: 0,
         }
     }
 }
@@ -495,7 +513,9 @@ impl PlaySfx {
     /// region, refilled per game mode - see `docs/formats/sfx-table.md`.
     fn resolve_slot(&self, id: u8) -> u8 {
         let slot = self.slot_for_cue(id).unwrap_or(FALLBACK_VAB_SLOT);
-        if self.bank_bytes.contains_key(&slot) {
+        if self.bank_bytes.contains_key(&slot)
+            || self.side_band.is_some_and(|(b, _)| b.slot == slot)
+        {
             slot
         } else {
             FALLBACK_VAB_SLOT
@@ -672,6 +692,10 @@ impl LegaiaRuntime {
     pub(crate) fn on_scene_change_audio(&mut self) {
         self.sfx.sched.clear();
         self.drop_reward_bank();
+        // The side-band request survives a scene change in retail (it is the
+        // scripts' to change), so only the attempt memo is reset: the next
+        // tick re-validates the bank against the new scene's BGM.
+        self.sfx.side_band_attempt = None;
     }
 
     /// Forget the transient reward bank (slot 11) wherever it is recorded.
@@ -849,7 +873,130 @@ impl LegaiaRuntime {
         // The battle audio duck ramps one retail unit per vsync, whatever
         // mode the scene is in (the ramp back to full outlives the battle).
         self.tick_duck();
+        self.route_field_sfx();
         self.fire_matured_sfx();
+    }
+
+    /// Replay this tick's SFX ring producer calls (field-VM op `0x36` sub
+    /// `0`/`4`, the ambient motion VM's op `0x09`) onto the scheduler's retail
+    /// ring, and keep the field-side cue sources - the scene's runtime
+    /// descriptor rows and the side-band bank - in step with the world. The
+    /// browser twin of the native `BootSession::route_field_sfx`.
+    // REF: FUN_80035B50, FUN_80035BAC, FUN_80035BD0
+    pub(crate) fn route_field_sfx(&mut self) {
+        use legaia_engine_core::world::SfxRingOp;
+        let Some(host) = self.scene_host.as_mut() else {
+            return;
+        };
+        let ops = host.world.take_sfx_ring_ops();
+        // One `World::tick` is one vsync and this scheduler ticks once per
+        // `World::tick`, so the ring ages by the vsyncs a tick spans
+        // (`display_frame_step`, always 1), not by the game-tick cadence.
+        self.sfx
+            .sched
+            .set_frame_step(host.world.clock.display_frame_step.clamp(1, 255) as u8);
+        for op in ops {
+            match op {
+                SfxRingOp::Push(id) => {
+                    self.sfx.sched.push_ring_cue(id);
+                }
+                SfxRingOp::SetLastDelay(d) => self.sfx.sched.set_ring_cue_delay(d),
+                SfxRingOp::ReplaceLast(id) => self.sfx.sched.replace_ring_cue(id),
+            }
+        }
+        if self.sfx.runtime_bundle != host.world.props.stager_bytes {
+            self.sfx.runtime_bundle = host.world.props.stager_bytes.clone();
+        }
+        let want = matches!(host.world.mode, SceneMode::Field | SceneMode::WorldMap)
+            .then(|| host.world.side_band_bank())
+            .flatten();
+        self.sync_side_band(want);
+    }
+
+    /// Stage (or drop) the side-band bank behind the BGM - the browser twin
+    /// of the native `AudioBgmDirector::sync_field_sfx`'s bank half. The bank
+    /// borrows the free tail of the BGM region the reward bank borrows, placed
+    /// above both the BGM and the reward bank; a BGM restage that grows into
+    /// it drops it, and the next tick re-stages it. Off wasm there is no SPU:
+    /// the bank is recorded (so the routing is testable) but not uploaded.
+    // REF: FUN_800243F0, FUN_8001E54C
+    fn sync_side_band(&mut self, want: Option<legaia_engine_core::world::SideBandBank>) {
+        // Stale when the BGM's samples have grown past its base.
+        if let (Some((_, base)), Some(used)) = (self.sfx.side_band, self.bgm_bank_used_end())
+            && used > base
+        {
+            self.drop_side_band();
+        }
+        let Some(want) = want else {
+            self.drop_side_band();
+            return;
+        };
+        if self.sfx.side_band.is_some_and(|(b, _)| b == want) {
+            return;
+        }
+        let key = (want.request, self.bgm_bank_used_end());
+        if self.sfx.side_band_attempt == Some(key) {
+            return;
+        }
+        self.sfx.side_band_attempt = Some(key);
+        self.drop_side_band();
+        let Some(bytes) = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.index.entry_bytes_extended(want.prot_entry).ok())
+        else {
+            return;
+        };
+        let Some((report, vab_offset)) = [4usize, 0]
+            .into_iter()
+            .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
+        else {
+            return;
+        };
+        #[cfg(target_arch = "wasm32")]
+        {
+            // The pinned banks first, so a later lazy stage of the top region
+            // does not mistake this slot for "already staged".
+            self.stage_sfx_vab();
+            let Some(used_end) = self.bgm_bank_used_end() else {
+                return;
+            };
+            let reward_end = self
+                .sfx_vabs
+                .get(&TRANSIENT_REWARD_SLOT)
+                .map(|b| vab_bank_used_end(Some(b), 0))
+                .unwrap_or(0);
+            let base = used_end.max(reward_end).div_ceil(16) * 16;
+            let region_end =
+                legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32 - SFX_BANK_SPU_BYTES;
+            let body_total: u32 = report.vag_samples.iter().map(|v| v.size as u32).sum();
+            if base >= region_end || body_total > region_end - base {
+                return;
+            }
+            let Some(out) = self.audio_out.as_ref() else {
+                return;
+            };
+            let bank = out.with_spu(|spu| {
+                let mut alloc =
+                    legaia_engine_audio::spu::ram::SpuAllocator::new(base, region_end - base);
+                VabBank::upload(spu, &mut alloc, &report, &bytes[vab_offset..])
+            });
+            self.sfx_vabs.insert(want.slot, bank);
+            self.sfx.side_band = Some((want, base));
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = (report, vab_offset);
+            self.sfx.side_band = Some((want, u32::MAX));
+        }
+    }
+
+    /// Forget the side-band bank wherever it is recorded.
+    fn drop_side_band(&mut self) {
+        if let Some((_b, _)) = self.sfx.side_band.take() {
+            #[cfg(target_arch = "wasm32")]
+            self.sfx_vabs.remove(&_b.slot);
+        }
     }
 
     /// Fire this frame's matured cues into the live SPU. Split out of
@@ -861,6 +1008,11 @@ impl LegaiaRuntime {
         let batch = self.sfx.sched.tick_frame();
         if batch.is_empty() {
             return;
+        }
+        self.sfx.ring_due += batch.ring.len() as u32;
+        #[cfg(target_arch = "wasm32")]
+        if !batch.ring.is_empty() {
+            self.fire_ring_cues(&batch.ring);
         }
         // Classify first, on every target: a voice-leg cue is declined the
         // same way whether or not there is a mixer, and the count is what the
@@ -918,6 +1070,61 @@ impl LegaiaRuntime {
             if let Some(last) = fired.last() {
                 self.sfx.last_fired = Some(*last);
             }
+        }
+    }
+
+    /// Key this frame's due ring cues. Ring ids are already the drainer's
+    /// input (`FUN_80016B6C`): below `0x200` a static-table id keyed through
+    /// its category's bank, at or above it a runtime row of the scene's
+    /// prescript record 0 keyed through the bank its own `+4` names - with no
+    /// fallback, since that row's program indexes no other bank.
+    // REF: FUN_80016B6C
+    #[cfg(target_arch = "wasm32")]
+    fn fire_ring_cues(&mut self, ring: &[i16]) {
+        if !self.stage_sfx_vab() && self.bgm_bank.is_none() {
+            return;
+        }
+        let Some(out) = self.audio_out.as_ref() else {
+            return;
+        };
+        let sfx = &self.sfx;
+        let vabs = &self.sfx_vabs;
+        let bgm_bank = self.bgm_bank.as_ref();
+        let mut fired = Vec::new();
+        out.with_spu(|spu| {
+            for &id in ring {
+                let voice = match u8::try_from(id) {
+                    Ok(small) => {
+                        let Some(vab) = vabs
+                            .get(&sfx.resolve_slot(small))
+                            .or_else(|| vabs.get(&FALLBACK_VAB_SLOT))
+                            .or(bgm_bank)
+                        else {
+                            continue;
+                        };
+                        sfx.bank.play_one_shot(small, spu, vab)
+                    }
+                    Err(_) => {
+                        let Some(row) = legaia_engine_core::world::runtime_sfx_descriptor_in(
+                            &sfx.runtime_bundle,
+                            id,
+                        ) else {
+                            continue;
+                        };
+                        let Some(vab) = vabs.get(&row[4]) else {
+                            continue;
+                        };
+                        SfxBank::play_descriptor(&row, spu, vab)
+                    }
+                };
+                if let Some(v) = voice {
+                    fired.push((id as u16, v));
+                }
+            }
+        });
+        self.sfx.fired += fired.len() as u32;
+        if let Some(last) = fired.last() {
+            self.sfx.last_fired = Some(*last);
         }
     }
 

@@ -1245,6 +1245,38 @@ impl BootSession {
     /// One per-frame step: tick the world, route field-VM camera + BGM
     /// events, advance the camera follow, return the [`SceneTickEvent`] for
     /// engines that want to react to scene transitions.
+    /// Hand this tick's SFX ring producer calls (field-VM op `0x36` sub
+    /// `0`/`4`, the ambient motion VM's op `0x09`) to the director's retail
+    /// ring, and keep the director's field-side SFX sources - the scene's
+    /// runtime descriptor rows and the side-band bank - in step with the
+    /// world. The director's own per-frame [`AudioBgmDirector::tick_sfx_frame`]
+    /// then plays whatever came due. With no audio the calls are dropped, as
+    /// every other cue is.
+    fn route_field_sfx(&mut self) {
+        let ops = self.host.world.take_sfx_ring_ops();
+        let Some(bgm) = self.bgm.as_mut() else {
+            return;
+        };
+        let world = &self.host.world;
+        // One `World::tick` is one vsync, and the director's scheduler ticks
+        // once per `World::tick`, so the ring ages by the vsyncs one tick
+        // spans (`display_frame_step`, always 1) - not by the game-tick
+        // cadence `frame_step`, which retail applies once per *game tick* of
+        // that many vsyncs. The two schedules are the same in wall time.
+        bgm.apply_sfx_ring_ops(&ops, world.clock.display_frame_step.clamp(1, 255) as u8);
+        let side_band = matches!(
+            world.mode,
+            legaia_engine_core::world::SceneMode::Field
+                | legaia_engine_core::world::SceneMode::WorldMap
+        )
+        .then(|| world.side_band_bank())
+        .flatten();
+        let index = &self.host.index;
+        bgm.sync_field_sfx(&world.props.stager_bytes, side_band, |entry| {
+            index.entry_bytes_extended(entry).ok()
+        });
+    }
+
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
         // The mode table's outer level, once per frame, ahead of everything
         // else - retail's `main` (`FUN_80015E90`, `0x8001615C..0x8001620C`)
@@ -1339,6 +1371,7 @@ impl BootSession {
             // to this point is what left every Biron Monastery cutscene
             // silent and then started its score over the next scene.
         }
+        self.route_field_sfx();
         // Reconcile the word with wherever the scene sessions left the world.
         // The seat owns the word; the sessions own the scene, and this is the
         // one join between them (see `ModeSeat`'s "what owns what").
