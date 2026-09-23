@@ -206,6 +206,7 @@ fn world_map_region_walk_triggers_battle() {
         rate_increment: 255,
         formation_base: 5,
         formation_count: 1,
+        setup: Default::default(),
     });
     world.set_world_map_regions(table);
 

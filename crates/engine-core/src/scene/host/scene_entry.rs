@@ -351,6 +351,9 @@ impl SceneHost {
         // finishes before a transition); the port can, so scene entry drops
         // the hop and its lock together.
         self.world.locomotion.ledge_hop = None;
+        // Likewise the kind-0 warp and the clip base: a warp does not carry
+        // across a scene change, and the base starts at idle.
+        self.world.reset_field_warp_and_clip();
         if let Some(slot) = self.world.player_actor_slot
             && let Some(actor) = self.world.actors.get_mut(slot as usize)
         {
@@ -1656,6 +1659,24 @@ impl SceneHost {
             crate::world::SceneMode::WorldMap => true,
             _ => return,
         };
+        // A kind-0 warp in flight owns the dispatcher: retail's timer half
+        // returns before the tile compare, and the landing frame seats the
+        // player, restamps the crossing tile and runs the landing tile's
+        // kind-1 record inline (`FUN_801D1EC4` at `0x801D1EEC..0x801D2064`).
+        if !on_world_map {
+            match self.world.tick_field_warp() {
+                crate::world::FieldWarpTick::Idle => {}
+                crate::world::FieldWarpTick::Running => return,
+                crate::world::FieldWarpTick::Landed {
+                    query_tile,
+                    landing_tile,
+                } => {
+                    self.last_trigger_tile = Some(landing_tile);
+                    self.dispatch_kind1_walk_on(query_tile, false);
+                    return;
+                }
+            }
+        }
         if self.world.cutscene_timeline_active()
             || self.world.name_entry_active()
             || self.world.dialogue_owns_input()
@@ -1709,6 +1730,9 @@ impl SceneHost {
         else {
             return;
         };
+        // Under `_DAT_8007B6A8` a kind-1 hit also resets the clip base to
+        // idle (`0x801D218C..0x801D21BC`).
+        self.world.field_walk_on_clip_reset();
         let Some(man_bytes) = self.field_man_cache.clone() else {
             return;
         };
@@ -1750,12 +1774,11 @@ impl SceneHost {
     /// census cannot see it, and an engine that dispatches only the kind-1
     /// table lets the player walk in and never back out.
     ///
-    /// Retail seats the player, re-samples the floor height, resets the camera
-    /// and then re-queries the **kind-1** table at the landing tile so the
-    /// arrival's own record spawns; the engine gets the arrival record by
-    /// leaving the last-tile compare stale, which fires it on the next tick.
-    /// (Retail also runs a ~0x26-frame fade across the reposition; the engine
-    /// warps instantly.)
+    /// The crossing does not move the player. It arms the warp
+    /// ([`crate::world::World::arm_field_warp`]): a `0x26`-frame timer and the
+    /// fade to black, with the pad held off. The landing - seat, floor
+    /// re-sample, camera re-pin, the arrival tile's kind-1 record - runs from
+    /// [`Self::dispatch_walk_on_trigger`] the frame the timer runs out.
     ///
     /// PORT: FUN_801D1EC4 (kind-0 arm, `0x801d21c0..0x801d2268`)
     fn dispatch_intra_scene_teleport(&mut self, tile: (u8, u8)) {
@@ -1776,30 +1799,12 @@ impl SceneHost {
         if actor.move_state.flags & 0x0008_0000 != 0 {
             return;
         }
-        let (wx, wz) = tp.dest_world();
-        let y = self
-            .world
-            .sample_field_floor_height(i32::from(wx), i32::from(wz)) as i16;
-        if let Some(actor) = self.world.actors.get_mut(slot as usize) {
-            actor.move_state.world_x = wx;
-            actor.move_state.world_z = wz;
-            actor.move_state.world_y = y;
-        }
-        // Arrival tile is a fresh crossing: leaving the compare stale makes the
-        // next tick run the landing tile's own kind-1 record (retail queries it
-        // inline at `0x801d2030`).
-        self.last_trigger_tile = None;
-        self.world
-            .pending_field_events
-            .push(crate::field_events::FieldEvent::MoveTo {
-                world_x: wx as u16,
-                world_z: wz as u16,
-                is_player: true,
-            });
+        self.world.arm_field_warp((tp.dest_x, tp.dest_z));
         log::info!(
-            "field: intra-scene teleport at ({},{}) -> world ({wx},{wz}) tile {:?}",
+            "field: intra-scene warp armed at ({},{}) -> world {:?} tile {:?}",
             tile.0,
             tile.1,
+            tp.dest_world(),
             tp.dest_tile(),
         );
     }

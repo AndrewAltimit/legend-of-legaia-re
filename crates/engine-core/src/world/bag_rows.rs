@@ -200,13 +200,16 @@ impl World {
         let tables = self.row_tables()?;
         let (ids, slot_base) = self.bag_window_ids();
         let applicable = |id: u8| self.item_applies_to_anyone(id);
+        // The two scratchpad scene gates (`0x1F800394` bits `0x100000` /
+        // `0x200000`) are the region reader's: every region hit raises both
+        // and the long record layout drops them per `region[+8]` bits 7 / 6
+        // ([`crate::region_encounter::region_battle_setup`]). Open until a
+        // region has been stood in.
+        let (door_light_blocked, door_wind_blocked) = self.region_door_gates();
         let ctx = UseListCtx {
             battle,
-            // The two scratchpad scene gates (`0x1F800394` bits `0x100000` /
-            // `0x200000`) have no engine carrier yet; an ungated Door row is
-            // the open state, which is what an overworld scene has.
-            door_light_blocked: false,
-            door_wind_blocked: false,
+            door_light_blocked,
+            door_wind_blocked,
             applicable: &applicable,
         };
         Some(decode(

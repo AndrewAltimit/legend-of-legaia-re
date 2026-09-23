@@ -1277,10 +1277,7 @@ impl World {
         self.locomotion
             .player_anim
             .as_ref()
-            .map(|a| {
-                let clip = if a.walking { &a.walk } else { &a.idle };
-                clip.frame_count() as u16
-            })
+            .map(|a| a.active_frame_count() as u16)
             .filter(|n| *n > 0)
             .unwrap_or(crate::field_env::PLAYER_CLIP_STANDIN_FRAMES)
     }

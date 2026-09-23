@@ -791,6 +791,13 @@ impl Camera {
         // only on `!gliding` re-pins the focus to the player on every settled
         // frame and turns those two values into ~1000.
         let scripted = gliding || self.script_owns_focus || world.cutscene_timeline_active();
+        // A player arc whose release watcher runs the follow camera
+        // (`FUN_801D5D60` calling `FUN_801DB510(player)` + `FUN_801DAA50`
+        // every frame the arc flies) hands a cutscene's shot back to the
+        // follow step for the arc's duration. A glide in flight keeps the
+        // frame: it is the shot the script is actively moving.
+        let arc_follow = !gliding && world.script_arc_follow_camera();
+        let scripted = scripted && !arc_follow;
         if !scripted
             && self.mode == CameraMode::Follow
             && let Some(a) = world
@@ -819,7 +826,9 @@ impl Camera {
             // stays as the port's backstop for a shot the script drops
             // without one, and it snaps from the resident block rather than
             // re-querying (retail's hand-back does not re-query either).
-            if self.zone.prev_scripted && !scripted {
+            // The arc's follow is an ease, not a hand-back: retail's
+            // watcher calls the ease, never the snap.
+            if self.zone.prev_scripted && !scripted && !arc_follow {
                 self.zone.snap_pending = true;
                 self.zone.prev_player = None;
             }

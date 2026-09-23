@@ -62,6 +62,13 @@ pub struct EncounterState {
     /// the scene-entry top-up) set it through
     /// [`crate::world::World::set_encounter_step_counter`].
     pub step_counter: i32,
+    /// The last region battle setup `FUN_801D9E1C` applied - on a field step
+    /// that landed in a region, and on the op-`0x3E` scripted-battle install.
+    /// Its fields are the retail globals battle entry reads: the stage
+    /// variant `_DAT_8007BD60`, the backdrop keep bit `_DAT_8007B64B`, and
+    /// the two Door gates of scratchpad `0x1F800394`. `None` until a region
+    /// has been stood in; retail's globals are sticky, and so is this.
+    pub region_setup: Option<crate::region_encounter::RegionBattleSetup>,
 }
 
 impl EncounterState {
@@ -74,6 +81,7 @@ impl EncounterState {
             scene_rollable: false,
             scene_hint_frames: 0,
             step_counter: crate::region_encounter::ENCOUNTER_COUNTER_BASE,
+            region_setup: None,
         }
     }
 }

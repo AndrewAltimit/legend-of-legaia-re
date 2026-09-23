@@ -35,22 +35,28 @@ pub(crate) struct PropDirProbe {
 /// bounded by its op's authored AABB rather than by walls.
 ///
 /// What this covers of `FUN_801cf8ac` (`0x801CF8AC..0x801CF9F0`) is the
-/// **class arm** only - `+0x10 & 0x01020000` set, box `0x40 - 0x18` = ±40
-/// about the walker's live position - which is the arm a placed NPC takes.
-/// Three parts of the routine are not modelled, because the engine's ambient
-/// channel carries no pooled actor to read them off:
+/// **class arm** - `+0x10 & 0x01020000` set, box `0x40 - 0x18` = ±40 about
+/// the walker's live position. That is the only arm an ambient walker can
+/// take: every placement the MAN spawner `FUN_8003A1E4` seats gets
+/// `+0x10 |= 0x20000` (`lui v1, 2; or` at `0x8003A3A8..0x8003A3B4`, plus the
+/// party-bank bit `0x01000000` for a `>= 0xF0` special model), and the
+/// ambient channels are exactly those placements. The same bit makes the
+/// hit's result class `1` (`+0x10 & 0x40020000`), never `4`.
 ///
-/// - the `+0x10 & 3` early-out (`0x801CF8B8`): a collision-exempt walker
-///   never hits the player;
-/// - the no-class arm (`0x801CF8D4..0x801CF930`): box `0x40 + 0x10` = ±80
-///   about the live position **plus** the model-bbox offset read from the
-///   32-byte record `*(0x1F8003EC) + actor[+0x60] * 32` (`rec[6]*128 +
-///   rec[0xE]*16` / `rec[7]*128 + rec[0xF]*16`, less `rec[0]` / plus
-///   `rec[4]` under `+0x52 & 8`) - the same anchor the prop colliders use;
-/// - the hit's side effects (`0x801CF9BC..0x801CF9E8`): the mutual contact
-///   link `player[+0x98] = actor`, `actor[+0x98] = player`, and the result
-///   class (`1` for `+0x10 & 0x40020000`, else `4`), where the engine
-///   returns a bare `bool`.
+/// So of the routine's other parts, the **no-class arm**
+/// (`0x801CF8D4..0x801CF930`: box `0x40 + 0x10` = ±80 plus the model-bbox
+/// offset of the 32-byte record `*(0x1F8003EC) + actor[+0x60] * 32`) serves
+/// pool actors spawned elsewhere and is not an ambient walker's to take.
+/// Two parts stay unmodelled, both because the ambient channel carries no
+/// pooled actor to hold them:
+///
+/// - the `+0x10 & 3` early-out (`0x801CF8B8`): a walker a script has made
+///   collision-exempt never hits the player - the channel has no flag word
+///   for a script to set those bits in;
+/// - the hit's mutual contact link (`0x801CF9BC..0x801CF9C8`):
+///   `player[+0x98] = actor`, `actor[+0x98] = player` - the port's player
+///   keeps its interaction target on the talk probe's side, not on a pooled
+///   `+0x98`.
 ///
 /// PORT: FUN_801cf8ac
 /// REF: FUN_801d5a68
@@ -2659,6 +2665,10 @@ impl World {
         // direction decode, so an input-free (or fully wall-blocked) frame
         // leaves `(0, 0)` behind and the ledge-hop trigger stays quiet.
         self.locomotion.step_delta = (0, 0);
+        // The player tick drains the post-warp hold before any of its gates
+        // (`FUN_801D1344` at `0x801D1618..0x801D1630`).
+        let ratio = self.move_vm.ramp_ratio.max(1);
+        vm::field_warp_tile::drain_post_warp_hold(&mut self.locomotion.warp, ratio);
         // BOTH dialogue channels, through the shared predicate. The ordinary
         // NPC talk runs the field-VM inline runner, which holds a box open
         // without a `current_dialog` whenever the record selects its segment
@@ -2686,6 +2696,12 @@ impl World {
         if self.actors[slot].move_state.flags & 0x0008_0000 != 0 {
             return;
         }
+        // A kind-0 warp in flight, and the hold its landing leaves, keep the
+        // pad controller off entirely (`0x801D16C8..0x801D16E4`): the player
+        // stands through the fade instead of walking out of it.
+        if vm::field_warp_tile::pad_suppressed(&self.locomotion.warp) {
+            return;
+        }
 
         // Opt-in precise mode swaps the quantised d-pad remap for the
         // continuous decode; the default path is bit-identical to the
@@ -2701,6 +2717,22 @@ impl World {
             self.decode_field_direction()
         };
         self.locomotion.last_move_dir_bits = dir_bits;
+        // The clip base (`_DAT_8007BDD8`) the settle tail strides into the
+        // player's clip: idle, walk or run off this frame's direction and base
+        // step, the scene sentinel under `_DAT_8007B6A8`
+        // (`0x801D0424..0x801D04A4`). The same frames raise the party-bank bit.
+        if let Some(base) = vm::field_player_clip::locomotion_clip_base(
+            self.locomotion.player_clip,
+            dir_bits,
+            self.field_base_step(),
+            self.party.scene_save_allowed,
+        ) {
+            self.locomotion.clip_base = base;
+            self.locomotion.player_party_bank = true;
+            if let Some(anim) = &mut self.locomotion.player_anim {
+                anim.pad_drove_this_frame = true;
+            }
+        }
         if dir_bits == 0 {
             // Input released: drop any precise sub-step remainder so a later
             // hold starts clean.
@@ -2711,7 +2743,7 @@ impl World {
 
         // speed = ((base_step * player[+0x72]) >> 12) * DAT_1f800393.
         let mult = self.actors[slot].move_state.field_72 as i32;
-        let ratio = self.move_vm.ramp_ratio.max(1) as i32;
+        let ratio = i32::from(ratio);
         let mut speed = ((self.field_base_step() * mult) >> 12) * ratio;
         // Diagonal normalise (camera mode 4, both axes pressed): x0.75.
         // The precise path normalises its vector instead (below), so the
@@ -3075,6 +3107,11 @@ impl World {
         }
         let phase = hop_arc::advance_hop_session(&mut hop.phase, scalar);
         hop.sfx = phase.sfx;
+        // The phase machine's clip-base stamps (`6` take-off, `7` landing,
+        // `1` tear-down) - the hop and land clips the settle tail picks.
+        if let Some(base) = phase.phase {
+            self.locomotion.clip_base = base as u16;
+        }
         let ms = &mut self.actors[slot].move_state;
         ms.flags |= phase.player_flags_set;
         ms.flags &= !phase.player_flags_clear;
@@ -3092,8 +3129,7 @@ impl World {
     /// (field overlay PROT 0897, `0x801D1BA0..0x801D1EC0` - two hundred and
     /// one instructions, file offset `0x3388`).
     ///
-    /// PORT: FUN_801d1ba0 (the glide and the hop gate; the anim-clip tail
-    /// `0x801D1D80..0x801D1EAC` is not ported - see below)
+    /// PORT: FUN_801d1ba0 (the glide, the hop gate and the anim-clip tail)
     /// REF: FUN_80019278, FUN_801d1878, FUN_801d1ec4, FUN_800204F8
     ///
     /// Glides the actor's height toward the floor beneath it at a
@@ -3112,20 +3148,18 @@ impl World {
     /// - `+0x9e` neither `0` nor `0x10`: no glide and no hop (mid-hop, or a
     ///   scripted motion owns the actor). The engine's player carries no
     ///   `+0x9E`, so it is treated as grounded.
-    /// - The hop additionally needs `_DAT_8007B6B0 <= 0` (the warp walk timer,
-    ///   which the engine's instant warps never raise) and
-    ///   `_DAT_8007B6B4 == 0` (the dialogue-pacing countdown,
-    ///   `0x801D1C6C..0x801D1C88`) - here, no dialogue owning the input.
+    /// - The hop additionally needs `_DAT_8007B6B0 <= 0` (the kind-0 warp
+    ///   timer) and `_DAT_8007B6B4 == 0` (the post-warp hold)
+    ///   (`0x801D1C6C..0x801D1C88`), both in
+    ///   [`crate::world::FieldLocomotion::warp`], and no dialogue owning the
+    ///   input.
     ///
-    /// Retail then runs a tail on every grounded frame that did not hop:
-    /// `jal 0x801D1EC4`, and an anim-clip pick into `+0x5C` from
-    /// `_DAT_8007BDD8` (with the `99` sentinel), `_DAT_8007B8F8 * 7` (the
-    /// party leader's stride into the clip bank) and `_DAT_8007B6AC` before
-    /// `FUN_800204F8`. The pick is the arithmetic of the unreferenced helper
-    /// `FUN_801E58A8` ([`vm::menu_actor_seed::actor_clip_pick`]). It is not
-    /// run here: its base `_DAT_8007BDD8` is stored by `FUN_801D1EC4` on four
-    /// arms the port does not model, and the engine's player animation is
-    /// driven by its own locomotion clip state (`crate::field_anim`).
+    /// Retail then runs a tail on every frame that did not start a hop:
+    /// `jal 0x801D1EC4` (the walk-on dispatcher, which the scene host runs),
+    /// and an anim-clip pick into `+0x5C` from the clip base `_DAT_8007BDD8`
+    /// before `FUN_800204F8` - [`Self::field_settle_clip_tail`]. The base's
+    /// main writer is the pad step itself (`FUN_801D01B0` at
+    /// `0x801D0424..0x801D04A4`); `FUN_801D1EC4` writes it on one arm only.
     ///
     /// The glide rate is `delta_scalar * 12`, halved when `+0x10 & 0x2000`
     /// is set (retail `sra s0, 1` - the slow-fall class). The height step is
@@ -3155,6 +3189,9 @@ impl World {
             return;
         }
         if self.tick_field_ledge_hop(slot) {
+            // Retail's hop holds the movement lock, which sends the settle to
+            // its no-hop arm - and that arm still ends in the clip tail.
+            self.field_settle_clip_tail();
             return;
         }
         // A scripted arc (op `0x43` sub-0/1/A/B) owns the player's height
@@ -3190,10 +3227,48 @@ impl World {
             }
         }
         // Retail gates the hop on the step-delta pair being non-zero - i.e.
-        // the actor actually walked this frame.
+        // the actor actually walked this frame - and on the warp pair: no
+        // warp in flight, no post-warp hold (`0x801D1C6C..0x801D1C88`).
         let (dx, dz) = self.locomotion.step_delta;
-        if hop_allowed && (dx != 0 || dz != 0) {
-            self.try_field_ledge_hop(slot);
+        let warp_quiet = !vm::field_warp_tile::pad_suppressed(&self.locomotion.warp);
+        if hop_allowed && warp_quiet && (dx != 0 || dz != 0) && self.try_field_ledge_hop(slot) {
+            // A frame that starts a hop returns before the tail
+            // (`j 0x801D1EB0` at `0x801D1CC0`).
+            return;
+        }
+        self.field_settle_clip_tail();
+    }
+
+    /// The anim-clip tail of the settle (`FUN_801D1BA0` at
+    /// `0x801D1D88..0x801D1EAC`): stride the clip base into the leader's
+    /// bank, store the player's clip id, and hand the picked bank slot to the
+    /// player's clip player.
+    ///
+    /// The op-`4C CE` override word `_DAT_8007B6AC` is read as `0`: the field
+    /// VM's host stores nothing for it, and its only two disc users
+    /// (`jagaroom`, `urudre1`) bind scene-bank records the party bank cannot
+    /// play. Scratchpad `0x1F800394 & 0x400` (the bind block) has no writer
+    /// the port models, so the bind always runs.
+    ///
+    /// REF: FUN_801D1BA0 (the tail is ported as
+    /// [`vm::field_player_clip::settle_clip_pick`])
+    pub(crate) fn field_settle_clip_tail(&mut self) {
+        let leader = self.locomotion.player_anim.as_ref().map_or(0, |a| a.leader);
+        let pick = vm::field_player_clip::settle_clip_pick(
+            self.locomotion.clip_base,
+            leader,
+            0,
+            self.locomotion.player_party_bank,
+            false,
+        );
+        self.locomotion.player_clip = pick.clip as i16;
+        self.locomotion.player_party_bank = pick.party_flag;
+        if !pick.binds {
+            return;
+        }
+        let slot = vm::field_player_clip::party_bank_slot(&pick, leader);
+        if let Some(anim) = &mut self.locomotion.player_anim {
+            anim.select_retail_slot(slot);
         }
     }
 

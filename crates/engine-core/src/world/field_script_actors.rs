@@ -157,6 +157,40 @@ impl World {
         self.script_actors.arcs.iter().any(|a| a.actor == actor)
     }
 
+    /// `true` while a live arc's release watcher runs the follow camera: a
+    /// sub-`1` / `0xB` arc on the player (`+0x5C` and `+0x50` both set), for
+    /// which `FUN_801D5D60` calls the follow ease `FUN_801DB510(player)` and
+    /// the focus clamp `FUN_801DAA50` every frame the arc flies - a cutscene
+    /// that owns the shot included. The camera reads this to run its follow
+    /// step through the cutscene ([`crate::camera::Camera`]).
+    ///
+    /// REF: FUN_801D5D60 (ported as [`hop_arc::release_watcher_tick`])
+    pub fn script_arc_follow_camera(&self) -> bool {
+        self.script_actors
+            .arcs
+            .iter()
+            .any(|a| hop_arc::release_watcher_tick(&a.watcher, false).camera_follow)
+    }
+
+    /// The op-`0x43` arc arm's acquire refusal: the arced actor already
+    /// carries the halt bit `0x400` and the scene word `*(_DAT_801C6EA4) + 8`
+    /// is zero (`0x801DF3A4..0x801DF3CC`). The field VM then leaves the PC
+    /// on the instruction and retries it next frame, so a second arc on an
+    /// actor still in the air waits for the first to land instead of
+    /// replacing it.
+    ///
+    /// The scene word is non-zero only while a placement's spawn section is
+    /// being pre-run (SCUS `0x8003B73C` / `0x8003B928`, and the two field-VM
+    /// re-runs at `0x801E2820` / `0x801E2BBC`); the port runs no arc there,
+    /// so it reads as zero. The halt the port can see is an arc still in
+    /// flight on that actor.
+    ///
+    /// REF: FUN_801DE840 (the op-`0x43` sub-`0`/`1`/`0xA`/`0xB` acquire)
+    pub fn script_arc_target_halted(&self, ext: Option<u8>) -> bool {
+        self.resolve_script_actor(ext)
+            .is_some_and(|actor| self.script_arc_live(actor))
+    }
+
     /// Advance every scripted arc one field frame: the arc helper's
     /// `FUN_801D5C08` ([`hop_arc::advance_hop_arc`]) writes the actor's
     /// position, then the watcher's `FUN_801D5D60`

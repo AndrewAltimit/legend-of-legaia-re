@@ -792,14 +792,16 @@ impl World {
     ///    driver `FUN_801D1344` drains it by the frame step and clamps it at
     ///    zero (`0x801D161C..0x801D1630`), so a non-zero value means a text
     ///    beat is still running. Folded into the same modal-dialog test.
-    /// 3. `_DAT_8007B6B0 > 0` - the **reposition / warp timer** `FUN_801C36AC`
-    ///    counts down while it walks a warped actor to its destination tile.
-    ///    The engine warps instantly, so it has no in-flight window; the mode
-    ///    test below is the nearest stand-in, covering the frames where the
-    ///    field is not what is being driven at all (a menu, a battle, a
-    ///    minigame).
+    /// 3. `_DAT_8007B6B0 > 0` - the **kind-0 warp timer** of the walk-on
+    ///    dispatcher `FUN_801D1EC4`, which counts the `0x26` frames between a
+    ///    door-tile crossing and the landing
+    ///    ([`crate::world::World::field_warp_in_flight`]). The mode test
+    ///    covers the frames where the field is not what is being driven at
+    ///    all (a menu, a battle, a minigame).
     fn escape_timer_busy(&self) -> bool {
-        self.dialogue_owns_input() || !matches!(self.mode, SceneMode::Field | SceneMode::Cutscene)
+        self.dialogue_owns_input()
+            || self.field_warp_in_flight()
+            || !matches!(self.mode, SceneMode::Field | SceneMode::Cutscene)
     }
 
     /// Drain the scripted countdown one retail frame and fire whichever

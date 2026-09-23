@@ -181,6 +181,8 @@ pub use field_elevation::{CELL_ELEVATION_OVERRIDE, ElevationOverride};
 pub use field_hud::PassiveHudPoints;
 mod field_loop;
 mod field_movement;
+mod field_warp;
+pub use field_warp::FieldWarpTick;
 mod frame_tick;
 mod handler_actors;
 pub use handler_actors::TransitionSweepReport;
