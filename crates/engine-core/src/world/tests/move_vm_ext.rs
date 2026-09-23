@@ -222,3 +222,35 @@ fn field_op_3f_rejects_phantom_name() {
     let _ = world.tick();
     assert!(world.pending_named_scene_transition.is_none());
 }
+
+#[test]
+fn ext_sub_op_2c_captures_a_strip_request_for_the_draw() {
+    // `0x2F 0x2C` + five unread operand words: the extension calls the
+    // scanline strip emitter `FUN_801D31B0`, which the world captures for
+    // the host's render pass.
+    let mut world = World::new();
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 12;
+    world.actors[0].move_state.world_z = -40;
+    world.actors[0].move_state.render_28 = 0x0400;
+    world.actors[0].move_state.anim_block_u16_set(8, 24);
+    let bc = vec![0x002F, 0x002C, 0, 0, 0, 0, 0];
+    world.set_move_bytecode(0, Some(bc.clone()));
+    let _ = world.step_move_vm(0, &bc);
+    assert_eq!(
+        world.actors[0].move_state.pc, 7,
+        "the instruction is seven halfwords"
+    );
+    let reqs = world.move_vm.take_strip_requests();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].pos, [12, 0, -40]);
+    assert_eq!(reqs[0].scroll.v_phase, 0x0400);
+    assert_eq!(reqs[0].slab.half_w, 24);
+    assert!(world.move_vm.take_strip_requests().is_empty(), "drained");
+    // The queue is capped for a host that never draws.
+    for _ in 0..(MOVE_STRIP_REQUEST_CAP + 8) {
+        world.actors[0].move_state.pc = 0;
+        let _ = world.step_move_vm(0, &bc);
+    }
+    assert_eq!(world.move_vm.strip_requests.len(), MOVE_STRIP_REQUEST_CAP);
+}

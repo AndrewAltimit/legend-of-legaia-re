@@ -287,6 +287,16 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         self.world.move_vm.scratchpad_targets[i] = target;
     }
 
+    // --- ext sub-op 0x2C scanline strip emitter -----------------------
+
+    fn ext_func801d31b0(&mut self, state: &mut MoveActorState, _operand: &[u16]) {
+        // `FUN_801D31B0` draws on the spot; the port captures what it reads
+        // and draws it on the host's render pass (`move_strip_prims`).
+        self.world
+            .move_vm
+            .push_strip_request(vm::move_ext_strip::StripRequest::from_actor(state));
+    }
+
     // --- ext sub-op 0x2F global slot ---------------------------------
 
     fn ext_set_8007b9d8(&mut self, value: i32) {
