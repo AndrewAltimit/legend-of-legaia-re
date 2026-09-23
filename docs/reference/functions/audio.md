@@ -226,7 +226,10 @@ legs, `sltiu v0,s0,0x100` at `0x8004FCD4`.
 stores `id-1`, `0x40..0x100` stores `id`, both skipping the currently-selected
 cue `DAT_8007B724`. Dispatch decode is ported as
 `legaia_engine_audio::classify_cue` (to `CueDispatch::Ring` / `Voice`); the ring
-itself is `SfxScheduler` (`FUN_80035B50`).
+itself is `legaia_engine_audio::sfx_ring::SfxCueRing` (`FUN_80035B50` and its
+two siblings, a round-robin ring of four with no free-slot search; no host
+reaches it yet). `SfxScheduler` is a port-side delay queue, not this routine
+([`sfx-table.md`](../../formats/sfx-table.md)).
 
 **At or above `0x100` - the streamed voice.** Two gates decline before anything
 is armed: the context byte `*(gp+0xA0C)+0x276` being non-zero (`lbu` at
