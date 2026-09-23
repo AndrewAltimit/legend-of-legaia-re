@@ -217,6 +217,11 @@ the importer patches (`legaia_patcher::translation::lift`):
    report now measures (`structural` / `by scan ordinal` / `shifted`). Both
    scans use the accent-tolerant gate on both sides, so the coincidental
    high-byte hits in the binary regions both discs share land on both lists.
+   A raw carrier outside the ten streaming dungeon scenes has no walk, and a
+   line one side reduced to a bare item token drops out of that side's gated
+   scan; what still pairs it is the entry's **ungated** framing list (every
+   `0x1F .. 0x00` run), used only when both discs count the same number of
+   framings and only where the script byte ahead of both leads agrees.
 
 `--fold-accents` additionally rewrites the accent cells onto plain ASCII, so the
 lifted text renders on an unmodified NTSC font (see
@@ -261,11 +266,26 @@ windows are cut into NUL-delimited chunks, junk included, and chunks that are
 byte-identical and unique on both sides (a stat label, a proper noun, a run of
 build-invariant pointer bytes) are **anchors** that partition the two lists;
 inside a partition the chunks pair by ordinal when both sides count the same,
-and otherwise by the head or the tail, accepted only when every aligned pair
-agrees in shape (prose against prose, comparable length). A partition that
-agrees on nothing pairs nothing, and an unpaired label stays vanilla: the
-failure is a label left in English, never a label written from the wrong
-slot. The place-name table is found by its first cell, the home town's name.
+and otherwise by an in-order alignment (`align_chunks_dp`): the source side
+may carry extra chunks anywhere, a pair must agree in shape (string against
+string, pointer bytes against pointer bytes, length within the ratio a
+translation stays inside), and an identical pair outranks a pair whose
+leading glyph class agrees (the `@` of a menu label), which outranks the
+rest, with the length closest to a translation's usual growth breaking ties.
+A head or tail alignment is the wrong model for a real pool: the Spanish menu
+overlay carries an extra variant of one label in the middle of the shop
+strings (`Tienes ` ahead of `@Tienes `), and aligning from the head slid every
+later label by one. "String" is its own test here, not the dialog gate: a
+UI string may abbreviate with a `/` (`p/ equipar`) or be one punctuated word
+behind a control token (`{ce:13}Pernas.`), both of which the dialog gate
+refuses, and one refused string on one build failed the whole pool. A chunk
+the window's end cuts short is dropped rather than paired, and where a SCUS
+pool can sit at either of two offsets the window sharing more
+build-invariant chunks with the USA one wins before the pair count is
+compared (an in-order alignment pairs *some* text in any window, including
+the item descriptions a wrong window lands on). An unpaired label stays
+vanilla. The place-name table is found by its first cell, the home town's
+name.
 
 ### Lifting a fan translation
 
@@ -285,13 +305,18 @@ legaia-patcher translate lift-official --from <patched.bin> --baseline <retail.b
 lift would otherwise use the build's own code (`es` for a patched Spanish
 disc, `en` for a patched USA one). `--baseline` names the retail disc the
 patch was built on and blanks every line whose text that disc also carries -
-at the same key, or anywhere in the same PROT entry, because a patch that adds
-or removes a line shifts the positional pairing of the rest of that entry, so
-one USA key can pair a retail line on the patched disc and its neighbour on
-the retail one. Without it, lines the patch left untranslated lift as the
+at the same key, or anywhere in the same PROT entry (a line that pairs by scan
+ordinal can pair a retail line on the patched disc and its neighbour on the
+retail one). Without it, lines the patch left untranslated lift as the
 underlying build's official text (Spanish under a partial Portuguese patch)
 and the pack is not publishable; with it, what survives is the translator's
-own text and those lines stay vanilla on import. Everything else is the
+own text and those lines stay vanilla on import. A line with **no prose of
+its own** - only control tokens and punctuation, such as a chest line the
+patch reduced to its item token - is kept even when the baseline carries it:
+the retail disc has the same bytes because the construction is the same in
+both languages, not because the translator skipped the line, and blanking it
+put the English line (`the <item>!`) back into the middle of a translated
+sentence. On the Brazilian Portuguese patch that is 633 lines. Everything else is the
 official-lift path: a patched USA disc keeps the USA bases (drift `0`, found
 by the same search), a patched PAL disc keeps its build's. The baseline
 comparison runs on the raw bytes and the fold after it, so a line the patch

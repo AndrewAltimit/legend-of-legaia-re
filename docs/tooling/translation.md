@@ -78,10 +78,15 @@ legaia-patcher translate import --input "Legend of Legaia (USA).bin" \
 Entries with an empty `translation:` are left byte-identical on the disc, so a
 partially filled pack is always playable. Import is idempotent (re-running the
 same pack over a patched image applies nothing) and incremental (fill more
-entries, re-import onto a fresh copy). When a scene's dialog no longer
-recompresses into its MAN's on-disc footprint (translated text is less
-repetitive than the source), import rolls back that scene's longest lines one at
-a time rather than dropping the whole scene - or, with
+entries, re-import onto a fresh copy). A translation-only pack has no source
+text to prove a line is the one it was written for, so once any keyed line of
+a scene no longer sits where the pack expects it (an earlier import relocated
+the scene, or another patch moved it) the whole scene is skipped rather than
+risk a line landing on a neighbour of the same length. When a scene's dialog
+no longer recompresses into its MAN's on-disc footprint (translated text is
+less repetitive than the source), import first re-fits the scene at exact line
+lengths through the relocator, then rolls back the lines that grow it most
+rather than dropping the whole scene - or, with
 `import --allow-relayout`, grows the overflowing scene MAN by whole sectors via
 a full-ISO relayout so the dialog imports byte-faithfully (the image grows, so
 this writes `--output`, not a same-size `--patch`; built for the official PAL
@@ -246,8 +251,12 @@ capped by `budget`:
   is re-terminated; bytes past the NUL are never read).
 - Dialog segments: same-size in place is the fast default - shorter
   translations are space-padded so the `0x1F ... 0x00` framing (and every
-  script offset around it) never moves. When a line overflows its own span,
-  the importer tries the **generalized rewriter** escape hatch: it grows every
+  script offset around it) never moves. A dialog line's `budget` is therefore
+  the English line's length, a hint, not a bound. When a line overflows its
+  own span, or when the space-padded scene no longer recompresses (padding
+  every shorter line back to the English length spends bytes a zero-slack
+  footprint does not have), the importer tries the **generalized rewriter**
+  escape hatch: it grows every
   filled segment in that scene MAN to full length and relocates all crossing
   references (partition tables, `u24_at_28`, straddling relative jumps -
   `man_edit::apply_text_edits`), verified as the same program by re-walking
@@ -264,10 +273,18 @@ capped by `budget`:
   window) when the fast greedy parse just misses the budget. The retail scene
   entries are sector-aligned with **zero compressed slack**, though, so an
   in-place grow only fits when the rewritten MAN recompresses no larger than
-  the original; a scene that still overflows falls back to same-size and rolls
-  back its longest lines one at a time (each with a per-key diagnostic) - shorten
-  the reported lines and re-run, or land the disc-level +1-sector relayout the
-  [PAL fit report](pal-localizations.md) motivates.
+  the original. A scene that overflows at full length is re-fitted with lines
+  rolled back to the source text, the ones that grow the MAN most first, a
+  batch sized by the measured overflow at a time (`fit_man_in_footprint`), so
+  a scene a few bytes over loses a line or two; only a scene the relocator
+  refuses outright falls back to the padded write and its longest-first
+  rollback. Each rolled-back line carries a per-key diagnostic - shorten the
+  reported lines and re-run, or use the whole-sector relayout
+  (`--allow-relayout`) the [PAL fit report](pal-localizations.md) motivates.
+  A shipped pack is the set of lines a same-size import of its full pack
+  actually writes, never a per-line budget filter: a line over its English
+  length usually fits once the scene is relocated, and a set of in-budget
+  lines can still overflow the scene when padded.
 
 `translate stats` checks all of this offline. On import each target is also
 verified against the pack's `source`; a mismatch (wrong disc revision, or a
