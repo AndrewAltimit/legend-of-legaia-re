@@ -926,18 +926,18 @@ impl World {
                 }
             }
         }
-        // Player-channel (`0xF8`) halt-acquire park: the timeline is holding
-        // at a `C3 F8` op for the player-anchor move armed by a preceding
-        // `A2 F8 <move_id>` to play out (retail's halt-acquire / state-resume
-        // handshake against the live player object). The armed countdown
-        // stands in for the playout - the engine's player pokes complete
-        // synchronously - so drain it one frame per tick; when it hits zero,
-        // step PAST the halt-acquire by its encoded width so the record flows
-        // on to its trailing ops (the door records' terminal `0x3F`).
+        // Player-channel (`0xF8`) arc park: the timeline is holding at a
+        // `C3 F8` op while the player's scripted arc flies (retail halts the
+        // caller with the player and the arc's watcher releases both on
+        // landing). When no arc could start, the countdown armed by a
+        // preceding `A2 F8 <move_id>` stands in for the playout instead. Either
+        // way, once it clears, step PAST the op by its encoded width so the
+        // record flows on to its trailing ops (the door records' terminal
+        // `0x3F`).
         // REF: FUN_8003BDE0
         if let Some(width) = tl.player_wait.take() {
             tl.player_move_frames = tl.player_move_frames.saturating_sub(1);
-            if tl.player_move_frames > 0 {
+            if tl.player_move_frames > 0 || self.player_script_arc_live() {
                 tl.player_wait = Some(width);
                 self.field_vm.channels = channels;
                 self.field_vm.stepping_view.clear();
@@ -1421,6 +1421,27 @@ impl World {
                         let width = if sub == 0xA || sub == 0xB { 11 } else { 9 };
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;
+                        }
+                        // The halt is the arc's: retail arcs the player
+                        // (`FUN_801D25EC`, `0x801DF5AC`) and its watcher
+                        // releases the halted caller on landing
+                        // (`FUN_801D5D60`), so the park lasts exactly the
+                        // clip. The move countdown is the fallback only when
+                        // no arc could start.
+                        // REF: FUN_801d25ec
+                        if let Some(req) = tl
+                            .bytecode
+                            .get(pc + 2..)
+                            .and_then(vm::field_ledge_hop_arc::ScriptArcRequest::decode)
+                            && host.world.start_field_script_arc(
+                                crate::world::ScriptActorRef::Player,
+                                &req,
+                                None,
+                            )
+                        {
+                            tl.player_move_frames = 0;
+                            tl.player_wait = Some(width);
+                            break;
                         }
                         if tl.player_move_frames == 0 {
                             tl.pc = pc + width;

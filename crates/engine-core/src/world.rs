@@ -83,6 +83,7 @@ mod field_carrier_state;
 mod field_locomotion;
 mod field_npc_state;
 mod field_prop_state;
+mod field_script_actor_state;
 mod field_terrain;
 mod field_vm_state;
 mod frame_clock;
@@ -116,6 +117,9 @@ pub use field_carrier_state::FieldCarrierState;
 pub use field_locomotion::FieldLocomotion;
 pub use field_npc_state::FieldNpcState;
 pub use field_prop_state::FieldPropState;
+pub use field_script_actor_state::{
+    FieldAttachedLight, FieldScriptActorState, FieldScriptArc, ScriptActorRef,
+};
 pub use field_terrain::FieldTerrain;
 pub use field_vm_state::FieldVmState;
 pub use frame_clock::FrameClock;
@@ -137,6 +141,8 @@ pub use world_toggles::WorldToggles;
 mod actors;
 pub mod ambient;
 mod cutscene_elements;
+mod field_script_actors;
+pub use field_script_actors::FieldLightDraw;
 mod fog_render;
 pub use cutscene_elements::{
     AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, CutsceneElement, ElementFrame,

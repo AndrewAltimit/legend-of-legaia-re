@@ -802,6 +802,9 @@ impl SceneHost {
         // the MAN installer clears its gate, so both happen here before the
         // section-4 region table (below) is handed over.
         self.world.reset_fog_for_scene_entry();
+        // Arcs, NPC heights and attached lights are field-overlay pool
+        // actors: the pool is re-allocated with the overlay on every entry.
+        self.world.reset_field_script_actors();
         match self
             .scene
             .as_ref()

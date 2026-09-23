@@ -1483,6 +1483,14 @@ impl World {
                 // [`Self::step_field_frame_slice`] for the three stop
                 // conditions and what one-op-per-tick cost.
                 self.step_field_frame_slice();
+                // Field script actors the VM just spawned or is running: the
+                // op-0x43 scripted arcs (arc helper `FUN_801D5C08` + release
+                // watcher `FUN_801D5D60`) and the op-0x34 sub-1 attached
+                // lights' tear-down + keyframe script (`FUN_801E4470` /
+                // `FUN_801E3E00`). Pool actors, one visit per frame.
+                // REF: FUN_801d5d60, FUN_801e3e00
+                self.tick_field_script_arcs();
+                self.tick_field_attached_lights();
                 // Field-NPC walk legs (autonomous patrol routes + scripted
                 // interaction-prologue runs) - one motion-VM step per RETAIL
                 // frame, writing back into `field_npc_positions` so collision /
@@ -1585,6 +1593,8 @@ impl World {
                     self.step_spawned_record_contexts();
                     self.step_field_channels();
                     self.step_field_frame_slice();
+                    self.tick_field_script_arcs();
+                    self.tick_field_attached_lights();
                     self.tick_screen_fx();
                 }
                 None

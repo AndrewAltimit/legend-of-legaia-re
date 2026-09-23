@@ -234,16 +234,17 @@ pub struct CutsceneTimeline {
     // REF: FUN_8003C83C
     pub player_move_frames: u32,
     /// `Some(step_past_width)` while the timeline is PARKED at a
-    /// **player-channel halt-acquire** (`C3 F8 <sub> …` = op `0x43`
+    /// **player-channel arc jump** (`C3 F8 <sub> …` = op `0x43`
     /// sub-0/1/A/B against `0xF8`). Retail raises the caller's halt bit and
-    /// hands the actor its walk target; the context sits out the leg and then
-    /// resumes at the **next instruction** - the operand halfwords are the
-    /// walk dispatcher's arguments, not a resume PC (see
+    /// arcs the player to the operand's landing tile (`FUN_801D25EC`); the
+    /// arc's release watcher clears the caller's halt on landing, and the
+    /// context resumes at the **next instruction** - the operand halfwords
+    /// are the arc's apex / frame count, not a resume PC (see
     /// `docs/subsystems/script-vm.md`, "0x43 sub-0/1/A/B"). The engine parks
-    /// at the op until [`Self::player_move_frames`] drains, then steps PAST
-    /// it by this encoded width - the completion side of the halt-acquire /
-    /// state-resume handshake - so the record reaches its trailing ops (the
-    /// door record's terminal `0x3F` scene change).
+    /// at the op while `World::player_script_arc_live` holds - or, when no arc
+    /// could start, until [`Self::player_move_frames`] drains - then steps
+    /// PAST it by this encoded width, so the record reaches its trailing ops
+    /// (the door record's terminal `0x3F` scene change).
     // REF: FUN_8003BDE0
     pub player_wait: Option<usize>,
     /// When `true`, completing this timeline un-parks every NPC left at the

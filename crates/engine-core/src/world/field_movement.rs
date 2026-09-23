@@ -2779,7 +2779,7 @@ impl World {
         // world-map walk path (which collides through the same routine but
         // derives height from the continent grid) is unaffected. No-op height
         // 0 until a scene supplies a floor LUT.
-        if self.locomotion.follow_terrain_height {
+        if self.locomotion.follow_terrain_height && !self.player_script_arc_live() {
             let y = match self.field_actor_mirrored_y(slot) {
                 Some(mirror) => i32::from(mirror),
                 None => {
@@ -3149,6 +3149,11 @@ impl World {
             return;
         }
         if self.tick_field_ledge_hop(slot) {
+            return;
+        }
+        // A scripted arc (op `0x43` sub-0/1/A/B) owns the player's height
+        // until it lands - retail's arc helper writes `+0x16` every frame.
+        if self.player_script_arc_live() {
             return;
         }
         let flags = self.actors[slot].move_state.flags;
