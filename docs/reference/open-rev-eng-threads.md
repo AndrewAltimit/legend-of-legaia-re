@@ -101,7 +101,7 @@ cheapest place to look for a claim that is still wrong.
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready | [details ↓](#region-story-flag-gate-families) |
 | Why does the port's field attached light leave `dolk` and `cave01` undarkened? | open - measured, a fix owed | `FUN_800195A8` adds a light's extents after the view transform, in the `_DAT_8007BF10` space six times world scale, so retail's rim radius is `H * ext / vz` (`dolk`: 201 px round `(153, 93)` at `H = 768`, `vz = 15635`). `World::field_light_draws` scales the extents at a world-unit depth - six times too large - and the rim and its darkening fills land off-screen ([`script-vm.md`](../subsystems/script-vm.md#the-extents-are-view-space-units-retail-capture)). The extents divided by the base-matrix scale on both hosts, checked against the `dolk` capture, closes it. |
-| Where does a halt-acquire conversation end? | open - inference | Retail's acquire (`0x801E1ECC..0x801E1F54`) halts the target and, for the player, the caller; the dispatcher's halted-target early-out (`0x801DE90C`) is skipped under a modal window. The port ends an inn stay where the record's tail loops back over the same acquire, on the reading that the acquire fails there once the window has closed ([`script-vm.md`](../subsystems/script-vm.md#door-choreography-record-families-the-0x00f-busy-mutex--the-jouind-per-visit-band)). An exec watch on the acquire's exit across a `retock` inn stay closes it. |
+| What clears the two halt bits an inn acquire sets? | open - measured, writer unknown | In `retock_innkeeper_talk_open` the second talk's acquire (`0x801E2148..0x801E21DC`, `s7 = 5`) raises `0x400` on the player and the innkeeper, and both bits are clear again 18 vsyncs later with the conversation still open ([`script-vm.md`](../subsystems/script-vm.md)). A write watch on the two actors' `+0x10` across that window, naming the store, closes it. |
 
 Four rows closed here. **The region battle-setup half of `FUN_801D9E1C`** is
 ported on both play hosts: `_DAT_8007BD60 = region[+8] & 0x1F` is the battle
@@ -118,6 +118,13 @@ same-scene reload, and the engine had re-run that section on every talk
 ([falsified](re-do-not-re-walk.md#field--locomotion)). **The frame-step floor**
 is the scene's: field init writes `2` and `opdeene`'s prescript raises it to
 `3` through move-VM ext sub-op `0x2F` ([settled](re-settled-threads.md#audio)).
+
+**Where a halt-acquire conversation ends** closed by capture: the inn stay ends
+when its last page closes, with the innkeeper's cursor parked on the loop-back,
+and the next talk's acquire succeeds. The reading that the acquire fails once
+the window closes, and that `*(_DAT_801C6EA4) + 8` is a modal-window flag, are
+both falsified ([falsified](re-do-not-re-walk.md#field--locomotion)); what
+clears the halt bits afterwards is the new row above.
 
 **Does P2[5] write `kor5`'s `0x436` organically** closed as yes: with only the
 two trigger-tile pokes and the Gaza fight's enemy HP held at `1` (a loss is a
@@ -513,7 +520,7 @@ performs either cast ([settled](re-settled-threads.md#battle--arts--level-up)).
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which slot-2 bank does the Muscle Dome hold? | open - inference | The dome's rounds run the battle frame driver `FUN_80046A20`, which calls the battle scene loader at `0x8004711C`, so the dome is taken to hold the class-2 bank PROT 0869; its warp clears the field-bank latch without closing slot 6, so slot 6's header would still be open over those samples ([`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)). A dome-round state's open-state array `_DAT_801CE368` and slot-2 header buffer, read against the disc banks, closes it. |
+| Does a Muscle Dome round load the class-2 bank? | open (narrowed) - the hub is measured, a round is not | At the contest hub (`minigame_muscle_dome`, mode `0x19`) slot 2 is closed and slot 6 holds PROT 0876 intact, so the hub has no class-2 bank. A round runs the battle frame driver `FUN_80046A20`, which calls the battle scene loader at `0x8004711C`, so a round is taken to stage PROT 0869 - but the only PCSX-Redux dome-round state carries a patched executable ([`audio.md`](../subsystems/audio.md#retail-capture-of-the-slot-2--slot-6-residency)). A retail dome-round state's slot records at `0x80091508`, read against the disc banks, close it. |
 | What does the field init's slot-10 load serve? | open - decoded, unmodelled | `FUN_801D6704` loads raw `0x428` then `0x422` into slot 10, over slot 0's SPU base, only while the current track `*(0x8007BAC8)` is `0x814` and the one-shot latch `0x8007B9B8` is clear (`0x801D71A0..0x801D7274`). Which scene plays track `0x814`, what cues name category 10 there, and who clears the latch close it. |
 
 **Do the hosts play the field's scripted SFX cues** closed as yes, on both.
