@@ -2628,8 +2628,8 @@ backup_fingerprint = "6acd2d93d83e0f24a03d794f99485bea11820083ad07c8598923d4f9f0
 phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "town01"
-description = "Rim Elm (town01) free field run, reached by a cold boot + memory-card load (the town01 save, restamped to suffix -00 so the calibrated ladder lands on it). Player at world (9690, 8512). Checkpointed 40 field-run vsyncs after the load; its load-screen sibling is field_load_first_town. The town with the first shop and inn, so the card-tier anchor for dialogue / shop / inn parity frames."
-topics = ["field", "town01", "Rim Elm", "card boot", "shop", "inn", "probe state"]
+description = "Rim Elm (town01) free field run, reached by a cold boot + memory-card load (the town01 save, restamped to suffix -00 so the calibrated ladder lands on it). Player at world (9690, 8512), which the frame shows as a cave chamber around a glowing tree (the save point the card was written at), with a second character standing beside Vahn - not the village square. Checkpointed 40 field-run vsyncs after the load; its load-screen sibling is field_load_first_town."
+topics = ["field", "town01", "Rim Elm", "card boot", "probe state"]
 
 # ----------------------------------------------------------------------
 # Pre-entry card-boot anchor.
