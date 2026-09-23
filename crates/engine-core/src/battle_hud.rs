@@ -1462,7 +1462,7 @@ pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Opti
 }
 
 /// The **target-select** plaque (placement record `0x29`): the monster name
-/// (and element badge) the open target cursor rests on, or `None` while no
+/// the open target cursor rests on, or `None` while no
 /// picker's cursor is on the enemy row.
 ///
 /// Retail's target-cursor arm of `FUN_801D5854` (`0x801D5B28..0x801D5BAC`)
@@ -1511,7 +1511,10 @@ pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(Strin
     if target.battle.max_hp == 0 {
         return None;
     }
-    Some((monster_name(world, t), monster_element_badge(world, t)))
+    // No element badge: the captured record-0x29 width (55 for "Gobu Gobu")
+    // is the bare name's advance, so retail's measured payload carries no
+    // badge escape here, unlike the top-left plaque's.
+    Some((monster_name(world, t), None))
 }
 
 /// The element badge a monster slot's plaque wears (`None` for none).

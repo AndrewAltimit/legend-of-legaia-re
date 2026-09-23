@@ -1256,7 +1256,8 @@ impl PlayWindowApp {
                 match &cmd.phase {
                     CommandPhase::RoundPrompt { .. }
                     | CommandPhase::Menu { .. }
-                    | CommandPhase::AttackMode { .. } => {
+                    | CommandPhase::AttackMode { .. }
+                    | CommandPhase::CommitConfirm { .. } => {
                         // Retail's command surfaces are clusters of framed
                         // chips around a D-pad glyph, not lists: the
                         // round-open `Begin | Run` pair, the packet-pinned

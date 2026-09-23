@@ -1030,7 +1030,8 @@ impl LegaiaRuntime {
             match &cmd.phase {
                 CommandPhase::RoundPrompt { .. }
                 | CommandPhase::Menu { .. }
-                | CommandPhase::AttackMode { .. } => {
+                | CommandPhase::AttackMode { .. }
+                | CommandPhase::CommitConfirm { .. } => {
                     // Retail's command surfaces are chip clusters, not
                     // lists: the round-open `Begin | Run` pair, the
                     // packet-pinned four-arm diamond, and the
