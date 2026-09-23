@@ -234,6 +234,34 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         note: "same walk-in choreography: actors 22/23 are captured on their cutscene \
                marks, away from the entry seats the engine reproduces",
     },
+    KnownDivergence {
+        label: "doman_arrival_from_korb2",
+        key: "vis:*",
+        class: "b",
+        note: "pre-load capture: the scene label already names the destination while the \
+               actor pool is still map03's (retail's seats run along z = 3520 at a 512-unit \
+               pitch - the world-map portal row), so there is no destination arrangement \
+               yet to compare; the engine's fresh entry is the arrangement retail builds \
+               next",
+    },
+    KnownDivergence {
+        label: "doman_arrival_from_korb2",
+        key: "pos:*",
+        class: "b",
+        note: "same pre-load capture context as doman_arrival_from_korb2 vis:*",
+    },
+    KnownDivergence {
+        label: "son_arrival_from_doman",
+        key: "vis:*",
+        class: "b",
+        note: "same pre-load capture context as doman_arrival_from_korb2 vis:*",
+    },
+    KnownDivergence {
+        label: "son_arrival_from_doman",
+        key: "pos:*",
+        class: "b",
+        note: "same pre-load capture context as doman_arrival_from_korb2 vis:*",
+    },
 ];
 
 fn known(label: &str, key: &str) -> Option<&'static KnownDivergence> {
