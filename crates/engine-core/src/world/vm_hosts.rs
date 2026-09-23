@@ -1805,6 +1805,36 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         SceneFadeResult::Done
     }
 
+    // Op `0x34` sub-1: the attached light (`FUN_801E5668`), seated on the
+    // actor the op runs against. See `world/field_script_actors.rs`.
+    fn op34_sub1_spawn_attached(
+        &mut self,
+        _ctx: &FieldCtx,
+        ext: Option<u8>,
+        spawn: &legaia_engine_vm::field_actor_billboard::AttachedSpriteSpawn,
+        script: Option<&[u8]>,
+    ) -> bool {
+        self.world.spawn_field_attached_light(ext, spawn, script)
+    }
+
+    // Op `0x43` sub-0/1/A/B: the scripted arc (`FUN_801D25EC`). An actor the
+    // engine cannot place (the scene system context) gets no arc; its halt
+    // stays raised exactly as before the arc channel existed.
+    fn op43_arc_jump(
+        &mut self,
+        _ctx: &FieldCtx,
+        ext: Option<u8>,
+        req: &legaia_engine_vm::field_ledge_hop_arc::ScriptArcRequest,
+    ) {
+        // The watcher's release context: the arced NPC's own channel, or -
+        // for a player arc - the channel that ran the op, which retail halts
+        // with the player (`0x801DF3F0..0x801DF408`).
+        let release = self.world.field_vm.executing_channel;
+        if let Some(actor) = self.world.resolve_script_actor(ext) {
+            self.world.start_field_script_arc(actor, req, release);
+        }
+    }
+
     fn op34_sub0_color_intensity_setup(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
         // Op `0x34` sub-0 is the **screen-effect colour tween**, and it is a
         // walk-out / walk-in pair rather than a value ramp. Reading the arm
