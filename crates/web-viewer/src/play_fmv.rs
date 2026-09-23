@@ -61,7 +61,9 @@
 
 use legaia_asset::fmv_dispatch::{FmvTable, STR_OVERLAY_PROT_INDEX, fmv_segment_window};
 use legaia_engine_core::cutscene::fmv_is_skippable;
-use legaia_engine_core::input::{InputState, PadButton};
+use legaia_engine_core::input::InputState;
+#[cfg(test)]
+use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::SceneHost;
 use legaia_engine_core::world::SceneMode;
 use wasm_bindgen::prelude::*;
@@ -81,21 +83,14 @@ const USER_DATA_SIZE: u32 = 2048;
 /// rate). The unsupported case does not wait at all.
 pub const INSTALL_TIMEOUT_FRAMES: u32 = 600;
 
-/// The buttons retail's `0x1F0` packed-mask test covers, in the standard PSX
-/// layout: Triangle / Circle / Cross / Square / Select.
-pub const SKIP_BUTTONS: [PadButton; 5] = [
-    PadButton::Triangle,
-    PadButton::Circle,
-    PadButton::Cross,
-    PadButton::Square,
-    PadButton::Select,
-];
-
-/// Retail's abort test: `fmv_id 0` only, on any of [`SKIP_BUTTONS`].
-/// `edge` is a just-pressed PSX pad word.
-pub fn skip_edge_hit(fmv_id: i16, edge: u16) -> bool {
-    fmv_is_skippable(fmv_id) && SKIP_BUTTONS.iter().any(|b| edge & (*b as u16) != 0)
-}
+/// The buttons retail's `0x1F0` packed-mask test covers - re-exported from
+/// the shared kernel so this host's tests keep their name.
+pub use legaia_engine_core::cutscene::FMV_SKIP_BUTTONS as SKIP_BUTTONS;
+/// Retail's abort test: a skippable `fmv_id`, on any of [`SKIP_BUTTONS`].
+/// `edge` is a just-pressed PSX pad word. Lives in
+/// [`legaia_engine_core::cutscene`] so the native window can make the same
+/// decision.
+pub use legaia_engine_core::cutscene::fmv_skip_edge_hit as skip_edge_hit;
 
 /// The same test over the world's own pad edge (the page feeds `set_pad`
 /// every tick, so `just_pressed` is the retail newly-pressed word).

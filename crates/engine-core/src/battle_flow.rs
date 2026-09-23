@@ -170,6 +170,8 @@ pub fn flow_state_for(phase: Option<&CommandPhase>, menu: BattleMenuKind) -> Bat
         Some(CommandPhase::SpiritGuard) | Some(CommandPhase::Aborted) => {
             BattleFlowState::CommitBegin
         }
+        // The cancel resolves on the ring it was pressed on.
+        Some(CommandPhase::StepBack) => BattleFlowState::CategoryMenu,
         None => BattleFlowState::Idle,
     }
 }

@@ -336,6 +336,7 @@ impl SceneHost {
         self.world.cutscene.caption_alpha = 0.0;
         self.world.cutscene.caption_shown_frames = 0;
         self.world.field_vm.channels.clear();
+        self.world.field_vm.stepping_view.clear();
         self.world.field_vm.channels_man = None;
         self.world.npcs.anim_cues.clear();
         // An in-flight ledge hop is scene-scoped, and its steering lock is
@@ -360,13 +361,17 @@ impl SceneHost {
         // in `camera_configure`, so a stale set would leak the prior scene's
         // focus / depth into a beat that omits those slots).
         self.world.camera.state.params.clear();
-        // The op-0x34 effect-global tint is scene-scoped (the opening
-        // timeline's between-beat black fades); drop any in flight. The
+        // The op-0x34 screen effect is scene-scoped (the opening timeline's
+        // between-beat black fades); retire its tween and forget the slot.
+        // Retail reaches the same state through the transition sweep, which
+        // names the tween's handler among its three retire classes. The
         // op-0x4C-0x12 global screen tint (`World::presentation.tint`) deliberately
         // PERSISTS - retail's cross-scene fade continuity: a departure
         // fade-to-black carries into the next scene, whose `P1[0]` arrival
         // arm fades back in.
-        self.world.presentation.effect_tint = None;
+        self.world.presentation.effect_tween_slot = None;
+        self.world
+            .retire_actors_by_handler(crate::actor_handler::ActorHandler::ColourTween);
         // Scripted CLUT-cell effects are scene-scoped (their cell operands
         // came from the previous scene's MAN); drop any in flight and re-pin
         // the frame-step factor `dt` (retail `DAT_1F800393`, the adaptive
@@ -375,6 +380,7 @@ impl SceneHost {
         // and the overworld kingdom scenes (`mapNN`) at 3 (20 fps). See
         // `World::clock.frame_step`.
         self.world.ambient.clut_fx.clear();
+        self.world.ambient.clut_blend_fx.clear();
         self.world.ambient.clut_vsync_accum = 0;
         self.world.ambient.clut_pending_game_ticks = 0;
         // Ambient move-VM effect parts (jou's flesh cyclers / lightning) are
@@ -1146,6 +1152,22 @@ impl SceneHost {
             Some(sc) => crate::model_bank::SceneModelBank::build(sc),
             None => crate::model_bank::SceneModelBank::default(),
         };
+        // The same bank, materialised for the world: the field VM's
+        // `0x4C 0xD8` allocator resolves its model operand here.
+        let field_bank = match self.scene.as_ref() {
+            Some(sc) => self
+                .model_bank
+                .materialise(sc)
+                .into_iter()
+                .map(|bytes| {
+                    let raw = bytes?;
+                    let tmd = legaia_tmd::parse(&raw).ok()?;
+                    Some(std::sync::Arc::new(crate::world::GlobalTmd { tmd, raw }))
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        self.world.install_field_scene_bank(field_bank);
         // Opening-prologue hand-off arm. When entering the cutscene scene
         // `opdeene`, derive the `town01` hand-off arm from the scene's own MAN
         // bytecode instead of a blind constant: walk the cutscene-timeline

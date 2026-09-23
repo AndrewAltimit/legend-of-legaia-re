@@ -1,6 +1,8 @@
 //! Overlay-resident move-VM extension dispatcher (`FUN_801D362C`).
 //!
-//! PORT: FUN_801D362C, FUN_801D31B0
+//! PORT: FUN_801D362C
+//! REF: FUN_801D31B0 (the strip emitter sub-op 0x2C calls - not ported;
+//!      [`MoveVmExtHost::emit_strip`] is a no-op hook)
 //!
 //! `FUN_801D362C` is the dispatcher reached from the move-VM
 //! (`FUN_80023070`) when the outer move-VM opcode is `0x2F` (overlay
@@ -63,9 +65,14 @@
 //!
 //! `FUN_801D31B0` is shared across many overlays (dialog, cutscene,
 //! 0897 field, world-map) - it is **not** a continent-specific
-//! function. The 832-byte body emits horizontal POLY_FT4 strips
-//! parameterised by the slab descriptor at `actor[+0x9C]` (UV bounds,
-//! tpage, clut, line height). Dialog overlays use it for scrolling
+//! function. The body (`0x801D31B0..0x801D362C`, 1148 bytes; an earlier
+//! note said 832) is called as `FUN_801D31B0(actor, insn)`: it projects
+//! `actor[+0x14]` through `FUN_8005BA38`, then emits a wrapping tiled strip
+//! of POLY_FT4s from the slab descriptor at `actor[+0x9C]` (`+0xC..+0x1A`:
+//! UV bounds, tpage, clut, line height), scrolled by `actor[+0x24]` /
+//! `actor[+0x28]`, linked through `FUN_8003D2C4` with the draw mode from
+//! `FUN_80059010`. None of that is ported: the sub-op decodes its five
+//! operands into the host hook and nothing draws. Dialog overlays use it for scrolling
 //! text-strip backgrounds; the world-map overlay variant has been
 //! observed mapped to op-0x2C in the JT but has not been observed
 //! dispatched during world-map render in any captured state (the

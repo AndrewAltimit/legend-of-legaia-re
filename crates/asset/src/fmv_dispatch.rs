@@ -48,6 +48,25 @@
 //! mapping from the user's own disc instead of a hard-coded table; the disc-gated
 //! `fmv_dispatch_real` test pins the nine retail entries.
 
+/// VA of the STR overlay's MDEC **quantisation-table command packet**: the
+/// header word `0x4000_0001` (MDEC command 2, "set quant table", colour bit
+/// set) then the 64-byte luma matrix at `0x801D0D5C` and the 64-byte chroma
+/// matrix at `0x801D0D9C`. `FUN_801CFCDC` copies the caller's two matrices in
+/// (sixteen words each, `addiu v1,zero,0xf` loop counts) and hands the packet
+/// to the MDEC upload `FUN_801CFFDC` with `a1 = 0x20` - thirty-two data words
+/// behind the header, so the packet is [`MDEC_PACKET_BYTES`] long.
+pub const MDEC_QUANT_PACKET_VA: u32 = 0x801D_0D58;
+/// VA of the MDEC **IDCT scale-table command packet**: header `0x6000_0000`
+/// (MDEC command 3) then the 64-halfword IDCT matrix at `0x801D0DE0`, handed
+/// to `FUN_801CFFDC` with `a1 = 0x20` right after the quant packet.
+pub const MDEC_IDCT_PACKET_VA: u32 = 0x801D_0DDC;
+/// Header word of the quant packet.
+pub const MDEC_QUANT_PACKET_HEADER: u32 = 0x4000_0001;
+/// Header word of the IDCT packet.
+pub const MDEC_IDCT_PACKET_HEADER: u32 = 0x6000_0000;
+/// Bytes per packet: the header word plus the `0x20` words the upload sends.
+pub const MDEC_PACKET_BYTES: usize = 4 + 0x20 * 4;
+
 /// Load base of the STR/MDEC overlay (PROT 0970), from the static-overlay map.
 pub const STR_OVERLAY_BASE_VA: u32 = 0x801C_E818;
 /// PROT entry index of the STR/MDEC cutscene overlay this table lives in.
@@ -57,10 +76,10 @@ pub const STR_OVERLAY_PROT_INDEX: u32 = 970;
 /// `(start_frame - 1) * SECTORS_PER_FRAME` into the file.
 pub const SECTORS_PER_FRAME: u32 = 10;
 /// VA of the per-`fmv_id` dispatch table the play-loop selector indexes.
-const FMV_TABLE_VA: u32 = 0x801D_0A6C;
+pub const FMV_TABLE_VA: u32 = 0x801D_0A6C;
 /// Per-`fmv_id` slot stride (`fmv_id * 0x20` - the `sll v0,v0,0x5` selector at
 /// overlay VA `0x801CEC9C`).
-const SLOT_STRIDE: usize = 0x20;
+pub const SLOT_STRIDE: usize = 0x20;
 /// Number of `fmv_id` slots in the table (9 retail + 14 dev).
 pub const FMV_SLOT_COUNT: usize = 23;
 

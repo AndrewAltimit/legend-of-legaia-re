@@ -75,6 +75,8 @@ import struct
 import sys
 from pathlib import Path
 
+from mips_walk import walk
+
 REPO = Path(__file__).resolve().parents[2]
 OVERLAY_MAP = REPO / "crates" / "asset" / "data" / "static-overlays.toml"
 OVERLAY_DIR = REPO / "extracted" / "overlays"
@@ -242,11 +244,21 @@ def scan_gp_relative(image: Image, disps: set[int]) -> list[tuple[int, str]]:
     return out
 
 
+def _index_note(idx: int | None) -> str:
+    return "" if idx is None else f"  [indexed by {REG_NAMES[idx]}: array base]"
+
+
 def scan_lui_mem(image: Image, target: int) -> list[tuple[int, int, str]]:
     """`lui rX, hi` + `<mem> rY, lo(rX)` - the direct-global form.
 
     Returns `(lui_offset, memop_offset, text)`. The high half carries the
     assembler's sign correction, exactly as for a `lui`+`addiu` pair.
+
+    The register is followed by `mips_walk.walk`: through copies, through one
+    indexing `addu`, across branches, and dropped the moment anything else
+    writes it. The indexed hit is the array form - `lui at,hi; addu at,at,v0;
+    lw v1,lo(at)` - and says so in its text: `target` is then the base of the
+    array, not the element read.
     """
     lo = target & 0xFFFF
     hi = ((target >> 16) + (1 if lo >= 0x8000 else 0)) & 0xFFFF
@@ -256,52 +268,23 @@ def scan_lui_mem(image: Image, target: int) -> list[tuple[int, int, str]]:
         word = struct.unpack_from("<I", image.data, off)[0]
         if (word >> 26) != 0x0F or (word & 0xFFFF) != hi:
             continue
-        reg = (word >> 16) & 0x1F
-        for k in range(1, LUI_PAIR_WINDOW + 1):
-            at = off + 4 * k
-            nxt = image.word(at)
-            if nxt is None:
-                break
+        for at, nxt, state in walk(image.word, off, LUI_PAIR_WINDOW, image.base):
             op = nxt >> 26
-            if op == 0x0F and ((nxt >> 16) & 0x1F) == reg:
-                break  # the register is reloaded; the pair cannot span this
-            if ((nxt >> 21) & 0x1F) != reg or (nxt & 0xFFFF) != lo:
+            rs = (nxt >> 21) & 0x1F
+            if op not in MEM_OPS or rs not in state or (nxt & 0xFFFF) != lo:
                 continue
-            if op in MEM_OPS:
-                rt = REG_NAMES[(nxt >> 16) & 0x1F]
-                base = REG_NAMES[reg]
-                out.append((off, at, f"{MEM_OPS[op]} {rt},{signed_lo:#x}({base})"))
-                break
+            value, idx = state[rs]
+            if value != hi << 16:
+                continue
+            rt = REG_NAMES[(nxt >> 16) & 0x1F]
+            out.append(
+                (
+                    off,
+                    at,
+                    f"{MEM_OPS[op]} {rt},{signed_lo:#x}({REG_NAMES[rs]})" + _index_note(idx),
+                )
+            )
     return out
-
-
-def _writes_reg(word: int) -> int | None:
-    """Which GPR an instruction clobbers, for the register walk below.
-
-    Only the forms that matter to a base-register walk are decoded exactly;
-    anything else that plausibly writes a register returns its destination so
-    the walk drops the base rather than trusting a stale value.
-    """
-    op = word >> 26
-    rt = (word >> 16) & 0x1F
-    if op == 0x00:  # SPECIAL
-        funct = word & 0x3F
-        if funct in (0x08, 0x0C, 0x0D):  # jr, syscall, break
-            return None
-        if funct in (0x18, 0x19, 0x1A, 0x1B, 0x11, 0x13):  # mult/div, mthi/mtlo
-            return None
-        return (word >> 11) & 0x1F  # rd
-    if op == 0x01:  # REGIMM - the `*al` forms link
-        return 31 if (rt & 0x1E) == 0x10 else None
-    if op == 0x03:  # jal
-        return 31
-    if 0x08 <= op <= 0x0F:  # addi/addiu/slti/sltiu/andi/ori/xori/lui
-        return rt
-    if op in (0x10, 0x11, 0x12, 0x13):  # coprocessor: mfc/cfc write rt
-        return rt if ((word >> 21) & 0x1F) in (0x00, 0x02) else None
-    if 0x20 <= op <= 0x26:  # loads
-        return rt
-    return None
 
 
 def scan_base_disp(image: Image, target: int) -> list[tuple[int, str]]:
@@ -317,11 +300,13 @@ def scan_base_disp(image: Image, target: int) -> list[tuple[int, str]]:
     A register that *holds* the target is reported too, which closes the
     sibling tool's documented "split materialisation" gap - an address built
     in more than two steps is not a `lui`+`addiu` pair and that scan walks
-    past it.
+    past it. So is a base the walk carried through an indexing `addu`
+    (`mips_walk.propagate`): `lui; addiu; addu v0,v0,a0; lw v1,0(v0)` reaches
+    the array at the formed address, and the hit says it is indexed.
 
-    Returns `(memop_offset, text)`. The walk is linear and stops a register at
-    its next writer, so a hit inside a branch shadow is a candidate to read,
-    not a proof; `code` and the disassembly settle it.
+    Returns `(memop_offset, text)`. The walk (`mips_walk.walk`) follows
+    branches both ways, so a hit is a candidate to read, not a proof; `code`
+    and the disassembly settle it.
     """
     out = []
     seen = set()
@@ -329,49 +314,43 @@ def scan_base_disp(image: Image, target: int) -> list[tuple[int, str]]:
         word = struct.unpack_from("<I", image.data, off)[0]
         if (word >> 26) != 0x0F:
             continue
-        reg = (word >> 16) & 0x1F
-        if reg == 0:
-            continue
-        regs = {reg: ((word & 0xFFFF) << 16) & 0xFFFFFFFF}
-        for k in range(1, BASE_DISP_WINDOW + 1):
-            at = off + 4 * k
-            nxt = image.word(at)
-            if nxt is None:
-                break
+        for at, nxt, state in walk(image.word, off, BASE_DISP_WINDOW, image.base):
             op = nxt >> 26
             rs = (nxt >> 21) & 0x1F
+            if rs not in state or at in seen:
+                continue
+            value, idx = state[rs]
             rt = (nxt >> 16) & 0x1F
             imm = nxt & 0xFFFF
             simm = imm - 0x10000 if imm & 0x8000 else imm
-            if op in MEM_OPS and rs in regs:
-                if (regs[rs] + simm) & 0xFFFFFFFF == target and at not in seen:
-                    seen.add(at)
-                    out.append(
-                        (
-                            at,
-                            "%s %s,%#x(%s)  [base 0x%08x from lui @ +0x%x]"
-                            % (
-                                MEM_OPS[op],
-                                REG_NAMES[rt],
-                                simm,
-                                REG_NAMES[rs],
-                                regs[rs],
-                                off,
-                            ),
-                        )
+            if op in MEM_OPS and (value + simm) & 0xFFFFFFFF == target:
+                seen.add(at)
+                out.append(
+                    (
+                        at,
+                        "%s %s,%#x(%s)  [base 0x%08x from lui @ +0x%x]%s"
+                        % (
+                            MEM_OPS[op],
+                            REG_NAMES[rt],
+                            simm,
+                            REG_NAMES[rs],
+                            value,
+                            off,
+                            _index_note(idx),
+                        ),
                     )
-            if op in ADDR_OPS and rs in regs:
-                val = ((regs[rs] | imm) if op == 0x0D else (regs[rs] + simm)) & 0xFFFFFFFF
-                regs[rt] = val
+                )
+            elif op in ADDR_OPS and not (op == 0x0D and idx is not None):
                 # The address itself in a register: the two-step form the
                 # sibling tool already reports, and the multi-step form it
                 # explicitly cannot ("split materialisation").
-                if val == target and at not in seen:
+                val = ((value | imm) if op == 0x0D else (value + simm)) & 0xFFFFFFFF
+                if val == target:
                     seen.add(at)
                     out.append(
                         (
                             at,
-                            "%s %s,%s,%#x  [= 0x%08x, from lui @ +0x%x]"
+                            "%s %s,%s,%#x  [= 0x%08x, from lui @ +0x%x]%s"
                             % (
                                 ADDR_OPS[op],
                                 REG_NAMES[rt],
@@ -379,15 +358,10 @@ def scan_base_disp(image: Image, target: int) -> list[tuple[int, str]]:
                                 imm,
                                 val,
                                 off,
+                                _index_note(idx),
                             ),
                         )
                     )
-                continue
-            dest = _writes_reg(nxt)
-            if dest is not None:
-                regs.pop(dest, None)
-            if not regs:
-                break
     return out
 
 

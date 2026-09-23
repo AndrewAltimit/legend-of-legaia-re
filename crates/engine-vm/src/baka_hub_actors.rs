@@ -70,7 +70,8 @@
 //!
 //! Read from `overlay_0897_801f0adc.txt` and `overlay_baka_fighter_801f{1138,
 //! 159c,16c0,17d8,1890,1950,1a1c,1ab0,1b64,1d90,1e48,1fdc,20b0,2134}.txt`
-//! plus `overlay_baka_fighter_801f90dc.txt`.
+//! plus `overlay_menu_801d0f1c.txt` (the item-info panel, whose misbased
+//! `overlay_baka_fighter_801f90dc.txt` print this module first read).
 //!
 //! Host: `legaia_engine_core::field_submode_screen` runs the dispatcher over
 //! the live `SubmodeDriver` pool actor every field frame.
@@ -1428,15 +1429,17 @@ pub fn two_line_panel(actor: &HubActor, env: &HubEnv) -> HubFrame {
     out
 }
 
-// NOT WIRED: unlike the other seven painters this VA has **no reference
-// anywhere in the field overlay's bytes** - it is in neither
-// `PTR_FUN_801F33B4` nor `PANEL_WINDOW_TABLE` - and it sits in the resident
-// slot-B band whose widget descriptors `engine-core::screen_fx` pins at
-// `0x801F8FE4..0x801F902C`. Its owning image is therefore unsettled, and its
-// only dump ends on `Control flow encountered bad instruction data`. What has
-// to exist first is a base-confirmed dump of the image that really owns
-// `0x801F90DC`, so a host knows which subsystem's caller to attach it to.
-/// PORT: FUN_801f90dc - the item-acquisition caption.
+// Owner: this is not a Baka hub routine and `0x801F90DC` is not its address.
+// Every dump filed at `0x801F90DC` is `dump-extent-attribution.csv` class
+// `misbased` - no image holds those bytes at that VA - and they are the menu
+// overlay's (PROT 0899) shared item-info panel `FUN_801D0F1C` printed
+// `0x281C0` high: its first 39 instructions match `overlay_menu_801d0f1c.txt`
+// operand for operand. The whole 221-instruction body is in that dump, so
+// the "unrecovered past the number draw" note no longer holds.
+/// PORT: FUN_801d0f1c
+/// REPLACED-BY: `legaia_engine_ui::ui_menu::pause_lists` - the live port of
+/// the same routine (its info window and the id-`0xFE` Point Card arm), which
+/// both play hosts' pause screens draw. No host is owed this second copy.
 ///
 /// `DAT_801E46B0` is an **item id**, and the two strings come from the static
 /// `SCUS_942.54` item table (`0x8007436C + id * 0x0C`, see

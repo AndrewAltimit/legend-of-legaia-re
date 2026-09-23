@@ -200,14 +200,23 @@ the importer patches (`legaia_patcher::translation::lift`):
    measured PAL discs vouch for it: the unpinned search lands on every pinned
    base (`translate_lift_official_real.rs`). The party template is found by
    the same fingerprint (its eight stats per record).
-3. Re-key positionally: name tables id-for-id (`usa_string_va -> source_string`),
-   dialog by the `diff-disc` Nth-segment-per-entry pairing, party names by fixed
-   field. Both discs are scanned with the accent-tolerant segment gate: the
-   pack's strict-gate offsets index the tolerant list (a qualifying run never
-   contains a segment start), and only the same gate on both sides sees the
-   same coincidental high-byte hits in the binary regions both discs share. A
-   strict scan on one side shifted every ordinal after such a hit, which a
-   retail disc lifted onto itself exposed as other lines' text.
+3. Re-key: name tables id-for-id (`usa_string_va -> source_string`), party
+   names by fixed field, and dialog **structurally** - each MAN (a scene
+   bundle's, or the uncompressed one leading a streaming dungeon scene) is
+   walked record by record with the field-VM disassembler, and a line's
+   coordinate is `(record ordinal, ordinal among that record's text leads)`,
+   the same on every build because the script is one program with different
+   strings. The scan-ordinal pairing `diff-disc` reports (the Nth qualifying
+   segment of an entry against the Nth) is only the fallback for a line the
+   walk does not place - an operand run, text past a record's first decode
+   error, an entry whose MAN has a different record shape on the source disc.
+   The distinction is not academic: the Spanish disc renders many a chest
+   line as a bare `{c2:xx}` item token, which fails the segment quality gate
+   on that side only, and from there every scan ordinal in the scene names the
+   *previous* line - a shift the pair counts never show, and one the lift
+   report now measures (`structural` / `by scan ordinal` / `shifted`). Both
+   scans use the accent-tolerant gate on both sides, so the coincidental
+   high-byte hits in the binary regions both discs share land on both lists.
 
 `--fold-accents` additionally rewrites the accent cells onto plain ASCII, so the
 lifted text renders on an unmodified NTSC font (see
@@ -240,13 +249,23 @@ silently. Implementation: `translation::markup::fold_high_glyphs` /
 `translation::lift::fold_pack_accents`; disc-gated oracle
 `crates/patcher/tests/translate_lift_official_real.rs`.
 
-### What a lift does not cover
+### How the string pools pair
 
-The overlay-resident `ui_menu` pools (pause-menu / options / shop / battle
-system labels) are **not** lifted. They are pinned by USA-coordinate VA windows
-(`translation::ui`) and the PAL overlays place their pools elsewhere, so a lift
-leaves those entries empty and the labels stay English. The name tables, the
-party roster, and the whole `0x1F` dialog corpus are covered.
+The overlay-resident `ui_menu` pools, the `system_text` SCUS strings and the
+`place_names` cells are lifted too, by a pairing of their own. A pool is
+pinned by a USA-coordinate VA window (`translation::ui`), and the same pool on
+the other build sits near the same file offset (an overlay's data segment
+opens the same way on every build; a SCUS window is carried by the located
+name tables' drift) but not at it - its strings are longer or shorter. Both
+windows are cut into NUL-delimited chunks, junk included, and chunks that are
+byte-identical and unique on both sides (a stat label, a proper noun, a run of
+build-invariant pointer bytes) are **anchors** that partition the two lists;
+inside a partition the chunks pair by ordinal when both sides count the same,
+and otherwise by the head or the tail, accepted only when every aligned pair
+agrees in shape (prose against prose, comparable length). A partition that
+agrees on nothing pairs nothing, and an unpaired label stays vanilla: the
+failure is a label left in English, never a label written from the wrong
+slot. The place-name table is found by its first cell, the home town's name.
 
 ### Lifting a fan translation
 
@@ -274,11 +293,17 @@ underlying build's official text (Spanish under a partial Portuguese patch)
 and the pack is not publishable; with it, what survives is the translator's
 own text and those lines stay vanilla on import. Everything else is the
 official-lift path: a patched USA disc keeps the USA bases (drift `0`, found
-by the same search), a patched PAL disc keeps its build's. A patched font
-atlas' custom glyph cells come through as raw `{xx}` escapes that
-`--fold-accents` leaves alone (it folds only the CP437 accent block) - both
-counts are reported, and a line still carrying one after the fold is best
-dropped than shipped, since the USA atlas draws nothing there. A translation
+by the same search), a patched PAL disc keeps its build's. The baseline
+comparison runs on the raw bytes and the fold after it, so a line the patch
+only re-accented is the translator's work and survives. A patched font atlas
+draws its own cells: the fold covers the CP437 accent block and the CP850
+cells a Portuguese patch redraws over CP437's box-drawing rows (the ordinal
+indicators, the inverted punctuation, the accented capitals), and any cell
+outside both comes through as a raw `{xx}` escape - both counts are reported,
+and a line still carrying one after the fold is best dropped than shipped,
+since the USA atlas draws nothing there. The lifted text also loses its
+trailing pad spaces (a same-size patch pads a shorter line to its slot); they
+draw nothing and only cost budget on the target. A translation
 that rewrote the game's structure (moved PROT entries, re-laid the ISO) still
 lifts as long as the PROT TOC on the patched disc is consistent - the walk is
 by entry index, and the entry sizes come from that disc's own TOC.

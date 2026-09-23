@@ -80,7 +80,7 @@ impl PlayWindowApp {
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
-        use legaia_engine_core::save_select::{SaveSelectSession, SelectPhase};
+        use legaia_engine_core::save_select::SaveSelectSession;
         // The save-select session (or field-menu Save sub-session) that
         // drives both pill chrome and any retail Load-mode overlays.
         let session: &SaveSelectSession = match &self.boot_ui {
@@ -112,22 +112,25 @@ impl PlayWindowApp {
         // `(24, 40)` over 16 frames, driven by `DAT_801ef194`. We
         // interpolate against `session.slide_anim_t()` so the engine
         // matches retail's slide-in.
-        let (pills, pill_anchor): (Vec<u8>, (i32, i32)) = match session.phase() {
-            SelectPhase::NowChecking { slot, .. } | SelectPhase::SlotPreview { slot } => {
-                // Slide start = the pill's Browsing position (retail
-                // mode-2 start `(160, 96)` minus the `-0x18` x-shift
-                // = the Browsing pill quad, i.e. the pill slides away
-                // from where it already sat).
-                let pos = session.interpolate(
-                    legaia_engine_render::SAVE_SELECT_SLOT1_POS,
-                    legaia_engine_render::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
-                );
-                (vec![slot], pos)
-            }
-            _ => (
+        // Which pills, which cursor, which overlays - the shared decision
+        // (`save_select::phase_layout`) both hosts read, so a phase cannot
+        // mean two screens.
+        let layout = legaia_engine_core::save_select::phase_layout(session.phase());
+        let (pills, pill_anchor): (Vec<u8>, (i32, i32)) = if layout.single_pill {
+            // Slide start = the pill's Browsing position (retail mode-2
+            // start `(160, 96)` minus the `-0x18` x-shift = the Browsing
+            // pill quad, i.e. the pill slides away from where it already
+            // sat).
+            let pos = session.interpolate(
+                legaia_engine_render::SAVE_SELECT_SLOT1_POS,
+                legaia_engine_render::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
+            );
+            (vec![session.current_slot()], pos)
+        } else {
+            (
                 (0..slot_count as u8).collect(),
                 legaia_engine_render::SAVE_SELECT_SLOT1_POS,
-            ),
+            )
         };
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
         let mut draws = legaia_engine_render::save_select_chrome_draws_for(
@@ -140,14 +143,10 @@ impl PlayWindowApp {
         // Pointing-finger cursor sprite - retail's small white hand
         // pointing at the selected slot pill, byte-pinned to CLUT row
         // 7 of the system-UI TIM. Emit last so it draws on top of
-        // the pills. Suppress during NowChecking (dialog covers the
-        // pill row) and SlotPreview (the grid emits its own cursor
-        // on the focused cell).
-        let emit_pill_cursor = !matches!(
-            session.phase(),
-            SelectPhase::NowChecking { .. } | SelectPhase::SlotPreview { .. }
-        );
-        if slot_count > 0 && emit_pill_cursor {
+        // the pills. Suppressed once a card is committed: the dialog
+        // covers the pill row and the grid emits its own cursor on the
+        // focused cell.
+        if slot_count > 0 && layout.pill_cursor {
             draws.push(legaia_engine_render::save_select_cursor_draw_for(
                 &assets.rects,
                 cursor_row,
@@ -159,7 +158,10 @@ impl PlayWindowApp {
         // bottom info panel; NowChecking shows a centered dialog box
         // with the "Now checking. Do not remove MEMORY CARD" message.
         match session.phase() {
-            SelectPhase::SlotPreview { .. } => {
+            // Every preview phase, the two confirms included - retail raises
+            // the overwrite / delete prompt FROM the preview, so the block
+            // grid and the info panel stay under the messagebox.
+            _ if layout.preview => {
                 // The grid is the picked PORT's fifteen blocks, focused by
                 // the shared flow's cursor - NOT the pill row, which in a
                 // two-stage rack lists the card ports instead.
@@ -197,7 +199,7 @@ impl PlayWindowApp {
                     stage_scale,
                 ));
             }
-            SelectPhase::NowChecking { .. } => {
+            _ if layout.now_checking => {
                 // Slide the panel left-from-right alongside the text,
                 // matching retail mode-0's `pos = (416, 112) -> (160,
                 // 112)` interpolation.
@@ -215,20 +217,19 @@ impl PlayWindowApp {
                     slide_offset,
                 ));
             }
-            SelectPhase::ConfirmOverwrite { .. } | SelectPhase::ConfirmDelete { .. } => {
-                // Retail raises the confirm as its own centred
-                // messagebox pair (prompt bar + stacked Yes/No box,
-                // mode 3 of FUN_801E1C1C), sliding up from below the
-                // stage. Text half lives in
-                // `save_select_phase_text_draws`.
-                draws.extend(legaia_engine_render::confirm_dialog_panel_draws_for(
-                    &assets.rects,
-                    confirm_dialog_slide_y(session),
-                    stage_origin,
-                    stage_scale,
-                ));
-            }
             _ => {}
+        }
+        // Retail raises the confirm as its own centred messagebox pair
+        // (prompt bar + stacked Yes/No box, mode 3 of FUN_801E1C1C),
+        // sliding up from below the stage ON TOP of the preview. Text half
+        // lives in `save_select_phase_text_draws`.
+        if layout.confirm {
+            draws.extend(legaia_engine_render::confirm_dialog_panel_draws_for(
+                &assets.rects,
+                confirm_dialog_slide_y(session),
+                stage_origin,
+                stage_scale,
+            ));
         }
         draws
     }
@@ -317,23 +318,37 @@ impl PlayWindowApp {
             }
             _ => return Vec::new(),
         };
-        let (alpha, dim) = if let Some(session) = title_session {
-            if matches!(
-                session.phase(),
-                legaia_engine_core::title::TitlePhase::Done(_)
-            ) {
-                return Vec::new();
-            }
-            let alpha = match session.phase() {
-                legaia_engine_core::title::TitlePhase::FadeIn { frames_remaining } => {
-                    let total = session.fade_in_frames.max(1) as f32;
-                    1.0 - (frames_remaining as f32 / total).clamp(0.0, 1.0)
+        // Everything below the composition is state, not geometry: which
+        // bands draw and how bright. The composition itself is
+        // `legaia_engine_ui::title_band_sprites`, shared with the browser
+        // play page so neither host can place a band the other does not.
+        let state = match title_session {
+            Some(session) => {
+                if matches!(
+                    session.phase(),
+                    legaia_engine_core::title::TitlePhase::Done(_)
+                ) {
+                    return Vec::new();
                 }
-                _ => 1.0,
-            };
-            (alpha, false)
-        } else {
-            (1.0, true)
+                use legaia_engine_core::title::TitlePhase;
+                let alpha = match session.phase() {
+                    TitlePhase::FadeIn { frames_remaining } => {
+                        let total = session.fade_in_frames.max(1) as f32;
+                        1.0 - (frames_remaining as f32 / total).clamp(0.0, 1.0)
+                    }
+                    _ => 1.0,
+                };
+                let mut st = legaia_engine_render::TitleBandState::card(alpha);
+                st.press_start = matches!(session.phase(), TitlePhase::PressStart { .. });
+                // Main-menu rows: selected row bright, unselected dim.
+                if let TitlePhase::MainMenu { cursor } = session.phase() {
+                    st.menu = Some((cursor, true));
+                }
+                st
+            }
+            // SaveSelect: the retail backdrop - dimmed art with both rows
+            // drawn cursor-less behind the slot pills.
+            None => legaia_engine_render::TitleBandState::backdrop(),
         };
         let Some(assets) = self.title_screen.as_ref() else {
             return Vec::new();
@@ -342,128 +357,12 @@ impl PlayWindowApp {
         if atlas_w == 0 || atlas_h == 0 {
             return Vec::new();
         }
-        // Share the canonical PSX framebuffer (320×240) stage with
+        // Share the canonical PSX framebuffer (320x240) stage with
         // every other boot-UI element so the title art aligns with
         // the save-select panel, slot pills, and cursor - all of
-        // which use retail-pinned framebuffer coords. The title TIM's
-        // bands are sampled at their natural src (sx, sy) but drawn
-        // at dst (TITLE_ART_POS + sx, TITLE_ART_POS + sy), i.e.
-        // offset by retail's title-quad top-left placement.
-        let ((stage_x0, stage_y0), scale) = self.save_select_stage(surface_w, surface_h);
-        let lum = if dim { 0.45 } else { 1.0 };
-        let color = [lum, lum, lum, alpha];
-        let emit_press_start = matches!(
-            &self.boot_ui,
-            BootUiState::Title(s)
-                if matches!(s.phase(), legaia_engine_core::title::TitlePhase::PressStart { .. })
-        );
-        use legaia_asset::title_pak;
-        // Each entry: (src_rect, dst_x_src, dst_y_src, tint). Most
-        // bands draw at their own (src_x, src_y); the menu rows are
-        // sampled from a packed single-row band and re-positioned so
-        // "NEW GAME" sits at src_y=143 and "CONTINUE" at src_y=159
-        // (matching the retail stacked layout, which puts these
-        // ~14 px apart between the wordmark and the copyright lines).
-        let scale_i32 = scale as i32;
-        let mut out: Vec<legaia_engine_render::SpriteDraw> = Vec::new();
-        // `dst_src_x/y` are coords inside the title TIM's source rect
-        // (0..256, 0..256). We offset by TITLE_ART_POS so the result
-        // lands at retail's framebuffer position.
-        let title_pos_x = legaia_engine_render::TITLE_ART_POS.0;
-        let title_pos_y = legaia_engine_render::TITLE_ART_POS.1;
-        let push_band = |out: &mut Vec<legaia_engine_render::SpriteDraw>,
-                         src: (u32, u32, u32, u32),
-                         dst_src_x: i32,
-                         dst_src_y: i32,
-                         tint: [f32; 4]| {
-            let (sx, sy, sw, sh) = src;
-            out.push(legaia_engine_render::SpriteDraw {
-                dst: (
-                    stage_x0 + (title_pos_x + dst_src_x) * scale_i32,
-                    stage_y0 + (title_pos_y + dst_src_y) * scale_i32,
-                    sw * scale,
-                    sh * scale,
-                ),
-                src: (sx, sy, sw, sh),
-                color: tint,
-            });
-        };
-
-        // Wordmark always - and it is the band retail treats as the
-        // *backdrop*, so it goes through the shared retail law rather
-        // than a plain tinted blit. `FUN_801E02A4` re-emits the art
-        // with all three RGB modulation bytes set to one brightness
-        // byte and splits the blit at the VRAM texture-page seam
-        // (`BACKDROP_SPLIT_X`); the caller's ramp (its `s0`, clamped
-        // `0..=0xFF`) is what drives both the title fade and the
-        // save-screen dim, which is why retail needs no alpha here.
-        // The engine folds its fade alpha and its dim luminance into
-        // the same byte: `0x80` is neutral, so the SaveSelect dim
-        // (0.45) lands at `0x3A` and a fully-faded-in title at `0x80`.
-        let wm = title_pak::TITLE_BAND_WORDMARK;
-        let brightness = (lum * alpha * 128.0).round().clamp(0.0, 255.0) as u8;
-        out.extend(legaia_engine_render::backdrop_dim_sprites(
-            wm,
-            brightness,
-            (
-                stage_x0 + (title_pos_x + wm.0 as i32) * scale_i32,
-                stage_y0 + (title_pos_y + wm.1 as i32) * scale_i32,
-            ),
-            scale,
-        ));
-
-        // PressStart prompt only during that phase.
-        if emit_press_start {
-            let ps = title_pak::TITLE_BAND_PRESS_START;
-            push_band(&mut out, ps, ps.0 as i32, ps.1 as i32, color);
-        }
-
-        // Main-menu rows (NEW GAME / CONTINUE) - drawn during MainMenu
-        // (selected row bright, unselected dim) and also during
-        // SaveSelect (both dim - they sit in the background behind the
-        // slot pills and don't reflect a live cursor).
-        let menu_state: Option<(u8, bool)> = match &self.boot_ui {
-            BootUiState::Title(s) => match s.phase() {
-                legaia_engine_core::title::TitlePhase::MainMenu { cursor } => Some((cursor, true)),
-                _ => None,
-            },
-            BootUiState::SaveSelect(_) => Some((1, false)),
-            _ => None,
-        };
-        if let Some((cursor, has_focus)) = menu_state {
-            let row_white = color;
-            let row_dim = [color[0] * 0.5, color[1] * 0.5, color[2] * 0.5, color[3]];
-            let ng = title_pak::TITLE_BAND_MENU_NEW_GAME;
-            let co = title_pak::TITLE_BAND_MENU_CONTINUE;
-            // Center inside the title-art width so the rows sit on
-            // the screen's horizontal center (fb_x=160) after the
-            // TITLE_ART_POS.x=33 offset is applied by push_band.
-            let title_art_w = legaia_engine_render::TITLE_ART_SIZE.0 as u32;
-            let ng_x = ((title_art_w - ng.2) / 2) as i32;
-            let co_x = ((title_art_w - co.2) / 2) as i32;
-            // Sit the menu between wordmark (ends y~141) and copyrights (start y~195).
-            let ng_y: i32 = 154;
-            let co_y: i32 = ng_y + ng.3 as i32 + 4;
-            let ng_tint = if has_focus && cursor == 0 {
-                row_white
-            } else {
-                row_dim
-            };
-            let co_tint = if has_focus && cursor == 1 {
-                row_white
-            } else {
-                row_dim
-            };
-            push_band(&mut out, ng, ng_x, ng_y, ng_tint);
-            push_band(&mut out, co, co_x, co_y, co_tint);
-        }
-
-        // Copyright lines always (post-fade).
-        let tm = title_pak::TITLE_BAND_TM_COPYRIGHT;
-        push_band(&mut out, tm, tm.0 as i32, tm.1 as i32, color);
-        let cc = title_pak::TITLE_BAND_C_COPYRIGHT;
-        push_band(&mut out, cc, cc.0 as i32, cc.1 as i32, color);
-        out
+        // which use retail-pinned framebuffer coords.
+        let (stage_origin, scale) = self.save_select_stage(surface_w, surface_h);
+        legaia_engine_render::title_band_sprites(state, stage_origin, scale)
     }
 
     /// **Deprecated path** kept as a no-disc fallback. The retail title

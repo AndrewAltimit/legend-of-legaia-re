@@ -191,9 +191,8 @@ impl SceneHost {
         /// Flat favored-class swing cost, until the lead's equipped swing
         /// records are threaded through the warp.
         const FAVORED_COST: u16 = 0x1E;
-        /// Stand-in turn budget / HP for both fighters - the arena stages its
-        /// own `(course, round)` from story flags, which a door warp does not
-        /// carry.
+        /// Stand-in turn budget for the lead, and the opponent's fallback
+        /// when the arena ladder or the monster archive does not decode.
         const STANDIN_BUDGET: u16 = 120;
         const STANDIN_HP: i32 = 400;
         /// The victory caption's Seru index. It names a *string*, not a prize.
@@ -225,20 +224,87 @@ impl SceneHost {
                 command_id: commands[i],
                 cost: FAVORED_COST,
             });
+        // The lead fighter is the lead party record, as retail's battle load
+        // copies it: live HP `+0x106` and its effective maximum `+0x104`.
+        // A record with no HP (a hand-built party) keeps the stand-in.
+        let lead_hp = self
+            .world
+            .party
+            .roster
+            .members
+            .first()
+            .map(|r| r.hp_mp_sp())
+            .filter(|h| h.hp_cur > 0 && h.hp_max > 0);
+        // The opponent is the contest's own ladder rung: the arena stages
+        // `(course, round)` off its unlock flags (`DomeContest::from_overlay`,
+        // the entry `FUN_801CEA6C` runs on a zero sub-id word), and the rung
+        // names an ordinary PROT 867 monster. Only a disc whose ladder or
+        // archive does not decode keeps the stand-in.
+        let arena_raw = self
+            .index
+            .entry_bytes_extended(crate::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32)
+            .ok();
+        if self.world.minigames.muscle_contest.is_none() {
+            let flags = self.world.muscle_contest_flags();
+            self.world.minigames.muscle_contest = arena_raw
+                .as_deref()
+                .and_then(|a| crate::muscle_dome::DomeContest::from_overlay(a, &flags));
+        }
+        let (course, round) = self
+            .world
+            .minigames
+            .muscle_contest
+            .as_ref()
+            .map_or((0, 0), |c| (c.course(), c.round()));
+        let opponent_record = arena_raw
+            .as_deref()
+            .and_then(crate::muscle_dome::parse_course_ladder)
+            .and_then(|ladder| {
+                let rounds = &ladder.get(course)?.rounds;
+                let n = (round as usize).min(rounds.len().saturating_sub(1));
+                Some(rounds.get(n)?.monster_id as u16)
+            })
+            .and_then(|id| {
+                let archive = self.index.entry_bytes_extended(867).ok()?;
+                legaia_asset::monster_archive::record(&archive, id).ok()?
+            })
+            .filter(|r| r.hp > 0);
+        let (opponent, opponent_hp, opponent_budget) = match opponent_record.as_ref() {
+            Some(r) => {
+                let bs = r.battle_stats();
+                (
+                    DomeCombatant {
+                        hp_max: r.hp,
+                        int: bs[4],
+                        udf: bs[2],
+                        ldf: bs[3],
+                        element: r.element,
+                    },
+                    i32::from(r.hp),
+                    Some(bs[0]).filter(|&a| a > 0).unwrap_or(STANDIN_BUDGET),
+                )
+            }
+            None => (STANDIN_COMBATANT, STANDIN_HP, STANDIN_BUDGET),
+        };
+        let hp = [
+            lead_hp.map_or(STANDIN_HP, |h| i32::from(h.hp_cur)),
+            opponent_hp,
+        ];
+        let lead_combatant = DomeCombatant {
+            hp_max: lead_hp.map_or(STANDIN_COMBATANT.hp_max, |h| h.hp_max),
+            ..STANDIN_COMBATANT
+        };
         let mut session = MuscleDomeSession::new(
             hand,
             hand,
-            [STANDIN_BUDGET; 2],
-            [STANDIN_HP; 2],
+            [STANDIN_BUDGET, opponent_budget],
+            hp,
             CAPTION_SERU_INDEX,
         );
         let seed = 0x4D55_5343 ^ self.world.frame as u32;
-        if let Some(model) = DomeDamageModel::from_battle_overlay(
-            &raw,
-            [STANDIN_COMBATANT; 2],
-            [STANDIN_HP; 2],
-            seed,
-        ) {
+        if let Some(model) =
+            DomeDamageModel::from_battle_overlay(&raw, [lead_combatant, opponent], hp, seed)
+        {
             session.install_damage_model(model);
         }
         // The fighter's normal-art catalog, so the turn resolves the retail

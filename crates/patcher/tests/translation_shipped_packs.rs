@@ -195,6 +195,12 @@ fn shipped_pack_keys_are_disc_coordinates() {
                         .and_then(|h| u32::from_str_radix(h, 16).ok())
                         .is_some(),
                     ["scus", "party", n] => n.parse::<usize>().is_ok(),
+                    // `scus:cell:0x<va>` - a fixed 0x20-byte SCUS cell (the
+                    // world-map place names).
+                    ["scus", "cell", va] => va
+                        .strip_prefix("0x")
+                        .and_then(|h| u32::from_str_radix(h, 16).ok())
+                        .is_some(),
                     // `ui:<prot>:0x<va>` - overlay UI string at a virtual
                     // address inside PROT overlay entry `prot`.
                     ["ui", entry, va] => {

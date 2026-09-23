@@ -129,7 +129,64 @@ fn op49_window_census_pins_the_corpus_shape() {
     // at 24.
     // 238: `bubu1` / `edbubu` resolve their MANs since the scene-asset-table
     // detector admits `count = 5`, and each carries one op-0x49 site.
-    assert_eq!(sites.len(), 238, "op-0x49 site count changed");
+    //
+    // 240 across 64 scenes since the disassembler frames the bare `0x1F` text
+    // segment instead of ending each record's clean walk at its first line.
+    // The total moved by two and the *composition* moved by more than fifty,
+    // in two named directions, neither of which is a near miss for any spine
+    // target:
+    //
+    //   - 55 sites went away, and every one of them read a printable-ASCII
+    //     base pair (`0x746E` "nt", `0x2074` " t", `0x6C75` "ul", ...). They
+    //     were dialog bytes decoded as an op-`0x49`, which is what a walk that
+    //     ran into a text segment produced; five scenes (`jagaroom`, `juui2`,
+    //     `station`, `urudre2`, `urudre3`) had nothing else and leave the
+    //     census entirely. The class is not gone - 31 sites still read an
+    //     ASCII base pair from inside an instruction's operands, and the
+    //     `ascii_base` assertion below pins that - but it is a third of what
+    //     it was.
+    //   - 54 sites appeared, all of them real instructions the old walk could
+    //     not reach because they sit BEHIND a record's first line. 48 are the
+    //     `[49 03 N]` / `[26 delta]` picker-resume ladder (three arms, each
+    //     jumping back to the picker) that follows a `0x1F` prompt in sixteen
+    //     scenes, taking the sub-`0x03` total from 4 to 55 - the `sub3`
+    //     assertion below; three of the sixteen ladders are carried by a scene
+    //     that has both a bundle MAN and a streaming variant, so the census
+    //     reports them twice - and the rest are the same
+    //     shape one link further on (`49 09` after a `4C 8D` / `4C C7` pair in
+    //     `bylon`, four sub-`0x00` resumes in `bylon` / `conc` / `conc3` /
+    //     `koin4`). Four scenes (`bubu2`, `dream`, `koin3`, `tunnelc`) enter
+    //     the census this way.
+    //
+    // The load-bearing negative below is untouched by either class: still no
+    // covering window for any spine target, still the same 24 kor near-misses
+    // at distance 3.
+    assert_eq!(sites.len(), 240, "op-0x49 site count changed");
+
+    // The gained family, named rather than folded into the total: a change
+    // that reframes text again moves this first.
+    let sub3 = sites.iter().filter(|s| s.sub_op == 0x03).count();
+    assert_eq!(
+        sub3, 55,
+        "the `49 03` picker-resume ladder count changed - a walk that stops at \
+         a text segment again loses 48 of these",
+    );
+
+    // The noise class, pinned so the count above is not a bare number: a site
+    // whose base pair is two printable ASCII bytes is reading text, and the
+    // whole point of framing text is that there are fewer of them.
+    let ascii_base = sites
+        .iter()
+        .filter(|s| {
+            let (lo, hi) = (s.base_flag & 0xFF, s.base_flag >> 8);
+            (0x20..0x7F).contains(&lo) && (0x20..0x7F).contains(&hi)
+        })
+        .count();
+    assert_eq!(
+        ascii_base, 31,
+        "op-0x49 sites reading a printable-ASCII base pair changed - the walk \
+         is framing text differently",
+    );
 
     // The carrier that dissolved with the entry-size correction stays gone.
     // Its reappearance means a reader is over-reading into a neighbour

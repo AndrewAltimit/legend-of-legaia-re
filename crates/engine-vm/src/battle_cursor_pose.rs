@@ -2,30 +2,32 @@
 //! living-actor cursor step, the two screen-element placement copy helpers,
 //! and the tracked-widget pool teardown.
 //!
-//! PORT: FUN_801D32BC
-//! PORT: FUN_801D57E8
-//! PORT: FUN_801D5778
-//! PORT: FUN_801D9AE8
+//! Each routine's port tag sits on the item that implements it
+//! (`FUN_801D32BC`, `FUN_801D57E8`, `FUN_801D5778`, `FUN_801D9AE8`), so each
+//! carries its own class - one wired, two pending, one replaced.
 //!
 //! REF: FUN_801D388C - the only retail caller of the two copy helpers, and
 //! itself a third writer of the same placement table.
 //! REF: FUN_801D5854 - the inline record-41/42 move on that table.
 //!
+//! `FUN_801D32BC` is **wired**. It is the **command-input** cursor, not a
+//! turn order. Six `jal`s reach it, all in the battle overlay: the round
+//! reset `FUN_801D88CC` (`0x801D8910`, forward after seeding `ctx[+0x13]`
+//! and `ctx[+0x1F]` to `0xFF`) and the command-window controller
+//! `FUN_801D388C` - case `0x11` forward (`0x801D4128`), cases `0x10` and
+//! `0x21` backward (`0x801D4010`, `0x801D4750`), and a forward / backward
+//! pair in its shared tail (`0x801D5690`, `0x801D56A0`). The port's forward
+//! walk is retail's slot scan already (`World::next_member_owing_command`,
+//! the `FUN_801DB81C` / `FUN_801DBA04` ports); the **backward** step is
+//! this kernel, run by `World::step_back_battle_command` when the ring's
+//! cancel arm (`FUN_801D0748` `0x801D11B4`) finds a member behind the
+//! cursor - case `0x10`. Case `0x21` is the commit-confirm screen's
+//! `Reselect` / cancel (`0x801D3040..0x801D3088`), a state the port does
+//! not stage: its last commit begins the round directly.
+//!
 //! NOT WIRED, with a concrete prerequisite each - except the last, which is
 //! replaced rather than pending:
 //!
-//! * `FUN_801D32BC` is where retail's round reset picks whose turn it is:
-//!   `FUN_801D88CC` seeds `ctx[+0x13]` and `ctx[+0x1F]` to `0xFF` and calls it
-//!   forward (`0x801D88CC..0x801D8914`), so the wrap lands the cursor on the
-//!   lowest selectable slot. The engine's round boundary
-//!   (`engine-core::battle_round::BattleRound::boundary`) picks by a different
-//!   model - `World::next_combatant_by_initiative` - and its port of
-//!   `FUN_801D88CC` (`battle_formulas::round::round_reset_agility`) covers the
-//!   AGL arm only, deliberately leaving the ctx header writes with retail's
-//!   caller. Wiring is therefore a choice, not a gap-fill: it means
-//!   `BattleActionCtx` gaining the `+0x1F` step counter and the `+0x20`/`+0x21`
-//!   history pair, *and* the boundary adopting retail's cursor order over the
-//!   initiative one.
 //! * `FUN_801D57E8` / `FUN_801D5778` copy records inside the **screen-element
 //!   placement table** at `0x80076C10` (`docs/reference/memory-map.md`). The
 //!   old reason - "the engine allocates no such table" - is withdrawn: the
@@ -200,6 +202,9 @@ impl CursorActor {
 /// not clamp any of them.
 ///
 /// PORT: FUN_801D32BC
+///
+/// WIRED: `legaia_engine_core` `World::step_back_battle_command`, the ring's
+/// cancel arm, from the command session both hosts tick.
 pub fn step_actor_cursor(
     cursor: &mut ActorCursor,
     dir: CursorStep,

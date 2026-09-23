@@ -230,8 +230,12 @@ alpha-bank jump table** - `0x8007657C` on the SCUS path, `0x801F8968` when the
 world-map overlay is paged in (`_DAT_1F800394 & 1`). Each handler does
 `RTPT`/`RTPS` → `NCLIP` backface cull → `AVSZ3`/`AVSZ4` depth → packet write into
 an ordering table (deferred `DrawOTag`; no direct GPU DMA). The alpha bank is the
-`_DAT_1F800028` offset (`0x00`/`0x50`/`0xA0`/`0xF0` = opaque / half / additive /
-subtractive).
+`_DAT_1F800028` offset the dispatcher itself **writes**: `0x00` with no blend
+argument, else `0x50`, raised to `0xA0` by tint bit `0x04000000` and to `0xF0` by
+bit `0x20000000` (`0x800434D8..0x80043500`). It is not the blend equation - that is
+`((a1 >> 24) & 3) << 21`, stored separately to `0x1F800030` - so the earlier
+"opaque / half / additive / subtractive" gloss read the bank index as an ABR
+mode.
 
 | kind | bank 0 (opaque) | banks 1-3 (fog) | topo | colour op |
 |---:|---|---|---|---|

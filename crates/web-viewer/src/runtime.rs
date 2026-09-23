@@ -189,6 +189,12 @@ pub struct LegaiaRuntime {
     /// Boot-chain title-screen session; `Some` while the title runs before a
     /// scene is entered ([`crate::boot_title`]).
     pub(crate) boot_title: Option<legaia_engine_core::title::TitleSession>,
+    /// The title session **parked as a backdrop** while the boot Continue
+    /// hand-off's save-select owns the screen. Retail keeps the title art up
+    /// behind the Load panel at a dim; this page used to release the session
+    /// at the hand-off and compose the panel over black
+    /// ([`crate::boot_title::LegaiaRuntime::boot_title_backdrop_draws_json`]).
+    pub(crate) boot_title_backdrop: Option<legaia_engine_core::title::TitleSession>,
     /// How many attract hand-offs the title has skipped this session. The
     /// countdown fires the same way it does natively, but this page has no
     /// STR/MDEC playback on the play path, so the movie is skipped and the
@@ -353,8 +359,13 @@ pub struct LegaiaRuntime {
     /// the playhead. Reset on a deliberate [`Self::enter_field`] so re-booting
     /// a scene restarts its music; preserved across door transitions so an
     /// unchanged track keeps playing.
+    ///
+    /// `pub(crate)` because the BGM director's own module reaches it too:
+    /// [`crate::play_bgm`] owns the title -> load hand-off, which is a
+    /// `stop` plus a replay of the world's track and so has to touch the
+    /// same latch this module's starts do.
     #[cfg(target_arch = "wasm32")]
-    bgm_last_started: Option<u16>,
+    pub(crate) bgm_last_started: Option<u16>,
 }
 
 /// Sentinel [`LegaiaRuntime::set_field_player_screen_y`] reads as "the lead
@@ -423,6 +434,7 @@ impl LegaiaRuntime {
             menu_assets: None,
             play_menu: None,
             boot_title: None,
+            boot_title_backdrop: None,
             boot_title_attract_skips: 0,
             title_atlas: None,
             boot_logos: None,
@@ -675,6 +687,7 @@ impl LegaiaRuntime {
         self.menu_assets = None;
         self.play_menu = None;
         self.boot_title = None;
+        self.boot_title_backdrop = None;
         self.title_atlas = None;
         self.boot_logos = None;
         self.boot_logos_atlas = None;
@@ -869,6 +882,15 @@ impl LegaiaRuntime {
             .then(|| stage_y.clamp(i16::MIN as i32, i16::MAX as i32) as i16);
     }
 
+    /// Read back the value [`Self::set_field_player_screen_y`] holds, or
+    /// [`NO_FIELD_PROJECTION`] for "not projectable" - for the page's
+    /// diagnostics and the parity ladder, which needs the number the
+    /// decision kernel is about to compare rather than the draw it produces.
+    pub fn field_player_screen_y(&self) -> i32 {
+        self.field_hud_projected_y
+            .map_or(NO_FIELD_PROJECTION, i32::from)
+    }
+
     /// Establish a fresh New Game slate - the browser twin of the native
     /// `BootSession::begin_new_game`: `World::begin_new_game` (flags, money,
     /// bag, clock, pending transitions) plus the SCUS starting party + bag.
@@ -942,9 +964,19 @@ impl LegaiaRuntime {
             self.world.tick();
             return Ok(String::new());
         };
-        let event = host
-            .tick()
-            .map_err(|e| JsValue::from_str(&format!("tick: {e:#}")))?;
+        // A movie owns the frame. The native window freezes every world tick
+        // under one (`run_ticks = 0` while its decoder handle is live) and
+        // this host did not, so a cutscene's field VM, actors, effect pool
+        // and clocks all kept running behind the picture - and the world
+        // arrived at the far side of a 40-second movie 2400 ticks ahead of
+        // where the native window leaves it. The FMV service below still
+        // runs: it is what advances the picture and ends the cutscene.
+        let event = if self.fmv.armed_for().is_some() {
+            SceneTickEvent::Stepped
+        } else {
+            host.tick()
+                .map_err(|e| JsValue::from_str(&format!("tick: {e:#}")))?
+        };
         // FMV beats: the movie path lives in [`crate::play_fmv`]; it hands
         // back the scene label when the post-movie hand-off entered one.
         let fmv_handoff_scene = self.service_cutscene_fmv();
@@ -968,9 +1000,6 @@ impl LegaiaRuntime {
         // Fishing HUD one-shot banners ride the sim clock, not the page's
         // animation frame, so a heavy scene does not slow them down.
         self.tick_fishing_banners();
-        // Sound-effect channel: feed the footstep cadence this tick's movement
-        // magnitude, advance the delay scheduler, key whatever matured.
-        self.tick_sfx();
         // Field VRAM effects: CLUT-walk shimmer + ambient palette cyclers +
         // scripted CLUT fx, drained against the scene VRAM; the page re-reads
         // `field_vram_bytes` when `field_vram_take_dirty` reports a change.
@@ -982,6 +1011,18 @@ impl LegaiaRuntime {
         // In-world minigame presentation (casino / dance / arena sessions
         // the scene host installed): the draw-side state the page reads.
         self.tick_minigame_ui();
+        // Sound-effect channel: feed the footstep cadence this tick's movement
+        // magnitude, advance the delay scheduler, key whatever matured.
+        //
+        // **After** the two queue drains above, not before them. The native
+        // window enqueues a battle tick's cues and calls `tick_sfx_frame` in
+        // the same pass (`drain_and_log_battle_events`), so a cue whose
+        // `timing_frames` is `0` - every strike impact, every minigame blip -
+        // sounds on the tick that raised it. Advancing the scheduler first
+        // made this host's copy of that cue wait a whole frame, which is not
+        // a delay anyone can hear on its own but puts the impact one frame
+        // off the animation it is supposed to land on.
+        self.tick_sfx();
         // The field-to-battle intro emitter: armed while the encounter
         // session sits in `Transition`, dropped when it leaves; caches this
         // frame's screen-prim geometry for the page's pass. Cheap no-op
@@ -1637,6 +1678,34 @@ impl LegaiaRuntime {
                     ));
                     break;
                 }
+                if self.field_vram_anim.is_none() {
+                    // Slot 5 absent / unparseable: the legacy single-cell
+                    // ocean-head cycle, the same fallback the native
+                    // `resolve_ocean_anim` keeps for a modified or damaged
+                    // bundle. Every retail kingdom ships slot 5, so this
+                    // never fires on a stock disc - and without it this host
+                    // froze the sea where the native window kept it moving.
+                    for entry in &scene.entries {
+                        let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&entry.bytes, 0)
+                        else {
+                            continue;
+                        };
+                        if let Some(ocean) = legaia_asset::ocean::find_ocean_assets(&slot0)
+                            && ocean.animation_frames.len() >= 32
+                        {
+                            crate::console_log(
+                                "play: no slot-5 CLUT-walk table in the kingdom bundle; \
+                                 falling back to the legacy ocean-head cycle",
+                            );
+                            self.field_vram_anim =
+                                Some(crate::field_scene::FieldSceneAnim::ocean_only(
+                                    ocean.animation_frames,
+                                    frame_step,
+                                ));
+                            break;
+                        }
+                    }
+                }
             } else {
                 for entry in &scene.entries {
                     let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes) else {
@@ -1675,6 +1744,10 @@ impl LegaiaRuntime {
         };
         let mut dirty = false;
         if let Some(anim) = self.field_vram_anim.as_mut() {
+            // Live divisor, not the value this scene was rebuilt at - the
+            // native animator reads `clock.frame_step` off the world on
+            // every frame.
+            anim.set_frame_step(host.world.clock.frame_step);
             dirty |= anim.tick(1, &mut res.vram);
         }
         dirty |= host.world.apply_script_vram_moves(&mut res.vram);

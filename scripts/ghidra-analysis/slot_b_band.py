@@ -72,6 +72,8 @@ MOVE_EXT_HALFWORDS = (
     4, 4, 3, 4, 6,
 )
 MOVE_OP_HALT = 0x08
+MOVE_OP_WAIT = 0x09
+MOVE_WAIT_FOREVER = 0x0FFF
 MOVE_LOOP_FOREVER = 0x4000
 MOVE_WALK_MAX_STEPS = 4096
 
@@ -85,16 +87,27 @@ def move_program_end(image, start):
     unconditional) that is not immediately followed by the record's own HALT.
     The end rounds up to 4 because the records are word-aligned.
 
+    Where neither turns up, a `0x09` WAIT carrying `MOVE_WAIT_FOREVER` bounds
+    the record instead (the LAST such WAIT the walk passed): a layout argument,
+    not a VM one, and the Rust walker's third outcome.
+
     `None` when the walk meets a halfword that is not a dispatchable opcode
-    before a terminator - then nothing here bounds the record.
+    before any of the three - then nothing here bounds the record.
     """
     pc, loop_a, loop_b = start, 0, 0
+    last_forever_wait = None
+
+    def stalled():
+        if last_forever_wait is None:
+            return None
+        return (last_forever_wait + 4 + 3) & ~3
+
     for _ in range(MOVE_WALK_MAX_STEPS):
         if pc + 2 > len(image):
-            return None
+            return stalled()
         op = struct.unpack_from("<H", image, pc)[0]
         if op > 0x46:
-            return None
+            return stalled()
 
         def arg(i, _pc=pc):
             o = _pc + i * 2
@@ -110,12 +123,14 @@ def move_program_end(image, start):
               or (op == 0x1B and loop_b & MOVE_LOOP_FOREVER)):
             if arg(1) != MOVE_OP_HALT:
                 return (pc + 2 + 3) & ~3
+        elif op == MOVE_OP_WAIT and arg(1) == MOVE_WAIT_FOREVER:
+            last_forever_wait = pc
         if op == 0x0A:
             n = 3 + 3 * arg(2)
         elif op == 0x2F:
             sub = arg(1)
             if sub >= len(MOVE_EXT_HALFWORDS):
-                return None
+                return stalled()
             n = MOVE_EXT_HALFWORDS[sub]
         elif op == 0x3C:
             n = 2 + 6 * max(struct.unpack_from("<h", image, pc + 2)[0]
@@ -126,9 +141,9 @@ def move_program_end(image, start):
         else:
             n = MOVE_OP_HALFWORDS[op]
         if n == 0:
-            return None
+            return stalled()
         pc += n * 2
-    return None
+    return stalled()
 
 
 def _jal_word(addr):
@@ -206,9 +221,9 @@ def spawn_record_band(image, base_va):
     bound it - but its PROGRAM can, and `move_program_end` does: the walk ends
     at the record's terminator and the end rounds up to the word the records
     are laid out on. The same walk then chains `[header][program]` records
-    above it while the bytes keep reading as records. Where the walk does not
-    terminate the record is left unbounded and claimed by nothing, which is
-    what four of the band's images get.
+    above it while the bytes keep reading as records, and stops at eight zero
+    bytes - padding, never a record header. Where the walk does not terminate
+    the record is left unbounded and claimed by nothing.
     """
     if base_va != SLOT_B_LINK_BASE or len(image) < 8:
         return ()
@@ -254,6 +269,12 @@ def spawn_record_band(image, base_va):
         out.append((base_va + top, base_va + end))
         p = end
         while p + 4 <= cap:
+            # Eight zero bytes are the module's padding, not a record: no
+            # pointer-credited record on the disc opens with a zero header AND
+            # a zero first opcode word, and every chained one that did was the
+            # gap between an image's last record and its inherited tail.
+            if image[p:p + 8] == bytes(8):
+                break
             sel = struct.unpack_from("<h", image, p)[0]
             if not (sel == -1 or 0 <= sel < _LIBRARY_MESH_SEL_MAX
                     or sel in _RENDER_NODE_SELS):

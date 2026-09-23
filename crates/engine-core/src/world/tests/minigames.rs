@@ -320,6 +320,60 @@ fn fishing_casts_locks_and_reels_to_a_resolution() {
     );
 }
 
+/// The hook cue and the celebration cues come off the **session's own phase
+/// edges**, on the world's shared cue queue, so every host that ticks the
+/// world hears them. They used to live on `LineActorSim`, which only the
+/// native window drives, so the strike and the catch were silent in both
+/// browsers - the same shape the strike splash had before it moved here.
+#[test]
+fn the_strike_and_catch_edges_queue_their_cues_on_the_world() {
+    use crate::fishing::FishingPhase;
+    use crate::fishing_actors::{CELEBRATE_CUE, HOOK_CUE};
+    let mut world = World::new();
+    world.enter_fishing(fishing_test_session());
+    // Drain whatever entry queued so the assertions below read this edge.
+    let _ = world.drain_minigame_sfx_cues();
+    for _ in 0..3 {
+        world.set_pad(0);
+        let _ = world.tick();
+    }
+    assert!(
+        world.drain_minigame_sfx_cues().is_empty(),
+        "casting frames raise no cue"
+    );
+    // The lock edge is the strike: splash + hook cue, one producer.
+    world.set_pad(0);
+    world.set_pad(input::PadButton::Cross.mask());
+    let _ = world.tick();
+    assert_eq!(
+        world.minigames.fishing.as_ref().unwrap().phase(),
+        FishingPhase::Fighting
+    );
+    assert!(
+        world
+            .drain_minigame_sfx_cues()
+            .contains(&u16::from(HOOK_CUE)),
+        "the strike edge queues the hook cue"
+    );
+    // Reel it in; the catch edge queues the celebration cue.
+    for _ in 0..3000 {
+        if world.minigames.fishing.as_ref().unwrap().phase() != FishingPhase::Fighting {
+            break;
+        }
+        world.set_pad(input::PadButton::Cross.mask());
+        let _ = world.tick();
+    }
+    assert_eq!(
+        world.minigames.fishing.as_ref().unwrap().phase(),
+        FishingPhase::Done
+    );
+    let cues = world.drain_minigame_sfx_cues();
+    assert!(
+        cues.contains(&u16::from(CELEBRATE_CUE)),
+        "a landed fish queues the celebration cue, got {cues:?}"
+    );
+}
+
 /// The reel buttons are the retail packed-pad bits decoded by
 /// `ReelInput::from_pad_mask`: `0x40` Cross = reel A, `0x80` Square = reel B,
 /// both held = reel A. Circle (`0x20`) is the cast/hook input, not a reel.

@@ -243,6 +243,26 @@ impl PlayWindowApp {
         )
     }
 
+    /// One minigame status row (dance / fishing / slots / Baka Fighter) at
+    /// its pen on the shared 320x240 stage, scaled onto the surface. The
+    /// browser play page composes the same rows at the same pens
+    /// (`PEN_STATUS` / `PEN_PROMPT` in `play_minigames.rs`) through the stage
+    /// transform; this host used to lay them out in raw surface pixels, a
+    /// third the size and pinned to the window corner instead of the stage.
+    fn stage_status_row(
+        &self,
+        text: &str,
+        pen: (i32, i32),
+        color: [f32; 4],
+        w: u32,
+        h: u32,
+    ) -> Vec<TextDraw> {
+        let mut d = text_draws_for(&self.font.layout_ascii(text), pen, color);
+        let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+        legaia_engine_render::scale_stage_text_draws(&mut d, stage_origin, stage_scale);
+        d
+    }
+
     pub(super) fn build_hud(&self, w: u32, h: u32) -> Vec<TextDraw> {
         let Some(atlas) = &self.font_atlas else {
             return Vec::new();
@@ -386,11 +406,9 @@ impl PlayWindowApp {
                 g.gauge(),
                 g.lane()
             );
-            let ly1 = self.font.layout_ascii(&dl1);
-            out.extend(text_draws_for(&ly1, (8, 62), white));
+            out.extend(self.stage_status_row(&dl1, (8, 62), white, w, h));
             let dl2 = format!("press {arrow}   {judge}   (Start = quit)");
-            let ly2 = self.font.layout_ascii(&dl2);
-            out.extend(text_draws_for(&ly2, (8, 80), dim));
+            out.extend(self.stage_status_row(&dl2, (8, 80), dim, w, h));
 
             // The beat track. Two things the overlay's track renderer
             // (`FUN_801d2524`) computes, kept distinct here because they are
@@ -448,53 +466,21 @@ impl PlayWindowApp {
             // two versus modes, so the rivals' score boxes, gauges and beat
             // tracks draw there and nowhere else.
             {
-                use legaia_engine_core::dance::{DanceHudDraw, DanceMode};
-                let rival_hud = matches!(g.mode(), DanceMode::Qualifier | DanceMode::Finals);
+                // Which rows, at which seats, in which pen is the engine's
+                // decision (`DanceGame::hud_frame_rows`); this host only lays
+                // the strings out. It used to be written out longhand here,
+                // which is why the browser play page - same `DanceGame`, same
+                // run - drew a plain status line instead of the frame.
+                let rival_hud = g.rival_hud_visible();
                 let (stage_origin, stage_scale) = self.save_select_stage(w, h);
                 let mut stage_draws: Vec<TextDraw> = Vec::new();
-                for d in g.hud_draws(rival_hud) {
-                    match d {
-                        DanceHudDraw::Score { x, y, value, .. } => {
-                            let digits: String =
-                                legaia_engine_core::dance::dance_number_digits(value)
-                                    .iter()
-                                    .filter_map(|d| d.map(|v| char::from(b'0' + v)))
-                                    .collect();
-                            let ly = self.font.layout_ascii(&digits);
-                            stage_draws.extend(text_draws_for(&ly, (x as i32, y as i32), white));
-                        }
-                        DanceHudDraw::ScoreBox { x, y } => {
-                            // The frame itself is the quad layer's; a dim
-                            // bracket marks its slot in the text layer.
-                            let ly = self.font.layout_ascii("[");
-                            stage_draws.extend(text_draws_for(&ly, (x as i32 - 12, y as i32), dim));
-                        }
-                        DanceHudDraw::Gauge { x, y, value, .. } => {
-                            let lv = value / legaia_engine_core::dance::GAUGE_STEP;
-                            let ly = self.font.layout_ascii(&format!("Lv.{lv}"));
-                            stage_draws.extend(text_draws_for(&ly, (x as i32, y as i32), dim));
-                        }
-                        DanceHudDraw::BeatTrack { slot, x, y } => {
-                            // The rival tracks draw their own lane's next
-                            // cells at the retail anchor; the human's full
-                            // track is the pen-space row above.
-                            if slot == 0 {
-                                continue;
-                            }
-                            if let Some(row) = g.chart_row(g.dancer_lane(slot)) {
-                                let cells: String = (0..8u32)
-                                    .map(|i| match row[((beat + i) % row.len() as u32) as usize] {
-                                        1 => '<',
-                                        2 => '>',
-                                        3 => '^',
-                                        _ => '.',
-                                    })
-                                    .collect();
-                                let ly = self.font.layout_ascii(&cells);
-                                stage_draws.extend(text_draws_for(&ly, (x as i32, y as i32), dim));
-                            }
-                        }
-                    }
+                for r in g.hud_frame_rows(rival_hud) {
+                    let ly = self.font.layout_ascii(&r.text);
+                    stage_draws.extend(text_draws_for(
+                        &ly,
+                        (r.x, r.y),
+                        if r.dim { dim } else { white },
+                    ));
                 }
                 legaia_engine_render::scale_stage_text_draws(
                     &mut stage_draws,
@@ -631,10 +617,8 @@ impl PlayWindowApp {
                     _ => "FISHING  (Cross = recast)".to_string(),
                 },
             };
-            let ly = self.font.layout_ascii(&line);
-            out.extend(text_draws_for(&ly, (8, 62), white));
-            let ly2 = self.font.layout_ascii("(Start = quit, P = prizes)");
-            out.extend(text_draws_for(&ly2, (8, 80), dim));
+            out.extend(self.stage_status_row(&line, (8, 62), white, w, h));
+            out.extend(self.stage_status_row("(Start = quit, P = prizes)", (8, 80), dim, w, h));
 
             // The overlay's developer readout (FUN_801d2050): the wander
             // actor's tile pair + settled height, shown only when the
@@ -661,8 +645,7 @@ impl PlayWindowApp {
                         wd.y,
                         wd.facing
                     );
-                    let ly = self.font.layout_ascii(&line);
-                    out.extend(text_draws_for(&ly, (8, 116), dim));
+                    out.extend(self.stage_status_row(&line, (8, 116), dim, w, h));
                 }
             }
 
@@ -690,17 +673,17 @@ impl PlayWindowApp {
             // out: the length / extent / cast-power readouts, plus the depth
             // and tension gauge block once the fish is on. `record` is the
             // fight's reel progress - the engine's analogue of the retail line
-            // record the land gate compares. Two retail globals have no engine
-            // analogue and stay zero: the cast line-projection term
-            // (`DAT_801d9178`) and the line depth (`DAT_801d9298`), so the
-            // extent readout reads 0 and the depth bar sits empty.
+            // record the land gate compares, and `depth` is `DAT_801d9298`,
+            // which `FishingFight` now carries. One retail global still has no
+            // engine analogue and stays zero: the cast line-projection term
+            // `DAT_801d9178`, so the extent readout reads 0.
             let fight = s.fight();
             items.extend(legaia_engine_render::catch_hud_draws(
                 &legaia_engine_render::CatchHudState {
                     record: fight.map(|f| f.progress()).unwrap_or(0),
                     line_extent: 0,
                     cast_power: s.cast_power(),
-                    depth: 0,
+                    depth: fight.map(|f| f.depth()).unwrap_or(0),
                     tension: fight.map(|f| f.tension()).unwrap_or(0),
                     gauges_visible: s.phase() == FishingPhase::Fighting,
                 },
@@ -743,53 +726,65 @@ impl PlayWindowApp {
             let (px, py) = panel
                 .map(|p| (p.x as i32 + sway.0 as i32, p.y as i32 + sway.1 as i32))
                 .unwrap_or((8, 98));
-            let venue_name = if ex.venue == 0 { "Buma" } else { "Vidna" };
-            let head = format!(
-                "PRIZE EXCHANGE ({venue_name})  points {}   (Enter = trade, Left/Right = venue, P = close)",
-                world.minigames.fishing_points
+            let names: Vec<String> = ex
+                .rows
+                .iter()
+                .map(|r| {
+                    r.name
+                        .clone()
+                        .unwrap_or_else(|| format!("item {:#04x}", r.item_id))
+                })
+                .collect();
+            // The screen itself is `legaia_engine_ui::ui_fishing_exchange`,
+            // shared with the browser play page: the row layout, the ink
+            // rule and the one-time tag are decided once. This host supplies
+            // the pen (the swaying panel above), its own key legend, and the
+            // live bag reads the view needs.
+            use legaia_engine_render::ui_fishing_exchange as fx;
+            let rows: Vec<fx::ExchangeRowView<'_>> = ex
+                .rows
+                .iter()
+                .enumerate()
+                .map(|(i, r)| {
+                    let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
+                    fx::ExchangeRowView {
+                        name: names[i].as_str(),
+                        price: r.price,
+                        owned,
+                        available: ex.is_available(
+                            i,
+                            world.minigames.fishing_points,
+                            owned,
+                            world.minigames.fishing_prizes_purchased,
+                        ),
+                        one_time: r.is_one_time(),
+                        latched: ex.is_latched(i, world.minigames.fishing_prizes_purchased),
+                    }
+                })
+                .collect();
+            let view = fx::ExchangeView {
+                venue: ex.venue as u8,
+                points: world.minigames.fishing_points,
+                cursor: ex.cursor,
+                first_visible: ex.first_visible(world.minigames.fishing_points),
+                rows: &rows,
+            };
+            // The pen is the retail panel rect, a 320x240 stage position, so
+            // the rows scale onto the surface through the same stage the
+            // HUD rows and the browser play page use. Drawn in raw surface
+            // pixels they sat in the window's top-left at a third of the
+            // page's size.
+            let mut ex_draws = fx::exchange_screen_draws_for(
+                &self.font,
+                &view,
+                "   (Enter = trade, Left/Right = venue, P = close)",
+                (px, py),
+                white,
+                dim,
             );
-            let ly = self.font.layout_ascii(&head);
-            out.extend(text_draws_for(&ly, (px, py), white));
-            let first = ex.first_visible(world.minigames.fishing_points);
-            for (i, r) in ex.rows.iter().enumerate().skip(first) {
-                let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
-                let avail = ex.is_available(
-                    i,
-                    world.minigames.fishing_points,
-                    owned,
-                    world.minigames.fishing_prizes_purchased,
-                );
-                let cursor = if i == ex.cursor { ">" } else { " " };
-                let name = r
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| format!("item {:#04x}", r.item_id));
-                // "sold" means the one-time bit is LATCHED, not "you cannot
-                // afford it right now". `avail` folds three independent
-                // refusals together (price, owned cap, latch), so reading it
-                // as the latch printed "sold" beside every unaffordable
-                // one-time prize on a fresh save - the row a player has never
-                // seen reads as the row they already bought. Ask the latch on
-                // its own by re-testing with the two other gates open.
-                let sold = r.is_one_time()
-                    && !ex.is_available(i, i32::MAX, 0, world.minigames.fishing_prizes_purchased);
-                let tag = if r.is_one_time() {
-                    if sold { "sold" } else { "one-time" }
-                } else {
-                    "each"
-                };
-                let line = format!(
-                    "{cursor} {name:<18} {:>6} pts  {tag}  (own {owned})",
-                    r.price
-                );
-                let ly = self.font.layout_ascii(&line);
-                let y = py + 18 + 18 * (i - first) as i32;
-                out.extend(text_draws_for(
-                    &ly,
-                    (px, y),
-                    if avail { white } else { dim },
-                ));
-            }
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            legaia_engine_render::scale_stage_text_draws(&mut ex_draws, stage_origin, stage_scale);
+            out.extend(ex_draws);
         }
         // Slot-machine minigame HUD: the three payline symbols, the balance /
         // bet readout, and the phase-specific prompt.
@@ -809,8 +804,7 @@ impl PlayWindowApp {
                 mode => format!("  feature {mode}"),
             };
             let sl1 = format!("SLOTS  {reels}  coins {}{feature}", m.balance());
-            let ly1 = self.font.layout_ascii(&sl1);
-            out.extend(text_draws_for(&ly1, (8, 62), white));
+            out.extend(self.stage_status_row(&sl1, (8, 62), white, w, h));
             let prompt = match m.phase() {
                 SlotPhase::Idle if !m.can_spin() => "not enough coins".to_string(),
                 // The cost is `SlotMachine::spin_cost()`, which is 1 in the
@@ -828,8 +822,7 @@ impl PlayWindowApp {
                 SlotPhase::CashedOut => "cashed out".to_string(),
             };
             let sl2 = format!("{prompt}   (Start = cash out + quit)");
-            let ly2 = self.font.layout_ascii(&sl2);
-            out.extend(text_draws_for(&ly2, (8, 80), dim));
+            out.extend(self.stage_status_row(&sl2, (8, 80), dim, w, h));
         }
         // Baka Fighter minigame HUD: HP bars as numbers, round pips, the
         // last-exchange readout, and the input prompt.
@@ -845,8 +838,7 @@ impl PlayWindowApp {
                 f.round_wins(1),
                 f.round() + 1
             );
-            let ly1 = self.font.layout_ascii(&bl1);
-            out.extend(text_draws_for(&ly1, (8, 62), white));
+            out.extend(self.stage_status_row(&bl1, (8, 62), white, w, h));
             let status = match f.phase() {
                 MatchPhase::MatchOver(0) => {
                     format!(
@@ -874,32 +866,27 @@ impl PlayWindowApp {
                 },
             };
             let bl2 = format!("{status}   Left/Right/Up attack, Down special (Start = quit)");
-            let ly2 = self.font.layout_ascii(&bl2);
-            out.extend(text_draws_for(&ly2, (8, 80), dim));
+            out.extend(self.stage_status_row(&bl2, (8, 80), dim, w, h));
 
             // The duel's three number drawers, at their ported cell layouts:
             // the one-glyph round digit, the 8 px right-aligned score field,
-            // and the 0x10 px "GET COIN" numeral strip for the prize. The HUD
-            // widget descriptors these cells patch (`DAT_801d7160`) index a
-            // sprite page the engine does not upload, so each cell is drawn as
-            // a font glyph at its ported x offset instead of as a textured
-            // quad - the layout is retail's, the glyph source is not.
-            use legaia_engine_core::baka_fighter::{
-                DigitCell, coin_digit_cells, right_aligned_number_cells, single_digit_cell,
-            };
-            let mut cell_row = |cells: &[DigitCell], base_x: i32, y: i32| {
-                for c in cells {
-                    let s = [b'0' + c.digit.min(9)];
-                    let text = core::str::from_utf8(&s).unwrap_or("0");
-                    let ly = self.font.layout_ascii(text);
-                    out.extend(text_draws_for(&ly, (base_x + c.x_offset as i32, y), dim));
-                }
-            };
-            cell_row(&[single_digit_cell((f.round() + 1).min(9) as u8)], 8, 98);
-            if let Some(t) = f.tally() {
-                cell_row(&right_aligned_number_cells(t.total()), 40, 98);
-                cell_row(&coin_digit_cells(t.gold_remaining()), 140, 98);
-            }
+            // and the 0x10 px "GET COIN" numeral strip for the prize. The
+            // placement is `baka_fighter_chrome::hud_digit_placements` and
+            // the glyph quads are `ui_baka_strips` - both shared with the
+            // browser play page, which printed a summary line here instead.
+            // The HUD widget descriptors these cells patch (`DAT_801d7160`)
+            // index a sprite page no host uploads, so each cell draws as a
+            // font glyph at its ported x: the layout is retail's, the glyph
+            // source is not.
+            let placed = legaia_engine_core::baka_fighter_chrome::hud_digit_placements(
+                f.round() as i32,
+                f.tally().map(|t| (t.total(), t.gold_remaining())),
+            );
+            out.extend(
+                legaia_engine_render::ui_baka_strips::baka_digit_strip_draws_for(
+                    &self.font, &placed, dim,
+                ),
+            );
 
             // The round chrome's resolved draws (`BakaChrome` - the intro
             // title, round banner and countdown timelines): each widget at
@@ -1026,239 +1013,10 @@ impl PlayWindowApp {
             let ly2 = self.font.layout_ascii(&ml2);
             out.extend(text_draws_for(&ly2, (8, 80), dim));
         }
-        // Shop / inn / prize / coin-counter overlay group. Every builder
-        // below places in the retail 320x240 STAGE, so the group is collected
-        // apart from the surface-pixel HUD above and scaled through the one
-        // stage transform both hosts share. Drawing it straight
-        // into `out` left the whole shop UI at 1/3 size in the 960x720 window
-        // while the browser play page scaled the same builders' output; the
-        // pinned `SHOP_OVERLAY_PEN` / `play_shop::SHOP_PEN` pair could not see
-        // it, because the split is in the transform, not the pen.
-        let mut stage: Vec<TextDraw> = Vec::new();
-        // Casino coin counter (op-0x49 sub-6): the submode screen's digit
-        // entry, drawn off the world's live counter cells whenever the
-        // screen is open on the coin slot. Not a menu-runtime state - the
-        // field VM owns the park.
-        stage.extend(self.coin_counter_window_draws());
-        // Shop / inn overlay: rendered at the bottom of the screen when the menu
-        // runtime is in any shop, inn, or confirmation state.
-        if self.menu_runtime.is_open() {
-            let label = self.menu_runtime.current_label();
-            // Casino prize exchange: the session runs outside the MenuState
-            // graph, so it is checked before the shop states. Windows
-            // 43/44/45/46 through the shared engine-ui composition.
-            if let Some(session) = &self.menu_runtime.prize_session {
-                stage.extend(self.prize_window_draws(session));
-            }
-            if let Some(shop) = &self.menu_runtime.shop_session {
-                let state = MenuState::from_byte(self.menu_runtime.ctx_state());
-                let cursor = self.menu_runtime.cursor() as usize;
-                let gold = self.session.host.world.party.money;
-                // The seru-trade screens carry dynamic, owned-string labels, so
-                // render them directly (the generic `(title, rows)` path below
-                // only handles `'static` labels).
-                let trade_state = matches!(
-                    state,
-                    Some(MenuState::ShopTrade) | Some(MenuState::ShopTradeConfirm)
-                );
-                if trade_state {
-                    self.draw_shop_trade(&mut stage, state, cursor);
-                }
-                // Row labels are owned so item names can be resolved from the
-                // disc item table; the ink is the retail `_DAT_8007B454` pen
-                // from the menu-overlay window kernels.
-                let bag = MenuRuntime::inventory_items(&self.session.host.world);
-                let item_label = |id: u8| -> String {
-                    self.session
-                        .host
-                        .world
-                        .menu
-                        .text
-                        .as_ref()
-                        .and_then(|t| t.item_name(id))
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| format!("item {id:02}"))
-                };
-                let held_of = |id: u8| -> i16 {
-                    bag.iter()
-                        .find(|(i, _)| *i == id)
-                        .map(|(_, q)| *q as i16)
-                        .unwrap_or(0)
-                };
-                let (title, rows_spec, show_gold): (_, Vec<(String, Option<u32>, u8)>, _) =
-                    match state {
-                        _ if trade_state => (label, Vec::new(), None),
-                        // Top picker: Buy / Sell / (Trade) / Exit, matching the
-                        // runtime's dynamic row layout. The Sell row's ink is
-                        // retail's bag-scan verdict.
-                        Some(MenuState::ShopMenu) => {
-                            let ink = legaia_engine_core::shop::shop_root_command_rows(
-                                (0, 0),
-                                0x4000,
-                                !bag.is_empty(),
-                            );
-                            let rows = legaia_engine_core::menu_runtime::shop_menu_rows(
-                                self.session.host.world.seru_trade_enabled(),
-                            )
-                            .iter()
-                            .map(|s| {
-                                let (l, i) = match s {
-                                    MenuState::ShopBuy => ("Buy", ink[0].ink),
-                                    MenuState::ShopSell => ("Sell", ink[1].ink),
-                                    MenuState::ShopTrade => ("Trade Seru", ink[0].ink),
-                                    _ => ("Exit", ink[0].ink),
-                                };
-                                (l.to_string(), None, i)
-                            })
-                            .collect();
-                            (label, rows, Some(gold))
-                        }
-                        Some(MenuState::ShopBuy) => {
-                            let rows = shop
-                                .inventory
-                                .items
-                                .iter()
-                                .map(|item| {
-                                    let ink = legaia_engine_core::shop::shop_stock_row_ink(
-                                        held_of(item.item_id),
-                                        0,
-                                        gold,
-                                        item.price as i32,
-                                    );
-                                    (item_label(item.item_id), Some(item.price), ink)
-                                })
-                                .collect();
-                            (label, rows, Some(gold))
-                        }
-                        // Retail's sell list is the price-gated slot walk,
-                        // not the id-sorted bag: an unsellable row dims and
-                        // sorts last (`MenuRuntime::sell_list_rows`). Twin of
-                        // the browser page's arm in `web-viewer::play_shop`.
-                        Some(MenuState::ShopSell) => {
-                            let rows =
-                                legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows(
-                                    &self.session.host.world,
-                                )
-                                .iter()
-                                .map(|r| {
-                                    (
-                                        format!("{} x{}", item_label(r.id), r.count),
-                                        None,
-                                        if r.dim {
-                                            legaia_engine_render::SHOP_INK_GREY
-                                        } else {
-                                            legaia_engine_render::SHOP_INK_NORMAL
-                                        },
-                                    )
-                                })
-                                .collect();
-                            (label, rows, Some(gold))
-                        }
-                        Some(MenuState::ShopQuantity) => {
-                            // Retail's quantity screen has no list: one number
-                            // steps in place inside window 35 / 37 while the
-                            // list it came from stays parked behind it, so this
-                            // screen contributes a title and no rows. The
-                            // window is drawn in `shop_windows`. Twin of the
-                            // browser page's arm in `web-viewer::play_shop`.
-                            (label, Vec::new(), None)
-                        }
-                        Some(MenuState::ShopConfirm) => {
-                            let rows = vec![
-                                (
-                                    "Yes".to_string(),
-                                    None,
-                                    legaia_engine_render::SHOP_INK_NORMAL,
-                                ),
-                                (
-                                    "No".to_string(),
-                                    None,
-                                    legaia_engine_render::SHOP_INK_NORMAL,
-                                ),
-                            ];
-                            (label, rows, Some(gold))
-                        }
-                        _ => (label, Vec::new(), None),
-                    };
-                // The retail descriptor windows for this phase - vendor
-                // plate, purse, item info, sell quantity - each painted by
-                // dispatching on its descriptor's `renderer_va`
-                // (`window/shop_windows.rs`). Empty without a disc table.
-                // The purse window is the retail gold readout, so the
-                // engine panel below drops its own footer whenever it draws.
-                let retail_windows = self.shop_window_draws(shop, state, cursor);
-                let show_gold = if retail_windows.is_empty() {
-                    show_gold
-                } else {
-                    None
-                };
-                stage.extend(retail_windows);
-                // The equipment-buy recipient flow's windows (36 / 25 / 41)
-                // ride over the parked buy list while the picker owns the
-                // pad - the same compositing order the browser play page
-                // uses in `play_overlay_draws_json`.
-                stage.extend(self.recipient_window_draws());
-                if !rows_spec.is_empty() {
-                    let rows: Vec<ShopRow<'_>> = rows_spec
-                        .iter()
-                        .map(|(l, price, ink)| ShopRow {
-                            label: l.as_str(),
-                            price: *price,
-                            ink: *ink,
-                        })
-                        .collect();
-                    let shop_draws = shop_draws_for(
-                        &self.font,
-                        title,
-                        &rows,
-                        cursor,
-                        show_gold,
-                        SHOP_OVERLAY_PEN,
-                    );
-                    stage.extend(shop_draws);
-                }
-            } else if self.menu_runtime.inn_session.is_some() {
-                // Inn overlay: cost prompt with Yes / No cursor.
-                let state = MenuState::from_byte(self.menu_runtime.ctx_state());
-                let cursor = self.menu_runtime.cursor() as usize;
-                let cost = self
-                    .menu_runtime
-                    .inn_session
-                    .as_ref()
-                    .map(|s| s.cost)
-                    .unwrap_or(0);
-                let gold = self.session.host.world.party.money;
-                match state {
-                    Some(MenuState::InnConfirm) => {
-                        let title = format!("INN  Rest for {}G?", cost);
-                        let rows = vec![ShopRow::new("Yes", None), ShopRow::new("No", None)];
-                        let inn_draws = shop_draws_for(
-                            &self.font,
-                            &title,
-                            &rows,
-                            cursor,
-                            Some(gold),
-                            SHOP_OVERLAY_PEN,
-                        );
-                        stage.extend(inn_draws);
-                    }
-                    Some(MenuState::InnSleep) => {
-                        let layout = self.font.layout_ascii("Resting...");
-                        stage.extend(text_draws_for(&layout, SHOP_OVERLAY_PEN, white));
-                    }
-                    _ => {
-                        let menu_label = format!("[{}]", label);
-                        let ml_layout = self.font.layout_ascii(&menu_label);
-                        stage.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
-                    }
-                }
-            } else {
-                // Non-shop, non-inn menu: show current mode label.
-                let menu_label = format!("[{}]", label);
-                let ml_layout = self.font.layout_ascii(&menu_label);
-                stage.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
-            }
-        }
+        // Shop / inn / prize / coin-counter overlay group, scaled through the
+        // one stage transform both hosts share. Built by its own `&self`
+        // method so the sprite pass can size the frame around it.
+        let mut stage = self.shop_overlay_stage_draws();
         if !stage.is_empty() {
             // The shared kernel by its own name rather than through the
             // `save_select_stage` wrapper, so `check-ui-host-drift.py` can
@@ -1335,7 +1093,7 @@ impl PlayWindowApp {
             // text; the battle tick parks the SM and the camera holds the
             // dialogue close-up), the menus are hidden - retail shows no
             // command chrome under the tutorial box.
-            let dialogue_up = bw.dialog.current.is_some() || bw.dialog.inline.is_some();
+            let dialogue_up = bw.dialogue_owns_input();
             if dialogue_up {
                 // Dialogue box up: no menu chrome.
             } else if let Some(view) = bw.arts_input_view() {
@@ -1785,8 +1543,294 @@ impl PlayWindowApp {
             out.extend(draws);
         }
         // Opt-in developer menu: its row list draws over everything else.
-        out.extend(self.dev_menu_draws.iter().copied());
+        //
+        // Through the canonical 320x240 stage, like every other retail screen
+        // the window composes. `DEV_MENU_PEN` / `DEV_RECORDS_PEN` are retail
+        // framebuffer coords, so drawing them raw pinned the whole overlay
+        // into the top-left ninth of a 960x720 window while the browser play
+        // page - which has always scaled them - filled the stage.
+        if !self.dev_menu_draws.is_empty() {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            let mut dev = self.dev_menu_draws.clone();
+            legaia_engine_render::scale_stage_text_draws(&mut dev, stage_origin, stage_scale);
+            out.extend(dev);
+        }
         out
+    }
+
+    /// The shop / inn / prize / coin-counter overlay group, in the retail
+    /// 320x240 **stage** rather than in surface pixels.
+    ///
+    /// Held apart from `build_hud`'s surface-pixel rows because every builder
+    /// below places in stage coordinates; drawing it straight into the HUD
+    /// list left the whole shop UI at a third of its size in a 960x720 window
+    /// while the browser play page scaled the same builders' output. The
+    /// pinned `SHOP_OVERLAY_PEN` / `play_shop::SHOP_PEN` pair could not see
+    /// that, because the split was in the transform and not the pen.
+    ///
+    /// It is a `&self` method, and that is the point: the window's chrome is
+    /// a separate `&self` sprite pass, so the frame around this panel can
+    /// only be sized by a builder both passes can call. See
+    /// [`Self::shop_overlay_chrome_sprite_draws`].
+    pub(super) fn shop_overlay_stage_draws(&self) -> Vec<TextDraw> {
+        let mut stage: Vec<TextDraw> = Vec::new();
+        let white = [1.0f32, 1.0, 1.0, 1.0];
+        // Casino coin counter (op-0x49 sub-6): the submode screen's digit
+        // entry, drawn off the world's live counter cells whenever the
+        // screen is open on the coin slot. Not a menu-runtime state - the
+        // field VM owns the park.
+        stage.extend(self.coin_counter_window_draws());
+        // Shop / inn overlay: rendered at the bottom of the screen when the menu
+        // runtime is in any shop, inn, or confirmation state.
+        if self.menu_runtime.is_open() {
+            let label = self.menu_runtime.current_label();
+            // Casino prize exchange: the session runs outside the MenuState
+            // graph, so it is checked before the shop states. Windows
+            // 43/44/45/46 through the shared engine-ui composition.
+            if let Some(session) = &self.menu_runtime.prize_session {
+                stage.extend(self.prize_window_draws(session));
+            }
+            if let Some(shop) = &self.menu_runtime.shop_session {
+                let state = MenuState::from_byte(self.menu_runtime.ctx_state());
+                let cursor = self.menu_runtime.cursor() as usize;
+                let gold = self.session.host.world.party.money;
+                // The seru-trade screens carry dynamic, owned-string labels, so
+                // render them directly (the generic `(title, rows)` path below
+                // only handles `'static` labels).
+                let trade_state = matches!(
+                    state,
+                    Some(MenuState::ShopTrade) | Some(MenuState::ShopTradeConfirm)
+                );
+                if trade_state {
+                    self.draw_shop_trade(&mut stage, state, cursor);
+                }
+                // Row labels are owned so item names can be resolved from the
+                // disc item table; the ink is the retail `_DAT_8007B454` pen
+                // from the menu-overlay window kernels.
+                let bag = MenuRuntime::inventory_items(&self.session.host.world);
+                let item_label = |id: u8| -> String {
+                    self.session
+                        .host
+                        .world
+                        .menu
+                        .text
+                        .as_ref()
+                        .and_then(|t| t.item_name(id))
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| format!("item {id:02}"))
+                };
+                let held_of = |id: u8| -> i16 {
+                    bag.iter()
+                        .find(|(i, _)| *i == id)
+                        .map(|(_, q)| *q as i16)
+                        .unwrap_or(0)
+                };
+                let (title, rows_spec, show_gold): (_, Vec<(String, Option<u32>, u8)>, _) =
+                    match state {
+                        _ if trade_state => (label, Vec::new(), None),
+                        // Top picker: Buy / Sell / (Trade) / Exit, matching the
+                        // runtime's dynamic row layout. The Sell row's ink is
+                        // retail's bag-scan verdict.
+                        Some(MenuState::ShopMenu) => {
+                            let ink = legaia_engine_core::shop::shop_root_command_rows(
+                                (0, 0),
+                                0x4000,
+                                !bag.is_empty(),
+                            );
+                            let rows = legaia_engine_core::menu_runtime::shop_menu_rows(
+                                self.session.host.world.seru_trade_enabled(),
+                            )
+                            .iter()
+                            .map(|s| {
+                                let (l, i) = match s {
+                                    MenuState::ShopBuy => ("Buy", ink[0].ink),
+                                    MenuState::ShopSell => ("Sell", ink[1].ink),
+                                    MenuState::ShopTrade => ("Trade Seru", ink[0].ink),
+                                    _ => ("Exit", ink[0].ink),
+                                };
+                                (l.to_string(), None, i)
+                            })
+                            .collect();
+                            (label, rows, Some(gold))
+                        }
+                        Some(MenuState::ShopBuy) => {
+                            let rows = shop
+                                .inventory
+                                .items
+                                .iter()
+                                .map(|item| {
+                                    let ink = legaia_engine_core::shop::shop_stock_row_ink(
+                                        held_of(item.item_id),
+                                        0,
+                                        gold,
+                                        item.price as i32,
+                                    );
+                                    (item_label(item.item_id), Some(item.price), ink)
+                                })
+                                .collect();
+                            (label, rows, Some(gold))
+                        }
+                        // Retail's sell list is the price-gated slot walk,
+                        // not the id-sorted bag: an unsellable row dims and
+                        // sorts last (`MenuRuntime::sell_list_rows`). Twin of
+                        // the browser page's arm in `web-viewer::play_shop`.
+                        Some(MenuState::ShopSell) => {
+                            let rows =
+                                legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows(
+                                    &self.session.host.world,
+                                )
+                                .iter()
+                                .map(|r| {
+                                    (
+                                        format!("{} x{}", item_label(r.id), r.count),
+                                        None,
+                                        if r.dim {
+                                            legaia_engine_render::SHOP_INK_GREY
+                                        } else {
+                                            legaia_engine_render::SHOP_INK_NORMAL
+                                        },
+                                    )
+                                })
+                                .collect();
+                            (label, rows, Some(gold))
+                        }
+                        Some(MenuState::ShopQuantity) => {
+                            // Retail's quantity screen has no list: one number
+                            // steps in place inside window 35 / 37 while the
+                            // list it came from stays parked behind it, so this
+                            // screen contributes a title and no rows. The
+                            // window is drawn in `shop_windows`. Twin of the
+                            // browser page's arm in `web-viewer::play_shop`.
+                            (label, Vec::new(), None)
+                        }
+                        Some(MenuState::ShopConfirm) => {
+                            let rows = vec![
+                                (
+                                    "Yes".to_string(),
+                                    None,
+                                    legaia_engine_render::SHOP_INK_NORMAL,
+                                ),
+                                (
+                                    "No".to_string(),
+                                    None,
+                                    legaia_engine_render::SHOP_INK_NORMAL,
+                                ),
+                            ];
+                            (label, rows, Some(gold))
+                        }
+                        _ => (label, Vec::new(), None),
+                    };
+                // The retail descriptor windows for this phase - vendor
+                // plate, purse, item info, sell quantity - each painted by
+                // dispatching on its descriptor's `renderer_va`
+                // (`window/shop_windows.rs`). Empty without a disc table.
+                // The purse window is the retail gold readout, so the
+                // engine panel below drops its own footer whenever it draws.
+                let retail_windows = self.shop_window_draws(shop, state, cursor);
+                let show_gold = if retail_windows.is_empty() {
+                    show_gold
+                } else {
+                    None
+                };
+                stage.extend(retail_windows);
+                // The equipment-buy recipient flow's windows (36 / 25 / 41)
+                // ride over the parked buy list while the picker owns the
+                // pad - the same compositing order the browser play page
+                // uses in `play_overlay_draws_json`.
+                stage.extend(self.recipient_window_draws());
+                if !rows_spec.is_empty() {
+                    let rows: Vec<ShopRow<'_>> = rows_spec
+                        .iter()
+                        .map(|(l, price, ink)| ShopRow {
+                            label: l.as_str(),
+                            price: *price,
+                            ink: *ink,
+                        })
+                        .collect();
+                    let shop_draws = shop_draws_for(
+                        &self.font,
+                        title,
+                        &rows,
+                        cursor,
+                        show_gold,
+                        SHOP_OVERLAY_PEN,
+                    );
+                    stage.extend(shop_draws);
+                }
+            } else if self.menu_runtime.inn_session.is_some() {
+                // Inn overlay: cost prompt with Yes / No cursor.
+                let state = MenuState::from_byte(self.menu_runtime.ctx_state());
+                let cursor = self.menu_runtime.cursor() as usize;
+                let cost = self
+                    .menu_runtime
+                    .inn_session
+                    .as_ref()
+                    .map(|s| s.cost)
+                    .unwrap_or(0);
+                let gold = self.session.host.world.party.money;
+                match state {
+                    Some(MenuState::InnConfirm) => {
+                        let title = format!("INN  Rest for {}G?", cost);
+                        let rows = vec![ShopRow::new("Yes", None), ShopRow::new("No", None)];
+                        let inn_draws = shop_draws_for(
+                            &self.font,
+                            &title,
+                            &rows,
+                            cursor,
+                            Some(gold),
+                            SHOP_OVERLAY_PEN,
+                        );
+                        stage.extend(inn_draws);
+                    }
+                    Some(MenuState::InnSleep) => {
+                        let layout = self.font.layout_ascii("Resting...");
+                        stage.extend(text_draws_for(&layout, SHOP_OVERLAY_PEN, white));
+                    }
+                    _ => {
+                        let menu_label = format!("[{}]", label);
+                        let ml_layout = self.font.layout_ascii(&menu_label);
+                        stage.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
+                    }
+                }
+            } else {
+                // Non-shop, non-inn menu: show current mode label.
+                let menu_label = format!("[{}]", label);
+                let ml_layout = self.font.layout_ascii(&menu_label);
+                stage.extend(text_draws_for(&ml_layout, SHOP_OVERLAY_PEN, white));
+            }
+        }
+        stage
+    }
+
+    /// The gold 9-slice frame around the shop / inn panel above.
+    ///
+    /// The browser play page has framed this panel since it gained the menu
+    /// chrome atlas; the native window drew the rows bare, because its text
+    /// pass and its sprite pass are different borrows and nothing sized the
+    /// frame for the sprite one. Both hosts now take the rect from
+    /// `legaia_engine_ui::shop_panel_frame_rect`, off the same pen and the
+    /// same row count.
+    pub(super) fn shop_overlay_chrome_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        let Some(menu) = self.save_menu.as_ref() else {
+            return Vec::new();
+        };
+        let draws = self.shop_overlay_stage_draws();
+        if draws.is_empty() {
+            return Vec::new();
+        }
+        let rows = legaia_engine_render::shop_panel_rows(&draws);
+        let (stage_origin, stage_scale) =
+            legaia_engine_render::pause_menu::stage_transform(surface_w, surface_h);
+        legaia_engine_render::menu_window_chrome_draws_for(
+            &menu.rects,
+            legaia_engine_render::shop_panel_frame_rect(SHOP_OVERLAY_PEN, rows),
+            stage_origin,
+            stage_scale,
+        )
     }
 
     /// Snapshot the live dialog source (simplified panel, cutscene
@@ -2237,6 +2281,7 @@ impl PlayWindowApp {
         let plaque = bh::battle_active_actor(w_ref);
         let target_plaque = bh::battle_target_plaque(w_ref);
         let move_name = bh::battle_move_name(w_ref);
+        let message_bar = bh::battle_message_bar(w_ref);
         let badges = self.battle_badge_rects();
         let banner = self.battle_banner_message();
         battle_hud_draws_for(
@@ -2277,6 +2322,7 @@ impl PlayWindowApp {
                 begin_tab: bh::battle_begin_tab_visible(w_ref),
                 move_name: move_name.as_deref(),
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
+                message_bar: message_bar.as_deref(),
                 ap_plate_value: bh::battle_ring_ap_plate_value(w_ref),
                 diag: legaia_engine_render::diag_hud_enabled(),
             },

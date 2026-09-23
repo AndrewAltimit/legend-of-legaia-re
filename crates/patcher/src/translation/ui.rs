@@ -56,6 +56,22 @@ pub struct UiStringPool {
 
 /// The committed overlay UI string pools. Coordinates only - the strings are
 /// read from the user's disc at export time, never stored here.
+///
+/// Beyond the menu and battle overlays:
+///
+/// - **Field overlay** = PROT entry 0897, same load base. Two pools: the
+///   equip / shop / inn / Genesis-Tree strings that follow the stat labels
+///   (`SPD` .. `ATK`, `Cannot equip`, `Sell` / `Buy`, `Your Gold`,
+///   `Total Cost`, `OK?` / `Yes` / `No`, the Genesis Tree heal prompt,
+///   `Resume` / `End Game`) - the pool ends where the `PLAY1 X` debug labels
+///   begin - and the new-game **name-select** prompts (`Cannot enter that
+///   name.`, `Tell me my name.`, `Select your name.`).
+/// - **Battle tutorial** = PROT entry 0967, slot-B base `0x801F69D8`: the
+///   sparring-tutorial prompt strings (`docs/subsystems/battle.md`), the
+///   first fight a new game reaches.
+/// - **Cast modules** 0941 (steal) and 0954 (fatal decision), slot-B base:
+///   the steal outcome lines (`Nothing was stolen.`, `You stole`) and the
+///   `MP zero` / `Items lost` / `Gold lost` results.
 pub const UI_STRING_POOLS: &[UiStringPool] = &[
     UiStringPool {
         prot_index: 899,
@@ -70,6 +86,93 @@ pub const UI_STRING_POOLS: &[UiStringPool] = &[
         va_start: 0x801F_4B98,
         va_end: 0x801F_4D2A,
         label: "battle",
+    },
+    UiStringPool {
+        prot_index: 897,
+        base_va: 0x801C_E818,
+        va_start: 0x801C_F048,
+        va_end: 0x801C_F1C8,
+        label: "field (equip / shop / inn)",
+    },
+    UiStringPool {
+        prot_index: 897,
+        base_va: 0x801C_E818,
+        va_start: 0x801C_F6AC,
+        va_end: 0x801C_F71C,
+        label: "field (name select)",
+    },
+    UiStringPool {
+        prot_index: 967,
+        base_va: 0x801F_69D8,
+        va_start: 0x801F_7684,
+        va_end: 0x801F_7D5C,
+        label: "battle tutorial",
+    },
+    UiStringPool {
+        prot_index: 941,
+        base_va: 0x801F_69D8,
+        va_start: 0x801F_83A0,
+        va_end: 0x801F_83EC,
+        label: "battle (steal)",
+    },
+    UiStringPool {
+        prot_index: 954,
+        base_va: 0x801F_69D8,
+        va_start: 0x801F_8F30,
+        va_end: 0x801F_8FB4,
+        label: "battle (fatal decision)",
+    },
+];
+
+/// Pseudo load base that maps a `SCUS_942.54` virtual address onto its file
+/// offset (`0x800`-byte PS-X EXE header, text at `0x80010000`): the same
+/// `va - base_va` arithmetic [`scan_pool`] uses for an overlay.
+pub const SCUS_POOL_BASE_VA: u32 = 0x8000_F800;
+
+/// `SCUS_942.54`-resident system strings outside the pointer-addressed name
+/// tables: NUL-terminated C strings the export walks NUL-to-NUL inside a
+/// pinned VA window and the importer rewrites in place like any other
+/// `scus:str:` entry (span + alignment padding). Coordinates only.
+///
+/// - the pause menu's **empty-list messages** and equipment-slot names
+///   (`You do not have|any items.`, `No magic skills.`, `No items to equip.`,
+///   `Nowhere you can go.`, `{ce:13} Legs.` ...), the strings the menu
+///   overlay draws from the executable when a list has nothing to show. The
+///   window stops before the per-character `... For {c1:00}.` variants: a
+///   NUL-to-NUL scan would cut those at the token's `0x00` argument;
+/// - the battle **steal / spoils result** lines (`Took the stolen`,
+///   `Recovered the stolen`, `Stole the`, `Recovered all stolen items.`);
+/// - the sparring-tutorial opener the new-game template trails (`I will show
+///   you how to fight ...`, `docs/formats/new-game-table.md`);
+/// - the equip-screen `Remove` and the `Save` label near the config strings.
+pub const SCUS_STRING_POOLS: &[UiStringPool] = &[
+    UiStringPool {
+        prot_index: usize::MAX,
+        base_va: SCUS_POOL_BASE_VA,
+        va_start: 0x8001_0C18,
+        va_end: 0x8001_0CC8,
+        label: "pause-menu empty-list messages",
+    },
+    UiStringPool {
+        prot_index: usize::MAX,
+        base_va: SCUS_POOL_BASE_VA,
+        va_start: 0x8007_7A38,
+        va_end: 0x8007_7A8C,
+        label: "battle steal result",
+    },
+    UiStringPool {
+        prot_index: usize::MAX,
+        base_va: SCUS_POOL_BASE_VA,
+        va_start: 0x8007_8CB4,
+        va_end: 0x8007_8CF8,
+        label: "sparring tutorial opener",
+    },
+    UiStringPool {
+        prot_index: usize::MAX,
+        base_va: SCUS_POOL_BASE_VA,
+        va_start: 0x8007_B41C,
+        va_end: 0x8007_B460,
+        label: "equip / save label",
     },
 ];
 

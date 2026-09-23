@@ -1575,53 +1575,16 @@ impl PlayWindowApp {
     /// engine feeds it the resolved formation and the loaded scene so a given
     /// battle gets the style retail gives it.
     fn arm_battle_intro(&self, formation_id: u16, total: i32) -> BattleIntro {
-        use legaia_engine_vm::battle_intro_styles::{IntroStyleInputs, select_intro_style};
+        use legaia_engine_vm::battle_intro_styles::select_intro_style;
 
-        let world = &self.session.host.world;
-        // `formation_slot0` is the *first monster id* of the formation about to
-        // fight - the value seven of the selector's arms key on. The rolled
-        // formation is the only source available here: the intro is armed
-        // during the encounter's `Transition` phase, so the world is still in
-        // Field mode and `battle_monster_slots()` (which returns empty outside
-        // `SceneMode::Battle`) cannot answer yet. Reading it first and falling
-        // back to `formation_id` therefore fed the selector a *row index* on
-        // every single battle, which left every id-keyed override - the three
-        // ScatterParticles ids, Curtain, Swirl, both TileShatter sub-2 arms -
-        // unreachable. Resolve the row instead, and keep the live table as the
-        // in-battle re-arm path.
-        let slot0 = world
-            .tables
-            .formation_table
-            .formation(formation_id)
-            .and_then(|d| d.slots.first())
-            .map(|s| s.monster_id as u8)
-            .or_else(|| {
-                world
-                    .battle_monster_slots()
-                    .first()
-                    .map(|&(_, id, _)| id as u8)
-            })
-            .unwrap_or(formation_id as u8);
-        // `DAT_8007BD60`, and specifically its bit `0x80` - the only bit the
-        // selector reads. It is a property of the rolled formation row, not a
-        // host choice: the entity SM's confirm state ORs the bit in when the
-        // row's `record[+0]` is non-zero (`FUN_801DA51C` at
-        // `0x801DA5F8..0x801DA61C`). The MAN's scripted / boss rows are
-        // exactly the rows carrying a non-zero byte there, which is what makes
-        // `IntroStyle::SpinUpParticles` reachable at all - it is the arm the
-        // flag selects. Passing a hard `0` here pinned every fight to the
-        // TileShatter default.
-        let battle_flags = world
-            .tables
-            .formation_table
-            .formation(formation_id)
-            .map(|d| d.per_battle_flags())
-            .unwrap_or(0);
-        let choice = select_intro_style(&IntroStyleInputs {
-            battle_flags,
-            formation_slot0: slot0,
-            scene_index: self.battle_intro_scene_index(),
-        });
+        // All three selector inputs come out of one engine-side resolver
+        // (`SceneHost::battle_intro_style_inputs`), so the browser play page's
+        // own arming cannot answer them differently - it did, on
+        // `formation_slot0`, which is the input every id-keyed style override
+        // keys on.
+        let inputs = self.session.host.battle_intro_style_inputs(formation_id);
+        let (slot0, battle_flags) = (inputs.formation_slot0, inputs.battle_flags);
+        let choice = select_intro_style(&inputs);
         let table = self
             .intro_quad_table()
             .unwrap_or_else(legaia_engine_render::battle_intro::IntroQuadTable::neutral);
@@ -1678,17 +1641,6 @@ impl PlayWindowApp {
         let rec = legaia_asset::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
         let as_loaded = legaia_asset::static_overlay::as_loaded(&raw, rec).ok()?;
         Some((as_loaded, rec.base_va))
-    }
-
-    /// The scene index `select_intro_style`'s two scene-conditional overrides
-    /// compare against (`DAT_80084540`, the current map / scene PROT base).
-    fn battle_intro_scene_index(&self) -> u32 {
-        self.session
-            .host
-            .scene
-            .as_ref()
-            .map(|s| s.start)
-            .unwrap_or(0)
     }
 
     /// Parse the curtain style's descriptor table out of PROT 0979.
@@ -2116,6 +2068,7 @@ impl PlayWindowApp {
             level_ups: &banner.level_ups,
             drops: &banner.drops,
             leader: &leader,
+            subject: banner.subject,
         };
         let windows = legaia_engine_render::battle_spoils_windows(&view);
         let (origin, scale) = self.save_select_stage(surface_w, surface_h);
@@ -2157,6 +2110,7 @@ impl PlayWindowApp {
             level_ups: &banner.level_ups,
             drops: &banner.drops,
             leader: &leader,
+            subject: banner.subject,
         };
         let (origin, scale) = self.save_select_stage(surface_w, surface_h);
         legaia_engine_render::battle_spoils_windows(&view)

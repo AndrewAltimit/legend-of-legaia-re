@@ -15,7 +15,10 @@
 //! 6. returns `attacker_roll - defender_roll` as the net damage.
 //!
 //! The two differ in exactly two places, and the second one is the interesting
-//! one:
+//! one. They are named here for the stat each mixes in - the INT wrapper and
+//! the ATK wrapper - because the earlier "physical" / "spell" names had it
+//! backwards: `FUN_801DD4B0` reads `+0x168` (INT working), `FUN_801DD6B4`
+//! reads `+0x158` (ATK working).
 //!
 //! | | `FUN_801DD4B0` | `FUN_801DD6B4` |
 //! |---|---|---|
@@ -35,7 +38,7 @@
 //! global actor pool, so they are directly testable and reusable by any host.
 //! The finisher itself is [`crate::battle_formulas::damage_finish`]; the
 //! `bypass_party_resist` flag each wrapper must pass is exposed here as
-//! [`PHYSICAL_BYPASSES_PARTY_RESIST`] / [`SPELL_BYPASSES_PARTY_RESIST`].
+//! [`INT_WRAPPER_BYPASSES_PARTY_RESIST`] / [`ATK_WRAPPER_BYPASSES_PARTY_RESIST`].
 //!
 //! Provenance: `see ghidra/scripts/funcs/overlay_battle_action_801dd4b0.txt`
 //! and `_801dd6b4.txt`; behaviour summary in
@@ -43,13 +46,13 @@
 
 use crate::battle_formulas::{apply_element_affinity, apply_status_weaken};
 
-/// The `param_5` the physical wrapper `FUN_801DD4B0` passes to the finisher:
+/// The `param_5` the INT wrapper `FUN_801DD4B0` passes to the finisher:
 /// `0`, so the party-defender equipment resist ladder runs.
-pub const PHYSICAL_BYPASSES_PARTY_RESIST: bool = false;
+pub const INT_WRAPPER_BYPASSES_PARTY_RESIST: bool = false;
 
-/// The `param_5` the spell wrapper `FUN_801DD6B4` passes to the finisher: `1`,
+/// The `param_5` the ATK wrapper `FUN_801DD6B4` passes to the finisher: `1`,
 /// so the party-defender resist block is skipped entirely.
-pub const SPELL_BYPASSES_PARTY_RESIST: bool = true;
+pub const ATK_WRAPPER_BYPASSES_PARTY_RESIST: bool = true;
 
 /// The attacker-side actor fields both wrappers read.
 #[derive(Debug, Clone, Copy, Default)]
@@ -63,8 +66,8 @@ pub struct WrapperAttacker {
     pub agl: u16,
     /// The `+0x158` stat, read by `FUN_801DD6B4` only -
     /// [`crate::battle_formulas::stat_init`] pins it as **ATK working**
-    /// (`+0x15A` base), i.e. the same offense scalar the physical routine
-    /// reads, not a separate spell-power field.
+    /// (`+0x15A` base), i.e. the same offense scalar the melee routine
+    /// reads. (The field name predates that pin; it is not a spell stat.)
     pub spell_power: u16,
     /// Status bitfield (`+0x16E`): bit `0x1` scales the roll to 9/10, bit
     /// `0x2` to 7/10, applied in that order (the `FUN_801DD864` stage).
@@ -97,7 +100,7 @@ pub struct WrapperDefender {
 /// `srl` and the first modulus is taken with `divu`.
 ///
 /// PORT: FUN_801DD4B0 (attacker-roll stage)
-pub fn physical_attacker_roll(power: u32, a: &WrapperAttacker, rng: [u16; 2]) -> u32 {
+pub fn int_attacker_roll(power: u32, a: &WrapperAttacker, rng: [u16; 2]) -> u32 {
     let modulus_power = (power >> 2) + 1;
     let modulus_agl = (a.agl as u32 >> 1) + 1;
     (rng[0] as u32) % modulus_power
@@ -112,11 +115,11 @@ pub fn physical_attacker_roll(power: u32, a: &WrapperAttacker, rng: [u16; 2]) ->
 /// agl * 2`.
 ///
 /// Identical arithmetic to the shared kernel's defender roll
-/// (`FUN_801DD0AC`), which is why the physical wrapper reuses the same stat
+/// (`FUN_801DD0AC`), which is why the INT wrapper reuses the same stat
 /// set.
 ///
 /// PORT: FUN_801DD4B0 (defender-roll stage)
-pub fn physical_defender_roll(d: &WrapperDefender, rand: u16) -> u32 {
+pub fn int_defender_roll(d: &WrapperDefender, rand: u16) -> u32 {
     let modulus = (d.agl as u32 >> 1) + 1;
     (rand as u32) % modulus
         + (d.hp as u32 >> 8)
@@ -128,11 +131,11 @@ pub fn physical_defender_roll(d: &WrapperDefender, rand: u16) -> u32 {
 /// Attacker roll of `FUN_801DD6B4`:
 /// `rand % ((power >> 2) + 1) + (hp >> 8) + power + spell_power`.
 ///
-/// One `rand()` draw. The AGL term the physical wrapper carries is replaced by
-/// the flat spell-power stat `+0x158`.
+/// One `rand()` draw. The `+0x168` term the INT wrapper carries is replaced by
+/// the flat ATK-working stat `+0x158`.
 ///
 /// PORT: FUN_801DD6B4 (attacker-roll stage)
-pub fn spell_attacker_roll(power: u32, a: &WrapperAttacker, rand: u16) -> u32 {
+pub fn atk_attacker_roll(power: u32, a: &WrapperAttacker, rand: u16) -> u32 {
     let modulus_power = (power >> 2) + 1;
     (rand as u32) % modulus_power + (a.hp as u32 >> 8) + power + a.spell_power as u32
 }
@@ -143,7 +146,7 @@ pub fn spell_attacker_roll(power: u32, a: &WrapperAttacker, rand: u16) -> u32 {
 ///
 /// The defender's AGL is not read at all on this path; the two defence terms
 /// carry the whole mitigation, and they carry it eight times as heavily as in
-/// the physical wrapper (`>> 1` instead of `>> 4`).
+/// the INT wrapper (`>> 1` instead of `>> 4`).
 ///
 /// **That weight does not translate into more mitigation.** It is heavy enough
 /// that on ordinary defence values the scaled attacker roll lands *below*
@@ -155,7 +158,7 @@ pub fn spell_attacker_roll(power: u32, a: &WrapperAttacker, rand: u16) -> u32 {
 /// against the defender's defence, not steeper: it sits on the bonus floor.
 ///
 /// PORT: FUN_801DD6B4 (defender-roll stage)
-pub fn spell_defender_roll(d: &WrapperDefender, rand: u16) -> u32 {
+pub fn atk_defender_roll(d: &WrapperDefender, rand: u16) -> u32 {
     let sum = d.stat_a as u32 + d.stat_b as u32;
     let modulus = (sum >> 3) + 1;
     (rand as u32) % modulus + (d.hp as u32 >> 8) + (d.stat_a as u32 >> 1) + (d.stat_b as u32 >> 1)
@@ -196,13 +199,13 @@ fn scale(
     (atk, def)
 }
 
-/// The physical wrapper `FUN_801DD4B0`, up to but not including the finisher.
+/// The INT wrapper `FUN_801DD4B0`, up to but not including the finisher.
 ///
 /// Returns `(attacker_roll, defender_roll)` after the scale stage and the
 /// conditional bonus arm. The pre-finisher damage retail hands
 /// `FUN_801DDB30` is `attacker_roll - defender_roll`; feed it to
 /// [`crate::battle_formulas::damage_finish`] with
-/// `bypass_party_resist = `[`PHYSICAL_BYPASSES_PARTY_RESIST`].
+/// `bypass_party_resist = `[`INT_WRAPPER_BYPASSES_PARTY_RESIST`].
 ///
 /// `rng` is three draws in retail's call order: attacker `x2`, defender `x1`.
 /// `bonus_rng` supplies the fourth draw and is invoked **only when the bonus
@@ -232,7 +235,7 @@ fn scale(
 /// the routing question directly. The per-module id switch is only needed to
 /// split a *shared* module's spells, which matters solely for the six
 /// **bypass** modules the census already pins by move id.
-pub fn physical_wrapper_predamage(
+pub fn int_wrapper_predamage(
     power: u32,
     a: &WrapperAttacker,
     d: &WrapperDefender,
@@ -240,8 +243,8 @@ pub fn physical_wrapper_predamage(
     rng: [u16; 3],
     bonus_rng: impl FnOnce() -> u16,
 ) -> (u32, u32) {
-    let atk = physical_attacker_roll(power, a, [rng[0], rng[1]]);
-    let def = physical_defender_roll(d, rng[2]);
+    let atk = int_attacker_roll(power, a, [rng[0], rng[1]]);
+    let def = int_defender_roll(d, rng[2]);
     let (mut atk, def) = scale(atk, def, a, d, element_affinity_pct);
     if atk < def + power {
         atk = wrapper_bonus_roll(def, power, bonus_rng());
@@ -249,13 +252,13 @@ pub fn physical_wrapper_predamage(
     (atk, def)
 }
 
-/// The spell / capture-class wrapper `FUN_801DD6B4`, up to but not including
-/// the finisher. Same contract as [`physical_wrapper_predamage`], except that
+/// The ATK / resist-bypass wrapper `FUN_801DD6B4`, up to but not including
+/// the finisher. Same contract as [`int_wrapper_predamage`], except that
 /// `rng` is two draws (attacker `x1`, defender `x1`) and the finisher must be
-/// called with `bypass_party_resist = `[`SPELL_BYPASSES_PARTY_RESIST`].
+/// called with `bypass_party_resist = `[`ATK_WRAPPER_BYPASSES_PARTY_RESIST`].
 ///
 /// PORT: FUN_801DD6B4
-pub fn spell_wrapper_predamage(
+pub fn atk_wrapper_predamage(
     power: u32,
     a: &WrapperAttacker,
     d: &WrapperDefender,
@@ -263,8 +266,8 @@ pub fn spell_wrapper_predamage(
     rng: [u16; 2],
     bonus_rng: impl FnOnce() -> u16,
 ) -> (u32, u32) {
-    let atk = spell_attacker_roll(power, a, rng[0]);
-    let def = spell_defender_roll(d, rng[1]);
+    let atk = atk_attacker_roll(power, a, rng[0]);
+    let def = atk_defender_roll(d, rng[1]);
     let (mut atk, def) = scale(atk, def, a, d, element_affinity_pct);
     if atk < def + power {
         atk = wrapper_bonus_roll(def, power, bonus_rng());
@@ -309,34 +312,34 @@ mod tests {
     }
 
     #[test]
-    fn physical_attacker_roll_matches_hand_evaluation() {
+    fn int_attacker_roll_matches_hand_evaluation() {
         // power 100: modulus_power = 26, modulus_agl = 21.
         // 7 % 26 + 5 % 21 + (0x300 >> 8) + 100 + 80 = 7 + 5 + 3 + 100 + 80
-        assert_eq!(physical_attacker_roll(100, &atk(), [7, 5]), 195);
+        assert_eq!(int_attacker_roll(100, &atk(), [7, 5]), 195);
     }
 
     #[test]
-    fn physical_defender_roll_matches_hand_evaluation() {
+    fn int_defender_roll_matches_hand_evaluation() {
         // modulus = 17; 9 % 17 + (0x500 >> 8) + (64 >> 4) + (48 >> 4) + 64
-        assert_eq!(physical_defender_roll(&def(), 9), 9 + 5 + 4 + 3 + 64);
+        assert_eq!(int_defender_roll(&def(), 9), 9 + 5 + 4 + 3 + 64);
     }
 
     #[test]
-    fn spell_attacker_roll_uses_spell_power_not_agl() {
+    fn atk_attacker_roll_uses_the_atk_stat_not_int() {
         // modulus_power = 26; 3 % 26 + 3 + 100 + 55. AGL never read.
         let mut a = atk();
-        assert_eq!(spell_attacker_roll(100, &a, 3), 3 + 3 + 100 + 55);
+        assert_eq!(atk_attacker_roll(100, &a, 3), 3 + 3 + 100 + 55);
         a.agl = 999;
-        assert_eq!(spell_attacker_roll(100, &a, 3), 3 + 3 + 100 + 55);
+        assert_eq!(atk_attacker_roll(100, &a, 3), 3 + 3 + 100 + 55);
     }
 
     #[test]
-    fn spell_defender_roll_ignores_agility_and_weights_defence_terms() {
+    fn atk_defender_roll_ignores_int_and_weights_defence_terms() {
         // sum = 112, modulus = 15; 4 % 15 + 5 + 32 + 24
         let mut d = def();
-        assert_eq!(spell_defender_roll(&d, 4), 4 + 5 + 32 + 24);
+        assert_eq!(atk_defender_roll(&d, 4), 4 + 5 + 32 + 24);
         d.agl = 999;
-        assert_eq!(spell_defender_roll(&d, 4), 4 + 5 + 32 + 24);
+        assert_eq!(atk_defender_roll(&d, 4), 4 + 5 + 32 + 24);
     }
 
     #[test]
@@ -344,7 +347,7 @@ mod tests {
         // A huge attacker roll clears `def + power`, so the bonus closure must
         // never run; retail draws that rand() inside the arm.
         let mut drew = false;
-        let (a1, _) = physical_wrapper_predamage(
+        let (a1, _) = int_wrapper_predamage(
             10,
             &WrapperAttacker {
                 hp: 0xFFFF,
@@ -365,7 +368,7 @@ mod tests {
 
         // A zeroed attacker against a defended target must take the arm.
         let mut drew = false;
-        let (a2, d2) = physical_wrapper_predamage(
+        let (a2, d2) = int_wrapper_predamage(
             50,
             &WrapperAttacker::default(),
             &def(),
@@ -384,9 +387,9 @@ mod tests {
     #[test]
     fn guard_doubles_the_defender_roll_in_the_scale_stage() {
         let mut d = def();
-        let (_, plain) = physical_wrapper_predamage(100, &atk(), &d, 100, [1, 1, 1], || 0);
+        let (_, plain) = int_wrapper_predamage(100, &atk(), &d, 100, [1, 1, 1], || 0);
         d.guard = 4;
-        let (_, guarded) = physical_wrapper_predamage(100, &atk(), &d, 100, [1, 1, 1], || 0);
+        let (_, guarded) = int_wrapper_predamage(100, &atk(), &d, 100, [1, 1, 1], || 0);
         assert_eq!(guarded, plain * 2);
     }
 
@@ -395,8 +398,8 @@ mod tests {
         // A defenceless target and a small power keep the bonus arm shut, so
         // the affinity scale is the only thing that moves between the two runs.
         let d = WrapperDefender::default();
-        let (a_full, d_full) = spell_wrapper_predamage(4, &atk(), &d, 100, [1, 1], || 0);
-        let (a_half, d_half) = spell_wrapper_predamage(4, &atk(), &d, 50, [1, 1], || 0);
+        let (a_full, d_full) = atk_wrapper_predamage(4, &atk(), &d, 100, [1, 1], || 0);
+        let (a_half, d_half) = atk_wrapper_predamage(4, &atk(), &d, 50, [1, 1], || 0);
         assert_eq!(d_full, d_half, "affinity must not touch the defender roll");
         assert_eq!(a_half, a_full / 2);
     }
@@ -409,7 +412,7 @@ mod tests {
         // is retail's ordering (scale, then the conditional re-roll), and it is
         // why the previous test has to disarm the bonus.
         let mut drew = false;
-        let (a, d) = spell_wrapper_predamage(200, &atk(), &def(), 50, [1, 1], || {
+        let (a, d) = atk_wrapper_predamage(200, &atk(), &def(), 50, [1, 1], || {
             drew = true;
             0
         });
@@ -421,7 +424,7 @@ mod tests {
     fn the_two_wrappers_disagree_on_the_finisher_flag() {
         // The whole point of the pair: same shape, opposite resist policy.
         assert_ne!(
-            PHYSICAL_BYPASSES_PARTY_RESIST, SPELL_BYPASSES_PARTY_RESIST,
+            INT_WRAPPER_BYPASSES_PARTY_RESIST, ATK_WRAPPER_BYPASSES_PARTY_RESIST,
             "the wrappers must pass opposite param_5 values"
         );
     }
@@ -436,12 +439,9 @@ mod tests {
     fn zero_power_does_not_divide_by_zero() {
         // (0 >> 2) + 1 == 1, so the modulus is never zero even at power 0 -
         // the retail `divu` break vector is unreachable from this path.
-        assert_eq!(
-            physical_attacker_roll(0, &WrapperAttacker::default(), [7, 0]),
-            0
-        );
-        assert_eq!(spell_attacker_roll(0, &WrapperAttacker::default(), 7), 0);
-        // The spell defender modulus is `((0 + 0) >> 3) + 1 == 1` likewise.
-        assert_eq!(spell_defender_roll(&WrapperDefender::default(), 7), 0);
+        assert_eq!(int_attacker_roll(0, &WrapperAttacker::default(), [7, 0]), 0);
+        assert_eq!(atk_attacker_roll(0, &WrapperAttacker::default(), 7), 0);
+        // The ATK-wrapper defender modulus is `((0 + 0) >> 3) + 1 == 1` likewise.
+        assert_eq!(atk_defender_roll(&WrapperDefender::default(), 7), 0);
     }
 }

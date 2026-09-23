@@ -215,9 +215,21 @@ pub struct World {
     /// other 138 kingdom-derived entries are not yet pinned; those slots
     /// stay `None` until the full chain lands.
     ///
-    /// Read by the field-VM `0x4C 0xD8` host hook to populate
-    /// [`Actor::tmd_ref`] on synchronous-spawn.
+    /// Read by the tile-board install's allocator. The field-VM `0x4C 0xD8`
+    /// hook resolves through [`Self::field_scene_bank`] instead: its operand
+    /// is a scene-bank index ([`Self::field_pool_tmd`]).
     pub global_tmd_pool: Vec<Option<Arc<GlobalTmd>>>,
+
+    /// The current field scene's **model bank**: pool slots
+    /// `crate::model_bank::SCENE_BANK_BASE..` of retail `DAT_8007C018`, in
+    /// registration order (index `i` = pool slot `5 + i`). Installed by
+    /// [`crate::scene::SceneHost::enter_field_scene`] from its
+    /// [`crate::model_bank::SceneModelBank`]; read by
+    /// [`Self::field_pool_tmd`]. Distinct from [`Self::global_tmd_pool`],
+    /// which the engine seeds with the battle effect-model library - the two
+    /// are the same retail table at different times, and a field operand
+    /// must not resolve against the battle half.
+    pub field_scene_bank: Vec<Option<Arc<GlobalTmd>>>,
 
     /// Summon / cast-module / move-FX scene-graph state: the active summon scene, the cast stager and phase bytes, and the move-effect spawns and trails.
     pub casting: CastFxState,
@@ -326,6 +338,7 @@ impl World {
             active_scene_label: String::new(),
             vdf_buffer: None,
             global_tmd_pool: Vec::new(),
+            field_scene_bank: Vec::new(),
             scene_battle_entry_arms: Vec::new(),
             game_over: false,
             game_over_hold: false,

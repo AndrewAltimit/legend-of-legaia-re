@@ -72,6 +72,7 @@ fn is_prose_punct(b: u8) -> bool {
             | b'>'
             | b'='
             | b'_'
+            | b'`'
     )
 }
 

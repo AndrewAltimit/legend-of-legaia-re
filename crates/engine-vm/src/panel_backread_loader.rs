@@ -50,18 +50,33 @@
 //! (`hp_curr_live`), so the halved max is compared against live HP and the
 //! damaged half of the party gets the second backdrop.
 //!
-//! ## NOT WIRED
+//! ## Where each half lands in the port
 //!
 //! REF: FUN_8003E8A8 - the PROT-index loader the retail branch resolves
 //! `0x4C7 + variant` through.
 //! REF: FUN_80025358 - the only caller, itself unported.
-//! REF: FUN_80056208 - the caller above that, ported (and itself NOT WIRED) as
-//! `legaia_engine_render::battle_sideband`.
 //!
-//! The engine has no staged sub-overlay loader. `FUN_80025358`, the only
-//! caller, is itself unported, and the engine's own asset path resolves PROT
-//! entries synchronously rather than through a frame-sliced CD read - so there
-//! is no host that would call this and nothing that owns `_DAT_8007B6C8`.
+//! The loader does three things, and the port keeps two of them:
+//!
+//! - **The pick** ([`backread_texture_variant`]) is live. Every dome leg ends
+//!   through `legaia_engine_core::world::World::exit_muscle_dome`, which runs
+//!   it (via `legaia_engine_core::muscle_ringside::still_prot_index`) over the
+//!   fighter's live HP and the lead record's `+0x11C` maximum and leaves the
+//!   answer on `MinigameState::muscle_ringside_still` - the still a
+//!   re-entered hub then shows. Both hosts reach it through their dome pad
+//!   path (`World::tick_muscle_dome`'s Won / Lost arm).
+//! - **The upload rectangles** ([`backread_slice_rect`]) are live.
+//!   `legaia_engine_ui::ringside_backdrop::still_sheet_rgba` lays the entry's
+//!   four bands down at exactly these rects, relative to `(384, 0)`, and both
+//!   hosts build the still's sheet through it: the native window's
+//!   `load_muscle_hub_assets` (baked into the hub atlas) and the play page's
+//!   `play_mg_muscle_hub_sheet_rgba(8, variant)`.
+//! - **The frame-sliced read schedule** ([`BackreadStep`],
+//!   [`backread_tick`]) is replaced. Its twelve arms exist to overlap four
+//!   20-sector `FUN_8003E800` reads with `FUN_8003DE7C` polls across frames;
+//!   the port reads the whole `0x28000`-byte entry at once through the scene
+//!   host's `ProtIndex`, so there is no read in flight to poll and nothing
+//!   for a host to step.
 //!
 //! "The only caller" is measured, not assumed: a five-form reference scan
 //! ([`docs/tooling/address-reference-scan.md`](../../../docs/tooling/address-reference-scan.md))
@@ -69,30 +84,15 @@
 //! exactly one reference to `0x801F6B24` - the `jal` at `0x80025404`, inside
 //! `FUN_80025358` - and no word, `j`, branch or `lui`+`addiu` form anywhere.
 //!
-//! The gap is two links deep, and both are named. `FUN_80025358`'s own caller
-//! is decoded: `legaia_engine_render::battle_sideband` ports `FUN_80056208`
-//! and surfaces the call as the `SubOverlayTick` effect its intro phase 3
-//! emits - but that port is itself inert (no host owns a
-//! `BattleSidebandState`), and `FUN_80025358` between the two is not ported at
-//! all. So this row does not close by finding a host for the loader; it closes
-//! only after the sequencer above it is ported and the sideband pass has one.
-//!
-//! ## And the drawer is a third gap, not the same one
-//!
-//! Neither host draws the still, and the parser for it exists
-//! ([`legaia_asset::ringside_still`], reached today only by the byte-account
-//! walker), so it would be easy to read this row as "a screen the port owes".
-//! It is not that yet, because what this routine does is an **upload**: four
-//! `0x140 x 0x40` `LoadImage` rects into VRAM at `(384, 0)`. Which on-screen
-//! pass then samples that region is not settled on the retail side either -
-//! [`ringside-still.md`](../../../docs/formats/ringside-still.md) grades the
-//! loader, the index arithmetic, the variant selector and the geometry as
-//! confirmed and the panel's *use* as inferred, and a live teardown has ruled
-//! out the obvious candidate (the between-match `INTERVAL` / `ROUND` screens
-//! are a live `koin1` render, not this rect). So a host wired today would put
-//! 320x256 pixels somewhere nothing reads - which is why the load is not
-//! worth wiring ahead of the answer, and why this row is blocked on three
-//! things rather than two.
+//! The drawer is the contest hub's `FUN_801D00F8` (PROT `0977`, file
+//! `+0x18E0`), whose still arm writes two `POLY_FT4` packets addressing
+//! tpages `0x106` and `0x109` - VRAM `x = 384` and `576` as *page* indices,
+//! which is why a search for the literal `0x180` never found the consumer.
+//! It is ported as `legaia_engine_ui::ringside_backdrop::ringside_still_quads`
+//! and drawn by both hosts over the re-entered hub; the level it is drawn at
+//! is `legaia_engine_core::muscle_ringside::HubBackdrop`.
+//! [`ringside-still.md`](../../../docs/formats/ringside-still.md) carries the
+//! packets and the `_DAT_801D1AE0` re-entry latch that selects the arm.
 
 /// Phase counter the loader indexes on (`_DAT_8007B6C8`).
 pub const BACKREAD_PHASE_GLOBAL: u32 = 0x8007_B6C8;
@@ -144,6 +144,10 @@ pub fn backread_slice_rect(n: u32) -> (i16, i16, i16, i16) {
 /// What one tick of the loader does, by phase.
 ///
 /// PORT: FUN_801f6b24 (the 12-entry jump table at `0x801F6AA8`)
+/// REPLACED-BY: the scene host's synchronous whole-entry read
+/// (`legaia_engine_core::scene::ProtIndex::entry_bytes_extended`), which both
+/// hosts' still-sheet builds call for extraction 1221 / 1222 - no sector read
+/// is in flight for a phase to wait on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackreadStep {
     /// Phases 0 and 1: the table's first two arms both jump straight to the
@@ -168,6 +172,8 @@ impl BackreadStep {
     /// The step this phase selects.
     ///
     /// PORT: FUN_801f6b24
+    /// REPLACED-BY: the scene host's synchronous whole-entry read - see
+    /// [`BackreadStep`].
     pub fn for_phase(phase: i32) -> BackreadStep {
         match phase {
             0 | 1 => BackreadStep::Stall,
@@ -194,9 +200,10 @@ impl BackreadStep {
 /// index and is **not** modelled here.
 ///
 /// PORT: FUN_801f6b24
-///
-/// NOT WIRED: nothing hosts a staged sub-overlay load - `FUN_80025358`, the
-/// only caller, is unported. See the module disclosure.
+/// REPLACED-BY: the scene host's synchronous whole-entry read
+/// (`legaia_engine_core::scene::ProtIndex::entry_bytes_extended`) - the port
+/// never splits the still into 20-sector reads, so there is no poll to step.
+/// Retail's own call site is the `jal` at `0x80025404` in `FUN_80025358`.
 pub fn backread_tick(phase: i32, poll_complete: bool) -> (i32, bool) {
     match BackreadStep::for_phase(phase) {
         BackreadStep::Stall | BackreadStep::OutOfRange => (phase, true),

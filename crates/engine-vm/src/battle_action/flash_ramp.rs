@@ -46,25 +46,119 @@
 //! same per-frame scalar the move-buffer envelope uses) and saturates at
 //! `0xF0` - the value that has already gated every trail layer off.
 //!
-//! # NOT WIRED
+//! # The raiser
 //!
-//! The retail per-frame caller is the battle draw tick `FUN_800480D8`
-//! (`jal 0x801e2524` at `0x80048140`, `ghidra/scripts/funcs/800480d8.txt`),
-//! whose own port - `engine-render::battle_actor_tick` - is a schedule with no
-//! host yet, so the wire's location is known but does not exist. The ramp is
-//! driven entirely by the two battle-context bytes `ctx[+0x28B]` (banner) and
-//! `ctx[+0x28C]` (clock), and `BattleActionCtx` carries neither - nothing in
-//! the port can raise a banner or hold its clock between frames. Retail calls
-//! the ramp unconditionally every frame and lets the stage byte gate it, so
-//! the missing piece is not the per-frame call but the **raiser**.
+//! Every write that raises or retires a banner is in **`FUN_8004AD80` in
+//! `SCUS_942.54`**, the staged-animation commit
+//! (`see ghidra/scripts/funcs/8004ad80.txt`; the four `sb ..,0x28b(..)` sites
+//! are `0x8004ADDC`, `0x8004B774`, `0x8004B80C` and `0x8004B87C`), not in the
+//! battle overlay - which is why an overlay sweep for the raiser came back
+//! empty. The one overlay write is the tick's own clear, `sb zero,0x28b(v0)`
+//! at `0x801E263C` in `FUN_801E2524` (the `5..=8` arm [`step_flash_ramp`]
+//! ports), so the byte has five writers disc-wide, not four.
 //!
-//! Now that the four positions are identified, the raiser's engine-side home
-//! is too: the Super / Miracle chain match in `World::build_battle_arts_rows`
-//! (`crates/engine-core/src/world/items_arts.rs`), which already calls
-//! `miracle_for_chain` / `super_for_chain`, is where a recognised chain would
-//! set the banner byte `1..=4`. Retail's own writer is still unfound in the
-//! battle overlay, so a port that raises it there is choosing the trigger
-//! rather than reproducing one.
+//! The commit reaches the banner block only for a **party** actor
+//! (`actor[+0x5A] < 3`) whose staged id `actor[+0x1DA]` is the SpecialStarter
+//! `0x1A` (`0x8004B6E8` bounds out anything `< 0x10`, `0x8004B6F4` bounds out
+//! the monster slots, `0x8004B720` selects the id) - the same arm that freezes
+//! every actor's `+0x21D` animation rate and puts the acting one at quarter
+//! speed. Inside it, three writes race in retail order and the last one wins:
+//!
+//! | site | condition | banner |
+//! |---|---|---|
+//! | `0x8004B774` | `ctx[+0x28D + slot] != 0` - the per-seat flag `FUN_801EED1C` raises at `0x801EF5A8` | `3` |
+//! | `0x8004B80C` | the word at `0x801F6990 + (ctx[+0x15] - 1) * 4` is non-zero | that word's low byte |
+//! | `0x8004B87C` | the byte is *still* `0` | `2` |
+//!
+//! So the seat flag does not decide the banner on its own: the table pick
+//! overwrites it when it hits. Whatever wins, `0x8004BB44` clears the slide
+//! clock `ctx[+0x28C]`, which is what makes a raise restart the slide rather
+//! than resume it.
+//!
+//! The **cancel** band is the same routine's prologue (`0x8004ADBC`): a commit
+//! that lands on the actor the context is already running
+//! (`actor[+0x5A] == ctx[+0x13]`) while a banner is live writes `banner + 4`
+//! and clears the clock, i.e. it asks the next frame to retire the banner -
+//! exactly the `5..=8` band above.
+//!
+//! What this module does **not** carry is the sound: each raise is followed by
+//! `jal 0x8004FCC8` on a cue id `0x101` / `0x111` / `0x121` selected by
+//! `0x8007BD10 + ctx[+0x13]`, which is the per-character Arts shout and lives
+//! on the `legaia_art::arts_voice` path instead.
+//!
+//! `0x801F6990` is the arts queue-builder's per-token **side array**, written
+//! by `FUN_801EED1C`'s build loop and by the Super tail-replace
+//! `FUN_801EF9E4` - the same array
+//! [`crate::battle_action::BattleActor::starter_marks`] already models. That
+//! is what makes the middle pick an engine read rather than a missing one, and
+//! it closes the banner space exactly:
+//!
+//! | source | mark | banner |
+//! |---|---|---|
+//! | the build loop accepted an art ([`crate::battle_action::BUILD_STARTER_MARK`]) | `1` | `NEW` |
+//! | nothing picked | - | `2` = `HYPER` |
+//! | the per-seat Super / Miracle flag | - | `3` = `MIRACLE` |
+//! | the Super tail-replace ([`crate::battle_action::SUPER_STARTER_MARK`]) | `4` | `SUPER` |
+//!
+//! So the two mark constants are not arbitrary tags that happen to differ:
+//! each *is* its banner's position index, and the "difference is load-bearing
+//! exactly once, at the Attack x2 refill" note on `starter_marks` was one
+//! reader short.
+
+/// The banner `ctx[+0x28D + slot]` selects (`0x8004B774`).
+pub const BANNER_SEAT_FLAG: u8 = 3;
+
+/// The banner a starter commit falls back to when nothing else picked one
+/// (`0x8004B87C`).
+pub const BANNER_DEFAULT: u8 = 2;
+
+/// The staged animation id (`actor[+0x1DA]`) whose commit raises a banner -
+/// the SpecialStarter, and the same id the animation-rate freeze keys on.
+pub const STARTER_ANIM_ID: u8 = 0x1A;
+
+/// Raise the banner on a **SpecialStarter commit**, in retail's own order.
+///
+/// REF: FUN_8004AD80 (`0x8004B754..0x8004BB44`)
+///
+/// `seat_flag` is `ctx[+0x28D + slot]`, `table_pick` the low byte of the
+/// non-zero word at `0x801F6990 + (ctx[+0x15] - 1) * 4` (`None` when that
+/// word is zero or unresolved). Returns the new `(stage, level)` pair - the
+/// level is always cleared, which is what restarts the slide.
+///
+/// The seat flag is applied *first* and the table pick overwrites it: that
+/// ordering is the whole content of the three sites, and a port that tested
+/// them as an `else` chain would show the wrong banner wherever both hit.
+pub fn banner_on_starter_commit(seat_flag: bool, table_pick: Option<u8>) -> (u8, u8) {
+    let mut stage = 0u8;
+    if seat_flag {
+        stage = BANNER_SEAT_FLAG;
+    }
+    if let Some(pick) = table_pick.filter(|p| *p != 0) {
+        stage = pick;
+    }
+    if stage == 0 {
+        stage = BANNER_DEFAULT;
+    }
+    (stage, 0)
+}
+
+/// The commit prologue's **cancel**: a live banner whose own actor commits
+/// again moves into the `5..=8` retire band and restarts its clock.
+///
+/// REF: FUN_8004AD80 (`0x8004ADBC..0x8004ADE8`)
+///
+/// `None` leaves both bytes alone - the banner is idle, or this commit is not
+/// the context's active actor.
+pub fn banner_cancel_on_commit(
+    stage: u8,
+    committing_slot: u8,
+    active_actor: u8,
+) -> Option<(u8, u8)> {
+    if stage == 0 || committing_slot != active_actor {
+        return None;
+    }
+    Some((stage.wrapping_add(4), 0))
+}
 
 /// Stage values `1..=STAGE_DRAW_MAX` run the emit pass.
 pub const STAGE_DRAW_MAX: u8 = 4;
@@ -124,6 +218,10 @@ pub struct FlashFrame {
 /// to draw plus the write-backs for the two context bytes; an idle or
 /// out-of-range stage yields an empty frame with no write-backs at all,
 /// which is the difference between "inert" and "retired".
+///
+/// Driven once per battle frame by
+/// `legaia_engine_core::world::World::tick_arts_banner`, so both hosts step
+/// it through `World::tick`.
 pub fn step_flash_ramp(stage: u8, level: u8, frame_delta: u8) -> FlashFrame {
     if stage == 0 || stage > STAGE_CANCEL_MAX {
         return FlashFrame::default();
@@ -240,9 +338,9 @@ fn vertical_half(extent: i16) -> i16 {
 /// memory held. That is not a shape a port can reproduce meaningfully, and
 /// [`step_flash_ramp`] only ever produces `0..=3`.
 ///
-/// NOT WIRED: same reason as [`step_flash_ramp`] - the ramp that supplies
-/// these layers is never stepped, because nothing in the port raises the
-/// stage byte `ctx[+0x28B]`.
+/// Both hosts emit these through
+/// `legaia_engine_ui::battle_numerals::arts_banner_prims`, fed from
+/// `World::battle_arts_banner_quads`.
 pub fn flash_quads(layer: &FlashLayer, level: u8) -> Option<[FlashQuad; 2]> {
     let (left_travel, seam, right_travel, u_left, u_right, v_top, v_bottom) =
         *POSITIONS.get(usize::from(layer.position))?;
@@ -277,6 +375,62 @@ pub fn flash_quads(layer: &FlashLayer, level: u8) -> Option<[FlashQuad; 2]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Retail applies the three picks in order and lets the later one win.
+    /// An `else` chain would read identically on every input but the one that
+    /// matters - a seat flag raised *and* a table word present - so the order
+    /// is asserted rather than the outcomes.
+    #[test]
+    fn the_table_pick_overwrites_the_seat_flags_banner() {
+        assert_eq!(banner_on_starter_commit(false, None), (BANNER_DEFAULT, 0));
+        assert_eq!(banner_on_starter_commit(true, None), (BANNER_SEAT_FLAG, 0));
+        assert_eq!(banner_on_starter_commit(true, Some(4)), (4, 0));
+        assert_eq!(banner_on_starter_commit(false, Some(1)), (1, 0));
+        // A zero word is "no pick", not "banner 0" - retail tests the whole
+        // word before reading its low byte.
+        assert_eq!(
+            banner_on_starter_commit(false, Some(0)),
+            (BANNER_DEFAULT, 0)
+        );
+        assert_eq!(
+            banner_on_starter_commit(true, Some(0)),
+            (BANNER_SEAT_FLAG, 0)
+        );
+    }
+
+    /// Every raise restarts the slide: the clock write is unconditional at
+    /// `0x8004BB44`, which is why a second starter re-runs the whole slide
+    /// instead of resuming a banner that had already landed.
+    #[test]
+    fn every_raise_clears_the_slide_clock() {
+        for seat in [false, true] {
+            for pick in [None, Some(1u8), Some(4)] {
+                assert_eq!(banner_on_starter_commit(seat, pick).1, 0);
+            }
+        }
+    }
+
+    /// The prologue's cancel lands in the `5..=8` band the step arm retires,
+    /// and only for the context's own active actor.
+    #[test]
+    fn the_cancel_moves_a_live_banner_into_the_retire_band() {
+        for stage in 1u8..=4 {
+            let (out, level) = banner_cancel_on_commit(stage, 2, 2).expect("own actor cancels");
+            assert_eq!(out, stage + 4);
+            assert_eq!(level, 0);
+            assert_eq!(step_flash_ramp(out, 0x40, 1).stage_out, Some(0));
+        }
+        assert_eq!(
+            banner_cancel_on_commit(3, 1, 2),
+            None,
+            "another actor does not cancel"
+        );
+        assert_eq!(
+            banner_cancel_on_commit(0, 2, 2),
+            None,
+            "an idle banner has nothing to cancel"
+        );
+    }
 
     #[test]
     fn stage_zero_and_stage_nine_up_are_inert() {

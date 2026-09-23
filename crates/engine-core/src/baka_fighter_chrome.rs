@@ -1461,6 +1461,90 @@ pub fn editor_tick(
     }
 }
 
+// ---------------------------------------------------------------------------
+// The duel HUD's three digit strips, placed
+// ---------------------------------------------------------------------------
+
+/// Stage pen of the one-glyph round digit.
+pub const HUD_ROUND_PEN: (i32, i32) = (8, 98);
+/// Stage pen of the 8 px right-aligned score field.
+pub const HUD_SCORE_PEN: (i32, i32) = (40, 98);
+/// Stage pen of the `0x10` px "GET COIN" numeral strip.
+pub const HUD_COIN_PEN: (i32, i32) = (140, 98);
+/// The round digit is one glyph, so a round past the row's ten cells has
+/// nowhere to go; retail's widget row holds ten and the port clamps.
+pub const HUD_ROUND_MAX: i32 = 9;
+
+/// Where the duel HUD's three number drawers put their glyphs this frame, as
+/// `(stage x, stage y, digit)`.
+///
+/// The three strips are `single_digit_cell` (the round), the right-aligned
+/// score field and the coin strip, each at its own pen with its own cell
+/// stride - and the two tally strips draw only while a match tally is up,
+/// which is what `tally` carries: `(total, gold_remaining)`.
+///
+/// This is the *layout*. The glyph quads are
+/// `legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for`, which both
+/// hosts call: a shared layout under two different emitters is exactly the
+/// shape that let one host draw a summary line where the other drew the
+/// retail cells.
+pub fn hud_digit_placements(round: i32, tally: Option<(i32, i32)>) -> Vec<(i32, i32, u8)> {
+    use crate::baka_fighter::{coin_digit_cells, right_aligned_number_cells, single_digit_cell};
+    let mut out: Vec<(i32, i32, u8)> = Vec::new();
+    let r = single_digit_cell((round + 1).clamp(0, HUD_ROUND_MAX) as u8);
+    out.push((
+        HUD_ROUND_PEN.0 + r.x_offset as i32,
+        HUD_ROUND_PEN.1,
+        r.digit,
+    ));
+    if let Some((total, gold_remaining)) = tally {
+        for c in right_aligned_number_cells(total) {
+            out.push((
+                HUD_SCORE_PEN.0 + c.x_offset as i32,
+                HUD_SCORE_PEN.1,
+                c.digit,
+            ));
+        }
+        for c in coin_digit_cells(gold_remaining) {
+            out.push((HUD_COIN_PEN.0 + c.x_offset as i32, HUD_COIN_PEN.1, c.digit));
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod hud_strip_tests {
+    use super::*;
+
+    #[test]
+    fn without_a_tally_only_the_round_digit_is_placed() {
+        let out = hud_digit_placements(0, None);
+        assert_eq!(out, vec![(HUD_ROUND_PEN.0, HUD_ROUND_PEN.1, 1)]);
+    }
+
+    #[test]
+    fn the_two_tally_strips_take_their_own_pens_and_strides() {
+        let out = hud_digit_placements(2, Some((42, 7)));
+        // Round 3, then "4" "2" 8 px apart, then the coin strip.
+        assert_eq!(out[0], (HUD_ROUND_PEN.0, HUD_ROUND_PEN.1, 3));
+        let score: Vec<&(i32, i32, u8)> = out
+            .iter()
+            .filter(|p| p.0 >= HUD_SCORE_PEN.0 && p.0 < HUD_COIN_PEN.0)
+            .collect();
+        assert_eq!(score.len(), 2);
+        assert_eq!(score[1].0 - score[0].0, 8);
+        let coin: Vec<&(i32, i32, u8)> = out.iter().filter(|p| p.0 >= HUD_COIN_PEN.0).collect();
+        assert_eq!(coin.len(), 1);
+        assert_eq!(coin[0].2, 7);
+    }
+
+    #[test]
+    fn a_round_past_the_row_clamps_rather_than_indexing_off_it() {
+        let out = hud_digit_placements(40, None);
+        assert_eq!(out[0].2, HUD_ROUND_MAX as u8);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

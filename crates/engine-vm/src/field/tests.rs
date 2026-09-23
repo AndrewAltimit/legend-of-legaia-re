@@ -63,6 +63,7 @@ struct TestHost {
     party_bank: std::collections::HashMap<u8, i32>,
     // 0x4C sub-1 menu sub-dispatcher recordings.
     menu_sub1_calls: Vec<(u8, [u8; 5])>,
+    clone_actor_calls: Vec<(u8, u32, i16)>,
     // 0x4C sub-3 cleanups.
     menu_refresh_calls: u32,
     depth_copy_calls: u32,
@@ -194,8 +195,8 @@ struct TestHost {
     halt_acquire_calls: Vec<(u8, usize, [i16; 3])>,
     // Round 18 - 0x4C n8 actor-allocator + nE camera + nD/n5 dialog.
     n_8_sub_1_set_model_calls: Vec<(u32, u16, u16)>, // (model_id, anim, tween)
-    n_8_sub_6_actor_set_rotation_calls: Vec<(u8, [i16; 3], [i16; 3])>,
-    n_8_sub_6_actor_present: bool,
+    n8_sub6_reflection_installs: Vec<(u8, [i16; 6])>,
+    n8_sub6_source_present: bool,
     n_8_sub_b_present_types: std::collections::HashSet<u8>,
     n_8_sub_d_search_result: ActorSearchResult,
     n_8_sub_d_queries: std::cell::RefCell<Vec<(u8, u8)>>,
@@ -361,6 +362,9 @@ impl FieldHost for TestHost {
     }
     fn menu_ctrl_sub1(&mut self, op0: u8, payload: &[u8; 5]) {
         self.menu_sub1_calls.push((op0, *payload));
+    }
+    fn menu_ctrl_clone_actor(&mut self, src_id: u8, tint_rgb: u32, fade_rate: i16) {
+        self.clone_actor_calls.push((src_id, tint_rgb, fade_rate));
     }
     fn menu_refresh(&mut self) {
         self.menu_refresh_calls += 1;
@@ -580,7 +584,7 @@ impl FieldHost for TestHost {
         self.n8_rect_tile_fills
             .push((col_start, row_start, col_end, row_end, value));
     }
-    fn op4c_n8_sub7_register_callback(&mut self) {
+    fn op4c_n8_sub7_retire_reflections(&mut self) {
         self.n8_callback_regs += 1;
     }
     fn op4c_n8_sub8_write_globals(&mut self, value: i16, b3: u8, b4: u8) {
@@ -598,9 +602,8 @@ impl FieldHost for TestHost {
     fn op4c_n9_sub_e_table_copy(&mut self, words: [i16; 16]) {
         self.n9_table_copies.push(words);
     }
-    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) -> bool {
+    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) {
         self.n9_callback_regs += 1;
-        false
     }
     fn op4e_sub4_bios_rand(&mut self) -> i32 {
         self.op4e_sub4_bios_rand_calls += 1;
@@ -761,16 +764,14 @@ impl FieldHost for TestHost {
         self.n_8_sub_1_set_model_calls
             .push((model_id, anim_frame, tween_frames));
     }
-    fn op4c_n_8_sub_6_actor_set_rotation(
+    fn op4c_n8_sub6_install_reflection(
         &mut self,
         _ctx: &mut FieldCtx,
-        actor_id: u8,
-        position: [i16; 3],
-        rotation: [i16; 3],
+        source_id: u8,
+        words: [i16; 6],
     ) -> bool {
-        self.n_8_sub_6_actor_set_rotation_calls
-            .push((actor_id, position, rotation));
-        self.n_8_sub_6_actor_present
+        self.n8_sub6_reflection_installs.push((source_id, words));
+        self.n8_sub6_source_present
     }
     fn op4c_n_8_sub_b_actor_type_present(&self, type_byte: u8) -> bool {
         self.n_8_sub_b_present_types.contains(&type_byte)

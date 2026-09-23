@@ -1107,7 +1107,8 @@ by `engine-core::field_submode_screen`.
 
 ### The `0x801f` band belongs to the field overlay
 
-The `0x801f1138`-`0x801f2200` cluster plus `FUN_801f90dc` was previously read
+The `0x801f1138`-`0x801f2200` cluster (and the `0x801f90dc` print, which is
+not hub code at all - see the item-info panel below) was previously read
 here as a *second*, hub-only cluster that "does not byte-match the field
 overlay (PROT 0897)". That reading is **falsified**, and both halves of it
 were wrong:
@@ -1208,8 +1209,14 @@ Nothing writes the purchased coins into gold. Port
 `engine-vm::baka_hub_actors::coin_exchange`, whose `HubAction::BuyCoins`
 carries the two deltas separately so a host cannot merge them by accident.
 
-The **item-acquisition caption** `FUN_801f90dc` is the one member that is not
-menu chrome. `DAT_801e46b0` is an **item id** and the two strings it draws are
+The "item-acquisition caption" once filed here as `FUN_801f90dc` is not a hub
+member at all. Every dump at `0x801F90DC` is `dump-extent-attribution.csv`
+class `misbased` - no image holds those bytes at that VA - and they are the
+menu overlay's (PROT 0899) shared item-info panel `FUN_801D0F1C` printed
+`0x281C0` high: the first 39 instructions match `overlay_menu_801d0f1c.txt`
+operand for operand, and that dump carries the whole 221-instruction body the
+Baka print stopped short of. `engine-ui`'s pause lists port it live. What the
+panel reads: `DAT_801e46b0` is an **item id** and the two strings it draws are
 the static `SCUS_942.54` item table's own record fields: the routine bases at
 `0x80074368` with a `0x0c` stride and reads words `1` and `2`, which is
 `0x8007436c + id * 0x0c` - the item-name pointer of
@@ -1219,9 +1226,7 @@ the eight-digit total at `_DAT_800845b4`, the Point Card counter of
 [`memory-map.md`](../reference/memory-map.md) - the same counter the shop's buy
 commit credits behind a `FUN_80042f4c(0xfe)` inventory-has gate
 ([`shop.md`](shop.md)). Party gold is `_DAT_8008459c` and the casino coin bank
-`_DAT_800845a4`; neither is read here. The Ghidra dump stops after that arm
-with no epilogue (`Control flow encountered bad instruction data`), so the
-body past the number draw is unrecovered.
+`_DAT_800845a4`; neither is read here.
 
 | Address | Role |
 |---|---|
@@ -1240,7 +1245,7 @@ body past the number draw is unrecovered.
 | `FUN_801f1fdc` | hub prompt SM (2 states): entry sting `FUN_80035b50(0x26)` + draw, then wait-confirm + deactivate |
 | `FUN_801f2134` | hub draw tick that clears the grid actor's `+0x3e` when `_DAT_8007bb80 == 0` |
 | `FUN_801f69ec` | shared minigame-hub 3D tile-grid GTE rasterizer: per visible tile (attr bit `0x1000`) of the scene map (`_DAT_1f8003ec + 0x8000`) runs RTPT + depth-cue and links a textured `POLY_GT` into the OT `_DAT_1f8003a0` - render-track |
-| `FUN_801f90dc` | **item-acquisition caption**: `DAT_801e46b0` is an item id into the static SCUS item table (see below) |
+| `0x801f90dc` | **not a hub routine**: a misbased print of the menu overlay's shared item-info panel `FUN_801D0F1C` (see below) |
 
 Provenance: each row corresponds to
 `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt` (byte-identical dumps

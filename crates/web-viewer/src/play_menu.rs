@@ -83,7 +83,7 @@ use legaia_engine_core::input::PadButton;
 use legaia_engine_core::inventory_use::{InventoryUseSession, InventoryUseState};
 use legaia_engine_core::options::OptionsSession;
 use legaia_engine_core::save_menu_atlas::{SaveMenuAtlas, build_atlas};
-use legaia_engine_core::save_screen::{SaveCommitKind, SaveScreenFlow};
+use legaia_engine_core::save_screen::{SaveCommitKind, SaveRefusal, SaveScreenFlow};
 use legaia_engine_core::save_select::{
     SaveRack, SaveSelectMode, SaveSelectSession, SelectPhase, SlotInfoMode,
 };
@@ -572,10 +572,39 @@ impl LegaiaRuntime {
             .is_some_and(|m| matches!(m.sub, Some(PlaySub::Session(_))))
     }
 
+    /// Whether the open sub-screen is the save-select **and** it is in a
+    /// phase retail composes over the title art rather than over black.
+    ///
+    /// Retail pivots to black once a slot is confirmed (`NowChecking` /
+    /// `SlotPreview`): the dialog, the portrait grid and the info panel are
+    /// drawn against black, never the title card. The native window makes the
+    /// same test inside `title_screen_sprite_draws`; this is the page's half,
+    /// kept here because `PlaySub` is private to this module.
+    pub(crate) fn play_menu_save_select_over_title(&self) -> bool {
+        use legaia_engine_core::save_select::SelectPhase;
+        let Some(menu) = self.play_menu.as_ref() else {
+            return false;
+        };
+        match &menu.sub {
+            Some(PlaySub::Session(sub)) => match sub.as_ref() {
+                FieldMenuSubsession::Save(s) => !matches!(
+                    s.phase(),
+                    SelectPhase::NowChecking { .. } | SelectPhase::SlotPreview { .. }
+                ),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     /// Close the menu (and any open sub-screen), restoring the scene mode the
     /// world ran when it opened - the browser twin of
     /// `BootSession::close_field_menu`.
     pub fn play_menu_close(&mut self) {
+        // The boot Continue hand-off parks its title session as the
+        // save-select backdrop; the menu closing is what ends it, whether the
+        // player loaded a save or backed out to the title card.
+        self.boot_title_backdrop = None;
         let Some(menu) = self.play_menu.take() else {
             return;
         };
@@ -743,6 +772,14 @@ impl LegaiaRuntime {
     ///   finishing) drops back to the top-level list.
     pub fn play_menu_input(&mut self, edge: u16) {
         if self.play_menu.is_none() {
+            return;
+        }
+        // A save-refusal notice owns the pad while it is up - the same
+        // pre-empt the native window makes, so the edge that dismisses the
+        // box does not also drive the menu behind it.
+        if let Some(m) = self.play_menu.as_mut()
+            && m.save_flow.tick_refusal(edge)
+        {
             return;
         }
         // Window 7 (spell level-up notice) owns the pad while armed: retail's
@@ -1189,6 +1226,19 @@ impl LegaiaRuntime {
         );
         sprites.extend(out.sprites);
         texts.extend(out.texts);
+        // A refused save commit lands the player back here, so this is where
+        // the notice is owed. Same two builders the native window draws.
+        if let Some(reason) = menu.save_flow.refusal() {
+            if let Some(rects) = assets.chrome_rects() {
+                sprites.extend(ui::save_refusal_panel_draws_for(rects, origin, scale));
+            }
+            texts.extend(ui::save_refusal_text_draws_for(
+                assets.font_ref(),
+                reason.message(),
+                origin,
+                scale,
+            ));
+        }
     }
 
     /// Status sub-screen: the main panel + the three satellite windows + the
@@ -1459,12 +1509,23 @@ impl LegaiaRuntime {
                             m.pending_load_scene = Some(scene);
                         }
                     }
-                    Err(e) => crate::console_log(&format!("play menu: card load failed: {e}")),
+                    Err(e) => {
+                        crate::console_log(&format!("play menu: card load failed: {e}"));
+                        if let Some(m) = self.play_menu.as_mut() {
+                            m.save_flow.refuse(SaveRefusal::CardReadFailed);
+                        }
+                    }
                 }
             }
             SaveCommitKind::Save => {
                 if let Err(e) = self.write_session_into_card(commit.port as usize, block) {
                     crate::console_log(&format!("play menu: card save failed: {e}"));
+                    // A console line is not an answer to the player: the
+                    // screen closed and nothing had happened. Raise the
+                    // shared refusal notice the native window raises.
+                    if let Some(m) = self.play_menu.as_mut() {
+                        m.save_flow.refuse(SaveRefusal::CardWriteFailed);
+                    }
                 }
             }
         }
@@ -1534,24 +1595,24 @@ impl LegaiaRuntime {
         // Retail draws every pill while browsing, but shows only the picked
         // one - relocated up under the Load panel - once a card is committed,
         // sliding it there over 16 frames (FUN_801E1C1C mode 2).
-        let (pills, pill_anchor): (Vec<u8>, (i32, i32)) = match phase {
-            SelectPhase::NowChecking { slot, .. }
-            | SelectPhase::SlotPreview { slot }
-            | SelectPhase::ConfirmOverwrite { slot, .. }
-            | SelectPhase::ConfirmDelete { slot, .. } => {
-                // Slide start = the pill's Browsing position (retail
-                // mode-2 start (160, 96) minus the inlined -0x18
-                // x-shift = the Browsing pill quad).
-                let pos = s.interpolate(
-                    ui::SAVE_SELECT_SLOT1_POS,
-                    ui::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
-                );
-                (vec![slot], pos)
-            }
-            _ => (
+        // Which pills, which cursor, which overlays - the shared decision
+        // (`save_select::phase_layout`) the native window also reads, so a
+        // phase cannot mean two screens.
+        let layout = legaia_engine_core::save_select::phase_layout(phase);
+        let (pills, pill_anchor): (Vec<u8>, (i32, i32)) = if layout.single_pill {
+            // Slide start = the pill's Browsing position (retail mode-2
+            // start (160, 96) minus the inlined -0x18 x-shift = the
+            // Browsing pill quad).
+            let pos = s.interpolate(
+                ui::SAVE_SELECT_SLOT1_POS,
+                ui::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
+            );
+            (vec![s.current_slot()], pos)
+        } else {
+            (
                 (0..s.slots().len().min(2) as u8).collect(),
                 ui::SAVE_SELECT_SLOT1_POS,
-            ),
+            )
         };
         sprites.extend(ui::save_select_chrome_draws_for(
             rects,
@@ -1562,7 +1623,7 @@ impl LegaiaRuntime {
         ));
         // The pill cursor is suppressed once a card is committed: the dialog
         // covers the pill row and the grid emits its own cursor.
-        if matches!(phase, SelectPhase::Browsing { .. }) && !s.slots().is_empty() {
+        if layout.pill_cursor && !s.slots().is_empty() {
             sprites.push(ui::save_select_cursor_draw_for(
                 rects,
                 (card as usize).min(1),
@@ -1572,7 +1633,7 @@ impl LegaiaRuntime {
         }
 
         match phase {
-            SelectPhase::NowChecking { .. } => {
+            _ if layout.now_checking => {
                 // Panel + text slide in together from the right, matching
                 // retail mode-0's (416, 112) -> (160, 112).
                 let pos_x = legaia_engine_core::save_select::interpolate_anim(
@@ -1587,9 +1648,7 @@ impl LegaiaRuntime {
                 ));
                 d.extend(ui::now_checking_text_draws_for(font, origin, scale, slide));
             }
-            SelectPhase::SlotPreview { .. }
-            | SelectPhase::ConfirmOverwrite { .. }
-            | SelectPhase::ConfirmDelete { .. } => {
+            _ if layout.preview => {
                 // The picked card's fifteen blocks as retail's 5x3 grid, plus
                 // the focused block's info panel sliding up underneath. The
                 // blocks come off the card read's cache - see
@@ -1653,11 +1712,12 @@ impl LegaiaRuntime {
 
         // The confirm prompt rides on top of everything, sliding up from
         // below the stage (retail mode 3, (160, 344) -> (160, 88)).
-        let confirm: Option<(&str, u8)> = match phase {
-            SelectPhase::ConfirmOverwrite { cursor, .. } => Some(("Do you wish to save?", cursor)),
-            SelectPhase::ConfirmDelete { cursor, .. } => Some(("Delete this save?", cursor)),
-            _ => None,
+        let prompt: (&str, u8) = match phase {
+            SelectPhase::ConfirmOverwrite { cursor, .. } => ("Do you wish to save?", cursor),
+            SelectPhase::ConfirmDelete { cursor, .. } => ("Delete this save?", cursor),
+            _ => ("", 0),
         };
+        let confirm: Option<(&str, u8)> = layout.confirm.then_some(prompt);
         if let Some((prompt, cursor)) = confirm {
             let y = legaia_engine_core::save_select::interpolate_anim(
                 (0, ui::CONFIRM_DIALOG_SLIDE_START_Y),

@@ -1,5 +1,5 @@
 //! Effect-VM slot pool: constants, master/child slot layout, script header,
-//! and the [`Pool`] runtime (`FUN_801DE914` init, `FUN_801DFDF8` spawn,
+//! and the [`Pool`] runtime (`FUN_801DE914` init, `FUN_801DFDF0` spawn,
 //! `FUN_801E0088` per-frame walker). Split out of `effect_vm.rs`.
 //!
 //! The faithful per-frame algebra lives in [`Pool::tick_retail`] (pass 1:
@@ -352,7 +352,7 @@ impl Pool {
             .filter(|&i| i < MAX_MASTER_SLOTS)
     }
 
-    /// Port of `FUN_801DFDF8` - spawn an effect at `world_pos` with `angle`
+    /// Port of `FUN_801DFDF0` - spawn an effect at `world_pos` with `angle`
     /// (12 bits used).
     ///
     /// Retail signature: `void(byte effect_id, short* world_pos, ushort
@@ -361,12 +361,16 @@ impl Pool {
     ///
     /// Returns `Some(slot)` on success, `None` if the pool is full or the
     /// global guard `_DAT_8007BD71 != -1` would fire (callers gate this).
-    /// The retail dispatch on `effect_id == 4` / `effect_id == 0x13` -
-    /// which calls the alternate handler `func_0x80050ed4` for "summon"
-    /// effects - is delegated to [`EffectHost::handle_summon`]; this port
-    /// handles only the generic case.
+    /// For `effect_id == 4` / `effect_id == 0x13` retail first calls
+    /// `func_0x80050ed4(world_pos, {0, angle, 0}, 0x801F5D90 / 0x801F5CF8,
+    /// 0x1000)` (`0x801DFE60..0x801DFE88`) - the move-VM actor spawner, so a
+    /// companion actor - and then **falls through** to the ordinary spawn at
+    /// `0x801DFE94`. The side call is delegated to
+    /// [`EffectHost::handle_summon`]; the effect itself is spawned either
+    /// way. (An earlier reading returned `None` after the hook, which lost
+    /// the effect for those two ids.)
     ///
-    /// PORT: FUN_801DFDF8
+    /// PORT: FUN_801DFDF0
     pub fn spawn<H: EffectHost + ?Sized>(
         &mut self,
         host: &mut H,
@@ -376,13 +380,13 @@ impl Pool {
         script: &EffectScript,
         children: &[ChildSprite],
     ) -> Option<usize> {
-        // Special-case effect IDs route to the streaming-summon handler,
-        // which has its own buffer pool. We consult the host instead of
-        // hard-wiring the constants, so engines can route summon IDs by
-        // table.
+        // Special-case effect IDs make a side call (`func_0x80050ed4`)
+        // before the ordinary spawn - retail's `jal` at `0x801DFE84`
+        // returns into `0x801DFE94`, the same allocation path every other
+        // id takes. The host routes the ids so engines need not hard-wire
+        // the constants.
         if host.is_summon_effect(effect_id) {
             host.handle_summon(effect_id, world_pos, angle);
-            return None;
         }
 
         let slot = self.allocate_master()?;

@@ -156,8 +156,13 @@ three `sb zero, 4/5/6` stores at `0x801E7674` leave its colour black.
 `tpage = 0x1E` selects semi-transparency mode `ABR = (0x1E >> 5) & 3 = 0`,
 i.e. `0.5*back + 0.5*front`; against a black front that halves the
 framebuffer. So the pass is a **50% screen darken** drawn behind the top-view
-debug panels, not an animation step. The two `DR_MODE` packets exist to take
-dither off across the blend quad and restore it after.
+debug panels, not an animation step. The table is **posting** order (the
+three `jal 0x8003D2C4` at `0x801E7620`, `0x801E7684`, `0x801E76B8`), and
+`AddPrim` `FUN_8003D2C4` inserts at the head of the OT entry, so the GPU runs
+them in reverse: the `dtd = 1` `DR_MODE`, the quad, then the `dtd = 0` one.
+The quad is drawn **with dither on** and dither is left off behind it - not
+"off across the quad and restored after", which read posting order as draw
+order.
 
 The quad's four vertices are literals at `0x801E764C..0x801E7670`: `(0, -4)`,
 `(320, -4)`, `(0, 224)`, `(320, 224)` - the full NTSC draw area, started four
@@ -379,7 +384,7 @@ including the default arm, so a record is always consumed exactly once.
 | 5 | Close every panel (`FUN_80035A4C`). |
 | 6 | Zero the window object's `+0x20` halfword. |
 | 8 | Retire the panel's actor (`FUN_800319A8`). |
-| 9 | Slide (`FUN_800358C0`) to the operand position, or to the descriptor position when the operand is zero. |
+| 9 | Snap (`FUN_800358C0` writes source and target alike and clears `+0x20`) to the operand position, or to the descriptor position when the operand is zero. |
 | 10 | Retire and respawn, sliding back to the live object's own `+0x0A` / `+0x0C`. |
 | 12 | Resize the party panel, then recurse into the nested script at `0x801F3170`. |
 | 7, 11, 13, `> 13` | Shared default - the record is consumed and nothing happens. |
@@ -1178,11 +1183,13 @@ landed:
   spine flag-writer capture harness is the closer. See
   [`functions.md`](../reference/functions.md).
 - **`0x142`** (the Caruban beat / dolk-dolk2 switch): writer **pinned**.
-  The SETs are plain field-VM `51 42` script bytes in the rikuroa
-  streaming-carrier MAN (extraction 157) - `P1[10..12]` plus the
-  post-victory record `P2[50]` (C1 = `0x142` itself, the self-latching
-  one-shot) - re-asserted by dolk2's carrier `P1[0..1]` and cleared by
-  dolk's bundle `P1[26]`. The firehose capture caught the write live
+  The SET is plain field-VM `51 42` script bytes in the rikuroa
+  streaming-carrier MAN (extraction 157) - the post-victory record
+  `P2[50]` (C1 = `0x142` itself, the self-latching one-shot) - re-asserted
+  on entry by dolk2's carrier `P1[0]`. That carrier's `P1[10..12]`, dolk2's
+  `P1[1]` and dolk's `P1[26]` also carry the op, but each is an arm of a
+  developer flag menu
+  ([script-vm.md](script-vm.md#shipped-scene-scripts-carry-developer-flag-setting-menus)). The firehose capture caught the write live
   (`ra 0x801E3598`, the dispatcher's own `0x5x` SET arm) and the resident
   script heap byte-matches the carrier. The old corpus-negative stood
   because no census walked the streaming variant MANs (and the earlier
@@ -2940,12 +2947,12 @@ function called from a 1332-byte parameter-prep wrapper:
 |---|---|
 | `FUN_801D1344` | The field overlay's **player master frame handler** (1332 bytes; function-pointer-only entry, Ghidra `incoming=0`) - the gate-arm forward is one early leg of it: when `_DAT_8007BCD0` or `_D4` is non-zero it forwards the three globals `_DAT_8007BCD0/_D4/_D8` to `FUN_801D8258` as the scale / step / OT-layer params at PC `0x801D1470: jal 0x801D8258`. Every capture at this VA (world_map / world_map_walk / cutscene_dialogue / dialog) holds this same instruction-identical body - the walk view runs the field overlay; an earlier note here that "the dialog overlay holds a different function at this VA" is falsified by the dump diff. Engine counterpart: the Field arm of `World::tick` (scoped `PORT: FUN_801d1344`). |
 | `FUN_801D8258` | 40-byte gate setter. Writes `_DAT_801F351C = 1`, then `_DAT_801F3520 = param_2`, `_DAT_801F3524 = param_3`, `_DAT_801F3528 = param_4` - the inputs the emitter consumes on its next run. |
-| `FUN_801C2B2C` | Code-identical relocation copy of `FUN_801D1344` in the 0897 field overlay. Same body, different load address; calls `jal 0x801D8258` at PC `0x801C2C58`. Active during field-mode entry transitions. |
+| `0x801C2B2C` (phantom VA) | **Not a relocation copy.** It is `FUN_801D1344` printed `0xE818` low (PROT 0897 bases at `0x801CE818`; the dump was imported at `0x801C0000`), so its "`jal 0x801D8258` at `0x801C2C58`" is the same call `FUN_801D1344` makes at `0x801D1470`. PSX overlays are not relocated. See [`overlay-va-aliases.md`](../reference/overlay-va-aliases.md). |
 
 The gate flag `_DAT_801F351C` is in the persistent `0x801F0000+` region,
-so it survives overlay swaps. The flag is shared - both the world-map
-overlay's `FUN_801D7EA0` and the 0897 field overlay's
-`FUN_801C9688` read + clear it.
+so it survives overlay swaps. One routine reads and clears it,
+`FUN_801D7EA0`; the "0897 sibling `FUN_801C9688`" earlier pages named is the
+same body printed `0xE818` low, compared with itself.
 
 ## Globals used
 
@@ -2961,7 +2968,7 @@ overlay's `FUN_801D7EA0` and the 0897 field overlay's
 | `_DAT_8007B6B8` | Game-mode discriminator (value `0x20` = alternate sprite path). |
 | `_DAT_80083808` | World-map entity activation gate. |
 | `_DAT_8007BC3C` | World-map submode register. `FUN_80016444` gates its `jal 0x801D7EA0` on this being `2`. Six SCUS writers (`FUN_80016230` / `FUN_80025980` / `FUN_80025DA0` / `FUN_8001D424`). |
-| `_DAT_801F351C` | One-shot gate flag for the POLY_FT4 batch emitter. `FUN_801D8258` sets it to `1`; `FUN_801D7EA0` (and the 0897 sibling `FUN_801C9688`) clear it after one emission. Lives in the persistent `0x801F0000+` region and survives overlay swaps. |
+| `_DAT_801F351C` | One-shot gate flag for the POLY_FT4 batch emitter. `FUN_801D8258` sets it to `1`; `FUN_801D7EA0` clears it after one emission (`0x801C9688` is the same body at a phantom VA, not a sibling). Lives in the persistent `0x801F0000+` region and survives overlay swaps. |
 | `_DAT_801F3518` | Running camera angle. Advanced by `DAT_1F800393 * _DAT_801F3524` per `FUN_801D7EA0` call; masked to 4096 entries when indexing the **sine** LUT at `0x8007B81C`. |
 | `_DAT_801F3520` | Render scale / range. Sourced from `_DAT_8007BCD4` via `FUN_801D8258`'s `param_2`. The emitter uses it both as `local_3c` and `local_3c / 5`. |
 | `_DAT_801F3524` | Angle step per frame tick. Sourced from `_DAT_8007BCD8` via `FUN_801D8258`'s `param_3`. |

@@ -665,6 +665,13 @@ pub struct BattleHudFrame<'a> {
     /// party member's action is aimed at and its element badge, on a blue
     /// plate whose right cap ends at `x = 312`, on the bar's row.
     pub target_plaque: Option<(&'a str, Option<u8>)>,
+    /// The full-width message bar (HUD element `0x5B`, placement record 91 -
+    /// `(16, 236)` sliding to `(16, 194)`, width 288): the steal / stolen-item
+    /// caption `engine-core::battle_hud::battle_message_bar` names. It takes
+    /// the active-actor bar's own seat, so while it is up neither that bar
+    /// nor the target plaque on the same row draws
+    /// (`player_steal_skeleton_banner` shows the caption alone on the row).
+    pub message_bar: Option<&'a str>,
     /// The ring's AP plate (placement record 82 at `(208, 172)`) and the
     /// value it shows - the acting member's Spirit gauge - or `None` when
     /// the plate is off. Drawn from the status screen's own gauge pieces,
@@ -1243,8 +1250,10 @@ pub fn battle_hud_draws_for(
     // party surfaces are **mutually exclusive**: while the bar owns the
     // screen the whole roster cluster is parked off-screen, so a frame shows
     // one or the other and never both.
+    let message_bar = frame.message_bar.filter(|m| !m.is_empty());
     let bar_member = frame
         .active_slot
+        .filter(|_| message_bar.is_none())
         .and_then(|a| live_party.iter().find(|(i, _)| *i == a as usize).copied());
 
     // Rows a host-drawn box claims this frame, skin included, and the row
@@ -1591,7 +1600,10 @@ pub fn battle_hud_draws_for(
     // at 312, rising to the bar's row; the name payload carries the
     // element-badge escape in front of the name, so the interior follows
     // the same badge law as the top-left plaque.
-    if let Some((name, badge_index)) = frame.target_plaque.filter(|(n, _)| !n.is_empty()) {
+    if let Some((name, badge_index)) = frame
+        .target_plaque
+        .filter(|(n, _)| !n.is_empty() && message_bar.is_none())
+    {
         let name_w = font.layout_ascii(name).advance_x as i32;
         let badge = badge_index.and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
         let lead = if badge.is_some() {
@@ -1608,6 +1620,16 @@ pub fn battle_hud_draws_for(
             stage_sprite(&mut sprites, src, content_x, content_y);
         }
         stage_text(&mut text, font, name, content_x + lead, content_y, white);
+    }
+
+    // ---- The message bar ----
+    //
+    // Placement record 91: the same content box as the active-actor bar
+    // (`(16, 194)`, interior 288) on the same blue plate run, one line of
+    // glyphs on the bar's name pen.
+    if let Some(message) = message_bar.filter(|_| !bar_covered) {
+        plate_run(&mut text, &mut sprites, BAR_X, BAR_Y, BAR_INTERIOR_W, false);
+        stage_text(&mut text, font, message, BAR_NAME.0, BAR_NAME.1, white);
     }
 
     // ---- The ring's AP plate ----

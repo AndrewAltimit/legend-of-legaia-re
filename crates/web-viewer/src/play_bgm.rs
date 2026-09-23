@@ -9,6 +9,9 @@
 //! body, so they can be asserted off-wasm - the director itself needs a
 //! `WebAudioOut`, which only exists in a browser.
 
+use crate::runtime::LegaiaRuntime;
+use wasm_bindgen::prelude::*;
+
 #[cfg(target_arch = "wasm32")]
 use legaia_engine_audio::WebAudioOut;
 
@@ -218,6 +221,57 @@ impl legaia_engine_core::scene::BgmDirector for WebBgmDirector<'_> {
             *self.last_started = None;
         }
         self.out.set_sequencer_paused(false);
+    }
+}
+
+/// The title -> load hand-off, as one call.
+///
+/// The native window runs `bgm.stop()` followed by
+/// `BootSession::restore_field_bgm()` the moment a title-screen save-select
+/// commits: the title theme has to let go of the score, and the loaded save's
+/// own op-`0x35` track (`World::audio.current_bgm`) has to come back, because
+/// the field VM will not re-emit a start for music that was already playing
+/// when the save was written.
+///
+/// The browser play page did neither, so a load from the title left the title
+/// theme running underneath the loaded scene - for as long as that scene's
+/// script went without a music event, which in a town is the whole visit.
+///
+/// Returns whether a track is sounding afterwards; `false` covers both "audio
+/// is down" and "the save carried no global-pool track", and in the second
+/// case the stop still ran, which is the native behaviour too (silence, not a
+/// stale theme).
+#[wasm_bindgen]
+impl LegaiaRuntime {
+    pub fn play_bgm_title_handoff(&mut self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use legaia_engine_core::scene::BgmDirector;
+            let Some(out) = self.audio_out.as_ref() else {
+                return false;
+            };
+            let mut director = WebBgmDirector {
+                out,
+                bank: &mut self.bgm_bank,
+                last_started: &mut self.bgm_last_started,
+            };
+            director.stop();
+            let Some(host) = self.scene_host.as_ref() else {
+                return false;
+            };
+            let Some(id) = host.world.audio.current_bgm else {
+                return false;
+            };
+            let Ok(Some(entry)) = host.music_bank_entry_bytes(id) else {
+                return false;
+            };
+            director.start_owned_vab(id, &entry);
+            self.bgm_last_started == Some(id)
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            false
+        }
     }
 }
 

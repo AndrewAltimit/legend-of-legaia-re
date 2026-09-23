@@ -153,7 +153,7 @@ pub trait ActionValidatorHost {
     /// that reach it by absolute address both treat it as a **frame
     /// countdown** - one decrements it by 1 and acts only on the transition to
     /// zero, the other refuses to proceed while it is non-zero. Its writer
-    /// `FUN_80046870` (`crate::battle_helpers::advance_gauge`) tops it up by
+    /// `FUN_80046870` (`crate::battle_helpers::top_up_cooldown`) tops it up by
     /// `0x40` and caps it at `0x100`. That is a cooldown window measured in
     /// frames, so `0xE0` is a threshold on *remaining time*, not a capacity.
     ///

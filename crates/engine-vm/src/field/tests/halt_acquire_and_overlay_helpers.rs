@@ -405,52 +405,83 @@ fn op_4c_n_e_sub_4_bbox_inside_advances_8_bytes() {
 }
 
 #[test]
-fn op_4c_n_e_sub_4_bbox_outside_halts_at_pc() {
-    let bytecode = [0x4Cu8, 0xE4, 0x10, 0x10, 0x20, 0x20, 0x00, 0x00, 0x00];
+fn op_4c_n_e_sub_4_bbox_outside_takes_the_relative_skip() {
+    // Outside -> the 0x801E3614 exit label: s8 = pc + 8, then + skip - 2,
+    // i.e. pc + 6 + skip (not a halt).
+    let bytecode = [0x4Cu8, 0xE4, 0x10, 0x10, 0x20, 0x20, 0x10, 0x00, 0x00];
     let mut host = TestHost {
         n_e_sub_4_outside: true,
         ..TestHost::default()
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert_eq!(r, StepResult::Advance { next_pc: 6 + 0x10 });
 }
 
 #[test]
-fn op_4c_n_e_sub_4_bbox_tile_center_math_for_low_byte() {
-    // Operand byte 0x10 → tile-center: (0x10 << 7) | 0x40 = 0x840
-    // (high bit clear, so no extra +0x40).
+fn op_4c_n_e_sub_4_bbox_corners_low_byte() {
+    // Operand byte 0x10 (high bit clear): min corner 0x800 + 0x20,
+    // max corner 0x800 + 0x60 (0x801E31D4..0x801E3208).
     let bytecode = [0x4Cu8, 0xE4, 0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let _ = step(&mut host, &mut ctx, &bytecode, 0);
     let bboxes = host.n_e_sub_4_bboxes.borrow();
     assert_eq!(bboxes.len(), 1);
-    // All four corners should be 0x840 = 2112.
-    assert_eq!(bboxes[0], [0x840, 0x840, 0x840, 0x840]);
+    assert_eq!(bboxes[0], [0x820, 0x820, 0x860, 0x860]);
 }
 
 #[test]
-fn op_4c_n_e_sub_4_bbox_tile_center_high_bit_adds_0x40() {
-    // Operand byte 0x90: low 7 bits are 0x10 → base 0x840. High bit set
-    // → extra +0x40 = 0x880.
+fn op_4c_n_e_sub_4_bbox_corners_high_bit() {
+    // Operand byte 0x90: base 0x800; high bit moves min to +0x60 and max
+    // to +0xA0 (0x801E320C..0x801E3234).
     let bytecode = [0x4Cu8, 0xE4, 0x90, 0x90, 0x90, 0x90, 0x00, 0x00, 0x00];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let _ = step(&mut host, &mut ctx, &bytecode, 0);
     let bboxes = host.n_e_sub_4_bboxes.borrow();
-    assert_eq!(bboxes[0], [0x880, 0x880, 0x880, 0x880]);
+    assert_eq!(bboxes[0], [0x860, 0x860, 0x8A0, 0x8A0]);
 }
 
 #[test]
-fn op_4c_n_e_sub_4_bbox_zero_byte_yields_zero() {
-    // Operand byte 0x00 → 0 (special case in tile-center math).
+fn op_4c_n_e_sub_4_bbox_zero_byte_is_not_special() {
+    // Retail has no b == 0 short-circuit here: byte 0 is min 0x20 / max 0x60.
     let bytecode = [0x4Cu8, 0xE4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let _ = step(&mut host, &mut ctx, &bytecode, 0);
     let bboxes = host.n_e_sub_4_bboxes.borrow();
-    assert_eq!(bboxes[0], [0, 0, 0, 0]);
+    assert_eq!(bboxes[0], [0x20, 0x20, 0x60, 0x60]);
+}
+
+#[test]
+fn op_4c_n_e_sub_4_default_host_runs_retails_test() {
+    struct Plain;
+    impl FieldHost for Plain {
+        fn global_flags(&self) -> u32 {
+            0
+        }
+        fn set_global_flags(&mut self, _value: u32) {}
+        fn frame_delta(&self) -> u16 {
+            1
+        }
+    }
+    // Box bytes 1..2 on both axes: x, z in [0xA0, 0x160].
+    let bytecode = [0x4Cu8, 0xE4, 0x01, 0x01, 0x02, 0x02, 0x04, 0x00];
+    let mut ctx = FieldCtx {
+        world_x: 0x100,
+        world_z: 0x100,
+        ..FieldCtx::default()
+    };
+    assert_eq!(
+        step(&mut Plain, &mut ctx, &bytecode, 0),
+        StepResult::Advance { next_pc: 8 }
+    );
+    ctx.world_x = 0x161;
+    assert_eq!(
+        step(&mut Plain, &mut ctx, &bytecode, 0),
+        StepResult::Advance { next_pc: 6 + 4 }
+    );
 }
 
 #[test]

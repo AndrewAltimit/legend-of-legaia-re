@@ -2543,3 +2543,206 @@ expected_game_mode = 0x03
 expected_active_scene = "teien"
 description = "Free field run inside the Sebucus garden (scene teien), captured a minute of field frames past the transition fade the corpus's only other teien field state sits in. The frame's live object grid at *(0x1F8003EC)+0x8000 holds 451 non-zero cells - 400 with the ground-draw bit 0x1000, 53 with 0x2000, 45 with 0x0800 and no 0x1000 - and PROT 0900 is byte-resident at slot B, so the ground pass FUN_801F6D48 can be breakpointed straight from the load."
 topics = ["field", "teien", "object grid", "ground pass", "FUN_801F6D48", "PROT 0900", "probe state"]
+
+# ----------------------------------------------------------------------
+# Memory-card cold-boot field anchors (the "card tier" states).
+#
+# These four are not save-state derivatives: each was produced by booting
+# the disc from power-on, driving the title front end through CONTINUE
+# into the memory-card load screen, loading one save off a progression
+# card and checkpointing on the first field-run frame
+# (scripts/pcsx-redux/autorun_boot_continue.lua). Everything the loader
+# builds at load time therefore comes off the disc under test, which a
+# state-derived anchor cannot promise.
+#
+# The card is staged down to a single save first, AND that save's
+# product-code suffix is re-stamped to `-00`. The load grid places a save
+# by its own slot number - the suffix - not by the card block it occupies,
+# so without the re-stamp only a `...PRO-00` save lands under the cursor
+# and the calibrated input ladder misses every other one.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "vozz_field_card_boot"
+backup_fingerprint = "d57b7ca197ecc34e23c6cfccff36b3e6d0942f362ea1bcce338fdbb8040e8ec5"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+description = "Voz Forest free field run, reached by a cold boot + memory-card load rather than from another state. Player at world (13606, 8760). The scene is one of the six that issue the field-VM actor clone (`4C 14`), and its sixteen sites are the disc's only ones at rate 0x0199."
+topics = ["field", "vozz", "card boot", "actor clone", "4C 14", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "conc_field_card_boot"
+backup_fingerprint = "085ec69470c8ef854acf5876f8132351a9fa97ab37fe113465b71dd39d309704"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc"
+description = "Conkram town free field run at the late-game save, reached by a cold boot + memory-card load. Player at world (2274, 12506). The nearest catalogued state to the `conc2` -> `juui1` door, which is the one op-0x3F crossing into the Juggernaut interior."
+topics = ["field", "conc", "Conkram", "card boot", "juui1", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "chitei2_field_card_boot"
+backup_fingerprint = "5ea350dfb89735177c628ab1a30f2424fc5ddfc0556e1a853f02a0dfeedcf5c0"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "chitei2"
+description = "Underground Octam free field run, reached by a cold boot + memory-card load. Player at world (6272, 4826). One of the Karisto spokes no capture had ever entered, so the region story-flag families it latches were unobserved."
+topics = ["field", "chitei2", "Karisto", "story flags", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "retona_field_card_boot"
+backup_fingerprint = "cb69ed5a9435041e9dabc83d29627aa7b7111446896305e9494178ffa63fcca3"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "retona"
+description = "Mt. Letona free field run, reached by a cold boot + memory-card load. Player at world (8536, 12638). The save one step before the `retock` beats, so a play-forward from here fires that region's entry family organically instead of finding it pre-latched."
+topics = ["field", "retona", "retock", "story flags", "card boot", "probe state"]
+
+# ----------------------------------------------------------------------
+# Pre-entry card-boot anchor.
+#
+# The card-tier anchors above are checkpointed on the first FIELD frame,
+# which is already past everything the scene entry did. A question about
+# what the entry itself writes needs an anchor BEFORE it, so this one is
+# checkpointed on the memory-card load screen with the CONTINUE ladder's
+# confirm already pressed: loading it replays the save block's restore,
+# the scene load and the entry script under whatever watches a probe arms
+# first.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "conc_pre_entry_card_boot"
+backup_fingerprint = "b0eef610f26d37763fdf8c375137969e28733a8b1eee11d4fa3a7ab8ea21dfe5"
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "opdeene"
+description = "Memory-card load screen with the `conc` save's confirm already taken, ~450 vsyncs before the scene settles into field mode. The pre-entry sibling of `conc_field_card_boot`: a watch armed on this state sees the save-block restore, both of conc's entry-time story-flag clears and the entry script's first re-arm passes."
+topics = ["field", "conc", "card boot", "story flags", "scene entry", "probe state"]
+
+# ----------------------------------------------------------------------
+# Story-ladder card-boot anchors (playthrough-ladder-pro00-14.mcr blocks
+# 8 / 10 / 11 / 12 / 13, endgame-7saves block 2). Same cold boot +
+# memory-card CONTINUE as the anchors above, one per save, so each
+# chapter-2 spoke has a state standing just before its own story beats:
+# `retock` (block 8), `kor5` (block 10 - the 0x43A -> 0x436 -> 0x6C4
+# chain is still all clear here), `korb2` (block 11 - 0x3FB still clear,
+# the save before `doman` sets it), `doman` (block 12) and the late-game
+# `rugi` (endgame block 2). The three `_pre_entry` rows are the
+# load-screen siblings (checkpointed with the CONTINUE confirm taken), for
+# watches that must see the scene entry itself.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "retock_field_card_boot"
+backup_fingerprint = "ec0b6122f9b1ea9173ed288562eaf40afa72cff6d12afb3fd46c92a06df331e2"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "retock"
+description = "Retock free field run from the story-ladder card (block 8), cold boot + memory-card load. Player at world (15280, 10960). The spoke whose entry script latches 0x493 / 0x01F / 0x52A and clears 0x19B..0x1AA."
+topics = ["field", "retock", "story flags", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "kor5_field_card_boot"
+backup_fingerprint = "1f81d55a7fe5f8ae9bf4a85a8ad95be1f3b270572780a6883d4499e93e36ca5b"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor5"
+description = "Biron Monastery (kor5) free field run from the story-ladder card (block 10), cold boot + memory-card load. Player at world (3674, 4214). Flags 0x43A / 0x436 / 0x464 / 0x6C4 all clear: the whole partition-2 chain P2[3] -> P2[4] -> P2[5] -> P2[8] is still ahead."
+topics = ["field", "kor5", "story flags", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "korb2_field_card_boot"
+backup_fingerprint = "a598c9057396248355089ec287132f3bc39b912e801de4efd7dbe548ff455ba4"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "korb2"
+description = "korb2 free field run from the story-ladder card (block 11), cold boot + memory-card load. Player at world (9536, 13146). kor5's chain is complete here (0x6C4 set) and doman's 0x3FB is still clear - the save before doman P2[4] sets it."
+topics = ["field", "korb2", "doman", "story flags", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "doman_field_card_boot"
+backup_fingerprint = "0ef4316a9350a4300ff142ef94143cb574746283378f0ea6b523c9dcb03962a2"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "doman"
+description = "Doman free field run from the story-ladder card (block 12), cold boot + memory-card load. Player at world (9818, 14846). 0x3FB is already set, so doman P2[4] (walk-on tiles (67, 108..110), C1 {0x3FB}) no longer spawns without a flag poke."
+topics = ["field", "doman", "story flags", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "rugi_field_card_boot"
+backup_fingerprint = "081f939ef49276ce28eeb752d7ca81be94795f2f70522b2e4ee9f37c161fbdab"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "rugi"
+description = "Rugi free field run from the endgame card (playthrough-endgame-7saves block 2), cold boot + memory-card load. Player at world (10918, 8416). The organic route to juui1 from here passes the Rogue boss (rugi P2[39])."
+topics = ["field", "rugi", "juui1", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "retock_pre_entry_card_boot"
+backup_fingerprint = "eb14d449287e8a73f2ea13c87c489e60c6b8fce6e98c891b84a2d56532d9716c"
+phase = "field"
+expected_game_mode = 0x02
+expected_active_scene = "opdeene"
+description = "Memory-card load with the story-ladder block-8 save's CONTINUE confirm taken; the scene settles into `retock` about 40 vsyncs after load. Pre-entry sibling of retock_field_card_boot."
+topics = ["field", "retock", "card boot", "story flags", "scene entry", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "doman_pre_entry_card_boot"
+backup_fingerprint = "319f004170bca04dba9ce7f6f81b281a6810810d0ae1aa21d515e3a7d272406e"
+phase = "field"
+expected_game_mode = 0x02
+expected_active_scene = "opdeene"
+description = "Memory-card load with the story-ladder block-12 save's CONTINUE confirm taken; the scene settles into `doman` about 40 vsyncs after load. Pre-entry sibling of doman_field_card_boot."
+topics = ["field", "doman", "card boot", "story flags", "scene entry", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "nilboa_pre_entry_card_boot"
+backup_fingerprint = "3fe32661b85a44aa044586d410089f2047357de52bf0799918fbb8fd7d47d5c5"
+phase = "field"
+expected_game_mode = 0x02
+expected_active_scene = "opdeene"
+description = "Memory-card load with the story-ladder block-13 save's CONTINUE confirm taken; the scene settles into `nilboa` about 40 vsyncs after load."
+topics = ["field", "nilboa", "card boot", "story flags", "scene entry", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "kor5_post_43a_checkpoint"
+backup_fingerprint = "073eab966cabfa6f7e547bf107088152e854b3f767ab118585e6cac1c42a9dbf"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor5"
+description = "kor5 300 vsyncs after P2[3] latches 0x43A, reached from kor5_field_card_boot by tile pokes (captures/w7c-0921/kor5_k2). P2[3] is parked and the player, still under the movement lock (+0x10 bit 0x80000) for about 120 more vsyncs, was poked onto P2[4]'s tile (32, 41) during the lock - so the last-tile pair already reads (32, 41) and standing there fires nothing; after the lock clears, crossing (32, 40) then (32, 41) dispatches P2[4]. 0x436 / 0x464 / 0x6C4 still clear."
+topics = ["field", "kor5", "story flags", "walk-on trigger", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "doman_arrival_from_korb2"
+backup_fingerprint = "dba64ecf1f6aa55b2270360d92cf4d19ca2b1e3e4d9de113c031cfcd45279a66"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "doman"
+description = "The map03 -> doman crossing, caught about 60 vsyncs before doman loads, on a route walked by tile pokes from korb2_field_card_boot (korb2 -> kor -> korout -> map03 -> doman; captures/w7c-0921/doman_org). The scene label already reads doman while the player still stands on map03's doman portal tile (63, 69). 0x3FB is clear, so doman P2[4] (walk-on (67, 108..110), C1 {0x3FB}) is still live - the organic pre-entry state card block 12 lacks."
+topics = ["field", "doman", "map03", "story flags", "scene entry", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "son_arrival_from_doman"
+backup_fingerprint = "7a80d3229a1ebaf5225e080ee2144c95ce5e5b04949927e84b4ebe16bb3baa52"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "son"
+description = "The map03 -> son crossing, caught just before son loads, on a route walked by tile pokes from doman_field_card_boot (doman -> map03 -> son; captures/w7c-0921/son_org). The scene label already reads son while the player is still on map03, at world (6272, 11520) where the portal record P2[13] (tile (45, 84)) left it. Loading it replays son's entry: the entry script clears 0x3A6 / 0x3A7 / 0x3A8 and the arrival seat (8, 9) fires P2[5], which sets 0x60D."
+topics = ["field", "son", "map03", "story flags", "scene entry", "probe state"]

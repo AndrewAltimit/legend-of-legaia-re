@@ -137,34 +137,49 @@ impl FadeState {
     /// which is why they persist past their ramp), `0` ends the fade on the
     /// landing frame, `n > 0` holds `n` more frames.
     ///
-    /// The per-frame arithmetic is still the engine's linear integrator rather
-    /// than [`crate::fade_ramp`]'s vsync-scaled accumulator; the lifetime
-    /// words are retail's.
+    /// One retail vsync - the step every host takes, and the whole of
+    /// [`Self::step_vsyncs`] at `dt = 1`.
     pub fn step(&mut self) -> bool {
-        if self.delay_left > 0 {
-            self.delay_left -= 1;
-            return true;
-        }
-        if self.elapsed < self.duration {
-            self.elapsed += 1;
-            if self.elapsed >= self.duration {
-                self.current_q6 = self.end_q6;
-            } else {
-                for c in 0..3 {
-                    self.current_q6[c] = self.current_q6[c].wrapping_add(self.delta_q6[c]);
-                }
-                return true;
-            }
-        }
-        // Landed: run the hold.
-        if self.hold_left < 0 {
-            return true;
-        }
-        if self.hold_left > 0 {
-            self.hold_left -= 1;
-            return true;
-        }
-        false
+        self.step_vsyncs(1)
+    }
+
+    /// Advance by `dt` vsyncs through the **retail** ramp kernel
+    /// ([`crate::fade_ramp::tick_fade_ramp`]), which is what this state's
+    /// block is: the arithmetic is `FUN_80020C14`'s, and this method is only
+    /// the representation shim - retail counts the duration *down* inside the
+    /// block, the engine keeps `elapsed` / `duration` so `progress()` and
+    /// `finished()` read naturally, so the two views are converted around the
+    /// call.
+    ///
+    /// This replaced a linear integrator that latched `current = end` the
+    /// frame `elapsed` reached `duration`. Retail does not latch: it keeps
+    /// accumulating every frame - through the hold as well - and each channel
+    /// clamps onto the target when the **delta's sign** says it overshot
+    /// (`0x80020CE8..0x80020D90`). Both end on the target; retail arrives a
+    /// frame or two later on a truncated delta, and that trajectory is the
+    /// one the port now takes.
+    pub fn step_vsyncs(&mut self, dt: u8) -> bool {
+        use crate::fade_ramp::{FadeRamp, tick_fade_ramp};
+        let mut ramp = FadeRamp::new(
+            self.current_q6,
+            self.end_q6,
+            self.delta_q6,
+            self.kind,
+            self.delay_left,
+            self.hold_left,
+            self.duration.saturating_sub(self.elapsed),
+            self.mode[2],
+        );
+        let alive = tick_fade_ramp(&mut ramp, dt).is_some() || !ramp.flags.finished;
+        // Retail leaves the delay negative once it lands; the engine's
+        // `visible()` reads `<= 0`, so either sign works, but keeping it at
+        // the floor keeps the field's range as documented.
+        self.delay_left = ramp.delay.max(0);
+        self.hold_left = ramp.hold;
+        self.current_q6 = ramp.current_q6;
+        self.elapsed = (i32::from(self.duration) - i32::from(ramp.duration))
+            .clamp(0, i32::from(self.duration)) as i16;
+        alive
     }
 
     /// `true` once the start delay has run - retail's tick returns `-1`
@@ -596,34 +611,53 @@ mod tests {
         assert_eq!(f.rgb(), [0xFF, 0xFF, 0xFF]);
     }
 
+    /// The delay and hold counters, on retail's own frame boundaries.
+    ///
+    /// Both are off by one from the obvious reading, and in opposite
+    /// directions - which is why they are asserted frame by frame rather than
+    /// by a loop count:
+    ///
+    /// * a delay of `3` suppresses **two** frames, not three. Retail's guard
+    ///   is `if (delay > 0) { delay -= dt; if (delay > 0) return; }`, so the
+    ///   frame that drops the counter to `0` falls through and ramps
+    ///   (`0x80020C20..0x80020C54`).
+    /// * a hold of `0` does **not** end on the landing frame. The `ramped`
+    ///   test is `duration < 0`, so the frame that brings the countdown to
+    ///   exactly `0` is still a live ramp frame and the hold starts the frame
+    ///   after (`0x80020C5C..0x80020CD0`).
     #[test]
-    fn a_zero_hold_drops_on_the_landing_frame_and_a_delay_defers_the_ramp() {
+    fn a_zero_hold_drops_a_frame_after_the_landing_and_a_delay_defers_the_ramp() {
         let mut t = escape_fade_template();
         t.duration = 4;
         t.mode = [3, 0, 0];
         let mut f = FadeState::load(&t);
-        // Three frames of delay: alive, invisible, colour untouched.
-        for _ in 0..3 {
+        // Two suppressed frames: alive, invisible, colour untouched.
+        for _ in 0..2 {
             assert!(!f.visible());
             assert!(f.step());
             assert_eq!(f.rgb(), [0, 0, 0]);
         }
+        // The third frame clears the delay and ramps in the same call.
+        assert!(!f.visible());
+        assert!(f.step());
         assert!(f.visible());
-        // Four ramp frames; the fourth lands and, with hold 0, ends the fade.
+        assert_eq!(f.rgb(), [0x3F, 0x3F, 0x3F], "one step of a four-frame ramp");
+        // Three more ramp frames land it, and the frame after that retires a
+        // zero hold.
         assert!(f.step());
         assert!(f.step());
         assert!(f.step());
-        assert!(!f.step(), "hold 0 ends on the landing frame");
         assert_eq!(f.rgb(), [0xFF, 0xFF, 0xFF]);
+        assert!(f.finished());
+        assert!(!f.step(), "hold 0 retires the frame after the ramp lands");
         // A positive hold keeps it alive that many frames more.
         t.mode = [0, 2, 0];
         let mut f = FadeState::load(&t);
-        for _ in 0..3 {
-            assert!(f.step());
+        for _ in 0..4 {
+            assert!(f.step(), "the four ramp frames");
         }
-        assert!(f.step(), "landing frame, hold 2 -> 1");
-        assert!(f.step(), "hold 1 -> 0");
-        assert!(!f.step(), "hold expired");
+        assert!(f.step(), "the first post-ramp frame, hold 2 -> 1");
+        assert!(!f.step(), "hold 1 -> 0 retires it");
     }
 
     #[test]

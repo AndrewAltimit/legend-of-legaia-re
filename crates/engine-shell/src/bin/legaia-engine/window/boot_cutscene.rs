@@ -17,6 +17,9 @@ enum TitleAttractAction {
     Playing,
     /// The movie drained and the session is back on the menu.
     Finished,
+    /// The player aborted the movie with a pad press; the session is back on
+    /// the menu and the caller has to tear the decoder down.
+    Aborted,
 }
 
 /// Build the window's title session with the attract hand-off armed.
@@ -176,16 +179,23 @@ impl PlayWindowApp {
     ) -> bool {
         use legaia_engine_core::save_screen::SaveCommitKind;
         let cell = commit.cell;
+        use legaia_engine_core::save_screen::SaveRefusal;
         let Some(card) = self.card.as_ref() else {
             log::warn!("save screen: port 2 holds no card; nothing read");
+            self.save_flow.refuse(SaveRefusal::CardReadFailed);
             return false;
         };
         if matches!(commit.kind, SaveCommitKind::Save) {
             log::warn!("save screen: writing into a mounted card image is not supported");
+            // Refused, and said so: the screen used to close on a log line
+            // the player never sees, so a Save into the mounted card looked
+            // exactly like a Save that worked.
+            self.save_flow.refuse(SaveRefusal::CardWriteUnsupported);
             return false;
         }
         let Some((sf, resume)) = card.save_at(cell) else {
             log::warn!("save screen: card block {} holds no save", cell + 1);
+            self.save_flow.refuse(SaveRefusal::CardReadFailed);
             return false;
         };
         if !resume.scene.is_empty()
@@ -277,6 +287,13 @@ impl PlayWindowApp {
         // BEFORE the session sees this edge. It runs ahead of the match
         // because the match borrows `self.boot_ui` for the rest of the tick.
         let pressed = self.service_save_flow(pressed);
+        // A refusal notice owns the pad while it is up: the edge that
+        // dismisses it must not also drive the menu behind it.
+        let pressed = if self.save_flow.tick_refusal(pressed) {
+            0
+        } else {
+            pressed
+        };
         // Read-only copy for the commit below, taken for the same reason.
         let save_flow = self.save_flow.clone();
         let cross = pressed & 0x4000 != 0;
@@ -300,6 +317,9 @@ impl PlayWindowApp {
         // and persisted after the match releases `self.boot_ui`.
         let mut rebound: Option<legaia_engine_core::input::Mapping> = None;
         let mut start_attract: Option<i16> = None;
+        // The player aborted the attract movie this tick; the decoder is torn
+        // down below, once the match has released `self.boot_ui`.
+        let mut abort_attract = false;
         // The pause menu's blips, off the raw edges before any screen
         // consumes them - the browser page keys the same three the same way
         // (Start closes the menu, so it blips as a cancel). Ahead of the
@@ -364,13 +384,18 @@ impl PlayWindowApp {
                 // movie owns the screen the title is frozen, exactly as
                 // retail's master mode 0x1A takes the front-end off the
                 // dispatcher until the STR overlay unloads.
-                let attract = Self::service_title_attract(session, cutscene_live);
+                let attract = Self::service_title_attract(session, cutscene_live, pressed);
                 if let TitleAttractAction::Start(id) = attract {
                     start_attract = Some(id);
                 }
+                if attract == TitleAttractAction::Aborted {
+                    abort_attract = true;
+                }
                 if matches!(
                     attract,
-                    TitleAttractAction::Start(_) | TitleAttractAction::Playing
+                    TitleAttractAction::Start(_)
+                        | TitleAttractAction::Playing
+                        | TitleAttractAction::Aborted
                 ) {
                     break 'title true;
                 }
@@ -799,6 +824,17 @@ impl PlayWindowApp {
         if let Some(fmv_id) = start_attract {
             self.start_title_attract(fmv_id);
         }
+        // The player aborted the attract: drop the decoder and give the score
+        // back, the same teardown the redraw loop's drain runs when the movie
+        // ends on its own. Without it the picture would keep drawing over a
+        // title the session has already returned to.
+        if abort_attract {
+            self.cutscene = None;
+            if let Some(out) = self.session.audio.as_ref() {
+                out.stop_xa();
+                out.set_sequencer_paused(false);
+            }
+        }
         // Same for a committed rebind: adopt it as the live table (so the
         // very next key event resolves through it) and persist it to the
         // same `legaia-input.toml` that `legaia-engine config set --binding`
@@ -1094,29 +1130,22 @@ impl PlayWindowApp {
         use legaia_engine_core::field_events::FieldEvent;
         let world = &mut self.session.host.world;
         let events = world.drain_field_events();
+        // `ActorSpawned` is the only variant this drain answers, and there is
+        // deliberately no `CameraConfigure` arm: `Camera::route_camera_events`
+        // has already consumed every one off the world queue during the
+        // session tick and does not restore it, so an arm here could never
+        // fire. The `apply == 0` snap beats are banked on the camera instead
+        // (`Camera::take_camera_snap_beats`, replayed by
+        // `replay_camera_snap_beats`).
         for ev in events {
-            match ev {
-                FieldEvent::ActorSpawned { slot, .. } => {
-                    let has_tmd = world
-                        .actors
-                        .get(slot as usize)
-                        .is_some_and(|a| a.tmd_ref.is_some());
-                    if has_tmd {
-                        self.pending_dynamic_mesh_slots.push(slot);
-                    }
+            if let FieldEvent::ActorSpawned { slot, .. } = ev {
+                let has_tmd = world
+                    .actors
+                    .get(slot as usize)
+                    .is_some_and(|a| a.tmd_ref.is_some());
+                if has_tmd {
+                    self.pending_dynamic_mesh_slots.push(slot);
                 }
-                // `apply == 0` Camera Configure beats snap the live camera
-                // globals immediately in retail. Queue them for the cutscene
-                // camera interp so a snap+glide beat pair committed in ONE
-                // tick (no yield between the ops) still glides FROM the
-                // snapped pose - the merged `camera_state` alone only shows
-                // the last beat's targets. See `pending_camera_snaps`.
-                FieldEvent::CameraConfigure {
-                    params,
-                    apply_trigger: 0,
-                    ..
-                } => self.pending_camera_snaps.push(params),
-                _ => {}
             }
         }
     }
@@ -1277,9 +1306,18 @@ impl PlayWindowApp {
     /// Returns `true` while the attract owns the screen, so the caller skips
     /// the rest of the title tick.
     // REF: FUN_801DD35C
+    ///
+    /// `pressed` is this tick's just-pressed pad word. Retail lets the player
+    /// abort the attract movie (`fmv_id 0` is the one skippable movie -
+    /// `legaia_engine_core::cutscene::fmv_skip_edge_hit`), and this host used
+    /// to play it to its last frame whatever the player pressed: the abort
+    /// existed only in the browser. An abort returns
+    /// [`TitleAttractAction::Aborted`] so the caller can tear the decoder
+    /// down; the session is finished here either way.
     fn service_title_attract(
         session: &mut legaia_engine_core::title::TitleSession,
         cutscene_live: bool,
+        pressed: u16,
     ) -> TitleAttractAction {
         if let Some(fmv_id) = session.attract_pending() {
             session.mark_attract_started();
@@ -1290,6 +1328,15 @@ impl PlayWindowApp {
             return TitleAttractAction::Finished;
         }
         if session.attract_playing() {
+            // The attract slot is the skippable movie; ask the shared test
+            // rather than spelling the button set out a second time.
+            if legaia_engine_core::cutscene::fmv_skip_edge_hit(
+                legaia_engine_vm::title_overlay::ATTRACT_FMV_ID,
+                pressed,
+            ) {
+                session.finish_attract();
+                return TitleAttractAction::Aborted;
+            }
             return TitleAttractAction::Playing;
         }
         TitleAttractAction::Idle

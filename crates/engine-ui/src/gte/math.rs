@@ -132,8 +132,8 @@ impl GteMat3 {
     ///
     // PORT: FUN_800461A4 - retail RotMatrixX (same cos/sin LUT + 12-bit angle
     // as FUN_8004629C, about the +X axis).
-    // NOT WIRED: same reason as `rot_y` above - `camera_view_rotation` calls
-    // it, and that pass is the one without a host.
+    // REPLACED-BY: the hosts' f32 camera composition - see
+    // `camera_view_rotation`, the one caller, which carries the reason.
     pub fn rot_x(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -146,9 +146,9 @@ impl GteMat3 {
     ///
     // PORT: FUN_8004638C - retail RotMatrixZ (same cos/sin LUT + 12-bit angle
     // as FUN_8004629C, about the +Z axis).
-    // NOT WIRED: same reason as `rot_y` above - `camera_view_rotation` calls
-    // it, and that pass is the one without a host. This address
-    // has a second, more faithful port in `billboard::rot_z_psx`, which takes
+    // REPLACED-BY: the hosts' f32 camera composition - see
+    // `camera_view_rotation`, the one caller, which carries the reason. This
+    // address has a second, more faithful port in `billboard::rot_z_psx`, which takes
     // the retail 12-bit angle and reads the LUT rather than f32 trig; the two
     // are pinned to agree at the cardinals by a unit test there. That one is
     // inert as well, for the separate reason recorded on that module.
@@ -227,7 +227,14 @@ pub mod view_rot_flags {
 /// REF: FUN_8003D178, FUN_800461A4, FUN_8004629C, FUN_8004638C, FUN_8003D1A4
 /// REF: FUN_8005B4E8
 ///
-/// NOT WIRED, and the reason is now narrow: **all three angle factors reach
+/// REPLACED-BY: `legaia_engine_core::camera_view::frame_vp` and the native
+/// window's `psx_camera_mvp`, which compose the same `Rx * Ry * Rz` in `glam`
+/// f32 on both hosts. The q3.12 product differs from it only by retail's
+/// element quantisation (`1/4096`), and no parity oracle in the tree shows
+/// that difference on a frame; the port keeps the finer product as its
+/// default and owes this one no host unless such an oracle does.
+///
+/// The history of the reason: **all three angle factors reach
 /// the shot**, but the hosts compose them in `glam` floating point rather than
 /// through this q3.12 rendition. The cutscene camera multiplies
 /// `Rx(pitch) * Ry(yaw) * Rz(roll)` in the same order this function does -

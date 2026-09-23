@@ -3,10 +3,10 @@
     "battle_data_pack": 100.0,
     "data_field_streaming": 100.0,
     "field_map": 100.0,
-    "lzs_container": 99.77,
-    "overlay_data_blob": 98.6,
-    "pack": 99.94,
-    "scene_asset_table": 99.64,
+    "lzs_container": 100.0,
+    "overlay_data_blob": 99.76,
+    "pack": 100.0,
+    "scene_asset_table": 99.99,
     "scene_tmd_stream": 100.0,
     "scene_vab_stream": 100.0,
     "summon_readef": 100.0,
@@ -16,18 +16,18 @@
     "battle_data_pack": 0,
     "data_field_streaming": 0,
     "field_map": 0,
-    "lzs_container": 9477,
-    "overlay_data_blob": 80375,
-    "pack": 948,
-    "scene_asset_table": 77420,
+    "lzs_container": 0,
+    "overlay_data_blob": 34220,
+    "pack": 0,
+    "scene_asset_table": 0,
     "scene_tmd_stream": 0,
     "scene_vab_stream": 0,
     "summon_readef": 20,
     "vab_multi_bank": 0
   },
   "disc": {
-    "accounted_pct": 99.51,
-    "structural_pct": 99.51,
-    "work_bytes": 239552
+    "accounted_pct": 99.8,
+    "structural_pct": 99.8,
+    "work_bytes": 36029
   }
 }

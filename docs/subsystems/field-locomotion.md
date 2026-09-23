@@ -507,22 +507,26 @@ For each probe the byte/sub-cell is derived as: `zc = (z>>6) + 2`, `xc = ((x + 0
 | `2` Z+ | `(−32,−63) (0,−63) (+32,−63)` |
 | `3` X+ | `(+64,−32) (+64,0) (+64,+32)` |
 
-**How far `DAT_801f21b4` runs, and what the rest of it is.** The locomotion
-reads four rows; the table carries **twelve**, `0x801F21B4..0x801F2274`, 192
-bytes. Its end is not a guess: `0x801F2274` is the next address in the image
-that anything references independently (a `lw`/`sw` variable at file
-`+0x2104` / `+0x2110`), and the row content stops being a footprint at exactly
-the same halfword. The twelve rows are three families of the same shape -
-rows `0..3` the cardinal footprint above; rows `4..5` two mixed rows pairing a
-`+64` lead with a `±32` lateral on the other axis; rows `6..9` the same four
-directions at a **smaller radius** (`±16` lateral, `48` ahead, `47` behind);
-rows `10..11` an eight-point `±64` ring with no lateral narrowing. Only the
-first family has a caller in the locomotion path.
+**How far `DAT_801f21b4` runs, and what sits beside it.** The 192 bytes
+`0x801F21B4..0x801F2274` are **three** tables, not one twelve-row block: three
+consumers form three distinct bases into them, and each base starts a table.
+The actor-collision probes above are `0x801F21B4`, six rows (formed at
+`0x801CFE74` in `FUN_801cfe4c` and `0x801D5A70` in `FUN_801d5a68`; rows `4..5`
+pair a `+64` lead with a `±32` lateral and have no reader of their own on the
+locomotion path). The leading-edge wall probes are `0x801F2214`, four rows -
+the same four directions at the smaller radius (`±16` lateral, `48` ahead, `47`
+behind), formed at `0x801CFEE8`, `0x801CFFC0` and `0x801D009C`. The interact
+facing compass is `0x801F2254`, eight `±64` points, formed at `0x801D0834`.
+Each table ends at the next formed base, and the last at `0x801F2274`, a
+`lw`/`sw` scalar. An earlier reading took the block as one twelve-row table
+whose later rows "had no caller" - they are the wall and compass tables this
+page documents under their own names. The three bases are pinned in
+[`legaia_asset::field_probe_tables`](../../crates/asset/src/field_probe_tables.rs),
+each re-derived from its `lui` pairs.
 
-Do not read the enclosing byte run as one table. `0x801F21B4` is the head of
-the field overlay's **data segment** - file `0x2399C..0x25000`, 5732 bytes -
-and 231 distinct sites inside PROT 0897 form addresses in it. The probe table
-is the first 192 bytes of that segment, not its shape.
+The block is the head of the field overlay's **data segment** - file
+`0x2399C..0x25000` - and 231 distinct sites inside PROT 0897 form addresses in
+that segment; the rest of it is scalars and arrays, not probe tables.
 
 `FUN_801cfc40(actor, scene, Δx, Δz, ex, ez)` walks the **collision candidate table** `DAT_801c93c8` (count `_DAT_8007b6b8`) and box-tests the probe point against each other actor.
 A **static entity** (`flags+0x10 & 0x1020000 == 0`) anchors at its **MAN object record** (`_DAT_1f8003ec + rec_idx[+0x60]*0x20`; anchor `= tile*128 + sub*16` from record bytes `+6`/`+7` and `+0xE`/`+0xF`, with a `flags+0x52 & 8` offset correction from record halfwords `+0`/`+4`) plus the actor's live `+0x14`/`+0x18`, and blocks within `±(0x40+0x10)` = **80 units** per axis (strict).
@@ -936,6 +940,45 @@ Two variants sit either side of that idiom. A record whose `C1`/`C2` are **empty
   The `town01` Mei walk-on beat (`P2[4]`) uses both: `CC 46 51 11 1D 00 3C` seats placement 34 (Mei) at the Vahn's-house door tile `(17,29)` - the poke that makes her VISIBLE for the conversation - while the `CC 01 …` ops swing the door object (flat record 1).
   A spawned-record channel poke of the `4C 51` family SEATS the target exactly (retail's run dispatch settles on the op target, the same pin as the entry pre-run), hide-box `(127,127)` seats included - the beat's closing choreography despawns Mei that way, and retail keeps her hidden until the next scene entry re-runs her prologue.
   An id that matches NO channel is skipped by its decoded width - running it against the timeline's own context corrupts the caller (a `B1 <id> 00` sets the caller's own busy bit, and the `CC <id> A0` busy-wait then hijacks the caller PC into the record header). Resolved-channel `4C A0` busy-waits fall through unconditionally: engine channel pokes complete synchronously, where retail's channel clears its own busy bit as its move plays out. Disc oracle: `crates/engine-core/tests/field_npc_entry_positions_disc.rs` (the Mei-beat test).
+
+### A crossing made under the movement lock is consumed
+
+Retail's tile-crossing compare records the new tile **before** it decides
+whether to act on it. In `FUN_801D1EC4` the changed-tile path runs the
+`cell & 0x600` filter (`0x801D2144`) and then the player's movement-disabled
+bit, `+0x10 & 0x80000` (`0x801D214C..0x801D2158`); both failure branches land
+on `0x801D226C` / `0x801D2270`, which store the new tile into the last-tile
+pair `0x8007BDC8` / `0x8007BDCC` without a lookup. So a crossing made while a
+cutscene holds the player is spent: the tile is now "last", and when the lock
+lifts, standing on it fires nothing - only a further crossing does.
+
+A PCSX-Redux capture on the `kor5_field_card_boot` save shows it end to end
+([`autorun_w7c_kor5_tail.lua`](../../scripts/pcsx-redux/autorun_w7c_kor5_tail.lua),
+captures `captures/w7c-0921/kor5_k2` and `kor5_k3a`). `kor5` P2[3]'s cutscene
+holds `+0x10` at `0x098A2880` (lock bit set) from its start until well after it
+latches `0x43A`; a tile poke onto P2[4]'s trigger `(32, 41)` made while the lock
+is still up moves the last-tile pair to `(32, 41)` and never reaches
+`FUN_801D5630` - which is why earlier tile-poke routes found P2[4] "never
+spawning". From a checkpoint taken after the lock clears (`+0x10` =
+`0x09820880`), a poke onto `(32, 40)` and then `(32, 41)` dispatches P2[4]
+(`FUN_8003BDE0(32, 41, 4, 1)`, `ra 0x801D218C`) on the first crossing, with no
+scene re-entry. The port's `SceneHost::dispatch_walk_on_trigger` differs here:
+it returns before updating its last-tile mirror while a cutscene timeline is
+active, so a crossing made during the cutscene is deferred to the first free
+tick rather than spent.
+
+The same captures walk the rest of `kor5`'s `0x43A -> 0x436 -> 0x6C4` chain,
+whose links are the partition-2 C1/C2 headers plus the `.PCH` walk-on table
+(P2[3] `(32,43)`, P2[4] `(32,41)`, P2[5] `(21,52)`, P2[8] `(32,86)`). P2[4]
+latches `0x464` at `+0x1037` and its closing `3E FF 0E` starts a battle
+(monster `165`; passed here by holding its HP at `1` - a synthetic bypass).
+Back in the field the scene reloads, and P1[0] sees `0x464`, clears it and
+spawns P2[5] through op `0x44` (`FUN_8003BDE0` from `ra 0x801DF098`) - the
+record that sets `0x436` at `+0xD0D`. P2[8] (C1 `{0x6C4}`, C2 `{0x436}`)
+dispatches on the first crossing of `(32, 86)` and writes `0x6C4` in the same
+frame through `FUN_8003CE08` (`ra 0x801E3598`, record `+0x75`); that last
+capture pokes `0x436` rather than playing P2[5] to its end, so the tail's
+writer is live and its C2 input is synthetic.
 
 ### Object-record format (`+0x0000`, 0x20-byte stride)
 

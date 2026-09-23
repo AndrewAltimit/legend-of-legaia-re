@@ -44,19 +44,17 @@
 ///
 /// PORT: FUN_8001FA00
 /// REF: FUN_801D6704 - MAIN_INIT, which seeds the list.
-/// REF: FUN_801D629C - the cutscene sprite emitter, which pops it.
 ///
-/// NOT WIRED: the two ends of this list sit in different functions, and only
-/// the far end is unported. Retail **seeds** the list from the field scene
-/// initialiser `FUN_801D6704` ("MAIN_INIT") at `0x801D7384` - the sole `jal`
-/// to `0x8001FA00` in the corpus - and that initialiser is ported, as
-/// [`crate::mode_entry_init`]. It **pops** from the list in the cutscene
-/// sprite emitter `FUN_801D629C` ([`crate::cutscene::sprite_stack_pop`]),
-/// which is not ported: the engine draws cutscene sprites as `screen_fx`
-/// widgets built from the decoded scripts. So what is missing is the
-/// `[count][halfword entries]` buffer itself - `mode_entry_init` ports
-/// MAIN_INIT as leaf kernels and a step list, not as an allocator - plus the
-/// emitter that would drain it.
+/// The list is the **fog-particle pool's free stack**, not a cutscene sprite
+/// list: MAIN_INIT allocates the `0x824`-byte pool at `0x801D7364`, parks it
+/// at `_DAT_8007B7E0`, and calls this with `(pool, pool + 4, 0x50)` at
+/// `0x801D7384`, so the eighty slot indices are seeded `0..79` with the top
+/// index `79` stored at the pool's `+0`. The pop and push are
+/// `crate::cutscene::sprite_stack_pop` / `sprite_stack_push`
+/// (`FUN_8001FA34` / `FUN_8001FA68`), whose one consumer is that pool.
+///
+/// WIRED: [`crate::fog_particles::FogPool::reset`] seeds its free stack
+/// through this on every field reset, on both hosts.
 pub fn init_identity_index_list(list: &mut [u16], n: i16) -> i16 {
     if n > 0 {
         for (i, slot) in list.iter_mut().take(n as usize).enumerate() {
@@ -389,7 +387,12 @@ pub const BOOT_ENABLE_FLAG_ADDRS: [u32; 3] = [0x8007_0520, 0x8007_0580, 0x8007_0
 /// PORT: FUN_800265E8
 /// REF: FUN_8002630C - the VAB-open path that reads the seeded table.
 ///
-/// NOT WIRED: the reader is **identified** - `FUN_8002630C`, the libsnd VAB
+/// REPLACED-BY: `legaia_engine_audio`'s flat `SpuRam`, which places each
+/// bank at the transfer address its loader hands it - the port keeps no
+/// slot-indexed SPU base map for a boot seeder to fill. Retail's call site is
+/// the boot path's `jal` at `0x8001601C`.
+///
+/// The reader is **identified** - `FUN_8002630C`, the libsnd VAB
 /// open path, materialises `0x800917B0` at `0x80026340` and indexes it by the
 /// VAB slot (`sll v0,slot,2; addu v0,v0,base; lw a2,0x0(v0)`) to get the SPU
 /// address it hands `SsVabOpenHead`. These twelve words are therefore the
@@ -414,8 +417,8 @@ pub const BOOT_ENABLE_FLAG_ADDRS: [u32; 3] = [0x8007_0520, 0x8007_0580, 0x8007_0
 /// rather than merely uninteresting: it asserts the seeded table and
 /// `spu_base_for_slot` agree word for word, so a caller could not change any
 /// value any consumer reads. A wire whose two paths leave identical state
-/// certifies itself and measures nothing, which is why this row stays inert
-/// by choice.
+/// certifies itself and measures nothing, which is why this row is replaced
+/// rather than pending.
 pub fn seed_boot_offset_table(table: &mut [u32; 12]) {
     for (i, word) in BOOT_OFFSET_TABLE.iter().enumerate() {
         if i == BOOT_OFFSET_TABLE_UNWRITTEN {

@@ -581,6 +581,58 @@ CANONICAL_LADDERS = [
     # twice (bag hit and bag miss) because one byte sequence has two host
     # paths. Disc-gated on `LEGAIA_DISC_BIN` + `extracted/`.
     ("w1f2_field_vm_op_arms_disc", "legaia-engine-core"),
+    # --- lane W3-B: the composing host, and three field arms off the disc --
+    #
+    # `w1h_fog_page_prims` is the **composing** ladder the fog rows always
+    # needed and nobody had joined. `World::fog_render_step` has exactly two
+    # callers in the workspace and both are render passes, so no headless walk
+    # reaches it however deep it goes; this one drives the browser play page's
+    # per-tick screen-prim assembly over the first scene whose entry script
+    # raises the gate unconditionally, and asserts the pass carries the quads.
+    # It was written, green and outside the union, which is the "promote the
+    # oracle that already drove it" exit one more time.
+    ("w1h_fog_page_prims", "legaia-web-viewer"),
+    #
+    # `w1b_host_parity_ladder` is the page half of the shared camera kernels -
+    # the NCLIP cull mode, the occlusion fade's arming gate and body centre,
+    # and the field HUD projection. Each replaced a decision the page had been
+    # making in JS, so each is engine code whose only browser caller is the
+    # page's own per-frame read surface; the ladder drives a real
+    # `LegaiaRuntime` over two disc scenes and reads the exports back.
+    ("w1b_host_parity_ladder", "legaia-web-viewer"),
+    #
+    # `w3b_wave_wires_disc` is `w1f2_field_vm_op_arms_disc`'s sibling for
+    # three more arms: the actor clone (`4C 14`), the reflection controller
+    # install (`4C 86`) and the screen-effect colour tween (`34 0x`). Same
+    # denominator - sites taken from the disc corpus at decoded instruction
+    # boundaries, one per scene, then stepped in a real `World` - and each arm
+    # is driven past its spawn into the pool tick that consumes it, because a
+    # seat nothing steps is indistinguishable from a seat that never ran.
+    ("w3b_wave_wires_disc", "legaia-engine-core"),
+    # --- lane W6-C ---
+    # Two new ladders and two promotions, each for a wire the union reached
+    # only halfway.
+    #
+    # `w6c_arts_banner_ladder` types a Super Art through the live battle and
+    # reads `World::battle_arts_banner_quads` once per frame, where both hosts
+    # read it. Every battle ladder already stepped the banner tick; none
+    # committed a SpecialStarter, so the quad emitter `flash_quads`
+    # (`801e2650`) had never run. `w6c_morph_page_ladder` enters the three
+    # `4C D8` carriers on the play page and stages the blended mesh through
+    # the page's own export - the spawner was entered, the page draw was not.
+    #
+    # The promotions were green and unlisted, and neither adds an anchor the
+    # union lacked - what each adds is an untagged host draw or a state flip,
+    # which this report cannot key on and the triage page records by name:
+    # `play_minigames_host` drives the four door-warp minigames on the page
+    # (the Baka digit strips are its only driver of `baka_status_draws`), and
+    # `conc_flag_6de_position_latch_disc` walks the player across `conc`'s
+    # `CD F8` box both ways, which makes `sync_field_ctx_player_anchor`
+    # observable as a flip rather than as a call.
+    ("w6c_arts_banner_ladder", "legaia-engine-core"),
+    ("w6c_morph_page_ladder", "legaia-web-viewer"),
+    ("play_minigames_host", "legaia-web-viewer"),
+    ("conc_flag_6de_position_latch_disc", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

@@ -874,7 +874,15 @@ impl LegaiaRuntime {
         }
         #[cfg(target_arch = "wasm32")]
         if !descriptors.is_empty() {
-            if !self.stage_sfx_vab() {
+            // A page that could not stage an SFX bank still has the scene's
+            // own BGM VAB resident, and that is what the native director
+            // keys against in the same situation (`tick_sfx_frame` gives up
+            // only when `sfx_vabs` is empty **and** `bank` is `None`). This
+            // host used to `return` here, so every cue on a boot where the
+            // SFX slots did not fit was dropped rather than played out of
+            // the wrong bank - silence where the native window is audible.
+            let staged = self.stage_sfx_vab();
+            if !staged && self.bgm_bank.is_none() {
                 return;
             }
             // A BGM restage since the reward bank staged makes it stale.
@@ -885,16 +893,19 @@ impl LegaiaRuntime {
             let bank = &self.sfx.bank;
             let sfx = &self.sfx;
             let vabs = &self.sfx_vabs;
+            let bgm_bank = self.bgm_bank.as_ref();
             let mut fired = Vec::new();
             out.with_spu(|spu| {
                 for &(queued_id, id) in &descriptors {
                     // Each cue keys the bank its own `+4` category names. The
                     // second `get` covers a slot whose bytes read but whose
                     // upload failed - the cue keeps its old sound rather than
-                    // dropping out.
+                    // dropping out - and the scene BGM bank is the last
+                    // resort, the native fallback.
                     let Some(vab) = vabs
                         .get(&sfx.resolve_slot(id))
                         .or_else(|| vabs.get(&FALLBACK_VAB_SLOT))
+                        .or(bgm_bank)
                     else {
                         continue;
                     };
@@ -907,6 +918,43 @@ impl LegaiaRuntime {
             if let Some(last) = fired.last() {
                 self.sfx.last_fired = Some(*last);
             }
+        }
+    }
+
+    /// Key one voice from an explicit
+    /// [`VoiceAttr`](legaia_engine_audio::VoiceAttr) set - the door
+    /// `AudioBgmDirector::key_on_voice_attr` is on the native window, and the
+    /// minigames page's `LegaiaMinigames::muscle_tally_voice` is on its own.
+    ///
+    /// Some cues never name themselves by id: the Muscle Dome's between-leg
+    /// tally roll resolves a whole attr set per lane (`FUN_801D1288`), so the
+    /// id-keyed scheduler above could not sound it however it was fed. The
+    /// tally was therefore silent on this host alone.
+    ///
+    /// `attr.vab_id` is a retail **VAB id**, resolved here as an SFX slot with
+    /// the live scene BGM bank behind it - the same two-step the native
+    /// director runs, and the same one [`Self::fire_matured_sfx`] uses.
+    /// Returns whether a voice keyed on.
+    pub(crate) fn key_on_voice_attr(&mut self, attr: legaia_engine_audio::VoiceAttr) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let slot = u8::try_from(attr.vab_id).unwrap_or(0);
+            if !self.sfx_vabs.contains_key(&slot) {
+                self.stage_sfx_vab();
+            }
+            let Some(vab) = self.sfx_vabs.get(&slot).or(self.bgm_bank.as_ref()) else {
+                return false;
+            };
+            let Some(out) = self.audio_out.as_ref() else {
+                return false;
+            };
+            out.with_spu(|spu| legaia_engine_audio::key_on_voice_attr(&attr, spu, vab))
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            // No live SPU off wasm; the count is still what the tests read.
+            let _ = attr;
+            false
         }
     }
 

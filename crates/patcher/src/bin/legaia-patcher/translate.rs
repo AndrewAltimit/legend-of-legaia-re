@@ -356,25 +356,25 @@ pub(crate) fn cmd_lift_official(
         pack.language = lang.to_string();
         rep.language = lang.to_string();
     }
+    // The baseline comparison runs on the raw bytes, before any fold: a line
+    // the patch re-accented (`Silencio` -> `Sil{88}ncio`) is the translator's
+    // work, and folding first would erase exactly that difference.
+    if let Some(base_path) = baseline {
+        let base_disc =
+            DiscPatcher::open(load_image(base_path)?).context("parse baseline disc image")?;
+        let (base_pack, _) = lift::lift_official(&usa, &base_disc)?;
+        drop(base_disc);
+        let blanked = lift::drop_baseline_text(&mut pack, &base_pack);
+        println!(
+            "baseline: {blanked} line(s) the baseline disc also carries blanked; {} translated line(s) remain",
+            pack.sections.filled()
+        );
+    }
     if fold_accents {
         let f = lift::fold_pack_accents(&mut pack);
         println!(
             "accents: {} folded to ASCII, {} high glyph(s) left raw (need a font patch)",
             f.folded, f.unmapped
-        );
-    }
-    if let Some(base_path) = baseline {
-        let base_disc =
-            DiscPatcher::open(load_image(base_path)?).context("parse baseline disc image")?;
-        let (mut base_pack, _) = lift::lift_official(&usa, &base_disc)?;
-        drop(base_disc);
-        if fold_accents {
-            lift::fold_pack_accents(&mut base_pack);
-        }
-        let blanked = lift::drop_baseline_text(&mut pack, &base_pack);
-        println!(
-            "baseline: {blanked} line(s) the baseline disc also carries blanked; {} translated line(s) remain",
-            pack.sections.filled()
         );
     }
     write_pack(&pack, output)?;
@@ -437,6 +437,24 @@ pub(crate) fn cmd_lift_official(
         rep.raw_total,
         pct(rep.raw_paired, rep.raw_total),
         rep.raw_unpaired(),
+    );
+    for (label, p) in [("MAN", rep.man_pairing), ("raw", rep.raw_pairing)] {
+        println!(
+            "  {label} pairing: {} structural (script walk), {} by scan ordinal; \
+             {} of the structural pairs differ from the ordinal pairing (shifted lines)",
+            p.structural, p.positional, p.shifted
+        );
+    }
+    println!(
+        "overlay UI pools: {} / {} strings paired",
+        rep.ui_paired, rep.ui_total
+    );
+    for p in &rep.ui_pools {
+        println!("  {:<40} {} / {}", p.label, p.paired, p.total);
+    }
+    println!(
+        "SCUS system strings: {} / {} paired; place-name cells: {} / {} paired",
+        rep.system_paired, rep.system_total, rep.cells_paired, rep.cells_total
     );
     println!("wrote {}", output.display());
     println!(

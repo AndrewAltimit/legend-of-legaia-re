@@ -119,7 +119,7 @@ impl World {
                 // Retail's state-50 handler rejects Run unconditionally for the
                 // whole sparring fight.
                 Resolution::RunAway => self.set_battle_flow(Flow::EscapePrompt),
-                Resolution::Aborted => false,
+                Resolution::Aborted | Resolution::StepBack => false,
             };
             if rejected {
                 self.open_battle_command(session.actor);
@@ -226,6 +226,7 @@ impl World {
                 }
                 self.commit_party_command(actor, PendingPartyAction::Attack { target });
             }
+            Some(Resolution::StepBack) => self.step_back_battle_command(session.actor),
             None => {
                 // Still selecting - keep the session open for the next frame.
                 self.battle.command = Some(session);

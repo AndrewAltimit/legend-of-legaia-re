@@ -393,6 +393,10 @@ impl World {
         self.battle_ctx.active_actor = 0;
         // Fresh battle: clear the monster-AI cooldowns / phase counter / ring.
         self.battle.monster_ai_state.reset();
+        // ...and the stolen band + steal latch, which retail zeroes with the
+        // same battle-load sweep (`crate::battle_steal`).
+        self.battle.steal = crate::battle_steal::StealBand::default();
+        self.battle.steal_caption = None;
         // Seed the turn-order initiative keys for this battle. When real SPD is
         // present the next-actor selector runs the initiative scheme from the
         // very first turn (see the opener pick below). A no-SPD battle leaves
@@ -592,6 +596,11 @@ impl World {
             return None;
         }
         let mode = self.mode;
+        // Re-seat the system context's position anchor on the live player
+        // before the slice runs. See [`Self::sync_field_ctx_player_anchor`].
+        if mode == crate::world::SceneMode::Field {
+            self.sync_field_ctx_player_anchor();
+        }
         let mut last = None;
         for _ in 0..FIELD_FRAME_SLICE_BUDGET {
             let pc = self.field_pc;
@@ -636,6 +645,38 @@ impl World {
         last
     }
 
+    /// Seat the ctx-`0xFB` system context's position anchor on the **live**
+    /// player actor.
+    ///
+    /// The scene system script addresses the player as cross-context target
+    /// `0xF8`, which retail resolves to the live player object
+    /// (`_DAT_8007C364`) and reads `+0x14`/`+0x18` off *each time*. The
+    /// system context has no position of its own, so the engine keeps the
+    /// player's in `field_ctx` - and it has to re-seat it every frame slice,
+    /// not once at scene load, because the script's park loop re-evaluates
+    /// its `CD F8` bounding-box tests on every pass.
+    ///
+    /// Seeding it once was a live defect rather than a rounding error: the
+    /// script buffer's install resets `field_ctx` to the default (position
+    /// `0, 0`), and only the three opening scenes run the load-frame pre-run
+    /// that re-seats it, so every other scene evaluated its `CD F8` tests
+    /// against the **origin** for the whole visit. `conc`'s entry script is
+    /// the measurable case: its park loop sets system flag `0x6DE` whenever
+    /// the player is outside tiles `10..=51` x `14..=72`, and tile `(-1,-1)`
+    /// is outside, so the flag latched on regardless of where the player
+    /// stood. The same loop carries each scene's camera-parameter bbox
+    /// gates.
+    ///
+    /// REF: FUN_8003CF7C (the per-frame slice this precedes)
+    pub fn sync_field_ctx_player_anchor(&mut self) {
+        if let Some(slot) = self.player_actor_slot
+            && let Some(a) = self.actors.get(slot as usize)
+        {
+            self.field_ctx.world_x = a.move_state.world_x as u16;
+            self.field_ctx.world_z = a.move_state.world_z as u16;
+        }
+    }
+
     /// Run the just-loaded scene-entry system script (ctx `0xFB`) up to its
     /// first yield / wait / halt, bounded.
     ///
@@ -653,17 +694,7 @@ impl World {
     /// REF: FUN_8003AB2C (system-script frame slice)
     pub fn pre_run_entry_script(&mut self) {
         const ENTRY_SCRIPT_STEP_BUDGET: usize = 2048;
-        // Seat the system ctx on the player's spawn position: the entry
-        // script's player-targeted position tests (`CD F8` bbox - retail
-        // resolves target `0xF8` to the live player object) read the ctx
-        // position, and the ctx-0xFB system context has none of its own. The
-        // opdeene fade arm sits behind exactly such a bbox gate.
-        if let Some(slot) = self.player_actor_slot
-            && let Some(a) = self.actors.get(slot as usize)
-        {
-            self.field_ctx.world_x = a.move_state.world_x as u16;
-            self.field_ctx.world_z = a.move_state.world_z as u16;
-        }
+        self.sync_field_ctx_player_anchor();
         for _ in 0..ENTRY_SCRIPT_STEP_BUDGET {
             match self.step_field() {
                 // Continue through `Yield` as well as `Advance`: several

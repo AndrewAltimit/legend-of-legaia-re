@@ -1435,21 +1435,36 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             });
     }
 
-    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) -> bool {
+    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) {
         // `4C 9F` is `FUN_8003CF40(_DAT_8007C34C, LAB_801DA930)`, a **retire
         // sweep** over the `0x801F27EC` handler - so it cancels every live
         // floor-height-ladder oscillator this scene spawned (sub-`0..2`),
         // and registers nothing. Retiring the engine's records is the whole
-        // of that half.
+        // of that half; the VM advances past the op either way.
         self.world.terrain.floor_tier_bobs.clear();
         self.world.retire_floor_ladder_oscillators();
-        // During the New-Game opening chain the sweep's script effect (the
-        // park at PC) resolves within a frame in retail - the whole opening
-        // auto-advances with zero input - so model it as already satisfied
-        // and let the entry script proceed to its op-0x44 record spawn.
-        // Outside the opening the faithful halt-until-callback park is kept
-        // (returning `false`).
-        self.world.cutscene.opening_chain_active
+    }
+
+    // `4C 86` / `4C 87` - the reflection controller's install and teardown,
+    // consecutive slots of the nibble-8 sub-table.
+    // REF: FUN_801E573C, FUN_8003CF40
+    fn op4c_n8_sub6_install_reflection(
+        &mut self,
+        ctx: &mut FieldCtx,
+        source_id: u8,
+        words: [i16; 6],
+    ) -> bool {
+        // Retail's `a0` is the executing context itself - `FUN_801DE840`'s
+        // third argument - so the script that issues the op is the mirror
+        // image, and the operand byte names what it reflects.
+        let ctx_is_player = ctx.flags & 0x0100_0000 != 0;
+        self.world
+            .spawn_reflection_controller(ctx_is_player, source_id, words)
+            .is_some()
+    }
+
+    fn op4c_n8_sub7_retire_reflections(&mut self) {
+        self.world.retire_reflection_controllers();
     }
 
     // -- the three frame-delta timer templates ---------------------------
@@ -1775,35 +1790,90 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn op34_sub0_color_intensity_setup(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
-        // Op 0x34 sub-0 = the EFFECT-layer global colour (`FUN_801E1FB0`):
-        // ramp toward the operand RGB (neutral 0xFF) over `intensity` frames.
-        // The opening timeline drives it in the crawl gaps (`34 05 00 00 00
-        // D2 00` = to black over 210 frames, `34 01 FF FF FF 00 00` =
-        // instant neutral). The value ramps are modelled faithfully, but
-        // this is NOT a whole-screen fade: the retail cold-boot capture
-        // holds the lit villager tableau across the span where a screen
-        // fade would run black, so the colour feeds the effect layer (the
-        // creation-glow planes - consumer still an open thread) and is kept
-        // out of `World::scene_screen_tint`. All-zero RGB is a ramp target,
-        // not a clear.
-        let target = [
-            rgb[0] as f32 / 255.0,
-            rgb[1] as f32 / 255.0,
-            rgb[2] as f32 / 255.0,
-        ];
-        let frames = intensity.max(0) as u16;
-        let current = self
-            .world
-            .presentation
-            .effect_tint
-            .as_ref()
-            .map(|t| t.factor());
-        self.world.presentation.effect_tint = Some(crate::fade::SceneTintRamp::to_target(
-            current, target, frames,
-        ));
+        // Op `0x34` sub-0 is the **screen-effect colour tween**, and it is a
+        // walk-out / walk-in pair rather than a value ramp. Reading the arm
+        // at `0x801DFCD4..0x801DFEF8` off the field overlay:
+        //
+        // 1. If `_DAT_8007B62C` names a live effect actor, retire it
+        //    (`+0x10 |= 8`) and spawn a tween that runs from the *previous*
+        //    target colour down to black with a **one**-frame hold, using
+        //    the blend and kind selectors as they stood.
+        // 2. Recompute both selectors from the sub-op byte and latch the new
+        //    target RGB into `_DAT_8007BCCD/CE/CF`.
+        // 3. An all-zero target **clears** the effect: retail stores zero
+        //    into `_DAT_8007B62C` and leaves without spawning anything.
+        // 4. Otherwise spawn the walk-in tween, black -> target, hold `-1`.
+        //
+        // REF: FUN_801DE2B0 (the spawner, ported at
+        // `crate::field_actor_kernels::tween_from_fade_template`)
+        //
+        // Both spawns fork on scratchpad global `_DAT_1F800394` bit 23
+        // (`lui v1,0x80; and` at `0x801DFD1C` / `0x801DFEB0`): set, retail
+        // spawns through `FUN_80024E80` instead of `FUN_801DE2B0`. Only the
+        // clear arm is modelled here because no script the disc carries
+        // raises that bit - neither a field-VM `0x2E` (`asset
+        // field-op-census --only 2E`) nor a motion-VM `0x10`/`0x11` (none is
+        // authored in any bank), pinned by
+        // `crates/asset/tests/scratch_global_bit_writers_real.rs`.
+        use crate::fade::FadeTemplate;
+        use crate::field_actor_kernels::{ACTOR_FLAG_YIELD, tween_from_fade_template};
+
+        if let Some(slot) = self.world.presentation.effect_tween_slot.take() {
+            if let Some(a) = self.world.actors.get_mut(slot) {
+                a.physics.status_flags |= ACTOR_FLAG_YIELD;
+            }
+            let walk_out = FadeTemplate {
+                kind: self.world.presentation.effect_blend,
+                duration: intensity,
+                start_rgb: self.world.presentation.effect_target_rgb,
+                end_rgb: [0; 3],
+                mode: [0, 1, 0],
+            };
+            let kind = self.world.presentation.effect_kind;
+            self.world
+                .spawn_colour_tween(tween_from_fade_template(&walk_out, kind));
+        }
+
+        let blend: i16 = if op0 & 1 != 0 { 2 } else { 1 };
+        let kind: i16 = if op0 & 2 != 0 {
+            8
+        } else if op0 & 4 != 0 {
+            0
+        } else {
+            2
+        };
+        let target = [i16::from(rgb[0]), i16::from(rgb[1]), i16::from(rgb[2])];
+        self.world.presentation.effect_blend = blend;
+        self.world.presentation.effect_kind = kind;
+        self.world.presentation.effect_target_rgb = target;
+
         self.world
             .pending_field_events
             .push(FieldEvent::ColorFade { op0, rgb });
+
+        if target == [0; 3] {
+            return;
+        }
+
+        // The one conditional on the operand: a pure-white target under
+        // blend `2` shortens the ramp by an eighth (`sra v0,s1,3` /
+        // `subu s1,s1,v0` at `0x801DFE60`). The shipped `0x41`-frame
+        // instruction is what a capture sees as a 57-frame template.
+        let duration = if blend == 2 && target == [0xFF; 3] {
+            intensity - (intensity >> 3)
+        } else {
+            intensity
+        };
+        let walk_in = FadeTemplate {
+            kind: blend,
+            duration,
+            start_rgb: [0; 3],
+            end_rgb: target,
+            mode: [0, crate::field_actor_kernels::TWEEN_HOLD_FOREVER, 0],
+        };
+        self.world.presentation.effect_tween_slot = self
+            .world
+            .spawn_colour_tween(tween_from_fade_template(&walk_in, kind));
     }
 
     fn effect_anim_trigger(&mut self, ctx: &mut FieldCtx, arg: u8) {
@@ -1865,6 +1935,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             op0,
             payload: *payload,
         });
+    }
+
+    // Sub-op 0x14: the actor clone. The whole body is
+    // `World::spawn_actor_clone` (retail `FUN_801D835C` plus the arm's own
+    // `FUN_8003C83C` resolve); the clone then ticks itself out through
+    // `World::tick_handler_actors`.
+    // REF: FUN_801D835C
+    fn menu_ctrl_clone_actor(&mut self, src_id: u8, tint_rgb: u32, fade_rate: i16) {
+        self.world.spawn_actor_clone(src_id, tint_rgb, fade_rate);
     }
 
     fn menu_refresh(&mut self) {
@@ -2007,6 +2086,17 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// PORT: FUN_801E4C58
     fn op4c_n6_sub_61_emitter(&mut self, _ctx: &mut FieldCtx, payload: [u8; 14]) {
         self.world.spawn_clut_cell_fx(&payload);
+    }
+
+    /// Op `0x4C 0xDB` - spawn the single-source CLUT blend fade
+    /// (`FUN_801E57F0` -> handler `FUN_801E4D8C`). `bytecode` starts at the
+    /// `0xDB` byte, the record pointer retail parks at actor `+0x90`; the
+    /// fade runs on [`World::step_clut_fx`]'s game-tick bank against the
+    /// host's software VRAM.
+    ///
+    /// REF: FUN_801E57F0
+    fn op4c_n_d_sub_b_call_e57f0(&mut self, bytecode: &[u8]) {
+        self.world.spawn_clut_blend_fx(bytecode);
     }
 
     /// Op `0x4C 0x60` - literal-operand VRAM `MoveImage`. The six words are
@@ -2290,7 +2380,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .vdf_record_bytes(b1)
             .map(|s| s.to_vec())
             .unwrap_or_default();
-        match self.world.spawn_field_actor(words[0], b1, kind, variant) {
+        match self
+            .world
+            .spawn_morph_weight_actor(words[0], b1, kind, variant)
+        {
             Some(slot_idx) => {
                 self.world
                     .pending_field_events

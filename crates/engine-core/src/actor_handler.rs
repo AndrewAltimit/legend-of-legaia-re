@@ -95,17 +95,36 @@ pub const VA_SUBMODE_DRIVER: u32 = crate::field_submode::SUBMODE_DRIVER_HANDLER;
 /// [`legaia_engine_vm::field_actor_timers`] and
 /// `docs/subsystems/script-vm-menuctrl.md`.
 ///
-/// Two mislabels fall out together: the field VM's `4C 9F` and `4C 87`
-/// "register callback" ops call `FUN_8003CF40(_DAT_8007C34C, LAB_801DA930)`,
-/// and `FUN_8003CF40` **retires** rather than registers, so those ops stop
+/// The field VM's `4C 9F` "register callback" op is really a teardown:
+/// `0x801E2548` loads `_DAT_8007C34C` and `0x801DA930` and tail-jumps into
+/// `FUN_8003CF40`, which **retires** rather than registers, so the op stops
 /// every running rung oscillator. The MAN loader's first inlined sweep
 /// (`FUN_8003AEB0` at `0x8003B3C8..0x8003B3F0`) is the same sweep on scene
 /// load.
+///
+/// `4C 87` was named alongside it and is a different teardown: its arm
+/// `0x801E2284` materialises `0x801E5154`, the reflection-callback tick
+/// ([`legaia_engine_vm::field_actor_reflect`]), not this handler. The two
+/// ops share only the tail at `0x801E2DC4`. Its install sibling is `4C 86`
+/// (`0x801E2250`, through the spawner `FUN_801E573C`) - the nibble-8
+/// sub-table at `0x801CEF48` puts the pair at consecutive slots 6 and 7.
 pub const VA_FLOOR_LADDER: u32 = 0x801D_A930;
 
 /// `FUN_801D4A60` - the four-program **scripted-scene** actor. Spawn
 /// descriptor `0x801F26D8` (field `0x023EC0`), allocated by `FUN_801D5A24`.
 pub const VA_SCRIPTED_SCENE: u32 = 0x801D_4A60;
+
+/// `FUN_801D820C` - the **clip-fraction fade** tick. Its descriptor is the
+/// static SCUS template `0x80070644` ([`crate::field_actor_clone::CLONE_DESCRIPTOR`]),
+/// whose `+0x08` word carries this VA; the field VM op `0x4C` sub-1 sub-op
+/// `0x14` clone helper `FUN_801D835C` is its only allocation site on the disc.
+pub const VA_CLIP_FADE: u32 = crate::field_actor_clone::CLONE_HANDLER;
+
+/// `FUN_801E5154` - the **reflection controller** tick, the handler on the
+/// field-overlay descriptor `0x801F2948` that the field VM's `4C 86` spawner
+/// `FUN_801E573C` allocates from (and that `4C 87` retires). Its body is
+/// [`legaia_engine_vm::field_actor_reflect::tick_reflection`].
+pub const VA_REFLECTION: u32 = legaia_engine_vm::field_actor_reflect::REFLECT_HANDLER;
 
 /// `FUN_801DBE9C` - the handler on the fixed scene-actor template
 /// `0x801F2810` that `FUN_801DE478` spawns from (field `0x023FF8`, word `+8`).
@@ -157,6 +176,10 @@ pub enum ActorHandler {
     SceneActor,
     /// [`VA_SCRIPTED_SCENE`].
     ScriptedScene,
+    /// [`VA_CLIP_FADE`].
+    ClipFade,
+    /// [`VA_REFLECTION`].
+    Reflection,
     /// [`VA_SCREEN_SPRITE`].
     ScreenSprite,
     /// [`VA_SCREEN_MASK`].
@@ -200,6 +223,19 @@ pub enum HandlerKernel {
     /// [`crate::field_actor_program::step_scene_program`] - ported, but not yet run by the
     /// actor loop; see that function's disclosure.
     ScriptedScene,
+    /// [`legaia_engine_vm::actor_tick::clip_fraction_step`], run by
+    /// [`crate::world::World::tick_handler_actors`] over the clones the field
+    /// VM's op `0x4C` sub-1 sub-op `0x14` spawns.
+    ClipFade,
+    /// [`legaia_engine_vm::field_actor_reflect::tick_reflection`], run by
+    /// [`crate::world::World::tick_handler_actors`] over the mirror pairs the
+    /// field VM's `4C 86` arm installs.
+    Reflection,
+    /// [`crate::morph_weight_apply::MorphWeightEnvelope::tick`], run by
+    /// [`crate::world::World::tick_handler_actors`] over the actors the
+    /// field VM's `4C D8` allocator
+    /// ([`crate::world::World::spawn_morph_weight_actor`]) seated.
+    MorphWeights,
     /// No ported body. The handler still participates in every identity
     /// test; it just has nothing to run.
     Unported,
@@ -211,7 +247,13 @@ impl HandlerKernel {
     /// are reached from their own host channels instead, which is why this
     /// is narrower than "is ported".
     pub fn runs_in_actor_loop(self) -> bool {
-        matches!(self, HandlerKernel::ColourTween)
+        matches!(
+            self,
+            HandlerKernel::ColourTween
+                | HandlerKernel::ClipFade
+                | HandlerKernel::Reflection
+                | HandlerKernel::MorphWeights
+        )
     }
 }
 
@@ -230,6 +272,8 @@ impl ActorHandler {
             VA_FLOOR_LADDER => ActorHandler::FloorLadder,
             VA_SCENE_ACTOR => ActorHandler::SceneActor,
             VA_SCRIPTED_SCENE => ActorHandler::ScriptedScene,
+            VA_CLIP_FADE => ActorHandler::ClipFade,
+            VA_REFLECTION => ActorHandler::Reflection,
             VA_SCREEN_SPRITE => ActorHandler::ScreenSprite,
             VA_SCREEN_MASK => ActorHandler::ScreenMask,
             VA_SCREEN_PANEL => ActorHandler::ScreenPanel,
@@ -256,6 +300,8 @@ impl ActorHandler {
             ActorHandler::FloorLadder => VA_FLOOR_LADDER,
             ActorHandler::SceneActor => VA_SCENE_ACTOR,
             ActorHandler::ScriptedScene => VA_SCRIPTED_SCENE,
+            ActorHandler::ClipFade => VA_CLIP_FADE,
+            ActorHandler::Reflection => VA_REFLECTION,
             ActorHandler::ScreenSprite => VA_SCREEN_SPRITE,
             ActorHandler::ScreenMask => VA_SCREEN_MASK,
             ActorHandler::ScreenPanel => VA_SCREEN_PANEL,
@@ -273,12 +319,14 @@ impl ActorHandler {
             ActorHandler::TextBalloon => HandlerKernel::TextBalloon,
             ActorHandler::CameraMover => HandlerKernel::CameraMover,
             ActorHandler::ScriptedScene => HandlerKernel::ScriptedScene,
+            ActorHandler::ClipFade => HandlerKernel::ClipFade,
+            ActorHandler::Reflection => HandlerKernel::Reflection,
+            ActorHandler::MorphWeights => HandlerKernel::MorphWeights,
             ActorHandler::ScreenSprite
             | ActorHandler::ScreenMask
             | ActorHandler::ScreenPanel
             | ActorHandler::ScreenLetterbox => HandlerKernel::ScreenWidget,
             ActorHandler::None
-            | ActorHandler::MorphWeights
             | ActorHandler::SubmodeDriver
             | ActorHandler::FloorLadder
             | ActorHandler::SceneActor
@@ -331,6 +379,7 @@ mod tests {
             ActorHandler::FloorLadder,
             ActorHandler::SceneActor,
             ActorHandler::ScriptedScene,
+            ActorHandler::Reflection,
             ActorHandler::ScreenSprite,
             ActorHandler::ScreenMask,
             ActorHandler::ScreenPanel,
@@ -381,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn only_the_colour_tween_runs_inside_the_actor_loop() {
+    fn only_the_pool_resident_kernels_run_inside_the_actor_loop() {
         // The other ported kernels are hosted off the pool (narration and
         // balloon are world channels, the camera mover is the camera's, the
         // widgets are `screen_fx`'s). Asserting this keeps a later variant
@@ -392,12 +441,21 @@ mod tests {
             ActorHandler::NarrationRoller,
             ActorHandler::TextBalloon,
             ActorHandler::CameraMover,
+            ActorHandler::ClipFade,
+            ActorHandler::Reflection,
             ActorHandler::ScreenMask,
         ]
         .into_iter()
         .filter(|h| h.kernel().runs_in_actor_loop())
         .collect();
-        assert_eq!(in_loop, vec![ActorHandler::ColourTween]);
+        assert_eq!(
+            in_loop,
+            vec![
+                ActorHandler::ColourTween,
+                ActorHandler::ClipFade,
+                ActorHandler::Reflection
+            ]
+        );
     }
 
     #[test]

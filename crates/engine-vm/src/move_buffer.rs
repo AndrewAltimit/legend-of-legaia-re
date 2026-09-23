@@ -67,8 +67,12 @@ pub const MOVE2_THRESHOLD: i16 = 0x400;
 pub mod env_flag {
     /// `0x2` - pause. When set, the cursor does not step.
     pub const PAUSE: u16 = 0x0002;
-    /// `0x8` - loop. When set, cursor wraps at the record boundary.
-    pub const LOOP: u16 = 0x0008;
+    /// `0x8` - clamp at the ends. When set, the cursor holds at `0`
+    /// (below) and at `count * 16 - 1` (above); when clear it wraps -
+    /// forward by `count * 16` below, back to `0` above
+    /// (`0x800206AC`, `0x80020708`). An earlier port named this `CLAMP_ENDS` and
+    /// had the low bound's two arms swapped.
+    pub const CLAMP_ENDS: u16 = 0x0008;
     /// `0x80` - reverse. When set, cursor steps backward.
     pub const REVERSE: u16 = 0x0080;
     /// `0x100` - "clamped this frame". OR'd in by the cursor whenever
@@ -398,12 +402,16 @@ pub fn envelope_tick(state: &mut MoveBufferState, frame_delta: u8) {
 /// - marks `record_bound = true` (the engine resolves the pointer
 ///   itself).
 ///
-/// Each frame the cursor steps `phase` by `phase_rate * frame_delta`
-/// (sign flipped when [`REVERSE`] is set). At record boundaries:
-/// - `phase < 0`: snap to 0 (no loop) or wrap forward by
-///   `frame_count * 16` (looping); OR in [`CLAMPED`].
-/// - `phase >= frame_count * 16`: snap to 0 (no loop) or clamp at
-///   `frame_count * 16 - 1` (looping); OR in [`CLAMPED`].
+/// Each frame the cursor steps `phase` by `rate * frame_delta` (sign
+/// flipped when [`REVERSE`] is set), where `rate` is `phase_rate` - or,
+/// when the record's flag bit 0 is set, `(phase_rate * 2 + divisor - 1) /
+/// divisor`, computed into a register and **not** stored back
+/// (`0x800205C8..0x800205E0`; an earlier port wrote it into `phase_rate`,
+/// so the rate shrank again every frame). At record boundaries:
+/// - `phase < 0`: hold at 0 with [`CLAMP_ENDS`], else wrap forward by
+///   `frame_count * 16`; OR in [`CLAMPED`].
+/// - `phase >= frame_count * 16 - 1`: hold at `frame_count * 16 - 1` with
+///   [`CLAMP_ENDS`], else back to 0; OR in [`CLAMPED`].
 pub fn cursor_advance<H: MoveBufferHost>(state: &mut MoveBufferState, host: &H, frame_delta: u8) {
     if state.status_flags & STATUS_FLAG_ENVELOPE_ACTIVE != 0 {
         envelope_tick(state, frame_delta);
@@ -430,11 +438,13 @@ pub fn cursor_advance<H: MoveBufferHost>(state: &mut MoveBufferState, host: &H, 
     let frame_count = u16::from_le_bytes([record[2], record[3]]);
     let divisor = record[6];
 
-    if record_flag & 0x1 != 0 && divisor != 0 {
-        // phase_rate = (phase_rate * 2 + divisor - 1) / divisor (signed integer division).
+    let rate = if record_flag & 0x1 != 0 && divisor != 0 {
+        // (phase_rate * 2 + divisor - 1) / divisor, signed; a local only.
         let numer = i32::from(state.phase_rate) * 2 + i32::from(divisor) - 1;
-        state.phase_rate = (numer / i32::from(divisor)) as i16;
-    }
+        numer / i32::from(divisor)
+    } else {
+        i32::from(state.phase_rate)
+    };
 
     let mut e = state.env_flags;
     if e & START_REQUEST != 0 {
@@ -452,7 +462,7 @@ pub fn cursor_advance<H: MoveBufferHost>(state: &mut MoveBufferState, host: &H, 
     state.env_flags &= !CLAMPED;
     let e_step = state.env_flags;
     if e_step & PAUSE == 0 {
-        let step = i32::from(state.phase_rate) * i32::from(frame_delta);
+        let step = rate * i32::from(frame_delta);
         let new = if e_step & REVERSE != 0 {
             i32::from(state.phase) - step
         } else {
@@ -463,7 +473,7 @@ pub fn cursor_advance<H: MoveBufferHost>(state: &mut MoveBufferState, host: &H, 
 
     let max = i32::from(frame_count) * 16 - 1;
     if state.phase < 0 {
-        if state.env_flags & LOOP == 0 {
+        if state.env_flags & CLAMP_ENDS != 0 {
             state.phase = 0;
         } else {
             let wrap = i32::from(state.phase) + i32::from(frame_count) * 16;
@@ -472,7 +482,7 @@ pub fn cursor_advance<H: MoveBufferHost>(state: &mut MoveBufferState, host: &H, 
         state.env_flags |= CLAMPED;
     }
     if i32::from(state.phase) >= max {
-        if state.env_flags & LOOP == 0 {
+        if state.env_flags & CLAMP_ENDS == 0 {
             state.phase = 0;
         } else {
             state.phase = max.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
@@ -794,7 +804,7 @@ mod tests {
     }
 
     #[test]
-    fn cursor_overshoot_loop_clamps_to_max() {
+    fn cursor_overshoot_clamp_ends_holds_at_max() {
         let host = FixedRecord {
             bytes: record(0, 4, 1),
         };
@@ -803,7 +813,7 @@ mod tests {
             cursor_active: 1,
             phase: 60,
             phase_rate: 8,
-            env_flags: LOOP,
+            env_flags: CLAMP_ENDS,
             ..Default::default()
         };
         cursor_advance(&mut s, &host, 1);
@@ -813,7 +823,7 @@ mod tests {
     }
 
     #[test]
-    fn cursor_undershoot_loop_wraps_forward() {
+    fn cursor_undershoot_without_clamp_wraps_forward() {
         let host = FixedRecord {
             bytes: record(0, 4, 1),
         };
@@ -822,11 +832,11 @@ mod tests {
             cursor_active: 1,
             phase: 4,
             phase_rate: 8,
-            env_flags: REVERSE | LOOP,
+            env_flags: REVERSE,
             ..Default::default()
         };
         cursor_advance(&mut s, &host, 1);
-        // After step: 4 - 8 = -4; wrap by +64 -> 60.
+        // After step: 4 - 8 = -4; CLAMP_ENDS clear -> wrap by +64 -> 60.
         assert_eq!(s.phase, 60);
         assert!(s.env_flags & CLAMPED != 0);
     }
@@ -842,7 +852,7 @@ mod tests {
             cursor_active: 5,
             phase: 99,
             phase_rate: 8,
-            env_flags: START_REQUEST | REVERSE | LOOP,
+            env_flags: START_REQUEST | REVERSE | CLAMP_ENDS,
             ..Default::default()
         };
         cursor_advance(&mut s, &host, 1);
@@ -866,9 +876,10 @@ mod tests {
             ..Default::default()
         };
         cursor_advance(&mut s, &host, 1);
-        // (9*2 + 3 - 1) / 3 = 20 / 3 = 6.
-        assert_eq!(s.phase_rate, 6);
-        // Phase advanced by the new rate.
+        // (9*2 + 3 - 1) / 3 = 20 / 3 = 6 is the step, and phase_rate is not
+        // written back (retail keeps it in a register).
+        assert_eq!(s.phase_rate, 9);
+        // Phase advanced by the derived rate.
         assert_eq!(s.phase, 16);
     }
 

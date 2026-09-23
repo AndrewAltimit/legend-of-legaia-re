@@ -106,8 +106,14 @@ pub const OWNER_STRING: &str = "string";
 /// Bytes a container's own size math covers but that carry no content
 /// (declared slack inside a fixed-stride slot).
 pub const OWNER_PAD: &str = "pad";
+/// Another image's bytes, at the same file offset: the run from where this
+/// overlay stops being its own content. See [`crate::inherited_tail`].
+pub const OWNER_INHERITED_TAIL: &str = "inherited_tail";
 /// Found by a magic sweep over the residue, not by a structural walk.
 pub const OWNER_SCAN: &str = "scan";
+/// A scalar variable in an overlay's data segment, at an address the image's
+/// own code loads or stores directly, sized by that access's width.
+pub const OWNER_GLOBAL: &str = "global";
 
 /// The owner vocabulary, `(owner, meaning)`. `docs/tooling/byte-accounting.md`
 /// documents the same list; keep the two in step.
@@ -124,10 +130,18 @@ pub const OWNERS: &[(&str, &str)] = &[
     (OWNER_GRID, "dense per-tile grid"),
     (OWNER_SCRIPT, "bytecode / script body"),
     (OWNER_CODE, "MIPS instructions in a dumped function extent"),
+    (
+        OWNER_GLOBAL,
+        "scalar variable the image's code loads / stores directly",
+    ),
     (OWNER_TEXTURE, "raw texture page"),
     (OWNER_CLUT, "palette / CLUT region"),
     (OWNER_STRING, "NUL-terminated string reached by a pointer"),
     (OWNER_PAD, "declared slack inside a fixed-stride slot"),
+    (
+        OWNER_INHERITED_TAIL,
+        "another image's bytes at the same file offset (mastering-buffer residue)",
+    ),
     (
         OWNER_SCAN,
         "magic sweep over the residue, not a structural walk",
@@ -436,6 +450,12 @@ pub struct AccountOptions {
     /// Directory of Ghidra dumps (`ghidra/scripts/funcs`). Required for
     /// [`Walker::OverlayCode`].
     pub funcs_dir: Option<PathBuf>,
+    /// Directory of extracted PROT entries (`extracted/PROT`). An overlay
+    /// image's **inherited tail** is a comparison against its siblings, so the
+    /// cut is only available when the sibling entries can be read; without this
+    /// the walker says so in a note rather than counting another module's code
+    /// as this one's residue silently. See [`crate::inherited_tail`].
+    pub prot_dir: Option<PathBuf>,
     /// Nesting depth budget. `0` accounts the outer buffer only.
     pub depth: u8,
     /// Sweep the residue for TIM / TMD / VAB / SEQ magics and claim the hits
@@ -455,6 +475,7 @@ impl Default for AccountOptions {
             label: String::new(),
             prot_index: None,
             funcs_dir: None,
+            prot_dir: None,
             depth: 1,
             rescan: true,
             min_residue: 64,
@@ -949,6 +970,598 @@ pub fn attribute(dump: &DumpExtent, image: &[u8], base_va: u32) -> Attribution {
         Attribution::Confirmed
     } else {
         Attribution::Unverifiable
+    }
+}
+
+// ---------------------------------------------------------------------------
+// An image's own uninitialised data region
+// ---------------------------------------------------------------------------
+
+/// Shortest all-zero run considered as an image's uninitialised data region.
+pub const BSS_RUN_MIN: usize = 256;
+
+/// Sites that must form one single address inside a zero run for it to count
+/// as addressed, when no second distinct address does.
+pub const BSS_MIN_SITES: usize = 4;
+
+/// How many instructions after a `lui` its half may be completed in.
+///
+/// A MIPS address materialises as `lui rt, hi` plus a second instruction that
+/// uses `rt` as its base, and the assembler is free to put anything in
+/// between - including the `jal` whose delay slot carries the pair's low half,
+/// which is where the STR overlay hands the VLC unpacker its destination
+/// (`0x801CF214` / `0x801CF218`). The window is walked forward and abandoned
+/// the moment something redefines `rt`, so a stale high half can never be
+/// paired with an unrelated low one; a backward-only scan from the second
+/// instruction misses the delay-slot form entirely.
+const LUI_PAIR_WINDOW: usize = 16;
+
+/// The register a MIPS word writes, or `None` for the forms that write none.
+fn defines(w: u32) -> Option<u32> {
+    let op = w >> 26;
+    let rt = (w >> 16) & 0x1F;
+    match op {
+        // SPECIAL: `rd`, except the two jump-register forms.
+        0x00 => match w & 0x3F {
+            0x08 => None,     // jr
+            0x09 => Some(31), // jalr (retail always links to ra)
+            _ => Some((w >> 11) & 0x1F),
+        },
+        0x01 | 0x04..=0x07 => None, // branches
+        0x02 => None,               // j
+        0x03 => Some(31),           // jal
+        0x08..=0x0F => Some(rt),    // immediate ALU + lui
+        0x20..=0x25 => Some(rt),    // loads
+        0x28..=0x2B => None,        // stores
+        0x10 | 0x12 => match (w >> 21) & 0x1F {
+            0x00 | 0x02 => Some(rt), // mfc0 / mfc2
+            _ => None,
+        },
+        _ => Some(rt),
+    }
+}
+
+/// Registers a call may clobber under the o32 convention: `at`, `v0`-`v1`,
+/// `a0`-`a3`, `t0`-`t9`, `ra`.
+const CALLER_SAVED: [u32; 18] = [
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 24, 25, 31,
+];
+
+/// The control transfer a word makes, as far as a register walk cares.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Flow {
+    None,
+    /// `jal` / `jalr`: the walk goes on past the delay slot, less the
+    /// caller-saved registers.
+    Call,
+    /// `jr ra`: the path ends.
+    Return,
+    /// `j` / `b`: the path continues at the target only (file offset).
+    Jump(usize),
+    /// A conditional branch: both the fall-through and the target.
+    Branch(usize),
+}
+
+impl Flow {
+    fn of(w: u32, at: usize, base_va: u32) -> Self {
+        let op = w >> 26;
+        let rs = (w >> 21) & 0x1F;
+        let rt = (w >> 16) & 0x1F;
+        let rel = (at as i64 + 4 + (((w & 0xFFFF) as i16 as i64) << 2)).max(0) as usize;
+        match (op, w & 0x3F) {
+            (0x03, _) | (0x00, 0x09) => Flow::Call,
+            (0x00, 0x08) if rs == 31 => Flow::Return,
+            (0x02, _) => {
+                let va = ((base_va.wrapping_add(at as u32 + 4)) & 0xF000_0000)
+                    | ((w & 0x03FF_FFFF) << 2);
+                Flow::Jump(va.wrapping_sub(base_va) as usize)
+            }
+            (0x04, _) if rs == 0 && rt == 0 => Flow::Jump(rel),
+            (0x01, _) if rs == 0 && rt == 0x01 => Flow::Jump(rel),
+            (0x04..=0x07, _) => Flow::Branch(rel),
+            (0x01, _) if matches!(rt, 0x00 | 0x01 | 0x10 | 0x11) => Flow::Branch(rel),
+            _ => Flow::None,
+        }
+    }
+}
+
+/// One address the image's own code materialises from a `lui`, as the
+/// instruction that completes it sees it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LuiForm {
+    /// VA of the completing instruction (`addiu` / `ori` / load / store).
+    pub site: u32,
+    /// The address the instruction forms or touches - or, for an indexed
+    /// form, the base of the array the index walks.
+    pub target: u32,
+    /// Primary opcode of the completing instruction.
+    pub op: u32,
+    /// The register holding the runtime index, when the `lui` register was
+    /// summed with one before the low half was applied.
+    pub index: Option<u32>,
+}
+
+/// A register a walk is carrying: `(register, value, index register)`.
+type Held = (u32, u32, Option<u32>);
+
+/// The walk state after `v` runs.
+fn walk_apply(v: u32, st: &mut Vec<Held>) {
+    let op = v >> 26;
+    let rs = (v >> 21) & 0x1F;
+    let rt = (v >> 16) & 0x1F;
+    let low = v & 0xFFFF;
+    let held = |st: &Vec<Held>, r: u32| st.iter().find(|x| x.0 == r).copied();
+    // addiu / ori on a carried register: the register now holds more of
+    // the address (the multi-step and base-plus-offset forms).
+    if matches!(op, 0x09 | 0x0D)
+        && let Some((_, value, index)) = held(st, rs)
+    {
+        st.retain(|x| x.0 != rt);
+        if !(op == 0x0D && index.is_some()) && rt != 0 {
+            let value = if op == 0x0D {
+                value | low
+            } else {
+                value.wrapping_add(low as i16 as u32)
+            };
+            st.push((rt, value, index));
+        }
+        return;
+    }
+    // addu / or with one carried source: a copy, or one runtime index.
+    if op == 0x00 && matches!(v & 0x3F, 0x21 | 0x25) {
+        let rd = (v >> 11) & 0x1F;
+        let (src, other) = match (held(st, rs), held(st, rt)) {
+            (Some(s), None) => (Some(s), rt),
+            (None, Some(s)) => (Some(s), rs),
+            _ => (None, 0),
+        };
+        let next = match src {
+            Some((_, value, index)) if other == 0 => Some((value, index)),
+            Some((_, value, None)) if v & 0x3F == 0x21 => Some((value, Some(other))),
+            _ => None,
+        };
+        if let (Some((value, index)), true) = (next, rd != 0) {
+            st.retain(|x| x.0 != rd);
+            st.push((rd, value, index));
+            return;
+        }
+    }
+    if let Some(d) = defines(v) {
+        st.retain(|x| x.0 != d);
+    }
+}
+
+/// Every address a `lui` forms, following its register through copies,
+/// through one indexing `addu`, and across branches.
+///
+/// Three shapes complete a `lui rA, hi`:
+///
+/// * **pair** - `addiu`/`ori`/load/store with base `rA` (or with a register
+///   that holds `rA` plus earlier `addiu`s: the multi-step and
+///   base-plus-displacement forms);
+/// * **copy** - `addu rB, rA, $zero` / `or rB, rA, $zero` first;
+/// * **indexed** - `addu rB, rA, rX` with a runtime `rX`, then
+///   `lw rY, lo(rB)`. The instruction stream carries `hi` and `lo` but never
+///   `hi + lo`, and the `addu` redefines the register a pair-only walk is
+///   following, so that walk stops one instruction short of the low half.
+///   `hi + lo` is the base of the array `rX` indexes.
+///
+/// A register leaves the walk the moment anything else writes it, so a stale
+/// high half is never paired with an unrelated low one. A branch forks the
+/// walk (fall-through and target both inherit the state out of its delay
+/// slot); `j` / `b` continue at the target only, because the word after them
+/// belongs to another arm; `jr ra` ends the path; a call's delay slot still
+/// sees every register - the STR overlay completes a pair there - but only
+/// the callee-saved ones survive the call. A `lui` that itself sits in a
+/// delay slot starts its walk where that jump goes. Every path is bounded by
+/// [`LUI_PAIR_WINDOW`] instructions, and each word is walked at most once per
+/// `lui`.
+pub fn lui_forms(image: &[u8], base_va: u32) -> Vec<LuiForm> {
+    let word = |off: usize| -> Option<u32> {
+        image
+            .get(off..off.checked_add(4)?)
+            .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
+    };
+    let mut out: std::collections::BTreeSet<LuiForm> = std::collections::BTreeSet::new();
+    let mut visited: Vec<usize> = Vec::new();
+    let mut off = 0usize;
+    while off + 4 <= image.len() {
+        let Some(w) = word(off) else { break };
+        let reg = (w >> 16) & 0x1F;
+        if w >> 26 != 0x0F || reg == 0 {
+            off += 4;
+            continue;
+        }
+        let start: Vec<Held> = vec![(reg, (w & 0xFFFF) << 16, None)];
+        // The jump whose delay slot this `lui` fills, if any, runs first.
+        let prev = off
+            .checked_sub(4)
+            .and_then(word)
+            .map(|p| Flow::of(p, off - 4, base_va))
+            .unwrap_or(Flow::None);
+        let mut stack: Vec<(usize, Vec<Held>, usize)> = match prev {
+            Flow::Return => Vec::new(),
+            Flow::Call => {
+                let kept: Vec<Held> = start
+                    .into_iter()
+                    .filter(|x| !CALLER_SAVED.contains(&x.0))
+                    .collect();
+                vec![(off + 4, kept, LUI_PAIR_WINDOW)]
+            }
+            Flow::Jump(t) => vec![(t, start, LUI_PAIR_WINDOW)],
+            Flow::Branch(t) => vec![
+                (off + 4, start.clone(), LUI_PAIR_WINDOW),
+                (t, start, LUI_PAIR_WINDOW),
+            ],
+            Flow::None => vec![(off + 4, start, LUI_PAIR_WINDOW)],
+        };
+        visited.clear();
+        while let Some((mut at, mut st, mut budget)) = stack.pop() {
+            let mut pending = Flow::None;
+            while budget > 0 && !st.is_empty() {
+                if pending == Flow::None && visited.contains(&at) {
+                    break;
+                }
+                let Some(v) = word(at) else { break };
+                visited.push(at);
+                let op = v >> 26;
+                let rs = (v >> 21) & 0x1F;
+                if let Some(&(_, value, index)) = st.iter().find(|x| x.0 == rs) {
+                    let low = v & 0xFFFF;
+                    let target = match (op, index) {
+                        // ori: the low half is zero-extended; meaningless on
+                        // an indexed register.
+                        (0x0D, None) => Some(value | low),
+                        // addiu and every load/store form: sign-extended.
+                        (0x09 | 0x20..=0x25 | 0x28..=0x2B, _) => {
+                            Some(value.wrapping_add(low as i16 as u32))
+                        }
+                        _ => None,
+                    };
+                    if let Some(target) = target {
+                        out.insert(LuiForm {
+                            site: base_va.wrapping_add(at as u32),
+                            target,
+                            op,
+                            index,
+                        });
+                    }
+                }
+                walk_apply(v, &mut st);
+                budget -= 1;
+                let here = Flow::of(v, at, base_va);
+                match std::mem::replace(&mut pending, Flow::None) {
+                    Flow::Return => break,
+                    Flow::Call => st.retain(|x| !CALLER_SAVED.contains(&x.0)),
+                    Flow::Jump(t) => {
+                        at = t;
+                        continue;
+                    }
+                    Flow::Branch(t) => stack.push((t, st.clone(), budget)),
+                    Flow::None => pending = here,
+                }
+                at += 4;
+            }
+        }
+        off += 4;
+    }
+    out.into_iter().collect()
+}
+
+/// Every `(site_va, target_va)` the image's own code forms from a `lui`
+/// ([`lui_forms`] minus the indexed form).
+///
+/// This is the structural half of the uninitialised-data claim below: a zero
+/// run is only that image's own declared buffer if the image's own code
+/// computes an address inside it. Shape cannot say so - zero fill looks the
+/// same whoever wrote it - which is why the test is a pointer-forming
+/// instruction and not a byte statistic.
+pub fn formed_addresses(image: &[u8], base_va: u32) -> Vec<(u32, u32)> {
+    lui_forms(image, base_va)
+        .into_iter()
+        .filter(|f| f.index.is_none())
+        .map(|f| (f.site, f.target))
+        .collect()
+}
+
+/// An array whose element count a loop in the image's own code states.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BoundedArray {
+    /// Array base, as the consumer's `lui` / `addiu` forms it.
+    pub base: u32,
+    /// Elements: the loop bound `N` of `i < N`, `i` counted up from zero.
+    pub count: u32,
+    /// Bytes per element: `1 << s` for an `sll i, s` index, else 1.
+    pub stride: u32,
+    /// VA of the `addiu` that completes the base.
+    pub form_site: u32,
+    /// VA of the `slti` / `sltiu` that states the bound.
+    pub bound_site: u32,
+}
+
+impl BoundedArray {
+    /// Extent in bytes.
+    pub fn byte_len(&self) -> usize {
+        (self.count * self.stride) as usize
+    }
+}
+
+/// Arrays whose count is pinned by the loop that walks them.
+///
+/// The shape is the counted loop the compiler emits over a formed base:
+///
+/// ```text
+///         move/addiu i, $zero, 0          ; i = 0, within eight words of L
+///     L:  [sll  j, i, s]                  ; stride 1 << s (or 1: j = i)
+///         addu e, j, B                    ; B = lui / addiu base, written in
+///         l?/s?  x, k(e)                  ;     the body or just before it
+///         ...
+///         addiu i, i, 1
+///         slti/sltiu t, i, N              ; within three words of the branch
+///         bnez t, L                       ; backward
+/// ```
+///
+/// Every element of the claim is read off an instruction: the base off its
+/// `lui` pair, the stride off the `sll`, the count off the bound, and the
+/// access through `e` must be no wider than the stride with its offset inside
+/// one element. Anything else - a pointer bump, a runtime bound, an index that
+/// starts elsewhere - is left alone, which is why this finds few arrays: most
+/// of the retail data segment is indexed by runtime values.
+pub fn loop_bounded_arrays(image: &[u8], base_va: u32) -> Vec<BoundedArray> {
+    let word = |o: usize| legaia_bytes::u32_le(image, o);
+    let formed: std::collections::BTreeMap<usize, u32> = lui_forms(image, base_va)
+        .into_iter()
+        .filter(|f| f.op == 0x09 && f.index.is_none())
+        .map(|f| (f.site.wrapping_sub(base_va) as usize, f.target))
+        .collect();
+    let width = |op: u32| match op {
+        0x20 | 0x24 | 0x28 => Some(1u32),
+        0x21 | 0x25 | 0x29 => Some(2),
+        0x23 | 0x2B => Some(4),
+        _ => None,
+    };
+    let mut out: Vec<BoundedArray> = Vec::new();
+    let mut p = 0usize;
+    while p + 8 <= image.len() {
+        let v = word(p).unwrap_or(0);
+        p += 4;
+        let at = p - 4;
+        // bnez / beqz t, L with L behind the branch.
+        if !matches!(v >> 26, 0x04 | 0x05) || (v >> 16) & 0x1F != 0 {
+            continue;
+        }
+        let l = at as i64 + 4 + (((v & 0xFFFF) as i16 as i64) << 2);
+        if l < 0 || l as usize >= at || at - l as usize > 0x200 {
+            continue;
+        }
+        let l = l as usize;
+        let t = (v >> 21) & 0x1F;
+        // slti / sltiu t, i, N just before it.
+        let mut bound = None;
+        for k in 1..=3 {
+            let Some(o) = at.checked_sub(4 * k) else {
+                break;
+            };
+            let x = word(o).unwrap_or(0);
+            if matches!(x >> 26, 0x0A | 0x0B) && (x >> 16) & 0x1F == t {
+                bound = Some((o, (x >> 21) & 0x1F, (x & 0xFFFF) as i16));
+                break;
+            }
+            if defines(x) == Some(t) {
+                break;
+            }
+        }
+        let Some((bound_off, i_reg, n)) = bound else {
+            continue;
+        };
+        if !(2..=0x1000).contains(&n) || i_reg == 0 {
+            continue;
+        }
+        let body = (l..at + 8).step_by(4);
+        let bump = (0x09 << 26) | (i_reg << 21) | (i_reg << 16) | 1;
+        if !body.clone().any(|o| word(o) == Some(bump)) {
+            continue;
+        }
+        // i = 0 before the loop.
+        let mut zeroed = false;
+        for k in 1..=8 {
+            let Some(o) = l.checked_sub(4 * k) else { break };
+            let x = word(o).unwrap_or(0);
+            if defines(x) == Some(i_reg) {
+                let (rs, rt) = ((x >> 21) & 0x1F, (x >> 16) & 0x1F);
+                zeroed = (x >> 26 == 0x09 && rs == 0 && x & 0xFFFF == 0)
+                    || (x >> 26 == 0 && matches!(x & 0x3F, 0x21 | 0x25) && rs == 0 && rt == 0);
+                break;
+            }
+        }
+        if !zeroed {
+            continue;
+        }
+        // The index and its scaled copies.
+        let mut index: Vec<(u32, u32)> = vec![(i_reg, 1)];
+        for o in body.clone() {
+            let x = word(o).unwrap_or(0);
+            let rd = (x >> 11) & 0x1F;
+            if x >> 26 == 0 && x & 0x3F == 0 && (x >> 16) & 0x1F == i_reg && rd != i_reg && rd != 0
+            {
+                index.push((rd, 1 << ((x >> 6) & 0x1F)));
+            }
+        }
+        for o in body.clone() {
+            let x = word(o).unwrap_or(0);
+            if !(x >> 26 == 0 && x & 0x3F == 0x21) {
+                continue;
+            }
+            let (rs, rt, rd) = ((x >> 21) & 0x1F, (x >> 16) & 0x1F, (x >> 11) & 0x1F);
+            for (ri, rb) in [(rs, rt), (rt, rs)] {
+                let Some(&(_, stride)) = index.iter().find(|e| e.0 == ri) else {
+                    continue;
+                };
+                // The base register's last writer must be a formed `addiu`.
+                let mut q = o;
+                let mut base = None;
+                while q >= 4 && q + 0x80 > l {
+                    q -= 4;
+                    let y = word(q).unwrap_or(0);
+                    if defines(y) == Some(rb) {
+                        if y >> 26 == 0x09 {
+                            base = formed.get(&q).map(|&b| (q, b));
+                        }
+                        break;
+                    }
+                }
+                let Some((form_off, b)) = base else { continue };
+                // The access through the element address.
+                for o2 in (o + 4..at + 8).step_by(4) {
+                    let z = word(o2).unwrap_or(0);
+                    if let Some(w) = width(z >> 26)
+                        && (z >> 21) & 0x1F == rd
+                    {
+                        let off = (z & 0xFFFF) as i16;
+                        if stride >= w && off >= 0 && (off as u32) < stride {
+                            out.push(BoundedArray {
+                                base: b,
+                                count: n as u32,
+                                stride,
+                                form_site: base_va.wrapping_add(form_off as u32),
+                                bound_site: base_va.wrapping_add(bound_off as u32),
+                            });
+                        }
+                        break;
+                    }
+                    if defines(z) == Some(rd) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    out.sort_by_key(|a| (a.base, std::cmp::Reverse(a.count * a.stride)));
+    out.dedup_by_key(|a| a.base);
+    out
+}
+
+/// Every `(site_va, array_base_va, index_reg)` the image's own code reaches
+/// as `lui rA, hi; addu rB, rA, rX; <op> rY, lo(rB)` - the indexed form
+/// [`formed_addresses`] leaves out, because its target is the base of an
+/// array rather than the datum the instruction touches.
+pub fn indexed_addresses(image: &[u8], base_va: u32) -> Vec<(u32, u32, u32)> {
+    lui_forms(image, base_va)
+        .into_iter()
+        .filter_map(|f| f.index.map(|i| (f.site, f.target, i)))
+        .collect()
+}
+
+/// Every `(site_va, target_va, width)` where the image's own code forms an
+/// address with a `lui` pair whose second instruction is a **load or store**
+/// (`lb`/`lbu`/`sb` = 1, `lh`/`lhu`/`sh` = 2, `lw`/`sw` = 4), so the access
+/// itself states the datum's width. `lwl`/`lwr` are left out: they read an
+/// unaligned word through two instructions and pin no width alone.
+pub fn accessed_addresses(image: &[u8], base_va: u32) -> Vec<(u32, u32, u32)> {
+    lui_forms(image, base_va)
+        .into_iter()
+        .filter(|f| f.index.is_none())
+        .filter_map(|f| {
+            let width = match f.op {
+                0x20 | 0x24 | 0x28 => 1,
+                0x21 | 0x25 | 0x29 => 2,
+                0x23 | 0x2B => 4,
+                _ => return None,
+            };
+            Some((f.site, f.target, width))
+        })
+        .collect()
+}
+
+/// Maximal all-zero runs of at least `min` bytes, as `(start, end)`.
+pub fn zero_runs(buf: &[u8], min: usize) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < buf.len() {
+        if buf[i] != 0 {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < buf.len() && buf[i] == 0 {
+            i += 1;
+        }
+        if i - start >= min {
+            out.push((start, i));
+        }
+    }
+    out
+}
+
+/// Claim the zero runs an overlay image's own code addresses.
+///
+/// An overlay is streamed by a **fixed-length** transfer: `FUN_8003EBE4` asks
+/// `FUN_8003E8A8` for the entry's sector count - `toc[i+3] - toc[i+2]`, the
+/// gap to the next entry - and hands it straight to `FUN_8003E800`. So the
+/// whole extent reaches RAM whatever is in it, and a linked image's
+/// uninitialised data region travels with its code as zero fill. Those bytes
+/// are not a format nobody has walked; they are the buffers the image's own
+/// code writes at runtime, and the disc's largest single unclaimed run (PROT
+/// `0970`, 131172 bytes) is one.
+///
+/// Two rules keep this from being a way to buy percentage points, and both are
+/// asserted against the raw file rather than against the parser:
+///
+/// * the claim is exactly one maximal **all-zero** run - it can never grow
+///   into live content, and a run interrupted by a single non-zero byte is two
+///   runs;
+/// * the image's own code must address the run, and once is not enough. A
+///   single `lui` pair landing somewhere in a multi-kilobyte window is a
+///   coincidence an image with thousands of pairs will produce; two distinct
+///   addresses, or one formed at [`BSS_MIN_SITES`] separate sites, is a
+///   structure. A zero region below that bar stays residue, which is what keeps
+///   a donor's zero tail - and a zero hole inside a sparse data segment - out of
+///   the figure. Entry `0970`'s post-blob slack and its 256-byte data-segment
+///   hole are refused for having no site at all; the menu overlay's largest
+///   data-segment hole is refused on the bar.
+///
+/// The claim's `detail` reports both counts, so the reader can weigh a run
+/// addressed twice against one addressed hundreds of times.
+fn claim_uninitialised_data(buf: &[u8], sink: &mut Sink, base_va: u32) {
+    // An indexed access addresses its array's base as surely as a pair
+    // addresses a scalar, so both count as the image reaching the run.
+    let formed: Vec<(u32, u32)> = lui_forms(buf, base_va)
+        .into_iter()
+        .map(|f| (f.site, f.target))
+        .collect();
+    let mut claimed = 0usize;
+    let mut runs = 0usize;
+    for (start, end) in zero_runs(buf, BSS_RUN_MIN) {
+        let lo = base_va.wrapping_add(start as u32);
+        let hi = base_va.wrapping_add(end as u32);
+        let sites = formed.iter().filter(|(_, t)| *t >= lo && *t < hi).count();
+        let distinct = formed
+            .iter()
+            .filter(|(_, t)| *t >= lo && *t < hi)
+            .map(|(_, t)| *t)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
+        if distinct < 2 && sites < BSS_MIN_SITES {
+            continue;
+        }
+        sink.claim(
+            start,
+            end,
+            OWNER_PAD,
+            format!(
+                "uninitialised data region {lo:#010x}..{hi:#010x}, \
+                 {distinct} address(es) formed inside it at {sites} site(s)"
+            ),
+        );
+        claimed += end - start;
+        runs += 1;
+    }
+    if runs > 0 {
+        sink.note(format!(
+            "{runs} uninitialised data region(s), {claimed} bytes: \
+             zero fill the loader transfers because the read length is the \
+             entry's own sector extent, addressed by this image's own code"
+        ));
     }
 }
 
@@ -2080,7 +2693,20 @@ fn walk_scene_v12(buf: &[u8], sink: &mut Sink) {
 }
 
 fn walk_scene_event_scripts(buf: &[u8], sink: &mut Sink) {
-    let Some(ranges) = crate::scene_event_scripts::record_ranges(buf) else {
+    // The walker is selected by the entry's class, so the entry has already
+    // been placed as a prescript; the standalone record-count floor exists for
+    // context-free buffers only. `edteien` (PROT 0780) holds two records and
+    // is the one carrier the floor rejects - the positional read is the one
+    // `scene_v12_table` and the engine's scene loader use for it.
+    let ranges = crate::scene_event_scripts::record_ranges(buf).or_else(|| {
+        let r = crate::scene_event_scripts::record_ranges_positional(buf)?;
+        sink.note(format!(
+            "{} record(s): below the standalone count floor, read positionally",
+            r.len()
+        ));
+        Some(r)
+    });
+    let Some(ranges) = ranges else {
         sink.note("scene_event_scripts::record_ranges returned None");
         return;
     };
@@ -2748,6 +3374,7 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     };
     let (mut confirmed, mut refuted, mut ambiguous, mut credited_by_label) = (0, 0, 0, 0);
     let mut fill_extents = 0usize;
+    let mut data_headed = 0usize;
     let mut uncorroborated_labels = 0usize;
     let mut by_label: Vec<(usize, usize, u32)> = Vec::new();
     for d in &dumps {
@@ -2768,12 +3395,37 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
             fill_extents += 1;
             continue;
         }
+        // A dump whose opening window is the `$zero`-absolute data signature
+        // is a table decoded as opcodes - pointer words read as `lb ra,
+        // 0xNNNN(zero)` - and re-encoding it to this image's bytes confirms
+        // only that the bytes are these bytes. The attribution sweep already
+        // calls such an extent `data`; crediting it as code here claimed PROT
+        // 0898's rodata (two switch tables and a string pool) as
+        // `FUN_801cf5d0`.
+        if zero_absolute_head(&buf[start..end]) {
+            data_headed += 1;
+            continue;
+        }
         match attribute(d, buf, base) {
             Attribution::Confirmed => {
                 confirmed += 1;
                 sink.claim(start, end, OWNER_CODE, format!("FUN_{:08x}", d.entry_va));
             }
             Attribution::Refuted => refuted += 1,
+            // A label is no evidence for an extent that OPENS on fill. No
+            // routine begins with eight `nop`s, so such a dump is a frontier
+            // walk that started in padding and ran on into whatever follows -
+            // in PROT 0972 five spawn records, which the label had credited as
+            // `FUN_801d84b4` code. The attribution sweep already calls these
+            // windows `zero_window`. (A byte-confirmed extent keeps its credit:
+            // the confirmation is about the words after the fill.)
+            Attribution::Unverifiable
+                if buf
+                    .get(start..start + ZERO_HEAD_BYTES)
+                    .is_some_and(|w| w.iter().all(|&b| b == 0)) =>
+            {
+                fill_extents += 1;
+            }
             Attribution::Unverifiable => {
                 if label_ok(&d.label) {
                     by_label.push((start, end, d.entry_va));
@@ -2809,7 +3461,8 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     sink.note(format!(
         "base {:#010x} ({}); {confirmed} extents confirmed by bytes, \
          {credited_by_label} credited by filename label, {ambiguous} unverifiable, \
-         {refuted} refuted (aliased sibling), {fill_extents} land on fill",
+         {refuted} refuted (aliased sibling), {fill_extents} land on or open on fill, \
+         {data_headed} open on the data signature",
         base, rec.label
     ));
     if uncorroborated_labels > 0 {
@@ -2819,7 +3472,694 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
              of their evidence"
         ));
     }
+    claim_uninitialised_data(buf, sink, base);
     claim_pinned_overlay_assets(buf, sink, idx);
+    claim_formed_strings(buf, sink, base);
+    claim_switch_tables(buf, sink, base, opts);
+    claim_accessed_globals(buf, sink, base, opts);
+    claim_spawn_records(buf, sink, base, opts);
+    claim_loop_bounded_arrays(buf, sink, base, opts);
+}
+
+/// Arrays whose count the loop walking them states
+/// ([`loop_bounded_arrays`]), claimed from the formed base for `count *
+/// stride` bytes. The array must start outside code and end below the
+/// inherited tail.
+fn claim_loop_bounded_arrays(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOptions) {
+    let own_end = inherited_tail_start(buf, opts).unwrap_or(buf.len());
+    let code = code_intervals(sink);
+    let in_code = |off: usize| {
+        let i = code.partition_point(|&(s, _)| s <= off);
+        i > 0 && off < code[i - 1].1
+    };
+    let mut n = 0usize;
+    for a in loop_bounded_arrays(&buf[..own_end], base) {
+        let Some(off) = a.base.checked_sub(base).map(|o| o as usize) else {
+            continue;
+        };
+        let end = off + a.byte_len();
+        if end > own_end || in_code(off) || !in_code((a.bound_site - base) as usize) {
+            continue;
+        }
+        sink.claim(
+            off,
+            end,
+            OWNER_RECORD,
+            format!(
+                "array of {} x {} B, count from the loop bound at {:#010x} (base formed at {:#010x})",
+                a.count, a.stride, a.bound_site, a.form_site
+            ),
+        );
+        n += 1;
+    }
+    if n > 0 {
+        sink.note(format!(
+            "{n} array(s) sized by the counted loop that walks them"
+        ));
+    }
+}
+
+/// The image's `code` claims as sorted, **merged** intervals.
+///
+/// Dump extents nest and overlap - a dump that opens mid-routine sits inside
+/// the one that opens at its prologue - so a binary search over the raw claims
+/// can land on the inner extent, see an offset past its end, and report code
+/// as not-code. Merged, the last interval starting at or below an offset is
+/// the only one that can contain it.
+fn code_intervals(sink: &Sink) -> Vec<(usize, usize)> {
+    let mut raw: Vec<(usize, usize)> = sink
+        .claims
+        .iter()
+        .filter(|c| c.owner == OWNER_CODE)
+        .map(|c| (c.start, c.end))
+        .collect();
+    raw.sort_unstable();
+    let mut out: Vec<(usize, usize)> = Vec::with_capacity(raw.len());
+    for (s, e) in raw {
+        match out.last_mut() {
+            Some(last) if s <= last.1 => last.1 = last.1.max(e),
+            _ => out.push((s, e)),
+        }
+    }
+    out
+}
+
+/// The value `reg` holds on reaching the word at `from`, walking backwards,
+/// when the image's own code formed it from a `lui` ([`lui_forms`]).
+///
+/// The last writer of `reg` must be the completing `addiu` of a plain form,
+/// or a copy (`addu`/`or` with `$zero`) of a register that resolves the same
+/// way - retail stages a record pointer in a saved register and hands it over
+/// with `move a2,s3`. A load, or an `addiu` off a register no `lui` reached,
+/// names nothing, and so does a call crossed on the way back: every argument
+/// register is caller-saved.
+fn reg_before(
+    buf: &[u8],
+    base: u32,
+    from: usize,
+    forms: &[LuiForm],
+    reg: u32,
+    skip_call_at: Option<usize>,
+) -> Option<u32> {
+    match reg_source(buf, base, from, forms, reg, skip_call_at) {
+        Some(RegSource::Formed(v)) => Some(v),
+        _ => None,
+    }
+}
+
+/// Where a register's value at a word came from, walking backwards.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RegSource {
+    /// A `lui`-formed address.
+    Formed(u32),
+    /// The routine's own argument register, unwritten since its prologue
+    /// (`addiu sp,sp,-N`) at the given file offset.
+    Arg { reg: u32, entry: usize },
+}
+
+/// [`reg_before`], also reporting an argument register the routine received
+/// untouched - which makes the routine a wrapper that forwards that argument.
+fn reg_source(
+    buf: &[u8],
+    base: u32,
+    from: usize,
+    forms: &[LuiForm],
+    mut reg: u32,
+    skip_call_at: Option<usize>,
+) -> Option<RegSource> {
+    const WINDOW: usize = 32;
+    let mut o = from;
+    for _ in 0..WINDOW {
+        let w = legaia_bytes::u32_le(buf, o)?;
+        if w >> 16 == 0x27BD && w & 0x8000 != 0 {
+            return (4..=7)
+                .contains(&reg)
+                .then_some(RegSource::Arg { reg, entry: o });
+        }
+        // Past the previous routine's return: the walk has left this one.
+        if w == 0x03E0_0008 && o + 4 < from {
+            return None;
+        }
+        if Some(o) != skip_call_at && matches!(Flow::of(w, o, base), Flow::Call) {
+            return None;
+        }
+        if defines(w) == Some(reg) && Some(o) != skip_call_at {
+            let (op, rs, rt) = (w >> 26, (w >> 21) & 0x1F, (w >> 16) & 0x1F);
+            if op == 0x00 && matches!(w & 0x3F, 0x21 | 0x25) && (rs == 0) != (rt == 0) {
+                reg = rs | rt;
+            } else {
+                let site = base.wrapping_add(o as u32);
+                return (op == 0x09)
+                    .then(|| {
+                        forms
+                            .iter()
+                            .find(|f| f.site == site && f.op == 0x09 && f.index.is_none())
+                            .map(|f| RegSource::Formed(f.target))
+                    })
+                    .flatten();
+            }
+        }
+        o = o.checked_sub(4)?;
+    }
+    None
+}
+
+/// Every value a call at `jal_off` can be handed in argument register `reg`:
+/// the one formed on the fall-through path ([`reg_before`] from the call's
+/// delay slot), and one per `j` that lands on the call (or a few words above
+/// it, with nothing in between writing `reg`), resolved from that `j`'s own
+/// delay slot. The second shape is a `switch` whose arms each load `$a2` in
+/// the delay slot of a jump to one shared `jal`.
+fn arg_values_at_call(
+    buf: &[u8],
+    base: u32,
+    jal_off: usize,
+    forms: &[LuiForm],
+    jumps_to: &std::collections::BTreeMap<usize, Vec<usize>>,
+    reg: u32,
+) -> Vec<u32> {
+    let mut out: Vec<u32> = reg_before(buf, base, jal_off + 4, forms, reg, Some(jal_off))
+        .into_iter()
+        .collect();
+    let mut t = jal_off;
+    for _ in 0..4 {
+        for &j in jumps_to.get(&t).map(Vec::as_slice).unwrap_or(&[]) {
+            out.extend(reg_before(buf, base, j + 4, forms, reg, Some(j)));
+        }
+        let Some(prev) = t.checked_sub(4) else { break };
+        let w = legaia_bytes::u32_le(buf, prev).unwrap_or(0);
+        if defines(w) == Some(reg) || !matches!(Flow::of(w, prev, base), Flow::None) {
+            break;
+        }
+        t = prev;
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// How far a record handed to a callee extends.
+#[derive(Clone, Copy)]
+enum ArgExtent {
+    /// `[i16 model_sel][u16 reserved][move-VM bytecode]`: to the program's
+    /// terminator ([`crate::slot_b_module::move_program_end`]).
+    MoveRecord,
+    /// A fixed size the callee's own field reads pin.
+    Fixed(usize),
+}
+
+/// The callees whose pointer argument names a record of a known extent.
+///
+/// * `FUN_80021B04` (spawn) and `FUN_80050ED4` (its pool wrapper) take a
+///   spawn record in `$a2` - the shape [`crate::slot_b_module`] claims across
+///   the slot-B band.
+/// * `FUN_80020DE0` (actor allocator) takes a static actor template in `$a0`:
+///   24 bytes, `+0x00..+0x14`, fixed by the allocator's own field copies
+///   (`docs/reference/functions/runtime-libs.md`, static actor templates).
+const ARG_RECORD_CALLEES: [(u32, u32, ArgExtent, &str); 3] = [
+    (0x8002_1B04, 6, ArgExtent::MoveRecord, "spawn record"),
+    (0x8005_0ED4, 6, ArgExtent::MoveRecord, "spawn record"),
+    (0x8002_0DE0, 4, ArgExtent::Fixed(0x18), "actor template"),
+];
+
+/// Records the image's own code hands to a callee in
+/// [`ARG_RECORD_CALLEES`], claimed from the consumer's pointer-forming
+/// instruction to the extent the callee fixes.
+///
+/// Both ends are evidence rather than shape. The start is the argument the
+/// call is handed ([`arg_at_call`]); the end is where a spawn record's program
+/// stops (`HALT`, an armed idle loop, or a `WAIT` that never retires) or the
+/// template size. A program walk that runs unterminated claims nothing, and a
+/// spawn record is cut at the next consumer-formed start of the same kind so
+/// two records never overlap. The call site must lie inside a `code` claim and
+/// below the inherited tail, and the record must start outside code, like
+/// every other data claim in this walker.
+fn claim_spawn_records(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOptions) {
+    let own_end = inherited_tail_start(buf, opts).unwrap_or(buf.len());
+    let code = code_intervals(sink);
+    let in_code = |off: usize| {
+        let i = code.partition_point(|&(s, _)| s <= off);
+        i > 0 && off < code[i - 1].1
+    };
+    let jal = |t: u32| 0x0C00_0000 | ((t & 0x0FFF_FFFF) >> 2);
+    let forms = lui_forms(&buf[..own_end], base);
+    let mut jumps_to: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+    for o in (0..own_end.saturating_sub(3)).step_by(4) {
+        let w = legaia_bytes::u32_le(buf, o).unwrap_or(0);
+        if let Flow::Jump(t) = Flow::of(w, o, base)
+            && w >> 26 == 0x02
+        {
+            jumps_to.entry(t).or_default().push(o);
+        }
+    }
+    // An image-local routine that hands its own argument straight to one of
+    // the callees is that callee for this purpose: PROT 0980 stages every
+    // dancer effect through `FUN_801D3FD0`, which moves `$a3` into `$a2` and
+    // calls the spawn. Found once, from the callees' own call sites.
+    let mut callees: Vec<(u32, u32, ArgExtent, &str)> = ARG_RECORD_CALLEES.to_vec();
+    for (callee, reg, extent, what) in ARG_RECORD_CALLEES {
+        let target = jal(callee);
+        for o in (0..own_end.saturating_sub(3)).step_by(4) {
+            if legaia_bytes::u32_le(buf, o) != Some(target) || !in_code(o) {
+                continue;
+            }
+            if let Some(RegSource::Arg { reg: arg, entry }) =
+                reg_source(&buf[..own_end], base, o + 4, &forms, reg, Some(o))
+            {
+                let va = base.wrapping_add(entry as u32);
+                if !callees.iter().any(|c| c.0 == va) {
+                    callees.push((va, arg, extent, what));
+                }
+            }
+        }
+    }
+    for (callee, reg, extent, what) in callees {
+        let target = jal(callee);
+        let mut starts: Vec<usize> = Vec::new();
+        let mut sites = 0usize;
+        let mut o = 0usize;
+        while o + 4 <= own_end {
+            if legaia_bytes::u32_le(buf, o) == Some(target) && in_code(o) {
+                sites += 1;
+                for t in arg_values_at_call(&buf[..own_end], base, o, &forms, &jumps_to, reg) {
+                    if let Some(off) = t.checked_sub(base).map(|x| x as usize)
+                        && off + 4 < own_end
+                        && !in_code(off)
+                    {
+                        starts.push(off);
+                    }
+                }
+            }
+            o += 4;
+        }
+        if sites == 0 {
+            continue;
+        }
+        starts.sort_unstable();
+        starts.dedup();
+        let (mut n, mut bytes) = (0usize, 0usize);
+        for (i, &s) in starts.iter().enumerate() {
+            let end = match extent {
+                ArgExtent::MoveRecord => {
+                    let Some(e) =
+                        crate::slot_b_module::move_program_end(&buf[..own_end], s + 4).bounded()
+                    else {
+                        continue;
+                    };
+                    starts.get(i + 1).map_or(e, |&n| e.min(n))
+                }
+                ArgExtent::Fixed(len) => s + len,
+            }
+            .min(own_end);
+            let head = i16::from_le_bytes([buf[s], buf[s + 1]]);
+            sink.claim(
+                s,
+                end,
+                OWNER_RECORD,
+                format!("{what}, first halfword {head} (argument of a FUN_{callee:08x} call)"),
+            );
+            n += 1;
+            bytes += end - s;
+        }
+        sink.note(format!(
+            "{sites} FUN_{callee:08x} call(s); {} distinct {what} start(s) formed in the \
+             argument, {n} claimed ({bytes} bytes)",
+            starts.len()
+        ));
+    }
+}
+
+/// Claim every scalar the image's own code loads or stores directly.
+///
+/// An overlay's initialised data segment has no header, no count and no
+/// stride - it is whatever globals the linker laid out. What pins one of them
+/// is its consumer: a `lui` pair whose second instruction is a load or store
+/// forms the address *and* states the width it reads. So each such access
+/// claims exactly `[target, target + width)`, and nothing between two
+/// accessed words is claimed on their account.
+///
+/// Three guards. The forming site must lie inside a `code` claim (a dumped
+/// function of this image), so a `lui`-shaped word in data forms nothing; the
+/// site and the target must both lie below the inherited tail, so a donor's
+/// code claims nothing here; and the target must be aligned to its width, as
+/// every R3000 load and store requires.
+fn claim_accessed_globals(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOptions) {
+    let own_end = inherited_tail_start(buf, opts).unwrap_or(buf.len());
+    let code = code_intervals(sink);
+    let in_code = |off: usize| {
+        let i = code.partition_point(|&(s, _)| s <= off);
+        i > 0 && off < code[i - 1].1
+    };
+    let mut seen: std::collections::BTreeMap<(usize, u32), usize> =
+        std::collections::BTreeMap::new();
+    for (site, target, width) in accessed_addresses(&buf[..own_end], base) {
+        let site_off = (site - base) as usize;
+        if !in_code(site_off) || target < base || target % width != 0 {
+            continue;
+        }
+        let off = (target - base) as usize;
+        if off + width as usize > own_end {
+            continue;
+        }
+        *seen.entry((off, width)).or_default() += 1;
+    }
+    let n = seen.len();
+    for ((off, width), sites) in seen {
+        sink.claim(
+            off,
+            off + width as usize,
+            OWNER_GLOBAL,
+            format!("{width}-byte global, loaded / stored directly at {sites} site(s)"),
+        );
+    }
+    if n > 0 {
+        sink.note(format!(
+            "{n} data-segment global(s) sized by the load / store that reads them"
+        ));
+    }
+}
+
+/// Every `switch` jump table this image's own code dispatches through, each
+/// read off its dispatch: base from the `lui` pair, extent from the `sltiu`
+/// bound ([`crate::switch_tables`]). Cut at the inherited tail, so a dispatch
+/// in the donor's residue claims nothing here.
+fn claim_switch_tables(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOptions) {
+    let own_end = inherited_tail_start(buf, opts).unwrap_or(buf.len());
+    let tables = crate::switch_tables::find(buf, base, own_end);
+    for t in &tables {
+        let off = (t.va - base) as usize;
+        sink.claim(
+            off,
+            off + t.byte_len(),
+            OWNER_TOC,
+            format!("switch table, {} arms (jr {:#010x})", t.arms, t.jr),
+        );
+    }
+    if !tables.is_empty() {
+        sink.note(format!(
+            "{} switch table(s) read off their dispatch (lui base, sltiu bound)",
+            tables.len()
+        ));
+    }
+}
+
+/// Leading zero bytes that disqualify a dump extent as a routine: eight
+/// `nop`s. A compiled routine opens on its frame or its first real
+/// instruction, never on a run of fill.
+const ZERO_HEAD_BYTES: usize = 32;
+
+/// Does this window open on the `$zero`-absolute data signature - at least
+/// half of its first 24 words a load or store off `$zero`? Real code reaches
+/// statics through `gp` or a `lui` pair, so a run of `lb rN,0xNNNN(zero)` is a
+/// table of `0x80`-high words decoded as instructions. The Rust side of
+/// `looks_like_data` in `scripts/ghidra-analysis/attribute-dump-extents.py`.
+pub fn zero_absolute_head(window: &[u8]) -> bool {
+    let words: Vec<u32> = window
+        .chunks_exact(4)
+        .take(24)
+        .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
+        .collect();
+    if words.is_empty() {
+        return false;
+    }
+    let hits = words
+        .iter()
+        .filter(|&&w| matches!(w >> 26, 0x20..=0x26 | 0x28..=0x2B | 0x2E) && (w >> 21) & 0x1F == 0)
+        .count();
+    hits * 2 >= words.len()
+}
+
+/// Shortest share of printable ASCII (`0x20..=0x7E`) a NUL-terminated run
+/// must reach to be read as a string - three quarters, so the dialog escape
+/// bytes some labels carry do not disqualify them.
+const FORMED_STRING_PRINTABLE_NUM: usize = 3;
+const FORMED_STRING_PRINTABLE_DEN: usize = 4;
+
+/// End (one past the NUL) of the C string at `off`, or `None` when the bytes
+/// there are not one.
+fn cstring_end(buf: &[u8], off: usize) -> Option<usize> {
+    let tail = buf.get(off..)?;
+    let len = tail.iter().position(|&b| b == 0)?;
+    if len == 0 {
+        return None;
+    }
+    // The dialog font's `0xCE` escape (`docs/formats/dialog-font.md`) and the
+    // index byte after it are text too: a label that opens on a glyph escape
+    // is still a label. So is a Shift-JIS pair - PROT 0896 is a Japanese
+    // build, and its labels are `[count][SJIS pairs][NUL]`.
+    // A Shift-JIS reading is only offered to a run with no control byte in it
+    // other than a leading count: `8C 8D 8E 8F 1A ...` pairs up as two SJIS
+    // characters, but a `0x1A` mid-run says it is a byte table.
+    let body = &tail[..len];
+    let sjis_ok = body.iter().skip(1).all(|&b| b >= 0x20);
+    let mut printable = 0usize;
+    let mut i = 0usize;
+    while i < len {
+        let sjis = sjis_ok
+            && matches!(body[i], 0x81..=0x9F | 0xE0..=0xEF)
+            && body
+                .get(i + 1)
+                .is_some_and(|&t| matches!(t, 0x40..=0x7E | 0x80..=0xFC));
+        if (body[i] == 0xCE && i + 1 < len) || sjis {
+            printable += 2;
+            i += 2;
+            continue;
+        }
+        if (0x20..0x7F).contains(&body[i]) {
+            printable += 1;
+        }
+        i += 1;
+    }
+    (printable * FORMED_STRING_PRINTABLE_DEN >= len * FORMED_STRING_PRINTABLE_NUM)
+        .then_some(off + len + 1)
+}
+
+/// Strings - and tables of pointers to strings - whose address the image's own
+/// code forms with a `lui` pair.
+///
+/// An overlay's rodata string pool has no header and no count; what bounds a
+/// string is its own NUL, and what makes a byte run a *string of this image*
+/// rather than text-shaped data is that this image's code computes its address
+/// ([`formed_addresses`], the same pointer-forming test the uninitialised-data
+/// claim rests on). One level of indirection is followed: where the formed
+/// address holds a run of two or more in-image words that each point at a
+/// string (or at an empty / one-byte one), the words are a pointer table and
+/// are claimed with the strings they name. A target already inside a claim (code, a pinned table, the inherited
+/// tail) is left to that claim.
+fn claim_formed_strings(buf: &[u8], sink: &mut Sink, base: u32) {
+    let in_claim =
+        |sink: &Sink, off: usize| sink.claims.iter().any(|c| c.start <= off && off < c.end);
+    let to_off = |va: u32| -> Option<usize> {
+        let o = va.checked_sub(base)? as usize;
+        (o < buf.len()).then_some(o)
+    };
+    // A pair issued from the inherited tail is the donor's code forming the
+    // donor's addresses; it names nothing of this image.
+    let tail: Vec<(usize, usize)> = sink
+        .claims
+        .iter()
+        .filter(|c| c.owner == OWNER_INHERITED_TAIL)
+        .map(|c| (c.start, c.end))
+        .collect();
+    let mut targets: Vec<u32> = formed_addresses(buf, base)
+        .into_iter()
+        .filter(|&(site, _)| {
+            let s = site.wrapping_sub(base) as usize;
+            !tail.iter().any(|&(a, b)| a <= s && s < b)
+        })
+        .map(|(_, t)| t)
+        .collect();
+    targets.sort_unstable();
+    targets.dedup();
+    let (mut strings, mut tables) = (0usize, 0usize);
+    for t in targets {
+        let Some(off) = to_off(t) else { continue };
+        if in_claim(sink, off) {
+            continue;
+        }
+        if let Some(end) = cstring_end(buf, off) {
+            sink.claim(
+                off,
+                end,
+                OWNER_STRING,
+                format!("string, address formed by this image ({t:#010x})"),
+            );
+            strings += 1;
+            continue;
+        }
+        if off % 4 != 0 {
+            continue;
+        }
+        let mut k = off;
+        let mut named: Vec<(usize, usize)> = Vec::new();
+        while let Some(w) = legaia_bytes::u32_le(buf, k) {
+            let Some(s) = to_off(w) else { break };
+            // Inside a table an entry may be empty or one glyph byte (the
+            // options screen's button-glyph choice): the neighbours already
+            // say what the table is, so the printable test is not asked of a
+            // string too short to carry it.
+            let short = buf
+                .get(s..s + 2)
+                .and_then(|b| b.iter().position(|&x| x == 0));
+            let Some(e) = cstring_end(buf, s).or(short.map(|n| s + n + 1)) else {
+                break;
+            };
+            named.push((s, e));
+            k += 4;
+        }
+        if named.len() >= 2 {
+            sink.claim(
+                off,
+                k,
+                OWNER_TOC,
+                format!(
+                    "string pointer table, {} words (formed at {t:#010x})",
+                    named.len()
+                ),
+            );
+            for (s, e) in named {
+                if !in_claim(sink, s) {
+                    sink.claim(s, e, OWNER_STRING, "string named by a formed pointer table");
+                }
+            }
+            tables += 1;
+        }
+    }
+    if strings + tables > 0 {
+        sink.note(format!(
+            "{strings} string(s) and {tables} string-pointer table(s) at addresses this image's own code forms"
+        ));
+    }
+}
+
+/// Link base of the image being accounted, from its `static-overlays.toml` row.
+/// Falls back to the slot-B base, which is the only base a slot-B walk is ever
+/// selected for.
+fn base_for(opts: &AccountOptions) -> u32 {
+    opts.prot_index
+        .and_then(|i| crate::static_overlay::overlay_map().by_prot_index(i))
+        .map(|r| r.base_va)
+        .unwrap_or(crate::slot_b_module::SLOT_B_LINK_BASE)
+}
+
+/// File offset at which this image stops being its own content, when it is a
+/// mapped overlay and the sibling entries can be read. See
+/// [`crate::inherited_tail`].
+fn inherited_tail_start(buf: &[u8], opts: &AccountOptions) -> Option<usize> {
+    let idx = opts.prot_index?;
+    let dir = opts.prot_dir.as_ref()?;
+    let t = crate::inherited_tail::tails_cached(dir)
+        .get(&idx)
+        .cloned()?;
+    (t.image_bytes == buf.len() && t.start < buf.len()).then_some(t.start)
+}
+
+/// Claim the run at which this overlay image stops being its own content.
+///
+/// The packer wrote every overlay into a buffer it did not clear, so a module
+/// shorter than the buffer flushes its own bytes and then the previous, longer
+/// module's residue - inside the entry, at the file offsets that module
+/// occupies. Those bytes are that module's, so no parser of THIS entry can ever
+/// consume them: counting them as residue puts work on the worklist that no
+/// work can close, and gives the run the shape of un-dumped code.
+/// `scripts/ci/disc-coverage.py` has cut tails out of its denominator since the
+/// rule was found; this is the byte account's side of the same cut, and
+/// [`crate::inherited_tail`] is the shared measurement.
+///
+/// The claim is made before any walker runs, so a walker that reaches into the
+/// tail (a slot-B record chain walking on into the donor's residue) loses no
+/// claim of its own - claims merge - while the residue classifier no longer
+/// sees the run.
+fn claim_inherited_tail(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
+    let Some(idx) = opts.prot_index else {
+        return;
+    };
+    if crate::static_overlay::overlay_map()
+        .by_prot_index(idx)
+        .is_none()
+    {
+        return;
+    }
+    let Some(dir) = opts.prot_dir.as_ref() else {
+        sink.note(
+            "inherited-tail cut unavailable: an overlay's tail is a comparison \
+             against its sibling entries, and no --prot-dir was given",
+        );
+        return;
+    };
+    let tails = crate::inherited_tail::tails_cached(dir);
+    // The map carries both legs of the rule - sibling comparison and the
+    // packer's buffer - so a tail whose donor is not an overlay (PROT 0898's
+    // and 0895's are PROT 0894's bytes) is in it too.
+    let Some(t) = tails.get(&idx) else {
+        return;
+    };
+    // A nested pass (a decoded LZS payload) carries the outer entry's index but
+    // not its bytes, and a file offset measured on the image means nothing in
+    // it.
+    if t.image_bytes != buf.len() || t.start >= buf.len() {
+        return;
+    }
+    sink.claim(
+        t.start,
+        buf.len(),
+        OWNER_INHERITED_TAIL,
+        if t.donor_label.is_empty() {
+            format!(
+                "PROT {:04}'s bytes at the same file offset (packer buffer)",
+                t.donor_prot_index
+            )
+        } else {
+            format!(
+                "PROT {:04} ({})'s bytes at the same file offset",
+                t.donor_prot_index, t.donor_label
+            )
+        },
+    );
+}
+
+/// Claim the last-sector slack above a parser's measured content end when the
+/// packer's buffer reproduces it byte for byte.
+///
+/// The mapped overlays get the same cut from [`claim_inherited_tail`], where
+/// the own-content end is itself a measurement the cut feeds back into. Every
+/// other entry has a parser whose claims already *are* the content end - a
+/// scene bundle's last descriptor stops where `legaia_lzs::decompress_tracked`
+/// stopped consuming - so the slack above the highest claim is tested whole
+/// against [`crate::inherited_tail::buffer_run`]: the nearest earlier entry
+/// reaching each offset must hold the same byte there. All or nothing; a run
+/// with one byte the prediction does not reproduce stays residue, and an
+/// all-zero run stays the `zero_pad` it already is.
+///
+/// This is the whole of the `scene_asset_table` class's residue: every bundle
+/// on the disc ends its last LZS stream inside its last sector, and the bytes
+/// above are an earlier entry's, at the same file offsets.
+fn claim_buffer_slack(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
+    let (Some(idx), Some(dir)) = (opts.prot_index, opts.prot_dir.as_ref()) else {
+        return;
+    };
+    if crate::static_overlay::overlay_map()
+        .by_prot_index(idx)
+        .is_some()
+    {
+        return;
+    }
+    let Some(end) = sink.claims.iter().map(|c| c.end).max() else {
+        return;
+    };
+    if end >= buf.len() || buf[end..].iter().all(|&b| b == 0) {
+        return;
+    }
+    let Some(pieces) = crate::inherited_tail::buffer_run(dir, idx, buf, end) else {
+        return;
+    };
+    for p in pieces {
+        let detail = match p.donor {
+            Some(d) => format!("PROT {d:04}'s bytes at the same file offset (packer buffer)"),
+            None => "zero - no earlier entry reached this offset (packer buffer)".to_string(),
+        };
+        sink.claim(p.start, p.end, OWNER_INHERITED_TAIL, detail);
+    }
 }
 
 /// Sub-assets an overlay image carries at an offset this workspace has pinned.
@@ -2833,6 +4173,17 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
 fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_index: u32) {
     const MENU_OVERLAY: u32 = 899;
     if prot_index == MENU_OVERLAY {
+        // The option-node list's extent is its own zero-word terminator, so
+        // it is measured here rather than carried as a fixed row.
+        if let Some(len) = crate::menu_windows::options_node_list_len(buf) {
+            let off = crate::menu_windows::OPTIONS_NODE_LIST_OFFSET;
+            sink.claim(
+                off,
+                off + len,
+                OWNER_RECORD,
+                "options row-descriptor list (menu_windows)",
+            );
+        }
         for (off, what) in [
             (
                 crate::title_pak::OVERLAY_SAVE_MENU_TIM_OFFSET,
@@ -2864,6 +4215,280 @@ fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_index: u32) {
     if prot_index == 898 {
         claim_effect_proto_records(buf, sink);
         claim_battle_overlay_strings(buf, sink);
+        claim_battle_jump_tables(buf, sink);
+        claim_side_effect_banners(buf, sink);
+    }
+    if prot_index == STR_OVERLAY_PROT_INDEX {
+        claim_str_overlay_tables(buf, sink);
+    }
+    if prot_index == crate::field_probe_tables::OVERLAY_PROT_INDEX {
+        claim_field_probe_tables(buf, sink);
+    }
+    if prot_index == crate::other3_roster::OVERLAY_PROT_INDEX {
+        claim_other3_roster(buf, sink);
+    }
+}
+
+/// The field overlay's three probe-offset tables at the head of its data
+/// segment, each bound to the `lui` pairs that form its base
+/// ([`crate::field_probe_tables`]). Claimed only when
+/// [`crate::field_probe_tables::check`] re-derives every base from this
+/// image's own instructions.
+fn claim_field_probe_tables(buf: &[u8], sink: &mut Sink) {
+    use crate::field_probe_tables as fpt;
+    let errs = fpt::check(buf);
+    if !errs.is_empty() {
+        sink.note(format!(
+            "field probe tables not claimed: {} row(s) disagree with this image ({})",
+            errs.len(),
+            errs[0]
+        ));
+        return;
+    }
+    for (va, rows, sites) in fpt::TABLES {
+        let off = (va - fpt::OVERLAY_BASE_VA) as usize;
+        sink.claim(
+            off,
+            off + rows * fpt::ROW_BYTES,
+            OWNER_RECORD,
+            format!(
+                "field probe table {va:#010x}, {rows} x (dx, dz) rows, formed at {} site(s)",
+                sites.len()
+            ),
+        );
+    }
+}
+
+/// The `OTHER3` dev module's 81-record selection roster (PROT `0974`).
+///
+/// Three quarters of that entry is one fixed-stride table of NUL-padded
+/// labels, and a shape test can only call the whole thing `ascii_text` - the
+/// stride is in the drawing loop's index arithmetic, not in the bytes
+/// ([`crate::other3_roster`]). Claiming each record at the stride covers its
+/// padding too, because the stride is what the loop advances by.
+fn claim_other3_roster(buf: &[u8], sink: &mut Sink) {
+    use crate::other3_roster as roster;
+    if roster::records(buf).is_none() {
+        sink.note("no OTHER3 roster at the pinned offset in PROT 0974");
+        return;
+    }
+    for i in 0..roster::RECORD_COUNT {
+        let Some((off, len)) = roster::record_extent(i) else {
+            break;
+        };
+        sink.claim(
+            off,
+            (off + len).min(buf.len()),
+            OWNER_STRING,
+            format!("OTHER3 roster label {i} (other3_roster)"),
+        );
+    }
+    sink.note(format!(
+        "{} roster labels on a {:#x} stride at {:#010x} (other3_roster)",
+        roster::RECORD_COUNT,
+        roster::RECORD_STRIDE,
+        roster::ROSTER_VA
+    ));
+}
+
+/// PROT index of the STR/MDEC cutscene overlay.
+const STR_OVERLAY_PROT_INDEX: u32 = 970;
+
+/// The STR/MDEC overlay's two data-segment structures: the per-`fmv_id`
+/// dispatch table with the movie paths it points at, and the compressed blob
+/// the VLC lookup table is unpacked from.
+///
+/// Both are consumed by modules in this workspace at pinned constants
+/// ([`crate::fmv_dispatch`], `legaia_mdec::strv2_table`) and neither was
+/// claimed: the dispatch table and its path strings read as `plausible_mips` /
+/// `ascii_text` residue, and the blob - the second-largest overlay residue run
+/// on the disc - read as `mixed`, which is what a compressed stream looks like
+/// to a shape test.
+///
+/// The blob's extent is **measured**, not assumed: `unpack_lz_tracked` walks
+/// the control bytes to the `0xFF 0xFF` terminator and reports what it
+/// consumed, the same way [`take_lzs`] measures an LZS span. What is left of
+/// the entry's last sector past that terminator is the builder's sector
+/// buffer, and takes the same one-sector-wide slack rule the streaming classes
+/// take.
+fn claim_str_overlay_tables(buf: &[u8], sink: &mut Sink) {
+    use crate::fmv_dispatch as fmv;
+    use legaia_mdec::strv2_table as vlc;
+
+    let base = fmv::STR_OVERLAY_BASE_VA;
+    let table_off = (fmv::FMV_TABLE_VA - base) as usize;
+    let table_len = fmv::FMV_SLOT_COUNT * fmv::SLOT_STRIDE;
+    match fmv::FmvTable::from_str_overlay(buf) {
+        Some(_) => {
+            sink.claim(
+                table_off,
+                (table_off + table_len).min(buf.len()),
+                OWNER_TOC,
+                format!(
+                    "FMV dispatch table, {} x {} bytes (fmv_dispatch)",
+                    fmv::FMV_SLOT_COUNT,
+                    fmv::SLOT_STRIDE
+                ),
+            );
+            // Each slot's `+0x00` is a pointer to its ISO9660 movie path; the
+            // strings sit in the image's own head pool, so the extents come
+            // from the pointers plus a NUL scan rather than from a table.
+            for i in 0..fmv::FMV_SLOT_COUNT {
+                let at = table_off + i * fmv::SLOT_STRIDE;
+                let Some(w) = buf.get(at..at + 4) else { break };
+                let ptr = u32::from_le_bytes(w.try_into().unwrap());
+                let Some(off) = ptr.checked_sub(base).map(|o| o as usize) else {
+                    continue;
+                };
+                let Some(tail) = buf.get(off..) else { continue };
+                let Some(len) = tail.iter().position(|&b| b == 0) else {
+                    continue;
+                };
+                sink.claim(
+                    off,
+                    off + len + 1,
+                    OWNER_STRING,
+                    format!("movie path for fmv_id {i} (fmv_dispatch)"),
+                );
+            }
+        }
+        None => sink.note("no FMV dispatch table at the pinned offset in PROT 0970"),
+    }
+
+    // The two MDEC command packets the table upload sends, each checked by
+    // its own header word before it is claimed.
+    for (va, header, what) in [
+        (
+            fmv::MDEC_QUANT_PACKET_VA,
+            fmv::MDEC_QUANT_PACKET_HEADER,
+            "MDEC quant-table packet: header + luma + chroma matrices (fmv_dispatch)",
+        ),
+        (
+            fmv::MDEC_IDCT_PACKET_VA,
+            fmv::MDEC_IDCT_PACKET_HEADER,
+            "MDEC IDCT-table packet: header + 64-halfword matrix (fmv_dispatch)",
+        ),
+    ] {
+        let off = (va - base) as usize;
+        if legaia_bytes::u32_le(buf, off) == Some(header)
+            && off + fmv::MDEC_PACKET_BYTES <= buf.len()
+        {
+            sink.claim(off, off + fmv::MDEC_PACKET_BYTES, OWNER_RECORD, what);
+        } else {
+            sink.note(format!(
+                "no MDEC packet header {header:#010x} at {va:#010x}"
+            ));
+        }
+    }
+
+    let src = (vlc::STRV2_PACKED_VA - base) as usize;
+    match buf.get(src..).map(vlc::unpack_lz_tracked) {
+        Some(Ok((table, consumed))) => {
+            let end = (src + consumed).min(buf.len());
+            sink.claim(
+                src,
+                end,
+                OWNER_LZS,
+                format!(
+                    "STRv2 VLC table source, mode-switched LZ77 -> {} bytes at {:#010x} \
+                     (legaia_mdec::strv2_table, FUN_801f1a00)",
+                    table.len(),
+                    vlc::STRV2_TABLE_VA
+                ),
+            );
+            // Past the terminator, inside the entry's last sector: the
+            // builder's buffer, the same slack the streaming classes declare.
+            claim_last_sector_slack(buf, sink, end, "slack past the VLC blob terminator");
+        }
+        _ => sink.note("the VLC blob at the pinned offset does not terminate"),
+    }
+}
+
+/// The battle overlay's head: twenty-two `switch` jump tables and the C
+/// strings in front of them, each bound to the instruction pair that forms its
+/// address ([`crate::battle_jump_tables`]).
+///
+/// A table's extent is its consumer's `sltiu` bound times four - read off the
+/// dispatch, not scanned out of the bytes - so the claims are structural. They
+/// are made only when [`crate::battle_jump_tables::check`] re-derives every row
+/// from this image's own instructions; an image that disagrees gets a note and
+/// no claim.
+fn claim_battle_jump_tables(buf: &[u8], sink: &mut Sink) {
+    use crate::battle_jump_tables as bjt;
+    let errs = bjt::check(buf);
+    if !errs.is_empty() {
+        sink.note(format!(
+            "battle jump tables not claimed: {} row(s) disagree with this image ({})",
+            errs.len(),
+            errs[0]
+        ));
+        return;
+    }
+    for t in &bjt::JUMP_TABLES {
+        sink.claim(
+            t.offset(),
+            t.offset() + t.byte_len(),
+            OWNER_TOC,
+            format!(
+                "jump table, {} arms on {} (jr {:#010x})",
+                t.arms, t.index, t.jr
+            ),
+        );
+    }
+    for s in &bjt::HEAD_STRINGS {
+        let off = s.offset();
+        if let Some(len) = buf.get(off..).and_then(|t| t.iter().position(|&b| b == 0)) {
+            sink.claim(
+                off,
+                off + len + 1,
+                OWNER_STRING,
+                format!("head string, address formed at {:#010x}", s.site),
+            );
+        }
+    }
+}
+
+/// The banner strings the Seru-magic side-effect table names.
+///
+/// Each 8-byte `[element][band]` record's `+4` word is the banner-string
+/// pointer the stager `FUN_801F3D3C` copies to `0x800775B4`
+/// ([`crate::seru_side_effect`]), so the table - already claimed at its
+/// pinned offset - is the consumer that pins each string's start, and the
+/// string's own NUL pins its end. A pointer outside the image claims nothing.
+fn claim_side_effect_banners(buf: &[u8], sink: &mut Sink) {
+    use crate::seru_side_effect as seru;
+    let base = seru::OVERLAY_LINK_BASE;
+    let mut n = 0usize;
+    let mut seen = std::collections::BTreeSet::new();
+    for r in 0..seru::SIDE_EFFECT_ELEMENTS * seru::SIDE_EFFECT_BANDS {
+        let at = seru::SIDE_EFFECT_TABLE_FILE_OFFSET + r * seru::SIDE_EFFECT_RECORD_STRIDE + 4;
+        let Some(w) = buf
+            .get(at..at + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        else {
+            continue;
+        };
+        let Some(off) = w.checked_sub(base).map(|o| o as usize) else {
+            continue;
+        };
+        if off >= buf.len() || !seen.insert(off) {
+            continue;
+        }
+        let Some(len) = buf[off..].iter().position(|&b| b == 0) else {
+            continue;
+        };
+        sink.claim(
+            off,
+            off + len + 1,
+            OWNER_STRING,
+            format!("Seru side-effect banner, record {r} +4"),
+        );
+        n += 1;
+    }
+    if n > 0 {
+        sink.note(format!(
+            "{n} Seru side-effect banner string(s) named by the side-effect table's +4 words"
+        ));
     }
 }
 
@@ -2976,6 +4601,7 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
         menu_windows as menu, minigame_art as art, minigame_slot_scene as slot, move_power as mp,
         muscle_dome as dome, seru_side_effect as seru, slot_payout as payout,
     };
+    use crate::{fishing_exchange as fex, fishing_species as fish};
     const SLOT_A: u32 = 0x801C_E818;
     let at = |va: u32| (va - SLOT_A) as usize;
     match prot_index {
@@ -3116,6 +4742,18 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
                 OWNER_RECORD,
                 "pause-menu window descriptor table (menu_windows)",
             ),
+            (
+                menu::OPTIONS_LAYOUT_OFFSET,
+                menu::OPTIONS_LAYOUT_ROWS * menu::OPTIONS_LAYOUT_STRIDE,
+                OWNER_RECORD,
+                "options display-layout table (menu_windows)",
+            ),
+            (
+                menu::PRIZE_TABLE_OFFSET,
+                menu::PRIZE_TABLE_BLOCKS * menu::PRIZE_BLOCK_BYTES,
+                OWNER_RECORD,
+                "casino prize table (menu_windows)",
+            ),
         ],
         975 => vec![
             (
@@ -3212,6 +4850,74 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
                 OWNER_RECORD,
                 "dance step chart (dance_chart)",
             ),
+            (
+                (dance_chart::DANCE_BONUS_VA - SLOT_A) as usize,
+                dance_chart::DANCE_SKILL_ROWS * dance_chart::DANCE_BONUS_LANES * 4,
+                OWNER_RECORD,
+                "dance sequence-bonus table (dance_chart)",
+            ),
+            (
+                (dance_chart::DANCE_TRIANGLE_SCHEDULE_VA - SLOT_A) as usize,
+                dance_chart::DANCE_SKILL_ROWS * dance_chart::DANCE_SCHEDULE_SLOTS * 4,
+                OWNER_RECORD,
+                "dance AI triangle schedule (dance_chart)",
+            ),
+            (
+                (dance_cast::SPAWN_QUALIFIER_VA - SLOT_A) as usize,
+                3 * 0x10,
+                OWNER_RECORD,
+                "dance qualifier spawn table (dance_cast)",
+            ),
+            (
+                (dance_cast::SPAWN_FINALS_VA - SLOT_A) as usize,
+                3 * 0x10,
+                OWNER_RECORD,
+                "dance finals spawn table (dance_cast)",
+            ),
+            (
+                (dance_cast::SPAWN_FREEPLAY_VA - SLOT_A) as usize,
+                6 * 0x10,
+                OWNER_RECORD,
+                "dance free-play spawn table (dance_cast)",
+            ),
+        ],
+        972 => vec![
+            (
+                fish::SPECIES_TABLE_FILE_OFFSET,
+                fish::SPECIES_COUNT * fish::SPECIES_RECORD_STRIDE,
+                OWNER_RECORD,
+                "fishing species table (fishing_species)",
+            ),
+            (
+                (fish::SPAWN_TABLE_VA_PAGE0 - SLOT_A) as usize,
+                fish::SPAWN_RODS * fish::SPAWN_BANDS * 4,
+                OWNER_RECORD,
+                "fishing venue-0 spawn table (fishing_species)",
+            ),
+            (
+                (fish::SPAWN_TABLE_VA_PAGE1 - SLOT_A) as usize,
+                fish::SPAWN_RODS * fish::SPAWN_BANDS * 4,
+                OWNER_RECORD,
+                "fishing venue-1 spawn table (fishing_species)",
+            ),
+            (
+                (fish::CADENCE_TEMPLATE_VA - SLOT_A) as usize,
+                fish::CADENCE_TEMPLATE_COUNT * fish::CADENCE_TEMPLATE_STRIDE,
+                OWNER_RECORD,
+                "fishing reel-cadence templates (fishing_species)",
+            ),
+            (
+                (fex::EXCHANGE_TABLE_VA_PAGE0 - SLOT_A) as usize,
+                fex::EXCHANGE_ROWS * fex::EXCHANGE_ROW_STRIDE,
+                OWNER_RECORD,
+                "fishing point-exchange page 0 (fishing_exchange)",
+            ),
+            (
+                (fex::EXCHANGE_TABLE_VA_PAGE1 - SLOT_A) as usize,
+                fex::EXCHANGE_ROWS * fex::EXCHANGE_ROW_STRIDE,
+                OWNER_RECORD,
+                "fishing point-exchange page 1 (fishing_exchange)",
+            ),
         ],
         _ => Vec::new(),
     }
@@ -3225,7 +4931,11 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
 /// `FUN_80050ED4`. See [`crate::slot_b_module`] and
 /// [`docs/formats/slot-b-module-layout.md`](https://andrewaltimit.github.io/legend-of-legaia-re/formats/slot-b-module-layout.html).
 fn walk_slot_b_module(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
-    let layout = crate::slot_b_module::parse(buf);
+    // The record walk is cut at the inherited tail for the same reason the
+    // band-level measurement is: a spawn call site up there belongs to the
+    // donor whose bytes those are, and so does the record pointer it forms.
+    let layout =
+        crate::slot_b_module::parse_with_tail(buf, base_for(opts), inherited_tail_start(buf, opts));
     if let Some(h) = layout.head_table.clone() {
         sink.claim(
             h.start,
@@ -3339,12 +5049,15 @@ pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
     {
         return Walker::RingsideStill;
     }
-    // The module band is selected on the index alone: its structural regions
-    // are recovered from the image, so the walker runs with or without a dump
-    // directory (it delegates to the code walker when one is given).
+    // Every mapped image at the slot-B link base, not just the 0903..=0966 cast
+    // band: the walk's three regions are recovered by resolving words against
+    // that base, so the base is what makes the walk apply (see
+    // `slot_b_module::is_slot_b_image`). Its structural regions come out of the
+    // image, so the walker runs with or without a dump directory (it delegates
+    // to the code walker when one is given).
     if opts
         .prot_index
-        .is_some_and(crate::slot_b_module::is_slot_b_module)
+        .is_some_and(crate::slot_b_module::is_slot_b_image)
     {
         return Walker::SlotBModule;
     }
@@ -3414,6 +5127,7 @@ fn walks_as_chunk_stream(buf: &[u8]) -> bool {
 }
 
 fn dispatch(buf: &[u8], walker: Walker, sink: &mut Sink, opts: &AccountOptions, depth: u8) {
+    claim_inherited_tail(buf, sink, opts);
     match walker {
         Walker::SceneAssetTable => walk_scene_asset_table(buf, sink, opts, depth),
         Walker::DescriptorBundle => walk_descriptor_bundle(buf, sink, opts, depth),
@@ -3506,6 +5220,9 @@ fn run(
 ) -> Account {
     let mut sink = Sink::new();
     dispatch(buf, walker, &mut sink, opts, depth);
+    if depth == opts.depth {
+        claim_buffer_slack(buf, &mut sink, opts);
+    }
 
     let size = buf.len();
     let mut merged = merge_ranges(&sink.claims, size);
@@ -4082,5 +5799,86 @@ mod tests {
         assert_eq!(acc.accounted, 0);
         assert_eq!(acc.residue_bytes, buf.len());
         assert_eq!(acc.by_shape[0].shape, "zero_pad");
+    }
+
+    fn words(ws: &[u32]) -> Vec<u8> {
+        ws.iter().flat_map(|w| w.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn lui_forms_reads_the_indexed_array_base() {
+        // 0970 at 0x801D055C: lui at,0x801d; addu at,at,a3; lw v1,0xd9c(at)
+        let img = words(&[0x3C01_801D, 0x0027_0821, 0x8C23_0D9C]);
+        let f = lui_forms(&img, 0x801D_055C);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].target, 0x801D_0D9C);
+        assert_eq!(f[0].index, Some(7));
+        assert!(formed_addresses(&img, 0x801D_055C).is_empty());
+        assert!(accessed_addresses(&img, 0x801D_055C).is_empty());
+        assert_eq!(
+            indexed_addresses(&img, 0x801D_055C),
+            vec![(0x801D_0564, 0x801D_0D9C, 7)]
+        );
+    }
+
+    #[test]
+    fn lui_forms_follows_a_copy_and_stops_at_a_redefinition() {
+        // lui v0,0x8008; move v1,v0; lw a0,0x10(v1)  -> 0x80080010
+        let copy = words(&[0x3C02_8008, 0x0040_1821, 0x8C64_0010]);
+        assert_eq!(formed_addresses(&copy, 0), vec![(8, 0x8008_0010)]);
+        // lui v0,0x8008; lw v0,0x46d0(v0); lbu v1,0x1df(v0) - the second
+        // load's base is the pointer the first returned, not the high half.
+        let reload = words(&[0x3C02_8008, 0x8C42_46D0, 0x9043_01DF]);
+        assert_eq!(formed_addresses(&reload, 0), vec![(4, 0x8008_46D0)]);
+    }
+
+    #[test]
+    fn lui_forms_keeps_a_delay_slot_and_drops_past_a_call_or_return() {
+        // lui a1,0x801e; jal f; addiu a1,a1,-0x5810  -> formed in the slot
+        let slot = words(&[0x3C05_801E, 0x0C00_0000, 0x24A5_A7F0]);
+        assert_eq!(formed_addresses(&slot, 0), vec![(8, 0x801D_A7F0)]);
+        // lui v0,0x8008; jal f; nop; lbu a2,2(v0): v0 is the callee's.
+        let call = words(&[0x3C02_8008, 0x0C00_0000, 0, 0x9046_0002]);
+        assert!(formed_addresses(&call, 0).is_empty());
+        // lui s0,0x8008; jal f; nop; lbu a2,2(s0): s0 survives the call.
+        let saved = words(&[0x3C10_8008, 0x0C00_0000, 0, 0x9206_0002]);
+        assert_eq!(formed_addresses(&saved, 0), vec![(12, 0x8008_0002)]);
+        // lui v0,0x8008; jr ra; nop; lw v1,4(v0): another routine.
+        let ret = words(&[0x3C02_8008, 0x03E0_0008, 0, 0x8C43_0004]);
+        assert!(formed_addresses(&ret, 0).is_empty());
+    }
+
+    #[test]
+    fn lui_forms_follows_a_branch_out_of_a_delay_slot() {
+        // 0976 at 0x801D4750: bnez v0,L; lui v0,0x8008 (delay slot);
+        // addiu v0,zero,1; L: lw a1,-0x4778(v0). Only the taken path pairs.
+        let img = words(&[0x1440_0002, 0x3C02_8008, 0x2402_0001, 0x8C45_B888]);
+        assert_eq!(formed_addresses(&img, 0), vec![(12, 0x8007_B888)]);
+    }
+
+    #[test]
+    fn loop_bounded_arrays_reads_count_stride_and_base_off_the_loop() {
+        // PROT 0976 at 0x801D55A8: seventeen words at 0x801DB8B8, walked by
+        // s7 = 0..0x10 with `sltiu v0,s7,0x11` as the latch.
+        let img = words(&[
+            0x2417_0000, // addiu s7,zero,0
+            0x0017_1080, // L: sll v0,s7,2
+            0x3C03_801E, // lui v1,0x801e
+            0x2463_B8B8, // addiu v1,v1,-0x4748
+            0x0043_1021, // addu v0,v0,v1
+            0x8C50_0000, // lw s0,0(v0)
+            0x26F7_0001, // addiu s7,s7,1
+            0x2EE2_0011, // sltiu v0,s7,0x11
+            0x1440_FFF8, // bnez v0,L
+            0x0000_0000,
+        ]);
+        let a = loop_bounded_arrays(&img, 0);
+        assert_eq!(a.len(), 1);
+        assert_eq!((a[0].base, a[0].count, a[0].stride), (0x801D_B8B8, 17, 4));
+        assert_eq!((a[0].form_site, a[0].bound_site), (12, 28));
+        // The same loop counting from a runtime start pins nothing.
+        let mut runtime = img.clone();
+        runtime[..4].copy_from_slice(&0x0280_B821u32.to_le_bytes()); // move s7,s4
+        assert!(loop_bounded_arrays(&runtime, 0).is_empty());
     }
 }

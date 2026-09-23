@@ -10,6 +10,10 @@ mod nibble_c;
 mod nibble_d;
 mod nibble_e;
 
+/// Sub-op of `0x4C` outer nibble 1 that clones an actor
+/// (`0x801CEEA0` table slot 4 -> `0x801E0E80`).
+pub const CLONE_ACTOR_SUB_OP: u8 = 0x14;
+
 pub(super) fn op_4c<H: FieldHost>(
     host: &mut H,
     ctx: &mut FieldCtx,
@@ -45,9 +49,28 @@ pub(super) fn op_4c<H: FieldHost>(
             let Some(&b5) = bytecode.get(operand + 5) else {
                 return StepResult::Unknown { opcode, pc };
             };
+            // Sub-op `0x14` is the one eight-byte form in this nibble: its
+            // arm (`0x801E0E80`) reads a sixth payload byte and exits through
+            // `j 0x801E3624` with `addiu s8,s8,1` in the delay slot, on top of
+            // the `addiu s8,s8,7` the nibble entry already did. Every other
+            // sub-op advances seven. `legaia_asset::field_disasm` has always
+            // decoded the extra byte; the executing VM did not, which slid the
+            // PC one byte on every `4C 14` the disc issues.
+            // REF: FUN_801D835C
+            let extra = usize::from(op0 == CLONE_ACTOR_SUB_OP);
+            if extra != 0 {
+                let Some(&b6) = bytecode.get(operand + 6) else {
+                    return StepResult::Unknown { opcode, pc };
+                };
+                host.menu_ctrl_clone_actor(
+                    b6,
+                    u32::from_le_bytes([b1, b2, b3, 0]),
+                    i16::from_le_bytes([b4, b5]),
+                );
+            }
             host.menu_ctrl_sub1(op0, &[b1, b2, b3, b4, b5]);
             StepResult::Advance {
-                next_pc: pc + header_size + 6,
+                next_pc: pc + header_size + 6 + extra,
             }
         }
         2 => {

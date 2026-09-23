@@ -5,6 +5,9 @@
 mod title;
 pub use title::*;
 
+mod title_bands;
+pub use title_bands::*;
+
 mod save_select;
 pub use save_select::*;
 

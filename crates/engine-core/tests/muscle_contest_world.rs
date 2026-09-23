@@ -170,3 +170,50 @@ fn the_master_prize_lands_in_the_bag_once() {
         "and the one-shot flag latched"
     );
 }
+
+/// The ringside still is picked off the **lead record** after the leg, the
+/// way the back-read loader `FUN_801F6B24` reads it: the battle end writes
+/// the fighter's HP into `+0x106`, and the pick is `+0x106 < +0x11C / 2`.
+#[test]
+fn the_ringside_pick_reads_the_lead_record_after_the_leg() {
+    let mut w = World::default();
+    w.load_party(legaia_save::Party::zeroed(1));
+    let mut party = w.party.roster.clone();
+    let rec = &mut party.members[0];
+    let mut hms = rec.hp_mp_sp();
+    hms.hp_cur = 300;
+    hms.hp_max = 300;
+    rec.set_hp_mp_sp(hms);
+    // The base maximum `+0x11C` the pick halves.
+    let mut stats = rec.record_stats();
+    stats.hp_max = 300;
+    rec.set_record_stats(stats);
+    w.load_party(party);
+    let card = md::MuscleCard {
+        command_id: 0x0C,
+        cost: 0x1E,
+    };
+    let fought_to = |w: &mut World, hp: i32| {
+        w.enter_muscle_dome(md::MuscleDomeSession::new(
+            [card; md::HAND_SLOTS],
+            [card; md::HAND_SLOTS],
+            [120, 120],
+            [hp, 400],
+            1,
+        ));
+        w.exit_muscle_dome();
+        (
+            w.minigames.muscle_ringside_still,
+            w.party.roster.members[0].hp_mp_sp().hp_cur,
+        )
+    };
+    assert_eq!(
+        fought_to(&mut w, 100),
+        (Some(legaia_asset::ringside_still::PROT_INDEX_LOW_HP), 100),
+        "below half: the second still, and the HP lands on the record"
+    );
+    assert_eq!(
+        fought_to(&mut w, 200),
+        (Some(legaia_asset::ringside_still::PROT_INDEX_DEFAULT), 200)
+    );
+}

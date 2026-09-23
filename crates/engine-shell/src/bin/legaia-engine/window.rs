@@ -489,6 +489,10 @@ struct MuscleHubAssets {
     table: Vec<legaia_engine_render::other_game_hud::HudSprite>,
     /// GPU-resident atlas (vertically stacked `(sheet, sub-palette)` blocks).
     atlas: legaia_engine_render::UploadedSpriteAtlas,
+    /// `(still variant, atlas y offset)` of each ringside still baked into
+    /// the same atlas (`0` = extraction 1221, `1` = 1222), laid out as the
+    /// VRAM region `(384, 0)` the loader uploads it to.
+    stills: Vec<(u32, u32)>,
 }
 
 /// One placed NPC's skinned mesh halves for one clip frame: the textured
@@ -884,6 +888,10 @@ struct PlayWindowApp {
     /// The ROUND banner: `(displayed round number, envelope)`, armed on
     /// every leg entry (after the intro card on a fresh contest).
     muscle_round_banner: Option<(i32, legaia_engine_core::muscle_dome::HubScreen)>,
+    /// The round a re-entered hub's backdrop last drew its ROUND card for, so
+    /// the leg that opens after it does not replay the card
+    /// (`muscle_ringside::leg_open_raises_round_card`).
+    muscle_card_round: Option<i32>,
     /// The between-legs INTERVAL + score-tally screen's envelope, armed when
     /// a leg closes while its contest is (or just was) open.
     muscle_interval: Option<legaia_engine_core::muscle_dome::HubScreen>,
@@ -891,6 +899,11 @@ struct PlayWindowApp {
     /// armed with the INTERVAL screen and stepped once per frame while it is
     /// up (`legaia_engine_core::other_game_overlay::ScoreTallyRamp`).
     muscle_tally: Option<(legaia_engine_core::other_game_overlay::ScoreTallyRamp, i32)>,
+    /// The re-entered hub's backdrop - which ringside still the leg left
+    /// resident and the level `*(0x801D1A7C)` it is drawn at - armed with the
+    /// INTERVAL screen and run on past it through the ROUND card
+    /// (`legaia_engine_core::muscle_ringside::HubBackdrop`).
+    muscle_backdrop: Option<legaia_engine_core::muscle_ringside::HubBackdrop>,
     /// Last frame's `world.minigames.muscle_dome.is_some()`, for the leg edges above.
     muscle_prev_leg_open: bool,
     /// Last frame's `world.minigames.muscle_contest.is_some()`, distinguishing a fresh
@@ -1146,14 +1159,6 @@ struct PlayWindowApp {
     /// interp advances in retail DISPLAY frames (the op-`0x45` `apply` unit),
     /// so the step count is this counter's delta, not the sim-tick count.
     cutscene_cam_frames: u64,
-    /// `apply == 0` Camera Configure beats drained from this frame's field
-    /// events, replayed as snaps onto the interp before the glide arms. The
-    /// field VM runs until yield, so a snap beat + glide beat pair with no
-    /// yield between (map01's fly-in aerial snap -> apply-900 descent)
-    /// commits in ONE tick and the merged `camera_state` only shows the
-    /// glide's targets; the snap replays keep the glide's start pose retail
-    /// (the captured fly-in trajectory starts exactly at the snapped pose).
-    pending_camera_snaps: Vec<Vec<legaia_engine_vm::field::CameraParam>>,
     /// Active dialog box, mirroring `World::dialog.current`. Opened from the
     /// scene's MES container the frame a dialog request appears (field-VM
     /// op `0x3F` or the overworld talk-to), ticked for its typewriter reveal,

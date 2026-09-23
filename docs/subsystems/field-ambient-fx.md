@@ -194,6 +194,38 @@ the default-arm size 1 for sub-ops whose retail arms are wider (`0x25` is
 size 3), so `2F 25 <slot>` re-enters the outer dispatcher on its own
 sub-opcode word and decodes as a child spawn of record 0.
 
+### The pool's control block `0x8007C348`
+
+The words in front of the pool are a heterogeneous control block, not a table
+indexed by channel. Its layout comes from the pool helpers' own stores and
+from the stage init that fills it:
+
+| Offset | Content | Written by |
+|---|---|---|
+| `+0x00` | free-stack **top index** (`0x8E` when full; the pop's `bltz` refuses at `-1`) | `FUN_800203EC` seed, `FUN_80020424` / `FUN_80020454` pop, `FUN_800204A4` push |
+| `+0x04`, `+0x08`, `+0x0C`, `+0x10`, `+0x18`, `+0x14`, `+0x24` (pop order) | seven actor-list **sentinel nodes**, each a pool slot popped by `FUN_80020424` and left pointing at itself | per-stage init `FUN_8001E1B4` (`0x8001E324..0x8001E364`) |
+| `+0x1C` | the **player** actor | field MAIN_INIT `FUN_801D6704` at `0x801D6D7C`: the return of the spawn allocator `FUN_80020DE0(0x800705FC, *(block + 4))` |
+| `+0x28 + 4*i` | the free stack itself, 143 slot pointers | `FUN_800203EC`, then the pop / push pair |
+
+A PCSX-Redux write-watch over `+0x04..+0x27` across a door crossing
+(`korb2` -> `kor`, the `korb2_field_card_boot` save,
+[`autorun_w7c_kor5_tail.lua`](../../scripts/pcsx-redux/autorun_w7c_kor5_tail.lua)
+with `LEGAIA_POOL_WATCH=1`) sees exactly those stores: the seven sentinel
+stores at `0x8001E338..0x8001E364` in mode `0x02`, then `+0x1C` at
+`0x801D6D7C` about eighty vsyncs later. Read across ten library states
+(field, battle, world map and minigame), the six sentinels at `+0x04..+0x18`
+are the same six pool slots every time (`0x80083D7C` down to `0x80083944`,
+`0xD8` apart), `+0x1C` is `0x80083794` in every field state and `0x800830D4`
+in the battle, world-map and minigame ones, and every live free-stack entry
+lands on a slot boundary.
+
+So the channel resolver `FUN_8003C83C` (and the inline copy of it in
+`FUN_8003A9D4`) does not index this block by channel either: `0xF8` reads
+`+0x1C`, `0xFB` walks the `+0x04` list for the node whose tick word is the
+world-map entity SM `0x801DA51C`, and any other id walks the `+0x0C` list
+comparing actor `+0x50`. Read as `0x8007C348 + 4*i`, index 7 lands on the
+player only because the player word happens to sit at `+0x1C`.
+
 ### The CLUT-cell HSV cycler (the "pulsating flesh")
 
 A `model_sel = 0x4000` render-mode part (`actor[+0x5A] = 3`) whose program

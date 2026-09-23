@@ -1,6 +1,11 @@
-//! SEQ resource-slot table - the 12-byte-stride record array at
-//! `0x80091508` that tracks which side-band SEQ/VAB resources currently
-//! hold an open libsnd sequence handle.
+//! Sound-resource slot table - the 12-byte-stride record array at
+//! `0x80091508`. What a loaded slot holds open is a **VAB bank**: the
+//! release calls the VAB close `FUN_80068C80` (`SsVabClose` - ids below 16,
+//! open-state bytes at `0x801CE368`, `SpuFree` of the resident body), so the
+//! `+0x8` byte is a VAB id, not a sequence handle. (The type keeps its
+//! historical `Seq` name; an earlier reading of this doc, and the
+//! ignore-list label that called `FUN_80068C80` `SsSeqClose`, took the
+//! table for open SEQ handles.)
 //!
 //! Each retail record carries two host pointers (`+0x0` destination,
 //! `+0x4` staging - owned by the loader, not modeled here), a sign-extended

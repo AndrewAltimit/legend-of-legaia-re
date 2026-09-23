@@ -175,7 +175,7 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
     // the same draw stream (FUN_801DD6B4 - one attacker draw + one defender
     // draw, lazy bonus, then the finisher's lazy floor draw).
     use legaia_engine_vm::battle_damage_wrappers::{
-        SPELL_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender, spell_wrapper_predamage,
+        ATK_WRAPPER_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender, atk_wrapper_predamage,
     };
     use vm::battle_formulas::{DamageFinish, damage_finish_lazy};
     let mut ds = DrawStream::new();
@@ -194,7 +194,7 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
         guard: 0,
     };
     let rng2 = [ds.draw(), ds.draw()];
-    let (atk, defv) = spell_wrapper_predamage(baked.max(0) as u32, &a, &d, 100, rng2, || ds.draw());
+    let (atk, defv) = atk_wrapper_predamage(baked.max(0) as u32, &a, &d, 100, rng2, || ds.draw());
     let finish = DamageFinish {
         predamage: atk.saturating_sub(defv).clamp(1, 9999),
         attacker_slot: 3,
@@ -203,7 +203,7 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
         defender_resist: Default::default(),
         defender_guarding: false,
         enemy_defender_halve: false,
-        bypass_party_resist: SPELL_BYPASSES_PARTY_RESIST,
+        bypass_party_resist: ATK_WRAPPER_BYPASSES_PARTY_RESIST,
         summon_power_pct: 100,
         floor_rand: 0,
     };
@@ -279,8 +279,7 @@ fn a_respecting_capture_cast_rolls_the_physical_wrapper() {
     let dealt = folded_damage(&mut w, 0xA6);
 
     use legaia_engine_vm::battle_damage_wrappers::{
-        PHYSICAL_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender,
-        physical_wrapper_predamage,
+        INT_WRAPPER_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender, int_wrapper_predamage,
     };
     use vm::battle_formulas::{DamageFinish, damage_finish_lazy};
     let mut ds = DrawStream::new();
@@ -299,8 +298,7 @@ fn a_respecting_capture_cast_rolls_the_physical_wrapper() {
         guard: 0,
     };
     let rng3 = [ds.draw(), ds.draw(), ds.draw()];
-    let (atk, defv) =
-        physical_wrapper_predamage(power.max(0) as u32, &a, &d, 100, rng3, || ds.draw());
+    let (atk, defv) = int_wrapper_predamage(power.max(0) as u32, &a, &d, 100, rng3, || ds.draw());
     let finish = DamageFinish {
         predamage: atk.saturating_sub(defv).clamp(1, 9999),
         attacker_slot: 3,
@@ -309,7 +307,7 @@ fn a_respecting_capture_cast_rolls_the_physical_wrapper() {
         defender_resist: Default::default(),
         defender_guarding: false,
         enemy_defender_halve: false,
-        bypass_party_resist: PHYSICAL_BYPASSES_PARTY_RESIST,
+        bypass_party_resist: INT_WRAPPER_BYPASSES_PARTY_RESIST,
         summon_power_pct: 100,
         floor_rand: 0,
     };

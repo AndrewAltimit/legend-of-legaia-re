@@ -54,6 +54,11 @@ pub struct AmbientFxState {
     /// hook), stepped + applied against the host's software VRAM by
     /// [`crate::world::World::step_clut_fx`], cleared on scene entry.
     pub clut_fx: Vec<crate::world::ClutCellFx>,
+    /// Live field-VM `4C DB` single-source CLUT blend fades, spawned by
+    /// [`crate::world::World::spawn_clut_blend_fx`] and stepped by
+    /// [`crate::world::World::step_clut_fx`] on the same game-tick bank;
+    /// cleared on scene entry.
+    pub clut_blend_fx: Vec<crate::world::ClutBlendFx>,
     /// Queued field-VM `4C 60` literal-operand VRAM `MoveImage` stamps (the
     /// sibling of [`crate::world::AmbientFxState::clut_fx`] - retail's one-shot face-frame stamps
     /// onto the player texture atlas). Queued by
@@ -84,6 +89,7 @@ impl AmbientFxState {
             clut_vsync_accum: 0,
             clut_pending_game_ticks: 0,
             clut_fx: Vec::new(),
+            clut_blend_fx: Vec::new(),
             script_vram_moves: Vec::new(),
             vram_rect_copies: Vec::new(),
         }

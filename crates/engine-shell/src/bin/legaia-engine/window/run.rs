@@ -1053,6 +1053,22 @@ pub(super) fn cmd_play_window_with_record(
             }
         });
 
+    // Cold boot with no publisher logos on the disc goes straight to the
+    // title, so the Continue-enable scan happens here instead of in the
+    // mode-table hand-off - and it has to scan BOTH ports, exactly as that
+    // hand-off does. Scanning the save directory alone greys the row out for
+    // a player whose only save is on the memory-card image they mounted,
+    // which is the one thing `--card` exists for.
+    // Port 2 of the save screen's rack, mounted once. A container the
+    // detector does not recognise is a mistake worth naming, not an empty
+    // port, so the mount failure logs instead of silently leaving `None`.
+    let mounted_card = card.and_then(|p| match super::MountedCard::open(p) {
+        Ok(c) => Some(c),
+        Err(e) => {
+            log::warn!("play-window: --card not mounted: {e:#}");
+            None
+        }
+    });
     let initial_boot_ui = if boot_ui {
         if publisher_logos_atlas_data.is_some() {
             BootUiState::PublisherLogos(
@@ -1060,7 +1076,12 @@ pub(super) fn cmd_play_window_with_record(
             )
         } else {
             let snapshots = scan_save_dir(save_dir);
-            let any_present = snapshots.iter().any(|s| s.present);
+            let any_present = snapshots.iter().any(|s| s.present)
+                || mounted_card.as_ref().is_some_and(|c| {
+                    legaia_engine_core::save_select::card_block_snapshots(c)
+                        .iter()
+                        .any(|s| s.present)
+                });
             BootUiState::Title(super::boot_cutscene::title_session(any_present))
         }
     } else {
@@ -1137,8 +1158,10 @@ pub(super) fn cmd_play_window_with_record(
         muscle_hub: None,
         muscle_intro_card: None,
         muscle_round_banner: None,
+        muscle_card_round: None,
         muscle_interval: None,
         muscle_tally: None,
+        muscle_backdrop: None,
         muscle_prev_leg_open: false,
         muscle_prev_contest_open: false,
         summon_actor_slot: None,
@@ -1176,16 +1199,7 @@ pub(super) fn cmd_play_window_with_record(
         npc_bundle_special: std::collections::HashMap::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
-        // Port 2 of the save screen's rack. A container the detector does
-        // not recognise is a mistake worth naming, not an empty port, so the
-        // mount failure logs instead of silently leaving `None`.
-        card: card.and_then(|p| match super::MountedCard::open(p) {
-            Ok(c) => Some(c),
-            Err(e) => {
-                log::warn!("play-window: --card not mounted: {e:#}");
-                None
-            }
-        }),
+        card: mounted_card,
         save_flow: legaia_engine_core::save_screen::SaveScreenFlow::new(),
         options_state: legaia_engine_core::options::OptionsState::load_or_default(
             &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
@@ -1200,7 +1214,6 @@ pub(super) fn cmd_play_window_with_record(
         cutscene: None,
         cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
         cutscene_cam_frames: 0,
-        pending_camera_snaps: Vec::new(),
         active_dialog: None,
         seru_names: None,
         battle_camera: None,

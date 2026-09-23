@@ -1,7 +1,9 @@
 //! World-map entity state machine, ported from `FUN_801DA51C`
-//! (overlay_world_map.bin base `0x801C0000`).
+//! (field overlay PROT 0897, base `0x801CE818`).
 //!
-//! PORT: FUN_801DA51C, FUN_801D9E1C
+//! PORT: FUN_801DA51C
+//! REF: FUN_801D9E1C (the region encounter roll this SM reaches through
+//!      [`WorldMapHost::on_encounter`]; ported in `legaia_engine_core::region_encounter`)
 //!
 //! One instance of [`WorldMapEntityCtx`] exists per on-map entity (NPCs,
 //! town-portal tiles, monster spawn zones). The retail engine stores the
@@ -76,8 +78,10 @@ pub trait WorldMapEntityHost {
     /// path below state-0 still runs when the gate is open elsewhere).
     fn activation_gate_open(&self) -> bool;
 
-    /// `DAT_8007b604` - signed encounter-rate countdown shared across all
-    /// entities. Decremented in the Idle state; the SM reads and writes it
+    /// `DAT_8007b604` - encounter-rate countdown shared across all
+    /// entities. Retail reads and writes it as an **unsigned** byte; the
+    /// `i8` carries the same bits and the SM only tests it against zero
+    /// and decrements with wrap. Decremented in the Idle state; the SM reads and writes it
     /// via the two methods below.
     fn encounter_countdown(&self) -> i8;
     fn set_encounter_countdown(&mut self, v: i8);
@@ -133,12 +137,17 @@ pub fn step<H: WorldMapEntityHost>(entity_idx: usize, ctx: &mut WorldMapEntityCt
         let countdown = host.encounter_countdown();
         match ctx.state {
             0 => {
-                // Idle: decrement encounter countdown; fire encounter when it
-                // hits 0 and the encounter rate is enabled.
-                if countdown == 0 && host.encounter_enabled() {
+                // Idle (`0x801DA580..0x801DA5B8`): the countdown is an
+                // unsigned byte (`lbu`/`sb` at `0x8007B604`). Non-zero ->
+                // decrement and stop; zero -> roll the encounter only when
+                // the rate flag is set, and otherwise leave the byte at 0.
+                // (The port once decremented on the zero/disabled path,
+                // storing 0xFF, and saturated at -128 where retail's byte
+                // counts 0x80 -> 0x7F.)
+                if countdown != 0 {
+                    host.set_encounter_countdown(countdown.wrapping_sub(1));
+                } else if host.encounter_enabled() {
                     host.on_encounter(entity_idx, 0);
-                } else {
-                    host.set_encounter_countdown(countdown.saturating_sub(1));
                 }
             }
             1 => {
@@ -146,8 +155,9 @@ pub fn step<H: WorldMapEntityHost>(entity_idx: usize, ctx: &mut WorldMapEntityCt
                 // drain the countdown. When it hits 0, advance to state 2 and
                 // fall through to the Transitioning handler.
                 ctx.pad_flags |= 0x80000;
-                if countdown > 0 {
-                    host.set_encounter_countdown(countdown - 1);
+                if countdown != 0 {
+                    // Unsigned byte in retail (`0x801DA5D4..0x801DA5EC`).
+                    host.set_encounter_countdown(countdown.wrapping_sub(1));
                     return;
                 }
                 host.on_activating(entity_idx);
@@ -206,6 +216,20 @@ impl WorldMapEntityCtx {
 /// World-map atmospheric fog-RGB script interpreter, ported from
 /// `FUN_801E3E00` (overlay_world_map.bin base `0x801C0000`; dump
 /// `ghidra/scripts/funcs/overlay_world_map_801e3e00.txt`).
+///
+/// NOT WIRED: `World::tick_world_map` is the pass that
+/// would drive it, and the thing it lacks is not the tick but the **actor**.
+/// Retail reaches this body through the world-map object-effect dispatch,
+/// which writes this address into a spawned actor's `+0x0C` tick slot and its
+/// keyframe script into `+0x94`; the port's overworld pass installs
+/// `WorldMapEntityCtx` state machines per classified placement
+/// (`install_world_map_entities_at`) and carries no per-actor tick pointer at
+/// all, so nothing constructs this interpreter outside its own tests. The
+/// site's world-overview viewer is not that consumer either: it takes the fog
+/// colour as a per-kingdom constant read out of a save state at
+/// `actor[+0x74]`, keyed on this very address
+/// (`legaia_web_viewer::sentinel_placements::ATMOSPHERIC_TICK`), which is a
+/// snapshot of one frame of this script rather than a run of it.
 ///
 /// PORT: FUN_801E3E00 - atmospheric-actor tick: keyframe script driving the
 /// fog color word at actor `+0x74` (the GTE far-color / haze source) plus a

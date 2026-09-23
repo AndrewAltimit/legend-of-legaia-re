@@ -3,7 +3,12 @@
 //! the legacy `tim_scan/<entry>/` filesystem intermediate the asset-viewer
 //! used.
 //!
-//! PORT: FUN_8001FE70
+//! REF: FUN_8001FE70 (the battle-init `scene_tmd_stream` loader - chunk 0's
+//! TMD allocated and copied with its pointer at `0x8007B864`, type-`0x01`
+//! chunks uploaded through `FUN_800198E0`, a type-`0x02` chunk or zero size
+//! ending the walk. Its walker is ported as `legaia_asset`'s
+//! type-`0x02`-terminated chunk walker; this module's whole-scene magic scan
+//! is not that routine, which the old `PORT:` here claimed it was.)
 //!
 //! NB this module's TMD pool is a **magic scan** over the scene's raw entry
 //! bytes, not retail's registration order: it cannot see a TMD inside an

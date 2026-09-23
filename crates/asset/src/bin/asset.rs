@@ -1312,6 +1312,10 @@ fn account_cmd(
         prot_index: prot_index.or_else(|| prot_index_from_name(&name)),
         label: name,
         funcs_dir: funcs,
+        // The overlay walkers need the sibling entries to measure this image's
+        // inherited tail (`legaia_asset::inherited_tail`); this is the same
+        // directory the bare-index form resolves against.
+        prot_dir: prot_dir.is_dir().then(|| prot_dir.to_path_buf()),
         depth,
         rescan,
         min_residue,

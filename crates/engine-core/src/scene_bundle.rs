@@ -1,13 +1,20 @@
 //! Scene-bundle loader: locates the per-scene asset table inside a loaded
 //! [`crate::scene::Scene`] and walks the descriptors into typed sub-assets.
 //!
-//! PORT: FUN_8001F7C0, FUN_8001F05C
+//! PORT: FUN_8001F7C0
+//! PORT: FUN_8001F05C (its `a1 >> 24` asset-type switch only - the typed
+//! classification of each descriptor; the per-case allocation, LZS decode /
+//! copy and VRAM upload are the host loader's)
 //!
 //! Mirrors the runtime field-loader chain in [`docs/subsystems/asset-loader.md`]:
-//! `FUN_8001F7C0` reads the scene-name path, opens the bundle entry, and the
-//! dispatcher at `FUN_8001F05C` walks the 7 descriptors. The retail engine
-//! decompressed the payload region into a per-scene working buffer and then
-//! resolved each descriptor's `data_offset` within that buffer; for engines
+//! `FUN_8001F7C0` reads the scene-name path and opens the bundle entry. The
+//! descriptor walk is `FUN_80020224`, which hands each `(data, type<<24 |
+//! size)` pair to `FUN_8001F05C` - a **per-asset install dispatcher**, not a
+//! descriptor walker: it switches on the type byte (`sltiu 0x15`, jump table
+//! `0x80010638`), allocates (`FUN_80017888`), decompresses (`FUN_8001A55C`)
+//! or copies (`FUN_8001A8B0`), and registers sub-entries per case.
+//! `FUN_8001F7C0` does not call it. The retail engine resolved each
+//! descriptor's `data_offset` within a per-scene working buffer; for engines
 //! we expose just the typed payload slices.
 //!
 //! The descriptor table format is documented in

@@ -853,9 +853,23 @@ impl LegaiaMinigames {
 
     /// Advance the duel one frame's worth of `frame_step` (the retail SM's
     /// per-frame delta; `1` is a normal frame).
+    ///
+    /// The rules kernel buffers a sound cue per exchange hit
+    /// (`BakaFight::cues`), and **this host never drained it**: the other two
+    /// take it every frame (`drain_baka_sfx_cues` natively, `tick_baka_ui` on
+    /// the play page), so on this page the duel was both silent and growing a
+    /// vector for the length of a ladder run. Drained here, audio up or not -
+    /// a muted page must not accumulate a queue either.
     pub fn baka_tick(&mut self, frame_step: i32) {
-        if let Some(f) = self.baka.as_mut() {
-            f.tick(frame_step);
+        let cues: Vec<u8> = match self.baka.as_mut() {
+            Some(f) => {
+                f.tick(frame_step);
+                f.take_cues()
+            }
+            None => return,
+        };
+        for id in cues {
+            self.minigame_sfx_cue(u16::from(id));
         }
     }
 
@@ -2324,16 +2338,12 @@ impl LegaiaMinigames {
             self.muscle_tally_voiced_steps = target;
             let mut keyed = 0u32;
             for cue in attrs {
-                let attr = legaia_engine_audio::VoiceAttr {
-                    voice: cue.voice.min(23) as u8,
-                    vab_id: cue.vab_program_tone.0 as i16,
-                    program: cue.vab_program_tone.1 as u8,
-                    tone: cue.vab_program_tone.2 as u8,
-                    note: cue.note_and_fine.0 as u8,
-                    fine: cue.note_and_fine.1 as i16,
-                    vol_l: cue.volume.0 as i16,
-                    vol_r: cue.volume.1 as i16,
-                };
+                let attr = legaia_engine_audio::VoiceAttr::from_cue_words(
+                    cue.voice,
+                    cue.vab_program_tone,
+                    cue.note_and_fine,
+                    cue.volume,
+                );
                 // Retail's `a1` is a VAB **id**; the native director resolves
                 // it as an SFX slot with the live BGM bank as the fallback.
                 // This page has no resident BGM bank (its music is an offline

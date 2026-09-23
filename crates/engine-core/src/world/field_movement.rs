@@ -436,7 +436,10 @@ impl World {
     /// Sample the collision grid at world coords `(x, z)` and return `true`
     /// if the covering sub-cell is a wall.
     ///
-    /// PORT: FUN_801cfe4c
+    /// REF: FUN_801cfe4c (the per-direction composite that inlines this
+    /// sampler three times over `DAT_801F2214` - ported as
+    /// [`Self::field_dir_blocked`]; this item is the single-point probe
+    /// `FUN_801d56c4` tagged below)
     ///
     /// Single candidate-centre wall test against the `+0x4000` grid, using
     /// retail's exact sub-cell derivation: `zc = (z>>6)+2`,

@@ -415,6 +415,27 @@ pub enum FieldCameraFrame {
     HostDebugOrbit,
 }
 
+/// Retail GTE **NCLIP** winding-rejection mode for this frame's scene pass -
+/// the word both hosts hand their renderer (`Renderer::set_backface_cull` /
+/// the play page's `setNclipCull`).
+///
+/// `2` = reject the retail back faces, `0` = draw both sides. It is armed for
+/// the in-engine cutscene camera and nothing else: the `opdeene` prologue's
+/// crater-rim tableau shot sits INSIDE the scene's closed cave-wall backdrop
+/// mesh, and retail's per-prim NCLIP is what discards the shell's near wall.
+/// Free-roam field, battle and the world map keep both-sided draws - their
+/// per-pass winding parities differ, and the world-map fly-in leg's continent
+/// terrain would lose its ground tiles under the field-tuned cull, which is
+/// why the overworld is excluded even while a timeline owns the camera.
+///
+/// Shared so the two hosts cannot arm it on different frames; each passes the
+/// two booleans it can answer locally.
+///
+/// REF: FUN_8002735c
+pub fn nclip_cull_mode(cutscene_camera_active: bool, in_world_map: bool) -> u32 {
+    u32::from(cutscene_camera_active && !in_world_map) * 2
+}
+
 /// Resolve this frame's camera from the live world.
 ///
 /// `cutscene` is the host's already-glided cutscene view (see

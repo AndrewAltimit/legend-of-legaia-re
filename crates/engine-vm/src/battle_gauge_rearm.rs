@@ -1,5 +1,7 @@
-//! Arts-gauge re-arm at art start (`FUN_801E93C8`) and the damage-number popup
-//! ring push (`FUN_801F44A0`).
+//! The per-actor anim-rate restore at an action's end (`FUN_801E93C8`) and the
+//! damage-number popup ring push (`FUN_801F44A0`). The module keeps its old
+//! name; `FUN_801E93C8` was first read as an arts-gauge re-arm, and it is not
+//! one - the byte it seeds, `+0x21D`, is the animation-rate scalar.
 //!
 //! Two small battle-overlay state kernels that both hang off the shared battle
 //! context `_DAT_8007BD24` and neither of which touches the GPU. They are
@@ -12,7 +14,7 @@
 //! `docs/subsystems/minigame-muscle-dome.md`.
 
 // ---------------------------------------------------------------------------
-// FUN_801E93C8 - gauge re-arm at art start
+// FUN_801E93C8 - anim-rate restore
 // ---------------------------------------------------------------------------
 
 /// The value `FUN_801E93C8` seeds into every actor's `+0x21D`. That byte is
@@ -23,27 +25,27 @@
 /// an arts-gauge "arm width"; the consumers - the anim tick `FUN_80047430`,
 /// the after-image walk `FUN_80049348` and the strike-drift scale - settle
 /// it as the anim rate.)
-pub const ARM_WIDTH_SEED: u8 = crate::battle_anim_rate::RATE_NORMAL;
+pub const ANIM_RATE_SEED: u8 = crate::battle_anim_rate::RATE_NORMAL;
 
-/// The number of actor slots the re-arm walks (`0..7`).
-pub const GAUGE_SLOTS: usize = 7;
+/// The number of actor slots the restore walks (`0..7`).
+pub const ANIM_RATE_SLOTS: usize = 7;
 
-/// The per-slot gauge fields `FUN_801E93C8` rewrites.
+/// The two per-slot bytes `FUN_801E93C8` rewrites.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GaugeSlots {
+pub struct AnimRateSlots {
     /// Per-actor `+0x21C` latch. Cleared **only when it holds exactly `1`** -
     /// any other value is left alone.
-    pub latch: [u8; GAUGE_SLOTS],
-    /// Per-actor `+0x21D` arm width, unconditionally seeded to
-    /// [`ARM_WIDTH_SEED`].
-    pub arm_width: [u8; GAUGE_SLOTS],
+    pub latch: [u8; ANIM_RATE_SLOTS],
+    /// Per-actor `+0x21D` animation rate, unconditionally seeded to
+    /// [`ANIM_RATE_SEED`].
+    pub anim_rate: [u8; ANIM_RATE_SLOTS],
 }
 
-impl Default for GaugeSlots {
+impl Default for AnimRateSlots {
     fn default() -> Self {
         Self {
-            latch: [0; GAUGE_SLOTS],
-            arm_width: [0; GAUGE_SLOTS],
+            latch: [0; ANIM_RATE_SLOTS],
+            anim_rate: [0; ANIM_RATE_SLOTS],
         }
     }
 }
@@ -55,24 +57,25 @@ impl Default for GaugeSlots {
 #[derive(Debug, Clone, Copy)]
 pub enum StagedAction {
     /// Party slot (active index `< 3`): the actor's last-staged action id
-    /// `+0x1D9`. The re-arm runs only while this is `< 0x10`, i.e. a plain
+    /// `+0x1D9`. The restore runs only while this is `< 0x10`, i.e. a plain
     /// direction command (`0x0C..=0x0F`) rather than a materialised art or
     /// starter.
     Party { action_id: u8 },
     /// Monster slot (active index `>= 3`): the flag byte `+0x87` of the art
     /// record the staged id resolves to (`record_table[slot - 3][id]` then
-    /// `+0x4C`). The re-arm runs only while this is zero.
+    /// `+0x4C`). The restore runs only while this is zero.
     Monster { record_flag: u8 },
 }
 
-/// Re-arm the per-actor gauge slots when a committed action begins.
+/// Restore every slot's animation rate (and clear a `+0x21C` latch of `1`)
+/// once the acting actor's action has ended.
 ///
-/// Returns `true` when the re-arm ran, which is also the condition under which
+/// Returns `true` when the restore ran, which is also the condition under which
 /// retail clears the context's `+0x243` byte - the caller owns that write
 /// because `+0x243` lives in the battle context, not in the slot array.
 ///
 /// The live caller is the battle-action SM's `DoneCleanup` tail
-/// (`crate::battle_action`'s `rearm_action_gauge`), which is where retail
+/// (`crate::battle_action`'s `restore_action_anim_rates`), which is where retail
 /// `jal`s it. That caller maps `+0x21C` / `+0x21D` onto the SM's
 /// `BattleActor::render_flag` / `BattleActor::impact_step`, and reads the
 /// party gate's `+0x1D9` off `BattleActor::current_anim` - the same byte, read
@@ -81,7 +84,7 @@ pub enum StagedAction {
 /// id).
 ///
 /// PORT: FUN_801E93C8
-pub fn rearm_gauge(staged: StagedAction, slots: &mut GaugeSlots) -> bool {
+pub fn restore_anim_rates(staged: StagedAction, slots: &mut AnimRateSlots) -> bool {
     let gate_open = match staged {
         StagedAction::Party { action_id } => action_id < 0x10,
         StagedAction::Monster { record_flag } => record_flag == 0,
@@ -89,11 +92,11 @@ pub fn rearm_gauge(staged: StagedAction, slots: &mut GaugeSlots) -> bool {
     if !gate_open {
         return false;
     }
-    for i in 0..GAUGE_SLOTS {
+    for i in 0..ANIM_RATE_SLOTS {
         if slots.latch[i] == 1 {
             slots.latch[i] = 0;
         }
-        slots.arm_width[i] = ARM_WIDTH_SEED;
+        slots.anim_rate[i] = ANIM_RATE_SEED;
     }
     true
 }
@@ -155,51 +158,57 @@ mod tests {
 
     #[test]
     fn party_gate_admits_direction_ids_and_rejects_materialised_arts() {
-        let mut s = GaugeSlots {
-            latch: [1; GAUGE_SLOTS],
-            arm_width: [0; GAUGE_SLOTS],
+        let mut s = AnimRateSlots {
+            latch: [1; ANIM_RATE_SLOTS],
+            anim_rate: [0; ANIM_RATE_SLOTS],
         };
-        assert!(rearm_gauge(StagedAction::Party { action_id: 0x0C }, &mut s));
-        assert_eq!(s.latch, [0; GAUGE_SLOTS]);
-        assert_eq!(s.arm_width, [ARM_WIDTH_SEED; GAUGE_SLOTS]);
+        assert!(restore_anim_rates(
+            StagedAction::Party { action_id: 0x0C },
+            &mut s
+        ));
+        assert_eq!(s.latch, [0; ANIM_RATE_SLOTS]);
+        assert_eq!(s.anim_rate, [ANIM_RATE_SEED; ANIM_RATE_SLOTS]);
 
-        let mut s = GaugeSlots {
-            latch: [1; GAUGE_SLOTS],
-            arm_width: [0; GAUGE_SLOTS],
+        let mut s = AnimRateSlots {
+            latch: [1; ANIM_RATE_SLOTS],
+            anim_rate: [0; ANIM_RATE_SLOTS],
         };
-        assert!(!rearm_gauge(
+        assert!(!restore_anim_rates(
             StagedAction::Party { action_id: 0x10 },
             &mut s
         ));
         // Nothing is touched on the closed gate.
-        assert_eq!(s.latch, [1; GAUGE_SLOTS]);
-        assert_eq!(s.arm_width, [0; GAUGE_SLOTS]);
+        assert_eq!(s.latch, [1; ANIM_RATE_SLOTS]);
+        assert_eq!(s.anim_rate, [0; ANIM_RATE_SLOTS]);
     }
 
     #[test]
     fn monster_gate_reads_the_record_flag_not_the_action_id() {
-        let mut s = GaugeSlots::default();
-        assert!(rearm_gauge(
+        let mut s = AnimRateSlots::default();
+        assert!(restore_anim_rates(
             StagedAction::Monster { record_flag: 0 },
             &mut s
         ));
-        assert_eq!(s.arm_width, [ARM_WIDTH_SEED; GAUGE_SLOTS]);
+        assert_eq!(s.anim_rate, [ANIM_RATE_SEED; ANIM_RATE_SLOTS]);
 
-        let mut s = GaugeSlots::default();
-        assert!(!rearm_gauge(
+        let mut s = AnimRateSlots::default();
+        assert!(!restore_anim_rates(
             StagedAction::Monster { record_flag: 1 },
             &mut s
         ));
-        assert_eq!(s.arm_width, [0; GAUGE_SLOTS]);
+        assert_eq!(s.anim_rate, [0; ANIM_RATE_SLOTS]);
     }
 
     #[test]
     fn only_a_latch_of_exactly_one_is_cleared() {
-        let mut s = GaugeSlots {
+        let mut s = AnimRateSlots {
             latch: [0, 1, 2, 3, 1, 5, 200],
-            arm_width: [0; GAUGE_SLOTS],
+            anim_rate: [0; ANIM_RATE_SLOTS],
         };
-        assert!(rearm_gauge(StagedAction::Party { action_id: 0 }, &mut s));
+        assert!(restore_anim_rates(
+            StagedAction::Party { action_id: 0 },
+            &mut s
+        ));
         assert_eq!(s.latch, [0, 0, 2, 3, 0, 5, 200]);
     }
 

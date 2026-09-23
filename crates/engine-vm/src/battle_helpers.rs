@@ -23,8 +23,7 @@
 //!
 //! | Kernel | Retail caller | Call site | Port of the caller |
 //! |---|---|---|---|
-//! | [`mes_append_escape`] | `FUN_8004AD80` | `8004B2F8`, `8004B338`, … | no engine message **composer** |
-//! | [`advance_gauge`] | `FUN_800402F4` | `800421A0` | ported piecewise, no single-function port |
+//! | [`top_up_cooldown`] | `FUN_800402F4` | `800421A0` | ported piecewise, no single-function port |
 //! | [`ease_quad_interp`] | unidentified - see below | - | - |
 //!
 //! [`screen_x_mirror`] is not on that list: it is the file's one **replaced**
@@ -46,22 +45,16 @@
 //! [`docs/tooling/phantom-print-index.md`](../../../docs/tooling/phantom-print-index.md).
 //!
 //! - `FUN_8003CB54` ([`mes_string_end_offset`] / [`mes_append_escape`]) is
-//!   **not an action-queue splice**, and the reason built on that reading is
-//!   withdrawn. Its buffer is a **MES-markup text string**: the `< 0x1f` stop
-//!   is the terminator/control range and the `(b & 0xF0) == 0xC0` two-byte
-//!   stride is the escape-token range, both exactly as
-//!   [`docs/formats/mes.md`](../../../docs/formats/mes.md) tabulates them, and
-//!   its sibling `FUN_8003CA78` is the marked-up string copy that seeds the
-//!   buffer this appends to. The one dumped caller settles it:
-//!   `FUN_8004AD80`, the battle staged-animation commit, copies a template
-//!   into a string scratch at `0x800779A8` / `0x800779DC` / `0x80077A08` and
-//!   then appends `{0xC2, id}` - the item-name substitution token. So the
-//!   blocker is not "no raw action buffer": the engine **decodes** these
-//!   escapes (`legaia_mes`, `engine-core::dialog`, `world::prop_interact`) but
-//!   never **composes** a marked-up string, because every engine message is
-//!   assembled as resolved text. Nothing holds a byte buffer mid-compose for
-//!   the append to land in.
-//! - `FUN_80046870` ([`advance_gauge`]) ramps the `gp + 0x2E8` word, which the
+//!   **wired**, and so off this list. Its buffer is a **MES-markup text
+//!   string**: the `< 0x1f` stop is the terminator/control range and the
+//!   `(b & 0xF0) == 0xC0` two-byte stride is the escape-token range, both
+//!   exactly as [`docs/formats/mes.md`](../../../docs/formats/mes.md)
+//!   tabulates them. Its one dumped caller, the battle anim commit
+//!   `FUN_8004AD80`, appends `{0xC2, id}` - the item-name token - to the
+//!   death-spoils captions (steal attack / thief's loot, HUD element `0x5B`),
+//!   and `legaia_engine_core::battle_steal::compose_caption` makes the same
+//!   call when a slain monster's knockdown ends.
+//! - `FUN_80046870` ([`top_up_cooldown`]) ramps the `gp + 0x2E8` word, which the
 //!   validator's arm-`0x82` gate `FUN_80046898` tests against `0xE0`. **That
 //!   word's identity is now settled, and it is not an inventory count.**
 //!   `gp` is `0x8007B318` (`80026ca8` `lui gp,0x8008` + `80026cac`
@@ -77,7 +70,7 @@
 //!   (`lw v0,-0x4a00(v0)` / `bne v0,zero,<skip>`). A count of held items is
 //!   neither ticked down per frame nor tested for zero as a busy gate.
 //!
-//!   So the pair is a **cooldown**: [`advance_gauge`] tops the window up by
+//!   So the pair is a **cooldown**: [`top_up_cooldown`] tops the window up by
 //!   `0x40` frames and caps it at `0x100`, and the arm-`0x82` gate asks
 //!   whether fewer than `0xE0` remain. What blocks the wire is therefore no
 //!   longer the identity but the engine's shape: it carries no such suppression
@@ -102,6 +95,9 @@
 /// [`mes_append_escape`] splices at.
 ///
 // PORT: FUN_8003cb54
+///
+/// WIRED: `legaia_engine_core::battle_steal::compose_caption`, from the
+/// death-spoils arm `World::resolve_monster_death_spoils` both hosts run.
 ///
 /// The buffer is dialog bytecode, so the walk is the standard glyph-stride
 /// walk of [`docs/formats/mes.md`](../../../docs/formats/mes.md):
@@ -138,6 +134,9 @@ pub fn mes_string_end_offset(s: &[u8]) -> usize {
 /// re-terminate it, returning the write offset.
 ///
 // PORT: FUN_8003cb54
+///
+/// WIRED: `legaia_engine_core::battle_steal::compose_caption`, from the
+/// death-spoils arm `World::resolve_monster_death_spoils` both hosts run.
 ///
 /// `tag` is a `0xC0..=0xCF` escape opcode and `arg` its argument - retail's one
 /// dumped caller (`FUN_8004AD80`, `0x8004B2F8`) appends `{0xC2, item_id}`, the
@@ -234,19 +233,25 @@ pub fn screen_x_mirror(orient: ScreenOrient, mirror: bool, x: i16, width: i16) -
 ///
 // PORT: FUN_80046870
 ///
-/// The retail gauge (`gp+0x2e8`) accumulates `+0x40` per call and saturates at
-/// `0x100`. Faithful to the original `slti v0,v0,0x100` clamp: the sum is
-/// clamped only when it reaches or exceeds `0x100`.
-pub const GAUGE_STEP: i32 = 0x40;
-/// Ceiling the gauge saturates at.
-pub const GAUGE_MAX: i32 = 0x100;
+/// The retail word `gp+0x2e8` (`_DAT_8007B600`) is a **frame cooldown**, not a
+/// charge gauge: each call tops it up by `+0x40` frames and saturates it at
+/// `0x100`, and two overlay sites count it down by one per frame and gate on
+/// zero (see the module notes). Faithful to the original `slti v0,v0,0x100`
+/// clamp: the sum is clamped only when it reaches or exceeds `0x100`.
+pub const COOLDOWN_STEP: i32 = 0x40;
+/// Ceiling the cooldown saturates at.
+pub const COOLDOWN_MAX: i32 = 0x100;
 
-/// See [`GAUGE_STEP`] / [`GAUGE_MAX`].
+/// See [`COOLDOWN_STEP`] / [`COOLDOWN_MAX`].
 ///
 // PORT: FUN_80046870
-pub fn advance_gauge(value: i32) -> i32 {
-    let next = value + GAUGE_STEP;
-    if next < GAUGE_MAX { next } else { GAUGE_MAX }
+pub fn top_up_cooldown(value: i32) -> i32 {
+    let next = value + COOLDOWN_STEP;
+    if next < COOLDOWN_MAX {
+        next
+    } else {
+        COOLDOWN_MAX
+    }
 }
 
 /// Quadratic ease of a scalar from `start` toward `target` over `dur` steps at
@@ -381,17 +386,17 @@ mod tests {
 
     #[test]
     fn gauge_accumulates_by_step() {
-        assert_eq!(advance_gauge(0), 0x40);
-        assert_eq!(advance_gauge(0x40), 0x80);
-        assert_eq!(advance_gauge(0xC0), GAUGE_MAX);
+        assert_eq!(top_up_cooldown(0), 0x40);
+        assert_eq!(top_up_cooldown(0x40), 0x80);
+        assert_eq!(top_up_cooldown(0xC0), COOLDOWN_MAX);
     }
 
     #[test]
     fn gauge_saturates_and_never_exceeds_max() {
         // 0xC0 + 0x40 = 0x100 -> clamp (slti is strict <).
-        assert_eq!(advance_gauge(0xC0), 0x100);
-        assert_eq!(advance_gauge(0x100), 0x100);
-        assert_eq!(advance_gauge(0x1000), 0x100);
+        assert_eq!(top_up_cooldown(0xC0), 0x100);
+        assert_eq!(top_up_cooldown(0x100), 0x100);
+        assert_eq!(top_up_cooldown(0x1000), 0x100);
     }
 
     #[test]

@@ -71,6 +71,12 @@ pub struct FieldScenePack {
 pub struct FieldSceneAnim {
     /// Parsed walker table + per-entry `(accumulator, frame_index)` state.
     walker: Option<(legaia_asset::clut_walk::ClutWalkTable, Vec<(u32, usize)>)>,
+    /// Legacy single-cell ocean-head cycle: `(13 x 32 CLUT bytes, frame
+    /// index, vsync accumulator)`. Used ONLY where no slot-5 walker table
+    /// parses - every retail kingdom ships one, so this is the
+    /// modified / damaged-bundle path the native window also keeps, and it
+    /// trades the seven non-ocean shimmer cells for a sea that still moves.
+    ocean: Option<(Vec<u8>, usize, u32)>,
     /// Ambient move-VM world (only the effect subsystem is used).
     ambient: Option<Box<legaia_engine_core::world::World>>,
     /// Vsyncs per game tick (retail `DAT_1F800393`).
@@ -192,6 +198,7 @@ pub fn build_field_scene_anim(
     }
     Some(FieldSceneAnim {
         walker,
+        ocean: None,
         ambient,
         frame_step,
         vsync_accum: 0,
@@ -210,10 +217,46 @@ impl FieldSceneAnim {
         let state = vec![(legaia_asset::clut_walk::ACCUMULATOR_SEED, 0usize); table.entries.len()];
         FieldSceneAnim {
             walker: Some((table, state)),
+            ocean: None,
             ambient: None,
             frame_step,
             vsync_accum: 0,
         }
+    }
+
+    /// Legacy ocean-head-only animation state: the 13-frame CLUT cycle
+    /// [`legaia_asset::ocean::find_ocean_assets`] decodes, for a kingdom
+    /// bundle whose slot-5 walker table does not parse. The browser twin of
+    /// the native `resolve_ocean_anim`'s fallback arm - `frames` is the raw
+    /// `13 x 32` byte run, and the whole cycle writes one CLUT row.
+    pub(crate) fn ocean_only(frames: Vec<u8>, frame_step: u8) -> FieldSceneAnim {
+        FieldSceneAnim {
+            walker: None,
+            ocean: Some((frames, 0, 0)),
+            ambient: None,
+            frame_step,
+            vsync_accum: 0,
+        }
+    }
+
+    /// Which halves of the animator are installed, as a bitmask: bit 0 the
+    /// CLUT walker, bit 1 the legacy ocean-head cycle. Read by
+    /// `LegaiaRuntime::play_field_anim_kind`.
+    pub(crate) fn kind_code(&self) -> u32 {
+        u32::from(self.walker.is_some()) | (u32::from(self.ocean.is_some()) << 1)
+    }
+
+    /// Re-point the animator at the world's **live** vsyncs-per-game-tick
+    /// (`World::clock.frame_step`, retail `DAT_1F800393`).
+    ///
+    /// The play runtime snapshotted this at scene rebuild while the native
+    /// window reads it off the world every frame. Today the two agree (the
+    /// scene loader installs the per-mode floor and only the un-wired
+    /// adaptive resolver `World::resolve_frame_step` can raise it), so this
+    /// is the shape of the drift rather than a visible one - but a snapshot
+    /// is exactly what makes wiring that resolver change one host only.
+    pub fn set_frame_step(&mut self, frame_step: u8) {
+        self.frame_step = frame_step.max(1);
     }
 
     /// Advance `vsyncs` retail vsyncs and apply any due VRAM writes to
@@ -253,6 +296,28 @@ impl FieldSceneAnim {
                         entry.dest_y,
                     );
                     *idx = (*idx + 1) % entry.frames.len();
+                    wrote = true;
+                }
+            }
+        }
+        // Legacy ocean-head fallback: one cell, frame bytes written from the
+        // decoded table rather than copied from a parked strip. Same banking
+        // law as a walker entry (reset, not subtract-remainder), with the
+        // slot-5 ocean-head entry's own hold of 8 vsyncs.
+        if let Some((frames, cur, accum)) = self.ocean.as_mut() {
+            const OCEAN_ANIM_VSYNCS_PER_FRAME: u32 = 8;
+            let nframes = frames.len() / 32;
+            if nframes > 0 {
+                for _ in 0..game_ticks {
+                    *accum += dt;
+                    if *accum < OCEAN_ANIM_VSYNCS_PER_FRAME {
+                        continue;
+                    }
+                    *accum = 0;
+                    *cur = (*cur + 1) % nframes;
+                    let off = *cur * 32;
+                    // The ocean-head CLUT row: VRAM (0, 506).
+                    vram.write_clut_row(0, 506, &frames[off..off + 32]);
                     wrote = true;
                 }
             }
@@ -665,15 +730,13 @@ impl LegaiaViewer {
         let Some(hf) = self.field_scene.as_ref().and_then(|f| f.ground.as_ref()) else {
             return Vec::new();
         };
-        // Ground sinks below the env pack's authored floor art (see
-        // `coplanar_draws::GROUND_SINK`).
-        let mut out = Vec::with_capacity(hf.positions.len() * 3);
-        for p in &hf.positions {
-            out.push(p[0]);
-            out.push(p[1] + legaia_engine_core::coplanar_draws::GROUND_SINK);
-            out.push(p[2]);
-        }
-        out
+        // Ground sinks below the env pack's authored floor art, through the
+        // same `field_ground` render kernel the play page and the native
+        // window build their ground from.
+        legaia_engine_core::field_ground::render_positions(hf)
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     pub fn field_scene_ground_uvs(&self) -> Vec<u8> {

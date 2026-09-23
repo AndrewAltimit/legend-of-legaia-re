@@ -169,14 +169,14 @@
     <thead><tr><th>Nibble</th><th>Theme</th></tr></thead>
     <tbody>
       <tr><td><code>0</code></td><td>Party-leader change</td></tr>
-      <tr><td><code>1</code></td><td>Menu sub-dispatcher on the whole byte (fade <code>12</code>, widgets)</td></tr>
+      <tr><td><code>1</code></td><td>A five-entry sub-table, not sixteen arms: only <code>10</code>..<code>14</code> index it and slot 1 is the common exit, so <code>11</code> and <code>15</code>..<code>1F</code> advance seven bytes and do nothing. The four real arms are a global write (<code>10</code>), the screen tint (<code>12</code>) and its sibling triple (<code>13</code>), and the <strong>actor clone</strong> (<code>14</code>) - the VM's after-image, and the one eight-byte form in the nibble</td></tr>
       <tr><td><code>2</code></td><td>Camera-octant / pad-rotation setter (<code>gp+0x2D8 = sub_op &amp; 7</code>)</td></tr>
       <tr><td><code>3</code></td><td>Input lock, player resync, party-state clear</td></tr>
       <tr><td><code>4</code></td><td>Immediate-or-ramped writes: render scale (<code>40</code>), scalar, mirrored Y</td></tr>
       <tr><td><code>5</code></td><td>Model select, NPC move-to-tile, <strong>TAKE_ITEM</strong> (sub 2), dialogue polls</td></tr>
       <tr><td><code>6</code></td><td>Emitter setup, halt-acquire</td></tr>
       <tr><td><code>7</code></td><td>Rectangular wall paint into the walkability grid - story-conditional collision (<a href="field-locomotion.html">locomotion</a>)</td></tr>
-      <tr><td><code>8</code></td><td>Party full heal, guard-slot jump, actor model + anim set, actor-search jumps</td></tr>
+      <tr><td><code>8</code></td><td>Party full heal, guard-slot jump, actor model + anim set, actor-search jumps, and the <strong>reflection controller</strong> (<code>86</code> installs it, <code>87</code> retires every live one). <code>86</code> names the actor to mirror and makes the executing script the image - ten sites, all in talk records whose text is a single parenthesised beat</td></tr>
       <tr><td><code>9</code></td><td>Floor-height ladder: sub-<code>0xE</code> installs all sixteen elevation rungs at <code>0x1F80035C</code>, sub-<code>0..2</code> sets one rung oscillating, sub-<code>0xF</code> retires the oscillators. Not a fade family &mdash; the tick's destination is the scene elevation LUT.</td></tr>
       <tr><td><code>A</code></td><td>Conditional jump on a ctx / local / global flag bit</td></tr>
       <tr><td><code>B</code></td><td>Undefined - the default arm halts</td></tr>
@@ -313,6 +313,7 @@
         <li><strong>Text aliases.</strong> Dialogue bytes land on the wide flag ops: <code>S..W</code> read as Set, <code>a..g</code> as Clear, <code>q..w</code> as Test, so bigrams like <code>ta</code> and <code>Sp</code> mint phantom sites. Rows carry <code>clean</code> (enough error-free decodes since the last desync) and <code>text_alias</code> (printable operand inside a prose-shaped window). A non-printable operand cannot be minted by prose; a mirrored Set/Clear run is self-proving.</li>
         <li><strong>Width blindness.</strong> A wrong sub-op width desyncs the walk even in clean code and hides a real site behind a phantom. Every <code>0x4C</code> nibble decodes with widths mirrored from the executing VM (nibble B stays a decode error by design).</li>
         <li><strong>Variant carriers.</strong> The census walks the bundle MAN <em>and</em> the streaming variant MANs (<code>--variant &lt;entry&gt;</code>; rows tagged <code>VARIANT-MAN</code>). <code>--p2-gates</code> prints the partition-2 spawn conditions the inline walk cannot see.</li>
+        <li><strong>Developer flag menus.</strong> The fourth shape is not a desync at all: several shipped records carry a debug picker whose options write the scene's own story flags, so the rows are clean, their operands real, and their meaning "an option nobody picks in retail play". The labels say so - <code>Set all flags</code> / <code>Clear</code> / <code>Exit</code> in Jeremi's inn record, <code>Clear all flags</code> on the Sebucus overworld, an <code>On</code> / <code>Off</code> / <code>Exit</code> toggle in half a dozen more. What separates them from a beat is the block: the label list, the record's stop, then two or more arms that each write flags and jump back to the picker. Rows carry <code>debug_menu</code>.</li>
       </ul>
       <p>Worked cases (flag <code>0x142</code> in the Rikuroa variant MAN, <code>0x370</code> in Nivora, <code>549</code> in Rim Elm) are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md#disc-wide-system-flag-census-tooling" target="_blank" rel="noopener"><code>script-vm.md</code></a>.</p>
     </div>

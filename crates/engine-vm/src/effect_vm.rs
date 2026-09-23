@@ -1,10 +1,13 @@
 //! Battle-effect VM, ported from the `0898_xxx_dat` battle overlay.
 //!
-//! PORT: FUN_801DE914, FUN_801DFDF8, FUN_801E0088
-//! PORT: FUN_801DFDF0 (the spawn API's dump entry point - the dump stem
-//! `overlay_battle_action_801dfdf0` places the entry 8 bytes before the
-//! `801DFDF8` name the docs/READMEs use; same function, both addresses
-//! resolve to [`Pool::spawn`])
+//! PORT: FUN_801DE914, FUN_801DFDF0, FUN_801E0088
+//!
+//! The spawn API's entry is `0x801DFDF0`: its first two words load the
+//! pool-ready byte `0x8007BD58` ahead of the `addiu sp,sp,-0x30` at
+//! `0x801DFDF8`, and every one of the disc's `jal`s to the routine names
+//! `0x801DFDF0` (none names `0x801DFDF8`). Older pages cite the routine by
+//! its prologue word `0x801DFDF8`; that is an interior address, not a
+//! second entry.
 //!
 //! See [`docs/subsystems/effect-vm.md`](../../../docs/subsystems/effect-vm.md)
 //! for the authoritative byte-level reference. This crate ports the slot pool
@@ -28,7 +31,7 @@
 //! | Function | Role | Status |
 //! |---|---|---|
 //! | `0x801DE914` | Init / pack-fixup | Ported as [`Pool::init`] |
-//! | `0x801DFDF8` | Public spawn API: `(byte effect_id, short* world_pos, ushort angle)` | Ported as [`Pool::spawn`] |
+//! | `0x801DFDF0` | Public spawn API: `(byte effect_id, short* world_pos, ushort angle)` | Ported as [`Pool::spawn`] |
 //! | `0x801E0088` | Per-frame walker | [`Pool::tick_retail`] (pass 1) + [`Pool::child_billboards`] (pass 2) |
 //!
 //! ## Port boundary

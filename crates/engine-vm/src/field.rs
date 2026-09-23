@@ -2,7 +2,10 @@
 //!
 //! PORT: FUN_801DE840, FUN_8003CE08, FUN_8003CE34, FUN_8003CE64, FUN_8003C83C, FUN_8003CF04
 //! PORT: FUN_801DAA50, FUN_801DAB90, FUN_801DBC20, FUN_801DE004, FUN_801DC0BC, FUN_801DDF48
-//! PORT: FUN_801DE190, FUN_8003C5F0, FUN_801D77F4, FUN_801D8280, FUN_801E57F0, FUN_801E3614
+//! PORT: FUN_801DE190, FUN_8003C5F0, FUN_801D77F4, FUN_801D8280, FUN_801E57F0
+//! REF: FUN_801E3614 (not a routine: the dispatcher's relative-skip exit label
+//!      `addiu v0,v0,-2; j 0x801E3624; addu s8,s8,v0`, taken by ops `0x4D` and
+//!      `4C E4`; the VM computes the skip inline)
 //!
 //! `FUN_801DE840` lives in PROT entry `0897_xxx_dat` (the town/field overlay,
 //! see `docs/subsystems/script-vm.md`). It drives Legaia's overworld scripting - NPC

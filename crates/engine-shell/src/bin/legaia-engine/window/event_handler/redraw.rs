@@ -672,7 +672,10 @@ impl PlayWindowApp {
             Some(out)
         } else {
             self.cutscene_cam_interp.reset();
-            self.pending_camera_snaps.clear();
+            // Nothing is interpolating this frame, so a banked snap would
+            // move a pose no draw reads - drop them rather than let them
+            // land on the next shot.
+            self.session.camera.clear_camera_snap_beats();
             None
         };
         // VDF vertex morphs (jou's flesh-ground pulse, rikuroa's generator
@@ -788,7 +791,10 @@ impl PlayWindowApp {
             // winding parity is the world-map pass's, not the field pass's,
             // so the field-tuned cull would eat the ground tiles.
             let in_world_map_now = self.session.host.world.mode == SceneMode::WorldMap;
-            let nclip_mode = u32::from(cutscene_cam.is_some() && !in_world_map_now) * 2;
+            let nclip_mode = legaia_engine_core::camera_view::nclip_cull_mode(
+                cutscene_cam.is_some(),
+                in_world_map_now,
+            );
             r.set_backface_cull(nclip_mode);
             if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
                 r.set_semi_blend(false);
@@ -862,28 +868,24 @@ impl PlayWindowApp {
             // anchors to) lifted half a character height (~130-unit mesh;
             // field world is retail Y-down, so up is negative).
             const OCCL_STRENGTH_EASE: f32 = 0.25;
+            // The world half of the gate is the shared kernel
+            // (`field_occlusion::fade_armed`: field mode, no scripted shot);
+            // what stays here is genuinely this host's - its master toggle,
+            // a boot / pause panel owning the screen, and the `F3` debug
+            // vantage. The browser play page reads the same split.
             let occl_focus = (self.occlusion_fade
                 && !self.boot_ui.is_active()
-                && !in_world_map
-                && self.session.host.world.mode == SceneMode::Field
-                && cutscene_cam.is_none()
-                && !self.field_debug_camera)
-                .then(|| {
-                    let w = &self.session.host.world;
-                    w.player_actor_slot
-                        .and_then(|s| w.actors.get(s as usize))
-                        .map(|a| (a.move_state.world_x, a.move_state.world_z))
-                })
-                .flatten();
+                && !self.field_debug_camera
+                && legaia_engine_core::field_occlusion::fade_armed(
+                    &self.session.host.world,
+                    cutscene_cam.is_some(),
+                ))
+            .then(|| {
+                legaia_engine_core::field_occlusion::player_body_centre(&self.session.host.world)
+            })
+            .flatten();
             let mut occl_staged = false;
-            if let Some((wx, wz)) = occl_focus {
-                const HALF_CHAR_HEIGHT: f32 = 65.0;
-                let floor_y = self
-                    .session
-                    .host
-                    .world
-                    .sample_field_floor_height(wx as i32, wz as i32);
-                let centre = [wx as f32, floor_y as f32 - HALF_CHAR_HEIGHT, wz as f32];
+            if let Some(centre) = occl_focus {
                 let fully_hidden = self
                     .field_follow_camera_eye()
                     .map(|eye| {
@@ -1013,6 +1015,54 @@ impl PlayWindowApp {
                         log::info!("play-window: spawn slot {slot} -> mesh slot {new_idx}");
                     }
                     Err(e) => log::warn!("spawn mesh upload: {e:#}"),
+                }
+            }
+            // Morph-weight actors (the same `0x4C 0xD8` allocator, seated by
+            // `World::spawn_morph_weight_actor`): re-pose and re-upload each
+            // one every frame. Retail re-blends in the handler call itself
+            // (`FUN_8002174C` restores the `+0x90` rest pose and re-applies
+            // the deltas at the live `+0x6E` weight before every draw), and
+            // the envelope is a ping-pong ramp that moves on every frame, so
+            // there is no frame where a cached upload would still be current.
+            // The blend is the engine's - `World::morph_weight_posed_tmd` is
+            // the one kernel, shared with the browser play page.
+            for (slot, _weight) in self.session.host.world.morph_weight_actor_weights() {
+                let Some(mesh_idx) = self
+                    .session
+                    .host
+                    .world
+                    .actors
+                    .get(slot as usize)
+                    .and_then(|a| a.tmd_binding)
+                else {
+                    continue;
+                };
+                let Some((posed, raw, _)) = self
+                    .session
+                    .host
+                    .world
+                    .morph_weight_posed_tmd(slot as usize)
+                else {
+                    continue;
+                };
+                let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&posed, &raw);
+                if vmesh.indices.is_empty() {
+                    continue;
+                }
+                match r.upload_vram_mesh(
+                    &vmesh.positions,
+                    &vmesh.uvs,
+                    &vmesh.cba_tsb,
+                    &vmesh.normals,
+                    &vmesh.colors,
+                    &vmesh.indices,
+                ) {
+                    Ok(m) => {
+                        if let Some(entry) = self.meshes.get_mut(mesh_idx) {
+                            *entry = m;
+                        }
+                    }
+                    Err(e) => log::warn!("morph mesh upload: {e:#}"),
                 }
             }
             // For each active actor with a tmd_binding and a current
@@ -1860,8 +1910,16 @@ impl PlayWindowApp {
                         // scale; the tint rides the per-draw GTE depth-cue
                         // seam (a saturated `DrawCue` ramp = a flat blend
                         // toward the cue colour) - the pointed-at monster
-                        // pulses bright, the others dim. The pulse phase is
-                        // the host tick.
+                        // pulses bright, the others dim.
+                        //
+                        // The pulse phase is the **world display-frame**
+                        // clock, not this window's redraw counter: the
+                        // browser play page runs the same formula off
+                        // `World::clock.display_frames`, and a redraw
+                        // counter advances on frames the simulation did not
+                        // take (a movie, a paused world, a resize storm), so
+                        // the two hosts' cursors drifted apart the moment
+                        // either host's redraw rate left its tick rate.
                         let model = self.actor_model(i);
                         let mut cue = None;
                         if in_battle {
@@ -1869,7 +1927,11 @@ impl PlayWindowApp {
                             let b = &actor.battle;
                             match b.render_flag {
                                 ba::CURSOR_FLAG_SELECTED => {
-                                    let pulse = 0.30 + 0.20 * (self.tick_no as f32 * 0.25).sin();
+                                    let pulse = 0.30
+                                        + 0.20
+                                            * (self.session.host.world.clock.display_frames as f32
+                                                * 0.25)
+                                                .sin();
                                     log::trace!(
                                         "target cursor: actor {i} SELECTED pulse {pulse:.2}"
                                     );
@@ -2065,6 +2127,12 @@ impl PlayWindowApp {
                 save_chrome_draw_vec.extend(self.battle_spoils_chrome_sprite_draws(w, h));
             }
             save_chrome_draw_vec.extend(self.field_menu_chrome_sprite_draws(w, h));
+            // The shop / inn panel's gold 9-slice frame, sized off the same
+            // stage text `build_hud` scales. The browser play page has framed
+            // this panel since it gained the chrome atlas; the window drew the
+            // rows bare because the frame belongs to this `&self` sprite pass
+            // and nothing here could size it.
+            save_chrome_draw_vec.extend(self.shop_overlay_chrome_sprite_draws(w, h));
             // Dialog-window chrome (gradient fill + gold frame + hand
             // cursors) shares the system-UI atlas slot; a dialog box
             // and the boot/menu chrome are mutually exclusive states.
@@ -2143,21 +2211,20 @@ impl PlayWindowApp {
                     draws: &caption_draw_vec,
                 });
 
-            // Force a pure-black background during boot UI so the
-            // logos / title / save-select panels read on PSX-style
-            // black instead of the default dark-blue clear. In a
-            // stage-dome battle clear to a sky blue so the gaps the
-            // front-half dome leaves open read as sky (like retail)
-            // rather than the bare grey clear.
-            let scene_clear = if self.boot_ui.is_active() && !game_over_hold {
-                Some([0.0, 0.0, 0.0, 1.0])
-            } else if self.session.host.world.mode == SceneMode::Battle
-                && self.battle_stage_mesh.is_some()
-            {
-                Some([0.32, 0.46, 0.66, 1.0])
-            } else {
-                None
-            };
+            // The clear colour is the shared engine-ui selector on every
+            // frame, the one the browser play page reads too: black for the
+            // boot UI and for field / cutscene frames (retail's background),
+            // sky blue in a stage-dome battle so the gaps the front-half dome
+            // leaves open read as sky. Passing it only for the boot UI and a
+            // stage battle left every other frame on the renderer's own
+            // fallback navy, a colour neither retail nor the page draws.
+            let boot_ui_clear = self.boot_ui.is_active() && !game_over_hold;
+            let stage_battle = self.session.host.world.mode == SceneMode::Battle
+                && self.battle_stage_mesh.is_some();
+            let scene_clear = Some(legaia_engine_render::battle_stage_clear::scene_clear(
+                boot_ui_clear,
+                stage_battle,
+            ));
 
             // Slot 1: logos OR title-art bands (title still
             // emits during SaveSelect, dimmed). Slot 2: either
@@ -2404,6 +2471,19 @@ impl PlayWindowApp {
             // flashes, the escape white-out), drawn through the same kernel
             // the intro fades use so the ABR mode is honoured.
             screen_prims.extend(self.screen_fade_screen_prim());
+            // The field overlay's **screen-effect** washes: the colour-tween
+            // actors the field VM's op `0x34` sub-0 arm spawns, each emitting
+            // one `FUN_80024EE4(layer, blend, packed)` push per frame. This is
+            // the scene-entry fade-from-black and the door prologue's
+            // fade-to-black - simulated on both hosts for as long as neither
+            // drew it. Through the same shared emitter the browser play page
+            // composites them with, so the ordering-table bucket, the ABR
+            // equation and the GP0 channel order are decided once.
+            screen_prims.extend(
+                legaia_engine_render::screen_overlay::screen_effect_push_prims(
+                    &self.session.host.world.screen_tint_push_args(),
+                ),
+            );
             // The field overlay's cinematic wipe (`0x43 0C` -> `FUN_801DD784`),
             // through the same shared emitter the browser play page uses so
             // the two bars cannot drift between hosts.
@@ -2423,6 +2503,15 @@ impl PlayWindowApp {
             // Only the seat is per-host: it needs the struck actor's projected
             // screen position, which only a host holding the camera has.
             screen_prims.extend(self.battle_value_readout_prims(fx_cam));
+            // The Arts announcement banner (`<word> ARTS!!`), off the same
+            // page through the same shared builder the browser play page
+            // emits it with. The whole banner - stage machine, slide clock,
+            // ghost-trail layers, quad geometry - is engine state stepped in
+            // `World::tick`, so this host contributes nothing but the append.
+            screen_prims.extend(legaia_engine_render::battle_numerals::arts_banner_prims(
+                &self.session.host.world.battle_arts_banner_quads(),
+                legaia_engine_render::battle_numerals::VALUE_READOUT_OT,
+            ));
             // The dance count-in banner, as retail's own 160x32 sprite off the
             // hall's HUD page rather than placeholder text. Same shared
             // builder the browser play page emits through

@@ -90,13 +90,13 @@ fn spawn_routes_summon_to_handler() {
     let script = EffectScript::default();
 
     let r = pool.spawn(&mut host, 4, [10, 20, 30], 0x123, &script, &[]);
-    assert_eq!(r, None);
+    // The side call runs first and the ordinary spawn follows it
+    // (`0x801DFE84` returns into `0x801DFE94`).
+    assert_eq!(r, Some(0));
     assert_eq!(
         host.events,
         vec![HostEvent::HandleSummon(4, [10, 20, 30], 0x123)]
     );
-    // No master slot consumed.
-    assert_eq!(pool.master_slots[0].child_count, 0);
 }
 
 #[test]
@@ -406,12 +406,11 @@ fn catalog_from_efect_dat_empty_on_truncated() {
     assert!(EffectCatalog::from_efect_dat_bytes(&buf).is_empty());
 }
 
-/// `is_summon_effect` short-circuits BEFORE consuming a master slot.
-/// Verifies that a summon dispatch leaves the pool fully empty (no
-/// allocator call, no child population). Guards against accidentally
-/// committing pool state on the summon path.
+/// The id-4 / id-0x13 side call runs BEFORE the ordinary spawn and does
+/// not replace it: retail's `jal 0x80050ed4` at `0x801DFE84` returns into
+/// the shared allocation at `0x801DFE94`.
 #[test]
-fn summon_path_does_not_consume_master_slot() {
+fn summon_side_call_then_ordinary_spawn() {
     let mut pool = Pool::new();
     let mut host = RecHost::default();
     host.summon_ids.insert(4);
@@ -424,15 +423,13 @@ fn summon_path_does_not_consume_master_slot() {
         &EffectScript::default(),
         &[],
     );
-    assert_eq!(r, None);
-
-    // Every slot must remain empty.
-    for m in &pool.master_slots {
-        assert_eq!(m.child_count, 0);
-        assert_eq!(m.pos_x, 0);
-    }
-    // Allocator should still hand out slot 0 on a non-summon spawn.
-    assert_eq!(pool.allocate_master(), Some(0));
+    assert_eq!(r, Some(0));
+    assert_eq!(
+        host.events.first(),
+        Some(&HostEvent::HandleSummon(4, [10, 20, 30], 0x123))
+    );
+    assert_eq!(pool.master_slots[0].pos_x, 10 << 8);
+    assert_eq!(pool.master_slots[0].ui_id, 4);
 }
 
 // ---------------------------------------------------------------------------

@@ -33,6 +33,48 @@
 
 use crate::field_env::EnvDraw;
 use crate::scene_resources::SceneResources;
+use crate::world::World;
+
+/// Half a standing character's height, world units (the mesh is ~130 tall).
+///
+/// The fade has two halves that must name the SAME point: the visibility
+/// gate ray-casts to it, and the host stages it as the shader's focus. Both
+/// hosts used to spell it out locally, and the browser page's focus read the
+/// actor's own `world_y` while its gate read the floor tier, so on any tile
+/// where the two differ the dissolve hole sat off the character.
+pub const HALF_CHAR_HEIGHT: f32 = 65.0;
+
+/// The world-side arming terms of the camera-occlusion fade.
+///
+/// The fade is a field free-roam feature: the follow camera's eye is what
+/// the visibility gate ray-casts from, so cutscene framing (authored),
+/// battle and the world map (each framing their own subject) are out.
+/// A host adds its own terms on top - its master toggle, a boot / pause UI
+/// owning the screen, its debug vantage, a VR first-person eye - and the
+/// native window and the browser play page had different sets of those:
+/// the page excluded only battle and the minigames, so a pause menu or a
+/// scripted shot kept dissolving the walls behind them.
+pub fn fade_armed(world: &World, cutscene_camera_owns_frame: bool) -> bool {
+    world.mode == crate::world::SceneMode::Field && !cutscene_camera_owns_frame
+}
+
+/// The player's body centre in **raw retail Y-down world coordinates** - the
+/// one point the camera-occlusion fade is about.
+///
+/// The floor tier under the actor (the sampler the follow camera anchors to)
+/// lifted half a character height; up is negative in this frame. `None` when
+/// there is no live player actor, which is the same guard that stops the
+/// fade arming at all.
+///
+/// A host that renders Y-up negates the Y on the way out to its draw frame;
+/// the gate ([`FieldOccluders::fully_occluded`]) takes this frame directly.
+pub fn player_body_centre(world: &World) -> Option<[f32; 3]> {
+    let slot = world.player_actor_slot?;
+    let a = world.actors.get(slot as usize)?;
+    let (wx, wz) = (a.move_state.world_x, a.move_state.world_z);
+    let floor_y = world.sample_field_floor_height(wx as i32, wz as i32);
+    Some([wx as f32, floor_y as f32 - HALF_CHAR_HEIGHT, wz as f32])
+}
 
 /// Vertical half-extent of the sample cross (world units): head/hip samples
 /// sit this far above/below the body centre. The character mesh is ~130

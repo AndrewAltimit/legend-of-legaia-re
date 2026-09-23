@@ -53,6 +53,43 @@ checks (`check-dump-stat-drift.py`, `check-dump-base-integrity.py`,
 [`dump-corpus-integrity.md`](dump-corpus-integrity.md) and
 [`call-target-integrity.md`](call-target-integrity.md).
 
+### The browser host is also the one nothing here compiles
+
+Every tier below reads sources. Every cargo gate beside them - `cargo fmt`,
+`cargo clippy --all-targets --workspace`, `cargo test`, `cargo build` - builds
+for the **host** triple, and about eighty files under `crates/web-viewer/`
+carry `#[cfg(target_arch = "wasm32")]` blocks that none of those four ever
+sees. A page feature written inside one can name a private field, a moved
+method or a deleted type and stay green through the whole ladder; the first
+thing that compiles it is a wasm build, which is where one was found.
+
+[`scripts/ci/check-wasm-target.sh`](../../scripts/ci/check-wasm-target.sh)
+closes that: `cargo check --release --target wasm32-unknown-unknown -p
+legaia-web-viewer`, run from the pre-commit hook whenever a staged file
+belongs to a crate carrying such a block. It is a type-check rather than a
+build and shares the profile `build-wasm.sh` and the CI wasm step use, so a
+warm run costs about a second.
+
+It is a hook tier for a reason worth writing down rather than an exception to
+the rule above. The `ci` job **does** build the wasm target - and it carries
+`if: github.event_name != 'pull_request'`, so that build happens after a merge
+to `main`, not on the pull request. The comment at the top of the workflow
+says the opposite ("so PR builds catch regressions before merge"); the `if` is
+what runs. Until the two agree, the hook is the browser host's only pre-merge
+compiler.
+
+### A wasm export is a property of its impl block, and no compiler reads that
+
+Compiling the browser host is still not the same as exporting from it. A
+method the page calls through `wasm-bindgen` exists in JavaScript only if it
+sits in the `#[wasm_bindgen] impl` block; the same method in a plain
+`impl LegaiaRuntime` compiles, type-checks for `wasm32`, passes clippy and the
+drift tiers, and is `not a function` in the browser. That is how the play
+page's save-select backdrop accessor shipped undrawn - the page's call sat
+behind a `try` that fell back to `null`, so nothing reported it. The only
+instrument that sees this is a headless run of the **built** bundle, which is
+therefore the check a new page export owes before it counts as wired.
+
 ## Tier 1 - reachability: does a screen reach both hosts?
 
 [`scripts/ci/check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py).
@@ -216,6 +253,7 @@ is reached at runtime.
 | dev-menu tick | `symbols_all` on `retail_packed` + `commit_equip_row` + the records-page toggle. |
 | dev-records model | `symbols_all` on `record_counters` + `records_screen` across the two model builders. |
 | play clock | `symbols_same` on `advance_play_time` across the two menu draw sites. |
+| walk-ground render surface | `symbols_all` on `field_ground::render_positions` (the sink) and `render_indices` (the winding) across the native mesh builder and the play page's ground exports. |
 
 The last three exist because each named a divergence the reachability tier
 could not see, and each divergence was a *model* one rather than a missing
@@ -428,6 +466,14 @@ naming `coplanar_draw_offsets` is prose, not a wiring, and under-counting
 | packet-colour stream fill | a packet-colour stream may not be filled with white |
 | placement tilt composition | reading `placement_rot_y` requires `rot_x` + `rot_z` |
 | shared value layout -> shared quad emitter | resolving `battle_value_readout` requires `battle_numerals` + one of its prim builders |
+| retained field ground pass gated off in battle | a file that both uploads a field ground (`uploadGround`) and drives a battle frame (`play_battle_active`) requires `setGroundEnable(false)` |
+
+**The ground-pass rule is about a retained pass, which no draw list shows.**
+The WebGL renderer draws `uploadGround`'s mesh inside `renderAssembled`
+before the placements, so a draw-list bisect that filters every battle draw
+out still paints it. Its trigger is an `\A`-anchored lookahead over both
+halves (the uploader and the battle driver) so one scan decides it; the
+unanchored form re-scans the file from every position.
 
 **The heightfield rule triggers on the emitter, not the type.** An early draft
 keyed on `WalkHeightfield` / `walk_heightfield` and reported four files that
@@ -774,6 +820,139 @@ content waiver from outliving the thing it described. A row is not a licence
 for the difference; it is a statement of **where the other host does the same
 work**, in the form the waiver rules above require.
 
+## What a screenshot pair adds to a green row, and what it does not
+
+Every tier here is a source measurement, and a row closed by one is a claim
+about code, not about pixels. The two hosts can be paired by a gate, reach a
+kernel by a ladder, and still put different frames on screen - so a closed
+row deserves a pair of pictures at the same state at least once.
+
+The recipe, because it took several wrong turns to find:
+
+| host | driver |
+|---|---|
+| browser play page | headless Chromium through `playwright-core`, against `python3 -m http.server` over `site/`, with `--use-angle=swiftshader`; the page's `window.__playRuntime` / `window.__playState` hooks say what state the frame is in, and `#play-canvas` is the element to screenshot |
+| native window | `legaia-engine play-window --screenshot <png> --screenshot-tick N`, with `--pad-script` / `--key-script` for input - an offscreen readback, not a screen-scrape |
+
+Three traps, each of which cost a run:
+
+- **`--pad-script` cannot confirm a boot-title row.** `Down` moves the title
+  cursor; neither `Cross` nor `Start` confirms it. The title's confirm lives
+  in the keyboard handler, so the entry is `--key-script "<tick>:Z"` - the
+  same split the flag's own help warns about for the minigame entries.
+- **A multi-save `.mcr` does not insert itself.** The page's import raises a
+  block picker whose buttons live in `#save-status`, and until one is
+  clicked no `kind: "card"` session exists, the card rack stays hidden and
+  `boot_title_has_save_data()` stays false - so the title's CONTINUE row is
+  dim and the boot save-select is unreachable. That is the page working as
+  designed, not a defect; a driver that clicks the rack instead measures a
+  dim row and concludes wrongly.
+- **Two hosts at the same tick are not at the same frame.** The window is
+  960x699 on this display where the page canvas is 960x720, so the vertical
+  field of view differs and the native framing reads as "closer". A framing
+  difference between the two is not evidence of a camera drift unless the
+  surfaces match: both hosts read the same
+  `options_state.camera_distance` (`window/run.rs`, `runtime.rs`), so that
+  knob is not the difference.
+
+### What the pairs showed
+
+Four states captured on both hosts: a field scene at spawn, a battle at its
+command phase, the boot title card and the boot save-select.
+
+Confirmed matching, for rows that until now were only test-asserted: the
+battle's sky clear colour and stage (B3), the command ring and its two
+labels, the party HUD block's content and pen, the title card's bands and
+its glyph-atlas menu rows, and the field scene's geometry, textures and
+player placement.
+
+One row the pair makes visible rather than settles: **C11, the dimmed title
+art behind the boot save-select.** The native draws the Load frame and the
+SLOT pills over the title card at reduced brightness; the page draws the
+same frame and pills over black, because it drops its title session on
+`TitleOutcome::Continue` (`crates/web-viewer/src/boot_title.rs`). The two
+screens are otherwise identical, which is exactly why no gate fails: the
+backdrop is a session the page released, not a draw it spells differently.
+
+The yellow strips the pair raised - in the battle command phase the page
+carried a run of **flat yellow strips** along the ground and a grass-and-gravel
+patch around the monster that the native frame does not - are the page's
+**field ground heightfield**, not a battle draw. `renderAssembled` in
+`site/js/webgl-tmd.js` draws the ground uploaded by `uploadGround` as a
+*retained* pass ahead of the placements, whatever the frame's draw list holds,
+and `_rebuild` uploads the field scene's ground cells there; the battle frame
+never turned that pass off, so town01's terrain drew through the battle camera,
+sampling the battle VRAM. The bisect that pins it: with the whole battle draw
+list filtered out of `renderAssembled`, the strips and the patch still draw.
+The native window draws its heightfield only in the non-battle branch of
+`window/event_handler/redraw.rs`, and a retail command-phase frame of the same
+stage (`v0_1_battle_command_menu`, `mednafen-state vram-dump --display-crop`)
+shows bare gravel. The page now turns the pass off while a battle draws and
+back on for every non-battle frame; the billboard-outline candidate the first
+reading suspected (`play_battle_fx.rs`, alpha `0` as the untextured flag) was
+off on both hosts throughout and draws nothing in this frame. Tier 7 carries
+the rule, **retained field ground pass gated off in battle**: a render
+surface that uploads a field ground and drives a battle frame through the
+same renderer must reach `setGroundEnable(false)`.
+
+### A second pass: frames matched by engine frame, with retail as the third
+
+A later audit shot the non-battle screens on both hosts from one starting
+point and, where a mednafen library state holds the same screen, cut the
+retail display crop (`mednafen-state vram-dump --display-crop`) as the third
+frame. Four recipe additions made the pairs comparable:
+
+- **Match by engine frame, not by wall clock.** Headless Chromium over
+  SwiftShader runs the page at a few frames a second, so a timed wait lands
+  on a different beat each run. The page's `window.__playState.frame` counts
+  the same sim ticks the native `--screenshot-tick` names, so a driver waits
+  for a frame number and the two hosts meet on one beat.
+- **Clip to `#play-canvas`, at a device scale that makes it 960 wide.** The
+  canvas displays at about 655 CSS pixels in the page layout; a screenshot at
+  that size resamples every glyph, and colour and position diffs read as
+  host differences.
+- **The page's keys are the web layout.** `Mapping::web_default` puts Circle
+  on `X` and the d-pad on `WASD`, so a driver pressing `S` for Circle walks
+  the cursor down a menu instead of backing out of it.
+- **The native stage is integer-scaled.** At the runner's 960x699 window the
+  2D stage is 2x and centred while the 3D pass fills the window (the
+  `stage_transform` floor), so native frames compare against page frames
+  only after cropping the stage out and halving it.
+
+What the pass fixed, each asserted through a host entry and re-shot on a
+rebuilt bundle:
+
+| row | shape | fix |
+|---|---|---|
+| prologue floor culled on the page | a kernel one host ran inline | the heightfield's triangle reversal moved into `engine-core::field_ground`; the page uploaded the builder's raw winding, which is the facing the cutscene camera's NCLIP pass discards |
+| sky and backdrop shells skipped on the page | a filter one host added | the page dropped every draw the full-map viewer's sky classifier matched; the opdeene crater shell is one, so the prologue tableau stood in a navy void |
+| fishing exchange drawn on one host | a hand-off inside one call | see [the exchange section](#the-fishing-point-exchange-sub-screen-one-session-on-two-hosts-a-query-on-the-third) |
+| minigame status rows in surface pixels natively | a pen read in the wrong space | the native window now scales them through the stage the page uses |
+| field clear colour | two non-retail constants | both hosts read `battle_stage_clear::scene_clear` every frame, and a field frame clears to retail black |
+
+The pass also left three rows open:
+
+- **Field fog sheets are not visible in native frames.** In `vell` the
+  native window's `take_field_fog_prims` returns 37 to 78 quads a frame
+  (a live pool, the gate raised, a texture region the page samples as
+  populated), yet none shows in a native capture, while the page draws the
+  same pool as bright mist. Which frame is retail's is not settled: no
+  library state holds a mist scene as a mednafen state, and the PCSX-Redux
+  states carry no VRAM reader.
+- **The native minigame hotkeys open sessions, not scenes.** `O` and `B` run
+  the slot machine and Baka Fighter over the field with status text only,
+  and `L` puts the fishing camera on whatever field the player stands in;
+  the standalone minigames page draws the cabinet, the arena and the pond.
+  Blocking capability: the native window has no pass for either minigame
+  scene (the slot cabinet mesh and reels, the Baka arena and fighters).
+- **3D that has to line up with the 2D stage does not, at a window size
+  that is not a stage multiple.** The naming screen's Vahn is the field
+  scene's 3D actor, drawn through the full-window viewport, so at 960x699
+  he stands larger and further left than the 2x stage's windows around him;
+  the field party HUD floats the same way. Blocking capability: a 3D
+  viewport the native window letterboxes to the stage rect while a
+  stage-anchored screen is up.
+
 ## Gaps the tiers were blind to, closed by reading the two hosts side by side
 
 One pass over both hosts, domain by domain, with every tier above green,
@@ -990,6 +1169,72 @@ about these is contested.
 | Gap | Shape |
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
+| world-map line overlay | A whole pass the page has no uploader for. See [below](#the-world-map-line-overlay-has-no-browser-uploader). |
+| derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
+| who owns the frame | The native window re-derives it instead of consuming the resolver. See [below](#the-native-window-re-derives-which-camera-owns-the-frame). |
+| boot Options second copy | A native-only unframed duplicate of a framed screen. See [below](#the-boot-options-screen-draws-twice-natively). |
+
+### The world-map line overlay has no browser uploader
+
+The native window draws the overworld's entity markers and the player marker
+as screen-space **lines** (`window/event_handler/redraw_passes.rs`), through
+the renderer's line pipeline. The browser play page has no line pass at all -
+its whole 3D surface is the textured / colour TMD program plus the sprite and
+font blitters - so this is not a missing call site.
+
+Blocking capability: a line-primitive path on the page. Either a wasm export
+that hands back the markers as screen-space quads the existing sprite blitter
+can draw (two triangles per segment, built engine-side so the two hosts emit
+the same marker set), or a second GL program with its own buffer. Until one
+exists there is nothing on the page for a wired call to reach.
+
+### Derived scene point lights are native-only
+
+`--dynamic-lighting` stages per-scene derived point lights plus their PCF
+shadow maps into the wgpu renderer. It is the enhancement layer, not retail -
+the faithful path is pixel-identical with it off, which is the default - and
+the page's GLSL program has neither a light array nor a shadow sampler.
+
+Blocking capability: a point-light + shadow layer in
+[`site/js/webgl-shaders.js`](../../site/js/webgl-shaders.js), and a per-frame
+export of the picked light set. Both are real work, and neither buys retail
+fidelity: this is the one row here where the *native* host is the one running
+a non-retail path, so the page being without it is a feature gap rather than
+a correctness gap.
+
+### The native window re-derives which camera owns the frame
+
+`camera_view::resolve_field_camera` answers which camera owns a field frame,
+and the browser play page consumes exactly that. The native window's
+`compute_scene_camera` answers it again from its own `match`, reaching the
+resolver only for the world-map arm.
+
+Nothing diverges today - both arms compose the same views - so this is latent
+rather than live. It is listed because the *shape* is the one every other row
+on this page comes from: one decision, two implementations, and no gate that
+can pair them (tier 3 pairs a kernel both hosts call, and here only one host
+calls it).
+
+Blocking capability: the native window's battle and boot arms have no
+`FieldCameraFrame` variant to resolve to - the resolver's five arms are field,
+cutscene and the two world-map vantages. Folding the window in means either
+extending the enum to cover the battle phase cameras (which live in
+`window/battle_cam.rs` and read a battle-only model) or accepting a
+half-resolved frame, and neither is a wiring change.
+
+### The boot Options screen draws twice natively
+
+The retail options screen is a framed pause-menu sub-screen, and both hosts
+open it from the title's Options row through the same menu runtime. The native
+window additionally paints an unframed copy of the same rows at a fixed pen
+(`window/boot_cutscene.rs`), left from before the framed screen existed.
+
+This is the inverse of every other row here: the *extra* draw is the native
+one, and the fix is a deletion rather than a wire. It stays recorded rather
+than done because the fixed-pen copy is what the window's own boot-UI tests
+read back, so removing it is a test change as well as a draw change - and
+because a boot Options screen with no framed window resident (no disc menu
+table parsed) currently falls back to exactly that copy.
 
 ### The minigame side-channel step is paired; its contents are not
 
@@ -1127,8 +1372,15 @@ Two things the port keeps deliberately unshared, and they are not drift:
   the export reports the miss rather than keying static row `0` by truncation -
   the width trap the play page's `u8` scheduler was caught by once already.
 
-The in-world dome on the **play** page was never the host this gap named: it
-sits beside a live SPU (`play_sfx`) already.
+The in-world dome on the **play** page was named by the same row and needed
+the same thing. Sitting beside a live SPU is not the same as having a door
+into it: `play_sfx` keyed cues by id and nothing else, so that host's tally
+ran its ramp and drew its rows in silence. It has `key_on_voice_attr` now,
+resolving the attr set's VAB id as an SFX slot with the scene BGM bank behind
+it - the native director's own two-step. All three hosts narrow the cue's
+eight arguments through one kernel (`VoiceAttr::from_cue_words`), because the
+voice-slot clamp is not cosmetic: a slot at or above `NUM_VOICES` keys
+nothing and reports success.
 
 ### Scripted mesh re-bind (op `0x0E`), and what it took
 
@@ -1448,6 +1700,43 @@ script word on both hosts (`World::fog.gate`, written by
 `crates/engine-shell/tests/w1h_fog_gate_census.rs` (native) and
 `crates/web-viewer/tests/w1h_fog_page_prims.rs` (page).
 
+#### The field screen-effect wash had a producer and no consumer
+
+The field VM's op `0x34` sub-0 arm spawns a colour-tween actor
+([`cutscene.md`](../subsystems/cutscene.md#what-the-beat-looks-like-measured)),
+and the tween's per-frame `FUN_80024EE4(a0, a1, packed)` call is retail's
+scene-entry fade-from-black and its door prologue's fade-to-black. The port
+simulated that envelope on **both** hosts and drew it on neither: the pool
+published a push per frame, the arm was ported, tagged, entered by a ladder
+and pinned by a disc-gated oracle, and no render surface read the pool.
+
+None of the tiers could fail on it, and the reason is worth keeping: every
+tier here compares two hosts. A feature absent from both is symmetric, so a
+drift gate reports parity - correctly - while the frame stays blank. What
+finds this shape is the reach export's producer/consumer join
+([`reach-triage.md`](reach-triage.md)), not a parity gate.
+
+Both hosts now composite it through one emitter:
+
+| host | call site | source |
+|---|---|---|
+| native window | `handle_redraw`'s `screen_prims` assembly, `window/event_handler/redraw.rs` | `World::screen_tint_push_args` |
+| play page | `tick_battle_intro`'s prim assembly, `play_battle.rs` | the same |
+
+The emitter is `screen_prim::screen_effect_push_prims`, and it exists as a
+named kernel because the three arguments are three separate ways to get the
+wash wrong and two of them look right in a diff: `a0` is an ordering-table
+bucket and `a1` an ABR equation - two `i16`s a call site can swap and still
+compile - and `packed` is a **GP0** colour word with red in the low byte,
+the opposite channel order from every other kernel in this module. A
+scene-entry fade ramps through grey, where a lost swap is invisible.
+
+Ladders: `crates/web-viewer/tests/w4b_screen_effect_page_prims.rs` enters a
+shipped scene whose own entry script issues the instruction and reads the
+page's uploaded primitives back (count, blended run, non-black colour); the
+native call site is held by the tier-3 row, its draw section living in a
+`bin/` target no integration test links.
+
 ### The two hosts do not share a shading law
 
 The 3D geometry is shared - the same TMD, the same mesh builders in
@@ -1647,33 +1936,77 @@ every gate by construction.
 The same kernel advanced on the simulation tick by one host and on the
 animation frame by the other. The two agree exactly at 60 fps and nowhere
 else, so nothing about the code is wrong to read and the difference only
-exists at run time. The name-entry caret is the plain case - native
-`window/hud.rs` steps it per sim tick, `crates/web-viewer/src/play_name_entry.rs`
-per animation frame - and the battle move-FX streak schedule and the
-target-cursor pulse phase are the same shape.
+exists at run time - which is also why the *symptom* names the display and
+not the code: the name-entry caret blinks at half speed on a 120 Hz monitor
+and at double on a throttled tab.
+
+That caret is the plain case, and the fix is the shape's general one: a modal
+overlay freezes the field tick, so the host has to spend the frame's sim
+steps on the frozen clock instead of letting the overlay ride the refresh.
+[`site/js/play-app.js`](../../site/js/play-app.js) drains its fixed-timestep
+accumulator once per display frame, above the overlay arms rather than
+inside the tick branch, and hands the count to the name-entry step - the
+press lands on the first step and the rest only advance `World::frame`, which
+is exactly what the native window's catch-up ticks do. The battle move-FX
+streak schedule and the target-cursor pulse phase are the same shape and are
+still on the worklist.
 
 ### One decision, two inputs
 
-A per-frame predicate both hosts run, fed from different state. The
-camera-occlusion fade's arming gate is the anchor: the native window excludes
-the boot UI, the world map, the cutscene camera and the debug orbit, while
-`site/js/play-app.js` excludes only battle, the minigames and VR. Tier 3 pairs
+A per-frame predicate both hosts run, fed from different state. Tier 3 pairs
 the *kernel*; the operand set is per host, so the gate is silent.
+
+The camera-occlusion fade's arming gate is the anchor, and it shows what the
+fix has to look like: splitting the predicate into the half the **world** can
+answer and the half only the **host** can. `field_occlusion::fade_armed` holds
+the world half (field mode, no scripted shot owning the camera) beside
+`player_body_centre`, which is the point the gate ray-casts to *and* the focus
+the shader takes - one kernel, so the two cannot name different points. What
+stays per host is genuinely per host: a master toggle, a boot or pause UI
+owning the screen, a debug vantage, a VR first-person eye.
+
+Leaving the world half per host is what produced the divergence: the native
+window excluded the boot UI, the world map, the cutscene camera and the debug
+orbit, while the page excluded only battle and the minigames, so a pause menu
+or a scripted shot kept dissolving the walls behind it.
 
 ### A GL state word the engine does not own
 
 The page sets some frame state in JS where the native window takes it from the
-world - the battle clear colour (`site/js/webgl-tmd.js`) is the sky on one
-host and a hard-coded near-black on the other, and the winding cull that
-retail's NCLIP performs is `disable(CULL_FACE)` there unconditionally. No Rust
-symbol is missing, so no tier can name it.
+world. No Rust symbol is missing, so no tier can name it, and the only
+durable fix is to move the *decision* into the engine and leave the GL call
+as the thing that applies it.
+
+Retail's GTE **NCLIP** winding rejection is the worked case:
+`camera_view::nclip_cull_mode` is the one place that says when it arms (the
+in-engine cutscene camera, off the overworld), the native window hands the
+word to `Renderer::set_backface_cull` and the page hands the same word to
+`TmdRenderer.setNclipCull`. Before that the page's assembled pass called
+`disable(CULL_FACE)` unconditionally. The battle clear colour - the sky on one
+host, a hard-coded near-black in
+[`site/js/webgl-tmd.js`](../../site/js/webgl-tmd.js) on the other - is the
+same shape and is still open.
+
+The page's prologue grade was a third instance and the subtlest, because
+nothing was missing that a reader would look for: the grade's *multiply* half
+reached the page, and its **palette-collapse** half - the law retail applies
+to the scene's uploaded CLUT entries and TMD packet words at load - had no
+uniform in [`site/js/webgl-shaders.js`](../../site/js/webgl-shaders.js) to
+land on. The engine had composed both arms and exported both; one of the two
+had no consumer, which reads in a diff as a fully wired feature.
 
 ### A whole pass one host has no uploader for
 
 Not wiring: a surface that exists on one host only, because the other has
 nothing to draw it with. These are the project-sized ones - the world-map
-entity and player-marker line overlay, the retail dance HUD frame on the play
-page, the Baka cabinet's digit strips and payout sheet.
+entity and player-marker line overlay, the Baka cabinet's digit strips and
+payout sheet. The retail dance HUD frame was on this list and is not any
+more, and what took it off was not a new uploader: the frame is text, and
+every decision in it (digits, `Lv.` label, which beat cells) had simply been
+spelled out inside one host's draw block. Moving the resolution into
+`DanceGame::hud_frame_rows` left each host three lines of layout. Before
+calling a one-host surface a project, check whether the other host is missing
+the *paint* or only the *decision*.
 
 ### A host-side handle the world does not hold
 
@@ -1682,6 +2015,339 @@ engine's own teardown cannot release because it never knew about it. The
 browser's summon actor seat is the worked example: `World::finish_battle`
 restores the engine actor table, the host-side slot index survives it, and the
 next fight hands the same seat out twice.
+
+## Shapes a "the page is missing it" reading gets backwards
+
+A side-by-side read produces sentences of the form "the native window does X
+and the page does not". Several live cases were the other way round, and each
+was only visible from the *event*, the *sign* or the *sink* - never from the
+two call sites. Two are written out below; three more are in
+[what a one-host feature can also mean](#what-a-one-host-feature-can-also-mean).
+
+### The feature was dead on both hosts
+
+The native window carried an arm for `apply == 0` Camera Configure beats - the
+snap beats retail's mover commits immediately - and the page carried none, so
+it read as a page gap. It was neither: `Camera::route_camera_events` consumes
+every `FieldEvent::CameraConfigure` off the world queue during the session
+tick and does **not** restore it to `pending_field_events`, and the window's
+arm sat in its own later drain of that same queue. The arm could not fire, the
+bank it filled was always empty, and the replay it fed was a no-op.
+
+The lesson generalises past cameras: where a host watches a queue another
+layer already drained, "one host has the arm" says nothing about whether
+either host has the behaviour. Follow the event to the drain that consumes
+it - the bank now lives on `Camera` itself, beside the consumer, which is
+what makes both hosts' replay reach it.
+
+### The hand-off was the bug
+
+The `F3` debug orbit is one vantage on both hosts, and only the page handed
+the engine camera anything on the way out of it - which reads as the page
+compensating for something the window does not need. It was: the window
+composes its vantage as `fixed diagonal + Camera::manual_orbit` and its drag
+writes that same field in both modes, so nothing drifts and nothing needs
+reconciling. The page kept a private yaw while the toggle was on and then
+wrote its **negation** into `manual_orbit` - and since the two track together
+with the toggle off, cycling `F3` flipped the orbit by twice its value.
+
+`Camera::debug_orbit_by` is the shared setter now (un-gated by the cutscene,
+because a dev vantage ignores whoever owns the scripted camera, but still
+field-only so a drag on the overworld cannot rewrite the locomotion compass).
+A host-side hand-off between two representations of one quantity is worth
+reading as a defect report rather than as parity work: the fix is usually to
+delete the second representation.
+
+## What a one-host feature can also mean
+
+Three more rows of a side-by-side audit turned out not to be page gaps. The
+pattern each one breaks is worth naming, because all three read identically
+from the two call sites.
+
+### The native was the host projecting through the wrong camera
+
+The move-FX streak and the weapon trail were listed as "native projects them
+through the fallback orbit camera, the page through the phase camera". True,
+and the native is the side that was wrong: its *scene* pass already chose
+between `battle_dome_camera_mvp` (a stage-dome fight) and `battle_camera_mvp`
+(an auto-framed orbit for a stage-less one), while both FX passes called the
+orbit unconditionally. In every scripted fight that projected the swing ribbon
+through one framing and the swordsman holding it through another.
+
+`battle_scene_mvp` is the one selector now, and all three native passes take
+it. A trail is attached to a body; where the body's camera is chosen is where
+the trail's has to be chosen too - and a second call site that "happens to
+agree today" is the shape to look for, not a second value.
+
+The same row had a sibling: the native gated its phase-camera *tick* on
+`battle_stage_mesh.is_some()`. That puts a host render resource in the arming
+condition of a simulation kernel, so the two hosts stepped the same script on
+different frames and a fight whose stage failed to build ran with no camera
+state at all. The gate is `world.mode` on both hosts now; which matrix a
+stage-less battle renders with stays a draw-side question.
+
+### The sink was already dead
+
+The dance HUD's *quad* half reads as a native-only layer, and the native's own
+materialiser opens with `let Some(src) = solid_src else { return Vec::new() }`
+- and the one call site passes `None`, because no host stages the dance 4bpp
+page into an atlas source. So the layer draws nothing on the host that has it.
+Wiring it into the second host would have produced a second empty list and a
+green row.
+
+The blocking capability is the art, not the draw: a dance sprite page resident
+in a host atlas, with a solid-texel rect to point `solid_src` at. Until that
+exists this is one disclosure, not two.
+
+The Muscle Dome hub has the same shape one level up. `HUB_TITLE_ART` and
+`HubScreen::opponent_card()` read as minigames-page-only features, and both
+sit behind generic screen-index accessors that page's draw loop never selects:
+it calls the quad export with screens 0, 2, 3 and 4 and the envelope export
+with 0, 1 and 3, so the title art (quad screen 1) and the opponent card
+(envelope screen 2) are reachable from a test and from nothing else. Adding
+them to a second host would have added a second unreached arm. A one-host
+*export* is not a one-host *screen* - check which arguments the draw loop
+actually passes.
+
+### The two hosts were running different engines
+
+`catch_hud_draws` takes a `depth`, and two of three hosts passed a literal `0`
+- which reads as a shortcut until you notice that those two drive a
+`FishingSession` and the third drives a `PondSession`. Both model the same
+minigame; only the second carried retail's line depth `DAT_801d9298`. The
+"missing" value had nowhere to come from.
+
+`FishingFight` carries it now, sunk by the hooked species' own `+0x10` factor
+(`pull * sink_factor / 150`, the run-state term) and paid back by the reel at
+the two rates the pond model already used, clamped to retail's `[0, 0x1000]`.
+The rest of that split is unfixed and is a real one: see
+[below](#one-minigame-two-session-types).
+
+## One minigame, two session types
+
+Fishing is modelled twice in `engine-core`. `FishingSession` (native window +
+browser play page) sequences cast -> fight -> done over a deterministic pull;
+`PondSession` (minigames page) runs the full retail loop - shore idle, cast
+wind-up, lure flight, the pre-hook band roll, the fish behaviour sub-state
+machine off `BiosRand`, line record and depth.
+
+Two consequences a gate cannot see, because both hosts are internally
+consistent:
+
+- **A phase one engine has and the other does not is not drift.** The
+  minigames page wraps its catch-HUD block in `phase() != PondPhase::Idle`;
+  the other two hosts do not, and should not, because `FishingPhase` has no
+  shore-idle state - a `FishingSession` exists only while a cast is in
+  progress. The hook gate retail actually applies (`DAT_801d91b4`) is the
+  `gauges_visible` field, and all three hosts set it.
+- **`World::minigames.fishing_casts` is written by one host** (the native
+  lure's walk-grid drift reads it) and `PondSession::casts` by another. They
+  are different counters with the same meaning.
+
+Blocking capability: one session type. `PondSession` is the retail-shaped one,
+so the merge direction is `FishingSession`'s hosts adopting it - which means a
+venue/lure model and an RNG on the play page's fishing entry, and a migration
+for the two-host `fishing_*` world fields the save block already carries.
+
+## The Baka cabinet runs a ladder on one host only
+
+`legaia_engine_core::baka_fighter::LadderRun` - the rung ladder, the NEXT GAME
+/ PAY OUT choice and the coin bank - is reached from the standalone minigames
+page alone. The native window and the browser play page run a bare `BakaFight`
+with no ladder wrapper, which is why neither draws the payout sheet, and why
+the native's digit-strip helpers have no run to print.
+
+This is not a missing draw call: the two other hosts enter the duel from a
+**field warp** (`World::tick_baka_fighter` on the scene the player walked
+into), and the ladder is a cabinet session that outlives one duel. Wiring it
+means giving the world a ladder that survives the warp back, and deciding what
+a mid-ladder save does.
+
+The digit strips themselves are not part of that block and are wired on both
+of those hosts: `baka_fighter_chrome::hud_digit_placements` places the round
+digit, the 8 px right-aligned score field and the `0x10` px "GET COIN" strip,
+and `legaia_engine_ui::ui_baka_strips` emits the quads. The split is
+deliberate - a shared *layout* under two host-written emitters is what let the
+window draw retail's cells while the play page printed one prose line of the
+same two numbers. What is still native-only above them is the round chrome
+(`BakaChrome`: intro card, ROUND banner, countdown), which the browser hosts
+do not install.
+
+Blocking capability: a `LadderRun` on `World::minigames` with a save
+representation, plus the warp-out arm that settles a rung instead of ending
+the session. The cue queue is *not* part of this and was fixed: the minigames
+page never drained `BakaFight::cues`, so its duel was silent while the queue
+grew for the length of a run.
+
+### The standalone page has no World to tick through
+
+The same page advances `DanceGame` directly (`dance_tick` -> `advance`)
+rather than through `World::tick_dance`, which also runs the pre-song
+count-in, the cue SFX and the mode fallback. It is not a missed call: that
+page has no `World` and no `SceneHost` in its loop at all - it drives
+standalone rules engines against JS state. Blocking capability: a `World` on
+the minigames page, which is the whole play-page runtime, so the practical
+answer is the reverse - fold the standalone games into the play page and
+retire the second host. Until then, a kernel that hangs off `World` reaches
+two hosts and not three, and that is what a `host_only` row on this page
+means.
+
+### Ringside still on the standalone dome page
+
+The Muscle Dome hub's ringside still
+([`ringside-still.md`](../formats/ringside-still.md#in-the-port)) is drawn by
+the native window and the browser play page, and not by the standalone
+minigames page. The two play hosts share every piece of it -
+`muscle_ringside::HubBackdrop` for the level, `ringside_backdrop::ringside_still_quads`
+for the packets, `still_sheet_rgba` for the sheet - and both arm it off
+`MinigameState::muscle_ringside_still`, which `World::exit_muscle_dome` writes
+at the leg's end. That is the blocking capability: the standalone page has no
+`World`, so no leg of its ends through the pick, and its INTERVAL screen is a
+stateless per-tick sample (`muscle_hub_screen_json`) with no backdrop clock to
+ride. The same answer as above applies - a `World` on the minigames page, or
+the page folded into the play page.
+
+The first visit's brick wall (the emitter's other arm,
+`ringside_backdrop::first_visit_tile_draws` at the level
+`muscle_ringside::first_visit_backdrop_level` reads off the intro card and the
+leg-open banner) is in the same position: both play hosts draw it under those
+two screens, and the standalone page, which samples its screens by index
+rather than running their envelopes, does not.
+
+The dome's command ring has the same shape one level down. Its chip marks
+(the red cross-out X is `FUN_801DBC30`, placed by the engine as
+`battle_party_panel::cross_out_mark`) are drawn by the standalone page only,
+because only that page draws the ring as chips: the native window and the play
+page present the dome's selection as text rows. Blocking capability: a chip
+ring on the play hosts' dome HUD.
+
+The play page also had a second gap under the first: its hub screens drew only
+inside the arena's own frame, which ends when the leg does, so the INTERVAL +
+tally screen - a between-legs screen - never reached the page at all. The page
+now draws the hub list on the field frames that follow a leg too.
+
+## The fishing point-exchange sub-screen: one session on two hosts, a query on the third
+
+`World::minigames.fishing_exchange` is a live `Option<PrizeExchange>` with its
+own cursor, and what *drives* it is one engine kernel,
+`World::fishing_exchange_input` (`engine-core::fishing_exchange_input`):
+toggle (banking the live session's points first), cursor moves floored at the
+first visible row, venue switch, buy at the cursor. The native window maps its
+keys onto that kernel's `ExchangeInput`; the browser play page maps its prize
+panel's buttons onto the same inputs through `play_fishing_exchange_input`, and
+`play_fishing_prize_buy` puts the cursor on a row and buys through it too.
+
+The **composition** is shared: `legaia_engine_ui::ui_fishing_exchange` holds
+the header, the row columns, the ink rule and the one-time tag, and both play
+hosts draw the open sub-screen through it on their 320x240 stage - the native
+window from its HUD pass, the page from `play_fishing_hud_json`.
+
+It used to be a screen on one host only, for a reason no gate could see: the
+page carried the same compose call, but its only opener,
+`play_fishing_prize_buy`, opened the world sub-mode, committed the buy and
+closed it again inside one call, so no HUD compose ever found it open. The page
+now holds it open across frames and the DOM panel follows the engine's open /
+venue state (`play_fishing_exchange_state_json`);
+`crates/web-viewer/tests/play_screen_parity_disc.rs` asserts the rows join the
+HUD draw list while it is open. The native window, for its part, drew the rows
+in raw surface pixels at a pen that is a stage position - top-left and a third
+of the page's size - until they went through the stage transform. The
+standalone minigames page still lays its own list out from the JSON
+(`fishing_exchange_json`); it has no `World` to hold the session on.
+
+The tag is the part that has to stay separated from the ink.
+`PrizeExchange::is_available` folds three independent refusals together -
+price, the owned-stack cap and the one-time latch - so a host that reads it as
+"already bought" prints `sold` beside every one-time prize a fresh save cannot
+yet afford. `exchange_row_tag` reads `is_latched` on its own, and a test pins
+the three cases.
+
+The play page's cursor is the world's own: a panel Buy moves
+`PrizeExchange::cursor` onto the row before buying, and the canvas draws that
+cursor. What the page does not have is a *keyboard* path to Up / Down on the
+open sub-screen - its arrow keys stay the pad, which the pond is still reading
+- so the panel's buttons are the page's input surface for it.
+
+The panel's pen also differs by one term: the native adds the venue overlay's
+idle sway (`FUN_801d03b0`), an actor the browser hosts do not install, so the
+page draws the panel at its resting top-left.
+
+## A screen can be one host's frame and the other host's borrow
+
+Three of the parity rows this page tracks were not a missing feature on either
+host. They were the same screen composed in two places, and what kept them
+apart was a borrow, a hand-off or a stale sentence.
+
+### The frame belonged to a pass that could not size it
+
+The shop / inn panel drew bare on the native window and framed on the browser
+play page for three programs running. Nobody chose that. The window builds its
+HUD text in one `&self` pass and its chrome sprites in another, and the panel
+was assembled inline inside the text pass - so the sprite pass had no row count
+to size a frame from, and adding one meant either duplicating the panel build
+or moving it.
+
+The fix is the move: `shop_overlay_stage_draws` is a `&self` builder both
+passes call, and the rect comes from `shop_panel_rows` (distinct baselines in
+the text) plus `shop_panel_frame_rect` (pen, inset, width, row pitch), both in
+engine-ui and both called by both hosts. Sizing off the text rather than off
+the session is what lets a screen that grows a row grow its frame on both
+hosts, without either re-deriving a row count from a session shape the other
+does not hold.
+
+The general form: when a host splits its frame into passes with different
+borrows, a feature can be absent from one pass for a reason that has nothing to
+do with the feature. Ask which pass owns the geometry before reading the
+absence as a decision.
+
+### The hand-off released the thing the next screen needed
+
+Retail composes the boot save-select over the title art at a dim. The native
+window keeps it because its boot state machine holds the title session
+alongside the save-select state. The browser play page reached the same screen
+through the pause menu's own Load row and released the title session at that
+hand-off, so the panel was composed over black.
+
+The session is parked instead of dropped, and both hosts draw the bands through
+one `title_band_sprites` kernel with a `TitleBandState`. Two gates on the
+parked session are the native window's own: it is live only while the
+save-select is the open sub-screen, and it is suppressed for `NowChecking` /
+`SlotPreview`, the two phases retail pivots to black for.
+
+### A declaration is a claim, and claims go stale
+
+Two `[[frame_content]]` declarations said something no longer true of the code
+they described.
+
+One said the play page "has no Records page at all". It ships one, behind the
+same Square toggle, through the same `records_screen_draws_for` builder, with
+its model pinned to the native one by a `SIM_PAIRS` row. The real difference is
+where each host builds the list - the window caches its dev-menu draws at tick
+time, the page builds them in the draw pass where it holds the surface size -
+which is the `tick_field_party_hud` shape, not a missing screen.
+
+The other said the native window "does that same work" for all thirty-two
+web-only engine calls in the battle-presentation pair. Thirty-one have a native
+call site, most of them in `window/battle.rs`. The thirty-second is
+`packet_color::hybrid`, and it is not presentation work the window skips: it is
+the CPU-side per-vertex colour stream the page owes WebGL, which the wgpu
+renderer resolves in its fragment shader instead.
+
+Neither correction changes a byte of engine behaviour, and that is the point.
+The gate ratchets the two *lists* and fails when they move; it cannot check the
+prose, so a reason that was true when written outlives the thing it described.
+Re-derive a declaration's reason whenever you touch the pair it names.
+
+### A refusal the player cannot see is not a refusal
+
+A save commit the host cannot honour - writing into a mounted card image the
+native window has no writer for, or a browser card write that fails - used to
+answer with a log line. The screen closed and nothing had happened, which from
+the player's seat is indistinguishable from a save that worked.
+`SaveScreenFlow::refuse` raises a shared notice instead, drawn by one pair of
+engine-ui builders over the menu root. It is the port's own screen: retail's
+save UI only ever talks to a card and reports a card it cannot use through the
+card driver's result word, which does not model a second backend's failures.
 
 ## Adding coverage
 

@@ -83,11 +83,18 @@ pub const GLIDE_RECORD_PAIRS: usize = 10;
 /// the glide tick counts a zero-step channel as arrived every frame - which is
 /// the safe default for a caller with no zoom to tween.
 ///
-/// PORT: FUN_801D829C NOT WIRED: the producer's arithmetic is
-/// `crate::battle_camera::build_camera_angle_tween`, which the native battle
-/// camera consumes directly as rate slots; nothing in the engine spawns the
-/// camera-relative glide **actor** this layout feeds, so no host reaches this
-/// function outside tests.
+/// PORT: FUN_801D829C
+/// REPLACED-BY: `engine-shell`'s `window/battle_cam.rs` `Glide`, which holds
+/// the same nine `(step, endpoint)` channels between frames directly off
+/// `crate::battle_camera::build_camera_angle_tween`. No host is owed a call.
+///
+/// This layout is **transport**, not behaviour: retail needs the twenty
+/// halfwords because its glide lives on a pool actor allocated from
+/// `DAT_8007071C`, so the builder's nine pairs have to be serialised into
+/// `actor+0x80` for the tick to find them a frame later. The port's glide is
+/// a struct the camera owns, so the slots travel as themselves and the record
+/// has no reader - and it would still have none if the actor were added,
+/// because the actor would hold the same slots.
 pub fn glide_spawn_record(
     slots: &[crate::battle_camera::TweenSlot; crate::battle_camera::TWEEN_SLOTS],
     gte_h: crate::battle_camera::TweenSlot,

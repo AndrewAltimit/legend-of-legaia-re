@@ -98,6 +98,12 @@
   <p>Two details there are the kind a backward-only or literal-only scan loses: the index is formed by <code>addiu</code> <em>in the <code>jal</code>'s delay slot</em>, and the comparison reads the character record through <code>lhu</code> at a <code>gp</code>-free absolute pair rather than through any table.</p>
 </section>
 
+<section class="doc-section" id="what-draws-it">
+  <h2>What draws it, and when</h2>
+  <p>The still is loaded at a battle's end and drawn a screen later, by the Muscle Dome's contest hub: two textured quads that address it by <em>texture page</em> (<code>0x106</code> and <code>0x109</code>, VRAM x 384 and 576) rather than by pixel column, one 320x240 image split at x = 192. The hub draws them only when it is <strong>re-entered</strong> after a finished leg, as the backdrop of the INTERVAL score tally and the ROUND card that follows - the first visit draws a different backdrop. Its brightness is the hub's backdrop fade level, which climbs to full with the INTERVAL heading, dims to half while the tally rolls, returns to full, and fades out with the ROUND card. Checkpoints from a dome contest played through three hub visits show both packets in the frame's primitive pool on the second and third visits, at the level the first of those arms had reached.</p>
+  <p>In the port both play hosts draw it the same way, from one set of engine kernels: the pick at the leg's end, the fade envelope, the two quads, and the sheet assembled band by band at the loader's own rectangles. The standalone minigames page does not.</p>
+</section>
+
 <section class="doc-section" id="why-no-magic">
   <h2>Why it has no magic</h2>
   <p>Nothing in the entry identifies it. Length is the only structural statement it makes, and <code>0x28000</code> is not distinctive on its own, so <code>legaia_asset::ringside_still::has_still_shape</code> is a length test and the selection is by PROT index. That is not a shortcut around a detector - there is nothing to detect. A still and any other raw 16bpp VRAM region are the same bytes, and the only thing that distinguishes them is which code uploads them where.</p>

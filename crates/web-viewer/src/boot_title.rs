@@ -320,7 +320,13 @@ impl LegaiaRuntime {
         use legaia_engine_core::title::TitleOutcome;
         match session.outcome() {
             Some(o) => {
-                self.boot_title = None;
+                // The session is not simply dropped at the hand-off: retail
+                // keeps the title art on screen behind the save-select, so
+                // Continue parks it as the backdrop
+                // (`boot_title_backdrop_draws_json`) and only New Game /
+                // Options release it. Retail composes the boot options screen
+                // against black, so Options takes the drop.
+                let parked = self.boot_title.take();
                 match o {
                     TitleOutcome::NewGame => "new_game".to_string(),
                     // Continue and Options route to the same two screens the
@@ -331,6 +337,7 @@ impl LegaiaRuntime {
                     // / `play_menu_draws_json` until the menu closes.
                     TitleOutcome::Continue => {
                         if self.play_menu_open_row("Load") {
+                            self.boot_title_backdrop = parked;
                             "continue".to_string()
                         } else {
                             self.reopen_title_after_failed_row("Load")
@@ -352,6 +359,7 @@ impl LegaiaRuntime {
     /// Abort the title flow (page navigated away / cancelled).
     pub fn boot_title_close(&mut self) {
         self.boot_title = None;
+        self.boot_title_backdrop = None;
     }
 
     /// Start the **publisher-logo** boot phase - the stage retail plays
@@ -565,6 +573,30 @@ impl LegaiaRuntime {
         })
         .to_string()
     }
+
+    /// The **save-screen backdrop**: the title art kept behind the Load /
+    /// Save chrome at retail's dim, rather than the screen being composed
+    /// over black.
+    ///
+    /// The page reaches retail's save-select through the pause menu's own
+    /// Load row, and used to drop its title session at that hand-off, so the
+    /// art went with it. The session is parked in `boot_title_backdrop`
+    /// instead and drawn through the same `ui::title_band_sprites` kernel the
+    /// live card uses, with `ui::TitleBandState::backdrop`'s dim. Retail
+    /// pivots to pure black once a slot is confirmed, which is why the
+    /// confirm phases draw nothing.
+    pub fn boot_title_backdrop_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
+        if !self.boot_title_backdrop_visible() {
+            return r#"{"active":false,"sprites":[]}"#.to_string();
+        }
+        let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
+        let sprites = ui::title_band_sprites(ui::TitleBandState::backdrop(), origin, scale);
+        serde_json::json!({
+            "active": true,
+            "sprites": sprites.iter().map(quad_json).collect::<Vec<_>>(),
+        })
+        .to_string()
+    }
 }
 
 impl LegaiaRuntime {
@@ -611,19 +643,20 @@ impl LegaiaRuntime {
         ui::title_menu_draws_for(2, cursor, session.continue_enabled, pen, title_scale)
     }
 
-    /// Compose the title-TIM bands (wordmark, Press Start, NEW GAME / CONTINUE,
-    /// copyright lines) into surface-pixel sprite quads - a faithful port of the
-    /// native window's `title_screen_sprite_draws`.
+    /// Compose the title-TIM bands (wordmark, Press Start, NEW GAME /
+    /// CONTINUE, copyright lines) into surface-pixel sprite quads.
+    ///
+    /// The composition itself is the shared `ui::title_band_sprites` kernel
+    /// the native window draws through; this resolves only the *state* - the
+    /// fade ramp and which bands the session's phase puts on screen.
     fn title_band_sprites(
         &self,
         session: &TitleSession,
         origin: (i32, i32),
         scale: u32,
     ) -> Vec<SpriteDraw> {
-        use legaia_asset::title_pak;
-        let mut out: Vec<SpriteDraw> = Vec::new();
         if self.title_atlas.is_none() {
-            return out;
+            return Vec::new();
         }
         // Fade-in dims the whole card via alpha; other phases are opaque.
         let alpha = match session.phase() {
@@ -631,88 +664,26 @@ impl LegaiaRuntime {
                 let total = session.fade_in_frames.max(1) as f32;
                 1.0 - (frames_remaining as f32 / total).clamp(0.0, 1.0)
             }
-            TitlePhase::Done(_) => return out,
+            TitlePhase::Done(_) => return Vec::new(),
             _ => 1.0,
         };
-        let color = [1.0, 1.0, 1.0, alpha];
-        let (sx0, sy0) = origin;
-        let si = scale as i32;
-        let tpx = ui::TITLE_ART_POS.0;
-        let tpy = ui::TITLE_ART_POS.1;
-        let push = |out: &mut Vec<SpriteDraw>,
-                    src: (u32, u32, u32, u32),
-                    dsx: i32,
-                    dsy: i32,
-                    tint: [f32; 4]| {
-            let (_, _, sw, sh) = src;
-            out.push(SpriteDraw {
-                dst: (
-                    sx0 + (tpx + dsx) * si,
-                    sy0 + (tpy + dsy) * si,
-                    sw * scale,
-                    sh * scale,
-                ),
-                src,
-                color: tint,
-            });
-        };
-
-        // Wordmark art always, through the shared retail backdrop law
-        // (`FUN_801E02A4`): the art re-emitted with all three RGB
-        // modulation bytes at one brightness byte, split at the VRAM
-        // texture-page seam. Retail's ramp is the modulation byte, not
-        // an alpha, so the page folds its fade into the same byte -
-        // `0x80` is neutral, a fully-faded-in title. Mirrors the native
-        // window's `title_screen_sprite_draws`.
-        let wm = title_pak::TITLE_BAND_WORDMARK;
-        let brightness = (alpha * 128.0).round().clamp(0.0, 255.0) as u8;
-        out.extend(ui::backdrop_dim_sprites(
-            wm,
-            brightness,
-            (
-                sx0 + (tpx + wm.0 as i32) * si,
-                sy0 + (tpy + wm.1 as i32) * si,
-            ),
-            scale,
-        ));
-
-        // Press Start prompt during that phase only.
-        if matches!(session.phase(), TitlePhase::PressStart { .. }) {
-            let ps = title_pak::TITLE_BAND_PRESS_START;
-            push(&mut out, ps, ps.0 as i32, ps.1 as i32, color);
-        }
-
-        // NEW GAME / CONTINUE rows during the main menu (selected bright).
+        let mut state = ui::TitleBandState::card(alpha);
+        state.press_start = matches!(session.phase(), TitlePhase::PressStart { .. });
         if let TitlePhase::MainMenu { cursor } = session.phase() {
-            let dim = [color[0] * 0.5, color[1] * 0.5, color[2] * 0.5, color[3]];
-            let ng = title_pak::TITLE_BAND_MENU_NEW_GAME;
-            let co = title_pak::TITLE_BAND_MENU_CONTINUE;
-            let art_w = ui::TITLE_ART_SIZE.0 as u32;
-            let ng_x = ((art_w - ng.2) / 2) as i32;
-            let co_x = ((art_w - co.2) / 2) as i32;
-            let ng_y: i32 = 154;
-            let co_y: i32 = ng_y + ng.3 as i32 + 4;
-            push(
-                &mut out,
-                ng,
-                ng_x,
-                ng_y,
-                if cursor == 0 { color } else { dim },
-            );
-            push(
-                &mut out,
-                co,
-                co_x,
-                co_y,
-                if cursor == 1 { color } else { dim },
-            );
+            state.menu = Some((cursor, true));
         }
+        ui::title_band_sprites(state, origin, scale)
+    }
 
-        // Copyright lines always (post-fade).
-        let tm = title_pak::TITLE_BAND_TM_COPYRIGHT;
-        push(&mut out, tm, tm.0 as i32, tm.1 as i32, color);
-        let cc = title_pak::TITLE_BAND_C_COPYRIGHT;
-        push(&mut out, cc, cc.0 as i32, cc.1 as i32, color);
-        out
+    /// Whether the parked backdrop session owns the frame behind the menu.
+    ///
+    /// Alive only while the Load row's save-select is the open sub-screen,
+    /// and suppressed for the two phases retail composes against black
+    /// (`NowChecking` / `SlotPreview`) - the same test the native window's
+    /// `title_screen_sprite_draws` makes.
+    pub(crate) fn boot_title_backdrop_visible(&self) -> bool {
+        self.boot_title_backdrop.is_some()
+            && self.title_atlas.is_some()
+            && self.play_menu_save_select_over_title()
     }
 }

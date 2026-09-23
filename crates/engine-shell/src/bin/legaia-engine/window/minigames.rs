@@ -478,20 +478,14 @@ impl PlayWindowApp {
                 .map(|(l, _)| (l.x(), l.z))
                 .or_else(|| self.fish_wander.as_ref().map(|w| (w.x, w.z)))
                 .unwrap_or((0, 0));
-            let mut cues: Vec<u8> = Vec::new();
-            if let Some(cue) = f.cue {
-                cues.push(cue);
-            }
+            // The bursts' *visuals* are this actor's: they hang off the lure,
+            // which only this host simulates. Their **cues** are not - the
+            // hook cue and the celebration tiers are queued by
+            // `World::tick_fishing` off the session's own phase edges, where
+            // all three hosts drain them (`drain_minigame_sfx_cues`). Firing
+            // them here as well would play each one twice on this host alone.
             for b in &f.bursts {
                 self.session.host.world.minigames.fx.spawn_burst(b, origin);
-                if let Some(cue) = b.cue {
-                    cues.push(cue);
-                }
-            }
-            if let Some(bgm) = self.session.bgm.as_mut() {
-                for cue in cues {
-                    bgm.enqueue_sfx(cue as u16, 0, 0, 0);
-                }
             }
             if !f.done {
                 self.fish_line = Some(line);
@@ -622,11 +616,19 @@ impl PlayWindowApp {
                 .muscle_contest
                 .as_ref()
                 .map_or(1, |c| c.round() as i32 + 1);
-            self.muscle_round_banner = Some((round, HubScreen::round_banner()));
+            // The card runs once per leg: a re-entered hub already played it
+            // over the still, so the leg that opens after it does not.
+            if legaia_engine_core::muscle_ringside::leg_open_raises_round_card(
+                self.muscle_card_round.take(),
+                round,
+            ) {
+                self.muscle_round_banner = Some((round, HubScreen::round_banner()));
+            }
             if contest_open && !self.muscle_prev_contest_open {
                 self.muscle_intro_card = Some(HubScreen::intro_card());
             }
             self.muscle_interval = None;
+            self.muscle_backdrop = None;
         }
         if !leg_open && self.muscle_prev_leg_open && self.muscle_prev_contest_open {
             // The leg boundary the arena hub sees. Whether it shows the tally
@@ -643,6 +645,13 @@ impl PlayWindowApp {
                     .last()
                     .unwrap_or(&0) as i32;
             self.muscle_interval = raises.then(|| HubScreen::interval(roll));
+            // A hub re-entered after a leg draws the still that leg's end
+            // left resident as its backdrop (retail's `_DAT_801D1AE0` arm).
+            self.muscle_backdrop = world
+                .minigames
+                .muscle_ringside_still
+                .filter(|_| raises)
+                .map(legaia_engine_core::muscle_ringside::HubBackdrop::reentry);
             // Arm the tally roll with the screen: the contest is already
             // settled, so the roll only decides what the six rows read while
             // the screen is up, and it ends on the settled values.
@@ -671,6 +680,28 @@ impl PlayWindowApp {
                 self.muscle_round_banner = None;
             }
         }
+        // The backdrop rides the INTERVAL screen's arms, then runs its own
+        // return + ROUND-card arms once the screen has gone.
+        if let Some(backdrop) = self.muscle_backdrop.as_mut() {
+            let lane0_full = self.muscle_tally.as_ref().is_some_and(|(ramp, _)| {
+                ramp.fade[0] >= legaia_engine_core::other_game_overlay::LANE_FADE_FULL
+            });
+            backdrop.tick(1, pad, self.muscle_interval.map(|i| i.stage()), lane0_full);
+            if backdrop.card_brightness().is_some() {
+                self.muscle_card_round = Some(
+                    self.session
+                        .host
+                        .world
+                        .minigames
+                        .muscle_contest
+                        .as_ref()
+                        .map_or(1, |c| c.round() as i32 + 1),
+                );
+            }
+            if backdrop.done() {
+                self.muscle_backdrop = None;
+            }
+        }
         if let Some(interval) = self.muscle_interval.as_mut() {
             interval.tick(1, pad);
             // The tally rolls on the same clock. `boost` is retail's bypass
@@ -685,16 +716,12 @@ impl PlayWindowApp {
                 let cues = step.cues.clone();
                 if let Some(bgm) = self.session.bgm.as_mut() {
                     for cue in cues {
-                        bgm.key_on_voice_attr(legaia_engine_audio::VoiceAttr {
-                            voice: cue.voice.min(23) as u8,
-                            vab_id: cue.vab_program_tone.0 as i16,
-                            program: cue.vab_program_tone.1 as u8,
-                            tone: cue.vab_program_tone.2 as u8,
-                            note: cue.note_and_fine.0 as u8,
-                            fine: cue.note_and_fine.1 as i16,
-                            vol_l: cue.volume.0 as i16,
-                            vol_r: cue.volume.1 as i16,
-                        });
+                        bgm.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
+                            cue.voice,
+                            cue.vab_program_tone,
+                            cue.note_and_fine,
+                            cue.volume,
+                        ));
                     }
                 }
             }
@@ -810,6 +837,9 @@ impl PlayWindowApp {
         if atlas_w == 0 {
             return;
         }
+        // The two ringside stills share the atlas: each is a 320-wide sheet
+        // (the VRAM region `(384, 0)` the battle end's loader fills).
+        let atlas_w = atlas_w.max(legaia_asset::ringside_still::WIDTH as u32);
         let mut blocks: Vec<(u8, u8, u32)> = Vec::new();
         let mut rgba: Vec<u8> = Vec::new();
         let mut atlas_h = 0u32;
@@ -833,6 +863,28 @@ impl PlayWindowApp {
             log::warn!("muscle hub: no page/palette block decoded");
             return;
         }
+        let mut stills: Vec<(u32, u32)> = Vec::new();
+        for variant in 0..2u32 {
+            let index = legaia_asset::ringside_still::PROT_INDEX_DEFAULT + variant;
+            let Some(sheet) = self
+                .session
+                .host
+                .index
+                .entry_bytes_extended(index)
+                .ok()
+                .and_then(|b| legaia_engine_render::ringside_backdrop::still_sheet_rgba(&b))
+            else {
+                log::warn!("muscle hub: ringside still {index} did not decode");
+                continue;
+            };
+            let sw = legaia_asset::ringside_still::WIDTH as u32;
+            for row in sheet.chunks_exact(sw as usize * 4) {
+                rgba.extend_from_slice(row);
+                rgba.resize(rgba.len() + ((atlas_w - sw) * 4) as usize, 0);
+            }
+            stills.push((variant, atlas_h));
+            atlas_h += legaia_asset::ringside_still::HEIGHT as u32;
+        }
         match renderer.upload_sprite_atlas(&rgba, atlas_w, atlas_h) {
             Ok(atlas) => {
                 log::info!(
@@ -843,6 +895,7 @@ impl PlayWindowApp {
                     blocks,
                     table,
                     atlas,
+                    stills,
                 });
             }
             Err(e) => log::warn!("muscle hub: atlas upload skipped: {e:#}"),
@@ -890,6 +943,20 @@ impl PlayWindowApp {
         // brightness.
         let mut quads: Vec<hud::HudQuad> = Vec::new();
         if in_dome {
+            // A first visit's brick wall (the emitter's latch-0 arm) under
+            // the two leg-open screens, at the level retail's arms 2..6 give
+            // it - drawn first, so it sits behind the cards.
+            let wall = legaia_engine_core::muscle_ringside::first_visit_backdrop_level(
+                self.muscle_intro_card.as_ref(),
+                self.muscle_round_banner.as_ref().map(|(_, b)| b),
+            );
+            if wall > 0 {
+                quads.extend(hud::hub_screen_quads(
+                    &mut table,
+                    &legaia_engine_render::ringside_backdrop::first_visit_tile_draws(),
+                    wall,
+                ));
+            }
             if let Some(card) = self.muscle_intro_card {
                 quads.extend(hud::hub_screen_quads(
                     &mut table,
@@ -928,10 +995,46 @@ impl PlayWindowApp {
             };
             quads.extend(hud::score_tally_quads(&mut table, values, row_bright));
         }
-        if quads.is_empty() {
-            return Vec::new();
+        // The re-entered hub's ROUND card (arms 0x15 / 0x16) over the still.
+        if !in_dome
+            && self.muscle_interval.is_none()
+            && let Some(card) = self.muscle_backdrop.and_then(|b| b.card_brightness())
+        {
+            let round = world
+                .minigames
+                .muscle_contest
+                .as_ref()
+                .map_or(1, |c| c.round() as i32 + 1);
+            quads.extend(hud::hub_screen_quads(
+                &mut table,
+                &hud::round_banner_draws(round),
+                card,
+            ));
         }
         let mut out: Vec<legaia_engine_render::SpriteDraw> = Vec::new();
+        // The backdrop goes first: retail links the still's two packets at
+        // the ordering table's far end (`OT + 0xFA0`), behind every sprite.
+        if !in_dome
+            && let Some(b) = self.muscle_backdrop.filter(|b| b.visible())
+            && let Some(&(_, still_y)) = assets.stills.iter().find(|(v, _)| *v == b.variant())
+        {
+            use legaia_engine_render::ringside_backdrop as rb;
+            for q in rb::ringside_still_quads(b.level()) {
+                let Some(d) = rb::StillDraw::from_quad(&q) else {
+                    continue;
+                };
+                // A flat packet colour: texture modulation `texel * c / 128`.
+                let c = f32::from(d.level) / 128.0;
+                out.push(legaia_engine_render::SpriteDraw {
+                    dst: d.dst,
+                    src: (d.src.0, still_y + d.src.1, d.src.2, d.src.3),
+                    color: [c, c, c, 1.0],
+                });
+            }
+        }
+        if quads.is_empty() && out.is_empty() {
+            return Vec::new();
+        }
         for q in &quads {
             let sheet = u8::from(q.tpage & 0x10 != 0);
             let pal = (q.clut & 0x3F) as u8;
@@ -953,9 +1056,24 @@ impl PlayWindowApp {
             // colours are a vertical two-stop gradient, flattened here to
             // the stops' mean.
             let tint = |k: usize| (q.rgb[0][k] as f32 + q.rgb[2][k] as f32) / 2.0 / 128.0;
+            // The retail display is the 320x240 frame and the GPU clips to
+            // it; the first visit's wall tiles run past it (three 128-wide
+            // columns, two 128-high rows), so clip here - the texel window
+            // shrinks with the same ratio - or the stage transform carries
+            // the overhang onto the window beside the frame.
+            let (dx, dy) = (q.xy[0].0 as i64, q.xy[0].1 as i64);
+            let (x0, x1) = (dx.max(0), (dx + dw as i64).min(320));
+            let (y0, y1) = (dy.max(0), (dy + dh as i64).min(240));
+            if x1 <= x0 || y1 <= y0 {
+                continue;
+            }
+            let sx = q.uv[0].0 as i64 + (x0 - dx) * sw as i64 / dw as i64;
+            let sy = q.uv[0].1 as i64 + (y0 - dy) * sh as i64 / dh as i64;
+            let csw = ((x1 - x0) * sw as i64 / dw as i64).max(1) as u32;
+            let csh = ((y1 - y0) * sh as i64 / dh as i64).max(1) as u32;
             out.push(legaia_engine_render::SpriteDraw {
-                dst: (q.xy[0].0 as i32, q.xy[0].1 as i32, dw, dh),
-                src: (q.uv[0].0 as u32, block_y + q.uv[0].1 as u32, sw, sh),
+                dst: (x0 as i32, y0 as i32, (x1 - x0) as u32, (y1 - y0) as u32),
+                src: (sx as u32, block_y + sy as u32, csw, csh),
                 color: [tint(0), tint(1), tint(2), 1.0],
             });
         }
@@ -1314,10 +1432,17 @@ impl PlayWindowApp {
             legaia_asset::monster_archive::record(&archive, r.monster_id as u16).ok()?
         });
         let lead = self.session.host.world.party.roster.members.first();
-        let player_hp = lead
+        // The fighter enters at the lead record's live HP (`+0x106`), as the
+        // arena door does - the battle end writes the fight's HP back there
+        // and the ringside pick reads it.
+        let player_hp_max = lead
             .map(|r| r.hp_mp_sp().hp_max as i32)
             .filter(|&hp| hp > 0)
             .unwrap_or(500);
+        let player_hp = lead
+            .map(|r| r.hp_mp_sp().hp_cur as i32)
+            .filter(|&hp| hp > 0)
+            .unwrap_or(player_hp_max);
         let player_budget = lead
             .map(|r| r.live_stats().agl)
             .filter(|&agl| agl > 0)
@@ -1365,7 +1490,7 @@ impl PlayWindowApp {
             .map(|r| {
                 let live = r.live_stats();
                 legaia_engine_core::muscle_dome::DomeCombatant {
-                    hp_max: player_hp.clamp(0, u16::MAX as i32) as u16,
+                    hp_max: player_hp_max.clamp(0, u16::MAX as i32) as u16,
                     int: live.int,
                     udf: live.udf,
                     ldf: live.ldf,

@@ -36,7 +36,7 @@
 //!
 //! ## What it draws
 //!
-//! Three primitives, in OT order, all posted through `AddPrim`
+//! Three primitives, listed in **posting** order, all posted through `AddPrim`
 //! (`FUN_8003D2C4`) into the OT at `*(0x1F800314 + 0xE0) + 8`, allocated off
 //! the scratchpad prim-pool cursor at `0x1F800314 + 0x8C`:
 //!
@@ -53,9 +53,15 @@
 //! **50% screen darken**, drawn behind the top-view debug panels - not an
 //! "animation step".
 //!
-//! The two `DR_MODE` packets bracket it because the blend quad must not be
-//! dithered: dither goes off (`dtd = 0`) before the quad and back on
-//! (`dtd = 1`) after, leaving the mode word restored for whatever draws next.
+//! `AddPrim` (`FUN_8003D2C4`) is a **head** insert - it stores the old OT
+//! link into the primitive and the primitive into the OT entry - so three
+//! primitives posted to one OT entry reach the GPU in reverse: the
+//! `dtd = 1` `DR_MODE` first, then the quad, then the `dtd = 0` `DR_MODE`.
+//! The quad is therefore drawn **with dither on**, and dither is left off
+//! behind it for whatever that OT slot's successors draw. (An earlier
+//! reading of this page took posting order for draw order and had dither
+//! off around the quad; the field names below keep that reading's
+//! before/after labels, which name posting position, not GPU order.)
 //!
 //! ## Vertex geometry
 //!
@@ -83,7 +89,8 @@ pub const DIM_GP0_CMD: u8 = 0x2A;
 pub struct DrawModePacket {
     /// `dfe` - drawing to the display area enabled. Zero in both packets.
     pub draw_on_display: bool,
-    /// `dtd` - dither enable. `false` before the quad, `true` after.
+    /// `dtd` - dither enable. `false` in the packet posted first, `true` in
+    /// the one posted last (which the GPU runs first).
     pub dither: bool,
     /// `tpage` word. [`DIM_TPAGE`] in both packets.
     pub tpage: u16,
@@ -102,14 +109,16 @@ pub struct DimQuad {
 }
 
 /// One frame's screen-dim pass: the three primitives `FUN_801E75DC` posts,
-/// in OT order.
+/// in posting order (the GPU executes them in reverse - see the module
+/// docs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScreenDimPass {
-    /// Packet 0 - dither off.
+    /// Packet 0 - posted first (`dtd = 0`), so executed **last**.
     pub mode_before: DrawModePacket,
-    /// Packet 1 - the blend quad.
+    /// Packet 1 - the blend quad (middle in both orders).
     pub quad: DimQuad,
-    /// Packet 2 - dither back on.
+    /// Packet 2 - posted last (`dtd = 1`), so executed **first**: the quad
+    /// draws with dither on.
     pub mode_after: DrawModePacket,
 }
 

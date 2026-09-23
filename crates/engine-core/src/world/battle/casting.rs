@@ -453,7 +453,7 @@ impl World {
     /// no-damage floor fires - matching `FUN_801DD6B4`'s call order.
     ///
     /// The finisher runs with `bypass_party_resist =
-    /// `[`SPELL_BYPASSES_PARTY_RESIST`], the `param_5 = 1` the wrapper pushes
+    /// `[`ATK_WRAPPER_BYPASSES_PARTY_RESIST`], the `param_5 = 1` the wrapper pushes
     /// at `0x801DD828`: the party defender's elemental-jewel / All-Guard
     /// ladder is skipped outright. The affinity scale still reads the caster's
     /// slot element, so only the *defender's* resist stage is dropped.
@@ -465,10 +465,11 @@ impl World {
     /// the engine's own seed even though the arithmetic is the wrapper's.
     ///
     /// PORT: FUN_801DD6B4 (live wiring; pure kernel in
-    /// `battle_damage_wrappers::spell_wrapper_predamage`)
+    /// `battle_damage_wrappers::atk_wrapper_predamage`)
     fn capture_bypass_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
         use legaia_engine_vm::battle_damage_wrappers::{
-            SPELL_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender, spell_wrapper_predamage,
+            ATK_WRAPPER_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender,
+            atk_wrapper_predamage,
         };
         use vm::battle_formulas::{DamageFinish, damage_finish_lazy};
 
@@ -500,7 +501,7 @@ impl World {
             (self.next_rng() & 0x7fff) as u16,
             (self.next_rng() & 0x7fff) as u16,
         ];
-        let (atk, def) = spell_wrapper_predamage(power, &a, &d, element_affinity_pct, rng2, || {
+        let (atk, def) = atk_wrapper_predamage(power, &a, &d, element_affinity_pct, rng2, || {
             (self.next_rng() & 0x7fff) as u16
         });
 
@@ -525,7 +526,7 @@ impl World {
                 .copied()
                 .unwrap_or(false),
             enemy_defender_halve: false,
-            bypass_party_resist: SPELL_BYPASSES_PARTY_RESIST,
+            bypass_party_resist: ATK_WRAPPER_BYPASSES_PARTY_RESIST,
             summon_power_pct: 100,
             floor_rand: 0,
         };
@@ -601,7 +602,7 @@ impl World {
     /// So a capture-class respecting cast routed through the shared kernel
     /// lands on a different damage figure *and* advances the RNG cursor by a
     /// different amount. The finisher runs with `bypass_party_resist = false`
-    /// ([`PHYSICAL_BYPASSES_PARTY_RESIST`]), so the party defender's jewel /
+    /// ([`INT_WRAPPER_BYPASSES_PARTY_RESIST`]), so the party defender's jewel /
     /// All-Guard ladder applies - which is what community playtests observe
     /// for these casts.
     ///
@@ -613,7 +614,7 @@ impl World {
     /// wrapper's.
     ///
     /// PORT: FUN_801DD4B0 (live wiring; pure kernel in
-    /// `battle_damage_wrappers::physical_wrapper_predamage`)
+    /// `battle_damage_wrappers::int_wrapper_predamage`)
     /// The **baked** per-hit power the resident slot-B module hands its
     /// damage wrapper, when the cast's module is one of the six the band's
     /// PORT rows decode ([`legaia_engine_vm::cast_module_ticks`]).
@@ -648,8 +649,8 @@ impl World {
 
     fn capture_respect_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
         use legaia_engine_vm::battle_damage_wrappers::{
-            PHYSICAL_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender,
-            physical_wrapper_predamage,
+            INT_WRAPPER_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender,
+            int_wrapper_predamage,
         };
         use vm::battle_formulas::{DamageFinish, damage_finish_lazy};
 
@@ -682,10 +683,9 @@ impl World {
             (self.next_rng() & 0x7fff) as u16,
             (self.next_rng() & 0x7fff) as u16,
         ];
-        let (atk, def) =
-            physical_wrapper_predamage(power_u, &a, &d, element_affinity_pct, rng3, || {
-                (self.next_rng() & 0x7fff) as u16
-            });
+        let (atk, def) = int_wrapper_predamage(power_u, &a, &d, element_affinity_pct, rng3, || {
+            (self.next_rng() & 0x7fff) as u16
+        });
 
         let attacker_element = self
             .actors
@@ -708,7 +708,7 @@ impl World {
                 .copied()
                 .unwrap_or(false),
             enemy_defender_halve: false,
-            bypass_party_resist: PHYSICAL_BYPASSES_PARTY_RESIST,
+            bypass_party_resist: INT_WRAPPER_BYPASSES_PARTY_RESIST,
             summon_power_pct: 100,
             floor_rand: 0,
         };
@@ -1458,7 +1458,7 @@ mod capture_bypass_tests {
     /// The wrapper's defence weighting, asserted on the pure roll where it is
     /// unconditionally observable: `FUN_801DD6B4`'s defender stage folds
     /// `+0x15C` / `+0x160` in at `>> 1`, eight times as heavily as the
-    /// physical wrapper's `>> 4`, and reads no AGL at all.
+    /// INT wrapper's `>> 4`, and reads no `+0x168` at all.
     ///
     /// This is deliberately *not* measured end-to-end. See
     /// [`the_bonus_arm_floor_makes_a_bypass_hit_defence_insensitive`] for why
@@ -1466,7 +1466,7 @@ mod capture_bypass_tests {
     #[test]
     fn the_bypass_wrapper_weights_the_defence_terms_more_heavily() {
         use legaia_engine_vm::battle_damage_wrappers::{
-            WrapperDefender, physical_defender_roll, spell_defender_roll,
+            WrapperDefender, atk_defender_roll, int_defender_roll,
         };
         let d = |stat: u16| WrapperDefender {
             hp: 0,
@@ -1477,10 +1477,8 @@ mod capture_bypass_tests {
             guard: 0,
         };
         // rand 0 isolates the deterministic terms from the modulus draw.
-        let spell_slope =
-            spell_defender_roll(&d(64), 0) as i32 - spell_defender_roll(&d(0), 0) as i32;
-        let phys_slope =
-            physical_defender_roll(&d(64), 0) as i32 - physical_defender_roll(&d(0), 0) as i32;
+        let spell_slope = atk_defender_roll(&d(64), 0) as i32 - atk_defender_roll(&d(0), 0) as i32;
+        let phys_slope = int_defender_roll(&d(64), 0) as i32 - int_defender_roll(&d(0), 0) as i32;
         assert_eq!(spell_slope, 64, "two terms at >> 1");
         assert_eq!(phys_slope, 8, "two terms at >> 4");
         assert_eq!(spell_slope, phys_slope * 8);
@@ -1489,7 +1487,7 @@ mod capture_bypass_tests {
     /// The end-to-end consequence of `FUN_801DD6B4`'s **bonus arm**, and the
     /// reason the heavier defence weighting above is not visible as HP loss.
     ///
-    /// `spell_wrapper_predamage` re-rolls the attacker whenever
+    /// `atk_wrapper_predamage` re-rolls the attacker whenever
     /// `atk < def + power`, and the re-roll is
     /// `def + power + rand % ((power >> 2) + 1)` (`wrapper_bonus_roll`,
     /// instruction-identical between `FUN_801DD4B0` and `FUN_801DD6B4`). The

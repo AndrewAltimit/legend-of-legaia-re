@@ -154,6 +154,20 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         note: "walker captured mid-route 896 units off its prologue seat (both placed)",
     },
     KnownDivergence {
+        label: "conc_field_card_boot",
+        key: "flag:1758",
+        class: "b",
+        note: "0x6DE is a live player-POSITION latch, so its value is a property of \
+               where the capture stands, not of what the entry ran. A flag-write watch \
+               across retail's own cold conc entry shows the clear running twice \
+               (P1[1]'s spawn prologue +0x10, the P1[0] entry script +0x18) and then \
+               P1[0]'s park loop re-arming it from +0x10B on every pass the player is \
+               outside tiles 10..=51 x 14..=72 - the capture's player stands at tile \
+               (17, 97), outside. A cold entry at entry point 0 stands at tile (29, 53), \
+               inside, where retail writes nothing either. Pinned both ways by \
+               conc_flag_6de_position_latch_disc.rs",
+    },
+    KnownDivergence {
         label: "chapter2_garmel_pre_zeto",
         key: "vis:3",
         class: "c",
@@ -219,6 +233,34 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         class: "b",
         note: "same walk-in choreography: actors 22/23 are captured on their cutscene \
                marks, away from the entry seats the engine reproduces",
+    },
+    KnownDivergence {
+        label: "doman_arrival_from_korb2",
+        key: "vis:*",
+        class: "b",
+        note: "pre-load capture: the scene label already names the destination while the \
+               actor pool is still map03's (retail's seats run along z = 3520 at a 512-unit \
+               pitch - the world-map portal row), so there is no destination arrangement \
+               yet to compare; the engine's fresh entry is the arrangement retail builds \
+               next",
+    },
+    KnownDivergence {
+        label: "doman_arrival_from_korb2",
+        key: "pos:*",
+        class: "b",
+        note: "same pre-load capture context as doman_arrival_from_korb2 vis:*",
+    },
+    KnownDivergence {
+        label: "son_arrival_from_doman",
+        key: "vis:*",
+        class: "b",
+        note: "same pre-load capture context as doman_arrival_from_korb2 vis:*",
+    },
+    KnownDivergence {
+        label: "son_arrival_from_doman",
+        key: "pos:*",
+        class: "b",
+        note: "same pre-load capture context as doman_arrival_from_korb2 vis:*",
     },
 ];
 

@@ -290,6 +290,11 @@ pub enum CommandPhase {
     /// No valid action was possible (e.g. nothing left to target). The live
     /// loop should fall back to a default strike so it never deadlocks.
     Aborted,
+    /// The cancel press on the ring (retail `0x28`'s cancel-mask arm at
+    /// `0x801D11B4`): the live loop steps the member cursor back - to the
+    /// previous member's ring, or to the round prompt when this is the
+    /// round's first member.
+    StepBack,
 }
 
 /// One party member's command-selection session, driven a frame at a time.
@@ -390,6 +395,7 @@ impl BattleCommandSession {
             CommandPhase::SpiritGuard => Some(Resolution::SpiritGuard),
             CommandPhase::RunAway => Some(Resolution::RunAway),
             CommandPhase::Aborted => Some(Resolution::Aborted),
+            CommandPhase::StepBack => Some(Resolution::StepBack),
             _ => None,
         }
     }
@@ -449,7 +455,8 @@ impl BattleCommandSession {
             | CommandPhase::OpenItemMenu
             | CommandPhase::SpiritGuard
             | CommandPhase::RunAway
-            | CommandPhase::Aborted => {}
+            | CommandPhase::Aborted
+            | CommandPhase::StepBack => {}
         }
     }
 }
@@ -481,6 +488,9 @@ pub enum Resolution {
     /// No valid action existed; the live loop should fall back to a default
     /// strike on the first living enemy.
     Aborted,
+    /// The player cancelled on the ring; the live loop should step the
+    /// member cursor back (`FUN_801D32BC(1)`).
+    StepBack,
 }
 
 /// Index of `command` within [`BattleCommand::MENU`].
@@ -662,6 +672,13 @@ fn step_menu(
 ) -> CommandPhase {
     let len = BattleCommand::MENU.len() as u8;
     let mut cursor = cursor.min(len - 1);
+
+    // The cancel mask is the handler's first test (`0x801D11B4`, ahead of
+    // the four arms from `0x801D12C0` on), so it wins a same-frame
+    // direction press.
+    if ev.circle {
+        return CommandPhase::StepBack;
+    }
 
     // Retail's state-0x28 dispatch: each direction is the diamond arm drawn
     // on that side of the screen, and the press itself commits the arm (see

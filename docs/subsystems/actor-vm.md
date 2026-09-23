@@ -37,10 +37,16 @@ descriptor table** ([field-menu.md](field-menu.md), parser
 the instruction's default coordinates. Side-effects go to the live window
 list (the `0x5C`-stride linked list at `gp+0x148`, descriptor id at `+0x8`)
 through the SCUS window helpers: lookup `FUN_80035334`, create
-`FUN_800326AC`, position write `FUN_800357FC`, slide `FUN_800358C0`, close
-`FUN_80035978`, global tick `FUN_80035A4C`, and `FUN_800319A8`. All motion
-is target-based - the VM installs slide targets; the per-frame window
-walker animates them.
+`FUN_800326AC`, start-slide `FUN_800357FC` (copies the node's current
+`+0xA`/`+0xC` into the motion sub-object's source, writes the target and
+sets `+0x20 = 1`), snap `FUN_800358C0` (writes source and target alike and
+clears `+0x20`), begin-close `FUN_80035978` (`+0x20 = -1`), close-all
+`FUN_80035A4C`, and immediate destroy `FUN_800319A8` (frees the node's
+buffers and unlinks it). Motion is target-based - the VM installs slide
+targets; the per-frame window walker animates them. (This list used to name
+`FUN_800357FC` a position write and `FUN_800358C0` the slide - the reverse
+of their tails at `0x80035874` / `0x80035938` - and `FUN_80035A4C` a global
+tick.)
 
 ## Opcodes
 

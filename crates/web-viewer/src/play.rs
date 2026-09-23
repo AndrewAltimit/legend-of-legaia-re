@@ -710,20 +710,17 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// The walk-ground heightfield's drawn positions, flattened - through the
+    /// shared [`legaia_engine_core::field_ground::render_positions`] kernel
+    /// (the `GROUND_SINK`) the native window's ground mesh also runs.
     pub fn field_ground_positions(&self) -> Vec<f32> {
         let Some(hf) = self.field.as_ref().and_then(|f| f.ground.as_ref()) else {
             return Vec::new();
         };
-        // Ground sinks below the env pack's authored floor art (see
-        // `coplanar_draws::GROUND_SINK` - coincident planes with different
-        // tessellations z-fight at any depth precision).
-        let mut out = Vec::with_capacity(hf.positions.len() * 3);
-        for p in &hf.positions {
-            out.push(p[0]);
-            out.push(p[1] + legaia_engine_core::coplanar_draws::GROUND_SINK);
-            out.push(p[2]);
-        }
-        out
+        legaia_engine_core::field_ground::render_positions(hf)
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     pub fn field_ground_uvs(&self) -> Vec<u8> {
@@ -740,11 +737,15 @@ impl LegaiaRuntime {
         hf.cba_tsb.iter().flatten().copied().collect()
     }
 
+    /// The walk-ground heightfield's drawn triangles, through the shared
+    /// [`legaia_engine_core::field_ground::render_indices`] kernel: reversed
+    /// onto the scene TMDs' winding, so the cutscene camera's NCLIP pass keeps
+    /// the ground on this page as it does in the native window.
     pub fn field_ground_indices(&self) -> Vec<u32> {
         self.field
             .as_ref()
             .and_then(|f| f.ground.as_ref())
-            .map(|hf| hf.indices.clone())
+            .map(legaia_engine_core::field_ground::render_indices)
             .unwrap_or_default()
     }
 
@@ -1321,13 +1322,41 @@ impl LegaiaRuntime {
             .collect()
     }
 
+    /// Actor slots carrying a live morph-weight blend (the same `0x4C 0xD8`
+    /// allocator, seated by `World::spawn_morph_weight_actor`). The page
+    /// re-stages each one through [`Self::play_dynamic_actor_mesh`] every
+    /// frame, exactly as the native window re-uploads it in its redraw pass:
+    /// retail re-blends inside the handler call, and the envelope is a
+    /// ping-pong ramp that moves on every frame, so no upload stays current.
+    pub fn play_morph_weight_slots(&self) -> Vec<u32> {
+        self.scene_host
+            .as_ref()
+            .map(|h| {
+                h.world
+                    .morph_weight_actor_weights()
+                    .into_iter()
+                    .map(|(slot, _)| u32::from(slot))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Stage actor `slot`'s spawned mesh (its `tmd_ref` from the global
     /// pool) for the `play_dynamic_mesh_*` reads. `false` when the slot
     /// carries no drawable mesh.
+    ///
+    /// A morph-weight actor stages its **blended** mesh instead - through
+    /// `World::morph_weight_posed_tmd`, the one engine-side kernel the
+    /// native window poses from too, so the blend itself lives on neither
+    /// host.
     pub fn play_dynamic_actor_mesh(&mut self, slot: u32) -> bool {
         let Ok(slot) = u8::try_from(slot) else {
             return false;
         };
+        let posed = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.morph_weight_posed_tmd(slot as usize));
         let Some(gtmd) = self
             .scene_host
             .as_ref()
@@ -1336,8 +1365,10 @@ impl LegaiaRuntime {
         else {
             return false;
         };
-        let (mesh, object_ids, shading) =
-            legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&gtmd.tmd, &gtmd.raw);
+        let (mesh, object_ids, shading) = match posed.as_ref() {
+            Some((tmd, raw, _)) => legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(tmd, raw),
+            None => legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&gtmd.tmd, &gtmd.raw),
+        };
         if mesh.indices.is_empty() {
             return false;
         }

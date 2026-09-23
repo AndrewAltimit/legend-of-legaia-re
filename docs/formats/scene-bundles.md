@@ -237,6 +237,25 @@ Type-sequence variants (count=7 unless noted):
 | `(10, 2, 3, 5, 6, 7)` | **count-6** early-town variant (`town0c`): leading `Flag(0xA)`, MAN at index 2. |
 | `(1, 3, 5, 6, 0x14)` | **count-5** variant (`bubu1`, `edbubu`): the canonical seven minus `Tmd` and `Vdf`. MAN at index 1; first `data_offset` is `0x30`. |
 
+#### The bytes after the last stream are not the bundle's
+
+A bundle's content ends where its last descriptor's LZS stream stops being
+consumed, and in every bundle on the disc that is inside the entry's last
+sector. Nothing reads above it - no descriptor points there, `+0x04` counts only
+decompressed bytes, and `FUN_80020224` stops at the stream's end - but the
+bytes there are not zero in 87 of the 90 bundles, and they look like data
+(`high_entropy`, `mixed`, `low_entropy` runs of up to about 2 KB).
+
+They are an earlier PROT entry's bytes at the same file offsets. The packer
+wrote every entry out of one buffer, in TOC order, without clearing it, so the
+slack at offset `k` is the byte of the nearest earlier entry whose extent
+reaches `k`. That prediction reproduces the slack of all 90 bundles byte for
+byte; the first bundle (`town01`, extraction 4) has no earlier entry that long
+and its slack is zero. An editor that rebuilds a bundle can write zeros there,
+and a parser should never read it. Measured by
+[`inherited_tail::buffer_run`](../../crates/asset/src/inherited_tail.rs); the
+disc-wide rule is in [`byte-accounting.md`](../tooling/byte-accounting.md#a-bundles-last-sector-is-the-packers-buffer).
+
 #### The `count` word is not always 6 or 7
 
 Retail imposes no bound on it - `FUN_80020224` reads `count` from `+0x00` and

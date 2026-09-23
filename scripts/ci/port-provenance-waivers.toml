@@ -305,22 +305,6 @@ actor-band command loop script-vm.md documents, forming the actor band
 # So `module-orphan` is close to guaranteed for a painter in this table; the
 # fourteen rows are one property of the subsystem, not fourteen mistakes.
 
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f90dc"
-reason = """
-Reviewed and the routine identity holds: the printed head draws the item name
-from `0x80074368 + id*12 + 4` in palette 6, the detail from `+8` in palette 7,
-and on `li v0,0xfe; bne v1,v0` adds a fixed caption 0x801CEA30 at (x+0x18,
-y+0x41) plus the 8-digit `lw a0,0x45b4(0x80084140)` at (x+0x38, y+0x4E) -
-`acquisition_caption`. Corrected while here: id 0xFE and 0x800845B4 are the
-**Point Card** and its counter, not a "money pseudo-item"; party gold is
-0x8008459C and the coin bank 0x800845A4, both named elsewhere in the same
-module. CAPTION_MONEY_ID is now CAPTION_POINT_CARD_ID and the prose in the crate
-and in docs/subsystems/minigame-baka-fighter.md says so. The dump's extent is
-untrustworthy past the number draw (Ghidra runs into nops for 5541
-instructions), which the tag already discloses.
-"""
-
 # ---------------------------------------------------------------------------
 # Singles and pairs
 # ---------------------------------------------------------------------------
@@ -1377,4 +1361,23 @@ The row only became checkable now. Its citation names a header-less "dump
 target" window, which carries no entry or size and so was never parsed as a
 dump of this address; the address has a based dump for the first time
 (overlay_arena_init_0977_801d0f60.txt), and the checker compared against it.
+"""
+
+[[waiver]]
+key = "non-entry:crates/engine-vm/src/cast_module_ticks.rs:801f69f8"
+reason = """
+VA-aliased, and the tag names the image it ports: the worklist_va_aliased row
+says three slot-B images hold distinct code at 0x801F69F8 (glare_divide 940,
+water_column 945, summon_aluru 916), and the tag's own text scopes it to the
+cast-module tick of one of them. Not a contradiction - an alias the ignore row
+records for the catalog's per-VA count.
+"""
+
+[[waiver]]
+key = "non-entry:crates/engine-vm/src/cast_module_ticks.rs:801f7644"
+reason = """
+VA-aliased: the worklist_shared_tail row is about world_map_render (0901),
+where 0x801F7644 is a shared tail exiting `j 0x80043580`; the tag is PROT 0949
+(cast_water_crystals), where the attribution CSV has a unique 5-instruction
+entry at this VA as one of the stager's eight entry points.
 """

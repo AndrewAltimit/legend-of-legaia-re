@@ -390,6 +390,101 @@ pub fn confirm_dialog_text_draws_for(
     out
 }
 
+/// Panel the **refusal notice** uses: the confirm dialog's prompt bar
+/// without its `Yes`/`No` box, because the notice takes no answer beyond an
+/// acknowledgement.
+const REFUSAL_PANEL: (i32, i32) = CONFIRM_PROMPT_PANEL;
+
+/// The y the refusal notice parks at - the confirm dialog's own target, so
+/// the box lands where the player's eye already is when the commit fails.
+pub const REFUSAL_NOTICE_Y: i32 = CONFIRM_DIALOG_SLIDE_TARGET_Y;
+
+/// Build the [`SpriteDraw`]s for a save-screen **refusal notice** panel.
+///
+/// This is the port's own screen: retail's save UI answers a card it cannot
+/// use through the card driver's result word, and both of this port's hosts
+/// carry a second backend whose failures that word does not model. The panel
+/// is the confirm dialog's prompt bar, reused so the notice is the shape the
+/// player has already seen on this screen.
+pub fn save_refusal_panel_draws_for(
+    rects: &SaveMenuAtlasRects,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let mut out = Vec::with_capacity(16);
+    let (w, h) = REFUSAL_PANEL;
+    let rect = messagebox_rect(CONFIRM_DIALOG_CENTER_X, REFUSAL_NOTICE_Y, w, h);
+    nine_slice_panel_into(&mut out, rects, rect, stage_origin, stage_scale, false);
+    out
+}
+
+/// Build the [`TextDraw`]s for a save-screen refusal notice: one line,
+/// centred on the dialog's own centre through retail's centring emitter
+/// (glyphs at `x - width/2`, `y + 7`).
+pub fn save_refusal_text_draws_for(
+    font: &legaia_font::Font,
+    message: &str,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<TextDraw> {
+    let scale = stage_scale.max(1);
+    let layout = font.layout_ascii(message);
+    let left_x = CONFIRM_DIALOG_CENTER_X - (layout.advance_x as i32 / 2);
+    let top_y = REFUSAL_NOTICE_Y + DIALOG_TEXT_BASELINE_DY;
+    let mut out = Vec::with_capacity(layout.glyphs.len());
+    for g in &layout.glyphs {
+        out.push(TextDraw {
+            dst: (
+                stage_origin.0 + (left_x + g.dst_x) * scale as i32,
+                stage_origin.1 + (top_y + g.dst_y) * scale as i32,
+                g.width * scale,
+                g.height * scale,
+            ),
+            src: (g.atlas_x, g.atlas_y, g.width, g.height),
+            color: SAVE_SELECT_TITLE_COLOR,
+        });
+    }
+    out
+}
+
+#[cfg(test)]
+mod refusal_notice_tests {
+    use super::*;
+
+    #[test]
+    fn the_notice_reuses_the_confirm_prompt_bar() {
+        // Same rect the confirm dialog parks its prompt bar at, so the
+        // notice is a shape the player has already seen on this screen.
+        assert_eq!(REFUSAL_NOTICE_Y, CONFIRM_DIALOG_SLIDE_TARGET_Y);
+        assert_eq!(REFUSAL_PANEL, CONFIRM_PROMPT_PANEL);
+    }
+
+    #[test]
+    fn the_message_becomes_glyph_quads_centred_on_the_dialog() {
+        let font = legaia_font::synthetic_for_tests();
+        let msg = "This MEMORY CARD cannot be written.";
+        let out = save_refusal_text_draws_for(&font, msg, (0, 0), 1);
+        assert!(!out.is_empty());
+        let left = out.iter().map(|d| d.dst.0).min().unwrap();
+        let right = out.iter().map(|d| d.dst.0 + d.dst.2 as i32).max().unwrap();
+        // Centred on the dialog centre, within a glyph's width.
+        let centre = (left + right) / 2;
+        assert!((centre - CONFIRM_DIALOG_CENTER_X).abs() <= 8, "{centre}");
+    }
+
+    #[test]
+    fn the_stage_transform_carries_the_notice_with_it() {
+        let font = legaia_font::synthetic_for_tests();
+        let a = save_refusal_text_draws_for(&font, "no", (0, 0), 1);
+        let b = save_refusal_text_draws_for(&font, "no", (7, 9), 3);
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(b.iter()) {
+            assert_eq!(y.dst.0, 7 + x.dst.0 * 3);
+            assert_eq!(y.dst.1, 9 + x.dst.1 * 3);
+        }
+    }
+}
+
 #[cfg(test)]
 mod messagebox_geometry_tests {
     use super::*;

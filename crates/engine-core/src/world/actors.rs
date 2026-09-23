@@ -50,13 +50,21 @@ impl World {
     ///
     /// This loop is the engine's form of the retail actor-list iterator
     /// `FUN_8002519C` - the walker `FUN_80016444` runs over each of the
-    /// five `_DAT_8007C34C..0x36C` list heads: per node it either `jalr`s
-    /// the node's own tick fn (`node[+0x0C]`) or, for standard actors whose
-    /// fn is `FUN_80021DF4`, runs the inline physics tick, with flag bit
-    /// `0x200` as the "already ticked this frame" dedupe. The engine keeps
-    /// one pool with an `active` flag instead of five lists, and the
-    /// special-fn nodes are the dedicated ticks `World::tick` sequences
-    /// around this loop, so the dedupe bit has no counterpart. Node layout
+    /// five `_DAT_8007C34C..0x36C` list heads. Per node it first snapshots
+    /// the previous position (`+0x14` -> `+0x1C`, `+0x18` -> `+0x20`,
+    /// `0x800251D4..0x800251F0`); a live node (`+0x10 & 8` clear) then gets
+    /// `jalr node[+0x0C]` (`0x800252B4`) - for a standard actor that is
+    /// `FUN_80021DF4`, reached through the same pointer as every other
+    /// handler. A retired node (`& 8`) instead gets a one-time teardown
+    /// guarded by bit `0x02000000` (not `0x200`): `FUN_80024DFC`,
+    /// `FUN_800204A4`, and - when its handler is `FUN_80021DF4` - the frees of
+    /// `+0xA8` / `+0x4C` and `FUN_800250D4` (`0x800251F4..0x80025294`). An
+    /// earlier version of this doc described an inline physics tick with a
+    /// `0x200` "ticked this frame" dedupe, which is not these bytes. The
+    /// engine keeps one pool with an `active` flag instead of five lists, and
+    /// the special-fn nodes are the dedicated ticks `World::tick` sequences
+    /// around this loop. Neither the previous-position snapshot nor the
+    /// retire teardown is modelled here. Node layout
     /// and observed tick fns: `docs/subsystems/world-map.md`
     /// ("per-frame render-pass iterator").
     ///
@@ -197,6 +205,12 @@ impl World {
                 }
                 Some((4, false)) => {
                     // Knockdown finished on a dead actor: hold the downed pose.
+                    // On a monster this is the death commit that hands over
+                    // its spoils - a thief's loot, or the killer's steal
+                    // attack (`FUN_8004AD80` `0x8004B0A4`: tag 4, HP 0).
+                    if i >= usize::from(self.party.party_count) {
+                        self.resolve_monster_death_spoils(i);
+                    }
                 }
                 Some((_, _)) => {
                     // Flinch / get-up / block finished: resume idle.
@@ -792,6 +806,20 @@ impl World {
             return;
         };
         let q = actor.battle.queued_anim;
+        // The commit prologue's Arts-banner cancel (`0x8004ADBC..0x8004ADE8`,
+        // ahead of every other write in the routine, idle re-commit included):
+        // a banner in flight whose own actor commits again moves into the
+        // `5..=8` retire band and restarts its clock.
+        // REF: FUN_8004AD80
+        if let Some((stage, level)) = vm::battle_action::banner_cancel_on_commit(
+            self.battle_ctx.arts_banner_stage,
+            i as u8,
+            self.battle_ctx.active_actor,
+        ) {
+            self.battle_ctx.arts_banner_stage = stage;
+            self.battle_ctx.arts_banner_level = level;
+        }
+        let actor = &mut self.actors[i];
         if q == actor.battle.current_anim {
             if let Some(p) = actor.battle_animation.as_mut() {
                 p.rewind();
@@ -814,7 +842,7 @@ impl World {
         // acting actor at quarter speed; an art constant (`>= 0x1B`) drops
         // the whole battle to half speed (quarter under an armed
         // `ctx[+0x243]`). The restore back to normal is the SM's Done arm
-        // (`FUN_801E93C8` via `battle_gauge_rearm::rearm_gauge`).
+        // (`FUN_801E93C8` via `battle_gauge_rearm::restore_anim_rates`).
         {
             use vm::battle_anim_rate as rl;
             let decayed = rl::commit_rate_decay(self.actors[i].battle.anim_rate);
@@ -830,6 +858,34 @@ impl World {
                         a.battle.anim_rate = rl::AnimRate(rl::RATE_FROZEN);
                     }
                     self.actors[i].battle.anim_rate = rl::AnimRate(rl::RATE_QUARTER);
+                    // The same arm raises the Arts announcement banner. Retail
+                    // reaches it only for a party seat, which is the engine's
+                    // `battle_monster_id == None` (`is_party` above), and the
+                    // rate arm has already established both that and the
+                    // staged id. The middle pick is the queue-builder's own
+                    // side array `0x801F6990[ctx[+0x15] - 1]`, which the
+                    // engine models per actor as `starter_marks` - so the
+                    // banner the player sees comes off the very marks the
+                    // build loop and the Super tail-replace left behind.
+                    // REF: FUN_8004AD80 (`0x8004B754..0x8004BB44`)
+                    if is_party {
+                        let seat = self
+                            .battle_ctx
+                            .arts_banner_seat_flags
+                            .get(i)
+                            .copied()
+                            .unwrap_or(0)
+                            != 0;
+                        let b = &self.actors[i].battle;
+                        let pick = usize::from(b.strike_index)
+                            .checked_sub(1)
+                            .and_then(|k| b.starter_marks.and_then(|m| m.get(k).copied()))
+                            .map(|w| w as u8);
+                        let (stage, level) =
+                            vm::battle_action::banner_on_starter_commit(seat, pick);
+                        self.battle_ctx.arts_banner_stage = stage;
+                        self.battle_ctx.arts_banner_level = level;
+                    }
                 }
                 rl::CommitRateEffect::StrikeSlow { rate } => {
                     for a in self.actors.iter_mut() {
@@ -1624,6 +1680,187 @@ impl World {
         }
     }
 
+    /// Seat the **actor clone** field-VM op `0x4C` sub-1 sub-op `0x14` asks
+    /// for: a fading, tinted copy of `src_id`'s transform on a pool slot
+    /// whose handler is the clip-fraction fade.
+    ///
+    /// PORT: FUN_801D835C (the helper; the plan kernel is
+    /// [`crate::field_actor_clone::clone_plan`])
+    /// REF: FUN_8003C83C (the id resolve), FUN_80020DE0 (the allocation),
+    /// REF: FUN_801D820C (the tick [`Self::tick_handler_actors`] then runs)
+    ///
+    /// `src_id` is resolved in the cross-context target space: `0xF8` is the
+    /// player anchor, any other id is matched against the scene's script
+    /// channels and read at its **live** position
+    /// (`World::npcs.positions`, which the walk legs update) rather than at
+    /// its MAN spawn point. An unresolvable id seats nothing, which is
+    /// retail's `beqz s5` skip; so does an exhausted pool.
+    ///
+    /// Returns the seated slot.
+    pub fn spawn_actor_clone(&mut self, src_id: u8, modulation: u32, rate: i16) -> Option<usize> {
+        let src = self.clone_source(src_id)?;
+        let plan = crate::field_actor_clone::clone_plan(src, modulation, rate);
+        let start = FIELD_SPAWN_START_SLOT as usize;
+        let slot_idx = self
+            .actors
+            .iter()
+            .enumerate()
+            .skip(start)
+            .find(|(_, a)| !a.active)
+            .map(|(i, _)| i)?;
+        // Retail's `FUN_80020DE0` hands back a zeroed node stamped from the
+        // descriptor, so the clone starts from a default record rather than
+        // from whatever the slot last held.
+        let mut actor = Actor {
+            active: true,
+            handler: crate::actor_handler::ActorHandler::ClipFade,
+            state_54: crate::field_actor_clone::CLONE_DESCRIPTOR_INITIAL_STATE,
+            ..Actor::default()
+        };
+        actor.physics.world_x = plan.pos.0;
+        actor.physics.world_y = plan.pos.1;
+        actor.physics.world_z = plan.pos.2;
+        actor.physics.motion_x = plan.rot.0;
+        actor.physics.motion_y = plan.rot.1;
+        actor.physics.motion_z = plan.rot.2;
+        actor.physics.timer = plan.rate;
+        actor.physics.focal_envelope = plan.fraction;
+        actor.move_state.world_x = plan.pos.0;
+        actor.move_state.world_y = plan.pos.1;
+        actor.move_state.world_z = plan.pos.2;
+        actor.move_state.render_24 = plan.rot.0;
+        actor.move_state.render_26 = plan.rot.1;
+        actor.move_state.render_28 = plan.rot.2;
+        actor.modulation_rgb = Some(crate::field_actor_clone::modulation_rgb(plan.modulation));
+        self.actors[slot_idx] = actor;
+        Some(slot_idx)
+    }
+
+    /// Seat the **reflection controller** the field VM's `4C 86` installs:
+    /// a pool actor that mirrors one addressable actor's pose onto another
+    /// across an axis-aligned plane, while the mirrored actor stands inside
+    /// a tile rect.
+    ///
+    /// PORT: FUN_801E573C (the plan kernel is
+    /// [`legaia_engine_vm::field_actor_reflect::spawn_controller`])
+    /// REF: FUN_8003C83C (the arm's id resolve), FUN_80020DE0 (the allocation),
+    /// REF: FUN_801E5154 (the tick [`Self::tick_handler_actors`] then runs)
+    ///
+    /// `ctx_is_player` is the executing context's `+0x10 & 0x01000000`, the
+    /// same bit the eased-move arm reads; [`crate::world::FieldVmState::executing_channel`]
+    /// resolves retail's `a0` - the script's own actor, which becomes the
+    /// image - and the bit only stands in when no channel is executing. The
+    /// `source_id` byte resolves in the cross-context target space (`0xF8` is
+    /// the player), and an id that names nothing seats nothing, which is the
+    /// arm's own `beqz s7` skip.
+    ///
+    /// Returns the seated slot.
+    pub fn spawn_reflection_controller(
+        &mut self,
+        ctx_is_player: bool,
+        source_id: u8,
+        words: [i16; 6],
+    ) -> Option<usize> {
+        use crate::world::EasedMoveTarget;
+        // Retail's `a0` is the executing context STRUCT, and a talk record's
+        // context is the record's own actor even when its `+0x10` player bit
+        // is up (the bit says who raised the record, not whose pose the
+        // context carries). Every shipped `4C 86` sits in such a record and
+        // names `0xF8`, so reading the bit as "the context is the player"
+        // pairs the player with itself and the tick teleports them onto the
+        // mirror line - the `other1` / `ropeway2` cold-spawn regression. The
+        // record's placement is the image; the player bit only decides the
+        // seat when there is no executing channel at all.
+        let destination = match (self.field_vm.executing_channel, ctx_is_player) {
+            (Some(placement), _) => EasedMoveTarget::Placement(placement),
+            (None, true) => EasedMoveTarget::Player,
+            (None, false) => return None,
+        };
+        let source = if source_id == 0xF8 {
+            EasedMoveTarget::Player
+        } else {
+            let view = self.channel_view();
+            let ci = crate::field_channels::resolve_target(view, source_id)?;
+            EasedMoveTarget::Placement(view[ci].placement_index as u8)
+        };
+        if source == destination {
+            // A pair whose two ends are one actor would write that actor's
+            // own mirrored pose back onto it every frame; no retail record
+            // forms one, and seating it can only strand the player.
+            return None;
+        }
+        let slot = self.spawn_handler_actor(crate::actor_handler::ActorHandler::Reflection)?;
+        let controller = legaia_engine_vm::field_actor_reflect::spawn_controller(words);
+        let a = &mut self.actors[slot];
+        a.state_54 = legaia_engine_vm::field_actor_reflect::REFLECT_INITIAL_STATE;
+        a.reflection = Some(crate::world::ReflectionLink {
+            destination,
+            source,
+            controller,
+        });
+        Some(slot)
+    }
+
+    /// The scene's channel set as a cross-context resolve should see it: the
+    /// live vector, or - while a stepping pass has moved it out to execute one
+    /// of its channels - the copy that pass took
+    /// ([`crate::world::FieldVmState::stepping_view`]).
+    ///
+    /// Retail's resolver (`FUN_8003C83C`) walks the whole actor list whatever
+    /// is executing, and a `4C 86` / `4C 14` / talk op that names another
+    /// actor resolves it from inside a running script by construction. Read
+    /// against the live vector alone, every such id resolved to nothing during
+    /// a step: `conc2` seated one of its three entry-time mirrors (the one
+    /// naming the player, which bypasses the walk) where a retail capture of
+    /// the same entry seats all three.
+    // REF: FUN_8003C83C
+    pub fn channel_view(&self) -> &[crate::field_channels::FieldChannel] {
+        if self.field_vm.channels.is_empty() {
+            &self.field_vm.stepping_view
+        } else {
+            &self.field_vm.channels
+        }
+    }
+
+    /// The source-actor fields the clone helper reads, resolved from a
+    /// cross-context target byte.
+    // REF: FUN_8003C83C
+    fn clone_source(&self, src_id: u8) -> Option<crate::field_actor_clone::CloneSource> {
+        use crate::field_actor_clone::CloneSource;
+        if src_id == 0xF8 {
+            let slot = self.player_actor_slot? as usize;
+            let a = self.actors.get(slot)?;
+            return Some(CloneSource {
+                pos: (
+                    a.move_state.world_x,
+                    a.move_state.world_y,
+                    a.move_state.world_z,
+                ),
+                rot: (
+                    a.move_state.render_24,
+                    a.move_state.render_26,
+                    a.move_state.render_28,
+                ),
+                ..CloneSource::default()
+            });
+        }
+        let view = self.channel_view();
+        let ci = crate::field_channels::resolve_target(view, src_id)?;
+        let ch = &view[ci];
+        let placement = ch.placement_index as u8;
+        let (x, z) = self
+            .npcs
+            .positions
+            .get(&placement)
+            .copied()
+            .unwrap_or((ch.ctx.world_x as i16, ch.ctx.world_z as i16));
+        Some(CloneSource {
+            pos: (x, ch.ctx.world_y as i16, z),
+            rot: (ch.ctx.field_24, ch.ctx.field_26 as i16, ch.ctx.field_28),
+            ..CloneSource::default()
+        })
+    }
+
     /// Allocate a field actor in the auto-spawn slot range
     /// ([`FIELD_SPAWN_START_SLOT`]..), resolving its mesh from the global
     /// TMD pool (`tmd_idx`) and its spawn record from the VDF buffer
@@ -1669,5 +1906,195 @@ impl World {
             Some(record_bytes)
         };
         Some(slot_idx)
+    }
+
+    /// Step the **Arts announcement banner** one battle frame.
+    ///
+    /// PORT: FUN_801E2524 (driver; the kernel is
+    /// [`legaia_engine_vm::battle_action::step_flash_ramp`])
+    ///
+    /// Retail calls the ramp unconditionally from the battle draw tick
+    /// (`FUN_800480D8`, `jal 0x801E2524` at `0x80048140`) and lets the stage
+    /// byte gate it. The engine splits simulation from presentation, so the
+    /// *step* runs here - inside the battle frame tick, where every host
+    /// reaches it - and the quads come off the resulting state at draw time
+    /// ([`Self::battle_arts_banner_quads`]). Returns `true` when the frame
+    /// drew something, which is what a test can assert without a renderer.
+    pub fn tick_arts_banner(&mut self, frame_delta: u8) -> bool {
+        use legaia_engine_vm::battle_action as fr;
+        let frame = fr::step_flash_ramp(
+            self.battle_ctx.arts_banner_stage,
+            self.battle_ctx.arts_banner_level,
+            frame_delta,
+        );
+        if let Some(stage) = frame.stage_out {
+            self.battle_ctx.arts_banner_stage = stage;
+        }
+        if let Some(level) = frame.level_out {
+            self.battle_ctx.arts_banner_level = level;
+        }
+        !frame.layers.is_empty()
+    }
+
+    /// This frame's banner quads, in retail emit order - the shared read both
+    /// hosts build their screen primitives from
+    /// (`legaia_engine_ui::battle_numerals::arts_banner_prims`).
+    ///
+    /// Retail re-reads `ctx[+0x28C]` per layer *inside* the emitter, so a
+    /// layer emitted later in the frame still sees the pre-walk value; the
+    /// step above writes the walked value back, so this read has to recompute
+    /// the layer set from the pre-walk clock rather than reuse the stepped
+    /// one. Empty outside battle and on an idle banner.
+    pub fn battle_arts_banner_quads(&self) -> Vec<legaia_engine_vm::battle_action::FlashQuad> {
+        use legaia_engine_vm::battle_action as fr;
+        if self.mode != SceneMode::Battle {
+            return Vec::new();
+        }
+        let level = self.battle_ctx.arts_banner_level;
+        // `frame_delta = 0`: the layer set for this clock, with no walk.
+        let frame = fr::step_flash_ramp(self.battle_ctx.arts_banner_stage, level, 0);
+        frame
+            .layers
+            .iter()
+            .filter_map(|l| fr::flash_quads(l, level))
+            .flatten()
+            .collect()
+    }
+
+    /// The field VM's `0x4C 0xD8` allocator, whole: [`Self::spawn_field_actor`]
+    /// plus the tail the port used to stop short of - the `actor+0x90`
+    /// rest-pose snapshot, the `+0x3C`/`+0x3E` envelope rates and the
+    /// `+0x0C` handler identity that makes the slot a morph actor at all.
+    ///
+    /// PORT: FUN_801D77F4
+    ///
+    /// The two immediates the instruction carries are the envelope's rise
+    /// and fall rates in that order (`sh s5,0x3c` / `sh s6,0x3e` at
+    /// `0x801D79A4`), and the weight, direction and render-mode halfwords
+    /// are zeroed, so a fresh morph actor starts at the rest pose and rises.
+    /// A spawn that resolves no morph block or no mesh seats no morph state
+    /// and behaves exactly like the plain allocator - retail's own
+    /// bail-through, where the snapshot allocation is a zero-byte request
+    /// and the copy loop never runs.
+    ///
+    /// The tile-board install keeps calling [`Self::spawn_field_actor`]: its
+    /// actors are not this opcode's, and the template id it passes as a VDF
+    /// index would otherwise seat a morph block that retail never installs.
+    pub(crate) fn spawn_morph_weight_actor(
+        &mut self,
+        tmd_idx: i16,
+        vdf_idx: u8,
+        up_rate: u16,
+        down_rate: u16,
+    ) -> Option<usize> {
+        let slot_idx = self.spawn_field_actor(tmd_idx, vdf_idx, up_rate, down_rate)?;
+        // The operand is a scene-bank index, not a raw pool slot: the arm
+        // adds `*(u16*)0x8007B6F8` before the call (see
+        // [`Self::field_pool_tmd`]). Resolving it against the pool the
+        // engine seeds with the battle effect library bound jagaroom's and
+        // garmel's morph actors to effect models and left balden's unbound.
+        self.actors[slot_idx].tmd_ref = self.field_pool_tmd(tmd_idx).cloned();
+        let block = match self.actors[slot_idx].spawn_record.clone() {
+            Some(b) if b.len() >= 4 => b,
+            _ => return Some(slot_idx),
+        };
+        let Some(gtmd) = self.actors[slot_idx].tmd_ref.as_ref().map(Arc::clone) else {
+            return Some(slot_idx);
+        };
+        let groups = Self::tmd_group_vertex_bytes(&gtmd.tmd);
+        let refs: Vec<&[u8]> = groups.iter().map(Vec::as_slice).collect();
+        let rest_pose = crate::morph_weight_apply::rest_pose_snapshot(&block, &refs);
+        let actor = &mut self.actors[slot_idx];
+        actor.handler = crate::actor_handler::ActorHandler::MorphWeights;
+        actor.morph_weights = Some(crate::morph_weight_apply::MorphWeightActor {
+            block,
+            rest_pose,
+            envelope: crate::morph_weight_apply::MorphWeightEnvelope {
+                weight: 0,
+                up_rate: up_rate as i16,
+                down_rate: down_rate as i16,
+                descending: false,
+            },
+        });
+        Some(slot_idx)
+    }
+
+    /// Every TMD object's vertex block as the 8-byte GTE vertices retail's
+    /// object table points at (`[i16 x][i16 y][i16 z][i16 pad]`).
+    fn tmd_group_vertex_bytes(tmd: &legaia_tmd::Tmd) -> Vec<Vec<u8>> {
+        tmd.objects
+            .iter()
+            .map(|o| {
+                let mut out = Vec::with_capacity(o.vertices.len() * 8);
+                for v in &o.vertices {
+                    out.extend_from_slice(&v.x.to_le_bytes());
+                    out.extend_from_slice(&v.y.to_le_bytes());
+                    out.extend_from_slice(&v.z.to_le_bytes());
+                    out.extend_from_slice(&v._pad.to_le_bytes());
+                }
+                out
+            })
+            .collect()
+    }
+
+    /// Actor slots carrying live morph-weight state, with each one's current
+    /// blend weight - the host-side change detector: re-pose and re-upload a
+    /// slot whose weight has moved since the last upload.
+    pub fn morph_weight_actor_weights(&self) -> Vec<(u8, i16)> {
+        self.actors
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.active)
+            .filter_map(|(i, a)| {
+                let m = a.morph_weights.as_ref()?;
+                Some((u8::try_from(i).ok()?, m.envelope.weight))
+            })
+            .collect()
+    }
+
+    /// The **one** engine-side morph kernel both hosts draw through: actor
+    /// `slot`'s mesh with its rest pose restored and its morph deltas
+    /// re-blended at the live `+0x6E` weight, returned as a posed TMD
+    /// alongside the raw bytes a VRAM-mesh build needs and the weight it was
+    /// posed at.
+    ///
+    /// This is [`crate::morph_weight_apply::apply_morph_weights`] run over
+    /// the engine's own vertex representation, so neither host owns any part
+    /// of the blend. `None` when the slot carries no morph state, no mesh,
+    /// or a block that names nothing the mesh has.
+    pub fn morph_weight_posed_tmd(
+        &self,
+        slot: usize,
+    ) -> Option<(legaia_tmd::Tmd, Arc<Vec<u8>>, i16)> {
+        let actor = self.actors.get(slot)?;
+        if !actor.active {
+            return None;
+        }
+        let m = actor.morph_weights.as_ref()?;
+        let gtmd = actor.tmd_ref.as_ref()?;
+        let mut groups = Self::tmd_group_vertex_bytes(&gtmd.tmd);
+        let weight = m.envelope.weight;
+        if crate::morph_weight_apply::apply_morph_weights(
+            &m.block,
+            &mut groups,
+            &m.rest_pose,
+            weight,
+        ) == 0
+        {
+            return None;
+        }
+        let mut posed = gtmd.tmd.clone();
+        for (obj, bytes) in posed.objects.iter_mut().zip(groups.iter()) {
+            for (i, v) in obj.vertices.iter_mut().enumerate() {
+                let o = i * 8;
+                if o + 6 > bytes.len() {
+                    break;
+                }
+                v.x = i16::from_le_bytes([bytes[o], bytes[o + 1]]);
+                v.y = i16::from_le_bytes([bytes[o + 2], bytes[o + 3]]);
+                v.z = i16::from_le_bytes([bytes[o + 4], bytes[o + 5]]);
+            }
+        }
+        Some((posed, Arc::new(gtmd.raw.clone()), weight))
     }
 }

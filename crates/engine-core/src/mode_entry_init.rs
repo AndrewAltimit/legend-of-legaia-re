@@ -558,13 +558,17 @@ pub struct DuelOverlayInit {
 ///
 /// PORT: FUN_801CF00C (`0x801cf00c..0x801cf384`).
 ///
-/// NOT WIRED: the duel arena's engine entry point is the rules engine in
-/// `baka_fighter.rs`, which starts from a match state rather than an overlay
-/// load - there is no overlay-entry host in this crate to call an initialiser
-/// from, and the module that owns the duel is outside this file's scope. The
-/// values are the retail seeds a future duel scene host reads; the two that
-/// already have engine mirrors (`round_win_target`, `fighter_slots`) agree
-/// with the rules engine's own best-of-three.
+/// NOT WIRED: the overlay-entry host exists - the mode-24 door warp's
+/// `SceneHost::enter_baka_from_overlay` reads PROT `0976` and builds the
+/// `BakaFight`, which is exactly where retail's mode table calls this
+/// initialiser - but none of the seeds it would hand over has a consumer
+/// there. `round_win_target` and `fighter_slots` are already the rules
+/// engine's own constants and agree; `screen_width` / `ot_depth` belong to
+/// the libgpu display setup the renderer replaces; and the rest - the stage
+/// counter seed, the arena camera pair, the `6 x 6` view window and the two
+/// streaming ids (SFX bank `0x367`, voice archive `0x415`) - have no duel-side
+/// counterpart, because the port stages no arena scene, camera or duel
+/// stream loads. A caller appears with the first of those.
 pub const fn duel_overlay_init() -> DuelOverlayInit {
     DuelOverlayInit {
         screen_width: 0x140,

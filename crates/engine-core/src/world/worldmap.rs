@@ -101,8 +101,8 @@ impl World {
         }
 
         // Run the one-shot horizon / sky band emitter if something armed its
-        // gate this frame (retail `FUN_801D7EA0`, or its 0897 relocation copy
-        // `FUN_801C9688`). Unarmed frames cost a flag test.
+        // gate this frame (retail `FUN_801D7EA0`). Unarmed frames cost a
+        // flag test.
         self.tick_world_map_horizon();
 
         // The world-map band's panel screen: the six `ctx[+0x54]` panel actors
@@ -464,7 +464,6 @@ impl World {
     /// to their scale-only extents rather than panicking.
     ///
     /// REF: FUN_801d7ea0
-    /// REF: FUN_801c9688
     fn tick_world_map_horizon(&mut self) {
         // Take the controller out so the emitter can borrow `self.cos_lut`.
         let Some(mut ctrl) = self.world_map.ctrl.take() else {

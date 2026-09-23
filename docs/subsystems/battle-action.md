@@ -1680,10 +1680,10 @@ Two sibling **damage kernels** the action path calls to resolve one hit. Each
 draws an attacker roll and a defender roll from the two battle-actor records
 (`(&DAT_801C9370)[slot]`), calls the affinity scale `FUN_801DD864` and then the
 closed-form finisher `FUN_801DDB30`, and returns `attacker_roll - defender_roll`
-as the net damage. They differ in two ways: `FUN_801DD4B0` mixes the physical
-attack/defence stat `+0x168` into both rolls and passes finisher **`param_5 = 0`**
+as the net damage. They differ in two ways: `FUN_801DD4B0` mixes the INT-working
+stat `+0x168` into both rolls and passes finisher **`param_5 = 0`**
 (the equipment resist ladder - jewels / elemental guards / All Guard - runs);
-`FUN_801DD6B4` uses the spell-power stat `+0x158` and passes **`param_5 = 1`**,
+`FUN_801DD6B4` uses the ATK-working stat `+0x158` and passes **`param_5 = 1`**,
 which makes the finisher **skip the whole party-defender resist block**. The
 `param_5 = 1` path is the **resist-BYPASS** wrapper: a hit routed through it
 takes no Earth/Luminous-Jewel or All-Guard reduction even when the defender is
@@ -4242,16 +4242,66 @@ Geometry, per layer:
 - the switch has **no default arm**, so a position `>= 4` reaches the CLUT /
   tpage writes and `AddPrim` with whatever X the recycled packet held
 
+### The raiser, and why its three writes are not alternatives
+
+`ctx[+0x28B]` has five writers disc-wide. The four that raise or retire a
+banner are in the SCUS-resident anim commit `FUN_8004AD80`
+(`see ghidra/scripts/funcs/8004ad80.txt`), which is why an overlay sweep for
+the *raiser* came back empty. The fifth is the tick's own clear -
+`sb zero,0x28b(v0)` at `0x801E263C` in `FUN_801E2524` (PROT 0898), the `5..=8`
+cancel arm above - and it is the only write in the battle overlay and the
+only one that stores zero. (An earlier reading of this section counted the
+four and said none sat in the overlay; a byte scan of `SCUS_942.54` and every
+overlay image for `sb ..,0x28b(..)` finds the fifth.)
+
+The commit reaches the banner block only for a **party** actor
+(`actor[+0x5A] < 3`, `0x8004B6F4`) whose staged id `actor[+0x1DA]` is the
+SpecialStarter `0x1A` (`0x8004B6E8` bounds out anything below `0x10`,
+`0x8004B720` selects the id) - the same arm that freezes every actor's
+`+0x21D` animation rate. Inside it the three writes run **in sequence and the
+later one wins**, so reading them as an `if / else if / else` gets the
+combination wrong:
+
+| site | condition | banner |
+|---|---|---|
+| `0x8004B774` | the per-seat flag `ctx[+0x28D + slot]`, raised by the queue builder `FUN_801EED1C` at `0x801EF5A8` | `3` `MIRACLE` |
+| `0x8004B80C` | the queue-builder side-array word `0x801F6990 + (ctx[+0x15] - 1) * 4` is non-zero | that word's low byte |
+| `0x8004B87C` | the byte is *still* `0` | `2` `HYPER` |
+
+Whichever wins, `0x8004BB44` clears the slide clock `+0x28C`, which is what
+makes a raise restart the slide rather than resume it.
+
+That middle row closes the banner space exactly, because the side array's two
+marks are its two remaining positions: the build loop's `1` is `NEW`
+(`0x801EF788`) and the Super tail-replace's `4` is `SUPER` (`0x801EFBA8`). The
+marks are not arbitrary tags - each *is* its banner's stage byte, which the
+draw turns into the position index as `stage - 1` (`0` = `NEW`, `3` = `SUPER`).
+
+The fourth site is the commit **prologue** (`0x8004ADBC..0x8004ADE8`), ahead of
+every other write in the routine: a commit that lands on the actor the context
+is already running (`actor[+0x5A] == ctx[+0x13]`) while a banner is live writes
+`banner + 4` and clears the clock - i.e. it asks the next frame to retire the
+banner through the `5..=8` band.
+
+The raises queue the per-character Arts fanfare through `jal 0x8004FCC8`, and
+not all on one cue. The `MIRACLE` raise (`0x8004B7D0`) and the side-array raise
+(`0x8004B840..0x8004B868`) take the fixed cue `0x101` / `0x111` / `0x121`,
+selected through `0x8007BD10 + ctx[+0x13]` - so a commit that hits both fires
+two. The `HYPER` default (`0x8004B87C`) instead reads the art byte
+`actor[+0x1DF + ctx[+0x15]]` (`0x8004B8E0`), matches it against `0x1C` / `0x1D` /
+`0x1E` and picks a cue with a coin flip (`FUN_80056798`, `0x8004B91C`); an art
+byte outside those three fires no cue. The prologue's retire fires none. The
+bank itself is documented in `legaia_art::hyper_fanfare`. (This paragraph
+earlier said every raise fires the fixed `0x101` / `0x111` / `0x121` cue.)
+
 Ported as `engine-vm::battle_action::flash_ramp` (`step_flash_ramp` +
-`flash_quads`), both disclosed `NOT WIRED`: `BattleActionCtx` carries neither
-byte. Retail's writer of `+0x28B` **is** pinned now - it is SCUS-resident,
-not overlay-resident: the anim commit `FUN_8004AD80`'s SpecialStarter arm
-(`0x8004B7D8..0x8004B87C`) raises the banner from the queue-builder's
-side-array mark at `0x801F6990[+0x15 - 1]` (Super = `4`), the Miracle marker
-path writes `3`, and the default arm writes `2` when the byte is clear; the
-same arm zeroes the clock `+0x28C` (`0x8004BB44`). So the engine-side raiser
-belongs in the staged-anim commit (`commit_staged_battle_anim`), beside the
-slow-motion arms - see [Arts presentation](#arts-presentation-slow-motion-and-after-image-ghosts).
+`flash_quads`), with the raiser and the cancel as `banner_on_starter_commit` /
+`banner_cancel_on_commit` called from the engine's own commit
+(`World::commit_staged_battle_anim_at_boundary`, beside the slow-motion arms -
+see [Arts presentation](#arts-presentation-slow-motion-and-after-image-ghosts)).
+`World::tick_arts_banner` steps the clock once per battle frame and
+`World::battle_arts_banner_quads` is the read both hosts draw through
+(`legaia_engine_ui::battle_numerals::arts_banner_prims`).
 
 ## Open work
 

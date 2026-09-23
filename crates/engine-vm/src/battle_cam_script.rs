@@ -1348,6 +1348,66 @@ const SHAKE_SEED: u32 = 0x0BAD_5EED;
 /// second stream so a shake and a swing angle are independently reproducible).
 const ATTACK_CURSOR_SEED: u32 = 0x0CA3_5EED;
 
+/// One **measured** sample of retail's free-running battle azimuth, in 12-bit
+/// units - the yaw a mednafen battle save state reads while the fight idles at
+/// the far Begin/Run framing.
+///
+/// It is not "the" resting yaw and nothing in retail makes it special: five
+/// battle states caught at the same framing read `224`, `2632`, `3136`, `3808`
+/// and `3882`, because `_DAT_8007B792` free-runs and a fight inherits whatever
+/// the field camera left. What every one of them *is* is **far from the seat
+/// axis**, and that is the property this constant is used for - see
+/// [`battle_entry_yaw`].
+pub const BATTLE_ENTRY_YAW_SAMPLE: f32 = 3372.0;
+
+/// How close to the seat axis an entry azimuth may be before
+/// [`battle_entry_yaw`] replaces it, in 12-bit units (`192` = ~17 degrees).
+///
+/// The bound is geometric, not fitted: the retail seats are `(0, +-800)`
+/// (`legaia_engine_core::battle_seats`), so at azimuth `t` the two rows are
+/// separated on screen by roughly `1600 * sin(t)` battle-world units against
+/// character meshes ~400 units wide (`docs/formats/character-mesh.md`). Inside
+/// ~17 degrees the separation is under one character width and the near row
+/// still covers the far one. It is a threshold on a continuum, and it is a
+/// **port judgement** - retail needs none because its azimuth free-runs.
+/// Sanity check rather than derivation: all five captured retail battle yaws
+/// (`224`, `2632`, `3136`, `3808`, `3882`) sit outside it.
+pub const DEGENERATE_YAW_WINDOW: u16 = 192;
+
+/// The azimuth a fight inherits on entry, given the live field-camera
+/// compass word (`_DAT_8007B792`, the port's
+/// `World::locomotion.camera_azimuth`).
+///
+/// Retail passes the shared rotation global straight through. The problem is
+/// that the port's mirror is not free-running: the field is framed by a
+/// **fixed follow camera** whose free-roam reset snaps the controller back
+/// every frame, so the compass publishes a constant `0` for the entire time
+/// the player is not manually orbiting.
+///
+/// `0` is the one azimuth a battle must not start at, for the reason
+/// [`BattleCamInputs::entry_yaw`] gives. The test is against
+/// [`DEGENERATE_YAW_WINDOW`] rather than against zero because the live
+/// compass reaches the battle with small non-zero values too: measured in
+/// `town01` with a seeded party it reads `160` on the frame the Tetsu fight
+/// opens - 14 degrees off the seat axis, inside the overlap window, and it
+/// framed both combatants at the same screen X.
+///
+/// This lives beside the script rather than in a host because it is an input
+/// to [`drive`], and an input only one host applies is a camera the two hosts
+/// do not share: the browser play page fed the raw compass word here and
+/// opened its fights down the seat axis whenever the native window did not.
+pub fn battle_entry_yaw(camera_azimuth: u16) -> f32 {
+    let live = camera_azimuth & 0xFFF;
+    // Distance to the nearer end of the seat axis (`0` and `2048` are the two
+    // azimuths that put the eye on it).
+    let off_axis = live.min(4096 - live).min(live.abs_diff(2048));
+    if off_axis < DEGENERATE_YAW_WINDOW {
+        BATTLE_ENTRY_YAW_SAMPLE
+    } else {
+        f32::from(live)
+    }
+}
+
 /// Everything one frame of battle state tells the camera. Bundled so the two
 /// hosts pass the same record to [`drive`] and a new channel cannot be added
 /// to one host and forgotten on the other.

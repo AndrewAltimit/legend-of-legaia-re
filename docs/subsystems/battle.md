@@ -5023,7 +5023,7 @@ Triangle presses changed nothing.
 | `0x28` | Left `0x8000` (`0x801D1404`) | `Attack` (left arm) | `0x78` / `0x5A` / `0x50` by option `0x800846C4` |
 | `0x28` | Right `0x2000` (`0x801D136C`) | Ra-Seru magic (right arm) | `0x46` |
 | `0x28` | Down `0x4000` (`0x801D1544`) | `Spirit` (down arm) | commit; `0x6E` on the last member |
-| `0x28` | cancel mask `0x800846D4` | - | back to `0x1E` |
+| `0x28` | cancel mask `0x800846D4` | - | back to `0x1E` on the round's first member, else the previous member's `0x28` ([the ring's cancel](#the-rings-cancel-steps-back-a-member)) |
 | `0x78` | Left / confirm mask | `Auto` | `0x5A` (target cursor) |
 | `0x78` | Right | `Command` | `0x50` (directional arts entry) |
 | `0x78` | cancel mask | - | back to `0x28` |
@@ -5038,6 +5038,35 @@ highlighted chip".
 attack-mode prompt, and option `0x800846C4` decides whether that prompt is shown
 (`0`), skipped straight to auto-target (`1`), or skipped straight to the
 directional entry (`2`).
+
+### The ring's cancel steps back a member
+
+The cancel mask is the ring handler's first test (`0x801D11B4`, ahead of the
+four arms from `0x801D12C0`), and it forks on the step counter `ctx[+0x1F]` -
+how many members the cursor has walked past this round, reset to `0xFF` and
+stepped once by the round reset `FUN_801D88CC`:
+
+- counter `0`: `FUN_801D388C(2)` and `ctx[+0x06] = 0x1E` - the round's first
+  member goes back to `Begin | Run` (`0x801D11D8..0x801D11E4`);
+- otherwise `FUN_801D388C(0x10)` (`0x801D1278`), whose case body ends in
+  `FUN_801D32BC(1)` (`0x801D4010`): the cursor scans down to the previous
+  member with `+0x14C != 0` and no `+0x16E & 0xF84` bit, and the flow stays
+  on `0x28` - now that member's ring. If the member it lands on had
+  committed an item (`+0x1DE == 1`), the copy its commit consumed goes back
+  through `FUN_800421D4(+0x1DF, 1)` (`0x801D12AC`).
+
+Nothing clears the landed member's commit: the ring simply takes its next
+choice over the old one. The commit-confirm screen `0x6E` has the other
+backward entry - its cancel or `Reselect` (the Right arm) keys cue `0x23`,
+re-scans with `FUN_801DBA04` and re-enters `0x28` through
+`FUN_801D388C(0x21)`, whose body steps back with the same `FUN_801D32BC(1)`
+(`0x801D3040..0x801D30C8`, `0x801D4750`).
+
+The port runs the ring's cancel as `World::step_back_battle_command` over the
+ported cursor step (`legaia_engine_vm::battle_cursor_pose::step_actor_cursor`),
+dropping the landed member's typed commit and its Spirit stance and refunding
+an item. It stages no `0x6E` screen - the last commit begins the round - so the
+`Reselect` entry has no seat.
 
 ### Where the words come from
 

@@ -205,6 +205,13 @@ pub fn build_camera_angle_tween(
 
 /// PORT: FUN_801D9D30 - re-roll the two-axis LCG camera-shake jitter.
 ///
+/// Image: these bytes are the **field overlay's** (PROT 0897,
+/// `dump-extent-attribution.csv` `unique field(897)`); the battle overlay
+/// 0898 carries no copy, and the context it shakes is the field camera's
+/// (`0x801C6EA4`). Stepping it from the battle camera script
+/// ([`crate::battle_cam_script`]) is a port choice; whether the battle
+/// overlay shakes its own camera by another routine is not settled here.
+///
 /// Retail state: `accum` is the shake accumulator pair at
 /// `0x800840B8/0x800840BC`, `offset` is the previously applied jitter pair
 /// held in the camera context (`DAT_801C6EA4 + 0x18/+0x1C`), `amplitude` is

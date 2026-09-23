@@ -302,6 +302,16 @@ Three ping-pongs run at different rates and are easy to conflate: the **MDEC cod
 (`ctx+0x00`/`+0x04`) flip once per frame, the **frame rects** (`ctx+0x18`/`+0x20`) once per frame
 buffer, and the **slice staging buffers** (`ctx+0x0C`/`+0x10`) once per 16-pixel column.
 
+`ctx` itself is the `0x50`-byte structure at **`0x801D19A0`**, a fixed address in the overlay's own
+uninitialised data region rather than an allocation - `801cf10c addiu a0,v0,0x19a0` materialises it
+as `FUN_801CF8B0`'s first argument and every helper below takes the same pointer. The two halves of
+each ping-pong sit on opposite sides of that region's ownership: the MDEC code buffers are
+`_DAT_8007B85C + 0x10000` and `+ 0x38000`, in the shared streaming asset buffer, while the two
+slice staging buffers are `0x801D19F0` and `0x801D91F0`, `0x7800` bytes each, inside the overlay
+image. The whole region is zero on the disc and reaches RAM only because the overlay loader's
+transfer length is the PROT entry's own sector extent; its map is in
+[`byte-accounting.md`](../tooling/byte-accounting.md#the-str-overlays-hole-region-by-region).
+
 The slice cursor itself is a small state machine: each MDEC-out completion advances `ctx+0x2C` by
 one column (`0x18` VRAM cells at 24bpp, `0x10` at 16bpp), and when the cursor passes the active
 rect's right edge the two frame rects flip and the cursor restarts on the new origin. A buffer
@@ -389,8 +399,17 @@ decode-done flag `ctx+0x34` and, on timeout, prints `time out in decoding` and f
 the code buffer (`ctx+0x28`); `FUN_801CFE00` is an 8-instruction thunk to the DMA-0 code
 upload `FUN_801D0070` (the `FUN_801CFFDC` family); `FUN_801CFC18` wraps the MDEC reset
 `FUN_801CFEE0`, adding a DMA reset (`func_0x8005FD88`) when its argument is `0`; and
-`FUN_801CFCDC` stages the two double-buffered output rects into `&DAT_801D0D5C` /
-`&DAT_801D0D9C`. The frame-poll wrapper `FUN_801CF740` is the logic sibling that stays
+`FUN_801CFCDC` is the MDEC table upload. It copies the caller's 128-byte quant
+table pair - luma `a0[0..0x40]` into `0x801D0D5C`, chroma `a0[0x40..0x80]` into
+`0x801D0D9C`, sixteen words each - into the body of the command packet whose header
+`0x4000_0001` (MDEC command 2, set quant table, colour bit) sits at `0x801D0D58`, then
+hands that packet and the static IDCT scale-table packet (header `0x6000_0000`, command
+3, at `0x801D0DDC`) to `FUN_801CFFDC` with `a1 = 0x20`. `FUN_801CFFDC` writes the
+header word to the MDEC command register (the pointer at `0x801D0E90` holds
+`0x1F801820`) and DMA-0s the `0x20`-word body (`MADR = pkt + 4`, `BCR = 0x20 | (len >> 5)
+<< 16`, `CHCR = 0x01000201`). An earlier reading had it staging two double-buffered
+output rects into `0x801D0D5C` / `0x801D0D9C`; those addresses are the quant packet's
+two matrix halves, not rects, and nothing here touches the output side. The frame-poll wrapper `FUN_801CF740` is the logic sibling that stays
 *inside* the port: it loops `StGetNext` (`FUN_8005EF40`, up to 2000 spins), sets the
 inclusive end-frame latch `DAT_801E09F8` when the demuxed frame number reaches the slot's
 `+0x0C`, and re-programs the decode rects from the sector header's own dimensions - both
@@ -1162,7 +1181,7 @@ The static arm ([`World::arm_prologue_handoff_from_man`](../../crates/engine-cor
 Two overlay-variant pins from the live opening run:
 
 - **Op `0x4C` nibble-4 sub-9 (`4C 49`) never jumps in the cutscene-dialogue overlay.** Its case 9 (`overlay_cutscene_dialogue_801de840.txt`, around the `_DAT_1f800394 & 0x1000000` test) selects a **write variant**: bit 25 → Delta (write/ramp target slot + the delta global), bit 24 → **player-relative write** (`+0x4A = value + player_anchor[+0x16]`), else Default - always advancing 6 bytes. The field-overlay-0897 dump's absolute-jump arm does **not** apply to the opening path (live probe: `opurud`'s entry script reaches its `44 32` at `+0x7A` with bit 24 set, which an abs-jump arm would have made unreachable). Engine: [`Sub9State::PlayerRelative`](../../crates/engine-vm/src/field/types.rs) replaces the earlier `AbsJump`.
-- **`4C 9F` (nibble-9 sub-F, `LAB_801DA930` via `0x8003CF40`) never fires during the opening** (live probe: zero exec hits). It is a **floor-height-ladder retire sweep**, not a callback registration and not a fade: `LAB_801DA930` handles descriptor `0x801F27EC`, whose tick animates one rung of the scene elevation LUT at `0x1F80035C`, and `FUN_8003CF40` only sets `node[+0x10] |= 8` on a live actor with that handler - inert with no rung running, which is what the probe measured ([`script-vm.md`](script-vm.md#the-two-actor-list-leaves-the-vm-keys-on-0x0c)). The engine's host hook ([`FieldHost::op4c_n9_sub_f_retire_ladder_oscillators`](../../crates/engine-vm/src/field/host.rs)) reports "already satisfied" during the opening chain so the entry script proceeds to its op-`0x44` spawn.
+- **`4C 9F` (nibble-9 sub-F, `LAB_801DA930` via `0x8003CF40`) never fires during the opening** (live probe: zero exec hits). It is a **floor-height-ladder retire sweep**, not a callback registration and not a fade: `LAB_801DA930` handles descriptor `0x801F27EC`, whose tick animates one rung of the scene elevation LUT at `0x1F80035C`, and `FUN_8003CF40` only sets `node[+0x10] |= 8` on a live actor with that handler - inert with no rung running, which is what the probe measured ([`script-vm.md`](script-vm.md#the-two-actor-list-leaves-the-vm-keys-on-0x0c)). The PC advances two bytes whatever the sweep finds, so the op never parks a script - see [the arm](script-vm-menuctrl.md#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown).
 
 Two single-shared-VM accommodations, **approximate by design**:
 
@@ -1353,15 +1372,112 @@ label, not a separate function) ramps the **effect-layer global colour** (neutra
 the operand RGB over the trailing word's frame count. The opening timeline drives it in the crawl
 gaps (`34 05 00 00 00 D2 00` = to black over 210 frames, `34 01 FF FF FF 00 00` = instant
 neutral, `34 01 FF FF FF 78 00` = up over 120 frames); the timeline's first op
-(`34 05 FF FF FF 00 00`, instant neutral) is a colour *reset*, not a white flash, and an all-zero
-colour is a ramp target, not a clear. **It is not a screen fade**: the retail cold-boot capture
+(`34 05 FF FF FF 00 00`, instant neutral) is a colour *reset*, not a white flash. An all-zero
+operand **is** a clear - the arm drops the effect pointer and never reaches the spawner, which
+corrects the earlier "ramp target, not a clear" reading. **It is not a screen fade**: the retail cold-boot capture
 holds the lit villager tableau across the whole span where the timeline's `34 01 00 00 00 28 00`
 → `34 05 FF FF FF 5A 00` pair would black a full-screen fade, falsifying the earlier
 "between-beat black fade" reading (and the older "white flash + 50% wash" model before it). The
 value feeds the effect layer - the creation-glow planes are the likely consumer, still an open
-thread. Engine model: the same ramp type in `World::presentation.effect_tint` (scene-local, kept out of
-`scene_screen_tint`). Disc-gated `opening_fade_from_black` pins both value models against the
-real `opdeene` bytecode.
+thread. Engine model: a pool colour tween per spawn, read back as this frame's
+`World::screen_tint_pushes` and kept out of `scene_screen_tint`. Disc-gated
+`opening_fade_from_black` pins it against the real `opdeene` bytecode, and
+`field_screen_effect_op34` pins the template and the push beats against the
+capture below.
+
+#### What the beat looks like, measured
+
+A live capture of one retail beat - an overworld state walked through a town
+portal, so the destination scene's entry fade-from-black runs - settles which
+of the two shapes the port carries is the one retail draws, and it is the
+**push**, not a tint word.
+
+Breakpoints on the spawner, the per-frame step and the draw
+([`autorun_w1a_tint_beat.lua`](../../scripts/pcsx-redux/autorun_w1a_tint_beat.lua)):
+
+- **The spawn is the op `0x34` sub-0 arm.** `FUN_801DE2B0` is entered once in
+  the beat with `ra = 0x801DFEF0`, the instruction after the second of the two
+  `jal 0x801DE2B0` sites inside `FUN_801DE840`. Its 13-halfword template reads
+  `kind = 2`, `duration = 57`, start RGB `(0, 0, 0)`, end RGB
+  `(255, 255, 255)`, `delay = 0`, `hold = 0xFFFF` - fade **up from black over
+  fifty-seven frames, then hold forever**.
+- **The step runs on one actor.** `FUN_801DDC20` is entered with the same `a0`
+  every time, its clock climbing by one per vsync (the breakpoint fires every
+  third vsync with a frame delta of three) from `0` to `57`, where it stops and
+  stays for the rest of the capture - `delay + duration`, then the
+  hold-forever sentinel. The actor's selectors read `+0xD2 = 2` (blend) and
+  `+0xD6 = 0` (kind) throughout.
+- **The observable is the push.** `FUN_80024EE4` is called once per step with
+  `a0 = 0` (the ordering-table bucket), `a1 = 2` (the ABR equation) and a grey
+  packed colour climbing `0x000000 -> 0x0D0D0D -> 0x1A1A1A -> ... -> 0xFFFFFF`
+  in steps near `13`, reaching neutral at the frame the clock reaches `57` and
+  repeating neutral while the tween holds. Walking back out of the scene runs
+  the mirror envelope with `a0 = 1`, the packed colour falling from `0xE5E5E5`
+  toward black in steps near `17`.
+- **The global multiply tint is not involved.** `DAT_8007BCB8/B9/BA` reads
+  neutral `0x80` on every vsync of the capture, so this beat is not an op
+  `0x4C 0x12` fade at all.
+
+The port used to carry the beat twice - a float `effect_tint` ramp beside the
+[`ScreenTintPush`](../../crates/engine-core/src/field_actor_kernels.rs) triples
+[`step_colour_tween`] emits - with nothing reading either. The measured beat is
+a `(a0, a1, packed)` triple per frame, which is the push's shape exactly, so
+the push is the surviving model: the op seats its tween through
+`World::spawn_colour_tween`, `World::tick_handler_actors` steps it, and
+`World::screen_tint_pushes` is the one read. Both arguments are live selectors
+here, not constants a scalar factor could stand in for.
+
+##### What the three arguments are, and what draws them
+
+`FUN_80024EE4` builds **one** primitive pair and nothing else: a
+semi-transparent `POLY_F4` (`GP0 0x2B`) over the scratchpad display rect
+(`0x80024F68..0x80024F98`), plus the `GP0(0xE1)` draw-mode packet that
+precedes it. There is no quad family to select between, which settles what
+each argument does:
+
+| arg | actor field | what it is |
+|---|---|---|
+| `a0` | `+0xD6` | the **ordering-table bucket**; floored at `0` (`bgez s1`, `0x80024F00`), capped at `OT_len - 1`, then `AddPrim(OT + a0*4, ..)` twice |
+| `a1` | `+0xD2` | the **ABR equation**: `(a1 << 5) \| 0xE` is the draw-mode word, whose bits 5..6 are the semi-transparency mode. `2` = `B - F` (darken), `1` = `B + F` (brighten) |
+| `a2` | packed tween colour | a **GP0 colour word** - red in bits 0..7 - masked to 24 bits under the `0x2B` command byte at `0x80024F54` |
+
+The port names `a0` `ScreenTintPush::kind`, after the spawner argument it
+arrives on. That name is not a claim about a quad family: earlier prose here
+read it as one, and the bytes above do not support it.
+
+Both hosts composite the frame's pushes through one emitter -
+`World::screen_tint_push_args` into
+`legaia_engine_ui::screen_prim::screen_effect_push_prims`, which applies the
+floor, the two-bit mask and the red/blue swap the rest of the screen-prim
+kernels do not need. For as long as the pool had a producer and no consumer,
+every field scene entry ran this envelope and drew nothing; the page-side
+consumer is pinned by `crates/web-viewer/tests/w4b_screen_effect_page_prims.rs`
+(the `town0e` entry script issues the instruction), the native call site by the
+`SIM_PAIRS` row in `scripts/ci/check-ui-host-drift.py`.
+
+##### The arm is a pair, and the sub-op byte carries both selectors
+
+Reading `0x801DFCD4..0x801DFEF8` off the field overlay, one instruction does
+up to two spawns:
+
+1. If `_DAT_8007B62C` names a live effect actor, retire it (`+0x10 |= 8`) and
+   spawn a **walk-out** whose start RGB is the *previous* target
+   (`_DAT_8007BCCD/CE/CF`, read before they are overwritten), end RGB black,
+   and hold **1** - one frame, then it retires itself.
+2. Recompute the two selectors from the sub-op byte: the template's `+0x00`
+   blend word (`_DAT_8007BCE0`) is `(op0 & 1) != 0 ? 2 : 1`, and the
+   spawner's `a1` push kind (`_DAT_8007BCCC`) is `8` when `op0 & 2`, else `0`
+   when `op0 & 4`, else `2`. Latch the operand RGB as the new target.
+3. An **all-zero target clears the effect**: retail stores zero into
+   `_DAT_8007B62C` and leaves without spawning. It is not a ramp to black.
+4. Otherwise spawn the **walk-in**, black up to the target, hold `-1`.
+
+One conditional touches the duration: a pure-white target under blend `2`
+loses an eighth (`sra v0,s1,3` / `subu s1,s1,v0` at `0x801DFE60`), which is
+why the captured template reads `57` where the instruction's own word is
+`0x41`.
+
+[`step_colour_tween`]: ../../crates/engine-core/src/field_actor_kernels.rs
 
 ### Full-scene sepia grade (the gold prologue look)
 

@@ -222,17 +222,27 @@ impl PlayWindowApp {
     }
 
     /// Advance the phase-scripted battle camera for this frame. Creates the
-    /// state on stage-dome battle entry (snapped to the entry phase's
-    /// framing), derives the retail phase from the live battle state -
-    /// **Dialogue** while an in-battle box is up, **Submenu** while a
-    /// command / arts / spell / item menu owns the pad, **Menu** otherwise -
-    /// and steps the pose on the retail display-frame clock
-    /// (`World::clock.display_frames`; one camera step per 2 vsyncs). Dropped
-    /// outside stage-dome battles so the next battle re-snaps.
+    /// state on battle entry (snapped to the entry phase's framing), derives
+    /// the retail phase from the live battle state - **Dialogue** while an
+    /// in-battle box is up, **Submenu** while a command / arts / spell / item
+    /// menu owns the pad, **Menu** otherwise - and steps the pose on the
+    /// retail display-frame clock (`World::clock.display_frames`; one camera
+    /// step per 2 vsyncs). Dropped outside battle so the next battle
+    /// re-snaps.
     /// See [`super::battle_cam`] for the measured phase law + provenance.
+    ///
+    /// The gate is the world's mode, nothing else. It used to also require
+    /// `battle_stage_mesh.is_some()`, which put a **host render resource** in
+    /// the arming condition of a simulation kernel the browser play page runs
+    /// from `world.mode` alone: the two hosts stepped the same script on
+    /// different frames, and a battle whose stage failed to build ran with no
+    /// camera state at all rather than with a camera nothing happened to
+    /// draw through. Which matrix a stage-less battle *renders* with is a
+    /// draw-side question, and [`Self::battle_scene_mvp`] is where it is
+    /// answered.
     pub(super) fn tick_battle_camera(&mut self) {
         let world = &self.session.host.world;
-        let active = world.mode == SceneMode::Battle && self.battle_stage_mesh.is_some();
+        let active = world.mode == SceneMode::Battle;
         let inputs = battle_cam_inputs(world);
         // The per-art attack camera's disc table (`0x801F4E10`) is sibling
         // static data in the battle-action overlay the scene loader already
@@ -523,6 +533,27 @@ impl PlayWindowApp {
         Self::psx_camera_mvp(to_rad(pitch), to_rad(yaw), 0.0, 256.0, tr, focus, aspect)
     }
 
+    /// The matrix **every** battle draw of this frame goes through: the
+    /// phase-scripted dome camera when a stage mesh is up, the monster-framing
+    /// orbit otherwise.
+    ///
+    /// One selector, because the alternative has already shipped here: the
+    /// scene pass picked between the two while the move-FX streak and the
+    /// weapon-trail passes both called [`Self::battle_camera_mvp`]
+    /// unconditionally. In a stage-dome battle - which is every scripted
+    /// fight - that projected the swing ribbon and the streak through an
+    /// auto-framed orbit while the swordsman holding them was drawn through
+    /// the scripted camera, so the effects sat wherever the two framings
+    /// happened to disagree. A trail is attached to a body; it has to ride
+    /// the body's camera.
+    pub(super) fn battle_scene_mvp(&self, aspect: f32) -> Mat4 {
+        if self.battle_stage_mesh.is_some() {
+            self.battle_dome_camera_mvp(aspect)
+        } else {
+            self.battle_camera_mvp(aspect)
+        }
+    }
+
     /// The model factor every **stage-class** battle draw carries: the
     /// backdrop arena and the ground grid.
     ///
@@ -585,36 +616,20 @@ impl PlayWindowApp {
         (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye)
     }
 
-    /// Replay this frame's drained `apply == 0` Camera Configure beats as
-    /// snaps onto the cutscene camera interp (see `pending_camera_snaps`).
-    /// Slot decode mirrors [`Self::cutscene_view`] exactly - same negations,
-    /// same angle scale, same `CUTSCENE_WORLD_SCALE` reduction, same
-    /// degenerate-value filters - so a snapped component's value equals the
-    /// glide target `cutscene_view` computes for it (no spurious re-arm).
+    /// Replay this frame's `apply == 0` Camera Configure beats as snaps onto
+    /// the cutscene camera interp.
+    ///
+    /// The beats come off `Camera::take_camera_snap_beats`, decoded by the
+    /// shared `CutsceneCameraInterp::snap_components_for`, because that is
+    /// where the events are: `Camera::route_camera_events` consumes every
+    /// `FieldEvent::CameraConfigure` off the world queue during the session
+    /// tick and does not restore it, so this window's own later
+    /// `drain_and_route_field_events` never saw one and the arm that watched
+    /// for them there was unreachable. The browser play page drains the same
+    /// bank, so a same-tick snap+glide pair glides from the snapped pose on
+    /// both hosts.
     pub(super) fn replay_camera_snap_beats(&mut self) {
-        use legaia_engine_core::camera_view::CUTSCENE_WORLD_SCALE;
-        use std::f32::consts::TAU;
-        let beats = std::mem::take(&mut self.pending_camera_snaps);
-        for params in beats {
-            let mut comps: Vec<(usize, f32)> = Vec::with_capacity(params.len());
-            for p in &params {
-                let v = p.value as i16 as f32;
-                match p.slot {
-                    0 => comps.push((3, v / 4096.0 * TAU)),
-                    1 => comps.push((4, v / 4096.0 * TAU)),
-                    // Roll rides packed component 9 (see
-                    // `CutsceneCameraInterp::ROLL`).
-                    2 => comps.push((9, v / 4096.0 * TAU)),
-                    3 => comps.push((6, v / CUTSCENE_WORLD_SCALE)),
-                    4 => comps.push((7, v / CUTSCENE_WORLD_SCALE)),
-                    5 if v.abs() > 1.0 => comps.push((8, v / CUTSCENE_WORLD_SCALE)),
-                    6 => comps.push((0, -v)),
-                    7 => comps.push((1, v)),
-                    8 => comps.push((2, -v)),
-                    9 if v > 1.0 => comps.push((5, v)),
-                    _ => {}
-                }
-            }
+        for comps in self.session.camera.take_camera_snap_beats() {
             self.cutscene_cam_interp.snap_components(&comps);
         }
     }
@@ -753,78 +768,14 @@ pub(super) fn battle_cam_inputs(
         // `_DAT_8007B792` is one global shared with the field camera, and
         // nothing on the battle-entry path zeroes it - a fight inherits the
         // live azimuth (see `BattleCamInputs::entry_yaw`).
-        entry_yaw: battle_entry_yaw(world),
+        entry_yaw: legaia_engine_vm::battle_cam_script::battle_entry_yaw(
+            world.locomotion.camera_azimuth,
+        ),
         shake_amplitude: world.camera.shake_amplitude,
         attack: battle_attack_channels(world, world.battle_ctx.active_actor),
         // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's
         // state edges (`BattleCamera::observe_action_state`).
         action_state: world.battle_ctx.action_state,
-    }
-}
-
-/// One **measured** sample of retail's free-running battle azimuth, in 12-bit
-/// units - the yaw a mednafen battle save state reads while the fight idles at
-/// the far Begin/Run framing.
-///
-/// It is not "the" resting yaw and nothing in retail makes it special: five
-/// battle states caught at the same framing read `224`, `2632`, `3136`, `3808`
-/// and `3882`, because `_DAT_8007B792` free-runs and a fight inherits whatever
-/// the field camera left. What every one of them *is* is **far from the seat
-/// axis**, and that is the property this constant is used for - see
-/// [`battle_entry_yaw`].
-pub(super) const BATTLE_ENTRY_YAW_SAMPLE: f32 = 3372.0;
-
-/// How close to the seat axis an entry azimuth may be before
-/// [`battle_entry_yaw`] replaces it, in 12-bit units (`192` = ~17 degrees).
-///
-/// The bound is geometric, not fitted: the retail seats are `(0, ±800)`
-/// ([`legaia_engine_core::battle_seats`]), so at azimuth `t` the two rows are
-/// separated on screen by roughly `1600 * sin(t)` battle-world units against
-/// character meshes ~400 units wide (`docs/formats/character-mesh.md`). Inside
-/// ~17 degrees the separation is under one character width and the near row
-/// still covers the far one. It is a threshold on a continuum, and it is a
-/// **port judgement** - retail needs none because its azimuth free-runs.
-/// Sanity check rather than derivation: all five captured retail battle yaws
-/// (`224`, `2632`, `3136`, `3808`, `3882`) sit outside it.
-const DEGENERATE_YAW_WINDOW: u16 = 192;
-
-/// The azimuth a fight inherits on entry.
-///
-/// Retail passes the shared rotation global `_DAT_8007B792` straight through,
-/// and the port's mirror of it is [`legaia_engine_core::world::World::
-/// field_camera_azimuth`]. The problem is that the mirror is not free-running:
-/// the field is framed by a **fixed follow camera**, `Camera::
-/// reset_for_free_roam` snaps the controller back to it every free-roam frame,
-/// and `Camera::compass_azimuth_units` therefore publishes a constant `0` for
-/// the entire time the player is not manually orbiting.
-///
-/// `0` is the one azimuth a battle must not start at. The retail seats are
-/// `(0, ±800)` ([`legaia_engine_core::battle_seats`]), so at yaw `0` the eye
-/// looks straight down the seat axis: the two rows project to the same screen
-/// X, the near row occludes the far one, and the acting actor sits close to the
-/// eye while its target reads small - the standing framing complaint. Retail
-/// cannot start there because its azimuth carries a real orbit; the port could,
-/// and did, for the ~6 seconds the `-4`/step idle orbit needs to leave.
-///
-/// Measured in `town01` with a seeded party, the compass reads `160` on the
-/// frame the Tetsu fight opens - not `0`, but 14 degrees off the seat axis,
-/// which is inside the overlap window and framed both combatants at the same
-/// screen X (`ndc.x` `0.00` for both, `LEGAIA_DIAG_BATCAM`). So the test is
-/// against [`DEGENERATE_YAW_WINDOW`], not against zero.
-///
-/// So: use the live azimuth when it is a framing the fight can actually be
-/// seen from, and otherwise seed [`BATTLE_ENTRY_YAW_SAMPLE`]. Both branches
-/// feed the same case-9 framing - only the azimuth the idle orbit starts from
-/// differs.
-pub(super) fn battle_entry_yaw(world: &legaia_engine_core::world::World) -> f32 {
-    let live = world.locomotion.camera_azimuth & 0xFFF;
-    // Distance to the nearer end of the seat axis (`0` and `2048` are the two
-    // azimuths that put the eye on it).
-    let off_axis = live.min(4096 - live).min(live.abs_diff(2048));
-    if off_axis < DEGENERATE_YAW_WINDOW {
-        BATTLE_ENTRY_YAW_SAMPLE
-    } else {
-        f32::from(live)
     }
 }
 
@@ -871,6 +822,7 @@ mod debug_orbit_tests {
 #[cfg(test)]
 mod battle_entry_yaw_tests {
     use super::*;
+    use legaia_engine_vm::battle_cam_script::BATTLE_ENTRY_YAW_SAMPLE;
 
     fn world_at(azimuth: u16) -> legaia_engine_core::world::World {
         let mut w = legaia_engine_core::world::World::new();
@@ -878,6 +830,12 @@ mod battle_entry_yaw_tests {
         w
     }
 
+    /// **The host applies the shared guard**, not just "the guard is right":
+    /// the kernel's own cases live in `legaia_engine_vm::battle_cam_script`,
+    /// and what this pins is that the window's `BattleCamInputs` carries its
+    /// result rather than the raw compass word. The browser play page's twin
+    /// of this test is in `crates/web-viewer/src/play_battle_render.rs`.
+    ///
     /// Every azimuth on (or beside) the seat axis is replaced - `0` and `2048`
     /// are the two that put the eye straight down it, and the port's fixed
     /// follow camera parks at `0`.
@@ -885,7 +843,7 @@ mod battle_entry_yaw_tests {
     fn an_on_axis_entry_azimuth_is_replaced() {
         for az in [0u16, 8, 160, 191, 2048, 2100, 4090] {
             assert_eq!(
-                battle_entry_yaw(&world_at(az)),
+                battle_cam_inputs(&world_at(az)).entry_yaw,
                 BATTLE_ENTRY_YAW_SAMPLE,
                 "azimuth {az} frames both rows at the same screen X"
             );
@@ -897,7 +855,7 @@ mod battle_entry_yaw_tests {
     #[test]
     fn a_real_orbit_azimuth_survives() {
         for az in [224u16, 2632, 3136, 3808, 3882] {
-            assert_eq!(battle_entry_yaw(&world_at(az)), f32::from(az));
+            assert_eq!(battle_cam_inputs(&world_at(az)).entry_yaw, f32::from(az));
         }
     }
 }

@@ -442,17 +442,17 @@ fn field_op_4c_d8_with_vdf_buffer_populates_spawn_record() {
     assert_eq!(spawned, vec![vec![0xCA, 0xFE, 0xBA, 0xBE, 0x42]]);
 }
 
-/// `0x4C 0xD8` with a populated global TMD pool should write a
-/// matching `Arc<GlobalTmd>` onto the spawned actor's `tmd_ref`
-/// (mirror of retail `actor[+0x48] = DAT_8007C018[tmd_idx]`).
-/// Indices the pool hasn't seen leave `tmd_ref` at `None` rather
-/// than aborting the spawn.
+/// `0x4C 0xD8` with a populated scene bank should write a matching
+/// `Arc<GlobalTmd>` onto the spawned actor's `tmd_ref` (retail
+/// `actor[+0x48] = DAT_8007C018[operand + *(u16*)0x8007B6F8]` - the operand
+/// is a scene-bank index). Indices the bank hasn't seen leave `tmd_ref` at
+/// `None` rather than aborting the spawn.
 #[test]
 fn field_op_4c_d8_with_global_tmd_pool_populates_tmd_ref() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
 
-    // Install a stub TMD at pool slot 5. The Tmd doesn't need to
+    // Install a stub TMD at scene-bank index 5. The Tmd doesn't need to
     // represent realistic mesh data - the host hook only does an
     // Arc::clone and stores the result.
     let stub = std::sync::Arc::new(GlobalTmd {
@@ -470,7 +470,12 @@ fn field_op_4c_d8_with_global_tmd_pool_populates_tmd_ref() {
         ],
     });
     let stub_ptr = std::sync::Arc::as_ptr(&stub);
-    world.set_global_tmd(5, stub.clone());
+    let mut bank = vec![None; 5];
+    bank.push(Some(stub.clone()));
+    world.install_field_scene_bank(bank);
+    // The raw pool slot the operand used to be read as must not answer: in
+    // the field that table holds the battle effect-model library.
+    world.set_global_tmd(9, stub.clone());
 
     // `[0x4C, 0xD8, vdf_idx=0x00, tmd=0x0005, kind=0x1111, variant=0x2222, 0x00]`.
     let bytecode = vec![0x4C, 0xD8, 0x00, 0x05, 0x00, 0x11, 0x11, 0x22, 0x22, 0x00];
@@ -482,7 +487,7 @@ fn field_op_4c_d8_with_global_tmd_pool_populates_tmd_ref() {
     let tmd_ref = world.actors[slot]
         .tmd_ref
         .as_ref()
-        .expect("tmd_ref should mirror DAT_8007C018[5]");
+        .expect("tmd_ref should mirror scene-bank index 5");
     assert_eq!(
         std::sync::Arc::as_ptr(tmd_ref),
         stub_ptr,

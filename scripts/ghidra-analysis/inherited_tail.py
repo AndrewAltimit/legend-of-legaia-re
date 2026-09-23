@@ -69,6 +69,8 @@ and is NOT what this module does - it names a donor wherever a suffix matches,
 including the pairs where neither image can be shown to own the bytes.
 """
 
+import os
+
 MIN_TAIL_BYTES = 0x40
 
 
@@ -166,3 +168,123 @@ def tail_starts_fixpoint(images, own_end, min_tail=MIN_TAIL_BYTES,
 # How many rounds the last `tail_starts_fixpoint` call spent. Equal to
 # `max_rounds` means it did not converge.
 tail_starts_fixpoint_rounds = 0
+
+
+# ---------------------------------------------------------------------------
+# The packer's buffer, predicted in TOC order
+# ---------------------------------------------------------------------------
+#
+# The sibling comparison above finds a tail by matching another MAPPED OVERLAY.
+# The buffer the residue comes out of is one buffer for the whole of PROT.DAT,
+# filled in extraction order and never cleared, so the residue at file offset
+# `k` of an entry's last sector is the byte the NEAREST EARLIER ENTRY whose
+# extent reaches `k` holds there - an overlay or not. That prediction has no
+# free parameter (the donor is fixed by the TOC order and the entry lengths),
+# and it is the Python side of `legaia_asset::inherited_tail::buffer_run` /
+# `buffer_suffix_start`.
+#
+# It is what cuts the two images no sibling can: PROT 0898's and 0895's last
+# sectors are PROT 0894's bytes, and 0894 is not an overlay. And where the two
+# rules disagree it is the one a consumer settles for (PROT 0901, see
+# `tail_cuts`).
+
+def prot_entry_index(prot_dir):
+    """`{idx: (path, length)}` for every `NNNN_*` entry under `prot_dir`.
+
+    First name (sorted) wins on a duplicate index, the tie-break the Rust side
+    applies."""
+    out = {}
+    for name in sorted(os.listdir(prot_dir)):
+        head = name[:4]
+        if len(name) < 5 or not head.isdigit() or name[4] != "_":
+            continue
+        idx = int(head)
+        if idx in out:
+            continue
+        path = os.path.join(prot_dir, name)
+        out[idx] = (path, os.path.getsize(path))
+    return out
+
+
+def buffer_predict(entries, idx, length, start):
+    """`(pieces, bytes)`: the buffer's bytes at `[start, length)` just before
+    entry `idx` was written. `pieces` is `[(start, end, donor_idx_or_None)]`;
+    `None` means no earlier entry reached that far and the buffer is zero."""
+    if idx not in entries or entries[idx][1] != length or start >= length:
+        return None
+    earlier = sorted((i for i in entries if i < idx), reverse=True)
+    pieces, out, k = [], bytearray(), start
+    while k < length:
+        donor = next((i for i in earlier if entries[i][1] > k), None)
+        end = length if donor is None else min(entries[donor][1], length)
+        if donor is None:
+            out += bytes(end - k)
+        else:
+            with open(entries[donor][0], "rb") as fh:
+                fh.seek(k)
+                out += fh.read(end - k)
+        pieces.append((k, end, donor))
+        k = end
+    return pieces, bytes(out)
+
+
+def buffer_suffix(entries, idx, data, min_tail=MIN_TAIL_BYTES):
+    """`(offset, donor)`: the lowest offset from which the buffer prediction
+    reproduces `data` through its end, and the entry the buffer held there.
+    `None` under `min_tail` bytes, or where the run opens on never-written
+    (zero) buffer.
+
+    The search is NOT confined to the last sector. PROT 0976's run starts
+    `0x98C` bytes below its end, and it is PROT 0970's code at the same file
+    offsets - the packer's extent for an overlay can exceed its content by more
+    than a sector, so a sector bound only hides such a run."""
+    got = buffer_predict(entries, idx, len(data), 0)
+    if got is None:
+        return None
+    pieces, predicted = got
+    i = len(data)
+    while i > 0 and data[i - 1] == predicted[i - 1]:
+        i -= 1
+    if len(data) - i < min_tail:
+        return None
+    donor = next(d for a, b, d in pieces if a <= i < b)
+    return None if donor is None else (i, donor)
+
+
+def tail_cuts(images, own_end, prot_dir=None, min_tail=MIN_TAIL_BYTES):
+    """The one tail rule both instruments use: `{key: (offset, donor_key)}`.
+
+    `images` is `(prot_index, base_va, data)` triples - keyed by PROT index, so
+    the buffer leg can find each image's place in the TOC. The sibling
+    fixpoint runs first; then, where `prot_dir` is given, the packer-buffer
+    suffix wins wherever it cuts LOWER than the sibling or where no sibling
+    cuts at all. Where both cut at the same offset the sibling's donor is kept
+    (it names the image that first wrote the bytes; the buffer names the one it
+    last held them from).
+
+    On the retail disc the buffer reproduces 82 of the sibling rule's 83 cuts
+    offset for offset, and adds or moves exactly three:
+
+    * PROT 0898 and PROT 0895 have no sibling donor: their runs are PROT
+      0894's bytes, and 0894 is not an overlay.
+    * PROT 0901, where the sibling rule stops short. Its equal-extent donor
+      0900 is declined by the own-content gate because a 0900 routine
+      frame-matches inside 0901's residue. The consumer settles it: 0901's own
+      code ends at file `0x24E4` with a zero run above it, and the run from
+      `0x252A` (two zero bytes coincide below the first word) opens mid-routine on the epilogue of 0900's routine at
+      `0x801F8E6C` (prologue at 0900 file `0x2494`, whose `beqz` at `0x24D4`
+      targets `0x801F8F0C`); no instruction of 0901 below the run forms any
+      address in `0x801F8F04..0x801F9088`.
+    """
+    cuts = dict(tail_starts_fixpoint(images, own_end, min_tail=min_tail))
+    if prot_dir is None or not os.path.isdir(prot_dir):
+        return cuts
+    entries = prot_entry_index(prot_dir)
+    for key, _base, data in images:
+        got = buffer_suffix(entries, key, data, min_tail=min_tail)
+        if got is None:
+            continue
+        have = cuts.get(key)
+        if have is None or got[0] < have[0]:
+            cuts[key] = got
+    return cuts

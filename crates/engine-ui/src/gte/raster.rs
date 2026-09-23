@@ -147,16 +147,21 @@ fn lerp_q12(cur: i32, nb: i32, frac: i32) -> i32 {
 ///
 /// PORT: FUN_80029724
 ///
-/// NOT WIRED: the engine has no software near-plane clip stage to synthesise
-/// a vertex for. Retail clips in software against a scratch cache of
-/// [`CLIP_VERT_STRIDE`]-byte projected vertices before handing the GPU a
-/// packet; the port projects with the GTE and then submits triangles to wgpu,
-/// which clips in hardware, so no `verts` cache is ever materialised. The
-/// prerequisite is that cache plus the clip walker that decides *where* the
-/// crossing is and with which [`clip_flags`] - this function is only the
-/// per-crossing interpolation. Changing that is a rasterisation-path change
-/// and is measured by the VRAM oracle, so it does not belong to a wiring
-/// pass.
+/// REPLACED-BY: the graphics backend's own clipper. Retail clips in software
+/// against a scratch cache of [`CLIP_VERT_STRIDE`]-byte projected vertices
+/// before handing the GPU a packet, and synthesising the crossing vertex is
+/// that stage's arithmetic; the port projects with the GTE and submits
+/// triangles to wgpu, which clips them in hardware, so the crossing vertex is
+/// produced by the rasteriser and never by the engine.
+///
+/// That leaves nothing for a caller to hold: the `verts` cache this indexes
+/// is never materialised, and the clip walker that would decide *where* the
+/// crossing is and with which [`clip_flags`] has no counterpart either -
+/// this function is only the per-crossing interpolation under it. Restoring
+/// the software stage is a rasterisation-path change measured by the VRAM
+/// oracle, and it would bring its own walker rather than call this one from
+/// somewhere that exists today. The kernel stays as the pinned arithmetic
+/// that change would have to reproduce.
 ///
 /// `verts` is the projected-vertex scratch cache ([`CLIP_VERT_STRIDE`] records);
 /// `cur_off` is the byte offset of the current vertex within it. The neighbour

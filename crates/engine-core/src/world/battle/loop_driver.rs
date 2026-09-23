@@ -344,6 +344,10 @@ impl World {
         // REF: FUN_80047430
         self.tick_battle_hp_bars();
 
+        // The death-spoils caption (HUD element `0x5B`) holds for the rest of
+        // the action that raised it (`crate::battle_steal`).
+        self.tick_steal_caption();
+
         // Rebuild the cast-census bytes the magic band's exit states read.
         // Retail's cast tick (`FUN_801E09F8`) does this from zero every frame
         // before it drives any effect child, so the gates are measurements

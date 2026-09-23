@@ -88,7 +88,7 @@ pub const MAP_DISPLAY_SFX: u8 = 0x20;
 const PENDING_SFX_CAP: usize = 8;
 
 /// One-shot gate for the world-map POLY_FT4 batch emitter (`FUN_801D7EA0`;
-/// 0897 field-overlay sibling `FUN_801C9688`).
+/// `0x801C9688` is that body printed `0xE818` low, not a sibling).
 ///
 /// Retail keeps this in the persistent `0x801F0000+` region so it survives
 /// overlay swaps:
@@ -100,8 +100,8 @@ const PENDING_SFX_CAP: usize = 8;
 /// | `angle_step` | `_DAT_801F3524` | Angle step per frame tick. |
 /// | `ot_layer` | `_DAT_801F3528` | OT layer / draw priority. |
 ///
-/// Armed by the 40-byte setter `FUN_801D8258`, whose caller (`FUN_801D1344`,
-/// 0897 relocation copy `FUN_801C2B2C`) sources the three params from the
+/// Armed by the 40-byte setter `FUN_801D8258`, whose caller (`FUN_801D1344`;
+/// `0x801C2B2C` is that body printed `0xE818` low, not a copy) sources the three params from the
 /// scene globals `_DAT_8007BCD0` / `_DAT_8007BCD4` / `_DAT_8007BCD8` - read
 /// as `a1`/`a2`/`a3` at `0x801D1444`/`0x801D1464`/`0x801D146C`, with `a0`
 /// cleared in the delay slot. The setter's first argument is dead - retail
@@ -124,7 +124,6 @@ impl EmitterGate {
     /// (retail plain stores, no accumulate).
     // PORT: FUN_801D8258
     // REF: FUN_801D1344 (param-prep wrapper; forwards _DAT_8007BCD0/_D4/_D8)
-    // REF: FUN_801C2B2C (the wrapper's 0897 field-overlay relocation copy)
     pub fn arm(&mut self, scale: u32, angle_step: u32, ot_layer: u32) {
         self.armed = true;
         self.scale = scale;
@@ -134,9 +133,9 @@ impl EmitterGate {
 
     /// Consumer side: if armed, self-clear the gate and yield the staged
     /// `(scale, angle_step, ot_layer)` params for one emission (the
-    /// `_DAT_801F351C != 0 -> _DAT_801F351C = 0` head of `FUN_801D7EA0` /
-    /// `FUN_801C9688`). `None` when not armed.
-    // REF: FUN_801D7EA0, FUN_801C9688 (the two gate-clearing emitters)
+    /// `_DAT_801F351C != 0 -> _DAT_801F351C = 0` head of `FUN_801D7EA0`).
+    /// `None` when not armed.
+    // REF: FUN_801D7EA0 (the one gate-clearing emitter)
     pub fn take(&mut self) -> Option<(u32, u32, u32)> {
         if !self.armed {
             return None;
@@ -439,7 +438,7 @@ impl WorldMapController {
     /// Consume an armed [`EmitterGate`] and run the horizon emitter.
     ///
     /// This is the retail call pair: the gate check + self-clear that opens
-    /// `FUN_801D7EA0` / `FUN_801C9688`, followed by the emitter body ported
+    /// `FUN_801D7EA0`, followed by the emitter body ported
     /// in [`legaia_engine_vm::world_map_horizon::emit_horizon`]. Returns
     /// `true` when a batch was emitted (i.e. the gate was armed).
     ///

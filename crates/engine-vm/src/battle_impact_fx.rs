@@ -30,7 +30,7 @@
 //! Both writes re-apply every in-window frame. The freeze persists past
 //! the window until the SM's Done arm reseeds every slot's `+0x21D = 8`
 //! (`FUN_801E93C8`, ported as `battle_action::done`'s
-//! `rearm_action_gauge`). The tint decays through the per-actor
+//! `restore_action_anim_rates`). The tint decays through the per-actor
 //! presentation tick `FUN_80050120` arm 0 (`+0x21C == 0`): each frame the
 //! packed word eases per-lane toward the neutral `0x20080200`
 //! ([`ease_actor_state`] with target `(0x80, 0x80, 0x80)` and step 1);

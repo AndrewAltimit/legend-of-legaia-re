@@ -132,6 +132,52 @@ pub fn combo_cluster_prims(cluster: &vr::ComboCluster, ot_index: u32) -> Vec<Scr
     out
 }
 
+/// The **Arts announcement banner**'s quads as screen primitives - the one
+/// builder both hosts emit the banner through.
+///
+/// `quads` is `World::battle_arts_banner_quads`, i.e. the pairs
+/// [`legaia_engine_vm::battle_action::flash_quads`] emits for this frame's
+/// layers. The emitter has already resolved every field a primitive needs -
+/// the GP0 code carries the semi-transparency, the grey word is the packet
+/// colour, and the CLUT / texture page are the readout's own - so this is a
+/// re-shape, not a second layout: the banner's geometry lives in the VM
+/// kernel and neither renderer re-derives it.
+///
+/// The banner shares the value readout's ordering bucket
+/// ([`VALUE_READOUT_OT`]) because it shares its page.
+pub fn arts_banner_prims(
+    quads: &[legaia_engine_vm::battle_action::FlashQuad],
+    ot_index: u32,
+) -> Vec<ScreenPrim> {
+    quads
+        .iter()
+        .map(|q| {
+            let grey = u32::from(q.gray);
+            ScreenPrim::Textured(ScreenQuad {
+                xy: [
+                    (q.x.0, q.y.0),
+                    (q.x.1, q.y.0),
+                    (q.x.0, q.y.1),
+                    (q.x.1, q.y.1),
+                ],
+                uv: [
+                    (q.u.0, q.v.0),
+                    (q.u.1, q.v.0),
+                    (q.u.0, q.v.1),
+                    (q.u.1, q.v.1),
+                ],
+                clut: q.clut,
+                tpage: q.tpage,
+                color: (grey << 16) | (grey << 8) | grey,
+                gouraud: None,
+                // Retail's GP0 code, `0x2C | semi << 1`.
+                semi_transparent: q.code & 0x02 != 0,
+                ot_index,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

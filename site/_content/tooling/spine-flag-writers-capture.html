@@ -124,7 +124,7 @@
 <section class="doc-section" id="settled">
   <h2>What the captures settled</h2>
   <ul class="bullets">
-    <li><strong>Flag <code>0x142</code>.</strong> The SET fires at the rikuroa post-Caruban beat from the field-VM dispatcher's own SET arm; the source is script bytes in the scene's streaming-variant MAN (records <code>P1[10..12]</code> plus the self-latching post-victory <code>P2[50]</code>). Bracket catalogued as <code>rikuroa_pre_caruban</code> / <code>rikuroa_post_caruban</code>.</li>
+    <li><strong>Flag <code>0x142</code>.</strong> The SET fires at the rikuroa post-Caruban beat from the field-VM dispatcher's own SET arm; the source is script bytes in the scene's streaming-variant MAN - the self-latching post-victory record <code>P2[50]</code>. The same carrier's <code>P1[10..12]</code> hold the identical op as developer flag-menu arms, not as the beat. Bracket catalogued as <code>rikuroa_pre_caruban</code> / <code>rikuroa_post_caruban</code>.</li>
     <li><strong>Provenance model.</strong> Across every chapter-1 scene traversed, story flags are written exclusively by the field VM's <code>0x5x</code>/<code>0x6x</code> script ops. Every other setter caller is an engine system touching low indices - entity-SM staging, battle-end victory, interaction locks, spawn ops.</li>
     <li><strong>Standing targets:</strong> flags <code>0x225</code> and <code>0x482</code>, both direct code paths.</li>
   </ul>

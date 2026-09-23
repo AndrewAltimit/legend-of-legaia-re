@@ -135,6 +135,28 @@ pub enum EasedMoveTarget {
     Placement(u8),
 }
 
+/// One live **reflection pair** - the engine's form of the controller actor
+/// `FUN_801E573C` seats, hung off the pool slot that carries
+/// [`ActorHandler::Reflection`](crate::actor_handler::ActorHandler::Reflection).
+///
+/// The two ends are not interchangeable. Retail's tick reads `+0x94` (and
+/// gates the whole frame on *its* tile position) and writes `+0x90`; the
+/// `4C 86` arm hands the spawner the executing script's own context as
+/// `+0x90` and the actor named by the instruction's last operand byte as
+/// `+0x94`. So a script installs **itself** as the mirror image of the actor
+/// it names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReflectionLink {
+    /// `+0x90` - the end the tick writes: the installing script's actor.
+    pub destination: EasedMoveTarget,
+    /// `+0x94` - the end the tick reads, and whose tile position decides
+    /// whether the mirror tracks this frame.
+    pub source: EasedMoveTarget,
+    /// `+0x80 .. +0x8A` - the mirror line and the tracking rect, as the
+    /// spawner laid them out.
+    pub controller: legaia_engine_vm::field_actor_reflect::ReflectController,
+}
+
 /// Render-agnostic snapshot of one live effect-pool master slot, produced by
 /// [`World::active_effect_markers`] - one entry per effect (effect origin +
 /// age). [`World::active_effect_sprites`] is the richer per-child billboard
@@ -532,6 +554,21 @@ pub struct Actor {
     /// Stepped once per game tick by [`World::tick_handler_actors`].
     pub colour_tween: Option<crate::field_actor_kernels::ColourTween>,
 
+    /// `+0x4C` / `+0x90` / `+0x3C..+0x40` / `+0x6E` - the **morph-weight**
+    /// block, present only on actors whose [`Self::handler`] is
+    /// [`ActorHandler::MorphWeights`](crate::actor_handler::ActorHandler::MorphWeights),
+    /// i.e. the ones the field VM's `4C D8` allocator seated
+    /// ([`World::spawn_morph_weight_actor`]). Its envelope is stepped once
+    /// per game tick by [`World::tick_handler_actors`]; hosts read the
+    /// blended mesh back through [`World::morph_weight_posed_tmd`].
+    pub morph_weights: Option<crate::morph_weight_apply::MorphWeightActor>,
+
+    /// `+0x80 .. +0x94` - the reflection pair, present only on actors whose
+    /// [`Self::handler`] is
+    /// [`ActorHandler::Reflection`](crate::actor_handler::ActorHandler::Reflection).
+    /// Stepped once per game tick by [`World::tick_handler_actors`].
+    pub reflection: Option<ReflectionLink>,
+
     /// This frame's `FUN_80024EE4` full-screen colour push, if the actor's
     /// handler emitted one. Cleared at the top of every
     /// [`World::tick_handler_actors`] pass, so it is always "this frame's",
@@ -694,6 +731,17 @@ pub struct Actor {
     /// posed-animation path) must re-apply that relocation, since a fresh build
     /// carries the nominal addresses again. `None` for non-monster actors.
     pub battle_tex_slot: Option<u8>,
+
+    /// `+0x74` - the actor's **modulation colour**, when one was installed.
+    ///
+    /// Retail keeps a packed word here and the sprite / widget family reads
+    /// its low 24 bits as RGB (`FUN_801F7A9C` draws from it, `FUN_801F8004`
+    /// writes it). The engine stores the three lanes the writer produced.
+    /// `None` is an actor nothing has tinted, which draws unmodulated.
+    ///
+    /// Written today by the field VM's actor clone
+    /// ([`World::spawn_actor_clone`], retail `FUN_801D835C`).
+    pub modulation_rgb: Option<[u8; 3]>,
 
     /// Index into `SceneResources::tmds` for this actor's bound mesh.
     /// `None` means no TMD is bound - the actor has no visible 3D model.

@@ -15,7 +15,8 @@
 //!
 //! The board is installed inline in the field-VM event script by op
 //! `0x49`; some instances are procedurally generated (the board filler
-//! `overlay_0897_801e0b1c` seeds cells from BIOS `rand`). This module
+//! arm at `0x801EF334` inside `FUN_801EF2B0` seeds cells from BIOS
+//! `rand`; `0x801E0B1C` is that arm printed `0xE818` low). This module
 //! models the runtime view the walk SM consumes, not the on-disc /
 //! generated fill.
 
@@ -149,7 +150,7 @@ impl TileBoardHeader {
     }
 }
 
-/// The retail procedural board fill (`overlay_0897_801e0b1c`), cells only
+/// The retail procedural board fill (the `0x801EF334` arm of `FUN_801EF2B0`), cells only
 /// (the tile-actor spawns from the header template ids are host concerns).
 /// `rand` supplies the BIOS `rand` draws (`func_0x80056798`, non-negative
 /// 15-bit) in retail call order:

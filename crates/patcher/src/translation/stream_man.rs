@@ -136,7 +136,11 @@ impl StreamManText {
             .rposition(|&b| b != 0)
             .map_or(self.stream_end, |last| (last + 1).max(self.stream_end));
         out.extend_from_slice(&foot[range.end..tail_end]);
-        let sectors = out.len().div_ceil(SECTOR);
+        // Never shorter than the footprint it replaces: the entry's TOC slot
+        // is fixed, so a MAN that comes out smaller (a translation shorter
+        // than the padded original) keeps its sectors and the difference is
+        // zero fill - a shrink is a same-size write, not a failure.
+        let sectors = out.len().div_ceil(SECTOR).max(foot.len() / SECTOR);
         out.resize(sectors * SECTOR, 0);
         if out.len() > MAX_GROWN_FOOTPRINT {
             return None;
@@ -214,6 +218,26 @@ mod tests {
         };
         let out = sm.rebuild(&foot, &fake(80, 2)).expect("rebuild");
         assert_eq!(out.len(), foot.len());
+    }
+
+    /// A MAN that comes out shorter than the original keeps the entry's
+    /// sectors: the TOC slot is fixed, so a shrink is a same-size write with
+    /// zero fill, never a payload smaller than the footprint.
+    #[test]
+    fn rebuild_never_shrinks_below_the_footprint() {
+        let man = fake(3000, 1);
+        let foot = stream(&man, &[&fake(40, 7)]);
+        assert_eq!(foot.len(), 2 * SECTOR);
+        let sm = StreamManText {
+            header_off: 0,
+            man: man.clone(),
+            man_len: 3000,
+            stream_end: 4 + 3000 + 4 + 40 + 4,
+        };
+        let out = sm.rebuild(&foot, &fake(100, 2)).expect("rebuild");
+        assert_eq!(out.len(), foot.len());
+        assert_eq!(&out[4..104], &fake(100, 2)[..]);
+        assert!(out[out.len() - SECTOR..].iter().all(|&b| b == 0));
     }
 
     #[test]

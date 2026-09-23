@@ -492,10 +492,137 @@ WEB_PLAY = "crates/web-viewer/src/play.rs"
 NATIVE_REDRAW_PASSES = (
     "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw_passes.rs"
 )
+NATIVE_CAMERA_MOD = "crates/engine-shell/src/bin/legaia-engine/window/camera.rs"
 WEB_PLAY_CAMERA = "crates/web-viewer/src/play_camera.rs"
+NATIVE_BATTLE = "crates/engine-shell/src/bin/legaia-engine/window/battle.rs"
+WEB_PLAY_ARENA = "crates/web-viewer/src/play_minigame_arena.rs"
+WEB_PLAY_FISHING = "crates/web-viewer/src/play_fishing.rs"
 WEB_FIELD_SCENE = "crates/web-viewer/src/field_scene.rs"
+NATIVE_TITLE_SAVE = (
+    "crates/engine-shell/src/bin/legaia-engine/window/title_save_draws.rs"
+)
 
 SIM_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "field screen-effect washes, native vs play page - the field "
+        "VM's op `0x34` sub-0 arm spawns colour-tween actors whose per-frame "
+        "`FUN_80024EE4(layer, blend, packed)` push IS the scene-entry "
+        "fade-from-black and the door prologue's fade-to-black. Both hosts "
+        "ticked the tween and NEITHER drew it: the pool had a producer and no "
+        "consumer, so every scene entry simulated a fade in the clear. The "
+        "three arguments are also three separate ways to get it backwards - "
+        "`layer` is an ordering-table bucket and `blend` an ABR equation "
+        "(two `i16`s a call site can swap), and `packed` is a GP0 colour word "
+        "with red LOW, the opposite of every other kernel here. Both sites "
+        "must emit through `screen_effect_push_prims`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (WEB_PLAY_BATTLE, "tick_battle_intro"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["screen_effect_push_prims"],
+    },
+    {
+        "what": "battle-intro style inputs, native vs play page - the style "
+        "selector reads three retail globals (`DAT_8007BD60`, `DAT_8007BD0C`, "
+        "`DAT_80084540`) and not one of them is a host choice: they are "
+        "properties of the rolled formation row and the loaded scene. Both "
+        "hosts resolved them inline and disagreed on `formation_slot0`, which "
+        "is the input EVERY id-keyed style override keys on - the page went "
+        "straight from the formation-table lookup to the bare row index, with "
+        "no live-monster-table leg, so an in-battle re-arm fed the selector a "
+        "row index and drew the default style. Both sites must read "
+        "`SceneHost::battle_intro_style_inputs`",
+        "sites": {
+            "native": (NATIVE_BATTLE, "arm_battle_intro"),
+            "web": (WEB_PLAY_BATTLE, "arm_battle_intro"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["battle_intro_style_inputs"],
+    },
+    {
+        "what": "dance HUD frame rows, native vs play page - which rows the "
+        "frame carries, at which 320x240 seats, in which pen, is the engine's "
+        "decision (`DanceGame::hud_frame_rows`, the presentation half of "
+        "`FUN_801d231c`): digit suppression, the `Lv.` label and the rival "
+        "track's chart sampling are all retail's, not a host's. The whole "
+        "resolution was written out longhand inside the native window's dance "
+        "block, so the play page - same run, same `DanceGame` - drew a plain "
+        "status line and no frame at all. Both sites must read the rows",
+        "sites": {
+            "native": (NATIVE_HUD, "build_hud"),
+            "web": (WEB_PLAY_ARENA, "dance_status_draws"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["hud_frame_rows"],
+    },
+    {
+        "what": "fishing prize one-time latch, native vs play page - "
+        "`is_available` folds three independent refusals together (price, "
+        "owned cap, one-time latch), so a host that reads it as the latch "
+        "labels every unaffordable one-time prize on a fresh save as already "
+        "taken. Each host answered the latch its own way - one re-tested "
+        "availability with the other two gates forced open, one shifted the "
+        "purchased mask by hand, and the play page never asked at all and "
+        "exposed only the folded bool. Both sites must read "
+        "`PrizeExchange::is_latched`",
+        "sites": {
+            "native": (NATIVE_HUD, "build_hud"),
+            "web": (WEB_PLAY_FISHING, "play_fishing_prizes_json"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["is_latched"],
+    },
+    {
+        "what": "camera-occlusion fade focus + arming, native vs play page - "
+        "the fade has two halves that must name the SAME world point: the "
+        "visibility gate ray-casts to it and the host stages it as the "
+        "shader's focus. Each host spelled the point out locally, and the "
+        "page's focus read the actor's own `world_y` while its gate read the "
+        "floor tier under it, so on any tile where those differ the dissolve "
+        "hole sat off the character. Its arming operands had drifted the same "
+        "way - the native window excludes the boot UI, the world map, a "
+        "scripted shot and the debug orbit, the page excluded only battle and "
+        "the minigames. Both sites must reach the shared kernels",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (WEB_PLAY_CAMERA, "play_occlusion_focus"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["player_body_centre"],
+    },
+    {
+        "what": "`apply == 0` Camera Configure snap beats, native vs play "
+        "page - retail's mover snaps the live camera globals to a snap beat "
+        "immediately, and the field VM runs until yield, so a snap+glide pair "
+        "committed in ONE tick must glide FROM the snapped pose. The beats "
+        "are banked by `Camera::route_camera_events`, which is the only thing "
+        "that drains `FieldEvent::CameraConfigure` off the world queue - a "
+        "host watching its own later event drain for them sees none. Both "
+        "cutscene interps must replay the shared bank",
+        "sites": {
+            "native": (NATIVE_CAMERA_MOD, "replay_camera_snap_beats"),
+            "web": (WEB_PLAY_CAMERA, "resolve_camera_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["take_camera_snap_beats"],
+    },
+    {
+        "what": "save-select phase layout, native vs play page - which pills "
+        "draw, whether the pill cursor shows, and whether the block grid and "
+        "its info panel stay up are one decision per `SelectPhase`, and the "
+        "two hosts answered it differently for exactly one phase pair: retail "
+        "raises the overwrite / delete prompt FROM the preview (see "
+        "docs/subsystems/save-screen.md), so a confirm is a `SlotPreview` "
+        "wearing a messagebox. The native window drew neither the grid nor "
+        "the panel under it. Both sites must read `save_select::phase_layout`",
+        "sites": {
+            "native": (NATIVE_TITLE_SAVE, "save_select_chrome_sprite_draws"),
+            "web": (WEB_PLAY_MENU, "build_save_select"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["phase_layout"],
+    },
     {
         "what": "shop / inn / prize / coin overlay stage transform, native "
         "vs play page - every builder in that group places in the retail "
@@ -611,13 +738,29 @@ SIM_PAIRS: list[dict[str, object]] = [
         "grid shares its plane with the env pack's authored floor art (koin6: "
         "both at y=0 with different tessellations), so every render site must "
         "sink it by the shared GROUND_SINK or that host's floors z-fight as "
-        "wedge streaks from steep cameras while every other host is clean",
+        "wedge streaks from steep cameras while every other host is clean. "
+        "Both build it through `field_ground::render_positions`, which is "
+        "where the sink lives",
         "sites": {
             "native": (NATIVE_GEOMETRY, "heightfield_to_vram_mesh"),
             "web": (WEB_PLAY, "field_ground_positions"),
         },
         "mode": "symbols_all",
-        "symbols": ["GROUND_SINK"],
+        "symbols": ["render_positions"],
+    },
+    {
+        "what": "ground-heightfield winding, native vs play page - the grid's "
+        "builder winds opposite to the scene TMDs, and the cutscene camera's "
+        "NCLIP pass (mode 2) discards exactly that facing, so a host that "
+        "uploads the builder's order loses the whole floor under a scripted "
+        "shot (the page did, in the opdeene prologue). Both reverse it through "
+        "`field_ground::render_indices`",
+        "sites": {
+            "native": (NATIVE_GEOMETRY, "heightfield_to_vram_mesh"),
+            "web": (WEB_PLAY, "field_ground_indices"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["render_indices"],
     },
     {
         "what": "ground-heightfield sink, play page vs field-scene viewer - "
@@ -628,7 +771,7 @@ SIM_PAIRS: list[dict[str, object]] = [
             "web_viewer": (WEB_FIELD_SCENE, "field_scene_ground_positions"),
         },
         "mode": "symbols_all",
-        "symbols": ["GROUND_SINK"],
+        "symbols": ["render_positions"],
     },
     {
         "what": "Muscle Dome damage - the arena's per-exchange damage must come "
@@ -2178,6 +2321,24 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
             r"\b(?:digit_run_prims|combo_cluster_prims|digit_quad|readout_quad)\b",
         ],
     },
+    {
+        "kernel": "retained field ground pass gated off in battle",
+        "why": "the WebGL renderer draws its field ground heightfield "
+        "(`uploadGround`) as a RETAINED pass inside `renderAssembled`, ahead "
+        "of whatever the frame's draw list holds - so a surface that uploads "
+        "a field ground and also draws a battle frame through the same "
+        "renderer paints the field terrain through the battle camera, "
+        "sampling the battle VRAM, unless it turns the pass off. The play "
+        "page did exactly that: town01's ground cells showed up as flat "
+        "yellow strips and stray grass/gravel patches around the monster in "
+        "every forced battle, while the native window only draws its "
+        "heightfield in the non-battle branch",
+        # Both halves in one file: the uploader of a field ground AND a
+        # battle frame driver. An `\A`-anchored lookahead keeps it one
+        # `trigger` and one scan (unanchored, it re-scans per position).
+        "trigger": r"(?s)\A(?=.*\buploadGround\s*\().*\bplay_battle_active\b",
+        "requires": [r"\bsetGroundEnable\s*\(\s*false\s*\)"],
+    },
     # RETIRED: "screen-space fade quad" (resolving `intro_fade(...)` requires
     # `fade_prim`). The whole transition emission - fade included - became
     # single-assembler when the `battle_intro` emitter moved to `engine-ui`
@@ -2304,6 +2465,20 @@ def check_render_kernels() -> tuple[list[str], list[str], list[tuple[str, int, i
 # surface clean, which is the failure mode this whole file exists to refuse -
 # so each case pins one direction of one detector against a synthetic source.
 SELFTEST_RENDER: list[tuple[str, dict, str, bool]] = [
+    (
+        "requires (lookahead trigger): battle surface that never gates the ground pass",
+        {"trigger": r"(?s)\A(?=.*\buploadGround\s*\().*\bplay_battle_active\b",
+         "requires": [r"\bsetGroundEnable\s*\(\s*false\s*\)"]},
+        "this.renderer.uploadGround(p, u, c, i);\nif (rt.play_battle_active()) draw();",
+        True,
+    ),
+    (
+        "requires (lookahead trigger): battle surface that gates it, either order",
+        {"trigger": r"(?s)\A(?=.*\buploadGround\s*\().*\bplay_battle_active\b",
+         "requires": [r"\bsetGroundEnable\s*\(\s*false\s*\)"]},
+        "if (rt.play_battle_active()) this.renderer.setGroundEnable(false);\nthis.renderer.uploadGround(p, u, c, i);",
+        False,
+    ),
     (
         "requires: triggering file that reaches the kernel",
         {"trigger": r"\bresolve_env_draws\b", "requires": [r"\bcoplanar_draw_offsets\b"]},

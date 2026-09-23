@@ -51,7 +51,7 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
         _ => host.pose(slot, Pose::Idle),
     }
 
-    rearm_action_gauge(host, ctx);
+    restore_action_anim_rates(host, ctx);
 
     // The `0x51` arm ramps the live audio level `_DAT_8007B910` back up to
     // its reference every frame (`docs/subsystems/battle-action.md` § the
@@ -61,13 +61,13 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::DoneFadeDown)
 }
 
-/// Re-arm the per-actor command-gauge slots at the tail of `DoneCleanup`.
+/// Restore the per-actor animation rates at the tail of `DoneCleanup`.
 ///
 /// Retail's state-`0x50` body falls through all three `+0x1DE` arms into a
 /// shared tail that stamps the next state, clears `ctx[+0x6]` and then
-/// `jal`s the re-arm (`overlay_battle_action_801e295c.txt` `0x801E5F64`,
+/// `jal`s the restore (`overlay_battle_action_801e295c.txt` `0x801E5F64`,
 /// unconditional on that path). The kernel itself is
-/// [`crate::battle_gauge_rearm::rearm_gauge`]; this is the call site plus the
+/// [`crate::battle_gauge_rearm::restore_anim_rates`]; this is the call site plus the
 /// two bridges retail reads through globals:
 ///
 /// * the **gate** input - a party slot (`< 3`) is gated on the actor's
@@ -83,8 +83,13 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
 /// early-outs.
 ///
 /// PORT: FUN_801E93C8 (call site; kernel in `battle_gauge_rearm`)
-fn rearm_action_gauge<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) {
-    use crate::battle_gauge_rearm::{GAUGE_SLOTS, GaugeSlots, StagedAction, rearm_gauge};
+fn restore_action_anim_rates<H: BattleActionHost + ?Sized>(
+    host: &mut H,
+    ctx: &mut BattleActionCtx,
+) {
+    use crate::battle_gauge_rearm::{
+        ANIM_RATE_SLOTS, AnimRateSlots, StagedAction, restore_anim_rates,
+    };
 
     let slot = ctx.active_actor;
     let staged_id = host.actor(slot).map(|a| a.current_anim).unwrap_or(0);
@@ -98,20 +103,20 @@ fn rearm_action_gauge<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut Batt
         }
     };
 
-    let mut slots = GaugeSlots::default();
-    for i in 0..GAUGE_SLOTS {
+    let mut slots = AnimRateSlots::default();
+    for i in 0..ANIM_RATE_SLOTS {
         if let Some(a) = host.actor(i as u8) {
             slots.latch[i] = a.render_flag;
-            slots.arm_width[i] = a.anim_rate.get();
+            slots.anim_rate[i] = a.anim_rate.get();
         }
     }
-    if !rearm_gauge(staged, &mut slots) {
+    if !restore_anim_rates(staged, &mut slots) {
         return;
     }
-    for i in 0..GAUGE_SLOTS {
+    for i in 0..ANIM_RATE_SLOTS {
         if let Some(a) = host.actor_mut(i as u8) {
             a.render_flag = slots.latch[i];
-            a.anim_rate = crate::battle_anim_rate::AnimRate(slots.arm_width[i]);
+            a.anim_rate = crate::battle_anim_rate::AnimRate(slots.anim_rate[i]);
         }
     }
     ctx.gauge_rearm_latch = 0;

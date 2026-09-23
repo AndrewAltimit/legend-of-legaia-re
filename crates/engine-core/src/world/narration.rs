@@ -153,13 +153,14 @@ impl World {
     /// creation crawl scrolls over the fade). `None` when no tint is active -
     /// the identity path, byte-identical to a build without this feature.
     ///
-    /// [`crate::World::effect_tint`] (op `0x34` sub-0) is deliberately NOT
-    /// composed in: the retail cold-boot capture holds the lit villager
-    /// tableau across the whole span where the opening timeline's
+    /// The op `0x34` sub-0 screen effect is deliberately NOT composed in:
+    /// the retail cold-boot capture holds the lit villager tableau across
+    /// the whole span where the opening timeline's
     /// `34 01 00 00 00 28 00` → `34 05 FF FF FF 5A 00` pair would black a
-    /// full-screen fade, which falsifies the "op 0x34 = screen fade" reading.
-    /// That op ramps the effect-layer colour (`FUN_801E1FB0`); its consumer
-    /// (the creation-glow effect planes) is a separate open thread.
+    /// full-screen fade, which falsifies the "op 0x34 = screen fade"
+    /// reading. That op spawns a colour tween whose per-frame
+    /// `FUN_80024EE4` push is its own layer - read it off
+    /// [`crate::world::World::screen_tint_pushes`].
     pub fn scene_screen_tint(&self) -> Option<[f32; 3]> {
         self.presentation.tint.as_ref().map(|t| t.factor())
     }
@@ -398,9 +399,12 @@ impl World {
     /// op-`0x44` spawn ([`Self::install_spawned_record`]) and the walk-on
     /// tile trigger.
     // PORT: FUN_8003BDE0 (record resolve + name/C0 skip + C1-any/C2-all gate
-    // eval + context install; the retail ctx[+0x50] seat-position seed from
-    // the header +0x22/+0x24 coords is carried by the walk-on trigger path's
-    // spawn tile instead of a context field)
+    // eval + context install). Retail also stores ctx[+0x50] =
+    // hdr[+0x22] + hdr[+0x24] + record index (0x8003C050..0x8003C094): the
+    // MAN header's partition counts, so +0x50 is the record's **global**
+    // index across partitions - not a seat-position seed from coords, as
+    // this note used to say. The port keeps the record index on the
+    // timeline instead of a context field.
     pub fn install_gated_p2_record(
         &mut self,
         man_file: &legaia_asset::man_section::ManFile,
@@ -877,6 +881,10 @@ impl World {
         self.cutscene.in_timeline = modal;
         self.field_vm.in_spawned_record_slice = true;
         let mut channels = std::mem::take(&mut self.field_vm.channels);
+        // Host hooks resolve cross-context ids against the channel set while
+        // one of these is executing; the live vector is moved out for the
+        // borrow, so they read this copy (`World::channel_view`).
+        self.field_vm.stepping_view = channels.clone();
         let channel_pre_pos: Vec<(u16, u16)> = channels
             .iter()
             .map(|c| (c.ctx.world_x, c.ctx.world_z))
@@ -898,6 +906,7 @@ impl World {
                     wait.frames += 1;
                     tl.channel_wait = Some(wait);
                     self.field_vm.channels = channels;
+                    self.field_vm.stepping_view.clear();
                     self.cutscene.in_timeline = false;
                     self.field_vm.in_spawned_record_slice = false;
                     return false;
@@ -930,6 +939,7 @@ impl World {
             if tl.player_move_frames > 0 {
                 tl.player_wait = Some(width);
                 self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
                 self.cutscene.in_timeline = false;
                 self.field_vm.in_spawned_record_slice = false;
                 return false;
@@ -993,6 +1003,7 @@ impl World {
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 tl.walk_wait = Some(walk);
                 self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
                 self.cutscene.in_timeline = false;
                 self.field_vm.in_spawned_record_slice = false;
                 // A walk park is real playout progress, not a hang: don't let
@@ -1047,6 +1058,7 @@ impl World {
             if r != vm::motion_vm::StepResult::Done && fw.frames < WALK_PARK_TIMEOUT {
                 tl.facing_wait = Some(fw);
                 self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
                 self.cutscene.in_timeline = false;
                 self.field_vm.in_spawned_record_slice = false;
                 // Like the walk park: a rotate park is real playout progress,
@@ -1646,6 +1658,7 @@ impl World {
             }
         }
         self.field_vm.channels = channels;
+        self.field_vm.stepping_view.clear();
         self.cutscene.in_timeline = false;
         self.field_vm.in_spawned_record_slice = false;
         true
@@ -1952,6 +1965,10 @@ impl World {
             return;
         };
         let mut channels = std::mem::take(&mut self.field_vm.channels);
+        // Host hooks resolve cross-context ids against the channel set while
+        // one of these is executing; the live vector is moved out for the
+        // borrow, so they read this copy (`World::channel_view`).
+        self.field_vm.stepping_view = channels.clone();
         let pre_pos: Vec<(u16, u16)> = channels
             .iter()
             .map(|c| (c.ctx.world_x, c.ctx.world_z))
@@ -2127,6 +2144,7 @@ impl World {
             self.npcs.positions.insert(slot, (nx as i16, nz as i16));
         }
         self.field_vm.channels = channels;
+        self.field_vm.stepping_view.clear();
     }
 
     /// Seed the per-actor field-VM channels for **ordinary free-roam** scene

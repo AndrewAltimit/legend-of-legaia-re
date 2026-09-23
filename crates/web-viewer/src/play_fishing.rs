@@ -181,15 +181,16 @@ impl LegaiaRuntime {
                 0
             },
         );
-        // Two retail globals have no engine analogue and stay zero, exactly as
-        // on the native host: the cast line-projection term (`DAT_801d9178`)
-        // and the line depth (`DAT_801d9298`).
+        // One retail global still has no engine analogue and stays zero,
+        // exactly as on the native host: the cast line-projection term
+        // (`DAT_801d9178`). The line depth `DAT_801d9298` is live -
+        // `FishingFight` carries it.
         let fight = s.fight();
         items.extend(ui::catch_hud_draws(&CatchHudState {
             record: fight.map(|f| f.progress()).unwrap_or(0),
             line_extent: 0,
             cast_power: s.cast_power(),
-            depth: 0,
+            depth: fight.map(|f| f.depth()).unwrap_or(0),
             tension: fight.map(|f| f.tension()).unwrap_or(0),
             gauges_visible: s.phase() == FishingPhase::Fighting,
         }));
@@ -363,6 +364,13 @@ impl LegaiaRuntime {
             (0, 0),
         );
         texts.extend(self.fishing_status_draws(font));
+        // The venue's point-exchange sub-screen, when one is open. This page
+        // used to answer the rows as a JSON side-channel only
+        // (`play_fishing_prizes_json`), so the screen the native window
+        // draws over the pond existed on one host and a data feed on the
+        // other. Both now compose it through
+        // `legaia_engine_ui::ui_fishing_exchange`.
+        texts.extend(self.fishing_exchange_draws(font));
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
         ui::scale_stage_text_draws(&mut texts, origin, scale);
         serde_json::json!({
@@ -382,7 +390,7 @@ impl LegaiaRuntime {
     /// ```json
     /// { "venue": 0, "points": 0, "rows": [
     ///     { "name": "...", "price": 0, "one_time": false, "available": true,
-    ///       "owned": 0 } ] }
+    ///       "owned": 0, "latched": false } ] }
     /// ```
     ///
     /// `null` when the venue pages did not decode.
@@ -411,6 +419,12 @@ impl LegaiaRuntime {
                         owned,
                         world.minigames.fishing_prizes_purchased,
                     ),
+                    // The one-time latch, on its own. `available` folds the
+                    // price and owned-cap refusals in with it, so this page
+                    // - which exposed only `available` - could not tell a
+                    // prize already taken from one the player cannot yet
+                    // afford, and the JS had no way to label either.
+                    "latched": ex.is_latched(i, world.minigames.fishing_prizes_purchased),
                 })
             })
             .collect();
@@ -423,24 +437,142 @@ impl LegaiaRuntime {
         .to_string()
     }
 
-    /// Buy prize row `row` at `venue` with the live point pool. Returns the
-    /// remaining points, or `-1` when the row is unavailable (too few points,
-    /// a latched one-time prize, or a full stack).
-    pub fn play_fishing_prize_buy(&mut self, venue: u32, row: usize) -> i32 {
+    /// The open point-exchange sub-screen's draws, through the shared
+    /// composition.
+    ///
+    /// The panel anchor is the same one the native window resolves - retail's
+    /// menu-picker rect (`FUN_801d74b0`) - minus the idle sway, which is an
+    /// overlay actor this host does not install; the rows sit at the panel's
+    /// resting top-left instead of swaying with it.
+    fn fishing_exchange_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+        use legaia_engine_ui::ui_fishing_exchange as fx;
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return Vec::new();
+        };
+        let Some(ex) = world.minigames.fishing_exchange.as_ref() else {
+            return Vec::new();
+        };
+        let names: Vec<String> = ex
+            .rows
+            .iter()
+            .map(|r| {
+                r.name
+                    .clone()
+                    .unwrap_or_else(|| format!("item {:#04x}", r.item_id))
+            })
+            .collect();
+        let rows: Vec<fx::ExchangeRowView<'_>> = ex
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
+                fx::ExchangeRowView {
+                    name: names[i].as_str(),
+                    price: r.price,
+                    owned,
+                    available: ex.is_available(
+                        i,
+                        world.minigames.fishing_points,
+                        owned,
+                        world.minigames.fishing_prizes_purchased,
+                    ),
+                    one_time: r.is_one_time(),
+                    latched: ex.is_latched(i, world.minigames.fishing_prizes_purchased),
+                }
+            })
+            .collect();
+        let view = fx::ExchangeView {
+            venue: ex.venue as u8,
+            points: world.minigames.fishing_points,
+            cursor: ex.cursor,
+            first_visible: ex.first_visible(world.minigames.fishing_points),
+            rows: &rows,
+        };
+        let pen = legaia_engine_core::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50)
+            .map(|p| (p.x as i32, p.y as i32))
+            .unwrap_or((8, 98));
+        fx::exchange_screen_draws_for(
+            font,
+            &view,
+            "   (Enter = trade, Left/Right = venue, P = close)",
+            pen,
+            [1.0, 1.0, 1.0, 1.0],
+            [0.65, 0.72, 0.8, 1.0],
+        )
+    }
+
+    /// Drive the point-exchange sub-screen through the shared engine kernel
+    /// ([`World::fishing_exchange_input`]): `code` `0` toggle, `1` up, `2`
+    /// down, `3` switch venue, `4` buy at the cursor. The screen stays open
+    /// on the world between calls, which is what lets this page's HUD compose
+    /// ([`Self::fishing_exchange_draws`]) draw it every frame the way the
+    /// native window does. Returns the remaining points after a buy, `-1`
+    /// for a refused input, `0` otherwise.
+    ///
+    /// [`World::fishing_exchange_input`]: legaia_engine_core::world::World::fishing_exchange_input
+    pub fn play_fishing_exchange_input(&mut self, code: u32) -> i32 {
+        use legaia_engine_core::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
+        let Some(input) = ExchangeInput::from_code(code) else {
+            return -1;
+        };
         let Some(venues) = self.fishing_venues.as_ref() else {
             return -1;
         };
-        let exchange = venues[(venue as usize).min(1)].clone();
         let Some(host) = self.scene_host.as_mut() else {
             return -1;
         };
-        host.world.open_fishing_exchange(exchange);
-        let ok = host.world.fishing_exchange_buy(row, 1).is_some();
-        host.world.close_fishing_exchange();
-        if ok {
-            host.world.minigames.fishing_points
-        } else {
-            -1
+        match host.world.fishing_exchange_input(venues, input) {
+            ExchangeOutcome::Bought(_) => host.world.minigames.fishing_points,
+            ExchangeOutcome::Refused => -1,
+            _ => 0,
+        }
+    }
+
+    /// The point-exchange sub-screen's live state as JSON - `{ "open": bool,
+    /// "venue": n, "cursor": n }` - so the page's side panel can mirror what
+    /// the canvas draws.
+    pub fn play_fishing_exchange_state_json(&self) -> String {
+        let ex = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.minigames.fishing_exchange.as_ref());
+        match ex {
+            Some(e) => serde_json::json!({ "open": true, "venue": e.venue, "cursor": e.cursor }),
+            None => serde_json::json!({ "open": false }),
+        }
+        .to_string()
+    }
+
+    /// Buy prize row `row` at `venue` with the live point pool, through the
+    /// same kernel: opens the sub-screen on `venue` when it is not already
+    /// showing it, puts the cursor on `row`, buys, and **leaves the screen
+    /// open** - it used to open, buy and close inside this one call, so the
+    /// screen the HUD compose draws was never open when a frame composed.
+    /// Returns the remaining points, or `-1` when the row is unavailable (too
+    /// few points, a latched one-time prize, or a full stack).
+    pub fn play_fishing_prize_buy(&mut self, venue: u32, row: usize) -> i32 {
+        use legaia_engine_core::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
+        let Some(venues) = self.fishing_venues.as_ref() else {
+            return -1;
+        };
+        let Some(host) = self.scene_host.as_mut() else {
+            return -1;
+        };
+        let world = &mut host.world;
+        let want = (venue as usize).min(1);
+        if world.minigames.fishing_exchange.is_none() {
+            world.fishing_exchange_input(venues, ExchangeInput::Toggle);
+        }
+        if world.minigames.fishing_exchange.as_ref().map(|e| e.venue) != Some(want) {
+            world.fishing_exchange_input(venues, ExchangeInput::SwitchVenue);
+        }
+        if let Some(ex) = &mut world.minigames.fishing_exchange {
+            ex.cursor = row.min(ex.rows.len().saturating_sub(1));
+        }
+        match world.fishing_exchange_input(venues, ExchangeInput::Buy) {
+            ExchangeOutcome::Bought(_) => world.minigames.fishing_points,
+            _ => -1,
         }
     }
 }

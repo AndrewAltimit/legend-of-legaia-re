@@ -109,8 +109,9 @@ re-capturing. Same launch shape, same emulator constraints, same
   **rikuroa post-Caruban beat** ("dolk clear" was a mislabel),
   `ra 0x801E3598` = the field-VM dispatcher's own `0x5x` SET arm. The source
   is script bytes `51 42` in the scene's **streaming variant MAN** (PROT
-  `0157_rikuroa`, records `P1[10..12]` + the self-latching post-victory
-  `P2[50]`; carrier + census in
+  `0157_rikuroa`, the self-latching post-victory record `P2[50]`; the same
+  carrier's `P1[10..12]` hold the op as developer flag-menu arms, not as
+  the beat - carrier + census in
   [script-vm.md](../subsystems/script-vm.md#a-second-script-byte-carrier-the-streaming-variant-man)).
   Save-state bracket catalogued as `rikuroa_pre_caruban` / `rikuroa_post_caruban`.
 - **Story-flag provenance model (capture-proven).** Across every chapter-1

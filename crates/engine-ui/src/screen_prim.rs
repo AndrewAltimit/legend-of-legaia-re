@@ -291,6 +291,62 @@ pub fn fog_puff_prim(
     })
 }
 
+/// The **screen-effect push** the field overlay's colour-tween actor emits
+/// once per frame - retail's `FUN_80024EE4(layer, blend, packed)` call, in
+/// retail's own argument order.
+///
+/// REF: FUN_80024EE4 (`see ghidra/scripts/funcs/80024ee4.txt`)
+///
+/// The three arguments, read off that body rather than off their port names:
+///
+/// - `layer` (`a0`) is the **ordering-table bucket**, not a quad selector:
+///   the routine clamps it to `0` when negative (`bgez s1` at `0x80024F00`)
+///   and to `OT_len - 1` above, then links the packet at `OT + layer*4`
+///   twice (`FUN_8003D2C4` at `0x80024FA4` and `0x80024FDC`). There is one
+///   quad in this emitter and its geometry is fixed; the argument only
+///   decides where in the table it lands.
+/// - `blend` (`a1`) is the **ABR mode**: the routine builds the draw-mode
+///   packet as `(blend << 5) | 0xE` (`sll a3,s3,0x5; ori a3,a3,0xe` at
+///   `0x80024FB0`), and bits 5..6 of a `GP0(0xE1)` word are the
+///   semi-transparency equation. `2` is `B - F` (the wash darkens), `1` is
+///   `B + F` (it brightens).
+/// - `packed` (`a2`) is a **GP0 colour word** - red in bits 0..7, green in
+///   8..15, blue in 16..23, masked to 24 bits and OR-ed under the `0x2B`
+///   command byte at `0x80024F54`. That is the opposite channel order from
+///   the `0xRRGGBB` every other kernel here takes, which is exactly why the
+///   swap lives in this one function: a host that forwarded the word as-is
+///   would draw every fade in its complement and nothing would look wrong
+///   on a grey ramp.
+///
+/// Both hosts composite the pool's pushes through this. A host that
+/// hand-rolled the quad would have three independent chances to get it
+/// backwards (the argument order, the ABR/OT split, the channel order), and
+/// a grey fade - which is what a scene entry ramps - hides the third.
+pub fn screen_effect_push_prim(layer: i16, blend: i16, packed: u32) -> ScreenPrim {
+    let (r, g, b) = (packed & 0xFF, (packed >> 8) & 0xFF, (packed >> 16) & 0xFF);
+    fade_prim(
+        (r << 16) | (g << 8) | b,
+        (blend & 3) as u8,
+        layer.max(0) as u32,
+    )
+}
+
+/// Every screen-effect push of one frame, as primitives - the plural
+/// [`screen_effect_push_prim`] both hosts call with the pool's own
+/// `(layer, blend, packed)` triples
+/// (`legaia_engine_core::world::World::screen_tint_push_args`).
+///
+/// Taking the triples rather than a host-built list is the point: the two
+/// arguments that decide what a wash looks like are both small integers of
+/// the same type, so a host assembling the call itself can swap them and
+/// still compile.
+pub fn screen_effect_push_prims(pushes: &[(i16, i16, u32)]) -> Vec<ScreenPrim> {
+    pushes
+        .iter()
+        .map(|&(layer, blend, packed)| screen_effect_push_prim(layer, blend, packed))
+        .collect()
+}
+
 /// OT bucket the cinematic bar emitter links its two quads at - retail's
 /// literal `*(0x1F8003F4) + 8`, i.e. eight buckets in front of the scene's
 /// own base, which is what puts the bars over everything.
@@ -822,6 +878,47 @@ mod tests {
             240,
         );
         assert_eq!(geo.run_words(), vec![2, 0, 6, 0, 6, 6]);
+    }
+
+    #[test]
+    fn a_screen_effect_push_keeps_retails_argument_roles_apart() {
+        // `FUN_80024EE4(layer, blend, packed)`: `a0` is the ordering-table
+        // bucket, `a1` the ABR equation, `a2` a GP0 colour word with red in
+        // the LOW byte. Three roles two `i16`s and a `u32` could carry in any
+        // order, so this pins all three at once.
+        let p = screen_effect_push_prim(8, 2, 0x0000_00FF);
+        let ScreenPrim::Flat(q) = p else {
+            panic!("the push is a flat quad");
+        };
+        assert_eq!(q.ot_index, 8, "`a0` is the OT bucket");
+        assert_eq!(q.abr_mode, 2, "`a1` is the ABR equation");
+        assert!(q.semi_transparent);
+        // Red low in, red out - a forwarded word would read as pure blue.
+        assert_eq!(q.color, [0xFF, 0, 0, 0xFF]);
+        // ... and the whole display rect, which is what makes it a wash.
+        assert_eq!(
+            q.xy,
+            [
+                (0, 0),
+                (PSX_DISPLAY_W, 0),
+                (0, PSX_DISPLAY_H),
+                (PSX_DISPLAY_W, PSX_DISPLAY_H)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_push_clamps_the_bucket_and_masks_the_equation_the_way_retail_does() {
+        // `bgez s1` at `0x80024F00` floors a negative bucket at zero, and the
+        // draw-mode word only carries two bits of `a1` (`(a1 << 5) | 0xE`).
+        let ScreenPrim::Flat(q) = screen_effect_push_prim(-3, 6, 0x0080_8080) else {
+            panic!("flat");
+        };
+        assert_eq!(q.ot_index, 0);
+        assert_eq!(q.abr_mode, 2);
+        assert_eq!(q.color, [0x80, 0x80, 0x80, 0xFF]);
+        assert_eq!(screen_effect_push_prims(&[(0, 1, 0)]).len(), 1);
+        assert!(screen_effect_push_prims(&[]).is_empty());
     }
 
     #[test]

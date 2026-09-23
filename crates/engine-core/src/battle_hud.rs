@@ -1407,6 +1407,19 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
     }
 }
 
+/// The full-width message bar's line (HUD element `0x5B`, placement record
+/// 91), or `None`: the death-spoils caption a slain monster raised - the
+/// Evil God Icon's steal, or a thief's loot handed back
+/// ([`crate::battle_steal`]). Composed at the death commit from the
+/// templates on the user's executable, and held for the rest of the action
+/// that raised it.
+pub fn battle_message_bar(world: &crate::world::World) -> Option<String> {
+    if world.mode != crate::world::SceneMode::Battle {
+        return None;
+    }
+    world.battle.steal_caption.as_ref().map(|c| c.text.clone())
+}
+
 /// The bottom-right target plaque (placement record 81): the monster a
 /// party member's attack is aimed at, with its element badge - or `None`.
 ///

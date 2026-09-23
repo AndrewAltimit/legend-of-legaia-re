@@ -42,6 +42,78 @@ fn menu_sub_1_advances_seven_and_dispatches_to_host() {
 }
 
 #[test]
+fn menu_sub_1_sub_op_14_is_eight_bytes_and_clones_the_sixth_operand_byte() {
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx::default();
+    // The literal `vozz` p2[13] issues at 0x0A2E: `4C 14 32 28 1E 99 01 08`.
+    // Retail's arm reads `lbu a0,6(s6)` (the `08`), decodes `FUN_8003CEB8`
+    // over bytes 1..3 and `FUN_8003CE9C` over bytes 4..5, and leaves through
+    // `j 0x801E3624` with `addiu s8,s8,1` in the delay slot - eight bytes,
+    // not seven.
+    let r = step(
+        &mut host,
+        &mut ctx,
+        &[0x4C, 0x14, 0x32, 0x28, 0x1E, 0x99, 0x01, 0x08],
+        0,
+    );
+    assert_eq!(r, StepResult::Advance { next_pc: 8 });
+    assert_eq!(host.clone_actor_calls, vec![(0x08, 0x001E_2832, 0x0199)]);
+}
+
+#[test]
+fn menu_sub_1_sub_op_14_keeps_the_extra_byte_in_the_extended_form() {
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx::default();
+    // `CC <target> 14 ...` - the cross-context form, whose two-byte header
+    // moves the operand but not the arm's own extra advance, so the
+    // instruction is nine bytes.
+    let r = step(
+        &mut host,
+        &mut ctx,
+        &[0xCC, 0x08, 0x14, 0x32, 0x28, 0x1E, 0x99, 0x01, 0x08],
+        0,
+    );
+    assert_eq!(r, StepResult::Advance { next_pc: 9 });
+    assert_eq!(host.clone_actor_calls, vec![(0x08, 0x001E_2832, 0x0199)]);
+}
+
+#[test]
+fn menu_sub_1_sub_op_14_truncated_at_the_sixth_byte_is_not_executed() {
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx::default();
+    let r = step(
+        &mut host,
+        &mut ctx,
+        &[0x4C, 0x14, 0x32, 0x28, 0x1E, 0x99, 0x01],
+        0,
+    );
+    assert_eq!(
+        r,
+        StepResult::Unknown {
+            opcode: 0x4C,
+            pc: 0
+        }
+    );
+    assert!(host.clone_actor_calls.is_empty());
+}
+
+#[test]
+fn menu_sub_1_other_sub_ops_stay_seven_bytes_and_clone_nothing() {
+    for op0 in [0x10u8, 0x11, 0x12, 0x13, 0x15, 0x1F] {
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(
+            &mut host,
+            &mut ctx,
+            &[0x4C, op0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5],
+            0,
+        );
+        assert_eq!(r, StepResult::Advance { next_pc: 7 }, "sub-op {op0:#04X}");
+        assert!(host.clone_actor_calls.is_empty(), "sub-op {op0:#04X}");
+    }
+}
+
+#[test]
 fn menu_sub_3_sub_5_writes_local_flags() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx {

@@ -534,7 +534,9 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                 .map(|s| s.turn())
                 .ok_or("dome session absent")?;
             // Left/Right/Up/Down commit hand slots 0..3; Cross confirms.
+            let mut commits = 0usize;
             for _ in 0..80 {
+                commits += 1;
                 for b in [
                     PadButton::Left,
                     PadButton::Right,
@@ -551,12 +553,18 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                     break;
                 }
             }
-            let s = host
-                .world
-                .minigames
-                .muscle_dome
-                .as_ref()
-                .ok_or("dome vanished")?;
+            // The warp's opponent is the contest's ladder rung and the fighter
+            // takes the lead record's live HP, so a match can be decided inside
+            // the ladder's commits - either way - and the session closes. That
+            // is a played match, not a vanished one; at least one commit round
+            // must have run for it to count.
+            let Some(s) = host.world.minigames.muscle_dome.as_ref() else {
+                return if commits > 0 {
+                    Ok(format!("match decided after {commits} commit round(s)"))
+                } else {
+                    Err("dome vanished before a commit".into())
+                };
+            };
             if s.turn() == before {
                 Err(format!(
                     "80 commit rounds left the dome on turn {before} (phase {:?})",

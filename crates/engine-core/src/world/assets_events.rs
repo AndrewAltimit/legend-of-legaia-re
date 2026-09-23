@@ -99,6 +99,31 @@ impl World {
         self.global_tmd_pool.get(idx as usize)?.as_ref()
     }
 
+    /// Resolve a field model operand the way the `0x4C 0xD8` arm does: the
+    /// arm adds the scene-bank base `*(u16*)0x8007B6F8` to the operand
+    /// (`lhu s0,-0x4908` + `addu` at `0x801E2DE0..0x801E2DE8`) and
+    /// `FUN_801D77F4` then reads `DAT_8007C018[slot]` with no further
+    /// adjustment (`0x801D7854..0x801D7878`). So a non-negative operand is a
+    /// scene-bank index ([`Self::field_scene_bank`]); an operand in `-5..0`
+    /// reaches the player head, which [`Self::global_tmd`] holds.
+    pub fn field_pool_tmd(&self, operand: i16) -> Option<&Arc<GlobalTmd>> {
+        let slot = i32::from(operand) + i32::from(crate::model_bank::SCENE_BANK_BASE);
+        if slot < 0 {
+            return None;
+        }
+        let bank = slot - i32::from(crate::model_bank::SCENE_BANK_BASE);
+        if bank >= 0 {
+            self.field_scene_bank.get(bank as usize)?.as_ref()
+        } else {
+            self.global_tmd(slot as i16)
+        }
+    }
+
+    /// Install the field scene's model bank ([`Self::field_scene_bank`]).
+    pub fn install_field_scene_bank(&mut self, bank: Vec<Option<Arc<GlobalTmd>>>) {
+        self.field_scene_bank = bank;
+    }
+
     /// Drain emitted field-VM events. Engines call once per frame after
     /// [`World::tick`] to dispatch BGM, dialog, money, etc. Returns events
     /// in emission order.

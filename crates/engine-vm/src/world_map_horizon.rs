@@ -1,8 +1,9 @@
-//! World-map horizon / sky band emitter, ported from
-//! `FUN_801D7EA0` (world-map overlay) and its byte-identical 0897
-//! field-overlay relocation copy `FUN_801C9688`.
+//! World-map horizon / sky band emitter, ported from `FUN_801D7EA0`
+//! (field overlay PROT 0897; the world map is one of its modes). There is
+//! one routine: `0x801C9688` is this body printed `0xE818` low, not a
+//! second copy - see the note on [`emit_horizon`].
 //!
-//! PORT: FUN_801d7ea0, FUN_801c9688
+//! PORT: FUN_801d7ea0
 //!
 //! The emitter is one-shot: it runs only when the gate `_DAT_801F351C` is
 //! set, and self-clears it. The gate plus its three staged params live in
@@ -66,8 +67,8 @@
 //!
 //! ## Source
 //!
-//! `ghidra/scripts/funcs/overlay_world_map_801d7ea0.txt` and
-//! `overlay_0897_xxx_dat_801c9688.txt` (the two overlay-resident copies).
+//! `ghidra/scripts/funcs/overlay_world_map_801d7ea0.txt` (the
+//! `overlay_0897_*_801c9688` dump is the same body at a phantom VA).
 //! See [`docs/subsystems/world-map.md`](../../../docs/subsystems/world-map.md#fun_801d7ea0---world-map-poly_ft4-batch-emitter-832-bytes).
 
 /// First value of the retail row counter `iVar11`.

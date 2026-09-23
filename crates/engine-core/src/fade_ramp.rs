@@ -51,32 +51,26 @@
 //! See `docs/reference/functions/renderer.md` and
 //! `ghidra/scripts/funcs/80020c14.txt`, `80025000.txt`, `80020b00.txt`.
 //!
-//! NOT WIRED - and **not** for want of the actor pool. That is the reason this
-//! tag used to give ("wiring it means the same thing wiring
-//! [`crate::fade::spawn_fade`] does"), and it names a prerequisite this module
-//! does not have. [`FadeRamp`] *is* the `+0x7C` block; one world field can hold
-//! it exactly as well as a pool entry can, and its per-frame input is a vsync
-//! delta, which [`crate::world::FrameClock::frame_step`] already carries live. The
-//! pool is what `spawn_fade` needs in order to have *several* fades at once,
-//! which is a different question.
+//! ## Where the engine runs it
 //!
-//! What blocks it is that the engine's one live fade already has a model.
-//! [`crate::world::ScreenFxState::fade`] is an `Option<`[`crate::fade::FadeState`]`>`,
-//! staged by the battle-escape teardown and stepped once per frame by the world
-//! tick, which **drops it when `step()` reports the ramp complete**. The retail
-//! ramp has no such report on this template: the escape template's hold word is
-//! `-1`, so [`RampFlags::finished`] never rises and the white-out holds white
-//! until the battle unloads. Substituting one for the other therefore moves the
-//! fade's lifetime out of the world tick and onto the teardown, which is a
-//! change to when the screen clears rather than a call insertion - so the
-//! substitution lands with the battle-teardown owner, not here. The lifetime
-//! half has landed there: `FadeState::holds_at_end` keeps a `-1`-hold fade at
-//! its end colour and `finish_battle` clears it, so the battle exit holds
-//! black until the scene unloads. What this module still has and the live
-//! model does not is the vsync-scaled step and the start delay.
+//! The engine's one live full-screen fade, [`crate::fade::FadeState`] (staged
+//! by the battle-escape teardown and stepped once per frame by the world
+//! tick), **is** this block, and [`crate::fade::FadeState::step_vsyncs`] is
+//! only a representation shim around [`tick_fade_ramp`]. Retail counts the duration
+//! down inside the block while the engine keeps `elapsed` / `duration` so
+//! `progress()` and `finished()` read naturally, so the two views are
+//! converted around the call. Both hosts draw the result through
+//! `legaia_engine_ui::screen_prim::screen_fade_prim`.
 //!
-//! Until then this module is the retail reference the host model is checked
-//! against, not the thing driving the screen.
+//! The wire replaced a linear integrator that latched `current = end` the frame
+//! `elapsed` reached `duration`. Retail does not latch - it keeps accumulating
+//! every frame, through the hold as well, and each channel clamps onto the
+//! target when the **delta's sign** says it overshot. Both end on the target;
+//! on a truncated delta retail arrives a frame or two later, and that
+//! trajectory is now the port's. The lifetime half had already landed on the
+//! teardown owner: `FadeState::holds_at_end` keeps a `-1`-hold fade at its end
+//! colour and `finish_battle` clears it, which is why the escape white-out and
+//! the battle exit hold rather than snapping back.
 
 // REF: FUN_80020B00 - the template loader whose stores name this block's
 // fields; ported in `crate::fade` as `FadeState::load`.

@@ -24,6 +24,11 @@ fn extracted_root() -> Option<PathBuf> {
 }
 
 fn funcs_dir() -> Option<PathBuf> {
+    // A git worktree carries no dump corpus; `LEGAIA_FUNCS_DIR` points one at
+    // the main checkout's without a symlink the coverage gates would misread.
+    if let Some(p) = std::env::var_os("LEGAIA_FUNCS_DIR").map(PathBuf::from) {
+        return p.is_dir().then_some(p);
+    }
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace = manifest.parent()?.parent()?;
     let p = workspace.join("ghidra").join("scripts").join("funcs");
@@ -609,10 +614,10 @@ fn pinned_overlay_tables_are_claimed_outside_every_code_extent() {
     // Per entry: how many pinned-table rows, and their total bytes.
     let want: [(u32, usize, usize); 5] = [
         (898, 17, 2340),
-        (899, 5, 860),
-        (975, 4, 306),
-        (976, 3, 3048),
-        (980, 3, 1416),
+        (899, 7, 1284),
+        (975, 7, 446),
+        (976, 5, 3124),
+        (980, 8, 1928),
     ];
     let mut checked = 0usize;
     for (idx, n_rows, n_bytes) in want {
@@ -622,7 +627,12 @@ fn pinned_overlay_tables_are_claimed_outside_every_code_extent() {
         let bytes = std::fs::read(&path).expect("read entry");
         let rec = map.by_prot_index(idx).expect("overlay map row");
         let rows = legaia_asset::byte_account::pinned_overlay_tables(idx);
-        assert_eq!(rows.len(), n_rows, "PROT {idx:04}: pinned-table row count");
+        assert_eq!(
+            rows.len(),
+            n_rows,
+            "PROT {idx:04}: pinned-table row count ({} bytes)",
+            rows.iter().map(|r| r.1).sum::<usize>()
+        );
         assert_eq!(
             rows.iter().map(|r| r.1).sum::<usize>(),
             n_bytes,
@@ -660,6 +670,12 @@ fn pinned_overlay_tables_are_claimed_outside_every_code_extent() {
             }
             let cs = (d.entry_va - rec.base_va) as usize;
             let ce = (cs + d.bytes as usize).min(bytes.len());
+            // The account refuses an extent that opens on the `$zero`-absolute
+            // data signature - a table printed as code - so a pinned table
+            // under one is the right claim, not an overlap.
+            if legaia_asset::byte_account::zero_absolute_head(&bytes[cs..ce]) {
+                continue;
+            }
             for &(a, b, what) in &spans {
                 assert!(
                     b <= cs || a >= ce,
@@ -684,9 +700,13 @@ fn pinned_overlay_tables_are_claimed_outside_every_code_extent() {
             .filter(|o| o.owner != "code" && o.owner != "tim")
             .map(|o| o.bytes)
             .sum();
-        assert_eq!(
-            table_bytes, n_bytes,
-            "PROT {idx:04}: accounted pinned-table bytes"
+        // At least the pinned tables: switch tables, sized globals, formed
+        // strings and call-argument records share these owners, so equality
+        // stopped holding once those claims existed (it was only ever checked
+        // where the dump corpus is present, which is why it went unnoticed).
+        assert!(
+            table_bytes >= n_bytes,
+            "PROT {idx:04}: accounted non-code bytes {table_bytes} < pinned-table bytes {n_bytes}"
         );
         checked += 1;
     }
@@ -740,4 +760,307 @@ fn battle_data_pack_table_to_data_slack_is_empty() {
     }
     assert!(checked >= 3, "expected the player battle files on disc");
     eprintln!("[ok] {checked} battle data packs account whole");
+}
+
+/// The uninitialised-data-region claim is exactly one maximal all-zero run,
+/// and only where the image's own code addresses it.
+///
+/// Three things have to hold together or the rule is a way to buy percentage
+/// points: every claim's bytes are all zero (so it can never grow into live
+/// content), its bounds are the zero run's own (so it is not a tuned window),
+/// and the runs the rule refuses stay in the residue. The STR overlay carries
+/// all three cases in one entry - a 131172-byte region addressed at many
+/// sites, a post-blob tail addressed at none, and a data-segment hole
+/// addressed at none.
+#[test]
+fn uninitialised_data_claims_are_whole_zero_runs_the_image_addresses() {
+    use legaia_asset::byte_account::{BSS_RUN_MIN, formed_addresses, zero_runs};
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let map = legaia_asset::static_overlay::overlay_map();
+    let mut checked = 0usize;
+    for idx in [970u32, 899, 980, 975] {
+        let (Some(path), Some(rec)) = (
+            entry_path(&dir, idx),
+            map.overlays.iter().find(|r| r.prot_index == idx),
+        ) else {
+            continue;
+        };
+        let bytes = std::fs::read(&path).expect("read entry");
+        let opts = AccountOptions {
+            prot_index: Some(idx),
+            label: format!("{idx:04}"),
+            funcs_dir: Some(funcs.clone()),
+            depth: 0,
+            keep_claims: true,
+            ..Default::default()
+        };
+        let acc = account(&bytes, &opts);
+        assert_invariants(&acc);
+        let runs = zero_runs(&bytes, BSS_RUN_MIN);
+        let formed = formed_addresses(&bytes, rec.base_va);
+        let claims: Vec<_> = acc
+            .claims
+            .iter()
+            .filter(|c| c.detail.starts_with("uninitialised data region"))
+            .collect();
+        assert!(
+            !claims.is_empty(),
+            "PROT {idx:04}: no uninitialised-data claim"
+        );
+        for c in &claims {
+            assert!(
+                bytes[c.start..c.end].iter().all(|&b| b == 0),
+                "PROT {idx:04}: claim {:#x}..{:#x} is not all zero",
+                c.start,
+                c.end
+            );
+            assert!(
+                runs.contains(&(c.start, c.end)),
+                "PROT {idx:04}: claim {:#x}..{:#x} is not a maximal zero run",
+                c.start,
+                c.end
+            );
+            let (lo, hi) = (rec.base_va + c.start as u32, rec.base_va + c.end as u32);
+            assert!(
+                formed.iter().any(|(_, t)| *t >= lo && *t < hi),
+                "PROT {idx:04}: claim {:#x}..{:#x} is addressed by nothing",
+                c.start,
+                c.end
+            );
+        }
+        checked += 1;
+        eprintln!(
+            "[ok] PROT {idx:04}: {} uninitialised-data claim(s) of {} zero run(s), \
+             structural {:.1}%",
+            claims.len(),
+            runs.len(),
+            acc.structural_pct
+        );
+    }
+    assert!(checked >= 3, "expected the mapped overlays on disc");
+
+    // The refused runs: entry 0970's post-blob tail and its data-segment hole
+    // carry no formed address, and both stay out of the claim set.
+    let Some(path) = entry_path(&dir, 970) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let base = map
+        .overlays
+        .iter()
+        .find(|r| r.prot_index == 970)
+        .expect("0970 row")
+        .base_va;
+    let formed = formed_addresses(&bytes, base);
+    let runs = zero_runs(&bytes, BSS_RUN_MIN);
+    let addressed = runs
+        .iter()
+        .filter(|(s, e)| {
+            let (lo, hi) = (base + *s as u32, base + *e as u32);
+            formed.iter().any(|(_, t)| *t >= lo && *t < hi)
+        })
+        .count();
+    assert_eq!(
+        addressed, 1,
+        "PROT 0970: exactly one of its zero runs is addressed"
+    );
+    eprintln!(
+        "[ok] PROT 0970: 1 of {} zero runs is addressed by the image's own code",
+        runs.len()
+    );
+}
+
+/// The STR overlay's dispatch table, its movie paths and its VLC blob are all
+/// claimed, and the blob's extent is the one the unpacker's walk consumed.
+#[test]
+fn the_str_overlay_data_segment_is_claimed_structurally() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 970) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    let opts = AccountOptions {
+        prot_index: Some(970),
+        label: "0970".into(),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        keep_claims: true,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+
+    use legaia_asset::fmv_dispatch as fmv;
+    use legaia_mdec::strv2_table as vlc;
+    let base = fmv::STR_OVERLAY_BASE_VA;
+    let src = (vlc::STRV2_PACKED_VA - base) as usize;
+    let (table, consumed) = vlc::unpack_lz_tracked(&bytes[src..]).expect("the blob terminates");
+    assert_eq!(table.len(), vlc::STRV2_TABLE_BYTES, "decoded table length");
+    let blob = acc
+        .claims
+        .iter()
+        .find(|c| c.detail.starts_with("STRv2 VLC table source"))
+        .expect("the VLC blob is claimed");
+    assert_eq!((blob.start, blob.end - blob.start), (src, consumed));
+    // The blob is the last content in the entry: what follows is inside one
+    // sector and is claimed as slack, not left as residue.
+    assert!(bytes[blob.end..].iter().all(|&b| b == 0));
+    assert!(bytes.len() - blob.end < 2048);
+
+    let paths = acc
+        .claims
+        .iter()
+        .filter(|c| c.detail.starts_with("movie path for fmv_id"))
+        .count();
+    assert_eq!(paths, fmv::FMV_SLOT_COUNT, "one path string per slot");
+    assert!(
+        acc.claims
+            .iter()
+            .any(|c| c.detail.starts_with("FMV dispatch table")),
+        "the dispatch table is claimed"
+    );
+    eprintln!(
+        "[ok] PROT 0970: VLC blob {consumed} bytes -> {} table bytes, {paths} movie paths, \
+         structural {:.1}%",
+        table.len(),
+        acc.structural_pct
+    );
+}
+
+/// The `OTHER3` dev module's roster is one 81-record table on a `0x84` stride,
+/// and claiming it at the stride leaves the entry near whole.
+#[test]
+fn the_other3_roster_accounts_the_dev_module() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let Some(path) = entry_path(&dir, 974) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read entry");
+    use legaia_asset::other3_roster as roster;
+    let recs = roster::records(&bytes).expect("the roster parses");
+    assert_eq!(recs.len(), roster::RECORD_COUNT);
+    // A roster of 81 identical records would pass the lead-byte guard and mean
+    // nothing; the labels differ, and most of each record is its NUL padding.
+    let distinct: std::collections::BTreeSet<&[u8]> = recs.iter().copied().collect();
+    assert!(distinct.len() > 60, "{} distinct labels", distinct.len());
+
+    let opts = AccountOptions {
+        prot_index: Some(974),
+        label: "0974".into(),
+        funcs_dir: Some(funcs),
+        depth: 0,
+        ..Default::default()
+    };
+    let acc = account(&bytes, &opts);
+    assert_invariants(&acc);
+    assert!(
+        acc.structural_pct > 95.0,
+        "PROT 0974 structural {:.1}%",
+        acc.structural_pct
+    );
+    eprintln!(
+        "[ok] PROT 0974: {} roster labels, structural {:.1}%",
+        recs.len(),
+        acc.structural_pct
+    );
+}
+
+/// PROT `0975`'s trailing `plausible_mips` residue is PROT `0972`'s code at
+/// the same file offset - an inherited tail, not this image's own bytes.
+///
+/// The run has no prologue, no `jr ra` and no caller, which invites reading it
+/// as a jump-table body or the interior of a neighbour. Byte equality settles
+/// it, and this test is the standing form of that measurement: byte accounting
+/// does not cut inherited tails the way `disc-coverage.py` does, so a
+/// `plausible_mips` run in an overlay entry is only un-dumped code once it has
+/// been checked against the other entries at the same offset.
+#[test]
+fn the_slot_machine_tail_is_the_fishing_overlays_code() {
+    let Some(dir) = extracted_root() else {
+        eprintln!("extracted/PROT not present - skipping");
+        return;
+    };
+    let (Some(a), Some(b)) = (entry_path(&dir, 975), entry_path(&dir, 972)) else {
+        return;
+    };
+    let slot = std::fs::read(a).expect("read 0975");
+    let fishing = std::fs::read(b).expect("read 0972");
+    const TAIL: usize = 0x5920;
+    assert!(fishing.len() > slot.len());
+    assert_eq!(
+        &slot[TAIL..],
+        &fishing[TAIL..slot.len()],
+        "0975's tail is not 0972's bytes at the same offset"
+    );
+    eprintln!(
+        "[ok] PROT 0975 file {TAIL:#x}..{:#x} ({} bytes) == PROT 0972 at the same offset",
+        slot.len(),
+        slot.len() - TAIL
+    );
+}
+
+/// Records a call receives are claimed off the call, through the three staging
+/// shapes retail uses, and a label-credited dump that opens on fill credits
+/// nothing.
+#[test]
+fn call_argument_records_are_claimed_and_fill_headed_labels_refused() {
+    let (Some(dir), Some(funcs)) = (extracted_root(), funcs_dir()) else {
+        eprintln!("extracted/PROT or ghidra/scripts/funcs not present - skipping");
+        return;
+    };
+    let run = |idx: u32| -> Option<Account> {
+        let path = entry_path(&dir, idx)?;
+        let bytes = std::fs::read(&path).ok()?;
+        let opts = AccountOptions {
+            prot_index: Some(idx),
+            label: path.file_name()?.to_str()?.to_string(),
+            funcs_dir: Some(funcs.clone()),
+            prot_dir: Some(dir.clone()),
+            depth: 0,
+            keep_claims: true,
+            ..Default::default()
+        };
+        Some(account(&bytes, &opts))
+    };
+    let note = |acc: &Account, needle: &str| {
+        acc.notes
+            .iter()
+            .find(|n| n.contains(needle))
+            .cloned()
+            .unwrap_or_default()
+    };
+    // PROT 0957 stages records in a saved register (`move a2,s0`) and in the
+    // delay slots of `switch` arms that jump to one shared call.
+    let Some(a957) = run(957) else { return };
+    assert_invariants(&a957);
+    let n = note(&a957, "FUN_80050ed4 call(s)");
+    assert!(n.contains("18 claimed"), "0957: {n}");
+    // PROT 0980 hands every dancer effect through a local wrapper that
+    // forwards its `$a3` as the spawn's `$a2`.
+    let Some(a980) = run(980) else { return };
+    let n = note(&a980, "FUN_801d3fd0 call(s)");
+    assert!(n.contains("8 claimed"), "0980: {n}");
+    // PROT 0897: nine effect scripts and twenty actor templates.
+    let Some(a897) = run(897) else { return };
+    assert!(note(&a897, "FUN_80021b04 call(s)").contains("9 claimed"));
+    assert!(note(&a897, "FUN_80020de0 call(s)").contains("20 claimed"));
+    // PROT 0976: the fill-headed `FUN_801d84b4` extent is not code.
+    let Some(a976) = run(976) else { return };
+    assert!(
+        !a976
+            .claims
+            .iter()
+            .any(|c| c.detail.starts_with("FUN_801d84b4")),
+        "0976 still credits the fill-headed FUN_801d84b4 extent"
+    );
+    eprintln!("[ok] call-argument records on 0957 / 0980 / 0897; 0976 fill-headed label refused");
 }

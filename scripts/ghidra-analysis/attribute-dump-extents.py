@@ -198,8 +198,9 @@ def load_images(extracted):
     # image's own content, and leaving them in makes a dump that lies wholly
     # inside one read `identical` (two images hold them) when exactly one owns
     # them. See `inherited_tail.py` for the rule and its asymmetry.
-    tail_inputs = [(im.label, im.base, im.data[:im.own_end]) for im in images
+    tail_inputs = [(im.prot, im.base, im.data[:im.own_end]) for im in images
                    if im.prot is not None]
+    labels_by_index = {im.prot: im.label for im in images if im.prot is not None}
     # Equal-EXTENT siblings are donor candidates too - `content_bytes` is the
     # PROT entry's sector extent, not the module's content - but only where the
     # bytes say which of the two owns the shared suffix. That is what
@@ -208,9 +209,15 @@ def load_images(extracted):
     # the cut is what makes that measurement right, so the first estimate
     # overshoots wherever a record chain walks into the residue. See
     # `inherited_tail.tail_starts_fixpoint`.
-    tails = inherited_tail.tail_starts_fixpoint(
+    # The packer-buffer leg (`inherited_tail.tail_cuts`) adds the cuts no
+    # sibling makes (PROT 0898 / 0895, donor the non-overlay 0894) and moves
+    # PROT 0901's down to where 0900's routine resumes mid-body.
+    by_index = inherited_tail.tail_cuts(
         tail_inputs,
-        lambda _label, base, data: slot_b_band.content_end(data, base))
+        lambda _key, base, data: slot_b_band.content_end(data, base),
+        prot_dir=os.path.join(extracted, "PROT"))
+    tails = {labels_by_index[k]: (off, labels_by_index.get(d, "prot_%04d" % d))
+             for k, (off, d) in by_index.items()}
     for im in images:
         cut = tails.get(im.label)
         if cut and cut[0] < im.own_end:

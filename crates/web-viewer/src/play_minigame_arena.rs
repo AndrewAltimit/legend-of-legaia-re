@@ -35,7 +35,8 @@ use legaia_engine_core::dance::{DanceGame, Judge};
 use legaia_engine_core::muscle_dome::{
     self as md, DomeContest, HubScreen, MuscleDomeSession, MusclePhase,
 };
-use legaia_engine_core::other_game_overlay::ScoreTallyRamp;
+use legaia_engine_core::muscle_ringside::HubBackdrop;
+use legaia_engine_core::other_game_overlay::{LANE_FADE_FULL, ScoreTallyRamp};
 use legaia_engine_ui::TextDraw;
 use legaia_engine_ui::other_game_hud::{self as hud, HudQuad, HudSprite};
 use wasm_bindgen::prelude::*;
@@ -49,6 +50,9 @@ const ARENA_OVERLAY_PROT_INDEX: u32 = md::ARENA_OVERLAY_PROT_INDEX as u32;
 /// PROT entry of the dome data container whose LZS section 0 carries the
 /// two hub-page TIMs (`other6.lzs` slot 0).
 const HUB_CONTAINER_PROT_INDEX: u32 = 1220;
+/// The page's sheet id for the ringside still (the hub pages are `4` / `5`);
+/// its `pal` is the still variant, `0` = extraction 1221, `1` = 1222.
+const STILL_SHEET: u32 = 8;
 
 // ------------------------------------------------------------- Muscle Dome
 
@@ -64,8 +68,15 @@ pub(crate) struct MuscleUi {
     pub(crate) char_slot: u32,
     intro_card: Option<HubScreen>,
     round_banner: Option<(i32, HubScreen)>,
+    /// The round the re-entered hub's backdrop last drew its ROUND card for
+    /// (`muscle_ringside::leg_open_raises_round_card`), the native window's
+    /// `muscle_card_round`.
+    card_round: Option<i32>,
     interval: Option<HubScreen>,
     tally: Option<(ScoreTallyRamp, i32)>,
+    /// The re-entered hub's backdrop: the ringside still the leg left
+    /// resident and its level, the native window's `muscle_backdrop`.
+    backdrop: Option<HubBackdrop>,
     prev_leg_open: bool,
     prev_contest_open: bool,
     /// Pristine parse of the PROT 0977 sprite table; the emitters write
@@ -172,19 +183,28 @@ impl LegaiaRuntime {
             .muscle_contest
             .as_ref()
             .map(|c| c.tally_roll());
+        let still = world.minigames.muscle_ringside_still;
         let ui = &mut self.minigame_ui.muscle;
         if leg_open && !ui.prev_leg_open {
-            ui.round_banner = Some((round, HubScreen::round_banner()));
+            // Once per leg: not again after a re-entered hub's own card.
+            if legaia_engine_core::muscle_ringside::leg_open_raises_round_card(
+                ui.card_round.take(),
+                round,
+            ) {
+                ui.round_banner = Some((round, HubScreen::round_banner()));
+            }
             if contest_open && !ui.prev_contest_open {
                 ui.intro_card = Some(HubScreen::intro_card());
             }
             ui.interval = None;
+            ui.backdrop = None;
         }
         if !leg_open && ui.prev_leg_open && ui.prev_contest_open {
             let roll = md::HUB_TALLY_ROLL_LEAD_TICKS
                 + *md::HUB_TALLY_CUE_STAGGER.last().unwrap_or(&0) as i32;
             ui.interval = raises.then(|| HubScreen::interval(roll));
             ui.tally = if raises { roll_seed } else { None };
+            ui.backdrop = still.filter(|_| raises).map(HubBackdrop::reentry);
             ui.intro_card = None;
             ui.round_banner = None;
         }
@@ -199,14 +219,30 @@ impl LegaiaRuntime {
                 ui.round_banner = None;
             }
         }
+        // Each drained lane keys a voice directly, with no cue id in sight
+        // (`FUN_801D1288` builds the whole attr set), so nothing in the
+        // id-keyed scheduler could sound it. Collected here and keyed below,
+        // once the `minigame_ui` borrow is done.
+        let mut voice_cues = Vec::new();
+        if let Some(backdrop) = ui.backdrop.as_mut() {
+            let lane0_full = ui
+                .tally
+                .as_ref()
+                .is_some_and(|(ramp, _)| ramp.fade[0] >= LANE_FADE_FULL);
+            backdrop.tick(1, pad, ui.interval.map(|i| i.stage()), lane0_full);
+            if backdrop.card_brightness().is_some() {
+                ui.card_round = Some(round);
+            }
+            if backdrop.done() {
+                ui.backdrop = None;
+            }
+        }
         if let Some(interval) = ui.interval.as_mut() {
             interval.tick(1, pad);
             if let Some((ramp, tally)) = ui.tally.as_mut() {
-                // The tally cues key voices directly by attribute set (no
-                // cue id); the page's scheduler has no such door, so the
-                // roll plays silently here.
                 let step = ramp.tick(1, false, volume_word);
                 *tally += step.tally_gain;
+                voice_cues.extend(step.cues.iter().copied());
             }
             if interval.done() {
                 ui.interval = None;
@@ -215,6 +251,14 @@ impl LegaiaRuntime {
         }
         ui.prev_leg_open = leg_open;
         ui.prev_contest_open = contest_open;
+        for cue in voice_cues {
+            self.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
+                cue.voice,
+                cue.vab_program_tone,
+                cue.note_and_fine,
+                cue.volume,
+            ));
+        }
     }
 
     /// This frame's hub-screen quads, the native `muscle_hub_sprite_draws`
@@ -232,6 +276,19 @@ impl LegaiaRuntime {
         let mut table = table.clone();
         let mut quads = Vec::new();
         if in_dome {
+            // A first visit's brick wall under the two leg-open screens - the
+            // native window's `muscle_hub_sprite_draws` twin.
+            let wall = legaia_engine_core::muscle_ringside::first_visit_backdrop_level(
+                ui.intro_card.as_ref(),
+                ui.round_banner.as_ref().map(|(_, b)| b),
+            );
+            if wall > 0 {
+                quads.extend(hud::hub_screen_quads(
+                    &mut table,
+                    &legaia_engine_ui::ringside_backdrop::first_visit_tile_draws(),
+                    wall,
+                ));
+            }
             if let Some(card) = ui.intro_card {
                 quads.extend(hud::hub_screen_quads(
                     &mut table,
@@ -265,7 +322,55 @@ impl LegaiaRuntime {
             };
             quads.extend(hud::score_tally_quads(&mut table, values, row_bright));
         }
+        // The re-entered hub's ROUND card (arms 0x15 / 0x16) over the still.
+        if !in_dome
+            && ui.interval.is_none()
+            && let Some(card) = ui.backdrop.and_then(|b| b.card_brightness())
+        {
+            let round = world
+                .minigames
+                .muscle_contest
+                .as_ref()
+                .map_or(1, |c| c.round() as i32 + 1);
+            quads.extend(hud::hub_screen_quads(
+                &mut table,
+                &hud::round_banner_draws(round),
+                card,
+            ));
+        }
         quads
+    }
+
+    /// The re-entered hub's backdrop as blit rows, drawn under
+    /// [`Self::muscle_hub_quads`]: the two still quads, resolved through
+    /// their texture pages onto the still sheet (`sheet` [`STILL_SHEET`],
+    /// `pal` = the still variant). Empty unless a still is up.
+    fn muscle_still_rows(&self) -> Vec<serde_json::Value> {
+        use legaia_engine_ui::ringside_backdrop as rb;
+        let Some(host) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        if host.world.mode == legaia_engine_core::world::SceneMode::MuscleDome {
+            return Vec::new();
+        }
+        let Some(b) = self.minigame_ui.muscle.backdrop.filter(|b| b.visible()) else {
+            return Vec::new();
+        };
+        rb::ringside_still_quads(b.level())
+            .iter()
+            .filter_map(|q| {
+                let d = rb::StillDraw::from_quad(q)?;
+                Some(serde_json::json!({
+                    "sheet": STILL_SHEET,
+                    "pal": b.variant(),
+                    "tpage": q.tpage,
+                    "u": d.src.0, "v": d.src.1, "w": d.src.2, "h": d.src.3,
+                    "x": d.dst.0, "y": d.dst.1, "dw": d.dst.2, "dh": d.dst.3,
+                    "bright": d.level,
+                    "semi": false,
+                }))
+            })
+            .collect()
     }
 
     /// The native window's Muscle Dome HUD lines, with the page's bindings.
@@ -339,7 +444,14 @@ impl LegaiaRuntime {
                 let [taken, dealt] = s.last_turn_damage();
                 format!("turn: dealt {dealt}, took {taken}")
             }
-            MusclePhase::Won => "LEG WON!  (Cross = next leg)".to_string(),
+            // The caption names a spell; it awards nothing (the contest's
+            // payout lands when the ladder settles). This host dropped the id
+            // and printed the bare banner, so the one piece of information
+            // the Won caption carries was visible on the native window only.
+            MusclePhase::Won => format!(
+                "LEG WON! caption spell {:#x}  (Cross = next leg)",
+                s.reward_spell_id()
+            ),
             MusclePhase::Lost => "you lose the leg  (Cross = leave)".to_string(),
         };
         let l2 = format!(
@@ -481,10 +593,20 @@ impl LegaiaRuntime {
         let l2 = format!("{status}   Left/Right/Up attack, Down special (Start = quit)");
         let mut out = row(font, &l1, PEN_STATUS, WHITE);
         out.extend(row(font, &l2, PEN_PROMPT, DIM));
-        if let Some(t) = f.tally() {
-            let l3 = format!("tally {}   coins {}", t.total(), t.gold_remaining());
-            out.extend(row(font, &l3, PEN_EXTRA, DIM));
-        }
+        // The duel's three retail number drawers - the round digit, the
+        // right-aligned score field and the `0x10` px "GET COIN" strip - at
+        // the ported cell layout the native window draws. This page printed
+        // `tally N   coins N` as one prose line instead, so the two hosts
+        // showed the same numbers in different places and at different
+        // strides. Layout from `baka_fighter_chrome::hud_digit_placements`,
+        // quads from `ui_baka_strips`, both shared.
+        let placed = legaia_engine_core::baka_fighter_chrome::hud_digit_placements(
+            f.round() as i32,
+            f.tally().map(|t| (t.total(), t.gold_remaining())),
+        );
+        out.extend(
+            legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for(font, &placed, DIM),
+        );
         out
     }
 }
@@ -570,6 +692,27 @@ impl LegaiaRuntime {
                 ));
             }
         }
+        // The retail-coordinate HUD frame - the three dancers' score
+        // readouts, their box brackets, the Lv gauges and the rivals' beat
+        // tracks - laid out by the engine
+        // (`DanceGame::hud_frame_rows`, the presentation half of
+        // `FUN_801d231c`). This host drew none of it: the frame's whole
+        // resolution lived inside the native window's dance block, so the
+        // browser showed the two plain status lines above and nothing else,
+        // for a run driven by the same `DanceGame`.
+        //
+        // These rows are in retail's 320x240 stage coordinates and the two
+        // lines above are in this page's own pen space; both go through the
+        // caller's single `scale_stage_text_draws`, which is the transform
+        // the native window also applies to this block.
+        for r in g.hud_frame_rows(g.rival_hud_visible()) {
+            out.extend(row(
+                font,
+                &r.text,
+                (r.x, r.y),
+                if r.dim { DIM } else { WHITE },
+            ));
+        }
         out
     }
 }
@@ -645,18 +788,42 @@ impl LegaiaRuntime {
     /// dome, INTERVAL + score tally after a leg), `{ ok, quads: [...] }` in
     /// the standalone page's row shape. `quads` is empty when no screen is
     /// up.
+    ///
+    /// A re-entered hub's ringside still leads the list (retail links it at
+    /// the ordering table's far end): two rows on sheet `8` whose `tpage` is
+    /// the packet's own `0x106` / `0x109`, `pal` the still variant and
+    /// `bright` the packet colour (`0x80` = neutral modulation).
     pub fn play_mg_muscle_hub_quads_json(&self) -> String {
-        let quads = self.muscle_hub_quads();
+        let mut rows = self.muscle_still_rows();
+        rows.extend(self.muscle_hub_quads().iter().map(hub_quad_json));
         serde_json::json!({
             "ok": self.minigame_ui.muscle.sprite_table.is_some(),
-            "quads": quads.iter().map(hub_quad_json).collect::<Vec<_>>(),
+            "quads": rows,
         })
         .to_string()
     }
 
     /// One dome hub page (`4` = VRAM (320,0), `5` = (320,256)) through
     /// 16-colour sub-palette `palette`, RGBA8. Empty when absent.
+    ///
+    /// Sheet `8` is the ringside still `palette` (`0` = extraction 1221,
+    /// `1` = 1222), 320x256, as the battle end's loader lays it into VRAM
+    /// at `(384, 0)`.
     pub fn play_mg_muscle_hub_sheet_rgba(&self, sheet: u32, palette: u32) -> Vec<u8> {
+        if sheet == STILL_SHEET {
+            return self
+                .scene_host
+                .as_ref()
+                .and_then(|h| {
+                    h.index
+                        .entry_bytes_extended(
+                            legaia_asset::ringside_still::PROT_INDEX_DEFAULT + palette.min(1),
+                        )
+                        .ok()
+                })
+                .and_then(|b| legaia_engine_ui::ringside_backdrop::still_sheet_rgba(&b))
+                .unwrap_or_default();
+        }
         self.minigame_art()
             .map(|a| a.muscle_hud_sheet_rgba(sheet, palette))
             .unwrap_or_default()
@@ -664,6 +831,12 @@ impl LegaiaRuntime {
 
     /// `[width, height]` of hub page `4` / `5`; empty when absent.
     pub fn play_mg_muscle_hub_sheet_dims(&self, sheet: u32) -> Vec<u32> {
+        if sheet == STILL_SHEET {
+            return vec![
+                legaia_asset::ringside_still::WIDTH as u32,
+                legaia_asset::ringside_still::HEIGHT as u32,
+            ];
+        }
         let Some((t0, t1)) = self.muscle_hub_tims() else {
             return Vec::new();
         };

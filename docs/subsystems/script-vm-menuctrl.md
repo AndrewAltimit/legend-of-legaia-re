@@ -14,7 +14,7 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers:
 | Outer nibble | Range | Theme |
 |---|---|---|
 | 0 | 0x00..0x0F | Party-leader change |
-| 1 | 0x10..0x1F | Complex sub-switch on whole byte (menu sub-dispatcher). `addiu s8,s8,0x7` on entry, then `op0 - 0x10 < 5` selects an arm through the table at `0x801CEEA0`; the `0x14` arm (`0x801E0E80`) reads a seventh payload byte and adds one more, so `4C 14` is the one 8-byte form. |
+| 1 | 0x10..0x1F | Five-entry sub-table (global writes, screen tint, and the [actor clone](#0x4c-nibble-1-sub-4---the-actor-clone)). `addiu s8,s8,0x7` on entry, then `op0 - 0x10 < 5` selects an arm through the table at `0x801CEEA0`; the `0x14` arm (`0x801E0E80`) reads a sixth payload byte and adds one more, so `4C 14` is the one 8-byte form. |
 | 2 | 0x20..0x2F | **Camera-octant / pad-rotation setter** - one arm, no sub-table. Full body: [nibble-2 camera-octant setter](#0x4c-nibble-2---the-camera-octant--pad-rotation-setter). |
 | 3 | 0x30..0x3F | Sub-3 cluster (the [ambient-particle master gate](#0x4c-nibble-0x300x3f---the-ambient-particle-master-gate), no-op cluster, player-resync chain, party-state-clear, etc.) |
 | 4 | 0x40..0x4F | Immediate-or-ramp cluster (write or ramp ctx slots / globals) |
@@ -22,7 +22,7 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers:
 | 6 | 0x60..0x6F | 6-word emitter (`func_0x80058490`) + 16-byte halt-acquire |
 | 7 | 0x70..0x7F | **Collision-grid rectangular wall paint** (handler `0x801e1c64`); writes the per-scene walkability grid at `_DAT_1f8003ec + 0x4000`. Full body: [nibble-7 wall paint](#0x4c-nibble-0x700x7f---collision-grid-rectangular-wall-paint). |
 | 8 | 0x80..0x8F | Large multi-purpose dispatcher (party-slot full heal, conditional jump on `+0x68`, actor model/anim set, actor-search jumps, …). Full body: [nibble-8 multi-purpose dispatcher](#0x4c-nibble-0x800x8f---large-multi-purpose-dispatcher). |
-| 9 | 0x90..0x9F | **Floor-height ladder.** Sub-`0xE` installs all sixteen rungs (`-words[i]` into `0x1F80035C + i*2`); sub-`0..2` sets one rung oscillating via `FUN_801DDE34`; sub-`0xF` retires every oscillator (`func_0x8003CF40(_DAT_8007C34C, &LAB_801DA930)` then halt at PC - a retire sweep, not a callback registration). See [the detail below](#nibble-9-is-the-floor-height-ladder-not-a-fade). |
+| 9 | 0x90..0x9F | **Floor-height ladder.** Sub-`0xE` installs all sixteen rungs (`-words[i]` into `0x1F80035C + i*2`); sub-`0..2` sets one rung oscillating via `FUN_801DDE34`; sub-`0xF` retires every oscillator (`func_0x8003CF40(_DAT_8007C34C, &LAB_801DA930)`, then PC += 2 - a retire sweep, not a callback registration, and it does not park). See [the detail below](#nibble-9-is-the-floor-height-ladder-not-a-fade). |
 | A | 0xA0..0xAF | Conditional jump on flag bit. Sub-0 reads `ctx.flags`, sub-1 reads `ctx.local_flags`, sub-2 reads the global story flag word. Bit SET → take absolute jump from operand[2..4]; bit CLEAR (or sub-3..=0xF) → skip 5 bytes. (The asm dispatches on sub-op first at 0x801e2568, so sub-3..=0xF skip both the per-bank check and the take-jump path.) |
 | B | 0xB0..0xBF | No valid sub-op: every one falls into retail's error printer (`jal 0x8001A068` at `0x801E3558`, arm `0x801E3550`). No shipped script carries any `4C Bx` - zero occurrences, clean **or** total, across the whole opcode census. |
 | C | 0xC0..0xCF | Small per-actor / per-scene writes (slot table, camera-zone query at a named tile, sound trigger, `field_74` XOR, [camera-focus override](#4c-cf-is-the-script-camera-focus-override)). **All 16 sub-ops are now ported.** Full body: [nibble-C small per-actor / per-scene writes](#0x4c-nibble-0xc00xcf---small-per-actor--per-scene-writes). |
@@ -148,13 +148,98 @@ These conditional deltas layer on top of the disc-streamed base grid (see [`fiel
 Large multi-purpose dispatcher (party-slot full heal, conditional jump on `+0x68`, …).
 - **Sub-2** (3-byte) is `[4C, 0x82, slot]` - **full HP/MP restore of one party slot**, the primitive every inn / rest / infirmary script is built on. Against the 0x414-stride record it writes `*(u16*)(rec+0x106) = *(u16*)(rec+0x104)` and `*(u16*)(rec+0x10A) = *(u16*)(rec+0x108)`, i.e. `hp_cur = hp_max; mp_cur = mp_max`. The slot is a literal operand, not "every active member". There is no inn opcode - the charge is a separate op-`0x4E` gate plus op-`0x3A` debit, which is why the price is per-scene script data; see [field-menu.md](field-menu.md#inn-stay-there-is-no-inn-screen). (The earlier "party-page inventory mirror" reading is superseded.)
 - **Sub-1** (round 18, 9-byte) sets actor model + animation frame: `[4C, 0x81, m0..m2, anim_lo, anim_hi, frames_lo, frames_hi]` decodes via [`load_u24_le`](script-vm.md#helper-functions) + `load_u16_le×2`; host applies the immediate-or-tween path based on its actor pool state.
-- **Sub-6** (round 18, 15-byte) is `[4C, 0x86, x..rz, actor_id]` - six 16-bit position+rotation values plus a 1-byte actor selector; host returns whether the actor was found, PC always += 15.
-- **Sub-7** (`func_0x8003CF40(_DAT_8007C34C, &LAB_801E5154)`) registers an actor-list callback then halts at PC via the dispatcher default.
+- **Sub-6** (15-byte) is `[4C, 0x86, w0..w5, actor_id]` - it **spawns the reflection controller**, not a transform write; see [below](#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown). PC always += 15 (the `addiu s8,s8,0xf` sits in the resolve's delay slot, so an unresolved actor advances too).
+- **Sub-7** (2-byte) is sub-6's **teardown**: `FUN_8003CF40(_DAT_8007C34C, 0x801E5154)` retires every reflection controller, then PC += 2. Not a registration and not a halt - see [below](#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown).
 - **Sub-4** (3-byte) is `[4C, 0x84, amplitude]` - **the screen-shake amplitude**. The whole arm is five instructions at `0x801E2134` (jump-table slot `0x801CEF58`): `addiu s8,s8,0x3` / `lbu v1,0x1(s6)` / `lui v0,0x8008` / `j 0x801e3624` / `_sw v1,-0x49d0(v0)`, i.e. `_DAT_8007B630 = operand` as a zero-extended word. That global is the only input to the LCG camera jitter `FUN_801D9D30` (`0` = no shake, `1..=0x15` widens the sample window) and this opcode is its only writer, which makes the field script the sole source of a camera shake. Port: [`FieldHost::op4c_n8_sub4_set_b630`]; engine sink `World::camera.shake_amplitude`.
 - **Sub-9** writes `_DAT_80073F00 = i16(operand[1..3])` and advances by 4 (the dump's "FUN_801E3620 dispatch" was Ghidra mis-rendering an internal `goto code_r0x801e3620` label; see the gotcha note below).
 - **Sub-B** (round 18, 5-byte) is a conditional jump: `[4C, 0x8B, type_byte, target_lo, target_hi]` jumps to absolute u16 if any actor of `type_byte` is active, else PC += 5.
 - **Sub-D** (round 18, 6-byte) is a tristate per-character actor-search: `[4C, 0x8D, char_idx, marker, target_lo, target_hi]` returns one of [`ActorSearchResult::EmptySlot`](../../crates/engine-vm/src/field.rs) (advance 6), `Found` (jump to u16 at +3..=4), or `NoMatch` (halt).
 - **Sub-5/E/F** (5-byte `[4C, op0, p0, p1, p2]`) share the standard halt-acquire idiom: on the predicate ([`FieldHost::field_halt_acquire_predicate`]: `saved_pc != 0` or the target is the player, and not already halted or the scene busy) it writes the target's `+0x94` payload pointer, clears `wait_accum`, sets the halt bit, then **advances the caller past the op** (`iVar24 = 5`, `overlay_0897_801de840.txt:6550` / `overlay_world_map_801de840.txt:7179`); on failure it halts the caller at PC (`LAB_801dee50`). Both operate on the resolved cross-context target - the cutscene timeline uses this to freeze its vignette actors, then pokes them beat by beat.
+
+##### `4C 86` / `4C 87` are the reflection controller's install and teardown
+
+The two sit at consecutive slots of the nibble-8 sub-table
+(`0x801CEF48`, indexed by `op0 & 0xF` under a `sltiu` bound of `0x10`; the
+`lui`/`addiu` pair that forms the base is at `0x801E1EAC`), and they are one
+feature rather than two unrelated writes.
+
+`4C 86`'s arm at `0x801E21E0` reads the **last** operand byte (`lbu a0,0xd(s6)`)
+as a cross-context actor id, resolves it through `FUN_8003C83C`, and returns
+early when it does not resolve - with the PC already advanced, because the
+`addiu s8,s8,0xf` sits in that call's delay slot. On a hit it decodes the six
+`s16` at operand `+1`, `+3`, `+5`, `+7`, `+9`, `+0xB` through `FUN_8003CE9C`
+and calls `FUN_801E573C(executing_ctx, resolved_actor, w0..w5)`.
+
+That spawner allocates from the descriptor at `0x801F2948` - whose `+0x08`
+handler word is `0x801E5154`, the reflection tick - and writes
+`+0x90 = executing ctx`, `+0x94 = resolved actor`, `+0x54 = 0` and the six
+halfwords into `+0x80 .. +0x8A`. So the six words are the **controller's**
+mirror line plus tracking rect, not a transform for the named actor.
+
+Which end is which is decided by the tick, not by the spawner's argument
+order: `FUN_801E5154` loads `+0x90` into `a3` and `+0x94` into `a2`, then
+reads `a2` (`lhu 0x14(a2)`, `lhu 0x5c(a2)`, and the tile test on its
+position) and writes `a3` (`sw 0x10(a3)`, `sh 0x14(a3)`, `sh 0x26(a3)`). So
+`+0x94` - the **named** actor - is the source, and `+0x90` - the executing
+script's own context - is the destination. A script that issues `4C 86`
+makes itself the mirror image of the actor it names, which is what its
+placement is: each of the ten sites sits in a talk record whose text is a
+single parenthesised beat, the answer a reflection gives when addressed.
+The image tracks only while the named actor stands inside the rect
+(`legaia_engine_vm::field_actor_reflect`; engine seat
+`World::spawn_reflection_controller`).
+
+All ten shipped operand blocks take the `(0, zz)` arm - `w0 = 0`, so no X
+mirror - and put the Z plane one or two tiles past the rect's own
+`max_tile_z`, so the image stands beyond the far wall rather than inside the
+room. `concnow`'s `p1[1]` is `w = (0, 0x37A0, 30, 90, 38, 110)` against
+`0xF8`, the player; its `p1[4]` and `p1[5]` name two further actors.
+
+`4C 87`'s arm at `0x801E2284` loads the same handler VA and the actor list
+`_DAT_8007C34C` and tail-jumps to the shared exit `0x801E2DC4`, which is
+`jal 0x8003CF40` with `addiu s8,s8,2` in its delay slot. `FUN_8003CF40`
+**retires** rather than registers - the same mislabel `4C 9F` carries for the
+floor-ladder oscillator - so the op stops every running reflection controller
+and advances two bytes.
+
+`4C 9F`'s arm at `0x801E2548` is the same five instructions against
+`0x801DA930` and jumps to that same exit, so it too advances two bytes
+unconditionally. Neither op parks: the `addiu s8,s8,2` is *in the call's
+delay slot*, which means it has already run before `FUN_8003CF40` is
+entered, and the shared tail returns the advanced cursor. Reading either as
+a halt-until-callback strands every carrier - fifteen scenes issue `4C 9F`,
+140 times in all.
+
+Four shipped scenes issue `4C 86` - `concnow`, `conc2`, `urudre2`, `opurud`,
+ten occurrences in all. No shipped scene issues `4C 87`; those scenes drop
+their controllers on the scene boundary instead.
+
+**Every one of the ten is installed at scene entry, not on a talk.** Each sits
+in its record's spawn prologue - after the leading `0x25` and before the
+record's first `0x21` park, where the `(Silence)`-style talk loop begins - so
+the controller is seated by the entry pass that seats the actor, and
+addressing the image only replays its line. A retail capture of a
+`conc` -> `conc2` crossing (exec breakpoints on `FUN_801E573C` and
+`FUN_801E5154`, `scripts/pcsx-redux/autorun_w6c_spoke_walk.lua` with
+`LEGAIA_MIRROR=1`) shows all three of `conc2`'s controllers spawned on one
+frame of the entry with no pad input, each returning into the arm
+(`ra` `0x801E227C`), each with the words `(0, 0x3700, 37, 98, 46, 110)`:
+`P1[1]` reflects the player, `P1[4]` / `P1[5]` reflect the actors placed at
+`P1[2]` / `P1[3]` (targets `0x2A` / `0x2B`, the scene's global record
+indices). With the player held by tile poke, every tick whose source stood
+inside the rect wrote the destination to `(x, y, 2*zz - z)` facing
+`-0x800 - a` (132 of 132 tick pairs) and every tick outside it left the image
+where it was (194 of 194). The rect test quantises with `(v + 0x40) >> 7`, half
+a tile the other way from the walk-on trigger compare - a player poked to the
+centre of tile 41 reads as tile 42 here.
+
+The two actor-sourced installs are also what exposed an engine defect: the
+field channel steppers move the channel vector out while one channel
+executes, so a cross-context id resolved from inside a running script found
+no channels at all, and the port seated only the player-sourced mirror of the
+three. `World::channel_view` resolves against the stepping pass's copy
+instead; `crates/engine-core/tests/field_reflection_conc2_capture_disc.rs`
+pins the three seats and the captured poses.
 
 #### 0x4C nibble 0xC0..0xCF - small per-actor / per-scene writes
 
@@ -245,7 +330,7 @@ Misc scene writes + emitter helpers. Ported sub-ops:
   superseded "syncs to the active camera" reading). Raw asm `0x801E3108..0x801E31B0` in
   `ghidra/scripts/funcs/overlay_0897_801de840.txt`; PC += 3 - advances in the `j 0x801E00BC`
   branch-delay slot on the player path and via the `0x801E00B8` +3 entry on the NPC path)
-- **4** (9-byte BBox collision query - each operand byte goes through [`tile_center`](script-vm.md#helper-functions); halts via `FUN_801E3614` when the actor is outside the bbox, otherwise PC += 9)
+- **4** (8-byte world-unit AABB branch `[4C E4 x0 z0 x1 z1 lo hi]`, `0x801E31C0..0x801E3288`: min corner `(b & 0x7F) * 0x80 + 0x20` (`+0x60` with the high bit) from `x0`/`z0`, max corner `+0x60` (`+0xA0`) from `x1`/`z1`, signed compares against the actor's `+0x14` / `+0x18`. Inside -> PC += 8; outside -> relative skip to `pc + 6 + LE16(lo, hi)` through the dispatcher's `0x801E3614` exit label. An earlier reading here used the `tile_center` formula for all four corners, a 9-byte length, and called `0x801E3614` a halt helper - it is an interior `addiu v0,v0,-2; j 0x801E3624; addu s8,s8,v0` label, the same skip the `0x4D` arm takes)
 - **5** (5-byte XP add - reads a 24-bit signed delta via [`load_u24_le`](script-vm.md#helper-functions) + `sign_extend_24`, then host clamps to `[0, 9999999]` and triggers party-stats refresh)
 - **6** (FUN_801D8280, 8-byte)
 - **7** (round 18, 7-byte camera animate: 24-bit LE target + 16-bit LE duration; host schedules `func_0x8003C5F0` tween or instant-write when duration is 0)
@@ -292,7 +377,7 @@ The 0x4C cluster is the longest-tail opcode in the field VM - most outer nibbles
 | Outer | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | 8   | 9   | A   | B   | C   | D   | E   | F   |
 |-------|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|
 | 0     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
-| 1     | ✓   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   |
+| 1     | ✓   | -   | ✓   | ✓   | ✓   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
 | 2     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 | 3     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 | 4     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
@@ -310,6 +395,8 @@ The 0x4C cluster is the longest-tail opcode in the field VM - most outer nibbles
 
 All 16x16 cells are now either fully ported (`✓`) or fall through to the dispatcher's default arm (`-`). The previously-`P` cells resolved as follows:
 
+- **Outer nibble 1 as a whole.** Its fifteen `P` cells were not fifteen unread arms: the entry bound is `sltiu v0,v1,5` at `0x801E0CA4`, so only `0x10`..`0x14` index the table at `0x801CEEA0` at all, and slot 1 of that table is the common exit `0x801E3624` - `0x11` and `0x15`..`0x1F` therefore advance seven bytes and do nothing, which is the `-` column, not a pending capture. The four real arms are `0x10` (`_DAT_8007B7B0`), `0x12` (screen tint), `0x13` (its sibling triple) and `0x14`, the [actor clone](#0x4c-nibble-1-sub-4---the-actor-clone).
+
 - **`n3 sub-4` / `sub-B` / `sub-C`**: the original at `0x801df208` (in `overlay_0897_801de840.txt`) jumps with delay slot `_addiu s8, s8, 0x2` to `LAB_801df09c switchD_801e00f4::default()` - a 2-byte advance with no side effect (the inline `_DAT_8007b5f0 = uVar31` write is a no-op because `uVar31` was read from the same slot). The Rust port matches: `next_pc = pc + header_size + 1`, no host hook fires.
 - **`n3 sub-D`**: the walk-region **attribute refresh** `FUN_800180EC`, hooked as [`FieldHost::region_attributes_refresh_at_player`]. It shares only the tile arithmetic with `sub-8`, which is a camera-zone query ([below](#0x4c-nibble-0x380x3e---the-camera-zone-arms)); routing both through one hook keyed on the sub-op byte hid that they call different routines.
 - **`n4 sub-5`**: 11-byte instruction `[4C, 0x45, b1, w94_lo, w94_hi, w96_lo, w96_hi, w98_lo, w98_hi, ticks_lo, ticks_hi]`. The dispatcher splits on `ticks == 0` between [`FieldHost::op4c_n4_sub5_write_immediate`] (direct write) and [`FieldHost::op4c_n4_sub5_ramp`] (STATE_RESUME ramp).
@@ -326,6 +413,90 @@ queues each one into `World::pending_actor_spawns`, and emits a `FieldEvent::Act
 Materializing the queued records into actor slots is a separate engine-side step. [`World::materialize_actor_spawns(start_slot)`] drains `pending_actor_spawns`, allocates the first inactive slot from `actors[start_slot..MAX_ACTORS]`, populates `Actor::spawn_record` with the raw bytecode bytes, and emits one `FieldEvent::ActorSpawned { slot, kind, variant, record }` per allocation. The retail allocator for this opcode (`overlay_world_map_801de840.txt:7080-7123`, case `8 sub-0`) allocates from pool `0x801f28a0` and writes `actor[+0x90]` (bytecode start), `actor[+0x94]` (parent back-pointer) and `actor[+0x54] = 0`; it does **not** write `actor[+0x3C]` (kind) or `actor[+0x3E]` (variant), so the event's `kind = 0` / `variant = 0` match retail - this is a faithful zero, not a placeholder.
 The `0x4C 0xD8` path is the one that decodes explicit `(kind, variant)` u16 immediates and routes through `FUN_801D77F4`; the `0x4C 0x80` path is bytecode-only by design. When the slot range is exhausted, a `FieldEvent::ActorSpawnFailed { record }` event surfaces the dropped request instead.
 
+#### 0x4C nibble 1 sub-4 - the actor clone
+
+`4C 14` is the field VM's after-image: it duplicates one actor's transform
+onto a fresh pool node that fades itself out and retires. It is the **only**
+eight-byte instruction in outer nibble 1 and the only allocation site on the
+disc for the static actor template at SCUS `0x80070644`.
+
+```text
+4C 14 <r> <g> <b> <rate_lo> <rate_hi> <src_id>
+```
+
+The arm at `0x801E0E80` reads `lbu a0,6(s6)` - a byte past the five every
+other arm of this nibble uses - resolves it through the cross-context walk
+`FUN_8003C83C`, and calls `FUN_801D835C(src, u24, s16)` with the two operands
+the nibble's own prologue and this arm decode: `FUN_8003CEB8(&operand[1])`
+(the 24-bit colour word) and `FUN_8003CE9C(&operand[4])` (the signed rate).
+Its exit is `j 0x801E3624` with `addiu s8,s8,1` in the **branch delay slot**,
+so the eighth byte is consumed on the unresolved-source path too.
+
+`FUN_801D835C` (48 instructions, field overlay file `0x9B44`) stores the
+source's `+0x64` into the descriptor's `+0x04` **low halfword** (`sh`, so the
+`0xFFFF` marker half survives), allocates through `FUN_80020DE0` against the
+generic effect-actor list, then copies `src[+0x14..+0x1B]` (position) and
+`src[+0x24..+0x2B]` (rotation) through `lwl`/`lwr` pairs, copies `src[+0x4C]`
+(the bound model word) and `src[+0x68]`, and writes `dst[+0x54] = rate`,
+`dst[+0x74] = colour`. A null allocation ends the routine with nothing else
+written.
+
+The clone's own per-frame body is the descriptor's `+0x08` word,
+`FUN_801D820C`: `+0x78 += (i16)+0x54 * DAT_1F800393` each frame, and at
+`0x1000` it pins `+0x78` to `0xFFF` and sets the retire bit `+0x10 |= 8`.
+So the rate is the clone's lifetime - `0x199` is about ten vsyncs - and
+`+0x74` is the modulation colour the sprite / widget family reads as packed
+RGB (`FUN_801F7A9C` draws from it, `FUN_801F8004` writes it; see
+[`move-vm.md`](move-vm.md)).
+
+Six shipped scenes issue the opcode - `vozz`, `retona`, `urudre3`, `kor5`,
+`nilboa`, `noaru` - always as a short burst, joined by the `WaitFrames`
+between the instructions. The census below is what the disc actually asks
+for.
+
+Port: `legaia_engine_core::field_actor_clone` (the plan kernel),
+`World::spawn_actor_clone` (the allocation and the id resolve), and
+`World::tick_handler_actors` (the clone's tick, through
+`ActorHandler::ClipFade`).
+
+##### What the disc asks for
+
+Ninety-four clean sites across those six scenes, every one eight bytes wide,
+walked off each scene's MAN carriers with the field-VM disassembler
+(`legaia-engine-core` test `field_actor_clone_burst_disc`).
+
+Three rates, five `(colour, rate)` pairs, and the rate is the clone's life:
+
+| colour word (`r`,`g`,`b`) | rate | vsyncs alive | where |
+|---|---|---|---|
+| `0x32,0x28,0x1E` / `0x37,0x2D,0x23` / `0x3C,0x32,0x28` | `0x0199` | 11 | `vozz` only - one word per ramp step |
+| `0x3C,0x3C,0x28` | `0x00B2` | 24 | every other scene's bursts |
+| `0x2A,0x2A,0x3F` | `0x0080` | 32 | `noaru` only |
+
+Nothing on the disc sets the word's top byte, so the `sw` at `0x801D83FC` is
+a 24-bit write in practice, and every shipped rate is positive - a clone
+always retires.
+
+**Depth is the cadence against the lifetime**, not a property of the opcode.
+`vozz`'s clones outlive their spacing by three frames, so its trail is two
+copies deep; every other scene's rate is less than half `vozz`'s and its
+trails run five or six deep. Replaying all ninety-four through the port's
+own pool seats all ninety-four, so none of those depths is a pool clamp.
+
+Two shorthands to retire. `vozz`'s first burst is **four** clones, not three:
+it issues the ramp's foot twice (`0x32,0x28,0x1E` at `+0x0A2E` and `+0x0A39`)
+before stepping, so "three, stepping the word" describes the ramp and not the
+burst. And only two of its five bursts run at eight frames - the other three
+run at six. The full shape of `vozz` P2[13] is one burst of four at eight
+frames, then three, six, three, eight, three, six and three, six.
+
+The **source id is per burst, not per scene**: `nilboa`'s P2 record switches
+from `0x25` to `0x23` partway through, so a reader (or a test fixture) that
+resolves one cross-context actor for a whole record silently loses every
+clone the rest of the record asks for - the arm's `beqz s5` skips the helper
+for an id nothing resolves, and the instruction still advances its eight
+bytes.
+
 #### What the `0x4C 0xD8` spawner builds
 
 `FUN_801D77F4` ([`functions/renderer.md`](../reference/functions/renderer.md#801d77f4)
@@ -338,7 +509,7 @@ is a mesh-morph actor. Its tail (`0x801D7848..0x801D79BC`, PROT 0897 file
 | Actor field | Filled from |
 |---|---|
 | `+0x4C` morph block | a **VDF** body: the VDF buffer at `0x8007B7DC`, indexed by operand 1 as `base + u32_at(base + 4 + idx*4)`, opening with its own `u32` record count |
-| `+0x48` TMD base | the resident-object table `0x8007C018`, indexed by operand 2 (the table `FUN_801D8280` walks) |
+| `+0x48` TMD base | the resident-object table `0x8007C018` at operand 2 **plus the scene-bank base** `*(u16*)0x8007B6F8` - see [below](#the-model-operand-is-a-scene-bank-index) |
 | `+0x90` rest pose | a **snapshot**, not an asset - see below |
 | `+0x3C` / `+0x3E` | the two `u16` immediates, verbatim |
 
@@ -356,6 +527,55 @@ actor-class meaning. `+0x56` (render mode), `+0x68` and `+0x6E` (live weight)
 are all zeroed, so a freshly spawned morph actor starts at rest. Because the
 rest pose is snapshotted at spawn, nothing on the disc carries one - which is
 why a search for a rest-pose asset finds nothing.
+
+#### The model operand is a scene-bank index
+
+The operand is not a raw pool slot. The `0x4C` arm reads it and adds the
+scene-bank base before the call - `lhu s0,-0x4908(v1)` (`0x8007B6F8`) then
+`addu s0,s0,v0` at `0x801E2DE0..0x801E2DE8` - and `FUN_801D77F4` reads
+`DAT_8007C018[slot]` with no further adjustment (`0x801D7854..0x801D7878`).
+With the base at `5` (the five player meshes ahead of the scene's own, see
+`engine-core::model_bank`), operand `n` names the scene's `n`th registered
+model.
+
+The disc agrees structurally. Every shipped morph block is one record
+`[group][first_vertex][delta_count]`, and on all seventeen sites
+`first_vertex + delta_count` equals the vertex count of object `0` of scene
+model `n` exactly - `balden`'s operands `99` / `100` / `109` / `110` included,
+through `balden2`'s count-`5` MAN-less table that the strict bundle detector
+does not accept. Read as raw pool slots against the battle effect-model
+library the engine keeps resident, `balden`'s operands resolve nothing and
+`jagaroom` / `garmel` bind effect models whose vertex counts disagree on seven
+of their eight sites; that reading is what left two carriers unseated.
+
+#### Three record pitches over one morph block
+
+Retail walks the `+0x4C` block three times, and the three loops disagree about
+where record `n + 1` begins:
+
+| Loop | Stride | Where |
+|---|---|---|
+| the spawner's size sum | `0xC` - the record header | `0x801D78D0..0x801D7900` |
+| the spawner's rest-pose copy | `n_vert * 8` | `0x801D792C..0x801D799C` |
+| the apply pass `FUN_8002174C`, both halves | `n_vert * 0x60` | `0x800217B4`, `0x80021860` |
+
+None of the three can be inferred from the others, and only a block of a
+**single** record makes them agree, because then no stride is ever consumed.
+That is every block the disc ships: all seventeen sites below resolve a VDF
+block whose leading count word is `1`, each naming TMD object `0`
+(`morph_weight_disc_blocks_are_single_record` in
+`crates/engine-core/tests/field_actor_spawn_disc_e2e.rs`). So the pitch
+disagreement is real in the instruction stream and unobservable in the shipped
+game; the port reproduces each loop at its own stride and pins the census, so a
+block with two records reads as new territory rather than as covered ground.
+
+The engine seats the whole chain on all five carriers:
+`World::spawn_morph_weight_actor` resolves the model through
+`World::field_pool_tmd` (the scene bank `SceneHost::enter_field_scene`
+installs from its `SceneModelBank`), builds the
+snapshot and stamps the `+0x0C` handler, `World::tick_handler_actors` steps the
+`+0x3C`/`+0x3E`/`+0x40`/`+0x6E` envelope once per game tick, and both hosts
+read the blended mesh back through `World::morph_weight_posed_tmd`.
 
 #### Where `0x4C 0xD8` occurs on the disc
 

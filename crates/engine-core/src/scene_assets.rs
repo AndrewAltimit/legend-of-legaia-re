@@ -3,9 +3,12 @@
 //!
 //! Bridges the gap between the on-disc per-CDNAME-block layout and the
 //! runtime asset chain documented in [`docs/subsystems/asset-loader.md`]:
-//! `FUN_8001F7C0` and `FUN_800255B8` build paths under
-//! `DATA\FIELD\<scene>\` and `h:\PROT\FIELD\<scene>\` to fetch six file
-//! types per scene (TIM list, TMDs, MES, MOVE, ANM, VDF). Descriptors
+//! `FUN_8001F7C0` opens the scene bundle, and `FUN_800255B8(kind)` fetches
+//! one per-scene file by kind: it strcat's `h:\PROT\FIELD\` + the scene
+//! name at `0x80084548` + a kind suffix (`0xA` -> `\tim.dat`, `0xF` ->
+//! `\move.mdt`, `0x14` -> the `DATA\FIELD\` form), loads it through
+//! `FUN_8003E6BC` and returns the size rounded up to a sector - or, when
+//! `_DAT_8007B8C2` is set, loads by PROT index through `FUN_8003EB98`. Descriptors
 //! 1..=6 inside the scene-asset table carry runtime-buffer offsets that
 //! don't address bytes in the on-disc PROT entry, so this module produces
 //! the typed view by sweeping every entry in the scene's CDNAME block
@@ -14,7 +17,9 @@
 //! Engines build a [`SceneAssets`] once per scene transition and query it
 //! through the [`crate::scene::SceneHost`] for the duration of the scene.
 //!
-//! PORT: FUN_8001F7C0, FUN_800255B8
+//! PORT: FUN_8001F7C0
+//! REF: FUN_800255B8 (the per-kind file fetch, replaced here by the
+//!      CDNAME-block sweep - see its `port-catalog-ignore.toml` row)
 //! REF: FUN_80026B4C
 
 use legaia_asset::categorize::Class;

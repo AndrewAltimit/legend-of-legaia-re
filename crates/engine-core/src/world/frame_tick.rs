@@ -571,8 +571,9 @@ impl World {
     /// performs (retail `FUN_8003C83C`); an unmatched id passes through raw.
     // REF: FUN_8003C83C (id resolve)
     fn talk_participant_slot(&self, id: u8) -> u8 {
-        crate::field_channels::resolve_target(&self.field_vm.channels, id)
-            .map(|ci| self.field_vm.channels[ci].placement_index as u8)
+        let view = self.channel_view();
+        crate::field_channels::resolve_target(view, id)
+            .map(|ci| view[ci].placement_index as u8)
             .unwrap_or(id)
     }
 
@@ -719,9 +720,15 @@ impl World {
         std::mem::take(&mut self.audio.pending_sound_release)
     }
 
-    /// Run the one-shot sound detach (`FUN_8002689C`). Returns `true` only on
+    /// Run the one-shot sound setup `FUN_8002689C`. Returns `true` only on
     /// the first call - retail's `gp+0x804` latch gates every later one out,
     /// which is why the mode-INIT chain can call it freely.
+    ///
+    /// Nothing is detached: behind the latch retail makes two volume calls,
+    /// the cmd-6 SPU command `FUN_80065440(0x32, 0x32)` and the master
+    /// volume `SsSetMVol` `FUN_80062AA0(0x7F, 0x7F)`. This port models the
+    /// latch only; the two volume writes are left to the audio host's own
+    /// defaults. (The function keeps the name an earlier reading gave it.)
     ///
     /// PORT: FUN_8002689c
     pub fn detach_sound(&mut self) -> bool {
@@ -1075,7 +1082,9 @@ impl World {
         // `frame_step` of them; [`Self::step_clut_fx`] drains the bank
         // against the host's VRAM. Only accumulates while effects are live
         // (capped so an undrained host can't wind up a backlog).
-        if self.clock.display_frame_step == 1 && !self.ambient.clut_fx.is_empty() {
+        if self.clock.display_frame_step == 1
+            && !(self.ambient.clut_fx.is_empty() && self.ambient.clut_blend_fx.is_empty())
+        {
             self.ambient.clut_vsync_accum += 1;
             if self.ambient.clut_vsync_accum >= self.clock.frame_step.max(1) {
                 self.ambient.clut_vsync_accum = 0;
@@ -1119,20 +1128,17 @@ impl World {
         {
             self.presentation.fade = None;
         }
-        // Step the two scripted scene-tint channels (op 0x34 sub-0 effect
-        // tint + op 0x4C 0x12 global screen tint). A ramp that lands on a
-        // non-neutral target HOLDS there (a screen faded to black stays
-        // black until a new op replaces it); one that lands on the neutral
-        // identity is dropped so the render path returns to untouched.
-        for tint in [
-            &mut self.presentation.effect_tint,
-            &mut self.presentation.tint,
-        ] {
-            if let Some(t) = tint {
-                t.step();
-                if t.is_identity() {
-                    *tint = None;
-                }
+        // Step the scripted global multiply tint (op `0x4C 0x12`). A ramp
+        // that lands on a non-neutral target HOLDS there (a screen faded to
+        // black stays black until a new op replaces it); one that lands on
+        // the neutral identity is dropped so the render path returns to
+        // untouched. The op-`0x34` sub-0 screen effect is **not** a second
+        // channel here - it is a pool colour tween emitting
+        // `FUN_80024EE4` pushes, stepped by `tick_handler_actors`.
+        if let Some(t) = self.presentation.tint.as_mut() {
+            t.step();
+            if t.is_identity() {
+                self.presentation.tint = None;
             }
         }
         // Consume a pending FMV transition the field VM signalled last frame
@@ -1179,10 +1185,11 @@ impl World {
             self.clock.actor_vsync_accum = 0;
             self.tick_actor_physics();
             // The `jalr node[+0x0C]` arm of the same walk: run the ported
-            // per-frame handler kernels (today the colour tween) and drop the
-            // actors that raised the kill bit - both this pass's tweens and
-            // any marked by the scene-transition sweep or a `FUN_8003CF40`
-            // retire since the last tick.
+            // per-frame handler kernels (the colour tween, the field VM
+            // clone's clip-fraction fade, the `4C 86` reflection pairs) and
+            // drop the actors that raised the kill bit - this pass's own
+            // expiries plus any marked by the scene-transition sweep or a
+            // `FUN_8003CF40` retire since the last tick.
             // REF: FUN_8002519C
             self.tick_handler_actors(cadence);
             self.tick_actors();
@@ -1362,6 +1369,12 @@ impl World {
                 // idle loop for that whole window and un-freeze it on confirm.
                 // REF: FUN_8002519C
                 self.tick_battle_animations();
+                // The Arts announcement banner's slide clock. Retail steps it
+                // from the battle DRAW tick (`FUN_800480D8`); the engine steps
+                // it here so every host advances it, and reads the quads back
+                // at draw time (`World::battle_arts_banner_quads`).
+                // REF: FUN_800480D8
+                self.tick_arts_banner(cadence);
                 // In-battle dialogue box (the tutorial text the engage script
                 // opened across the transition): the box owns the frame -
                 // retail parks the battle under it (the camera holds the
@@ -1821,8 +1834,10 @@ impl World {
     /// op-49 consumers) when a board is already up or the header is
     /// malformed.
     ///
-    /// PORT: overlay_0897_801e0b1c (board alloc + fill; cells only - the
-    /// per-cell tile-actor spawns are a renderer concern)
+    /// PORT: FUN_801ef2b0 (the board alloc + fill arm at `0x801EF334`, an
+    /// interior label of the walk SM; cells only - the per-cell tile-actor
+    /// spawns are a renderer concern. `0x801E0B1C` is that arm printed
+    /// `0xE818` low, not a function.)
     /// REF: overlay_0897_801de840 (op 0x49 arm, `_DAT_8007b450 = pbVar47`)
     pub fn try_install_tile_board(&mut self, instr: &[u8]) -> bool {
         if self.board.armed || self.board.grid.is_some() {
@@ -2352,6 +2367,40 @@ impl World {
                 SPLASH_SPREAD,
             );
             self.minigames.fx.spawn_splash(&parts);
+            // The hook cue rides the same edge. It is `_DAT_8007B6DA` and it
+            // lived on `LineActorSim::tick`'s arm phase, which only the play
+            // window drives - so the strike was audible on one surface and
+            // silent on the two that share this tick. The cue queue is
+            // drained by every host, which is the point of putting it here:
+            // the splash and its sound come from one producer.
+            self.minigames
+                .pending_sfx
+                .push(u16::from(crate::fishing_actors::HOOK_CUE));
+        }
+        // The catch edge raises the celebration cue plus whichever of the four
+        // score-gated burst cues the catch unlocked (`FUN_801d4948`). Same
+        // argument as the hook: the tiers were resolved inside the native-only
+        // line actor, so only that host heard them.
+        if entry_phase == FishingPhase::Fighting && now == Some(FishingPhase::Done) {
+            let landed = self
+                .minigames
+                .fishing
+                .as_ref()
+                .and_then(|s| s.last_outcome())
+                .and_then(|o| match o {
+                    crate::fishing::FightOutcome::Landed { points } => Some(points),
+                    _ => None,
+                });
+            if let Some(points) = landed {
+                self.minigames
+                    .pending_sfx
+                    .push(u16::from(crate::fishing_actors::CELEBRATE_CUE));
+                for burst in crate::fishing_actors::celebration_bursts(points) {
+                    if let Some(cue) = burst.cue {
+                        self.minigames.pending_sfx.push(u16::from(cue));
+                    }
+                }
+            }
         }
     }
 
@@ -2720,7 +2769,33 @@ impl World {
         // Give the venue its own music back when the arena's battle theme
         // displaced it (no-op when it did not).
         self.restore_minigame_bgm();
-        self.minigames.muscle_dome.take()
+        let session = self.minigames.muscle_dome.take();
+        // The battle end writes the fighter's HP back into the lead record
+        // (`+0x106`), and the background read that follows streams one of the
+        // two ringside stills into VRAM, picked off that record: live HP
+        // `+0x106` against the base maximum `+0x11C`, not the effective
+        // `+0x104` (`FUN_801F6B24`, `0x801F6B8C..0x801F6BAC`).
+        if let Some(s) = session.as_ref() {
+            let fought = s.hp(0).clamp(0, i32::from(u16::MAX)) as u16;
+            let (hp_cur, hp_max) = match self.party.roster.members.first_mut() {
+                Some(rec) => {
+                    let mut hms = rec.hp_mp_sp();
+                    // A hand-built record with no maximum has nothing to
+                    // write back into; the pick reads the fight's HP.
+                    if hms.hp_max > 0 {
+                        hms.hp_cur = fought.min(hms.hp_max);
+                        rec.set_hp_mp_sp(hms);
+                    } else {
+                        hms.hp_cur = fought;
+                    }
+                    (hms.hp_cur, rec.record_stats().hp_max)
+                }
+                None => (fought, 0),
+            };
+            self.minigames.muscle_ringside_still =
+                Some(crate::muscle_ringside::still_prot_index(hp_cur, hp_max));
+        }
+        session
     }
 
     /// Report the finished leg to the open contest and step the between-leg

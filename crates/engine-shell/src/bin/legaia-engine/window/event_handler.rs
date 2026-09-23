@@ -102,11 +102,15 @@ impl ApplicationHandler for PlayWindowApp {
                     if dx != 0.0 && !self.boot_ui.is_active() {
                         let rad = dx * camera::debug_orbit::YAW_RAD_PER_PX;
                         if self.field_debug_camera {
-                            if world.mode == SceneMode::Field {
-                                self.session.camera.manual_orbit =
-                                    (self.session.camera.manual_orbit + rad)
-                                        .rem_euclid(std::f32::consts::TAU);
-                            }
+                            // The debug orbit is not a second yaw: this
+                            // window's vantage is `fixed diagonal +
+                            // manual_orbit`, so the drag lands on the very
+                            // field the follow camera reads and leaving `F3`
+                            // needs no hand-off. Shared with the browser play
+                            // page as `Camera::debug_orbit_by`, which is
+                            // un-gated by the cutscene (a dev vantage) but
+                            // still field-only.
+                            self.session.camera.debug_orbit_by(world, rad);
                         } else {
                             self.session.camera.orbit_by(world, rad);
                         }

@@ -523,11 +523,16 @@ pub const BITE_NUDGE_MASKS: [u32; 3] = [0x8000, 0x2000, 0x00C0];
 /// Count this frame's pad nudges into the bite countdown.
 ///
 /// PORT: FUN_801d26cc (pad nudge)
-// NOT WIRED: it counts raw held bits out of `_DAT_8007B874`, and the engine
-// never sees that word - [`crate::fishing::BandCheck::tick`] takes an already
-// abstracted `edge_bonus: i32` from the host instead, which is the same
-// quantity arrived at from the browser / native input layers. Wiring means
-// deciding the pad mask is the engine's representation, not adding a call.
+// NOT WIRED: the pad word is not the blocker - the engine does see
+// `_DAT_8007B874`, as `World::input.retail_pad().pressed` (newly pressed
+// bits, not held ones). The blocker is who runs the bite band: only the
+// standalone minigames page ticks a `PondSession`, through
+// `fishing_pond_tick(reel_mask, cast_edge, edge_bonus)`, and its script
+// counts `edge_bonus` itself, one per key event - left, right, each reel
+// press and the cast press - where this kernel counts left, right and the
+// two reel bits as one mask, and never the cast. The play hosts' `World::tick_fishing` runs no bite band
+// at all. Wiring means that export taking the pressed mask through this
+// kernel, which changes the page's count to retail's.
 pub fn bite_pad_nudge(pad: u32) -> i32 {
     BITE_NUDGE_MASKS.iter().filter(|&&m| pad & m != 0).count() as i32
 }
@@ -623,9 +628,10 @@ pub const CELEBRATION_BURSTS: [CelebrationBurst; 4] = [
 ///
 /// PORT: FUN_801d4948 (celebration gate)
 // Wired: [`LineActorSim::tick`]'s celebrate arm resolves the unlocked tiers
-// at the first stage frame, and the play window spawns them into its effect
-// pool (offset from the wander actor's catch position) and fires each `cue`
-// through the SFX scheduler (`window/minigames.rs`).
+// at the first stage frame; `World::tick_fishing` queues each `cue` on the
+// world's SFX channel at the session's catch edge (so all three hosts hear
+// it), and the play window spawns the bursts into its effect pool (offset
+// from the wander actor's catch position) in `window/minigames.rs`.
 pub fn celebration_bursts(score: i32) -> impl Iterator<Item = &'static CelebrationBurst> {
     CELEBRATION_BURSTS.iter().filter(move |b| score > b.above)
 }

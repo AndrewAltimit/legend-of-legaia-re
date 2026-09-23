@@ -195,15 +195,22 @@ impl DrawEnvInit {
     ///
     /// PORT: FUN_80020038
     ///
-    /// NOT WIRED: the prerequisite is a DRAWENV pair for the stores to land
-    /// in. The engine has no `0x8007BF30 + 0x74 * index` record - `engine-render`
-    /// owns a software PSX VRAM and sets its own draw state, so there is no
-    /// libgpu environment struct to initialise and no frame-end driver
-    /// swapping a pair. [`DRAW_ENV_INIT`] is read at three sites, all inside
-    /// this file's `#[cfg(test)]` block. What the port does carry forward from
-    /// the routine is the *negative* finding on its doc: the `0` here is the
-    /// pre-first-frame dither state and not retail's steady value, which is
-    /// [`DITHER_BOOT_VALUE`].
+    /// REPLACED-BY: `engine-render`'s own draw state over its software PSX
+    /// VRAM, which is what stands in for retail's libgpu DRAWENV pair at
+    /// `0x8007BF30 + 0x74 * index`.
+    ///
+    /// The routine's job is to seed one member of that pair before the
+    /// frame-end driver swaps it, and the port has neither half: the renderer
+    /// carries texture page, dither and background-clear as its own pipeline
+    /// state and writes them per draw, so there is no libgpu environment
+    /// struct for these three stores to land in and no swap to seed them
+    /// ahead of. A call site here would fill a record nothing reads.
+    ///
+    /// The kernel is kept for the *negative* finding on its doc, which is a
+    /// fidelity datum rather than a call: the `0` here is the pre-first-frame
+    /// dither state and not retail's steady value, which is
+    /// [`DITHER_BOOT_VALUE`]. [`DRAW_ENV_INIT`] is read at three sites, all
+    /// inside this file's `#[cfg(test)]` block.
     pub const fn stores(self) -> [(u8, u16); 3] {
         [
             (Self::STORE_OFFSETS[0], self.tpage),

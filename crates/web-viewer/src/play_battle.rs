@@ -451,6 +451,7 @@ impl LegaiaRuntime {
             level_ups: &banner.level_ups,
             drops: &banner.drops,
             leader: &leader,
+            subject: banner.subject,
         };
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
         ui::battle_spoils_windows(&view)
@@ -487,6 +488,7 @@ impl LegaiaRuntime {
                 level_ups: &banner.level_ups,
                 drops: &banner.drops,
                 leader: &leader,
+                subject: banner.subject,
             };
             let windows = ui::battle_spoils_windows(&view);
             let (origin, scale) =
@@ -506,6 +508,14 @@ impl LegaiaRuntime {
     /// Sibling of the native window's `arts_input_chrome_sprite_draws` -
     /// same shared builders, same baked atlas, same stage transform, so
     /// the two hosts cannot drift.
+    ///
+    /// An in-battle dialogue box owns the screen while it is up, and the
+    /// native window drops the whole entry chrome under one. The suppression
+    /// lives **inside this builder** rather than at the call site because it
+    /// was at the call site on one host only: the plain-text `arts_menu` list
+    /// below carried the gate and this retail-model chrome did not, so a
+    /// browser fight drew the command buffer, the AP gauge and the chip row
+    /// straight through the narration box.
     pub(crate) fn arts_input_stage_draws(
         &self,
         font: &legaia_font::Font,
@@ -519,6 +529,9 @@ impl LegaiaRuntime {
         let Some(bw) = self.scene_host.as_ref().map(|h| &h.world) else {
             return empty;
         };
+        if bw.dialogue_owns_input() {
+            return empty;
+        }
         let Some(view) = bw.arts_input_view() else {
             return empty;
         };
@@ -607,6 +620,7 @@ impl LegaiaRuntime {
         let plaque = world.and_then(battle_active_actor);
         let target_plaque = world.and_then(bh::battle_target_plaque);
         let move_name = world.and_then(bh::battle_move_name);
+        let message_bar = world.and_then(bh::battle_message_bar);
         ui::battle_hud_draws_for(
             font,
             &ui::BattleHudFrame {
@@ -646,6 +660,7 @@ impl LegaiaRuntime {
                 begin_tab: world.is_some_and(bh::battle_begin_tab_visible),
                 move_name: move_name.as_deref(),
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
+                message_bar: message_bar.as_deref(),
                 ap_plate_value: world.and_then(bh::battle_ring_ap_plate_value),
                 diag: ui::diag_hud_enabled(),
             },
@@ -870,7 +885,7 @@ impl LegaiaRuntime {
         // open, so it takes priority over the command menu. While an
         // in-battle dialogue box owns the frame (the tutorial text), the
         // menus are hidden - retail shows no command chrome under it.
-        let dialogue_up = bw.dialog.current.is_some() || bw.dialog.inline.is_some();
+        let dialogue_up = bw.dialogue_owns_input();
         if dialogue_up {
             // Dialogue box up: no menu chrome.
         } else if let Some(arts) = &bw.battle.arts_menu {
@@ -1935,6 +1950,17 @@ impl LegaiaRuntime {
         // `N HIT` / `TOTAL` counter cluster - off the resident effect atlas,
         // through the same `battle_numerals` builder the native window emits.
         prims.extend(self.battle_value_readout_prims());
+        // The Arts announcement banner (`<word> ARTS!!`) off the same page,
+        // through the same `battle_numerals` builder the native window emits
+        // it with. Engine state end to end - this host only appends.
+        prims.extend(legaia_engine_ui::battle_numerals::arts_banner_prims(
+            &self
+                .scene_host
+                .as_ref()
+                .map(|h| h.world.battle_arts_banner_quads())
+                .unwrap_or_default(),
+            legaia_engine_ui::battle_numerals::VALUE_READOUT_OT,
+        ));
         // The dance count-in banner's retail sprite (`crate::play_dance_art`),
         // off the dance hall's own HUD page while a dance owns the frame.
         prims.extend(self.dance_countin_prims());
@@ -1947,6 +1973,15 @@ impl LegaiaRuntime {
             .and_then(|h| h.world.screen_fade_draw())
         {
             prims.push(legaia_engine_ui::screen_prim::fade_prim(rgb, abr, ot));
+        }
+        // The field overlay's screen-effect washes (op `0x34` sub-0 ->
+        // `FUN_80024EE4`): the scene-entry fade-from-black and the door
+        // prologue's fade-to-black, through the same shared emitter the
+        // native window composites them with.
+        if let Some(host) = self.scene_host.as_ref() {
+            prims.extend(legaia_engine_ui::screen_prim::screen_effect_push_prims(
+                &host.world.screen_tint_push_args(),
+            ));
         }
         // The field overlay's cinematic wipe (`0x43 0C` -> `FUN_801DD784`).
         // Same shared emitter as the native window's screen-prim pass, so
@@ -2126,21 +2161,17 @@ impl LegaiaRuntime {
     /// bit the selector reads), and the scene's PROT base (`DAT_80084540`).
     fn arm_battle_intro(&self, formation_id: u16, total: i32) -> BattleIntro {
         use legaia_engine_vm::battle_intro_particles::IntroEnv;
-        use legaia_engine_vm::battle_intro_styles::{IntroStyleInputs, select_intro_style};
+        use legaia_engine_vm::battle_intro_styles::select_intro_style;
 
         let host = self.scene_host.as_ref().expect("caller checked");
-        let def = host.world.tables.formation_table.formation(formation_id);
-        let slot0 = def
-            .and_then(|d| d.slots.first())
-            .map(|s| s.monster_id as u8)
-            .unwrap_or(formation_id as u8);
-        let battle_flags = def.map(|d| d.per_battle_flags()).unwrap_or(0);
-        let scene_index = host.scene.as_ref().map(|s| s.start).unwrap_or(0);
-        let choice = select_intro_style(&IntroStyleInputs {
-            battle_flags,
-            formation_slot0: slot0,
-            scene_index,
-        });
+        // One engine-side resolver for all three inputs
+        // (`SceneHost::battle_intro_style_inputs`). This host used to resolve
+        // them inline and went straight from the formation-table lookup to
+        // the bare row index for `formation_slot0`, with no live-monster-table
+        // leg - so an in-battle re-arm, where the row is not the authority,
+        // fed the selector a row index and drew the default style.
+        let inputs = host.battle_intro_style_inputs(formation_id);
+        let choice = select_intro_style(&inputs);
         // The curtain's descriptor table + the tile seeder's corner table,
         // both decoded off the PROT 0979 intro overlay at its load base; the
         // disc-free fallbacks are the same ones the native window uses.
@@ -2224,6 +2255,36 @@ impl LegaiaRuntime {
         // they sample the intermediate the moment the page re-uploads.
         let _ = intro.refresh_captured_page();
         self.battle_intro = Some(intro);
+    }
+
+    /// Which VRAM animator the scene rebuild installed:
+    /// `0` none, `1` the slot-5 CLUT **walker**, `2` the legacy **ocean-head**
+    /// fallback, `3` both.
+    ///
+    /// A diagnostic, and specifically a *negative* one: the ocean fallback is
+    /// the arm for a kingdom bundle whose slot-5 walker table does not parse,
+    /// and every retail kingdom ships one - so a ladder that enters a kingdom
+    /// scene and reads `1` here is measuring that no shipped content reaches
+    /// `FieldSceneAnim::ocean_only` at all.
+    pub fn play_field_anim_kind(&self) -> u32 {
+        self.field_vram_anim
+            .as_ref()
+            .map(|a| a.kind_code())
+            .unwrap_or(0)
+    }
+
+    /// How many field screen-effect washes the world published this frame
+    /// (`World::screen_tint_push_args`), i.e. how many of this frame's
+    /// screen primitives are op-`0x34`-sub-0 colour-tween pushes.
+    ///
+    /// The page-side twin of `play_fog_stats`: a diagnostic read of the
+    /// producer, so a ladder can tell "the pass carries N prims" apart from
+    /// "the pass carries the wash".
+    pub fn play_screen_effect_push_count(&self) -> u32 {
+        self.scene_host
+            .as_ref()
+            .map(|h| h.world.screen_tint_push_args().len() as u32)
+            .unwrap_or(0)
     }
 
     /// How many screen-space PSX primitives this frame carries. `0` is the

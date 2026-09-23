@@ -632,6 +632,75 @@ fn run_boss_stager_requires_a_resident_scene_man() {
     );
 }
 
+/// Minimal MAN carrying `n` partition-1 placement records, each
+/// `[N=1][2 locals][model, anim, tile_x, tile_z]` then `3E FF <row>` and a
+/// `0x21` halt - i.e. every record reads as a boss-stager site. Mirrors the
+/// fixture shape in [`super::script_teleport`], with the scripted-battle op
+/// in the body.
+fn man_with_stager_records(rows: &[u8]) -> Vec<u8> {
+    let mut man = vec![0u8; 0x2B + rows.len() * 3];
+    man[0x24] = rows.len() as u8; // N1 = placement count (N0 = N2 = 0)
+    let mut bodies = Vec::new();
+    for (i, row) in rows.iter().enumerate() {
+        let off = bodies.len() as u32;
+        let p = 0x2B + i * 3;
+        man[p..p + 3].copy_from_slice(&off.to_le_bytes()[..3]);
+        bodies.push(0x01); // N = 1 local pair
+        bodies.extend_from_slice(&[0xAA, 0xBB]); // the local pair
+        bodies.extend_from_slice(&[0x00, 0x00, 0x03, 0x04]); // header: tile (3,4)
+        bodies.extend_from_slice(&[0x3E, 0xFF, *row]); // scripted-battle entry
+        bodies.push(0x21); // halt
+    }
+    let sec_off = bodies.len() as u32;
+    man[0x28..0x2B].copy_from_slice(&sec_off.to_le_bytes()[..3]);
+    man.extend_from_slice(&bodies);
+    man.extend_from_slice(&[0u8; 18]); // six zero-length sections
+    man
+}
+
+/// A placement the carrier install already owns is **not** armed as a boss
+/// stager. Retail's Rim Elm sparring partner (`town01` P1[10], row 4) is a
+/// talk-first scripted-encounter carrier whose `3E FF 04` sits behind its
+/// dialogue and its four-option picker; arming it as a stager gives one
+/// placement two dispatch owners, and the stager wins inside
+/// `World::trigger_field_interact` - the box never opens and the fight never
+/// starts. It is the only placement in the retail corpus where the two
+/// models collide.
+#[test]
+fn a_scripted_encounter_carrier_slot_is_not_armed_as_a_boss_stager() {
+    use crate::monster_catalog::{FormationDef, FormationSlot};
+
+    let man = man_with_stager_records(&[4, 4]);
+    let man_file = legaia_asset::man_section::parse(&man).expect("fixture parses");
+
+    let mut world = World::new();
+    // Row 4 must resolve for either placement to arm at all.
+    world
+        .tables
+        .formation_table
+        .insert(FormationDef::new(4, vec![FormationSlot::new(0x4F)]));
+    // Placement 0 is a scripted-encounter carrier (the sparring-partner
+    // shape); placement 1 is a plain stager.
+    world.carriers.slots.insert(0, 0);
+
+    world.install_boss_stagers_from_man(&man_file, &man);
+
+    assert!(
+        !world.props.boss_stagers.contains_key(&0),
+        "the carrier-owned placement keeps its dialogue dispatch"
+    );
+    assert!(
+        world.props.boss_stagers.contains_key(&1),
+        "a placement no carrier owns still arms as a stager"
+    );
+    // The stager install must not move the carrier's interact-probe anchor
+    // to a station point either.
+    assert!(
+        !world.npcs.positions.contains_key(&0),
+        "the carrier placement's probe position is left to the carrier install"
+    );
+}
+
 #[test]
 fn boss_battle_entry_writes_no_flags() {
     use crate::monster_catalog::{FormationDef, FormationSlot};

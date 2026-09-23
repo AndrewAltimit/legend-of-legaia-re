@@ -225,23 +225,20 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(3)
         }
 
-        // 0x0E - midpoint position calc + write to actor world.
-        // Reads param_2 + 4/6/8 (a) + 10/12/14 (off) + 16/18/20 (b). The
-        // midpoint helper consumes `actor[+0x50]` (the blend amount set by
-        // ext ops 0x0C/0x0D). Original returns `iVar16 = 0xb0000` → size 11
-        // (opcode + sub-op + 9 operand u16s).
+        // 0x0E - quadratic Bezier position + write to actor world
+        // (`0x801D38FC..0x801D39D0`). Reads op words 2..4 (`a` = P0),
+        // 5..7 (`off`) and 8..10 (`b` = P2); the control point is
+        // `off + (a + b) / 2`, and `FUN_801E45BC(C, P0, P2, t = actor[+0x50])`
+        // evaluates the curve into C, which is copied to `+0x14..`. `+0x50`
+        // is the curve parameter set by ext ops 0x0C/0x0D. Original returns
+        // `iVar16 = 0xb0000` → size 11 (opcode + sub-op + 9 operand u16s).
         0x0E => {
             let a = [op_w(2) as i16, op_w(3) as i16, op_w(4) as i16];
             let off = [op_w(5) as i16, op_w(6) as i16, op_w(7) as i16];
             let b = [op_w(8) as i16, op_w(9) as i16, op_w(10) as i16];
             let mode = state.field_50;
             host.ext_midpoint_set(state, a, b, off, mode);
-            // Pre-stage the world coords the way the original does (the
-            // helper may overwrite them depending on `mode`, but a host that
-            // doesn't model the helper still gets the average write-through).
-            state.world_x = off[0].wrapping_add(((a[0] as i32 + b[0] as i32) >> 1) as i16);
-            state.world_y = off[1].wrapping_add(((a[1] as i32 + b[1] as i32) >> 1) as i16);
-            state.world_z = off[2].wrapping_add(((a[2] as i32 + b[2] as i32) >> 1) as i16);
+            write_bezier_world(state, a, b, off);
             MoveExtResult::with_size(11)
         }
 
@@ -286,13 +283,13 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(2)
         }
 
-        // 0x12 - slot-indexed midpoint variant of 0x0E. Reads
-        // `actor[+0x86] & 0xFF` as a slot index, loads `slot.x/y/z` from the
-        // 16-slot scratch table at `&DAT_801F3498`, then computes
-        //   actor.world.{x,y,z} = op[2/3/4] + (slot.{x,y,z} + op[5/6/7]) / 2
-        // before passing through the same midpoint helper as 0x0E. The
-        // operand layout is `(op[2..4]=offset, op[5..7]=b)` - `a` comes from
-        // the slot, not from the bytecode. Original returns `iVar16 =
+        // 0x12 - slot-indexed variant of 0x0E (`0x801D3A6C..0x801D3B50`).
+        // Reads `actor[+0x86] & 0xFF` as a slot index and loads P0 from the
+        // 16-slot scratch table at `&DAT_801F3498`; the control point is
+        //   op[2/3/4] + (slot.{x,y,z} + op[5/6/7]) / 2
+        // and the same `FUN_801E45BC` curve runs from the slot to
+        // `op[5..7]` (P2). The operand layout is `(op[2..4]=offset,
+        // op[5..7]=b)` - `a` comes from the slot, not from the bytecode. Original returns `iVar16 =
         // 0x80000` → size 8 (opcode + sub-op + 6 operand u16s).
         0x12 => {
             let slot = state.field_86 & 0xFF;
@@ -307,9 +304,7 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             let off = [op_w(2) as i16, op_w(3) as i16, op_w(4) as i16];
             let mode = state.field_50;
             host.ext_midpoint_set(state, a, b, off, mode);
-            state.world_x = off[0].wrapping_add(((a[0] as i32 + b[0] as i32) >> 1) as i16);
-            state.world_y = off[1].wrapping_add(((a[1] as i32 + b[1] as i32) >> 1) as i16);
-            state.world_z = off[2].wrapping_add(((a[2] as i32 + b[2] as i32) >> 1) as i16);
+            write_bezier_world(state, a, b, off);
             MoveExtResult::with_size(8)
         }
 
@@ -923,4 +918,35 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
         // catch-all is the faithful mirror of that guarded return.
         _ => MoveExtResult::default_arm(),
     }
+}
+
+/// Ext sub-ops `0x0E` / `0x12`: evaluate retail's quadratic Bezier
+/// `FUN_801E45BC(C, P0, P2, t)` with `C = off + (a + b) / 2`, `P0 = a`,
+/// `P2 = b` and `t = actor[+0x50]` (read `lhu`, not clamped), and write the
+/// result to the actor's world X/Y/Z, as the arm's `swl`/`swr` copy of the
+/// in/out triple does.
+///
+/// An earlier port wrote the control point itself to the world coords, so
+/// the actor sat at the midpoint for every `t`; that is the curve's value
+/// only at `t = 0x800` when `off` is zero.
+///
+/// The copy retail makes is eight bytes wide, so it also stores an
+/// uninitialised stack halfword into `+0x1A`; nothing here models that.
+///
+/// PORT: FUN_801E45BC (the evaluator, applied per axis; the
+/// `0x1000`-scaled basis split into integer and fractional halves floors to
+/// the same value as the widened divide - see
+/// `crate::field_ledge_hop_arc::bezier_at`, which clamps `t` for its own
+/// caller where this one does not)
+fn write_bezier_world(state: &mut ActorState, a: [i16; 3], b: [i16; 3], off: [i16; 3]) {
+    let t = state.field_50 as i64;
+    let u = 0x1000 - t;
+    let axis = |i: usize| -> i16 {
+        let c = off[i].wrapping_add(((a[i] as i32 + b[i] as i32) >> 1) as i16);
+        let acc = u * u * a[i] as i64 + 2 * u * t * c as i64 + t * t * b[i] as i64;
+        acc.div_euclid(0x100_0000) as i16
+    };
+    state.world_x = axis(0);
+    state.world_y = axis(1);
+    state.world_z = axis(2);
 }

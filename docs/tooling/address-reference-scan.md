@@ -23,7 +23,8 @@ carries no copy of its target; that is the shape behind Ghidra's fake
 sweeps the disc's code images for **all five** forms at once - literal word,
 `lui`+`addiu`/`ori` materialisation, `jal`, `j`, and PC-relative branch - so a
 "nothing references this" result is a statement about the bytes rather than
-about one tool's blind spot.
+about one tool's blind spot. The materialisation arm follows the `lui` register
+the way [the shared walk](#how-both-scans-follow-a-register) does.
 
 ```bash
 # One address, every form, across SCUS + the based overlay images.
@@ -165,12 +166,14 @@ against a known answer before trusting a "nothing found":
   not cover the images where callers actually live.
 - **Split materialisation.** The pair scan wants one `lui` and one
   `addiu`/`ori` with the exact low half, within a few instructions. An address
-  assembled in more than two steps, or reached as `table_base + index`, is not
-  a pair and will not be found - which is why a per-record negative over a
-  table needs the table *base* scanned too before it means anything. The
+  assembled in more than two steps is not a pair and will not be found. The
   register walk in the sibling sweep [below](#the-gp-relative-and-luiload-forms)
-  covers the multi-step case; `table_base + index` is still out of reach for
-  both, because the index is a runtime value.
+  covers the multi-step case. `table_base + index` is covered to the extent
+  the bytes allow: the walk carries the `lui` register through the indexing
+  `addu` and reports the array's **base** (see
+  [the indexed form](#the-indexed-form-lui-addu-lw-lo)), never the element a
+  runtime index selects - so a per-record negative over a table still needs
+  the table *base* scanned before it means anything.
 - **`$gp`, `lui`+load, and a materialised base plus a displacement.** Three
   forms this tool does not decode at all - a `disp(gp)` access, a `lui`/load
   pair whose low half rides the load instead of an `addiu`, and an access
@@ -249,10 +252,67 @@ base-independent by construction. The cost of that is coincidence: a raw byte
 scan over scene data will produce hits with `code=0` around them. Read the
 disassembly at a hit before calling it a reference.
 
-The register walk has one soft edge of its own: it is linear, so it follows a
-`lui` straight through a branch it should not have taken. A hit is therefore a
-site to read, not a proof, and the `code` count plus the disassembly settle it
-the same way they do for the five-form scan.
+## How both scans follow a register
+
+Every form above except `disp(gp)` starts at a `lui` and follows the register
+it loads until something completes the address. What "follow" means is the
+whole of the scans' precision, so it lives once, in
+[`scripts/ghidra-analysis/mips_walk.py`](../../scripts/ghidra-analysis/mips_walk.py),
+and the byte account's [`lui_forms`](../../crates/asset/src/byte_account.rs)
+is the same walk in Rust:
+
+| Step | Treatment |
+|---|---|
+| any write to the register | drops it - a stale high half is never paired with a later low one |
+| `addu rB, rA, $zero` / `or rB, rA, $zero` | a copy: `rB` carries what `rA` held |
+| `addu rB, rA, rX`, runtime `rX` | an index: `rB` is the high half plus `rX`, and a later `lo(rB)` completes the array's base |
+| `addiu` / `ori` on a carried register | the register now holds more of the address (the multi-step and base-plus-displacement forms) |
+| conditional branch | forks: fall-through and target both carry the state out of the delay slot |
+| `j` / `b` | continues at the target only - the next word is another arm's |
+| `jal` / `jalr` | the delay slot still sees every register (retail completes pairs there); past it only callee-saved registers survive |
+| `jr ra` | ends the path |
+| a `lui` in a delay slot | the walk starts where that jump goes |
+
+Every path is bounded by the scan's window and each word is walked once per
+`lui`. A hit is still a site to read, not a proof: the walk does not know which
+path a register really arrived by at a join, and the `code` count plus the
+disassembly settle it the same way they do for the five-form scan.
+
+### The walk used to be lax
+
+Before the shared walk, both scans stopped only when the register was re-loaded
+by *another `lui`*. Any other write - `lw v0,x(v0)`, `ori a3,a3,0x314`, a
+call's return value - left the old high half paired with whatever low half came
+next. Counted over SCUS plus every mapped overlay, the lax walk formed 23,200
+`lui`+memory pairs inside the pair window; the strict walk keeps 17,476 of them,
+drops 6,015 and adds 291 it had missed (branch targets and copies). A sample of
+eight dropped pairs read in the disassembly was eight false pairs, each a
+register already rewritten: `lui v1,0x8008; lw v1,-0x42dc(v1); lbu v1,0(v1)`
+had been reported as a reference to `0x80080000`.
+
+None of this moved a recorded negative. Re-running both scans over every
+address the ignore list's reachability rows and `docs/` cite as unreferenced
+(89 addresses) changes no verdict: every address with hits before has hits
+after, and no zero became non-zero. What moved is the hit lists behind the
+positives - the scratchpad byte `0x1F800393` gains 143 sites and loses none.
+
+### The indexed form (`lui`, `addu`, `lw lo`)
+
+`lui at,0x801d; addu at,at,a3; lw v1,0xd9c(at)` (PROT 0970 at `0x801D055C`)
+reads element `a3` of the array at `0x801D0D9C` without any instruction holding
+`0x801D0D9C`. The pair scan cannot see it (the second instruction is an `addu`),
+and a register walk that drops the register at its first redefinition stops
+one instruction short. The shared walk carries the index and the gp script
+labels the hit `[indexed by a3: array base]`; the five-form tool prints the
+`addiu` variant as `addiu+index`.
+
+The form is rarer than a lax count suggests. Over SCUS and the mapped overlays
+it completes 512 accesses: 273 in SCUS, 223 in PROT 0896 (the Japanese-build
+image), 9 in 0971, and single digits elsewhere. The field (0897) and menu
+(0899) overlays have **none** - their compiler forms the base with `lui`+`addiu`
+first and indexes the formed register, which the pair scans always saw. A lax
+walk reports dozens of "indexed" sites in both, every one a register rewritten
+between the `lui` and the `addu`.
 
 Both silent-negative shapes on this page have now produced a corrected doc.
 `gp+0x678` is the small-data one. The base-plus-displacement one is the camera
