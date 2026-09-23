@@ -1398,3 +1398,7 @@ key = "doc-citation:docs/reference/functions/menus.md:801e9b3c:801f3340"
 reason = """
 0x801F3340 is where the window programs this interpreter walks begin; callers pass them as a0, so the base is formed at the call sites, not in the interpreter's own bytes.
 """
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/field_warp_tile.rs:801da51c"
+reason = "CORRECT. clear_landed_sentinel ports the tail of FUN_801DA51C (PROT 0897): lw v1,-0x4950(a0) / li v0,-0x3e8 / bne / sw zero,-0x4950(a0) at 0x801DA7C8..0x801DA7D8, the -1000 clear of _DAT_8007B6B0, read from the disassembly; it shares the warp timer global with its module siblings, which the lui+lw form hides from the data-address signal."
