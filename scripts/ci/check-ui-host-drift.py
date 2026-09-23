@@ -738,13 +738,29 @@ SIM_PAIRS: list[dict[str, object]] = [
         "grid shares its plane with the env pack's authored floor art (koin6: "
         "both at y=0 with different tessellations), so every render site must "
         "sink it by the shared GROUND_SINK or that host's floors z-fight as "
-        "wedge streaks from steep cameras while every other host is clean",
+        "wedge streaks from steep cameras while every other host is clean. "
+        "Both build it through `field_ground::render_positions`, which is "
+        "where the sink lives",
         "sites": {
             "native": (NATIVE_GEOMETRY, "heightfield_to_vram_mesh"),
             "web": (WEB_PLAY, "field_ground_positions"),
         },
         "mode": "symbols_all",
-        "symbols": ["GROUND_SINK"],
+        "symbols": ["render_positions"],
+    },
+    {
+        "what": "ground-heightfield winding, native vs play page - the grid's "
+        "builder winds opposite to the scene TMDs, and the cutscene camera's "
+        "NCLIP pass (mode 2) discards exactly that facing, so a host that "
+        "uploads the builder's order loses the whole floor under a scripted "
+        "shot (the page did, in the opdeene prologue). Both reverse it through "
+        "`field_ground::render_indices`",
+        "sites": {
+            "native": (NATIVE_GEOMETRY, "heightfield_to_vram_mesh"),
+            "web": (WEB_PLAY, "field_ground_indices"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["render_indices"],
     },
     {
         "what": "ground-heightfield sink, play page vs field-scene viewer - "
@@ -755,7 +771,7 @@ SIM_PAIRS: list[dict[str, object]] = [
             "web_viewer": (WEB_FIELD_SCENE, "field_scene_ground_positions"),
         },
         "mode": "symbols_all",
-        "symbols": ["GROUND_SINK"],
+        "symbols": ["render_positions"],
     },
     {
         "what": "Muscle Dome damage - the arena's per-exchange damage must come "

@@ -730,15 +730,13 @@ impl LegaiaViewer {
         let Some(hf) = self.field_scene.as_ref().and_then(|f| f.ground.as_ref()) else {
             return Vec::new();
         };
-        // Ground sinks below the env pack's authored floor art (see
-        // `coplanar_draws::GROUND_SINK`).
-        let mut out = Vec::with_capacity(hf.positions.len() * 3);
-        for p in &hf.positions {
-            out.push(p[0]);
-            out.push(p[1] + legaia_engine_core::coplanar_draws::GROUND_SINK);
-            out.push(p[2]);
-        }
-        out
+        // Ground sinks below the env pack's authored floor art, through the
+        // same `field_ground` render kernel the play page and the native
+        // window build their ground from.
+        legaia_engine_core::field_ground::render_positions(hf)
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     pub fn field_scene_ground_uvs(&self) -> Vec<u8> {
