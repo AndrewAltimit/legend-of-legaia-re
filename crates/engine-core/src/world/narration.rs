@@ -1970,7 +1970,15 @@ impl World {
     /// NOP-break slice [`Self::step_field_channels`] runs per frame - a spawn
     /// prologue is written `test / MoveTo / 21`-idle, so its repositioning
     /// lands in the first slice), *unconditionally* - this is load-time
-    /// behaviour, not the opt-in free-roam liveliness. Position writes are
+    /// behaviour, not the opt-in free-roam liveliness - but only for a record
+    /// whose first opcode is `0x24`/`0x25`, the install loop's own entry gate.
+    /// Everything that slice runs is the record's **spawn** section (it stops
+    /// at the section's raw `0x21`), so a story-flag write there is a write
+    /// every MAN-loading entry performs - `kor5` `P1[2]`'s `SET 0x619` at
+    /// `+0x1A` is one. A same-scene reload that does not re-load the MAN
+    /// (`FUN_801D6704` passes `a0 = loader-mask & 4` to `FUN_8003AEB0`, which
+    /// skips the partition-1 spawn loop at `0x8003B8A0` when it is zero) runs
+    /// none of it. Position writes are
     /// surfaced for every repositioned slot, and a slot whose scripted
     /// position parks it or leaves its decoded patrol route's locality drops
     /// that route (the route was derived by a flag-blind linear walk; the
@@ -2036,6 +2044,19 @@ impl World {
             // (Autonomous frame pacing uses the `0x21` NOP break instead of
             // yields, so suspension never races normal idling.)
             if channels[i].ctx.is_halted() {
+                continue;
+            }
+            // The load-frame slice is gated on the record's FIRST opcode:
+            // `FUN_8003A1E4` enters its run loop only when the byte at the
+            // freshly seated `+0x9E` is `0x24` or `0x25` (`addiu v0,v1,-0x24;
+            // sltiu v0,v0,0x2` at `0x8003A480`), so a placement opening on
+            // anything else executes nothing inside the load frame.
+            if entry_prerun
+                && !matches!(
+                    man.get(channels[i].record_offset + channels[i].pc),
+                    Some(0x24 | 0x25)
+                )
+            {
                 continue;
             }
             let mut budget = FIELD_CHANNEL_STEP_BUDGET;

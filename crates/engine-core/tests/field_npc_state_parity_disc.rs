@@ -280,16 +280,20 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
     KnownDivergence {
         label: "kor5_post_436_organic",
         key: "flag:1561",
-        class: "a-reported",
-        note: "retail's kor5 entry does not write 0x619: a byte poll + SET/CLEAR exec-bps \
-               across the chain from kor5_post_43a_checkpoint (14000 vsyncs, two Gaza \
-               battles, two kor5 reloads) log only P2[4]'s CLEAR at record +0x16 and \
-               no SET. The walk-on beats bracket it (P2[3] clears at +0x10 and sets at \
-               +0x14CF, P2[4] clears at +0x16, P2[8] sets at +0x14), and the only \
-               unconditional SET in partition 1 is P1[2]+0x1A, the first op of a monk's \
-               TALK body at its pc0. The engine's cold entry setting it therefore runs \
-               an interaction body retail runs only on talk (most likely P1[2]) - an \
-               engine divergence, not capture context",
+        class: "b",
+        note: "capture context, not an engine defect: 0x619's only unconditional SET is \
+               P1[2]+0x1A, which sits in that record's SPAWN section (0x25 at pc0, the \
+               SET, a CamCfg, the raw 0x21 terminator at +0x1F - the interaction resumes \
+               at +0x20). FUN_8003A1E4 runs that section at every MAN-loading entry \
+               (first-opcode gate 0x24/0x25 at 0x8003A480 passes), so retail's fresh entry \
+               sets it too - both kor5 states captured before the chain clears it \
+               (kor5_field_card_boot, kor5_post_43a_checkpoint) hold it set. This state \
+               was captured after P2[4]'s CLEAR (+0x16) and a post-battle same-scene \
+               reload, and that reload re-spawns no partition-1 record: FUN_801D6704 \
+               passes a0 = loader mask & 4 (MAN loaded) to FUN_8003AEB0, which skips the \
+               spawn loop at 0x8003B8A0 when it is zero - the capture's zero SETs over two \
+               reloads. A cold entry against the post-CLEAR bank re-runs the spawn \
+               section, exactly as retail's own fresh entry would",
     },
 ];
 

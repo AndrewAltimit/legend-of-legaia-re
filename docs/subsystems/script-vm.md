@@ -209,6 +209,18 @@ cold or supplied flags): `man_field_scripts::placement_spawn_relocation`,
 applied by `npc_catalog`; roster pinned against a live fresh-game capture's
 actor list (`_DAT_8007C354`).
 
+The partition-1 spawn loop itself runs only when the scene load actually
+loaded a MAN. The field-scene initializer (`FUN_801D6704` in PROT 0897) passes
+`a0 = loader mask & 4` to `FUN_8003AEB0` (`0x801D6D98`; bit `4` is the MAN
+dispatch's return bit, [`asset-type.md`](../formats/asset-type.md)), and
+`FUN_8003AEB0` skips the `FUN_8003A1E4` loop at `0x8003B8A0` when it is zero,
+while the scene system script (`FUN_8003AB2C`, `0x8003BAD8`) and the object
+binds (`FUN_8003A55C`) run either way. So a spawn section's story-flag write
+lands on every MAN-loading entry and on no same-scene reload that keeps the
+MAN resident. `kor5`'s `P1[2]` `SET 0x619` shows both halves in captures: set
+at the card-boot entry, then cleared by `P2[4]` and never re-set across two
+post-battle reloads.
+
 Three consequences worth stating plainly, because they retire the intuition
 that long cutscenes need catching up:
 
