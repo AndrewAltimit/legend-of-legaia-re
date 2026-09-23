@@ -608,3 +608,49 @@ fn the_save_row_is_greyed_and_buzzes_in_a_field_scene() {
         "the buzzed confirm left the root list exactly as it was"
     );
 }
+
+/// The title's Continue opens the save-select through the pause menu's Load
+/// row; backing out of it must return to the title, not to a pause root list
+/// the title never showed. The native window runs Continue as a standalone
+/// save-select whose cancel lands on the title; the page marks the
+/// title-opened menu so the sub-screen's exit closes it.
+#[test]
+fn a_backed_out_title_continue_closes_the_menu_instead_of_landing_on_the_root() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    rt.insert_card(0, card_with_save(3, "Vahn", 1234), "card A".into())
+        .expect("insert card into port 1");
+    assert!(rt.boot_title_has_save_data(), "the card makes Continue live");
+    rt.boot_title_start();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+    }
+    rt.boot_title_step(0x0008); // Start: PressStart -> MainMenu, cursor on Continue
+    let mut outcome = String::new();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+        outcome = rt.boot_title_step(CROSS);
+        if !outcome.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(outcome, "continue", "Cross on the Continue row hands off");
+    assert!(rt.play_menu_is_open(), "the save-select is up");
+    assert!(rt.play_menu_sub_is_open(), "on the Load sub-screen, not the root");
+    // Circle backs out of the port pick; the title-opened menu closes with it.
+    for _ in 0..8 {
+        if !rt.play_menu_is_open() {
+            break;
+        }
+        rt.play_menu_input(0);
+        rt.play_menu_input(CIRCLE);
+        assert!(
+            !rt.play_menu_is_open() || rt.play_menu_sub_is_open(),
+            "a backed-out Continue must never show the pause root list"
+        );
+    }
+    assert!(!rt.play_menu_is_open(), "the menu closed back to the title");
+    assert_eq!(rt.play_menu_take_load_scene(), "", "nothing was loaded");
+}

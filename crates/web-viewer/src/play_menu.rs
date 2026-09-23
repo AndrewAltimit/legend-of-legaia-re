@@ -230,12 +230,17 @@ pub struct PlayMenu {
     /// are *not* in the table yet, and an unbound key has no bit. The native
     /// window latches the same thing in its `pending_key_name`.
     pending_key: Option<String>,
-    /// Opened by the boot title's Options row, not by Start: the
+    /// Opened by the boot title's Continue or Options row, not by Start: the
     /// sub-screen's exit closes the whole menu, so the title comes back
     /// instead of a root picker the title never showed. The native window
-    /// keeps the same flag (`menu_from_title`). Continue -> Load does not set
-    /// it: a card Load parks its scene label on this struct for the page to
-    /// collect, and closing here would drop it.
+    /// keeps the same flag (`menu_from_title`) for Options and runs Continue
+    /// as a standalone save-select, which backs out to the title too.
+    ///
+    /// A card Load that succeeded parks its scene label on this struct for
+    /// the page to collect; the exit then leaves the menu open so the label
+    /// survives until `play_menu_take_load_scene`, and the page closes the
+    /// menu itself once it has it. Continue used to skip the flag for that
+    /// reason alone, which put a backed-out Continue on the pause root.
     from_title: bool,
 }
 
@@ -954,7 +959,9 @@ impl LegaiaRuntime {
                     // closes on this same tick.
                     let close = if let Some(m) = self.play_menu.as_mut() {
                         let _ = m.session.resume(m.from_title);
-                        m.from_title
+                        // A parked Load label must outlive this tick: the
+                        // page collects it and closes the menu itself.
+                        m.from_title && m.pending_load_scene.is_none()
                     } else {
                         false
                     };

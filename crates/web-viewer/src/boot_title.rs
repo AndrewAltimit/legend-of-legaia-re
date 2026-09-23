@@ -337,6 +337,11 @@ impl LegaiaRuntime {
                     // / `play_menu_draws_json` until the menu closes.
                     TitleOutcome::Continue => {
                         if self.play_menu_open_row("Load") {
+                            // Backing out of the save-select returns to the
+                            // title card, not to a pause root the title never
+                            // showed - the native window's standalone
+                            // save-select does the same.
+                            self.play_menu_mark_from_title();
                             self.boot_title_backdrop = parked;
                             "continue".to_string()
                         } else {

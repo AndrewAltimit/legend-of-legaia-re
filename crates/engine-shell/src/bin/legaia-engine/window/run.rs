@@ -494,6 +494,14 @@ pub(super) fn cmd_play_window_with_record(
     // `begin_new_game` resets the bank - dropping them there would make the
     // two flags silently exclusive.
     seed_debug_story_flags(&mut session, &debug_seeds);
+    // Which entry a scene takes is the scene's own property, decided by the
+    // one engine predicate every host asks (`is_world_map_scene`) - the
+    // browser play page's `enter_field` and the in-world door transition both
+    // route an overworld label through the world-map entry by name. Without
+    // it `--scene map01` entered the overworld as a plain field scene here
+    // unless `--world-map` was also passed. The flag still forces the
+    // world-map entry for any other label.
+    let world_map = world_map || legaia_engine_core::scene::is_world_map_scene(scene);
     if world_map {
         // Load the scene's resources, route its region-keyed encounter table
         // onto the overworld, install the player, and enter world-map mode
