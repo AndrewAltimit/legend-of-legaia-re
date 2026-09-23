@@ -861,6 +861,36 @@ impl LegaiaMinigames {
         }
     }
 
+    /// The round chrome's draws this frame (`BakaChrome` - the intro title
+    /// card, the ROUND banner and the READY / FIGHT countdown), the same
+    /// runner the native window and the play page draw from:
+    ///
+    /// ```json
+    /// [ { "w": 3, "x": 160, "y": 100, "b": 128, "s": 4096, "g": null }, ... ]
+    /// ```
+    ///
+    /// `w` is the HUD widget id, `x`/`y` the quad centre, `b` the brightness
+    /// (`0x80` = the descriptor's own RGB), `s` the 20.12 size scale and `g`
+    /// the glyph-strip cell a digit draw pages widget 5 to (`null` for a
+    /// plain widget). `[]` outside a duel.
+    pub fn baka_chrome_json(&self) -> String {
+        let Some(f) = self.baka.as_ref() else {
+            return "[]".to_string();
+        };
+        let rows: Vec<serde_json::Value> = f
+            .chrome_frame()
+            .draws
+            .iter()
+            .map(|d| {
+                serde_json::json!({
+                    "w": d.widget, "x": d.x, "y": d.y,
+                    "b": d.brightness, "s": d.size, "g": d.glyph,
+                })
+            })
+            .collect();
+        serde_json::Value::Array(rows).to_string()
+    }
+
     /// Commit the visitor's attack this exchange: `1`/`2`/`3` are the three
     /// rock-paper-scissors throws, `4` the special. Returns `false` when the
     /// fighter can't act yet (cooldown, or a choice is already pending).

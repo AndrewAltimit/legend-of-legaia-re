@@ -519,53 +519,42 @@ impl LegaiaRuntime {
             .as_ref()
     }
 
-    /// Entry: reproduce the scene host's opponent pick (`1 + frame % (n-1)`
-    /// at the drain tick, which is this tick), then cross-check it against
-    /// the fight's prize - the roster row the rules engine actually holds -
-    /// and fall back to the row whose prize matches when the frame-keyed
-    /// guess disagrees.
+    /// Entry: the opponent is whoever the fight seated - the cabinet's
+    /// first rung, read straight off the rules engine rather than
+    /// reconstructed from the entry frame.
     pub(crate) fn enter_baka_ui(&mut self) {
-        use legaia_asset::static_overlay;
         self.minigame_ui.baka = BakaUi::default();
-        let Some(host) = self.scene_host.as_ref() else {
-            return;
-        };
-        let frame = host.world.frame as u32;
-        let prize = self.baka_session().map(|f| f.gold_reward());
-        let roster = static_overlay::overlay_map()
-            .by_prot_index(legaia_asset::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32)
-            .and_then(|rec| {
-                let raw = host.index.entry_bytes_extended(rec.prot_index).ok()?;
-                let loaded = static_overlay::as_loaded(&raw, rec).ok()?;
-                legaia_asset::baka_opponents::parse(&loaded)
-            });
-        let Some(roster) = roster else {
-            return;
-        };
-        let guess = 1 + (frame as usize % roster.len().saturating_sub(1).max(1));
-        let opponent = match prize {
-            Some(p) if roster.get(guess).is_some_and(|o| o.gold_reward == p) => guess,
-            Some(p) => roster
-                .iter()
-                .position(|o| o.index != 0 && o.gold_reward == p)
-                .unwrap_or(guess),
-            None => guess,
-        };
-        self.minigame_ui.baka.opponent = opponent;
+        if let Some(f) = self.baka_session() {
+            self.minigame_ui.baka.opponent = f.opponent_roster();
+        }
     }
 
     /// Per-tick inside the duel: drain the rules kernel's SFX cues (the
     /// exchange hit, `BAKA_CUE_HIT`) into the page's scheduler - the native
     /// window's `drain_baka_sfx_cues`.
     pub(crate) fn tick_baka_ui(&mut self) {
-        let cues: Vec<u8> = self
+        // The cabinet's NEXT GAME seats the next rung inside the same visit:
+        // follow it, and bump the scene generation so the page rebuilds the
+        // opponent's mesh and duel VRAM.
+        if let Some(roster) = self.baka_session().map(|f| f.opponent_roster())
+            && roster != self.minigame_ui.baka.opponent
+        {
+            self.minigame_ui.baka.opponent = roster;
+            self.minigame_ui.generation = self.minigame_ui.generation.wrapping_add(1);
+        }
+        let (cues, xa): (Vec<u8>, _) = self
             .scene_host
             .as_mut()
             .and_then(|h| h.world.minigames.baka_fighter.as_mut())
-            .map(|f| f.take_cues())
+            .map(|f| (f.take_cues(), f.chrome_frame().xa))
             .unwrap_or_default();
         for id in cues {
             self.minigame_sfx(id as u16);
+        }
+        // The round chrome's announcer line (`FUN_8003D53C`), the native
+        // window's `tick_baka_chrome` twin.
+        if let Some(xa) = xa {
+            self.play_xa_clip(u32::from(xa.clip), u32::from(xa.chan), u32::from(xa.dur));
         }
     }
 
@@ -583,11 +572,11 @@ impl LegaiaRuntime {
             f.round() + 1
         );
         let status = match f.phase() {
-            MatchPhase::MatchOver(0) => format!(
-                "YOU WIN the match! +{} coins  (Cross = leave)",
-                f.gold_reward()
-            ),
-            MatchPhase::MatchOver(_) => "you lose the match  (Cross = leave)".to_string(),
+            MatchPhase::MatchOver(0) if f.cabinet().choice_sheet().is_some() => {
+                "NEXT GAME / PAY OUT: Left/Right, Cross confirms".to_string()
+            }
+            MatchPhase::MatchOver(0) => format!("YOU WIN the match! +{} coins", f.gold_reward()),
+            MatchPhase::MatchOver(_) => "you lose the match - GAME OVER".to_string(),
             MatchPhase::RoundOver(0) => "round won!".to_string(),
             MatchPhase::RoundOver(_) => "round lost".to_string(),
             MatchPhase::Fighting => match f.last_exchange() {
@@ -623,6 +612,38 @@ impl LegaiaRuntime {
         out.extend(
             legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for(font, &placed, DIM),
         );
+        // The round chrome (`BakaChrome`: intro card, ROUND banner,
+        // countdown) and the "NEXT GAME / PAY OUT" sheet, through the label
+        // kernels the native window draws with.
+        use legaia_engine_core::{baka_cabinet as bcab, baka_fighter_chrome as bc};
+        out.extend(
+            legaia_engine_ui::ui_baka_strips::baka_widget_label_draws_for(
+                font,
+                &bc::chrome_labels(&f.chrome_frame().draws),
+                WHITE,
+            ),
+        );
+        if let Some(cells) = f.cabinet().choice_sheet() {
+            out.extend(
+                legaia_engine_ui::ui_baka_strips::baka_widget_label_draws_for(
+                    font,
+                    &bcab::choice_sheet_labels(&cells),
+                    WHITE,
+                ),
+            );
+            let pot = self
+                .scene_host
+                .as_ref()
+                .map(|h| h.world.minigames.winnings)
+                .unwrap_or(0);
+            out.extend(
+                legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for(
+                    font,
+                    &bcab::choice_pot_placements(pot),
+                    WHITE,
+                ),
+            );
+        }
         out
     }
 }

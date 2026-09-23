@@ -1746,7 +1746,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }
     const st = JSON.parse(api.baka_state_json());
     if (bakaView && bakaView.ok && !$('baka-duel').hidden) {
-      bakaView.frame(st.live ? st : null, bakaMeta);
+      /* The engine's round chrome rides along with the stage meta. */
+      let chrome = [];
+      try {
+        if (typeof api.baka_chrome_json === 'function') chrome = JSON.parse(api.baka_chrome_json());
+      } catch (e) { chrome = []; }
+      bakaView.frame(st.live ? st : null, Object.assign({}, bakaMeta, { chrome }));
     }
 
     /* Post-win intermission: let the victory flourish play, then raise the

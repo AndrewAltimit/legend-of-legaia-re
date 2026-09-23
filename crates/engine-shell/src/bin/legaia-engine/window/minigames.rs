@@ -477,13 +477,19 @@ impl PlayWindowApp {
         let Some(f) = self.session.host.world.minigames.baka_fighter.as_ref() else {
             return;
         };
-        let frame = f.chrome_frame();
-        if let Some(xa) = frame.xa {
+        let frame = f.chrome_frame().clone();
+        // The announcer line the chrome fired (`FUN_8003D53C`), through the
+        // XA path the battle clips use - the play page plays the same one.
+        if let Some(xa) = frame.xa
+            && let Some(bgm) = self.session.bgm.as_mut()
+        {
+            let fired = bgm.play_xa_clip(u32::from(xa.clip), u32::from(xa.chan), u32::from(xa.dur));
             log::debug!(
-                "baka chrome: announcer XA clip {} chan {} ({} frames)",
+                "baka chrome: announcer XA clip {} chan {} ({}) -> {}",
                 xa.clip,
                 xa.chan,
-                xa.dur
+                xa.dur,
+                if fired { "playing" } else { "not staged" }
             );
         }
         // Resolve the draws: a glyph-carrying draw pages the glyph strip by
@@ -1286,11 +1292,11 @@ impl PlayWindowApp {
             log::warn!("baka: action-table parse failed");
             return false;
         };
-        // Rotate the ladder opponent with the frame counter (1..=16; roster 0
-        // is the player-side default). Seed like the slot machine: frame-
-        // derived, deterministic across a replayed pad stream.
+        // The cabinet's first rung (roster 0 is the player-side default);
+        // the cabinet climbs the ladder from here. Seed like the slot
+        // machine: frame-derived, deterministic across a replayed pad stream.
         let frame = self.session.host.world.frame as u32;
-        let opponent = 1 + (frame as usize % (opponents.len().saturating_sub(1).max(1)));
+        let opponent = legaia_engine_core::baka_fighter::first_rung_roster();
         let seed = 0xBA4A_F19A ^ frame;
         let Some(fight) = legaia_engine_core::baka_fighter::BakaFight::from_tables(
             &opponents, &actions, 0, opponent, seed,

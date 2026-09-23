@@ -826,6 +826,65 @@ actor outright once the match ends, otherwise sets the fade from whether
 `DAT_801DBF74`), picks the sprite bank by `actor+0x5C < 0x400`, and reads
 byte `+0x07` of the record the id's low 10 bits reach into `actor+0x6A`.
 
+### The ladder in the port
+
+The ladder lives inside one mode-24 visit: every way out of the cabinet
+runs through state `0x1F4` (PAY OUT on `0x68`, the end of the all-clear
+chain, and `0x97` "GAME OVER"), and the return warp there is what banks
+the prize accumulator into the coin bank. So the port's World runs the
+ladder on the fight it already holds: once the match is decided,
+`World::tick_baka_fighter` hands the packed pad edge to the cabinet
+(`BakaFight::set_cabinet_pad`), the cabinet walks the tally into `0x68`,
+NEXT GAME passes through `0x6E` into the install state `0x1E`, and the
+fight seats the roster record the rung fold names
+(`BakaFight::install_rung`, off the tables `BakaFight::from_tables` keeps).
+PAY OUT and the all-clear reach `0x1F4`; the World leaves on the exit
+fade's end (`BakaCabinet::exit_done`). A loss's first "GAME OVER" frame
+zeroes the accumulator. There is no save point inside mode 24, so a
+half-climbed ladder has nothing to persist - the coin bank is the only
+result that outlives the visit. Every visit's first opponent is roster `5`,
+the fold of the stage counter `FUN_801CF00C` seeds to `2`
+(`baka_fighter::first_rung_roster`); both field-warp hosts used to pick a
+frame-rotated opponent from `1..=16`, which served roster rows the cabinet
+never serves first.
+
+The pot is the global accumulator `_DAT_80084440`, and only the score
+tally adds to it (`FUN_801D239C`, `0x801D28AC..0x801D28BC`). The cabinet's
+match-won arm writes the rung prize to `DAT_801DBEE8` for the tally to
+drain (`lw v1,0x20(v0)` / `sw v1,-0x4118(v0)` at `0x801D06FC`) and never
+touches the pot; its only store to the word is the game-over zero
+(`sw zero,0x300(s2)` at `0x801D1288`, `s2 = 0x80084140`). The port's cabinet
+used to add the prize to its own pot at the win arm as well; it now takes
+the live accumulator from the host (`BakaCabinet::set_pot`).
+
+The "NEXT GAME / PAY OUT" sheet is five widget draws
+(`FUN_801D5ED0(x, y, widget, brightness, 0x1000)`, `0x801D0C10..0x801D0D24`)
+plus the pot numeral:
+
+| Widget | Where | Brightness |
+|---|---|---|
+| `0x2C` NEXT GAME | `(0x4C, 0x20)` | `0xA0` when picked, else `0x40` |
+| `0x2D` PAY OUT | `(0x100, 0x20)` | `0xA0` when picked, else `0x40` |
+| `0x30` lit arrow | `(0x94, 0x20)` on NEXT GAME, `(0xAC, 0x20)` on PAY OUT | `0x80`, `0xA0` while blink bit 4 is clear |
+| `0x31` unlit arrow | the other arrow slot | `0x40` |
+| `0x2E` GET COIN | `(0x70, 0xCC)` | `0xA0` |
+
+The pot draws through the `0x10` px coin strip `FUN_801D6F44` at
+`(0x78, 0xCC)` off `_DAT_80084440`. The sheet is drawn only while the
+confirm latch `DAT_801DBF88` is zero (`bne v1,zero` at `0x801D0BB4`), so it
+vanishes the frame NEXT GAME is taken. Port:
+`baka_cabinet::choice_sheet` / `choice_pot_placements`, drawn on the native
+window and the play page through `ui_baka_strips::baka_widget_label_draws_for`
+(labels at the cell centres - neither host uploads the PROT 1203 sheet).
+**Confirmed** (disassembly).
+
+The round chrome (`BakaChrome`: intro card, ROUND banner, READY / FIGHT
+countdown) reaches all three hosts: the native window and the play page
+print it through the same label kernel (`baka_fighter_chrome::chrome_labels`),
+and the standalone minigames page draws its widgets with the sheet art
+(`baka_chrome_json`). The chrome's announcer line plays through each play
+host's CD-XA clip path.
+
 ### Site presentation
 
 The site's minigames page draws the duel from exactly these sources, decoded

@@ -133,10 +133,19 @@ fn the_prize_arrives_over_frames_not_in_one_step() {
     );
 
     // Leaving after a finished tally banks it once, and must not double-pay.
-    step(&mut world, PadButton::Cross.mask());
+    // The way out is the cabinet's own: PAY OUT on the "NEXT GAME / PAY
+    // OUT" choice (cursor Right, confirm Cross), then the exit fade.
+    press(&mut world, PadButton::Right.mask());
+    press(&mut world, PadButton::Cross.mask());
+    for _ in 0..0x80 {
+        if world.minigames.baka_fighter.is_none() {
+            break;
+        }
+        step(&mut world, 0);
+    }
     assert!(
         world.minigames.baka_fighter.is_none(),
-        "Cross leaves the duel"
+        "PAY OUT leaves the duel"
     );
     assert_eq!(
         world.minigames.casino_coins, PRIZE,
@@ -177,7 +186,9 @@ fn leaving_mid_tally_still_banks_exactly_the_prize() {
     let partway = world.minigames.winnings;
     assert!(partway > 0 && partway < PRIZE, "mid-tally");
 
-    step(&mut world, PadButton::Cross.mask());
+    // Retail has no way out of the tally screen; a host-forced exit (a
+    // teardown, a quit key) still has to bank the undrained remainder.
+    world.exit_baka_fighter();
     assert!(world.minigames.baka_fighter.is_none(), "duel left");
     assert_eq!(
         world.minigames.casino_coins, PRIZE,

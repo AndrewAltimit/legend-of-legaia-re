@@ -183,9 +183,10 @@ impl SceneHost {
     /// PROT 0976's roster + action tables -> a live
     /// [`crate::baka_fighter::BakaFight`].
     ///
-    /// Roster `0` is the player-side default; the ladder opponent rotates with
-    /// the frame counter so a repeat entry varies while a replayed pad stream
-    /// stays deterministic.
+    /// Roster `0` is the player-side default; the opponent is the cabinet's
+    /// first rung ([`crate::baka_fighter::first_rung_roster`]), and the
+    /// cabinet climbs the ladder from there. The RNG seed is frame-derived,
+    /// so a replayed pad stream stays deterministic.
     fn enter_baka_from_overlay(&mut self, loaded: &[u8]) -> bool {
         let Some(opponents) = legaia_asset::baka_opponents::parse(loaded) else {
             return false;
@@ -194,7 +195,7 @@ impl SceneHost {
             return false;
         };
         let frame = self.world.frame as u32;
-        let opponent = 1 + (frame as usize % opponents.len().saturating_sub(1).max(1));
+        let opponent = crate::baka_fighter::first_rung_roster();
         let seed = 0xBA4A_F19A ^ frame;
         let Some(fight) =
             crate::baka_fighter::BakaFight::from_tables(&opponents, &actions, 0, opponent, seed)

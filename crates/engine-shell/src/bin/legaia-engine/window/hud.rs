@@ -816,12 +816,13 @@ impl PlayWindowApp {
             out.extend(self.stage_status_row(&bl1, (8, 62), white, w, h));
             let status = match f.phase() {
                 MatchPhase::MatchOver(0) => {
-                    format!(
-                        "YOU WIN the match! +{} gold  (Cross/B = leave)",
-                        f.gold_reward()
-                    )
+                    if f.cabinet().choice_sheet().is_some() {
+                        "NEXT GAME / PAY OUT: Left/Right, Cross confirms".to_string()
+                    } else {
+                        format!("YOU WIN the match! +{} coins", f.gold_reward())
+                    }
                 }
-                MatchPhase::MatchOver(_) => "you lose the match  (Cross/B = leave)".to_string(),
+                MatchPhase::MatchOver(_) => "you lose the match - GAME OVER".to_string(),
                 MatchPhase::RoundOver(0) => "round won!".to_string(),
                 MatchPhase::RoundOver(_) => "round lost".to_string(),
                 MatchPhase::Fighting => match f.last_exchange() {
@@ -869,18 +870,38 @@ impl PlayWindowApp {
             // shows its paged cell index; the stamped cell rect
             // (`glyph_u`-paged `u` + the record's `v/w/h`) rides alongside
             // as the future atlas source.
-            if !self.baka_chrome_frame.is_empty() {
+            // Labels come from the shared kernels
+            // (`baka_fighter_chrome::chrome_labels`, `ui_baka_strips`), the
+            // same the browser play page draws.
+            let sheet = f.cabinet().choice_sheet();
+            if !self.baka_chrome_frame.is_empty() || sheet.is_some() {
                 let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-                let mut cd: Vec<TextDraw> = Vec::new();
-                for (d, _cell) in &self.baka_chrome_frame {
-                    let alpha = (d.brightness.clamp(0, 0xFF) as f32) / 255.0;
-                    let color = [1.0f32, 1.0, 1.0, alpha];
-                    let label = match d.glyph {
-                        Some(idx) => format!("{}", idx.rem_euclid(10)),
-                        None => format!("w{:02x}", d.widget),
-                    };
-                    let ly = self.font.layout_ascii(&label);
-                    cd.extend(text_draws_for(&ly, (d.x as i32, d.y as i32), color));
+                let draws: Vec<_> = self.baka_chrome_frame.iter().map(|(d, _)| *d).collect();
+                let mut cd = legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
+                    &self.font,
+                    &legaia_engine_core::baka_fighter_chrome::chrome_labels(&draws),
+                    [1.0; 4],
+                );
+                // The "NEXT GAME / PAY OUT" sheet (`FUN_801CF388` state
+                // `0x68`) and its pot numeral off the live accumulator.
+                if let Some(cells) = sheet {
+                    use legaia_engine_core::baka_cabinet as bcab;
+                    cd.extend(
+                        legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
+                            &self.font,
+                            &bcab::choice_sheet_labels(&cells),
+                            [1.0; 4],
+                        ),
+                    );
+                    cd.extend(
+                        legaia_engine_render::ui_baka_strips::baka_digit_strip_draws_for(
+                            &self.font,
+                            &bcab::choice_pot_placements(
+                                self.session.host.world.minigames.winnings,
+                            ),
+                            [1.0; 4],
+                        ),
+                    );
                 }
                 legaia_engine_render::scale_stage_text_draws(&mut cd, stage_origin, stage_scale);
                 out.extend(cd);

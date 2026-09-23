@@ -1512,6 +1512,25 @@ pub fn hud_digit_placements(round: i32, tally: Option<(i32, i32)>) -> Vec<(i32, 
     out
 }
 
+/// The round chrome's draws as `(centre x, centre y, brightness, text)` rows
+/// for a glyph-less host: a glyph draw shows its paged cell's digit, any
+/// other widget its id. The HUD sprite page these widgets index is uploaded
+/// by the standalone minigames page only, so the native window and the play
+/// page print the draw where retail puts the quad - one label kernel, so the
+/// two hosts cannot drift on what the chrome says.
+pub fn chrome_labels(draws: &[ChromeDraw]) -> Vec<(i32, i32, i32, String)> {
+    draws
+        .iter()
+        .map(|d| {
+            let text = match d.glyph {
+                Some(idx) => format!("{}", idx.rem_euclid(10)),
+                None => format!("w{:02x}", d.widget),
+            };
+            (i32::from(d.x), i32::from(d.y), d.brightness, text)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod hud_strip_tests {
     use super::*;

@@ -722,6 +722,126 @@ pub fn action_table_dump(tables: &[BakaActionSet]) -> String {
 
 // ------------------------------------------------------- the state machine
 
+/// One widget draw on the "NEXT GAME / PAY OUT" sheet: `FUN_801D5ED0(x, y,
+/// widget, brightness, 0x1000)` as the choice state issues it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SheetCell {
+    /// HUD widget id.
+    pub widget: u8,
+    /// Screen centre.
+    pub x: i32,
+    pub y: i32,
+    /// Colour scale (`0x80` = the descriptor's own RGB).
+    pub brightness: i32,
+}
+
+/// "NEXT GAME" cell (widget `0x2C`).
+pub const WIDGET_NEXT_GAME: u8 = 0x2C;
+/// "PAY OUT" cell (widget `0x2D`).
+pub const WIDGET_PAY_OUT: u8 = 0x2D;
+/// "GET COIN" cell (widget `0x2E`).
+pub const WIDGET_GET_COIN: u8 = 0x2E;
+/// The lit cursor arrow (widget `0x30`).
+pub const WIDGET_ARROW_LIT: u8 = 0x30;
+/// The unlit cursor arrow (widget `0x31`).
+pub const WIDGET_ARROW_DIM: u8 = 0x31;
+/// Pen of the pot numeral on the sheet (`FUN_801D6F44(0x78, 0xCC, pot,
+/// 0x80, 0)` at `0x801D0D28`).
+pub const CHOICE_POT_PEN: (i32, i32) = (0x78, 0xCC);
+
+/// PORT: FUN_801cf388 (`0x801D0C10`..`0x801D0D24`) - the "NEXT GAME / PAY
+/// OUT" sheet's widget draws.
+///
+/// The picked side's label draws at `0xA0`, the other at `0x40`. The two
+/// arrows sit at `x = 0x94` and `0xAC` and swap: the lit one (`0x30`) goes on
+/// the picked side, blinking between `0x80` and `0xA0` on bit 4 of the blink
+/// phase (`andi 0x10` / `sltiu 1` / `sll 5`), the unlit one (`0x31`) at
+/// `0x40`. "GET COIN" sits under them at `(0x70, 0xCC)`; the pot numeral at
+/// [`CHOICE_POT_PEN`] is the host's, off the live accumulator.
+pub fn choice_sheet(menu_cursor: i32, blink: i32) -> [SheetCell; 5] {
+    let lit = 0x80 | (i32::from(blink & 0x10 == 0) << 5);
+    let cell = |widget, x, brightness| SheetCell {
+        widget,
+        x,
+        y: 0x20,
+        brightness,
+    };
+    let (left_arrow, right_arrow, next, pay) = if menu_cursor & 1 == 0 {
+        (
+            cell(WIDGET_ARROW_LIT, 0x94, lit),
+            cell(WIDGET_ARROW_DIM, 0xAC, 0x40),
+            0xA0,
+            0x40,
+        )
+    } else {
+        (
+            cell(WIDGET_ARROW_DIM, 0x94, 0x40),
+            cell(WIDGET_ARROW_LIT, 0xAC, lit),
+            0x40,
+            0xA0,
+        )
+    };
+    [
+        left_arrow,
+        right_arrow,
+        cell(WIDGET_NEXT_GAME, 0x4C, next),
+        cell(WIDGET_PAY_OUT, 0x100, pay),
+        SheetCell {
+            widget: WIDGET_GET_COIN,
+            x: 0x70,
+            y: 0xCC,
+            brightness: 0xA0,
+        },
+    ]
+}
+
+/// The text a glyph-less host draws for a sheet widget. The cells index the
+/// PROT 1203 tally page, which only the standalone minigames page uploads;
+/// the native window and the play page print the cell's words at its
+/// centre instead.
+pub fn sheet_label(widget: u8) -> &'static str {
+    match widget {
+        WIDGET_NEXT_GAME => "NEXT GAME",
+        WIDGET_PAY_OUT => "PAY OUT",
+        WIDGET_GET_COIN => "GET COIN",
+        WIDGET_ARROW_LIT | WIDGET_ARROW_DIM => "<>",
+        _ => "?",
+    }
+}
+
+/// The sheet as `(centre x, centre y, brightness, text)` rows for a
+/// glyph-less host - the lit arrow points at the picked side.
+pub fn choice_sheet_labels(cells: &[SheetCell]) -> Vec<(i32, i32, i32, String)> {
+    cells
+        .iter()
+        .map(|c| {
+            let text = match c.widget {
+                WIDGET_ARROW_LIT if c.x < 0xA0 => "<".to_string(),
+                WIDGET_ARROW_LIT => ">".to_string(),
+                WIDGET_ARROW_DIM => "-".to_string(),
+                w => sheet_label(w).to_string(),
+            };
+            (c.x, c.y, c.brightness, text)
+        })
+        .collect()
+}
+
+/// The pot numeral's glyph placements on the sheet: the `0x10` px coin
+/// strip (`FUN_801D6F44`) at [`CHOICE_POT_PEN`], as `(x, y, digit)` for
+/// `legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for`.
+pub fn choice_pot_placements(pot: u32) -> Vec<(i32, i32, u8)> {
+    crate::baka_fighter::coin_digit_cells(pot.min(i32::MAX as u32) as i32)
+        .into_iter()
+        .map(|c| {
+            (
+                CHOICE_POT_PEN.0 + c.x_offset as i32,
+                CHOICE_POT_PEN.1,
+                c.digit,
+            )
+        })
+        .collect()
+}
+
 /// What the cabinet did this frame, for the host.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CabinetFrame {
@@ -764,7 +884,10 @@ pub struct CabinetInput {
     pub opponent_round_wins: u32,
     /// Round-win target (`DAT_801DBED0`, `2` in retail).
     pub win_target: u32,
-    /// Prize gold of the rung just cleared (roster record `+0x20`).
+    /// Prize gold of the rung just cleared (roster record `+0x20`). The
+    /// match-won arm copies it into `DAT_801DBEE8` for the tally to drain
+    /// (`lw v1,0x20(v0)` / `sw v1,-0x4118(v0)` at `0x801D06FC`); it does
+    /// not touch the pot.
     pub rung_prize: u32,
     /// Per-slot HP, for the HUD pass.
     pub hp: [i32; 2],
@@ -947,6 +1070,40 @@ impl BakaCabinet {
     /// `DAT_801DBF28` - matches won that were not shutouts.
     pub fn rounds_dropped(&self) -> i32 {
         self.rounds_dropped
+    }
+
+    /// Mirror the live casino prize accumulator (`_DAT_80084440`) into the
+    /// cabinet before a tick. The word is global and the tally drain owns
+    /// its increments, so a host that drains the tally elsewhere hands the
+    /// value across here; the game-over zero and the exit's payout then act
+    /// on the real amount.
+    pub fn set_pot(&mut self, pot: u32) {
+        self.pot = pot;
+    }
+
+    /// `DAT_801DBF90` - the menu cursor (tally choice, pause, developer).
+    pub fn menu_cursor(&self) -> i32 {
+        self.menu_cursor
+    }
+
+    /// `DAT_801DC12C` - the blink phase the choice screen's lit arrow reads.
+    pub fn blink(&self) -> i32 {
+        self.blink
+    }
+
+    /// The "NEXT GAME / PAY OUT" sheet this frame, when the cabinet is on
+    /// it. Retail draws the sheet only while the confirm latch
+    /// `DAT_801DBF88` is still zero (`bne v1,zero,0x801D0DD8` at
+    /// `0x801D0BB4`), so it disappears the frame NEXT GAME is taken.
+    pub fn choice_sheet(&self) -> Option<[SheetCell; 5]> {
+        (self.state == ST_CHOICE && self.state_timer == 0)
+            .then(|| choice_sheet(self.menu_cursor, self.blink))
+    }
+
+    /// `true` once the exit state's fade has run (`DAT_801DBE9C >= 0x3D`),
+    /// the frame retail's return warp `FUN_80026018` leaves the mode.
+    pub fn exit_done(&self) -> bool {
+        self.state == ST_EXIT && self.exit_timer >= 0x3D
     }
 
     /// Publish the running high score the secret-opponent gate reads.
@@ -1317,8 +1474,12 @@ impl BakaCabinet {
             self.state = ST_ROUND_SETUP;
 
             if input.player_round_wins == input.win_target {
+                // Only `DAT_801DBEE8` is written here. The pot
+                // (`_DAT_80084440`) is fed by the score tally's drain
+                // (`FUN_801D239C`, `0x801D28AC..0x801D28BC`) and by nothing
+                // in this dispatcher - its one store to the word is the
+                // game-over zero.
                 self.prize = input.rung_prize as i32;
-                self.pot = self.pot.saturating_add(input.rung_prize);
                 if self.secret == SecretOpponent::None {
                     self.secret = secret_opponent_gate(self.stage, self.high_score);
                 }
@@ -1687,7 +1848,10 @@ mod tests {
         for _ in 0..0xB6 {
             cab.tick(&won);
         }
-        assert_eq!(cab.pot(), 40);
+        // The win arm records the prize for the tally; the pot itself is
+        // the tally drain's to fill, never this arm's.
+        assert_eq!(cab.prize, 40);
+        assert_eq!(cab.pot(), 0);
         assert_eq!(cab.stage(), 3);
         assert_eq!(cab.state(), ST_PERFECT);
         assert_eq!(cab.rounds_dropped(), 0, "a shutout drops no rounds");
@@ -1707,8 +1871,10 @@ mod tests {
         assert_eq!(messy.state(), ST_PERFECT);
         assert_eq!(messy.rounds_dropped(), 1);
 
-        // Now lose one with a pot on the table.
+        // Now lose one with a pot on the table (the host mirrors the live
+        // accumulator in, as the tally would have filled it).
         cab.enter_duel();
+        cab.set_pot(40);
         let lost = CabinetInput {
             frame_step: 1,
             opponent_round_wins: 2,
@@ -1729,6 +1895,45 @@ mod tests {
         assert_eq!(forfeit, Some(40));
         assert_eq!(cab.pot(), 0);
         assert_eq!(cab.state(), ST_EXIT);
+    }
+
+    #[test]
+    fn the_choice_sheet_lights_the_picked_side_and_swaps_the_arrows() {
+        let s = choice_sheet(0, 0);
+        assert_eq!(
+            s[0],
+            SheetCell {
+                widget: WIDGET_ARROW_LIT,
+                x: 0x94,
+                y: 0x20,
+                brightness: 0xA0
+            }
+        );
+        assert_eq!(s[1].widget, WIDGET_ARROW_DIM);
+        assert_eq!((s[2].widget, s[2].brightness), (WIDGET_NEXT_GAME, 0xA0));
+        assert_eq!((s[3].widget, s[3].brightness), (WIDGET_PAY_OUT, 0x40));
+        assert_eq!((s[4].x, s[4].y), (0x70, 0xCC));
+        let s = choice_sheet(1, 0x10);
+        assert_eq!(
+            s[1],
+            SheetCell {
+                widget: WIDGET_ARROW_LIT,
+                x: 0xAC,
+                y: 0x20,
+                brightness: 0x80
+            }
+        );
+        assert_eq!((s[2].brightness, s[3].brightness), (0x40, 0xA0));
+
+        let mut cab = BakaCabinet::new();
+        assert!(cab.choice_sheet().is_none());
+        cab.state = ST_CHOICE;
+        assert!(cab.choice_sheet().is_some());
+        cab.state_timer = 1;
+        assert!(
+            cab.choice_sheet().is_none(),
+            "NEXT GAME taken: the sheet is gone"
+        );
     }
 
     #[test]

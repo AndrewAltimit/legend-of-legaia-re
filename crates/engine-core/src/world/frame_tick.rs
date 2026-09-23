@@ -2789,9 +2789,22 @@ impl World {
     ///   type 4, which is its auto-finisher (`0x801D4550`).
     /// - The CPU slot picks through the ported `FUN_801d487c` roll inside
     ///   [`crate::baka_fighter::BakaFight::tick`].
-    /// - When the match is decided, a [`Cross`](input::PadButton::Cross)
-    ///   press leaves the duel (via [`World::exit_baka_fighter`], crediting
-    ///   the gold prize on a player win).
+    /// - When the match is decided, the frame's packed pad edge goes to the
+    ///   cabinet (`FUN_801CF388`, [`crate::baka_cabinet::BakaCabinet`]),
+    ///   which runs the rest of the **ladder** inside this one mode-24 visit,
+    ///   as retail does: a win reaches the tally and then the "NEXT GAME /
+    ///   PAY OUT" choice (Left / Right, confirm Cross); NEXT GAME seats the
+    ///   next rung's opponent through the cabinet's install state, PAY OUT
+    ///   and the all-clear run the exit state. A loss runs "GAME OVER",
+    ///   whose first frame zeroes the prize accumulator (`sw zero,0x300(s2)`
+    ///   = `_DAT_80084440` at `0x801D1288`), then the exit. The exit's fade
+    ///   ending is where the return warp ([`World::exit_baka_fighter`])
+    ///   banks what is left into the coin bank.
+    ///
+    /// The ladder therefore never outlives the visit: every exit of the
+    /// cabinet runs through state `0x1F4`, and there is no save point inside
+    /// mode 24, so it has no save representation to carry - the only
+    /// persistent result is the coin bank.
     ///
     /// PORT: the Baka Fighter per-frame drive (`FUN_801d3f44` player input →
     /// type commit; `FUN_801d3468` resolution SM via `BakaFight::tick`).
@@ -2817,14 +2830,23 @@ impl World {
             ]
             .iter()
             .any(|&b| self.input.just_pressed(b));
+            let edge = crate::dev_menu::retail_packed(self.input.pad() & !self.input.pad_prev());
+            let pot = self.minigames.winnings;
+            let mut exit = false;
             if let Some(f) = self.minigames.baka_fighter.as_mut() {
+                f.cabinet_mut().set_pot(pot);
+                f.set_cabinet_pad(edge);
                 f.tick_with_input(1, face);
                 let paid = f.take_tally_gold();
                 if paid > 0 {
                     self.minigames.winnings = self.minigames.winnings.saturating_add(paid as u32);
                 }
+                if f.cabinet_frame().forfeit.is_some() {
+                    self.minigames.winnings = 0;
+                }
+                exit = f.cabinet().exit_done();
             }
-            if self.input.just_pressed(input::PadButton::Cross) {
+            if exit {
                 self.exit_baka_fighter();
             }
             return;
