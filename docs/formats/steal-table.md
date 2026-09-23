@@ -159,6 +159,7 @@ vsync the Begin press lands on.
 | `steal_a` | steal bit | 7694 | 94 | 30 | no steal, no caption, bag untouched |
 | `steal_nat25` | steal bit, Begin 15 vsyncs later | 22937 | 37 | 30 | no steal |
 | `steal_nat40` | steal bit, Begin 30 vsyncs later | 23717 | 17 | 30 | **stole `0x78`**: caption, bag slot 1 := `[0x78, 1]` |
+| `steal_nat55` | steal bit, Begin 45 vsyncs later | 7244 | 44 | 30 | no steal |
 | `steal_b` | steal bit, forced | 7694 | 29 | 30 | stole (caption + grant) |
 | `steal_c` | steal bit, forced | 7694 | 30 | 30 | no steal |
 | `steal_d` | steal + Items Up bits, forced | 7694 | 59 | 60 | stole |
@@ -193,7 +194,8 @@ What the rows pin, field by field:
 - **The latch re-arms per strike chain, not per battle.** `ctx[+0x27]` is
   set to `1` at `0x8004B3E4` before any other gate - so a kill by a killer
   without the passive also spends it (`steal_nobit`) - but it is also
-  **cleared**, which the disassembly-only reading of this arm had missed: a write-watch on the byte catches `sb zero,0x16(s5)` at
+  **cleared**, which the disassembly-only reading of this arm had missed:
+  a write-watch on the byte catches `sb zero,0x16(s5)` at
   `0x801E3A84` in the battle-action state machine `FUN_801E295C` (PROT 0898,
   `s5 = ctx + 0x11` from `0x801E2994`), the delay slot of the arm at
   `0x801E3A70` that moves an actor's strike loop (`0x1E`) on to its recovery
