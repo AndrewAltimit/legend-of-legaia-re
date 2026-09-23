@@ -711,7 +711,7 @@ mod tests {
         // Pad bytes around the CLUT with all-STP halfwords (high bit set)
         // so the scanner doesn't see neighboring shifted windows as
         // CLUT-shaped.
-        for chunk in bytes.chunks_exact_mut(2) {
+        for chunk in bytes.as_chunks_mut::<2>().0 {
             chunk.copy_from_slice(&0x8000u16.to_le_bytes());
         }
         bytes[0x40..0x40 + CLUT_ROW_BYTES].copy_from_slice(&clut);
@@ -729,7 +729,7 @@ mod tests {
         // Surround with all-STP padding so the search doesn't find
         // shifted matches around our placement.
         let mut vram = vec![0u8; VRAM_BYTES];
-        for chunk in vram.chunks_exact_mut(2) {
+        for chunk in vram.as_chunks_mut::<2>().0 {
             chunk.copy_from_slice(&0x8000u16.to_le_bytes());
         }
         let off = (50 * VRAM_WIDTH + 100) * 2;

@@ -132,7 +132,7 @@ pub fn mesh_planes(positions: &[[f32; 3]], indices: &[u32]) -> MeshPlanes {
         init: bool,
     }
     let mut acc: HashMap<(i32, i32, i32, i64), Acc> = HashMap::new();
-    for t in indices.chunks_exact(3) {
+    for t in indices.as_chunks::<3>().0 {
         let (Some(&v0), Some(&v1), Some(&v2)) = (
             positions.get(t[0] as usize),
             positions.get(t[1] as usize),

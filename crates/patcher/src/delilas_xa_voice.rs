@@ -476,7 +476,7 @@ fn sibling_victory_voice(
 fn write_victory_body(dst: &mut [u8], src: &[u8]) {
     let n = (src.len().min(dst.len().saturating_sub(16)) / 16) * 16;
     dst[..n].copy_from_slice(&src[..n]);
-    for block in dst[..n].chunks_exact_mut(16) {
+    for block in dst[..n].as_chunks_mut::<16>().0 {
         block[1] = 0;
     }
     for b in &mut dst[n..] {
@@ -1115,7 +1115,7 @@ mod tests {
             .collect();
         let body = spu_encode(&pcm);
         assert_eq!(body.len() % 16, 0);
-        for block in body.chunks_exact(16) {
+        for block in body.as_chunks::<16>().0 {
             assert!(block[0] >> 4 <= 4, "illegal filter");
             assert!(block[0] & 0x0F <= 12, "illegal shift");
             assert_eq!(block[1], 0, "encoder must leave flags to the caller");

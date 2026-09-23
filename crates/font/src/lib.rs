@@ -165,7 +165,7 @@ impl Font {
         // blends into dark UI panels the same way retail's dim-CLUT-
         // entry shadows do. Keeping shadow texels stops a one-pixel
         // bold-outline halo when the tint goes bright (~white).
-        for px in atlas_rgba.chunks_exact_mut(4) {
+        for px in atlas_rgba.as_chunks_mut::<4>().0 {
             if px[3] != 0 && px[0] >= 0x80 && px[1] >= 0x80 && px[2] >= 0x80 {
                 px[0] = 0xFF;
                 px[1] = 0xFF;
@@ -517,7 +517,7 @@ fn decode_atlas_png(path: &Path) -> Result<(Vec<u8>, u32, u32)> {
                 .saturating_mul(4);
             let mut out =
                 Vec::with_capacity(usize::try_from(cap).unwrap_or(0).min(buf.len() / 3 * 4));
-            for px in buf.chunks_exact(3) {
+            for px in buf.as_chunks::<3>().0 {
                 out.extend_from_slice(&[px[0], px[1], px[2], 255]);
             }
             (out, info.width, info.height)
@@ -1316,7 +1316,9 @@ pub fn export_extracted_font_dir(font_tim: &[u8], scus: &[u8], out_dir: &Path) -
 
     // Metadata JSON (same schema as font-extract).
     let escape_entries: Vec<serde_json::Value> = escape_bytes
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .enumerate()
         .map(|(i, c)| {
             let string_id = i16::from_le_bytes([c[0], c[1]]);

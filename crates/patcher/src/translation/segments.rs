@@ -292,11 +292,11 @@ mod tests {
     fn rejects_binary_noise() {
         // High glyphs, wide-glyph escapes, 0xFF chaperones, letter-poor runs.
         for junk in [
-            &[0x5D, 0xE2, 0x71, 0x50, 0x6D][..],             // ']{e2}qPm'
-            &[b'S', 0xFF, 0x6D, b'a', b'l', b'l'][..],       // compressed-stream hit
-            &[b'p', 0xCB, 0xD3, b'a'][..],                   // wide-glyph escape
-            &[b'2', b'/', b'D', b'/', b'V', b'/', b'h'][..], // offset-table pattern
-            &[b'w'][..],                                     // single letter
+            &[0x5D, 0xE2, 0x71, 0x50, 0x6D][..],       // ']{e2}qPm'
+            &[b'S', 0xFF, 0x6D, b'a', b'l', b'l'][..], // compressed-stream hit
+            &[b'p', 0xCB, 0xD3, b'a'][..],             // wide-glyph escape
+            &b"2/D/V/h"[..],                           // offset-table pattern
+            &b"w"[..],                                 // single letter
         ] {
             let buf = seg(junk);
             assert_eq!(scan(&buf), Vec::new(), "junk {junk:02x?} must not qualify");

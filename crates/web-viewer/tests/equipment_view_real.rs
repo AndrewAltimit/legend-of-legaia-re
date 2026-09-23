@@ -494,7 +494,9 @@ fn the_item_alone_glb_drops_the_limb_and_matches_the_preview_mask() {
     assert_eq!(mask.len(), positions.len() / 3, "mask is per vertex");
     let indices = v.equipped_mesh_indices();
     let kept_tris = indices
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .filter(|t| t.iter().all(|&i| mask[i as usize] == 2))
         .count() as u64;
     assert_eq!(
@@ -602,7 +604,7 @@ fn item_cards_carry_metadata_a_thumbnail_and_downloads() {
     assert!(card["alone_triangles"].as_u64().unwrap() > 20, "{card}");
     let px = v.equipment_item_card_pixels(96);
     assert_eq!(px.len(), 96 * 96 * 4);
-    let opaque = px.chunks_exact(4).filter(|p| p[3] == 255).count();
+    let opaque = px.as_chunks::<4>().0.iter().filter(|p| p[3] == 255).count();
     // Something drew, and the background stayed transparent.
     assert!(
         opaque > 96 * 96 / 40 && opaque < 96 * 96 * 9 / 10,
@@ -627,7 +629,7 @@ fn item_cards_carry_metadata_a_thumbnail_and_downloads() {
         "a circlet has no grip"
     );
     let px = v.equipment_item_card_pixels(64);
-    assert!(px.chunks_exact(4).any(|p| p[3] == 255));
+    assert!(px.as_chunks::<4>().0.iter().any(|p| p[3] == 255));
     // Out of range / default id refuse cleanly.
     let bad: serde_json::Value =
         serde_json::from_str(&v.equipment_item_card_json(0, 2, 0)).unwrap();
@@ -660,7 +662,7 @@ fn item_cards_carry_metadata_a_thumbnail_and_downloads() {
         let rows = cards.len().div_ceil(cols);
         let (w, h) = (cols * (size + 4), rows * (size + 4));
         let mut img = vec![0u8; w * h * 4];
-        for px in img.chunks_exact_mut(4) {
+        for px in img.as_chunks_mut::<4>().0 {
             px.copy_from_slice(&[24, 26, 32, 255]);
         }
         for (k, (si, id)) in cards.iter().enumerate() {

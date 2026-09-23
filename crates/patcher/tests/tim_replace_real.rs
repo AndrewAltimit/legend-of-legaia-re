@@ -35,8 +35,10 @@ fn assert_touched_sectors_valid(a: &[u8], b: &[u8]) -> usize {
     assert_eq!(a.len(), b.len());
     let mut touched = 0;
     for (i, (sa, sb)) in a
-        .chunks_exact(SECTOR_SIZE)
-        .zip(b.chunks_exact(SECTOR_SIZE))
+        .as_chunks::<SECTOR_SIZE>()
+        .0
+        .iter()
+        .zip(b.as_chunks::<SECTOR_SIZE>().0)
         .enumerate()
     {
         if sa != sb {
@@ -166,8 +168,10 @@ fn raw_replacement_round_trips_and_keeps_sectors_valid() {
     let (prot_lba, prot_size) = find_file_in_image(&before, "PROT.DAT").unwrap();
     let prot_end = prot_lba as usize + (prot_size as usize).div_ceil(2048);
     for (i, (sa, sb)) in before
-        .chunks_exact(SECTOR_SIZE)
-        .zip(patched.chunks_exact(SECTOR_SIZE))
+        .as_chunks::<SECTOR_SIZE>()
+        .0
+        .iter()
+        .zip(patched.as_chunks::<SECTOR_SIZE>().0)
         .enumerate()
     {
         if sa != sb {

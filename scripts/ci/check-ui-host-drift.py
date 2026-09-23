@@ -2414,7 +2414,7 @@ def check_render_kernels() -> tuple[list[str], list[str], list[tuple[str, int, i
         seen_blocked: set[str] = set()
         seen_exempt: set[str] = set()
         for path, text in texts.items():
-            rel = str(path.relative_to(REPO))
+            rel = path.relative_to(REPO).as_posix()
             if not re.search(str(rule["trigger"]), text):
                 continue
             findings = rule_findings(rule, text)

@@ -1075,7 +1075,7 @@ fn the_tile_sheet_covers_the_display_on_the_gpu() {
     let (w, hpx) = (PSX_SCREEN_WIDTH as usize, PSX_SCREEN_HEIGHT as usize);
     let mut magenta = 0usize;
     let mut black = 0usize;
-    for px in drawn.chunks_exact(4) {
+    for px in drawn.as_chunks::<4>().0 {
         if px[0] > 200 && px[1] < 50 && px[2] > 200 {
             magenta += 1;
         }

@@ -108,7 +108,7 @@ fn prescript_records_are_word_aligned_not_field_vm() {
             let words = scene_event_scripts::record_words(record).unwrap();
             // The terminator is excluded from `record_words`; a properly framed
             // record has a 0x0008 word somewhere after the header.
-            let has_terminator = record[4..].chunks_exact(2).any(|w| {
+            let has_terminator = record[4..].as_chunks::<2>().0.iter().any(|w| {
                 u16::from_le_bytes([w[0], w[1]]) == scene_event_scripts::RECORD_TERMINATOR
             });
             if has_terminator {

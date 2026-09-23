@@ -70,7 +70,9 @@ fn real_window() -> Option<(ItemWindow, RetailInventory)> {
 
     let (lo, hi) = window.bounds();
     let slots: Vec<(u8, u8)> = raw
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .skip(lo)
         .take(hi - lo)
         .map(|c| (c[0], c[1]))

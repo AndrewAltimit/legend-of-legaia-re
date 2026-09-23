@@ -420,7 +420,9 @@ pub fn bucket_table_to_bytes(buckets: &[BucketOffer]) -> [u8; BUCKET_TABLE_LEN] 
 /// [`bucket_table_to_bytes`].
 pub fn bucket_table_from_bytes(bytes: &[u8]) -> Vec<BucketOffer> {
     bytes
-        .chunks_exact(BUCKET_ENTRY_LEN)
+        .as_chunks::<BUCKET_ENTRY_LEN>()
+        .0
+        .iter()
         .take(BUCKET_COUNT)
         .map(|c| BucketOffer {
             want_id: c[0],

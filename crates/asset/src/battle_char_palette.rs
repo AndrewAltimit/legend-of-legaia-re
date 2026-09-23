@@ -134,7 +134,9 @@ fn read_clut(buf: &[u8], off: usize) -> Result<Option<PaletteBand>> {
         .get(start..end)
         .ok_or_else(|| anyhow::anyhow!("CLUT colours out of range at 0x{start:X}..0x{end:X}"))?;
     let colors = bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
     Ok(Some(PaletteBand { base, colors }))

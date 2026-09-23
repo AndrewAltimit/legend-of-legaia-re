@@ -485,7 +485,9 @@ impl DiscPatcher {
         let (pcm, _) = legaia_xa::decode(&payload, opts)
             .with_context(|| format!("decode {name} channel {chan}"))?;
         let mono = if stereo {
-            pcm.chunks_exact(2)
+            pcm.as_chunks::<2>()
+                .0
+                .iter()
                 .map(|c| ((c[0] as i32 + c[1] as i32) / 2) as i16)
                 .collect()
         } else {

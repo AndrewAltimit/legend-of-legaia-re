@@ -210,7 +210,7 @@ impl Spu {
     /// Convenience for tests + the cpal callback's resampler.
     pub fn render_into(&mut self, out: &mut [i16]) {
         debug_assert_eq!(out.len() % 2, 0);
-        for chunk in out.chunks_exact_mut(2) {
+        for chunk in out.as_chunks_mut::<2>().0 {
             let (l, r) = self.tick();
             chunk[0] = l;
             chunk[1] = r;

@@ -107,7 +107,9 @@ pub fn read(image: &[u8], va: u32, rows: usize) -> Option<Vec<[(i16, i16); 4]>> 
     let bytes = image.get(off..off + rows * ROW_BYTES)?;
     Some(
         bytes
-            .chunks_exact(ROW_BYTES)
+            .as_chunks::<ROW_BYTES>()
+            .0
+            .iter()
             .map(|r| {
                 let h = |i: usize| i16::from_le_bytes([r[2 * i], r[2 * i + 1]]);
                 [(h(0), h(1)), (h(2), h(3)), (h(4), h(5)), (h(6), h(7))]

@@ -172,7 +172,10 @@ fn tetsu_and_gobu_gobu_idle_entries_never_ghost() {
 /// so this is the selector space a party swing can stamp on a monster.
 #[test]
 fn player_file_records_carry_only_routed_selectors() {
-    std::env::var_os("LEGAIA_DISC_BIN").expect("gated above by prot_file; keep the same skip");
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
     let mut files = Vec::new();
     for p in ["extracted/PROT", "../../extracted/PROT"] {
         if let Ok(rd) = std::fs::read_dir(p) {

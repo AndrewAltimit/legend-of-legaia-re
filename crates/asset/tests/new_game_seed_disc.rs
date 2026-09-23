@@ -53,8 +53,8 @@ fn gated() -> Option<Vec<u8>> {
 fn s0_store_offsets(code: &[u8]) -> (BTreeSet<u32>, BTreeSet<u32>) {
     let mut bytes = BTreeSet::new();
     let mut halfwords = BTreeSet::new();
-    for chunk in code.chunks_exact(4) {
-        let word = u32::from_le_bytes(chunk.try_into().unwrap());
+    for chunk in code.as_chunks::<4>().0 {
+        let word = u32::from_le_bytes(*chunk);
         let op = word >> 26;
         let rs = (word >> 21) & 0x1F;
         let imm = word & 0xFFFF;
@@ -209,8 +209,8 @@ fn s0_seed_stores(code: &[u8]) -> (Option<u32>, Vec<(u32, u32, new_game::SeedWid
     let mut s0_base = None;
     let mut out = Vec::new();
 
-    for chunk in code.chunks_exact(4) {
-        let word = u32::from_le_bytes(chunk.try_into().unwrap());
+    for chunk in code.as_chunks::<4>().0 {
+        let word = u32::from_le_bytes(*chunk);
         let op = word >> 26;
         let rs = ((word >> 21) & 0x1F) as usize;
         let rt = ((word >> 16) & 0x1F) as usize;
@@ -378,8 +378,8 @@ fn starting_item_seed_region_is_the_documented_ten_instructions() {
 
     // The tail is the redundant zero-loop: a backward branch whose target is
     // inside the region. Encoding: bgez (op 0x01, rt 0x01).
-    let has_back_branch = code.chunks_exact(4).enumerate().any(|(i, c)| {
-        let word = u32::from_le_bytes(c.try_into().unwrap());
+    let has_back_branch = code.as_chunks::<4>().0.iter().enumerate().any(|(i, c)| {
+        let word = u32::from_le_bytes(*c);
         let op = word >> 26;
         let rt = (word >> 16) & 0x1F;
         let disp = (word & 0xFFFF) as i16 as i32;

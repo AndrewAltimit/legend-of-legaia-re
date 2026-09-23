@@ -226,7 +226,9 @@ fn encode_pixels(
         );
     }
     let texels: Vec<u16> = rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|c| {
             // `rgba8_to_bgr555` already sends alpha 0 to 0x0000 and opaque
             // black to 0x8000; the normalisation puts everything else in

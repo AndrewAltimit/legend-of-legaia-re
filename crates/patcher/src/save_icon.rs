@@ -110,7 +110,9 @@ fn encode_tile(
         );
     }
     let texels: Vec<u16> = rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|c| legaia_tim::encode::rgba8_to_bgr555([c[0], c[1], c[2], c[3]]))
         .collect();
 

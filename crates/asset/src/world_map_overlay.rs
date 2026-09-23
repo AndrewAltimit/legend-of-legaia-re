@@ -479,7 +479,7 @@ pub fn top_down_lines(slot: &KingdomSlot4, opts: &WireframeOptions) -> Vec<Wiref
                 }
                 let (ah, av) = opts.axes;
                 for (g, group) in body.groups().enumerate() {
-                    for pair in group.chunks_exact(2) {
+                    for pair in group.as_chunks::<2>().0 {
                         let a = pair[0];
                         let b = pair[1];
                         if opts.strip_zero_records

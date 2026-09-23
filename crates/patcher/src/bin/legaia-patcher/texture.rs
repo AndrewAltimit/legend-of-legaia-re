@@ -311,12 +311,10 @@ pub(crate) fn cmd_tim_replace(
     if outcome.quantized_pixels == 0 {
         let got = legaia_tim::decode_rgba8(&after.tim, 0)?;
         let want: Vec<u8> = rgba
-            .chunks_exact(4)
-            .flat_map(|p| {
-                legaia_tim::bgr555_to_rgba8(legaia_tim::encode::rgba8_to_bgr555(
-                    p.try_into().unwrap(),
-                ))
-            })
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|p| legaia_tim::bgr555_to_rgba8(legaia_tim::encode::rgba8_to_bgr555(*p)))
             .collect();
         if got != want {
             bail!("verification failed: patched texture does not decode to the input image");
@@ -465,12 +463,14 @@ fn cmd_battle_replace(
     if outcome.quantized_pixels == 0 {
         let got = battle_texture::export_block(&patcher, &target, palette)?;
         let want: Vec<u8> = rgba
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|p| {
                 let stored = if p[3] == 0 {
                     0
                 } else {
-                    let e = legaia_tim::encode::rgba8_to_bgr555(p.try_into().unwrap());
+                    let e = legaia_tim::encode::rgba8_to_bgr555(*p);
                     if e == 0 { 0x8000 } else { e }
                 };
                 legaia_tim::bgr555_to_rgba8(stored)

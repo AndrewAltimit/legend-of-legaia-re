@@ -622,7 +622,7 @@ fn summon_rgba(entry_bytes: &[u8], p: &SummonPage, clut_sub: usize) -> Option<Rg
         .collect::<Option<_>>()?;
     let page = entry_bytes.get(p.page_offset..p.page_offset + p.page_bytes)?;
     let mut data = vec![0u8; p.width * p.height * 4];
-    for (texel, px) in data.chunks_exact_mut(4).enumerate() {
+    for (texel, px) in data.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let byte = *page.get(texel / 2)?;
         let idx = if texel % 2 == 0 {
             byte & 0xF

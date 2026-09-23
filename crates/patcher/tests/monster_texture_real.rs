@@ -293,7 +293,9 @@ fn a_colour_the_palettes_do_not_hold_is_refused_before_any_write() {
     let stray = [8u8, 248, 8, 255];
     let held: std::collections::HashSet<[u8; 4]> = ex
         .rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|c| [c[0], c[1], c[2], c[3]])
         .collect();
     assert!(!held.contains(&stray), "the probe colour must be new");

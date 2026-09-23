@@ -1708,7 +1708,7 @@ impl World {
             let globals_out = vm.globals;
             let scale_out = vm.scale;
             let tilt_out = (vm.pitch, vm.roll);
-            let effects: Vec<_> = vm.effects.drain(..).collect();
+            let effects: Vec<_> = std::mem::take(&mut vm.effects);
             // A walk op's heading write is walk-direction-implied facing: it
             // only means anything alongside the step it accompanies. With the
             // walking suppressed it must be suppressed too, or the NPC pivots

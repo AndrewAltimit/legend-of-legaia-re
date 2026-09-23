@@ -65,10 +65,10 @@ fn save_icon_replace_is_surgical_on_disc() {
     // The replaced slot decodes to the requested pixels (through the PSX
     // 15-bit rounding the encoder applies).
     let want: Vec<u8> = rgba
-        .chunks_exact(4)
-        .flat_map(|p| {
-            legaia_tim::bgr555_to_rgba8(legaia_tim::encode::rgba8_to_bgr555(p.try_into().unwrap()))
-        })
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .flat_map(|p| legaia_tim::bgr555_to_rgba8(legaia_tim::encode::rgba8_to_bgr555(*p)))
         .collect();
     assert_eq!(
         save_icon::export_slot(&after, slot).unwrap(),

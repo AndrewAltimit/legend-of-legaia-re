@@ -1768,7 +1768,12 @@ pub fn subdraw_step(image: &[u8], base_va: u32, step: usize) -> Option<SubdrawSt
     Some(SubdrawStep {
         anim: head[1],
         panel: head[2],
-        pairs: body.chunks_exact(2).map(|c| (c[0], c[1])).collect(),
+        pairs: body
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| (c[0], c[1]))
+            .collect(),
     })
 }
 

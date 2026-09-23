@@ -751,7 +751,9 @@ pub fn sc_block_checksum(sc_block: &[u8]) -> Option<u32> {
     }
     Some(
         sc_block[..RETAIL_BLOCK_CHECKSUM_OFFSET]
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .fold(0u32, |sum, c| {
                 sum.wrapping_add(u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             }),
@@ -1701,7 +1703,9 @@ mod tests {
         );
         // The word-slice kernel and the byte form agree.
         let words: Vec<u32> = block
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect();
         assert_eq!(

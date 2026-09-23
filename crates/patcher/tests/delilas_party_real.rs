@@ -556,7 +556,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                     // voice alive for the field load to corrupt.
                     let body = &p_snd[span.clone()];
                     let mut terminal = None;
-                    for (bi, block) in body.chunks_exact(16).enumerate() {
+                    for (bi, block) in body.as_chunks::<16>().0.iter().enumerate() {
                         assert!(
                             block[1] <= 7,
                             "victory clip {clip:#x} VAG {i} block {bi} bad flags {:#x}",

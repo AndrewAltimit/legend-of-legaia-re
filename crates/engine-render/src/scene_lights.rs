@@ -158,7 +158,7 @@ pub fn vram_mesh_emitters(
     indices: &[u32],
 ) -> Vec<EmitterSample> {
     let mut out = Vec::new();
-    for tri in indices.chunks_exact(3) {
+    for tri in indices.as_chunks::<3>().0 {
         let i0 = tri[0] as usize;
         if i0 >= cba_tsb.len() || i0 >= colors.len() {
             continue;
@@ -191,7 +191,7 @@ pub fn color_mesh_emitters(
     indices: &[u32],
 ) -> Vec<EmitterSample> {
     let mut out = Vec::new();
-    for tri in indices.chunks_exact(3) {
+    for tri in indices.as_chunks::<3>().0 {
         let i0 = tri[0] as usize;
         let Some(&word) = blend.get(i0) else {
             continue;

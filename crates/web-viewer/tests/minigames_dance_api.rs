@@ -40,7 +40,7 @@ fn dance_presentation_api_decodes() {
     for pal in [0usize, 5, 6, 8, 13, 14] {
         let page = mg.dance_hud_page_rgba(pal);
         assert_eq!(page.len(), 256 * 256 * 4, "palette {pal}");
-        assert!(page.chunks_exact(4).any(|p| p[3] != 0));
+        assert!(page.as_chunks::<4>().0.iter().any(|p| p[3] != 0));
     }
 
     // 34 widget records; spot-check the traced digit-font row.
@@ -67,7 +67,7 @@ fn dance_presentation_api_decodes() {
         for pose in 0..4 {
             let face = mg.dance_face_rgba(dancer, pose);
             assert!(
-                !face.is_empty() && face.chunks_exact(4).any(|p| p[3] != 0),
+                !face.is_empty() && face.as_chunks::<4>().0.iter().any(|p| p[3] != 0),
                 "face {dancer} pose {pose} empty"
             );
         }
@@ -181,7 +181,7 @@ fn dance_presentation_api_decodes() {
     // human spawn, the walkable floor near y = 0, and the ceiling above
     // (negative y in the retail Y-down frame).
     let (mut xs, mut ys, mut zs) = ((0f32, 0f32), (0f32, 0f32), (0f32, 0f32));
-    for v in env_pos.chunks_exact(3) {
+    for v in env_pos.as_chunks::<3>().0 {
         xs = (xs.0.min(v[0]), xs.1.max(v[0]));
         ys = (ys.0.min(v[1]), ys.1.max(v[1]));
         zs = (zs.0.min(v[2]), zs.1.max(v[2]));

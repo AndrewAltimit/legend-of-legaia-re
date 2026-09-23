@@ -142,8 +142,13 @@ mod tests {
         assert_eq!(atlas.rgba.len(), (ATLAS_WIDTH * ATLAS_HEIGHT * 4) as usize);
         assert_eq!(atlas.rect, (0, 0, ATLAS_WIDTH, ATLAS_HEIGHT));
         // Sanity: not all-transparent and not all-opaque-black.
-        let any_opaque = atlas.rgba.chunks_exact(4).any(|p| p[3] > 0);
-        let any_non_black = atlas.rgba.chunks_exact(4).any(|p| p[0] | p[1] | p[2] != 0);
+        let any_opaque = atlas.rgba.as_chunks::<4>().0.iter().any(|p| p[3] > 0);
+        let any_non_black = atlas
+            .rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|p| p[0] | p[1] | p[2] != 0);
         assert!(any_opaque, "title atlas is fully transparent");
         assert!(any_non_black, "title atlas is fully black");
     }

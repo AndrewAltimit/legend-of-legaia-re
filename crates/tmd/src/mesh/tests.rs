@@ -133,7 +133,7 @@ fn pyramid_to_mesh() {
     assert_eq!(mesh.triangle_count(), 4); // 4 FT3 fan tris
     assert_eq!(mesh.indices.len(), 12);
     // Apex (vertex 4) is in every triangle.
-    for tri in mesh.indices.chunks_exact(3) {
+    for tri in mesh.indices.as_chunks::<3>().0 {
         assert!(tri.contains(&4u32), "expected apex (4) in tri {:?}", tri);
     }
 }
@@ -332,7 +332,7 @@ fn append_scaled_half_turn_keeps_winding_and_mirrors_positions() {
     }
     // Determinant +1: corner order is preserved.
     let k = base.indices.len();
-    for (i, t) in base.indices.chunks_exact(3).enumerate() {
+    for (i, t) in base.indices.as_chunks::<3>().0.iter().enumerate() {
         assert_eq!(
             &both.indices[k + i * 3..k + i * 3 + 3],
             &[t[0] + n as u32, t[1] + n as u32, t[2] + n as u32]
@@ -351,7 +351,7 @@ fn append_scaled_mirror_reverses_winding() {
     let n = base.positions.len() as u32;
     let k = base.indices.len();
     // Determinant -1: corners 1 and 2 swap so the copy still faces out.
-    for (i, t) in base.indices.chunks_exact(3).enumerate() {
+    for (i, t) in base.indices.as_chunks::<3>().0.iter().enumerate() {
         assert_eq!(
             &both.indices[k + i * 3..k + i * 3 + 3],
             &[t[0] + n, t[2] + n, t[1] + n]

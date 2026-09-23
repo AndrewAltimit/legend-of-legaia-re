@@ -575,7 +575,7 @@ pub(crate) fn monster_mesh_to_obj(tmd: &legaia_tmd::Tmd, buf: &[u8], id: u16) ->
         s.push_str(&format!("v {} {} {}\n", p[0], p[1], p[2]));
     }
     // OBJ vertex indices are 1-based.
-    for tri in mesh.indices.chunks_exact(3) {
+    for tri in mesh.indices.as_chunks::<3>().0 {
         s.push_str(&format!("f {} {} {}\n", tri[0] + 1, tri[1] + 1, tri[2] + 1));
     }
     s

@@ -87,7 +87,12 @@ fn exported_summon_glb_carries_the_canvas_packet_colours() {
 
     // Non-vacuity: this cast's words really are strongly non-neutral, so a
     // white export would be a visible loss rather than a rounding one.
-    let words: Vec<[u8; 3]> = canvas.chunks_exact(4).map(|c| [c[0], c[1], c[2]]).collect();
+    let words: Vec<[u8; 3]> = canvas
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| [c[0], c[1], c[2]])
+        .collect();
     let non_neutral = words.iter().filter(|w| **w != [0x80; 3]).count();
     let hot = words.iter().filter(|w| w[0] > 0xC0 && w[2] < 0x40).count();
     assert!(
@@ -164,7 +169,9 @@ fn no_cast_exports_a_whiter_model_than_it_draws() {
         }
         let canvas = s.mesh_flat_rgba();
         let canvas_non_neutral = canvas
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .filter(|c| [c[0], c[1], c[2]] != [0x80; 3])
             .count();
         let glb = s.export_summon_glb();

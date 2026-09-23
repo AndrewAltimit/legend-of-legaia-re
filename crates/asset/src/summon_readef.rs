@@ -323,7 +323,9 @@ pub fn parse(bytes: &[u8]) -> Result<SidebandFile> {
         );
     }
     let slots = bytes
-        .chunks_exact(SLOT_BYTES)
+        .as_chunks::<SLOT_BYTES>()
+        .0
+        .iter()
         .enumerate()
         .map(|(index, slot)| {
             let mode = u32::from_le_bytes(slot[..4].try_into().unwrap());
@@ -717,7 +719,7 @@ pub fn decode_texture_slot(slot: &[u8], t: &TextureSlot, clut_sub: u8) -> Option
         .collect();
     let page = slot.get(t.texture_offset..t.texture_offset + width * height / 2)?;
     let mut rgba = vec![0u8; width * height * 4];
-    for (texel, px) in rgba.chunks_exact_mut(4).enumerate() {
+    for (texel, px) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let byte = page[texel / 2];
         let idx = if texel.is_multiple_of(2) {
             byte & 0xF

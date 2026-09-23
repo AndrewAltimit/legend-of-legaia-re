@@ -608,7 +608,9 @@ impl SummonScene {
 fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<SummonPartRuntime> {
     let rec = record_bytes.get(p.record_off..)?;
     let buf: Vec<u16> = rec
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
     let mut state = ActorState::new();

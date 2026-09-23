@@ -58,7 +58,7 @@ impl ColorMesh {
         );
         self.colors.extend_from_slice(&src.colors);
         self.blend.extend_from_slice(&src.blend);
-        for t in src.indices.chunks_exact(3) {
+        for t in src.indices.as_chunks::<3>().0 {
             if flip {
                 self.indices
                     .extend_from_slice(&[base + t[0], base + t[2], base + t[1]]);

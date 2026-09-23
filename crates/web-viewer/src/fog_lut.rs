@@ -85,7 +85,7 @@ fn check(scus: &[u8], off: usize) -> Option<&[u8]> {
     let mut violations = 0usize;
     let mut last = 0u16;
     let mut nonzero = 0usize;
-    for chunk in slice.chunks_exact(2) {
+    for chunk in slice.as_chunks::<2>().0 {
         let v = u16::from_le_bytes([chunk[0], chunk[1]]);
         if v & 0x8000 != 0 {
             return None; // STP bit set; not a fog LUT entry
@@ -186,7 +186,7 @@ mod tests {
         // Shift everything up by 4 so the leading 8 entries (16 bytes)
         // are no longer 0. With nonzero padding, the scanner can't slide
         // into an all-zero region either.
-        for chunk in lut.chunks_exact_mut(2) {
+        for chunk in lut.as_chunks_mut::<2>().0 {
             let v = u16::from_le_bytes([chunk[0], chunk[1]]) + 4;
             chunk.copy_from_slice(&v.to_le_bytes());
         }

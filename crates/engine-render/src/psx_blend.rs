@@ -289,7 +289,7 @@ fn append_semi_tail_by(
     // original mesh order so the per-frame blend list sees retail's
     // prim submission order.
     let mut prims: Vec<(u8, u32, [f32; 3])> = Vec::new();
-    for tri in indices.chunks_exact(3) {
+    for tri in indices.as_chunks::<3>().0 {
         let word = word_of(tri[0] as usize);
         if prim_semi_transparent(word) {
             let mode = abr_mode(word);

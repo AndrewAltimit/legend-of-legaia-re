@@ -323,7 +323,9 @@ fn name_class(name_bytes: &[u8]) -> Option<DoorSide> {
     // The names are sequences of 2-byte SJIS codes; compare on u16 chars so a
     // pattern can't match across a character boundary.
     let chars: Vec<u16> = name_bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| u16::from_be_bytes([c[0], c[1]]))
         .collect();
     const IN_SEQ: [u16; 2] = [0x8268, 0x826D];

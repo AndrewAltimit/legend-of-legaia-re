@@ -178,7 +178,7 @@ impl FieldOccluders {
                         // the per-vertex attribute afterwards - so the
                         // semi-transparency exclusion must read the packed
                         // cba_tsb, not the closure argument.
-                        for tri in mesh.indices.chunks_exact(3) {
+                        for tri in mesh.indices.as_chunks::<3>().0 {
                             let abe = mesh
                                 .cba_tsb
                                 .get(tri[0] as usize)
@@ -192,7 +192,7 @@ impl FieldOccluders {
                         positions.extend_from_slice(&cmesh.positions);
                         // Colour half: same ABE gate on the blend word (all
                         // corners of a prim share one word).
-                        for tri in cmesh.indices.chunks_exact(3) {
+                        for tri in cmesh.indices.as_chunks::<3>().0 {
                             let abe = cmesh
                                 .blend
                                 .get(tri[0] as usize)
@@ -234,7 +234,7 @@ impl FieldOccluders {
         let start = self.tris.len();
         let mut lo = [f32::INFINITY; 3];
         let mut hi = [f32::NEG_INFINITY; 3];
-        for tri in indices.chunks_exact(3) {
+        for tri in indices.as_chunks::<3>().0 {
             let (Some(a), Some(b), Some(cc)) = (
                 positions.get(tri[0] as usize),
                 positions.get(tri[1] as usize),

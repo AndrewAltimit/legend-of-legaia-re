@@ -173,8 +173,10 @@ fn pixel_delta(a: &Path, b: &Path) -> f64 {
         b.display()
     );
     let differing = ap
-        .chunks_exact(4)
-        .zip(bp.chunks_exact(4))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(bp.as_chunks::<4>().0)
         .filter(|(x, y)| x != y)
         .count();
     differing as f64 / (aw as f64 * ah as f64)

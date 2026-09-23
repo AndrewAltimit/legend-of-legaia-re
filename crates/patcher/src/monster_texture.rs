@@ -331,7 +331,7 @@ fn edit_page(
     // first, exactly the order the decode read it.
     let mut block = page.block.clone();
     let pix = page.pixels_offset();
-    for (i, chunk) in indices.chunks_exact(2).enumerate() {
+    for (i, chunk) in indices.as_chunks::<2>().0.iter().enumerate() {
         let byte = (chunk[0] & 0x0F) | (chunk[1] << 4);
         let at = pix + i;
         if at >= block.len() {

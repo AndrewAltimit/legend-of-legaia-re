@@ -189,7 +189,9 @@ pub fn stager_records_arm_morphs(
             continue;
         };
         let buf: Vec<u16> = slice
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect();
         let mut pc = 2usize;

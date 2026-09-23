@@ -3875,7 +3875,9 @@ const ZERO_HEAD_BYTES: usize = 32;
 /// `looks_like_data` in `scripts/ghidra-analysis/attribute-dump-extents.py`.
 pub fn zero_absolute_head(window: &[u8]) -> bool {
     let words: Vec<u32> = window
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .take(24)
         .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
         .collect();

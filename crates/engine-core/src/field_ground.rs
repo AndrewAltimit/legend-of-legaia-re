@@ -42,7 +42,7 @@ pub fn render_positions(hf: &WalkHeightfield) -> Vec<[f32; 3]> {
 /// as-is.
 pub fn render_indices(hf: &WalkHeightfield) -> Vec<u32> {
     let mut out = hf.indices.clone();
-    for tri in out.chunks_exact_mut(3) {
+    for tri in out.as_chunks_mut::<3>().0 {
         tri.swap(1, 2);
     }
     out

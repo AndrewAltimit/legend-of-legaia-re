@@ -148,7 +148,7 @@ pub fn parse(buf: &[u8]) -> Result<MesBlob> {
     let format = detect_format(buf).ok_or_else(|| {
         anyhow::anyhow!(
             "buffer doesn't match any known MES format (first 4 bytes: {:02X?})",
-            &buf.get(0..4).unwrap_or(&[])
+            buf.get(0..4).unwrap_or(&[])
         )
     })?;
     match format {

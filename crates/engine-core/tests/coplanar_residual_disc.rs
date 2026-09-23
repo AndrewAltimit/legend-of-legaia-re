@@ -299,7 +299,7 @@ fn diag_scene(index: &ProtIndex, name: &str) -> (usize, f32) {
                        indices: &[u32],
                        ds_flag: &dyn Fn(u32) -> bool,
                        colour_half: bool| {
-            for tri in indices.chunks_exact(3) {
+            for tri in indices.as_chunks::<3>().0 {
                 // Double-sided-pair copies are resolved by the shaders'
                 // facing discard, not by geometry - not a residual fight.
                 if ds_flag(tri[0]) {
@@ -360,7 +360,7 @@ fn diag_scene(index: &ProtIndex, name: &str) -> (usize, f32) {
     // pins.
     if let Ok(Some(hf)) = scene.walk_heightfield(index) {
         const GROUND_DRAW: usize = usize::MAX;
-        for tri in hf.indices.chunks_exact(3) {
+        for tri in hf.indices.as_chunks::<3>().0 {
             let v: Vec<[f32; 3]> = tri
                 .iter()
                 .map(|&i| {

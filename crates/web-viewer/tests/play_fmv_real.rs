@@ -76,7 +76,7 @@ fn slice_sectors(disc: &[u8], w: &Wanted) -> Vec<u8> {
 /// RGB triple.
 fn non_uniform(rgba: &[u8]) -> bool {
     let first = &rgba[..3];
-    rgba.chunks_exact(4).any(|px| &px[..3] != first)
+    rgba.as_chunks::<4>().0.iter().any(|px| &px[..3] != first)
 }
 
 fn non_silent(pcm: &[i16]) -> bool {

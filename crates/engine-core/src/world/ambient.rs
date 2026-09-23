@@ -193,7 +193,9 @@ impl World {
         let (record_off, end) = (rec.record_off, rec.bytecode.end);
         let bytes = self.props.stager_bytes.get(record_off..end)?;
         let buf: Vec<u16> = bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect();
         let mut state = ActorState::new();

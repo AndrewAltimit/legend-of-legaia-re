@@ -56,7 +56,9 @@ fn overlay_0898() -> Option<Vec<u8>> {
 /// unimplemented `opcode` as `Err`.
 fn drive_record(overlay: &[u8], record_off: usize) -> Result<(bool, BTreeSet<u16>), u16> {
     let buf: Vec<u16> = overlay[record_off..]
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
     let mut state = ActorState::new();

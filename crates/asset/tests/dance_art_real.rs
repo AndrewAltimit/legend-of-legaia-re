@@ -54,7 +54,7 @@ fn dance_art_pack_and_widget_table_decode() {
     let page = dance_art::hud_page_rgba(&tims, 0).expect("page decodes");
     assert_eq!((page.width, page.height), (256, 256));
     assert!(
-        page.rgba.chunks_exact(4).any(|p| p[3] != 0),
+        page.rgba.as_chunks::<4>().0.iter().any(|p| p[3] != 0),
         "HUD page not empty"
     );
 
@@ -99,7 +99,7 @@ fn dance_art_pack_and_widget_table_decode() {
             let face = dance_art::face_window_rgba(strip, rig, &frames, pose, 0, 64)
                 .unwrap_or_else(|e| panic!("face case {case} pose {pose}: {e}"));
             assert_eq!((face.width, face.height), (64, 64));
-            assert!(face.rgba.chunks_exact(4).any(|p| p[3] != 0));
+            assert!(face.rgba.as_chunks::<4>().0.iter().any(|p| p[3] != 0));
         }
     }
 
@@ -118,5 +118,5 @@ fn dance_art_pack_and_widget_table_decode() {
         .expect("Noa atlas at (852, 256)");
     let frames = dance_art::parse_face_frames(&overlay, rig).expect("Noa frames");
     let face = dance_art::face_window_rgba(atlas, rig, &frames, 1, 0, 64).expect("Noa face");
-    assert!(face.rgba.chunks_exact(4).any(|p| p[3] != 0));
+    assert!(face.rgba.as_chunks::<4>().0.iter().any(|p| p[3] != 0));
 }

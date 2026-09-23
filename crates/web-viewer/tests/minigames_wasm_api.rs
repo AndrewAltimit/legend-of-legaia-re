@@ -120,7 +120,7 @@ fn slot_machine_art_decodes_off_the_disc() {
         let px = mg.slot_symbol_rgba(sym);
         assert_eq!(px.len(), 64 * 64 * 4, "symbol {sym} is a 64x64 sprite");
         assert!(
-            px.chunks_exact(4).any(|p| p[3] != 0),
+            px.as_chunks::<4>().0.iter().any(|p| p[3] != 0),
             "symbol {sym} is not fully transparent"
         );
     }
@@ -130,8 +130,10 @@ fn slot_machine_art_decodes_off_the_disc() {
     // that would fail if the per-symbol CLUT (`0x7A80 + sym`) were ignored.
     let (a, b) = (mg.slot_symbol_rgba(0), mg.slot_symbol_rgba(1));
     let alpha_eq = a
-        .chunks_exact(4)
-        .zip(b.chunks_exact(4))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(b.as_chunks::<4>().0)
         .all(|(x, y)| (x[3] == 0) == (y[3] == 0));
     assert!(alpha_eq, "symbols 0 and 1 share one cell of artwork");
     assert_ne!(a, b, "...but different palettes, so different pixels");

@@ -73,7 +73,9 @@ pub fn mark_double_sided_pairs(mesh: &mut VramMesh) -> usize {
     use std::collections::HashMap;
     let tris: Vec<[u32; 3]> = mesh
         .indices
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|c| [c[0], c[1], c[2]])
         .collect();
     let mut by_triple: HashMap<[VKey; 3], Vec<usize>> = HashMap::new();
@@ -277,7 +279,9 @@ pub fn separate_coplanar_prims(mesh: &mut VramMesh) -> usize {
     use std::collections::HashMap;
     let tris: Vec<[u32; 3]> = mesh
         .indices
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|c| [c[0], c[1], c[2]])
         .collect();
     let mut recs: Vec<TriRec> = Vec::new();

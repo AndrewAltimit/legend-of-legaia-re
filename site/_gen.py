@@ -1248,7 +1248,7 @@ def build_progress_meter() -> str:
     if not src.exists():
         return ""
     try:
-        tracks = json.loads(src.read_text()).get("tracks", [])
+        tracks = json.loads(src.read_text(encoding="utf-8")).get("tracks", [])
     except (ValueError, OSError):
         return ""
     if not tracks:
@@ -1523,7 +1523,7 @@ def write_gitignore(generated: list[str]) -> None:
     # including the source fragments under _content/ (e.g. the writeups index
     # pages), silently un-tracking them so CI checks out without their content.
     lines = header + [f"/{p}" for p in sorted(generated)] + [""]
-    (ROOT / ".gitignore").write_text("\n".join(lines))
+    (ROOT / ".gitignore").write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
 def main() -> int:
@@ -1549,7 +1549,7 @@ def main() -> int:
         if not src.exists():
             print(f"  skip {out_path:40s} (no content yet)")
             continue
-        body = src.read_text()
+        body = src.read_text(encoding="utf-8")
 
         extra_head = ""
         if body.startswith("<!--HEAD:"):
@@ -1577,14 +1577,14 @@ def main() -> int:
         )
         out = ROOT / out_path
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(page)
+        out.write_text(page, encoding="utf-8")
         written += 1
         generated.append(out_path)
         print(f"  wrote {out_path}")
 
     # Write search-index.json
     idx_path = ROOT / "search-index.json"
-    idx_path.write_text(json.dumps(search_index, ensure_ascii=False, separators=(",", ":")))
+    idx_path.write_text(json.dumps(search_index, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     generated.append("search-index.json")
 
     # Write sitemap.xml over every generated page's canonical URL. GitHub
@@ -1598,7 +1598,7 @@ def main() -> int:
     for u in urls:
         sitemap.append(f"  <url><loc>{html.escape(u)}</loc></url>")
     sitemap.append("</urlset>\n")
-    (ROOT / "sitemap.xml").write_text("\n".join(sitemap))
+    (ROOT / "sitemap.xml").write_text("\n".join(sitemap), encoding="utf-8")
     generated.append("sitemap.xml")
 
     # robots.txt is only authoritative at a domain root, so on the project
@@ -1607,7 +1607,8 @@ def main() -> int:
     (ROOT / "robots.txt").write_text(
         "User-agent: *\n"
         "Allow: /\n"
-        f"Sitemap: {SITE_URL}/sitemap.xml\n"
+        f"Sitemap: {SITE_URL}/sitemap.xml\n",
+        encoding="utf-8",
     )
     generated.append("robots.txt")
 
@@ -1641,14 +1642,15 @@ def main() -> int:
 </div>
 </body>
 </html>
-""")
+""", encoding="utf-8")
     generated.append("404.html")
 
     # Write scenes.json (CDNAME -> category map for the asset viewer's
     # Scene filter).
     scenes_payload = build_scenes_json()
     (ROOT / "scenes.json").write_text(
-        json.dumps(scenes_payload, ensure_ascii=False, separators=(",", ":"))
+        json.dumps(scenes_payload, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
     )
     generated.append("scenes.json")
 
@@ -1656,19 +1658,23 @@ def main() -> int:
     # interactive shops / world / minigames pages).
     shops_payload, world_payload, minigames_payload = build_gamedata_json()
     (ROOT / "shops.json").write_text(
-        json.dumps(shops_payload, ensure_ascii=False, separators=(",", ":"))
+        json.dumps(shops_payload, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
     )
     (ROOT / "world.json").write_text(
-        json.dumps(world_payload, ensure_ascii=False, separators=(",", ":"))
+        json.dumps(world_payload, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
     )
     (ROOT / "minigames.json").write_text(
-        json.dumps(minigames_payload, ensure_ascii=False, separators=(",", ":"))
+        json.dumps(minigames_payload, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
     )
     generated += ["shops.json", "world.json", "minigames.json"]
 
     arts_payload = build_arts_json()
     (ROOT / "arts.json").write_text(
-        json.dumps(arts_payload, ensure_ascii=False, separators=(",", ":"))
+        json.dumps(arts_payload, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
     )
     generated.append("arts.json")
 

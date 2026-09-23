@@ -194,13 +194,18 @@ fn the_seven_named_summons_resolve_to_bespoke_meshes() {
         // attribute defaults to white, and white is `texel * 255/128` - a
         // blowout that reads as "too bright", never as "unlit". Assert the
         // stream is neither all-white nor all-one-value.
-        let rgb: Vec<[u8; 3]> = rgba.chunks_exact(4).map(|c| [c[0], c[1], c[2]]).collect();
+        let rgb: Vec<[u8; 3]> = rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| [c[0], c[1], c[2]])
+            .collect();
         assert!(
             !rgb.iter().all(|c| *c == [255, 255, 255]),
             "{name}: colour stream is all white - the texel*2 blowout"
         );
         assert!(
-            rgba.chunks_exact(4).all(|c| c[3] == 255),
+            rgba.as_chunks::<4>().0.iter().all(|c| c[3] == 255),
             "{name}: every vertex is flagged textured"
         );
         let distinct: std::collections::BTreeSet<[u8; 3]> = rgb.iter().copied().collect();
@@ -379,7 +384,9 @@ fn casts_expose_their_fx_texture_pages() {
             // passes either way. Count them: if the unpack broke, essentially
             // every page goes flat and the file-wide floor below fails.
             let distinct: std::collections::BTreeSet<[u8; 4]> = rgba
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .map(|c| [c[0], c[1], c[2], c[3]])
                 .collect();
             pages_seen += 1;

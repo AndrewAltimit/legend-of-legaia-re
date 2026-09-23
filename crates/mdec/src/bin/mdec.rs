@@ -536,7 +536,7 @@ fn write_ppm(path: &Path, rgba: &[u8], width: u32, height: u32) -> Result<()> {
         std::fs::File::create(path).with_context(|| format!("create {}", path.display()))?,
     );
     write!(f, "P6\n{} {}\n255\n", width, height)?;
-    for chunk in rgba.chunks_exact(4) {
+    for chunk in rgba.as_chunks::<4>().0 {
         f.write_all(&chunk[..3])?; // RGB only
     }
     Ok(())

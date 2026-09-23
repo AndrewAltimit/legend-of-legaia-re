@@ -230,7 +230,7 @@ fn monster_texture_pool_decodes_palettes_and_4bpp_page() {
     let rgba = gt.to_rgba(0);
     assert_eq!(rgba.len(), gt.width * gt.height * 4);
     assert!(
-        rgba.chunks_exact(4).any(|p| p[3] == 255),
+        rgba.as_chunks::<4>().0.iter().any(|p| p[3] == 255),
         "atlas has opaque texels"
     );
     // PSX transparency is per-palette: a texel is transparent when its palette

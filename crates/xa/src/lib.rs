@@ -340,7 +340,7 @@ fn decode_group_4bit(
         Channels::Stereo => {
             // Left = even units, right = odd units; pair (0,1),(2,3),(4,5),(6,7)
             // and emit each pair as 28 interleaved L,R sample pairs.
-            for pair in decoded[..UNITS_PER_GROUP_4BIT].chunks_exact(2) {
+            for pair in decoded[..UNITS_PER_GROUP_4BIT].as_chunks::<2>().0 {
                 for (ls, rs) in pair[0].iter().zip(pair[1].iter()) {
                     out.push(*ls);
                     out.push(*rs);
@@ -404,7 +404,7 @@ fn decode_group_8bit(
         }
         Channels::Stereo => {
             // Left = even units (0,2), right = odd units (1,3); pair (0,1),(2,3).
-            for pair in decoded.chunks_exact(2) {
+            for pair in decoded.as_chunks::<2>().0 {
                 for (ls, rs) in pair[0].iter().zip(pair[1].iter()) {
                     out.push(*ls);
                     out.push(*rs);

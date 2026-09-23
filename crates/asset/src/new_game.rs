@@ -450,8 +450,8 @@ fn replay_seed_stores(region: &[u8]) -> std::collections::BTreeMap<u32, u8> {
     let mut bytes: BTreeMap<u32, u8> = BTreeMap::new();
     // The scratch registers a seed store may use: $v0 (2) and $v1 (3).
     let mut regs: [u32; 32] = [0; 32];
-    for chunk in region.chunks_exact(4) {
-        let word = u32::from_le_bytes(chunk.try_into().unwrap());
+    for chunk in region.as_chunks::<4>().0 {
+        let word = u32::from_le_bytes(*chunk);
         let op = word >> 26;
         let rs = (word >> 21) & 0x1F;
         let rt = ((word >> 16) & 0x1F) as usize;

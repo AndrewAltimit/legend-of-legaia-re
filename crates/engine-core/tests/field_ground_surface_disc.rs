@@ -220,7 +220,7 @@ fn open_floor_cells_are_surfaced_by_ground_or_mesh() {
                 let base = pts.len() as u32;
                 pts.extend(cm.positions.iter().map(xz));
                 idx.extend(cm.indices.iter().map(|i| i + base));
-                for t in idx.chunks_exact(3) {
+                for t in idx.as_chunks::<3>().0 {
                     let (Some(a), Some(b), Some(c)) = (
                         pts.get(t[0] as usize),
                         pts.get(t[1] as usize),

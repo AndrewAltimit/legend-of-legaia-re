@@ -534,8 +534,10 @@ fn pager_is_replaced_whole_and_its_caller_still_reaches_it() {
     // and the applier's match arm detours into it - two words, with the flag
     // store after them and the applier's entry untouched.
     let words: Vec<u32> = planned
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     assert!(
         plan.performed_va > PAGER_VA && plan.performed_va < PAGER_VA + (PAGER_WORDS as u32) * 4

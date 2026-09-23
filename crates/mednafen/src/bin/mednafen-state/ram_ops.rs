@@ -137,9 +137,16 @@ pub fn cmd_extract(save: &Path, start: u32, end: u32, out: Option<&Path>) -> Res
 
     // Quick MIPS-shape sanity check (mirrors the python script).
     let jr_ra: [u8; 4] = [0x08, 0x00, 0xE0, 0x03];
-    let n_jr = slice.chunks_exact(4).filter(|w| *w == jr_ra).count();
+    let n_jr = slice
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|w| **w == jr_ra)
+        .count();
     let n_sp = slice
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .filter(|w| w[1] == 0xFF && w[2] == 0xBD && w[3] == 0x27)
         .count();
     let nonzero = slice.iter().filter(|&&b| b != 0).count();

@@ -287,8 +287,10 @@ fn monster_models_survive_obj_png_round_trip() {
                 // texels are dead bytes the import legitimately discards).
                 let png_diff = exported
                     .rgba
-                    .chunks_exact(4)
-                    .zip(second.rgba.chunks_exact(4))
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .zip(second.rgba.as_chunks::<4>().0)
                     .zip(exported.owned.iter())
                     .filter(|((x, y), owned)| **owned && x != y)
                     .count();

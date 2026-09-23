@@ -243,7 +243,7 @@ fn write_sheet(path: &Path, cells: &[Cell], size: usize) {
     let rows = cells.len().div_ceil(cols);
     let (w, h) = (cols * pw, rows * ph);
     let mut img = vec![0u8; w * h * 4];
-    for px in img.chunks_exact_mut(4) {
+    for px in img.as_chunks_mut::<4>().0 {
         px.copy_from_slice(&[10, 10, 12, 255]);
     }
     for (i, c) in cells.iter().enumerate() {

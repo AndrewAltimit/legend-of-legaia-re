@@ -1956,8 +1956,10 @@ mod tests {
     fn no_load_delay_hazards_in_the_hook() {
         let bytes = assemble_hook(STUB_VA, &routes());
         let words: Vec<u32> = bytes
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| u32::from_le_bytes(*c))
             .collect();
         let loaded_reg = |w: u32| -> Option<u32> {
             // lb/lh/lwl/lw/lbu/lhu/lwr
@@ -2179,8 +2181,10 @@ mod tests {
             bytes.len()
         );
         let words: Vec<u32> = bytes
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| u32::from_le_bytes(*c))
             .collect();
         let loaded_reg =
             |w: u32| -> Option<u32> { matches!(w >> 26, 0x20..=0x26).then_some((w >> 16) & 0x1F) };

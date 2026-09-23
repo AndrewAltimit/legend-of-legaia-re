@@ -79,7 +79,7 @@ pub fn stage_effect_clut(vram: &mut Vram, src_x: u8) -> bool {
         return false;
     }
     let mut bytes = [0u8; EFFECT_CLUT_ENTRIES * 2];
-    for (i, pair) in bytes.chunks_exact_mut(2).enumerate() {
+    for (i, pair) in bytes.as_chunks_mut::<2>().0.iter_mut().enumerate() {
         let px = vram.pixel(usize::from(src_x) + i, usize::from(EFFECT_CLUT_ROW));
         pair.copy_from_slice(&px.to_le_bytes());
     }

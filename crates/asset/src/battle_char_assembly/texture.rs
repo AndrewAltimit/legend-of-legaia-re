@@ -387,7 +387,9 @@ pub fn parse_upload_block(
         .get(4..4 + clut_n * 2)
         .ok_or_else(|| anyhow::anyhow!("CLUT run past block end"))?;
     let clut = clut_bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| {
             let e = u16::from_le_bytes([c[0], c[1]]);
             if e != 0 { e | 0x8000 } else { e }
