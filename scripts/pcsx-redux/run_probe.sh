@@ -72,6 +72,10 @@
 #                        Human-navigated poll-tier captures sustain 3x; the
 #                        BP-tier probes should stay at 100.
 #   --log PATH           emulator log path (default logs/pcsx_probe_<stem>.log)
+#                        Env LEGAIA_FASTBOOT=1 adds -fastboot (skip the BIOS
+#                        intro). A cold boot (LEGAIA_NO_SSTATE=1) needs it:
+#                        the default boot path stalls on an early CD read in
+#                        headless -run (docs/tooling/playthrough-coverage.md).
 #   --help               print this header and exit
 #
 # Why -interpreter -debugger by default:
@@ -426,6 +430,9 @@ export LEGAIA_CORE
 # than dumping in one chunk at exit. -stdout enables pcsx-redux's
 # fputs-to-stdout path.
 emu_flags=(-bios "$LEGAIA_BIOS" -iso "$LEGAIA_ISO" -run -stdout -dofile "$LEGAIA_LUA")
+if [[ "${LEGAIA_FASTBOOT:-0}" == "1" ]]; then
+    emu_flags=(-fastboot "${emu_flags[@]}")
+fi
 if [[ "$ISOLATE_CONFIG" == "1" ]]; then
     # -portable PATH points getPersistentDir() at our throwaway profile dir
     # (src/core/arguments.cc: the flag's value sets m_portablePath AND flips
