@@ -724,8 +724,14 @@ struct PlayWindowApp {
     ground_heightfield: Option<UploadedVramMesh>,
     /// `C`-key toggle: when `true`, the field render uses the wide debug
     /// orbit vantage (`camera_mvp`) instead of the retail follow camera
-    /// (`field_follow_camera_mvp`). Defaults to the retail view.
+    /// (`camera_view::field_follow_view`). Defaults to the retail view.
     field_debug_camera: bool,
+    /// The pause menu is up because the title's Options row opened it, not
+    /// because Start did: its sub-screen's exit closes the whole menu and
+    /// returns to the title (retail's title reaches the options screen and
+    /// comes straight back). The browser play page keeps the same flag on
+    /// its `PlayMenu`.
+    menu_from_title: bool,
     /// Kingdom slot-4 clip-bank inspection overlay, as raw line geometry
     /// `(positions, colors, line-indices)` in world space. `Some` only on a
     /// world-map scene when `LEGAIA_WORLDMAP_SLOT4=1` is set; `None`
@@ -1191,8 +1197,6 @@ enum BootUiState {
     Title(legaia_engine_core::title::TitleSession),
     /// Save-select panel is active.
     SaveSelect(legaia_engine_core::save_select::SaveSelectSession),
-    /// Options / config panel is active.
-    Options(legaia_engine_core::options::OptionsSession),
     /// Field (pause) menu is active. The menu session itself is hosted by
     /// the [`BootSession`]
     /// (`session.field_menu`, the retail CARD mode pair / `game_mode 0x17`;
@@ -1262,7 +1266,7 @@ use record::{RecordLog, RecordTarget};
 // them at the same effective scope they had before the split.
 pub(crate) use geometry::{
     LineGeometry, effect_billboard_mesh, effect_sprite_line_geometry, heightfield_to_vram_mesh,
-    world_map_entity_line_geometry, world_map_player_line_geometry, world_map_slot4_line_geometry,
+    scene_viewport_for, world_map_slot4_line_geometry,
 };
 // The procedural battle ground grid lives in `legaia-asset` so all three
 // hosts share one implementation (the native window, the asset-viewer and

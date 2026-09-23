@@ -699,7 +699,11 @@ impl PlayWindowApp {
             self.font_atlas.as_ref(),
         ) {
             let (w, h) = r.surface_size();
-            let aspect = w as f32 / h.max(1) as f32;
+            // The 3D pass draws into the 2D stage rect at the stage's 4:3,
+            // so it lines up with every stage-anchored draw at any window
+            // size (`scene_viewport_for`); the browser canvas is a stage.
+            let (scene_viewport, aspect) = scene_viewport_for(w, h);
+            r.set_scene_viewport(scene_viewport);
             // Upload (or drop) the opdeene "It was the Seru." caption sprite
             // atlas to track World state. The caption image is present only
             // while opdeene is loaded and never changes, so upload it once on
@@ -2316,16 +2320,11 @@ impl PlayWindowApp {
                     cue: None,
                 });
             }
-            // World-map overlay lines: a kind-coded upright marker for
-            // each placed entity (portal / NPC / encounter zone, from
-            // `World::world_map_entity_markers`) plus the player marker
-            // (`World::world_map_player_marker`) - the player's own mesh
-            // isn't drawn in world-map mode. Both build into one Lines
-            // mesh, routed through the same overlay slot as the effect
-            // outlines (mutually exclusive: no effects spawn on the
-            // world map). Without this the installed entities + player
-            // carry positions but never appear on screen.
-            let world_map_entity_lines = self.build_world_map_overlay_lines(r, in_world_map);
+            // World-map overlay lines: only the env-gated slot-4 inspection
+            // wireframe now. The entity and player markers draw as screen
+            // primitives through the kernel the browser play page shares
+            // (`world_map_marker_prims`, appended to `screen_prims` below).
+            let world_map_slot4_lines = self.build_world_map_overlay_lines(r, in_world_map);
             // Effect 3D models (`etmd.dat`): spell effects like Tail
             // Fire are small Gouraud-shaded `etmd` meshes textured by
             // the resident `etim` texels, not billboards. Build a
@@ -2417,8 +2416,8 @@ impl PlayWindowApp {
                 color_draws: &color_draws,
                 // Effect outlines share the billboards' `fx_cam` (the two
                 // sources are mutually exclusive, and off the battle stage
-                // `fx_cam == cam`, so the world-map markers are unaffected).
-                overlay_lines: world_map_entity_lines
+                // `fx_cam == cam`, so the slot-4 inspection lines are unaffected).
+                overlay_lines: world_map_slot4_lines
                     .as_ref()
                     .or(effect_lines.as_ref())
                     .map(|m| (m, fx_cam)),
@@ -2519,6 +2518,10 @@ impl PlayWindowApp {
             // same residency predicate decides for both hosts whether the
             // sprite or the letterforms draw.
             screen_prims.extend(self.dance_countin_prims());
+            // The overworld's entity + player markers: the shared
+            // `world_map_markers` kernel's quads, the browser play page's
+            // twin (`crate::play_world_map_markers` there).
+            screen_prims.extend(self.world_map_marker_prims());
             let target = |scene| present_target(scene, &screen_prims);
             // Periodic sweep (`--screenshot-every`): capture a frame every N
             // ticks into the sweep dir (named for the tick), keep running,

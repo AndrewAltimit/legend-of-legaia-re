@@ -136,7 +136,9 @@ impl PlayWindowApp {
             .actors
             .get(slot)
             .filter(|a| a.active || a.tmd_binding.is_some())?;
-        let aspect = sw as f32 / sh as f32;
+        // The projection the 3D pass draws with, into the stage rect whose
+        // NDC `y` is exactly the 240-line stage row.
+        let (_, aspect) = scene_viewport_for(sw, sh);
         let in_world_map = world.mode == SceneMode::WorldMap;
         let cam = self.compute_scene_camera(aspect, in_world_map, None);
         let v = cam

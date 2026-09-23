@@ -1349,6 +1349,7 @@ impl Renderer {
             // always blends ABE prims, so field water / glass / effects should
             // composite in the clean render, not just under LEGAIA_PSX_RENDER.
             semi_blend: std::cell::Cell::new(true),
+            scene_viewport: std::cell::Cell::new(None),
             dyn_lighting: std::cell::Cell::new(false),
             // Shadow sub-toggle defaults ON - it only bites while dynamic
             // lighting is enabled and lights are staged.

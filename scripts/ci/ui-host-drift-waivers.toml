@@ -641,7 +641,7 @@ reason = "The dev menu Records page, built on opposite sides of the frame. Both 
 [[frame_content]]
 native = "tick_field_party_hud"
 web = "tick_field_party_hud"
-native_only = ["field_follow_view", "frame_vp", "is_open", "pose", "resolve_field_camera", "scale", "vp"]
+native_only = ["frame_vp", "is_open", "pose", "resolve_field_camera", "scale"]
 web_only = ["pad"]
 reason = "One kernel with the projection on opposite sides of the wasm boundary. The native window projects the lead through resolve_field_camera + frame_vp inside the step; the page draw pass holds no camera and no mutable self, so the projection is its own export, play_camera::play_field_hud_project, which the page calls before the tick - same resolver, same frame_vp, same 0x80 torso offset, and with the CUTSCENE arm suppressed the way the native step suppresses it. It used to be JS math over this frame draw VP, so a scripted shot decided where the readout sat. `pad` sits on the page side only because the window reads the pad word off its own field instead of off World::input."
 

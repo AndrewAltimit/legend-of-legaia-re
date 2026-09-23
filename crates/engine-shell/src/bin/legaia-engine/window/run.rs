@@ -1124,6 +1124,7 @@ pub(super) fn cmd_play_window_with_record(
         // Headless capture harnesses can't press `F3`; let them start on the
         // wide debug vantage via the env switch.
         field_debug_camera: std::env::var_os("LEGAIA_FIELD_DEBUG_CAM").is_some(),
+        menu_from_title: false,
         world_map_slot4_lines: None,
         ocean_anim: None,
         cpu_vram_base: None,

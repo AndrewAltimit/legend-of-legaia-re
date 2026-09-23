@@ -135,37 +135,10 @@ impl PlayWindowApp {
             .clamp(debug_orbit::PITCH_MIN, debug_orbit::PITCH_MAX)
     }
 
-    /// The retail **field follow camera**. While the zone camera drives the
-    /// frame, every input is a live global the engine composes per scene and
-    /// per tile: pitch `_DAT_8007B790`, yaw `_DAT_8007B792`, GTE `H`
-    /// `_DAT_8007B6F4` and the eye-space translation trio
-    /// `_DAT_800840B8/BC/C0`, the last divided by the 6x world scale retail
-    /// folds into its camera rotation (`FUN_800172C0` builds `TR` from that
-    /// trio directly - see docs/subsystems/renderer.md). The savestate-pinned
-    /// pitch / yaw and `FIELD_CAM_DEPTH` frame only a world with no field
-    /// terrain loaded. The look-at target is the player anchor - retail's
-    /// follow-cam (`FUN_801DBE9C`) folds `-(anchor X/Z)` into the focus
-    /// globals each frame.
-    ///
-    /// Falls back to the fixed orbit vantage (`camera_mvp`) when no player
-    /// actor exists to follow.
-    ///
-    /// Two user camera knobs compose onto the pinned base: the
-    /// camera-distance preset (`T` cycles retail / far / farther) scales the
-    /// eye-back depth, and a left-mouse horizontal drag orbits the yaw
-    /// around the player (`Camera::manual_orbit`, compass sense - the PSX
-    /// render yaw is its negation, so the movement compass fed through
-    /// `Camera::compass_azimuth_units` tracks the on-screen view exactly).
-    /// Both default to the retail-identical values.
-    pub(super) fn field_follow_camera_mvp(&self, aspect: f32) -> Option<Mat4> {
-        let view = camera_view::field_follow_view(&self.session.camera, &self.session.host.world)?;
-        Some(Mat4::from_cols_array(&view.vp(aspect)))
-    }
-
     /// World-space **eye position** of the retail field follow camera, in
     /// RAW retail Y-down world coordinates (the frame the field draws use) -
-    /// the analytic inverse of the view composition
-    /// `field_follow_camera_mvp` uploads. Consumed by the camera-occlusion
+    /// the analytic inverse of the follow view (`camera_view::field_follow_view`)
+    /// `compute_scene_camera` uploads. Consumed by the camera-occlusion
     /// fade's visibility gate, which ray-casts eye->player against the static
     /// scene geometry in this same frame. `None` on the same no-player guard
     /// as the follow camera.
@@ -1025,7 +998,7 @@ mod follow_compass_tests {
         const PITCH_UNITS: f32 = 450.0;
         let to_rad = |units: f32| units / 4096.0 * TAU;
         for manual_orbit in [0.0f32, 0.4, 1.2, 2.5, -0.7, 3.9] {
-            // The exact composition `field_follow_camera_mvp` builds
+            // The exact composition the follow arm of `compute_scene_camera` builds
             // (with the caller's FIELD_WORLD_FLIP post-multiply).
             let yaw = to_rad(FIELD_FOLLOW_YAW_UNITS) - manual_orbit;
             let target = Vec3::new(500.0, 0.0, 800.0);

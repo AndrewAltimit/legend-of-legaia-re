@@ -164,6 +164,7 @@ pub mod vdf_pulse;
 pub mod walk_regen;
 pub mod world;
 pub mod world_map;
+pub mod world_map_markers;
 
 pub mod float_tween;
 

@@ -2503,11 +2503,7 @@ render-agnostic seam for the installed placements: one
 `WorldMapEntityMarker { world_pos, kind }` per entity that carries a position,
 pairing the placement coordinate with its coarse `WorldMapEntityKind`
 (Portal / Npc / EncounterZone). The marker `y` is the player actor's current
-plane (the placements are 2D), so markers sit on the walking plane. The native
-`play-window` draws each as a kind-coded upright marker (a vertical post plus a
-small base cross, colour-keyed: portals cyan, NPCs green, encounter zones red)
-through the Lines pipeline - the same overlay slot the effect outlines use, and
-mutually exclusive with them since no effects spawn on the world map. The
+plane (the placements are 2D), so markers sit on the walking plane. The
 markers share the player's coordinate frame (both come from the scene MAN), so
 they read correctly relative to the player even while the kingdom terrain mesh
 still renders at its own pack-local coordinates (binding each placement to its
@@ -2515,16 +2511,24 @@ own actor model is the still-open per-entity mesh thread). Config-only installs
 (no disc placements) produce no markers, so a camera-only world map draws
 nothing extra.
 
-The player itself is drawn the same way:
 [`World::world_map_player_marker`](../../crates/engine-core/src/world.rs)
-returns the player actor's position plus heading (the player's own mesh is not
-drawn in world-map mode), and `play-window` draws a distinct white-yellow
-marker - a taller post, a base cross, and a facing tick pointing in the
-heading. Because the world-map walk uses the camera-relative direction bits
-rather than the field `decode_field_direction`, `step_world_map_locomotion`
-records the heading into the actor's `render_26` field itself (the same field
-the field path stores), so the facing tick tracks the walk direction
-deterministically. The player + entity markers build into one Lines mesh.
+returns the player actor's position plus heading. Because the world-map walk
+uses the camera-relative direction bits rather than the field
+`decode_field_direction`, `step_world_map_locomotion` records the heading into
+the actor's `render_26` field itself (the same field the field path stores).
+
+What draws them is one kernel both hosts call,
+[`engine-core::world_map_markers`](../../crates/engine-core/src/world_map_markers.rs).
+Each entity is a kind-coded upright marker - a vertical post plus a small base
+cross, portals cyan, NPCs green, encounter zones red - and the player is a
+taller white-yellow post, a base cross and a facing tick along the heading,
+drawn only while the party leader's own mesh is missing. The kernel projects
+every segment through the resolved frame's `camera_view::frame_vp` at the
+display's 4:3 and emits it as a one-pixel-wide quad on the 320x240 display;
+the native window and the browser play page both put those quads on their
+shared screen-primitive pass (`screen_prim::world_map_marker_prim`). These
+markers are the port's, not retail's.
+
 Diagonal movement applies the same `speed -= speed >> 2` normalise as the field
 controller (and the retail walk overlay): `advance_with_collision` steps both
 axes equally, so a diagonal would otherwise travel ~1.41x the cardinal speed.

@@ -190,6 +190,10 @@ pub struct Renderer {
     /// 15-bit dither that `psx_mode` also enables are strict-PS1 artefacts.
     /// Set with [`Renderer::set_semi_blend`].
     pub(super) semi_blend: std::cell::Cell<bool>,
+    /// Where the 3D pass and the screen-primitive overlay draw inside the
+    /// target, as `(x, y, w, h)` in target pixels; `None` = the whole target.
+    /// Set with [`Renderer::set_scene_viewport`].
+    pub(super) scene_viewport: std::cell::Cell<Option<(u32, u32, u32, u32)>>,
     /// Opt-in dynamic-lighting enhancement, staged into
     /// `MeshUniforms.light_dir[3]`. `false` (the default) keeps every mesh
     /// path pixel-identical to the faithful baked-shading render - retail's
@@ -299,6 +303,22 @@ impl Renderer {
     /// is on regardless of the strict-PS1 jitter / dither knobs.
     pub fn set_semi_blend(&self, enable: bool) {
         self.semi_blend.set(enable);
+    }
+
+    /// Confine the **3D scene pass** and the **screen-primitive overlay** to a
+    /// sub-rectangle of the target (`(x, y, w, h)` in target pixels), or give
+    /// them the whole target again with `None`.
+    ///
+    /// The play window passes its 2D stage rect here: every stage-anchored
+    /// draw (text, menu sprites, the field party HUD, the naming screen's
+    /// windows) sits in the integer-scaled, centred 320x240 stage, and the 3D
+    /// that has to line up with it (the naming screen's actor, the HUD's
+    /// projected-player row) must use the same rect. The text and sprite
+    /// overlays keep the whole target - they are already in surface pixels.
+    /// A caller that sets a rect also composes its projection at the rect's
+    /// aspect, not the target's.
+    pub fn set_scene_viewport(&self, rect: Option<(u32, u32, u32, u32)>) {
+        self.scene_viewport.set(rect);
     }
 
     /// Read the current semi-transparency-blend flag.

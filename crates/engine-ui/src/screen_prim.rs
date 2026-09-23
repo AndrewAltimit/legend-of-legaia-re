@@ -291,6 +291,26 @@ pub fn fog_puff_prim(
     })
 }
 
+/// OT bucket the overworld markers link at: the nearest bucket, so they sit
+/// over every other screen primitive the world map carries.
+pub const WORLD_MAP_MARKER_OT: u32 = 0;
+
+/// One overworld marker segment, already projected and widened by
+/// `legaia_engine_core::world_map_markers` (a port marker, not a retail
+/// primitive): an opaque flat quad at [`WORLD_MAP_MARKER_OT`]. Both hosts wrap
+/// the kernel's quads through this, so the blend class and bucket are decided
+/// once.
+pub fn world_map_marker_prim(xy: [(i16, i16); 4], rgba: [u8; 4]) -> ScreenPrim {
+    ScreenPrim::Flat(FlatQuad {
+        xy,
+        color: rgba,
+        gouraud: None,
+        semi_transparent: false,
+        abr_mode: 0,
+        ot_index: WORLD_MAP_MARKER_OT,
+    })
+}
+
 /// The **screen-effect push** the field overlay's colour-tween actor emits
 /// once per frame - retail's `FUN_80024EE4(layer, blend, packed)` call, in
 /// retail's own argument order.

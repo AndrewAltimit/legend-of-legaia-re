@@ -15,6 +15,22 @@ pub struct CaptureImage {
     pub height: u32,
 }
 
+/// Cut an `(x, y, w, h)` window out of a captured frame. The caller has
+/// bounded the window by the image.
+fn crop_capture(img: &CaptureImage, x: u32, y: u32, w: u32, h: u32) -> CaptureImage {
+    let stride = img.width as usize * 4;
+    let mut rgba = Vec::with_capacity(w as usize * h as usize * 4);
+    for row in y..y + h {
+        let start = row as usize * stride + x as usize * 4;
+        rgba.extend_from_slice(&img.rgba[start..start + w as usize * 4]);
+    }
+    CaptureImage {
+        rgba,
+        width: w,
+        height: h,
+    }
+}
+
 /// Panic message for the two arms that `encode_frame`'s normalisation makes
 /// unreachable. Kept as one constant so the invariant is stated once.
 const NORMALISED: &str =
@@ -217,6 +233,24 @@ impl Renderer {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+            // The stage rect the 3D pass and the screen-primitive overlay are
+            // confined to (see `set_scene_viewport`); the text / sprite
+            // overlays are in surface pixels and take the whole target.
+            let (full_w, full_h) = (self.config.width, self.config.height);
+            let scene_vp = self
+                .scene_viewport
+                .get()
+                .filter(|&(x, y, w, h)| w > 0 && h > 0 && x + w <= full_w && y + h <= full_h);
+            let set_scene_vp = |rp: &mut wgpu::RenderPass<'_>| {
+                if let Some((x, y, w, h)) = scene_vp {
+                    rp.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
+                }
+            };
+            let set_full_vp = |rp: &mut wgpu::RenderPass<'_>| {
+                if scene_vp.is_some() {
+                    rp.set_viewport(0.0, 0.0, full_w as f32, full_h as f32, 0.0, 1.0);
+                }
+            };
             match target {
                 RenderTarget::Clear => {}
                 RenderTarget::Texture(t) => {
@@ -284,6 +318,7 @@ impl Renderer {
                     rp.draw_indexed(0..mesh.index_count, 0, 0..1);
                 }
                 RenderTarget::Scene(scene) => {
+                    set_scene_vp(&mut rp);
                     let bg_borrow = self.scene_uniforms_bg.borrow();
                     let bg: &wgpu::BindGroup = &bg_borrow;
                     rp.set_pipeline(&self.scene_vram_mesh_pipeline);
@@ -434,6 +469,7 @@ impl Renderer {
                         overlays.push(t);
                     }
                     if !overlays.is_empty() {
+                        set_full_vp(&mut rp);
                         let ranges = self.scene_quad_ranges.borrow();
                         if !ranges.iter().all(|(_, n)| *n == 0) {
                             rp.set_pipeline(&self.text_pipeline);
@@ -471,6 +507,7 @@ impl Renderer {
                     }
                 }
                 RenderTarget::ScreenOverlay { vram, .. } => {
+                    set_scene_vp(&mut rp);
                     self.draw_screen_overlay(&mut rp, vram);
                 }
                 // Rebound to `Scene` at the top of this function.
@@ -480,6 +517,7 @@ impl Renderer {
             // drawn last so the quads sit over the scene's meshes, sprites and
             // text, at the reversed-Z near plane.
             if let (true, Some(vram)) = (composite_overlay, composited_vram) {
+                set_scene_vp(&mut rp);
                 self.draw_screen_overlay(&mut rp, vram);
             }
         }
@@ -516,10 +554,27 @@ impl Renderer {
         dst: crate::vram_capture::VramRect,
         opts: crate::vram_capture::CaptureOpts,
     ) -> Result<usize> {
-        let img = self.capture_rgba(target)?;
+        let img = self.capture_scene_rgba(target)?;
         Ok(crate::vram_capture::blit_rgba_into_vram(
             &img.rgba, img.width, img.height, vram, dst, opts,
         ))
+    }
+
+    /// [`Self::capture_rgba`], cropped to the scene viewport
+    /// ([`Self::set_scene_viewport`]) when one is set: the picture the 3D
+    /// pass drew, without the letterbox around it. What a frame-into-VRAM
+    /// capture wants - retail's framebuffer *is* the 320x240 display, so the
+    /// bars are not part of it.
+    pub fn capture_scene_rgba(&self, target: RenderTarget<'_>) -> Result<CaptureImage> {
+        let img = self.capture_rgba(target)?;
+        let Some((x, y, w, h)) = self
+            .scene_viewport
+            .get()
+            .filter(|&(x, y, w, h)| w > 0 && h > 0 && x + w <= img.width && y + h <= img.height)
+        else {
+            return Ok(img);
+        };
+        Ok(crop_capture(&img, x, y, w, h))
     }
 
     /// Render one frame into an offscreen texture at the current surface

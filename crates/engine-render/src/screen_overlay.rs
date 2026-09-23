@@ -59,7 +59,7 @@ pub use legaia_engine_ui::screen_prim::{
     SCREEN_VERTEX_OFF_POS, SCREEN_VERTEX_OFF_UV, SCREEN_VERTEX_STRIDE, ScreenPrim, ScreenQuad,
     ScreenVertex, build_geometry, cinematic_bar_prims, display_rect_flat_quad, fade_prim,
     fog_puff_prim, order_primitives, screen_effect_push_prim, screen_effect_push_prims,
-    screen_fade_prim,
+    screen_fade_prim, world_map_marker_prim,
 };
 
 /// The display rect the shared model authors in is the same rect this crate

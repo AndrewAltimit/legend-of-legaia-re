@@ -345,6 +345,7 @@ impl LegaiaRuntime {
                     }
                     TitleOutcome::Options => {
                         if self.play_menu_open_row("Options") {
+                            self.play_menu_mark_from_title();
                             "options".to_string()
                         } else {
                             self.reopen_title_after_failed_row("Options")
