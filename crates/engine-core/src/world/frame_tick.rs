@@ -1778,21 +1778,31 @@ impl World {
         self.presentation.fx = fx;
     }
 
-    /// Walk-SM arrival pass (`overlay_0897_801ef2b0` case 3), run when the
-    /// player's interpolation reaches the committed tile centre:
+    /// Walk-SM arrival pass (state 3 of `FUN_801EF2B0`, `0x801EF6FC`), run
+    /// when the player's interpolation reaches the committed tile centre. The
+    /// arrived cell picks one of three arms ([`crate::tile_board::arrival_action`]):
     ///
-    /// - an **event / transition cell** (`8..=0xA`) leaves the board mode -
-    ///   the board uninstalls, and the suspended op-0x49 script reads `Done`
-    ///   and resumes (retail reads the header `+7`/`+9` flag operands here;
-    ///   the engine surfaces the exit through the op-49 tristate);
-    /// - an **animated cell** (`0xB..=0xE`) cycles its value one step,
-    ///   wrapping `0xE -> 0xB` (the arrival sub-state's decay pass).
+    /// - a **trigger cell** (`7`) leaves the board with no flag write;
+    /// - an **event cell** (`8..=0xA`) first writes the state-8 system flags
+    ///   ([`crate::tile_board::event_cell_flag_writes`]: SET `A + v + 1`, and
+    ///   SET `A` when TEST `B + v` is clear, `v = cell - 8`, `A`/`B` the header
+    ///   `+7`/`+9` bases), then leaves the board;
+    /// - any other cell advances **every** animated cell on the board one step
+    ///   (`0xB -> 0xC -> 0xD -> 0xE -> 0xB`) and returns to input.
     ///
-    /// PORT: overlay_0897_801ef2b0 (arrival sub-states)
+    /// Leaving uninstalls the board and despawns its tile actors;
+    /// `tile_board_armed` stays set, so the suspended op-0x49 script reads
+    /// `Done` and resumes past the install op - the engine form of retail's
+    /// teardown state `0xE` zeroing the controller's `+0x3E`, which the op-49
+    /// handler reads to raise `_DAT_8007B450 = 1`. Retail spends a fade
+    /// (states `9..0xD`, `+0x9C` ramped down by `DAT_1F800393 << 8`) before
+    /// that teardown; the engine exits on the arrival frame.
+    ///
+    /// PORT: FUN_801EF2B0 (states 3 and 8; the op-49 menu state 5 and the
+    /// fade states `9..0xD` are not ported - no shipped script installs a
+    /// board, see docs/subsystems/tile-board.md)
     fn tile_board_arrival(&mut self) {
-        use crate::tile_board::{
-            CELL_ANIM_FIRST, CELL_ANIM_LAST, CELL_EVENT_FIRST, CELL_EVENT_LAST,
-        };
+        use crate::tile_board::ArrivalAction;
         let Some(board) = self.board.grid.as_mut() else {
             return;
         };
@@ -1800,23 +1810,24 @@ impl World {
         let Some(cell) = board.cell(col, row) else {
             return;
         };
-        if (CELL_EVENT_FIRST..=CELL_EVENT_LAST).contains(&cell) {
-            // Event / transition tile: exit the board. `tile_board_armed`
-            // stays set so the op-49 tristate reads Done and the field
-            // script resumes past the install op. Despawn the tile actors
-            // so they don't leak into the next scene.
-            self.board.grid = None;
-            self.board.header = None;
-            self.despawn_tile_actors();
-        } else if (CELL_ANIM_FIRST..=CELL_ANIM_LAST).contains(&cell) {
-            let next = if cell == CELL_ANIM_LAST {
-                CELL_ANIM_FIRST
-            } else {
-                cell + 1
-            };
-            let idx = row as usize * board.width as usize + col as usize;
-            if let Some(c) = board.cells.get_mut(idx) {
-                *c = next;
+        match crate::tile_board::arrival_action(cell) {
+            ArrivalAction::Continue => {
+                crate::tile_board::advance_animated_cells(&mut board.cells);
+            }
+            action => {
+                if action == ArrivalAction::ExitEvent
+                    && let Some(header) = self.board.header
+                {
+                    let writes = crate::tile_board::event_cell_flag_writes(&header, cell, |i| {
+                        self.system_flag_test(i)
+                    });
+                    for idx in writes {
+                        self.system_flag_set(idx);
+                    }
+                }
+                self.board.grid = None;
+                self.board.header = None;
+                self.despawn_tile_actors();
             }
         }
     }

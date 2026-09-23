@@ -90,10 +90,10 @@ fn install_board(h: crate::tile_board::TileBoardHeader) -> World {
         h.height,
         h.radius,
         h.mode_flag,
-        0,
-        0,
-        0,
-        0,
+        h.flag_base_set.to_le_bytes()[0],
+        h.flag_base_set.to_le_bytes()[1],
+        h.flag_base_test.to_le_bytes()[0],
+        h.flag_base_test.to_le_bytes()[1],
         h.player_template,
         h.tile_template_base,
     ];
@@ -121,6 +121,7 @@ fn hdr(
         mode_flag,
         player_template: 0,
         tile_template_base,
+        ..Default::default()
     }
 }
 
@@ -269,4 +270,73 @@ fn tile_board_is_deterministic() {
         )
     };
     assert_eq!(drive(), drive());
+}
+
+/// Walk-SM state 8: landing on event cell `8 + v` sets system flag
+/// `A + v + 1`, and also `A` when flag `B + v` is clear (`0x801EFC38..`).
+#[test]
+fn event_cell_arrival_writes_the_state_8_flags() {
+    let mut h = hdr(3, 3, 0, 0, 8, 0, 0x30);
+    h.flag_base_set = 0x200;
+    h.flag_base_test = 0x300;
+    let run = |pre_set_test: bool| {
+        let mut w = install_board(h);
+        {
+            let b = w.board.grid.as_mut().unwrap();
+            let idx = b.width as usize; // (col 0, row 1)
+            b.cells[idx] = crate::tile_board::CELL_EVENT_FIRST + 2; // v = 2
+        }
+        if pre_set_test {
+            w.system_flag_set(0x300 + 2);
+        }
+        pad_held(&mut w, input::PadButton::Down.mask(), 20);
+        assert!(w.board.grid.is_none(), "event cell exits the board");
+        (w.system_flag_test(0x200 + 2 + 1), w.system_flag_test(0x200))
+    };
+    // TEST base + v clear -> both flags set.
+    assert_eq!(run(false), (true, true));
+    // TEST base + v already set -> only the per-cell flag.
+    assert_eq!(run(true), (true, false));
+}
+
+/// Walk-SM state 3: a trigger cell (`7`) leaves the board with no flag write.
+#[test]
+fn trigger_cell_arrival_exits_without_flags() {
+    let mut h = hdr(3, 3, 0, 0, 8, 0, 0x30);
+    h.flag_base_set = 0x200;
+    let mut w = install_board(h);
+    {
+        let b = w.board.grid.as_mut().unwrap();
+        let idx = b.width as usize;
+        b.cells[idx] = crate::tile_board::CELL_TRIGGER;
+    }
+    pad_held(&mut w, input::PadButton::Down.mask(), 20);
+    assert!(w.board.grid.is_none(), "trigger cell exits the board");
+    assert!(!w.system_flag_test(0x200));
+}
+
+/// Walk-SM state 3's animated pass advances every animated cell on the
+/// board, not only the arrived one.
+#[test]
+fn plain_arrival_advances_every_animated_cell() {
+    let mut w = tile_board_world();
+    {
+        let b = w.board.grid.as_mut().unwrap();
+        b.cells[8] = crate::tile_board::CELL_ANIM_LAST; // (2,2), not visited
+        b.cells[6] = crate::tile_board::CELL_ANIM_FIRST; // (0,2), not visited
+    }
+    // One Right step to (1,0): an ordinary cell.
+    w.set_pad(input::PadButton::Right.mask());
+    for _ in 0..20 {
+        let _ = w.tick();
+        w.set_pad(0);
+    }
+    let b = w.board.grid.as_ref().unwrap();
+    assert_eq!(b.player_col, 1);
+    assert_eq!(
+        b.cells[8],
+        crate::tile_board::CELL_ANIM_FIRST,
+        "0xE wraps to 0xB"
+    );
+    assert_eq!(b.cells[6], crate::tile_board::CELL_ANIM_FIRST + 1);
 }
