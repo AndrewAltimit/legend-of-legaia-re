@@ -467,6 +467,7 @@ naming `coplanar_draw_offsets` is prose, not a wiring, and under-counting
 | placement tilt composition | reading `placement_rot_y` requires `rot_x` + `rot_z` |
 | shared value layout -> shared quad emitter | resolving `battle_value_readout` requires `battle_numerals` + one of its prim builders |
 | world-map markers through the shared quad kernel | reading the marker seams (`world_map_entity_markers` / `world_map_player_marker`) or `marker_quads` requires `marker_quads` + `world_map_marker_prim` |
+| field attached lights through the shared prim kernel | reading `field_light_draws` requires `light_pool_prims` |
 | retained field ground pass gated off in battle | a file that both uploads a field ground (`uploadGround`) and drives a battle frame (`play_battle_active`) requires `setGroundEnable(false)` |
 
 **The ground-pass rule is about a retained pass, which no draw list shows.**
@@ -1855,6 +1856,20 @@ computing one thing.** Where the shared artefact is *data* (a draw list, a
 matrix, a rect) the gates can pair it. Where it is a *law* expressed twice in
 two shading languages, only a rendered frame from each host, at the same scene
 and the same camera, can compare them.
+
+## Field script actors reach both hosts through one accessor each
+
+The field VM's op `0x43` scripted arcs and op `0x34` sub-1 attached lights
+([`script-vm.md`](../subsystems/script-vm.md#0x34-sub-1-is-an-attached-light))
+are simulated once, in `World::script_actors`, and each host only reads.
+NPC height is the one read a host could get wrong silently: the NPC position
+map carries X / Z, so a host that samples the floor under an NPC itself draws
+an arcing NPC on the ground with every tier green. Both place NPCs through
+`World::field_npc_render_y` - the native window's field NPC pass and the play
+page's `play_npc_transforms` - and the lights ride each host's screen-prim pass
+through the tier-7 rule above. Neither host draws the arc's follow-camera ease
+(`FUN_801DB510` / `FUN_801DAA50` from the release watcher), which is shared
+absence rather than drift.
 
 ## Three one-host decisions moved onto one kernel
 

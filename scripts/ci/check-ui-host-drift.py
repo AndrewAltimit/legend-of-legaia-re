@@ -2334,6 +2334,17 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         "requires": [r"\bmarker_quads\b", r"\bworld_map_marker_prim\b"],
     },
     {
+        "kernel": "field attached lights through the shared prim kernel",
+        "why": "the op `0x34` sub-1 light pools (`World::field_light_draws`, "
+        "the `FUN_801E3984` port) are untextured semi-transparent gouraud "
+        "polygons at an additive or subtractive ABR mode; a surface that "
+        "reads them and builds its own quads picks its own blend, vertex "
+        "order and triangle split, which is exactly the per-host decision "
+        "`screen_prim::light_pool_prims` exists to take once",
+        "trigger": r"\bfield_light_draws\b",
+        "requires": [r"\blight_pool_prims\b"],
+    },
+    {
         "kernel": "retained field ground pass gated off in battle",
         "why": "the WebGL renderer draws its field ground heightfield "
         "(`uploadGround`) as a RETAINED pass inside `renderAssembled`, ahead "
