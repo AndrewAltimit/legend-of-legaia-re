@@ -176,14 +176,14 @@ fn part_a_spine_anchors_codify_retail_progression() {
     const PCSX: &[PcsxAnchor] = &[
         PcsxAnchor {
             label: "s3_rimelm_freeroam",
-            fp: "2fba9adf4ade2f14de2a10c82e066b76025ac7ded1f063b852de9d498be00a6a",
+            fp: "e9e526595d0479ce1af9619418922ca337019ba0d1078169bc65235c22d75fc8",
             scene: "town01",
             mode: 0x03,
             pos: (4160, 11840),
         },
         PcsxAnchor {
             label: "s5_tetsu_battle",
-            fp: "4e9c1e5ffd5972c33da9bdf2304964979037cdfaf77a50df5b03a68c67a55e6f",
+            fp: "4fcfff14628ececbc46dd5d122852b1e8f12bd7352e93fca1e374f72c8eb23dd",
             scene: "town01",
             mode: 0x15,
             pos: (0, 0),

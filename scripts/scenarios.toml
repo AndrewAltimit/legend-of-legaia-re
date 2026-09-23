@@ -452,9 +452,8 @@ topics = ["new game", "in-engine cutscene", "intro"]
 [[scenarios]]
 slot = 255
 label = "first_town_interactive"
-backup_fingerprint = "2fba9adf4ade2f14de2a10c82e066b76025ac7ded1f063b852de9d498be00a6a"
-resident_patch = "shiny-seru + enemy-ally charm (PROT 0867/0898/0899 + SCUS)"
-description = "Rim Elm free-roam after the full NEW GAME intro completes: the SAME capture as s3_rimelm_freeroam (one library file, two labels). Master mode 0x03, player at world (4160, 11840), player +0x10 = 0x09820880 (movement-lock bit 0x80000 clear, input live)."
+backup_fingerprint = "e9e526595d0479ce1af9619418922ca337019ba0d1078169bc65235c22d75fc8"
+description = "Rim Elm free-roam after the full NEW GAME intro completes: the SAME capture as s3_rimelm_freeroam (one library file, two labels). Master mode 0x03, player at world (4160, 11840), movement-lock bit 0x80000 of player +0x10 clear, input live. Retail SCUS (the re-shot S3 on an unpatched image)."
 phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "town01"
@@ -2125,56 +2124,51 @@ expected_game_mode = 0x15
 [[scenarios]]
 slot = 255
 label = "s1_newgame_field"
-backup_fingerprint = "01ea51754ff3495360d06469983a1258816c1c8bdc7d09f385f219d18707b51e"
-resident_patch = "shiny-seru + enemy-ally charm (PROT 0867/0898/0899 + SCUS)"
+backup_fingerprint = "e3d6b6f329cdcf23e28ac3a4f4e0bd6ef6b5abee99a354de48f9ce207e49f7e0"
 phase = "field"
 expected_game_mode = 3
 expected_active_scene = "opdeene"
-description = "S1 of the trace-driven playthrough: a fresh NEW GAME driven COLD FROM BOOT by autorun_play_from_boot.lua (title-tick exec-bp FUN_801DD35C navigates PRESS-START + NEW GAME; field-tick exec-bp FUN_8001698C drives + checkpoints past the XA-streaming vsync-blind window). Captured at the opening prologue scene 'opdeene' at FIELD-RUN (game_mode 0x03, after the scene load + 20-tick settle) - a stable, resumable state (the earlier field-INIT capture crashed on resume). The start anchor for chaining S2 (Rim Elm)."
+description = "S1 of the trace-driven playthrough: a fresh NEW GAME driven cold from boot on a staged, unpatched image (autorun_play_from_boot.lua, LEGAIA_NO_SSTATE=1 LEGAIA_FASTBOOT=1: title-tick exec-bp FUN_801DD35C navigates PRESS-START + NEW GAME; field-tick exec-bp FUN_8001698C drives + checkpoints past the XA-streaming vsync-blind window). Captured at the opening prologue scene 'opdeene' at field-run (game_mode 0x03, 20-tick settle), player (5824, 1984) - the same moment as the capture it replaces (01ea5175..., made on a shiny-seru + enemy-ally charm image, whose resident SCUS carried that build). Retail SCUS at every patcher site (patch_taint_audit.py states). The start anchor for chaining S2 (Rim Elm)."
 topics = ["playthrough", "trace-coverage", "S1", "cold-boot", "new-game", "pcsx-redux"]
 
 [[scenarios]]
 slot = 255
 label = "s2_rimelm_town01"
-backup_fingerprint = "7193710080c9881d615735ff31683b093844243f72211beff0b83995a494247c"
-resident_patch = "shiny-seru + enemy-ally charm (PROT 0867/0898/0899 + SCUS)"
+backup_fingerprint = "72d0201ab5224af86a8370256b2fb9386654355aa9d8301f3c3ebe02e4286ec5"
 phase = "field"
 expected_game_mode = 3
 expected_active_scene = "town01"
-description = "S2 of the trace-driven playthrough: Rim Elm (town01) reached by CHAINING FORWARD from the S1 checkpoint (autorun_play_from_boot.lua, field-tick exec-bp FUN_8001698C CROSS-mashing through the opening prologue scenes opdeene -> opstati -> opurud -> map01 -> town01, ~3500 frames, no resume between). Validated to reload to the field; the start anchor for S3 (first free walk + NPC dialogue)."
+description = "S2 of the trace-driven playthrough: Rim Elm (town01) reached by chaining forward from the S1 checkpoint on a staged, unpatched image (autorun_chain_fast.lua under --fast, CROSS every 20 vsyncs through opdeene -> opstati -> opurud -> map01 -> town01, ~10200 vsyncs, 40-vsync settle). Player (12352, 2368), as in the patched-image capture it replaces (71937100...). Retail SCUS at every patcher site. The start anchor for S3."
 topics = ["playthrough", "trace-coverage", "S2", "rim-elm", "town01", "segment-chaining", "pcsx-redux"]
 
 [[scenarios]]
 slot = 255
 label = "s3_rimelm_freeroam"
-backup_fingerprint = "2fba9adf4ade2f14de2a10c82e066b76025ac7ded1f063b852de9d498be00a6a"
-resident_patch = "shiny-seru + enemy-ally charm (PROT 0867/0898/0899 + SCUS)"
+backup_fingerprint = "e9e526595d0479ce1af9619418922ca337019ba0d1078169bc65235c22d75fc8"
 phase = "field"
 expected_game_mode = 3
 expected_active_scene = "town01"
-description = "S3 of the trace-driven playthrough: FIRST FREE WALK in Rim Elm (town01), reached by completing the opening NAME-ENTRY screen (autorun_s3_capture.lua resumes S2, selects 'End' with CROSS, holds the Yes/No toggle _DAT_8007B458 = 0 = the advancing/accept option, accepts the default name 'Vahn'; the field-VM op-0x49 STATE_RESUME unparks, the rest of the opening plays ~1300 frames, the player engaged flag 0x80000 clears -> free-roam). The town01 'opening deadlock' was the name-entry screen; see docs/tooling/playthrough-coverage.md. The start anchor for S4 (first scene transition)."
+description = "S3 of the trace-driven playthrough: first free walk in Rim Elm (town01), reached by completing the opening name-entry screen from S2 with pad input only (autorun_s3_fast.lua: CROSS on End, UP to Yes and CROSS while the name-entry actor's +0x54 sub-state is the confirm, then CROSS through the opening's remaining dialogue until the player engaged flag 0x80000 clears), 60-vsync settle. Player (4160, 11840), name 'Vahn' (record +0x2A7), as in the patched-image capture it replaces (2fba9adf...). Retail SCUS at every patcher site. The start anchor for S4."
 topics = ["playthrough", "trace-coverage", "S3", "rim-elm", "town01", "name-entry", "free-roam", "pcsx-redux"]
 
 [[scenarios]]
 slot = 255
 label = "s4_rimelm_door_transition"
-backup_fingerprint = "a89f131f74811b56ef12146fcae0f49867f2a3307941a39c292bbd15831c890e"
-resident_patch = "shiny-seru + enemy-ally charm (PROT 0867/0898/0899 + SCUS)"
+backup_fingerprint = "820f1418028a3a26f6acc39d63ab6fa070c9d21be3dd7f8ef4d17f8e05dc80af"
 phase = "field"
 expected_game_mode = 3
 expected_active_scene = "town01"
-description = "S4 of the trace-driven playthrough: FIRST DOOR TRANSITION - the player walks OUT of Vahn's house into Rim Elm proper, reached by the grid-BFS door-nav controller (autorun_s4_doornav.lua resumes S3, reads the per-scene walkability grid at *(_DAT_1f8003ec)+0x4000, BFS's the reachable house-interior tiles from the player tile, walks the boundary tiles with online-adaptive pad input pulsing CROSS; at the front-door tile a walk-touch warp jumps the player (4134,10588)->(3264,3520) = tile (32,82)->(25,27), an intra-town01 warp into the open exterior, settled at mode 0x03). KEY: player+0x14/+0x18 are 16-BIT signed and player+0x16, between them, is the FOOTING - the height of the floor the actor stands on, not a heading (the heading is +0x26; see docs/subsystems/field-locomotion.md). The earlier 'dynamic camera' dead-end was a u32 read folding that footing word into the X high half. Faithful playthrough: D-pad + interact only, no pokes. See docs/tooling/playthrough-coverage.md."
+description = "S4 of the trace-driven playthrough: first door transition - the player walks out of Vahn's house into Rim Elm proper. Reached from S3 by holding DOWN (autorun_chain_fast.lua LEGAIA_HOLD_BTN=DOWN LEGAIA_CKPT_WARP=1): the front-door walk-touch warp jumps the player (4160,10574) -> (3264,3520) = tile (32,82) -> (25,27), an intra-town01 warp into the open exterior, and the state is taken 200 vsyncs after the jump (a checkpoint 50 vsyncs after it does not resume - the emulator reboots). player+0x14/+0x18 are 16-bit signed; +0x16 between them is the footing (field-locomotion.md). Replaces the patched-image capture a89f131f..., which reached the same warp by grid-BFS door-nav. Retail SCUS at every patcher site. D-pad only, no pokes."
 topics = ["playthrough", "trace-coverage", "S4", "rim-elm", "town01", "door", "grid-bfs", "scene-transition", "pcsx-redux"]
 
 [[scenarios]]
 slot = 255
 label = "s5_tetsu_battle"
-backup_fingerprint = "4e9c1e5ffd5972c33da9bdf2304964979037cdfaf77a50df5b03a68c67a55e6f"
-resident_patch = "shiny-seru + enemy-ally charm (PROT 0867/0898/0899 + SCUS)"
+backup_fingerprint = "4fcfff14628ececbc46dd5d122852b1e8f12bd7352e93fca1e374f72c8eb23dd"
 phase = "battle"
 expected_game_mode = 21
 expected_active_scene = "town01"
-description = "S5 of the trace-driven playthrough: FIRST BATTLE - the scripted Tetsu sparring tutorial (formation_id 4), entered from the S4 exterior anchor. Rim Elm has no random encounters at this story point (story-gated), so the first fight is the spar, started by talking to the sparring partner and picking the 3rd 'training fight' list option. Reached by a record-then-replay loop: a human played the route (S4 -> walk to Tetsu at world (2752,1856) -> his dialogue -> 3rd option -> start) under autorun_record_inputs.lua, and autorun_replay_inputs.lua reproduces it deterministically (drives the pad via pad.force from the recorded 0x8007B850 mask, since FUN_8001822C rebuilds the mask after the field-tick BP so direct RAM writes don't stick). Validated: reloads to game_mode 0x15 (BattleMode), battle_ctx 0x8007BD24 = 0x800EB654 (resident), over town01. Faithful: real D-pad + interact inputs, no pokes. See docs/tooling/playthrough-coverage.md."
+description = "S5 of the trace-driven playthrough: first battle - the scripted Tetsu sparring tutorial (formation_id 4), entered from the S4 exterior anchor. Rim Elm has no random encounters at this story point (story-gated), so the first fight is the spar, started by talking to the sparring partner and picking the 3rd 'training fight' list option. Reached by replaying a human's recorded route (autorun_record_inputs.lua; the S4 -> Tetsu walk at world (2752,1856), the story beat at (2368,3392) on the way, his dialogue, 3rd option, start) with autorun_replay_inputs.lua, which drives the pad through pad.force from the recorded 0x8007B850 mask on the field-tick clock. The recording was made from the patched-image S4 (a89f131f...) and replays unchanged from the re-shot one: BattleMode 0x15, battle_ctx 0x8007BD24 = 0x800EB654, over town01, as in the capture it replaces (4e9c1e5f..., whose resident 0898 differed from the disc at six hook clusters). Resident SCUS and 0898 retail. Real D-pad + interact inputs, no pokes."
 topics = ["playthrough", "trace-coverage", "S5", "rim-elm", "town01", "tetsu", "battle", "record-replay", "pcsx-redux"]
 
 # ----------------------------------------------------------------------
@@ -2612,12 +2606,11 @@ topics = ["boot", "title", "cold boot", "init.pak", "WARNING screen", "kanji pag
 [[scenarios]]
 slot = 255
 label = "teien_field_run"
-backup_fingerprint = "811098af2f18e96d7989c03cbc3521976eb913a92af34e244127248c6fbf6fe4"
-resident_patch = "location rename (quick-travel names)"
+backup_fingerprint = "0f0f5384290739532d20a93d2759d36aa16fc551051ebc071f671b443ae6dbb8"
 phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "teien"
-description = "Free field run inside the Sebucus garden (scene teien), captured a minute of field frames past the transition fade the corpus's only other teien field state sits in. The frame's live object grid at *(0x1F8003EC)+0x8000 holds 451 non-zero cells - 400 with the ground-draw bit 0x1000, 53 with 0x2000, 45 with 0x0800 and no 0x1000 - and PROT 0900 is byte-resident at slot B, so the ground pass FUN_801F6D48 can be breakpointed straight from the load."
+description = "Free field run inside the Sebucus garden (scene teien), player at world (6180, 3994): a cold boot of a staged, unpatched image + a memory-card load of the teien save (playthrough-ladder-pro00-14.mcr block 3, restamped to -00; autorun_boot_continue.lua under --fast, 400-vsync settle). It replaces a capture of the same save made on a location-rename image (811098af...); the object-grid counts below and the 0900 residency are identical in both. The frame's live object grid at *(0x1F8003EC)+0x8000 holds 451 non-zero cells - 400 with the ground-draw bit 0x1000, 53 with 0x2000, 45 with 0x0800 and no 0x1000 - and PROT 0900 is byte-resident at slot B, so the ground pass FUN_801F6D48 can be breakpointed straight from the load."
 topics = ["field", "teien", "object grid", "ground pass", "FUN_801F6D48", "PROT 0900", "probe state"]
 
 # ----------------------------------------------------------------------
@@ -2873,3 +2866,17 @@ expected_game_mode = 0x15
 expected_active_scene = "nilboa"
 description = "Koru (monster 0xB6) battle at the first round's Begin / Run prompt, with the Turns Left / HP Left strip drawn (turns left 4, HP 100). SYNTHETIC formation: autorun_w1a_koru_strip.lua installed cells 0x8007BD0C..0F = [0xB6,0,0,0] + master mode 8 from nivora_cutscene_delilas_intro, so the party is that state's (Gala alone) and the arena is the nilboa battle stage, not Koru's scripted fight. The strip's gate reads only the formation cell."
 topics = ["battle", "Koru", "timed fight", "battle HUD", "synthetic", "probe state"]
+
+# ----------------------------------------------------------------------
+# Retail dialogue reference: town01 P1[16]'s first page.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "town01_npc16_dialogue_first_page"
+backup_fingerprint = "7d9fb8c0b64ab43ce2f85d27601921f2ca144f05481b5ab1fa5b341e710d04fe"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town01"
+description = "Rim Elm (town01) with placement P1[16]'s conversation open on its first page, fully typed and waiting on the page cursor: two lines, the first opening on the lead-name escape (1F C1 00). Retail frame-pair for the engine's first-box render of the same record. Made from s4_rimelm_door_transition (retail SCUS) by autorun_talk_to_npc.lua with LEGAIA_NPC_P90=0x800E6702 (MAN base 0x800E4008 + record offset 0x26FA) and a position poke to (3456, 3072) - the path from the house door crosses a story trigger and a fenced lane - then a DOWN tap and CROSS. The poke moves only the player; nothing the conversation reads."
+topics = ["field", "town01", "dialogue", "P1[16]", "name escape", "frame pair", "probe state"]
