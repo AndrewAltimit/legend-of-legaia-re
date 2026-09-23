@@ -685,10 +685,11 @@ translation trio.
 read from `_DAT_8007B630`, whose only retail writer is a field-VM opcode
 (`overlay_0897_801de840.txt` `0x801E2134`, a 3-byte instruction whose operand
 byte becomes the global). Routing a translation value into it is a category
-error, so that arm cannot be the missing caller. The port's field VM does not
-model `_DAT_8007B630`, which leaves the amplitude a permanent zero - the value
-at which the routine degenerates to backing its own previous offset out of the
-accumulators. Wiring it means modelling that opcode first.
+error, so that arm cannot be the missing caller. The port's field VM models
+the opcode (`FieldHost::op4c_n8_sub4_set_b630` -> `World::camera.shake_amplitude`),
+and the global has a second reader besides this routine: the field follow
+camera `FUN_801DB510` loads it at `0x801DB850` and folds the shake into its
+zone ease, which the port's follow camera now consumes too.
 
 `round.rs` already carries `NOT WIRED` disclosures on two neighbouring
 functions, so the house style for that file is established either way.
