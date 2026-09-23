@@ -15,13 +15,13 @@ pub(super) fn op_43<H: FieldHost>(
         return StepResult::Unknown { opcode, pc };
     };
     match sub_op {
-        // Halt-acquire dispatcher (sub-0/1/A/B). 5-byte for sub-0/1,
-        // 9-byte for sub-A/B. Acquire = save HALT bit + saved_pc on
-        // ctx; on success, return absolute resume PC via the s16
-        // operand at +3 (sub-0/1) or +7 (sub-A/B). On failure (the
-        // host's predicate returns false), advance PC by the standard
-        // amount (5 or 9). See `docs/subsystems/script-vm.md`
-        // (opcode 0x43, halt-acquire dispatcher).
+        // Halt-acquire dispatcher (sub-0/1/A/B). 8-byte for sub-0/1,
+        // 10-byte for sub-A/B. Acquire = save HALT bit + saved_pc on
+        // ctx, then arc the target. A refused acquire leaves the PC on
+        // the instruction (`beqz v0, 0x801DEE4C` at `0x801DF410`;
+        // `0x801DEE4C` is `move s8, s4`, the invocation's own PC), so the
+        // op is retried next frame, never skipped. See
+        // `docs/subsystems/script-vm.md` (opcode 0x43, the arc jump).
         0 | 1 | 0xA | 0xB => {
             // Scripted arc jump - halt-acquire, then arc the target actor.
             // Operand `[sub][tile_x][tile_z][apex: s16][frames: s16]` plus
@@ -55,18 +55,22 @@ pub(super) fn op_43<H: FieldHost>(
             // the context stops running because the acquire raised the halt bit
             // (`ctx[+0x10] |= 0x400`), not because the PC moved.
             let next_pc = pc + header_size + operand_len;
-            if host.field_halt_acquire_predicate(ctx, sub_op) {
+            let ext = crate::field::peek_extended(bytecode, pc);
+            // The acquire refuses a target still carrying the halt bit while
+            // the scene word `*(_DAT_801C6EA4) + 8` is zero
+            // (`0x801DF3A4..0x801DF3CC`) - an actor already mid arc.
+            let refused = host.op43_arc_target_halted(ctx, ext);
+            if !refused && host.field_halt_acquire_predicate(ctx, sub_op) {
                 ctx.flags |= 0x400;
                 ctx.wait_accum = 0;
                 ctx.saved_pc = pc as u32;
                 host.field_halt_acquire_apply(ctx, sub_op, next_pc, coords);
                 // `jal 0x801D25EC` at `0x801DF5AC` is unconditional on the
                 // acquire side: the halt is released by the arc's watcher.
-                let ext = crate::field::peek_extended(bytecode, pc);
                 host.op43_arc_jump(ctx, ext, &req);
                 StepResult::Yield { resume_pc: next_pc }
             } else {
-                StepResult::Advance { next_pc }
+                StepResult::Halt { final_pc: pc }
             }
         }
         2 => {

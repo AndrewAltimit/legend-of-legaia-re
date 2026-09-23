@@ -50,8 +50,12 @@ fn op_43_sub_a_halt_acquire_negates_the_offset_7_s16_into_y() {
     );
 }
 
+// A refused acquire leaves the PC on the instruction: `beqz v0, 0x801DEE4C`
+// at `0x801DF410`, and `0x801DEE4C` is `move s8, s4` - the invocation's own
+// PC - before the shared return. The instruction is retried next frame; it is
+// never skipped.
 #[test]
-fn op_43_sub_0_predicate_false_advances_8_bytes() {
+fn op_43_sub_0_predicate_false_stays_on_the_instruction() {
     let bytecode = [0x43u8, 0x00, 0, 0, 0, 0, 0, 0];
     let mut host = TestHost {
         halt_acquire_predicate: false,
@@ -59,12 +63,13 @@ fn op_43_sub_0_predicate_false_advances_8_bytes() {
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 8 });
+    assert_eq!(r, StepResult::Halt { final_pc: 0 });
     assert!(!ctx.is_halted());
+    assert!(host.halt_acquire_calls.is_empty());
 }
 
 #[test]
-fn op_43_sub_b_predicate_false_advances_10_bytes() {
+fn op_43_sub_b_predicate_false_stays_on_the_instruction() {
     let bytecode = [0x43u8, 0x0B, 0, 0, 0, 0, 0, 0, 0, 0];
     let mut host = TestHost {
         halt_acquire_predicate: false,
@@ -72,7 +77,21 @@ fn op_43_sub_b_predicate_false_advances_10_bytes() {
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 10 });
+    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+}
+
+#[test]
+fn op_43_waits_while_the_target_is_still_arcing() {
+    let bytecode = [0x43u8, 0x01, 0, 0, 0, 0, 0, 0];
+    let mut host = TestHost {
+        halt_acquire_predicate: true,
+        arc_target_halted: true,
+        ..TestHost::default()
+    };
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert!(host.halt_acquire_calls.is_empty(), "no acquire, no arc");
 }
 
 // -- Round 16: helper-driven sub-ops --------------------------------

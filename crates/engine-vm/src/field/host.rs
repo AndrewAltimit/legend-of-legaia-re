@@ -2248,9 +2248,10 @@ pub trait FieldHost {
     /// - setting `ctx.flags |= 0x400` (HALT bit),
     /// - clearing `ctx.wait_accum`.
     ///
-    /// For op 0x43 sub-0/1/A/B the resume PC is encoded in the operand:
-    /// - Sub-0/1: `target = operand + 3` → bytecode bytes `pc+4..pc+6`.
-    /// - Sub-A/B: `target = operand + 7` → bytecode bytes `pc+8..pc+10`.
+    /// For op 0x43 sub-0/1/A/B the resume PC is the fall-through past the
+    /// 8-byte (sub-0/1) or 10-byte (sub-A/B) instruction; none of the operand
+    /// halfwords is a jump target (they are the arc's apex, frame count and
+    /// sub-A/B's negated Y).
     ///
     /// For op 0x38 the resume PC is `pc + 3` (post-instruction); there is no
     /// operand-encoded target.
@@ -2261,10 +2262,10 @@ pub trait FieldHost {
     ///   `_DAT_801C6EA4 + 0x8` is non-zero.
     ///
     /// On success: VM emits `Yield { resume_pc: target_pc }` (the host's
-    /// state-resume layer drives re-entry). On failure for op 0x43 the VM
-    /// advances PC by the default amount (5 for sub-0/1, 9 for sub-A/B); on
-    /// failure for op 0x38 the VM `Halt`s at the current PC (matching the
-    /// original's `switchD_801e00f4::default()` fallthrough).
+    /// state-resume layer drives re-entry). On failure the VM `Halt`s at the
+    /// current PC: for op 0x43 that is the arm's own `j 0x801DEE4C`
+    /// (`move s8, s4` - retry next frame), for op 0x38 the original's
+    /// `switchD_801e00f4::default()` fallthrough.
     ///
     /// `which` is the originating opcode/sub-op tag so hosts that need to
     /// distinguish the call site can - it's `0x38` for op 0x38, and the raw
@@ -2276,6 +2277,17 @@ pub trait FieldHost {
     fn field_halt_acquire_predicate(&self, ctx: &FieldCtx, which: u8) -> bool {
         let _ = (ctx, which);
         true
+    }
+
+    /// Op `0x43` sub-`0`/`1`/`0xA`/`0xB`: `true` when the arm's acquire must
+    /// refuse because its target already carries the halt bit `0x400` and
+    /// the scene word `*(_DAT_801C6EA4) + 8` is zero (`0x801DF3A4..0x801DF3CC`);
+    /// in practice, an actor still in the air from an earlier arc. `ext`
+    /// is the instruction's extended channel byte. A refused acquire leaves
+    /// the PC on the instruction for a retry next frame. Default `false`.
+    fn op43_arc_target_halted(&self, ctx: &FieldCtx, ext: Option<u8>) -> bool {
+        let _ = (ctx, ext);
+        false
     }
 
     /// Side effect of [`field_halt_acquire_predicate`] returning `true`.

@@ -193,6 +193,7 @@ struct TestHost {
     n_e_sub_b_actor_ids: Vec<u8>,
     // 0x43 halt-acquire (sub-0/1/A/B).
     halt_acquire_predicate: bool,
+    arc_target_halted: bool,
     halt_acquire_calls: Vec<(u8, usize, [i16; 3])>,
     // Round 18 - 0x4C n8 actor-allocator + nE camera + nD/n5 dialog.
     n_8_sub_1_set_model_calls: Vec<(u32, u16, u16)>, // (model_id, anim, tween)
@@ -743,6 +744,9 @@ impl FieldHost for TestHost {
     }
     fn field_halt_acquire_predicate(&self, _ctx: &FieldCtx, _which: u8) -> bool {
         self.halt_acquire_predicate
+    }
+    fn op43_arc_target_halted(&self, _ctx: &FieldCtx, _ext: Option<u8>) -> bool {
+        self.arc_target_halted
     }
     fn field_halt_acquire_apply(
         &mut self,
