@@ -466,6 +466,7 @@ naming `coplanar_draw_offsets` is prose, not a wiring, and under-counting
 | packet-colour stream fill | a packet-colour stream may not be filled with white |
 | placement tilt composition | reading `placement_rot_y` requires `rot_x` + `rot_z` |
 | shared value layout -> shared quad emitter | resolving `battle_value_readout` requires `battle_numerals` + one of its prim builders |
+| world-map markers through the shared quad kernel | reading the marker seams (`world_map_entity_markers` / `world_map_player_marker`) or `marker_quads` requires `marker_quads` + `world_map_marker_prim` |
 | retained field ground pass gated off in battle | a file that both uploads a field ground (`uploadGround`) and drives a battle frame (`play_battle_active`) requires `setGroundEnable(false)` |
 
 **The ground-pass rule is about a retained pass, which no draw list shows.**
@@ -915,9 +916,10 @@ frame. Four recipe additions made the pairs comparable:
   on `X` and the d-pad on `WASD`, so a driver pressing `S` for Circle walks
   the cursor down a menu instead of backing out of it.
 - **The native stage is integer-scaled.** At the runner's 960x699 window the
-  2D stage is 2x and centred while the 3D pass fills the window (the
-  `stage_transform` floor), so native frames compare against page frames
-  only after cropping the stage out and halving it.
+  stage is 2x and centred (the `stage_transform` floor), so native frames
+  compare against page frames only after cropping the stage out and halving
+  it. The 3D pass draws inside that stage rect too, so the crop holds the
+  whole picture.
 
 What the pass fixed, each asserted through a host entry and re-shot on a
 rebuilt bundle:
@@ -930,7 +932,7 @@ rebuilt bundle:
 | minigame status rows in surface pixels natively | a pen read in the wrong space | the native window now scales them through the stage the page uses |
 | field clear colour | two non-retail constants | both hosts read `battle_stage_clear::scene_clear` every frame, and a field frame clears to retail black |
 
-The pass also left three rows open:
+The pass also left two rows open:
 
 - **Field fog sheets are not visible in native frames.** In `vell` the
   native window's `take_field_fog_prims` returns 37 to 78 quads a frame
@@ -945,13 +947,19 @@ The pass also left three rows open:
   the standalone minigames page draws the cabinet, the arena and the pond.
   Blocking capability: the native window has no pass for either minigame
   scene (the slot cabinet mesh and reels, the Baka arena and fighters).
-- **3D that has to line up with the 2D stage does not, at a window size
-  that is not a stage multiple.** The naming screen's Vahn is the field
-  scene's 3D actor, drawn through the full-window viewport, so at 960x699
-  he stands larger and further left than the 2x stage's windows around him;
-  the field party HUD floats the same way. Blocking capability: a 3D
-  viewport the native window letterboxes to the stage rect while a
-  stage-anchored screen is up.
+
+That pass also named a third: 3D that has to line up with the 2D stage did
+not, at a window size that is not a stage multiple (the naming screen's actor
+larger and further left than its windows, the field party HUD floating),
+because the native 3D pass filled the window while the stage is integer-scaled
+and centred. The native window now hands the renderer its stage rect
+(`Renderer::set_scene_viewport`, `scene_viewport_for`): the 3D pass and the
+screen-primitive overlay draw inside it at the stage's 4:3, while text and
+sprites keep the whole surface they are already positioned in. The page's
+canvas is a stage, so both hosts draw 3D into the same frame. A window smaller
+than one stage keeps the whole surface. A frame captured into VRAM (the
+battle-intro field capture) is cropped to the same rect, since retail's
+framebuffer is the display and not the letterbox around it.
 
 ## Gaps the tiers were blind to, closed by reading the two hosts side by side
 
@@ -1169,24 +1177,7 @@ about these is contested.
 | Gap | Shape |
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
-| world-map line overlay | A whole pass the page has no uploader for. See [below](#the-world-map-line-overlay-has-no-browser-uploader). |
 | derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
-| who owns the frame | The native window re-derives it instead of consuming the resolver. See [below](#the-native-window-re-derives-which-camera-owns-the-frame). |
-| boot Options second copy | A native-only unframed duplicate of a framed screen. See [below](#the-boot-options-screen-draws-twice-natively). |
-
-### The world-map line overlay has no browser uploader
-
-The native window draws the overworld's entity markers and the player marker
-as screen-space **lines** (`window/event_handler/redraw_passes.rs`), through
-the renderer's line pipeline. The browser play page has no line pass at all -
-its whole 3D surface is the textured / colour TMD program plus the sprite and
-font blitters - so this is not a missing call site.
-
-Blocking capability: a line-primitive path on the page. Either a wasm export
-that hands back the markers as screen-space quads the existing sprite blitter
-can draw (two triangles per segment, built engine-side so the two hosts emit
-the same marker set), or a second GL program with its own buffer. Until one
-exists there is nothing on the page for a wired call to reach.
 
 ### Derived scene point lights are native-only
 
@@ -1201,40 +1192,6 @@ export of the picked light set. Both are real work, and neither buys retail
 fidelity: this is the one row here where the *native* host is the one running
 a non-retail path, so the page being without it is a feature gap rather than
 a correctness gap.
-
-### The native window re-derives which camera owns the frame
-
-`camera_view::resolve_field_camera` answers which camera owns a field frame,
-and the browser play page consumes exactly that. The native window's
-`compute_scene_camera` answers it again from its own `match`, reaching the
-resolver only for the world-map arm.
-
-Nothing diverges today - both arms compose the same views - so this is latent
-rather than live. It is listed because the *shape* is the one every other row
-on this page comes from: one decision, two implementations, and no gate that
-can pair them (tier 3 pairs a kernel both hosts call, and here only one host
-calls it).
-
-Blocking capability: the native window's battle and boot arms have no
-`FieldCameraFrame` variant to resolve to - the resolver's five arms are field,
-cutscene and the two world-map vantages. Folding the window in means either
-extending the enum to cover the battle phase cameras (which live in
-`window/battle_cam.rs` and read a battle-only model) or accepting a
-half-resolved frame, and neither is a wiring change.
-
-### The boot Options screen draws twice natively
-
-The retail options screen is a framed pause-menu sub-screen, and both hosts
-open it from the title's Options row through the same menu runtime. The native
-window additionally paints an unframed copy of the same rows at a fixed pen
-(`window/boot_cutscene.rs`), left from before the framed screen existed.
-
-This is the inverse of every other row here: the *extra* draw is the native
-one, and the fix is a deletion rather than a wire. It stays recorded rather
-than done because the fixed-pen copy is what the window's own boot-UI tests
-read back, so removing it is a test change as well as a draw change - and
-because a boot Options screen with no framed window resident (no disc menu
-table parsed) currently falls back to exactly that copy.
 
 ### The minigame side-channel step is paired; its contents are not
 
@@ -1893,6 +1850,83 @@ matrix, a rect) the gates can pair it. Where it is a *law* expressed twice in
 two shading languages, only a rendered frame from each host, at the same scene
 and the same camera, can compare them.
 
+## Three one-host decisions moved onto one kernel
+
+Each of these was once listed as a gap no gate fails on. Each was one
+decision with two implementations, and each now has one.
+
+### The overworld markers are screen primitives on both hosts
+
+The world map draws a kind-coded post and base cross at every placed entity,
+and a facing-ticked post for the player while the party leader's mesh is
+missing. It is a port marker, not a retail draw (retail binds each placement
+to its own actor model, which is still open). The native window used to draw
+it as world-space **lines** through the renderer's line pipeline, which the
+browser play page has no counterpart for.
+
+`legaia_engine_core::world_map_markers` now owns the whole marker: the
+segments, colours and sizes, and the projection through the frame's own
+`camera_view::frame_vp` at the display's 4:3, emitting each segment as one
+quad (two triangles) one display pixel wide. Both hosts wrap the quads through
+`engine-ui::screen_prim::world_map_marker_prim` onto the screen-primitive pass
+they already share - the native `world_map_marker_prims` and the page's
+`play_world_map_markers` - and both resolve the camera with
+`resolve_field_camera(.., None, ..)`, so the draw step never advances a
+cutscene glide. The line pipeline is left carrying only the env-gated slot-4
+inspection wireframe, which is a diagnostic rather than a render path.
+
+The one input each host answers locally is whether the party leader's mesh
+drew: the native window from its upload set, the page from whether its player
+rig resolved.
+
+### The native window consumes the camera resolver
+
+`compute_scene_camera` used to answer "which camera owns this frame" from its
+own `match`, reaching `camera_view::resolve_field_camera` only for the world
+map. It now hands the resolver the glided cutscene view and draws whatever
+`frame_vp` returns, for the cutscene, both world-map vantages, the field
+follow camera and `HostDebugOrbit` alike - the call the page makes.
+
+Two arms stay in the window, and neither is a second answer to that question.
+**Battle** has its own kernel (`battle_cam_script::battle_vp`, stepped against
+the battle phase model in `window/battle_cam.rs`), which the page runs too; a
+`FieldCameraFrame` variant for it would carry the battle phase state and share
+nothing the kernel does not already share. The **`F3` debug orbit** is this
+host's own vantage, as the page's orbit is its own.
+
+### The boot Options screen is the pause menu's, on both hosts
+
+The retail options screen is a framed pause-menu sub-screen. The page's title
+always reached it through the menu runtime; the native title did **not**. It
+installed a bare `OptionsSession` and painted its rows unframed at a fixed pen
+(`window/boot_cutscene.rs`), so the native window drew the screen once, in a
+form the page never had. (This page used to say the native window drew it
+*twice*, framed and unframed, and that the window's boot-UI tests read the
+fixed-pen copy; neither was so - no test read it, and the framed screen was
+never reached from the title.)
+
+The native title's Options row now opens the pause menu straight onto the
+Options sub-screen through the picker's own confirm routing
+(`open_menu_row_from_title`, the twin of the page's `play_menu_open_row`), and
+the unframed copy and its `BootUiState` arm are gone. No fallback is kept: a
+disc with no parsed menu window table still frames the screen, at the
+`MENU_WINDOW_FALLBACK` rects.
+
+Neither route is reachable from retail's title, and that is the larger
+correction: the title menu is **two** rows. Its tick wraps the row counter
+with `andi v1,v1,0x1` at `0x801DDC00` and its confirm arm branches on row `0`
+against everything else (see `ghidra/scripts/funcs/overlay_title_801dd6b8.txt`),
+so `TitleSession` steps a two-row space (`TITLE_MENU_ROWS`) and never yields
+`TitleOutcome::Options`. The screen retail reaches Options from is the pause
+menu. Both hosts' title arms for the outcome are the same route regardless,
+so the enum's third answer cannot mean two things.
+
+Both hosts carry one flag for a title-opened menu (`menu_from_title` natively,
+`PlayMenu::from_title` on the page): the sub-screen's exit calls
+`resume(true)` and the title comes back, instead of a root picker the title
+never showed. The title's Continue row does not set it on the page, because a
+card Load parks its scene label on the menu for the page to collect.
+
 ## A shared builder can be starved by its caller's slice
 
 Tier 1 asks whether a host *reaches* a builder. Nothing asks whether it hands
@@ -1998,9 +2032,11 @@ had no consumer, which reads in a diff as a fully wired feature.
 ### A whole pass one host has no uploader for
 
 Not wiring: a surface that exists on one host only, because the other has
-nothing to draw it with. These are the project-sized ones - the world-map
-entity and player-marker line overlay, the Baka cabinet's digit strips and
-payout sheet. The retail dance HUD frame was on this list and is not any
+nothing to draw it with. The Baka cabinet's digit strips and payout sheet are
+the project-sized one left. The world-map entity and player markers were on
+this list as a line overlay; what took them off was emitting them as the quads
+the page's screen-primitive pass already draws
+([above](#the-overworld-markers-are-screen-primitives-on-both-hosts)). The retail dance HUD frame was on this list and is not any
 more, and what took it off was not a new uploader: the frame is text, and
 every decision in it (digits, `Lv.` label, which beat cells) had simply been
 spelled out inside one host's draw block. Moving the resolution into
