@@ -280,30 +280,34 @@ Read against `FUN_801D77F4`'s walker - `*puVar11 = record_count`, `puVar10 = puV
 
 ## Field-spawned sprite-tick actors
 
-Two field-overlay (PROT 0897) functions spawn and drive *attached-sprite* actors
-on the shared actor list `_DAT_8007C34C` - the same list the
-[field VM](script-vm.md#per-frame-scheduling) walks - rather than being actor-VM
-opcode handlers themselves.
+Two field-overlay (PROT 0897) pool-actor families hang off a parent actor's
+`+0x90` back-link on the shared actor list - the same list the
+[field VM](script-vm.md#per-frame-scheduling) walks - rather than being
+actor-VM opcode handlers themselves. They are two families, not one: an
+earlier reading grouped both as "attached sprites".
 
-`FUN_801D25EC` is the **position-tween spawner**: given a source actor, a target
-`xyz`, and a duration, it allocates an actor from template `0x801F227C`
+`FUN_801D25EC` is the **scripted arc** spawner, reached only from the field
+VM's op `0x43` sub-0/1/A/B: given a source actor, a landing `xyz`, an apex
+height and a frame count, it allocates an actor from template `0x801F227C`
 (`func_0x80020DE0(0x801F227C, _DAT_8007C34C)`), records the source in `+0x90`,
-copies the source position `+0x14/+0x16/+0x18`, stores the target in
+copies the source position `+0x14/+0x16/+0x18`, stores the landing point in
 `+0x24/+0x26/+0x28`, seeds the midpoints `+0x3C/+0x3E/+0x40`, and sets the
-per-frame step `+0x9E = 0x1000 / duration` (fixed-point `1.0` over the duration).
+per-frame step `+0x9E = 0x1000 / duration`; a second record from template
+`0x801F22AC` is the arc's release watcher. See
+[`script-vm.md`](script-vm.md#0x43-sub-01ab---scripted-arc-jump).
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_801d25ec.txt`.
 
-`FUN_801E4470` is the **per-frame tick** for such an actor: it reads the parent
-`+0x90`, adds the parent's world position to its own, screen-projects through the
-GTE wrapper `func_0x800195A8` (using the actor's `+0x3C/+0x3E` bbox), computes the
-projected midpoint + span, and draws via `FUN_801E3984` (control word `+0x74`,
-`+0x88`, byte `+0x5A`). It calls the GTE projection and builds a draw
-primitive, so the packet half is render-track - but the routine as a whole is
-**ported**, not merely documented: `engine-vm::field_actor_billboard` carries
-the parent-relative position fold and the projected span, and `engine-render`
-turns that into a draw. (`locate-entry-image.py 801e4470` puts the entry in
-PROT 0897 with a clean frame, so the field reading of the address is the right
-one.) Its direct `overlay_0897` dump is a truncated alias; the real
+`FUN_801E4470` is the per-frame tick of the other family, the op `0x34`
+sub-1 **attached light** (template `0x801F28B8`, spawner `FUN_801E5668`): it
+reads the parent `+0x90`, adds the parent's world position to its own offset,
+screen-projects through `func_0x800195A8` with the actor's `+0x3C/+0x3E`
+extents, and hands the projected midpoint + span to `FUN_801E3984`, which
+draws an untextured semi-transparent light pool in colours `+0x74` / `+0x88`
+at blend mode `+0x5A`. See
+[`script-vm.md`](script-vm.md#0x34-sub-1-is-an-attached-light). Ported in
+`engine-vm::field_actor_billboard` and drawn on both play hosts.
+(`locate-entry-image.py 801e4470` puts the entry in PROT 0897 with a clean
+frame.) Its direct `overlay_0897` dump is a truncated alias; the real
 83-instruction body is in the cutscene-dialogue field capture.
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_801e4470.txt`.
 
@@ -326,8 +330,9 @@ apex  = min(start.y, target.y) - height   ; height = the arc argument
 ```
 
 `2*apex - mid` is exactly the control point that makes a quadratic Bézier
-pass through `apex` at its half-way parameter, so `arc_height` is "how far
-above the lower endpoint the hop peaks" - a lob, not a straight tween.
+pass through `apex` at its half-way parameter, so `arc_height` is how far
+above the **higher** endpoint the hop peaks (world Y grows downward, so
+`min` picks the higher one) - a lob, not a straight tween.
 The per-frame parameter is the `+0x9E = 0x1000 / duration` step, with
 `0x1000` (fixed-point `1.0`) substituted whole when `duration <= 0`.
 Confidence: **Confirmed**, disassembled from PROT entry 0897 at base

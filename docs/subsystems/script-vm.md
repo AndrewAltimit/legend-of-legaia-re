@@ -372,19 +372,46 @@ These are sub-dispatchers - the operand byte selects a sub-command.
 | Sub | Encoding | Effect |
 |---|---|---|
 | 0 | `[34, op0, r, g, b, intensity_lo, intensity_hi]` (7 bytes) | Effect-global colour + intensity setup. Rewrites `_DAT_8007BCCC..BCE0` colour-mode globals. Fade pipeline gated on `_DAT_1F800394 & 0x800000`. |
-| 1 | base 13 bytes; +2+payload when peek-at-`pc+13` byte is 0x40 | Effect / sprite spawn with optional captured-PC. Walks actor list at `_DAT_8007C354`; if found, skips spawn. Otherwise calls `FUN_801E5668(ctx, ..., pos, packed24, mode)`; `mode = 1 + (op0 & 1)`. When `capture_flag == 0x40`, captures payload bytes onto the spawned actor's `+0x94`. |
+| 1 | `[34, 1x, r, g, b, ext_w: s16, ext_h: s16, lift: s16, 2 unread]` (13 bytes, 14 extended); a spawn also consumes a following `0x40` block | **Attached light** spawn - see [below](#0x34-sub-1-is-an-attached-light). |
 | 2 | 2 bytes (`[34, 2N]`); the byte after is peeked, not consumed | Actor-pool capture-and-yield. Walks list looking for entry whose `+0x90 == ctx`; if found AND the next byte is `0x40`, captures the forward PC and emits `caseD_4` (STATE_RESUME → Yield). That `0x40` is the `DATA_BLOCK` op carrying the captured payload, which the dispatcher skips on its own once the capture has yielded; the fall-through advance is `PC += 2` (`code_r0x801df098`). A decoder that consumed it as an operand landed inside the data block. |
 | 3 | 4 bytes | Play 3D animation via `func_0x800252EC(operand1+1, ctx+0x14, ctx+0x24)`. Looks up an offset in the buffer at `_DAT_8007B8D0` (in the field that is the scene's `efect.dat` prescript window, `*(0x1F8003EC) + 0x12800`; the `bse.dat` battle bank is the *other* occupant of the same pointer - see [`bse-dat.md`](../formats/bse-dat.md)) using `*(u16*)(buf + 2 + idx*2)`, then spawns an actor via `FUN_80021B04(pos, ?, buf+ofs, 0x1000)`. Buffer layout matches the [ANM container shape](../formats/anm.md). |
 | 4..=15 | - | No `case` arm in `FUN_801de840`; falls through `if (bVar35 != 2) { if (bVar35 != 3) { return param_2; } }` - halts at PC. |
 
-The sub-1 spawn (`jal 0x801E5668` at `0x801DFFE0`) seats an **attached
-sprite**: template `0x801F28B8`, whose tick `FUN_801E4470` rides the parent's
-`+0x90` back-link and draws a projected billboard through the emitter
-`FUN_801E3984`; the spawner leaves `+0x94` zero for the capture form to fill.
-It is common - `34 10` has 415 clean sites in 43 scenes (`asset
-field-op-census`) - and the engine host keeps the op's default no-spawn body,
-so none of these sprites draws. The tick is ported
-(`legaia_engine_vm::field_actor_billboard`), with the disclosure.
+##### 0x34 sub-1 is an attached light
+
+The sub-1 arm (`0x801DFEFC..0x801E0018`) walks the actor list at
+`_DAT_8007C354` for an actor ticked by `FUN_801E4470` whose `+0x90` is
+already the target (`FUN_8003CF04`), and skips the spawn when one exists.
+Otherwise `jal 0x801E5668` at `0x801DFFE0` allocates from template
+`0x801F28B8`: `+0x90` = the target, offset `(0, -lift, 0)`, `+0x3C` /
+`+0x3E` = the two extents, and the packed colour into `+0x74` with `+0x88 = 0`
+and `+0x5A = 1` when op0 bit 0 is clear, or into `+0x88` with `+0x74 = 0` and
+`+0x5A = 2` when it is set. A following `0x40` byte makes `+0x94` point past the
+block header and the instruction grow by `2 + len`; on the skip path the block
+stays in the stream as its own `0x40` op. The exit adds `0xD` to an `s8` the
+prologue has already moved past any extended channel byte, so the extended
+form is fourteen bytes.
+
+The tick `FUN_801E4470` projects the parent-plus-offset point with the two
+extents as view-space half sizes (`FUN_800195A8`) and hands the rect to
+`FUN_801E3984`, which draws **no sprite**: an untextured, semi-transparent
+ellipse - a gouraud fan from `+0x74` at the centre to a quarter mix at half
+radius, a ring out to `+0x88` at the rim, and, when `+0x88` is non-zero, flat
+`+0x88` fills from the rim to both screen edges and the bands above and below
+- all at blend mode `+0x5A`. Mode 1 is an additive glow (the night-time lamp
+pools a `town01` placement script lights on flag `0x147`); mode 2 is a
+subtractive darkness mask with a lit hole (`cave01`'s `B4 F8 11 80 80 20 ...`
+round the player). `+0x94`, when set, is a keyframe script `FUN_801E3E00`
+steps once per drawn frame: `0x02` records `[dur][ext_w][ext_h][A rgb][B rgb]
+[lift]` interpolated by `t / dur`, `0x40` block headers stepped over, `0x01`
+restart, `0x00` retire - the lamp pools breathe.
+
+The engine seats the light on the op's target (the player for channel `0xF8`,
+else the running placement's NPC) in `World::script_actors`
+(`engine-core::world::field_script_actors`) and both play hosts draw it
+through `legaia_engine_ui::screen_prim::light_pool_prims`. The ports:
+`legaia_engine_vm::field_actor_billboard`. `34 10` has 415 clean sites in 43
+scenes (`asset field-op-census`).
 
 #### 0x35 BGM
 
@@ -703,7 +730,7 @@ before its `0x3F` -> `map01` tail, and a target of zero restarted the record.
 
 22+ sub-ops, keyed on operand byte 0:
 
-#### 0x43 sub-0/1/A/B - halt-acquire dispatcher
+#### 0x43 sub-0/1/A/B - scripted arc jump
 
 ```c
 // Acquire halt if not already halted (or if system channel can override):
@@ -757,9 +784,18 @@ player, from the calling context and the player both. `follow` is `1` for
 sub-`1`/`0xB` and makes the watcher run the follow-camera ease on the player
 while the arc flies. The disc carries 492 clean sites across the four sub-ops
 (`asset field-op-census`: `43 01` 293, `43 0A` 124, `43 00` 68, `43 0B` 7).
-The port stops at the acquire and runs no arc
-(`legaia_engine_vm::field_ledge_hop_arc::spawn_arc_with_emitter`
-carries the disclosure).
+All 492 are extended: 323 arc the player (`0xF8`), the rest an NPC
+channel, and all but six sit in partition-2 cutscene records.
+
+The engine runs the arc. `legaia_engine_vm::field_ledge_hop_arc::ScriptArcRequest`
+decodes the operand from the arm's loads; the cutscene timeline's `C3 F8` park
+and `FieldHost::op43_arc_jump` (NPC channels) both reach
+`World::start_field_script_arc`, and `World::tick_field_script_arcs` advances
+the clip and the watcher. An NPC's height lives in
+`World::script_actors.npc_heights` for as long as it stands where the arc put
+it - the NPC position map carries X / Z only - and both play hosts place NPCs
+through `World::field_npc_render_y`. The watcher's follow-camera ease is not
+modelled.
 
 #### 0x43 sub-2/3-6/7/8/9/C/D/E/F - actor / sound / face / position cluster
 
