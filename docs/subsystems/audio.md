@@ -85,7 +85,7 @@ outright.
 |---|---|---|
 | `0` | PROT 0868 system bank | resident |
 | `1` | the current BGM bank (`music_01`, variable) | `FUN_800243F0` |
-| `2` | PROT 0869 class-2 bank (`0875` alternate) | `FUN_800520F0`, `FUN_801CF00C` |
+| `2` | PROT 0869 class-2 bank (`0875` alternate); a minigame's own bank in fishing / slot machine / dance | `FUN_800520F0`, `FUN_801CF00C`, the minigame overlay inits |
 | `3` | a `vab_01` side-band bank (variable) | `FUN_800243F0`, from `_DAT_8007BABC` |
 | `6` | PROT 0876 field bank | field init `FUN_801D6704` |
 | `7` / `8` | the two `monster.snd` banks | `FUN_8003E104` (below) |
@@ -95,7 +95,9 @@ The record initialiser `FUN_8001D424` writes `+8 = record index` for all 16
 records, then assigns their header buffers from one base with four pairs sharing
 one - and `FUN_800265E8` gives those same pairs one SPU base. Slot 6 and slot 2
 are therefore the same physical bank in two modes, which is why retail needs no
-extra SPU room for the field cues. Slot sizes, the SPU map and the structural
+extra SPU room for the field cues: the field init loads PROT 0876 into slot 6
+and the battle mode init closes it before the battle loader fills slot 2
+([per mode](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)). Slot sizes, the SPU map and the structural
 checks behind each pin: [`formats/sfx-table.md`](../formats/sfx-table.md#which-prot-entry-reaches-which-slot).
 
 The seeder and the reader are ported at opposite ends and never meet:
@@ -1060,10 +1062,13 @@ is the census. No scene reaches either producer with no input in its first
 4000 ticks: the sites sit behind interactions, walk-ons and timeline branches.
 
 The static half of a field cue is mostly category `6` (the rest are category `0`),
-and slot `6` (PROT 0876) is the one pinned bank neither host stages - it
-shares slot `2`'s SPU region and retail refills that region per mode. Until a
-host swaps the region on the field/battle transition, a category-`6` cue keys
-the class-2 fallback bank (PROT 0869) and sounds the wrong sample.
+so it keys slot `6` - PROT 0876, the field bank, which shares slot `2`'s SPU
+region and which retail's field init reloads whenever a battle, a minigame or a
+side-band teardown has cleared the field-bank latch `0x8007BAFC`. Both play
+hosts refill that region per mode from `World::sync_sfx_residency`, so a
+category-`6` cue keys PROT 0876 in the field and is silent in battle, where
+retail's slot 6 is closed; the latch, the writers and the closed-slot rule are
+in [`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6).
 
 ## XA-ADPCM
 

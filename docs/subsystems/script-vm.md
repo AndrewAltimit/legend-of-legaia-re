@@ -537,7 +537,7 @@ at PC). Otherwise bit 15 of `sel` picks the arm:
 | bit 15 set, sub `0` | `func_0x80035B50(arg)` - enqueue SFX cue `arg` into the four-slot pending ring, parking its slot at `gp+0x15A`. |
 | bit 15 set, sub `1` | `_DAT_8007BABC = arg` - **guarded**, see below. |
 | bit 15 set, sub `2` | Gate only: halt unless `_DAT_8007BABC == _DAT_8007BAA0`. |
-| bit 15 set, sub `3` | `FUN_801D8450()` - the side-band stream **teardown**: `FUN_800653C8(0x17)` then `(0x16)`, `FUN_8001FF58(6)` (release SEQ slot 6), then `_DAT_8007BA88 = 0` and `_DAT_8007BAFC = 0`. Ungated, and it *yields the frame* rather than falling through. |
+| bit 15 set, sub `3` | `FUN_801D8450()` - the side-band stream **teardown**: `FUN_800653C8(0x17)` then `(0x16)`, `FUN_8001FF58(6)` (close VAB slot 6 - the field bank, or a side-band bank streamed over it), then `_DAT_8007BA88 = 0` and the field-bank latch `_DAT_8007BAFC = 0`, so the next field init reloads PROT 0876 ([`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)). Ungated, and it *yields the frame* rather than falling through. |
 | bit 15 set, sub `4` | `func_0x80035BAC(arg)` - store `arg` as the parked slot's delay, scheduling the cue instead of firing it. Ungated. Port: `engine-core::scus_leaf_kernels::SfxCueDelays`. |
 
 #### The stream gates on op 0x36
