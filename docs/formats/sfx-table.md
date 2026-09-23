@@ -112,7 +112,11 @@ functions walk them, in a fixed order the per-frame mode handlers pin
 - **`FUN_80016B6C` drains** (`0x80016BF8`). A slot plays only when its timer is
   **exactly zero** and its id is still `>= 0`.
 - The producers sit between them. `FUN_80035B50` writes `id` plus `timer = 0`
-  into slot `gp+0x158` and advances that cursor round-robin over the four.
+  into slot `gp+0x158`, latches that slot into `gp+0x15A`, and advances the
+  cursor round-robin over the four - there is no search for a free slot. Two
+  three-instruction siblings address the latched slot: `FUN_80035BAC(delay)`
+  writes its countdown, and `FUN_80035BD0(id)` overwrites its cue and zeroes
+  its countdown without moving the cursor.
 
 So the contract is a **one-shot scheduled delay**, not a queue: a cue armed with
 timer `N` plays on the frame its countdown first reads zero and is cleared before
@@ -121,7 +125,9 @@ frame counter" gets wrong - the countdown is in **vsyncs** (at the field cadence
 floor of 2, a `timer = 4` cue plays after two game ticks, not four), and there
 are exactly four slots, so a fifth pending cue *replaces* one.
 
-Port: `legaia_engine_audio::sfx_ring`.
+Port: `legaia_engine_audio::sfx_ring` (`SfxCueRing::push_cue` / `set_last_delay` /
+`replace_last` for the three producers). The scheduler's `enqueue` is a
+port-side unbounded delay queue, not `FUN_80035B50`.
 
 ### Voice allocation: one-shots descend from 23, sustained cues ascend from 7
 

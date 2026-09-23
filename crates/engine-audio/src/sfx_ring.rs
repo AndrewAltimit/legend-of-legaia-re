@@ -5,7 +5,9 @@
 //!
 //! The producers that arm a slot, the mid-frame driver and the per-frame mode
 //! handler that sequences the pair.
-//! REF: FUN_80035B50, FUN_8004FE5C, FUN_80016444, FUN_80025EEC
+//! REF: FUN_8004FE5C, FUN_80016444, FUN_80025EEC
+//! The enqueue pair `FUN_80035B50` / `FUN_80035BD0` is [`SfxCueRing::push_cue`] /
+//! [`SfxCueRing::replace_last`], which carry their own tags.
 //! The libsnd calls a drained cue makes, factored out of [`CueVoicePlan`].
 //! REF: FUN_80065034, FUN_800653C8
 //!
@@ -104,6 +106,11 @@ impl Default for CueSlot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SfxCueRing {
     slots: [CueSlot; RING_SLOTS],
+    /// `gp+0x158` - the round-robin write cursor [`Self::push_cue`] advances.
+    cursor: i16,
+    /// `gp+0x15A` - the slot the last [`Self::push_cue`] wrote, which
+    /// [`Self::set_last_delay`] and [`Self::replace_last`] address.
+    last: i16,
 }
 
 impl SfxCueRing {
@@ -111,6 +118,71 @@ impl SfxCueRing {
     pub const fn new() -> Self {
         Self {
             slots: [CueSlot::empty(); RING_SLOTS],
+            cursor: 0,
+            last: 0,
+        }
+    }
+
+    /// The round-robin write cursor (`gp+0x158`).
+    pub fn cursor(&self) -> i16 {
+        self.cursor
+    }
+
+    /// The slot the last [`Self::push_cue`] wrote (`gp+0x15A`).
+    pub fn last_slot(&self) -> i16 {
+        self.last
+    }
+
+    /// PORT: FUN_80035B50 NOT WIRED: the field VM's op `0x36` sub-`0` and the ambient motion VM's op `0x09` are the retail producers, and both hosts' engine-core handlers still advance only the cursor/delay pair in `World::audio.sfx_cue_delays`, which carries no cue id, so neither reaches this ring; wiring them means routing the id through `AudioBgmDirector` / the web runtime's scheduler
+    ///
+    /// The SFX-cue enqueue, `FUN_80035B50(id)`.
+    ///
+    /// Read off `0x80035B50..0x80035BA8`: store `id` into
+    /// `DAT_8007B6D8[cursor]`, latch `cursor` into `gp+0x15A`, zero that
+    /// slot's countdown `DAT_8007C338[cursor]` (`sw zero` in the `bne` delay
+    /// slot), advance `cursor` and reset it to `0` when it reaches `4`. The
+    /// cursor is the **only** slot choice - there is no search for a free
+    /// slot, so a fifth cue queued before the first has drained overwrites
+    /// it. Returns the slot written.
+    ///
+    /// Retail performs no bounds check on the cursor; the port wraps an
+    /// out-of-range cursor (only reachable by corrupting `gp+0x158`) to 0.
+    pub fn push_cue(&mut self, id: i16) -> usize {
+        let slot = if (0..RING_SLOTS as i16).contains(&self.cursor) {
+            self.cursor as usize
+        } else {
+            0
+        };
+        self.slots[slot] = CueSlot { id, timer: 0 };
+        self.last = slot as i16;
+        let next = slot as i16 + 1;
+        self.cursor = if next == RING_SLOTS as i16 { 0 } else { next };
+        slot
+    }
+
+    /// REF: FUN_80035BAC - ported (and wired to the cursor/delay pair) as
+    /// `legaia_engine_core::scus_leaf_kernels::SfxCueDelays::set_delay`.
+    ///
+    /// `FUN_80035BAC(delay)` - write the countdown of the slot the last
+    /// [`Self::push_cue`] wrote: `lh v1,0x15a(gp)`, then `sw` of the
+    /// sign-extended halfword into `DAT_8007C338[last]`
+    /// (`0x80035BAC..0x80035BCC`). A negative delay is stored as-is; the
+    /// aging pass floors it to zero on the next frame.
+    pub fn set_last_delay(&mut self, delay: i16) {
+        if let Some(s) = self.slots.get_mut(self.last as usize) {
+            s.timer = i32::from(delay);
+        }
+    }
+
+    /// PORT: FUN_80035BD0 NOT WIRED: its retail callers (the dev equip commit's cue `0x24`, the menu deny buzz) have no host arm that plays a ring cue; `legaia_engine_vm::dev_equip_commit` surfaces the call as a host hook nothing implements
+    ///
+    /// `FUN_80035BD0(id)` - overwrite the cue in the slot the last
+    /// [`Self::push_cue`] wrote and zero its countdown, **without** advancing the
+    /// cursor (`0x80035BD0..0x80035BFC`). The deny buzz replacing a queued
+    /// accept is the shape it serves.
+    pub fn replace_last(&mut self, id: i16) {
+        if let Some(s) = self.slots.get_mut(self.last as usize) {
+            *s = CueSlot { id, timer: 0 };
         }
     }
 
@@ -138,7 +210,8 @@ impl SfxCueRing {
         }
     }
 
-    /// Clear the whole ring (scene / battle teardown).
+    /// Clear the whole ring (scene / battle teardown). The cursor pair is
+    /// left alone: no retail teardown resets `gp+0x158` / `gp+0x15A`.
     pub fn clear(&mut self) {
         self.slots = [CueSlot::empty(); RING_SLOTS];
     }
@@ -372,6 +445,38 @@ pub fn plan_cue_voices(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn push_round_robins_four_slots_and_overwrites_the_oldest() {
+        let mut r = SfxCueRing::new();
+        for (n, id) in [0x10i16, 0x11, 0x12, 0x13].iter().enumerate() {
+            assert_eq!(r.push_cue(*id), n);
+            assert_eq!(r.last_slot(), n as i16);
+        }
+        assert_eq!(r.cursor(), 0, "the cursor wraps at 4");
+        // A fifth cue before any drain replaces slot 0 - no free-slot search.
+        assert_eq!(r.push_cue(0x14), 0);
+        let ids: Vec<i16> = r.slots().iter().map(|s| s.id).collect();
+        assert_eq!(ids, vec![0x14, 0x11, 0x12, 0x13]);
+    }
+
+    #[test]
+    fn push_zeroes_the_slot_delay_and_the_setter_addresses_the_last_slot() {
+        let mut r = SfxCueRing::new();
+        r.arm(1, 0x40, 9);
+        r.push_cue(0x20); // slot 0
+        r.push_cue(0x21); // slot 1: the stale 9-vsync delay is zeroed
+        assert_eq!(r.slots()[1], CueSlot { id: 0x21, timer: 0 });
+        r.set_last_delay(6);
+        assert_eq!(r.slots()[1].timer, 6);
+        assert_eq!(r.slots()[0].timer, 0);
+        // The overwrite variant rewrites slot 1, zeroes it, keeps the cursor.
+        r.replace_last(0x23);
+        assert_eq!(r.slots()[1], CueSlot { id: 0x23, timer: 0 });
+        assert_eq!(r.cursor(), 2);
+        let fired: Vec<_> = r.drain().collect();
+        assert_eq!(fired, vec![(0, 0x20), (1, 0x23)]);
+    }
 
     #[test]
     fn zero_timer_clears_the_slot_on_the_next_aging_pass() {

@@ -455,6 +455,25 @@ impl SfxScheduler {
         self.ring.arm(slot, id, delay_vsyncs);
     }
 
+    /// The retail enqueue: write `id` into the ring slot the round-robin
+    /// cursor names, zero its delay, advance the cursor
+    /// ([`crate::sfx_ring::SfxCueRing::push_cue`]). Returns the slot written.
+    pub fn push_ring_cue(&mut self, id: i16) -> usize {
+        self.ring.push_cue(id)
+    }
+
+    /// Set the delay (vsyncs) of the slot the last [`Self::push_ring_cue`]
+    /// wrote ([`crate::sfx_ring::SfxCueRing::set_last_delay`]).
+    pub fn set_ring_cue_delay(&mut self, delay: i16) {
+        self.ring.set_last_delay(delay);
+    }
+
+    /// Overwrite the last pushed ring cue in place
+    /// ([`crate::sfx_ring::SfxCueRing::replace_last`]).
+    pub fn replace_ring_cue(&mut self, id: i16) {
+        self.ring.replace_last(id);
+    }
+
     /// Borrow the retail ring (inspection / tests).
     pub fn ring(&self) -> &crate::sfx_ring::SfxCueRing {
         &self.ring
@@ -463,14 +482,11 @@ impl SfxScheduler {
     /// Queue a cue. The cue fires when `frames_remaining` reaches zero
     /// during a [`Self::tick_frame`] call.
     ///
-    // PORT: FUN_80035B50 - retail's SFX-cue enqueue writes the cue id into the
-    // next slot of a fixed 4-entry u16 ring at &DAT_8007B6D8 and advances the
-    // head; this models the same "queue a one-shot SFX" contract with an
-    // unbounded queue + per-cue countdown instead of the 4-slot ring.
-    // REF: FUN_80035BD0 - the retail "overwrite current slot" variant (replace
-    // an in-flight cue without advancing the head, e.g. the deny buzz 0x23
-    // replacing a queued accept when a menu-open is refused) is not separately
-    // modeled; cues simply queue here.
+    /// This is a port-side scheduler, not a retail routine: an unbounded
+    /// queue with a per-cue countdown in ticks, which the battle cue timing
+    /// (`HitCue::timing_frames`) and the host SFX fronts ride. The retail
+    /// four-slot enqueue `FUN_80035B50` - one fixed cursor, the delay zeroed,
+    /// a fifth cue overwriting the first - is [`Self::push_ring_cue`].
     pub fn enqueue(&mut self, cue: PendingCue) {
         self.queue.push(cue);
     }
