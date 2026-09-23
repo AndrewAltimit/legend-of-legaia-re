@@ -320,8 +320,8 @@ pub(super) fn build_window_scene_resources(session: &BootSession) -> Result<Scen
     // (rows 478..481 col 0), so the meshes sample an unpopulated row and
     // the VRAM filter drops them - the invisible-player symptom. Retail
     // field load uploads the pack with strip semantics; replicate that.
-    // (NOT the etim effect pool - uploading that battle-resident pool
-    // into field VRAM clobbers pages the town meshes sample.)
+    // The rest of the section is layered *under* the build below, never
+    // written over it.
     match session
         .host
         .index
@@ -341,6 +341,32 @@ pub(super) fn build_window_scene_resources(session: &BootSession) -> Result<Scen
         }
         Err(err) => {
             log::warn!("play-window: field char atlas upload skipped: {err:#}");
+        }
+    }
+    // The whole effect-texture pool of that section (`etim`: the
+    // `(448, 0)` page, the `fb_y = 256` pages, CLUT strips on rows 473 /
+    // 475 / 478) is resident in retail field and world-map VRAM, and it
+    // is where the field fog sheets sample: texture page `0x27` is
+    // `(448, 0)`, the wisps sit at rows `0x40..0x6F` of it, CLUT `0x7640`
+    // is `(0, 473)`. Every PCSX-Redux field / world-map state in the
+    // library holds those cells byte-exact. Retail loads the pool before
+    // the scene, so a scene TIM on an overlapping rect wins (`dolk`'s
+    // `(448, 0)` page keeps its own texels in retail) - the boot-resident
+    // underlay order `SceneResources` uses for the system-UI bundle.
+    // Without it the fog quads sampled all-zero texels and the shader
+    // discarded every fragment. See `docs/subsystems/field-ambient-fx.md`.
+    let mut effect_pool = legaia_tim::Vram::new();
+    match legaia_engine_core::scene::upload_effect_textures_into_vram(
+        &session.host.index,
+        &mut effect_pool,
+        true,
+    ) {
+        Ok(n) => {
+            res.vram.underlay(&effect_pool);
+            log::info!("play-window: effect-texture pool underlaid ({n} TIMs)");
+        }
+        Err(err) => {
+            log::warn!("play-window: effect-texture pool underlay skipped: {err:#}");
         }
     }
     Ok(res)

@@ -1236,6 +1236,9 @@ mod dev_menu;
 mod event_handler;
 #[path = "window/field_render.rs"]
 mod field_render;
+#[cfg(test)]
+#[path = "window/fog_texture_tests.rs"]
+mod fog_texture_tests;
 #[path = "window/geometry.rs"]
 mod geometry;
 #[path = "window/hud.rs"]
