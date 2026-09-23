@@ -1411,8 +1411,10 @@ pub fn loop_bounded_arrays(image: &[u8], base_va: u32) -> Vec<BoundedArray> {
                     }
                 }
                 let Some((form_off, b)) = base else { continue };
-                // The access through the element address.
-                for o2 in (o + 4..at + 8).step_by(4) {
+                // The access through the element address: below the `addu`,
+                // or - when the `addu` sits at the loop's bottom (often the
+                // branch's delay slot) - at the top of the next iteration.
+                for o2 in (o + 4..at + 8).step_by(4).chain((l..o).step_by(4)) {
                     let z = word(o2).unwrap_or(0);
                     if let Some(w) = width(z >> 26)
                         && (z >> 21) & 0x1F == rd
@@ -3402,7 +3404,7 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
         // calls such an extent `data`; crediting it as code here claimed PROT
         // 0898's rodata (two switch tables and a string pool) as
         // `FUN_801cf5d0`.
-        if zero_absolute_head(&buf[start..end]) {
+        if zero_absolute_head(&buf[start..end]) || no_instruction_signature(&buf[start..end]) {
             data_headed += 1;
             continue;
         }
@@ -3478,7 +3480,18 @@ fn walk_overlay_code(buf: &[u8], sink: &mut Sink, opts: &AccountOptions) {
     claim_switch_tables(buf, sink, base, opts);
     claim_accessed_globals(buf, sink, base, opts);
     claim_spawn_records(buf, sink, base, opts);
+    claim_widget_scripts(buf, sink, base, opts);
     claim_loop_bounded_arrays(buf, sink, base, opts);
+    {
+        let own_end = inherited_tail_start(buf, opts).unwrap_or(buf.len());
+        let code = code_intervals(sink);
+        let in_code = |off: usize| {
+            let i = code.partition_point(|&(s, _)| s <= off);
+            i > 0 && off < code[i - 1].1
+        };
+        arrays::claim_pointer_bump_arrays(buf, sink, base, own_end, &in_code);
+        arrays::claim_indexed_arrays(buf, sink, base, own_end, &in_code);
+    }
 }
 
 /// Arrays whose count the loop walking them states
@@ -3587,7 +3600,10 @@ fn reg_source(
     mut reg: u32,
     skip_call_at: Option<usize>,
 ) -> Option<RegSource> {
-    const WINDOW: usize = 32;
+    // Wide enough for a record pointer formed at the top of a routine's
+    // argument set-up and handed over dozens of words later (PROT 0972 forms
+    // 0x801D8D30 in `$a2` thirty-seven words above its spawn call).
+    const WINDOW: usize = 64;
     let mut o = from;
     for _ in 0..WINDOW {
         let w = legaia_bytes::u32_le(buf, o)?;
@@ -3716,6 +3732,7 @@ fn claim_spawn_records(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOpt
     // the callees is that callee for this purpose: PROT 0980 stages every
     // dancer effect through `FUN_801D3FD0`, which moves `$a3` into `$a2` and
     // calls the spawn. Found once, from the callees' own call sites.
+    let mut record_starts: Vec<usize> = Vec::new();
     let mut callees: Vec<(u32, u32, ArgExtent, &str)> = ARG_RECORD_CALLEES.to_vec();
     for (callee, reg, extent, what) in ARG_RECORD_CALLEES {
         let target = jal(callee);
@@ -3785,6 +3802,265 @@ fn claim_spawn_records(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOpt
             "{sites} FUN_{callee:08x} call(s); {} distinct {what} start(s) formed in the \
              argument, {n} claimed ({bytes} bytes)",
             starts.len()
+        ));
+        if matches!(extent, ArgExtent::MoveRecord) {
+            record_starts.extend(starts);
+        }
+    }
+    claim_chained_spawn_records(&buf[..own_end], sink, &record_starts, &in_code);
+}
+
+/// A window-program interpreter an overlay image carries, and the program
+/// shape it walks.
+#[derive(Clone, Copy)]
+enum WindowProgram {
+    /// PROT 0899's `FUN_801D6628`: 4-byte `[opcode][window][u16 operand]`
+    /// instructions ending on a zero opcode, validated by
+    /// [`crate::widget_script::parse_at`].
+    Menu,
+    /// PROT 0897's `FUN_801E9B3C`: 8-byte instructions, `[i16 opcode][i16
+    /// window][u32 operand]`, walked `addiu s5,s5,8` until the opcode
+    /// halfword reads zero (`lh v0,(s5)` / `bnez` at `0x801E9D90`); the window
+    /// halfword indexes the overlay's own 28-byte descriptor table at
+    /// `0x801F2B98` (`FUN_801E9B3C`'s `((w << 3) - w) << 2`).
+    Field,
+}
+
+/// `(PROT entry, interpreter VA, program kind)` for the window-program VMs.
+/// The interpreter is image-local - at any other image the same `jal` word
+/// names whatever that image holds at the VA - so each row applies to its own
+/// entry alone.
+const WINDOW_PROGRAM_VMS: [(u32, u32, WindowProgram); 2] = [
+    (899, 0x801D_6628, WindowProgram::Menu),
+    (897, 0x801E_9B3C, WindowProgram::Field),
+];
+
+/// Window programs an overlay hands its window VM
+/// ([`WINDOW_PROGRAM_VMS`]).
+///
+/// Each program pointer is the `$a0` a call is handed, resolved like a spawn
+/// record's (`arg_values_at_call`: the fall-through value from the delay slot
+/// back, plus one per `switch` arm that loads `$a0` in the delay slot of a `j`
+/// to the shared call - most of the pause menu's programs are staged that way,
+/// which [`crate::widget_script::scan`]'s eight-word window does not follow),
+/// and the extent is the program through its terminator
+/// (`docs/formats/window-script.md`).
+fn claim_widget_scripts(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOptions) {
+    let Some(&(_, vm, kind)) = WINDOW_PROGRAM_VMS
+        .iter()
+        .find(|r| Some(r.0) == opts.prot_index)
+    else {
+        return;
+    };
+    if base != crate::menu_windows::MENU_OVERLAY_BASE_VA {
+        return;
+    }
+    let own_end = inherited_tail_start(buf, opts).unwrap_or(buf.len());
+    let code = code_intervals(sink);
+    let in_code = |off: usize| {
+        let i = code.partition_point(|&(s, _)| s <= off);
+        i > 0 && off < code[i - 1].1
+    };
+    let forms = lui_forms(&buf[..own_end], base);
+    let mut jumps_to: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+    for o in (0..own_end.saturating_sub(3)).step_by(4) {
+        let w = legaia_bytes::u32_le(buf, o).unwrap_or(0);
+        if let Flow::Jump(t) = Flow::of(w, o, base)
+            && w >> 26 == 0x02
+        {
+            jumps_to.entry(t).or_default().push(o);
+        }
+    }
+    let target = 0x0C00_0000 | ((vm & 0x0FFF_FFFF) >> 2);
+    let mut vas: std::collections::BTreeSet<u32> = Default::default();
+    let mut sites = 0usize;
+    for o in (0..own_end.saturating_sub(3)).step_by(4) {
+        if legaia_bytes::u32_le(buf, o) == Some(target) && in_code(o) {
+            sites += 1;
+            vas.extend(arg_values_at_call(
+                &buf[..own_end],
+                base,
+                o,
+                &forms,
+                &jumps_to,
+                4,
+            ));
+        }
+    }
+    let starts: Vec<usize> = vas
+        .iter()
+        .filter_map(|&va| va.checked_sub(base).map(|o| o as usize))
+        .filter(|&o| o < own_end)
+        .collect();
+    let (mut n, mut bytes) = (0usize, 0usize);
+    for (i, &off) in starts.iter().enumerate() {
+        let va = base + off as u32;
+        let (end, insns) = match kind {
+            WindowProgram::Menu => {
+                let Ok(script) = crate::widget_script::parse_at(&buf[..own_end], va) else {
+                    continue;
+                };
+                (off + script.byte_len(), script.insns.len())
+            }
+            WindowProgram::Field => {
+                let mut p = off;
+                let mut k = 0usize;
+                while let Some(op) = buf.get(p..p + 2) {
+                    if op == [0, 0] || k > crate::widget_script::MAX_SCRIPT_INSNS {
+                        break;
+                    }
+                    p += 8;
+                    k += 1;
+                }
+                if k > crate::widget_script::MAX_SCRIPT_INSNS || p + 8 > own_end {
+                    continue;
+                }
+                (p + 8, k)
+            }
+        };
+        let end = starts.get(i + 1).map_or(end, |&nx| end.min(nx));
+        if in_code(off) || end > own_end || end <= off {
+            continue;
+        }
+        sink.claim(
+            off,
+            end,
+            OWNER_SCRIPT,
+            format!("window program, {insns} instruction(s) (argument of a FUN_{vm:08x} call)"),
+        );
+        n += 1;
+        bytes += end - off;
+    }
+    if sites > 0 {
+        sink.note(format!(
+            "{sites} FUN_{vm:08x} call(s); {n} window program(s) claimed ({bytes} bytes)"
+        ));
+    }
+}
+
+/// Spawn records the consumer's pointers do not name but whose position both
+/// ends of a `[header][program]` chain pin.
+///
+/// Retail lays a module's spawn records back to back, and hands only some of
+/// them to a spawn call directly; the rest are reached by a route the static
+/// walk does not see. A run the pointer-credited records leave unclaimed is
+/// read as a chain - each record's end is where its move-VM program stops
+/// ([`crate::slot_b_module::move_program_end`]), and the next record opens
+/// there - and the chain is claimed only when **both** of its ends are
+/// structural: it starts at a pointer-credited record's end (or at the first
+/// word above code or another claim, below a credited record), and it lands
+/// exactly on a pointer-credited record's start, or on eight zero bytes of
+/// padding. A chain that dies on a program that does not terminate, or lands
+/// anywhere else, claims nothing. PROT 0972's records from `0x801D89E8` chain
+/// from the credited `0x801D899C` exactly onto the credited `0x801D8CDC`;
+/// PROT 0895's from `0x801F37D0` onto `0x801F3918`.
+fn claim_chained_spawn_records(
+    buf: &[u8],
+    sink: &mut Sink,
+    starts: &[usize],
+    in_code: &dyn Fn(usize) -> bool,
+) {
+    const MAX_CHAIN: usize = 256;
+    let mut anchors: Vec<usize> = starts.to_vec();
+    anchors.sort_unstable();
+    anchors.dedup();
+    if anchors.is_empty() {
+        return;
+    }
+    let claimed: Vec<(usize, usize)> = {
+        let mut v: Vec<(usize, usize)> = sink.claims.iter().map(|c| (c.start, c.end)).collect();
+        v.sort_unstable();
+        let mut out: Vec<(usize, usize)> = Vec::new();
+        for (s, e) in v {
+            match out.last_mut() {
+                Some(last) if s <= last.1 => last.1 = last.1.max(e),
+                _ => out.push((s, e)),
+            }
+        }
+        out
+    };
+    let is_claimed = |off: usize| {
+        let i = claimed.partition_point(|&(s, _)| s <= off);
+        i > 0 && off < claimed[i - 1].1
+    };
+    let zero8 = |p: usize| buf.get(p..p + 8).is_some_and(|w| w.iter().all(|&b| b == 0));
+    // Chain from `p`; `Some(records)` when it lands on an anchor or padding.
+    let chain = |mut p: usize, stop_at: Option<usize>| -> Option<Vec<(usize, usize)>> {
+        let mut out = Vec::new();
+        for _ in 0..MAX_CHAIN {
+            if Some(p) == stop_at || (stop_at.is_none() && anchors.binary_search(&p).is_ok()) {
+                return Some(out);
+            }
+            if stop_at.is_none() && zero8(p) {
+                return Some(out);
+            }
+            if p + 4 > buf.len() || in_code(p) || (stop_at.is_none() && is_claimed(p)) {
+                return None;
+            }
+            let sel = i16::from_le_bytes([buf[p], buf[p + 1]]);
+            if !crate::slot_b_module::dispatchable_model_sel(sel) {
+                return None;
+            }
+            let q = crate::slot_b_module::move_program_end(buf, p + 4).bounded()?;
+            if q <= p || (p + 1..q).any(in_code) {
+                return None;
+            }
+            out.push((p, q));
+            if let Some(s) = stop_at
+                && q > s
+            {
+                return None;
+            }
+            p = q;
+        }
+        None
+    };
+    let mut found: Vec<(usize, usize)> = Vec::new();
+    for &a in &anchors {
+        // Forward: from this record's own program end.
+        if let Some(e) = crate::slot_b_module::move_program_end(buf, a + 4).bounded()
+            && e > a
+            && !is_claimed(e)
+            && let Some(recs) = chain(e, None)
+        {
+            found.extend(recs);
+        }
+        // Backward: the unclaimed run just below this record, chained onto it.
+        if a >= 4 && !is_claimed(a - 4) {
+            let mut g = a - 4;
+            while g >= 4 && !is_claimed(g - 4) && !in_code(g - 4) && a - (g - 4) <= 0x2000 {
+                g -= 4;
+            }
+            // Skip word padding up to the first non-zero word.
+            while g < a && buf.get(g..g + 4).is_some_and(|w| w.iter().all(|&b| b == 0)) {
+                g += 4;
+            }
+            if g < a
+                && let Some(recs) = chain(g, Some(a))
+            {
+                found.extend(recs);
+            }
+        }
+    }
+    found.sort_unstable();
+    found.dedup();
+    let bytes: usize = found.iter().map(|&(s, e)| e - s).sum();
+    for &(s, e) in &found {
+        let head = i16::from_le_bytes([buf[s], buf[s + 1]]);
+        sink.claim(
+            s,
+            e,
+            OWNER_RECORD,
+            format!(
+                "spawn record, first halfword {head}, chained between pointer-credited records \
+                 (both ends pinned)"
+            ),
+        );
+    }
+    if !found.is_empty() {
+        sink.note(format!(
+            "{} spawn record(s) chained between pointer-credited ones ({bytes} bytes)",
+            found.len()
         ));
     }
 }
@@ -3889,6 +4165,72 @@ pub fn zero_absolute_head(window: &[u8]) -> bool {
         .filter(|&&w| matches!(w >> 26, 0x20..=0x26 | 0x28..=0x2B | 0x2E) && (w >> 21) & 0x1F == 0)
         .count();
     hits * 2 >= words.len()
+}
+
+/// Does this extent read as data decoded as opcodes by what its non-`nop`
+/// words **do**? A compiler never writes `$zero` except with the canonical
+/// `nop`, and never emits a word that decodes to no R3000 instruction; at
+/// least half the extent's non-zero words doing one or the other is a table,
+/// not a routine. It catches the shape [`zero_absolute_head`] cannot - a run
+/// of small halfwords or a fill-headed window shorter than
+/// [`ZERO_HEAD_BYTES`] (the Baka Fighter image's `FUN_801daa50` label: seven
+/// `nop`s then `mfhi zero`).
+pub fn no_instruction_signature(window: &[u8]) -> bool {
+    let words: Vec<u32> = window
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
+        .filter(|&w| w != 0)
+        .collect();
+    if words.is_empty() {
+        return false;
+    }
+    let odd = words
+        .iter()
+        .filter(|&&w| writes_gpr_zero(w) || !is_r3000_word(w))
+        .count();
+    odd >= 1 && odd * 2 >= words.len()
+}
+
+/// Whether a non-zero word is an ALU op, load or coprocessor move whose
+/// destination general register is `$zero`. (A GTE load `lwc2 $0` names a
+/// GTE register, not a general one, and is not counted.)
+fn writes_gpr_zero(w: u32) -> bool {
+    let (op, rs, rt, rd) = (
+        w >> 26,
+        (w >> 21) & 0x1F,
+        (w >> 16) & 0x1F,
+        (w >> 11) & 0x1F,
+    );
+    match op {
+        0x00 => {
+            w != 0
+                && rd == 0
+                && matches!(
+                    w & 0x3F,
+                    0x00 | 0x02..=0x04 | 0x06 | 0x07 | 0x09 | 0x10 | 0x12 | 0x20..=0x27 | 0x2A | 0x2B
+                )
+        }
+        0x08..=0x0F | 0x20..=0x26 => rt == 0,
+        0x10 | 0x12 => matches!(rs, 0x00 | 0x02) && rt == 0,
+        _ => false,
+    }
+}
+
+/// Whether a word decodes to an R3000 instruction a PSX compiler emits (the
+/// integer set plus `COP0` / `COP2` and `lwc2` / `swc2`).
+fn is_r3000_word(w: u32) -> bool {
+    match w >> 26 {
+        0x00 => matches!(
+            w & 0x3F,
+            0x00 | 0x02..=0x04 | 0x06..=0x09 | 0x0C | 0x0D | 0x10..=0x13 | 0x18..=0x1B | 0x20..=0x27 | 0x2A | 0x2B
+        ),
+        0x01 => matches!((w >> 16) & 0x1F, 0x00 | 0x01 | 0x10 | 0x11),
+        0x02..=0x10 | 0x12 => true,
+        0x20..=0x26 | 0x28..=0x2B | 0x2E | 0x32 | 0x3A => true,
+        _ => false,
+    }
 }
 
 /// Shortest share of printable ASCII (`0x20..=0x7E`) a NUL-terminated run
@@ -5456,6 +5798,10 @@ pub fn render_text(acc: &Account, indent: usize) -> String {
 // Tests
 // ---------------------------------------------------------------------------
 
+#[path = "byte_account_arrays.rs"]
+mod arrays;
+pub use arrays::{BumpArray, IndexedArray, indexed_arrays, pointer_bump_arrays};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5856,6 +6202,24 @@ mod tests {
         // addiu v0,zero,1; L: lw a1,-0x4778(v0). Only the taken path pairs.
         let img = words(&[0x1440_0002, 0x3C02_8008, 0x2402_0001, 0x8C45_B888]);
         assert_eq!(formed_addresses(&img, 0), vec![(12, 0x8007_B888)]);
+    }
+
+    #[test]
+    fn a_window_of_zero_writes_is_data_not_code() {
+        // The Baka Fighter image's `FUN_801daa50` label: seven `nop`s, then
+        // `mfhi zero` and two more words that write `$zero`.
+        let data = words(&[0, 0, 0, 0, 0, 0, 0, 0x0000_0010, 0x2400_0001, 0x8C00_0004]);
+        assert!(no_instruction_signature(&data));
+        // A real prologue, a `mult` (rd field zero, but it writes hi/lo) and a
+        // GTE load into GTE register 0 are code.
+        let code = words(&[
+            0x27BD_FFE8,
+            0xAFBF_0010,
+            0x0085_0018,
+            0xC880_0000,
+            0x03E0_0008,
+        ]);
+        assert!(!no_instruction_signature(&code));
     }
 
     #[test]
