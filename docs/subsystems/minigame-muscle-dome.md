@@ -1577,6 +1577,31 @@ Three facts the earlier readings of the *arithmetic* got wrong, each corrected f
 
 `ctx+0x28a` is the shared **battle turn counter**: the battle-action SM's case `0xff` (`FUN_801e295c`) does `ctx[6] = 0x14; ctx[+0x28a] += 1`, i.e. it bumps the counter and parks the round driver on the strip arm. Enemy AI in the same overlay keys its behaviour off the same byte. That is shared battle machinery; only the `0xB6`-gated strip arm is Koru's.
 
+### What the strip looks like in retail
+
+A PCSX-Redux capture draws it
+([`autorun_w1a_koru_strip.lua`](../../scripts/pcsx-redux/autorun_w1a_koru_strip.lua),
+scenario `koru_strip_forced`). The formation is **installed**, not rolled
+or scripted - cells `0x8007BD0C..0F = [0xB6, 0, 0, 0]` and master mode 8
+from a field state, with Gala alone in the party - and the gate reads only
+that cell, so the draw is the one Koru's fight makes.
+
+- **Timeline.** `ctx[+0x28A]` starts at `0` and rises by one per round;
+  each round the round driver's phase byte `ctx[+6]` steps `0x14 -> 0x1E ->
+  0x28 -> 0x3C -> 0x64 -> 0x6E -> 0xFE -> 0xFF`, and `DAT_801F6958` takes
+  its new value (`4, 3, 2, 1, 0` over five rounds) on the `0x14 -> 0x1E`
+  step. `DAT_801F6959` read `100` throughout (the mash never damaged Koru).
+- **Seat.** The strip is one framed window across the top of the frame:
+  its gold border runs from framebuffer column `9` to `309`, top edge on
+  row `11`, the two numbers inside it. The per-actor name plate (`Gala`,
+  `Koru`) sits in the same top-left seat, from column `9`, rows `13..28`.
+- **They never share a frame.** The strip is up while the round's
+  `Begin / Run` prompt is (phase `0x1E` onward); once actions play (phase
+  `0xFF`) it is gone and the acting fighter's name plate holds the seat.
+  Of the run's 27 checkpoints, the three taken at a `Begin / Run` prompt
+  show the strip, the plate shows only in action frames, and no frame
+  shows both.
+
 ## What ends a leg: a knockout, and nothing else
 
 The arena has no battle loop of its own, so it has nothing to bound. It picks

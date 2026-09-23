@@ -2789,3 +2789,13 @@ expected_game_mode = 0x03
 expected_active_scene = "kor5"
 description = "kor5 on the vsync P2[5] sets 0x436 itself (record +0xD0D, FUN_8003CE08 from ra 0x801E3598) - no flag poke. Reached from kor5_post_43a_checkpoint by tile pokes onto P2[4]'s (32,40) -> (32,41), a Cross mash, and the Gaza fight passed by holding the enemy HP at 1 (synthetic: the loss is a game over, mode 0x16); P1[0] spawns P2[5] on the reload and it runs to +0xD0D about 3,300 vsyncs later. 0x6C4 still clear: crossing (32,85) -> (32,86) dispatches P2[8], which sets it at +0x75."
 topics = ["field", "kor5", "story flags", "walk-on trigger", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "koru_strip_forced"
+backup_fingerprint = "7f4a53493c884f768ac087672bc74317cabaf5b24a89ac212a1a52b53f07dbbc"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+description = "Koru (monster 0xB6) battle at the first round's Begin / Run prompt, with the Turns Left / HP Left strip drawn (turns left 4, HP 100). SYNTHETIC formation: autorun_w1a_koru_strip.lua installed cells 0x8007BD0C..0F = [0xB6,0,0,0] + master mode 8 from nivora_cutscene_delilas_intro, so the party is that state's (Gala alone) and the arena is the nilboa battle stage, not Koru's scripted fight. The strip's gate reads only the formation cell."
+topics = ["battle", "Koru", "timed fight", "battle HUD", "synthetic", "probe state"]
