@@ -780,6 +780,7 @@ pub fn lift_official(
         DialogDomain {
             seg_texts: man_seg_texts,
             man_of: man_of_scene,
+            keys_are_entry_offsets: false,
         },
         &mut report.man_total,
         &mut report.man_paired,
@@ -792,6 +793,7 @@ pub fn lift_official(
         DialogDomain {
             seg_texts: raw_seg_texts,
             man_of: man_of_stream,
+            keys_are_entry_offsets: true,
         },
         &mut report.raw_total,
         &mut report.raw_paired,
@@ -903,6 +905,9 @@ fn man_of_stream(entry: &[u8]) -> Option<(usize, Vec<u8>)> {
 struct DialogDomain {
     seg_texts: SegTexts,
     man_of: ManOf,
+    /// The keyed offsets index the PROT entry itself (the `raw:` space), so
+    /// the entry's own framing list can pair what the scan and the walk miss.
+    keys_are_entry_offsets: bool,
 }
 
 /// Blank every `translation` in `pack` that the `baseline` pack also carries -
@@ -914,6 +919,14 @@ struct DialogDomain {
 /// the baseline, what survives is the translator's own text, and the lines the
 /// patch left alone stay empty (vanilla on import) instead of carrying the
 /// underlying build's official text. Returns the number of entries blanked.
+///
+/// A line with **no prose of its own** - nothing but control tokens and
+/// punctuation, e.g. a chest line reduced to its item-name token - is kept
+/// even when the baseline carries it: the retail disc has the same bytes
+/// because the construction is the same in both languages, not because the
+/// translator skipped the line, and blanking it leaves the English line
+/// (`the <item>!`) in the middle of a translated sentence. It carries no
+/// text of the underlying build either.
 pub fn drop_baseline_text(pack: &mut LanguagePack, baseline: &LanguagePack) -> usize {
     use std::collections::{BTreeMap, BTreeSet};
     let group_of = |key: &str| -> String {
@@ -941,7 +954,7 @@ pub fn drop_baseline_text(pack: &mut LanguagePack, baseline: &LanguagePack) -> u
             }
         }
         for e in section.iter_mut() {
-            if e.translation.is_empty() {
+            if e.translation.is_empty() || !has_prose(&e.translation) {
                 continue;
             }
             let shared = groups
@@ -954,6 +967,22 @@ pub fn drop_baseline_text(pack: &mut LanguagePack, baseline: &LanguagePack) -> u
         }
     }
     blanked
+}
+
+/// `true` when a markup line carries at least one letter outside its
+/// `{..}` control tokens - words of its own, as opposed to a line built only
+/// from tokens and punctuation.
+fn has_prose(markup: &str) -> bool {
+    let mut depth = 0usize;
+    for c in markup.chars() {
+        match c {
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            c if depth == 0 && c.is_alphabetic() => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// ASCII-fold every lifted `translation` in `pack`, in place.
@@ -1045,6 +1074,7 @@ fn fill_dialog(
             },
             _ => None,
         };
+        let mut unpaired: Vec<(usize, usize)> = Vec::new();
         for &m in &members {
             let key = entries[m].key.clone();
             // Offset from the key.
@@ -1077,15 +1107,63 @@ fn fill_dialog(
                     stats.positional += 1;
                     Some(text)
                 }
-                (None, None) => None,
+                (None, None) => {
+                    unpaired.push((m, off));
+                    None
+                }
             };
             if let Some(text) = chosen {
                 entries[m].translation = markup::decode(text);
                 *paired += 1;
             }
         }
+        // Last resort for a raw carrier the walk does not cover: the entry's
+        // every `0x1F .. 0x00` framing, quality gate off. A translated line
+        // too short for the gate (a chest line reduced to its item token)
+        // shifts the gated scan by one on that side only; the ungated lists
+        // stay the same length when only the text changed. Paired only when
+        // they do, and only where the script byte ahead of both leads agrees.
+        if domain.keys_are_entry_offsets && !unpaired.is_empty() {
+            let (uf, pf) = (framings(&usa_entry), framings(&pal_entry));
+            if uf.len() == pf.len() {
+                let ord: BTreeMap<usize, usize> =
+                    uf.iter().enumerate().map(|(k, (o, _))| (*o, k)).collect();
+                for (m, off) in unpaired.drain(..) {
+                    let Some((pal_off, text)) = ord.get(&off).map(|&k| &pf[k]) else {
+                        continue;
+                    };
+                    let lead_agrees =
+                        off >= 2 && *pal_off >= 2 && usa_entry[off - 2] == pal_entry[pal_off - 2];
+                    if lead_agrees && !text.is_empty() {
+                        entries[m].translation = markup::decode(text);
+                        stats.positional += 1;
+                        *paired += 1;
+                    }
+                }
+            }
+        }
     }
     Ok(stats)
+}
+
+/// Every `0x1F <text> 0x00` framing in `buf`, in order, with no quality gate:
+/// `(text offset, text bytes)`.
+fn framings(buf: &[u8]) -> Vec<(usize, Vec<u8>)> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < buf.len() {
+        if buf[i] == 0x1F
+            && let Some(t) = segments::walk_to_terminator(buf, i + 1)
+            && buf[t] == 0x00
+            && t > i + 1
+        {
+            out.push((i + 1, buf[i + 1..t].to_vec()));
+            i = t + 1;
+            continue;
+        }
+        i += 1;
+    }
+    out
 }
 
 /// NUL-to-NUL chunks of `buf[lo..hi)`: `(offset, bytes)` of every non-empty
@@ -1102,6 +1180,13 @@ fn nul_chunks(buf: &[u8], lo: usize, hi: usize) -> Vec<(usize, Vec<u8>)> {
         let mut e = pos;
         while e < hi && buf[e] != 0 {
             e += 1;
+        }
+        // A run the window's end cuts short is a fragment, not a string: it
+        // can pair with nothing (and as a source it would lift a truncated
+        // line), and a fragment's length disagrees with the whole string on
+        // the other build, failing every alignment that reaches it.
+        if e == hi && buf.get(e).is_some_and(|&b| b != 0) {
+            break;
         }
         // A string pool's first string can trail the code that addresses it
         // with no NUL between: key the chunk on its first glyph, not on the
@@ -1184,7 +1269,7 @@ fn pair_chunk_lists(
         // same is retried over the prose-shaped chunks only, so a run of
         // one-byte junk on one side cannot displace a line.
         let head_first = p + 1 == bounds.len();
-        let prose = |c: &(usize, Vec<u8>)| segments::qualifies_ext(&c.1, true);
+        let prose = |c: &(usize, Vec<u8>)| pool_text(&c.1);
         let up: Vec<&(usize, Vec<u8>)> = u.iter().filter(|c| prose(c)).collect();
         let sp: Vec<&(usize, Vec<u8>)> = s.iter().filter(|c| prose(c)).collect();
         let u_all: Vec<&(usize, Vec<u8>)> = u.iter().collect();
@@ -1193,9 +1278,12 @@ fn pair_chunk_lists(
         // a surplus on the USA side means the gate ate source strings, and
         // aligning what survived would put a different line on a slot -
         // the one failure an unpaired label never is.
-        let pairs = (s.len() >= u.len())
-            .then(|| align_chunks(&u_all, &s_all, head_first))
-            .flatten()
+        let pairs = align_chunks_dp(&u_all, &s_all)
+            .or_else(|| {
+                (s.len() >= u.len())
+                    .then(|| align_chunks(&u_all, &s_all, head_first))
+                    .flatten()
+            })
             .or_else(|| {
                 (sp.len() >= up.len())
                     .then(|| align_chunks(&up, &sp, head_first))
@@ -1213,13 +1301,40 @@ fn pair_chunk_lists(
     out
 }
 
+/// Whether a pool chunk is a string rather than pointer / code bytes: every
+/// glyph (control tokens stepped over) printable or an accent tile, with at
+/// least two letters. The dialog gate is too strict for UI strings - it
+/// refuses the `/` of an abbreviation (`p/ equipar`) and a punctuated word
+/// with no space (`{ce:13}Pernas.`) - and one refused string on one build
+/// fails every alignment of the pool it sits in.
+fn pool_text(b: &[u8]) -> bool {
+    let (mut i, mut letters) = (0usize, 0usize);
+    while i < b.len() {
+        let c = b[i];
+        if markup::is_two_byte_op(c) {
+            i += 2;
+            continue;
+        }
+        if c < 0x20 {
+            return false;
+        }
+        if c == 0x7F || (0xB0..=0xB4).contains(&c) || (0xDB..=0xDF).contains(&c) {
+            // The CP850 shade / box / block tiles: a string never mixes
+            // them with prose, pointer bytes land on them all the time.
+            return false;
+        }
+        if c.is_ascii_alphabetic() || c >= 0x80 {
+            letters += 1;
+        }
+        i += 1;
+    }
+    letters >= 2
+}
+
 /// Two chunks of the same pool slot on two builds look alike: both prose or
 /// both not, and when prose, within a length ratio a translation stays inside.
 fn chunks_agree(a: &[u8], b: &[u8]) -> bool {
-    let (pa, pb) = (
-        segments::qualifies_ext(a, true),
-        segments::qualifies_ext(b, true),
-    );
+    let (pa, pb) = (pool_text(a), pool_text(b));
     if pa != pb {
         return false;
     }
@@ -1232,6 +1347,69 @@ fn chunks_agree(a: &[u8], b: &[u8]) -> bool {
 
 /// A NUL-delimited chunk of a string pool: `(offset, bytes)`.
 type Chunk = (usize, Vec<u8>);
+
+/// Align two chunk lists of unequal length by dynamic programming, in order:
+/// the source may carry extra chunks anywhere (a build that splits one
+/// string in two, or adds a label variant, puts its surplus in the middle of
+/// the pool, where a head or tail alignment slides every later pair by one),
+/// and a USA chunk may stay unpaired at a higher cost (the widened source
+/// window can still end before the USA one does). A pair must
+/// [`chunks_agree`]; an identical pair scores highest, then a pair whose
+/// leading glyph class agrees (the `@` of a menu label) and whose lengths are
+/// closest. `None` when no USA prose chunk pairs at all.
+fn align_chunks_dp<'a>(u: &[&'a Chunk], s: &[&'a Chunk]) -> Option<Vec<(&'a Chunk, &'a Chunk)>> {
+    let (n, m) = (u.len(), s.len());
+    if n == 0 || m == 0 {
+        return None;
+    }
+    let pair = |a: &Chunk, b: &Chunk| -> Option<i64> {
+        if a.1 == b.1 {
+            return Some(60);
+        }
+        if !chunks_agree(&a.1, &b.1) {
+            return None;
+        }
+        let lead = |c: &Chunk| c.1.first().map(|&x| (x == b'@', x.is_ascii_alphanumeric()));
+        let (la, lb) = (a.1.len() as i64, b.1.len() as i64);
+        // A translation runs about a fifth longer; score the distance from
+        // that, in fifths of the USA length.
+        let dev = ((lb * 5 - la * 6).abs() * 4 / (la * 5).max(1)).min(12);
+        Some(24 + if lead(a) == lead(b) { 12 } else { 0 } - dev)
+    };
+    const SKIP_SRC: i64 = 2;
+    const SKIP_USA: i64 = 20;
+    // dp[i][j]: best score over u[..i] and s[..j].
+    let mut dp = vec![vec![0i64; m + 1]; n + 1];
+    for (j, cell) in dp[0].iter_mut().enumerate() {
+        *cell = -(j as i64) * SKIP_SRC;
+    }
+    for i in 1..=n {
+        dp[i][0] = -(i as i64) * SKIP_USA;
+        for j in 1..=m {
+            let mut best = (dp[i][j - 1] - SKIP_SRC).max(dp[i - 1][j] - SKIP_USA);
+            if let Some(sc) = pair(u[i - 1], s[j - 1]) {
+                best = best.max(dp[i - 1][j - 1] + sc);
+            }
+            dp[i][j] = best;
+        }
+    }
+    let mut out = Vec::new();
+    let (mut i, mut j) = (n, m);
+    while i > 0 && j > 0 {
+        let here = dp[i][j];
+        if pair(u[i - 1], s[j - 1]).is_some_and(|sc| dp[i - 1][j - 1] + sc == here) {
+            out.push((u[i - 1], s[j - 1]));
+            i -= 1;
+            j -= 1;
+        } else if dp[i][j - 1] - SKIP_SRC == here {
+            j -= 1;
+        } else {
+            i -= 1;
+        }
+    }
+    out.reverse();
+    (!out.is_empty()).then_some(out)
+}
 
 /// Align two chunk lists of unequal length by their head or their tail,
 /// whichever the caller prefers, accepting an alignment only when every
@@ -1362,7 +1540,10 @@ fn lift_scus_pools(
         // The data segment does not drift uniformly: the pools ahead of the
         // name tables sit at the same offsets on every build, the ones
         // behind them carry the tables' displacement. Try both and keep the
-        // window that pairs more of the pool's own strings.
+        // window that shares more build-invariant chunks with the USA one
+        // (the run-in and run-out bytes), then the one pairing more of the
+        // pool's own strings: an in-order alignment pairs *some* text in any
+        // window, so the pair count alone can crown the wrong one.
         let pool_offs: Vec<usize> = ui::scan_pool(usa_exe, pool)
             .iter()
             .map(|s| (s.va - pool.base_va) as usize)
@@ -1372,9 +1553,20 @@ fn lift_scus_pools(
             .map(|d| {
                 let s_lo = (lo as i64 + d - 0x40).max(0) as usize;
                 let s_hi = (hi as i64 + d + span as i64 + 0x80).max(0) as usize;
-                pair_chunk_lists(&usa_chunks, &nul_chunks(src_exe, s_lo, s_hi))
+                let src_chunks = nul_chunks(src_exe, s_lo, s_hi);
+                let shared = usa_chunks
+                    .iter()
+                    .filter(|(_, b)| src_chunks.iter().any(|(_, c)| c == b))
+                    .count();
+                (shared, pair_chunk_lists(&usa_chunks, &src_chunks))
             })
-            .max_by_key(|m| pool_offs.iter().filter(|o| m.contains_key(o)).count())
+            .max_by_key(|(shared, m)| {
+                (
+                    *shared,
+                    pool_offs.iter().filter(|o| m.contains_key(o)).count(),
+                )
+            })
+            .map(|(_, m)| m)
             .unwrap_or_default();
         for e in pack.sections.system_text.iter_mut() {
             let Some(va) = key_scus_va(&e.key) else {
@@ -1468,6 +1660,7 @@ mod tests {
             entry("man:5:0x20", "shifted line"), // blanked: baseline has it elsewhere in entry 5
             entry("man:5:0x30", "translated"), // kept
             entry("man:6:0x10", "shifted line"), // kept: entry 6 never carried it
+            entry("man:5:0x40", "{c2:7c}."), // kept: no prose of its own
         ];
         pack.sections.items = vec![entry("scus:str:0x80011230", "Potion")];
         let mut base = LanguagePack::new("xx");
@@ -1475,6 +1668,7 @@ mod tests {
             entry("man:5:0x10", "same key"),
             entry("man:5:0x28", "shifted line"),
             entry("man:5:0x30", "retail text"),
+            entry("man:5:0x40", "{c2:7c}."),
         ];
         base.sections.items = vec![entry("scus:str:0x80011230", "Potion")];
         assert_eq!(drop_baseline_text(&mut pack, &base), 3);
@@ -1484,8 +1678,83 @@ mod tests {
             .iter()
             .map(|e| e.translation.as_str())
             .collect();
-        assert_eq!(t, ["", "", "translated", "shifted line"]);
+        assert_eq!(t, ["", "", "translated", "shifted line", "{c2:7c}."]);
         assert_eq!(pack.sections.items[0].translation, "");
+    }
+
+    #[test]
+    fn nul_chunks_drop_a_run_the_window_cuts() {
+        let buf = b"\0Alpha\0Bravo\0Charlie\0";
+        // The window ends inside `Charlie`: that fragment is not a string.
+        let got: Vec<Vec<u8>> = nul_chunks(buf, 0, 17).into_iter().map(|c| c.1).collect();
+        assert_eq!(got, [b"Alpha".to_vec(), b"Bravo".to_vec()]);
+        let got = nul_chunks(buf, 0, buf.len());
+        assert_eq!(got.len(), 3);
+    }
+
+    #[test]
+    fn pool_text_accepts_labels_the_dialog_gate_refuses() {
+        // An abbreviation's `/` and a space-less punctuated word behind a
+        // control token are UI strings, not junk.
+        assert!(pool_text(b"Nenhum item p/ equipar."));
+        assert!(pool_text(&[
+            0xCE, 0x13, b'P', b'e', b'r', b'n', b'a', b's', b'.'
+        ]));
+        assert!(pool_text(&[b'P', b'r', b'e', 0x87, b'o']));
+        // Pointer bytes and box / shade tiles are not.
+        assert!(!pool_text(&[0xC8, 0x02, 0x80, 0x7C]));
+        assert!(!pool_text(&[b'L', 0xB4, b'a', 0xAC, 0x7F]));
+        assert!(!pool_text(b"@."));
+    }
+
+    #[test]
+    fn dp_alignment_absorbs_a_surplus_chunk_mid_pool() {
+        // The source build carries an extra label variant in the middle of
+        // the pool (`Possui ` ahead of `@Possui `): a head alignment pairs
+        // `@Have ` with the variant and slides every later pair by one.
+        let mk = |v: &[&[u8]]| -> Vec<Chunk> {
+            v.iter()
+                .enumerate()
+                .map(|(i, b)| (i * 0x20, b.to_vec()))
+                .collect()
+        };
+        let u = mk(&[b"@Cannot Equip", b"@Have ", b"@.", b"@None", b"@Price"]);
+        let s = mk(&[
+            b"@Nao pode equipar",
+            b"Possui ",
+            b"@Possui ",
+            b"@.",
+            b"@Nada",
+            b"@Preco",
+        ]);
+        let (ur, sr): (Vec<&Chunk>, Vec<&Chunk>) = (u.iter().collect(), s.iter().collect());
+        let pairs = align_chunks_dp(&ur, &sr).expect("aligns");
+        let got: Vec<(&[u8], &[u8])> = pairs
+            .iter()
+            .map(|(a, b)| (a.1.as_slice(), b.1.as_slice()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                (&b"@Cannot Equip"[..], &b"@Nao pode equipar"[..]),
+                (b"@Have ", b"@Possui "),
+                (b"@.", b"@."),
+                (b"@None", b"@Nada"),
+                (b"@Price", b"@Preco"),
+            ]
+        );
+        // The same list against itself is the identity.
+        let pairs = align_chunks_dp(&ur, &ur).expect("identity");
+        assert!(pairs.iter().all(|(a, b)| a.0 == b.0));
+        assert_eq!(pairs.len(), u.len());
+    }
+
+    #[test]
+    fn prose_test_ignores_control_tokens() {
+        assert!(!has_prose("{c2:7c}."));
+        assert!(!has_prose("{c1:00}, {c1:01}!"));
+        assert!(has_prose("{c1:00} no"));
+        assert!(has_prose("S{a1}"));
     }
 
     #[test]
