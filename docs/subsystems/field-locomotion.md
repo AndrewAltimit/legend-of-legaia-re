@@ -941,6 +941,32 @@ Two variants sit either side of that idiom. A record whose `C1`/`C2` are **empty
   A spawned-record channel poke of the `4C 51` family SEATS the target exactly (retail's run dispatch settles on the op target, the same pin as the entry pre-run), hide-box `(127,127)` seats included - the beat's closing choreography despawns Mei that way, and retail keeps her hidden until the next scene entry re-runs her prologue.
   An id that matches NO channel is skipped by its decoded width - running it against the timeline's own context corrupts the caller (a `B1 <id> 00` sets the caller's own busy bit, and the `CC <id> A0` busy-wait then hijacks the caller PC into the record header). Resolved-channel `4C A0` busy-waits fall through unconditionally: engine channel pokes complete synchronously, where retail's channel clears its own busy bit as its move plays out. Disc oracle: `crates/engine-core/tests/field_npc_entry_positions_disc.rs` (the Mei-beat test).
 
+### A crossing made under the movement lock is consumed
+
+Retail's tile-crossing compare records the new tile **before** it decides
+whether to act on it. In `FUN_801D1EC4` the changed-tile path runs the
+`cell & 0x600` filter (`0x801D2144`) and then the player's movement-disabled
+bit, `+0x10 & 0x80000` (`0x801D214C..0x801D2158`); both failure branches land
+on `0x801D226C` / `0x801D2270`, which store the new tile into the last-tile
+pair `0x8007BDC8` / `0x8007BDCC` without a lookup. So a crossing made while a
+cutscene holds the player is spent: the tile is now "last", and when the lock
+lifts, standing on it fires nothing - only a further crossing does.
+
+A PCSX-Redux capture on the `kor5_field_card_boot` save shows it end to end
+([`autorun_w7c_kor5_tail.lua`](../../scripts/pcsx-redux/autorun_w7c_kor5_tail.lua),
+captures `captures/w7c-0921/kor5_k2` and `kor5_k3a`). `kor5` P2[3]'s cutscene
+holds `+0x10` at `0x098A2880` (lock bit set) from its start until well after it
+latches `0x43A`; a tile poke onto P2[4]'s trigger `(32, 41)` made while the lock
+is still up moves the last-tile pair to `(32, 41)` and never reaches
+`FUN_801D5630` - which is why earlier tile-poke routes found P2[4] "never
+spawning". From a checkpoint taken after the lock clears (`+0x10` =
+`0x09820880`), a poke onto `(32, 40)` and then `(32, 41)` dispatches P2[4]
+(`FUN_8003BDE0(32, 41, 4, 1)`, `ra 0x801D218C`) on the first crossing, with no
+scene re-entry. The port's `SceneHost::dispatch_walk_on_trigger` differs here:
+it returns before updating its last-tile mirror while a cutscene timeline is
+active, so a crossing made during the cutscene is deferred to the first free
+tick rather than spent.
+
 ### Object-record format (`+0x0000`, 0x20-byte stride)
 
 `FUN_8003a55c` reads each record at `field_buffer + idx*0x20` (the `.MAP` file's authored

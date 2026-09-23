@@ -136,6 +136,12 @@ local OUT_DIR    = probe.getenv("LEGAIA_OUT_DIR", "captures/w7c_kor5_tail")
 local CKPT_FLAG  = tonumber(probe.getenv("LEGAIA_CKPT_FLAG", ""), 16)
 local CKPT_DELAY = probe.getenv_num("LEGAIA_CKPT_DELAY", 120)
 local ckpt_flag_at = nil
+-- The pool-block write-watch fires on every list relink (a Lua callback per
+-- store), which slows the interpreter several-fold: opt in.
+local POOL_WATCH = probe.getenv("LEGAIA_POOL_WATCH", "") == "1"
+local WAIT_UNLOCK = probe.getenv("LEGAIA_WAIT_UNLOCK", "") == "1"
+local BATTLE_HP1 = probe.getenv("LEGAIA_BATTLE_HP1", "") == "1"
+local battle_poked = {}
 
 local BTN = {
     up = pad.BTN.UP, down = pad.BTN.DOWN, left = pad.BTN.LEFT,
@@ -345,7 +351,7 @@ local function arm_all()
     -- Actor-pool control block 0x8007C348: +0x04..+0x24 list heads and the
     -- player ctx word +0x1C. One row per distinct (pc, word) writer.
     local seenblk = {}
-    bp.arm(0x8007C34C, "Write", 0x24, "pool_block", function(addr)
+    if POOL_WATCH then bp.arm(0x8007C34C, "Write", 0x24, "pool_block", function(addr)
         local r = PCSX.getRegisters()
         local a = u32n(addr or 0)
         local k = string.format("%s@%s", hex32(r.pc), hex32(a))
@@ -353,7 +359,7 @@ local function arm_all()
         seenblk[k] = true
         log(string.format("f=%d POOL_BLOCK_WRITE +0x%02X pc=%s ra=%s scene=%s mode=0x%02X", vsync,
             a - 0x8007C348, hex32(r.pc), hex32(r.GPR.n.ra), scene_name(), u8(GAME_MODE)))
-    end)
+    end) end
     local seen5630 = {}
     bp.arm(0x801D5630, "Exec", 4, "trig_lookup", function()
         local r = PCSX.getRegisters()
@@ -408,6 +414,26 @@ local function on_vsync()
     end
 
     if md == 0x03 then field_ticks = field_ticks + 1 else field_ticks = 0 end
+    -- LEGAIA_BATTLE_HP1=1: in battle (mode 0x15), hold every living enemy
+    -- seat's HP (+0x14C) at 1 so the party's next hit ends the fight. A
+    -- synthetic bypass: say so wherever a route rests on it.
+    if BATTLE_HP1 and md == 0x15 then
+        for seat = 3, 6 do
+            local a = u32n(mem.read_u32(0x801C9370 + seat * 4) or 0)
+            if a >= 0x80000000 and a < 0x80200000 and u8(0x8007BD09 + seat) ~= 0 then
+                local hp = (mem.read_u16(a + 0x14C) or 0) % 0x10000
+                if hp > 1 then
+                    mem.write_u16(a + 0x14C, 1)
+                    if not battle_poked[a] then
+                        battle_poked[a] = true
+                        log(string.format("BATTLE HP POKE (synthetic) f=%d seat %d monster %d hp %d -> 1",
+                            vsync, seat, u8(0x8007BD09 + seat), hp))
+                    end
+                end
+            end
+        end
+    end
+
     -- Player flags +0x10 (bit 0x80000 = movement disabled: the walk-on
     -- trigger at 0x801D214C skips the lookup while it is set) and the
     -- last-tile pair 0x8007BDC8 / 0x8007BDCC the trigger compares against.
@@ -443,7 +469,18 @@ local function on_vsync()
         end
         l = nil
     end
-    if l ~= nil and md == 0x03 and sc == l.scene and field_ticks >= SETTLE then
+    -- LEGAIA_WAIT_UNLOCK=1: hold a leg until the player's +0x10 bit 0x80000
+    -- (movement disabled) reads clear. The walk-on trigger fires on a tile
+    -- CHANGE (0x801D2088 / 0x801D209C against 0x8007BDC8 / 0x8007BDCC) and
+    -- skips the lookup while that bit is set (0x801D214C), but the last-tile
+    -- pair still follows the poked position - so a poke made during a
+    -- cutscene's lock is consumed and the tile never "changes" again.
+    local locked = false
+    if WAIT_UNLOCK then
+        local pp = player_ptr()
+        locked = pp ~= nil and bit.band(mem.read_u32(pp + 0x10) or 0, 0x80000) ~= 0
+    end
+    if l ~= nil and md == 0x03 and sc == l.scene and field_ticks >= SETTLE and not locked then
         local p = player_ptr()
         if p ~= nil then
             mem.write_u16(p + 0x14, world_of(l.tx) % 0x10000)
