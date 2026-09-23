@@ -1099,6 +1099,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_scene_entry_eye_seed.lua`](../../scripts/pcsx-redux/autorun_scene_entry_eye_seed.lua) | Which of the two scene-entry camera-eye seeds runs last, and what the first field view reads. &rarr; [detail](#autorun_scene_entry_eye_seedlua) |
 | [`autorun_field_pad_ring.lua`](../../scripts/pcsx-redux/autorun_field_pad_ring.lua) | What retail's camera-relative pad remap turns each held direction into, at every rotation index. &rarr; [detail](#autorun_field_pad_ringlua) |
 | [`autorun_scene_name_hijack.lua`](../../scripts/pcsx-redux/autorun_scene_name_hijack.lua) | Loads a scene no save state reaches by rewriting a door's inline destination name. &rarr; [detail](#autorun_scene_name_hijacklua) |
+| [`autorun_w5b_field_watch.lua`](../../scripts/pcsx-redux/autorun_w5b_field_watch.lua) | One configurable field watch - write watches that log the value that lands, exec and read breakpoints, per-vsync samples, pad holds, position and memory pokes - so a disassembly claim gets a retail check without a new probe. &rarr; [detail](#autorun_w5b_field_watchlua) |
 #### Runtime probe details
 
 ##### `autorun_w4d_cort_flow_writer.lua`
@@ -1142,6 +1143,33 @@ the longer ones (`Probes` + `What it answered`) are written out as
   Left, which drives both the command ring and the directional arts screen. See
   [`battle-action.md`](../subsystems/battle-action.md#the-sound-a-melee-swing-makes-and-which-half-of-it-the-port-has).
   Interpreter mode, battle states only - the addresses are slot-A overlay VAs.
+
+##### `autorun_w5b_field_watch.lua`
+
+- **Probes:** `LEGAIA_WATCH` write watches (`addr:width:label`), each row
+  carrying the writer `pc` / `ra` and the value that **lands** - the debug hook
+  fires before the store, so the probe decodes the `sb` / `sh` / `sw` at `pc`
+  and reads its source register; `LEGAIA_EXEC` exec-BPs and `LEGAIA_READ` read
+  watches logging `a0..a3`, `v0`, `s1`, `s5..s8`; `LEGAIA_SAMPLE` per-vsync
+  words, addressed absolutely, player-relative (`P+0x10`) or through a pointer
+  word (`*0x801C6EA4+0x8`).
+- **Drives:** `LEGAIA_PRESS` pad holds with `+`-joined chords
+  (`330:DOWN+R1:150`), `LEGAIA_POKE` player position pokes, `LEGAIA_MEMPOKE`
+  one-shot memory writes (the encounter step counter, a story flag),
+  `LEGAIA_SHOTS` / `LEGAIA_CKPTS` screenshots and raw checkpoints,
+  `LEGAIA_ACTORS` a dump of the six field actor lists, `LEGAIA_TRIGGERS` the
+  scene's kind-0 / kind-1 / kind-2 trigger tables read out of the live field
+  buffer `*(0x1F8003EC)`. Frame numbers are vsyncs since the state load.
+- **What it answered:** the clip-base writers and the per-tick system-channel
+  reset, the timed kind-0 warp's timings and the idle clip through it
+  ([`field-locomotion.md`](../subsystems/field-locomotion.md#retail-capture-of-the-base-writers));
+  a `town01` player arc tick for tick
+  ([`script-vm.md`](../subsystems/script-vm.md#0x43-sub-01ab---scripted-arc-jump));
+  where retail ends the `retock` innkeeper's talk; the slot-2 / slot-6
+  residency across a battle and a minigame warp
+  ([`audio.md`](../subsystems/audio.md#retail-capture-of-the-slot-2--slot-6-residency)).
+  Interpreter mode when any watch or breakpoint is armed; vsync-only runs
+  (pokes, checkpoints) work under `--fast`.
 
 ##### `autorun_w4d_light_kind_hits.lua`
 
