@@ -137,7 +137,7 @@ The MES bytecode interpreter is **statically linked into SCUS_942.54** - not ove
 
 ## Dialog-overlay actor-frame helpers
 
-Per-frame substeps of `FUN_801D1344` (the actor frame handler in the dialog overlay). They split the frame into "compute screen position", "step actor physics", "emit sprite primitives", and "build collision bitmask".
+Per-frame substeps of `FUN_801D1344`, the player actor's tick in the field overlay (PROT 0897; `dialog overlay` is the capture label these dumps carry). They split the frame into "compute screen position", "step actor physics", "emit sprite primitives", and "build collision bitmask".
 
 | Address | Role |
 |---|---|

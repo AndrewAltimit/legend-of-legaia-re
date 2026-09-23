@@ -63,7 +63,7 @@ not one of this routine's own). The record is a two-seat pair ([`memory-map.md`]
 | `80043264` | **Goods-slot** contains check: `(char_idx, item_id) -> bool`. The loop counter starts at `li v1,0x5` (`0x80043284`) and runs while `slti v1,0x8`, so it reads `char +0x19B..+0x19D` - slots 5..7 of the `+0x196..0x19D` equip block, the accessory ("Goods") slots - not all eight. The "8 slots" reading of this row contradicted [`menus.md`](menus.md); the bytes settle it. `see ghidra/scripts/funcs/80043264.txt`. |
 | `800432BC` | **Seru-magic equip:** `(char_idx, spell_id, src_slot)`. Reads the active-spell slot at `[char + 0x2B0 + src_slot*0x14]` - bytes `+1..+4` reassembled little-endian into the spell's u32 word, byte `+5` the level (**forced to 1 when zero**) - then inserts at the **head** of the spell list: shift ids `+0x13D`, levels `+0x161` and words `+0x8 + i*4` up by one, store the new entry at index 0, `count@+0x13C += 1`. Sister of `FUN_80042DBC`, which unequips. |
 | `8004E2F0` | Battle range / line-of-sight: `(actor_a_id, actor_b_id) -> i16 distance`. Reads `[0x801C9370 + id*4]` for both, sums `+0x1F` size bytes, clamps per-tier. |
-| `80054CB0` | Monster init: `(record, monster_slot)` populates `[0x801C9370 + (slot+3)*4]` from a monster record (HP/MP/stats), and builds the **hit-reaction tag map** at actor `+0x1EF..+0x1F3` (entry indices whose action tag is `2/3/4/5/0xB`, with a tag-4 → tag-2 fallback). Actor `+0x230` is **not** XP: `0x8005515C`/`0x80055164` are `lw v0,0x4(s4)` / `sw v0,0x230(v1)`, i.e. it takes record `+0x04`, the monster's battle-model / attack-effect pointer - see [`subsystems/battle.md`](../../subsystems/battle.md#monster-mesh-record-0x04). `see ghidra/scripts/funcs/80054cb0.txt`. |
+| `80054CB0` | Monster init: `(record, monster_slot)` populates `[0x801C9370 + (slot+3)*4]` from a monster record (HP/MP/stats). It opens with an unbounded name copy ([details ↓](#80054cb0)) and and builds the **hit-reaction tag map** at actor `+0x1EF..+0x1F3` (entry indices whose action tag is `2/3/4/5/0xB`, with a tag-4 → tag-2 fallback). Actor `+0x230` is **not** XP: `0x8005515C`/`0x80055164` are `lw v0,0x4(s4)` / `sw v0,0x230(v1)`, i.e. it takes record `+0x04`, the monster's battle-model / attack-effect pointer - see [`subsystems/battle.md`](../../subsystems/battle.md#monster-mesh-record-0x04). `see ghidra/scripts/funcs/80054cb0.txt`. |
 | `80053CB8` | Party battle-actor init: `(file, slot)` copies the character name + seeds HP/MP/stats (with equipment bonuses via `DAT_80074F68`), zeroes `+0x1D9/+0x1DA`, and hardcodes the reaction map `+0x1EF..+0x1F3 = [2,3,4,5,0xB]` (the player files' identity entry layout). `80053cb8.txt`. |
 | `8004AD80` | Battle **anim commit/transition**. Resolves `actor[+0x1DA]` to an action record (party `< 0x10`: `*(0x801C9360[slot] + id*4)`; monster: `+0x4C`-table; party `>= 0x10`: materializes from the record[0] `+0x58` art bank into dynamic slot `0x10`/`0x11`), installs `node+0x4C`, snaps `+0x1D9 = +0x1DA`, raises the Arts banner and composes the steal captions ([details ↓](#8004ad80)), seeds the clip's **loop count** from entry `+0x84` into `actor[+0x21B]` and `actor[+0x176] = +0x84 << 4` (a count, not a second rate), seeds the sound cue, runs the end-of-clip chains (tag 4 → get-up / downed-party 7; tag 7 → 8). Also hosts the Evil-God-Icon steal roll, and calls the arts-voice cue `FUN_8004C140` when a party art fires. `8004ad80.txt`. |
 | `8004C140` | **Arts-voice cue selector.** `(char_id, action_constant, flag)`. Fires the **shout** via `FUN_8003D53C((char_id-1)*2+1, channel, dur)` - slot 1/3/5 = `XA2`/`XA4`/`XA6.XA`. Draws a channel from a per-action-constant pool (range table `0x800781A4`, tables + `dur` at `0x80077A8C`), re-rolled while it equals the last pick `gp+0xA4A` = `0x8007BD62` (`0x8004C3F8`) - **one byte party-wide**, so a one-entry pool holding the last pick would spin; the pick is stored, then forced to channel `0xC` when formation id `gp+0x9F4` is `0x4F` (`0x8004C400..0x8004C414`). Called from `FUN_8004AD80`; capture-verified. Parser `legaia_art::arts_voice`. `8004c140.txt`. |
@@ -671,6 +671,10 @@ anywhere in retail ([`encounter.md`](../../formats/encounter.md)).
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
 
+### `80054CB0`
+
+The routine's head copies the monster's name - the pointer at record `+0x00` - into actor `+0x1BC` (`0x80054CD4..0x80054D58`): the length is `FUN_8003CA38`'s glyph count masked to a byte, the loop copies that many bytes and stores a terminator, and nothing compares the length against the buffer. A translated name therefore keeps to the longest name retail already writes there ([`translation.md`](../../tooling/translation.md#monster-names)).
+
 ### `80047430`
 
 Also sets the AI-delegation flag `actor[+0x16e] \|= 0x380` **only on party slots** with ability bit 45 (`+0xF8 & 0x2000` = passive `0x2D` **Rage**, Evil Medallion), mirrored into char record `+0x12E`; normal monsters keep `0x380` clear. The delegated action *pick* is not in the dumped corpus - see [battle-action.md](../../subsystems/battle-action.md#ai-delegated-0x380-party-members---what-is-and-isnt-pinned).
@@ -1013,8 +1017,8 @@ was a `pointer_resolution` false positive -
 **Read it out of the `0902` image, not `0898`.** The VA falls inside the
 battle-action image's footprint too, and the dump taken there reports `NOFUNC`
 with a garbage decode window. The `0902` copy has the clean `addiu sp, sp, -0x58`
-prologue: 193 instructions, `see
-ghidra/scripts/funcs/overlay_0902_xxx_dat_801ce844.txt`.
+prologue: 193 instructions, 
+`see ghidra/scripts/funcs/overlay_0902_xxx_dat_801ce844.txt`.
 
 Three phases, and only the third is renderer-free:
 
@@ -1130,8 +1134,8 @@ to particle spawner `FUN_80050ED4`" - they are neither tables nor direct callers
 of the spawner. They are move programs, and it is the `0x17` inside them that
 reaches it.
 
-`FUN_80050ED4` is **not** a boundary either: it is decoded (`see
-ghidra/scripts/funcs/80050ed4.txt`) - a 23-instruction scan of the 0x60-slot
+`FUN_80050ED4` is **not** a boundary either: it is decoded (
+`see ghidra/scripts/funcs/80050ed4.txt`) - a 23-instruction scan of the 0x60-slot
 pointer pool at `DAT_801C90F0` that forwards the same four arguments to
 `FUN_80021B04`, sign-extending the low halfword of the fourth, stores the returned
 actor pointer in the first null slot and returns it, or returns `0` when all 96

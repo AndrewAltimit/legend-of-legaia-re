@@ -122,6 +122,14 @@ Content-only panel draws in the menu overlay (`overlay_menu` and `overlay_shop_s
 | `801D1F10` | **Window-12 Yes/No prompt renderer** (the Incense confirm, submenu `0xD`): second prompt line indents `+0xC`, option block one pitch lower. Ported: `engine-ui::confirm_prompt_draws`. `see ghidra/scripts/funcs/overlay_menu_801d1f10.txt`. |
 | `801DD330` | **Options sub-screen wrapper** (`0x17`): `FUN_801DA9F8(0, 9, 0x30, 1)` and nothing else. Ported: `engine-core::options::OPTIONS_SUBSCREEN_*`. `see ghidra/scripts/funcs/overlay_menu_801dd330.txt`. |
 
+## Foreign-build options / status image (PROT 0896)
+
+PROT 0896 links at `0x801D4DF0` against another build's executable, and no USA loader reaches it ([`call-target-integrity.md`](../../tooling/call-target-integrity.md#the-image-at-its-own-base-still-misses)); its `jal` targets say nothing about USA routines.
+
+| Address | Role |
+|---|---|
+| `801D896C` | **Window-program interpreter** - the image's own copy of the menu window VM's 4-byte form: `s4` walks the program (`addiu s4,s4,4` per instruction), the opcode switch is bounded `sltiu 0xd` over `op - 1` (`0x801D89D4`), and a zero opcode ends the program (`lbu v0,(s4)` / `bnez` at `0x801D8BAC`). The pool it runs is the image's twenty-eight window programs ([`byte-accounting.md`](../../tooling/byte-accounting.md#the-window-programs-are-read-off-their-interpreters-calls)). `see ghidra/scripts/funcs/overlay_jp_options_status_0896_801d896c.txt`. |
+
 ## Menu / HUD globals
 
 | Address | Role |
