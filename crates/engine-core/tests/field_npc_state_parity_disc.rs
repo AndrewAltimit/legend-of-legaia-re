@@ -280,11 +280,16 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
     KnownDivergence {
         label: "kor5_post_436_organic",
         key: "flag:1561",
-        class: "c",
-        note: "the engine's cold kor5 entry sets 0x619 and the captured bank holds 0; \
-               either a chain beat clears it after retail's entry or the entry arm that \
-               sets it is gated on a flag the chain changed. Needs a write watch on \
-               0x619 across the chain to decide",
+        class: "a-reported",
+        note: "retail's kor5 entry does not write 0x619: a byte poll + SET/CLEAR exec-bps \
+               across the chain from kor5_post_43a_checkpoint (14000 vsyncs, two Gaza \
+               battles, two kor5 reloads) log only P2[4]'s CLEAR at record +0x16 and \
+               no SET. The walk-on beats bracket it (P2[3] clears at +0x10 and sets at \
+               +0x14CF, P2[4] clears at +0x16, P2[8] sets at +0x14), and the only \
+               unconditional SET in partition 1 is P1[2]+0x1A, the first op of a monk's \
+               TALK body at its pc0. The engine's cold entry setting it therefore runs \
+               an interaction body retail runs only on talk (most likely P1[2]) - an \
+               engine divergence, not capture context",
     },
 ];
 
