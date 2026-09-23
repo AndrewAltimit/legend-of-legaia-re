@@ -149,6 +149,14 @@ impl PlayWindowApp {
             if vmesh.indices.is_empty() {
                 continue;
             }
+            // Rot limb dimming (`FUN_80048A08`), the browser page's twin in
+            // `web-viewer::play_battle_limb_dim`.
+            if actor.battle_animation.is_some() {
+                self.session
+                    .host
+                    .world
+                    .dim_posed_battle_mesh(ai, tmd, raw, &mut vmesh.colors);
+            }
             if std::env::var_os("LEGAIA_DIAG_POSE").is_some() {
                 let (lo, hi) = vmesh.aabb();
                 log::info!(
