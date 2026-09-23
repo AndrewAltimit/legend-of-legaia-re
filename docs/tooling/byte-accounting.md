@@ -783,9 +783,13 @@ table (`no_instruction_signature`). It catches a fill-headed window shorter
 than eight words - the Baka Fighter image's `FUN_801daa50` label is seven
 `nop`s and then `mfhi zero`, and the fishing image's `FUN_801d8de8` label is
 three such words - both inside record regions the rules above claim. Swept over
-every extent `dump-extent-attribution.csv` calls `unique`, those two are the
-only ones with the shape; the corpus's other data-over-code dumps are the nine
-the attribution already calls `data` and the zero windows.
+every extent the attribution sweep had called `unique`, those two were the only
+ones with the shape. The sweep reads the same rule off the dump's mnemonics
+(`no_instruction_signature` in `attribute-dump-extents.py`, applied to the
+opening window like its `$zero`-absolute test), so it calls both extents `data`
+now and `disc-coverage.py` stops crediting them too; the two instruments agree
+about these bytes. The rule moves a handful of other extents from `short` or
+`zero_window` to `data`, none of them credited either way.
 
 ### The formed-address test follows the register
 

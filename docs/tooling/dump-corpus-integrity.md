@@ -596,8 +596,11 @@ It refuses a fill-headed label credit now
 
 ### Other data signatures find nothing more
 
-The `$zero`-absolute signature is the one data shape the attribution sweep
-refuses (the `data` class). A sweep of every image-attributed extent for the
+The attribution sweep refuses two data shapes as the `data` class: the
+`$zero`-absolute signature, and a window where at least half the non-`nop`
+instructions write `$zero` or are no R3000 instruction at all (the byte
+account's `no_instruction_signature`, read off the mnemonics;
+[`byte-accounting.md`](byte-accounting.md#a-dump-whose-words-write-zero-is-not-code-either)). A sweep of every image-attributed extent for the
 other shapes data takes when printed as code - runs of eight or more
 consecutive words that decode to reserved R3000 opcodes, invalid `SPECIAL` /
 `REGIMM` / COP0 forms, COP2 words with no GTE function, or four-byte ASCII -

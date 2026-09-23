@@ -329,6 +329,59 @@ def looks_like_data(insns):
     return hits * 2 >= len(insns)
 
 
+# Mnemonics whose first operand is the general register they write. A compiler
+# writes `$zero` only with the canonical `nop`, so any of these naming `zero` as
+# its destination is a table decoded as opcodes (the R3000 has no pipeline hazard
+# a `$zero` write would be emitted to cover). Ghidra's pseudo-ops are included.
+ZERO_DEST_MNEMONICS = {
+    "sll", "srl", "sra", "sllv", "srlv", "srav", "mfhi", "mflo",
+    "add", "addu", "sub", "subu", "and", "or", "xor", "nor", "slt", "sltu",
+    "addi", "addiu", "slti", "sltiu", "andi", "ori", "xori", "lui",
+    "lb", "lbu", "lh", "lhu", "lw", "lwl", "lwr",
+    "mfc0", "cfc0", "mfc2", "cfc2",
+    "li", "move", "negu", "neg", "not", "clear",
+}
+
+# Mnemonics Ghidra prints for words no PSX compiler emits: MIPS II+ and COP1
+# forms the R3000A lacks, and the disassembler's own undecodable markers. A
+# denylist rather than an allowlist, so a Ghidra pseudo-op this list does not
+# know errs toward "code".
+NON_R3000_MNEMONICS = {
+    "movf", "movt", "movz", "movn", "beql", "bnel", "blezl", "bgtzl",
+    "bltzl", "bgezl", "bltzall", "bgezall", "cache", "ll", "sc", "pref",
+    "sync", "lwc1", "swc1", "ldc1", "sdc1", "lwc3", "swc3", "teq", "tne",
+    "tge", "tgeu", "tlt", "tltu", "teqi", "tnei", "tgei", "tgeiu", "tlti",
+    "tltiu", "eret", "deret", "sdbbp", "madd", "maddu", "msub", "msubu",
+    "mul", "clz", "clo", "ssnop", "ehb", ".byte", "??",
+}
+
+
+def no_instruction_signature(insns):
+    """The window's non-`nop` words do what no compiled routine does.
+
+    The mnemonic-level twin of `byte_account::no_instruction_signature`: at
+    least half of the non-`nop` instructions either write `$zero` or are not
+    R3000 instructions at all. It catches the fill-headed windows too short
+    for `zero_padded`'s floor to fire on and too varied for `looks_like_data`
+    - the Baka Fighter image's `0x801DAA50` label (seven `nop`s, `mfhi zero`,
+    `syscall`, `movf zero,zero`) and the fishing image's `0x801D8DE8` label
+    (three shifts into `zero`). Without it the attribution sweep credited both
+    windows as `unique` code while the byte account refused them, so the two
+    instruments disagreed about the same bytes.
+    """
+    signal = odd = 0
+    for _, mn, ops in insns:
+        m = mn.lower().lstrip("_")
+        if m == "nop":
+            continue
+        signal += 1
+        first = ops.split(",", 1)[0].strip().lstrip("$").lower()
+        if m in NON_R3000_MNEMONICS or (m in ZERO_DEST_MNEMONICS
+                                        and first == "zero"):
+            odd += 1
+    return odd >= 1 and odd * 2 >= signal
+
+
 def zero_padded(insns):
     """The window is zero fill with too little in it to name an image.
 
@@ -515,6 +568,10 @@ def attribute_dump(images, reloc, entry, insns, tables=None):
     if looks_like_data(insns):
         return ("data", [], "opening window is the `$zero`-absolute data "
                             "signature - a table decoded as opcodes")
+    if no_instruction_signature(insns):
+        return ("data", [], "at least half the window's non-`nop` "
+                            "instructions write `$zero` or are no R3000 "
+                            "instruction - a table decoded as opcodes")
     if gapped(insns):
         return ("gapped", [], "printed addresses are non-contiguous, so the "
                               "window matches no image as a contiguous run")
