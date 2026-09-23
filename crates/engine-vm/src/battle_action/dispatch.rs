@@ -383,7 +383,7 @@ pub fn begin_formation_arm_for<H: BattleActionHost + ?Sized>(
 ///
 /// PORT: FUN_801F0450 (the auto-fill leg + its per-slot loop)
 /// REF: FUN_801DB124 (the dead-target redirect the target roll feeds)
-fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H) {
+fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) {
     use super::pool_ops::{RedirectQuery, redirect_dead_target};
     use crate::battle_arts_auto_combo::{
         ART_ACTION_BIAS, auto_fill_queue, gate_selects_auto_fill, roll_target_slot,
@@ -402,6 +402,13 @@ fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H) {
         if !gate_selects_auto_fill(host.character_ability_bits_high(slot), status) {
             continue;
         }
+        // `li v0,0x1` / `sw v0,0x696c(v1)` at `0x801F0514..0x801F0518`: the
+        // first store past the `+0x16E & 0x404` veto raises the builder's
+        // special-trigger flag `0x801F696C`, which the strike loop's drift
+        // reads at `0x801E3840`. The player builder `FUN_801EED1C` clears it
+        // at its head (`0x801EED88`), but a delegated member never runs that
+        // builder, so the flag stands for the round.
+        ctx.super_trigger = true;
         // Retail's order: category and target are written first
         // (`0x801F0528` / `0x801F0578`), and the learned-arts count gate that
         // can end the slot comes after (`0x801F05AC`) - so a delegated member
@@ -459,7 +466,7 @@ pub(super) fn begin<H: BattleActionHost + ?Sized>(
     // runs first: retail's opening instruction of state `0x00` is
     // `jal 0x801f0450` (`0x801E2AB8`), ahead of the formation arm.
     if !ctx.formation_armed {
-        auto_fill_party_queues(host);
+        auto_fill_party_queues(host, ctx);
     }
     begin_formation_arm_for(host, ctx);
     // Branch to QueuedFromMenu if menu still open, otherwise PreActionWait.

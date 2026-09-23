@@ -25,13 +25,23 @@
 //! [`redirect_dead_target`](crate::battle_action::redirect_dead_target)
 //! (`FUN_801DB124`).
 //!
-//! ## What is not ported here
+//! ## The art insertion tail
 //!
-//! The tail from `0x801F0B4C` on - a second budget pass keyed on
-//! `actor[+0x170]` with `/10` and `/7` reciprocal divides and an
-//! `AP-Used-Down`-style halving - is decoded only far enough to know it is a
-//! distinct budget stage, so it is left out rather than guessed at. Everything
-//! this module exposes is a kernel whose every instruction is accounted for.
+//! The tail from `0x801F0B4C` on is [`insert_arts`]: a walk over the
+//! character's art-animation bank (the `0xD0`-stride records at
+//! `*(DAT_801C9360[slot] + 0x58) + 4`) that splices learned arts' arrow
+//! strings over the spend loop's direction queue, paying for each out of a
+//! **local copy** of the Spirit gauge `actor[+0x170]`. Its divisors are
+//! `% 5` (the opening record roll), `% 7` (the Spirit gate), `% 100` (the
+//! accept chance), `% 3` (the re-seed) and `% 2` (the step) - an earlier note
+//! here read a `/10`; the `0x66666667` reciprocal is followed by `sra 1`, so
+//! it is `/5`. The halving under record `+0xF8 & 0x800` applies to the
+//! per-input Spirit cost, not to the AP gauge.
+//!
+//! The `0x801F696C` special-trigger store at `0x801F0518` is **not** in the
+//! tail: it heads the auto-fill arm (`li v0,1` / `sw v0,0x696c(v1)` right
+//! after the `+0x16E & 0x404` veto), so it is raised for every slot that arm
+//! takes - see `auto_fill_party_queues` in `battle_action::dispatch`.
 //!
 //! # Wiring: the auto-fill arm is live, the pool arm is not
 //!
@@ -56,8 +66,12 @@
 //! (record `+0x185` count, `+0x186..` ids) and the per-character floor keys on
 //! `DAT_8007BD10[slot]`, the roster character id, not the battle slot.
 //!
-//! **The pool arm stays inert**, and its blockers are disc-side, not caller-
-//! side:
+//! **The pool arm stays inert.** Its caller-side gate is the per-fighter
+//! Auto flag `ctx[+0x266 + slot]` (`0x801F0704`), which only the command SM's
+//! Auto pick writes (`FUN_801D0748` phase `0x78`, see
+//! `docs/subsystems/minigame-muscle-dome.md`) and which the engine's battle
+//! command flow does not offer. Two disc-side inputs were also missing when
+//! it was ported:
 //!
 //! * the per-(character, weapon) arts-command records at
 //!   `DAT_801C9360[slot][cmd]` with their `+0x74` AP costs (see
@@ -393,9 +407,418 @@ pub const fn slot_is_live(a: &FleeActor) -> bool {
     a.hp != 0
 }
 
+// --- the Spirit-budgeted art insertion tail (0x801F0B4C..0x801F1274) ---------
+
+/// Offset of the art-bank record's combo string (`+0x00`, arrows `1..=4`,
+/// zero-terminated) - the bytes the tail both counts and splices.
+pub const TAIL_COMBO_LEN: usize = 0x0A;
+/// Offset of the zero-terminated byte run the reject arm measures
+/// (`lbu v0,0xb(v1)` at `0x801F1200`).
+pub const TAIL_SKIP_RUN: usize = 0x0B;
+/// First art-bank record index the tail considers: the opening roll is
+/// `rand() % 5 + 0xB` (`0x801F0BC4`) and every re-seed is `rand() % 3 + 0xB`
+/// (`0x801F11D8`). Bank index `0xB` is learned-art id `0` - the same `0xB`
+/// the auto-fill arm's `ART_ACTION_BIAS - 0x10` encodes.
+pub const TAIL_FIRST_ART: u8 = 0x0B;
+/// The Spirit threshold's base: an insertion is only attempted while
+/// `rand() % 7 + 0x12 < budget` (`0x801F0C58..0x801F0C5C`).
+pub const TAIL_SPIRIT_THRESHOLD_BASE: i32 = 0x12;
+/// Per-input Spirit cost: `0xB` on the first pass, `0xA` after it, `6` from the
+/// fifth pass on (`0x801F0CAC..0x801F0CC8`), halved under record `+0xF8`
+/// bit `0x800` (`0x801F0D00..0x801F0D0C`).
+pub const TAIL_COST_FIRST: u8 = 0x0B;
+pub const TAIL_COST_LATER: u8 = 0x0A;
+pub const TAIL_COST_LATE: u8 = 6;
+/// Record `+0xF8` bit that halves the per-input cost.
+pub const TAIL_COST_HALVING_BIT: u32 = 0x800;
+/// Accept chance, percent: `0x32` below the character's low-tier bound,
+/// `0x4B` at or above it (`0x801F0E4C..0x801F0E78`).
+pub const TAIL_CHANCE_LOW_TIER: i32 = 0x32;
+pub const TAIL_CHANCE_HIGH_TIER: i32 = 0x4B;
+/// Marker stand-in: with the slot's Miracle marker `ctx[+0x25F + slot]`
+/// clear, the first four passes overwrite the first arrow's need with `100`
+/// (`sb v0,0x10(sp)` at `0x801F0E38`) so no insertion can be afforded.
+pub const TAIL_MARKERLESS_NEED: u8 = 0x64;
+/// Engine safety bound on the random refill's re-rolls. Retail's loop always
+/// terminates (the art's own need leaves one spare direction over the slots
+/// it must refill); the bound only stops a malformed input from spinning.
+const TAIL_REFILL_GUARD: usize = 0x1_0000;
+
+/// What the tail reads besides the queue.
+#[derive(Clone, Copy, Debug)]
+pub struct ArtsTailInput<'a> {
+    /// Roster character id `DAT_8007BD10[slot]` (`2` = Noa gets the
+    /// `0xD`/`0xE` skip and the higher low-tier bound).
+    pub char_id: u8,
+    /// The acting actor's Spirit gauge `+0x170` (`lhu`, then compared as a
+    /// signed halfword). The tail spends a **local copy** - nothing is
+    /// stored back.
+    pub spirit: u16,
+    /// Character record `+0xF8` (the upper accessory-passive word).
+    pub ability_high: u32,
+    /// Character record's learned-arts list (`+0x186..`, count `+0x185`).
+    pub learned: &'a [u8],
+    /// The slot's Miracle marker `ctx[+0x25F + slot] != 0`.
+    pub miracle_marker: bool,
+    /// The art-animation bank (`*(DAT_801C9360[slot] + 0x58)`): the low byte
+    /// of its `u32` count is the loop bound, records follow at `+4` at the
+    /// `0xD0` stride. Each element is one whole record.
+    pub records: &'a [[u8; 0xD0]],
+    /// The bank's count byte (`lbu v0,0x0(v0)` at `0x801F0B84`). Kept apart
+    /// from `records.len()` so a caller can pass the disc's count verbatim;
+    /// a record index past `records` reads as all-zero bytes.
+    pub art_count: u8,
+}
+
+/// One art the tail spliced in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TailInsertion {
+    /// Bank record index (learned-art id + `0xB`).
+    pub art: u8,
+    /// Queue position its first arrow landed at.
+    pub at: usize,
+    /// Arrows spliced (`s2`: `1` + the non-zero run from combo byte `1`).
+    pub len: usize,
+    /// Spirit charged against the local budget (`len * per-input cost`).
+    pub cost: i32,
+    /// The combo was one longer than the free region: retail's head index
+    /// went to `-1`, so every free slot took `combo[i + 1]` and the combo's
+    /// byte `0` fell off. [`Self::at`] reads `0` then.
+    pub clipped: bool,
+}
+
+/// What the tail did to the queue.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ArtsTailResult {
+    /// Insertions in the order they were made.
+    pub inserted: Vec<TailInsertion>,
+    /// The local Spirit budget left (never written back).
+    pub budget_left: i32,
+    /// `rand()` draws consumed.
+    pub draws: usize,
+}
+
+/// The auto-combo's **art insertion tail** (`FUN_801F0450`
+/// `0x801F0B4C..0x801F1274`), run after the pool arm's spend loop has written
+/// `queue` - a run of direction swings `0x0C..=0x0F` into `actor[+0x1DF..]`.
+///
+/// It walks the character's art-animation bank upward from a random record in
+/// `0xB..=0xF`, and each pass either splices one art's arrow string over the
+/// tail of the still-free region of the queue or skips ahead:
+///
+/// 1. Noa (`char_id == 2`) steps over records `0xD` / `0xE` (`+2`).
+/// 2. **Spirit gate**: stop unless `rand() % 7 + 0x12 < budget` and at least two
+///    free queue slots remain.
+/// 3. A record whose combo byte `1` is zero (fewer than two arrows) is skipped.
+/// 4. Need vs have: the combo's arrows from byte `1` on (byte `0` is spliced
+///    but not counted, `li s2,0x1` at `0x801F0DA0`) against the free region's
+///    direction census; without the Miracle marker the first four passes
+///    demand `100` of arrow `1`.
+/// 5. Cost `len * per_input` must fit the budget; a `rand() % 100` roll under
+///    `50` / `75` (low / high tier); the art must be **learned**
+///    (`index - 0xB` in the list); not the art just placed; not below the tier
+///    floor a placed low-tier art raises (`0x11` for Noa, `0xF` otherwise).
+/// 6. Accept: the census drops by the need, the budget by the cost, and the
+///    free region is rebuilt - its head refilled with `rand() % 4` directions
+///    drawn from what is left, its last `len` slots the combo as `arrow + 0xB`.
+///    The free region shrinks by `len`, and the next record is
+///    `rand() % 3 + 0xB`.
+/// 7. Reject: skip ahead by **twice** the length of the record's zero-terminated
+///    run at `+0x0B` - the loop's `a0` is loaded once and its delay-slot
+///    increment runs on both edges, so every byte of the run counts two.
+///
+/// Every pass then advances by `rand() % 2 + 1` and the walk ends once the
+/// index reaches the bank count. `queue.len()` is the spend loop's count (the
+/// free region's starting size); bytes past it are not touched.
+///
+/// PORT: FUN_801F0450 (`0x801F0B4C..0x801F1274`, the art insertion tail) NOT WIRED: its one host is the pool arm, reached for a party slot whose per-fighter Auto flag `ctx[+0x266 + slot]` is set by the command SM's Auto pick (`FUN_801D0748` phase `0x78`), and the engine's battle command flow offers no Auto pick - see `docs/subsystems/battle-action.md`
+pub fn insert_arts(
+    queue: &mut [u8],
+    input: &ArtsTailInput,
+    mut rand: impl FnMut() -> i32,
+) -> ArtsTailResult {
+    let mut draws = 0usize;
+    let mut draw = || {
+        draws += 1;
+        rand()
+    };
+    static ZERO: [u8; 0xD0] = [0; 0xD0];
+    let records = input.records;
+    let rec = |i: u8| records.get(usize::from(i)).unwrap_or(&ZERO);
+    let mut inserted = Vec::new();
+    // `s7`: a local copy of the Spirit gauge, compared as a signed halfword.
+    let mut budget: i32 = i32::from(input.spirit as i16);
+    let budget16 = |b: i32| i32::from(b as i16);
+    // `s8`: the free region's size, compared as a signed halfword. It can
+    // go to `-1` (see the rebuild below), which ends the walk at the next
+    // Spirit gate.
+    let mut free: isize = queue.len().min(0xFF) as isize;
+    let mut pass: u8 = 0; // `s5`, compared as a byte
+    let mut floor: u8 = 0; // `sp+0x38`
+    let mut last: u8 = 0xFF; // `s3`
+    // `s4` is only ever compared and indexed through `andi 0xff`, so byte
+    // wrapping arithmetic is exact.
+    let mut art: u8 = (draw() % 5 + i32::from(TAIL_FIRST_ART)) as u8;
+    let noa = input.char_id == 2;
+    while art < input.art_count {
+        'pass: {
+            if noa && art.wrapping_sub(0xD) < 2 {
+                art = art.wrapping_add(2);
+            }
+            // The Spirit gate. Its stop path parks the index at the count
+            // (`lbu s4,0x40(sp)` at `0x801F0C78`) and still takes the common
+            // advance below, draw included.
+            let threshold = draw() % 7 + TAIL_SPIRIT_THRESHOLD_BASE;
+            if threshold >= budget16(budget) || free < 2 {
+                art = input.art_count;
+                break 'pass;
+            }
+            let r = rec(art);
+            if r[1] == 0 {
+                break 'pass;
+            }
+            let mut per_input = if pass == 0 {
+                TAIL_COST_FIRST
+            } else {
+                TAIL_COST_LATER
+            };
+            if pass >= 4 {
+                per_input = TAIL_COST_LATE;
+            }
+            if input.ability_high & TAIL_COST_HALVING_BIT != 0 {
+                per_input >>= 1;
+            }
+            // Retail's 8-byte scratch `sp+0x10..0x17`: lanes 0..3 = the
+            // combo's need (arrow - 1), lanes 4..7 = the free region's census
+            // (byte - 8). Both indices are unchecked byte arithmetic; an
+            // index outside the scratch lands elsewhere in retail's frame and
+            // is dropped here.
+            let mut sp = [0u8; 8];
+            for &b in &queue[..free.max(0) as usize] {
+                if let Some(v) = sp.get_mut(usize::from(b.wrapping_sub(8))) {
+                    *v = v.wrapping_add(1);
+                }
+            }
+            let mut len = 1usize; // `s2`
+            while len < TAIL_COMBO_LEN && r[len] != 0 {
+                if let Some(v) = sp.get_mut(usize::from(r[len].wrapping_sub(1))) {
+                    *v = v.wrapping_add(1);
+                }
+                len += 1;
+            }
+            if !input.miracle_marker && pass < 4 {
+                sp[0] = TAIL_MARKERLESS_NEED;
+            }
+            let low_bound = if noa { 0x11 } else { 0x0F };
+            let mut chance = if art < low_bound {
+                TAIL_CHANCE_LOW_TIER
+            } else {
+                TAIL_CHANCE_HIGH_TIER
+            };
+            // `0x801F0E7C..0x801F0E90`: a zero index (reachable only through
+            // byte wrap) replaces the chance with `budget == 100`.
+            if art == 0 {
+                chance = i32::from(budget16(budget) == 100);
+            }
+            let cost = (len as i32) * i32::from(per_input);
+            let reject = 'gate: {
+                if (0..4).any(|k| sp[4 + k] < sp[k]) {
+                    break 'gate true;
+                }
+                if budget16(budget) < cost {
+                    break 'gate true;
+                }
+                if draw() % 100 >= chance {
+                    break 'gate true;
+                }
+                if !input.learned.contains(&art.wrapping_sub(TAIL_FIRST_ART)) {
+                    break 'gate true;
+                }
+                last == art || art < floor
+            };
+            if reject {
+                // `0x801F11DC..0x801F123C`: `a0` holds the run's first byte
+                // for the whole loop and the delay-slot `addiu s1,s1,1` runs
+                // on both edges, so each byte of the run counts twice.
+                let run = r[TAIL_SKIP_RUN..].iter().take_while(|&&b| b != 0).count();
+                art = art.wrapping_add((2 * run) as u8);
+                break 'pass;
+            }
+            for k in 0..4 {
+                sp[4 + k] = sp[4 + k].wrapping_sub(sp[k]);
+            }
+            budget -= cost;
+            // Rebuild the free region: `head` slots refilled from the census,
+            // the rest the combo as `arrow + 0xB`. `head` is `-1` when the
+            // combo is one longer than the free region; retail then writes
+            // `rec[i + 1]` into every slot (the combo's byte 0 falls off).
+            let head = free - len as isize;
+            let mut guard = 0usize;
+            let mut i: isize = 0;
+            while i < free {
+                let at = i as usize;
+                if i < head {
+                    let d = draw() % 4;
+                    queue[at] = d as u8;
+                    let lane = usize::from((d as u8).wrapping_add(4));
+                    match sp.get_mut(lane) {
+                        Some(v) if *v != 0 => {
+                            *v -= 1;
+                            queue[at] = (d as u8).wrapping_add(0x0C);
+                        }
+                        _ => {
+                            guard += 1;
+                            if guard > TAIL_REFILL_GUARD {
+                                break;
+                            }
+                            continue;
+                        }
+                    }
+                } else {
+                    queue[at] = r[(i - head) as usize].wrapping_add(0x0B);
+                }
+                i += 1;
+            }
+            inserted.push(TailInsertion {
+                art,
+                at: head.max(0) as usize,
+                len,
+                cost,
+                clipped: head < 0,
+            });
+            free = head;
+            last = art;
+            if art < low_bound {
+                floor = low_bound;
+            }
+            art = (draw() % 3 + i32::from(TAIL_FIRST_ART)) as u8;
+        }
+        pass = pass.wrapping_add(1);
+        art = art.wrapping_add((draw() % 2 + 1) as u8);
+    }
+    ArtsTailResult {
+        inserted,
+        budget_left: budget,
+        draws,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tail_rec(combo: &[u8]) -> [u8; 0xD0] {
+        let mut r = [0u8; 0xD0];
+        r[..combo.len()].copy_from_slice(combo);
+        r
+    }
+
+    /// A scripted `rand()`: the listed draws in order, then `fallback`.
+    fn script(draws: &[i32], fallback: i32) -> impl FnMut() -> i32 + '_ {
+        let mut it = draws.iter();
+        move || it.next().copied().unwrap_or(fallback)
+    }
+
+    #[test]
+    fn the_tail_stops_at_once_below_the_spirit_gate() {
+        // Record 0xB is a two-arrow art; Spirit 0x12 fails `r%7 + 0x12 <
+        // budget` for every draw.
+        let mut recs = vec![[0u8; 0xD0]; 0x0B];
+        recs.push(tail_rec(&[1, 2]));
+        let mut q = vec![0x0C, 0x0D, 0x0C, 0x0D];
+        let input = ArtsTailInput {
+            char_id: 1,
+            spirit: 0x12,
+            ability_high: 0,
+            learned: &[0],
+            miracle_marker: true,
+            records: &recs,
+            art_count: recs.len() as u8,
+        };
+        // Draws: opening %5 = 0 -> art 0xB; gate %7; step %2.
+        let out = insert_arts(&mut q, &input, script(&[0, 0, 0], 0));
+        assert!(out.inserted.is_empty());
+        assert_eq!(out.draws, 3, "opening roll, gate roll, the common step");
+        assert_eq!(q, vec![0x0C, 0x0D, 0x0C, 0x0D], "queue untouched");
+        assert_eq!(out.budget_left, 0x12);
+    }
+
+    #[test]
+    fn an_accepted_art_lands_on_the_free_regions_tail() {
+        // Art 0xB = arrows [2, 1]: need counts only byte 1 (one `1`), and it
+        // is spliced as [0x0D, 0x0C] over the last two slots.
+        let mut recs = vec![[0u8; 0xD0]; 0x0B];
+        recs.push(tail_rec(&[2, 1]));
+        let mut q = vec![0x0C, 0x0C, 0x0D, 0x0E];
+        let input = ArtsTailInput {
+            char_id: 1,
+            spirit: 100,
+            ability_high: 0,
+            learned: &[0],
+            miracle_marker: true,
+            records: &recs,
+            art_count: recs.len() as u8,
+        };
+        // opening 0 -> 0xB; gate 0 (0x12 < 100); chance 0 (< 50); refill two
+        // head slots: dir 0 (have 2-1=1), dir 2 (have 1); re-seed; step.
+        let out = insert_arts(&mut q, &input, script(&[0, 0, 0, 0, 2, 0, 0], 0));
+        assert_eq!(out.inserted.len(), 1);
+        let ins = out.inserted[0];
+        assert_eq!((ins.art, ins.at, ins.len, ins.clipped), (0x0B, 2, 2, false));
+        assert_eq!(ins.cost, 2 * i32::from(TAIL_COST_FIRST));
+        assert_eq!(q, vec![0x0C, 0x0E, 0x0D, 0x0C]);
+        assert_eq!(out.budget_left, 100 - 22);
+    }
+
+    #[test]
+    fn a_rejected_art_skips_twice_its_plus_0x0b_run() {
+        // Art 0xB is not learned; its +0x0B run is two bytes long, so the
+        // walk skips 4 records, then steps +1 -> 0x10 = the count: done.
+        let mut recs = vec![[0u8; 0xD0]; 0x0B];
+        let mut r = [0u8; 0xD0];
+        r[0] = 1;
+        r[1] = 1;
+        r[0x0B] = 5;
+        r[0x0C] = 6;
+        recs.push(r);
+        recs.resize(recs.len() + 4, [0u8; 0xD0]);
+        let mut q = vec![0x0C, 0x0C, 0x0C];
+        let input = ArtsTailInput {
+            char_id: 1,
+            spirit: 100,
+            ability_high: 0,
+            learned: &[],
+            miracle_marker: true,
+            records: &recs,
+            art_count: recs.len() as u8,
+        };
+        let out = insert_arts(&mut q, &input, script(&[0, 0, 0, 0], 0));
+        assert!(out.inserted.is_empty());
+        // opening, gate, chance, step - then 0xB + 4 + 1 = 0x10 >= 0x10.
+        assert_eq!(out.draws, 4);
+    }
+
+    #[test]
+    fn noa_steps_over_records_0xd_and_0xe() {
+        let mut recs = vec![[0u8; 0xD0]; 0x0F];
+        recs.push(tail_rec(&[1, 1]));
+        let mut q = vec![0x0C, 0x0C, 0x0C];
+        let input = ArtsTailInput {
+            char_id: 2,
+            spirit: 100,
+            ability_high: TAIL_COST_HALVING_BIT,
+            learned: &[4],
+            miracle_marker: true,
+            records: &recs,
+            art_count: recs.len() as u8,
+        };
+        // opening %5 = 2 -> 0xD -> Noa's +2 -> 0xF.
+        let out = insert_arts(&mut q, &input, script(&[2, 0, 0, 0, 0, 0], 0));
+        assert_eq!(out.inserted.len(), 1);
+        assert_eq!(out.inserted[0].art, 0x0F);
+        // The halving bit: 0xB >> 1 = 5 per input.
+        assert_eq!(out.inserted[0].cost, 2 * 5);
+    }
 
     #[test]
     fn gate_needs_the_bit_set_and_the_status_clear() {
