@@ -1683,7 +1683,10 @@ impl PlayWindowApp {
                         if w.field_npc_render_scale(d.slot as usize) == Some(0) {
                             continue;
                         }
-                        let y = w.sample_field_floor_height(x as i32, z as i32) as f32;
+                        // The floor under the NPC, or the height a
+                        // scripted arc (op `0x43`) left it at - the same
+                        // accessor the browser play page places NPCs with.
+                        let y = w.field_npc_render_y(d.slot, x, z) as f32;
                         // Raw retail-convention transform (no model
                         // flip): the field camera's FIELD_WORLD_FLIP
                         // provides the single net Y negation. Walkers
@@ -2467,6 +2470,9 @@ impl PlayWindowApp {
             // `fog_puff_prim` wrapper the browser play page composites with.
             screen_prims.extend(field_fog_prims);
             screen_prims.extend(move_strip_prims);
+            // The field VM's attached lights (op `0x34` sub-1): the same
+            // `light_pool_prims` wrapper the browser play page composites.
+            screen_prims.extend(self.field_light_screen_prims());
             screen_prims.extend(self.weapon_trail_screen_prims(r));
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel

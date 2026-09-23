@@ -570,6 +570,34 @@ impl PlayWindowApp {
         legaia_engine_render::move_strip::move_strip_prims(&requests, &view)
     }
 
+    /// This frame's attached lights - the field VM's op `0x34` sub-1 light
+    /// pools (`World::field_light_draws`, the `FUN_801E4470` draw feeding
+    /// `FUN_801E3984`) - through the same follow camera as the fog sheets and
+    /// the shared `light_pool_prims` wrapper the browser play page uses.
+    /// Empty outside a field scene or with no light live.
+    pub(super) fn field_light_screen_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
+        let world = &self.session.host.world;
+        if world.mode != SceneMode::Field || world.script_actors.lights.is_empty() {
+            return Vec::new();
+        }
+        let center = [
+            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+        ];
+        let frame = resolve_field_camera(world, &self.session.camera, None, center);
+        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
+            return Vec::new();
+        };
+        world
+            .field_light_draws(&view)
+            .iter()
+            .flat_map(|d| legaia_engine_render::screen_overlay::light_pool_prims(d.abr, &d.polys))
+            .collect()
+    }
+
     pub(super) fn weapon_trail_screen_prims(
         &self,
         r: &legaia_engine_render::Renderer,

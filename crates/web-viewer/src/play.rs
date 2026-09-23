@@ -1214,7 +1214,9 @@ impl LegaiaRuntime {
             // convention carries), so identity is `facing = 2048`, not `0` -
             // `0` would draw every prologue-less NPC turned half a revolution.
             let facing = h.world.npcs.headings.get(&slot).copied().unwrap_or(2048) as f32;
-            let y = h.world.sample_field_floor_height(x as i32, z as i32) as f32;
+            // The floor under the NPC, or the height a scripted arc (op
+            // `0x43`) left it at - the accessor the native window uses too.
+            let y = h.world.field_npc_render_y(slot, x, z) as f32;
             out.extend_from_slice(&[x as f32, y, z as f32, facing]);
         }
         out

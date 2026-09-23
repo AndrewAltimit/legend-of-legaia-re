@@ -1,4 +1,5 @@
-//! Field screen-space effects on the play page: the fog sheets.
+//! Field screen-space effects on the play page: the fog sheets and the
+//! op `0x34` sub-1 attached lights.
 //!
 //! Retail draws the field fog pool from the field render pass
 //! (`FUN_8003F348` at `0x80026F24`, gated on game mode `3` and
@@ -67,6 +68,30 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         legaia_engine_ui::move_strip::move_strip_prims(&requests, &view)
+    }
+
+    /// This frame's attached lights (the field VM's op `0x34` sub-1 light
+    /// pools, `World::field_light_draws`) as screen primitives, through the
+    /// same follow camera as the fog and the shared
+    /// `legaia_engine_ui::screen_prim::light_pool_prims` wrapper - the native
+    /// window's `field_light_screen_prims` twin. Empty outside a field scene.
+    pub(crate) fn field_light_prims(&self) -> Vec<ScreenPrim> {
+        let Some(host) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        let world = &host.world;
+        if world.mode != SceneMode::Field || world.script_actors.lights.is_empty() {
+            return Vec::new();
+        }
+        let frame = resolve_field_camera(world, &self.camera, None, [0.0, 0.0]);
+        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
+            return Vec::new();
+        };
+        world
+            .field_light_draws(&view)
+            .iter()
+            .flat_map(|d| legaia_engine_ui::screen_prim::light_pool_prims(d.abr, &d.polys))
+            .collect()
     }
 }
 
