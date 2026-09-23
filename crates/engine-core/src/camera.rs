@@ -421,6 +421,12 @@ pub struct ZoneFollow {
     /// from the one global `rand` stream; the port keeps the camera's draws
     /// on their own stream so a shake never perturbs gameplay RNG.
     shake_seed: u32,
+    /// The focus pair (`_DAT_80089118` / `_DAT_80089120`) this follow
+    /// camera left at the end of its previous tick. A mode-5 fixed shot
+    /// eases its focus from here - retail's `FUN_801DB510` pins the focus
+    /// onto the player (`0x801DB820`) only for the other modes, and a
+    /// stationary mode-5 frame leaves it where it was.
+    focus_held: Option<[i32; 2]>,
 }
 
 impl Default for ZoneFollow {
@@ -444,6 +450,7 @@ impl Default for ZoneFollow {
             },
             shake_offset: [0, 0],
             shake_seed: 1,
+            focus_held: None,
         }
     }
 }
@@ -467,6 +474,7 @@ impl ZoneFollow {
         self.tile = None;
         self.prev_player = None;
         self.active = false;
+        self.focus_held = None;
     }
 }
 
@@ -1008,6 +1016,20 @@ impl Camera {
         ];
         let t = zone.target;
         let g = &mut self.globals.0;
+        // The free-roam writeback in [`Camera::tick_globals`] pins the focus
+        // onto the player every frame. Retail's ease does that too
+        // (`0x801DB820`: focus = `-player`), but only when the shot is not
+        // mode 5: `0x801DB724..0x801DB734` sends a mode-5 frame to the focus
+        // ease instead, which starts from the focus the previous frame left,
+        // and a mode-5 frame the player did not move on skips both. So a
+        // fixed shot gets its own focus back before it eases.
+        if mode5
+            && zone.active
+            && let Some([fx, fz]) = zone.focus_held
+        {
+            g[6] = fx;
+            g[8] = fz;
+        }
         if zone.snap_pending {
             let (p, yw, eye, h) = snap(&t);
             g[0] = p;
@@ -1073,6 +1095,7 @@ impl Camera {
         );
         g[6] = clamped[0];
         g[8] = clamped[1];
+        zone.focus_held = Some([g[6], g[8]]);
         zone.active = true;
     }
 
@@ -1901,6 +1924,61 @@ mod tests {
         assert_eq!(c2.globals.angles()[0], 0x1B8);
         assert_eq!(c2.globals.angles()[1], 0);
         assert_eq!(c2.globals.h(), 0x300);
+    }
+
+    /// A mode-5 fixed shot keeps its own focus across the free-roam
+    /// writeback: retail's `FUN_801DB510` pins the focus onto the player only
+    /// outside mode 5 (`0x801DB724..0x801DB734` -> `0x801DB820`), eases a
+    /// mode-5 focus from where the previous frame left it, and leaves it
+    /// alone on a frame the player did not move.
+    #[test]
+    fn zone_camera_mode5_focus_eases_from_its_own_value_not_the_player() {
+        use crate::field_regions::ZONE_RECORD_STRIDE;
+        let mut w = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w.actors[0].move_state.world_x = 0x1040;
+        w.actors[0].move_state.world_z = 0x2040;
+        let mut rec = [0u8; ZONE_RECORD_STRIDE];
+        rec[0] = 1;
+        rec[1..5].copy_from_slice(&[0, 0, 0x7F, 0x7F]);
+        rec[5] = 0x10;
+        rec[16..18].copy_from_slice(&512i16.to_le_bytes());
+        let mut zone_table = vec![1u8];
+        zone_table.extend_from_slice(&rec);
+        w.load_field_region_tables(&[], &zone_table);
+        let mut c = Camera::default();
+        c.reset_globals_for_scene_entry();
+        w.tick();
+        c.tick(&w);
+        assert!(c.zone.active);
+
+        // Turn the resident block into a fixed shot on tile (4, 6), ease
+        // code 1 (`>> 5`), and snap it in: the focus sits on the anchor.
+        c.zone.config.mode = 0x50;
+        c.zone.config.b60b = 0x10;
+        c.zone.config.anchor_x = 4;
+        c.zone.config.anchor_z = 6;
+        c.zone.snap_pending = true;
+        w.tick();
+        c.tick(&w);
+        let anchor = [-(4 << 7) - 0x40, -(6 << 7) - 0x40];
+        assert_eq!([c.globals.0[6], c.globals.0[8]], anchor, "snapped");
+
+        // Standing still: the focus holds on the anchor, not the player.
+        w.tick();
+        c.tick(&w);
+        assert_eq!([c.globals.0[6], c.globals.0[8]], anchor, "held");
+
+        // Walking: the focus eases from the anchor toward the anchor - it
+        // stays put - rather than restarting from the player's position.
+        w.actors[0].move_state.world_x += 2;
+        w.tick();
+        c.tick(&w);
+        assert_eq!([c.globals.0[6], c.globals.0[8]], anchor, "eased in place");
     }
 
     #[test]
