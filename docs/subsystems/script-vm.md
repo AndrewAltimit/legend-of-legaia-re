@@ -686,11 +686,9 @@ row 2 exactly as `3E FF 02` would. The body, in order:
    (`0x801E06E4` / `0x801E06F0`; player = `*(0x8007C348 + 0x1C)`) - the
    region reader's cached tile, forced stale.
 2. `FUN_801D9E1C(player, 0)`. With `a1 = 0` the region reader re-derives the
-   player's region and re-seats its battle setup - `_DAT_8007BD60 =
-   region[+8] & 0x1F`, scratchpad `0x1F800394 |= 0x300000`, and on the
-   `ctrl[+0x5F] >= 0xC` layout the `_DAT_8007B64B` / render-flag bits and the
-   `0x800845xx` triple from `region[+9..+11]` - then returns at
-   `beqz fp` (`0x801DA16C`) before the step roll.
+   player's region and re-seats its battle setup, then returns at `beqz fp`
+   (`0x801DA16C`) before the step roll - see
+   [the region battle setup](#the-region-battle-setup).
 3. `_DAT_8007B868 != 0` (the dev word) skips the rest; so does a missing
    system entity (`FUN_8003C83C(0xFB)` returning null). Either way the PC
    still advances by 3 (`0x801E00B8`).
@@ -706,9 +704,42 @@ The disc carries ten clean non-`0xFF` sites (`asset field-op-census --only
 BGM cue - the shape of every `3E FF` boss entry. Engine:
 `FieldHost::scripted_battle` → `World::trigger_scripted_battle` for every
 `op0`; `engine-core/tests/scripted_battle_low_op0_disc.rs` steps one site per
-scene into `SceneMode::Battle` against the named MAN row. The region
-battle-setup half of step 2 is not modelled on either the scripted or the
-random-roll path.
+scene into `SceneMode::Battle` against the named MAN row.
+
+#### The region battle setup
+
+The half of the region reader ([`FUN_801D9E1C`](../reference/functions/world-map.md#fun_801d9e1c-world_map-overlay))
+that runs on every region hit, whether or not the call then rolls (`0x801DA058..0x801DA12C`). The random-roll path reaches it
+on each player tile step; op `0x3E` reaches it with `a1 = 0` after presetting
+the player's `+0x8E` / `+0x8F` to `0xFF` so the same-tile early-out cannot
+fire; so does `0x801F12F8`. Every shipped region record is 12 bytes. What it
+stores, and who reads each:
+
+| Store | From | Reader |
+|---|---|---|
+| `_DAT_8007BD60` | `region[+8] & 0x1F` | battle init `FUN_800513F0` loads the backdrop from entry `0x80084540 + variant` via `FUN_8001FA88`, raw TOC `+5` = extraction `+3` |
+| `0x1F800394 \|= 0x300000` | every hit | the item list dims Door of Light (`0x100000`) / Door of Wind (`0x200000`) (`0x8003093C..0x80030970`) |
+| clear `0x100000` / `0x200000` | `region[+8]` bit 7 / bit 6 | the same two rows, re-opened |
+| `_DAT_8007B64B` | `(region[+8] >> 5) & 1` | `FUN_800513F0` keeps the backdrop's object 1 when set (`0x80051ABC`) |
+| `0x80084628` / `0x80084624` / `0x8008462C` | `region[+9] \| (region[+5] & 0x7F) << 8`, `region[+0xA]`, `region[+0xB]` | the world-map return point: the map word is the overworld scene's CDNAME index, the pair its tile |
+
+The disc bears the reading out: every `map01` region carries `0x40` (Door of
+Wind only), every `cave01` region `0x80` or `0xA0` (Door of Light) with a
+return point on `map01` (`0x55`), and `town01` neither. The pinned
+per-scene backdrops are this arithmetic - `town01`'s village regions carry
+variant `1` (CDNAME `3` + 1 + 3 = entry 7), `map01`'s variant `0`
+(`85 + 0 + 3 = 88`).
+
+Engine: `region_encounter::region_battle_setup` over the bytes
+`region_encounter_table_from_man` keeps per region;
+`World::on_field_step` and `World::trigger_scripted_battle` store it in
+`World::encounters.region_setup` (a short record would leave `_DAT_8007B64B`
+and the return triple as they were, and the store does too).
+`SceneHost::battle_stage_entry` and `battle_stage_keeps_object_1` are what
+both play hosts build the battle backdrop from; `World::bag_use_rows` reads
+the Door gates. Not modelled: the world-map return triple's consumer
+(the world map keeps its own visit table) and the world-map region tracker's
+setup half. Tests `engine-core/tests/region_battle_setup_disc.rs`.
 
 #### 0x3E WARP (mode-24 minigame door-warp)
 
@@ -834,8 +865,35 @@ and `FieldHost::op43_arc_jump` (NPC channels) both reach
 the clip and the watcher. An NPC's height lives in
 `World::script_actors.npc_heights` for as long as it stands where the arc put
 it - the NPC position map carries X / Z only - and both play hosts place NPCs
-through `World::field_npc_render_y`. The watcher's follow-camera ease is not
-modelled.
+through `World::field_npc_render_y`.
+
+**The follow camera during an arc.** `FUN_801DB510(player)` is the whole
+free-roam follow step, not just an ease: on a frame the player moved it
+re-composes the shot (`jal 0x801DAB90` at `0x801DB5B4`), eases the live globals
+toward it, and pins the focus to `-player` unless the zone's mode nibble is `5`
+(`0x801DB724..0x801DB734`, `0x801DB820..0x801DB83C`). The watcher calling it
+every frame therefore hands the camera back to the follow step for the length
+of a sub-`1` / `0xB` player arc, cutscene or not. The engine does the same:
+`World::script_arc_follow_camera` is true while such an arc flies, and the
+camera's tick runs its follow writeback and zone step through a cutscene for
+those frames, without the snap a cutscene hand-back takes (the watcher never
+calls `FUN_801DB8EC`). A glide in flight keeps the frame. Under the
+`Cinematic` camera mode an op-`0x45` apply selects, the port's view does not
+read the follow globals, so the arc's follow reaches only the `Follow` mode.
+
+**The acquire refuses an actor already mid arc.** The arm's acquire
+(`0x801DF384..0x801DF40C`) fails when the target carries the halt bit `0x400`
+and the scene word `*(_DAT_801C6EA4) + 8` is zero, and a failed acquire
+leaves the PC on the instruction (`beqz v0, 0x801DEE4C`; `0x801DEE4C` is
+`move s8, s4`) - the op waits and retries, it is never skipped. The scene word
+is non-zero only while a placement's spawn section is being pre-run (set and
+cleared around the spawn loop at SCUS `0x8003B73C` / `0x8003B928` and around
+the two field-VM re-runs at `0x801E2820` / `0x801E2BBC`). The engine reads the
+halt it can see - an arc still in flight on that actor
+(`World::script_arc_target_halted`, the `FieldHost::op43_arc_target_halted`
+hook) - and the VM returns `Halt` at the op on any refusal; it previously
+advanced past the op, skipping the jump. The acquire's other clause (an NPC
+target with no `+0x94` owner) is not modelled.
 
 #### 0x43 sub-2/3-6/7/8/9/C/D/E/F - actor / sound / face / position cluster
 

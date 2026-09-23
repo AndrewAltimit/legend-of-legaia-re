@@ -530,6 +530,16 @@ accept a hit inside the ±40 moving-actor box. These are the same two tables
 the player's own locomotion reads (see
 [field-locomotion.md](field-locomotion.md)).
 
+The box is the routine's **class arm** (`+0x10 & 0x01020000`), and every
+ambient walker takes it: the MAN spawner `FUN_8003A1E4` ORs `0x20000` into
+each placement it seats (`0x8003A3A8..0x8003A3B4`), and `0x01000000` too for a
+`>= 0xF0` party model. The no-class arm - `±80` plus a model-bbox offset from
+the 32-byte `.MAP` object record at `*(0x1F8003EC) + actor[+0x60] * 32` - is
+for pool actors spawned elsewhere. On a hit the routine links the pair through
+`+0x98` both ways and returns class `1` for these walkers; the port keeps
+neither the link nor the `+0x10 & 3` collision-exempt early-out, since the
+ambient channel has no pooled flag word or target slot to hold them.
+
 So an ambient walker's containment is the AABB its op authored, and the only
 thing that can stop a step is the player standing in it. A blocked
 directional step re-runs its op next tick without advancing the cursor or the

@@ -52,7 +52,8 @@ actor-pool sweeps `FUN_8002519C`, which `jalr`s each actor's `+0x0C` handler;
 the player's handler is the field frame pump `FUN_801D1344`, and the pump
 calls the locomotion controller `FUN_801D01B0` unconditionally
 (`jal 0x801D01B0` at `0x801D16F4` - the only gates ahead of it are the
-engaged-flag / warp-timer / dialogue-pacing tests, not a cadence gate).
+engaged-flag / warp-timer / post-warp-hold tests, not a cadence gate - see
+[the timed warp](#the-timed-kind-0-warp)).
 
 ### Cadence invariance
 
@@ -64,7 +65,7 @@ it is denominated **in vsyncs and scaled by `DAT_1F800393`**, never in passes:
 | `FUN_801D01B0` | the frame's travel budget | `0x801D0564..0x801D05C4` |
 | `FUN_801D01B0` | the walk-regen accumulator `_DAT_801F2274` | `0x801D0910..0x801D0928` |
 | `FUN_8003774C` | every NPC glide leg | `0x80037868` then each `mult` |
-| `FUN_801D1344` | the dialogue-pacing timer `_DAT_8007B6B4` | `0x801D1618..0x801D1630` |
+| `FUN_801D1344` | the post-warp pad hold `_DAT_8007B6B4` | `0x801D1618..0x801D1630` |
 | `FUN_801D1344` | the field-control byte `+0x62` | `0x801D1670..0x801D1690` |
 | `FUN_801D1BA0` | the vertical settle's glide rate | `0x801D1C30..0x801D1C68` |
 
@@ -134,12 +135,12 @@ The player actor pointer is the global `_DAT_8007c364`. Confirmed fields on the 
 
 | Offset | Meaning |
 |---|---|
-| `+0x10` | flags; bit `0x80000` = movement disabled (encounter pending / cutscene), bit `0x1000000` = action/interact requested |
+| `+0x10` | flags; bit `0x80000` = movement disabled (encounter pending / cutscene), bit `0x1000000` = clip from the **party** locomotion bank (the clip selector `FUN_800204F8` tests it at `0x8002053C`; see [the clip base](#the-clip-base-and-the-settle-tail)) |
 | `+0x14` | world X (`s16`) |
 | `+0x16` | **footing** - the height of the floor the actor stands on (`s16`), glided toward the floor sample at a clamped rate by [`FUN_801d1ba0`](#fun_801d1ba0---settle-then-trigger). Not a yaw and not an angle of any kind; the heading is `+0x26`. |
 | `+0x18` | world Z (`s16`) |
 | `+0x26` | heading (8-direction movement angle, set from the pad direction) |
-| `+0x5c` | running/dash state counter (`> 0` switches the walk-animation select) |
+| `+0x5c` | clip id - `1`-based record in the bank `+0x10 & 0x1000000` selects; the settle tail stores it every frame (see [the clip base](#the-clip-base-and-the-settle-tail)) |
 | `+0x72` | per-actor speed multiplier (fixed-point, `>> 12`) |
 | `+0x94` | encounter-record pointer (see [encounter format](../formats/encounter.md)) |
 | `+0x98` | interaction-target actor pointer |
@@ -334,7 +335,29 @@ The pass exists because the flag previously had only those two writers, both on 
 
 Wiring it needs an idle-clip → walk-clip pairing per NPC, and only the `special_model` party placements have one pinned (the PROT 0874 §1 locomotion bank's `LOCOMOTION_IDLE_SLOT` / `_WALK_SLOT` per character). For an ordinary scene NPC the placement names a single record out of the scene's own ANM bundle and the walk sibling is not identified.
 
-Retail selects it off the actor's `+0x5c` dash-state counter, and that counter's **writer is not in this controller**: `FUN_801d01b0` only reads it (`lh $v0, 0x5c($s2)` at `0x801D0424`, gating a `+0x6a = 8` store and an `actor[+0x10] |= 0x01000000`). Finding the writer is the next step.
+### The clip base and the settle tail
+
+Retail picks the player's clip in three steps, and the controller is only the first.
+
+1. **`FUN_801d01b0` writes the clip base `_DAT_8007BDD8`** (`0x801D0424..0x801D04A4`), on every frame it runs and the actor's clip id `+0x5c` is positive. No direction held stores `2`. A direction under the plain walk step `8` stores `1`; any other base step (run `0xC`, turbo `0x18`, forced slow `5`) stores `3`; and under `_DAT_8007B6A8` the store is overwritten with the sentinel `99`. The same frames stamp `+0x6a = 8` and raise `+0x10 |= 0x1000000`, the party-bank bit.
+2. **The settle `FUN_801d1ba0` strides the base into a clip id** (`0x801D1D88..0x801D1EAC`, [below](#fun_801d1ba0---settle-then-trigger)): `base + leader * 7` into `+0x5c`, the leader being `_DAT_8007B8F8`. The sentinel instead stores `leader + 1` and drops the party-bank bit.
+3. **`FUN_800204F8` binds it**: record `id - 1` of the party bundle (PROT 0874 section 1) when the bit is set, of the scene's own bundle otherwise, rewinding when the id changed.
+
+The other writers of the base are the hop phase machine `FUN_801d2298` (`6` at take-off, `7` at the landing crossing, `1` at tear-down), the walk-on dispatcher `FUN_801D1EC4` and the touch post `FUN_801d5b5c` (each `2`, under `_DAT_8007B6A8` only), field-VM op `0x22` aimed at the player (its operand), and scene entry (`2`, SCUS `0x8003B364`).
+
+| base | bank slot | clip | writer |
+|---|---|---|---|
+| `1` | `0` | walk | pad walk, hop tear-down |
+| `2` | `1` | idle | pad idle, scene entry |
+| `3` | `2` | run | pad run |
+| `6` | `5` | hop | hop take-off |
+| `7` | `6` | land | hop landing crossing |
+
+Slots `0` and `1` are capture-pinned ([`anm.md`](../formats/anm.md)); `2`, `5` and `6` rest on these writers' arithmetic. The run clip is the one a held **Cross or R1** reaches. The locomotion run-pin capture held Square and Circle, neither of which is in the run mask `0x48`, which is why it never saw the record change.
+
+**Engine port.** The pad step writes `World::locomotion.clip_base` through `legaia_engine_vm::field_player_clip::locomotion_clip_base`; the hop tick applies the phase machine's stamps; `World::field_settle_clip_tail` runs `settle_clip_pick` and hands the bank slot to `FieldPlayerAnim::select_retail_slot`. Both play hosts build the player's clips with `FieldPlayerAnim::from_locomotion_bank`, which loads the leader's whole seven-record bank.
+
+A frame that moved the player without the pad step (a script walk) keeps the motion-derived walk above, since the port does not carry op `0x22`'s base for script moves. Not modelled: the op-`4C CE` override `_DAT_8007B6AC` (read as `0`; its two disc users, `jagaroom` and `urudre1`, bind scene-bank records) and the scene-bank sentinel, which falls back to the motion-derived pair.
 
 ### Wall-slide resolution (`FUN_80046494`)
 
@@ -568,7 +591,7 @@ A bit-`1` hit posts the touch event (`FUN_801d5b5c` on the `+0x98` partner), tur
 
 **`FUN_801d5b5c` (the touch event post, decoded from a live overlay image - the static `overlay_0897` copy is garbled in this region)** marks the engagement: player `flags |= 0x80000` (the same bit that suppresses locomotion input at the top of `FUN_801d01b0`), touched actor `flags |= 0x100`, actor touch counter `+0x2a += 1`, field-control event counter `_DAT_801c6ea4+0xA += 1`, the actor's current facing `+0x26` saved into `+0x5A` (restored when the interaction ends), then `FUN_8003c9ac` - which sweeps the scene actor list and reloads every moving-class actor's `+0x5C`/`+0x88` timer from the per-actor byte table at `0x801C6470` (an NPC-motion pause kick while the interaction runs).
 The **teardown** is the dialog SM's exit path (`FUN_80039b7c`): it restores the actor's facing `+0x26` from the `+0x5A` save (moving-class partners), subtracts the actor's `+0x2A` touch counter out of the field-control global `+0xA`, and when the global reaches zero clears the player's `0x80000` engaged flag and `ctrl+0x60` - so overlapping touches keep locomotion suppressed until every one is dismissed.
-(The separate sampler `FUN_801d5718` reads the same `*(_DAT_1f8003ec) + 0x4000` grid with the identical nibble-and-mask shape, confirming the map layout.)
+(The same grid has a second reader: the walkability probe `FUN_801D56C4` (PROT 0897, `0x801D56C4..0x801D577C`), which the wall-slide resolver `FUN_80046494` calls five times. It indexes `*(_DAT_1f8003ec) + 0x4000` with the same row / column / high-nibble / quadrant-bit shape. An older reading named this sampler `FUN_801d5718`; that VA is the probe's own row-index `sll` at `+0x54`, not an entry, and the routine other images carry at `0x801D5718` - the battle image's placement-table landing copy - is unrelated code at the same address.)
 
 **There is no second per-direction collision probe.** `FUN_801c1634` was read as a
 byte-for-byte structural twin of `FUN_801cfe4c`; it is that same function, printed at a
@@ -723,22 +746,19 @@ assignment. An actor carrying `+0x10 & 0x20000000` takes `-(+0x8E)` instead of
 the sample, in both arms.
 
 Only on the grounded, unlocked path does it then consider the hop, and only
-when `_DAT_8007B6B0 <= 0` (the warp walk timer) and `_DAT_8007B6B4 == 0` (the
-dialogue-pacing countdown) and the step delta is non-zero
-(`0x801D1C6C..0x801D1CA8`). A frame that did not hop, with `+0x9e <= 0x10`,
-ends in an animation tail: `jal 0x801D1EC4`, then an anim-clip pick into
-`+0x5C` from `_DAT_8007BDD8` (with a `99` sentinel), `_DAT_8007B8F8 * 7` and
-`_DAT_8007B6AC`, and `FUN_800204F8` (`0x801D1D80..0x801D1EAC`). The pick
-skips the `FUN_800204F8` call when scratchpad `0x1F800394 & 0x400` is set or
-the picked clip is `0`. The arithmetic is byte-for-byte the unreferenced
-field-overlay helper `FUN_801E58A8` (ported as
-`legaia_engine_vm::menu_actor_seed::actor_clip_pick`): `_DAT_8007B8F8` is the
-party leader's character id and `* 7` its stride into the party clip bank,
-not a page count. The port does not run the tail - its clip base
-`_DAT_8007BDD8` comes from `FUN_801D1EC4`, which stores it on four arms
-(`0x801D21AC`, `0x801D22FC`, `0x801D237C`, `0x801D23E0`) the port does not
-model - and the engine's field clip player (`engine-core::field_anim`) picks
-the player's idle / walk clip instead.
+when `_DAT_8007B6B0 <= 0` (the kind-0 warp timer) and `_DAT_8007B6B4 == 0`
+(the post-warp pad hold - see [the timed warp](#the-timed-kind-0-warp)) and
+the step delta is non-zero (`0x801D1C6C..0x801D1CA8`). Every frame that did
+not start a hop, with `+0x9e <= 0x10`, ends in the animation tail - the
+locked glide arm included, so the tail runs through a hop: `jal 0x801D1EC4`,
+then the [clip pick](#the-clip-base-and-the-settle-tail) into `+0x5C` from
+`_DAT_8007BDD8`, `_DAT_8007B8F8 * 7` and `_DAT_8007B6AC`, and `FUN_800204F8`
+(`0x801D1D80..0x801D1EAC`). The pick skips the `FUN_800204F8` call when
+scratchpad `0x1F800394 & 0x400` is set or the picked clip is `0`. The
+arithmetic is byte-for-byte the unreferenced field-overlay helper
+`FUN_801E58A8` (`legaia_engine_vm::menu_actor_seed::actor_clip_pick`), plus
+the two bind gates; the override arm clears the party-bank bit around the
+bind and restores it after, so an override id binds from the scene bank.
 
 **The settle is a precondition of the probe, not a neighbour of it.** The glide
 (`0x801D1C30..0x801D1C68`: `jal 0x80019278`, `subu a0, v0, v1`, the two `slt`
@@ -811,9 +831,9 @@ far point.
 
 `World::step_field_vertical` (`FUN_801d1ba0`) runs in the field frame tick
 after `step_field_locomotion`. The movement lock and an input-owning dialogue
-(the engine's `_DAT_8007B6B4`) withhold the hop but not the glide; the
-animation tail is not ported, because the engine drives the player's clip from
-its own locomotion state. It calls `World::try_field_ledge_hop`
+(and the warp pair `_DAT_8007B6B0` / `_DAT_8007B6B4`) withhold the hop but not
+the glide; the animation tail is `World::field_settle_clip_tail`, which also
+runs on every frame of a hop in flight. It calls `World::try_field_ledge_hop`
 (`FUN_801d1878`), which classifies the ledge and starts the hop through
 `World::start_field_ledge_hop` (`FUN_801d2404`). The step-delta pair is
 `World::locomotion.step_delta`.
@@ -945,11 +965,22 @@ The per-tile lookup (`FUN_801D5630`) scans the `+0x10000` primary block first an
   A record whose first opcode is `0x24`/`0x25` gets its prologue pre-run at bind time (the inline `FUN_801DE840` loop, stopping at a `0x21`, a stalled PC, or a dialog byte) - how the Vahn's-house door context carries its `4C 41` angle-ramp seed before anything pokes it. Engine: `field_channels::spawn_object_channels` + `World::seed_object_channels` (poke-target channels; not autonomously stepped).
   The touch box is therefore the **object's**, not the trigger tile's: `FUN_801CFC40` centres it at `object_world + (desc[+0x06] * 128 + (i8)desc[+0x0E] * 16, desc[+0x07] * 128 + (i8)desc[+0x0F] * 16)` with half-extent `0x40 + 0x10`. Binding at the trigger tile instead makes most doors unreachable - key tiles are routinely inside a wall (Rim Elm's own house-door key tile `(38,25)` is a collision wall). Engine: `field_regions::parse_map_objects` → `man_field_scripts::object_walk_touch_binds` → `World::install_trigger_walk_touch_with_records` (synthetic walk-touch slots from `World::TRIGGER_WALK_TOUCH_SLOT_BASE`); contact routes through the same `check_field_walk_touch` dispatch as placement touches.
   Record headers differ **per partition**, so the flat index must be resolved to its partition before the script offset is computed: P0 `[u8 n][n*2 SJIS name][u8 attr]` (`pc0 = 1 + 2n + 1`), P1 `[u8 N][N*2 locals][4-byte placement header]` (`pc0 = 1 + 2N + 4`), P2 name + three condition blocks (`FUN_8003BDE0`). Engine: `man_field_scripts::flat_record_span`.
-- **Kind 0 - intra-scene teleport** (`SceneHost::dispatch_intra_scene_teleport`, the `FUN_801D1EC4` arm at `0x801d21c0..0x801d2268`): crossing onto a kind-0 tile seats the player at the record's landing (`dest_x*64 + 64`, `(dest_z + 1)*64`), re-samples the floor height, and leaves the last-tile compare stale so the landing tile's own kind-1 record fires next tick (retail queries it inline and runs a ~`0x26`-frame fade across the reposition; the engine warps instantly). Skipped while the player's movement-disabled flag (`+0x10 & 0x80000`) is set. This is the class most house **exits** belong to - see [Intra-scene doorways](#intra-scene-doorways---the-walk-touch-teleport-family).
+- **Kind 0 - intra-scene teleport** (`SceneHost::dispatch_intra_scene_teleport`, the `FUN_801D1EC4` arm at `0x801d21c0..0x801d2268`): crossing onto a kind-0 tile seats the player at the record's landing (`dest_x*64 + 64`, `(dest_z + 1)*64`), and runs the landing tile's own kind-1 record - **`0x26` frames after the crossing**, behind a fade to black, with the pad held off (see [the timed warp](#the-timed-kind-0-warp)). Skipped while the player's movement-disabled flag (`+0x10 & 0x80000`) is set. This is the class most house **exits** belong to - see [Intra-scene doorways](#intra-scene-doorways---the-walk-touch-teleport-family).
   Retail gates both arms on the crossed tile's object-index word: `cell & 0x600 != 0` (`0x801d2140`) - a fast filter in front of the table scan. Every kind-0 trigger tile on the disc carries those bits, so the engine's exact-match table lookup subsumes it.
 
-  **The retail reposition animator + tile-crossing handler is `FUN_801c36ac`.** While its warp timer `_DAT_8007b6b0` is positive it steps the warped actor toward destination tile `(_DAT_8007bdd0, _DAT_8007bdd4)` - landing world `(dest_x*64 + 64, (dest_z + 1)*64)` into actor `+0x14`/`+0x18` (the same `dest*64+64` formula the engine warps to instantly) - re-samples floor via `FUN_80019278`, re-poses via `func_0x801d5630`, and decrements the timer by `_DAT_1f800393`.
-  When the timer is idle it quantises the actor position to a tile, compares against the stored crossing tile `(_DAT_8007bdd8, _DAT_8007bddc)`, and on a change runs the same `cell & 0x600` object-index filter (scene map `_DAT_1f800314+0xd8 + tile*2 + 0x8000`) and posts `FUN_8003bde0`, arming a fresh `0x26`-frame warp via `FUN_801d58f0`. See `ghidra/scripts/funcs/overlay_0897_xxx_dat_801c36ac.txt`.
+
+### The timed kind-0 warp
+
+`FUN_801D1EC4` (PROT 0897, `0x801D1EC4..0x801D2294`, reached once per frame from the settle's tail) is one routine with two halves, keyed on the warp timer `_DAT_8007B6B0`. An older reading of it, printed at the phantom VA `0x801C36AC` (see [`overlay-va-aliases.md`](../reference/overlay-va-aliases.md)), had the timer half walking the actor toward its destination and the crossing tile at `(_DAT_8007bdd8, _DAT_8007bddc)`; neither is in the bytes.
+
+- **Timer idle** (`<= 0`, `0x801D2068..0x801D227C`) - the tile compare. `tile = world >> 7` against the crossing tile `(_DAT_8007BDC8, _DAT_8007BDCC)`. On the same tile it re-runs the kind-1 record only while scratchpad `0x1F800394 & 0x80000` is set. On a new tile it clears that bit, applies the `cell & 0x600` filter and the player's movement-lock test (each stores the tile and returns), runs the kind-1 arm - and under `_DAT_8007B6A8` resets the clip base to `2` with the party-bank bit - then the kind-0 arm.
+- **The kind-0 arm arms, it does not move.** It stores the tile, the destination `(_DAT_8007BDD0, _DAT_8007BDD4) = (rec[2], rec[3])` in half-tiles, `_DAT_8007B6B0 = 0x26`, spawns two fades through `FUN_801D58F0` - kind `2` black-to-white over `0x1C` frames holding `0xE` (a fade to black under the subtractive blend), then the reverse ramp delayed `0x29` frames - and clears the player's movement lock.
+- **Timer running** (`> 0`, `0x801D1EF4..0x801D2064`). It tags for tear-down the first live actor whose handler `+0x0C` is `0x801DA7F0`, subtracts `DAT_1F800393`, and returns while positive.
+- **The landing** is the frame it reaches zero: `_DAT_8007B6B4 = 0x28`, the lock cleared, the encounter step counter re-rolled through `FUN_801DDF48` **only when it is `<= 0`** (`bgtz` at `0x801D1F64`, `jal` at `0x801D1F6C`), `_DAT_8007B6B0 = -1000`, the player seated at `(dest_x * 64 + 64, (dest_z + 1) * 64)`, the crossing tile re-stamped from that position, the camera re-pinned (`FUN_80017EC8`, `FUN_801DE3E0`, `FUN_801DB8EC`, `FUN_801DAA50`), the floor re-sampled into `+0x16`, and the kind-1 record at `(dest_x >> 1, dest_z >> 1)` run through `FUN_8003BDE0`.
+
+The player's own tick `FUN_801D1344` turns this into a pause. It drains `_DAT_8007B6B4` by the frame delta, clamped at zero (`0x801D161C..0x801D1630`), and skips the pad controller outright while `_DAT_8007B6B0 > 0` or `_DAT_8007B6B4 != 0` (`0x801D16C8..0x801D16E4`). The player therefore stands through the `0x26` fade frames and `0x28` more after the landing, still animating the clip the last pad frame picked - a player who walked onto the door walks in place. `_DAT_8007B6B4` is often called a dialogue-pacing countdown; this landing is one of its writers, and the player tick is its drain.
+
+**Engine port.** `legaia_engine_vm::field_warp_tile` carries the timer, the landing, the hold drain and the pad gate; `World::arm_field_warp` / `World::tick_field_warp` apply them to the world, and `SceneHost::dispatch_walk_on_trigger` ticks the warp before its tile compare and runs the landing tile's kind-1 record on the landing frame. The port has one fade slot, so the fade-in replaces the held fade-out when its delay runs out. Not modelled: the `0x801DA7F0` actor tag, the `0x1F800394 & 0x80000` same-tile re-run, and the camera re-pin beyond the player `MoveTo` event the hosts follow.
 
 The partition-2 gate bitmap (`DAT_80085758`) **is** the field VM's `0x50`/`0x60`/`0x70` system-flag bank - one store, shared by the record dispatcher's C1/C2 test (`World::p2_gate_flag_set` = `system_flag_test`) and the VM's flag writes, so an opening-timeline `set` is immediately visible to the next record's gate. It also overlaps the saved story-flag window at byte `+0x158` (`0x80085758 - 0x80085600`); the engine save mirrors the bank into that window and reloads seed it back. Disc-gated coverage: `crates/engine-core/tests/walk_on_trigger_dispatch_disc.rs` (opening-to-free-roam progression, south-gate exit to `map01`, house-door contact teleport, ambient no-lock, gate-flag save round-trip).
 
