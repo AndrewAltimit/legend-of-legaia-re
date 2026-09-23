@@ -243,6 +243,26 @@ impl PlayWindowApp {
         )
     }
 
+    /// One minigame status row (dance / fishing / slots / Baka Fighter) at
+    /// its pen on the shared 320x240 stage, scaled onto the surface. The
+    /// browser play page composes the same rows at the same pens
+    /// (`PEN_STATUS` / `PEN_PROMPT` in `play_minigames.rs`) through the stage
+    /// transform; this host used to lay them out in raw surface pixels, a
+    /// third the size and pinned to the window corner instead of the stage.
+    fn stage_status_row(
+        &self,
+        text: &str,
+        pen: (i32, i32),
+        color: [f32; 4],
+        w: u32,
+        h: u32,
+    ) -> Vec<TextDraw> {
+        let mut d = text_draws_for(&self.font.layout_ascii(text), pen, color);
+        let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+        legaia_engine_render::scale_stage_text_draws(&mut d, stage_origin, stage_scale);
+        d
+    }
+
     pub(super) fn build_hud(&self, w: u32, h: u32) -> Vec<TextDraw> {
         let Some(atlas) = &self.font_atlas else {
             return Vec::new();
@@ -386,11 +406,9 @@ impl PlayWindowApp {
                 g.gauge(),
                 g.lane()
             );
-            let ly1 = self.font.layout_ascii(&dl1);
-            out.extend(text_draws_for(&ly1, (8, 62), white));
+            out.extend(self.stage_status_row(&dl1, (8, 62), white, w, h));
             let dl2 = format!("press {arrow}   {judge}   (Start = quit)");
-            let ly2 = self.font.layout_ascii(&dl2);
-            out.extend(text_draws_for(&ly2, (8, 80), dim));
+            out.extend(self.stage_status_row(&dl2, (8, 80), dim, w, h));
 
             // The beat track. Two things the overlay's track renderer
             // (`FUN_801d2524`) computes, kept distinct here because they are
@@ -599,10 +617,8 @@ impl PlayWindowApp {
                     _ => "FISHING  (Cross = recast)".to_string(),
                 },
             };
-            let ly = self.font.layout_ascii(&line);
-            out.extend(text_draws_for(&ly, (8, 62), white));
-            let ly2 = self.font.layout_ascii("(Start = quit, P = prizes)");
-            out.extend(text_draws_for(&ly2, (8, 80), dim));
+            out.extend(self.stage_status_row(&line, (8, 62), white, w, h));
+            out.extend(self.stage_status_row("(Start = quit, P = prizes)", (8, 80), dim, w, h));
 
             // The overlay's developer readout (FUN_801d2050): the wander
             // actor's tile pair + settled height, shown only when the
@@ -629,8 +645,7 @@ impl PlayWindowApp {
                         wd.y,
                         wd.facing
                     );
-                    let ly = self.font.layout_ascii(&line);
-                    out.extend(text_draws_for(&ly, (8, 116), dim));
+                    out.extend(self.stage_status_row(&line, (8, 116), dim, w, h));
                 }
             }
 
@@ -754,14 +769,22 @@ impl PlayWindowApp {
                 first_visible: ex.first_visible(world.minigames.fishing_points),
                 rows: &rows,
             };
-            out.extend(fx::exchange_screen_draws_for(
+            // The pen is the retail panel rect, a 320x240 stage position, so
+            // the rows scale onto the surface through the same stage the
+            // HUD rows and the browser play page use. Drawn in raw surface
+            // pixels they sat in the window's top-left at a third of the
+            // page's size.
+            let mut ex_draws = fx::exchange_screen_draws_for(
                 &self.font,
                 &view,
                 "   (Enter = trade, Left/Right = venue, P = close)",
                 (px, py),
                 white,
                 dim,
-            ));
+            );
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            legaia_engine_render::scale_stage_text_draws(&mut ex_draws, stage_origin, stage_scale);
+            out.extend(ex_draws);
         }
         // Slot-machine minigame HUD: the three payline symbols, the balance /
         // bet readout, and the phase-specific prompt.
@@ -781,8 +804,7 @@ impl PlayWindowApp {
                 mode => format!("  feature {mode}"),
             };
             let sl1 = format!("SLOTS  {reels}  coins {}{feature}", m.balance());
-            let ly1 = self.font.layout_ascii(&sl1);
-            out.extend(text_draws_for(&ly1, (8, 62), white));
+            out.extend(self.stage_status_row(&sl1, (8, 62), white, w, h));
             let prompt = match m.phase() {
                 SlotPhase::Idle if !m.can_spin() => "not enough coins".to_string(),
                 // The cost is `SlotMachine::spin_cost()`, which is 1 in the
@@ -800,8 +822,7 @@ impl PlayWindowApp {
                 SlotPhase::CashedOut => "cashed out".to_string(),
             };
             let sl2 = format!("{prompt}   (Start = cash out + quit)");
-            let ly2 = self.font.layout_ascii(&sl2);
-            out.extend(text_draws_for(&ly2, (8, 80), dim));
+            out.extend(self.stage_status_row(&sl2, (8, 80), dim, w, h));
         }
         // Baka Fighter minigame HUD: HP bars as numbers, round pips, the
         // last-exchange readout, and the input prompt.
@@ -817,8 +838,7 @@ impl PlayWindowApp {
                 f.round_wins(1),
                 f.round() + 1
             );
-            let ly1 = self.font.layout_ascii(&bl1);
-            out.extend(text_draws_for(&ly1, (8, 62), white));
+            out.extend(self.stage_status_row(&bl1, (8, 62), white, w, h));
             let status = match f.phase() {
                 MatchPhase::MatchOver(0) => {
                     format!(
@@ -846,8 +866,7 @@ impl PlayWindowApp {
                 },
             };
             let bl2 = format!("{status}   Left/Right/Up attack, Down special (Start = quit)");
-            let ly2 = self.font.layout_ascii(&bl2);
-            out.extend(text_draws_for(&ly2, (8, 80), dim));
+            out.extend(self.stage_status_row(&bl2, (8, 80), dim, w, h));
 
             // The duel's three number drawers, at their ported cell layouts:
             // the one-glyph round digit, the 8 px right-aligned score field,
