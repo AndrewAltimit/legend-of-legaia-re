@@ -2880,3 +2880,27 @@ expected_game_mode = 0x03
 expected_active_scene = "town01"
 description = "Rim Elm (town01) with placement P1[16]'s conversation open on its first page, fully typed and waiting on the page cursor: two lines, the first opening on the lead-name escape (1F C1 00). Retail frame-pair for the engine's first-box render of the same record. Made from s4_rimelm_door_transition (retail SCUS) by autorun_talk_to_npc.lua with LEGAIA_NPC_P90=0x800E6702 (MAN base 0x800E4008 + record offset 0x26FA) and a position poke to (3456, 3072) - the path from the house door crosses a story trigger and a fenced lane - then a DOWN tap and CROSS. The poke moves only the player; nothing the conversation reads."
 topics = ["field", "town01", "dialogue", "P1[16]", "name escape", "frame pair", "probe state"]
+
+# ----------------------------------------------------------------------
+# Retail field references reached by tile pokes / a talk probe.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "cave01_attached_light"
+backup_fingerprint = "bfbf2a94618ba8bf7d75640245577c7ba7e97025b9804798b1989b3199001481"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "cave01"
+description = "cave01 free field run with the op 0x34 sub-1 darkness mask live on the player: one FUN_801E4470 actor, extents (0xC00, 0xC00), +0x74 0, +0x88 0x808020, +0x5A 2, offset (0, -0x60, 0). Retail SCUS: reached from s3_rimelm_freeroam by autorun_w5a_poke_walk.lua (LEGAIA_ROUTE town01@25,46;map01@37,110), checkpointed 240 field vsyncs after the arrival at world (11968, 12480). The frame's rim packets put the ring at 180 px round (155, 116) with H 512 and vz 8710. Consumed by engine-core attached_light_cave01_retail_capture_disc."
+topics = ["field", "cave01", "attached light", "darkness mask", "op 0x34", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "retock_innkeeper_talk_open"
+backup_fingerprint = "7e62fec0bdd6153953a685d01eb113c55c3631253e01652cdbfcdbb803518c32"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "retock"
+description = "retock inn interior with the innkeeper's (P1[26], actor +0x90 0x800E9688, MAN base 0x800E7494) conversation open, 5 vsyncs after the box appears. Retail SCUS: from retock_field_card_boot, a tile poke onto the kind-0 door (54,71) warps into the inn at (15168, 1280); autorun_talk_to_npc.lua with LEGAIA_POKE_POS=14816,1728 opens the talk (approached from the west - from the south the adjacent P1[29] answers instead). A Cross cadence runs one full stay (240 G) and parks the record's cursor on its 26 loop-back at +0x18A; the next talk executes the loop-back and the CC F8 85 acquire at +0x30 (arm 0x801E2148, s7 = 5)."
+topics = ["field", "retock", "inn", "dialogue", "halt-acquire", "probe state"]
