@@ -437,6 +437,14 @@ impl BattleRender {
         self.actors.iter().map(|a| a.actor_idx).collect()
     }
 
+    /// Mesh `i`'s world actor slot, rest packet-colour stream and per-vertex
+    /// object ids - what [`crate::play_battle_limb_dim`] re-colours.
+    pub(crate) fn actor_colour_stream(&self, i: usize) -> Option<(usize, &[u8], &[u32])> {
+        self.actors
+            .get(i)
+            .map(|a| (a.actor_idx, a.mesh.flat.as_slice(), a.object_ids.as_slice()))
+    }
+
     /// Append a mid-battle summon creature's mesh bundle and adopt the VRAM
     /// its texture was injected into. Called by
     /// [`LegaiaRuntime::spawn_summon_creature_web`] after the world side of

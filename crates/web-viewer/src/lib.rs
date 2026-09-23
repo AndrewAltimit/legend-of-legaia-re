@@ -28,6 +28,7 @@ pub mod play;
 pub mod play_battle;
 pub mod play_battle_audio;
 pub mod play_battle_fx;
+pub mod play_battle_limb_dim;
 pub mod play_battle_render;
 pub mod play_battle_vram;
 pub mod play_bgm;
