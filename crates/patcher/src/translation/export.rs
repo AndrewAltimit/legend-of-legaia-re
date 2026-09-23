@@ -25,6 +25,7 @@ use legaia_asset::{accessory_passive, item_names, new_game, spell_names, worldma
 use crate::disc::DiscPatcher;
 
 use super::markup;
+use super::monster_names;
 use super::pack::{Entry, LanguagePack};
 use super::segments;
 use super::ui;
@@ -34,6 +35,11 @@ const MAN_TYPE: u8 = 0x03;
 
 /// Longest SCUS string we will follow before deciding a pointer is bogus.
 const MAX_SCUS_STRLEN: usize = 512;
+
+/// Slots of the spell-description pointer table
+/// (`spell_names::DESC_PTR_TABLE_VA`): it runs from the end of the spell
+/// records to the arts-name table (`0x80075EC4 - 0x80075DB0 = 0x114` bytes).
+pub const DESC_TABLE_SLOTS: u32 = 0x45;
 
 /// A located scene-bundle MAN, shared by export and import: the compressed
 /// stream's placement inside the PROT entry plus the decompressed bytes.
@@ -263,16 +269,45 @@ fn collect_scus_sections(scus: &[u8], pack: &mut LanguagePack) -> Result<()> {
         }
     }
 
-    // Tactical Arts names (record +0xC = name pointer).
+    // Spell descriptions: the info window's `Name|effect` strings, reached
+    // through the flat pointer table the record's `+4` byte indexes (index 0
+    // = none). Walked by table slot, so every string the window can draw is
+    // collected once.
+    for idx in 1..DESC_TABLE_SLOTS {
+        let va = spell_names::DESC_PTR_TABLE_VA + idx * 4;
+        if let Some(ptr) = ptr_at(scus, va)
+            && ptr != 0
+        {
+            col.add(
+                "spells",
+                ptr,
+                format!("spell description {idx} ('|' = line break)"),
+            );
+        }
+    }
+
+    // Tactical Arts names (record +0xC = name pointer) and the arts-menu
+    // descriptions (+0x10). The description is also where the in-battle
+    // matcher finds the combo string (the bytes right after its NUL), so it
+    // stays a same-size in-place rewrite that never moves - see
+    // `legaia_art::arts_table`.
     if let Some(arts) = legaia_art::arts_table::parse_from_scus(scus) {
         for (i, art) in arts.iter().enumerate() {
-            let va = legaia_art::arts_table::TABLE_VA
-                + (i * legaia_art::arts_table::RECORD_STRIDE) as u32
-                + 0xC;
-            if let Some(ptr) = ptr_at(scus, va)
+            let rec = legaia_art::arts_table::TABLE_VA
+                + (i * legaia_art::arts_table::RECORD_STRIDE) as u32;
+            if let Some(ptr) = ptr_at(scus, rec + 0xC)
                 && ptr != 0
             {
                 col.add("arts", ptr, format!("art '{}'", art.name));
+            }
+            if let Some(ptr) = ptr_at(scus, rec + 0x10)
+                && ptr != 0
+            {
+                col.add(
+                    "arts",
+                    ptr,
+                    format!("art '{}' description ('|' = line break)", art.name),
+                );
             }
         }
     }
@@ -390,6 +425,27 @@ fn collect_scus_system_sections(scus: &[u8], pack: &mut LanguagePack) {
     }
 }
 
+/// Monster names (`mon:<id>` keys): each populated record of the monster
+/// archive, budgeted by [`monster_names::budgets`].
+fn collect_monster_names(patcher: &DiscPatcher, pack: &mut LanguagePack) {
+    let Ok(entry) = patcher.read_entry(crate::disc::MONSTER_ARCHIVE_ENTRY) else {
+        return;
+    };
+    let fields = monster_names::fields(&entry);
+    for ((id, f), (_, budget)) in fields.iter().zip(monster_names::budgets(&fields)) {
+        pack.sections.monster_names.push(Entry {
+            key: format!("mon:{id}"),
+            context: format!(
+                "monster {id} name (battle plaque; keep a leading {{5e:xx}} badge and a \
+                 trailing ' $N')"
+            ),
+            source: monster_names::decode(&f.bytes),
+            translation: String::new(),
+            budget,
+        });
+    }
+}
+
 /// Per-PROT-entry scan length: the entry's footprint clamped to the next
 /// entry's start, so overlapping extended footprints don't export the same
 /// disc bytes twice under two keys.
@@ -426,6 +482,7 @@ pub fn export_pack(patcher: &DiscPatcher) -> Result<LanguagePack> {
     collect_scus_sections(&scus, &mut pack)?;
     collect_ui_sections(patcher, &mut pack);
     collect_scus_system_sections(&scus, &mut pack);
+    collect_monster_names(patcher, &mut pack);
 
     let cdname = patcher.cdname();
     let scene_of = |idx: usize| -> String {

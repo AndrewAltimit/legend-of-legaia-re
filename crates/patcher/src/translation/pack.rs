@@ -50,7 +50,10 @@ pub struct Entry {
     ///   streaming MAN carriers);
     /// - `ui:<entry>:0x<va>` - NUL-terminated UI string at virtual address
     ///   `va` inside PROT overlay entry `entry` (menu / battle labels; the
-    ///   file offset is `va - base_va`, see [`super::ui`]).
+    ///   file offset is `va - base_va`, see [`super::ui`]);
+    /// - `scus:cell:0x<va>` - fixed `0x20`-byte place-name cell;
+    /// - `mon:<id>` - monster `id`'s name inside its record in the monster
+    ///   archive (PROT entry 867, see [`super::monster_names`]).
     pub key: String,
     /// Human context (scene name, table ids, neighbours). Not machine-read.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -124,6 +127,11 @@ pub struct Sections {
     /// fields in `SCUS_942.54` (`legaia_asset::worldmap_menu`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub place_names: Vec<Entry>,
+    /// Monster names (battle name plaque + every battle line naming the
+    /// enemy): one per record of the monster archive, same-size inside the
+    /// record. See [`super::monster_names`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub monster_names: Vec<Entry>,
 }
 
 impl Sections {
@@ -141,12 +149,13 @@ impl Sections {
             ("ui_menu", self.ui_menu.as_slice()),
             ("system_text", self.system_text.as_slice()),
             ("place_names", self.place_names.as_slice()),
+            ("monster_names", self.monster_names.as_slice()),
         ]
         .into_iter()
     }
 
     /// Mutable view of every section, in serialization order.
-    pub fn each_mut(&mut self) -> [&mut Vec<Entry>; 11] {
+    pub fn each_mut(&mut self) -> [&mut Vec<Entry>; 12] {
         [
             &mut self.items,
             &mut self.item_types,
@@ -159,6 +168,7 @@ impl Sections {
             &mut self.ui_menu,
             &mut self.system_text,
             &mut self.place_names,
+            &mut self.monster_names,
         ]
     }
 

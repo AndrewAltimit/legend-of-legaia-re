@@ -46,6 +46,7 @@ use crate::disc::DiscPatcher;
 
 use super::export::SceneManText;
 use super::markup::{self, Target};
+use super::monster_names;
 use super::pack::{Entry, LanguagePack};
 use super::segments;
 use super::stream_man::StreamManText;
@@ -189,6 +190,10 @@ enum Key {
         prot: usize,
         va: u32,
     },
+    /// A monster name inside its record in the monster archive.
+    Mon {
+        id: u16,
+    },
 }
 
 fn parse_key(key: &str) -> Option<Key> {
@@ -226,6 +231,9 @@ fn parse_key(key: &str) -> Option<Key> {
             let va = u32::from_str_radix(it.next()?.strip_prefix("0x")?, 16).ok()?;
             Some(Key::Ui { prot, va })
         }
+        "mon" => Some(Key::Mon {
+            id: monster_names::key_id(key)?,
+        }),
         _ => None,
     }
 }
@@ -348,16 +356,14 @@ fn plan_scus_str(
         return None;
     };
     // The string as it stands on this disc, up to (not including) its NUL.
+    // A strict system-text pool reads token-aware: `{c1:00}` carries a `0x00`
+    // argument that is not the terminator.
     let Some(tail) = scus.get(off..) else {
         report.issue(&entry.key, "string span past end of SCUS");
         return None;
     };
-    let Some(cur_len) = tail
-        .iter()
-        .take(MAX_SCUS_STRLEN)
-        .position(|&b| b == 0)
-        .filter(|&l| l > 0)
-    else {
+    let strict = ui::pool_for(usize::MAX, va).is_some_and(|p| p.strict);
+    let Some(cur_len) = ui::pool_strlen(scus, off, strict).filter(|&l| l <= MAX_SCUS_STRLEN) else {
         report.issue(&entry.key, "no NUL-terminated string at this VA - skipped");
         return None;
     };
@@ -388,8 +394,15 @@ fn plan_scus_str(
     if !fits(entry, &translated, entry.budget.min(writable), report) {
         return None;
     }
+    // Re-terminate and zero the rest of the old string's span: nothing reads
+    // past a terminator, but a stale printable tail is what a pool scanner
+    // (and any reader that skips zero padding to the next string - the combo
+    // string that follows an arts description) would pick up.
     let mut bytes = translated;
-    bytes.push(0); // re-terminate; the old tail past the NUL is never read
+    bytes.push(0);
+    if bytes.len() < cur_len + 1 {
+        bytes.resize(cur_len + 1, 0);
+    }
     Some((off, bytes))
 }
 
@@ -506,6 +519,7 @@ fn plan_ui(
     base_va: u32,
     e: &Entry,
     va: u32,
+    pool_strict: bool,
     report: &mut ImportReport,
 ) -> Option<(usize, Vec<u8>)> {
     let source = encode_source(e, Target::CString, report).ok()?;
@@ -518,11 +532,8 @@ fn plan_ui(
         report.issue(&e.key, "VA past end of the overlay entry");
         return None;
     };
-    let Some(cur_len) = tail
-        .iter()
-        .take(MAX_SCUS_STRLEN)
-        .position(|&b| b == 0)
-        .filter(|&l| l > 0)
+    let strict = pool_strict;
+    let Some(cur_len) = ui::pool_strlen(entry, off, strict).filter(|&l| l <= MAX_SCUS_STRLEN)
     else {
         report.issue(&e.key, "no NUL-terminated string at this VA - skipped");
         return None;
@@ -1065,6 +1076,7 @@ pub fn import_pack_phase(
     let mut man_work: BTreeMap<usize, Vec<(usize, &Entry)>> = BTreeMap::new();
     let mut raw_work: BTreeMap<usize, Vec<(usize, &Entry)>> = BTreeMap::new();
     let mut ui_work: BTreeMap<usize, Vec<(u32, &Entry)>> = BTreeMap::new();
+    let mut mon_work: Vec<(u16, &Entry)> = Vec::new();
     for (_, entries) in pack.sections.iter() {
         for e in entries {
             let key = parse_key(&e.key);
@@ -1075,7 +1087,8 @@ pub fn import_pack_phase(
                     Some(Key::ScusStr { .. })
                     | Some(Key::ScusParty { .. })
                     | Some(Key::ScusCell { .. })
-                    | Some(Key::Ui { .. }),
+                    | Some(Key::Ui { .. })
+                    | Some(Key::Mon { .. }),
                     ImportPhase::NamesOnly,
                 ) => true,
                 // Unrecognized keys are diagnosed once, in the names (last)
@@ -1103,6 +1116,7 @@ pub fn import_pack_phase(
                 Some(Key::Ui { prot, va }) => {
                     ui_work.entry(prot).or_default().push((va, e));
                 }
+                Some(Key::Mon { id }) => mon_work.push((id, e)),
                 None => report.issue(&e.key, "unrecognized key shape - skipped"),
             }
         }
@@ -1476,7 +1490,8 @@ pub fn import_pack_phase(
             }
         };
         for (va, en) in edits {
-            if let Some((off, bytes)) = plan_ui(&buf, base_va, en, va, &mut report) {
+            let strict = ui::pool_for(prot, va).is_some_and(|p| p.strict);
+            if let Some((off, bytes)) = plan_ui(&buf, base_va, en, va, strict, &mut report) {
                 patcher.patch_prot_entry(prot, off as u64, &bytes)?;
                 buf[off..off + bytes.len()].copy_from_slice(&bytes);
                 report.applied += 1;
@@ -1485,5 +1500,83 @@ pub fn import_pack_phase(
         }
     }
 
+    if !mon_work.is_empty() {
+        import_monster_names(patcher, &mon_work, &mut report)?;
+    }
+
     Ok(report)
+}
+
+/// Monster names: one decode / rewrite / re-pack per touched record, into its
+/// fixed slot of the archive (see [`monster_names`]). The budget is re-derived
+/// from the archive on this disc, never taken from the pack.
+fn import_monster_names(
+    patcher: &mut DiscPatcher,
+    work: &[(u16, &Entry)],
+    report: &mut ImportReport,
+) -> Result<()> {
+    let mut archive = match patcher.read_entry(crate::disc::MONSTER_ARCHIVE_ENTRY) {
+        Ok(b) => b,
+        Err(e) => {
+            for (_, en) in work {
+                report.issue(&en.key, format!("monster archive unreadable: {e}"));
+            }
+            return Ok(());
+        }
+    };
+    let fields = monster_names::fields(&archive);
+    let budgets: BTreeMap<u16, usize> = monster_names::budgets(&fields).into_iter().collect();
+    let current: BTreeMap<u16, Vec<u8>> = fields.into_iter().map(|(id, f)| (id, f.bytes)).collect();
+    for &(id, en) in work {
+        let (Some(cur), Some(&budget)) = (current.get(&id), budgets.get(&id)) else {
+            report.issue(&en.key, "no named monster record at this id - skipped");
+            continue;
+        };
+        let Ok(source) = encode_source(en, Target::CString, report) else {
+            continue;
+        };
+        let Some(translated) = encode_translation(en, Target::CString, report) else {
+            continue;
+        };
+        if !translated.iter().all(|&b| (0x20..0x7F).contains(&b)) {
+            report.issue(
+                &en.key,
+                "a monster name takes printable glyphs only (the loader reads the \
+                 record's name as plain text, markup escapes included)",
+            );
+            continue;
+        }
+        if cur == &translated {
+            report.already_applied += 1;
+            report.already_keys.push(en.key.clone());
+            continue;
+        }
+        if let Some(src) = &source
+            && src != cur
+        {
+            report.issue(
+                &en.key,
+                "disc bytes don't match the pack source (different disc revision or \
+                 a conflicting patch) - skipped",
+            );
+            continue;
+        }
+        if source.is_none() && !hint_agrees(en, budget, report) {
+            continue;
+        }
+        if !fits(en, &translated, en.budget.min(budget), report) {
+            continue;
+        }
+        match monster_names::rewrite_slot(&archive, id, &translated, budget) {
+            Ok(slot) => {
+                let at = monster_names::slot_offset(id);
+                patcher.patch_monster_slot(id, &slot)?;
+                archive[at..at + slot.len()].copy_from_slice(&slot);
+                report.applied += 1;
+                report.applied_keys.push(en.key.clone());
+            }
+            Err(e) => report.issue(&en.key, format!("{e} - skipped")),
+        }
+    }
+    Ok(())
 }

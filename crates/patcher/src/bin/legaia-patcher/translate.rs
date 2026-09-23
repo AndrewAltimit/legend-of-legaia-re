@@ -456,6 +456,14 @@ pub(crate) fn cmd_lift_official(
         "SCUS system strings: {} / {} paired; place-name cells: {} / {} paired",
         rep.system_paired, rep.system_total, rep.cells_paired, rep.cells_total
     );
+    println!(
+        "  pool strings paired through a code / data reference: {}",
+        rep.pool_ref_paired
+    );
+    println!(
+        "monster names: {} / {} paired",
+        rep.monsters_paired, rep.monsters_total
+    );
     println!("wrote {}", output.display());
     println!(
         "NB: this pack contains the game's text - keep it out of version control / \

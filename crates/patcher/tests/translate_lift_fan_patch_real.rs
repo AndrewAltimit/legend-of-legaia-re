@@ -64,7 +64,22 @@ fn fan_patch_lift_pairs_every_carrier_and_keeps_token_lines() {
         rep.raw_paired, rep.raw_total,
         "every raw-carrier line pairs"
     );
-    assert_eq!(rep.ui_paired, rep.ui_total, "every overlay UI string pairs");
+    // One USA line has no counterpart: `'s magic level increased.` follows
+    // a name the code draws first, while the Spanish build splits its line
+    // around the name (`El nivel de magia de` .. ` ha aumentado!`). It stays
+    // unpaired rather than taking half a sentence.
+    let unpaired_ui: Vec<&str> = pack
+        .sections
+        .ui_menu
+        .iter()
+        .filter(|e| e.translation.is_empty())
+        .map(|e| e.key.as_str())
+        .collect();
+    assert_eq!(
+        unpaired_ui,
+        ["ui:898:0x801f6844"],
+        "every other overlay UI string pairs"
+    );
     assert_eq!(
         rep.system_paired, rep.system_total,
         "every SCUS system string pairs"
