@@ -1,5 +1,5 @@
 //! Disc-gated: the field player's locomotion clip is the one retail's clip
-//! base names - idle, walk, **run**, and a warp's walk-in-place - picked by
+//! base names - idle, walk, **run**, and a warp's idle - picked by
 //! the settle tail (`FUN_801D1BA0` at `0x801D1D88..0x801D1EAC`) from the base
 //! the pad step writes (`FUN_801D01B0` at `0x801D0424..0x801D04A4`).
 //!
@@ -120,8 +120,13 @@ const EXIT_LANDING: (i16, i16) = (4672, 3008);
 
 /// The kind-0 exit does not teleport on the crossing: it arms a `0x26`-frame
 /// timer behind a fade to black, the pad is off while it runs and for `0x28`
-/// frames after, and the player walks in place the whole time
-/// (`FUN_801D1EC4`, `FUN_801D1344`).
+/// frames after, and the player **idles** the whole time (`FUN_801D1EC4`,
+/// `FUN_801D1344`): with the pad controller skipped, the settle binds the
+/// idle base the system channel stores every tick (`0x80039D94` in
+/// `FUN_80039B7C`). Retail capture from `town01` with Down held: the clip id
+/// goes walk -> idle on the first warp tick, stays idle through the landing
+/// (`0x26` vsyncs after the crossing) and the `0x28`-vsync hold, and returns
+/// to walk on the first tick the pad controller runs again.
 #[test]
 fn town01_kind0_exit_lands_after_the_warp_timer() {
     let Some(mut host) = open_town01() else {
@@ -154,7 +159,12 @@ fn town01_kind0_exit_lands_after_the_warp_timer() {
         "the fade to black is up"
     );
     let walk_slot = slot(&host);
-    // The warp runs: position held, pad ignored, the walk clip kept.
+    assert_eq!(walk_slot, Some(0), "the crossing frame is a walk frame");
+    assert_eq!(
+        host.world.locomotion.clip_base, 1,
+        "walk base on the crossing"
+    );
+    // The warp runs: position held, pad ignored, the idle clip bound.
     let mut landed_after = None;
     for f in 1..=0x30u32 {
         host.world.set_pad(PadButton::Down.mask());
@@ -169,19 +179,36 @@ fn town01_kind0_exit_lands_after_the_warp_timer() {
             at_cross,
             "frame {f}: the pad is off mid-warp"
         );
-        assert_eq!(slot(&host), walk_slot, "frame {f}: the clip is held");
+        assert_eq!(slot(&host), Some(1), "frame {f}: the player idles mid-warp");
+        assert_eq!(host.world.locomotion.clip_base, 2, "frame {f}: idle base");
     }
     assert_eq!(
         landed_after,
         Some(0x26),
         "the landing comes 0x26 frames after the crossing frame"
     );
-    // The post-warp hold: the pad stays off for 0x28 more frames.
-    drive(&mut host, PadButton::Down.mask(), 0x20);
-    let ms = &host.world.actors[s].move_state;
+    assert_eq!(slot(&host), Some(1), "idle on the landing frame");
+    // The post-warp hold: the pad stays off for 0x28 more frames, idling.
+    let mut pad_back_after = None;
+    for f in 1..=0x30u32 {
+        host.world.set_pad(PadButton::Down.mask());
+        host.tick().expect("tick");
+        if slot(&host) == Some(0) {
+            pad_back_after = Some(f);
+            break;
+        }
+        let ms = &host.world.actors[s].move_state;
+        assert_eq!(
+            (ms.world_x, ms.world_z),
+            EXIT_LANDING,
+            "frame {f}: the hold keeps the pad off after the landing"
+        );
+        assert_eq!(slot(&host), Some(1), "frame {f}: idle through the hold");
+    }
     assert_eq!(
-        (ms.world_x, ms.world_z),
-        EXIT_LANDING,
-        "the hold keeps the pad off after the landing"
+        pad_back_after,
+        Some(0x28),
+        "the walk clip returns 0x28 frames after the landing, the first frame \
+         the pad controller runs (retail: landing vsync 98, pad back 138)"
     );
 }

@@ -2698,8 +2698,16 @@ impl World {
         }
         // A kind-0 warp in flight, and the hold its landing leaves, keep the
         // pad controller off entirely (`0x801D16C8..0x801D16E4`): the player
-        // stands through the fade instead of walking out of it.
+        // stands through the fade instead of walking out of it - and stands
+        // idle. Retail's system channel stores the idle base `2` into
+        // `_DAT_8007BDD8` on every field tick after the settle has read it
+        // (`sw v0,-0x4228(v1)` at `0x80039D94` in `FUN_80039B7C`, ticked from
+        // `FUN_801DA51C` by `jal 0x80039B7C` at `0x801DA7BC`), so a tick that
+        // skips the controller leaves `2` for the settle to bind. While the
+        // controller runs it overwrites the base first, which is why the
+        // reset is modelled only here.
         if vm::field_warp_tile::pad_suppressed(&self.locomotion.warp) {
+            self.field_system_channel_clip_reset();
             return;
         }
 
@@ -3237,6 +3245,22 @@ impl World {
             return;
         }
         self.field_settle_clip_tail();
+    }
+
+    /// The system channel's per-tick clip-base reset: `FUN_80039B7C` stores
+    /// the idle base `2` into `_DAT_8007BDD8` (`0x80039D90..0x80039D94`) on
+    /// the arm its actor's `+0x9C == 0` and the scene control block's `+0xA`
+    /// counter `< 2` select, once per field tick after the player's settle
+    /// has read the base. The port applies it on the ticks the pad
+    /// controller is skipped by a kind-0 warp, the ones where it is visible
+    /// (the controller rewrites the base before the settle on every other
+    /// tick). Only the base is written; the party-bank bit is untouched.
+    ///
+    /// REF: FUN_80039B7C (the idle-base store of its `+0x9C == 0` arm, run
+    /// for the system channel `0x8007E694`; the rest of the routine is the
+    /// per-actor script / dialogue stepper)
+    pub(crate) fn field_system_channel_clip_reset(&mut self) {
+        self.locomotion.clip_base = vm::field_player_clip::BASE_IDLE;
     }
 
     /// The anim-clip tail of the settle (`FUN_801D1BA0` at
