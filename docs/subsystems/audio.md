@@ -1114,7 +1114,15 @@ Fighter's path.
 as the field state `s3_rimelm_freeroam`). So at the dome's hub the region holds
 the field bank intact and no class-2 bank at all. Whether a round (mode
 `0x14` / `0x15`) loads PROT 0869 over it is not captured: the only PCSX-Redux
-dome state carries a patched resident SCUS.
+dome state carries a patched resident SCUS. The arena enters a round by storing
+mode word `0x14`, which is what `FUN_8001DCF8`'s close arm tests, so the round
+is read as taking the battle residency ([`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)).
+
+**Engine port.** `SfxBankResidency` tracks slot 2's and slot 6's enables
+separately (`slot_open`), so the Baka Fighter state - both open, slot 6 stale
+(`stale_open_slot`) - is represented; the hosts stage only the bank the region
+holds, so a cue on the stale slot is silent rather than played through the wrong
+header. The port's dome mode is a leg and takes the battle arm.
 
 ## XA-ADPCM
 

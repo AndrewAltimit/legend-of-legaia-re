@@ -357,17 +357,34 @@ battle and a category-2 cue in the field therefore make no sound. That is also
 what makes `FUN_80035BD0(0)` - which both the field and menu overlays call before
 a push - a cancel in those modes: descriptor `0x00` is category 2.
 
-Two readings are inference rather than read off a call chain. The Muscle Dome's
-rounds run the battle frame driver `FUN_80046A20`, which calls the battle scene
-loader at `0x8004711C`, so the dome is taken to hold the class-2 bank; and
-because its warp clears the latch without closing slot 6, slot 6's header is
-still open over the class-2 samples there. The dance's PROT 1231 (234 400
-bytes of samples) is larger than the region's gap to slot 3's base and overruns
-it, legal while slot 3 is closed.
+The battle mode init's close arm is keyed on the **mode word**, not on the
+argument: `FUN_8001DCF8` reads `0x8007B83C` and runs the close-6-and-3 /
+clear-latch arm only when it holds `0x14` (`0x8001DF74..0x8001DF80`). A minigame
+overlay calls it under `0x18`, so the arm is skipped there, and after the
+overlay's own slot-2 load **both** slots are enabled over the one region -
+slot 6's header (PROT 0876's) over slot 2's samples. Retail captures pin both
+sides ([audio.md](../subsystems/audio.md#retail-capture-of-the-slot-2--slot-6-residency)):
+the Baka Fighter's path shows the stale-header state from the overlay's load on,
+and the Muscle Dome's hub (mode `0x19`) holds slot 2 **closed** and slot 6 open
+over PROT 0876 - the field bank the warp left behind, not the class-2 bank. An
+earlier reading here took the dome as a whole to hold the class-2 bank; that
+holds for a round at most. A round is an ordinary battle entered by the arena's
+store of mode word `0x14` (`0x801D15B8`, PROT 0977,
+[minigame-muscle-dome.md](../subsystems/minigame-muscle-dome.md#what-ends-a-leg-a-knockout-and-nothing-else)),
+so it takes the battle arm - slot 6 closed, PROT 0869 staged into slot 2 - by
+the same code path the field-to-battle capture observes; a round's residency
+itself is not captured. The dance's PROT 1231 (234 400 bytes of samples) is
+larger than the region's gap to slot 3's base and overruns it, legal while slot
+3 is closed.
 
-Port: `legaia_engine_core::world::World::sync_sfx_residency` models the latch
-and the region's occupant off the world's mode edges, and op `0x36` sub `3` runs
-`World::release_field_audio`. Both play hosts restage the region from it every
+Port: `legaia_engine_core::world::World::sync_sfx_residency` models the latch,
+each slot's enable (`SfxBankResidency::slot_open`) and the region's occupant off
+the world's mode edges, and op `0x36` sub `3` runs `World::release_field_audio`.
+The port's Muscle Dome mode is a leg and takes the battle arm; it has no hub
+mode. A slot left open over another bank's samples
+(`SfxBankResidency::stale_open_slot`, slot 6 in a minigame) is left unstaged by
+the hosts, so its cues are silent where retail plays the stale header over the
+wrong samples. Both play hosts restage the region from it every
 tick (`AudioBgmDirector::sync_shared_region` on the native window,
 `LegaiaRuntime::sync_shared_region` on the browser play page), above the slot-0
 system bank inside the reserved SFX window, and resolve a routed cue to its own

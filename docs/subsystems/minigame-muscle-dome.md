@@ -1465,9 +1465,13 @@ shared impact.
 `6` open over PROT 0876's header - the field bank the warp left behind, since the
 warp clears the latch without closing anything
 ([capture](audio.md#retail-capture-of-the-slot-2--slot-6-residency)). So a
-category-`2` cue (row `0x09` included) is silent at the hub, and the class-2 bank
-is present, if at all, only once a round's battle scene loader has staged it -
-which no retail capture has yet observed.
+category-`2` cue (row `0x09` included) is silent at the hub. A round is entered
+through the arena's store of mode word `0x14` (below), the value
+`FUN_8001DCF8`'s close-6 / clear-latch arm is keyed on, so a round takes the
+ordinary battle residency - slot 6 closed, PROT 0869 staged into slot 2 - by the
+same path the field-to-battle capture observes; no retail capture of a round's
+residency exists yet. The port's `SceneMode::MuscleDome` is a leg, so
+`World::sync_sfx_residency` gives it the battle arm.
 
 ### Which blip is which (`0x21` / `0x22` / `0x23`)
 

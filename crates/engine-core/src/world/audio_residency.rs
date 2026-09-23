@@ -13,7 +13,7 @@
 //! | battle mode init | `FUN_8001DCF8` `0x8001DF74..0x8001DFC0` (next mode `0x14`) | closes slots `6` and `3`, clears the latch |
 //! | battle scene loader | `FUN_800520F0` `0x80052378..0x800523AC` | loads raw `0x367` (PROT 0869; `0x36D` = 0875 when `DAT_8007BD11 == 4`) into slot `2` |
 //! | minigame warp | `FUN_80025980` `0x800259A4` | clears the latch (closes nothing) |
-//! | minigame overlay init | fishing `0x801CF29C`, slot machine `0x801CF064`, dance `0x801CF428`, Baka `0x801CF248` | loads the minigame's own bank into slot `2` |
+//! | minigame overlay init | fishing `0x801CF29C`, slot machine `0x801CF064`, dance `0x801CF428`, Baka `0x801CF248` | loads the minigame's own bank into slot `2`; `FUN_8001DCF8` runs under mode word `0x18`, so its close arm (keyed on `0x14`, `0x8001DF74..0x8001DF80`) does not, and slot `6` stays open |
 //! | side-band teardown | `FUN_801D8450` (field-VM op `0x36` sub `3`) | closes slot `6`, clears the latch |
 //! | side-band request `>= 3000` / `1000..=1999` | `FUN_800243F0` `0x800248B4..0x8002494C` | streams a `vab_01` bank into slot `6`, over the field bank |
 //!
@@ -21,6 +21,17 @@
 //! change without a reload, and what makes it come back after a battle, a
 //! minigame or a side-band teardown: each of those clears it, and the next
 //! field init sees it clear.
+//!
+//! The two slots are opened and closed separately, so both can be open over
+//! the one region: on the Baka Fighter's path the warp leaves slot `6` open
+//! and the overlay loads PROT 0869 into slot `2`, and from then on slot `6`'s
+//! header (PROT 0876's) sits over slot `2`'s samples (retail capture,
+//! `docs/subsystems/audio.md`). [`SfxBankResidency::slot_open`] tracks each
+//! slot; [`SfxBankResidency::shared`] names the bank whose samples the region
+//! holds. The hosts stage that one bank under its own slot and leave the
+//! other slot unstaged, so a cue routed to a slot left open over a foreign
+//! bank's samples is silent in the port where retail plays the stale header
+//! over the wrong samples.
 //!
 //! A closed slot is silent, not rerouted: the cue drainer `FUN_80016B6C` skips
 //! a cue whose mixer record's `+0xB` enable byte is zero (`lb v0,0xb(v1)` /
@@ -77,6 +88,10 @@ pub struct SfxBankResidency {
     pub field_bank_latch: bool,
     /// The bank the shared region holds, `None` while neither slot is open.
     pub shared: Option<SharedRegionBank>,
+    /// Slot `2`'s mixer-record enable (`0x80091508 + 2 * 12 + 0xB`).
+    slot2_open: bool,
+    /// Slot `6`'s mixer-record enable (`0x80091508 + 6 * 12 + 0xB`).
+    slot6_open: bool,
     /// The mode the last [`World::sync_sfx_residency`] saw.
     last_mode: Option<SceneMode>,
     /// The scene the last field init ran for.
@@ -87,32 +102,78 @@ pub struct SfxBankResidency {
 }
 
 impl SfxBankResidency {
+    /// Whether VAB slot `slot` (`2` or `6`) is open. `false` for any other
+    /// slot.
+    pub fn slot_open(&self, slot: u8) -> bool {
+        match slot {
+            2 => self.slot2_open,
+            6 => self.slot6_open,
+            _ => false,
+        }
+    }
+
+    /// The open slot whose header is **not** the region's current bank -
+    /// retail's stale-header state (slot `6` over a minigame's slot-2
+    /// samples). `None` when at most one slot is open.
+    pub fn stale_open_slot(&self) -> Option<u8> {
+        let owner = self.shared.map(|b| b.slot)?;
+        [2u8, 6]
+            .into_iter()
+            .find(|&s| s != owner && self.slot_open(s))
+    }
+
+    /// `FUN_8001FF58` on slot 2 or 6: the enable drops, and the region's bank
+    /// goes with it when that slot owned it.
+    fn close(&mut self, slot: u8) {
+        match slot {
+            2 => self.slot2_open = false,
+            6 => self.slot6_open = false,
+            _ => return,
+        }
+        if self.shared.is_some_and(|b| b.slot == slot) {
+            self.shared = None;
+        }
+    }
+
+    /// `FUN_8001FC00` + `FUN_8001E54C` into slot 2 or 6: the region takes the
+    /// bank and the slot opens. The other slot's enable is untouched.
+    fn load(&mut self, bank: SharedRegionBank) {
+        match bank.slot {
+            2 => self.slot2_open = true,
+            6 => self.slot6_open = true,
+            _ => return,
+        }
+        self.shared = Some(bank);
+    }
+
     /// `FUN_801D6704`'s bank arm: slot 2 closes; the field bank reloads when
     /// the latch is clear.
     pub fn field_init(&mut self) {
-        if self.shared.is_some_and(|b| b.slot == 2) {
-            self.shared = None;
-        }
+        self.close(2);
         if !self.field_bank_latch {
-            self.shared = Some(SharedRegionBank::FIELD);
+            self.load(SharedRegionBank::FIELD);
             self.field_bank_latch = true;
         }
     }
 
-    /// `FUN_8001DCF8`'s next-mode-`0x14` arm (close 6 and 3, clear the latch)
-    /// followed by `FUN_800520F0` loading the class-2 bank into slot 2.
+    /// `FUN_8001DCF8`'s mode-word-`0x14` arm (close 6 and 3, clear the latch,
+    /// `0x8001DF74..0x8001DFC0`) followed by `FUN_800520F0` loading the
+    /// class-2 bank into slot 2.
     pub fn battle_init(&mut self) {
+        self.close(6);
         self.field_bank_latch = false;
-        self.shared = Some(SharedRegionBank::CLASS2);
+        self.load(SharedRegionBank::CLASS2);
     }
 
-    /// `FUN_80025980` (clear the latch) followed by the minigame overlay's
-    /// own slot-2 load. `bank` is `None` for a minigame that loads nothing
-    /// into slot 2 (the Muscle Dome's arena init loads slots 3 and 5 only).
+    /// `FUN_80025980` (clear the latch, close nothing) followed by the
+    /// minigame overlay's own slot-2 load. Slot 6 keeps whatever enable it
+    /// had, because the overlay's `FUN_8001DCF8` call runs under mode word
+    /// `0x18` and skips the close arm. `bank` is `None` for a minigame that
+    /// loads nothing into slot 2.
     pub fn minigame_warp(&mut self, bank: Option<u32>) {
         self.field_bank_latch = false;
         if let Some(prot_entry) = bank {
-            self.shared = Some(SharedRegionBank {
+            self.load(SharedRegionBank {
                 slot: 2,
                 prot_entry,
             });
@@ -123,9 +184,7 @@ impl SfxBankResidency {
     /// `0x16` (host side), closes slot 6, clears `_DAT_8007BA88` and the
     /// latch. The field bank stays gone until the next field init.
     pub fn side_band_teardown(&mut self) {
-        if self.shared.is_some_and(|b| b.slot == 6) {
-            self.shared = None;
-        }
+        self.close(6);
         self.field_bank_latch = false;
     }
 
@@ -137,7 +196,7 @@ impl SfxBankResidency {
             return;
         }
         self.last_slot6_request = Some(request);
-        self.shared = Some(SharedRegionBank {
+        self.load(SharedRegionBank {
             slot: 6,
             prot_entry,
         });
@@ -145,15 +204,22 @@ impl SfxBankResidency {
 }
 
 /// The slot-2 bank a minigame mode's overlay init loads, `None` for a mode
-/// that is not a warp minigame. The Muscle Dome's rounds run the battle
-/// frame driver, whose scene loader `FUN_800520F0` (called from
-/// `FUN_80046A20` at `0x8004711C`) loads the class-2 bank.
+/// that is not a warp minigame.
+///
+/// [`SceneMode::MuscleDome`] is not one: the port's dome mode is a **leg** (a
+/// round), and retail runs a round as an ordinary battle - the arena stores
+/// mode word `0x14` (`0x801D15B8`, PROT 0977), so `FUN_8001DCF8`'s close arm
+/// runs and the battle scene loader stages the class-2 bank, the
+/// [`SfxBankResidency::battle_init`] path. The arena's hub (retail mode
+/// `0x19`) holds slot 2 closed and slot 6 open over the field bank the warp
+/// left (retail capture); the port has no hub mode - its hub is the field it
+/// returns to, whose init reloads that bank.
 pub fn minigame_slot2_bank(mode: SceneMode) -> Option<Option<u32>> {
     Some(match mode {
         SceneMode::Fishing => Some(FISHING_SLOT2_PROT_INDEX),
         SceneMode::SlotMachine => Some(SLOT_MACHINE_SLOT2_PROT_INDEX),
         SceneMode::Dance => Some(DANCE_SLOT2_PROT_INDEX),
-        SceneMode::BakaFighter | SceneMode::MuscleDome => Some(SLOT2_CLASS2_BANK_PROT_INDEX),
+        SceneMode::BakaFighter => Some(SLOT2_CLASS2_BANK_PROT_INDEX),
         _ => return None,
     })
 }
@@ -185,7 +251,9 @@ impl World {
                     self.audio.residency.last_slot6_request = None;
                 }
             }
-            SceneMode::Battle if entered => self.audio.residency.battle_init(),
+            SceneMode::Battle | SceneMode::MuscleDome if entered => {
+                self.audio.residency.battle_init()
+            }
             m if entered => {
                 if let Some(bank) = minigame_slot2_bank(m) {
                     self.audio.residency.minigame_warp(bank);
@@ -268,6 +336,47 @@ mod tests {
         assert_eq!((b.slot, b.prot_entry), (2, 1197));
         w.mode = SceneMode::Field;
         assert_eq!(w.sync_sfx_residency(), Some(SharedRegionBank::FIELD));
+    }
+
+    #[test]
+    fn baka_leaves_slot_six_open_over_the_class2_samples() {
+        let mut w = world_in(SceneMode::Field, "town01");
+        w.sync_sfx_residency();
+        assert!(w.audio.residency.slot_open(6));
+        w.mode = SceneMode::BakaFighter;
+        assert_eq!(w.sync_sfx_residency(), Some(SharedRegionBank::CLASS2));
+        let r = &w.audio.residency;
+        assert!(r.slot_open(2) && r.slot_open(6), "both enables up");
+        assert_eq!(r.stale_open_slot(), Some(6));
+        assert!(!r.field_bank_latch);
+        // The field init closes 2 and reloads 0876 into 6.
+        w.mode = SceneMode::Field;
+        assert_eq!(w.sync_sfx_residency(), Some(SharedRegionBank::FIELD));
+        let r = &w.audio.residency;
+        assert!(!r.slot_open(2) && r.slot_open(6));
+        assert_eq!(r.stale_open_slot(), None);
+    }
+
+    #[test]
+    fn a_dome_leg_is_a_battle_for_the_region() {
+        let mut w = world_in(SceneMode::Field, "town01");
+        w.sync_sfx_residency();
+        w.mode = SceneMode::MuscleDome;
+        assert_eq!(w.sync_sfx_residency(), Some(SharedRegionBank::CLASS2));
+        let r = &w.audio.residency;
+        assert!(r.slot_open(2) && !r.slot_open(6), "the 0x14 close arm ran");
+        assert_eq!(r.stale_open_slot(), None);
+        assert_eq!(minigame_slot2_bank(SceneMode::MuscleDome), None);
+    }
+
+    #[test]
+    fn battle_closes_slot_six() {
+        let mut w = world_in(SceneMode::Field, "town01");
+        w.sync_sfx_residency();
+        w.mode = SceneMode::Battle;
+        w.sync_sfx_residency();
+        assert!(!w.audio.residency.slot_open(6));
+        assert!(w.audio.residency.slot_open(2));
     }
 
     #[test]
