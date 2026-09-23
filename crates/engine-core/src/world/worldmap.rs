@@ -509,19 +509,20 @@ impl World {
     /// Consume the world-map emitter gate and, when armed, build this
     /// frame's horizon bands.
     ///
-    /// The trig samples come from [`Self::cos_lut`] - the engine's copy of
-    /// the `0x1000`-entry table retail reaches through `_DAT_8007B81C`. An
-    /// empty LUT (no disc loaded) samples as zero, which degrades the bands
-    /// to their scale-only extents rather than panicking.
+    /// The trig samples come from [`Self::sin_lut`] - the engine's copy of
+    /// the `0x1000`-entry table retail reaches through `_DAT_8007B81C`
+    /// (`lw v0,-0x47e4(v0)` at `0x801D7F9C`), which is the **sine** view.
+    /// This read the cosine view while both LUTs were left empty, which hid
+    /// the quarter-revolution phase error; an empty LUT samples as zero.
     ///
     /// REF: FUN_801d7ea0
     fn tick_world_map_horizon(&mut self) {
-        // Take the controller out so the emitter can borrow `self.cos_lut`.
+        // Take the controller out so the emitter can borrow `self.sin_lut`.
         let Some(mut ctrl) = self.world_map.ctrl.take() else {
             return;
         };
         let frame_step = self.clock.frame_step;
-        let lut = &self.cos_lut;
+        let lut = &self.sin_lut;
         ctrl.run_horizon_emitter(frame_step, &|i| lut.get(i as usize).copied().unwrap_or(0));
         self.world_map.ctrl = Some(ctrl);
     }
