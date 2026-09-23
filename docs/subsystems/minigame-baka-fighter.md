@@ -1272,9 +1272,10 @@ The "item-acquisition caption" once filed here as `FUN_801f90dc` is not a hub
 member at all. Every dump at `0x801F90DC` is `dump-extent-attribution.csv`
 class `misbased` - no image holds those bytes at that VA - and they are the
 menu overlay's (PROT 0899) shared item-info panel `FUN_801D0F1C` printed
-`0x281C0` high: the first 39 instructions match `overlay_menu_801d0f1c.txt`
-operand for operand, and that dump carries the whole 221-instruction body the
-Baka print stopped short of. `engine-ui`'s pause lists port it live. What the
+`0x281C0` high: the first sixty-three instructions match
+`overlay_menu_801d0f1c.txt` operand for operand (the one branch among them
+differs by exactly that delta), the Baka print holds zeros from there on, and
+the menu dump carries the whole body the Baka print stops short of. `engine-ui`'s pause lists port it live. What the
 panel reads: `DAT_801e46b0` is an **item id** and the two strings it draws are
 the static `SCUS_942.54` item table's own record fields: the routine bases at
 `0x80074368` with a `0x0c` stride and reads words `1` and `2`, which is
