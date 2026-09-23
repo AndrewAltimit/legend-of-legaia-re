@@ -1946,6 +1946,9 @@ impl LegaiaRuntime {
         // pool's render step through the follow camera, the native window's
         // `take_field_fog_prims` twin ([`crate::play_field_fx`]).
         prims.extend(self.tick_field_fog_prims());
+        // Move-VM strip spans (`FUN_801D31B0`), same camera, same kernel as
+        // the native window's `take_move_strip_prims`.
+        prims.extend(self.tick_move_strip_prims());
         // The battle value readout - retail's 24x24 numeral cells and the
         // `N HIT` / `TOTAL` counter cluster - off the resident effect atlas,
         // through the same `battle_numerals` builder the native window emits.

@@ -36,7 +36,7 @@ A five-form reference scan over `SCUS_942.54`, every based overlay image and eve
 
 That closes a question about the port. The engine hosts exactly that one caller: `move_vm::dispatch`'s `0x2F` arm calls `MoveHost::ext_dispatch`, whose default body is `move_vm::ext::ext_default_dispatch`, and `engine-core::world::vm_hosts` inherits the default - so the dispatcher runs for every actor the world ticks. `move_vm_overlay_ext`'s standalone `step` / `walk` walker is a second surface over the same routine with no retail caller of its own to be wired at. Its `canonical_size` table is live on its own account.
 
-Each sub-handler returns the size in u16 units. Sub-handlers at `0x801D31B0` (per-scanline POLY_FT4 strip emitter), `0x801D32F8`, `0x801D3444`, `0x801D3748`, `0x801D52D0`, etc. are members of the 0897 table.
+Each sub-handler returns the size in u16 units. The one arm that calls out to a routine of its own is `0x2C`: `jal 0x801D31B0` at `0x801D44C8`, the [scanline strip emitter](#the-scanline-strip-emitter-0x2b--0x2c--0x2d) below. (`0x801D32F8`, `0x801D3444` and `0x801D3748`, once listed here as further sub-handlers, are interior addresses of that emitter and of the dispatcher, not table members.)
 
 ## Instruction widths
 
@@ -175,9 +175,36 @@ Sub-ops `0x3A`, `0x3B`, `0x3C` close out the player-relative cluster:
 - `0x3B` looks up the position of party-member `op[2]` and writes the world-XYZ triple into `bytecode[state.pc + op[3] + 4..+6]`. Pre-clears the dst slots before the lookup so a no-table host still gets the zero-sentinel guarantee. When the lookup returns `None`, the size is `4` (skip the follow-up payload). Engines populate `world.party.party_actor_slots: Vec<Option<u8>>` with the live party-to-actor-slot map.
 - `0x3C` writes the immediate fade colour to scratchpad globals (`ticks == 0`) or schedules a per-frame ramp (`ticks > 0`). The world records the request in `world.presentation.pending_fade: Option<FadeRequest>` so engines can drain it each frame to drive the screen overlay.
 
+## The scanline strip emitter (`0x2B` / `0x2C` / `0x2D`)
+
+Sub-op `0x2C` calls `FUN_801D31B0` (PROT 0897, `0x801D31B0..0x801D362C`) with the actor and the instruction pointer, and the routine never reads the pointer: it overwrites `a1` before its first use (`addiu a1,sp,0x30` at `0x801D31C4`), so the instruction's five operand words are padding the width skips. `FUN_801D31B0` is field-overlay code with exactly one reference on the disc, that `jal` - the "shared across dialog, cutscene and world-map overlays" reading came from the same capture-label aliasing the dispatcher's residency section retires. `see ghidra/scripts/funcs/overlay_0897_801d31b0.txt`.
+
+What it draws is a textured object built of one-pixel-tall rows:
+
+1. `FUN_8005BA38` (`RotTransPers`) projects the actor's `+0x14` position for the screen centre `(sx, sy)` and the OT depth; a zero depth ends the call.
+2. The billboard projector `FUN_800195A8` projects a camera-facing box of half-extent `(slab+0x18, slab+0x1A)` about the same point. The routine keeps the box's top-edge corners and its bottom row.
+3. From the bottom row up to the top edge, each row's width is the top edge scaled about `sx` by `cos(((sy - y) << 10) / (sy - y0 + 2))` (the cosine view `_DAT_8007B7F8`), optionally wobbled by `sin((y - sy) * slab+0x1E -/+ actor+0x26) * slab+0x1C >> 12` (the sine view `_DAT_8007B81C`, left edge on `-`, right on `+`).
+4. The row samples one texel row `v`, scrolled by `actor+0x28` and wrapped into the slab's `v0..=v1` band, and is tiled with `POLY_FT4` spans of the slab's `u0..=u1` width, scrolled by `actor+0x24`, one texel per pixel, clipped to the row and to the draw-area halfwords `0x1F800388..0x1F80038E`.
+5. Every span is opaque (`0x2C808080`) at the slab's tpage and CLUT; a `SetDrawMode` packet linked last at the same slot installs the tpage.
+
+The slab is the actor's `+0x9C` window:
+
+| slab | actor | field |
+|---|---|---|
+| `+0x0C..+0x12` | `+0xA8..+0xAE` | texture rect `u0, v0, u1, v1` |
+| `+0x14` / `+0x16` | `+0xB0` / `+0xB2` | tpage / CLUT |
+| `+0x18` / `+0x1A` | `+0xB4` / `+0xB6` | box half-extent |
+| `+0x1C` / `+0x1E` | `+0xB8` / `+0xBA` | wobble amplitude / frequency |
+
+So sub-ops `0x2B` (set) and `0x2D` (add), which write `slab+0x18..+0x1E`, set a box size and a wobble - not "UV bounds", as they were long labelled.
+
+**Nothing on the disc issues `0x2C`.** The disc-gated census `crates/engine-core/tests/move_ext_strip_census_disc.rs` walks every CDNAME scene's prescript stager records through the move-VM decoder (the carrier the field VM installs through `FUN_800252EC`) and scans every PROT entry's type-`0x05` MOVE slot for the aligned `[0x002F, 0x002C]` pair. It decodes thousands of extension instructions, `0x2B` and `0x2D` among them, and no `0x2C` in either carrier; the uncompressed PROT entries hold no move-shaped `0x2F 0x2C` either. `0x2E`, the dispatcher's other packet builder, is absent the same way.
+
+Port: `legaia_engine_vm::move_ext_strip::emit_strip` is the row walk; the engine-core field host captures each `0x2C` execution (`MoveVmGlobals::push_strip_request`), and both play hosts drain the queue on their draw path through the one kernel `legaia_engine_ui::move_strip::move_strip_prims`, which makes the two projections under the frame's field camera. One deliberate difference: retail's wrap loops never terminate for a slab whose `u` or `v` span is not positive, and the port declines such a slab instead.
+
 ## Sub-op coverage in `crates/engine-vm`
 
 **61/61 dispatched** (every entry of the `FUN_801D362C` JT at `0x801CE868`). Some sub-ops have host-trait stubs that fall through to no-ops on the default `MoveHost` impl:
 
-- The world wires the ones with natural state - `ext_compute_angle`, `ext_party_member_lookup`, `ext_fade_color`, `ext_query_flag_bank`, `ext_set_flag_bank`, `ext_clear_flag_bank`, `ext_scratchpad_*`, `ext_set_8007b9d8`.
-- The remaining stubs (`ext_debug_world`, `ext_func56798`, `ext_midpoint_set`, `ext_func801d31b0`, `ext_emit_ot_packet`, `ext_world_struct_*`, `ext_17`, `ext_20`) carry pure rendering / opaque-PsyQ side-effects and are best overridden per engine.
+- The world wires the ones with natural state - `ext_compute_angle`, `ext_party_member_lookup`, `ext_fade_color`, `ext_query_flag_bank`, `ext_set_flag_bank`, `ext_clear_flag_bank`, `ext_scratchpad_*`, `ext_set_8007b9d8`, and `ext_func801d31b0` (the strip emitter above).
+- The remaining stubs (`ext_debug_world`, `ext_func56798`, `ext_midpoint_set`, `ext_emit_ot_packet`, `ext_world_struct_*`, `ext_17`, `ext_20`) carry pure rendering / opaque-PsyQ side-effects and are best overridden per engine.

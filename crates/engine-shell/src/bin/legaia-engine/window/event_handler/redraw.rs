@@ -693,6 +693,8 @@ impl PlayWindowApp {
         // (`FUN_8003F348` runs inside retail's field render pass, so it is a
         // draw-path step on both hosts). Empty outside a gated field scene.
         let field_fog_prims = self.take_field_fog_prims();
+        // Move-VM strip spans (`FUN_801D31B0`), through the same camera.
+        let move_strip_prims = self.take_move_strip_prims();
         if let (Some(r), Some(vram), Some(atlas)) = (
             self.win.renderer.as_ref(),
             self.uploaded_vram.as_ref(),
@@ -2465,6 +2467,7 @@ impl PlayWindowApp {
             // The field fog sheets (`fog_particles`), through the same
             // `fog_puff_prim` wrapper the browser play page composites with.
             screen_prims.extend(field_fog_prims);
+            screen_prims.extend(move_strip_prims);
             screen_prims.extend(self.weapon_trail_screen_prims(r));
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel

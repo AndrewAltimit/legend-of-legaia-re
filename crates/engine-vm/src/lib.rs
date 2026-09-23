@@ -166,6 +166,7 @@ pub mod menu_actor_seed;
 pub mod motion_pause;
 pub mod motion_vm;
 pub mod move_buffer;
+pub mod move_ext_strip;
 pub mod move_no_effect_guard;
 pub mod move_vm;
 pub mod move_vm_overlay_ext;

@@ -69,6 +69,7 @@ pub mod billboard;
 pub mod field_party_hud;
 pub mod gte;
 pub mod minigame_fx;
+pub mod move_strip;
 pub mod other_game_hud;
 pub mod pause_menu;
 pub mod ringside_backdrop;

@@ -146,8 +146,10 @@ pub trait MoveHost {
     /// slot. The VM only fires this when `ticks == 0`.
     fn ext_scratchpad_write(&mut self, _slot_index: i16, _value: i16) {}
 
-    /// Extension sub-op 0x2C - `FUN_801D31B0(actor, op)` - overlay-resident
-    /// helper. Default no-op.
+    /// Extension sub-op 0x2C - `FUN_801D31B0(actor, op)`, the scanline strip
+    /// emitter ([`crate::move_ext_strip`]). It reads the actor's slab window
+    /// and render banks, never `op`. Default no-op; the engine-core field
+    /// host captures a [`crate::move_ext_strip::StripRequest`] for the draw.
     fn ext_func801d31b0(&mut self, _state: &mut ActorState, _operand: &[u16]) {}
 
     /// Extension sub-op 0x2E - `func_0x80059010(...)` and friends - emits

@@ -544,6 +544,32 @@ impl PlayWindowApp {
             .collect()
     }
 
+    /// This frame's move-VM strip spans: every extension sub-op `0x2C`
+    /// execution the world captured since the last draw (the scanline strip
+    /// emitter `FUN_801D31B0`), projected through the same follow camera as
+    /// the fog sheets by the shared `move_strip_prims` kernel the browser
+    /// play page draws them with. Drained every frame, drawn only in a field
+    /// scene - the extension dispatcher exists only in the field overlay.
+    pub(super) fn take_move_strip_prims(
+        &mut self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
+        let requests = self.session.host.world.move_vm.take_strip_requests();
+        let world = &self.session.host.world;
+        if requests.is_empty() || world.mode != SceneMode::Field {
+            return Vec::new();
+        }
+        let center = [
+            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+        ];
+        let frame = resolve_field_camera(world, &self.session.camera, None, center);
+        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
+            return Vec::new();
+        };
+        legaia_engine_render::move_strip::move_strip_prims(&requests, &view)
+    }
+
     pub(super) fn weapon_trail_screen_prims(
         &self,
         r: &legaia_engine_render::Renderer,

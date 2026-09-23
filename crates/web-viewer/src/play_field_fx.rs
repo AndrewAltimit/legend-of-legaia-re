@@ -47,6 +47,29 @@ impl LegaiaRuntime {
     }
 }
 
+impl LegaiaRuntime {
+    /// This tick's move-VM strip spans (the extension sub-op `0x2C` callee
+    /// `FUN_801D31B0`) as screen primitives - the native window's
+    /// `take_move_strip_prims` twin, through the same shared kernel and the
+    /// same follow camera as the fog sheets. The captured requests drain on
+    /// every call; only a field scene draws them.
+    pub(crate) fn tick_move_strip_prims(&mut self) -> Vec<ScreenPrim> {
+        let Some(host) = self.scene_host.as_mut() else {
+            return Vec::new();
+        };
+        let world = &mut host.world;
+        let requests = world.move_vm.take_strip_requests();
+        if requests.is_empty() || world.mode != SceneMode::Field {
+            return Vec::new();
+        }
+        let frame = resolve_field_camera(world, &self.camera, None, [0.0, 0.0]);
+        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
+            return Vec::new();
+        };
+        legaia_engine_ui::move_strip::move_strip_prims(&requests, &view)
+    }
+}
+
 #[wasm_bindgen]
 impl LegaiaRuntime {
     /// Sheets the fog pool emitted on the last tick (two per drawn
