@@ -286,7 +286,7 @@ impl World {
             // MANs carry four story-state variants of the overworld region
             // set, and only one is live.
             tracker.select_group(|flag| self.system_flag_test(flag));
-            let roll = tracker.on_step(wx, wz, || self.next_rng());
+            let roll = tracker.on_step(wx, wz, || self.next_rand());
             self.encounters.step_counter = tracker.counter();
             self.world_map.region_tracker = Some(tracker);
             if let Some(roll) = roll {
@@ -360,7 +360,7 @@ impl World {
     /// REF: FUN_801DDF48 (ported as
     /// [`crate::region_encounter::encounter_counter_reroll`])
     pub fn reroll_encounter_step_counter(&mut self) {
-        let v = crate::region_encounter::encounter_counter_reroll(|| self.next_rng() & 0x7FFF);
+        let v = crate::region_encounter::encounter_counter_reroll(|| self.next_rand());
         self.set_encounter_step_counter(v);
     }
 
@@ -371,9 +371,8 @@ impl World {
     /// [`crate::region_encounter::encounter_counter_scene_entry_top_up`])
     pub fn top_up_encounter_step_counter(&mut self) {
         let c = self.encounters.step_counter;
-        let v = crate::region_encounter::encounter_counter_scene_entry_top_up(c, || {
-            self.next_rng() & 0x7FFF
-        });
+        let v =
+            crate::region_encounter::encounter_counter_scene_entry_top_up(c, || self.next_rand());
         self.set_encounter_step_counter(v);
     }
 

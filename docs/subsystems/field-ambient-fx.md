@@ -714,7 +714,9 @@ then fails on almost every frame and passes on all 24 draws of one frame,
 which dropped fifty-odd records into the pool at once past the stale count -
 the engine's `vell` pool read 40 to 62 against retail's 21 to 38 until the
 element channel shaped its draws the BIOS way
-(`engine-core::world::cutscene_elements::bios_rand_shape`). Shaped, the
+(`engine-vm::battle_formulas::bios_rand_shape`, the one shaping every
+world draw that stands in for a `jal 0x80056798` goes through -
+`World::next_rand`). Shaped, the
 engine's `vell` pool over 2400 ticks after a 600-tick settle reads 19 to
 35, mean 26.4, at most twelve spawns in one tick
 (`w1h_fog_gate_census.rs`, `vell_fog_density_tracks_the_retail_poll`).

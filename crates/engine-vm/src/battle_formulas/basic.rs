@@ -15,6 +15,21 @@ pub fn psyq_rand_step(seed: &mut u32) -> u16 {
     ((*seed >> 16) & 0x7FFF) as u16
 }
 
+/// The value BIOS `rand()` (`A(2Fh)`, the thunk `FUN_80056798`:
+/// `li t2,0xA0; jr t2; li t1,0x2F`) returns for an LCG state: its high
+/// half, `(state >> 16) & 0x7FFF`.
+///
+/// Every engine draw that stands in for a retail `jal 0x80056798` shapes
+/// its generator's raw state through this before a consumer sees it. Retail
+/// callers test the **low** bits of the result (`rand & 1`, `& 7`, `& 0xF`,
+/// `% n`) and divide it as a 15-bit quantity; a raw 32-bit LCG state has a
+/// low bit of period 2 and a low nibble of period 16, and a sign bit, so
+/// handing it over unshaped turns coin flips into alternations, bursts a
+/// `& 0xF` gate once every sixteen draws, and makes a signed `%` negative.
+pub fn bios_rand_shape(state: u32) -> u32 {
+    (state >> 16) & 0x7FFF
+}
+
 /// Spirit super-art damage. Hard-coded per battle-action state 0x3E / 0x46:
 /// `damage = ((target_hp * 7) / 5) + 8`, capped.
 ///

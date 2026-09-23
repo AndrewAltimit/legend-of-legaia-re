@@ -917,6 +917,21 @@ impl World {
         self.rng_state
     }
 
+    /// One retail **`rand()`** draw: the next [`Self::next_rng`] state shaped
+    /// the way BIOS `A(2Fh)` (`FUN_80056798`) shapes its own, `0..=0x7FFF`
+    /// ([`legaia_engine_vm::battle_formulas::bios_rand_shape`]).
+    ///
+    /// A port that stands in for a `jal 0x80056798` should draw through this
+    /// rather than the raw state: retail callers test the result's low bits
+    /// and divide it as a 15-bit value. The battle-side consumers still draw
+    /// raw (see `docs/subsystems/battle-formulas.md`, RNG primitive). Retail's `rand()` has one
+    /// kernel seed shared by every caller in SCUS and every overlay (the
+    /// executable carries no `srand` thunk), which is why this is one world
+    /// stream rather than a generator per subsystem.
+    pub fn next_rand(&mut self) -> u32 {
+        legaia_engine_vm::battle_formulas::bios_rand_shape(self.next_rng())
+    }
+
     /// Replace the per-frame pad bitmask snapshot. Equivalent to
     /// `self.input.set_pad(mask)` but available without importing
     /// [`input::InputState`] at the call site. Hosts that drive the
@@ -1895,9 +1910,8 @@ impl World {
         let Some(header) = crate::tile_board::TileBoardHeader::parse(window) else {
             return false;
         };
-        let cells = crate::tile_board::procedural_fill(header.width, header.height, || {
-            self.next_rng() & 0x7FFF
-        });
+        let cells =
+            crate::tile_board::procedural_fill(header.width, header.height, || self.next_rand());
         let board = crate::tile_board::TileBoard::from_header(&header, cells);
 
         // Spawn one tile actor per distinct drawn cell value present on the

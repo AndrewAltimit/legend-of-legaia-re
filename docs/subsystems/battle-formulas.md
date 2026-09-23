@@ -1740,6 +1740,14 @@ The arithmetic is the BIOS' own: the standard 32-bit LCG with multiplier `110351
 
 The seed lives in kernel-managed RAM, **not** at `0x8007AE5C` - that address appears nowhere in the dump corpus. What the dump confirms (`see ghidra/scripts/funcs/80056798.txt`) is the veneer and the vector, nothing about the seed's storage. For deterministic playback the engine seeds its own mirror rather than reading a retail seed word.
 
+There is **one** seed. The executable carries no `srand` (`A(30h)`) thunk, and every `jal 0x80056798` on the disc - SCUS and every overlay alike - draws the same kernel stream. The overlays' own generators are separate words with their own arithmetic (the battle overlay's `FUN_801D0290`, the slot machine's pair), not reseeds of this one.
+
+#### How the port draws it
+
+A caller tests the **low** bits of the result (`rand & 1` coin flips, `& 0xF` gates, `% n`) and divides it as a 15-bit quantity, so what matters is the shape, not the generator. The world's stream (`World::next_rng`) is a raw 32-bit LCG state; its low bit strictly alternates, its low nibble has period 16, and as an `i32` it is negative half the time. `World::next_rand` is the retail draw - the next state through `battle_formulas::bios_rand_shape`, `(state >> 16) & 0x7FFF`. The tile-board fill and the overworld region-encounter counter draw through it, and the ambient element channel shapes its own draws the same way.
+
+The battle-side consumers still take the raw state - most mask it `& 0x7FFF` (the **low** fifteen bits, the wrong half) or take `% n` of the whole word - and several battle unit tests pin outcomes under that raw stream, so moving them is a change to the test fixtures as well as to the draws. The engine's own step tracker (`encounter::EncounterTracker::on_step`) is not a retail port and splits one raw word into a low trigger byte and a high pick half. Minigames and pure kernels that keep a private seed use the already-shaped `psyq_rand_step` / `BiosRand`.
+
 ## Engine-side mirror - `engine-vm::battle_formulas`
 
 The from-scratch Rust module `crates/engine-vm/src/battle_formulas.rs` ports the formulas above as pure functions. It's deliberately *not* trying to reproduce `FUN_800402F4`'s entire selector-dispatch - that lives in `engine-vm::battle_action` next to the state machine.

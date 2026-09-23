@@ -105,6 +105,27 @@ fn next_rng_is_deterministic() {
 }
 
 #[test]
+fn next_rand_is_the_bios_shaped_draw() {
+    // `World::next_rand` is BIOS `rand()`'s shape over the world stream:
+    // the high half of the state, never above 0x7FFF, never negative as i32.
+    let mut a = World::new();
+    let mut b = World::new();
+    for _ in 0..256 {
+        let r = a.next_rand();
+        assert_eq!(r, (b.next_rng() >> 16) & 0x7FFF);
+        assert!(r <= 0x7FFF);
+    }
+    // The raw state's low bit strictly alternates (period 2); the shaped
+    // draw's low bit must not, or every `rand & 1` coin flip is a toggle.
+    let mut w = World::new();
+    let raw: Vec<u32> = (0..64).map(|_| w.next_rng() & 1).collect();
+    assert!(raw.windows(2).all(|p| p[0] != p[1]));
+    let mut w = World::new();
+    let shaped: Vec<u32> = (0..64).map(|_| w.next_rand() & 1).collect();
+    assert!(shaped.windows(2).any(|p| p[0] == p[1]));
+}
+
+#[test]
 fn battle_party_wipe_signals_end_via_world() {
     let mut world = World::new();
     world.mode = SceneMode::Battle;

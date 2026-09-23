@@ -69,12 +69,10 @@ impl WorldRng {
     }
 }
 
-/// The value BIOS `rand()` (`A(2Fh)`, the call `FUN_80056798` makes) returns
-/// for an LCG state: its high half, `(seed >> 16) & 0x7FFF`. Applied to the
-/// raw [`WorldRng`] state before the element channel's consumers see a draw.
-pub fn bios_rand_shape(state: u32) -> u32 {
-    (state >> 16) & 0x7FFF
-}
+/// The BIOS `rand()` shaping, applied to the raw [`WorldRng`] state before
+/// the element channel's consumers see a draw. One definition for the whole
+/// engine: [`legaia_engine_vm::battle_formulas::bios_rand_shape`].
+pub use legaia_engine_vm::battle_formulas::bios_rand_shape;
 
 /// Runtime VA of the ambient emitter's spawn descriptor in the field overlay's
 /// plain-template table (see the module note).

@@ -1134,7 +1134,7 @@ impl World {
                 let setup = crate::region_encounter::region_battle_setup(&region.setup);
                 self.store_region_battle_setup(setup);
             }
-            let roll = tracker.on_step(wx, wz, || self.next_rng());
+            let roll = tracker.on_step(wx, wz, || self.next_rand());
             // Per-step roll diagnostics (trace level; off in normal runs):
             // which tile the step landed on and how far the region counter
             // has drained. A step outside every region logs no counter
