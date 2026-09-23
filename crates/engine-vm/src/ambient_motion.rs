@@ -1,6 +1,8 @@
-//! Ambient / idle **facing** channel of the second per-actor motion VM
-//! (`FUN_80038158`, SCUS_942.54) - the runtime interpreter for its two
-//! rotate ops, plus the generic ramp scheduler one of them delegates to.
+//! The second per-actor motion VM (`FUN_80038158`, SCUS_942.54) - the
+//! ambient / idle interpreter for MAN tail-section 1 - plus the generic ramp
+//! scheduler its `0x0D` rotate delegates to. The section below documents the
+//! two rotate ops in detail; [`AmbientMotion::step_ops_with`] runs the whole
+//! opcode table.
 //!
 //! PORT: FUN_80038158, FUN_80036d80, FUN_8003c5f0
 //! REF: FUN_801cf8ac, FUN_801d5a68, FUN_801cfe4c, FUN_80056798
@@ -22,9 +24,10 @@
 //!
 //! ### `0x04` `[04, b1, b2]` - the in-VM ramp
 //!
-//! Retail body `0x800385D0..0x800386A0`. Per tick:
+//! Retail body `0x8003859C..0x800386A0`. Per tick:
 //!
 //! ```text
+//! requested move = record.anim            ; if record.move != 0x8C (prologue)
 //! frames    = b2 & 0x7F                  ; frame budget
 //! remaining = frames - cursor            ; cursor = actor +0x8B, u8
 //! target    = LUT[b1 & 7]
@@ -32,6 +35,7 @@
 //! if remaining == 0:                     ; terminal
 //!     heading = target                   ; exact snap
 //!     cursor  = 0 ; pc += 3 ; fall through to the next op THIS tick
+//!     restamp move/anim from the record's move byte  ; epilogue 0x800390A8
 //! else:
 //!     arc      = (target - heading) mod 0x1000   ; or (heading - target)
 //!     heading += arc / remaining                 ; or -=, raw u16 wrapping
@@ -471,20 +475,36 @@ fn lerp_remaining(start: i32, end: i32, remaining: i32, total: i32) -> i32 {
     end + (start - end).saturating_mul(remaining) / total
 }
 
-/// `kind 3`: the same lerp run independently on three packed 8-bit lanes
-/// (`0x80036E54..`). Present for completeness - the motion VM never installs
-/// this kind.
+/// `kind 3`: the lerp run on three packed 8-bit lanes (`0x80036E54..0x80036F60`).
+/// Present for completeness - the motion VM never installs this kind.
+///
+/// The lanes are **not** three copies of [`lerp_remaining`]. Only red runs
+/// on the plain byte (`andi 0xff`, then `& 0xff` on the result). Green runs
+/// on the byte still scaled by 256 (`andi 0xff00`), and blue on bits 16..23
+/// the same way after both words are shifted down by 8 (`sra 8` then
+/// `andi 0xff00`); each scaled result is masked back to `& 0xff00`. The
+/// divide truncates the *scaled* difference toward zero and the mask then
+/// floors, so a decreasing green or blue lane lands one below the plain-byte
+/// lerp whenever the quotient has a fraction: start `0`, end `10`, one third
+/// remaining gives red `7` but green `6`. The result's top byte is zero.
 fn rgb_lerp(start: i32, end: i32, remaining: i32, total: i32, finished: bool) -> i32 {
     if finished {
         return end;
     }
-    let mut out = 0i32;
-    for shift in [0u32, 8, 16] {
-        let s = (start >> shift) & 0xFF;
-        let e = (end >> shift) & 0xFF;
-        out |= (lerp_remaining(s, e, remaining, total) & 0xFF) << shift;
+    if total == 0 {
+        return end;
     }
-    out
+    let lerp = |s: i32, e: i32| -> i32 {
+        (s - e)
+            .wrapping_mul(remaining)
+            .wrapping_div(total)
+            .wrapping_add(e)
+    };
+    let red = lerp(start & 0xFF, end & 0xFF) & 0xFF;
+    let green = lerp(start & 0xFF00, end & 0xFF00) & 0xFF00;
+    let (s8, e8) = (start >> 8, end >> 8);
+    let blue = (lerp(s8 & 0xFF00, e8 & 0xFF00) & 0xFF00) << 8;
+    red | green | blue
 }
 
 // ---------------------------------------------------------------------------
@@ -1100,6 +1120,12 @@ impl AmbientMotion {
     /// consumed (the stepping arm), `false` on the terminal snap - which
     /// falls through to the next op in the same tick.
     fn step_facing_ramp(&mut self, body: &[u8]) -> bool {
+        // Prologue `0x8003859C..0x800385C8`, run on every tick: the same
+        // restamp the walk ops open with - the record's **anim** byte, guarded
+        // on its move byte.
+        if self.default_move[0] != DEFAULT_MOVE_UNSET {
+            self.requested_move = Some(self.default_move[1]);
+        }
         let (b1, b2) = (body[1], body[2]);
         let frames = u32::from(b2 & 0x7F);
         let cursor = u32::from((self.cursor & 0xFF) as u8);
@@ -1114,6 +1140,9 @@ impl AmbientMotion {
             self.heading = target;
             self.cursor &= 0xFF00;
             self.pc = self.pc.wrapping_add(3);
+            // The terminal leaves through the shared epilogue `0x800390A8`
+            // (`j` at `0x80038610`), which restamps the move byte.
+            self.reload_requested_move();
             return false;
         }
         let decreasing = b1 & 0x80 != 0;
@@ -1959,6 +1988,25 @@ mod tests {
     }
 
     #[test]
+    fn op04_stamps_the_anim_byte_while_turning_and_the_move_byte_on_exit() {
+        // `0x17` installs [move 0x0A, anim 0x0B]; `0x04` turns over 2 frames.
+        let code = [0x17u8, 0x0A, 0x0B, 0x04, 0x02, 0x02, 0x05, 0x40];
+        let mut vm = AmbientMotion::new(1, 0);
+        vm.tick(&code, 1);
+        assert_eq!(vm.requested_move, Some(0x0B), "stepping: anim byte");
+        vm.tick(&code, 1);
+        assert_eq!(vm.requested_move, Some(0x0B));
+        vm.tick(&code, 1); // terminal: snap, epilogue restamp, fall through
+        assert_eq!(vm.requested_move, Some(0x0A), "exit: move byte");
+        // No record installed: neither restamp fires.
+        let mut bare = AmbientMotion::new(1, 0);
+        let code = [0x04u8, 0x02, 0x01, 0x05, 0x40];
+        bare.tick(&code, 1);
+        bare.tick(&code, 1);
+        assert_eq!(bare.requested_move, None);
+    }
+
+    #[test]
     fn scheduler_lerp_matches_the_retail_form() {
         // value = end + (start - end) * remaining / total, truncating.
         assert_eq!(lerp_remaining(0, 100, 100, 100), 0);
@@ -2078,6 +2126,22 @@ mod tests {
             zone_ramp_tick(&r, 0, 0x41, false, false),
             ZoneRampTick::Idle
         );
+    }
+
+    #[test]
+    fn rgb_ramp_scales_green_and_blue_before_dividing() {
+        // start 0, end 10 on every lane, one third remaining.
+        let start = 0;
+        let end = 0x000A_0A0A;
+        let v = rgb_lerp(start, end, 1, 3, false);
+        assert_eq!(v & 0xFF, 7, "red: 10 + trunc(-10/3)");
+        assert_eq!((v >> 8) & 0xFF, 6, "green: floor of the scaled lerp");
+        assert_eq!((v >> 16) & 0xFF, 6, "blue: same as green");
+        assert_eq!(v >> 24, 0);
+        // Increasing lanes agree with the plain lerp.
+        let up = rgb_lerp(0x000A_0A0A, 0, 1, 3, false);
+        assert_eq!(up, 0x0003_0303);
+        assert_eq!(rgb_lerp(1, end, 0, 3, true), end);
     }
 
     #[test]

@@ -1182,19 +1182,6 @@ base+0x18EBC.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/anim_vm.rs:80024cfc"
-reason = """
-A three-store stub cannot corroborate anything. The tag's own text is the
-evidence: FUN_80024CFC stows the record pointer in actor[+0x4C], sets
-actor[+0x56] = 0xB and actor[+0x68] = 100, and returns - its ONE distinctive
-datum is 0x8007B7C8 and it calls nothing. The module's six siblings are the
-battle anim ticks that consume those fields. The finding's lift line places
-0x8007B7C8 under FUN_8001F05C and FUN_801D6704, the asset dispatcher and the
-scene-entry init, which is where the anim payload is installed - consistent with
-the stub, not against it.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f1b64"
 reason = """
 The painter shape port-provenance.md documents, one level up: this is a

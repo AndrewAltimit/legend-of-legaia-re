@@ -621,9 +621,15 @@ tick, and that terminal tick does **not** consume the frame (retail never
 increments the did-work counter `s8` on that arm), so the snap and the
 following op execute together.
 
-Each tick also reloads the actor's requested-move / anim pair
-(`+0x88`/`+0x5C`) from the per-actor default-move record while it is set -
-the same `0x801C6470` table op `0x17` writes.
+The requested move / anim pair (`+0x88`/`+0x5C`) is restamped twice, from
+two different bytes of the per-actor default-move record (the `0x801C6470`
+table op `0x17` writes), and only while its move byte is not the `0x8C`
+sentinel. The case head `0x8003859C..0x800385C8` stores the record's
+**anim** byte (`+1`) on every tick, stepping or terminal. The terminal arm
+then leaves through the shared epilogue `0x800390A8` (`j` at `0x80038610`),
+which stores the **move** byte (`+0`) - so a turn plays the record's turning
+clip and hands back to its idle move on the tick it snaps. The port is
+`AmbientMotion::step_facing_ramp`.
 
 #### Op `0x0D` `[0D, b1, b2, b3]` - pre-unwrap + tween
 

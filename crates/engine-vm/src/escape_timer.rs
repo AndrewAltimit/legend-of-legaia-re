@@ -11,7 +11,10 @@
 //! a below-threshold flag and an expiry flag through `func_0x8003CE08` as the
 //! count crosses each line, and decomposes what is left into the MM:SS.ff
 //! readout plus its ink colour. The decomposition is therefore a product of
-//! the tick, not of a renderer.
+//! the tick, not of a renderer. The routine is the handler of the HUD actor
+//! the timer op spawns, and that actor's own `+0x54` phase machine - which
+//! holds a zeroed readout for [`EXPIRED_HOLD`] frames after expiry and then
+//! kills the actor, ending the countdown - is [`EscapeTimerHud`].
 //!
 //! The installer half lives in [`crate::field`] (`FUN_801DE840` case 0xD sub
 //! 3, which writes the duration / threshold / packed-flag-word triple);
@@ -120,6 +123,90 @@ impl EscapeTimer {
     }
 }
 
+/// Frames the expired readout holds `00:00.00` before the HUD actor kills
+/// itself: `+0x68 >= 0x79` (`slti v0,v0,0x79` at `0x801D3098`).
+pub const EXPIRED_HOLD: i16 = 0x79;
+
+/// The HUD actor's own phase machine, `+0x54` (`0x801D2FE8..0x801D30B4`).
+///
+/// `FUN_801D2EBC` is the handler of the HUD actor the timer op spawns, so
+/// the countdown lives exactly as long as that actor does. After the count
+/// runs out (or the timer is disarmed) the actor does not vanish on the spot:
+///
+/// - **phase 0** - while the timer is armed and the count positive, the
+///   readout is the live decomposition. Otherwise the count is zeroed, the
+///   digits are drawn as zeros, and the phase advances;
+/// - **phase 1** - zero the hold clock `+0x68`, advance, and fall straight
+///   into phase 2's body the same frame;
+/// - **phase 2** - zero the count and the digits, add the frame step to
+///   `+0x68`, and once it reaches [`EXPIRED_HOLD`] set the kill bit
+///   (`+0x10 |= 8`).
+///
+/// The draw that follows runs in every phase, so the expired timer shows a
+/// neutral-ink `00:00.00` for the hold.
+///
+/// PORT: FUN_801D2EBC (the `+0x54` phase machine)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EscapeTimerHud {
+    /// `+0x54`.
+    pub phase: u8,
+    /// `+0x68` - the expired-readout hold clock.
+    pub hold: i16,
+}
+
+/// What one pass of [`EscapeTimerHud::step`] leaves on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EscapeTimerHudFrame {
+    /// `(minutes, seconds, hundredths)` - zeros once the timer has expired.
+    pub digits: (i32, i32, i32),
+    /// The ink `_DAT_8007B454` the digits draw in.
+    pub ink: TimerInk,
+    /// The actor set its kill bit this frame.
+    pub teardown: bool,
+}
+
+impl EscapeTimerHud {
+    /// One pass of the phase machine, after [`EscapeTimer::tick`] has drained
+    /// the count this frame. `frame_step` is `DAT_1F800393`.
+    pub fn step(&mut self, timer: &mut EscapeTimer, frame_step: u8) -> EscapeTimerHudFrame {
+        let mut zeroed = false;
+        let mut teardown = false;
+        let mut phase2 = false;
+        match self.phase {
+            0 => {
+                if !(timer.armed && timer.remaining > 0) {
+                    timer.remaining = 0;
+                    zeroed = true;
+                    self.phase = 1;
+                }
+            }
+            1 => {
+                self.hold = 0;
+                self.phase = 2;
+                phase2 = true;
+            }
+            2 => phase2 = true,
+            _ => {}
+        }
+        if phase2 {
+            timer.remaining = 0;
+            zeroed = true;
+            self.hold = self.hold.wrapping_add(i16::from(frame_step));
+            teardown = self.hold >= EXPIRED_HOLD;
+        }
+        let digits = if zeroed {
+            (0, 0, 0)
+        } else {
+            timer.hud_fields()
+        };
+        EscapeTimerHudFrame {
+            digits,
+            ink: timer_ink(timer.remaining),
+            teardown,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,5 +278,38 @@ mod tests {
         assert_eq!(m, 1);
         assert_eq!(s, 30);
         assert_eq!(hundredths, 30 * 100 / 60); // 50
+    }
+
+    #[test]
+    fn expired_hud_holds_zeros_then_tears_down() {
+        let mut t = EscapeTimer {
+            remaining: 2,
+            warn_threshold: 0,
+            armed: true,
+        };
+        let mut hud = EscapeTimerHud::default();
+        t.tick(1, 0, false);
+        let f = hud.step(&mut t, 1);
+        assert_eq!((f.digits, f.teardown, hud.phase), ((0, 0, 1), false, 0));
+        t.tick(1, 0, false); // hits zero: disarms
+        let f = hud.step(&mut t, 1);
+        assert_eq!(
+            (f.digits, f.ink, hud.phase),
+            ((0, 0, 0), TimerInk::Neutral, 1)
+        );
+        // Phase 1 falls into phase 2 the same frame: hold = 1.
+        t.tick(1, 0, false);
+        let f = hud.step(&mut t, 1);
+        assert_eq!((hud.phase, hud.hold, f.teardown), (2, 1, false));
+        assert_eq!(t.remaining, 0, "phase 2 zeroes the count each frame");
+        let mut frames = 1;
+        loop {
+            t.tick(1, 0, false);
+            frames += 1;
+            if hud.step(&mut t, 1).teardown {
+                break;
+            }
+        }
+        assert_eq!(frames, EXPIRED_HOLD as i32);
     }
 }

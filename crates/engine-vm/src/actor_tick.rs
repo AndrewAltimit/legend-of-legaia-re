@@ -240,8 +240,8 @@ impl FrameCadence {
 
 /// The retail frame-time telemetry that feeds [`FrameCadence::resolve`].
 ///
-/// PORT: FUN_80016b6c - the adaptive-cadence half of the frame-end driver
-/// (`0x80017044 .. 0x800171D8`), read off the disassembly
+/// PORT: FUN_80016b6c - the cadence half of the frame-end driver
+/// (`0x80017044 .. 0x800171D8`: the `gp+0x5D8` forced arm, [`Self::forced`], and the adaptive block), read off the disassembly
 /// (`see ghidra/scripts/funcs/80016b6c.txt`) and cross-checked block-for-block
 /// against the static-recomp rendering of `func_80016B6C`.
 ///
@@ -348,6 +348,43 @@ impl FrameStepTelemetry {
         // 0x800171D8: the resolved cadence becomes next frame's VSync arg.
         self.previous = cadence.vsyncs_per_tick();
         cadence
+    }
+
+    /// The forced-cadence arm that precedes the adaptive block
+    /// (`0x80017050..0x80017090`). When the word `gp+0x5D8` is non-zero,
+    /// retail stores its **low byte** straight into `DAT_1F800393`, calls
+    /// `DrawSync(0)` (`FUN_80058104`), waits `VSync(n)` with `n = forced`
+    /// except that `1` is passed as `0`, and jumps to `0x800171DC` - past
+    /// the ring write, the maximum, the ladder and the `0x1F800392` store.
+    /// So a forced frame leaves [`Self::history`] and [`Self::previous`]
+    /// exactly as they were.
+    ///
+    /// Returns `None` when `forced == 0` (the adaptive block runs), else
+    /// `(frame step, VSync argument)`.
+    pub const fn forced(forced: u32) -> Option<(u8, u32)> {
+        if forced == 0 {
+            return None;
+        }
+        let vsync = if forced == 1 { 0 } else { forced };
+        Some(((forced & 0xFF) as u8, vsync))
+    }
+
+    /// One frame of the whole cadence block: the forced arm when
+    /// `forced != 0` ([`Self::forced`]), else [`Self::resolve`]. Returns the
+    /// value retail leaves in `DAT_1F800393`.
+    pub fn step(
+        &mut self,
+        forced: u32,
+        elapsed_hblanks: i32,
+        frameskip_enabled: bool,
+        mode_floor: u8,
+    ) -> u8 {
+        match Self::forced(forced) {
+            Some((step, _vsync)) => step,
+            None => self
+                .resolve(elapsed_hblanks, frameskip_enabled, mode_floor)
+                .vsyncs_per_tick(),
+        }
     }
 
     /// The `VSync(n)` argument for the frame just resolved: last frame's
@@ -1203,6 +1240,31 @@ mod cadence_tests {
         assert_eq!(FrameCadence::resolve(true, 0x300, 2).vsyncs_per_tick(), 4);
         // Battle-intro floor of 3 beats a mid adaptive of 2.
         assert_eq!(FrameCadence::resolve(true, 0x150, 3).vsyncs_per_tick(), 3);
+    }
+
+    /// `gp+0x5D8 != 0` forces the step from its low byte and skips the ring
+    /// entirely - a forced frame neither records a sample nor moves the
+    /// previous cadence.
+    #[test]
+    fn a_forced_cadence_bypasses_the_telemetry() {
+        assert_eq!(FrameStepTelemetry::forced(0), None);
+        assert_eq!(
+            FrameStepTelemetry::forced(1),
+            Some((1, 0)),
+            "VSync(1) is passed as 0"
+        );
+        assert_eq!(FrameStepTelemetry::forced(3), Some((3, 3)));
+        assert_eq!(FrameStepTelemetry::forced(0x102), Some((2, 0x102)));
+        let mut t = FrameStepTelemetry::new();
+        let before = t;
+        assert_eq!(t.step(4, 0x400, true, 1), 4);
+        assert_eq!(t, before, "no ring write, no previous-cadence store");
+        assert_eq!(
+            t.step(0, 0x400, true, 1),
+            4,
+            "the adaptive block when not forced"
+        );
+        assert_ne!(t, before);
     }
 
     /// A spike `>= 0x2D0` reaches the top rung on the frame it happens and

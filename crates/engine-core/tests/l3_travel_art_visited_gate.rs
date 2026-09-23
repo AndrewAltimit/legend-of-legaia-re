@@ -219,36 +219,29 @@ fn riremito_and_rula_are_the_same_machine_on_different_dwells() {
     let (riremito_flash, riremito_warp) = drive(TravelArt::Riremito);
     let (rula_flash, rula_warp) = drive(TravelArt::Rula);
 
-    // Riremito flashes leaving phase 1 (dwell 0x50), Rula leaving phase 2
-    // (dwell 0x28 then 0x28). Both then resolve on the next frame.
+    // Riremito flashes leaving phase 1 (dwell 0x50); Rula leaving phase 2,
+    // whose end is its lift clearing -0x618 rather than a dwell.
     assert_eq!(
         riremito_flash,
         TravelArt::Riremito.phase1_dwell() as usize,
         "Riremito's quad is on the phase-1 boundary"
     );
-    assert_eq!(
-        rula_flash,
-        (TravelArt::Rula.phase1_dwell() + TravelArt::Rula.phase2_dwell()) as usize,
-        "Rula's quad is on the phase-2 boundary"
-    );
     assert!(
-        riremito_warp > rula_warp,
-        "Riremito's longer phase-1 dwell must make it the slower art \
-         ({riremito_warp} vs {rula_warp})"
+        rula_flash > TravelArt::Rula.phase1_dwell() as usize,
+        "Rula's quad is on the phase-2 (lift) boundary"
     );
-    // Both reach the same kernel on the frame after their second dwell
-    // expires, so the total is the sum of the two dwells + 1 either way; only
-    // *where the quad lands* inside that span differs.
-    for (art, warp) in [
-        (TravelArt::Riremito, riremito_warp),
-        (TravelArt::Rula, rula_warp),
-    ] {
-        assert_eq!(
-            warp,
-            (art.phase1_dwell() + art.phase2_dwell()) as usize + 1,
-            "{art:?} resolved off its own dwell pair"
-        );
-    }
+    // Both reach the resolve kernel on the frame after phase 2 ends.
+    assert_eq!(
+        riremito_warp,
+        (TravelArt::Riremito.phase1_dwell() + TravelArt::Riremito.phase2_dwell().unwrap()) as usize
+            + 1,
+        "Riremito resolved off its own dwell pair"
+    );
+    assert_eq!(
+        rula_warp,
+        rula_flash + 1,
+        "Rula resolves the frame after its flash"
+    );
 }
 
 #[test]
