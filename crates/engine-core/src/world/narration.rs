@@ -29,9 +29,16 @@ impl World {
     /// display name (e.g. the template `Vahn`). Mirrors the opening `town01`
     /// script's lead-character naming prompt. The host drives it each frame
     /// with [`Self::step_name_entry`] and renders from [`crate::world::PartyState::name_entry`].
+    ///
+    /// The screen also holds the frame-step floor at `1` while it is open and
+    /// hands the scene's floor back on close
+    /// ([`crate::name_entry::NameEntry::saved_frame_step_floor`]).
     pub fn open_name_entry(&mut self, slot: usize) {
         let initial = self.party_name(slot).to_string();
-        self.party.name_entry = Some(crate::name_entry::NameEntry::new(slot, &initial));
+        let mut entry = crate::name_entry::NameEntry::new(slot, &initial);
+        entry.saved_frame_step_floor = Some(self.clock.frame_step_floor);
+        self.set_frame_step_floor(1);
+        self.party.name_entry = Some(entry);
     }
 
     /// `true` while the name-entry overlay is active.
@@ -61,6 +68,9 @@ impl World {
             // `+0x2A7`, not a side table.
             if let Some(rec) = self.party.roster.members.get_mut(slot) {
                 rec.set_name(&name);
+            }
+            if let Some(floor) = entry.saved_frame_step_floor {
+                self.set_frame_step_floor(floor);
             }
             self.party.name_entry = None;
             true

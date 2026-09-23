@@ -69,6 +69,7 @@ use vm_hosts::{
 };
 
 mod ambient_fx_state;
+mod audio_residency;
 mod audio_state;
 mod battle_state;
 mod camera_hooks;
@@ -87,6 +88,7 @@ mod field_script_actor_state;
 mod field_terrain;
 mod field_vm_state;
 mod frame_clock;
+mod frame_step_floor;
 mod item_bag;
 mod menu_state;
 mod minigame_state;
@@ -103,6 +105,10 @@ mod world_map_state;
 mod world_toggles;
 
 pub use ambient_fx_state::AmbientFxState;
+pub use audio_residency::{
+    DANCE_SLOT2_PROT_INDEX, FISHING_SLOT2_PROT_INDEX, SHARED_REGION_SLOTS,
+    SLOT_MACHINE_SLOT2_PROT_INDEX, SfxBankResidency, SharedRegionBank, minigame_slot2_bank,
+};
 pub use audio_state::{
     AudioState, FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK, SfxRingOp, SideBandBank,
     VAB_01_RAW_BASE, runtime_sfx_descriptor_in, side_band_bank_for_request,

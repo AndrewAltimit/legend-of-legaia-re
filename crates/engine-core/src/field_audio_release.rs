@@ -1,6 +1,6 @@
-//! The field overlay's audio-slot release: stop the two SPU voices the field
-//! reserves for its streamed cue, free the SEQ resource slot behind it, and
-//! clear the two globals that track it.
+//! The field overlay's slot-6 release: stop the top two SPU voices, close VAB
+//! slot 6 (the field bank, or a side-band bank streamed over it), and clear
+//! the forced-channel latch and the field-bank latch.
 //!
 //! REF: FUN_800653C8, FUN_8001FF58
 //!
@@ -38,21 +38,29 @@
 //! `FUN_800653C8(voice)` is the sound driver's voice stop - the same primitive
 //! the sustained-SFX teardown `FUN_80017910` and the debug sound test's
 //! stop-all use; it rejects any index `>= 0x18`, which is why the loop counts
-//! *down* from `0x17` rather than up. `FUN_8001FF58(slot)` is the SEQ
-//! resource-slot release keyed on the 12-byte-stride table at `0x80091508`.
+//! *down* from `0x17` rather than up. Voices `0x17` / `0x16` are the first two
+//! the one-shot cue drainer `FUN_80016B6C` keys (`23 - cursor`).
 //!
-//! So the field reserves the **top two** of the 24 SPU voices (`0x17` and
-//! `0x16`) plus SEQ resource slot `6`, and this routine hands all three back.
+//! `FUN_8001FF58(slot)` is a **VAB** close, not a SEQ release: it tests the
+//! 12-byte mixer record at `0x80091508 + slot*12`'s `+0xB` enable byte, clears
+//! it, and passes the record's `+8` VAB id to `FUN_80068C80` (`SsVabClose`:
+//! `SpuFree` the bank, clear its open-state byte). Record 6's VAB is the field
+//! bank PROT 0876 the field init loads, or a side-band bank a `>= 3000`
+//! request streamed over it. `0x8007BAFC` is the field-bank latch: the field
+//! init loads PROT 0876 into slot 6 only while it is clear
+//! (`0x801D6FF4..0x801D7028`), so this routine is what makes the next field
+//! init reload the field bank. `_DAT_8007BA88` is the cue drainer's
+//! forced-channel latch. See `crate::world::SfxBankResidency`.
 
 /// The number of SPU voices the field's streamed cue holds.
 pub const FIELD_VOICE_COUNT: u16 = 2;
 /// Highest SPU voice index the field cue uses; the loop counts down from here.
 pub const FIELD_TOP_VOICE: u16 = 0x17;
-/// SEQ resource slot the field cue owns.
-pub const FIELD_SEQ_SLOT: u16 = 6;
-/// First global the routine clears (`_DAT_8007BA88`).
+/// VAB slot the routine closes - the field bank's.
+pub const FIELD_VAB_SLOT: u16 = 6;
+/// First global the routine clears (`_DAT_8007BA88`, the forced-channel latch).
 pub const FIELD_CUE_GLOBAL_A: u32 = 0x8007_BA88;
-/// Second global the routine clears (`_DAT_8007BAFC`).
+/// Second global the routine clears (`_DAT_8007BAFC`, the field-bank latch).
 pub const FIELD_CUE_GLOBAL_B: u32 = 0x8007_BAFC;
 
 /// The teardown steps, in the order retail performs them, as data - so a host
@@ -62,37 +70,24 @@ pub const FIELD_CUE_GLOBAL_B: u32 = 0x8007_BAFC;
 pub enum ReleaseStep {
     /// `FUN_800653C8(voice)` - stop one SPU voice.
     StopVoice(u16),
-    /// `FUN_8001FF58(slot)` - release one SEQ resource slot.
-    ReleaseSeqSlot(u16),
+    /// `FUN_8001FF58(slot)` - close one VAB slot.
+    ReleaseVabSlot(u16),
     /// Zero one 32-bit global.
     ClearGlobal(u32),
 }
 
 /// Build the release sequence.
 ///
-/// PORT: FUN_801d8450
-// NOT WIRED: nothing owns the resources these steps hand back. The two
-// primitives the steps replay against both exist - `SustainedSfx::stop_voice`
-// is the model of `FUN_800653C8` down to its `id < 0x18` bound, and
-// `legaia_engine_audio::seq_slots::SeqResourceTable::release` carries the
-// `PORT: FUN_8001FF58` tag - so the earlier reading, that neither the
-// per-voice stop nor the `0x80091508` table was modelled, named the module's
-// own two `REF:` addresses as missing when both are ported.
-//
-// The gap is one level down. `SustainedSfx` tracks the *cue ring's*
-// reservation, which starts at `SUSTAINED_BASE_VOICE` (7); the field cue's
-// top two voices (`0x16`/`0x17`) are a second, separate reservation that the
-// engine never makes, so stopping them releases nothing. `SeqResourceTable`
-// is instantiated nowhere in the workspace, so slot 6 has no owner either.
-// And the two globals this clears have no engine counterpart. A caller added
-// at the scene teardown that already runs `release_sustained_sfx` would
-// therefore execute five correct steps against three absent resources.
+/// PORT: FUN_801d8450 - field-VM op `0x36` sub `3` replays these steps
+/// through `World::release_field_audio` (`world/vm_hosts.rs`): the voice stops
+/// reach both play hosts' SPU, the slot-6 close and the latch clear reach the
+/// slot-2 / slot-6 residency the hosts restage from.
 pub fn field_audio_release_steps() -> Vec<ReleaseStep> {
     let mut steps = Vec::with_capacity(FIELD_VOICE_COUNT as usize + 3);
     for i in 0..FIELD_VOICE_COUNT {
         steps.push(ReleaseStep::StopVoice(FIELD_TOP_VOICE - i));
     }
-    steps.push(ReleaseStep::ReleaseSeqSlot(FIELD_SEQ_SLOT));
+    steps.push(ReleaseStep::ReleaseVabSlot(FIELD_VAB_SLOT));
     steps.push(ReleaseStep::ClearGlobal(FIELD_CUE_GLOBAL_A));
     steps.push(ReleaseStep::ClearGlobal(FIELD_CUE_GLOBAL_B));
     steps
@@ -128,7 +123,7 @@ mod tests {
             vec![
                 ReleaseStep::StopVoice(0x17),
                 ReleaseStep::StopVoice(0x16),
-                ReleaseStep::ReleaseSeqSlot(6),
+                ReleaseStep::ReleaseVabSlot(6),
                 ReleaseStep::ClearGlobal(FIELD_CUE_GLOBAL_A),
                 ReleaseStep::ClearGlobal(FIELD_CUE_GLOBAL_B),
             ]

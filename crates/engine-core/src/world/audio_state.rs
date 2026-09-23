@@ -129,6 +129,14 @@ pub struct AudioState {
     ///
     /// REF: FUN_8002689C
     pub sound_detach: crate::sound_state::SoundDetachLatch,
+    /// Which bank the SPU region VAB slots `2` and `6` share holds, and the
+    /// field-bank latch `0x8007BAFC` - see
+    /// [`crate::world::World::sync_sfx_residency`].
+    pub residency: crate::world::SfxBankResidency,
+    /// SPU voices a field-VM op asked the host to stop this tick (the
+    /// side-band teardown's `FUN_800653C8(0x17)` / `(0x16)`), drained by
+    /// [`crate::world::World::take_sfx_voice_stops`].
+    pub sfx_voice_stops: Vec<u8>,
 }
 
 impl AudioState {
@@ -163,6 +171,8 @@ impl AudioState {
             sound_stream: crate::scus_leaf_kernels::SoundStreamRequest::IDLE_PAIR,
             dual_mode_gate: 0,
             sound_detach: crate::sound_state::SoundDetachLatch::default(),
+            residency: crate::world::SfxBankResidency::default(),
+            sfx_voice_stops: Vec::new(),
         }
     }
 }
@@ -274,6 +284,16 @@ impl World {
     /// (producers inside the game-logic phase, the drainer after).
     pub fn take_sfx_ring_ops(&mut self) -> Vec<SfxRingOp> {
         std::mem::take(&mut self.audio.sfx_ring_ops)
+    }
+
+    /// Queue `FUN_80035B50(id)` - the push producer - for the host ring, and
+    /// advance the engine-core mirror of the cursor pair the way field-VM op
+    /// `0x36` sub `0` does: write the cursor's slot, park it, advance.
+    pub fn push_sfx_cue(&mut self, id: i16) {
+        let slot = self.audio.sfx_cue_cursor;
+        self.audio.sfx_cue_cursor = self.audio.sfx_cue_delays.park(slot);
+        self.audio.sfx_parked_slot = slot;
+        self.audio.sfx_ring_ops.push(SfxRingOp::Push(id));
     }
 
     /// Queue `FUN_80035BD0(id)` - the overwrite producer - for the host ring.
