@@ -25,17 +25,20 @@
 //!    test recomputes that from the state's own scratchpad view matrix
 //!    (`0x1F8003C8`) and matches the rim the packets carry.
 //!
-//! The engine's `World::field_light_draws` scales the extents by `H / z` at
-//! a **world-unit** eye depth, so at a comparable framing its ellipse is six
-//! times retail's (divided by whatever the follow camera's distance preset
-//! adds). This test does not assert the engine's projection; it pins the
-//! retail numbers the fix has to reproduce.
+//! 3. **The projection, engine side.** The engine's view of the same frame -
+//!    the state's own camera globals (`_DAT_8007B790..94` angles, the eye
+//!    trio `_DAT_800840B8/BC/C0` reduced by the base-matrix scale, the
+//!    negated focus `_DAT_80089118/1C/20`, `H`) - with the player at the
+//!    state's position puts `World::field_light_draws`'s rim at retail's
+//!    radius and centre. The engine's eye space is the `1x` reduction of
+//!    retail's, so the extents divide by the same scale before `H / z`.
 //!
 //! Disc- and capture-gated: skip-passes without `LEGAIA_DISC_BIN`,
 //! `extracted/`, or the save library directory.
 
 use legaia_engine_core::scene::SceneHost;
 use legaia_engine_core::world::ScriptActorRef;
+use legaia_engine_vm::psx_camera::FieldCameraView;
 use std::path::PathBuf;
 
 /// `drake_castle_to_worldmap` (retail SCUS; `patch_taint_audit.py states`).
@@ -236,5 +239,65 @@ fn dolk_darkness_mask_matches_the_retail_capture() {
     assert!(
         (cx as i64 - px).abs() <= 2,
         "rim centre x {cx} vs projected {px}"
+    );
+
+    // 3. The engine's projection of the same frame.
+    let turn = |a: u32| st.i16_at(a) as f32 / 4096.0 * std::f32::consts::TAU;
+    let s = scale as f32 / 4096.0;
+    let view_e = FieldCameraView {
+        focus: [
+            -(st.i16_at(0x8008_9118) as f32),
+            -(st.i16_at(0x8008_911C) as f32),
+            -(st.i16_at(0x8008_9120) as f32),
+        ],
+        pitch: turn(0x8007_B790),
+        yaw: turn(0x8007_B792),
+        roll: turn(0x8007_B794),
+        h: hh as f32,
+        tr_eye: [
+            st.u32_at(0x8008_40B8) as i32 as f32 / s,
+            st.u32_at(0x8008_40BC) as i32 as f32 / s,
+            st.u32_at(0x8008_40C0) as i32 as f32 / s,
+        ],
+    };
+    let eye = view_e.eye_space([p[0] as f32, p[1] as f32, p[2] as f32]);
+    assert!(
+        ((eye[2] * s) as i64 - view[2]).abs() <= 8,
+        "the engine view is the state's view at 1x: vz {} vs retail {}",
+        eye[2] * s,
+        view[2]
+    );
+    let slot = host.world.player_actor_slot.expect("a player actor") as usize;
+    let ms = &mut host.world.actors[slot].move_state;
+    ms.world_x = st.i16_at(pl + 0x14);
+    ms.world_y = st.i16_at(pl + 0x16);
+    ms.world_z = st.i16_at(pl + 0x18);
+    let draws = host.world.field_light_draws(&view_e);
+    let d = draws.first().expect("the engine draws the dolk mask");
+    assert_eq!(d.abr, r.abr);
+    // The ring's outer vertices (`FUN_801E3764`'s third and fourth) sit on
+    // the rim.
+    let (mut x0, mut x1, mut y0, mut y1) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
+    for q in d
+        .polys
+        .iter()
+        .filter(|q| q.verts == 4 && q.rgb[0] != q.rgb[2])
+    {
+        for &(x, y) in &q.xy[2..4] {
+            let (x, y) = (i32::from(x), i32::from(y));
+            (x0, x1, y0, y1) = (x0.min(x), x1.max(x), y0.min(y), y1.max(y));
+        }
+    }
+    let (ecx, ecy, erx, ery) = ((x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2);
+    eprintln!(
+        "[ok] engine: rim centre ({ecx},{ecy}) half ({erx},{ery}) px vs retail ({cx},{cy}) ({rx},{ry})"
+    );
+    assert!(
+        (erx - rx).abs() <= 2 && (ery - ry).abs() <= 2,
+        "engine rim ({erx},{ery}) vs retail ({rx},{ry})"
+    );
+    assert!(
+        (ecx - cx).abs() <= 2 && (ecy - cy).abs() <= 2,
+        "engine rim centre ({ecx},{ecy}) vs retail ({cx},{cy})"
     );
 }

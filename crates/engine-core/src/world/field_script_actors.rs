@@ -334,12 +334,19 @@ impl World {
     /// ([`billboard::attached_sprite_tick`]) feeding `FUN_801E3984`
     /// ([`billboard::light_pool_polys`]).
     ///
-    /// The projection stands in for `FUN_800195A8`: the parent-plus-offset
-    /// point goes through the same view-projection the fog sheets use, and
-    /// the light's view-space half extents scale by `H / z` at that point's
-    /// eye depth - the billboard's four corners are that point `+-` the
-    /// extents in view space, divided by one shared `z`. Empty outside a
-    /// field scene.
+    /// The projection is `FUN_800195A8`'s. `FUN_801E4470` rebuilds the field
+    /// view matrix (`FUN_800172C0`) immediately before the call, so the
+    /// parent-plus-offset point goes through `S * Rot` and `TR` - the view
+    /// the fog sheets use, at retail's scale - and the four corners are that
+    /// view-space point `+-` the extents, projected through an identity
+    /// rotation (`FUN_8003D178`, `FUN_8005BAC8`) at one shared depth. The
+    /// extents are therefore **view-space units of the scaled view**: the rim
+    /// radius is `H * ext / vz` with `vz` the eye depth in retail's `6x`
+    /// space. The engine's eye space is the `1x` reduction of that one
+    /// (`tr_eye / S`, [`crate::camera_view::CUTSCENE_WORLD_SCALE`]), so the
+    /// extents divide by the same `S` before the `H / z` scale - an extent
+    /// of `0x1000` is `0x1000 / 6` world units, and `dolk`'s mask rim lands
+    /// where retail's does. Empty outside a field scene.
     pub fn field_light_draws(&self, view: &FieldCameraView) -> Vec<FieldLightDraw> {
         if self.mode != SceneMode::Field || self.script_actors.lights.is_empty() {
             return Vec::new();
@@ -359,7 +366,9 @@ impl World {
                     let eye = view.eye_space([p[0] as f32, p[1] as f32, p[2] as f32]);
                     match fog_view.project(p) {
                         Some((sx, sy, _)) if eye[2] > 1.0 => {
-                            let k = view.h / eye[2];
+                            // `_DAT_8007BF10`'s uniform scale: the extents
+                            // live in retail's scaled view space.
+                            let k = view.h / (eye[2] * crate::camera_view::CUTSCENE_WORLD_SCALE);
                             let ex = (f32::from(hw) * k).round() as i32;
                             let ey = (f32::from(hh) * k).round() as i32;
                             let c = |v: i32| v.clamp(-1024, 1023) as i16;
