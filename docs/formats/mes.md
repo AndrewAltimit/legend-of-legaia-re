@@ -144,6 +144,10 @@ A field NPC's interaction text is a flat pool of `0x1F`-lead lines, each `0x1F <
 
 The advance loop in `FUN_80039B7C` (state `0x2`, the `for (; 0x1e < *pbVar4; ...)` walk that skips a line the SM has shown) masks `(*pbVar4 & 0xF0) == 0xC0` and consumes the following data byte as part of the same token. So a `0xC0..=0xCF` escape whose argument byte falls in the `0x00..=0x1E` range - e.g. a `0xC1 0x00` character-name substitution - does **not** terminate the line early; the line ends only at a terminator that is not a `0xC?` escape argument. Every `0xC0..=0xCF` byte is a 2-byte token (see the token table above), so the standard interpreter strides past them correctly.
 
+The rule matters most at a line's **head**: a line can open on an escape, and 113 of the 1586 talkable partition-1 records open their first line that way (`1F C1 00 ...`, the lead character's name, is the common case - `town01` `P1[16]` at record `+0x4C`). A scanner that ends a line at its first `0x00` reads such a line as one byte long, rejects it as a stray marker and resumes inside its text, so every consumer starts one line late.
+
+The engine's segment finder (`man_field_scripts::first_inline_dialog_offset`) walks lines with `legaia_mes::dialog_box::line_end` for that reason; the same walk also stops at the other terminators (`0x01..=0x1E`), which retires the stray `0x1F` bytes in opcode operands that a scan-to-`0x00` used to accept by swallowing the real line after them. Disc-gated pin: `engine-core/tests/dialog_escape_led_line_disc.rs`.
+
 Decoded by `legaia_mes::dialog_box`:
 
 - `pack_box` packs one box from a `0x1F` lead, capped at `LINES_PER_BOX = 3`, reporting the terminating `Dispatch`.

@@ -71,27 +71,46 @@ pub enum PlacementKind {
 /// searching from `from`.
 ///
 /// A field-scene interaction record stores its message text as a run of
-/// segments, each `0x1F <printable bytes> 0x00`. This returns the offset of the
+/// segments, each `0x1F <glyph bytes> 0x00`. This returns the offset of the
 /// first `0x1F` that introduces a segment whose body is non-trivial (≥3 bytes)
-/// and overwhelmingly printable ASCII (≥3/4 of the bytes in `0x20..=0x7E`) - the
+/// and overwhelmingly printable (≥3/4 of the bytes in `0x20..=0x7E`) - the
 /// printable-ratio gate rejects a stray `0x1F` glyph byte that happens to sit in
 /// opcode / move-script data. Returns `None` when no such segment exists (a
 /// decorative or warp-only actor).
+///
+/// The segment's extent is the MES line walk ([`legaia_mes::dialog_box::line_end`]), not a
+/// scan to the first `0x00`: a `0xC0..=0xCF` escape is two bytes, and its
+/// argument is often `0x00` - the party-name escape `C1 00` ("Vahn") opens a
+/// line as `1F C1 00 ...`. Cutting the segment at that argument made the line
+/// one byte long, the gate rejected it, and the scan resumed *inside* the
+/// line's text, so the first segment reported was the line after it and every
+/// consumer dropped the name line (town01 `P1[16]`, record `+0x4C`). An escape
+/// pair counts as printable: it expands to glyphs on screen.
 pub fn first_inline_dialog_offset(body: &[u8], from: usize) -> Option<usize> {
     let mut i = from.min(body.len());
     while i < body.len() {
         if body[i] == 0x1F {
             let text_start = i + 1;
-            let mut j = text_start;
-            while j < body.len() && body[j] != 0x00 {
-                j += 1;
-            }
+            let j = legaia_mes::dialog_box::line_end(body, text_start).min(body.len());
             let raw = &body[text_start..j];
-            let printable = raw.iter().filter(|&&b| (0x20..=0x7E).contains(&b)).count();
+            let mut printable = 0usize;
+            let mut k = 0usize;
+            while k < raw.len() {
+                let b = raw[k];
+                if (0xC0..=0xCF).contains(&b) && k + 1 < raw.len() {
+                    printable += 2;
+                    k += 2;
+                    continue;
+                }
+                if (0x20..=0x7E).contains(&b) {
+                    printable += 1;
+                }
+                k += 1;
+            }
             if raw.len() >= 3 && printable * 4 >= raw.len() * 3 {
                 return Some(i);
             }
-            i = j + 1;
+            i = j.max(text_start) + 1;
         } else {
             i += 1;
         }
