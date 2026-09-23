@@ -16,11 +16,25 @@ use legaia_iso::raw::SECTOR_SIZE;
 use legaia_iso::write::mode2_form1_sector_is_valid;
 use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::translation::export::SceneManText;
-use legaia_patcher::translation::{import_pack, lift, segments};
+use legaia_patcher::translation::{import_pack, lift};
 
 fn load(var: &str) -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os(var)?);
     p.is_file().then(|| std::fs::read(&p).ok()).flatten()
+}
+
+/// How many `0x1F` text leads of a decompressed MAN its records' clean
+/// script walks reach (`man_edit::text_site` == `Segment`).
+fn walked_leads(man: &[u8]) -> usize {
+    (1..man.len())
+        .filter(|&off| {
+            man[off - 1] == 0x1F
+                && matches!(
+                    legaia_asset::man_edit::text_site(man, off),
+                    legaia_asset::man_edit::TextSite::Segment
+                )
+        })
+        .count()
 }
 
 #[test]
@@ -78,14 +92,25 @@ fn lift_then_import_stays_valid_and_grows_a_man() {
         };
         if new_man.decoded.len() > orig_man.decoded.len() {
             grew += 1;
-            // The relocation preserved the segment structure: same number of
-            // qualifying dialog segments before and after growth. Scan
-            // PAL-tolerant (`allow_high`) on both sides so the grown segments'
-            // accent bytes don't get rejected by the strict Latin gate.
+            // The relocation preserved the program: the same script walks
+            // with every reference relocated, and it reaches as many text
+            // leads as before. Counted on the walk, not by a byte scan: a line
+            // written at its exact length (`Excuse-moi.`) can fall below the
+            // dialog quality gate that the same line space-padded to the
+            // English length cleared, and an ungated scan also counts the
+            // coincidental `0x1F` runs inside operands, whose resync shifts
+            // with the text around them - both measure bytes, not structure.
+            assert!(
+                legaia_asset::man_edit::text_edits_preserve_scripts(
+                    &orig_man.decoded,
+                    &new_man.decoded
+                ),
+                "grown MAN {idx} is not the same program relocated",
+            );
             assert_eq!(
-                segments::scan_ext(&orig_man.decoded, true).len(),
-                segments::scan_ext(&new_man.decoded, true).len(),
-                "grown MAN {idx} changed its segment count",
+                walked_leads(&orig_man.decoded),
+                walked_leads(&new_man.decoded),
+                "grown MAN {idx} changed how many text leads its walk reaches",
             );
         }
     }
