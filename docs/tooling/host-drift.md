@@ -1867,9 +1867,10 @@ map carries X / Z, so a host that samples the floor under an NPC itself draws
 an arcing NPC on the ground with every tier green. Both place NPCs through
 `World::field_npc_render_y` - the native window's field NPC pass and the play
 page's `play_npc_transforms` - and the lights ride each host's screen-prim pass
-through the tier-7 rule above. Neither host draws the arc's follow-camera ease
-(`FUN_801DB510` / `FUN_801DAA50` from the release watcher), which is shared
-absence rather than drift.
+through the tier-7 rule above. The arc's follow camera (`FUN_801DB510` /
+`FUN_801DAA50` from the release watcher) is engine-side too: the shared
+`Camera` tick reads `World::script_arc_follow_camera`, so both hosts' follow
+views take it without a host line.
 
 ## Three one-host decisions moved onto one kernel
 
