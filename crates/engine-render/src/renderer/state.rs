@@ -272,6 +272,12 @@ pub struct Renderer {
     /// Draw runs staged for the current frame's screen overlay (one indexed
     /// draw per run; see [`crate::screen_overlay::DrawRun`]).
     pub(super) screen_overlay_runs: std::cell::RefCell<Vec<crate::screen_overlay::DrawRun>>,
+    /// One flat quad covering the scene viewport, drawn first in a scene pass
+    /// in the frame's clear colour when a [`Self::scene_viewport`] is set.
+    /// Separate from the screen-overlay buffers because those hold the
+    /// composited ordering-table tail of the same frame.
+    pub(super) viewport_fill_vbuf: wgpu::Buffer,
+    pub(super) viewport_fill_ibuf: wgpu::Buffer,
 }
 
 impl Renderer {

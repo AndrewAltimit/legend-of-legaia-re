@@ -1296,6 +1296,19 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
+        let viewport_fill_vbuf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scene viewport fill vertex buffer"),
+            size: 4 * crate::screen_overlay::SCREEN_VERTEX_STRIDE,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let viewport_fill_ibuf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scene viewport fill index buffer"),
+            size: 6 * 4,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let depth_view = create_depth_view(&device, config.width, config.height);
 
         Ok(Self {
@@ -1378,6 +1391,8 @@ impl Renderer {
             screen_overlay_vcap: std::cell::Cell::new(initial_overlay_quads * 4),
             screen_overlay_icap: std::cell::Cell::new(initial_overlay_quads * 6),
             screen_overlay_runs: std::cell::RefCell::new(Vec::new()),
+            viewport_fill_vbuf,
+            viewport_fill_ibuf,
         })
     }
 }

@@ -196,7 +196,14 @@ impl Renderer {
                 }),
                 stencil_ops: None,
             });
+            // With a scene viewport set, the clear colour belongs to the
+            // stage rect only: the letterbox around it is black (retail has
+            // no letterbox - its clear colour covers exactly the 320x240
+            // display), and the stage rect is filled with the clear colour
+            // by `viewport_fill` as the scene pass's first draw.
+            let viewport_fill = self.stage_viewport_fill(&target);
             let clear_rgba = match &target {
+                RenderTarget::Scene(_) if viewport_fill.is_some() => wgpu::Color::BLACK,
                 RenderTarget::Scene(s) => s
                     .clear_color
                     .map(|c| wgpu::Color {
@@ -218,6 +225,7 @@ impl Renderer {
                     a: 1.0,
                 },
             };
+            let viewport_fill = viewport_fill.is_some();
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("legaia frame pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -319,6 +327,19 @@ impl Renderer {
                 }
                 RenderTarget::Scene(scene) => {
                     set_scene_vp(&mut rp);
+                    if viewport_fill {
+                        // Depth test passes against the cleared far plane and
+                        // the pipeline writes no depth, so every 3D draw
+                        // below still lands over the fill.
+                        rp.set_pipeline(&self.screen_overlay_pipeline);
+                        rp.set_bind_group(0, &scene.vram.bind_group, &[]);
+                        rp.set_vertex_buffer(0, self.viewport_fill_vbuf.slice(..));
+                        rp.set_index_buffer(
+                            self.viewport_fill_ibuf.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                        rp.draw_indexed(0..6, 0, 0..1);
+                    }
                     let bg_borrow = self.scene_uniforms_bg.borrow();
                     let bg: &wgpu::BindGroup = &bg_borrow;
                     rp.set_pipeline(&self.scene_vram_mesh_pipeline);
@@ -1191,6 +1212,53 @@ impl Renderer {
     /// draw per [`crate::screen_overlay::DrawRun`], binding the opaque
     /// pipeline or the matching per-ABR blend pipeline. Groups 0 = the shared
     /// PSX VRAM texture.
+    /// Stage the scene-viewport fill for this frame: when the target is a
+    /// scene with a non-black clear colour and a
+    /// [`scene viewport`](Self::set_scene_viewport) narrower than the target,
+    /// write one flat quad in that colour over the viewport and return the
+    /// colour. The render pass then clears the whole target black and draws
+    /// the quad first, so only the stage rect reads as the clear colour -
+    /// before this, a stage battle's sky clear filled the letterbox bars too.
+    fn stage_viewport_fill(&self, target: &RenderTarget<'_>) -> Option<[f32; 4]> {
+        let RenderTarget::Scene(scene) = target else {
+            return None;
+        };
+        let c = scene.clear_color?;
+        if c[0] == 0.0 && c[1] == 0.0 && c[2] == 0.0 {
+            return None;
+        }
+        let (x, y, w, h) = self.scene_viewport.get()?;
+        let (full_w, full_h) = (self.config.width, self.config.height);
+        if w == 0 || h == 0 || x + w > full_w || y + h > full_h || (w, h) == (full_w, full_h) {
+            return None;
+        }
+        let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let (sw, sh) = (
+            crate::vram_capture::PSX_SCREEN_WIDTH as i16,
+            crate::vram_capture::PSX_SCREEN_HEIGHT as i16,
+        );
+        let quad = crate::screen_overlay::ScreenPrim::Flat(crate::screen_overlay::FlatQuad {
+            xy: [(0, 0), (sw, 0), (0, sh), (sw, sh)],
+            color: [byte(c[0]), byte(c[1]), byte(c[2]), 255],
+            gouraud: None,
+            semi_transparent: false,
+            abr_mode: 0,
+            ot_index: 0,
+        });
+        let geo = crate::screen_overlay::build_geometry(&[quad], sw as u32, sh as u32);
+        self.queue.write_buffer(
+            &self.viewport_fill_vbuf,
+            0,
+            bytemuck::cast_slice(&geo.vertices),
+        );
+        self.queue.write_buffer(
+            &self.viewport_fill_ibuf,
+            0,
+            bytemuck::cast_slice(&geo.indices),
+        );
+        Some(c)
+    }
+
     fn draw_screen_overlay(&self, rp: &mut wgpu::RenderPass<'_>, vram: &UploadedVram) {
         use crate::screen_overlay::BlendClass;
         let runs = self.screen_overlay_runs.borrow();
