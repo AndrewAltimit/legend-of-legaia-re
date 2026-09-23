@@ -1241,10 +1241,10 @@ play page draws them now - it had no emit site for them at all, while the
 minigames page had been drawing them from retail's own widget cells the whole
 time.
 
-**The fishing splash is a session edge, not a venue actor.** The strike splash
-spawns from the `Casting -> Fighting` phase edge, which every host sees, so
-`World::tick_fishing` spawns it and the venue's wander / line actors are not a
-prerequisite. What genuinely still needs those actors is the wander-retarget
+**The fishing splash is a session event, not a venue actor.** The strike splash
+spawns from the session's cadence-match `PondEvent::Splash`, which every host
+sees, so `World::tick_fishing` spawns it and the venue's wander / line actors
+are not a prerequisite. What genuinely still needs those actors is the wander-retarget
 ripple and the catch-celebration bursts, because their *seats* come from
 actors only the play window installs - they spawn into the shared pool from
 there.
@@ -1885,6 +1885,28 @@ The one input each host answers locally is whether the party leader's mesh
 drew: the native window from its upload set, the page from whether its player
 rig resolved.
 
+The move cost the markers their occlusion, on both hosts at once. The line
+pipeline they left was depth-tested; the screen-primitive pass has no depth
+channel (`ScreenVertex` carries a 2D position), so a marker behind a mountain
+now draws over it. Retail has no marker to compare against, but what the
+marker stands in for - the placement's own actor model - goes through the
+ordering table with the terrain, so a nearer mountain hides it. Blocking
+capability: a depth-tested marker draw on both hosts - a per-corner depth on
+the kernel's quads plus a depth-compared run in each host's screen-primitive
+pass (the native pass already draws inside the scene render pass with the
+depth attachment bound; the page's WebGL pass would need the scene's depth
+buffer kept for it).
+
+### An overworld label enters the world map on both hosts
+
+Which entry a scene takes is the scene's own property, and one engine
+predicate answers it: `scene::is_world_map_scene` (the three `mapNN`
+labels). The page's `enter_field` and the in-world door transition both route
+an overworld label through the world-map entry by name; the native
+`play-window --scene` only did so under `--world-map`, so `--scene map01`
+entered the overworld as a plain field scene. The window now asks the same
+predicate, and the flag only forces the world-map entry for another label.
+
 ### The native window consumes the camera resolver
 
 `compute_scene_camera` used to answer "which camera owns this frame" from its
@@ -1930,8 +1952,13 @@ so the enum's third answer cannot mean two things.
 Both hosts carry one flag for a title-opened menu (`menu_from_title` natively,
 `PlayMenu::from_title` on the page): the sub-screen's exit calls
 `resume(true)` and the title comes back, instead of a root picker the title
-never showed. The title's Continue row does not set it on the page, because a
-card Load parks its scene label on the menu for the page to collect.
+never showed. The page sets it for the title's Continue row too - the native
+window runs Continue as a standalone save-select, whose back-out also lands on
+the title. Continue used to skip the flag because a card Load parks its scene
+label on the menu for the page to collect, and closing would drop it; the exit
+now keeps the menu open exactly when a label is parked, and the page closes it
+once it has taken the label. Without the flag a backed-out Continue landed on
+the pause root.
 
 ## A shared builder can be starved by its caller's slice
 
@@ -2154,42 +2181,61 @@ actually passes.
 ### The two hosts were running different engines
 
 `catch_hud_draws` takes a `depth`, and two of three hosts passed a literal `0`
-- which reads as a shortcut until you notice that those two drive a
-`FishingSession` and the third drives a `PondSession`. Both model the same
-minigame; only the second carried retail's line depth `DAT_801d9298`. The
-"missing" value had nowhere to come from.
+- which read as a shortcut until the cause surfaced: those two drove one
+session type and the third drove another. Both modelled the same minigame; only
+the second carried retail's line depth `DAT_801d9298`. The "missing" value had
+nowhere to come from. The fix that mattered was not a depth field on the first
+engine but deleting it - [one session type](#one-minigame-one-session-type).
 
-`FishingFight` carries it now, sunk by the hooked species' own `+0x10` factor
-(`pull * sink_factor / 150`, the run-state term) and paid back by the reel at
-the two rates the pond model already used, clamped to retail's `[0, 0x1000]`.
-The rest of that split is unfixed and is a real one: see
-[below](#one-minigame-two-session-types).
+## One minigame, one session type
 
-## One minigame, two session types
+Fishing was modelled twice in `engine-core`: a deterministic cast -> fight ->
+done loop on the native window and the browser play page, and `PondSession` -
+the retail loop with a shore idle, cast wind-up, lure flight, the pre-hook band
+roll off the spawn page, the fish behaviour sub-state machine off `BiosRand`,
+line record and depth - on the minigames page. The first picked its species
+from the locked cast power and pulled at a steady rate, so the two play hosts
+and the minigames page played two different games while every gate stayed
+green: each host was internally consistent.
 
-Fishing is modelled twice in `engine-core`. `FishingSession` (native window +
-browser play page) sequences cast -> fight -> done over a deterministic pull;
-`PondSession` (minigames page) runs the full retail loop - shore idle, cast
-wind-up, lure flight, the pre-hook band roll, the fish behaviour sub-state
-machine off `BiosRand`, line record and depth.
+`PondSession` is now the only session. The play hosts reach it through one
+engine entry, `SceneHost::enter_fishing_from_overlay` - the door warp's own,
+which both debug launchers (`L` natively, the play page's Fish button) now
+call - and it does four things neither launcher did before:
 
-Two consequences a gate cannot see, because both hosts are internally
-consistent:
+- decodes the species, spawn and cadence tables together
+  (`fishing::FishingTables`), so a play host can hook off the spawn page;
+- runs the bring-up's rod scan *and* the lure gate, writing both corrected
+  indices back, so the old per-launcher fixed rod stat is gone;
+- seeds the session from the persistent save-block words on
+  `World::minigames` (`fishing_points`, `fishing_best_points`,
+  `fishing_best_fish`, `fishing_lure`, `fishing_rod`, `fishing_casts`,
+  `fishing_prizes_purchased`), which `exit_fishing` banks back in full - the
+  migration for what used to be a points-only bank plus a cast counter one
+  host wrote and another host's session never read;
+- picks the venue from the departure scene the way the driver's setup state
+  does (`fishing::venue_for_departure_scene`) and attaches the `other1`
+  venue map the minigames page casts into (`SceneHost::fishing_venue_map`), so
+  the lure's walk-grid drift and water class come off the same bytes on every
+  host. The native window's own lure actor, and its cast-counter increment,
+  are gone with it.
 
-- **A phase one engine has and the other does not is not drift.** The
-  minigames page wraps its catch-HUD block in `phase() != PondPhase::Idle`;
-  the other two hosts do not, and should not, because `FishingPhase` has no
-  shore-idle state - a `FishingSession` exists only while a cast is in
-  progress. The hook gate retail actually applies (`DAT_801d91b4`) is the
-  `gauges_visible` field, and all three hosts set it.
-- **`World::minigames.fishing_casts` is written by one host** (the native
-  lure's walk-grid drift reads it) and `PondSession::casts` by another. They
-  are different counters with the same meaning.
+`World::tick_fishing` drives the session from the pad (Circle casts and locks,
+Cross / Square reel, D-pad and reel edges feed the strike credit) and parks
+each frame's `PondEvent`s on `World::minigames.fishing_events`. Both play hosts
+seed their banner one-shots from that list and the minigames page from its own
+tick's return - one event-to-banner map, including the recast banner the
+minigames page used to derive from a phase diff. The catch HUD's inputs are
+one derivation, `PondSession::catch_hud`, on all three hosts; the play hosts
+used to hand it a fight's reel progress as the line record.
 
-Blocking capability: one session type. `PondSession` is the retail-shaped one,
-so the merge direction is `FishingSession`'s hosts adopting it - which means a
-venue/lure model and an RNG on the play page's fishing entry, and a migration
-for the two-host `fishing_*` world fields the save block already carries.
+What stays per host is what each host owns. The minigames page drives the
+session directly, with no `World`: it has no field scene to suspend, and its
+persistent words come from the visitor's memory card. The native window keeps
+its venue actors (the wandering fish, the line actor, the floor solve and
+camera publish), which read the session's events and its lure; the page has no
+venue pass. The play hosts' status rows are one engine text
+(`PondSession::status_rows`) with each host's own key names.
 
 ## The Baka cabinet runs a ladder on one host only
 
