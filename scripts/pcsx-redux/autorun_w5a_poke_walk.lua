@@ -29,6 +29,10 @@
 --   LEGAIA_SETTLE       vsyncs of field mode before a leg pokes (default 90)
 --   LEGAIA_CKPT_SCENE   write `<label>.rawsstate` on reaching this scene
 --   LEGAIA_CKPT_LABEL   checkpoint stem (default "poke_walk")
+--   LEGAIA_CKPT_AFTER   field-mode vsyncs in the checkpoint scene before the
+--                       checkpoint is written (default 40). Raise it for a
+--                       state whose point is something the scene builds up
+--                       over time, e.g. a populated field fog pool
 --   LEGAIA_FRAMES       vsyncs to keep running after the last leg lands
 --   LEGAIA_TINT         1 = also log `FUN_80024EE4(bucket, abr, colour)`
 --   LEGAIA_PRESS        "frame:BTN:dur,..." absolute-vsync pad presses,
@@ -62,6 +66,7 @@ local POST       = probe.getenv_num("LEGAIA_FRAMES", 300)
 local MAX_TICKS  = probe.getenv_num("LEGAIA_MAX_TICKS", 4000)
 local CKPT_SCENE = probe.getenv("LEGAIA_CKPT_SCENE", "")
 local CKPT_LABEL = probe.getenv("LEGAIA_CKPT_LABEL", "poke_walk")
+local CKPT_AFTER = probe.getenv_num("LEGAIA_CKPT_AFTER", 40)
 local WANT_TINT  = probe.getenv("LEGAIA_TINT", "") == "1"
 local OUT_DIR    = probe.getenv("LEGAIA_OUT_DIR", "captures/w5a_poke_walk")
 
@@ -249,7 +254,7 @@ local function on_vsync()
         field_ticks = 0
     end
 
-    if CKPT_SCENE ~= "" and not ckpt_done and sc == CKPT_SCENE and md == 0x03 and field_ticks >= 40 then
+    if CKPT_SCENE ~= "" and not ckpt_done and sc == CKPT_SCENE and md == 0x03 and field_ticks >= CKPT_AFTER then
         ckpt_done = true
         log("reached checkpoint scene " .. sc .. " at tick " .. vsync)
         checkpoint()

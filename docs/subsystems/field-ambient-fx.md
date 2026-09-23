@@ -647,10 +647,61 @@ The half-width is `(0x180 + (age >> 4)) >> 1`. Retail adds a byte from
 `FUN_8003F838` here, but it seeds that PRNG's state with the record's age
 rate first, and the step `v = state * 12 + 2; state = (v << 16) + (v >> 16)`
 leaves a zero low byte for every rate the spawner can write - the random
-term is dead code. The art is the effect atlas: texture page `0x27` (VRAM
-`(448, 256)`, 4bpp, ABR `1` additive) through CLUT `0x7640` (`(0, 473)`);
-the left half samples staged row 1 (`v 0x58..0x6F`), the right half row 0
-(`v 0x40..0x57`), each `u 0..0x3F`. Rows 2 and 3 are staged and unread.
+term is dead code. The art is two cloud wisps in the effect-texture pool:
+texture page `0x0027` (VRAM `(448, 0)`, 4bpp, ABR `1` additive) through
+CLUT `0x7640` (`(0, 473)`); the left half samples staged row 1
+(`v 0x58..0x6F`), the right half row 0 (`v 0x40..0x57`), each `u 0..0x3F`.
+Rows 2 and 3 are staged and unread.
+
+### Where the fog texels come from
+
+The page halfword is the upper half of the second staged UV word
+(`0x0027403F` at `0x8007323C`), a GP0 texpage: bits `0..3` give X `7 * 64 =
+448`, bit 4 - the Y-base bit - is clear, bits `5..6` are ABR `1`. So the
+sheets sample `(448, 0)`, not `(448, 256)`, and the cells they read are
+rows `0x40..0x6F` of the `(448, 0)` 64x256 page of the PROT 0874 section-2
+effect-texture pool (`legaia_engine_core::scene::upload_effect_textures_into_vram`),
+whose CLUT strip also lands on row 473. Retail keeps that pool resident in
+field and world-map VRAM: the fog cells and the row-473 CLUT are
+byte-identical in nine PCSX-Redux states across `retona`, `town01`,
+`chitei2`, `dolk`, `map01`, `son`, `vozz`, `map03` and `vell`
+(`scripts/pcsx-redux/extract_vram_from_sstate.py`).
+
+The pool is resident **before** the scene loads. Where a scene TIM covers a
+pool rect the scene's texels win: `dolk`'s TIMs reach into the `(448, 0)`
+page, and its capture holds the scene's texels on all 1010 halfwords where
+the two differ. So a port layers the pool *under* its scene build
+(`Vram::underlay`, the order `SceneResources` already uses for the
+boot-resident system-UI bundle); writing it over the build clobbers those
+texels. The engine host's own field entry still writes the pool over its
+build (`upload_effect_textures_into_vram` after
+`build_targeted_with_options` in `engine-core::scene::host::scene_entry`),
+which is the VRAM the browser play page draws from. A disc-wide census of
+every CDNAME scene built the window's way finds the overlap in `dolk` and
+`dolk2` (the `(448, 0)` page), `bubu2` (the CLUT rows), the `ed*` ending
+scenes (mostly the `(320, 256)` page) and the non-field `other4..6` /
+`befect_data` blocks; every other scene's TIMs miss the pool entirely.
+
+A host whose scene VRAM lacks the pool draws the fog quads against zero
+words, and a textured fragment on a zero word is transparent: the pool is
+live, the quads are emitted, and nothing reaches the frame. That was the
+native window's state until its scene build gained the underlay
+(`crates/engine-shell/src/bin/legaia-engine/window/run.rs`, disc-gated
+`window/fog_texture_tests.rs`, which pins both retail hashes).
+
+### Pool density against retail
+
+A per-vsync poll of the pool in `vell`
+([`autorun_w1a_fog_pool_poll.lua`](../../scripts/pcsx-redux/autorun_w1a_fog_pool_poll.lua),
+1800 vsyncs standing at the `map01` entrance, gate raised, cap `0x18`)
+reads the render walk's live count at 24 to 31 in 1178 of the 1800
+samples, never above 36, and the allocated-record count between 16 and 39.
+The render walk writes the count (`sw v0,0x990(gp)` at `0x8003F3C8`) and the
+spawner compares the stale value, so one frame's spawns can overshoot the cap
+by a few records - which is all retail does. The port's pool in `vell`
+(render step every tick, 2400 ticks after a 600-tick settle) reads 40 to 47
+in 357 samples and peaks at 62: roughly half again as many sheets on screen
+as retail at the same cap.
 
 The region table is MAN section 4 (`DAT_80073ED8`, count `DAT_80073EDC`):
 `0xB`-byte records of `[enable][x0][z0][x1][z1][angle base][angle

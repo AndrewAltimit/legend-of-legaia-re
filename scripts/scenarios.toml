@@ -2746,3 +2746,24 @@ expected_game_mode = 0x03
 expected_active_scene = "son"
 description = "The map03 -> son crossing, caught just before son loads, on a route walked by tile pokes from doman_field_card_boot (doman -> map03 -> son; captures/w7c-0921/son_org). The scene label already reads son while the player is still on map03, at world (6272, 11520) where the portal record P2[13] (tile (45, 84)) left it. Loading it replays son's entry: the entry script clears 0x3A6 / 0x3A7 / 0x3A8 and the arrival seat (8, 9) fires P2[5], which sets 0x60D."
 topics = ["field", "son", "map03", "story flags", "scene entry", "probe state"]
+
+# ----------------------------------------------------------------------
+# Mist-forest fog reference. `vell` is reached from the map01 hub state
+# `overworld_into_town_man_load` by one door-tile poke
+# (`autorun_w5a_poke_walk.lua`, LEGAIA_ROUTE="map01@77,97",
+# LEGAIA_CKPT_SCENE=vell, LEGAIA_CKPT_AFTER=700), then checkpointed 700
+# field vsyncs after arrival so the fog pool is populated. It is the retail
+# reference for the field fog sheets: VRAM through
+# `extract_vram_from_sstate.py`, the pool through
+# `autorun_w1a_fog_pool_poll.lua`.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "vell_fog_field"
+backup_fingerprint = "bd407707f5aa6f437bc3c9a075416da1ac26fad3d7ea6a54cf1fd6450965775e"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vell"
+description = "Mist forest (vell) free field run at the map01 entrance, player at world (11584, 1088), fog gate _DAT_8007B854 raised, 14 live fog records at the checkpoint (cap 0x18). Reached from overworld_into_town_man_load by a door-tile poke, not a walk. Retail frame + VRAM reference for the field fog sheets (texture page 0x0027 = VRAM (448, 0), CLUT (0, 473))."
+topics = ["field", "vell", "fog", "fog pool", "VRAM", "probe state"]
