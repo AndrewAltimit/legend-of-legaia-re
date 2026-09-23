@@ -927,9 +927,11 @@ pub fn colour_walk_group_stride(header: &PrimGroupHeader) -> usize {
 /// REF: FUN_801D8280 - the `DAT_8007C018` resident-object table walker that
 /// calls this on every object's primitive block.
 ///
-/// REPLACED-BY: `crate::fade::ColorGrade::PROLOGUE_SEPIA`, which the world
-/// applies by scene label to exactly the three scenes whose scripts issue
-/// the op this routine serves.
+/// REPLACED-BY: the renderer's prologue palette mode, whose packet-colour law
+/// (`legaia_engine_render::psx_light::prologue_sepia_word` and the page
+/// shader's twin) is this routine's two-op result in closed form, keyed on
+/// `World::scene_color_grade` for exactly the three scenes whose scripts
+/// issue the op.
 ///
 /// The sole `jal` to `0x801D5E20` in the corpus is `0x801D82F8`, inside the
 /// `REF`'d walker `FUN_801D8280`, which is the field VM's op `0x4C`
@@ -940,17 +942,18 @@ pub fn colour_walk_group_stride(header: &PrimGroupHeader) -> usize {
 /// exactly three carriers (`asset field-op-census --only "4C E6"`): partition
 /// 1 record 0 of `opdeene`, `opstati` and `opurud`, the same two ops in each -
 /// `4C E6 00 00 00 FF 00 00` (saturation `-0x100`, clamped to `0`: every
-/// resident mesh colour desaturated) followed by `4C E6 38 00 90 00 E2 FF`
-/// (hue `+0x38`, saturation `+0x90`, value `-0x1E`). That pair is the
-/// prologue's sepia: a neutral `0x80` grey comes out at hue 56, saturation
-/// 144/255, value 98, i.e. `R:G:B` about `1.0 : 0.96 : 0.43` - the ratio the
-/// engine's grade carries as its measured `255:240:110` draw-list modulation.
+/// resident mesh colour greyed at its `max`, capped at `0xF8` by
+/// `FUN_8001A6C8`) followed by `4C E6 38 00 90 00 E2 FF` (hue `+0x38`,
+/// saturation `+0x90`, value `-0x1E`). The second pass starts from a grey,
+/// so a word's result depends on its `max` alone:
+/// `(V, V * 246 >> 8, V * 112 >> 8)`, `V = min(max, 0xF8) - 30`. A retail
+/// `opdeene` state (`s1_newgame_field`) holds every resident colour word on
+/// that curve.
 ///
-/// The substitution is a per-pixel multiply rather than a rewrite of the
-/// meshes' colour words, and it does not reproduce the value drop (the `R`
-/// channel stays at `1.0` rather than `98/128`); the engine grades per render
-/// node (`crate::fade::ColorGrade`) and has no `DAT_8007C018` resident-object
-/// table for the walker to iterate.
+/// The walker's table (`DAT_8007C018`, every resident TMD) has no engine
+/// counterpart, so rather than rewriting uploaded mesh bytes the renderer
+/// applies the closed form per packet colour; a host that ran the op itself
+/// would draw the same pixels.
 pub fn shift_primitive_colours(
     groups: &mut [(PrimGroupHeader, Vec<[u8; 4]>)],
     shift: &HsvShift,

@@ -1409,12 +1409,14 @@ default, is a no-op; text/UI overlays use separate shaders and are never graded)
 For the opening prologue's gold sepia (`opdeene` / `opstati` / `opurud`) the multiply is
 superseded by the **palette-collapse mode** (`Renderer::set_palette_grade`): retail applies the
 grade to the *loaded assets* - every uploaded CLUT entry rewritten to
-`L = max(r, g, b) -> (L, max(L-1, 0), L >> 1)` and the loaded TMD colour words collapsed to
-`gold · max(rgb)` - and the engine's shaders apply the identical law per decoded texel / packet
-colour, with runtime-neutral `0x80` words kept neutral and the view-depth cue ramp inert (see
-[`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look) for the capture that
-pins it). The gold coefficients `(1.0, 0.94, 0.43)` are the measured amber-family ratio, stored
-as display ratios as-is - see
+`L = max(r, g, b) -> (L, max(L-1, 0), L >> 1)`, and every resident TMD colour word rewritten by
+the scripts' two `4C E6` HSV ops to `(V, V*246 >> 8, V*112 >> 8)`, `V = min(max(rgb), 0xF8) - 30`
+- and the engine's shaders apply the identical laws per decoded texel / packet colour
+(`palette_law_word`, `prologue_sepia_word`), with runtime-neutral `0x80` words kept neutral and
+the view-depth cue ramp inert (see
+[`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look) for the captures that
+pin them). In that mode the gold coefficients play no part; they remain the multiply grade's,
+stored as display ratios as-is - see
 [Colour space](#colour-space-psx-framebuffer-values-end-to-end). Driven by
 [`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) (only the prologue
 cutscene legs grade); every other scene renders with both grade paths off, bit-identical to the

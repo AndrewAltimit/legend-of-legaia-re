@@ -122,20 +122,35 @@ pub fn palette_law(word: u16) -> u16 {
     (word & 0x8000) | ((l >> 1) << 10) | (l.saturating_sub(1) << 5) | l
 }
 
-/// The packet-colour half of the palette grade: collapse a loaded TMD colour
-/// word (`0..=255` byte units) to `gold * max(r, g, b)`, leaving the exact
-/// neutral `0x80` word untouched. Mirrors `palette_collapse_prim` (WGSL).
+/// The packet-colour half of the palette grade: a loaded TMD colour word
+/// (`0..=255` byte units) as the prologue's two `4C E6` ops leave it, with
+/// the exact neutral `0x80` word untouched. Mirrors `palette_collapse_prim`
+/// (WGSL).
 ///
-/// The retail opening's GP0 stream shows loaded-TMD prims drawing an amber
-/// family `~(M, 0.94*M, 0.43*M)` while the runtime-emitted ground quads keep
-/// their neutral `0x80,0x80,0x80` modulation - the two facts this split
-/// reproduces.
-pub fn palette_collapse(colour: [u8; 3], gold: [f32; 3]) -> [f32; 3] {
+/// The ops (`FUN_801D8280` -> `FUN_801D5E20` over every resident TMD, field
+/// overlay PROT 0897) run the SCUS HSV pair twice: saturation `-0x100` first,
+/// which greys the word at `W = min(max(r, g, b), 0xF8)` (the `0xF8` cap is
+/// `FUN_8001A6C8`'s), then hue `+0x38`, saturation `+0x90`, value `-0x1E`.
+/// The second pass starts from a grey, so the result is a function of the
+/// word's `max` alone - [`prologue_sepia_word`]. The ground tile kernel's
+/// runtime-emitted neutral words are not resident TMD words and keep `0x80`.
+pub fn palette_collapse(colour: [u8; 3]) -> [f32; 3] {
     if colour == [NEUTRAL; 3] {
         return [f32::from(NEUTRAL); 3];
     }
-    let m = f32::from(colour[0].max(colour[1]).max(colour[2]));
-    [gold[0] * m, gold[1] * m, gold[2] * m]
+    prologue_sepia_word(colour[0].max(colour[1]).max(colour[2])).map(f32::from)
+}
+
+/// The prologue sepia's closed form: a TMD colour word whose largest channel
+/// is `m` comes out of the two `4C E6` rewrites as
+/// `(V, V * 246 >> 8, V * 112 >> 8)` with `V = max(min(m, 0xF8) - 30, 0)` -
+/// `FUN_8001A8DC`'s sector-0 arm at hue `0x38` (`f = 0x38 * 256 / 60 = 238`,
+/// `t = V * (256 - (0x90 * (256 - 238) >> 8)) >> 8`, `p = V * (256 - 0x90) >> 8`).
+/// An authored `0x80` word lands at `(98, 94, 42)`, the most common colour
+/// among the resident words of the retail `opdeene` capture.
+pub fn prologue_sepia_word(m: u8) -> [u8; 3] {
+    let v = u32::from(m.min(0xF8)).saturating_sub(30);
+    [v as u8, ((v * 246) >> 8) as u8, ((v * 112) >> 8) as u8]
 }
 
 #[cfg(test)]
@@ -261,20 +276,49 @@ mod tests {
     }
 
     /// Packet-colour collapse: exact neutral is the fixed point (the ground
-    /// tile kernel's runtime-emitted word), everything else lands on the
-    /// gold ray scaled by the max component - the amber family the retail
-    /// opening's GP0 stream carries.
+    /// tile kernel's runtime-emitted word); every other word lands on the
+    /// prologue sepia curve of its max component.
     #[test]
-    fn palette_collapse_neutral_fixed_point_and_gold_ray() {
-        let gold = [1.0, 0.94, 0.43];
-        approx(palette_collapse([NEUTRAL; 3], gold), [128.0; 3]);
-        // A full-colour authored word collapses to max * gold.
-        let out = palette_collapse([0x38, 0x60, 0x18], gold);
-        approx(out, [96.0, 90.24, 41.28]);
+    fn palette_collapse_neutral_fixed_point_and_sepia_curve() {
+        approx(palette_collapse([NEUTRAL; 3]), [128.0; 3]);
+        // A full-colour authored word: max 0x60 -> V = 66.
+        approx(palette_collapse([0x38, 0x60, 0x18]), [66.0, 63.0, 28.0]);
         // One-off from neutral is NOT the fixed point - only the exact
-        // synthetic word is.
-        let off = palette_collapse([0x80, 0x80, 0x7F], gold);
-        assert!((off[2] - 128.0 * 0.43).abs() < 1e-3);
+        // synthetic word is: max 0x80 -> (98, 94, 42).
+        approx(palette_collapse([0x80, 0x80, 0x7F]), [98.0, 94.0, 42.0]);
+    }
+
+    /// The closed form is the composition of the two `4C E6` rewrites through
+    /// the ported SCUS HSV pair (`FUN_8001A78C` / `FUN_8001A8DC`, with
+    /// `FUN_8001A6C8`'s `0xF8` cap and `FUN_801D5E20`'s fold and clamps),
+    /// for every colour word - not only greys.
+    #[test]
+    fn prologue_sepia_word_is_the_two_op_composition() {
+        use legaia_engine_vm::move_vm::{hsv_to_rgb, rgb_to_hsv};
+        let pass = |c: [i32; 3], dh: i32, ds: i32, dv: i32| -> [i32; 3] {
+            let (h, s, v) = rgb_to_hsv(c[0], c[1], c[2]);
+            let mut h = h + dh;
+            if h > 0x167 {
+                h -= 0x167;
+            }
+            if h < 0 {
+                h += 0x167;
+            }
+            let (r, g, b) = hsv_to_rgb(h, (s + ds).clamp(0, 0xFF), (v + dv).clamp(0, 0xFF));
+            [r.min(0xF8), g.min(0xF8), b.min(0xF8)]
+        };
+        for r in (0..=255).step_by(5) {
+            for g in (0..=255).step_by(7) {
+                for b in (0..=255).step_by(11) {
+                    let c = [r, g, b];
+                    let grey = pass(c, 0, -0x100, 0);
+                    let out = pass(grey, 0x38, 0x90, -0x1E);
+                    let m = r.max(g).max(b) as u8;
+                    let want = prologue_sepia_word(m).map(i32::from);
+                    assert_eq!(out, want, "word {c:?}");
+                }
+            }
+        }
     }
 
     /// The WGSL twins of the palette law must stay present and in shape.

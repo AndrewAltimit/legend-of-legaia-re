@@ -112,18 +112,28 @@ fn palette_law_word(w: u32) -> u32 {
     return (w & 0x8000u) | ((l >> 1u) << 10u) | (g2 << 5u) | l;
 }
 
-// The packet-colour half of the same grade: retail's prologue draw list
-// carries a small amber family of modulation words - each the collapse of a
-// full-colour authored TMD word to `max(rgb)` scaled by the gold ratio
-// (`~(1.0, 0.94, 0.43)` - the staged `grade.rgb`) - while runtime-emitted
-// neutral `0x80,0x80,0x80` words (the ground tile kernel) stay neutral.
-// `prim` is in 0..255 colour-byte units.
-fn palette_collapse_prim(prim: vec3<f32>, gold: vec3<f32>) -> vec3<f32> {
+// The packet-colour half of the same grade: the prologue scripts' two
+// `4C E6` ops, `FUN_801D8280` -> `FUN_801D5E20`, rewrite every baked colour
+// word of every resident TMD through the SCUS HSV pair - first saturation
+// `-0x100` (grey at `W = min(max(rgb), 0xF8)`, the `0xF8` cap of
+// `FUN_8001A6C8`), then hue `+0x38` / saturation `+0x90` / value `-0x1E`.
+// Composed, a word depends on its `max` alone:
+//     V = max(W - 30, 0);  (V, V * 246 >> 8, V * 112 >> 8)
+// (capture-pinned: every resident colour word of the retail `opdeene`
+// state lies on it, `0x80` authored words at `(98, 94, 42)`). The ground
+// kernel's runtime-emitted neutral `0x80,0x80,0x80` words are not TMD words
+// and stay neutral. `prim` is in 0..255 colour-byte units.
+fn prologue_sepia_word(m: f32) -> vec3<f32> {
+    let w = min(floor(m + 0.5), 248.0);
+    let v = max(w - 30.0, 0.0);
+    return vec3<f32>(v, floor(v * 246.0 / 256.0), floor(v * 112.0 / 256.0));
+}
+
+fn palette_collapse_prim(prim: vec3<f32>) -> vec3<f32> {
     if (prim.r == 128.0 && prim.g == 128.0 && prim.b == 128.0) {
         return prim;
     }
-    let m = max(prim.r, max(prim.g, prim.b));
-    return gold * m;
+    return prologue_sepia_word(max(prim.r, max(prim.g, prim.b)));
 }
 
 // PSX GPU texture blending - THE field lighting model.
@@ -925,7 +935,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // runtime-emitted neutral words stay neutral).
     var prim = in.prim_color;
     if palette_on {
-        prim = palette_collapse_prim(prim, u.grade.rgb);
+        prim = palette_collapse_prim(prim);
     }
     let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
@@ -1003,7 +1013,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     // (identity when disabled) so lit water/glass composites consistently.
     var prim = in.prim_color;
     if palette_on {
-        prim = palette_collapse_prim(prim, u.grade.rgb);
+        prim = palette_collapse_prim(prim);
     }
     let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
@@ -1155,7 +1165,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     var base = in.color.rgb;
     if palette_on {
         let m = max(base.r, max(base.g, base.b));
-        base = u.grade.rgb * m;
+        base = prologue_sepia_word(m * 255.0) / 255.0;
     }
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let pg = scene_point_gain(in.world_w, vec3<f32>(0.0), geo_n);
@@ -1208,7 +1218,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     var base = in.color.rgb;
     if palette_on {
         let m = max(base.r, max(base.g, base.b));
-        base = u.grade.rgb * m;
+        base = prologue_sepia_word(m * 255.0) / 255.0;
     }
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let pg = scene_point_gain(in.world_w, vec3<f32>(0.0), geo_n);

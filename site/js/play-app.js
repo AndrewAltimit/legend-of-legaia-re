@@ -2570,8 +2570,8 @@ void main() {
       }
       /* The prologue grade's PALETTE-COLLAPSE half (the native window's
        * second staging call, `set_palette_grade`): with a prologue grade
-       * live, `setColorGrade` above carries the gold coefficients for the
-       * packet collapse and this carries the op-`4C 12` screen tint. The
+       * live, the shaders give the packet words the `4C E6` sepia rewrite
+       * and this carries the op-`4C 12` screen tint. The
        * engine composed both arms already - the page just stages what
        * `play_cutscene_state_json` hands back. Without this the tint reached
        * the engine-built field-FX geometry and nothing else, so an ordinary

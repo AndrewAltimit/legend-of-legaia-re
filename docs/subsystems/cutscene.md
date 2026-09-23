@@ -1523,17 +1523,38 @@ the same capture close the older readings:
   authored gouraud words, not a DPCS pull.
 - **Packet colours split by source.** The GP0 draw list's textured prims carry either the
   runtime-emitted neutral `0x80,0x80,0x80` (the ground tile kernel's quads - drawn gold
-  purely by their law-collapsed CLUT) or a small **amber family** `≈ (M, 0.94·M, 0.43·M)` -
-  the collapse of each loaded TMD's authored full-colour word (the `0749` pack authors these
-  meshes in green/blue) to the same gold ray. Near-field graded surfaces land `B/R ≈ 0.44`
-  (`(L >> 1) / L`), matching the law.
+  purely by their law-collapsed CLUT) or a small **amber family** - the loaded TMDs' authored
+  words after the scripts' `4C E6` rewrite (below).
 
-The `opdeene` MAN itself carries **no** colour op (no op `0x4C 0x8A` ambient, no op
-`0x4C 0x81` far colour), and its motion-VM section carries no per-actor depth-cue op `0x0C`
-either; the grade is applied by the cutscene host to the scene's decoded assets at load. The
-GTE back/ambient colour `DAT_8007B788` is `0x00202020` in `opdeene` vs `0x00FFFFFF` in
-`town01` (`FUN_80043390`), but the field path issues no light op, so it is not the grade
-mechanism.
+The packet half is a script op, not a host pass. Partition 1 record 0 of `opdeene`, `opstati`
+and `opurud` issues field-VM op `4C E6` twice - `4C E6 00 00 00 FF 00 00` then
+`4C E6 38 00 90 00 E2 FF`, the only six `4C E6` sites on the disc (`asset field-op-census
+--only "4C E6"`). The arm calls `FUN_801D8280`, which walks every resident TMD in
+`DAT_8007C018[0..=DAT_8007BB38]` and hands each object to
+[`FUN_801D5E20`](#fun_801d5e20-rotates-a-meshs-own-colour-words): saturation `-0x100` first
+(every baked word greyed at `W = min(max(r, g, b), 0xF8)`, the `0xF8` cap being
+`FUN_8001A6C8`'s), then hue `+0x38`, saturation `+0x90`, value `-0x1E`. The second pass starts
+from a grey, so a word ends as a function of its `max` alone:
+
+```
+V = max(min(max(r, g, b), 0xF8) - 30, 0)   ->   (V, V*246 >> 8, V*112 >> 8)
+```
+
+(`FUN_8001A8DC`'s sector-0 arm at hue `0x38`: `f = 238`, `t = V*(256 - (0x90*18 >> 8)) >> 8`,
+`p = V*(256 - 0x90) >> 8`). The retail state `s1_newgame_field` (`opdeene` at field-run) holds
+all 18425 baked colour words of its 77 resident TMDs on that curve with none off it, an
+authored `0x80` word at `(98, 94, 42)` -
+`crates/engine-core/tests/prologue_sepia_retail_capture.rs`. So the amber family is not
+`gold · max` but this curve, and it carries a value drop of 30 the older ratio reading could
+not see (`G/R` is `246/256`, `B/R` is `112/256`; the draw list's `0.94` / `0.43` were the same
+curve, which the older draw-list ratio reading approximated). Only baked-colour rows are touched: the colour counts at
+`0x801F26F0` in the field overlay are non-zero for `flags >> 1` in `12..=19` alone (flags
+`0x18..=0x27`), so the light-source rows `0x10..=0x17` keep their GTE colour.
+
+The `opdeene` MAN carries no ambient op (`0x4C 0x8A`), no far-colour op (`0x4C 0x81`) and no
+per-actor depth-cue op `0x0C` in its motion-VM section. The GTE back/ambient colour
+`DAT_8007B788` is `0x00202020` in `opdeene` vs `0x00FFFFFF` in `town01` (`FUN_80043390`); it
+reaches only the light-source rows. What rewrites the CLUT rows is still open (below).
 
 **Engine port.** The engine keeps the disc palettes in its software VRAM and applies the law
 in the mesh shaders instead - exactly equivalent, because a 4/8bpp texel *is* a palette entry:
@@ -1541,11 +1562,9 @@ in the mesh shaders instead - exactly equivalent, because a 4/8bpp texel *is* a 
 **palette-collapse mode** (`palette_law_word` / `palette_collapse_prim` in
 [`shaders.rs`](../../crates/engine-render/src/shaders.rs), CPU mirrors + lockstep tests in
 [`psx_light.rs`](../../crates/engine-render/src/psx_light.rs)): each decoded texel word goes
-through the exact 5-bit law, each non-neutral packet colour collapses to
-`gold · max(r, g, b)` (gold = the staged
-[`ColorGrade::PROLOGUE_SEPIA`](../../crates/engine-core/src/fade.rs) coefficients
-`(1.0, 0.94, 0.43)`, the measured amber-family ratio), exact-neutral words stay neutral (the
-ground tile kernel's runtime word, retail-verified), and the view-depth cue ramp is inert
+through the exact 5-bit law, each non-neutral packet colour takes the `4C E6` curve of its
+`max` (`prologue_sepia_word`; the page shader carries the twin), exact-neutral words stay
+neutral (the ground tile kernel's runtime word, retail-verified), and the view-depth cue ramp is inert
 (no node carries `IR0` in the capture). The op `0x4C 0x12` screen tint rides the palette
 uniform's `rgb` so scene fades still multiply every graded pixel.
 [`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) still owns the
@@ -1581,13 +1600,15 @@ is no such law to port:
   same shape as the XA-clip-table writer under "Open items").
 - **The palette grade is faithful; the gap is source colour + region.** With `IR0 = 0` on
   every node (above), no DPCS pull acts on the far prims, and both halves of the grade are
-  capture-pinned (CLUT law in VRAM, amber packet in the GP0 list) and reproduced by the
-  engine. A far prim drawn with a baked amber packet lands `B/R ≈ 0.44 × 0.43 ≈ 0.19` on both
-  sides. The engine's `0.27` excess is un-darkened **neutral** packets in the sampled region:
+  capture-pinned (CLUT law in VRAM, the `4C E6` curve in the resident TMDs) and reproduced
+  by the engine. A far prim drawn with a baked amber packet lands `B/R ≈ 0.44 × 0.44 ≈ 0.19`
+  on both sides. The engine's `0.27` excess is un-darkened **neutral** packets in the sampled region:
   lit-descriptor prims (rows 0/1 of `DAT_8007326C`, `byte1 = 0`, no baked colour block) are
   fed neutral `0x80` by the mesh builder (`prim.colors...unwrap_or([128,128,128])` in
   `crates/tmd/src/mesh/{color,vram}.rs`), so `palette_collapse_prim`'s neutral guard leaves
-  them un-graded. Retail draws those same lit prims through the scene GTE back/far colour that
+  them un-graded. The same guard also leaves an authored word of exactly `(0x80, 0x80, 0x80)`
+  neutral, which retail's rewrite takes to `(98, 94, 42)`; the renderer cannot tell the two
+  apart at the shader. Retail draws those same lit prims through the scene GTE back/far colour that
   its field renderer `FUN_80029888` loads (opdeene's ambient `DAT_8007B788 = 0x00202020`, dim,
   vs `town01`'s `0x00FFFFFF`; writer `FUN_80043390`) - the field-path GTE colour the engine
   deliberately omits (no field light source). That omission is a scene-wide boundary that only
@@ -2134,7 +2155,14 @@ per primitive **and** once more after the group's loop (`801d5FF8` inside,
 Against the `count x ilen*4` body [`tmd.md`](../formats/tmd.md) documents, that
 over-runs by one primitive per group.
 
-Port: `legaia_engine_core::cutscene_script_elements::shift_primitive_colours`.
+The table at `0x801F26F0` holds `[1, 1, 3, 4, 1, 1, 3, 4]` at indices `12..=19` and zero
+everywhere else, so the walker rewrites the baked-colour rows (flat, gouraud, flat-textured
+baked, gouraud-textured baked) and skips the light-source rows. The disc's only callers are the
+prologue's six `4C E6` sites; what their two-op pair does to a word, and the capture that pins
+it, is under [the sepia grade](#full-scene-sepia-grade-the-gold-prologue-look).
+
+Port: `legaia_engine_core::cutscene_script_elements::shift_primitive_colours`; the renderers'
+`prologue_sepia_word` is its two-op result in closed form.
 
 ### What the tween and the emitter do beyond the one-line role
 
