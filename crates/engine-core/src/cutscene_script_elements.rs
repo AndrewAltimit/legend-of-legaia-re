@@ -927,20 +927,30 @@ pub fn colour_walk_group_stride(header: &PrimGroupHeader) -> usize {
 /// REF: FUN_801D8280 - the `DAT_8007C018` resident-object table walker that
 /// calls this on every object's primitive block.
 ///
-/// NOT WIRED. "No caller" would be the wrong reason: the sole `jal` to
-/// `0x801D5E20` in the corpus is `0x801D82F8`, inside the `REF`'d walker
-/// `FUN_801D8280`, and that walker is both ported and live - it is the field
-/// VM's op `0x4C` outer-nibble-E sub-6 arm, whose host hook
-/// `FieldHost::op4c_n_e_sub6_call_d8280` takes the three `i16` operands and
-/// has an empty default body. So a scene script can already reach this, and
-/// the arm silently does nothing.
+/// REPLACED-BY: `crate::fade::ColorGrade::PROLOGUE_SEPIA`, which the world
+/// applies by scene label to exactly the three scenes whose scripts issue
+/// the op this routine serves.
 ///
-/// The blocker is the grading **model**, not the route. The engine grades per
-/// render node (`crate::fade::ColorGrade` / `crate::fade::SceneTintRamp`, a
-/// multiply applied at draw time) rather than rewriting the mesh's own colour
-/// words, and it has no equivalent of the `DAT_8007C018` resident-object
-/// table for the walker to iterate. Wiring it needs that table plus a
-/// decision to mutate parsed TMD data in place.
+/// The sole `jal` to `0x801D5E20` in the corpus is `0x801D82F8`, inside the
+/// `REF`'d walker `FUN_801D8280`, which is the field VM's op `0x4C`
+/// outer-nibble-E sub-6 arm (`FieldHost::op4c_n_e_sub6_call_d8280`, three
+/// `i16` operands, which the walker forwards as this routine's `a1..a3` - the
+/// hue / saturation / value deltas, `addu`-ed onto the `FUN_8001A78C` result
+/// at `0x801D5F10` / `0x801D5F20` / `0x801D5F30`). The disc issues that op in
+/// exactly three carriers (`asset field-op-census --only "4C E6"`): partition
+/// 1 record 0 of `opdeene`, `opstati` and `opurud`, the same two ops in each -
+/// `4C E6 00 00 00 FF 00 00` (saturation `-0x100`, clamped to `0`: every
+/// resident mesh colour desaturated) followed by `4C E6 38 00 90 00 E2 FF`
+/// (hue `+0x38`, saturation `+0x90`, value `-0x1E`). That pair is the
+/// prologue's sepia: a neutral `0x80` grey comes out at hue 56, saturation
+/// 144/255, value 98, i.e. `R:G:B` about `1.0 : 0.96 : 0.43` - the ratio the
+/// engine's grade carries as its measured `255:240:110` draw-list modulation.
+///
+/// The substitution is a per-pixel multiply rather than a rewrite of the
+/// meshes' colour words, and it does not reproduce the value drop (the `R`
+/// channel stays at `1.0` rather than `98/128`); the engine grades per render
+/// node (`crate::fade::ColorGrade`) and has no `DAT_8007C018` resident-object
+/// table for the walker to iterate.
 pub fn shift_primitive_colours(
     groups: &mut [(PrimGroupHeader, Vec<[u8; 4]>)],
     shift: &HsvShift,

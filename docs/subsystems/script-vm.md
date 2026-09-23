@@ -377,6 +377,15 @@ These are sub-dispatchers - the operand byte selects a sub-command.
 | 3 | 4 bytes | Play 3D animation via `func_0x800252EC(operand1+1, ctx+0x14, ctx+0x24)`. Looks up an offset in the buffer at `_DAT_8007B8D0` (in the field that is the scene's `efect.dat` prescript window, `*(0x1F8003EC) + 0x12800`; the `bse.dat` battle bank is the *other* occupant of the same pointer - see [`bse-dat.md`](../formats/bse-dat.md)) using `*(u16*)(buf + 2 + idx*2)`, then spawns an actor via `FUN_80021B04(pos, ?, buf+ofs, 0x1000)`. Buffer layout matches the [ANM container shape](../formats/anm.md). |
 | 4..=15 | - | No `case` arm in `FUN_801de840`; falls through `if (bVar35 != 2) { if (bVar35 != 3) { return param_2; } }` - halts at PC. |
 
+The sub-1 spawn (`jal 0x801E5668` at `0x801DFFE0`) seats an **attached
+sprite**: template `0x801F28B8`, whose tick `FUN_801E4470` rides the parent's
+`+0x90` back-link and draws a projected billboard through the emitter
+`FUN_801E3984`; the spawner leaves `+0x94` zero for the capture form to fill.
+It is common - `34 10` has 415 clean sites in 43 scenes (`asset
+field-op-census`) - and the engine host keeps the op's default no-spawn body,
+so none of these sprites draws. The tick is ported
+(`legaia_engine_vm::field_actor_billboard`), with the disclosure.
+
 #### 0x35 BGM
 
 `[35, lo, hi, sub]`. Operand 2 selects sub-op:
@@ -543,7 +552,7 @@ script parks - the same "satisfied on arrival" shape the BGM barrier has.
 | 0x3B | `SET_ITEM_COUNT` | `[3B, slot, count]` | Set inventory entry: `*(byte*)(0x80084340 + (slot & 0xF) + (slot >> 4) * 0x414) = count`, then `func_0x80042558()` to refresh inventory display. Inventory pages of 0x414 bytes. |
 | 0x3C | `PARTY_ADD` | `[3C, char_id]` | Add character to party (sorted insertion into `_DAT_80084598..` array, count at `DAT_80084594`). Caps at 4 members. Updates `_DAT_8007B8F8` (party leader) when count was 0. Calls `FUN_801DE190()` (refresh display). Special: if count becomes 2 with `_DAT_80084598 == 0x100`, calls `func_0x800423E0()` and returns. |
 | 0x3D | `PARTY_REMOVE` | `[3D, char_id]` | Remove character (linear search, shift, count--). Updates leader if affected. Refresh via `FUN_801DE190()`. |
-| 0x3E | `WARP / INTERACT` | `[3E, op0, op1, …]` | If `op0 == 0xFF` or `op0 < 100`: trigger field interact at index `op1` on system context (`func_0x8003C83C(0xFB)`); writes `sys_ctx[+0x94] = scene_data + op1 * stride + 1`, calls `func_0x8003CE08(0xE)`. Else (`op0 >= 100`): **minigame door-warp** - `_DAT_8007BA34 = op0 - 100` (sub-id), `_DAT_8007B83C = 0x18` (mode 24 OTHER INIT), zero the session-winnings accumulator `_DAT_80084440` and `0x8007BAC0`, clear `player[+0x10] & 0x80000`, call `func_0x8003CE08(0xE)`. The op carries **no destination name**; full pre-warp/return behaviour in [§ 0x3E WARP](#0x3e-warp-mode-24-minigame-door-warp) below. |
+| 0x3E | `SCRIPTED_BATTLE / WARP` | `[3E, op0, op1, …]` | If `op0 == 0xFF` or `op0 < 100`: **scripted-battle install** of formation-table row `op1` on the system context (`func_0x8003C83C(0xFB)`): `sys_ctx[+0x94] = formation_table + op1 * stride + 1`, step-counter reroll, `func_0x8003CE08(0xE)`; `op0` is not read further - see [§ 0x3E scripted battle](#0x3e-scripted-battle-op0--100). Else (`op0 >= 100`): **minigame door-warp** - `_DAT_8007BA34 = op0 - 100` (sub-id), `_DAT_8007B83C = 0x18` (mode 24 OTHER INIT), zero the session-winnings accumulator `_DAT_80084440` and `0x8007BAC0`, clear `player[+0x10] & 0x80000`, call `func_0x8003CE08(0xE)`. The op carries **no destination name**; full pre-warp/return behaviour in [§ 0x3E WARP](#0x3e-warp-mode-24-minigame-door-warp) below. |
 | 0x3F | `SCENE_CHANGE` (named warp) | `[3F, idx_lo, idx_hi, name_len, [name_len name bytes], entry_x, entry_z, dir]` | **Named scene-change ("warp by name"), NOT a dialog op.** Full encoding + behaviour in [§ 0x3F SCENE_CHANGE](#0x3f-scene_change-named-warp) below. |
 | 0x40 | `DATA_BLOCK` | `[40, len, ...len bytes]` | Skips `len` bytes after header - embeds raw inline data. PC += 2 + len. |
 | 0x42 | `COND_JMP` | `[42, mode, op1, op2, op3]` | Multi-mode conditional. `mode == 0`: test `_DAT_8007B8F4 & (1 << (op1 & 0x1F))` - if clear, return `pc + 5` (skip). `mode == 1`: test screen-mode (`_DAT_8007B850`) against `_DAT_801F28D0[op1*4]` (8-entry table) for `op1 < 8`, bit 0x20 for `op1 == 8`, 0x40 for 9, 0x80 for 10, 0x10 for 11; **`op1 >= 0xC` falls through to the unconditional take-jump path** (no test). `mode >= 2` hits the dispatcher's default arm - halts at PC. Successful jump target = `pc + 3 + LE_u16(op2,op3)`; skip target = `pc + 5`. |
@@ -595,6 +604,44 @@ the live give-item is inlined in the dispatcher here.) NB the chest's announceme
 - PC += 7 + name_len.
 
 A scene's controller script lists every reachable destination as one of these ops - see [world-map § scene destinations](world-map.md). (This op only *looks* like dialog when the over-approximating walk desyncs on a literal `?` = `0x3F` inside message text. Field **dialogue** has no dedicated opcode - see [§ Field dialogue](#field-dialogue-has-no-opcode).)
+
+#### 0x3E scripted battle (`op0 < 100`)
+
+Both `op0 == 0xFF` and every `op0 < 100` run one body, the **scripted-battle
+install** - not a field interaction, and not a dialogue opener. The arm
+(`FUN_801DE840`, field overlay PROT 0897, from `0x801E06D4`) reads `op0`
+exactly twice: `beq v1,0xFF` at `0x801E06FC`, and `sltiu v0,v1,0x64` in its
+delay slot feeding `beqz` at `0x801E0704`, which sends `op0 >= 100` to the
+door-warp below. Nothing after that reads the byte, so `3E 00 02` installs
+row 2 exactly as `3E FF 02` would. The body, in order:
+
+1. Both arms first store `0xFF` to `player[+0x8E]` and `player[+0x8F]`
+   (`0x801E06E4` / `0x801E06F0`; player = `*(0x8007C348 + 0x1C)`) - the
+   region reader's cached tile, forced stale.
+2. `FUN_801D9E1C(player, 0)`. With `a1 = 0` the region reader re-derives the
+   player's region and re-seats its battle setup - `_DAT_8007BD60 =
+   region[+8] & 0x1F`, scratchpad `0x1F800394 |= 0x300000`, and on the
+   `ctrl[+0x5F] >= 0xC` layout the `_DAT_8007B64B` / render-flag bits and the
+   `0x800845xx` triple from `region[+9..+11]` - then returns at
+   `beqz fp` (`0x801DA16C`) before the step roll.
+3. `_DAT_8007B868 != 0` (the dev word) skips the rest; so does a missing
+   system entity (`FUN_8003C83C(0xFB)` returning null). Either way the PC
+   still advances by 3 (`0x801E00B8`).
+4. `sys[+0x8A] = 1`; `sys[+0x94] = *(ctrl+0x20) + op1 * ctrl[+0x5D] + 1`
+   with `ctrl = *0x801C6EA4` - the formation-table row, the same table
+   `FUN_801D9E1C` rolls into (`*(ctrl+0x20)` leads with the row count).
+5. `_DAT_8007B5FC = FUN_801DDF48()` (the step-counter reroll), then
+   `FUN_8003CE08(0xE)` (the battle mode request); PC += 3.
+
+The disc carries ten clean non-`0xFF` sites (`asset field-op-census --only
+3E`): `town0b` `3E 00 02` five times, `stone` `3E 00 03` four times and
+`jagaroom` `3E 01 00` once, each behind a flag SET and a wait or a battle
+BGM cue - the shape of every `3E FF` boss entry. Engine:
+`FieldHost::scripted_battle` → `World::trigger_scripted_battle` for every
+`op0`; `engine-core/tests/scripted_battle_low_op0_disc.rs` steps one site per
+scene into `SceneMode::Battle` against the named MAN row. The region
+battle-setup half of step 2 is not modelled on either the scripted or the
+random-roll path.
 
 #### 0x3E WARP (mode-24 minigame door-warp)
 
@@ -676,8 +723,8 @@ if (((ctx[+0x94] != 0) || ctx == _DAT_8007C364) &&
 If `pbVar47[1] == 0 && pbVar47[2] == 0`: use ctx's current position (read `+0x14/+0x16/+0x18`); store negated-Y at `ctx[+0x8E]`. Else: decode target XZ from operand bytes via `(b & 0x7F) * 0x80 + 0x40` (or `+0x80` if high bit set); call `func_0x80019278(ctx)` for collision lookup of Y.
 
 None of the operand halfwords is a resume PC. All three go through the
-unaligned signed-16 reader `FUN_8003CE9C` and end up as arguments to the walk
-dispatcher `FUN_801D25EC`:
+unaligned signed-16 reader `FUN_8003CE9C` and end up as arguments to the arc-hop
+spawner `FUN_801D25EC`:
 
 - `+3` and `+5` are its `a2` / `a3` (read at `0x801DF54C` / `0x801DF558` on the
   non-player arm and `0x801DF57C` / `0x801DF588` on the player one).
@@ -697,6 +744,22 @@ sent `urudre2` `P2[9]` backwards to body `0x00A0` on every arrival - its
 
 If halt was *not* acquired: `j 0x801DEE4C`, which restores `s8` from the
 invocation's entry PC (`s4`) instead of advancing.
+
+**The op is a scripted jump.** `FUN_801D25EC(actor, &landing, apex = +3,
+frames = +5, release_ctx, 0x400, follow)` (`jal` at `0x801DF5AC`) builds the
+same quadratic-Bezier clip as the player's ledge hop - peak `apex` units above
+the higher endpoint, cursor step `0x1000 / frames` - on a helper ticked by
+`FUN_801D5C08`, which writes the curve into the actor's `+0x14..+0x18` (and
+`-Y` into `+0x8E` for a non-player actor). The chained record is a **release
+watcher** (`FUN_801D5D60`): when the arc lands it clears `0x400` - the halt
+bit this arm's acquire raised - from the arced actor, or, when the actor is the
+player, from the calling context and the player both. `follow` is `1` for
+sub-`1`/`0xB` and makes the watcher run the follow-camera ease on the player
+while the arc flies. The disc carries 492 clean sites across the four sub-ops
+(`asset field-op-census`: `43 01` 293, `43 0A` 124, `43 00` 68, `43 0B` 7).
+The port stops at the acquire and runs no arc
+(`legaia_engine_vm::field_ledge_hop_arc::spawn_arc_with_emitter`
+carries the disclosure).
 
 #### 0x43 sub-2/3-6/7/8/9/C/D/E/F - actor / sound / face / position cluster
 
@@ -1903,11 +1966,15 @@ Ported: [`legaia_engine_vm::field_passive_hud`](../../crates/engine-vm/src/field
 There is **no dedicated "open dialogue" field-VM opcode.** Talking to a field
 NPC is the **interaction pipeline**, not a text-carrying instruction:
 
-1. **Trigger** - the field-interact op (`0x3E` with `op0 < 100`) arms the actor's
-   interaction context: it sets `sys_ctx[+0x94]` to the actor's interaction-script
-   pointer (`scene_data + op1*stride + 1`) and `sys_ctx[+0x8a] = 1`. (`0x3E` with
-   `op0 >= 100` is the door-warp; `0x3F` is the named scene-change - neither is
-   dialogue.)
+1. **Trigger** - the touch / button-press interaction: the entity SM
+   `FUN_801DA51C` resumes the touched actor's parked script (the facing probe
+   `FUN_801CF9F4` picks the actor; see
+   [`field-locomotion.md`](field-locomotion.md)). No field-VM opcode is involved.
+   Op `0x3E` in particular is not: with `op0 < 100` it is the
+   [scripted-battle install](#0x3e-scripted-battle-op0--100) - the pointer it
+   writes into `sys_ctx[+0x94]` is a **formation-table** row, not an
+   interaction script - and with `op0 >= 100` it is the door-warp. `0x3F` is
+   the named scene-change.
 2. **Text source** - the dialogue text is the **actor's own inline
    interaction-script MES** at `actor[+0x90] + actor[+0x9e]` (the actor's script
    buffer base + the running text offset). Confirmed by `FUN_80039b7c`, which sets
@@ -2005,10 +2072,12 @@ interaction-driven actor-text pipeline above, not an inline-text opcode. (The
 **not** the dialog open/poll an earlier note assumed.)
 
 **Engine wiring (re-grounded).** The from-scratch engine now matches this:
-`field_interact` (`0x3E` with `op0 < 100`) opens the interacted actor's inline
-dialogue from `World::npcs.dialog` (the per-actor inline interaction-script
-text, keyed by `slot` = the actor's MAN record index, populated at field-scene
-entry), via the host's `open_dialog` primitive. `0x3F` is now a **live named
+`World::trigger_field_interact` (the interaction probe and the walk-touch
+post) opens the interacted actor's inline dialogue from `World::npcs.dialog`
+(the per-actor inline interaction-script text, keyed by `slot` = the actor's
+MAN record index, populated at field-scene entry), via the host's
+`open_dialog` primitive. An earlier port routed op `0x3E` with `op0 < 100`
+here too, which opened dialogue where retail starts a fight. `0x3F` is now a **live named
 scene-change** (`host.scene_transition_named` → `SceneHost::tick`), no longer a
 dialog opener. The dialog-dismiss gate stays on the `0x4C` nibble-5 sub-4 poll.
 
@@ -2026,7 +2095,7 @@ discs and translation packs.
 ## Connection to other crates
 
 - [`crates/mdt`](../formats/mdt.md) - opcode `0x22` `EXEC_MOVE` drives the move-table consumer at `FUN_800204F8`. Move IDs in scripts feed straight into the .mdt parsers.
-- [`crates/mes`](../formats/mes.md) - field **dialogue** has no dedicated opcode (see [§ Field dialogue](#field-dialogue-has-no-opcode)): it is the **actor's inline interaction-script MES text**, shown by the per-frame actor-dialog SM (`FUN_80039b7c`) + pager (`FUN_801D84D0`), triggered by the **field-interact op** (`0x3E` with `op0 < 100`). The text `crates/mes` parses is that inline `0x1F`/glyph stream. (Opcode `0x3F` is the named scene-change, not a dialog opener.)
+- [`crates/mes`](../formats/mes.md) - field **dialogue** has no dedicated opcode (see [§ Field dialogue](#field-dialogue-has-no-opcode)): it is the **actor's inline interaction-script MES text**, shown by the per-frame actor-dialog SM (`FUN_80039b7c`) + pager (`FUN_801D84D0`), triggered by the touch / button-press interaction (no opcode). The text `crates/mes` parses is that inline `0x1F`/glyph stream. (Opcode `0x3F` is the named scene-change, not a dialog opener.)
 - [`crates/anm`](../formats/anm.md) - opcode `0x34` sub-op 3 plays 3D animations via `func_0x800252EC` - likely the ANM consumer.
 - [`crates/engine-vm`](../../crates/engine-vm/src/field.rs) - destination for the from-scratch Rust port. Adds a `field_vm` module sister to the existing actor VM. Reuses the `Host` trait pattern.
 

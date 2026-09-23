@@ -1,7 +1,17 @@
 //! The field overlay's **attached-sprite tick** - the per-frame body of an
-//! actor spawned by the arc-hop family
-//! ([`crate::field_ledge_hop_arc`]), which rides a parent actor and draws a
-//! screen-space billboard at the parent's position.
+//! actor that rides a parent actor and draws a screen-space billboard at the
+//! parent's position.
+//!
+//! The actor comes from template `0x801F28B8` (word `2` = `0x801E4470`), and
+//! the template's one reference is the spawner `FUN_801E5668` (`lui`+`addiu`
+//! at `0x801E5694`/`0x801E56A8`), which seats `+0x90 = parent`,
+//! `+0x14..+0x18` = the offset, `+0x3C`/`+0x3E` = the size, `+0x74` = the
+//! sprite asset, `+0x88` / `+0x5A` from its stack arguments, `+0x50 = 0x3E7`
+//! and **`+0x94 = 0`**. Its one `jal` is `0x801DFFE0`, the field VM's op
+//! `0x34` sub-1 spawn (`FieldHost::op34_sub1_spawn_or_skip`), which the op's
+//! capture form then fills `+0x94` from. The arc-hop family is **not** the
+//! spawner: its chained record (template `0x801F22AC`) ticks `FUN_801D5D60`,
+//! not this routine.
 //!
 //! REF: FUN_800172c0, FUN_800195a8, FUN_801e3984, FUN_801e3e00
 //!
@@ -157,15 +167,16 @@ pub fn sprite_rect(quad: &ProjectedQuad) -> SpriteRect {
 // not off a parent actor's `+0x90` back-link. The missing host is an
 // `engine-core` actor kind carrying that back-link.
 //
-// Retail's one filler of that back-link is `FUN_801D25EC`'s chained emitter
-// (`field_ledge_hop_arc::HopEmitter`, template `0x801F22AC`), whose `+0x94`
-// encounter record is exactly what this tick branches on. Note what that does
-// **not** mean: the *player* arc-hop family is live now - `build_hop_arc`,
-// `advance_hop_arc` and `advance_hop_session` all run from
-// `World::step_field_vertical` - but the entry it goes through
-// (`FUN_801D2404`) allocates the arc helper and the phase helper, and **no**
-// emitter. Only `FUN_801D25EC` chains one, and that entry is still inert; so
-// the live hop does not close this row.
+// Retail's one spawner of this actor is `FUN_801E5668` (template
+// `0x801F28B8`), reached only from the field VM's op `0x34` sub-1 at
+// `0x801DFFE0` - a heavily used op (`34 10` has 415 clean sites in 43 scenes,
+// `asset field-op-census`) that the engine host skips outright
+// (`op34_sub1_spawn_or_skip` keeps its default no-spawn body). An earlier note
+// here named `FUN_801D25EC`'s chained record as the filler; that record's
+// template (`0x801F22AC`) ticks `FUN_801D5D60`, not this routine. Wiring
+// means an attached-sprite actor kind spawned by that op arm, a projector the
+// host supplies, and a draw for the `FUN_801e3984` emitter on both play
+// hosts.
 pub fn attached_sprite_tick<P, E>(
     parent: Option<(u32, (i16, i16, i16))>,
     local_offset: (i16, i16, i16),

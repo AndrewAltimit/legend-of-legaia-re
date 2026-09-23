@@ -235,31 +235,38 @@ pub fn build_hop_arc(start: (i16, i16, i16), target: HopTarget, apex: i16, frame
     }
 }
 
-/// The second record `FUN_801d25ec` chains behind the arc helper: an emitter
-/// allocated from template `0x801F22AC`, back-linked to the arc helper and
-/// carrying the two pointers and the class byte the caller supplied on the
-/// stack.
+/// The second record `FUN_801d25ec` chains behind the arc helper, allocated
+/// from template `0x801F22AC` and back-linked to the arc helper. It is the
+/// arc's **release watcher**, not an emitter: its tick `FUN_801D5D60`
+/// (template word `2`) waits for the arc helper to retire (`+0x90`'s
+/// `+0x10 & 8`), then clears the `+0x74` mask out of the `+0x94` context's
+/// flag word - and out of the player's too when `+0x50` is set - and retires
+/// itself. While the arc runs, a non-zero `+0x5C` with `+0x50` set runs the
+/// follow-camera ease and focus clamp (`FUN_801DB510` / `FUN_801DAA50`) on the
+/// player every frame.
 ///
-/// Field-for-field, from the stores at `0x801D2770..0x801D27AC`:
+/// Field-for-field, from the stores at `0x801D2770..0x801D27AC`, and what the
+/// one caller - the field VM's op `0x43` sub-`0`/`1`/`0xA`/`0xB` arm,
+/// `0x801DF53C..0x801DF5B0` - passes:
 ///
 /// | Offset | Source |
 /// |---|---|
 /// | `+0x90` | the arc helper allocated first |
-/// | `+0x94` | the caller's `sp+0x38` word - the actor's encounter record |
-/// | `+0x74` | the caller's `sp+0x3C` word - the emitter's asset pointer |
-/// | `+0x5C` | the caller's `sp+0x40` byte, zero-extended |
+/// | `+0x94` | `sp+0x38`: the context to release - the calling context when the arced actor is the player (both were halted), else the arced actor |
+/// | `+0x74` | `sp+0x3C`: the flag mask to clear - always `0x400`, the halt bit the arm's acquire raised |
+/// | `+0x5C` | `sp+0x40` byte: `1` for sub-`1`/`0xB`, `0` for sub-`0`/`0xA` - camera follow |
 /// | `+0x9C` | `0` |
 /// | `+0x9E` | the raw `a3` frame count, unscaled |
 /// | `+0x50` | `1` when the `a0` actor **is** the player, else `0` |
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HopEmitter {
-    /// `+0x94` - the caller's first stack pointer. `+0x94` is the actor slot
-    /// the encounter record is installed at (`docs/formats/encounter.md`), and
-    /// the attached-sprite tick `FUN_801e4470` branches on it being non-null.
-    pub encounter_record: u32,
-    /// `+0x74` - the emitter's asset pointer.
-    pub asset: u32,
-    /// `+0x5C` - the class byte, `lbu` from `sp+0x40` so never sign-extended.
+    /// `+0x94` - the context whose flag word the watcher clears on release.
+    pub release_ctx: u32,
+    /// `+0x74` - the mask it clears there (`0x400`, the halt bit, at the one
+    /// retail call site).
+    pub release_mask: u32,
+    /// `+0x5C` - the camera-follow byte, `lbu` from `sp+0x40` so never
+    /// sign-extended.
     pub class: u16,
     /// `+0x9E` - the frame count, stored raw rather than as `0x1000 / frames`.
     pub frames: i16,
@@ -346,7 +353,7 @@ pub fn spawn_arc_helper(
 }
 
 /// Arc-hop spawn with a chained emitter: retail
-/// `FUN_801d25ec(src, &target, apex, frames, encounter, asset, class)`
+/// `FUN_801d25ec(src, &target, apex, frames, release_ctx, release_mask, class)`
 /// (field overlay `0897_xxx_dat`, file offset `0x3DD4`).
 ///
 /// The first half is [`spawn_arc_helper`] inlined verbatim. The second half
@@ -369,7 +376,9 @@ pub fn spawn_arc_helper(
 // operand's two tile bytes (`(b & 0x7F) << 7 | 0x40`, plus `0x40` again when
 // bit 7 is set), falling back to the actor's own position when both are zero;
 // `a2` / `a3` are the decoded apex and frame count; the class byte is `1` for
-// sub-`1`/`B` and `0` for sub-`0`/`A`.
+// sub-`1`/`B` and `0` for sub-`0`/`A`. The chained record is the arc's
+// release watcher (`FUN_801D5D60`, see [`HopEmitter`]): it is what clears the
+// halt bit the acquire raised, once the arc lands.
 //
 // The port's arm (`crate::field::step::actor_ctrl::op_43`) stops at the halt.
 // It already computes and forwards the landing coords -
@@ -377,9 +386,11 @@ pub fn spawn_arc_helper(
 // hook that would carry the spawn exists and is called. What does not exist is
 // anywhere to put the result: `World::locomotion.ledge_hop` is a single
 // `Option<FieldLedgeHop>` for the **player**, and this entry arcs whichever
-// actor the script is running on, chaining an emitter record besides. Wiring
-// needs a per-actor arc channel (and a consumer for `HopEmitter`, whose tick
-// `FUN_801E4470` is itself inert for the same reason).
+// actor the script is running on - 492 clean sites disc-wide across the four
+// sub-ops (`asset field-op-census`), most of them cutscene-timeline pokes at
+// NPC channels. Wiring needs a per-actor arc channel, a height channel for
+// field NPCs (whose `World::npcs.positions` carry X / Z only, so an NPC arc
+// would lose its apex), and the release on landing.
 //
 // Naming this gap "the engine has no actor pool" was too coarse - the missing
 // thing is one keyed channel, and the call site is already named and live.
@@ -390,16 +401,16 @@ pub fn spawn_arc_with_emitter(
     target: HopTarget,
     apex: i16,
     frames: i16,
-    encounter_record: u32,
-    asset: u32,
+    release_ctx: u32,
+    release_mask: u32,
     class: u8,
 ) -> Option<HopSpawn> {
     let spawn = spawn_arc_helper(src, target, apex, frames)?;
     Some(HopSpawn {
         arc: spawn.arc,
         emitter: Some(HopEmitter {
-            encounter_record,
-            asset,
+            release_ctx,
+            release_mask,
             class: u16::from(class),
             frames,
             owner_is_player: src_is_player,
@@ -675,8 +686,8 @@ mod tests {
         assert_eq!(s.arc.step, 0x100);
         assert_eq!(e.frames, 0x10);
         assert_eq!(e.class, 0x0c);
-        assert_eq!(e.encounter_record, 0xdead_beef);
-        assert_eq!(e.asset, 0xfeed_face);
+        assert_eq!(e.release_ctx, 0xdead_beef);
+        assert_eq!(e.release_mask, 0xfeed_face);
         assert!(e.owner_is_player);
     }
 
