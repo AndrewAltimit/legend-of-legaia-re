@@ -253,6 +253,7 @@ is reached at runtime.
 | dev-menu tick | `symbols_all` on `retail_packed` + `commit_equip_row` + the records-page toggle. |
 | dev-records model | `symbols_all` on `record_counters` + `records_screen` across the two model builders. |
 | play clock | `symbols_same` on `advance_play_time` across the two menu draw sites. |
+| walk-ground render surface | `symbols_all` on `field_ground::render_positions` (the sink) and `render_indices` (the winding) across the native mesh builder and the play page's ground exports. |
 
 The last three exist because each named a divergence the reachability tier
 could not see, and each divergence was a *model* one rather than a missing
@@ -893,6 +894,64 @@ off on both hosts throughout and draws nothing in this frame. Tier 7 carries
 the rule, **retained field ground pass gated off in battle**: a render
 surface that uploads a field ground and drives a battle frame through the
 same renderer must reach `setGroundEnable(false)`.
+
+### A second pass: frames matched by engine frame, with retail as the third
+
+A later audit shot the non-battle screens on both hosts from one starting
+point and, where a mednafen library state holds the same screen, cut the
+retail display crop (`mednafen-state vram-dump --display-crop`) as the third
+frame. Four recipe additions made the pairs comparable:
+
+- **Match by engine frame, not by wall clock.** Headless Chromium over
+  SwiftShader runs the page at a few frames a second, so a timed wait lands
+  on a different beat each run. The page's `window.__playState.frame` counts
+  the same sim ticks the native `--screenshot-tick` names, so a driver waits
+  for a frame number and the two hosts meet on one beat.
+- **Clip to `#play-canvas`, at a device scale that makes it 960 wide.** The
+  canvas displays at about 655 CSS pixels in the page layout; a screenshot at
+  that size resamples every glyph, and colour and position diffs read as
+  host differences.
+- **The page's keys are the web layout.** `Mapping::web_default` puts Circle
+  on `X` and the d-pad on `WASD`, so a driver pressing `S` for Circle walks
+  the cursor down a menu instead of backing out of it.
+- **The native stage is integer-scaled.** At the runner's 960x699 window the
+  2D stage is 2x and centred while the 3D pass fills the window (the
+  `stage_transform` floor), so native frames compare against page frames
+  only after cropping the stage out and halving it.
+
+What the pass fixed, each asserted through a host entry and re-shot on a
+rebuilt bundle:
+
+| row | shape | fix |
+|---|---|---|
+| prologue floor culled on the page | a kernel one host ran inline | the heightfield's triangle reversal moved into `engine-core::field_ground`; the page uploaded the builder's raw winding, which is the facing the cutscene camera's NCLIP pass discards |
+| sky and backdrop shells skipped on the page | a filter one host added | the page dropped every draw the full-map viewer's sky classifier matched; the opdeene crater shell is one, so the prologue tableau stood in a navy void |
+| fishing exchange drawn on one host | a hand-off inside one call | see [the exchange section](#the-fishing-point-exchange-sub-screen-one-session-on-two-hosts-a-query-on-the-third) |
+| minigame status rows in surface pixels natively | a pen read in the wrong space | the native window now scales them through the stage the page uses |
+| field clear colour | two non-retail constants | both hosts read `battle_stage_clear::scene_clear` every frame, and a field frame clears to retail black |
+
+The pass also left three rows open:
+
+- **Field fog sheets are not visible in native frames.** In `vell` the
+  native window's `take_field_fog_prims` returns 37 to 78 quads a frame
+  (a live pool, the gate raised, a texture region the page samples as
+  populated), yet none shows in a native capture, while the page draws the
+  same pool as bright mist. Which frame is retail's is not settled: no
+  library state holds a mist scene as a mednafen state, and the PCSX-Redux
+  states carry no VRAM reader.
+- **The native minigame hotkeys open sessions, not scenes.** `O` and `B` run
+  the slot machine and Baka Fighter over the field with status text only,
+  and `L` puts the fishing camera on whatever field the player stands in;
+  the standalone minigames page draws the cabinet, the arena and the pond.
+  Blocking capability: the native window has no pass for either minigame
+  scene (the slot cabinet mesh and reels, the Baka arena and fighters).
+- **3D that has to line up with the 2D stage does not, at a window size
+  that is not a stage multiple.** The naming screen's Vahn is the field
+  scene's 3D actor, drawn through the full-window viewport, so at 960x699
+  he stands larger and further left than the 2x stage's windows around him;
+  the field party HUD floats the same way. Blocking capability: a 3D
+  viewport the native window letterboxes to the stage rect while a
+  stage-anchored screen is up.
 
 ## Gaps the tiers were blind to, closed by reading the two hosts side by side
 
@@ -2167,28 +2226,34 @@ inside the arena's own frame, which ends when the leg does, so the INTERVAL +
 tally screen - a between-legs screen - never reached the page at all. The page
 now draws the hub list on the field frames that follow a leg too.
 
-## The fishing point-exchange sub-screen: a screen on one host, a query on two
+## The fishing point-exchange sub-screen: one session on two hosts, a query on the third
 
 `World::minigames.fishing_exchange` is a live `Option<PrizeExchange>` with its
-own cursor. The native window opens it, draws it as a sub-screen over the
-fishing HUD, and closes it. Both browser hosts also answer one-shot JSON
-snapshots (`play_fishing_prizes_json`, `fishing_exchange_json`) that page-side
-JS lays out itself, and the play page opens the world sub-mode only
-transiently, inside a single buy call.
+own cursor, and what *drives* it is one engine kernel,
+`World::fishing_exchange_input` (`engine-core::fishing_exchange_input`):
+toggle (banking the live session's points first), cursor moves floored at the
+first visible row, venue switch, buy at the cursor. The native window maps its
+keys onto that kernel's `ExchangeInput`; the browser play page maps its prize
+panel's buttons onto the same inputs through `play_fishing_exchange_input`, and
+`play_fishing_prize_buy` puts the cursor on a row and buys through it too.
 
-The **composition** is no longer split: `legaia_engine_ui::ui_fishing_exchange`
-holds the header, the row columns, the ink rule and the one-time tag, and the
-native window draws the open sub-screen through it. The browser play page
-carries the same call (`fishing_exchange_draws` inside `play_fishing_hud_json`),
-but that arm has nothing to draw: the page's only opener is
-`play_fishing_prize_buy`, which opens the world sub-mode, commits the buy and
-closes it again inside one call, so no HUD compose ever finds
-`World::minigames.fishing_exchange` set, and what the player sees is the DOM
-prize panel `site/js/play-minigames.js` lays out from `play_fishing_prizes_json`.
-So the composition is shared and the *screen* is still native-only; no ladder in
-the reach union enters the page arm, and none can until the page holds the
-sub-mode open across frames. The standalone minigames page still lays its own
-list out from the JSON.
+The **composition** is shared: `legaia_engine_ui::ui_fishing_exchange` holds
+the header, the row columns, the ink rule and the one-time tag, and both play
+hosts draw the open sub-screen through it on their 320x240 stage - the native
+window from its HUD pass, the page from `play_fishing_hud_json`.
+
+It used to be a screen on one host only, for a reason no gate could see: the
+page carried the same compose call, but its only opener,
+`play_fishing_prize_buy`, opened the world sub-mode, committed the buy and
+closed it again inside one call, so no HUD compose ever found it open. The page
+now holds it open across frames and the DOM panel follows the engine's open /
+venue state (`play_fishing_exchange_state_json`);
+`crates/web-viewer/tests/play_screen_parity_disc.rs` asserts the rows join the
+HUD draw list while it is open. The native window, for its part, drew the rows
+in raw surface pixels at a pen that is a stage position - top-left and a third
+of the page's size - until they went through the stage transform. The
+standalone minigames page still lays its own list out from the JSON
+(`fishing_exchange_json`); it has no `World` to hold the session on.
 
 The tag is the part that has to stay separated from the ink.
 `PrizeExchange::is_available` folds three independent refusals together -
@@ -2197,10 +2262,11 @@ price, the owned-stack cap and the one-time latch - so a host that reads it as
 yet afford. `exchange_row_tag` reads `is_latched` on its own, and a test pins
 the three cases.
 
-What still differs is the cursor. Blocking capability: a page-side cursor
-surface that drives the world's own `PrizeExchange` cursor (arrow keys into
-`fishing_exchange`, not into a JS list), so the sub-screen is one session with
-one cursor rather than a rendered mode on two hosts and a query on the third.
+The play page's cursor is the world's own: a panel Buy moves
+`PrizeExchange::cursor` onto the row before buying, and the canvas draws that
+cursor. What the page does not have is a *keyboard* path to Up / Down on the
+open sub-screen - its arrow keys stay the pad, which the pond is still reading
+- so the panel's buttons are the page's input surface for it.
 
 The panel's pen also differs by one term: the native adds the venue overlay's
 idle sway (`FUN_801d03b0`), an actor the browser hosts do not install, so the
