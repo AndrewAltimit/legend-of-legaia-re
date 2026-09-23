@@ -370,11 +370,16 @@ fn a_live_cast_stages_its_module_records() {
             press(&mut w, PadButton::Cross); // confirm the target
         }
         cast += 1;
-        for _ in 0..3 {
-            if w.battle.command.is_none() {
-                break;
+        // The last commit raises the party's Begin | Reselect (`0x6E`);
+        // Cross takes its highlighted Begin.
+        for _ in 0..4 {
+            match w.battle.command.as_ref().map(|c| &c.phase) {
+                None => break,
+                Some(legaia_engine_core::battle_input::CommandPhase::CommitConfirm { .. }) => {
+                    press(&mut w, PadButton::Cross)
+                }
+                Some(_) => press(&mut w, PadButton::Down),
             }
-            press(&mut w, PadButton::Down);
         }
         // Run the band out, watching for the frame the stager stages the
         // module's records (`SummonPhase::Armed`, retail's `0x801E4B1C`).

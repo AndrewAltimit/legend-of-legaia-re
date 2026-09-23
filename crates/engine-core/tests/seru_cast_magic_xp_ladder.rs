@@ -182,13 +182,17 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
         press(&mut w, PadButton::Cross); // target confirm -> the commit
         casts += 1;
         // The cast lands at the caster's dispatch, after the last member
-        // commits (retail `0x6E -> 0xFE`): the other members Spirit so the
-        // round begins, and with flat turn tokens slot 0 dispatches first.
-        for _ in 0..3 {
-            if w.battle.command.is_none() {
-                break;
+        // commits (retail `0x6E -> 0xFE`): the other members Spirit, the
+        // party's Begin | Reselect takes Cross (Begin), and with flat turn
+        // tokens slot 0 dispatches first.
+        for _ in 0..4 {
+            match w.battle.command.as_ref().map(|c| &c.phase) {
+                None => break,
+                Some(legaia_engine_core::battle_input::CommandPhase::CommitConfirm { .. }) => {
+                    press(&mut w, PadButton::Cross) // Begin
+                }
+                Some(_) => press(&mut w, PadButton::Down), // ring: Spirit arm
             }
-            press(&mut w, PadButton::Down); // ring: Spirit arm
         }
         assert!(
             w.battle.command.is_none(),
