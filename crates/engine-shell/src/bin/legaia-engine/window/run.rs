@@ -634,6 +634,10 @@ pub(super) fn cmd_play_window_with_record(
         // sparring caption) was read at boot (`boot.rs`), this is the overlay
         // half.
         session.host.world.battle.ui_strings.merge(&strings);
+        // The party cast trigger's per-spell anim-pair lists, off the same
+        // battle-overlay image.
+        session.host.world.battle.spell_anim_pairs =
+            legaia_engine_core::battle_open::spell_anim_pairs_from_prot(&session.host.index);
         let n = session.host.world.battle.ui_strings.len();
         log::info!("play-window: battle UI labels read off the disc ({n} string(s))");
     }

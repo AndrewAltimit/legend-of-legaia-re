@@ -368,9 +368,12 @@ fn spell_anim_trigger_stages_the_summon_route_and_the_stager_requests_the_spawn(
         let mut host = BattleHostImpl { world: &mut world };
         host.spell_anim_trigger(0, 0x81);
     }
+    // `params[0]` is `+0x1DF`, so the three bytes land at `params[1..=3]`;
+    // `+0x1E0` is both the stream byte and the sub-route the band tests.
     assert_eq!(world.actors[0].battle.sub_route, 9, "+0x1E0 = 9");
-    assert_eq!(world.actors[0].battle.params[1], 0x12, "+0x1E1 = 0x12");
-    assert_eq!(world.actors[0].battle.params[2], 0xFF, "+0x1E2 = 0xFF");
+    assert_eq!(world.actors[0].battle.params[1], 9, "+0x1E0 = 9");
+    assert_eq!(world.actors[0].battle.params[2], 0x12, "+0x1E1 = 0x12");
+    assert_eq!(world.actors[0].battle.params[3], 0xFF, "+0x1E2 = 0xFF");
     assert!(
         world.casting.summon_stager.is_some(),
         "the stager is armed, not run"

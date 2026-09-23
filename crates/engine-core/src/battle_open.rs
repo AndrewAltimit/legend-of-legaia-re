@@ -60,6 +60,26 @@ pub fn battle_ui_strings_from_prot(index: &crate::scene::ProtIndex) -> BattleUiS
     out
 }
 
+/// Read the party cast trigger's per-spell anim-pair lists
+/// (`FUN_801DBF9C`'s `< 0x25` arm) off the user's own `PROT.DAT` - the same
+/// battle-overlay image [`battle_ui_strings_from_prot`] reads. Empty when the
+/// entry will not resolve.
+pub fn spell_anim_pairs_from_prot(
+    index: &crate::scene::ProtIndex,
+) -> legaia_asset::spell_anim_pairs::SpellAnimPairs {
+    use legaia_asset::spell_anim_pairs::SpellAnimPairs;
+    let Some(rec) = legaia_asset::static_overlay::overlay_map().by_label("battle_action") else {
+        return SpellAnimPairs::default();
+    };
+    let Ok(bytes) = index.entry_bytes(rec.prot_index) else {
+        return SpellAnimPairs::default();
+    };
+    match legaia_asset::static_overlay::as_loaded(&bytes, rec) {
+        Ok(loaded) => SpellAnimPairs::parse(&loaded, rec.base_va),
+        Err(_) => SpellAnimPairs::parse(&bytes, OVERLAY_BASE_VA),
+    }
+}
+
 /// Frames the open banner stays up, matching the `ctx[+0x6D6]` reseed at
 /// `0x801D0E34`: retail holds the intro `0x78` frames whenever the formation
 /// roll produced an advantage, against `0x5A` for an ordinary open.

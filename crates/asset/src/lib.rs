@@ -113,6 +113,7 @@ pub mod shop_stock;
 pub mod slot_b_module;
 pub mod slot_payout;
 pub mod sound_pack;
+pub mod spell_anim_pairs;
 pub mod spell_names;
 pub mod stage_geom;
 pub mod static_overlay;

@@ -354,6 +354,11 @@ pub struct BattleState {
     /// to read - the port's own wording is used then, so the surfaces still
     /// draw rather than going blank.
     pub ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings,
+    /// The party cast trigger's per-spell anim-pair lists
+    /// (`legaia_asset::spell_anim_pairs`), read off the user's PROT 0898 by
+    /// the host next to [`Self::ui_strings`]. Empty without a disc read, in
+    /// which case a spell id below `0x25` stages no clip and folds at once.
+    pub spell_anim_pairs: legaia_asset::spell_anim_pairs::SpellAnimPairs,
     /// The next [`crate::world::World::enter_battle`] is the sparring fight and should arm
     /// [`crate::world::BattleState::tutorial`]. Set by
     /// [`crate::world::World::prime_battle_tutorial`]; the engine's stand-in for retail's
@@ -498,6 +503,7 @@ impl BattleState {
             tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),
             tutorial_boxes: std::collections::VecDeque::new(),
             ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings::default(),
+            spell_anim_pairs: legaia_asset::spell_anim_pairs::SpellAnimPairs::default(),
             tutorial_pending: false,
             active_formation: None,
             last_rewards: None,

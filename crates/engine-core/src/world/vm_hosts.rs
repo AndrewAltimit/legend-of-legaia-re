@@ -2714,22 +2714,24 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     }
     /// The party cast trigger the pre-cast wait runs on its timer's expiry.
     ///
-    /// Two arms on the spell id (`sltiu v0,a1,0x25` at `0x801DBFA0`):
+    /// Two arms on the spell id (`sltiu v0,a1,0x25` at `0x801DBFA0`), both
+    /// writing the caster's action-parameter stream from `+0x1E0` - which is
+    /// `params[1]`, since `params[0]` is `+0x1DF`:
     ///
-    /// * `>= 0x25` - every player Seru id: the summon sub-route
-    ///   (`actor[+0x1E0] = 9`), the cast-effect id `0x12` at `+0x1E1` and the
-    ///   terminator at `+0x1E2` (`0x801DC064..0x801DC09C`). The engine arms
-    ///   its stager here; the outcome is the stager's strike.
-    /// * `< 0x25` - the per-spell anim-pair list at
-    ///   `0x801F4E64` / `0x801F4EDC` copied into `params[1..]`
-    ///   (`0x801DBFAC..0x801DC060`). The engine has no parse of that overlay
-    ///   table, so the stream terminates at `params[1]` and the outcome the
-    ///   clips would have carried folds here instead. That is a gap in *this
-    ///   arm's data*, not a wiring gap: the routine is called on every pre-cast
-    ///   expiry and the ladders execute it. Deliberately not written as an
-    ///   unwired-port disclosure - that marker is an anchor-level claim, and
-    ///   on a routine a ladder really runs it makes a passing oracle read as
-    ///   having traversed a stub.
+    /// * `>= 0x25` - every player Seru id: `+0x1E0 = 9` (the summon sub-route
+    ///   byte, which *is* `params[1]` in retail - the port also keeps it in
+    ///   [`vm::battle_action::BattleActor::sub_route`]), the cast-effect id
+    ///   `0x12` at `+0x1E1` and the terminator at `+0x1E2`
+    ///   (`0x801DC064..0x801DC09C`). The engine arms its stager here; the
+    ///   outcome is the stager's strike.
+    /// * `< 0x25` - the per-spell `(anim, effect)` pair list the index at
+    ///   `0x801F4E63 + id` picks out of the 8-byte records at `0x801F4EDC`,
+    ///   copied pair by pair from `+0x1E0` and closed with `0xFF`
+    ///   (`0x801DBFAC..0x801DC060`), read off the disc into
+    ///   [`crate::world::BattleState::spell_anim_pairs`]. With pairs staged the
+    ///   band walks them and the cast folds at its exit; an empty list (or no
+    ///   disc read) leaves the terminator at `params[1]`, the band goes
+    ///   straight to its cleanup, and the owed outcome folds here.
     ///
     /// PORT: FUN_801DBF9C
     fn spell_anim_trigger(&mut self, party_slot: u8, spell_id: u8) {
@@ -2743,15 +2745,36 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         if spell_id >= SPELL_TRIGGER_SUMMON_MIN_ID {
             if let Some(a) = self.world.actors.get_mut(party_slot as usize) {
                 a.battle.sub_route = 9;
-                a.battle.params[1] = SUMMON_CAST_EFFECT_ID;
-                a.battle.params[2] = 0xFF;
+                a.battle.params[1] = 9;
+                a.battle.params[2] = SUMMON_CAST_EFFECT_ID;
+                a.battle.params[3] = 0xFF;
             }
             self.world.arm_summon_stager(party_slot, spell_id);
         } else {
+            let pairs: Vec<(u8, u8)> = self
+                .world
+                .battle
+                .spell_anim_pairs
+                .pairs(spell_id)
+                .map(<[(u8, u8)]>::to_vec)
+                .unwrap_or_default();
             if let Some(a) = self.world.actors.get_mut(party_slot as usize) {
-                a.battle.params[1] = 0xFF;
+                let n = a.battle.params.len();
+                let mut end = 1usize;
+                for (k, (anim, effect)) in pairs.iter().enumerate() {
+                    let at = 1 + 2 * k;
+                    if at + 2 >= n {
+                        break;
+                    }
+                    a.battle.params[at] = *anim;
+                    a.battle.params[at + 1] = *effect;
+                    end = at + 2;
+                }
+                a.battle.params[end] = 0xFF;
             }
-            self.world.fold_pending_cast();
+            if pairs.is_empty() {
+                self.world.fold_pending_cast();
+            }
         }
     }
     /// Stage a full-screen fade from the band's template - the summon
