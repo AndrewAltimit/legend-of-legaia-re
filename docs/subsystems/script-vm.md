@@ -425,6 +425,34 @@ through `legaia_engine_ui::screen_prim::light_pool_prims`. The ports:
 `legaia_engine_vm::field_actor_billboard`. `34 10` has 415 clean sites in 43
 scenes (`asset field-op-census`).
 
+##### The extents are view-space units (retail capture)
+
+`FUN_800195A8` adds the two extents to the parent point **after**
+`FUN_8003D344` has MVMVA'd it through the field view matrix, then projects
+the four corners through an identity rotation (`FUN_8003D178`,
+`FUN_8005BAC8`). The view matrix `FUN_800172C0` composes at `0x1F8003C8`
+carries the base-matrix scale `_DAT_8007BF10` (`24576 * I`, six times world
+scale - [`renderer.md`](renderer.md)), so the rim radius on screen is
+`H * ext / vz` with `vz` the eye depth in that scaled space: an extent of
+`0x1000` is a sixth of `0x1000` world units. `FUN_801E4470` then passes the
+full projected span and `FUN_801E3984` halves it through the `0x1000` entry of
+its cosine table (`0x801F2904`), so the radius is the extent itself, not half
+of it.
+
+The catalogued retail state `drake_castle_to_worldmap` (`dolk`, retail
+SCUS) holds the `dolk` mask live: one actor ticked by `FUN_801E4470` (callback
+word `+0x0C`) on the player, extents `(0x1000, 0x1000)`, `+0x74 = 0`,
+`+0x88 = 0x909060`, `+0x5A = 2`, offset `(0, -0x60, 0)`, no keyframe script -
+the engine's spawn of the same op matches every field. The frame's packets
+put the rim at `201` px round `(153, 93)` with `H = 768` (`_DAT_8007B6F4`) and
+`vz = 15635`, exactly `H * ext / vz`; so the ring reaches the screen corners
+and the rim-colour fills darken everything beyond it. The engine's
+`World::field_light_draws` scales the extents by `H / z` at a **world-unit**
+eye depth, six times the retail radius at the same framing, which puts the
+rim and its fills off-screen and leaves only the faint centre fan - the
+engine's `dolk` and `cave01` frames show no darkness at all. Pinned (retail side) by
+`crates/engine-core/tests/attached_light_retail_capture_disc.rs`.
+
 #### 0x35 BGM
 
 `[35, lo, hi, sub]`. Operand 2 selects sub-op:
