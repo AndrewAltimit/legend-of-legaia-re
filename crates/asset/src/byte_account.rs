@@ -3682,6 +3682,48 @@ enum ArgExtent {
     MoveRecord,
     /// A fixed size the callee's own field reads pin.
     Fixed(usize),
+    /// An array whose element size the callee's loop fixes and whose element
+    /// count the caller hands over as an immediate in `count_reg`.
+    Counted { count_reg: u32, stride: usize },
+}
+
+/// The immediate `reg` holds on reaching the word at `from`, walking
+/// backwards: the last writer must be `addiu reg,$zero,imm` (`li`), reached
+/// through any chain of register copies. A call crossed on the way back, the
+/// routine's prologue, or any other writer names nothing.
+fn imm_before(
+    buf: &[u8],
+    base: u32,
+    from: usize,
+    mut reg: u32,
+    skip_call_at: usize,
+) -> Option<i32> {
+    const WINDOW: usize = 64;
+    let mut o = from;
+    for _ in 0..WINDOW {
+        let w = legaia_bytes::u32_le(buf, o)?;
+        if w >> 16 == 0x27BD && w & 0x8000 != 0 {
+            return None;
+        }
+        if o != skip_call_at {
+            if matches!(Flow::of(w, o, base), Flow::Call) {
+                return None;
+            }
+            if defines(w) == Some(reg) {
+                let (op, rs, rt) = (w >> 26, (w >> 21) & 0x1F, (w >> 16) & 0x1F);
+                if op == 0x09 && rs == 0 {
+                    return Some(i32::from((w & 0xFFFF) as i16));
+                }
+                if op == 0x00 && matches!(w & 0x3F, 0x21 | 0x25) && (rs == 0) != (rt == 0) {
+                    reg = rs | rt;
+                } else {
+                    return None;
+                }
+            }
+        }
+        o = o.checked_sub(4)?;
+    }
+    None
 }
 
 /// The callees whose pointer argument names a record of a known extent.
@@ -3692,10 +3734,24 @@ enum ArgExtent {
 /// * `FUN_80020DE0` (actor allocator) takes a static actor template in `$a0`:
 ///   24 bytes, `+0x00..+0x14`, fixed by the allocator's own field copies
 ///   (`docs/reference/functions/runtime-libs.md`, static actor templates).
-const ARG_RECORD_CALLEES: [(u32, u32, ArgExtent, &str); 3] = [
+/// * `FUN_8001C93C` (debug value-monitor list drawer) takes `$a0` rows of
+///   `0x28` bytes at `$a1`: its loop runs `$a0` times and every arm advances
+///   the row pointer by `addiu s0,s0,0x28`; a row is `[i16 kind][i16 x][i16
+///   y][..][u32 value ptr @ +0x08][label @ +0x0E][u32 name table @ +0x24]`
+///   (`see ghidra/scripts/funcs/8001c93c.txt`).
+const ARG_RECORD_CALLEES: [(u32, u32, ArgExtent, &str); 4] = [
     (0x8002_1B04, 6, ArgExtent::MoveRecord, "spawn record"),
     (0x8005_0ED4, 6, ArgExtent::MoveRecord, "spawn record"),
     (0x8002_0DE0, 4, ArgExtent::Fixed(0x18), "actor template"),
+    (
+        0x8001_C93C,
+        5,
+        ArgExtent::Counted {
+            count_reg: 4,
+            stride: 0x28,
+        },
+        "value-monitor row list",
+    ),
 ];
 
 /// Records the image's own code hands to a callee in
@@ -3735,6 +3791,11 @@ fn claim_spawn_records(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOpt
     let mut record_starts: Vec<usize> = Vec::new();
     let mut callees: Vec<(u32, u32, ArgExtent, &str)> = ARG_RECORD_CALLEES.to_vec();
     for (callee, reg, extent, what) in ARG_RECORD_CALLEES {
+        // A counted callee's count travels in a second register a forwarding
+        // wrapper would have to be read for too; none is needed on the disc.
+        if matches!(extent, ArgExtent::Counted { .. }) {
+            continue;
+        }
         let target = jal(callee);
         for o in (0..own_end.saturating_sub(3)).step_by(4) {
             if legaia_bytes::u32_le(buf, o) != Some(target) || !in_code(o) {
@@ -3753,17 +3814,34 @@ fn claim_spawn_records(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOpt
     for (callee, reg, extent, what) in callees {
         let target = jal(callee);
         let mut starts: Vec<usize> = Vec::new();
+        // Per start, the element count every call handing it over agrees on
+        // (`Counted` only); a start two calls disagree about claims nothing.
+        let mut counts: std::collections::BTreeMap<usize, Option<usize>> = Default::default();
         let mut sites = 0usize;
         let mut o = 0usize;
         while o + 4 <= own_end {
             if legaia_bytes::u32_le(buf, o) == Some(target) && in_code(o) {
                 sites += 1;
+                let count = match extent {
+                    ArgExtent::Counted { count_reg, .. } => {
+                        imm_before(&buf[..own_end], base, o + 4, count_reg, o)
+                            .and_then(|n| usize::try_from(n).ok())
+                            .filter(|&n| n > 0)
+                    }
+                    _ => None,
+                };
                 for t in arg_values_at_call(&buf[..own_end], base, o, &forms, &jumps_to, reg) {
                     if let Some(off) = t.checked_sub(base).map(|x| x as usize)
                         && off + 4 < own_end
                         && !in_code(off)
                     {
                         starts.push(off);
+                        if matches!(extent, ArgExtent::Counted { .. }) {
+                            let e = counts.entry(off).or_insert(count);
+                            if *e != count {
+                                *e = None;
+                            }
+                        }
                     }
                 }
             }
@@ -3786,6 +3864,19 @@ fn claim_spawn_records(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOpt
                     starts.get(i + 1).map_or(e, |&n| e.min(n))
                 }
                 ArgExtent::Fixed(len) => s + len,
+                ArgExtent::Counted { stride, .. } => {
+                    let Some(n) = counts.get(&s).copied().flatten() else {
+                        continue;
+                    };
+                    let end = s + n * stride;
+                    // The whole array must be data this image owns: an extent
+                    // that runs into code or past the own-content end is a
+                    // count read off the wrong register, not a table.
+                    if end > own_end || (s..end).step_by(4).any(&in_code) {
+                        continue;
+                    }
+                    end
+                }
             }
             .min(own_end);
             let head = i16::from_le_bytes([buf[s], buf[s + 1]]);
@@ -3830,9 +3921,19 @@ enum WindowProgram {
 /// The interpreter is image-local - at any other image the same `jal` word
 /// names whatever that image holds at the VA - so each row applies to its own
 /// entry alone.
-const WINDOW_PROGRAM_VMS: [(u32, u32, WindowProgram); 2] = [
-    (899, 0x801D_6628, WindowProgram::Menu),
-    (897, 0x801E_9B3C, WindowProgram::Field),
+///
+/// PROT 0896, the foreign build's options / status image, carries its own copy
+/// of the menu interpreter at `FUN_801D896C`: it walks `[u8 op][u8 window][u16
+/// operand]` words with `addiu s4,s4,4` until the opcode byte reads zero
+/// (`lbu v0,(s4)` / `bnez` at `0x801D8BAC`) and dispatches `op - 1` through an
+/// `sltiu 0xd` jump table - the menu program format, opcode bound included.
+///
+/// The second column is the link base the interpreter VA assumes; an image
+/// accounted at any other base names nothing through it.
+const WINDOW_PROGRAM_VMS: [(u32, u32, u32, WindowProgram); 3] = [
+    (899, 0x801C_E818, 0x801D_6628, WindowProgram::Menu),
+    (897, 0x801C_E818, 0x801E_9B3C, WindowProgram::Field),
+    (896, 0x801D_4DF0, 0x801D_896C, WindowProgram::Menu),
 ];
 
 /// Window programs an overlay hands its window VM
@@ -3846,13 +3947,13 @@ const WINDOW_PROGRAM_VMS: [(u32, u32, WindowProgram); 2] = [
 /// and the extent is the program through its terminator
 /// (`docs/formats/window-script.md`).
 fn claim_widget_scripts(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOptions) {
-    let Some(&(_, vm, kind)) = WINDOW_PROGRAM_VMS
+    let Some(&(_, link_base, vm, kind)) = WINDOW_PROGRAM_VMS
         .iter()
         .find(|r| Some(r.0) == opts.prot_index)
     else {
         return;
     };
-    if base != crate::menu_windows::MENU_OVERLAY_BASE_VA {
+    if base != link_base {
         return;
     }
     let own_end = inherited_tail_start(buf, opts).unwrap_or(buf.len());
@@ -3894,10 +3995,13 @@ fn claim_widget_scripts(buf: &[u8], sink: &mut Sink, base: u32, opts: &AccountOp
         .collect();
     let (mut n, mut bytes) = (0usize, 0usize);
     for (i, &off) in starts.iter().enumerate() {
-        let va = base + off as u32;
         let (end, insns) = match kind {
             WindowProgram::Menu => {
-                let Ok(script) = crate::widget_script::parse_at(&buf[..own_end], va) else {
+                // `parse_at` addresses the image at the menu overlay's base;
+                // hand it the file offset in that frame so an image linked
+                // elsewhere (PROT 0896) parses the same bytes.
+                let at = crate::menu_windows::MENU_OVERLAY_BASE_VA + off as u32;
+                let Ok(script) = crate::widget_script::parse_at(&buf[..own_end], at) else {
                     continue;
                 };
                 (off + script.byte_len(), script.insns.len())
@@ -4565,11 +4669,192 @@ fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_index: u32) {
     if prot_index == STR_OVERLAY_PROT_INDEX {
         claim_str_overlay_tables(buf, sink);
     }
+    claim_consumer_pinned_tables(buf, sink, prot_index);
     if prot_index == crate::field_probe_tables::OVERLAY_PROT_INDEX {
         claim_field_probe_tables(buf, sink);
     }
     if prot_index == crate::other3_roster::OVERLAY_PROT_INDEX {
         claim_other3_roster(buf, sink);
+    }
+}
+
+/// Where a consumer-pinned table's count comes from.
+#[derive(Clone, Copy)]
+enum PinnedCount {
+    /// The loop that walks the table states it: the word at `site` is an
+    /// `slti` / `sltiu` (or `li`) whose immediate is the count.
+    Loop { site: u32 },
+    /// The index's domain is another table's row count, named by a constant
+    /// of the module that parses that table.
+    Domain { what: &'static str },
+    /// Nothing bounds the index; the table runs to the next address the image
+    /// forms, `next` (formed by the `lui` at `site`), and that distance must be
+    /// a whole number of elements - the runtime-index rule's layout test, for
+    /// a table whose field reads sit too far from the index arithmetic for
+    /// that rule's straight-line scan.
+    Layout { next: u32, site: u32 },
+}
+
+/// One table whose base, stride and count are each read off a consumer
+/// instruction rather than off the bytes. See [`claim_consumer_pinned_tables`].
+struct ConsumerPinnedTable {
+    prot: u32,
+    base_va: u32,
+    stride: usize,
+    count: usize,
+    /// `(lui site, address formed)`: the `lui` at `site` and the first
+    /// following instruction that addresses through its register (within four
+    /// words) together form `address` - the table base or one of its fields.
+    forms: &'static [(u32, u32)],
+    count_from: PinnedCount,
+    what: &'static str,
+}
+
+/// Tables the generic array rules cannot size, each pinned by the
+/// instructions that consume it and re-checked against this image's own words
+/// before it is claimed.
+const CONSUMER_PINNED_TABLES: [ConsumerPinnedTable; 3] = [
+    // DEBUG MODE's variable-monitor rows: the `FUN_8001C93C` row layout
+    // (`+0x00` kind, `+0x04` y, `+0x08` value pointer, `+0x0E` label, `+0x24`
+    // name table), walked inline by the menu loop at `0x801CEBC0`. The kind
+    // read `lh v1,-0x770(at)` (`lui at` at `0x801CEC1C`, indexed by the loop's
+    // `s3 += 0x28`) forms the base; the row-y pointer `s2` starts at `+4`
+    // (`0x801CEBA8`), bumped `addiu s2,s2,0x28`; the loop bound is `sltiu
+    // v0,s0,0x16` at `0x801CECE0`.
+    ConsumerPinnedTable {
+        prot: 971,
+        base_va: 0x801C_F890,
+        stride: 0x28,
+        count: 22,
+        forms: &[(0x801C_EC1C, 0x801C_F890), (0x801C_EBA8, 0x801C_F894)],
+        count_from: PinnedCount::Loop { site: 0x801C_ECE0 },
+        what: "DEBUG MODE value-monitor rows (FUN_8001C93C layout)",
+    },
+    // The fishing overlay's per-species eight-byte records: `lw` of the hooked
+    // species id `0x801D91CC`, `sll 3`, `addu` with the base formed at
+    // `0x801D52CC` / `0x801D5360` / `0x801D5414`, then halfword reads at
+    // `+0`, `+2`, `+4`, `+6`. The index is the species id, whose domain is
+    // the ten-row species table; the tenth record ends exactly on the `HIT`
+    // string at `0x801D8584`.
+    ConsumerPinnedTable {
+        prot: 972,
+        base_va: 0x801D_8534,
+        stride: 8,
+        count: crate::fishing_species::SPECIES_COUNT,
+        forms: &[
+            (0x801D_52CC, 0x801D_8534),
+            (0x801D_5360, 0x801D_8534),
+            (0x801D_5414, 0x801D_8534),
+        ],
+        count_from: PinnedCount::Domain {
+            what: "the hooked species id (fishing_species::SPECIES_COUNT rows)",
+        },
+        what: "fishing per-species motion records",
+    },
+    // The contest hub's twenty-byte sprite records: `FUN_801D050C` and
+    // `FUN_801D08EC` index them `(a2 & 0x3FF) * 20` off the base formed at
+    // `0x801D0544` / `0x801D093C`, and read every field - `+0x00` word,
+    // `+0x04` / `+0x06` halfwords, `+0x08..+0x13` bytes - most of them over a
+    // hundred words below the `addu`, past the reach of the runtime-index
+    // rule's straight-line scan. The fixed accesses the image makes into the
+    // table land on the same fields at the same widths: `sb 0xC3(s4)` /
+    // `sb 0xC7(s4)` at `0x801CF538` (element 9, `+0x0F` / `+0x13`),
+    // `sh 0xBA(v1)` and `sb 8(s3)` in `FUN_801D1308` (element 9, `+0x06` /
+    // `+0x08`), and the direct byte globals at elements 1 and 4 (`+0x08`,
+    // `+0x0B`). The next address the image forms, `0x801D1860`, closes
+    // seventeen whole records.
+    ConsumerPinnedTable {
+        prot: 977,
+        base_va: 0x801D_170C,
+        stride: 0x14,
+        count: 17,
+        forms: &[
+            (0x801C_F530, 0x801D_170C),
+            (0x801D_0544, 0x801D_170C),
+            (0x801D_093C, 0x801D_170C),
+            (0x801D_13D0, 0x801D_170C),
+        ],
+        count_from: PinnedCount::Layout {
+            next: 0x801D_1860,
+            site: 0x801D_10E8,
+        },
+        what: "contest hub sprite records",
+    },
+];
+
+/// The address the `lui` at file offset `at` forms with the first following
+/// instruction (within four words) that addresses through the same register:
+/// an `addiu`, a load or a store. `None` when the word is not a `lui`.
+fn lui_pair_address(buf: &[u8], at: usize) -> Option<u32> {
+    let w = legaia_bytes::u32_le(buf, at)?;
+    if w >> 26 != 0x0F {
+        return None;
+    }
+    let reg = (w >> 16) & 0x1F;
+    let hi = (w & 0xFFFF) << 16;
+    for k in 1..=4 {
+        let x = legaia_bytes::u32_le(buf, at + 4 * k)?;
+        let (op, rs) = (x >> 26, (x >> 21) & 0x1F);
+        if rs == reg && matches!(op, 0x09 | 0x20..=0x26 | 0x28..=0x2B) {
+            return Some(hi.wrapping_add((x & 0xFFFF) as i16 as i32 as u32));
+        }
+    }
+    None
+}
+
+/// Claim each [`CONSUMER_PINNED_TABLES`] row of this entry, after checking
+/// every instruction the row cites: each `lui` site must still form its
+/// address, and a loop-stated count must still be the immediate at its site.
+/// A row that disagrees with the image gets a note and no claim.
+fn claim_consumer_pinned_tables(buf: &[u8], sink: &mut Sink, prot_index: u32) {
+    const SLOT_A: u32 = 0x801C_E818;
+    for t in CONSUMER_PINNED_TABLES
+        .iter()
+        .filter(|t| t.prot == prot_index)
+    {
+        let at = |va: u32| (va - SLOT_A) as usize;
+        let forms_ok = t
+            .forms
+            .iter()
+            .all(|&(site, va)| lui_pair_address(buf, at(site)) == Some(va));
+        let count_ok = match t.count_from {
+            PinnedCount::Loop { site } => legaia_bytes::u32_le(buf, at(site)).is_some_and(|w| {
+                matches!(w >> 26, 0x09..=0x0B) && (w & 0xFFFF) as usize == t.count
+            }),
+            PinnedCount::Domain { .. } => true,
+            PinnedCount::Layout { next, site } => {
+                lui_pair_address(buf, at(site)) == Some(next)
+                    && next > t.base_va
+                    && (next - t.base_va) as usize == t.count * t.stride
+            }
+        };
+        let (start, end) = (at(t.base_va), at(t.base_va) + t.count * t.stride);
+        if !forms_ok || !count_ok || end > buf.len() {
+            sink.note(format!(
+                "{} at {:#010x} not claimed: a cited instruction no longer reads as stated",
+                t.what, t.base_va
+            ));
+            continue;
+        }
+        let count_why = match t.count_from {
+            PinnedCount::Loop { site } => format!("loop bound at {site:#010x}"),
+            PinnedCount::Domain { what } => format!("index domain: {what}"),
+            PinnedCount::Layout { next, .. } => {
+                format!("whole records to the next formed address {next:#010x}")
+            }
+        };
+        sink.claim(
+            start,
+            end,
+            OWNER_RECORD,
+            format!(
+                "{}, {} x {:#x} bytes ({count_why}; base formed at {} site(s))",
+                t.what,
+                t.count,
+                t.stride,
+                t.forms.len()
+            ),
+        );
     }
 }
 
@@ -4725,6 +5010,8 @@ fn claim_str_overlay_tables(buf: &[u8], sink: &mut Sink) {
         }
     }
 
+    claim_str_dead_vlc_table(buf, sink, base);
+
     let src = (vlc::STRV2_PACKED_VA - base) as usize;
     match buf.get(src..).map(vlc::unpack_lz_tracked) {
         Some(Ok((table, consumed))) => {
@@ -4746,6 +5033,65 @@ fn claim_str_overlay_tables(buf: &[u8], sink: &mut Sink) {
         }
         _ => sink.note("the VLC blob at the pinned offset does not terminate"),
     }
+}
+
+/// First word of the STR overlay's second, unreferenced AC VLC lookup table.
+const STR_DEAD_VLC_VA: u32 = 0x801D_0E9C;
+/// One past its last word: the start of the overlay's uninitialised data
+/// region (the `cutscene_str` row of `static-overlays.toml`).
+const STR_DEAD_VLC_END_VA: u32 = 0x801D_199C;
+
+/// The STR overlay's 2816-byte AC VLC lookup table at [`STR_DEAD_VLC_VA`],
+/// directly above the MDEC / DMA register-pointer block, which **nothing
+/// reads**: no word, `jal`, `j`, branch or `lui` pair in any image names an
+/// address in it (`find-address-word-refs.py --prot`), no `lui` + load or
+/// `gp`-relative access reaches it (`find-gp-relative-refs.py --prot`), and
+/// the register block's own accesses stop at its last pointer, `0x801D0E98`.
+/// The overlay's decoder reads the separate `0x11000`-byte table
+/// `FUN_801F1A00` unpacks at `0x801E0A00` instead
+/// (`legaia_mdec::strv2_table`). So this is initialised data the link carried
+/// and no code uses - claimed as dead data under that name, not as a
+/// structure anything consumes.
+///
+/// The claim is shape-checked before it is made: every word is either zero or
+/// an entry `(len << 26) | (run << 10) | level` whose bits `16..26` are clear
+/// and whose length field is a plausible code length - the MPEG-1 AC run /
+/// level form (`0x1000_0401` is a 4-bit code for run 1, level 1).
+fn claim_str_dead_vlc_table(buf: &[u8], sink: &mut Sink, base: u32) {
+    let (start, end) = (
+        (STR_DEAD_VLC_VA - base) as usize,
+        (STR_DEAD_VLC_END_VA - base) as usize,
+    );
+    let Some(words) = buf.get(start..end) else {
+        sink.note("the STR overlay is too short for its dead VLC table");
+        return;
+    };
+    let (mut zero, mut entries) = (0usize, 0usize);
+    for w in words
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|w| u32::from_le_bytes(*w))
+    {
+        if w == 0 {
+            zero += 1;
+        } else if w & 0x03FF_0000 == 0 && (2..=17).contains(&(w >> 26)) {
+            entries += 1;
+        } else {
+            sink.note(format!(
+                "no AC VLC table at {STR_DEAD_VLC_VA:#010x}: word {w:#010x} is not a run/level entry"
+            ));
+            return;
+        }
+    }
+    sink.claim(
+        start,
+        end,
+        OWNER_RECORD,
+        format!(
+            "unreferenced AC VLC lookup table, {entries} run/level entries + {zero} empty              slots: dead data, no image forms an address in it"
+        ),
+    );
 }
 
 /// The battle overlay's head: twenty-two `switch` jump tables and the C
@@ -5808,6 +6154,59 @@ mod tests {
 
     fn c(a: usize, b: usize) -> Claim {
         Claim::new(a, b, OWNER_RECORD, "t")
+    }
+
+    #[test]
+    fn lui_pair_address_reads_the_first_access_through_the_register() {
+        // lui v0,0x801e ; lw v1,-0x7000(a0) (other reg) ; addiu s4,v0,-0x7acc
+        let b = words(&[0x3C02_801E, 0x8C83_9000, 0x2454_8534]);
+        assert_eq!(lui_pair_address(&b, 0), Some(0x801D_8534));
+        // lui at,0x801d ; addu at,at,s3 ; lh v1,-0x770(at): the displacement
+        // completes the pair.
+        let b = words(&[0x3C01_801D, 0x0033_0821, 0x8423_F890]);
+        assert_eq!(lui_pair_address(&b, 0), Some(0x801C_F890));
+        // Not a lui.
+        assert_eq!(lui_pair_address(&words(&[0x2402_0001]), 0), None);
+    }
+
+    #[test]
+    fn imm_before_reads_an_li_through_copies_and_stops_at_a_call() {
+        // li a0,0xb ; move a1,s0 ; jal ... ; nop  (walk from the delay slot)
+        let b = words(&[0x2404_000B, 0x0200_2821, 0x0C00_724F, 0x0000_0000]);
+        assert_eq!(imm_before(&b, 0x801C_E818, 12, 4, 8), Some(0xB));
+        // li s1,5 ; move a0,s1 ; jal ; nop - followed through the copy.
+        let b = words(&[0x2411_0005, 0x0220_2021, 0x0C00_724F, 0x0000_0000]);
+        assert_eq!(imm_before(&b, 0x801C_E818, 12, 4, 8), Some(5));
+        // li a0,3 ; jal other ; nop ; jal target ; nop - a call in between
+        // names nothing.
+        let b = words(&[0x2404_0003, 0x0C00_1000, 0, 0x0C00_724F, 0]);
+        assert_eq!(imm_before(&b, 0x801C_E818, 16, 4, 12), None);
+    }
+
+    #[test]
+    fn the_dead_vlc_table_is_claimed_only_when_every_word_is_an_entry() {
+        let base = 0x801C_E818u32;
+        let start = (STR_DEAD_VLC_VA - base) as usize;
+        let end = (STR_DEAD_VLC_END_VA - base) as usize;
+        let mut buf = vec![0u8; end + 16];
+        for (i, w) in buf[start..end]
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .enumerate()
+        {
+            let v: u32 = if i % 3 == 0 { 0 } else { 0x1000_0401 };
+            w.copy_from_slice(&v.to_le_bytes());
+        }
+        let mut sink = Sink::new();
+        claim_str_dead_vlc_table(&buf, &mut sink, base);
+        assert_eq!(sink.claims.len(), 1);
+        assert_eq!((sink.claims[0].start, sink.claims[0].end), (start, end));
+        // One word with bits 16..26 set is not a run / level entry.
+        buf[start + 8..start + 12].copy_from_slice(&0x1001_0401u32.to_le_bytes());
+        let mut sink = Sink::new();
+        claim_str_dead_vlc_table(&buf, &mut sink, base);
+        assert!(sink.claims.is_empty());
     }
 
     #[test]

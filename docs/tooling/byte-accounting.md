@@ -600,12 +600,12 @@ it.
 | `0899` | `0x1EB28`, 3552 B | zero fill between the save-menu atlas's end and the save-slot icon sheet at `0x1F908` | not uninitialised data: no instruction in any image forms an address inside it (`find-gp-relative-refs.py --prot`, zero hits), so it is inter-asset slack, and it already classifies `zero_pad` |
 | `0899` | `0x163A7`, about 1 KB, claimed | the pause menu's window-script programs, handed to `FUN_801D6628` mostly from `switch` arms ([below](#the-window-programs-are-read-off-their-interpreters-calls)) | - |
 | `0899` | `0x2050C` band | what is left of the save-screen message slots once their formed strings are claimed - the NUL tails of the `0x80`-stride slots | the stride is measured off the slots, not off a consumer |
-| `0976` | `0xD44C`, 544 B, and short runs | the words from `0x801DBC64` up, above the three sixteen-byte records at `0x801DBC34` a pointer-bump loop sizes; the per-fighter move tables and their seventeen name tags below are claimed ([below](#a-pointer-bump-loop-states-its-arrays-length)) | the one base the image forms in the run, `0x801DBCCC` (at `0x801D51C0`), is handed to the SCUS routine `FUN_8001C93C` in `$a1` with `$a0 = 0xB` - plausibly a count of eleven records, but the record size is that callee's to state and it is not yet read |
+| `0976` | `0xD44C`, 104 B, and short runs | the words from `0x801DBC64` to `0x801DBCCC`, above the three sixteen-byte records at `0x801DBC34` a pointer-bump loop sizes | no instruction the image carries forms an address in them. The run above, `0x801DBCCC`, is claimed: it is eleven `0x28`-byte rows handed to `FUN_8001C93C` in `$a1` with `li a0,0xB` at `0x801D51B8`, and that routine's loop fixes the row size ([above](#a-record-is-sized-by-the-call-that-receives-it)) |
 | `0954` | `0x237D`, claimed | a `0x28`-stride status-label table at `0x801F8D50`, sixteen labels | each element address is handed to the text drawer `FUN_80035F04` in its delay slot, which the runtime-index rule counts as an access; the next formed address, `0x801F8FD0`, closes sixteen whole elements |
 | `0977` | `0x3108`, 232 B | twenty-nine `[label pointer, u32]` pairs at `0x801D1920` naming the head label pool | no instruction in the image forms an address in the table, directly or `lui`/`addu`-indexed |
 | `0927` / `0912` / `0895` | claimed | spawn records | `0912`'s is formed in a saved register fifty-nine words above its call ([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#resolving-the-pointer-a-spawn-call-is-handed)); `0927`'s and `0895`'s chain exactly onto a pointer-credited record ([below](#a-record-chain-pinned-at-both-ends)) |
-| `0896` | `0x855B` up, about 1.2 KB | the Japanese build's `a0`-formed record pool at `0x801DD560` (thirty-odd bases at irregular spacing) and the SJIS-bearing words around it | its consumers are that build's routines, whose callee layouts are not the USA SCUS ones the record rules key on, and the runs fail the string rule's printable share |
-| `0970` | `0x2648` up, about 3 KB | the STR overlay's initialised data above its two MDEC command packets: the MDEC / DMA register-pointer block (fifteen pointers, `0x801D0E60`..`0x801D0E9B`) and a block of `[u16][u16]` lookup words from `0x801D0E9C` (the first is `0x1400_0002`, not a pointer) that no `lui` pair addresses | no word, `jal`, `j` or `lui` pair names the block's first nine words in any image (`find-address-word-refs.py --prot`), and nothing reaches its head through `gp`, a `lui` + load pair or a materialised base plus displacement (`find-gp-relative-refs.py --prot`, zero hits); it is initialised data, not code (no `jal` lands in the run, a third of it is zero) |
+| `0896` | `0x855B` up, about 470 B | the SJIS-bearing words at `0x801DD34B` and the short record runs at `0x801DD44D` / `0x801DD49D` | their consumers are the foreign build's routines, whose callee layouts are not the USA SCUS ones the record rules key on. The `a0`-formed pool from `0x801DD554` is claimed: it is twenty-eight window programs for the image's own interpreter `FUN_801D896C` ([below](#the-window-programs-are-read-off-their-interpreters-calls)) |
+| `0970` | `0x801D0E9C`, 2816 B, claimed as dead data | an AC VLC lookup table - every word is zero or `(len << 26) \| (run << 10) \| level`, the MPEG-1 run / level form - directly above the MDEC / DMA register-pointer block, running to the uninitialised region at `0x801D199C` | nothing reads it: no word, `jal`, `j` or `lui` pair names an address in it in any image (`find-address-word-refs.py --prot`), no `gp`, `lui` + load or base-plus-displacement access reaches it, the register block's own loads stop at `0x801D0E98`, and the overlay's decoder reads the separate table `FUN_801F1A00` unpacks at `0x801E0A00`. It is claimed shape-checked under that name ([`byte_account`](../../crates/asset/src/byte_account.rs), `claim_str_dead_vlc_table`), not as a structure a consumer walks |
 
 The `0970` row used to start at `0x2534` and was taken by one reading for
 uninitialised data and by the shape classifier for code; it is neither. Its
@@ -816,13 +816,14 @@ globals sized by their load from 63 to 70.
 
 ### A record is sized by the call that receives it
 
-Three callees take a pointer to a record whose extent they fix:
+Four callees take a pointer to a record whose extent they fix:
 
 | Callee | Argument | Extent |
 |---|---|---|
 | `FUN_80021B04` (spawn) | `$a2` | `[i16 model_sel][u16 reserved][move-VM bytecode]`, to the program's `HALT`, armed idle loop, or never-retiring `WAIT` |
 | `FUN_80050ED4` (its pool wrapper) | `$a2` | the same |
 | `FUN_80020DE0` (actor allocator) | `$a0` | a 24-byte static actor template, fixed by the allocator's field copies ([`runtime-libs.md`](../reference/functions/runtime-libs.md#static-actor-templates)) |
+| `FUN_8001C93C` (value-monitor list drawer) | `$a1` | `$a0` rows of `0x28` bytes: the loop runs `$a0` times and every arm advances the row pointer by `0x28`; the count must be an `li` the caller loads, and the whole array must be data the image owns |
 
 `claim_spawn_records` claims, in every mapped image, the record at each value
 such a call is handed: the argument register is walked back from the call's
@@ -842,15 +843,18 @@ next record start of the same kind, a program walk that runs unterminated
 claims nothing, and the record must start outside code and below the inherited
 tail.
 
-The slot-B band already had the spawn half of this
-([`slot_b_module`](../../crates/asset/src/slot_b_module.rs)); its `$a2` walk
-follows neither a copy nor a jump, and the generic claim picks up the records it
-missed there as well - PROT `0957`'s `0x801F9C20` (staged in `s0`) and
-`0x801F9C64` / `0x801F9CE0` / `0x801F9D5C` (three `switch` arms into the
-`jal FUN_80050ED4` at `0x801F7F08`) among them. Across the mapped images this
-closes the slot-B residue of `0957`, `0929`, `0907`, `0935`, `0904`, `0924`,
-`0908` and `0916` entirely, most of `0979` (the field battle intro's effect
-records), and `0897`'s nine effect scripts and twenty templates.
+The slot-B band has the spawn half of this in
+[`slot_b_module`](../../crates/asset/src/slot_b_module.rs), whose `$a2` walk
+follows the same three shapes - the delay slot, a saved-register copy and
+`switch` arms into one call
+([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#resolving-the-pointer-a-spawn-call-is-handed)) -
+so PROT `0957`'s `0x801F9C20` (staged in `s0`) and `0x801F9C64` /
+`0x801F9CE0` / `0x801F9D5C` (three `switch` arms into the
+`jal FUN_80050ED4` at `0x801F7F08`) are credited on both sides. Across the
+mapped images this closes the slot-B residue of `0957`, `0929`, `0907`,
+`0935`, `0904`, `0924`, `0908` and `0916` entirely, most of `0979` (the field
+battle intro's effect records), and `0897`'s nine effect scripts and twenty
+templates.
 
 ### A counted loop states its array's length
 
@@ -911,8 +915,33 @@ is kept only where the whole-element test holds. It is what sizes PROT `0897`'s
 address the overlay forms is the `lw` scalar at `0x801F2E8C`) and its 73
 ten-byte sound-test rows at `0x801F2E94` (index `(n + 1) * 10`, the last row
 the `'X'` sentinel the consumer wraps on). Where the rule's arithmetic does not
-close - PROT `0972`'s eight-byte table at `0x801D8534` runs into two unformed
-strings, leaving four bytes over a whole element - it claims nothing.
+close it claims nothing; the tables it cannot close but whose consumers pin
+them are [below](#a-table-its-consumers-pin).
+
+### A table its consumers pin
+
+Three tables defeat both array rules for reasons the rules are right to refuse,
+and each is pinned instead by the instructions that consume it, re-checked
+against the image's own words before the claim is made
+(`CONSUMER_PINNED_TABLES` in
+[`byte_account`](../../crates/asset/src/byte_account.rs)). Every `lui` site a
+row cites must still form the address it names, and a loop-stated count must
+still be the immediate at its site; a row that disagrees gets a note and no
+claim.
+
+| Entry | Table | Base, stride, count | What the rules could not see |
+|---|---|---|---|
+| `0971` | DEBUG MODE's variable-monitor rows | `0x801CF890`, `0x28`, 22 | the loop bumps three pointers that start at fields `+0x04`, `+0x08` and `+0x1E`, never at a row start; the row start is the `lh v1,-0x770(at)` kind read at `0x801CEC24`, and the bound is `sltiu v0,s0,0x16` at `0x801CECE0` |
+| `0972` | per-species motion records | `0x801D8534`, 8, 10 | the index is the hooked species id `0x801D91CC`, which no bound check guards; its domain is the ten-row species table, and the tenth record ends exactly on the unformed `HIT` string at `0x801D8584` |
+| `0977` | the contest hub's sprite records | `0x801D170C`, `0x14`, 17 | `FUN_801D050C` / `FUN_801D08EC` read most fields over a hundred words below the index `addu`, past the runtime-index rule's straight-line scan, so the fixed accesses at elements 1 and 4 looked like fields no indexed access reads; the next formed address, `0x801D1860`, closes seventeen whole records |
+
+The `0971` rows are the layout `FUN_8001C93C` draws - `+0x00` kind, `+0x04`
+y, `+0x08` value pointer, `+0x0E` label, `+0x24` name table - walked inline
+rather than handed to that routine. The `0977` count is the runtime-index
+rule's own layout inference, not an instruction's immediate, and it agrees with
+the seventeen sprite descriptors the Muscle Dome hub's HUD port already parses
+there ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md));
+the `0971` count is the loop's, and the `0972` count is the species table's.
 
 ### A pointer-bump loop states its array's length
 
@@ -961,13 +990,14 @@ image; `0x801F8988`'s one `lui` pair is PROT `0954`'s, a different image).
 
 ### The window programs are read off their interpreters' calls
 
-Two overlays carry a window-program interpreter of their own, and the programs
+Three overlays carry a window-program interpreter of their own, and the programs
 they run are handed to it in `$a0`:
 
 | Image | Interpreter | Instruction | Programs claimed |
 |---|---|---|---|
 | `0899` (menu) | `FUN_801D6628` | 4 bytes, `[opcode][window][u16 operand]`, zero opcode ends ([`window-script.md`](../formats/window-script.md)) | fifty-six |
 | `0897` (field) | `FUN_801E9B3C` | 8 bytes, `[i16 opcode][i16 window][u32 operand]`, walked `addiu s5,s5,8` until the opcode halfword reads zero | fifteen |
+| `0896` (foreign-build options / status) | `FUN_801D896C` | the menu's 4-byte form: `lbu v0,(s4)` / `bnez` at `0x801D8BAC` ends on a zero opcode, `addiu s4,s4,4` per word, `sltiu 0xd` over `op - 1` | twenty-eight |
 
 The field interpreter is the menu one's sibling - the same `sltiu opcode-1,
 0xd` thirteen-arm dispatch - over a different instruction width, and its
