@@ -347,9 +347,12 @@ end = 0x80200000
 [[scenarios]]
 slot = 255
 label = "publisher_logos"
-description = "Mid publisher-logo sequence (Prokion / Contrail / SCEA / WARNING). init.pak TIMs visible in VRAM; PROT 0895 has been LZS-decoded into the staging buffer."
+backup_fingerprint = "31fc18941d401c5758600f5be00ea47f92541b45334ce70dd28249e412d966a2"
+description = "Publisher-logo sequence, the SCEA 'Presents' card on the display; the init.pak logo TIMs (SCEA, WARNING, Prokion, Contrail) resident in VRAM beside it. Master mode 0x11 (READ MODE, the logos). Cold boot with no save state and no input (autorun_boot_continue.lua, LEGAIA_NO_SSTATE=1, LEGAIA_MASH_UNTIL=1), cal checkpoint at vsync 450; the same run enters 0x10 at 295, 0x11 at 378 and CARD INIT 0x16 at 1038."
 phase = "boot"
-# pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate3"   # uncomment after capture
+expected_game_mode = 0x11
+# Re-shot: the old pointer was the live slot SCUS94254.sstate3, since
+# overwritten.
 topics = ["boot path", "init.pak", "publisher_logos"]
 
 [[scenarios]]
@@ -460,9 +463,13 @@ topics = ["field", "town01", "Rim Elm", "interactive"]
 [[scenarios]]
 slot = 255
 label = "field_load_first_town"
-description = "Mid-transition to the first field scene via either NEW GAME (after name input) or CONTINUE. FUN_8001F7C0 scene-asset loader executing; field-pack bytes streaming into _DAT_8007B8D0."
+backup_fingerprint = "077310ee068e9288824ff0a8dbf901683c6cc3b494997d949c48d99c2e02d7e6"
+description = "Mid-load into town01 (Rim Elm) off a memory-card CONTINUE: master mode 0x02 (MAIN INIT, the field init), scene name already town01, about 340 vsyncs before the first field-run frame. Cold boot + the one-save card staged from the town01 save (isolate_card_save.py --keep 8 --restamp 0 on the workstation's memcard1), the calibrated CONTINUE ladder, cal checkpoint at vsync 6250; mode 0x02 runs from 6142 to 6593 in that run. The field-run end of the same run is town01_field_card_boot."
 phase = "field"
-# pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate6"   # uncomment after capture
+expected_game_mode = 0x02
+expected_active_scene = "town01"
+# Re-shot: the old pointer was the live slot SCUS94254.sstate6, since
+# overwritten.
 topics = ["field load", "scene asset loader", "town01"]
 
 # ----------------------------------------------------------------------
@@ -2613,6 +2620,16 @@ expected_game_mode = 0x03
 expected_active_scene = "retona"
 description = "Mt. Letona free field run, reached by a cold boot + memory-card load. Player at world (8536, 12638). The save one step before the `retock` beats, so a play-forward from here fires that region's entry family organically instead of finding it pre-latched."
 topics = ["field", "retona", "retock", "story flags", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "town01_field_card_boot"
+backup_fingerprint = "6acd2d93d83e0f24a03d794f99485bea11820083ad07c8598923d4f9f03a3b34"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town01"
+description = "Rim Elm (town01) free field run, reached by a cold boot + memory-card load (the town01 save, restamped to suffix -00 so the calibrated ladder lands on it). Player at world (9690, 8512). Checkpointed 40 field-run vsyncs after the load; its load-screen sibling is field_load_first_town. The town with the first shop and inn, so the card-tier anchor for dialogue / shop / inn parity frames."
+topics = ["field", "town01", "Rim Elm", "card boot", "shop", "inn", "probe state"]
 
 # ----------------------------------------------------------------------
 # Pre-entry card-boot anchor.

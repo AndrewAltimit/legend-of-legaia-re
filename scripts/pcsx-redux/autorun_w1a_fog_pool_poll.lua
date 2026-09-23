@@ -10,7 +10,12 @@
 --
 -- Env: LEGAIA_SSTATE (run_probe.sh --scenario / --sstate), LEGAIA_FRAMES
 -- (vsyncs to poll after the load, default 1800), LEGAIA_OUT_DIR.
--- Output: fog_pool.csv (vsync,scene,mode,gate,live,cap,free_top,alive).
+-- Output: fog_pool.csv (vsync,scene,mode,gate,live,cap,free_top,alive,dt,
+-- walk). `live` is the word as the vsync IRQ finds it, so a sample taken
+-- while the render walk is mid-pool reads a partial count (the walk zeroes it
+-- first, `sw zero,0x990(gp)` at 0x8003F398); `alive` is the alive-byte count,
+-- the population. `dt` is the frame step `DAT_1F800393` and `walk` is 1 on
+-- the vsyncs where the alive population changed, i.e. a frame ran.
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
 local mem   = require("probe.mem")
@@ -22,13 +27,14 @@ local FOG_POOL   = 0x8007B7E0
 local FOG_LIVE   = 0x8007BCA8
 local FOG_CAP    = 0x8007BCB0
 local SLOTS, REC0, STRIDE = 0x50, 0xA4, 0x18
+local FRAME_STEP = 0x1F800393
 
 local SSTATE = probe.getenv("LEGAIA_SSTATE", "")
 local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 1800)
 local OUT_DIR = probe.getenv("LEGAIA_OUT_DIR", "captures/w1a_fog_pool_poll")
 os.execute(string.format("mkdir -p %q", OUT_DIR))
 local CSV = probe.csv_open(probe.out_path("fog_pool.csv"),
-    "vsync,scene,mode,gate,live,cap,free_top,alive")
+    "vsync,scene,mode,gate,live,cap,free_top,alive,dt,walk")
 
 local function scene_name()
     local s = {}
@@ -41,6 +47,7 @@ local function scene_name()
 end
 
 local vsync, loaded, done = 0, nil, false
+local last_sig = nil
 local function on_vsync()
     if done then return end
     vsync = vsync + 1
@@ -62,9 +69,20 @@ local function on_vsync()
             if (mem.read_u8(pool + REC0 + i * STRIDE + 5) or 0) ~= 0 then alive = alive + 1 end
         end
     end
-    CSV:row("%d,%s,0x%02X,%d,%d,%d,%d,%d", vsync - loaded, scene_name(),
+    -- A frame ran when any record's age word moved: the walk ages every
+    -- live record by rate * dt, so this is a per-frame signature.
+    local sig = 0
+    if pool >= 0x80000000 and pool < 0x80200000 then
+        for i = 0, SLOTS - 1 do
+            sig = (sig * 31 + (mem.read_u16(pool + REC0 + i * STRIDE) or 0)) % 0x7FFFFFFF
+        end
+    end
+    local walk = (last_sig ~= nil and sig ~= last_sig) and 1 or 0
+    last_sig = sig
+    CSV:row("%d,%s,0x%02X,%d,%d,%d,%d,%d,%d,%d", vsync - loaded, scene_name(),
         mem.read_u8(GAME_MODE) or 0, mem.read_u32(FOG_GATE) or 0,
-        mem.read_u32(FOG_LIVE) or 0, mem.read_u32(FOG_CAP) or 0, top, alive)
+        mem.read_u32(FOG_LIVE) or 0, mem.read_u32(FOG_CAP) or 0, top, alive,
+        mem.read_scratch_u8(FRAME_STEP), walk)
     if vsync - loaded >= FRAMES then
         done = true; CSV:close(); PCSX.quit(0)
     end

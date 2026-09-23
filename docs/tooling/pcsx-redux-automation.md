@@ -162,12 +162,23 @@ The wrapper:
 
 1. Verifies the binary / BIOS / save state / Lua file all exist
    (fails early with a clear error if any one is missing).
-2. Launches PCSX-Redux with `-interpreter -debugger -run -bios
+2. Stages the disc: it symlinks the `--iso` image as `disc.bin` into a
+   private temporary directory and hands the emulator that path, never the
+   one you named. PCSX-Redux's `PPF::load` (`src/cdrom/ppf.cc`) replaces the
+   image path's extension with `.ppf` and applies that file whenever it
+   exists, logging only `[+ppf]`; the randomizer CLI writes its `.ppf`
+   beside its input disc by default, so a patch file sitting beside the
+   retail `.bin` patched every probe that named the retail path - the
+   runner's own default `--iso` included, until it staged. A patch reaches a
+   run only through `--ppf PATH` (staged as `disc.ppf`). The banner names
+   the source image and any sibling `.ppf` it bypassed, and the runner warns
+   if the log still shows `[+ppf]` without `--ppf`.
+3. Launches PCSX-Redux with `-interpreter -debugger -run -bios
    <SCPH> -iso <bin> -dofile <lua> -stdout` and pipes the emulator
    log to `pcsx.log` inside the run's output directory - or to
    `logs/pcsx_<probe-stem>.log` when `LEGAIA_OUT` pins a single output
    file instead (`--log PATH` overrides either).
-3. On exit, prints the CSV row count and greps the log for the probe's
+4. On exit, prints the CSV row count and greps the log for the probe's
    own `=== probe hits ===`-style banner, echoing it back as a
    `=== probe summary ===` block.
 
@@ -839,7 +850,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_w4d_light_kind_hits.lua`](../../scripts/pcsx-redux/autorun_w4d_light_kind_hits.lua) | Whether the renderer's four light-capable prim handlers (kinds 8..11) execute at all. &rarr; [detail](#autorun_w4d_light_kind_hitslua) |
 | [`autorun_w7c_steal_oracle.lua`](../../scripts/pcsx-redux/autorun_w7c_steal_oracle.lua) | Retail steal oracle: loads a battle state, optionally writes the synthetic gates (steal passive bit, Items Up bit, enemy HP, a forced `rand() % 100`), presses Begin and logs every step of the death-commit steal arm of `FUN_8004AD80`, every reader of the steal table and every bag writer. Findings in [`steal-table.md`](../formats/steal-table.md#retail-steal-capture). |
 | [`autorun_w7c_kor5_tail.lua`](../../scripts/pcsx-redux/autorun_w7c_kor5_tail.lua) | The W6-C spoke walk (tile-poke route + story-flag firehose) plus an exec-bp on the record dispatcher `FUN_8003BDE0`, one on the field overlay's trigger lookup `FUN_801D5630`, a per-second player-flags line and a flag-keyed checkpoint (`LEGAIA_CKPT_FLAG`). Opt-ins: `LEGAIA_WAIT_UNLOCK` holds a leg while the movement lock is up ([why](../subsystems/field-locomotion.md#a-crossing-made-under-the-movement-lock-is-consumed)), `LEGAIA_BATTLE_HP1` holds enemy HP at 1 (synthetic), `LEGAIA_POOL_WATCH` write-watches the actor-pool block (slow). `LEGAIA_POLL_FLAGS` / `LEGAIA_CKPT_EVERY` are poll-only, for a `--fast` pass. Walked the `kor5` chain with no flag poke, and `korb2` to `doman` over `map03`. |
-| [`autorun_w1a_fog_pool_poll.lua`](../../scripts/pcsx-redux/autorun_w1a_fog_pool_poll.lua) | Per-vsync observer of the field fog pool from a loaded state: the script gate `_DAT_8007B854`, the render walk's live count `_DAT_8007BCA8`, the spawner cap `_DAT_8007BCB0`, the free-stack top and the alive-byte census of the 80 records. No BPs, so `--fast`. Measured `vell_fog_field` (the state [`autorun_w5a_poke_walk.lua`](../../scripts/pcsx-redux/autorun_w5a_poke_walk.lua) checkpoints `LEGAIA_CKPT_AFTER` field vsyncs into `vell`) - see [the density note](../subsystems/field-ambient-fx.md#pool-density-against-retail). |
+| [`autorun_w1a_fog_pool_poll.lua`](../../scripts/pcsx-redux/autorun_w1a_fog_pool_poll.lua) | Per-vsync observer of the field fog pool from a loaded state: the script gate `_DAT_8007B854`, the render walk's live count `_DAT_8007BCA8`, the spawner cap `_DAT_8007BCB0`, the free-stack top, the alive-byte census of the 80 records, the frame step `DAT_1F800393` and a per-vsync "a frame ran" bit (the records' age words moved). `live` is read as the vsync IRQ finds it, so a sample inside the walk reads a partial count; `alive` is the population. No BPs, so `--fast`. Measured `vell_fog_field` - see [the density note](../subsystems/field-ambient-fx.md#pool-density-against-retail). |
 | [`autorun_w1a_koru_strip.lua`](../../scripts/pcsx-redux/autorun_w1a_koru_strip.lua) | Installs a formation (default Koru, `0xB6`) from a field state the way a rolled encounter does, mashes the command flow, and logs the turn counter `ctx[+0x28A]`, the phase byte `ctx[+6]` and the strip's two digit globals, with a checkpoint per round and every `LEGAIA_CKPT_EVERY` battle vsyncs. Poll-only (`--fast`); the formation is synthetic. Captured the `Turns Left / HP Left` strip ([muscle-dome page](../subsystems/minigame-muscle-dome.md#what-the-strip-looks-like-in-retail)). |
 | [`autorun_audio_trace.lua`](../../scripts/pcsx-redux/autorun_audio_trace.lua) | Multi-frame retail-trace input for the audio-trace parity oracle. → [detail](#autorun_audio_tracelua) |
 | [`autorun_summon_model_base.lua`](../../scripts/pcsx-redux/autorun_summon_model_base.lua) | Targets `gp[0x754]`, the `model_sel` additive base read in the shared spawn stager `FUN_80021B04`. Exec-bp the stager during a summon (default `gimard_summon_start`) or an enemy special-attack frame; each hit logs `$gp`, the absolute `gp+0x754` global, the base value, and the part record's `model_sel`/`flags`. The one residual unblocking both summon and move-power effect-FX render (the records share this stager). |
@@ -1357,7 +1368,7 @@ Two consequences for `juui1` in particular:
 | [`overlay_residency.py`](../../scripts/pcsx-redux/overlay_residency.py) | A PCSX-Redux `.sstate`, a 2 MiB main-RAM dump, or a window dump (`--window-base`); plus an as-loaded PROT overlay payload + its base VA | Per-chunk byte-match report answering "is this overlay RESIDENT at its base in this state?". Matches over non-zero payload bytes only; `--split <va>` separates an entry's unique head from its over-read tail (a 1.00-matching *suffix* usually means a *different* overlay is resident in the next slot window). Reads main RAM straight out of the sstate protobuf. Established the 0897/0899 slot-A swap across the casino prize-exchange flow + the PROT 0896 pre-transition negative. |
 | [`scan_panel_prims.py`](../../scripts/pcsx-redux/scan_panel_prims.py) | A 2 MiB main-RAM dump (e.g. `load_screen_ram.bin`) + optional `--rect X0 Y0 X1 Y1` framebuffer rect | Lists every GP0 textured-sprite primitive (cmd byte `0x64..0x67`) whose dst falls in the rect, decoded into `(dst_x, dst_y, u, v, clut_x, clut_y, w, h)`. Groups by CLUT so the unique source tiles each CLUT references stand out. Used to pin the 9-slice tile geometry of the load-screen panel (14 prims sampling CLUT row 2 of the system-UI TIM) - see [`subsystems/save-screen.md`](../subsystems/save-screen.md#sprite-asset-sources-continue--load-screen). |
 | [`decode_battle_mesh.py`](../../scripts/pcsx-redux/decode_battle_mesh.py) | The 2 MiB RAM dump from `autorun_battle_mesh_dump.lua` | Decodes the assembled in-RAM battle meshes (per-seat part tables) for the battle-mesh differential - the offline half of the [memory-card capture tier](#memory-card-capture-tier). |
-| [`isolate_card_save.py`](../../scripts/pcsx-redux/isolate_card_save.py) | A `.mcd` memory-card image | Copies one save into an otherwise-blank card, so a card-tier boot loads exactly the intended save regardless of what else the source card carries. |
+| [`isolate_card_save.py`](../../scripts/pcsx-redux/isolate_card_save.py) | A `.mcd` memory-card image | Copies one save into an otherwise-blank card, so a card-tier boot loads exactly the intended save regardless of what else the source card carries. The load grid places a save by its product-code suffix, not its card block, so `--restamp 0` rewrites the kept save's `...PRO-NN` suffix to `-00` and the calibrated CONTINUE ladder lands on it. |
 
 #### The audibility predicate is the envelope, not the key state
 
@@ -1437,9 +1448,12 @@ battle under test, dump the full 2 MiB of RAM
   was made against; only a cold path through the loader observes the
   patched image. This is the savestate RAM-cache trap in probe form.
 - **PCSX-Redux auto-applies a sibling `.ppf`** sitting next to the image
-  it is handed (`cdrom/ppf.cc`), silently - an unstaged disc directory
-  can test a different image than the one named on the command line.
-  Point `--iso` at a scratch copy in a directory you control.
+  it is handed (`cdrom/ppf.cc`: the image path with its extension replaced
+  by `.ppf`), silently bar a `[+ppf]` log token - an unstaged disc
+  directory can test a different image than the one named on the command
+  line. `run_probe.sh` stages every image itself (see
+  [The harness](#the-harness)); a script that launches the emulator
+  directly must stage too, as `capture_battle_mesh.sh` does.
 - **Card selection is env-only** (`LEGAIA_MCD1`/`LEGAIA_MCD2` - see the
   wrapper section above for why `-memcard2` cannot be used).
 
