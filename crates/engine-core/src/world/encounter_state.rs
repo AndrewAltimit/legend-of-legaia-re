@@ -55,6 +55,13 @@ pub struct EncounterState {
     /// [`crate::world::World::arm_live_loop`] when the loop lands on such a scene and aged
     /// by [`crate::world::World::tick`]. Read through [`crate::world::World::show_encounter_hint`].
     pub scene_hint_frames: u16,
+    /// `_DAT_8007B5FC` - the encounter step counter. One retail global, not
+    /// per scene: the region trackers (field + overworld) are seeded from it
+    /// when a scene installs them and write it back after every step, and the
+    /// non-roll writers (field-VM op `4C EC`, the op-`0x3E` formation arm,
+    /// the scene-entry top-up) set it through
+    /// [`crate::world::World::set_encounter_step_counter`].
+    pub step_counter: i32,
 }
 
 impl EncounterState {
@@ -66,6 +73,7 @@ impl EncounterState {
             session: None,
             scene_rollable: false,
             scene_hint_frames: 0,
+            step_counter: crate::region_encounter::ENCOUNTER_COUNTER_BASE,
         }
     }
 }

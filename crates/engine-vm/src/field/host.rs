@@ -1875,9 +1875,13 @@ pub trait FieldHost {
 
     /// Op 0x4C outer-nibble-E sub-0xC - write `_DAT_8007B5FC` from `FUN_801DDF48`.
     ///
-    /// 2-byte instruction `[4C, 0xEC]`. Writes `_DAT_8007B5FC = FUN_801DDF48()`
-    /// (captures the return of an overlay-resident helper into the global).
-    /// Hosts model the call. PC += 2.
+    /// 2-byte instruction `[4C, 0xEC]`. Writes `_DAT_8007B5FC = FUN_801DDF48()`:
+    /// the encounter step-counter reroll `r1 % 487 - r2 % 487 + 0x3CE`
+    /// (triangular over `488..=1460`), ported as
+    /// `legaia_engine_core::region_encounter::encounter_counter_reroll` and
+    /// seated by the engine host into the shared counter. No shipped script
+    /// issues a clean `4C EC`. PC += 2.
+    // REF: FUN_801DDF48
     fn op4c_n_e_sub_c_capture_ddf48(&mut self) {}
 
     /// Op 0x4C outer-nibble-E sub-0xD - write `_DAT_8007BA66`.

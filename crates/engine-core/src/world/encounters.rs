@@ -744,6 +744,12 @@ impl World {
     /// Returns `false` (and enters nothing) when the row isn't registered or
     /// has no monsters, mirroring the reader's `count == 0` no-spawn arm.
     pub fn trigger_scripted_battle(&mut self, row: u8) -> bool {
+        // The arm rerolls the encounter step counter right after the `+0x94`
+        // install (`jal 0x801DDF48` at `0x801E076C`, `sw v0, _DAT_8007B5FC`
+        // at `0x801E0780`) and before the mode request - unconditionally, so
+        // a fight that ends back in a rolling region starts from a fresh
+        // `488..=1460` count rather than the pre-fight residue.
+        self.reroll_encounter_step_counter();
         let formation_id = u16::from(row);
         let has_slots = self
             .tables
@@ -1079,6 +1085,7 @@ impl World {
                 "field step at ({wx}, {wz}): region counter {}",
                 tracker.counter()
             );
+            self.encounters.step_counter = tracker.counter();
             self.terrain.region_tracker = Some(tracker);
             return match roll {
                 Some(r) => {

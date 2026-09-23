@@ -287,6 +287,7 @@ impl World {
             // set, and only one is live.
             tracker.select_group(|flag| self.system_flag_test(flag));
             let roll = tracker.on_step(wx, wz, || self.next_rng());
+            self.encounters.step_counter = tracker.counter();
             self.world_map.region_tracker = Some(tracker);
             if let Some(roll) = roll {
                 self.world_map.pending_encounter = Some(roll.formation_id as u16);
@@ -298,8 +299,9 @@ impl World {
     /// `Self::tick_world_map` rolls random encounters per region. Resets the
     /// step-tile latch. Pair with [`Self::enter_world_map`] (or call after it).
     pub fn set_world_map_regions(&mut self, table: crate::region_encounter::RegionEncounterTable) {
-        self.world_map.region_tracker =
-            Some(crate::region_encounter::RegionEncounterTracker::new(table));
+        let mut tracker = crate::region_encounter::RegionEncounterTracker::new(table);
+        tracker.set_counter(self.encounters.step_counter);
+        self.world_map.region_tracker = Some(tracker);
         self.world_map.last_tile = None;
         self.refresh_encounter_rollable();
     }
@@ -321,9 +323,58 @@ impl World {
         &mut self,
         table: Option<crate::region_encounter::RegionEncounterTable>,
     ) {
-        self.terrain.region_tracker =
-            table.map(crate::region_encounter::RegionEncounterTracker::new);
+        // Every field scene entry (the world map enters through the same
+        // path) runs retail's scene-entry top-up of the shared step counter
+        // before any tracker is seeded from it.
+        self.top_up_encounter_step_counter();
+        self.terrain.region_tracker = table.map(|t| {
+            let mut tracker = crate::region_encounter::RegionEncounterTracker::new(t);
+            tracker.set_counter(self.encounters.step_counter);
+            tracker
+        });
         self.refresh_encounter_rollable();
+    }
+
+    /// The encounter step counter `_DAT_8007B5FC`.
+    pub fn encounter_step_counter(&self) -> i32 {
+        self.encounters.step_counter
+    }
+
+    /// Write the encounter step counter `_DAT_8007B5FC` - the shared global
+    /// and every installed region tracker, which each carry a working copy.
+    pub fn set_encounter_step_counter(&mut self, counter: i32) {
+        self.encounters.step_counter = counter;
+        if let Some(t) = self.terrain.region_tracker.as_mut() {
+            t.set_counter(counter);
+        }
+        if let Some(t) = self.world_map.region_tracker.as_mut() {
+            t.set_counter(counter);
+        }
+    }
+
+    /// Reroll the step counter to a fresh `488..=1460` triangular draw - the
+    /// store field-VM op `4C EC` and the op-`0x3E` scripted-formation arm make
+    /// (`sw v0, _DAT_8007B5FC` after `jal 0x801DDF48` at `0x801E3500` /
+    /// `0x801E077C`).
+    ///
+    /// REF: FUN_801DDF48 (ported as
+    /// [`crate::region_encounter::encounter_counter_reroll`])
+    pub fn reroll_encounter_step_counter(&mut self) {
+        let v = crate::region_encounter::encounter_counter_reroll(|| self.next_rng() & 0x7FFF);
+        self.set_encounter_step_counter(v);
+    }
+
+    /// The scene-entry top-up: below 487 the counter gains half a reroll,
+    /// otherwise it carries across the door untouched.
+    ///
+    /// REF: FUN_8003AB2C (ported as
+    /// [`crate::region_encounter::encounter_counter_scene_entry_top_up`])
+    pub fn top_up_encounter_step_counter(&mut self) {
+        let c = self.encounters.step_counter;
+        let v = crate::region_encounter::encounter_counter_scene_entry_top_up(c, || {
+            self.next_rng() & 0x7FFF
+        });
+        self.set_encounter_step_counter(v);
     }
 
     /// Seed `count` overworld entity state machines (all Idle) so

@@ -70,6 +70,50 @@ pub const ENCOUNTER_COUNTER_BASE: i32 = 0x3ce;
 /// Counter reset modulus (`0x1e7` = 487) applied to each of the two RNG draws.
 pub const ENCOUNTER_COUNTER_MOD: u32 = 0x1e7;
 
+/// The encounter step-counter reroll: `r1 % 487 - r2 % 487 + 0x3CE`, a
+/// triangular distribution over `488..=1460` centred on 974.
+///
+/// Retail has this as its own field-overlay leaf, not only inline in the
+/// region roll: two `jal 0x80056798` draws, each reduced by the
+/// `0x43491159` / `>> 7` reciprocal (the `* 487` rebuild is
+/// `((a*16 - a)*4 + a)*8 - a`), then `s0 - (v0 - 0x3CE)`. The FIRST draw is
+/// the added term. It has four callers, every one of which stores the result
+/// into `_DAT_8007B5FC`: the region roll's trigger reset (inlined here in
+/// [`RegionEncounterTracker::on_step`]), field-VM op `4C EC`
+/// (`0x801E34F8`), the op-`0x3E` scripted-formation arm (`0x801E076C`), and
+/// the scene-entry top-up in the SCUS system-script installer
+/// (`0x8003AC90`, see [`encounter_counter_scene_entry_top_up`]).
+///
+/// `rng` is the retail `rand()` (`0..=0x7FFF`); any non-negative draw gives
+/// the same result because the reduction is a truncating signed modulus.
+///
+/// PORT: FUN_801DDF48
+pub fn encounter_counter_reroll(mut rng: impl FnMut() -> u32) -> i32 {
+    let ra = (rng() % ENCOUNTER_COUNTER_MOD) as i32;
+    let rb = (rng() % ENCOUNTER_COUNTER_MOD) as i32;
+    ENCOUNTER_COUNTER_BASE + ra - rb
+}
+
+/// The scene-entry top-up of the step counter.
+///
+/// The SCUS system-script installer (`FUN_8003AB2C`, reached once per field
+/// scene entry from the MAN decoder `FUN_8003AEB0`) tests
+/// `_DAT_8007B5FC < 0x1E7` (`0x8003AC84`); only then does it add half a fresh
+/// reroll, rounding toward zero (`srl 31; addu; sra 1` at `0x8003AC98`).
+/// A counter at or above 487 is carried across the door unchanged - retail
+/// never re-seeds it per scene. Returns the new counter.
+///
+/// REF: FUN_8003AB2C (the top-up slice at `0x8003AC78..0x8003ACAC`)
+pub fn encounter_counter_scene_entry_top_up(counter: i32, rng: impl FnMut() -> u32) -> i32 {
+    if counter >= ENCOUNTER_COUNTER_MOD as i32 {
+        return counter;
+    }
+    let r = encounter_counter_reroll(rng);
+    // `(r + (r >>> 31)) >> 1` - signed halve toward zero; `r` is always
+    // positive here, kept for fidelity.
+    counter.wrapping_add(r / 2)
+}
+
 /// One scene encounter region: an AABB in 128-unit tiles, a per-step rate
 /// increment, and the formation slice it rolls into.
 ///
@@ -533,6 +577,14 @@ impl RegionEncounterTracker {
         self.counter
     }
 
+    /// Overwrite the step counter (`_DAT_8007B5FC`). The counter is one retail
+    /// global shared by every scene, so the world seeds a freshly installed
+    /// tracker from its carried value and the non-roll writers (op `4C EC`,
+    /// the op-`0x3E` formation arm, the scene-entry top-up) land here.
+    pub fn set_counter(&mut self, counter: i32) {
+        self.counter = counter;
+    }
+
     /// Reset per-scene state (scene change). Re-seeds the counter and clears
     /// the anti-repeat latch.
     pub fn reset(&mut self) {
@@ -586,9 +638,7 @@ impl RegionEncounterTracker {
         self.last_formation = Some(formation_id);
 
         // Counter reset: 0x3ce + (rng_a % 0x1e7) - (rng_b % 0x1e7).
-        let ra = (rng() % ENCOUNTER_COUNTER_MOD) as i32;
-        let rb = (rng() % ENCOUNTER_COUNTER_MOD) as i32;
-        self.counter = ENCOUNTER_COUNTER_BASE + ra - rb;
+        self.counter = encounter_counter_reroll(&mut rng);
 
         Some(RegionEncounterRoll { formation_id })
     }
@@ -841,5 +891,38 @@ mod tests {
         let mut draws2 = [0u32, 0, 0].into_iter().cycle();
         let second = tracker.on_step(0, 0, || draws2.next().unwrap()).unwrap();
         assert_eq!(second.formation_id, 11, "duplicate pick advanced by one");
+    }
+
+    #[test]
+    fn counter_reroll_is_first_draw_minus_second_plus_974() {
+        // Retail order: the first `rand()` is the added term.
+        let mut draws = [1000u32, 3].into_iter();
+        // 1000 % 487 = 26; 974 + 26 - 3 = 997.
+        assert_eq!(encounter_counter_reroll(|| draws.next().unwrap()), 997);
+        // Extremes of the triangular range.
+        let mut hi = [486u32, 0].into_iter();
+        assert_eq!(encounter_counter_reroll(|| hi.next().unwrap()), 1460);
+        let mut lo = [0u32, 486].into_iter();
+        assert_eq!(encounter_counter_reroll(|| lo.next().unwrap()), 488);
+    }
+
+    #[test]
+    fn scene_entry_top_up_only_below_487() {
+        // At or above 487 the counter is carried unchanged and no RNG is drawn.
+        let mut drew = false;
+        assert_eq!(
+            encounter_counter_scene_entry_top_up(487, || {
+                drew = true;
+                0
+            }),
+            487
+        );
+        assert!(!drew);
+        // Below: add half a reroll (974 + 100 - 0 = 1074 -> +537).
+        let mut d = [100u32, 0].into_iter();
+        assert_eq!(
+            encounter_counter_scene_entry_top_up(-5, || d.next().unwrap()),
+            -5 + 537
+        );
     }
 }
