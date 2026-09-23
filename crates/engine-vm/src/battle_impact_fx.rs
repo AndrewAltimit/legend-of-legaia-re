@@ -198,13 +198,12 @@ pub fn clip_impact(character_id: u8, attach_key: u8, cursor: u16) -> Option<Clip
 /// Vahn's tag-`0x2B` arm: the value written to the **acting** actor's
 /// `+0x21C` this frame, or `None` off the tag.
 pub fn vahn_render_arm(character_id: u8, attach_key: u8, cursor: u16) -> Option<u8> {
-    (character_id == 1 && attach_key == VAHN_RENDER_TAG).then(|| {
-        if (cursor as i16) < VAHN_RENDER_CURSOR_END as i16 {
-            3
-        } else {
-            0
-        }
-    })
+    let flag = if (cursor as i16) < VAHN_RENDER_CURSOR_END as i16 {
+        3
+    } else {
+        0
+    };
+    (character_id == 1 && attach_key == VAHN_RENDER_TAG).then_some(flag)
 }
 
 /// A monster's tag-`0x3B` arm: `(acting +0x21C, target +0x21C)` to write
