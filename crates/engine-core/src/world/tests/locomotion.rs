@@ -281,6 +281,9 @@ fn cutscene_narration_roller_is_timer_driven_not_confirm_paced() {
     use crate::cutscene_narration::OPENING_FRAME_STEP;
     let mut world = World::new();
     world.mode = SceneMode::Title; // isolate the top-of-tick narration advance
+    // The opening's cadence, which its prescript installs (ext `0x2F`).
+    world.clock.frame_step_floor = OPENING_FRAME_STEP as u8;
+    world.clock.frame_step = OPENING_FRAME_STEP as u8;
     world.open_cutscene_narration(vec!["Page 1".into(), "Page 2".into()]);
     let entered = |w: &World| {
         w.cutscene

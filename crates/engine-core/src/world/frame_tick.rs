@@ -1263,7 +1263,7 @@ impl World {
         // packet instead - see `take_prologue_handoff`). Clear it once every
         // page has scrolled off so the suspended cutscene timeline resumes.
         // The roller counts vsyncs and runs one handler pass per
-        // `OPENING_FRAME_STEP`-vsync retail frame (`cutscene_narration`).
+        // `frame_step`-vsync retail frame it was opened at (`cutscene_narration`).
         if let Some(narration) = &mut self.cutscene.narration
             && !narration.tick(self.clock.display_frame_step as u32)
         {

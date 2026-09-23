@@ -81,11 +81,15 @@ impl World {
             return;
         }
         // The crawl geometry is the config block the scene's seed op left
-        // (`CutsceneState::narration_seed`), at the opening's frame step.
+        // (`CutsceneState::narration_seed`), at the world's own game-tick
+        // cadence: the opening scenes' prescripts raise the frame-step floor
+        // `DAT_8007B9D8` to 3 through move-VM ext sub-op `0x2F` (opdeene's
+        // record 16), which is what the capture reads - so no per-roller
+        // override is needed.
         self.cutscene.narration = Some(crate::cutscene_narration::CutsceneNarration::with_seed(
             pages,
             self.cutscene.narration_seed,
-            crate::cutscene_narration::OPENING_FRAME_STEP,
+            u16::from(self.clock.frame_step),
         ));
         // Monotonic "which crawl block is showing" counter. Because a
         // non-blocking crawl lets the next block open the very tick the prior

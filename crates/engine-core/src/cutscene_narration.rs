@@ -49,7 +49,11 @@
 //! from the measured frame cost and floors it at `DAT_8007B9D8`; the
 //! cold-boot `opdeene` capture (`s1_newgame_field`) holds that floor at `3`
 //! and a live roller's accumulator at `3` after one frame, so the opening
-//! runs at a frame step of 3 - [`OPENING_FRAME_STEP`]. At the seed's divisor
+//! runs at a frame step of 3 - [`OPENING_FRAME_STEP`]. The floor's writer is
+//! the scene itself: `opdeene`'s prescript record 16 opens with move-VM ext
+//! sub-op `0x2F` operand `3` (the arm at `0x801D45D4` in PROT 0897 stores it
+//! to `0x8007B9D8`), and the world installs the roller at the world's cadence,
+//! so the constant is the measured value, not an override. At the seed's divisor
 //! of 4 that is 1 px per two frames, 10 px/s, which is the realtime-video
 //! figure the previous capture-pinned model had fitted with a frame count.
 //!
