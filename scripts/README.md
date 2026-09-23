@@ -77,6 +77,7 @@ in the hook, and must self-skip everywhere else.
 - `check-wasm-freshness.py` - does your locally built `site/wasm/` bundle still match this tree's sources? Content-addressed, because mtime and `git log` reasoning both return false "in sync" answers. **Advisory**, in CI and in the hook alike: it never fails a build, because the bundle is untracked output the deploy job rebuilds. See [`docs/tooling/shipped-bundle-freshness.md`](../docs/tooling/shipped-bundle-freshness.md).
 - `setup-cross-toolchain.sh` - provision one release target's cross toolchain (rustup std, zig + `cargo-zigbuild`, the amd64 ALSA sysroot); idempotent, root-free except mingw-w64, which it only checks for. See [`docs/tooling/releases.md`](../docs/tooling/releases.md).
 - `release-build.sh` - build + package one release target into `target/dist` (archive + `.sha256`). Driven per target by `.github/workflows/release.yml`.
+- `select-ci-target-dir.sh` - narrows `main-ci.yml`'s persistent `CARGO_TARGET_DIR` cache to a subdirectory keyed on the exact `rustc` build and prunes every other key, so a toolchain bump on the runner starts cold instead of handing the new compiler the old one's rlibs (`E0514` in the doctest pass). Also fails fast when `rustc` and `rustdoc` versions disagree.
 
 ### lib/
 
