@@ -61,6 +61,10 @@ pub struct CutsceneState {
     /// blocks (a non-blocking crawl opens the next block the same tick the prior
     /// scrolls out) that a rising-edge `active`-watch would merge into one.
     pub narration_seq: u32,
+    /// The crawl config block (`*0x801C6EA4 +0x4C..+0x52`) the next roller
+    /// reads: the scene reset's values until a timeline `CC F8 E8` seed op
+    /// overwrites them. See [`crate::cutscene_narration::RollerSeed`].
+    pub narration_seed: crate::cutscene_narration::RollerSeed,
     /// Active opening-cutscene timeline executor, or `None` when no cutscene
     /// timeline is running. Installed by
     /// [`crate::world::World::load_cutscene_timeline_from_man`] (the `opdeene` opening
@@ -151,6 +155,7 @@ impl CutsceneState {
             finished_fmv: None,
             narration: None,
             narration_seq: 0,
+            narration_seed: crate::cutscene_narration::RollerSeed::SCENE_RESET,
             timeline: None,
             in_timeline: false,
             prologue_naming_pending: false,

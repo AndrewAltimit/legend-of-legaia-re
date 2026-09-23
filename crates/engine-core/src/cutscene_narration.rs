@@ -1,102 +1,140 @@
 //! Opening-cutscene narration presenter - the retail subtitle **roller**.
 //!
-//! The opening prologue scenes (`opdeene` / `opstati` / `opurud`) play their
-//! on-screen narration from inline ASCII text pages embedded in the scene
-//! MAN's cutscene-timeline script (parsed by [`legaia_asset::cutscene_text`]).
-//! Retail routes the introducing op (`0xCC 0xF8 0x80 N`, field-VM `0x4C`
-//! outer-nibble-8 sub-0) to a dedicated on-screen-text actor whose handler is
-//! `FUN_80037174` - a bottom-up **text crawl**, not a one-line caption:
+//! The opening prologue scenes (`opdeene` / `opstati` / `opurud` / `map01`)
+//! play their on-screen narration from inline ASCII text pages embedded in the
+//! scene MAN's cutscene-timeline script (parsed by
+//! [`legaia_asset::cutscene_text`]). Retail routes the introducing op
+//! (`0xCC 0xF8 0x80 N`, field-VM `0x4C` outer-nibble-8 sub-0) to a dedicated
+//! on-screen-text actor whose handler is `FUN_80037174` - a bottom-up **text
+//! crawl**, not a one-line caption.
 //!
-//! - one roller actor owns all `N` pages of a block; the *parent* timeline
-//!   script halt-suspends at the op until the roller finishes;
-//! - lines enter at the bottom of a clipped window and scroll upward one
-//!   pixel per `frames_per_pixel` frames; each full `line_step` of climb
-//!   admits the next page at the bottom;
-//! - several lines are visible concurrently (up to 8 in `opdeene`), each
-//!   drawn centered with all glyphs at once (no typewriter);
-//! - the block completes when every page has scrolled out of the window,
-//!   which un-halts the parent script.
+//! [`CutsceneNarration`] is that handler, state for state, read off the
+//! disassembly (`see ghidra/scripts/funcs/80037174.txt`):
 //!
-//! Geometry is per-scene ([`RollerParams::for_scene`]), pinned from a
-//! PCSX-Redux cold-boot pixel capture of the retail opening (`opdeene`
-//! window ~y64..188 at 18 px spacing, the other scenes ~y128..203 at 16 px).
-//! Speed is pinned from a realtime retail video: ~10.5 px/s = 1 px per 6
-//! frames at the 60 Hz sim tick (the earlier 0.5 px/frame figure measured
-//! px per *capture tick* under the interpreter+debugger harness, which runs
-//! ~3x slower than realtime, so it over-scrolled the engine's crawl ~3x and
-//! desynced the text from the camera beats - the tableau dolly landed after
-//! the crawl had already ended instead of under "come close to dying out
-//! forever" as in retail). `opurud` keeps its capture-pinned 2x relative
-//! speed.
+//! - **Geometry comes from the scene, not from a table.** The roller reads a
+//!   config block through the dialog-context pointer `*0x801C6EA4`: `+0x4C`
+//!   window top, `+0x4E` line-slot count `n`, `+0x50` scroll divisor, `+0x52`
+//!   release line count ([`RollerSeed`]). The scene reset `FUN_8003A024`
+//!   stores `0x40 / 8 / 4 / 0` (`0x8003A0BC..0x8003A0DC`), and the timeline's
+//!   `CC F8 E8 w0 w1 w2 w3` op (`w3 == 0`) overwrites the first three,
+//!   defaulting each zero word the same way (`0x801E348C..0x801E34BC` in the
+//!   field VM). On the disc the seed op immediately precedes a crawl block.
+//! - **The line pitch is fixed at 16.** Slot `i` draws at
+//!   `y = top - subscroll + 16*i` (`addiu s3,s3,0x10` at `0x8003760C`), and
+//!   the sub-scroll `+0x9E` wraps at `0x10` (`0x80037288`).
+//! - **The clock is the adaptive frame step, not a frame count.** Every frame
+//!   the accumulator `+0x50` gains the frame step `DAT_1F800393`
+//!   (`0x8003723C..0x80037250`, skipped while the pause bit `+0x10 & 0x80000`
+//!   is set); when it reaches the divisor it resets to zero and the crawl
+//!   climbs one pixel. The remainder is discarded, so the speed is
+//!   `1 px per ceil(divisor / step)` frames.
+//! - **`n + 1` slot states** at `actor+0x80..` (`0xFF` empty, `0xFE` blank
+//!   line, `1` text), seeded all-empty (`0x800371F0..0x80037210`). A full
+//!   16-pixel climb shifts them up one (`0x800372CC..0x800372FC`), counting a
+//!   retired page `+0x6A` when slot 0 held one, and admits page `+0x9C` into
+//!   slot `n` - `0xFE` when its first byte is the terminator, `0xFF` once the
+//!   pages run out.
+//! - **Release** (`0x800373BC..0x80037428`): with `+0x52` non-zero and slot 1
+//!   occupied, the roller pauses itself (`+0x10 |= 0x80000`) and clears
+//!   `+0x52` when the lines retired so far (`+0x6A`, plus one if slot 0 is
+//!   occupied) equal it.
+//! - **Clip window** (`0x80037610..0x800376C4`): `y` from `top + 4` to
+//!   `min(top + 16*n - 1, 0xE8)`, `x` from `0` to `0x13F`; lines scroll into
+//!   and out of it a pixel at a time.
+//! - **Completion** (`0x800376D8..0x80037728`): once `+0x6A` reaches the
+//!   page count the roller clears the parent's `+0x10 & 0x400` and kills
+//!   itself (`+0x10 |= 8`).
 //!
-//! [`CutsceneNarration`] is that roller as a small state machine - installed
-//! on the world by [`crate::world::World::open_cutscene_narration`] (from the
-//! timeline stepper when its PC reaches a narration block), ticked each frame
-//! from [`crate::world::World::tick`], and rendered by the host from
-//! [`Self::visible_lines`].
+//! What the port does not own is the frame step. `FUN_80016B6C` derives it
+//! from the measured frame cost and floors it at `DAT_8007B9D8`; the
+//! cold-boot `opdeene` capture (`s1_newgame_field`) holds that floor at `3`
+//! and a live roller's accumulator at `3` after one frame, so the opening
+//! runs at a frame step of 3 - [`OPENING_FRAME_STEP`]. At the seed's divisor
+//! of 4 that is 1 px per two frames, 10 px/s, which is the realtime-video
+//! figure the previous capture-pinned model had fitted with a frame count.
 //!
 //! The `PORT:` tag for the roller is on [`CutsceneNarration`] itself, not
-//! here. A tag at the end of this block has no item within the anchor
-//! collector's lookahead - the next line that is neither comment nor attribute
-//! is a `pub const`, which is not an item kind it recognises - so it silently
-//! became a *file*-scoped anchor, and a file-scoped anchor's entry verdict is
-//! "any region in this file ran". That is the pseudo-entry shape
-//! [`reach-triage.md`](../../../docs/tooling/reach-triage.md) documents.
+//! here - a module-scope tag resolves to a file-scoped anchor
+//! ([`reach-triage.md`](../../../docs/tooling/reach-triage.md)).
 
-/// Frames per 1-pixel scroll step (retail default; ~10.5 px/s measured from
-/// a realtime retail video = 1 px per 6 frames at the 60 Hz tick; see the
-/// module doc for why the older capture-derived 0.5 px/frame was ~3x fast).
-pub const DEFAULT_FRAMES_PER_PIXEL: u32 = 6;
-/// Pixel height of one text row (the roller's line step; `opdeene` uses 18).
-pub const LINE_STEP_PX: i32 = 16;
+/// Retail's fixed line pitch (`addiu s3,s3,0x10`; the sub-scroll wraps at
+/// `0x10`).
+pub const LINE_PITCH: i32 = 16;
 
-/// Per-scene roller geometry / speed, pinned from the PCSX-Redux cold-boot
-/// pixel capture of the retail opening (per-frame text-band tracking):
-/// lines enter at `enter_y`, crawl up 1 pixel per `frames_per_pixel` frames,
-/// and retire when they reach `exit_y`. `opdeene` runs the tall window
-/// (up to 8 lines, 18 px spacing, exit mid-upper screen); the other opening
-/// scenes run a short mid-screen window; `opurud` scrolls at double speed.
+/// The frame step (`DAT_1F800393`) the opening scenes run at: the floor
+/// `DAT_8007B9D8` reads `3` in the cold-boot `opdeene` capture, and a live
+/// roller's accumulator reads `3` one frame after a reset.
+pub const OPENING_FRAME_STEP: u16 = 3;
+
+/// Bottom of the clip window never passes this line (`slti v0,a3,0xe9`).
+pub const CLIP_BOTTOM_MAX: i32 = 0xE8;
+
+/// Slot state: empty (`0xFF`).
+const SLOT_EMPTY: u8 = 0xFF;
+/// Slot state: a page with no text - consumes a page, draws nothing (`0xFE`).
+const SLOT_BLANK: u8 = 0xFE;
+/// Slot state: a drawn page.
+const SLOT_TEXT: u8 = 1;
+
+/// The crawl config block the roller reads through `*0x801C6EA4`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RollerParams {
-    /// Y where a new line enters (PSX framebuffer pixels, top of the row).
-    pub enter_y: i32,
-    /// Y at which a line retires (scrolls out of the window).
-    pub exit_y: i32,
-    /// Vertical spacing between consecutive lines.
-    pub line_step: i32,
-    /// Frames per 1-pixel scroll step.
-    pub frames_per_pixel: u32,
+pub struct RollerSeed {
+    /// `+0x4C` - window top (slot 0's line base).
+    pub top: i16,
+    /// `+0x4E` - line-slot count `n`; the roller keeps `n + 1` slot states.
+    pub slots: i16,
+    /// `+0x50` - accumulator threshold for one pixel of climb.
+    pub divisor: i16,
+    /// `+0x52` - release line count; `0` = never.
+    pub release: i16,
 }
 
-impl RollerParams {
-    /// The default short mid-screen window (opstati / map01 measurements).
-    pub const DEFAULT: Self = Self {
-        enter_y: 203,
-        exit_y: 128,
-        line_step: LINE_STEP_PX,
-        frames_per_pixel: DEFAULT_FRAMES_PER_PIXEL,
+impl RollerSeed {
+    /// What the scene reset `FUN_8003A024` stores.
+    pub const SCENE_RESET: Self = Self {
+        top: 0x40,
+        slots: 8,
+        divisor: 4,
+        release: 0,
     };
 
-    /// Roller geometry for a scene label (capture-pinned per-scene values;
-    /// unknown scenes get [`Self::DEFAULT`]).
-    pub fn for_scene(label: &str) -> Self {
-        match label {
-            // Tall window: enter ~y188, fade out at y64..67, 18 px spacing.
-            "opdeene" => Self {
-                enter_y: 188,
-                exit_y: 64,
-                line_step: 18,
-                frames_per_pixel: 6,
-            },
-            // Double-speed short window: enter ~y187, vanish y128.
-            "opurud" => Self {
-                enter_y: 187,
-                exit_y: 128,
-                line_step: 16,
-                frames_per_pixel: 3,
-            },
-            _ => Self::DEFAULT,
+    /// Apply the timeline's `CC F8 E8` seed words `w0..w2` (`w3 == 0`
+    /// sub-mode): each zero word takes the op's default (`0x40` / `8` / `4`),
+    /// and `+0x52` is left as it was.
+    pub fn with_config_words(self, w0: i16, w1: i16, w2: i16) -> Self {
+        Self {
+            top: if w0 == 0 { 0x40 } else { w0 },
+            slots: if w1 == 0 { 8 } else { w1 },
+            divisor: if w2 == 0 { 4 } else { w2 },
+            release: self.release,
         }
+    }
+
+    /// The seed op ending exactly at `op_offset` in a timeline body, if one
+    /// does: `[CC F8 E8][w0][w1][w2][w3]` with `w3 == 0` (the geometry
+    /// sub-mode). Every crawl block on the disc is either preceded by one or
+    /// runs on the seed a previous block in the same scene left.
+    pub fn config_op_before(self, body: &[u8], op_offset: usize) -> Option<Self> {
+        let start = op_offset.checked_sub(11)?;
+        let op = body.get(start..op_offset)?;
+        if op[..3] != [0xCC, 0xF8, 0xE8] {
+            return None;
+        }
+        let w = |k: usize| i16::from_le_bytes([op[3 + 2 * k], op[4 + 2 * k]]);
+        (w(3) == 0).then(|| self.with_config_words(w(0), w(1), w(2)))
+    }
+
+    /// The clip window's vertical span, `(top, bottom)` inclusive.
+    pub fn clip_window(&self) -> (i32, i32) {
+        let top = i32::from(self.top);
+        let bottom = (top + LINE_PITCH * i32::from(self.slots) - 1).min(CLIP_BOTTOM_MAX);
+        (top + 4, bottom)
+    }
+}
+
+impl Default for RollerSeed {
+    fn default() -> Self {
+        Self::SCENE_RESET
     }
 }
 
@@ -119,40 +157,53 @@ pub struct NarrationLine<'a> {
 pub struct CutsceneNarration {
     /// The subtitle pages, in entry order.
     pages: Vec<String>,
-    /// Window geometry + speed (see [`RollerParams`]).
-    params: RollerParams,
-    /// Frame accumulator toward the next pixel step.
-    clock: u32,
-    /// Live lines: `(page index, current Y)`, oldest (highest) first.
-    active: Vec<(usize, i32)>,
-    /// Next page index to enter at the window bottom.
+    /// The config block (see [`RollerSeed`]).
+    seed: RollerSeed,
+    /// `DAT_1F800393` - vsyncs per retail frame, and the accumulator gain.
+    frame_step: u16,
+    /// Vsyncs banked toward the next retail frame.
+    vsyncs: u32,
+    /// `+0x54` - `false` until the first frame's init has run.
+    started: bool,
+    /// `+0x50` - the scroll accumulator.
+    accum: u16,
+    /// `+0x9E` - pixels climbed within the current 16-pixel line.
+    subscroll: i16,
+    /// `+0x6A` - pages retired off the top slot.
+    retired: usize,
+    /// `+0x9C` - next page to admit at the bottom slot.
     next_page: usize,
-    /// Pixels the newest line has climbed since entering (the next page
-    /// enters after a full `line_step`).
-    entered_px: i32,
-    /// Set once every page has scrolled out (or the block was
-    /// force-finished).
+    /// `+0x80..` - `n + 1` slot states.
+    slots: Vec<u8>,
+    /// `+0x10 & 0x80000` - the pause bit (release, or the config op's pause).
+    paused: bool,
+    /// `+0x10 & 8` - the block has finished (or was force-finished).
     complete: bool,
 }
 
 impl CutsceneNarration {
-    /// Build a roller over `pages` with the default window. A roller with no
-    /// pages is immediately [`complete`](Self::is_complete).
+    /// Build a roller over `pages` with the scene-reset seed at the opening's
+    /// frame step. A roller with no pages is immediately
+    /// [`complete`](Self::is_complete).
     pub fn new(pages: Vec<String>) -> Self {
-        Self::with_params(pages, RollerParams::DEFAULT)
+        Self::with_seed(pages, RollerSeed::SCENE_RESET, OPENING_FRAME_STEP)
     }
 
-    /// Build a roller with explicit per-scene geometry / speed.
-    pub fn with_params(pages: Vec<String>, params: RollerParams) -> Self {
+    /// Build a roller with an explicit seed and frame step.
+    pub fn with_seed(pages: Vec<String>, seed: RollerSeed, frame_step: u16) -> Self {
         let complete = pages.is_empty();
         Self {
             pages,
-            params,
-            clock: 0,
-            active: Vec::new(),
+            seed,
+            frame_step: frame_step.max(1),
+            vsyncs: 0,
+            started: false,
+            accum: 0,
+            subscroll: 0,
+            retired: 0,
             next_page: 0,
-            // Primed so the first line enters on the first pixel step.
-            entered_px: params.line_step.max(1) - 1,
+            slots: Vec::new(),
+            paused: false,
             complete,
         }
     }
@@ -162,9 +213,14 @@ impl CutsceneNarration {
         self.pages.len()
     }
 
-    /// Index of the next page to enter at the window bottom.
+    /// Index of the next page to enter at the window bottom (`+0x9C`).
     pub fn current_index(&self) -> usize {
         self.next_page
+    }
+
+    /// Pages retired off the top of the window (`+0x6A`).
+    pub fn retired(&self) -> usize {
+        self.retired
     }
 
     /// `true` once every page has scrolled out (or the block was
@@ -173,73 +229,174 @@ impl CutsceneNarration {
         self.complete
     }
 
-    /// The window geometry this roller runs.
-    pub fn params(&self) -> RollerParams {
-        self.params
+    /// The config block this roller runs.
+    pub fn seed(&self) -> RollerSeed {
+        self.seed
     }
 
-    /// The currently visible lines, top (oldest) first, each with its
-    /// PSX-space Y. Empty once complete.
-    pub fn visible_lines(&self) -> Vec<NarrationLine<'_>> {
-        if self.complete {
-            return Vec::new();
+    /// The retail clip window, `(top, bottom)` inclusive, in PSX pixels.
+    pub fn clip_window(&self) -> (i32, i32) {
+        self.seed.clip_window()
+    }
+
+    /// `true` while the pause bit is set.
+    pub fn is_paused(&self) -> bool {
+        self.paused
+    }
+
+    /// The config op's pause (`w3 == 1`, `w0 == 0`).
+    pub fn pause(&mut self) {
+        self.paused = true;
+    }
+
+    /// The config op's resume (`w3 == 2`): clear the pause bit.
+    pub fn resume(&mut self) {
+        self.paused = false;
+    }
+
+    /// The config op's release trigger (`w3 == 1`, `w0 != 0`): write `+0x52`.
+    pub fn set_release(&mut self, lines: i16) {
+        self.seed.release = lines;
+    }
+
+    /// Every slot's line with its Y, in slot order, as the draw pass walks
+    /// them (`0x80037544..0x8003760C`): the page cursor starts at `+0x6A`,
+    /// an empty slot neither draws nor consumes a page, a blank slot consumes
+    /// one without drawing.
+    fn slot_lines(&self) -> Vec<NarrationLine<'_>> {
+        let mut out = Vec::new();
+        if self.complete || !self.started {
+            return out;
         }
-        self.active
-            .iter()
-            .map(|&(page, y)| NarrationLine {
-                y,
-                text: self.pages[page].as_str(),
-            })
+        let mut page = self.retired;
+        let mut y = i32::from(self.seed.top) - i32::from(self.subscroll);
+        for &state in &self.slots {
+            match state {
+                SLOT_EMPTY => {}
+                SLOT_BLANK => page += 1,
+                _ => {
+                    if let Some(text) = self.pages.get(page) {
+                        out.push(NarrationLine { y, text });
+                    }
+                    page += 1;
+                }
+            }
+            y += LINE_PITCH;
+        }
+        out
+    }
+
+    /// The lines on screen, top first, each with its PSX-space Y. Only lines
+    /// whose whole 16-pixel row lies inside [`Self::clip_window`] are
+    /// returned, because neither host scissors the text: retail's window
+    /// shows the rows at its two edges partially, which a host with a scissor
+    /// can reproduce from [`Self::all_lines`].
+    pub fn visible_lines(&self) -> Vec<NarrationLine<'_>> {
+        let (top, bottom) = self.clip_window();
+        self.slot_lines()
+            .into_iter()
+            .filter(|l| l.y >= top && l.y + LINE_PITCH - 1 <= bottom)
             .collect()
+    }
+
+    /// Every drawn line including the rows the clip window cuts.
+    pub fn all_lines(&self) -> Vec<NarrationLine<'_>> {
+        self.slot_lines()
     }
 
     /// The text of the newest (bottom-most) visible line, or `None` when
     /// nothing is on screen. Compatibility accessor for single-line hosts;
     /// prefer [`Self::visible_lines`].
     pub fn current_text(&self) -> Option<&str> {
-        if self.complete {
-            return None;
-        }
-        self.active
-            .last()
-            .map(|&(page, _)| self.pages[page].as_str())
+        self.visible_lines().last().map(|l| l.text)
     }
 
-    /// Advance the roller by `frame_delta` frames: every
-    /// `frames_per_pixel` frames each visible line climbs 1 pixel; a line
-    /// reaching `exit_y` retires; a new page enters at `enter_y` once the
-    /// newest line has climbed one full `line_step`. Returns `true` while
-    /// the block is still on screen, `false` once complete (so the host can
-    /// release the suspended timeline).
-    pub fn tick(&mut self, frame_delta: u32) -> bool {
+    /// Advance the roller by `vsyncs` display vsyncs. Every
+    /// [`Self::frame_step`]-vsync retail frame runs one pass of the handler.
+    /// Returns `true` while the block is still on screen, `false` once
+    /// complete (so the host can release the suspended timeline).
+    pub fn tick(&mut self, vsyncs: u32) -> bool {
         if self.complete {
             return false;
         }
-        self.clock = self.clock.saturating_add(frame_delta);
-        let fpp = self.params.frames_per_pixel.max(1);
-        while self.clock >= fpp && !self.complete {
-            self.clock -= fpp;
-            self.pixel_step();
+        self.vsyncs = self.vsyncs.saturating_add(vsyncs);
+        let step = u32::from(self.frame_step);
+        while self.vsyncs >= step && !self.complete {
+            self.vsyncs -= step;
+            self.frame();
         }
         !self.complete
     }
 
-    /// One pixel of crawl: climb every line, retire top-outs, admit the next
-    /// page on a full line step.
-    fn pixel_step(&mut self) {
-        for line in &mut self.active {
-            line.1 -= 1;
+    /// The frame step this roller runs at.
+    pub fn frame_step(&self) -> u16 {
+        self.frame_step
+    }
+
+    /// One pass of `FUN_80037174`.
+    pub fn frame(&mut self) {
+        if self.complete {
+            return;
         }
-        let exit_y = self.params.exit_y;
-        self.active.retain(|&(_, y)| y > exit_y);
-        self.entered_px += 1;
-        if self.next_page < self.pages.len() && self.entered_px >= self.params.line_step {
-            self.entered_px = 0;
-            self.active.push((self.next_page, self.params.enter_y));
-            self.next_page += 1;
+        if !self.started {
+            // `+0x54 == 0`: reset the counters, prime the sub-scroll at 0xF
+            // and the accumulator at the divisor (so the first frame steps),
+            // clear `n + 1` slots.
+            self.retired = 0;
+            self.next_page = 0;
+            self.subscroll = 0xF;
+            self.accum = self.seed.divisor as u16;
+            let n = usize::try_from(self.seed.slots).unwrap_or(0);
+            self.slots = vec![SLOT_EMPTY; n + 1];
+            self.started = true;
         }
-        if self.next_page >= self.pages.len() && self.active.is_empty() {
+        if !self.paused {
+            self.accum = self.accum.wrapping_add(self.frame_step);
+        }
+        if (self.accum as i16) >= self.seed.divisor {
+            self.accum = 0;
+            self.subscroll += 1;
+            if self.subscroll >= LINE_PITCH as i16 {
+                self.subscroll = 0;
+                self.line_step();
+            }
+        }
+        if self.retired >= self.pages.len() {
             self.complete = true;
+        }
+    }
+
+    /// A full 16-pixel climb: retire, shift, admit, then the release test.
+    fn line_step(&mut self) {
+        if self.slots.first().is_some_and(|&s| s != SLOT_EMPTY) {
+            self.retired += 1;
+        }
+        let last = self.slots.len().saturating_sub(1);
+        if !self.slots.is_empty() {
+            self.slots.rotate_left(1);
+            self.slots[last] = if self.next_page >= self.pages.len() {
+                SLOT_EMPTY
+            } else {
+                let state = if self.pages[self.next_page].is_empty() {
+                    SLOT_BLANK
+                } else {
+                    SLOT_TEXT
+                };
+                self.next_page += 1;
+                state
+            };
+        }
+        let release = self.seed.release;
+        if release != 0 && self.slots.get(1).is_some_and(|&s| s != SLOT_EMPTY) {
+            let reached = if self.slots[0] == SLOT_EMPTY {
+                self.retired as i64
+            } else {
+                self.retired as i64 + 1
+            };
+            if reached == i64::from(release) {
+                self.seed.release = 0;
+                self.paused = true;
+            }
         }
     }
 
@@ -250,20 +407,22 @@ impl CutsceneNarration {
         if self.complete {
             return false;
         }
-        for _ in 0..self.params.line_step.max(1) {
-            self.pixel_step();
-            if self.complete {
-                break;
-            }
+        if !self.started {
+            self.frame();
         }
-        self.clock = 0;
+        self.subscroll = 0;
+        self.line_step();
+        self.accum = 0;
+        if self.retired >= self.pages.len() {
+            self.complete = true;
+        }
         !self.complete
     }
 
-    /// Force-finish the block (retail config op `0x4C 0x88` mode 3): every
-    /// remaining page is retired and the roller reports complete.
+    /// Force-finish the block (the config op's `w3 == 3` kill): the roller
+    /// reports complete and draws nothing.
     pub fn force_finish(&mut self) {
-        self.active.clear();
+        self.retired = self.pages.len();
         self.next_page = self.pages.len();
         self.complete = true;
     }
@@ -277,6 +436,12 @@ mod tests {
         (0..n).map(|i| format!("line {i}")).collect()
     }
 
+    fn frames(n: &mut CutsceneNarration, count: u32) {
+        for _ in 0..count {
+            n.frame();
+        }
+    }
+
     #[test]
     fn empty_narration_is_complete_immediately() {
         let mut n = CutsceneNarration::new(vec![]);
@@ -287,84 +452,154 @@ mod tests {
     }
 
     #[test]
-    fn first_line_enters_at_the_window_bottom() {
+    fn first_frame_admits_page_zero_into_the_bottom_slot() {
+        // Primed sub-scroll 0xF + accumulator at the divisor: the very first
+        // frame completes a line step.
         let mut n = CutsceneNarration::new(pages(3));
-        assert!(
-            n.visible_lines().is_empty(),
-            "nothing before the first step"
-        );
-        assert!(n.tick(DEFAULT_FRAMES_PER_PIXEL));
-        let lines = n.visible_lines();
-        assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].text, "line 0");
-        assert_eq!(lines[0].y, RollerParams::DEFAULT.enter_y);
+        n.frame();
+        assert_eq!(n.current_index(), 1);
+        let all = n.all_lines();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].text, "line 0");
+        // Slot n = 8 at y = top + 16*8 - 0.
+        assert_eq!(all[0].y, 0x40 + 16 * 8);
     }
 
     #[test]
-    fn lines_crawl_upward_one_pixel_per_step() {
-        let mut n = CutsceneNarration::new(pages(3));
-        n.tick(DEFAULT_FRAMES_PER_PIXEL);
-        let y0 = n.visible_lines()[0].y;
-        n.tick(DEFAULT_FRAMES_PER_PIXEL);
-        let y1 = n.visible_lines()[0].y;
+    fn capture_state_after_ten_steps() {
+        // s1_newgame_field: acc 3, +0x9C 1, +0x9E 9, slots [FF x8, 1] at a
+        // frame step of 3 and divisor 4 - one step every two frames.
+        let mut n = CutsceneNarration::new(pages(14));
+        n.frame(); // init + first step (page 0 enters, sub 0)
+        frames(&mut n, 18); // nine more steps
+        n.frame(); // one frame of accumulation
+        assert_eq!(n.accum, 3);
+        assert_eq!(n.subscroll, 9);
+        assert_eq!(n.current_index(), 1);
         assert_eq!(
-            y1,
-            y0 - 1,
-            "1 pixel up per {DEFAULT_FRAMES_PER_PIXEL} frames"
+            n.slots,
+            vec![0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 1]
         );
     }
 
     #[test]
-    fn a_full_line_period_brings_in_the_next_page() {
-        let p = RollerParams::DEFAULT;
+    fn frame_step_three_divisor_four_climbs_one_pixel_every_two_frames() {
         let mut n = CutsceneNarration::new(pages(3));
-        n.tick(p.frames_per_pixel); // line 0 enters
-        n.tick(p.frames_per_pixel * p.line_step as u32);
-        let lines = n.visible_lines();
-        assert_eq!(lines.len(), 2, "two lines visible");
-        assert_eq!(lines[0].text, "line 0");
-        assert_eq!(lines[1].text, "line 1");
-        assert_eq!(lines[1].y - lines[0].y, p.line_step);
+        n.frame();
+        let y0 = n.all_lines()[0].y;
+        n.frame();
+        assert_eq!(n.all_lines()[0].y, y0, "3 < 4: no step");
+        n.frame();
+        assert_eq!(
+            n.all_lines()[0].y,
+            y0 - 1,
+            "6 >= 4: step, remainder dropped"
+        );
+        // tick() counts vsyncs: two frames = six vsyncs.
+        n.tick(6);
+        assert_eq!(n.all_lines()[0].y, y0 - 2);
     }
 
     #[test]
-    fn completes_when_every_page_scrolls_out() {
-        let p = RollerParams::DEFAULT;
+    fn line_pitch_is_sixteen_and_the_window_clips_edge_rows() {
+        let mut n = CutsceneNarration::new(pages(40));
+        frames(&mut n, 2 * 16 * 12);
+        let all = n.all_lines();
+        for w in all.windows(2) {
+            assert_eq!(w[1].y - w[0].y, LINE_PITCH);
+        }
+        let (top, bottom) = n.clip_window();
+        assert_eq!((top, bottom), (0x44, 0x40 + 128 - 1));
+        let vis = n.visible_lines();
+        assert!(vis.len() >= 6 && vis.len() < all.len());
+        assert!(vis.iter().all(|l| l.y >= top && l.y + 15 <= bottom));
+    }
+
+    #[test]
+    fn seed_op_before_a_block_sets_the_geometry() {
+        // [CC F8 E8][128][5][5][0] then the crawl op.
+        let mut body = vec![0u8; 4];
+        body.extend([0xCC, 0xF8, 0xE8, 0x80, 0, 5, 0, 5, 0, 0, 0]);
+        let op = body.len();
+        body.extend([0xCC, 0xF8, 0x80, 3]);
+        let seed = RollerSeed::SCENE_RESET.config_op_before(&body, op).unwrap();
+        assert_eq!(
+            seed,
+            RollerSeed {
+                top: 128,
+                slots: 5,
+                divisor: 5,
+                release: 0
+            }
+        );
+        assert_eq!(seed.clip_window(), (132, 207));
+        // Zero words take the op's defaults.
+        let d = RollerSeed {
+            top: 1,
+            slots: 1,
+            divisor: 1,
+            release: 7,
+        }
+        .with_config_words(0, 0, 4);
+        assert_eq!(
+            d,
+            RollerSeed {
+                top: 0x40,
+                slots: 8,
+                divisor: 4,
+                release: 7
+            }
+        );
+        // No op directly before: None.
+        assert!(RollerSeed::SCENE_RESET.config_op_before(&body, 3).is_none());
+    }
+
+    #[test]
+    fn completes_when_every_page_retires_off_slot_zero() {
         let mut n = CutsceneNarration::new(pages(2));
-        // Entry cadence (2 line steps) + a full window traversal each.
-        let window_px = (p.enter_y - p.exit_y) as u32;
-        let steps = (2 * p.line_step as u32 + window_px + 4) * p.frames_per_pixel;
-        assert!(!n.tick(steps), "roller completes after the crawl");
+        let mut guard = 0;
+        while n.tick(3) {
+            guard += 1;
+            assert!(guard < 10_000);
+        }
         assert!(n.is_complete());
+        assert_eq!(n.retired(), 2);
         assert!(n.visible_lines().is_empty());
     }
 
     #[test]
-    fn window_bounds_visible_line_count() {
-        let p = RollerParams::DEFAULT;
-        let mut n = CutsceneNarration::new(pages(40));
-        n.tick(p.frames_per_pixel * p.line_step as u32 * 12);
-        assert!(!n.is_complete());
-        let max_lines = ((p.enter_y - p.exit_y) / p.line_step) as usize + 1;
-        assert!(n.visible_lines().len() <= max_lines);
+    fn blank_pages_consume_a_slot_without_drawing() {
+        let mut n = CutsceneNarration::new(vec!["a".into(), String::new(), "c".into()]);
+        frames(&mut n, 1 + 2 * 16 * 2);
+        let texts: Vec<&str> = n.all_lines().iter().map(|l| l.text).collect();
+        assert_eq!(texts, vec!["a", "c"]);
     }
 
     #[test]
-    fn opdeene_params_run_the_tall_window() {
-        let p = RollerParams::for_scene("opdeene");
-        assert_eq!(p.line_step, 18);
-        assert_eq!(p.exit_y, 64);
-        let mut n = CutsceneNarration::with_params(pages(22), p);
-        // Saturate: up to 7-8 lines visible concurrently (retail capture).
-        n.tick(p.frames_per_pixel * p.line_step as u32 * 10);
-        assert!(n.visible_lines().len() >= 6);
+    fn release_pauses_the_crawl_at_the_line_count() {
+        let mut n = CutsceneNarration::new(pages(20));
+        n.set_release(3);
+        let mut guard = 0;
+        while !n.is_paused() {
+            n.frame();
+            guard += 1;
+            assert!(guard < 10_000);
+        }
+        assert_eq!(n.seed().release, 0, "+0x52 is cleared");
+        let before = n.all_lines();
+        let snapshot: Vec<i32> = before.iter().map(|l| l.y).collect();
+        frames(&mut n, 50);
+        let after: Vec<i32> = n.all_lines().iter().map(|l| l.y).collect();
+        assert_eq!(snapshot, after, "paused: the accumulator stops");
+        n.resume();
+        frames(&mut n, 4);
+        assert_ne!(n.all_lines()[0].y, snapshot[0]);
     }
 
     #[test]
     fn skip_page_forces_a_line_step() {
         let mut n = CutsceneNarration::new(pages(2));
         assert!(n.skip_page());
-        assert_eq!(n.visible_lines().len(), 1);
         let mut guard = 0;
         while n.skip_page() {
             guard += 1;
@@ -376,7 +611,7 @@ mod tests {
     #[test]
     fn force_finish_completes_immediately() {
         let mut n = CutsceneNarration::new(pages(5));
-        n.tick(DEFAULT_FRAMES_PER_PIXEL * 20);
+        n.tick(60);
         n.force_finish();
         assert!(n.is_complete());
         assert!(n.visible_lines().is_empty());

@@ -278,7 +278,7 @@ fn locomotion_deterministic_across_identical_pad_stream() {
 
 #[test]
 fn cutscene_narration_roller_is_timer_driven_not_confirm_paced() {
-    use crate::cutscene_narration::{DEFAULT_FRAMES_PER_PIXEL, RollerParams};
+    use crate::cutscene_narration::OPENING_FRAME_STEP;
     let mut world = World::new();
     world.mode = SceneMode::Title; // isolate the top-of-tick narration advance
     world.open_cutscene_narration(vec!["Page 1".into(), "Page 2".into()]);
@@ -291,32 +291,25 @@ fn cutscene_narration_roller_is_timer_driven_not_confirm_paced() {
     };
     assert_eq!(entered(&world), 0, "no line has entered yet");
 
-    // The roller advances on the 60fps field sub-clock, not once per
-    // `World::tick` (the sim runs at 100Hz): roughly `floor(3*ticks/5)`
-    // roller-frames elapse per `ticks` World::ticks. Scale each crawl budget
-    // by 100/60 (plus a small margin) to cover the same number of pixel steps.
-    let ticks_for = |roller_frames: u32| roller_frames * 100 / 60 + 4;
-
     // A confirm press does NOT advance the crawl (retail `FUN_80037174` is
     // timer-driven; the intro skip goes through the hand-off packet).
     world.set_pad(input::PadButton::Cross.mask());
-    let _ = world.tick();
-    assert_eq!(entered(&world), 0);
-
-    // The timer does: after one pixel step the first line enters.
-    world.set_pad(0);
-    for _ in 0..ticks_for(DEFAULT_FRAMES_PER_PIXEL) {
+    // Fewer vsyncs than one retail frame: nothing has run yet.
+    for _ in 0..(OPENING_FRAME_STEP - 1) {
         let _ = world.tick();
     }
-    assert_eq!(entered(&world), 1, "line 0 entered on the first pixel step");
+    assert_eq!(entered(&world), 0);
 
-    // Ticking through the whole crawl (2 entries + a full window traversal)
-    // completes the block and clears the presenter, releasing the suspended
-    // timeline.
-    let p = RollerParams::DEFAULT;
-    let roller_budget =
-        (2 * p.line_step as u32 + (p.enter_y - p.exit_y) as u32 + 4) * p.frames_per_pixel;
-    for _ in 0..ticks_for(roller_budget) {
+    // The timer does: the first handler pass admits line 0.
+    world.set_pad(0);
+    for _ in 0..8 {
+        let _ = world.tick();
+    }
+    assert_eq!(entered(&world), 1, "line 0 entered on the first pass");
+
+    // Two pages at 1 px per two frames: (2 + 8) line steps of 16 px, each
+    // two 3-vsync frames per pixel, plus margin.
+    for _ in 0..(12 * 16 * 2 * u32::from(OPENING_FRAME_STEP)) {
         let _ = world.tick();
     }
     assert!(

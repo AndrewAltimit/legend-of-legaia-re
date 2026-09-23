@@ -770,6 +770,13 @@ impl World {
             armed: cd != 0,
         };
         self.battle.escape_timer_hud = None;
+        // A zero duration marks a live HUD actor for teardown; otherwise a
+        // live one is kept (with its phase) and a missing one is spawned on
+        // the next tick (the spawner `0x801D596C` checks for the actor by
+        // handler before allocating).
+        if cd == 0 {
+            self.battle.escape_timer_actor = None;
+        }
     }
 
     /// Whether this frame is one of the ones retail's timed-flag scheduler
@@ -815,9 +822,15 @@ impl World {
     /// REF: FUN_801D2EBC (scheduler + HUD decomposition; the ports are
     /// `legaia_engine_vm::escape_timer::EscapeTimer` and `timer_ink`)
     fn tick_escape_timer(&mut self) {
-        if !self.battle.escape_timer.armed {
-            self.battle.escape_timer_hud = None;
-            return;
+        // The countdown runs for exactly as long as its HUD actor lives: the
+        // arming op spawns it, and after expiry it holds a zeroed readout
+        // for `EXPIRED_HOLD` frames before killing itself.
+        if self.battle.escape_timer_actor.is_none() {
+            if !self.battle.escape_timer.armed {
+                self.battle.escape_timer_hud = None;
+                return;
+            }
+            self.battle.escape_timer_actor = Some(vm::escape_timer::EscapeTimerHud::default());
         }
         let busy = self.escape_timer_busy();
         let flag_word = self.battle.escape_timer_flag_word;
@@ -828,9 +841,23 @@ impl World {
         if let Some(flag) = events.warning_flag {
             self.system_flag_set(flag);
         }
-        let (minutes, seconds, hundredths) = self.battle.escape_timer.hud_fields();
-        let ink = vm::escape_timer::timer_ink(self.battle.escape_timer.remaining);
-        self.battle.escape_timer_hud = Some((minutes, seconds, hundredths, ink));
+        if busy {
+            // Retail's busy frame returns before the phase machine and the
+            // draw; the port keeps the last readout up.
+            return;
+        }
+        let Some(mut actor) = self.battle.escape_timer_actor else {
+            return;
+        };
+        let frame = actor.step(&mut self.battle.escape_timer, 1);
+        if frame.teardown {
+            self.battle.escape_timer_actor = None;
+            self.battle.escape_timer_hud = None;
+            return;
+        }
+        self.battle.escape_timer_actor = Some(actor);
+        let (minutes, seconds, hundredths) = frame.digits;
+        self.battle.escape_timer_hud = Some((minutes, seconds, hundredths, frame.ink));
     }
 
     /// Resolve this frame's cadence the way `FUN_80016B6C` does and install
@@ -1235,12 +1262,8 @@ impl World {
         // skip; the player skips the WHOLE opening through the hand-off
         // packet instead - see `take_prologue_handoff`). Clear it once every
         // page has scrolled off so the suspended cutscene timeline resumes.
-        // Scroll the roller on the retail-frame sub-clock. Its speed is pinned
-        // from a realtime retail video as 1 px per 6 frames at 60 Hz
-        // (`cutscene_narration::DEFAULT_FRAMES_PER_PIXEL`), so the sub-clock
-        // has to deliver a full 60 retail frames a second - which it does only
-        // under the 1:1 denomination (at the old 100 Hz premise it delivered
-        // 36, and the crawl ran at 0.6x its own pinned figure).
+        // The roller counts vsyncs and runs one handler pass per
+        // `OPENING_FRAME_STEP`-vsync retail frame (`cutscene_narration`).
         if let Some(narration) = &mut self.cutscene.narration
             && !narration.tick(self.clock.display_frame_step as u32)
         {

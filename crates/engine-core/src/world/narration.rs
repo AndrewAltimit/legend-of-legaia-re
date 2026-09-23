@@ -80,11 +80,12 @@ impl World {
         if pages.is_empty() {
             return;
         }
-        // Per-scene crawl geometry / speed (capture-pinned; see
-        // `RollerParams::for_scene`).
-        let params = crate::cutscene_narration::RollerParams::for_scene(&self.active_scene_label);
-        self.cutscene.narration = Some(crate::cutscene_narration::CutsceneNarration::with_params(
-            pages, params,
+        // The crawl geometry is the config block the scene's seed op left
+        // (`CutsceneState::narration_seed`), at the opening's frame step.
+        self.cutscene.narration = Some(crate::cutscene_narration::CutsceneNarration::with_seed(
+            pages,
+            self.cutscene.narration_seed,
+            crate::cutscene_narration::OPENING_FRAME_STEP,
         ));
         // Monotonic "which crawl block is showing" counter. Because a
         // non-blocking crawl lets the next block open the very tick the prior
@@ -1102,6 +1103,18 @@ impl World {
                             }
                             let site_end = site.end;
                             let pages = site.pages.clone();
+                            // The `CC F8 E8` geometry seed the field VM runs
+                            // immediately before the block (retail stores it
+                            // into `*0x801C6EA4 +0x4C..+0x50`; a block with no
+                            // seed op of its own reads the one left there).
+                            if let Some(seed) = host
+                                .world
+                                .cutscene
+                                .narration_seed
+                                .config_op_before(&tl.bytecode, pc)
+                            {
+                                host.world.cutscene.narration_seed = seed;
+                            }
                             host.world.open_cutscene_narration(pages);
                             // Non-blocking: the roller scrolls on its own
                             // (`World::tick`); continue into the camera cuts.

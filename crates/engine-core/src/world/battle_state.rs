@@ -197,6 +197,9 @@ pub struct BattleState {
     /// function that drains the counter, so the values are a per-frame
     /// product of the tick rather than something a renderer derives.
     pub escape_timer_hud: Option<(i32, i32, i32, vm::escape_timer::TimerInk)>,
+    /// The HUD actor that owns the countdown (`FUN_801D2EBC` is its handler):
+    /// alive from the arming op until its expired readout's hold runs out.
+    pub escape_timer_actor: Option<vm::escape_timer::EscapeTimerHud>,
     /// Per-actor status-effect tracker (Toxic / Numb / Venom /
     /// Sleep / Confuse / Curse / Stone / Faint). Populated by
     /// [`crate::world::World::fold_battle_event`] on `ApplyArtStrike` events whose
@@ -465,6 +468,7 @@ impl BattleState {
             escape_timer: Default::default(),
             escape_timer_flag_word: 0,
             escape_timer_hud: None,
+            escape_timer_actor: None,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             guarding: [false; 3],
