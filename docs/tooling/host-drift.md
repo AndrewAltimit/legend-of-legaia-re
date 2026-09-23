@@ -2500,6 +2500,31 @@ routed through `classify_cue` - the scheduler returns ring cues in their own
 list - because every runtime-bank id (`>= 0x200`) would otherwise land on the
 CD-XA voice leg and be declined.
 
+## The slot-2 / slot-6 SFX region: one residency, two restagers
+
+Which bank the SPU region VAB slots `2` and `6` share holds is decided once, in
+the engine: `World::sync_sfx_residency` models retail's field-bank latch
+`0x8007BAFC` and the region's occupant off the world's mode edges (field and
+world map load PROT 0876 into slot 6, battle and the Baka duel PROT 0869 into
+slot 2, fishing / slot machine / dance their own banks), and field-VM op `0x36`
+sub `3` runs `World::release_field_audio`. Each play host only restages: the
+native `AudioBgmDirector::sync_shared_region` and the browser play page's
+`LegaiaRuntime::sync_shared_region`, both called from their `route_field_sfx`
+every tick, both placing the bank above the slot-0 system bank inside the same
+`SFX_BANK_SPU_BYTES` window. Both resolve a routed cue to its own slot or to
+silence (`bgm::resolve_sfx_slot` / `PlaySfx::resolve_slot`) - a class-2
+fallback on one host only would make a field cue audible there and silent on
+the other.
+
+The minigames page keeps its own lazy per-slot staging
+(`LegaiaMinigames::stage_sfx_slot`, `prot_index_for_slot`), so its slot 2 is
+PROT 0869 for every game rather than the fishing / slot-machine / dance bank the
+residency names. The only catalog cues it fires are the Baka duel's
+(`BakaFight::take_cues`, drained in `baka_tick`) and the Muscle Dome tally's
+voice attrs, and both games hold PROT 0869 in slot 2 on every host, so no cue it
+plays differs; a category-`2` cue added to fishing, the slot machine or the
+dance on that page would.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
