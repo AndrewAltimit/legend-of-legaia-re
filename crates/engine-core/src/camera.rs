@@ -413,6 +413,14 @@ pub struct ZoneFollow {
     /// ([`Camera::route_camera_events`]) - retail's order is seed, then
     /// whichever of those the scene's script runs.
     pub view_window: [i8; 4],
+    /// The jitter pair the follow ease last added into the eye X / Y
+    /// globals (retail's scene control block `+0x18` / `+0x1C`,
+    /// `*(0x801C6EA4)`), subtracted back out at the top of the next ease.
+    pub shake_offset: [i32; 2],
+    /// PsyQ `rand()` state for the follow ease's shake draws. Retail draws
+    /// from the one global `rand` stream; the port keeps the camera's draws
+    /// on their own stream so a shake never perturbs gameplay RNG.
+    shake_seed: u32,
 }
 
 impl Default for ZoneFollow {
@@ -434,6 +442,8 @@ impl Default for ZoneFollow {
                 let (a, b, c, d) = crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
                 [a, b, c, d]
             },
+            shake_offset: [0, 0],
+            shake_seed: 1,
         }
     }
 }
@@ -1023,6 +1033,26 @@ impl Camera {
                     g[8] = ease_step(g[8], focus_anchor[1], code);
                 }
             }
+        }
+
+        // 5b. The ease's shake arm (`FUN_801DB510` head `0x801DB51C..0x801DB55C`
+        //     and tail `0x801DB844..0x801DB8D4`): the previous jitter pair
+        //     comes back out of eye X / Y, and with a non-zero amplitude
+        //     `_DAT_8007B630` (field-VM `[4C 84 amp]`) two fresh draws go in
+        //     - X centred on zero, Y upward only. Retail runs it on every
+        //     call, moved or not, snapped or not, so it sits outside the
+        //     ease branch; the arithmetic is `FUN_801D9D30`'s, which the
+        //     ease tail duplicates verbatim.
+        {
+            let mut eye = [g[3], g[4]];
+            legaia_engine_vm::battle_camera::apply_shake(
+                &mut eye,
+                &mut zone.shake_offset,
+                u32::from(world.camera.shake_amplitude),
+                &mut zone.shake_seed,
+            );
+            g[3] = eye[0];
+            g[4] = eye[1];
         }
 
         // 6. The focus edge clamp (`FUN_801DAA50`), which every retail
