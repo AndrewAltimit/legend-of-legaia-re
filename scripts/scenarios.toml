@@ -2767,3 +2767,13 @@ expected_game_mode = 0x03
 expected_active_scene = "vell"
 description = "Mist forest (vell) free field run at the map01 entrance, player at world (11584, 1088), fog gate _DAT_8007B854 raised, 14 live fog records at the checkpoint (cap 0x18). Reached from overworld_into_town_man_load by a door-tile poke, not a walk. Retail frame + VRAM reference for the field fog sheets (texture page 0x0027 = VRAM (448, 0), CLUT (0, 473))."
 topics = ["field", "vell", "fog", "fog pool", "VRAM", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "kor5_post_436_organic"
+backup_fingerprint = "4f40281a85b01b4e8d6b9c84115228bd03aa0a94066e762f87a9899851335fcc"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor5"
+description = "kor5 on the vsync P2[5] sets 0x436 itself (record +0xD0D, FUN_8003CE08 from ra 0x801E3598) - no flag poke. Reached from kor5_post_43a_checkpoint by tile pokes onto P2[4]'s (32,40) -> (32,41), a Cross mash, and the Gaza fight passed by holding the enemy HP at 1 (synthetic: the loss is a game over, mode 0x16); P1[0] spawns P2[5] on the reload and it runs to +0xD0D about 3,300 vsyncs later. 0x6C4 still clear: crossing (32,85) -> (32,86) dispatches P2[8], which sets it at +0x75."
+topics = ["field", "kor5", "story flags", "walk-on trigger", "probe state"]

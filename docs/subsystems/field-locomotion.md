@@ -991,9 +991,22 @@ Back in the field the scene reloads, and P1[0] sees `0x464`, clears it and
 spawns P2[5] through op `0x44` (`FUN_8003BDE0` from `ra 0x801DF098`) - the
 record that sets `0x436` at `+0xD0D`. P2[8] (C1 `{0x6C4}`, C2 `{0x436}`)
 dispatches on the first crossing of `(32, 86)` and writes `0x6C4` in the same
-frame through `FUN_8003CE08` (`ra 0x801E3598`, record `+0x75`); that last
-capture pokes `0x436` rather than playing P2[5] to its end, so the tail's
-writer is live and its C2 input is synthetic.
+frame through `FUN_8003CE08` (`ra 0x801E3598`, record `+0x75`).
+
+P2[5] writes `0x436` itself. From `kor5_post_43a_checkpoint`, with nothing
+poked but the two trigger tiles and the Gaza fight's enemy HP (held at `1`;
+losing that fight is a game over, master mode `0x16`), P1[0] spawns P2[5]
+on the reload and it reaches `+0xD0D` - `54 36`, `FUN_8003CE08` from
+`ra 0x801E3598` - 3,336 vsyncs after `0x464` clears and 8,533 after the
+state loads (`kor5_post_436_organic`). P2[8] then sets `0x6C4` on its first
+`(32, 86)` crossing, so the whole chain runs without a flag poke. The
+"about 17,500 vsyncs" an earlier run estimated was that probe's own doing:
+its `!464` leg counted pokes rather than reading the flag, so once the
+battle's reload lifted the movement lock it poked `(32, 41)` again,
+re-dispatched P2[4] (a second `0x464` SET and a second battle) over the
+running P2[5], and the chain stalled with the player locked
+([`autorun_w7c_kor5_tail.lua`](../../scripts/pcsx-redux/autorun_w7c_kor5_tail.lua)
+now ends such a leg on the flag).
 
 ### Object-record format (`+0x0000`, 0x20-byte stride)
 
