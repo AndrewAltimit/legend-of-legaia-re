@@ -287,9 +287,9 @@ pub fn placement_interaction_entry_pc(body: &[u8], script_pc0: usize, limit: usi
 /// placement's `dialog_inline` byte-for-byte.
 ///
 /// `entry_pc` here is the record's `script_pc0`, **not** the interaction cursor
-/// [`placement_interaction_entry_pc`] derives - see
-/// [`placement_interaction_record`] for why the two are separate entry points
-/// today.
+/// [`placement_interaction_entry_pc`] derives; the interaction dispatch uses
+/// [`placement_interaction_record`]. This form is for consumers that want the
+/// whole record from its first opcode (the disc sweeps).
 pub fn placement_inline_prologue(
     man_file: &ManFile,
     man: &[u8],
@@ -319,16 +319,19 @@ pub fn placement_inline_prologue(
 /// compare jumps to - so entering at `script_pc0`, tripping the terminator and
 /// falling through to that segment lands in the refusal branch.
 ///
-/// ## Why talk NPCs are not on this entry yet
+/// Talk NPCs take this entry too (`World::install_field_carriers_from_man`):
+/// retail runs one SM over one cursor for every placement, and entering a
+/// talk record at `script_pc0` re-ran its spawn section on every talk - the
+/// section's seat pokes, and any story-flag write it carries (`kor5` `P1[2]`
+/// sets `0x619` there) - then tripped the spawn terminator and fell through
+/// to the first line, skipping the record's own segment-selection prologue.
 ///
-/// The rule is general - retail runs one SM over one cursor for every
-/// placement - but switching the NPC path to it regresses at least one pinned,
-/// working conversation: `retock`'s innkeeper resolves its picker and then
-/// neither charges nor restores (`inn_stay_field_vm_disc`). Whatever the inn
-/// record does between its spawn terminator and its first line, the port's VM
-/// does not come out of it where the old entry did. Until that is understood,
-/// the corrected cursor ships for the door records it was derived on, and the
-/// NPC path keeps the entry its behaviour is pinned against.
+/// The inn regression that once held NPCs on the old entry was the runner,
+/// not the cursor: `retock`'s innkeeper opens its interaction with a
+/// cross-context halt-acquire on the player (`CC F8 85`), and the runner left
+/// that halt on the record's own context, so every later player gesture of
+/// the stay returned `Halt` and the talk ended before the gold gate. See
+/// `World::step_inline_dialogue`.
 pub fn placement_interaction_record(
     man_file: &ManFile,
     man: &[u8],

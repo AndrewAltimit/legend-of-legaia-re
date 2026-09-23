@@ -108,6 +108,12 @@ pub struct InlineDialogue {
     /// whole map disarms the detector for the rest of the conversation, which
     /// is the same defect in its second shape.
     pub visited: Vec<bool>,
+    /// Cross-context targets this conversation has halt-acquired (`4C 85`
+    /// family behind an `0x80` target byte), so a second acquire of the same
+    /// target - the record looping back over its own opening - ends the talk
+    /// the way retail's failed acquire does.
+    /// See `World::step_inline_dialogue`.
+    pub acquired_targets: Vec<u8>,
 }
 
 impl InlineDialogue {
@@ -127,6 +133,7 @@ impl InlineDialogue {
             prop_anchor: None,
             park_frames: 0,
             visited,
+            acquired_targets: Vec::new(),
         }
     }
 
@@ -157,6 +164,7 @@ impl InlineDialogue {
             prop_anchor: None,
             park_frames: 0,
             visited,
+            acquired_targets: Vec::new(),
         }
     }
 

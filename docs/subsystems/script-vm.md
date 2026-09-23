@@ -2103,15 +2103,30 @@ derives the cursor structurally instead
 segment so the walk can never desync inside message bytes and read an ASCII `!`
 as a terminator).
 
-**The port applies it to door records only.** The rule is general, but moving
-the talk-NPC path onto it regresses at least one pinned conversation: `retock`'s
-innkeeper resolves its 2-option picker and then runs neither its gold debit nor
-its HP/MP restore (`engine-core/tests/inn_stay_field_vm_disc.rs`). What the port
-does between an NPC record's spawn terminator and its first line does not come
-out where the old entry did, and until that is understood the corrected cursor
-ships for the records it was derived on. The two entry points are
-`placement_interaction_record` (cursor) and `placement_inline_prologue`
-(`script_pc0`).
+**The port applies it to every placement, talk NPCs included.** Entering a
+talk record at `script_pc0` re-ran its spawn section on every talk - its seat
+pokes, and any story-flag write it carries - then tripped the terminator and
+fell through to the first line, skipping the record's own segment-selection
+prologue. `kor5`'s `P1[2]` is the flag-write case: its spawn section is `0x25`,
+`SET 0x619`, a `CamCfg`, `0x21`, so every talk re-latched a flag retail writes
+only at scene load. The two entry points are `placement_interaction_record`
+(cursor, the interaction dispatch) and `placement_inline_prologue`
+(`script_pc0`, for whole-record disc sweeps).
+
+The inn regression that once kept talk NPCs on `script_pc0` was the runner,
+not the cursor. `retock`'s innkeeper opens its interaction with `CC F8 85`, a
+halt-acquire on the player. Retail's acquire (`0x801E1ECC..0x801E1F54`) halts
+the target and, for the player target, the caller too, then advances; the
+halted-target early-out at the top of the dispatcher (`0x801DE90C`) is skipped
+while a modal window is up (`*(_DAT_801C6EA4 + 8) != 0`), so the stay's later
+player gestures still run. The runner hands such an op the record's own context
+as the target's stand-in, and the halt bit it left there turned each later
+cross-context op into a `Halt`, ending the stay before its gold gate. The
+runner now keeps the caller's halt state across a cross-context op and records
+the acquired target; the record's tail looping back over the same acquire is
+where the conversation ends (retail's acquire fails there once the window has
+closed, and the caller halts at its own PC). That end rule is an inference
+from the acquire's predicate, not a capture.
 
 An earlier engine model drove `0x3F → open_dialog(text_id, inline, …)`, which is
 wrong twice over: `0x3F` is the named scene-change, and field dialogue is the

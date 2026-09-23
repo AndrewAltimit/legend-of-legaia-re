@@ -170,12 +170,16 @@ impl World {
             } = kind
             {
                 self.npcs.dialog.insert(slot, inline);
-                // Stash the untruncated record so the opt-in field-VM runner can
-                // execute the interaction prologue (segment selection) - purely
-                // additive; the default path keeps using `field_npc_dialog`.
-                if let Some(prologue) =
-                    crate::man_field_scripts::placement_inline_prologue(man_file, man, &placement)
-                {
+                // Stash the untruncated record so the field-VM runner can
+                // execute the interaction prologue (segment selection),
+                // entered at the interaction cursor - one past the spawn
+                // section's `0x21`, where retail's dialog SM resumes
+                // `actor[+0x9E]` - never at `script_pc0`, which would re-run
+                // the spawn section on every talk. The simplified path keeps
+                // using `field_npc_dialog`.
+                if let Some(prologue) = crate::man_field_scripts::placement_interaction_record(
+                    man_file, man, &placement,
+                ) {
                     self.npcs.dialog_prologue.insert(slot, prologue);
                 }
                 // The interaction probe box-tests the player against this spawn

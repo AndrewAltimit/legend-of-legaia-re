@@ -2595,7 +2595,51 @@ impl World {
                         None => false,
                     }
                 });
+            // A cross-context HALT-ACQUIRE (`4C 85` / `4C 8E` / `4C 8F` behind
+            // an `0x80` target byte) suspends the TARGET, and for the player
+            // target also the calling record, then advances the caller
+            // (`0x801E1ECC..0x801E1F54` in `overlay_0897_801de840.txt`). Two
+            // consequences the runner has to model, because it hands the op
+            // the record's own context as a stand-in for the target:
+            //
+            // - The halted-target early-out at the top of `FUN_801DE840`
+            //   (`0x801DE90C`) is skipped while a modal window is up
+            //   (`*(_DAT_801C6EA4 + 8) != 0`), so inside a conversation the
+            //   record's later cross-context ops on the frozen player still
+            //   run. A halt bit left on the stand-in would instead turn every
+            //   one of them into a `Halt` and end the talk at its first
+            //   player gesture - `retock`'s innkeeper opens its interaction
+            //   with `CC F8 85` and never reached its gold gate.
+            // - Re-acquiring a target this conversation already holds is the
+            //   record's resident loop-back reaching its top selector again
+            //   (the innkeeper's tail jumps back over `CC F8 85`); retail's
+            //   acquire fails there once the window has closed, the caller
+            //   halts at its own PC, and the dialog SM ends the talk.
+            let caller_halt =
+                ext_target.map(|t| (t, id.ctx.flags & 0x400, id.ctx.saved_pc, id.ctx.wait_accum));
             let step = vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc);
+            let mut reacquired = false;
+            if let Some((target, halt, saved_pc, wait_accum)) = caller_halt
+                && halt == 0
+                && id.ctx.flags & 0x400 != 0
+            {
+                id.ctx.flags &= !0x400;
+                id.ctx.saved_pc = saved_pc;
+                id.ctx.wait_accum = wait_accum;
+                if id.acquired_targets.contains(&target) {
+                    reacquired = true;
+                } else {
+                    id.acquired_targets.push(target);
+                }
+            }
+            if reacquired {
+                if let Some(fb) = id.fallback_segment_pc.take() {
+                    id.pc = fb;
+                    continue;
+                }
+                id.done = true;
+                break;
+            }
             if let Some(target) = bound
                 && let Some(actor) = host.world.props.bank.actor_clip_mut(target)
             {
