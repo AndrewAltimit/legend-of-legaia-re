@@ -34,6 +34,24 @@ pub(crate) struct PropDirProbe {
 /// Neither probe reads the walkability grid, so a wandering villager is
 /// bounded by its op's authored AABB rather than by walls.
 ///
+/// What this covers of `FUN_801cf8ac` (`0x801CF8AC..0x801CF9F0`) is the
+/// **class arm** only - `+0x10 & 0x01020000` set, box `0x40 - 0x18` = ±40
+/// about the walker's live position - which is the arm a placed NPC takes.
+/// Three parts of the routine are not modelled, because the engine's ambient
+/// channel carries no pooled actor to read them off:
+///
+/// - the `+0x10 & 3` early-out (`0x801CF8B8`): a collision-exempt walker
+///   never hits the player;
+/// - the no-class arm (`0x801CF8D4..0x801CF930`): box `0x40 + 0x10` = ±80
+///   about the live position **plus** the model-bbox offset read from the
+///   32-byte record `*(0x1F8003EC) + actor[+0x60] * 32` (`rec[6]*128 +
+///   rec[0xE]*16` / `rec[7]*128 + rec[0xF]*16`, less `rec[0]` / plus
+///   `rec[4]` under `+0x52 & 8`) - the same anchor the prop colliders use;
+/// - the hit's side effects (`0x801CF9BC..0x801CF9E8`): the mutual contact
+///   link `player[+0x98] = actor`, `actor[+0x98] = player`, and the result
+///   class (`1` for `+0x10 & 0x40020000`, else `4`), where the engine
+///   returns a bare `bool`.
+///
 /// PORT: FUN_801cf8ac
 /// REF: FUN_801d5a68
 struct AmbientPlayerProbe {
@@ -3095,9 +3113,13 @@ impl World {
     ///
     /// Retail then runs a tail on every grounded frame that did not hop:
     /// `jal 0x801D1EC4`, and an anim-clip pick into `+0x5C` from
-    /// `_DAT_8007BDD8` (with the `99` sentinel), `_DAT_8007B8F8 * 7` and
-    /// `_DAT_8007B6AC` before `FUN_800204F8`. The engine's player animation
-    /// is driven by its own locomotion clip state, so that tail is not ported.
+    /// `_DAT_8007BDD8` (with the `99` sentinel), `_DAT_8007B8F8 * 7` (the
+    /// party leader's stride into the clip bank) and `_DAT_8007B6AC` before
+    /// `FUN_800204F8`. The pick is the arithmetic of the unreferenced helper
+    /// `FUN_801E58A8` ([`vm::menu_actor_seed::actor_clip_pick`]). It is not
+    /// run here: its base `_DAT_8007BDD8` is stored by `FUN_801D1EC4` on four
+    /// arms the port does not model, and the engine's player animation is
+    /// driven by its own locomotion clip state (`crate::field_anim`).
     ///
     /// The glide rate is `delta_scalar * 12`, halved when `+0x10 & 0x2000`
     /// is set (retail `sra s0, 1` - the slow-fall class). The height step is
@@ -3397,11 +3419,9 @@ impl World {
 #[cfg(test)]
 mod face_target_tests {
     use super::*;
-    use crate::world::vm_hosts::FieldHostImpl;
-    use vm::field::FieldHost;
 
     /// Talking to a field NPC turns it to face the player: the interaction
-    /// dispatch (`FieldHostImpl::field_interact`) drives the ported `0x4C`
+    /// dispatch ([`World::trigger_field_interact`]) drives the ported `0x4C`
     /// `FaceTarget` motion-VM leg through [`World::face_field_npc_toward`] and
     /// settles the NPC's [`crate::world::FieldNpcState::headings`] entry onto the player
     /// bearing, converging from whatever stale facing it held.
@@ -3418,10 +3438,7 @@ mod face_target_tests {
         w.npcs.positions.insert(3, (0, 0));
         w.npcs.headings.insert(3, 0x800);
 
-        {
-            let mut host = FieldHostImpl { world: &mut w };
-            host.field_interact(0x05, 3);
-        }
+        w.trigger_field_interact(0x05, 3);
 
         // atan2(dx=100, dz=0) = +pi/2 -> 12-bit yaw 0x400 (X+); the one-shot
         // FaceTarget leg snaps straight onto it.

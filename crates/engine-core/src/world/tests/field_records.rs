@@ -102,17 +102,44 @@ fn field_op_3e_warp_arms_the_minigame_door_not_a_scene_change() {
     assert!(world.minigames.scene_backup.is_some());
 }
 
-/// `op0 < 100` is the field_interact arm - should trigger neither a scene
-/// transition nor a door-warp.
+/// `op0 < 100` is the scripted-battle install, not an interaction: it
+/// requests neither a scene transition nor a door-warp, opens no dialogue
+/// even on a slot that has inline text, and installs formation-table row
+/// `op1` exactly as `op0 == 0xFF` does (`FUN_801DE840` `0x801E06FC..0x801E0788`:
+/// the arm never reads `op0` past the `0xFF` / `< 100` test).
 #[test]
-fn field_op_3e_low_op0_does_not_request_scene_transition() {
-    let mut world = World::new();
-    world.mode = SceneMode::Field;
-    let bytecode = vec![0x3E, 50, 7];
-    world.load_field_script(bytecode);
-    let _ = world.tick();
-    assert_eq!(world.pending_scene_transition, None);
-    assert_eq!(world.minigames.pending_warp, None);
+fn field_op_3e_low_op0_installs_scripted_battle_row() {
+    for op0 in [0x00u8, 0x01, 50, 0xFF] {
+        let mut world = World::new();
+        world.set_formation_table(
+            crate::monster_catalog::vanilla_formation_table(),
+            crate::monster_catalog::vanilla_monster_catalog(),
+        );
+        world.mode = SceneMode::Field;
+        world.npcs.dialog.insert(1, vec![0x1F, b'h', b'i', 0x00]);
+        world.load_field_script(vec![0x3E, op0, 1]);
+        let _ = world.tick();
+        assert_eq!(world.pending_scene_transition, None, "op0 {op0:#x}");
+        assert_eq!(world.minigames.pending_warp, None, "op0 {op0:#x}");
+        assert!(
+            world.dialog.current.is_none(),
+            "op0 {op0:#x}: the op opens no dialogue"
+        );
+        assert_eq!(world.dialog.last_field_interact, None, "op0 {op0:#x}");
+        // The install arms the field-to-battle intro; the flip lands once
+        // its display frames elapse.
+        for _ in 0..200 {
+            if world.mode == SceneMode::Battle {
+                break;
+            }
+            let _ = world.tick();
+        }
+        assert_eq!(
+            world.mode,
+            SceneMode::Battle,
+            "op0 {op0:#x}: formation row 1 installed and entered"
+        );
+    }
 }
 
 /// Field-VM op `0x4C 0xE2` (FMV trigger) records the FMV index in

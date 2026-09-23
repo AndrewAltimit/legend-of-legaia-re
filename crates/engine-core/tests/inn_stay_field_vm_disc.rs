@@ -8,8 +8,7 @@
 //! HP/MP restore per party slot. This test walks that whole record on the real
 //! disc bytes through the production interaction path:
 //!
-//! `World::trigger_field_interact` (what the field-interact op and the
-//! walk-up probe both call) -> `World::drive_inline_dialogue` ->
+//! `World::trigger_field_interact` (what the walk-up probe calls) -> `World::drive_inline_dialogue` ->
 //! `World::step_inline_dialogue` -> `legaia_engine_vm::field::step`
 //!
 //! and asserts the two observable outcomes a player gets: the gold leaves the

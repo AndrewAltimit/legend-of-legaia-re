@@ -21,11 +21,11 @@ pub struct FieldNpcState {
     /// is (`Self::tick_field_interaction_probe`).
     pub solid: bool,
     /// Per-actor inline interaction-script dialogue, keyed by the actor's
-    /// MAN partition-1 record index - the `slot` a field-interact op
-    /// (`0x3E` with `op0 < 100`) carries. Populated at field-scene entry from
+    /// MAN partition-1 record index - the `slot` the talk probe addresses.
+    /// Populated at field-scene entry from
     /// the scene's actor placements. This is the **real** field NPC dialogue
     /// source (the actor's inline MES text at retail `actor[+0x90]`), so
-    /// `crate::world::vm_hosts`'s `field_interact` opens the interacted
+    /// `World::trigger_field_interact` (the talk path) opens the interacted
     /// actor's dialogue from here - not from a `0x3F` op (which is the named
     /// scene-change, not dialogue). Empty between field scenes.
     pub dialog: std::collections::HashMap<u8, Vec<u8>>,

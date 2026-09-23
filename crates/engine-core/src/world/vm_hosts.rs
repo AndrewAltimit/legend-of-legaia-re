@@ -1403,36 +1403,20 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::PartyRemove { char_id });
     }
 
-    fn field_interact(&mut self, interact_id: u8, slot: u8) {
-        // `3E FF <row>` - the scripted-battle entry arm. Retail's case-0x3E
-        // interact path installs the per-scene MAN formation-table row `op1`
-        // as the SYSTEM entity's encounter record (`sys_ctx[+0x8A] = 1`,
-        // `sys_ctx[+0x94] = formation_table + op1*stride + 1`) and requests
-        // the battle mode switch; `FUN_801DA51C`'s confirm state then copies
-        // the row into the battle formation cell. This is how the scripted
-        // boss fights enter: garmel's Zeto beat record ends in `3E FF 09`
-        // (row 9 = lone monster `0x4B`), its Songi twin in `3E FF 08`, and
-        // rikuroa's Caruban stager in `3E FF 11` (row 17 = lone `0x49`).
-        if interact_id == 0xFF {
-            self.world.trigger_scripted_battle(slot);
-            return;
-        }
-        // "Face the speaker" now lives inside
-        // [`World::trigger_field_interact`] below, as
-        // [`World::face_field_npc_at_player`] - both because retail's write is
-        // in the dialog SM (one snap, not the `0x4C` ramp this site used to
-        // run) and because doing it here reached only the *scripted* interact
-        // op. The walk-up-and-press talk goes straight to
-        // `trigger_field_interact` from the interaction probe and never
-        // reached this function at all, which is why ordinary NPCs did not
-        // turn.
-        //
-        // The real field-dialogue path: open the interacted actor's own inline
-        // interaction-script MES (retail `actor[+0x90]`, keyed by `slot`) and
-        // arm/engage a scripted-encounter carrier on that slot (the dialogue-
-        // accept auto-arm). Shared with the interaction probe via
-        // [`World::trigger_field_interact`].
-        self.world.trigger_field_interact(interact_id, slot);
+    fn scripted_battle(&mut self, op0: u8, row: u8) {
+        // `3E <op0> <row>` with `op0 < 100` or `op0 == 0xFF` - the
+        // scripted-battle install. Retail's arm installs the per-scene MAN
+        // formation-table row `row` as the SYSTEM entity's encounter record
+        // (`sys_ctx[+0x8A] = 1`, `sys_ctx[+0x94] = formation_table +
+        // row*stride + 1`) and requests the battle mode switch;
+        // `FUN_801DA51C`'s confirm state then copies the row into the battle
+        // formation cell. `op0` is never read past the `0xFF` / `< 100` test,
+        // so `3E 00 02` (town0b), `3E 00 03` (stone) and `3E 01 00`
+        // (jagaroom) install their rows exactly as garmel's Zeto beat's
+        // `3E FF 09` does. Talking to an NPC never reaches this op: that is
+        // the interaction probe's [`World::trigger_field_interact`].
+        let _ = op0;
+        self.world.trigger_scripted_battle(row);
     }
 
     fn view_window_long(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) {

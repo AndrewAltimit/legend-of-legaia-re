@@ -1,4 +1,4 @@
-//! Field action opcodes: EXEC_MOVE/MOVE_TO, SCENE_CHANGE, BGM, CAM_CFG, item/money/party, COND_JMP, WARP/INTERACT, RENDER_CFG, COUNTER, ANIMATE. Extracted verbatim from `field/tests.rs`.
+//! Field action opcodes: EXEC_MOVE/MOVE_TO, SCENE_CHANGE, BGM, CAM_CFG, item/money/party, COND_JMP, SCRIPTED BATTLE / MINIGAME WARP (0x3E), RENDER_CFG, COUNTER, ANIMATE. Extracted verbatim from `field/tests.rs`.
 
 use super::*;
 
@@ -434,26 +434,26 @@ fn op_4c_n4_sub_e_or_f_halts_at_pc() {
     assert_eq!(r, StepResult::Halt { final_pc: 0 });
 }
 
-// -- 0x3E WARP / INTERACT -------------------------------------------
+// -- 0x3E SCRIPTED BATTLE / MINIGAME WARP -------------------------------------------
 
 #[test]
-fn warp_interact_path_advances_3() {
-    // op0 = 5 (< 100) → INTERACT path.
+fn scripted_battle_path_advances_3() {
+    // op0 = 5 (< 100) → the scripted-battle install, row 2 (op0 is not read further).
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x3E, 0x05, 0x02], 0);
     assert_eq!(r, StepResult::Advance { next_pc: 3 });
-    assert_eq!(host.interacts, vec![(0x05u8, 0x02u8)]);
+    assert_eq!(host.scripted_battles, vec![(0x05u8, 0x02u8)]);
     assert!(host.scene_transitions.is_empty());
 }
 
 #[test]
-fn warp_interact_handles_0xff_sentinel() {
+fn scripted_battle_handles_0xff_op0() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x3E, 0xFF, 0x00], 0);
     assert_eq!(r, StepResult::Advance { next_pc: 3 });
-    assert_eq!(host.interacts, vec![(0xFFu8, 0x00u8)]);
+    assert_eq!(host.scripted_battles, vec![(0xFFu8, 0x00u8)]);
 }
 
 #[test]

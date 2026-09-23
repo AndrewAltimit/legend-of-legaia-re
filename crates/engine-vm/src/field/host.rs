@@ -51,7 +51,7 @@ pub trait FieldHost {
 
     /// Open a dialog box. The text ID + inline buffer feed the MES bytecode that
     /// `crates/mes` parses. **Not** wired to a field-VM opcode: it is the host's
-    /// dialogue-open primitive, invoked from [`Self::field_interact`] with the
+    /// dialogue-open primitive, invoked by the host's interaction path with the
     /// interacted actor's inline interaction-script text (the real field-dialogue
     /// source - retail `actor[+0x90]`). Field dialogue has no dedicated opcode;
     /// `0x3F` is the named scene-change, not a dialog op (see
@@ -160,12 +160,25 @@ pub trait FieldHost {
         None
     }
 
-    /// Trigger an in-scene field interaction (op 0x3E, `op0 < 100` path).
-    /// `interact_id` is `op0` (with `0xFF` representing "current"); `slot` is
-    /// `op1`. The original writes `sys_ctx[+0x94]` with a per-scene table
-    /// offset and dispatches `func_0x8003CE08(0xE)`.
-    fn field_interact(&mut self, interact_id: u8, slot: u8) {
-        let _ = (interact_id, slot);
+    /// The **scripted-battle install** (op `0x3E` with `op0 < 100` or
+    /// `op0 == 0xFF`). `row` is `op1`, an index into the scene MAN's
+    /// formation table; `op0` is carried for visibility only - the arm never
+    /// reads it past the `0xFF` / `< 100` test.
+    ///
+    /// The arm (`FUN_801DE840` `0x801E06D4..0x801E0788`, PROT 0897) first
+    /// stamps `player[+0x8E] = player[+0x8F] = 0xFF` (both arms share this
+    /// head), then calls `FUN_801D9E1C(player, 0)` - the region reader with
+    /// its roll disabled, so it only re-seats the current region's battle
+    /// setup - and, unless the dev word `_DAT_8007B868` is set or the system
+    /// entity (`FUN_8003C83C(0xFB)`) is missing, installs the row:
+    /// `sys[+0x8A] = 1`, `sys[+0x94] = formation_table + row * stride + 1`
+    /// (table `*(ctrl+0x20)`, stride byte `ctrl+0x5D`, `ctrl = *0x801C6EA4`),
+    /// rerolls the step counter (`FUN_801DDF48` into `_DAT_8007B5FC`) and
+    /// requests the battle mode switch (`FUN_8003CE08(0xE)`). It opens no
+    /// dialogue: talking to an NPC never goes through this op.
+    // REF: FUN_801DE840 case 0x3e at 0x801E06D4
+    fn scripted_battle(&mut self, op0: u8, row: u8) {
+        let _ = (op0, row);
     }
 
     /// Trigger a scene transition by map id.

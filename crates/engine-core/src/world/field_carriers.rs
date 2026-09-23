@@ -111,8 +111,9 @@ impl World {
         }
 
         // Capture each actor's inline interaction-script dialogue, keyed by its
-        // partition-1 record index (= the `slot` a field-interact op carries),
-        // so `field_interact` can open the interacted actor's real dialogue.
+        // partition-1 record index (= the `slot` the talk probe addresses),
+        // so `trigger_field_interact` can open the interacted actor's real
+        // dialogue.
         // This is the actor's own inline MES text (retail `actor[+0x90]`), the
         // mechanism `0x3F` was wrongly standing in for.
         self.npcs.dialog.clear();
@@ -313,12 +314,14 @@ impl World {
         }
     }
 
-    /// Trigger a field interaction on placement `slot` (retail's field-interact
-    /// op `0x3E` with `op0 < 100`, and the interaction-probe dispatch). Opens
-    /// the actor's inline dialogue if it has any, arms / engages a scripted-
-    /// encounter carrier on that slot (the dialogue-accept auto-arm), and
-    /// surfaces a [`FieldEvent::FieldInteract`]. Shared by the field VM host and
-    /// `Self::tick_field_interaction_probe`.
+    /// Trigger a field interaction on placement `slot` (the interaction-probe
+    /// dispatch - retail's entity SM resuming the touched actor's script, not
+    /// a field-VM opcode). Opens the actor's inline dialogue if it has any,
+    /// arms / engages a scripted-encounter carrier on that slot (the
+    /// dialogue-accept auto-arm), and surfaces a [`FieldEvent::FieldInteract`].
+    /// Called by `Self::tick_field_interaction_probe` and the walk-touch path.
+    /// Op `0x3E` with `op0 < 100` is **not** an interaction: it is the
+    /// scripted-battle install ([`Self::trigger_scripted_battle`]).
     pub fn trigger_field_interact(&mut self, interact_id: u8, slot: u8) {
         self.dialog.last_field_interact = Some((interact_id, slot));
         // A boss-stager placement (rikuroa's Caruban stager P1[3]): the

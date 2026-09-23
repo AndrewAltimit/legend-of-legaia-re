@@ -31,7 +31,7 @@ struct TestHost {
     item_writes: Vec<(u8, u8)>, // (slot_byte, count)
     party_added: Vec<u8>,
     party_removed: Vec<u8>,
-    interacts: Vec<(u8, u8)>,
+    scripted_battles: Vec<(u8, u8)>, // op 0x3E `op0 < 100` / `0xFF` (op0, row)
     scene_transitions: Vec<u8>,
     minigame_door_warps: Vec<u8>, // op 0x3E `op0 >= 100` sub-ids
     named_scene_transitions: Vec<(String, u8, u8, u8)>, // (scene, entry_x, entry_z, dir)
@@ -280,8 +280,8 @@ impl FieldHost for TestHost {
             .copied()
             .flatten()
     }
-    fn field_interact(&mut self, interact_id: u8, slot: u8) {
-        self.interacts.push((interact_id, slot));
+    fn scripted_battle(&mut self, op0: u8, row: u8) {
+        self.scripted_battles.push((op0, row));
     }
     fn scene_transition(&mut self, map_id: u8) {
         self.scene_transitions.push(map_id);
