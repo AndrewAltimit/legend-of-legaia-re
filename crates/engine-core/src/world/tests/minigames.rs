@@ -238,34 +238,92 @@ fn dance_song_end_auto_restores_mode() {
 
 // --- Fishing minigame wiring -----------------------------------------------
 
-fn fishing_test_session() -> crate::fishing::FishingSession {
-    use legaia_asset::fishing_species::FishingSpecies;
-    let mk = |index: usize, strike_gate: i32| FishingSpecies {
+fn fishing_test_species(
+    index: usize,
+    pull_factor: i32,
+) -> legaia_asset::fishing_species::FishingSpecies {
+    legaia_asset::fishing_species::FishingSpecies {
         index,
         name_ptr_va: 0,
         score_value: 10_000,
-        pull_factor: 64,
+        pull_factor,
         dart_factor: 60,
         sink_factor: 4,
         depth_gate: 1024,
         roll_cutoff_a: 200,
         roll_cutoff_b: 512,
         roll_cutoff_c: 90,
-        strike_gate,
-    };
-    // Small strike gates so a reeled fight lands quickly in-test.
-    crate::fishing::FishingSession::new(
-        vec![mk(0, 8), mk(1, 8), mk(2, 8)],
-        8,
-        crate::fishing::FishingRecord::default(),
-    )
+        strike_gate: 400,
+    }
+}
+
+/// Synthetic overlay tables: ten species, every lure row spawning species
+/// 3 / 5 so any band hooks something, and no cadence templates (the slow,
+/// held-reel strike path).
+fn fishing_test_tables(pull_factor: i32) -> crate::fishing::FishingTables {
+    let mut page = vec![[0u32; 8]; 8];
+    for row in page.iter_mut().take(3) {
+        *row = [3, 5, 3, 5, 5, 0, 0, 0];
+    }
+    crate::fishing::FishingTables {
+        species: (0..10)
+            .map(|i| fishing_test_species(i, pull_factor))
+            .collect(),
+        spawn: [page.clone(), page],
+        cadence: Vec::new(),
+    }
+}
+
+fn fishing_phase(world: &World) -> crate::fishing::PondPhase {
+    world.minigames.fishing.as_ref().unwrap().phase()
+}
+
+/// One frame with `mask` held; a button's edge is its first held frame.
+fn fishing_frame(world: &mut World, mask: u16) {
+    world.set_pad(mask);
+    let _ = world.tick();
+}
+
+/// Circle edge -> wind-up -> power sweep -> Circle lock -> flight -> the lure
+/// lands in the pre-hook loop.
+fn fishing_cast(world: &mut World) {
+    use crate::fishing::{FLIGHT_FRAMES, PondPhase, WINDUP_FRAMES};
+    let circle = input::PadButton::Circle.mask();
+    fishing_frame(world, 0);
+    fishing_frame(world, circle);
+    for _ in 0..WINDUP_FRAMES + 24 {
+        fishing_frame(world, 0);
+    }
+    assert_eq!(fishing_phase(world), PondPhase::Power);
+    fishing_frame(world, circle);
+    assert_eq!(fishing_phase(world), PondPhase::Flight);
+    for _ in 0..FLIGHT_FRAMES {
+        fishing_frame(world, 0);
+    }
+    assert_eq!(fishing_phase(world), PondPhase::Waiting);
+}
+
+/// Hold Cross (reel A) through the pre-hook loop, re-casting whenever the
+/// empty line is fully reeled in, until a fish strikes. Returns the frame's
+/// events on the hook frame.
+fn fishing_hold_until_hooked(world: &mut World) -> Vec<crate::fishing::PondEvent> {
+    use crate::fishing::PondPhase;
+    for _ in 0..40_000 {
+        fishing_frame(world, input::PadButton::Cross.mask());
+        match fishing_phase(world) {
+            PondPhase::Hooked => return world.minigames.fishing_events.clone(),
+            PondPhase::Idle => fishing_cast(world),
+            _ => {}
+        }
+    }
+    panic!("no strike over the held-reel budget");
 }
 
 #[test]
 fn enter_fishing_suspends_mode_and_exit_restores_it() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.enter_fishing(fishing_test_session());
+    world.enter_fishing_session(&fishing_test_tables(64), 0, None);
     assert_eq!(world.mode, SceneMode::Fishing);
     assert!(world.minigames.fishing.is_some());
     let session = world.exit_fishing();
@@ -274,99 +332,116 @@ fn enter_fishing_suspends_mode_and_exit_restores_it() {
     assert!(world.minigames.fishing.is_none());
 }
 
+/// The session opens from the persistent save-block words on the world and
+/// banks every one of them back on exit - the migration that made the
+/// world's `fishing_*` cells and the session's fields one state.
 #[test]
-fn fishing_casts_locks_and_reels_to_a_resolution() {
-    use crate::fishing::FishingPhase;
+fn a_session_seeds_from_and_banks_back_the_persistent_words() {
     let mut world = World::new();
-    world.enter_fishing(fishing_test_session());
-    // A few casting frames oscillate the meter.
-    for _ in 0..3 {
-        world.set_pad(0);
-        let _ = world.tick();
+    world.mode = SceneMode::Field;
+    world.minigames.fishing_points = 1234;
+    world.minigames.fishing_best_points = 99;
+    world.minigames.fishing_best_fish = 4;
+    world.minigames.fishing_casts = 60;
+    world.minigames.fishing_prizes_purchased = 0b100;
+    // The lure gate re-points the lure index at one the party holds: only
+    // the Heavy Lure (0x9f) is in the bag.
+    world.minigames.fishing_lure = 0;
+    world.party.inventory.insert(0x9f, 3);
+    world.enter_fishing_session(&fishing_test_tables(64), 1, None);
+    {
+        let s = world.minigames.fishing.as_ref().unwrap();
+        assert_eq!(s.record.points, 1234);
+        assert_eq!((s.record.best_points, s.record.best_fish), (99, 4));
+        assert_eq!(s.casts, 60);
+        assert_eq!(s.purchased_mask, 0b100);
+        assert_eq!(s.lure, 2, "the lure gate re-pointed at the owned lure");
+        assert_eq!(s.venue, 1);
     }
     assert_eq!(
-        world.minigames.fishing.as_ref().unwrap().phase(),
-        FishingPhase::Casting
+        world.minigames.fishing_lure, 2,
+        "written back, as retail does"
     );
-    // Confirm (Cross rising edge) locks the cast -> Fighting.
-    world.set_pad(0);
-    world.set_pad(input::PadButton::Cross.mask());
-    let _ = world.tick();
-    assert_eq!(
-        world.minigames.fishing.as_ref().unwrap().phase(),
-        FishingPhase::Fighting
-    );
-    // Hold Cross (reel A) until the fight resolves.
-    for _ in 0..3000 {
-        if world.minigames.fishing.as_ref().unwrap().phase() != FishingPhase::Fighting {
-            break;
-        }
-        // Keep Cross held frame to frame (no fresh edge needed for reeling).
-        world.set_pad(input::PadButton::Cross.mask());
-        let _ = world.tick();
-    }
-    assert_eq!(
-        world.minigames.fishing.as_ref().unwrap().phase(),
-        FishingPhase::Done
-    );
-    assert!(
-        world
-            .minigames
-            .fishing
-            .as_ref()
-            .unwrap()
-            .last_outcome()
-            .is_some()
-    );
+    fishing_cast(&mut world);
+    world.exit_fishing();
+    assert_eq!(world.minigames.fishing_casts, 61, "the landing banked back");
+    assert_eq!(world.minigames.fishing_points, 1234);
 }
 
-/// The hook cue and the celebration cues come off the **session's own phase
-/// edges**, on the world's shared cue queue, so every host that ticks the
+#[test]
+fn fishing_casts_hooks_and_reels_to_a_resolution() {
+    use crate::fishing::{PondEvent, PondPhase};
+    let mut world = World::new();
+    world.enter_fishing_session(&fishing_test_tables(64), 0, None);
+    for _ in 0..3 {
+        fishing_frame(&mut world, 0);
+    }
+    assert_eq!(fishing_phase(&world), PondPhase::Idle);
+    fishing_cast(&mut world);
+    let events = fishing_hold_until_hooked(&mut world);
+    assert!(events.iter().any(|e| matches!(e, PondEvent::Hooked(_))));
+    // Reel while tension is safe, rest when it climbs, until it resolves.
+    for _ in 0..40_000 {
+        if fishing_phase(&world) != PondPhase::Hooked {
+            break;
+        }
+        let t = world.minigames.fishing.as_ref().unwrap().tension();
+        let mask = if t < 0x800 {
+            input::PadButton::Cross.mask()
+        } else {
+            0
+        };
+        fishing_frame(&mut world, mask);
+    }
+    assert!(matches!(
+        fishing_phase(&world),
+        PondPhase::Landed | PondPhase::Snapped
+    ));
+    // Circle dismisses the result back to the shore, raising the recast event.
+    fishing_frame(&mut world, 0);
+    fishing_frame(&mut world, input::PadButton::Circle.mask());
+    assert_eq!(fishing_phase(&world), PondPhase::Idle);
+    assert!(world.minigames.fishing_events.contains(&PondEvent::Recast));
+}
+
+/// The hook cue and the celebration cues come off the **session's own
+/// events**, on the world's shared cue queue, so every host that ticks the
 /// world hears them. They used to live on `LineActorSim`, which only the
 /// native window drives, so the strike and the catch were silent in both
-/// browsers - the same shape the strike splash had before it moved here.
+/// browsers.
 #[test]
 fn the_strike_and_catch_edges_queue_their_cues_on_the_world() {
-    use crate::fishing::FishingPhase;
+    use crate::fishing::PondPhase;
     use crate::fishing_actors::{CELEBRATE_CUE, HOOK_CUE};
     let mut world = World::new();
-    world.enter_fishing(fishing_test_session());
-    // Drain whatever entry queued so the assertions below read this edge.
+    world.enter_fishing_session(&fishing_test_tables(16), 0, None);
     let _ = world.drain_minigame_sfx_cues();
-    for _ in 0..3 {
-        world.set_pad(0);
-        let _ = world.tick();
-    }
+    fishing_cast(&mut world);
     assert!(
         world.drain_minigame_sfx_cues().is_empty(),
         "casting frames raise no cue"
     );
-    // The lock edge is the strike: splash + hook cue, one producer.
-    world.set_pad(0);
-    world.set_pad(input::PadButton::Cross.mask());
-    let _ = world.tick();
-    assert_eq!(
-        world.minigames.fishing.as_ref().unwrap().phase(),
-        FishingPhase::Fighting
-    );
+    fishing_hold_until_hooked(&mut world);
     assert!(
         world
             .drain_minigame_sfx_cues()
             .contains(&u16::from(HOOK_CUE)),
-        "the strike edge queues the hook cue"
+        "the strike queues the hook cue"
     );
-    // Reel it in; the catch edge queues the celebration cue.
-    for _ in 0..3000 {
-        if world.minigames.fishing.as_ref().unwrap().phase() != FishingPhase::Fighting {
+    // A weak fish: holding reel A the whole fight never pins tension.
+    for _ in 0..40_000 {
+        if fishing_phase(&world) != PondPhase::Hooked {
             break;
         }
-        world.set_pad(input::PadButton::Cross.mask());
-        let _ = world.tick();
+        let t = world.minigames.fishing.as_ref().unwrap().tension();
+        let mask = if t < 0x800 {
+            input::PadButton::Cross.mask()
+        } else {
+            0
+        };
+        fishing_frame(&mut world, mask);
     }
-    assert_eq!(
-        world.minigames.fishing.as_ref().unwrap().phase(),
-        FishingPhase::Done
-    );
+    assert_eq!(fishing_phase(&world), PondPhase::Landed);
     let cues = world.drain_minigame_sfx_cues();
     assert!(
         cues.contains(&u16::from(CELEBRATE_CUE)),
@@ -376,61 +451,31 @@ fn the_strike_and_catch_edges_queue_their_cues_on_the_world() {
 
 /// The reel buttons are the retail packed-pad bits decoded by
 /// `ReelInput::from_pad_mask`: `0x40` Cross = reel A, `0x80` Square = reel B,
-/// both held = reel A. Circle (`0x20`) is the cast/hook input, not a reel.
+/// both held = reel A. Circle (`0x20`) is the cast input, not a reel.
 ///
-/// The two reels are told apart by their divisors (`rod*9 + 0x23` for A,
-/// `rod*6 + 0x19` for B), so one frame of each leaves a different tension.
+/// Tension after the hook frame plus one fight frame differs by which reel
+/// was held, because the two divisors differ (`rod*9 + 0x23` / `rod*6 + 0x19`).
 #[test]
 fn fishing_reel_buttons_are_cross_and_square_with_cross_winning() {
-    use legaia_asset::fishing_species::FishingSpecies;
-    // A fish that pulls hard enough for one frame of reeling to move the
-    // gauge through the integer divisors at rod stat 8.
-    let strong = |index: usize| FishingSpecies {
-        index,
-        name_ptr_va: 0,
-        score_value: 10_000,
-        pull_factor: 4000,
-        dart_factor: 60,
-        sink_factor: 4,
-        depth_gate: 1024,
-        roll_cutoff_a: 200,
-        roll_cutoff_b: 512,
-        roll_cutoff_c: 90,
-        strike_gate: 1000,
-    };
-    let one_frame = |mask: u16| -> i32 {
+    use crate::fishing::PondPhase;
+    let run = |mask: u16| -> i32 {
         let mut world = World::new();
-        world.enter_fishing(crate::fishing::FishingSession::new(
-            (0..3).map(strong).collect(),
-            8,
-            crate::fishing::FishingRecord::default(),
-        ));
-        world.set_pad(0);
-        world.set_pad(input::PadButton::Cross.mask());
-        let _ = world.tick(); // locks the cast -> Fighting
-        world.set_pad(mask);
-        let _ = world.tick();
-        world
-            .minigames
-            .fishing
-            .as_ref()
-            .and_then(|s| s.fight())
-            .map(|f| f.tension())
-            .unwrap_or(-1)
+        world.enter_fishing_session(&fishing_test_tables(4000), 0, None);
+        fishing_cast(&mut world);
+        fishing_hold_until_hooked(&mut world);
+        assert_eq!(fishing_phase(&world), PondPhase::Hooked);
+        let before = world.minigames.fishing.as_ref().unwrap().tension();
+        // Same BiosRand stream from here in every run, so the pull matches.
+        fishing_frame(&mut world, mask);
+        world.minigames.fishing.as_ref().unwrap().tension() - before
     };
-    // base_pull = 4000/8 = 500; reel A divisor 8*9+0x23 = 107, reel B 8*6+0x19 = 73.
-    let reel_a = one_frame(input::PadButton::Cross.mask());
-    let reel_b = one_frame(input::PadButton::Square.mask());
-    assert_eq!(reel_a, 500 / 107);
-    assert_eq!(reel_b, 500 / 73);
+    let reel_a = run(input::PadButton::Cross.mask());
+    let reel_b = run(input::PadButton::Square.mask());
+    let both = run(input::PadButton::Cross.mask() | input::PadButton::Square.mask());
+    let circle = run(input::PadButton::Circle.mask());
     assert_ne!(reel_a, reel_b, "the two divisors must be distinguishable");
-    // Both held resolves to reel A - the retail decoder's priority, not a blend.
-    assert_eq!(
-        one_frame(input::PadButton::Cross.mask() | input::PadButton::Square.mask()),
-        reel_a
-    );
-    // Circle is the cast/hook input: idle, so the gauge bleeds off (clamped at 0).
-    assert_eq!(one_frame(input::PadButton::Circle.mask()), 0);
+    assert_eq!(both, reel_a, "Cross wins - the retail decoder's priority");
+    assert!(circle <= 0, "Circle is not a reel: the gauge bleeds off");
 }
 
 #[test]

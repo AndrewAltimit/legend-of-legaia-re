@@ -338,9 +338,8 @@ impl PlayWindowApp {
             // Minigame side-channels: the dance count-in + tutorial + effect
             // spawns, the fishing venue actors (wander / line / floor solve /
             // camera publish / sway), the Baka round chrome, and the shared
-            // effect pool. Runs BEFORE tick_fishing_banners so
-            // `fishing_prev_phase` still holds last frame's phase for its own
-            // edge detection.
+            // effect pool. Both it and tick_fishing_banners read the fishing
+            // events this world tick raised.
             self.tick_minigame_extras();
             // Fishing: advance the HUD's one-shot banner animations (hook /
             // reel-in / miss / auxiliary / strike splash) and cache their

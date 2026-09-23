@@ -2438,10 +2438,17 @@ mod tests {
         // a session installed - a minigame mode with no session self-heals
         // back to its return mode inside the world tick, which would mask the
         // install this test is about.
-        w.enter_fishing(crate::fishing::FishingSession::new(
+        w.enter_fishing(crate::fishing::PondSession::new(
             Vec::new(),
-            4,
+            Vec::new(),
+            Vec::new(),
+            0,
+            0,
+            0,
+            0,
             crate::fishing::FishingRecord::default(),
+            0,
+            0,
         ));
         w.mode = SceneMode::Title;
         d.set_warp_sub_id(Some(0));

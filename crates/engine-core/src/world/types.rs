@@ -354,7 +354,7 @@ pub enum SceneMode {
     /// (`OTHER MODE`) with warp sub-id `6` (the dance overlay, PROT 0980).
     Dance,
     /// Fishing minigame - the cast / fight / score loop owns the frame
-    /// ([`crate::fishing::FishingSession`]); field / battle dispatch is
+    /// ([`crate::fishing::PondSession`]); field / battle dispatch is
     /// suspended and the interrupted mode restored on exit. Retail runs it
     /// under `game_mode 0x19` (`OTHER MODE`) with warp sub-id `0` (the fishing
     /// overlay, PROT 0972).

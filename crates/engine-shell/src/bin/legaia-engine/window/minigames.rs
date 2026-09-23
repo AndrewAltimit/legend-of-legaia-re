@@ -20,9 +20,10 @@ impl PlayWindowApp {
 
     /// Drive the fishing HUD's one-shot banner animations for this frame.
     ///
-    /// Seeds a timer on each session phase edge (cast lock = strike + hook,
-    /// resolve = reel-in or miss, recast = the auxiliary banner), then services
-    /// every timer through the retail driver-tail loop
+    /// Seeds a timer on each of the session's events this tick
+    /// (`World::minigames.fishing_events`: cadence splash, hook, landed,
+    /// snapped, recast), then services every timer through the retail
+    /// driver-tail loop
     /// ([`BannerTimer::service`](legaia_engine_render::BannerTimer::service))
     /// and caches this frame's draws for the HUD builder, which is `&self` and
     /// cannot advance them itself.
@@ -30,31 +31,23 @@ impl PlayWindowApp {
     /// The frame step is the engine's fixed one tick per frame (retail reads
     /// `DAT_1f800393`, its frame-rate compensation word).
     pub(super) fn tick_fishing_banners(&mut self) {
-        use legaia_engine_core::fishing::{FightOutcome, FishingPhase};
-        let Some(session) = self.session.host.world.minigames.fishing.as_ref() else {
+        use legaia_engine_core::fishing::PondEvent;
+        let world = &self.session.host.world;
+        if world.minigames.fishing.is_none() {
             // Left the minigame: drop any half-run banner with the session.
             self.fishing_banners = Default::default();
             self.fishing_banner_draws.clear();
-            self.fishing_prev_phase = None;
             return;
-        };
-        let phase = session.phase();
-        let outcome = session.last_outcome();
-        match (self.fishing_prev_phase, phase) {
-            (Some(FishingPhase::Casting), FishingPhase::Fighting) => {
-                self.fishing_banners.on_hook();
-            }
-            (Some(FishingPhase::Fighting), FishingPhase::Done) => match outcome {
-                Some(FightOutcome::Landed { .. }) => self.fishing_banners.on_landed(),
-                Some(FightOutcome::Snapped) => self.fishing_banners.on_snapped(),
-                _ => {}
-            },
-            (Some(FishingPhase::Done), FishingPhase::Casting) => {
-                self.fishing_banners.on_recast();
-            }
-            _ => {}
         }
-        self.fishing_prev_phase = Some(phase);
+        for e in &world.minigames.fishing_events {
+            match e {
+                PondEvent::Splash => self.fishing_banners.splash.start(),
+                PondEvent::Hooked(_) => self.fishing_banners.on_hook(),
+                PondEvent::Landed(_) => self.fishing_banners.on_landed(),
+                PondEvent::Snapped => self.fishing_banners.on_snapped(),
+                PondEvent::Recast => self.fishing_banners.on_recast(),
+            }
+        }
         self.fishing_banner_draws = self.fishing_banners.service_frame(1);
     }
 
@@ -326,30 +319,24 @@ impl PlayWindowApp {
         self.session.host.index.entry_bytes_extended(idx).ok()
     }
 
-    /// The venue map's `+0x10000` region block - the table the lure's water
-    /// class walks (`FUN_800180EC`'s input).
-    fn venue_region_block(&self) -> Option<Vec<u8>> {
-        let scene = self.session.host.scene.as_ref()?;
-        scene
-            .field_map_region_block(&self.session.host.index)
-            .ok()
-            .flatten()
-    }
-
     /// The fishing venue's actor-side frame: the free-swimming fish wander
-    /// (idle/cast), the venue floor solve for its height, the retail camera
-    /// publish, the reeling-line actor across hook -> fight -> celebration,
-    /// and the sub-screen idle sway.
+    /// (at the shore, before the lure flies), the venue floor solve for its
+    /// height, the retail camera publish, the reeling-line actor across
+    /// hook -> fight -> celebration, and the sub-screen idle sway.
+    ///
+    /// The cast lure itself is the session's
+    /// ([`PondSession::lure_actor`](legaia_engine_core::fishing::PondSession::lure_actor)),
+    /// cast from the venue the engine attached at entry, so its walk-grid
+    /// drift and water class are the same on every host; this frame only
+    /// reads it, to hang the celebration bursts off it.
     pub(super) fn tick_fishing_actors(&mut self) {
-        use legaia_engine_core::fishing::{FightOutcome, FishingPhase};
+        use legaia_engine_core::fishing::{PondEvent, PondPhase};
         use legaia_engine_core::fishing_actors as fa;
         use legaia_engine_core::fishing_chrome as fc;
         if self.session.host.world.mode != SceneMode::Fishing {
             self.fish_wander = None;
             self.fish_line = None;
             self.fishing_floor = None;
-            self.fishing_regions = None;
-            self.fish_lure = None;
             self.fishing_sway_offset = (0, 0);
             return;
         }
@@ -371,7 +358,6 @@ impl PlayWindowApp {
         if self.fish_wander.is_none() {
             self.fish_wander = Some(fa::FishWander::new(0x400, 0, 0x400));
             self.fishing_floor = self.venue_floor_bytes();
-            self.fishing_regions = self.venue_region_block();
             let reset = fc::venue_camera_reset();
             let g = &mut self.session.camera.globals.0;
             g[0] = reset.rot[0] as i32;
@@ -380,9 +366,13 @@ impl PlayWindowApp {
             g[3] = reset.tr_x;
             g[5] = reset.tr_z;
         }
-        // The wander runs while the cast is idle (retail's MODE_IDLE_CAST
-        // fishing-SM state); the D-pad steers the fish.
-        if phase == FishingPhase::Casting {
+        // The wander runs while the cast is idle (retail's shore states
+        // `0xc` / `0xd` / `0x14`, before the lure flies); the D-pad steers
+        // the fish.
+        if matches!(
+            phase,
+            PondPhase::Idle | PondPhase::WindUp | PondPhase::Power
+        ) {
             let held = self.pad.rotate_right(8);
             let mut rng = self.minigame_rng;
             let rolled = self.fish_wander.as_mut().and_then(|w| {
@@ -420,70 +410,40 @@ impl PlayWindowApp {
             g[7] = cam.translation.1;
             g[8] = cam.translation.2;
         }
-        // The line actor: armed on the hook edge, landed on the catch edge.
-        // `fishing_prev_phase` still holds last frame's phase here (the
-        // banner tick that refreshes it runs after this method).
-        let outcome = self
-            .session
-            .host
-            .world
-            .minigames
-            .fishing
-            .as_ref()
-            .and_then(|s| s.last_outcome());
-        match (self.fishing_prev_phase, phase) {
-            (Some(FishingPhase::Casting), FishingPhase::Fighting) => {
-                // The strike splash is spawned by `World::tick_fishing` off
-                // the session's own phase edge, so every host gets it.
-                self.fish_line = Some(fa::LineActorSim::hooked());
-                // The cast lands: the lure spawns a fixed radius ahead of the
-                // venue anchor along the angler's facing, the same
-                // subtraction retail runs in the fishing SM's cast arm.
-                let facing = self.fish_wander.as_ref().map(|w| w.facing).unwrap_or(0);
-                let (ax, az) = fa::VENUE_ANCHOR;
-                self.session.host.world.minigames.fishing_casts += 1;
-                self.fish_lure =
-                    fa::LureActor::cast(ax, az, facing, 1).map(|l| (l, Default::default()));
+        // The line actor: armed on the hook event, landed on the catch
+        // event, dropped on a snap.
+        let events = self.session.host.world.minigames.fishing_events.clone();
+        for e in &events {
+            match *e {
+                PondEvent::Hooked(_) => self.fish_line = Some(fa::LineActorSim::hooked()),
+                PondEvent::Landed(points) => match self.fish_line.as_mut() {
+                    Some(line) => line.land(points),
+                    None => self.fish_line = None,
+                },
+                PondEvent::Snapped => self.fish_line = None,
+                PondEvent::Splash | PondEvent::Recast => {}
             }
-            (Some(FishingPhase::Fighting), FishingPhase::Done) => {
-                if let (Some(line), Some(FightOutcome::Landed { points })) =
-                    (self.fish_line.as_mut(), outcome)
-                {
-                    line.land(points);
-                } else {
-                    self.fish_line = None;
-                }
-            }
-            _ => {}
-        }
-        // The lure's own frame while the line is out: the walk-grid drift and
-        // the water class of the tile it sits over.
-        if let (Some((lure, probe)), Some(buf)) =
-            (self.fish_lure.as_mut(), self.fishing_floor.as_ref())
-        {
-            let region = self
-                .fishing_regions
-                .as_deref()
-                .and_then(legaia_engine_core::field_regions::RegionTable::parse);
-            let casts = self.session.host.world.minigames.fishing_casts;
-            *probe = lure.probe(buf, region.as_ref(), casts, 1);
         }
         if let Some(mut line) = self.fish_line.take() {
             let f = line.tick(1);
             // Retail's celebration bursts ride the line actor, which sits on
             // the lure - not on the free-swimming fish the venue also draws.
             let origin = self
-                .fish_lure
+                .session
+                .host
+                .world
+                .minigames
+                .fishing
                 .as_ref()
-                .map(|(l, _)| (l.x(), l.z))
+                .and_then(|s| s.lure_actor())
+                .map(|l| (l.x(), l.z))
                 .or_else(|| self.fish_wander.as_ref().map(|w| (w.x, w.z)))
                 .unwrap_or((0, 0));
-            // The bursts' *visuals* are this actor's: they hang off the lure,
-            // which only this host simulates. Their **cues** are not - the
-            // hook cue and the celebration tiers are queued by
-            // `World::tick_fishing` off the session's own phase edges, where
-            // all three hosts drain them (`drain_minigame_sfx_cues`). Firing
-            // them here as well would play each one twice on this host alone.
+            // The bursts' *visuals* are this actor's. Their **cues** are not -
+            // the hook cue and the celebration tiers are queued by
+            // `World::tick_fishing` off the session's own events, where all
+            // three hosts drain them (`drain_minigame_sfx_cues`). Firing them
+            // here as well would play each one twice on this host alone.
             for b in &f.bursts {
                 self.session.host.world.minigames.fx.spawn_burst(b, origin);
             }
@@ -1118,13 +1078,14 @@ impl PlayWindowApp {
         out
     }
 
-    /// Load the fishing overlay (PROT 0972), decode its per-species table, and
-    /// start a fishing session in the world (suspending the current scene).
-    /// Returns `false` (and logs) when no disc is attached or the table can't
-    /// decode. Mirrors [`Self::start_dance_minigame`]'s overlay path.
-    ///
-    /// The rod stat + persistent record start at defaults (the save-block
-    /// fishing record isn't loaded into this dev entry point).
+    /// Load the fishing overlay (PROT 0972) and start a fishing session in the
+    /// world (suspending the current scene) through the same engine entry the
+    /// mode-24 door warp takes (`SceneHost::enter_fishing_from_overlay`): the
+    /// species / spawn / cadence tables, the bring-up's rod and lure ownership
+    /// scans, the persistent save-block words and the venue the cast lure
+    /// lands in. Returns `false` (and logs) when no disc is attached or the
+    /// tables can't decode. Mirrors [`Self::start_dance_minigame`]'s overlay
+    /// path.
     pub(super) fn start_fishing_minigame(&mut self) -> bool {
         use legaia_asset::static_overlay;
         let Some(rec) = static_overlay::overlay_map()
@@ -1147,12 +1108,8 @@ impl PlayWindowApp {
                 return false;
             }
         };
-        let Some(species) = legaia_asset::fishing_species::parse(&loaded) else {
-            log::warn!("fishing: species-table parse failed");
-            return false;
-        };
-        // Decode the two point-exchange venue pages alongside the species
-        // table, naming rows from the SCUS item table when it's readable
+        // Decode the two point-exchange venue pages alongside the session
+        // tables, naming rows from the SCUS item table when it's readable
         // (P toggles the prize list while fishing).
         self.fishing_prize_venues = legaia_asset::fishing_exchange::parse(&loaded).map(|ex| {
             use legaia_engine_core::Vfs;
@@ -1178,16 +1135,10 @@ impl PlayWindowApp {
                 )
             })
         });
-        // Default rod stat for the dev entry point; the record resumes the
-        // world's persistent point pool (banked back on exit).
-        const DEV_ROD_STAT: i32 = 4;
-        let record = legaia_engine_core::fishing::FishingRecord {
-            points: self.session.host.world.minigames.fishing_points,
-            ..Default::default()
-        };
-        let session =
-            legaia_engine_core::fishing::FishingSession::new(species, DEV_ROD_STAT, record);
-        self.session.host.world.enter_fishing(session);
+        if !self.session.host.enter_fishing_from_overlay(&loaded) {
+            log::warn!("fishing: species / spawn / cadence tables did not decode");
+            return false;
+        }
         true
     }
 

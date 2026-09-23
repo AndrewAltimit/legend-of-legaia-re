@@ -103,28 +103,59 @@ impl SceneHost {
         }
     }
 
-    /// PROT 0972's per-species table -> a live [`crate::fishing::FishingSession`].
+    /// PROT 0972's species / spawn / cadence tables -> a live
+    /// [`crate::fishing::PondSession`] through
+    /// [`crate::world::World::enter_fishing_session`], which runs the
+    /// bring-up's rod and lure ownership scans and seeds the session from the
+    /// persistent save-block words (`exit_fishing` banks them back).
     ///
-    /// The rod stat comes from the bring-up's own ownership scan over the live
-    /// bag ([`crate::world::World::resolve_fishing_entry_rod`]); the record
-    /// resumes the world's persistent point pool, which `exit_fishing` banks
-    /// back. Wiring the scan here rather than at each host's launcher is what
-    /// makes the session's rod agree with the one the persistent HUD's rod row
-    /// shows - both now read the same cell, as they do in retail.
-    fn enter_fishing_from_overlay(&mut self, loaded: &[u8]) -> bool {
-        let Some(species) = legaia_asset::fishing_species::parse(loaded) else {
+    /// The venue variant (`DAT_801d90d0`) comes off the departure scene the
+    /// way the driver's setup state picks it
+    /// ([`crate::fishing::venue_for_departure_scene`]): the Sebucus door
+    /// (`map02`) opens Vidna, the Karisto door (`map03`) opens Buma. The
+    /// suspended scene is still loaded here, so its raw CDNAME `#define` is
+    /// the id retail backs up. A launcher that opens a session from any other
+    /// scene gets Buma, the variant's zero.
+    pub fn enter_fishing_from_overlay(&mut self, loaded: &[u8]) -> bool {
+        let Some(tables) = crate::fishing::FishingTables::from_overlay(loaded) else {
             return false;
         };
-        let rod_stat = self.world.resolve_fishing_entry_rod();
-        let record = crate::fishing::FishingRecord {
-            points: self.world.minigames.fishing_points,
-            ..Default::default()
-        };
-        self.world
-            .enter_fishing(crate::fishing::FishingSession::new(
-                species, rod_stat, record,
-            ));
+        let venue = self
+            .scene
+            .as_ref()
+            .map(|sc| sc.start + legaia_prot::cdname::RAW_TOC_INDEX_OFFSET)
+            .map_or(0, |id| crate::fishing::venue_for_departure_scene(id, 0));
+        let venue_map = self.fishing_venue_map(0);
+        self.world.enter_fishing_session(&tables, venue, venue_map);
         true
+    }
+
+    /// The venue the cast lure lands in: the fishing venue scene's (`other1`,
+    /// the bundle whose overlay slot is PROT 0972) `.MAP` extended footprint,
+    /// which is the `_DAT_1F8003EC` floor buffer, plus its `+0x10000` region block,
+    /// anchored at [`crate::fishing_actors::VENUE_ANCHOR`] and cast along
+    /// `facing`. `None` when the bundle does not resolve; the session then
+    /// runs with no water class, as the far-band ladder does.
+    ///
+    /// One builder for the warp and both play hosts' launchers, and the same
+    /// scene the minigames page reads its lure venue from, so the lure's
+    /// walk-grid drift and water class come off the same bytes on every host
+    /// whichever scene the session was opened from.
+    pub fn fishing_venue_map(&self, facing: i16) -> Option<crate::fishing::PondVenue> {
+        /// CDNAME label of the fishing venue bundle.
+        const FISHING_VENUE_SCENE: &str = "other1";
+        let scene = crate::scene::Scene::load(&self.index, FISHING_VENUE_SCENE).ok()?;
+        let idx = scene.field_map_index(&self.index)?;
+        let map = self.index.entry_bytes_extended(idx).ok()?;
+        let region_block = scene.field_map_region_block(&self.index).ok().flatten();
+        let (anchor_x, anchor_z) = crate::fishing_actors::VENUE_ANCHOR;
+        Some(crate::fishing::PondVenue {
+            map,
+            region_block,
+            anchor_x,
+            anchor_z,
+            facing,
+        })
     }
 
     /// PROT 0975's payout table -> a live [`crate::slot_machine::SlotMachine`].

@@ -418,22 +418,25 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
             }
         }
         MinigameSubId::Fishing => {
-            use legaia_engine_core::fishing::FishingPhase;
-            // Casting auto-advances; Cross locks the cast and hooks a fish.
-            for _ in 0..8 {
-                host.world.set_pad(0);
-                let _ = host.tick();
+            use legaia_engine_core::fishing::PondPhase;
+            let phase = |host: &SceneHost| host.world.minigames.fishing.as_ref().map(|s| s.phase());
+            if phase(host) != Some(PondPhase::Idle) {
+                return Err(format!(
+                    "session opened in {:?}, expected Idle",
+                    phase(host)
+                ));
             }
-            tap(host, PadButton::Cross);
-            let phase = host
-                .world
-                .minigames
-                .fishing
-                .as_ref()
-                .map(|s| s.phase())
-                .ok_or("fishing session absent")?;
-            if phase != FishingPhase::Fighting {
-                return Err(format!("cast lock left phase {phase:?}, expected Fighting"));
+            // Circle starts the wind-up, the power meter sweeps, a second
+            // Circle locks it, and the lure flies out and lands.
+            tap(host, PadButton::Circle);
+            hold(host, 0, 30);
+            tap(host, PadButton::Circle);
+            hold(host, 0, 30);
+            if phase(host) != Some(PondPhase::Waiting) {
+                return Err(format!(
+                    "cast left phase {:?}, expected Waiting",
+                    phase(host)
+                ));
             }
             // Reel A is a *held* input, not a tap.
             hold(host, PadButton::Cross.mask(), 400);
@@ -444,9 +447,10 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                 .as_ref()
                 .ok_or("fishing session vanished")?;
             Ok(format!(
-                "hooked and reeled to phase {:?}, points {}",
+                "cast landed ({} casts), reeled to phase {:?}, points {}",
+                s.casts,
                 s.phase(),
-                s.record().points
+                s.record.points
             ))
         }
         MinigameSubId::SlotMachine => {

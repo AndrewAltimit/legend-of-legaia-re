@@ -2748,7 +2748,7 @@ ENUM_COVERAGE: list[dict[str, object]] = [
                 "blocked_on": "the play page's minigame screen dispatch "
                 "(`ActiveGame::of_mode`, play_minigames.rs) maps the four "
                 "door-warp games and returns None for Fishing; the page's "
-                "fishing host keys on the installed FishingSession instead, "
+                "fishing host keys on the installed PondSession instead, "
                 "so the mode word reaches no page-side arm",
             },
         },

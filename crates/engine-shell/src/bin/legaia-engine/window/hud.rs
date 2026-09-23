@@ -593,33 +593,12 @@ impl PlayWindowApp {
         if self.session.host.world.mode == SceneMode::Fishing
             && let Some(s) = &self.session.host.world.minigames.fishing
         {
-            use legaia_engine_core::fishing::{FightOutcome, FishingPhase};
-            let line = match s.phase() {
-                FishingPhase::Casting => {
-                    format!("FISHING  cast power {}  (Cross = cast)", s.cast_power())
-                }
-                FishingPhase::Fighting => {
-                    let (tension, strength) = s
-                        .fight()
-                        .map(|f| (f.tension(), f.strength()))
-                        .unwrap_or((0, 0));
-                    format!(
-                        "FISHING  tension {tension}/{}  strength {strength}  (hold Cross/Circle to reel)",
-                        legaia_engine_core::fishing::TENSION_MAX
-                    )
-                }
-                FishingPhase::Done => match s.last_outcome() {
-                    Some(FightOutcome::Landed { points }) => {
-                        format!("FISHING  landed! +{points} points  (Cross = recast)")
-                    }
-                    Some(FightOutcome::Snapped) => {
-                        "FISHING  the line snapped!  (Cross = recast)".to_string()
-                    }
-                    _ => "FISHING  (Cross = recast)".to_string(),
-                },
-            };
+            // The phase line + key hint are one engine derivation both play
+            // hosts print (`PondSession::status_rows`).
+            let (line, hint) = s.status_rows("Circle", "Cross", "Square");
             out.extend(self.stage_status_row(&line, (8, 62), white, w, h));
-            out.extend(self.stage_status_row("(Start = quit, P = prizes)", (8, 80), dim, w, h));
+            let hint = format!("{hint}  (Start = quit, P = prizes)");
+            out.extend(self.stage_status_row(&hint, (8, 80), dim, w, h));
 
             // The overlay's developer readout (FUN_801d2050): the wander
             // actor's tile pair + settled height, shown only when the
@@ -651,44 +630,39 @@ impl PlayWindowApp {
             }
 
             // The retail persistent HUD rows (best-catch, capped point total,
-            // rod label, lures remaining) at their traced stage-pixel pens,
-            // through the ported layout + its draw-list consumer. The rod
-            // index comes from the retail ownership gate, which re-points a
-            // stale selection at the next owned lure.
-            use legaia_engine_core::fishing::{lure_item_id, select_owned_rod};
+            // lure label, lures remaining) at their traced stage-pixel pens,
+            // through the ported layout + its draw-list consumer. The lure
+            // index is the session's - the entry's ownership gate already
+            // re-pointed it at an owned lure.
             let inventory = &self.session.host.world.party.inventory;
-            let count_of = |id: u32| *inventory.get(&(id as u8)).unwrap_or(&0) as i32;
-            let mut rod_index = 0;
-            let has_rod = select_owned_rod(&mut rod_index, count_of);
+            let lure = s.lure;
+            let lures_left = *inventory
+                .get(&(legaia_engine_core::fishing::lure_item_id(lure) as u8))
+                .unwrap_or(&0) as i32;
             let mut items = legaia_engine_render::persistent_hud_draws(
-                s.record().points,
-                s.record().best_points,
-                rod_index,
-                if has_rod {
-                    count_of(lure_item_id(rod_index))
-                } else {
-                    0
-                },
+                s.record.points,
+                s.record.best_points,
+                lure,
+                lures_left,
             );
             // The catch HUD, drawn over the persistent rows while a cast is
             // out: the length / extent / cast-power readouts, plus the depth
-            // and tension gauge block once the fish is on. `record` is the
-            // fight's reel progress - the engine's analogue of the retail line
-            // record the land gate compares, and `depth` is `DAT_801d9298`,
-            // which `FishingFight` now carries. One retail global still has no
-            // engine analogue and stays zero: the cast line-projection term
-            // `DAT_801d9178`, so the extent readout reads 0.
-            let fight = s.fight();
-            items.extend(legaia_engine_render::catch_hud_draws(
-                &legaia_engine_render::CatchHudState {
-                    record: fight.map(|f| f.progress()).unwrap_or(0),
-                    line_extent: 0,
-                    cast_power: s.cast_power(),
-                    depth: fight.map(|f| f.depth()).unwrap_or(0),
-                    tension: fight.map(|f| f.tension()).unwrap_or(0),
-                    gauges_visible: s.phase() == FishingPhase::Fighting,
-                },
-            ));
+            // and tension gauge block once the fish is on - one engine
+            // derivation (`PondSession::catch_hud`). The cast line-projection
+            // term `DAT_801d9178` has no engine analogue and stays zero.
+            let c = s.catch_hud();
+            if c.visible {
+                items.extend(legaia_engine_render::catch_hud_draws(
+                    &legaia_engine_render::CatchHudState {
+                        record: c.record,
+                        line_extent: 0,
+                        cast_power: c.cast_power,
+                        depth: c.depth,
+                        tension: c.tension,
+                        gauges_visible: c.gauges_visible,
+                    },
+                ));
+            }
             // This frame's live one-shot banners (hook / reel-in / miss /
             // auxiliary / strike splash), serviced in the redraw handler.
             items.extend(self.fishing_banner_draws.iter().copied());

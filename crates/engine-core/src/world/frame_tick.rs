@@ -2213,12 +2213,84 @@ impl World {
     /// Enter the fishing minigame on `session`, suspending the current scene
     /// mode (restored by [`World::exit_fishing`]). Like the dance / pause-menu
     /// suspend contract, the interrupted field state stays intact underneath.
-    pub fn enter_fishing(&mut self, session: crate::fishing::FishingSession) {
+    ///
+    /// Takes a ready session; [`World::enter_fishing_session`] is the entry
+    /// that builds one from the persistent save-block words, which is what
+    /// every player-facing and debug path uses.
+    pub fn enter_fishing(&mut self, session: crate::fishing::PondSession) {
         if self.mode != SceneMode::Fishing {
             self.minigames.fishing_return_mode = self.mode;
         }
         self.minigames.fishing = Some(session);
+        self.minigames.fishing_events.clear();
         self.mode = SceneMode::Fishing;
+    }
+
+    /// The persistent fishing words (`_DAT_8008444C..0x8008446C`) as the
+    /// world holds them between sessions.
+    pub fn fishing_persist(&self) -> crate::fishing::FishingPersist {
+        let m = &self.minigames;
+        crate::fishing::FishingPersist {
+            lure: m.fishing_lure,
+            rod: m.fishing_rod as i32,
+            casts: m.fishing_casts,
+            record: crate::fishing::FishingRecord {
+                points: m.fishing_points,
+                best_points: m.fishing_best_points,
+                best_fish: m.fishing_best_fish as usize,
+            },
+            purchased_mask: m.fishing_prizes_purchased,
+        }
+    }
+
+    /// Bank a session's persistent words back into the world - retail keeps
+    /// them in the live save window, so they outlast the overlay.
+    fn bank_fishing_persist(&mut self, p: crate::fishing::FishingPersist) {
+        let m = &mut self.minigames;
+        m.fishing_lure = p.lure;
+        m.fishing_rod = p.rod.max(0) as u32;
+        m.fishing_casts = p.casts;
+        m.fishing_points = p.record.points;
+        m.fishing_best_points = p.record.best_points;
+        m.fishing_best_fish = p.record.best_fish as u32;
+        m.fishing_prizes_purchased = p.purchased_mask;
+    }
+
+    /// Open a fishing session over the decoded overlay `tables` at `venue`
+    /// (`0` Buma, `1` Vidna - `DAT_801d90d0`), seeded from the persistent
+    /// save-block words, and enter it.
+    ///
+    /// The bring-up's two ownership scans run first, as in retail: the rod
+    /// scan ([`World::resolve_fishing_entry_rod`], `FUN_801CF070`) and the
+    /// lure gate ([`crate::fishing::select_owned_rod`] over the lure family,
+    /// `FUN_801d712c`), each writing its corrected index back. `venue_map`
+    /// gives the cast lure a world to land in (the venue scene's `.MAP`).
+    ///
+    /// The BIOS-rand stream is seeded off the frame counter, so a repeat
+    /// entry varies while a replayed pad stream stays deterministic.
+    pub fn enter_fishing_session(
+        &mut self,
+        tables: &crate::fishing::FishingTables,
+        venue: usize,
+        venue_map: Option<crate::fishing::PondVenue>,
+    ) {
+        /// Salt for the frame-derived seed (engine glue: retail's `rand` is
+        /// the BIOS global, whose state at overlay entry is not pinned).
+        const FISHING_SEED_SALT: u32 = 0xF15B_0972;
+        self.resolve_fishing_entry_rod();
+        let bag = &self.party.inventory;
+        let mut lure = self.minigames.fishing_lure;
+        crate::fishing::select_owned_rod(&mut lure, |id| {
+            i32::from(bag.get(&(id as u8)).copied().unwrap_or(0))
+        });
+        self.minigames.fishing_lure = lure;
+        let seed = FISHING_SEED_SALT ^ self.frame as u32;
+        let mut session =
+            crate::fishing::PondSession::from_tables(tables, venue, self.fishing_persist(), seed);
+        if let Some(v) = venue_map {
+            session.attach_venue(v);
+        }
+        self.enter_fishing(session);
     }
 
     /// Re-point the persistent rod cell at a rod the party actually holds, and
@@ -2234,9 +2306,8 @@ impl World {
     /// `_DAT_80084454`, which is the same cell the persistent HUD's rod row
     /// reads.
     ///
-    /// Both hosts reach this through the mode-24 door warp
-    /// (`SceneHost::enter_fishing_from_overlay`); the two debug launchers that
-    /// open a session without a field scene keep their own fixed stat.
+    /// Every session entry runs it, through [`World::enter_fishing_session`]:
+    /// the mode-24 door warp and both play hosts' debug launchers alike.
     pub fn resolve_fishing_entry_rod(&mut self) -> i32 {
         let bag = &self.party.inventory;
         let rod = crate::fishing::entry_rod_index(self.minigames.fishing_rod, |id| {
@@ -2247,21 +2318,22 @@ impl World {
     }
 
     /// Leave the fishing minigame and restore the interrupted mode, returning
-    /// the session so the host can read the final [`FishingRecord`]. The
-    /// record's point total is banked into the persistent
-    /// [`crate::world::MinigameState::fishing_points`] pool (retail credits `_DAT_8008444C`
-    /// directly; hosts seed the next session's record from the pool). No-op
-    /// when fishing isn't active.
+    /// the session so the host can read the final [`FishingRecord`]. Every
+    /// persistent word the session carries - the point record, the cast
+    /// counter, lure, rod and the one-time prize mask - is banked back into
+    /// [`crate::world::MinigameState`] (retail writes those cells in place;
+    /// the next session seeds from them). No-op when fishing isn't active.
     ///
     /// [`FishingRecord`]: crate::fishing::FishingRecord
-    pub fn exit_fishing(&mut self) -> Option<crate::fishing::FishingSession> {
+    pub fn exit_fishing(&mut self) -> Option<crate::fishing::PondSession> {
         if self.mode == SceneMode::Fishing {
             self.mode = self.minigames.fishing_return_mode;
         }
         let session = self.minigames.fishing.take();
         self.minigames.fishing_exchange = None;
+        self.minigames.fishing_events.clear();
         if let Some(s) = &session {
-            self.minigames.fishing_points = s.record().points;
+            self.bank_fishing_persist(s.persist());
         }
         session
     }
@@ -2313,129 +2385,127 @@ impl World {
         let count = self.party.inventory.entry(purchase.item_id).or_insert(0);
         *count = count.saturating_add(purchase.qty.min(255) as u8);
         if let Some(s) = &mut self.minigames.fishing {
-            s.set_points(self.minigames.fishing_points);
+            s.record.points = self.minigames.fishing_points;
+            s.purchased_mask = self.minigames.fishing_prizes_purchased;
         }
         Some(purchase)
     }
 
-    /// Advance the fishing minigame one frame, reading this frame's pad:
+    /// Advance the fishing minigame one frame, reading this frame's pad into
+    /// the session's [`PondInput`](crate::fishing::PondInput):
     ///
-    /// - **Casting**: the power meter oscillates; a confirm press
-    ///   ([`Cross`](input::PadButton::Cross)) locks the cast and hooks a fish.
-    /// - **Fighting**: holding a reel button raises tension - [`Cross`] is reel
-    ///   A (the `rod*9 + 0x23` divisor), [`Square`] reel B (`rod*6 + 0x19`);
-    ///   neither held bleeds tension off. The line snaps at max tension. The
-    ///   two buttons are the retail packed-pad bits `0x40` / `0x80`, decoded
-    ///   through the ported reel decoder [`ReelInput::from_pad_mask`]
-    ///   (`FUN_801d7450`) rather than by a host `if` chain, so holding both
-    ///   resolves to reel A exactly as retail does.
-    /// - **Done**: a confirm press recasts.
+    /// - **Cast / confirm** is the [`Circle`] edge (retail packed bit
+    ///   `0x20`): it starts the wind-up at the idle shore, locks the power
+    ///   meter, and dismisses a resolved fight.
+    /// - **Reel** is the held [`Cross`] (`0x40`, reel A) / [`Square`]
+    ///   (`0x80`, reel B) pair, rebuilt into the retail held word
+    ///   `_DAT_8007b850` and classified by the ported decoder inside the
+    ///   session, so holding both resolves to reel A as retail does.
+    /// - **Strike credit**: every fresh D-pad left/right or reel edge adds
+    ///   one, the input-edge term of the pre-hook band check.
     ///
+    /// The frame's [`PondEvent`](crate::fishing::PondEvent)s land in
+    /// [`crate::world::MinigameState::fishing_events`] for the hosts' banner
+    /// one-shots, and the two sound-bearing ones queue their cues here.
+    ///
+    /// [`Circle`]: input::PadButton::Circle
     /// [`Cross`]: input::PadButton::Cross
     /// [`Square`]: input::PadButton::Square
-    /// [`ReelInput::from_pad_mask`]: crate::fishing::ReelInput::from_pad_mask
     ///
-    /// PORT: the fishing overlay's per-frame driver (`FUN_801cf3bc` mode SM ->
-    /// `FUN_801d4004` tension). The casting-meter step is not byte-pinned (the
-    /// retail meter sweeps visibly fast); `FISHING_CAST_STEP` is the host rate.
+    /// PORT: FUN_801cf3bc (the fishing overlay's driver, reached through its
+    /// actor-template tick word). What this covers: the run-loop states
+    /// `0xc` idle / `0xd` wind-up / `0x14` power oscillator / `0x1e..0x22`
+    /// lure flight, then the pre-hook band roll and the hooked fight, which
+    /// retail runs from the fish actor's handler `FUN_801d26cc` into
+    /// `FUN_801d4004` rather than from the mode switch. Not covered here:
+    /// the rod/type select (state `0`), the fade ramps, the no-lure end
+    /// screen (`0x96`) and the exit fade (`200`) - the hosts' Start-to-leave
+    /// affordance replaces the last - and the driver tail's HUD, banner
+    /// timers and sub-screen, which the hosts compose. The point-exchange
+    /// branch (`0x64..0x7a`) is [`World::fishing_exchange_input`]. The
+    /// casting-meter step is not byte-pinned; `FISHING_CAST_STEP` is the
+    /// host rate.
     fn tick_fishing(&mut self) {
-        use crate::fishing::{FishingPhase, ReelInput};
+        use crate::fishing::{PondEvent, PondInput};
         /// Per-frame casting-meter step (see the method note - not byte-pinned).
         const FISHING_CAST_STEP: i32 = 0x80;
         /// Packed spread argument the strike splash fans its three parts by.
         /// Direct form (bit [`crate::fishing_chrome::SPLASH_SUB_BLOCK_BIT`]
         /// clear); the value is the play window's, carried over unchanged.
         const SPLASH_SPREAD: i32 = 0x40;
-        let Some(phase) = self.minigames.fishing.as_ref().map(|s| s.phase()) else {
+        if self.minigames.fishing.is_none() {
             // Mode is Fishing but no session installed - drop back to a sane mode.
             self.mode = self.minigames.fishing_return_mode;
             return;
+        }
+        // The point-exchange sub-screen owns the pad while it is open, as
+        // retail's shop branch owns the mode switch.
+        if self.minigames.fishing_exchange.is_some() {
+            self.minigames.fishing_events.clear();
+            return;
+        }
+        use input::PadButton as B;
+        let mut reel_mask = 0u32;
+        if self.input.pressed(B::Cross) {
+            reel_mask |= crate::fishing::REEL_A_PAD_BIT;
+        }
+        if self.input.pressed(B::Square) {
+            reel_mask |= crate::fishing::REEL_B_PAD_BIT;
+        }
+        let edge_bonus = [B::Left, B::Right, B::Cross, B::Square]
+            .iter()
+            .filter(|&&b| self.input.just_pressed(b))
+            .count() as i32;
+        let pond_input = PondInput {
+            reel_mask,
+            cast_edge: self.input.just_pressed(B::Circle),
+            edge_bonus,
         };
-        let entry_phase = phase;
-        match phase {
-            FishingPhase::Casting => {
-                if let Some(s) = self.minigames.fishing.as_mut() {
-                    s.advance_cast(FISHING_CAST_STEP);
-                }
-                if self.input.just_pressed(input::PadButton::Cross)
-                    && let Some(s) = self.minigames.fishing.as_mut()
-                {
-                    s.lock_cast();
-                }
+        let events = match self.minigames.fishing.as_mut() {
+            Some(s) => {
+                s.tick(pond_input, 1, FISHING_CAST_STEP);
+                s.take_events()
             }
-            FishingPhase::Fighting => {
-                // Rebuild the two reel bits of the retail held word
-                // `_DAT_8007b850` from this frame's pad and let the ported
-                // decoder classify them.
-                let mut held = 0u32;
-                if self.input.pressed(input::PadButton::Cross) {
-                    held |= crate::fishing::REEL_A_PAD_BIT;
+            None => Vec::new(),
+        };
+        for e in &events {
+            match *e {
+                // The cadence-match strike splash spawns its three parts into
+                // the shared effect pool. The producer is the session's own
+                // event, not a venue actor, so every host that ticks the world
+                // gets the burst.
+                PondEvent::Splash => {
+                    let parts = crate::fishing_chrome::splash_burst(
+                        crate::fishing_actors::SCREEN_CENTRE.0,
+                        crate::fishing_actors::SCREEN_CENTRE.1,
+                        crate::minigame_fx::SPLASH_SPRITE_ID,
+                        SPLASH_SPREAD,
+                    );
+                    self.minigames.fx.spawn_splash(&parts);
                 }
-                if self.input.pressed(input::PadButton::Square) {
-                    held |= crate::fishing::REEL_B_PAD_BIT;
-                }
-                let input = ReelInput::from_pad_mask(held);
-                if let Some(s) = self.minigames.fishing.as_mut() {
-                    s.reel(input, 1);
-                }
-            }
-            FishingPhase::Done => {
-                if self.input.just_pressed(input::PadButton::Cross)
-                    && let Some(s) = self.minigames.fishing.as_mut()
-                {
-                    s.recast();
-                }
-            }
-        }
-        // The strike edge spawns the three-part splash into the shared effect
-        // pool. The producer is the session's own phase edge, not a venue
-        // actor, so every host that ticks the world gets the burst - the play
-        // window used to spawn it from its fishing-actor frame, which is why
-        // it was the only surface that had one.
-        let now = self.minigames.fishing.as_ref().map(|s| s.phase());
-        if entry_phase == FishingPhase::Casting && now == Some(FishingPhase::Fighting) {
-            let parts = crate::fishing_chrome::splash_burst(
-                crate::fishing_actors::SCREEN_CENTRE.0,
-                crate::fishing_actors::SCREEN_CENTRE.1,
-                crate::minigame_fx::SPLASH_SPRITE_ID,
-                SPLASH_SPREAD,
-            );
-            self.minigames.fx.spawn_splash(&parts);
-            // The hook cue rides the same edge. It is `_DAT_8007B6DA` and it
-            // lived on `LineActorSim::tick`'s arm phase, which only the play
-            // window drives - so the strike was audible on one surface and
-            // silent on the two that share this tick. The cue queue is
-            // drained by every host, which is the point of putting it here:
-            // the splash and its sound come from one producer.
-            self.minigames
-                .pending_sfx
-                .push(u16::from(crate::fishing_actors::HOOK_CUE));
-        }
-        // The catch edge raises the celebration cue plus whichever of the four
-        // score-gated burst cues the catch unlocked (`FUN_801d4948`). Same
-        // argument as the hook: the tiers were resolved inside the native-only
-        // line actor, so only that host heard them.
-        if entry_phase == FishingPhase::Fighting && now == Some(FishingPhase::Done) {
-            let landed = self
-                .minigames
-                .fishing
-                .as_ref()
-                .and_then(|s| s.last_outcome())
-                .and_then(|o| match o {
-                    crate::fishing::FightOutcome::Landed { points } => Some(points),
-                    _ => None,
-                });
-            if let Some(points) = landed {
-                self.minigames
+                // The hook cue `_DAT_8007B6DA`. It used to live on the native
+                // window's line actor, which made the strike audible on one
+                // surface; the cue queue is drained by every host.
+                PondEvent::Hooked(_) => self
+                    .minigames
                     .pending_sfx
-                    .push(u16::from(crate::fishing_actors::CELEBRATE_CUE));
-                for burst in crate::fishing_actors::celebration_bursts(points) {
-                    if let Some(cue) = burst.cue {
-                        self.minigames.pending_sfx.push(u16::from(cue));
+                    .push(u16::from(crate::fishing_actors::HOOK_CUE)),
+                // The catch raises the celebration cue plus whichever of the
+                // four score-gated burst cues it unlocked (`FUN_801d4948`).
+                PondEvent::Landed(points) => {
+                    self.minigames
+                        .pending_sfx
+                        .push(u16::from(crate::fishing_actors::CELEBRATE_CUE));
+                    for burst in crate::fishing_actors::celebration_bursts(points) {
+                        if let Some(cue) = burst.cue {
+                            self.minigames.pending_sfx.push(u16::from(cue));
+                        }
                     }
                 }
+                PondEvent::Snapped | PondEvent::Recast => {}
             }
         }
+        self.minigames.fishing_events = events;
     }
 
     /// Enter the casino slot-machine minigame on `machine`, suspending the

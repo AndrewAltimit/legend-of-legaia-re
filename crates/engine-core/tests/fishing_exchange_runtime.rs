@@ -3,7 +3,7 @@
 //! the retail tables (a one-time top prize + repeatable stock; see
 //! `legaia_asset::fishing_exchange` for the on-disc layout the shapes mirror).
 
-use legaia_engine_core::fishing::{FishingRecord, FishingSession, PrizeExchange};
+use legaia_engine_core::fishing::{FishingTables, PrizeExchange};
 use legaia_engine_core::world::World;
 
 fn venue(page: usize) -> PrizeExchange {
@@ -59,24 +59,21 @@ fn buy_commits_points_mask_and_inventory() {
 fn exchange_syncs_live_session_and_exit_banks_points() {
     let mut world = World::new();
     world.minigames.fishing_points = 1_000;
-    world.enter_fishing(FishingSession::new(
-        Vec::new(),
-        4,
-        FishingRecord {
-            points: 1_000,
-            ..Default::default()
-        },
-    ));
+    // An empty table set: the session never hooks, which this test does not
+    // need - it is about the point pool and the one-time mask.
+    let tables = FishingTables {
+        species: Vec::new(),
+        spawn: [Vec::new(), Vec::new()],
+        cadence: Vec::new(),
+    };
+    world.enter_fishing_session(&tables, 0, None);
     world.open_fishing_exchange(venue(0));
     world.fishing_exchange_buy(2, 3).expect("buys");
     // The live session's on-screen total follows the pool.
-    assert_eq!(
-        world.minigames.fishing.as_ref().unwrap().record().points,
-        400
-    );
+    assert_eq!(world.minigames.fishing.as_ref().unwrap().record.points, 400);
     // Leaving fishing banks the session total back and closes the list.
     let s = world.exit_fishing().expect("session");
-    assert_eq!(s.record().points, 400);
+    assert_eq!(s.record.points, 400);
     assert_eq!(world.minigames.fishing_points, 400);
     assert!(world.minigames.fishing_exchange.is_none());
 }

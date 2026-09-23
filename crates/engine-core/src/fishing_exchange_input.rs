@@ -88,7 +88,7 @@ impl World {
                 ExchangeOutcome::Closed
             }
             ExchangeInput::Toggle => {
-                if let Some(points) = self.minigames.fishing.as_ref().map(|s| s.record().points) {
+                if let Some(points) = self.minigames.fishing.as_ref().map(|s| s.record.points) {
                     self.minigames.fishing_points = points;
                 }
                 self.open_fishing_exchange(venues[0].clone());

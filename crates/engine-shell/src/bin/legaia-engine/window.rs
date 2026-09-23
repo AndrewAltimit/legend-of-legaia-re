@@ -851,9 +851,6 @@ struct PlayWindowApp {
     /// This frame's live fishing banner draws, produced by servicing
     /// `fishing_banners`. Empty whenever no banner is running.
     fishing_banner_draws: Vec<legaia_engine_render::HudDraw>,
-    /// The fishing phase seen on the previous frame, so the redraw handler can
-    /// detect the hook / landed / snapped / recast edges that seed the banners.
-    fishing_prev_phase: Option<legaia_engine_core::fishing::FishingPhase>,
     // The dance pre-song count-in and the Disco King how-to tutorial used to
     // live here, as a host phase holding the parsed game pending. They are
     // `World::minigames.dance_countin` / `dance_tutorial` now, stepped by the
@@ -868,13 +865,6 @@ struct PlayWindowApp {
     /// The venue scene's `.MAP` extended footprint, read at fishing entry -
     /// the engine's `_DAT_1F8003EC` floor buffer the ground solver reads.
     fishing_floor: Option<Vec<u8>>,
-    /// That map's `+0x10000` region block, for the lure's water-class walk.
-    fishing_regions: Option<Vec<u8>>,
-    /// The cast lure and its last probe (`0x801D9174` / the water class).
-    fish_lure: Option<(
-        legaia_engine_core::fishing_actors::LureActor,
-        legaia_engine_core::fishing_actors::LureProbe,
-    )>,
     /// The fishing sub-screens' idle-sway phase (`0x801D9118`).
     fishing_sway_angle: i32,
     /// This frame's sway offset, applied to the point-exchange panel.

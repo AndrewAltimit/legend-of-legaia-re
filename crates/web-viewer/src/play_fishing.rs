@@ -5,27 +5,30 @@
 //! source for:
 //!
 //! 1. **A session.** [`Self::play_fishing_start`] lifts the fishing overlay
-//!    (PROT 0972) through the static-overlay map, decodes its per-species table
-//!    ([`legaia_asset::fishing_species`]) plus the two point-exchange venue
-//!    pages, and installs a [`FishingSession`] with `World::enter_fishing` -
-//!    the same suspend contract the native `play-window` uses, so the field
-//!    scene stays intact underneath and resumes on exit.
+//!    (PROT 0972) through the static-overlay map and hands it to
+//!    `SceneHost::enter_fishing_from_overlay` - the entry the mode-24 door warp
+//!    and the native window's `L` launcher take too. That decodes the species,
+//!    spawn and cadence tables, runs the bring-up's rod and lure ownership
+//!    scans, seeds a [`PondSession`] from the persistent save-block words on
+//!    `World::minigames`, attaches the scene's `.MAP` as the venue the lure
+//!    lands in, and suspends the field scene underneath.
 //! 2. **A cast / reel input path.** None is added here, and that is the point:
 //!    the driver is `World::tick_fishing`, which reads the *pad*
 //!    ([`legaia_engine_core::input::PadButton`]) the page already routes through
-//!    `LegaiaRuntime::set_pad` every frame. Cross locks the cast and reels
-//!    (reel A), Square reels harder (reel B), Cross recasts when the cast is
-//!    done. The ported reel decoder `ReelInput::from_pad_mask` classifies the
-//!    two held bits, so holding both resolves the way retail does.
-//! 3. **A point record.** `World::minigames.fishing_points` is the persistent pool
-//!    (retail `_DAT_8008444C`); the session seeds from it and `exit_fishing`
-//!    banks back into it, so points survive leaving and re-entering.
+//!    `LegaiaRuntime::set_pad` every frame. Circle casts and locks the power
+//!    meter, Cross reels (reel A), Square reels harder (reel B). The ported
+//!    reel decoder `ReelInput::from_pad_mask` classifies the two held bits, so
+//!    holding both resolves the way retail does.
+//! 3. **A persistent record.** `World::minigames` keeps the save-block words
+//!    (retail `_DAT_8008444C..0x8008446C`); the session seeds from them and
+//!    `exit_fishing` banks every one back, so points, casts and the lure
+//!    survive leaving and re-entering.
 //!
 //! The HUD itself is not re-implemented: [`Self::play_fishing_hud_json`] builds
 //! the retail draw list from the shared builders
 //! ([`legaia_engine_ui::persistent_hud_draws`],
-//! [`legaia_engine_ui::catch_hud_draws`], the [`legaia_engine_ui::FishingBanners`]
-//! one-shots) and projects it through
+//! [`legaia_engine_ui::catch_hud_draws`] over `PondSession::catch_hud`, the
+//! [`legaia_engine_ui::FishingBanners`] one-shots) and projects it through
 //! [`legaia_engine_ui::fishing_hud_draws_for`] - the same consumer the native
 //! window's `window/hud.rs` calls, with the same blind sprite atlas, because
 //! the fishing sprite page is the one undecoded asset in the chain.
@@ -42,18 +45,11 @@
 //! consumer cannot produce without a sprite page are re-routed.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::fishing::{
-    FishingPhase, FishingRecord, FishingSession, PrizeExchange, TENSION_MAX,
-};
+use legaia_engine_core::fishing::{PondEvent, PondPhase, PondSession, PrizeExchange, TENSION_MAX};
 use legaia_engine_ui::{
     self as ui, BarAxis, CatchHudState, FishingCaptions, FishingHudAtlas, HudDraw, TextDraw,
 };
 use wasm_bindgen::prelude::*;
-
-/// Rod stat for the page's entry point. Matches the native window's
-/// `DEV_ROD_STAT`: the save-block fishing record is not loaded on either host's
-/// dev entry, so both start from the same mid rod.
-const WEB_ROD_STAT: i32 = 4;
 
 /// Stage-pixel pen for the phase / prompt status line, matching the native
 /// window's fishing line at `(8, 62)`.
@@ -64,91 +60,73 @@ const HINT_PEN: (i32, i32) = (8, 80);
 /// The empty payload. Kept as one literal so every early return agrees.
 const CLOSED: &str = r#"{"open":false,"sprites":[],"texts":[],"bars":[]}"#;
 
+/// The page-facing name of a session phase - the same strings the minigames
+/// page's `fishing_pond_state_json` uses.
+pub(crate) fn pond_phase_name(p: PondPhase) -> &'static str {
+    match p {
+        PondPhase::Idle => "idle",
+        PondPhase::WindUp => "windup",
+        PondPhase::Power => "power",
+        PondPhase::Flight => "flight",
+        PondPhase::Waiting => "waiting",
+        PondPhase::Hooked => "hooked",
+        PondPhase::Landed => "landed",
+        PondPhase::Snapped => "snapped",
+    }
+}
+
 impl LegaiaRuntime {
     /// Service the fishing banner one-shots for this sim tick and cache the
     /// draws the HUD will emit. The browser twin of the native window's
-    /// `tick_fishing_banners`: the session's phase *edges* seed the timers
-    /// (hook / landed / snapped / recast), and each timer retires itself.
+    /// `tick_fishing_banners`: the session's events this tick
+    /// (`World::minigames.fishing_events`) seed the timers, and each timer
+    /// retires itself.
     ///
     /// Called from `tick_frame`, i.e. on the sim clock, so a page rendering
     /// below 60 Hz does not slow the banner animations down.
     pub(crate) fn tick_fishing_banners(&mut self) {
-        use legaia_engine_core::fishing::FightOutcome;
-        let Some(session) = self
+        let Some(world) = self
             .scene_host
             .as_ref()
-            .and_then(|h| h.world.minigames.fishing.as_ref())
+            .map(|h| &h.world)
+            .filter(|w| w.minigames.fishing.is_some())
         else {
             self.fishing_banners = Default::default();
             self.fishing_banner_draws.clear();
-            self.fishing_prev_phase = None;
             return;
         };
-        let phase = session.phase();
-        let outcome = session.last_outcome();
-        match (self.fishing_prev_phase, phase) {
-            (Some(FishingPhase::Casting), FishingPhase::Fighting) => {
-                self.fishing_banners.on_hook();
+        for e in &world.minigames.fishing_events {
+            match e {
+                PondEvent::Splash => self.fishing_banners.splash.start(),
+                PondEvent::Hooked(_) => self.fishing_banners.on_hook(),
+                PondEvent::Landed(_) => self.fishing_banners.on_landed(),
+                PondEvent::Snapped => self.fishing_banners.on_snapped(),
+                PondEvent::Recast => self.fishing_banners.on_recast(),
             }
-            (Some(FishingPhase::Fighting), FishingPhase::Done) => match outcome {
-                Some(FightOutcome::Landed { .. }) => self.fishing_banners.on_landed(),
-                Some(FightOutcome::Snapped) => self.fishing_banners.on_snapped(),
-                // `Fighting` is the in-progress outcome, so it cannot describe
-                // a fight the session has just left.
-                Some(FightOutcome::Fighting) | None => {}
-            },
-            (Some(FishingPhase::Done), FishingPhase::Casting) => {
-                self.fishing_banners.on_recast();
-            }
-            _ => {}
         }
-        self.fishing_prev_phase = Some(phase);
         self.fishing_banner_draws = self.fishing_banners.service_frame(1);
     }
 
     /// The live fishing session, when one is installed on the scene host's
     /// world.
-    fn fishing_session(&self) -> Option<&FishingSession> {
+    fn fishing_session(&self) -> Option<&PondSession> {
         self.scene_host.as_ref()?.world.minigames.fishing.as_ref()
     }
 
     /// The phase / prompt status rows the native window prints above the retail
     /// HUD, so a player can tell which phase the session is in before the
-    /// sprite page exists.
+    /// sprite page exists. The text is the engine's (`PondSession::status_rows`);
+    /// the key names are this page's default bindings for Circle / Cross /
+    /// Square.
     fn fishing_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        use legaia_engine_core::fishing::FightOutcome;
         let Some(s) = self.fishing_session() else {
             return Vec::new();
         };
         let white = [1.0, 1.0, 1.0, 1.0];
         let dim = [0.65, 0.72, 0.8, 1.0];
-        let line = match s.phase() {
-            FishingPhase::Casting => {
-                format!("FISHING  cast power {}  (Z = cast)", s.cast_power())
-            }
-            FishingPhase::Fighting => {
-                let (tension, strength) = s
-                    .fight()
-                    .map(|f| (f.tension(), f.strength()))
-                    .unwrap_or((0, 0));
-                format!("FISHING  tension {tension}/{TENSION_MAX}  strength {strength}")
-            }
-            FishingPhase::Done => match s.last_outcome() {
-                Some(FightOutcome::Landed { points }) => {
-                    format!("FISHING  landed! +{points} points  (Z = recast)")
-                }
-                Some(FightOutcome::Snapped) => {
-                    "FISHING  the line snapped!  (Z = recast)".to_string()
-                }
-                _ => "FISHING  (Z = recast)".to_string(),
-            },
-        };
-        let hint = match s.phase() {
-            FishingPhase::Fighting => "hold Z / V to reel",
-            _ => "Z casts and reels, V reels harder",
-        };
+        let (line, hint) = s.status_rows("X", "Z", "V");
         let mut out = ui::text_draws_for(&font.layout_ascii(&line), STATUS_PEN, white);
-        out.extend(ui::text_draws_for(&font.layout_ascii(hint), HINT_PEN, dim));
+        out.extend(ui::text_draws_for(&font.layout_ascii(&hint), HINT_PEN, dim));
         out
     }
 
@@ -159,41 +137,33 @@ impl LegaiaRuntime {
         let Some(s) = self.fishing_session() else {
             return Vec::new();
         };
-        // The lure/rod index and its remaining count come from the retail
-        // ownership gate, which re-points a stale selection at the next owned
-        // lure - the same call the native window makes.
-        use legaia_engine_core::fishing::{lure_item_id, select_owned_rod};
         let inventory = self
             .scene_host
             .as_ref()
             .map(|h| &h.world.party.inventory)
             .expect("fishing_session() proved the host exists");
-        let count_of = |id: u32| *inventory.get(&(id as u8)).unwrap_or(&0) as i32;
-        let mut rod_index = 0;
-        let has_rod = select_owned_rod(&mut rod_index, count_of);
-        let mut items = ui::persistent_hud_draws(
-            s.record().points,
-            s.record().best_points,
-            rod_index,
-            if has_rod {
-                count_of(lure_item_id(rod_index))
-            } else {
-                0
-            },
-        );
-        // One retail global still has no engine analogue and stays zero,
-        // exactly as on the native host: the cast line-projection term
-        // (`DAT_801d9178`). The line depth `DAT_801d9298` is live -
-        // `FishingFight` carries it.
-        let fight = s.fight();
-        items.extend(ui::catch_hud_draws(&CatchHudState {
-            record: fight.map(|f| f.progress()).unwrap_or(0),
-            line_extent: 0,
-            cast_power: s.cast_power(),
-            depth: fight.map(|f| f.depth()).unwrap_or(0),
-            tension: fight.map(|f| f.tension()).unwrap_or(0),
-            gauges_visible: s.phase() == FishingPhase::Fighting,
-        }));
+        // The lure index is the session's; the entry's ownership gate already
+        // re-pointed it at an owned lure, exactly as the native window reads it.
+        let lure = s.lure;
+        let lures_left = *inventory
+            .get(&(legaia_engine_core::fishing::lure_item_id(lure) as u8))
+            .unwrap_or(&0) as i32;
+        let mut items =
+            ui::persistent_hud_draws(s.record.points, s.record.best_points, lure, lures_left);
+        // One derivation for the catch HUD on every host
+        // (`PondSession::catch_hud`). The cast line-projection term
+        // `DAT_801d9178` has no engine analogue and stays zero.
+        let c = s.catch_hud();
+        if c.visible {
+            items.extend(ui::catch_hud_draws(&CatchHudState {
+                record: c.record,
+                line_extent: 0,
+                cast_power: c.cast_power,
+                depth: c.depth,
+                tension: c.tension,
+                gauges_visible: c.gauges_visible,
+            }));
+        }
         items.extend(self.fishing_banner_draws.iter().copied());
         items
     }
@@ -231,12 +201,11 @@ fn bar_json(items: &[HudDraw]) -> Vec<serde_json::Value> {
 impl LegaiaRuntime {
     /// Start a fishing session on the live world, suspending the current scene
     /// mode. Returns `false` (and leaves the world untouched) when no disc is
-    /// loaded or the fishing overlay's species table does not decode.
+    /// loaded or the fishing overlay's tables do not decode.
     ///
-    /// The session's point pool resumes [`legaia_engine_core::world::MinigameState::fishing_points`], so leaving
-    /// and re-entering keeps the running total.
-    ///
-    /// [`legaia_engine_core::world::MinigameState::fishing_points`]: legaia_engine_core::world::World::fishing_points
+    /// The session seeds from the world's persistent fishing words
+    /// (`World::minigames.fishing_points` and siblings), so leaving and
+    /// re-entering keeps the running total and the cast counter.
     pub fn play_fishing_start(&mut self) -> bool {
         use legaia_asset::{fishing_species, static_overlay};
         let Some(host) = self.scene_host.as_mut() else {
@@ -253,30 +222,23 @@ impl LegaiaRuntime {
         let Ok(loaded) = static_overlay::as_loaded(&raw, rec) else {
             return false;
         };
-        let Some(species) = fishing_species::parse(&loaded) else {
+        if !host.enter_fishing_from_overlay(&loaded) {
             return false;
-        };
+        }
         // The two point-exchange venue pages ride the same overlay image; row
         // labels resolve through the SCUS item table the page already parsed.
         let names = self.item_names.as_ref();
         self.fishing_venues = legaia_asset::fishing_exchange::parse(&loaded).map(|ex| {
             [0usize, 1].map(|venue| PrizeExchange::from_asset(venue, &ex.venues[venue], names))
         });
-        let record = FishingRecord {
-            points: host.world.minigames.fishing_points,
-            ..Default::default()
-        };
-        host.world
-            .enter_fishing(FishingSession::new(species, WEB_ROD_STAT, record));
         self.fishing_banners = Default::default();
         self.fishing_banner_draws.clear();
-        self.fishing_prev_phase = None;
         true
     }
 
     /// Leave the fishing session and restore the suspended scene mode, banking
-    /// the session's points into the world's persistent pool. Returns the
-    /// banked total (`-1` when no session was live).
+    /// the session's persistent words into the world. Returns the banked
+    /// point total (`-1` when no session was live).
     pub fn play_fishing_stop(&mut self) -> i32 {
         let Some(host) = self.scene_host.as_mut() else {
             return -1;
@@ -286,7 +248,6 @@ impl LegaiaRuntime {
         }
         self.fishing_banners = Default::default();
         self.fishing_banner_draws.clear();
-        self.fishing_prev_phase = None;
         host.world.minigames.fishing_points
     }
 
@@ -295,33 +256,32 @@ impl LegaiaRuntime {
         self.fishing_session().is_some()
     }
 
-    /// The live session's state for the page's readout:
+    /// The live session's state for the page's readout - the phase names the
+    /// minigames page's `fishing_pond_state_json` uses:
     ///
     /// ```json
-    /// { "live": true, "phase": "casting", "cast_power": 0, "cast_max": 0,
-    ///   "tension": 0, "tension_max": 0, "progress": 0, "points": 0,
-    ///   "best": 0, "lure": 0 }
+    /// { "live": true, "phase": "idle", "cast_power": 0, "cast_max": 0,
+    ///   "tension": 0, "tension_max": 0, "record": 0, "points": 0,
+    ///   "best": 0, "casts": 0, "lure": 0, "rod": 0, "venue": 0 }
     /// ```
     pub fn play_fishing_state_json(&self) -> String {
         let Some(s) = self.fishing_session() else {
             return r#"{"live":false}"#.to_string();
         };
-        let phase = match s.phase() {
-            FishingPhase::Casting => "casting",
-            FishingPhase::Fighting => "fighting",
-            FishingPhase::Done => "done",
-        };
-        let fight = s.fight();
         serde_json::json!({
             "live": true,
-            "phase": phase,
+            "phase": pond_phase_name(s.phase()),
             "cast_power": s.cast_power(),
             "cast_max": legaia_engine_core::fishing::CAST_POWER_MAX,
-            "tension": fight.map(|f| f.tension()).unwrap_or(0),
+            "tension": s.tension(),
             "tension_max": TENSION_MAX,
-            "progress": fight.map(|f| f.progress()).unwrap_or(0),
-            "points": s.record().points,
-            "best": s.record().best_points,
+            "record": s.line_record(),
+            "points": s.record.points,
+            "best": s.record.best_points,
+            "casts": s.casts,
+            "lure": s.lure,
+            "rod": s.rod,
+            "venue": s.venue,
         })
         .to_string()
     }

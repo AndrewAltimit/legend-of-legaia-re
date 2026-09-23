@@ -55,7 +55,6 @@ use legaia_asset::minigame_slot_scene::{self as slot_scene, SlotScene};
 use legaia_asset::static_overlay;
 use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, LadderRun, MatchPhase, RunPhase};
 use legaia_engine_core::dance::{DanceDir, DanceEvent, DanceGame};
-use legaia_engine_core::fishing::FishingSession;
 use legaia_engine_core::slot_machine::{SlotMachine, SlotPhase};
 use legaia_tim::Tim;
 
@@ -106,8 +105,6 @@ pub struct LegaiaMinigames {
     /// sample (see `minigames_dance.rs`).
     dance_bodies: Option<dance_presentation::DanceBodies>,
 
-    /// Live fishing session (see `minigames_fishing.rs`).
-    fishing: Option<FishingSession>,
     /// Parsed per-species table (PROT 0972 rodata; cached so the roster panel
     /// and each recast read it without re-decoding).
     fishing_species: Option<Vec<FishingSpecies>>,
@@ -117,12 +114,6 @@ pub struct LegaiaMinigames {
     /// Live venue-faithful pond session (the retail cast/band/strike/fight
     /// loop; see `minigames_fishing.rs`).
     fishing_pond: Option<legaia_engine_core::fishing::PondSession>,
-    /// The page's persistent fishing record - the tab widget's stand-in for
-    /// `World::minigames.fishing_points`, which the play page and the native window both
-    /// seed a session from. Without it every `fishing_start` began from
-    /// `FishingRecord::default()`, so the points counter reset on every cast
-    /// series and the prize exchange could never be reached from this page.
-    fishing_record: legaia_engine_core::fishing::FishingRecord,
     /// Parsed per-venue species-spawn tables (PROT 0972 rodata pages).
     fishing_spawn: Option<[Vec<[u32; 8]>; 2]>,
     /// Parsed reel-cadence gesture templates (PROT 0972 rodata).
@@ -285,11 +276,9 @@ impl LegaiaMinigames {
             baka_names: None,
             dance_pres: None,
             dance_bodies: None,
-            fishing: None,
             fishing_species: None,
             fishing_overlay: None,
             fishing_pond: None,
-            fishing_record: Default::default(),
             fishing_spawn: None,
             fishing_cadence: None,
             fishing_exchange: None,
@@ -365,7 +354,6 @@ impl LegaiaMinigames {
         self.baka = None;
         self.baka_run = None;
         self.slot = None;
-        self.fishing = None;
         self.fishing_species = None;
         self.fishing_overlay = None;
         self.fishing_pond = None;

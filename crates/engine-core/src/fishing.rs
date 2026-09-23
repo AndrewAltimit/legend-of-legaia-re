@@ -22,19 +22,27 @@
 //!
 //! What is an **engine-side reconstruction** (the retail win/lose conditions are
 //! in this module's [Open](../../../docs/subsystems/minigame-fishing.md#open)
-//! list - the exact reel-button bit assignment and the land/snap thresholds are
-//! not pinned from the dumps): the [`FishingSession`] flow ties the
-//! confirmed kernels together with a line-snaps-at-max-tension loss and a
-//! reel-progress land, so the minigame is playable. Those glue rules are marked
-//! at their call sites; every numeric kernel above is the confirmed one. No Sony
-//! bytes are baked in - the species values decode from the user's disc.
+//! list): [`PondSession`] composes the confirmed kernels into the retail
+//! cast -> wait -> strike -> fight -> score loop, and the glue it adds (flight
+//! timing, the line-record reel-down rates, the snap-at-max-tension loss) is
+//! marked at each call site. No Sony bytes are baked in - the species, spawn
+//! and cadence tables decode from the user's disc ([`FishingTables`]).
 //!
 //! Chain: retail `FUN_801cf3bc` (mode SM) -> `FUN_801d4004` (fish-AI + tension)
 //! -> `FUN_801d5298` (catch scoring).
 //!
+//! # One session type
+//!
+//! [`PondSession`] is the only fishing session. All three hosts run it: the
+//! native window and the browser play page through `World::enter_fishing` /
+//! `World::tick_fishing` (the mode-24 door warp and each host's debug
+//! launcher), the minigames page directly. The persistent save-block words it
+//! reads and writes back (lure, rod, cast counter, point record, one-time
+//! prize mask) live on `World::minigames` between sessions.
+//!
 //! # Scope
 //!
-//! This module is the **rules** half only: [`FishingSession`] and the kernels
+//! This module is the **rules** half only: [`PondSession`] and the kernels
 //! it drives ([`CastPower`], [`TensionGauge`], [`FishingRecord`],
 //! [`PrizeExchange`]) are called from `world`'s minigame dispatch, which is
 //! how the fishing minigame runs.
@@ -278,308 +286,6 @@ impl FishingRecord {
     }
 }
 
-/// The outcome of a fishing fight.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FightOutcome {
-    /// The fish is still on the line.
-    Fighting,
-    /// The fish was landed for `points` (already credited to the record).
-    Landed { points: i32 },
-    /// The line snapped (tension hit max) - no catch.
-    Snapped,
-}
-
-/// A live fishing fight against one hooked species. Composes the confirmed
-/// [`TensionGauge`] + catch scoring with an engine-side land/snap loop so the
-/// minigame is playable.
-///
-/// The land/snap rules are the module's reconstruction (see the module docs):
-/// the line **snaps** the frame tension reaches [`TENSION_MAX`], and the fish is
-/// **landed** once accumulated reel progress reaches the fish's strike gate
-/// (`+0x24`, `record < f + 300` in `FUN_801d4004`) - reusing a confirmed
-/// per-species field as the fight length. The scored `strength` is the
-/// confirmed `DAT_801d91b8` accumulator that feeds `FUN_801d5298`.
-#[derive(Debug, Clone)]
-pub struct FishingFight {
-    species: FishingSpecies,
-    gauge: TensionGauge,
-    /// Accumulated fight strength (`DAT_801d91b8`) - grows as the fish is worked;
-    /// feeds the score award.
-    strength: i32,
-    /// Accumulated reel progress toward landing.
-    progress: i32,
-    /// Line depth (`DAT_801d9298`), `0..=`[`TENSION_MAX`].
-    ///
-    /// The hooked fish sinks the line by its record's `+0x10` sink factor and
-    /// reeling pulls it back up - the same two terms
-    /// [`PondSession`](crate::fishing::PondSession) runs, which is the point:
-    /// both model the same minigame and only one of them carried a depth.
-    /// The catch HUD's depth gauge read a literal `0` on the two hosts that
-    /// drive a `FishingSession`, so the gauge sat empty for a whole fight
-    /// while the minigames page's filled.
-    depth: i32,
-    outcome: FightOutcome,
-}
-
-impl FishingFight {
-    /// Begin a fight against `species` with a rod of persistent stat `rod_stat`.
-    pub fn new(species: FishingSpecies, rod_stat: i32) -> Self {
-        Self {
-            species,
-            gauge: TensionGauge::new(rod_stat),
-            strength: 0,
-            progress: 0,
-            depth: 0,
-            outcome: FightOutcome::Fighting,
-        }
-    }
-
-    /// Live tension, `0..=0x1000`.
-    pub fn tension(&self) -> i32 {
-        self.gauge.tension()
-    }
-
-    /// Accumulated fight strength (the value that feeds the score award).
-    pub fn strength(&self) -> i32 {
-        self.strength
-    }
-
-    /// Accumulated reel progress - the engine's analogue of the retail line
-    /// record `DAT_801d927c`, and the value [`Self::land_target`] is the
-    /// `record < f + 300` gate on. The catch HUD's length readout reads it.
-    pub fn progress(&self) -> i32 {
-        self.progress
-    }
-
-    /// Live line depth (`DAT_801d9298`) - what the catch HUD's depth gauge
-    /// draws.
-    pub fn depth(&self) -> i32 {
-        self.depth
-    }
-
-    /// The hooked species.
-    pub fn species(&self) -> &FishingSpecies {
-        &self.species
-    }
-
-    /// The current fight outcome.
-    pub fn outcome(&self) -> FightOutcome {
-        self.outcome
-    }
-
-    /// The strike-gate target that reel progress must reach to land the fish
-    /// (`+0x24 + 300`, the confirmed `record < f + 300` hook check).
-    pub fn land_target(&self) -> i32 {
-        self.species.strike_gate + RECORD_STRIKE_BASE
-    }
-
-    /// Advance one fight frame: the fish pulls with `base_pull` (raising fight
-    /// strength), the player reels (or not), and the tension + progress update.
-    /// Returns the (possibly terminal) outcome.
-    ///
-    /// - Confirmed: the tension update ([`TensionGauge::apply_reel`]) and the
-    ///   score award on landing ([`FishingSpecies::score_for`], credited via
-    ///   [`FishingRecord::credit`]).
-    /// - Reconstruction: reeling adds to `progress` and to `strength`; the line
-    ///   snaps at max tension; the fish lands when `progress >= land_target()`.
-    pub fn tick(
-        &mut self,
-        input: ReelInput,
-        base_pull: i32,
-        frame_step: i32,
-        record: &mut FishingRecord,
-    ) -> FightOutcome {
-        if self.outcome != FightOutcome::Fighting {
-            return self.outcome;
-        }
-        self.gauge.apply_reel(input, base_pull, frame_step);
-        // Line depth (`DAT_801d9298`). The sink term is retail's
-        // (`FUN_801d4004`: `pull * sink_factor / 150`, the `/ 0x96` in the
-        // run-state arm) and so is the clamp; applying it every fight frame
-        // rather than only in the run state is this engine's reconstruction,
-        // because a `FishingFight` has no behaviour sub-state machine, and the
-        // reel-back rates are [`PondSession`]'s glue, reused so the one
-        // minigame does not end up with two depth models.
-        let sink = (base_pull.max(0).saturating_mul(self.species.sink_factor)) / SINK_DIVISOR;
-        let reeled = match input {
-            ReelInput::ReelA => 2 * frame_step.max(1),
-            ReelInput::ReelB => frame_step.max(1),
-            ReelInput::Idle => 0,
-        };
-        self.depth = (self.depth + sink - reeled).clamp(0, TENSION_MAX);
-        // Working the fish (reeling) accrues fight strength + landing progress;
-        // a stronger pull banks more strength (a better score) but risks tension.
-        if input != ReelInput::Idle {
-            self.strength = self.strength.saturating_add(base_pull.max(0));
-            self.progress = self.progress.saturating_add(frame_step.max(1));
-        }
-        // Line snap: tension pinned at the ceiling loses the fish.
-        if self.gauge.at_max() {
-            self.outcome = FightOutcome::Snapped;
-            return self.outcome;
-        }
-        // Land: reel progress met the strike gate.
-        if self.progress >= self.land_target() {
-            let points = self.species.score_for(self.strength);
-            record.credit(self.species.index, points);
-            self.outcome = FightOutcome::Landed { points };
-        }
-        self.outcome
-    }
-}
-
-/// Which phase of a fishing session is live.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FishingPhase {
-    /// Casting: the power meter oscillates until the player locks it.
-    Casting,
-    /// Fighting a hooked fish with the reel.
-    Fighting,
-    /// The last fight resolved (landed or snapped); the player can recast.
-    Done,
-}
-
-/// A full fishing session: the cast-power meter, the current fight, and the
-/// persistent record, sequenced cast -> fight -> done -> recast. This is the
-/// host-facing composition (`FUN_801cf3bc` mode SM in miniature); it holds the
-/// parsed per-species table and drives the confirmed kernels.
-///
-/// Two glue rules are the module's reconstruction (documented at their sites):
-/// the locked cast power selects which species hooks (a longer cast reaches
-/// rarer fish), and the hooked fish exerts a steady per-frame `base_pull`
-/// derived from its `pull_factor` (retail rolls it against `rand`; this keeps
-/// the wired minigame deterministic - see the doc's Open list).
-#[derive(Debug, Clone)]
-pub struct FishingSession {
-    species: Vec<FishingSpecies>,
-    rod_stat: i32,
-    record: FishingRecord,
-    cast: CastPower,
-    fight: Option<FishingFight>,
-    phase: FishingPhase,
-    last_outcome: Option<FightOutcome>,
-}
-
-impl FishingSession {
-    /// Start a session over the parsed species table with a rod of persistent
-    /// stat `rod_stat` and an existing point `record`. Begins in [`Casting`].
-    ///
-    /// [`Casting`]: FishingPhase::Casting
-    pub fn new(species: Vec<FishingSpecies>, rod_stat: i32, record: FishingRecord) -> Self {
-        Self {
-            species,
-            rod_stat: rod_stat.max(0),
-            record,
-            cast: CastPower::new(),
-            fight: None,
-            phase: FishingPhase::Casting,
-            last_outcome: None,
-        }
-    }
-
-    /// The current phase.
-    pub fn phase(&self) -> FishingPhase {
-        self.phase
-    }
-
-    /// The persistent record (points + best catch).
-    pub fn record(&self) -> FishingRecord {
-        self.record
-    }
-
-    /// Overwrite the record's point total. The point exchange spends from the
-    /// shared pool while a session is live (retail deducts `_DAT_8008444C`
-    /// directly), so the host syncs the on-screen total after a purchase.
-    pub fn set_points(&mut self, points: i32) {
-        self.record.points = points;
-    }
-
-    /// The live cast-power meter value.
-    pub fn cast_power(&self) -> i32 {
-        self.cast.value()
-    }
-
-    /// The live fight, if one is in progress.
-    pub fn fight(&self) -> Option<&FishingFight> {
-        self.fight.as_ref()
-    }
-
-    /// The most recent resolved fight outcome (set on entering [`Done`]).
-    ///
-    /// [`Done`]: FishingPhase::Done
-    pub fn last_outcome(&self) -> Option<FightOutcome> {
-        self.last_outcome
-    }
-
-    /// Advance the cast-power oscillator by `step`. No-op outside the casting
-    /// phase.
-    pub fn advance_cast(&mut self, step: i32) {
-        if self.phase == FishingPhase::Casting {
-            self.cast.advance(step);
-        }
-    }
-
-    /// Lock the cast and hook a fish, entering the fight. The locked power picks
-    /// the species: a longer cast reaches a rarer (higher-index) fish
-    /// (reconstruction). No-op outside casting or with an empty table.
-    pub fn lock_cast(&mut self) {
-        if self.phase != FishingPhase::Casting || self.species.is_empty() {
-            return;
-        }
-        let power = self.cast.lock();
-        let span = (CAST_POWER_MAX - CAST_POWER_MIN).max(1);
-        let idx = (((power - CAST_POWER_MIN).max(0) as i64 * self.species.len() as i64)
-            / span as i64) as usize;
-        let idx = idx.min(self.species.len() - 1);
-        self.fight = Some(FishingFight::new(self.species[idx], self.rod_stat));
-        self.phase = FishingPhase::Fighting;
-    }
-
-    /// The steady per-frame pull the hooked fish exerts (`pull_factor` scaled
-    /// down; reconstruction - retail rolls it against `rand`). `0` when not
-    /// fighting.
-    pub fn fish_pull(&self) -> i32 {
-        self.fight
-            .as_ref()
-            .map(|f| (f.species().pull_factor / 8).max(1))
-            .unwrap_or(0)
-    }
-
-    /// Apply one fight frame with the given reel input. On a terminal outcome
-    /// the session moves to [`Done`] and records [`Self::last_outcome`]. No-op
-    /// outside the fighting phase.
-    ///
-    /// [`Done`]: FishingPhase::Done
-    pub fn reel(&mut self, input: ReelInput, frame_step: i32) {
-        if self.phase != FishingPhase::Fighting {
-            return;
-        }
-        let base_pull = self.fish_pull();
-        let mut record = self.record;
-        let outcome = match self.fight.as_mut() {
-            Some(f) => f.tick(input, base_pull, frame_step, &mut record),
-            None => return,
-        };
-        self.record = record;
-        if outcome != FightOutcome::Fighting {
-            self.last_outcome = Some(outcome);
-            self.phase = FishingPhase::Done;
-        }
-    }
-
-    /// Recast after a resolved fight: reset the cast meter and clear the fight.
-    /// No-op unless in [`Done`].
-    ///
-    /// [`Done`]: FishingPhase::Done
-    pub fn recast(&mut self) {
-        if self.phase == FishingPhase::Done {
-            self.cast = CastPower::new();
-            self.fight = None;
-            self.phase = FishingPhase::Casting;
-        }
-    }
-}
-
 // --- Point exchange (prize shop) -------------------------------------------
 
 /// One prize row of the point-exchange screen, decoded from the overlay's
@@ -792,9 +498,10 @@ pub const ROD_KINDS: u32 = 3;
 /// `count_of` supplies the live inventory count for an item id. The sum
 /// guarantees termination in retail; the port bounds the scan at
 /// [`ROD_KINDS`] anyway so a caller with an out-of-range index cannot hang it.
-// PORT: FUN_801d712c (rod-ownership gate + persistent rod-index re-point)
-// PARTLY WIRED: the play window calls this to resolve the rod index its
-// persistent HUD rows display. Its other retail role - the rod/lure
+// PORT: FUN_801d712c (lure-ownership gate + persistent lure-index re-point)
+// PARTLY WIRED: `World::enter_fishing_session` runs it over the live bag at
+// every session entry (door warp and both play hosts' launchers) and writes
+// the corrected lure index back. Its other retail role - the rod/lure
 // selection screen's cursor handler, which is what lets the player *change*
 // the selection - has no host UI, so that path is still unreached.
 pub fn select_owned_rod(rod_index: &mut u32, mut count_of: impl FnMut(u32) -> i32) -> bool {
@@ -850,11 +557,10 @@ pub const ENTRY_ROD_PROBES: u32 = 6;
 /// PORT: FUN_801CF070 (`0x801cf35c..0x801cf39c`)
 ///
 /// WIRED: [`crate::world::World::resolve_fishing_entry_rod`] runs it over the
-/// party's live bag and writes the result back to the persistent rod cell, and
-/// `SceneHost::enter_fishing_from_overlay` - the mode-24 door warp both hosts
-/// take into a fishing venue - passes that as the session's `rod_stat`.
-/// Each host's *debug* launcher still opens a session with a fixed stat of its
-/// own, which is a dev entry point rather than a player path.
+/// party's live bag and writes the result back to the persistent rod cell,
+/// which `World::enter_fishing_session` seeds the session's rod from. Every
+/// entry reaches it through `SceneHost::enter_fishing_from_overlay` - the
+/// mode-24 door warp and both play hosts' debug launchers alike.
 pub fn entry_rod_index(saved: u32, mut count_of: impl FnMut(u32) -> i32) -> u32 {
     let mut rod = saved;
     for _ in 0..ENTRY_ROD_PROBES {
@@ -1129,9 +835,9 @@ pub struct RodLureSelectTick {
 /// to `owned_rods + 2` - the `3` lure rows plus the owned-rod rows.
 ///
 /// **No host reaches this, and no ladder can.** No host owns a rod/lure select
-/// screen: the two engine hosts pick the rod from a dev constant
-/// (`DEV_ROD_STAT` / `WEB_ROD_STAT`) and the minigames page takes rod and lure
-/// as `fishing_pond_start` arguments, so nothing calls this kernel in
+/// screen: the two engine hosts open a session on the persistent rod and lure
+/// the bring-up scans leave (`World::enter_fishing_session`) and the minigames
+/// page takes rod and lure as `fishing_pond_start` arguments, so nothing calls this kernel in
 /// production. Two prerequisites, neither of them a call: a screen to own the
 /// rows, and - on the minigames page specifically - a tackle inventory for the
 /// `count_of` probe, which that page does not model at all (its HUD hard-codes
@@ -1661,6 +1367,10 @@ pub enum PondEvent {
     Landed(i32),
     /// The line snapped.
     Snapped,
+    /// The session returned to the idle shore: a resolved fight was
+    /// dismissed, or an empty line was reeled all the way in. Hosts seed the
+    /// auxiliary recast banner off it.
+    Recast,
 }
 
 /// The venue-faithful fishing session: the retail cast -> wait -> strike ->
@@ -1999,6 +1709,7 @@ impl PondSession {
                     if self.line_record <= RECORD_STRIKE_BASE {
                         self.line_record = 0;
                         self.lure_actor = None;
+                        self.events.push(PondEvent::Recast);
                         self.phase = PondPhase::Idle;
                     }
                 }
@@ -2055,11 +1766,206 @@ impl PondSession {
                     self.fight_species = None;
                     self.line_record = 0;
                     self.depth = 0;
+                    self.lure_actor = None;
+                    self.events.push(PondEvent::Recast);
                     self.phase = PondPhase::Idle;
                 }
             }
         }
     }
+}
+
+/// The departure-scene id that selects the **Vidna** venue (`DAT_801d90d0 =
+/// 1`): the raw CDNAME `#define` of the Sebucus overworld, `map02`.
+pub const VENUE_SCENE_VIDNA: u32 = 0xF4;
+/// The departure-scene id that selects the **Buma** venue (`DAT_801d90d0 =
+/// 0`): the raw CDNAME `#define` of the Karisto overworld, `map03`.
+pub const VENUE_SCENE_BUMA: u32 = 0x187;
+
+/// The venue variant (`DAT_801d90d0`: `0` Buma, `1` Vidna) the fishing
+/// driver's setup state picks from the scene the door warp left.
+///
+/// The mode-24 entry backs the departure scene's id word `_DAT_80084540` up
+/// into `0x8007BAC4` (`FUN_80025980`), and state `1` of the driver compares
+/// that backup against two immediates:
+///
+/// ```text
+/// 801cf5a4  lw   a0,-0x453c(v0)     ; 0x8007BAC4, the departure scene id
+/// 801cf5a8  li   v0,0xf4
+/// 801cf5ac  bne  a0,v0,0x801cf5c0
+/// 801cf5bc  sw   v0,-0x6f30(v1)     ; == 0xF4  -> DAT_801d90d0 = 1
+/// 801cf5c0  li   v0,0x187
+/// 801cf5c4  bne  a0,v0,0x801cf5d8
+/// 801cf5d0  sw   zero,-0x6f30(v0)   ; == 0x187 -> DAT_801d90d0 = 0
+/// ```
+///
+/// The two immediates are the raw CDNAME `#define`s of `map02` and `map03`,
+/// the only two scenes whose scripts carry a fishing door. Any other id
+/// leaves the variant as it was, which is `current` here.
+///
+/// PORT: FUN_801cf3bc (state `1` venue select, `0x801cf5a4..0x801cf5d0`)
+pub fn venue_for_departure_scene(scene_id: u32, current: usize) -> usize {
+    match scene_id {
+        VENUE_SCENE_VIDNA => 1,
+        VENUE_SCENE_BUMA => 0,
+        _ => current,
+    }
+}
+
+/// The three disc tables a [`PondSession`] runs over, all rodata of the
+/// fishing overlay (PROT 0972): the ten-record species table, the two venue
+/// spawn pages and the reel-cadence gesture templates.
+///
+/// One decode serves every host - the mode-24 door warp, both play hosts'
+/// debug launchers and the minigames page all build a session from this.
+#[derive(Debug, Clone)]
+pub struct FishingTables {
+    /// Per-species parameter records ([`legaia_asset::fishing_species::parse`]).
+    pub species: Vec<FishingSpecies>,
+    /// The two venue spawn pages, Buma then Vidna
+    /// ([`legaia_asset::fishing_species::parse_spawn_tables`]).
+    pub spawn: [Vec<[u32; 8]>; 2],
+    /// Reel-cadence gesture templates
+    /// ([`legaia_asset::fishing_species::parse_cadence_templates`]).
+    pub cadence: Vec<CadenceTemplate>,
+}
+
+impl FishingTables {
+    /// Decode all three tables from the loaded overlay image. `None` when any
+    /// of them fails to decode - a session without a spawn page can never
+    /// hook a fish, so a partial decode is not a playable session.
+    pub fn from_overlay(loaded: &[u8]) -> Option<Self> {
+        use legaia_asset::fishing_species as fs;
+        Some(Self {
+            species: fs::parse(loaded)?,
+            spawn: fs::parse_spawn_tables(loaded)?,
+            cadence: fs::parse_cadence_templates(loaded)?,
+        })
+    }
+}
+
+/// The persistent save-block words a [`PondSession`] opens from and banks
+/// back into: retail `_DAT_8008444C..0x8008446C`, which the port keeps on
+/// `World::minigames` between sessions.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FishingPersist {
+    /// Equipped lure row (`_DAT_80084450`, `0..=2`).
+    pub lure: u32,
+    /// Rod stat (`_DAT_80084454`, `0..=2`).
+    pub rod: i32,
+    /// Lifetime cast counter (`_DAT_80084460`).
+    pub casts: i32,
+    /// Point record (`_DAT_8008444C` / `58` / `5C`).
+    pub record: FishingRecord,
+    /// One-time prize bitmask (`_DAT_8008446C`).
+    pub purchased_mask: u32,
+}
+
+impl PondSession {
+    /// Open a session at `venue` over the decoded `tables` with the
+    /// persistent words in `persist`.
+    pub fn from_tables(
+        tables: &FishingTables,
+        venue: usize,
+        persist: FishingPersist,
+        seed: u32,
+    ) -> Self {
+        let venue = venue.min(1);
+        Self::new(
+            tables.species.clone(),
+            tables.spawn[venue].clone(),
+            tables.cadence.clone(),
+            venue,
+            persist.lure,
+            persist.rod,
+            persist.casts,
+            persist.record,
+            persist.purchased_mask,
+            seed,
+        )
+    }
+
+    /// The persistent words as they stand now - what leaving the session
+    /// banks back into the save block.
+    pub fn persist(&self) -> FishingPersist {
+        FishingPersist {
+            lure: self.lure,
+            rod: self.rod,
+            casts: self.casts,
+            record: self.record,
+            purchased_mask: self.purchased_mask,
+        }
+    }
+
+    /// The catch HUD's inputs this frame (`FUN_801d1580`): drawn once a cast
+    /// is out, its gauge block only while a fish is on (`DAT_801d91b4`).
+    ///
+    /// One derivation for all three hosts. The play hosts used to feed the
+    /// HUD a fight's reel *progress* as its line record and the minigames
+    /// page the line record itself; the value retail draws is the line record
+    /// `DAT_801d927c`, which is what this returns.
+    pub fn catch_hud(&self) -> PondCatchHud {
+        PondCatchHud {
+            visible: self.phase != PondPhase::Idle,
+            record: self.line_record,
+            cast_power: self.cast.value(),
+            depth: self.depth,
+            tension: self.gauge.tension(),
+            gauges_visible: self.phase == PondPhase::Hooked,
+        }
+    }
+
+    /// The host status rows - a phase line and a key hint - both play hosts
+    /// print above the retail HUD while the fishing sprite page is undecoded.
+    /// Engine affordance text, not retail; one copy so the hosts agree.
+    /// `cast` / `reel_a` / `reel_b` are the host's own key names for Circle,
+    /// Cross and Square.
+    pub fn status_rows(&self, cast: &str, reel_a: &str, reel_b: &str) -> (String, String) {
+        let line = match self.phase {
+            PondPhase::Idle => format!("FISHING  ({cast} = cast)"),
+            PondPhase::WindUp => "FISHING  winding up".to_string(),
+            PondPhase::Power => {
+                format!("FISHING  cast power {}  ({cast} = lock)", self.cast.value())
+            }
+            PondPhase::Flight => "FISHING  the lure is flying".to_string(),
+            PondPhase::Waiting => format!("FISHING  line {}  waiting for a bite", self.readout()),
+            PondPhase::Hooked => format!(
+                "FISHING  tension {}/{TENSION_MAX}  strength {}",
+                self.gauge.tension(),
+                self.strength
+            ),
+            PondPhase::Landed => format!(
+                "FISHING  landed! +{} points  ({cast} = again)",
+                self.last_award
+            ),
+            PondPhase::Snapped => format!("FISHING  the line snapped!  ({cast} = again)"),
+        };
+        let hint = match self.phase {
+            PondPhase::Waiting | PondPhase::Hooked => {
+                format!("hold {reel_a} / {reel_b} to reel")
+            }
+            _ => format!("{cast} casts, {reel_a} / {reel_b} reel"),
+        };
+        (line, hint)
+    }
+}
+
+/// The catch HUD's inputs, host-neutral (the `engine-ui` `CatchHudState`
+/// minus its `line_extent`, which has no engine analogue yet).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PondCatchHud {
+    /// Whether the catch HUD draws at all (a cast is out).
+    pub visible: bool,
+    /// Line record `DAT_801d927c`.
+    pub record: i32,
+    /// Live cast-power meter.
+    pub cast_power: i32,
+    /// Line depth `DAT_801d9298`.
+    pub depth: i32,
+    /// Live tension.
+    pub tension: i32,
+    /// The gauge block's gate (`DAT_801d91b4`): a fish is on.
+    pub gauges_visible: bool,
 }
 
 #[cfg(test)]
@@ -2080,37 +1986,6 @@ mod tests {
             roll_cutoff_c: 90,
             strike_gate,
         }
-    }
-
-    /// The line depth `DAT_801d9298` is live on a `FishingFight`, not a
-    /// literal `0`: the hooked fish sinks it by its own `+0x10` factor and
-    /// the reel pays it back, reel A twice as fast as reel B. Two of the
-    /// three hosts drew the catch HUD's depth gauge off this, and drew it
-    /// empty for a whole fight because the value did not exist.
-    #[test]
-    fn the_fight_carries_a_line_depth_the_fish_sinks_and_the_reel_lifts() {
-        let sp = species(0, 100, 4000);
-        let mut f = FishingFight::new(sp, 4);
-        let mut record = FishingRecord::default();
-        assert_eq!(f.depth(), 0, "a fresh hook starts at the surface");
-        // Idling lets the fish run: pull 300 * sink_factor 4 / 150 = 8 a
-        // frame, nothing paid back.
-        for _ in 0..4 {
-            f.tick(ReelInput::Idle, 300, 1, &mut record);
-        }
-        assert_eq!(f.depth(), 4 * (300 * 4 / SINK_DIVISOR));
-        let sunk = f.depth();
-        // Reel A lifts 2 per frame against the same 8 of sink, so the line
-        // keeps sinking - but more slowly than it did.
-        f.tick(ReelInput::ReelA, 300, 1, &mut record);
-        assert_eq!(f.depth(), sunk + (300 * 4 / SINK_DIVISOR) - 2);
-        // With no pull at all the reel is pure lift, and the surface is a
-        // floor (retail clamps to `[0, 0x1000]`).
-        for _ in 0..200 {
-            f.tick(ReelInput::ReelA, 0, 1, &mut record);
-        }
-        assert_eq!(f.depth(), 0);
-        assert!(f.depth() <= TENSION_MAX);
     }
 
     /// `is_available` folds three refusals together; `is_latched` asks only
@@ -2152,6 +2027,45 @@ mod tests {
         assert!(!ex.is_available(0, 10_000, 0, mask));
         // Its neighbour's bit is untouched.
         assert!(!ex.is_latched(1, mask));
+    }
+
+    /// State `1` compares the backed-up departure-scene id against the two
+    /// overworld `#define`s and leaves the variant alone for anything else.
+    #[test]
+    fn the_departure_scene_picks_the_venue() {
+        assert_eq!(venue_for_departure_scene(VENUE_SCENE_VIDNA, 0), 1);
+        assert_eq!(venue_for_departure_scene(VENUE_SCENE_BUMA, 1), 0);
+        assert_eq!(venue_for_departure_scene(1195, 0), 0);
+        assert_eq!(venue_for_departure_scene(1195, 1), 1);
+    }
+
+    /// A session built from the tables and the persistent words hands the
+    /// same words back, and its catch HUD is dark at the shore.
+    #[test]
+    fn a_session_round_trips_its_persistent_words() {
+        let tables = FishingTables {
+            species: (0..10).map(|i| species(i, 1000, 400)).collect(),
+            spawn: [vec![[0u32; 8]; 8], vec![[0u32; 8]; 8]],
+            cadence: templates(),
+        };
+        let persist = FishingPersist {
+            lure: 2,
+            rod: 1,
+            casts: 77,
+            record: FishingRecord {
+                points: 50,
+                best_points: 9,
+                best_fish: 3,
+            },
+            purchased_mask: 0x101,
+        };
+        let s = PondSession::from_tables(&tables, 1, persist, 7);
+        assert_eq!(s.venue, 1);
+        assert_eq!(s.persist(), persist);
+        assert!(!s.catch_hud().visible, "no catch HUD before a cast");
+        let (line, hint) = s.status_rows("S", "Z", "X");
+        assert!(line.contains("S = cast"), "{line}");
+        assert!(hint.contains('Z') && hint.contains('X'), "{hint}");
     }
 
     #[test]
@@ -2292,93 +2206,6 @@ mod tests {
         // Points cap at 999999.
         r.credit(0, FISH_POINTS_CAP);
         assert_eq!(r.points, FISH_POINTS_CAP);
-    }
-
-    #[test]
-    fn fight_lands_a_fish_and_scores_it() {
-        let mut record = FishingRecord::default();
-        // Small strike gate so a few gentle reels land it without snapping.
-        let mut fight = FishingFight::new(species(2, 10_000, 10), 8);
-        let target = fight.land_target();
-        assert_eq!(target, 10 + 300);
-        // Reel with a modest pull (rod stat 8 softens tension) until landed.
-        let mut outcome = FightOutcome::Fighting;
-        for _ in 0..1000 {
-            outcome = fight.tick(ReelInput::ReelA, 4, 4, &mut record);
-            if outcome != FightOutcome::Fighting {
-                break;
-            }
-        }
-        match outcome {
-            FightOutcome::Landed { points } => {
-                assert!(points > 0);
-                assert_eq!(record.points, points);
-                assert_eq!(record.best_fish, 2);
-            }
-            other => panic!("expected a landed catch, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn session_sequences_cast_fight_and_recast() {
-        let table = vec![
-            species(0, 8_000, 8),
-            species(1, 12_000, 8),
-            species(2, 20_000, 8),
-        ];
-        let mut s = FishingSession::new(table, 8, FishingRecord::default());
-        assert_eq!(s.phase(), FishingPhase::Casting);
-        // Oscillate the meter, then lock -> a fish hooks and the fight starts.
-        for _ in 0..5 {
-            s.advance_cast(0x40);
-        }
-        s.lock_cast();
-        assert_eq!(s.phase(), FishingPhase::Fighting);
-        assert!(s.fight().is_some());
-        assert!(s.fish_pull() > 0);
-        // Reel until the fight resolves.
-        for _ in 0..2000 {
-            if s.phase() != FishingPhase::Fighting {
-                break;
-            }
-            s.reel(ReelInput::ReelA, 4);
-        }
-        assert_eq!(s.phase(), FishingPhase::Done);
-        assert!(s.last_outcome().is_some());
-        // Recast returns to a fresh casting meter.
-        s.recast();
-        assert_eq!(s.phase(), FishingPhase::Casting);
-        assert_eq!(s.cast_power(), CAST_POWER_SEED);
-    }
-
-    #[test]
-    fn locked_cast_power_selects_a_species() {
-        let table = vec![
-            species(0, 8_000, 8),
-            species(1, 12_000, 8),
-            species(2, 20_000, 8),
-        ];
-        // A max-power cast reaches the rarest (last) fish.
-        let mut s = FishingSession::new(table.clone(), 8, FishingRecord::default());
-        s.advance_cast(CAST_POWER_MAX); // jump to the ceiling
-        s.lock_cast();
-        assert_eq!(s.fight().unwrap().species().index, table.len() - 1);
-    }
-
-    #[test]
-    fn fight_snaps_the_line_at_max_tension() {
-        let mut record = FishingRecord::default();
-        // Huge pull + weak rod -> tension pins immediately -> snap.
-        let mut fight = FishingFight::new(species(5, 20_000, 10_000), 0);
-        let outcome = fight.tick(ReelInput::ReelA, i32::MAX / 2, 1, &mut record);
-        assert_eq!(outcome, FightOutcome::Snapped);
-        // A snap scores nothing.
-        assert_eq!(record.points, 0);
-        // The fight is terminal - further ticks stay snapped.
-        assert_eq!(
-            fight.tick(ReelInput::ReelA, 4, 4, &mut record),
-            FightOutcome::Snapped
-        );
     }
 
     fn exchange() -> PrizeExchange {

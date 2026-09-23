@@ -20,9 +20,11 @@ for a party holding none (`0x801cf35c..0x801cf39c`, parser
 `World::resolve_fishing_entry_rod` on the way through the door warp, writes the
 corrected index back to the same cell, and passes it as the session's
 `rod_stat`, so the [tension divisors](#tension--reeling-mechanic) and the
-persistent HUD's rod row read one value. Each host's debug launcher still opens
-a session with a fixed stat of its own; those bypass the field scene and are
-dev entry points, not this path.
+persistent HUD's rod row read one value. Every session entry runs it -
+`World::enter_fishing_session`, which the door warp and both play hosts' debug
+launchers all reach through `SceneHost::enter_fishing_from_overlay` - together
+with the lure gate `select_owned_rod` (`FUN_801d712c`) over the lure cell
+`_DAT_80084450`.
 
 **Why `FUN_801cf3bc` has no caller.** It is not called; it is the `+0x08` tick word of the static 24-byte actor template at `0x801D8FF4`. The sub-id-0 init `FUN_801CF070` materialises that template and spawns an actor from it (`jal FUN_80020DE0` at `0x801CF22C`), and the per-frame pool walk then reaches it through `jalr actor[+0x0C]` in `FUN_8002519C`. A `jal` search for the driver's address returns zero by construction, which is the correct answer rather than a corpus gap.
 
@@ -33,7 +35,7 @@ dev entry points, not this path.
 | State | Role |
 |---|---|
 | `0` | Rod / type select: queues a small menu, reads a select edge, and on confirm grants the inventory rod + lure items (`func_0x800421d4` ids `0x9d`..`0xa2` - the SCUS item table names them Light/Normal/Heavy Lure + Old/Deluxe/Legendary Rod) and advances to `1`. |
-| `1` | Scene / actor setup: spawns the fishing actors (`func_0x80020de0`), picks the location variant from `DAT_801d90d0`, initialises camera-tint bytes, then falls through to `0x32`. |
+| `1` | Scene / actor setup: spawns the fishing actors (`func_0x80020de0`), picks the location variant `DAT_801d90d0` from the departure scene (see [Venue select](#venue-select)), initialises camera-tint bytes, then falls through to `0x32`. |
 | `0x32` | Sets state to `10` (the run-loop entry). |
 | `10` (`0xa`) | Run-loop init: zeroes the per-cast working set, including tension `DAT_801d9168`, depth/line `DAT_801d9298`, casting-power `DAT_801d9274` (seeded `0x40`) and its direction `DAT_801d9278`, then advances. |
 | `0xb` | Fade-in: ramps the screen-fade level `DAT_801d905c` down to 0, then advances (or jumps to the "no lure" state `0x96` if `FUN_801d712c` reports no lure owned). |
@@ -293,8 +295,8 @@ and whose `probe` runs both reads in retail's order. The class walk is the
 already-ported region routine - `field_regions::refresh_region_attributes`
 (`FUN_800180EC`, called at `0x801D3384` with the same tile pair) - so the port
 reaches `_DAT_8007B8F4` through the same producer retail does. Both hosts drive
-it: the browser minigames page inside `fishing::PondSession`, the play window
-from its own venue frame, where the lure is also the origin the celebration
+it inside `fishing::PondSession`, the one session all three hosts run; the play
+window additionally reads the session's lure as the origin its celebration
 bursts spawn at.
 
 ## Fishing actors and scene render
@@ -739,9 +741,10 @@ well: `band_roll` (the three cutoffs), `BandCheck` (the countdown/credit
 strike check; the exact denominator ladder is approximated by the readout
 itself, marked at the site), `band4_gate` (the venue-hardwired arm) and
 `spawn_species` (`lure*8 + band`), composed with the confirmed kernels into
-`PondSession` - the venue-faithful cast → wait → strike → fight → score loop
-the site's minigames page drives through `crates/web-viewer`
-(`minigames_fishing.rs`).
+`PondSession` - the venue-faithful cast → wait → strike → fight → score loop.
+It is the only fishing session: the site's minigames page drives it directly
+(`crates/web-viewer/src/minigames_fishing.rs`), and the native window and the
+browser play page run it through `World::tick_fishing`.
 
 The HUD / banner cluster is ported as a draw-list layer (`HudDraw`) in [`legaia_engine_ui::ui_fishing`](../../crates/engine-ui/src/ui_fishing.rs), beside the consumer that renders it: `persistent_hud_draws` (`FUN_801d13f0`), `catch_hud_draws` plus the `length_display` / `extent_display` / `cast_power_percent` kernels (`FUN_801d1580`), the five animators `banner_from_left_draw` / `banner_from_right_draw` / `strike_splash_draws` / `banner_miss_draw` / `banner_converge_draws` (`FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` / `FUN_801d6f10` / `FUN_801d7528`), and `BannerTimer` (the tail's timer-service loop).
 
@@ -751,7 +754,7 @@ The bar and digit primitives are ported as layout builders over that same draw l
 
 What the consumer does **not** supply is the fishing sprite page itself. `FUN_801d63b0` is a bare VRAM quad emitter whose glyph ids index a page no host uploads yet, so a host that passes no atlas gets the number / caption rows and none of the icon or gauge geometry. The play window is in exactly that state: it renders the persistent HUD's rows at their traced stage pens and keeps a text line for the live tension / cast readouts the gauges would otherwise carry.
 
-The `FishingSession` composes those kernels into a cast → fight → score loop. The win/lose glue (line-snaps-at-max-tension, reel-progress land, the locked-cast species pick, and the steady per-frame fish pull) is an **engine-side reconstruction** of the [Open](#open) items below and is marked as such at each call site - no Sony bytes are baked in.
+`PondSession` composes those kernels into the cast → wait → strike → fight → score loop. Its glue (flight timing, the line-record reel-down rates, the snap-at-max-tension loss) is an **engine-side reconstruction** of the [Open](#open) items below and is marked as such at each call site - no Sony bytes are baked in. An earlier second session type, `FishingSession`, ran the two play hosts on a deterministic cast → fight loop in which the locked cast power picked the species and the fish pulled at a steady rate; it had no shore idle, no band roll, no spawn table and no RNG, so the play hosts and the minigames page played two different games. It is gone; the play hosts' debug launchers and the door warp open a `PondSession` from the same tables.
 
 **Retail entry.** A fishing-pond door hands off through the ordinary **game mode 24** (`OTHER INIT`, `sub_id = 0`) path - the same scene-backup → overlay-load → return-to-field sequence any mode-24 minigame takes, with PROT 0972 as the loaded overlay. There is no bespoke fishing entry: the pond door is a normal door whose target mode is 24, which is why the minigame inherits the host scene's BGM (above) and returns to the exact field state it suspended. The engine's `GameMode::OtherInit`/`OtherMode` pair (`crates/engine-core/src/mode.rs`) is that mode.
 
@@ -765,9 +768,39 @@ high-Z half, and a rocky-shore blue pool with two rock islets in the low-Z
 half - the two `DAT_801d90d0` location variants. Which variant id maps to
 which area (and the retail camera / spawn placement inside each) is not
 statically pinned - the overlay positions its actors through runtime globals -
-so the browser page's per-venue anchors are fitted and marked as such.
+so the browser page's per-venue anchors are fitted and marked as such. Which
+*variant* a door selects is pinned; see below.
 
-Runtime wiring: installed as a suspending scene mode (`SceneMode::Fishing`; `World::enter_fishing` / `tick_fishing` / `exit_fishing`). The `play-window` viewer starts it from the `L` key (loads the fishing overlay PROT 0972, `fishing_species::parse`); Cross locks the cast and reels (reel A), Square is reel B (retail: `0x80`), and the HUD shows the cast-power / tension / catch-result line plus the running point total. `P` opens the [point exchange](#point-exchange-prize-shop) (Up/Down move, Left/Right switch venue, Enter trades).
+### Venue select
+
+The mode-24 entry `FUN_80025980` backs the departure scene's id word
+`_DAT_80084540` up into `0x8007BAC4`, and state `1` of the driver compares that
+backup against two immediates (`0x801cf5a4..0x801cf5d0`, see
+`ghidra/scripts/funcs/overlay_fishing_801cf3bc.txt`): `0xF4` stores `1` into
+`DAT_801d90d0` (Vidna), `0x187` stores `0` (Buma), anything else leaves the
+variant alone. The immediates are the raw CDNAME `#define`s of `map02` and
+`map03` - the only two scenes whose scripts carry a fishing door (above) - so
+the Sebucus door opens Vidna and the Karisto door opens Buma. The same variant
+then selects the point-exchange page and the spawn page. Port:
+`fishing::venue_for_departure_scene`, applied by
+`SceneHost::enter_fishing_from_overlay` to the still-loaded departure scene.
+
+Runtime wiring: installed as a suspending scene mode (`SceneMode::Fishing`;
+`World::enter_fishing_session` / `tick_fishing` / `exit_fishing`). The session
+seeds from the persistent save-block words the world keeps between sessions
+(`World::minigames.fishing_points` / `fishing_best_points` /
+`fishing_best_fish` / `fishing_lure` / `fishing_rod` / `fishing_casts` /
+`fishing_prizes_purchased` - retail `_DAT_8008444C..0x8008446C`) and
+`exit_fishing` banks every one back. The lure lands in the `other1` venue map
+(`SceneHost::fishing_venue_map`), the same bytes the minigames page reads. The
+`play-window` viewer starts it from the `L` key and the browser play page from
+its Fish button; both call `SceneHost::enter_fishing_from_overlay`, the door
+warp's own entry. Circle (`0x20`) casts and locks the power meter, Cross reels
+(reel A, `0x40`), Square reels harder (reel B, `0x80`); each frame's session
+events (`World::minigames.fishing_events`) seed both hosts' banner one-shots
+and queue the hook / celebration cues. `P` opens the [point
+exchange](#point-exchange-prize-shop) (Up/Down move, Left/Right switch venue,
+Enter trades), which owns the pad while open.
 
 The same host also runs the overlay's **actor-side frame**
 (`window/minigames.rs`, `tick_fishing_actors`):
@@ -790,7 +823,7 @@ The same host also runs the overlay's **actor-side frame**
   through the staged catch celebration on a landed fish - the
   `CELEBRATION_STAGE_FRAMES` timer firing `CELEBRATE_CUE` plus every
   unlocked `celebration_bursts` tier into the effect pool + SFX scheduler;
-- the strike splash (`fishing_chrome::splash_burst`) on the hook edge, the
+- the strike splash (`fishing_chrome::splash_burst`) on the cadence-match event, the
   point-exchange panel framed by `fishing_chrome::centred_panel` and swayed
   by `fishing_chrome::sway_vector`, and the overlay's developer readout
   (`debug_tile` / `debug_readout_visible`) when the dev-menu session is up

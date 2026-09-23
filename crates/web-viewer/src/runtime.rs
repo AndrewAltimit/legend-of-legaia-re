@@ -226,8 +226,6 @@ pub struct LegaiaRuntime {
     pub(crate) fishing_banners: legaia_engine_ui::FishingBanners,
     /// This tick's live banner draws, folded into the fishing HUD list.
     pub(crate) fishing_banner_draws: Vec<legaia_engine_ui::HudDraw>,
-    /// Last observed fishing phase, so the banner timers seed on phase *edges*.
-    pub(crate) fishing_prev_phase: Option<legaia_engine_core::fishing::FishingPhase>,
     /// The two point-exchange venue pages decoded alongside the species table
     /// when a fishing session starts. `None` until then (or if they don't
     /// decode).
@@ -444,7 +442,6 @@ impl LegaiaRuntime {
             cards: [const { None }; crate::cards::CARD_SLOTS],
             fishing_banners: Default::default(),
             fishing_banner_draws: Vec::new(),
-            fishing_prev_phase: None,
             fishing_venues: None,
             equip_stats: None,
             seru_names: None,

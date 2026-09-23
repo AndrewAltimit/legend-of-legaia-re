@@ -404,13 +404,13 @@ impl PlayWindowApp {
                 if let Some(s) = self.session.host.world.exit_fishing() {
                     log::info!(
                         "fishing: left with {} points (best {})",
-                        s.record().points,
-                        s.record().best_points
+                        s.record.points,
+                        s.record.best_points
                     );
                 }
             } else if self.start_fishing_minigame() {
                 log::info!(
-                    "fishing: started - Cross casts/reels(A), Square reels(B), L to quit, P = prize exchange"
+                    "fishing: started - Circle casts/locks, Cross reels(A), Square reels(B), L to quit, P = prize exchange"
                 );
             }
             return;
