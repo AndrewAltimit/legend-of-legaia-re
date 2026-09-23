@@ -968,28 +968,14 @@ impl PlayWindowApp {
                                     }
                                 }
                             }
-                            // Live playback: the idle/walk clip pair, ticked
-                            // by the world's field step (locomotion picks the
-                            // clip, the posed rebuild consumes `pose_frame`).
+                            // Live playback: the leader's whole locomotion
+                            // bank, ticked by the world's field step (the
+                            // settle tail picks the slot, the posed rebuild
+                            // consumes `pose_frame`).
                             let anim = locomotion.as_ref().and_then(|bundle| {
-                                let rec = |slot| {
-                                    legaia_asset::character_pack::locomotion_record_index(
-                                        lead, slot,
-                                    )
-                                };
-                                let idle =
-                                    legaia_engine_core::field_anim::FieldClipPlayer::from_record(
-                                        bundle,
-                                        rec(legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT),
-                                    )?;
-                                let walk =
-                                    legaia_engine_core::field_anim::FieldClipPlayer::from_record(
-                                        bundle,
-                                        rec(legaia_asset::character_pack::LOCOMOTION_WALK_SLOT),
-                                    )?;
-                                Some(legaia_engine_core::field_anim::FieldPlayerAnim::new(
-                                    idle, walk,
-                                ))
+                                legaia_engine_core::field_anim::FieldPlayerAnim::from_locomotion_bank(
+                                    bundle, lead,
+                                )
                             });
                             let animated = anim.is_some();
                             world.set_field_player_anim(anim);

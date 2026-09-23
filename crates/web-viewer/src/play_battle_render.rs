@@ -526,7 +526,9 @@ impl LegaiaRuntime {
     fn build_battle_stage(&self) -> Option<WebBattleStage> {
         let host = self.scene_host.as_ref()?;
         let scene = host.scene.as_ref()?;
-        let stage_entry = host.index.battle_stage_entry_for_scene(&scene.name)?;
+        // The region the fight starts in names the backdrop
+        // (`SceneHost::battle_stage_entry`, retail `_DAT_8007BD60`).
+        let stage_entry = host.battle_stage_entry()?;
         let mut shared: Vec<Scene> = Vec::new();
         for name in FIELD_SHARED_BLOCKS {
             if let Ok(s) = Scene::load(&host.index, name) {
@@ -633,7 +635,16 @@ impl LegaiaRuntime {
             ..
         }) = &stage
         {
-            let tmd0 = legaia_asset::battle_backdrop::drawn_objects_tmd(tmd);
+            // `_DAT_8007B64B` (region `+8` bit 5) keeps object 1.
+            let keep_object_1 = self
+                .scene_host
+                .as_ref()
+                .is_some_and(|h| h.battle_stage_keeps_object_1());
+            let tmd0 = if keep_object_1 {
+                tmd.clone()
+            } else {
+                legaia_asset::battle_backdrop::drawn_objects_tmd(tmd)
+            };
             let (mut vmesh, _oids, shading) =
                 legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd0, raw);
             let mut flat = crate::packet_color::hybrid(&vmesh, &shading);

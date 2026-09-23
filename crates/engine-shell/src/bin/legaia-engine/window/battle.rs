@@ -374,13 +374,10 @@ impl PlayWindowApp {
         let scene = self.session.host.scene.as_ref()?;
         let scene_name = scene.name.clone();
         // Not the block's first stage stream: a scene bundle carries one per
-        // sub-area, and Rim Elm's own backdrop is the second (see
-        // `ProtIndex::battle_stage_entry_for_scene`).
-        let stage_entry = self
-            .session
-            .host
-            .index
-            .battle_stage_entry_for_scene(&scene_name)?;
+        // sub-area, and the region the fight starts in names which one
+        // (`SceneHost::battle_stage_entry`, the region reader's stage
+        // variant `_DAT_8007BD60`).
+        let stage_entry = self.session.host.battle_stage_entry()?;
         let mut shared: Vec<Scene> = Vec::new();
         for name in FIELD_SHARED_BLOCKS {
             if let Ok(s) = Scene::load(&self.session.host.index, name) {
@@ -524,7 +521,12 @@ impl PlayWindowApp {
             // and drawing it painted an engine-only white streak across the
             // Tetsu arena floor. On the four-object overworld domes it keeps
             // objects 0 (sky), 2 (mountains) and 3 (the flat ground ring).
-            let tmd0 = legaia_asset::battle_backdrop::drawn_objects_tmd(tmd);
+            // `_DAT_8007B64B` (region `+8` bit 5) keeps object 1.
+            let tmd0 = if self.session.host.battle_stage_keeps_object_1() {
+                tmd.clone()
+            } else {
+                legaia_asset::battle_backdrop::drawn_objects_tmd(tmd)
+            };
             // ...and it draws that shell TWICE, the second copy under a
             // per-stage diagonal transform. The shell on the disc is an
             // authored HALF (open toward -X, -Z or +X, never +Z); the second

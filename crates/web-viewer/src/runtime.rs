@@ -2061,20 +2061,11 @@ impl LegaiaRuntime {
             flat,
             posed,
         });
-        // Live idle/walk playback: the world's field tick picks the clip off the
-        // locomotion movement flag and folds the pose into the player actor.
+        // Live locomotion playback: the leader's whole bank, from which the
+        // world's settle tail picks idle / walk / run / hop each field tick
+        // and folds the pose into the player actor.
         let anim = locomotion.as_ref().and_then(|bundle| {
-            let idle = legaia_engine_core::field_anim::FieldClipPlayer::from_record(
-                bundle,
-                rec(legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT),
-            )?;
-            let walk = legaia_engine_core::field_anim::FieldClipPlayer::from_record(
-                bundle,
-                rec(legaia_asset::character_pack::LOCOMOTION_WALK_SLOT),
-            )?;
-            Some(legaia_engine_core::field_anim::FieldPlayerAnim::new(
-                idle, walk,
-            ))
+            legaia_engine_core::field_anim::FieldPlayerAnim::from_locomotion_bank(bundle, lead)
         });
         host.world.set_field_player_anim(anim);
     }
