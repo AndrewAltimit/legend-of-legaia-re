@@ -484,11 +484,12 @@ fn tap(rt: &mut LegaiaRuntime, mask: u16) {
     let _ = rt.tick_frame();
 }
 
-/// Surface Y the enemy target strip lands on at 960x720 (stage scale 3, stage
-/// Y 166 -> 498). The strip draws **only** while the picker's cursor sits on
-/// the enemy row, which is precisely the precondition `retail_enemy_step`
-/// needs - so its glyphs are the honest probe for "the ring could run".
-const STRIP_SURFACE_Y: i64 = 498;
+/// Surface Y the target-select plaque pens its name on at 960x720 (stage
+/// scale 3; placement record `0x29` row 162, pen `162 - 2 = 160` -> 480). The
+/// plaque draws **only** while the picker's cursor sits on the enemy row,
+/// which is precisely the precondition `retail_enemy_step` needs - so its
+/// glyphs are the honest probe for "the ring could run".
+const STRIP_SURFACE_Y: i64 = 3 * (legaia_engine_vm::battle_chrome::TARGET_SELECT_Y as i64 - 2);
 
 fn strip_glyphs(rt: &mut LegaiaRuntime) -> usize {
     let v = json(&rt.play_overlay_draws_json(W, H));

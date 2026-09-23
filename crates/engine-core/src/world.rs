@@ -113,7 +113,7 @@ pub use audio_state::{
     AudioState, FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK, SfxRingOp, SideBandBank,
     VAB_01_RAW_BASE, runtime_sfx_descriptor_in, side_band_bank_for_request,
 };
-pub use battle_state::BattleState;
+pub use battle_state::{BattleState, ClipRibbon};
 pub use camera_hooks::CameraZoneRequest;
 pub use camera_rig::CameraRig;
 pub use cast_fx_state::CastFxState;

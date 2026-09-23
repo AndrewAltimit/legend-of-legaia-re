@@ -260,9 +260,49 @@ pub fn streak_quads_scheduled(
     crate::afterimage::build_streak_ribbon(corners, src.trail_id, frame_rng(frame))
 }
 
+/// Emit the **clip-tag** streak ribbon - the second retail caller of
+/// `FUN_801E1D98`, outside the move-FX dispatcher.
+///
+/// `FUN_8004CE2C` pass 2's Gala tag-`0x67` arm (`0x8004D1E8..0x8004D248`)
+/// calls the ribbon directly on every frame the committed clip's cursor sits
+/// in `0xB0..=0xF0`, with `$a0` = the **target's seat vector** (actor
+/// `+0x3C`) instead of the launch point `ctx[+0x1144]`, and `$a1 = 0xC`
+/// instead of the move-power record's trail byte. The ribbon body is the same
+/// routine, so the projection ([`project_ribbon_corners_mvp`] - constant half
+/// sizes, no Y push) and the packet chain
+/// ([`crate::afterimage::build_streak_ribbon`]) are the move-FX ribbon's.
+///
+/// `seat` is in the same world frame the host's `mvp` expects (the page
+/// scales it by its placement factor inside the MVP, as it does the
+/// move-FX launch point). Engine source:
+/// `legaia_engine_core::world::BattleState::clip_ribbon`.
+pub fn clip_ribbon_quads(
+    seat: [f32; 3],
+    trail_id: u8,
+    mvp: &Mat4,
+    frame: u32,
+) -> Vec<AfterimageQuad> {
+    let Some(corners) = project_ribbon_corners_mvp(mvp, seat) else {
+        return Vec::new();
+    };
+    crate::afterimage::build_streak_ribbon(corners, trail_id, frame_rng(frame))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clip_ribbon_projects_at_the_seat_with_the_ribbon_law() {
+        let m = cam();
+        let q = clip_ribbon_quads([0.0, 0.0, 0.0], 0xC, &m, 3);
+        // Same corners, same packets as the move-FX ribbon at that point.
+        let corners = project_ribbon_corners_mvp(&m, [0.0, 0.0, 0.0]).unwrap();
+        let direct = crate::afterimage::build_streak_ribbon(corners, 0xC, frame_rng(3));
+        assert_eq!(q, direct);
+        // Behind the camera: nothing.
+        assert!(clip_ribbon_quads([0.0, 0.0, 5000.0], 0xC, &m, 3).is_empty());
+    }
 
     /// A plain perspective * look-at facing -Z from `+z`, the shape the
     /// battle camera has.

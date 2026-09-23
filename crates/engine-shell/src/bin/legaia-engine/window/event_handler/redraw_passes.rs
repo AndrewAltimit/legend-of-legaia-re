@@ -450,18 +450,31 @@ impl PlayWindowApp {
         &self,
         r: &legaia_engine_render::Renderer,
     ) -> Vec<legaia_engine_render::afterimage::AfterimageQuad> {
-        use legaia_engine_render::streak_pass::{StreakSource, streak_quads_scheduled};
+        use legaia_engine_render::streak_pass::{
+            StreakSource, clip_ribbon_quads, streak_quads_scheduled,
+        };
         let world = &self.session.host.world;
+        let (w, h) = r.surface_size();
+        let mvp = self.battle_scene_mvp(w as f32 / h.max(1) as f32);
+        // The clip-tag ribbon (`FUN_8004CE2C` tag `0x67` ->
+        // `FUN_801E1D98(&target[+0x3C], 0xC)`) is independent of the move-FX
+        // scene: it rides a physical art's clip, not a staged effect.
+        let mut clip = world
+            .battle
+            .clip_ribbon
+            .map(|c| {
+                let seat = c.seat.map(f32::from);
+                clip_ribbon_quads(seat, c.trail_id, &mvp, world.clock.display_frames as u32)
+            })
+            .unwrap_or_default();
         let trail = world.active_move_fx_trail_texpage();
         if trail.is_none() {
-            return Vec::new();
+            return clip;
         }
         let block = world.move_fx_streak();
         let Some(src) = StreakSource::from_block(block.launch, block.half_width(), trail) else {
-            return Vec::new();
+            return clip;
         };
-        let (w, h) = r.surface_size();
-        let mvp = self.battle_scene_mvp(w as f32 / h.max(1) as f32);
         // The retail emitter schedule keys on the counter word and on the
         // acting side: party = afterimage shrinking toward the ribbon,
         // monster = ribbon throughout (`FUN_801E09F8`).
@@ -472,7 +485,8 @@ impl PlayWindowApp {
         // did not take - so the emitter phase was a property of how fast the
         // host happened to be drawing.
         let frame = world.clock.display_frames as u32;
-        let quads = streak_quads_scheduled(&src, &mvp, frame, block.counter_word, party);
+        let mut quads = streak_quads_scheduled(&src, &mvp, frame, block.counter_word, party);
+        quads.append(&mut clip);
         log::debug!(
             "move-FX streak: launch {:?} counter {:#x} half-width {} -> {} quad(s)",
             block.launch,

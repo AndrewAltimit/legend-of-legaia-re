@@ -552,6 +552,9 @@ impl World {
     fn tick_battle_impact_fx(&mut self) {
         use vm::battle_formulas::{FadeInputs, TintWords, tint_sm_step};
         use vm::battle_impact_fx as ifx;
+        // The tag-`0x67` ribbon is a per-frame call in retail: re-derived
+        // below every tick, so it drops the frame the window closes.
+        self.battle.clip_ribbon = None;
         if self.mode != SceneMode::Battle {
             return;
         }
@@ -648,10 +651,25 @@ impl World {
             return;
         };
         // `w.effect_at_target` is tag `0x67`'s per-frame
-        // `FUN_801E1D98(&target[+0x3C], 0xC)` - the chained streak ribbon
-        // (`legaia_engine_ui::afterimage`), drawn at the target's seat. The
-        // streak pass has no per-arm seat source yet, so the ribbon is not
-        // raised from here; the tint below is.
+        // `FUN_801E1D98(&target[+0x3C], 0xC)` (`addiu a0,s1,0x3c` in the
+        // delay slot at `0x8004D220`, `li a1,0xc` at `0x8004D224`): the
+        // chained streak ribbon anchored on the target's seat vector.
+        // `+0x3C..+0x43` is the spawn node's seat copied verbatim by the
+        // battle setup (`0x8005158C..0x80051598`); the engine keeps its
+        // `x`/`z` as `BattleActor::seat` and every retail seat row has
+        // `y = 0` (`crate::battle_seats`), so the seat's Y is `0`.
+        if w.effect_at_target
+            && let Some(t) = self.actors.get(target)
+        {
+            let (sx, sz) = t
+                .battle
+                .seat
+                .unwrap_or((t.move_state.world_x, t.move_state.world_z));
+            self.battle.clip_ribbon = Some(super::ClipRibbon {
+                seat: [sx, 0, sz],
+                trail_id: ifx::GALA_EFFECT_ARG,
+            });
+        }
         let tint = self
             .tables
             .move_power

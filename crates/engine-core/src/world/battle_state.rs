@@ -444,6 +444,27 @@ pub struct BattleState {
     /// a field encounter to [`crate::world::SceneMode::Field`]). Defaults to
     /// [`crate::world::SceneMode::Field`].
     pub return_mode: SceneMode,
+    /// This frame's clip-tag streak ribbon, raised by `FUN_8004CE2C` pass
+    /// 2's Gala tag-`0x67` arm (`0x8004D1E8..0x8004D248`): on every frame the
+    /// clip cursor sits in `0xB0..=0xF0` retail calls
+    /// `FUN_801E1D98(&target[+0x3C], 0xC)` - the chained ribbon anchored on
+    /// the **target's seat** with trail id `0xC`. Re-derived every tick by
+    /// the impact pass (`None` off the window), so it lives exactly as long
+    /// as the retail per-frame call does. Hosts draw it through
+    /// `legaia_engine_ui::streak_pass::clip_ribbon_quads`.
+    pub clip_ribbon: Option<ClipRibbon>,
+}
+
+/// One frame's tag-`0x67` ribbon source: the `8`-byte seat vector the
+/// retail call hands `FUN_801E1D98` in `$a0` (actor `+0x3C/+0x3E/+0x40`,
+/// the seat `FUN_800513F0` copies verbatim from the spawn node at
+/// `0x8005158C..0x80051598`) and its `$a1` trail id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClipRibbon {
+    /// Target seat, battle-world `x, y, z` (`+0x3C/+0x3E/+0x40`).
+    pub seat: [i16; 3],
+    /// Trail id - the `li a1,0xc` at `0x8004D224`.
+    pub trail_id: u8,
 }
 
 impl BattleState {
@@ -511,6 +532,7 @@ impl BattleState {
             victory: None,
             loot_applied: false,
             return_mode: SceneMode::Field,
+            clip_ribbon: None,
         }
     }
 }

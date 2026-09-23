@@ -879,6 +879,52 @@ fn gala_clip_key_0x18_freezes_the_target_in_window() {
     assert_eq!(world2.actors[1].battle.anim_rate.get(), RATE_NORMAL);
 }
 
+/// Gala's clip-tag-`0x67` arm raises the chained ribbon at the TARGET's seat
+/// with trail id `0xC` on exactly the frames the cursor sits in
+/// `0xB0..=0xF0` (`FUN_8004CE2C` `0x8004D1E8..0x8004D248`).
+#[test]
+fn gala_clip_key_0x67_raises_the_ribbon_at_the_target_seat_in_window() {
+    use vm::battle_impact_fx as ifx;
+    let mut world = World::new();
+    world.enter_battle(1, 0);
+    world.set_active_party(vec![2]);
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.active_target = 1;
+    world.actors[1].active = true;
+    world.actors[1].battle_monster_id = Some(5);
+    world.actors[1].battle.seat = Some((120, 800));
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    clips[0] = Some(trail_test_clip(0, 8));
+    clips[0xC] = Some(trail_test_clip(ifx::GALA_EFFECT_TAG, 40));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.queued_anim = 0xC;
+    world.commit_staged_battle_anim(0);
+    let mut raised = Vec::new();
+    for _ in 0..40 {
+        // The pass reads the cursor as it stands when the pass runs, which
+        // is before this tick's advance.
+        let cursor = world.actors[0]
+            .battle_animation
+            .as_ref()
+            .map_or(0, |p| p.cursor_sixteenths());
+        world.tick_battle_animations();
+        let r = world.battle.clip_ribbon;
+        assert_eq!(
+            r.is_some(),
+            ifx::GALA_EFFECT_WINDOW.contains(&cursor),
+            "ribbon raised iff the cursor {cursor:#x} is in the window"
+        );
+        if let Some(r) = r {
+            raised.push(r);
+        }
+    }
+    assert!(!raised.is_empty(), "the window never opened");
+    for r in raised {
+        assert_eq!(r.seat, [120, 0, 800]);
+        assert_eq!(r.trail_id, ifx::GALA_EFFECT_ARG);
+    }
+}
+
 /// The armed tint eases back to the neutral word, the blend drains, and
 /// the selector retires - `FUN_80050120` arm 0 over the `FUN_80050F30`
 /// per-lane ease, in the disassembly's order (`0x800501A4..0x80050210`):

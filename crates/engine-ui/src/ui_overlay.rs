@@ -667,6 +667,14 @@ pub struct BattleHudFrame<'a> {
     /// party member's action is aimed at and its element badge, on a blue
     /// plate whose right cap ends at `x = 312`, on the bar's row.
     pub target_plaque: Option<(&'a str, Option<u8>)>,
+    /// The **target-select** plaque (placement record `0x29`): the monster
+    /// the open target cursor rests on, and its element badge, on the blue
+    /// plate class at retail's seat - content box centred on `x = 0xE8`,
+    /// pulled left to end by `0x130`, row `162`
+    /// (`legaia_engine_vm::battle_chrome::target_select_plaque_x`). `None`
+    /// unless a picker's cursor sits on the enemy row
+    /// (`engine-core::battle_hud::battle_target_select_plaque`).
+    pub target_select: Option<(&'a str, Option<u8>)>,
     /// The full-width message bar (HUD element `0x5B`, placement record 91 -
     /// `(16, 236)` sliding to `(16, 194)`, width 288): the steal / stolen-item
     /// caption `engine-core::battle_hud::battle_message_bar` names. It takes
@@ -1628,6 +1636,40 @@ pub fn battle_hud_draws_for(
         stage_text(&mut text, font, name, content_x + lead, content_y, white);
     }
 
+    // ---- The target-select plaque ----
+    //
+    // Placement record `0x29`: `FUN_801D5854`'s target-cursor arm measures
+    // the target's name payload and writes the content box's rest seat
+    // (`0x801D5B4C..0x801D5BAC`); the plate is the blue class (kind pair
+    // `0x0101`), pen `(x, y - 2)`, plate `(x - 8, y - 6)` like every
+    // content-box record. The slide in from `x + 0x80` is not modelled - the
+    // plaque draws at rest.
+    if let Some((name, badge_index)) = frame.target_select.filter(|(n, _)| !n.is_empty()) {
+        use legaia_engine_vm::battle_chrome as chrome;
+        let name_w = font.layout_ascii(name).advance_x as i32;
+        let badge = badge_index.and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
+        let lead = if badge.is_some() {
+            PLAQUE_BADGE_W + PLAQUE_BADGE_GAP
+        } else {
+            0
+        };
+        let interior = lead + name_w;
+        let x = i32::from(chrome::target_select_plaque_x(interior as u16));
+        let y = i32::from(chrome::TARGET_SELECT_Y);
+        plate_run(
+            &mut text,
+            &mut sprites,
+            x - PLATE_CAP_W,
+            y - 6,
+            interior,
+            false,
+        );
+        if let Some(src) = badge {
+            stage_sprite(&mut sprites, src, x, y - 2);
+        }
+        stage_text(&mut text, font, name, x + lead, y - 2, white);
+    }
+
     // ---- The commit log ----
     //
     // Placement records `0x2B + 3n`: each committed member's name, command
@@ -1873,19 +1915,6 @@ pub fn battle_hud_draws_for(
     BattleHudDraws { text, sprites }
 }
 
-/// One laid-out row of the enemy target-selection strip.
-///
-/// Hosts build these from `engine-core::battle_hud::battle_enemy_target_rows`
-/// after running `target_picker::layout_enemy_menu_rows` with their font's
-/// measurer: `label` is the retail dedup-labelled monster name, `x` the
-/// layout's stage-pixel left edge (320-wide stage), `selected` whether the
-/// picker's cursor slot falls inside this row's formation run.
-pub struct EnemyTargetRowView<'a> {
-    pub label: &'a str,
-    pub x: i16,
-    pub selected: bool,
-}
-
 /// Stage Y of the enemy target strip. An engine seat: the row layout the
 /// strip reuses is `FUN_801D9D3C`'s, and that routine is the flow-`0x0A`
 /// battle-**intro** enemy-name banner composer (its only reference is the
@@ -1922,59 +1951,6 @@ pub fn enemy_target_menu_rows_y(host_box: Option<(i32, i32, i32, i32)>) -> i32 {
         y -= ENEMY_MENU_STEP;
     }
     y
-}
-
-/// Build [`TextDraw`]s for the enemy target-selection name strip at a
-/// caller-chosen stage row - the seat [`enemy_target_menu_rows_y`] picks,
-/// which is [`ENEMY_MENU_STAGE_Y`] unless a host box shares the strip's row.
-///
-/// The row *content* is retail's intro-banner law: dedup labels from
-/// `FUN_801D9D3C` (the flow-`0x0A` enemy-name banner composer, reused here for
-/// the picker) and the centre/relax/clamp X layout from its second half
-/// (`target_picker::layout_enemy_menu_rows`), both run by the caller. This
-/// builder only projects the laid-out rows onto the surface: each label at
-/// its stage X (integer-upscaled + centred, the same transform as the battle
-/// HUD panels), the selected row in white behind a `>` cursor, the rest
-/// dimmed.
-///
-/// There is deliberately no fixed-seat wrapper: both hosts share a row band
-/// with a host-drawn prompt box, so every caller must pass the resolved seat
-/// or it silently overprints the box.
-pub fn enemy_target_menu_draws_at(
-    font: &legaia_font::Font,
-    rows: &[EnemyTargetRowView<'_>],
-    surface: (u32, u32),
-    stage_y: i32,
-) -> Vec<TextDraw> {
-    // Default pen (ink 7), the font CLUT's (206, 206, 206).
-    let white = crate::MENU_TEXT_WHITE;
-    let dim: [f32; 4] = [0.62, 0.62, 0.66, 1.0];
-    let scale = (surface.0 / BOOT_UI_STAGE_W)
-        .min(surface.1 / BOOT_UI_STAGE_H)
-        .clamp(1, 4);
-    let origin = (
-        (surface.0 as i32 - BOOT_UI_STAGE_W as i32 * scale as i32) / 2,
-        (surface.1 as i32 - BOOT_UI_STAGE_H as i32 * scale as i32) / 2,
-    );
-    let mut out = Vec::new();
-    for row in rows {
-        let color = if row.selected { white } else { dim };
-        let mut draws = text_draws_for(
-            &font.layout_ascii(row.label),
-            (i32::from(row.x), stage_y),
-            color,
-        );
-        if row.selected {
-            draws.extend(text_draws_for(
-                &font.layout_ascii(">"),
-                (i32::from(row.x) - 9, stage_y),
-                white,
-            ));
-        }
-        scale_stage_text_draws(&mut draws, origin, scale);
-        out.extend(draws);
-    }
-    out
 }
 
 pub fn apply_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {

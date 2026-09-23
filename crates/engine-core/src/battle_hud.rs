@@ -1461,6 +1461,59 @@ pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Opti
     Some((monster_name(world, t), monster_element_badge(world, t)))
 }
 
+/// The **target-select** plaque (placement record `0x29`): the monster name
+/// (and element badge) the open target cursor rests on, or `None` while no
+/// picker's cursor is on the enemy row.
+///
+/// Retail's target-cursor arm of `FUN_801D5854` (`0x801D5B28..0x801D5BAC`)
+/// resolves the acting actor's target `+0x1DD`, measures that monster's name
+/// payload `+0x1BC` (`FUN_80035F04`) and seats record `0x29` from it; the
+/// commit arms of `FUN_801D388C` later copy that record into the commit log's
+/// target column (`jal 0x801d5718` with `a1 = 0x29`, `0x801D3E64..0x801D3E70`).
+/// Captured on `party_basic_attack_vs_gobu_gobu`: record `0x29` holds
+/// "Gobu Gobu", width `55`, second seat `(205, 162)`.
+///
+/// Every port picker that can park on the enemy row is consulted: the command
+/// session (Attack), the arts list, the spell list and the arts-input bar's
+/// own cursor. Seat law: `legaia_engine_vm::battle_chrome::target_select_plaque_x`.
+///
+/// REF: FUN_801D5854 (`0x801D5B28..0x801D5BAC`)
+pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(String, Option<u8>)> {
+    use crate::target_picker::{CursorRow, PickerState, TargetPickerSession};
+    let b = &world.battle;
+    let picker: Option<&TargetPickerSession> = b
+        .command
+        .as_ref()
+        .and_then(|c| c.picker())
+        .or_else(|| b.arts_input.as_ref().and_then(|a| a.picker()))
+        .or_else(|| {
+            b.arts_menu.as_ref().and_then(|a| match &a.phase {
+                crate::battle_arts::ArtsPhase::Targeting { picker, .. } => Some(picker),
+                _ => None,
+            })
+        })
+        .or_else(|| {
+            b.spell_menu.as_ref().and_then(|s| match &s.phase {
+                crate::battle_magic::SpellPhase::Targeting { picker, .. } => Some(picker),
+                _ => None,
+            })
+        });
+    let PickerState::Cursor {
+        row: CursorRow::Enemy,
+        slot,
+    } = picker?.state()
+    else {
+        return None;
+    };
+    let pc = party_count(world) as u8;
+    let t = pc.checked_add(slot)?;
+    let target = world.actors.get(t as usize)?;
+    if target.battle.max_hp == 0 {
+        return None;
+    }
+    Some((monster_name(world, t), monster_element_badge(world, t)))
+}
+
 /// The element badge a monster slot's plaque wears (`None` for none).
 fn monster_element_badge(world: &crate::world::World, slot: u8) -> Option<u8> {
     let actor = world.actors.get(slot as usize)?;

@@ -2287,6 +2287,7 @@ impl PlayWindowApp {
         // surface is up.
         let plaque = bh::battle_active_actor(w_ref);
         let target_plaque = bh::battle_target_plaque(w_ref);
+        let target_select = bh::battle_target_select_plaque(w_ref);
         let move_name = bh::battle_move_name(w_ref);
         let message_bar = bh::battle_message_bar(w_ref);
         let commit_log = bh::battle_commit_log(w_ref);
@@ -2330,6 +2331,7 @@ impl PlayWindowApp {
                 begin_tab: bh::battle_begin_tab_visible(w_ref),
                 move_name: move_name.as_deref(),
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
+                target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: bh::battle_ring_ap_plate_value(w_ref),
                 commit_log: &commit_log,
@@ -2498,49 +2500,36 @@ impl PlayWindowApp {
         out
     }
 
-    /// The retail enemy target-name strip for a picker parked on the enemy
-    /// row: rows deduplicated + labelled by the ported `FUN_801D9D3C`
-    /// (`battle_enemy_target_rows`), placed by its centre/relax/clamp layout
-    /// with this window's font as the measurer, cursor row highlighted.
-    /// `None` when the cursor is not on the enemy row (ally / sweep states
-    /// keep their text line) or no monster is up.
+    /// The enemy-row half of a target picker's on-screen text.
+    ///
+    /// Retail draws **one** plaque for the target cursor - placement record
+    /// `0x29`, seated by `FUN_801D5854`'s target arm at `0xE8 - w/2`, row
+    /// `162` - and that plaque rides the shared battle-HUD builder
+    /// (`BattleHudFrame::target_select`, filled from
+    /// `battle_hud::battle_target_select_plaque`) so it lands on the same
+    /// pixels on both hosts. This returns an empty draw list while the cursor
+    /// sits on the enemy row, so the caller does not add its text fallback;
+    /// `None` on the ally / sweep states, which keep their text line.
+    ///
+    /// The earlier dedup-name strip (the `FUN_801D9D3C` intro-banner layout
+    /// at stage row 166) is retired here: that routine is the battle-intro
+    /// banner's composer, and its strip overprinted the commit log's target
+    /// column.
     pub(super) fn enemy_target_strip_draws(
         &self,
         picker: &legaia_engine_core::target_picker::TargetPickerSession,
-        w: u32,
-        h: u32,
+        _w: u32,
+        _h: u32,
     ) -> Option<Vec<TextDraw>> {
-        use legaia_engine_core::target_picker::{CursorRow, PickerState, layout_enemy_menu_rows};
-        let PickerState::Cursor {
-            row: CursorRow::Enemy,
-            slot,
-        } = picker.state()
-        else {
-            return None;
-        };
-        let mut rows =
-            legaia_engine_core::battle_hud::battle_enemy_target_rows(&self.session.host.world);
-        if rows.is_empty() {
-            return None;
-        }
-        layout_enemy_menu_rows(&mut rows, |s| self.font.layout_ascii(s).advance_x as i16);
-        let views: Vec<legaia_engine_render::EnemyTargetRowView<'_>> = rows
-            .iter()
-            .map(|r| legaia_engine_render::EnemyTargetRowView {
-                label: &r.label,
-                x: r.x,
-                selected: slot >= r.first_slot && slot < r.first_slot + r.members,
-            })
-            .collect();
-        // The strip and a bottom-anchored sparring prompt share stage row 166
-        // when the prompt runs to three lines, so the strip steps clear of the
-        // live box's drawn footprint (`enemy_target_menu_rows_y`).
-        Some(legaia_engine_render::enemy_target_menu_draws_at(
-            &self.font,
-            &views,
-            (w, h),
-            legaia_engine_render::enemy_target_menu_rows_y(self.battle_tutorial_stage_rect()),
-        ))
+        use legaia_engine_core::target_picker::{CursorRow, PickerState};
+        matches!(
+            picker.state(),
+            PickerState::Cursor {
+                row: CursorRow::Enemy,
+                ..
+            }
+        )
+        .then(Vec::new)
     }
 }
 
