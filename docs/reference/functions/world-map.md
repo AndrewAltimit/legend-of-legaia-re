@@ -109,6 +109,8 @@ World-map encounter handler. 349 instructions / 1396 bytes. `(entity_ptr, resolv
 
 Maps to [`WorldMapEntityHost::on_encounter`] in `crates/engine-vm/src/world_map.rs`.
 
+With `a1 = 0` it is the **region re-read** that field op `0x3E`'s scripted-battle arm runs (`jal` at `0x801E0710`): it re-derives the player's region and re-seats its battle setup - `_DAT_8007BD60 = region[+8] & 0x1F`, scratchpad `0x1F800394 |= 0x300000`, and on the `ctrl[+0x5F] >= 0xC` layout `_DAT_8007B64B` and the `0x800845xx` triple from `region[+9..+11]` - then returns at `beqz fp` (`0x801DA16C`) before the step roll. The roll itself is an inlined copy of `FUN_801DDF48` (`0x801DA2D4..0x801DA35C`) storing `_DAT_8007B5FC`. The port models neither half of the region re-read.
+
 ### `FUN_801D7EA0` (world_map overlay, 832 bytes)
 
 Parametric POLY_FT4 emitter. Gated by one-shot self-clearing flag `_DAT_801F351C`. 224-iter outer loop emitting 2× POLY_FT4 (literal `0x2C808080` GP0 cmd, chain tag `0x9000000`) + 1 small prim (chain tag `0x3000000`) per iter using cos-rotation projection from the LUT at `0x8007B81C`. ~670 prims per call. Horizon / sky / animated background. The bulk continent (~4300 POLY_FT4 prims per kingdom) is **not** emitted here - it flows through ordinary case-5 TMD rendering via `FUN_80043390`'s overlay-mode dispatch table at `0x801F8968` (eight per-prim fog-enabled leaves at `0x801F7644..0x801F8690`, each a SCUS-side sibling body plus a GTE `dpcs`/`dpct` distance-cue post-process).

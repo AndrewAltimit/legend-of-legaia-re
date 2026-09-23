@@ -73,6 +73,8 @@ Ports: `legaia_engine_ui::other_game_hud` (the two quad emitters + the decimal r
 | `801D050C` | **Centred sprite-quad emitter** - a `POLY_GT4` packet from the scratchpad pool `0x1F800314+0x8C`, textured and Gouraud-shaded from the descriptor table at `0x801D170C` (stride `0x14`), centred on the argument point. [details](#prot-0977-hud-primitives). `see ghidra/scripts/funcs/overlay_0977_other_game_801d050c.txt`. |
 | `801D08EC` | **Corner-anchored sibling** of `801D050C`: same packet, but the argument point is the quad's top-left and the brightness argument is clamped to `0..=0xFF` first. [details](#prot-0977-hud-primitives). `see ghidra/scripts/funcs/overlay_0977_other_game_801d08ec.txt`. |
 | `801D1308` | **Decimal readout** - up to eight digits through `FUN_801D050C`, stepping the digit record's texture column per glyph. Negative values draw nothing. [details](#prot-0977-hud-primitives). `see ghidra/scripts/funcs/overlay_0977_other_game_801d1308.txt`. |
+| `801D042C` | **Course card** (PROT 0977). Six corner-anchored draws from placement records `5 + course` and `8`, the course word at `0x801D1A90` - a subtractive shadow, an under-layer and an additive face. Called by hub arms 4 and 5 (`0x801CFB78` / `0x801CFBBC`). Port `other_game_hud::course_card_draws` ([`minigame-muscle-dome.md`](../../subsystems/minigame-muscle-dome.md)). |
+| `801D1610` | **Backdrop shade** (PROT 0977). A subtractive `POLY_G4` (draw-mode tpage `0x46`, ABR 2) whose level runs `0x64` down to `0`; one caller, `0x801D01AC`. The port draws it as alpha bands, since neither host blends subtractively. |
 | `801D1288` | **Round-robin SFX cue** - one `FUN_80065034` voice-attr call per frame across voices `0x10..=0x13` (counter `DAT_801D1AE4 & 3`), at program `0` / tone `1` / note `0x3C`. Its last two arguments are `vol_l` / `vol_r`, halved out of the voice-volume config `_DAT_80084580`; the earlier "positioned from the party-block word" reading is falsified, see [`minigame-muscle-dome.md`](../../subsystems/minigame-muscle-dome.md#the-arenas-per-frame-voice-cue-fun_801d1288). Not a sprite emitter - `FUN_80065034` is the libsnd `SpuSetVoiceAttr` analogue. `see ghidra/scripts/funcs/overlay_0977_other_game_801d1288.txt`. |
 | `801D14B0` | **Step-size scaler** - a leaf: returns the argument unchanged while flag `DAT_801D1AB4` is set, else `arg/5` (`arg > 5`, via the `0x66666667` magic multiply), `1` (`arg < 3`), or `arg/2`. The **same routine is linked into PROT 0976 as `FUN_801D6710`** (the Baka tally drain), where only the gate global is relocated - `lui v0,0x801e; lw v0,-0x4100(v0)` reads `_DAT_801DBF00` there against this image's `_DAT_801D1AB4`, and **twenty-two of the twenty-four** instructions match one for one. A common-**prefix** byte compare reports **zero** bytes in common because the relocated `lui` is the first word, which measures where the compare starts rather than what the bodies share. `see ghidra/scripts/funcs/overlay_0977_other_game_801d14b0.txt`. |
 | `801CF074` (true VA; the `801c085c` dump is mis-based, `+0xE818`) | **Contest score-tally screen** - the six-row label + number readout, and the count-up that fills it. [details](#the-contest-score-tally-screen-fun_801cf074). Correctly based dump `overlay_arena_init_0977_801cf074.txt` (2044 B, taken from the static PROT 0977 image at `0x801CE818`); the older `see ghidra/scripts/funcs/overlay_0977_other_game_801c085c.txt` prints the same bytes at the wrong VA. |
@@ -114,6 +116,13 @@ so the byte census stops re-proposing it:
 No `jr ra` sits between the image head and either `0x801CEAC4` or `0x801CEF6C`, and
 the first one in the image is at `0x801CF06C` - so both are interior to the same
 body, the contest entry `FUN_801CEA6C`.
+
+### Baka Fighter's per-fighter move table (PROT 0976)
+
+| Address | Role |
+|---|---|
+| `801D553C` | **Move-table writer.** Walks the seventeen-word pointer table at `0x801DB8B8` (bound `sltiu v0,s7,0x11` at `0x801D5754`) and, per fighter, nine `0x60`-byte move records (`slti v0,s5,9` at `0x801D5710`), formatting each record's words and its `+0x1C` count of eight-byte points at `+0x20` into a text buffer handed to `FUN_8003E7F0`. Name tags at `0x801DB7A8`. One `jal`, at `0x801D1E90`. |
+| `801D57BC` | **Move-record reader.** `(fighter, move)` -> record `table[fighter] + move * 0x60`, point count `+0x1C` bounded below eight. One `jal`, at `0x801D527C`. The seventeen blocks tile `0x801D7E28..0x801DB788` exactly. |
 
 ## Dev modules OTHER2 / OTHER3 (PROT 0973 / 0974)
 
