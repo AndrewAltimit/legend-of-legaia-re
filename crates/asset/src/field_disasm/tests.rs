@@ -210,7 +210,7 @@ fn warp_uses_six_bytes_when_op0_ge_100() {
 }
 
 #[test]
-fn interact_uses_three_bytes_when_op0_under_100() {
+fn scripted_battle_uses_three_bytes_when_op0_under_100() {
     let bc = [0x3Eu8, 5, 0xAB];
     let insn = decode(&bc, 0).unwrap();
     assert_eq!(insn.size, 3);
@@ -671,4 +671,48 @@ fn text_lead_names_the_lead_byte_of_every_text_carrying_shape() {
     let i = decode(&op, 0).unwrap();
     assert_eq!(i.size, 5);
     assert_eq!(text_lead(&op, &i), None);
+}
+
+#[test]
+fn op43_arc_jump_decodes_tile_apex_frames_and_explicit_y() {
+    // town01 `C3 F8 00 5F 0D 26 00 1C 00`: player arc to tile (0x5F, 0x0D),
+    // apex 0x26, 0x1C frames. The halfwords are the arc's apex / frame
+    // count, not a resume PC.
+    let bc = [0xC3u8, 0xF8, 0x00, 0x5F, 0x0D, 0x26, 0x00, 0x1C, 0x00];
+    let insn = decode(&bc, 0).unwrap();
+    assert_eq!(insn.size, 9);
+    match insn.info {
+        InsnInfo::ActorCtrl {
+            kind:
+                ActorCtrlKind::ArcJump {
+                    sub_op,
+                    tile_x,
+                    tile_z,
+                    apex,
+                    frames,
+                    y,
+                },
+            ..
+        } => {
+            assert_eq!(
+                (sub_op, tile_x, tile_z, apex, frames, y),
+                (0, 0x5F, 0x0D, 0x26, 0x1C, None)
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    // Sub-A carries an explicit landing height, stored negated
+    // (`0x801DF524..0x801DF530`: `jal 0x8003CE9C` on `+7`, then `negu`).
+    let bc = [0x43u8, 0x0A, 0x76, 0x70, 0x50, 0x00, 0x32, 0x00, 0xA0, 0x00];
+    let insn = decode(&bc, 0).unwrap();
+    assert_eq!(insn.size, 10);
+    match insn.info {
+        InsnInfo::ActorCtrl {
+            kind: ActorCtrlKind::ArcJump {
+                apex, frames, y, ..
+            },
+            ..
+        } => assert_eq!((apex, frames, y), (0x50, 0x32, Some(-0xA0))),
+        other => panic!("{other:?}"),
+    }
 }

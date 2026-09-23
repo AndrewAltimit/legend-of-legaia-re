@@ -69,7 +69,7 @@ fn render_mnemonic(insn: &Insn) -> String {
             if *is_warp {
                 format!("Warp map_id={}", op0 - 100)
             } else {
-                format!("Interact op0=0x{op0:02X} op1=0x{op1:02X}")
+                format!("ScriptedBattle op0=0x{op0:02X} formation_row={op1}")
             }
         }
         ViewWindow { long, op0, .. } => format!(

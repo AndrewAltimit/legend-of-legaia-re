@@ -31,25 +31,19 @@ pub(super) fn decode_actor_ctrl(
         })
     };
     match sub_op {
-        0 | 1 => {
-            need(7)?;
-            let target_offset_pc = operand + 3;
+        0 | 1 | 0xA | 0xB => {
+            let wide = sub_op >= 0xA;
+            need(if wide { 9 } else { 7 })?;
+            let s16 = |at: usize| i16::from_le_bytes([bytecode[at], bytecode[at + 1]]);
             mk(
-                header_size + 7,
-                ActorCtrlKind::HaltAcquire {
+                header_size + if wide { 9 } else { 7 },
+                ActorCtrlKind::ArcJump {
                     sub_op,
-                    target_offset_pc,
-                },
-            )
-        }
-        0xA | 0xB => {
-            need(9)?;
-            let target_offset_pc = operand + 7;
-            mk(
-                header_size + 9,
-                ActorCtrlKind::HaltAcquire {
-                    sub_op,
-                    target_offset_pc,
+                    tile_x: bytecode[operand + 1],
+                    tile_z: bytecode[operand + 2],
+                    apex: s16(operand + 3),
+                    frames: s16(operand + 5),
+                    y: wide.then(|| s16(operand + 7).wrapping_neg()),
                 },
             )
         }

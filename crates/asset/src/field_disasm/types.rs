@@ -64,7 +64,9 @@ pub enum InsnInfo {
         delta: u16,
         target: usize,
     },
-    /// `0x3E` - WARP (op0 >= 100) / INTERACT.
+    /// `0x3E` - WARP (op0 >= 100) / scripted-battle install (op0 `0xFF` or
+    /// `< 100`; `op1` = MAN formation row). The variant name predates the
+    /// battle reading; the non-warp arm arms no interaction script.
     WarpOrInteract { op0: u8, op1: u8, is_warp: bool },
     /// `0x46 VIEW_WINDOW` (the camera visible-tile-window setter).
     ViewWindow {
@@ -268,8 +270,24 @@ pub enum EffectKind {
 
 #[derive(Debug, Clone)]
 pub enum ActorCtrlKind {
-    /// Halt-acquire dispatcher (sub-0 / sub-1: 5 bytes, sub-A / sub-B: 9 bytes).
-    HaltAcquire { sub_op: u8, target_offset_pc: usize },
+    /// Sub-0 / 1 / A / B: scripted **arc jump** - halt the target actor and
+    /// hop it along a quadratic arc to a landing point (sub-0/1: 7 operand
+    /// bytes, sub-A/B: 9). The operand is `[sub][tile_x][tile_z][apex: s16]
+    /// [frames: s16]` plus `[y: s16]` on sub-A/B. A tile byte encodes
+    /// `(b & 0x7F) * 128 + 0x40`, `+0x40` more when bit 7 is set; both tile
+    /// bytes zero means "hop in place". The landing Y is the floor under the
+    /// tile, or `-y` on sub-A/B. Sub-1/B additionally make the camera follow
+    /// a player arc. None of the halfwords is a PC: the arm
+    /// (`FUN_801DE840` case `0x43`, `0x801DF384..0x801DF5B8` in PROT 0897)
+    /// passes apex / frames to `FUN_801D25EC` as `a2` / `a3`.
+    ArcJump {
+        sub_op: u8,
+        tile_x: u8,
+        tile_z: u8,
+        apex: i16,
+        frames: i16,
+        y: Option<i16>,
+    },
     /// Sub-2: 8-byte 3-actor talk.
     ThreeActorTalk {
         actors: [u8; 3],
