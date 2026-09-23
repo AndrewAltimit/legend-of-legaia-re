@@ -41,6 +41,10 @@
 //!
 //! `_DAT_8007B6B0` is not only this warp's word: `-1000` is the "landed"
 //! sentinel other readers test, and the world-map controller writes it too.
+//! It lives for the rest of the landing tick only: the field overlay's entity
+//! tick `FUN_801DA51C`, which runs the system channel after the player, ends
+//! by comparing the word with `-0x3e8` and storing `0` (`0x801DA7C8..0x801DA7D8`)
+//! - see [`clear_landed_sentinel`].
 
 /// `_DAT_8007B6B0` on the frame a kind-0 crossing arms the warp
 /// (`addiu v0, zero, 0x26` at `0x801D2214`).
@@ -223,6 +227,25 @@ pub fn pad_suppressed(warp: &WarpTimer) -> bool {
     warp.timer > 0 || warp.hold != 0
 }
 
+/// The tail of the entity tick `FUN_801DA51C` (`0x801DA7C4..0x801DA7D8`,
+/// PROT 0897): `lw v1,-0x4950(a0)` / `li v0,-0x3e8` / `bne` / `sw zero,
+/// -0x4950(a0)` - a `-1000` landed sentinel in `_DAT_8007B6B0` is cleared to
+/// `0`. The system channel runs this tick after the player's settle, so the
+/// sentinel a landing parks is gone before the next tick's readers look.
+/// Retail reaches the tail only while the channel's `+0x8A` is `0`, the
+/// scratchpad dialogue bit `0x1F800394 & 0x8000` is clear and the channel's
+/// own `+0x10 & 0x80000` lock is clear (`0x801DA750..0x801DA784`). Returns
+/// whether it cleared.
+///
+/// PORT: FUN_801DA51C (the `-1000` sentinel clear, `0x801DA7C4..0x801DA7D8`)
+pub fn clear_landed_sentinel(warp: &mut WarpTimer) -> bool {
+    if warp.timer == WARP_LANDED_SENTINEL {
+        warp.timer = 0;
+        return true;
+    }
+    false
+}
+
 /// Whether a crossed cell passes the object-index filter both walk-on arms
 /// sit behind: the scene map word at `*(0x1F8003EC) + 0x8000 + x * 2 + z *
 /// 256` ANDed with [`WALK_ON_CELL_MASK`] (`0x801D2104..0x801D2144`).
@@ -261,6 +284,25 @@ mod tests {
             drain_post_warp_hold(&mut w, 1);
         }
         assert!(!pad_suppressed(&w));
+    }
+
+    #[test]
+    fn the_system_channel_clears_the_landed_sentinel() {
+        let mut w = WarpTimer::default();
+        arm_warp(&mut w, (4, 4));
+        assert!(!clear_landed_sentinel(&mut w), "a running timer is kept");
+        assert_eq!(w.timer, WARP_TIMER_FRAMES);
+        w.timer = 1;
+        assert!(matches!(
+            tick_warp_timer(&mut w, 1, 1),
+            WarpStep::Landed { .. }
+        ));
+        assert_eq!(w.timer, WARP_LANDED_SENTINEL);
+        assert!(clear_landed_sentinel(&mut w));
+        assert_eq!(w.timer, 0, "cleared on the landing tick");
+        assert_eq!(w.hold, POST_WARP_HOLD_FRAMES, "the hold is untouched");
+        assert!(pad_suppressed(&w), "the hold still keeps the pad off");
+        assert!(!clear_landed_sentinel(&mut w));
     }
 
     #[test]

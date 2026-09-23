@@ -84,9 +84,22 @@ impl World {
     /// Retail also tags the pool actor running `0x801DA7F0` for tear-down
     /// on every running frame; the port has no such actor to tag.
     ///
+    /// Every frame ends with the system channel's clear of the `-1000`
+    /// landed sentinel ([`warp_tile::clear_landed_sentinel`]), which retail
+    /// runs later in the same tick from `FUN_801DA51C`: the timer reads
+    /// `-1000` only between the landing and the end of its own tick. The
+    /// channel's dialogue / lock gates are not modelled - the landing frame
+    /// has neither up.
+    ///
     /// REF: FUN_801D1EC4 (ported as [`warp_tile::tick_warp_timer`]),
-    /// FUN_801DDF48, FUN_80019278
+    /// FUN_801DDF48, FUN_80019278, FUN_801DA51C
     pub fn tick_field_warp(&mut self) -> FieldWarpTick {
+        let tick = self.tick_field_warp_timer();
+        warp_tile::clear_landed_sentinel(&mut self.locomotion.warp);
+        tick
+    }
+
+    fn tick_field_warp_timer(&mut self) -> FieldWarpTick {
         let delta = self.move_vm.ramp_ratio.max(1);
         if let Some(left) = self.locomotion.warp_fade_in_in.as_mut() {
             *left -= i32::from(delta);
@@ -201,6 +214,11 @@ mod tests {
         let ms = &w.actors[slot].move_state;
         assert_eq!((ms.world_x, ms.world_z), (21 * 64 + 64, 41 * 64));
         assert_eq!(w.encounter_step_counter(), 300, "a live counter carries");
+        // The system channel clears the -1000 sentinel the same tick.
+        assert_eq!(
+            w.locomotion.warp.timer, 0,
+            "sentinel cleared on the landing tick"
+        );
         // The hold keeps the pad off after the landing.
         assert!(vm::field_warp_tile::pad_suppressed(&w.locomotion.warp));
     }
