@@ -1121,7 +1121,7 @@ channel - but it is the thing to check before filing "op X does nothing".
 | `0x10` / `0x11` / `0x12` | the actor flag word and clip-control word on the channel; the global halves are seeded from and written back to `World::flags.story_flags` each tick |
 | `0x14` | published into the field-VM channel's `+0x72` so `World::field_npc_render_scale` - the accessor both hosts consult before drawing an NPC - sees it |
 | `0x02` / `0x0A` / `0x0B` | the requested-move pair reaches `carry_npc_run_anim`; the translucency bit has no consumer |
-| `0x09` | runs the same enqueue the field VM's op `0x36` sub-`0` runs - `World::audio.sfx_cue_cursor` / `sfx_parked_slot` / `sfx_cue_delays` - so a following delay write lands on the slot this op parked; the cue **id** is kept on the channel's ring copy and no host plays a field SFX cue yet |
+| `0x09` | runs the same enqueue the field VM's op `0x36` sub-`0` runs - `World::audio.sfx_cue_cursor` / `sfx_parked_slot` / `sfx_cue_delays` - so a following delay write lands on the slot this op parked; the cue **id** crosses to the hosts as `SfxRingOp::Push`, which both replay into their SFX ring and play |
 | `0x0C` | tint and draw-mode ramp on the channel; no NPC tint reaches either host's draw list |
 | `0x0E` | `World::npcs.models`, keyed by placement slot, read back through `World::field_npc_live_model`; each host resolves the bytes through `SceneHost::model_bank` (`model_bank::SceneModelBank::tmd_bytes`, all 215 authored sites) and re-uploads that slot's mesh |
 | `0x13` | no VRAM blit is reachable from a field-actor tick; `engine-render` owns the only VRAM |

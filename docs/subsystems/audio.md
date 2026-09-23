@@ -1035,6 +1035,36 @@ A scene *music* VAB's program 0 is an ordinary melodic instrument instead - in t
 
 Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.rs).
 
+### The field's scripted cues ride the retail ring
+
+The field scripts' cues are not `PendingCue`s. Field-VM op `0x36` sub `0` and
+the motion VM's op `0x09` call the ring enqueue `FUN_80035B50` with the id
+straight from their bytecode, and op `0x36` sub `4` sets that slot's
+countdown through `FUN_80035BAC`
+([`sfx-table.md`](../formats/sfx-table.md#the-fields-producers-op-0x36-and-the-motion-vms-op-0x09)).
+The engine queues each call on the world as a `SfxRingOp`; the native
+`BootSession::route_field_sfx` and the browser play page's `route_field_sfx`
+replay the queue onto their scheduler's four-slot ring every tick, and the
+scheduler returns due ring cues in `SfxFireBatch::ring`, apart from the router
+queue. A ring id is keyed as the drainer `FUN_80016B6C` keys it: below `0x200`
+through the static table and its category's bank, at or above it through the
+scene's own prescript record 0 and the bank that row's `+4` names - the
+side-band slot `3` in a town, staged behind the BGM from the op-`0x36` sub-`1`
+request ([`sfx-table.md`](../formats/sfx-table.md#the-side-band-bank-a-field-script-selects)).
+
+Across every scene MAN on the disc, every scripted id resolves to a row of its
+own scene's bank except one: `balden2`'s scripts push `0x20B`, one row past its
+eleven-row record 0, which reads the next record's header - voice count zero -
+and keys nothing in retail either. `engine-core/tests/field_sfx_ring_disc.rs`
+is the census. No scene reaches either producer with no input in its first
+4000 ticks: the sites sit behind interactions, walk-ons and timeline branches.
+
+The static half of a field cue is mostly category `6` (the rest are category `0`),
+and slot `6` (PROT 0876) is the one pinned bank neither host stages - it
+shares slot `2`'s SPU region and retail refills that region per mode. Until a
+host swaps the region on the field/battle transition, a category-`6` cue keys
+the class-2 fallback bank (PROT 0869) and sounds the wrong sample.
+
 ## XA-ADPCM
 
 `crates/xa` decodes CD-XA 4-bit ADPCM bit-exactly: on a real cutscene track its per-channel PCM matches an external lossless reference decode sample-for-sample. The on-disc `.XA` / `.STR` audio is standard CD-XA Mode 2 Form 2 - the earlier "non-standard interleave" was Form-1 truncation damage in the old extractor, not a bespoke format. The demuxer (`legaia_xa::demux`) splits raw 2352-byte sectors by `(file_no, ch_no)` and the group decoder reconstructs each channel. See [`formats/xa.md`](../formats/xa.md) for the sound-group decode (parameter/nibble layout, full-precision predictor) and [Cutscene / STR](cutscene.md) for the interleaved A/V path.
@@ -1608,7 +1638,18 @@ parity comparand. What is left on this axis is the **key-on rate**
 (`VoiceAllocationStats::onsets_per_frame`, and `onset_ratio` on the
 comparison): a key-on is a register write the score performs from the game's
 own vsync handler, so it is on the emulated clock on both sides, and on the
-aligned window the two sides' rates agree. The capture probe that carries the
+aligned window the two sides' rates agree.
+
+The alignment is not optional for this statistic either. Against the
+250-frame `s3_rimelm_freeroam` window, an engine trace of `3601` frames aligns
+at engine frame `3111` and reads `0.560` key-ons per frame against retail's
+`0.488` (ratio `1.148`); the 120-frame window aligns at `3112` and reads
+`0.592` against `0.558` (ratio `1.060`). An engine trace only as long as the
+retail window has nowhere to slide - the best offset is frame `1`, the track's
+opening bars - and the same pairing then reads `0.244` against `0.488`, a
+ratio of `0.5` that is a statement about which bars were compared, not about
+the port. Ask `audio-trace` for at least the aligned frame plus the retail
+window's length. The capture probe that carries the
 wall-clock stamp is
 [`autorun_w1a_audio_clock.lua`](../../scripts/pcsx-redux/autorun_w1a_audio_clock.lua),
 and `scripts/pcsx-redux/analyze_audio_clock.py` is the offline half.

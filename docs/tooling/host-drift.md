@@ -2479,6 +2479,27 @@ harness provides, and the retail references (`v0_1_tetsu_dialogue_accept`
 for the dialogue box: border rows 9 and 63, columns 31..287, the same
 `(206, 206, 206)` ink) have no port frame to pair with.
 
+## The field SFX ring: one producer queue, two replays
+
+The field scripts' cue producers (field-VM op `0x36` sub `0` / `4`, the motion
+VM's op `0x09`) run inside `World::tick`, but the ring they write lives with
+the SPU, on the host side of the `engine-core` / `engine-audio` boundary. The
+world therefore queues each call as a `SfxRingOp` and **both** hosts replay the
+queue: the native `BootSession::route_field_sfx` into `AudioBgmDirector`, the
+browser play page's `route_field_sfx` into `PlaySfx::sched`. The two share the
+other halves too - the side-band bank resolver
+(`World::side_band_bank`) and the runtime-row lookup
+(`runtime_sfx_descriptor_in`) are engine functions, and each host only stages
+and keys. The minigames page has no field and no queue to drain.
+
+Two things a one-host reading of this would get wrong. The ring ages by the
+vsyncs one host tick spans (`display_frame_step`, one), not by the game-tick
+cadence `frame_step`: a host that fed it `frame_step` would play every delayed
+cue at twice retail's rate at the field cadence of 2. And a ring id is never
+routed through `classify_cue` - the scheduler returns ring cues in their own
+list - because every runtime-bank id (`>= 0x200`) would otherwise land on the
+CD-XA voice leg and be declined.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;

@@ -108,10 +108,22 @@ DAT_1F800393 = max(adaptive, DAT_8007B9D8);
 | `FUN_801CFDA0` | 3 | Field-to-battle intro transition |
 | `FUN_801DC6B4` / `FUN_801DE234` / `FUN_801DD35C` | 1 | Menu family; save/restore idiom |
 | `FUN_801CF678` | 1 / 4 | Baka Fighter duel / scripted beat |
-| `FUN_801D362C` | script | Cutscene dialogue; operand at `param_2 + 4` |
+| `FUN_801D362C` | script | Move-VM `0x2F` `OVERLAY_EXT` sub-op `0x2F`: the halfword at `pc + 4`. `opdeene`'s prescript record 16 opens with it (operand `3`) |
 
 `FUN_801D6704`'s install is `sw s0,-0x4628(v0)` at `0x801D6990`, with `li s0,0x2`
 in the preceding instruction at `0x801D6988` (`overlay_0897`, base `0x801CE818`).
+
+The `FUN_801D362C` row is the move VM's extension dispatcher, not a dialogue
+routine: jump-table slot `0x2F` of `0x801CE868` is `0x801D45D4`, which loads
+`lh v1,4(s3)` and stores it with `sw v1,-0x4628(v0)` at `0x801D45E4`
+([`move-vm-overlay-ext.md`](move-vm-overlay-ext.md)). Across the extracted PROT
+corpus the byte pattern `2F 00 2F 00 <v> 00` occurs in five scene prescripts -
+`opdeene` (`3`), `jagaroom` (`3`), `juui1` (`3`, twice), `dohaty` (`5`, twice),
+`concnow` (`5`) - so the opening cutscene's cadence of 3, which the cold-boot
+`opdeene` capture reads at `DAT_8007B9D8`, is installed by the scene's own
+stager, not by a mode loader. The engine applies it in
+`MoveVmHostImpl::ext_set_8007b9d8`, raising `FrameClock::frame_step_floor`
+and the cadence together.
 
 `FUN_801CFDA0` is more than a floor installer - it is the field-to-battle intro
 particle builder (dump `overlay_field_battle_intro_801cfda0.txt`). After setting

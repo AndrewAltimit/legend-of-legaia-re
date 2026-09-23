@@ -129,6 +129,71 @@ Port: `legaia_engine_audio::sfx_ring` (`SfxCueRing::push_cue` / `set_last_delay`
 `replace_last` for the three producers). The scheduler's `enqueue` is a
 port-side unbounded delay queue, not `FUN_80035B50`.
 
+### The field's producers: op `0x36` and the motion VM's op `0x09`
+
+Two field scripts reach `FUN_80035B50`, and both pass the cue id straight from
+their bytecode:
+
+| Producer | Call site | Argument |
+|---|---|---|
+| field VM op `0x36`, `word0 = 0x8000` (sub `0`) | `jal 0x80035B50` at `0x801E0348` (PROT 0897) | `a0 = (s16)word1` |
+| field VM op `0x36`, `word0 = 0x8004` (sub `4`) | `jal 0x80035BAC` at `0x801E03D8` | `a0 = (s16)word1`, the countdown in vsyncs |
+| motion VM (`FUN_80038158`) op `0x09` `[09 lo hi]` | `jal 0x80035B50` at `0x80039178` | `a0 = (s16)(lo + (hi << 8))` |
+
+Sub `0` runs only while the side-band request pair is settled
+(`_DAT_8007BABC == _DAT_8007BAA0`, `0x801E032C..0x801E0340`); otherwise the
+script halts at PC. The scripts pair the two subs as `36 00 80 <id>` then
+`36 04 80 <delay>`, so the delay write lands on the slot the push just latched.
+
+The disc's field VM corpus (`asset field-op-census --only 36`) carries 3 828
+sub-`0` sites and 2 690 sub-`4` sites across 133 carriers. The ids split
+between both halves of the table: static ids `0x0E..=0x47` (every one a
+category-`6` or category-`0` row - `0x2C`, `0x29`, `0x2D`, `0x2A` lead), and
+runtime ids `0x200..=0x25F`, which resolve through the scene's own prescript
+record 0 ([above](#ids--0x200-come-from-the-current-bundles-record-0)). `rugi`
+alone carries 587 sites; `opdeene`'s cutscene timeline pushes `0x2A` and `0x29`
+with no input.
+
+Port: the engine queues each call as `legaia_engine_core::world::SfxRingOp`
+(`World::take_sfx_ring_ops`); the native `BootSession` and the browser play
+page replay the queue onto their `SfxScheduler`'s ring every tick, and the
+scheduler hands ring cues back apart from its router queue - a ring id is the
+drainer's input, so it never goes through `classify_cue`. A runtime id keys the
+row `World::runtime_sfx_descriptor` returns, through the bank the row's own
+`+4` names, with no fallback bank. The ring ages by the vsyncs one host tick
+spans (one), which is retail's per-game-tick `DAT_1F800393` decrement spread
+over the same wall time.
+
+### The side-band bank a field script selects
+
+A per-scene runtime row names category `3`, the side-band slot, and op `0x36`
+sub `1` picks which `vab_01` bank fills it: the script stores the id into
+`_DAT_8007BABC`, and `FUN_800243F0`'s second streaming slot resolves it at
+`0x800248B4..0x8002494C`. The arms run in sequence, later ones overwriting
+earlier ones:
+
+| Request id | PROT raw index | Slot |
+|---|---|---|
+| `< 1000` | `*(0x8007BBE4) + 2` | `3` |
+| `1000..=1999` | `*(0x8007BBE4) + 2` | `6` |
+| `2000..=2999` | `*(0x8007BBE4) + id - 2000` | `3` |
+| `>= 3000` | `*(0x8007BBE4) + id - 3000` | `6` |
+| `0x1000` | none - the request is copied onto the acknowledge cell and nothing loads | - |
+
+The first two rows are what is left of two scene-local arms
+(`*(0x80084540) + id` and `+ id - 1000`): the `id < 2000` arm at `0x80024938`
+overwrites their index with `vab_01 + 2` and keeps only their slot choice.
+`*(0x8007BBE4)` reads `1072` - CDNAME's `#define vab_01 1072`, the raw index -
+in every catalogued mednafen state checked, so request `2002` (`town01`'s)
+streams extraction entry `1072`. The field overlay seeds the request as `8`
+(`0x801D6880`), which the same arm resolves to that entry. The disc's scripts
+use only the two global arms: of 275 sub-`1` operands, 248 are `2000..=2999`,
+21 are `>= 3000` and 6 are the park sentinel.
+
+Port: `legaia_engine_core::world::side_band_bank_for_request`; both hosts stage
+the resolved bank behind the BGM, in the free tail of the BGM region the reward
+bank also borrows, while the world is in a field-family mode.
+
 ### Voice allocation: one-shots descend from 23, sustained cues ascend from 7
 
 `FUN_80016B6C`'s two key-on loops do not share a voice range.
