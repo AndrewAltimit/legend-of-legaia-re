@@ -72,34 +72,26 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
-- **A field script could not see any other channel while it ran.** Both field
-  channel steppers moved the channel list out of the world for the duration of a
-  step, so every cross-context id - a `4C 86` mirror source, a `4C 14` clone
-  source, a talk partner - resolved to nothing from inside a script. A retail
-  capture of `conc2` seating three mirror controllers against the engine's one
-  found it.
-- **Retail's steal is the killing blow, not a command.** An action's first
-  kill spends that action's one attempt; the latch re-arms at every strike
-  chain's exit, which a byte scan for the latch's offset could not see
+- **Op `0x3E` with `op0 < 100` starts a fight, not a conversation.** The arm
+  reads `op0` only to fork off the door-warp, so `3E 00 02` installs a MAN
+  formation row exactly as `3E FF 02` does; the engine had opened dialogue at
+  all ten non-`0xFF` sites, and eleven doc sentences said the op "arms the
+  interaction script"
+  ([falsified](re-do-not-re-walk.md#field--locomotion)).
+- **The field fog samples VRAM `(448, 0)`, its cap is a MAN header bit, and the
+  port's excess density was its random numbers.** Texture page `0x27` has the
+  page-y bit clear; `0x48` is every overworld's cap rather than a debug value;
+  and the engine handed the spawner a raw LCG state where retail's BIOS `rand`
+  returns the high half ([falsified](re-do-not-re-walk.md#rendering--camera)).
+- **`kor5`'s `0x436` needed no poke.** P2[5] writes it 3,336 vsyncs after
+  `0x464` clears; the 17,500-vsync estimate was the probe re-dispatching P2[4]
+  over the running chain ([settled](re-settled-threads.md#field--locomotion)).
+- **The title menu has two rows**, so no title route reaches Options, and the
+  "boot Options draws twice" host-drift reading was wrong on both counts
+  ([falsified](re-do-not-re-walk.md#title--boot--overlays)).
+- **`FUN_801F138C`'s "capture payout" is the dead-slot Item refund** of
+  `FUN_801DABA4`, printed at a phantom VA
   ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
-- **The reference sweeps paired registers that had already been overwritten.**
-  About a quarter of their `lui` pairs were false; no unreferenced verdict moved
-  under the strict walk, but the indexed-form counts that opened a row did
-  ([falsified](re-do-not-re-walk.md#measurement-readings)).
-- **About three live port tags in ten misdescribe their routine.** A 316-tag
-  audit against the disassembly found wrong addresses, swapped names and partial
-  ports behind green gates; several were behaviour defects
-  ([settled](re-settled-threads.md#measurement--corpus)).
-- **A filter one host added and a kernel one host ran inline both read green on
-  every drift tier.** The page skipped "sky" meshes the native window draws, and
-  uploaded the walk ground unreversed so the cutscene camera culled the floor
-  ([falsified](re-do-not-re-walk.md#rendering--camera)).
-- **A re-entered Muscle Dome hub does draw the ringside still**, and the port's
-  leg-open "ROUND banner" was the course card
-  ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
-- **`4C D8`'s model operand is a scene-bank index**, and the PROT 0898 head is
-  twenty-two jump tables, not nine
-  ([falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
 
 ---
 
@@ -108,7 +100,20 @@ cheapest place to look for a claim that is still wrong.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready | [details ↓](#region-story-flag-gate-families) |
-| Does P2[5] write `kor5`'s `0x436` organically? | partial - the chain is captured end to end with one input poked | The order is P2[3] (`0x43A`) -> P2[4] (`0x464`, then a battle against monster 165) -> scene reload -> P1[0] clears `0x464` and spawns P2[5] -> P2[8] writes `0x6C4` at `+0x75` on tile `(32,86)`, gated `C1 {0x6C4}` / `C2 {0x436}`. `0x436` was poked: P2[5]'s own write at `+0xD0D` needs about 17,500 vsyncs of play the probe box could not spend. A run that reaches it closes the row. |
+| What does the region battle-setup half of `FUN_801D9E1C` change? | open - decoded, unmodelled on both paths | Op `0x3E`'s scripted-battle arm and the random step roll both run `FUN_801D9E1C(player, 0)`, whose region re-read seats `_DAT_8007BD60 = region[+8] & 0x1F`, raises scratchpad `0x1F800394 \| 0x300000` and, on the `ctrl[+0x5F] >= 0xC` layout, `_DAT_8007B64B` and the `0x800845xx` triple from `region[+9..+11]`. The port models none of it ([`script-vm.md`](../subsystems/script-vm.md#0x3e-scripted-battle-op0--100)). A reader census for those four destinations, then a port or an unreferenced verdict, closes it. |
+| Who draws op `0x43`'s scripted arcs and op `0x34` sub-1's attached sprites? | open - being ported | Op `0x43` sub-`0`/`1`/`0xA`/`0xB` (492 clean sites) is a quadratic-Bezier jump through `FUN_801D25EC`, and the port stops at the acquire and runs no arc; its operand decode read the apex and frame words as a coordinate. `34 10` (415 sites in 43 scenes) spawns an attached billboard through `FUN_801E5668` (template `0x801F28B8`, tick `FUN_801E4470`), and the engine host skips the spawn ([`script-vm.md`](../subsystems/script-vm.md#0x43-sub-01ab---halt-acquire-dispatcher)). An arc channel and a spawn seat on both hosts, with a disc-gated site per sub-op, close it. |
+| Does a chain beat clear `kor5`'s `0x619` after retail's entry? | open - a class-c parity divergence | The engine's cold `kor5` entry sets flag `0x619`; the `kor5_post_436_organic` capture, taken after the whole P2[3] -> P2[8] chain, holds it clear (`field_npc_state_parity_disc.rs`, class `c`). Either a chain beat clears it or the entry arm that sets it is gated on a flag the chain changed. A single-flag write watch on `0x619` across the chain decides it. |
+| Which frame-step floor does a field scene install? | open - retail `3` against the port's `2` | The cold-boot `opdeene` capture holds `DAT_8007B9D8` at `3`; the port's scene entry installs `2` for every non-overworld scene (`scene/host/scene_entry.rs`), and the narration roller runs its own `OPENING_FRAME_STEP = 3` to compensate ([`cutscene.md`](../subsystems/cutscene.md)). The writer of `DAT_8007B9D8` per mode, read off the disassembly, closes it. |
+
+**Does P2[5] write `kor5`'s `0x436` organically** closed as yes: with only the
+two trigger-tile pokes and the Gaza fight's enemy HP held at `1` (a loss is a
+game over), P2[5] reaches `+0xD0D` and sets `0x436` through `FUN_8003CE08`
+(`ra 0x801E3598`) 3,336 vsyncs after `0x464` clears, and P2[8] then sets
+`0x6C4` on its first `(32, 86)` crossing. The 17,500-vsync estimate was the
+probe's own: its `!464` leg counted pokes rather than reading the flag, so it
+re-dispatched P2[4] over the running P2[5]
+([settled](re-settled-threads.md#field--locomotion),
+[`field-locomotion.md`](../subsystems/field-locomotion.md)).
 
 **Is `juui1` dark in retail outside its tint beats** closed as no, on a
 synthetically gated walk: the black run is the door fade, and at rest the scene
@@ -335,9 +340,25 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Does the port stage retail's `0x6E` commit-confirm screen? | open - the ring's back step is wired, its Reselect twin is not | `FUN_801D388C` case `0x21` (`0x801D3040..0x801D3088`) is the Reselect / cancel on the `0x6E` screen that confirms a whole party's commits; the port commits without that screen, so the case has no seat. The screen staged on both hosts, with a ladder that reselects, closes it. |
-| Why do `vell`'s fog sheets not show on the native host? | open - the pool is live and emitted, and nothing reaches the frame | In the Mist forest the native `take_field_fog_prims` returns 37 to 78 quads a frame with the gate raised, and no native frame shows fog; the play page draws the same pool as bright mist. No retail reference exists - no mednafen state sits in a mist scene. A mist-scene capture with VRAM, and the native draw pass traced from the quad list to the framebuffer, close it. |
-| Which host draws Koru's timed-fight `Turns Left / HP Left` strip? | open - the strip is decoded and deliberately kept out of the dome | The strip prints `4 - ctx[+0x28A]` and the first enemy's HP percent through the format string at PROT 0898 file `0x0`, gated on the formation cell holding the timed-fight monster. `timed_fight_turns_left` is disclosed rather than wired because a dome leg ends on a knockout and must not consult a turn limit ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-four-turn-strip-belongs-to-koru-not-the-dome)). A Koru-fight capture (none exists) settling the strip-vs-name-plate `(16, 14)` seat, then a formation-cell gate, closes it ([`live-audit-triage.md`](../tooling/live-audit-triage.md)). |
+| Does Koru's timed-fight strip draw over or under the `(16, 14)` tab? | open (narrowed) - both hosts draw the strip; only its order is unpinned | `engine-core::timed_fight` gates the strip on formation slot 0 holding Koru (`0xB6`) and keeps it up for the command phase, and both hosts draw it on top of the name-plate tab that shares its seat ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-four-turn-strip-belongs-to-koru-not-the-dome)). The one capture of the strip never holds the plate in the same frame. A Koru-fight frame with both up, or the two emitters' ordering-table slots read off the disassembly, closes it. |
+| Does the port draw retail's command-phase commit log? | open - being ported | Each committed member gets a row of three placement records at `0x2B + 3n` (name, command, target), copied from records `0x1A`, `0x0D` / `0x3B` and `0x29` by `FUN_801D5718` / `FUN_801D5778` / `FUN_801D57E8` and stacked at `y = 146 / 170 / 194`; the port draws none of it ([`battle.md`](../subsystems/battle.md#the-commit-confirm-screen-0x6e)). The rows drawn on both hosts against a command-phase capture close it. |
+| What does the native host draw over the world map as white horizontal sheets? | open - native only, source unknown | A native `map01` frame carries white horizontal bands across the terrain that neither retail nor the play page draws; the pass that emits them is unidentified (the candidate is the world-map draw in `window/event_handler/redraw.rs`). The emitting pass named, then removed or matched to retail, closes it. |
+| Why is the spoils and shop ink white where retail's is grey? | open - measured, not fixed | Retail's victory-spoils and shop text draws ink `7` = `(206, 206, 206)`; the `engine-ui` builders use `[1, 1, 1, 1]` white (`ui_menu/field_panels.rs` spoils rows, `ui_overlay.rs` shop rows). The measurement is a native frame pair; the builders are shared, so the page is expected to match (inference). The ink each builder should read, applied once, closes it. |
+| Why does the overworld camera sit higher and farther than retail's? | open - both hosts | A frame pair on `map01` puts both hosts' world-map camera above and behind retail's framing (`engine-core::camera_view`'s world-map arm). The world-map view build's height and distance words, read off the disassembly and compared with the port's constants, close it. |
+| Does the port run the world-map fog arm? | open - field only | Every kingdom overworld raises the fog cap to `0x48` (`FUN_8003AEB0` from MAN header bit 0), so retail runs the pool on the world map; the port's fog render is wired for field scenes only ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md)). A world-map fog frame on both hosts against a `map01` / `map03` state closes it. |
+
+Three rows closed here with a wire on both hosts. **The `0x6E` commit-confirm
+screen** is staged once for the whole party, after the last member able to act,
+for every party size and behind no option; its `Reselect` steps back one member
+through `FUN_801D32BC(1)` - onto the **last** able member, not the first - and
+refunds that member's Item ([settled](re-settled-threads.md#battle--arts--level-up),
+[`battle.md`](../subsystems/battle.md#the-commit-confirm-screen-0x6e)). **`vell`'s
+native fog** was invisible because the native scene VRAM lacked the PROT 0874
+section-2 effect pool the fog page samples; retail keeps it resident under every
+field scene, and nine retail states agree cell for cell
+([settled](re-settled-threads.md#rendering--camera)). **Which host draws Koru's
+strip** is both: the gate is formation slot 0, the limit is Koru's own AI arm,
+and only the draw order against the tab stays open (row above).
 
 **Does the port run retail's in-battle steal** and **how does the port step
 back to an earlier member** both closed with a wire on both hosts. The steal is
@@ -467,7 +488,11 @@ performs either cast ([settled](re-settled-threads.md#battle--arts--level-up)).
 
 ## Audio / BGM
 
-No open threads. The last three closed the same way: by fixing the instrument
+| Thread | Status | What would close it |
+|---|---|---|
+| Does either host play the field's scripted SFX cues? | open - being wired | Field op `0x36` sub-`0` and ambient motion op `0x09` both hand a cue id to the SFX producers (`FUN_80035B50` and siblings); on both hosts only their delays advance and no cue reaches the mixer (inference from the host call graph). A disc-gated ladder that steps one site of each into a key-on closes it. |
+
+The last three threads before it closed the same way: by fixing the instrument
 rather than the engine.
 
 **Why the port sustains more sounding voices than retail on the same track**
@@ -662,7 +687,56 @@ a coincidence of the pad byte plus the mask table's first three entries
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which live ports cover only part of their routine, and which of those differ from retail? | open - listed, not ported | A tag audit read 316 live tags and found 43 partial ports. The ones that change behaviour: the encounter reroll `801DDF48` is unimplemented; tile-board event cells set no story flags; Baka Fighter's inputs are face buttons in retail, not the d-pad; the actor tick does not step the move VM when `+0x54 < 0`; `801DBF9C`'s summon parameters may be written one byte low; initiative `801DABA4` skips the dead-actor item refund; the field camera-shake arm of `801DB510` has no consumer. Two routines newly cited have no port at all: the scanline strip emitter `FUN_801D31B0` (PROT 0897) and the dome's course card `FUN_801D042C` (PROT 0977). |
+| Which live ports cover only part of their routine, and which of those differ from retail? | open (narrowed) - listed, not ported | Of the 43 partial ports a tag audit found, the ones that still change behaviour are `FUN_801D1BA0`'s clip tail with `FUN_801D1EC4` (a reroll site the encounter port misses), the tile board's menu and fade states, `FUN_801DB510`'s hold gates, `FUN_801CF8AC`'s probe arms, the actor allocator's initialisation, Rula's lift, the dome hub's shade and gates, and a battle and an audio residue - each named with its blocker [details ↓](#which-live-ports-cover-only-part-of-their-routine). Each residue ported, or disclosed where it is blocked, closes it. |
+| Which probe runs measured a patched disc? | open - being audited | PCSX-Redux applies any `<stem>.ppf` beside the image it loads, and `run_probe.sh`'s default `--iso` sat beside a randomizer patch until the script began staging a scratch copy; a set of recent `pcsx.log` files carry the `[+ppf]` marker. Each marked run's findings re-checked against a clean copy, or marked as patched-disc evidence, closes it ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)). |
+| Which engine draws hand a raw LCG state where retail calls BIOS `rand`? | open - one caller fixed | `FUN_80056798` is the BIOS `A(2Fh)` thunk and returns `(seed >> 16) & 0x7FFF`; the fog spawner's low-bit tests on a raw 32-bit state cycled with period 16 until `bios_rand_shape` shaped them. Every other port that stands in for a `jal 0x80056798` and masks low bits is a candidate. An audit of those call sites against the port's RNG closes it. |
+
+### Which live ports cover only part of their routine
+
+*Status:* open - the list is the residue of a 316-tag audit after two rounds of fixes
+
+The audit found 43 partial ports. Fixed since, on both hosts where a host is
+involved: the encounter reroll `FUN_801DDF48` and its global `_DAT_8007B5FC`;
+the tile board's event-cell flag writes and trigger exit (states `3` and `8`);
+Baka Fighter's and the slot machine's face buttons; the actor tick's move-VM
+step when `+0x54 < 0`; `FUN_801DBF9C`'s parameter stream, which was written one
+byte low; the initiative sweep's dead-slot refund and tie list; the follow
+camera's shake consumption and its mode-5 focus; the SFX ring's three
+producers; the narration roller's config block; the escape timer's HUD;
+`FUN_8003540C`'s unconditional clear; and the two routines that had no port at
+all, the strip emitter `FUN_801D31B0` and the dome course card `FUN_801D042C`.
+
+What remains, each with where it is recorded:
+
+- **`FUN_801D1BA0`'s tail and `FUN_801D1EC4`.** The vertical settle's
+  anim-clip pick reads a base `FUN_801D1EC4` stores on four arms the port does
+  not model ([`field-locomotion.md`](../subsystems/field-locomotion.md)).
+  `FUN_801D1EC4` is also a reroll site the encounter port misses: at
+  `0x801D1F6C` it calls `FUN_801DDF48` when `_DAT_8007B5FC <= 0` (`bgtz` at
+  `0x801D1F64`), alongside SCUS `0x8003AC90`, the op-`0x3E` arm `0x801E076C`,
+  `4C EC` at `0x801E34F8` and the inlined copy in `FUN_801D9E1C`.
+- **Tile board** (`801EF2B0`): the menu and fade states.
+- **`FUN_801DB510`**: the hold gates, which have no modelled writer.
+- **`FUN_801CF8AC`**: the probe arms beyond the box test.
+- **`FUN_80020DE0` / `FUN_80024E08`**: the allocator's initialisation from the
+  spawn descriptor, and the model setter's `FUN_80020F88` re-stage.
+- **Rula's lift** (`801EE328`): the kernel lifts the player to
+  `Y < -0x618`, but the host holds no player handle to apply it or the
+  Riremito restore.
+- **The Muscle Dome hub**: `FUN_801D1610` is a subtractive `POLY_G4`
+  (tpage `0x46`, ABR 2) the port approximates with alpha bands; the gates
+  `_DAT_8007BC20` / `0x8007B648` are modelled open; the first-visit SFX
+  `FUN_8003D53C` is not played; the slot machine's spin-up latch `0x801D3790`
+  and Baka Fighter's ladder run are unported.
+- **Battle**: `801F0450`'s auto-combo tail, the tag-`0x67` streak ribbon, the
+  "nobody can act" `0x1E` -> `0x6E` round, and `FUN_8004AD80`'s kind ladder
+  with `FUN_80048A08`'s draw.
+- **Audio/anim**: `8004DA00`, `80064090`, `800480D8` and `80020F88`, each
+  blocked on a host structure (no XA channel streamer, no multi-slot SEQ
+  table, a crate barrier between `engine-core` and `engine-render`).
+
+Rows of the audit not named here were not re-read after it; the audit's own
+evidence column is the place to start before trusting one.
 
 **Which references does the indexed form hide** closed at 512 accesses, none
 in PROT 0897 / 0899: the counts that opened the row came from a scanner that
