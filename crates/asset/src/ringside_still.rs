@@ -122,7 +122,7 @@ pub fn to_rgba8(buf: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let mut out = Vec::with_capacity(WIDTH * HEIGHT * 4);
-    for px in buf.chunks_exact(2) {
+    for px in buf.as_chunks::<2>().0 {
         let h = u16::from_le_bytes([px[0], px[1]]);
         let ch = |shift: u32| {
             let c = ((h >> shift) & 0x1F) as u8;

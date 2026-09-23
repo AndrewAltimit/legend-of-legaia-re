@@ -141,37 +141,33 @@ impl SaveState {
         // matches inside main RAM.
         let mut pos = MDFN_HEADER_LEN;
         while pos + SECTION_NAME_LEN + 4 <= self.payload.len() {
-            if let Some(rel) = self.payload[pos..]
+            let rel = self.payload[pos..]
                 .windows(SECTION_NAME_LEN)
-                .position(|w| w == needle)
-            {
-                let abs = pos + rel;
-                let size_off = abs + SECTION_NAME_LEN;
-                if size_off + 4 > self.payload.len() {
-                    return None;
-                }
-                let body_len = u32::from_le_bytes([
-                    self.payload[size_off],
-                    self.payload[size_off + 1],
-                    self.payload[size_off + 2],
-                    self.payload[size_off + 3],
-                ]) as usize;
-                let body_offset = size_off + 4;
-                if body_offset + body_len > self.payload.len() || body_len > 4 * 1024 * 1024 {
-                    // Possible false positive - keep scanning past this hit.
-                    pos = abs + SECTION_NAME_LEN;
-                    continue;
-                }
-                let entries = walk_subentries(&self.payload, body_offset, body_len);
-                return Some(Section {
-                    name: name.to_owned(),
-                    body_offset,
-                    body_len,
-                    entries,
-                });
-            } else {
+                .position(|w| w == needle)?;
+            let abs = pos + rel;
+            let size_off = abs + SECTION_NAME_LEN;
+            if size_off + 4 > self.payload.len() {
                 return None;
             }
+            let body_len = u32::from_le_bytes([
+                self.payload[size_off],
+                self.payload[size_off + 1],
+                self.payload[size_off + 2],
+                self.payload[size_off + 3],
+            ]) as usize;
+            let body_offset = size_off + 4;
+            if body_offset + body_len > self.payload.len() || body_len > 4 * 1024 * 1024 {
+                // Possible false positive - keep scanning past this hit.
+                pos = abs + SECTION_NAME_LEN;
+                continue;
+            }
+            let entries = walk_subentries(&self.payload, body_offset, body_len);
+            return Some(Section {
+                name: name.to_owned(),
+                body_offset,
+                body_len,
+                entries,
+            });
         }
         None
     }

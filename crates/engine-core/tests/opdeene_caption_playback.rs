@@ -61,10 +61,18 @@ fn opdeene_caption_is_a_bounded_beat_in_the_crawl_gap() {
         (112 * 32 * 4) as usize,
         "RGBA8 buffer matches the dimensions"
     );
-    let transparent = cap.rgba.chunks_exact(4).filter(|p| p[3] == 0).count();
+    let transparent = cap
+        .rgba
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|p| p[3] == 0)
+        .count();
     let opaque_bright = cap
         .rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .filter(|p| p[3] == 255 && p[0] > 170)
         .count();
     assert!(

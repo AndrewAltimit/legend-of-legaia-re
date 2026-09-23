@@ -476,7 +476,9 @@ struct EscapeEntry {
 
 fn parse_escape_table(bytes: &[u8]) -> Vec<EscapeEntry> {
     bytes
-        .chunks_exact(ESCAPE_ENTRY_SIZE)
+        .as_chunks::<ESCAPE_ENTRY_SIZE>()
+        .0
+        .iter()
         .map(|c| EscapeEntry {
             string_id: i16::from_le_bytes([c[0], c[1]]),
             advance_px: c[2],

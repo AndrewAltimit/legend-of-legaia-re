@@ -236,7 +236,7 @@ fn play_segment(
                         );
                         let first = &rgba[0..3];
                         assert!(
-                            rgba.chunks_exact(4).any(|p| p[0..3] != *first),
+                            rgba.as_chunks::<4>().0.iter().any(|p| p[0..3] != *first),
                             "frame {}: decoded to a single flat colour",
                             frame.frame_number
                         );

@@ -98,7 +98,7 @@ pub fn decode_channel_span(raw_sectors: &[u8], channel: u8) -> Option<(XaClip, u
     let mut widest = 0u8;
     let mut audio = Vec::new();
     let mut coding: Option<(u32, bool, u8)> = None;
-    for raw in raw_sectors.chunks_exact(RAW_SECTOR_BYTES) {
+    for raw in raw_sectors.as_chunks::<RAW_SECTOR_BYTES>().0 {
         let mut sub_bytes = [0u8; 8];
         sub_bytes.copy_from_slice(&raw[SUBHEADER_OFFSET..SUBHEADER_OFFSET + 8]);
         let (sub, ok) = parse_subheader(&sub_bytes);

@@ -800,7 +800,7 @@ impl EffectAuxTables {
         // Shape guard, so a build whose data band moved cannot yield a table of
         // plausible-looking noise: a record names at most four cues, and every
         // non-actor cue id has to index the two tables above.
-        for rec in groups.chunks_exact(CUE_GROUP_STRIDE) {
+        for rec in groups.as_chunks::<CUE_GROUP_STRIDE>().0 {
             let count = rec[0] as usize;
             if count > CUE_GROUP_STRIDE - 1 {
                 return None;

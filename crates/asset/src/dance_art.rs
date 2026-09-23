@@ -172,7 +172,7 @@ pub fn parse_widgets(overlay: &[u8]) -> Result<Vec<DanceWidget>> {
         .get(base..end)
         .context("dance overlay image too small for the widget table")?;
     let mut out = Vec::with_capacity(WIDGET_COUNT);
-    for rec in table.chunks_exact(WIDGET_STRIDE) {
+    for rec in table.as_chunks::<WIDGET_STRIDE>().0 {
         out.push(DanceWidget {
             scale: i32::from_le_bytes(rec[0..4].try_into().unwrap()),
             tpage: u16::from_le_bytes(rec[4..6].try_into().unwrap()),
@@ -358,7 +358,9 @@ pub fn parse_face_frames(overlay: &[u8], rig: &FaceRig) -> Result<Vec<[u8; 4]>> 
         .get(off..off + rig.poses * 4)
         .context("overlay image too small for the face frame table")?;
     Ok(bytes
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|c| [c[0], c[1], c[2], c[3]])
         .collect())
 }

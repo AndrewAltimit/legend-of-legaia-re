@@ -200,8 +200,20 @@ mod tests {
         assert_eq!(atlas.height, ATLAS_HEIGHT);
         assert_eq!(atlas.rgba.len(), (ATLAS_WIDTH * ATLAS_HEIGHT * 4) as usize);
         // Sanity: not all-transparent and not all-opaque.
-        let opaque = atlas.rgba.chunks_exact(4).filter(|p| p[3] > 0).count();
-        let transparent = atlas.rgba.chunks_exact(4).filter(|p| p[3] == 0).count();
+        let opaque = atlas
+            .rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| p[3] > 0)
+            .count();
+        let transparent = atlas
+            .rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| p[3] == 0)
+            .count();
         assert!(opaque > 1000, "atlas has too few opaque pixels: {}", opaque);
         assert!(
             transparent > 1000,

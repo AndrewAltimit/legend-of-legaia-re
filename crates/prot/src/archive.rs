@@ -107,8 +107,10 @@ impl Archive {
         reader.seek(SeekFrom::Start(toc_start))?;
         reader.read_exact(&mut buf)?;
         let toc: Vec<u32> = buf
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|&c| u32::from_le_bytes(c))
             .collect();
 
         // For entry p:

@@ -51,7 +51,9 @@ pub fn xa_cue_durations_from_scus(scus: &[u8]) -> Option<Vec<u16>> {
     let bytes = scus.get(off..off + len as usize)?;
     Some(
         bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect(),
     )

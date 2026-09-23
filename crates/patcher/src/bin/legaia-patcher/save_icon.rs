@@ -136,12 +136,10 @@ pub(crate) fn cmd_save_icon_replace(
     if outcome.quantized_pixels == 0 {
         let got = save_icon::export_slot(&after, slot)?;
         let want: Vec<u8> = rgba
-            .chunks_exact(4)
-            .flat_map(|p| {
-                legaia_tim::bgr555_to_rgba8(legaia_tim::encode::rgba8_to_bgr555(
-                    p.try_into().unwrap(),
-                ))
-            })
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|p| legaia_tim::bgr555_to_rgba8(legaia_tim::encode::rgba8_to_bgr555(*p)))
             .collect();
         if got != want {
             bail!("verification failed: patched portrait does not decode to the input image");

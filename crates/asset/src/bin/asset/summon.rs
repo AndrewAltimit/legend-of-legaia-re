@@ -159,7 +159,7 @@ pub(crate) fn summon_readef_cmd(
                         })
                         .collect();
                     let mut rgba = vec![0u8; w * h * 4];
-                    for (texel, px) in rgba.chunks_exact_mut(4).enumerate() {
+                    for (texel, px) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                         let byte = raw[t.texture_offset + texel / 2];
                         let idx = if texel % 2 == 0 {
                             byte & 0xF

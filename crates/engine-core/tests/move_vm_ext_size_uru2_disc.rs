@@ -101,7 +101,9 @@ fn uru2_stager_records_never_re_enter_on_an_ext_sub_opcode_word() {
     for (id, rec) in records.iter().enumerate() {
         let bytes = &scripts.bytes[rec.record_off..rec.bytecode.end];
         let words: Vec<u16> = bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect();
         if words.len() < 3 {

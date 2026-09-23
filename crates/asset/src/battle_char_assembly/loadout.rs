@@ -334,7 +334,7 @@ fn drop_duplicate_objects(
         ids.push(object_ids[v]);
         prims.push(prim_ids.get(v).copied().unwrap_or(u32::MAX));
     }
-    for tri in mesh.indices.chunks_exact(3) {
+    for tri in mesh.indices.as_chunks::<3>().0 {
         let m: Vec<u32> = tri.iter().map(|&i| remap[i as usize]).collect();
         if m.iter().all(|&i| i != u32::MAX) {
             out.indices.extend_from_slice(&m);
@@ -391,7 +391,7 @@ fn keep_objects(
             .push(mesh.colors.get(v).copied().unwrap_or([0x80; 3]));
         ids.push(to);
     }
-    for tri in mesh.indices.chunks_exact(3) {
+    for tri in mesh.indices.as_chunks::<3>().0 {
         let m: Vec<u32> = tri.iter().map(|&i| remap[i as usize]).collect();
         if m.iter().all(|&i| i != u32::MAX) {
             out.indices.extend_from_slice(&m);
@@ -732,7 +732,7 @@ pub fn item_glb(
             obj
         });
     }
-    for tri in full.indices.chunks_exact(3) {
+    for tri in full.indices.as_chunks::<3>().0 {
         let m: Vec<u32> = tri.iter().map(|&i| remap[i as usize]).collect();
         if m.iter().all(|&i| i != u32::MAX) {
             mesh.indices.extend_from_slice(&m);

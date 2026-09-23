@@ -100,8 +100,10 @@ pub fn inject_overlay_slice_opts(
     let at_hook: Vec<u32> = overlay_entry
         .get(hook_off..hook_off + 8)
         .ok_or_else(|| anyhow::anyhow!("hook offset past end of overlay entry"))?
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     if at_hook[..] != ov::SHOP_DISPLACED[..] {
         anyhow::bail!(
@@ -181,8 +183,10 @@ pub fn inject_overlay_slice_dead_mode(patcher: &mut DiscPatcher) -> Result<Overl
     let at_hook: Vec<u32> = overlay_entry
         .get(hook_off..hook_off + 8)
         .ok_or_else(|| anyhow::anyhow!("hook offset past end of overlay entry"))?
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     if at_hook[..] != ov::SHOP_DISPLACED[..] {
         anyhow::bail!(
@@ -316,8 +320,10 @@ pub fn inject_overlay_slice_warp_opts(
     let at_hook: Vec<u32> = overlay_entry
         .get(hook_off..hook_off + 8)
         .ok_or_else(|| anyhow::anyhow!("hook offset past end of overlay entry"))?
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     if at_hook[..] != ov::SHOP_DISPLACED[..] {
         anyhow::bail!(
@@ -338,8 +344,10 @@ pub fn inject_overlay_slice_warp_opts(
     let at_init: Vec<u32> = scus
         .get(init_off..init_off + 8)
         .ok_or_else(|| anyhow::anyhow!("FUN_80025980 detour offset out of range"))?
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     if at_init[..] != ov::WARP_INIT_DISPLACED[..] {
         anyhow::bail!(
@@ -425,8 +433,10 @@ pub fn inject_overlay_slice_picker(patcher: &mut DiscPatcher) -> Result<OverlayS
     let at_hook: Vec<u32> = menu_entry
         .get(hook_off..hook_off + 8)
         .ok_or_else(|| anyhow::anyhow!("picker hook offset past end of menu overlay entry"))?
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     if at_hook[..] != ov::PICKER_DISPLACED[..] {
         anyhow::bail!("picker hook site does not match the recognized US build; refusing to patch");
@@ -445,8 +455,10 @@ pub fn inject_overlay_slice_picker(patcher: &mut DiscPatcher) -> Result<OverlayS
     let at_init: Vec<u32> = scus
         .get(init_off..init_off + 8)
         .ok_or_else(|| anyhow::anyhow!("FUN_80025980 detour offset out of range"))?
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     if at_init[..] != ov::WARP_INIT_DISPLACED[..] {
         anyhow::bail!(
@@ -531,8 +543,10 @@ pub fn inject_native_trade_row(patcher: &mut DiscPatcher) -> Result<()> {
     let at_row4: Vec<u32> = menu_entry
         .get(row4_off..row4_off + 8)
         .ok_or_else(|| anyhow::anyhow!("row-4 hook offset past end of menu overlay entry"))?
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     if at_row4[..] != ov::ROW4_DISPLACED[..] {
         anyhow::bail!(

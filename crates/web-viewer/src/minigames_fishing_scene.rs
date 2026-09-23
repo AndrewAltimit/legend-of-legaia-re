@@ -332,7 +332,7 @@ impl LegaiaMinigames {
         }
         let mut lo = [f32::INFINITY; 3];
         let mut hi = [f32::NEG_INFINITY; 3];
-        for v in env.positions.chunks_exact(3) {
+        for v in env.positions.as_chunks::<3>().0 {
             for k in 0..3 {
                 lo[k] = lo[k].min(v[k]);
                 hi[k] = hi[k].max(v[k]);

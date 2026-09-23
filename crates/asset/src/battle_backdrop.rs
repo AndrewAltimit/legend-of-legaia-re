@@ -773,7 +773,7 @@ mod ground_grid_tests {
     #[test]
     fn uvs_are_unmirrored_table_sub_tiles() {
         let m = build_ground_grid();
-        for q in m.uvs.chunks_exact(4) {
+        for q in m.uvs.as_chunks::<4>().0 {
             let (u0, v0) = (q[0][0], q[0][1]);
             let (u1, v1) = (q[3][0], q[3][1]);
             assert!(
@@ -792,7 +792,7 @@ mod ground_grid_tests {
     fn all_four_sub_tiles_appear_equally() {
         let m = build_ground_grid();
         let mut hits = [0usize; 4];
-        for q in m.uvs.chunks_exact(4) {
+        for q in m.uvs.as_chunks::<4>().0 {
             let key = (q[0][0], q[0][1], q[3][0], q[3][1]);
             let i = GROUND_SUB_TILE_UVS.iter().position(|t| *t == key).unwrap();
             hits[i] += 1;

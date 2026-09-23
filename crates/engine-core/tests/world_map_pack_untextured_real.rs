@@ -102,7 +102,7 @@ fn landmark_packs_keep_their_untextured_prims() {
                 mesh.positions.len() * 4,
                 "{label} slot {slot}: stream"
             );
-            let untextured = flat.chunks_exact(4).filter(|c| c[3] == 0).count();
+            let untextured = flat.as_chunks::<4>().0.iter().filter(|c| c[3] == 0).count();
             if untextured > 0 {
                 with_untextured.push(slot as u32);
             }

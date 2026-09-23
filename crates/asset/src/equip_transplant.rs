@@ -225,7 +225,9 @@ fn pool_of(decoded: &[u8]) -> Result<Option<PoolParts<'_>>> {
         bail!("pool CLUT run past record end");
     }
     let cluts: Vec<u16> = decoded[body_end + 4..run_end]
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
     Ok(Some((clut_x, cluts, &decoded[run_end..])))

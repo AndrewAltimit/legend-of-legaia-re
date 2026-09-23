@@ -471,7 +471,7 @@ pub fn item_mesh(tmd: &Tmd, blob: &[u8], item: &IsolatedItem) -> (VramMesh, Vec<
             .push(full.colors.get(v).copied().unwrap_or([0x80; 3]));
         out_ids.push(ids[v]);
     }
-    for tri in full.indices.chunks_exact(3) {
+    for tri in full.indices.as_chunks::<3>().0 {
         let m = [
             remap[tri[0] as usize],
             remap[tri[1] as usize],

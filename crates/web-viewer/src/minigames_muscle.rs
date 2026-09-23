@@ -440,7 +440,7 @@ impl LegaiaMinigames {
                 mesh2.colors.push(mesh.colors[i]);
                 flat2.extend_from_slice(&flat[i * 4..i * 4 + 4]);
             }
-            for t in mesh.indices.chunks_exact(3) {
+            for t in mesh.indices.as_chunks::<3>().0 {
                 let (a, b, c) = (
                     remap[t[0] as usize],
                     remap[t[1] as usize],

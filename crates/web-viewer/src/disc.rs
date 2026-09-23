@@ -266,8 +266,10 @@ pub fn parse_prot_toc(buf: &[u8]) -> Option<Vec<EntryMeta>> {
     let toc_start = hoff + 8;
     let toc_end = hoff + (header_sectors as usize) * SECTOR as usize;
     let toc: Vec<u32> = buf[toc_start..toc_end]
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
 
     // An entry's size is the sector gap to the next entry, and the span comes

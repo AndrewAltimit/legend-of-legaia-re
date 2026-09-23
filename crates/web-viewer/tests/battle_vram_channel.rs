@@ -48,7 +48,7 @@ fn party_row(vram: &[u8], slot: usize) -> Vec<u16> {
 /// The halfwords inside every `[x, y, w, h]` quad of `regions`.
 fn region_words(vram: &[u8], regions: &[u16]) -> Vec<u16> {
     let mut out = Vec::new();
-    for q in regions.chunks_exact(4) {
+    for q in regions.as_chunks::<4>().0 {
         let (x, y, w, h) = (q[0] as usize, q[1] as usize, q[2] as usize, q[3] as usize);
         for row in y..y + h {
             for col in x..x + w {

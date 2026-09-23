@@ -351,7 +351,9 @@ pub fn proto_table(overlay: &[u8]) -> Result<Vec<u32>> {
         .get(PROTO_TABLE_FILE_OFFSET..end)
         .context("battle overlay is too short to hold the 0x801F6324 table")?;
     Ok(slice
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect())
 }
@@ -423,7 +425,7 @@ pub fn plan(disc: &DiscPatcher, sibling: Sibling, cave_taken: bool) -> Result<Op
     // stops immediately instead of decoding stale operands.
     let mut record = module[off..off + len].to_vec();
     record.resize(CAVE_LEN, 0);
-    for w in record[len..].chunks_exact_mut(2) {
+    for w in record[len..].as_chunks_mut::<2>().0 {
         w.copy_from_slice(&0x0008u16.to_le_bytes());
     }
 

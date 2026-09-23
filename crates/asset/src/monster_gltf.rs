@@ -255,7 +255,7 @@ fn partition_objects(
         .unwrap_or((1.0, 1.0));
     // A global vertex belongs to exactly one object (prims never span objects),
     // so a populated `local_of` slot is unambiguously this object's local index.
-    for tri in mesh.indices.chunks_exact(3) {
+    for tri in mesh.indices.as_chunks::<3>().0 {
         // All three corners of a prim share one object id; key on the first.
         let oid = object_ids.get(tri[0] as usize).copied().unwrap_or(0);
         let geom = by_object.entry(oid).or_insert_with(|| ObjectGeom {

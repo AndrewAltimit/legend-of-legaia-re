@@ -154,7 +154,7 @@ pub(crate) struct DemuxedChannel {
 /// trailing partial sector is ignored.
 pub(crate) fn demux_raw_sectors(sectors: &[u8]) -> Vec<DemuxedChannel> {
     let mut by_key: BTreeMap<(u8, u8), DemuxedChannel> = BTreeMap::new();
-    for raw in sectors.chunks_exact(RAW_SECTOR_BYTES) {
+    for raw in sectors.as_chunks::<RAW_SECTOR_BYTES>().0 {
         let mut sub_bytes = [0u8; 8];
         sub_bytes.copy_from_slice(&raw[SUBHEADER_OFFSET..SUBHEADER_OFFSET + 8]);
         let (sub, ok) = parse_subheader(&sub_bytes);

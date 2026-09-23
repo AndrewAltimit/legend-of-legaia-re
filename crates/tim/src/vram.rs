@@ -198,7 +198,9 @@ impl Vram {
             return;
         }
         let halfwords: Vec<u16> = bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect();
         self.write_words(fb_x, fb_y, halfwords.len() as u16, 1, &halfwords);
@@ -219,7 +221,9 @@ impl Vram {
             return;
         }
         let halfwords: Vec<u16> = bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect();
         self.write_words(fb_x, fb_y, w_words, h, &halfwords);

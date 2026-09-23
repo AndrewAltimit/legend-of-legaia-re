@@ -83,7 +83,7 @@ const MAD_TO_SIGMA: f32 = 1.4826;
 /// holds the bulk of the geometry, which is the body.
 fn framing_center_of(positions: &[f32], object_ids: &[u32], part_count: u32) -> [f32; 3] {
     let mut axes: [Vec<f32>; 3] = [Vec::new(), Vec::new(), Vec::new()];
-    for (i, p) in positions.chunks_exact(3).enumerate() {
+    for (i, p) in positions.as_chunks::<3>().0.iter().enumerate() {
         if !object_ids.is_empty() && object_ids.get(i).is_none_or(|&o| o >= part_count) {
             continue;
         }
@@ -129,7 +129,7 @@ fn part_centroid_distances(
     let n = part_count as usize;
     let mut sum = vec![[0f64; 3]; n];
     let mut count = vec![0usize; n];
-    for (i, p) in positions.chunks_exact(3).enumerate() {
+    for (i, p) in positions.as_chunks::<3>().0.iter().enumerate() {
         let Some(&o) = object_ids.get(i) else {
             continue;
         };
@@ -214,7 +214,9 @@ fn framing_bound_of(positions: &[f32], object_ids: &[u32], part_count: u32, k: f
 
     // Step 2: a percentile of vertex distance over the retained objects.
     let mut d: Vec<f32> = positions
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .enumerate()
         .filter(|(i, _)| match object_ids.get(*i) {
             _ if object_ids.is_empty() => true,
@@ -798,7 +800,9 @@ mod framing_tests {
     /// Plain maximum distance from the origin over every vertex - the naive
     /// bound the framing statistic replaces.
     fn naive_max(pos: &[f32]) -> f32 {
-        pos.chunks_exact(3)
+        pos.as_chunks::<3>()
+            .0
+            .iter()
             .map(|p| (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt())
             .fold(0.0f32, f32::max)
     }
@@ -873,7 +877,7 @@ mod framing_tests {
     #[test]
     fn the_centre_tracks_the_body_not_the_origin() {
         let (mut pos, ids) = rig(10, 8.0, Some([-900.0, 700.0, 0.0]), 60);
-        for (i, p) in pos.chunks_exact_mut(3).enumerate() {
+        for (i, p) in pos.as_chunks_mut::<3>().0.iter_mut().enumerate() {
             if ids[i] < 10 {
                 p[0] += 200.0;
                 p[1] -= 50.0;

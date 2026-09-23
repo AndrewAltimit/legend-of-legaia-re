@@ -76,10 +76,14 @@ pub fn parse_blocks(overlay: &[u8]) -> Option<Vec<Vec<PrizeRecord>>> {
     let table = overlay.get(PRIZE_TABLE_FILE_OFFSET..end)?;
     Some(
         table
-            .chunks_exact(PRIZE_BLOCK_BYTES)
+            .as_chunks::<PRIZE_BLOCK_BYTES>()
+            .0
+            .iter()
             .map(|block| {
                 block
-                    .chunks_exact(8)
+                    .as_chunks::<8>()
+                    .0
+                    .iter()
                     .map(|r| PrizeRecord {
                         item_id: u16::from_le_bytes([r[0], r[1]]) as u8,
                         gate: u16::from_le_bytes([r[2], r[3]]),

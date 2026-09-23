@@ -258,7 +258,9 @@ pub fn module_head_cue(image: &[u8]) -> Option<ModuleHeadCue> {
         n => n.min(image.len()),
     };
     let words: Vec<u32> = image[..end & !3]
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect();
     for (site, &w) in words.iter().enumerate() {

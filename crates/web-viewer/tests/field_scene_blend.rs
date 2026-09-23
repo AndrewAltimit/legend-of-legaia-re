@@ -64,7 +64,7 @@ struct SemiStats {
 }
 
 fn tally(mesh: &VramMesh, flat: &[u8], vram: &Vram, stats: &mut SemiStats) {
-    for tri in mesh.indices.chunks_exact(3) {
+    for tri in mesh.indices.as_chunks::<3>().0 {
         let v0 = tri[0] as usize;
         let tsb = mesh.cba_tsb[v0][1];
         if tsb & TSB_SEMI_TRANSPARENT_BIT == 0 {

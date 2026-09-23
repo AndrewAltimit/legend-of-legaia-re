@@ -53,7 +53,7 @@ fn list_mov_str_files(disc: &mut RawDisc) -> anyhow::Result<Vec<DirectoryRecord>
 /// Decode the first MDEC frame from a raw STR sector stream.
 fn decode_first_frame(sectors: &[u8]) -> Option<VideoFrame> {
     let mut asm = StrFrameAssembler::new();
-    for sector in sectors.chunks_exact(2048) {
+    for sector in sectors.as_chunks::<2048>().0 {
         match asm.push_sector(sector) {
             Ok(Some((hdr, bs))) => {
                 let dec = MdecDecoder::new(hdr.width as u32, hdr.height as u32);

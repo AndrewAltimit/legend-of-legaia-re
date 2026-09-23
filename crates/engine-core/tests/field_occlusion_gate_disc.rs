@@ -106,7 +106,7 @@ fn keikoku_corridor_walk_does_not_arm_the_gate() {
             let mesh =
                 legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&rt.tmd, &rt.raw, |_, _, _| true);
             // Local-space triangle (rot_y observed 0 for this fixture).
-            for (pi, ptri) in mesh.indices.chunks_exact(3).enumerate() {
+            for (pi, ptri) in mesh.indices.as_chunks::<3>().0.iter().enumerate() {
                 let p0 = mesh.positions[ptri[0] as usize];
                 let close = |a: [f32; 3], b: [f32; 3]| {
                     (a[0] + t[0] - b[0]).abs() < 1.0
@@ -128,7 +128,7 @@ fn keikoku_corridor_walk_does_not_arm_the_gate() {
                 }
             }
             let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rt.tmd, &rt.raw);
-            for ptri in cmesh.indices.chunks_exact(3) {
+            for ptri in cmesh.indices.as_chunks::<3>().0 {
                 let p0 = cmesh.positions[ptri[0] as usize];
                 let close = |a: [f32; 3], b: [f32; 3]| {
                     (a[0] + t[0] - b[0]).abs() < 1.0

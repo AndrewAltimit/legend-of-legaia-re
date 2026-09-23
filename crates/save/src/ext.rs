@@ -771,7 +771,13 @@ impl SaveFile {
             .map(<[u8]>::to_vec)
             .unwrap_or_default();
         let item_slots: Vec<(u8, u8)> = crate::card::read_retail_item_window(sc_block)
-            .map(|raw| raw.chunks_exact(2).map(|p| (p[0], p[1])).collect())
+            .map(|raw| {
+                raw.as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|p| (p[0], p[1]))
+                    .collect()
+            })
             .unwrap_or_default();
         let inventory: Vec<(u8, u8)> = item_slots
             .iter()
@@ -999,7 +1005,12 @@ fn parse_ext_v6(buf: &[u8]) -> Result<Vec<(u8, u8)>> {
             buf.len()
         );
     }
-    Ok(buf[2..end].chunks_exact(2).map(|c| (c[0], c[1])).collect())
+    Ok(buf[2..end]
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| (c[0], c[1]))
+        .collect())
 }
 
 fn parse_ext_v3(buf: &[u8]) -> Result<Vec<u8>> {

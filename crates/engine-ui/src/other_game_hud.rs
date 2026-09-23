@@ -196,8 +196,10 @@ pub fn parse_sprite_table(overlay_0977: &[u8]) -> Vec<HudSprite> {
         return Vec::new();
     };
     table
-        .chunks_exact(HUD_SPRITE_STRIDE)
-        .filter_map(HudSprite::parse)
+        .as_chunks::<HUD_SPRITE_STRIDE>()
+        .0
+        .iter()
+        .filter_map(|r| HudSprite::parse(r))
         .collect()
 }
 

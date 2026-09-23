@@ -513,7 +513,7 @@ fn loft(
     // Orient every triangle outward (away from the axis line), so a
     // back-face-culling viewer sees the tube from outside.
     let mid_axis = mid(a.centroid, b_centroid);
-    for t in new_indices.chunks_exact_mut(3) {
+    for t in new_indices.as_chunks_mut::<3>().0 {
         let p0 = mesh.positions[t[0] as usize];
         let p1 = mesh.positions[t[1] as usize];
         let p2 = mesh.positions[t[2] as usize];
@@ -533,7 +533,7 @@ fn loft(
     }
     // Drop degenerate triangles (two corners at one weld position).
     let mut kept = 0usize;
-    for t in new_indices.chunks_exact(3) {
+    for t in new_indices.as_chunks::<3>().0 {
         let p0 = mesh.positions[t[0] as usize];
         let p1 = mesh.positions[t[1] as usize];
         let p2 = mesh.positions[t[2] as usize];

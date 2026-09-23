@@ -187,8 +187,10 @@ pub fn unpack_strv2_vlc_table(packed: &[u8]) -> Result<Vec<u16>> {
     }
     de_delta(&mut bytes)?;
     Ok(bytes[..STRV2_TABLE_BYTES]
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&c| u16::from_le_bytes(c))
         .collect())
 }
 

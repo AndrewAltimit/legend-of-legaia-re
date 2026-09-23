@@ -55,7 +55,12 @@ fn card_block() -> Option<BlockWithSlots> {
     let blocks = legaia_save::card::parse_card(&bytes).ok()?;
     let sc = legaia_save::card::read_block(&bytes, blocks.first()?.block)?.to_vec();
     let raw = legaia_save::card::read_retail_item_window(&sc)?;
-    let slots: Vec<(u8, u8)> = raw.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+    let slots: Vec<(u8, u8)> = raw
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| (c[0], c[1]))
+        .collect();
     eprintln!(
         "[card-slots] {} occupied {} of {ITEM_SLOTS_TOTAL}, highest occupied slot {}",
         path.display(),
@@ -129,7 +134,12 @@ fn the_write_back_reproduces_the_block_bytes() {
     sf.write_into_retail_sc_block(&mut fresh)
         .expect("compose an SC block");
     let written = legaia_save::card::read_retail_item_window(&fresh).expect("item window");
-    let round: Vec<(u8, u8)> = written.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+    let round: Vec<(u8, u8)> = written
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| (c[0], c[1]))
+        .collect();
     assert_eq!(
         round, raw_slots,
         "the composed block's item region is the card's own, slot for slot"

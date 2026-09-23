@@ -89,8 +89,10 @@ fn main() -> Result<()> {
             ),
         );
         let table_words: Vec<u32> = table
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| u32::from_le_bytes(*c))
             .collect();
         emit(ov::BUCKET_TABLE_VA, &table_words);
         let sidecar_path = format!("{output}.rampatch");

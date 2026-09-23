@@ -776,8 +776,8 @@ pub(crate) fn cmd_delilas_pokes(custom_items: bool) -> Result<()> {
             bytes.len() % 4 == 0,
             "probe write at {va:#x} is not word-aligned"
         );
-        for (i, w) in bytes.chunks_exact(4).enumerate() {
-            let word = u32::from_le_bytes(w.try_into().unwrap());
+        for (i, w) in bytes.as_chunks::<4>().0.iter().enumerate() {
+            let word = u32::from_le_bytes(*w);
             pokes.push(format!("0x{:08X}:0x{:08X}", va + (i as u32) * 4, word));
         }
     }

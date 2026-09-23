@@ -305,7 +305,7 @@ fn muscle_arena_backdrop_decodes() {
     // Half-stage authoring rule: the shell sits at X >= 0 (open side -X),
     // spanning thousands of world units on a Y <= ~0 (Y-down) profile.
     let (mut min_x, mut max_x) = (f32::MAX, f32::MIN);
-    for v in pos.chunks_exact(3) {
+    for v in pos.as_chunks::<3>().0 {
         min_x = min_x.min(v[0]);
         max_x = max_x.max(v[0]);
     }
@@ -434,7 +434,7 @@ fn muscle_hud_chrome_decodes_from_the_disc() {
     ] {
         let rgba = mg.muscle_hud_sheet_rgba(source, pal);
         assert!(!rgba.is_empty(), "{name} decodes");
-        let opaque = rgba.chunks_exact(4).filter(|p| p[3] != 0).count();
+        let opaque = rgba.as_chunks::<4>().0.iter().filter(|p| p[3] != 0).count();
         assert!(
             opaque * 50 > rgba.len() / 4,
             "{name} has real opaque coverage: {opaque}"
@@ -518,7 +518,7 @@ fn muscle_vertex_colours_are_the_packet_colours_not_white() {
     let modulated = |flat: &[u8]| -> (usize, usize) {
         let mut textured = 0usize;
         let mut white = 0usize;
-        for p in flat.chunks_exact(4) {
+        for p in flat.as_chunks::<4>().0 {
             if p[3] == 0 {
                 continue; // untextured fill - its colour is the fill itself
             }

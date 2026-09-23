@@ -57,33 +57,21 @@ pub enum PowerByte {
 impl PowerByte {
     /// Decode a single power byte from the art record.
     pub fn from_byte(b: u8) -> PowerByte {
-        let alt_range;
-        let target;
-        let idx;
-
-        if (0x16..=0x1A).contains(&b) {
+        let (alt_range, target, idx) = if (0x16..=0x1A).contains(&b) {
             // Standard UDF range.
-            alt_range = false;
-            target = PowerTarget::Udf;
-            idx = b - 0x16;
+            (false, PowerTarget::Udf, b - 0x16)
         } else if (0x1B..=0x1F).contains(&b) {
             // Standard LDF range.
-            alt_range = false;
-            target = PowerTarget::Ldf;
-            idx = b - 0x1B;
+            (false, PowerTarget::Ldf, b - 0x1B)
         } else if (0x0C..=0x10).contains(&b) {
             // Alt UDF range - misses short enemies.
-            alt_range = true;
-            target = PowerTarget::Udf;
-            idx = b - 0x0C;
+            (true, PowerTarget::Udf, b - 0x0C)
         } else if (0x11..=0x15).contains(&b) {
             // Alt LDF range - misses floating enemies.
-            alt_range = true;
-            target = PowerTarget::Ldf;
-            idx = b - 0x11;
+            (true, PowerTarget::Ldf, b - 0x11)
         } else {
             return PowerByte::NoDamage;
-        }
+        };
 
         let multiplier = MULTIPLIER_TABLE[idx as usize];
         PowerByte::Damage(ArtPower {

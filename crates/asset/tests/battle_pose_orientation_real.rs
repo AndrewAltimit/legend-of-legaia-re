@@ -135,7 +135,7 @@ fn dump_ortho(path: &Path, positions: &[[f32; 3]], indices: &[u32], axes: (usize
     };
     let mut depth = vec![f32::MAX; W * H];
     let mut img = vec![0u8; W * H];
-    for tri in indices.chunks_exact(3) {
+    for tri in indices.as_chunks::<3>().0 {
         let v: Vec<(f32, f32, f32)> = tri.iter().map(|&i| to_px(&positions[i as usize])).collect();
         let (x0, y0) = (v[0].0, v[0].1);
         let (x1, y1) = (v[1].0, v[1].1);

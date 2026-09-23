@@ -88,7 +88,7 @@ fn env_prims_never_sample_an_empty_clut() {
         for &ti in &env {
             let t = &res.tmds[ti];
             let mesh = tmd_to_vram_mesh_filtered(&t.tmd, &t.raw, |_, _, _| true);
-            for tri in mesh.indices.chunks_exact(3) {
+            for tri in mesh.indices.as_chunks::<3>().0 {
                 let v = tri[0] as usize;
                 let (cba, tsb) = (mesh.cba_tsb[v][0], mesh.cba_tsb[v][1]);
                 // Only the paletted depths (4bpp / 8bpp) read a CLUT.

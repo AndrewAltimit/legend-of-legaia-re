@@ -82,7 +82,7 @@ fn pack_accessors_carry_the_untextured_half_flagged() {
         );
         // Textured prefix flagged 255, untextured tail flagged 0 - the
         // shader's `a_flat_rgba.a < 0.5` fill branch keys off exactly this.
-        let flags: Vec<u8> = flat.chunks_exact(4).map(|c| c[3]).collect();
+        let flags: Vec<u8> = flat.as_chunks::<4>().0.iter().map(|c| c[3]).collect();
         assert!(
             flags[..textured].iter().all(|&f| f == 255),
             "{label} slot {slot}: textured prefix must be flagged 255"

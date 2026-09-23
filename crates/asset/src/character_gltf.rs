@@ -195,7 +195,7 @@ pub fn build_character_glb_named(
     };
     let mut by_object: BTreeMap<u32, ObjectGeom> = BTreeMap::new();
     let mut local_of = vec![u32::MAX; mesh.positions.len()];
-    for tri in mesh.indices.chunks_exact(3) {
+    for tri in mesh.indices.as_chunks::<3>().0 {
         // All three corners of a prim share one object id (and one textured
         // flag); key on the first.
         let oid = object_ids.get(tri[0] as usize).copied().unwrap_or(0);

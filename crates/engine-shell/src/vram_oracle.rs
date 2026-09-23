@@ -310,10 +310,13 @@ pub fn compute_static_mask(snapshots: &[&[u8]]) -> Vec<bool> {
     }
     let first = snapshots[0];
     for other in &snapshots[1..] {
-        for (m, (fa, ob)) in mask
-            .iter_mut()
-            .zip(first.chunks_exact(2).zip(other.chunks_exact(2)))
-        {
+        for (m, (fa, ob)) in mask.iter_mut().zip(
+            first
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .zip(other.as_chunks::<2>().0),
+        ) {
             if fa != ob {
                 *m = false;
             }

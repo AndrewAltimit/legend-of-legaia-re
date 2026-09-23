@@ -693,7 +693,7 @@ mod tests {
         let out = MdecDecoder::new(16, 16).decode_frame(&frame).unwrap();
         assert_eq!(out.len(), 16 * 16 * 4);
         // DC=0 + no AC -> luma 0 -> +128 -> neutral gray, fully opaque.
-        for px in out.chunks_exact(4) {
+        for px in out.as_chunks::<4>().0 {
             assert!((px[0] as i32 - 128).abs() <= 4, "r={}", px[0]);
             assert_eq!(px[3], 255);
         }

@@ -196,14 +196,14 @@ pub fn decode_png_rgba(png_bytes: &[u8]) -> Result<(usize, usize, Vec<u8>)> {
         png::ColorType::Rgba => data.to_vec(),
         png::ColorType::Rgb => {
             let mut out = Vec::with_capacity(n * 4);
-            for p in data.chunks_exact(3) {
+            for p in data.as_chunks::<3>().0 {
                 out.extend_from_slice(&[p[0], p[1], p[2], 255]);
             }
             out
         }
         png::ColorType::GrayscaleAlpha => {
             let mut out = Vec::with_capacity(n * 4);
-            for p in data.chunks_exact(2) {
+            for p in data.as_chunks::<2>().0 {
                 out.extend_from_slice(&[p[0], p[0], p[0], p[1]]);
             }
             out

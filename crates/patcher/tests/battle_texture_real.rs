@@ -74,7 +74,9 @@ fn catalog_and_export_reach_the_armband() {
     // 4bpp: at most 16 distinct colours can appear through one palette.
     let distinct: std::collections::HashSet<[u8; 4]> = ex
         .rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|c| [c[0], c[1], c[2], c[3]])
         .collect();
     assert!(distinct.len() <= 16, "{} distinct colours", distinct.len());
@@ -280,7 +282,7 @@ fn an_over_budget_repaint_is_refused_and_writes_nothing() {
     // record cannot recompress into its slot.
     let palette: Vec<[u8; 4]> = {
         let mut seen: Vec<[u8; 4]> = Vec::new();
-        for c in ex.rgba.chunks_exact(4) {
+        for c in ex.rgba.as_chunks::<4>().0 {
             let p = [c[0], c[1], c[2], c[3]];
             if !seen.contains(&p) {
                 seen.push(p);

@@ -91,7 +91,7 @@ pub(crate) fn compute_smooth_normals(positions: &[[f32; 3]], indices: &[u32]) ->
     type Key = (i32, i32, i32);
     let key_of = |p: &[f32; 3]| -> Key { (p[0] as i32, p[1] as i32, p[2] as i32) };
     let mut bins: HashMap<Key, [f32; 3]> = HashMap::new();
-    for tri in indices.chunks_exact(3) {
+    for tri in indices.as_chunks::<3>().0 {
         let (a, b, c) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
         if a >= positions.len() || b >= positions.len() || c >= positions.len() {
             continue;

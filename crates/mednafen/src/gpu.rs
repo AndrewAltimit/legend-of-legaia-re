@@ -226,7 +226,7 @@ pub fn bgr555_to_rgba8(word: u16) -> [u8; 4] {
 pub fn vram_to_rgba8(bytes: &[u8]) -> Vec<u8> {
     assert_eq!(bytes.len(), VRAM_BYTES, "vram_to_rgba8: wrong byte count");
     let mut rgba = Vec::with_capacity(VRAM_WIDTH * VRAM_HEIGHT * 4);
-    for chunk in bytes.chunks_exact(2) {
+    for chunk in bytes.as_chunks::<2>().0 {
         let w = u16::from_le_bytes([chunk[0], chunk[1]]);
         rgba.extend_from_slice(&bgr555_to_rgba8(w));
     }
@@ -237,8 +237,10 @@ pub fn vram_to_rgba8(bytes: &[u8]) -> Vec<u8> {
 /// "how much texture data the runtime has uploaded so far".
 pub fn nonzero_rows(bytes: &[u8]) -> usize {
     bytes
-        .chunks_exact(VRAM_WIDTH * 2)
-        .filter(|row| row.chunks_exact(2).any(|c| c != [0u8, 0u8]))
+        .as_chunks::<{ VRAM_WIDTH * 2 }>()
+        .0
+        .iter()
+        .filter(|row| row.as_chunks::<2>().0.iter().any(|c| *c != [0u8, 0u8]))
         .count()
 }
 

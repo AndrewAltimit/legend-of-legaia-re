@@ -108,7 +108,7 @@ pub fn render_posed(
 ) -> Vec<u8> {
     let (w, h) = (opts.width, opts.height);
     let mut out = vec![0u8; w * h * 4];
-    for px in out.chunks_exact_mut(4) {
+    for px in out.as_chunks_mut::<4>().0 {
         px.copy_from_slice(&opts.background);
     }
     if w == 0 || h == 0 || mesh.indices.len() < 3 {
@@ -655,7 +655,12 @@ mod tests {
         assert_eq!(&img[centre..centre + 4], &[0, 255, 0, 255]);
         // Margin stays background.
         assert_eq!(img[3], 0);
-        let opaque = img.chunks_exact(4).filter(|p| p[3] == 255).count();
+        let opaque = img
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| p[3] == 255)
+            .count();
         // ~88% of the side is covered: (32 * 0.88)^2 ≈ 793 pixels.
         assert!((700..=900).contains(&opaque), "{opaque}");
     }

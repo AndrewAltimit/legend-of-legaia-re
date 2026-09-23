@@ -101,7 +101,7 @@ fn kick_is_blue_punch_is_red_on_disc() {
     let avg = |sym: usize| -> (u64, u64, u64) {
         let sp = minigame_art::slot_symbol(&art, sym).expect("symbol decodes");
         let (mut r, mut g, mut b, mut n) = (0u64, 0u64, 0u64, 0u64);
-        for px in sp.rgba.chunks_exact(4) {
+        for px in sp.rgba.as_chunks::<4>().0 {
             if px[3] < 8 {
                 continue; // ignore transparent texels
             }
@@ -189,7 +189,7 @@ fn the_bonus_reels_carry_ten_distinct_numerals_on_their_own_art_page() {
         );
 
         let (mut fill, mut ink, mut opaque) = (Vec::new(), 0usize, 0usize);
-        for px in sp.rgba.chunks_exact(4) {
+        for px in sp.rgba.as_chunks::<4>().0 {
             if px[3] < 8 {
                 continue;
             }

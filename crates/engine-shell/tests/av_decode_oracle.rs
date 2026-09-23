@@ -171,7 +171,7 @@ fn str_mdec_decode_is_pixel_stable() {
 
     // Not blank / not a single flat colour (would indicate a dead decode).
     let first = &rgba[0..3];
-    let varied = rgba.chunks_exact(4).any(|p| p[0..3] != *first);
+    let varied = rgba.as_chunks::<4>().0.iter().any(|p| p[0..3] != *first);
     assert!(varied, "{path}: decoded frame 0 is a single flat colour");
 
     // FNV-1a over the RGBA pins the exact pixels.

@@ -567,8 +567,10 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
 
     // The entry stub `j`s to the 0899-hosted handler and gates on the active flag.
     let entry_words: Vec<u32> = entry
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     let j_handler = 0x0800_0000 | ((seru_overlay::TRADE_HANDLER_VA & 0x0fff_ffff) >> 2);
     assert!(
@@ -577,8 +579,10 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
     );
     let flag_lui = 0x3c01_0000 | (seru_overlay::TRADE_ACTIVE_VA.wrapping_add(0x8000) >> 16);
     let disp_words: Vec<u32> = disp
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     assert!(
         disp_words.contains(&flag_lui),

@@ -58,7 +58,7 @@ impl Mesh {
                 .map(|p| [p[0] * scale[0], p[1] * scale[1], p[2] * scale[2]]),
         );
         let flip = scale[0] * scale[1] * scale[2] < 0.0;
-        for t in src.indices.chunks_exact(3) {
+        for t in src.indices.as_chunks::<3>().0 {
             if flip {
                 self.indices
                     .extend_from_slice(&[base + t[0], base + t[2], base + t[1]]);

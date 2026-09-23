@@ -351,8 +351,10 @@ fn delilas_challenge_keeps_touched_sectors_valid() {
     assert_eq!(patched.len(), disc.len());
     let mut touched = 0usize;
     for (i, (a, b)) in disc
-        .chunks_exact(2352)
-        .zip(patched.chunks_exact(2352))
+        .as_chunks::<2352>()
+        .0
+        .iter()
+        .zip(patched.as_chunks::<2352>().0)
         .enumerate()
     {
         if a != b {

@@ -352,7 +352,9 @@ fn items(
     // still a dump rather than nothing.
     let walk = window.map(|w| w.len()).unwrap_or(raw.len() / 2);
     let slots: Vec<(u8, u8)> = raw
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .take(walk)
         .map(|c| (c[0], c[1]))
         .collect();
