@@ -3065,25 +3065,39 @@ impl World {
     }
 
     /// Per-frame vertical settle + ledge-hop trigger: retail `FUN_801d1ba0`
-    /// (field overlay `overlay_0897`, 74 instructions at file offset
-    /// `0x3388`).
+    /// (field overlay PROT 0897, `0x801D1BA0..0x801D1EC0` - two hundred and
+    /// one instructions, file offset `0x3388`).
     ///
-    /// PORT: FUN_801d1ba0
-    /// REF: FUN_80019278, FUN_801d1878
+    /// PORT: FUN_801d1ba0 (the glide and the hop gate; the anim-clip tail
+    /// `0x801D1D80..0x801D1EAC` is not ported - see below)
+    /// REF: FUN_80019278, FUN_801d1878, FUN_801d1ec4, FUN_800204F8
     ///
     /// Glides the actor's height toward the floor beneath it at a
-    /// frame-rate-scaled rate, then - once settled and still walking - asks
-    /// [`Self::try_field_ledge_hop`] whether the step ahead is a ledge.
+    /// frame-rate-scaled rate, then - when the frame is free to hop and the
+    /// actor walked - asks [`Self::try_field_ledge_hop`] whether the step
+    /// ahead is a ledge.
     ///
-    /// Retail's gates, in order (`0x801d1bb4..0x801d1bec`):
+    /// Retail's gates (`0x801d1bb4..0x801d1d78`) decide the **hop**, not the
+    /// glide:
     ///
-    /// - `+0x10 & 0x80000` set: the movement-disabled flag. The same bit
-    ///   [`Self::step_field_locomotion`] honours - a cutscene or queued
-    ///   encounter owns the actor, so no settle and no hop.
-    /// - the pad-latch bit `0x400`: retail reads it out of the live pad
-    ///   word, and it suppresses the settle for that frame.
-    /// - `+0x9e != 0x10`: the actor is not in the grounded state (already
-    ///   mid-hop, or in a scripted motion), so the controller yields.
+    /// - `+0x10 & 0x80000` (the movement lock [`Self::step_field_locomotion`]
+    ///   honours) or scratchpad `_DAT_1F800394 & 0x400` sends the routine to
+    ///   `0x801D1CC8`, which still glides (and first promotes a `+0x9E` of `0`
+    ///   to the grounded `0x10`) but never hops. An earlier reading here had
+    ///   the lock skip the settle outright; it only skips the hop.
+    /// - `+0x9e` neither `0` nor `0x10`: no glide and no hop (mid-hop, or a
+    ///   scripted motion owns the actor). The engine's player carries no
+    ///   `+0x9E`, so it is treated as grounded.
+    /// - The hop additionally needs `_DAT_8007B6B0 <= 0` (the warp walk timer,
+    ///   which the engine's instant warps never raise) and
+    ///   `_DAT_8007B6B4 == 0` (the dialogue-pacing countdown,
+    ///   `0x801D1C6C..0x801D1C88`) - here, no dialogue owning the input.
+    ///
+    /// Retail then runs a tail on every grounded frame that did not hop:
+    /// `jal 0x801D1EC4`, and an anim-clip pick into `+0x5C` from
+    /// `_DAT_8007BDD8` (with the `99` sentinel), `_DAT_8007B8F8 * 7` and
+    /// `_DAT_8007B6AC` before `FUN_800204F8`. The engine's player animation
+    /// is driven by its own locomotion clip state, so that tail is not ported.
     ///
     /// The glide rate is `delta_scalar * 12`, halved when `+0x10 & 0x2000`
     /// is set (retail `sra s0, 1` - the slow-fall class). The height step is
@@ -3116,9 +3130,8 @@ impl World {
             return;
         }
         let flags = self.actors[slot].move_state.flags;
-        if flags & 0x0008_0000 != 0 {
-            return;
-        }
+        // The movement lock routes to the no-hop glide arm (`0x801D1CC8`).
+        let hop_allowed = flags & 0x0008_0000 == 0 && !self.dialogue_owns_input();
         // Retail rate: `delta_scalar * 3 << 2`, halved for the `0x2000`
         // slow-fall class.
         let scalar = self.move_vm.ramp_ratio.max(1) as i32;
@@ -3146,7 +3159,7 @@ impl World {
         // Retail gates the hop on the step-delta pair being non-zero - i.e.
         // the actor actually walked this frame.
         let (dx, dz) = self.locomotion.step_delta;
-        if dx != 0 || dz != 0 {
+        if hop_allowed && (dx != 0 || dz != 0) {
             self.try_field_ledge_hop(slot);
         }
     }

@@ -706,17 +706,29 @@ along an axis the walk never moved on.
 
 ### `FUN_801d1ba0` - settle, then trigger
 
-Gates, in order (`0x801d1bb4..0x801d1bec`): the movement-disabled flag
-`+0x10 & 0x80000`; a pad-latch bit `0x400`; and `+0x9e != 0x10`, the grounded
-state - an actor already mid-hop or in a scripted motion yields the frame.
+The routine runs `0x801D1BA0..0x801D1EC0`. Its gates decide the **hop**, not
+the glide. The movement-disabled flag `+0x10 & 0x80000` or scratchpad
+`_DAT_1F800394 & 0x400` (`0x801d1bb4..0x801d1bd8`) sends it to `0x801D1CC8`,
+the no-hop arm; so does a `+0x9e` other than the grounded `0x10`. That arm
+promotes a `+0x9e` of `0` to `0x10` (`0x801D1CE8`) and still glides whenever
+`+0x9e` is `0x10`; any other `+0x9e` (mid-hop, scripted motion) skips the glide
+too. An earlier reading here listed the three tests as gates on the whole
+routine, which dropped the glide from every locked frame.
 
-It then glides `+0x16` toward the floor beneath the actor at
+The glide moves `+0x16` toward the floor beneath the actor at
 `delta_scalar * 12` units per frame, halved for the `+0x10 & 0x2000` slow-fall
 class. The step is **clamped to that rate**, so a tall drop takes several
 frames. That clamp is the whole reason this is a controller rather than an
-assignment.
+assignment. An actor carrying `+0x10 & 0x20000000` takes `-(+0x8E)` instead of
+the sample, in both arms.
 
-With the settle done and the step delta non-zero, it calls the hop probe.
+Only on the grounded, unlocked path does it then consider the hop, and only
+when `_DAT_8007B6B0 <= 0` (the warp walk timer) and `_DAT_8007B6B4 == 0` (the
+dialogue-pacing countdown) and the step delta is non-zero
+(`0x801D1C6C..0x801D1CA8`). A frame that did not hop, with `+0x9e <= 0x10`,
+ends in an animation tail: `jal 0x801D1EC4`, then an anim-clip pick into
+`+0x5C` from `_DAT_8007BDD8` (with a `99` sentinel), `_DAT_8007B8F8 * 7` and
+`_DAT_8007B6AC`, and `FUN_800204F8` (`0x801D1D80..0x801D1EAC`).
 
 **The settle is a precondition of the probe, not a neighbour of it.** The glide
 (`0x801D1C30..0x801D1C68`: `jal 0x80019278`, `subu a0, v0, v1`, the two `slt`
@@ -788,7 +800,10 @@ far point.
 ### Engine port
 
 `World::step_field_vertical` (`FUN_801d1ba0`) runs in the field frame tick
-after `step_field_locomotion`; it calls `World::try_field_ledge_hop`
+after `step_field_locomotion`. The movement lock and an input-owning dialogue
+(the engine's `_DAT_8007B6B4`) withhold the hop but not the glide; the
+animation tail is not ported, because the engine drives the player's clip from
+its own locomotion state. It calls `World::try_field_ledge_hop`
 (`FUN_801d1878`), which classifies the ledge and starts the hop through
 `World::start_field_ledge_hop` (`FUN_801d2404`). The step-delta pair is
 `World::locomotion.step_delta`.
