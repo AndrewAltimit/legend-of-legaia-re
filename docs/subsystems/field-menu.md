@@ -2668,6 +2668,8 @@ branch for.
 
 `engine-ui::BattleHudFrame::host_box` carries the live box's centre rect and
 the builder omits whichever party surface its inflated footprint covers. The
-enemy target strip has the same collision one band up - its stage row `166` is
-the last row of a three-line style-5 hint - and steps up in whole 14-px text
-rows until it clears (`enemy_target_menu_rows_y`).
+target cursor's name draws as retail's target-select plaque (placement record
+`0x29`, row `162`, see
+[`battle-action.md`](battle-action.md#the-target-select-plaque-record-0x29)); the
+engine-seat enemy strip that used to step clear of the hint
+(`enemy_target_menu_rows_y`) is no longer drawn by either host.
