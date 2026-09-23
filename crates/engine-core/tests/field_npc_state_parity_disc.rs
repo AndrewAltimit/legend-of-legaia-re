@@ -262,6 +262,30 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         class: "b",
         note: "same pre-load capture context as doman_arrival_from_korb2 vis:*",
     },
+    KnownDivergence {
+        label: "kor5_post_436_organic",
+        key: "vis:*",
+        class: "b",
+        note: "mid-visit capture taken after the whole P2[3] -> P2[8] chain ran (a \
+               0x464 battle, a scene reload, P2[5]'s 0x436 write): the chain's walk-on \
+               beats re-seat and re-show actors after retail's own entry, which a cold \
+               entry against the captured bank does not replay",
+    },
+    KnownDivergence {
+        label: "kor5_post_436_organic",
+        key: "pos:*",
+        class: "b",
+        note: "same mid-chain capture context as kor5_post_436_organic vis:*",
+    },
+    KnownDivergence {
+        label: "kor5_post_436_organic",
+        key: "flag:1561",
+        class: "c",
+        note: "the engine's cold kor5 entry sets 0x619 and the captured bank holds 0; \
+               either a chain beat clears it after retail's entry or the entry arm that \
+               sets it is gated on a flag the chain changed. Needs a write watch on \
+               0x619 across the chain to decide",
+    },
 ];
 
 fn known(label: &str, key: &str) -> Option<&'static KnownDivergence> {
