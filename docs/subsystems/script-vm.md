@@ -453,6 +453,24 @@ rim and its fills off-screen and leaves only the faint centre fan - the
 engine's `dolk` and `cave01` frames show no darkness at all. Pinned (retail side) by
 `crates/engine-core/tests/attached_light_retail_capture_disc.rs`.
 
+A second scene at a second extent holds the same law. `cave01_attached_light`
+(retail SCUS, tile-poked in from `s3_rimelm_freeroam` through `map01`'s cave
+portal) carries one `FUN_801E4470` actor on the player built by `cave01`
+`P1[0]`'s `B4 F8 11 80 80 20 00 0C 00 0C 60 00 00 00`: extents
+`(0xC00, 0xC00)`, `+0x74 = 0`, `+0x88 = 0x808020`, `+0x5A = 2`, offset
+`(0, -0x60, 0)`, no script, and the engine's spawn matches every field. Its
+rim is `180` px round `(155, 116)` with `H = 512` and `vz = 8710`
+(`512 * 0xC00 / 8710 = 180`); the world-unit reading would give `1080` px.
+Pinned by `crates/engine-core/tests/attached_light_cave01_retail_capture_disc.rs`.
+The rim scan there accepts a colour match only behind a well-formed
+ordering-table tag (word count `5`, a RAM link): in `cave01` the rim colour's
+bytes also occur outside the frame's packets, and an unfiltered scan reads a
+rim tens of thousands of pixels wide. `jiji`'s one attached-light site
+(`P1[0]` `+0x73`, a white `B4 F8 11 FF FF FF ...`) did not spawn on either of
+two retail entries from `map02` (story flag `0x2AD` set as the card left it,
+then cleared by a poke): no `FUN_801E4470` actor in the lists, so that scene
+stays unpinned.
+
 #### 0x35 BGM
 
 `[35, lo, hi, sub]`. Operand 2 selects sub-op:
@@ -894,6 +912,26 @@ halt it can see - an arc still in flight on that actor
 hook) - and the VM returns `Halt` at the op on any refusal; it previously
 advanced past the op, skipping the jump. The acquire's other clause (an NPC
 target with no `+0x94` owner) is not modelled.
+
+**Retail capture of a player arc.** `town01`'s walk-on tiles `(30..32, 19)`
+spawn `P2[12..14]`, each a player arc `C3 F8 01 <x> 10 60 00 18 00` (sub-`1`,
+apex `0x60`, frames `0x18`) behind a pad-direction test. From
+`s3_rimelm_freeroam` with a position poke to `(3904, 2700)` and Down held
+([`autorun_w5b_field_watch.lua`](../../scripts/pcsx-redux/autorun_w5b_field_watch.lua)),
+the crossing onto `(30,19)` spawns `P2[12]` (`FUN_8003BDE0(0x1E, 0x13, 12, 1)`
+from `ra 0x801D218C`), `FUN_801D25EC` runs six vsyncs later with `a2 = 0x60`,
+`a3 = 0x18` from `ra 0x801DF5B4`, and `FUN_801D5C08` / `FUN_801D5D60` tick
+once per field tick for thirteen ticks. The player's `(Y, Z)` per tick is
+`(-235, 2519) (-267, 2482) (-288, 2445) (-299, 2408) (-299, 2371)
+(-289, 2334) (-268, 2298) (-236, 2261) (-194, 2224) (-141, 2187)
+(-78, 2150) (-4, 2113) (0, 2112)` from a start of `(-192, 2556)` - every
+sample equal to `bezier_at` over `build_hop_arc`'s control point with the
+cursor stepping `2 * (0x1000 / 0x18)` a tick. The landing is the decoded
+tile's centre, `(3904, 2112)` = tile `(30, 16)`, on the floor at `0`. The
+peak is `-299`: `96` above the higher endpoint at `t = 0.5`, as the
+construction states, and `107` above it at the curve's true minimum
+(`t = 0.375` for these endpoints), so "peaks `apex` above" is the midpoint
+height, not the extremum.
 
 #### 0x43 sub-2/3-6/7/8/9/C/D/E/F - actor / sound / face / position cluster
 
@@ -2201,18 +2239,39 @@ only at scene load. The two entry points are `placement_interaction_record`
 
 The inn regression that once kept talk NPCs on `script_pc0` was the runner,
 not the cursor. `retock`'s innkeeper opens its interaction with `CC F8 85`, a
-halt-acquire on the player. Retail's acquire (`0x801E1ECC..0x801E1F54`) halts
-the target and, for the player target, the caller too, then advances; the
-halted-target early-out at the top of the dispatcher (`0x801DE90C`) is skipped
-while a modal window is up (`*(_DAT_801C6EA4 + 8) != 0`), so the stay's later
-player gestures still run. The runner hands such an op the record's own context
-as the target's stand-in, and the halt bit it left there turned each later
-cross-context op into a `Halt`, ending the stay before its gold gate. The
+halt-acquire on the player. Retail's acquire for sub `5` is the arm at
+`0x801E2148..0x801E21DC` (jump table `0x801CEF48`, entries `5`, `0xE` and `0xF`
+all point there; `0x801E1ECC..0x801E1F54`, cited here before, is the same-shaped
+arm of sub `0`, `4C 80`). It halts the target and, for the player target, the
+caller too, then advances by its width in `s7`; `s7 = 0` is the refusal,
+`beqz s7, 0x801DEE4C` at `0x801E21D0`. The runner hands such an op the record's
+own context as the target's stand-in, and the halt bit it left there turned each
+later cross-context op into a `Halt`, ending the stay before its gold gate. The
 runner now keeps the caller's halt state across a cross-context op and records
-the acquired target; the record's tail looping back over the same acquire is
-where the conversation ends (retail's acquire fails there once the window has
-closed, and the caller halts at its own PC). That end rule is an inference
-from the acquire's predicate, not a capture.
+the acquired target, and ends the conversation when the record's tail loops back
+over the same acquire.
+
+**Where retail ends it (capture).** `retock_innkeeper_talk_open`, a Cross
+cadence, exec-BPs on the arm's entry and on `0x801E21D0`
+([`autorun_w5b_field_watch.lua`](../../scripts/pcsx-redux/autorun_w5b_field_watch.lua)):
+one stay runs to its last page, and when that page is dismissed the player's
+movement lock (`+0x10 & 0x80000`) clears with the innkeeper's cursor `+0x9E`
+parked **on** the `26 9D FE` loop-back at `+0x18A` - not executed. Nothing more
+runs until the next Cross on the innkeeper; that talk's first VM step executes
+the loop-back to `+0x28`, the two selector tests, and the acquire at `+0x30`,
+which **succeeds** (`s7 = 5`, target the player, caller the innkeeper): both
+take `0x400`, the cursor advances to `+0x36`, and the second conversation opens
+there. So the talk ends at the page close before the loop-back, and a failing
+acquire plays no part - the earlier reading that "the acquire fails once the
+window has closed" is falsified. It also misread its gate: the scene word
+`*(_DAT_801C6EA4) + 8` reads `0` on every sampled vsync of both conversations,
+consistent with its one documented use (non-zero only while a placement's spawn
+section is pre-run, [above](#0x43-sub-01ab---scripted-arc-jump)), so it is not
+a modal-window flag. The engine's runner instead executes the loop-back and the
+`+0x28` selector's flag tests before it ends, so those tests run at the end of
+the finishing talk rather than at the start of the next one. The two
+`0x400` bits the acquire set are clear again 18 vsyncs later with the second
+conversation still open; what clears them is not identified.
 
 An earlier engine model drove `0x3F → open_dialog(text_id, inline, …)`, which is
 wrong twice over: `0x3F` is the named scene-change, and field dialogue is the
