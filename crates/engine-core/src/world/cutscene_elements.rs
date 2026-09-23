@@ -69,6 +69,13 @@ impl WorldRng {
     }
 }
 
+/// The value BIOS `rand()` (`A(2Fh)`, the call `FUN_80056798` makes) returns
+/// for an LCG state: its high half, `(seed >> 16) & 0x7FFF`. Applied to the
+/// raw [`WorldRng`] state before the element channel's consumers see a draw.
+pub fn bios_rand_shape(state: u32) -> u32 {
+    (state >> 16) & 0x7FFF
+}
+
 /// Runtime VA of the ambient emitter's spawn descriptor in the field overlay's
 /// plain-template table (see the module note).
 pub const AMBIENT_EMITTER_TEMPLATE_VA: u32 = 0x801F_271C;
@@ -361,7 +368,18 @@ impl World {
     /// Retired elements are dropped at the end of the pass; an element spawned
     /// *during* it is spliced in rather than overwritten, the same way the
     /// eased-move pass handles a spawn from its own frame.
-    pub fn tick_cutscene_elements(&mut self, frame_step: u8, mut rand: impl FnMut() -> u32) {
+    pub fn tick_cutscene_elements(&mut self, frame_step: u8, mut raw_rand: impl FnMut() -> u32) {
+        // The emitter and the fog spawner call the BIOS `rand()` (`A(2Fh)`,
+        // reached through `FUN_80056798`), which returns the **high** half of
+        // its LCG state, `(seed >> 16) & 0x7FFF`. The world stream is a raw
+        // 32-bit LCG whose low four bits cycle with period 16, and both
+        // routines test exactly those bits (`rand & 0xF`, `rand & 7`,
+        // `rand & 0x7F`): fed the raw state, the emitter's burst gate failed
+        // on almost every frame and then passed on all 24 draws at once,
+        // spawning fifty-odd fog records in one frame - the "pool density
+        // above retail" the vell poll measured. Shaping the draw the way the
+        // BIOS does restores retail's per-frame spawn statistics.
+        let mut rand = move || bios_rand_shape(raw_rand());
         if self.cutscene.elements.is_empty() {
             if !self.cutscene.element_frame.is_empty() {
                 self.cutscene.element_frame = ElementFrame::default();

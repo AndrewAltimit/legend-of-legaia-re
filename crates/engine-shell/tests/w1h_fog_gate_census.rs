@@ -194,27 +194,36 @@ fn native_engine_draws_retail_shaped_fog_once_the_script_raises_the_gate() {
         .enter_field_live(&scene, &FieldLiveOpts::default())
         .expect("enter field scene");
 
-    // The effect-atlas cells the fog samples (page 0x27 = VRAM (448, 256),
-    // 4bpp; rows v 0x40..0x6F of the two staged UV rows) are resident in
-    // the scene VRAM from field entry - the same upload both hosts stage.
+    // The effect-atlas cells the fog samples are resident in the scene VRAM
+    // from field entry, byte-for-byte what retail holds there. Texpage
+    // `0x0027` is VRAM `(448, 0)` - bit 4, the Y-base bit, is clear; bit 5 is
+    // ABR - and the two staged UV rows read `v 0x40..0x6F`, `u 0x00..0x3F`
+    // (4bpp: sixteen halfwords). The CLUT `0x7640` is `(0, 473)`. Both
+    // hashes are the retail ones `window/fog_texture_tests.rs` pins (nine
+    // PCSX-Redux field / world-map states agree).
     {
         let res = session
             .host
             .resources
             .as_ref()
             .expect("scene resources after field entry");
-        let mut nonzero = 0usize;
-        for y in (256 + 0x40)..(256 + 0x70) {
-            for x in 448..(448 + 16) {
-                if res.vram.pixel(x, y) != 0 {
-                    nonzero += 1;
-                }
-            }
-        }
-        eprintln!("[fog oracle] fog cell halfwords resident: {nonzero}/768");
-        assert!(
-            nonzero > 0,
-            "fog texture cells not resident in the scene VRAM"
+        let fnv = |vals: &mut dyn Iterator<Item = u16>| {
+            vals.fold(0xcbf2_9ce4_8422_2325u64, |h, p| {
+                (h ^ u64::from(p)).wrapping_mul(0x0000_0100_0000_01b3)
+            })
+        };
+        let cells = fnv(&mut (0x40..0x70)
+            .flat_map(|y| (448..464).map(move |x| (x, y)))
+            .map(|(x, y)| res.vram.pixel(x, y)));
+        let clut = fnv(&mut (0..16).map(|x| res.vram.pixel(x, 473)));
+        eprintln!("[fog oracle] fog cells {cells:016x}, clut {clut:016x}");
+        assert_eq!(
+            cells, 0xe9d8_110d_1eec_6070,
+            "fog wisps at VRAM (448, 0x40..0x70) differ from retail"
+        );
+        assert_eq!(
+            clut, 0x3e91_7d19_3b0e_dcf5,
+            "fog CLUT at (0, 473) differs from retail"
         );
     }
 
@@ -283,5 +292,70 @@ fn native_engine_draws_retail_shaped_fog_once_the_script_raises_the_gate() {
     assert!(
         first_draw.is_some(),
         "gate raised but no fog quad was emitted in 1200 ticks"
+    );
+}
+
+/// Pool density against the retail `vell` poll.
+///
+/// `autorun_w1a_fog_pool_poll.lua` on the `vell_fog_field` state (1800
+/// vsyncs standing at the `map01` entrance, gate raised, cap `0x18`, frame
+/// step `DAT_1F800393 = 2` on every sample) reads the alive-record population
+/// at 21..38, mean 25.9. The port once read 40..62: its emitter drew the raw
+/// world LCG state, whose low four bits cycle with period 16, where retail's
+/// BIOS `rand()` returns the state's high half - so the burst gate
+/// (`rand & 0xF == 0`) failed on almost every frame and then passed on all 24
+/// draws of one frame, dropping fifty-odd records into the pool at once past
+/// the stale live count. This pins the per-tick spawn count to what one
+/// retail frame can produce and the settled population to retail's band.
+#[test]
+fn vell_fog_density_tracks_the_retail_poll() {
+    let Some(extracted) = gated() else { return };
+    let scene = "vell".to_string();
+    let cfg = BootConfig {
+        scene: scene.clone(),
+        enable_audio: false,
+    };
+    let mut session = BootSession::open(&extracted, &cfg).expect("boot session");
+    session
+        .enter_field_live(&scene, &FieldLiveOpts::default())
+        .expect("enter vell");
+    let mut samples = Vec::new();
+    let mut max_spawn = 0usize;
+    for f in 0..3000 {
+        session.host.world.set_pad(0);
+        let before = session.host.world.fog.allocated();
+        let _ = session.tick();
+        let spawned = session.host.world.fog.allocated().saturating_sub(before);
+        let frame = resolve_field_camera(&session.host.world, &session.camera, None, [0.0, 0.0]);
+        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
+            panic!("no field camera frame at tick {f}");
+        };
+        let _ = session.host.world.fog_render_step(&view);
+        if f >= 600 {
+            samples.push(session.host.world.fog.live);
+            max_spawn = max_spawn.max(spawned);
+        }
+    }
+    assert!(
+        session.host.world.fog.gate,
+        "vell's entry script raises the gate"
+    );
+    let n = samples.len();
+    let mean = samples.iter().map(|&v| f64::from(v)).sum::<f64>() / n as f64;
+    let min = *samples.iter().min().unwrap();
+    let max = *samples.iter().max().unwrap();
+    eprintln!(
+        "[fog density] vell over {n} ticks: live {min}..{max}, mean {mean:.1}; \
+         max spawns in one tick {max_spawn} (retail poll: alive 21..38, mean 25.9, cap 24)"
+    );
+    // One retail frame: 24 burst draws, each a 1-in-16 gate for 1..4 spawns.
+    // Fifty-plus in one tick is the degenerate-gate shape this guards.
+    assert!(
+        max_spawn <= 24,
+        "{max_spawn} fog spawns in one tick - the burst gate is not drawing BIOS rand()"
+    );
+    assert!(
+        (18.0..=34.0).contains(&mean),
+        "vell fog population mean {mean:.1} is outside retail's band (25.9, cap 24)"
     );
 }

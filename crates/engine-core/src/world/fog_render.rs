@@ -57,7 +57,9 @@ impl World {
 
     /// Install the scene MAN's section-4 fog-region table - the
     /// `DAT_80073ED8` / `DAT_80073EDC` pair `FUN_8003AEB0` sets from the
-    /// section (`+3` = count, records from `+4`).
+    /// section (`+3` = count, records from `+4`) - and the pool cap the same
+    /// installer derives from the MAN header
+    /// ([`crate::fog_particles::fog_cap_for_man`]).
     ///
     /// REF: FUN_8003AEB0
     pub fn install_fog_regions(
@@ -71,6 +73,9 @@ impl World {
             .and_then(|s| s.body(man))
             .map(crate::fog_particles::parse_fog_regions)
             .unwrap_or_default();
+        // `_DAT_8007BCB0`, seated by the same installer from the MAN's
+        // header byte `+1` (`0x8003B6BC..0x8003B6E8`).
+        self.fog.cap = crate::fog_particles::fog_cap_for_man(man);
     }
 
     /// One rendered frame of the fog pool through `view` - the field render

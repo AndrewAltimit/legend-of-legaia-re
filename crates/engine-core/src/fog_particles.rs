@@ -66,8 +66,10 @@
 //!
 //! Each half of a particle is one `POLY_FT4` (tag `0x09` words, command
 //! `0x2E` = textured, semi-transparent, texture-blended) linked at OT bucket
-//! `view_z >> 5`, sampling texture page `0x27` (VRAM `(448, 256)`, 4bpp, ABR
-//! `1` = additive) through CLUT `0x7640` (`(0, 473)`). The left half takes
+//! `view_z >> 5`, sampling texture page `0x27` (VRAM `(448, 0)`, 4bpp, ABR
+//! `1` = additive) through CLUT `0x7640` (`(0, 473)`). As a GP0 texpage the
+//! halfword's bits `0..3` give X `7 * 64 = 448` and bit 4 - the Y-base bit -
+//! is clear; the set bit 5 is the low bit of ABR, not a Y offset. The left half takes
 //! UV row 1 of the staged table (`v 0x58..0x6F`), the right half row 0
 //! (`v 0x40..0x57`); rows 2 and 3 are staged too but this routine never
 //! reads them. The quad is axis-aligned in screen space between two
@@ -85,19 +87,52 @@ use legaia_engine_vm::psx_camera::FieldCameraView;
 pub const FOG_POOL_SLOTS: usize = 0x50;
 
 /// Live-particle cap the spawner tests the pool population against
-/// (`_DAT_8007BCA8 < _DAT_8007BCB0`): the field reset writes `0x18` at
-/// `0x8003B6E8` (`FUN_8003AEB0`'s body), or `0x48` when either debug byte it
-/// tests first is set.
+/// (`_DAT_8007BCA8 < _DAT_8007BCB0`) in an ordinary field scene - see
+/// [`fog_cap_for_man`] for who writes it.
 pub const FOG_CAP_DEFAULT: u16 = 0x18;
-/// The debug-flag cap (`addiu a0,zero,0x48` at `0x8003B6DC`).
-pub const FOG_CAP_DEBUG: u16 = 0x48;
+/// The raised cap (`li a0,0x48` at `0x8003B6DC`): the kingdom overworlds and
+/// any scene whose MAN sets bit 2 of its header byte `+1`.
+pub const FOG_CAP_RAISED: u16 = 0x48;
+
+/// The cap the MAN installer `FUN_8003AEB0` seats for a scene, from the MAN it
+/// just loaded.
+///
+/// ```text
+/// 8003af48  lbu  v0,0x1(v1)        ; v1 = _DAT_8007B898, the resident MAN
+/// 8003af50  andi v0,v0,0x1
+/// 8003af54  sb   v0,-0x4958(a0)    ; _DAT_8007B6A8 = MAN[1] & 1
+///   ...
+/// 8003b6bc  lw   v0,-0x4768(v0)    ; the MAN again
+/// 8003b6c4  lbu  v0,0x1(v0)
+/// 8003b6c8  lbu  v1,-0x4958(v1)    ; _DAT_8007B6A8
+/// 8003b6cc  andi v0,v0,0x4
+/// 8003b6d0  or   v0,v0,v1
+/// 8003b6d4  beq  v0,zero,0x8003b6e0
+/// 8003b6d8  _li  a0,0x18
+/// 8003b6dc  li   a0,0x48
+/// 8003b6e8  sw   a0,-0x4350(v0)    ; _DAT_8007BCB0
+/// ```
+///
+/// So the cap is `0x48` exactly when `MAN[1] & 5` is non-zero. Bit 0 is the
+/// per-scene save-allow / overworld flag (`_DAT_8007B6A8`, set on the three
+/// kingdom overworlds), which is why every PCSX-Redux `map01` / `map03`
+/// state reads `0x48` there; neither input is a debug switch. A MAN shorter
+/// than two bytes seats the default.
+///
+/// PORT: FUN_8003AEB0 (`0x8003B6BC..0x8003B6E8`, the fog-cap arm)
+pub fn fog_cap_for_man(man: &[u8]) -> u16 {
+    match man.get(1) {
+        Some(b) if b & 0x05 != 0 => FOG_CAP_RAISED,
+        _ => FOG_CAP_DEFAULT,
+    }
+}
 
 /// One fog-region record's stride in the MAN section-4 table (`addiu v1,v1,0xb`
 /// at `0x801D63B4`).
 pub const FOG_REGION_STRIDE: usize = 0xB;
 
 /// GP0 texpage word every fog quad carries (`0x8007322C` row word 1, high
-/// halfword): page `(448, 256)`, 4bpp, ABR 1.
+/// halfword): page `(448, 0)` (bit 4, the Y-base bit, is clear), 4bpp, ABR 1.
 pub const FOG_TPAGE: u16 = 0x0027;
 /// GP0 CLUT word (`0x8007322C` row word 0, high halfword): `(0, 473)`.
 pub const FOG_CLUT: u16 = 0x7640;
@@ -425,7 +460,11 @@ impl FogPool {
 
     /// Spawn one particle at tile `(tile_x, tile_z)` - `FUN_801D629C`.
     ///
-    /// `rand` is the shared `FUN_80056798` stream; this consumes exactly the
+    /// `rand` is the shared `FUN_80056798` stream - BIOS `rand()`, whose
+    /// result is the high half of its LCG state, `(seed >> 16) & 0x7FFF`
+    /// (the element channel shapes the world stream that way; a raw LCG
+    /// state's low bits cycle and wreck the `& 7` / `& 0x7F` draws below).
+    /// This consumes exactly the
     /// draws retail does on the path it takes (two before the slot pop, three
     /// after), so the emitter's own draws stay aligned around it. `trig` is
     /// the LUT pair behind `_DAT_8007B81C` (sine, [`RotationLut::b`]) and
@@ -463,7 +502,11 @@ impl FogPool {
         else {
             return false;
         };
-        // 0x801D63C0..0x801D63DC: population under the cap.
+        // 0x801D63C0..0x801D63DC: population under the cap. The count is
+        // `_DAT_8007BCA8` as the last render walk left it (`sw v0,0x990(gp)`
+        // at `0x8003F3C8`); nothing here increments it, so every spawn of
+        // one frame compares the same stale value - `self.live` is written
+        // only by `render_step` for the same reason.
         if self.live >= self.cap {
             return false;
         }
@@ -668,6 +711,15 @@ fn emit_half(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cap_is_raised_by_man_header_bits_0_and_2_only() {
+        assert_eq!(fog_cap_for_man(&[0, 0]), FOG_CAP_DEFAULT);
+        assert_eq!(fog_cap_for_man(&[0, 0x01]), FOG_CAP_RAISED);
+        assert_eq!(fog_cap_for_man(&[0, 0x04]), FOG_CAP_RAISED);
+        assert_eq!(fog_cap_for_man(&[0xFF, 0xFA]), FOG_CAP_DEFAULT);
+        assert_eq!(fog_cap_for_man(&[0x05]), FOG_CAP_DEFAULT);
+    }
 
     fn lut() -> &'static crate::action_effect_script::RetailRotationLut {
         crate::action_effect_script::retail_rotation_lut()

@@ -1106,13 +1106,21 @@ impl SceneHost {
                     },
                 )
             {
-                // Upload the battle effect-model textures (etim.dat, PROT 0874
-                // section 2) into the scene VRAM so the 3D effect models
-                // (etmd.dat) have their texels resident. Kept across the battle
-                // scene-mode overlay; soft-fails (textures just stay absent).
-                if let Err(err) = upload_effect_textures_into_vram(&self.index, &mut res.vram, true)
-                {
-                    eprintln!("[scene] effect-texture VRAM upload skipped: {err:#}");
+                // Layer the effect-texture pool (etim.dat, PROT 0874 section 2)
+                // UNDER the scene VRAM: the 3D effect models (etmd.dat) and the
+                // field fog sheets (page `(448, 0)`, CLUT row 473) sample it.
+                // Retail uploads the pool before the scene, so where a scene
+                // TIM covers a pool rect the scene's texels win - `dolk` keeps
+                // its own `(448, 0)` texels on the 1010 halfwords the two
+                // differ on. Writing the pool over the build clobbered them.
+                // Same order as the native window's build (`window/run.rs`).
+                // Soft-fails (the pool just stays absent).
+                let mut effect_pool = legaia_tim::Vram::new();
+                match upload_effect_textures_into_vram(&self.index, &mut effect_pool, true) {
+                    Ok(_) => res.vram.underlay(&effect_pool),
+                    Err(err) => {
+                        eprintln!("[scene] effect-texture VRAM underlay skipped: {err:#}");
+                    }
                 }
                 self.world.init_scene_animations(&res);
                 // Scene-entry VDF pulse (enhancement): when the scene's VDF

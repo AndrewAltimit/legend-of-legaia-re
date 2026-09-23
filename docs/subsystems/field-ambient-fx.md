@@ -673,10 +673,12 @@ page, and its capture holds the scene's texels on all 1010 halfwords where
 the two differ. So a port layers the pool *under* its scene build
 (`Vram::underlay`, the order `SceneResources` already uses for the
 boot-resident system-UI bundle); writing it over the build clobbers those
-texels. The engine host's own field entry still writes the pool over its
-build (`upload_effect_textures_into_vram` after
-`build_targeted_with_options` in `engine-core::scene::host::scene_entry`),
-which is the VRAM the browser play page draws from. A disc-wide census of
+texels. Both builds underlay it: the native window's
+(`engine-shell` `window/run.rs`) and the engine host's own field entry
+(`engine-core::scene::host::scene_entry`), which is the VRAM the browser
+play page draws from; the disc-gated
+`crates/engine-core/tests/scene_host_effect_pool_underlay_disc.rs` pins the
+host side on `dolk` and `vell`. A disc-wide census of
 every CDNAME scene built the window's way finds the overlap in `dolk` and
 `dolk2` (the `(448, 0)` page), `bubu2` (the CLUT rows), the `ed*` ending
 scenes (mostly the `(320, 256)` page) and the non-field `other4..6` /
@@ -694,14 +696,40 @@ native window's state until its scene build gained the underlay
 A per-vsync poll of the pool in `vell`
 ([`autorun_w1a_fog_pool_poll.lua`](../../scripts/pcsx-redux/autorun_w1a_fog_pool_poll.lua),
 1800 vsyncs standing at the `map01` entrance, gate raised, cap `0x18`)
-reads the render walk's live count at 24 to 31 in 1178 of the 1800
-samples, never above 36, and the allocated-record count between 16 and 39.
-The render walk writes the count (`sw v0,0x990(gp)` at `0x8003F3C8`) and the
-spawner compares the stale value, so one frame's spawns can overshoot the cap
-by a few records - which is all retail does. The port's pool in `vell`
-(render step every tick, 2400 ticks after a 600-tick settle) reads 40 to 47
-in 357 samples and peaks at 62: roughly half again as many sheets on screen
-as retail at the same cap.
+reads the alive-record population at 21 to 38, mean 25.9, with the frame
+step `DAT_1F800393` at `2` on every sample - `vell` runs at 30 frames a
+second. The live-count word itself is a poor sample: the walk zeroes it
+before it counts (`sw zero,0x990(gp)` at `0x8003F398`) and adds as it goes
+(`sw v0,0x990(gp)` at `0x8003F3C8`), so a vsync that lands inside the walk
+reads a partial count. The spawner compares that word as the last walk left
+it, so one frame's spawns can overshoot the cap by what one frame can
+spawn - which is all retail does.
+
+The emitter and the spawner draw BIOS `rand()` (`FUN_80056798` is the
+`A(2Fh)` thunk), which returns the **high** half of its LCG state,
+`(seed >> 16) & 0x7FFF`, and both test low bits of the result (`rand & 0xF`
+for the burst gate, `& 7`, `& 0x7F`). A port that hands them a raw 32-bit
+LCG state gets bits whose low nibble cycles with period 16: the burst gate
+then fails on almost every frame and passes on all 24 draws of one frame,
+which dropped fifty-odd records into the pool at once past the stale count -
+the engine's `vell` pool read 40 to 62 against retail's 21 to 38 until the
+element channel shaped its draws the BIOS way
+(`engine-core::world::cutscene_elements::bios_rand_shape`). Shaped, the
+engine's `vell` pool over 2400 ticks after a 600-tick settle reads 19 to
+35, mean 26.4, at most twelve spawns in one tick
+(`w1h_fog_gate_census.rs`, `vell_fog_density_tracks_the_retail_poll`).
+
+The cap is not a debug switch. The MAN installer `FUN_8003AEB0` stores
+`MAN[1] & 1` into `_DAT_8007B6A8` (`0x8003AF54`, the per-scene save-allow /
+overworld flag), then at `0x8003B6BC..0x8003B6E8` writes `0x48` into
+`_DAT_8007BCB0` when `MAN[1] & 4` or that flag is set, `0x18` otherwise. So
+every kingdom overworld runs the pool at `0x48` - the value every
+PCSX-Redux `map01` / `map03` library state holds - and a field scene
+reaches it only through header bit 2. Across the 101 scene MANs on the disc
+four raise it: `map01`, `map02` and `map03` (bit 0) and `opurud` (bit 2).
+The engine seats the cap from the MAN at scene entry
+(`fog_particles::fog_cap_for_man`); the census is
+`crates/engine-core/tests/scene_host_effect_pool_underlay_disc.rs`.
 
 The region table is MAN section 4 (`DAT_80073ED8`, count `DAT_80073EDC`):
 `0xB`-byte records of `[enable][x0][z0][x1][z1][angle base][angle
