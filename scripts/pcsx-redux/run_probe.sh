@@ -90,12 +90,19 @@
 #   -portable, so the capture is config-independent. Memory cards are pointed at
 #   the real ~/.config/pcsx-redux via ABSOLUTE Mcd paths (memorycard.cc only
 #   prepends the persistent dir to RELATIVE names), so card saves still work.
-#   The profile also zeroes Debug.FirstChanceException: the default mask
-#   (0x1CF0) PAUSES the whole emulator on the game's own first-chance CPU
-#   exceptions (retail battle load performs an unaligned LW the BIOS handler
-#   resolves), which under -debugger froze every breakpoint probe that crossed
-#   a battle load - the probe just stops logging mid-run with
-#   "First chance exception: LoadAddressError" as the last pcsx.log line.
+#   The profile also zeroes Debug.FirstChanceException (override with
+#   LEGAIA_PCSX_FIRST_CHANCE): the default mask (0x1CF0) PAUSES the whole
+#   emulator on a first-chance CPU exception, which under -debugger freezes a
+#   breakpoint probe mid-run. The retail battle load was blamed for one (an
+#   "unaligned LW" LoadAddressError), but no pcsx.log in the capture corpus
+#   logs a LoadAddressError, and a field-to-battle load on a staged, unpatched
+#   image with the mask armed ran through to BattleMode clean. Every
+#   battle-load first-chance exception the corpus does hold is on a PATCHED
+#   image - e.g. a sibling .ppf's 0898 detour jumping into a SCUS arena the
+#   state held unpatched (ReservedInstruction at 0x8007AF3C;
+#   docs/tooling/pcsx-redux-automation.md#patched-disc-taint).
+#   The zero mask stays the default so a probe of a deliberately patched disc
+#   keeps running.
 #   Knobs: LEGAIA_PCSX_PROFILE_DIR (profile dir), LEGAIA_PCSX_REAL_CONFIG (real
 #   config dir for memcards), LEGAIA_PCSX_HARDWARE_GPU=1 (pin the OpenGL/hardware
 #   renderer instead of the ship-default software one).
@@ -360,7 +367,7 @@ if [[ "$ISOLATE_CONFIG" == "1" ]]; then
     "Mcd2": "$_mcd2",
     "Mcd1Inserted": true,
     "Mcd2Inserted": true,
-    "Debug": { "Debug": $_debug, "GdbServer": false, "WebServer": false, "FirstChanceException": 0 }
+    "Debug": { "Debug": $_debug, "GdbServer": false, "WebServer": false, "FirstChanceException": ${LEGAIA_PCSX_FIRST_CHANCE:-0} }
   }
 }
 JSON

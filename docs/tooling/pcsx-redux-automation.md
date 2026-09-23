@@ -885,7 +885,12 @@ jumped into SCUS arena 1, which the state held as retail. The emulator
 logged `ReservedInstruction` at `0x8007AF3C`, where the zero run of the
 arena ends. It is the only first-chance exception at a battle load in any
 retail-path capture, and no capture on an unpatched image logs one at a
-battle load.
+battle load. The runner's isolated profile zeroes the emulator's
+first-chance exception mask on the reading that a retail battle load raises
+one; re-run with the default mask armed (`LEGAIA_PCSX_FIRST_CHANCE=7408`)
+on a staged image, the same field-to-battle load from
+`karisto_sol_pre_encounter` reaches BattleMode without one. The zero mask
+stays the default so a probe of a deliberately patched disc keeps running.
 
 ## Catalogue
 
