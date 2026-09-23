@@ -2,14 +2,15 @@
 
 use super::*;
 
-/// One observed `op34_sub1_spawn_or_skip` invocation.
+/// One observed `op34_sub1_spawn_attached` invocation.
 #[derive(Debug, Default)]
 struct Op34Sub1Call {
     op0: u8,
+    ext: Option<u8>,
     packed24: u32,
-    pos: [i16; 3],
-    capture_flag: u8,
-    captured_payload: Vec<u8>,
+    /// `[half_w, half_h, height]`.
+    extent_and_height: [i16; 3],
+    script: Option<Vec<u8>>,
 }
 
 /// Recording host: tracks every host-state interaction so tests can
@@ -118,7 +119,7 @@ struct TestHost {
     // 0x34 sub-0 / sub-1.
     op34_sub0_calls: Vec<(u8, [u8; 3], i16)>, // (op0, rgb, intensity)
     op34_sub1_calls: Vec<Op34Sub1Call>,
-    op34_sub1_capture_delta: Option<usize>, // override the default 13
+    op34_sub1_spawns: bool, // report a spawn (consumes a following 0x40 block)
     // 0x4C outer-nibble-4 sub-5 (actor-field block).
     n4_sub5_immediate: Vec<(u8, i16, i16, i16)>, // (b1, w94, w96, w98)
     n4_sub5_ramp: Vec<(u8, i16, i16, i16, u16)>, // (b1, w94, w96, w98, ticks)
@@ -485,23 +486,21 @@ impl FieldHost for TestHost {
     fn op34_sub0_color_intensity_setup(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
         self.op34_sub0_calls.push((op0, rgb, intensity));
     }
-    fn op34_sub1_spawn_or_skip(
+    fn op34_sub1_spawn_attached(
         &mut self,
         _ctx: &FieldCtx,
-        op0: u8,
-        packed24: u32,
-        pos: [i16; 3],
-        capture_flag: u8,
-        captured_pc_payload: &[u8],
-    ) -> usize {
+        ext: Option<u8>,
+        spawn: &crate::field_actor_billboard::AttachedSpriteSpawn,
+        script: Option<&[u8]>,
+    ) -> bool {
         self.op34_sub1_calls.push(Op34Sub1Call {
-            op0,
-            packed24,
-            pos,
-            capture_flag,
-            captured_payload: captured_pc_payload.to_vec(),
+            op0: spawn.op0,
+            ext,
+            packed24: spawn.packed_rgb,
+            extent_and_height: [spawn.half_extent.0, spawn.half_extent.1, spawn.height],
+            script: script.map(|s| s.iter().copied().take(3).collect()),
         });
-        self.op34_sub1_capture_delta.unwrap_or(13)
+        self.op34_sub1_spawns
     }
     fn system_flag_set(&mut self, idx: u16) {
         self.ensure_sys_flag_capacity();

@@ -29,45 +29,33 @@ pub(super) fn op_34<H: FieldHost>(
             }
         }
         1 => {
-            // Base instruction is 13 bytes (opcode + 12 operand
-            // bytes). The "capture flag" at `pbVar46[0xC]` is the
-            // BYTE JUST PAST the instruction - the runtime peeks at
-            // the first byte of the next instruction to decide
-            // whether to consume it as a capture extension.
-            let Some(payload) = bytecode.get(operand + 1..operand + 12) else {
+            // Attached light spawn (`overlay_0897` `0x801DFEFC..0x801E0018`):
+            // twelve operand bytes, then `FUN_801E5668` unless the target
+            // already carries one. The exit adds `0xD` to an `s8` the
+            // prologue already moved past any extended channel byte, so the
+            // base width is `header_size + 12`. Only a **spawned** light
+            // consumes a following `0x40` block as its keyframe script
+            // (`+0x94 = s6 + 2`, `s8 += 2 + len`); on the skip path the block
+            // stays in the stream and runs as op `0x40`, which skips itself.
+            let Some(spawn) = crate::field_actor_billboard::AttachedSpriteSpawn::decode(
+                bytecode.get(operand..).unwrap_or(&[]),
+            ) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let packed24 =
-                ((payload[0] as u32) << 16) | ((payload[1] as u32) << 8) | (payload[2] as u32);
-            let world_x = i16::from_le_bytes([payload[3], payload[4]]);
-            let world_z = i16::from_le_bytes([payload[5], payload[6]]);
-            // The original NEGATES the y component (`local_a6 = -local_a6`)
-            // before the spawn call - undo the sign here.
-            let raw_neg_y = i16::from_le_bytes([payload[7], payload[8]]);
-            let world_y = raw_neg_y.wrapping_neg();
-            // Peek the byte AT pc + 13 (first byte after the
-            // 13-byte base instruction). When it's 0x40, the
-            // runtime treats it as a capture-extension marker and
-            // PC advances by an extra `2 + payload_len`.
-            let capture_flag = bytecode.get(operand + 12).copied().unwrap_or(0);
-            let captured_pc_payload: &[u8] = if capture_flag == 0x40 {
-                let payload_len = bytecode.get(operand + 13).copied().unwrap_or(0) as usize;
-                let start = operand + 14;
-                let end = start + payload_len;
-                bytecode.get(start..end).unwrap_or(&[])
-            } else {
-                &[]
+            let base = header_size + 12;
+            let after = pc + base;
+            let script = match bytecode.get(after) {
+                Some(0x40) => bytecode.get(after + 2..),
+                _ => None,
             };
-            let delta_from_opcode = host.op34_sub1_spawn_or_skip(
-                ctx,
-                op0,
-                packed24,
-                [world_x, world_y, world_z],
-                capture_flag,
-                captured_pc_payload,
-            );
+            let ext = crate::field::peek_extended(bytecode, pc);
+            let spawned = host.op34_sub1_spawn_attached(ctx, ext, &spawn, script);
+            let extra = match (spawned, script) {
+                (true, Some(_)) => 2 + bytecode.get(after + 1).copied().unwrap_or(0) as usize,
+                _ => 0,
+            };
             StepResult::Advance {
-                next_pc: pc + delta_from_opcode,
+                next_pc: after + extra,
             }
         }
         2 => {
