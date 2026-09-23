@@ -103,13 +103,16 @@ sections:
     <tbody>
       <tr><td><code>items</code></td><td>item names</td><td><code>scus:str:0x&lt;va&gt;</code></td><td>overwrite the string in <code>SCUS_942.54</code> in place, re-terminate</td></tr>
       <tr><td><code>item_types</code></td><td>shared item "type" strings</td><td><code>scus:str:…</code></td><td>same</td></tr>
-      <tr><td><code>spells</code></td><td>spell / magic names</td><td><code>scus:str:…</code></td><td>same</td></tr>
-      <tr><td><code>arts</code></td><td>Tactical Arts names</td><td><code>scus:str:…</code></td><td>same</td></tr>
+      <tr><td><code>spells</code></td><td>spell / magic names and their info-window descriptions</td><td><code>scus:str:…</code></td><td>same</td></tr>
+      <tr><td><code>arts</code></td><td>Tactical Arts names and arts-menu descriptions</td><td><code>scus:str:…</code></td><td>same</td></tr>
       <tr><td><code>accessory_passives</code></td><td>Goods-menu passive names + descriptions</td><td><code>scus:str:…</code></td><td>same</td></tr>
       <tr><td><code>party_names</code></td><td>new-game roster names</td><td><code>scus:party:&lt;n&gt;</code></td><td>fixed 10-byte field, 9-byte budget</td></tr>
       <tr><td><code>scene_dialog</code></td><td>NPC / event dialogue in scene MANs</td><td><code>man:&lt;prot&gt;:0x&lt;off&gt;</code></td><td>edit inside the decompressed MAN, recompress into the original footprint</td></tr>
       <tr><td><code>inline_text</code></td><td>dialogue / narration in raw carriers</td><td><code>raw:&lt;prot&gt;:0x&lt;off&gt;</code></td><td>space-padded same-size overwrite in the PROT entry; in the streaming dungeon scenes a longer line grows the uncompressed MAN chunk instead (within the entry's sector slack, or by whole sectors with <code>--allow-relayout</code>)</td></tr>
-      <tr><td><code>ui_menu</code></td><td>pause-menu / shop / status labels, battle messages</td><td><code>ui:&lt;prot&gt;:0x&lt;va&gt;</code></td><td>overwrite in the overlay entry at <code>va - base_va</code></td></tr>
+      <tr><td><code>ui_menu</code></td><td>pause-menu / shop / status labels, battle messages and help, Seru-magic effect lines, record screen, name entry, memory-card messages</td><td><code>ui:&lt;prot&gt;:0x&lt;va&gt;</code></td><td>overwrite in the overlay entry at <code>va - base_va</code></td></tr>
+      <tr><td><code>system_text</code></td><td>executable strings outside the name tables: battle command chips (<code>Attack</code> / <code>Item</code> / <code>Run</code> / <code>Begin</code>), level-up lines, empty-list messages, steal results</td><td><code>scus:str:0x&lt;va&gt;</code></td><td>same as the name tables</td></tr>
+      <tr><td><code>place_names</code></td><td>world-map quick-travel place names</td><td><code>scus:cell:0x&lt;va&gt;</code></td><td>fixed 32-byte cell</td></tr>
+      <tr><td><code>monster_names</code></td><td>enemy names (battle plaque and battle lines)</td><td><code>mon:&lt;id&gt;</code></td><td>rewrite inside the monster's record (PROT 867), re-pack its fixed slot</td></tr>
     </tbody>
   </table>
   <p>Dialogue sections are line-granular: the pager packs up to three consecutive segments into one box (<a href="../formats/mes.html">MES</a>), so consecutive pack entries are consecutive rows on screen. Translate them as a group, each row inside its own budget.</p>
@@ -120,7 +123,8 @@ sections:
         <li>Strings pointer-shared by several table slots export once; the <code>context</code> lists the referencing ids, and interior pointers clamp the budget.</li>
         <li>The SCUS name pools are 4-byte aligned, so each budget also claims the 0..3 zero bytes after the terminator (verified zero, never past another string) - about 1.5 extra bytes on average, which is what lets the tightest tables translate at all.</li>
         <li>Duplicate PROT TOC entries over the same disc bytes are deduplicated by LBA.</li>
-        <li><code>ui_menu</code> pools are pinned by VA windows in the menu (PROT 0899) and battle (PROT 0898) overlays; see <a href="../subsystems/field-menu.html">field menu</a>. Short writes zero-fill the old span.</li>
+        <li><code>ui_menu</code> pools are pinned by VA windows in the menu (PROT 0899), battle (PROT 0898) and field (PROT 0897) overlays; see <a href="../subsystems/field-menu.html">field menu</a>. Short writes zero-fill the old span. A window that mixes labels with debug formats reads each string token-aware (a <code>{c1:00}</code> name token is not a terminator) and keeps only UI-shaped text.</li>
+        <li>A monster name keeps its markup: a leading <code>{5e:xx}</code> element badge and a trailing <code> $N</code> variant. Its budget is the record's own room up to the next data the record addresses, never above the longest retail name (15 bytes).</li>
       </ul>
     </div>
   </details>
@@ -171,9 +175,8 @@ sections:
 <section class="doc-section" id="coverage">
   <h2>Coverage + limits</h2>
   <ul class="bullets">
-    <li><strong>Covered:</strong> every SCUS name table; NPC, cutscene and narration dialogue, picker labels, chest flavour text; overlay UI labels and battle system messages.</li>
-    <li><strong>Tight:</strong> the overlay label pools - a short label can be shorter than English but rarely longer.</li>
-    <li><strong>No string exists:</strong> the in-battle <code>Attack / Arts / Magic / Item</code> ring is icon sprites.</li>
+    <li><strong>Covered:</strong> every SCUS name table and the spell / arts descriptions; NPC, cutscene and narration dialogue, picker labels, chest flavour text; overlay UI labels, battle system messages and the battle command chips; enemy names.</li>
+    <li><strong>Tight:</strong> the overlay label pools and the command chips - a short label can be shorter than English but rarely longer.</li>
     <li><strong>Stays English:</strong> lines the conservative segment scanner declines to export. Junk entries it does export (dev-debug strings) are harmless - leave them blank.</li>
   </ul>
 </section>
@@ -194,7 +197,7 @@ sections:
   <details class="disclosure">
     <summary>Details: fit numbers and the recommended path</summary>
     <div class="disclosure-body">
-      <p>The PAL discs gave most scene entries one extra sector at mastering. In place, name tables land 36-60% and dialogue about half per string. Overlay <code>ui_menu</code> labels are not lifted - the PAL overlays place their pools elsewhere. Recommended path: lift &rarr; <code>fit-report</code> &rarr; import with relayout &rarr; font patch &rarr; <code>strip</code> to <code>site/lang/&lt;lang&gt;.yaml</code>. Full layout, accent map and fit numbers: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/pal-localizations.md" target="_blank" rel="noopener"><code>pal-localizations.md</code></a>.</p>
+      <p>The PAL discs gave most scene entries one extra sector at mastering. In place, name tables land 36-60% and dialogue about half per string. Overlay and executable labels are lifted by the code and data that point at them (the PAL builds lay their string pools out differently); an opening crawl the PAL build reflowed into more pages pairs its text pages in order. Recommended path: lift &rarr; <code>fit-report</code> &rarr; import with relayout &rarr; font patch &rarr; <code>strip</code> to <code>site/lang/&lt;lang&gt;.yaml</code>. Full layout, accent map and fit numbers: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/pal-localizations.md" target="_blank" rel="noopener"><code>pal-localizations.md</code></a>.</p>
     </div>
   </details>
 </section>
@@ -211,7 +214,6 @@ sections:
       <tr><td>Title wordmark (PROT 0888)</td><td>logo, <code>PRESS START BUTTON</code>, copyright bands</td><td>bands are sub-rects of one 256&times;256 TIM; copyright bands must stay</td></tr>
       <tr><td>Title menu <code>NEW GAME</code> / <code>CONTINUE</code></td><td>drawn from the glyph atlas</td><td>real text in a region the pipeline does not address by coordinate</td></tr>
       <tr><td>Save / load UI (PROT 0899)</td><td><code>SLOT n</code> pill, <code>Load</code> panel</td><td>small 4bpp TIMs; a same-footprint swap is feasible (<a href="../subsystems/save-screen.html">save screen</a>)</td></tr>
-      <tr><td>In-battle command ring</td><td><code>Attack / Arts / Magic / Item</code></td><td>icon sprites; a worded localisation needs new icon art</td></tr>
       <tr><td>Boot / publisher logos (PROT 0895)</td><td>brand marks</td><td><strong>do not alter</strong> - trademark art</td></tr>
       <tr><td>Opening prologue caption</td><td>a baked caption under the crawl</td><td>the crawl narration itself is dialogue and is covered</td></tr>
     </tbody>

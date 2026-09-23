@@ -223,6 +223,21 @@ the importer patches (`legaia_patcher::translation::lift`):
    `0x1F .. 0x00` run), used only when both discs count the same number of
    framings and only where the script byte ahead of both leads agrees.
 
+   The pages of a narration **crawl** (`CC F8 80 N` and the `N` pages after
+   it - the opening's creation myth, the `opstati` / `opurud` crawls) are the
+   one place the program itself differs: the page count is part of the
+   script, and the PAL builds reflow a block into more pages with blank `" "`
+   pages between paragraphs (`opdeene` 14 + 8 pages on USA, 16 + 9 on the
+   Spanish disc). A crawl page is keyed `(record, block, page)` apart from the
+   record's other lines; a block of equal length pairs page for page, and a
+   reflowed one pairs its **text** pages in order when both builds carry the
+   same number of them (a blank target page stays as it is). Anything else
+   pairs nothing - a crawl read from the wrong page is worse than an English
+   one - and a crawl page never falls back to the scan ordinal. Keyed with the
+   record's other lines, one reflowed block shifted every later line of the
+   record by the pages it gained: the opening's crawl came out a page off,
+   with the English lines where a blank page landed.
+
 `--fold-accents` additionally rewrites the accent cells onto plain ASCII, so the
 lifted text renders on an unmodified NTSC font (see
 [Accent folding](#accent-folding) below).
@@ -286,6 +301,35 @@ compared (an in-order alignment pairs *some* text in any window, including
 the item descriptions a wrong window lands on). An unpaired label stays
 vanilla. The place-name table is found by its first cell, the home town's
 name.
+
+A pool string is also paired through the **code and data that reference it**
+(`translation::refpair`), and for a strict pool (see
+[`translation.md`](translation.md#strict-pools)) that is the only pairing
+besides an identical layout. A localized build lays its string pools out by
+length - the compiler puts a string of up to eight bytes in the `$gp`
+small-data pool and a longer one in read-only data - so the Spanish
+`Automatico` sits in another pool from the USA `Auto` it replaces while the
+screen-element placement record pointing at it is the same record. Each
+reference is one word: an `addiu`/`ori` completing a `lui` pair or an `addiu`
+off `$gp` (code), or a pointer word in a table (data). Its signature is the
+window of words around it with every address masked out (instruction
+immediates, pointer-shaped words); a USA reference pairs with the source
+reference whose signature differs in the fewest words (at most two of
+seventeen), a tie broken by the displacement of the nearest unique pair, and a
+run of bare pointers (too few informative words) pairs nothing. A USA string
+pairs when every paired reference agrees, and only onto the start of a source
+string. Where the source build rewrote the code that draws a string (the
+Spanish battle overlay centres the Hyper Arts help and reads it through a
+pointer table), no reference survives; the few such strings of the Spanish
+build are pinned by coordinate (`pinned_pool_pairs`, coordinates only). One
+USA line has no counterpart there: `'s magic level increased.` follows a name
+the code draws first, while the Spanish build splits its line around the name,
+and it stays unpaired rather than taking half a sentence.
+
+Monster names (`monster_names`) pair record for record: the monster ids are
+the same program on every build. The Spanish fan translation leaves the
+monster archive untouched, so its names are the Spanish build's and the
+baseline filter drops them - the section ships empty for a translator to fill.
 
 ### Lifting a fan translation
 
