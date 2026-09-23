@@ -102,10 +102,11 @@ fn playwindow_load_path_spins_the_real_payout_table() {
             armed == SPIN_UP_FRAMES || armed == SPIN_UP_FRAMES + BONUS_SPIN_UP_FRAMES,
             "spin {spin}: the spin-up is one of the two retail lengths"
         );
-        for _ in 0..REEL_COUNT {
+        // One stop button per reel: Square / Cross / Circle -> reels 0 / 1 / 2.
+        for b in [PadButton::Square, PadButton::Cross, PadButton::Circle] {
             world.set_pad(0);
             let _ = world.tick();
-            world.set_pad(PadButton::Cross.mask());
+            world.set_pad(b.mask());
             let _ = world.tick();
         }
         let m = world.minigames.slot_machine.as_ref().unwrap();

@@ -1261,8 +1261,12 @@ round win), the comeback-crit roll (`FUN_801d6660`), the backward-pattern CPU
 picker (`FUN_801d487c`, BIOS-rand stream) and the best-of-3 bookkeeping,
 built from the parsed roster + action tables
 (`legaia_asset::baka_opponents::parse` / `parse_actions`). The world hosts it
-as the suspending `SceneMode::BakaFighter` (play-window `B` key;
-Left/Right/Up = the three attacks, Down charges the special). A player match
+as the suspending `SceneMode::BakaFighter` (play-window `B` key). The world
+tick reads the player's commit off the face buttons the way the slot-0 branch
+does - Square / Circle / Cross = types 1 / 2 / 3, tested in that order with
+the last edge winning - on every host, the minigames page included; Triangle
+charges the special, a port enhancement, since retail's type 4 is the
+auto-finisher and has no button. A player match
 win installs the score tally (`BakaTally`, the `FUN_801d239c` port), which the
 world's Baka Fighter tick runs frame by frame, adding each drained step into
 the mode-24 winnings accumulator exactly as retail adds it into

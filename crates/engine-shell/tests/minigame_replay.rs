@@ -491,14 +491,15 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                 .as_ref()
                 .map(|f| f.round())
                 .ok_or("baka session absent")?;
-            // Left / Right / Up = attacks A/B/C, Down = special.
+            // Square / Circle / Cross = attacks A/B/C (retail's face-button
+            // read), Triangle = the port's chargeable special.
             let mut resolved = false;
             for i in 0..400 {
                 let b = match i % 4 {
-                    0 => PadButton::Left,
-                    1 => PadButton::Right,
-                    2 => PadButton::Up,
-                    _ => PadButton::Down,
+                    0 => PadButton::Square,
+                    1 => PadButton::Circle,
+                    2 => PadButton::Cross,
+                    _ => PadButton::Triangle,
                 };
                 tap(host, b);
                 let Some(f) = host.world.minigames.baka_fighter.as_ref() else {
@@ -516,7 +517,7 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                 .as_ref()
                 .ok_or("baka vanished")?;
             if !resolved && f.round() == before {
-                Err("400 direction edges resolved no exchange".into())
+                Err("400 face-button edges resolved no exchange".into())
             } else {
                 Ok(format!(
                     "round {before} -> {}, exchange_resolved={resolved}, over={}",

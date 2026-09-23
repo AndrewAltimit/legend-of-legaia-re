@@ -98,9 +98,9 @@ fn real_tables_drive_a_decided_match_and_bank_the_gold() {
         }
         let pad = match (f.chosen(1), f.can_choose(0)) {
             (Some(cpu), true) => match counter_of(cpu) {
-                BakaAttack::A => PadButton::Left.mask(),
-                BakaAttack::B => PadButton::Right.mask(),
-                BakaAttack::C => PadButton::Up.mask(),
+                BakaAttack::A => PadButton::Square.mask(),
+                BakaAttack::B => PadButton::Circle.mask(),
+                BakaAttack::C => PadButton::Cross.mask(),
                 BakaAttack::Special => 0,
             },
             _ => 0,

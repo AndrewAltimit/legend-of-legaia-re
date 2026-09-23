@@ -492,13 +492,29 @@ fn slot_machine_spins_stops_and_collects_through_the_pad() {
         world.minigames.slot_machine.as_ref().unwrap().phase(),
         SlotPhase::Stopping
     );
-    // Three fresh Cross edges stop the three reels -> Payout.
+    // Each reel has its own stop button (Square / Cross / Circle -> reels
+    // 0 / 1 / 2): a repeated Cross stops reel 1 alone.
     for _ in 0..3 {
         world.set_pad(0);
         let _ = world.tick();
         world.set_pad(input::PadButton::Cross.mask());
         let _ = world.tick();
     }
+    assert_eq!(
+        world
+            .minigames
+            .slot_machine
+            .as_ref()
+            .unwrap()
+            .reels_stopped(),
+        1,
+        "Cross is reel 1's button only"
+    );
+    // One frame with Square + Circle edges stops the other two together.
+    world.set_pad(0);
+    let _ = world.tick();
+    world.set_pad(input::PadButton::Square.mask() | input::PadButton::Circle.mask());
+    let _ = world.tick();
     let m = world.minigames.slot_machine.as_ref().unwrap();
     assert_eq!(m.phase(), SlotPhase::Payout);
     assert_eq!(m.reels_stopped(), crate::slot_machine::REEL_COUNT);

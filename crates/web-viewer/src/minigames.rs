@@ -1091,6 +1091,17 @@ impl LegaiaMinigames {
         self.slot.as_mut().is_some_and(|m| m.stop_next_reel())
     }
 
+    /// Stop reel `reel` (0..=2) with its own button - the cabinet's three
+    /// stop buttons, Square / Cross / Circle for reels 0 / 1 / 2
+    /// (`FUN_801CF0D8` state 3, `0x801CF70C..0x801CF7E0`), the same map the
+    /// play window's world tick reads. `false` when that reel cannot stop
+    /// (not spinning, still spinning up, or already stopped).
+    pub fn slot_stop_reel(&mut self, reel: u32) -> bool {
+        self.slot
+            .as_mut()
+            .is_some_and(|m| m.stop_reel(reel as usize))
+    }
+
     /// Tally the latched payout into the balance and return to idle. Returns
     /// the credited coins. [`Self::slot_tick`] already does this on the frame a
     /// spin resolves; this stays for hosts that drive the tally themselves.

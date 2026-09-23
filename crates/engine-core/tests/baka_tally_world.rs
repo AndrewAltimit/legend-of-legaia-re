@@ -57,8 +57,8 @@ fn play_to_player_win(world: &mut World) {
         if f.match_over() {
             return;
         }
-        // Down = the special (type 4) in the world's pad mapping.
-        press(world, PadButton::Down.mask());
+        // Triangle = the special (type 4) in the world's pad mapping.
+        press(world, PadButton::Triangle.mask());
     }
     panic!("match did not terminate");
 }
@@ -204,7 +204,8 @@ fn a_lost_match_installs_no_tally_and_pays_nothing() {
         {
             break;
         }
-        press(&mut world, PadButton::Left.mask());
+        // Square = attack type 1, retail's `0x80` bit.
+        press(&mut world, PadButton::Square.mask());
     }
     let f = world.minigames.baka_fighter.as_ref().expect("installed");
     assert_eq!(f.winner(), Some(1), "the CPU takes the match");

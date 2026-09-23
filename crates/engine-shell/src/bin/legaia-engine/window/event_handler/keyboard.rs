@@ -553,7 +553,9 @@ impl PlayWindowApp {
                     self.session.restore_field_bgm();
                 }
             } else if self.start_baka_minigame() {
-                log::info!("baka: started - Left/Right/Up attack, Down special, B to leave");
+                log::info!(
+                    "baka: started - Square/Circle/Cross attack, Triangle special, B to leave"
+                );
             }
             return;
         }

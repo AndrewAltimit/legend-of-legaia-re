@@ -2557,12 +2557,15 @@ impl World {
     /// Advance the slot machine one frame, reading this frame's pad:
     ///
     /// - **Idle**: a [`Cross`](input::PadButton::Cross) press charges the
-    ///   flat bet (3 coins, 1 in feature modes) and spins - all three
-    ///   paylines always play.
+    ///   flat bet (3 coins, 1 in feature modes) and spins - all five
+    ///   paylines play on every spin.
     /// - **Spinning**: the spin-up timer runs down on its own.
-    /// - **Stopping**: a [`Cross`] press stops the leftmost live reel (host
-    ///   simplification of the retail three stop buttons, pad bits
-    ///   `0x80`/`0x40`/`0x20` → reels 0/1/2).
+    /// - **Stopping**: the three reels have a stop button each, read off the
+    ///   edge word `_DAT_8007B874` the way the reel SM does it
+    ///   (`0x801CF70C..0x801CF7E0`): Square (`0x80`) stops reel 0, Cross
+    ///   (`0x40`) reel 1, Circle (`0x20`) reel 2. The three tests are
+    ///   independent - each gated on its own reel still running - so one
+    ///   frame can stop several reels.
     /// - **Payout**: a [`Cross`] press collects the win into the balance.
     ///
     /// [`Cross`]: input::PadButton::Cross
@@ -2577,6 +2580,12 @@ impl World {
             return;
         };
         let confirm = self.input.just_pressed(input::PadButton::Cross);
+        let stop_buttons = [
+            input::PadButton::Square,
+            input::PadButton::Cross,
+            input::PadButton::Circle,
+        ]
+        .map(|b| self.input.just_pressed(b));
         let Some(m) = self.minigames.slot_machine.as_mut() else {
             return;
         };
@@ -2589,8 +2598,10 @@ impl World {
             }
             SlotPhase::Spinning => {}
             SlotPhase::Stopping => {
-                if confirm {
-                    m.stop_next_reel();
+                for (reel, button) in stop_buttons.into_iter().enumerate() {
+                    if button {
+                        m.stop_reel(reel);
+                    }
                 }
             }
             SlotPhase::Payout => {
@@ -2663,11 +2674,17 @@ impl World {
 
     /// Advance the Baka Fighter duel one frame, reading this frame's pad:
     ///
-    /// - [`Left`](input::PadButton::Left) / [`Right`](input::PadButton::Right)
-    ///   / [`Up`](input::PadButton::Up) commit attack types 1 / 2 / 3 for the
-    ///   player slot (retail folds the face/shoulder mask bits
-    ///   `0x80`/`0x20`/`0x40` into the same three types);
-    ///   [`Down`](input::PadButton::Down) commits the special (type 4).
+    /// - [`Square`](input::PadButton::Square) / [`Circle`](input::PadButton::Circle)
+    ///   / [`Cross`](input::PadButton::Cross) commit attack types 1 / 2 / 3
+    ///   for the player slot - retail's slot-0 read of the edge word
+    ///   `_DAT_8007B874` (`andi 0x80` -> type 1 at `0x801D43B4`, `0x20` ->
+    ///   type 2 at `0x801D43CC`, `0x40` -> type 3 at `0x801D43E4`, in
+    ///   Legaia's packed pad layout). The three tests run in that order and
+    ///   each overwrites the last, so on a frame with several edges Cross
+    ///   wins, then Circle.
+    /// - [`Triangle`](input::PadButton::Triangle) commits the chargeable
+    ///   special (type 4) - a port enhancement: retail has no button for
+    ///   type 4, which is its auto-finisher (`0x801D4550`).
     /// - The CPU slot picks through the ported `FUN_801d487c` roll inside
     ///   [`crate::baka_fighter::BakaFight::tick`].
     /// - When the match is decided, a [`Cross`](input::PadButton::Cross)
@@ -2710,13 +2727,14 @@ impl World {
             }
             return;
         }
-        let attack = if self.input.just_pressed(input::PadButton::Left) {
-            Some(BakaAttack::A)
-        } else if self.input.just_pressed(input::PadButton::Right) {
-            Some(BakaAttack::B)
-        } else if self.input.just_pressed(input::PadButton::Up) {
+        // Retail's last-write-wins test order, read back to front.
+        let attack = if self.input.just_pressed(input::PadButton::Cross) {
             Some(BakaAttack::C)
-        } else if self.input.just_pressed(input::PadButton::Down) {
+        } else if self.input.just_pressed(input::PadButton::Circle) {
+            Some(BakaAttack::B)
+        } else if self.input.just_pressed(input::PadButton::Square) {
+            Some(BakaAttack::A)
+        } else if self.input.just_pressed(input::PadButton::Triangle) {
             Some(BakaAttack::Special)
         } else {
             None
