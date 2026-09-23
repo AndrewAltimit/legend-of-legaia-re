@@ -542,8 +542,19 @@ pub(super) fn cmd_play_window_with_record(
     // rather than an empty roster. Runs after field entry; `begin_new_game`
     // only resets story/money/inventory + sets mode=Field, leaving the loaded
     // scene intact.
+    //
+    // A `--world-map` entry keeps its mode: `begin_new_game`'s `mode = Field`
+    // is the New Game boot's field launch, and letting it stand turned the
+    // overworld into a field scene - the field fog pool (the kingdom MAN's
+    // fog bit) then drew its sheets across the terrain through the field
+    // camera, and the terrain took the field draw path, neither of which the
+    // world map runs.
     if seed_party {
+        let entered = session.host.world.mode;
         session.begin_new_game();
+        if entered == legaia_engine_core::world::SceneMode::WorldMap {
+            session.host.world.mode = entered;
+        }
         let seeded = session.host.world.party.roster.members.len();
         log::info!("play-window: --seed-party seeded {seeded} roster member(s)");
     }
