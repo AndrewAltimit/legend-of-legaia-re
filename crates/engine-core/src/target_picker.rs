@@ -676,11 +676,10 @@ pub fn enemy_menu_rows(
 
 /// Place the enemy menu rows across the screen.
 ///
-/// PORT: FUN_801D9D3C (`0x801d9f1c..0x801da1ac`).
+/// PORT: FUN_801D9D3C (`0x801d9f1c..0x801da1ac`) NOT WIRED: its retail host is the flow-`0x0A` battle-intro enemy-name banner (labels at y = 48), which neither host draws; the target picker it used to lay out now draws retail's record-`0x29` plaque instead (`battle_hud::battle_target_select_plaque`)
 ///
 /// This is the intro banner composer's seat law (labels centred over their
-/// enemies at y = 48, relaxed apart, clamped to the screen), reused by the
-/// engine for the target picker's X layout.
+/// enemies at y = 48, relaxed apart, clamped to the screen).
 ///
 /// Three passes, in order:
 ///
