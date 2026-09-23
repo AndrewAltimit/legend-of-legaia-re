@@ -932,15 +932,21 @@ rebuilt bundle:
 | minigame status rows in surface pixels natively | a pen read in the wrong space | the native window now scales them through the stage the page uses |
 | field clear colour | two non-retail constants | both hosts read `battle_stage_clear::scene_clear` every frame, and a field frame clears to retail black |
 
-The pass also left two rows open:
+The pass also left two rows open. The first has since closed:
 
-- **Field fog sheets are not visible in native frames.** In `vell` the
-  native window's `take_field_fog_prims` returns 37 to 78 quads a frame
-  (a live pool, the gate raised, a texture region the page samples as
-  populated), yet none shows in a native capture, while the page draws the
-  same pool as bright mist. Which frame is retail's is not settled: no
-  library state holds a mist scene as a mednafen state, and the PCSX-Redux
-  states carry no VRAM reader.
+- **Field fog sheets were not visible in native frames** - two scene-VRAM
+  builders, one missing an upload. The page draws from the host's
+  `SceneResources`, whose field entry adds the PROT 0874 section-2
+  effect-texture pool; the native window builds its own scene VRAM and did
+  not, so the fog quads (texture page `0x0027` = `(448, 0)`, CLUT
+  `(0, 473)`) sampled zero words and every fragment was discarded. Retail
+  holds that pool resident in field VRAM (nine PCSX-Redux states, read with
+  `scripts/pcsx-redux/extract_vram_from_sstate.py` - the PCSX-Redux side
+  does have a VRAM reader). The window now layers the pool under its build;
+  see [`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#where-the-fog-texels-come-from).
+  The shape to look for: a texture upload one host's resource builder makes
+  and the other's does not reads as "the draw is broken", because the quads
+  are there and only the texels are missing.
 - **The native minigame hotkeys open sessions, not scenes.** `O` and `B` run
   the slot machine and Baka Fighter over the field with status text only,
   and `L` puts the fishing camera on whatever field the player stands in;
