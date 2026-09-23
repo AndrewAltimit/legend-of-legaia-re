@@ -184,7 +184,7 @@ N * [ 0x1F label segment 0x00 ]       the on-screen option labels</code></pre>
       <tr><td>Live blob</td><td>RAM <code>0x80109270</code>, 3893 bytes</td><td>Town-overlay capture validating the parser end to end</td><td>save state</td></tr>
     </tbody>
   </table>
-  <p>Field dialogue has no dedicated opcode: it is the actor's inline interaction-script text, triggered by field-interact op <code>0x3E</code> (<code>op0 &lt; 100</code>). Op <code>0x3F</code> is the scene change, not a dialog op.</p>
+  <p>Field dialogue has no dedicated opcode: it is the actor's inline interaction-script text, triggered by the touch / button-press interaction rather than an opcode (op <code>0x3E</code> with <code>op0 &lt; 100</code> is the scripted-battle install). Op <code>0x3F</code> is the scene change, not a dialog op.</p>
 </section>
 
 <section class="doc-section" id="cli">

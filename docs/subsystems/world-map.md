@@ -970,9 +970,9 @@ from-scratch port ([`legaia_engine_vm::world_map::step`]) is host-driven, so
 - `SceneMode::Field` via `tick_field_carriers`, for the scene's MAN-placed
   carriers. A `FieldCarrierConfig::ScriptedEncounter { formation_id }` sits
   Idle (towns run a 0% random rate, so its `encounter_enabled` host gate is
-  `false` and it never self-fires) until the field-interact dialogue-accept
-  engages it: interacting with the carrier's placement (op `0x3E`, `op0 < 100`)
-  arms the engage, and accepting the prompt (the `0x4C` n5 sub-4 dialog dismiss)
+  `false` and it never self-fires) until the talk interaction's dialogue-accept
+  engages it: talking to the carrier's placement (the button-press
+  interaction - no field-VM opcode) arms the engage, and accepting the prompt (the `0x4C` n5 sub-4 dialog dismiss)
   calls `World::engage_field_carrier`, advancing it Idle → Activating - so the
   field-VM bytecode drives the fight rather than a manual API. The next
   `tick_field_carriers` then runs the state-1 body (`on_activating`, the
@@ -1257,8 +1257,9 @@ also not a header.
 > scene-change** (it copies a destination scene *name* and calls the scene-change
 > packet `FUN_8001FD44`; see [`script-vm.md`](script-vm.md) and
 > [scene destinations](#scene-destinations)). In fact field dialogue has **no
-> dedicated opcode**: the field-interact op (`0x3E`, `op0 < 100`) arms the actor's
-> interaction context, and the per-frame actor-dialog SM (`FUN_80039b7c`) + pager
+> dedicated opcode**: the touch / button-press interaction resumes the actor's
+> parked script (op `0x3E` with `op0 < 100` is the scripted-battle install, not
+> a talk - see [`script-vm.md`](script-vm.md#0x3e-scripted-battle-op0--100)), and the per-frame actor-dialog SM (`FUN_80039b7c`) + pager
 > (`FUN_801D84D0`) display the actor's inline interaction-script MES text - the
 > structural `0x1F` pool above. See
 > [`script-vm.md` § Field dialogue](script-vm.md#field-dialogue-has-no-opcode).
@@ -1629,8 +1630,9 @@ distinguishing opcodes:
   calls no scene-change packet and the op carries no destination name, so there
   is no map-id space here to resolve (see
   [`asset-loader.md` → WARP opcode flow](asset-loader.md#warp-opcode--minigame-door-warp-flow-sub_id));
-- an inline `0x1F`-lead **dialog-text block** or a **field interact** (`0x3E`
-  with `op0 < 100`) and no warp → an **NPC** (sign / talk-to / event trigger).
+- an inline `0x1F`-lead **dialog-text block** or a **scripted-battle install**
+  (`0x3E` with `op0 < 100`) and no warp → an **NPC** (sign / talk-to / event
+  trigger).
   (The dialog signal is the *structural* `0x1F` text scan, not an opcode - see
   [NPC dialogue text source](#npc-dialogue-text-source);
 - none of those → **Plain** (a moving / animated / model-only actor, e.g. the
@@ -1698,8 +1700,9 @@ clean-CDNAME-label check), calls `host.scene_transition_named`, and
 [`SceneHost::tick`] drains the resulting `World::pending_named_scene_transition`
 to load that scene directly (world-map vs field routed by `is_world_map_scene`),
 ahead of the `0x3E` map-id path. Field **dialogue** was re-grounded off `0x3F`
-onto its real trigger - the field-interact op (`0x3E` with `op0 < 100`) opens the
-interacted actor's inline interaction-script text (see
+onto its real trigger - the touch / button-press interaction opens the
+interacted actor's inline interaction-script text (op `0x3E` with `op0 < 100` is
+the scripted-battle install, not a talk) (see
 [`script-vm.md` § Field dialogue](script-vm.md#field-dialogue-has-no-opcode)).
 
 #### Chapter-1 Drake hub sweep

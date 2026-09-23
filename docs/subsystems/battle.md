@@ -88,7 +88,7 @@ belong to the `befect_data` block - raw 872..875 = extraction 870..873 =
   party vertex pools - [character-mesh.md § Battle form](../formats/character-mesh.md#battle-form---assembled-from-the-player-files)).
   The field pack 0874 §0 is field-only; PROT 1204 is the Baka Fighter
   default-equipment sibling pack.
-- **State `0xE`** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.
+- **State `0xE`** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` scripted-battle / door-warp paths on the system context.
 - **State `0xFF`** - dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.DAT` (extraction PROT 893 / 894; format + verification in [`formats/summon-readef.md`](../formats/summon-readef.md)).
 
 A paired stage pack loads at raw TOC `0x367`/`0x36d` (= extraction entries 0869/0875) in states 2/4/6.
@@ -4128,8 +4128,11 @@ harness that skips the path it verifies proves nothing about it.
 
 ### Scripted-battle entry (`3E FF <row>`)
 
-The scripted boss fights enter through the field-VM interact op `0x3E` with
-`op0 = 0xFF`: the case-0x3E interact arm (`FUN_801DE840`, field overlay) sets
+The scripted boss fights enter through field-VM op `0x3E` with `op0 = 0xFF` -
+or any `op0 < 100`, which runs the same body (the arm reads `op0` only to fork
+off the `>= 100` door-warp; see
+[`script-vm.md`](script-vm.md#0x3e-scripted-battle-op0--100)): the case-0x3E
+arm (`FUN_801DE840`, field overlay) sets
 the SYSTEM entity's 5-state SM to Activating (`sys_ctx[+0x8A] = 1`), points its
 encounter-record slot at the per-scene MAN formation-table row `op1`
 (`sys_ctx[+0x94] = *(ctrl+0x20) + op1 * *(ctrl+0x5D) + 1`), and requests the
@@ -4200,7 +4203,7 @@ actor's record.
 
 Engine port: `World::trigger_scripted_battle(row)`
 ([`crates/engine-core::world::encounters`](../../crates/engine-core/src/world/encounters.rs)),
-reached from the field-VM host's `field_interact` arm when `op0 == 0xFF`. The
+reached from the field-VM host's `scripted_battle` arm for `op0 == 0xFF` and every `op0 < 100`. The
 formation resolves against the rows `install_man_encounter` registered at scene
 entry (with the PROT 867 archive stats merged; the v12 dungeons resolve their
 encounter section from the streaming variant MAN, their only carrier), and the

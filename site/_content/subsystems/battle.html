@@ -69,7 +69,7 @@
   <ul class="bullets">
     <li><strong>Walking.</strong> Every step onto a new 128-unit collision tile rolls against the region's rate; a hit picks a formation row from the scene's own table (see <a href="../formats/encounter.html">encounter record</a>).</li>
     <li><strong>World map.</strong> Each region rolls the same way against its own slice of rows (<a href="world-map.html">world map</a>).</li>
-    <li><strong>Script.</strong> Boss rows sit outside every rollable slice and are reached only by the field-VM interact op <code>3E FF &lt;row&gt;</code>. The row's non-zero header byte is what gives a scripted fight its particle intro and second audio cue.</li>
+    <li><strong>Script.</strong> Boss rows sit outside every rollable slice and are reached only by the field-VM scripted-battle op <code>3E FF &lt;row&gt;</code> (any <code>op0 &lt; 100</code> runs the same body). The row's non-zero header byte is what gives a scripted fight its particle intro and second audio cue.</li>
   </ul>
   <table class="data-table">
     <thead><tr><th>Scene</th><th>Op</th><th>Formation row</th><th>Contents</th></tr></thead>
