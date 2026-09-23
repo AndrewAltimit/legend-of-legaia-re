@@ -58,7 +58,24 @@ impl World {
                 Some((ms.world_x, ms.world_y, ms.world_z))
             }
             ScriptActorRef::Npc(slot) => {
-                let &(x, z) = self.npcs.positions.get(&slot)?;
+                // A drawn NPC's live position first; a placement the talk /
+                // draw catalogue does not carry (a lamp-post marker, a
+                // scripted helper) stands where its script channel's context
+                // says - the `+0x14` / `+0x18` its own `MoveTo`s write.
+                let (x, z) = match self.npcs.positions.get(&slot) {
+                    Some(&p) => p,
+                    None => {
+                        let chans = if self.field_vm.channels.is_empty() {
+                            &self.field_vm.stepping_view
+                        } else {
+                            &self.field_vm.channels
+                        };
+                        let c = chans
+                            .iter()
+                            .find(|c| !c.object_bind && c.placement_index == usize::from(slot))?;
+                        (c.ctx.world_x as i16, c.ctx.world_z as i16)
+                    }
+                };
                 Some((x, self.field_npc_render_y(slot, x, z) as i16, z))
             }
         }
