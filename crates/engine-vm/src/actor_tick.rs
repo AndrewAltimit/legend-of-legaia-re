@@ -964,10 +964,17 @@ pub fn common_late_update(
     }
 
     // Retail (`0x80022B94..0x80022BB8`): `+0x54 < 0` first steps the
-    // move-table VM `FUN_80023070` on this actor, and only then leaves early
-    // when `+0x10 & 8`. This port reports the flag test as
-    // `kill_requested` and does not step the move VM here; no host reads
-    // `kill_requested`.
+    // move-table VM `FUN_80023070` on this actor (`jal` at `0x80022BA4`),
+    // and only then leaves early when `+0x10 & 8`. The engine runs that step
+    // as its own pass rather than from inside this function: the move-VM
+    // half of `+0x54` is `ActorState::wait_timer`, decremented and gated by
+    // `crate::move_vm::decrement_wait_timer` + `crate::move_vm::actor_tick`
+    // (the same `bgez` gate and post-call `& 8` test), which
+    // `World::tick_move_vms_with_delta` in engine-core runs for every live
+    // actor with bytecode, and which the summon-part and ambient-effect
+    // drivers call directly. This function only reports the post-VM flag test
+    // as `kill_requested`.
+    // REF: FUN_80023070
     if p.timer < 0 {
         out.kill_requested = true;
         if (p.status_flags & 0x8) != 0 {

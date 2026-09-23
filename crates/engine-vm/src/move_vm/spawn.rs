@@ -202,11 +202,34 @@ pub trait MoveSpawnHost: ActorAllocatorHost {
 /// 6. Mirror `world_y → world_y_mirror` via
 ///    [`MoveSpawnHost::mirror_world_y`].
 ///
-/// The retail body additionally writes `DAT_80070630` (a global scratch
-/// slot) on entry. The slot has no SCUS reader outside FUN_80021B04 itself
-/// in the captured corpus, so the port drops it. See
-/// `find_addr_materializer_dat_80070630.py` (TODO if a reader surfaces) for
-/// the readback search.
+/// Before allocating, the retail body writes `DAT_80070630`
+/// (`0x80021B50..0x80021B68`): [`template_model_index`] of the init word.
+/// That halfword is not a readerless scratch slot - it is `+4` of the spawn
+/// descriptor `0x8007062C` the allocator is then handed, and
+/// `FUN_80020DE0` copies descriptor `+4` into the new actor's `+0x64` and
+/// `+0x60` (`0x80020E68..0x80020E7C`). The OBJECT-table rebuild then reads
+/// `+0x64` back (`lh v0, 0x64(s0)` at `0x80021BF8`) to index
+/// `DAT_8007C018`. So the model the rebuild resolves is the init word plus
+/// the scene's model base, which is what
+/// [`ActorAllocatorHost::rebuild_object_table`] has to be told.
+/// The model index `FUN_80021B04` stages into its spawn descriptor
+/// (`DAT_80070630`, descriptor `0x8007062C + 4`) before allocating: the init
+/// word plus the scene model base `gp[0x754]` (a `lhu`, added and stored as a
+/// halfword) when the init word is a model reference, and `0` for the three
+/// non-model classes - negative, `0x4000` and `0x4001` (`bltz` / two `beq`
+/// at `0x80021B34..0x80021B48`). `FUN_80020DE0` seats it at actor `+0x64` /
+/// `+0x60`.
+///
+/// REF: FUN_80020DE0
+pub fn template_model_index(init_word: u16, scene_model_base: u16) -> u16 {
+    let signed = init_word as i16;
+    if signed < 0 || init_word == 0x4000 || init_word == 0x4001 {
+        0
+    } else {
+        init_word.wrapping_add(scene_model_base)
+    }
+}
+
 pub fn spawn_move_actor<H: MoveSpawnHost + ?Sized>(
     host: &mut H,
     req: MoveSpawnRequest,
