@@ -2391,6 +2391,27 @@ engine-ui builders over the menu root. It is the port's own screen: retail's
 save UI only ever talks to a card and reports a card it cannot use through the
 card driver's result word, which does not model a second backend's failures.
 
+## Frame-paired against retail: spoils banner, overworld, scene VRAM
+
+Retail frames come from library states (`mednafen-state vram-dump
+--display-crop`; PCSX-Redux states through
+`scripts/pcsx-redux/extract_vram_from_sstate.py`), native frames from
+`play-window --screenshot-every` cropped to the 2x stage and sampled back to
+320x240, page frames from headless Chromium over a locally built bundle.
+
+| Screen | Retail reference | What pairs | What differs | Host |
+|---|---|---|---|---|
+| Battle spoils banner | `noa_levelup_banner` | window rect `(9..309, 153..207)` identical on native; the XP / gold columns right-aligned the same way | text ink: retail's default string ink is CLUT-7 `(206, 206, 206)`, the native frame draws `(255, 255, 255)` - `battle_spoils_draws_for` passes pure white; interior is flat where retail is a vertical gradient (the documented menu-window approximation) | both (shared `engine-ui` builder) |
+| Battle letterbox | none (retail has no letterbox) | - | the native window clears the area outside the 2x stage to the battle stage clear colour, a light blue, where the field clears it black | native |
+| Overworld walk | `keikoku_chest_preload`, `sebucus_overworld_resident`, `karisto_overworld_resident` | the party panel's position and rows | both hosts frame the walk from a much higher, farther camera than retail's behind-the-leader view; the native window also draws horizontal white sheets across the terrain that neither the page nor any of the three retail frames shows (present with `--no-entry-pulse` too) | camera: both; sheets: native |
+| Field scene VRAM (fog page) | nine PCSX-Redux field / world-map states | the effect pool's fog cells and CLUT row hash-identical on both builds; `dolk`'s own texels survive on the `(448, 0)` page | nothing since the host's field entry layers the pool under its build (it wrote it over, which is the VRAM the page draws from) | both |
+
+The dialogue box, shop, inn and FMV are still not frame-paired: a talk,
+shop or inn needs a positioned walk-to-NPC input on both hosts, which no
+harness provides, and the retail references (`v0_1_tetsu_dialogue_accept`
+for the dialogue box: border rows 9 and 63, columns 31..287, the same
+`(206, 206, 206)` ink) have no port frame to pair with.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
