@@ -229,7 +229,28 @@ impl SfxBank {
     /// sample is missing - e.g. the cue's program isn't resident in this
     /// bank). Mirrors `crates/web-viewer/src/sfx_view.rs::render_cue`.
     pub fn play_one_shot(&self, id: u8, spu: &mut Spu, vab: &VabBank) -> Option<u8> {
-        let entry = self.get(id)?;
+        Self::play_entry(self.get(id)?, spu, vab)
+    }
+
+    /// Fire one raw 8-byte descriptor row - the shape both halves of the
+    /// drainer's id split resolve to (`FUN_80016B6C` `0x80016C24`): the static
+    /// `DAT_8006F198` table below cue `0x200`, and the **runtime** bank above
+    /// it, whose rows a field scene carries in its own prescript record 0
+    /// (`docs/formats/sfx-table.md`). A runtime row has no id in this bank's
+    /// `u8` space, so a host that resolved one hands the row here directly.
+    /// Returns the first voice keyed, as [`Self::play_one_shot`] does; a row
+    /// with a zero voice count keys nothing, matching the drainer's skip.
+    // REF: FUN_80016B6C
+    pub fn play_descriptor(row: &[u8; 8], spu: &mut Spu, vab: &VabBank) -> Option<u8> {
+        let voices = row[3] & 0x1F;
+        if voices == 0 {
+            return None;
+        }
+        let entry = SfxEntry::from_descriptor(0, row[0], row[1], row[2], voices);
+        Self::play_entry(&entry, spu, vab)
+    }
+
+    fn play_entry(entry: &SfxEntry, spu: &mut Spu, vab: &VabBank) -> Option<u8> {
         let voices = entry.voices.max(1);
         let mut first_voice: Option<u8> = None;
         for i in 0..voices {
@@ -405,11 +426,21 @@ impl PendingCue {
 #[derive(Debug, Default, Clone)]
 pub struct SfxFireBatch {
     pub fired: Vec<PendingCue>,
+    /// Retail-ring slots that came due this frame, as the **resolved** cue
+    /// ids the ring holds (`DAT_8007B6D8`), in ascending slot order.
+    ///
+    /// Kept apart from [`Self::fired`] because the two id spaces differ: a
+    /// queued [`PendingCue`] still has to go through the router
+    /// (`classify_cue` = `FUN_8004FCC8`), while a ring id is already the
+    /// drainer's input - below `0x200` a `DAT_8006F198` row, at or above it a
+    /// row of the runtime bank. Routing a ring id through `classify_cue`
+    /// would send every runtime-bank cue (`>= 0x200`) to the CD-XA voice leg.
+    pub ring: Vec<i16>,
 }
 
 impl SfxFireBatch {
     pub fn is_empty(&self) -> bool {
-        self.fired.is_empty()
+        self.fired.is_empty() && self.ring.is_empty()
     }
 }
 
@@ -541,11 +572,7 @@ impl SfxScheduler {
         // delay 0 fires on this tick, delay d fires d ticks later, and the
         // slot is cleared before it can fire twice. Ageing first would
         // clear a just-armed delay-0 cue before it ever played.
-        for (_slot, id) in self.ring.drain() {
-            if id >= 0 {
-                batch.fired.push(PendingCue::new(id as u16, 0));
-            }
-        }
+        batch.ring.extend(self.ring.drain().map(|(_slot, id)| id));
         self.ring.age(self.frame_step);
         batch
     }
@@ -824,10 +851,11 @@ mod tests {
     fn ring_cue_fires_once_through_the_scheduler_and_is_then_cleared() {
         let mut s = SfxScheduler::new();
         s.arm_ring_cue(0, 0x1A, 0);
-        let ids: Vec<u16> = s.tick_frame().fired.iter().map(|c| c.id).collect();
-        assert_eq!(ids, vec![0x1A], "delay 0 fires on the arming frame");
+        let b = s.tick_frame();
+        assert_eq!(b.ring, vec![0x1A], "delay 0 fires on the arming frame");
+        assert!(b.fired.is_empty(), "ring ids never enter the router queue");
         assert!(
-            s.tick_frame().fired.is_empty(),
+            s.tick_frame().is_empty(),
             "the aging pass cleared the slot - a ring cue never repeats"
         );
     }
@@ -838,10 +866,13 @@ mod tests {
         // Field cadence: one tick spans two vsyncs.
         s.set_frame_step(2);
         s.arm_ring_cue(1, 0x33, 4);
-        assert!(s.tick_frame().fired.is_empty());
-        assert!(s.tick_frame().fired.is_empty());
-        let ids: Vec<u16> = s.tick_frame().fired.iter().map(|c| c.id).collect();
-        assert_eq!(ids, vec![0x33], "4 vsyncs at cadence 2 = 2 ticks");
+        assert!(s.tick_frame().is_empty());
+        assert!(s.tick_frame().is_empty());
+        assert_eq!(
+            s.tick_frame().ring,
+            vec![0x33],
+            "4 vsyncs at cadence 2 = 2 ticks"
+        );
     }
 
     #[test]
@@ -849,7 +880,27 @@ mod tests {
         let mut s = SfxScheduler::new();
         s.arm_ring_cue(2, 0x40, 0);
         s.clear();
-        assert!(s.tick_frame().fired.is_empty());
+        assert!(s.tick_frame().is_empty());
+    }
+
+    /// The field VM's scripted pair `36 00 80 <id>` / `36 04 80 <delay>` is
+    /// `FUN_80035B50(id)` then `FUN_80035BAC(delay)`: the second call lands on
+    /// the slot the first one wrote, so the cue plays `delay` vsyncs later -
+    /// and a runtime-bank id (`>= 0x200`) comes out of the ring untouched.
+    #[test]
+    fn a_pushed_cue_with_a_delay_fires_on_its_frame_with_its_raw_id() {
+        let mut s = SfxScheduler::new();
+        s.set_frame_step(2);
+        s.push_ring_cue(0x1C);
+        s.push_ring_cue(0x1C);
+        s.set_ring_cue_delay(0x0C);
+        assert_eq!(s.tick_frame().ring, vec![0x1C], "the undelayed first push");
+        for _ in 0..5 {
+            assert!(s.tick_frame().is_empty());
+        }
+        assert_eq!(s.tick_frame().ring, vec![0x1C], "12 vsyncs at cadence 2");
+        s.push_ring_cue(0x20B);
+        assert_eq!(s.tick_frame().ring, vec![0x20B]);
     }
 
     #[test]
@@ -1150,6 +1201,19 @@ mod tests {
         assert!(!spu.voices[0].is_off(), "voice 0 playing");
         assert!(!spu.voices[1].is_off(), "voice 1 playing (2nd of the cue)");
         assert!(spu.voices[2].is_off(), "only two voices keyed");
+
+        // A runtime-bank row (`>= 0x200`, the scene's prescript record 0)
+        // keys the same way off its raw bytes; category and trailer ride
+        // along unread.
+        let mut spu = Spu::new();
+        let row = [0u8, 1, 64, 2, 3, 0, 0, 0];
+        assert_eq!(SfxBank::play_descriptor(&row, &mut spu, &vab), Some(0));
+        assert!(!spu.voices[1].is_off() && spu.voices[2].is_off());
+        // `n & 0x1F == 0` keys nothing (the drainer's skip at 0x80016D04).
+        let mut spu = Spu::new();
+        let silent = [0u8, 1, 64, 0x00, 3, 0, 0, 0];
+        assert_eq!(SfxBank::play_descriptor(&silent, &mut spu, &vab), None);
+        assert!(spu.voices[0].is_off());
     }
 
     #[test]

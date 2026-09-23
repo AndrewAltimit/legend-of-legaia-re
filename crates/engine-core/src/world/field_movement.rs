@@ -1836,8 +1836,9 @@ impl World {
     /// [`AmbientEffect::SfxCue`] runs the enqueue half of `FUN_80035B50` -
     /// the same cursor / parked-slot / delay-table update the field VM's op
     /// `0x36` sub-`0` runs - so a scripted beat's cue parks the slot a
-    /// following op-`0x36` sub-`4` delay write then targets. The cue **id**
-    /// stays on the channel's own ring copy: no host plays a field SFX cue.
+    /// following op-`0x36` sub-`4` delay write then targets - and queues the
+    /// cue **id** as a [`crate::world::SfxRingOp::Push`] for the host's audio
+    /// ring, which both hosts drain and play.
     ///
     /// [`AmbientEffect::ModelSwap`]: legaia_engine_vm::ambient_motion_ops::AmbientEffect::ModelSwap
     /// [`AmbientEffect::MoveImage`]: legaia_engine_vm::ambient_motion_ops::AmbientEffect::MoveImage
@@ -1859,10 +1860,15 @@ impl World {
                     // spawn-prologue parks depend on it landing.
                     self.npcs.positions.insert(slot, (x, z));
                 }
-                Fx::SfxCue(_) => {
+                Fx::SfxCue(id) => {
                     let cursor = self.audio.sfx_cue_cursor;
                     self.audio.sfx_cue_cursor = self.audio.sfx_cue_delays.park(cursor);
                     self.audio.sfx_parked_slot = cursor;
+                    // `jal 0x80035B50` at `0x80039178`: the id reaches the
+                    // host ring, which plays it.
+                    self.audio
+                        .sfx_ring_ops
+                        .push(crate::world::SfxRingOp::Push(id));
                 }
                 Fx::MoveImage { rect, dx, dy } => {
                     // The same libgpu blit the field VM's `4C 60` emitter

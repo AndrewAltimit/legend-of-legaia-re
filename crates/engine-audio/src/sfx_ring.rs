@@ -7,7 +7,10 @@
 //! handler that sequences the pair.
 //! REF: FUN_8004FE5C, FUN_80016444, FUN_80025EEC
 //! The enqueue pair `FUN_80035B50` / `FUN_80035BD0` is [`SfxCueRing::push_cue`] /
-//! [`SfxCueRing::replace_last`], which carry their own tags.
+//! [`SfxCueRing::replace_last`], which carry their own tags. The field-side
+//! producers reach them from the engine as `legaia_engine_core::world::SfxRingOp`
+//! values, since this ring lives with the SPU on the host side of the crate
+//! boundary.
 //! The libsnd calls a drained cue makes, factored out of [`CueVoicePlan`].
 //! REF: FUN_80065034, FUN_800653C8
 //!
@@ -133,7 +136,7 @@ impl SfxCueRing {
         self.last
     }
 
-    /// PORT: FUN_80035B50 NOT WIRED: the field VM's op `0x36` sub-`0` and the ambient motion VM's op `0x09` are the retail producers, and both hosts' engine-core handlers still advance only the cursor/delay pair in `World::audio.sfx_cue_delays`, which carries no cue id, so neither reaches this ring; wiring them means routing the id through `AudioBgmDirector` / the web runtime's scheduler
+    /// PORT: FUN_80035B50 (live: the field VM's op `0x36` sub-`0` and the ambient motion VM's op `0x09` queue `SfxRingOp::Push` on the world, which `BootSession::route_field_sfx` / the web runtime's `route_field_sfx` replay through `SfxScheduler::push_ring_cue` into this ring every tick)
     ///
     /// The SFX-cue enqueue, `FUN_80035B50(id)`.
     ///
@@ -174,7 +177,7 @@ impl SfxCueRing {
         }
     }
 
-    /// PORT: FUN_80035BD0 NOT WIRED: its retail callers (the dev equip commit's cue `0x24`, the menu deny buzz) have no host arm that plays a ring cue; `legaia_engine_vm::dev_equip_commit` surfaces the call as a host hook nothing implements
+    /// PORT: FUN_80035BD0 (reached through both hosts' `SfxRingOp::ReplaceLast` replay into `SfxScheduler::replace_ring_cue`; its retail callers - the dev equip commit, the Baka hub picker, the world-map panel sub-list - queue it through `World::replace_last_sfx_cue` once their engine hooks reach the world, which none does yet)
     ///
     /// `FUN_80035BD0(id)` - overwrite the cue in the slot the last
     /// [`Self::push_cue`] wrote and zero its countdown, **without** advancing the
