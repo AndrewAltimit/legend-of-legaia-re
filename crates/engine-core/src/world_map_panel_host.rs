@@ -458,8 +458,10 @@ pub trait PanelFlagStore {
 /// draw.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PanelFrame {
-    /// SFX cues raised this frame, in order.
-    pub sfx: Vec<u32>,
+    /// SFX ring producer calls raised this frame, in call order - the
+    /// sub-list's `FUN_80035BD0(0x20)` (`0x801ED65C`) and the text box's
+    /// `FUN_80035BD0(0)` + `FUN_80035B50(0x25)` (`0x801EE9AC` / `0x801EE9B4`).
+    pub sfx: Vec<crate::world::SfxRingOp>,
     /// Every [`ActorExit`] a terminal arm asked for. Recorded, not dispatched -
     /// see the module docs.
     pub exits: Vec<ActorExit>,
@@ -831,7 +833,11 @@ impl PanelActorHost {
                         self.audio_level << 1
                     };
                 }
-                SubListEffect::PlaySfx(s) => frame.sfx.push(s),
+                // `jal 0x80035BD0` at `0x801ED65C`: the confirm overwrites
+                // the last-written ring slot rather than pushing.
+                SubListEffect::PlaySfx(s) => frame
+                    .sfx
+                    .push(crate::world::SfxRingOp::ReplaceLast(s as i16)),
                 SubListEffect::ClearWindowDescriptor => {
                     self.flag_desc = FlagWindowDescriptor::default()
                 }
@@ -933,7 +939,15 @@ impl PanelActorHost {
         self.timer = timer;
         for e in out {
             match e {
-                TextBoxEffect::PlaySfx(s) => frame.sfx.push(s),
+                // `FUN_80035BD0(0)` (`0x801EE9AC`) then `FUN_80035B50(0x25)`
+                // (`0x801EE9B4`): the move cue overwrites, the restore pushes.
+                TextBoxEffect::PlaySfx(s) => frame.sfx.push(
+                    if s == legaia_engine_vm::world_map_panel_actors::TEXT_BOX_MOVE_SFX {
+                        crate::world::SfxRingOp::ReplaceLast(s as i16)
+                    } else {
+                        crate::world::SfxRingOp::Push(s as i16)
+                    },
+                ),
                 TextBoxEffect::RestoreParty => frame.restore_party = true,
                 TextBoxEffect::RunPanelScript(va) => {
                     self.windows.run_script(va);

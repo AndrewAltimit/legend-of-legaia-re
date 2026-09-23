@@ -177,7 +177,7 @@ impl SfxCueRing {
         }
     }
 
-    /// PORT: FUN_80035BD0 (reached through both hosts' `SfxRingOp::ReplaceLast` replay into `SfxScheduler::replace_ring_cue`; its retail callers - the dev equip commit, the Baka hub picker, the world-map panel sub-list - queue it through `World::replace_last_sfx_cue` once their engine hooks reach the world, which none does yet)
+    /// PORT: FUN_80035BD0 (both hosts replay `SfxRingOp::ReplaceLast` into `SfxScheduler::replace_ring_cue`; `World::replace_last_sfx_cue` is reached from the world-map panel's sub-list and text box (`world/worldmap.rs`) and the Baka hub's confirm stings (`field_submode_screen.rs`))
     ///
     /// `FUN_80035BD0(id)` - overwrite the cue in the slot the last
     /// [`Self::push_cue`] wrote and zero its countdown, **without** advancing the

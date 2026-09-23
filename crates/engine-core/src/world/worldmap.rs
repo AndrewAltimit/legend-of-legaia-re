@@ -652,8 +652,15 @@ impl World {
         let frame = ctrl.panels.tick(edge, held, frame_step, &mut store);
         self.world_map.ctrl = Some(ctrl);
 
-        for cue in &frame.sfx {
-            log::debug!("world-map panel: sfx cue {cue:#04x}");
+        // The panel's ring calls cross to the host ring like the field VM's
+        // op-`0x36` ones (`World::take_sfx_ring_ops`); a replace keeps the
+        // engine-core mirror's parked-slot delay in step as retail's does.
+        for &op in &frame.sfx {
+            match op {
+                SfxRingOp::ReplaceLast(id) => self.replace_last_sfx_cue(id),
+                SfxRingOp::Push(id) => self.push_sfx_cue(id),
+                op => self.audio.sfx_ring_ops.push(op),
+            }
         }
         for id in &frame.flags_set {
             log::info!("world-map panel: flag window set story flag {id}");
