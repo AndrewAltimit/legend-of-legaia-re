@@ -90,7 +90,8 @@ partition.
 
 A record is named by an **instruction**, never by a statistic. The module
 materialises the record's address with a `lui` / `addiu` pair and passes it in
-`$a2` to a `jal` into one of two spawn helpers:
+`$a2` to a `jal` into one of two spawn helpers ([how the pointer is
+resolved](#resolving-the-pointer-a-spawn-call-is-handed)):
 
 | Helper | What it is |
 |---|---|
@@ -129,20 +130,61 @@ records. The four Rust structs that carry the halfword
 `legaia_engine_core::world::ambient::AmbientPart`,
 `legaia_engine_vm::battle_burst::BurstRecord`) name it `reserved` too.
 
+### Resolving the pointer a spawn call is handed
+
+Retail does not always form the pointer as a `lui`/`addiu` pair in `$a2` just
+above the call, and a resolver that only reads that shape misses records the
+module plainly hands over. The walk
+(`slot_b_module::a2_values`, mirrored by `slot_b_band._a2_values`) reads `$a2`
+backwards from the call's **delay slot**, over straight-line code, and follows
+three shapes the narrow rule did not:
+
+- **The delay slot.** `lui a2,hi; jal FUN_80021B04; addiu a2,a2,lo` completes
+  the pair after the `jal` word. Reading only the words above the call left
+  `$a2` holding the bare high half (`0x801F0000` / `0x80200000`), which lands
+  outside the image and was dropped as "a neighbour's record" - 52 of the 97
+  out-of-image drops the band used to report were this shape, not neighbours.
+- **A saved-register copy.** `move a2,s0` (`addu a2,s0,$zero`) hands over a
+  pointer formed earlier in a saved register; the walk follows the copy, and
+  while it follows `s0`-`s8` it reaches up to 256 words back, because no call
+  can clobber a saved register. PROT 0912 forms `0x801F852C` with a `lui s4`
+  at `0x801F6C38` and completes it fifty-nine words down.
+- **`switch` arms into one call.** PROT 0957's arms each load `$a2` in the
+  delay slot of a `j` to the shared `jal FUN_80050ED4` at `0x801F7F08`. Every
+  `j` inside the image's own code that lands on the call, or up to three words
+  above it with nothing between writing `$a2` or transferring control,
+  contributes the value its own delay slot leaves. The fall-through walk stops
+  above the delay slot of any unconditional jump (`j`, `jr`, `b`), because
+  that word is an arm's, not the fall-through path's.
+
+A last writer that is a load or any other instruction names nothing, and so
+does a call crossed while the followed register is caller-saved, the routine's
+`jr ra`, or its `addiu sp,sp,-N` prologue. Most of what the three shapes add
+is records the narrow rule merged into their neighbour's extent, now split at
+the pointer the module forms; the inherited-tail cuts the walk feeds do not
+move on any image. The sibling generic
+claim in `byte_account` (`claim_spawn_records`) follows the same three shapes
+and also treats an image-local wrapper that forwards its own argument as a
+spawn call - PROT 0980's `FUN_801D3FD0`, 0976's `FUN_801D6E04` and 0972's
+`FUN_801D7A5C` move `$a3` into `$a2`; no band image has such a wrapper, since
+the band has no internal `jal`.
+
 ### The filters, and which of them retail exercises
 
-| Filter | What it excludes | Pointers it drops across the band |
+| Filter | What it excludes | Resolved values it drops across the band |
 |---|---|---|
-| the resolved address must land in the image with room for a header | a neighbour's record, reached through the shared link base | 97 |
-| the **call site** must lie inside a framed body of this image | an inherited fragment of a sibling's routine, whose pointer names the sibling's records | 5 records, 484 claimed bytes |
-| an intervening `jal` between the `lui`/`addiu` pair and the consuming call voids the value - `$a2` is caller-saved | a pointer formed for something else earlier in the window | 9 |
-| a target inside a framed function | a stale register the 22-instruction window mis-read as a record pointer | 0 |
+| the resolved address must land in the image with room for a header | a neighbour's record, reached through the shared link base | 55 |
+| the **call site** must lie inside a framed body of this image | an inherited fragment of a sibling's routine, whose pointer names the sibling's records | 7 |
+| a call crossed while following a caller-saved register voids the value | a pointer formed for something else before an intervening call | 0 |
+| a target inside a framed function | a stale register the walk mis-read as a record pointer | 0 |
 | a `model_sel` outside the set `FUN_80021B04` dispatches | an address that lands on something the spawn path would never seat | 0 |
 
-The last two never fire on retail, and saying so is the point of the column:
+The last three never fire on retail, and saying so is the point of the column:
 they are guards against a resolution failure this disc does not contain, not
-findings about it. Quote the first three if the question is what the band's
-extent rests on.
+findings about it. Quote the first two if the question is what the band's
+extent rests on. Of the band's 1384 spawn call sites, 28 resolve to nothing:
+26 whose `$a2` writer lies beyond the walk's reach, one whose last writer is
+not a `lui` chain, and one whose straight line ends at an arm's delay slot.
 
 The call-site filter is the one the **inherited tail** makes necessary. Every
 band image ends in a byte-identical, same-file-offset run of another extracted
@@ -168,12 +210,14 @@ cleanly it lets the donor's call through.
 The cut that closes this is the image's own **content end**: a call site at or
 above it is the donor's, whatever it frames as. `slot_b_module::parse_with_tail`
 takes that offset and drops every call site and every record target from there
-up. Over the band it removes a credited pointer on five images - 0908, 0910,
-0920, 0943, 0961 - at offsets `0x26D8`, `0x26D8`, `0x1EF4`, `0x17E0`, `0x1DAC`.
-PROT 0945 is the sixth image whose donor call site passes the frame test, and it
-loses nothing, because its pointer never resolved to a record in the first
-place. The content end comes from `inherited_tail.py` when the other images are
-in hand, and from `slot_b_module::content_end` when only this one is.
+up. Over the band it removes a credited pointer on all six images - 0908,
+0910, 0920, 0943 and 0961 at offsets `0x26D8`, `0x26D8`, `0x1EF4`, `0x17E0`,
+`0x1DAC`, and 0945. The 0945 donor routine at `0x801F7F2C` completes each pair
+in the call's delay slot, so its three calls resolved to nothing until the walk
+read the delay slot ([above](#resolving-the-pointer-a-spawn-call-is-handed));
+now they resolve to three of the donor's records, which the cut drops like the
+others. The content end comes from `inherited_tail.py` when the other images
+are in hand, and from `slot_b_module::content_end` when only this one is.
 
 ### Bounding the highest record
 
@@ -231,11 +275,11 @@ them, and all four were needed:
    record.
 
 Under those four, chaining `[header][program]` from every record start
-reproduces 1021 of the band's 1027 bounded record extents exactly (the band's
+reproduces 1231 of the band's 1238 bounded record extents exactly (the band's
 own highest records are excluded from that count - their ends come from this
 very walk), no chain overruns a measured end, and every one of the 62 images
-that has a highest record bounds it. The six that miss stall below the measured
-end and are a stated residue, not a rounding tolerance.
+that has a highest record bounds it. The seven that miss stall below the
+measured end and are a stated residue, not a rounding tolerance.
 
 The residue has exactly one direction, and the direction is a property of the
 **claim**, not of the walk's program counter - the two are easy to confuse.

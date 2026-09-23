@@ -52,13 +52,21 @@
   spawn helper <code>FUN_80021B04</code> or its pool wrapper <code>FUN_80050ED4</code>. One record's end is the
   next record's start, so both ends of a claim are addresses the module's own code computes - no length field, no
   terminator scan, no entropy test.</p>
-  <p>Five filters keep a spurious pointer out, and three of them fire on retail: the resolved address must land
-  inside this image (97 pointers), the <strong>call site</strong> must lie inside a framed body of this image (5
-  records, 484 bytes - an inherited tail carries a sibling's spawn calls, and in PROT 0909 three of them name PROT
-  0908's records), and an intervening call voids the value, since <code>$a2</code> is caller-saved (9 pointers).
-  The remaining two - a target inside a framed function, and a <code>model_sel</code> the spawn helper would not
-  dispatch - never fire on this disc, and saying so is the point: they are guards, not findings. With all five, no
-  claim in the band overlaps a routine the dump corpus places in the same image.</p>
+  <p>The pointer is not always a pair sitting just above the call, and a resolver that only reads that shape
+  misses records the module plainly hands over. The walk reads <code>$a2</code> backwards from the call's
+  <strong>delay slot</strong> and follows three more shapes: the pair completed in the delay slot itself (the
+  narrow reading saw only the bare high half there, which lands outside the image - 52 of the 97 pointers it
+  used to drop as "a neighbour's record" were this shape); a copy from a saved register (<code>move a2,s0</code>,
+  followed up to 256 words back, since no call can clobber a saved register); and <code>switch</code> arms that
+  each load <code>$a2</code> in the delay slot of a jump to one shared call. The Rust walker and the Python mirror
+  the coverage scripts use resolve all three the same way, record for record.</p>
+  <p>Five filters keep a spurious pointer out, and two of them fire on retail: the resolved address must land
+  inside this image (55 values), and the <strong>call site</strong> must lie inside a framed body of this image
+  (7 values - an inherited tail carries a sibling's spawn calls, and in PROT 0909 three of them name PROT 0908's
+  records). The other three - a call crossed while following a caller-saved register, a target inside a framed
+  function, and a <code>model_sel</code> the spawn helper would not dispatch - never fire on this disc, and saying
+  so is the point: they are guards, not findings. With all five, no claim in the band overlaps a routine the dump
+  corpus places in the same image.</p>
   <p>The image's <strong>highest</strong> record has nothing above it computing an address, so the band cannot
   bound it - its own move-VM program does. Walk the opcode widths to a terminator (<code>0x08</code> HALT, or an
   armed <code>0x19</code> / <code>0x1B</code> idle loop that no HALT immediately follows) and round the end up to
@@ -72,8 +80,8 @@
   exactly, so the walk remembers the last one it stepped over and returns it only where it would otherwise have
   no bound at all. Under that ordering every image on the disc that has a highest record bounds it.</p>
   <p>The residue has one direction, which is what makes the rule safe to consume - but the direction belongs to
-  the <em>claim</em>, not to the walk's program counter. Of the 1027 extents the band itself bounds, the chain
-  reproduces 1021 exactly, <strong>not one chain overruns a measured end</strong>, and the six that miss stall
+  the <em>claim</em>, not to the walk's program counter. Of the 1238 extents the band itself bounds, the chain
+  reproduces 1231 exactly, <strong>not one chain overruns a measured end</strong>, and the seven that miss stall
   below it. So the rule never claims bytes the band does not bound and cannot retire real code from the dump
   worklist.</p>
   <p>The program counter does run past the end, though. Most misses stop exactly on the measured end - the record
