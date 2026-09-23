@@ -2716,3 +2716,23 @@ expected_game_mode = 0x02
 expected_active_scene = "opdeene"
 description = "Memory-card load with the story-ladder block-13 save's CONTINUE confirm taken; the scene settles into `nilboa` about 40 vsyncs after load."
 topics = ["field", "nilboa", "card boot", "story flags", "scene entry", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "kor5_post_43a_checkpoint"
+backup_fingerprint = "073eab966cabfa6f7e547bf107088152e854b3f767ab118585e6cac1c42a9dbf"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor5"
+description = "kor5 300 vsyncs after P2[3] latches 0x43A, reached from kor5_field_card_boot by tile pokes (captures/w7c-0921/kor5_k2). P2[3] is parked and the player, still under the movement lock (+0x10 bit 0x80000) for about 120 more vsyncs, was poked onto P2[4]'s tile (32, 41) during the lock - so the last-tile pair already reads (32, 41) and standing there fires nothing; after the lock clears, crossing (32, 40) then (32, 41) dispatches P2[4]. 0x436 / 0x464 / 0x6C4 still clear."
+topics = ["field", "kor5", "story flags", "walk-on trigger", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "doman_arrival_from_korb2"
+backup_fingerprint = "dba64ecf1f6aa55b2270360d92cf4d19ca2b1e3e4d9de113c031cfcd45279a66"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "doman"
+description = "The map03 -> doman crossing, caught about 60 vsyncs before doman loads, on a route walked by tile pokes from korb2_field_card_boot (korb2 -> kor -> korout -> map03 -> doman; captures/w7c-0921/doman_org). The scene label already reads doman while the player still stands on map03's doman portal tile (63, 69). 0x3FB is clear, so doman P2[4] (walk-on (67, 108..110), C1 {0x3FB}) is still live - the organic pre-entry state card block 12 lacks."
+topics = ["field", "doman", "map03", "story flags", "scene entry", "probe state"]
