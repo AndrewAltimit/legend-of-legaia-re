@@ -854,7 +854,35 @@ fn the_attack_x2_refill_replays_the_stream_once_and_demotes_the_starters() {
         host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
     }
     assert_eq!(ctx.action_state, ActionState::AttackRecovery.as_byte());
-    assert_eq!(ctx.attack_x2_pass, 1, "the pair runs exactly twice");
+    // Every second-pass stage bumps the counter (`0x801E37AC..0x801E37BC`):
+    // 1 -> 2 -> 3. The refill tests `== 0`, so it still runs exactly twice,
+    // and the carry arm (`< 2`) has released from the first second-pass
+    // stage on.
+    assert_eq!(ctx.attack_x2_pass, 3, "one bump per second-pass stage");
+    assert!(
+        ctx.attack_x2_pass >= crate::battle_action::ATTACK_X2_PASS_BOUND,
+        "the damage kernel's carry arm is released for the second pass"
+    );
+}
+
+#[test]
+fn the_attack_x2_stage_bump_waits_for_the_refill() {
+    // `0x801E37B4`: a zero counter is left alone, so the first pass stages
+    // with the counter still `0`; the first second-pass stage lifts `1 -> 2`.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    host.ability_bits
+        .insert(1, crate::battle_action::WAR_GOD_ATTACK_X2_BIT);
+    host.actors[1].params[0] = 0x0C;
+    host.actors[1].params[1] = 0x0D;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.attack_x2_pass, 0, "first-pass stage: no bump");
+    host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.attack_x2_pass, 1, "the refill, not the bump");
+    host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.attack_x2_pass, 2, "first second-pass stage");
 }
 
 #[test]

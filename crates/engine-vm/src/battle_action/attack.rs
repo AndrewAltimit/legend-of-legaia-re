@@ -259,6 +259,7 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
         actor.flag_bits.set(ActorFlags::ADVANCE_DONE);
         actor.strike_index = actor.strike_index.saturating_add(1);
     }
+    attack_x2_stage_bump(host, ctx);
     swing_drift(host, ctx);
     // The terminator is tested at the **new** cursor on the same step
     // (`0x801E3998..0x801E39AC`, `0x00` routing to `0x1F` at `0x801E3A7C`):
@@ -272,6 +273,48 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
         return transition(ctx, ActionState::AttackRecovery);
     }
     stay(ctx)
+}
+
+/// The War God Icon's **per-stage pass bump** - `FUN_801E295C`
+/// `0x801E3768..0x801E37BC`, the tail of the stage site.
+///
+/// ```text
+/// 801e3798  lw    v0,0x6bc(v0)     ; char record +0xF4 (roster DAT_8007BD10[ctx+0x13])
+/// 801e37a0  andi  v0,v0,0x2000     ; War God Icon "Attack x2"
+/// 801e37ac  lbu   v0,0x5(s5)       ; ctx[+0x16]
+/// 801e37b4  beq   v0,zero,801e37c0 ; zero: the pair has not started - no bump
+/// 801e37b8  _addiu v0,v0,0x1
+/// 801e37bc  sb    v0,0x5(s5)       ; ctx[+0x16] += 1
+/// ```
+///
+/// Runs on every **staged** byte (only the stage path reaches it - the
+/// in-flight hold branches straight to `0x801E37C0`). On the first pass the
+/// counter reads `0` and nothing moves; the refill
+/// ([`attack_x2_refill`]) raises it to `1` on the step the terminator is
+/// read, while the first pass's last clip is still in flight - so that clip's
+/// hits read `1` and still carry. The second pass's first stage then lifts it
+/// to `2`, which is what ends the damage kernel's carry arm (`s2 = 0xFF`
+/// only while `ctx[+0x16] < 2`, [`crate::battle_action::apply_mode`]): the
+/// whole second pass applies. Without this bump the counter sat at `1`
+/// through the second pass and the carry arm never released.
+///
+/// Retail's record read indexes the roster by `ctx[+0x13]` with no party
+/// test in front of it; the engine asks the host's ability word only for a
+/// seated party slot (the same narrowing [`attack_x2_refill`] makes), since a
+/// monster ordinal indexes past the three roster bytes.
+///
+/// PORT: FUN_801E295C (`0x801E37AC..0x801E37BC`, the ctx[+0x16] stage bump)
+fn attack_x2_stage_bump<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) {
+    let slot = ctx.active_actor;
+    if usize::from(slot) >= usize::from(host.party_count()) {
+        return;
+    }
+    if host.character_ability_bits(slot) & WAR_GOD_ATTACK_X2_BIT == 0 {
+        return;
+    }
+    if ctx.attack_x2_pass != 0 {
+        ctx.attack_x2_pass = ctx.attack_x2_pass.wrapping_add(1);
+    }
 }
 
 /// Whether the strike loop's **per-frame drift** runs this frame -

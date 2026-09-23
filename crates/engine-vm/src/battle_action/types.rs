@@ -885,12 +885,15 @@ pub struct BattleActionCtx {
     /// `[+0x16]` - the **Attack x2 pass counter** the War God Icon's pair
     /// runs on.
     ///
-    /// Written by exactly one site in the corpus: the strike loop's
-    /// end-of-stream arm (`FUN_801E295C`, `0x801E3A20..0x801E3A64`), reached
-    /// only for a party actor (`ctx[+0x13] < 3`) whose character record
-    /// carries `+0xF4 & 0x2000` and whose counter still reads `0`. That arm
-    /// rewinds the strike cursor, bumps this byte and rewrites every marked
-    /// queue slot to `0x19`, so the whole action stream replays once.
+    /// Two writers, both in the strike loop of `FUN_801E295C` and both
+    /// behind the character record's `+0xF4 & 0x2000`. The end-of-stream
+    /// arm (`0x801E3A20..0x801E3A64`), reached only for a party actor
+    /// (`ctx[+0x13] < 3`) whose counter still reads `0`, rewinds the strike
+    /// cursor, bumps this byte to `1` and rewrites every marked queue slot
+    /// to `0x19`, so the whole action stream replays once. The stage site's
+    /// tail (`0x801E37AC..0x801E37BC`) then bumps it again on every staged
+    /// byte while it is already non-zero, so the second pass's first stage
+    /// lifts it to `2`.
     ///
     /// Its reader is the damage kernel's apply-mode arm
     /// ([`crate::battle_action::apply_mode`], `0x801EE114`): while the pair is
