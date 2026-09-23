@@ -423,7 +423,7 @@ While the warp timer `_DAT_8007B6B0 > 0` it only counts: it tags the first live
 actor whose handler is `0x801DA7F0` for tear-down and subtracts `DAT_1F800393` -
 nothing walks toward the destination. The frame it reaches zero is the landing:
 `_DAT_8007B6B4 = 0x28`, the encounter counter re-rolled through `FUN_801DDF48`
-if it is `<= 0` (`0x801D1F6C`), `_DAT_8007B6B0 = -1000`, the player seated at
+if it is `<= 0` (`0x801D1F6C`), `_DAT_8007B6B0 = -1000` (cleared to `0` the same tick by `FUN_801DA51C`'s tail, `0x801DA7D8`), the player seated at
 `(dest_x * 64 + 64, (dest_z + 1) * 64)` from `(_DAT_8007BDD0, _DAT_8007BDD4)`,
 the camera re-pinned and the landing tile's kind-1 record run. When idle,
 compares the actor tile against the last crossed tile `(_DAT_8007BDC8,

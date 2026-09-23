@@ -102,7 +102,18 @@ Full write-ups for the rows above whose detail outgrew a table cell. Linked from
 
 ### `801D1344`
 
-The player actor's per-frame tick (PROT 0897, `0x801D1344..0x801D1878`; the `dialog` / `world_map` / `cutscene_dialogue` dumps at this VA are captures of the same image and print the same routine). Per frame it drains the post-warp pad hold `_DAT_8007B6B4` by the frame delta, clamped at zero (`0x801D161C..0x801D1630`), skips the pad controller `FUN_801D01B0` while the kind-0 warp timer `_DAT_8007B6B0 > 0` or the hold is non-zero (`0x801D16C8..0x801D16E4`), then runs the settle `FUN_801D1BA0`, the follow camera `FUN_801DB510` and the view build `FUN_800172C0` ([`field-locomotion.md`](../../subsystems/field-locomotion.md#the-timed-kind-0-warp)).
+The player actor's per-frame tick (PROT 0897, `0x801D1344..0x801D1878`; the
+`dialog` / `world_map` / `cutscene_dialogue` dumps at this VA are captures of
+the same image and print the same routine). Per frame it drains the post-warp
+pad hold `_DAT_8007B6B4` by the frame delta, clamped at zero
+(`0x801D161C..0x801D1630`), skips the pad controller `FUN_801D01B0` while the
+kind-0 warp timer `_DAT_8007B6B0 > 0` or the hold is non-zero
+(`0x801D16C8..0x801D16E4`), then runs the settle `FUN_801D1BA0`, the follow
+camera `FUN_801DB510` and the view build `FUN_800172C0`
+([`field-locomotion.md`](../../subsystems/field-locomotion.md#the-timed-kind-0-warp)).
+With the pad step skipped nothing rewrites the clip base before the settle reads
+it, so the player idles through a warp on the `2` the system channel stores
+every tick (`0x80039D94`).
 
 It also issues the one-shot opening **intro skip**: when `_DAT_8007B868 == 0 && (_DAT_1F800394 & 0x4000000) && (_DAT_8007B850 & 0x100)` (normal mode + the cutscene-set trigger flag + the player's confirm pad bit), it fades (`FUN_801D58F0`), sets the town01 entry coords (`_DAT_80073EF4 = 0xEC0`, `_DAT_80073EF8 = 0x2DC0`), clears the trigger flag (fire-once), and calls `FUN_8001FD44(s_town01_801ce82c)` - the target name `"town01"` is the overlay literal at `0x801CE82C`. The natural (zero-input) opening chains scene to scene by script instead; this packet only fires on a confirm press after `opdeene` arms `GFLAG 26`.
 
