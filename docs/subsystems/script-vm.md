@@ -446,11 +446,19 @@ word `+0x0C`) on the player, extents `(0x1000, 0x1000)`, `+0x74 = 0`,
 the engine's spawn of the same op matches every field. The frame's packets
 put the rim at `201` px round `(153, 93)` with `H = 768` (`_DAT_8007B6F4`) and
 `vz = 15635`, exactly `H * ext / vz`; so the ring reaches the screen corners
-and the rim-colour fills darken everything beyond it. The engine's
-`World::field_light_draws` scales the extents by `H / z` at a **world-unit**
-eye depth, six times the retail radius at the same framing, which puts the
-rim and its fills off-screen and leaves only the faint centre fan - the
-engine's `dolk` and `cave01` frames show no darkness at all. Pinned (retail side) by
+and the rim-colour fills darken everything beyond it. `FUN_801E4470` rebuilds
+the field view matrix (`FUN_800172C0`) immediately before the call, so `vz` is
+the parent point's eye depth in the scaled view, and `H` is the live GTE `H`.
+
+`World::field_light_draws` projects the same way: the engine's eye space is the
+`1x` reduction of retail's (`tr_eye / S`), so the extents divide by the same
+`S` before the `H / z` scale. Fed the state's own camera globals with the
+player at the state's position, the engine puts the rim at `201` px round
+`(154, 94)`, within a pixel of the packets. Both hosts draw the pool beneath
+the party HUD, as the capture's frame shows it, sorted in one ordering-table
+list with the fog sheets and move strips (the page's single screen-prim pass;
+the native window's `under_overlay` list).
+Pinned, retail side and engine side, by
 `crates/engine-core/tests/attached_light_retail_capture_disc.rs`.
 
 A second scene at a second extent holds the same law. `cave01_attached_light`

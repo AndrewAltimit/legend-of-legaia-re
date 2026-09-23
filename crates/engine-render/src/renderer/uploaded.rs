@@ -454,6 +454,11 @@ pub enum RenderTarget<'a> {
     SceneWithScreenPrims {
         scene: &'a Scene<'a>,
         prims: &'a [crate::screen_overlay::ScreenPrim],
+        /// Prims drawn after the scene's meshes but **before** its 2D sprite
+        /// and text overlays - the field attached-light pools, whose
+        /// darkness mask retail draws beneath the party HUD. Ordered on its
+        /// own by the same builder.
+        under_overlay: &'a [crate::screen_overlay::ScreenPrim],
     },
 }
 

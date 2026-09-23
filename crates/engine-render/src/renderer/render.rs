@@ -70,19 +70,23 @@ impl Renderer {
         // `SceneWithScreenPrims` is a `Scene` plus a composited ordering-table
         // pass; unwrap it here so the scene arms below stay single-purpose and
         // the overlay is drawn as a tail on top of whatever the scene emitted.
-        let (target, composited_prims) = match target {
-            RenderTarget::SceneWithScreenPrims { scene, prims } => {
-                (RenderTarget::Scene(scene), prims)
-            }
-            other => (other, &[] as &[crate::screen_overlay::ScreenPrim]),
+        let empty: &[crate::screen_overlay::ScreenPrim] = &[];
+        let (target, composited_prims, under_prims) = match target {
+            RenderTarget::SceneWithScreenPrims {
+                scene,
+                prims,
+                under_overlay,
+            } => (RenderTarget::Scene(scene), prims, under_overlay),
+            other => (other, empty, empty),
         };
         let composited_vram = match &target {
             RenderTarget::Scene(s) => Some(s.vram),
             _ => None,
         };
-        let composite_overlay = composited_vram.is_some() && !composited_prims.is_empty();
+        let composite_overlay =
+            composited_vram.is_some() && !(composited_prims.is_empty() && under_prims.is_empty());
         if composited_vram.is_some() {
-            self.stage_screen_overlay(composited_prims);
+            self.stage_screen_overlay_split(under_prims, composited_prims);
         }
         // Stage uniform writes before begin_render_pass.
         match &target {
@@ -479,6 +483,14 @@ impl Renderer {
                             rp.draw_indexed(start..start + count, 0, 0..1);
                         });
                     }
+                    // The composited prims that sit UNDER the 2D overlays
+                    // (`SceneWithScreenPrims::under_overlay`): the field
+                    // attached-light pools, which retail draws beneath the
+                    // party HUD.
+                    if composite_overlay {
+                        set_scene_vp(&mut rp);
+                        self.draw_screen_overlay_runs(&mut rp, scene.vram, true);
+                    }
                     let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(3);
                     if let Some(s) = scene.overlay_sprites {
                         overlays.push(s);
@@ -539,7 +551,7 @@ impl Renderer {
             // text, at the reversed-Z near plane.
             if let (true, Some(vram)) = (composite_overlay, composited_vram) {
                 set_scene_vp(&mut rp);
-                self.draw_screen_overlay(&mut rp, vram);
+                self.draw_screen_overlay_runs(&mut rp, vram, false);
             }
         }
         crate::profile::mark("encode");
@@ -1167,11 +1179,34 @@ impl Renderer {
     /// the top-left corner of a larger frame. See
     /// [`crate::screen_overlay::build_geometry`].
     fn stage_screen_overlay(&self, prims: &[crate::screen_overlay::ScreenPrim]) {
-        let geo = crate::screen_overlay::build_geometry(
-            prims,
+        self.stage_screen_overlay_split(&[], prims);
+    }
+
+    /// Stage two ordering-table lists into the one overlay buffer: `under`
+    /// (drawn before the 2D sprite / text overlays) first, then `over`. Each
+    /// list is ordered on its own by the shared builder; the split point is
+    /// the number of runs `under` produced.
+    fn stage_screen_overlay_split(
+        &self,
+        under: &[crate::screen_overlay::ScreenPrim],
+        over: &[crate::screen_overlay::ScreenPrim],
+    ) {
+        let (w, h) = (
             crate::vram_capture::PSX_SCREEN_WIDTH as u32,
             crate::vram_capture::PSX_SCREEN_HEIGHT as u32,
         );
+        let mut geo = crate::screen_overlay::build_geometry(under, w, h);
+        self.screen_overlay_under_runs.set(geo.runs.len());
+        if !over.is_empty() {
+            let tail = crate::screen_overlay::build_geometry(over, w, h);
+            let (vbase, ibase) = (geo.vertices.len() as u32, geo.indices.len() as u32);
+            geo.vertices.extend(tail.vertices);
+            geo.indices.extend(tail.indices.iter().map(|i| i + vbase));
+            geo.runs.extend(tail.runs.into_iter().map(|mut r| {
+                r.index_start += ibase;
+                r
+            }));
+        }
         self.screen_overlay_runs.borrow_mut().clone_from(&geo.runs);
         if geo.is_empty() {
             return;
@@ -1260,8 +1295,22 @@ impl Renderer {
     }
 
     fn draw_screen_overlay(&self, rp: &mut wgpu::RenderPass<'_>, vram: &UploadedVram) {
+        self.draw_screen_overlay_runs(rp, vram, false);
+    }
+
+    /// Draw one half of the staged runs: `under == true` draws the runs of
+    /// the `under` list [`Self::stage_screen_overlay_split`] staged, `false`
+    /// the rest.
+    fn draw_screen_overlay_runs(
+        &self,
+        rp: &mut wgpu::RenderPass<'_>,
+        vram: &UploadedVram,
+        under: bool,
+    ) {
         use crate::screen_overlay::BlendClass;
-        let runs = self.screen_overlay_runs.borrow();
+        let all = self.screen_overlay_runs.borrow();
+        let split = self.screen_overlay_under_runs.get().min(all.len());
+        let runs = if under { &all[..split] } else { &all[split..] };
         if runs.is_empty() {
             return;
         }

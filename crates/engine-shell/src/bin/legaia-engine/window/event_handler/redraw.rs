@@ -12,11 +12,16 @@ use super::super::*;
 fn present_target<'a>(
     scene: &'a RenderScene<'a>,
     prims: &'a [legaia_engine_render::screen_overlay::ScreenPrim],
+    under_overlay: &'a [legaia_engine_render::screen_overlay::ScreenPrim],
 ) -> RenderTarget<'a> {
-    if prims.is_empty() {
+    if prims.is_empty() && under_overlay.is_empty() {
         RenderTarget::Scene(scene)
     } else {
-        RenderTarget::SceneWithScreenPrims { scene, prims }
+        RenderTarget::SceneWithScreenPrims {
+            scene,
+            prims,
+            under_overlay,
+        }
     }
 }
 
@@ -744,10 +749,10 @@ impl PlayWindowApp {
             match (self.session.host.world.scene_color_grade(), tint) {
                 // Prologue grade: staged as the renderer's PALETTE-COLLAPSE
                 // mode - the retail mechanism's true altitude (the scene's
-                // uploaded CLUTs + TMD colour words are rewritten to the gold
-                // law at load; the engine's shaders apply the identical law
-                // per texel / packet colour). `set_color_grade` carries the
-                // gold coefficients for the packet collapse; the screen tint
+                // uploaded CLUTs are rewritten to the gold law and the
+                // resident TMD colour words by the two `4C E6` HSV ops; the
+                // engine's shaders apply the identical laws per texel /
+                // packet colour, `prologue_sepia_word`). The screen tint
                 // rides the palette slot so the ground's neutral modulation
                 // still fades. The view-depth cue ramp is inert in this mode
                 // (retail's prologue nodes hold `IR0 = 0`).
@@ -2466,13 +2471,17 @@ impl PlayWindowApp {
             // weapon-trail bands (mutually exclusive in practice - the
             // trail only draws once a swing clip plays inside the battle).
             let mut screen_prims = battle_intro_prims;
-            // The field fog sheets (`fog_particles`), through the same
-            // `fog_puff_prim` wrapper the browser play page composites with.
-            screen_prims.extend(field_fog_prims);
-            screen_prims.extend(move_strip_prims);
-            // The field VM's attached lights (op `0x34` sub-1): the same
-            // `light_pool_prims` wrapper the browser play page composites.
-            screen_prims.extend(self.field_light_screen_prims());
+            // The field scene's own ordering-table effects, drawn UNDER the
+            // 2D overlays and sorted as one list: the fog sheets
+            // (`fog_particles`, `fog_puff_prim`), the move strips, and the
+            // field VM's attached lights (op `0x34` sub-1,
+            // `light_pool_prims`). Retail's darkness mask leaves the party
+            // HUD bright (the `dolk` capture); the browser play page draws
+            // the same three through one sorted pass with its HUD a layer
+            // above the canvas.
+            let mut light_prims = field_fog_prims;
+            light_prims.extend(move_strip_prims);
+            light_prims.extend(self.field_light_screen_prims());
             screen_prims.extend(self.weapon_trail_screen_prims(r));
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel
@@ -2530,7 +2539,7 @@ impl PlayWindowApp {
             // `world_map_markers` kernel's quads, the browser play page's
             // twin (`crate::play_world_map_markers` there).
             screen_prims.extend(self.world_map_marker_prims());
-            let target = |scene| present_target(scene, &screen_prims);
+            let target = |scene| present_target(scene, &screen_prims, &light_prims);
             // Periodic sweep (`--screenshot-every`): capture a frame every N
             // ticks into the sweep dir (named for the tick), keep running,
             // and exit after the capture at/past `--screenshot-last-tick`.

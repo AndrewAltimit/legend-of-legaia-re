@@ -272,6 +272,9 @@ pub struct Renderer {
     /// Draw runs staged for the current frame's screen overlay (one indexed
     /// draw per run; see [`crate::screen_overlay::DrawRun`]).
     pub(super) screen_overlay_runs: std::cell::RefCell<Vec<crate::screen_overlay::DrawRun>>,
+    /// How many of [`Self::screen_overlay_runs`] belong to the list drawn
+    /// under the 2D overlays (`SceneWithScreenPrims::under_overlay`).
+    pub(super) screen_overlay_under_runs: std::cell::Cell<usize>,
     /// One flat quad covering the scene viewport, drawn first in a scene pass
     /// in the frame's clear colour when a [`Self::scene_viewport`] is set.
     /// Separate from the screen-overlay buffers because those hold the
@@ -610,12 +613,15 @@ impl Renderer {
     /// retail opening (recomp VRAM peek vs the disc TIMs) shows the scene's
     /// uploaded CLUT rows rewritten entry-for-entry to
     /// `L = max(r, g, b) -> (L, max(L-1, 0), L >> 1)` (5-bit, STP kept, zero
-    /// mismatches across the graded rows), the loaded TMD packet colours
-    /// collapsed to the amber family `~(M, 0.94*M, 0.43*M)` with
+    /// mismatches across the graded rows), every resident TMD colour word
+    /// rewritten by the prologue's two `4C E6` HSV ops to
+    /// `(V, V*246 >> 8, V*112 >> 8)`, `V = min(max, 0xF8) - 30` (a retail
+    /// `opdeene` state holds every resident word on that curve), with
     /// runtime-emitted neutral `0x80` words untouched, and **no** render node
     /// carrying a DPCS `IR0` (node `+0x78` holds `0` all prologue). When
     /// `enable` is on the mesh shaders apply exactly that: the texel law +
-    /// packet collapse (coefficients from [`Self::set_color_grade`]'s gold),
+    /// packet collapse (the `4C E6` sepia rewrite,
+    /// `psx_light::prologue_sepia_word`),
     /// a global screen `tint` multiply (the op `0x4C 0x12` fade), and an
     /// inert view-depth cue ramp. When off (the default) every path is
     /// bit-identical to the multiply-grade render.

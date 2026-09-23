@@ -2526,6 +2526,25 @@ voice attrs, and both games hold PROT 0869 in slot 2 on every host, so no cue it
 plays differs; a category-`2` cue added to fishing, the slot machine or the
 dance on that page would.
 
+## Screen prims under the HUD: one sort, two layerings
+
+The browser play page draws every screen-space primitive through one
+ordering-table pass over the finished 3D frame, and its party HUD is a layer
+above the whole canvas; the native window composited the same primitives as a
+tail **after** its sprite and text overlays, so its HUD sat under them. The
+two agreed on every frame nothing darkened - until the field attached light
+(op `0x34` sub-1) projected at retail's scale and its subtractive mask started
+darkening the native HUD while the page's stayed bright. Retail's frame (the
+`dolk` capture behind `attached_light_retail_capture_disc.rs`) keeps the HUD
+bright.
+
+The native `RenderTarget::SceneWithScreenPrims` carries a second list,
+`under_overlay`, drawn after the scene's meshes and before its 2D overlays and
+sorted on its own by the shared builder. The field scene's own effects go
+there as one list - the fog sheets, the move strips and the light pools - so
+they order against each other exactly as the page's single pass orders them.
+Transitions, fades and battle readouts stay in the tail.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
