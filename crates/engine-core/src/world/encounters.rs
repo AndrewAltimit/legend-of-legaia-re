@@ -284,6 +284,12 @@ impl World {
         if let Ok(menu) = legaia_asset::worldmap_menu::parse_scus(scus) {
             self.menu.worldmap_menu = Some(menu);
         }
+        // The battle draw's Rot limb ranges (`0x80077998`) - the one
+        // per-object colour rule of `FUN_80048A08`, read by both hosts'
+        // battle actor draws through [`Self::battle_limb_dim_plan`].
+        if let Some(t) = legaia_engine_vm::battle_actor_draw::RotLimbTable::from_scus(scus) {
+            self.tables.rot_limb_table = Some(t);
+        }
     }
 
     /// Install the menu-overlay data tables (PROT 0899 as-loaded image):

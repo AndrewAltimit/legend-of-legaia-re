@@ -664,6 +664,59 @@ and that `FUN_80029888` is reached whenever `actor[+0x7A] != 0` on the overworld
 On `map03` the case-5 gate fired 756 times in 180 vsyncs and took the near arm
 every time.
 
+## The battle per-actor draw
+
+`FUN_80048A08` is the draw every battle body goes through once per rendered
+frame - monsters, the party, and a player Seru summon's parts. It composes the
+actor matrix (`RotMatrix(actor+0x24)`, translation `+0x2C/+0x30/+0x34`, under
+the camera matrix saved at `0x1F8003C8`), runs the pose decoder `FUN_8004998C`,
+applies the render scale `actor+0x72` when it is not `0x1000`, and then walks
+the mesh's objects (count `*(*(actor+0x4C)+0x88)`), handing each to one leaf:
+`FUN_8002735C` while `actor+0x42` is set, `FUN_80029888` while `actor+0x7A` is
+set (with the 12-byte row `0x8007BE60 + actor+0x6D * 12`), else the dispatcher
+`FUN_80043390`. An actor whose `+0x10` carries bit `0x00800000` draws every
+object `0x50` ordering-table buckets deeper. The function row is
+[`80048A08` in the battle function table](../reference/functions/battle.md#80048a08);
+see `ghidra/scripts/funcs/80048a08.txt`.
+
+### Rotted limbs draw dark
+
+The colour word `actor+0x74` and blend `actor+0x78` are reloaded for **each
+object** (`0x80048BEC..0x80048C00`), because a party seat (`actor+0x5A < 3`)
+may override them per object. The seated battle actor's status word `+0x16E`
+carries the three Rot limb bits, and a five-byte row per character at
+`0x80077998` (indexed by the roster id `0x8007BD10[seat] - 1`) gives each bit
+an object range of that character's battle mesh: bit `0x08` dims objects
+`row[0]..=row[1]`, bit `0x10` dims `row[2]..=row[3]`, bit `0x20` dims every
+object from `row[4]` up. A dimmed object draws with R and G quartered and B
+halved (`((c & 0xFEFCFC) >> 1)`, then B `& 0x7F0000` and G/R `(& 0x7E7E) >> 1`)
+and a blend of `0xC00`, which the dispatcher stages as the GTE far colour and
+`IR0` - the limb's own packet colours pushed three quarters of the way toward a
+blue-black. No other per-object colour rule exists in the draw.
+
+The port is `legaia_engine_vm::battle_actor_draw` (`LimbDimPlan`), resolved
+against the world by `World::battle_limb_dim_plan`. The native window applies
+it to the per-frame posed mesh; the browser play page re-uploads the actor's
+packet-colour stream when the plan's key changes
+(`web-viewer::play_battle_limb_dim`). One difference is deliberate: the port's
+tint flash is a per-draw cue over the whole mesh, so a limb dimmed during a
+flash also takes the flash, where retail's override replaces it.
+
+### The ground shadow
+
+Unless `actor+0x6A` is set, the draw ends with a shadow disc under the actor:
+the position is projected with its height `+0x16` zeroed, the procedural
+builder `FUN_80028158` makes a 24-segment disc (case `1`) of radius
+`actor+0x58 * 4 / 10` into `_DAT_8007B85C + 0x62400`, and `FUN_80043390` draws
+it with flag word `0x8A000000` - semi-transparent, blend mode 2, i.e.
+subtracted from the frame - only while the actor is neither pitched nor rolled
+(`+0x24 == 0 && +0x28 == 0`). The centre / rim colours are `0x404040` /
+`0x080808`, `0x202020` / `0x040404` when `+0x74 & 0x83000000`, or derived from
+`+0x74` (`>> 1 & 0x3F3F3F`, `>> 5 & 0x070707`) while `+0x16` is non-zero.
+`battle_actor_draw::shadow_plan` models those numbers; neither host draws the
+disc, because `FUN_80028158`'s case-1 geometry is not ported (only its case-0
+annulus parameters are, for the battle-entry ring).
+
 ## Per-primitive TMD render helpers (`FUN_8002735C` family)
 
 Three helpers hang off the main TMD renderer `FUN_8002735C`, documented but not
