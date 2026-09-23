@@ -6,7 +6,7 @@
 //!
 //! 1. **Parity with the doc.** `docs/subsystems/cast-module.md` quotes the
 //!    spawn-site / record counts of the three decoded exemplars (PROT 958 =
-//!    "13 distinct records for 15 sites", 959 = 41 for 41, 960 = 21 for 24) and
+//!    "14 distinct records for 15 sites", 959 = 44 for 41, 960 = 23 for 24) and
 //!    their record spans. Those are the figures the band's own bytes give, so a
 //!    regression in `summon_overlay`'s `a2` recovery moves them.
 //! 2. **Resolution.** Every id in the player Seru block `0x81..=0x8B` names a
@@ -37,9 +37,9 @@ const SERU_IDS: [u8; 11] = [
 /// `docs/subsystems/cast-module.md`: the three decoded exemplars, as
 /// `(PROT entry, spawn sites, distinct records, first record VA, last record VA)`.
 const EXEMPLARS: [(u32, usize, usize, u32, u32); 3] = [
-    (958, 15, 13, 0x801F_8EB8, 0x801F_9348),
-    (959, 41, 41, 0x801F_884C, 0x801F_95CC),
-    (960, 24, 21, 0x801F_8768, 0x801F_8E0C),
+    (958, 15, 14, 0x801F_8EB8, 0x801F_9348),
+    (959, 41, 44, 0x801F_884C, 0x801F_95CC),
+    (960, 24, 23, 0x801F_8768, 0x801F_8E0C),
 ];
 
 /// The band's two record-less entries: PROT 0926 is the 1-sector null stub
@@ -182,8 +182,8 @@ fn every_player_seru_cast_and_a_capture_cast_resolve_a_record_set() {
     );
     assert_eq!(
         w.casting.active_summon.as_ref().map(|s| s.parts.len()),
-        Some(13),
-        "PROT 958's 13 records are the staged scene"
+        Some(14),
+        "PROT 958's 14 records are the staged scene"
     );
     println!(
         "[ok] cast module resolution: {} capture records",
