@@ -740,6 +740,10 @@ impl World {
         if !self.any_living_initiative_key() {
             self.reseed_initiative();
         }
+        // The seeder's tail clears the round-skip count `ctx[+0x25]` every
+        // round (`sb zero,0x25(v0)` at `0x801DAB84`, the delay slot of the
+        // pick's `jal`), keys re-rolled or not.
+        self.battle_ctx.round_skip = 0;
         self.battle.round_flow.clear_pending();
         self.battle.round_flow.cursor = 0;
         // `FUN_801E752C` - the per-round status DoT ticker, skipped on round
@@ -769,14 +773,14 @@ impl World {
             self.begin_round_execution();
             return;
         }
-        match self.next_member_owing_command(None) {
-            Some(first) => self.open_battle_command(first),
-            // Nobody can act. Retail still raises `Begin | Run`, and its
-            // `Begin` finds `FUN_801DBA04` equal to the count and stores the
-            // commit confirm `0x6E` directly (`0x801D10A0`, step `0x27`); the
-            // port plays such a round out at once, with neither screen.
-            None => self.begin_round_execution(),
-        }
+        // Nobody can act: retail still raises `Begin | Run` (on the selector's
+        // seed, member 0), and its `Begin` finds `FUN_801DBA04` equal to the
+        // count and stores the commit confirm `0x6E` directly (`0x801D10A0`,
+        // step `0x27`) - `tick_battle_command` takes that arm. `Reselect`
+        // from there finds nobody behind the cursor and returns to `0x1E`
+        // (`0x801D30D0..0x801D30E0`), the step-back's own empty case.
+        let first = self.next_member_owing_command(None).unwrap_or(0);
+        self.open_battle_command(first);
     }
 
     /// Hand the round to the action SM - retail's `0x6E` begin arm storing

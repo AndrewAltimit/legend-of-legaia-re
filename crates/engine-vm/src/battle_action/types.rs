@@ -844,20 +844,37 @@ pub struct BattleActionCtx {
     /// combatant count less the skipped tail, so the thing being compared is a
     /// position in the order, not anything per-actor.
     ///
-    /// None of the three bytes the bound is built from is modelled here.
     /// `ctx[+0x00]` / `ctx[+0x01]` are the **seated** party / monster counts
     /// (`FUN_801E7250`'s all-target arm scans `0 .. ctx[+0x00]`, which is what
-    /// makes it a party-side scan). `ctx[+0x25]` is the **round-skip** count -
-    /// cleared once per round at `0x801DAB84` and bumped at `0x801DAC2C` for
-    /// each slot that is dead *and* still holds an unspent initiative key,
-    /// i.e. a combatant that died before its turn came up. The port compares
-    /// against the living count instead; see
-    /// `end_of_action`'s comment in `battle_action::done` for the one direction
-    /// in which that differs.
+    /// makes it a party-side scan); the port reads them off the host's seated
+    /// slots. `ctx[+0x25]` is [`Self::round_skip`].
     ///
     /// REF: FUN_801E295C (`ctx[+0x1A]`; the `PORT:` anchor for the seeding
     /// arm is `battle_action::dispatch`'s `seed_turn_cursor`)
     pub turn_cursor: u8,
+    /// `[+0x25]` - the **round-skip count**: combatants dropped out of this
+    /// round's order without acting. Its only two writers are in the
+    /// initiative code: the seeder `FUN_801DA780` clears it once per round
+    /// (`sb zero,0x25(v0)` at `0x801DAB84`, the delay slot of its
+    /// `jal 0x801DABA4`), and the pick `FUN_801DABA4` bumps it at
+    /// `0x801DAC2C..0x801DAC38` for each slot that is dead (`+0x14C == 0`)
+    /// **and** still holds an unspent key (`+0x16C != 0`). Every other
+    /// `sb ...,0x25(...)` in PROT 0898 stores into a GPU packet's `u`/`v`
+    /// byte, not into the context. The end-of-action gate subtracts it from
+    /// the seated count (`0x801E67B4..0x801E67C8`).
+    ///
+    /// Written by the engine's initiative code (`World::begin_battle_round`
+    /// resets it, `World::next_combatant_by_initiative`'s dead-slot sweep
+    /// bumps it); read by `battle_action::done::end_of_action`.
+    pub round_skip: u8,
+    /// `0x801F696C` - the queue builder's **special-trigger flag** (a
+    /// battle-overlay global, not a context byte; carried here because it
+    /// lives exactly as long as one party action). `FUN_801EED1C` clears it
+    /// at its head and sets it when the queue ends in a Miracle or a Super
+    /// Art ([`crate::battle_action::finish_action_queue_with_trigger`]).
+    /// Its one reader is the strike loop's per-swing drift at `0x801E3840`
+    /// ([`crate::battle_action::swing_drift_armed`]).
+    pub super_trigger: bool,
     /// `[+0x262]` - the **cast readout cursor**: which of the eight
     /// value-window slots the next effect-child hit files its damage in.
     /// `FUN_801E09F8`'s hit arm writes `ctx[0x83C + slot*4]`,

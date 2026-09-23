@@ -133,3 +133,80 @@ fn a_solo_party_reaches_the_screen_off_its_only_command() {
     assert_eq!(cmd.actor, 0);
     assert!(matches!(cmd.phase, CommandPhase::Menu { .. }));
 }
+
+#[test]
+fn nobody_able_to_act_still_gets_the_prompt_then_the_confirm() {
+    // Both members carry a `0xF84` status bit (Sleep's `0x80`): neither can
+    // enter a command. Retail still raises `Begin | Run` (0x1E); `Begin`
+    // finds `FUN_801DBA04` equal to the count and stores `0x6E` directly.
+    let mut world = party_world(2);
+    world.actors[0].battle.field_flags = 0x80;
+    world.actors[1].battle.field_flags = 0x80;
+    world.begin_battle_round();
+    let cmd = world
+        .battle
+        .command
+        .as_ref()
+        .expect("the round prompt opens");
+    assert!(matches!(cmd.phase, CommandPhase::RoundPrompt { .. }));
+
+    press(&mut world, PadButton::Cross);
+    assert!(on_confirm(&world), "Begin goes straight to 0x6E");
+
+    // Reselect with nobody behind the cursor returns to the prompt.
+    press(&mut world, PadButton::Circle);
+    let cmd = world.battle.command.as_ref().expect("the prompt reopens");
+    assert!(matches!(cmd.phase, CommandPhase::RoundPrompt { .. }));
+
+    press(&mut world, PadButton::Cross);
+    assert!(on_confirm(&world));
+    press(&mut world, PadButton::Cross);
+    assert!(world.battle.command.is_none(), "Begin plays the round out");
+}
+
+#[test]
+fn the_commit_log_lists_every_member_the_cursor_walked_past() {
+    use crate::battle_hud::{CommitLogTarget, battle_commit_log};
+    use legaia_engine_vm::battle_commit_log as log;
+    let mut world = party_world(3);
+    world.battle.round_flow.phase = crate::battle_round::RoundPhase::Command;
+    assert!(battle_commit_log(&world).is_empty());
+    commit_spirit(&mut world, 0);
+    let rows = battle_commit_log(&world);
+    assert_eq!(rows.len(), 1, "member 0 committed, member 1 entering");
+    assert_eq!(rows[0].command_record, log::RECORD_CHIP_SPIRIT);
+    assert_eq!(rows[0].target, CommitLogTarget::None);
+    world.commit_party_command(1, PendingPartyAction::Attack { target: 3 });
+    commit_spirit(&mut world, 2);
+    assert!(on_confirm(&world));
+    let rows = battle_commit_log(&world);
+    assert_eq!(rows.len(), 3, "the 0x6E screen shows the whole party");
+    assert_eq!(rows[1].command_record, log::RECORD_CHIP_ATTACK);
+    assert!(matches!(rows[1].target, CommitLogTarget::Single(_)));
+
+    // Reselect takes the last member's row down with its commit.
+    press(&mut world, PadButton::Circle);
+    assert_eq!(battle_commit_log(&world).len(), 2);
+
+    // The round's start removes the log.
+    commit_spirit(&mut world, 2);
+    press(&mut world, PadButton::Cross);
+    assert!(battle_commit_log(&world).is_empty());
+}
+
+#[test]
+fn the_round_skip_count_bumps_for_a_combatant_that_died_holding_its_turn() {
+    let mut world = party_world(1);
+    world.battle.round_flow.phase = crate::battle_round::RoundPhase::Execute;
+    world.actors[1].battle.init_key = 5;
+    world.actors[2].battle.init_key = 7;
+    world.actors[2].battle.liveness = 0;
+    world.battle_ctx.round_skip = 0;
+    let _ = world.next_combatant_by_initiative();
+    assert_eq!(world.battle_ctx.round_skip, 1, "slot 2 dropped out unacted");
+    let _ = world.next_combatant_by_initiative();
+    assert_eq!(
+        world.battle_ctx.round_skip, 1,
+        "its key is spent: no second bump"
+    );
+}

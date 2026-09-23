@@ -390,9 +390,9 @@ impl World {
     /// item (`+0x1DE == 1`) - the item handed back to the bag
     /// (`FUN_800421D4(+0x1DF, 1)` at `0x801DAC54..0x801DAC58`) and the category
     /// byte cleared (`0x801DAC68`). A member who used an item and died before
-    /// acting keeps the item. The round-skip count `ctx[+0x25]` the same
-    /// arm bumps is not modelled (the action SM's end-of-action bound reads the
-    /// living count instead - `battle_action::done`).
+    /// acting keeps the item. The same arm bumps the round-skip count
+    /// `ctx[+0x25]` (`0x801DAC2C..0x801DAC38`, `battle_ctx.round_skip`), which
+    /// the action SM's end-of-action bound subtracts from the seated count.
     ///
     /// **The pick** (`0x801DAC7C..0x801DAD60`) builds retail's tie list, which
     /// is not a plain list of the tied seats: it starts as `[0]` with the
@@ -423,6 +423,8 @@ impl World {
             }
             a.battle.init_key = 0;
             a.battle.spirit_gauge = a.battle.spirit_gauge.min(100);
+            // `ctx[+0x25]`: one more combatant out of this round unacted.
+            self.battle_ctx.round_skip = self.battle_ctx.round_skip.saturating_add(1);
             if a.battle.action_category == vm::battle_action::ActionCategory::Item.as_byte() {
                 a.battle.action_category = 0;
                 if let Some(Some(PendingPartyAction::Item { item_id, .. })) =

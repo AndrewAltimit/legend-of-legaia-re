@@ -478,7 +478,9 @@ cast inspects the party side only. `ctx[+0x01]` is its monster-side twin, read
 by the seed arm's pre-emptive-strike branch (`0x801E2B18`).
 
 `ctx[+0x25]` is the **round-skip count** - combatants dropped out of this
-round's order *without acting*. It has one writer of each kind:
+round's order *without acting*. It has one writer of each kind (every other
+`sb ...,0x25(...)` in PROT 0898 stores a `u`/`v` byte of a GPU packet, not
+this context byte):
 
 - **reset**, `0x801DAB84` - `sb zero,0x25(v0)`, in the delay slot of the
   `jal 0x801DABA4` that ends the initiative seeder `FUN_801DA780`. So it clears
@@ -502,9 +504,14 @@ living actor holds an unspent key, and that is the round end
 directions: an actor that dies **after** acting had its key consumed at its
 dispatch (retail: its cursor position was consumed), and one that dies
 **before** acting has its key zeroed by the pick's first loop (retail: the
-`0x801DABF8` clear plus the `+0x25` skip bump). `ctx[+0x00]`, `ctx[+0x01]` and
-`ctx[+0x25]` are therefore not modelled on `BattleActionCtx`; what they
-compute is recovered from the keys.
+`0x801DABF8` clear plus the `+0x25` skip bump). The action SM's own bound is
+modelled too: `BattleActionCtx::round_skip` is `ctx[+0x25]`, cleared by
+`World::begin_battle_round` every round and bumped by the dead-slot sweep in
+`World::next_combatant_by_initiative`, and `end_of_action` compares the
+turn cursor against the seated party plus the seated monsters (a monster seat
+the battle loaded, `max_hp != 0`) less that skip - so an actor that dies
+*after* acting no longer shortens the round, as it did while the bound read
+the living count.
 
 **Port.** `legaia_engine_vm::battle_action::BattleActionCtx::turn_cursor`. The
 port previously modelled `+0x1A` on `BattleActor` and stamped it at `Begin`
@@ -2953,6 +2960,37 @@ Port: `legaia_engine_vm::battle_action`'s `attack_chain` (`attack_x2_refill`),
 with the counter on `BattleActionCtx::attack_x2_pass` and the marks carried
 from the builder on `BattleActor::starter_marks`
 (`BUILD_STARTER_MARK` / `SUPER_STARTER_MARK`).
+
+#### The per-frame drift and the `0x801F696C` flag
+
+Both the stage path and the in-flight hold (`bne v1,zero,0x801E37C0` at
+`0x801E3718`) fall into one block at `0x801E37C0` that runs on every frame of
+the loop for a party actor (`ctx[+0x13] < 3`). It moves two actors a little
+along their facings: the acting actor's live pair by
+`trig(facing) * -3 * frame_dt * rate >> 15` and the target's by
+`trig(target facing) * +3 * frame_dt * rate >> 15`, both scaled by the
+**acting** actor's rate byte `+0x21D` (`0x801E386C..0x801E3994`; `frame_dt`
+is the scratchpad byte `0x1F800393`). Two arms gate it on the committed
+clip's header byte `ctx[+0x243]`:
+
+- `ctx[+0x243] == 0`: the character record's `+0xF4` (`+0x6BC` off the
+  record base) carries the War God Icon bit `0x2000`;
+- `ctx[+0x243] != 0`: the global `0x801F696C` is non-zero (`lw` at
+  `0x801E3840`, the flag's one reader) and the latched clip id `+0x1DB` is
+  outside `0x10..=0x1A`.
+
+`0x801F696C` is the queue builder's special-trigger flag. `FUN_801EED1C`
+clears it at its head (`sw zero,0x696c` at `0x801EED88`) and three sites set
+it to `1`: the Miracle arm (`0x801EF5B8`), the Super tail match
+(`0x801EFBD4`) and the auto-combo tail `FUN_801F0450` (`0x801F0518`).
+
+Port: `swing_drift_armed` / `swing_drift` in `attack_chain`, with the flag on
+`BattleActionCtx::super_trigger` (set by
+`finish_action_queue_with_trigger`; the basic-attack build clears it). The
+`0x801F0518` writer is not modelled - the auto-combo tail is only partly
+ported. The War God Icon's `ctx[+0x16]` bump at `0x801E37AC..0x801E37BC`
+(on a stage, while the counter is already non-zero) sits in the same block
+and is not modelled either.
 
 ### 3. Damage is one power byte per animation hit event
 
