@@ -1032,13 +1032,26 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
 
     // PORT: FUN_8001FD44 (the name-based scene-change packet)
     //
-    // Retail stages the destination by *name*: `strcpy` into the staged
-    // buffer `0x8007050C` and the active buffer `0x80084548`, raise
-    // `_DAT_1F800394 |= 0x40` (transition pending) and call `FUN_8001D7F8`
-    // to resolve the scene-index word. The engine has no staged/active
-    // buffer pair, so the packet is this deferred triple plus the arrival
-    // facing; `SceneHost::tick` drains it where retail's next field-init
-    // reads the active buffer.
+    // Retail stages the destination by *name*. It saves the active buffer
+    // `0x80084548` and the resolved-index word `0x80084540`, raises
+    // `_DAT_1F800394 |= 0x40` (transition pending), zeroes `_DAT_8007BA98`,
+    // copies the name into the staged buffer `0x8007050C` and calls
+    // `FUN_8001D7F8`, which rewrites `0x80084540` with the destination's
+    // index. Then it forks on `_DAT_8007B8C2` (`0x8001FDCC`):
+    //
+    // - `!= 0` (retail boots with it set): the old active name is backed up
+    //   to `0x80084558` (the previous-scene buffer), the new name becomes the
+    //   active one, and the index goes to `_DAT_8007B768` (`0x8001FDF4`);
+    // - `== 0` (the dev arm, never taken on the disc): the name goes to
+    //   `0x800915C8`, the saved name is restored into the active buffer, and
+    //   the index goes to `gp+0x688`.
+    //
+    // Both arms restore `0x80084540` from the saved copy and spawn the
+    // transition streaming actor (descriptor `0x80070734`, handler
+    // `FUN_80021934`), writing `_DAT_8007B828 = 0x7FFF` when the pool is full.
+    // The engine has no name buffers or streaming actor: the packet is this
+    // deferred triple plus the arrival facing, which `SceneHost::tick` drains
+    // where the retail arm's streaming actor would load the destination.
     fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {
         // Named scene-change (op 0x3F): the destination name is inline, so no
         // map-id resolver is needed. Recorded for SceneHost::tick to drain,
@@ -1073,6 +1086,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             text_id: 0,
             sub_op: 2,
         });
+    }
+
+    // Field-VM op `4C EC`: `_DAT_8007B5FC = FUN_801DDF48()` (`0x801E34F8`
+    // `jal`, store in the `j` delay slot at `0x801E3508`) - reroll the
+    // encounter step counter. No shipped script issues a clean `4C EC`
+    // (field-op census), so this is reachable only from modded bytecode.
+    // REF: FUN_801DDF48 (ported as region_encounter::encounter_counter_reroll)
+    fn op4c_n_e_sub_c_capture_ddf48(&mut self) {
+        self.world.reroll_encounter_step_counter();
     }
 
     fn op4c_n_e_sub_1_text_actor(&mut self, text_buf: &[u8], script_id: u16) {
