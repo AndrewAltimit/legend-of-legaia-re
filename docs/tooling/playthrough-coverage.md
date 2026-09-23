@@ -275,15 +275,16 @@ Save states are gitignored Sony RAM - cite the `backup_fingerprint` from
 Both anchors are cataloged in `scripts/scenarios.toml` + `saves/library` by
 `backup_fingerprint`, resolvable via `run_probe.sh --scenario <label>`.
 
-**S1..S5 run a patched executable.** The chain was driven from a cold boot
-of an image carrying the shiny-seru + enemy-ally charm build, so every
-anchor from `s1_newgame_field` to `s5_tetsu_battle` holds that build's SCUS
-in RAM (`resident_patch` in the manifest), and `s5_tetsu_battle` also holds
-its `0898` hook sites. The field segments read none of those sites; S5 is a
-one-enemy fight the charm skips, and its trace names functions by address,
-which the hooks do not move. S6 (`rim_elm_queen_bee_battle`) is retail at
-every patcher site. The measurement and what a family can affect are in
-[Patched-disc taint](pcsx-redux-automation.md#patched-disc-taint).
+**S1..S5 are retail captures.** The chain was first driven from a cold boot
+of an image carrying the shiny-seru + enemy-ally charm build, so those
+anchors held that build's SCUS in RAM (and `s5_tetsu_battle` its `0898` hook
+sites). Every anchor is re-shot on a staged, unpatched image at the same
+moment - same scene, mode and player position, S5 the same battle context -
+and the manifest labels point at the retail files; the drivers, and what the
+re-shoot taught about them, are in
+[Re-shooting the S1..S5 anchors](pcsx-redux-automation.md#re-shooting-the-s1s5-anchors-on-an-unpatched-image).
+S2..S4 now run on the recompiler (`autorun_chain_fast.lua`,
+`autorun_s3_fast.lua`); S1 and S5 keep the breakpoint drivers below.
 
 **The universal field tick made chaining work.** The breakthrough was a second
 per-frame exec-bp on `FUN_8001698C` (the default mode handler's vsync-sync,

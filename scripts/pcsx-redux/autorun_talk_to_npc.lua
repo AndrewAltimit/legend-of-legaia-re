@@ -13,13 +13,18 @@
 -- taken it. The MAN base is P1[1]'s actor +0x90 minus P1[1]'s record offset.
 --
 -- Steering is closed-loop on the live positions (player = *0x8007C364,
--- +0x14 / +0x18 signed 16-bit). The pad is camera-relative, so each
--- direction's world step is learnt online (the autorun_s4_doornav.lua
--- model) and the best-aligned one is held. A push that stops the player
+-- +0x14 / +0x18 signed 16-bit): the pad direction best aligned with the
+-- world delta is held, under a fixed screen-to-world mapping (see SEED
+-- below). A push that stops the player
 -- for 12 vsyncs while still out of range sidesteps along the other axis for
 -- 24 vsyncs (alternating sides); once within LEGAIA_TALK_DIST it releases,
--- taps toward the NPC to face it and presses CROSS. Checkpoints land
--- LEGAIA_SHOTS vsyncs after the press.
+-- taps toward the NPC to face it and presses CROSS, retrying every 30
+-- vsyncs until the field-control dialogue byte (*0x801C6EA4 +0x62) goes
+-- non-zero. Checkpoints land LEGAIA_SHOTS vsyncs after that. In the
+-- town01 run the byte lags the box by a page, so LEGAIA_FACE_EVERY is how
+-- the first page is caught. The steer does not plan: from the house door a
+-- story trigger and a fenced lane stop it, which is what the three route
+-- forms below are for.
 --
 -- A route with walls between the player and the NPC takes LEGAIA_WAYPOINTS,
 -- a "col,row;col,row;..." tile list walked first (tile centre = tile * 128 +
