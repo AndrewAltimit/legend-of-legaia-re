@@ -2211,18 +2211,20 @@ impl PlayWindowApp {
                     draws: &caption_draw_vec,
                 });
 
-            // Force a pure-black background during boot UI so the
-            // logos / title / save-select panels read on PSX-style
-            // black instead of the default dark-blue clear. In a
-            // stage-dome battle clear to a sky blue so the gaps the
-            // front-half dome leaves open read as sky (like retail)
-            // rather than the bare grey clear.
+            // The clear colour is the shared engine-ui selector on every
+            // frame, the one the browser play page reads too: black for the
+            // boot UI and for field / cutscene frames (retail's background),
+            // sky blue in a stage-dome battle so the gaps the front-half dome
+            // leaves open read as sky. Passing it only for the boot UI and a
+            // stage battle left every other frame on the renderer's own
+            // fallback navy, a colour neither retail nor the page draws.
             let boot_ui_clear = self.boot_ui.is_active() && !game_over_hold;
             let stage_battle = self.session.host.world.mode == SceneMode::Battle
                 && self.battle_stage_mesh.is_some();
-            let scene_clear = (boot_ui_clear || stage_battle).then(|| {
-                legaia_engine_render::battle_stage_clear::scene_clear(boot_ui_clear, stage_battle)
-            });
+            let scene_clear = Some(legaia_engine_render::battle_stage_clear::scene_clear(
+                boot_ui_clear,
+                stage_battle,
+            ));
 
             // Slot 1: logos OR title-art bands (title still
             // emits during SaveSelect, dimmed). Slot 2: either
