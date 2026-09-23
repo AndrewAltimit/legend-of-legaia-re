@@ -78,8 +78,9 @@ cheapest place to look for a claim that is still wrong.
   source, a talk partner - resolved to nothing from inside a script. A retail
   capture of `conc2` seating three mirror controllers against the engine's one
   found it.
-- **Retail's steal is the killing blow, not a command.** The first kill in a
-  battle spends the one attempt, whoever lands it
+- **Retail's steal is the killing blow, not a command.** An action's first
+  kill spends that action's one attempt; the latch re-arms at every strike
+  chain's exit, which a byte scan for the latch's offset could not see
   ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
 - **The reference sweeps paired registers that had already been overwritten.**
   About a quarter of their `lui` pairs were false; no unreferenced verdict moved
@@ -107,7 +108,7 @@ cheapest place to look for a claim that is still wrong.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready | [details ↓](#region-story-flag-gate-families) |
-| What un-parks `kor5` P2[3] and spawns P2[4] / P2[5]? | open - the chain head is measured, the tail is not | Tile poke on `(32,43)` spawns P2[3], which SETs `0x43A` at `+0x14CB` and then parks in a `21 26` loop; the walk-on records P2[4] `(32,41)` and P2[5] `(21,52)` did not spawn in 12k vsyncs after that beat, so the tail's `0x6C4` writer was never reached. The records' C1 / C2 gates and what ends P2[3]'s park, read from the MAN and satisfied under the probe, close it. |
+| Does P2[5] write `kor5`'s `0x436` organically? | partial - the chain is captured end to end with one input poked | The order is P2[3] (`0x43A`) -> P2[4] (`0x464`, then a battle against monster 165) -> scene reload -> P1[0] clears `0x464` and spawns P2[5] -> P2[8] writes `0x6C4` at `+0x75` on tile `(32,86)`, gated `C1 {0x6C4}` / `C2 {0x436}`. `0x436` was poked: P2[5]'s own write at `+0xD0D` needs about 17,500 vsyncs of play the probe box could not spend. A run that reaches it closes the row. |
 
 **Is `juui1` dark in retail outside its tint beats** closed as no, on a
 synthetically gated walk: the black run is the door fade, and at rest the scene
@@ -285,8 +286,12 @@ alongside the earlier organic `ropeway`/`ropeway2`/`jiji` walks and Nivora's
   before any order is read off the log;
 - **walked without an organic family SET** (the beats were already latched in
   the loaded state, or the region was entered mid-arc): `retock`/`retockin`
-  (`0x502` never fired; `0x357` pre-latched), `doman` (`0x3FB` did not fire),
-  `nilboa`'s entry family, `son`, and the `kor5` tail `0x6C4`.
+  (`0x502` never fired - its writer hangs off Eliza's talk loop, unhidden by
+  `jagaroom`'s `0x33B`; `0x357` pre-latched). `doman`'s `0x3FB` (P2[4]),
+  `son`'s arrival family and the `kor5` tail's `0x6C4` (P2[8]) have since been
+  captured, `kor5` with its `0x436` input poked rather than played; the
+  retock / doman / nilboa entry families are measured
+  ([settled](re-settled-threads.md#field--locomotion)).
 
 The generic C1/C2 seeder already drives every family. One more session from
 an early-enough save (before the retock/doman/nilboa beats) closes the
@@ -336,7 +341,7 @@ process-matching helpers in
 
 **Does the port run retail's in-battle steal** and **how does the port step
 back to an earlier member** both closed with a wire on both hosts. The steal is
-the killing blow's once-per-battle roll, not a command, and a disc-gated round
+the killing blow's once-per-chain roll, not a command, and a disc-gated round
 reproduces the retail caption word for word; the back step is the ring's cancel
 with a non-zero step counter
 ([settled](re-settled-threads.md#battle--arts--level-up)).
