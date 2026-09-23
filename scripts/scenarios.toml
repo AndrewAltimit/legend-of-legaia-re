@@ -355,26 +355,35 @@ topics = ["boot path", "init.pak", "publisher_logos"]
 [[scenarios]]
 slot = 255
 label = "title_attract"
-description = "Title screen idle - countdown ticking; main TITLE TIM uploaded to VRAM; tick function FUN_801DD35C running."
+backup_fingerprint = "e40b480aff63004e02cb9d5cd75cdd529a3cfe2ba2c5367d2b642458a347216b"
+description = "Title screen idle, no input since the cold boot: logo + NEW GAME / CONTINUE drawn, attract countdown running (the attract STR, master mode 0x1A, starts about 950 vsyncs later). Master mode 0x17. Captured by autorun_boot_continue.lua on a cold boot (no save state, LEGAIA_MASH_UNTIL=1, cal checkpoint at vsync 1800; title mode 0x17 arrives at 1169)."
 phase = "title"
-# pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate4"   # uncomment after capture
+expected_game_mode = 0x17
+# Re-shot: the old pointer was the live slot SCUS94254.sstate4, since
+# overwritten (it holds a battle state now), so the label opened the wrong
+# screen.
 topics = ["title overlay", "countdown trigger", "attract"]
 
 [[scenarios]]
 slot = 255
 label = "title_menu_idle"
-description = "Title menu visible (NEW GAME / CONTINUE). The user has interrupted the attract countdown but not yet pressed X; menu-glyph atlas at 0x80106478 is live; sub-mode VM in title-overlay tick is on the menu branch."
+backup_fingerprint = "edcc11cfbbe73f50473585489a12ee449dc68a830127e3e98cc324006078afbd"
+description = "Title menu with the cursor moved: one DOWN at vsync 1800 put it on CONTINUE (interrupting the attract countdown), no Cross yet. Master mode 0x17. Same cold-boot run as save_select_idle (autorun_boot_continue.lua, LEGAIA_SEQ=1800:DOWN,2100:CROSS), cal checkpoint at vsync 2000."
 phase = "title"
-# (live slot reused for the rim_elm_queen_bee_battle capture; re-capture to a
-# fresh slot + back it up to re-attach a durable reference here)
+expected_game_mode = 0x17
+# Re-shot: the label had no durable state (its live slot was reused for the
+# rim_elm_queen_bee_battle capture).
 topics = ["title overlay", "title menu", "menu glyph atlas"]
 
 [[scenarios]]
 slot = 255
 label = "save_select_idle"
-description = "Save-slot select screen open (CONTINUE pressed). Menu overlay 0896 paged in; FUN_801DC6B4 driving the save-screen SM."
+backup_fingerprint = "0c98be41dcb1f21bf4c9b4cf3c18c082666829fe1959049d2a88c64e5e3fa702"
+description = "CONTINUE pressed from the title: the Load window's memory-card slot picker (SLOT 1 / SLOT 2) open over the title, cursor on SLOT 1. Still master mode 0x17. Cold boot, DOWN at vsync 1800, CROSS at 2100, cal checkpoint at 3000 (autorun_boot_continue.lua). One more Cross opens the card's save list."
 phase = "menu"
-# pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate5"   # uncomment after capture
+expected_game_mode = 0x17
+# Re-shot: the old pointer was the live slot SCUS94254.sstate5, since
+# overwritten (it holds a battle state now).
 # Not captured - but no state is needed to reach this screen any more: from any
 # field state, SELECT opens the pause menu and the command list (Items / Magic /
 # Equip / Status / Options / Load / Save) puts Load 5 DOWNs away and Save 6.
@@ -432,10 +441,13 @@ topics = ["new game", "in-engine cutscene", "intro"]
 [[scenarios]]
 slot = 255
 label = "first_town_interactive"
-description = "Rim Elm free-roam after the full NEW GAME intro completes (or CONTINUE drops the player here from a near-start save). Dialog VM idle, player input live. End state of the boot-to-town walk."
+backup_fingerprint = "2fba9adf4ade2f14de2a10c82e066b76025ac7ded1f063b852de9d498be00a6a"
+description = "Rim Elm free-roam after the full NEW GAME intro completes: the SAME capture as s3_rimelm_freeroam (one library file, two labels). Master mode 0x03, player at world (4160, 11840), player +0x10 = 0x09820880 (movement-lock bit 0x80000 clear, input live)."
 phase = "field"
+expected_game_mode = 0x03
 expected_active_scene = "town01"
-# pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate9"   # uncomment after capture
+# Relabelled: the old pointer was the live slot SCUS94254.sstate9, since
+# overwritten (it holds a battle state now).
 topics = ["field", "town01", "Rim Elm", "interactive"]
 
 # ----------------------------------------------------------------------
