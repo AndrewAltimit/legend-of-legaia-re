@@ -72,7 +72,7 @@
 
 <section class="doc-section" id="when-a-steal-happens">
   <h2>When a steal happens</h2>
-  <p>The steal is not a command and does not happen on the hit. The battle animation commit <code>FUN_8004AD80</code> rolls it as a slain monster finishes its knockdown fall, and only for the <strong>first</strong> monster a party member fells in the battle: a one-shot latch is set before the killer is even looked at, so a kill by someone without the Evil God Icon spends the battle's only attempt. The killer must have used Attack and wear the icon; the roll is <code>rand() % 100 &lt; chance</code>, doubled when any living party member has the Bronze Book's <em>Items Up</em>; and a stack already at 99 drops the steal silently. The caption goes up in the full-width bottom bar, composed from a template in the executable plus the item name.</p>
+  <p>The steal is not a command and does not happen on the hit. The battle animation commit <code>FUN_8004AD80</code> rolls it as a slain monster finishes its knockdown fall, and only for the <strong>first</strong> monster each attacking action fells: a one-shot latch is set before the killer is even looked at, so a kill by someone without the Evil God Icon spends that action's attempt. The battle state machine re-arms the latch at the end of every attack chain. The killer must have used Attack and wear the icon; the roll is <code>rand() % 100 &lt; chance</code>, doubled when any living party member has the Bronze Book's <em>Items Up</em>; and a stack already at 99 drops the steal silently. The caption goes up in the full-width bottom bar, composed from a template in the executable plus the item name.</p>
   <p>The same arm also returns loot: a monster whose Steal spell took something hands it back when it dies. Both halves run in the port (<code>legaia_engine_core::battle_steal</code>), on both the native window and the browser play page.</p>
 </section>
 
@@ -83,8 +83,8 @@
 </section>
 
 <section class="doc-section" id="retail-steal-capture">
-  <h2>What a steal looks like in the retail game</h2>
-  <p>The steal is not a command and does not happen on the hit: it is rolled once, on the frame the slain monster's death animation starts (a side branch of the battle anim commit <code>FUN_8004AD80</code>). An emulator probe that breaks on every step of that branch, in a real battle with the Evil God Icon's passive bit written in, shows the roll is one BIOS <code>rand()</code> taken <code>% 100</code> and compared <em>strictly</em> against the table's chance: a 29 steals at 30%, a 30 does not. The Bronze Book's Items Up passive doubles the threshold to 60, exactly.</p>
+  <h2>Watching it in the retail game</h2>
+  <p>An emulator probe that breaks on every step of that branch, in a real battle with the Evil God Icon's passive bit written in, shows the roll is one BIOS <code>rand()</code> taken <code>% 100</code> and compared <em>strictly</em> against the table's chance: a 29 steals at 30%, a 30 does not. The Bronze Book's Items Up passive doubles the threshold to 60, exactly.</p>
   <p>The one-roll latch that stops the death animation from rolling again every frame is <strong>re-armed at the end of every attack chain</strong> (the battle state machine clears it when a strike loop hands over to its recovery wait), so each attacking action gets a roll on the first monster it fells - not one roll per battle. A plain byte search for writes to that latch misses the clear, because the instruction reaches it through a base register that already carries part of the offset.</p>
 </section>
 

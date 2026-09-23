@@ -1,7 +1,7 @@
 # Steal-item table
 
-What the player steals from an enemy with the **Evil God Icon** equipped - once
-per battle, from the first monster a party member fells, see
+What the player steals from an enemy with the **Evil God Icon** equipped - at
+most once per attacking action, from the first monster that action fells, see
 [the steal attack](#the-steal-attack) - is
 looked up in a static per-monster table inside `SCUS_942.54` - **not** in the
 PROT 867 `battle_data` monster record. An exhaustive offset scan of the decoded
@@ -80,13 +80,16 @@ The arm first checks the monster's cell of the stolen band `0x801C8FE0`
 | 8 | the bag holds fewer than `99` of the item (`FUN_80042F4C`) | `0x8004B5BC..0x8004B5D0` |
 
 Three consequences follow from the order. The latch is set at step 2,
-**before** the killer is checked at all, and its only writer on the disc is
-that one `sb` (a byte scan of `SCUS_942.54`, the battle overlay and every
-cast / summon module finds no other store to `+0x27`, zero or otherwise) - so
-a battle gets **one** steal attempt, and the first monster any party member
-fells spends it whether or not the killer could steal. Items Up doubles the
-chance for the whole party, not only for its wearer. And a stack already at
-`99` drops the steal silently: no caption, no item.
+**before** the killer is checked at all, so a kill by a member without the
+passive spends it. It is not a once-per-battle latch: the battle-action state
+machine clears it (`sb zero,0x16(s5)` at `0x801E3A84`, `s5 = ctx + 0x11`) at
+the end of every strike chain - see
+[the retail capture](#retail-steal-capture) - so each attacking action gets
+one attempt, on the first monster it fells. A byte scan for a store to `+0x27`
+finds only the set, because the clear's displacement is `0x16` off a base
+that already carries `+0x11`. Items Up doubles the chance for the whole party,
+not only for its wearer. And a stack already at `99` drops the steal
+silently: no caption, no item.
 
 On success the caption is composed into `0x80077A08`: template
 `0x80077A64` copied by `FUN_8003CA78`, the item-name token `{0xC2, id}`
@@ -135,11 +138,7 @@ to reassign steal items; see [`randomizer.md`](../tooling/randomizer.md).
 
 ## Retail steal capture
 
-The player's steal is not a battle command and does not happen on the hit.
-It is a side branch of the SCUS anim commit `FUN_8004AD80`
-(`0x8004B29C..0x8004B660`, see `ghidra/scripts/funcs/8004ad80.txt`), taken
-when an enemy seat's death clip commits with live HP `+0x14C == 0`. A
-PCSX-Redux probe
+The [steal attack](#the-steal-attack) observed live. A PCSX-Redux probe
 ([`autorun_w7c_steal_oracle.lua`](../../scripts/pcsx-redux/autorun_w7c_steal_oracle.lua))
 exec-breaks every step of that branch in the retail
 `party_basic_attack_vs_gobu_gobu` battle (Vahn alone against one Gobu Gobu,
@@ -194,7 +193,7 @@ What the rows pin, field by field:
 - **The latch re-arms per strike chain, not per battle.** `ctx[+0x27]` is
   set to `1` at `0x8004B3E4` before any other gate - so a kill by a killer
   without the passive also spends it (`steal_nobit`) - but it is also
-  **cleared**: a write-watch on the byte catches `sb zero,0x16(s5)` at
+  **cleared**, which the disassembly-only reading of this arm had missed: a write-watch on the byte catches `sb zero,0x16(s5)` at
   `0x801E3A84` in the battle-action state machine `FUN_801E295C` (PROT 0898,
   `s5 = ctx + 0x11` from `0x801E2994`), the delay slot of the arm at
   `0x801E3A70` that moves an actor's strike loop (`0x1E`) on to its recovery
