@@ -1131,7 +1131,13 @@ impl LegaiaMinigames {
                     "broke"
                 }
             }
-            SlotPhase::Spinning => "spinup",
+            // A press during the spin-up is a face-button edge: retail
+            // latches `DAT_801D3790` off it, which widens (rarefies) the next
+            // roll's feature odds.
+            SlotPhase::Spinning => {
+                m.latch_spin_up(true);
+                "spinup"
+            }
             SlotPhase::Stopping => {
                 if m.stop_next_reel() {
                     "stop"

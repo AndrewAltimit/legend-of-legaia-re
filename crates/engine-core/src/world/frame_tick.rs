@@ -2679,10 +2679,19 @@ impl World {
             input::PadButton::Circle,
         ]
         .map(|b| self.input.just_pressed(b));
+        let face_edge = [
+            input::PadButton::Triangle,
+            input::PadButton::Circle,
+            input::PadButton::Cross,
+            input::PadButton::Square,
+        ]
+        .iter()
+        .any(|&b| self.input.just_pressed(b));
         let Some(m) = self.minigames.slot_machine.as_mut() else {
             return;
         };
         m.tick();
+        m.latch_spin_up(face_edge);
         match phase {
             SlotPhase::Idle => {
                 if confirm {

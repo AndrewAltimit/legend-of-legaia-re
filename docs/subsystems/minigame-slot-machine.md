@@ -35,7 +35,7 @@ The machine is a single per-frame handler, `FUN_801cf0d8` (`overlay_slot_machine
 |---|---|
 | `0` | **init**: reseed (`func_0x80056798`), build the three reel strips, clone them into the display copy, fade in |
 | `1` | **attract / idle**: wait for input; pressing a face button (`_DAT_8007b874 & 0xe0`) charges the flat bet (3 coins, or 1 in feature modes 4..6) and advances to spin; the menu/select edge (`& 0x110`) routes to state `0x32` (cash-out) |
-| `2` | **spin-up**: ramp the three reel velocities (`DAT_801d3cd0..` added into the reel positions `DAT_801d3cc0..` each frame, wrapping mod `0x1400`) until the spin timer `DAT_801d3c90` expires |
+| `2` | **spin-up**: ramp the three reel velocities (`DAT_801d3cd0..` added into the reel positions `DAT_801d3cc0..` each frame, wrapping mod `0x1400`) until the spin timer `DAT_801d3c90` expires; a face-button edge meanwhile raises the [spin-up press latch](#the-spin-up-press-latch) |
 | `3` | **stopping**: each Stop input (pad bits `0x80`/`0x40`/`0x20` → reels 0/1/2) calls `FUN_801d2114` to choose where that reel lands; once all three reels are stopped (`DAT_801d3d2c == 3`) it runs `FUN_801d13e8` (win eval) and advances to `4` |
 | `4` | **payout tally**: animates the credited win (`DAT_801d3d38`) ticking from the win counter into the player balance `DAT_801d4114`; on completion returns to `1` |
 | `0x32`..`0x39` | **cash-out / quit submenu**: a 3-option picker (`DAT_801d4110 % 3`) with fade-in/out states; option `1` commits the balance (route to state `100`), the others return to play or leave |
@@ -168,9 +168,28 @@ numbers a bonus round multiplies are the player's timing and nothing else.
 would land a matched line - that is **falsified**; the retail case is the least
 steered of the seven, not the most.)
 
+### The spin-up press latch
+
+`DAT_801d3790` is an **input** latch, not a machine setting. State `2` raises
+it on any face-button edge (`_DAT_8007b874 & 0xF0`) while the spin timer
+`DAT_801d3c90` is non-zero (`0x801CF6D4..0x801CF704`, `li v0,1` /
+`sw v0,0x3790(v1)` in the jump's delay slot), and state `1` clears it the
+moment the next spin's roll has read it (`sw zero,0x3790(v0)` at
+`0x801CF56C`, straight after `jal 0x801D258C`). What the roll does with it is
+**widen** every feature-entry denominator by `rand % 100 + 200`, so pressing
+buttons while the reels spin up makes the next spin's reach and hot modes
+rarer - the mode-1 odds in the lowest net-take bracket go from `1/700` to
+`1/900..=1/999`. An earlier reading called the word a "richer-odds flag",
+which has the effect backwards and never named a writer. Port:
+`SlotMachine::latch_spin_up`, called by `World::tick_slot_machine` (native
+window and play page) and by the standalone page's `slot_press`. The port's
+tick leaves the spin-up one frame before retail's test runs on the expiring
+frame, so an edge on exactly that frame does not latch. **Confirmed**
+(disassembly).
+
 ### Feature roll - `FUN_801d258c`
 
-`FUN_801d258c` (`overlay_slot_machine_801d258c.txt`) runs once at spin start. It seeds `DAT_801d4134` (`rand%5` landing jitter) and `DAT_801d3cb8` (`rand%6 + 2` normal-mode target), rolls the optional widen amount **once** (`rand%100 + 200` when the richer-odds flag `DAT_801d3790` is set - added to every denominator below), then - only when no feature is already active (`DAT_801d3cac == 0`) - rolls `rand % (widen + N) == 0` probabilities to *enter* a feature mode. The denominators are **bracketed on the net-take counter** `DAT_801d3d40` (NOT the balance):
+`FUN_801d258c` (`overlay_slot_machine_801d258c.txt`) runs once at spin start. It seeds `DAT_801d4134` (`rand%5` landing jitter) and `DAT_801d3cb8` (`rand%6 + 2` normal-mode target), rolls the optional widen amount **once** (`rand%100 + 200` when the [spin-up press latch](#the-spin-up-press-latch) `DAT_801d3790` is set - added to every denominator below), then - only when no feature is already active (`DAT_801d3cac == 0`) - rolls `rand % (widen + N) == 0` probabilities to *enter* a feature mode. The denominators are **bracketed on the net-take counter** `DAT_801d3d40` (NOT the balance):
 
 | `DAT_801d3d40` | mode-1 / mode-2 denominators |
 |---|---|
@@ -360,7 +379,7 @@ All overlay-local; the block clusters in `0x801d3c80..0x801d4140`. **Confirmed**
 | `DAT_801d3e90..` | source strip: the ten reel **symbols** (`slot/2`, ids `0..=9`) |
 | `DAT_801d3fd0..` | source strip: the ten bonus **numerals** (`slot/2 + 0x10`, values `0x10..=0x19`) |
 | `DAT_801d37a0..` | the marquee's dot buffer (`col * 0x10 + row`), recomposed each frame by `FUN_801cfff0` |
-| `DAT_801d3790` | richer-odds flag (widens feature denominators) |
+| `DAT_801d3790` | spin-up press latch: widens (rarefies) the next spin's feature denominators |
 | `DAT_801d3794` | flash/whiteout intensity |
 | `DAT_801d3798` | "bonus just ended" flag - forces the next spin's long spin-up so the symbols rotate back onto the payline |
 | `DAT_801d4110` | cash-out submenu cursor (`% 3`) |
