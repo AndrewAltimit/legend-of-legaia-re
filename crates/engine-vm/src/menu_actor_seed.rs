@@ -1,6 +1,7 @@
-//! Two small field-overlay helpers that seed a pooled **menu actor**:
-//! `FUN_801E5834` (spawn) and `FUN_801E58A8` (row-count seed). Both live in
-//! PROT 0897 at base `0x801CE818`.
+//! Two small field-overlay helpers: `FUN_801E5834`, which seeds a pooled
+//! actor off the descriptor `0x801F2978`, and `FUN_801E58A8`, an actor
+//! **anim-clip pick** (not a list row count - see below). Both live in PROT
+//! 0897 at base `0x801CE818`.
 //!
 //! ## `FUN_801E5834` - pooled menu-actor spawn
 //!
@@ -11,30 +12,39 @@
 //! and `+0x9C`. A null allocation is silently dropped - there is no retry and
 //! no error path.
 //!
-//! ## `FUN_801E58A8` - list row-count seed
+//! ## `FUN_801E58A8` - actor anim-clip pick
 //!
-//! Writes the sentinel `+0x5E = -2`, then derives the actor's row count
-//! `+0x5C` from three globals and one actor flag bit. Read out of the
-//! disassembly (the arithmetic is easy to mis-read from the decompiled C,
-//! which renders `x*8 - x` as a multiply):
+//! Writes `+0x5E = -2`, derives a clip index into `+0x5C` from three globals
+//! and one actor flag bit, and hands the actor to the clip selector
+//! `FUN_800204F8`. Read out of the disassembly (`0x801E58A8..0x801E59A4`):
 //!
 //! ```text
-//!   base  = u16 @ 0x8007BDD8
-//!   pages = u16 @ 0x8007B8F8
-//!   extra = word @ 0x8007B6AC
+//!   base     = word @ 0x8007BDD8   ; the clip base the field tick picks
+//!   leader   = u16  @ 0x8007B8F8   ; the party leader's character id
+//!   override = word @ 0x8007B6AC   ; op 4C CE's value
 //!
-//!   if base == 99:                     rows = pages + 1        ; clear bit
+//!   if base == 99:                     clip = leader + 1        ; clear bit
 //!   else if actor[+0x10] & 0x01000000:
-//!       if extra != 0:                 rows = base + extra - 1 ; clear, tick, re-set
-//!       else:                          rows = base + pages*7
-//!   else:                              rows = base
+//!       if override != 0:              clip = base + override - 1 ; clear, tick, re-set
+//!       else:                          clip = base + leader*7
+//!   else:                              clip = base
+//!   FUN_800204F8(actor)
 //! ```
 //!
-//! The `pages * 7` term is `(pages << 3) - pages` in the body. The flag bit
+//! The `leader * 7` term is `(leader << 3) - leader` in the body. The flag bit
 //! `0x01000000` is cleared **around** the `FUN_800204F8` tick in the
-//! `extra != 0` arm and restored immediately after, which is the only reason
-//! that arm returns early instead of falling into the shared tick - both
-//! paths tick the actor exactly once.
+//! `override != 0` arm and restored immediately after, which is the only
+//! reason that arm returns early instead of falling into the shared tick -
+//! both paths tick the actor exactly once.
+//!
+//! An earlier reading named this a "list row-count seed" and the leader word
+//! a page count. The identity comes from its two neighbours in the bytes: the
+//! value lands in `+0x5C`, the word `FUN_800204F8` reads as the clip to bind,
+//! and the **same arithmetic** runs inline as the tail of the field vertical
+//! settle `FUN_801D1BA0` (`0x801D1D88..0x801D1EAC`) - there on the player,
+//! every grounded frame that did not hop, with `_DAT_8007BDD8` written by
+//! `FUN_801D1EC4` just before. `leader * 7` is the per-character stride into
+//! the party locomotion clip bank.
 //!
 //! REF: FUN_80020de0, FUN_800204f8  -- callees, not ported here
 //!
@@ -57,20 +67,20 @@
 //! `--home field` marks it.
 //!
 //! That is why the two notes below read `REPLACED-BY:` and not `NOT WIRED:`.
-//! The missing pooled-actor fields they name are real gaps in the engine's
-//! `Actor`, but filling them would not make these two run, because retail does
-//! not run them either - and the state they would hold is already held, on the
-//! side `SubmodeScreen` struct. Both are decoded provenance for the actor
-//! layout and the row-count arithmetic, not pending wiring work.
+//! Neither can run in the port because neither runs in retail. The spawn's
+//! write set is held on the side `SubmodeScreen` struct; the clip pick's live
+//! twin is `FUN_801D1BA0`'s tail, whose job the engine's field clip player
+//! does (`legaia_engine_core::field_anim`).
 
-/// The `base == 99` special case in the row-count seed.
+/// The `base == 99` special case in the clip pick.
 pub const BASE_SENTINEL: u16 = 99;
 
-/// The actor flag bit the row-count seed tests and toggles.
-pub const ROW_FLAG_BIT: u32 = 0x0100_0000;
+/// The actor flag bit the clip pick tests and toggles (the per-character
+/// clip-bank class).
+pub const CLIP_FLAG_BIT: u32 = 0x0100_0000;
 
-/// The sentinel written to `actor[+0x5E]` on every call.
-pub const ROW_SENTINEL: i16 = -2;
+/// The value written to `actor[+0x5E]` on every call.
+pub const CLIP_SENTINEL: i16 = -2;
 
 /// The five fields `FUN_801E5834` writes into a freshly-allocated pool entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,59 +138,60 @@ pub fn menu_actor_seed(handler: u16, x: u16, y: u16, param: u16) -> MenuActorSee
     }
 }
 
-/// What one row-count seed produced.
+/// What one clip pick produced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RowCountSeed {
-    /// The value written to `actor[+0x5C]`.
-    pub rows: u16,
+pub struct ActorClipPick {
+    /// The clip index written to `actor[+0x5C]`.
+    pub clip: u16,
     /// The value of the `0x01000000` flag bit after the call.
     pub flag_set: bool,
 }
 
-/// Derive the list row count.
+/// Derive the actor's clip index.
 ///
-/// `flag_set` is `actor[+0x10] & 0x01000000 != 0` on entry.
+/// `base` is `_DAT_8007BDD8`, `leader` is `_DAT_8007B8F8`, `clip_override` is
+/// `_DAT_8007B6AC`, and `flag_set` is `actor[+0x10] & 0x01000000 != 0` on
+/// entry.
 ///
 /// PORT: FUN_801e58a8
 ///
-/// REPLACED-BY: the typed `Vec` each engine list counts itself - the pause
-/// menu's, the dev menu's, the save rack's.
+/// REPLACED-BY: the engine field clip player (`legaia_engine_core::field_anim`,
+/// the idle / walk slot of the party locomotion bank), which picks the
+/// player's clip where `FUN_801D1BA0`'s inline twin of this arithmetic does.
 ///
 /// Additionally **retail-unreachable** - `FUN_801E58A8`'s only scan hit is a
 /// branch from another overlay at the same VA, which cannot reach it (see
-/// the module's "Neither one runs in retail"), so this row does not close by
-/// wiring. The port-side gap below stands on its own.
-///
-/// The three globals it derives the count from
-/// (`0x8007BDD8` base, `0x8007B8F8` pages, `0x8007B6AC` extra) are not
-/// modelled anywhere in the port, and the actor field it writes (`+0x5C`,
-/// with the `+0x5E = -2` sentinel) is one of the same missing pooled-actor
-/// fields [`menu_actor_seed`] names. Every engine list - the pause menu's,
-/// the dev menu's, the save rack's - counts its own typed `Vec`, so there
-/// is no consumer for a count keyed off a page global either. Both halves
-/// close together with those fields.
-pub fn row_count_seed(base: u16, pages: u16, extra: u32, flag_set: bool) -> RowCountSeed {
+/// the module's "Neither one runs in retail"). The live copy of the same
+/// arithmetic is the tail of `FUN_801D1BA0`, and what the port lacks there is
+/// the clip base `_DAT_8007BDD8`, which `FUN_801D1EC4` writes on four arms
+/// the port does not model.
+pub fn actor_clip_pick(
+    base: u16,
+    leader: u16,
+    clip_override: u32,
+    flag_set: bool,
+) -> ActorClipPick {
     if base == BASE_SENTINEL {
-        return RowCountSeed {
-            rows: pages.wrapping_add(1),
+        return ActorClipPick {
+            clip: leader.wrapping_add(1),
             flag_set: false,
         };
     }
     if !flag_set {
-        return RowCountSeed {
-            rows: base,
+        return ActorClipPick {
+            clip: base,
             flag_set: false,
         };
     }
-    if extra != 0 {
+    if clip_override != 0 {
         // The bit is cleared around the tick and restored, so it ends set.
-        return RowCountSeed {
-            rows: base.wrapping_add(extra as u16).wrapping_sub(1),
+        return ActorClipPick {
+            clip: base.wrapping_add(clip_override as u16).wrapping_sub(1),
             flag_set: true,
         };
     }
-    RowCountSeed {
-        rows: base.wrapping_add(pages.wrapping_mul(7)),
+    ActorClipPick {
+        clip: base.wrapping_add(leader.wrapping_mul(7)),
         flag_set: true,
     }
 }
@@ -197,37 +208,37 @@ mod tests {
     }
 
     #[test]
-    fn sentinel_base_uses_pages_plus_one_and_clears_the_flag() {
-        let r = row_count_seed(BASE_SENTINEL, 4, 77, true);
-        assert_eq!(r.rows, 5);
+    fn sentinel_base_uses_leader_plus_one_and_clears_the_flag() {
+        let r = actor_clip_pick(BASE_SENTINEL, 4, 77, true);
+        assert_eq!(r.clip, 5);
         assert!(!r.flag_set);
     }
 
     #[test]
     fn sentinel_base_wins_over_the_flag_being_clear() {
-        let r = row_count_seed(BASE_SENTINEL, 0, 0, false);
-        assert_eq!(r.rows, 1);
+        let r = actor_clip_pick(BASE_SENTINEL, 0, 0, false);
+        assert_eq!(r.clip, 1);
     }
 
     #[test]
     fn flag_clear_passes_the_base_through() {
-        let r = row_count_seed(12, 4, 77, false);
-        assert_eq!(r.rows, 12);
+        let r = actor_clip_pick(12, 4, 77, false);
+        assert_eq!(r.clip, 12);
         assert!(!r.flag_set);
     }
 
     #[test]
-    fn flag_set_with_extra_adds_extra_minus_one_and_restores_the_flag() {
-        let r = row_count_seed(12, 4, 5, true);
-        assert_eq!(r.rows, 16);
+    fn flag_set_with_override_adds_override_minus_one_and_restores_the_flag() {
+        let r = actor_clip_pick(12, 4, 5, true);
+        assert_eq!(r.clip, 16);
         assert!(r.flag_set);
     }
 
     #[test]
-    fn flag_set_without_extra_scales_pages_by_seven() {
-        // (pages << 3) - pages, not (pages << 3).
-        let r = row_count_seed(12, 4, 0, true);
-        assert_eq!(r.rows, 12 + 28);
+    fn flag_set_without_override_scales_leader_by_seven() {
+        // (leader << 3) - leader, not (leader << 3).
+        let r = actor_clip_pick(12, 4, 0, true);
+        assert_eq!(r.clip, 12 + 28);
         assert!(r.flag_set);
     }
 }

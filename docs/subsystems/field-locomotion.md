@@ -280,7 +280,7 @@ After movement, the same function runs an interaction probe (`FUN_801cf9f4`) to 
 The probe compares the player's position against each actor's `+0x14`/`+0x18` **directly** (no transform), so the player and the placed actors share one coordinate frame - and that frame is the MAN placement frame. `FUN_8003A1E4` spawns each partition-1 placement at `world = tile*128 + 0x40` (the `+0x40`/`+0x80` half-tile centre, i.e. the placement's [`world_x`](../formats/encounter.md)) and `FUN_80024C88` writes it straight into `actor[+0x14/+0x16/+0x18]` with **no anchor subtraction**. The player cold-spawn `0xA40` (2624) is exactly `tile 20 * 128 + 0x40`, so the player starts at MAN tile 20 in the same frame. (A live actor's position can still drift from its spawn tile if it patrols - a moving NPC reads at a different tile than its placement - but the frame is identical.)
 
 The engine ports the probe as `World::tick_field_interaction_probe` (`engine-core`): it stores each talkable NPC's placement position (`World::npcs.positions`, keyed by the same slot as the dialogue) and, on a just-pressed action button, runs the retail facing probe (`World::field_interact_probe_slot` - the `DAT_801f2254` radius-64 compass point ahead of the facing, ±72 box), opens the matched NPC's dialogue via `World::trigger_field_interact`, and turns the player toward it (`World::face_field_npc`) - then dismisses a probe-opened box on the next press (a `dialog_input_consumed` per-tick guard keeps it from racing the field VM's `0x4C` dialog poll).
-This is the input-driven counterpart to the scripted field-interact op; talking to the Rim Elm sparring partner this way starts the Tetsu fight through the dialogue-accept auto-arm.
+This probe is the whole trigger - no field-VM opcode opens a conversation (op `0x3E` with `op0 < 100` is the scripted-battle install; see [`script-vm.md`](script-vm.md#0x3e-scripted-battle-op0--100)). Talking to the Rim Elm sparring partner this way starts the Tetsu fight through the dialogue-accept auto-arm.
 
 `World::nav_step_toward(tx, tz, tol)` is the matching auto-navigation primitive: it steps the player one frame toward a world target using the same per-axis collision as the pad path (`advance_with_collision`) but a world-space direction, returning `true` on arrival. A driver loops it along a BFS route over the collision grid to walk the player to a target - e.g. the v0.1 oracle's emergent Battle leg walks from the cold-boot spawn to the sparring partner, then talks to it via the probe. (The partner's *placement* tile (76,65) is its post-tutorial village spot, in a town01 sub-area not walk-reachable from the spawn; the opening repositions it next to Vahn for the tutorial - see `RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS`.)
 
@@ -728,7 +728,17 @@ dialogue-pacing countdown) and the step delta is non-zero
 (`0x801D1C6C..0x801D1CA8`). A frame that did not hop, with `+0x9e <= 0x10`,
 ends in an animation tail: `jal 0x801D1EC4`, then an anim-clip pick into
 `+0x5C` from `_DAT_8007BDD8` (with a `99` sentinel), `_DAT_8007B8F8 * 7` and
-`_DAT_8007B6AC`, and `FUN_800204F8` (`0x801D1D80..0x801D1EAC`).
+`_DAT_8007B6AC`, and `FUN_800204F8` (`0x801D1D80..0x801D1EAC`). The pick
+skips the `FUN_800204F8` call when scratchpad `0x1F800394 & 0x400` is set or
+the picked clip is `0`. The arithmetic is byte-for-byte the unreferenced
+field-overlay helper `FUN_801E58A8` (ported as
+`legaia_engine_vm::menu_actor_seed::actor_clip_pick`): `_DAT_8007B8F8` is the
+party leader's character id and `* 7` its stride into the party clip bank,
+not a page count. The port does not run the tail - its clip base
+`_DAT_8007BDD8` comes from `FUN_801D1EC4`, which stores it on four arms
+(`0x801D21AC`, `0x801D22FC`, `0x801D237C`, `0x801D23E0`) the port does not
+model - and the engine's field clip player (`engine-core::field_anim`) picks
+the player's idle / walk clip instead.
 
 **The settle is a precondition of the probe, not a neighbour of it.** The glide
 (`0x801D1C30..0x801D1C68`: `jal 0x80019278`, `subu a0, v0, v1`, the two `slt`
