@@ -68,6 +68,7 @@ fn open_target_cursor(w: &mut World) {
     w.set_pad(0);
     w.set_pad(PadButton::Cross.mask());
     w.tick_battle_arts_menu();
+    take_commit_begin(w);
 }
 
 fn cursor_slot(w: &World) -> u8 {
@@ -90,6 +91,7 @@ fn press(w: &mut World, button: PadButton) {
     w.set_pad(0);
     w.set_pad(button.mask());
     w.tick_battle_arts_menu();
+    take_commit_begin(w);
 }
 
 /// Run the live battle loop until the action state machine parks the armed

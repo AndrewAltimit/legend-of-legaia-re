@@ -516,6 +516,20 @@ pub const CLUSTER_TOP_LEVEL: ChipCluster = ChipCluster {
     interior_w: 36,
 };
 
+/// The party-wide commit-confirm cluster (`Begin | Reselect`, flow state
+/// `0x6E`): the same horizontal pair and D-pad seat as [`CLUSTER_TOP_LEVEL`],
+/// built wider - its chips are placement records `0x10` (content `(92, 88)`)
+/// and `0x13` (`(180, 88)`), both `48` wide, where the round prompt's are `36`.
+/// Packet-pinned from `party_basic_attack_vs_gobu_gobu` (solo Vahn parked on
+/// the screen): plates at `(84, 82)` and `(172, 82)`, labels at `(92, 86)` and
+/// `(180, 86)`, and the `FUN_801DB8F4(0x98, 0x58)` D-pad at `(152, 84)`.
+pub const CLUSTER_COMMIT_CONFIRM: ChipCluster = ChipCluster {
+    centre: (160, 92),
+    dx: 44,
+    dy: 0,
+    interior_w: 48,
+};
+
 /// The per-actor command cluster (`Item` / `Attack` / the element command /
 /// `Spirit`): a four-way diamond seated on the right of the stage.
 pub const CLUSTER_COMMAND: ChipCluster = ChipCluster {
@@ -864,6 +878,20 @@ mod tests {
                 (140, 216, 8),
             ]
         );
+    }
+
+    #[test]
+    fn commit_confirm_cluster_reproduces_the_begin_reselect_capture() {
+        // `party_basic_attack_vs_gobu_gobu`: the 0x6E screen's two plates
+        // run x 84..148 and 172..236 at y 82..102, their glyphs start at x 92
+        // and 180 on y 86, and the D-pad sits at (152, 84).
+        let c = CLUSTER_COMMIT_CONFIRM;
+        assert_eq!(c.plate_origin(ChipSeat::Left), (84, 82));
+        assert_eq!(c.plate_origin(ChipSeat::Right), (172, 82));
+        assert_eq!(c.label_seat(ChipSeat::Left), (92, 86));
+        assert_eq!(c.label_seat(ChipSeat::Right), (180, 86));
+        assert_eq!(c.dpad_rect(), (152, 84, 15, 15));
+        assert_eq!(plate_width(c.interior_w), 64);
     }
 
     #[test]

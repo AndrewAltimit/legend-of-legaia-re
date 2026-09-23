@@ -771,6 +771,10 @@ impl World {
         }
         match self.next_member_owing_command(None) {
             Some(first) => self.open_battle_command(first),
+            // Nobody can act. Retail still raises `Begin | Run`, and its
+            // `Begin` finds `FUN_801DBA04` equal to the count and stores the
+            // commit confirm `0x6E` directly (`0x801D10A0`, step `0x27`); the
+            // port plays such a round out at once, with neither screen.
             None => self.begin_round_execution(),
         }
     }
@@ -807,10 +811,13 @@ impl World {
 
     /// Commit `action` as `actor`'s command for this round and walk the ring
     /// on - retail's ten-site commit idiom (`0x801D16AC` and siblings):
-    /// advance to the next member that still owes a command, or begin the
-    /// round. The `Run` commit is the exception retail makes at `0x32`
+    /// advance to the next member that still owes a command, or - once none
+    /// does - raise the party-wide `Begin | Reselect` screen (`0x6E`) that
+    /// the same idiom stores when `FUN_801DB81C` comes back equal to the
+    /// party count. The round begins from that screen's `Begin`. The `Run`
+    /// commit is the exception retail makes at `0x32`
     /// (`0x801D1174..0x801D1184`): it stamps category `5` on every party actor
-    /// and begins the round at once.
+    /// and begins the round at once, with no confirm.
     ///
     /// PORT: FUN_801D0748 (the commit idiom; `0x32`'s run confirm)
     pub(in crate::world) fn commit_party_command(
@@ -841,8 +848,25 @@ impl World {
         }
         match self.next_member_owing_command(Some(actor)) {
             Some(next) => self.open_battle_command(next),
-            None => self.begin_round_execution(),
+            None => self.open_commit_confirm(actor),
         }
+    }
+
+    /// Raise the party-wide commit-confirm screen (retail `ctx[+0x06] =
+    /// 0x6E`) over `actor`, the member whose commit completed the party. A
+    /// battle no pad drives has nobody to press `Begin`, so it begins at once.
+    ///
+    /// REF: FUN_801D0748 (state `0x6E`, `0x801D3024..0x801D31E4`)
+    pub(in crate::world) fn open_commit_confirm(&mut self, actor: u8) {
+        use crate::battle_flow::BattleFlowState as Flow;
+        use crate::battle_input::BattleCommandSession;
+        if !self.battle.player_driven {
+            self.begin_round_execution();
+            return;
+        }
+        self.battle_ctx.active_actor = actor;
+        self.battle.command = Some(BattleCommandSession::new_commit_confirm(actor, actor));
+        self.set_battle_flow(Flow::CommitBegin);
     }
 
     /// Give `next` its turn in the execution band: age its buffs, then a

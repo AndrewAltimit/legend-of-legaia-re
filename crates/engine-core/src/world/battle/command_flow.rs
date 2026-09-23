@@ -119,7 +119,10 @@ impl World {
                 // Retail's state-50 handler rejects Run unconditionally for the
                 // whole sparring fight.
                 Resolution::RunAway => self.set_battle_flow(Flow::EscapePrompt),
-                Resolution::Aborted | Resolution::StepBack => false,
+                Resolution::Aborted
+                | Resolution::StepBack
+                | Resolution::BeginRound
+                | Resolution::Reselect => false,
             };
             if rejected {
                 self.open_battle_command(session.actor);
@@ -227,6 +230,10 @@ impl World {
                 self.commit_party_command(actor, PendingPartyAction::Attack { target });
             }
             Some(Resolution::StepBack) => self.step_back_battle_command(session.actor),
+            // The commit-confirm screen (`0x6E`): Begin plays the round out,
+            // Reselect walks the member cursor back to the last member's ring.
+            Some(Resolution::BeginRound) => self.begin_round_execution(),
+            Some(Resolution::Reselect) => self.reselect_battle_commands(session.actor),
             None => {
                 // Still selecting - keep the session open for the next frame.
                 self.battle.command = Some(session);

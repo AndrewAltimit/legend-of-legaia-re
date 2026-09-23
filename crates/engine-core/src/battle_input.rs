@@ -19,6 +19,38 @@
 //! | `0x1E` | [`CommandPhase::RoundPrompt`] | `Begin` / `Run` |
 //! | `0x28` | [`CommandPhase::Menu`] | `Item` / `Attack` / magic / `Spirit` |
 //! | `0x78` | [`CommandPhase::AttackMode`] | `Auto` / `Command` |
+//! | `0x6E` | [`CommandPhase::CommitConfirm`] | `Begin` / `Reselect` |
+//!
+//! ## The party's commits are confirmed once, after the last member
+//!
+//! Every arm that commits a member's command asks the forward scan
+//! `FUN_801DB81C` for the next member that can still act; while one remains
+//! the flow returns to the ring (`0x28`) for that member, and when the scan
+//! comes back equal to the party count (`ctx[+0x00]`) the flow stores `0x6E`
+//! instead - the arts review (`0x801D3000..0x801D3018`), the target cursor,
+//! and the magic / item / Spirit commits all carry the same
+//! `beq v0,v1` / `addiu v0,zero,0x6e` pair. So the confirm screen is raised
+//! for **every** party size, a solo party included, and no option word gates
+//! it. On entry the member cursor has already stepped past the last member:
+//! the `party_basic_attack_vs_gobu_gobu` capture holds `ctx[+0x06] = 0x6E`
+//! with `ctx[+0x13] = 1` and `ctx[+0x1F] = 1` on a one-member party.
+//!
+//! The `0x6E` arm (`0x801D3024..0x801D31E4`) draws the D-pad glyph at
+//! `(152, 84)` (`FUN_801DB8F4(0x98, 0x58)`) between two chips - placement
+//! records `0x10` (`Begin`, content `(92, 88)`, width 48) and `0x13`
+//! (`Reselect`, `(180, 88)`, width 48) - and splits the pad two ways:
+//!
+//! * the **confirm** mask `_DAT_800846D0` or Left (`0x8000`) stores `0xFE`
+//!   and plays the round out (`0x801D31A4..0x801D31B4`);
+//! * the **cancel** mask `_DAT_800846D4` or Right (`0x2000`) takes the
+//!   `Reselect` arm (`0x801D3054..0x801D30CC`): `FUN_801D388C(0x21)` steps
+//!   the member cursor **back one** (`FUN_801D32BC(1)` at `0x801D4750`) from
+//!   the past-the-end index to the last member that can act, the flow returns
+//!   to that member's ring (`0x28`), and if the member had committed an item
+//!   (`+0x1DE == 1`) the copy goes back to the bag (`FUN_800421D4(+0x1DF, 1)`
+//!   at `0x801D30BC..0x801D30C0`). With no member able to act at all
+//!   (`FUN_801DBA04` equal to the count) the same press returns to the round
+//!   prompt `0x1E` instead.
 //!
 //! The round prompt runs **once per round**, before the first party member
 //! commands: `801d0e3c` (the intro-timer state `0x0B`) hands the flow to `0x14`
@@ -242,6 +274,33 @@ impl AttackMode {
     }
 }
 
+/// The commit-confirm screen's two chips - retail flow state `0x6E`, raised
+/// once the last member that can act has committed. `Begin` is placement
+/// record `0x10` (its label is stamped from the battle overlay's pool by the
+/// round prompt's `Begin` arm at `0x801D1060`); `Reselect` is record `0x13`,
+/// whose payload points straight at `SCUS_942.54` `0x800152D4`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitChoice {
+    /// Play the round out (retail `0xFE`).
+    Begin,
+    /// Step back to the last member's ring (retail `FUN_801D388C(0x21)`).
+    Reselect,
+}
+
+impl CommitChoice {
+    /// The screen's chips in seat order (left, right).
+    pub const PROMPT: [CommitChoice; 2] = [CommitChoice::Begin, CommitChoice::Reselect];
+
+    /// Chip label - the port's word, used only when the disc strings were not
+    /// read (`legaia_asset::battle_ui_strings::{OVL_BEGIN, SCUS_RESELECT}`).
+    pub fn label(self) -> &'static str {
+        match self {
+            CommitChoice::Begin => "Begin",
+            CommitChoice::Reselect => "Reselect",
+        }
+    }
+}
+
 /// Sub-phase of one party member's command selection.
 #[derive(Debug, Clone)]
 pub enum CommandPhase {
@@ -295,6 +354,17 @@ pub enum CommandPhase {
     /// previous member's ring, or to the round prompt when this is the
     /// round's first member.
     StepBack,
+    /// The party-wide `Begin` / `Reselect` screen (retail `ctx[+0x06] ==
+    /// 0x6E`), raised after the last member's commit. `cursor` indexes
+    /// [`CommitChoice::PROMPT`] and opens on `Begin` - the tail of
+    /// `FUN_801D388C` seeds the highlight word `ctx[+0x880]` with Left
+    /// (`0x8000`) whenever the flow byte reads `0x6E` (`0x801D4C38..0x801D4C74`).
+    CommitConfirm { cursor: u8 },
+    /// `Begin` taken on the commit-confirm screen: play the round out.
+    BeginRound,
+    /// `Reselect` taken on the commit-confirm screen: step the member cursor
+    /// back from past the party's end.
+    Reselect,
 }
 
 /// One party member's command-selection session, driven a frame at a time.
@@ -349,6 +419,28 @@ impl BattleCommandSession {
         }
     }
 
+    /// Open the party-wide **commit-confirm** screen (retail `0x6E`) after the
+    /// last member's commit. `actor` / `party_slot` name that member; the
+    /// screen itself acts on the whole party.
+    pub fn new_commit_confirm(actor: u8, party_slot: u8) -> Self {
+        Self {
+            actor,
+            party_slot,
+            no_escape: false,
+            phase: CommandPhase::CommitConfirm { cursor: 0 },
+        }
+    }
+
+    /// The commit-confirm chip under the cursor, while that screen is up.
+    pub fn commit_choice(&self) -> Option<CommitChoice> {
+        match self.phase {
+            CommandPhase::CommitConfirm { cursor } => {
+                CommitChoice::PROMPT.get(cursor as usize).copied()
+            }
+            _ => None,
+        }
+    }
+
     /// The round-prompt chip under the cursor, while the prompt is up.
     pub fn round_choice(&self) -> Option<RoundChoice> {
         match self.phase {
@@ -396,6 +488,8 @@ impl BattleCommandSession {
             CommandPhase::RunAway => Some(Resolution::RunAway),
             CommandPhase::Aborted => Some(Resolution::Aborted),
             CommandPhase::StepBack => Some(Resolution::StepBack),
+            CommandPhase::BeginRound => Some(Resolution::BeginRound),
+            CommandPhase::Reselect => Some(Resolution::Reselect),
             _ => None,
         }
     }
@@ -412,6 +506,9 @@ impl BattleCommandSession {
         match &mut self.phase {
             CommandPhase::RoundPrompt { cursor } => {
                 self.phase = step_round_prompt(*cursor, ev, self.no_escape);
+            }
+            CommandPhase::CommitConfirm { cursor } => {
+                self.phase = step_commit_confirm(*cursor, ev);
             }
             CommandPhase::AttackMode { cursor } => {
                 self.phase = step_attack_mode(*cursor, ev, self.party_slot, party, monsters);
@@ -456,7 +553,9 @@ impl BattleCommandSession {
             | CommandPhase::SpiritGuard
             | CommandPhase::RunAway
             | CommandPhase::Aborted
-            | CommandPhase::StepBack => {}
+            | CommandPhase::StepBack
+            | CommandPhase::BeginRound
+            | CommandPhase::Reselect => {}
         }
     }
 }
@@ -491,6 +590,13 @@ pub enum Resolution {
     /// The player cancelled on the ring; the live loop should step the
     /// member cursor back (`FUN_801D32BC(1)`).
     StepBack,
+    /// `Begin` on the commit-confirm screen; the live loop plays the round
+    /// out.
+    BeginRound,
+    /// `Reselect` on the commit-confirm screen; the live loop steps the member
+    /// cursor back from past the party's end to the last member that can act
+    /// (`FUN_801D388C(0x21)` -> `FUN_801D32BC(1)`).
+    Reselect,
 }
 
 /// Index of `command` within [`BattleCommand::MENU`].
@@ -594,6 +700,38 @@ fn step_round_prompt(cursor: u8, ev: BattleCommandInput, no_escape: bool) -> Com
         }
     }
     CommandPhase::RoundPrompt { cursor }
+}
+
+/// One frame of the **commit-confirm screen** (retail `0x6E`). Left or the
+/// confirm button takes `Begin`; Right or the cancel button takes `Reselect` -
+/// each on the press itself, exactly the arm's own two-way split. Cross
+/// commits whatever the cursor rests on, which is the chip retail's highlight
+/// word seeds (`Begin`), so a harness that only presses Cross begins the
+/// round.
+///
+/// REF: FUN_801D0748 (state `0x6E`, `0x801D3024..0x801D31E4`)
+fn step_commit_confirm(cursor: u8, ev: BattleCommandInput) -> CommandPhase {
+    let len = CommitChoice::PROMPT.len() as u8;
+    let mut cursor = cursor.min(len - 1);
+    // The cancel mask is its own route to Reselect (`0x801D3038..0x801D3044`
+    // tests `_DAT_800846D4` first), independent of the highlight.
+    if ev.circle {
+        return CommandPhase::Reselect;
+    }
+    let pressed = match pair_seat(ev) {
+        Some(seat) => {
+            cursor = seat;
+            true
+        }
+        None => false,
+    };
+    if pressed || ev.cross {
+        return match CommitChoice::PROMPT[cursor as usize] {
+            CommitChoice::Begin => CommandPhase::BeginRound,
+            CommitChoice::Reselect => CommandPhase::Reselect,
+        };
+    }
+    CommandPhase::CommitConfirm { cursor }
 }
 
 /// One frame of the **attack-mode prompt** (retail `0x78`). Left takes
@@ -1005,5 +1143,38 @@ mod tests {
         let mut s = on_attack_mode();
         s.input(press(|e| e.left = true), party3(), dead_monsters);
         assert_eq!(s.resolved(), Some(Resolution::Aborted));
+    }
+
+    #[test]
+    fn the_commit_confirm_screen_opens_on_begin() {
+        let s = BattleCommandSession::new_commit_confirm(0, 0);
+        assert_eq!(s.commit_choice(), Some(CommitChoice::Begin));
+        assert!(s.resolved().is_none());
+        assert_eq!(
+            CommitChoice::PROMPT.map(CommitChoice::label),
+            ["Begin", "Reselect"]
+        );
+    }
+
+    #[test]
+    fn commit_confirm_splits_the_pad_two_ways() {
+        // Left or the confirm button -> Begin (retail 0xFE).
+        for ev in [press(|e| e.left = true), press_cross()] {
+            let mut s = BattleCommandSession::new_commit_confirm(0, 0);
+            s.input(ev, party3(), one_monster());
+            assert_eq!(s.resolved(), Some(Resolution::BeginRound));
+        }
+        // Right or the cancel button -> Reselect (FUN_801D388C(0x21)).
+        for ev in [press(|e| e.right = true), press(|e| e.circle = true)] {
+            let mut s = BattleCommandSession::new_commit_confirm(0, 0);
+            s.input(ev, party3(), one_monster());
+            assert_eq!(s.resolved(), Some(Resolution::Reselect));
+        }
+        // Up / Down are not part of the screen.
+        let mut s = BattleCommandSession::new_commit_confirm(0, 0);
+        s.input(press(|e| e.up = true), party3(), one_monster());
+        s.input(press(|e| e.down = true), party3(), one_monster());
+        assert!(s.resolved().is_none());
+        assert_eq!(s.commit_choice(), Some(CommitChoice::Begin));
     }
 }

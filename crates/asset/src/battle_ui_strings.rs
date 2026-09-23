@@ -37,6 +37,7 @@
 //! | `ctx[+0x06] == 0x28` | command ring | [`SCUS_ITEM`] / [`SCUS_ATTACK`] / Ra-Seru / [`OVL_SPIRIT`] |
 //! | `ctx[+0x06] == 0x78` | attack mode | [`SCUS_AUTO`] / [`SCUS_COMMAND`] |
 //! | `ctx[+0x06] == 0x6E` | commit confirm | runtime `Begin`/`Escape` / [`SCUS_RESELECT`] |
+//! | round start, formation slot 0 `== 0xB6` | timed-fight strip | [`OVL_TIMED_FIGHT_STRIP`] |
 //!
 //! See [`battle.md`](../../../docs/subsystems/battle.md) for the state machine
 //! these sit on.
@@ -131,6 +132,12 @@ pub const OVL_TEAM_SURPRISED: u32 = 0x801F_4CD8;
 /// `<name> surprised the enemy.` - the solo pre-emptive banner.
 pub const OVL_SOLO_SURPRISED: u32 = 0x801F_4CF8;
 
+/// The timed fight's strip format string - the first bytes of the overlay,
+/// registered as text actor `1` by the round-start arm (`lui`+`addiu` pair
+/// `0x801D0F80..0x801D0F84`) whenever the formation's first monster is Koru
+/// (`legaia_engine_core::timed_fight`).
+pub const OVL_TIMED_FIGHT_STRIP: u32 = 0x801C_E818;
+
 /// Base of the per-Ra-Seru magic-command label table (`0x801D8F0C`).
 pub const RASERU_LABEL_TABLE_VA: u32 = 0x801F_4B9E;
 /// Bytes between two Ra-Seru labels (`id*5` then `<< 1`).
@@ -140,7 +147,8 @@ pub const RASERU_LABEL_STRIDE: u32 = 10;
 pub const RASERU_LABEL_MAX: u8 = 4;
 
 /// Every overlay-resident battle label, in address order.
-pub const OVERLAY_LABELS: [(u32, BattleUiLabel); 7] = [
+pub const OVERLAY_LABELS: [(u32, BattleUiLabel); 8] = [
+    (OVL_TIMED_FIGHT_STRIP, BattleUiLabel::TimedFightStrip),
     (OVL_SPIRIT, BattleUiLabel::Spirit),
     (OVL_DEFENSE, BattleUiLabel::Defense),
     (OVL_TEAM_SURPRISED, BattleUiLabel::TeamSurprised),
@@ -198,6 +206,8 @@ pub enum BattleUiLabel {
     StealRecoveredTail,
     /// The whole-line "every stolen item is back" caption.
     StealRecoveredAll,
+    /// Koru's timed-fight strip (`Turns Left` / `HP Left` field labels).
+    TimedFightStrip,
 }
 
 /// The battle UI labels read off one image pair.

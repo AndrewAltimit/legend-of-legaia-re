@@ -158,6 +158,7 @@ pub mod tactical_arts_editor;
 pub mod target_picker;
 pub mod text_balloon;
 pub mod tile_board;
+pub mod timed_fight;
 pub mod title;
 pub mod title_screen_atlas;
 pub mod vdf_pulse;

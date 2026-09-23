@@ -55,9 +55,11 @@ fn confirm_cast(world: &mut World) {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
+    take_commit_begin(world);
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
+    take_commit_begin(world);
     world.set_pad(0);
 }
 

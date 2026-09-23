@@ -163,6 +163,11 @@ pub fn flow_state_for(phase: Option<&CommandPhase>, menu: BattleMenuKind) -> Bat
         // step, which the engine runs inside `crate::inventory_use` - so
         // nothing here produces `TargetConfirm` yet.
         Some(CommandPhase::Confirmed { .. }) => BattleFlowState::CommitBegin,
+        // The commit-confirm screen itself, and the two exits it resolves to
+        // (both leave the state the same frame).
+        Some(CommandPhase::CommitConfirm { .. })
+        | Some(CommandPhase::BeginRound)
+        | Some(CommandPhase::Reselect) => BattleFlowState::CommitBegin,
         Some(CommandPhase::OpenItemMenu) => BattleFlowState::ItemWindow,
         Some(CommandPhase::OpenSpellMenu) => BattleFlowState::MagicWindow,
         Some(CommandPhase::OpenArtsMenu) => BattleFlowState::ArtsCommandEntry,

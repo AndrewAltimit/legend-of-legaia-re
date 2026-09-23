@@ -8,7 +8,7 @@ from-scratch engine systems. Use the contents below to jump to a section.
 ## Contents
 
 **Retail scene + render**
-- [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [the two boss-stage modules](#what-the-two-boss-stage-modules-do-overlays-968--969) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes) · [the round loop](#the-round-loop---what-re-arms-0x1e) · [`s2` + commit](#s2-is-not-the-pad-and-how-a-command-commits)
+- [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [the two boss-stage modules](#what-the-two-boss-stage-modules-do-overlays-968--969) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes) · [the round loop](#the-round-loop---what-re-arms-0x1e) · [`s2` + commit](#s2-is-not-the-pad-and-how-a-command-commits) · [commit confirm](#the-commit-confirm-screen-0x6e)
 - [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [post-strike two-shot](#the-post-strike-two-shot-fun_801d5854-cases-7-and-8) · [menu vs input framing](#the-command-chooser-is-the-far-framing-the-arts-input-is-the-close-up) · [resting yaw](#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
 
 **Retail battle logic + data**
@@ -628,7 +628,7 @@ party actors at `0x801D1174..0x801D1184` before storing `0xFE`.
 
 The ring's four arms sit on the same four masks, and every one of them commits
 through the same idiom - **advance to the next member that still owes a
-command, or begin the round**:
+command, or raise the [commit confirm](#the-commit-confirm-screen-0x6e)**:
 
 ```text
 801d16ac  jal   0x801db81c          ; next member after ctx[+0x13] awaiting a command
@@ -655,6 +655,56 @@ arming the next surface is a soft-lock, and it does not have to be the command
 itself that breaks - see the readout desync in
 [`battle-action.md`](battle-action.md#the-0x51-exit-gate-and-the-hp-bar-settle-invariant).
 
+### The commit-confirm screen (`0x6E`)
+
+Every commit site above stores `0x6E` instead of `0x28` once `FUN_801DB81C`
+comes back equal to the party count, so the screen is raised after the
+**last** member that can act has committed, for every party size - a solo
+party reaches it off its only member's command. No option word gates it: the
+only option the review arm consults is `_DAT_800846C8` (the Battle Command
+setting), and only to decide whether Up / Down count as a confirm. When no
+member can act at all, the round prompt's `Begin` stores `0x6E` directly
+(`0x801D10A0`, step `0x27`).
+
+The arm at `0x801D3024` draws the D-pad glyph at `(152, 84)`
+(`FUN_801DB8F4(0x98, 0x58)`) between two chips - placement record `0x10`
+(content `(92, 88)`, width `48`, its word stamped from the overlay pool by the
+round prompt's `Begin` arm at `0x801D1060`) and record `0x13` (`(180, 88)`,
+payload `Reselect` at SCUS `0x800152D4`). The `party_basic_attack_vs_gobu_gobu`
+capture's display list holds exactly those plates, `(84, 82)` and
+`(172, 82)`, `64 x 20` each.
+
+It splits the pad as the [`s2` table](#s2-is-not-the-pad-and-how-a-command-commits)
+says: Left or the confirm mask stores `0xFE` and plays the round out;
+Right or the cancel mask is `Reselect`. `Reselect` calls
+`FUN_801D388C(0x21)`, whose tail is `FUN_801D32BC(1)` (`0x801D4750`) - a
+**one-member** backward step - and stores `0x28`; the dispatcher then
+refunds the landing member's item if it had committed one
+(`FUN_800421D4(+0x1DF, 1)`, `0x801D30BC`). The step lands on the **last**
+member that can act, not the first, because by `0x6E` the forward walk has
+already moved the cursor past the party: the capture holds
+`ctx[+0x13] = 1`, `ctx[+0x1F] = 1` on a one-member party. With nobody able
+to act, `FUN_801DBA04` equals the count and the press returns to `0x1E`
+(`0x801D30D0`).
+
+Retail also keeps a **commit log** up through the whole command phase: each
+committed member gets a row of three placement records at `0x2B + 3n` (name,
+command, target) copied from records `0x1A`, `0x0D` / `0x3B` and `0x29` by
+`FUN_801D5718` and stacked at `y = 146 / 170 / 194`. The port does not draw
+it.
+
+**Port.** `battle_input::CommandPhase::CommitConfirm` (step
+`step_commit_confirm`); `World::open_commit_confirm` raises it where
+`commit_party_command` used to begin the round, and
+`World::reselect_battle_commands` is the `Reselect` step (the same
+`FUN_801D32BC(1)` kernel the ring's cancel uses, started from the party
+count). Both hosts draw it through `battle_hud::battle_command_chips`
+(`CommandChipPhase::CommitConfirm`) and the shared chip cluster
+`legaia_engine_ui::battle_command_ui::CLUSTER_COMMIT_CONFIRM`, with the chip
+words read off the disc. The arts entry no longer carries a `Begin | Reselect`
+of its own: that was this party-wide screen modelled per member, which put it
+after every member's arts and after no one's Magic or Item.
+
 ### How the engine raises the flow state
 
 The engine splits what `FUN_801D0748` does in one machine across a
@@ -677,7 +727,7 @@ differ from retail and are deliberate:
   mid-round (a submenu backed out of) finds the flow on a window state and
   opens on the ring, which is where retail's own cancel arms land.
 - **Target confirm.** `CommandPhase::Confirmed` is the Attack path, which retail
-  routes `0x5A → 0x6E`; state `100` is the item window's own target step and has
+  routes `0x5A → 0x28` for the next member or `0x5A → 0x6E` after the last; state `100` is the item window's own target step and has
   no engine hook point yet.
 - **Lesson counter.** Retail shares `ctx[+0x28A]` with the action SM, where the
   sparring fight's scripted `case 0xFF` bumps it. The engine has no script driver

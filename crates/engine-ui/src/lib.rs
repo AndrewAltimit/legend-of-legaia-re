@@ -63,6 +63,7 @@ pub mod battle_item_ui;
 pub mod battle_name_banner;
 pub mod battle_numerals;
 pub mod battle_stage_clear;
+mod battle_timed_fight_strip;
 pub mod battle_trail;
 mod battle_tutorial_box;
 pub mod billboard;
@@ -90,6 +91,7 @@ pub mod ui_prize_exchange;
 mod ui_title_save;
 pub mod vram_capture;
 
+pub use battle_timed_fight_strip::*;
 pub use battle_tutorial_box::*;
 pub use text_balloon_box::*;
 pub use ui_fishing::*;

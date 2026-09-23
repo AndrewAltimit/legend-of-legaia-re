@@ -21,6 +21,7 @@ fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu();
+    take_commit_begin(&mut world);
     {
         let m = world.battle.item_menu.as_ref().unwrap();
         match m.state {
@@ -35,6 +36,7 @@ fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu();
+    take_commit_begin(&mut world);
 
     assert_eq!(world.actors[1].battle.hp, 300, "500 -> 300 after Bomb");
     assert_eq!(
@@ -85,6 +87,7 @@ fn heal_item_target_panel_lists_party_rows_only() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // confirm the heal -> target select
+    take_commit_begin(&mut world);
     let m = world.battle_item_menu_model().expect("menu model");
     let (rows, cursor) = m.targets.expect("target select armed");
     assert_eq!(rows.len(), 1, "party rows only - no enemy in a heal panel");
@@ -96,6 +99,7 @@ fn heal_item_target_panel_lists_party_rows_only() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu();
+    take_commit_begin(&mut world);
     let m = world.battle_item_menu_model().expect("menu model");
     let (rows, cursor) = m.targets.expect("target select armed");
     assert_eq!(rows.len(), 1, "enemy rows only in an offensive panel");
@@ -113,9 +117,11 @@ fn battle_item_bomb_downs_a_low_hp_enemy() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // confirm item -> target
+    take_commit_begin(&mut world);
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // confirm enemy
+    take_commit_begin(&mut world);
 
     assert_eq!(world.actors[1].battle.hp, 0, "HP floored at zero");
     assert_eq!(world.actors[1].battle.liveness, 0, "monster downed");
@@ -136,9 +142,11 @@ fn battle_item_capture_downs_a_weakened_enemy_and_logs_the_id() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // item -> target (lands on enemy)
+    take_commit_begin(&mut world);
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // confirm enemy
+    take_commit_begin(&mut world);
 
     assert_eq!(
         world.actors[1].battle.liveness, 0,
@@ -162,9 +170,11 @@ fn battle_item_escape_returns_to_field() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // item -> target
+    take_commit_begin(&mut world);
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu(); // confirm
+    take_commit_begin(&mut world);
 
     // Retail does not leave the battle on the confirm frame: the `0x66`
     // teardown spawns the exit fade and parks the SM in the `0x67` hold, and
@@ -249,6 +259,7 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
+    take_commit_begin(&mut world);
     assert!(world.battle.spell_menu.is_some(), "still picking a target");
 
     // Frame 2: Cross confirms the monster; the confirm arms the action SM's
@@ -257,6 +268,7 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
+    take_commit_begin(&mut world);
 
     assert!(world.battle.spell_menu.is_none(), "spell menu closed");
     assert_eq!(world.battle_ctx.action_state, ActionState::Begin.as_byte());
@@ -360,9 +372,11 @@ fn battle_magic_cast_applies_mp_half_ability_bit() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
+    take_commit_begin(&mut world);
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
+    take_commit_begin(&mut world);
     // The band's 0x28 charges the cost.
     tick_until_cast_folds(&mut world);
 
@@ -695,6 +709,7 @@ fn battle_magic_escape_returns_to_field() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_spell_menu();
+    take_commit_begin(&mut world);
     assert_eq!(
         world.mode,
         SceneMode::Battle,

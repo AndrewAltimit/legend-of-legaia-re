@@ -20,7 +20,6 @@ fn arts_input_screen(
     match p {
         Sim::Entering => Ui::Entering,
         Sim::Review => Ui::Review,
-        Sim::BeginMenu { cursor } => Ui::BeginMenu { cursor },
         Sim::Targeting => Ui::Targeting,
     }
 }
@@ -1098,27 +1097,12 @@ impl PlayWindowApp {
             let dialogue_up = bw.dialogue_owns_input();
             if dialogue_up {
                 // Dialogue box up: no menu chrome.
-            } else if let Some(view) = bw.arts_input_view() {
-                // Retail-model arts entry: the screen is baked art (drawn
-                // in the sprite layer by `arts_input_chrome_sprite_draws`),
-                // so the only text is the Begin | Reselect pick.
-                use legaia_engine_render::arts_input as ai;
-                let (origin, scale) = self.save_select_stage(w, h);
-                out.extend(ai::arts_input_text_draws(
-                    &self.font,
-                    &ai::ArtsInputFrame {
-                        buffer: view.buffer,
-                        spent: view.spent,
-                        chip_costs: view.costs,
-                        pool: view.pool,
-                        pool_max: view.pool_max,
-                        plate_value: view.plate_value,
-                        list_page: view.list_page,
-                        phase: arts_input_screen(view.phase),
-                    },
-                    origin,
-                    scale,
-                ));
+            } else if bw.arts_input_view().is_some() {
+                // Retail-model arts entry: the whole screen is baked art,
+                // drawn in the sprite layer by
+                // `arts_input_chrome_sprite_draws`, so it puts up no text.
+                // The Begin | Reselect pick is the party's commit confirm
+                // (the command-chip cluster), not a line of this screen.
             } else if let Some(arts) = &bw.battle.arts_menu {
                 use legaia_engine_core::battle_arts::ArtsPhase;
                 let menu_x = 8i32;
@@ -1366,6 +1350,23 @@ impl PlayWindowApp {
                         dim,
                     ));
                 }
+                legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+                out.extend(draws);
+            }
+            // Koru's timed-fight strip (`Turns Left / HP Left`): a stage-space
+            // text actor like the tutorial box, framed in the same layer by
+            // `battle_tutorial_chrome_sprite_draws`.
+            if let Some(strip) =
+                legaia_engine_core::timed_fight::timed_fight_strip(&self.session.host.world)
+            {
+                let mut draws = legaia_engine_render::timed_fight_strip_text_draws(
+                    &self.font,
+                    &legaia_engine_render::TimedFightStripView {
+                        label: &strip.label,
+                        turns_left: strip.turns_left,
+                        hp_left: strip.hp_left,
+                    },
+                );
                 legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
                 out.extend(draws);
             }
@@ -2131,6 +2132,15 @@ impl PlayWindowApp {
                 stage_scale,
             ));
         }
+        // Koru's timed-fight strip wears the same skin (both are text actors
+        // registered with an explicit rect and style word `0x44`).
+        if legaia_engine_core::timed_fight::timed_fight_strip(&self.session.host.world).is_some() {
+            out.extend(legaia_engine_render::timed_fight_strip_chrome_draws(
+                &assets.rects,
+                stage_origin,
+                stage_scale,
+            ));
+        }
         out
     }
 
@@ -2410,11 +2420,12 @@ impl PlayWindowApp {
         let chips = battle_command_chips(&self.session.host.world)?;
         // The two enums are separate types because `engine-ui` is a leaf
         // that does not link `engine-core`; the browser page carries the
-        // same three-line map.
+        // same four-line map.
         let phase = match chips.phase {
             CommandChipPhase::RoundPrompt => ChipPhase::RoundPrompt,
             CommandChipPhase::CommandRing => ChipPhase::CommandRing,
             CommandChipPhase::AttackMode => ChipPhase::AttackMode,
+            CommandChipPhase::CommitConfirm => ChipPhase::CommitConfirm,
         };
         Some((chips.chips, chips.cursor, phase))
     }
@@ -2891,6 +2902,7 @@ mod battle_hud_wiring_tests {
         let pairs = [
             (bcu::CLUSTER_COMMAND, bc::CLUSTER_COMMAND),
             (bcu::CLUSTER_TOP_LEVEL, bc::CLUSTER_TOP_LEVEL),
+            (bcu::CLUSTER_COMMIT_CONFIRM, bc::CLUSTER_COMMIT_CONFIRM),
         ];
         for (ui, vm) in pairs {
             assert_eq!(ui.centre, (vm.centre.0 as i32, vm.centre.1 as i32));
@@ -2979,6 +2991,19 @@ mod battle_hud_wiring_tests {
         );
         assert_eq!(bcu::ATTACK_MODE_SEATS[0], bcu::MENU_SEATS[1]);
         assert_eq!(bcu::ATTACK_MODE_SEATS[1], bcu::MENU_SEATS[2]);
+        // The commit confirm seats its two chips on its own pinned pair, in
+        // the engine's `Begin`, `Reselect` order.
+        assert_eq!(
+            bcu::COMMIT_CONFIRM_SEATS.len(),
+            legaia_engine_core::battle_input::CommitChoice::PROMPT.len()
+        );
+        assert_eq!(
+            bcu::COMMIT_CONFIRM_SEATS,
+            [
+                bcu::CommandSeat::Commit(bcu::ChipSeat::Left),
+                bcu::CommandSeat::Commit(bcu::ChipSeat::Right),
+            ]
+        );
     }
 
     /// A direction press must commit the chip **drawn on that side of the

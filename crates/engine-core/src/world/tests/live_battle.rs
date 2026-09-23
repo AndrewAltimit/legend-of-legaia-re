@@ -26,6 +26,7 @@ fn spirit_command_charges_ap_and_raises_the_guard_stance() {
         phase: CommandPhase::SpiritGuard,
     });
     world.tick_battle_command();
+    take_commit_begin(&mut world);
     // The guard stance is up from the commit - retail's pending category
     // `+0x1DE = 4`, which every monster that dispatches ahead of this member
     // reads - while the AP charge is the Spirit band's own, at dispatch.
@@ -58,6 +59,7 @@ fn spirit_command_charges_ap_and_raises_the_guard_stance() {
             phase: CommandPhase::SpiritGuard,
         });
         world.tick_battle_command();
+        take_commit_begin(&mut world);
     }
     assert!(
         world.battle.command.is_none(),
@@ -174,6 +176,7 @@ fn run_command_arms_the_run_band() {
         phase: CommandPhase::RunAway,
     });
     world.tick_battle_command();
+    take_commit_begin(&mut world);
     assert!(world.battle.command.is_none(), "session resolved");
     assert_eq!(world.actors[0].battle.action_category, 5, "Run category");
     assert_eq!(world.battle_ctx.queued_action, 5);

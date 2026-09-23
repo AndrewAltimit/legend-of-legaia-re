@@ -518,7 +518,7 @@ impl LegaiaRuntime {
     /// straight through the narration box.
     pub(crate) fn arts_input_stage_draws(
         &self,
-        font: &legaia_font::Font,
+        _font: &legaia_font::Font,
         chrome: Option<&ui::SaveMenuAtlasRects>,
         origin: (i32, i32),
         scale: u32,
@@ -549,7 +549,6 @@ impl LegaiaRuntime {
             phase: match view.phase {
                 Sim::Entering => ai::ArtsInputScreen::Entering,
                 Sim::Review => ai::ArtsInputScreen::Review,
-                Sim::BeginMenu { cursor } => ai::ArtsInputScreen::BeginMenu { cursor },
                 Sim::Targeting => ai::ArtsInputScreen::Targeting,
             },
         };
@@ -571,10 +570,9 @@ impl LegaiaRuntime {
                 scale,
             ));
         }
-        (
-            sprites,
-            ai::arts_input_text_draws(font, &frame, origin, scale),
-        )
+        // The screen is baked art: no text. The Begin | Reselect pick is the
+        // party's commit confirm, drawn by the command-chip cluster.
+        (sprites, Vec::new())
     }
 
     /// Battle overlay text draws in **surface pixels**: HUD rows, the
@@ -728,11 +726,12 @@ impl LegaiaRuntime {
         let chips = battle_command_chips(world)?;
         // The two enums are separate types because `engine-ui` is a leaf
         // that does not link `engine-core`; the native window carries the
-        // same three-line map.
+        // same four-line map.
         let phase = match chips.phase {
             CommandChipPhase::RoundPrompt => ChipPhase::RoundPrompt,
             CommandChipPhase::CommandRing => ChipPhase::CommandRing,
             CommandChipPhase::AttackMode => ChipPhase::AttackMode,
+            CommandChipPhase::CommitConfirm => ChipPhase::CommitConfirm,
         };
         Some((chips.chips, chips.cursor, phase))
     }
@@ -1353,6 +1352,22 @@ impl LegaiaRuntime {
                 ));
             }
         }
+        // Koru's timed-fight strip - the same stage-space text-actor family,
+        // one shared builder with the native window.
+        if let Some(strip) = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| legaia_engine_core::timed_fight::timed_fight_strip(&h.world))
+        {
+            out.extend(ui::timed_fight_strip_text_draws(
+                font,
+                &ui::TimedFightStripView {
+                    label: &strip.label,
+                    turns_left: strip.turns_left,
+                    hp_left: strip.hp_left,
+                },
+            ));
+        }
         out
     }
 
@@ -1374,6 +1389,15 @@ impl LegaiaRuntime {
                 origin,
                 scale,
             ));
+        }
+        // Koru's timed-fight strip wears the same skin.
+        if self
+            .scene_host
+            .as_ref()
+            .and_then(|h| legaia_engine_core::timed_fight::timed_fight_strip(&h.world))
+            .is_some()
+        {
+            out.extend(ui::timed_fight_strip_chrome_draws(rects, origin, scale));
         }
         out
     }

@@ -4,6 +4,21 @@ use super::*;
 use vm::Insn;
 use vm::battle_action::BattleActionHost;
 
+/// Take `Begin` on the party's commit-confirm screen (`0x6E`) when the last
+/// commit raised it, so the round plays out. Returns whether it was up.
+fn take_commit_begin(w: &mut World) -> bool {
+    use crate::battle_input::CommandPhase;
+    let Some(cmd) = w.battle.command.as_mut() else {
+        return false;
+    };
+    if !matches!(cmd.phase, CommandPhase::CommitConfirm { .. }) {
+        return false;
+    }
+    cmd.phase = CommandPhase::BeginRound;
+    w.tick_battle_command();
+    true
+}
+
 // ---- tile-board step + collision (A2) ----
 
 /// Tile-board world: 3x3 board, all floor except a wall at (1,1);
@@ -266,6 +281,7 @@ mod battle_tutorial_flow;
 mod battle_xp_attack;
 mod camera_offset_ease;
 mod cast_band;
+mod commit_confirm;
 mod core;
 mod dialogue_runner_fx;
 mod effects_actors;

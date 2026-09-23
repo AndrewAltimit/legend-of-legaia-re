@@ -961,8 +961,11 @@ Attack / Ra-Seru element anchors) -> Command opens the input screen
 command's `+0x74` cost and appends to `actor+0x1df` - RAM-verified per
 press); entry **ends by itself** the moment no command is affordable
 (`0x50 -> 0x5a` on the exhausting press, no confirm). `0x5a` reviews the
-committed bar; any press reaches the **Begin | Reselect** menu (`0x6e`);
-Begin plays the round out, Reselect returns to a clean input. The previous
+committed bar; any press reaches the **Begin | Reselect** menu (`0x6e`) -
+the party-wide commit confirm, which a one-fighter dome reaches straight off
+the entry ([`battle.md`](battle.md#the-commit-confirm-screen-0x6e)). Begin
+plays the round out; Reselect steps the member cursor back onto the fighter,
+whose ring reopens. The previous
 round's pennants persist in the bar when the input reopens and clear on
 the first fresh press. **Triangle** cycles the learned-arts list: closed ->
 page 1 -> ... -> last page -> closed; it is inert when the character's
@@ -1003,8 +1006,9 @@ cost (menu-atlas 8x12 digits, right-aligned ending x=152) through the
 the SCUS arts-name table's own columns
 ([`art-data.md`](../formats/art-data.md#arts-name-table-dat_80075ec4)).
 
-Still unpinned here: the review / Begin-Reselect screens' piece decomposition
-(screenshot-read only). The pennant's cost law and spawn anchor are pinned
+Still unpinned here: the review screen's piece decomposition (screenshot-read
+only). The Begin-Reselect screen's is packet-pinned in
+[`battle.md`](battle.md#the-commit-confirm-screen-0x6e). The pennant's cost law and spawn anchor are pinned
 [below](#the-pennant-geometry-is-linear-in-the-commands-ap-cost); so is the
 **Auto arm**.
 
@@ -1576,6 +1580,30 @@ Three independent facts settle it:
   `bosses.toml`, walkthrough-derived) records Koru as a *four-turn timed
   kill whose failure is a game over* - exactly a `4 - turn` readout with the
   boss's own HP percentage next to it.
+
+**Where the four turns end.** No code compares `ctx[+0x28A]` against a bound.
+The limit is Koru's own AI arm: the per-monster AI switch indexes its jump
+table at `0x801CF1CC` by `formation_cell[slot] - 4` (`0x801EA9C0..0x801EA9FC`),
+entry `178` is Koru's (`0x801EB52C`), and that arm switches on the round counter
+(`sltiu v0,v1,5` at `0x801EB540`, table `0x801CF49C`): rounds `0..=3` cast spell
+ids `0xA2`..`0xA5` and round `4` casts `0xA1`, the all-party finisher. The
+engine already runs that arm (`engine-core::monster_ai::decide`, case `0xB6`).
+
+**How long the strip stays up.** It is text actor `1` on the `gp+0x148` list,
+and `FUN_800355F0` drains that list whole in two places: the intro countdown
+arm right before it stores `0x14` (`0x801D0EB4`), and `FUN_801D99BC`
+(`0x801D9A24`), which the `0xFE` arm calls as the round starts to play out
+(`0x801D31E8`). So the strip is up from each round's start until `Begin` - the
+command phase - and gone for the action playback. The ring's cancel back to
+`0x1E` (`0x801D11EC`) and the commit confirm's `Reselect` (`0x801D30E4`)
+re-register it from the two stored bytes.
+
+**Port.** `engine-core::timed_fight` (gate, numbers, lifetime) and
+`legaia_engine_ui::battle_timed_fight_strip` (the draw: the format string off
+the user's PROT 0898 at the registered rect, in the tutorial box's skin, the
+two numbers at `+0x68` / `+0xD2`), drawn by both hosts. The order against the
+`(16, 14)` tab that shares its seat is not pinned - no capture holds the Koru
+fight - and the port draws the strip on top.
 
 Three facts the earlier readings of the *arithmetic* got wrong, each corrected from the disassembly, and all still standing:
 

@@ -1558,6 +1558,8 @@ pub enum CommandChipPhase {
     RoundPrompt,
     CommandRing,
     AttackMode,
+    /// The party-wide `Begin | Reselect` screen (retail `0x6E`).
+    CommitConfirm,
 }
 
 /// The live command surface projected into chip labels: one `(label,
@@ -1578,7 +1580,8 @@ pub struct BattleCommandChips {
 /// [`battle_magic_chip`] - the member's Ra-Seru name or `-` - not a fixed
 /// word.
 pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommandChips> {
-    use crate::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
+    use crate::battle_input::{AttackMode, BattleCommand, CommandPhase, CommitChoice, RoundChoice};
+    use legaia_asset::battle_ui_strings::BattleUiLabel;
     if world.mode != crate::world::SceneMode::Battle {
         return None;
     }
@@ -1622,6 +1625,29 @@ pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommand
                 .collect(),
             cursor: cursor as usize,
             phase: CommandChipPhase::AttackMode,
+        }),
+        // The left chip's word is the one the round prompt's `Begin` arm
+        // stamped into record `0x10` from the overlay pool (`0x801D1060`);
+        // the right chip's is record `0x13`'s SCUS pointer. Both off the disc.
+        CommandPhase::CommitConfirm { cursor } => Some(BattleCommandChips {
+            chips: CommitChoice::PROMPT
+                .iter()
+                .map(|c| {
+                    let disc = match c {
+                        CommitChoice::Begin => BattleUiLabel::CommitBegin,
+                        CommitChoice::Reselect => BattleUiLabel::Reselect,
+                    };
+                    let label = world
+                        .battle
+                        .ui_strings
+                        .get(disc)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(c.label());
+                    chip(label, true)
+                })
+                .collect(),
+            cursor: cursor as usize,
+            phase: CommandChipPhase::CommitConfirm,
         }),
         _ => None,
     }

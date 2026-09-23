@@ -366,15 +366,16 @@ see [the battle-camera rows](#the-battle-camera-rows) for how they resolved.
 Both closed, and they closed in opposite directions - which is the point of
 keeping them together. Neither could be settled from the audit row itself.
 
-**`timed_fight_turns_left`** (`801d0748`,
-`crates/engine-core/src/muscle_dome.rs`) is `DISCLOSE`, and the reason is a
-*deliberate* non-read rather than a missing host. The strip it feeds is Koru's
-timed fight, gated on the formation cell holding
-`TIMED_FIGHT_MONSTER_ID`; a dome round is an ordinary battle that ends on a
-knockout, so `MuscleDomeSession` must not consult a turn limit. The row is the
-counter-example to reading an undisclosed inert port as work: the wire would be
-a bug. Its prerequisite is a host that draws that one fight's `Turns Left /
-HP Left` strip, which needs the formation-cell gate the engine does not carry.
+**`timed_fight_turns_left`** (`801d0748`) was `DISCLOSE` while it lived in
+`crates/engine-core/src/muscle_dome.rs`, and the reason was a *deliberate*
+non-read rather than a missing host: the strip it feeds is Koru's timed fight,
+and a dome round is an ordinary battle that ends on a knockout, so
+`MuscleDomeSession` must not consult a turn limit. The row is the
+counter-example to reading an undisclosed inert port as work: the wire *into
+the dome* would have been a bug. It is now wired where it belongs -
+`engine-core::timed_fight` gates it on the formation's first monster seat and
+the command-phase lifetime the bytes give, and both hosts draw the strip - and
+the dome keeps only a re-export.
 
 **`tile_for_slot`** (`801e1934`, `crates/asset/src/save_icon.rs`) is `WIRE`,
 and the audit is not scoped to say so - it sits in `legaia-asset`, outside this

@@ -24,9 +24,9 @@
 use std::path::PathBuf;
 
 use legaia_asset::battle_ui_strings::{
-    BattleUiLabel, BattleUiStrings, OVERLAY_BASE_VA, OVL_AMBUSHED, OVL_ESCAPE, OVL_SOLO_SURPRISED,
-    OVL_SPIRIT, OVL_TEAM_SURPRISED, RASERU_LABEL_MAX, SCUS_ATTACK, SCUS_AUTO, SCUS_BEGIN,
-    SCUS_COMMAND, SCUS_ITEM, SCUS_LABELS, SCUS_RUN,
+    BattleUiLabel, BattleUiStrings, OVERLAY_BASE_VA, OVERLAY_LABELS, OVL_AMBUSHED, OVL_ESCAPE,
+    OVL_SOLO_SURPRISED, OVL_SPIRIT, OVL_TEAM_SURPRISED, RASERU_LABEL_MAX, SCUS_ATTACK, SCUS_AUTO,
+    SCUS_BEGIN, SCUS_COMMAND, SCUS_ITEM, SCUS_LABELS, SCUS_RUN,
 };
 use legaia_asset::screen_elements::ScreenElementTable;
 
@@ -55,8 +55,23 @@ fn every_pinned_battle_label_resolves_on_the_disc() {
     // Non-vacuity: both halves resolved, not just one.
     assert_eq!(
         s.len(),
-        SCUS_LABELS.len() + 7,
+        SCUS_LABELS.len() + OVERLAY_LABELS.len(),
         "every pinned label should have resolved"
+    );
+
+    // The timed-fight strip is one line holding its two field labels, space
+    // padded where the round-start arm lays its numbers in (x 0x68 / 0xD2).
+    let strip = s
+        .get(BattleUiLabel::TimedFightStrip)
+        .expect("timed-fight strip resolved");
+    assert!(strip.starts_with(' '), "the strip opens on padding");
+    assert!(
+        strip.chars().all(|c| c.is_ascii_graphic() || c == ' '),
+        "the strip is one printable line"
+    );
+    assert!(
+        strip.split_whitespace().count() >= 4,
+        "two `<field> Left:` labels"
     );
 
     // The chip labels are short printable ASCII words - a mis-pinned address

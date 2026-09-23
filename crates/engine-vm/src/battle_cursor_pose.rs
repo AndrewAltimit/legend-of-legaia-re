@@ -21,9 +21,10 @@
 //! the `FUN_801DB81C` / `FUN_801DBA04` ports); the **backward** step is
 //! this kernel, run by `World::step_back_battle_command` when the ring's
 //! cancel arm (`FUN_801D0748` `0x801D11B4`) finds a member behind the
-//! cursor - case `0x10`. Case `0x21` is the commit-confirm screen's
-//! `Reselect` / cancel (`0x801D3040..0x801D3088`), a state the port does
-//! not stage: its last commit begins the round directly.
+//! cursor - case `0x10` - and by `World::reselect_battle_commands` for case
+//! `0x21`, the commit-confirm screen's `Reselect` (`0x801D3054..0x801D30CC`),
+//! which steps back from the past-the-end index the forward walk leaves at
+//! `0x6E` onto the last member that can act.
 //!
 //! NOT WIRED, with a concrete prerequisite each - except the last, which is
 //! replaced rather than pending:
@@ -203,8 +204,9 @@ impl CursorActor {
 ///
 /// PORT: FUN_801D32BC
 ///
-/// WIRED: `legaia_engine_core` `World::step_back_battle_command`, the ring's
-/// cancel arm, from the command session both hosts tick.
+/// WIRED: `legaia_engine_core` `World::step_back_battle_command` (the ring's
+/// cancel arm) and `World::reselect_battle_commands` (the commit confirm's
+/// `Reselect`), both from the command session both hosts tick.
 pub fn step_actor_cursor(
     cursor: &mut ActorCursor,
     dir: CursorStep,
