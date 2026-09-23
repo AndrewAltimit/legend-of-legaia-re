@@ -1460,6 +1460,15 @@ stages). The dome's basic swing commands map to move-power record 0, whose
 per-move sound-cue byte (`+0x0d`) is **0** - so no per-move cue overrides the
 shared impact.
 
+**The bank at the hub is the field's.** A retail state parked at the contest hub
+(`minigame_muscle_dome`, mode `0x19`) has the class-2 slot `2` **closed** and slot
+`6` open over PROT 0876's header - the field bank the warp left behind, since the
+warp clears the latch without closing anything
+([capture](audio.md#retail-capture-of-the-slot-2--slot-6-residency)). So a
+category-`2` cue (row `0x09` included) is silent at the hub, and the class-2 bank
+is present, if at all, only once a round's battle scene loader has staged it -
+which no retail capture has yet observed.
+
 ### Which blip is which (`0x21` / `0x22` / `0x23`)
 
 Every site is inside a `ctx+6` phase arm (or the input pre-pass that runs before

@@ -1070,6 +1070,52 @@ category-`6` cue keys PROT 0876 in the field and is silent in battle, where
 retail's slot 6 is closed; the latch, the writers and the closed-slot rule are
 in [`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6).
 
+### Retail capture of the slot-2 / slot-6 residency
+
+The VAB slot records sit at `0x80091508 + slot * 12` (the drainer's `lui t1,
+0x8009; addiu t1,t1,0x1508` at `0x80016CD8`), with the enable byte at `+0xB`;
+slots 2 and 6 share the header pointer `0x8008D708`, so one header copy serves
+whichever of them is open. Two probes of
+[`autorun_w5b_field_watch.lua`](../../scripts/pcsx-redux/autorun_w5b_field_watch.lua)
+watch the latch `0x8007BAFC` for writes, exec-break the VAB loader
+`FUN_8001FC00` (`a0` raw PROT index, `a1` slot), the closer `FUN_8001FF58`, the
+mode initialiser `FUN_8001DCF8` and the warp `FUN_80025980`, and sample both
+enable bytes every vsync.
+
+**Field -> battle -> field** (`retona_field_card_boot`, the step counter
+`0x8007B5FC` poked to `1`, a Cross cadence through the fight; vsyncs):
+
+| vsync | event |
+|---|---|
+| 174 | `FUN_8001DCF8(0x0A)` - the encounter transition; latch still `1` |
+| 444 | `FUN_8001DCF8(0x0C)` with the mode word `0x14`: closes `6` (`0x8001DFB4`) and `3` (`0x8001DFBC`), latch `-> 0` at `0x8001DFC0`; slot 6's enable drops |
+| 638, 674 | the battle scene loader (`ra 0x8005241C`) loads raw `0x367` (PROT 0869) into slot `2`, twice; slot 2 enabled at 675 |
+| 3853 | raw `0x37B` (PROT 0889) into slot `11` at results, closed again at 3886 |
+| 4252 | the field init closes `2`, `7`, `8`, `11` (`0x801D68A4..0x801D68BC`); slot 2's enable drops |
+| 4379 | the field init loads raw `0x36E` (PROT 0876) into slot `6` (`ra 0x801D7034`), latch `-> 1` at `0x801D7028`; slot 6 enabled at 4437 |
+
+Every row is the table in `sfx-table.md`, site for site.
+
+**Field -> minigame** (`baka_fighter_entry_pretransition`; that state's resident
+SCUS carries the new-game starting-bag seed, a patch site outside every audio
+path): the warp `FUN_80025980` (`ra 0x800161A4`) clears the latch at `0x800259A4`
+and closes nothing; `FUN_8001DCF8(0x0C)` runs from the minigame overlay
+(`ra 0x801CF05C`) with the mode word `0x18`, so its close-and-clear arm - keyed on
+the mode word reading `0x14` (`0x8001DF74..0x8001DF80`) - does **not** run; the
+overlay then loads PROT 0869 into slot `2` (`0x801CF250` / `0x801CF288`). From
+vsync 381 on, slots 2 **and** 6 are both enabled over the one region: slot 6's
+header is PROT 0876's, the samples under it PROT 0869's. That is the reading the
+format page gave as an inference for the Muscle Dome, observed here on the Baka
+Fighter's path.
+
+**The Muscle Dome's hub** (`minigame_muscle_dome`, a retail mednafen state at mode
+`0x19`): latch `0`, slot 2 **closed**, slot 6 **open**, and the shared header at
+`0x8008D708` is PROT 0876's (`pBAV`, total size `0x2C090`, the same header bytes
+as the field state `s3_rimelm_freeroam`). So at the dome's hub the region holds
+the field bank intact and no class-2 bank at all. Whether a round (mode
+`0x14` / `0x15`) loads PROT 0869 over it is not captured: the only PCSX-Redux
+dome state carries a patched resident SCUS.
+
 ## XA-ADPCM
 
 `crates/xa` decodes CD-XA 4-bit ADPCM bit-exactly: on a real cutscene track its per-channel PCM matches an external lossless reference decode sample-for-sample. The on-disc `.XA` / `.STR` audio is standard CD-XA Mode 2 Form 2 - the earlier "non-standard interleave" was Form-1 truncation damage in the old extractor, not a bespoke format. The demuxer (`legaia_xa::demux`) splits raw 2352-byte sectors by `(file_no, ch_no)` and the group decoder reconstructs each channel. See [`formats/xa.md`](../formats/xa.md) for the sound-group decode (parameter/nibble layout, full-precision predictor) and [Cutscene / STR](cutscene.md) for the interleaved A/V path.
