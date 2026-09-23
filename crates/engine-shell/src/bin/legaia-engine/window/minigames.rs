@@ -642,8 +642,27 @@ impl PlayWindowApp {
         // title, course card and ROUND card in turn.
         if let Some(hub) = self.muscle_first_visit.as_mut() {
             hub.tick(1, pad);
+            // The first visit's two announcer lines (`FUN_8003D53C` at arms
+            // 0 and 0x15), through the same XA path the battle clips use.
+            let xa = hub.take_xa();
             if hub.done() {
                 self.muscle_first_visit = None;
+            }
+            if let Some(c) = xa
+                && let Some(bgm) = self.session.bgm.as_mut()
+            {
+                let fired = bgm.play_xa_clip(
+                    u32::from(c.clip),
+                    u32::from(c.channel),
+                    u32::from(c.duration_sectors),
+                );
+                log::debug!(
+                    "dome hub XA clip slot {} ch {} dur {} -> {}",
+                    c.clip,
+                    c.channel,
+                    c.duration_sectors,
+                    if fired { "playing" } else { "not staged" }
+                );
             }
         } else if let Some((_, banner)) = self.muscle_round_banner.as_mut() {
             banner.tick(1, pad);
@@ -1604,7 +1623,11 @@ const SHADE_BANDS: u32 = 16;
 /// Disclosed stand-in: the sprite pipeline blends with ordinary alpha, so
 /// the ramp is cut into [`SHADE_BANDS`] flat bands of black at alpha
 /// `f / 255` - "scale the background by `1 - f/255`" in place of retail's
-/// "subtract `f`". The browser play page draws the same bands.
+/// "subtract `f`". The window's one ABR-capable 2D pass (the screen-prim
+/// pass, which has the `ReverseSubtract` pipeline) runs *before* the sprite
+/// overlay, so it cannot sit between the wall tiles and the screens drawn
+/// over them. Both browser pages subtract exactly on their 2D layer
+/// (`subtractShade`); this host is the one still on the stand-in.
 fn shade_band_draws(
     sh: &legaia_engine_render::ringside_backdrop::BackdropShade,
     white_y: u32,

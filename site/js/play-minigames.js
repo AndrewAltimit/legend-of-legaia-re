@@ -793,10 +793,11 @@
     g.imageSmoothingEnabled = false;
     g.clearRect(0, 0, layer.width, layer.height);
     for (const q of quads) {
-      /* The first visit's backdrop shade (FUN_801D1610): a subtractive
-       * Gouraud ramp, drawn - like the native window - as 16 bands of
-       * black at alpha f / 255 over whatever is already down. */
+      /* The first visit's backdrop shade (FUN_801D1610): retail's
+       * subtractive Gouraud ramp, applied to what is already down; black
+       * bands at alpha f / 255 only when the layer cannot be read back. */
       if (q.shade) {
+        if (subtractShade(g, q, sx, sy)) continue;
         const bands = 16;
         for (let b = 0; b < bands; b++) {
           const y0 = q.y + Math.floor(q.dh * b / bands);
@@ -819,6 +820,37 @@
         g.fillRect(q.x * sx, q.y * sy, q.dw * sx, q.dh * sy);
       }
     }
+    return true;
+  }
+
+  /* The first visit's backdrop shade (FUN_801D1610): an untextured Gouraud
+   * quad drawn with ABR 2 (tpage 0x46, `B - F`), top corners 0x64, bottom 0.
+   * A 2D canvas has no subtractive composite, so the page does the equation
+   * itself on the pixels already down: per canvas row, F is the ramp at that
+   * row's logical y and every channel drops by F, clamped at 0. `sx` / `sy`
+   * map logical 320x240 pixels to canvas pixels. Returns false when the
+   * canvas cannot be read back (the caller then falls back to black bands). */
+  function subtractShade(g, q, sx, sy) {
+    const cw = g.canvas.width, ch = g.canvas.height;
+    const x0 = Math.max(0, Math.round(q.x * sx)), y0 = Math.max(0, Math.round(q.y * sy));
+    const x1 = Math.min(cw, Math.round((q.x + q.dw) * sx));
+    const y1 = Math.min(ch, Math.round((q.y + q.dh) * sy));
+    const w = x1 - x0, h = y1 - y0;
+    if (w <= 0 || h <= 0 || !(q.dh > 0)) return true;
+    let img;
+    try { img = g.getImageData(x0, y0, w, h); } catch (e) { return false; }
+    const d = img.data;
+    for (let r = 0; r < h; r++) {
+      const ly = (y0 + r + 0.5) / sy - q.y;
+      const f = Math.round(q.top + (q.bottom - q.top) * (ly / q.dh));
+      if (f <= 0) continue;
+      for (let i = r * w * 4, e = i + w * 4; i < e; i += 4) {
+        d[i] = d[i] > f ? d[i] - f : 0;
+        d[i + 1] = d[i + 1] > f ? d[i + 1] - f : 0;
+        d[i + 2] = d[i + 2] > f ? d[i + 2] - f : 0;
+      }
+    }
+    g.putImageData(img, x0, y0);
     return true;
   }
 

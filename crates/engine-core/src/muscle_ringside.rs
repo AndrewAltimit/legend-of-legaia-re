@@ -206,6 +206,36 @@ pub const TITLE_ZOOM_START: i32 = 0x1640;
 /// Title-art scale the zoom clamps to - `1.0` in 12.12.
 pub const TITLE_ZOOM_END: i32 = 0x1000;
 
+/// One CD-XA clip start the hub made this tick - `FUN_8003D53C(clip, chan,
+/// dur)`, in the starter's own terms, for a host's XA path
+/// (`AudioBgmDirector::play_xa_clip` natively, `play_xa_clip` on the page).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HubXaCue {
+    /// Clip-table slot (`XA<slot + 1>.XA`).
+    pub clip: u8,
+    /// CD-XA filter channel.
+    pub channel: u8,
+    /// Read span, the starter's `dur` operand.
+    pub duration_sectors: u16,
+}
+
+/// The intro strip's announcer line: arm `0`'s first tick,
+/// `FUN_8003D53C(0x1E, 0xB, 0xA9)` (`0x801CF918..0x801CF928`).
+pub const FIRST_VISIT_INTRO_XA: HubXaCue = HubXaCue {
+    clip: 0x1E,
+    channel: 0x0B,
+    duration_sectors: 0xA9,
+};
+
+/// The ROUND card's announcer line: arm `0x15`'s first tick,
+/// `FUN_8003D53C(0x1F, DAT_801D1A94, 0x54)` (`0x801CFF58..0x801CFF70`). The
+/// channel is the leg's round index, `(_DAT_8007BAC0 - 1) & 0xF`
+/// (`FUN_801CEA6C`), which is `0` on a first visit - every first-entry word
+/// the arena entry writes (`0x111` / `0x211` / `0x321`) has low nibble `1`.
+pub const ROUND_CARD_XA_CLIP: u8 = 0x1F;
+/// The ROUND card line's read span.
+pub const ROUND_CARD_XA_DURATION: u16 = 0x54;
+
 /// Which arm of `FUN_801CF870` a [`FirstVisitHub`] is in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FirstVisitArm {
@@ -256,11 +286,26 @@ pub struct FirstVisitFrame {
 /// strip, the wall rising under it, the title zoom, the course card, the
 /// wall draining, and the ROUND card over black before the first fight.
 ///
-/// Two gates are modelled as always open: the load-busy word
-/// `_DAT_8007BC20` (arms `3`, `4` and `0x16` wait on it) and arm `6`'s
-/// wait for `_DAT_8007B648 == 0x80` - the port has no asynchronous load to
-/// wait for. The two sound cues (`FUN_8003D53C` at arm `0`'s and arm
-/// `0x15`'s first tick) are not the hub's to play here.
+/// Arms `3`, `4` and `0x16` wait on `_DAT_8007BC20`, and that word is the
+/// **CD-XA in-flight** flag, not a load counter: its non-zero writer is the
+/// clip starter itself (`li s1,2` / `sw s1,0x908(gp)` at `0x8003D658` in
+/// `FUN_8003D53C`, `gp = 0x8007B318`), and the hub starts two clips of its
+/// own - the intro line at arm `0`'s first tick and the ROUND line at arm
+/// `0x15`'s. So the waits hold the title zoom, the course card and the
+/// fight start until the announcer has finished speaking. The port models
+/// the flag as the clip's read span in frames from the start
+/// ([`Self::take_xa`] hands the start to the host), the same model the
+/// battle voice legs use (`AudioState::battle_xa_busy_frames`). Arm `4`'s
+/// exit therefore keeps brightening the card past `0x80` while it waits,
+/// as retail's unclamped add does.
+///
+/// Arm `6`'s wait for `_DAT_8007B648 == 0x80` stays open. That byte is the
+/// state of the SCUS loader machine `FUN_80052770` (an eleven-arm jump
+/// table at `0x800153C8`); arm `4` zeroes it to start a load and the
+/// machine's own arms write the done value `0x80` (`0x8005285C`,
+/// `0x80052F14`) once the drive is idle, which is a tick or two later and
+/// long before arm `5`'s `0xB4`-tick hold ends. The port's loads are
+/// synchronous, so the done value is already there.
 ///
 /// PORT: FUN_801cf870 (arms `0`..`6` and `0x14`..`0x16` on the latch-`0`
 /// path: `0x801CF90C..0x801CFC94`, `0x801CFEE0..0x801D0084`)
@@ -285,6 +330,11 @@ pub struct FirstVisitHub {
     hold: i32,
     /// `0x801D1A8C`.
     card_hold: i32,
+    /// `_DAT_8007BC20` as modelled: frames left on the hub's in-flight XA
+    /// line.
+    xa_busy: i32,
+    /// The clip the last tick started, for the host to play.
+    xa: Option<HubXaCue>,
 }
 
 impl Default for FirstVisitHub {
@@ -306,7 +356,25 @@ impl FirstVisitHub {
             scale: 0,
             hold: 0,
             card_hold: 0,
+            xa_busy: 0,
+            xa: None,
         }
+    }
+
+    fn start_xa(&mut self, cue: HubXaCue) {
+        self.xa = Some(cue);
+        self.xa_busy = i32::from(cue.duration_sectors);
+    }
+
+    /// Take the CD-XA line the last tick started, if any (the host plays it).
+    pub fn take_xa(&mut self) -> Option<HubXaCue> {
+        self.xa.take()
+    }
+
+    /// Whether the modelled `_DAT_8007BC20` is up (an announcer line is
+    /// still in flight).
+    pub fn xa_in_flight(&self) -> bool {
+        self.xa_busy > 0
     }
 
     /// Advance one hub tick. `dt` is the frame-skip factor
@@ -316,8 +384,13 @@ impl FirstVisitHub {
         let dt = i32::from(dt.max(1));
         let skip = pad & HUB_SKIP_PAD_MASK != 0;
         self.drawn = self.arm;
+        self.xa_busy = (self.xa_busy - dt).max(0);
+        let xa_idle = self.xa_busy == 0;
         match self.arm {
             FirstVisitArm::IntroIn => {
+                if self.intro == 0 {
+                    self.start_xa(FIRST_VISIT_INTRO_XA);
+                }
                 self.intro += dt * HUB_FADE_STEP_FAST;
                 if self.intro > HUB_FADE_FULL {
                     self.intro = HUB_FADE_FULL;
@@ -346,12 +419,14 @@ impl FirstVisitHub {
                 self.scale -= dt * TITLE_ZOOM_STEP;
                 if self.scale < TITLE_ZOOM_END {
                     self.scale = TITLE_ZOOM_END;
-                    self.arm = FirstVisitArm::CardIn;
+                    if xa_idle {
+                        self.arm = FirstVisitArm::CardIn;
+                    }
                 }
             }
             FirstVisitArm::CardIn => {
                 self.card += dt * HUB_FADE_STEP_SLOW;
-                if self.card > HUB_FADE_FULL {
+                if self.card > HUB_FADE_FULL && xa_idle {
                     self.card = HUB_FADE_FULL;
                     self.hold = HUB_ROUND_BANNER_HOLD_TICKS;
                     self.arm = FirstVisitArm::CardHold;
@@ -375,6 +450,13 @@ impl FirstVisitHub {
             }
             FirstVisitArm::Return => self.arm = FirstVisitArm::RoundIn,
             FirstVisitArm::RoundIn => {
+                if self.card == 0 {
+                    self.start_xa(HubXaCue {
+                        clip: ROUND_CARD_XA_CLIP,
+                        channel: 0,
+                        duration_sectors: ROUND_CARD_XA_DURATION,
+                    });
+                }
                 self.card += dt * HUB_FADE_STEP_SLOW;
                 if self.card > HUB_FADE_FULL {
                     self.card = HUB_FADE_FULL;
@@ -389,7 +471,9 @@ impl FirstVisitHub {
                 self.backdrop = (self.backdrop - dt * HUB_FADE_STEP_SLOW).max(0);
                 if self.card < 0 {
                     self.card = 0;
-                    self.arm = FirstVisitArm::Done;
+                    if xa_idle {
+                        self.arm = FirstVisitArm::Done;
+                    }
                 }
             }
             FirstVisitArm::Done => {}
@@ -508,6 +592,58 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_hub_starts_its_two_announcer_lines_once_each() {
+        let mut hub = FirstVisitHub::new();
+        let mut cues = Vec::new();
+        for _ in 0..2000 {
+            hub.tick(1, 0);
+            if let Some(c) = hub.take_xa() {
+                cues.push((hub.arm(), c));
+            }
+            if hub.done() {
+                break;
+            }
+        }
+        assert!(hub.done());
+        assert_eq!(cues.len(), 2, "{cues:?}");
+        assert_eq!(cues[0].1, FIRST_VISIT_INTRO_XA);
+        assert_eq!(cues[1].1.clip, ROUND_CARD_XA_CLIP);
+        assert_eq!(cues[1].1.channel, 0, "round index 0 on a first visit");
+        assert_eq!(cues[1].1.duration_sectors, ROUND_CARD_XA_DURATION);
+    }
+
+    #[test]
+    fn a_line_in_flight_holds_the_fight_start() {
+        let mut hub = FirstVisitHub::new();
+        hub.arm = FirstVisitArm::RoundOut;
+        hub.card = 1;
+        hub.xa_busy = 10;
+        hub.tick(4, 0);
+        assert_eq!(
+            hub.arm(),
+            FirstVisitArm::RoundOut,
+            "the ROUND line is still playing"
+        );
+        assert!(hub.xa_in_flight());
+        for _ in 0..3 {
+            hub.tick(4, 0);
+        }
+        assert!(hub.done(), "the fight starts once the line has ended");
+
+        // Arm 4 keeps brightening the card past 0x80 while it waits.
+        let mut hub = FirstVisitHub::new();
+        hub.arm = FirstVisitArm::CardIn;
+        hub.card = HUB_FADE_FULL;
+        hub.xa_busy = 100;
+        hub.tick(1, 0);
+        assert_eq!(hub.arm(), FirstVisitArm::CardIn);
+        assert!(
+            hub.card > HUB_FADE_FULL,
+            "retail's add is unclamped while it waits"
+        );
     }
 
     #[test]

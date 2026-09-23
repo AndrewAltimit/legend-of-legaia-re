@@ -254,10 +254,30 @@ off the world's leg edges; the standalone minigames page replays the same
 walk through `muscle_first_visit_json` and hands over to its own ROUND banner
 at arm `0x15`.
 
-The shade is the one stand-in. It is subtractive (`B - F`, draw-mode tpage
-`0x46`), and neither hub path blends subtractively, so both draw it as
-sixteen horizontal bands of black at alpha `f / 255` - scaling what is under
-it by `1 - f/255` where retail subtracts `f`.
+The shade is subtractive (`B - F`, draw-mode tpage `0x46`). Both browser
+pages apply it as retail does: they read back the pixels their 2D layer
+already holds and subtract the Gouraud ramp row by row, clamped at zero
+(`subtractShade` in `play-minigames.js` and `minigame-muscle.js`). The native
+window is the one stand-in left: its sprite pass blends with ordinary alpha,
+and its one ABR-capable 2D pass (the screen-prim pass) runs before the sprite
+overlay, so it cannot sit between the wall tiles and the screens over them.
+It draws sixteen horizontal bands of black at alpha `f / 255` instead -
+scaling what is under it by `1 - f/255` where retail subtracts `f`.
+
+Two waits in the first visit come from the hub's own sound. Arms `3`, `4`
+and `0x16` hold on `_DAT_8007BC20`, the **CD-XA in-flight** word: the clip
+starter `FUN_8003D53C` raises it (`li s1,2` / `sw s1,0x908(gp)` at
+`0x8003D658`), and the hub starts two lines itself - `FUN_8003D53C(0x1E,
+0xB, 0xA9)` on arm `0`'s first tick and `FUN_8003D53C(0x1F, round, 0x54)` on
+arm `0x15`'s, where `round` is `(_DAT_8007BAC0 - 1) & 0xF` (`0` on a first
+visit). So the title zoom, the course card and the fight start wait for the
+announcer to finish. `FirstVisitHub` models the word as the line's read span
+in frames (the battle voice legs' model) and hands each start to the host's
+XA path (`take_xa`). Arm `6` holds on `_DAT_8007B648 == 0x80`, which is the
+state byte of the SCUS loader machine `FUN_80052770`: arm `4` zeroes it to
+start a load, and the machine writes `0x80` when the drive is idle
+(`0x8005285C`, `0x80052F14`), a tick or two later and well inside arm `5`'s
+hold - the port loads synchronously, so that wait is already satisfied.
 
 ### The hub screens share one OT slot
 

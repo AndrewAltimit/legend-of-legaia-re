@@ -213,8 +213,12 @@ impl LegaiaRuntime {
             ui.first_visit = None;
             ui.round_banner = None;
         }
+        // The first visit's two announcer lines (`FUN_8003D53C` at arms 0 and
+        // 0x15), played through the page's XA path once the borrow ends.
+        let mut hub_xa = None;
         if let Some(hub) = ui.first_visit.as_mut() {
             hub.tick(1, pad);
+            hub_xa = hub.take_xa();
             if hub.done() {
                 ui.first_visit = None;
             }
@@ -256,6 +260,13 @@ impl LegaiaRuntime {
         }
         ui.prev_leg_open = leg_open;
         ui.prev_contest_open = contest_open;
+        if let Some(c) = hub_xa {
+            self.play_xa_clip(
+                u32::from(c.clip),
+                u32::from(c.channel),
+                u32::from(c.duration_sectors),
+            );
+        }
         for cue in voice_cues {
             self.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
                 cue.voice,
@@ -772,8 +783,9 @@ fn hub_quad_json(q: &HudQuad) -> serde_json::Value {
 
 /// The first visit's backdrop shade (`FUN_801D1610`) as a page row:
 /// `{ shade: true, x, y, dw, dh, top, bottom }` - a vertical ramp the page
-/// draws as bands of black at alpha `f / 255`, the native window's
-/// `shade_band_draws` stand-in for retail's subtractive blend.
+/// applies subtractively (`B - F`, clamped at 0) to the pixels already on its
+/// 2D layer (`subtractShade` in `play-minigames.js`), which is retail's
+/// ABR 2. The native window still draws black bands at alpha `f / 255`.
 fn shade_json(sh: &legaia_engine_ui::ringside_backdrop::BackdropShade) -> serde_json::Value {
     serde_json::json!({
         "shade": true,

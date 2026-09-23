@@ -1511,6 +1511,37 @@ window.MgMuscle = (function () {
      * placed and in paint order from the kernel both play hosts draw with;
      * the page hands over to its ROUND banner - retail's arms 0x15/0x16 -
      * when the walk reaches them. */
+    /* The first visit's backdrop shade (FUN_801D1610): an untextured Gouraud
+     * quad drawn with ABR 2 (tpage 0x46, `B - F`), top corners 0x64, bottom 0.
+     * A 2D canvas has no subtractive composite, so the page does the equation
+     * itself on the pixels already down: per canvas row, F is the ramp at that
+     * row's logical y and every channel drops by F, clamped at 0. `sx` / `sy`
+     * map logical 320x240 pixels to canvas pixels. Returns false when the
+     * canvas cannot be read back (the caller then falls back to black bands). */
+    function subtractShade(g, q, sx, sy) {
+      const cw = g.canvas.width, ch = g.canvas.height;
+      const x0 = Math.max(0, Math.round(q.x * sx)), y0 = Math.max(0, Math.round(q.y * sy));
+      const x1 = Math.min(cw, Math.round((q.x + q.dw) * sx));
+      const y1 = Math.min(ch, Math.round((q.y + q.dh) * sy));
+      const w = x1 - x0, h = y1 - y0;
+      if (w <= 0 || h <= 0 || !(q.dh > 0)) return true;
+      let img;
+      try { img = g.getImageData(x0, y0, w, h); } catch (e) { return false; }
+      const d = img.data;
+      for (let r = 0; r < h; r++) {
+        const ly = (y0 + r + 0.5) / sy - q.y;
+        const f = Math.round(q.top + (q.bottom - q.top) * (ly / q.dh));
+        if (f <= 0) continue;
+        for (let i = r * w * 4, e = i + w * 4; i < e; i += 4) {
+          d[i] = d[i] > f ? d[i] - f : 0;
+          d[i + 1] = d[i + 1] > f ? d[i + 1] - f : 0;
+          d[i + 2] = d[i + 2] > f ? d[i + 2] - f : 0;
+        }
+      }
+      g.putImageData(img, x0, y0);
+      return true;
+    }
+
     const firstVisitCache = new Map();
     function drawFirstVisit() {
       if (!api || !api.muscle_first_visit_json || !contest) return null;
@@ -1525,8 +1556,10 @@ window.MgMuscle = (function () {
       if (!m.ok) return null;
       for (const q of m.rows || []) {
         if (q.shade) {
-          /* Subtractive Gouraud ramp, drawn as 16 bands of black at alpha
-           * f / 255 - the native window's stand-in too. */
+          /* Retail's subtractive Gouraud ramp (ABR 2, `B - F`) on the
+           * pixels already down; black bands only when the canvas cannot
+           * be read back. */
+          if (subtractShade(g, q, 2, 2)) continue;
           const bands = 16;
           for (let b = 0; b < bands; b++) {
             const y0 = q.y + Math.floor(q.dh * b / bands);
