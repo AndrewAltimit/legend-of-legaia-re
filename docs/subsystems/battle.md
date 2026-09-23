@@ -664,7 +664,9 @@ party reaches it off its only member's command. No option word gates it: the
 only option the review arm consults is `_DAT_800846C8` (the Battle Command
 setting), and only to decide whether Up / Down count as a confirm. When no
 member can act at all, the round prompt's `Begin` stores `0x6E` directly
-(`0x801D10A0`, step `0x27`).
+(`0x801D10A0`, step `0x27`); the port takes the same arm
+(`World::tick_battle_command`, after `World::begin_battle_round` opened the
+prompt on member 0).
 
 The arm at `0x801D3024` draws the D-pad glyph at `(152, 84)`
 (`FUN_801DB8F4(0x98, 0x58)`) between two chips - placement record `0x10`
@@ -687,11 +689,8 @@ already moved the cursor past the party: the capture holds
 to act, `FUN_801DBA04` equals the count and the press returns to `0x1E`
 (`0x801D30D0`).
 
-Retail also keeps a **commit log** up through the whole command phase: each
-committed member gets a row of three placement records at `0x2B + 3n` (name,
-command, target) copied from records `0x1A`, `0x0D` / `0x3B` and `0x29` by
-`FUN_801D5718` and stacked at `y = 146 / 170 / 194`. The port does not draw
-it.
+Retail also keeps a **commit log** up through the whole command phase - see
+[the commit log](#the-commit-log) below.
 
 **Port.** `battle_input::CommandPhase::CommitConfirm` (step
 `step_commit_confirm`); `World::open_commit_confirm` raises it where
@@ -704,6 +703,56 @@ count). Both hosts draw it through `battle_hud::battle_command_chips`
 words read off the disc. The arts entry no longer carries a `Begin | Reselect`
 of its own: that was this party-wide screen modelled per member, which put it
 after every member's arts and after no one's Magic or Item.
+
+### The commit log
+
+Each committed member gets a row of three placement records at `0x2B + 3n`
+(name, command, target), `n = ctx[+0x1F]` - the command cursor's step
+depth. The commit arms of `FUN_801D388C` stage them: case `0x20` (Attack)
+at `0x801D4444`, case `0x11` (Spirit, a member other than the last, with the
+forward step) at `0x801D4020`, case `0x23` (Spirit, the last member) at
+`0x801D4918`. Each arm:
+
+1. lands the three elements with `FUN_801D5718(dst, src)` - name from the
+   acting plaque (record `0x1A`), command from the chosen ring chip (record
+   `0x0D` `Attack` on case `0x20`, record `0x0B` `Spirit` on the other two),
+   target from the target plaque (record `0x29`); the Spirit arms point the
+   target element at an empty string of width `0` instead;
+2. seats the columns off the name's measured width: name at `x = 16`,
+   command at `name_w + 0x20`, target at `name_w + 0x60`;
+3. scrolls the log so the newest row sits lowest - one row rests at
+   `y = 170`, a second moves the first to `146` and takes `170`, a third
+   takes `194`.
+
+`FUN_801D5718` copies `+0x02 <- src+0x0A`, `+0x04 <- src+0x0C`, `+0x06`,
+`+0x0A` and `+0x14`, and never `+0x0C`: the element starts where its source
+rests and the arm writes the landing row itself. When the target cursor
+covers a whole side, `FUN_801D57E8` has already swapped record `0x29`'s
+content for record `0x3D` (`"  All"`, width 36) or `0x3E` (`"All Allies"`,
+width 48), so an all-target commit logs that label. The `0x6E` screen's
+`Reselect` (case `0x21`, `0x801D45A8`) parks the landing member's row at
+`x = 328`, and the round's start launches the whole log off-screen through
+`FUN_801D5778` (the two loops at `0x801D50A0` / `0x801D50F8`, copying record
+`0x2B + i` into `0x35 + i` with seat B one display width to the left).
+
+The capture `party_basic_attack_vs_gobu_gobu` (solo Vahn at `0x6E`,
+`ctx[+0x1F] = 1`) holds records `0x2B` / `0x2C` / `0x2D` at seat B
+`(16, 170)` / `(59, 170)` / `(123, 170)` - `Vahn` (width 27), `Attack`,
+`Gobu Gobu` - which is the one-row case of the layout above.
+
+**Port.** `legaia_engine_vm::battle_commit_log` stages the rows over a
+scratch placement array (`stage_commit_row`, with `FUN_801D5718` as
+`battle_cursor_pose::element_placement_land` and `FUN_801D57E8` for the
+all-target labels); `engine-core::battle_hud::battle_commit_log` lists the
+members the cursor has walked past - all of them once `0x6E` is up - from
+`RoundFlow::pending`; and `engine-ui`'s battle HUD builder draws each element
+as a gold plate (kind `2`) with its text at the pen `(x, y - 2)`. Both hosts
+pass the rows through `BattleHudFrame::commit_log`. What is drawn is each
+element's resting seat: the glide from seat A (`FUN_801D8DE8` /
+`FUN_801DB7B0`) and the round-start launch are not modelled, so
+`FUN_801D5778` is still unwired. Which chip an Item or magic commit logs
+(records `0x0C` / `0x0E`) and whether an Item row carries a target are
+inferred from the ring's arm order, not read off a commit arm.
 
 ### How the engine raises the flow state
 

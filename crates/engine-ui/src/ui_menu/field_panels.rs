@@ -154,7 +154,9 @@ pub fn battle_spoils_draws_for(
     view: &BattleSpoilsView<'_>,
     windows: &[SpoilsWindow],
 ) -> Vec<TextDraw> {
-    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    // Retail's default pen (ink 7), not full-scale white - see
+    // [`MENU_TEXT_WHITE`].
+    let white = MENU_TEXT_WHITE;
     let mut out = Vec::new();
     for (i, win) in windows.iter().enumerate() {
         let pen = (

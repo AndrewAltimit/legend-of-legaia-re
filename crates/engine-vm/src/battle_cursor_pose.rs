@@ -1,13 +1,14 @@
-//! Four leaves of the battle overlay's shared "slot B" library: the
-//! living-actor cursor step, the two screen-element placement copy helpers,
-//! and the tracked-widget pool teardown.
+//! Five leaves of the battle overlay's shared "slot B" library: the
+//! living-actor cursor step, the three screen-element placement movers, and
+//! the tracked-widget pool teardown.
 //!
 //! Each routine's port tag sits on the item that implements it
-//! (`FUN_801D32BC`, `FUN_801D57E8`, `FUN_801D5778`, `FUN_801D9AE8`), so each
-//! carries its own class - one wired, two pending, one replaced.
+//! (`FUN_801D32BC`, `FUN_801D5718`, `FUN_801D57E8`, `FUN_801D5778`,
+//! `FUN_801D9AE8`), so each carries its own class - three wired, one pending,
+//! one replaced.
 //!
-//! REF: FUN_801D388C - the only retail caller of the two copy helpers, and
-//! itself a third writer of the same placement table.
+//! REF: FUN_801D388C - the only retail caller of the three movers, and
+//! itself a further writer of the same placement table.
 //! REF: FUN_801D5854 - the inline record-41/42 move on that table.
 //!
 //! `FUN_801D32BC` is **wired**. It is the **command-input** cursor, not a
@@ -26,98 +27,53 @@
 //! which steps back from the past-the-end index the forward walk leaves at
 //! `0x6E` onto the last member that can act.
 //!
-//! NOT WIRED, with a concrete prerequisite each - except the last, which is
-//! replaced rather than pending:
+//! The placement-copy family is the **commit log**'s machinery
+//! (`crate::battle_commit_log`), and each routine's status sits on its own
+//! item:
 //!
-//! * `FUN_801D57E8` / `FUN_801D5778` copy records inside the **screen-element
-//!   placement table** at `0x80076C10` (`docs/reference/memory-map.md`). The
-//!   old reason - "the engine allocates no such table" - is withdrawn: the
-//!   table is disc data and the port parses it, as
-//!   `legaia_asset::screen_elements::ScreenElementTable` (103 records, `0x18`
-//!   stride). That parser's own page even names this pair's subject: `+0x0A` /
-//!   `+0x0C` is "the second seat - the pair `FUN_801D5778` offsets by a screen
-//!   width", the from/to of an element's **slide**.
+//! * `FUN_801D5718` ([`element_placement_land`]) and `FUN_801D57E8`
+//!   ([`element_placement_copy`]) are **wired**: the commit arms of
+//!   `FUN_801D388C` land every log element with the first, and the second
+//!   swaps the target plaque's content for the `All` / `All Allies` label
+//!   (`(dst 0x29, src 0x3D)` at `0x801D4414`, `(0x29, 0x3E)` at
+//!   `0x801D4434`). Both run over the scratch placement array
+//!   `battle_commit_log::commit_log_layout` stages, which the battle HUD
+//!   builder both hosts share reads each frame.
+//! * `FUN_801D5778` ([`element_placement_copy_remapped`]) is the log's
+//!   **launch**: two identical loops (`0x801D50A0`, `0x801D50F8`) over `i` in
+//!   `0..3*ctx[+0x1F]` copy record `0x2B + i` into `0x35 + i` with seat B one
+//!   display width (`0x140`) left of seat A - the whole log sliding off-screen
+//!   when the round begins. The port draws resting seats and drops the log at
+//!   the round start instead of gliding it, so it is not wired; see its tag.
 //!
-//!   The *replacement* reason ran too - "the engine's chrome derives its rects
-//!   per frame from the read-only disc record (`ScreenElement::pen` /
-//!   `plate_at`)" - and it is wrong in the direction that makes the work
-//!   bigger, not smaller. Nothing derives anything from that record. Grep the
-//!   workspace: `ScreenElementTable::from_scus` has **no production caller at
-//!   all** (its four callers are one negative unit test and three disc-gated
-//!   oracles in `crates/asset/tests/`); `crate::battle_chrome`'s only mention
-//!   of the parser is `pub use legaia_asset::screen_elements`, a bare
-//!   re-export it never calls; and `engine-ui` does not import
-//!   `screen_elements` in any source file. The live battle-chrome draw path is
-//!   `engine-ui::battle_command_ui` plus `engine-ui::ui_overlay`, which mirror
-//!   `battle_chrome`'s literals and call only its seat kernel
-//!   (`panel_seats` / `PANEL_TEXT_INSET`, from
-//!   `ui_overlay::party_panel_stage_x`); nothing on that path reads a parsed
-//!   record, so the disc table reaches no pixel today.
+//! The array is the **screen-element placement table** at `0x80076C10`
+//! (`legaia_asset::screen_elements`), which is disc data; the port stages
+//! only the records the log touches. This module used to call the array a
+//! per-actor animation-pose buffer - the record layout falsifies that:
+//! `FUN_801D5778` writes `dst[+0xA] = src[+0xA] - 0x140`, and `0x140` is the
+//! PSX display width, so the field it shifts is a screen X. "Pose slot" is
+//! still the right name for a *different* thing, the actor's animation-pose
+//! index (`battle_cue_group`, `charm_fix`, `docs/subsystems/battle.md`).
 //!
-//!   What that costs the wire, in order:
+//! `FUN_801D9AE8` is replaced rather than pending - it releases a `0x28`-slot
+//! tracked-widget pool, and no host is owed that call. Both of its arrays
+//! are *described* in the port - `crate::battle_value_readout` carries the
+//! same `ctx[+0x1074]` pointer table and `ctx[+0x11B4]` `0xC`-stride record
+//! as address constants - but a described offset is not a pool. No engine
+//! structure owns widget slots: the battle UI is rebuilt from world state
+//! every frame by the `engine-ui` draw-list builders, so no widget outlives
+//! the frame that drew it and nothing has a lifetime to end. That verdict
+//! rides on [`release_widget_pool`]'s own `REPLACED-BY:` marker.
 //!
-//!   1. `ScreenElementTable` is deliberately immutable - private `Vec`, `get`
-//!      returns by value, no `&mut` surface anywhere. A live seat array has to
-//!      be built, in a crate a drawer can see.
-//!   2. `engine-ui` sits *below* `engine-vm`, so an array owned here is
-//!      unreadable by the builders that draw. Either the array lives lower or
-//!      the draw path moves.
-//!   3. These two helpers are not the only writer. `FUN_801D388C` also
-//!      rewrites the table directly - at `0x801D5138..0x801D5164` it walks from
-//!      record 32 at a `0x18` stride storing `+0x0A -> +0x02` and `0xE8` into
-//!      `+0x04` (the park row, below the 240-line window; the port hardcodes
-//!      the same idea as `battle_chrome::PANEL_PARK_Y`), and `FUN_801D5854`
-//!      moves records 41/42 inline. An array only these two copies wrote would
-//!      be inconsistent with the rest of the frame.
+//! ## Why one module for five functions
 //!
-//!   The call sites are decoded, so step 3 is bounded rather than open:
-//!   `FUN_801D57E8` is called with `(dst 0x29, src 0x3D)` at `0x801D4414` and
-//!   `(0x29, 0x3E)` at `0x801D4434`; `FUN_801D5778` runs in two identical
-//!   loops (`0x801D50A0`, `0x801D50F8`) over `i` in `0..3*ctx[+0x1F]`, copying
-//!   `src i+0x2B` to `dst i+0x35`. With a three-member party the loop writes
-//!   `0x35..0x3D`, and `0x3D` is exactly the straight copy's source - the two
-//!   helpers are one pipeline staging into record 41, not two unrelated leaves.
-//!
-//!   Landing this well means step 1 first, on its own: route the parsed table
-//!   into the production draw path and prove `plate_for_record` reproduces
-//!   today's literals from real disc records. That is independently valuable -
-//!   it kills a mirrored-literal drift whose only guard is a cross-check test -
-//!   and it is what makes the slide cheap afterwards.
-//!
-//!   This module used to call the array a per-actor animation-pose buffer,
-//!   one of three names the same base carried. The record layout falsifies
-//!   that one specifically: `FUN_801D5778` writes
-//!   `dst[+0xA] = src[+0xA] - 0x140`, and `0x140` is the PSX display width, so
-//!   the field it shifts is a screen X and the operation is off-screen
-//!   staging. A pose index is not offset by a display width. The other two
-//!   readings - the party panel's publish target and the Muscle Dome's
-//!   element layout - were both compatible with placements all along; all
-//!   three now say "screen-element placement".
-//!
-//!   Keep the collision in mind when reading nearby code: "pose slot" is
-//!   still the right name for a *different* thing, the actor's animation-pose
-//!   index (`battle_cue_group`, `charm_fix`, `docs/subsystems/battle.md`).
-//!   That collision is why the wrong name stuck here.
-//! * `FUN_801D9AE8` is the exception - it releases a `0x28`-slot
-//!   tracked-widget pool, and no host is owed that call. Both of its arrays
-//!   are *described* in the port - `crate::battle_value_readout` carries the
-//!   same `ctx[+0x1074]` pointer table and `ctx[+0x11B4]` `0xC`-stride record
-//!   as address constants - but a described offset is not a pool. No engine
-//!   structure owns widget slots: the battle UI is rebuilt from world state
-//!   every frame by the `engine-ui` draw-list builders, so no widget outlives
-//!   the frame that drew it and nothing has a lifetime to end. That verdict
-//!   rides on [`release_widget_pool`]'s own `REPLACED-BY:` marker, which is
-//!   why this address is not part of the blanket above.
-//!
-//! ## Why one module for four functions
-//!
-//! All four sit in the address band that every "slot B" overlay image carries
+//! All five sit in the address band that every "slot B" overlay image carries
 //! verbatim - `overlay_battle_action`, `overlay_magic_capture`,
 //! `overlay_magic_level_up` and `overlay_muscle_dome` disassemble
 //! byte-identically at each of these VAs. (The `overlay_0897` image does
 //! **not**: at `0x801D57E8` it has a mid-function fragment with no prologue,
 //! which is a VA collision, not the same routine. Read the battle-side dumps
-//! for these four, never the 0897 ones.)
+//! for these, never the 0897 ones.)
 //!
 //! Provenance: `see ghidra/scripts/funcs/overlay_battle_action_801d32bc.txt`,
 //! `overlay_battle_action_801d57e8.txt`, `overlay_battle_action_801d5778.txt`,
@@ -314,6 +270,9 @@ pub struct ElementPlacement {
 /// (both indices are scaled `* 0x18` with no bound check).
 ///
 /// PORT: FUN_801D57E8
+///
+/// WIRED: `crate::battle_commit_log::stage_commit_row` (the all-target
+/// label swap), under the battle HUD builder both hosts draw.
 pub fn element_placement_copy(slots: &mut [ElementPlacement], dst: usize, src: usize) {
     if dst >= slots.len() || src >= slots.len() {
         return;
@@ -325,6 +284,38 @@ pub fn element_placement_copy(slots: &mut [ElementPlacement], dst: usize, src: u
     d.f06 = s.f06;
     d.f0a = s.f0a;
     d.f0c = s.f0c;
+    d.anim = s.anim;
+}
+
+/// Land one placement record's content at another's resting seat.
+/// `FUN_801D5718`.
+///
+/// ```text
+///   dst[+0x02] = src[+0x0A]
+///   dst[+0x04] = src[+0x0C]
+///   dst[+0x06] = src[+0x06]
+///   dst[+0x0A] = src[+0x0A]
+///   dst[+0x14] = src[+0x14]
+/// ```
+///
+/// Seat A takes the source's seat B, so the element starts where the source
+/// element rests; `+0x0C` is **not** written - the caller sets the landing
+/// row itself. Read from `0x801D5718..0x801D5774`.
+///
+/// PORT: FUN_801D5718
+///
+/// WIRED: `crate::battle_commit_log::stage_commit_row`, the commit log both
+/// hosts draw through `engine-ui`'s battle HUD builder.
+pub fn element_placement_land(slots: &mut [ElementPlacement], dst: usize, src: usize) {
+    if dst >= slots.len() || src >= slots.len() {
+        return;
+    }
+    let s = slots[src];
+    let d = &mut slots[dst];
+    d.f02 = s.f0a;
+    d.f04 = s.f0c;
+    d.f06 = s.f06;
+    d.f0a = s.f0a;
     d.anim = s.anim;
 }
 
@@ -348,7 +339,7 @@ pub fn element_placement_copy(slots: &mut [ElementPlacement], dst: usize, src: u
 /// value shifted one screen width. The subtraction is `addiu`, i.e. wrapping
 /// 16-bit.
 ///
-/// PORT: FUN_801D5778
+/// PORT: FUN_801D5778 NOT WIRED: the commit log's round-start launch (retail slides every log element one screen left); the port draws the log's resting seats and removes the log when the round begins, so there is no slide for this copy to stage until the element glide (`FUN_801D8DE8` / `FUN_801DB7B0`) is modelled.
 pub fn element_placement_copy_remapped(slots: &mut [ElementPlacement], dst: usize, src: usize) {
     if dst >= slots.len() || src >= slots.len() {
         return;

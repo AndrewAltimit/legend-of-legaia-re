@@ -157,7 +157,9 @@ pub fn shop_draws_for<'a>(
     const LABEL_X: i32 = 20; // retail 0x14
     const PRICE_X: i32 = 112; // retail 0x70, left edge of 6-digit price field
 
-    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    // `SHOP_INK_NORMAL` (ink 7) is retail's default pen, which the font
+    // CLUT resolves to (206, 206, 206) - not full-scale white.
+    let white = crate::MENU_TEXT_WHITE;
     let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
     let gold_col: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
     let marked: [f32; 4] = [0.45, 0.68, 1.0, 1.0];
@@ -701,6 +703,10 @@ pub struct BattleHudFrame<'a> {
     /// the full-width active-actor bar; hosts also pass the same actor's name
     /// as [`Self::plaque`].
     pub active_slot: Option<u8>,
+    /// The **commit log** - one row per member who has committed a command
+    /// this round (`engine-core::battle_hud::battle_commit_log`), laid out by
+    /// `legaia_engine_vm::battle_commit_log` and drawn as gold plates.
+    pub commit_log: &'a [legaia_engine_vm::battle_commit_log::CommitLogRow],
     /// Diagnostic readout ([`diag_hud_enabled`]): the engine's debug rows -
     /// monster HP numerals/bars (retail draws **no** monster gauge,
     /// `docs/subsystems/battle-action.md`), per-slot LV / AP readouts, and
@@ -1622,6 +1628,42 @@ pub fn battle_hud_draws_for(
         stage_text(&mut text, font, name, content_x + lead, content_y, white);
     }
 
+    // ---- The commit log ----
+    //
+    // Placement records `0x2B + 3n`: each committed member's name, command
+    // and target, landed by the commit arms of `FUN_801D388C` and laid out
+    // by the shared kernel. Every element is a content box on the gold
+    // plate class (kind `2`): pen `(x, y - 2)`, plate `(x - 8, y - 6)`.
+    // An element whose content is empty (Spirit's target) draws nothing.
+    if !frame.commit_log.is_empty() {
+        use legaia_engine_vm::battle_commit_log as log;
+        let width = |t: &str| font.layout_ascii(t).advance_x as u16;
+        let commits: Vec<log::LogCommit> =
+            frame.commit_log.iter().map(|r| r.commit(width)).collect();
+        for (row, elements) in frame
+            .commit_log
+            .iter()
+            .zip(log::commit_log_layout(&commits))
+        {
+            let content = [row.name.as_str(), row.command.as_str(), row.target_text()];
+            for (el, content) in elements.iter().zip(content) {
+                if content.is_empty() {
+                    continue;
+                }
+                let (x, y) = (i32::from(el.x), i32::from(el.y));
+                plate_run(
+                    &mut text,
+                    &mut sprites,
+                    x - PLATE_CAP_W,
+                    y - 6,
+                    i32::from(el.width),
+                    true,
+                );
+                stage_text(&mut text, font, content, x, y - 2, READOUT_NORMAL);
+            }
+        }
+    }
+
     // ---- The message bar ----
     //
     // Placement record 91: the same content box as the active-actor bar
@@ -1904,7 +1946,8 @@ pub fn enemy_target_menu_draws_at(
     surface: (u32, u32),
     stage_y: i32,
 ) -> Vec<TextDraw> {
-    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    // Default pen (ink 7), the font CLUT's (206, 206, 206).
+    let white = crate::MENU_TEXT_WHITE;
     let dim: [f32; 4] = [0.62, 0.62, 0.66, 1.0];
     let scale = (surface.0 / BOOT_UI_STAGE_W)
         .min(surface.1 / BOOT_UI_STAGE_H)

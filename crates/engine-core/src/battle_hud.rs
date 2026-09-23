@@ -1653,6 +1653,121 @@ pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommand
     }
 }
 
+pub use legaia_engine_vm::battle_commit_log::{CommitLogRow, CommitLogTarget};
+
+/// The commit-log rows retail shows this frame, row 0 first.
+///
+/// Retail keeps the log up through the whole command phase and launches it
+/// off-screen when the round begins. A row belongs to each member the command
+/// cursor has already walked past: every member ahead of the one entering a
+/// command, and every committed member once the `Begin | Reselect` screen
+/// (`0x6E`) is up. A member the `Reselect` step lands back on has its row
+/// taken down (case `0x21` parks it at `x = 328`), which the "ahead of the
+/// member entering" rule reproduces.
+///
+/// The Attack and Spirit rows' sources are read off the commit arms
+/// (`FUN_801D388C` cases `0x20` / `0x11` / `0x23`); an Art commits through
+/// the ring's `Attack` chip. Which chip record an Item or magic commit logs,
+/// and whether an Item row carries a target, is inferred from the ring's
+/// arm order (records `0x0C` / `0x0E`), not read off a commit arm.
+pub fn battle_commit_log(world: &crate::world::World) -> Vec<CommitLogRow> {
+    use crate::battle_input::CommandPhase;
+    use crate::battle_round::{PendingPartyAction, RoundPhase};
+    use crate::target_picker::CursorRow;
+    use legaia_asset::battle_ui_strings::BattleUiLabel;
+    use legaia_engine_vm::battle_commit_log as log;
+    if world.mode != crate::world::SceneMode::Battle
+        || world.battle.round_flow.phase != RoundPhase::Command
+    {
+        return Vec::new();
+    }
+    let pc = party_count(world) as u8;
+    let confirm = world
+        .battle
+        .command
+        .as_ref()
+        .is_some_and(|c| matches!(c.phase, CommandPhase::CommitConfirm { .. }));
+    let entering = world.battle_ctx.active_actor;
+    let label = |disc: BattleUiLabel, fallback: &str| -> String {
+        world
+            .battle
+            .ui_strings
+            .get(disc)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(fallback)
+            .to_string()
+    };
+    let slot_target = |row: CursorRow, slot: u8| -> CommitLogTarget {
+        let abs = match row {
+            CursorRow::Enemy => pc.saturating_add(slot),
+            CursorRow::Ally => slot,
+        };
+        CommitLogTarget::Single(actor_name(world, abs))
+    };
+    let mut rows = Vec::new();
+    for slot in 0..pc {
+        if !confirm && slot >= entering {
+            break;
+        }
+        let Some(Some(action)) = world.battle.round_flow.pending.get(usize::from(slot)) else {
+            continue;
+        };
+        let (command, command_record, target) = match action {
+            PendingPartyAction::Attack { target } => (
+                label(BattleUiLabel::Attack, "Attack"),
+                log::RECORD_CHIP_ATTACK,
+                CommitLogTarget::Single(actor_name(world, *target)),
+            ),
+            PendingPartyAction::Art {
+                target_row,
+                target_slot,
+                ..
+            } => (
+                label(BattleUiLabel::Attack, "Attack"),
+                log::RECORD_CHIP_ATTACK,
+                slot_target(*target_row, *target_slot),
+            ),
+            PendingPartyAction::Spell {
+                spell_id,
+                target_row,
+                target_slot,
+            } => {
+                use crate::spells::SpellTarget;
+                let target = match world.tables.spell_catalog.get(*spell_id).map(|d| d.target) {
+                    Some(SpellTarget::AllEnemies) => CommitLogTarget::AllEnemies,
+                    Some(SpellTarget::AllAllies) => CommitLogTarget::AllAllies,
+                    _ => slot_target(*target_row, *target_slot),
+                };
+                (
+                    battle_magic_chip(world, slot).0,
+                    log::RECORD_CHIP_MAGIC,
+                    target,
+                )
+            }
+            PendingPartyAction::Item { .. } => (
+                label(BattleUiLabel::Item, "Item"),
+                log::RECORD_CHIP_ITEM,
+                CommitLogTarget::None,
+            ),
+            PendingPartyAction::Spirit => (
+                label(BattleUiLabel::Spirit, "Spirit"),
+                log::RECORD_CHIP_SPIRIT,
+                CommitLogTarget::None,
+            ),
+            // `Run` begins the round at once and `StandBy` is no command:
+            // neither reaches a logged commit.
+            PendingPartyAction::Run | PendingPartyAction::StandBy => continue,
+        };
+        rows.push(CommitLogRow {
+            name: party_member_name(world, slot),
+            command,
+            command_record,
+            target,
+        });
+    }
+    rows
+}
+
 /// The combo cluster style the action in flight draws its hits in, or
 /// `None` outside an action: a physical / arts chain counts `HIT` +
 /// `TOTAL` (`player_steal_skeleton_banner`), a cast, item or spirit action

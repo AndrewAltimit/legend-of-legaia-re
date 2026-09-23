@@ -104,6 +104,7 @@ pub mod battle_cast_census;
 pub mod battle_cast_cue;
 pub mod battle_cast_dispatch;
 pub mod battle_chrome;
+pub mod battle_commit_log;
 pub mod battle_cue_group;
 pub mod battle_cursor_pose;
 pub mod battle_damage_wrappers;

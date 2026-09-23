@@ -619,6 +619,7 @@ impl LegaiaRuntime {
         let target_plaque = world.and_then(bh::battle_target_plaque);
         let move_name = world.and_then(bh::battle_move_name);
         let message_bar = world.and_then(bh::battle_message_bar);
+        let commit_log = world.map(bh::battle_commit_log).unwrap_or_default();
         ui::battle_hud_draws_for(
             font,
             &ui::BattleHudFrame {
@@ -660,6 +661,7 @@ impl LegaiaRuntime {
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: world.and_then(bh::battle_ring_ap_plate_value),
+                commit_log: &commit_log,
                 diag: ui::diag_hud_enabled(),
             },
             BATTLE_HUD_PEN,
