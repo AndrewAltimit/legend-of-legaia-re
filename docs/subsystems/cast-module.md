@@ -632,9 +632,14 @@ the pool spawner `FUN_80050ED4` from hardcoded `jal` sites - 15 in PROT `0958`,
 41 in `0959`, 24 in `0960` - and at every one of them `a2` is a **constant
 module-resident pointer** and `a3` is a scale literal (`0x1000` at every 958 and
 960 site; 959 also uses `0x0C00` four times and `0x0800` once). The pointers land
-in each module's data band and nowhere else: `0x801F8EB8..0x801F9348` in 958 (13
-distinct records for 15 sites), `0x801F884C..0x801F95CC` in 959 (41 for 41),
-`0x801F8768..0x801F8E0C` in 960 (21 for 24). What they point at is the **summon
+in each module's data band and nowhere else: `0x801F8EB8..0x801F9348` in 958 (14
+distinct records for 15 sites), `0x801F884C..0x801F95CC` in 959 (44 for 41 - a
+site that `switch` arms jump to receives one pointer per arm), and
+`0x801F8768..0x801F8E0C` in 960 (23 for 24). An earlier count of 13, 41 and 21
+came from a resolver that read only a `lui`/`addiu` pair above the call and so
+missed the pointers completed in a delay slot or loaded in an arm
+([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#resolving-the-pointer-a-spawn-call-is-handed)).
+What they point at is the **summon
 part-record shape** the whole spawn stack shares - `[i16 model_sel][u16 reserved]
 [move-VM bytecode]`, `model_sel = -1` on the pure-transform records, a real index
 on the modelled ones (960's `0x801F8CB8` carries `27`) - i.e. byte-for-byte the

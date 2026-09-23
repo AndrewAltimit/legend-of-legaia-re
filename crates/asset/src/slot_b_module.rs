@@ -5,10 +5,12 @@
 //!
 //! [`crate::cast_effect_pool`] indexes the band by PROT entry and hands each
 //! image to [`crate::summon_overlay::parse`], which answers *what a module
-//! spawns*. This module answers the sibling question the byte-accounting
-//! instruments ask - **which bytes of the image are what** - and it answers it
-//! at a granularity the spawn parser does not: a per-record half-open extent,
-//! cut where the image's own code partition resumes.
+//! spawns* - reading its record pointers through this module's walk, so the
+//! two cannot disagree about a spawn site. This module answers the sibling
+//! question the byte-accounting instruments ask - **which bytes of the image
+//! are what** - and it answers it at a granularity the spawn parser does not:
+//! a per-record half-open extent, cut where the image's own code partition
+//! resumes.
 //!
 //! ## The three regions
 //!
@@ -116,8 +118,8 @@ pub const SLOT_B_PROT_FIRST: u32 = crate::cast_effect_pool::CAST_MODULE_PROT_FIR
 /// Last extraction PROT entry of the module band.
 pub const SLOT_B_PROT_LAST: u32 = crate::cast_effect_pool::CAST_MODULE_PROT_LAST;
 
-/// Instructions of `$a2`-forming context scanned back from a spawn call. The
-/// same window [`crate::summon_overlay::parse`] uses.
+/// Instructions of `$a2`-forming context scanned back from a spawn call while
+/// the followed register is caller-saved.
 const A2_WINDOW_INSNS: usize = 22;
 
 /// Widest head jump table in the band (PROT 0958 fills file `0x0..0x400`).

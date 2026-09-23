@@ -92,9 +92,11 @@
 //! Recovery is by scanning the stager's `jal FUN_80021B04` / `jal FUN_80050ED4`
 //! call sites and recovering the `a2` (record-pointer) each one passes - the
 //! records are variable-length move-VM bytecode, not a fixed-stride table, so
-//! the call sites are the authoritative enumeration. The `a2` register is
-//! followed with a tiny `lui`/`addiu` emulator over each call site's preceding
-//! window.
+//! the call sites are the authoritative enumeration. The pointer is resolved by
+//! the slot-B layout walk ([`crate::slot_b_module`]), which reads `$a2` from
+//! the call's delay slot back, follows a saved-register copy and the `switch`
+//! arms that jump to one shared call, and drops a call no framed body of this
+//! image issues (an inherited fragment of a sibling image's code).
 //!
 //! ## Where the effect magnitude lives (per-spell "power")
 //!
@@ -323,56 +325,10 @@ pub struct SummonOverlay {
     pub parts: Vec<SummonPart>,
 }
 
-fn rd_u32(b: &[u8], o: usize) -> u32 {
-    u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
-}
-
 /// `jal <addr>` instruction word for a kseg0 target.
+#[cfg(test)]
 fn jal_word(addr: u32) -> u32 {
     0x0c00_0000 | ((addr >> 2) & 0x03ff_ffff)
-}
-
-/// Recover the `a2` register value at the `jal` at `site` by emulating the
-/// `lui`/`addiu` writes to `$a2` (register 6) over the preceding window. Returns
-/// `None` if `a2` is last written by a non-immediate op (`move`/`addu`/`lw`),
-/// i.e. loaded from a saved register the static window can't see.
-fn resolve_a2(b: &[u8], site: usize, window_insns: usize) -> Option<u32> {
-    let start = site.saturating_sub(window_insns * 4);
-    let mut a2: Option<u32> = None;
-    let mut o = start;
-    while o + 4 <= site {
-        let w = rd_u32(b, o);
-        let op = w >> 26;
-        let rs = (w >> 21) & 31;
-        let rt = (w >> 16) & 31;
-        let imm = w & 0xffff;
-        if rt == 6 {
-            match op {
-                0x0f => a2 = Some(imm << 16), // lui $a2, imm
-                0x09 if rs == 6 => {
-                    // addiu $a2, $a2, imm (sign-extended)
-                    let s = if imm & 0x8000 != 0 {
-                        imm as i32 - 0x1_0000
-                    } else {
-                        imm as i32
-                    };
-                    a2 = a2.map(|v| (v as i32).wrapping_add(s) as u32);
-                }
-                0x09 if rs == 0 => {
-                    // addiu $a2, $zero, imm (li)
-                    let s = if imm & 0x8000 != 0 {
-                        imm as i32 - 0x1_0000
-                    } else {
-                        imm as i32
-                    };
-                    a2 = Some(s as u32);
-                }
-                _ => a2 = None, // move / addu / lw / ... -> unknown
-            }
-        }
-        o += 4;
-    }
-    a2
 }
 
 /// Parse the summon part records out of a per-summon stager overlay's raw bytes
@@ -388,33 +344,13 @@ fn resolve_a2(b: &[u8], site: usize, window_insns: usize) -> Option<u32> {
 /// in-file at or past the overlay's data region, and bounds each record's
 /// move-VM bytecode by the next record start.
 pub fn parse(bytes: &[u8], link_base: u32) -> SummonOverlay {
-    let spawn = jal_word(SPAWN_HELPER);
-    let pooled = jal_word(POOL_SPAWN_HELPER);
-    let mut sites = Vec::new();
-    let mut o = 0usize;
-    while o + 4 <= bytes.len() {
-        let w = rd_u32(bytes, o);
-        if w == spawn || w == pooled {
-            sites.push(o);
-        }
-        o += 4;
-    }
-
-    // Recover each call site's record pointer, map to a file offset.
-    let mut offs: Vec<usize> = Vec::new();
-    for &s in &sites {
-        if let Some(a2) = resolve_a2(bytes, s, 22) {
-            let foff = a2.wrapping_sub(link_base) as usize;
-            // Keep only pointers that land inside the file with room for a
-            // record header; the spurious ones (a2 loaded from a saved reg the
-            // window can't see) fall in the code region or out of range.
-            if foff + 4 <= bytes.len() {
-                offs.push(foff);
-            }
-        }
-    }
-    offs.sort_unstable();
-    offs.dedup();
+    // One resolver for the whole band: the slot-B layout walk reads each spawn
+    // call's `$a2` from the delay slot back, through saved-register copies and
+    // `switch` arms, and keeps only calls this image's own framed code issues
+    // and records `FUN_80021B04` can dispatch
+    // (`docs/formats/slot-b-module-layout.md`).
+    let layout = crate::slot_b_module::parse_at(bytes, link_base);
+    let offs = layout.record_offsets;
 
     // The records form a contiguous data region; the move-VM bytecode of each
     // runs up to the next record. Anchor the region at the first record that is
@@ -444,7 +380,7 @@ pub fn parse(bytes: &[u8], link_base: u32) -> SummonOverlay {
 
     SummonOverlay {
         link_base,
-        spawn_sites: sites.len(),
+        spawn_sites: layout.spawn_sites,
         parts,
     }
 }
@@ -522,10 +458,13 @@ mod tests {
             let lo = (addr.wrapping_sub(hi << 16)) & 0xffff;
             put(b, at + 4, (0x09u32 << 26) | (6 << 21) | (6 << 16) | lo);
         };
+        put(&mut b, 0x08, 0x27BD_FFE8); // addiu sp,sp,-0x18
         load_a2(&mut b, 0x10, base + rec0 as u32);
         put(&mut b, 0x18, jal_word(SPAWN_HELPER));
         load_a2(&mut b, 0x20, base + rec1 as u32);
         put(&mut b, 0x28, jal_word(POOL_SPAWN_HELPER));
+        put(&mut b, 0x30, 0x03E0_0008); // jr ra
+        put(&mut b, 0x34, 0x27BD_0018); // addiu sp,sp,0x18
 
         let ov = parse(&b, base);
         assert_eq!(ov.spawn_sites, 2, "both call forms are spawn sites");
@@ -551,18 +490,6 @@ mod tests {
     }
 
     #[test]
-    fn resolve_a2_follows_lui_addiu() {
-        // lui $a2, 0x8020 ; addiu $a2, $a2, -0x7dc4 ; jal (at +8)
-        let mut b = vec![0u8; 12];
-        b[0..4].copy_from_slice(&0x3c06_8020u32.to_le_bytes()); // lui $a2, 0x8020
-        // addiu $a2, $a2, -0x7DC4  (imm low half = 0x823C): 0x09<<26 | rs6 | rt6 | imm
-        let addiu = (0x09u32 << 26) | (6 << 21) | (6 << 16) | 0x823c;
-        b[4..8].copy_from_slice(&addiu.to_le_bytes());
-        let a2 = resolve_a2(&b, 8, 4).expect("a2 resolves");
-        assert_eq!(a2, 0x801f_823c);
-    }
-
-    #[test]
     fn parse_synthetic_two_part_overlay() {
         // Build a tiny overlay: 2 spawn sites each loading a record pointer, then
         // a small data region with two `-1` records.
@@ -583,10 +510,14 @@ mod tests {
             let lo = (addr.wrapping_sub(hi << 16)) & 0xffff;
             put(b, at + 4, (0x09u32 << 26) | (6 << 21) | (6 << 16) | lo);
         };
+        // The spawn calls sit in one framed body, as every stager's do.
+        put(&mut b, 0x08, 0x27BD_FFE8); // addiu sp,sp,-0x18
         load_a2(&mut b, 0x10, base + rec0 as u32);
         put(&mut b, 0x18, jal_word(SPAWN_HELPER));
         load_a2(&mut b, 0x20, base + rec1 as u32);
         put(&mut b, 0x28, jal_word(SPAWN_HELPER));
+        put(&mut b, 0x30, 0x03E0_0008); // jr ra
+        put(&mut b, 0x34, 0x27BD_0018); // addiu sp,sp,0x18
 
         let ov = parse(&b, base);
         assert_eq!(ov.spawn_sites, 2);
