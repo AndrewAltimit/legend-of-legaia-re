@@ -291,6 +291,45 @@ pub fn fog_puff_prim(
     })
 }
 
+/// OT bucket a field attached light links at: retail's `FUN_801E3984` links
+/// every packet into `*0x1F8003F4 + 8`, slot `2` of the field overlay table.
+pub const FIELD_LIGHT_POOL_OT: u32 = 2;
+
+/// A field attached light's primitives - the op `0x34` sub-1 light pool,
+/// `legaia_engine_vm::field_actor_billboard::light_pool_polys` - as untextured
+/// semi-transparent gouraud quads at blend mode `abr`, in the link order the
+/// kernel returns them (the ordering-table sort draws one slot LIFO, as
+/// retail's does). The three-vertex fan triangles repeat their last corner,
+/// so the quad split's second triangle is degenerate. Both play hosts wrap
+/// through this, so neither can pick its own blend or vertex order.
+///
+/// REF: FUN_801e3984
+pub fn light_pool_prims(
+    abr: u8,
+    polys: &[legaia_engine_vm::field_actor_billboard::LightPoly],
+) -> Vec<ScreenPrim> {
+    let rgba = |c: u32| [(c >> 16) as u8, (c >> 8) as u8, c as u8, 0xFF];
+    polys
+        .iter()
+        .map(|p| {
+            let mut xy = p.xy;
+            let mut rgb = p.rgb;
+            if p.verts == 3 {
+                xy[3] = xy[2];
+                rgb[3] = rgb[2];
+            }
+            ScreenPrim::Flat(FlatQuad {
+                xy,
+                color: rgba(rgb[0]),
+                gouraud: Some(rgb.map(rgba)),
+                semi_transparent: true,
+                abr_mode: abr & 0x3,
+                ot_index: FIELD_LIGHT_POOL_OT,
+            })
+        })
+        .collect()
+}
+
 /// OT bucket the overworld markers link at: the nearest bucket, so they sit
 /// over every other screen primitive the world map carries.
 pub const WORLD_MAP_MARKER_OT: u32 = 0;
