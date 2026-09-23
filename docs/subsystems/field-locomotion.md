@@ -353,7 +353,18 @@ The other writers of the base are the hop phase machine `FUN_801d2298` (`6` at t
 | `6` | `5` | hop | hop take-off |
 | `7` | `6` | land | hop landing crossing |
 
-Slots `0` and `1` are capture-pinned ([`anm.md`](../formats/anm.md)); `2`, `5` and `6` rest on these writers' arithmetic. The run clip is the one a held **Cross or R1** reaches. The locomotion run-pin capture held Square and Circle, neither of which is in the run mask `0x48`, which is why it never saw the record change.
+Slots `0` and `1` are capture-pinned ([`anm.md`](../formats/anm.md)); `2`, `5` and `6` rest on these writers' arithmetic, and the capture below confirms the bases that select them. The run clip is the one a held **Cross or R1** reaches. The locomotion run-pin capture held Square and Circle, neither of which is in the run mask `0x48`, which is why it never saw the record change.
+
+#### Retail capture of the base writers
+
+A width-4 write watch on `_DAT_8007BDD8` from `s3_rimelm_freeroam` (`town01`, retail SCUS; [`autorun_w5b_field_watch.lua`](../../scripts/pcsx-redux/autorun_w5b_field_watch.lua), which decodes the store at the watch's `pc` to log the value that lands) sees every table row written by the named site, one write per field tick (every second vsync):
+
+- idle `2` at `0x801D04A4`, walk `1` at `0x801D0498` under a held direction, run `3` at `0x801D0498` under **R1 + direction and under Cross + direction alike**; the player's clip id `+0x5C` reads `1` / `2` / `3` on the same ticks (Vahn leads, so `base + 0 * 7`);
+- a ledge hop at `(5152, 96)` (the tile `engine-core/tests/field_ledge_hop_disc.rs` finds) with Up held: `6` at `0x801D22FC`, `7` at `0x801D237C` seven ticks later, `1` at `0x801D23E0` three ticks after that, all with `ra = 0x801D22C8` inside `FUN_801d2298`; the floor goes `48 -> -128`, the engine test's rise of `-176`.
+
+The same watch finds a writer the list above does not name, and it fires on **every** field tick: `sw v0,-0x4228(v1)` at `0x80039D94` stores `2` (`FUN_80039B7C`, SCUS, the branch taken when the actor's `+0x9C` is `0` and the scene control block's `+0xA` counter is below `2`). Its `a0` is the system channel `0x8007E694`, ticked by `FUN_801DA51C` (`jal 0x80039B7C` at
+`0x801DA7BC`), which runs after the player's tick. A read watch on the base puts its two readers at `0x801D1D8C` and `0x801D1E08`, both inside the settle, so each tick runs pad write -> settle reads -> system-channel reset to `2`. The reset is invisible while the pad controller runs, because the controller rewrites the base before the settle reads it; on a tick the controller
+is skipped the settle reads `2` and the player idles - which is what the [timed warp](#the-timed-kind-0-warp) does.
 
 **Engine port.** The pad step writes `World::locomotion.clip_base` through `legaia_engine_vm::field_player_clip::locomotion_clip_base`; the hop tick applies the phase machine's stamps; `World::field_settle_clip_tail` runs `settle_clip_pick` and hands the bank slot to `FieldPlayerAnim::select_retail_slot`. Both play hosts build the player's clips with `FieldPlayerAnim::from_locomotion_bank`, which loads the leader's whole seven-record bank.
 
@@ -978,9 +989,27 @@ The per-tile lookup (`FUN_801D5630`) scans the `+0x10000` primary block first an
 - **Timer running** (`> 0`, `0x801D1EF4..0x801D2064`). It tags for tear-down the first live actor whose handler `+0x0C` is `0x801DA7F0`, subtracts `DAT_1F800393`, and returns while positive.
 - **The landing** is the frame it reaches zero: `_DAT_8007B6B4 = 0x28`, the lock cleared, the encounter step counter re-rolled through `FUN_801DDF48` **only when it is `<= 0`** (`bgtz` at `0x801D1F64`, `jal` at `0x801D1F6C`), `_DAT_8007B6B0 = -1000`, the player seated at `(dest_x * 64 + 64, (dest_z + 1) * 64)`, the crossing tile re-stamped from that position, the camera re-pinned (`FUN_80017EC8`, `FUN_801DE3E0`, `FUN_801DB8EC`, `FUN_801DAA50`), the floor re-sampled into `+0x16`, and the kind-1 record at `(dest_x >> 1, dest_z >> 1)` run through `FUN_8003BDE0`.
 
-The player's own tick `FUN_801D1344` turns this into a pause. It drains `_DAT_8007B6B4` by the frame delta, clamped at zero (`0x801D161C..0x801D1630`), and skips the pad controller outright while `_DAT_8007B6B0 > 0` or `_DAT_8007B6B4 != 0` (`0x801D16C8..0x801D16E4`). The player therefore stands through the `0x26` fade frames and `0x28` more after the landing, still animating the clip the last pad frame picked - a player who walked onto the door walks in place. `_DAT_8007B6B4` is often called a dialogue-pacing countdown; this landing is one of its writers, and the player tick is its drain.
+The player's own tick `FUN_801D1344` turns this into a pause. It drains `_DAT_8007B6B4` by the frame delta, clamped at zero (`0x801D161C..0x801D1630`), and skips the pad controller outright while `_DAT_8007B6B0 > 0` or `_DAT_8007B6B4 != 0` (`0x801D16C8..0x801D16E4`). The player therefore stands through the `0x26` fade frames and `0x28` more after the landing - and stands
+**idle**: with the controller skipped nothing rewrites the clip base, so the settle reads the `2` the system channel stores every tick (`0x80039D94`, [above](#retail-capture-of-the-base-writers)) and binds the idle clip. An earlier reading had the player keep the clip the last pad frame picked and walk in place; it held only if nothing but the controller wrote the base, and the
+capture below shows the walk clip dropping on the first warp tick. `_DAT_8007B6B4` is often called a dialogue-pacing countdown; this landing is one of its writers, and the player tick is its drain.
 
-**Engine port.** `legaia_engine_vm::field_warp_tile` carries the timer, the landing, the hold drain and the pad gate; `World::arm_field_warp` / `World::tick_field_warp` apply them to the world, and `SceneHost::dispatch_walk_on_trigger` ticks the warp before its tile compare and runs the landing tile's kind-1 record on the landing frame. The port has one fade slot, so the fade-in replaces the held fade-out when its delay runs out. Not modelled: the `0x801DA7F0` actor tag, the `0x1F800394 & 0x80000` same-tile re-run, and the camera re-pin beyond the player `MoveTo` event the hosts follow.
+#### Retail capture of the warp
+
+From `s3_rimelm_freeroam` with Down held, a position poke onto `town01`'s kind-0 tile `(30,40)` (record `(30,40 : 146,132)`) on vsync 60 ([`autorun_w5b_field_watch.lua`](../../scripts/pcsx-redux/autorun_w5b_field_watch.lua), write watches on the four globals, exec-BPs on the fade spawner and the re-roll):
+
+| vsync | writer | event |
+|---|---|---|
+| 60 | `0x801D2218` | crossing: `_DAT_8007B6B0 = 38`, destination `(146, 132)`; `FUN_801D58F0` called twice from `0x801D2234` / `0x801D2254` with `a0 = 2` and `a3 = 0` / `0x29`, colours `0 -> 0xFFFFFF` then `0xFFFFFF -> 0` |
+| 62..98 | `0x801D1F3C` | the timer drains by `2` a tick (the frame-step `2`), 19 ticks |
+| 98 | `0x801D1F54`, `0x801D1F80` | landing: `_DAT_8007B6B4 = 40`, `_DAT_8007B6B0 = -1000`, player seated at `(9408, 8512)` = `(146 * 64 + 64, 133 * 64)`; no re-roll (the step counter was positive) |
+| 98 | `0x801DA7D8` | the **same** tick, `FUN_801DA51C` writes `_DAT_8007B6B0 = 0`: its tail compares the timer with `-1000` and clears it |
+| 100..138 | `0x801D162C` | the hold drains by `2` a tick; the pad controller runs again at vsync 138 |
+
+So the landing is `38` vsyncs after the crossing and the pad returns `40` vsyncs after that, and the `-1000` sentinel lives for the rest of the landing tick only - it is gone before the next tick's readers (op `0x4C 2x`'s facing turn, the settle's hop gate) look, in any scene whose system channel runs `FUN_801DA51C`. The player's clip id `+0x5C` reads `2` (idle) from vsync 64 to 136 while Down stays held, and `1` again from 140. Each drain tick also stores the clamped `0` at `0x801D1630` after the `-2` at `0x801D162C` when the hold is already empty.
+
+**Engine port.** `legaia_engine_vm::field_warp_tile` carries the timer, the landing, the hold drain and the pad gate; `World::arm_field_warp` / `World::tick_field_warp` apply them to the world, and `SceneHost::dispatch_walk_on_trigger` ticks the warp before its tile compare and runs the landing tile's kind-1 record on the landing frame. The port has one fade slot, so the
+fade-in replaces the held fade-out when its delay runs out. Not modelled: the `0x801DA7F0` actor tag, the `0x1F800394 & 0x80000` same-tile re-run, the camera re-pin beyond the player `MoveTo` event the hosts follow, the system channel's same-tick clear of the `-1000` sentinel (the port leaves the timer at `-1000` until the next crossing), and the idle clip through the warp: the
+port keeps the clip the last pad tick picked, and `engine-core/tests/field_player_clip_disc.rs` asserts that hold, which the capture above contradicts.
 
 The partition-2 gate bitmap (`DAT_80085758`) **is** the field VM's `0x50`/`0x60`/`0x70` system-flag bank - one store, shared by the record dispatcher's C1/C2 test (`World::p2_gate_flag_set` = `system_flag_test`) and the VM's flag writes, so an opening-timeline `set` is immediately visible to the next record's gate. It also overlaps the saved story-flag window at byte `+0x158` (`0x80085758 - 0x80085600`); the engine save mirrors the bank into that window and reloads seed it back. Disc-gated coverage: `crates/engine-core/tests/walk_on_trigger_dispatch_disc.rs` (opening-to-free-roam progression, south-gate exit to `map01`, house-door contact teleport, ambient no-lock, gate-flag save round-trip).
 
