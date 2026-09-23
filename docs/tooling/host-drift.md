@@ -2237,35 +2237,41 @@ camera publish), which read the session's events and its lure; the page has no
 venue pass. The play hosts' status rows are one engine text
 (`PondSession::status_rows`) with each host's own key names.
 
-## The Baka cabinet runs a ladder on one host only
+## The Baka cabinet's ladder: one on the field hosts, another on the standalone page
 
-`legaia_engine_core::baka_fighter::LadderRun` - the rung ladder, the NEXT GAME
-/ PAY OUT choice and the coin bank - is reached from the standalone minigames
-page alone. The native window and the browser play page run a bare `BakaFight`
-with no ladder wrapper, which is why neither draws the payout sheet, and why
-the native's digit-strip helpers have no run to print.
+The native window and the browser play page run the retail ladder: the
+cabinet shell (`baka_cabinet::BakaCabinet`, the `FUN_801CF388` port) that
+`BakaFight` carries takes the packed pad edge once a match is decided, walks
+the tally into the "NEXT GAME / PAY OUT" choice, seats the next rung through
+its install state (`BakaFight::install_rung`) and leaves through the exit
+state, whose end is the return warp that banks the coins. The ladder never
+outlives the mode-24 visit - every cabinet exit runs through state `0x1F4` -
+so it needs no save representation; see
+[`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#the-ladder-in-the-port).
+Both hosts draw the choice sheet and the round chrome (`BakaChrome`: intro
+card, ROUND banner, countdown) through one label kernel pair
+(`baka_cabinet::choice_sheet_labels`, `baka_fighter_chrome::chrome_labels`,
+emitted by `ui_baka_strips::baka_widget_label_draws_for`), and both play the
+chrome's announcer line through their CD-XA clip path. The play page follows
+a newly seated rung by bumping its scene generation, so the opponent's mesh
+and duel VRAM are rebuilt.
 
-This is not a missing draw call: the two other hosts enter the duel from a
-**field warp** (`World::tick_baka_fighter` on the scene the player walked
-into), and the ladder is a cabinet session that outlives one duel. Wiring it
-means giving the world a ladder that survives the warp back, and deciding what
-a mid-ladder save does.
+The standalone minigames page keeps its own run model,
+`baka_fighter::LadderRun` behind the `baka_run_*` surface: fixed serve order
+from `baka_ladder()`, a page-drawn choice sheet at fitted positions, no
+score-gated secret rungs. It draws the engine chrome with the sheet's own
+widget art (`baka_chrome_json`), and plays no announcer line. That page has
+no `World` to tick the cabinet through (next section), which is the
+blocking capability for giving it the cabinet's ladder too.
 
-The digit strips themselves are not part of that block and are wired on both
-of those hosts: `baka_fighter_chrome::hud_digit_placements` places the round
-digit, the 8 px right-aligned score field and the `0x10` px "GET COIN" strip,
-and `legaia_engine_ui::ui_baka_strips` emits the quads. The split is
-deliberate - a shared *layout* under two host-written emitters is what let the
-window draw retail's cells while the play page printed one prose line of the
-same two numbers. What is still native-only above them is the round chrome
-(`BakaChrome`: intro card, ROUND banner, countdown), which the browser hosts
-do not install.
-
-Blocking capability: a `LadderRun` on `World::minigames` with a save
-representation, plus the warp-out arm that settles a rung instead of ending
-the session. The cue queue is *not* part of this and was fixed: the minigames
-page never drained `BakaFight::cues`, so its duel was silent while the queue
-grew for the length of a run.
+Still disclosed on the two field hosts: the in-duel pause menu (`0xBE` /
+`0xBF`) stays unreached, because the duel state's pause edge `0x110`
+includes Triangle, which the port binds to the special attack, so the
+cabinet sees a zero pad inside the duel. The digit strips are wired on both
+(`baka_fighter_chrome::hud_digit_placements` under
+`ui_baka_strips::baka_digit_strip_draws_for`). The cue queue was fixed
+separately: the minigames page never drained `BakaFight::cues`, so its duel
+was silent while the queue grew for the length of a run.
 
 ### The standalone page has no World to tick through
 
