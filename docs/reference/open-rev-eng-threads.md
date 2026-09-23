@@ -72,40 +72,33 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
-- **A story flag can be a live position test.** `conc`'s `0x6DE` is SET every
-  other frame by the entry script's own bounding-box test while the party stands
-  outside the plaza, so a save holding it set says where the party stood, not
-  what the entry ran. The two "entry clears" the parity row blamed are walk-on
-  trigger scripts a cold entry never reaches
-  ([falsified](re-do-not-re-walk.md#field--locomotion)).
-- **A named routine was named for the wrong half of its work, three times.**
-  `FUN_801D84C0` builds the battle-result messages rather than party panel
-  labels, `FUN_801D32BC` is the command window's member cursor rather than a
-  turn order, and `FUN_8001FA00`'s one caller seeds the fog-particle free stack
-  rather than a cutscene sprite list. Each port was tagged, live and green
+- **A field script could not see any other channel while it ran.** Both field
+  channel steppers moved the channel list out of the world for the duration of a
+  step, so every cross-context id - a `4C 86` mirror source, a `4C 14` clone
+  source, a talk partner - resolved to nothing from inside a script. A retail
+  capture of `conc2` seating three mirror controllers against the engine's one
+  found it.
+- **Retail's steal is the killing blow, not a command.** The first kill in a
+  battle spends the one attempt, whoever lands it
   ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
-- **A re-entered Muscle Dome hub does draw the ringside still.** The row that
-  called the `INTERVAL` screen a live render read the first visit; on the second
-  and third the latch is `1` and both still packets sit in the primitive pool
-  ([reversed](re-do-not-re-walk.md#containers--placeholder-slots)).
-- **The bytes after an entry's own content belong to an earlier entry, not to
-  the walker that stopped short of them.** Every scene bundle's last-sector
-  residue, and the `lzs_container` / `pack` / `bse_bank` tails, are the packer
-  buffer's copy of the nearest earlier entry reaching that offset - and the
-  donor need not be an overlay, nor the run confined to the last sector
-  ([falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
-- **The PROT 0898 head is twenty-two jump tables, not nine** - and the image's
-  read-only data carries two more above the head. A table is read off its `jr`
-  dispatch, which also stopped a 3,264-byte data run printing as a function
-  ([falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
-- **`4C D8`'s model operand is a scene-bank index.** Read as a global-pool slot,
-  it bound battle effect models on seven of eight sites in two scenes and made
-  the balden carriers look unseatable
-  ([falsified](re-do-not-re-walk.md#field--locomotion)).
-- **The ctx `+0x28B` banner raiser was always in `SCUS_942.54`**, and its three
-  raise sites run in sequence - the side-array pick overwrites the seat flag's
-  write - rather than as alternatives
+- **The reference sweeps paired registers that had already been overwritten.**
+  About a quarter of their `lui` pairs were false; no unreferenced verdict moved
+  under the strict walk, but the indexed-form counts that opened a row did
+  ([falsified](re-do-not-re-walk.md#measurement-readings)).
+- **About three live port tags in ten misdescribe their routine.** A 316-tag
+  audit against the disassembly found wrong addresses, swapped names and partial
+  ports behind green gates; several were behaviour defects
+  ([settled](re-settled-threads.md#measurement--corpus)).
+- **A filter one host added and a kernel one host ran inline both read green on
+  every drift tier.** The page skipped "sky" meshes the native window draws, and
+  uploaded the walk ground unreversed so the cutscene camera culled the floor
+  ([falsified](re-do-not-re-walk.md#rendering--camera)).
+- **A re-entered Muscle Dome hub does draw the ringside still**, and the port's
+  leg-open "ROUND banner" was the course card
   ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
+- **`4C D8`'s model operand is a scene-bank index**, and the PROT 0898 head is
+  twenty-two jump tables, not nine
+  ([falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
 
 ---
 
@@ -114,7 +107,12 @@ cheapest place to look for a claim that is still wrong.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready | [details ↓](#region-story-flag-gate-families) |
-| Is `juui1` dark in retail outside its `ColorIntensity` tint beats? | open (narrowed) - the route is pinned; a record gate on the one card save that reaches it blocks the walk | The route is `conc` P2[11] - walk-on tiles `(29,66)` / `(30,66)` / `(31,66)` / `(96,98)` from the `.MAP` fallback block at `+0x12000` - into `conc2`, then `conc2` P2[20] `+0x78` into `juui1`. That second door is a Yes/No picker, whose Yes arm `44 74` reaches the scene change, so a tile poke alone parks on the prompt. The walk is blocked by data, not by budget: P2[20] and the spawners P2[23..30] carry `C1 = [0x3E1]` / `C2 = [0x3E5]`, and the only card save that reaches `conc2` already holds `0x3E1` set. A card block from before the `0x3E1` beat, crossed by tile poke plus a confirm press, closes it. |
+| What un-parks `kor5` P2[3] and spawns P2[4] / P2[5]? | open - the chain head is measured, the tail is not | Tile poke on `(32,43)` spawns P2[3], which SETs `0x43A` at `+0x14CB` and then parks in a `21 26` loop; the walk-on records P2[4] `(32,41)` and P2[5] `(21,52)` did not spawn in 12k vsyncs after that beat, so the tail's `0x6C4` writer was never reached. The records' C1 / C2 gates and what ends P2[3]'s park, read from the MAN and satisfied under the probe, close it. |
+
+**Is `juui1` dark in retail outside its tint beats** closed as no, on a
+synthetically gated walk: the black run is the door fade, and at rest the scene
+holds a dim purple vortex with the party visible
+([settled](re-settled-threads.md#field--locomotion)).
 
 **Does retail's cold entry into `conc` run the `66 DE` clear** closed as yes -
 twice - and the flag turned out not to be progress at all. A single-flag write
@@ -332,9 +330,16 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Does the port run retail's in-battle steal? | open - the captions and the roll are decoded, and no host reaches the grant | Retail composes the steal-result captions inside `FUN_8004AD80` - templates `0x80077A38` / `0x80077A4C` / `0x80077A64` copied by `FUN_8003CA78`, name escape appended by `FUN_8003CB54` at `0x8004B2F8` / `0x8004B338` / `0x8004B60C` - and shows them through `FUN_801D8DE8(0x5B)`. The port's `World::apply_steal` has no production caller, so no battle on either host steals. What closes it is the trigger chain from the command, art or cast that reaches the steal-table read ([`steal-table.md`](../formats/steal-table.md)) wired into the round both hosts run, with a disc-gated test that grants the item through the live round. |
-| How does the port step back to an earlier member in the command window? | open - retail's cursor is decoded; the port has no backward step | `FUN_801D32BC` is the command window's **member cursor**, not a turn order: its six call sites are the round reset `0x801D8910` and `FUN_801D388C`'s cases `0x10` (back, `0x801D4010`), `0x11` (forward, `0x801D4128`), `0x21` (back, `0x801D4750`) and the tail pair `0x801D5690` / `0x801D56A0`. The port's command session has no way from a later member's ring back to an earlier one's, which is why `step_actor_cursor` stays disclosed. The backward arm in the command session on both hosts, with a ladder that steps back, closes it. |
-| Which host draws Koru's timed-fight `Turns Left / HP Left` strip? | open - the strip is decoded and deliberately kept out of the dome | The strip prints `4 - ctx[+0x28A]` and the first enemy's HP percent through the format string at PROT 0898 file `0x0`, gated on the formation cell holding the timed-fight monster. `timed_fight_turns_left` is disclosed rather than wired because a dome leg ends on a knockout and must not consult a turn limit ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-four-turn-strip-belongs-to-koru-not-the-dome)). A host that draws this one fight's strip behind a formation-cell gate the engine does not yet carry closes it ([`live-audit-triage.md`](../tooling/live-audit-triage.md)). |
+| Does the port stage retail's `0x6E` commit-confirm screen? | open - the ring's back step is wired, its Reselect twin is not | `FUN_801D388C` case `0x21` (`0x801D3040..0x801D3088`) is the Reselect / cancel on the `0x6E` screen that confirms a whole party's commits; the port commits without that screen, so the case has no seat. The screen staged on both hosts, with a ladder that reselects, closes it. |
+| Why do `vell`'s fog sheets not show on the native host? | open - the pool is live and emitted, and nothing reaches the frame | In the Mist forest the native `take_field_fog_prims` returns 37 to 78 quads a frame with the gate raised, and no native frame shows fog; the play page draws the same pool as bright mist. No retail reference exists - no mednafen state sits in a mist scene. A mist-scene capture with VRAM, and the native draw pass traced from the quad list to the framebuffer, close it. |
+| Which host draws Koru's timed-fight `Turns Left / HP Left` strip? | open - the strip is decoded and deliberately kept out of the dome | The strip prints `4 - ctx[+0x28A]` and the first enemy's HP percent through the format string at PROT 0898 file `0x0`, gated on the formation cell holding the timed-fight monster. `timed_fight_turns_left` is disclosed rather than wired because a dome leg ends on a knockout and must not consult a turn limit ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-four-turn-strip-belongs-to-koru-not-the-dome)). A Koru-fight capture (none exists) settling the strip-vs-name-plate `(16, 14)` seat, then a formation-cell gate, closes it ([`live-audit-triage.md`](../tooling/live-audit-triage.md)). |
+
+**Does the port run retail's in-battle steal** and **how does the port step
+back to an earlier member** both closed with a wire on both hosts. The steal is
+the killing blow's once-per-battle roll, not a command, and a disc-gated round
+reproduces the retail caption word for word; the back step is the ring's cancel
+with a non-zero step counter
+([settled](re-settled-threads.md#battle--arts--level-up)).
 
 Two threads closed here before these opened, and both were questions about
 whether a routine no capture had caught is reachable at all.
@@ -652,7 +657,13 @@ a coincidence of the pad byte plus the mask table's first three entries
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which references does the indexed form `lui at, hi; addu at, at, rX; lw rY, lo(at)` hide? | open - invisible to the byte account's scanner, probably to the reference sweeps too | An array whose base only an indexed load forms reads as unreferenced; a Python scan finds 23 such sites in PROT 0897 and 44 in PROT 0899 that `legaia_asset`'s formed-address scanner misses. The five-form sweep pairs a `lui` only with `addiu` / `ori`, and `find-gp-relative-refs.py`'s register walk stops at the `addu` that rewrites the base, so both should be blind too (inferred from their rules, not measured). The form ported into the Rust scanner and the reference sweep and every `unreferenced` ignore row re-checked under it closes it ([`address-reference-scan.md`](../tooling/address-reference-scan.md)). |
+| Which live ports cover only part of their routine, and which of those differ from retail? | open - listed, not ported | A tag audit read 316 live tags and found 43 partial ports. The ones that change behaviour: the encounter reroll `801DDF48` is unimplemented; tile-board event cells set no story flags; Baka Fighter's inputs are face buttons in retail, not the d-pad; the actor tick does not step the move VM when `+0x54 < 0`; `801DBF9C`'s summon parameters may be written one byte low; initiative `801DABA4` skips the dead-actor item refund; the field camera-shake arm of `801DB510` has no consumer. Two routines newly cited have no port at all: the scanline strip emitter `FUN_801D31B0` (PROT 0897) and the dome's course card `FUN_801D042C` (PROT 0977). |
+
+**Which references does the indexed form hide** closed at 512 accesses, none
+in PROT 0897 / 0899: the counts that opened the row came from a scanner that
+never dropped an overwritten register, and both reference sweeps shared the same
+laxness. Re-scanning every address the ignore list and docs call unreferenced
+moved no verdict ([settled](re-settled-threads.md#measurement--corpus)).
 
 **Which slot-B record walk bounds PROT 0944's top record** closed on the
 walker, not the image: nothing in any consumer loop bounds the record band, and
