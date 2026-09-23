@@ -967,6 +967,19 @@ it returns before updating its last-tile mirror while a cutscene timeline is
 active, so a crossing made during the cutscene is deferred to the first free
 tick rather than spent.
 
+The same captures walk the rest of `kor5`'s `0x43A -> 0x436 -> 0x6C4` chain,
+whose links are the partition-2 C1/C2 headers plus the `.PCH` walk-on table
+(P2[3] `(32,43)`, P2[4] `(32,41)`, P2[5] `(21,52)`, P2[8] `(32,86)`). P2[4]
+latches `0x464` at `+0x1037` and its closing `3E FF 0E` starts a battle
+(monster `165`; passed here by holding its HP at `1` - a synthetic bypass).
+Back in the field the scene reloads, and P1[0] sees `0x464`, clears it and
+spawns P2[5] through op `0x44` (`FUN_8003BDE0` from `ra 0x801DF098`) - the
+record that sets `0x436` at `+0xD0D`. P2[8] (C1 `{0x6C4}`, C2 `{0x436}`)
+dispatches on the first crossing of `(32, 86)` and writes `0x6C4` in the same
+frame through `FUN_8003CE08` (`ra 0x801E3598`, record `+0x75`); that last
+capture pokes `0x436` rather than playing P2[5] to its end, so the tail's
+writer is live and its C2 input is synthetic.
+
 ### Object-record format (`+0x0000`, 0x20-byte stride)
 
 `FUN_8003a55c` reads each record at `field_buffer + idx*0x20` (the `.MAP` file's authored
