@@ -26,7 +26,7 @@ use legaia_engine_audio::{
     VabBank, XaClipBank,
 };
 use legaia_engine_core::scene::BgmDirector;
-use legaia_engine_core::world::{SfxRingOp, SideBandBank};
+use legaia_engine_core::world::{SfxRingOp, SharedRegionBank, SideBandBank};
 use legaia_seq::Seq;
 
 /// The pause menu's cursor-step cue: `FUN_80032A44`'s ring write
@@ -72,20 +72,19 @@ pub struct AudioBgmDirector {
     /// ([`legaia_asset::sfx_table::SfxTable::cue_slots`]): a cue's `+4`
     /// category selects the mixer record whose `+8` is the slot its voices key.
     /// Empty until [`Self::set_sfx_cue_slots`]; an absent id routes to
-    /// [`FALLBACK_VAB_SLOT`] exactly like an unstaged slot does.
+    /// [`FALLBACK_VAB_SLOT`], while a routed id whose slot is closed is silent.
     sfx_cue_slots: BTreeMap<u8, u8>,
     /// Resident SFX program banks keyed by that slot. Slot `0` is the system
-    /// bank (extraction PROT 0868) the 16 shared UI cues key; slot `2` is the
-    /// **class-2 sound bank** (PROT 0869, raw loader index `0x367`) the battle
-    /// scene loader and the Baka Fighter init load explicitly, whose low
-    /// programs (`0`, `3`) carry the strike / duel-hit cues (see
-    /// `sfx-table.md`). Both are uploaded once at boot out of one allocator
-    /// over a dedicated SPU RAM region, so battle / menu cues resolve
-    /// regardless of which BGM VAB happens to be open. Empty when nothing
-    /// could be staged (a disc-free boot); [`Self::tick_sfx_frame`] then falls
-    /// back to the scene BGM bank ([`Self::bank`]), matching the retail
-    /// field-scene path where a cue sounds out of whichever bank the libsnd
-    /// current-bank globals hold.
+    /// bank (extraction PROT 0868) the 16 shared UI cues key, uploaded once at
+    /// boot at the bottom of the reserved SFX region. Slots `2` and `6` share
+    /// the rest of that region, as they share one SPU base in retail, and hold
+    /// whichever bank the current mode's initialiser loads there - PROT 0876
+    /// (slot 6) in the field and on the world map, PROT 0869 (slot 2) in
+    /// battle, a minigame's own bank in its mode
+    /// ([`Self::sync_shared_region`]). Slot `11` (the reward bank) and slot `3`
+    /// (a side-band bank) borrow the BGM region's tail. Empty on a disc-free
+    /// boot; [`Self::tick_sfx_frame`] then falls back to the scene BGM bank
+    /// ([`Self::bank`]).
     sfx_vabs: BTreeMap<u8, VabBank>,
     /// Frame-timed one-shot cue queue. [`Self::enqueue_sfx`] adds a cue at
     /// its strike-relative delay; [`Self::tick_sfx_frame`] advances one frame
@@ -132,6 +131,15 @@ pub struct AudioBgmDirector {
     /// Bumped on every BGM-region restage ([`Self::set_bank`] /
     /// [`Self::stage_owned_vab`]).
     bgm_gen: u64,
+    /// The bank the SPU region VAB slots `2` and `6` share holds - retail's
+    /// per-mode refill of one region (`FUN_800265E8` gives both slots
+    /// `0x33010`), driven by
+    /// [`legaia_engine_core::world::World::sync_sfx_residency`]. `None` while
+    /// neither slot is open.
+    shared_region: Option<SharedRegionBank>,
+    /// SPU address the shared region starts at: one past the slot-0 system
+    /// bank's samples, inside the reserved SFX region.
+    shared_region_base: u32,
 }
 
 /// `_DAT_8007B910`'s reference value (`0xD7`, `FUN_8001FFA4`): the un-ducked
@@ -257,6 +265,8 @@ impl AudioBgmDirector {
             side_band: None,
             side_band_attempt: None,
             bgm_gen: 0,
+            shared_region: None,
+            shared_region_base: crate::boot::SPU_RAM_BYTES - crate::boot::SFX_BANK_SPU_BYTES,
         }
     }
 
@@ -513,15 +523,19 @@ impl AudioBgmDirector {
         &self.sfx_bank
     }
 
-    /// The VAB slot cue `id` resolves to on this director, routing and
-    /// fallback included. See [`resolve_sfx_slot`].
-    pub fn sfx_slot_for_cue(&self, id: u8) -> u8 {
+    /// The VAB slot cue `id` resolves to on this director, `None` when its
+    /// slot is closed. See [`resolve_sfx_slot`].
+    pub fn sfx_slot_for_cue(&self, id: u8) -> Option<u8> {
         resolve_sfx_slot(&self.sfx_cue_slots, &self.sfx_vabs, id)
     }
 
-    /// The resident bank cue `id` keys, or `None` when nothing is staged.
+    /// The bank cue `id` keys: its slot's resident bank, or - only while no
+    /// SFX bank staged at all (a disc-free boot) - the scene BGM bank.
     fn sfx_vab_for_cue(&self, id: u8) -> Option<&VabBank> {
-        self.sfx_vabs.get(&self.sfx_slot_for_cue(id))
+        if self.sfx_vabs.is_empty() {
+            return self.bank.as_ref();
+        }
+        self.sfx_vabs.get(&self.sfx_slot_for_cue(id)?)
     }
 
     /// Key one voice from an explicit
@@ -587,9 +601,7 @@ impl AudioBgmDirector {
             .iter()
             .filter_map(|&id| {
                 let fire = match u8::try_from(id) {
-                    Ok(small) => {
-                        RingFire::Static(small, self.sfx_vab_for_cue(small).or(self.bank.as_ref())?)
-                    }
+                    Ok(small) => RingFire::Static(small, self.sfx_vab_for_cue(small)?),
                     Err(_) => {
                         let row = legaia_engine_core::world::runtime_sfx_descriptor_in(
                             &self.runtime_sfx_bundle,
@@ -650,9 +662,9 @@ impl AudioBgmDirector {
                 let Ok(id) = u8::try_from(cue.id) else {
                     continue;
                 };
-                // The cue's category picks its bank; with nothing staged the
-                // scene BGM VAB stands in, as it did before any SFX bank did.
-                let Some(vab) = self.sfx_vab_for_cue(id).or(self.bank.as_ref()) else {
+                // The cue's category picks its bank; a closed slot is silent,
+                // and with nothing staged the scene BGM VAB stands in.
+                let Some(vab) = self.sfx_vab_for_cue(id) else {
                     continue;
                 };
                 if let Some(voice) = bank.play_one_shot(id, spu, vab) {
@@ -690,6 +702,84 @@ impl AudioBgmDirector {
             self.sfx_vabs.remove(&b.slot);
         }
         self.bgm_gen = self.bgm_gen.wrapping_add(1);
+    }
+
+    /// Set where the shared slot-2 / slot-6 region starts - one past the
+    /// slot-0 system bank's samples.
+    pub fn set_shared_region_base(&mut self, base: u32) {
+        self.shared_region_base = base.div_ceil(16) * 16;
+    }
+
+    /// The bank the shared slot-2 / slot-6 region holds, if any.
+    pub fn shared_region(&self) -> Option<SharedRegionBank> {
+        self.shared_region
+    }
+
+    /// Refill the region VAB slots `2` and `6` share with `want` - the bank
+    /// the world's residency says the current mode holds there - the way each
+    /// mode's initialiser refills it in retail (`FUN_801D6704` loads PROT 0876
+    /// into slot 6, `FUN_800520F0` PROT 0869 into slot 2). Whatever the region
+    /// held is dropped first, under both slot keys: the two are one region.
+    /// `read_entry` reads an extraction-frame PROT entry. Returns whether the
+    /// wanted bank is now resident. A bank that does not fit (the dance's
+    /// PROT 1231 is 234 400 bytes of samples against the region's
+    /// 190 720) leaves both slots closed, which is what its cues then are.
+    // REF: FUN_801D6704, FUN_800520F0, FUN_8001E54C
+    pub fn sync_shared_region(
+        &mut self,
+        want: Option<SharedRegionBank>,
+        read_entry: impl FnOnce(u32) -> Option<Vec<u8>>,
+    ) -> bool {
+        if self.shared_region == want {
+            return want.is_none_or(|b| self.sfx_vabs.contains_key(&b.slot));
+        }
+        self.shared_region = want;
+        let (a, b) = legaia_engine_core::world::SHARED_REGION_SLOTS;
+        self.sfx_vabs.remove(&a);
+        self.sfx_vabs.remove(&b);
+        let Some(want) = want else {
+            return true;
+        };
+        let Some(bytes) = read_entry(want.prot_entry) else {
+            log::debug!("shared-region bank PROT {} unreadable", want.prot_entry);
+            return false;
+        };
+        let Some((report, vab_off)) = [4usize, 0]
+            .into_iter()
+            .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
+        else {
+            return false;
+        };
+        let base = self.shared_region_base;
+        let room = crate::boot::SPU_RAM_BYTES.saturating_sub(base);
+        let body_total: u32 = report.vag_samples.iter().map(|v| v.size as u32).sum();
+        if body_total > room {
+            log::debug!(
+                "shared-region bank PROT {} ({body_total} B) does not fit in {room} B",
+                want.prot_entry
+            );
+            return false;
+        }
+        let body = &bytes[vab_off..];
+        let bank = self.audio.with_spu(|spu| {
+            let mut alloc = legaia_engine_audio::SpuAllocator::new(base, room);
+            VabBank::upload(spu, &mut alloc, &report, body)
+        });
+        self.sfx_vabs.insert(want.slot, bank);
+        true
+    }
+
+    /// Key off SPU voices a field-VM op stopped (`FUN_800653C8`, the side-band
+    /// teardown's top two).
+    // REF: FUN_800653C8
+    pub fn stop_sfx_voices(&mut self, voices: &[u8]) {
+        let mask = voices
+            .iter()
+            .filter(|&&v| v < 24)
+            .fold(0u32, |m, &v| m | (1 << v));
+        if mask != 0 {
+            self.audio.with_spu(|spu| spu.key_off_mask(mask));
+        }
     }
 
     /// Replay the world's SFX ring producer calls onto the retail ring half
@@ -955,18 +1045,19 @@ impl BgmDirector for AudioBgmDirector {
 }
 
 /// Which VAB slot a cue resolves to, given the installed cue -> slot routing
-/// and the set of slots that actually staged.
+/// and the set of slots that actually staged. `None` means the cue is silent.
 ///
-/// **The fallback is the pre-routing behaviour on purpose.** This host stages
-/// slots `0` and `2`; categories `6` and `11` name banks it does not hold
-/// (PROT 0876 / 0889 - traced, but they do not fit beside the other two in the
-/// reserved SPU region), so those - and any id the descriptor table doesn't
-/// carry - resolve to [`FALLBACK_VAB_SLOT`], the class-2 bank this host staged
-/// for every cue before the routing existed. Categories 0 and 2 become correct
-/// without changing what 6 / 11 sound like. Retail needs no extra room because
-/// slot 6 *is* slot 2's SPU region, refilled on the field/battle transition;
-/// staging them here means reloading that region per mode - see
-/// `docs/formats/sfx-table.md`.
+/// A routed cue keys the slot its `+4` category names **or nothing**: retail's
+/// drainer `FUN_80016B6C` skips a cue whose mixer record's `+0xB` enable byte
+/// is zero (`0x80016CE4..0x80016CEC`), and a closed slot has it zero - so a
+/// category-6 cue in battle (slot 6 closed by `FUN_8001DCF8`) or a category-2
+/// cue in the field (slot 2 closed by `FUN_801D6704`) is silent there, not
+/// rerouted to whichever bank is open. The hosts restage the slot-2 / slot-6
+/// region per mode ([`AudioBgmDirector::sync_shared_region`]), so each
+/// category's own bank is resident exactly where retail's is.
+///
+/// Only an id the routing does not carry (no descriptor table installed, or an
+/// id past it) still falls back to [`FALLBACK_VAB_SLOT`] when that is staged.
 ///
 /// Free function rather than a method so it is testable without a cpal device
 /// (an [`AudioBgmDirector`] needs a live [`AudioOut`]).
@@ -974,13 +1065,9 @@ pub(crate) fn resolve_sfx_slot<T>(
     cue_slots: &BTreeMap<u8, u8>,
     staged: &BTreeMap<u8, T>,
     id: u8,
-) -> u8 {
+) -> Option<u8> {
     let slot = cue_slots.get(&id).copied().unwrap_or(FALLBACK_VAB_SLOT);
-    if staged.contains_key(&slot) {
-        slot
-    } else {
-        FALLBACK_VAB_SLOT
-    }
+    staged.contains_key(&slot).then_some(slot)
 }
 
 #[cfg(test)]
@@ -988,30 +1075,34 @@ mod tests {
     use super::*;
     use legaia_engine_audio::VabBank;
 
-    /// A cue keys the bank its `+4` category names when that slot staged, and
-    /// the class-2 bank otherwise - never a third thing, and never silence
-    /// while any bank is resident.
+    /// A cue keys the bank its `+4` category names when that slot is staged,
+    /// and nothing otherwise - a closed slot is silent in retail.
     #[test]
-    fn cue_routes_to_its_category_slot_and_falls_back_to_class_two() {
+    fn cue_routes_to_its_category_slot_or_is_silent() {
         // Retail categories: 0x21 menu cursor = 0, 0x09 duel hit = 2,
-        // 0x2E field script = 6, 0x4D = 11.
-        let routing = BTreeMap::from([(0x21u8, 0u8), (0x09, 2), (0x2E, 6), (0x4D, 11)]);
-        let staged: BTreeMap<u8, ()> = BTreeMap::from([(0, ()), (2, ())]);
-
-        assert_eq!(resolve_sfx_slot(&routing, &staged, 0x21), 0);
-        assert_eq!(resolve_sfx_slot(&routing, &staged, 0x09), 2);
-        // Unpinned slots and unknown ids both land on the class-2 bank.
-        for id in [0x2Eu8, 0x4D, 0xFE] {
-            assert_eq!(resolve_sfx_slot(&routing, &staged, id), FALLBACK_VAB_SLOT);
-        }
-        // With only the class-2 bank staged this is exactly the old behaviour.
-        let one: BTreeMap<u8, ()> = BTreeMap::from([(2, ())]);
-        for id in [0x21u8, 0x09, 0x2E, 0xFE] {
-            assert_eq!(resolve_sfx_slot(&routing, &one, id), FALLBACK_VAB_SLOT);
-        }
-        // No routing installed at all: everything is class-2, as before.
+        // 0x2E field script = 6, 0x50 reward jingle = 11.
+        let routing = BTreeMap::from([(0x21u8, 0u8), (0x09, 2), (0x2E, 6), (0x50, 11)]);
+        // The field: slot 0 + the field bank in slot 6.
+        let field: BTreeMap<u8, ()> = BTreeMap::from([(0, ()), (6, ())]);
+        assert_eq!(resolve_sfx_slot(&routing, &field, 0x21), Some(0));
+        assert_eq!(resolve_sfx_slot(&routing, &field, 0x2E), Some(6));
+        assert_eq!(resolve_sfx_slot(&routing, &field, 0x09), None);
+        assert_eq!(resolve_sfx_slot(&routing, &field, 0x50), None);
+        // Battle: slot 0 + the class-2 bank in slot 2.
+        let battle: BTreeMap<u8, ()> = BTreeMap::from([(0, ()), (2, ())]);
+        assert_eq!(resolve_sfx_slot(&routing, &battle, 0x09), Some(2));
+        assert_eq!(resolve_sfx_slot(&routing, &battle, 0x2E), None);
+        // An id the routing does not carry falls back to the class-2 bank.
+        assert_eq!(
+            resolve_sfx_slot(&routing, &battle, 0xFE),
+            Some(FALLBACK_VAB_SLOT)
+        );
+        assert_eq!(resolve_sfx_slot(&routing, &field, 0xFE), None);
         let none = BTreeMap::new();
-        assert_eq!(resolve_sfx_slot(&none, &staged, 0x21), FALLBACK_VAB_SLOT);
+        assert_eq!(
+            resolve_sfx_slot(&none, &battle, 0x21),
+            Some(FALLBACK_VAB_SLOT)
+        );
     }
 
     /// Test stub bank - empty programs / samples. Real banks come from

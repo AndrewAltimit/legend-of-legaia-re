@@ -446,9 +446,11 @@ channel, assembled from what already existed rather than as a second audio path.
 The chain is the retail one. `SCUS_942.54`'s static descriptor table
 (`DAT_8006F198 + id*8`) is parsed at `load_disc` into a
 `legaia_engine_audio::SfxBank` - pure data, so it lands whether or not the
-visitor has enabled sound. The resident class-2 program bank (PROT 0869, with
-the documented 0875 alternate as a fallback) uploads into a dedicated region at
-the **top** of SPU RAM the first time a cue fires, and cues key through
+visitor has enabled sound. The slot-0 system bank (PROT 0868) uploads into a
+dedicated region at the **top** of SPU RAM the first time a cue fires, and the
+rest of that region holds whichever bank the current mode's slot-2 / slot-6
+residency names (PROT 0876 in the field, PROT 0869 in battle,
+`World::sync_sfx_residency`), refilled on each mode change. Cues key through
 `SfxBank::play_one_shot` into the **live** `WebAudioOut` SPU - the same mixer the
 BGM sequencer feeds, so a cue and the music share one voice pool as they do on
 hardware.
