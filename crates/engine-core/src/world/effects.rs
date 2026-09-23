@@ -273,6 +273,14 @@ impl World {
         let mut host = BattleHostImpl { world: self };
         let out = vm::battle_action::step(&mut host, &mut ctx);
         self.battle_ctx = ctx;
+        // The strike chain's exit re-arms the steal latch: the arm that
+        // writes `0x1F` into the action state at `0x801E3A7C` clears
+        // `ctx[+0x27]` in its jump's delay slot (`sb zero, 0x16(s5)` at
+        // `0x801E3A84`, `s5 = ctx + 0x11`), for monsters' chains as well as
+        // the party's - so each attacking action gets one steal roll.
+        if let StepOutcome::Transition { from, to } = out {
+            self.battle.steal.on_action_transition(from, to);
+        }
         if let StepOutcome::Transition { from, to } = out
             && log::log_enabled!(log::Level::Debug)
         {

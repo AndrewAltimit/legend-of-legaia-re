@@ -14,10 +14,10 @@
 //!   off another monster) and *recovered* otherwise, and the cell is zeroed.
 //!   When the last message raised is already `0x5B` (`ctx[+0x18]`), the whole
 //!   line is swapped for the *every stolen item is back* caption instead.
-//! * **anyone else** runs the steal attack, once per battle: with the acting
-//!   seat `ctx[+0x13]` in the party and the latch `ctx[+0x27]` clear, the
-//!   latch is set **before any other test**, so the first monster a party
-//!   member fells spends the battle's one attempt whether or not the killer
+//! * **anyone else** runs the steal attack, once per strike chain: with the
+//!   acting seat `ctx[+0x13]` in the party and the latch `ctx[+0x27]` clear,
+//!   the latch is set **before any other test**, so the first monster an
+//!   action fells spends that action's one attempt whether or not the killer
 //!   could steal. Then, outside a special battle (`_DAT_8007BAC0 == 0`), with
 //!   the killer's action category `+0x1DE == 3` (Attack) and its record's
 //!   ability word `+0xF4` bit `0x10000` (passive `0x10`, Steal Attack - the
@@ -28,10 +28,15 @@
 //!   the bag already holds `99` of (`FUN_80042F4C`) is dropped silently;
 //!   anything else raises the caption and adds the item.
 //!
-//! The `ctx[+0x27]` latch has no other writer: a byte scan of `SCUS_942.54`,
-//! the battle overlay and every cast / summon module finds the one `sb` at
-//! `0x8004B3E4` and no store of zero, so the context arriving zeroed at
-//! battle load is the only thing that re-arms it.
+//! The `ctx[+0x27]` latch is re-armed by the battle-action state machine
+//! `FUN_801E295C` (PROT 0898): the arm that moves an actor's strike chain
+//! (`0x1E`) to recovery (`0x1F`) at `0x801E3A7C` clears it in its jump's
+//! delay slot, `sb zero, 0x16(s5)` at `0x801E3A84` with `s5 = ctx + 0x11`.
+//! That runs at the end of every chain, monsters' included, so each attacking
+//! action gets one roll (capture: the latch goes `1 -> 0` at the chain's end
+//! after a kill set it). A byte scan for `0x27(reg)` cannot see the store,
+//! whose displacement rides a base already offset by `0x11`; the port clears
+//! [`StealBand::attempted`] on the same edge in `World::step_battle`.
 //!
 //! The caption is composed the retail way - template copy
 //! (`FUN_8003CA78`), the `{0xC2, item}` item-name token appended by
@@ -68,19 +73,35 @@ pub const ITEMS_UP_BIT: u32 = 0x0002_0000;
 pub const HELD_CAP: u8 = 99;
 
 /// The battle-scoped steal state: retail's stolen band plus the one-attempt
-/// latch `ctx[+0x27]`. Zeroed at battle load.
+/// latch `ctx[+0x27]`. Zeroed at battle load; the latch is also cleared at
+/// the end of every strike chain.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StealBand {
     /// `0x801C8FE0 + m*4` - the item a thief in monster seat `m` holds.
     pub stolen: [u8; BAND_SEATS],
     /// `0x801C8FE0 + (m + 8)*4` - non-zero when that loot came off a monster.
     pub took: [u32; BAND_SEATS],
-    /// `ctx[+0x27]` - the battle's one steal attempt has been spent.
+    /// `ctx[+0x27]` - the current strike chain's one steal attempt has been
+    /// spent.
     pub attempted: bool,
     /// Port bookkeeping: the death commit has run for monster seat `m`.
     /// Retail's arm runs once because the commit it lives in runs once per
     /// installed clip; the port's end-of-knockdown test is level-triggered.
     pub resolved: [bool; BAND_SEATS],
+}
+
+impl StealBand {
+    /// Re-arm the latch on the strike chain's exit - `0x1E -> 0x1F`, the arm
+    /// of `FUN_801E295C` whose delay slot clears `ctx[+0x27]` (`0x801E3A84`).
+    ///
+    /// REF: FUN_801E295C
+    pub fn on_action_transition(&mut self, from: u8, to: u8) {
+        use legaia_engine_vm::battle_action::ActionState;
+        if from == ActionState::AttackChain.as_byte() && to == ActionState::AttackRecovery.as_byte()
+        {
+            self.attempted = false;
+        }
+    }
 }
 
 /// Everything the steal-attack leg reads besides the band and the rand.
@@ -132,7 +153,7 @@ impl DeathSpoils {
 /// names the item the caller adds to the bag.
 ///
 // PORT: FUN_8004AD80 (`0x8004B29C..0x8004B65C`: the death-spoils arm - thief
-// return and the once-per-battle steal attack)
+// return and the once-per-chain steal attack)
 pub fn resolve_death_spoils(
     band: &mut StealBand,
     m: usize,
@@ -366,5 +387,23 @@ mod tests {
         assert_eq!(bytes, b"HEAD <\xC2\x8A>.".to_vec());
         let text = caption_text(&bytes, |id| (id == 0x8A).then(|| "Thing".to_string()));
         assert_eq!(text, "HEAD <Thing>.");
+    }
+    #[test]
+    fn the_strike_chain_exit_rearms_the_latch() {
+        use legaia_engine_vm::battle_action::ActionState;
+        let mut band = StealBand {
+            attempted: true,
+            ..StealBand::default()
+        };
+        band.on_action_transition(
+            ActionState::AttackStrike.as_byte(),
+            ActionState::AttackChain.as_byte(),
+        );
+        assert!(band.attempted, "only the chain's exit clears it");
+        band.on_action_transition(
+            ActionState::AttackChain.as_byte(),
+            ActionState::AttackRecovery.as_byte(),
+        );
+        assert!(!band.attempted);
     }
 }
