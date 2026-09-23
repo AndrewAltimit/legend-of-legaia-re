@@ -435,11 +435,15 @@ impl BakaFight {
     /// Hand the cabinet this frame's **packed** pad edge (`_DAT_8007B874`,
     /// Legaia's layout - `baka_cabinet::CABINET_*`).
     ///
-    /// The cabinet reads it only once the match is decided: the tally, the
-    /// "NEXT GAME / PAY OUT" choice and the exit. Inside the duel the port
-    /// keeps feeding zero, because the duel state's one pad read is the pause
-    /// edge `0x110`, and Triangle - one of its bits - is the port's special
-    /// attack button; the in-duel pause menu stays unreached on every host.
+    /// The cabinet reads it only once the match is decided **and** it has
+    /// left its duel state: the tally, the "NEXT GAME / PAY OUT" choice and
+    /// the exit. While the cabinet is in the duel state the port keeps
+    /// feeding zero, because that state's one pad read is the pause edge
+    /// `0x110`, and Triangle - one of its bits - is the port's special attack
+    /// button; the in-duel pause menu stays unreached on every host. The
+    /// port's cabinet stays in the duel state up to `0xB5` frames past the
+    /// deciding exchange (its round timer is its own), so gating on the
+    /// match alone let a special thrown in that window open the pause menu.
     pub fn set_cabinet_pad(&mut self, edge: u16) {
         self.cabinet_pad = edge;
     }
@@ -536,10 +540,14 @@ impl BakaFight {
     fn tick_cabinet(&mut self, frame_step: i32) {
         let input = crate::baka_cabinet::CabinetInput {
             frame_step,
-            // The host's packed edge, but only once the match is decided (see
-            // `set_cabinet_pad`): the duel band's one read is the pause edge
-            // `0x110`, which overlaps the port's Triangle special.
-            pad_edge: if matches!(self.phase, MatchPhase::MatchOver(_)) {
+            // The host's packed edge, but only once the match is decided and
+            // the cabinet has left the duel state (see `set_cabinet_pad`): the
+            // duel band's one read is the pause edge `0x110`, which overlaps
+            // the port's Triangle special, and the port's cabinet sits in the
+            // duel state for up to `0xB5` frames after the deciding exchange.
+            pad_edge: if matches!(self.phase, MatchPhase::MatchOver(_))
+                && self.cabinet.state() != crate::baka_cabinet::ST_DUEL
+            {
                 std::mem::take(&mut self.cabinet_pad)
             } else {
                 self.cabinet_pad = 0;

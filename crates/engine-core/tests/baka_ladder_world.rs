@@ -136,6 +136,25 @@ fn next_game_keeps_the_pot_at_risk_and_pay_out_banks_it() {
     assert_eq!(w.minigames.casino_coins, 2 * PRIZE, "both rungs banked");
 }
 
+/// Specials thrown after the deciding exchange - while the port's cabinet is
+/// still in its duel state - must not open the in-duel pause menu (`0x110`
+/// includes Triangle); the run still reaches the choice.
+#[test]
+fn late_specials_do_not_open_the_pause_menu() {
+    let mut w = world_with(BakaFight::new(
+        cfg(0, 4000, 0),
+        cfg(1, 0, PRIZE),
+        [0, 0],
+        0xBAA5EED,
+    ));
+    play_out(&mut w);
+    for _ in 0..0x100 {
+        press(&mut w, PadButton::Triangle.mask());
+    }
+    idle_to_state(&mut w, ST_CHOICE);
+    assert!(fight(&w).cabinet().choice_sheet().is_some());
+}
+
 #[test]
 fn a_lost_rung_forfeits_the_pot_on_the_way_out() {
     // The player cannot hurt the opponent; the opponent one-shots.
