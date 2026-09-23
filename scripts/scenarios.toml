@@ -2736,3 +2736,13 @@ expected_game_mode = 0x03
 expected_active_scene = "doman"
 description = "The map03 -> doman crossing, caught about 60 vsyncs before doman loads, on a route walked by tile pokes from korb2_field_card_boot (korb2 -> kor -> korout -> map03 -> doman; captures/w7c-0921/doman_org). The scene label already reads doman while the player still stands on map03's doman portal tile (63, 69). 0x3FB is clear, so doman P2[4] (walk-on (67, 108..110), C1 {0x3FB}) is still live - the organic pre-entry state card block 12 lacks."
 topics = ["field", "doman", "map03", "story flags", "scene entry", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "son_arrival_from_doman"
+backup_fingerprint = "7a80d3229a1ebaf5225e080ee2144c95ce5e5b04949927e84b4ebe16bb3baa52"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "son"
+description = "The map03 -> son crossing, caught just before son loads, on a route walked by tile pokes from doman_field_card_boot (doman -> map03 -> son; captures/w7c-0921/son_org). The scene label already reads son while the player is still on map03, at world (6272, 11520) where the portal record P2[13] (tile (45, 84)) left it. Loading it replays son's entry: the entry script clears 0x3A6 / 0x3A7 / 0x3A8 and the arrival seat (8, 9) fires P2[5], which sets 0x60D."
+topics = ["field", "son", "map03", "story flags", "scene entry", "probe state"]
