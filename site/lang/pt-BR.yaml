@@ -1,7 +1,7 @@
 format: 'legaia-text-pack-v1'
 language: 'pt-BR'
 game: 'Legend of Legaia (USA) SCUS-94254'
-notes: 'Brazilian Portuguese (Portugues do Brasil) community pack: the fan translation by somentedan (published by joao13traducoes as a patch for the Spanish disc), lifted onto USA coordinates with translate lift-official. Dialog lines are paired by their position on the scene script walk; item, magic, art and accessory names and descriptions abbreviated to their byte budgets where the translation overflows; pause / battle / field / tutorial labels and the SCUS system strings lifted from the patch, abbreviated or written by the project where they overflow or the patch left them in Spanish (the yes choices the patch left in Spanish read Si, its own form everywhere else). Holds every line a same-size import writes: a line longer or shorter than the English is relocated inside its own scene, so only the few lines a scene footprint cannot hold stay English (the relayout deliverable carries them). ASCII fold (the retail font has no accent glyphs); source-free distributable shape.'
+notes: 'Brazilian Portuguese (Portugues do Brasil) community pack: the fan translation by somentedan (published by joao13traducoes as a patch for the Spanish disc), lifted onto USA coordinates with translate lift-official. Dialog lines are paired by their position on the scene script walk; item, magic, art and accessory names and descriptions abbreviated to their byte budgets where the translation overflows; pause / battle / field / tutorial labels, the battle command chips, level-up and memory-card lines and the SCUS system strings lifted from the patch (paired through the code and data that point at them), abbreviated or written by the project where they overflow or the patch left them in Spanish (the yes choices the patch left in Spanish read Si, its own form everywhere else). The opening crawl pairs page for page across the extra paragraph pages of the patch. Enemy names stay English: the patch keeps the monster names of the Spanish disc, so the monster_names section is left for a translator. Holds every line a same-size import writes: a line longer or shorter than the English is relocated inside its own scene, so only the few lines a scene footprint cannot hold stay English (the relayout deliverable carries them). ASCII fold (the retail font has no accent glyphs); source-free distributable shape.'
 contributors:
 - 'somentedan (translation)'
 - 'joao13traducoes (publication)'
@@ -1393,33 +1393,90 @@ sections:
   - key: 'scus:str:0x8001320c'
     translation: 'Efeitos Desconh.'
     budget: 19
+  - key: 'scus:str:0x80013220'
+    translation: 'Voltagor|Ataca todos inimigos.'
+    budget: 31
+  - key: 'scus:str:0x80013240'
+    translation: 'Tornado reina|Ataca todos inimigos'
+    budget: 35
   - key: 'scus:str:0x80013264'
     translation: 'Inferno|Ataca todos.'
     budget: 27
+  - key: 'scus:str:0x80013280'
+    translation: 'Promessa mortal|Ataca todos inim.'
+    budget: 35
+  - key: 'scus:str:0x800132a4'
+    translation: 'Ressurretor|Recupera PS. Todos.'
+    budget: 35
   - key: 'scus:str:0x800132c8'
     translation: 'Chuva Meteoros|Ataca todos.'
+    budget: 35
+  - key: 'scus:str:0x800132ec'
+    translation: 'Avalanche prof.|Ataca todos inim.'
+    budget: 35
+  - key: 'scus:str:0x80013310'
+    translation: 'Canhao Espaco|Ataca todos inim.'
     budget: 35
   - key: 'scus:str:0x80013334'
     translation: 'Ilusao Onirica|Ataca todos.'
     budget: 35
+  - key: 'scus:str:0x80013358'
+    translation: 'Dimensao Estran|Ataca todos inim.'
+    budget: 35
+  - key: 'scus:str:0x8001337c'
+    translation: 'Chuva Mortal|Ataca todos inim.'
+    budget: 31
   - key: 'scus:str:0x8001339c'
     translation: 'Olhos Sagrados|Cura PS dos aliados.'
     budget: 35
+  - key: 'scus:str:0x800133c0'
+    translation: 'Presas Caninas|Ataca inim.'
+    budget: 27
+  - key: 'scus:str:0x800133dc'
+    translation: 'Imersao Inf|Ataca inim.'
+    budget: 23
   - key: 'scus:str:0x800133f4'
     translation: 'Blaster Final|Mata ou ataca.'
+    budget: 35
+  - key: 'scus:str:0x80013418'
+    translation: 'Condutor Louco|Ataca inimigos.'
+    budget: 31
+  - key: 'scus:str:0x80013438'
+    translation: 'Chama Giratoria|Ataca todos inim.'
     budget: 35
   - key: 'scus:str:0x8001345c'
     translation: 'Vento Violento|Ataca.'
     budget: 27
+  - key: 'scus:str:0x80013478'
+    translation: 'Ponto Gelo|Ataca todos os inimigos.'
+    budget: 35
+  - key: 'scus:str:0x8001349c'
+    translation: 'Orbe sagr.|Recupera PS. Todos.'
+    budget: 35
   - key: 'scus:str:0x800134c0'
     translation: 'Onda Sonica|Ataca inimigo.'
     budget: 27
+  - key: 'scus:str:0x800134dc'
+    translation: 'Tempest. plasma|Ataca todos inim.'
+    budget: 35
+  - key: 'scus:str:0x80013500'
+    translation: 'Martelo vertical|Ataca inim. + area.'
+    budget: 39
   - key: 'scus:str:0x80013528'
     translation: 'Musica Infernal|Mata ou confunde.'
     budget: 35
+  - key: 'scus:str:0x8001354c'
+    translation: 'Esmaga bolhas|Envenena todos.'
+    budget: 35
+  - key: 'scus:str:0x80013570'
+    translation: 'Cuidado mistico|Recupera PS.'
+    budget: 31
   - key: 'scus:str:0x80013590'
     translation: 'Laser Giratorio|Ataca + area.'
     budget: 35
+  - key: 'scus:str:0x800135b4'
+    translation: 'Ataque abrasador|Ataca inimigo.'
+    budget: 31
   - key: 'scus:str:0x80013b5c'
     translation: 'Lanca Miragem'
     budget: 15
@@ -1565,108 +1622,216 @@ sections:
     translation: 'Tufao'
     budget: 7
   arts:
+  - key: 'scus:str:0x800135e0'
+    translation: 'Artes. Chute no ar|na velocidade do raio.'
+    budget: 43
   - key: 'scus:str:0x8001360c'
     translation: 'Chute Voador'
     budget: 19
+  - key: 'scus:str:0x8001362c'
+    translation: 'Artes. Ataque mortal|no ombro.'
+    budget: 39
   - key: 'scus:str:0x80013654'
     translation: 'Ariete'
     budget: 15
+  - key: 'scus:str:0x80013670'
+    translation: 'Artes. Cabecada forte com|giro rapido.'
+    budget: 43
   - key: 'scus:str:0x8001369c'
     translation: 'Cabecada'
     budget: 11
+  - key: 'scus:str:0x800136a8'
+    translation: 'Artes. Reves com|forca centrifuga.'
+    budget: 51
   - key: 'scus:str:0x800136dc'
     translation: 'Soco Costas'
     budget: 11
+  - key: 'scus:str:0x800136e8'
+    translation: 'Artes. Ataque com o braco|que decapita o inimigo.'
+    budget: 51
   - key: 'scus:str:0x8001371c'
     translation: 'Guilhotina'
     budget: 11
+  - key: 'scus:str:0x80013734'
+    translation: 'Artes. Golpe de mao aberta|na cabeca do inim.'
+    budget: 47
   - key: 'scus:str:0x80013764'
     translation: 'Decapitacao'
     budget: 15
+  - key: 'scus:str:0x80013780'
+    translation: 'Artes. Chutes altos e baixos|pela lateral.'
+    budget: 51
   - key: 'scus:str:0x800137b4'
     translation: 'Chute Lado'
     budget: 11
+  - key: 'scus:str:0x800137cc'
+    translation: 'Artes. Soco rapido para baixo|do ar.'
+    budget: 51
   - key: 'scus:str:0x80013800'
     translation: 'Chuva negra'
     budget: 11
+  - key: 'scus:str:0x80013818'
+    translation: 'Artes. Soco extremo,|aniquilador.'
+    budget: 43
   - key: 'scus:str:0x80013844'
     translation: 'Neoelevador'
     budget: 11
+  - key: 'scus:str:0x80013860'
+    translation: 'Artes. Golpes para baixo|e empurroes das maos.'
+    budget: 47
   - key: 'scus:str:0x80013890'
     translation: 'Eletropaliza'
     budget: 15
+  - key: 'scus:str:0x800138b0'
+    translation: 'Artes. Empurrao mortal a 2 maos|apos chute giratorio.'
+    budget: 55
   - key: 'scus:str:0x800138e8'
     translation: 'Chifrada'
     budget: 11
+  - key: 'scus:str:0x80013904'
+    translation: 'Hiperartes do trovao.|Ataque de relampago de gigavolts.'
+    budget: 55
   - key: 'scus:str:0x8001393c'
     translation: 'Soco do trovao'
     budget: 15
+  - key: 'scus:str:0x8001394c'
+    translation: 'Hiperartes do trovao.|Usa-se bracos e pernas.'
+    budget: 47
   - key: 'scus:str:0x8001397c'
     translation: 'Tempestade Raio'
     budget: 15
+  - key: 'scus:str:0x80013998'
+    translation: 'Hiperartes do trovao. Serie|de socos explosivos.'
+    budget: 55
   - key: 'scus:str:0x800139d0'
     translation: 'Pnh. Explosivo'
     budget: 15
+  - key: 'scus:str:0x800139f0'
+    translation: 'Arte do trovao - Final.|O ultimo em armas.'
+    budget: 43
   - key: 'scus:str:0x80013a1c'
     translation: '{cf:09}Furia Biron'
     budget: 15
   - key: 'scus:str:0x80013a44'
     translation: 'Rabo Reptil'
     budget: 11
+  - key: 'scus:str:0x80013a50'
+    translation: 'Artes. Serie de chutes apos|um giro para tras.'
+    budget: 47
   - key: 'scus:str:0x80013a80'
     translation: 'Carga Acrobata'
     budget: 15
+  - key: 'scus:str:0x80013a9c'
+    translation: 'Artes. Soco mortal|supersonico.'
+    budget: 35
   - key: 'scus:str:0x80013ac0'
     translation: 'Jabalina Sonica'
     budget: 15
+  - key: 'scus:str:0x80013adc'
+    translation: 'Artes. Ataque mortal de socos|com o corpo todo.'
+    budget: 55
   - key: 'scus:str:0x80013b14'
     translation: 'Golpe Nevasca'
     budget: 15
+  - key: 'scus:str:0x80013b30'
+    translation: 'Artes. Combo de soco e|chute alto.'
+    budget: 43
+  - key: 'scus:str:0x80013b78'
+    translation: 'Artes. Dois socos no ar|de cima para baixo.'
+    budget: 47
   - key: 'scus:str:0x80013ba8'
     translation: 'Ataque Golfinho'
     budget: 15
   - key: 'scus:str:0x80013bfc'
     translation: 'Passo Ave'
     budget: 11
+  - key: 'scus:str:0x80013c08'
+    translation: 'Artes. Chute lateral mortal|giratorio 2 fases.'
+    budget: 47
+  - key: 'scus:str:0x80013c44'
+    translation: 'Artes. Golpe carinhoso a um|inimigo temido.'
+    budget: 43
   - key: 'scus:str:0x80013c70'
     translation: 'Amor Forte'
     budget: 11
   - key: 'scus:str:0x80013cb8'
     translation: 'Vendaval Rapido'
     budget: 15
+  - key: 'scus:str:0x80013cd8'
+    translation: 'Artes. Ataque em 4 fases|com impacto de investida.'
+    budget: 51
+  - key: 'scus:str:0x80013d2c'
+    translation: 'Hiperartes do vento.|Rajada de tornado.'
+    budget: 47
   - key: 'scus:str:0x80013d5c'
     translation: 'Brisa Gelada'
     budget: 15
   - key: 'scus:str:0x80013dac'
     translation: 'Lamina Abutre'
     budget: 15
+  - key: 'scus:str:0x80013dcc'
+    translation: 'Hiperartes do vento.|Rapida serie de chutes.'
+    budget: 47
+  - key: 'scus:str:0x80013e20'
+    translation: 'Arte do vento: Final.|O ultimo em armas'
+    budget: 39
   - key: 'scus:str:0x80013e48'
     translation: 'Arca {cf:09}{c1:01}'
     budget: 11
   - key: 'scus:str:0x80013ea0'
     translation: 'Hipercodo'
     budget: 11
+  - key: 'scus:str:0x80013eb8'
+    translation: 'Artes. Golpe com o ombro |esquerdo.'
+    budget: 39
+  - key: 'scus:str:0x80013efc'
+    translation: 'Artes. Chute com pirueta|para tras.'
+    budget: 35
   - key: 'scus:str:0x80013f50'
     translation: 'Chute Corte'
     budget: 11
+  - key: 'scus:str:0x80013f68'
+    translation: 'Artes. Ataque central de|socos, a duas maos.'
+    budget: 47
+  - key: 'scus:str:0x80013fb0'
+    translation: 'Artes. Chute que varre as |pernas do inimigo.'
+    budget: 51
   - key: 'scus:str:0x80013fe4'
     translation: 'Chute-Cruz'
     budget: 11
   - key: 'scus:str:0x80014028'
     translation: 'Piropaliza'
     budget: 11
+  - key: 'scus:str:0x80014040'
+    translation: 'Artes. Combo a partir de um |chute giratorio.'
+    budget: 51
+  - key: 'scus:str:0x8001408c'
+    translation: 'Artes. Tecnica de combo que |usa o corpo todo.'
+    budget: 55
   - key: 'scus:str:0x800140c4'
     translation: 'Comb. PP'
     budget: 11
   - key: 'scus:str:0x80014108'
     translation: 'Furacao'
     budget: 11
+  - key: 'scus:str:0x80014120'
+    translation: 'Artes. Chute em 2 fases|irregular, no ar.'
+    budget: 43
+  - key: 'scus:str:0x80014158'
+    translation: 'Hiperartes do fogo. |Redemoinho de chamas.'
+    budget: 47
   - key: 'scus:str:0x80014188'
     translation: 'Chama Tornado'
     budget: 15
   - key: 'scus:str:0x800141d4'
     translation: 'Golpe Fogo'
     budget: 11
+  - key: 'scus:str:0x800141ec'
+    translation: 'Hiperartes de Fogo. Queimam|os inimigos por dentro!'
+    budget: 51
+  - key: 'scus:str:0x80014240'
+    translation: 'Arte do Fogo: Final.|O ultimo em armas.'
+    budget: 39
   accessory_passives:
   - key: 'scus:str:0x80014290'
     translation: 'Carta Secr.'
@@ -29081,89 +29246,92 @@ sections:
   - key: 'man:183:0xbdeb'
     translation: 'nao perderei a esperanca'
     budget: 18
-  - key: 'man:183:0xbe1a'
+  - key: 'man:183:0xbdff'
     translation: 'Seu pai, Dedoes Gordos,'
-    budget: 6
-  - key: 'man:183:0xbeb0'
+    budget: 25
+  - key: 'man:183:0xbe8f'
     translation: 'Pepe: Quando era pequeno,'
+    budget: 31
+  - key: 'man:183:0xbeb0'
+    translation: 'perguntei a Mae o que a atraiu'
     budget: 25
   - key: 'man:183:0xbecb'
-    translation: 'perguntei a Mae o que a atraiu'
+    translation: 'em Pai.'
     budget: 10
   - key: 'man:183:0xbed8'
-    translation: 'em Pai.'
+    translation: 'Pepe: Ela me disse que foram seus'
     budget: 25
   - key: 'man:183:0xbef3'
-    translation: 'Pepe: Ela me disse que foram seus'
+    translation: 'dedoes gordos, mas habeis.'
     budget: 23
   - key: 'man:183:0xbf0d'
-    translation: 'dedoes gordos, mas habeis.'
+    translation: 'Pepe: Desde entao,'
     budget: 22
   - key: 'man:183:0xbf25'
-    translation: 'Pepe: Desde entao,'
+    translation: 'o apelido dele'
     budget: 29
   - key: 'man:183:0xbf44'
-    translation: 'o apelido dele'
+    translation: 'foi Dedoes Gordos'
     budget: 18
   - key: 'man:183:0xbf65'
-    translation: 'foi Dedoes Gordos'
-    budget: 28
-  - key: 'man:183:0xbf83'
     translation: 'Pepe: Se devo ser honesto,'
     budget: 28
-  - key: 'man:183:0xbfa1'
+  - key: 'man:183:0xbf83'
     translation: 'em algum lugar de meu coracao'
+    budget: 28
+  - key: 'man:183:0xbfa1'
+    translation: 'ja dera meu pai como perdido.'
     budget: 19
   - key: 'man:183:0xbfc3'
-    translation: 'ja dera meu pai como perdido.'
+    translation: 'Pepe: Mas esta vivo!'
     budget: 21
   - key: 'man:183:0xbfda'
-    translation: 'Pepe: Mas esta vivo!'
+    translation: 'Oh, obrigado por ter trazido'
     budget: 26
   - key: 'man:183:0xbff6'
-    translation: 'Oh, obrigado por ter trazido'
+    translation: 'a carta.'
     budget: 11
   - key: 'man:183:0xc004'
-    translation: 'a carta.'
+    translation: 'Pepe: Muito obrigado!'
     budget: 24
   - key: 'man:183:0xc01e'
-    translation: 'Pepe: Muito obrigado!'
+    translation: 'Oxala Mae tambem estivesse viva!'
     budget: 31
   - key: 'man:183:0xc071'
-    translation: 'Oxala Mae tambem estivesse viva!'
+    translation: 'Pepe: Sim'
     budget: 10
   - key: 'man:183:0xc07d'
-    translation: 'Pepe: Sim'
+    translation: 'Ha tres anos, ficou doente'
     budget: 29
   - key: 'man:183:0xc09c'
-    translation: 'Ha tres anos, ficou doente'
+    translation: 'e morreu'
     budget: 9
   - key: 'man:183:0xc0af'
-    translation: 'e morreu'
-    budget: 24
-  - key: 'man:183:0xc245'
     translation: 'Pepe: Oh, esperem um momento!'
     budget: 24
-  - key: 'man:183:0xc25f'
+  - key: 'man:183:0xc245'
     translation: 'Pepe: E uma lembranca'
+    budget: 24
+  - key: 'man:183:0xc25f'
+    translation: 'de minha mae. Se me fizerem'
     budget: 27
   - key: 'man:183:0xc27c'
-    translation: 'de minha mae. Se me fizerem'
+    translation: 'o favor, entregue a Pai'
     budget: 25
   - key: 'man:183:0xc29f'
-    translation: 'o favor, entregue a Pai'
+    translation: '{c1:00} e os demais'
     budget: 17
   - key: 'man:183:0xc2b2'
-    translation: '{c1:00} e os demais'
+    translation: 'agora tem o Anel de Yuma!'
     budget: 21
   - key: 'man:183:0xc314'
-    translation: 'agora tem o Anel de Yuma!'
+    translation: 'Pepe: Por favor, digam a Pai...'
     budget: 27
   - key: 'man:183:0xc331'
-    translation: 'Pepe: Por favor, digam a Pai...'
+    translation: 'digam a Zalan de Jeremi que seu'
     budget: 29
   - key: 'man:183:0xc350'
-    translation: 'digam a Zalan de Jeremi que seu'
+    translation: 'filho esta vivo'
     budget: 13
   - key: 'man:183:0xc74d'
     translation: '{c1:01}: Ei!'
@@ -46526,14 +46694,20 @@ sections:
   - key: 'man:455:0x1719'
     translation: 'Nao pode mudar o passado.'
     budget: 27
-  - key: 'man:455:0x1752'
+  - key: 'man:455:0x1736'
     translation: 'Deve ser corajoso e trabalhar'
+    budget: 26
+  - key: 'man:455:0x1752'
+    translation: 'para construir o futuro!'
     budget: 30
   - key: 'man:455:0x1772'
-    translation: 'para construir o futuro!'
+    translation: 'Isso e ser humano!'
+    budget: 34
+  - key: 'man:455:0x1799'
+    translation: 'Os humanos sao tao corajosos que'
     budget: 34
   - key: 'man:455:0x17bd'
-    translation: 'Os humanos sao tao corajosos que'
+    translation: 'para construir o proprio futuro.'
     budget: 34
   - key: 'man:466:0x82f'
     translation: '(Pensativo)'
@@ -47153,15 +47327,21 @@ sections:
   - key: 'man:475:0x237a'
     translation: 'final permanece o espirito.'
     budget: 24
-  - key: 'man:475:0x23b6'
+  - key: 'man:475:0x2394'
     translation: 'Orgulhe-se de si mesmo e use'
+    budget: 32
+  - key: 'man:475:0x23b6'
+    translation: 'esse orgulho para criar alegria!'
     budget: 31
   - key: 'man:475:0x23d7'
-    translation: 'esse orgulho para criar alegria!'
+    translation: 'Isso e ser humano!'
     budget: 34
   - key: 'man:475:0x23fb'
-    translation: 'Isso e ser humano!'
+    translation: 'Os humanos constroem sua propria'
     budget: 31
+  - key: 'man:475:0x241c'
+    translation: 'alegria com seu'
+    budget: 30
   - key: 'man:484:0x1fe'
     translation: 'Sem energia.'
     budget: 17
@@ -65540,44 +65720,56 @@ sections:
   - key: 'man:749:0xb59'
     translation: 'para governar este mundo.'
     budget: 24
-  - key: 'man:749:0xb94'
+  - key: 'man:749:0xb73'
     translation: 'E apesar de ter a sabedoria'
+    budget: 31
+  - key: 'man:749:0xb94'
+    translation: 'de deus, mas fisicamente eram'
     budget: 30
   - key: 'man:749:0xbb4'
-    translation: 'de deus, mas fisicamente eram'
+    translation: 'fracos que as bestas'
     budget: 28
   - key: 'man:749:0xbd2'
-    translation: 'fracos que as bestas'
+    translation: 'e de espirito impulsivo.'
     budget: 24
   - key: 'man:749:0xbec'
-    translation: 'e de espirito impulsivo.'
+    translation: 'Muitas vezes estiveram perto'
     budget: 25
   - key: 'man:749:0xc07'
-    translation: 'Muitas vezes estiveram perto'
+    translation: 'de se extinguir para sempre.'
     budget: 32
   - key: 'man:749:0xc29'
-    translation: 'de se extinguir para sempre.'
-    budget: 27
-  - key: 'man:749:0xc66'
     translation: 'Preocupado com o futuro dos'
-    budget: 29
-  - key: 'man:749:0x12f6'
+    budget: 27
+  - key: 'man:749:0xc46'
+    translation: 'humanos, deus deu-lhes uma forca'
+    budget: 30
+  - key: 'man:749:0xc66'
     translation: 'poderosa para ajuda-los.'
+    budget: 29
+  - key: 'man:749:0x12dd'
+    translation: 'Desde o inicio da memoria'
+    budget: 23
+  - key: 'man:749:0x12f6'
+    translation: 'humana, chamada historia,'
     budget: 25
   - key: 'man:749:0x1311'
-    translation: 'Desde o inicio da memoria'
+    translation: 'os humanos conviviam com'
     budget: 26
   - key: 'man:749:0x132d'
-    translation: 'humana, chamada historia,'
+    translation: 'criaturas conhecidas como Seru'
     budget: 24
   - key: 'man:749:0x1347'
-    translation: 'os humanos conviviam com'
+    translation: 'Os Seru conviviam com os'
     budget: 28
   - key: 'man:749:0x1365'
-    translation: 'criaturas conhecidas como Seru'
+    translation: 'humanos, sempre os obedeciam'
     budget: 28
+  - key: 'man:749:0x1383'
+    translation: 'e faziam deles criaturas'
+    budget: 32
   - key: 'man:749:0x13a5'
-    translation: 'Os Seru conviviam com os'
+    translation: 'mais fortes do que eram.'
     budget: 21
   - key: 'man:754:0x3ca'
     translation: 'Quando nao esta em um humano, um'
@@ -65591,11 +65783,17 @@ sections:
   - key: 'man:754:0x4da'
     translation: 'muda de forma e confere a este'
     budget: 33
-  - key: 'man:754:0x52f'
+  - key: 'man:754:0x4fd'
+    translation: 'poderes secretos.'
+    budget: 17
+  - key: 'man:754:0x510'
     translation: 'Com um Seru, um humano pode'
+    budget: 29
+  - key: 'man:754:0x52f'
+    translation: 'levantar duas vezes o peso e'
     budget: 31
   - key: 'man:754:0x550'
-    translation: 'levantar duas vezes o peso e'
+    translation: 'ate mesmo voar.'
     budget: 28
   - key: 'man:764:0xa3c'
     translation: 'No entanto, essa epoca terminou'
@@ -70710,23 +70908,29 @@ sections:
   - key: 'raw:157:0x6508'
     translation: 'e pode corroer o alma.'
     budget: 27
-  - key: 'raw:157:0x653b'
+  - key: 'raw:157:0x6525'
     translation: 'Mas nao perca a esperanca!'
+    budget: 20
+  - key: 'raw:157:0x653b'
+    translation: 'Porque se ha esperanca,'
     budget: 23
   - key: 'raw:157:0x6554'
-    translation: 'Porque se ha esperanca,'
+    translation: 'pode tirar forcas do'
     budget: 26
   - key: 'raw:157:0x6570'
-    translation: 'pode tirar forcas do'
+    translation: 'passado'
     budget: 9
   - key: 'raw:157:0x657b'
-    translation: 'passado'
-    budget: 24
-  - key: 'raw:157:0x6595'
     translation: 'Esta e a essencia do'
-    budget: 13
-  - key: 'raw:157:0x65eb'
+    budget: 24
+  - key: 'raw:157:0x65a4'
     translation: 'Se ha esperanca no seu coracao,'
+    budget: 35
+  - key: 'raw:157:0x65c9'
+    translation: 'os humanos encontram o futuro'
+    budget: 32
+  - key: 'raw:157:0x65eb'
+    translation: 'mediante o passado.'
     budget: 17
   - key: 'raw:157:0x6afb'
     translation: '{c1:01}: Que?'
@@ -77184,86 +77388,89 @@ sections:
   - key: 'raw:320:0xbe22'
     translation: 'nao perco a esperanca.'
     budget: 18
-  - key: 'raw:320:0xbe51'
+  - key: 'raw:320:0xbe36'
     translation: 'Vosso pai, Dedos Gordos,'
-    budget: 6
-  - key: 'raw:320:0xbee7'
+    budget: 25
+  - key: 'raw:320:0xbec6'
     translation: 'Pepe: Quando era pequeno, eu'
+    budget: 31
+  - key: 'raw:320:0xbee7'
+    translation: 'perguntei a Mae o que foi que a'
     budget: 25
   - key: 'raw:320:0xbf02'
-    translation: 'perguntei a Mae o que foi que a'
+    translation: 'atraiu de Padre.'
     budget: 10
   - key: 'raw:320:0xbf0f'
-    translation: 'atraiu de Padre.'
+    translation: 'Pepe: Ela me disse que foram suas'
     budget: 25
   - key: 'raw:320:0xbf2a'
-    translation: 'Pepe: Ela me disse que foram suas'
+    translation: 'dedos gordos mas habeis.'
     budget: 23
   - key: 'raw:320:0xbf44'
-    translation: 'dedos gordos mas habeis.'
+    translation: 'Pepe: Desde entao,'
     budget: 22
   - key: 'raw:320:0xbf5c'
-    translation: 'Pepe: Desde entao,'
+    translation: 'seu apelido la'
     budget: 29
   - key: 'raw:320:0xbf7b'
-    translation: 'seu apelido la'
+    translation: 'foi "Dedos Gordos"'
     budget: 18
   - key: 'raw:320:0xbf9c'
-    translation: 'foi "Dedos Gordos"'
-    budget: 28
-  - key: 'raw:320:0xbfba'
     translation: 'Pepe: Se eu dizer a verdade,'
     budget: 28
-  - key: 'raw:320:0xbfd8'
+  - key: 'raw:320:0xbfba'
     translation: 'num canto do meu coracao,'
+    budget: 28
+  - key: 'raw:320:0xbfd8'
+    translation: 'tinha dado a meu pai por perdido.'
     budget: 19
   - key: 'raw:320:0xbffa'
-    translation: 'tinha dado a meu pai por perdido.'
+    translation: 'Pepe: Pero esta vivo!'
     budget: 21
   - key: 'raw:320:0xc011'
-    translation: 'Pepe: Pero esta vivo!'
+    translation: 'Oh, obrigado por me trazer'
     budget: 26
   - key: 'raw:320:0xc02d'
-    translation: 'Oh, obrigado por me trazer'
+    translation: 'a carta.'
     budget: 11
   - key: 'raw:320:0xc03b'
-    translation: 'a carta.'
+    translation: 'Pepe: Muito obrigado!'
     budget: 24
   - key: 'raw:320:0xc055'
-    translation: 'Pepe: Muito obrigado!'
+    translation: 'Espero que a Mae tambem esteja viva!'
     budget: 31
   - key: 'raw:320:0xc0a8'
-    translation: 'Espero que a Mae tambem esteja viva!'
+    translation: 'Pepe: Sim'
     budget: 10
   - key: 'raw:320:0xc0b4'
-    translation: 'Pepe: Sim'
+    translation: 'Ha tres anos, adoeceu'
     budget: 29
   - key: 'raw:320:0xc0d3'
-    translation: 'Ha tres anos, adoeceu'
+    translation: 'morreu.'
     budget: 9
   - key: 'raw:320:0xc0e6'
-    translation: 'morreu.'
-    budget: 24
-  - key: 'raw:320:0xc27c'
     translation: 'Pepe: Oh, esperem um momento!'
     budget: 24
-  - key: 'raw:320:0xc296'
+  - key: 'raw:320:0xc27c'
     translation: 'Pepe: Isso e um recuerdo'
+    budget: 24
+  - key: 'raw:320:0xc296'
+    translation: 'da minha mae. Se fizerem o'
     budget: 27
   - key: 'raw:320:0xc2b3'
-    translation: 'da minha mae. Se fizerem o'
-    budget: 25
-  - key: 'raw:320:0xc2d6'
     translation: 'favor, deem a Pai.'
-    budget: 17
-  - key: 'raw:320:0xc34b'
+    budget: 25
+  - key: 'raw:320:0xc2e9'
     translation: 'tem agora o Anel de Yuma!'
+    budget: 21
+  - key: 'raw:320:0xc34b'
+    translation: 'Pepe: Por favor, diga ao Pai...'
     budget: 27
   - key: 'raw:320:0xc368'
-    translation: 'Pepe: Por favor, diga ao Pai...'
+    translation: 'Decida a Zalan de Jeremi que su'
     budget: 29
   - key: 'raw:320:0xc387'
-    translation: 'Decida a Zalan de Jeremi que su'
+    translation: 'filho vive.'
     budget: 13
   - key: 'raw:320:0xc78e'
     translation: '{c1:02}, mira! Gente de Biron!'
@@ -83179,6 +83386,141 @@ sections:
   - key: 'ui:954:0x801f8fa8'
     translation: 'Perde ouro'
     budget: 11
+  - key: 'ui:898:0x801ce840'
+    translation: 'Botao: Ver hiperartes'
+    budget: 31
+  - key: 'ui:898:0x801ce860'
+    translation: 'Botao: Proxima pag.'
+    budget: 23
+  - key: 'ui:898:0x801ced34'
+    translation: 'Pts devolvidos'
+    budget: 15
+  - key: 'ui:898:0x801cf6c8'
+    translation: 'Efeito magico: Recupera estados e PA'
+    budget: 39
+  - key: 'ui:898:0x801cf6f0'
+    translation: 'Efeito magico: Cura Ven/Putr/Petr'
+    budget: 35
+  - key: 'ui:898:0x801cf714'
+    translation: 'Efeito magico: Cura Ven/Putr.'
+    budget: 31
+  - key: 'ui:898:0x801cf734'
+    translation: 'Efeito magico: Cura Veneno.'
+    budget: 27
+  - key: 'ui:898:0x801cfa20'
+    translation: 'Sem efeito.'
+    budget: 11
+  - key: 'ui:898:0x801f6860'
+    translation: ' escapou.'
+    budget: 11
+  - key: 'ui:897:0x801cf698'
+    translation: 'Gostou deste nome?'
+    budget: 19
+  - key: 'ui:899:0x801cec78'
+    translation: '@A batalha vai comecar.'
+    budget: 23
+  - key: 'ui:899:0x801cec94'
+    translation: '@Esta pronto?'
+    budget: 15
+  - key: 'ui:899:0x801ceca8'
+    translation: '@Luta contra os irmaos Delilas'
+    budget: 43
+  - key: 'ui:899:0x801cecd4'
+    translation: '@vai comecar. Este combate tem tres'
+    budget: 39
+  - key: 'ui:899:0x801cecfc'
+    translation: '@lutas um a um consecutivas!'
+    budget: 35
+  - key: 'ui:899:0x801ced20'
+    translation: '@Antes da luta,'
+    budget: 19
+  - key: 'ui:899:0x801ced38'
+    translation: '@prepare seus tres lutadores:'
+    budget: 31
+  - key: 'ui:899:0x801ceda4'
+    translation: 'Esqueca as hiperartes.'
+    budget: 31
+  - key: 'ui:899:0x801cef28'
+    translation: 'Verificando o MEMORY CARD'
+    budget: 27
+  - key: 'ui:899:0x801cef44'
+    translation: 'Ocorreu um erro.'
+    budget: 19
+  - key: 'ui:899:0x801cef8c'
+    translation: 'Sem MEMORY CARD'
+    budget: 23
+  - key: 'ui:899:0x801cefb0'
+    translation: 'Nao ha|dados de Legend of Legaia'
+    budget: 47
+  - key: 'ui:899:0x801cefe0'
+    translation: 'Blocos|livres insuficientes'
+    budget: 39
+  - key: 'ui:899:0x801cf04c'
+    translation: 'MEMORY CARD sem formato'
+    budget: 27
+  - key: 'ui:899:0x801cf068'
+    translation: 'Deseja formata-lo?'
+    budget: 23
+  - key: 'ui:899:0x801cf08c'
+    translation: 'Falha ao formatar o MEMORY CARD'
+    budget: 31
+  - key: 'ui:899:0x801cf0ac'
+    translation: 'Formatando...'
+    budget: 19
+  - key: 'ui:899:0x801cf0c0'
+    translation: 'Nao extrair o MEMORY CARD'
+    budget: 27
+  - key: 'ui:899:0x801cf0ec'
+    translation: 'Formato concluido.'
+    budget: 23
+  - key: 'ui:899:0x801cf134'
+    translation: 'Dados nao carregados.'
+    budget: 23
+  - key: 'ui:899:0x801cf14c'
+    translation: 'Dados corromp.'
+    budget: 15
+  - key: 'ui:899:0x801cf1e0'
+    translation: 'Falha ao salvar'
+    budget: 15
+  - key: 'ui:899:0x801cf1f0'
+    translation: 'Jogo Carregado!'
+    budget: 19
+  - key: 'ui:899:0x801cf204'
+    translation: 'Salvo com sucesso.'
+    budget: 19
+  - key: 'ui:899:0x801cf330'
+    translation: 'Arquivo antigo'
+    budget: 15
+  - key: 'ui:899:0x801cf34c'
+    translation: 'Sem dados de Legend of Legaia.'
+    budget: 31
+  - key: 'ui:899:0x801cf36c'
+    translation: 'Salvo.'
+    budget: 15
+  - key: 'ui:899:0x801cf37c'
+    translation: 'Vazio'
+    budget: 7
+  - key: 'ui:899:0x801cf384'
+    translation: 'Voltar'
+    budget: 7
+  - key: 'ui:899:0x801cf4e8'
+    translation: 'Verificando.'
+    budget: 15
+  - key: 'ui:899:0x801cf500'
+    translation: 'Deseja salvar?'
+    budget: 23
+  - key: 'ui:899:0x801cf518'
+    translation: 'Sobrescrever?'
+    budget: 27
+  - key: 'ui:899:0x801cf534'
+    translation: 'Carregar?'
+    budget: 23
+  - key: 'ui:899:0x801cf550'
+    translation: 'Salvando na MEMORY CARD'
+    budget: 23
+  - key: 'ui:899:0x801cf568'
+    translation: 'Carreg.'
+    budget: 11
   system_text:
   - key: 'scus:str:0x80010c18'
     translation: 'Voce nao tem|nenhum item.'
@@ -83227,6 +83569,36 @@ sections:
     budget: 7
   - key: 'scus:str:0x8007b444'
     translation: 'Salvar'
+    budget: 7
+  - key: 'scus:str:0x80015204'
+    translation: 'O nivel de todos subiu!'
+    budget: 27
+  - key: 'scus:str:0x800152c8'
+    translation: 'Todos aliad'
+    budget: 11
+  - key: 'scus:str:0x800152d4'
+    translation: 'Selec.'
+    budget: 11
+  - key: 'scus:str:0x8007b660'
+    translation: 'Ordem'
+    budget: 7
+  - key: 'scus:str:0x8007b668'
+    translation: 'Todos'
+    budget: 7
+  - key: 'scus:str:0x8007b670'
+    translation: 'PM'
+    budget: 3
+  - key: 'scus:str:0x8007b674'
+    translation: 'Ataque'
+    budget: 7
+  - key: 'scus:str:0x8007b67c'
+    translation: 'Item'
+    budget: 7
+  - key: 'scus:str:0x8007b684'
+    translation: 'Sai'
+    budget: 3
+  - key: 'scus:str:0x8007b688'
+    translation: 'Iniciar'
     budget: 7
   place_names:
   - key: 'scus:cell:0x80073b38'
