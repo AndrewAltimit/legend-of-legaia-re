@@ -253,3 +253,92 @@ fn a_broke_party_is_turned_away_and_keeps_its_last_coin() {
         "the can't-afford branch still restored the party"
     );
 }
+
+/// The first box a freshly triggered talk opens: the lead pc of its first row,
+/// plus the runner's executed-pc map at that point. Steps the conversation
+/// without input until a box is up.
+fn first_box_of_next_talk(world: &mut World, slot: u8) -> (usize, Vec<bool>) {
+    world.trigger_field_interact(0xFF, slot);
+    for _ in 0..600 {
+        world.input.set_pad(0);
+        world.drive_inline_dialogue();
+        if let Some(lead) = world
+            .dialog
+            .inline
+            .as_ref()
+            .and_then(|d| d.panel.as_ref())
+            .and_then(|p| p.row_leads().first().copied())
+        {
+            let visited = world
+                .dialog
+                .inline
+                .as_ref()
+                .map(|d| d.visited.clone())
+                .unwrap_or_default();
+            return (lead, visited);
+        }
+    }
+    panic!("the talk never opened a box");
+}
+
+/// Retail ends a talk at the last page's dismiss when the byte after the box
+/// does not continue the conversation (`FUN_80038050` returns `0`), leaving the
+/// actor's cursor `+0x9E` **on** that byte; the next talk resumes there. The
+/// innkeeper's stay ends on its `26` loop-back, and the next talk executes the
+/// loop-back, the selectors and the `CC F8 85` acquire - which succeeds - and
+/// opens at the same first box. Captured on `retock_innkeeper_talk_open`
+/// (retail SCUS): parked at `+0x18A`, reopened at `+0x36`.
+#[test]
+fn two_talks_in_a_row_both_open_the_innkeepers_greeting() {
+    let Some((mut world, cost, slot)) = retock_world() else {
+        return;
+    };
+    let rec = world.npcs.dialog_prologue[&slot].clone();
+    let (first_lead, _) = first_box_of_next_talk(&mut world, slot);
+    assert_eq!(
+        first_lead, rec.first_segment,
+        "talk 1 opens at the greeting"
+    );
+    // Run the stay to its end (the talk above is still open: finish it).
+    world.dialog.inline = None;
+    world.dialog.current = None;
+    stay_at_the_inn(&mut world, slot, 0);
+    assert_eq!(world.party.money, PURSE - cost as i32, "the stay ran");
+
+    let parked = world.npcs.dialog_prologue[&slot].entry_pc;
+    assert!(
+        parked > rec.first_segment,
+        "the talk parked the cursor past its greeting (entry {:#x} -> {parked:#x})",
+        rec.entry_pc
+    );
+    assert_eq!(
+        rec.body[parked], 0x26,
+        "the cursor parks on the post-box loop-back, not executed"
+    );
+    let back = i16::from_le_bytes([rec.body[parked + 1], rec.body[parked + 2]]);
+    assert_eq!(
+        (parked as i32 + 1 + i32::from(back)) as usize,
+        rec.entry_pc,
+        "the loop-back returns to the interaction entry"
+    );
+    eprintln!(
+        "[inn] talk 1 parked at {parked:#x} (entry {:#x}, greeting {:#x})",
+        rec.entry_pc, rec.first_segment
+    );
+
+    // Talk 2 resumes at the parked jump and opens at the same greeting: the
+    // acquire it runs again does not end it.
+    let (lead, ran) = first_box_of_next_talk(&mut world, slot);
+    assert!(ran[parked], "talk 2 executes the parked loop-back");
+    assert!(ran[rec.entry_pc], "and lands on the interaction entry");
+    assert_eq!(lead, rec.first_segment, "talk 2 opens at the greeting too");
+    world.dialog.inline = None;
+    world.dialog.current = None;
+    // And it plays to its end like the first (decline this time).
+    stay_at_the_inn(&mut world, slot, 1);
+    assert_eq!(
+        world.party.money,
+        PURSE - cost as i32,
+        "declining charges nothing"
+    );
+}

@@ -2255,9 +2255,11 @@ caller too, then advances by its width in `s7`; `s7 = 0` is the refusal,
 `beqz s7, 0x801DEE4C` at `0x801E21D0`. The runner hands such an op the record's
 own context as the target's stand-in, and the halt bit it left there turned each
 later cross-context op into a `Halt`, ending the stay before its gold gate. The
-runner now keeps the caller's halt state across a cross-context op and records
-the acquired target, and ends the conversation when the record's tail loops back
-over the same acquire.
+runner keeps the caller's halt state across a cross-context op. The acquire's
+own refusal is for a target that already carries `0x400` while the scene word
+`*(_DAT_801C6EA4) + 8` is `0` (`0x801E2168..0x801E218C`), the same test the
+dispatcher's halted-target early-out makes (`0x801DE90C..0x801DE940`, which also
+lets a caller whose `+0x50` is `0xFB` through).
 
 **Where retail ends it (capture).** `retock_innkeeper_talk_open`, a Cross
 cadence, exec-BPs on the arm's entry and on `0x801E21D0`
@@ -2275,11 +2277,36 @@ window has closed" is falsified. It also misread its gate: the scene word
 `*(_DAT_801C6EA4) + 8` reads `0` on every sampled vsync of both conversations,
 consistent with its one documented use (non-zero only while a placement's spawn
 section is pre-run, [above](#0x43-sub-01ab---scripted-arc-jump)), so it is not
-a modal-window flag. The engine's runner instead executes the loop-back and the
-`+0x28` selector's flag tests before it ends, so those tests run at the end of
-the finishing talk rather than at the start of the next one. The two
-`0x400` bits the acquire set are clear again 18 vsyncs later with the second
-conversation still open; what clears them is not identified.
+a modal-window flag. The two `0x400` bits the acquire set are clear again 18
+vsyncs later with the second conversation still open; what clears them is not
+identified.
+
+**The end rule is the dialog SM's, not the acquire's.** Once a box's lines are
+scanned, `FUN_80039B7C` hands the byte after them to `FUN_80038050`
+(`jal 0x80038050` at `0x80039C84`) and ends the talk when it returns `0`
+(`bne v0,zero,0x80039D64` at `0x80039C8C`; the fall-through clears the actor's
+`+0x10 & 0x100`, zeroes `+0x9C` and releases the player lock). `FUN_80038050`'s
+jump table (`0x80010F38`, 44 entries for `0x21..0x4C`) continues on `0x24`,
+`0x25` and `0x48` (cursor `+1`), on the option bytes `0x27..0x2A`, and on
+`0x4C FF` / `0x4C FE` (`+2` / `+3`); `0x21` steps past itself and ends; every
+other byte - a `0x26` jump, any opcode - takes the default and ends with the
+cursor left on it. In the placement interaction records of every scene, the
+parking bytes found after a box are almost all `0x26` jumps (forward to a shared
+tail or back to the top selector; a handful are other opcodes), so this is how a
+talk ends: parked on that jump, which the next talk then runs. The capture above
+is one instance.
+
+The engine ports the classification as
+`legaia_engine_core::inline_dialogue::talk_dispatch`: when a dismissed box's
+next byte parks, the runner ends the talk with the cursor recorded
+(`InlineDialogue::parked_pc`), and `World::drive_inline_dialogue` stores it as
+the placement's interaction entry, so the next talk on the same actor resumes
+there - through the loop-back, the selectors and the acquire, which is not an
+end. `crates/engine-core/tests/inn_stay_field_vm_disc.rs` pins the innkeeper: the
+stay parks at `+0x18A` and the second talk opens at the greeting again. Not
+modelled: a talk that ends on a raw `0x21` keeps its entry (retail's cursor
+moves past the `0x21`), and prop-bound records (doors, cupboards) run their tail
+through, since only NPC talks are captured.
 
 An earlier engine model drove `0x3F → open_dialog(text_id, inline, …)`, which is
 wrong twice over: `0x3F` is the named scene-change, and field dialogue is the

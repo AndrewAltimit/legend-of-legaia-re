@@ -108,12 +108,55 @@ pub struct InlineDialogue {
     /// whole map disarms the detector for the rest of the conversation, which
     /// is the same defect in its second shape.
     pub visited: Vec<bool>,
-    /// Cross-context targets this conversation has halt-acquired (`4C 85`
-    /// family behind an `0x80` target byte), so a second acquire of the same
-    /// target - the record looping back over its own opening - ends the talk
-    /// the way retail's failed acquire does.
-    /// See `World::step_inline_dialogue`.
-    pub acquired_targets: Vec<u8>,
+    /// Where this conversation left the record's cursor when it ended at a
+    /// box whose post-box byte does not continue the talk
+    /// ([`TalkDispatch::EndParked`]) - retail's `actor[+0x9E]`, which the
+    /// next talk on the same actor resumes from. `None` for every other end.
+    pub parked_pc: Option<usize>,
+}
+
+/// What the dialog SM does with the byte after a finished text box: the
+/// return value and cursor step of `FUN_80038050` (SCUS), which
+/// `FUN_80039B7C` calls once a box's lines are scanned (`jal 0x80038050` at
+/// `0x80039C84`) and which ends the talk on `0`
+/// (`bne v0,zero,0x80039D64` at `0x80039C8C`; the fall-through clears the
+/// actor's `+0x10 & 0x100`, zeroes `+0x9C` and releases the player lock).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TalkDispatch {
+    /// The SM keeps running the record from the given cursor: `0x24`,
+    /// `0x25` and `0x48` step one byte, `0x4C FF` two and `0x4C FE xx`
+    /// three (the jump table at `0x80010F38` sends `0x24` / `0x25` / `0x48`
+    /// to `0x800380A8`, `0x4C` to `0x80038104`). The option bytes
+    /// `0x27..=0x2A` also continue; the runner resolves them through the
+    /// picker instead.
+    Continue(usize),
+    /// `0x21`: the cursor steps past it and the talk ends
+    /// (`0x8003809C`).
+    EndAfter(usize),
+    /// Any other byte - a `0x26` jump, an opcode - takes the table's default
+    /// (`0x80038150`): the talk ends with the cursor left **on** it, not
+    /// executed. The next talk on the actor starts there.
+    EndParked(usize),
+}
+
+/// Classify the byte at `pc` (the one after a finished box) the way
+/// `FUN_80038050` does. The byte is read raw: an `0x80`-prefixed byte is not
+/// in the table and parks.
+///
+/// PORT: FUN_80038050 (the post-box classification; the option-jump apply
+/// for `0x27..=0x2A` is `legaia_mes::Picker::jump_target`)
+pub fn talk_dispatch(bytes: &[u8], pc: usize) -> TalkDispatch {
+    match bytes.get(pc).copied() {
+        Some(0x21) => TalkDispatch::EndAfter(pc + 1),
+        Some(0x24 | 0x25 | 0x48) => TalkDispatch::Continue(pc + 1),
+        Some(0x27..=0x2A) => TalkDispatch::Continue(pc),
+        Some(0x4C) => match bytes.get(pc + 1).copied() {
+            Some(0xFF) => TalkDispatch::Continue(pc + 2),
+            Some(0xFE) => TalkDispatch::Continue(pc + 3),
+            _ => TalkDispatch::EndParked(pc),
+        },
+        _ => TalkDispatch::EndParked(pc),
+    }
 }
 
 impl InlineDialogue {
@@ -133,7 +176,7 @@ impl InlineDialogue {
             prop_anchor: None,
             park_frames: 0,
             visited,
-            acquired_targets: Vec::new(),
+            parked_pc: None,
         }
     }
 
@@ -164,7 +207,7 @@ impl InlineDialogue {
             prop_anchor: None,
             park_frames: 0,
             visited,
-            acquired_targets: Vec::new(),
+            parked_pc: None,
         }
     }
 
@@ -201,5 +244,37 @@ impl InlineDialogue {
 
     pub fn is_done(&self) -> bool {
         self.done
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_post_box_byte_decides_whether_the_talk_goes_on() {
+        let b = [
+            0x26, 0x9D, 0xFE, 0x21, 0x24, 0x25, 0x48, 0x4C, 0xFF, 0x4C, 0xFE, 0x07, 0x4C, 0x10,
+            0x28, 0xA4,
+        ];
+        assert_eq!(
+            talk_dispatch(&b, 0),
+            TalkDispatch::EndParked(0),
+            "a jump parks"
+        );
+        assert_eq!(talk_dispatch(&b, 3), TalkDispatch::EndAfter(4));
+        assert_eq!(talk_dispatch(&b, 4), TalkDispatch::Continue(5));
+        assert_eq!(talk_dispatch(&b, 5), TalkDispatch::Continue(6));
+        assert_eq!(talk_dispatch(&b, 6), TalkDispatch::Continue(7));
+        assert_eq!(talk_dispatch(&b, 7), TalkDispatch::Continue(9));
+        assert_eq!(talk_dispatch(&b, 9), TalkDispatch::Continue(12));
+        assert_eq!(talk_dispatch(&b, 12), TalkDispatch::EndParked(12));
+        assert_eq!(talk_dispatch(&b, 14), TalkDispatch::Continue(14));
+        assert_eq!(
+            talk_dispatch(&b, 15),
+            TalkDispatch::EndParked(15),
+            "raw, not masked"
+        );
+        assert_eq!(talk_dispatch(&b, 99), TalkDispatch::EndParked(99));
     }
 }

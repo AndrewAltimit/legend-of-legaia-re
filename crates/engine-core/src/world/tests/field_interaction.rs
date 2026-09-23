@@ -392,11 +392,15 @@ fn spar_menu_of_derives_fight_option_from_the_scripted_battle_install() {
 /// `3E FF 04` install) must still run once the frames elapse, not be dropped
 /// when the wait first halts. Before the resume fix the WaitFrames halt ended
 /// the conversation and the SET never ran.
+///
+/// The box carries a `0x25` after it, the byte retail's dialog SM continues
+/// the talk on (`FUN_80038050`); an opcode straight after a box would end the
+/// talk parked on it instead.
 #[test]
 fn inline_runner_resumes_across_wait_frames_to_run_the_post_wait_effect() {
-    // First box "hi", then WaitFrames 16, then SET system flag 7 (the effect),
-    // then reply "ok", then end.
-    let mut buf = vec![0x1F, b'h', b'i', 0x00];
+    // First box "hi" + `0x25`, then WaitFrames 16, then SET system flag 7 (the
+    // effect), then reply "ok", then end.
+    let mut buf = vec![0x1F, b'h', b'i', 0x00, 0x25];
     buf.extend_from_slice(&[0x4A, 0x10, 0x00]); // WaitFrames 16 (u16 LE target)
     buf.extend_from_slice(&[0x50, 0x07]); // SET system flag 7 - the gated effect
     buf.extend_from_slice(&[0x1F, b'o', b'k', 0x00]); // reply box

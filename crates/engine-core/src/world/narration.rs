@@ -2447,12 +2447,13 @@ impl World {
                     let choice = panel.picker_cursor();
                     let target = panel.picker().and_then(|pk| pk.jump_target(choice));
                     id.last_choice = Some(choice);
-                    // A user choice is progress: clear the wrap map so a menu
-                    // record that re-emits its menu by jumping back after a
-                    // branch reply still cycles (the izumi book-menu shape,
-                    // pinned by `inline_dialogue_menu_reemission_survives_wrap_rule`).
-                    // The player leaves such a record by picking its exit
-                    // option, not by the runner deciding the pass is over.
+                    // A user choice is progress: clear the wrap map so a
+                    // branch that jumps back over PCs this talk already ran
+                    // is not read as a loop. A branch whose reply box is
+                    // followed by the jump back (the izumi book-menu shape)
+                    // ends the talk parked on that jump instead, and the next
+                    // talk re-opens the menu - pinned by
+                    // `a_menu_reply_parks_on_its_jump_back_and_the_next_talk_reopens_the_menu`.
                     id.visited.iter_mut().for_each(|v| *v = false);
                     match target {
                         Some(t) => id.pc = t,
@@ -2460,9 +2461,11 @@ impl World {
                     }
                     id.panel = None;
                 } else if panel.is_done() {
-                    // Plain box dismissed: resume the VM just past this segment.
+                    // Plain box dismissed: the byte after the box decides
+                    // whether the talk goes on (`FUN_80038050`).
                     id.pc = panel.pc;
                     id.panel = None;
+                    end_talk_at_post_box_byte(&mut id);
                 } else if panel.is_waiting_for_input() {
                     // Page break inside a multi-page conversation (`0x24` /
                     // `0x48` / implicit next lead): turn the page in the same
@@ -2473,6 +2476,7 @@ impl World {
                     if panel.is_done() {
                         id.pc = panel.pc;
                         id.panel = None;
+                        end_talk_at_post_box_byte(&mut id);
                     } else {
                         for lead in panel.row_leads() {
                             if lead < id.visited.len() {
@@ -2607,48 +2611,36 @@ impl World {
                 });
             // A cross-context HALT-ACQUIRE (`4C 85` / `4C 8E` / `4C 8F` behind
             // an `0x80` target byte) suspends the TARGET, and for the player
-            // target also the calling record, then advances the caller
-            // (`0x801E1ECC..0x801E1F54` in `overlay_0897_801de840.txt`). Two
-            // consequences the runner has to model, because it hands the op
-            // the record's own context as a stand-in for the target:
-            //
-            // - The halted-target early-out at the top of `FUN_801DE840`
-            //   (`0x801DE90C`) is skipped while a modal window is up
-            //   (`*(_DAT_801C6EA4 + 8) != 0`), so inside a conversation the
-            //   record's later cross-context ops on the frozen player still
-            //   run. A halt bit left on the stand-in would instead turn every
-            //   one of them into a `Halt` and end the talk at its first
-            //   player gesture - `retock`'s innkeeper opens its interaction
-            //   with `CC F8 85` and never reached its gold gate.
-            // - Re-acquiring a target this conversation already holds is the
-            //   record's resident loop-back reaching its top selector again
-            //   (the innkeeper's tail jumps back over `CC F8 85`); retail's
-            //   acquire fails there once the window has closed, the caller
-            //   halts at its own PC, and the dialog SM ends the talk.
+            // target also the calling record, then advances the caller by its
+            // width (the arm `0x801E2148..0x801E21DC`, jump-table `0x801CEF48`
+            // entries `5` / `0xE` / `0xF`; `s7 = 0` is the refusal,
+            // `beqz s7` at `0x801E21D0`, taken for a target already carrying
+            // `0x400` while the scene word `*(_DAT_801C6EA4) + 8` is `0`,
+            // `0x801E2168..0x801E218C`). The runner hands the op the record's
+            // own context as a stand-in for the target, so the halt bit the
+            // acquire sets lands on the stand-in, and the dispatcher's
+            // halted-target early-out (`0x801DE90C..0x801DE940`: an extended
+            // op whose target carries `+0x10 & 0x400` returns at its own PC
+            // unless that scene word is non-zero or the caller's `+0x50` is
+            // `0xFB`) would then turn every later cross-context op of the talk into a
+            // `Halt` - `retock`'s innkeeper opens with `CC F8 85` and never
+            // reached its gold gate. Retail's talk does not stall there: in the
+            // captured stay both `0x400` bits are clear again 18 vsyncs after
+            // the acquire, before the first player gesture (which follows a
+            // text box and a picker); the writer is not identified. The runner
+            // therefore keeps the caller's halt state across the op. A talk's
+            // later re-acquire of the same target is not an end: the capture
+            // shows the next talk's acquire succeeding.
             let caller_halt =
-                ext_target.map(|t| (t, id.ctx.flags & 0x400, id.ctx.saved_pc, id.ctx.wait_accum));
+                ext_target.map(|_| (id.ctx.flags & 0x400, id.ctx.saved_pc, id.ctx.wait_accum));
             let step = vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc);
-            let mut reacquired = false;
-            if let Some((target, halt, saved_pc, wait_accum)) = caller_halt
+            if let Some((halt, saved_pc, wait_accum)) = caller_halt
                 && halt == 0
                 && id.ctx.flags & 0x400 != 0
             {
                 id.ctx.flags &= !0x400;
                 id.ctx.saved_pc = saved_pc;
                 id.ctx.wait_accum = wait_accum;
-                if id.acquired_targets.contains(&target) {
-                    reacquired = true;
-                } else {
-                    id.acquired_targets.push(target);
-                }
-            }
-            if reacquired {
-                if let Some(fb) = id.fallback_segment_pc.take() {
-                    id.pc = fb;
-                    continue;
-                }
-                id.done = true;
-                break;
             }
             if let Some(target) = bound
                 && let Some(actor) = host.world.props.bank.actor_clip_mut(target)
@@ -2657,11 +2649,12 @@ impl World {
                 id.ctx.local_flags = saved_local_flags;
             }
             match step {
-                // A backward Advance onto an already-executed PC is the
-                // record's resident loop-back to its top selector - the end
-                // of ONE conversation pass (retail parks there until the next
-                // talk). End the conversation like a Halt would; the wrap map
-                // is cleared on picker commits so menu re-emission survives.
+                // A backward Advance onto an already-executed PC with no box
+                // parked in between is the record looping over its own ops.
+                // Retail ends a talk earlier, at the dismissed box's parking
+                // byte (`end_talk_at_post_box_byte`); this is the port's net
+                // for a loop that shows no box. End the conversation like a
+                // Halt would; the wrap map is cleared on picker commits.
                 FieldStepResult::Advance { next_pc }
                     if next_pc <= id.pc && id.visited.get(next_pc).copied().unwrap_or(false) =>
                 {
@@ -2816,6 +2809,16 @@ impl World {
         let down = self.input.just_pressed(input::PadButton::Down);
         self.step_inline_dialogue(confirm, up, down);
         if self.dialog.inline.as_ref().is_some_and(|d| d.is_done()) {
+            // A talk that ended on a parking post-box byte leaves the actor's
+            // cursor there (retail `actor[+0x9E]`), and the next talk on the
+            // same actor resumes from it - `retock`'s innkeeper re-enters
+            // through its `26` loop-back and its acquire.
+            if let Some(id) = self.dialog.inline.as_ref()
+                && let (Some(pc), Some(slot)) = (id.parked_pc, id.npc_slot)
+                && let Some(rec) = self.npcs.dialog_prologue.get_mut(&slot)
+            {
+                rec.entry_pc = pc;
+            }
             self.dialog.inline = None;
             self.dialog.current = None;
             // Drop the interaction's staging slots with it. They are consumed
@@ -2832,6 +2835,27 @@ impl World {
             self.pending_field_events
                 .push(crate::field_events::FieldEvent::DialogDismissed);
         }
+    }
+}
+
+/// Apply `FUN_80038050`'s verdict on the byte after a dismissed box to the
+/// runner: a parking byte ends the talk with the cursor left on it (recorded
+/// in [`crate::inline_dialogue::InlineDialogue::parked_pc`]); `0x21` and the
+/// continuing bytes are left to the VM loop, which already ends on a raw
+/// `0x21` and runs the rest. A prop-bound run (door / cupboard record) keeps
+/// running through its tail: the parking rule is pinned on NPC talks only.
+///
+/// REF: FUN_80039B7C (`0x80039C84..0x80039D60`, the talk end after a box),
+/// FUN_80038050
+fn end_talk_at_post_box_byte(id: &mut crate::inline_dialogue::InlineDialogue) {
+    if id.prop_anchor.is_some() {
+        return;
+    }
+    if let crate::inline_dialogue::TalkDispatch::EndParked(pc) =
+        crate::inline_dialogue::talk_dispatch(&id.bytecode, id.pc)
+    {
+        id.parked_pc = Some(pc);
+        id.done = true;
     }
 }
 
