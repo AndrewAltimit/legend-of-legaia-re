@@ -301,6 +301,16 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
 
     fn ext_set_8007b9d8(&mut self, value: i32) {
         self.world.move_vm.dat_8007b9d8 = value;
+        // The word is the frame-step **floor** (`FUN_80016B6C` reads it at
+        // `0x80017178` and stores its low byte into `DAT_1F800393` when the
+        // measured cadence is below it, `lbu -0x4628` at `0x80017190`). A
+        // stager that raises it - opdeene's prescript record 16 writes `3` as
+        // its first op - slows the game tick from the next frame on. The
+        // engine runs the deterministic arm of that resolver (adaptive cadence
+        // off), whose result is the floor itself, so the cadence follows.
+        let floor = (value as u8).max(1);
+        self.world.clock.frame_step_floor = floor;
+        self.world.clock.frame_step = floor;
     }
 
     // --- ext sub-op 0x3A angle-to-player ------------------------------
@@ -1740,6 +1750,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // `0`/`2`/`3` and stopped at the bit-15-set arm; the bytes say subs
         // `0`/`1`/`2` and the bit-15-clear arm, with sub `3` ungated.
         //
+        // Both producer calls also cross to the host's audio ring as
+        // `SfxRingOp`s (`World::take_sfx_ring_ops`), which is what sounds the
+        // cue; the pair above is the engine-core mirror the gates read.
+        //
         // PORT: FUN_80035BAC (live wiring; the table itself is
         // `crate::scus_leaf_kernels::SfxCueDelays`)
         // REF: FUN_80035B50
@@ -1765,6 +1779,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                     let slot = self.world.audio.sfx_cue_cursor;
                     self.world.audio.sfx_cue_cursor = self.world.audio.sfx_cue_delays.park(slot);
                     self.world.audio.sfx_parked_slot = slot;
+                    // `jal 0x80035B50` with `a0 = (s16)op1_word`
+                    // (`0x801E0344..0x801E034C`): the cue id goes to the
+                    // host ring.
+                    self.world
+                        .audio
+                        .sfx_ring_ops
+                        .push(crate::world::SfxRingOp::Push(op1_word as i16));
                 }
                 1 => {
                     if !self
@@ -1791,6 +1812,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                         .audio
                         .sfx_cue_delays
                         .set_delay(parked, op1_word as i16);
+                    self.world
+                        .audio
+                        .sfx_ring_ops
+                        .push(crate::world::SfxRingOp::SetLastDelay(op1_word as i16));
                 }
                 // Sub `3` (`FUN_801D8450`) and every sub `>= 5` advance
                 // unconditionally.

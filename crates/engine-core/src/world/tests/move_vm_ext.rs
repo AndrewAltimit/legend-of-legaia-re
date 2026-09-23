@@ -254,3 +254,19 @@ fn ext_sub_op_2c_captures_a_strip_request_for_the_draw() {
     }
     assert_eq!(world.move_vm.strip_requests.len(), MOVE_STRIP_REQUEST_CAP);
 }
+
+/// Sub-op `0x2F`'s word is the frame-step floor `DAT_8007B9D8`: the resolver
+/// `FUN_80016B6C` raises the cadence to its low byte. With the adaptive arm
+/// off (the engine's), the cadence *is* the floor.
+#[test]
+fn move_vm_ext_0x2f_raises_the_frame_step_floor() {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    assert_eq!(world.clock.frame_step_floor, 2);
+    let bc = vec![0x002F, 0x002F, 0x0003];
+    world.set_move_bytecode(0, Some(bc.clone()));
+    let _ = world.step_move_vm(0, &bc);
+    assert_eq!(world.move_vm.dat_8007b9d8, 3);
+    assert_eq!(world.clock.frame_step_floor, 3);
+    assert_eq!(world.clock.frame_step, 3);
+}
