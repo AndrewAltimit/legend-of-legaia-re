@@ -124,6 +124,18 @@ fn run_window(
     pad_script: Option<&str>,
     shot_tick: u64,
 ) -> (String, String) {
+    run_window_with(disc, shot, key_script, pad_script, shot_tick, &[])
+}
+
+/// [`run_window`] with extra `play-window` arguments.
+fn run_window_with(
+    disc: &Path,
+    shot: &Path,
+    key_script: &str,
+    pad_script: Option<&str>,
+    shot_tick: u64,
+    extra: &[&std::ffi::OsStr],
+) -> (String, String) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_legaia-engine"));
     cmd.arg("play-window")
         .arg("--scene")
@@ -141,6 +153,7 @@ fn run_window(
     if let Some(p) = pad_script {
         cmd.arg("--pad-script").arg(p);
     }
+    cmd.args(extra);
     let out = cmd.output().expect("spawn legaia-engine play-window");
     (
         String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -260,14 +273,15 @@ fn rung(
 /// Fishing: the venue actors (wander / floor solve / camera publish / line),
 /// the persistent + catch HUD rows and the venue chrome.
 ///
-/// `L` opens it and Cross casts. The cast is pad input, which is exactly why
-/// both scripts are needed: neither channel alone reaches this frame.
+/// `L` opens it, Circle starts the cast and locks the power meter, and Cross
+/// reels. The cast is pad input, which is exactly why both scripts are
+/// needed: neither channel alone reaches this frame.
 #[test]
 fn rung1_fishing_opens_and_paints_its_hud() {
     rung(
         "fishing",
         "40:L",
-        Some("80:Cross,140:Cross,200:Cross"),
+        Some("80:Circle,120:Circle,160-200:Cross"),
         "fishing: started",
         0.001,
         SHOT_TICK,
@@ -277,12 +291,14 @@ fn rung1_fishing_opens_and_paints_its_hud() {
 /// The fishing prize exchange: the venue sub-screen panel, the per-row
 /// availability gate and the **quantity cap** a committed purchase runs.
 ///
-/// The long held-Cross window is not padding. The cap is only reached through
-/// an *available* row, and a row is available only when the point pool can
-/// pay for it - so the rung has to fish long enough to earn a cheapest-row
-/// price before it opens the counter. A short run reaches the panel and stops
-/// one gate short of the arithmetic, which is exactly how this row stayed
-/// dark while the exchange itself was on screen.
+/// The cap is only reached through an *available* row, and a row is
+/// available only when the point pool can pay for it. The session is the
+/// retail loop now - a catch needs a strike off the band roll, which a short
+/// scripted run cannot count on - so the rung seeds the pool the way a player
+/// with a GameShark would: a cheat file writing `0x8008444C`, the pool the
+/// exchange spends from. A pool that cannot pay reaches the panel and stops
+/// one gate short of the arithmetic, which is exactly how this row once
+/// stayed dark while the exchange itself was on screen.
 #[test]
 fn rung2_fishing_prize_exchange_buys_a_row() {
     let Some((disc, out)) = ladder_env() else {
@@ -291,16 +307,20 @@ fn rung2_fishing_prize_exchange_buys_a_row() {
     let base = baseline(&disc, &out);
     let shot = out.join("fishing_exchange.png");
     let _ = std::fs::remove_file(&shot);
-    let (stdout, stderr) = run_window(
+    // 5000 points (a u16 write, the cheat database's own shape).
+    let cheat = out.join("fishing_points.gs.txt");
+    std::fs::write(&cheat, "R I 2 L 0 8008444C 1388 Fishing points\n").expect("write cheat file");
+    let (stdout, stderr) = run_window_with(
         &disc,
         &shot,
         // Five `Down`s walk the cursor to the last row whatever the pool
         // floors it to: the dear one-time prizes sit at the top of every
         // venue table and the cheap repeatable ones at the bottom, so the
         // clamped-at-`last` row is the one a modest point total can pay for.
-        "40:L,1800:P,1820:Down,1840:Down,1860:Down,1880:Down,1900:Down,1940:Enter,1960:Right",
-        Some("80-1700:Cross"),
-        2000,
+        "40:L,100:P,120:Down,140:Down,160:Down,180:Down,200:Down,240:Enter,260:Right",
+        None,
+        300,
+        &[std::ffi::OsStr::new("--cheat-file"), cheat.as_os_str()],
     );
     assert!(
         stdout.contains("[ok] screenshot"),
@@ -313,7 +333,7 @@ fn rung2_fishing_prize_exchange_buys_a_row() {
     // The purchase is the assertion. Both outcomes the buy can log are
     // failures of this rung for different reasons, so neither is accepted:
     // "unavailable" means the pool never reached a price (the fishing window
-    // was too short), and no line at all means `Enter` never reached the
+    // was too small), and no line at all means `Enter` never reached the
     // commit.
     assert!(
         stderr.contains("fishing exchange: bought item"),

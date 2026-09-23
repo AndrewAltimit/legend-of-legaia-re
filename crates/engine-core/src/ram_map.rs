@@ -69,8 +69,11 @@ pub enum CellTarget {
 pub enum WorldField {
     /// Gold (`World::party.money`).
     Gold,
-    /// Casino coins. Currently no engine field; recorded only.
+    /// Casino coins (`World::minigames.casino_coins`).
     Coins,
+    /// Persistent fishing-point pool (`World::minigames.fishing_points`,
+    /// retail `_DAT_8008444C`).
+    FishingPoints,
     /// Game-time seconds (`World::clock.play_time_seconds`). Mapped from
     /// the in-RAM frame counter at the cell address.
     PlayTimeSeconds,
@@ -141,6 +144,13 @@ pub fn build_registry() -> Vec<RamCell> {
         category: Category::PartyMoney,
         target: CellTarget::World(WorldField::Coins),
         citation: "GameShark `Infinite Coins`",
+    });
+    out.push(RamCell {
+        addr: 0x8008444C,
+        width: 4,
+        category: Category::Minigame,
+        target: CellTarget::World(WorldField::FishingPoints),
+        citation: "the fishing point pool `_DAT_8008444C` (docs/subsystems/minigame-fishing.md); the cheat classifier's `fishing_points_u16`",
     });
     out.push(RamCell {
         addr: 0x8007B5FC,

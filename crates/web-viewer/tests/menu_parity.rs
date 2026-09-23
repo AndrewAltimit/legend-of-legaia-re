@@ -622,7 +622,10 @@ fn a_backed_out_title_continue_closes_the_menu_instead_of_landing_on_the_root() 
     };
     rt.insert_card(0, card_with_save(3, "Vahn", 1234), "card A".into())
         .expect("insert card into port 1");
-    assert!(rt.boot_title_has_save_data(), "the card makes Continue live");
+    assert!(
+        rt.boot_title_has_save_data(),
+        "the card makes Continue live"
+    );
     rt.boot_title_start();
     for _ in 0..240 {
         rt.boot_title_step(0);
@@ -638,7 +641,10 @@ fn a_backed_out_title_continue_closes_the_menu_instead_of_landing_on_the_root() 
     }
     assert_eq!(outcome, "continue", "Cross on the Continue row hands off");
     assert!(rt.play_menu_is_open(), "the save-select is up");
-    assert!(rt.play_menu_sub_is_open(), "on the Load sub-screen, not the root");
+    assert!(
+        rt.play_menu_sub_is_open(),
+        "on the Load sub-screen, not the root"
+    );
     // Circle backs out of the port pick; the title-opened menu closes with it.
     for _ in 0..8 {
         if !rt.play_menu_is_open() {
