@@ -1817,8 +1817,11 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                         .sfx_ring_ops
                         .push(crate::world::SfxRingOp::SetLastDelay(op1_word as i16));
                 }
-                // Sub `3` (`FUN_801D8450`) and every sub `>= 5` advance
-                // unconditionally.
+                // Sub `3` (`FUN_801D8450`) is ungated: it stops the top two
+                // voices, closes VAB slot 6 and clears the field-bank latch,
+                // so the next field init reloads PROT 0876.
+                3 => self.world.release_field_audio(),
+                // Every sub `>= 5` advances unconditionally.
                 _ => {}
             }
         } else if !dev_gate && !self.world.audio.sound_stream.is_settled() {
