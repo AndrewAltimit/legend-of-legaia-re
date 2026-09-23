@@ -43,6 +43,11 @@ param(
     # $env:LEGAIA_NO_ISOLATE=1 forces the real dir.
     [switch]$IsolateConfig,
     [switch]$NoIsolateConfig,
+    # PCSX-Redux applies <image stem>.ppf from beside the image it loads
+    # (cdrom/ppf.cc, logged only as "[+ppf]"), and the randomizer writes its
+    # .ppf beside its INPUT disc. This runner refuses such an image unless
+    # -AllowSiblingPpf says the patch is wanted (run_probe.sh stages instead).
+    [switch]$AllowSiblingPpf,
     [string]$ProfileDir  = $(if ($env:LEGAIA_PCSX_PROFILE_DIR) { $env:LEGAIA_PCSX_PROFILE_DIR } else { "" }),
     [string]$RealConfig  = $(if ($env:LEGAIA_PCSX_REAL_CONFIG) { $env:LEGAIA_PCSX_REAL_CONFIG } else { "$env:APPDATA\pcsx-redux" })
 )
@@ -146,6 +151,12 @@ if ($isolate) {
         }
     }
     ($profile | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath (Join-Path $ProfileDir "pcsx.json") -Encoding utf8
+}
+
+# ---- sibling .ppf guard (see -AllowSiblingPpf) ----
+$siblingPpf = [System.IO.Path]::ChangeExtension($Iso, ".ppf")
+if ((Test-Path -LiteralPath $siblingPpf) -and -not $AllowSiblingPpf) {
+    throw "A .ppf sits beside the image ($siblingPpf); PCSX-Redux would apply it silently. Copy the .bin into a directory without one, or pass -AllowSiblingPpf to measure the patched disc on purpose."
 }
 
 # ---- emulator flags (interpreter+debugger unless -Fast) ----

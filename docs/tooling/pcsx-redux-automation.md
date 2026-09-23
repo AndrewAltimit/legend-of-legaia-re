@@ -20,6 +20,7 @@ This page documents the pattern, the harness, and the catalogue.
 - [The harness](#the-harness)
 - [The probe pattern](#the-probe-pattern)
 - [Fast whole-playthrough capture (two-tier model)](#fast-whole-playthrough-capture-two-tier-model)
+- [Patched-disc taint](#patched-disc-taint)
 - [Catalogue](#catalogue)
   - [Runtime probes (Lua autorun)](#runtime-probes-lua-autorun)
   - [Save-state to Python (offline analysis)](#save-state-to-python-offline-analysis)
@@ -774,6 +775,117 @@ previously needed a manual `attribute_overlay_hits.py` pass. An unmapped
 checksum degrades visibly (`csum:XXXXXXXX?`). `--overlay-map FILE`
 overrides the committed map.
 Pure functions, exercised by `test_analyze_reader_watch.py` on synthetic rows.
+
+## Patched-disc taint
+
+A capture can measure a patched game while every log line names the retail
+image. Two routes carry a patch in, and they fail differently:
+
+- **The image route.** PCSX-Redux applies `<image stem>.ppf` from beside the
+  image it loads (logged only as `[+ppf]` on the `Loaded CD Image` line), and
+  `legaia-patcher randomize` writes its `.ppf` beside its **input** disc unless
+  `--patch` names another path. Every probe that handed the emulator the
+  retail path while a randomizer run had left a `.ppf` there read patched
+  sectors - including runs that passed no `--iso` at all, because the
+  runner's default `--iso` was that path until [the harness](#the-harness)
+  started staging.
+- **The state route.** `SCUS_942.54` is read from the disc once, at boot. A
+  save state made on a patched disc carries the patched executable in RAM
+  forever, whatever disc it is later loaded onto, and so does every state
+  checkpointed from it. Overlays and scene data are re-read on the next load
+  that needs them; the executable never is. Staging the disc does nothing for
+  this route.
+
+A patched byte matters only if the run reads it. For the image route that
+means a disc read after the state load (a scene or battle load, a cold boot);
+for the state route it means executing or reading a patched SCUS site, or an
+overlay the state already holds from the patched disc.
+
+[`patch_taint_audit.py`](../../scripts/pcsx-redux/patch_taint_audit.py)
+measures both: `states` compares the resident SCUS of every library state
+against the retail executable at a fixed table of patcher sites, `logs`
+lists every `[+ppf]` run, and `ppf` decodes a patch file into ISO files,
+PROT entries and SCUS addresses. The manifest records the result per
+scenario as `resident_patch` ([`scripts/scenarios.toml`](../../scripts/scenarios.toml)).
+No disc bytes are printed; the output is addresses, lengths and labels.
+
+### Resident patch families in the save-state library
+
+A patched state is identified by what its resident SCUS carries at the
+patcher's own hook sites, and - where one exists - by an exact byte match
+against a patched image built by the same feature.
+
+| Family (`resident_patch`) | Resident signature | What else the build rewrites | Carried by |
+|---|---|---|---|
+| shiny-seru + enemy-ally charm | SCUS hooks `0x800321D4`, `0x8004AD0C`, `0x80051990`, `0x80051A20` + the four SCUS arenas; resident `0898` at six hook sites. Byte-identical to a shiny + charm build at every one of that build's SCUS bytes | PROT 0867 (monster archive, repacked), 0898, 0899 | the S1..S5 playthrough anchors, `first_town_interactive`, the three `rikuroa_*` beats, `dolk2_market_noa`, the five `minigame_*_pcsx` states |
+| shiny-seru (earlier layout) | `0x800321D4`, `0x8004AD0C`, `0x80051A20`, gap-1 arena | as above, earlier layout | the three `shiny_refactor_gimard_*` states |
+| arts AP override | SCUS arena 1 routines; resident `0898` guard / debit / refund sites `0x801EF410` / `0x801EF490` / `0x801EF988` | PROT 0898 | the four `battle_gaza2_*` states |
+| starting bag + warp preset | the new-game seed code `0x80034ADC` and `0x80034B04` | none resident - the edit acts once, at NEW GAME | `karisto_sol_pre_encounter`, `sol_to_karisto_worldmap`, `octam_to_sebucus_worldmap`, the three `casino_*` states, `baka_fighter_entry_pretransition`, the two Super / Miracle Art battle states, four mednafen `overworld_battle_bg_angle_*` states |
+| location rename | the quick-travel name cells at `0x80073B18` | the kingdom and scene MAN name carriers ([`place-names.md`](../formats/place-names.md)) | the three `cort_evolved_*` states, `teien_field_run` |
+| delilas party swap + cast | `0x80012DD0`, `0x80054008`, gap-1 arena | player battle files, cast modules | the nine `delilas_*` states (made on purpose) |
+| enemy-ally charm | `0x80051990` + its arena | - | `enemy_ally_charm_gobu_slime` (made on purpose) |
+
+What a family can and cannot move:
+
+- **Field-only claims** (story flags, NPC seats, locomotion, scene entry)
+  read none of these sites. The shiny + charm hooks act at battle load, at
+  the animation commit and in battle menus; the seed edit ran once, before
+  the capture; the rename changes name text only.
+- **Battle claims** on a shiny + charm or arts-AP state run patched `0898`
+  code at the listed sites. The charm skips single-enemy fights by design
+  (so `s5_tetsu_battle`, the one-enemy Tetsu spar, is never charmed), and
+  the shiny hooks act on Seru capture and fade.
+- **Inventory and progression** on a starting-bag state began from a
+  non-retail bag and a pre-unlocked warp list.
+- **Byte comparisons of a resident overlay** against the disc see the hook
+  windows as differences - the `s5_tetsu_battle` resident `0898` differs
+  from the retail image at six places of eight bytes or fewer.
+
+### What the retail image's sibling `.ppf` patched
+
+The captures fall into four windows during which a `.ppf` sat beside the
+retail image, separated by windows with none (`patch_taint_audit.py logs`).
+A `.ppf` is overwritten by the next `randomize` run on that input and
+deleted by hand, so each window's content has to be recovered from what
+the runs themselves left behind.
+
+| Window (run families) | Patch | Evidence |
+|---|---|---|
+| door / house-door traces, `battle_render_capture`, `party_attack_damage_trace`, `summon_model_base`, the `super_art_*` queue runs, `minigame_overlay_capture` | unknown beyond SCUS: the states made in it carry the starting bag + warp preset seed and no other SCUS patcher site | resident SCUS of the states the window produced |
+| charm / shiny validation runs, `prescript_read_watch`, the S1..S5 capture runs, `tetsu_*`, `flag_firehose`, `spine_flag_writers`, early `state_poll` | the shiny-seru + enemy-ally charm build | cold-boot `state_poll` snapshots and the S-segment snapshots carry that build's SCUS byte-exact |
+| `gaza2_*`, `location_banner_source`, `tile_shatter_page`, late `state_poll`, `delilas_battle_load`, `custom_items_cast_experiment`, `arts_voice_cue` | arts AP override early in the window, location rename by its cold boots; later runs unknown | resident SCUS and `0898` of the `battle_gaza2_*` states; cold-boot `state_poll` snapshots |
+| `w3a`, `w1d`, `lane-a` | oscillating AP costs, seed 7 (decoded below) | the `.ppf` itself |
+
+The current sibling `.ppf` is `randomize --oscillating-ap` (seed 7). It
+rewrites SCUS only at the battle-loader setup hook `0x80051A20`, the
+arts-list read-out `0x800344D8` and the four arenas, and PROT 0898 at the
+damage site `0x801EDA10` and the guard / debit / refund sites
+([`oscillating_ap.rs`](../../crates/patcher/src/oscillating_ap.rs)).
+
+### Verdicts on capture-graded claims
+
+A claim is at risk only when its run read a patched byte and the claim is
+about behaviour that byte changes. Each row below was re-checked against
+that test.
+
+| Claim (page) | Rests on | Verdict |
+|---|---|---|
+| Story-flag play order from the poll corpus ([`re-settled-threads.md`](../reference/re-settled-threads.md), [`world-map.md`](../subsystems/world-map.md)) | cold-boot `state_poll` runs under the location-rename patch | stands: the patch rewrites name text; flag writes are script ops it does not touch |
+| Story-flag writers are the field VM's own `0x5x` / `0x6x` arms ([`script-vm.md`](../subsystems/script-vm.md)) | `flag_firehose` / `spine_flag_writers` under the shiny + charm build | stands: the build rewrites no scene MAN and no field overlay |
+| Super / Miracle Art queue bytes ([`super-art-queue-capture.md`](super-art-queue-capture.md)) | starting-bag battle states, image-route runs of unknown patch | stands: both states hold the retail `0898` at every patcher site, and the queue matched tables sourced independently byte-exact |
+| `model_sel` base `gp[0x754]` ([`move-power.md`](../formats/move-power.md)) | `summon_model_base` under an unknown patch | stands: pinned again by `crates/mednafen/tests/summon_model_base.rs` on retail-clean mednafen states |
+| Gaza 2 park / approach mechanics ([`battle-action.md`](../subsystems/battle-action.md)) | the `battle_gaza2_*` states (arts AP override resident) | stands by inference: the override changes party arts AP accounting; the park is the monster's Move clip and reach test |
+| Battle camera trios and the `0967` resident identity ([`battle.md`](../subsystems/battle.md)) | `s5_tetsu_battle` (shiny + charm resident) | stands: `0967` is outside the build and no hook sits in the camera path; a one-enemy fight is never charmed |
+| `0874` registrar counts, cast-arm gating, cast voice cues | `w3a` / `w1d` / `lane-a` runs under the oscillating-AP `.ppf` | stands for every in-battle run (the state already held `0898` and the executable, and neither is re-read); `w3a/registrar_sol` is void - see below |
+
+**The one run the patch visibly broke.** `w3a/registrar_sol` crossed a
+field-to-battle load from `karisto_sol_pre_encounter`: the battle load read
+the patched `0898` from the image, and its oscillating-AP guard detour
+jumped into SCUS arena 1, which the state held as retail. The emulator
+logged `ReservedInstruction` at `0x8007AF3C`, where the zero run of the
+arena ends. It is the only first-chance exception at a battle load in any
+retail-path capture, and no capture on an unpatched image logs one at a
+battle load.
 
 ## Catalogue
 
