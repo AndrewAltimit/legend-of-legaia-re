@@ -282,3 +282,81 @@ fn over_budget_and_non_latin_report_per_entry_and_touch_nothing() {
         "failed entries must leave the image untouched"
     );
 }
+
+/// Every line a scene script actually carries is exported, whatever it reads
+/// like. The prose-quality gate used to drop short script lines - a lone word
+/// with trailing punctuation, a sound effect, a speaker line built only from
+/// name substitutions - so a translator never saw them and they stayed in
+/// English. Walks each LZS scene MAN independently of the exporter: every
+/// `0x1F` lead the record's clean script walk carries as text (non-blank) must
+/// have a `man:` key, and no `man:` key may sit on an instruction's operand
+/// bytes.
+#[test]
+fn export_keeps_every_script_walked_man_line() {
+    use legaia_asset::man_edit::{TextSite, text_site};
+    use legaia_patcher::translation::{export::SceneManText, segments};
+
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let pack = export(&original);
+    let exported: std::collections::BTreeSet<&str> = pack
+        .sections
+        .scene_dialog
+        .iter()
+        .map(|e| e.key.as_str())
+        .collect();
+
+    let patcher = DiscPatcher::open(original).expect("open disc");
+    let (mut walked, mut short) = (0usize, 0usize);
+    let mut missing = Vec::new();
+    for idx in 0..patcher.entry_count() {
+        let Ok(entry) = patcher.read_entry(idx) else {
+            continue;
+        };
+        let Some(man) = SceneManText::locate(&entry) else {
+            continue;
+        };
+        let buf = &man.decoded;
+        for lead in 0..buf.len() {
+            if buf[lead] != 0x1F {
+                continue;
+            }
+            let off = lead + 1;
+            let Some(term) = segments::walk_to_terminator(buf, off) else {
+                continue;
+            };
+            if buf[term] != 0x00 || buf[off..term].iter().all(|&b| b == b' ') {
+                continue;
+            }
+            let key = format!("man:{idx}:0x{off:x}");
+            match text_site(buf, off) {
+                TextSite::Segment => {
+                    walked += 1;
+                    if !segments::qualifies(&buf[off..term]) {
+                        short += 1;
+                    }
+                    if !exported.contains(key.as_str()) {
+                        missing.push(key);
+                    }
+                }
+                TextSite::Operand => assert!(
+                    !exported.contains(key.as_str()),
+                    "{key}: exported a run of instruction operand bytes as dialog"
+                ),
+                TextSite::Unreached | TextSite::NoRecord => {}
+            }
+        }
+    }
+    assert!(walked > 10_000, "only {walked} walked MAN lines found");
+    // Non-vacuous: the retail disc carries hundreds of walked lines the prose
+    // gate alone rejects.
+    assert!(short > 100, "only {short} walked lines fail the prose gate");
+    assert!(
+        missing.is_empty(),
+        "{} script-walked MAN lines missing from the export, e.g. {:?}",
+        missing.len(),
+        &missing[..missing.len().min(8)]
+    );
+}

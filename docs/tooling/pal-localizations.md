@@ -211,10 +211,13 @@ the importer patches (`legaia_patcher::translation::lift`):
    walk does not place - an operand run, text past a record's first decode
    error, an entry whose MAN has a different record shape on the source disc.
    The distinction is not academic: the Spanish disc renders many a chest
-   line as a bare `{c2:xx}` item token, which fails the segment quality gate
-   on that side only, and from there every scan ordinal in the scene names the
-   *previous* line - a shift the pair counts never show, and one the lift
-   report now measures (`structural` / `by scan ordinal` / `shifted`). Both
+   line as a bare `{c2:xx}` item token, which fails the prose-quality gate on
+   that side only; wherever that gate decides (a lead the walk does not reach,
+   a raw carrier outside the streaming scenes), every scan ordinal after it
+   names the *previous* line - a shift the pair counts never show, and one the
+   lift report measures (`structural` / `by scan ordinal` / `shifted`). A
+   walked MAN lead skips the gate entirely (`segments::scan_man`), so the
+   token line survives on both sides there. Both
    scans use the accent-tolerant gate on both sides, so the coincidental
    high-byte hits in the binary regions both discs share land on both lists.
    A raw carrier outside the ten streaming dungeon scenes has no walk, and a

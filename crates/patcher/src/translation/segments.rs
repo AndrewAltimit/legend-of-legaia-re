@@ -22,7 +22,11 @@
 //! chaperoned by `0xFF` control bytes every <= 8 bytes, and any segment
 //! containing `0xFF` is rejected.
 
+use legaia_asset::man_edit::{self, TextSite};
+
+use super::export::SceneManText;
 use super::markup;
+use super::stream_man::StreamManText;
 
 /// One qualifying dialog segment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -234,6 +238,90 @@ pub fn scan_ext(buf: &[u8], allow_high: bool) -> Vec<Segment> {
             }
             _ => i += 1,
         }
+    }
+    segs
+}
+
+/// Every dialog segment of a **decompressed scene MAN**, in offset order.
+///
+/// Inside a MAN the script itself says which `0x1F` leads are text: a lead
+/// that an instruction on its record's clean walk carries
+/// ([`man_edit::text_site`] = `Segment`) is dialog whatever it reads like, so
+/// the prose gate is not consulted for it. That gate drops the short lines
+/// scene scripts are full of - `Anyway...`, `Oh!`, `(Silence)`, and every
+/// speaker line built from name substitutions such as `{c1:01}: {c1:00}!` -
+/// because a space-less or letter-poor run is exactly its signature of binary
+/// noise. A lead the walk spans as operand bytes is never text and is dropped
+/// even when it reads as a word. A lead the walk does not reach (`Unreached`
+/// / `NoRecord`) falls back to the prose gate, which is what import's
+/// same-size path expects of it.
+pub fn scan_man(man: &[u8], allow_high: bool) -> Vec<Segment> {
+    let mut segs = Vec::new();
+    let mut i = 0;
+    while i < man.len() {
+        if man[i] != 0x1F {
+            i += 1;
+            continue;
+        }
+        let text_off = i + 1;
+        let Some(term) = walk_to_terminator(man, text_off).filter(|&t| man[t] == 0x00) else {
+            i += 1;
+            continue;
+        };
+        let text = &man[text_off..term];
+        // A blank spacer line (spaces only) draws nothing and has nothing
+        // to translate.
+        let keep = text.iter().any(|&b| b != b' ')
+            && match man_edit::text_site(man, text_off) {
+                TextSite::Segment => true,
+                TextSite::Operand => false,
+                TextSite::Unreached | TextSite::NoRecord => qualifies_ext(text, allow_high),
+            };
+        if keep {
+            segs.push(Segment {
+                text_off,
+                len: term - text_off,
+            });
+            i = term + 1;
+        } else {
+            i += 1;
+        }
+    }
+    segs
+}
+
+/// Every dialog segment of a **raw PROT carrier** (the `raw:` key domain),
+/// with offsets in entry space. Empty unless the entry is a genuine dialog
+/// carrier ([`is_dialog_carrier`]). Hits inside the entry's LZS scene-MAN
+/// stream are dropped (those bytes are compressed, not text). When the entry
+/// is a streaming scene led by an uncompressed MAN chunk
+/// ([`StreamManText`]), that chunk is scanned with [`scan_man`] - the same
+/// script walk the LZS MANs get - and only the bytes outside it fall back to
+/// the prose gate.
+pub fn scan_raw_carrier(entry: &[u8], allow_high: bool) -> Vec<Segment> {
+    if !is_dialog_carrier(entry) {
+        return Vec::new();
+    }
+    let compressed = SceneManText::locate(entry).map(|m| m.compressed_span());
+    let stream = StreamManText::locate(entry);
+    let man_range = stream.as_ref().map(StreamManText::man_range);
+    let mut segs: Vec<Segment> = scan_ext(entry, allow_high)
+        .into_iter()
+        .filter(|s| {
+            !compressed.as_ref().is_some_and(|c| c.contains(&s.text_off))
+                && !man_range.as_ref().is_some_and(|r| r.contains(&s.text_off))
+        })
+        .collect();
+    if let (Some(stream), Some(range)) = (&stream, &man_range) {
+        segs.extend(
+            scan_man(&stream.man, allow_high)
+                .into_iter()
+                .map(|s| Segment {
+                    text_off: s.text_off + range.start,
+                    len: s.len,
+                }),
+        );
+        segs.sort_by_key(|s| s.text_off);
     }
     segs
 }
