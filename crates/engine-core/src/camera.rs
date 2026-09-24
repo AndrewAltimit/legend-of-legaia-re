@@ -707,6 +707,12 @@ impl Camera {
             }
         }
         world.pending_field_events.extend(leftover);
+        // Publish the live visible-tile window to the fog pool: the ambient
+        // emitter samples its burst span from the same scratchpad bytes
+        // `0x1F8003E8..EB` every frame (`lb` at `0x801D6158..`), and those
+        // bytes live here, not on the world the emitter ticks in. A record
+        // load in this frame's `tick` reaches the emitter one frame later.
+        world.fog.view_window = Some(self.zone.view_window);
         applied
     }
 
@@ -811,10 +817,14 @@ impl Camera {
 
         // The zone-driven follow camera: retail's per-scene / per-tile camera
         // parameters composed into the same ten globals, then eased. It runs
-        // only in a field scene with terrain loaded (the zone table and the
+        // in any walkable scene with terrain loaded (the zone table and the
         // walk-region table are what it queries) and only while nothing
-        // scripted owns the shot.
-        let zone_scene = world.mode == crate::world::SceneMode::Field && has_field_terrain(world);
+        // scripted owns the shot - the kingdom overworld included: retail's
+        // overworld is an ordinary mode-`0x03` field-run scene, and on all
+        // three resident overworld states the live pitch / yaw / eye trio /
+        // `H` equal the follow composer's staging descriptor at `0x801F3580`
+        // field for field (see [`zone_camera_scene`]).
+        let zone_scene = zone_camera_scene(world);
         if zone_scene {
             // A scripted shot handing the camera back snaps. Retail's
             // scripts do this themselves through the `[4C 39]` / `[4C 3E]`
@@ -1112,11 +1122,7 @@ impl Camera {
     /// free-roam scene, so a scripted beat that is about to capture the live
     /// globals sees the zone camera's pose rather than the field reset.
     fn prime_zone_before_script(&mut self, world: &World) {
-        if self.zone.snap_pending
-            && self.mode == CameraMode::Follow
-            && world.mode == crate::world::SceneMode::Field
-            && has_field_terrain(world)
-        {
+        if self.zone.snap_pending && self.mode == CameraMode::Follow && zone_camera_scene(world) {
             self.zone_follow_tick(world, 1);
         }
     }
@@ -1317,6 +1323,25 @@ impl Camera {
 /// Whether a world carries the per-scene field terrain the zone camera
 /// queries - the walk-region table, the MAN section-3 zone table, or the
 /// collision grid the floor sampler reads.
+/// Whether the zone-driven follow camera owns this world's walk camera: a
+/// walkable scene - the field or the kingdom overworld - with field terrain.
+///
+/// The overworld is not a separate camera. Retail runs it as an ordinary
+/// mode-`0x03` field-run scene through the field overlay's own per-frame
+/// chain, and its walk camera is the zone camera: on the three resident
+/// overworld states (`keikoku_chest_preload` on `map01`,
+/// `sebucus_overworld_resident` on `map02`, `karisto_overworld_resident` on
+/// `map03`) the live pitch `0x8007B790`, yaw, eye trio `0x800840B8/BC/C0` and
+/// GTE `H` `0x8007B6F4` equal the `FUN_801DAB90` staging descriptor at
+/// `0x801F3580` exactly, the block at `0x8007B606` carries `H = 0x170`, and
+/// the eye X is the composer's `-(depth >> 7)` on all three.
+pub(crate) fn zone_camera_scene(world: &World) -> bool {
+    matches!(
+        world.mode,
+        crate::world::SceneMode::Field | crate::world::SceneMode::WorldMap
+    ) && has_field_terrain(world)
+}
+
 fn has_field_terrain(world: &World) -> bool {
     !world.terrain.zone_table.is_empty()
         || !world.terrain.map_region_block.is_empty()

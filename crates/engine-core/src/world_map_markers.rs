@@ -18,6 +18,19 @@
 //! The projection is the frame's own: [`camera_view::frame_vp`] at the
 //! display's 4:3 aspect, composed with the one world flip that takes the raw
 //! retail Y-down marker position into that matrix's Y-up render frame.
+//!
+//! # Occlusion
+//!
+//! Retail's placements are actor models, sorted into the ordering table with
+//! the terrain, so a portal behind a mountain is hidden by it. A screen-space
+//! quad has no such order, so under the walk camera each quad carries its
+//! corners' **scene depth** through the same matrix
+//! ([`MarkerQuad::depth`]), and both hosts depth-test it against the terrain
+//! they already drew (`legaia_engine_ui::screen_prim::FLAG_DEPTH_TESTED`).
+//! The depth is taken [`DEPTH_PULL`] units nearer the eye than the segment
+//! itself, so a base cross lying on the ground does not z-fight the ground it
+//! lies on. The top-view debug camera has no retail eye and keeps drawing
+//! the markers over everything.
 
 use crate::camera_view::{self, FieldCameraFrame};
 use crate::world::{World, WorldMapEntityKind, WorldMapEntityMarker, WorldMapPlayerMarker};
@@ -35,6 +48,11 @@ pub const MIN_CLIP_W: f32 = 1.0;
 /// Endpoints further than this from the display (in display pixels) are
 /// off-screen for any purpose, and are dropped before the `i16` store.
 pub const OFFSCREEN_LIMIT: f32 = 4096.0;
+/// How far toward the eye (world units) a marker's depth is sampled, so the
+/// base cross on the ground wins the depth test against that ground while a
+/// ridge any real distance in front still hides the marker. A tenth of a
+/// 128-unit map tile.
+pub const DEPTH_PULL: f32 = 12.0;
 
 /// One marker segment in raw retail Y-down world coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -46,10 +64,14 @@ pub struct MarkerSegment {
 
 /// One projected segment: four display-pixel corners in the `v0..v3` order
 /// every `screen_prim` quad uses (`a+n`, `b+n`, `a-n`, `b-n`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MarkerQuad {
     pub xy: [(i16, i16); 4],
     pub rgba: [u8; 4],
+    /// Per-corner scene depth in the frame matrix's normalised depth
+    /// (`clip.z / clip.w`), same corner order as [`Self::xy`]; `None` when
+    /// the frame has no eye to depth-test from (the top-view debug camera).
+    pub depth: Option<[f32; 4]>,
 }
 
 /// Colour key per entity kind: portals cyan, NPCs green, encounter zones red.
@@ -140,9 +162,23 @@ pub fn player_segments(p: &WorldMapPlayerMarker) -> [MarkerSegment; 4] {
 /// Every marker segment this frame: one set per placed entity, plus the
 /// player's when `draw_player` (a host passes `false` while it draws the
 /// party leader's real mesh, which the marker would otherwise stab through).
+///
+/// Each entity marker stands on the ground under it: with the scene's
+/// collision grid loaded its `y` is the floor height sampled at the
+/// placement (`World::sample_field_floor_height`, the `FUN_80019278` port),
+/// the height retail's placement spawn adds from the same floor LUT. The
+/// seam's own `y` is the player's plane, which buries a marker whose ground
+/// sits higher than the player's under the terrain once the quads are
+/// depth-tested. Without a grid the seam's plane stands.
 pub fn marker_segments(world: &World, draw_player: bool) -> Vec<MarkerSegment> {
     let mut out = Vec::new();
-    for m in world.world_map_entity_markers() {
+    let grounded = !world.terrain.collision_grid.is_empty();
+    for mut m in world.world_map_entity_markers() {
+        if grounded {
+            m.world_pos[1] = world
+                .sample_field_floor_height(m.world_pos[0] as i32, m.world_pos[2] as i32)
+                as f32;
+        }
         out.extend(entity_segments(&m));
     }
     if draw_player && let Some(p) = world.world_map_player_marker() {
@@ -166,12 +202,47 @@ fn project(vp: &[f32; 16], p: [f32; 3]) -> Option<[f32; 2]> {
     (sx.abs() < OFFSCREEN_LIMIT && sy.abs() < OFFSCREEN_LIMIT).then_some([sx, sy])
 }
 
+/// A raw Y-down world point's normalised depth through `vp`, sampled
+/// [`DEPTH_PULL`] units toward `eye`.
+fn depth_toward(vp: &[f32; 16], p: [f32; 3], eye: [f32; 3]) -> Option<f32> {
+    let d = [eye[0] - p[0], eye[1] - p[1], eye[2] - p[2]];
+    let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    let t = if len > DEPTH_PULL {
+        DEPTH_PULL / len
+    } else {
+        0.0
+    };
+    let q = [p[0] + d[0] * t, p[1] + d[1] * t, p[2] + d[2] * t];
+    let v = [q[0], -q[1], q[2], 1.0];
+    let row = |r: usize| (0..4).map(|c| vp[c * 4 + r] * v[c]).sum::<f32>();
+    let w = row(3);
+    (w >= MIN_CLIP_W).then(|| row(2) / w)
+}
+
 /// One segment as a display quad [`SEGMENT_WIDTH`] wide. A segment shorter
 /// than that on screen still gets a square of that width, so a post seen
-/// end-on stays visible.
+/// end-on stays visible. No depth - see [`segment_quad_depth`].
 pub fn segment_quad(vp: &[f32; 16], s: &MarkerSegment) -> Option<MarkerQuad> {
+    segment_quad_depth(vp, s, None)
+}
+
+/// [`segment_quad`] with the corners' scene depth, sampled toward `eye` (the
+/// frame's raw Y-down world eye, [`camera_view::frame_eye`]); `eye = None`
+/// leaves the quad depth-free.
+pub fn segment_quad_depth(
+    vp: &[f32; 16],
+    s: &MarkerSegment,
+    eye: Option<[f32; 3]>,
+) -> Option<MarkerQuad> {
     let a = project(vp, s.a)?;
     let mut b = project(vp, s.b)?;
+    let depth = match eye {
+        Some(e) => {
+            let (da, db) = (depth_toward(vp, s.a, e)?, depth_toward(vp, s.b, e)?);
+            Some([da, db, da, db])
+        }
+        None => None,
+    };
     let half = SEGMENT_WIDTH * 0.5;
     let (mut dx, mut dy) = (b[0] - a[0], b[1] - a[1]);
     let mut len = (dx * dx + dy * dy).sqrt();
@@ -190,6 +261,7 @@ pub fn segment_quad(vp: &[f32; 16], s: &MarkerSegment) -> Option<MarkerQuad> {
             pt(b[0] - nx, b[1] - ny),
         ],
         rgba: s.rgba,
+        depth,
     })
 }
 
@@ -214,9 +286,10 @@ pub fn marker_quads(
     let Some(vp) = camera_view::frame_vp(frame, aabb, DISPLAY_W / DISPLAY_H) else {
         return Vec::new();
     };
+    let eye = camera_view::frame_eye(frame);
     marker_segments(world, draw_player)
         .iter()
-        .filter_map(|s| segment_quad(&vp, s))
+        .filter_map(|s| segment_quad_depth(&vp, s, eye))
         .collect()
 }
 
@@ -302,6 +375,41 @@ mod tests {
         assert_eq!(q.xy[0].0, 80);
         assert_eq!(q.xy[1].0, 240);
         assert!((q.xy[0].1 - q.xy[2].1).abs() <= 1);
+    }
+
+    /// Under the walk camera every quad carries its corners' depth, pulled a
+    /// little toward the eye; a farther marker reads deeper.
+    #[test]
+    fn walk_camera_quads_carry_scene_depth() {
+        let w = world_map_world();
+        let frame = camera_view::resolve_field_camera(
+            &w,
+            &crate::camera::Camera::default(),
+            None,
+            [0.0, 0.0],
+        );
+        let quads = marker_quads(&w, &frame, AABB, true);
+        assert!(!quads.is_empty());
+        let vp = camera_view::frame_vp(&frame, AABB, DISPLAY_W / DISPLAY_H).unwrap();
+        let eye = camera_view::frame_eye(&frame).unwrap();
+        for q in &quads {
+            let d = q.depth.expect("walk frame quads are depth-tested");
+            assert!(d.iter().all(|z| (0.0..=1.0).contains(z)), "{d:?}");
+        }
+        // The pull puts the sampled depth just in front of the true point.
+        let p = [1000.0, 0.0, 2000.0];
+        let exact = {
+            let v = [p[0], -p[1], p[2], 1.0];
+            let row = |r: usize| (0..4).map(|c| vp[c * 4 + r] * v[c]).sum::<f32>();
+            row(2) / row(3)
+        };
+        let pulled = depth_toward(&vp, p, eye).unwrap();
+        assert!(pulled < exact, "pulled {pulled} vs exact {exact}");
+        // And a point farther along the eye-to-player ray is deeper.
+        let dir = [p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]];
+        let far_p = [p[0] + dir[0], p[1] + dir[1], p[2] + dir[2]];
+        let far = depth_toward(&vp, far_p, eye).unwrap();
+        assert!(far > pulled, "far {far} vs {pulled}");
     }
 
     #[test]

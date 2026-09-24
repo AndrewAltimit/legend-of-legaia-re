@@ -36,7 +36,7 @@ pub(super) fn headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
     Some((device, queue))
 }
 
-fn vram_attributes() -> [wgpu::VertexAttribute; 5] {
+fn vram_attributes() -> [wgpu::VertexAttribute; 6] {
     [
         wgpu::VertexAttribute {
             offset: 0,
@@ -62,6 +62,11 @@ fn vram_attributes() -> [wgpu::VertexAttribute; 5] {
             offset: 40,
             shader_location: 4,
             format: wgpu::VertexFormat::Uint32,
+        },
+        wgpu::VertexAttribute {
+            offset: crate::screen_overlay::SCREEN_VERTEX_OFF_DEPTH,
+            shader_location: 5,
+            format: wgpu::VertexFormat::Float32,
         },
     ]
 }
@@ -525,6 +530,7 @@ fn screen_overlay_pipeline_draws_on_gpu() {
         semi_transparent: false,
         abr_mode: 0,
         ot_index: 10,
+        depth: None,
     });
     let px = render_center_pixel(&h, &[flat], [0.0, 0.0, 0.0, 1.0]);
     assert!(
@@ -548,6 +554,7 @@ fn screen_overlay_pipeline_draws_on_gpu() {
         gouraud: None,
         semi_transparent: false,
         ot_index: 10,
+        depth: None,
     });
     let px = render_center_pixel(&h, &[textured], [0.0, 0.0, 0.0, 1.0]);
     assert!(
@@ -568,6 +575,7 @@ fn screen_overlay_pipeline_draws_on_gpu() {
         semi_transparent: true,
         abr_mode: 1,
         ot_index: 10,
+        depth: None,
     });
     let bg = render_center_pixel(&h, &[], [0.25, 0.25, 0.25, 1.0]);
     let blended = render_center_pixel(&h, &[add], [0.25, 0.25, 0.25, 1.0]);

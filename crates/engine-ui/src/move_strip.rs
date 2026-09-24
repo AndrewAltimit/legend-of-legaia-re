@@ -96,6 +96,7 @@ pub fn strip_quad_prim(q: &StripQuad, ot_index: u32) -> ScreenPrim {
         gouraud: None,
         semi_transparent: false,
         ot_index,
+        depth: None,
     })
 }
 

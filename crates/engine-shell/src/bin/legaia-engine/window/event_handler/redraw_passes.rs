@@ -293,7 +293,9 @@ impl PlayWindowApp {
             .is_some_and(|pslot| self.drained_spawn_slots.contains(&pslot));
         legaia_engine_core::world_map_markers::marker_quads(world, &frame, aabb, !player_mesh_drawn)
             .iter()
-            .map(|q| legaia_engine_render::screen_overlay::world_map_marker_prim(q.xy, q.rgba))
+            .map(|q| {
+                legaia_engine_render::screen_overlay::world_map_marker_prim(q.xy, q.rgba, q.depth)
+            })
             .collect()
     }
 
@@ -534,8 +536,9 @@ impl PlayWindowApp {
     /// retail's field render pass) through the follow camera this frame
     /// draws the field with, wrapped by the shared `fog_puff_prim` so the
     /// blend class and vertex order are the browser play page's too. Empty
-    /// outside a field scene or while the script gate (`_DAT_8007B854`) is
-    /// clear - the same two tests the pass makes at `0x80026EA4..0x80026EC4`.
+    /// outside game mode 3 (a field scene or the kingdom overworld) or while
+    /// the script gate (`_DAT_8007B854`) is clear - the same two tests the
+    /// pass makes at `0x80026EA4..0x80026EC4`.
     ///
     /// The camera resolves with no cutscene view, on both hosts alike, so a
     /// scripted camera beat projects the fog through the follow pose: a
@@ -543,10 +546,10 @@ impl PlayWindowApp {
     pub(super) fn take_field_fog_prims(
         &mut self,
     ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
-        use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
+        use legaia_engine_core::camera_view::resolve_field_camera;
         use legaia_engine_render::screen_overlay::fog_puff_prim;
         let world = &self.session.host.world;
-        if world.mode != SceneMode::Field || !world.fog.gate {
+        if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
             return Vec::new();
         }
         let center = [
@@ -554,7 +557,10 @@ impl PlayWindowApp {
             (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
         ];
         let frame = resolve_field_camera(world, &self.session.camera, None, center);
-        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
+        // The field follow pose, or the overworld walk pose in the field
+        // frame - retail's overworld is a game-mode-3 scene and draws the
+        // same pool through the same pass.
+        let Some(view) = frame.field_view() else {
             return Vec::new();
         };
         self.session
@@ -562,7 +568,7 @@ impl PlayWindowApp {
             .world
             .fog_render_step(&view)
             .iter()
-            .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index))
+            .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
             .collect()
     }
 

@@ -292,7 +292,8 @@ in vec2 a_pos;          /* already NDC - built by the shared Rust builder */
 in vec2 a_uv;           /* texel coordinates inside the texture page */
 in uvec2 a_cba_tsb;     /* GP0 CLUT base + texpage words */
 in vec4 a_color;        /* textured: /128 factor. flat: /255 colour. */
-in uint a_flags;        /* bit 0 = textured */
+in uint a_flags;        /* bit 0 = textured, bit 1 = depth-tested */
+in float a_depth;       /* scene depth, read only with flags bit 1 */
 
 out vec2 v_uv;
 flat out uvec2 v_cba_tsb;
@@ -304,7 +305,13 @@ void main() {
   v_cba_tsb = a_cba_tsb;
   v_color = a_color;
   v_flags = a_flags;
-  gl_Position = vec4(a_pos, 0.0, 1.0);
+  /* A depth-tested quad (the overworld markers) carries the shared
+   * view-projection's clip z / w - the value the 3D pass's gl_Position
+   * produces for the same world point - so it hides behind nearer terrain.
+   * Every other quad sits on the near plane (-1) and passes against any
+   * scene depth, which is how it composited before the channel existed. */
+  float z = (a_flags & 2u) != 0u ? a_depth : -1.0;
+  gl_Position = vec4(a_pos, z, 1.0);
 }
 `;
 
@@ -376,12 +383,13 @@ void main() {
   /* Byte layout of `legaia_engine_ui::screen_prim::ScreenVertex`. Pinned on
    * the Rust side by `the_vertex_field_offsets_match_the_layout_hosts_read_as_bytes`
    * so a field reorder fails a test rather than a shader. */
-  const SCREEN_VERTEX_STRIDE = 44;
+  const SCREEN_VERTEX_STRIDE = 48;
   const SCREEN_VERTEX_OFF_POS = 0;
   const SCREEN_VERTEX_OFF_UV = 8;
   const SCREEN_VERTEX_OFF_CBA_TSB = 16;
   const SCREEN_VERTEX_OFF_COLOR = 24;
   const SCREEN_VERTEX_OFF_FLAGS = 40;
+  const SCREEN_VERTEX_OFF_DEPTH = 44;
 
   class ScreenPrimPass {
     /* `renderer` is the live TmdRenderer: this pass borrows its GL context,
@@ -419,6 +427,7 @@ void main() {
       bindI('a_cba_tsb', 2, SCREEN_VERTEX_OFF_CBA_TSB);
       bindF('a_color', 4, SCREEN_VERTEX_OFF_COLOR);
       bindI('a_flags', 1, SCREEN_VERTEX_OFF_FLAGS);
+      bindF('a_depth', 1, SCREEN_VERTEX_OFF_DEPTH);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibo);
       gl.bindVertexArray(null);
     }
@@ -440,10 +449,14 @@ void main() {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.renderer.tex);
       gl.uniform1i(this.locVram, 0);
-      /* Screen-space packets carry no depth: they composite in ordering-table
-       * order over the finished scene, so the depth buffer takes no part. */
+      /* Retail screen-space packets carry no depth: they composite in
+       * ordering-table order over the finished scene, on the near plane, so
+       * the test always passes for them. The test is armed (no write) for
+       * the one kind that does carry a depth - the overworld markers, which
+       * must hide behind the terrain the frame already drew. */
       const depthWasOn = gl.isEnabled(gl.DEPTH_TEST);
-      gl.disable(gl.DEPTH_TEST);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
       gl.depthMask(false);
       gl.disable(gl.CULL_FACE);
       let blendOn = false;
@@ -464,7 +477,7 @@ void main() {
         gl.blendEquation(gl.FUNC_ADD);
       }
       gl.depthMask(true);
-      if (depthWasOn) gl.enable(gl.DEPTH_TEST);
+      if (!depthWasOn) gl.disable(gl.DEPTH_TEST);
       gl.bindVertexArray(null);
     }
 

@@ -45,7 +45,7 @@ impl LegaiaRuntime {
         let frame = resolve_field_camera(world, &self.camera, None, centre);
         marker_quads(world, &frame, aabb, draw_player)
             .iter()
-            .map(|q| world_map_marker_prim(q.xy, q.rgba))
+            .map(|q| world_map_marker_prim(q.xy, q.rgba, q.depth))
             .collect()
     }
 }
@@ -56,5 +56,21 @@ impl LegaiaRuntime {
     /// probe for the oracle; the draw itself rides the screen-prim pass.
     pub fn play_world_map_marker_count(&mut self) -> u32 {
         self.world_map_marker_prims().len() as u32
+    }
+
+    /// Debug seat: put the player on raw world `(x, z)` with the floor
+    /// sampled under it and re-arm the zone camera's arrival snap - the
+    /// frame-pairing aid for comparing the page against a retail save state
+    /// at that state's own player position. The native window's twin is
+    /// `play-window`'s `LEGAIA_SEAT`.
+    pub fn play_debug_seat(&mut self, x: i16, z: i16) -> bool {
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        let seated = host.world.debug_seat_player(x, z);
+        if seated {
+            self.camera.zone.arm_arrival();
+        }
+        seated
     }
 }

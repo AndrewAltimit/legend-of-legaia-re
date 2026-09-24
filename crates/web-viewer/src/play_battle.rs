@@ -226,6 +226,7 @@ fn screen_fx_prims(
                 semi_transparent,
                 abr_mode,
                 ot_index: ot,
+                depth: None,
             }),
             ScreenFxQuad::Textured {
                 xy,
@@ -244,6 +245,7 @@ fn screen_fx_prims(
                 gouraud: None,
                 semi_transparent,
                 ot_index: ot,
+                depth: None,
             }),
         })
         .collect()
@@ -2332,9 +2334,10 @@ impl LegaiaRuntime {
     }
 
     /// The screen-prim vertex stream as raw bytes, in the shared
-    /// `ScreenVertex` layout: stride 44, `pos: vec2<f32>` (already NDC) at 0,
+    /// `ScreenVertex` layout: stride 48, `pos: vec2<f32>` (already NDC) at 0,
     /// `uv: vec2<f32>` at 8, `cba_tsb: vec2<u32>` at 16, `color: vec4<f32>` at
-    /// 24, `flags: u32` at 40 (bit 0 = textured). The same bytes the native
+    /// 24, `flags: u32` at 40 (bit 0 = textured, bit 1 = depth-tested),
+    /// `depth: f32` at 44. The same bytes the native
     /// renderer maps into its wgpu vertex buffer.
     ///
     /// The page never sees the primitive list, only its output: the

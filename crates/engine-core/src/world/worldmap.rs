@@ -295,6 +295,27 @@ impl World {
         }
     }
 
+    /// Seat the player on raw world `(x, z)` with the floor height sampled
+    /// under it, and refresh the per-tile region tables - a debug seat for
+    /// frame-pairing a host against a retail save state at the state's own
+    /// player position (`play-window`'s `LEGAIA_SEAT`, the play page's
+    /// `play_debug_seat`). The caller re-arms its camera's arrival snap
+    /// (`Camera::zone.arm_arrival()`), which the world does not own.
+    pub fn debug_seat_player(&mut self, x: i16, z: i16) -> bool {
+        let Some(slot) = self.player_actor_slot else {
+            return false;
+        };
+        let y = self.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
+        let Some(a) = self.actors.get_mut(slot as usize) else {
+            return false;
+        };
+        a.move_state.world_x = x;
+        a.move_state.world_y = y;
+        a.move_state.world_z = z;
+        self.refresh_field_regions();
+        true
+    }
+
     /// Route the scene's region-keyed encounter table onto the overworld so
     /// `Self::tick_world_map` rolls random encounters per region. Resets the
     /// step-tile latch. Pair with [`Self::enter_world_map`] (or call after it).

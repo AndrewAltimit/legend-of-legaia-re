@@ -1279,6 +1279,7 @@ impl Renderer {
             semi_transparent: false,
             abr_mode: 0,
             ot_index: 0,
+            depth: None,
         });
         let geo = crate::screen_overlay::build_geometry(&[quad], sw as u32, sh as u32);
         self.queue.write_buffer(

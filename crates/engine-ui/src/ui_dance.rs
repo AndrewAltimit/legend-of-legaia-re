@@ -284,6 +284,7 @@ pub fn dance_countin_prims(
             gouraud: None,
             semi_transparent: semi,
             ot_index,
+            depth: None,
         })
     };
     let y = countin_centre_y(view.hold);

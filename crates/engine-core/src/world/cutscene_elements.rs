@@ -39,7 +39,7 @@ use crate::cutscene_script_elements::{
     AmbientEmitter, AmbientParticle, AmbientScene, ElementTeardown, ElementVec, PositionTween,
     TeardownActions, TweenStep,
 };
-use crate::world::{EasedMoveTarget, World};
+use crate::world::{EasedMoveTarget, SceneMode, World};
 
 /// A borrow-free view of [`World::rng_state`], so the channel can feed the
 /// ambient emitter the world's own deterministic LCG while the tick holds
@@ -393,6 +393,10 @@ impl World {
         // emitter's scene arm centres its bursts on (`_DAT_80089118/20`
         // hold the negated player X/Z; the follow camera's focus).
         let mut fog = std::mem::take(&mut self.fog);
+        // `_DAT_1F800394 & 1`, the overworld bit: the emitter's dense profile
+        // and the spawner's overworld arm both key on it.
+        let overworld = self.mode == SceneMode::WorldMap;
+        fog.overworld = overworld;
         let window = self.terrain.region_attributes.box_bytes;
         let [player_x, _, player_z] = self.fog_player_world_pos();
         let trig = crate::action_effect_script::retail_rotation_lut();
@@ -417,6 +421,19 @@ impl World {
                     el.done = t.done;
                 }
                 ElementKind::AmbientEmitter { emitter, scene } => {
+                    scene.dense = overworld;
+                    // The burst span is the live visible-tile window, read
+                    // afresh every frame (`lb` of `0x1F8003E8..EB`): on the
+                    // overworld a region record widens it to reach well
+                    // ahead of the player, which is where retail's fog sits.
+                    if let Some([x_min, y_min, x_max, y_max]) = fog.view_window {
+                        scene.span = crate::cutscene_script_elements::SceneSpan {
+                            x_min,
+                            y_min,
+                            x_max,
+                            y_max,
+                        };
+                    }
                     scene.camera_x = -player_x;
                     scene.camera_y = -player_z;
                     emitter.step_with(scene, &mut rand, |p, rand| {

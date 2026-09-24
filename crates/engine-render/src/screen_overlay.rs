@@ -54,12 +54,13 @@
 use crate::afterimage::AfterimageQuad;
 
 pub use legaia_engine_ui::screen_prim::{
-    BlendClass, DrawRun, FLAG_TEXTURED, FlatQuad, OverlayGeometry, PSX_DISPLAY_H, PSX_DISPLAY_W,
-    SCREEN_VERTEX_OFF_CBA_TSB, SCREEN_VERTEX_OFF_COLOR, SCREEN_VERTEX_OFF_FLAGS,
-    SCREEN_VERTEX_OFF_POS, SCREEN_VERTEX_OFF_UV, SCREEN_VERTEX_STRIDE, ScreenPrim, ScreenQuad,
-    ScreenVertex, build_geometry, cinematic_bar_prims, display_rect_flat_quad, fade_prim,
-    fog_puff_prim, light_pool_prims, order_primitives, screen_effect_push_prim,
-    screen_effect_push_prims, screen_fade_prim, world_map_marker_prim,
+    BlendClass, CornerDepth, DrawRun, FLAG_DEPTH_TESTED, FLAG_TEXTURED, FlatQuad, OverlayGeometry,
+    PSX_DISPLAY_H, PSX_DISPLAY_W, SCREEN_VERTEX_OFF_CBA_TSB, SCREEN_VERTEX_OFF_COLOR,
+    SCREEN_VERTEX_OFF_DEPTH, SCREEN_VERTEX_OFF_FLAGS, SCREEN_VERTEX_OFF_POS, SCREEN_VERTEX_OFF_UV,
+    SCREEN_VERTEX_STRIDE, ScreenPrim, ScreenQuad, ScreenVertex, build_geometry,
+    cinematic_bar_prims, display_rect_flat_quad, fade_prim, fog_puff_prim, light_pool_prims,
+    order_primitives, screen_effect_push_prim, screen_effect_push_prims, screen_fade_prim,
+    world_map_marker_prim,
 };
 
 /// The display rect the shared model authors in is the same rect this crate
@@ -87,6 +88,7 @@ pub fn afterimage_screen_quad(q: &AfterimageQuad, ot_index: u32) -> ScreenQuad {
         gouraud: None,
         semi_transparent: q.semi_transparent,
         ot_index,
+        depth: None,
     }
 }
 

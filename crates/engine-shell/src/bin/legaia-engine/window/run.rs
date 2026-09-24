@@ -565,6 +565,26 @@ pub(super) fn cmd_play_window_with_record(
     // seeded ban.
     seed_debug_story_flags(&mut session, &debug_seeds);
 
+    // Debug seat: `LEGAIA_SEAT=X,Z` puts the player on raw world `(X, Z)`
+    // (floor-sampled Y) and re-arms the zone camera's arrival snap - the
+    // frame-pairing aid for comparing this host against a retail save state
+    // at that state's own player position. The play page's twin is
+    // `play_debug_seat`.
+    if let Ok(seat) = std::env::var("LEGAIA_SEAT") {
+        let xz: Vec<i16> = seat
+            .split(',')
+            .filter_map(|v| v.trim().parse::<i16>().ok())
+            .collect();
+        if let [x, z] = xz[..]
+            && session.host.world.debug_seat_player(x, z)
+        {
+            session.camera.zone.arm_arrival();
+            log::info!("play-window: LEGAIA_SEAT seated the player at ({x}, {z})");
+        } else {
+            log::warn!("play-window: LEGAIA_SEAT='{seat}' not applied (want X,Z and a player)");
+        }
+    }
+
     // Debug learn path: `--learn-spell 0x81` (repeatable) or the older
     // `LEGAIA_LEARN_SPELLS=0x81,0x9e` prepends those spell ids (level 1) onto
     // the lead character's record, so a seeded New Game party can reach the

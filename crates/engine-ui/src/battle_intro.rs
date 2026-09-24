@@ -389,6 +389,7 @@ fn push_ft4_quad(
         gouraud: None,
         semi_transparent,
         ot_index: otz as u32,
+        depth: None,
     }));
     true
 }
@@ -617,6 +618,7 @@ pub fn emit_particle_field(
             gouraud: None,
             semi_transparent: moved,
             ot_index: ot,
+            depth: None,
         }));
         drawn = true;
     }
@@ -706,6 +708,7 @@ pub fn emit_spinup_ring(phase: i32, prims: &mut Vec<ScreenPrim>) -> bool {
             semi_transparent: true,
             abr_mode: 0,
             ot_index: otz as u32,
+            depth: None,
         }));
         drawn = true;
     }
@@ -1426,6 +1429,7 @@ impl BattleIntro {
                 gouraud: None,
                 semi_transparent: false,
                 ot_index: CURTAIN_TRAIL_OT,
+                depth: None,
             }));
         }
     }
@@ -1670,6 +1674,7 @@ pub fn intro_quad_to_screen(q: &IntroQuad) -> ScreenQuad {
         gouraud: Some(std::array::from_fn(|i| rgb(q.verts[i].rgb))),
         semi_transparent: q.code & 0x02 != 0,
         ot_index: q.ot_depth,
+        depth: None,
     }
 }
 

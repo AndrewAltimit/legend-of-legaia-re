@@ -1376,11 +1376,20 @@ fn vs_main(
     @location(2) cba_tsb: vec2<u32>,
     @location(3) color: vec4<f32>,
     @location(4) flags: u32,
+    @location(5) depth: f32,
 ) -> VsOut {
     var out: VsOut;
     // z = 1.0 is the reversed-Z near plane: overlay quads pass the
-    // GreaterEqual test against any scene depth and composite on top.
-    out.clip_pos = vec4<f32>(pos, 1.0, 1.0);
+    // GreaterEqual test against any scene depth and composite on top. A
+    // depth-tested quad (flags bit 1, the overworld markers) carries the
+    // shared view-projection's normalised depth instead, remapped the way
+    // the scene pass remaps it (`reverse_z`: z' = 1 - z), so it hides
+    // behind nearer terrain.
+    var z = 1.0;
+    if (flags & 2u) != 0u {
+        z = 1.0 - depth;
+    }
+    out.clip_pos = vec4<f32>(pos, z, 1.0);
     out.uv = uv;
     out.cba_tsb = cba_tsb;
     out.color = color;

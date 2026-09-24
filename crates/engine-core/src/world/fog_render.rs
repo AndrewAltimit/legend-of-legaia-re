@@ -79,10 +79,19 @@ impl World {
     }
 
     /// One rendered frame of the fog pool through `view` - the field render
-    /// pass's `0x80026EA4..0x80026F28`: nothing outside game mode `3`
-    /// ([`SceneMode::Field`]) or while the gate word is clear; otherwise the
-    /// pool walk with this frame's `dt`, player position, held pad, camera
-    /// vertical offset and global tint.
+    /// pass's `0x80026EA4..0x80026F28`: nothing outside game mode `3` or
+    /// while the gate word is clear; otherwise the pool walk with this
+    /// frame's `dt`, player position, held pad, camera vertical offset and
+    /// global tint.
+    ///
+    /// Game mode `3` is both [`SceneMode::Field`] and the kingdom overworld
+    /// ([`SceneMode::WorldMap`]): retail runs the overworld as an ordinary
+    /// field-run scene, and on the `map01` resident state
+    /// (`keikoku_chest_preload`) the gate is up and all `0x48` records of the
+    /// raised cap are live, every one at the overworld spawner's lifted
+    /// height. `view` is the frame's field-frame pose
+    /// ([`crate::camera_view::FieldCameraFrame::field_view`]); it is also
+    /// kept as the camera the next spawn's overworld depth test reads.
     ///
     /// Returns the quads to composite this frame, also kept in
     /// [`World::fog_quads`]. The `dt` is every tick since the previous call
@@ -93,7 +102,8 @@ impl World {
     pub fn fog_render_step(&mut self, view: &FieldCameraView) -> &[FogQuad] {
         let dt = self.fog.pending_dt.min(u32::from(u8::MAX)) as u8;
         self.fog.pending_dt = 0;
-        if self.mode != SceneMode::Field || !self.fog.gate {
+        self.fog.depth_view = Some(*view);
+        if !Self::fog_mode(self.mode) || !self.fog.gate {
             self.fog.quads.clear();
             return &self.fog.quads;
         }
@@ -117,6 +127,13 @@ impl World {
             window: self.terrain.region_attributes.box_bytes,
         };
         self.fog.render_step(&FogView::from_field_view(view), &env)
+    }
+
+    /// Whether `mode` is one the fog pass runs in - retail's game mode `3`,
+    /// which the port splits into the field and the kingdom overworld. The
+    /// hosts gate their draw-path call on this so they cannot disagree.
+    pub fn fog_mode(mode: SceneMode) -> bool {
+        matches!(mode, SceneMode::Field | SceneMode::WorldMap)
     }
 
     /// The quads the last [`World::fog_render_step`] produced.

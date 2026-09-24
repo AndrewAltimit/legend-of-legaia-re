@@ -1630,6 +1630,14 @@ impl World {
                 // record) execute concurrently, same as the field arm - both
                 // are retail-frame paced.
                 self.step_spawned_record_contexts();
+                // The scene system script (ctx `0xFB`, MAN `P1[0]`). The
+                // overworld is a mode-3 field-run scene and retail runs its
+                // entry script like any field's: `map01`'s sets the visible
+                // tile window (`46 24 EE F4 12 20`, `(-18, -12, 18, 32)` -
+                // the window every library `map01` state holds) and raises
+                // the ambient-particle gate (`4C 30`) that puts fog over the
+                // continent. Same frame slice as the field arm.
+                self.step_field_frame_slice();
                 // Clock a committed overworld encounter's field-to-battle
                 // transition (the intro overlay rides this phase) and open
                 // the fight when it elapses - the world-map twin of the

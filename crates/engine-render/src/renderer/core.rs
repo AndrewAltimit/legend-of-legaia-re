@@ -1203,8 +1203,8 @@ impl Renderer {
                 push_constant_ranges: &[],
             });
         // pos(Float32x2)@0 + uv(Float32x2)@8 + cba_tsb(Uint32x2)@16 +
-        // color(Float32x4)@24 + flags(Uint32)@40 = 44 bytes (matches
-        // `screen_overlay::ScreenVertex`).
+        // color(Float32x4)@24 + flags(Uint32)@40 + depth(Float32)@44 = 48
+        // bytes (matches `screen_overlay::ScreenVertex`).
         let screen_overlay_attributes = [
             wgpu::VertexAttribute {
                 offset: 0,
@@ -1230,6 +1230,11 @@ impl Renderer {
                 offset: 40,
                 shader_location: 4,
                 format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                offset: crate::screen_overlay::SCREEN_VERTEX_OFF_DEPTH,
+                shader_location: 5,
+                format: wgpu::VertexFormat::Float32,
             },
         ];
         let screen_overlay_vertex_layout = wgpu::VertexBufferLayout {
