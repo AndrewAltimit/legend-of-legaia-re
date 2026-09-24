@@ -2554,6 +2554,81 @@ there as one list - the fog sheets, the move strips and the light pools - so
 they order against each other exactly as the page's single pass orders them.
 Transitions, fades and battle readouts stay in the tail.
 
+## A side-by-side pass over one set of both-host features
+
+The drift tiers are green over every feature below, and each one was then shot
+on both hosts at the same scene and moment: `play-window --screenshot-every N
+--screenshot-dir` cropped to the integer stage, against headless Chromium on
+the play page, with retail references from `captures/` where one exists. Two
+recipe rules came out of it, on top of the ones [above](#a-second-pass-frames-matched-by-engine-frame-with-retail-as-the-third).
+
+- **Prove the page is this tree's bundle before reading a frame.** On a shared
+  runner, `python3 -m http.server <port>` started detached on a port an older
+  worktree's server still holds exits without a word, and the driver's
+  requests land on that other tree. A whole pass of page frames came out of an
+  earlier build that way - no attached light in `dolk` or `cave01`, a retired
+  fishing session's prompt text - and read as page drift. The guard is the
+  bundle stamp: the served `wasm/SOURCE_STAMP.json` must equal the tree's own
+  (`check-wasm-freshness.py` writes it) before the first frame counts.
+- **In a scripted span, pair by state, not by tick.** The page's
+  `__playState.frame` and the native `--screenshot-every` tick agree on a
+  settled field, but not through `vell`'s entry walk, where the page ran about
+  fifty ticks ahead of the native frame of the same number; a battle's command
+  phase is paired by which prompt is up.
+
+| Feature | Native | Page | Verdict |
+|---|---|---|---|
+| `vell` fog underlay | sheets drawn, textured | same | same on settled frames; an additive glow by the player at the frame's edge reads whiter natively (not chased) |
+| `dolk` / `cave01` attached light, HUD above screen prims | darkness mask, rim on the player, HUD bright | same | same; the page's subtractive run is now pinned by `attached_light_page_prims.rs` |
+| prologue sepia (`opdeene`) | sepia tableau | same tint | differs: see [the prologue meshes](#a-prologue-mesh-set-drawn-black-natively) |
+| narration crawl | 1x glyphs, rows at the window's `h / 240` | 1x glyphs, rows at the canvas's `h / 240` | both wrong against retail, differently; fixed on both, and a native frame now lays its rows over the retail frame's line for line |
+| "It was the Seru." caption | scaled by `h / 240` in window pixels | the overlay canvas is the stage | native larger than the stage and off centre; fixed |
+| `0x6E` Begin / Reselect, commit log, target plaque | labels, log rows, plaque at `x = 0xE8 - w / 2` | same | same |
+| Koru strip | not shot (no formation-0xB6 entry on either host short of the dome) | - | not paired |
+| scripted battle (op `0x3E`), talk entry at the interaction cursor | not shot (no positioned walk-to-NPC input on either host) | - | not paired |
+| fishing (`PondSession`) | status rows, digits, venue camera | status rows, digits, gauge fills, field camera | gauge fills were page-only; fixed. The venue pass is disclosed native-only ([fishing](#one-minigame-one-session-type)) |
+| slot / Baka face buttons | prompts named the old buttons | same prompts | both hosts' prompt text was stale against the kernel; fixed |
+| title menu | two rows | two rows | same (the lit row follows each host's card state) |
+| battle letterbox, spoils ink | black letterbox, spoils text all `(206, 206, 206)` | canvas is the stage; the banner fell between two shots | native matches retail; page not shot |
+
+### Three shapes no tier fails on
+
+**Two hosts agreeing on a surface-pixel law for a stage element.** The crawl
+and the caption were laid out by scaling a 240-line Y into each host's surface
+and drawing the glyphs at 1x. A pair check could never flag it - the page's
+canvas is 720 lines, the native window 699, and both put the rows about three
+surface pixels apart per stage line with glyphs a third of retail's size.
+Retail prints stage-sized glyphs on a 16-line pitch
+(`captures/crawl1_capture`). The crawl and the title card are now one engine-ui
+builder in stage pixels (`cutscene_text_stage_draws`), scaled through each
+host's stage transform.
+
+**A hint string is a paired constant with nothing pairing it.** The slot
+machine's `Stopping` prompt said Cross stops a reel and the Baka duel's said
+the D-pad attacks, on both hosts, after the kernel moved to Square / Cross /
+Circle per reel and Square / Circle / Cross per attack type with Triangle as
+the special. The play page's own button title named Z as the fishing cast key
+where the page binds cast to X. The kernel's tests were green throughout; the
+text is host-side and duplicated. Fishing is the model the others lack: its
+rows are one engine text (`PondSession::status_rows`) taking each host's key
+names.
+
+**A draw one host carries on a side channel.** The fishing gauges resolve to
+frames on both hosts, but only the page filled them - from a `bars` payload it
+emits beside the shared text list - while the native window passed the shared
+consumer no solid texel and drew empty gauges. The native window now hands
+`fishing_hud_draws_for` the font's solid texel, so both hosts fill the same
+frames.
+
+### A prologue mesh set drawn black natively
+
+In the `opdeene` jungle the native window draws a set of plants - the twisted
+branches and the dark bushes - as black silhouettes, where the page and the
+retail frame (`captures/crawl1_capture`) draw them pale and textured. Both
+hosts share the sepia word law (`prologue_sepia_word`), so the difference sits
+upstream of it, in what each host feeds that law for those primitives. Not
+fixed here.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
