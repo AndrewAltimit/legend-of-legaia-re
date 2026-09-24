@@ -362,9 +362,23 @@ process-matching helpers in
 | Thread | Status | What would close it |
 |---|---|---|
 | Does Koru's timed-fight strip draw over or under the `(16, 14)` tab? | open (narrowed) - both hosts draw the strip; only its order is unpinned | `engine-core::timed_fight` gates the strip on formation slot 0 holding Koru (`0xB6`) and keeps it up for the command phase, and both hosts draw it on top of the name-plate tab that shares its seat ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-four-turn-strip-belongs-to-koru-not-the-dome)). The one capture of the strip never holds the plate in the same frame. A Koru-fight frame with both up, or the two emitters' ordering-table slots read off the disassembly, closes it. |
-| Why does the play page's enemy-target label overprint the commit log's first row? | open - page only | On the play page the target label sits near `x = 155` and overprints row 0 of the commit log; retail's target plaque rests at `x = 205`, centred on `232` ([`battle.md`](../subsystems/battle.md#the-commit-log)). The page's plaque seat read off record `0x29`'s placement, matched against a command-phase capture, closes it. |
-| Why does the overworld camera sit higher and farther than retail's? | open - both hosts | A frame pair on `map01` puts both hosts' world-map camera above and behind retail's framing (`engine-core::camera_view`'s world-map arm). The world-map view build's height and distance words, read off the disassembly and compared with the port's constants, close it. |
-| Does the port run the world-map fog arm? | open - field only | Every kingdom overworld raises the fog cap to `0x48` (`FUN_8003AEB0` from MAN header bit 0), so retail runs the pool on the world map; the port's fog render is wired for field scenes only ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md)). A world-map fog frame on both hosts against a `map01` / `map03` state closes it. |
+| Why do the overworld fog sheets read denser and brighter than retail's? | open - placement matches, intensity does not | Frame-paired at `keikoku_chest_preload`, both hosts put the fog where retail's display list does, but retail's haze shows only as a white band above the ridges. Retail's 72 live records modulate at a median `rgb` of 41 (`grey * brightness >> 15`, tint neutral), so a foreground sheet adds under a third of its texel ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-pool-on-the-kingdom-overworld)). The port's per-sheet colour on its screen-primitive pass, compared record for record against that state's pool, closes it. |
+| Why does the overworld's camera vertical offset read 192 where retail's reads 252? | open - measured, writer unknown | `_DAT_8007BCAC` eases toward `scene_ctrl[+0x4A] - player[+0x16]`; on `keikoku_chest_preload` retail's control word reads `60` and the port's `0`, so every overworld fog particle draws 60 units lower than retail's ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-pool-on-the-kingdom-overworld)). Naming the store that leaves `60` there on the overworld - a write watch on `scene_ctrl[+0x4A]` across a kingdom entry - closes it. |
+
+Three more rows closed here. **The overworld camera** is the field zone
+camera: the overworld is a mode-`0x03` field-run scene, and on all three
+resident overworld states the live words equal the zone composer's staging
+descriptor, so both hosts now run the zone camera there and the separate
+two-anchor walk pose survives only as a no-terrain fallback
+([settled](re-settled-threads.md#world-map--kingdom-bundles),
+[`world-map.md`](../subsystems/world-map.md#walk-view-camera-retail-model-ram-pinned)).
+**The world-map fog arm** runs on both hosts: the kingdom system script is
+stepped on the overworld, `map01`'s widens the view window and raises the
+gate, and the spawner's overworld arm (`0x1F800394` bit 0) is modelled with
+its depth test and lift; the two deltas left are the rows above. **The
+enemy-target label** is retail's target-select plaque on both hosts, placement
+record `0x29` seated at `x = 0xE8 - w/2`, row `162`; the slide-in is not
+modelled ([settled](re-settled-threads.md#battle--arts--level-up)).
 
 Three more rows closed here. **The commit log** is drawn on both hosts from
 `FUN_801D388C`'s commit arms: records `0x2B + 3n`, columns at `x = 16`,
@@ -520,7 +534,7 @@ performs either cast ([settled](re-settled-threads.md#battle--arts--level-up)).
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Does a Muscle Dome round load the class-2 bank? | open (narrowed) - the hub is measured, a round is not | At the contest hub (`minigame_muscle_dome`, mode `0x19`) slot 2 is closed and slot 6 holds PROT 0876 intact, so the hub has no class-2 bank. A round runs the battle frame driver `FUN_80046A20`, which calls the battle scene loader at `0x8004711C`, so a round is taken to stage PROT 0869 - but the only PCSX-Redux dome-round state carries a patched executable ([`audio.md`](../subsystems/audio.md#retail-capture-of-the-slot-2--slot-6-residency)). A retail dome-round state's slot records at `0x80091508`, read against the disc banks, close it. |
+| Does a Muscle Dome round load the class-2 bank? | open (narrowed) - the hub is measured, a round is not | At the contest hub (`minigame_muscle_dome`, mode `0x19`) slot 2 is closed and slot 6 holds PROT 0876 intact, so the hub has no class-2 bank. A round runs the battle frame driver `FUN_80046A20`, which calls the battle scene loader at `0x8004711C`, and the arena enters a round by storing mode word `0x14` (`0x801D15B8`, PROT 0977), which is the value `FUN_8001DCF8`'s close-and-stage arm keys on, so a round is taken to stage PROT 0869 - but the only PCSX-Redux dome-round state carries a patched executable ([`audio.md`](../subsystems/audio.md#retail-capture-of-the-slot-2--slot-6-residency)). A retail dome-round state's slot records at `0x80091508`, read against the disc banks, close it. |
 | What does the field init's slot-10 load serve? | open - decoded, unmodelled | `FUN_801D6704` loads raw `0x428` then `0x422` into slot 10, over slot 0's SPU base, only while the current track `*(0x8007BAC8)` is `0x814` and the one-shot latch `0x8007B9B8` is clear (`0x801D71A0..0x801D7274`). Which scene plays track `0x814`, what cues name category 10 there, and who clears the latch close it. |
 
 **Do the hosts play the field's scripted SFX cues** closed as yes, on both.
@@ -729,7 +743,7 @@ a coincidence of the pad byte plus the mask table's first three entries
 |---|---|---|
 | Which live ports cover only part of their routine, and which of those differ from retail? | open (narrowed) - listed, not ported | Of the 43 partial ports a tag audit found, the ones that still change behaviour are `FUN_801D1BA0`'s clip tail with `FUN_801D1EC4` (a reroll site the encounter port misses), the tile board's menu and fade states, `FUN_801DB510`'s hold gates, `FUN_801CF8AC`'s probe arms, the actor allocator's initialisation, Rula's lift, the dome hub's shade and gates, and a battle and an audio residue - each named with its blocker [details ↓](#which-live-ports-cover-only-part-of-their-routine). Each residue ported, or disclosed where it is blocked, closes it. |
 | Which save-state library entries still hold a patched executable? | open (narrowed) - audited and tagged; the rest need human play | A state made on a patched disc keeps that build's `SCUS_942.54` in RAM on every later load. `patch_taint_audit.py states` tags each library state's `resident_patch`; the S1..S5 anchors, `first_town_interactive` and `teien_field_run` are re-shot retail, and every capture-graded claim re-checked against its family stands ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md#patched-disc-taint)). The `rikuroa_*`, `dolk2_market_noa`, `cort_evolved_*`, `minigame_*_pcsx`, `battle_gaza2_*` states and the mednafen `overworld_battle_bg_angle_*` states re-shot on an unpatched image close it. |
-| Which engine draws hand a raw LCG state where retail calls BIOS `rand`? | open - one caller fixed | `FUN_80056798` is the BIOS `A(2Fh)` thunk and returns `(seed >> 16) & 0x7FFF`; the fog spawner's low-bit tests on a raw 32-bit state cycled with period 16 until `bios_rand_shape` shaped them. Every other port that stands in for a `jal 0x80056798` and masks low bits is a candidate. An audit of those call sites against the port's RNG closes it. |
+| Which engine draws hand a raw LCG state where retail calls BIOS `rand`? | partial - the field side is shaped, the battle side is raw | `FUN_80056798` is the BIOS `A(2Fh)` thunk and returns `(seed >> 16) & 0x7FFF`, and nothing reseeds it ([settled](re-settled-threads.md#measurement--corpus)). `World::next_rand` is one world stream through `bios_rand_shape`, and the fog spawner, the tile-board fill and the overworld region-encounter tracker draw on it. The battle-side consumers still draw the raw state, and a set of `engine-core` unit fixtures pins outcomes under that raw stream. Moving each battle call site onto the shaped stream, with its fixtures re-derived, closes it. |
 
 ### Which live ports cover only part of their routine
 
@@ -770,11 +784,14 @@ What remains, each with where it is recorded:
   `_DAT_8007BC20` / `0x8007B648` are modelled open; the first-visit SFX
   `FUN_8003D53C` is not played; the slot machine's spin-up latch `0x801D3790`
   and Baka Fighter's ladder run are unported.
-- **Battle**: `801F0450`'s auto-combo tail (and with it the `0x801F0518`
-  write of the `0x801F696C` flag), the tag-`0x67` streak ribbon
-  `FUN_801E1D98`, the War God Icon's `ctx[+0x16]` bump at
-  `0x801E37AC..0x801E37BC`, and `FUN_8004AD80`'s kind ladder with
-  `FUN_80048A08`'s draw.
+- **Battle**: `801F0450`'s art insertion tail is ported
+  (`battle_arts_auto_combo::insert_arts`) but not wired - its one host is the
+  command SM's Auto pick, which the engine does not offer; `FUN_8004AD80`'s
+  kind ladder; and `FUN_80048A08`'s ground shadow, which needs
+  `FUN_80028158`'s case-1 disc geometry (the draw's per-object decisions,
+  Rot limbs included, are ported on both hosts). The `0x801F0518` flag write,
+  the ribbon's per-clip caller and the War God Icon's per-stage bump are
+  modelled.
 - **Audio/anim**: `8004DA00`, `80064090`, `800480D8` and `80020F88`, each
   blocked on a host structure (no XA channel streamer, no multi-slot SEQ
   table, a crate barrier between `engine-core` and `engine-render`).
