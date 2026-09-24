@@ -638,7 +638,7 @@ byte layout):
 
 | Routine | Image | Role |
 |---|---|---|
-| `FUN_801D629C` | field overlay (0897, file `0x7A84`) | **Spawner.** Rejects a tile outside the walk-region box `0x1F800384..87`; finds the first MAN section-4 region whose open box holds the tile and stops if it is disabled; requires `_DAT_8007BCA8 < _DAT_8007BCB0` (live count under the cap, `0x18` from the field reset); pops a slot off the pool's free stack (`FUN_8001FA34`); fills the record - drift from the region's angle base + random spread through the sin/cos LUTs times its speed, height `-(rand & 0x7F)`, grey `rand & 0x7F`, age rate `(rand & 7) + 8`. |
+| `FUN_801D629C` | field overlay (0897, file `0x7A84`) | **Spawner.** Rejects a tile outside the walk-region box `0x1F800384..87`; finds the first MAN section-4 region whose open box holds the tile and stops if it is disabled; requires `_DAT_8007BCA8 < _DAT_8007BCB0` (live count under the cap, `0x18` from the field reset); on the overworld drops a tile whose camera-space depth passes `0x4000` (see below); pops a slot off the pool's free stack (`FUN_8001FA34`); fills the record - drift from the region's angle base + random spread through the sin/cos LUTs times its speed, height `-(rand & 0x7F)`, grey `rand & 0x7F`, age rate `(rand & 7) + 8`. |
 | `FUN_8003F348` | SCUS | **Walk.** Called only from the render pass's gated site (`0x80026F24`); pushes the matrix stack, folds `RotMatrixX(0x400)` into the camera rotation, then runs the update on every one of the 80 records whose alive byte is set. |
 | `FUN_8003F3FC` | SCUS | **Per-particle update + draw.** Kills a record outside the walk box; brightness ramps `0..0xFF` over age `0..0x400`, holds to `0xC00`, then fades and kills; colour is `grey * tint * brightness >> 15` per channel with the tint the op `0x4C 0x12` global multiply (`_DAT_8007BCB8..BA`, `0x80` neutral); drift and age advance by `DAT_1F800393`; the player's `+-0x180 / +-0x80 / +-0x80` box ages it again, three times more with a d-pad bit held; then two halves through `FUN_8003F86C`, and a record whose two halves both cull is freed (`FUN_8001FA68`). |
 | `FUN_8003F86C` | SCUS | **Half-sheet emitter.** One `POLY_FT4` (tag `0x09` words, command `0x2E`: textured, semi-transparent, texture-blended) between two projected points - the particle, and the point `2 * half_width` to one side and `0x80` above it - axis-aligned in screen space; culled when both points are off the `[-8, 0x148)` columns, both above row `0`, or both below row `0x190`; kept but not drawn between rows `0xF0` and `0x190`; NCLIP-culled at a signed area past `0x1F40` quarter-pixels; linked at OT bucket `view_z >> 5`. |
@@ -733,6 +733,88 @@ The engine seats the cap from the MAN at scene entry
 (`fog_particles::fog_cap_for_man`); the census is
 `crates/engine-core/tests/scene_host_effect_pool_underlay_disc.rs`.
 
+### The pool on the kingdom overworld
+
+The overworld is a game-mode-3 field-run scene, so the render pass's gate
+at `0x80026EA4..0x80026EC4` (`_DAT_8007B83C == 3` and `_DAT_8007B854 != 0`)
+passes there exactly as in a field, and retail draws the fog over the
+continent. On `keikoku_chest_preload` (`map01`) the gate is raised and all
+`0x48` records of the raised cap are alive, every one at a height in
+`-0x28 - 0x7F ..= -0x28`: the spawner's overworld arm, not the field arm,
+wrote them.
+
+That arm keys on scratchpad `_DAT_1F800394` bit 0. Across the mednafen
+library the bit is set on all nine non-battle kingdom-overworld states
+(`map01` / `map02` / `map03`, field-run and pause menu) and clear on the
+other 89, the battles fought on an overworld included - it is the overworld
+flag. Read off `FUN_801D629C`'s disassembly, the bit changes three things:
+
+- **Depth test before the pop.** After the height draw the spawner builds an
+  `SVECTOR` of `(tile_x << 7, y, tile_z << 7)` on its stack and transforms
+  it with `FUN_8003D344` (`0x801D6460`) - one `MVMVA` of `V0` by the
+  rotation matrix plus the translation, i.e. the resident camera. A result
+  depth past `0x4000` (`slti v0,v0,0x4001` at `0x801D6470`) ends the spawn
+  before the slot pop, having consumed two draws.
+- **A further lift.** After the record is filled, `0x801D651C..0x801D653C`
+  subtract `0x28` from its height.
+- **The emitter's dense profile.** `FUN_801D6058` switches its burst span
+  bias and offset from `(2, 1)` to `(6, 0x0E)` on the same bit
+  (`cutscene_script_elements::AmbientProfile`).
+
+What puts the fog *ahead* of the player is the emitter's span. The burst
+arm samples its tiles across the visible-tile window `0x1F8003E8..EB`,
+read afresh every frame (`lb` of `0xD4..0xD7(s0)` with `s0 = 0x1F800314`,
+`0x801D6158..0x801D6168`), and `map01`'s entry script (`P1[0]`) sets that
+window to `(-18, -12, 18, 32)` (`46 24 EE F4 12 20`) two ops before it
+raises the gate (`4C 30`, unconditional). The field default
+`(-8, -6, 6, 10)` with the dense profile places every burst behind the
+player; the overworld window reaches 32 tiles ahead. On
+`keikoku_chest_preload` the pool spans 1075 units behind to 1337 ahead of
+the player. Fed that pool, retail's camera words and retail's vertical
+offset, the port's render step emits 66 half-sheets whose sizes and vertical
+spread match the state's own display-list fog packets (median `122 x 31`
+against retail's `106 x 27` pixels; centres from row `-10` down to about
+`250` on both) - a shape comparison, not a packet-for-packet one, since the
+walked ordering table holds 104 fog packets against the pool's 72 records.
+
+The GTE matrix at the spawner's `MVMVA` is read as the camera the frame
+draws with (the port uses the last camera its render step projected
+through); that attribution is an inference from the operands - the routine
+never loads a matrix of its own. The engine models the arm as
+`FogPool::overworld` + `FogPool::depth_view`, set from the world mode by the
+element channel and from the draw path by `World::fog_render_step`, and
+both hosts run the render step in either mode (`World::fog_mode`), handing
+it the frame's field-frame pose
+(`camera_view::FieldCameraFrame::field_view`). The live window reaches the
+emitter as `FogPool::view_window`, published by `Camera::route_camera_events`
+(the window is camera state); the world-map frame arm steps the scene
+system script the way the field arm does, which is what runs `map01`'s
+`P1[0]`. The disc-gated oracle is
+`crates/engine-shell/tests/world_map_fog_oracle.rs`.
+
+On the overworld each half-sheet is also depth-tested against the
+continent the frame already drew (`FogQuad::depth`, the bottom-right
+point's depth - the point the OT bucket comes from), because retail links
+the sheets into the same ordering table as the terrain; the field keeps its
+composite-over-the-frame draw.
+
+Frame-paired at `keikoku_chest_preload`'s seat, both hosts place the fog
+where retail's display list does - retail's 104 fog packets cover the same
+band from the ridge line down to the foreground - but the port's sheets read
+denser and brighter than the retail frame, where the haze is visible only
+as the white band above the ridges. Retail's 72 records modulate at a
+median `rgb` of 41 (`grey * brightness >> 15`, tint neutral), so each
+foreground sheet adds under a third of its texel; the per-sheet intensity
+on the port's screen-primitive pass is the open question, not the
+placement.
+
+The one input still off retail on the overworld is the camera vertical
+offset `_DAT_8007BCAC` the render step subtracts from every particle
+height: 252 on `keikoku_chest_preload` against the port's 192. The ease
+walks toward `scene_ctrl[+0x4A] - player[+0x16]`, and the port's scene
+control word reads `0` where retail's reads `60`; the particles draw 60
+units lower than retail's.
+
 The region table is MAN section 4 (`DAT_80073ED8`, count `DAT_80073EDC`):
 `0xB`-byte records of `[enable][x0][z0][x1][z1][angle base][angle
 spread][speed][unread][flag index u16]`; op `0x4C` nibble-C sub-1 rewrites
@@ -753,7 +835,8 @@ on the element channel `engine-core::world::cutscene_elements`; the producer is
 `engine-core::fog_particles::FogPool` (spawn, walk, update, emit), installed
 from section 4 at scene entry (`World::install_fog_regions`) and rendered by
 `World::fog_render_step` - which both hosts call from their draw path with
-the follow camera, wrapping the quads through
+the frame's camera (the field follow pose, or the overworld walk pose),
+wrapping the quads through
 `engine-ui::screen_prim::fog_puff_prim` into their screen-primitive pass.
 Fuller spawn-site provenance is in [`cutscene.md`](cutscene.md); the
 disc-wide census of the gate-raising scripts and the two oracles are
