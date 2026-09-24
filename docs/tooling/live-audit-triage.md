@@ -1448,7 +1448,8 @@ that satisfies the audit without them is worse than the honest disclosure:
   window calls `minigame_fx::dance_quad_draws` every frame with the live
   `DanceHudQuad` list - but it passes `solid_src: None`, because the dance
   sprite page is not uploaded, so the sink materialises nothing. The fishing
-  HUD degrades the same way (`FishingHudAtlas::solid_src: None`). Adding a
+  HUD's icon glyphs degrade the same way (its gauge fills stretch the font's
+  solid texel instead, `FishingHudAtlas::solid_src`). Adding a
   second emitter into that path reaches a dead end, not a renderer; the
   prerequisite is the overlay's 4bpp page resident in engine VRAM.
 - **A quad-shaped request on the web side.** The dome page's HUD is a 2D

@@ -666,11 +666,14 @@ impl PlayWindowApp {
             // This frame's live one-shot banners (hook / reel-in / miss /
             // auxiliary / strike splash), serviced in the redraw handler.
             items.extend(self.fishing_banner_draws.iter().copied());
-            // No fishing sprite page is uploaded, so the glyph ids and the
-            // gauge fills resolve to nothing; the number / caption rows are
-            // font-atlas text and render as-is.
+            // No fishing sprite page is uploaded, so the glyph ids resolve
+            // to nothing; the number / caption rows are font-atlas text and
+            // render as-is. The gauge fills (the cast-power and depth /
+            // tension bars) stretch the font atlas's solid texel - the page
+            // fills the same resolved frames from its `bars` payload, and a
+            // `None` here left the native gauges empty.
             let hud_atlas = legaia_engine_render::FishingHudAtlas {
-                solid_src: None,
+                solid_src: self.battle_hud_solid_src(),
                 glyph_src: &|_| None,
                 bar_thickness: 8,
             };

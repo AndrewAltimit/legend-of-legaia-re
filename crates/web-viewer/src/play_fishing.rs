@@ -33,16 +33,16 @@
 //! window's `window/hud.rs` calls, with the same blind sprite atlas, because
 //! the fishing sprite page is the one undecoded asset in the chain.
 //!
-//! # The one place this host draws more than native
+//! # The gauge fills: one geometry, two carriers
 //!
-//! With a blind atlas, `fishing_hud_draws_for` drops every glyph and every bar
-//! fill - native's fishing HUD is therefore digits and captions only, with no
-//! visible gauges. The gauges are the functional part of the tension
-//! tug-of-war, so this host emits their resolved frames as a third `bars`
-//! channel (through the ported [`legaia_engine_ui::HudDraw::resolve_bar`], the
-//! same `FUN_801d1870` / `FUN_801d1a90` geometry) for the page to fill as
-//! rects. Text still comes from the shared consumer; only the quads the shared
-//! consumer cannot produce without a sprite page are re-routed.
+//! With a blind atlas and no solid texel, `fishing_hud_draws_for` drops every
+//! glyph and every bar fill. The gauges are the functional part of the tension
+//! tug-of-war, so both play hosts fill them from the same resolved frames
+//! ([`legaia_engine_ui::HudDraw::resolve_bar`], the `FUN_801d1870` /
+//! `FUN_801d1a90` geometry): the native window hands the shared consumer its
+//! font's solid texel as `solid_src`, this host emits the frames as a third
+//! `bars` channel for the page to fill as rects. Text comes from the shared
+//! consumer on both.
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::fishing::{PondEvent, PondPhase, PondSession, PrizeExchange, TENSION_MAX};
@@ -308,9 +308,12 @@ impl LegaiaRuntime {
             return CLOSED.to_string();
         };
         let font = assets.font_ref();
-        // The retail persistent + catch rows through the shared consumer. The
-        // atlas is blind on purpose: no fishing sprite page is uploaded on
-        // either host, so this is byte-for-byte the native call.
+        // The retail persistent + catch rows through the shared consumer. No
+        // fishing sprite page is uploaded on either host, so the glyph ids
+        // resolve to nothing on both. The fills differ in carrier only: the
+        // native window stretches its font's solid texel through
+        // `solid_src`, this page leaves it `None` and fills the same resolved
+        // frames from `bars` in JS.
         let atlas = FishingHudAtlas {
             solid_src: None,
             glyph_src: &|_| None,
