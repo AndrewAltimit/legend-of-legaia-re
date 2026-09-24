@@ -1349,7 +1349,8 @@ pub struct PondInput {
     /// Held pad mask bits `0x40` (Cross / reel A) and `0x80` (Square /
     /// reel B) - the `_DAT_8007b850` bits the reel decoder reads.
     pub reel_mask: u32,
-    /// The cast / confirm edge (Circle `0x20` in retail; Space on the page).
+    /// The cast / confirm edge (Circle `0x20` in retail; `X` on both browser pages, and Space as well
+    /// on the minigames page).
     pub cast_edge: bool,
     /// Count of fresh input edges this frame (D-pad left/right, either reel
     /// button) - each adds one to the strike credit.

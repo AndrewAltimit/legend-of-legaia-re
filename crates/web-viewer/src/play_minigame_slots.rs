@@ -96,7 +96,7 @@ impl LegaiaRuntime {
             SlotPhase::Idle if !m.can_spin() => "not enough coins".to_string(),
             SlotPhase::Idle => format!("Cross = spin ({} coins)", m.spin_cost()),
             SlotPhase::Spinning => "spinning...".to_string(),
-            SlotPhase::Stopping => "Cross = stop reel".to_string(),
+            SlotPhase::Stopping => "Square/Cross/Circle = stop reels 1/2/3".to_string(),
             SlotPhase::Payout => match m.last_result() {
                 Some(r) if r.payout > 0 => {
                     format!("WIN +{} coins!  (Cross = collect)", r.payout)

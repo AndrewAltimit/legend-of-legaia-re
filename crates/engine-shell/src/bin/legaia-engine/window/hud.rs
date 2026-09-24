@@ -787,7 +787,7 @@ impl PlayWindowApp {
                 // mispriced every bonus spin and never warned on a thin bank.
                 SlotPhase::Idle => format!("Cross = spin ({} coins)", m.spin_cost()),
                 SlotPhase::Spinning => "spinning...".to_string(),
-                SlotPhase::Stopping => "Cross = stop reel".to_string(),
+                SlotPhase::Stopping => "Square/Cross/Circle = stop reels 1/2/3".to_string(),
                 SlotPhase::Payout => match m.last_result() {
                     Some(r) if r.payout > 0 => {
                         format!("WIN +{} coins!  (Cross = collect)", r.payout)
@@ -841,7 +841,8 @@ impl PlayWindowApp {
                     None => "choose your attack".to_string(),
                 },
             };
-            let bl2 = format!("{status}   Left/Right/Up attack, Down special (Start = quit)");
+            let bl2 =
+                format!("{status}   Square/Circle/Cross attack, Triangle special (Start = quit)");
             out.extend(self.stage_status_row(&bl2, (8, 80), dim, w, h));
 
             // The duel's three number drawers, at their ported cell layouts:

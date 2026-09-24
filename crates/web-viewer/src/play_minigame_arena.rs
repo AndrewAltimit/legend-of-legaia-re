@@ -606,7 +606,7 @@ impl LegaiaRuntime {
                 None => "choose your attack".to_string(),
             },
         };
-        let l2 = format!("{status}   Left/Right/Up attack, Down special (Start = quit)");
+        let l2 = format!("{status}   Square/Circle/Cross attack, Triangle special (Start = quit)");
         let mut out = row(font, &l1, PEN_STATUS, WHITE);
         out.extend(row(font, &l2, PEN_PROMPT, DIM));
         // The duel's three retail number drawers - the round digit, the
