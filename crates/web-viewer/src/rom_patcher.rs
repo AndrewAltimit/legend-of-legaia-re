@@ -22,7 +22,8 @@ use legaia_patcher::drops::DropMode;
 use legaia_patcher::items::valid_item_pool;
 use legaia_patcher::rng::seed_from_str;
 use legaia_patcher::translation::{
-    ImportPhase, ImportReport, LanguagePack, export_pack, import_pack, import_pack_phase, lift,
+    ImportPhase, ImportReport, LanguagePack, export_pack, import_pack, import_pack_phase,
+    import_pack_relayout, lift,
 };
 
 fn parse_mode(s: &str) -> Option<DropMode> {
@@ -336,8 +337,14 @@ const PATCH_ROM_STAGES: u32 = 38;
 /// into a scene's decompressed MAN and the door / starting-bag passes relocate
 /// those records - translate-then-randomize composes, the reverse loses the
 /// moved scenes' lines. Per-entry skips (a line over budget, a wrong-disc
-/// mismatch) are counted in the summary but never abort the patch. Returns
-/// `{ data, summary, seed }`.
+/// mismatch) are counted in the summary but never abort the patch.
+/// `lang_relayout` lets a scene whose translated dialog no longer fits its
+/// compressed footprint grow by whole sectors (the CLI's `translate import
+/// --allow-relayout`): the image gets larger and the dialog lands at full
+/// length instead of rolling lines back to English. It only matters with a
+/// pack, and it runs in the dialog phase, before any randomizer pass, so every
+/// later index-keyed edit resolves against the relaid-out disc. Returns
+/// `{ data, summary, seed, lang }`.
 ///
 /// Async: the optional trailing `progress` callback is invoked with
 /// `(stage_index, stage_count, label)` at each feature-stage boundary, and
@@ -350,6 +357,7 @@ pub async fn patch_rom(
     image: Vec<u8>,
     seed: &str,
     lang_pack: &str,
+    lang_relayout: bool,
     drops: &str,
     encounters: &str,
     encounter_scope: &str,
@@ -571,7 +579,7 @@ pub async fn patch_rom(
     };
     let mut lang_report = ImportReport::default();
     if let Some(pack) = &parsed_pack {
-        let report = import_pack_phase(&mut patcher, pack, ImportPhase::DialogOnly, false)
+        let report = import_pack_phase(&mut patcher, pack, ImportPhase::DialogOnly, lang_relayout)
             .map_err(|e| err(format!("apply language pack (dialog): {e}")))?;
         lang_report.merge(report);
     }
@@ -1688,7 +1696,7 @@ pub async fn patch_rom(
         lang_report.merge(report);
         let sections = lang_report.section_counts(pack);
         lang_line = format!(
-            "language ({}): {} strings translated{}\n",
+            "language ({}): {} strings translated{}\n{}",
             pack.language,
             lang_report.applied + lang_report.already_applied,
             if lang_report.issues.is_empty() {
@@ -1698,7 +1706,8 @@ pub async fn patch_rom(
                     " ({} line(s) skipped - over budget, non-encodable or not on this disc)",
                     lang_report.issues.len()
                 )
-            }
+            },
+            relayout_line(&lang_report),
         );
         // Per-section rows live in the `lang` JSON object; the page renders
         // them as the coverage block, so the text summary stays one line.
@@ -1930,7 +1939,41 @@ fn lang_report_json(
         rarr.push(&row);
     }
     Reflect::set(&out, &"reasons".into(), &rarr)?;
+    Reflect::set(
+        &out,
+        &"relayout_entries".into(),
+        &num(report.relayout_entries),
+    )?;
+    Reflect::set(
+        &out,
+        &"relayout_sectors".into(),
+        &num(report.relayout_sectors_added as usize),
+    )?;
+    // Every skipped line, by key, so a translator can find and shorten it in
+    // their own copy of the pack (the page offers these as a CSV download).
+    let iarr = js_sys::Array::new();
+    for (key, msg) in &report.issues {
+        let row = Object::new();
+        Reflect::set(&row, &"key".into(), &key.as_str().into())?;
+        Reflect::set(&row, &"reason".into(), &issue_reason(msg).into())?;
+        Reflect::set(&row, &"message".into(), &msg.as_str().into())?;
+        iarr.push(&row);
+    }
+    Reflect::set(&out, &"issues".into(), &iarr)?;
     Ok(out.into())
+}
+
+/// The summary line a relayout adds (empty when no scene grew).
+fn relayout_line(report: &ImportReport) -> String {
+    if report.relayout_entries == 0 {
+        return String::new();
+    }
+    format!(
+        "  disc relayout: {} scene(s) grew by {} sector(s) total (image +{} bytes)\n",
+        report.relayout_entries,
+        report.relayout_sectors_added,
+        report.relayout_sectors_added as u64 * 2352
+    )
 }
 
 /// Validate a `legaia-text-pack-v1` YAML document **against the user's own
@@ -1940,11 +1983,25 @@ fn lang_report_json(
 /// human summary. This is the same dry run the CLI's `translate stats --input`
 /// does - the only way to check a distributable pack's budgets, which are
 /// hints until a disc is there to measure. Nothing is written.
+///
+/// `relayout` dry-runs the whole-sector disc relayout the same way
+/// [`patch_rom`]'s `lang_relayout` applies it, so the counts match what a
+/// relayout patch would land; the report then carries `relayout_entries` /
+/// `relayout_sectors`.
 #[wasm_bindgen]
-pub fn validate_lang_pack(image: Vec<u8>, pack_yaml: &str) -> Result<JsValue, JsValue> {
+pub fn validate_lang_pack(
+    image: Vec<u8>,
+    pack_yaml: &str,
+    relayout: Option<bool>,
+) -> Result<JsValue, JsValue> {
     let pack = LanguagePack::from_yaml(pack_yaml).map_err(|e| err(format!("parse pack: {e}")))?;
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
-    let report = import_pack(&mut patcher, &pack).map_err(|e| err(format!("dry run: {e}")))?;
+    let report = if relayout.unwrap_or(false) {
+        import_pack_relayout(&mut patcher, &pack)
+    } else {
+        import_pack(&mut patcher, &pack)
+    }
+    .map_err(|e| err(format!("dry run: {e}")))?;
     let out = Object::new();
     Reflect::set(&out, &"ok".into(), &JsValue::from_bool(true))?;
     Reflect::set(&out, &"language".into(), &pack.language.as_str().into())?;
@@ -1958,11 +2015,17 @@ pub fn validate_lang_pack(image: Vec<u8>, pack_yaml: &str) -> Result<JsValue, Js
         &"skipped".into(),
         &JsValue::from_f64(report.issues.len() as f64),
     )?;
-    let msg = format!(
+    let mut msg = format!(
         "{} strings would be translated, {} skipped (over budget or not on this disc)",
         report.applied,
         report.issues.len()
     );
+    if report.relayout_entries > 0 {
+        msg.push_str(&format!(
+            "; the relayout grows {} scene(s) by {} sector(s)",
+            report.relayout_entries, report.relayout_sectors_added
+        ));
+    }
     Reflect::set(&out, &"message".into(), &msg.into())?;
     let sections = report.section_counts(&pack);
     Reflect::set(
@@ -2125,17 +2188,49 @@ pub fn lift_official_pack(
 /// user's own disc data and never leaves the browser.
 ///
 /// `language` stamps the pack header (`fr`, `de`, ...); pass `en` for a plain
-/// source dump. Returns the YAML string.
+/// source dump. `resume`, when given, is an existing pack (a shipped
+/// distributable one, or the translator's own) whose filled translations are
+/// copied onto the matching keys - the CLI's `translate init --resume`, so a
+/// translator can keep working on a published pack with the English next to
+/// each line. Returns the YAML string.
 #[wasm_bindgen]
-pub fn export_lang_pack(image: Vec<u8>, language: &str) -> Result<String, JsValue> {
+pub fn export_lang_pack(
+    image: Vec<u8>,
+    language: &str,
+    resume: Option<String>,
+) -> Result<String, JsValue> {
     let patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
     let pack = export_pack(&patcher).map_err(|e| err(format!("export: {e}")))?;
-    let pack = if language.is_empty() || language == "en" {
+    let mut pack = if language.is_empty() || language == "en" {
         pack
     } else {
         pack.into_skeleton(language, Vec::new())
     };
+    if let Some(prev) = resume.as_deref().map(str::trim).filter(|y| !y.is_empty()) {
+        let seed =
+            LanguagePack::from_yaml(prev).map_err(|e| err(format!("parse resume pack: {e}")))?;
+        pack.merge_translations(&seed);
+    }
     pack.to_yaml().map_err(|e| err(format!("emit YAML: {e}")))
+}
+
+/// Turn a filled working pack into the **distributable** shape (the CLI's
+/// `translate strip`): only the filled entries, keyed by disc coordinate, with
+/// every `source:` / `context:` field removed, so none of the game's own text
+/// survives. This is the file a translator shares. Needs no disc. Returns
+/// `{ yaml, kept, total }`.
+#[wasm_bindgen]
+pub fn strip_lang_pack(pack_yaml: &str) -> Result<JsValue, JsValue> {
+    let pack = LanguagePack::from_yaml(pack_yaml).map_err(|e| err(format!("parse pack: {e}")))?;
+    let total = pack.sections.total();
+    let dist = pack.strip_sources();
+    let kept = dist.sections.total();
+    let yaml = dist.to_yaml().map_err(|e| err(format!("emit YAML: {e}")))?;
+    let out = Object::new();
+    Reflect::set(&out, &"yaml".into(), &yaml.into())?;
+    Reflect::set(&out, &"kept".into(), &JsValue::from_f64(kept as f64))?;
+    Reflect::set(&out, &"total".into(), &JsValue::from_f64(total as f64))?;
+    Ok(out.into())
 }
 
 // --- Texture replacement --------------------------------------------------

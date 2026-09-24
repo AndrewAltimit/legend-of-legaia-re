@@ -71,9 +71,16 @@
           </div>
         </div>
 
+        <label class="rom-check-row" id="rom-lang-relayout-row" hidden>
+          <input type="checkbox" id="rom-lang-relayout">
+          <span>Give translated dialog more room (makes the disc image slightly larger)
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Each scene's dialog is stored compressed, and on the USA disc those blocks have no spare room. Without this option, a scene whose translation doesn't fit gets some of its longest lines put back in English.</p><p>With it on, those scenes get extra 2048-byte sectors and the rest of the disc shifts along, so every line fits at full length. The official European discs were mastered with extra room added the same way. Usually only a few scenes grow, by a few KB in total.</p><p>Only affects dialog; names and menu labels still have fixed sizes. Test the result from a fresh boot or a memory-card save. An emulator save state made on another disc points at the old layout and will break. Details: <a href="translation.html">translation packs</a>.</p></span></span></span>
+        </label>
         <div class="rom-row">
           <button type="button" id="rom-lang-validate" class="rom-button rom-button-ghost">Check pack against my disc</button>
           <button type="button" id="rom-lang-export" class="rom-button rom-button-ghost">Export a starter pack from my disc</button>
+          <button type="button" id="rom-lang-strip" class="rom-button rom-button-ghost" hidden>Make a shareable pack (.yaml, no English)</button>
+          <button type="button" id="rom-lang-issues" class="rom-button rom-button-ghost" hidden>Download skipped lines (.csv)</button>
         </div>
         <div id="rom-lang-status" class="rom-status"></div>
       </div>
