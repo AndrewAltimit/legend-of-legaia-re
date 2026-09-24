@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; translation</div>
   <h1>Translation / language packs</h1>
-  <p class="lede">Legend of Legaia shipped in English, French, German, Italian and Japanese. A language pack lets a community translate the game's text - item and spell names, menus, dialogue - into any Latin-script language and play it on the retail disc. The pack is a plain YAML file you edit in any text editor; applying it never changes the size of anything on the disc.</p>
+  <p class="lede">Legend of Legaia shipped in English, French, German, Italian and Japanese. A language pack lets a community translate the game's text - item and spell names, menus, dialogue - into any Latin-script language and play it on the retail disc. The pack is a plain YAML file you edit in any text editor; by default applying it never changes the size of anything on the disc, and an opt-in relayout gives scene dialog extra room when a translation runs long.</p>
 </header>
 
 <section class="doc-section" id="glance">
@@ -10,7 +10,7 @@
     <dt>What you get</dt><dd>A translated game on your own disc, applied in the <a href="rom-patcher.html">browser patcher</a> or with <code>legaia-patcher translate</code>. Composes with every randomizer option.</dd>
     <dt>Covered</dt><dd>Name tables (items, spells, arts, accessory passives, party names), the whole NPC / cutscene / narration dialogue corpus, pause-menu / shop / battle system labels.</dd>
     <dt>Not covered</dt><dd>Text baked into textures; accented and non-Latin scripts (the retail font has no glyphs for them).</dd>
-    <dt>The one rule</dt><dd>Every edit is same-size in place. Each line has a byte <em>budget</em>; a line over budget is reported and left English.</dd>
+    <dt>The one rule</dt><dd>Every edit is same-size in place unless you opt into the relayout. Each line has a byte <em>budget</em>; a line over budget is reported and left English.</dd>
     <dt>Sharing</dt><dd>A pack is safe to publish once its <code>source:</code> text is stripped - what remains is your text keyed by disc coordinates.</dd>
     <dt>Code</dt><dd><code>crates/patcher/src/translation/</code>; writes go through <code>DiscPatcher</code> (EDC/ECC re-encoded, no LBA moves).</dd>
     <dt>Own another disc?</dt><dd>An official European disc's text, or a fan-translated disc's, can be <a href="#official-pal">lifted onto the USA disc</a> from your own two discs.</dd>
@@ -71,6 +71,7 @@
     <li><strong>Never commit</strong> working packs - they carry the game's script. <code>/translations/</code> and <code>legaia_*.yaml</code> are gitignored.</li>
   </ul>
   <p>The in-browser <a href="rom-patcher.html">ROM patcher</a> does the same from a language dropdown (default <strong>None</strong>): shipped packs, your own pack, a starter export, or a PAL lift - validated against your disc, with a per-section coverage report. Nothing is uploaded.</p>
+  <p>For translators working on the YAML in their own editor, the page covers the whole loop without the CLI: <em>Export a starter pack</em> (or, with a pack chosen, a working copy of it with the English beside each line), <em>Check pack against my disc</em>, <em>Download skipped lines</em> (a CSV of every line that did not land, by key and reason), <em>Give translated dialog more room</em> (the relayout below), and <em>Make a shareable pack</em>, which strips the English out so the file is safe to pass around.</p>
 </section>
 
 <section class="doc-section" id="pack-shapes">
@@ -157,7 +158,7 @@ sections:
       <tr><td>Whole scene</td><td>the rewritten MAN must recompress into its original LZS footprint - retail scenes have <strong>zero compressed slack</strong></td></tr>
     </tbody>
   </table>
-  <p>When a scene still overflows, import rolls back its longest lines one at a time with a per-key diagnostic - shorten those and re-run. The CLI's <code>import --allow-relayout</code> instead grows the scene by whole sectors (an <code>--output</code> image only, never a PPF). Each target is also checked against the pack's <code>source</code>; a mismatch skips the entry rather than writing blind.</p>
+  <p>When a scene still overflows, import rolls back its longest lines one at a time with a per-key diagnostic - shorten those and re-run. The CLI's <code>import --allow-relayout</code> - the patcher page's <em>Give translated dialog more room</em> checkbox - instead grows the scene by whole sectors (an <code>--output</code> image only, never a PPF). Each target is also checked against the pack's <code>source</code>; a mismatch skips the entry rather than writing blind.</p>
   <details class="disclosure">
     <summary>Details: the dialogue-carrier gate on <code>raw:</code> writes</summary>
     <div class="disclosure-body">
@@ -193,7 +194,7 @@ sections:
       <tr><td><code>translate fit-report</code></td><td>Per-string vs per-MAN fit, text-free.</td></tr>
     </tbody>
   </table>
-  <p><strong>Not all of it fits, because of sector alignment:</strong> USA scenes are packed with zero slack, so a longer line overflows. Roughly a third of the dialogue lands in place; the rest is reported, not dropped quietly. <code>import --allow-relayout</code> closes the residual on the CLI.</p>
+  <p><strong>Not all of it fits, because of sector alignment:</strong> USA scenes are packed with zero slack, so a longer line overflows. Roughly a third of the dialogue lands in place; the rest is reported, not dropped quietly. <code>import --allow-relayout</code> closes the residual, on the CLI or with the patcher page's relayout checkbox.</p>
   <details class="disclosure">
     <summary>Details: fit numbers and the recommended path</summary>
     <div class="disclosure-body">

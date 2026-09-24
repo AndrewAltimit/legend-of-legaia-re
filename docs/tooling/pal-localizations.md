@@ -490,7 +490,8 @@ lives in page memory (downloadable, since it is the visitor's own disc text).
 The result is handed straight back to `patch_rom`'s `lang_pack` argument, so it
 inherits the documented dialog-before-randomizer / names-after ordering and the
 same per-section coverage report every other pack gets. Accent folding is on by
-default there; the relayout path is CLI-only (it grows the image).
+default there, and the relayout is the page's *give translated dialog more
+room* checkbox (the downloaded image grows).
 
 The honest headline for that path is this page's fit numbers: roughly a third of
 the dialog corpus lands in place, the rest is reported as over-budget or

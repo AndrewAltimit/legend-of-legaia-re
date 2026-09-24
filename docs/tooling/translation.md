@@ -109,6 +109,18 @@ relayout, by whole sectors (`translation::stream_man`).
 The in-browser ROM patcher ([`site/js/rom-patcher-app.js`](../../site/js/rom-patcher-app.js))
 offers the shipped packs directly (a language dropdown, default **None**), plus
 an *import my own pack* path and an *export a starter pack from my disc* button.
+With a pack chosen, the export becomes a working copy of that pack - its filled
+lines copied onto a fresh export, English beside each (`export_lang_pack`'s
+`resume` argument, the CLI's `init --resume`) - and an imported pack gets a
+*make a shareable pack* button (`strip_lang_pack`, the CLI's `strip`). A
+*give translated dialog more room* checkbox is the CLI's `--allow-relayout`:
+`patch_rom`'s `lang_relayout` runs it in the dialog phase, before every
+randomizer pass, and `validate_lang_pack`'s `relayout` dry-runs it, so the
+check predicts what the patch lands. The download is then the grown `.bin`
+(the page ships no PPF, so nothing changes for the output shape). Every
+skipped line of a check or a patch is downloadable as CSV (key, reason,
+message) from the report's `issues` array, so a translator editing the YAML
+in their own tools can find each line by key.
 It applies the language pack in **two phases around** the randomizer passes
 (see the ordering note below) via `patch_rom`'s `lang_pack` argument, and
 validates a chosen pack against the user's disc with `validate_lang_pack`

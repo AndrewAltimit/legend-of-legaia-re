@@ -3,7 +3,7 @@
  * image. Nothing is uploaded; the disc bytes never leave the browser.
  *
  * The WASM module (legaia_web_viewer) exposes `patch_rom(image, seed, lang_pack,
- * drops, encounters, encounter_scope, chests, shops, casino, steals, arts,
+ * lang_relayout, drops, encounters, encounter_scope, chests, shops, casino, steals, arts,
  * doors, door_coupling, house_doors, starting_items, door_of_wind, incense,
  * speed_chain, chicken_heart, good_luck_bell, all_warps,
  * unused_enemies, unused_items, equipment_drops, monster_stats, move_power,
@@ -16,8 +16,13 @@
  * delilas_moves, enemy_attack_count, swing_costs, equip_owners, enemy_hp_bar,
  * progress?)
  * -> Promise<{ data, summary, seed, lang }>`, `resolve_seed(str)`,
- * `validate_lang_pack(image, yaml) -> { ok, language, applied, skipped, message, report }`,
- * `export_lang_pack(image, language) -> yaml_string`, and
+ * `validate_lang_pack(image, yaml, relayout?) -> { ok, language, applied, skipped, message, report }`,
+ * `validate_lang_pack(image, yaml, relayout?)` dry-runs the whole-sector disc
+ * relayout when `relayout` is true (patch_rom's `lang_relayout`, the argument
+ * right after `lang_pack`, applies it), `export_lang_pack(image, language,
+ * resume?) -> yaml_string` (resume = a pack whose filled lines seed the
+ * export), `strip_lang_pack(yaml) -> { yaml, kept, total }` (the shareable,
+ * source-free shape), and
  * `lift_official_pack(usa_image, other_image, fold_accents, language?) -> { yaml,
  * language, exe, build, summary, tables, ... }` (the other-disc transfer: the
  * user supplies their OWN second disc - an official PAL localization or a
@@ -26,7 +31,8 @@
  * same two-phase ordering and the same coverage report). `lang` / `report`
  * carry the per-section language-patch coverage: `{ language, applied,
  * already_applied, skipped, untranslated, sections: [{name, total, filled,
- * applied, already_applied, skipped}], reasons: [{reason, count}] }` (null
+ * applied, already_applied, skipped}], reasons: [{reason, count}],
+ * relayout_entries, relayout_sectors, issues: [{key, reason, message}] }` (null
  * when no language pack was chosen).
  * The structured "Prices & names" editors ride `read_manual_edit_tables(image)
  * -> { max_name_len, locations: [name x16], world_map_only: [name], fishing:
@@ -164,7 +170,30 @@ function langCoverageText(lang) {
   for (const r of (lang.reasons || [])) {
     lines.push(`  ${r.count} skipped: ${r.reason}`);
   }
+  if (lang.relayout_entries) {
+    lines.push(`  disc relayout: ${lang.relayout_entries} scene(s) grew by ` +
+      `${lang.relayout_sectors} sector(s); the patched image is larger than the original`);
+  }
+  if ((lang.issues || []).length) {
+    lines.push('  "Download skipped lines" lists every one by key, to find and shorten in your pack.');
+  }
   return lines.join('\n') + '\n';
+}
+
+// The skipped lines of a language report as CSV (key, reason, message), so a
+// translator can find each one in their own pack by its key.
+function langIssuesCsv(lang) {
+  const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const rows = ['key,reason,message'];
+  for (const i of (lang.issues || [])) rows.push([q(i.key), q(i.reason), q(i.message)].join(','));
+  return rows.join('\n') + '\n';
+}
+
+// The `language:` header of a pack's YAML, or '' - enough to name files after
+// a pack the user brought, without a YAML parser on the page.
+function packLanguage(yaml) {
+  const m = /^language:\s*['"]?([^'"\n]+?)['"]?\s*$/m.exec(yaml || '');
+  return m ? m[1].trim() : '';
 }
 
 // A .cue for the patched .bin. Legend of Legaia (USA) is a single-track
@@ -2461,6 +2490,10 @@ function init() {
   const langLiftSaveBtn = $('rom-lang-lift-save');
   const langValidateBtn = $('rom-lang-validate');
   const langExportBtn = $('rom-lang-export');
+  const langRelayoutRow = $('rom-lang-relayout-row');
+  const langRelayoutChk = $('rom-lang-relayout');
+  const langIssuesBtn = $('rom-lang-issues');
+  const langStripBtn = $('rom-lang-strip');
   const langStatusEl = $('rom-lang-status');
   const runBtn = $('rom-run');
   const statusEl = $('rom-status');
@@ -2503,11 +2536,55 @@ function init() {
   // The custom-pack file input is only relevant when "Import my own pack" is
   // chosen; the group is opt-in and defaults to None.
   function syncLangRow() {
-    if (langFileRow) langFileRow.hidden = langSel.value !== '__custom';
-    if (langOfficialRow) langOfficialRow.hidden = langSel.value !== '__official';
+    const v = langSel.value;
+    if (langFileRow) langFileRow.hidden = v !== '__custom';
+    if (langOfficialRow) langOfficialRow.hidden = v !== '__official';
+    if (langRelayoutRow) langRelayoutRow.hidden = v === '';
+    // Sharing is for the translator's own pack: a shipped pack is already
+    // shareable, and a lifted one is another disc's text, not theirs to share.
+    if (langStripBtn) langStripBtn.hidden = v !== '__custom';
+    // With a pack chosen, the export carries its lines next to the English.
+    langExportBtn.textContent = v === ''
+      ? 'Export a starter pack from my disc'
+      : 'Export a working copy of this pack (English alongside)';
   }
-  langSel.addEventListener('change', () => { syncLangRow(); setLangStatus(''); });
+  langSel.addEventListener('change', () => { syncLangRow(); setLangStatus(''); showLangIssues(null); });
   syncLangRow();
+
+  // The last language report with skipped lines (from a check or a patch), for
+  // the "Download skipped lines" button.
+  let lastLangReport = null;
+  function showLangIssues(report) {
+    lastLangReport = report && (report.issues || []).length ? report : null;
+    if (langIssuesBtn) langIssuesBtn.hidden = !lastLangReport;
+  }
+  if (langIssuesBtn) {
+    langIssuesBtn.addEventListener('click', () => {
+      if (!lastLangReport) return;
+      const code = lastLangReport.language || 'xx';
+      triggerDownload(new TextEncoder().encode(langIssuesCsv(lastLangReport)),
+        `legaia_${code}.skipped-lines.csv`);
+    });
+  }
+
+  // "Make a shareable pack": strip the English out of the user's own filled
+  // pack, leaving only their lines keyed by disc position (the CLI's
+  // `translate strip`). Needs no disc.
+  if (langStripBtn) {
+    langStripBtn.addEventListener('click', async () => {
+      try {
+        const yaml = await resolveLangPack(langSel, langFile);
+        const mod = await ensureWasm(setStatus);
+        const r = mod.strip_lang_pack(yaml);
+        const code = packLanguage(r.yaml) || 'xx';
+        triggerDownload(new TextEncoder().encode(r.yaml), `legaia_${code}.yaml`);
+        setLangStatus(`Downloaded legaia_${code}.yaml: ${r.kept} translated line(s), ` +
+          'no English text. This is the file to share; others load it with "Import my own pack".', 'ok');
+      } catch (e) {
+        setLangStatus('Error: ' + (e && e.message ? e.message : e), 'err');
+      }
+    });
+  }
 
   // The current disc file's bytes, or an error if none is chosen.
   async function discBytes() {
@@ -2536,11 +2613,15 @@ function init() {
       if (!yaml) { setLangStatus('No language selected (English).'); return; }
       const mod = await ensureWasm(setStatus);
       const buf = await discBytes();
-      const r = mod.validate_lang_pack(buf, yaml);
+      const relayout = !!(langRelayoutChk && langRelayoutChk.checked);
+      if (relayout) setLangStatus('Checking, with the relayout (this takes a moment) ...');
+      await new Promise((res) => setTimeout(res, 30));
+      const r = mod.validate_lang_pack(buf, yaml, relayout);
       setLangStatus(`${langSel.options[langSel.selectedIndex].text}: ${r.message}`, 'ok');
       // Per-section dry-run coverage in the summary panel (same shape as the
       // post-patch report).
       if (r.report) summaryEl.textContent = langCoverageText(r.report).trim();
+      showLangIssues(r.report);
     } catch (e) {
       setLangStatus('Error: ' + (e && e.message ? e.message : e), 'err');
     }
@@ -2608,17 +2689,25 @@ function init() {
   if (langCodeInput) langCodeInput.addEventListener('change', invalidateLift);
 
   // "Export a starter pack from my disc": dump a source-bearing working pack the
-  // user can edit. Uses the chosen language code as the header stamp (or en).
+  // user can edit. With a pack chosen (shipped, imported or lifted) its filled
+  // lines seed the export, so a translator continues from it with the English
+  // beside every line (the CLI's `translate init --resume`).
   langExportBtn.addEventListener('click', async () => {
     try {
-      setLangStatus('Exporting starter pack from your disc ...');
+      setLangStatus('Exporting from your disc ...');
       const mod = await ensureWasm(setStatus);
       const buf = await discBytes();
-      const code = (langSel.value && langSel.value !== '__custom') ? langSel.value : 'en';
-      const yaml = mod.export_lang_pack(buf, code);
+      const v = langSel.value;
+      // No pack to continue from yet (nothing imported / lifted): a blank one.
+      const noPack = (v === '__custom' && !(langFile.files && langFile.files[0])) ||
+        (v === '__official' && !liftedPack);
+      const resume = noPack ? '' : await resolveLangPack(langSel, langFile);
+      const code = (v && !v.startsWith('__')) ? v : (packLanguage(resume) || 'en');
+      const yaml = mod.export_lang_pack(buf, code, resume || undefined);
       const bytes = new TextEncoder().encode(yaml);
       triggerDownload(bytes, `legaia_${code}.working.yaml`);
-      setLangStatus(`Downloaded legaia_${code}.working.yaml - fill the translation: fields and import it above.`, 'ok');
+      setLangStatus(`Downloaded legaia_${code}.working.yaml - fill the translation: fields and import it above. ` +
+        'It contains the game\'s English text, so keep it to yourself and share the "shareable pack" instead.', 'ok');
     } catch (e) {
       setLangStatus('Error: ' + (e && e.message ? e.message : e), 'err');
     }
@@ -2837,7 +2926,7 @@ function init() {
     // orthogonal to the randomization config, so editing them must not flip
     // the preset to "Custom".
     if (e.target && (['rom-seed', 'rom-file', 'rom-lang', 'rom-lang-file',
-      'rom-lang-pal-file', 'rom-lang-fold'].includes(e.target.id)
+      'rom-lang-pal-file', 'rom-lang-fold', 'rom-lang-relayout'].includes(e.target.id)
       || (e.target.id || '').startsWith('rom-tex-'))) return;
     markCustom();
     syncDependents();
@@ -3048,11 +3137,13 @@ function init() {
       let summaryText = '';
       let langReport = null;
       if (baseActive) {
-        const result = await mod.patch_rom(buf, seed, langPack, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, oscillatingAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, superArtsPack, attackCount, swingCosts, equipOwners, enemyHpBar, onPatchProgress);
+        const langRelayout = langActive && !!(langRelayoutChk && langRelayoutChk.checked);
+        const result = await mod.patch_rom(buf, seed, langPack, langRelayout, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, oscillatingAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, superArtsPack, attackCount, swingCosts, equipOwners, enemyHpBar, onPatchProgress);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';
         langReport = result.lang;
+        showLangIssues(langReport);
       }
       if (texSpecs.length) {
         setStatus('Applying texture replacement' + (texSpecs.length > 1 ? 's' : '') + ' ...');
