@@ -330,6 +330,23 @@ impl RetailRotationLut {
     }
 }
 
+impl RetailRotationLut {
+    /// The sine view behind `_DAT_8007B81C`: one revolution, 12-bit angle.
+    pub fn sin_table(&self) -> &[i16; 4096] {
+        &self.sin
+    }
+
+    /// The cosine view behind `_DAT_8007B7F8` (`_DAT_8007B81C + 0x800`
+    /// bytes = `+0x400` entries), materialised as its own revolution.
+    ///
+    /// Retail reads past the first revolution into the table's repeated
+    /// tail instead of masking; over the `0..=0xFFF` index domain every
+    /// consumer masks to, the two are the same values.
+    pub fn cos_table(&self) -> [i16; 4096] {
+        std::array::from_fn(|i| self.sin[(i + 0x400) & 0xFFF])
+    }
+}
+
 impl Default for RetailRotationLut {
     fn default() -> Self {
         Self::new()

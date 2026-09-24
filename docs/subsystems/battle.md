@@ -8,7 +8,7 @@ from-scratch engine systems. Use the contents below to jump to a section.
 ## Contents
 
 **Retail scene + render**
-- [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [the two boss-stage modules](#what-the-two-boss-stage-modules-do-overlays-968--969) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes) · [the round loop](#the-round-loop---what-re-arms-0x1e) · [`s2` + commit](#s2-is-not-the-pad-and-how-a-command-commits)
+- [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [the two boss-stage modules](#what-the-two-boss-stage-modules-do-overlays-968--969) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes) · [the round loop](#the-round-loop---what-re-arms-0x1e) · [`s2` + commit](#s2-is-not-the-pad-and-how-a-command-commits) · [commit confirm](#the-commit-confirm-screen-0x6e)
 - [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [post-strike two-shot](#the-post-strike-two-shot-fun_801d5854-cases-7-and-8) · [menu vs input framing](#the-command-chooser-is-the-far-framing-the-arts-input-is-the-close-up) · [resting yaw](#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
 
 **Retail battle logic + data**
@@ -88,7 +88,7 @@ belong to the `befect_data` block - raw 872..875 = extraction 870..873 =
   party vertex pools - [character-mesh.md § Battle form](../formats/character-mesh.md#battle-form---assembled-from-the-player-files)).
   The field pack 0874 §0 is field-only; PROT 1204 is the Baka Fighter
   default-equipment sibling pack.
-- **State `0xE`** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.
+- **State `0xE`** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` scripted-battle / door-warp paths on the system context.
 - **State `0xFF`** - dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.DAT` (extraction PROT 893 / 894; format + verification in [`formats/summon-readef.md`](../formats/summon-readef.md)).
 
 A paired stage pack loads at raw TOC `0x367`/`0x36d` (= extraction entries 0869/0875) in states 2/4/6.
@@ -628,7 +628,7 @@ party actors at `0x801D1174..0x801D1184` before storing `0xFE`.
 
 The ring's four arms sit on the same four masks, and every one of them commits
 through the same idiom - **advance to the next member that still owes a
-command, or begin the round**:
+command, or raise the [commit confirm](#the-commit-confirm-screen-0x6e)**:
 
 ```text
 801d16ac  jal   0x801db81c          ; next member after ctx[+0x13] awaiting a command
@@ -655,6 +655,105 @@ arming the next surface is a soft-lock, and it does not have to be the command
 itself that breaks - see the readout desync in
 [`battle-action.md`](battle-action.md#the-0x51-exit-gate-and-the-hp-bar-settle-invariant).
 
+### The commit-confirm screen (`0x6E`)
+
+Every commit site above stores `0x6E` instead of `0x28` once `FUN_801DB81C`
+comes back equal to the party count, so the screen is raised after the
+**last** member that can act has committed, for every party size - a solo
+party reaches it off its only member's command. No option word gates it: the
+only option the review arm consults is `_DAT_800846C8` (the Battle Command
+setting), and only to decide whether Up / Down count as a confirm. When no
+member can act at all, the round prompt's `Begin` stores `0x6E` directly
+(`0x801D10A0`, step `0x27`); the port takes the same arm
+(`World::tick_battle_command`, after `World::begin_battle_round` opened the
+prompt on member 0).
+
+The arm at `0x801D3024` draws the D-pad glyph at `(152, 84)`
+(`FUN_801DB8F4(0x98, 0x58)`) between two chips - placement record `0x10`
+(content `(92, 88)`, width `48`, its word stamped from the overlay pool by the
+round prompt's `Begin` arm at `0x801D1060`) and record `0x13` (`(180, 88)`,
+payload `Reselect` at SCUS `0x800152D4`). The `party_basic_attack_vs_gobu_gobu`
+capture's display list holds exactly those plates, `(84, 82)` and
+`(172, 82)`, `64 x 20` each.
+
+It splits the pad as the [`s2` table](#s2-is-not-the-pad-and-how-a-command-commits)
+says: Left or the confirm mask stores `0xFE` and plays the round out;
+Right or the cancel mask is `Reselect`. `Reselect` calls
+`FUN_801D388C(0x21)`, whose tail is `FUN_801D32BC(1)` (`0x801D4750`) - a
+**one-member** backward step - and stores `0x28`; the dispatcher then
+refunds the landing member's item if it had committed one
+(`FUN_800421D4(+0x1DF, 1)`, `0x801D30BC`). The step lands on the **last**
+member that can act, not the first, because by `0x6E` the forward walk has
+already moved the cursor past the party: the capture holds
+`ctx[+0x13] = 1`, `ctx[+0x1F] = 1` on a one-member party. With nobody able
+to act, `FUN_801DBA04` equals the count and the press returns to `0x1E`
+(`0x801D30D0`).
+
+Retail also keeps a **commit log** up through the whole command phase - see
+[the commit log](#the-commit-log) below.
+
+**Port.** `battle_input::CommandPhase::CommitConfirm` (step
+`step_commit_confirm`); `World::open_commit_confirm` raises it where
+`commit_party_command` used to begin the round, and
+`World::reselect_battle_commands` is the `Reselect` step (the same
+`FUN_801D32BC(1)` kernel the ring's cancel uses, started from the party
+count). Both hosts draw it through `battle_hud::battle_command_chips`
+(`CommandChipPhase::CommitConfirm`) and the shared chip cluster
+`legaia_engine_ui::battle_command_ui::CLUSTER_COMMIT_CONFIRM`, with the chip
+words read off the disc. The arts entry no longer carries a `Begin | Reselect`
+of its own: that was this party-wide screen modelled per member, which put it
+after every member's arts and after no one's Magic or Item.
+
+### The commit log
+
+Each committed member gets a row of three placement records at `0x2B + 3n`
+(name, command, target), `n = ctx[+0x1F]` - the command cursor's step
+depth. The commit arms of `FUN_801D388C` stage them: case `0x20` (Attack)
+at `0x801D4444`, case `0x11` (Spirit, a member other than the last, with the
+forward step) at `0x801D4020`, case `0x23` (Spirit, the last member) at
+`0x801D4918`. Each arm:
+
+1. lands the three elements with `FUN_801D5718(dst, src)` - name from the
+   acting plaque (record `0x1A`), command from the chosen ring chip (record
+   `0x0D` `Attack` on case `0x20`, record `0x0B` `Spirit` on the other two),
+   target from the target plaque (record `0x29`); the Spirit arms point the
+   target element at an empty string of width `0` instead;
+2. seats the columns off the name's measured width: name at `x = 16`,
+   command at `name_w + 0x20`, target at `name_w + 0x60`;
+3. scrolls the log so the newest row sits lowest - one row rests at
+   `y = 170`, a second moves the first to `146` and takes `170`, a third
+   takes `194`.
+
+`FUN_801D5718` copies `+0x02 <- src+0x0A`, `+0x04 <- src+0x0C`, `+0x06`,
+`+0x0A` and `+0x14`, and never `+0x0C`: the element starts where its source
+rests and the arm writes the landing row itself. When the target cursor
+covers a whole side, `FUN_801D57E8` has already swapped record `0x29`'s
+content for record `0x3D` (`"  All"`, width 36) or `0x3E` (`"All Allies"`,
+width 48), so an all-target commit logs that label. The `0x6E` screen's
+`Reselect` (case `0x21`, `0x801D45A8`) parks the landing member's row at
+`x = 328`, and the round's start launches the whole log off-screen through
+`FUN_801D5778` (the two loops at `0x801D50A0` / `0x801D50F8`, copying record
+`0x2B + i` into `0x35 + i` with seat B one display width to the left).
+
+The capture `party_basic_attack_vs_gobu_gobu` (solo Vahn at `0x6E`,
+`ctx[+0x1F] = 1`) holds records `0x2B` / `0x2C` / `0x2D` at seat B
+`(16, 170)` / `(59, 170)` / `(123, 170)` - `Vahn` (width 27), `Attack`,
+`Gobu Gobu` - which is the one-row case of the layout above.
+
+**Port.** `legaia_engine_vm::battle_commit_log` stages the rows over a
+scratch placement array (`stage_commit_row`, with `FUN_801D5718` as
+`battle_cursor_pose::element_placement_land` and `FUN_801D57E8` for the
+all-target labels); `engine-core::battle_hud::battle_commit_log` lists the
+members the cursor has walked past - all of them once `0x6E` is up - from
+`RoundFlow::pending`; and `engine-ui`'s battle HUD builder draws each element
+as a gold plate (kind `2`) with its text at the pen `(x, y - 2)`. Both hosts
+pass the rows through `BattleHudFrame::commit_log`. What is drawn is each
+element's resting seat: the glide from seat A (`FUN_801D8DE8` /
+`FUN_801DB7B0`) and the round-start launch are not modelled, so
+`FUN_801D5778` is still unwired. Which chip an Item or magic commit logs
+(records `0x0C` / `0x0E`) and whether an Item row carries a target are
+inferred from the ring's arm order, not read off a commit arm.
+
 ### How the engine raises the flow state
 
 The engine splits what `FUN_801D0748` does in one machine across a
@@ -677,7 +776,7 @@ differ from retail and are deliberate:
   mid-round (a submenu backed out of) finds the flow on a window state and
   opens on the ring, which is where retail's own cancel arms land.
 - **Target confirm.** `CommandPhase::Confirmed` is the Attack path, which retail
-  routes `0x5A → 0x6E`; state `100` is the item window's own target step and has
+  routes `0x5A → 0x28` for the next member or `0x5A → 0x6E` after the last; state `100` is the item window's own target step and has
   no engine hook point yet.
 - **Lesson counter.** Retail shares `ctx[+0x28A]` with the action SM, where the
   sparring fight's scripted `case 0xFF` bumps it. The engine has no script driver
@@ -1915,6 +2014,11 @@ Engine mirror: [`engine-core::battle_seats`](../../crates/engine-core/src/battle
 
 ## Range / line-of-sight (`FUN_8004E2F0`)
 
+Its first test is the battle-end byte `0x8007BD71`: anything but `0xFF` - the
+wipe and escape teardowns store `0xFE` - returns the out-of-range `1` before
+any slot is read (`0x8004E2F4..0x8004E310`); the port reads `battle.end` for
+it.
+
 `FUN_8004E2F0(actor_a_id, actor_b_id) -> i16 distance` is the canonical battle range check, called 5+ times from the per-actor state machine. Reads `[DAT_801C9370 + id*4]` for both actors, computes a euclidean distance from `+0x34/+0x38` (or `+0x3C/+0x40` for the b-actor), then sums the two `+0x1F` size bytes (party-member size table at `0x80078878`, monster size byte read from the live actor) to get the hit radius. Final value is clamped to a per-actor cap and `0xF` per `param_2 < 3` party tier.
 
 ## Monster init (`FUN_80054CB0`)
@@ -2784,10 +2888,10 @@ byte `*(_DAT_8007BD24)[0]`:
    `_DAT_801F53D4` / `_DAT_801F53D8` into the **target's** `+0x04` tint and
    `+0x21F` selector. Gala's clip-`0x18` arm additionally **freezes the
    target's pose** (`+0x21D = 0`, cursor window `0x40..=0x80`; restored by
-   `FUN_801E93C8`); Vahn's clip-`0x18` arm is tint-only (`0x90..=0xA0`). The
-   overlay ribbon `FUN_801E1D98` is called by the clip-`0x67` arm, not the
-   `0x18` one. Both arms also stamp `+0x0C = 0x1000` (`sw v0,0xc(s1)` at
-   `0x8004D1DC` / `0x8004D294`). Port: `engine-vm::battle_impact_fx` +
+   `FUN_801E93C8`); Vahn's clip-`0x18` arm is tint-only (`0x90..=0xA0`).
+   Every tint arm also stamps `+0x0C = 0x1000`. The rest of the pass, from
+   `0x8004D01C` to `0x8004D32C`, is [tabulated below](#the-other-clip-tag-arms).
+   Port: `engine-vm::battle_impact_fx` +
    `World::tick_battle_impact_fx`; the tint decays through the per-actor
    presentation SM `FUN_80050120` (arm 0: `FUN_80050F30` ease to neutral,
    then the `+0x0C` blend drains, then the `+0x21F` selector retires - port
@@ -2805,6 +2909,7 @@ byte `*(_DAT_8007BD24)[0]`:
    status-proc arm; the class rides the clip as
    `MonsterAnimation::impact_class`. How the words reach the pixel is in
    [tint pass and draw pass](#how-the-tint-words-reach-the-pixel).
+   See [the other clip-tag arms](#the-other-clip-tag-arms) for the table.
 3. **Per-encounter boss hooks.** Gated on `DAT_8007BD0C` - the **monster /
    formation id**, not a sequence sub-phase byte, and `0x8A`/`0xA7`/`0xAA`/`0xB4`
    (138/167/170/180) are **boss ids**, not phase bands. Each arm applies
@@ -2852,6 +2957,37 @@ byte `*(_DAT_8007BD24)[0]`:
    [battle-formulas.md](battle-formulas.md#status-application-the-art--move-record-status-byte)),
    which the monster-cast fold calls and which lands the `+0x16E` bit on a
    party seat.
+
+### The other clip-tag arms
+
+Pass 2 keys every arm on the acting actor's committed record `+0x77` and the
+anim-player node's cursor `+0x68` (sixteenths of a keyframe), and writes the
+target named by the acting actor's `+0x1DD`. The whole pass, from the
+disassembly (`see ghidra/scripts/funcs/8004ce2c.txt`):
+
+| Who acts | Tag | Cursor | Writes |
+|---|---|---|---|
+| Gala | `0x16` | `>= 0x20` | target tint, entry 1, selector `2`, blend `0x1000` |
+| Gala | `0x17` | `>= 0x40` | the same tint |
+| Gala | `0x18` | `0x40..=0x80` | the same tint plus the pose freeze; acting `+0x21F = 2` on the tag alone |
+| Gala | `0x67` | `0xB0..=0xF0` | the same tint plus `FUN_801E1D98(&target[+0x3C], 0xC)` |
+| Vahn | `0x18` | `0x90..=0xA0` | target tint, entry 0, selector `1` |
+| Vahn | `0x2B` | any | acting `+0x21C = 3` below `0x51`, `0` from there |
+| Noa | `0x29` / `0x2D` | any | target `+0x16E` takes bits `0x380`, gated below |
+| a monster | `0x3B` | any | acting `+0x21C = 3`, target `4` while acting `+0x21B == 0x13`; both `0` when it reads `0` |
+
+The two Gala tint-only arms are open-ended: `slti v0,v0,0x20` / `0x40` at
+`0x8004D14C` / `0x8004D168` gate the start and nothing gates the end. Noa's
+arm needs a landed hit (acting `+0x1F4 != 0`), an ordinary fight
+(`ctx[+0x287] == 0`), an even `rand()` (`0x8004D0EC`) and a first monster
+other than `0xA7` - the byte it reads is `gp+0x9F4`, which with
+`gp = 0x8007B318` is the formation cell `0x8007BD0C`. `+0x21C` is the
+presentation arm the tint SM `FUN_80050120` dispatches on.
+
+Every row is ported in `engine-vm::battle_impact_fx` and applied by
+`World::tick_battle_impact_fx`, except the tag-`0x67` ribbon: its
+`FUN_801E1D98` call is surfaced as `ClipImpactWrite::effect_at_target`
+and the streak pass does not yet raise a ribbon from it.
 
 Calls the actor-spawn/move-VM invoker `FUN_80021B04` and helpers
 `FUN_8004FE5C` / `FUN_800583C8` / `FUN_80031D00` / RNG `FUN_80056798`.
@@ -4041,8 +4177,11 @@ harness that skips the path it verifies proves nothing about it.
 
 ### Scripted-battle entry (`3E FF <row>`)
 
-The scripted boss fights enter through the field-VM interact op `0x3E` with
-`op0 = 0xFF`: the case-0x3E interact arm (`FUN_801DE840`, field overlay) sets
+The scripted boss fights enter through field-VM op `0x3E` with `op0 = 0xFF` -
+or any `op0 < 100`, which runs the same body (the arm reads `op0` only to fork
+off the `>= 100` door-warp; see
+[`script-vm.md`](script-vm.md#0x3e-scripted-battle-op0--100)): the case-0x3E
+arm (`FUN_801DE840`, field overlay) sets
 the SYSTEM entity's 5-state SM to Activating (`sys_ctx[+0x8A] = 1`), points its
 encounter-record slot at the per-scene MAN formation-table row `op1`
 (`sys_ctx[+0x94] = *(ctrl+0x20) + op1 * *(ctrl+0x5D) + 1`), and requests the
@@ -4113,7 +4252,7 @@ actor's record.
 
 Engine port: `World::trigger_scripted_battle(row)`
 ([`crates/engine-core::world::encounters`](../../crates/engine-core/src/world/encounters.rs)),
-reached from the field-VM host's `field_interact` arm when `op0 == 0xFF`. The
+reached from the field-VM host's `scripted_battle` arm for `op0 == 0xFF` and every `op0 < 100`. The
 formation resolves against the rows `install_man_encounter` registered at scene
 entry (with the PROT 867 archive stats merged; the v12 dungeons resolve their
 encounter section from the streaming variant MAN, their only carrier), and the

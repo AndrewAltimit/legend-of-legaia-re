@@ -138,9 +138,10 @@ impl LegaiaRuntime {
     /// The narration crawl + title card as font-atlas text quads over a
     /// `surface_w` x `surface_h` canvas - the same
     /// `{ "open", "texts" }` quad shape as the menu / dialog draws (blit off
-    /// the font atlas; there are no chrome sprites). Line Ys are the
-    /// roller's PSX 240-line window scaled to the surface; each line is
-    /// centred, white - the native window's narration draw.
+    /// the font atlas; there are no chrome sprites). The lines are laid out
+    /// in the 320x240 stage (the roller's PSX 240-line Ys, centred, white)
+    /// and scaled through the page's stage transform - the native window's
+    /// narration draw.
     /// REF: FUN_80037174
     pub fn play_cutscene_text_draws_json(&mut self, surface_w: u32, surface_h: u32) -> String {
         const CLOSED: &str = r#"{"open":false,"texts":[]}"#;
@@ -157,33 +158,27 @@ impl LegaiaRuntime {
             return CLOSED.to_string();
         };
         let font = assets.font_ref();
-        let white = [1.0f32, 1.0, 1.0, 1.0];
-        let center_x = (surface_w.max(1) / 2) as i32;
-        let scale = surface_h.max(1) as f32 / 240.0;
-        let mut texts: Vec<TextDraw> = Vec::new();
-        // Bottom-up subtitle crawl: every visible line centred at its
-        // current window Y (PSX 240-line space, scaled to the surface).
-        if let Some(narration) = w.cutscene.narration.as_ref() {
-            for line in narration.visible_lines() {
-                let y = (line.y as f32 * scale) as i32;
-                if y < 0 || y > surface_h as i32 - 8 {
-                    continue;
-                }
-                texts.extend(ui::cutscene_narration_draws_for(
-                    font, line.text, center_x, y, white,
-                ));
-            }
-        }
-        // Static title card: the pages shown together, centred, at the
-        // capture-pinned band y=92..130.
-        if let Some(card) = w.cutscene.card.as_ref() {
-            for (i, text) in card.iter().enumerate() {
-                let y = ((92 + 16 * i as i32) as f32 * scale) as i32;
-                texts.extend(ui::cutscene_narration_draws_for(
-                    font, text, center_x, y, white,
-                ));
-            }
-        }
+        // The crawl and the title card in retail's 320x240 stage, through
+        // the shared `cutscene_text_stage_draws`, then the page's stage
+        // transform - the native window's narration draw, pass for pass.
+        let lines = w
+            .cutscene
+            .narration
+            .as_ref()
+            .map(|n| n.visible_lines())
+            .unwrap_or_default();
+        let crawl: Vec<(&str, i32)> = lines.iter().map(|l| (l.text, l.y)).collect();
+        let card: Vec<&str> = w
+            .cutscene
+            .card
+            .iter()
+            .flatten()
+            .map(String::as_str)
+            .collect();
+        let mut texts: Vec<TextDraw> =
+            ui::cutscene_text_stage_draws(font, &crawl, &card, [1.0, 1.0, 1.0, 1.0]);
+        let (origin, scale) = crate::play_menu::stage_transform(surface_w, surface_h);
+        ui::scale_stage_text_draws(&mut texts, origin, scale);
         serde_json::json!({
             "open": !texts.is_empty(),
             "texts": texts.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),

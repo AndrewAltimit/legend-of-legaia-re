@@ -313,9 +313,6 @@ impl PlayWindowApp {
         // screen is open is stale by the next frame and must not survive to
         // be bound later.
         let pending_key = self.pending_key_name.take();
-        // A binding table a Key Config screen committed this tick, applied
-        // and persisted after the match releases `self.boot_ui`.
-        let mut rebound: Option<legaia_engine_core::input::Mapping> = None;
         let mut start_attract: Option<i16> = None;
         // The player aborted the attract movie this tick; the decoder is torn
         // down below, once the match has released `self.boot_ui`.
@@ -504,16 +501,18 @@ impl PlayWindowApp {
                             );
                         }
                         TitleOutcome::Options => {
-                            // Armed with the live binding table, so the boot
-                            // options screen carries the same Key Config row
-                            // the pause menu's does - one screen, both
-                            // entries.
-                            self.boot_ui = BootUiState::Options(
-                                legaia_engine_core::options::OptionsSession::with_key_rebind(
-                                    self.options_state.clone(),
-                                    self.mapping.clone(),
-                                ),
-                            );
+                            // The retail options screen is the pause menu's
+                            // framed Options sub-screen; the title reaches it
+                            // through the same menu runtime the Start press
+                            // does, as the browser play page's title does
+                            // (`play_menu_open_row("Options")`). A refused
+                            // open leaves the title up.
+                            if !self.open_menu_row_from_title(
+                                legaia_engine_core::field_menu::FieldMenuRow::Options,
+                            ) {
+                                self.boot_ui = BootUiState::Title(title_session(true));
+                                self.start_title_bgm();
+                            }
                         }
                     }
                 }
@@ -563,36 +562,6 @@ impl PlayWindowApp {
                 }
                 true
             }
-            BootUiState::Options(session) => {
-                use legaia_engine_core::options::{OptionsInput, OptionsOutcome};
-                let input = OptionsInput {
-                    up,
-                    down,
-                    left,
-                    right,
-                    cross,
-                    circle,
-                    start,
-                };
-                let _ = session.tick_with_key(input, pending_key);
-                if session.take_bindings_dirty()
-                    && let Some(m) = session.mapping().cloned()
-                {
-                    rebound = Some(m);
-                }
-                if let Some(OptionsOutcome::Closed) = session.outcome() {
-                    // Value edits commit inside the session's popup (retail
-                    // writes the config word at popup confirm and never
-                    // reverts); lift + persist the final state.
-                    self.options_state = session.state().clone();
-                    self.persist_and_apply_options();
-                    // After options, route back to Title so the player can
-                    // pick New Game / Continue (matches retail flow).
-                    self.boot_ui = BootUiState::Title(title_session(true));
-                    self.start_title_bgm();
-                }
-                true
-            }
             BootUiState::FieldMenu { sub } => {
                 use legaia_engine_core::field_menu::{FieldMenuInput, FieldMenuOutcome};
                 use legaia_engine_core::field_menu_dispatch::{
@@ -618,10 +587,9 @@ impl PlayWindowApp {
                     return true;
                 }
                 // A bind committed inside the Options sub-session's Key
-                // Config screen this tick. Held in a local because this arm
-                // returns before the post-match apply the boot options screen
-                // uses, and because `self.mapping` cannot be written while
-                // `sub` borrows `self.boot_ui`.
+                // Config screen this tick. Held in a local because
+                // `self.mapping` cannot be written while `sub` borrows
+                // `self.boot_ui`.
                 let rebound_in_menu;
                 if let Some(active_sub) = sub.as_mut() {
                     // Engine extension: Triangle on the Status screen swaps
@@ -708,8 +676,10 @@ impl PlayWindowApp {
                                 self.persist_and_apply_options();
                             }
                         }
+                        // A title-opened menu has no root screen to return
+                        // to: the sub-screen's exit closes it entirely.
                         if let Some(menu) = self.session.field_menu.as_mut() {
-                            let _ = menu.resume(false);
+                            let _ = menu.resume(self.menu_from_title);
                         }
                     }
                     // Adopt + persist the rebind now that the `self.boot_ui`
@@ -786,6 +756,10 @@ impl PlayWindowApp {
                             // scene mode and drop straight to the scene.
                             self.session.close_field_menu();
                             self.boot_ui = BootUiState::Inactive;
+                            if std::mem::take(&mut self.menu_from_title) {
+                                self.boot_ui = BootUiState::Title(title_session(true));
+                                self.start_title_bgm();
+                            }
                         }
                     }
                 }
@@ -835,14 +809,6 @@ impl PlayWindowApp {
                 out.set_sequencer_paused(false);
             }
         }
-        // Same for a committed rebind: adopt it as the live table (so the
-        // very next key event resolves through it) and persist it to the
-        // same `legaia-input.toml` that `legaia-engine config set --binding`
-        // writes - one file, whichever way the player edited it.
-        if let Some(mapping) = rebound {
-            self.mapping = mapping;
-            self.persist_bindings();
-        }
         boot_ui_active
     }
 
@@ -885,6 +851,59 @@ impl PlayWindowApp {
             }
             None => log::info!("title attract: fmv_id={fmv_id} did not decode; staying on title"),
         }
+    }
+
+    /// Open the pause menu straight onto one row's sub-screen, for the
+    /// title's Options row: the native twin of the browser play page's
+    /// `play_menu_open_row`. The row is reached through the shared picker's
+    /// own confirm routing (cursor steps + Cross), so a row its gate blocks
+    /// stays blocked. `false` when the open or the row is refused, with the
+    /// menu closed again.
+    pub(super) fn open_menu_row_from_title(
+        &mut self,
+        row: legaia_engine_core::field_menu::FieldMenuRow,
+    ) -> bool {
+        use legaia_engine_core::field_menu::{FieldMenuInput, FieldMenuPhase};
+        use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+        self.session.open_field_menu();
+        let Some(menu) = self.session.field_menu.as_mut() else {
+            return false;
+        };
+        if !menu.row_is_available(row) {
+            self.session.close_field_menu();
+            return false;
+        }
+        for _ in 0..row.index() {
+            let _ = menu.tick(FieldMenuInput {
+                down: true,
+                ..FieldMenuInput::default()
+            });
+        }
+        let _ = menu.tick(FieldMenuInput {
+            cross: true,
+            ..FieldMenuInput::default()
+        });
+        if menu.phase() != (FieldMenuPhase::Suspended { row }) {
+            self.session.close_field_menu();
+            return false;
+        }
+        let rack = disk_save_rack_with_card(&self.save_dir, self.card.as_ref());
+        self.save_flow.reset();
+        let world = &self.session.host.world;
+        let chain_library = world.chain_library();
+        let mut built = FieldMenuSubsession::build(
+            row,
+            world,
+            &self.options_state,
+            &rack,
+            &chain_library,
+            &world.tables.spell_catalog,
+            &world.tables.equipment_table,
+        );
+        built.arm_key_rebind(self.mapping.clone());
+        self.boot_ui = BootUiState::FieldMenu { sub: Some(built) };
+        self.menu_from_title = true;
+        true
     }
 
     /// Build text draws for the active boot UI (when applicable).
@@ -1018,64 +1037,6 @@ impl PlayWindowApp {
                     self.save_menu.is_some(),
                 ));
                 out
-            }
-            BootUiState::Options(s) => {
-                // The boot options screen's Key Config sub-screen. Same
-                // shared builder the pause menu's composition uses - the
-                // rebind layout is written once, for both entries and both
-                // hosts.
-                if let Some(k) = s.key_rebind() {
-                    let pairs: Vec<(String, String)> = k
-                        .rows()
-                        .iter()
-                        .map(|r| (r.button.name().to_string(), r.key.clone()))
-                        .collect();
-                    let borrowed: Vec<(&str, &str)> = pairs
-                        .iter()
-                        .map(|(b, v)| (b.as_str(), v.as_str()))
-                        .collect();
-                    return legaia_engine_render::key_rebind_draws_for(
-                        &self.font,
-                        &borrowed,
-                        k.cursor(),
-                        matches!(
-                            k.phase(),
-                            legaia_engine_core::key_rebind::KeyRebindPhase::AwaitingKey { .. }
-                        ),
-                        (96, 80),
-                    );
-                }
-                let rows = s.state().rows_for(s.key_config_armed());
-                let row_views: Vec<legaia_engine_render::OptionsRowView<'_>> = rows
-                    .iter()
-                    .map(|r| legaia_engine_render::OptionsRowView {
-                        label: r.label,
-                        value: r.value,
-                        teal: r.teal,
-                        advance: r.advance,
-                    })
-                    .collect();
-                // The boot-UI options panel draws at a fixed pen rather
-                // than the menu-overlay window rects; anchor the value
-                // popup off the same pen (value column + 6).
-                let popup = s.popup().map(|p| legaia_engine_render::OptionsPopupDraw {
-                    rect: legaia_engine_core::options::options_popup_content_rect(
-                        80,
-                        96 + 146,
-                        128,
-                        p.row,
-                        p.choices.len(),
-                    ),
-                    choices: p.choices,
-                    cursor: p.cursor,
-                });
-                legaia_engine_render::options_draws_for(
-                    &self.font,
-                    &row_views,
-                    s.cursor(),
-                    popup.as_ref(),
-                    (96, 80),
-                )
             }
             BootUiState::FieldMenu { sub } => {
                 use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;

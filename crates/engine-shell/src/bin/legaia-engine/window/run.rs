@@ -320,8 +320,8 @@ pub(super) fn build_window_scene_resources(session: &BootSession) -> Result<Scen
     // (rows 478..481 col 0), so the meshes sample an unpopulated row and
     // the VRAM filter drops them - the invisible-player symptom. Retail
     // field load uploads the pack with strip semantics; replicate that.
-    // (NOT the etim effect pool - uploading that battle-resident pool
-    // into field VRAM clobbers pages the town meshes sample.)
+    // The rest of the section is layered *under* the build below, never
+    // written over it.
     match session
         .host
         .index
@@ -341,6 +341,32 @@ pub(super) fn build_window_scene_resources(session: &BootSession) -> Result<Scen
         }
         Err(err) => {
             log::warn!("play-window: field char atlas upload skipped: {err:#}");
+        }
+    }
+    // The whole effect-texture pool of that section (`etim`: the
+    // `(448, 0)` page, the `fb_y = 256` pages, CLUT strips on rows 473 /
+    // 475 / 478) is resident in retail field and world-map VRAM, and it
+    // is where the field fog sheets sample: texture page `0x27` is
+    // `(448, 0)`, the wisps sit at rows `0x40..0x6F` of it, CLUT `0x7640`
+    // is `(0, 473)`. Every PCSX-Redux field / world-map state in the
+    // library holds those cells byte-exact. Retail loads the pool before
+    // the scene, so a scene TIM on an overlapping rect wins (`dolk`'s
+    // `(448, 0)` page keeps its own texels in retail) - the boot-resident
+    // underlay order `SceneResources` uses for the system-UI bundle.
+    // Without it the fog quads sampled all-zero texels and the shader
+    // discarded every fragment. See `docs/subsystems/field-ambient-fx.md`.
+    let mut effect_pool = legaia_tim::Vram::new();
+    match legaia_engine_core::scene::upload_effect_textures_into_vram(
+        &session.host.index,
+        &mut effect_pool,
+        true,
+    ) {
+        Ok(n) => {
+            res.vram.underlay(&effect_pool);
+            log::info!("play-window: effect-texture pool underlaid ({n} TIMs)");
+        }
+        Err(err) => {
+            log::warn!("play-window: effect-texture pool underlay skipped: {err:#}");
         }
     }
     Ok(res)
@@ -468,6 +494,14 @@ pub(super) fn cmd_play_window_with_record(
     // `begin_new_game` resets the bank - dropping them there would make the
     // two flags silently exclusive.
     seed_debug_story_flags(&mut session, &debug_seeds);
+    // Which entry a scene takes is the scene's own property, decided by the
+    // one engine predicate every host asks (`is_world_map_scene`) - the
+    // browser play page's `enter_field` and the in-world door transition both
+    // route an overworld label through the world-map entry by name. Without
+    // it `--scene map01` entered the overworld as a plain field scene here
+    // unless `--world-map` was also passed. The flag still forces the
+    // world-map entry for any other label.
+    let world_map = world_map || legaia_engine_core::scene::is_world_map_scene(scene);
     if world_map {
         // Load the scene's resources, route its region-keyed encounter table
         // onto the overworld, install the player, and enter world-map mode
@@ -508,8 +542,19 @@ pub(super) fn cmd_play_window_with_record(
     // rather than an empty roster. Runs after field entry; `begin_new_game`
     // only resets story/money/inventory + sets mode=Field, leaving the loaded
     // scene intact.
+    //
+    // A `--world-map` entry keeps its mode: `begin_new_game`'s `mode = Field`
+    // is the New Game boot's field launch, and letting it stand turned the
+    // overworld into a field scene - the field fog pool (the kingdom MAN's
+    // fog bit) then drew its sheets across the terrain through the field
+    // camera, and the terrain took the field draw path, neither of which the
+    // world map runs.
     if seed_party {
+        let entered = session.host.world.mode;
         session.begin_new_game();
+        if entered == legaia_engine_core::world::SceneMode::WorldMap {
+            session.host.world.mode = entered;
+        }
         let seeded = session.host.world.party.roster.members.len();
         log::info!("play-window: --seed-party seeded {seeded} roster member(s)");
     }
@@ -519,6 +564,26 @@ pub(super) fn cmd_play_window_with_record(
     // arena entry, long after this, so this is the pass that matters for a
     // seeded ban.
     seed_debug_story_flags(&mut session, &debug_seeds);
+
+    // Debug seat: `LEGAIA_SEAT=X,Z` puts the player on raw world `(X, Z)`
+    // (floor-sampled Y) and re-arms the zone camera's arrival snap - the
+    // frame-pairing aid for comparing this host against a retail save state
+    // at that state's own player position. The play page's twin is
+    // `play_debug_seat`.
+    if let Ok(seat) = std::env::var("LEGAIA_SEAT") {
+        let xz: Vec<i16> = seat
+            .split(',')
+            .filter_map(|v| v.trim().parse::<i16>().ok())
+            .collect();
+        if let [x, z] = xz[..]
+            && session.host.world.debug_seat_player(x, z)
+        {
+            session.camera.zone.arm_arrival();
+            log::info!("play-window: LEGAIA_SEAT seated the player at ({x}, {z})");
+        } else {
+            log::warn!("play-window: LEGAIA_SEAT='{seat}' not applied (want X,Z and a player)");
+        }
+    }
 
     // Debug learn path: `--learn-spell 0x81` (repeatable) or the older
     // `LEGAIA_LEARN_SPELLS=0x81,0x9e` prepends those spell ids (level 1) onto
@@ -608,6 +673,10 @@ pub(super) fn cmd_play_window_with_record(
         // sparring caption) was read at boot (`boot.rs`), this is the overlay
         // half.
         session.host.world.battle.ui_strings.merge(&strings);
+        // The party cast trigger's per-spell anim-pair lists, off the same
+        // battle-overlay image.
+        session.host.world.battle.spell_anim_pairs =
+            legaia_engine_core::battle_open::spell_anim_pairs_from_prot(&session.host.index);
         let n = session.host.world.battle.ui_strings.len();
         log::info!("play-window: battle UI labels read off the disc ({n} string(s))");
     }
@@ -1124,6 +1193,7 @@ pub(super) fn cmd_play_window_with_record(
         // Headless capture harnesses can't press `F3`; let them start on the
         // wide debug vantage via the env switch.
         field_debug_camera: std::env::var_os("LEGAIA_FIELD_DEBUG_CAM").is_some(),
+        menu_from_title: false,
         world_map_slot4_lines: None,
         ocean_anim: None,
         cpu_vram_base: None,
@@ -1144,19 +1214,16 @@ pub(super) fn cmd_play_window_with_record(
         fishing_prize_venues: None,
         fishing_banners: Default::default(),
         fishing_banner_draws: Vec::new(),
-        fishing_prev_phase: None,
         fish_wander: None,
         fish_line: None,
         fishing_floor: None,
-        fishing_regions: None,
-        fish_lure: None,
         fishing_sway_angle: 0,
         fishing_sway_offset: (0, 0),
         minigame_rng: 0x1234_5678,
         baka_hud_widgets: None,
         baka_chrome_frame: Vec::new(),
         muscle_hub: None,
-        muscle_intro_card: None,
+        muscle_first_visit: None,
         muscle_round_banner: None,
         muscle_card_round: None,
         muscle_interval: None,

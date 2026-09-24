@@ -187,6 +187,16 @@ fn apply_world(world: &mut World, field: WorldField, code: CheatCode) {
             // its playing balance from this and assigns it back on cash-out.
             world.minigames.casino_coins = code.value as u32;
         }
+        WorldField::FishingPoints => {
+            // The persistent fishing-point pool (`0x8008444C`). A cheat
+            // entry is a u16 write, so it sets the low half; the pool never
+            // exceeds 999999, whose high half the write keeps.
+            let new = (world.minigames.fishing_points as u32 & 0xFFFF_0000) | code.value as u32;
+            world.minigames.fishing_points = new as i32;
+            if let Some(s) = world.minigames.fishing.as_mut() {
+                s.record.points = world.minigames.fishing_points;
+            }
+        }
         WorldField::EncounterStepCounter
         | WorldField::SaveAnywhereFlag
         | WorldField::CameraMode
@@ -263,6 +273,40 @@ mod tests {
         let r = apply(&mut world, &db, ApplyOptions::default());
         assert_eq!(r.applied, 1);
         assert_eq!(world.party.money, 0xFFFF);
+    }
+
+    /// The fishing point pool is a world cell like gold: a u16 write sets its
+    /// low half, and a live session's on-screen record follows it.
+    #[test]
+    fn applier_writes_the_fishing_point_pool() {
+        let mut world = empty_world();
+        world.minigames.fishing_points = 0;
+        world.enter_fishing_session(
+            &crate::fishing::FishingTables {
+                species: Vec::new(),
+                spawn: [Vec::new(), Vec::new()],
+                cadence: Vec::new(),
+            },
+            0,
+            None,
+        );
+        let mut db = Database::new();
+        db.entries.push(entry(
+            "Fishing points",
+            vec![CheatCode {
+                op: CheatOp::WriteU16,
+                addr: 0x8008444C,
+                value: 5000,
+                width: 2,
+            }],
+        ));
+        let r = apply(&mut world, &db, ApplyOptions::default());
+        assert_eq!(r.applied, 1);
+        assert_eq!(world.minigames.fishing_points, 5000);
+        assert_eq!(
+            world.minigames.fishing.as_ref().unwrap().record.points,
+            5000
+        );
     }
 
     #[test]

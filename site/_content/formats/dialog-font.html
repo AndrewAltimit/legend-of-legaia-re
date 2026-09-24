@@ -153,7 +153,7 @@ V = (c &amp; 0xF0) - 0x20</code></pre>
       <tr><td>Line metric</td><td>save screen warning line</td><td>164 px from a disc-decoded font</td><td><code>engine-shell/tests/dialog_font_metrics.rs</code></td></tr>
     </tbody>
   </table>
-  <p>Field dialogue has no dedicated opcode: an NPC's text is its inline interaction-script MES, shown by the per-frame actor-dialog state machine and the dialog pager, triggered by the field-interact op - see <a href="../subsystems/script-vm.html">field script VM</a>.</p>
+  <p>Field dialogue has no dedicated opcode: an NPC's text is its inline interaction-script MES, shown by the per-frame actor-dialog state machine and the dialog pager, triggered by the touch / button-press interaction rather than an opcode - see <a href="../subsystems/script-vm.html">field script VM</a>.</p>
 </section>
 
 <section class="doc-section" id="deep-dive">

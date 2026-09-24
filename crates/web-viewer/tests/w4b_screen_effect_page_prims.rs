@@ -37,7 +37,7 @@ const SCENE: &str = "town0e";
 /// Byte offsets into the shared `ScreenVertex` layout - re-stated from
 /// `legaia_engine_ui::screen_prim` so a silent stride change fails here
 /// rather than reading a neighbouring field as a colour.
-const STRIDE: usize = 44;
+const STRIDE: usize = 48;
 const OFF_COLOR: usize = 24;
 
 fn loaded_runtime() -> Option<LegaiaRuntime> {

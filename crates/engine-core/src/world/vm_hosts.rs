@@ -287,10 +287,30 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         self.world.move_vm.scratchpad_targets[i] = target;
     }
 
+    // --- ext sub-op 0x2C scanline strip emitter -----------------------
+
+    fn ext_func801d31b0(&mut self, state: &mut MoveActorState, _operand: &[u16]) {
+        // `FUN_801D31B0` draws on the spot; the port captures what it reads
+        // and draws it on the host's render pass (`move_strip_prims`).
+        self.world
+            .move_vm
+            .push_strip_request(vm::move_ext_strip::StripRequest::from_actor(state));
+    }
+
     // --- ext sub-op 0x2F global slot ---------------------------------
 
     fn ext_set_8007b9d8(&mut self, value: i32) {
         self.world.move_vm.dat_8007b9d8 = value;
+        // The word is the frame-step **floor** (`FUN_80016B6C` reads it at
+        // `0x80017178` and stores its low byte into `DAT_1F800393` when the
+        // measured cadence is below it, `lbu -0x4628` at `0x80017190`). A
+        // stager that raises it - opdeene's prescript record 16 writes `3` as
+        // its first op - slows the game tick from the next frame on. The
+        // engine runs the deterministic arm of that resolver (adaptive cadence
+        // off), whose result is the floor itself, so the cadence follows.
+        let floor = (value as u8).max(1);
+        self.world.clock.frame_step_floor = floor;
+        self.world.clock.frame_step = floor;
     }
 
     // --- ext sub-op 0x3A angle-to-player ------------------------------
@@ -1032,13 +1052,26 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
 
     // PORT: FUN_8001FD44 (the name-based scene-change packet)
     //
-    // Retail stages the destination by *name*: `strcpy` into the staged
-    // buffer `0x8007050C` and the active buffer `0x80084548`, raise
-    // `_DAT_1F800394 |= 0x40` (transition pending) and call `FUN_8001D7F8`
-    // to resolve the scene-index word. The engine has no staged/active
-    // buffer pair, so the packet is this deferred triple plus the arrival
-    // facing; `SceneHost::tick` drains it where retail's next field-init
-    // reads the active buffer.
+    // Retail stages the destination by *name*. It saves the active buffer
+    // `0x80084548` and the resolved-index word `0x80084540`, raises
+    // `_DAT_1F800394 |= 0x40` (transition pending), zeroes `_DAT_8007BA98`,
+    // copies the name into the staged buffer `0x8007050C` and calls
+    // `FUN_8001D7F8`, which rewrites `0x80084540` with the destination's
+    // index. Then it forks on `_DAT_8007B8C2` (`0x8001FDCC`):
+    //
+    // - `!= 0` (retail boots with it set): the old active name is backed up
+    //   to `0x80084558` (the previous-scene buffer), the new name becomes the
+    //   active one, and the index goes to `_DAT_8007B768` (`0x8001FDF4`);
+    // - `== 0` (the dev arm, never taken on the disc): the name goes to
+    //   `0x800915C8`, the saved name is restored into the active buffer, and
+    //   the index goes to `gp+0x688`.
+    //
+    // Both arms restore `0x80084540` from the saved copy and spawn the
+    // transition streaming actor (descriptor `0x80070734`, handler
+    // `FUN_80021934`), writing `_DAT_8007B828 = 0x7FFF` when the pool is full.
+    // The engine has no name buffers or streaming actor: the packet is this
+    // deferred triple plus the arrival facing, which `SceneHost::tick` drains
+    // where the retail arm's streaming actor would load the destination.
     fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {
         // Named scene-change (op 0x3F): the destination name is inline, so no
         // map-id resolver is needed. Recorded for SceneHost::tick to drain,
@@ -1073,6 +1106,15 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             text_id: 0,
             sub_op: 2,
         });
+    }
+
+    // Field-VM op `4C EC`: `_DAT_8007B5FC = FUN_801DDF48()` (`0x801E34F8`
+    // `jal`, store in the `j` delay slot at `0x801E3508`) - reroll the
+    // encounter step counter. No shipped script issues a clean `4C EC`
+    // (field-op census), so this is reachable only from modded bytecode.
+    // REF: FUN_801DDF48 (ported as region_encounter::encounter_counter_reroll)
+    fn op4c_n_e_sub_c_capture_ddf48(&mut self) {
+        self.world.reroll_encounter_step_counter();
     }
 
     fn op4c_n_e_sub_1_text_actor(&mut self, text_buf: &[u8], script_id: u16) {
@@ -1381,36 +1423,20 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::PartyRemove { char_id });
     }
 
-    fn field_interact(&mut self, interact_id: u8, slot: u8) {
-        // `3E FF <row>` - the scripted-battle entry arm. Retail's case-0x3E
-        // interact path installs the per-scene MAN formation-table row `op1`
-        // as the SYSTEM entity's encounter record (`sys_ctx[+0x8A] = 1`,
-        // `sys_ctx[+0x94] = formation_table + op1*stride + 1`) and requests
-        // the battle mode switch; `FUN_801DA51C`'s confirm state then copies
-        // the row into the battle formation cell. This is how the scripted
-        // boss fights enter: garmel's Zeto beat record ends in `3E FF 09`
-        // (row 9 = lone monster `0x4B`), its Songi twin in `3E FF 08`, and
-        // rikuroa's Caruban stager in `3E FF 11` (row 17 = lone `0x49`).
-        if interact_id == 0xFF {
-            self.world.trigger_scripted_battle(slot);
-            return;
-        }
-        // "Face the speaker" now lives inside
-        // [`World::trigger_field_interact`] below, as
-        // [`World::face_field_npc_at_player`] - both because retail's write is
-        // in the dialog SM (one snap, not the `0x4C` ramp this site used to
-        // run) and because doing it here reached only the *scripted* interact
-        // op. The walk-up-and-press talk goes straight to
-        // `trigger_field_interact` from the interaction probe and never
-        // reached this function at all, which is why ordinary NPCs did not
-        // turn.
-        //
-        // The real field-dialogue path: open the interacted actor's own inline
-        // interaction-script MES (retail `actor[+0x90]`, keyed by `slot`) and
-        // arm/engage a scripted-encounter carrier on that slot (the dialogue-
-        // accept auto-arm). Shared with the interaction probe via
-        // [`World::trigger_field_interact`].
-        self.world.trigger_field_interact(interact_id, slot);
+    fn scripted_battle(&mut self, op0: u8, row: u8) {
+        // `3E <op0> <row>` with `op0 < 100` or `op0 == 0xFF` - the
+        // scripted-battle install. Retail's arm installs the per-scene MAN
+        // formation-table row `row` as the SYSTEM entity's encounter record
+        // (`sys_ctx[+0x8A] = 1`, `sys_ctx[+0x94] = formation_table +
+        // row*stride + 1`) and requests the battle mode switch;
+        // `FUN_801DA51C`'s confirm state then copies the row into the battle
+        // formation cell. `op0` is never read past the `0xFF` / `< 100` test,
+        // so `3E 00 02` (town0b), `3E 00 03` (stone) and `3E 01 00`
+        // (jagaroom) install their rows exactly as garmel's Zeto beat's
+        // `3E FF 09` does. Talking to an NPC never reaches this op: that is
+        // the interaction probe's [`World::trigger_field_interact`].
+        let _ = op0;
+        self.world.trigger_scripted_battle(row);
     }
 
     fn view_window_long(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) {
@@ -1724,6 +1750,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // `0`/`2`/`3` and stopped at the bit-15-set arm; the bytes say subs
         // `0`/`1`/`2` and the bit-15-clear arm, with sub `3` ungated.
         //
+        // Both producer calls also cross to the host's audio ring as
+        // `SfxRingOp`s (`World::take_sfx_ring_ops`), which is what sounds the
+        // cue; the pair above is the engine-core mirror the gates read.
+        //
         // PORT: FUN_80035BAC (live wiring; the table itself is
         // `crate::scus_leaf_kernels::SfxCueDelays`)
         // REF: FUN_80035B50
@@ -1749,6 +1779,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                     let slot = self.world.audio.sfx_cue_cursor;
                     self.world.audio.sfx_cue_cursor = self.world.audio.sfx_cue_delays.park(slot);
                     self.world.audio.sfx_parked_slot = slot;
+                    // `jal 0x80035B50` with `a0 = (s16)op1_word`
+                    // (`0x801E0344..0x801E034C`): the cue id goes to the
+                    // host ring.
+                    self.world
+                        .audio
+                        .sfx_ring_ops
+                        .push(crate::world::SfxRingOp::Push(op1_word as i16));
                 }
                 1 => {
                     if !self
@@ -1775,9 +1812,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                         .audio
                         .sfx_cue_delays
                         .set_delay(parked, op1_word as i16);
+                    self.world
+                        .audio
+                        .sfx_ring_ops
+                        .push(crate::world::SfxRingOp::SetLastDelay(op1_word as i16));
                 }
-                // Sub `3` (`FUN_801D8450`) and every sub `>= 5` advance
-                // unconditionally.
+                // Sub `3` (`FUN_801D8450`) is ungated: it stops the top two
+                // voices, closes VAB slot 6 and clears the field-bank latch,
+                // so the next field init reloads PROT 0876.
+                3 => self.world.release_field_audio(),
+                // Every sub `>= 5` advances unconditionally.
                 _ => {}
             }
         } else if !dev_gate && !self.world.audio.sound_stream.is_settled() {
@@ -1787,6 +1831,42 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .pending_field_events
             .push(FieldEvent::SceneFade { op0_word, op1_word });
         SceneFadeResult::Done
+    }
+
+    // Op `0x34` sub-1: the attached light (`FUN_801E5668`), seated on the
+    // actor the op runs against. See `world/field_script_actors.rs`.
+    fn op34_sub1_spawn_attached(
+        &mut self,
+        _ctx: &FieldCtx,
+        ext: Option<u8>,
+        spawn: &legaia_engine_vm::field_actor_billboard::AttachedSpriteSpawn,
+        script: Option<&[u8]>,
+    ) -> bool {
+        self.world.spawn_field_attached_light(ext, spawn, script)
+    }
+
+    // Op `0x43` sub-0/1/A/B: the scripted arc (`FUN_801D25EC`). An actor the
+    // engine cannot place (the scene system context) gets no arc; its halt
+    // stays raised exactly as before the arc channel existed.
+    fn op43_arc_target_halted(&self, _ctx: &FieldCtx, ext: Option<u8>) -> bool {
+        // The arm's acquire refuses an actor still mid arc
+        // (`0x801DF3A4..0x801DF3CC`); the VM retries the op next frame.
+        self.world.script_arc_target_halted(ext)
+    }
+
+    fn op43_arc_jump(
+        &mut self,
+        _ctx: &FieldCtx,
+        ext: Option<u8>,
+        req: &legaia_engine_vm::field_ledge_hop_arc::ScriptArcRequest,
+    ) {
+        // The watcher's release context: the arced NPC's own channel, or -
+        // for a player arc - the channel that ran the op, which retail halts
+        // with the player (`0x801DF3F0..0x801DF408`).
+        let release = self.world.field_vm.executing_channel;
+        if let Some(actor) = self.world.resolve_script_actor(ext) {
+            self.world.start_field_script_arc(actor, req, release);
+        }
     }
 
     fn op34_sub0_color_intensity_setup(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
@@ -2698,22 +2778,24 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     }
     /// The party cast trigger the pre-cast wait runs on its timer's expiry.
     ///
-    /// Two arms on the spell id (`sltiu v0,a1,0x25` at `0x801DBFA0`):
+    /// Two arms on the spell id (`sltiu v0,a1,0x25` at `0x801DBFA0`), both
+    /// writing the caster's action-parameter stream from `+0x1E0` - which is
+    /// `params[1]`, since `params[0]` is `+0x1DF`:
     ///
-    /// * `>= 0x25` - every player Seru id: the summon sub-route
-    ///   (`actor[+0x1E0] = 9`), the cast-effect id `0x12` at `+0x1E1` and the
-    ///   terminator at `+0x1E2` (`0x801DC064..0x801DC09C`). The engine arms
-    ///   its stager here; the outcome is the stager's strike.
-    /// * `< 0x25` - the per-spell anim-pair list at
-    ///   `0x801F4E64` / `0x801F4EDC` copied into `params[1..]`
-    ///   (`0x801DBFAC..0x801DC060`). The engine has no parse of that overlay
-    ///   table, so the stream terminates at `params[1]` and the outcome the
-    ///   clips would have carried folds here instead. That is a gap in *this
-    ///   arm's data*, not a wiring gap: the routine is called on every pre-cast
-    ///   expiry and the ladders execute it. Deliberately not written as an
-    ///   unwired-port disclosure - that marker is an anchor-level claim, and
-    ///   on a routine a ladder really runs it makes a passing oracle read as
-    ///   having traversed a stub.
+    /// * `>= 0x25` - every player Seru id: `+0x1E0 = 9` (the summon sub-route
+    ///   byte, which *is* `params[1]` in retail - the port also keeps it in
+    ///   [`vm::battle_action::BattleActor::sub_route`]), the cast-effect id
+    ///   `0x12` at `+0x1E1` and the terminator at `+0x1E2`
+    ///   (`0x801DC064..0x801DC09C`). The engine arms its stager here; the
+    ///   outcome is the stager's strike.
+    /// * `< 0x25` - the per-spell `(anim, effect)` pair list the index at
+    ///   `0x801F4E63 + id` picks out of the 8-byte records at `0x801F4EDC`,
+    ///   copied pair by pair from `+0x1E0` and closed with `0xFF`
+    ///   (`0x801DBFAC..0x801DC060`), read off the disc into
+    ///   [`crate::world::BattleState::spell_anim_pairs`]. With pairs staged the
+    ///   band walks them and the cast folds at its exit; an empty list (or no
+    ///   disc read) leaves the terminator at `params[1]`, the band goes
+    ///   straight to its cleanup, and the owed outcome folds here.
     ///
     /// PORT: FUN_801DBF9C
     fn spell_anim_trigger(&mut self, party_slot: u8, spell_id: u8) {
@@ -2727,15 +2809,36 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         if spell_id >= SPELL_TRIGGER_SUMMON_MIN_ID {
             if let Some(a) = self.world.actors.get_mut(party_slot as usize) {
                 a.battle.sub_route = 9;
-                a.battle.params[1] = SUMMON_CAST_EFFECT_ID;
-                a.battle.params[2] = 0xFF;
+                a.battle.params[1] = 9;
+                a.battle.params[2] = SUMMON_CAST_EFFECT_ID;
+                a.battle.params[3] = 0xFF;
             }
             self.world.arm_summon_stager(party_slot, spell_id);
         } else {
+            let pairs: Vec<(u8, u8)> = self
+                .world
+                .battle
+                .spell_anim_pairs
+                .pairs(spell_id)
+                .map(<[(u8, u8)]>::to_vec)
+                .unwrap_or_default();
             if let Some(a) = self.world.actors.get_mut(party_slot as usize) {
-                a.battle.params[1] = 0xFF;
+                let n = a.battle.params.len();
+                let mut end = 1usize;
+                for (k, (anim, effect)) in pairs.iter().enumerate() {
+                    let at = 1 + 2 * k;
+                    if at + 2 >= n {
+                        break;
+                    }
+                    a.battle.params[at] = *anim;
+                    a.battle.params[at + 1] = *effect;
+                    end = at + 2;
+                }
+                a.battle.params[end] = 0xFF;
             }
-            self.world.fold_pending_cast();
+            if pairs.is_empty() {
+                self.world.fold_pending_cast();
+            }
         }
     }
     /// Stage a full-screen fade from the band's template - the summon

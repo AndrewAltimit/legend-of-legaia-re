@@ -136,7 +136,28 @@ pub fn finish_action_queue(
     miracle_armed: bool,
     bytes: &mut [u8; ACTION_QUEUE_CAP],
 ) -> [u32; ACTION_QUEUE_CAP] {
+    finish_action_queue_with_trigger(character, command_input, miracle_armed, bytes).0
+}
+
+/// [`finish_action_queue`], also reporting the builder's **special-trigger
+/// flag** - retail's `0x801F696C`
+/// ([`BattleActionCtx::super_trigger`](super::BattleActionCtx::super_trigger)).
+/// The builder clears it at its head (`sw zero,0x696c` at `0x801EED88`) and
+/// sets it on the Miracle arm (`0x801EF5B8`); the Super applier
+/// `FUN_801EF9E4` it calls sets it on a tail match (`0x801EFBD4`, which
+/// latches even for an empty replace row); the third writer, `0x801F0518`, is
+/// the auto-combo tail `FUN_801F0450`.
+///
+/// PORT: FUN_801EED1C (the `0x801F696C` writes at `0x801EED88` / `0x801EF5B8`)
+/// REF: FUN_801EF9E4 (the `0x801EFBD4` write)
+pub fn finish_action_queue_with_trigger(
+    character: legaia_art::Character,
+    command_input: &[legaia_art::Command],
+    miracle_armed: bool,
+    bytes: &mut [u8; ACTION_QUEUE_CAP],
+) -> ([u32; ACTION_QUEUE_CAP], bool) {
     use legaia_art::MiracleMatcher;
+    let mut trigger = false;
     // The side array `0x801F6990` as the build loop leaves it. Retail writes
     // it incrementally during the build and the Miracle copy does **not**
     // touch it, so it is reconstructed here - before the copy overwrites the
@@ -148,12 +169,15 @@ pub fn finish_action_queue(
             .is_some()
     {
         apply_miracle_replace(bytes, &miracle_row_for(character));
+        trigger = true;
     }
     clear_queue_msb(bytes);
     reorder_marked_starters(bytes, &starter_marks);
     let (find_rows, replace_rows) = super_rows_for(character);
-    apply_super_tail_replace(bytes, &mut starter_marks, &find_rows, &replace_rows);
-    starter_marks
+    if apply_super_tail_replace(bytes, &mut starter_marks, &find_rows, &replace_rows).is_some() {
+        trigger = true;
+    }
+    (starter_marks, trigger)
 }
 
 /// Dispatch one frame of the battle action state machine.
@@ -359,7 +383,7 @@ pub fn begin_formation_arm_for<H: BattleActionHost + ?Sized>(
 ///
 /// PORT: FUN_801F0450 (the auto-fill leg + its per-slot loop)
 /// REF: FUN_801DB124 (the dead-target redirect the target roll feeds)
-fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H) {
+fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) {
     use super::pool_ops::{RedirectQuery, redirect_dead_target};
     use crate::battle_arts_auto_combo::{
         ART_ACTION_BIAS, auto_fill_queue, gate_selects_auto_fill, roll_target_slot,
@@ -378,6 +402,13 @@ fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H) {
         if !gate_selects_auto_fill(host.character_ability_bits_high(slot), status) {
             continue;
         }
+        // `li v0,0x1` / `sw v0,0x696c(v1)` at `0x801F0514..0x801F0518`: the
+        // first store past the `+0x16E & 0x404` veto raises the builder's
+        // special-trigger flag `0x801F696C`, which the strike loop's drift
+        // reads at `0x801E3840`. The player builder `FUN_801EED1C` clears it
+        // at its head (`0x801EED88`), but a delegated member never runs that
+        // builder, so the flag stands for the round.
+        ctx.super_trigger = true;
         // Retail's order: category and target are written first
         // (`0x801F0528` / `0x801F0578`), and the learned-arts count gate that
         // can end the slot comes after (`0x801F05AC`) - so a delegated member
@@ -435,7 +466,7 @@ pub(super) fn begin<H: BattleActionHost + ?Sized>(
     // runs first: retail's opening instruction of state `0x00` is
     // `jal 0x801f0450` (`0x801E2AB8`), ahead of the formation arm.
     if !ctx.formation_armed {
-        auto_fill_party_queues(host);
+        auto_fill_party_queues(host, ctx);
     }
     begin_formation_arm_for(host, ctx);
     // Branch to QueuedFromMenu if menu still open, otherwise PreActionWait.

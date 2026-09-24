@@ -20,9 +20,10 @@ impl PlayWindowApp {
 
     /// Drive the fishing HUD's one-shot banner animations for this frame.
     ///
-    /// Seeds a timer on each session phase edge (cast lock = strike + hook,
-    /// resolve = reel-in or miss, recast = the auxiliary banner), then services
-    /// every timer through the retail driver-tail loop
+    /// Seeds a timer on each of the session's events this tick
+    /// (`World::minigames.fishing_events`: cadence splash, hook, landed,
+    /// snapped, recast), then services every timer through the retail
+    /// driver-tail loop
     /// ([`BannerTimer::service`](legaia_engine_render::BannerTimer::service))
     /// and caches this frame's draws for the HUD builder, which is `&self` and
     /// cannot advance them itself.
@@ -30,31 +31,23 @@ impl PlayWindowApp {
     /// The frame step is the engine's fixed one tick per frame (retail reads
     /// `DAT_1f800393`, its frame-rate compensation word).
     pub(super) fn tick_fishing_banners(&mut self) {
-        use legaia_engine_core::fishing::{FightOutcome, FishingPhase};
-        let Some(session) = self.session.host.world.minigames.fishing.as_ref() else {
+        use legaia_engine_core::fishing::PondEvent;
+        let world = &self.session.host.world;
+        if world.minigames.fishing.is_none() {
             // Left the minigame: drop any half-run banner with the session.
             self.fishing_banners = Default::default();
             self.fishing_banner_draws.clear();
-            self.fishing_prev_phase = None;
             return;
-        };
-        let phase = session.phase();
-        let outcome = session.last_outcome();
-        match (self.fishing_prev_phase, phase) {
-            (Some(FishingPhase::Casting), FishingPhase::Fighting) => {
-                self.fishing_banners.on_hook();
-            }
-            (Some(FishingPhase::Fighting), FishingPhase::Done) => match outcome {
-                Some(FightOutcome::Landed { .. }) => self.fishing_banners.on_landed(),
-                Some(FightOutcome::Snapped) => self.fishing_banners.on_snapped(),
-                _ => {}
-            },
-            (Some(FishingPhase::Done), FishingPhase::Casting) => {
-                self.fishing_banners.on_recast();
-            }
-            _ => {}
         }
-        self.fishing_prev_phase = Some(phase);
+        for e in &world.minigames.fishing_events {
+            match e {
+                PondEvent::Splash => self.fishing_banners.splash.start(),
+                PondEvent::Hooked(_) => self.fishing_banners.on_hook(),
+                PondEvent::Landed(_) => self.fishing_banners.on_landed(),
+                PondEvent::Snapped => self.fishing_banners.on_snapped(),
+                PondEvent::Recast => self.fishing_banners.on_recast(),
+            }
+        }
         self.fishing_banner_draws = self.fishing_banners.service_frame(1);
     }
 
@@ -326,30 +319,24 @@ impl PlayWindowApp {
         self.session.host.index.entry_bytes_extended(idx).ok()
     }
 
-    /// The venue map's `+0x10000` region block - the table the lure's water
-    /// class walks (`FUN_800180EC`'s input).
-    fn venue_region_block(&self) -> Option<Vec<u8>> {
-        let scene = self.session.host.scene.as_ref()?;
-        scene
-            .field_map_region_block(&self.session.host.index)
-            .ok()
-            .flatten()
-    }
-
     /// The fishing venue's actor-side frame: the free-swimming fish wander
-    /// (idle/cast), the venue floor solve for its height, the retail camera
-    /// publish, the reeling-line actor across hook -> fight -> celebration,
-    /// and the sub-screen idle sway.
+    /// (at the shore, before the lure flies), the venue floor solve for its
+    /// height, the retail camera publish, the reeling-line actor across
+    /// hook -> fight -> celebration, and the sub-screen idle sway.
+    ///
+    /// The cast lure itself is the session's
+    /// ([`PondSession::lure_actor`](legaia_engine_core::fishing::PondSession::lure_actor)),
+    /// cast from the venue the engine attached at entry, so its walk-grid
+    /// drift and water class are the same on every host; this frame only
+    /// reads it, to hang the celebration bursts off it.
     pub(super) fn tick_fishing_actors(&mut self) {
-        use legaia_engine_core::fishing::{FightOutcome, FishingPhase};
+        use legaia_engine_core::fishing::{PondEvent, PondPhase};
         use legaia_engine_core::fishing_actors as fa;
         use legaia_engine_core::fishing_chrome as fc;
         if self.session.host.world.mode != SceneMode::Fishing {
             self.fish_wander = None;
             self.fish_line = None;
             self.fishing_floor = None;
-            self.fishing_regions = None;
-            self.fish_lure = None;
             self.fishing_sway_offset = (0, 0);
             return;
         }
@@ -371,7 +358,6 @@ impl PlayWindowApp {
         if self.fish_wander.is_none() {
             self.fish_wander = Some(fa::FishWander::new(0x400, 0, 0x400));
             self.fishing_floor = self.venue_floor_bytes();
-            self.fishing_regions = self.venue_region_block();
             let reset = fc::venue_camera_reset();
             let g = &mut self.session.camera.globals.0;
             g[0] = reset.rot[0] as i32;
@@ -380,9 +366,13 @@ impl PlayWindowApp {
             g[3] = reset.tr_x;
             g[5] = reset.tr_z;
         }
-        // The wander runs while the cast is idle (retail's MODE_IDLE_CAST
-        // fishing-SM state); the D-pad steers the fish.
-        if phase == FishingPhase::Casting {
+        // The wander runs while the cast is idle (retail's shore states
+        // `0xc` / `0xd` / `0x14`, before the lure flies); the D-pad steers
+        // the fish.
+        if matches!(
+            phase,
+            PondPhase::Idle | PondPhase::WindUp | PondPhase::Power
+        ) {
             let held = self.pad.rotate_right(8);
             let mut rng = self.minigame_rng;
             let rolled = self.fish_wander.as_mut().and_then(|w| {
@@ -420,70 +410,40 @@ impl PlayWindowApp {
             g[7] = cam.translation.1;
             g[8] = cam.translation.2;
         }
-        // The line actor: armed on the hook edge, landed on the catch edge.
-        // `fishing_prev_phase` still holds last frame's phase here (the
-        // banner tick that refreshes it runs after this method).
-        let outcome = self
-            .session
-            .host
-            .world
-            .minigames
-            .fishing
-            .as_ref()
-            .and_then(|s| s.last_outcome());
-        match (self.fishing_prev_phase, phase) {
-            (Some(FishingPhase::Casting), FishingPhase::Fighting) => {
-                // The strike splash is spawned by `World::tick_fishing` off
-                // the session's own phase edge, so every host gets it.
-                self.fish_line = Some(fa::LineActorSim::hooked());
-                // The cast lands: the lure spawns a fixed radius ahead of the
-                // venue anchor along the angler's facing, the same
-                // subtraction retail runs in the fishing SM's cast arm.
-                let facing = self.fish_wander.as_ref().map(|w| w.facing).unwrap_or(0);
-                let (ax, az) = fa::VENUE_ANCHOR;
-                self.session.host.world.minigames.fishing_casts += 1;
-                self.fish_lure =
-                    fa::LureActor::cast(ax, az, facing, 1).map(|l| (l, Default::default()));
+        // The line actor: armed on the hook event, landed on the catch
+        // event, dropped on a snap.
+        let events = self.session.host.world.minigames.fishing_events.clone();
+        for e in &events {
+            match *e {
+                PondEvent::Hooked(_) => self.fish_line = Some(fa::LineActorSim::hooked()),
+                PondEvent::Landed(points) => match self.fish_line.as_mut() {
+                    Some(line) => line.land(points),
+                    None => self.fish_line = None,
+                },
+                PondEvent::Snapped => self.fish_line = None,
+                PondEvent::Splash | PondEvent::Recast => {}
             }
-            (Some(FishingPhase::Fighting), FishingPhase::Done) => {
-                if let (Some(line), Some(FightOutcome::Landed { points })) =
-                    (self.fish_line.as_mut(), outcome)
-                {
-                    line.land(points);
-                } else {
-                    self.fish_line = None;
-                }
-            }
-            _ => {}
-        }
-        // The lure's own frame while the line is out: the walk-grid drift and
-        // the water class of the tile it sits over.
-        if let (Some((lure, probe)), Some(buf)) =
-            (self.fish_lure.as_mut(), self.fishing_floor.as_ref())
-        {
-            let region = self
-                .fishing_regions
-                .as_deref()
-                .and_then(legaia_engine_core::field_regions::RegionTable::parse);
-            let casts = self.session.host.world.minigames.fishing_casts;
-            *probe = lure.probe(buf, region.as_ref(), casts, 1);
         }
         if let Some(mut line) = self.fish_line.take() {
             let f = line.tick(1);
             // Retail's celebration bursts ride the line actor, which sits on
             // the lure - not on the free-swimming fish the venue also draws.
             let origin = self
-                .fish_lure
+                .session
+                .host
+                .world
+                .minigames
+                .fishing
                 .as_ref()
-                .map(|(l, _)| (l.x(), l.z))
+                .and_then(|s| s.lure_actor())
+                .map(|l| (l.x(), l.z))
                 .or_else(|| self.fish_wander.as_ref().map(|w| (w.x, w.z)))
                 .unwrap_or((0, 0));
-            // The bursts' *visuals* are this actor's: they hang off the lure,
-            // which only this host simulates. Their **cues** are not - the
-            // hook cue and the celebration tiers are queued by
-            // `World::tick_fishing` off the session's own phase edges, where
-            // all three hosts drain them (`drain_minigame_sfx_cues`). Firing
-            // them here as well would play each one twice on this host alone.
+            // The bursts' *visuals* are this actor's. Their **cues** are not -
+            // the hook cue and the celebration tiers are queued by
+            // `World::tick_fishing` off the session's own events, where all
+            // three hosts drain them (`drain_minigame_sfx_cues`). Firing them
+            // here as well would play each one twice on this host alone.
             for b in &f.bursts {
                 self.session.host.world.minigames.fx.spawn_burst(b, origin);
             }
@@ -517,13 +477,19 @@ impl PlayWindowApp {
         let Some(f) = self.session.host.world.minigames.baka_fighter.as_ref() else {
             return;
         };
-        let frame = f.chrome_frame();
-        if let Some(xa) = frame.xa {
+        let frame = f.chrome_frame().clone();
+        // The announcer line the chrome fired (`FUN_8003D53C`), through the
+        // XA path the battle clips use - the play page plays the same one.
+        if let Some(xa) = frame.xa
+            && let Some(bgm) = self.session.bgm.as_mut()
+        {
+            let fired = bgm.play_xa_clip(u32::from(xa.clip), u32::from(xa.chan), u32::from(xa.dur));
             log::debug!(
-                "baka chrome: announcer XA clip {} chan {} ({} frames)",
+                "baka chrome: announcer XA clip {} chan {} ({}) -> {}",
                 xa.clip,
                 xa.chan,
-                xa.dur
+                xa.dur,
+                if fired { "playing" } else { "not staged" }
             );
         }
         // Resolve the draws: a glyph-carrying draw pages the glyph strip by
@@ -618,14 +584,19 @@ impl PlayWindowApp {
                 .map_or(1, |c| c.round() as i32 + 1);
             // The card runs once per leg: a re-entered hub already played it
             // over the still, so the leg that opens after it does not.
-            if legaia_engine_core::muscle_ringside::leg_open_raises_round_card(
+            let raise = legaia_engine_core::muscle_ringside::leg_open_raises_round_card(
                 self.muscle_card_round.take(),
                 round,
-            ) {
-                self.muscle_round_banner = Some((round, HubScreen::round_banner()));
-            }
+            );
             if contest_open && !self.muscle_prev_contest_open {
-                self.muscle_intro_card = Some(HubScreen::intro_card());
+                // A fresh contest opens on the hub's first visit, whose own
+                // arms end in the ROUND card (`FirstVisitHub`).
+                self.muscle_first_visit =
+                    Some(legaia_engine_core::muscle_ringside::FirstVisitHub::new());
+            } else if raise {
+                // Retail's ROUND card is arms 0x15 / 0x16 - the opponent-card
+                // envelope.
+                self.muscle_round_banner = Some((round, HubScreen::opponent_card()));
             }
             self.muscle_interval = None;
             self.muscle_backdrop = None;
@@ -664,15 +635,34 @@ impl PlayWindowApp {
                         .map(|c| c.tally_roll())
                 })
                 .flatten();
-            self.muscle_intro_card = None;
+            self.muscle_first_visit = None;
             self.muscle_round_banner = None;
         }
-        // Retail runs one screen at a time: the intro strip's cross-fade is
-        // its own arm, and the ROUND banner's arm only follows it.
-        if let Some(card) = self.muscle_intro_card.as_mut() {
-            card.tick(1, pad);
-            if card.done() {
-                self.muscle_intro_card = None;
+        // Retail runs one arm at a time: the first visit's arms walk intro,
+        // title, course card and ROUND card in turn.
+        if let Some(hub) = self.muscle_first_visit.as_mut() {
+            hub.tick(1, pad);
+            // The first visit's two announcer lines (`FUN_8003D53C` at arms
+            // 0 and 0x15), through the same XA path the battle clips use.
+            let xa = hub.take_xa();
+            if hub.done() {
+                self.muscle_first_visit = None;
+            }
+            if let Some(c) = xa
+                && let Some(bgm) = self.session.bgm.as_mut()
+            {
+                let fired = bgm.play_xa_clip(
+                    u32::from(c.clip),
+                    u32::from(c.channel),
+                    u32::from(c.duration_sectors),
+                );
+                log::debug!(
+                    "dome hub XA clip slot {} ch {} dur {} -> {}",
+                    c.clip,
+                    c.channel,
+                    c.duration_sectors,
+                    if fired { "playing" } else { "not staged" }
+                );
             }
         } else if let Some((_, banner)) = self.muscle_round_banner.as_mut() {
             banner.tick(1, pad);
@@ -863,6 +853,14 @@ impl PlayWindowApp {
             log::warn!("muscle hub: no page/palette block decoded");
             return;
         }
+        // A small white block: the texel the untextured backdrop shade draws
+        // with.
+        let white_y = atlas_h;
+        for _ in 0..4 {
+            rgba.extend(std::iter::repeat_n(0xFF, 4 * 4));
+            rgba.resize(rgba.len() + ((atlas_w - 4) * 4) as usize, 0);
+        }
+        atlas_h += 4;
         let mut stills: Vec<(u32, u32)> = Vec::new();
         for variant in 0..2u32 {
             let index = legaia_asset::ringside_still::PROT_INDEX_DEFAULT + variant;
@@ -896,6 +894,7 @@ impl PlayWindowApp {
                     table,
                     atlas,
                     stills,
+                    white_y,
                 });
             }
             Err(e) => log::warn!("muscle hub: atlas upload skipped: {e:#}"),
@@ -907,9 +906,10 @@ impl PlayWindowApp {
     /// ([`legaia_engine_render::other_game_hud::hub_screen_quads`] /
     /// [`legaia_engine_render::other_game_hud::score_tally_quads`] - the browser
     /// dome page reaches the same functions via
-    /// `minigames_muscle::muscle_hub_quads_json`): the intro card and ROUND
-    /// banner over an open leg, the INTERVAL heading + six-row score tally
-    /// between legs. Every quad's extent and screen seat come out of the
+    /// `minigames_muscle::muscle_hub_quads_json`): the hub's first visit
+    /// (`ringside_backdrop::first_visit_hub_draw` - wall, shade, intro strip,
+    /// title zoom, course card, ROUND card) over a fresh contest's first leg,
+    /// the INTERVAL heading + six-row score tally between legs. Every quad's extent and screen seat come out of the
     /// PROT 0977 descriptor table and recovered draw lists; the host places
     /// nothing itself.
     ///
@@ -942,27 +942,34 @@ impl PlayWindowApp {
         // to pass 0x100, which drew every hub screen at twice retail's
         // brightness.
         let mut quads: Vec<hud::HudQuad> = Vec::new();
+        // The first visit's shade and the screens drawn over it: the shade
+        // sits between the wall tiles (`quads`) and these.
+        let mut shade: Option<legaia_engine_render::ringside_backdrop::BackdropShade> = None;
+        let mut front: Vec<hud::HudQuad> = Vec::new();
         if in_dome {
-            // A first visit's brick wall (the emitter's latch-0 arm) under
-            // the two leg-open screens, at the level retail's arms 2..6 give
-            // it - drawn first, so it sits behind the cards.
-            let wall = legaia_engine_core::muscle_ringside::first_visit_backdrop_level(
-                self.muscle_intro_card.as_ref(),
-                self.muscle_round_banner.as_ref().map(|(_, b)| b),
-            );
-            if wall > 0 {
-                quads.extend(hud::hub_screen_quads(
-                    &mut table,
-                    &legaia_engine_render::ringside_backdrop::first_visit_tile_draws(),
-                    wall,
-                ));
-            }
-            if let Some(card) = self.muscle_intro_card {
-                quads.extend(hud::hub_screen_quads(
-                    &mut table,
-                    hud::HUB_INTRO_CARD,
-                    card.brightness(),
-                ));
+            // A first visit's frame: the brick wall + shade (the backdrop
+            // emitter's latch-0 arm) behind the arm's screens, all composed
+            // by the shared kernel the play page draws with.
+            if let Some(hub) = self.muscle_first_visit {
+                let f = hub.frame();
+                let levels = legaia_engine_render::ringside_backdrop::FirstVisitLevels {
+                    backdrop: f.backdrop,
+                    intro: f.intro,
+                    title_scale: f.title_scale,
+                    course_card: f.course_card,
+                    round_card: f.round_card,
+                };
+                let (course, round) = world
+                    .minigames
+                    .muscle_contest
+                    .as_ref()
+                    .map_or((0, 1), |c| (c.course() as i32, c.round() as i32 + 1));
+                let d = legaia_engine_render::ringside_backdrop::first_visit_hub_draw(
+                    &mut table, &levels, course, round,
+                );
+                quads.extend(d.tiles);
+                shade = d.shade;
+                front.extend(d.hud);
             } else if let Some((round, banner)) = self.muscle_round_banner {
                 quads.extend(hud::hub_screen_quads(
                     &mut table,
@@ -1032,10 +1039,17 @@ impl PlayWindowApp {
                 });
             }
         }
-        if quads.is_empty() && out.is_empty() {
+        if quads.is_empty() && out.is_empty() && front.is_empty() {
             return Vec::new();
         }
-        for q in &quads {
+        let shade_at = quads.len();
+        quads.extend(front);
+        for (i, q) in quads.iter().enumerate() {
+            if i == shade_at
+                && let Some(sh) = shade
+            {
+                out.extend(shade_band_draws(&sh, assets.white_y));
+            }
             let sheet = u8::from(q.tpage & 0x10 != 0);
             let pal = (q.clut & 0x3F) as u8;
             let Some(&(_, _, block_y)) = assets
@@ -1077,6 +1091,11 @@ impl PlayWindowApp {
                 color: [tint(0), tint(1), tint(2), 1.0],
             });
         }
+        if shade_at >= quads.len()
+            && let Some(sh) = shade
+        {
+            out.extend(shade_band_draws(&sh, assets.white_y));
+        }
         // The quads sit in the retail 320x240 frame; map them through the
         // same stage transform every minigame chrome layer uses.
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
@@ -1084,13 +1103,14 @@ impl PlayWindowApp {
         out
     }
 
-    /// Load the fishing overlay (PROT 0972), decode its per-species table, and
-    /// start a fishing session in the world (suspending the current scene).
-    /// Returns `false` (and logs) when no disc is attached or the table can't
-    /// decode. Mirrors [`Self::start_dance_minigame`]'s overlay path.
-    ///
-    /// The rod stat + persistent record start at defaults (the save-block
-    /// fishing record isn't loaded into this dev entry point).
+    /// Load the fishing overlay (PROT 0972) and start a fishing session in the
+    /// world (suspending the current scene) through the same engine entry the
+    /// mode-24 door warp takes (`SceneHost::enter_fishing_from_overlay`): the
+    /// species / spawn / cadence tables, the bring-up's rod and lure ownership
+    /// scans, the persistent save-block words and the venue the cast lure
+    /// lands in. Returns `false` (and logs) when no disc is attached or the
+    /// tables can't decode. Mirrors [`Self::start_dance_minigame`]'s overlay
+    /// path.
     pub(super) fn start_fishing_minigame(&mut self) -> bool {
         use legaia_asset::static_overlay;
         let Some(rec) = static_overlay::overlay_map()
@@ -1113,12 +1133,8 @@ impl PlayWindowApp {
                 return false;
             }
         };
-        let Some(species) = legaia_asset::fishing_species::parse(&loaded) else {
-            log::warn!("fishing: species-table parse failed");
-            return false;
-        };
-        // Decode the two point-exchange venue pages alongside the species
-        // table, naming rows from the SCUS item table when it's readable
+        // Decode the two point-exchange venue pages alongside the session
+        // tables, naming rows from the SCUS item table when it's readable
         // (P toggles the prize list while fishing).
         self.fishing_prize_venues = legaia_asset::fishing_exchange::parse(&loaded).map(|ex| {
             use legaia_engine_core::Vfs;
@@ -1144,16 +1160,10 @@ impl PlayWindowApp {
                 )
             })
         });
-        // Default rod stat for the dev entry point; the record resumes the
-        // world's persistent point pool (banked back on exit).
-        const DEV_ROD_STAT: i32 = 4;
-        let record = legaia_engine_core::fishing::FishingRecord {
-            points: self.session.host.world.minigames.fishing_points,
-            ..Default::default()
-        };
-        let session =
-            legaia_engine_core::fishing::FishingSession::new(species, DEV_ROD_STAT, record);
-        self.session.host.world.enter_fishing(session);
+        if !self.session.host.enter_fishing_from_overlay(&loaded) {
+            log::warn!("fishing: species / spawn / cadence tables did not decode");
+            return false;
+        }
         true
     }
 
@@ -1301,11 +1311,11 @@ impl PlayWindowApp {
             log::warn!("baka: action-table parse failed");
             return false;
         };
-        // Rotate the ladder opponent with the frame counter (1..=16; roster 0
-        // is the player-side default). Seed like the slot machine: frame-
-        // derived, deterministic across a replayed pad stream.
+        // The cabinet's first rung (roster 0 is the player-side default);
+        // the cabinet climbs the ladder from here. Seed like the slot
+        // machine: frame-derived, deterministic across a replayed pad stream.
         let frame = self.session.host.world.frame as u32;
-        let opponent = 1 + (frame as usize % (opponents.len().saturating_sub(1).max(1)));
+        let opponent = legaia_engine_core::baka_fighter::first_rung_roster();
         let seed = 0xBA4A_F19A ^ frame;
         let Some(fight) = legaia_engine_core::baka_fighter::BakaFight::from_tables(
             &opponents, &actions, 0, opponent, seed,
@@ -1600,4 +1610,47 @@ fn sway_sine_table() -> &'static [i16] {
             })
             .collect()
     })
+}
+
+/// Rows the backdrop shade's vertical Gouraud ramp is cut into for the
+/// sprite pipeline, which carries one colour per draw.
+const SHADE_BANDS: u32 = 16;
+
+/// The first visit's backdrop shade (`FUN_801D1610`, a subtractive `B - F`
+/// Gouraud quad, `0x64` at the top fading to `0` at the bottom) as sprite
+/// draws over the atlas's white block.
+///
+/// Disclosed stand-in: the sprite pipeline blends with ordinary alpha, so
+/// the ramp is cut into [`SHADE_BANDS`] flat bands of black at alpha
+/// `f / 255` - "scale the background by `1 - f/255`" in place of retail's
+/// "subtract `f`". The window's one ABR-capable 2D pass (the screen-prim
+/// pass, which has the `ReverseSubtract` pipeline) runs *before* the sprite
+/// overlay, so it cannot sit between the wall tiles and the screens drawn
+/// over them. Both browser pages subtract exactly on their 2D layer
+/// (`subtractShade`); this host is the one still on the stand-in.
+fn shade_band_draws(
+    sh: &legaia_engine_render::ringside_backdrop::BackdropShade,
+    white_y: u32,
+) -> Vec<legaia_engine_render::SpriteDraw> {
+    let (x0, y0) = (i32::from(sh.xy[0].0), i32::from(sh.xy[0].1));
+    let w = (i32::from(sh.xy[1].0) - x0).max(0) as u32;
+    let h = (i32::from(sh.xy[2].1) - y0).max(0);
+    let top = f32::from(sh.rgb[0][0]);
+    let bottom = f32::from(sh.rgb[2][0]);
+    let mut out = Vec::new();
+    for b in 0..SHADE_BANDS as i32 {
+        let by0 = y0 + h * b / SHADE_BANDS as i32;
+        let by1 = y0 + h * (b + 1) / SHADE_BANDS as i32;
+        let t = (b as f32 + 0.5) / SHADE_BANDS as f32;
+        let f = top + (bottom - top) * t;
+        if by1 <= by0 || f <= 0.0 {
+            continue;
+        }
+        out.push(legaia_engine_render::SpriteDraw {
+            dst: (x0, by0, w, (by1 - by0) as u32),
+            src: (0, white_y, 1, 1),
+            color: [0.0, 0.0, 0.0, f / 255.0],
+        });
+    }
+    out
 }

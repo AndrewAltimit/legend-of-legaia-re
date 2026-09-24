@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use legaia_pcsxr::{SCRATCHPAD_LEN, SaveState};
 
 /// `teien_field_run` in `scripts/scenarios.toml`.
-const TEIEN_FIELD_RUN: &str = "811098af2f18e96d7989c03cbc3521976eb913a92af34e244127248c6fbf6fe4";
+const TEIEN_FIELD_RUN: &str = "0f0f5384290739532d20a93d2759d36aa16fc551051ebc071f671b443ae6dbb8";
 
 /// The scene-map pointer the field pass dereferences.
 const SCENE_MAP_PTR_VA: u32 = 0x1F80_03EC;

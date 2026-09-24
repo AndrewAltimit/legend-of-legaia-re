@@ -1,0 +1,137 @@
+//! Disc-gated round trip of the `monster_names` pack section: export every
+//! named record of the monster archive (PROT 867), fill a few names - one at
+//! its full budget, one shorter than the retail name - import onto a scratch
+//! copy, and re-read the archive: the renamed records decode to the new name
+//! with every stat untouched, every other slot is byte-identical, an
+//! over-budget name is refused, and every touched sector stays EDC/ECC-valid.
+//!
+//! Skips + passes without `LEGAIA_DISC_BIN`.
+
+use legaia_asset::monster_archive::{self, SLOT_STRIDE};
+use legaia_iso::raw::SECTOR_SIZE;
+use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_patcher::translation::{export_pack, import_pack};
+
+fn load_disc() -> Option<Vec<u8>> {
+    let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
+    p.is_file().then(|| std::fs::read(&p).ok()).flatten()
+}
+
+#[test]
+fn monster_names_export_import_round_trip() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let src = DiscPatcher::open(original.clone()).expect("open disc");
+    let mut pack = export_pack(&src).expect("export");
+    let names = &pack.sections.monster_names;
+    assert!(names.len() > 150, "named records: {}", names.len());
+    assert!(
+        names
+            .iter()
+            .all(|e| e.budget >= e.source.len().min(e.budget)),
+        "every budget holds its own retail name"
+    );
+    // The element-badge escape exports as a markup token a translator keeps.
+    assert!(
+        names.iter().any(|e| e.source.starts_with("{5e:")),
+        "badge escapes surface as {{5e:xx}}"
+    );
+
+    // Pick: a badge name at full budget, a plain name made shorter, and one
+    // entry pushed one byte over its budget.
+    let badge = names
+        .iter()
+        .position(|e| e.source.starts_with("{5e:") && e.budget >= 8)
+        .expect("a badge name");
+    let plain = names
+        .iter()
+        .position(|e| !e.source.contains('{') && e.source.len() > 4)
+        .expect("a plain name");
+    let over = names
+        .iter()
+        .enumerate()
+        .position(|(i, e)| i != plain && i != badge && !e.source.contains('{'))
+        .expect("a third name");
+    let tok = &names[badge].source[..7];
+    let full = format!("{tok}{}", "Z".repeat(names[badge].budget - 2));
+    let short = "Qq".to_string();
+    let too_long = "W".repeat(names[over].budget + 1);
+    let sections = &mut pack.sections.monster_names;
+    sections[badge].translation = full.clone();
+    sections[plain].translation = short.clone();
+    sections[over].translation = too_long;
+    let keys = [
+        sections[badge].key.clone(),
+        sections[plain].key.clone(),
+        sections[over].key.clone(),
+    ];
+
+    let mut patcher = DiscPatcher::open(original.clone()).expect("open disc");
+    let report = import_pack(&mut patcher, &pack).expect("import");
+    assert_eq!(report.applied, 2, "issues: {:?}", report.issues);
+    assert!(
+        report
+            .issues
+            .iter()
+            .any(|(k, m)| k == &keys[2] && m.contains("budget")),
+        "over-budget name refused: {:?}",
+        report.issues
+    );
+
+    let before = src.read_entry(MONSTER_ARCHIVE_ENTRY).unwrap();
+    let patched = patcher.into_image();
+    let post = DiscPatcher::open(patched.clone()).expect("open patched");
+    let after = post.read_entry(MONSTER_ARCHIVE_ENTRY).unwrap();
+    assert_eq!(before.len(), after.len());
+    let id_of = |k: &str| k.strip_prefix("mon:").unwrap().parse::<u16>().unwrap();
+    let (badge_id, plain_id) = (id_of(&keys[0]), id_of(&keys[1]));
+    for id in 1..=monster_archive::slot_count(&before) as u16 {
+        let range = (id as usize - 1) * SLOT_STRIDE..id as usize * SLOT_STRIDE;
+        if id != badge_id && id != plain_id {
+            assert_eq!(before[range.clone()], after[range], "slot {id} untouched");
+            continue;
+        }
+        let a = monster_archive::record(&before, id).unwrap().unwrap();
+        let b = monster_archive::record(&after, id).unwrap().unwrap();
+        assert_eq!(
+            (a.hp, a.mp, a.stats, a.gold, a.exp),
+            (b.hp, b.mp, b.stats, b.gold, b.exp)
+        );
+        assert_eq!(a.spells.len(), b.spells.len());
+    }
+    let re = export_pack(&post).expect("re-export");
+    let got = |k: &str| {
+        re.sections
+            .monster_names
+            .iter()
+            .find(|e| e.key == k)
+            .map(|e| e.source.clone())
+    };
+    assert_eq!(got(&keys[0]).as_deref(), Some(full.as_str()));
+    assert_eq!(got(&keys[1]).as_deref(), Some(short.as_str()));
+    // Budgets are a property of the record, not of the current name: the
+    // re-export offers the same room.
+    for (a, b) in pack
+        .sections
+        .monster_names
+        .iter()
+        .zip(&re.sections.monster_names)
+    {
+        assert_eq!((&a.key, a.budget), (&b.key, b.budget));
+    }
+
+    for (i, (a, b)) in original
+        .chunks(SECTOR_SIZE)
+        .zip(patched.chunks(SECTOR_SIZE))
+        .enumerate()
+    {
+        if a != b && a.len() == SECTOR_SIZE {
+            assert!(
+                legaia_iso::write::mode2_form1_sector_is_valid(b),
+                "sector {i} invalid"
+            );
+        }
+    }
+}

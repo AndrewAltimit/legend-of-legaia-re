@@ -1,16 +1,16 @@
 //! Per-actor animation runtime - wraps the actor-tick anim dispatch.
 //!
-//! PORT: FUN_80024CFC, FUN_8004AD80, FUN_80047430, FUN_80048A08
-//! PORT: FUN_80049348, FUN_8004998C, FUN_8004E13C
+//! REF: FUN_80024CFC - the actor spawn that seats a record; its stores are [`spawn_init`], which carries the tag.
+//! REF: FUN_8004AD80 - the staged-animation commit. Its real ports are the rate-write arms (`crate::battle_anim_rate`), the dynamic-art arm ([`AnimRuntime`]'s record select), the art bank select (`legaia_asset::battle_char_assembly`) and the death-spoils arm (`legaia_engine_core::battle_steal`). The per-kind [`Host`] hooks here are no-op defaults, and they run every tick where retail runs its kind ladder once per commit.
+//! REF: FUN_80047430 - the battle-actor anim tick; ported arms live in `crate::battle_hp_bar` and `legaia_asset::battle_char_assembly::animation`. [`Host::on_movement_step`] is a no-op default.
+//! REF: FUN_80048A08 - the battle-actor draw (pose decode + TMD submit). [`Host::on_render_loop`] is a no-op default; nothing here ports it.
+//! REF: FUN_80049348 - the after-image walk, ported as `legaia_engine_core::battle_afterimage`.
+//! REF: FUN_8004E13C - the art-mode latch, ported at its `+0x243` store in `legaia_engine_core::world::actors`.
 //!
-//! Scope: `FUN_80024CFC` is modelled only as far as `+0x68 = 100`
-//! (its allocation through `FUN_80020DE0`, the `+0x4C` record pointer
-//! resolved off `*(0x8007B7C8)` and the `+0x56 = 0xB` store are not), and
-//! the other five are host hooks with no-op defaults on
-//! [`Host`] - their retail roles are written on each hook. The
-//! pose unpack `FUN_8004998C` performs is ported in
-//! `legaia_asset::monster_archive`; the afterimage draw in
-//! `legaia_engine_core::battle_afterimage`.
+//! `FUN_8004998C`'s 9-byte nibble unpack and 16-step lerp are [`BoneFrame`],
+//! which carries its own scoped tag; the rest of that routine (the
+//! frame-index / loop cursor, the cross-animation blend and the translation
+//! forward term) is not ported.
 //!
 //! ## Background
 //!
@@ -74,11 +74,13 @@ mod dispatch;
 mod keyframe;
 mod record;
 mod runtime;
+mod spawn_init;
 
 pub use dispatch::*;
 pub use keyframe::*;
 pub use record::*;
 pub use runtime::*;
+pub use spawn_init::*;
 
 #[cfg(test)]
 mod tests;

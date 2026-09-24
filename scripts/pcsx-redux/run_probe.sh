@@ -30,7 +30,17 @@
 #                        neither --out nor --out-dir is given
 #   --frames N           post-load capture vsyncs (default 600)
 #   --bios PATH          PSX BIOS (default ~/.mednafen/firmware/SCPH1001.BIN)
-#   --iso PATH           disc image (default ~/Downloads/...)
+#   --iso PATH           disc image (default ~/Downloads/...). The runner never
+#                        hands this path to the emulator directly: PCSX-Redux
+#                        auto-applies <stem>.ppf from beside whatever image it
+#                        is given (cdrom/ppf.cc, logged as "[+ppf]"), and the
+#                        patcher writes its .ppf beside its INPUT disc - i.e.
+#                        beside the retail image. The runner symlinks the image
+#                        into a private stage dir (disc.bin, no sibling .ppf)
+#                        and launches that instead.
+#   --ppf PATH           apply this .ppf on purpose: staged beside the staged
+#                        disc as disc.ppf (env LEGAIA_PPF). The only way a
+#                        patch reaches a run.
 #   --pcsx PATH          pcsx-redux binary (default ~/Tools/pcsx-redux/pcsx-redux)
 #                        Env LEGAIA_MCD1 / LEGAIA_MCD2 override the memory-card
 #                        pair (no flag form; -memcard2 is broken in this build -
@@ -62,6 +72,10 @@
 #                        Human-navigated poll-tier captures sustain 3x; the
 #                        BP-tier probes should stay at 100.
 #   --log PATH           emulator log path (default logs/pcsx_probe_<stem>.log)
+#                        Env LEGAIA_FASTBOOT=1 adds -fastboot (skip the BIOS
+#                        intro). A cold boot (LEGAIA_NO_SSTATE=1) needs it:
+#                        the default boot path stalls on an early CD read in
+#                        headless -run (docs/tooling/playthrough-coverage.md).
 #   --help               print this header and exit
 #
 # Why -interpreter -debugger by default:
@@ -80,12 +94,19 @@
 #   -portable, so the capture is config-independent. Memory cards are pointed at
 #   the real ~/.config/pcsx-redux via ABSOLUTE Mcd paths (memorycard.cc only
 #   prepends the persistent dir to RELATIVE names), so card saves still work.
-#   The profile also zeroes Debug.FirstChanceException: the default mask
-#   (0x1CF0) PAUSES the whole emulator on the game's own first-chance CPU
-#   exceptions (retail battle load performs an unaligned LW the BIOS handler
-#   resolves), which under -debugger froze every breakpoint probe that crossed
-#   a battle load - the probe just stops logging mid-run with
-#   "First chance exception: LoadAddressError" as the last pcsx.log line.
+#   The profile also zeroes Debug.FirstChanceException (override with
+#   LEGAIA_PCSX_FIRST_CHANCE): the default mask (0x1CF0) PAUSES the whole
+#   emulator on a first-chance CPU exception, which under -debugger freezes a
+#   breakpoint probe mid-run. The retail battle load was blamed for one (an
+#   "unaligned LW" LoadAddressError), but no pcsx.log in the capture corpus
+#   logs a LoadAddressError, and a field-to-battle load on a staged, unpatched
+#   image with the mask armed ran through to BattleMode clean. Every
+#   battle-load first-chance exception the corpus does hold is on a PATCHED
+#   image - e.g. a sibling .ppf's 0898 detour jumping into a SCUS arena the
+#   state held unpatched (ReservedInstruction at 0x8007AF3C;
+#   docs/tooling/pcsx-redux-automation.md#patched-disc-taint).
+#   The zero mask stays the default so a probe of a deliberately patched disc
+#   keeps running.
 #   Knobs: LEGAIA_PCSX_PROFILE_DIR (profile dir), LEGAIA_PCSX_REAL_CONFIG (real
 #   config dir for memcards), LEGAIA_PCSX_HARDWARE_GPU=1 (pin the OpenGL/hardware
 #   renderer instead of the ship-default software one).
@@ -105,6 +126,7 @@ LEGAIA_OUT_DIR="${LEGAIA_OUT_DIR:-}"
 LEGAIA_LUA="${LEGAIA_LUA:-scripts/pcsx-redux/autorun_world_map_probe.lua}"
 LEGAIA_SCENARIO="${LEGAIA_SCENARIO:-}"
 LEGAIA_PROBE_SPEC="${LEGAIA_PROBE_SPEC:-}"
+LEGAIA_PPF="${LEGAIA_PPF:-}"
 LOG_FILE=""
 FAST=0
 TIMING=0
@@ -129,6 +151,7 @@ while [[ $# -gt 0 ]]; do
         --frames)    LEGAIA_FRAMES="$2"; shift 2 ;;
         --bios)      LEGAIA_BIOS="$2"; shift 2 ;;
         --iso)       LEGAIA_ISO="$2"; shift 2 ;;
+        --ppf)       LEGAIA_PPF="$2"; shift 2 ;;
         --pcsx)      PCSX_REDUX="$2"; shift 2 ;;
         --log)       LOG_FILE="$2"; shift 2 ;;
         --fast)      FAST=1; shift ;;
@@ -136,7 +159,7 @@ while [[ $# -gt 0 ]]; do
         --isolate-config)    ISOLATE_CONFIG=1; shift ;;
         --no-isolate-config) ISOLATE_CONFIG=0; shift ;;
         -h|--help)
-            sed -n '2,65p' "$0"
+            sed -n '2,75p' "$0"
             exit 0 ;;
         *)
             echo "ERROR: unknown flag: $1" >&2
@@ -264,6 +287,23 @@ if [[ -z "$LOG_FILE" ]]; then
 fi
 mkdir -p "$(dirname "$LOG_FILE")"
 
+# ---------- disc staging (never hand the emulator an unstaged image) ----------
+# PCSX-Redux's PPF::load (src/cdrom/ppf.cc) replaces the image path's extension
+# with .ppf and applies that file if it exists - silently, bar a "[+ppf]" in
+# the log. A randomizer .ppf beside the retail .bin therefore patches every
+# probe that names the retail path. Stage a symlink named disc.bin in a
+# directory this run owns; its sibling disc.ppf exists only when --ppf asks.
+STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/legaia-probe-stage.XXXXXX")"
+trap 'rm -rf "$STAGE_DIR"' EXIT
+SOURCE_ISO="$LEGAIA_ISO"
+ln -s "$(readlink -f "$SOURCE_ISO")" "$STAGE_DIR/disc.bin"
+if [[ -n "$LEGAIA_PPF" ]]; then
+    [[ -f "$LEGAIA_PPF" ]] || { echo "ERROR: --ppf file not found: $LEGAIA_PPF" >&2; exit 1; }
+    ln -s "$(readlink -f "$LEGAIA_PPF")" "$STAGE_DIR/disc.ppf"
+fi
+LEGAIA_ISO="$STAGE_DIR/disc.bin"
+SOURCE_PPF="${SOURCE_ISO%.*}.ppf"
+
 cd "$REPO_ROOT"
 
 # ---------- config isolation resolution + fast-profile write ----------
@@ -331,7 +371,7 @@ if [[ "$ISOLATE_CONFIG" == "1" ]]; then
     "Mcd2": "$_mcd2",
     "Mcd1Inserted": true,
     "Mcd2Inserted": true,
-    "Debug": { "Debug": $_debug, "GdbServer": false, "WebServer": false, "FirstChanceException": 0 }
+    "Debug": { "Debug": $_debug, "GdbServer": false, "WebServer": false, "FirstChanceException": ${LEGAIA_PCSX_FIRST_CHANCE:-0} }
   }
 }
 JSON
@@ -342,7 +382,14 @@ fi
     echo "=== run_probe.sh ==="
     echo "  pcsx-redux : $PCSX_REDUX"
     echo "  bios       : $LEGAIA_BIOS"
-    echo "  iso        : $LEGAIA_ISO"
+    echo "  iso        : $SOURCE_ISO (staged as $LEGAIA_ISO)"
+    if [[ -n "$LEGAIA_PPF" ]]; then
+        echo "  ppf        : $LEGAIA_PPF (APPLIED on purpose, --ppf)"
+    elif [[ -e "$SOURCE_PPF" ]]; then
+        echo "  ppf        : none (bypassed the sibling $SOURCE_PPF)"
+    else
+        echo "  ppf        : none"
+    fi
     [[ "${LEGAIA_NO_SSTATE:-0}" == "1" ]] \
         && echo "  sstate     : (cold boot - LEGAIA_NO_SSTATE=1)" \
         || echo "  sstate     : $LEGAIA_SSTATE${LEGAIA_SCENARIO:+ (from --scenario $LEGAIA_SCENARIO)}"
@@ -383,6 +430,9 @@ export LEGAIA_CORE
 # than dumping in one chunk at exit. -stdout enables pcsx-redux's
 # fputs-to-stdout path.
 emu_flags=(-bios "$LEGAIA_BIOS" -iso "$LEGAIA_ISO" -run -stdout -dofile "$LEGAIA_LUA")
+if [[ "${LEGAIA_FASTBOOT:-0}" == "1" ]]; then
+    emu_flags=(-fastboot "${emu_flags[@]}")
+fi
 if [[ "$ISOLATE_CONFIG" == "1" ]]; then
     # -portable PATH points getPersistentDir() at our throwaway profile dir
     # (src/core/arguments.cc: the flag's value sets m_portablePath AND flips
@@ -433,6 +483,12 @@ fi
 
 echo "" | tee -a "$LOG_FILE"
 echo "pcsx-redux exited with status $EXIT" | tee -a "$LOG_FILE"
+
+# The emulator prints "[+ppf]" when it applied a patch file. Without --ppf
+# that means the staging above failed to isolate the image - say so loudly.
+if [[ -z "$LEGAIA_PPF" ]] && grep -qF "[+ppf]" "$LOG_FILE"; then
+    echo "WARNING: pcsx-redux applied a .ppf although none was requested - this run measured a PATCHED disc" | tee -a "$LOG_FILE" >&2
+fi
 
 # Surface CSV / probe-hits summary from the log if present.
 if [[ -n "$LEGAIA_OUT" && -f "$LEGAIA_OUT" ]]; then

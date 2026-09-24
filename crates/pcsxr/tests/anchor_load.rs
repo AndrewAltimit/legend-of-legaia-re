@@ -57,14 +57,14 @@ struct AnchorExpect {
 const ANCHORS: &[AnchorExpect] = &[
     AnchorExpect {
         label: "s3_rimelm_freeroam",
-        fingerprint: "2fba9adf4ade2f14de2a10c82e066b76025ac7ded1f063b852de9d498be00a6a",
+        fingerprint: "e9e526595d0479ce1af9619418922ca337019ba0d1078169bc65235c22d75fc8",
         scene: "town01",
         mode: 0x03,
         pos: Some((4160, 11840)),
     },
     AnchorExpect {
         label: "s4_rimelm_door_transition",
-        fingerprint: "a89f131f74811b56ef12146fcae0f49867f2a3307941a39c292bbd15831c890e",
+        fingerprint: "820f1418028a3a26f6acc39d63ab6fa070c9d21be3dd7f8ef4d17f8e05dc80af",
         scene: "town01",
         mode: 0x03,
         pos: Some((3264, 3520)),
@@ -72,7 +72,7 @@ const ANCHORS: &[AnchorExpect] = &[
     AnchorExpect {
         // battle: player parked at (0,0); only scene+mode asserted
         label: "s5_tetsu_battle",
-        fingerprint: "4e9c1e5ffd5972c33da9bdf2304964979037cdfaf77a50df5b03a68c67a55e6f",
+        fingerprint: "4fcfff14628ececbc46dd5d122852b1e8f12bd7352e93fca1e374f72c8eb23dd",
         scene: "town01",
         mode: 0x15,
         pos: None,

@@ -101,7 +101,7 @@ fn play_to_player_win(w: &mut World) {
         {
             return;
         }
-        press(w, PadButton::Down.mask());
+        press(w, PadButton::Triangle.mask()); // the special (type 4)
     }
     panic!("the duel never resolved");
 }

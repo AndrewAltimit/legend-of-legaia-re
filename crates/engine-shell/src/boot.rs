@@ -83,17 +83,19 @@ pub(crate) const SPU_RAM_BYTES: u32 = 512 * 1024;
 /// Byte offset reserved for voice-0 / scratchpad - banks are allocated
 /// above this. Mirrors the asset-viewer SEQ playback path.
 pub(crate) const SPU_RESERVED_BYTES: u32 = 0x1000;
-/// SPU RAM reserved at the TOP of the map for the resident SFX banks - both
-/// pinned VAB slots, packed out of one allocator. On real hardware several
-/// banks and the BGM VAB coexist in the 512 KiB SPU RAM; carving a dedicated
-/// top region models that so a scene-BGM upload can't stomp the SFX samples.
+/// SPU RAM reserved at the TOP of the map for the resident SFX banks: the
+/// slot-0 system bank, and above it the region VAB slots `2` and `6` share
+/// (one SPU base in retail, refilled per game mode). Carving a dedicated top
+/// region keeps a scene-BGM upload from stomping the SFX samples.
 ///
 /// The size is arithmetic, and the browser host's `SFX_BANK_SPU_BYTES` must
-/// stay equal to it. PROT 0868's VAG bodies total 59136 bytes and PROT 0869's
-/// 188128, so the pair needs 247264 and 0x3D000 (249856) holds them. It cannot
-/// go higher: the BGM region is what is left, and one step up (`0x3E000`)
-/// leaves 266240 - under the two largest scene BGM VABs on the disc (269632,
-/// 268496), i.e. it would start silencing music that plays today.
+/// stay equal to it. PROT 0868's VAG bodies total 59136 bytes and the largest
+/// bank the shared region takes in a mode the port stages it for, PROT 0869,
+/// 188128 (PROT 0876 is 174192), so the pair needs 247264 and 0x3D000
+/// (249856) holds them. It cannot go higher: the BGM region is what is left,
+/// and one step up (`0x3E000`) leaves 266240 - under the two largest scene BGM
+/// VABs on the disc (269632, 268496), i.e. it would start silencing music that
+/// plays today.
 pub const SFX_BANK_SPU_BYTES: u32 = 0x3D000;
 
 /// One-time configuration for [`BootSession::open`].
@@ -1245,6 +1247,47 @@ impl BootSession {
     /// One per-frame step: tick the world, route field-VM camera + BGM
     /// events, advance the camera follow, return the [`SceneTickEvent`] for
     /// engines that want to react to scene transitions.
+    /// Hand this tick's SFX ring producer calls (field-VM op `0x36` sub
+    /// `0`/`4`, the ambient motion VM's op `0x09`) to the director's retail
+    /// ring, and keep the director's field-side SFX sources - the scene's
+    /// runtime descriptor rows and the side-band bank - in step with the
+    /// world. The director's own per-frame [`AudioBgmDirector::tick_sfx_frame`]
+    /// then plays whatever came due. With no audio the calls are dropped, as
+    /// every other cue is.
+    fn route_field_sfx(&mut self) {
+        let ops = self.host.world.take_sfx_ring_ops();
+        let Some(bgm) = self.bgm.as_mut() else {
+            return;
+        };
+        let world = &self.host.world;
+        // One `World::tick` is one vsync, and the director's scheduler ticks
+        // once per `World::tick`, so the ring ages by the vsyncs one tick
+        // spans (`display_frame_step`, always 1) - not by the game-tick
+        // cadence `frame_step`, which retail applies once per *game tick* of
+        // that many vsyncs. The two schedules are the same in wall time.
+        bgm.apply_sfx_ring_ops(&ops, world.clock.display_frame_step.clamp(1, 255) as u8);
+        let side_band = matches!(
+            world.mode,
+            legaia_engine_core::world::SceneMode::Field
+                | legaia_engine_core::world::SceneMode::WorldMap
+        )
+        .then(|| world.side_band_bank())
+        .flatten();
+        let index = &self.host.index;
+        // A slot-6 side-band bank is not a tail borrower: retail streams it
+        // over the field bank in the shared region, and the residency below
+        // carries it.
+        let side_band = side_band.filter(|b| b.slot != 6);
+        bgm.sync_field_sfx(&world.props.stager_bytes, side_band, |entry| {
+            index.entry_bytes_extended(entry).ok()
+        });
+        // The slot-2 / slot-6 region follows the mode: the field bank in the
+        // field, the class-2 bank in battle, a minigame's own in its mode.
+        let shared = self.host.world.sync_sfx_residency();
+        bgm.sync_shared_region(shared, |entry| index.entry_bytes_extended(entry).ok());
+        bgm.stop_sfx_voices(&self.host.world.take_sfx_voice_stops());
+    }
+
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
         // The mode table's outer level, once per frame, ahead of everything
         // else - retail's `main` (`FUN_80015E90`, `0x8001615C..0x8001620C`)
@@ -1339,6 +1382,7 @@ impl BootSession {
             // to this point is what left every Biron Monastery cutscene
             // silent and then started its score over the next scene.
         }
+        self.route_field_sfx();
         // Reconcile the word with wherever the scene sessions left the world.
         // The seat owns the word; the sessions own the scene, and this is the
         // one join between them (see `ModeSeat`'s "what owns what").
@@ -1591,80 +1635,54 @@ fn stage_scene_vab(
     Ok(())
 }
 
-/// Read every boot-**resident** SFX program bank, parse its VAB, upload the
-/// samples into the dedicated top region of SPU RAM, and stash the resulting
-/// [`VabBank`] in the director under its VAB slot.
+/// Stage the reserved SFX region the way retail's SPU map lays it out:
+/// slot `0` = PROT 0868 (the system bank the 16 category-`0` shared UI cues
+/// key) resident from boot at the region's bottom, and above it the region
+/// VAB slots `2` and `6` share (`FUN_800265E8` gives both `0x33010`).
 ///
-/// The resident slots are slot `0` = PROT 0868 (the system bank the 16
-/// category-`0` shared UI cues key) and slot `2` = PROT 0869 (the class-2 bank
-/// the battle scene loader `FUN_800520F0` loads with `a1 = 2`, with the
-/// `DAT_8007BD11 == 4` alternate 0875 as its fallback). Slots `6` and `11`,
-/// which retail's descriptors also reach, name PROT 0876 / 0889 but do not fit
-/// beside these two in the region - retail keeps slot 6 in slot 2's own SPU
-/// region and refills it per game mode, so staging them here means reloading
-/// that region on the field/battle transition rather than reserving more. Their
-/// cues fall back to slot 2 meanwhile.
+/// The shared region is seeded with the class-2 bank (PROT 0869, slot 2) so a
+/// cue fired before the first world tick has somewhere to sound; from then on
+/// [`BootSession::route_field_sfx`] refills it with whatever the world's
+/// residency names for the current mode - PROT 0876 in slot 6 in the field,
+/// PROT 0869 in slot 2 in battle ([`AudioBgmDirector::sync_shared_region`]).
 ///
 /// Each entry is a scene-VAB-style stream (`[u32 chunk header][VAB]...`), so
-/// the VAB starts at `+4` (with a `+0` fallback for a bare bank). Both come out
-/// of **one** [`SpuAllocator`] so they pack end to end; two allocators each
-/// starting at the region base would overlay one bank on the other. Uploaded
-/// once at boot; they stay resident across scene transitions because the BGM
-/// region is capped below them.
+/// the VAB starts at `+4` (with a `+0` fallback for a bare bank).
 fn stage_sfx_vab(
     director: &mut AudioBgmDirector,
     audio: &AudioOut,
     host: &SceneHost,
 ) -> Result<()> {
-    use legaia_asset::sfx_table::{
-        FALLBACK_VAB_SLOT, PINNED_SLOT_BANKS, SLOT2_CLASS2_BANK_ALT_PROT_INDEX,
-    };
+    use legaia_asset::sfx_table::SLOT0_SYSTEM_BANK_PROT_INDEX;
+    use legaia_engine_core::world::SharedRegionBank;
 
-    let mut alloc = SpuAllocator::new(SPU_RAM_BYTES - SFX_BANK_SPU_BYTES, SFX_BANK_SPU_BYTES);
-    let mut staged = 0usize;
-    let mut last_err = None;
-    for (slot, prot) in PINNED_SLOT_BANKS.iter().copied() {
-        // Only the class-2 slot has a documented alternate entry.
-        let alt = if slot == FALLBACK_VAB_SLOT {
-            SLOT2_CLASS2_BANK_ALT_PROT_INDEX
-        } else {
-            prot
-        };
-        let mut done = false;
-        for idx in [prot, alt] {
-            let Ok(bytes) = host.index.entry_bytes_extended(idx) else {
-                continue;
-            };
-            let Some((report, vab_off)) = [4usize, 0]
-                .into_iter()
-                .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
-            else {
-                continue;
-            };
-            let body = &bytes[vab_off..];
-            let bank =
-                audio.with_spu(|spu: &mut Spu| VabBank::upload(spu, &mut alloc, &report, body));
-            director.set_sfx_vab(slot, bank);
-            staged += 1;
-            done = true;
-            break;
-        }
-        if !done {
-            last_err = Some(anyhow::anyhow!(
-                "no VAB header at +4 or +0 in PROT {prot} (slot {slot})"
-            ));
-        }
+    let region = SPU_RAM_BYTES - SFX_BANK_SPU_BYTES;
+    let bytes = host
+        .index
+        .entry_bytes_extended(SLOT0_SYSTEM_BANK_PROT_INDEX)
+        .context("read the slot-0 system bank")?;
+    let (report, vab_off) = [4usize, 0]
+        .into_iter()
+        .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
+        .ok_or_else(|| anyhow::anyhow!("no VAB header at +4 or +0 in PROT 0868"))?;
+    let mut alloc = SpuAllocator::new(region, SFX_BANK_SPU_BYTES);
+    let bank = audio
+        .with_spu(|spu: &mut Spu| VabBank::upload(spu, &mut alloc, &report, &bytes[vab_off..]));
+    let slot0_end = bank
+        .samples
+        .iter()
+        .flatten()
+        .map(|s| s.addr + s.size)
+        .max()
+        .unwrap_or(region);
+    director.set_sfx_vab(0, bank);
+    director.set_shared_region_base(slot0_end);
+    if !director.sync_shared_region(Some(SharedRegionBank::CLASS2), |e| {
+        host.index.entry_bytes_extended(e).ok()
+    }) {
+        log::warn!("class-2 SFX bank not staged in the shared region");
     }
-    match last_err {
-        // A partial stage is still useful - the routed cues that did land keep
-        // sounding - so only report when nothing at all came up.
-        Some(e) if staged == 0 => Err(e),
-        Some(e) => {
-            log::warn!("SFX bank partially staged ({staged} of 2): {e:#}");
-            Ok(())
-        }
-        None => Ok(()),
-    }
+    Ok(())
 }
 
 #[cfg(test)]

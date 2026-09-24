@@ -961,8 +961,11 @@ Attack / Ra-Seru element anchors) -> Command opens the input screen
 command's `+0x74` cost and appends to `actor+0x1df` - RAM-verified per
 press); entry **ends by itself** the moment no command is affordable
 (`0x50 -> 0x5a` on the exhausting press, no confirm). `0x5a` reviews the
-committed bar; any press reaches the **Begin | Reselect** menu (`0x6e`);
-Begin plays the round out, Reselect returns to a clean input. The previous
+committed bar; any press reaches the **Begin | Reselect** menu (`0x6e`) -
+the party-wide commit confirm, which a one-fighter dome reaches straight off
+the entry ([`battle.md`](battle.md#the-commit-confirm-screen-0x6e)). Begin
+plays the round out; Reselect steps the member cursor back onto the fighter,
+whose ring reopens. The previous
 round's pennants persist in the bar when the input reopens and clear on
 the first fresh press. **Triangle** cycles the learned-arts list: closed ->
 page 1 -> ... -> last page -> closed; it is inert when the character's
@@ -1003,8 +1006,9 @@ cost (menu-atlas 8x12 digits, right-aligned ending x=152) through the
 the SCUS arts-name table's own columns
 ([`art-data.md`](../formats/art-data.md#arts-name-table-dat_80075ec4)).
 
-Still unpinned here: the review / Begin-Reselect screens' piece decomposition
-(screenshot-read only). The pennant's cost law and spawn anchor are pinned
+Still unpinned here: the review screen's piece decomposition (screenshot-read
+only). The Begin-Reselect screen's is packet-pinned in
+[`battle.md`](battle.md#the-commit-confirm-screen-0x6e). The pennant's cost law and spawn anchor are pinned
 [below](#the-pennant-geometry-is-linear-in-the-commands-ap-cost); so is the
 **Auto arm**.
 
@@ -1358,8 +1362,9 @@ The **hub screens** draw on both hosts through the shared
 `muscle_hub_quads_json` (screen-selected by the page); the native
 play-window bakes the two hub page TIMs per referenced sub-palette into a
 sprite atlas and runs the same builders itself (`window/minigames.rs`,
-`muscle_hub_sprite_draws`): the intro card + ROUND banner over an open leg,
-the INTERVAL heading + six-row score tally between legs, the tally fed the
+`muscle_hub_sprite_draws`): the hub's first visit (intro strip, wall, title
+zoom, course card, ROUND card) over a fresh contest's first leg, the INTERVAL
+heading + six-row score tally between legs, the tally fed the
 same `DomeContest` rows / tally / coin-bank model on both hosts. *Between
 legs* is the whole of it - see [The intermission is per fight, not per
 turn](#the-intermission-is-per-fight-not-per-turn) for why a turn boundary
@@ -1393,13 +1398,20 @@ it at *twice* retail's brightness.
 | Opponent / ROUND-n card | `0x15` / `0x16` | `+dt*2`, 64 ticks | `0x3D` = 61 ticks (`slti 0x3d`, `0x801CFFB8`) | yes | `-dt*2` |
 | INTERVAL + score tally | `0x0A` / `0x0B` / `0x0C` | `+dt*4`, 32 ticks | the tally roll (data-dependent) | no | `-dt*2` to the `0x40` floor (`slti 0x40`, `0x801CFDAC`), then `-dt*4` |
 
-The `4` / `5` / `6` row was read as the ROUND banner for a while, and the
-port's leg-open banner still runs its envelope (`HubScreen::round_banner`).
-The draws say otherwise: arms `4` and `5` call the course card `FUN_801D042C`
-(records `5 + course` at `(8, 0x78)`, record `8` at `(0xB8, 0x7B)`) at
+The `4` / `5` / `6` row was read as the ROUND banner for a while. The draws
+say otherwise: arms `4` and `5` call the course card `FUN_801D042C` at
 `*(0x801D1A84)` beside the title art at a fixed `0x80`, and arm `6` draws
 nothing but the backdrop it drains. The ROUND banner `FUN_801D02F0` is drawn
-only by arm `0x15`, the opponent-card row.
+only by arm `0x15`, the opponent-card row. `FUN_801D042C` is six
+corner-anchored draws: the course-name strip (record `5 + course`,
+`*(0x801D1A90)`) as variant 1 at `(8, 0x78)`, variant 2 at the same seat and
+variant 2 again at `(0x10, 0x80)`, then record `8` the same way at
+`(0xB8, 0x7B)` / `(0xC0, 0x83)` - a subtractive shadow, an under-layer and an
+additive face once painted in OT order. Arm `3` also starts the card's level
+climbing (`0x801CFA74`, `+dt*2`) while the title zooms, so the card enters
+arm `4` part-lit. Port: `other_game_hud::course_card_draws`; the first visit
+as a whole is `muscle_ringside::FirstVisitHub`
+([`ringside-still.md`](../formats/ringside-still.md#in-the-port)).
 
 A skippable hold reads the arm's pad-edge snapshot `DAT_801D1A9C`
 (`_DAT_8007B874 | _DAT_8007B938`, stored at `0x801CF8C4`) and leaves on any
@@ -1447,6 +1459,19 @@ duel damage kernel `FUN_801D3B18`, the same bank the battle scene loader
 stages). The dome's basic swing commands map to move-power record 0, whose
 per-move sound-cue byte (`+0x0d`) is **0** - so no per-move cue overrides the
 shared impact.
+
+**The bank at the hub is the field's.** A retail state parked at the contest hub
+(`minigame_muscle_dome`, mode `0x19`) has the class-2 slot `2` **closed** and slot
+`6` open over PROT 0876's header - the field bank the warp left behind, since the
+warp clears the latch without closing anything
+([capture](audio.md#retail-capture-of-the-slot-2--slot-6-residency)). So a
+category-`2` cue (row `0x09` included) is silent at the hub. A round is entered
+through the arena's store of mode word `0x14` (below), the value
+`FUN_8001DCF8`'s close-6 / clear-latch arm is keyed on, so a round takes the
+ordinary battle residency - slot 6 closed, PROT 0869 staged into slot 2 - by the
+same path the field-to-battle capture observes; no retail capture of a round's
+residency exists yet. The port's `SceneMode::MuscleDome` is a leg, so
+`World::sync_sfx_residency` gives it the battle arm.
 
 ### Which blip is which (`0x21` / `0x22` / `0x23`)
 
@@ -1569,6 +1594,30 @@ Three independent facts settle it:
   kill whose failure is a game over* - exactly a `4 - turn` readout with the
   boss's own HP percentage next to it.
 
+**Where the four turns end.** No code compares `ctx[+0x28A]` against a bound.
+The limit is Koru's own AI arm: the per-monster AI switch indexes its jump
+table at `0x801CF1CC` by `formation_cell[slot] - 4` (`0x801EA9C0..0x801EA9FC`),
+entry `178` is Koru's (`0x801EB52C`), and that arm switches on the round counter
+(`sltiu v0,v1,5` at `0x801EB540`, table `0x801CF49C`): rounds `0..=3` cast spell
+ids `0xA2`..`0xA5` and round `4` casts `0xA1`, the all-party finisher. The
+engine already runs that arm (`engine-core::monster_ai::decide`, case `0xB6`).
+
+**How long the strip stays up.** It is text actor `1` on the `gp+0x148` list,
+and `FUN_800355F0` drains that list whole in two places: the intro countdown
+arm right before it stores `0x14` (`0x801D0EB4`), and `FUN_801D99BC`
+(`0x801D9A24`), which the `0xFE` arm calls as the round starts to play out
+(`0x801D31E8`). So the strip is up from each round's start until `Begin` - the
+command phase - and gone for the action playback. The ring's cancel back to
+`0x1E` (`0x801D11EC`) and the commit confirm's `Reselect` (`0x801D30E4`)
+re-register it from the two stored bytes.
+
+**Port.** `engine-core::timed_fight` (gate, numbers, lifetime) and
+`legaia_engine_ui::battle_timed_fight_strip` (the draw: the format string off
+the user's PROT 0898 at the registered rect, in the tutorial box's skin, the
+two numbers at `+0x68` / `+0xD2`), drawn by both hosts. The order against the
+`(16, 14)` tab that shares its seat is not pinned - no capture holds the Koru
+fight - and the port draws the strip on top.
+
 Three facts the earlier readings of the *arithmetic* got wrong, each corrected from the disassembly, and all still standing:
 
 - **The multiplier is 100, not `0x6C`.** The compiler emits the `× 100` as a shift-add chain at `0x801d0f38..0x801d0f4c` - `sll 1` (2x), `addu` (3x), `sll 3` (24x), `addu` (25x), `sll 2` (**100x**). Reading only the first three instructions yields `0x6C` (108). Ghidra's own C prints `* 100`, and an independently based dump of the same code (`overlay_0896_801f04b0.txt`) reproduces it.
@@ -1576,6 +1625,31 @@ Three facts the earlier readings of the *arithmetic* got wrong, each corrected f
 - **The percentage is the *opponent's*, not each fighter's own.** It reads `DAT_801c937c`, which is actor-table index 3 - the first **enemy** slot, since the party occupies 0..=2. There is one number on screen, not one per fighter.
 
 `ctx+0x28a` is the shared **battle turn counter**: the battle-action SM's case `0xff` (`FUN_801e295c`) does `ctx[6] = 0x14; ctx[+0x28a] += 1`, i.e. it bumps the counter and parks the round driver on the strip arm. Enemy AI in the same overlay keys its behaviour off the same byte. That is shared battle machinery; only the `0xB6`-gated strip arm is Koru's.
+
+### What the strip looks like in retail
+
+A PCSX-Redux capture draws it
+([`autorun_w1a_koru_strip.lua`](../../scripts/pcsx-redux/autorun_w1a_koru_strip.lua),
+scenario `koru_strip_forced`). The formation is **installed**, not rolled
+or scripted - cells `0x8007BD0C..0F = [0xB6, 0, 0, 0]` and master mode 8
+from a field state, with Gala alone in the party - and the gate reads only
+that cell, so the draw is the one Koru's fight makes.
+
+- **Timeline.** `ctx[+0x28A]` starts at `0` and rises by one per round;
+  each round the round driver's phase byte `ctx[+6]` steps `0x14 -> 0x1E ->
+  0x28 -> 0x3C -> 0x64 -> 0x6E -> 0xFE -> 0xFF`, and `DAT_801F6958` takes
+  its new value (`4, 3, 2, 1, 0` over five rounds) on the `0x14 -> 0x1E`
+  step. `DAT_801F6959` read `100` throughout (the mash never damaged Koru).
+- **Seat.** The strip is one framed window across the top of the frame:
+  its gold border runs from framebuffer column `9` to `309`, top edge on
+  row `11`, the two numbers inside it. The per-actor name plate (`Gala`,
+  `Koru`) sits in the same top-left seat, from column `9`, rows `13..28`.
+- **They never share a frame.** The strip is up while the round's
+  `Begin / Run` prompt is (phase `0x1E` onward); once actions play (phase
+  `0xFF`) it is gone and the acting fighter's name plate holds the seat.
+  Of the run's 27 checkpoints, the three taken at a `Begin / Run` prompt
+  show the strip, the plate shows only in action frames, and no frame
+  shows both.
 
 ## What ends a leg: a knockout, and nothing else
 

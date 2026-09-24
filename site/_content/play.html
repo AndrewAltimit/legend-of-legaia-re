@@ -324,7 +324,7 @@
           <button id="play-step" type="button">Step 1 frame</button>
           <button id="play-recenter" type="button">Reset camera</button>
           <button id="play-fishing" type="button"
-                  title="Start the fishing minigame here (Z casts and reels, V reels harder)">Fish here</button>
+                  title="Start the fishing minigame here (X casts and locks the power, Z and V reel)">Fish here</button>
           <button id="play-fullscreen" type="button" title="Present the viewport full screen (Esc to exit)">&#9974; Fullscreen</button>
           <label class="play-volume" title="Scene BGM output gain (the engine's SPU mixer runs into a WebAudio GainNode)">
             &#9834; <input type="range" id="play-volume" min="0" max="10" step="0.5" value="1">
@@ -483,7 +483,13 @@
       command, a target, an art, a spell or an item from the same menus the native window draws,
       over an HP/MP/AP readout with damage popups. Win and you are back on the field with XP,
       gold and drops. Towns have no encounter table and stay peaceful.</li>
-    <li><strong>Fishing.</strong> <em>Fish here</em> starts the minigame on the spot.</li>
+    <li><strong>Fishing.</strong> <em>Fish here</em> starts the minigame on the spot - the same
+      retail loop the <a href="minigames.html">minigames page</a> runs, with your points, casts
+      and lure carried between sessions. <kbd>X</kbd> casts and locks the power meter,
+      <kbd>Z</kbd> and <kbd>V</kbd> reel (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-fishing.md">fishing</a>).</li>
+    <li><strong>The overworld.</strong> Picking a kingdom map walks it with the world-map
+      controller: step-driven encounters, ports and town doors
+      (<a href="subsystems/world-map.html">world map</a>).</li>
   </ul>
   <h3>Not here yet</h3>
   <ul>
@@ -500,7 +506,9 @@
       Dome and the dance floor are playable standalone on the
       <a href="minigames.html">minigames page</a> but not from their cabinets here. Start leaves
       any minigame from anywhere.</li>
-    <li><strong>The overworld.</strong> World-map walking is a different controller; the
+    <li><strong>The overworld's placed figures.</strong> Each town, port and encounter zone
+      on a kingdom map draws as a coloured post rather than its retail model, on both hosts,
+      and the posts show through mountains in front of them. The
       <a href="world-overview.html">world overview</a> shows the continents.</li>
   </ul>
   <p class="hint">
@@ -1868,7 +1876,7 @@
   /* Fishing minigame. The engine suspends whatever mode the scene is in and
      restores it on exit, so this works from any staged scene - the disc's own
      species table (the fishing overlay) decides what bites. The HUD is the
-     retail draw list; Z / V are the reel buttons the ported driver reads. */
+     retail draw list; X casts, Z / V are the reel buttons the ported driver reads. */
   const fishBtn = document.getElementById('play-fishing');
   const syncFishBtn = () => {
     const on = !!(view && view.fishingActive());

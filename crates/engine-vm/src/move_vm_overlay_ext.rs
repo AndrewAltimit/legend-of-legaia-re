@@ -1,8 +1,9 @@
 //! Overlay-resident move-VM extension dispatcher (`FUN_801D362C`).
 //!
 //! PORT: FUN_801D362C
-//! REF: FUN_801D31B0 (the strip emitter sub-op 0x2C calls - not ported;
-//!      [`MoveVmExtHost::emit_strip`] is a no-op hook)
+//! REF: FUN_801D31B0 (the strip emitter sub-op 0x2C calls - ported as
+//!      [`crate::move_ext_strip`]; this walker's [`MoveVmExtHost::emit_strip`]
+//!      stays a no-op hook)
 //!
 //! `FUN_801D362C` is the dispatcher reached from the move-VM
 //! (`FUN_80023070`) when the outer move-VM opcode is `0x2F` (overlay
@@ -51,33 +52,23 @@
 //! read it as a default-next branch hint (0x13 / 0x14, which
 //! `j 0x801d4838`) read it out of the move program itself.
 //!
-//! ## Scrolling-strip opcodes (sub-ops 0x2B..0x2E)
+//! ## Strip-emitter opcodes (sub-ops 0x2B..0x2D) and the packet op 0x2E
 //!
-//! Four sub-opcodes drive the per-scanline POLY_FT4 strip emitter
-//! `FUN_801D31B0` and its slab/UV/GPU-mode state:
+//! | sub-op | role                                                              | size |
+//! | ------ | ----------------------------------------------------------------- | ---- |
+//! | 0x2B   | Set the strip's box + wobble: `op[2..5]` to `slab[+0x18..+0x1E]`  | 6    |
+//! | 0x2C   | Call the scanline strip emitter `FUN_801D31B0` (operands unread)  | 7    |
+//! | 0x2D   | Add `op[2..5]` to `slab[+0x18..+0x1E]`                            | 6    |
+//! | 0x2E   | Build a textured-sprite packet from `op[2..]` and link it         | 13   |
 //!
-//! | sub-op | role                                                          | size |
-//! | ------ | ------------------------------------------------------------- | ---- |
-//! | 0x2B   | Set slab UV bounds: writes `op[2..5]` to `slab[+0x18..+0x1E]` | 6    |
-//! | 0x2C   | Invoke per-scanline POLY_FT4 strip emitter (`FUN_801D31B0`)   | 7    |
-//! | 0x2D   | Increment slab UV bounds by `op[2..5]`                        | 6    |
-//! | 0x2E   | Build GP0 TPage/CLUT packet from `op[2..]`                    | 13   |
-//!
-//! `FUN_801D31B0` is shared across many overlays (dialog, cutscene,
-//! 0897 field, world-map) - it is **not** a continent-specific
-//! function. The body (`0x801D31B0..0x801D362C`, 1148 bytes; an earlier
-//! note said 832) is called as `FUN_801D31B0(actor, insn)`: it projects
-//! `actor[+0x14]` through `FUN_8005BA38`, then emits a wrapping tiled strip
-//! of POLY_FT4s from the slab descriptor at `actor[+0x9C]` (`+0xC..+0x1A`:
-//! UV bounds, tpage, clut, line height), scrolled by `actor[+0x24]` /
-//! `actor[+0x28]`, linked through `FUN_8003D2C4` with the draw mode from
-//! `FUN_80059010`. None of that is ported: the sub-op decodes its five
-//! operands into the host hook and nothing draws. Dialog overlays use it for scrolling
-//! text-strip backgrounds; the world-map overlay variant has been
-//! observed mapped to op-0x2C in the JT but has not been observed
-//! dispatched during world-map render in any captured state (the
-//! bulk continent prims in the world-map's prim pool come from a
-//! different emitter that is still under investigation).
+//! `slab = actor + 0x9C`. `slab[+0x18..+0x1E]` is the emitter's box
+//! half-extent and wobble amplitude / frequency, not UV bounds; the texture
+//! rect it tiles is `slab[+0x0C..+0x12]`. `FUN_801D31B0` is field-overlay
+//! code with one reference on the disc (this arm's `jal`), and it never reads
+//! the instruction pointer it is passed, so the five operand words are
+//! padding. The routine and the census showing no shipped move program
+//! issues `0x2C` are in [`crate::move_ext_strip`] and
+//! `docs/subsystems/move-vm-overlay-ext.md`.
 //!
 //! The remaining 54 unique opcodes are advance-only stubs by default.
 //! Engines that want to track e.g. flag writes can override the host
@@ -103,16 +94,20 @@ pub const HALFWORD: usize = 2;
 
 /// Slab descriptor offsets relative to the actor's `+0x9C` base.
 ///
-/// These are the fields the per-scanline POLY_FT4 strip emitter
-/// (`FUN_801D31B0`) reads. The drawing VM mutates the UV bounds
-/// (`+0x18..+0x1E`) via sub-ops 0x2B / 0x2D; everything else is set up
-/// either by the controller or by sub-op 0x2E (TPage/CLUT packet build).
+/// These are fields the per-scanline POLY_FT4 strip emitter
+/// (`FUN_801D31B0`) reads. Sub-ops 0x2B / 0x2D write `+0x18..+0x1E`, which
+/// the emitter reads as its box half-extent and wobble amplitude /
+/// frequency; the texture rect it tiles is `+0x0C..+0x12`
+/// ([`crate::move_ext_strip::StripSlab`]). The `UV_BOUNDS_*` names are the
+/// historical ones.
 pub mod slab {
     /// `slab[+0x14] = tpage` (PSX GPU TPage word).
     pub const TPAGE: usize = 0x14;
     /// `slab[+0x16] = clut` (PSX GPU CLUT word).
     pub const CLUT: usize = 0x16;
-    /// `slab[+0x18..+0x1E]` = scrolling UV bounds (u16 x4).
+    /// `slab[+0x18..+0x1E]` = the strip's half-width, half-height, wobble
+    /// amplitude and wobble frequency (u16 x4) - named "UV bounds"
+    /// historically.
     pub const UV_BOUNDS_START: usize = 0x18;
     pub const UV_BOUNDS_END: usize = 0x1E;
 }
@@ -226,30 +221,27 @@ pub fn canonical_size(sub_op: u16) -> Option<u16> {
 /// run the VM in "advance-only" mode (validating that every byte
 /// parses) before wiring up the renderer.
 pub trait MoveVmExtHost {
-    /// Sub-op 0x2B - set slab UV bounds.
+    /// Sub-op 0x2B - set the slab's `+0x18..+0x1E` words.
     ///
     /// Writes `args` directly to the slab descriptor at offsets
-    /// `+0x18..+0x1E` (origin u + origin v + end u + end v). The slab
-    /// descriptor lives at `actor[+0x9C]` in the original.
+    /// `+0x18..+0x1E` - the strip emitter's half-width, half-height,
+    /// wobble amplitude and wobble frequency. The slab descriptor lives at
+    /// `actor[+0x9C]` in the original.
     fn slab_uv_set(&mut self, _args: [u16; 4]) {}
 
-    /// Sub-op 0x2D - increment slab UV bounds by `args`.
+    /// Sub-op 0x2D - add `args` to the slab's `+0x18..+0x1E` words.
     ///
-    /// Used by scroll/anim ticks to advance the texture window per
-    /// frame. The wrap is unsigned u16 wrap (handler is `lhu / addu /
-    /// sh`).
+    /// The wrap is unsigned u16 wrap (handler is `lhu / addu / sh`).
     fn slab_uv_inc(&mut self, _args: [u16; 4]) {}
 
     /// Sub-op 0x2C - invoke the per-scanline POLY_FT4 strip emitter
-    /// (`FUN_801D31B0`).
+    /// (`FUN_801D31B0`, ported as [`crate::move_ext_strip::emit_strip`]).
     ///
     /// The full instruction is 7 halfwords (14 bytes) - including the
-    /// outer `0x2F` op + inner `0x2C` sub-op header at +0..+4. Args
-    /// `op[2..7]` (5 halfwords) are the emitter parameters; their
-    /// precise role lives inside `FUN_801D31B0` and is not relevant
-    /// to the VM walk. `FUN_801D31B0` is a shared scrolling-strip
-    /// helper used by dialog / cutscene / 0897 field / world-map
-    /// overlays, not a continent-specific function.
+    /// outer `0x2F` op + inner `0x2C` sub-op header at +0..+4. The five
+    /// words `op[2..7]` are handed over as read, but the emitter itself
+    /// never reads them: its inputs are the actor's slab window and render
+    /// banks.
     fn emit_strip(&mut self, _args: [u16; 5]) {}
 
     /// Sub-op 0x2E - build GP0 TPage/CLUT packet.

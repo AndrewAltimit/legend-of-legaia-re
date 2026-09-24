@@ -22,7 +22,7 @@ use legaia_engine_core::world::{SceneMode, World};
 
 /// The captured S4 warp end-state: world `(3264, 3520)` = tile `(25, 27)`.
 const S4_LAND: (u16, u16) = (3264, 3520);
-const S4_FINGERPRINT: &str = "a89f131f74811b56ef12146fcae0f49867f2a3307941a39c292bbd15831c890e";
+const S4_FINGERPRINT: &str = "820f1418028a3a26f6acc39d63ab6fa070c9d21be3dd7f8ef4d17f8e05dc80af";
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {

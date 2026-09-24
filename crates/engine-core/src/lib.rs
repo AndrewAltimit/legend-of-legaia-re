@@ -158,12 +158,14 @@ pub mod tactical_arts_editor;
 pub mod target_picker;
 pub mod text_balloon;
 pub mod tile_board;
+pub mod timed_fight;
 pub mod title;
 pub mod title_screen_atlas;
 pub mod vdf_pulse;
 pub mod walk_regen;
 pub mod world;
 pub mod world_map;
+pub mod world_map_markers;
 
 pub mod float_tween;
 

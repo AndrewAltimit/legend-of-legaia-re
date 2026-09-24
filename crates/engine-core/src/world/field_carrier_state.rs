@@ -34,7 +34,7 @@ pub struct FieldCarrierState {
     pub slots: std::collections::HashMap<u8, usize>,
     /// A scripted-encounter carrier whose dialogue the player opened via a
     /// field-interact and which engages when that dialogue is dismissed (the
-    /// accept). Set in `crate::world::vm_hosts`'s `field_interact`, consumed
+    /// accept). Set in `World::trigger_field_interact`, consumed
     /// by the dialog-advance dismiss (`op 0x4C n5 sub-4`). `None` when no
     /// scripted carrier's prompt is up.
     ///

@@ -254,3 +254,13 @@ fn the_halt_bit_is_the_one_move_vm_op_08_sets() {
     assert_eq!(PART_ACTOR_HALT_FLAG, 0x8);
     assert_eq!(PART_POOL_SLOTS, 0x80);
 }
+
+#[test]
+fn template_model_index_adds_the_scene_base_only_for_model_words() {
+    assert_eq!(template_model_index(3, 0x20), 0x23);
+    assert_eq!(template_model_index(0x4000, 0x20), 0);
+    assert_eq!(template_model_index(0x4001, 0x20), 0);
+    assert_eq!(template_model_index(0x8000, 0x20), 0);
+    // 0x4002 is a model word like any other positive value.
+    assert_eq!(template_model_index(0x4002, 0x20), 0x4022);
+}

@@ -216,11 +216,16 @@ fn a_captured_seru_banks_at_teardown_and_commits_the_learn_to_the_record() {
         press(&mut w, PadButton::Cross); // spell row 0 (Reseal) -> target
         press(&mut w, PadButton::Cross); // target confirm -> the commit
         casts += 1;
-        for _ in 0..3 {
-            if w.battle.command.is_none() {
-                break;
+        // The last commit raises the party's Begin | Reselect (`0x6E`);
+        // Cross takes its highlighted Begin.
+        for _ in 0..4 {
+            match w.battle.command.as_ref().map(|c| &c.phase) {
+                None => break,
+                Some(legaia_engine_core::battle_input::CommandPhase::CommitConfirm { .. }) => {
+                    press(&mut w, PadButton::Cross)
+                }
+                Some(_) => press(&mut w, PadButton::Down),
             }
-            press(&mut w, PadButton::Down);
         }
         // Run the cast band out so the capture roll folds.
         for _ in 0..0x400 {

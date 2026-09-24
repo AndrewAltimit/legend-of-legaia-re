@@ -64,7 +64,7 @@ impl World {
     /// On an abort (no valid target) it falls back to the first living monster
     /// so the loop never deadlocks.
     pub(in crate::world) fn tick_battle_command(&mut self) {
-        use crate::battle_input::{BattleCommandInput, Resolution};
+        use crate::battle_input::{BattleCommandInput, CommandPhase, Resolution};
         use crate::battle_round::PendingPartyAction;
         use crate::input::PadButton;
         use crate::target_picker::CursorRow;
@@ -89,7 +89,18 @@ impl World {
             // The ring's Attack arm reads the option word with the pad.
             select_attack: self.toggles.select_attack,
         };
+        let was_round_prompt = matches!(session.phase, CommandPhase::RoundPrompt { .. });
         session.input(ev, party, monsters);
+        // `Begin` with nobody able to act: retail's round-prompt confirm arm
+        // finds `FUN_801DBA04` equal to the party count and stores the commit
+        // confirm `0x6E` directly (`0x801D10A0`, step `0x27`) instead of
+        // opening a ring nobody can use.
+        if was_round_prompt
+            && matches!(session.phase, CommandPhase::Menu { .. })
+            && self.next_member_owing_command(None).is_none()
+        {
+            session.phase = CommandPhase::CommitConfirm { cursor: 0 };
+        }
         // Target-cursor tint: retail stamps the four monster slots bright /
         // dimmed while the cursor is walking them and clears the tint the
         // moment it closes.
@@ -119,7 +130,10 @@ impl World {
                 // Retail's state-50 handler rejects Run unconditionally for the
                 // whole sparring fight.
                 Resolution::RunAway => self.set_battle_flow(Flow::EscapePrompt),
-                Resolution::Aborted | Resolution::StepBack => false,
+                Resolution::Aborted
+                | Resolution::StepBack
+                | Resolution::BeginRound
+                | Resolution::Reselect => false,
             };
             if rejected {
                 self.open_battle_command(session.actor);
@@ -227,6 +241,10 @@ impl World {
                 self.commit_party_command(actor, PendingPartyAction::Attack { target });
             }
             Some(Resolution::StepBack) => self.step_back_battle_command(session.actor),
+            // The commit-confirm screen (`0x6E`): Begin plays the round out,
+            // Reselect walks the member cursor back to the last member's ring.
+            Some(Resolution::BeginRound) => self.begin_round_execution(),
+            Some(Resolution::Reselect) => self.reselect_battle_commands(session.actor),
             None => {
                 // Still selecting - keep the session open for the next frame.
                 self.battle.command = Some(session);
@@ -280,6 +298,9 @@ impl World {
     /// REF: FUN_801EED1C
     pub(in crate::world) fn seed_basic_attack_queue(&mut self, actor: u8, target: u8) -> usize {
         let swing_class = self.attack_swing_class_of(target);
+        // `FUN_801EED1C`'s head clears `0x801F696C` (`0x801EED88`); the
+        // no-directional-input arm sets nothing.
+        self.battle_ctx.super_trigger = false;
         let mut queue = [0u8; vm::battle_action::ACTION_QUEUE_CAP];
         let written =
             vm::battle_action::basic_attack_queue(&mut queue, swing_class, &mut || self.next_rng());
@@ -695,8 +716,16 @@ impl World {
             }
         }
         let miracle_armed = self.miracle_marker_armed_for(roster);
-        let marks =
-            vm::battle_action::finish_action_queue(character, commands, miracle_armed, &mut bytes);
+        // The builder's special-trigger flag `0x801F696C` (cleared at its
+        // head, set by the Miracle and Super arms) rides out on the context
+        // for the strike loop's drift gate.
+        let (marks, trigger) = vm::battle_action::finish_action_queue_with_trigger(
+            character,
+            commands,
+            miracle_armed,
+            &mut bytes,
+        );
+        self.battle_ctx.super_trigger = trigger;
         let actions: Vec<ActionConstant> = bytes
             .iter()
             .take_while(|&&b| b != 0)

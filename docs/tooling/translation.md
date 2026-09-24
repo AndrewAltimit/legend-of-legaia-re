@@ -78,10 +78,15 @@ legaia-patcher translate import --input "Legend of Legaia (USA).bin" \
 Entries with an empty `translation:` are left byte-identical on the disc, so a
 partially filled pack is always playable. Import is idempotent (re-running the
 same pack over a patched image applies nothing) and incremental (fill more
-entries, re-import onto a fresh copy). When a scene's dialog no longer
-recompresses into its MAN's on-disc footprint (translated text is less
-repetitive than the source), import rolls back that scene's longest lines one at
-a time rather than dropping the whole scene - or, with
+entries, re-import onto a fresh copy). A translation-only pack has no source
+text to prove a line is the one it was written for, so once any keyed line of
+a scene no longer sits where the pack expects it (an earlier import relocated
+the scene, or another patch moved it) the whole scene is skipped rather than
+risk a line landing on a neighbour of the same length. When a scene's dialog
+no longer recompresses into its MAN's on-disc footprint (translated text is
+less repetitive than the source), import first re-fits the scene at exact line
+lengths through the relocator, then rolls back the lines that grow it most
+rather than dropping the whole scene - or, with
 `import --allow-relayout`, grows the overflowing scene MAN by whole sectors via
 a full-ISO relayout so the dialog imports byte-faithfully (the image grows, so
 this writes `--output`, not a same-size `--patch`; built for the official PAL
@@ -186,17 +191,18 @@ Sections and their patch mechanisms:
 
 | Section | Contents | Key shape | Mechanism |
 |---|---|---|---|
-| `items` | item names (MES `{c2:xx}`/`{c4:xx}` substitutions) | `scus:str:0x<va>` | overwrite the NUL-terminated string in `SCUS_942.54` in place, re-terminate |
+| `items` | item names (MES `{c2:xx}`/`{c4:xx}` substitutions) | `scus:str:0x<va>` | overwrite the NUL-terminated string in `SCUS_942.54` in place, re-terminate (a short write zero-fills the rest of the old span) |
 | `item_types` | shared item "type" strings (second record pointer) | `scus:str:0x<va>` | same |
-| `spells` | spell/magic names (`{c3:xx}`) | `scus:str:0x<va>` | same |
-| `arts` | Tactical Arts names (`{c5:xx}`) | `scus:str:0x<va>` | same |
+| `spells` | spell/magic names (`{c3:xx}`) and the info window's `Name\|effect` descriptions (the pointer table `0x80075DB0` the record's `+4` byte indexes) | `scus:str:0x<va>` | same |
+| `arts` | Tactical Arts names (`{c5:xx}`) and the arts-menu descriptions (record `+0x10`) | `scus:str:0x<va>` | same |
 | `accessory_passives` | Goods-menu passive names + descriptions | `scus:str:0x<va>` | same |
 | `party_names` | new-game roster names (Vahn/Noa/Gala/Terra) | `scus:party:<n>` | fixed 10-byte NUL-padded field (9-byte budget) |
 | `scene_dialog` | NPC/event dialog in the scene-bundle MANs | `man:<prot>:0x<off>` | edit the `0x1F`-segment inside the LZS-decompressed MAN (space-padded to its exact length), recompress, must fit the original compressed footprint |
 | `inline_text` | dialog/narration in raw carriers (v12 event-script prescripts, streaming-MAN dungeon scenes) | `raw:<prot>:0x<off>` | space-padded same-size overwrite directly in the PROT entry; in a streaming dungeon scene a longer line grows the uncompressed MAN chunk instead (relocated like a scene MAN, later chunks shifted) - within the entry's sector slack, or by whole sectors with `--allow-relayout` |
-| `ui_menu` | overlay-resident UI strings: pause-menu / options / shop / equip / status command labels, in-battle system messages, the field overlay's shop / inn / name-select prompts, the sparring-tutorial prompts, the steal and fatal-decision result lines | `ui:<prot>:0x<va>` | overwrite the NUL-terminated string in the PROT **overlay** entry in place at `file offset = va - base_va`, re-terminate (short writes zero-fill the old span) |
-| `system_text` | `SCUS_942.54` system strings outside the name tables: the pause menu's empty-list messages and equipment-slot names, battle steal / spoils result lines, the sparring-tutorial opener, the equip-screen `Remove` / `Save` labels | `scus:str:0x<va>` | same as the name tables (span + alignment padding), from pinned VA windows (`translation::ui::SCUS_STRING_POOLS`) |
+| `ui_menu` | overlay-resident UI strings: pause-menu / options / shop / equip / status command labels, in-battle system messages and help lines, the Seru-magic effect lines, the field overlay's shop / inn / record-screen / name-entry prompts, the Delilas-bout preamble, the memory-card messages, the sparring-tutorial prompts, the steal and fatal-decision result lines | `ui:<prot>:0x<va>` | overwrite the NUL-terminated string in the PROT **overlay** entry in place at `file offset = va - base_va`, re-terminate (short writes zero-fill the old span) |
+| `system_text` | `SCUS_942.54` system strings outside the name tables: the pause menu's empty-list messages and equipment-slot names, the battle command chips (`Attack` / `Item` / `Run` / `Begin` / `Auto` / `Command`), the level-up lines, `All Allies` / `Reselect`, battle steal / spoils result lines, the sparring-tutorial opener, the equip-screen `Remove` / `Save` labels | `scus:str:0x<va>` | same as the name tables (span + alignment padding), from pinned VA windows (`translation::ui::SCUS_STRING_POOLS`) |
 | `place_names` | world-map quick-travel place names (`legaia_asset::worldmap_menu`) | `scus:cell:0x<va>` | fixed `0x20`-byte NUL-padded cell (31-byte budget) |
+| `monster_names` | enemy names: the battle name plaque and every battle line that names the enemy | `mon:<id>` | rewrite the name inside monster `id`'s record in the monster archive (PROT 867) and re-pack its fixed slot - see [Monster names](#monster-names) |
 
 Strings pointer-shared by several table slots export once (the `context`
 lists the referencing ids); interior pointers clamp the `budget`. Duplicate
@@ -246,8 +252,12 @@ capped by `budget`:
   is re-terminated; bytes past the NUL are never read).
 - Dialog segments: same-size in place is the fast default - shorter
   translations are space-padded so the `0x1F ... 0x00` framing (and every
-  script offset around it) never moves. When a line overflows its own span,
-  the importer tries the **generalized rewriter** escape hatch: it grows every
+  script offset around it) never moves. A dialog line's `budget` is therefore
+  the English line's length, a hint, not a bound. When a line overflows its
+  own span, or when the space-padded scene no longer recompresses (padding
+  every shorter line back to the English length spends bytes a zero-slack
+  footprint does not have), the importer tries the **generalized rewriter**
+  escape hatch: it grows every
   filled segment in that scene MAN to full length and relocates all crossing
   references (partition tables, `u24_at_28`, straddling relative jumps -
   `man_edit::apply_text_edits`), verified as the same program by re-walking
@@ -264,10 +274,18 @@ capped by `budget`:
   window) when the fast greedy parse just misses the budget. The retail scene
   entries are sector-aligned with **zero compressed slack**, though, so an
   in-place grow only fits when the rewritten MAN recompresses no larger than
-  the original; a scene that still overflows falls back to same-size and rolls
-  back its longest lines one at a time (each with a per-key diagnostic) - shorten
-  the reported lines and re-run, or land the disc-level +1-sector relayout the
-  [PAL fit report](pal-localizations.md) motivates.
+  the original. A scene that overflows at full length is re-fitted with lines
+  rolled back to the source text, the ones that grow the MAN most first, a
+  batch sized by the measured overflow at a time (`fit_man_in_footprint`), so
+  a scene a few bytes over loses a line or two; only a scene the relocator
+  refuses outright falls back to the padded write and its longest-first
+  rollback. Each rolled-back line carries a per-key diagnostic - shorten the
+  reported lines and re-run, or use the whole-sector relayout
+  (`--allow-relayout`) the [PAL fit report](pal-localizations.md) motivates.
+  A shipped pack is the set of lines a same-size import of its full pack
+  actually writes, never a per-line budget filter: a line over its English
+  length usually fits once the scene is relocated, and a set of in-budget
+  lines can still overflow the scene when padded.
 
 `translate stats` checks all of this offline. On import each target is also
 verified against the pack's `source`; a mismatch (wrong disc revision, or a
@@ -308,8 +326,9 @@ Covered: the SCUS name tables (items, item types, spells, Tactical Arts,
 accessory passives, party names), the `0x1F`-segment dialog corpus (scene
 bundles + raw event-script carriers) - NPC dialog, cutscene dialog and
 narration, picker labels, chest flavor text - the overlay-resident UI strings
-(`ui_menu`), the SCUS system strings outside the name tables (`system_text`)
-and the world-map place-name cells (`place_names`).
+(`ui_menu`), the SCUS system strings outside the name tables (`system_text`),
+the world-map place-name cells (`place_names`) and the enemy names
+(`monster_names`).
 
 The `ui_menu` pools are NUL-terminated C strings in overlay data segments
 rather than in any table or dialog segment, pinned by disc-coordinate VA
@@ -325,17 +344,60 @@ overlay occupies; see [`field-menu.md`](../subsystems/field-menu.md) and
 | field, PROT 0897 | `0x801CF6AC..` | the new-game name-select prompts |
 | battle tutorial, PROT 0967 | `0x801F7684..` | the sparring-tutorial prompts (`docs/subsystems/battle.md`) |
 | cast modules 0941 / 0954 | `0x801F83A0..` / `0x801F8F30..` | steal results; `MP zero` / `Items lost` / `Gold lost` |
+| battle, PROT 0898 (strict) | `0x801CE818..`, `0x801CED18..`, `0x801CF638..`, `0x801F6844..` | `Turns Left:` / `HP Left:`, the Hyper Arts list help, `Counterattack successful!` / `Points returned`, the Seru-magic effect lines, ` ran away.` |
+| field, PROT 0897 (strict) | `0x801CF51C..`, `0x801CF650`, `0x801CF698`, `0x801CF748` | the record screen, `Give up?`, the name-entry `Is this name okay?`, `[Nameless]` |
+| menu, PROT 0899 (strict) | `0x801CEC78..`, `0x801CEF18..` (three windows) | the Delilas-bout preamble, the memory-card / save messages |
 
 They are tight: a pool is 4-byte aligned with little slack, so a same-size
 translation of a short label (`@Items` is six bytes) can be shorter than English
 but rarely much longer, and a lifted line that overflows stays English until a
-translator abbreviates it - the in-battle `Attack` / `Arts` / `Magic` / `Item`
-command ring is drawn as UI-icon sprites (no text string to translate).
+translator abbreviates it.
+
+### Strict pools
+
+A **strict** pool (`UiStringPool::strict`) covers a window that mixes
+player-facing strings with debug `printf` formats and pointer tables. It walks
+each string token-aware - the name token `{c1:00}` carries a `0x00` argument
+that is not the terminator, so a NUL-to-NUL scan cuts `{c1:00}'s level
+increased!` in two - and keeps a chunk only when it reads as UI text (glyphs and
+tokens only, two letters, no `%d`-style conversion, no underscore); a label a
+pointer table runs into without a NUL is keyed on its text. The import reads
+the same way, so a strict string's budget and wrong-disc guard see the whole
+string.
+
+The battle command chips are text, not icon art: each is the payload string of
+a [screen-element placement record](../reference/memory-map.md#0x80076c10---one-table-three-names)
+(`Attack`, `Item`, `Run`, `Begin`, `Auto`, `Command` in the executable's
+small-data pool; the magic arm draws the character's Ra-Seru name from the
+battle pool; see [`battle.md`](../subsystems/battle.md#where-the-words-come-from)).
+They are four to eight bytes each, so a translation abbreviates.
+
+### Monster names
+
+A monster's name lives in its own record (`legaia_asset::monster_archive`,
+PROT 867): the decoded block's `+0x00` word is the block-relative offset of the
+name, and the battle loader `FUN_80054CB0` copies the whole string into the
+actor's name buffer, from which the plaque and the battle lines read it. The
+section exports every populated record as `mon:<id>`; the source keeps its
+markup - a leading element-badge escape `^X` (exported as the `{5e:xx}` token,
+drawn as badge `X - 'A'`) and a trailing ` $N` variant suffix (the plaque copy
+stops at `$`) - and a translation keeps both.
+
+The budget is the record's own room: from the name to the lowest block-relative
+offset any of the record's pointer words (`+0x04`, `+0x08`, the spell-offset
+array and the effect-offset table ahead of the name) addresses above it, less
+the terminator, and never more than the longest retail name (fifteen bytes) -
+the loader's copy is unbounded, so no name outgrows what retail already puts in
+the actor's buffer. Import decodes the slot, rewrites the name (the rest of the
+old span zeroed), and re-packs the block into its fixed `0x14000`-byte slot, so
+no other slot and no PROT offset moves; every stat reads back unchanged. A
+monster name takes printable glyphs only. Test:
+`crates/patcher/tests/translation_monster_names_real.rs`.
 
 Not covered (out of scope for this pipeline):
 
 - textures with baked-in text (title screen, save/load UI, boot logos, the
-  in-battle command ring); these are enumerated with their footprint
+  opening's `It was the Seru.` caption); these are enumerated with their footprint
   constraints under [Textures with baked-in text](#textures-with-baked-in-text)
   below;
 - the world-map label table trailing each kingdom MAN and each scene MAN's
@@ -369,7 +431,6 @@ The text-bearing textures on the retail disc:
 | Title menu `NEW GAME` / `CONTINUE` | title overlay (inside PROT entry 0899 at `+0xEB44`) | rendered at runtime from the **dialog-font glyph atlas**, not a baked band (retail ignores the embedded footer band) | So this is *text*, but it lives in the title overlay code region the pipeline does not address by coordinate. Follow-up: pin the two label strings' VA window like a `ui_menu` pool. |
 | Save/Load UI | PROT 0899 `+0x16908` (`SLOT n` pill) + the pre-`init_data` `PROT.DAT` gap (`Load` panel TIM) + the title-overlay memcard atlas `0x801E5120` | baked `SLOT 1..` pill label, the `Load` panel wordmark, and Japanese memcard strings in the atlas | Small 4bpp TIMs at fixed offsets; a same-footprint pill/panel swap is feasible. See [`save-screen.md`](../subsystems/save-screen.md). |
 | Config-screen TIMs | PROT 0899 `+0x169DC` / `+0x1F91C` | small option-screen chrome TIMs that sit after the config **string** pool (the strings are the `ui_menu` menu labels, already translatable) | Chrome art; only replace if a label is baked rather than drawn from the string pool. |
-| In-battle command ring | battle overlay UI-icon sprites | `Attack` / `Arts` / `Magic` / `Item` are drawn as **icon sprites**, not text | No string exists; a worded localization would need new icon art. This is why the `ui_menu` battle pool covers `Spirit` / `Defense` / `Escape` / `Begin` (real strings) but not the four ring commands. |
 | Boot / publisher logos | PROT 0895 `init.pak` (`legaia_asset::init_pak`) - PROKION, SCEA / Sony | brand logos ("licensed by", studio marks) | **Do not alter** - trademark art, not localizable text. Listed only so a sweep does not mistake them for translatable UI. |
 | Opening prologue caption | opening-sequence baked caption TIM (the narration **crawl** itself is `0x1F`-framed text and *is* covered via the dialog corpus) | a baked caption still shows English under the crawl | The crawl narration translates through `scene_dialog` / `inline_text`; only the baked caption TIM would need an art swap. |
 

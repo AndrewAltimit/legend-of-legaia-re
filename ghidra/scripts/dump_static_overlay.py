@@ -332,7 +332,7 @@ RANGES = {
     # with something else in the delay slot, and a matcher that only looks at
     # the delay slot reports every one of those functions as unterminated.
     "overlay_gameover_0902": [("801ceb50", "801cec44")],
-    "overlay_fishing_0972": [("801cf070", "801cf3bc")],
+    "overlay_fishing_0972": [("801cf070", "801cf3bc"), ("801d71c0", "801d71d4")],
     "overlay_other2_dev_0973": [("801ce8a0", "801ce8ec"), ("801ce8ec", "801ceb58"),
                                 ("801ceb58", "801cefd0")],
     "overlay_other3_dev_0974": [("801ce85c", "801ced68"), ("801ced68", "801cee80"),
@@ -403,7 +403,9 @@ RANGES = {
     # own image. The pre-existing dumps of these VAs are `overlay_muscle_dome_*`
     # and `overlay_0897_*`; the first is the same bytes under a capture-derived
     # name, the second is a VA collision with entirely different functions.
-    "overlay_battle_action_0898": [("801f1ed4", "801f2160"), ("801f2160", "801f2410")],
+    "overlay_battle_action_0898": [("801f1ed4", "801f2160"), ("801f2160", "801f2410"),
+                                   ("801d0290", "801d02c0"), ("801ec3e4", "801eed1c"),
+                                   ("801f463c", "801f46c8")],
     # PROT 0977's arena init and its settlement routine, dumped from the BASED
     # image. Both VAs already had a dump and neither was usable as a byte claim:
     # the 0x801CEA6C one is a header-less "raw window" (no entry, no size), and
@@ -423,7 +425,26 @@ RANGES = {
     # the consensus in check-port-provenance.py narrowed to the wrong body and
     # reported this module's port tag as an orphan. A VA that two images own
     # needs a base-attributed dump from EACH of them, not a waiver.
-    "overlay_menu_0899": [("801d6d38", "801d6e18")],
+    "overlay_menu_0899": [("801d6d38", "801d6e18"), ("801dd088", "801dd0c0")],
+    # Byte-account residue that was code with no dump over it, each a body the
+    # frame partition bounds from its own bytes (the account's `plausible_mips`
+    # runs). Five are frameless leaves that open right after the previous
+    # routine's `jr ra` + delay slot: PROT 0898's battle-overlay RNG
+    # 0x801D0290 (five internal `jal`s; ported as engine-vm `overlay_rng`
+    # without a dump), PROT 0899's byte-table search 0x801DD088 (walks the
+    # 255-byte table at 0x801E4A88 for `a0`), PROT 0972's flag-clear leaf
+    # 0x801D71C0, and PROT 0970's 0x801D06DC, which follows its own state word
+    # 0x801D06D8 and forms that address itself. The other three replace dumps
+    # carved short: PROT 0898's 0x801F463C printed 25 of its 35 instructions
+    # (own `jr ra` at 0x801F46C0); PROT 0898's 0x801EC3E4 stopped at
+    # 0x801EEAFC, where Ghidra promoted the switch ladder's join label
+    # 0x801EEB60 and the thunk above it to functions and left the arms
+    # 0x801EEB04..0x801EEB60 in no body (the frame `-0x50` at 0x801EC3EC
+    # closes at the `jr ra` 0x801EED14); and PROT 0897's 0x801DD9D4, whose only
+    # dump names entry 0x801DD8F0 in its header, with an extent that stops 0x88
+    # bytes short of the `jr ra` at 0x801DDC18.
+    "overlay_field_0897": [("801dd9d4", "801ddc20")],
+    "overlay_cutscene_str_0970": [("801d06dc", "801d070c")],
 }
 
 # {program label: [(start VA, end VA exclusive), ...]} for images that DO have

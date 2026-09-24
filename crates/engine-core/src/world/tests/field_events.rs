@@ -12,18 +12,17 @@ fn dialog_advance_halts_then_clears_on_just_pressed_cross() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
 
-    // Open dialogue via the field-interact path (the real opener), then arm a
+    // Open dialogue via the interaction path (the real opener), then arm a
     // poll (4C 54) followed by a sentinel op.
-    // 0x3E 0x05 0x03: field-interact (op0<100) on actor slot 3 -> opens its
-    //   seeded inline dialogue (3 bytes).
     // 0x4C 0x54: dialog-advance poll (2 bytes).
     // 0x00: sentinel that makes `step_field` advance further once the dialog
     //   clears.
     world.npcs.dialog.insert(3, vec![0x1F, b'h', b'i', 0x00]);
-    let bc = vec![0x3E, 0x05, 0x03, 0x4C, 0x54, 0x00];
+    world.trigger_field_interact(0x05, 0x03);
+    let bc = vec![0x4C, 0x54, 0x00];
     world.load_field_script(bc);
 
-    // Tick 1: open the dialog. The 4C 54 poll runs next tick.
+    // Tick 1: the dialog is open and the 4C 54 poll parks on it.
     let _ = world.tick();
     assert!(world.dialog.current.is_some(), "dialog should be open");
 

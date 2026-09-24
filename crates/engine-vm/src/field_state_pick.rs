@@ -100,11 +100,15 @@
 //! remaining work is the return slot and the debug-mode word, not a dispatch
 //! arm.
 //!
-//! Two smaller gaps sit behind it, and they are the ones with no engine home
-//! at all: the scene record's `+0x2E` / `+0x40` save-slot pair, which is where
-//! the outgoing state is parked for the return, and the build's debug-mode word
-//! `_DAT_8007B98C`, which the engine's input path does not carry - so even
-//! reached, the handler could only ever pick [`STATE_NORMAL`].
+//! The `+0x2E` / `+0x40` pair the handler writes is **not** homeless: it is
+//! `DAT_801C6EA4`, the submode cursor context, and the port models both cells
+//! as `HubGrid::handback` / `HubGrid::stashed_state`
+//! ([`crate::baka_hub_actors::HubGrid`]), which every hand-back already
+//! writes. What is missing is the use of `+0x40` as a **return** slot - the
+//! enter half parking `7` there, and a hand-back restoring `+0x50` from it -
+//! plus the build's debug-mode word `_DAT_8007B98C`, which the engine's input
+//! path does not carry, so even reached, the handler could only ever pick
+//! [`STATE_NORMAL`].
 
 /// The state installed on every non-debug path.
 pub const STATE_NORMAL: u16 = 0x30;
@@ -156,13 +160,14 @@ pub fn picked_state(inputs: StatePickInputs) -> u16 {
 /// Run the handler. `current_state` is the actor's `+0x50` on entry.
 ///
 /// PORT: FUN_801f1f4c
-// NOT WIRED: nothing routes an actor to slot `7` of `PTR_FUN_801F33B4`, on
-// either side - retail's op-`0x49` sub-op table names no slot `7`, so the
-// predecessor that writes `7` into an actor's `+0x50` is unidentified (see the
-// module's `Not wired`). The actor pair `+0x50`/`+0x54` DOES exist
-// (`Actor::state_50` / `Actor::state_54`) and so does the op-`0x49` payload;
-// what has no engine home is the scene record's `+0x2E`/`+0x40` and the
-// debug-mode word.
+// NOT WIRED: slot `7` of `PTR_FUN_801F33B4` is a return state, installed by
+// the submode enter half `FUN_801F1278` at `0x801F140C` and parked in the
+// cursor context's `+0x40` when the op-`0x49` sub-op names a screen
+// (`0x801F1474..0x801F14AC`). `World::open_field_submode_screen` installs the
+// screen's slot directly and never parks `7`, and no hand-back restores `+0x50`
+// from `+0x40` (`HubGrid::stashed_state`), so nothing reaches this slot. The
+// debug-mode word `_DAT_8007B98C` has no engine home either. See the module's
+// `Not wired`.
 pub fn state_pick(inputs: StatePickInputs, current_state: u16) -> StatePickWrites {
     StatePickWrites {
         scene_slot_2e: -1,

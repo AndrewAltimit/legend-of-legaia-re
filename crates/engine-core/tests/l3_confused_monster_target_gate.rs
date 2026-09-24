@@ -78,8 +78,24 @@ fn battle_world(seed: u32) -> World {
 /// target = self). Filtering on `category == 3` therefore drops exactly the
 /// outcome that proves the arm ran, and reads as "the monster never acted".
 fn armed_actions(w: &mut World, slot: u8, frames: usize) -> Vec<(u8, u8)> {
+    use legaia_engine_core::battle_input::CommandPhase;
     let mut seen: Vec<(u8, u8)> = Vec::new();
-    for _ in 0..frames {
+    for frame in 0..frames {
+        // A party nobody can command still raises the party-wide screens
+        // (`Begin | Run`, then `0x6E`); press Begin through them on every
+        // other frame so the round plays, as a player would.
+        let party_screen = w.battle.command.as_ref().is_some_and(|c| {
+            matches!(
+                c.phase,
+                CommandPhase::RoundPrompt { .. } | CommandPhase::CommitConfirm { .. }
+            )
+        });
+        let cross = legaia_engine_core::input::PadButton::Cross.mask();
+        w.set_pad(if party_screen && frame % 2 == 0 {
+            cross
+        } else {
+            0
+        });
         w.tick();
         if w.mode != SceneMode::Battle {
             break;
@@ -352,8 +368,17 @@ fn a_confused_party_member_is_flipped_the_other_way() {
         // Every round start ticks the status durations (retail `FUN_801E752C`
         // from `0x14`), so a confusion can wear off inside the sampling
         // window and the cured member owes the next round a command. The menu
-        // is off-limits only while the member holds the status.
-        if let Some(session) = w.battle.command.as_ref() {
+        // is off-limits only while the member holds the status. The party-wide
+        // screens are not a member's menu: with every member confused nobody
+        // can act, and retail still raises `Begin | Run` (`0x14` stores `0x1E`
+        // unconditionally) and takes `Begin` straight to `0x6E`.
+        if let Some(session) = w.battle.command.as_ref().filter(|s| {
+            !matches!(
+                s.phase,
+                legaia_engine_core::battle_input::CommandPhase::RoundPrompt { .. }
+                    | legaia_engine_core::battle_input::CommandPhase::CommitConfirm { .. }
+            )
+        }) {
             let still_confused = w
                 .battle
                 .status_effects

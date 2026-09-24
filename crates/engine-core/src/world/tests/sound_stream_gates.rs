@@ -98,9 +98,13 @@ fn subs_3_and_4_are_ungated() {
     let (_, pc) = run_op36(0x8003, 0, busy, 0);
     assert_eq!(pc, 5, "sub 3 advances with the pair unsettled");
 
-    let (world, pc) = run_op36(0x8004, 0x0030, busy, 0);
+    let (mut world, pc) = run_op36(0x8004, 0x0030, busy, 0);
     assert_eq!(pc, 5, "sub 4 advances with the pair unsettled");
     assert_eq!(world.audio.sfx_cue_delays.delay(0), Some(0x30));
+    assert_eq!(
+        world.take_sfx_ring_ops(),
+        vec![crate::world::SfxRingOp::SetLastDelay(0x30)]
+    );
 }
 
 /// Sub-`0`, the SFX enqueue, is gated: `bne a0,v0,0x801DEE4C` at
@@ -116,9 +120,14 @@ fn sub0_enqueue_waits_for_the_pair() {
     assert_eq!(world.audio.sfx_cue_cursor, 0, "the enqueue never ran");
 
     let settled = SoundStreamRequest::IDLE_PAIR;
-    let (world, pc) = run_op36(0x8000, 0x0011, settled, 0);
+    let (mut world, pc) = run_op36(0x8000, 0x0011, settled, 0);
     assert_eq!(pc, 5);
     assert_eq!(world.audio.sfx_cue_cursor, 1);
+    // `a0 = (s16)word1` into `FUN_80035B50`: the id crosses to the host ring.
+    assert_eq!(
+        world.take_sfx_ring_ops(),
+        vec![crate::world::SfxRingOp::Push(0x11)]
+    );
 }
 
 /// The bit-15-**clear** arm carries the same barrier, which is the half

@@ -35,7 +35,7 @@
 //! REF: FUN_801D0748
 //! REF: FUN_801D388C
 
-use crate::{SpriteDraw, TextDraw};
+use crate::SpriteDraw;
 use legaia_asset::title_pak;
 
 // ------------------------------------------------------------ screen seats
@@ -128,13 +128,6 @@ pub const LIST_COST_RIGHT_X: i32 = 152;
 /// Command-string glyph origin inside a row (`(44 + 12k, y + 14)`).
 pub const LIST_CMD_X0: i32 = 44;
 pub const LIST_CMD_PITCH: i32 = 12;
-
-/// Stage seat of the **Begin | Reselect** pick's first row, and its row
-/// pitch. Screenshot-read, not packet-pinned (the capture covers the
-/// entry screen; the review / Begin screens' piece decomposition is
-/// still open - see the doc's "Still unpinned here").
-pub const BEGIN_MENU_SEAT: (i32, i32) = (24, 144);
-pub const BEGIN_MENU_PITCH_Y: i32 = 16;
 
 /// The four entry directions, in the order the chips read on screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -283,7 +276,6 @@ impl ArtsInputAtlasRects {
 pub enum ArtsInputScreen {
     Entering,
     Review,
-    BeginMenu { cursor: u8 },
     Targeting,
 }
 
@@ -616,53 +608,6 @@ pub fn ap_plate_draws(
         let d = (ch - b'0') as u32;
         push((dx + d * pitch, dy, digit_w, dh), cx, py + 5, digit_w, dh);
         cx += digit_w as i32;
-    }
-    out
-}
-
-/// Text the input screen puts up alongside the sprite chrome: the
-/// **Begin | Reselect** pick, when it is showing. Everything else on the
-/// screen is baked art.
-pub fn arts_input_text_draws(
-    font: &legaia_font::Font,
-    frame: &ArtsInputFrame<'_>,
-    stage_origin: (i32, i32),
-    stage_scale: u32,
-) -> Vec<TextDraw> {
-    let ArtsInputScreen::BeginMenu { cursor } = frame.phase else {
-        return Vec::new();
-    };
-    let scale = stage_scale.max(1) as i32;
-    let mut out = Vec::new();
-    for (i, label) in ["Begin", "Reselect"].iter().enumerate() {
-        let selected = i as u8 == cursor;
-        let color = if selected {
-            [1.0, 1.0, 1.0, 1.0]
-        } else {
-            [0.62, 0.66, 0.74, 1.0]
-        };
-        let text = if selected {
-            format!("> {label}")
-        } else {
-            format!("  {label}")
-        };
-        let layout = font.layout_ascii(&text);
-        let pen = (
-            stage_origin.0 + BEGIN_MENU_SEAT.0 * scale,
-            stage_origin.1 + (BEGIN_MENU_SEAT.1 + BEGIN_MENU_PITCH_Y * i as i32) * scale,
-        );
-        for g in &layout.glyphs {
-            out.push(TextDraw {
-                dst: (
-                    pen.0 + g.dst_x * scale,
-                    pen.1 + g.dst_y * scale,
-                    g.width * scale as u32,
-                    g.height * scale as u32,
-                ),
-                src: (g.atlas_x, g.atlas_y, g.width, g.height),
-                color,
-            });
-        }
     }
     out
 }

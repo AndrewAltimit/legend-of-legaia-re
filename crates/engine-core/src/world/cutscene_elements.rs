@@ -39,7 +39,7 @@ use crate::cutscene_script_elements::{
     AmbientEmitter, AmbientParticle, AmbientScene, ElementTeardown, ElementVec, PositionTween,
     TeardownActions, TweenStep,
 };
-use crate::world::{EasedMoveTarget, World};
+use crate::world::{EasedMoveTarget, SceneMode, World};
 
 /// A borrow-free view of [`World::rng_state`], so the channel can feed the
 /// ambient emitter the world's own deterministic LCG while the tick holds
@@ -68,6 +68,11 @@ impl WorldRng {
         self.0
     }
 }
+
+/// The BIOS `rand()` shaping, applied to the raw [`WorldRng`] state before
+/// the element channel's consumers see a draw. One definition for the whole
+/// engine: [`legaia_engine_vm::battle_formulas::bios_rand_shape`].
+pub use legaia_engine_vm::battle_formulas::bios_rand_shape;
 
 /// Runtime VA of the ambient emitter's spawn descriptor in the field overlay's
 /// plain-template table (see the module note).
@@ -361,7 +366,18 @@ impl World {
     /// Retired elements are dropped at the end of the pass; an element spawned
     /// *during* it is spliced in rather than overwritten, the same way the
     /// eased-move pass handles a spawn from its own frame.
-    pub fn tick_cutscene_elements(&mut self, frame_step: u8, mut rand: impl FnMut() -> u32) {
+    pub fn tick_cutscene_elements(&mut self, frame_step: u8, mut raw_rand: impl FnMut() -> u32) {
+        // The emitter and the fog spawner call the BIOS `rand()` (`A(2Fh)`,
+        // reached through `FUN_80056798`), which returns the **high** half of
+        // its LCG state, `(seed >> 16) & 0x7FFF`. The world stream is a raw
+        // 32-bit LCG whose low four bits cycle with period 16, and both
+        // routines test exactly those bits (`rand & 0xF`, `rand & 7`,
+        // `rand & 0x7F`): fed the raw state, the emitter's burst gate failed
+        // on almost every frame and then passed on all 24 draws at once,
+        // spawning fifty-odd fog records in one frame - the "pool density
+        // above retail" the vell poll measured. Shaping the draw the way the
+        // BIOS does restores retail's per-frame spawn statistics.
+        let mut rand = move || bios_rand_shape(raw_rand());
         if self.cutscene.elements.is_empty() {
             if !self.cutscene.element_frame.is_empty() {
                 self.cutscene.element_frame = ElementFrame::default();
@@ -377,6 +393,10 @@ impl World {
         // emitter's scene arm centres its bursts on (`_DAT_80089118/20`
         // hold the negated player X/Z; the follow camera's focus).
         let mut fog = std::mem::take(&mut self.fog);
+        // `_DAT_1F800394 & 1`, the overworld bit: the emitter's dense profile
+        // and the spawner's overworld arm both key on it.
+        let overworld = self.mode == SceneMode::WorldMap;
+        fog.overworld = overworld;
         let window = self.terrain.region_attributes.box_bytes;
         let [player_x, _, player_z] = self.fog_player_world_pos();
         let trig = crate::action_effect_script::retail_rotation_lut();
@@ -401,6 +421,19 @@ impl World {
                     el.done = t.done;
                 }
                 ElementKind::AmbientEmitter { emitter, scene } => {
+                    scene.dense = overworld;
+                    // The burst span is the live visible-tile window, read
+                    // afresh every frame (`lb` of `0x1F8003E8..EB`): on the
+                    // overworld a region record widens it to reach well
+                    // ahead of the player, which is where retail's fog sits.
+                    if let Some([x_min, y_min, x_max, y_max]) = fog.view_window {
+                        scene.span = crate::cutscene_script_elements::SceneSpan {
+                            x_min,
+                            y_min,
+                            x_max,
+                            y_max,
+                        };
+                    }
                     scene.camera_x = -player_x;
                     scene.camera_y = -player_z;
                     emitter.step_with(scene, &mut rand, |p, rand| {

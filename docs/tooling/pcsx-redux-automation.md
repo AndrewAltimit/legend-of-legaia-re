@@ -20,6 +20,7 @@ This page documents the pattern, the harness, and the catalogue.
 - [The harness](#the-harness)
 - [The probe pattern](#the-probe-pattern)
 - [Fast whole-playthrough capture (two-tier model)](#fast-whole-playthrough-capture-two-tier-model)
+- [Patched-disc taint](#patched-disc-taint)
 - [Catalogue](#catalogue)
   - [Runtime probes (Lua autorun)](#runtime-probes-lua-autorun)
   - [Save-state to Python (offline analysis)](#save-state-to-python-offline-analysis)
@@ -162,12 +163,23 @@ The wrapper:
 
 1. Verifies the binary / BIOS / save state / Lua file all exist
    (fails early with a clear error if any one is missing).
-2. Launches PCSX-Redux with `-interpreter -debugger -run -bios
+2. Stages the disc: it symlinks the `--iso` image as `disc.bin` into a
+   private temporary directory and hands the emulator that path, never the
+   one you named. PCSX-Redux's `PPF::load` (`src/cdrom/ppf.cc`) replaces the
+   image path's extension with `.ppf` and applies that file whenever it
+   exists, logging only `[+ppf]`; the randomizer CLI writes its `.ppf`
+   beside its input disc by default, so a patch file sitting beside the
+   retail `.bin` patched every probe that named the retail path - the
+   runner's own default `--iso` included, until it staged. A patch reaches a
+   run only through `--ppf PATH` (staged as `disc.ppf`). The banner names
+   the source image and any sibling `.ppf` it bypassed, and the runner warns
+   if the log still shows `[+ppf]` without `--ppf`.
+3. Launches PCSX-Redux with `-interpreter -debugger -run -bios
    <SCPH> -iso <bin> -dofile <lua> -stdout` and pipes the emulator
    log to `pcsx.log` inside the run's output directory - or to
    `logs/pcsx_<probe-stem>.log` when `LEGAIA_OUT` pins a single output
    file instead (`--log PATH` overrides either).
-3. On exit, prints the CSV row count and greps the log for the probe's
+4. On exit, prints the CSV row count and greps the log for the probe's
    own `=== probe hits ===`-style banner, echoing it back as a
    `=== probe summary ===` block.
 
@@ -764,6 +776,175 @@ checksum degrades visibly (`csum:XXXXXXXX?`). `--overlay-map FILE`
 overrides the committed map.
 Pure functions, exercised by `test_analyze_reader_watch.py` on synthetic rows.
 
+## Patched-disc taint
+
+A capture can measure a patched game while every log line names the retail
+image. Two routes carry a patch in, and they fail differently:
+
+- **The image route.** PCSX-Redux applies `<image stem>.ppf` from beside the
+  image it loads (logged only as `[+ppf]` on the `Loaded CD Image` line), and
+  `legaia-patcher randomize` writes its `.ppf` beside its **input** disc unless
+  `--patch` names another path. Every probe that handed the emulator the
+  retail path while a randomizer run had left a `.ppf` there read patched
+  sectors - including runs that passed no `--iso` at all, because the
+  runner's default `--iso` was that path until [the harness](#the-harness)
+  started staging.
+- **The state route.** `SCUS_942.54` is read from the disc once, at boot. A
+  save state made on a patched disc carries the patched executable in RAM
+  forever, whatever disc it is later loaded onto, and so does every state
+  checkpointed from it. Overlays and scene data are re-read on the next load
+  that needs them; the executable never is. Staging the disc does nothing for
+  this route.
+
+A patched byte matters only if the run reads it. For the image route that
+means a disc read after the state load (a scene or battle load, a cold boot);
+for the state route it means executing or reading a patched SCUS site, or an
+overlay the state already holds from the patched disc.
+
+[`patch_taint_audit.py`](../../scripts/pcsx-redux/patch_taint_audit.py)
+measures both: `states` compares the resident SCUS of every library state
+against the retail executable at a fixed table of patcher sites, `logs`
+lists every `[+ppf]` run, and `ppf` decodes a patch file into ISO files,
+PROT entries and SCUS addresses. The manifest records the result per
+scenario as `resident_patch` ([`scripts/scenarios.toml`](../../scripts/scenarios.toml)).
+No disc bytes are printed; the output is addresses, lengths and labels.
+
+### Resident patch families in the save-state library
+
+A patched state is identified by what its resident SCUS carries at the
+patcher's own hook sites, and - where one exists - by an exact byte match
+against a patched image built by the same feature.
+
+| Family (`resident_patch`) | Resident signature | What else the build rewrites | Carried by |
+|---|---|---|---|
+| shiny-seru + enemy-ally charm | SCUS hooks `0x800321D4`, `0x8004AD0C`, `0x80051990`, `0x80051A20` + the four SCUS arenas; resident `0898` at six hook sites. Byte-identical to a shiny + charm build at every one of that build's SCUS bytes | PROT 0867 (monster archive, repacked), 0898, 0899 | the three `rikuroa_*` beats, `dolk2_market_noa`, the five `minigame_*_pcsx` states (the S1..S5 anchors and `first_town_interactive` were re-shot retail - [below](#re-shooting-the-s1s5-anchors-on-an-unpatched-image)) |
+| shiny-seru (earlier layout) | `0x800321D4`, `0x8004AD0C`, `0x80051A20`, gap-1 arena | as above, earlier layout | the three `shiny_refactor_gimard_*` states |
+| arts AP override | SCUS arena 1 routines; resident `0898` guard / debit / refund sites `0x801EF410` / `0x801EF490` / `0x801EF988` | PROT 0898 | the four `battle_gaza2_*` states |
+| starting bag + warp preset | the new-game seed code `0x80034ADC` and `0x80034B04` | none resident - the edit acts once, at NEW GAME | `karisto_sol_pre_encounter`, `sol_to_karisto_worldmap`, `octam_to_sebucus_worldmap`, the three `casino_*` states, `baka_fighter_entry_pretransition`, the two Super / Miracle Art battle states, four mednafen `overworld_battle_bg_angle_*` states |
+| location rename | the quick-travel name cells at `0x80073B18` | the kingdom and scene MAN name carriers ([`place-names.md`](../formats/place-names.md)) | the three `cort_evolved_*` states (`teien_field_run` was re-shot retail) |
+| delilas party swap + cast | `0x80012DD0`, `0x80054008`, gap-1 arena | player battle files, cast modules | the nine `delilas_*` states (made on purpose) |
+| enemy-ally charm | `0x80051990` + its arena | - | `enemy_ally_charm_gobu_slime` (made on purpose) |
+
+What a family can and cannot move:
+
+- **Field-only claims** (story flags, NPC seats, locomotion, scene entry)
+  read none of these sites. The shiny + charm hooks act at battle load, at
+  the animation commit and in battle menus; the seed edit ran once, before
+  the capture; the rename changes name text only.
+- **Battle claims** on a shiny + charm or arts-AP state run patched `0898`
+  code at the listed sites. The charm skips single-enemy fights by design
+  (so `s5_tetsu_battle`, the one-enemy Tetsu spar, is never charmed), and
+  the shiny hooks act on Seru capture and fade.
+- **Inventory and progression** on a starting-bag state began from a
+  non-retail bag and a pre-unlocked warp list.
+- **Byte comparisons of a resident overlay** against the disc see the hook
+  windows as differences - the `s5_tetsu_battle` resident `0898` differs
+  from the retail image at six places of eight bytes or fewer.
+
+### What the retail image's sibling `.ppf` patched
+
+The captures fall into four windows during which a `.ppf` sat beside the
+retail image, separated by windows with none (`patch_taint_audit.py logs`).
+A `.ppf` is overwritten by the next `randomize` run on that input and
+deleted by hand, so each window's content has to be recovered from what
+the runs themselves left behind.
+
+| Window (run families) | Patch | Evidence |
+|---|---|---|
+| door / house-door traces, `battle_render_capture`, `party_attack_damage_trace`, `summon_model_base`, the `super_art_*` queue runs, `minigame_overlay_capture` | unknown beyond SCUS: the states made in it carry the starting bag + warp preset seed and no other SCUS patcher site | resident SCUS of the states the window produced |
+| charm / shiny validation runs, `prescript_read_watch`, the S1..S5 capture runs, `tetsu_*`, `flag_firehose`, `spine_flag_writers`, early `state_poll` | the shiny-seru + enemy-ally charm build | cold-boot `state_poll` snapshots and the S-segment snapshots carry that build's SCUS byte-exact |
+| `gaza2_*`, `location_banner_source`, `tile_shatter_page`, late `state_poll`, `delilas_battle_load`, `custom_items_cast_experiment`, `arts_voice_cue` | arts AP override early in the window, location rename by its cold boots; later runs unknown | resident SCUS and `0898` of the `battle_gaza2_*` states; cold-boot `state_poll` snapshots |
+| `w3a`, `w1d`, `lane-a` | oscillating AP costs, seed 7 (decoded below) | the `.ppf` itself |
+
+The current sibling `.ppf` is `randomize --oscillating-ap` (seed 7). It
+rewrites SCUS only at the battle-loader setup hook `0x80051A20`, the
+arts-list read-out `0x800344D8` and the four arenas, and PROT 0898 at the
+damage site `0x801EDA10` and the guard / debit / refund sites
+([`oscillating_ap.rs`](../../crates/patcher/src/oscillating_ap.rs)).
+
+### Verdicts on capture-graded claims
+
+A claim is at risk only when its run read a patched byte and the claim is
+about behaviour that byte changes. Each row below was re-checked against
+that test.
+
+| Claim (page) | Rests on | Verdict |
+|---|---|---|
+| Story-flag play order from the poll corpus ([`re-settled-threads.md`](../reference/re-settled-threads.md), [`world-map.md`](../subsystems/world-map.md)) | cold-boot `state_poll` runs under the location-rename patch | stands: the patch rewrites name text; flag writes are script ops it does not touch |
+| Story-flag writers are the field VM's own `0x5x` / `0x6x` arms ([`script-vm.md`](../subsystems/script-vm.md)) | `flag_firehose` / `spine_flag_writers` under the shiny + charm build | stands: the build rewrites no scene MAN and no field overlay |
+| Super / Miracle Art queue bytes ([`super-art-queue-capture.md`](super-art-queue-capture.md)) | starting-bag battle states, image-route runs of unknown patch | stands: both states hold the retail `0898` at every patcher site, and the queue matched tables sourced independently byte-exact |
+| `model_sel` base `gp[0x754]` ([`move-power.md`](../formats/move-power.md)) | `summon_model_base` under an unknown patch | stands: pinned again by `crates/mednafen/tests/summon_model_base.rs` on retail-clean mednafen states |
+| Gaza 2 park / approach mechanics ([`battle-action.md`](../subsystems/battle-action.md)) | the `battle_gaza2_*` states (arts AP override resident) | stands by inference: the override changes party arts AP accounting; the park is the monster's Move clip and reach test |
+| Battle camera trios and the `0967` resident identity ([`battle.md`](../subsystems/battle.md)) | `s5_tetsu_battle` (shiny + charm resident) | stands: `0967` is outside the build and no hook sits in the camera path; a one-enemy fight is never charmed |
+| `0874` registrar counts, cast-arm gating, cast voice cues | `w3a` / `w1d` / `lane-a` runs under the oscillating-AP `.ppf` | stands for every in-battle run (the state already held `0898` and the executable, and neither is re-read); `w3a/registrar_sol` is void - see below |
+
+**The one run the patch visibly broke.** `w3a/registrar_sol` crossed a
+field-to-battle load from `karisto_sol_pre_encounter`: the battle load read
+the patched `0898` from the image, and its oscillating-AP guard detour
+jumped into SCUS arena 1, which the state held as retail. The emulator
+logged `ReservedInstruction` at `0x8007AF3C`, where the zero run of the
+arena ends. It is the only first-chance exception at a battle load in any
+retail-path capture, and no capture on an unpatched image logs one at a
+battle load. The runner's isolated profile zeroes the emulator's
+first-chance exception mask on the reading that a retail battle load raises
+one; re-run with the default mask armed (`LEGAIA_PCSX_FIRST_CHANCE=7408`)
+on a staged image, the same field-to-battle load from
+`karisto_sol_pre_encounter` reaches BattleMode without one. The zero mask
+stays the default so a probe of a deliberately patched disc keeps running.
+
+### Re-shooting the S1..S5 anchors on an unpatched image
+
+The S1..S5 playthrough anchors and `teien_field_run` are re-captured on a
+staged, unpatched image; each label in the manifest now points at the new
+file, the old files stay in the library unreferenced, and every re-shot
+state reads `retail` in `patch_taint_audit.py states`. Each lands on the
+moment the capture it replaces pinned - the same scene, mode and player
+position, and for S5 the same battle context word - so the oracles that
+read them pass unchanged apart from the fingerprint.
+
+| Anchor | Driver | Input | Matches the replaced capture on |
+|---|---|---|---|
+| `s1_newgame_field` | `autorun_play_from_boot.lua` (interpreter, `LEGAIA_FASTBOOT=1`) | START+CROSS through the title, CROSS in the field | `opdeene`, mode `0x03`, `(5824, 1984)` |
+| `s2_rimelm_town01` | `autorun_chain_fast.lua` (`--fast`) | CROSS every 20 vsyncs | `town01`, `(12352, 2368)` |
+| `s3_rimelm_freeroam` | `autorun_s3_fast.lua` (`--fast`) | CROSS on End, UP + CROSS on the confirm, CROSS through the dialogue | `(4160, 11840)`, name `Vahn` |
+| `s4_rimelm_door_transition` | `autorun_chain_fast.lua` (`--fast`, `LEGAIA_HOLD_BTN=DOWN LEGAIA_CKPT_WARP=1`) | DOWN held to the front-door warp | `(3264, 3520)` after the warp |
+| `s5_tetsu_battle` | `autorun_replay_inputs.lua` (interpreter) | the recorded human route, unchanged | mode `0x15`, `battle_ctx` `0x800EB654`; resident `0898` byte-identical to the disc |
+| `teien_field_run` | `autorun_boot_continue.lua` (`--fast`), card block 3 of `playthrough-ladder-pro00-14.mcr` restamped to `-00` | the calibrated CONTINUE ladder | `(6180, 3994)`, the object-grid counts, `0900` at slot B |
+
+Four things the re-shoot settled about the drivers:
+
+- **The interpreter core is the bottleneck, not the game.** With the box
+  loaded, the breakpoint drivers ran the opening at a few frames per
+  second; S2 did not reach `town01` inside a 25-minute budget. Under
+  `--fast` a `GPU::Vsync` listener is delivered through the prologue's XA
+  streams, so the vsync drivers reach the same states in minutes. Only
+  S1 (the title tick) and S5 (the recorded route is clocked on field
+  ticks) still need the breakpoint core.
+- **A blind press on the name-entry screen types into the name.** The
+  first `--fast` S3 pressed UP + CROSS on a timer; whenever the confirm was
+  not open, UP moved the glyph cursor off End and CROSS appended a glyph,
+  and the state that reached free-roam carried the name `Vahn(*'#` in
+  record `+0x2A7` and on every later HUD. The driver now keys each press
+  on the name-entry actor's own sub-state. The interpreter driver's write
+  of `0` to the confirm cursor `_DAT_8007B458` does not take on this path:
+  the frame still shows the cursor on No.
+- **A checkpoint 50 vsyncs after an intra-scene warp does not resume.**
+  Loaded, it puts the scene name back and then reboots the machine (mode
+  `0x10`, the publisher logos); the same state taken 200 vsyncs after the
+  warp resumes to field mode. Load every new checkpoint once before
+  cataloguing it.
+- **The grid-BFS door-nav under a vsync clock did not find the door** in
+  its frame budget; holding DOWN from the S3 spawn walks straight onto the
+  front-door tile. The S4 walk is D-pad only in both versions.
+
+What the re-shoot could not reach from a card or a cold boot without
+human play: the `rikuroa_*` beats (a boss fight and its cutscenes),
+`dolk2_market_noa` (a story scene), the `cort_evolved_*` states (the final
+dungeon's cutscene and boss), the `minigame_*_pcsx` load transitions, the
+`battle_gaza2_*` park states, and the mednafen `overworld_battle_bg_angle_*`
+states (PCSX-Redux cannot write a mednafen state). None of their field-only
+claims reads a patched site ([above](#resident-patch-families-in-the-save-state-library)).
+
 ## Catalogue
 
 The committed scripts live in
@@ -838,7 +1019,9 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_w4d_melee_grunt_gate.lua`](../../scripts/pcsx-redux/autorun_w4d_melee_grunt_gate.lua) | Which `s7` definition an ordinary party swing carries into the melee grunt gate. &rarr; [detail](#autorun_w4d_melee_grunt_gatelua) |
 | [`autorun_w4d_light_kind_hits.lua`](../../scripts/pcsx-redux/autorun_w4d_light_kind_hits.lua) | Whether the renderer's four light-capable prim handlers (kinds 8..11) execute at all. &rarr; [detail](#autorun_w4d_light_kind_hitslua) |
 | [`autorun_w7c_steal_oracle.lua`](../../scripts/pcsx-redux/autorun_w7c_steal_oracle.lua) | Retail steal oracle: loads a battle state, optionally writes the synthetic gates (steal passive bit, Items Up bit, enemy HP, a forced `rand() % 100`), presses Begin and logs every step of the death-commit steal arm of `FUN_8004AD80`, every reader of the steal table and every bag writer. Findings in [`steal-table.md`](../formats/steal-table.md#retail-steal-capture). |
-| [`autorun_w7c_kor5_tail.lua`](../../scripts/pcsx-redux/autorun_w7c_kor5_tail.lua) | The W6-C spoke walk (tile-poke route + story-flag firehose) plus an exec-bp on the record dispatcher `FUN_8003BDE0`, one on the field overlay's trigger lookup `FUN_801D5630`, a per-second player-flags line and a flag-keyed checkpoint (`LEGAIA_CKPT_FLAG`). Opt-ins: `LEGAIA_WAIT_UNLOCK` holds each leg until the player's movement lock clears (a crossing poked under the lock is [spent](../subsystems/field-locomotion.md#a-crossing-made-under-the-movement-lock-is-consumed)), `LEGAIA_BATTLE_HP1` holds enemy HP at 1 (synthetic), `LEGAIA_POOL_WATCH` write-watches the actor-pool control block (slow). Walked the `kor5` chain, and `korb2` to `doman` across the `map03` overworld. |
+| [`autorun_w7c_kor5_tail.lua`](../../scripts/pcsx-redux/autorun_w7c_kor5_tail.lua) | The W6-C spoke walk (tile-poke route + story-flag firehose) plus an exec-bp on the record dispatcher `FUN_8003BDE0`, one on the field overlay's trigger lookup `FUN_801D5630`, a per-second player-flags line and a flag-keyed checkpoint (`LEGAIA_CKPT_FLAG`). Opt-ins: `LEGAIA_WAIT_UNLOCK` holds a leg while the movement lock is up ([why](../subsystems/field-locomotion.md#a-crossing-made-under-the-movement-lock-is-consumed)), `LEGAIA_BATTLE_HP1` holds enemy HP at 1 (synthetic), `LEGAIA_POOL_WATCH` write-watches the actor-pool block (slow). `LEGAIA_POLL_FLAGS` / `LEGAIA_CKPT_EVERY` are poll-only, for a `--fast` pass. Walked the `kor5` chain with no flag poke, and `korb2` to `doman` over `map03`. |
+| [`autorun_w1a_fog_pool_poll.lua`](../../scripts/pcsx-redux/autorun_w1a_fog_pool_poll.lua) | Per-vsync observer of the field fog pool from a loaded state: the script gate `_DAT_8007B854`, the render walk's live count `_DAT_8007BCA8`, the spawner cap `_DAT_8007BCB0`, the free-stack top, the alive-byte census of the 80 records, the frame step `DAT_1F800393` and a per-vsync "a frame ran" bit (the records' age words moved). `live` is read as the vsync IRQ finds it, so a sample inside the walk reads a partial count; `alive` is the population. No BPs, so `--fast`. Measured `vell_fog_field` - see [the density note](../subsystems/field-ambient-fx.md#pool-density-against-retail). |
+| [`autorun_w1a_koru_strip.lua`](../../scripts/pcsx-redux/autorun_w1a_koru_strip.lua) | Installs a formation (default Koru, `0xB6`) from a field state the way a rolled encounter does, mashes the command flow, and logs the turn counter `ctx[+0x28A]`, the phase byte `ctx[+6]` and the strip's two digit globals, with a checkpoint per round and every `LEGAIA_CKPT_EVERY` battle vsyncs. Poll-only (`--fast`); the formation is synthetic. Captured the `Turns Left / HP Left` strip ([muscle-dome page](../subsystems/minigame-muscle-dome.md#what-the-strip-looks-like-in-retail)). |
 | [`autorun_audio_trace.lua`](../../scripts/pcsx-redux/autorun_audio_trace.lua) | Multi-frame retail-trace input for the audio-trace parity oracle. → [detail](#autorun_audio_tracelua) |
 | [`autorun_summon_model_base.lua`](../../scripts/pcsx-redux/autorun_summon_model_base.lua) | Targets `gp[0x754]`, the `model_sel` additive base read in the shared spawn stager `FUN_80021B04`. Exec-bp the stager during a summon (default `gimard_summon_start`) or an enemy special-attack frame; each hit logs `$gp`, the absolute `gp+0x754` global, the base value, and the part record's `model_sel`/`flags`. The one residual unblocking both summon and move-power effect-FX render (the records share this stager). |
 | [`autorun_battle_moveimage_trace.lua`](../../scripts/pcsx-redux/autorun_battle_moveimage_trace.lua) | Logs every libgpu `MoveImage` request (caller RA + source RECT + dest) via an exec-bp on `FUN_80058490`; `LEGAIA_TRACE_LOADIMAGE=1` adds the `LoadImage` wrapper (slow - it fires every frame on the overworld). Pinned move-VM op `0x40` as the animated-texture strip primitive (see [`move-vm.md`](../subsystems/move-vm.md)). |
@@ -875,6 +1058,9 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_s5_spar.lua`](../../scripts/pcsx-redux/autorun_s5_spar.lua) | S5 spar-accept driver: navigates to Tetsu's canonical talk tile (21,13) and logs the dialog state (`*(0x801C6EA4)+0x62`/`+0x0C`/`+0x60`, pager `0x801F2740`), driving an option-picker to the accepting row. **Found: the spar does not start from the S4 anchor** - the nav funnels to tile (21,15) (Tetsu's tile blocks his south side, so (21,13) is unreachable), CROSS-advancing the engaged NPC ~370x neither battles nor ends, and `+0x62` is a typewriter sawtooth (no Yes/No picker surfaces). The grid-BFS S4 shortcut is off the scripted spar path. See the [S5 finding](playthrough-coverage.md#s5-the-first-battle-is-the-scripted-tetsu-spar-not-a-random-encounter). |
 | [`autorun_dump_storyflags.lua`](../../scripts/pcsx-redux/autorun_dump_storyflags.lua) | Dumps the field-VM story-flag bank (`0x80085758`, `0x400` bytes) + the lead character record header from a resumed state to `flags_<tag>.txt`, for diffing which scripted beat one state has and another skipped. Used to test whether the S4 anchor is missing the beat that arms the Tetsu spar vs. the known-good `v0_1_pre_battle_tetsu`. |
 | [`autorun_record_inputs.lua`](../../scripts/pcsx-redux/autorun_record_inputs.lua) | **Manual input recorder** (run INTERACTIVELY - real window + keyboard, interpreter+debugger so the field-tick BP fires). Resumes a save and logs the per-frame button mask `0x8007B850` as a `frame,held_hex` CSV (frame 0 = first field tick after load); auto-quits a few seconds after a battle starts. For capturing a sequence that needs human play - e.g. walk to Tetsu, pick the 3rd "training fight" list option, start the spar. |
+| [`autorun_chain_fast.lua`](../../scripts/pcsx-redux/autorun_chain_fast.lua) | Recompiler-speed segment driver - the vsync-only sibling of `autorun_play_from_boot.lua`. Resumes a checkpoint (or cold-boots), presses the advance button every `LEGAIA_MASH_EVERY` vsyncs (START+CROSS outside field and battle modes, `LEGAIA_MASH_BTN` in them), optionally holds a direction for the whole run (`LEGAIA_HOLD_BTN`), and checkpoints on a target scene / mode / actor flag or on an intra-scene warp (`LEGAIA_CKPT_WARP=1`: the player jumps over 300 units between two vsyncs). Under `--fast` `GPU::Vsync` reaches Lua through the prologue XA streams, which is what lets it drive S2. [Details](#re-shooting-the-s1s5-anchors-on-an-unpatched-image). |
+| [`autorun_s3_fast.lua`](../../scripts/pcsx-redux/autorun_s3_fast.lua) | Recompiler-speed S3: accepts the default name on the `town01` name-entry screen with pad input only, gated on the name-entry actor's own sub-state (callback word `+0x0C = FUN_801F159C`, sub-state `+0x54`: `1` grid, `2..4` confirm), then CROSSes through the opening's remaining dialogue to free-roam. [Details](#re-shooting-the-s1s5-anchors-on-an-unpatched-image). |
+| [`autorun_talk_to_npc.lua`](../../scripts/pcsx-redux/autorun_talk_to_npc.lua) | Walks the player to one field NPC and opens its conversation, checkpointing the frames after the confirm so the box reads back offline (VRAM crop). The NPC is named by its script pointer (`+0x90` = MAN base + the placement's record offset), so a walk route cannot lose it; the route is a steer, a recorded span list (`LEGAIA_ROUTE`), tile waypoints (`LEGAIA_WAYPOINTS`) or a position poke (`LEGAIA_POKE_POS`); the box's opening is the field-control dialogue byte `*0x801C6EA4 +0x62`. The retail side of the `town01` `P1[16]` dialogue frame-pair. |
 | [`autorun_replay_inputs.lua`](../../scripts/pcsx-redux/autorun_replay_inputs.lua) | **Deterministic input replayer.** Resumes the same save headlessly, reconstructs the held mask per frame from the recorder's CSV, and drives the pad via `pad.force`/`pad.release` (NOT RAM writes - `FUN_8001822C` rebuilds `0x8007B850` from the actual pad after the field-tick BP, so writes don't stick), then checkpoints the result. Validated: a synthetic hold-DOWN CSV replays the exact `pad.force(DOWN)` displacement. |
 | [`autorun_btnmap.lua`](../../scripts/pcsx-redux/autorun_btnmap.lua) | Diagnostic: forces each PCSX pad button alone and reads `0x8007B850` to pin the mask layout. Result: the mask is the **byte-swapped PSX controller word** - button index `b` -> bit `1<<(b+8)` for `b<8` else `1<<(b-8)` (UP=`0x1000`, RIGHT=`0x2000`, DOWN=`0x4000`, LEFT=`0x8000`, CROSS=`0x0040`, CIRCLE=`0x0020`). Underpins the input record/replay decode. |
 | [`autorun_delilas_battle_load.lua`](../../scripts/pcsx-redux/autorun_delilas_battle_load.lua) | Can retail's battle loader stage a formation of N **distinct** monster ids? Retail authoring never exceeds 2 per formation; the Delilas Challenge stages 3 (162/163/164, ~345 KB of decoded blocks). Answered the reported battle-load freeze. |
@@ -913,6 +1099,7 @@ the longer ones (`Probes` + `What it answered`) are written out as
 | [`autorun_scene_entry_eye_seed.lua`](../../scripts/pcsx-redux/autorun_scene_entry_eye_seed.lua) | Which of the two scene-entry camera-eye seeds runs last, and what the first field view reads. &rarr; [detail](#autorun_scene_entry_eye_seedlua) |
 | [`autorun_field_pad_ring.lua`](../../scripts/pcsx-redux/autorun_field_pad_ring.lua) | What retail's camera-relative pad remap turns each held direction into, at every rotation index. &rarr; [detail](#autorun_field_pad_ringlua) |
 | [`autorun_scene_name_hijack.lua`](../../scripts/pcsx-redux/autorun_scene_name_hijack.lua) | Loads a scene no save state reaches by rewriting a door's inline destination name. &rarr; [detail](#autorun_scene_name_hijacklua) |
+| [`autorun_w5b_field_watch.lua`](../../scripts/pcsx-redux/autorun_w5b_field_watch.lua) | One configurable field watch - write watches that log the value that lands, exec and read breakpoints, per-vsync samples, pad holds, position and memory pokes - so a disassembly claim gets a retail check without a new probe. &rarr; [detail](#autorun_w5b_field_watchlua) |
 #### Runtime probe details
 
 ##### `autorun_w4d_cort_flow_writer.lua`
@@ -956,6 +1143,33 @@ the longer ones (`Probes` + `What it answered`) are written out as
   Left, which drives both the command ring and the directional arts screen. See
   [`battle-action.md`](../subsystems/battle-action.md#the-sound-a-melee-swing-makes-and-which-half-of-it-the-port-has).
   Interpreter mode, battle states only - the addresses are slot-A overlay VAs.
+
+##### `autorun_w5b_field_watch.lua`
+
+- **Probes:** `LEGAIA_WATCH` write watches (`addr:width:label`), each row
+  carrying the writer `pc` / `ra` and the value that **lands** - the debug hook
+  fires before the store, so the probe decodes the `sb` / `sh` / `sw` at `pc`
+  and reads its source register; `LEGAIA_EXEC` exec-BPs and `LEGAIA_READ` read
+  watches logging `a0..a3`, `v0`, `s1`, `s5..s8`; `LEGAIA_SAMPLE` per-vsync
+  words, addressed absolutely, player-relative (`P+0x10`) or through a pointer
+  word (`*0x801C6EA4+0x8`).
+- **Drives:** `LEGAIA_PRESS` pad holds with `+`-joined chords
+  (`330:DOWN+R1:150`), `LEGAIA_POKE` player position pokes, `LEGAIA_MEMPOKE`
+  one-shot memory writes (the encounter step counter, a story flag),
+  `LEGAIA_SHOTS` / `LEGAIA_CKPTS` screenshots and raw checkpoints,
+  `LEGAIA_ACTORS` a dump of the six field actor lists, `LEGAIA_TRIGGERS` the
+  scene's kind-0 / kind-1 / kind-2 trigger tables read out of the live field
+  buffer `*(0x1F8003EC)`. Frame numbers are vsyncs since the state load.
+- **What it answered:** the clip-base writers and the per-tick system-channel
+  reset, the timed kind-0 warp's timings and the idle clip through it
+  ([`field-locomotion.md`](../subsystems/field-locomotion.md#retail-capture-of-the-base-writers));
+  a `town01` player arc tick for tick
+  ([`script-vm.md`](../subsystems/script-vm.md#0x43-sub-01ab---scripted-arc-jump));
+  where retail ends the `retock` innkeeper's talk; the slot-2 / slot-6
+  residency across a battle and a minigame warp
+  ([`audio.md`](../subsystems/audio.md#retail-capture-of-the-slot-2--slot-6-residency)).
+  Interpreter mode when any watch or breakpoint is armed; vsync-only runs
+  (pokes, checkpoints) work under `--fast`.
 
 ##### `autorun_w4d_light_kind_hits.lua`
 
@@ -1355,7 +1569,7 @@ Two consequences for `juui1` in particular:
 | [`overlay_residency.py`](../../scripts/pcsx-redux/overlay_residency.py) | A PCSX-Redux `.sstate`, a 2 MiB main-RAM dump, or a window dump (`--window-base`); plus an as-loaded PROT overlay payload + its base VA | Per-chunk byte-match report answering "is this overlay RESIDENT at its base in this state?". Matches over non-zero payload bytes only; `--split <va>` separates an entry's unique head from its over-read tail (a 1.00-matching *suffix* usually means a *different* overlay is resident in the next slot window). Reads main RAM straight out of the sstate protobuf. Established the 0897/0899 slot-A swap across the casino prize-exchange flow + the PROT 0896 pre-transition negative. |
 | [`scan_panel_prims.py`](../../scripts/pcsx-redux/scan_panel_prims.py) | A 2 MiB main-RAM dump (e.g. `load_screen_ram.bin`) + optional `--rect X0 Y0 X1 Y1` framebuffer rect | Lists every GP0 textured-sprite primitive (cmd byte `0x64..0x67`) whose dst falls in the rect, decoded into `(dst_x, dst_y, u, v, clut_x, clut_y, w, h)`. Groups by CLUT so the unique source tiles each CLUT references stand out. Used to pin the 9-slice tile geometry of the load-screen panel (14 prims sampling CLUT row 2 of the system-UI TIM) - see [`subsystems/save-screen.md`](../subsystems/save-screen.md#sprite-asset-sources-continue--load-screen). |
 | [`decode_battle_mesh.py`](../../scripts/pcsx-redux/decode_battle_mesh.py) | The 2 MiB RAM dump from `autorun_battle_mesh_dump.lua` | Decodes the assembled in-RAM battle meshes (per-seat part tables) for the battle-mesh differential - the offline half of the [memory-card capture tier](#memory-card-capture-tier). |
-| [`isolate_card_save.py`](../../scripts/pcsx-redux/isolate_card_save.py) | A `.mcd` memory-card image | Copies one save into an otherwise-blank card, so a card-tier boot loads exactly the intended save regardless of what else the source card carries. |
+| [`isolate_card_save.py`](../../scripts/pcsx-redux/isolate_card_save.py) | A `.mcd` memory-card image | Copies one save into an otherwise-blank card, so a card-tier boot loads exactly the intended save regardless of what else the source card carries. The load grid places a save by its product-code suffix, not its card block, so `--restamp 0` rewrites the kept save's `...PRO-NN` suffix to `-00` and the calibrated CONTINUE ladder lands on it. |
 
 #### The audibility predicate is the envelope, not the key state
 
@@ -1409,6 +1623,11 @@ bash scripts/pcsx-redux/run_probe.sh --scenario party_basic_attack_vs_gobu_gobu 
 LEGAIA_NO_SSTATE=1 bash scripts/pcsx-redux/run_probe.sh \
     --lua scripts/pcsx-redux/autorun_countdown_trigger.lua
 
+# Cold boot through the title into the game: add -fastboot (the default
+# boot path stalls on an early CD read in headless -run).
+LEGAIA_NO_SSTATE=1 LEGAIA_FASTBOOT=1 bash scripts/pcsx-redux/run_probe.sh \
+    --isolate-config --lua scripts/pcsx-redux/autorun_play_from_boot.lua
+
 # Fast (recompiler) mode - FORCES `-dynarec` (overriding the persisted
 # interpreter+debugger config; confirm top bar = CPU: Dynarec). Lua **BPs
 # do NOT fire** under the recompiler, so this is for vsync-event-only
@@ -1435,9 +1654,12 @@ battle under test, dump the full 2 MiB of RAM
   was made against; only a cold path through the loader observes the
   patched image. This is the savestate RAM-cache trap in probe form.
 - **PCSX-Redux auto-applies a sibling `.ppf`** sitting next to the image
-  it is handed (`cdrom/ppf.cc`), silently - an unstaged disc directory
-  can test a different image than the one named on the command line.
-  Point `--iso` at a scratch copy in a directory you control.
+  it is handed (`cdrom/ppf.cc`: the image path with its extension replaced
+  by `.ppf`), silently bar a `[+ppf]` log token - an unstaged disc
+  directory can test a different image than the one named on the command
+  line. `run_probe.sh` stages every image itself (see
+  [The harness](#the-harness)); a script that launches the emulator
+  directly must stage too, as `capture_battle_mesh.sh` does.
 - **Card selection is env-only** (`LEGAIA_MCD1`/`LEGAIA_MCD2` - see the
   wrapper section above for why `-memcard2` cannot be used).
 

@@ -1203,8 +1203,8 @@ impl Renderer {
                 push_constant_ranges: &[],
             });
         // pos(Float32x2)@0 + uv(Float32x2)@8 + cba_tsb(Uint32x2)@16 +
-        // color(Float32x4)@24 + flags(Uint32)@40 = 44 bytes (matches
-        // `screen_overlay::ScreenVertex`).
+        // color(Float32x4)@24 + flags(Uint32)@40 + depth(Float32)@44 = 48
+        // bytes (matches `screen_overlay::ScreenVertex`).
         let screen_overlay_attributes = [
             wgpu::VertexAttribute {
                 offset: 0,
@@ -1230,6 +1230,11 @@ impl Renderer {
                 offset: 40,
                 shader_location: 4,
                 format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                offset: crate::screen_overlay::SCREEN_VERTEX_OFF_DEPTH,
+                shader_location: 5,
+                format: wgpu::VertexFormat::Float32,
             },
         ];
         let screen_overlay_vertex_layout = wgpu::VertexBufferLayout {
@@ -1296,6 +1301,19 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
+        let viewport_fill_vbuf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scene viewport fill vertex buffer"),
+            size: 4 * crate::screen_overlay::SCREEN_VERTEX_STRIDE,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let viewport_fill_ibuf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scene viewport fill index buffer"),
+            size: 6 * 4,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let depth_view = create_depth_view(&device, config.width, config.height);
 
         Ok(Self {
@@ -1349,6 +1367,7 @@ impl Renderer {
             // always blends ABE prims, so field water / glass / effects should
             // composite in the clean render, not just under LEGAIA_PSX_RENDER.
             semi_blend: std::cell::Cell::new(true),
+            scene_viewport: std::cell::Cell::new(None),
             dyn_lighting: std::cell::Cell::new(false),
             // Shadow sub-toggle defaults ON - it only bites while dynamic
             // lighting is enabled and lights are staged.
@@ -1377,6 +1396,9 @@ impl Renderer {
             screen_overlay_vcap: std::cell::Cell::new(initial_overlay_quads * 4),
             screen_overlay_icap: std::cell::Cell::new(initial_overlay_quads * 6),
             screen_overlay_runs: std::cell::RefCell::new(Vec::new()),
+            screen_overlay_under_runs: std::cell::Cell::new(0),
+            viewport_fill_vbuf,
+            viewport_fill_ibuf,
         })
     }
 }

@@ -189,11 +189,21 @@ fn tap(session: &mut BootSession, button: PadButton) {
 
 /// Advance with a neutral pad until `f` holds, returning whether it did.
 /// The neutral pad matters: the action SM runs its timelines between player
-/// turns and a held button would be re-read by whatever opens next.
+/// turns and a held button would be re-read by whatever opens next. The one
+/// press a settle makes is `Begin` on the party's commit confirm (`0x6E`),
+/// which every rung's last commit raises before the round can play out.
 fn settle_until(session: &mut BootSession, ticks: usize, f: impl Fn(&BootSession) -> bool) -> bool {
     for _ in 0..ticks {
         if f(session) {
             return true;
+        }
+        let confirm_up = matches!(
+            session.host.world.battle.command.as_ref().map(|c| &c.phase),
+            Some(CommandPhase::CommitConfirm { .. })
+        );
+        if confirm_up {
+            tap(session, PadButton::Cross);
+            continue;
         }
         session.host.world.set_pad(0);
         let _ = session.tick();
@@ -268,8 +278,15 @@ fn no_command(session: &BootSession, after: &str) -> String {
 
 /// Wait for a party turn to hand the pad a command session.
 fn wait_for_command(session: &mut BootSession) -> bool {
+    // A pickable surface - not the commit confirm, which the settle itself
+    // takes (`Begin`) on the way to the next round's prompt.
     settle_until(session, SETTLE_TICKS, |s| {
-        s.host.world.battle.command.is_some()
+        s.host
+            .world
+            .battle
+            .command
+            .as_ref()
+            .is_some_and(|c| !matches!(c.phase, CommandPhase::CommitConfirm { .. }))
     })
 }
 
@@ -340,9 +357,10 @@ fn pick_command(session: &mut BootSession, want: BattleCommand) -> bool {
     false
 }
 
-/// Confirm through a target picker if one is up. Attack / Magic open a cursor
-/// after the arm is taken; the default seat is a live enemy, so a single
-/// confirm commits.
+/// Confirm through a target picker if one is up, then through the party's
+/// `Begin | Reselect` (`0x6E`) the last commit raises. Attack / Magic open a
+/// cursor after the arm is taken; the default seat is a live enemy, so a
+/// single confirm commits, and the confirm screen opens on `Begin`.
 fn confirm_target(session: &mut BootSession) {
     for _ in 0..8 {
         let up = session
@@ -351,7 +369,12 @@ fn confirm_target(session: &mut BootSession) {
             .battle
             .command
             .as_ref()
-            .map(|s| matches!(s.phase, CommandPhase::Targeting { .. }))
+            .map(|s| {
+                matches!(
+                    s.phase,
+                    CommandPhase::Targeting { .. } | CommandPhase::CommitConfirm { .. }
+                )
+            })
             .unwrap_or(false);
         if !up {
             return;
@@ -588,11 +611,9 @@ fn battle_depth_ladder() {
         // Review -> Begin -> target.
         //
         // The loop condition has to be the phase, not `arts_input_active()`:
-        // the session stays alive through Review, Begin|Reselect and
-        // Targeting, so a driver that keeps pressing a direction while it is
-        // "active" walks past the auto-end, toggles the Begin|Reselect cursor
-        // onto **Reselect**, and the next confirm wipes the buffer and drops
-        // it back into a fresh entry - a perfect loop that never strikes.
+        // the session stays alive through Review and Targeting, so a driver
+        // that keeps pressing a direction while it is "active" walks past the
+        // auto-end into the target picker instead of stopping at the review.
         for _ in 0..24 {
             let entering = session
                 .host
@@ -605,14 +626,16 @@ fn battle_depth_ladder() {
             }
             tap(&mut session, PadButton::Up);
         }
-        // From Review, Cross alone walks Review -> BeginMenu{cursor:0} ->
-        // Begin -> target -> confirmed. Cursor 0 is Begin, so no navigation.
+        // From Review, Cross alone walks Review -> target -> confirmed, and
+        // the commit raises the party's Begin | Reselect, which opens on
+        // Begin - so Cross again plays the round out.
         for _ in 0..24 {
             if !session.host.world.arts_input_active() {
                 break;
             }
             tap(&mut session, PadButton::Cross);
         }
+        confirm_target(&mut session);
         if !settle_until(&mut session, SETTLE_TICKS, |s| {
             monster_hp_total(s) < hp_before
         }) {
@@ -693,6 +716,8 @@ fn battle_depth_ladder() {
             }
             tap(&mut session, PadButton::Cross);
         }
+        // The cast's commit raised the party's Begin | Reselect; take Begin.
+        confirm_target(&mut session);
         let mut spawned = false;
         for _ in 0..SETTLE_TICKS {
             if session.host.world.take_pending_summon_spawn().is_some() {

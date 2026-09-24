@@ -160,8 +160,9 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
         "exactly one copy consumed at the commit"
     );
     assert_eq!(w.actors[0].battle.hp, 40, "the heal waits for the dispatch");
-    // The other two members Spirit (the ring's down arm) so the round
-    // begins; with flat turn tokens slot 0 dispatches first.
+    // The other two members Spirit (the ring's down arm); the last commit
+    // raises the party's Begin | Reselect (`0x6E`), and Cross takes Begin;
+    // with flat turn tokens slot 0 dispatches first.
     for _ in 0..2 {
         assert!(
             w.battle.command.is_some(),
@@ -170,9 +171,11 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
         press(&mut w, PadButton::Down, &mut trace);
     }
     assert!(
-        w.battle.command.is_none(),
-        "the last commit begins the round"
+        w.battle.command.is_some(),
+        "the last commit raises the commit confirm"
     );
+    press(&mut w, PadButton::Cross, &mut trace);
+    assert!(w.battle.command.is_none(), "Begin plays the round out");
 
     // The dispatch ARMS the SM, not parks it: the item id staged as the
     // action parameter, and the simulation fold ahead of the band.

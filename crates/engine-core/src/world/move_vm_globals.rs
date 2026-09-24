@@ -69,7 +69,18 @@ pub struct MoveVmGlobals {
     /// call. Pairs of `(actor_slot, outcome)`. Engines drain or inspect this
     /// after `World::tick` to react to halts / pending opcodes.
     pub outcomes: Vec<(u8, vm::move_vm::ActorTickOutcome)>,
+    /// Move-VM extension sub-op `0x2C` executions since the last draw - the
+    /// scanline strip emitter `FUN_801D31B0`'s inputs, captured at the step
+    /// and drawn by [`crate::world::World::move_strip_render_step`] on the
+    /// host's render pass. Capped at [`MOVE_STRIP_REQUEST_CAP`].
+    pub strip_requests: Vec<vm::move_ext_strip::StripRequest>,
 }
+
+/// Most strip requests [`MoveVmGlobals::strip_requests`] holds between two
+/// draws. A host that never draws (a headless tick loop) would otherwise grow
+/// the queue without bound; retail has no queue at all - it emits into the
+/// frame's primitive buffer on the spot.
+pub const MOVE_STRIP_REQUEST_CAP: usize = 64;
 
 impl MoveVmGlobals {
     pub fn new() -> Self {
@@ -88,7 +99,24 @@ impl MoveVmGlobals {
             scratchpad_targets: [0; 16],
             actor_motions: std::collections::BTreeMap::new(),
             outcomes: Vec::new(),
+            strip_requests: Vec::new(),
         }
+    }
+}
+
+impl MoveVmGlobals {
+    /// Queue one sub-op `0x2C` execution for the next draw, dropping it once
+    /// [`MOVE_STRIP_REQUEST_CAP`] requests are already waiting.
+    pub fn push_strip_request(&mut self, req: vm::move_ext_strip::StripRequest) {
+        if self.strip_requests.len() < MOVE_STRIP_REQUEST_CAP {
+            self.strip_requests.push(req);
+        }
+    }
+
+    /// Drain the queued strip requests - what a host's draw path hands the
+    /// shared render step (`legaia_engine_ui::move_strip::move_strip_prims`).
+    pub fn take_strip_requests(&mut self) -> Vec<vm::move_ext_strip::StripRequest> {
+        std::mem::take(&mut self.strip_requests)
     }
 }
 

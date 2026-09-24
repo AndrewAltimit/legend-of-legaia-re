@@ -8,7 +8,11 @@
 //! - `man:*` - the segment inside the decompressed scene MAN is overwritten
 //!   and space-padded (`0x20`) to its exact original length (the pager walks
 //!   segments byte-by-byte, so the framing must not move), then the whole
-//!   MAN is recompressed and must fit its original compressed footprint;
+//!   MAN is recompressed and must fit its original compressed footprint.
+//!   A line longer than its span, or a padded scene that no longer
+//!   recompresses, goes through the relocator instead (every line at its own
+//!   length, crossing references moved - [`man_edit::apply_text_edits`]),
+//!   still inside the same footprint;
 //! - `raw:*` - same space-padded overwrite, directly in the PROT entry; the
 //!   ten streaming dungeon scenes (an uncompressed MAN leading a typed-chunk
 //!   stream - [`super::stream_man`]) also get the generalized rewriter: a
@@ -42,6 +46,7 @@ use crate::disc::DiscPatcher;
 
 use super::export::SceneManText;
 use super::markup::{self, Target};
+use super::monster_names;
 use super::pack::{Entry, LanguagePack};
 use super::segments;
 use super::stream_man::StreamManText;
@@ -185,6 +190,10 @@ enum Key {
         prot: usize,
         va: u32,
     },
+    /// A monster name inside its record in the monster archive.
+    Mon {
+        id: u16,
+    },
 }
 
 fn parse_key(key: &str) -> Option<Key> {
@@ -222,6 +231,9 @@ fn parse_key(key: &str) -> Option<Key> {
             let va = u32::from_str_radix(it.next()?.strip_prefix("0x")?, 16).ok()?;
             Some(Key::Ui { prot, va })
         }
+        "mon" => Some(Key::Mon {
+            id: monster_names::key_id(key)?,
+        }),
         _ => None,
     }
 }
@@ -344,16 +356,14 @@ fn plan_scus_str(
         return None;
     };
     // The string as it stands on this disc, up to (not including) its NUL.
+    // A strict system-text pool reads token-aware: `{c1:00}` carries a `0x00`
+    // argument that is not the terminator.
     let Some(tail) = scus.get(off..) else {
         report.issue(&entry.key, "string span past end of SCUS");
         return None;
     };
-    let Some(cur_len) = tail
-        .iter()
-        .take(MAX_SCUS_STRLEN)
-        .position(|&b| b == 0)
-        .filter(|&l| l > 0)
-    else {
+    let strict = ui::pool_for(usize::MAX, va).is_some_and(|p| p.strict);
+    let Some(cur_len) = ui::pool_strlen(scus, off, strict).filter(|&l| l <= MAX_SCUS_STRLEN) else {
         report.issue(&entry.key, "no NUL-terminated string at this VA - skipped");
         return None;
     };
@@ -384,8 +394,15 @@ fn plan_scus_str(
     if !fits(entry, &translated, entry.budget.min(writable), report) {
         return None;
     }
+    // Re-terminate and zero the rest of the old string's span: nothing reads
+    // past a terminator, but a stale printable tail is what a pool scanner
+    // (and any reader that skips zero padding to the next string - the combo
+    // string that follows an arts description) would pick up.
     let mut bytes = translated;
-    bytes.push(0); // re-terminate; the old tail past the NUL is never read
+    bytes.push(0);
+    if bytes.len() < cur_len + 1 {
+        bytes.resize(cur_len + 1, 0);
+    }
     Some((off, bytes))
 }
 
@@ -502,6 +519,7 @@ fn plan_ui(
     base_va: u32,
     e: &Entry,
     va: u32,
+    pool_strict: bool,
     report: &mut ImportReport,
 ) -> Option<(usize, Vec<u8>)> {
     let source = encode_source(e, Target::CString, report).ok()?;
@@ -514,11 +532,8 @@ fn plan_ui(
         report.issue(&e.key, "VA past end of the overlay entry");
         return None;
     };
-    let Some(cur_len) = tail
-        .iter()
-        .take(MAX_SCUS_STRLEN)
-        .position(|&b| b == 0)
-        .filter(|&l| l > 0)
+    let strict = pool_strict;
+    let Some(cur_len) = ui::pool_strlen(entry, off, strict).filter(|&l| l <= MAX_SCUS_STRLEN)
     else {
         report.issue(&e.key, "no NUL-terminated string at this VA - skipped");
         return None;
@@ -623,6 +638,60 @@ fn prepare_segment(
     }
 }
 
+/// Validate every keyed line of one carrier against the disc
+/// ([`prepare_segment`]) and return the ready set.
+///
+/// A **translation-only** pack has no source text to prove a line is the one
+/// it was written for - only the segment's framing and its length hint - so
+/// once any keyed line of a carrier fails that check, the carrier's text is
+/// not where the pack expects it (an earlier import relocated the scene, or
+/// another patch moved it), and a line that still happens to pass may be a
+/// *neighbour* of the right length. The whole carrier is then skipped: that
+/// is what makes re-importing onto an already translated image a no-op
+/// rather than a write into shifted text. A working pack keeps the per-line
+/// source comparison, which cannot land on a neighbour.
+fn collect_ready<'a>(
+    buf: &[u8],
+    entry_idx: usize,
+    edits: &[(usize, &'a Entry)],
+    report: &mut ImportReport,
+) -> Vec<ReadyMan<'a>> {
+    let mut ready = Vec::new();
+    let mut mismatched = 0usize;
+    for (off, en) in edits {
+        let Ok(source) = encode_source(en, Target::Segment, report) else {
+            continue;
+        };
+        let Some(translated) = encode_translation(en, Target::Segment, report) else {
+            continue;
+        };
+        match prepare_segment(buf, en, *off, source.as_deref(), &translated, report) {
+            SegPrep::Ready { old_len } => ready.push(ReadyMan {
+                off: *off,
+                old_len,
+                translated,
+                entry: en,
+            }),
+            SegPrep::Skip if source.is_none() => mismatched += 1,
+            _ => {}
+        }
+    }
+    if mismatched > 0 && !ready.is_empty() {
+        for r in &ready {
+            report.issue(
+                &r.entry.key,
+                format!(
+                    "PROT entry {entry_idx}: {mismatched} other line(s) of this scene no longer \
+                     sit where the pack expects them (an earlier import or another patch moved \
+                     its text) - the whole scene is skipped so no line lands on a neighbour"
+                ),
+            );
+        }
+        return Vec::new();
+    }
+    ready
+}
+
 /// Diagnostic for a keyed line whose `0x1F` framing is a coincidental byte
 /// run inside a decoded instruction's operands.
 const OPERAND_RUN_MSG: &str = "the text framing at this offset is a coincidence inside a \
@@ -675,14 +744,26 @@ fn gate_text_sites<'a>(
     (walked, applied)
 }
 
+/// Why [`relocate_and_pack`] could not produce a stream.
+enum GrowFail {
+    /// The relocator refused the edit set, or the rewrite is not the same
+    /// program relocated - nothing about *which* lines are kept changes that.
+    NotPreserved,
+    /// The relocated MAN recompresses `n` bytes past the footprint.
+    Overflow(usize),
+}
+
 /// Attempt the **generalized rewriter** path for one scene MAN: grow/shrink
-/// every ready segment to its exact translated bytes, relocate all crossing
+/// every given segment to its exact translated bytes, relocate all crossing
 /// references ([`man_edit::apply_text_edits`]), verify the rewrite is the same
 /// program relocated ([`man_edit::text_edits_preserve_scripts`]), and recompress
-/// within the MAN's on-disc footprint. Returns `(recompressed_stream,
-/// new_decompressed_size)` on success, or `None` when the growth can't be done
-/// safely / won't fit (caller falls back to same-size + abbreviation).
-fn try_grow_man(man: &SceneManText, ready: &[ReadyMan]) -> Option<(Vec<u8>, u32)> {
+/// within the MAN's on-disc footprint (fast greedy parse, then the optimal
+/// parse when it just misses - same policy as `repack`). Returns
+/// `(recompressed_stream, new_decompressed_size)`.
+fn relocate_and_pack(
+    man: &SceneManText,
+    ready: &[&ReadyMan],
+) -> std::result::Result<(Vec<u8>, u32), GrowFail> {
     let edits: Vec<TextEdit> = ready
         .iter()
         .map(|r| TextEdit {
@@ -691,24 +772,136 @@ fn try_grow_man(man: &SceneManText, ready: &[ReadyMan]) -> Option<(Vec<u8>, u32)
             new_bytes: r.translated.clone(),
         })
         .collect();
-    let grown = man_edit::apply_text_edits(&man.decoded, &edits).ok()?;
+    let grown =
+        man_edit::apply_text_edits(&man.decoded, &edits).map_err(|_| GrowFail::NotPreserved)?;
     if !man_edit::text_edits_preserve_scripts(&man.decoded, &grown) {
-        return None;
+        return Err(GrowFail::NotPreserved);
     }
-    // Recompress within the descriptor-boundary footprint (fast greedy parse,
-    // then the optimal parse when it just misses - same policy as `repack`).
     let stream = legaia_lzs::compress(&grown);
-    let stream = if stream.len() <= man.compressed_budget {
-        stream
-    } else {
-        let opt = legaia_lzs::compress_optimal(&grown);
-        if opt.len() <= man.compressed_budget {
-            opt
-        } else {
+    if stream.len() <= man.compressed_budget {
+        return Ok((stream, grown.len() as u32));
+    }
+    let opt = legaia_lzs::compress_optimal(&grown);
+    if opt.len() <= man.compressed_budget {
+        return Ok((opt, grown.len() as u32));
+    }
+    Err(GrowFail::Overflow(opt.len() - man.compressed_budget))
+}
+
+/// [`relocate_and_pack`] over every ready line; `None` when the growth can't
+/// be done safely / won't fit (caller falls back to relayout or same-size).
+fn try_grow_man(man: &SceneManText, ready: &[ReadyMan]) -> Option<(Vec<u8>, u32)> {
+    let all: Vec<&ReadyMan> = ready.iter().collect();
+    relocate_and_pack(man, &all).ok()
+}
+
+/// A same-size scene write the relocator fitted into the MAN's footprint:
+/// the stream, its decompressed size, and which `ready` lines it carries
+/// (`kept`) versus left English (`dropped`).
+struct FittedMan {
+    stream: Vec<u8>,
+    size: u32,
+    kept: Vec<usize>,
+    dropped: Vec<usize>,
+}
+
+/// Fit as many `ready` lines as possible into the MAN's **own** compressed
+/// footprint through the relocator (every line at its exact length - a
+/// shorter translation shrinks the MAN, a longer one grows it), rolling
+/// lines back to the source text only when the scene still overflows.
+///
+/// This is the same-size image's best path whenever the space-padded write
+/// does not recompress: padding every shorter line back to the English
+/// length spends bytes the footprint does not have, while the exact-length
+/// rewrite gives them back. The rollback drops the lines that grow the MAN
+/// most first, a batch at a time sized by the measured overflow, so a scene
+/// that is a few bytes over loses a line or two rather than every line
+/// longer than the one that tipped it. `None` when the relocator refuses the
+/// scene outright or no subset fits (the caller keeps the padded path).
+fn fit_man_in_footprint(man: &SceneManText, ready: &[ReadyMan]) -> Option<FittedMan> {
+    use std::cmp::Reverse;
+    let growth = |r: &ReadyMan| r.translated.len() as isize - r.old_len as isize;
+    // Drop order: biggest growth first, then the longest translation.
+    let mut order: Vec<usize> = (0..ready.len()).collect();
+    order.sort_by_key(|&i| {
+        (
+            Reverse(growth(&ready[i])),
+            Reverse(ready[i].translated.len()),
+            i,
+        )
+    });
+    let mut keep = vec![true; ready.len()];
+    let mut cursor = 0usize;
+    loop {
+        let kept: Vec<usize> = (0..ready.len()).filter(|&i| keep[i]).collect();
+        if kept.is_empty() {
             return None;
         }
-    };
-    Some((stream, grown.len() as u32))
+        let refs: Vec<&ReadyMan> = kept.iter().map(|&i| &ready[i]).collect();
+        match relocate_and_pack(man, &refs) {
+            Ok((stream, size)) => {
+                let dropped = (0..ready.len()).filter(|&i| !keep[i]).collect();
+                return Some(FittedMan {
+                    stream,
+                    size,
+                    kept,
+                    dropped,
+                });
+            }
+            Err(GrowFail::NotPreserved) => return None,
+            Err(GrowFail::Overflow(over)) => {
+                // Raw bytes restored are an upper bound on the compressed
+                // bytes saved, so a batch whose growth covers the overflow is
+                // the fewest lines that can possibly fit - never more.
+                let mut freed = 0usize;
+                while freed < over && cursor < order.len() {
+                    let i = order[cursor];
+                    cursor += 1;
+                    keep[i] = false;
+                    freed += growth(&ready[i]).max(1) as usize;
+                }
+            }
+        }
+    }
+}
+
+/// Write a [`fit_man_in_footprint`] result: the stream, the MAN descriptor's
+/// new size word, the carried lines (plus the same-size `pre_applied` ones
+/// already in the decoded MAN) counted as applied, and a rollback diagnostic
+/// for every line left in the source language.
+fn write_fitted_man(
+    patcher: &mut DiscPatcher,
+    entry_idx: usize,
+    man: &SceneManText,
+    ready: &[ReadyMan],
+    pre_applied: &PreApplied,
+    fit: FittedMan,
+    report: &mut ImportReport,
+) -> Result<()> {
+    patcher.patch_prot_entry(entry_idx, man.man_offset as u64, &fit.stream)?;
+    patcher.patch_prot_entry(
+        entry_idx,
+        man.man_descriptor_off as u64,
+        &scene_asset_table::encode_size_word(0x03, fit.size).to_le_bytes(),
+    )?;
+    report.applied += fit.kept.len() + pre_applied.len();
+    report
+        .applied_keys
+        .extend(fit.kept.iter().map(|&i| ready[i].entry.key.clone()));
+    report
+        .applied_keys
+        .extend(pre_applied.iter().map(|(_, _, en)| en.key.clone()));
+    for &i in &fit.dropped {
+        report.issue(
+            &ready[i].entry.key,
+            format!(
+                "scene {entry_idx}: rolled back - the scene's dialog no longer \
+                 recompresses into its {} byte footprint (shorten this line)",
+                man.compressed_budget
+            ),
+        );
+    }
+    Ok(())
 }
 
 /// Build entry `entry_idx`'s new **full-footprint payload**, growing the scene
@@ -883,6 +1076,7 @@ pub fn import_pack_phase(
     let mut man_work: BTreeMap<usize, Vec<(usize, &Entry)>> = BTreeMap::new();
     let mut raw_work: BTreeMap<usize, Vec<(usize, &Entry)>> = BTreeMap::new();
     let mut ui_work: BTreeMap<usize, Vec<(u32, &Entry)>> = BTreeMap::new();
+    let mut mon_work: Vec<(u16, &Entry)> = Vec::new();
     for (_, entries) in pack.sections.iter() {
         for e in entries {
             let key = parse_key(&e.key);
@@ -893,7 +1087,8 @@ pub fn import_pack_phase(
                     Some(Key::ScusStr { .. })
                     | Some(Key::ScusParty { .. })
                     | Some(Key::ScusCell { .. })
-                    | Some(Key::Ui { .. }),
+                    | Some(Key::Ui { .. })
+                    | Some(Key::Mon { .. }),
                     ImportPhase::NamesOnly,
                 ) => true,
                 // Unrecognized keys are diagnosed once, in the names (last)
@@ -921,6 +1116,7 @@ pub fn import_pack_phase(
                 Some(Key::Ui { prot, va }) => {
                     ui_work.entry(prot).or_default().push((va, e));
                 }
+                Some(Key::Mon { id }) => mon_work.push((id, e)),
                 None => report.issue(&e.key, "unrecognized key shape - skipped"),
             }
         }
@@ -969,30 +1165,7 @@ pub fn import_pack_phase(
 
         // Validate each segment against the disc once (framing / already-applied
         // / wrong-disc guard), collecting the ready set with its current span.
-        let mut ready: Vec<ReadyMan> = Vec::new();
-        for (off, en) in &edits {
-            let Ok(source) = encode_source(en, Target::Segment, &mut report) else {
-                continue;
-            };
-            let Some(translated) = encode_translation(en, Target::Segment, &mut report) else {
-                continue;
-            };
-            if let SegPrep::Ready { old_len } = prepare_segment(
-                &man.decoded,
-                en,
-                *off,
-                source.as_deref(),
-                &translated,
-                &mut report,
-            ) {
-                ready.push(ReadyMan {
-                    off: *off,
-                    old_len,
-                    translated,
-                    entry: en,
-                });
-            }
-        }
+        let ready = collect_ready(&man.decoded, entry_idx, &edits, &mut report);
         // Structural gate: a line is dialog only when its `0x1F` lead is the
         // text an instruction on the record's clean script walk carries. A
         // coincidental `1F .. 00` inside an instruction's operands is refused
@@ -1046,10 +1219,23 @@ pub fn import_pack_phase(
             }
         }
 
+        // A line is over its span and neither the whole-set grow nor a
+        // relayout took the scene: fit the most lines the footprint holds
+        // through the relocator before falling back to padding (which could
+        // only drop every over-span line).
+        if ready.iter().any(|r| r.translated.len() > r.old_len)
+            && let Some(fit) = fit_man_in_footprint(&man, &ready)
+        {
+            write_fitted_man(patcher, entry_idx, &man, &ready, &applied, fit, &mut report)?;
+            continue;
+        }
+
         // Same-size (fast, byte-identical) path: apply the fitting lines in
         // place, report the over-budget ones (the MAN couldn't be grown to fit
         // them), then recompress with a longest-first rollback if the scene's
         // dialog no longer fits its compressed footprint.
+        let pre_applied = applied.len();
+        let any_over = ready.iter().any(|r| r.translated.len() > r.old_len);
         for r in &ready {
             if r.translated.len() > r.old_len {
                 report.issue(
@@ -1078,6 +1264,26 @@ pub fn import_pack_phase(
         // rather than losing the whole scene's dialog. `pop()` takes from the
         // vector's tail, so an ASCENDING sort puts the longest line there.
         let mut stream = man.repack();
+        // Space padding spends bytes the footprint may not have: every
+        // shorter translation padded back to the source length recompresses
+        // worse than the same line at its own length. Before rolling lines
+        // back, undo the padding and let the relocator fit the scene at exact
+        // lengths (the shape a translation-only pack of in-budget lines hits).
+        if stream.is_none() && !any_over && applied.len() > pre_applied {
+            for (off, before, _) in applied.drain(pre_applied..).rev() {
+                man.decoded[off..off + before.len()].copy_from_slice(&before);
+            }
+            if let Some(fit) = fit_man_in_footprint(&man, &ready) {
+                write_fitted_man(patcher, entry_idx, &man, &ready, &applied, fit, &mut report)?;
+                continue;
+            }
+            for r in &ready {
+                let before = man.decoded[r.off..r.off + r.old_len].to_vec();
+                man.decoded[r.off..r.off + r.old_len]
+                    .copy_from_slice(&pad_segment(&r.translated, r.old_len));
+                applied.push((r.off, before, r.entry));
+            }
+        }
         if stream.is_none() {
             applied.sort_by_key(|(_, before, _)| before.len());
             while stream.is_none()
@@ -1146,30 +1352,7 @@ pub fn import_pack_phase(
         }
         // Validate each segment against the disc once (framing / already-applied
         // / wrong-disc guard), collecting the ready set with its current span.
-        let mut ready: Vec<ReadyMan> = Vec::new();
-        for (off, en) in &edits {
-            let Ok(source) = encode_source(en, Target::Segment, &mut report) else {
-                continue;
-            };
-            let Some(translated) = encode_translation(en, Target::Segment, &mut report) else {
-                continue;
-            };
-            if let SegPrep::Ready { old_len } = prepare_segment(
-                &window,
-                en,
-                *off,
-                source.as_deref(),
-                &translated,
-                &mut report,
-            ) {
-                ready.push(ReadyMan {
-                    off: *off,
-                    old_len,
-                    translated,
-                    entry: en,
-                });
-            }
-        }
+        let ready = collect_ready(&window, entry_idx, &edits, &mut report);
         if ready.is_empty() {
             continue;
         }
@@ -1307,7 +1490,8 @@ pub fn import_pack_phase(
             }
         };
         for (va, en) in edits {
-            if let Some((off, bytes)) = plan_ui(&buf, base_va, en, va, &mut report) {
+            let strict = ui::pool_for(prot, va).is_some_and(|p| p.strict);
+            if let Some((off, bytes)) = plan_ui(&buf, base_va, en, va, strict, &mut report) {
                 patcher.patch_prot_entry(prot, off as u64, &bytes)?;
                 buf[off..off + bytes.len()].copy_from_slice(&bytes);
                 report.applied += 1;
@@ -1316,5 +1500,83 @@ pub fn import_pack_phase(
         }
     }
 
+    if !mon_work.is_empty() {
+        import_monster_names(patcher, &mon_work, &mut report)?;
+    }
+
     Ok(report)
+}
+
+/// Monster names: one decode / rewrite / re-pack per touched record, into its
+/// fixed slot of the archive (see [`monster_names`]). The budget is re-derived
+/// from the archive on this disc, never taken from the pack.
+fn import_monster_names(
+    patcher: &mut DiscPatcher,
+    work: &[(u16, &Entry)],
+    report: &mut ImportReport,
+) -> Result<()> {
+    let mut archive = match patcher.read_entry(crate::disc::MONSTER_ARCHIVE_ENTRY) {
+        Ok(b) => b,
+        Err(e) => {
+            for (_, en) in work {
+                report.issue(&en.key, format!("monster archive unreadable: {e}"));
+            }
+            return Ok(());
+        }
+    };
+    let fields = monster_names::fields(&archive);
+    let budgets: BTreeMap<u16, usize> = monster_names::budgets(&fields).into_iter().collect();
+    let current: BTreeMap<u16, Vec<u8>> = fields.into_iter().map(|(id, f)| (id, f.bytes)).collect();
+    for &(id, en) in work {
+        let (Some(cur), Some(&budget)) = (current.get(&id), budgets.get(&id)) else {
+            report.issue(&en.key, "no named monster record at this id - skipped");
+            continue;
+        };
+        let Ok(source) = encode_source(en, Target::CString, report) else {
+            continue;
+        };
+        let Some(translated) = encode_translation(en, Target::CString, report) else {
+            continue;
+        };
+        if !translated.iter().all(|&b| (0x20..0x7F).contains(&b)) {
+            report.issue(
+                &en.key,
+                "a monster name takes printable glyphs only (the loader reads the \
+                 record's name as plain text, markup escapes included)",
+            );
+            continue;
+        }
+        if cur == &translated {
+            report.already_applied += 1;
+            report.already_keys.push(en.key.clone());
+            continue;
+        }
+        if let Some(src) = &source
+            && src != cur
+        {
+            report.issue(
+                &en.key,
+                "disc bytes don't match the pack source (different disc revision or \
+                 a conflicting patch) - skipped",
+            );
+            continue;
+        }
+        if source.is_none() && !hint_agrees(en, budget, report) {
+            continue;
+        }
+        if !fits(en, &translated, en.budget.min(budget), report) {
+            continue;
+        }
+        match monster_names::rewrite_slot(&archive, id, &translated, budget) {
+            Ok(slot) => {
+                let at = monster_names::slot_offset(id);
+                patcher.patch_monster_slot(id, &slot)?;
+                archive[at..at + slot.len()].copy_from_slice(&slot);
+                report.applied += 1;
+                report.applied_keys.push(en.key.clone());
+            }
+            Err(e) => report.issue(&en.key, format!("{e} - skipped")),
+        }
+    }
+    Ok(())
 }

@@ -175,3 +175,65 @@ fn live_battles_opt_out_keeps_the_field_walk_only() {
     let v = overlay(&mut rt);
     assert_eq!(v["open"], false, "no battle, no shop => overlay closed");
 }
+
+/// The **commit log** reaches the page: once a party member commits a command
+/// the page's battle overlay carries the log row - its gold name plate's left
+/// cap at stage `x = 8` (content `x = 16`, plate `x - 8`) and the member's
+/// name glyphs on the pen `x = 16` - through the same `battle_hud_draws_for`
+/// builder the native window calls.
+#[test]
+fn a_committed_member_puts_its_commit_log_row_on_the_page() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    for _ in 0..5 {
+        rt.tick_frame().expect("tick");
+    }
+    if !rt.debug_start_test_battle() {
+        eprintln!("[skip] no scripted formation row resolved on this disc build");
+        return;
+    }
+    const CROSS: u16 = 0x4000;
+    const LEFT: u16 = 0x0080;
+    // 960x720 = 3x the stage at a zero origin.
+    let log_row = |v: &serde_json::Value| -> bool {
+        let plate = v["sprites"].as_array().is_some_and(|a| {
+            a.iter().any(|s| {
+                s["dst"][0].as_f64() == Some(24.0)
+                    && matches!(s["dst"][1].as_f64(), Some(y) if y == 140.0 * 3.0 || y == 164.0 * 3.0)
+            })
+        });
+        let glyphs = v["texts"].as_array().is_some_and(|a| {
+            a.iter().any(|t| {
+                t["dst"][0]
+                    .as_f64()
+                    .is_some_and(|x| (48.0..60.0).contains(&x))
+                    && t["dst"][1]
+                        .as_f64()
+                        .is_some_and(|y| (430.0..520.0).contains(&y))
+            })
+        });
+        plate && glyphs
+    };
+    // Walk the ring: Begin, then Left (Attack) + Cross (Auto / target) until
+    // the first member's commit lands.
+    let mut seen = false;
+    for step in 0..60 {
+        let mask = if step % 2 == 0 { CROSS } else { LEFT };
+        rt.set_pad(mask);
+        rt.tick_frame().expect("tick");
+        rt.set_pad(0);
+        for _ in 0..12 {
+            rt.tick_frame().expect("tick");
+        }
+        if rt.scene_mode() != "Battle" {
+            break;
+        }
+        if log_row(&overlay(&mut rt)) {
+            seen = true;
+            break;
+        }
+    }
+    assert!(seen, "the page never drew a commit-log row");
+}

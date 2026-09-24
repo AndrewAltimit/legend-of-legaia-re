@@ -112,7 +112,11 @@ functions walk them, in a fixed order the per-frame mode handlers pin
 - **`FUN_80016B6C` drains** (`0x80016BF8`). A slot plays only when its timer is
   **exactly zero** and its id is still `>= 0`.
 - The producers sit between them. `FUN_80035B50` writes `id` plus `timer = 0`
-  into slot `gp+0x158` and advances that cursor round-robin over the four.
+  into slot `gp+0x158`, latches that slot into `gp+0x15A`, and advances the
+  cursor round-robin over the four - there is no search for a free slot. Two
+  three-instruction siblings address the latched slot: `FUN_80035BAC(delay)`
+  writes its countdown, and `FUN_80035BD0(id)` overwrites its cue and zeroes
+  its countdown without moving the cursor.
 
 So the contract is a **one-shot scheduled delay**, not a queue: a cue armed with
 timer `N` plays on the frame its countdown first reads zero and is cleared before
@@ -121,7 +125,74 @@ frame counter" gets wrong - the countdown is in **vsyncs** (at the field cadence
 floor of 2, a `timer = 4` cue plays after two game ticks, not four), and there
 are exactly four slots, so a fifth pending cue *replaces* one.
 
-Port: `legaia_engine_audio::sfx_ring`.
+Port: `legaia_engine_audio::sfx_ring` (`SfxCueRing::push_cue` / `set_last_delay` /
+`replace_last` for the three producers). The scheduler's `enqueue` is a
+port-side unbounded delay queue, not `FUN_80035B50`.
+
+### The field's producers: op `0x36` and the motion VM's op `0x09`
+
+Two field scripts reach `FUN_80035B50`, and both pass the cue id straight from
+their bytecode:
+
+| Producer | Call site | Argument |
+|---|---|---|
+| field VM op `0x36`, `word0 = 0x8000` (sub `0`) | `jal 0x80035B50` at `0x801E0348` (PROT 0897) | `a0 = (s16)word1` |
+| field VM op `0x36`, `word0 = 0x8004` (sub `4`) | `jal 0x80035BAC` at `0x801E03D8` | `a0 = (s16)word1`, the countdown in vsyncs |
+| motion VM (`FUN_80038158`) op `0x09` `[09 lo hi]` | `jal 0x80035B50` at `0x80039178` | `a0 = (s16)(lo + (hi << 8))` |
+
+Sub `0` runs only while the side-band request pair is settled
+(`_DAT_8007BABC == _DAT_8007BAA0`, `0x801E032C..0x801E0340`); otherwise the
+script halts at PC. The scripts pair the two subs as `36 00 80 <id>` then
+`36 04 80 <delay>`, so the delay write lands on the slot the push just latched.
+
+The disc's field VM corpus (`asset field-op-census --only 36`) carries 3 828
+sub-`0` sites and 2 690 sub-`4` sites across 133 carriers. The ids split
+between both halves of the table: static ids `0x0E..=0x47` (every one a
+category-`6` or category-`0` row - `0x2C`, `0x29`, `0x2D`, `0x2A` lead), and
+runtime ids `0x200..=0x25F`, which resolve through the scene's own prescript
+record 0 ([above](#ids--0x200-come-from-the-current-bundles-record-0)). `rugi`
+alone carries 587 sites; `opdeene`'s cutscene timeline pushes `0x2A` and `0x29`
+with no input.
+
+Port: the engine queues each call as `legaia_engine_core::world::SfxRingOp`
+(`World::take_sfx_ring_ops`); the native `BootSession` and the browser play
+page replay the queue onto their `SfxScheduler`'s ring every tick, and the
+scheduler hands ring cues back apart from its router queue - a ring id is the
+drainer's input, so it never goes through `classify_cue`. A runtime id keys the
+row `World::runtime_sfx_descriptor` returns, through the bank the row's own
+`+4` names, with no fallback bank. The ring ages by the vsyncs one host tick
+spans (one), which is retail's per-game-tick `DAT_1F800393` decrement spread
+over the same wall time.
+
+### The side-band bank a field script selects
+
+A per-scene runtime row names category `3`, the side-band slot, and op `0x36`
+sub `1` picks which `vab_01` bank fills it: the script stores the id into
+`_DAT_8007BABC`, and `FUN_800243F0`'s second streaming slot resolves it at
+`0x800248B4..0x8002494C`. The arms run in sequence, later ones overwriting
+earlier ones:
+
+| Request id | PROT raw index | Slot |
+|---|---|---|
+| `< 1000` | `*(0x8007BBE4) + 2` | `3` |
+| `1000..=1999` | `*(0x8007BBE4) + 2` | `6` |
+| `2000..=2999` | `*(0x8007BBE4) + id - 2000` | `3` |
+| `>= 3000` | `*(0x8007BBE4) + id - 3000` | `6` |
+| `0x1000` | none - the request is copied onto the acknowledge cell and nothing loads | - |
+
+The first two rows are what is left of two scene-local arms
+(`*(0x80084540) + id` and `+ id - 1000`): the `id < 2000` arm at `0x80024938`
+overwrites their index with `vab_01 + 2` and keeps only their slot choice.
+`*(0x8007BBE4)` reads `1072` - CDNAME's `#define vab_01 1072`, the raw index -
+in every catalogued mednafen state checked, so request `2002` (`town01`'s)
+streams extraction entry `1072`. The field overlay seeds the request as `8`
+(`0x801D6880`), which the same arm resolves to that entry. The disc's scripts
+use only the two global arms: of 275 sub-`1` operands, 248 are `2000..=2999`,
+21 are `>= 3000` and 6 are the park sentinel.
+
+Port: `legaia_engine_core::world::side_band_bank_for_request`; both hosts stage
+the resolved bank behind the BGM, in the free tail of the BGM region the reward
+bank also borrows, while the world is in a field-family mode.
 
 ### Voice allocation: one-shots descend from 23, sustained cues ascend from 7
 
@@ -194,10 +265,17 @@ extraction indices ([numbering](cdname.md#numbering-space)).
 | `0` | PROT 0868 | resident system bank |
 | `1` | the scene's BGM bank (`music_01`, variable) | `FUN_800243F0`, index `*(0x8007BC64) + id - 2000` |
 | `2` | PROT 0869 (raw `0x367`), `0875` alternate | battle scene loader `FUN_800520F0`, Baka init `FUN_801CF00C` |
+| `2` | a minigame's own bank: PROT 1197 (fishing), 1198 (slot machine), 1231 (dance) | the overlay inits at `0x801CF29C` (PROT 0972), `0x801CF064` (0975), `0x801CF428` (0980) |
 | `3` | a `vab_01` side-band bank (variable) | `FUN_800243F0`, index `*(0x8007BBE4) + id - 2000` from `_DAT_8007BABC` |
 | `6` | PROT 0876 (raw `0x36E`) | field init `FUN_801D6704` |
 | `7` / `8` | the two `monster.snd` banks | `FUN_8003E104` + `FUN_8001E54C(7\|8, …)` from `FUN_800520F0` |
 | `11` | PROT 0889 (raw `0x37B`) | battle-end reward resolution `FUN_8004E568` |
+| `10` | raw `0x428` then `0x422`, over slot 0's SPU base | field init `FUN_801D6704` `0x801D71A0..0x801D7274`, only while `*(0x8007BAC8) == 0x814` and a one-shot latch `0x8007B9B8` is clear |
+
+Slot `5` (slot 1's alias) takes the minigames' own music banks (arena `0x3F8`,
+Baka `0x415`, dance `0x41A`, fishing `0x3EF` / `0x3F9`, battle intro `0x36F`
+plus an index) and slot `3` the arena's and the debug menu's side banks - the
+same `FUN_8001FC00` / `FUN_8001E54C` pair at each site.
 
 Both new pins carry an independent structural check. PROT 0876 holds **30** VAGs
 for the 30 category-`6` descriptors, its populated program slots are `1..=7`, and
@@ -247,6 +325,73 @@ mutual exclusion the shared base predicts. Slot 11 is open in none of them,
 which fits a bank the battle-end reward path loads after the point these states
 were taken.
 
+### One region per mode: slot 2 and slot 6
+
+Because slots 2 and 6 share one SPU base, every mode's initialiser refills that
+region with its own bank, and one latch decides whether the field bank needs
+reloading. Read off every `FUN_8001FC00` / `FUN_8001E54C` pair on the disc, every
+`FUN_8001FF58` (VAB close) call, and the three writers of `0x8007BAFC` (the
+`gp+0x7E4` form included):
+
+| Step | Site | Slots 2 / 6 |
+|---|---|---|
+| field init | `FUN_801D6704` `0x801D684C..0x801D68B8`, `0x801D6FF4..0x801D7048` (PROT 0897) | closes `2`, `7`, `8`, `11`; loads PROT 0876 into `6` and sets the latch, only while the latch is clear |
+| battle mode init | `FUN_8001DCF8` `0x8001DF74..0x8001DFC0`, next mode `0x14` | closes `6` and `3`, clears the latch |
+| battle scene loader | `FUN_800520F0` `0x80052378..0x800523AC` | loads PROT 0869 (or 0875) into `2` |
+| minigame warp | `FUN_80025980` `0x800259A4` (`sw zero,0x7e4(gp)`) | clears the latch, closes nothing |
+| minigame overlay init | table above | loads the minigame's bank into `2` |
+| side-band teardown | `FUN_801D8450` (field-VM op `0x36` sub `3`) | closes `6`, clears the latch |
+| side-band request `>= 3000` | `FUN_800243F0` | streams a `vab_01` bank into `6`, latch untouched |
+
+So the field bank survives a field-to-field scene change without a reload (the
+latch is set), comes back on the first field init after a battle, a minigame or a
+teardown (each clears it), and is gone - slot 6 closed - between a teardown and
+that next init. The world map is the field overlay's own subsystem and takes the
+same init.
+
+A closed slot is **silent**, not rerouted: the drainer `FUN_80016B6C` tests the
+cue's mixer record's `+0xB` enable byte and skips the cue when it is zero
+(`lb v0,0xb(v1)` / `beq v0,zero` at `0x80016CE4..0x80016CEC`), and
+`FUN_8001FF58` zeroes that byte when it closes the slot. A category-6 cue in
+battle and a category-2 cue in the field therefore make no sound. That is also
+what makes `FUN_80035BD0(0)` - which both the field and menu overlays call before
+a push - a cancel in those modes: descriptor `0x00` is category 2.
+
+The battle mode init's close arm is keyed on the **mode word**, not on the
+argument: `FUN_8001DCF8` reads `0x8007B83C` and runs the close-6-and-3 /
+clear-latch arm only when it holds `0x14` (`0x8001DF74..0x8001DF80`). A minigame
+overlay calls it under `0x18`, so the arm is skipped there, and after the
+overlay's own slot-2 load **both** slots are enabled over the one region -
+slot 6's header (PROT 0876's) over slot 2's samples. Retail captures pin both
+sides ([audio.md](../subsystems/audio.md#retail-capture-of-the-slot-2--slot-6-residency)):
+the Baka Fighter's path shows the stale-header state from the overlay's load on,
+and the Muscle Dome's hub (mode `0x19`) holds slot 2 **closed** and slot 6 open
+over PROT 0876 - the field bank the warp left behind, not the class-2 bank. An
+earlier reading here took the dome as a whole to hold the class-2 bank; that
+holds for a round at most. A round is an ordinary battle entered by the arena's
+store of mode word `0x14` (`0x801D15B8`, PROT 0977,
+[minigame-muscle-dome.md](../subsystems/minigame-muscle-dome.md#what-ends-a-leg-a-knockout-and-nothing-else)),
+so it takes the battle arm - slot 6 closed, PROT 0869 staged into slot 2 - by
+the same code path the field-to-battle capture observes; a round's residency
+itself is not captured. The dance's PROT 1231 (234 400 bytes of samples) is
+larger than the region's gap to slot 3's base and overruns it, legal while slot
+3 is closed.
+
+Port: `legaia_engine_core::world::World::sync_sfx_residency` models the latch,
+each slot's enable (`SfxBankResidency::slot_open`) and the region's occupant off
+the world's mode edges, and op `0x36` sub `3` runs `World::release_field_audio`.
+The port's Muscle Dome mode is a leg and takes the battle arm; it has no hub
+mode. A slot left open over another bank's samples
+(`SfxBankResidency::stale_open_slot`, slot 6 in a minigame) is left unstaged by
+the hosts, so its cues are silent where retail plays the stale header over the
+wrong samples. Both play hosts restage the region from it every
+tick (`AudioBgmDirector::sync_shared_region` on the native window,
+`LegaiaRuntime::sync_shared_region` on the browser play page), above the slot-0
+system bank inside the reserved SFX window, and resolve a routed cue to its own
+slot or to silence. A slot-6 side-band bank is staged there too rather than in
+the BGM tail. The dance's bank does not fit the port's window, so the dance
+mode leaves the region closed.
+
 ### What a single-bank port gets wrong, and why it is silent
 
 A port that stages **one** resident SFX bank resolves only one category
@@ -258,21 +403,16 @@ than the field menu's, because 0869's `center` bytes are authored higher. Peak,
 duration and "did a voice key on" all pass in that state. The only observable
 that separates the two is which PROT entry the samples came from.
 
-Both hosts stage two banks - slot 0 and slot 2 - and route each cue through
-`slot_for_category(descriptor.category)`; the 30 category-`6` descriptors
-fall back to the class-2 bank, which is exactly the behaviour they had before.
-The single category-`11` cue (`0x50`, the level-up jingle) is the exception on
-the native window: it is staged the way retail stages it, at results time -
-`AudioBgmDirector::stage_transient_sfx_vab` uploads PROT 0889 into the free
-tail of the BGM region behind the battle theme the moment the results frame
-queues the cue, and drops it again when the next track restages. The browser
-still falls back for it.
-That fallback is now a **residency** limit rather than a gap in the map: slots 6
-and 11 name real entries (0876 / 0889), and what stops a host staging them is
-the [SPU budget](#spu-budget---both-banks-in-one-region) below. Retail does not
-need the room because slot 6 *is* slot 2's region, refilled per mode; a host that
-wants the field cues right has to reload the shared region on the field/battle
-transition the way `FUN_801D6704` and `FUN_800520F0` do, not widen the reservation.
+Both play hosts stage slot 0 plus whichever bank the current mode holds in the
+shared slot-2 / slot-6 region ([above](#one-region-per-mode-slot-2-and-slot-6)),
+and route each cue through `slot_for_category(descriptor.category)`; the 30
+category-`6` descriptors key PROT 0876 in the field and are silent in battle,
+where retail's slot 6 is closed. The single category-`11` cue (`0x50`, the
+level-up jingle) is staged the way retail stages it, at results time:
+`AudioBgmDirector::stage_transient_sfx_vab` (and the browser's
+`stage_transient_reward_bank`) uploads PROT 0889 into the free tail of the BGM
+region behind the battle theme when the results frame queues the cue, and drops
+it again when the next track restages; until then the cue is silent.
 
 ### The ring value **is** the descriptor index
 
@@ -418,10 +558,11 @@ Pinned from the save-state catalogue:
 
 Because banks differ in size, a cue resolves only where its `program` / `tone`
 exists - SFX availability depends on which slots are loaded, not on a guaranteed
-reservation. The engine models the **pinned** part of the slot set: it stages
-slot 0 and slot 2 into one reserved SPU region and plays each cue through the
-bank its own category names, falling back to the class-2 bank for the unpinned
-slots and to the scene's already-loaded BGM `VabBank` when nothing staged at all.
+reservation. The engine stages slot 0 and the current mode's slot-2 / slot-6
+bank into one reserved SPU region
+([per mode](#one-region-per-mode-slot-2-and-slot-6)) and plays each cue through
+the bank its own category names - a closed slot is silent - falling back to the
+scene's already-loaded BGM `VabBank` only when nothing staged at all.
 `SfxBank::from_descriptors` carries the playback fields (program + tone-region
 index + note + voice count) and `SfxTable::cue_slots` the routing;
 `SfxBank::play_one_shot(spu, vab)` fires the cue via `VabBank::play_tone` across
@@ -429,8 +570,11 @@ its `voices` consecutive regions - by explicit tone **index**, not by key range.
 
 ### SPU budget - both banks in one region
 
-The two pinned banks are resident together, so the engine's reserved SFX region
-has to hold both and the BGM region is whatever is left of the 512 KiB.
+The slot-0 bank and the shared region's largest occupant are resident together,
+so the engine's reserved SFX region has to hold both and the BGM region is
+whatever is left of the 512 KiB. The largest occupant a host stages is PROT
+0869; PROT 0876 (174 192), 1197 (52 928) and 1198 (101 504) fit under it, and
+the dance's 1231 (234 400) does not.
 
 | | Bytes |
 |---|---|
@@ -444,8 +588,8 @@ Every VAG in both banks is already a multiple of the allocator's 16-byte ADPCM
 block, so the packed footprint equals the raw total and 2 592 bytes stay free.
 The figure is squeezed from both sides: one step larger (`0x3E000`) drops the
 BGM region to 266 240 and starts silencing music that plays today, one step
-smaller does not fit both banks. Both hosts use the same constant, and the two
-must stay equal.
+smaller does not fit slot 0 and PROT 0869. Both hosts use the same constant, and
+the two must stay equal.
 
 Retail's own map, from the initialiser `FUN_800265E8`, is the reason it does not
 face this: the four fixed banks never sum, because slot 6 shares slot 2's SPU
@@ -482,19 +626,25 @@ one-shot through the from-scratch SPU. So the duel hit `0x09` renders out of
 PROT 0869 and the shared UI blips `0x20` / `0x21` / `0x37` and the strike `0x1A`
 out of PROT 0868, even though the same duel overlay writes all of them.
 
-The live engine mirrors this: `BootSession` uploads both pinned banks into one
-dedicated top region of SPU RAM at boot (`stage_sfx_vab`, one `SpuAllocator` so
-they pack, with the scene-BGM allocator capped below the region so a BGM upload
-can't stomp the SFX samples), and `AudioBgmDirector::tick_sfx_frame` fires each
-cue against the bank its slot names - falling back to the class-2 bank for an
-unpinned slot, and to the scene BGM `VabBank` when nothing staged at all. So the
+The live engine mirrors this: `BootSession` uploads the slot-0 bank into the
+bottom of one dedicated top region of SPU RAM at boot (`stage_sfx_vab`, with the
+scene-BGM allocator capped below the region so a BGM upload can't stomp the SFX
+samples), refills the rest of the region per mode
+([above](#one-region-per-mode-slot-2-and-slot-6)) - the class-2 bank in battle
+and the Baka duel - and `AudioBgmDirector::tick_sfx_frame` fires each cue
+against the bank its slot names, silent when that slot is closed, and against
+the scene BGM `VabBank` only when nothing staged at all. So the
 Tactical-Arts strike cue (`0x1A`) sounds out of the system bank and the Baka
 Fighter exchange-hit cue (`0x09`, queued by the duel rules kernel and drained by
 the play-window) out of the bank the retail battle loader loads. The disc-gated
 `sfx_cue_resident_bank` test (engine-shell) proves the routed cues key a voice
 via the tone-index path and that both banks pack inside the reserved region;
-`play_sfx_channel` (web-viewer) asserts a category-`0` and a category-`2` cue
-resolve to *different* PROT entries.
+`sfx_shared_region` (engine-shell) walks the residency through field, battle and
+three minigames, checks every named bank fits above slot 0, and keys the field
+cues `0x2E` / `0x2F` out of PROT 0876; `play_sfx_channel` (web-viewer) asserts
+that in town a category-`0` cue sounds out of PROT 0868 and a category-`6` cue
+out of PROT 0876 while a category-`2` cue has no bank, and that a forced battle
+swaps the region to PROT 0869.
 
 ## Provenance
 
@@ -517,9 +667,12 @@ The same module carries the **routing law**: `slot_for_category`,
 `prot_index_for_slot` (`None` only for the slots whose bank is variable rather
 than a fixed entry, so a host cannot mistake one for the other),
 `prot_index_for_category`, the `SLOT_BANKS` pairs (every fixed-entry slot),
-`PINNED_SLOT_BANKS` (the subset a single-region host stages),
+`PINNED_SLOT_BANKS` (slots 0 and 2, the pair the site's cue player stages),
 `spu_base_for_slot` + `SLOT_ALIASES` (retail's SPU map and the pairs that share
-a region), and `FALLBACK_VAB_SLOT` for the categories a host has not staged.
+a region), and `FALLBACK_VAB_SLOT`, which the play hosts use only for an id the
+routing does not carry - a routed cue whose slot is closed is silent. The
+per-mode occupant of the shared slot-2 / slot-6 region is engine state, not a
+table: `legaia_engine_core::world::World::sync_sfx_residency`.
 `SfxTable::cue_slots` / `slots_used` are the per-cue and per-table views.
 
 The disc-gated

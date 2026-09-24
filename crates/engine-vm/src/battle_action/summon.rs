@@ -92,7 +92,7 @@ pub const SUMMON_FLASH_CUE: u16 = 0x63;
 /// REF: FUN_801DBF9C
 pub const SPELL_TRIGGER_SUMMON_MIN_ID: u8 = 0x25;
 
-/// The anim byte the trigger's summon arm stages at `params[1]`
+/// The anim byte the trigger's summon arm stages at `params[2]` (`+0x1E1`)
 /// (`li v1,0x12; sb v1,0x1e1(a0)` at `0x801DC088`): the argument the band
 /// then hands `FUN_801DC0A0` every frame of `0x33` / `0x34` while the caster
 /// stays on clip `9` - a cast-effect id, not a clip id.

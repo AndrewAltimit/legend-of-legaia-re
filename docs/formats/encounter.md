@@ -109,7 +109,7 @@ What the raised bit then changes is tabulated under [the per-battle flags byte](
 - The install opcodes below are the field VM's generic **halt-acquire** family (`0x37/0x41/0x38/0x43/0x47/0x4C`), the same ones used for ordinary script yields.
 - What turns a halt into an encounter is the *consumer*: only world-map / field **entities** ticked by `FUN_801DA51C` (those carrying the 5-state `entity[+0x8A]` SM) ever read their `+0x94` as a formation record, and only once the SM reaches the encounter-confirm state.
 - The random-encounter path enters that state via the `FUN_801D9E1C` roll (state 0); a *scripted* arm relies on the scene bytecode having authored `[count @ +3][ids @ +4..]` after the halt opcode on such an entity's context.
-- The general-purpose scripted arm is the interact op **`0x3E` with `op0 = 0xFF`** (`3E FF <row>`): the retail case-0x3E handler sets `entity[+0x8A] = 1` and installs `entity[+0x94] = ctrl[+0x20] + row * ctrl[+0x5D] + 1` - pointing the record slot at MAN formation-table row `row` directly (full arm + disc sites in [battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row): garmel rows 8/9 = Songi/Zeto, rikuroa row 17 = Caruban; boss rows sit outside every region's rollable `[base, base+count)` slice). Other per-scene shapes (an inline `[count][ids]` authored after a halt op) still occur; which shape a fight uses remains a per-scene bytecode fact.
+- The general-purpose scripted arm is op **`0x3E` with `op0 = 0xFF`** (`3E FF <row>`; every `op0 < 100` runs the same body): the retail case-0x3E handler sets `entity[+0x8A] = 1` and installs `entity[+0x94] = ctrl[+0x20] + row * ctrl[+0x5D] + 1` - pointing the record slot at MAN formation-table row `row` directly (full arm + disc sites in [battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row): garmel rows 8/9 = Songi/Zeto, rikuroa row 17 = Caruban; boss rows sit outside every region's rollable `[base, base+count)` slice). Other per-scene shapes (an inline `[count][ids]` authored after a halt op) still occur; which shape a fight uses remains a per-scene bytecode fact.
 
 **Engine port.** The from-scratch field VM mirrors this discriminator split:
 
@@ -297,7 +297,7 @@ locked by `crates/engine-core/tests/rim_elm_sparring_carrier.rs`.
 
 The carrier is identified by its **dialog block**, not by an opcode-decoded
 selector: a field interaction record is dominated by embedded message text whose
-bytes alias field-VM opcodes (a literal `>` is `0x3E`, the warp/interact opcode;
+bytes alias field-VM opcodes (a literal `>` is `0x3E`, the scripted-battle / door-warp opcode;
 ASCII punctuation hits the `0x37`/`0x41` yield bytes), so a linear disassembly
 desyncs inside the text and reports phantom interact / dialog ops with garbage
 operands. The dialog text itself is therefore recovered **structurally** - as a
@@ -328,8 +328,11 @@ sparring carrier's slot; `enter_field_scene` calls it on every field entry (the
 counterpart to the MAN encounter-table install), so the carriers are live from
 the scene's own data. They sit Idle until the carrier is engaged, which advances
 the actual MAN actor's `FUN_801DA51C` SM. Engagement is driven by the
-field-interact dialogue-accept: a field-interact op (`0x3E`, `op0 < 100`) on the
-sparring carrier's placement opens its inline dialogue and arms the engage, and
+talk interaction's dialogue-accept: talking to the sparring carrier's placement
+(the button-press interaction, which resumes the actor's parked script - no
+field-VM opcode; op `0x3E` with `op0 < 100` is the
+[scripted-battle install](../subsystems/script-vm.md#0x3e-scripted-battle-op0--100),
+not a talk) opens its inline dialogue and arms the engage, and
 accepting the prompt (the dialog-advance dismiss, `0x4C` n5 sub-4) engages it -
 so the field-VM bytecode drives the fight, not a manual API. (`engage_field_carrier`
 remains the direct entry point the auto-arm and tests call.)

@@ -43,11 +43,11 @@
 //!
 //! The other half of the fork is the first visit (latch zero), where the same
 //! emitter tiles a brick wall under the intro, title and course cards;
-//! [`first_visit_backdrop_level`] is that arm's level over the two leg-open
-//! screens the port stages.
+//! [`FirstVisitHub`] runs that visit's arms, the wall's level among them.
 
 use crate::muscle_dome::{
-    HUB_BACKDROP_HALF, HUB_FADE_FULL, HUB_FADE_STEP_FAST, HUB_FADE_STEP_SLOW, HubScreen,
+    HUB_BACKDROP_HALF, HUB_FADE_FULL, HUB_FADE_STEP_FAST, HUB_FADE_STEP_SLOW, HUB_INTRO_HOLD_TICKS,
+    HUB_OPPONENT_CARD_HOLD_TICKS, HUB_ROUND_BANNER_HOLD_TICKS, HUB_SKIP_PAD_MASK, HubScreen,
     HubScreenStage,
 };
 use legaia_engine_vm::panel_backread_loader::backread_texture_variant;
@@ -196,36 +196,320 @@ impl HubBackdrop {
     }
 }
 
-/// The first visit's backdrop level `*(0x801D1A7C)` - the brick wall the
-/// latch-`0` arm of `FUN_801D00F8` tiles - read off the two leg-open screens
-/// the port stages.
+/// Title-art zoom step per tick: `dt << 7` (`sll v1,v1,7` at `0x801CFAA0`).
+pub const TITLE_ZOOM_STEP: i32 = 0x80;
+
+/// Title-art scale the first visit's arm `2` seeds (`li v0,0x1640` at
+/// `0x801CFA58`) and arm `3` zooms down from.
+pub const TITLE_ZOOM_START: i32 = 0x1640;
+
+/// Title-art scale the zoom clamps to - `1.0` in 12.12.
+pub const TITLE_ZOOM_END: i32 = 0x1000;
+
+/// One CD-XA clip start the hub made this tick - `FUN_8003D53C(clip, chan,
+/// dur)`, in the starter's own terms, for a host's XA path
+/// (`AudioBgmDirector::play_xa_clip` natively, `play_xa_clip` on the page).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HubXaCue {
+    /// Clip-table slot (`XA<slot + 1>.XA`).
+    pub clip: u8,
+    /// CD-XA filter channel.
+    pub channel: u8,
+    /// Read span, the starter's `dur` operand.
+    pub duration_sectors: u16,
+}
+
+/// The intro strip's announcer line: arm `0`'s first tick,
+/// `FUN_8003D53C(0x1E, 0xB, 0xA9)` (`0x801CF918..0x801CF928`).
+pub const FIRST_VISIT_INTRO_XA: HubXaCue = HubXaCue {
+    clip: 0x1E,
+    channel: 0x0B,
+    duration_sectors: 0xA9,
+};
+
+/// The ROUND card's announcer line: arm `0x15`'s first tick,
+/// `FUN_8003D53C(0x1F, DAT_801D1A94, 0x54)` (`0x801CFF58..0x801CFF70`). The
+/// channel is the leg's round index, `(_DAT_8007BAC0 - 1) & 0xF`
+/// (`FUN_801CEA6C`), which is `0` on a first visit - every first-entry word
+/// the arena entry writes (`0x111` / `0x211` / `0x321`) has low nibble `1`.
+pub const ROUND_CARD_XA_CLIP: u8 = 0x1F;
+/// The ROUND card line's read span.
+pub const ROUND_CARD_XA_DURATION: u16 = 0x54;
+
+/// Which arm of `FUN_801CF870` a [`FirstVisitHub`] is in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirstVisitArm {
+    /// Arm `0`: the intro strip fades in.
+    IntroIn,
+    /// Arm `1`: the intro strip holds `0x7B` ticks.
+    IntroHold,
+    /// Arm `2`: the intro strip fades out while the wall rises.
+    IntroOut,
+    /// Arm `3`: the course-title art zooms in.
+    TitleZoom,
+    /// Arm `4`: the course card fades in over the title art.
+    CardIn,
+    /// Arm `5`: the course card holds (pad-skippable).
+    CardHold,
+    /// Arm `6`: the wall drains.
+    Drain,
+    /// Arm `0x14`: on a first visit, a single pass-through tick.
+    Return,
+    /// Arm `0x15`: the ROUND card fades in and holds.
+    RoundIn,
+    /// Arm `0x16`: the ROUND card fades out; at zero the fight starts.
+    RoundOut,
+    /// Past arm `0x16` (`FUN_801D1510`, the fight).
+    Done,
+}
+
+/// What a [`FirstVisitHub`] draws this frame: each screen's level, or
+/// `None` for a screen its arm does not draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FirstVisitFrame {
+    /// `*(0x801D1A7C)` - the brick wall's level; the backdrop emitter runs
+    /// only while it is non-zero (`beqz a0` at `0x801D00A4`).
+    pub backdrop: i32,
+    /// The intro strip (record 3) at `*(0x801D1A80)`.
+    pub intro: Option<i32>,
+    /// The course-title art's face scale `*(0x801D1A88)` (drawn at the fixed
+    /// level `0x80`; its drop shadow is always at scale `0x1000`).
+    pub title_scale: Option<i32>,
+    /// The course card `FUN_801D042C` at `*(0x801D1A84)`.
+    pub course_card: Option<i32>,
+    /// The ROUND card `FUN_801D02F0` at `*(0x801D1A84)`.
+    pub round_card: Option<i32>,
+}
+
+/// The contest hub's **first visit**: arms `0..6` and `0x14..0x16` of
+/// `FUN_801CF870` with the re-entry latch `_DAT_801D1AE0` zero - the intro
+/// strip, the wall rising under it, the title zoom, the course card, the
+/// wall draining, and the ROUND card over black before the first fight.
 ///
-/// Retail's first visit runs the hub's arms `0..6` before the fight: the
-/// intro card fades in (`0`) and holds (`1`); arm `2` fades it out at
-/// `4 dt` while raising the level by the same `4 dt` to `0x80`
-/// (`0x801CF9E4..0x801CFA2C`); arms `3..5` hold the level at `0x80` under
-/// the title and course cards; arm `6` drains it at `4 dt`
-/// (`0x801CFC48..0x801CFC78`) and kicks the battle load. The port's
-/// leg-open banner ([`HubScreen::round_banner`]) runs exactly the arms `4`
-/// / `5` / `6` envelope - `2 dt` in, `0xB4` held, `4 dt` out - so the level
-/// is `0x80` less the intro card while the card fades out, `0x80` while the
-/// banner is up, and the banner's own level while it fades out.
+/// Arms `3`, `4` and `0x16` wait on `_DAT_8007BC20`, and that word is the
+/// **CD-XA in-flight** flag, not a load counter: its non-zero writer is the
+/// clip starter itself (`li s1,2` / `sw s1,0x908(gp)` at `0x8003D658` in
+/// `FUN_8003D53C`, `gp = 0x8007B318`), and the hub starts two clips of its
+/// own - the intro line at arm `0`'s first tick and the ROUND line at arm
+/// `0x15`'s. So the waits hold the title zoom, the course card and the
+/// fight start until the announcer has finished speaking. The port models
+/// the flag as the clip's read span in frames from the start
+/// ([`Self::take_xa`] hands the start to the host), the same model the
+/// battle voice legs use (`AudioState::battle_xa_busy_frames`). Arm `4`'s
+/// exit therefore keeps brightening the card past `0x80` while it waits,
+/// as retail's unclamped add does.
 ///
-/// `None` for a screen the host is not showing.
+/// Arm `6`'s wait for `_DAT_8007B648 == 0x80` stays open. That byte is the
+/// state of the SCUS loader machine `FUN_80052770` (an eleven-arm jump
+/// table at `0x800153C8`); arm `4` zeroes it to start a load and the
+/// machine's own arms write the done value `0x80` (`0x8005285C`,
+/// `0x80052F14`) once the drive is idle, which is a tick or two later and
+/// long before arm `5`'s `0xB4`-tick hold ends. The port's loads are
+/// synchronous, so the done value is already there.
 ///
-/// PORT: FUN_801cf870 (the `0x801D1A7C` writes of arms `2` and `6`,
-/// `0x801CF9F4` / `0x801CFC64`)
-pub fn first_visit_backdrop_level(intro: Option<&HubScreen>, banner: Option<&HubScreen>) -> i32 {
-    if let Some(card) = intro {
-        return match card.stage() {
-            HubScreenStage::FadeOut | HubScreenStage::Done => HUB_FADE_FULL - card.brightness(),
-            _ => 0,
-        };
+/// PORT: FUN_801cf870 (arms `0`..`6` and `0x14`..`0x16` on the latch-`0`
+/// path: `0x801CF90C..0x801CFC94`, `0x801CFEE0..0x801D0084`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FirstVisitHub {
+    arm: FirstVisitArm,
+    /// The arm the last tick ran - the one whose emitter calls this frame's
+    /// draw is (retail draws inside the arm, then the arm byte moves on).
+    drawn: FirstVisitArm,
+    /// The card level the last tick drew at: arm `5` draws before its exit
+    /// test zeroes `0x801D1A84`.
+    drawn_card: i32,
+    /// `0x801D1A80`.
+    intro: i32,
+    /// `0x801D1A7C`.
+    backdrop: i32,
+    /// `0x801D1A84` - the intro hold counter in arm `1`, the card level after.
+    card: i32,
+    /// `0x801D1A88`.
+    scale: i32,
+    /// `0x801D1A70`.
+    hold: i32,
+    /// `0x801D1A8C`.
+    card_hold: i32,
+    /// `_DAT_8007BC20` as modelled: frames left on the hub's in-flight XA
+    /// line.
+    xa_busy: i32,
+    /// The clip the last tick started, for the host to play.
+    xa: Option<HubXaCue>,
+}
+
+impl Default for FirstVisitHub {
+    fn default() -> Self {
+        Self::new()
     }
-    match banner.map(|b| (b.stage(), b.brightness())) {
-        Some((HubScreenStage::FadeOut, level)) => level,
-        Some((HubScreenStage::Done, _)) | None => 0,
-        Some(_) => HUB_FADE_FULL,
+}
+
+impl FirstVisitHub {
+    /// A fresh first visit at arm `0`, every counter zero.
+    pub const fn new() -> Self {
+        Self {
+            arm: FirstVisitArm::IntroIn,
+            drawn: FirstVisitArm::IntroIn,
+            drawn_card: 0,
+            intro: 0,
+            backdrop: 0,
+            card: 0,
+            scale: 0,
+            hold: 0,
+            card_hold: 0,
+            xa_busy: 0,
+            xa: None,
+        }
+    }
+
+    fn start_xa(&mut self, cue: HubXaCue) {
+        self.xa = Some(cue);
+        self.xa_busy = i32::from(cue.duration_sectors);
+    }
+
+    /// Take the CD-XA line the last tick started, if any (the host plays it).
+    pub fn take_xa(&mut self) -> Option<HubXaCue> {
+        self.xa.take()
+    }
+
+    /// Whether the modelled `_DAT_8007BC20` is up (an announcer line is
+    /// still in flight).
+    pub fn xa_in_flight(&self) -> bool {
+        self.xa_busy > 0
+    }
+
+    /// Advance one hub tick. `dt` is the frame-skip factor
+    /// (`_DAT_1F800393`, read as `lbu 0x7f(0x1F800314)` too), `pad` the edge
+    /// snapshot `DAT_801D1A9C`.
+    pub fn tick(&mut self, dt: u8, pad: u16) {
+        let dt = i32::from(dt.max(1));
+        let skip = pad & HUB_SKIP_PAD_MASK != 0;
+        self.drawn = self.arm;
+        self.xa_busy = (self.xa_busy - dt).max(0);
+        let xa_idle = self.xa_busy == 0;
+        match self.arm {
+            FirstVisitArm::IntroIn => {
+                if self.intro == 0 {
+                    self.start_xa(FIRST_VISIT_INTRO_XA);
+                }
+                self.intro += dt * HUB_FADE_STEP_FAST;
+                if self.intro > HUB_FADE_FULL {
+                    self.intro = HUB_FADE_FULL;
+                    self.card = 0;
+                    self.arm = FirstVisitArm::IntroHold;
+                }
+            }
+            FirstVisitArm::IntroHold => {
+                self.card += dt;
+                if self.card >= HUB_INTRO_HOLD_TICKS {
+                    self.card = 0;
+                    self.arm = FirstVisitArm::IntroOut;
+                }
+            }
+            FirstVisitArm::IntroOut => {
+                self.backdrop += dt * HUB_FADE_STEP_FAST;
+                self.intro = (self.intro - dt * HUB_FADE_STEP_FAST).max(0);
+                if self.backdrop > HUB_FADE_FULL {
+                    self.backdrop = HUB_FADE_FULL;
+                    self.arm = FirstVisitArm::TitleZoom;
+                }
+                self.scale = TITLE_ZOOM_START;
+            }
+            FirstVisitArm::TitleZoom => {
+                self.card = (self.card + dt * HUB_FADE_STEP_SLOW).min(HUB_FADE_FULL);
+                self.scale -= dt * TITLE_ZOOM_STEP;
+                if self.scale < TITLE_ZOOM_END {
+                    self.scale = TITLE_ZOOM_END;
+                    if xa_idle {
+                        self.arm = FirstVisitArm::CardIn;
+                    }
+                }
+            }
+            FirstVisitArm::CardIn => {
+                self.card += dt * HUB_FADE_STEP_SLOW;
+                if self.card > HUB_FADE_FULL && xa_idle {
+                    self.card = HUB_FADE_FULL;
+                    self.hold = HUB_ROUND_BANNER_HOLD_TICKS;
+                    self.arm = FirstVisitArm::CardHold;
+                }
+            }
+            FirstVisitArm::CardHold => {
+                // `jal 0x801D042C` at `0x801CFBBC` runs before the test.
+                self.drawn_card = self.card;
+                self.hold -= dt;
+                if skip || self.hold < 0 {
+                    self.card = 0;
+                    self.arm = FirstVisitArm::Drain;
+                }
+            }
+            FirstVisitArm::Drain => {
+                self.backdrop -= dt * HUB_FADE_STEP_FAST;
+                if self.backdrop < 0 {
+                    self.backdrop = 0;
+                    self.arm = FirstVisitArm::Return;
+                }
+            }
+            FirstVisitArm::Return => self.arm = FirstVisitArm::RoundIn,
+            FirstVisitArm::RoundIn => {
+                if self.card == 0 {
+                    self.start_xa(HubXaCue {
+                        clip: ROUND_CARD_XA_CLIP,
+                        channel: 0,
+                        duration_sectors: ROUND_CARD_XA_DURATION,
+                    });
+                }
+                self.card += dt * HUB_FADE_STEP_SLOW;
+                if self.card > HUB_FADE_FULL {
+                    self.card = HUB_FADE_FULL;
+                    self.card_hold += dt;
+                    if self.card_hold >= HUB_OPPONENT_CARD_HOLD_TICKS || skip {
+                        self.arm = FirstVisitArm::RoundOut;
+                    }
+                }
+            }
+            FirstVisitArm::RoundOut => {
+                self.card -= dt * HUB_FADE_STEP_SLOW;
+                self.backdrop = (self.backdrop - dt * HUB_FADE_STEP_SLOW).max(0);
+                if self.card < 0 {
+                    self.card = 0;
+                    if xa_idle {
+                        self.arm = FirstVisitArm::Done;
+                    }
+                }
+            }
+            FirstVisitArm::Done => {}
+        }
+    }
+
+    /// Which arm the hub is in.
+    pub fn arm(&self) -> FirstVisitArm {
+        self.arm
+    }
+
+    /// Whether the first fight has been handed its start.
+    pub fn done(&self) -> bool {
+        self.arm == FirstVisitArm::Done
+    }
+
+    /// The screens the last tick drew, per that arm's own emitter calls.
+    pub fn frame(&self) -> FirstVisitFrame {
+        use FirstVisitArm as A;
+        let arm = self.drawn;
+        let intro = matches!(arm, A::IntroIn | A::IntroHold | A::IntroOut).then_some(self.intro);
+        let title_scale =
+            matches!(arm, A::TitleZoom | A::CardIn | A::CardHold).then_some(self.scale);
+        let course_card = match arm {
+            A::CardIn => Some(self.card),
+            A::CardHold => Some(self.drawn_card),
+            _ => None,
+        };
+        let round_card = matches!(arm, A::RoundIn | A::RoundOut).then_some(self.card);
+        FirstVisitFrame {
+            backdrop: self.backdrop,
+            intro,
+            title_scale,
+            course_card,
+            round_card,
+        }
     }
 }
 
@@ -252,32 +536,144 @@ pub fn leg_open_raises_round_card(card_shown_round: Option<i32>, round: i32) -> 
 mod tests {
     use super::*;
 
+    /// Run a first visit to the end, recording each frame.
+    fn run_first_visit(pad_at_hold: bool) -> Vec<(FirstVisitArm, FirstVisitFrame)> {
+        let mut hub = FirstVisitHub::new();
+        let mut out = Vec::new();
+        for _ in 0..2000 {
+            let pad = if pad_at_hold && hub.arm() == FirstVisitArm::CardHold {
+                0x40
+            } else {
+                0
+            };
+            hub.tick(1, pad);
+            out.push((hub.arm(), hub.frame()));
+            if hub.done() {
+                break;
+            }
+        }
+        out
+    }
+
     #[test]
-    fn the_first_visit_wall_rises_under_the_intro_fade_and_drains_with_the_banner() {
-        let mut intro = HubScreen::intro_card();
-        assert_eq!(first_visit_backdrop_level(Some(&intro), None), 0);
-        while intro.stage() != HubScreenStage::FadeOut {
-            intro.tick(1, 0);
-        }
-        intro.tick(1, 0);
-        let rising = first_visit_backdrop_level(Some(&intro), None);
-        assert_eq!(rising, HUB_FADE_FULL - intro.brightness());
-        assert!(rising > 0 && rising < HUB_FADE_FULL);
-        let mut banner = HubScreen::round_banner();
-        banner.tick(1, 0);
+    fn the_first_visit_walks_every_arm_in_order() {
+        let frames = run_first_visit(false);
+        let mut arms: Vec<FirstVisitArm> = frames.iter().map(|(a, _)| *a).collect();
+        arms.dedup();
+        use FirstVisitArm as A;
         assert_eq!(
-            first_visit_backdrop_level(None, Some(&banner)),
-            HUB_FADE_FULL
+            arms,
+            vec![
+                A::IntroIn,
+                A::IntroHold,
+                A::IntroOut,
+                A::TitleZoom,
+                A::CardIn,
+                A::CardHold,
+                A::Drain,
+                A::Return,
+                A::RoundIn,
+                A::RoundOut,
+                A::Done
+            ]
         );
-        while banner.stage() != HubScreenStage::FadeOut {
-            banner.tick(1, 0x40);
+        // The wall peaks at full under the title + course card and is gone
+        // before the ROUND card: a first visit's arm 0x14 does not raise it.
+        let peak = frames.iter().map(|(_, f)| f.backdrop).max().unwrap();
+        assert_eq!(peak, HUB_FADE_FULL);
+        for (_, f) in &frames {
+            if f.round_card.is_some() {
+                assert_eq!(f.backdrop, 0, "no wall under the first ROUND card");
+            }
+            if f.title_scale.is_some() {
+                assert_eq!(
+                    f.backdrop, HUB_FADE_FULL,
+                    "the wall is full under the title"
+                );
+            }
         }
-        banner.tick(1, 0);
+    }
+
+    #[test]
+    fn the_hub_starts_its_two_announcer_lines_once_each() {
+        let mut hub = FirstVisitHub::new();
+        let mut cues = Vec::new();
+        for _ in 0..2000 {
+            hub.tick(1, 0);
+            if let Some(c) = hub.take_xa() {
+                cues.push((hub.arm(), c));
+            }
+            if hub.done() {
+                break;
+            }
+        }
+        assert!(hub.done());
+        assert_eq!(cues.len(), 2, "{cues:?}");
+        assert_eq!(cues[0].1, FIRST_VISIT_INTRO_XA);
+        assert_eq!(cues[1].1.clip, ROUND_CARD_XA_CLIP);
+        assert_eq!(cues[1].1.channel, 0, "round index 0 on a first visit");
+        assert_eq!(cues[1].1.duration_sectors, ROUND_CARD_XA_DURATION);
+    }
+
+    #[test]
+    fn a_line_in_flight_holds_the_fight_start() {
+        let mut hub = FirstVisitHub::new();
+        hub.arm = FirstVisitArm::RoundOut;
+        hub.card = 1;
+        hub.xa_busy = 10;
+        hub.tick(4, 0);
         assert_eq!(
-            first_visit_backdrop_level(None, Some(&banner)),
-            banner.brightness()
+            hub.arm(),
+            FirstVisitArm::RoundOut,
+            "the ROUND line is still playing"
         );
-        assert_eq!(first_visit_backdrop_level(None, None), 0);
+        assert!(hub.xa_in_flight());
+        for _ in 0..3 {
+            hub.tick(4, 0);
+        }
+        assert!(hub.done(), "the fight starts once the line has ended");
+
+        // Arm 4 keeps brightening the card past 0x80 while it waits.
+        let mut hub = FirstVisitHub::new();
+        hub.arm = FirstVisitArm::CardIn;
+        hub.card = HUB_FADE_FULL;
+        hub.xa_busy = 100;
+        hub.tick(1, 0);
+        assert_eq!(hub.arm(), FirstVisitArm::CardIn);
+        assert!(
+            hub.card > HUB_FADE_FULL,
+            "retail's add is unclamped while it waits"
+        );
+    }
+
+    #[test]
+    fn the_title_zooms_from_the_seed_to_unit_scale() {
+        let frames = run_first_visit(false);
+        let scales: Vec<i32> = frames.iter().filter_map(|(_, f)| f.title_scale).collect();
+        assert_eq!(scales[0], TITLE_ZOOM_START - TITLE_ZOOM_STEP);
+        assert_eq!(*scales.last().unwrap(), TITLE_ZOOM_END);
+        assert!(scales.windows(2).all(|w| w[1] <= w[0]));
+    }
+
+    #[test]
+    fn the_course_card_carries_the_zoom_ramp_and_a_skippable_hold() {
+        let full = run_first_visit(false);
+        let skipped = run_first_visit(true);
+        let held = |f: &[(FirstVisitArm, FirstVisitFrame)]| {
+            f.iter()
+                .filter(|(a, _)| *a == FirstVisitArm::CardHold)
+                .count()
+        };
+        assert_eq!(held(&full) as i32, HUB_ROUND_BANNER_HOLD_TICKS + 1);
+        assert_eq!(
+            held(&skipped),
+            1,
+            "a pad edge leaves on the first hold tick"
+        );
+        // The card level started climbing under the zoom (arm 3 ramps
+        // `0x801D1A84` too), so it enters arm 4 above zero.
+        let first_card = full.iter().find_map(|(_, f)| f.course_card).unwrap();
+        assert!(first_card > 0);
     }
 
     #[test]

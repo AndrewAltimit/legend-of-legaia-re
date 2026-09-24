@@ -226,6 +226,7 @@ fn screen_fx_prims(
                 semi_transparent,
                 abr_mode,
                 ot_index: ot,
+                depth: None,
             }),
             ScreenFxQuad::Textured {
                 xy,
@@ -244,57 +245,40 @@ fn screen_fx_prims(
                 gouraud: None,
                 semi_transparent,
                 ot_index: ot,
+                depth: None,
             }),
         })
         .collect()
 }
 
 impl LegaiaRuntime {
-    /// The retail enemy target-name strip for a picker parked on the enemy
-    /// row - the browser twin of the native window's
-    /// `enemy_target_strip_draws`: rows deduplicated + labelled by the
-    /// ported `FUN_801D9D3C` (`battle_enemy_target_rows`), placed by its
-    /// centre/relax/clamp layout with the page font as the measurer, cursor
-    /// row highlighted. `None` when the cursor is not on the enemy row or no
-    /// monster is up.
+    /// The enemy-row half of a target picker's on-screen text - the browser
+    /// twin of the native window's `enemy_target_strip_draws`.
+    ///
+    /// Retail draws one plaque for the target cursor (placement record
+    /// `0x29`, `FUN_801D5854`'s target arm, content box centred on `0xE8`,
+    /// row `162`); it rides the shared battle-HUD builder
+    /// (`BattleHudFrame::target_select`) on both hosts. This returns an empty
+    /// list while the cursor sits on the enemy row so the caller skips its
+    /// text fallback, and `None` on the ally / sweep states. The dedup-name
+    /// strip it used to draw (the `FUN_801D9D3C` intro-banner layout, stage
+    /// row 166) overprinted the commit log's target column and is retired.
     fn enemy_target_strip_draws(
         &self,
-        font: &legaia_font::Font,
+        _font: &legaia_font::Font,
         picker: &legaia_engine_core::target_picker::TargetPickerSession,
-        surface_w: u32,
-        surface_h: u32,
+        _surface_w: u32,
+        _surface_h: u32,
     ) -> Option<Vec<TextDraw>> {
-        use legaia_engine_core::target_picker::{CursorRow, PickerState, layout_enemy_menu_rows};
-        let PickerState::Cursor {
-            row: CursorRow::Enemy,
-            slot,
-        } = picker.state()
-        else {
-            return None;
-        };
-        let world = &self.scene_host.as_ref()?.world;
-        let mut rows = legaia_engine_core::battle_hud::battle_enemy_target_rows(world);
-        if rows.is_empty() {
-            return None;
-        }
-        layout_enemy_menu_rows(&mut rows, |s| font.layout_ascii(s).advance_x as i16);
-        let views: Vec<ui::EnemyTargetRowView<'_>> = rows
-            .iter()
-            .map(|r| ui::EnemyTargetRowView {
-                label: &r.label,
-                x: r.x,
-                selected: slot >= r.first_slot && slot < r.first_slot + r.members,
-            })
-            .collect();
-        // The strip shares a row band with a host-drawn prompt box, so it
-        // steps up in whole 14 px rows off that box's rect rather than
-        // overprinting it - the native window resolves the same collision.
-        Some(ui::enemy_target_menu_draws_at(
-            font,
-            &views,
-            (surface_w, surface_h),
-            ui::enemy_target_menu_rows_y(self.battle_tutorial_stage_rect(font)),
-        ))
+        use legaia_engine_core::target_picker::{CursorRow, PickerState};
+        matches!(
+            picker.state(),
+            PickerState::Cursor {
+                row: CursorRow::Enemy,
+                ..
+            }
+        )
+        .then(Vec::new)
     }
 
     /// Arm the live gameplay loop on the freshly-entered scene, the browser
@@ -518,7 +502,7 @@ impl LegaiaRuntime {
     /// straight through the narration box.
     pub(crate) fn arts_input_stage_draws(
         &self,
-        font: &legaia_font::Font,
+        _font: &legaia_font::Font,
         chrome: Option<&ui::SaveMenuAtlasRects>,
         origin: (i32, i32),
         scale: u32,
@@ -549,7 +533,6 @@ impl LegaiaRuntime {
             phase: match view.phase {
                 Sim::Entering => ai::ArtsInputScreen::Entering,
                 Sim::Review => ai::ArtsInputScreen::Review,
-                Sim::BeginMenu { cursor } => ai::ArtsInputScreen::BeginMenu { cursor },
                 Sim::Targeting => ai::ArtsInputScreen::Targeting,
             },
         };
@@ -571,10 +554,9 @@ impl LegaiaRuntime {
                 scale,
             ));
         }
-        (
-            sprites,
-            ai::arts_input_text_draws(font, &frame, origin, scale),
-        )
+        // The screen is baked art: no text. The Begin | Reselect pick is the
+        // party's commit confirm, drawn by the command-chip cluster.
+        (sprites, Vec::new())
     }
 
     /// Battle overlay text draws in **surface pixels**: HUD rows, the
@@ -619,8 +601,10 @@ impl LegaiaRuntime {
         // surface is up.
         let plaque = world.and_then(battle_active_actor);
         let target_plaque = world.and_then(bh::battle_target_plaque);
+        let target_select = world.and_then(bh::battle_target_select_plaque);
         let move_name = world.and_then(bh::battle_move_name);
         let message_bar = world.and_then(bh::battle_message_bar);
+        let commit_log = world.map(bh::battle_commit_log).unwrap_or_default();
         ui::battle_hud_draws_for(
             font,
             &ui::BattleHudFrame {
@@ -660,8 +644,10 @@ impl LegaiaRuntime {
                 begin_tab: world.is_some_and(bh::battle_begin_tab_visible),
                 move_name: move_name.as_deref(),
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
+                target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: world.and_then(bh::battle_ring_ap_plate_value),
+                commit_log: &commit_log,
                 diag: ui::diag_hud_enabled(),
             },
             BATTLE_HUD_PEN,
@@ -728,11 +714,12 @@ impl LegaiaRuntime {
         let chips = battle_command_chips(world)?;
         // The two enums are separate types because `engine-ui` is a leaf
         // that does not link `engine-core`; the native window carries the
-        // same three-line map.
+        // same four-line map.
         let phase = match chips.phase {
             CommandChipPhase::RoundPrompt => ChipPhase::RoundPrompt,
             CommandChipPhase::CommandRing => ChipPhase::CommandRing,
             CommandChipPhase::AttackMode => ChipPhase::AttackMode,
+            CommandChipPhase::CommitConfirm => ChipPhase::CommitConfirm,
         };
         Some((chips.chips, chips.cursor, phase))
     }
@@ -1045,7 +1032,8 @@ impl LegaiaRuntime {
             match &cmd.phase {
                 CommandPhase::RoundPrompt { .. }
                 | CommandPhase::Menu { .. }
-                | CommandPhase::AttackMode { .. } => {
+                | CommandPhase::AttackMode { .. }
+                | CommandPhase::CommitConfirm { .. } => {
                     // Retail's command surfaces are chip clusters, not
                     // lists: the round-open `Begin | Run` pair, the
                     // packet-pinned four-arm diamond, and the
@@ -1353,6 +1341,22 @@ impl LegaiaRuntime {
                 ));
             }
         }
+        // Koru's timed-fight strip - the same stage-space text-actor family,
+        // one shared builder with the native window.
+        if let Some(strip) = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| legaia_engine_core::timed_fight::timed_fight_strip(&h.world))
+        {
+            out.extend(ui::timed_fight_strip_text_draws(
+                font,
+                &ui::TimedFightStripView {
+                    label: &strip.label,
+                    turns_left: strip.turns_left,
+                    hp_left: strip.hp_left,
+                },
+            ));
+        }
         out
     }
 
@@ -1374,6 +1378,15 @@ impl LegaiaRuntime {
                 origin,
                 scale,
             ));
+        }
+        // Koru's timed-fight strip wears the same skin.
+        if self
+            .scene_host
+            .as_ref()
+            .and_then(|h| legaia_engine_core::timed_fight::timed_fight_strip(&h.world))
+            .is_some()
+        {
+            out.extend(ui::timed_fight_strip_chrome_draws(rects, origin, scale));
         }
         out
     }
@@ -1894,17 +1907,19 @@ mod live_hud_tests {
         }
         let json = rt.play_overlay_draws_json(960, 720);
         let v: serde_json::Value = serde_json::from_str(&json).expect("overlay json");
-        // 960x720 -> stage scale 3, origin (0,0); the strip draws at stage
-        // Y 166 (engine-ui ENEMY_MENU_STAGE_Y) -> surface y 498.
+        // 960x720 -> stage scale 3, origin (0,0); the target-select plaque
+        // (placement record 0x29) pens its name at stage Y 162 - 2 = 160 ->
+        // surface y 480, content box centred on stage x 0xE8.
+        let pen_y = 3 * (i64::from(legaia_engine_vm::battle_chrome::TARGET_SELECT_Y) - 2);
         let strip_glyphs = v["texts"]
             .as_array()
             .expect("texts array")
             .iter()
-            .filter(|t| t["dst"][1] == 498)
+            .filter(|t| t["dst"][1] == pen_y)
             .count();
         assert!(
             strip_glyphs > 0,
-            "enemy target strip glyphs land at the strip band"
+            "target-select plaque glyphs land on record 0x29's pen row"
         );
         if let Ok(path) = std::env::var("LEGAIA_HUD_DUMP") {
             std::fs::write(path, &json).expect("write hud dump");
@@ -1946,6 +1961,13 @@ impl LegaiaRuntime {
         // pool's render step through the follow camera, the native window's
         // `take_field_fog_prims` twin ([`crate::play_field_fx`]).
         prims.extend(self.tick_field_fog_prims());
+        // Move-VM strip spans (`FUN_801D31B0`), same camera, same kernel as
+        // the native window's `take_move_strip_prims`.
+        prims.extend(self.tick_move_strip_prims());
+        // The field VM's attached lights (op `0x34` sub-1): additive glows
+        // and subtractive darkness masks, the native window's
+        // `field_light_screen_prims` twin ([`crate::play_field_fx`]).
+        prims.extend(self.field_light_prims());
         // The battle value readout - retail's 24x24 numeral cells and the
         // `N HIT` / `TOTAL` counter cluster - off the resident effect atlas,
         // through the same `battle_numerals` builder the native window emits.
@@ -1964,6 +1986,10 @@ impl LegaiaRuntime {
         // The dance count-in banner's retail sprite (`crate::play_dance_art`),
         // off the dance hall's own HUD page while a dance owns the frame.
         prims.extend(self.dance_countin_prims());
+        // The overworld's entity + player markers, through the shared
+        // `world_map_markers` kernel the native window draws them with
+        // (`crate::play_world_map_markers`).
+        prims.extend(self.world_map_marker_prims());
         // The world's one live full-screen fade (the summon band's two
         // flashes, the escape white-out) through the same `fade_prim` kernel
         // the native window composites it with.
@@ -2076,7 +2102,7 @@ impl LegaiaRuntime {
     fn battle_fx_screen_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
         use legaia_engine_ui::battle_trail as bt;
         use legaia_engine_ui::streak_pass::{
-            MOVE_FX_STREAK_OT, StreakSource, streak_quads_scheduled,
+            MOVE_FX_STREAK_OT, StreakSource, clip_ribbon_quads, streak_quads_scheduled,
         };
         use legaia_engine_vm::battle_trail::TRAIL_POINTS;
 
@@ -2136,6 +2162,17 @@ impl LegaiaRuntime {
                 for q in streak_quads_scheduled(&src, &mvp, frame, block.counter_word, party) {
                     out.push(q.to_screen_prim(MOVE_FX_STREAK_OT));
                 }
+            }
+        }
+        // Clip-tag ribbon (`FUN_8004CE2C` tag `0x67` ->
+        // `FUN_801E1D98(&target[+0x3C], 0xC)`): same kernel as the native
+        // window's `move_fx_streak_quads`, through this page's scaled MVP.
+        if let Some(c) = world.battle.clip_ribbon {
+            let mvp =
+                glam::Mat4::from_cols_array(&vp) * glam::Mat4::from_scale(glam::Vec3::splat(scale));
+            let frame = world.clock.display_frames as u32;
+            for q in clip_ribbon_quads(c.seat.map(f32::from), c.trail_id, &mvp, frame) {
+                out.push(q.to_screen_prim(MOVE_FX_STREAK_OT));
             }
         }
         out
@@ -2297,9 +2334,10 @@ impl LegaiaRuntime {
     }
 
     /// The screen-prim vertex stream as raw bytes, in the shared
-    /// `ScreenVertex` layout: stride 44, `pos: vec2<f32>` (already NDC) at 0,
+    /// `ScreenVertex` layout: stride 48, `pos: vec2<f32>` (already NDC) at 0,
     /// `uv: vec2<f32>` at 8, `cba_tsb: vec2<u32>` at 16, `color: vec4<f32>` at
-    /// 24, `flags: u32` at 40 (bit 0 = textured). The same bytes the native
+    /// 24, `flags: u32` at 40 (bit 0 = textured, bit 1 = depth-tested),
+    /// `depth: f32` at 44. The same bytes the native
     /// renderer maps into its wgpu vertex buffer.
     ///
     /// The page never sees the primitive list, only its output: the

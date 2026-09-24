@@ -97,6 +97,7 @@ fn psx_texel_presents_at_its_retail_byte() {
             gouraud: None,
             semi_transparent: false,
             ot_index: 10,
+            depth: None,
         })
     };
 

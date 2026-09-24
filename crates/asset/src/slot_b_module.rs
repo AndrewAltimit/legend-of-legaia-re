@@ -5,10 +5,12 @@
 //!
 //! [`crate::cast_effect_pool`] indexes the band by PROT entry and hands each
 //! image to [`crate::summon_overlay::parse`], which answers *what a module
-//! spawns*. This module answers the sibling question the byte-accounting
-//! instruments ask - **which bytes of the image are what** - and it answers it
-//! at a granularity the spawn parser does not: a per-record half-open extent,
-//! cut where the image's own code partition resumes.
+//! spawns* - reading its record pointers through this module's walk, so the
+//! two cannot disagree about a spawn site. This module answers the sibling
+//! question the byte-accounting instruments ask - **which bytes of the image
+//! are what** - and it answers it at a granularity the spawn parser does not:
+//! a per-record half-open extent, cut where the image's own code partition
+//! resumes.
 //!
 //! ## The three regions
 //!
@@ -116,8 +118,8 @@ pub const SLOT_B_PROT_FIRST: u32 = crate::cast_effect_pool::CAST_MODULE_PROT_FIR
 /// Last extraction PROT entry of the module band.
 pub const SLOT_B_PROT_LAST: u32 = crate::cast_effect_pool::CAST_MODULE_PROT_LAST;
 
-/// Instructions of `$a2`-forming context scanned back from a spawn call. The
-/// same window [`crate::summon_overlay::parse`] uses.
+/// Instructions of `$a2`-forming context scanned back from a spawn call while
+/// the followed register is caller-saved.
 const A2_WINDOW_INSNS: usize = 22;
 
 /// Widest head jump table in the band (PROT 0958 fills file `0x0..0x400`).
@@ -300,50 +302,158 @@ fn head_table(bytes: &[u8], link_base: u32, functions: &[FramedFn]) -> Option<Ra
     (k > 0).then_some(0..k)
 }
 
-/// Resolve the `$a2` a `jal` at word index `site` is handed, by walking the
-/// `lui` / `addiu` writes over the preceding [`A2_WINDOW_INSNS`] instructions.
+/// The register a MIPS word writes, or `None` for the forms that write none.
+fn writes(w: u32) -> Option<u32> {
+    let op = w >> 26;
+    let rt = (w >> 16) & 0x1F;
+    match op {
+        0x00 => match w & 0x3F {
+            0x08 => None,
+            0x09 => Some(31),
+            0x18..=0x1B | 0x11 | 0x13 => None,
+            _ => Some((w >> 11) & 0x1F),
+        },
+        0x01 | 0x02 | 0x04..=0x07 => None,
+        0x03 => Some(31),
+        0x08..=0x0F => Some(rt),
+        0x20..=0x26 => Some(rt),
+        0x28..=0x2E => None,
+        0x10 | 0x12 => match (w >> 21) & 0x1F {
+            0x00 | 0x02 => Some(rt),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Registers a call may clobber under the o32 convention.
+fn caller_saved(r: u32) -> bool {
+    matches!(r, 1..=15 | 24 | 25 | 31)
+}
+
+/// Longest backward walk while the followed register is a **saved** one
+/// (`s0`-`s8`): a routine forms a record base in a saved register once and
+/// hands it over many calls later (PROT 0912 loads `lui s4` at `0x801F6C38`
+/// and completes it fifty-nine words down). The walk still ends at the
+/// routine's prologue.
+const SAVED_REG_WINDOW_INSNS: usize = 256;
+
+/// The value `reg` holds on reaching the word **after** `start`, walking the
+/// straight-line code backwards from `start` (inclusive), skipping the word at
+/// `skip` (the consuming call itself, whose delay slot `start` usually is).
+/// [`A2_WINDOW_INSNS`] words are walked while the followed register is
+/// caller-saved; a saved register is followed up to
+/// [`SAVED_REG_WINDOW_INSNS`], because calls cannot clobber it.
 ///
-/// Returns `None` when `$a2` is last written by something the static window
-/// cannot follow (a `move`, a load, a saved register) **or** when another `jal`
-/// sits between the pair and this call: `$a2` is caller-saved, so a value
-/// formed across a call is not the one the consumer reads.
-fn resolve_a2(bytes: &[u8], site: usize) -> Option<u32> {
-    let start = site.saturating_sub(A2_WINDOW_INSNS * 4);
-    let mut a2: Option<u32> = None;
+/// The last writer must be a `lui` - reached through any chain of `addiu`
+/// adds and register copies (`move a2,s0`: retail stages a record pointer in a
+/// saved register) - or an `addiu` off `$zero`. A load or any other writer
+/// names nothing, and so does a call crossed while the register being followed
+/// is caller-saved, a routine's `jr ra`, its `addiu sp,sp,-N` prologue, or the
+/// delay slot of an unconditional jump above (a `switch` arm's value is not the
+/// fall-through path's).
+fn reg_back(bytes: &[u8], start: usize, mut reg: u32, skip: usize) -> Option<u32> {
+    let mut add: i64 = 0;
     let mut o = start;
-    while o + 4 <= site {
+    let mut steps = 0usize;
+    loop {
+        let cap = if caller_saved(reg) {
+            A2_WINDOW_INSNS
+        } else {
+            SAVED_REG_WINDOW_INSNS
+        };
+        if steps > cap {
+            return None;
+        }
+        steps += 1;
+        if o + 4 > bytes.len() {
+            return None;
+        }
         let w = rd_u32(bytes, o);
-        let op = w >> 26;
-        let rs = (w >> 21) & 31;
-        let rt = (w >> 16) & 31;
-        let imm = w & 0xffff;
-        if op == 3 {
-            a2 = None;
-        } else if rt == 6 {
-            match op {
-                0x0f => a2 = Some(imm << 16),
-                0x09 if rs == 6 => {
-                    let s = if imm & 0x8000 != 0 {
-                        imm as i32 - 0x1_0000
-                    } else {
-                        imm as i32
-                    };
-                    a2 = a2.map(|v| (v as i32).wrapping_add(s) as u32);
+        if o != skip {
+            let op = w >> 26;
+            if (op == 3 || (op == 0 && w & 0x3F == 0x09)) && caller_saved(reg) {
+                return None;
+            }
+            if w == 0x03E0_0008 && o < start {
+                return None;
+            }
+            if w >> 16 == 0x27BD && w & 0x8000 != 0 {
+                return None;
+            }
+            if writes(w) == Some(reg) {
+                let (rs, rt) = ((w >> 21) & 0x1F, (w >> 16) & 0x1F);
+                let simm = (w & 0xFFFF) as i16 as i64;
+                match op {
+                    0x0F => return Some((((w & 0xFFFF) as i64) << 16).wrapping_add(add) as u32),
+                    0x09 if rs == 0 => return Some(simm.wrapping_add(add) as u32),
+                    0x09 => {
+                        add += simm;
+                        reg = rs;
+                    }
+                    0x00 if matches!(w & 0x3F, 0x21 | 0x25) && (rs == 0) != (rt == 0) => {
+                        reg = rs | rt;
+                    }
+                    _ => return None,
                 }
-                0x09 if rs == 0 => {
-                    let s = if imm & 0x8000 != 0 {
-                        imm as i32 - 0x1_0000
-                    } else {
-                        imm as i32
-                    };
-                    a2 = Some(s as u32);
-                }
-                _ => a2 = None,
             }
         }
-        o += 4;
+        // The word above is the delay slot of an unconditional jump (`j`,
+        // `jr`, `b`) that never falls through to here: the straight line ends.
+        if o >= 8 && unconditional(rd_u32(bytes, o - 8)) {
+            return None;
+        }
+        o = o.checked_sub(4)?;
     }
-    a2
+}
+
+/// `j`, `jr`, or `b` (`beq $zero,$zero`) - a transfer that never falls
+/// through past its delay slot.
+fn unconditional(w: u32) -> bool {
+    let op = w >> 26;
+    op == 0x02 || (op == 0x00 && w & 0x3F == 0x08) || (op == 0x04 && (w >> 16) & 0x3FF == 0)
+}
+
+/// Every `$a2` a spawn call at file offset `site` is handed.
+///
+/// Two paths reach the call. The fall-through one is resolved from the call's
+/// own delay slot back ([`reg_back`] - retail often completes the pair there).
+/// The other is a `switch` whose arms each load `$a2` in the delay slot of a
+/// `j` to one shared `jal`: every `j` that lands on the call, or a few words
+/// above it with nothing between writing `$a2` or transferring control,
+/// contributes the value its own delay slot leaves (PROT 0957's three arms into
+/// the `jal FUN_80050ED4` at `0x801F7F08`).
+fn a2_values(bytes: &[u8], link_base: u32, site: usize, own: &dyn Fn(usize) -> bool) -> Vec<u32> {
+    let mut out: Vec<u32> = reg_back(bytes, site + 4, 6, site).into_iter().collect();
+    let mut targets = vec![site];
+    let mut t = site;
+    for _ in 0..3 {
+        let Some(prev) = t.checked_sub(4) else { break };
+        let w = rd_u32(bytes, prev);
+        let op = w >> 26;
+        let flow = matches!(op, 0x01..=0x07) || (op == 0 && matches!(w & 0x3F, 0x08 | 0x09));
+        if writes(w) == Some(6) || flow {
+            break;
+        }
+        targets.push(prev);
+        t = prev;
+    }
+    let mut j = 0usize;
+    while j + 8 <= bytes.len() {
+        let w = rd_u32(bytes, j);
+        if w >> 26 == 0x02 && own(j) {
+            let va =
+                (link_base.wrapping_add(j as u32 + 4) & 0xF000_0000) | ((w & 0x03FF_FFFF) << 2);
+            let off = va.wrapping_sub(link_base) as usize;
+            if targets.contains(&off) {
+                out.extend(reg_back(bytes, j + 4, 6, j));
+            }
+        }
+        j += 4;
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -548,7 +658,7 @@ fn is_record_padding(bytes: &[u8], p: usize) -> bool {
 }
 
 /// `true` when `sel` is a value `FUN_80021B04` dispatches on.
-fn dispatchable_model_sel(sel: i16) -> bool {
+pub(crate) fn dispatchable_model_sel(sel: i16) -> bool {
     sel == crate::summon_overlay::MODEL_SEL_TRANSFORM_NODE
         || (0..LIBRARY_MESH_SEL_MAX).contains(&sel)
         || sel == RENDER_NODE_MODE_A
@@ -633,13 +743,17 @@ pub fn parse_with_tail(bytes: &[u8], link_base: u32, tail_start: Option<usize>) 
             // copy of another image's bytes), and the pointer it forms belongs
             // to that sibling's load, not to this image.
             let own_call = functions.iter().any(|f| f.start <= o && o < f.end);
-            if let (true, Some(a2)) = (own_call, resolve_a2(bytes, o)) {
-                let f = a2.wrapping_sub(link_base) as usize;
-                if f + 4 <= limit
-                    && !functions.iter().any(|fun| fun.start <= f && f < fun.end)
-                    && dispatchable_model_sel(i16::from_le_bytes([bytes[f], bytes[f + 1]]))
-                {
-                    offsets.push(f);
+            if own_call {
+                let own =
+                    |x: usize| x < limit && functions.iter().any(|f| f.start <= x && x < f.end);
+                for a2 in a2_values(&bytes[..limit], link_base, o, &own) {
+                    let f = a2.wrapping_sub(link_base) as usize;
+                    if f + 4 <= limit
+                        && !functions.iter().any(|fun| fun.start <= f && f < fun.end)
+                        && dispatchable_model_sel(i16::from_le_bytes([bytes[f], bytes[f + 1]]))
+                    {
+                        offsets.push(f);
+                    }
                 }
             }
         }
@@ -809,6 +923,60 @@ mod tests {
         // Site 0x20's `$a2` was formed before the stray call at 0x1C, so it is
         // not credited; the first record still is.
         assert_eq!(l.spawn_sites, 2);
+        assert_eq!(l.record_offsets, vec![0x80]);
+    }
+
+    /// The spawn record pointer staged the two ways retail does beyond a
+    /// plain pair: completed in the call's delay slot, and parked in a saved
+    /// register across an unrelated call and handed over with `move a2,s0`.
+    #[test]
+    fn a_delay_slot_and_a_saved_register_copy_both_resolve() {
+        let mut b: Vec<u8> = Vec::new();
+        w(&mut b, 0x27BD_FFE8); // 0x00 addiu sp,sp,-0x18
+        w(&mut b, 0x3C10_801F); // 0x04 lui s0,0x801f
+        w(&mut b, 0x2610_6A78); // 0x08 addiu s0,s0,0x6a78 (= base + 0xa0)
+        w(&mut b, 0x3C06_801F); // 0x0c lui a2,0x801f
+        w(&mut b, jal_word(SPAWN_HELPER)); // 0x10
+        w(&mut b, 0x24C6_6A58); // 0x14 addiu a2,a2,0x6a58 (delay slot, = base + 0x80)
+        w(&mut b, jal_word(0x8001_0000)); // 0x18 an unrelated call
+        w(&mut b, 0);
+        w(&mut b, 0x0200_3021); // 0x20 move a2,s0
+        w(&mut b, jal_word(POOL_SPAWN_HELPER)); // 0x24
+        w(&mut b, 0);
+        w(&mut b, MIPS_JR_RA);
+        w(&mut b, 0x27BD_0018);
+        b.resize(0xC0, 0);
+        b[0x80] = 0xFF;
+        b[0x81] = 0xFF;
+        b[0xA0] = 0x03;
+        let l = parse(&b);
+        assert_eq!(l.spawn_sites, 2);
+        assert_eq!(l.record_offsets, vec![0x80, 0xA0]);
+    }
+
+    /// A `switch` arm that loads `$a2` in the delay slot of a `j` to a shared
+    /// call is followed from that delay slot; the fall-through walk stops at
+    /// the arm, whose value is not the fall-through path's.
+    #[test]
+    fn a_switch_arm_into_a_shared_call_resolves_from_its_delay_slot() {
+        let mut b: Vec<u8> = Vec::new();
+        w(&mut b, 0x27BD_FFE8); // 0x00 addiu sp,sp,-0x18
+        w(&mut b, 0x3C06_801F); // 0x04 lui a2,0x801f
+        w(&mut b, 0x1480_0003); // 0x08 bnez a0,0x18
+        w(&mut b, 0);
+        let j_to_call = 0x0800_0000 | (((SLOT_B_LINK_BASE + 0x20) >> 2) & 0x03FF_FFFF);
+        w(&mut b, j_to_call); // 0x10 j 0x20
+        w(&mut b, 0x24C6_6A58); // 0x14 addiu a2,a2,0x6a58 (= base + 0x80)
+        w(&mut b, 0x24C6_6A78); // 0x18 addiu a2,a2,0x6a78 (branch path only)
+        w(&mut b, 0);
+        w(&mut b, jal_word(SPAWN_HELPER)); // 0x20
+        w(&mut b, 0);
+        w(&mut b, MIPS_JR_RA);
+        w(&mut b, 0x27BD_0018);
+        b.resize(0xC0, 0);
+        b[0x80] = 0xFF;
+        b[0x81] = 0xFF;
+        let l = parse(&b);
         assert_eq!(l.record_offsets, vec![0x80]);
     }
 

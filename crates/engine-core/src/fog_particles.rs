@@ -66,8 +66,10 @@
 //!
 //! Each half of a particle is one `POLY_FT4` (tag `0x09` words, command
 //! `0x2E` = textured, semi-transparent, texture-blended) linked at OT bucket
-//! `view_z >> 5`, sampling texture page `0x27` (VRAM `(448, 256)`, 4bpp, ABR
-//! `1` = additive) through CLUT `0x7640` (`(0, 473)`). The left half takes
+//! `view_z >> 5`, sampling texture page `0x27` (VRAM `(448, 0)`, 4bpp, ABR
+//! `1` = additive) through CLUT `0x7640` (`(0, 473)`). As a GP0 texpage the
+//! halfword's bits `0..3` give X `7 * 64 = 448` and bit 4 - the Y-base bit -
+//! is clear; the set bit 5 is the low bit of ABR, not a Y offset. The left half takes
 //! UV row 1 of the staged table (`v 0x58..0x6F`), the right half row 0
 //! (`v 0x40..0x57`); rows 2 and 3 are staged too but this routine never
 //! reads them. The quad is axis-aligned in screen space between two
@@ -85,19 +87,59 @@ use legaia_engine_vm::psx_camera::FieldCameraView;
 pub const FOG_POOL_SLOTS: usize = 0x50;
 
 /// Live-particle cap the spawner tests the pool population against
-/// (`_DAT_8007BCA8 < _DAT_8007BCB0`): the field reset writes `0x18` at
-/// `0x8003B6E8` (`FUN_8003AEB0`'s body), or `0x48` when either debug byte it
-/// tests first is set.
+/// (`_DAT_8007BCA8 < _DAT_8007BCB0`) in an ordinary field scene - see
+/// [`fog_cap_for_man`] for who writes it.
 pub const FOG_CAP_DEFAULT: u16 = 0x18;
-/// The debug-flag cap (`addiu a0,zero,0x48` at `0x8003B6DC`).
-pub const FOG_CAP_DEBUG: u16 = 0x48;
+/// The raised cap (`li a0,0x48` at `0x8003B6DC`): the kingdom overworlds and
+/// any scene whose MAN sets bit 2 of its header byte `+1`.
+pub const FOG_CAP_RAISED: u16 = 0x48;
+
+/// The cap the MAN installer `FUN_8003AEB0` seats for a scene, from the MAN it
+/// just loaded.
+///
+/// ```text
+/// 8003af48  lbu  v0,0x1(v1)        ; v1 = _DAT_8007B898, the resident MAN
+/// 8003af50  andi v0,v0,0x1
+/// 8003af54  sb   v0,-0x4958(a0)    ; _DAT_8007B6A8 = MAN[1] & 1
+///   ...
+/// 8003b6bc  lw   v0,-0x4768(v0)    ; the MAN again
+/// 8003b6c4  lbu  v0,0x1(v0)
+/// 8003b6c8  lbu  v1,-0x4958(v1)    ; _DAT_8007B6A8
+/// 8003b6cc  andi v0,v0,0x4
+/// 8003b6d0  or   v0,v0,v1
+/// 8003b6d4  beq  v0,zero,0x8003b6e0
+/// 8003b6d8  _li  a0,0x18
+/// 8003b6dc  li   a0,0x48
+/// 8003b6e8  sw   a0,-0x4350(v0)    ; _DAT_8007BCB0
+/// ```
+///
+/// So the cap is `0x48` exactly when `MAN[1] & 5` is non-zero. Bit 0 is the
+/// per-scene save-allow / overworld flag (`_DAT_8007B6A8`, set on the three
+/// kingdom overworlds), which is why every PCSX-Redux `map01` / `map03`
+/// state reads `0x48` there; neither input is a debug switch. A MAN shorter
+/// than two bytes seats the default.
+///
+/// PORT: FUN_8003AEB0 (`0x8003B6BC..0x8003B6E8`, the fog-cap arm)
+pub fn fog_cap_for_man(man: &[u8]) -> u16 {
+    match man.get(1) {
+        Some(b) if b & 0x05 != 0 => FOG_CAP_RAISED,
+        _ => FOG_CAP_DEFAULT,
+    }
+}
+
+/// The overworld spawner's eye-space depth limit (`slti v0,v0,0x4001` at
+/// `0x801D6470`): a particle whose tile transforms deeper than this through
+/// the camera is not spawned.
+pub const FOG_OVERWORLD_MAX_DEPTH: i32 = 0x4000;
+/// The overworld spawner's extra height (`addiu v0,v0,-0x28` at `0x801D6538`).
+pub const FOG_OVERWORLD_LIFT: i16 = 0x28;
 
 /// One fog-region record's stride in the MAN section-4 table (`addiu v1,v1,0xb`
 /// at `0x801D63B4`).
 pub const FOG_REGION_STRIDE: usize = 0xB;
 
 /// GP0 texpage word every fog quad carries (`0x8007322C` row word 1, high
-/// halfword): page `(448, 256)`, 4bpp, ABR 1.
+/// halfword): page `(448, 0)` (bit 4, the Y-base bit, is clear), 4bpp, ABR 1.
 pub const FOG_TPAGE: u16 = 0x0027;
 /// GP0 CLUT word (`0x8007322C` row word 0, high halfword): `(0, 473)`.
 pub const FOG_CLUT: u16 = 0x7640;
@@ -260,7 +302,7 @@ impl FogParticle {
 }
 
 /// One drawn half-sheet: the `POLY_FT4` fields `FUN_8003F86C` writes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FogQuad {
     /// Corners in PSX screen pixels, `POLY_FT4` order: `(x0,y0) (x1,y0)
     /// (x0,y1) (x1,y1)`.
@@ -273,6 +315,15 @@ pub struct FogQuad {
     pub rgb: [u8; 3],
     /// `view_z >> 5` of the bottom-right point (`SZ2`).
     pub ot_index: u32,
+    /// The sheet's scene depth for a depth-tested draw, in the frame
+    /// matrix's normalised depth (`legaia_engine_ui::screen_prim::CornerDepth`'s
+    /// convention): the bottom-right point's - the same point the OT bucket
+    /// is taken from, so the sheet is flat at the depth retail sorts it at.
+    /// Set on the overworld arm only ([`FogPool::overworld`]), where the
+    /// sheets float over a continent whose ridges retail's ordering table
+    /// draws in front of the fog behind them; `None` keeps the field's
+    /// composite-over-the-frame draw.
+    pub depth: Option<f32>,
 }
 
 /// The camera this frame's fog is projected through - the same
@@ -298,6 +349,16 @@ impl FogView {
     /// render frame (raw retail points are Y-negated before multiplying).
     pub fn from_vp(vp: [f32; 16]) -> Self {
         Self { vp }
+    }
+
+    /// A raw retail world point's normalised depth (`clip.z / clip.w`)
+    /// through the same matrix; `None` at or behind the eye.
+    pub fn ndc_depth(&self, p: [i32; 3]) -> Option<f32> {
+        let m = &self.vp;
+        let v = [p[0] as f32, -(p[1] as f32), p[2] as f32, 1.0];
+        let row = |r: usize| m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2] + m[12 + r] * v[3];
+        let w = row(3);
+        (w.is_finite() && w > 0.5).then(|| row(2) / w)
     }
 
     /// Project a raw retail world point (Y-down). Returns `(sx, sy, sz)` in
@@ -350,7 +411,7 @@ pub struct FogFrameEnv {
 }
 
 /// The pool, its free stack, and the per-frame bookkeeping the spawner reads.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FogPool {
     pub records: Vec<FogParticle>,
     free_table: Vec<i16>,
@@ -368,6 +429,19 @@ pub struct FogPool {
     pub pending_dt: u32,
     /// The quads the last render step produced.
     pub quads: Vec<FogQuad>,
+    /// `_DAT_1F800394 & 1` - the overworld bit. Set on every non-battle
+    /// kingdom-overworld state in the save library and clear on every other
+    /// state; the spawner's world-map arm keys on it (see [`Self::spawn`]).
+    pub overworld: bool,
+    /// The camera the last render step projected through, field frame. The
+    /// overworld arm's depth test transforms the new particle through the
+    /// GTE's resident camera matrix; this is the port's copy of it.
+    pub depth_view: Option<FieldCameraView>,
+    /// The camera's visible-tile window (`0x1F8003E8..EB`) as the host's
+    /// camera last published it - the span the ambient emitter's burst arm
+    /// samples. `None` until a camera has published one; the emitter then
+    /// keeps the span it was installed with.
+    pub view_window: Option<[i8; 4]>,
 }
 
 impl Default for FogPool {
@@ -393,6 +467,9 @@ impl FogPool {
             gate: false,
             pending_dt: 0,
             quads: Vec::new(),
+            overworld: false,
+            depth_view: None,
+            view_window: None,
         };
         pool.reset();
         pool
@@ -425,15 +502,27 @@ impl FogPool {
 
     /// Spawn one particle at tile `(tile_x, tile_z)` - `FUN_801D629C`.
     ///
-    /// `rand` is the shared `FUN_80056798` stream; this consumes exactly the
+    /// `rand` is the shared `FUN_80056798` stream - BIOS `rand()`, whose
+    /// result is the high half of its LCG state, `(seed >> 16) & 0x7FFF`
+    /// (the element channel shapes the world stream that way; a raw LCG
+    /// state's low bits cycle and wreck the `& 7` / `& 0x7F` draws below).
+    /// This consumes exactly the
     /// draws retail does on the path it takes (two before the slot pop, three
     /// after), so the emitter's own draws stay aligned around it. `trig` is
     /// the LUT pair behind `_DAT_8007B81C` (sine, [`RotationLut::b`]) and
     /// `_DAT_8007B7F8` (cosine, [`RotationLut::a`]).
     ///
-    /// The world-map arm (`_DAT_1F800394 & 1`: a camera-space depth test and
-    /// a `-0x28` height bias) is not modelled - the field arm is the one the
-    /// port's field scenes reach.
+    /// The overworld arm ([`Self::overworld`], `_DAT_1F800394 & 1`) adds two
+    /// steps. Before the slot pop it transforms the particle's
+    /// `(tile_x << 7, y, tile_z << 7)` through the resident camera matrix
+    /// (`FUN_8003D344` at `0x801D6460`: one `MVMVA` of `V0` by `RT` plus
+    /// `TR`) and drops the spawn when the eye-space depth exceeds `0x4000`
+    /// (`slti v0,v0,0x4001` at `0x801D6470`) - only two draws are consumed
+    /// on that path. After the record is filled it lifts the particle a
+    /// further `0x28` (`addiu v0,v0,-0x28` at `0x801D6538`). The depth is
+    /// measured in the GTE's own units, i.e. through the 6x world scale
+    /// retail folds into the camera rotation; with no camera seen yet
+    /// ([`Self::depth_view`] empty) the test is skipped.
     ///
     /// PORT: FUN_801D629C
     ///
@@ -463,7 +552,11 @@ impl FogPool {
         else {
             return false;
         };
-        // 0x801D63C0..0x801D63DC: population under the cap.
+        // 0x801D63C0..0x801D63DC: population under the cap. The count is
+        // `_DAT_8007BCA8` as the last render walk left it (`sw v0,0x990(gp)`
+        // at `0x8003F3C8`); nothing here increments it, so every spawn of
+        // one frame compares the same stale value - `self.live` is written
+        // only by `render_step` for the same reason.
         if self.live >= self.cap {
             return false;
         }
@@ -475,6 +568,22 @@ impl FogPool {
         let angle = ((base + ((r1 as i32 * spread) >> 12)) & 0xFFF) as usize;
         // 0x801D6444..0x801D6458: height, negative is up.
         let y = -((rand() & 0x7F) as i16);
+        // 0x801D6448..0x801D6478: the overworld arm's depth test, through
+        // the camera matrix, on the halfword SVECTOR the routine builds on
+        // its stack (`sh` of `tile << 7`, so the coordinates wrap as i16).
+        if self.overworld
+            && let Some(view) = self.depth_view
+        {
+            let p = [
+                f32::from((tile_x << 7) as i16),
+                f32::from(y),
+                f32::from((tile_z << 7) as i16),
+            ];
+            let depth = view.eye_space(p)[2] * crate::camera_view::CUTSCENE_WORLD_SCALE;
+            if depth > FOG_OVERWORLD_MAX_DEPTH as f32 {
+                return false;
+            }
+        }
         // 0x801D647C..0x801D649C: pop a slot; none -> nothing spawns.
         let Some(slot) = crate::cutscene::sprite_stack_pop(&mut self.free_top, &self.free_table)
         else {
@@ -499,7 +608,12 @@ impl FogPool {
             vz: (-((c * speed) >> 14)) as i8,
             x: (tile_x << 7) << 4,
             z: (tile_z << 7) << 4,
-            y,
+            // 0x801D651C..0x801D653C: the overworld lift.
+            y: if self.overworld {
+                y.wrapping_sub(FOG_OVERWORLD_LIFT)
+            } else {
+                y
+            },
             grey,
         };
         true
@@ -579,8 +693,9 @@ impl FogPool {
                 // alive while either one is on screen.
                 let hw = FogParticle::half_width(rec.age);
                 let p = [sx, sy, sz];
-                let (l_alive, l_quad) = emit_half(view, p, -2 * hw, 0, FOG_LEFT_UV_ROW, rgb);
-                let (r_alive, r_quad) = emit_half(view, p, 0, 2 * hw, FOG_RIGHT_UV_ROW, rgb);
+                let ow = self.overworld;
+                let (l_alive, l_quad) = emit_half(view, p, -2 * hw, 0, FOG_LEFT_UV_ROW, rgb, ow);
+                let (r_alive, r_quad) = emit_half(view, p, 0, 2 * hw, FOG_RIGHT_UV_ROW, rgb, ow);
                 self.quads.extend(l_quad);
                 self.quads.extend(r_quad);
                 alive = l_alive || r_alive;
@@ -613,6 +728,7 @@ fn emit_half(
     dx1: i32,
     row: usize,
     rgb: [u8; 3],
+    depth_tested: bool,
 ) -> (bool, Option<FogQuad>) {
     let top_left = [p[0] + dx0, p[1] - FOG_SHEET_HEIGHT, p[2]];
     let bottom_right = [p[0] + dx1, p[1], p[2]];
@@ -661,6 +777,11 @@ fn emit_half(
             tpage: (words[1] >> 16) as u16,
             rgb,
             ot_index: (z1.max(0) >> 5) as u32,
+            depth: if depth_tested {
+                view.ndc_depth(bottom_right)
+            } else {
+                None
+            },
         }),
     )
 }
@@ -668,6 +789,15 @@ fn emit_half(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cap_is_raised_by_man_header_bits_0_and_2_only() {
+        assert_eq!(fog_cap_for_man(&[0, 0]), FOG_CAP_DEFAULT);
+        assert_eq!(fog_cap_for_man(&[0, 0x01]), FOG_CAP_RAISED);
+        assert_eq!(fog_cap_for_man(&[0, 0x04]), FOG_CAP_RAISED);
+        assert_eq!(fog_cap_for_man(&[0xFF, 0xFA]), FOG_CAP_DEFAULT);
+        assert_eq!(fog_cap_for_man(&[0x05]), FOG_CAP_DEFAULT);
+    }
 
     fn lut() -> &'static crate::action_effect_script::RetailRotationLut {
         crate::action_effect_script::retail_rotation_lut()
@@ -782,6 +912,54 @@ mod tests {
         assert_eq!(m, 0);
     }
 
+    /// The overworld arm (`_DAT_1F800394 & 1`): a camera-space depth test
+    /// before the slot pop that stops after two draws, and a `0x28` lift on
+    /// the stored height.
+    #[test]
+    fn overworld_arm_depth_tests_then_lifts() {
+        let trig = lut();
+        // A straight-ahead camera: no rotation, eye trio (0, 0, d/6) in the
+        // field frame, focus at the origin - so a point's retail depth is
+        // `6 * (z + d/6)` = `6z + d`.
+        let view = |d: f32| FieldCameraView {
+            focus: [0.0; 3],
+            pitch: 0.0,
+            yaw: 0.0,
+            roll: 0.0,
+            h: 368.0,
+            tr_eye: [0.0, 0.0, d / 6.0],
+        };
+        let mut pool = FogPool::new();
+        pool.regions = vec![region()];
+        pool.overworld = true;
+        // Tile z 10 sits at z = 1280 -> depth 7680 + d.
+        pool.depth_view = Some(view(8700.0)); // 16380: kept
+        let mut rand = || 0u32;
+        assert!(pool.spawn(10, 10, [0, 0, 0x7F, 0x7F], trig, &mut rand));
+        let r = pool.records[FOG_POOL_SLOTS - 1];
+        assert_eq!(r.y, -FOG_OVERWORLD_LIFT, "rand 0 height, lifted 0x28");
+        // Past 0x4000 (16386): dropped after the two pre-pop draws.
+        pool.depth_view = Some(view(8706.0));
+        let mut n = 0;
+        let mut rand2 = || {
+            n += 1;
+            0u32
+        };
+        let before = pool.allocated();
+        assert!(!pool.spawn(10, 10, [0, 0, 0x7F, 0x7F], trig, &mut rand2));
+        assert_eq!(n, 2);
+        assert_eq!(pool.allocated(), before, "no slot popped");
+        // No camera seen yet: the test is skipped, the lift still applies.
+        pool.depth_view = None;
+        assert!(pool.spawn(10, 10, [0, 0, 0x7F, 0x7F], trig, &mut rand));
+        // The field arm never lifts and never depth-tests.
+        let mut field = FogPool::new();
+        field.regions = vec![region()];
+        field.depth_view = Some(view(1.0e6));
+        assert!(field.spawn(10, 10, [0, 0, 0x7F, 0x7F], trig, &mut rand));
+        assert_eq!(field.records[FOG_POOL_SLOTS - 1].y, 0);
+    }
+
     #[test]
     fn velocity_follows_the_region_angle_and_speed() {
         let trig = lut();
@@ -866,6 +1044,47 @@ mod tests {
         // `rand() == 0x7F` seeds rate `(0x7F & 7) + 8 = 15`.
         assert_eq!(pool.records[slot].rate, 15);
         assert_eq!(pool.records[slot].age, 0x800 + 15);
+    }
+
+    /// The overworld arm's sheets carry the bottom-right point's scene
+    /// depth for the hosts' depth test; the field's carry none.
+    #[test]
+    fn only_overworld_sheets_carry_a_scene_depth() {
+        let trig = lut();
+        for overworld in [false, true] {
+            let mut pool = FogPool::new();
+            pool.regions = vec![region()];
+            let mut rand = || 0x7Fu32;
+            assert!(pool.spawn(10, 10, [0, 0, 0x7F, 0x7F], trig, &mut rand));
+            pool.overworld = overworld;
+            let slot = FOG_POOL_SLOTS - 1;
+            pool.records[slot].x = 0;
+            pool.records[slot].z = 2000 << 4;
+            pool.records[slot].y = 0;
+            pool.records[slot].age = 0x800;
+            let view = plain_view();
+            let quads = pool.render_step(&view, &env()).to_vec();
+            assert_eq!(quads.len(), 2);
+            for q in &quads {
+                if overworld {
+                    let d = q.depth.expect("an overworld sheet is depth-tested");
+                    assert_eq!(Some(d), view.ndc_depth([q_particle_x(q), 0, 2000]));
+                } else {
+                    assert_eq!(q.depth, None);
+                }
+            }
+        }
+    }
+
+    /// The bottom-right world X of a half-sheet under [`plain_view`]: the
+    /// left half ends at the particle (x `0`), the right half ends
+    /// `2 * half_width` to its right.
+    fn q_particle_x(q: &FogQuad) -> i32 {
+        if q.uv[0].1 == 0x58 {
+            0
+        } else {
+            2 * FogParticle::half_width(0x800 + 15)
+        }
     }
 
     #[test]

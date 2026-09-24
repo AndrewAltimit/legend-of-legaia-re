@@ -159,6 +159,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu();
+    take_commit_begin(&mut world);
     assert!(world.battle.item_menu.is_some(), "still picking a target");
 
     // Frame 2: Cross confirms the first target (the wounded slot 0). The copy
@@ -167,6 +168,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_item_menu();
+    take_commit_begin(&mut world);
     assert_eq!(
         world.party.inventory.get(&0x01).copied(),
         Some(1),
@@ -200,6 +202,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
             },
         });
         world.tick_battle_command();
+        take_commit_begin(&mut world);
     }
     assert!(
         world.battle.command.is_none(),
@@ -252,6 +255,7 @@ fn battle_item_menu_cancel_reopens_command_menu() {
     world.set_pad(0);
     world.set_pad(PadButton::Circle.mask());
     world.tick_battle_item_menu();
+    take_commit_begin(&mut world);
 
     assert!(world.battle.item_menu.is_none(), "item menu closed");
     assert!(

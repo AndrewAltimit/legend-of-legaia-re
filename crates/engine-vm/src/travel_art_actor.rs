@@ -38,8 +38,21 @@
 //! |---|---|---|
 //! | phase 0 | `FUN_8003CE08(0x0B)`, `FUN_801D5A24(1)` | `FUN_8003CE08(0x0B)`, `FUN_801D5A24(0)` |
 //! | phase 1 dwell | `0x50`, then spawns the flash quad | `0x28`, no quad |
-//! | phase 2 dwell | `0x28`, no quad | quad + camera halt/scroll on `_DAT_8007C364` |
-//! | phase 3 | resolve + warp | resolve + warp |
+//! | phase 2 | dwell `0x28`, no quad | the **lift**: the player rises until above `-0x618`, then the quad |
+//! | phase 3 | resolve + warp, restoring player `+0x72` / `+0x10` | resolve + warp |
+//!
+//! Rula's phase 2 (`0x801EE400..0x801EE4C4`) is not a dwell. Every frame it
+//! sets the player actor's (`*0x8007C364`) `+0x10` bit 0 and the scratchpad
+//! word `0x1F800394`'s bit 24, adds the frame step to `+0x9E` - which here is
+//! a **velocity**, zeroed by phase 1's exit - and subtracts that velocity
+//! from the player's Y `+0x16`. When Y drops below `-0x618` it clears
+//! `0x8007B6B4`, spawns the fade quad (`FUN_80024E80`) and advances; the
+//! player flies up out of shot on an accelerating arc before the warp.
+//!
+//! Only Riremito's resolve phase touches the player
+//! (`0x801EE268..0x801EE294`): on a hit it stores render scale `0x1000` to
+//! `+0x72` and clears `+0x10` bit `0x200000` before the warp. Rula's resolve
+//! (`0x801EE4C8..`) stores neither.
 //!
 //! Both phase-1 bodies are additionally gated on `FUN_8003CE64(0x0B)`
 //! returning zero, so the dwell does not start until the effect the phase-0
@@ -54,6 +67,22 @@ pub const VISITED_RECORD_STRIDE: usize = 0x10;
 pub const VISITED_NAME_OFFSET: usize = 0xC;
 /// The diagnostic phase both handlers park in when the scan misses.
 pub const PHASE_UNFOUND: u16 = 0x63;
+
+/// Rula's lift ends once the player's Y (`+0x16`) is below this
+/// (`slti v0,v0,-0x618` at `0x801EE464`).
+pub const RULA_LIFT_EXIT_Y: i16 = -0x618;
+
+/// The bit Rula's lift sets in the player's `+0x10` each frame.
+pub const RULA_LIFT_PLAYER_FLAG: u32 = 0x1;
+
+/// The bit Rula's lift sets in the scratchpad word `0x1F800394`.
+pub const RULA_LIFT_SCRATCH_FLAG: u32 = 0x0100_0000;
+
+/// Render scale Riremito's resolve stores to the player's `+0x72`.
+pub const RIREMITO_RESTORE_SCALE: i16 = 0x1000;
+
+/// The bit Riremito's resolve clears in the player's `+0x10`.
+pub const RIREMITO_RESTORE_CLEARED_FLAG: u32 = 0x0020_0000;
 
 /// Which travel art a handler is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,9 +110,13 @@ impl TravelArt {
         }
     }
 
-    /// The phase-2 dwell threshold.
-    pub fn phase2_dwell(self) -> i16 {
-        0x28
+    /// The phase-2 dwell threshold - Riremito only. Rula's phase 2 is the
+    /// lift, which ends on the player's height ([`RULA_LIFT_EXIT_Y`]).
+    pub fn phase2_dwell(self) -> Option<i16> {
+        match self {
+            TravelArt::Riremito => Some(0x28),
+            TravelArt::Rula => None,
+        }
     }
 
     /// The phase whose completion spawns the screen-flash quad.
@@ -166,6 +199,14 @@ pub struct TravelArtFrame {
     pub destination: Option<TravelDestination>,
     /// The scan missed; the handler parked in the diagnostic phase.
     pub unfound: bool,
+    /// Rula's lift ran this frame: the player's new Y (`+0x16`), after the
+    /// handler set [`RULA_LIFT_PLAYER_FLAG`] on the player and
+    /// [`RULA_LIFT_SCRATCH_FLAG`] in `0x1F800394`.
+    pub lift_player_y: Option<i16>,
+    /// Riremito's resolve hit: the player's `+0x72` is set to
+    /// [`RIREMITO_RESTORE_SCALE`] and [`RIREMITO_RESTORE_CLEARED_FLAG`] is
+    /// cleared from its `+0x10`.
+    pub restore_player: bool,
 }
 
 /// Riremito / Rula actor state.
@@ -175,8 +216,11 @@ pub struct TravelArtActor {
     pub art: TravelArt,
     /// Phase halfword `actor[+0x54]`.
     pub phase: u16,
-    /// Dwell counter `actor[+0x9E]`.
+    /// Dwell counter `actor[+0x9E]` - in Rula's phase 2, the lift velocity.
     pub dwell: i16,
+    /// The player actor's Y (`+0x16`) the lift moves. Seed it with
+    /// [`Self::with_player_y`]; a host that never does lifts from `0`.
+    pub player_y: i16,
 }
 
 impl TravelArtActor {
@@ -186,6 +230,15 @@ impl TravelArtActor {
             art,
             phase: 0,
             dwell: 0,
+            player_y: 0,
+        }
+    }
+
+    /// Seed the player's Y the Rula lift starts from.
+    pub fn with_player_y(self, y: i16) -> Self {
+        Self {
+            player_y: y,
+            ..self
         }
     }
 
@@ -208,6 +261,10 @@ impl TravelArtActor {
     /// The `effect_busy` gate is passed as `false` there - the engine has no
     /// effect queue for `FUN_8003CE64(0x0B)` to report on, so the dwell starts
     /// on the frame after the install rather than after the flourish clears.
+    /// Neither host applies [`TravelArtFrame::lift_player_y`] or
+    /// [`TravelArtFrame::restore_player`] yet: the panel host carries no
+    /// handle on the player actor, so the Rula lift's arc times the phase
+    /// but moves nothing on screen.
     pub fn tick(
         &mut self,
         effect_busy: bool,
@@ -233,18 +290,31 @@ impl TravelArtActor {
                 self.dwell = 0;
                 self.phase = 2;
             }
-            2 => {
-                self.dwell = self.dwell.wrapping_add(frame_delta);
-                if self.dwell < self.art.phase2_dwell() {
-                    return out;
+            2 => match self.art.phase2_dwell() {
+                Some(threshold) => {
+                    self.dwell = self.dwell.wrapping_add(frame_delta);
+                    if self.dwell < threshold {
+                        return out;
+                    }
+                    out.spawn_flash = self.art.flash_phase() == 2;
+                    self.dwell = 0;
+                    self.phase = 3;
                 }
-                out.spawn_flash = self.art.flash_phase() == 2;
-                self.dwell = 0;
-                self.phase = 3;
-            }
+                None => {
+                    // Rula's lift: `+0x9E` is a velocity, never reset here.
+                    self.dwell = self.dwell.wrapping_add(frame_delta);
+                    self.player_y = self.player_y.wrapping_sub(self.dwell);
+                    out.lift_player_y = Some(self.player_y);
+                    if self.player_y < RULA_LIFT_EXIT_Y {
+                        out.spawn_flash = true;
+                        self.phase = 3;
+                    }
+                }
+            },
             3 => match resolve() {
                 Some(dest) => {
                     out.destination = Some(dest);
+                    out.restore_player = self.art == TravelArt::Riremito;
                     self.phase = 4;
                 }
                 None => {
@@ -305,18 +375,45 @@ mod tests {
     }
 
     #[test]
-    fn rula_flashes_on_phase_two() {
+    fn rula_lifts_the_player_on_an_accelerating_arc_then_flashes() {
         let mut a = TravelArtActor::new(TravelArt::Rula);
         assert_eq!(a.tick(false, 1, || None).queue_effect, Some(0));
         for _ in 0..TravelArt::Rula.phase1_dwell() {
             a.tick(false, 1, || None);
         }
         assert_eq!(a.phase, 2);
-        for _ in 0..TravelArt::Rula.phase2_dwell() - 1 {
-            assert!(!a.tick(false, 1, || None).spawn_flash);
+        assert_eq!(a.dwell, 0, "phase 1's exit zeroes the velocity");
+        // Step 2: velocity 2, 4, 6, ...; Y = -n(n+1). n = 39 lands exactly
+        // on -0x618 (-1560), which is not below it; n = 40 (-1640) is.
+        let mut frames = 0;
+        let mut last_y = 0;
+        loop {
+            let f = a.tick(false, 2, || None);
+            frames += 1;
+            let y = f.lift_player_y.expect("the lift writes Y every frame");
+            assert!(y < last_y, "the player rises every frame");
+            last_y = y;
+            if f.spawn_flash {
+                break;
+            }
+            assert!(frames < 100);
         }
-        assert!(a.tick(false, 1, || None).spawn_flash);
+        assert_eq!(last_y, -(frames * (frames + 1)) as i16);
+        assert!(last_y < RULA_LIFT_EXIT_Y);
+        assert!(-((frames - 1) * frames) >= i32::from(RULA_LIFT_EXIT_Y));
         assert_eq!(a.phase, 3);
+        // Rula's resolve does not restore the player.
+        let f = a.tick(false, 2, || Some(destination_for(0, 0, 0)));
+        assert!(f.destination.is_some() && !f.restore_player);
+    }
+
+    #[test]
+    fn riremito_resolve_restores_the_player() {
+        let mut a = TravelArtActor::new(TravelArt::Riremito);
+        a.phase = 3;
+        let f = a.tick(false, 1, || Some(destination_for(0, 0, 0)));
+        assert!(f.restore_player);
+        assert_eq!(f.lift_player_y, None);
     }
 
     #[test]

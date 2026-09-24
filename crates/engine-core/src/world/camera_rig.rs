@@ -11,12 +11,17 @@ pub struct CameraRig {
     ///
     /// Written by exactly one thing in retail: the field-VM opcode
     /// `0x4C` outer-nibble `8` sub-`4` (`[4C, 0x84, amplitude]`), ported at
-    /// [`legaia_engine_vm::field::FieldHost::op4c_n8_sub4_set_b630`]. It is
-    /// the only input to the LCG camera jitter `FUN_801D9D30`
-    /// ([`legaia_engine_vm::battle_camera::apply_shake`]): `0` is the resting
-    /// state and `1..=0x15` widens the jitter window.
+    /// [`legaia_engine_vm::field::FieldHost::op4c_n8_sub4_set_b630`]. Two
+    /// routines read it: the LCG camera jitter `FUN_801D9D30` and the camera
+    /// follow-ease `FUN_801DB510` (`lw a0,-0x49d0(v0)` at `0x801DB850`), whose
+    /// tail (`0x801DB864..0x801DB8D4`) draws the same two masked `rand()`
+    /// samples with the same centring and adds them straight onto the eye
+    /// `0x800840B8` / `0x800840BC`, so one port
+    /// ([`legaia_engine_vm::battle_camera::apply_shake`]) covers both. In
+    /// both, `0` is the resting state and `1..=0x15` widens the jitter
+    /// window.
     ///
-    /// REF: FUN_801D9D30
+    /// REF: FUN_801D9D30, FUN_801DB510
     pub shake_amplitude: u8,
     /// Scene control block `+0x4A` (`_DAT_801C6EA4 + 0x4A`) - the camera
     /// vertical offset the current scene asks for, in the player actor's

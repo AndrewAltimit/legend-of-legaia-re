@@ -193,7 +193,7 @@ pub fn build_engine_mode_trace_field_live(
 ///    game's pre-Tetsu story state - there is no earlier save).
 /// 2. [`BootSession::enter_field_live`] drops into `scene_name` with the live
 ///    loop armed; the cold boot auto-installs the town's sparring carrier.
-/// 3. A real field-interact op on the carrier's slot opens its dialogue; a
+/// 3. A real interaction on the carrier's slot opens its dialogue; a
 ///    just-pressed confirm (Cross) advances/dismisses it, which engages the
 ///    scripted lone-Tetsu encounter and flips Field → Battle.
 ///
@@ -241,12 +241,11 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
     let mut out = Vec::with_capacity((frames as usize).saturating_add(1));
     out.push(sample_engine_frame(&session));
 
-    // A real field-interact (op 0x3E, op0<100) on the carrier's slot, then the
-    // dialog-advance op (0x4C n5). Mirrors the battle-leg test bytecode.
-    session
-        .host
-        .world
-        .load_field_script(vec![0x3E, 0x05, slot, 0x4C, 0x54]);
+    // A real interaction on the carrier's slot (the talk probe's entry -
+    // op 0x3E with op0 < 100 is the scripted-battle install, not a talk),
+    // then the dialog-advance op (0x4C n5). Mirrors the battle-leg test.
+    session.host.world.trigger_field_interact(0, slot);
+    session.host.world.load_field_script(vec![0x4C, 0x54]);
     let cross = PadButton::Cross.mask();
     let down = PadButton::Down.mask();
     for i in 0..frames {

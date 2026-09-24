@@ -49,6 +49,7 @@ fn a_drawn_frame_lands_in_vram_as_the_colour_that_was_drawn() {
             semi_transparent: false,
             abr_mode: 0,
             ot_index: 10,
+            depth: None,
         })],
         [0.0, 0.0, 0.0, 1.0],
     );
@@ -104,6 +105,7 @@ fn the_captured_page_reads_back_through_the_15bpp_texture_path() {
             semi_transparent: false,
             abr_mode: 0,
             ot_index: 10,
+            depth: None,
         })],
         [0.0, 0.0, 0.0, 1.0],
     );
@@ -142,6 +144,7 @@ fn the_captured_page_reads_back_through_the_15bpp_texture_path() {
             gouraud: None,
             semi_transparent: false,
             ot_index: 10,
+            depth: None,
         })],
         [0.0, 0.0, 0.0, 1.0],
     );
@@ -174,6 +177,7 @@ fn a_gouraud_quad_gradients_across_the_frame_on_gpu() {
             gouraud: Some([0, 0, 0x0080_8080, 0x0080_8080]),
             semi_transparent: false,
             ot_index: 10,
+            depth: None,
         })],
         [0.0, 0.0, 0.0, 1.0],
     );

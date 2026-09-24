@@ -61,6 +61,9 @@ pub struct World {
     /// spawns into and the render pass draws from - see
     /// [`crate::fog_particles`].
     pub fog: crate::fog_particles::FogPool,
+    /// Field script actors: op `0x43` scripted arcs and the NPC height
+    /// channel they write, and op `0x34` sub-1 attached lights.
+    pub script_actors: FieldScriptActorState,
     /// Field-VM `screen_mode` register read by op 0x42 mode 1 - packed mode
     /// bits (bits 4 / 5 / 6 / 7 individually testable; bits 12..15 indexed
     /// against `screen_mode_table`).
@@ -70,10 +73,16 @@ pub struct World {
     /// a deterministic LCG so tests are reproducible.
     pub rng_state: u32,
 
-    /// Sin LUT used by move-VM op `0x03`. Engines populate from extracted
-    /// asset data; default is empty (returns zero).
+    /// The sine view of retail's one SCUS trig table, the table
+    /// `_DAT_8007B81C` points at (`0x80070A2C`, installed at boot by
+    /// `FUN_80026BE0`): `0x1000` entries of `trunc(sin(i * 2pi / 4096) *
+    /// 4096)`. Read by move-VM op `0x03` (the X term) and the world-map
+    /// horizon emitter `FUN_801D7EA0`. Filled by [`World::new`] from
+    /// [`crate::action_effect_script::retail_rotation_lut`], byte-exact
+    /// with the disc table.
     pub sin_lut: Vec<i16>,
-    /// Cos LUT - same shape as `sin_lut`.
+    /// The cosine view, `_DAT_8007B7F8` = the same table `+0x400` entries
+    /// on. Read by move-VM op `0x03` (the Z term).
     pub cos_lut: Vec<i16>,
 
     /// Live battle session state: per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues and the end-of-battle latches.
@@ -306,11 +315,16 @@ impl World {
             presentation: ScreenFxState::new(),
             flags: StoryFlagState::new(),
             fog: crate::fog_particles::FogPool::new(),
+            script_actors: FieldScriptActorState::default(),
             screen_mode: 0,
             rng_state: 0x1234_5678,
             casting: CastFxState::new(),
-            sin_lut: Vec::new(),
-            cos_lut: Vec::new(),
+            sin_lut: crate::action_effect_script::retail_rotation_lut()
+                .sin_table()
+                .to_vec(),
+            cos_lut: crate::action_effect_script::retail_rotation_lut()
+                .cos_table()
+                .to_vec(),
             battle: BattleState::new(),
             camera: CameraRig::new(),
             audio: AudioState::new(),

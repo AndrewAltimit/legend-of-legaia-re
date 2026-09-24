@@ -19,8 +19,9 @@
 //!   world's leg / contest edges, ported from the native window's
 //!   `tick_muscle_hub`; the quads come out of the PROT 0977 sprite table
 //!   through the shared `other_game_hud` emitters.
-//! - **Baka Fighter** (`World::tick_baka_fighter`): Left / Right / Up commit
-//!   attack types 1 / 2 / 3, Down the special; the result screen's tally
+//! - **Baka Fighter** (`World::tick_baka_fighter`): Square / Circle / Cross
+//!   commit attack types 1 / 2 / 3 (retail's face-button read), Triangle the
+//!   port's chargeable special; the result screen's tally
 //!   banks into the mode-24 winnings the return warp pays out. The opponent
 //!   the scene host rotated in is reproduced here (the same frame-keyed pick,
 //!   cross-checked against the fight's prize) so the page draws the fighter
@@ -66,7 +67,11 @@ pub(crate) struct MuscleUi {
     pub(crate) monster_id: Option<u16>,
     /// Player battle-file slot the fighter mesh assembles from (0 = Vahn).
     pub(crate) char_slot: u32,
-    intro_card: Option<HubScreen>,
+    /// The hub's first visit on a fresh contest, the native window's
+    /// `muscle_first_visit`.
+    first_visit: Option<legaia_engine_core::muscle_ringside::FirstVisitHub>,
+    /// A leg-open ROUND card no hub screen introduced (arms `0x15` /
+    /// `0x16`), the native window's `muscle_round_banner`.
     round_banner: Option<(i32, HubScreen)>,
     /// The round the re-entered hub's backdrop last drew its ROUND card for
     /// (`muscle_ringside::leg_open_raises_round_card`), the native window's
@@ -187,14 +192,14 @@ impl LegaiaRuntime {
         let ui = &mut self.minigame_ui.muscle;
         if leg_open && !ui.prev_leg_open {
             // Once per leg: not again after a re-entered hub's own card.
-            if legaia_engine_core::muscle_ringside::leg_open_raises_round_card(
+            let raise = legaia_engine_core::muscle_ringside::leg_open_raises_round_card(
                 ui.card_round.take(),
                 round,
-            ) {
-                ui.round_banner = Some((round, HubScreen::round_banner()));
-            }
+            );
             if contest_open && !ui.prev_contest_open {
-                ui.intro_card = Some(HubScreen::intro_card());
+                ui.first_visit = Some(legaia_engine_core::muscle_ringside::FirstVisitHub::new());
+            } else if raise {
+                ui.round_banner = Some((round, HubScreen::opponent_card()));
             }
             ui.interval = None;
             ui.backdrop = None;
@@ -205,13 +210,17 @@ impl LegaiaRuntime {
             ui.interval = raises.then(|| HubScreen::interval(roll));
             ui.tally = if raises { roll_seed } else { None };
             ui.backdrop = still.filter(|_| raises).map(HubBackdrop::reentry);
-            ui.intro_card = None;
+            ui.first_visit = None;
             ui.round_banner = None;
         }
-        if let Some(card) = ui.intro_card.as_mut() {
-            card.tick(1, pad);
-            if card.done() {
-                ui.intro_card = None;
+        // The first visit's two announcer lines (`FUN_8003D53C` at arms 0 and
+        // 0x15), played through the page's XA path once the borrow ends.
+        let mut hub_xa = None;
+        if let Some(hub) = ui.first_visit.as_mut() {
+            hub.tick(1, pad);
+            hub_xa = hub.take_xa();
+            if hub.done() {
+                ui.first_visit = None;
             }
         } else if let Some((_, banner)) = ui.round_banner.as_mut() {
             banner.tick(1, pad);
@@ -251,6 +260,13 @@ impl LegaiaRuntime {
         }
         ui.prev_leg_open = leg_open;
         ui.prev_contest_open = contest_open;
+        if let Some(c) = hub_xa {
+            self.play_xa_clip(
+                u32::from(c.clip),
+                u32::from(c.channel),
+                u32::from(c.duration_sectors),
+            );
+        }
         for cue in voice_cues {
             self.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
                 cue.voice,
@@ -261,9 +277,11 @@ impl LegaiaRuntime {
         }
     }
 
-    /// This frame's hub-screen quads, the native `muscle_hub_sprite_draws`
-    /// selection over the shared emitters.
-    fn muscle_hub_quads(&self) -> Vec<HudQuad> {
+    /// This frame's hub-screen rows, the native `muscle_hub_sprite_draws`
+    /// selection over the shared emitters: blit rows for the quads, plus a
+    /// `shade` row for the first visit's backdrop shade between the wall
+    /// tiles and the screens drawn over them.
+    fn muscle_hub_rows(&self) -> Vec<serde_json::Value> {
         let ui = &self.minigame_ui.muscle;
         let Some(table) = ui.sprite_table.as_ref() else {
             return Vec::new();
@@ -275,26 +293,31 @@ impl LegaiaRuntime {
         let in_dome = world.mode == legaia_engine_core::world::SceneMode::MuscleDome;
         let mut table = table.clone();
         let mut quads = Vec::new();
+        let mut shade_row: Option<(usize, serde_json::Value)> = None;
         if in_dome {
-            // A first visit's brick wall under the two leg-open screens - the
-            // native window's `muscle_hub_sprite_draws` twin.
-            let wall = legaia_engine_core::muscle_ringside::first_visit_backdrop_level(
-                ui.intro_card.as_ref(),
-                ui.round_banner.as_ref().map(|(_, b)| b),
-            );
-            if wall > 0 {
-                quads.extend(hud::hub_screen_quads(
-                    &mut table,
-                    &legaia_engine_ui::ringside_backdrop::first_visit_tile_draws(),
-                    wall,
-                ));
-            }
-            if let Some(card) = ui.intro_card {
-                quads.extend(hud::hub_screen_quads(
-                    &mut table,
-                    hud::HUB_INTRO_CARD,
-                    card.brightness(),
-                ));
+            // A first visit's frame: wall + shade behind the arm's screens,
+            // through the shared kernel the native window draws with.
+            if let Some(hub) = ui.first_visit {
+                use legaia_engine_ui::ringside_backdrop as rb;
+                let f = hub.frame();
+                let levels = rb::FirstVisitLevels {
+                    backdrop: f.backdrop,
+                    intro: f.intro,
+                    title_scale: f.title_scale,
+                    course_card: f.course_card,
+                    round_card: f.round_card,
+                };
+                let (course, round) = world
+                    .minigames
+                    .muscle_contest
+                    .as_ref()
+                    .map_or((0, 1), |c| (c.course() as i32, c.round() as i32 + 1));
+                let d = rb::first_visit_hub_draw(&mut table, &levels, course, round);
+                quads.extend(d.tiles);
+                if let Some(sh) = d.shade {
+                    shade_row = Some((quads.len(), shade_json(&sh)));
+                }
+                quads.extend(d.hud);
             } else if let Some((round, banner)) = ui.round_banner {
                 quads.extend(hud::hub_screen_quads(
                     &mut table,
@@ -338,11 +361,15 @@ impl LegaiaRuntime {
                 card,
             ));
         }
-        quads
+        let mut rows: Vec<serde_json::Value> = quads.iter().map(hub_quad_json).collect();
+        if let Some((at, row)) = shade_row {
+            rows.insert(at.min(rows.len()), row);
+        }
+        rows
     }
 
     /// The re-entered hub's backdrop as blit rows, drawn under
-    /// [`Self::muscle_hub_quads`]: the two still quads, resolved through
+    /// [`Self::muscle_hub_rows`]: the two still quads, resolved through
     /// their texture pages onto the still sheet (`sheet` [`STILL_SHEET`],
     /// `pal` = the still variant). Empty unless a still is up.
     fn muscle_still_rows(&self) -> Vec<serde_json::Value> {
@@ -503,53 +530,42 @@ impl LegaiaRuntime {
             .as_ref()
     }
 
-    /// Entry: reproduce the scene host's opponent pick (`1 + frame % (n-1)`
-    /// at the drain tick, which is this tick), then cross-check it against
-    /// the fight's prize - the roster row the rules engine actually holds -
-    /// and fall back to the row whose prize matches when the frame-keyed
-    /// guess disagrees.
+    /// Entry: the opponent is whoever the fight seated - the cabinet's
+    /// first rung, read straight off the rules engine rather than
+    /// reconstructed from the entry frame.
     pub(crate) fn enter_baka_ui(&mut self) {
-        use legaia_asset::static_overlay;
         self.minigame_ui.baka = BakaUi::default();
-        let Some(host) = self.scene_host.as_ref() else {
-            return;
-        };
-        let frame = host.world.frame as u32;
-        let prize = self.baka_session().map(|f| f.gold_reward());
-        let roster = static_overlay::overlay_map()
-            .by_prot_index(legaia_asset::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32)
-            .and_then(|rec| {
-                let raw = host.index.entry_bytes_extended(rec.prot_index).ok()?;
-                let loaded = static_overlay::as_loaded(&raw, rec).ok()?;
-                legaia_asset::baka_opponents::parse(&loaded)
-            });
-        let Some(roster) = roster else {
-            return;
-        };
-        let guess = 1 + (frame as usize % roster.len().saturating_sub(1).max(1));
-        let opponent = match prize {
-            Some(p) if roster.get(guess).is_some_and(|o| o.gold_reward == p) => guess,
-            Some(p) => roster
-                .iter()
-                .position(|o| o.index != 0 && o.gold_reward == p)
-                .unwrap_or(guess),
-            None => guess,
-        };
-        self.minigame_ui.baka.opponent = opponent;
+        if let Some(f) = self.baka_session() {
+            self.minigame_ui.baka.opponent = f.opponent_roster();
+        }
     }
 
     /// Per-tick inside the duel: drain the rules kernel's SFX cues (the
     /// exchange hit, `BAKA_CUE_HIT`) into the page's scheduler - the native
     /// window's `drain_baka_sfx_cues`.
     pub(crate) fn tick_baka_ui(&mut self) {
-        let cues: Vec<u8> = self
+        // The cabinet's NEXT GAME seats the next rung inside the same visit:
+        // follow it, and bump the scene generation so the page rebuilds the
+        // opponent's mesh and duel VRAM.
+        if let Some(roster) = self.baka_session().map(|f| f.opponent_roster())
+            && roster != self.minigame_ui.baka.opponent
+        {
+            self.minigame_ui.baka.opponent = roster;
+            self.minigame_ui.generation = self.minigame_ui.generation.wrapping_add(1);
+        }
+        let (cues, xa): (Vec<u8>, _) = self
             .scene_host
             .as_mut()
             .and_then(|h| h.world.minigames.baka_fighter.as_mut())
-            .map(|f| f.take_cues())
+            .map(|f| (f.take_cues(), f.chrome_frame().xa))
             .unwrap_or_default();
         for id in cues {
             self.minigame_sfx(id as u16);
+        }
+        // The round chrome's announcer line (`FUN_8003D53C`), the native
+        // window's `tick_baka_chrome` twin.
+        if let Some(xa) = xa {
+            self.play_xa_clip(u32::from(xa.clip), u32::from(xa.chan), u32::from(xa.dur));
         }
     }
 
@@ -567,11 +583,11 @@ impl LegaiaRuntime {
             f.round() + 1
         );
         let status = match f.phase() {
-            MatchPhase::MatchOver(0) => format!(
-                "YOU WIN the match! +{} coins  (Cross = leave)",
-                f.gold_reward()
-            ),
-            MatchPhase::MatchOver(_) => "you lose the match  (Cross = leave)".to_string(),
+            MatchPhase::MatchOver(0) if f.cabinet().choice_sheet().is_some() => {
+                "NEXT GAME / PAY OUT: Left/Right, Cross confirms".to_string()
+            }
+            MatchPhase::MatchOver(0) => format!("YOU WIN the match! +{} coins", f.gold_reward()),
+            MatchPhase::MatchOver(_) => "you lose the match - GAME OVER".to_string(),
             MatchPhase::RoundOver(0) => "round won!".to_string(),
             MatchPhase::RoundOver(_) => "round lost".to_string(),
             MatchPhase::Fighting => match f.last_exchange() {
@@ -590,7 +606,7 @@ impl LegaiaRuntime {
                 None => "choose your attack".to_string(),
             },
         };
-        let l2 = format!("{status}   Left/Right/Up attack, Down special (Start = quit)");
+        let l2 = format!("{status}   Square/Circle/Cross attack, Triangle special (Start = quit)");
         let mut out = row(font, &l1, PEN_STATUS, WHITE);
         out.extend(row(font, &l2, PEN_PROMPT, DIM));
         // The duel's three retail number drawers - the round digit, the
@@ -607,6 +623,38 @@ impl LegaiaRuntime {
         out.extend(
             legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for(font, &placed, DIM),
         );
+        // The round chrome (`BakaChrome`: intro card, ROUND banner,
+        // countdown) and the "NEXT GAME / PAY OUT" sheet, through the label
+        // kernels the native window draws with.
+        use legaia_engine_core::{baka_cabinet as bcab, baka_fighter_chrome as bc};
+        out.extend(
+            legaia_engine_ui::ui_baka_strips::baka_widget_label_draws_for(
+                font,
+                &bc::chrome_labels(&f.chrome_frame().draws),
+                WHITE,
+            ),
+        );
+        if let Some(cells) = f.cabinet().choice_sheet() {
+            out.extend(
+                legaia_engine_ui::ui_baka_strips::baka_widget_label_draws_for(
+                    font,
+                    &bcab::choice_sheet_labels(&cells),
+                    WHITE,
+                ),
+            );
+            let pot = self
+                .scene_host
+                .as_ref()
+                .map(|h| h.world.minigames.winnings)
+                .unwrap_or(0);
+            out.extend(
+                legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for(
+                    font,
+                    &bcab::choice_pot_placements(pot),
+                    WHITE,
+                ),
+            );
+        }
         out
     }
 }
@@ -733,6 +781,22 @@ fn hub_quad_json(q: &HudQuad) -> serde_json::Value {
     })
 }
 
+/// The first visit's backdrop shade (`FUN_801D1610`) as a page row:
+/// `{ shade: true, x, y, dw, dh, top, bottom }` - a vertical ramp the page
+/// applies subtractively (`B - F`, clamped at 0) to the pixels already on its
+/// 2D layer (`subtractShade` in `play-minigames.js`), which is retail's
+/// ABR 2. The native window still draws black bands at alpha `f / 255`.
+fn shade_json(sh: &legaia_engine_ui::ringside_backdrop::BackdropShade) -> serde_json::Value {
+    serde_json::json!({
+        "shade": true,
+        "x": sh.xy[0].0, "y": sh.xy[0].1,
+        "dw": sh.xy[1].0 as i32 - sh.xy[0].0 as i32,
+        "dh": sh.xy[2].1 as i32 - sh.xy[0].1 as i32,
+        "top": sh.rgb[0][0],
+        "bottom": sh.rgb[2][0],
+    })
+}
+
 #[wasm_bindgen]
 impl LegaiaRuntime {
     // ------------------------------------------------------ Muscle Dome
@@ -795,7 +859,7 @@ impl LegaiaRuntime {
     /// `bright` the packet colour (`0x80` = neutral modulation).
     pub fn play_mg_muscle_hub_quads_json(&self) -> String {
         let mut rows = self.muscle_still_rows();
-        rows.extend(self.muscle_hub_quads().iter().map(hub_quad_json));
+        rows.extend(self.muscle_hub_rows());
         serde_json::json!({
             "ok": self.minigame_ui.muscle.sprite_table.is_some(),
             "quads": rows,

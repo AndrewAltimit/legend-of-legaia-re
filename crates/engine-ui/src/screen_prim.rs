@@ -121,6 +121,10 @@ pub struct ScreenQuad {
     pub gouraud: Option<[u32; 4]>,
     pub semi_transparent: bool,
     pub ot_index: u32,
+    /// Per-corner scene depth for a depth-tested draw ([`CornerDepth`]).
+    /// `None` for every retail emitter but the overworld fog sheets, which
+    /// retail sorts into the ordering table with the continent.
+    pub depth: Option<CornerDepth>,
 }
 
 impl ScreenQuad {
@@ -128,6 +132,29 @@ impl ScreenQuad {
     /// blend equation this quad uses when `semi_transparent`.
     pub fn abr_mode(&self) -> u8 {
         abr_mode(self.tpage)
+    }
+}
+
+/// Per-corner depth of a depth-tested screen quad, in the **shared
+/// view-projection's** normalised depth: `clip.z / clip.w` of the corner's
+/// world point through the same matrix the scene meshes draw with
+/// (`legaia_engine_vm::psx_camera::psx_projection` maps the near plane to
+/// `0` and the far plane to `1`). Each host maps it exactly the way its 3D
+/// pass maps that matrix's output - the native renderer through its
+/// reversed-Z remap (`1 - z`), the play page straight into `gl_Position.z` -
+/// so a corner at a mesh vertex's depth compares equal to it.
+///
+/// Stored as `f32` bit patterns so the primitive types keep `Eq`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CornerDepth([u32; 4]);
+
+impl CornerDepth {
+    pub fn new(depth: [f32; 4]) -> Self {
+        Self(depth.map(f32::to_bits))
+    }
+
+    pub fn get(&self) -> [f32; 4] {
+        self.0.map(f32::from_bits)
     }
 }
 
@@ -152,6 +179,13 @@ pub struct FlatQuad {
     /// ABR blend mode 0..=3 (only consulted when `semi_transparent`).
     pub abr_mode: u8,
     pub ot_index: u32,
+    /// Per-corner scene depth, for the one screen primitive that must hide
+    /// behind the 3D scene rather than composite over it: the overworld
+    /// markers (a port marker, not a retail primitive - retail draws each
+    /// placement's actor model, OT-sorted with the terrain). `None` for
+    /// every retail screen-space emitter, which composites in ordering-table
+    /// order over the finished frame. See [`CornerDepth`].
+    pub depth: Option<CornerDepth>,
 }
 
 /// A primitive linked into the screen-space ordering table.
@@ -235,6 +269,7 @@ pub fn display_rect_flat_quad(
         semi_transparent,
         abr_mode,
         ot_index,
+        depth: None,
     })
 }
 
@@ -269,6 +304,8 @@ pub fn fade_prim(rgb: u32, abr_mode: u8, ot_index: u32) -> ScreenPrim {
 /// bottom-right depth. The fields are exactly the engine-core
 /// `fog_particles::FogQuad` the pool's render step emits; both hosts wrap
 /// through this so the blend class and the vertex order cannot differ.
+/// `depth` is the quad's `FogQuad::depth` - set on the overworld, where the
+/// sheet is depth-tested against the continent ([`FLAG_DEPTH_TESTED`]).
 ///
 /// REF: FUN_8003F86C
 pub fn fog_puff_prim(
@@ -278,6 +315,7 @@ pub fn fog_puff_prim(
     tpage: u16,
     rgb: [u8; 3],
     ot_index: u32,
+    depth: Option<f32>,
 ) -> ScreenPrim {
     ScreenPrim::Textured(ScreenQuad {
         xy,
@@ -288,6 +326,77 @@ pub fn fog_puff_prim(
         gouraud: None,
         semi_transparent: true,
         ot_index,
+        depth: depth.map(|d| CornerDepth::new([d; 4])),
+    })
+}
+
+/// OT bucket a field attached light links at: retail's `FUN_801E3984` links
+/// every packet into `*0x1F8003F4 + 8`, slot `2` of the field overlay table.
+pub const FIELD_LIGHT_POOL_OT: u32 = 2;
+
+/// A field attached light's primitives - the op `0x34` sub-1 light pool,
+/// `legaia_engine_vm::field_actor_billboard::light_pool_polys` - as untextured
+/// semi-transparent gouraud quads at blend mode `abr`, in the link order the
+/// kernel returns them (the ordering-table sort draws one slot LIFO, as
+/// retail's does). The three-vertex fan triangles repeat their last corner,
+/// so the quad split's second triangle is degenerate. Both play hosts wrap
+/// through this, so neither can pick its own blend or vertex order.
+///
+/// REF: FUN_801e3984
+pub fn light_pool_prims(
+    abr: u8,
+    polys: &[legaia_engine_vm::field_actor_billboard::LightPoly],
+) -> Vec<ScreenPrim> {
+    let rgba = |c: u32| [(c >> 16) as u8, (c >> 8) as u8, c as u8, 0xFF];
+    polys
+        .iter()
+        .map(|p| {
+            let mut xy = p.xy;
+            let mut rgb = p.rgb;
+            if p.verts == 3 {
+                xy[3] = xy[2];
+                rgb[3] = rgb[2];
+            }
+            ScreenPrim::Flat(FlatQuad {
+                xy,
+                color: rgba(rgb[0]),
+                gouraud: Some(rgb.map(rgba)),
+                semi_transparent: true,
+                abr_mode: abr & 0x3,
+                ot_index: FIELD_LIGHT_POOL_OT,
+                depth: None,
+            })
+        })
+        .collect()
+}
+
+/// OT bucket the overworld markers link at: the nearest bucket, so they sit
+/// over every other screen primitive the world map carries.
+pub const WORLD_MAP_MARKER_OT: u32 = 0;
+
+/// One overworld marker segment, already projected and widened by
+/// `legaia_engine_core::world_map_markers` (a port marker, not a retail
+/// primitive): an opaque flat quad at [`WORLD_MAP_MARKER_OT`]. Both hosts wrap
+/// the kernel's quads through this, so the blend class and bucket are decided
+/// once.
+///
+/// `depth` is the kernel's per-corner scene depth ([`CornerDepth`]): with it
+/// the quad is depth-tested against the terrain the frame already drew, so a
+/// marker behind a mountain is hidden the way retail's OT-sorted actor model
+/// is. `None` (the top-view debug camera) composites over everything.
+pub fn world_map_marker_prim(
+    xy: [(i16, i16); 4],
+    rgba: [u8; 4],
+    depth: Option<[f32; 4]>,
+) -> ScreenPrim {
+    ScreenPrim::Flat(FlatQuad {
+        xy,
+        color: rgba,
+        gouraud: None,
+        semi_transparent: false,
+        abr_mode: 0,
+        ot_index: WORLD_MAP_MARKER_OT,
+        depth: depth.map(CornerDepth::new),
     })
 }
 
@@ -382,6 +491,7 @@ pub fn cinematic_bar_prims(bar: i16, screen_h: i16) -> Vec<ScreenPrim> {
                 semi_transparent: false,
                 abr_mode: 0,
                 ot_index: CINEMATIC_BAR_OT,
+                depth: None,
             })
         })
         .collect()
@@ -444,6 +554,9 @@ pub struct ScreenVertex {
     pub cba_tsb: [u32; 2],
     pub color: [f32; 4],
     pub flags: u32,
+    /// Scene depth ([`CornerDepth`]'s convention), read only when `flags`
+    /// carries [`FLAG_DEPTH_TESTED`]. `0` otherwise.
+    pub depth: f32,
 }
 
 /// Byte stride of [`ScreenVertex`] in a host vertex buffer.
@@ -459,9 +572,19 @@ pub const SCREEN_VERTEX_OFF_CBA_TSB: u64 = 16;
 pub const SCREEN_VERTEX_OFF_COLOR: u64 = 24;
 /// Byte offset of [`ScreenVertex::flags`].
 pub const SCREEN_VERTEX_OFF_FLAGS: u64 = 40;
+/// Byte offset of [`ScreenVertex::depth`].
+pub const SCREEN_VERTEX_OFF_DEPTH: u64 = 44;
 
 /// `flags` bit set when a [`ScreenVertex`] belongs to a textured quad.
 pub const FLAG_TEXTURED: u32 = 1;
+/// `flags` bit set when a [`ScreenVertex`] is **depth-tested** against the
+/// scene: its [`ScreenVertex::depth`] is the corner's scene depth. Without
+/// it a host places the vertex at its near plane, so it passes the test
+/// against any scene depth - every retail screen-space emitter's behaviour,
+/// unchanged. Both hosts run the whole pass with the test armed (compare
+/// "nearer or equal", no depth write); this bit is the only thing that
+/// makes a quad take part.
+pub const FLAG_DEPTH_TESTED: u32 = 2;
 
 /// One contiguous run of quads sharing a [`BlendClass`], expressed as an
 /// index-buffer range. A host binds the run's pipeline / blend state once and
@@ -533,10 +656,15 @@ fn push_quad(
     cba_tsb: [u32; 2],
     color: [[f32; 4]; 4],
     flags: u32,
+    depth: Option<CornerDepth>,
     surf_w: f32,
     surf_h: f32,
 ) {
     let base = verts.len() as u32;
+    let (flags, depth) = match depth {
+        Some(d) => (flags | FLAG_DEPTH_TESTED, d.get()),
+        None => (flags, [0.0; 4]),
+    };
     for c in 0..4 {
         verts.push(ScreenVertex {
             pos: to_ndc(xy[c].0, xy[c].1, surf_w, surf_h),
@@ -544,6 +672,7 @@ fn push_quad(
             cba_tsb,
             color: color[c],
             flags,
+            depth: depth[c],
         });
     }
     // POLY_FT4 = two triangles (v0,v1,v2) + (v1,v2,v3). Cull is disabled in
@@ -596,6 +725,7 @@ pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> Overlay
                     None => [tex_mod_factor(q.color); 4],
                 },
                 FLAG_TEXTURED,
+                q.depth,
                 sw,
                 sh,
             ),
@@ -619,6 +749,7 @@ pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> Overlay
                         None => [corner(q.color); 4],
                     },
                     0,
+                    q.depth,
                     sw,
                     sh,
                 )
@@ -656,6 +787,7 @@ mod tests {
             gouraud: None,
             semi_transparent: true,
             ot_index: ot,
+            depth: None,
         })
     }
 
@@ -696,6 +828,7 @@ mod tests {
             semi_transparent: false,
             abr_mode: 0,
             ot_index: 1, // nearest -> drawn last
+            depth: None,
         }));
 
         let geo = build_geometry(&prims, 320, 240);
@@ -732,6 +865,7 @@ mod tests {
             semi_transparent: true,
             abr_mode: 1,
             ot_index: 50,
+            depth: None,
         });
         let b = ScreenPrim::Flat(FlatQuad {
             xy: [(0, 0), (8, 0), (0, 8), (8, 8)],
@@ -740,6 +874,7 @@ mod tests {
             semi_transparent: true,
             abr_mode: 2,
             ot_index: 40,
+            depth: None,
         });
         let geo = build_geometry(&[a, b], 320, 240);
         // Different ABR modes never coalesce, even back-to-back.
@@ -772,6 +907,7 @@ mod tests {
             gouraud: Some([top, top, bottom, bottom]),
             semi_transparent: false,
             ot_index: 1,
+            depth: None,
         });
         let geo = build_geometry(&[q], 320, 240);
         assert_eq!(geo.vertices[0].color, [1.0, 1.0, 1.0, 1.0]);
@@ -793,6 +929,7 @@ mod tests {
             semi_transparent: false,
             abr_mode: 0,
             ot_index: 1,
+            depth: None,
         });
         let psx = build_geometry(&[full], 320, 240);
         assert_eq!(psx.vertices[0].pos, [-1.0, 1.0]);
@@ -872,6 +1009,7 @@ mod tests {
                     semi_transparent: false,
                     abr_mode: 0,
                     ot_index: 5,
+                    depth: None,
                 }),
             ],
             320,
@@ -926,13 +1064,14 @@ mod tests {
         // The browser reads this struct as raw bytes with hand-written
         // attribute offsets, so a field reorder has to fail here rather than
         // in a shader that silently samples the wrong words.
-        assert_eq!(SCREEN_VERTEX_STRIDE, 44);
+        assert_eq!(SCREEN_VERTEX_STRIDE, 48);
         let v = ScreenVertex {
             pos: [0.0; 2],
             uv: [0.0; 2],
             cba_tsb: [0; 2],
             color: [0.0; 4],
             flags: 0,
+            depth: 0.0,
         };
         let base = &v as *const _ as usize;
         let off = |p: *const u8| (p as usize - base) as u64;
@@ -946,6 +1085,39 @@ mod tests {
         assert_eq!(
             off(&v.flags as *const u32 as *const u8),
             SCREEN_VERTEX_OFF_FLAGS
+        );
+        assert_eq!(
+            off(&v.depth as *const f32 as *const u8),
+            SCREEN_VERTEX_OFF_DEPTH
+        );
+    }
+
+    /// Only a quad that carries a depth takes part in the depth test; every
+    /// other emitter's vertices keep the flag clear and a zero depth, which
+    /// is the behaviour they had before the channel existed.
+    #[test]
+    fn only_a_depth_carrying_quad_is_depth_tested() {
+        let plain = fade_prim(0x102030, 0, 3);
+        let marker = world_map_marker_prim(
+            [(0, 0), (4, 0), (0, 4), (4, 4)],
+            [1, 2, 3, 255],
+            Some([0.25, 0.5, 0.75, 1.0]),
+        );
+        let bare = world_map_marker_prim([(0, 0), (4, 0), (0, 4), (4, 4)], [1, 2, 3, 255], None);
+        let geo = build_geometry(&[plain, marker, bare], 320, 240);
+        // OT order: fade (bucket 3) first, then the two markers (bucket 0)
+        // later-submitted first.
+        let (fade, rest) = geo.vertices.split_at(4);
+        assert!(
+            fade.iter()
+                .all(|v| v.flags & FLAG_DEPTH_TESTED == 0 && v.depth == 0.0)
+        );
+        let (bare_v, marker_v) = rest.split_at(4);
+        assert!(bare_v.iter().all(|v| v.flags & FLAG_DEPTH_TESTED == 0));
+        assert!(marker_v.iter().all(|v| v.flags & FLAG_DEPTH_TESTED != 0));
+        assert_eq!(
+            marker_v.iter().map(|v| v.depth).collect::<Vec<_>>(),
+            vec![0.25, 0.5, 0.75, 1.0]
         );
     }
 }

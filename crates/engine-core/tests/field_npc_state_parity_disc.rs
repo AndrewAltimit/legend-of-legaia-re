@@ -262,6 +262,39 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         class: "b",
         note: "same pre-load capture context as doman_arrival_from_korb2 vis:*",
     },
+    KnownDivergence {
+        label: "kor5_post_436_organic",
+        key: "vis:*",
+        class: "b",
+        note: "mid-visit capture taken after the whole P2[3] -> P2[8] chain ran (a \
+               0x464 battle, a scene reload, P2[5]'s 0x436 write): the chain's walk-on \
+               beats re-seat and re-show actors after retail's own entry, which a cold \
+               entry against the captured bank does not replay",
+    },
+    KnownDivergence {
+        label: "kor5_post_436_organic",
+        key: "pos:*",
+        class: "b",
+        note: "same mid-chain capture context as kor5_post_436_organic vis:*",
+    },
+    KnownDivergence {
+        label: "kor5_post_436_organic",
+        key: "flag:1561",
+        class: "b",
+        note: "capture context, not an engine defect: 0x619's only unconditional SET is \
+               P1[2]+0x1A, which sits in that record's SPAWN section (0x25 at pc0, the \
+               SET, a CamCfg, the raw 0x21 terminator at +0x1F - the interaction resumes \
+               at +0x20). FUN_8003A1E4 runs that section at every MAN-loading entry \
+               (first-opcode gate 0x24/0x25 at 0x8003A480 passes), so retail's fresh entry \
+               sets it too - both kor5 states captured before the chain clears it \
+               (kor5_field_card_boot, kor5_post_43a_checkpoint) hold it set. This state \
+               was captured after P2[4]'s CLEAR (+0x16) and a post-battle same-scene \
+               reload, and that reload re-spawns no partition-1 record: FUN_801D6704 \
+               passes a0 = loader mask & 4 (MAN loaded) to FUN_8003AEB0, which skips the \
+               spawn loop at 0x8003B8A0 when it is zero - the capture's zero SETs over two \
+               reloads. A cold entry against the post-CLEAR bank re-runs the spawn \
+               section, exactly as retail's own fresh entry would",
+    },
 ];
 
 fn known(label: &str, key: &str) -> Option<&'static KnownDivergence> {

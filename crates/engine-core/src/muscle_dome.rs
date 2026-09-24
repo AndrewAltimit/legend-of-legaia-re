@@ -29,7 +29,8 @@
 //! `ctx+0x28a` is bumped in one place and never compared against a bound: its
 //! readers are per-turn *scripted enemy behaviour* selectors plus Koru's own
 //! countdown. So there is no timeout arm to port - see
-//! [`timed_fight_turns_left`].
+//! [`crate::timed_fight`], which owns the strip and shows that even Koru's
+//! limit is a script arm rather than a bound.
 //!
 //! This module is the *rules* layer: the four-direction deal, the
 //! budget-gated commit into the fighter's action queue, the turn counter,
@@ -57,8 +58,8 @@
 //!   ctx[+0x28a]` (Turns Left, one digit) and `DAT_801f6959 = hp * 100 /
 //!   max_hp` of the **enemy** record `DAT_801c937c` (HP Left, three digits).
 //!   The format string is on the disc at PROT 0898 file offset `0x0` (VA
-//!   `0x801CE818`). Kept here because the port's session still reuses it as
-//!   a leg bound - see [`TIMED_FIGHT_TURN_LIMIT`].
+//!   `0x801CE818`). The strip is [`crate::timed_fight`]'s; no dome session
+//!   reads it.
 //! - `ctx+0x28a` is the battle turn counter the shared battle-action SM
 //!   bumps at the end of a turn (case `0xff`, which also parks the match
 //!   phase at `0x14`; see [`MuscleDomeSession::resolve_turn`]).
@@ -112,48 +113,13 @@ pub const HAND_SLOTS: usize = legaia_asset::muscle_dome::HAND_SLOTS;
 /// (16 bytes), bounding the per-turn queue.
 pub const QUEUE_CAP: usize = 0x10;
 
-/// Monster id the `Turns Left / HP Left` strip's draw sites gate on
-/// (`*(u8*)0x8007BD0C == 0xB6`). `0x8007BD0C` is the **formation cell**, not
-/// a battle-type byte, so this is a monster id: Koru. It is here, not in a
-/// dome-named constant, because the earlier reading called it
-/// `DOME_BATTLE_TYPE` and that was wrong.
-pub const TIMED_FIGHT_MONSTER_ID: u8 = 0xB6;
-
-/// The numerator of the timed fight's `Turns Left` digit: its HUD prints
-/// `4 - ctx[+0x28a]` (`0x801d0f9c..0x801d0fa4`).
-///
-/// This bounds **Koru's** fight, not a dome leg. [`MuscleDomeSession`] does
-/// not read it: a dome round is an ordinary battle and ends on a KO.
-pub const TIMED_FIGHT_TURN_LIMIT: u32 = 4;
-
-/// The timed fight's `Turns Left` digit for battle turn counter `turn`
-/// (`ctx+0x28a`), floored at zero.
-///
-/// Free-standing because the strip belongs to the one fight whose formation
-/// slot 0 is [`TIMED_FIGHT_MONSTER_ID`]. It is a decode of retail's
-/// arithmetic, not a rule any dome session is subject to.
-///
-/// PORT: FUN_801d0748 phase 0x14 (`DAT_801f6958 = 4 - ctx[+0x28a]`)
-///
-/// NOT WIRED: the strip's lifetime is the missing piece, not its state or its
-/// draw. [`MuscleDomeSession`] does not read this and must not - the strip is
-/// Koru's timed fight, and a dome round is an ordinary battle that ends on a
-/// knockout. The gate is readable (`World::battle_monster_slots` names the
-/// formation's first monster) and the draw is one registration: phase
-/// `0x14` calls `FUN_8003541C(1, 0, 0x801CE818, 0x10, 0x0E, 0x120, 0x0C,
-/// 0x44)` - text actor key `1`, the format string at the head of PROT
-/// `0898`, a `288 x 12` box at `(16, 14)` - and two `FUN_8003563C` records
-/// on the same key, this digit at x `0x68` (one digit) and the HP percent at
-/// x `0xD2` (three), `0x801D0F7C..0x801D1020`; phase `0x6E` re-stamps them.
-/// What neither host can say is when that actor goes: nothing in the `0x14`
-/// / `0x6E` arms or the dumped corpus names the `FUN_800355F0` sweep that
-/// closes key `1` for this fight, no capture holds the Koru battle, and the
-/// box's seat is the actor-name plaque's own (placement record 68,
-/// `(16, 14)`), so a host draw would also have to decide which of the two
-/// wins. A caller appears with a Koru-fight capture that pins both.
-pub fn timed_fight_turns_left(turn: u32) -> u32 {
-    TIMED_FIGHT_TURN_LIMIT.saturating_sub(turn)
-}
+/// The `Turns Left / HP Left` strip is Koru's, not the dome's: its gate
+/// (`TIMED_FIGHT_MONSTER_ID`), its bound and its readout live in
+/// [`crate::timed_fight`], re-exported here because the dome's own ladder
+/// tests prove no dome round can satisfy the gate.
+pub use crate::timed_fight::{
+    TIMED_FIGHT_MONSTER_ID, TIMED_FIGHT_TURN_LIMIT, timed_fight_turns_left,
+};
 
 /// The HP-Left readout's scale: `hp * 100 / max_hp`, a plain percentage. The
 /// retail expression is the MIPS shift-add chain `((hp<<1 + hp)<<3 + hp)<<2`
@@ -2966,8 +2932,10 @@ impl HubScreen {
     /// and arm `6`'s `4 dt` drain is the first-visit backdrop level
     /// (`0x801CFC54`), with nothing else drawn. The ROUND banner
     /// (`FUN_801D02F0`) is arm `0x15`'s, under [`Self::opponent_card`]. The
-    /// hosts draw the ROUND card on this envelope at a leg's opening, which
-    /// is disclosed in `docs/formats/ringside-still.md`.
+    /// play hosts run those arms through
+    /// `crate::muscle_ringside::FirstVisitHub` and raise any other leg-open
+    /// ROUND card on [`Self::opponent_card`]; this envelope stays for the
+    /// standalone page's sampled screen `1`.
     pub const fn round_banner() -> Self {
         Self::new(
             HUB_FADE_STEP_SLOW,

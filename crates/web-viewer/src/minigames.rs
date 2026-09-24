@@ -55,7 +55,6 @@ use legaia_asset::minigame_slot_scene::{self as slot_scene, SlotScene};
 use legaia_asset::static_overlay;
 use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, LadderRun, MatchPhase, RunPhase};
 use legaia_engine_core::dance::{DanceDir, DanceEvent, DanceGame};
-use legaia_engine_core::fishing::FishingSession;
 use legaia_engine_core::slot_machine::{SlotMachine, SlotPhase};
 use legaia_tim::Tim;
 
@@ -106,8 +105,6 @@ pub struct LegaiaMinigames {
     /// sample (see `minigames_dance.rs`).
     dance_bodies: Option<dance_presentation::DanceBodies>,
 
-    /// Live fishing session (see `minigames_fishing.rs`).
-    fishing: Option<FishingSession>,
     /// Parsed per-species table (PROT 0972 rodata; cached so the roster panel
     /// and each recast read it without re-decoding).
     fishing_species: Option<Vec<FishingSpecies>>,
@@ -117,12 +114,6 @@ pub struct LegaiaMinigames {
     /// Live venue-faithful pond session (the retail cast/band/strike/fight
     /// loop; see `minigames_fishing.rs`).
     fishing_pond: Option<legaia_engine_core::fishing::PondSession>,
-    /// The page's persistent fishing record - the tab widget's stand-in for
-    /// `World::minigames.fishing_points`, which the play page and the native window both
-    /// seed a session from. Without it every `fishing_start` began from
-    /// `FishingRecord::default()`, so the points counter reset on every cast
-    /// series and the prize exchange could never be reached from this page.
-    fishing_record: legaia_engine_core::fishing::FishingRecord,
     /// Parsed per-venue species-spawn tables (PROT 0972 rodata pages).
     fishing_spawn: Option<[Vec<[u32; 8]>; 2]>,
     /// Parsed reel-cadence gesture templates (PROT 0972 rodata).
@@ -285,11 +276,9 @@ impl LegaiaMinigames {
             baka_names: None,
             dance_pres: None,
             dance_bodies: None,
-            fishing: None,
             fishing_species: None,
             fishing_overlay: None,
             fishing_pond: None,
-            fishing_record: Default::default(),
             fishing_spawn: None,
             fishing_cadence: None,
             fishing_exchange: None,
@@ -365,7 +354,6 @@ impl LegaiaMinigames {
         self.baka = None;
         self.baka_run = None;
         self.slot = None;
-        self.fishing = None;
         self.fishing_species = None;
         self.fishing_overlay = None;
         self.fishing_pond = None;
@@ -873,6 +861,36 @@ impl LegaiaMinigames {
         }
     }
 
+    /// The round chrome's draws this frame (`BakaChrome` - the intro title
+    /// card, the ROUND banner and the READY / FIGHT countdown), the same
+    /// runner the native window and the play page draw from:
+    ///
+    /// ```json
+    /// [ { "w": 3, "x": 160, "y": 100, "b": 128, "s": 4096, "g": null }, ... ]
+    /// ```
+    ///
+    /// `w` is the HUD widget id, `x`/`y` the quad centre, `b` the brightness
+    /// (`0x80` = the descriptor's own RGB), `s` the 20.12 size scale and `g`
+    /// the glyph-strip cell a digit draw pages widget 5 to (`null` for a
+    /// plain widget). `[]` outside a duel.
+    pub fn baka_chrome_json(&self) -> String {
+        let Some(f) = self.baka.as_ref() else {
+            return "[]".to_string();
+        };
+        let rows: Vec<serde_json::Value> = f
+            .chrome_frame()
+            .draws
+            .iter()
+            .map(|d| {
+                serde_json::json!({
+                    "w": d.widget, "x": d.x, "y": d.y,
+                    "b": d.brightness, "s": d.size, "g": d.glyph,
+                })
+            })
+            .collect();
+        serde_json::Value::Array(rows).to_string()
+    }
+
     /// Commit the visitor's attack this exchange: `1`/`2`/`3` are the three
     /// rock-paper-scissors throws, `4` the special. Returns `false` when the
     /// fighter can't act yet (cooldown, or a choice is already pending).
@@ -1091,6 +1109,17 @@ impl LegaiaMinigames {
         self.slot.as_mut().is_some_and(|m| m.stop_next_reel())
     }
 
+    /// Stop reel `reel` (0..=2) with its own button - the cabinet's three
+    /// stop buttons, Square / Cross / Circle for reels 0 / 1 / 2
+    /// (`FUN_801CF0D8` state 3, `0x801CF70C..0x801CF7E0`), the same map the
+    /// play window's world tick reads. `false` when that reel cannot stop
+    /// (not spinning, still spinning up, or already stopped).
+    pub fn slot_stop_reel(&mut self, reel: u32) -> bool {
+        self.slot
+            .as_mut()
+            .is_some_and(|m| m.stop_reel(reel as usize))
+    }
+
     /// Tally the latched payout into the balance and return to idle. Returns
     /// the credited coins. [`Self::slot_tick`] already does this on the frame a
     /// spin resolves; this stays for hosts that drive the tally themselves.
@@ -1132,7 +1161,13 @@ impl LegaiaMinigames {
                     "broke"
                 }
             }
-            SlotPhase::Spinning => "spinup",
+            // A press during the spin-up is a face-button edge: retail
+            // latches `DAT_801D3790` off it, which widens (rarefies) the next
+            // roll's feature odds.
+            SlotPhase::Spinning => {
+                m.latch_spin_up(true);
+                "spinup"
+            }
             SlotPhase::Stopping => {
                 if m.stop_next_reel() {
                     "stop"

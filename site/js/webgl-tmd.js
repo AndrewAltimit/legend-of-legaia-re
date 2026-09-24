@@ -932,6 +932,19 @@ class TmdRenderer {
     m.aabb = computeAabb(positions);
   }
 
+  /* Re-upload just the per-vertex packet colours of an already-registered
+   * scene mesh (same vertex count). The battle actors' Rot limb dimming
+   * (retail FUN_80048A08's per-object colour rule) rides this: the engine
+   * hands a re-coloured stream when the dimmed set changes. No-op for an
+   * unknown meshId or a mesh uploaded without a colour stream. */
+  updateSceneMeshFlat(meshId, flatRgba) {
+    const gl = this.gl;
+    const m = this.sceneMeshes.get(meshId);
+    if (!m || !m.hasFlat || !m.flatBuf || !flatRgba || flatRgba.length === 0) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, m.flatBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, flatRgba);
+  }
+
   clearScene() {
     const gl = this.gl;
     for (const m of this.sceneMeshes.values()) {

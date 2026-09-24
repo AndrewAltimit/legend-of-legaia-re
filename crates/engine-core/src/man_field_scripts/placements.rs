@@ -71,27 +71,46 @@ pub enum PlacementKind {
 /// searching from `from`.
 ///
 /// A field-scene interaction record stores its message text as a run of
-/// segments, each `0x1F <printable bytes> 0x00`. This returns the offset of the
+/// segments, each `0x1F <glyph bytes> 0x00`. This returns the offset of the
 /// first `0x1F` that introduces a segment whose body is non-trivial (≥3 bytes)
-/// and overwhelmingly printable ASCII (≥3/4 of the bytes in `0x20..=0x7E`) - the
+/// and overwhelmingly printable (≥3/4 of the bytes in `0x20..=0x7E`) - the
 /// printable-ratio gate rejects a stray `0x1F` glyph byte that happens to sit in
 /// opcode / move-script data. Returns `None` when no such segment exists (a
 /// decorative or warp-only actor).
+///
+/// The segment's extent is the MES line walk ([`legaia_mes::dialog_box::line_end`]), not a
+/// scan to the first `0x00`: a `0xC0..=0xCF` escape is two bytes, and its
+/// argument is often `0x00` - the party-name escape `C1 00` ("Vahn") opens a
+/// line as `1F C1 00 ...`. Cutting the segment at that argument made the line
+/// one byte long, the gate rejected it, and the scan resumed *inside* the
+/// line's text, so the first segment reported was the line after it and every
+/// consumer dropped the name line (town01 `P1[16]`, record `+0x4C`). An escape
+/// pair counts as printable: it expands to glyphs on screen.
 pub fn first_inline_dialog_offset(body: &[u8], from: usize) -> Option<usize> {
     let mut i = from.min(body.len());
     while i < body.len() {
         if body[i] == 0x1F {
             let text_start = i + 1;
-            let mut j = text_start;
-            while j < body.len() && body[j] != 0x00 {
-                j += 1;
-            }
+            let j = legaia_mes::dialog_box::line_end(body, text_start).min(body.len());
             let raw = &body[text_start..j];
-            let printable = raw.iter().filter(|&&b| (0x20..=0x7E).contains(&b)).count();
+            let mut printable = 0usize;
+            let mut k = 0usize;
+            while k < raw.len() {
+                let b = raw[k];
+                if (0xC0..=0xCF).contains(&b) && k + 1 < raw.len() {
+                    printable += 2;
+                    k += 2;
+                    continue;
+                }
+                if (0x20..=0x7E).contains(&b) {
+                    printable += 1;
+                }
+                k += 1;
+            }
             if raw.len() >= 3 && printable * 4 >= raw.len() * 3 {
                 return Some(i);
             }
-            i = j + 1;
+            i = j.max(text_start) + 1;
         } else {
             i += 1;
         }
@@ -268,9 +287,9 @@ pub fn placement_interaction_entry_pc(body: &[u8], script_pc0: usize, limit: usi
 /// placement's `dialog_inline` byte-for-byte.
 ///
 /// `entry_pc` here is the record's `script_pc0`, **not** the interaction cursor
-/// [`placement_interaction_entry_pc`] derives - see
-/// [`placement_interaction_record`] for why the two are separate entry points
-/// today.
+/// [`placement_interaction_entry_pc`] derives; the interaction dispatch uses
+/// [`placement_interaction_record`]. This form is for consumers that want the
+/// whole record from its first opcode (the disc sweeps).
 pub fn placement_inline_prologue(
     man_file: &ManFile,
     man: &[u8],
@@ -300,16 +319,19 @@ pub fn placement_inline_prologue(
 /// compare jumps to - so entering at `script_pc0`, tripping the terminator and
 /// falling through to that segment lands in the refusal branch.
 ///
-/// ## Why talk NPCs are not on this entry yet
+/// Talk NPCs take this entry too (`World::install_field_carriers_from_man`):
+/// retail runs one SM over one cursor for every placement, and entering a
+/// talk record at `script_pc0` re-ran its spawn section on every talk - the
+/// section's seat pokes, and any story-flag write it carries (`kor5` `P1[2]`
+/// sets `0x619` there) - then tripped the spawn terminator and fell through
+/// to the first line, skipping the record's own segment-selection prologue.
 ///
-/// The rule is general - retail runs one SM over one cursor for every
-/// placement - but switching the NPC path to it regresses at least one pinned,
-/// working conversation: `retock`'s innkeeper resolves its picker and then
-/// neither charges nor restores (`inn_stay_field_vm_disc`). Whatever the inn
-/// record does between its spawn terminator and its first line, the port's VM
-/// does not come out of it where the old entry did. Until that is understood,
-/// the corrected cursor ships for the door records it was derived on, and the
-/// NPC path keeps the entry its behaviour is pinned against.
+/// The inn regression that once held NPCs on the old entry was the runner,
+/// not the cursor: `retock`'s innkeeper opens its interaction with a
+/// cross-context halt-acquire on the player (`CC F8 85`), and the runner left
+/// that halt on the record's own context, so every later player gesture of
+/// the stay returned `Halt` and the talk ended before the gold gate. See
+/// `World::step_inline_dialogue`.
 pub fn placement_interaction_record(
     man_file: &ManFile,
     man: &[u8],

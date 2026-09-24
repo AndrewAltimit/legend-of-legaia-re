@@ -20,7 +20,6 @@ fn arts_input_screen(
     match p {
         Sim::Entering => Ui::Entering,
         Sim::Review => Ui::Review,
-        Sim::BeginMenu { cursor } => Ui::BeginMenu { cursor },
         Sim::Targeting => Ui::Targeting,
     }
 }
@@ -136,7 +135,9 @@ impl PlayWindowApp {
             .actors
             .get(slot)
             .filter(|a| a.active || a.tmd_binding.is_some())?;
-        let aspect = sw as f32 / sh as f32;
+        // The projection the 3D pass draws with, into the stage rect whose
+        // NDC `y` is exactly the 240-line stage row.
+        let (_, aspect) = scene_viewport_for(sw, sh);
         let in_world_map = world.mode == SceneMode::WorldMap;
         let cam = self.compute_scene_camera(aspect, in_world_map, None);
         let v = cam
@@ -592,33 +593,12 @@ impl PlayWindowApp {
         if self.session.host.world.mode == SceneMode::Fishing
             && let Some(s) = &self.session.host.world.minigames.fishing
         {
-            use legaia_engine_core::fishing::{FightOutcome, FishingPhase};
-            let line = match s.phase() {
-                FishingPhase::Casting => {
-                    format!("FISHING  cast power {}  (Cross = cast)", s.cast_power())
-                }
-                FishingPhase::Fighting => {
-                    let (tension, strength) = s
-                        .fight()
-                        .map(|f| (f.tension(), f.strength()))
-                        .unwrap_or((0, 0));
-                    format!(
-                        "FISHING  tension {tension}/{}  strength {strength}  (hold Cross/Circle to reel)",
-                        legaia_engine_core::fishing::TENSION_MAX
-                    )
-                }
-                FishingPhase::Done => match s.last_outcome() {
-                    Some(FightOutcome::Landed { points }) => {
-                        format!("FISHING  landed! +{points} points  (Cross = recast)")
-                    }
-                    Some(FightOutcome::Snapped) => {
-                        "FISHING  the line snapped!  (Cross = recast)".to_string()
-                    }
-                    _ => "FISHING  (Cross = recast)".to_string(),
-                },
-            };
+            // The phase line + key hint are one engine derivation both play
+            // hosts print (`PondSession::status_rows`).
+            let (line, hint) = s.status_rows("Circle", "Cross", "Square");
             out.extend(self.stage_status_row(&line, (8, 62), white, w, h));
-            out.extend(self.stage_status_row("(Start = quit, P = prizes)", (8, 80), dim, w, h));
+            let hint = format!("{hint}  (Start = quit, P = prizes)");
+            out.extend(self.stage_status_row(&hint, (8, 80), dim, w, h));
 
             // The overlay's developer readout (FUN_801d2050): the wander
             // actor's tile pair + settled height, shown only when the
@@ -650,52 +630,50 @@ impl PlayWindowApp {
             }
 
             // The retail persistent HUD rows (best-catch, capped point total,
-            // rod label, lures remaining) at their traced stage-pixel pens,
-            // through the ported layout + its draw-list consumer. The rod
-            // index comes from the retail ownership gate, which re-points a
-            // stale selection at the next owned lure.
-            use legaia_engine_core::fishing::{lure_item_id, select_owned_rod};
+            // lure label, lures remaining) at their traced stage-pixel pens,
+            // through the ported layout + its draw-list consumer. The lure
+            // index is the session's - the entry's ownership gate already
+            // re-pointed it at an owned lure.
             let inventory = &self.session.host.world.party.inventory;
-            let count_of = |id: u32| *inventory.get(&(id as u8)).unwrap_or(&0) as i32;
-            let mut rod_index = 0;
-            let has_rod = select_owned_rod(&mut rod_index, count_of);
+            let lure = s.lure;
+            let lures_left = *inventory
+                .get(&(legaia_engine_core::fishing::lure_item_id(lure) as u8))
+                .unwrap_or(&0) as i32;
             let mut items = legaia_engine_render::persistent_hud_draws(
-                s.record().points,
-                s.record().best_points,
-                rod_index,
-                if has_rod {
-                    count_of(lure_item_id(rod_index))
-                } else {
-                    0
-                },
+                s.record.points,
+                s.record.best_points,
+                lure,
+                lures_left,
             );
             // The catch HUD, drawn over the persistent rows while a cast is
             // out: the length / extent / cast-power readouts, plus the depth
-            // and tension gauge block once the fish is on. `record` is the
-            // fight's reel progress - the engine's analogue of the retail line
-            // record the land gate compares, and `depth` is `DAT_801d9298`,
-            // which `FishingFight` now carries. One retail global still has no
-            // engine analogue and stays zero: the cast line-projection term
-            // `DAT_801d9178`, so the extent readout reads 0.
-            let fight = s.fight();
-            items.extend(legaia_engine_render::catch_hud_draws(
-                &legaia_engine_render::CatchHudState {
-                    record: fight.map(|f| f.progress()).unwrap_or(0),
-                    line_extent: 0,
-                    cast_power: s.cast_power(),
-                    depth: fight.map(|f| f.depth()).unwrap_or(0),
-                    tension: fight.map(|f| f.tension()).unwrap_or(0),
-                    gauges_visible: s.phase() == FishingPhase::Fighting,
-                },
-            ));
+            // and tension gauge block once the fish is on - one engine
+            // derivation (`PondSession::catch_hud`). The cast line-projection
+            // term `DAT_801d9178` has no engine analogue and stays zero.
+            let c = s.catch_hud();
+            if c.visible {
+                items.extend(legaia_engine_render::catch_hud_draws(
+                    &legaia_engine_render::CatchHudState {
+                        record: c.record,
+                        line_extent: 0,
+                        cast_power: c.cast_power,
+                        depth: c.depth,
+                        tension: c.tension,
+                        gauges_visible: c.gauges_visible,
+                    },
+                ));
+            }
             // This frame's live one-shot banners (hook / reel-in / miss /
             // auxiliary / strike splash), serviced in the redraw handler.
             items.extend(self.fishing_banner_draws.iter().copied());
-            // No fishing sprite page is uploaded, so the glyph ids and the
-            // gauge fills resolve to nothing; the number / caption rows are
-            // font-atlas text and render as-is.
+            // No fishing sprite page is uploaded, so the glyph ids resolve
+            // to nothing; the number / caption rows are font-atlas text and
+            // render as-is. The gauge fills (the cast-power and depth /
+            // tension bars) stretch the font atlas's solid texel - the page
+            // fills the same resolved frames from its `bars` payload, and a
+            // `None` here left the native gauges empty.
             let hud_atlas = legaia_engine_render::FishingHudAtlas {
-                solid_src: None,
+                solid_src: self.battle_hud_solid_src(),
                 glyph_src: &|_| None,
                 bar_thickness: 8,
             };
@@ -812,7 +790,7 @@ impl PlayWindowApp {
                 // mispriced every bonus spin and never warned on a thin bank.
                 SlotPhase::Idle => format!("Cross = spin ({} coins)", m.spin_cost()),
                 SlotPhase::Spinning => "spinning...".to_string(),
-                SlotPhase::Stopping => "Cross = stop reel".to_string(),
+                SlotPhase::Stopping => "Square/Cross/Circle = stop reels 1/2/3".to_string(),
                 SlotPhase::Payout => match m.last_result() {
                     Some(r) if r.payout > 0 => {
                         format!("WIN +{} coins!  (Cross = collect)", r.payout)
@@ -841,12 +819,13 @@ impl PlayWindowApp {
             out.extend(self.stage_status_row(&bl1, (8, 62), white, w, h));
             let status = match f.phase() {
                 MatchPhase::MatchOver(0) => {
-                    format!(
-                        "YOU WIN the match! +{} gold  (Cross/B = leave)",
-                        f.gold_reward()
-                    )
+                    if f.cabinet().choice_sheet().is_some() {
+                        "NEXT GAME / PAY OUT: Left/Right, Cross confirms".to_string()
+                    } else {
+                        format!("YOU WIN the match! +{} coins", f.gold_reward())
+                    }
                 }
-                MatchPhase::MatchOver(_) => "you lose the match  (Cross/B = leave)".to_string(),
+                MatchPhase::MatchOver(_) => "you lose the match - GAME OVER".to_string(),
                 MatchPhase::RoundOver(0) => "round won!".to_string(),
                 MatchPhase::RoundOver(_) => "round lost".to_string(),
                 MatchPhase::Fighting => match f.last_exchange() {
@@ -865,7 +844,8 @@ impl PlayWindowApp {
                     None => "choose your attack".to_string(),
                 },
             };
-            let bl2 = format!("{status}   Left/Right/Up attack, Down special (Start = quit)");
+            let bl2 =
+                format!("{status}   Square/Circle/Cross attack, Triangle special (Start = quit)");
             out.extend(self.stage_status_row(&bl2, (8, 80), dim, w, h));
 
             // The duel's three number drawers, at their ported cell layouts:
@@ -894,18 +874,38 @@ impl PlayWindowApp {
             // shows its paged cell index; the stamped cell rect
             // (`glyph_u`-paged `u` + the record's `v/w/h`) rides alongside
             // as the future atlas source.
-            if !self.baka_chrome_frame.is_empty() {
+            // Labels come from the shared kernels
+            // (`baka_fighter_chrome::chrome_labels`, `ui_baka_strips`), the
+            // same the browser play page draws.
+            let sheet = f.cabinet().choice_sheet();
+            if !self.baka_chrome_frame.is_empty() || sheet.is_some() {
                 let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-                let mut cd: Vec<TextDraw> = Vec::new();
-                for (d, _cell) in &self.baka_chrome_frame {
-                    let alpha = (d.brightness.clamp(0, 0xFF) as f32) / 255.0;
-                    let color = [1.0f32, 1.0, 1.0, alpha];
-                    let label = match d.glyph {
-                        Some(idx) => format!("{}", idx.rem_euclid(10)),
-                        None => format!("w{:02x}", d.widget),
-                    };
-                    let ly = self.font.layout_ascii(&label);
-                    cd.extend(text_draws_for(&ly, (d.x as i32, d.y as i32), color));
+                let draws: Vec<_> = self.baka_chrome_frame.iter().map(|(d, _)| *d).collect();
+                let mut cd = legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
+                    &self.font,
+                    &legaia_engine_core::baka_fighter_chrome::chrome_labels(&draws),
+                    [1.0; 4],
+                );
+                // The "NEXT GAME / PAY OUT" sheet (`FUN_801CF388` state
+                // `0x68`) and its pot numeral off the live accumulator.
+                if let Some(cells) = sheet {
+                    use legaia_engine_core::baka_cabinet as bcab;
+                    cd.extend(
+                        legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
+                            &self.font,
+                            &bcab::choice_sheet_labels(&cells),
+                            [1.0; 4],
+                        ),
+                    );
+                    cd.extend(
+                        legaia_engine_render::ui_baka_strips::baka_digit_strip_draws_for(
+                            &self.font,
+                            &bcab::choice_pot_placements(
+                                self.session.host.world.minigames.winnings,
+                            ),
+                            [1.0; 4],
+                        ),
+                    );
                 }
                 legaia_engine_render::scale_stage_text_draws(&mut cd, stage_origin, stage_scale);
                 out.extend(cd);
@@ -1096,27 +1096,12 @@ impl PlayWindowApp {
             let dialogue_up = bw.dialogue_owns_input();
             if dialogue_up {
                 // Dialogue box up: no menu chrome.
-            } else if let Some(view) = bw.arts_input_view() {
-                // Retail-model arts entry: the screen is baked art (drawn
-                // in the sprite layer by `arts_input_chrome_sprite_draws`),
-                // so the only text is the Begin | Reselect pick.
-                use legaia_engine_render::arts_input as ai;
-                let (origin, scale) = self.save_select_stage(w, h);
-                out.extend(ai::arts_input_text_draws(
-                    &self.font,
-                    &ai::ArtsInputFrame {
-                        buffer: view.buffer,
-                        spent: view.spent,
-                        chip_costs: view.costs,
-                        pool: view.pool,
-                        pool_max: view.pool_max,
-                        plate_value: view.plate_value,
-                        list_page: view.list_page,
-                        phase: arts_input_screen(view.phase),
-                    },
-                    origin,
-                    scale,
-                ));
+            } else if bw.arts_input_view().is_some() {
+                // Retail-model arts entry: the whole screen is baked art,
+                // drawn in the sprite layer by
+                // `arts_input_chrome_sprite_draws`, so it puts up no text.
+                // The Begin | Reselect pick is the party's commit confirm
+                // (the command-chip cluster), not a line of this screen.
             } else if let Some(arts) = &bw.battle.arts_menu {
                 use legaia_engine_core::battle_arts::ArtsPhase;
                 let menu_x = 8i32;
@@ -1275,7 +1260,8 @@ impl PlayWindowApp {
                 match &cmd.phase {
                     CommandPhase::RoundPrompt { .. }
                     | CommandPhase::Menu { .. }
-                    | CommandPhase::AttackMode { .. } => {
+                    | CommandPhase::AttackMode { .. }
+                    | CommandPhase::CommitConfirm { .. } => {
                         // Retail's command surfaces are clusters of framed
                         // chips around a D-pad glyph, not lists: the
                         // round-open `Begin | Run` pair, the packet-pinned
@@ -1367,6 +1353,23 @@ impl PlayWindowApp {
                 legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
                 out.extend(draws);
             }
+            // Koru's timed-fight strip (`Turns Left / HP Left`): a stage-space
+            // text actor like the tutorial box, framed in the same layer by
+            // `battle_tutorial_chrome_sprite_draws`.
+            if let Some(strip) =
+                legaia_engine_core::timed_fight::timed_fight_strip(&self.session.host.world)
+            {
+                let mut draws = legaia_engine_render::timed_fight_strip_text_draws(
+                    &self.font,
+                    &legaia_engine_render::TimedFightStripView {
+                        label: &strip.label,
+                        turns_left: strip.turns_left,
+                        hp_left: strip.hp_left,
+                    },
+                );
+                legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+                out.extend(draws);
+            }
         }
         // Level-up + Seru-capture messages. Both take retail's own
         // top-of-screen banner - the widget the `noa_levelup_banner` capture
@@ -1417,38 +1420,40 @@ impl PlayWindowApp {
             }
         }
         // Opening-cutscene narration: the retail bottom-up subtitle CRAWL
-        // (`FUN_80037174`) - every visible line drawn centered at its
-        // current window Y, scrolling upward. Line Ys are PSX-framebuffer
-        // space (240 lines); scale into the surface. Pixel-pinned from the
-        // cold-boot retail capture (multi-line, 0.5 px/frame; the earlier
-        // one-caption-at-a-time reading measured the separate `4C E1`
-        // balloon, not this crawl).
-        if let Some(narration) = &self.session.host.world.cutscene.narration {
-            let white = [1.0f32, 1.0, 1.0, 1.0];
-            let center_x = (w / 2) as i32;
-            let scale = h as f32 / 240.0;
-            for line in narration.visible_lines() {
-                let y = (line.y as f32 * scale) as i32;
-                if y < 0 || y > h as i32 - 8 {
-                    continue;
-                }
-                out.extend(legaia_engine_render::cutscene_narration_draws_for(
-                    &self.font, line.text, center_x, y, white,
-                ));
-            }
-        }
-        // Opening-cutscene static title card (`map01`'s "twilight of
-        // humanity" beat): the pages shown together, centered, at the
-        // capture-pinned band y=92..130.
-        if let Some(card) = &self.session.host.world.cutscene.card {
-            let white = [1.0f32, 1.0, 1.0, 1.0];
-            let center_x = (w / 2) as i32;
-            let scale = h as f32 / 240.0;
-            for (i, text) in card.iter().enumerate() {
-                let y = ((92 + 16 * i as i32) as f32 * scale) as i32;
-                out.extend(legaia_engine_render::cutscene_narration_draws_for(
-                    &self.font, text, center_x, y, white,
-                ));
+        // (`FUN_80037174`) - every visible line centred at its current window
+        // Y, scrolling upward - and the static title card (`map01`'s
+        // "twilight of humanity" beat). Both are laid out in retail's 320x240
+        // stage by the shared `cutscene_text_stage_draws` and upscaled with
+        // the stage transform the rest of the stage-space text uses, so the
+        // glyphs are stage-sized and the rows sit 16 stage lines apart on
+        // every window size (scaling only the row Y drew 1x glyphs at ~3x the
+        // pitch).
+        {
+            let world = &self.session.host.world;
+            let lines = world
+                .cutscene
+                .narration
+                .as_ref()
+                .map(|n| n.visible_lines())
+                .unwrap_or_default();
+            let crawl: Vec<(&str, i32)> = lines.iter().map(|l| (l.text, l.y)).collect();
+            let card: Vec<&str> = world
+                .cutscene
+                .card
+                .iter()
+                .flatten()
+                .map(String::as_str)
+                .collect();
+            if !crawl.is_empty() || !card.is_empty() {
+                let mut draws = legaia_engine_render::cutscene_text_stage_draws(
+                    &self.font,
+                    &crawl,
+                    &card,
+                    [1.0, 1.0, 1.0, 1.0],
+                );
+                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+                legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+                out.extend(draws);
             }
         }
         // Name-entry overlay: the opening `town01` lead-character naming
@@ -2129,6 +2134,15 @@ impl PlayWindowApp {
                 stage_scale,
             ));
         }
+        // Koru's timed-fight strip wears the same skin (both are text actors
+        // registered with an explicit rect and style word `0x44`).
+        if legaia_engine_core::timed_fight::timed_fight_strip(&self.session.host.world).is_some() {
+            out.extend(legaia_engine_render::timed_fight_strip_chrome_draws(
+                &assets.rects,
+                stage_origin,
+                stage_scale,
+            ));
+        }
         out
     }
 
@@ -2280,8 +2294,10 @@ impl PlayWindowApp {
         // surface is up.
         let plaque = bh::battle_active_actor(w_ref);
         let target_plaque = bh::battle_target_plaque(w_ref);
+        let target_select = bh::battle_target_select_plaque(w_ref);
         let move_name = bh::battle_move_name(w_ref);
         let message_bar = bh::battle_message_bar(w_ref);
+        let commit_log = bh::battle_commit_log(w_ref);
         let badges = self.battle_badge_rects();
         let banner = self.battle_banner_message();
         battle_hud_draws_for(
@@ -2322,8 +2338,10 @@ impl PlayWindowApp {
                 begin_tab: bh::battle_begin_tab_visible(w_ref),
                 move_name: move_name.as_deref(),
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
+                target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: bh::battle_ring_ap_plate_value(w_ref),
+                commit_log: &commit_log,
                 diag: legaia_engine_render::diag_hud_enabled(),
             },
             BATTLE_HUD_PEN,
@@ -2408,11 +2426,12 @@ impl PlayWindowApp {
         let chips = battle_command_chips(&self.session.host.world)?;
         // The two enums are separate types because `engine-ui` is a leaf
         // that does not link `engine-core`; the browser page carries the
-        // same three-line map.
+        // same four-line map.
         let phase = match chips.phase {
             CommandChipPhase::RoundPrompt => ChipPhase::RoundPrompt,
             CommandChipPhase::CommandRing => ChipPhase::CommandRing,
             CommandChipPhase::AttackMode => ChipPhase::AttackMode,
+            CommandChipPhase::CommitConfirm => ChipPhase::CommitConfirm,
         };
         Some((chips.chips, chips.cursor, phase))
     }
@@ -2488,49 +2507,36 @@ impl PlayWindowApp {
         out
     }
 
-    /// The retail enemy target-name strip for a picker parked on the enemy
-    /// row: rows deduplicated + labelled by the ported `FUN_801D9D3C`
-    /// (`battle_enemy_target_rows`), placed by its centre/relax/clamp layout
-    /// with this window's font as the measurer, cursor row highlighted.
-    /// `None` when the cursor is not on the enemy row (ally / sweep states
-    /// keep their text line) or no monster is up.
+    /// The enemy-row half of a target picker's on-screen text.
+    ///
+    /// Retail draws **one** plaque for the target cursor - placement record
+    /// `0x29`, seated by `FUN_801D5854`'s target arm at `0xE8 - w/2`, row
+    /// `162` - and that plaque rides the shared battle-HUD builder
+    /// (`BattleHudFrame::target_select`, filled from
+    /// `battle_hud::battle_target_select_plaque`) so it lands on the same
+    /// pixels on both hosts. This returns an empty draw list while the cursor
+    /// sits on the enemy row, so the caller does not add its text fallback;
+    /// `None` on the ally / sweep states, which keep their text line.
+    ///
+    /// The earlier dedup-name strip (the `FUN_801D9D3C` intro-banner layout
+    /// at stage row 166) is retired here: that routine is the battle-intro
+    /// banner's composer, and its strip overprinted the commit log's target
+    /// column.
     pub(super) fn enemy_target_strip_draws(
         &self,
         picker: &legaia_engine_core::target_picker::TargetPickerSession,
-        w: u32,
-        h: u32,
+        _w: u32,
+        _h: u32,
     ) -> Option<Vec<TextDraw>> {
-        use legaia_engine_core::target_picker::{CursorRow, PickerState, layout_enemy_menu_rows};
-        let PickerState::Cursor {
-            row: CursorRow::Enemy,
-            slot,
-        } = picker.state()
-        else {
-            return None;
-        };
-        let mut rows =
-            legaia_engine_core::battle_hud::battle_enemy_target_rows(&self.session.host.world);
-        if rows.is_empty() {
-            return None;
-        }
-        layout_enemy_menu_rows(&mut rows, |s| self.font.layout_ascii(s).advance_x as i16);
-        let views: Vec<legaia_engine_render::EnemyTargetRowView<'_>> = rows
-            .iter()
-            .map(|r| legaia_engine_render::EnemyTargetRowView {
-                label: &r.label,
-                x: r.x,
-                selected: slot >= r.first_slot && slot < r.first_slot + r.members,
-            })
-            .collect();
-        // The strip and a bottom-anchored sparring prompt share stage row 166
-        // when the prompt runs to three lines, so the strip steps clear of the
-        // live box's drawn footprint (`enemy_target_menu_rows_y`).
-        Some(legaia_engine_render::enemy_target_menu_draws_at(
-            &self.font,
-            &views,
-            (w, h),
-            legaia_engine_render::enemy_target_menu_rows_y(self.battle_tutorial_stage_rect()),
-        ))
+        use legaia_engine_core::target_picker::{CursorRow, PickerState};
+        matches!(
+            picker.state(),
+            PickerState::Cursor {
+                row: CursorRow::Enemy,
+                ..
+            }
+        )
+        .then(Vec::new)
     }
 }
 
@@ -2889,6 +2895,7 @@ mod battle_hud_wiring_tests {
         let pairs = [
             (bcu::CLUSTER_COMMAND, bc::CLUSTER_COMMAND),
             (bcu::CLUSTER_TOP_LEVEL, bc::CLUSTER_TOP_LEVEL),
+            (bcu::CLUSTER_COMMIT_CONFIRM, bc::CLUSTER_COMMIT_CONFIRM),
         ];
         for (ui, vm) in pairs {
             assert_eq!(ui.centre, (vm.centre.0 as i32, vm.centre.1 as i32));
@@ -2977,6 +2984,19 @@ mod battle_hud_wiring_tests {
         );
         assert_eq!(bcu::ATTACK_MODE_SEATS[0], bcu::MENU_SEATS[1]);
         assert_eq!(bcu::ATTACK_MODE_SEATS[1], bcu::MENU_SEATS[2]);
+        // The commit confirm seats its two chips on its own pinned pair, in
+        // the engine's `Begin`, `Reselect` order.
+        assert_eq!(
+            bcu::COMMIT_CONFIRM_SEATS.len(),
+            legaia_engine_core::battle_input::CommitChoice::PROMPT.len()
+        );
+        assert_eq!(
+            bcu::COMMIT_CONFIRM_SEATS,
+            [
+                bcu::CommandSeat::Commit(bcu::ChipSeat::Left),
+                bcu::CommandSeat::Commit(bcu::ChipSeat::Right),
+            ]
+        );
     }
 
     /// A direction press must commit the chip **drawn on that side of the

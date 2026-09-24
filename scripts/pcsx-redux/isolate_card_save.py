@@ -123,6 +123,14 @@ def main() -> int:
         help="relocate the kept save to this block (default 1, where the "
         "load grid's cursor starts); 0 leaves it in place",
     )
+    ap.add_argument(
+        "--restamp",
+        type=int,
+        metavar="SLOT",
+        help="rewrite the kept save's product-code suffix (`...PRO-NN`) to "
+        "this two-digit slot number - `--restamp 0` puts the save under the "
+        "load grid's starting cursor whatever suffix it was saved with",
+    )
     args = ap.parse_args()
 
     data = open(args.card, "rb").read()
@@ -189,6 +197,20 @@ def main() -> int:
             if dst != args.keep:
                 free_entry(card, args.keep)
             where = dst
+
+    if args.restamp is not None:
+        # The load grid cell follows the suffix (see above), so a calibrated
+        # CONTINUE ladder lands on any save once its suffix reads `-00`.
+        # Directory-only: the entry's name field, then its XOR byte.
+        off = entry_off(where)
+        name = bytes(card[off + 10 : off + 30]).split(b"\0")[0]
+        dash = name.rfind(b"-")
+        if dash < 0 or len(name) - dash - 1 != 2:
+            print(f"--restamp: no two-digit suffix in {name!r}", file=sys.stderr)
+            return 2
+        tail = b"%02d" % args.restamp
+        card[off + 10 + dash + 1 : off + 10 + dash + 3] = tail
+        card[off + 127] = xor_checksum(bytes(card[off : off + FRAME]))
 
     open(args.out, "wb").write(bytes(card))
     kept = read_entry(bytes(card), where)

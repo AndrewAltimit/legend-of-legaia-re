@@ -134,6 +134,12 @@ pub struct NameEntry {
     /// Yes/No selection while in [`NameEntryState::Confirm`]. Retail opens
     /// the prompt with the hand on **No** (`false`); up/down moves it.
     pub confirm_yes: bool,
+    /// The frame-step floor (`DAT_8007B9D8`) the screen found on open. Retail
+    /// state 0 saves it to `0x801F2A84` (`0x801F0468..0x801F0474`), state 1
+    /// holds the floor at `1` every frame (`0x801F0488`) and the close arm
+    /// writes the saved word back (`0x801F09A0`); see
+    /// `crate::world::World::open_name_entry`.
+    pub saved_frame_step_floor: Option<u8>,
 }
 
 impl NameEntry {
@@ -153,6 +159,7 @@ impl NameEntry {
             cursor: CONTROL_ANCHORS[2],
             state: NameEntryState::Editing,
             confirm_yes: false,
+            saved_frame_step_floor: None,
         }
     }
 

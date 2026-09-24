@@ -927,20 +927,33 @@ pub fn colour_walk_group_stride(header: &PrimGroupHeader) -> usize {
 /// REF: FUN_801D8280 - the `DAT_8007C018` resident-object table walker that
 /// calls this on every object's primitive block.
 ///
-/// NOT WIRED. "No caller" would be the wrong reason: the sole `jal` to
-/// `0x801D5E20` in the corpus is `0x801D82F8`, inside the `REF`'d walker
-/// `FUN_801D8280`, and that walker is both ported and live - it is the field
-/// VM's op `0x4C` outer-nibble-E sub-6 arm, whose host hook
-/// `FieldHost::op4c_n_e_sub6_call_d8280` takes the three `i16` operands and
-/// has an empty default body. So a scene script can already reach this, and
-/// the arm silently does nothing.
+/// REPLACED-BY: the renderer's prologue palette mode, whose packet-colour law
+/// (`legaia_engine_render::psx_light::prologue_sepia_word` and the page
+/// shader's twin) is this routine's two-op result in closed form, keyed on
+/// `World::scene_color_grade` for exactly the three scenes whose scripts
+/// issue the op.
 ///
-/// The blocker is the grading **model**, not the route. The engine grades per
-/// render node (`crate::fade::ColorGrade` / `crate::fade::SceneTintRamp`, a
-/// multiply applied at draw time) rather than rewriting the mesh's own colour
-/// words, and it has no equivalent of the `DAT_8007C018` resident-object
-/// table for the walker to iterate. Wiring it needs that table plus a
-/// decision to mutate parsed TMD data in place.
+/// The sole `jal` to `0x801D5E20` in the corpus is `0x801D82F8`, inside the
+/// `REF`'d walker `FUN_801D8280`, which is the field VM's op `0x4C`
+/// outer-nibble-E sub-6 arm (`FieldHost::op4c_n_e_sub6_call_d8280`, three
+/// `i16` operands, which the walker forwards as this routine's `a1..a3` - the
+/// hue / saturation / value deltas, `addu`-ed onto the `FUN_8001A78C` result
+/// at `0x801D5F10` / `0x801D5F20` / `0x801D5F30`). The disc issues that op in
+/// exactly three carriers (`asset field-op-census --only "4C E6"`): partition
+/// 1 record 0 of `opdeene`, `opstati` and `opurud`, the same two ops in each -
+/// `4C E6 00 00 00 FF 00 00` (saturation `-0x100`, clamped to `0`: every
+/// resident mesh colour greyed at its `max`, capped at `0xF8` by
+/// `FUN_8001A6C8`) followed by `4C E6 38 00 90 00 E2 FF` (hue `+0x38`,
+/// saturation `+0x90`, value `-0x1E`). The second pass starts from a grey,
+/// so a word's result depends on its `max` alone:
+/// `(V, V * 246 >> 8, V * 112 >> 8)`, `V = min(max, 0xF8) - 30`. A retail
+/// `opdeene` state (`s1_newgame_field`) holds every resident colour word on
+/// that curve.
+///
+/// The walker's table (`DAT_8007C018`, every resident TMD) has no engine
+/// counterpart, so rather than rewriting uploaded mesh bytes the renderer
+/// applies the closed form per packet colour; a host that ran the op itself
+/// would draw the same pixels.
 pub fn shift_primitive_colours(
     groups: &mut [(PrimGroupHeader, Vec<[u8; 4]>)],
     shift: &HsvShift,

@@ -119,6 +119,7 @@ pub fn weapon_trail_prims(
                 semi_transparent: true,
                 abr_mode: TRAIL_ABR_MODE,
                 ot_index,
+                depth: None,
             }));
         }
     }

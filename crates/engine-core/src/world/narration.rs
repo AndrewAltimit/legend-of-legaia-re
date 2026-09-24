@@ -29,9 +29,16 @@ impl World {
     /// display name (e.g. the template `Vahn`). Mirrors the opening `town01`
     /// script's lead-character naming prompt. The host drives it each frame
     /// with [`Self::step_name_entry`] and renders from [`crate::world::PartyState::name_entry`].
+    ///
+    /// The screen also holds the frame-step floor at `1` while it is open and
+    /// hands the scene's floor back on close
+    /// ([`crate::name_entry::NameEntry::saved_frame_step_floor`]).
     pub fn open_name_entry(&mut self, slot: usize) {
         let initial = self.party_name(slot).to_string();
-        self.party.name_entry = Some(crate::name_entry::NameEntry::new(slot, &initial));
+        let mut entry = crate::name_entry::NameEntry::new(slot, &initial);
+        entry.saved_frame_step_floor = Some(self.clock.frame_step_floor);
+        self.set_frame_step_floor(1);
+        self.party.name_entry = Some(entry);
     }
 
     /// `true` while the name-entry overlay is active.
@@ -62,6 +69,9 @@ impl World {
             if let Some(rec) = self.party.roster.members.get_mut(slot) {
                 rec.set_name(&name);
             }
+            if let Some(floor) = entry.saved_frame_step_floor {
+                self.set_frame_step_floor(floor);
+            }
             self.party.name_entry = None;
             true
         } else {
@@ -80,11 +90,16 @@ impl World {
         if pages.is_empty() {
             return;
         }
-        // Per-scene crawl geometry / speed (capture-pinned; see
-        // `RollerParams::for_scene`).
-        let params = crate::cutscene_narration::RollerParams::for_scene(&self.active_scene_label);
-        self.cutscene.narration = Some(crate::cutscene_narration::CutsceneNarration::with_params(
-            pages, params,
+        // The crawl geometry is the config block the scene's seed op left
+        // (`CutsceneState::narration_seed`), at the world's own game-tick
+        // cadence: the opening scenes' prescripts raise the frame-step floor
+        // `DAT_8007B9D8` to 3 through move-VM ext sub-op `0x2F` (opdeene's
+        // record 16), which is what the capture reads - so no per-roller
+        // override is needed.
+        self.cutscene.narration = Some(crate::cutscene_narration::CutsceneNarration::with_seed(
+            pages,
+            self.cutscene.narration_seed,
+            u16::from(self.clock.frame_step),
         ));
         // Monotonic "which crawl block is showing" counter. Because a
         // non-blocking crawl lets the next block open the very tick the prior
@@ -925,18 +940,18 @@ impl World {
                 }
             }
         }
-        // Player-channel (`0xF8`) halt-acquire park: the timeline is holding
-        // at a `C3 F8` op for the player-anchor move armed by a preceding
-        // `A2 F8 <move_id>` to play out (retail's halt-acquire / state-resume
-        // handshake against the live player object). The armed countdown
-        // stands in for the playout - the engine's player pokes complete
-        // synchronously - so drain it one frame per tick; when it hits zero,
-        // step PAST the halt-acquire by its encoded width so the record flows
-        // on to its trailing ops (the door records' terminal `0x3F`).
+        // Player-channel (`0xF8`) arc park: the timeline is holding at a
+        // `C3 F8` op while the player's scripted arc flies (retail halts the
+        // caller with the player and the arc's watcher releases both on
+        // landing). When no arc could start, the countdown armed by a
+        // preceding `A2 F8 <move_id>` stands in for the playout instead. Either
+        // way, once it clears, step PAST the op by its encoded width so the
+        // record flows on to its trailing ops (the door records' terminal
+        // `0x3F`).
         // REF: FUN_8003BDE0
         if let Some(width) = tl.player_wait.take() {
             tl.player_move_frames = tl.player_move_frames.saturating_sub(1);
-            if tl.player_move_frames > 0 {
+            if tl.player_move_frames > 0 || self.player_script_arc_live() {
                 tl.player_wait = Some(width);
                 self.field_vm.channels = channels;
                 self.field_vm.stepping_view.clear();
@@ -1102,6 +1117,18 @@ impl World {
                             }
                             let site_end = site.end;
                             let pages = site.pages.clone();
+                            // The `CC F8 E8` geometry seed the field VM runs
+                            // immediately before the block (retail stores it
+                            // into `*0x801C6EA4 +0x4C..+0x50`; a block with no
+                            // seed op of its own reads the one left there).
+                            if let Some(seed) = host
+                                .world
+                                .cutscene
+                                .narration_seed
+                                .config_op_before(&tl.bytecode, pc)
+                            {
+                                host.world.cutscene.narration_seed = seed;
+                            }
                             host.world.open_cutscene_narration(pages);
                             // Non-blocking: the roller scrolls on its own
                             // (`World::tick`); continue into the camera cuts.
@@ -1408,6 +1435,27 @@ impl World {
                         let width = if sub == 0xA || sub == 0xB { 11 } else { 9 };
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;
+                        }
+                        // The halt is the arc's: retail arcs the player
+                        // (`FUN_801D25EC`, `0x801DF5AC`) and its watcher
+                        // releases the halted caller on landing
+                        // (`FUN_801D5D60`), so the park lasts exactly the
+                        // clip. The move countdown is the fallback only when
+                        // no arc could start.
+                        // REF: FUN_801d25ec
+                        if let Some(req) = tl
+                            .bytecode
+                            .get(pc + 2..)
+                            .and_then(vm::field_ledge_hop_arc::ScriptArcRequest::decode)
+                            && host.world.start_field_script_arc(
+                                crate::world::ScriptActorRef::Player,
+                                &req,
+                                None,
+                            )
+                        {
+                            tl.player_move_frames = 0;
+                            tl.player_wait = Some(width);
+                            break;
                         }
                         if tl.player_move_frames == 0 {
                             tl.pc = pc + width;
@@ -1932,7 +1980,15 @@ impl World {
     /// NOP-break slice [`Self::step_field_channels`] runs per frame - a spawn
     /// prologue is written `test / MoveTo / 21`-idle, so its repositioning
     /// lands in the first slice), *unconditionally* - this is load-time
-    /// behaviour, not the opt-in free-roam liveliness. Position writes are
+    /// behaviour, not the opt-in free-roam liveliness - but only for a record
+    /// whose first opcode is `0x24`/`0x25`, the install loop's own entry gate.
+    /// Everything that slice runs is the record's **spawn** section (it stops
+    /// at the section's raw `0x21`), so a story-flag write there is a write
+    /// every MAN-loading entry performs - `kor5` `P1[2]`'s `SET 0x619` at
+    /// `+0x1A` is one. A same-scene reload that does not re-load the MAN
+    /// (`FUN_801D6704` passes `a0 = loader-mask & 4` to `FUN_8003AEB0`, which
+    /// skips the partition-1 spawn loop at `0x8003B8A0` when it is zero) runs
+    /// none of it. Position writes are
     /// surfaced for every repositioned slot, and a slot whose scripted
     /// position parks it or leaves its decoded patrol route's locality drops
     /// that route (the route was derived by a flag-blind linear walk; the
@@ -1998,6 +2054,19 @@ impl World {
             // (Autonomous frame pacing uses the `0x21` NOP break instead of
             // yields, so suspension never races normal idling.)
             if channels[i].ctx.is_halted() {
+                continue;
+            }
+            // The load-frame slice is gated on the record's FIRST opcode:
+            // `FUN_8003A1E4` enters its run loop only when the byte at the
+            // freshly seated `+0x9E` is `0x24` or `0x25` (`addiu v0,v1,-0x24;
+            // sltiu v0,v0,0x2` at `0x8003A480`), so a placement opening on
+            // anything else executes nothing inside the load frame.
+            if entry_prerun
+                && !matches!(
+                    man.get(channels[i].record_offset + channels[i].pc),
+                    Some(0x24 | 0x25)
+                )
+            {
                 continue;
             }
             let mut budget = FIELD_CHANNEL_STEP_BUDGET;
@@ -2378,12 +2447,13 @@ impl World {
                     let choice = panel.picker_cursor();
                     let target = panel.picker().and_then(|pk| pk.jump_target(choice));
                     id.last_choice = Some(choice);
-                    // A user choice is progress: clear the wrap map so a menu
-                    // record that re-emits its menu by jumping back after a
-                    // branch reply still cycles (the izumi book-menu shape,
-                    // pinned by `inline_dialogue_menu_reemission_survives_wrap_rule`).
-                    // The player leaves such a record by picking its exit
-                    // option, not by the runner deciding the pass is over.
+                    // A user choice is progress: clear the wrap map so a
+                    // branch that jumps back over PCs this talk already ran
+                    // is not read as a loop. A branch whose reply box is
+                    // followed by the jump back (the izumi book-menu shape)
+                    // ends the talk parked on that jump instead, and the next
+                    // talk re-opens the menu - pinned by
+                    // `a_menu_reply_parks_on_its_jump_back_and_the_next_talk_reopens_the_menu`.
                     id.visited.iter_mut().for_each(|v| *v = false);
                     match target {
                         Some(t) => id.pc = t,
@@ -2391,9 +2461,11 @@ impl World {
                     }
                     id.panel = None;
                 } else if panel.is_done() {
-                    // Plain box dismissed: resume the VM just past this segment.
+                    // Plain box dismissed: the byte after the box decides
+                    // whether the talk goes on (`FUN_80038050`).
                     id.pc = panel.pc;
                     id.panel = None;
+                    end_talk_at_post_box_byte(&mut id);
                 } else if panel.is_waiting_for_input() {
                     // Page break inside a multi-page conversation (`0x24` /
                     // `0x48` / implicit next lead): turn the page in the same
@@ -2404,6 +2476,7 @@ impl World {
                     if panel.is_done() {
                         id.pc = panel.pc;
                         id.panel = None;
+                        end_talk_at_post_box_byte(&mut id);
                     } else {
                         for lead in panel.row_leads() {
                             if lead < id.visited.len() {
@@ -2536,7 +2609,39 @@ impl World {
                         None => false,
                     }
                 });
+            // A cross-context HALT-ACQUIRE (`4C 85` / `4C 8E` / `4C 8F` behind
+            // an `0x80` target byte) suspends the TARGET, and for the player
+            // target also the calling record, then advances the caller by its
+            // width (the arm `0x801E2148..0x801E21DC`, jump-table `0x801CEF48`
+            // entries `5` / `0xE` / `0xF`; `s7 = 0` is the refusal,
+            // `beqz s7` at `0x801E21D0`, taken for a target already carrying
+            // `0x400` while the scene word `*(_DAT_801C6EA4) + 8` is `0`,
+            // `0x801E2168..0x801E218C`). The runner hands the op the record's
+            // own context as a stand-in for the target, so the halt bit the
+            // acquire sets lands on the stand-in, and the dispatcher's
+            // halted-target early-out (`0x801DE90C..0x801DE940`: an extended
+            // op whose target carries `+0x10 & 0x400` returns at its own PC
+            // unless that scene word is non-zero or the caller's `+0x50` is
+            // `0xFB`) would then turn every later cross-context op of the talk into a
+            // `Halt` - `retock`'s innkeeper opens with `CC F8 85` and never
+            // reached its gold gate. Retail's talk does not stall there: in the
+            // captured stay both `0x400` bits are clear again 18 vsyncs after
+            // the acquire, before the first player gesture (which follows a
+            // text box and a picker); the writer is not identified. The runner
+            // therefore keeps the caller's halt state across the op. A talk's
+            // later re-acquire of the same target is not an end: the capture
+            // shows the next talk's acquire succeeding.
+            let caller_halt =
+                ext_target.map(|_| (id.ctx.flags & 0x400, id.ctx.saved_pc, id.ctx.wait_accum));
             let step = vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc);
+            if let Some((halt, saved_pc, wait_accum)) = caller_halt
+                && halt == 0
+                && id.ctx.flags & 0x400 != 0
+            {
+                id.ctx.flags &= !0x400;
+                id.ctx.saved_pc = saved_pc;
+                id.ctx.wait_accum = wait_accum;
+            }
             if let Some(target) = bound
                 && let Some(actor) = host.world.props.bank.actor_clip_mut(target)
             {
@@ -2544,11 +2649,12 @@ impl World {
                 id.ctx.local_flags = saved_local_flags;
             }
             match step {
-                // A backward Advance onto an already-executed PC is the
-                // record's resident loop-back to its top selector - the end
-                // of ONE conversation pass (retail parks there until the next
-                // talk). End the conversation like a Halt would; the wrap map
-                // is cleared on picker commits so menu re-emission survives.
+                // A backward Advance onto an already-executed PC with no box
+                // parked in between is the record looping over its own ops.
+                // Retail ends a talk earlier, at the dismissed box's parking
+                // byte (`end_talk_at_post_box_byte`); this is the port's net
+                // for a loop that shows no box. End the conversation like a
+                // Halt would; the wrap map is cleared on picker commits.
                 FieldStepResult::Advance { next_pc }
                     if next_pc <= id.pc && id.visited.get(next_pc).copied().unwrap_or(false) =>
                 {
@@ -2703,6 +2809,16 @@ impl World {
         let down = self.input.just_pressed(input::PadButton::Down);
         self.step_inline_dialogue(confirm, up, down);
         if self.dialog.inline.as_ref().is_some_and(|d| d.is_done()) {
+            // A talk that ended on a parking post-box byte leaves the actor's
+            // cursor there (retail `actor[+0x9E]`), and the next talk on the
+            // same actor resumes from it - `retock`'s innkeeper re-enters
+            // through its `26` loop-back and its acquire.
+            if let Some(id) = self.dialog.inline.as_ref()
+                && let (Some(pc), Some(slot)) = (id.parked_pc, id.npc_slot)
+                && let Some(rec) = self.npcs.dialog_prologue.get_mut(&slot)
+            {
+                rec.entry_pc = pc;
+            }
             self.dialog.inline = None;
             self.dialog.current = None;
             // Drop the interaction's staging slots with it. They are consumed
@@ -2719,6 +2835,27 @@ impl World {
             self.pending_field_events
                 .push(crate::field_events::FieldEvent::DialogDismissed);
         }
+    }
+}
+
+/// Apply `FUN_80038050`'s verdict on the byte after a dismissed box to the
+/// runner: a parking byte ends the talk with the cursor left on it (recorded
+/// in [`crate::inline_dialogue::InlineDialogue::parked_pc`]); `0x21` and the
+/// continuing bytes are left to the VM loop, which already ends on a raw
+/// `0x21` and runs the rest. A prop-bound run (door / cupboard record) keeps
+/// running through its tail: the parking rule is pinned on NPC talks only.
+///
+/// REF: FUN_80039B7C (`0x80039C84..0x80039D60`, the talk end after a box),
+/// FUN_80038050
+fn end_talk_at_post_box_byte(id: &mut crate::inline_dialogue::InlineDialogue) {
+    if id.prop_anchor.is_some() {
+        return;
+    }
+    if let crate::inline_dialogue::TalkDispatch::EndParked(pc) =
+        crate::inline_dialogue::talk_dispatch(&id.bytecode, id.pc)
+    {
+        id.parked_pc = Some(pc);
+        id.done = true;
     }
 }
 

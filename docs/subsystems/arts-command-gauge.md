@@ -310,8 +310,12 @@ decompiled C renders that pair in the opposite order - read the disassembly.
 opens a per-press directional entry, each press appends its command byte to the
 actor's buffer and debits that command's `+0x74` cost from the turn pool, and
 entry ends either by itself once nothing is affordable or on the confirm mask
-([`0x50` exits](#leaving-state-0x50)). The review screen's next press reaches
-**Begin | Reselect** (`0x6E`).
+([`0x50` exits](#leaving-state-0x50)). The review screen's next press picks
+the target and commits the entry; **Begin | Reselect** (`0x6E`) is raised
+once for the whole party, after the last member that can act has committed
+([`battle.md`](battle.md#the-commit-confirm-screen-0x6e)), so a party of one
+reaches it straight off its arts entry and a party of three only after the
+third member.
 The entered sequence resolves through the `legaia-art` matcher family - an
 exact Miracle string replaces the whole queue, a recognised sequence ending on
 a Super combination replaces the tail, and otherwise each named art contributes
@@ -333,7 +337,7 @@ itself, since retail moves the status plate off-screen for the whole session.
 | cancel, buffer typed | clears the entry, refunds the pool | same |
 | cancel, buffer empty | leaves to `0x78` / `0x28` | leaves to the command menu |
 | art body | paid from **Spirit** `+0x170` | same, at the commit rather than at the cleanup arm |
-| target | pre-picked with the command | picked after Begin |
+| target | the `0x5A` cursor after the entry (Left / Right walk `+0x1DD` through `FUN_801D8D00`, `0x801D21D4..0x801D2268`) | the target picker after the review press |
 
 The first two rows are the gap this closes: the old `ap_gauge` model counted a
 fitted `4 + level/10` pool and comped the swings entirely, so the

@@ -69,6 +69,7 @@ use vm_hosts::{
 };
 
 mod ambient_fx_state;
+mod audio_residency;
 mod audio_state;
 mod battle_state;
 mod camera_hooks;
@@ -83,9 +84,11 @@ mod field_carrier_state;
 mod field_locomotion;
 mod field_npc_state;
 mod field_prop_state;
+mod field_script_actor_state;
 mod field_terrain;
 mod field_vm_state;
 mod frame_clock;
+mod frame_step_floor;
 mod item_bag;
 mod menu_state;
 mod minigame_state;
@@ -102,8 +105,15 @@ mod world_map_state;
 mod world_toggles;
 
 pub use ambient_fx_state::AmbientFxState;
-pub use audio_state::AudioState;
-pub use battle_state::BattleState;
+pub use audio_residency::{
+    DANCE_SLOT2_PROT_INDEX, FISHING_SLOT2_PROT_INDEX, SHARED_REGION_SLOTS,
+    SLOT_MACHINE_SLOT2_PROT_INDEX, SfxBankResidency, SharedRegionBank, minigame_slot2_bank,
+};
+pub use audio_state::{
+    AudioState, FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK, SfxRingOp, SideBandBank,
+    VAB_01_RAW_BASE, runtime_sfx_descriptor_in, side_band_bank_for_request,
+};
+pub use battle_state::{BattleState, ClipRibbon};
 pub use camera_hooks::CameraZoneRequest;
 pub use camera_rig::CameraRig;
 pub use cast_fx_state::CastFxState;
@@ -116,13 +126,16 @@ pub use field_carrier_state::FieldCarrierState;
 pub use field_locomotion::FieldLocomotion;
 pub use field_npc_state::FieldNpcState;
 pub use field_prop_state::FieldPropState;
+pub use field_script_actor_state::{
+    FieldAttachedLight, FieldScriptActorState, FieldScriptArc, ScriptActorRef,
+};
 pub use field_terrain::FieldTerrain;
 pub use field_vm_state::FieldVmState;
 pub use frame_clock::FrameClock;
 pub use item_bag::{BagEntry, ItemBag};
 pub use menu_state::MenuState;
 pub use minigame_state::MinigameState;
-pub use move_vm_globals::MoveVmGlobals;
+pub use move_vm_globals::{MOVE_STRIP_REQUEST_CAP, MoveVmGlobals};
 pub use party_state::PartyState;
 pub use screen_fx_state::ScreenFxState;
 pub use seru_state::SeruState;
@@ -137,6 +150,8 @@ pub use world_toggles::WorldToggles;
 mod actors;
 pub mod ambient;
 mod cutscene_elements;
+mod field_script_actors;
+pub use field_script_actors::FieldLightDraw;
 mod fog_render;
 pub use cutscene_elements::{
     AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, CutsceneElement, ElementFrame,
@@ -166,6 +181,8 @@ pub use field_elevation::{CELL_ELEVATION_OVERRIDE, ElevationOverride};
 pub use field_hud::PassiveHudPoints;
 mod field_loop;
 mod field_movement;
+mod field_warp;
+pub use field_warp::FieldWarpTick;
 mod frame_tick;
 mod handler_actors;
 pub use handler_actors::TransitionSweepReport;

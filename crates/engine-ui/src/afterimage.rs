@@ -190,6 +190,7 @@ impl AfterimageQuad {
             gouraud: None,
             semi_transparent: self.semi_transparent,
             ot_index,
+            depth: None,
         })
     }
 }

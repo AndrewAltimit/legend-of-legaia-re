@@ -2,7 +2,7 @@
 //! landing-point triple the locomotion controller builds on its stack into a
 //! quadratic-Bezier hop clip on a freshly spawned helper actor.
 //!
-//! REF: FUN_801d1878, FUN_80020de0, FUN_801db510, FUN_801daa50, FUN_801e45bc, FUN_801d5d60
+//! REF: FUN_801d1878, FUN_80020de0, FUN_801db510, FUN_801daa50, FUN_801e45bc
 //!
 //! Each ported entry carries its `PORT` tag on the Rust item that implements
 //! it - [`build_hop_arc`] (`FUN_801d2404`), [`spawn_arc_helper`]
@@ -137,15 +137,11 @@
 //! whole would report the three live hop kernels as stale-tagged. The two
 //! inert spawners carry their own per-function tags instead.
 //!
-//! Only the two standalone spawners are inert now, and for different reasons -
-//! see their own tags. [`spawn_arc_helper`] is **retail-unreachable**:
+//! Only [`spawn_arc_helper`] is inert, and it is **retail-unreachable**:
 //! `FUN_801D5780` has no reference of any form anywhere in the shipped data,
 //! while its three siblings each do, so it is dead code in the retail image
-//! rather than an engine wiring gap. [`spawn_arc_with_emitter`] is a real
-//! retail entry with a named live caller - the field VM's op `0x43`
-//! sub-`0`/`1`/`0xA`/`0xB` arm, whose port already forwards the landing triple
-//! to a host hook - and what it lacks is a per-actor arc channel to spawn into;
-//! `World::locomotion.ledge_hop` is the player's alone.
+//! rather than an engine wiring gap. [`spawn_arc_with_emitter`] is live
+//! through the field VM's op `0x43` sub-`0`/`1`/`0xA`/`0xB` arm - see its tag.
 //!
 //! The player hop itself is live: `World::try_field_ledge_hop` classifies the
 //! ledge and starts the session, `World::step_field_vertical` advances both
@@ -235,31 +231,38 @@ pub fn build_hop_arc(start: (i16, i16, i16), target: HopTarget, apex: i16, frame
     }
 }
 
-/// The second record `FUN_801d25ec` chains behind the arc helper: an emitter
-/// allocated from template `0x801F22AC`, back-linked to the arc helper and
-/// carrying the two pointers and the class byte the caller supplied on the
-/// stack.
+/// The second record `FUN_801d25ec` chains behind the arc helper, allocated
+/// from template `0x801F22AC` and back-linked to the arc helper. It is the
+/// arc's **release watcher**, not an emitter: its tick `FUN_801D5D60`
+/// (template word `2`) waits for the arc helper to retire (`+0x90`'s
+/// `+0x10 & 8`), then clears the `+0x74` mask out of the `+0x94` context's
+/// flag word - and out of the player's too when `+0x50` is set - and retires
+/// itself. While the arc runs, a non-zero `+0x5C` with `+0x50` set runs the
+/// follow-camera ease and focus clamp (`FUN_801DB510` / `FUN_801DAA50`) on the
+/// player every frame.
 ///
-/// Field-for-field, from the stores at `0x801D2770..0x801D27AC`:
+/// Field-for-field, from the stores at `0x801D2770..0x801D27AC`, and what the
+/// one caller - the field VM's op `0x43` sub-`0`/`1`/`0xA`/`0xB` arm,
+/// `0x801DF53C..0x801DF5B0` - passes:
 ///
 /// | Offset | Source |
 /// |---|---|
 /// | `+0x90` | the arc helper allocated first |
-/// | `+0x94` | the caller's `sp+0x38` word - the actor's encounter record |
-/// | `+0x74` | the caller's `sp+0x3C` word - the emitter's asset pointer |
-/// | `+0x5C` | the caller's `sp+0x40` byte, zero-extended |
+/// | `+0x94` | `sp+0x38`: the context to release - the calling context when the arced actor is the player (both were halted), else the arced actor |
+/// | `+0x74` | `sp+0x3C`: the flag mask to clear - always `0x400`, the halt bit the arm's acquire raised |
+/// | `+0x5C` | `sp+0x40` byte: `1` for sub-`1`/`0xB`, `0` for sub-`0`/`0xA` - camera follow |
 /// | `+0x9C` | `0` |
 /// | `+0x9E` | the raw `a3` frame count, unscaled |
 /// | `+0x50` | `1` when the `a0` actor **is** the player, else `0` |
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HopEmitter {
-    /// `+0x94` - the caller's first stack pointer. `+0x94` is the actor slot
-    /// the encounter record is installed at (`docs/formats/encounter.md`), and
-    /// the attached-sprite tick `FUN_801e4470` branches on it being non-null.
-    pub encounter_record: u32,
-    /// `+0x74` - the emitter's asset pointer.
-    pub asset: u32,
-    /// `+0x5C` - the class byte, `lbu` from `sp+0x40` so never sign-extended.
+    /// `+0x94` - the context whose flag word the watcher clears on release.
+    pub release_ctx: u32,
+    /// `+0x74` - the mask it clears there (`0x400`, the halt bit, at the one
+    /// retail call site).
+    pub release_mask: u32,
+    /// `+0x5C` - the camera-follow byte, `lbu` from `sp+0x40` so never
+    /// sign-extended.
     pub class: u16,
     /// `+0x9E` - the frame count, stored raw rather than as `0x1000 / frames`.
     pub frames: i16,
@@ -346,7 +349,7 @@ pub fn spawn_arc_helper(
 }
 
 /// Arc-hop spawn with a chained emitter: retail
-/// `FUN_801d25ec(src, &target, apex, frames, encounter, asset, class)`
+/// `FUN_801d25ec(src, &target, apex, frames, release_ctx, release_mask, class)`
 /// (field overlay `0897_xxx_dat`, file offset `0x3DD4`).
 ///
 /// The first half is [`spawn_arc_helper`] inlined verbatim. The second half
@@ -361,28 +364,17 @@ pub fn spawn_arc_helper(
 /// as `None`.
 ///
 /// PORT: FUN_801d25ec
-// NOT WIRED. The retail caller is not vague: the field VM's op `0x43`
-// sub-`0`/`1`/`0xA`/`0xB` arm calls it at `0x801DF5AC`, unconditionally on the
-// success side of that arm's halt-acquire (`0x801DF410 beq v0,zero` takes the
-// PC-advance path on failure). So op `0x43` sub-0/1/A/B is **halt the script
-// AND arc this actor**, not a halt alone: the landing triple is built from the
-// operand's two tile bytes (`(b & 0x7F) << 7 | 0x40`, plus `0x40` again when
-// bit 7 is set), falling back to the actor's own position when both are zero;
-// `a2` / `a3` are the decoded apex and frame count; the class byte is `1` for
-// sub-`1`/`B` and `0` for sub-`0`/`A`.
-//
-// The port's arm (`crate::field::step::actor_ctrl::op_43`) stops at the halt.
-// It already computes and forwards the landing coords -
-// `FieldHost::field_halt_acquire_apply(ctx, sub_op, resume, coords)` - so the
-// hook that would carry the spawn exists and is called. What does not exist is
-// anywhere to put the result: `World::locomotion.ledge_hop` is a single
-// `Option<FieldLedgeHop>` for the **player**, and this entry arcs whichever
-// actor the script is running on, chaining an emitter record besides. Wiring
-// needs a per-actor arc channel (and a consumer for `HopEmitter`, whose tick
-// `FUN_801E4470` is itself inert for the same reason).
-//
-// Naming this gap "the engine has no actor pool" was too coarse - the missing
-// thing is one keyed channel, and the call site is already named and live.
+///
+/// Live: the field VM's op `0x43` sub-`0`/`1`/`0xA`/`0xB` arm calls it at
+/// `0x801DF5AC`, unconditionally on the success side of that arm's
+/// halt-acquire - so the op is **halt the script and arc this actor**, not a
+/// halt alone. The engine reaches it from both routes the arm has:
+/// `FieldHost::op43_arc_jump` (NPC channels) and the cutscene timeline's
+/// player-anchor `C3 F8` park, each through `World::start_field_script_arc`,
+/// which keeps one arc per actor in `World::script_actors`; the clip and the
+/// release watcher ([`release_watcher_tick`]) advance in
+/// `World::tick_field_script_arcs`, and both play hosts draw the height
+/// (`World::field_npc_render_y` for NPCs, the player's `world_y`).
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_arc_with_emitter(
     src: Option<(i16, i16, i16)>,
@@ -390,16 +382,19 @@ pub fn spawn_arc_with_emitter(
     target: HopTarget,
     apex: i16,
     frames: i16,
-    encounter_record: u32,
-    asset: u32,
+    release_ctx: u32,
+    release_mask: u32,
     class: u8,
 ) -> Option<HopSpawn> {
-    let spawn = spawn_arc_helper(src, target, apex, frames)?;
+    // Retail inlines `FUN_801D5780`'s body here rather than calling it (the
+    // standalone entry has no caller at all), so this builds the clip
+    // directly too.
+    let start = src?;
     Some(HopSpawn {
-        arc: spawn.arc,
+        arc: build_hop_arc(start, target, apex, frames),
         emitter: Some(HopEmitter {
-            encounter_record,
-            asset,
+            release_ctx,
+            release_mask,
             class: u16::from(class),
             frames,
             owner_is_player: src_is_player,
@@ -630,6 +625,152 @@ pub fn hop_apex_height(arc: &HopArc) -> i32 {
     hi - bezier_at(arc.start.1, arc.control.1, arc.end.1, CLIP_FULL / 2)
 }
 
+/// The landing-tile decode the op `0x43` arc arm applies to each of its two
+/// tile bytes (`0x801DF484..0x801DF4E4`): `(b & 0x7F) << 7` plus `0x40`, or
+/// plus `0x80` when bit 7 is set - a tile centre, or the far tile edge.
+pub fn arc_tile_to_world(b: u8) -> i16 {
+    let base = i16::from(b & 0x7F) << 7;
+    base + if b & 0x80 != 0 { 0x80 } else { 0x40 }
+}
+
+/// The decoded operand of the field VM's op `0x43` sub-`0` / `1` / `0xA` /
+/// `0xB` - the scripted **arc jump** - read off the arm's own operand loads
+/// (`FUN_801DE840` case `0x43`, `0x801DF418..0x801DF5B0` in PROT 0897; `s6`
+/// is the operand cursor, pointing at the sub-op byte).
+///
+/// | Operand | Load | Meaning |
+/// |---|---|---|
+/// | `+0` | `lbu (s6)` | sub-op; `1` / `0xB` set the camera-follow byte (`s2`) |
+/// | `+1` / `+2` | `lbu 1(s6)` / `lbu 2(s6)` | landing tile X / Z ([`arc_tile_to_world`]); both zero = hop in place |
+/// | `+3` | `jal 0x8003CE9C` on `s6+3` | the arc's apex height -> `FUN_801D25EC` `a2` |
+/// | `+5` | `jal 0x8003CE9C` on `s6+5` | the clip length in frames -> `a3` |
+/// | `+7` | `jal 0x8003CE9C` on `s6+7`, `negu` | sub-A/B only: the landing Y, stored negated |
+///
+/// None of the halfwords is a PC. The landing Y of a tile target is the
+/// floor under it: retail parks the actor on the tile (`sh` to `+0x14` /
+/// `+0x18`), calls the floor sampler `FUN_80019278`, stores the result as Y
+/// and restores the actor's own X / Z (`0x801DF4E8..0x801DF50C`). The
+/// in-place form takes the actor's own `+0x14..+0x18` as the landing point
+/// and mirrors `-Y` into `+0x8E`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScriptArcRequest {
+    /// `0`, `1`, `0xA` or `0xB`.
+    pub sub_op: u8,
+    /// Raw landing-tile X byte.
+    pub tile_x: u8,
+    /// Raw landing-tile Z byte.
+    pub tile_z: u8,
+    /// Apex height above the higher endpoint (`a2`).
+    pub apex: i16,
+    /// Clip length in frames (`a3`).
+    pub frames: i16,
+    /// Sub-A/B's explicit landing Y, already negated as retail stores it.
+    pub explicit_y: Option<i16>,
+}
+
+impl ScriptArcRequest {
+    /// Decode from the operand slice starting at the sub-op byte. `None` for
+    /// a sub-op outside the arc family or a truncated operand.
+    pub fn decode(operand: &[u8]) -> Option<Self> {
+        let sub_op = *operand.first()?;
+        let wide = match sub_op {
+            0 | 1 => false,
+            0xA | 0xB => true,
+            _ => return None,
+        };
+        let need = if wide { 9 } else { 7 };
+        if operand.len() < need {
+            return None;
+        }
+        let s16 = |at: usize| i16::from_le_bytes([operand[at], operand[at + 1]]);
+        Some(Self {
+            sub_op,
+            tile_x: operand[1],
+            tile_z: operand[2],
+            apex: s16(3),
+            frames: s16(5),
+            explicit_y: wide.then(|| s16(7).wrapping_neg()),
+        })
+    }
+
+    /// Operand length in bytes, sub-op byte included (`7` or `9`).
+    pub fn operand_len(&self) -> usize {
+        if self.explicit_y.is_some() { 9 } else { 7 }
+    }
+
+    /// `1` for sub-`1` / `0xB` - the byte the arm passes as `FUN_801D25EC`'s
+    /// class argument, which becomes the watcher's camera-follow `+0x5C`.
+    pub fn camera_follow(&self) -> bool {
+        self.sub_op == 1 || self.sub_op == 0xB
+    }
+
+    /// The landing X / Z, or `None` for the hop-in-place form (both tile
+    /// bytes zero, `0x801DF438..0x801DF450`).
+    pub fn landing_xz(&self) -> Option<(i16, i16)> {
+        if self.tile_x == 0 && self.tile_z == 0 {
+            None
+        } else {
+            Some((
+                arc_tile_to_world(self.tile_x),
+                arc_tile_to_world(self.tile_z),
+            ))
+        }
+    }
+
+    /// The full landing triple the arm builds at `sp+0x30`, given the arced
+    /// actor's current position and a floor sampler standing in for
+    /// `FUN_80019278` at the landing tile.
+    pub fn landing(
+        &self,
+        actor: (i16, i16, i16),
+        floor_at: impl FnOnce(i16, i16) -> i16,
+    ) -> HopTarget {
+        let (x, y, z) = match self.landing_xz() {
+            None => actor,
+            Some((x, z)) => (x, floor_at(x, z), z),
+        };
+        HopTarget {
+            x,
+            y: self.explicit_y.unwrap_or(y),
+            z,
+        }
+    }
+}
+
+/// What one tick of the release watcher decided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct WatcherTick {
+    /// `+0x5C` and `+0x50` were both set: retail ran the follow-camera
+    /// ease `FUN_801DB510(player)` and `FUN_801DAA50()` this frame.
+    pub camera_follow: bool,
+    /// The arc helper had retired: clear this mask out of the `+0x94`
+    /// context's flag word.
+    pub release_mask: Option<u32>,
+    /// ...and out of the player's too (`+0x50` set).
+    pub release_player: bool,
+}
+
+/// Per-frame tick of the arc's release watcher: retail `FUN_801d5d60`
+/// (field overlay PROT 0897, `0x801D5D60..0x801D5E1C`), the tick word of
+/// template `0x801F22AC`.
+///
+/// `arc_retired` is the back-linked arc helper's `+0x10 & 8` - set by
+/// [`advance_hop_arc`]'s arrival tick. The camera call runs before the
+/// retire test, so the landing frame still eases the camera.
+///
+/// PORT: FUN_801d5d60
+pub fn release_watcher_tick(emitter: &HopEmitter, arc_retired: bool) -> WatcherTick {
+    let mut t = WatcherTick {
+        camera_follow: emitter.class != 0 && emitter.owner_is_player,
+        ..WatcherTick::default()
+    };
+    if arc_retired {
+        t.release_mask = Some(emitter.release_mask);
+        t.release_player = emitter.owner_is_player;
+    }
+    t
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -675,8 +816,8 @@ mod tests {
         assert_eq!(s.arc.step, 0x100);
         assert_eq!(e.frames, 0x10);
         assert_eq!(e.class, 0x0c);
-        assert_eq!(e.encounter_record, 0xdead_beef);
-        assert_eq!(e.asset, 0xfeed_face);
+        assert_eq!(e.release_ctx, 0xdead_beef);
+        assert_eq!(e.release_mask, 0xfeed_face);
         assert!(e.owner_is_player);
     }
 
@@ -894,5 +1035,62 @@ mod tests {
     fn midpoint_uses_arithmetic_shift_not_truncating_division() {
         // -3 + 0 = -3; `sra 1` floors to -2, whereas `-3 / 2` truncates to -1.
         assert_eq!(mid(-3, 0), -2);
+    }
+}
+
+#[cfg(test)]
+mod script_arc_tests {
+    use super::*;
+
+    #[test]
+    fn tile_bytes_decode_to_centres_or_far_edges() {
+        assert_eq!(arc_tile_to_world(0x18), 0x18 * 128 + 0x40);
+        assert_eq!(arc_tile_to_world(0x98), 0x18 * 128 + 0x80);
+    }
+
+    #[test]
+    fn town01_player_arc_decodes_apex_and_frames_not_a_pc() {
+        // `C3 F8 00 5F 0D 26 00 1C 00` - operand from the sub-op byte.
+        let r = ScriptArcRequest::decode(&[0x00, 0x5F, 0x0D, 0x26, 0x00, 0x1C, 0x00]).unwrap();
+        assert_eq!((r.apex, r.frames), (0x26, 0x1C));
+        assert!(!r.camera_follow());
+        assert_eq!(r.landing_xz(), Some((0x5F * 128 + 0x40, 0x0D * 128 + 0x40)));
+        let t = r.landing((0, -64, 0), |_, _| -32);
+        assert_eq!((t.x, t.y, t.z), (0x5F * 128 + 0x40, -32, 0x0D * 128 + 0x40));
+    }
+
+    #[test]
+    fn in_place_hop_lands_on_the_actor_and_sub_a_overrides_y() {
+        let r = ScriptArcRequest::decode(&[0x00, 0, 0, 0x0C, 0, 0x0C, 0]).unwrap();
+        let t = r.landing((100, -48, 200), |_, _| unreachable!());
+        assert_eq!((t.x, t.y, t.z), (100, -48, 200));
+        let r = ScriptArcRequest::decode(&[0x0B, 0x76, 0x70, 0x50, 0, 0x32, 0, 0xA0, 0]).unwrap();
+        assert!(r.camera_follow());
+        assert_eq!(r.operand_len(), 9);
+        assert_eq!(r.landing((0, 0, 0), |_, _| 7).y, -0xA0);
+        assert!(ScriptArcRequest::decode(&[0x02, 0, 0, 0, 0, 0, 0]).is_none());
+    }
+
+    #[test]
+    fn watcher_releases_only_once_the_arc_retires() {
+        let e = HopEmitter {
+            release_ctx: 1,
+            release_mask: 0x400,
+            class: 1,
+            frames: 12,
+            owner_is_player: true,
+        };
+        let running = release_watcher_tick(&e, false);
+        assert!(running.camera_follow);
+        assert_eq!(running.release_mask, None);
+        let done = release_watcher_tick(&e, true);
+        assert_eq!(done.release_mask, Some(0x400));
+        assert!(done.release_player);
+        let npc = HopEmitter {
+            owner_is_player: false,
+            ..e
+        };
+        assert!(!release_watcher_tick(&npc, false).camera_follow);
+        assert!(!release_watcher_tick(&npc, true).release_player);
     }
 }

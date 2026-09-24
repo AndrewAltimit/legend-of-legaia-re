@@ -1042,7 +1042,10 @@ The per-actor stat block runs `+0x14C..+0x16A`, each stat stored as a **pair** o
 
 HP/MP/AGL/SPD are copied unchanged in both. Both profiles boost - the raw record always understates the fight. A live international-retail capture reproduces profile **B** byte-for-byte (Gaza Sim-Seru id 166: raw ATK 288 / UDF 222 / LDF 200 / INT 220 → in-battle 360 / 444 / 400 / 247), which is also what the curated `enemies.toml` holds and what `MonsterRecord::battle_stats()` returns. This cross-region difficulty difference was first surfaced by **Zetopheonix**; the [enemy table](../../site/_content/monsters.html) shows the boosted stats by default with a raw-record toggle.
 
-**SPD** (`+0x164`): `FUN_801DA780` seeds each actor's per-turn initiative key from it. It has a dedicated "Speed Up" buff (selector 7 sub 1) and is reset to its base each round (`FUN_80053CB8`: `+0x164 = +0x166`). Distinct from INT, which governs the hit/dodge roll rather than turn order, and from AGL, which is the per-round action gauge. The next-actor selector `recompute_battle_order` (`FUN_801daba4`) reads the seeded `+0x16C` keys: it picks the living actor with the highest key (random tiebreak via `rand % tie_count`), zeroing dead actors' keys first. Ported as `World::next_combatant_by_initiative`; see [turn order in battle.md](battle.md#auto-resolve-vs-player-driven).
+**SPD** (`+0x164`): `FUN_801DA780` seeds each actor's per-turn initiative key from it. It has a dedicated "Speed Up" buff (selector 7 sub 1) and is reset to its base each round (`FUN_80053CB8`: `+0x164 = +0x166`). Distinct from INT, which governs the hit/dodge roll rather than turn order, and from AGL, which is the per-round action gauge.
+
+The next-actor selector `recompute_battle_order` (`FUN_801daba4`) reads the seeded `+0x16C` keys: it picks the actor with the highest key after a dead-slot sweep that zeroes a fallen actor's unspent key, clamps its Spirit to 100 and hands back an item it had committed.
+The tiebreak is not an even `rand % tie_count`: the tie list starts at seat 0 and a seat that *raises* the maximum is entered twice, so the first seat above 0 to reach the top key wins `2 / (ties + 2)` of the `rand % (count + 1)` draw (`0x801DAC7C..0x801DAD60`). Ported as `World::next_combatant_by_initiative`; see [turn order in battle.md](battle.md#auto-resolve-vs-player-driven).
 
 ##### Initiative key seeding (`FUN_801DA780`)
 
@@ -1736,6 +1739,14 @@ The character record is documented to have stat fields at `+0x100..+0x110` and a
 The arithmetic is the BIOS' own: the standard 32-bit LCG with multiplier `1103515245` and increment `12345`, returning `(seed >> 16) & 0x7FFF`. Range 0..32767; for damage variance the battle code typically uses `roll % cap`, so distribution skew at small caps is fine.
 
 The seed lives in kernel-managed RAM, **not** at `0x8007AE5C` - that address appears nowhere in the dump corpus. What the dump confirms (`see ghidra/scripts/funcs/80056798.txt`) is the veneer and the vector, nothing about the seed's storage. For deterministic playback the engine seeds its own mirror rather than reading a retail seed word.
+
+There is **one** seed. The executable carries no `srand` (`A(30h)`) thunk, and every `jal 0x80056798` on the disc - SCUS and every overlay alike - draws the same kernel stream. The overlays' own generators are separate words with their own arithmetic (the battle overlay's `FUN_801D0290`, the slot machine's pair), not reseeds of this one.
+
+#### How the port draws it
+
+A caller tests the **low** bits of the result (`rand & 1` coin flips, `& 0xF` gates, `% n`) and divides it as a 15-bit quantity, so what matters is the shape, not the generator. The world's stream (`World::next_rng`) is a raw 32-bit LCG state; its low bit strictly alternates, its low nibble has period 16, and as an `i32` it is negative half the time. `World::next_rand` is the retail draw - the next state through `battle_formulas::bios_rand_shape`, `(state >> 16) & 0x7FFF`. The tile-board fill and the overworld region-encounter counter draw through it, and the ambient element channel shapes its own draws the same way.
+
+The battle-side consumers still take the raw state - most mask it `& 0x7FFF` (the **low** fifteen bits, the wrong half) or take `% n` of the whole word - and several battle unit tests pin outcomes under that raw stream, so moving them is a change to the test fixtures as well as to the draws. The engine's own step tracker (`encounter::EncounterTracker::on_step`) is not a retail port and splits one raw word into a low trigger byte and a high pick half. Minigames and pure kernels that keep a private seed use the already-shaped `psyq_rand_step` / `BiosRand`.
 
 ## Engine-side mirror - `engine-vm::battle_formulas`
 

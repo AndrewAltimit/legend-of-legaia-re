@@ -376,29 +376,62 @@ impl World {
     }
 
     /// Next combatant by SPD-seeded initiative - the port of
-    /// `recompute_battle_order` (`FUN_801daba4`). Returns the living actor with
-    /// the highest current initiative key (random tiebreak via `rand %
-    /// tie_count`), consuming that actor's key so the next pick moves on -
-    /// retail consumes it at the action SM's `0x0C` dispatch
+    /// `recompute_battle_order` (`FUN_801daba4`). Returns the actor with the
+    /// highest current initiative key, consuming that actor's key so the next
+    /// pick moves on - retail consumes it at the action SM's `0x0C` dispatch
     /// (`sh zero,0x16c(s3)` at `0x801E2CDC`), and the engine dispatches on the
-    /// same call, so the two are one seam. Dead actors' keys are zeroed (the
-    /// function's first loop) so they can't be picked.
+    /// same call, so the two are one seam.
     ///
-    /// `None` once every living actor's key is spent: that is the round's
-    /// end, and it is the caller's to close (retail's `0x5A` bound test ->
-    /// `0xFF` -> `0x14`); the keys are re-seeded by the *round start*
-    /// (`FUN_801DA780` from `FUN_801D0748`'s `0x14` arm, `0x801D0ED8`), never
-    /// by the pick itself. A battle with no SPD walks its flat turn tokens in
-    /// slot order after the last acting actor - the historical round-robin.
+    /// **The dead-slot sweep** (`0x801DABD0..0x801DAC74`) runs first, over
+    /// every seat: a combatant with no HP that still holds an unspent key
+    /// (`lhu 0x14c` / `lhu 0x16c` tests at `0x801DABD8` / `0x801DABE8`) has
+    /// the key zeroed (`0x801DABF8`), its Spirit gauge `+0x170` clamped to
+    /// `100` (`sltiu v0,v0,0x65` at `0x801DAC0C`), and - if it had committed an
+    /// item (`+0x1DE == 1`) - the item handed back to the bag
+    /// (`FUN_800421D4(+0x1DF, 1)` at `0x801DAC54..0x801DAC58`) and the category
+    /// byte cleared (`0x801DAC68`). A member who used an item and died before
+    /// acting keeps the item. The same arm bumps the round-skip count
+    /// `ctx[+0x25]` (`0x801DAC2C..0x801DAC38`, `battle_ctx.round_skip`), which
+    /// the action SM's end-of-action bound subtracts from the seated count.
+    ///
+    /// **The pick** (`0x801DAC7C..0x801DAD60`) builds retail's tie list, which
+    /// is not a plain list of the tied seats: it starts as `[0]` with the
+    /// running maximum at seat 0's key, and each later seat that **raises** the
+    /// maximum resets the list to `[s]` *and then* matches it, appending `s`
+    /// again. So a maximum first set by a seat above 0 sits in the list twice
+    /// and wins `2 / (ties + 2)` of the `rand % (count + 1)` draw rather than an
+    /// even share, while a maximum held by seat 0 draws evenly. `None` once
+    /// every key is spent: that is the round's end, and it is the caller's to
+    /// close (retail's `0x5A` bound test -> `0xFF` -> `0x14`); the keys are
+    /// re-seeded by the *round start* (`FUN_801DA780` from `FUN_801D0748`'s
+    /// `0x14` arm, `0x801D0ED8`), never by the pick itself. Retail draws its
+    /// `rand` before it learns the maximum was zero; the port's generator is
+    /// its own LCG, so the round-end draw is not reproduced. A battle with no
+    /// SPD walks its flat turn tokens in slot order after the last acting
+    /// actor - the historical round-robin.
     ///
     /// PORT: FUN_801DABA4
     pub(in crate::world) fn next_combatant_by_initiative(&mut self) -> Option<u8> {
-        // First loop: zero dead actors' keys so the max-pick skips them.
+        use crate::battle_round::PendingPartyAction;
+        // The dead-slot sweep.
         for i in 0..BATTLE_SLOTS {
-            if self.actors.get(i).is_some_and(|a| a.battle.liveness == 0)
-                && let Some(a) = self.actors.get_mut(i)
-            {
-                a.battle.init_key = 0;
+            let Some(a) = self.actors.get_mut(i) else {
+                continue;
+            };
+            if a.battle.liveness != 0 || a.battle.init_key == 0 {
+                continue;
+            }
+            a.battle.init_key = 0;
+            a.battle.spirit_gauge = a.battle.spirit_gauge.min(100);
+            // `ctx[+0x25]`: one more combatant out of this round unacted.
+            self.battle_ctx.round_skip = self.battle_ctx.round_skip.saturating_add(1);
+            if a.battle.action_category == vm::battle_action::ActionCategory::Item.as_byte() {
+                a.battle.action_category = 0;
+                if let Some(Some(PendingPartyAction::Item { item_id, .. })) =
+                    self.battle.round_flow.pending.get_mut(i).map(Option::take)
+                {
+                    let _ = self.party.inventory.add(item_id, 1);
+                }
             }
         }
         if !self.any_battle_speed() {
@@ -418,35 +451,74 @@ impl World {
             self.battle.round_flow.flat_walk_last = Some(pick as u8);
             return Some(pick as u8);
         }
-        // Highest key among living actors; ties collected in slot order.
-        let mut best: u16 = 0;
-        let mut ties: Vec<u8> = Vec::new();
-        for i in 0..BATTLE_SLOTS {
-            let Some(a) = self.actors.get(i) else {
-                continue;
-            };
-            if a.battle.liveness == 0 {
-                continue;
-            }
-            let key = a.battle.init_key;
-            if key == 0 {
-                continue;
-            }
-            if key > best {
-                best = key;
-                ties.clear();
-                ties.push(i as u8);
-            } else if key == best {
-                ties.push(i as u8);
-            }
-        }
-        if ties.is_empty() {
-            return None;
-        }
-        let pick = ties[(self.next_rng() as usize) % ties.len()];
+        let keys: Vec<u16> = (0..BATTLE_SLOTS)
+            .map(|i| self.actors.get(i).map_or(0, |a| a.battle.init_key))
+            .collect();
+        let pick = initiative_tie_pick(|i| keys[i], || self.next_rng())?;
         if let Some(a) = self.actors.get_mut(pick as usize) {
             a.battle.init_key = 0; // consume this turn
         }
         Some(pick)
+    }
+}
+
+/// `FUN_801DABA4`'s maximum-and-tie pick over the seats' initiative keys
+/// (see [`World::next_combatant_by_initiative`]): retail's list construction,
+/// duplicate included, then `rand % (count + 1)`. `None` when every key is
+/// zero. The keys are compared as the unsigned halfwords they are stored as;
+/// retail sign-extends the running maximum (`sra` at `0x801DACAC`), which
+/// agrees for every key below `0x8000`.
+fn initiative_tie_pick(key: impl Fn(usize) -> u16, mut rand: impl FnMut() -> u32) -> Option<u8> {
+    let mut best = key(0);
+    let mut list = [0u8; BATTLE_SLOTS + 1];
+    let mut count = 0usize;
+    for s in 1..BATTLE_SLOTS {
+        let k = key(s);
+        if best < k {
+            best = k;
+            count = 0;
+            list[0] = s as u8;
+        }
+        if best == k {
+            count += 1;
+            list[count] = s as u8;
+        }
+    }
+    if best == 0 {
+        return None;
+    }
+    Some(list[rand() as usize % (count + 1)])
+}
+
+#[cfg(test)]
+mod tie_pick_tests {
+    use super::*;
+
+    fn keys(k: &[u16]) -> impl Fn(usize) -> u16 + '_ {
+        move |i| k.get(i).copied().unwrap_or(0)
+    }
+
+    #[test]
+    fn a_maximum_raised_above_seat_zero_sits_in_the_list_twice() {
+        // Seats 2 and 5 tie at 9: the list is [2, 2, 5] and the draw is mod 3.
+        let k = [1, 3, 9, 0, 4, 9];
+        let picks: Vec<u8> = (0..3)
+            .map(|r| initiative_tie_pick(keys(&k), || r).unwrap())
+            .collect();
+        assert_eq!(picks, [2, 2, 5]);
+    }
+
+    #[test]
+    fn a_maximum_held_by_seat_zero_draws_evenly() {
+        let k = [9, 3, 9];
+        let picks: Vec<u8> = (0..2)
+            .map(|r| initiative_tie_pick(keys(&k), || r).unwrap())
+            .collect();
+        assert_eq!(picks, [0, 2]);
+    }
+
+    #[test]
+    fn every_key_spent_ends_the_round() {
+        assert_eq!(initiative_tie_pick(keys(&[0, 0, 0]), || 0), None);
     }
 }

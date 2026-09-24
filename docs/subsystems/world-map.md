@@ -970,9 +970,9 @@ from-scratch port ([`legaia_engine_vm::world_map::step`]) is host-driven, so
 - `SceneMode::Field` via `tick_field_carriers`, for the scene's MAN-placed
   carriers. A `FieldCarrierConfig::ScriptedEncounter { formation_id }` sits
   Idle (towns run a 0% random rate, so its `encounter_enabled` host gate is
-  `false` and it never self-fires) until the field-interact dialogue-accept
-  engages it: interacting with the carrier's placement (op `0x3E`, `op0 < 100`)
-  arms the engage, and accepting the prompt (the `0x4C` n5 sub-4 dialog dismiss)
+  `false` and it never self-fires) until the talk interaction's dialogue-accept
+  engages it: talking to the carrier's placement (the button-press
+  interaction - no field-VM opcode) arms the engage, and accepting the prompt (the `0x4C` n5 sub-4 dialog dismiss)
   calls `World::engage_field_carrier`, advancing it Idle → Activating - so the
   field-VM bytecode drives the fight rather than a manual API. The next
   `tick_field_carriers` then runs the state-1 body (`on_activating`, the
@@ -1257,8 +1257,9 @@ also not a header.
 > scene-change** (it copies a destination scene *name* and calls the scene-change
 > packet `FUN_8001FD44`; see [`script-vm.md`](script-vm.md) and
 > [scene destinations](#scene-destinations)). In fact field dialogue has **no
-> dedicated opcode**: the field-interact op (`0x3E`, `op0 < 100`) arms the actor's
-> interaction context, and the per-frame actor-dialog SM (`FUN_80039b7c`) + pager
+> dedicated opcode**: the touch / button-press interaction resumes the actor's
+> parked script (op `0x3E` with `op0 < 100` is the scripted-battle install, not
+> a talk - see [`script-vm.md`](script-vm.md#0x3e-scripted-battle-op0--100)), and the per-frame actor-dialog SM (`FUN_80039b7c`) + pager
 > (`FUN_801D84D0`) display the actor's inline interaction-script MES text - the
 > structural `0x1F` pool above. See
 > [`script-vm.md` § Field dialogue](script-vm.md#field-dialogue-has-no-opcode).
@@ -1485,35 +1486,58 @@ the mover-follows-the-remap agreement, and the frame's handedness
 
 ### Walk-view camera (retail model, RAM-pinned)
 
-The walk-view (free-roam) camera follows the same GTE composition as the
-field and battle cameras, with its constants read directly out of the
-overworld resident savestates' RAM (`sebucus_overworld_resident` /
-`karisto_overworld_resident`):
+The walk camera is the **field zone camera**. The overworld is a mode-`0x03`
+field-run scene and runs the field overlay's per-frame chain, and its camera
+is the follow camera every field scene has
+([`camera_zone`](../../crates/engine-core/src/camera_zone.rs)): the kingdom
+MAN's section-3 camera-region record loaded into the parameter block at
+`0x8007B606`, composed by `FUN_801DAB90` into the staging descriptor at
+`0x801F3580`, and eased into the live globals. On all three resident
+overworld states the live words equal the staging descriptor field for
+field:
+
+| State | pitch | yaw | eye trio `0x800840B8` | `H` |
+|---|---|---|---|---|
+| `keikoku_chest_preload` (`map01`) | 370 | 0 | `(-69, 776, 8875)` | 368 |
+| `sebucus_overworld_resident` (`map02`) | 360 | 0 | `(-71, 536, 9139)` | 368 |
+| `karisto_overworld_resident` (`map03`) | 476 | 0 | `(-86, 406, 11041)` | 368 |
+
+The eye X on each is the composer's `-(depth >> 7)`, the block's `H` word is
+`0x170` = 368, and the staging focus is the state's player. The composition
+is the field one:
 
 ```
-screen = H * (R * (S*(v - focus)) + TR) / Ze     R = Rx(pitch) * Ry(azimuth)
+screen = H * (R * (S*(v - focus)) + TR) / Ze     R = Rx(pitch) * Ry(yaw)
 ```
 
-- `H = _DAT_8007B6F4 = 368` (GTE projection register; both kingdoms).
-- `S`: the base matrix `DAT_8007BF10` holds `24576 * I` on the overworld -
-  a **6.0× uniform world scale** (the battle sibling holds `16384 * I` = 4×).
-- Rotation trio at `_DAT_8007B790`: pitch-only in both captures
-  (`(360, 0, 0)` / `(476, 0, 0)`); the azimuth global `_DAT_8007B794` feeds
-  `ry` when the player rotates the view.
-- `focus`: the player's world X/Z - `_DAT_80089118/20` hold its negation
-  (the same negated-focus convention the field follow-cam uses), focus Y
-  (`_DAT_8008911C`) = 0.
-- `TR` from the `_DAT_800840B8` trio: `(0, 536, 9139)` in the Sebucus
-  capture, `(0, 406, 11041)` in the Karisto capture. The trajectory
-  captures below show these are each kingdom's *default walk pose*, not
-  two ends of one zoom axis.
+- `S`: the base matrix `DAT_8007BF10` holds `24576 * I` - a **6.0x uniform
+  world scale** (the battle sibling holds `16384 * I` = 4x).
+- `focus`: the player's world X/Z - `_DAT_80089118/20` hold its negation;
+  focus Y (`_DAT_8008911C`) = 0.
+- `TR`: the eye trio above, which carries the per-region pitch, depth and
+  the floor-height compensation of eye Y.
 
-`play-window`'s walk view implements exactly this composition
-(`psx_camera_mvp` + the 6× scale + the player-focus translation), sliding
-between the two pinned anchors on the controller's zoom input - an engine
-interpretation the trajectory captures do not reproduce (retail holds one
-of those poses per kingdom and eases per region; see below). The top-view
-debug camera keeps its synthetic framing.
+The engine runs the zone camera in both walkable modes
+(`camera::zone_camera_scene`), and
+[`camera_view::resolve_field_camera`](../../crates/engine-core/src/camera_view.rs)'s
+world-map arm hands both hosts that pose as `FieldCameraFrame::WorldMapWalk`
+(the eye trio back in retail GTE units, the 6x scale applied as a world
+transform about the player). The disc-gated oracle
+`crates/engine-shell/tests/world_map_zone_camera_oracle.rs` enters each
+settled library overworld state's scene, seats the player on the state's
+position and asserts the engine's live pose and the resolved frame equal
+retail's words.
+
+An earlier revision modelled the walk camera as a separate pose pinned from
+the Sebucus and Karisto states, sliding between them on the top-view
+controller's zoom. That reading was wrong about the mechanism: the two
+"anchors" are two region records' compositions, and on `map01` near Rim Elm
+the pinned pose framed the player from well above and behind retail's
+camera (pitch 360 / eye depth 9139 against the region's 370 / 8875, and no
+terrain-height compensation of eye Y). The pinned pose survives only as the
+fallback for a world with no field terrain loaded
+(`camera_view::world_map_walk_view`). The top-view debug camera keeps its
+synthetic framing.
 
 #### Captured walk-camera trajectories
 
@@ -1523,8 +1547,8 @@ rows: rotation trio + H + the TR low halves, on change - `diff_wmcam` in
 [pcsx-redux-automation.md](../tooling/pcsx-redux-automation.md)). Three
 whole-playthrough runs (`captures/state_poll/2026-07-29T20-20-05Z`,
 `…T22-21-04Z`, `…T22-53-56Z` - 1,581 rows spanning all three kingdom
-overworlds) pin the trajectories. This is trajectory data, not a mechanism
-pin: the writer routine and its easing curve still need a code trace.
+overworlds) pin the trajectories. The writer is the zone camera above; these
+captures are its trajectories.
 Observed regimes (roll is `0` in every captured row):
 
 - **Steady walk** (`H = 368`, yaw `0`): the camera holds a per-kingdom,
@@ -1543,7 +1567,8 @@ Observed regimes (roll is `0` in every captured row):
   the terrain under the focus and `tz` is region-dependent - `tz` is
   **not** a function of pitch, so the walk camera is not a 1-D zoom path.
 - **Pose eases**: crossing a region boundary runs a smooth ease
-  (~150 ticks, decelerating tail) between poses - e.g. `map01`
+  (~150 ticks, decelerating tail) between poses - the zone camera's
+  `FUN_801DB510` ease between two region records - e.g. `map01`
   `(370, ty 584, tz 8835)` → `(550, 482, 9071)`. Two eases captured far
   apart replay byte-identical TR trajectories, so the path is
   position-keyed. One 370→550 ease follows a TRIANGLE press within 10
@@ -1566,6 +1591,20 @@ Observed regimes (roll is `0` in every captured row):
 Yaw and roll stay `0` in every steady-walk row - retail never yaws or
 rolls the walk camera; non-zero yaw appears only in the entry/cinematic
 regimes above.
+
+### The scene system script runs on the overworld
+
+Each kingdom MAN carries a scene system script (`P1[0]`, the field VM's
+context `0xFB`), and retail steps it on the overworld exactly as in a town -
+the overworld is a mode-`0x03` field-run scene. `map01`'s sets the visible
+tile window to `(-18, -12, 18, 32)` (`46 24 EE F4 12 20`, the window every
+library `map01` state holds) and raises the ambient-particle gate (`4C 30`),
+which is what puts fog over the continent
+([`field-ambient-fx.md`](field-ambient-fx.md#the-pool-on-the-kingdom-overworld));
+`map02` and `map03` raise and clear the gate behind flag fences. The engine's
+world-map frame arm steps the same frame slice the field arm does
+(`World::step_field_frame_slice`); before it did, the overworld ran its
+region-keyed walk with the entry script never executed.
 
 ### Boot-path seeding
 
@@ -1629,8 +1668,9 @@ distinguishing opcodes:
   calls no scene-change packet and the op carries no destination name, so there
   is no map-id space here to resolve (see
   [`asset-loader.md` → WARP opcode flow](asset-loader.md#warp-opcode--minigame-door-warp-flow-sub_id));
-- an inline `0x1F`-lead **dialog-text block** or a **field interact** (`0x3E`
-  with `op0 < 100`) and no warp → an **NPC** (sign / talk-to / event trigger).
+- an inline `0x1F`-lead **dialog-text block** or a **scripted-battle install**
+  (`0x3E` with `op0 < 100`) and no warp → an **NPC** (sign / talk-to / event
+  trigger).
   (The dialog signal is the *structural* `0x1F` text scan, not an opcode - see
   [NPC dialogue text source](#npc-dialogue-text-source);
 - none of those → **Plain** (a moving / animated / model-only actor, e.g. the
@@ -1698,8 +1738,9 @@ clean-CDNAME-label check), calls `host.scene_transition_named`, and
 [`SceneHost::tick`] drains the resulting `World::pending_named_scene_transition`
 to load that scene directly (world-map vs field routed by `is_world_map_scene`),
 ahead of the `0x3E` map-id path. Field **dialogue** was re-grounded off `0x3F`
-onto its real trigger - the field-interact op (`0x3E` with `op0 < 100`) opens the
-interacted actor's inline interaction-script text (see
+onto its real trigger - the touch / button-press interaction opens the
+interacted actor's inline interaction-script text (op `0x3E` with `op0 < 100` is
+the scripted-battle install, not a talk) (see
 [`script-vm.md` § Field dialogue](script-vm.md#field-dialogue-has-no-opcode)).
 
 #### Chapter-1 Drake hub sweep
@@ -2503,11 +2544,7 @@ render-agnostic seam for the installed placements: one
 `WorldMapEntityMarker { world_pos, kind }` per entity that carries a position,
 pairing the placement coordinate with its coarse `WorldMapEntityKind`
 (Portal / Npc / EncounterZone). The marker `y` is the player actor's current
-plane (the placements are 2D), so markers sit on the walking plane. The native
-`play-window` draws each as a kind-coded upright marker (a vertical post plus a
-small base cross, colour-keyed: portals cyan, NPCs green, encounter zones red)
-through the Lines pipeline - the same overlay slot the effect outlines use, and
-mutually exclusive with them since no effects spawn on the world map. The
+plane (the placements are 2D), so markers sit on the walking plane. The
 markers share the player's coordinate frame (both come from the scene MAN), so
 they read correctly relative to the player even while the kingdom terrain mesh
 still renders at its own pack-local coordinates (binding each placement to its
@@ -2515,16 +2552,37 @@ own actor model is the still-open per-entity mesh thread). Config-only installs
 (no disc placements) produce no markers, so a camera-only world map draws
 nothing extra.
 
-The player itself is drawn the same way:
 [`World::world_map_player_marker`](../../crates/engine-core/src/world.rs)
-returns the player actor's position plus heading (the player's own mesh is not
-drawn in world-map mode), and `play-window` draws a distinct white-yellow
-marker - a taller post, a base cross, and a facing tick pointing in the
-heading. Because the world-map walk uses the camera-relative direction bits
-rather than the field `decode_field_direction`, `step_world_map_locomotion`
-records the heading into the actor's `render_26` field itself (the same field
-the field path stores), so the facing tick tracks the walk direction
-deterministically. The player + entity markers build into one Lines mesh.
+returns the player actor's position plus heading. Because the world-map walk
+uses the camera-relative direction bits rather than the field
+`decode_field_direction`, `step_world_map_locomotion` records the heading into
+the actor's `render_26` field itself (the same field the field path stores).
+
+What draws them is one kernel both hosts call,
+[`engine-core::world_map_markers`](../../crates/engine-core/src/world_map_markers.rs).
+Each entity is a kind-coded upright marker - a vertical post plus a small base
+cross, portals cyan, NPCs green, encounter zones red - and the player is a
+taller white-yellow post, a base cross and a facing tick along the heading,
+drawn only while the party leader's own mesh is missing. The kernel projects
+every segment through the resolved frame's `camera_view::frame_vp` at the
+display's 4:3 and emits it as a one-pixel-wide quad on the 320x240 display;
+the native window and the browser play page both put those quads on their
+shared screen-primitive pass (`screen_prim::world_map_marker_prim`). These
+markers are the port's, not retail's.
+
+Retail's placements are actor models sorted into the ordering table with the
+terrain, so a mountain between the camera and a portal hides it. A
+screen-space quad has no such order, so under the walk camera each marker
+quad carries its corners' scene depth through the same matrix
+(`MarkerQuad::depth`, sampled `DEPTH_PULL` units toward the eye so a base
+cross does not z-fight the ground it lies on), and both hosts depth-test it
+against the terrain they already drew: `screen_prim::FLAG_DEPTH_TESTED`
+marks the vertex, the native overlay maps its depth through the scene pass's
+reversed-Z remap and the page puts it straight into `gl_Position.z`. The
+overworld fog sheets carry the same flag; every other screen primitive keeps
+it clear and draws on the near plane as before. The top-view debug camera has no eye and draws the markers over
+everything.
+
 Diagonal movement applies the same `speed -= speed >> 2` normalise as the field
 controller (and the retail walk overlay): `advance_with_collision` steps both
 axes equally, so a diagonal would otherwise travel ~1.41x the cardinal speed.

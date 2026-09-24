@@ -1059,6 +1059,8 @@ impl FightPolicy {
                 }
                 CommandPhase::AttackMode { .. } => PadButton::Left.mask(), // Auto
                 CommandPhase::Targeting { .. } => PadButton::Cross.mask(),
+                // The party's commit confirm (`0x6E`): Left is Begin.
+                CommandPhase::CommitConfirm { .. } => PadButton::Left.mask(),
                 _ => 0,
             };
         }

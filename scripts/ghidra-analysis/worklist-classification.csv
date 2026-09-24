@@ -16,7 +16,7 @@ addr,class,reason
 801de37c,REAL,every dump at this VA is of field(897) (captures: field_0897); no second dumped body here
 801e59b0,REAL,self-entry body of 22 instructions returning `jr ra`
 801f2d54,REAL,self-entry body of 11 instructions returning `jr ra`
-801f463c,REAL,"dump is bounded short (25 instructions, no `jr ra`), but battle_action(898) starts a routine at this VA at its mapped base (preceded by `jr ra`)"
+801f463c,REAL,"battle_action(898) starts a routine at this VA at its mapped base (preceded by `jr ra`); its based dump runs to its own `jr ra` at 0x801f46c0 (an earlier dump stopped ten instructions short)"
 801f6a00,REAL,self-entry body of 1082 instructions returning `jr ra`
 801f6a0c,REAL,self-entry body of 451 instructions returning `jr ra`
 801f6a10,REAL,self-entry body of 747 instructions returning `jr ra`

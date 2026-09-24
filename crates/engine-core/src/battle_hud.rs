@@ -1461,6 +1461,62 @@ pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Opti
     Some((monster_name(world, t), monster_element_badge(world, t)))
 }
 
+/// The **target-select** plaque (placement record `0x29`): the monster name
+/// the open target cursor rests on, or `None` while no
+/// picker's cursor is on the enemy row.
+///
+/// Retail's target-cursor arm of `FUN_801D5854` (`0x801D5B28..0x801D5BAC`)
+/// resolves the acting actor's target `+0x1DD`, measures that monster's name
+/// payload `+0x1BC` (`FUN_80035F04`) and seats record `0x29` from it; the
+/// commit arms of `FUN_801D388C` later copy that record into the commit log's
+/// target column (`jal 0x801d5718` with `a1 = 0x29`, `0x801D3E64..0x801D3E70`).
+/// Captured on `party_basic_attack_vs_gobu_gobu`: record `0x29` holds
+/// "Gobu Gobu", width `55`, second seat `(205, 162)`.
+///
+/// Every port picker that can park on the enemy row is consulted: the command
+/// session (Attack), the arts list, the spell list and the arts-input bar's
+/// own cursor. Seat law: `legaia_engine_vm::battle_chrome::target_select_plaque_x`.
+///
+/// REF: FUN_801D5854 (`0x801D5B28..0x801D5BAC`)
+pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(String, Option<u8>)> {
+    use crate::target_picker::{CursorRow, PickerState, TargetPickerSession};
+    let b = &world.battle;
+    let picker: Option<&TargetPickerSession> = b
+        .command
+        .as_ref()
+        .and_then(|c| c.picker())
+        .or_else(|| b.arts_input.as_ref().and_then(|a| a.picker()))
+        .or_else(|| {
+            b.arts_menu.as_ref().and_then(|a| match &a.phase {
+                crate::battle_arts::ArtsPhase::Targeting { picker, .. } => Some(picker),
+                _ => None,
+            })
+        })
+        .or_else(|| {
+            b.spell_menu.as_ref().and_then(|s| match &s.phase {
+                crate::battle_magic::SpellPhase::Targeting { picker, .. } => Some(picker),
+                _ => None,
+            })
+        });
+    let PickerState::Cursor {
+        row: CursorRow::Enemy,
+        slot,
+    } = picker?.state()
+    else {
+        return None;
+    };
+    let pc = party_count(world) as u8;
+    let t = pc.checked_add(slot)?;
+    let target = world.actors.get(t as usize)?;
+    if target.battle.max_hp == 0 {
+        return None;
+    }
+    // No element badge: the captured record-0x29 width (55 for "Gobu Gobu")
+    // is the bare name's advance, so retail's measured payload carries no
+    // badge escape here, unlike the top-left plaque's.
+    Some((monster_name(world, t), None))
+}
+
 /// The element badge a monster slot's plaque wears (`None` for none).
 fn monster_element_badge(world: &crate::world::World, slot: u8) -> Option<u8> {
     let actor = world.actors.get(slot as usize)?;
@@ -1558,6 +1614,8 @@ pub enum CommandChipPhase {
     RoundPrompt,
     CommandRing,
     AttackMode,
+    /// The party-wide `Begin | Reselect` screen (retail `0x6E`).
+    CommitConfirm,
 }
 
 /// The live command surface projected into chip labels: one `(label,
@@ -1578,7 +1636,8 @@ pub struct BattleCommandChips {
 /// [`battle_magic_chip`] - the member's Ra-Seru name or `-` - not a fixed
 /// word.
 pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommandChips> {
-    use crate::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
+    use crate::battle_input::{AttackMode, BattleCommand, CommandPhase, CommitChoice, RoundChoice};
+    use legaia_asset::battle_ui_strings::BattleUiLabel;
     if world.mode != crate::world::SceneMode::Battle {
         return None;
     }
@@ -1623,8 +1682,146 @@ pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommand
             cursor: cursor as usize,
             phase: CommandChipPhase::AttackMode,
         }),
+        // The left chip's word is the one the round prompt's `Begin` arm
+        // stamped into record `0x10` from the overlay pool (`0x801D1060`);
+        // the right chip's is record `0x13`'s SCUS pointer. Both off the disc.
+        CommandPhase::CommitConfirm { cursor } => Some(BattleCommandChips {
+            chips: CommitChoice::PROMPT
+                .iter()
+                .map(|c| {
+                    let disc = match c {
+                        CommitChoice::Begin => BattleUiLabel::CommitBegin,
+                        CommitChoice::Reselect => BattleUiLabel::Reselect,
+                    };
+                    let label = world
+                        .battle
+                        .ui_strings
+                        .get(disc)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(c.label());
+                    chip(label, true)
+                })
+                .collect(),
+            cursor: cursor as usize,
+            phase: CommandChipPhase::CommitConfirm,
+        }),
         _ => None,
     }
+}
+
+pub use legaia_engine_vm::battle_commit_log::{CommitLogRow, CommitLogTarget};
+
+/// The commit-log rows retail shows this frame, row 0 first.
+///
+/// Retail keeps the log up through the whole command phase and launches it
+/// off-screen when the round begins. A row belongs to each member the command
+/// cursor has already walked past: every member ahead of the one entering a
+/// command, and every committed member once the `Begin | Reselect` screen
+/// (`0x6E`) is up. A member the `Reselect` step lands back on has its row
+/// taken down (case `0x21` parks it at `x = 328`), which the "ahead of the
+/// member entering" rule reproduces.
+///
+/// The Attack and Spirit rows' sources are read off the commit arms
+/// (`FUN_801D388C` cases `0x20` / `0x11` / `0x23`); an Art commits through
+/// the ring's `Attack` chip. Which chip record an Item or magic commit logs,
+/// and whether an Item row carries a target, is inferred from the ring's
+/// arm order (records `0x0C` / `0x0E`), not read off a commit arm.
+pub fn battle_commit_log(world: &crate::world::World) -> Vec<CommitLogRow> {
+    use crate::battle_input::CommandPhase;
+    use crate::battle_round::{PendingPartyAction, RoundPhase};
+    use crate::target_picker::CursorRow;
+    use legaia_asset::battle_ui_strings::BattleUiLabel;
+    use legaia_engine_vm::battle_commit_log as log;
+    if world.mode != crate::world::SceneMode::Battle
+        || world.battle.round_flow.phase != RoundPhase::Command
+    {
+        return Vec::new();
+    }
+    let pc = party_count(world) as u8;
+    let confirm = world
+        .battle
+        .command
+        .as_ref()
+        .is_some_and(|c| matches!(c.phase, CommandPhase::CommitConfirm { .. }));
+    let entering = world.battle_ctx.active_actor;
+    let label = |disc: BattleUiLabel, fallback: &str| -> String {
+        world
+            .battle
+            .ui_strings
+            .get(disc)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(fallback)
+            .to_string()
+    };
+    let slot_target = |row: CursorRow, slot: u8| -> CommitLogTarget {
+        let abs = match row {
+            CursorRow::Enemy => pc.saturating_add(slot),
+            CursorRow::Ally => slot,
+        };
+        CommitLogTarget::Single(actor_name(world, abs))
+    };
+    let mut rows = Vec::new();
+    for slot in 0..pc {
+        if !confirm && slot >= entering {
+            break;
+        }
+        let Some(Some(action)) = world.battle.round_flow.pending.get(usize::from(slot)) else {
+            continue;
+        };
+        let (command, command_record, target) = match action {
+            PendingPartyAction::Attack { target } => (
+                label(BattleUiLabel::Attack, "Attack"),
+                log::RECORD_CHIP_ATTACK,
+                CommitLogTarget::Single(actor_name(world, *target)),
+            ),
+            PendingPartyAction::Art {
+                target_row,
+                target_slot,
+                ..
+            } => (
+                label(BattleUiLabel::Attack, "Attack"),
+                log::RECORD_CHIP_ATTACK,
+                slot_target(*target_row, *target_slot),
+            ),
+            PendingPartyAction::Spell {
+                spell_id,
+                target_row,
+                target_slot,
+            } => {
+                use crate::spells::SpellTarget;
+                let target = match world.tables.spell_catalog.get(*spell_id).map(|d| d.target) {
+                    Some(SpellTarget::AllEnemies) => CommitLogTarget::AllEnemies,
+                    Some(SpellTarget::AllAllies) => CommitLogTarget::AllAllies,
+                    _ => slot_target(*target_row, *target_slot),
+                };
+                (
+                    battle_magic_chip(world, slot).0,
+                    log::RECORD_CHIP_MAGIC,
+                    target,
+                )
+            }
+            PendingPartyAction::Item { .. } => (
+                label(BattleUiLabel::Item, "Item"),
+                log::RECORD_CHIP_ITEM,
+                CommitLogTarget::None,
+            ),
+            PendingPartyAction::Spirit => (
+                label(BattleUiLabel::Spirit, "Spirit"),
+                log::RECORD_CHIP_SPIRIT,
+                CommitLogTarget::None,
+            ),
+            // `Run` begins the round at once and `StandBy` is no command:
+            // neither reaches a logged commit.
+            PendingPartyAction::Run | PendingPartyAction::StandBy => continue,
+        };
+        rows.push(CommitLogRow {
+            name: party_member_name(world, slot),
+            command,
+            command_record,
+            target,
+        });
+    }
+    rows
 }
 
 /// The combo cluster style the action in flight draws its hits in, or

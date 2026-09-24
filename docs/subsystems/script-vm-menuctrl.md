@@ -338,11 +338,34 @@ Misc scene writes + emitter helpers. Ported sub-ops:
 - **9** (clear `_DAT_8007B9C4` then PC += 2 via `caseD_4`)
 - **0xA** (call `func_0x8003C7EC` then halt)
 - **0xB** (5-byte conditional actor lookup with embedded jump target - host returns `Some(())` to take the resolved-actor "pc + 5" path or `None` to jump to the absolute u16 at `operand+2..=3`; jump target read via [`load_u16_le`](script-vm.md#helper-functions))
-- **0xC** (capture FUN_801DDF48 return, 2-byte)
+- **0xC** (2-byte encounter step-counter reroll: `_DAT_8007B5FC = FUN_801DDF48()`, see [Encounter step-counter reroll](#encounter-step-counter-reroll-fun_801ddf48); no shipped script issues a clean `4C EC`)
 - **0xD** (set `_DAT_8007BA66`, 3-byte)
 - **0xE** (snapshot `_DAT_80084570 → _DAT_800845DC`, 2-byte).
 
 All non-`P` cells in the matrix above are now ported.
+
+#### Encounter step-counter reroll (`FUN_801DDF48`)
+
+`FUN_801DDF48` (PROT 0897, frameless of locals, two `jal 0x80056798`) returns
+`r1 % 487 - r2 % 487 + 0x3CE`: each draw is reduced by the `0x43491159` /
+`sra 7` reciprocal and a shift-add rebuild of `* 487`, then
+`s0 - (v0 - 0x3CE)` with the **first** draw as the added term. The result is a
+triangular count over `488..=1460`, centred on 974. It has four callers, and
+every one stores the value into the encounter step counter `_DAT_8007B5FC`:
+
+| Caller | Store |
+|---|---|
+| op `4C EC` (`0x801E34F8`) | replaces the counter (`sw` in the `j` delay slot at `0x801E3508`) |
+| op `0x3E` formation arm (`0x801E076C`) | replaces the counter after the `sys_ctx[+0x94]` install, before `FUN_8003CE08(0xE)` |
+| the region roll `FUN_801D9E1C` | the same arithmetic inlined, on a trigger |
+| SCUS system-script installer `FUN_8003AB2C` (`0x8003AC90`) | only when the counter is below `0x1E7`: adds **half** a reroll (signed halve toward zero), otherwise leaves it |
+
+The last row is why the counter is one global rather than per-scene state:
+`FUN_8003AB2C` runs once per field scene entry (from the MAN decoder
+`FUN_8003AEB0`), and a counter at or above 487 crosses the door untouched.
+Engine: `region_encounter::encounter_counter_reroll` /
+`encounter_counter_scene_entry_top_up`, seated by `World::set_encounter_step_counter`
+into the carried counter and every installed region tracker.
 
 #### Two outer nibbles are the error printer
 

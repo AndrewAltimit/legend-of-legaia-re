@@ -516,6 +516,20 @@ pub const CLUSTER_TOP_LEVEL: ChipCluster = ChipCluster {
     interior_w: 36,
 };
 
+/// The party-wide commit-confirm cluster (`Begin | Reselect`, flow state
+/// `0x6E`): the same horizontal pair and D-pad seat as [`CLUSTER_TOP_LEVEL`],
+/// built wider - its chips are placement records `0x10` (content `(92, 88)`)
+/// and `0x13` (`(180, 88)`), both `48` wide, where the round prompt's are `36`.
+/// Packet-pinned from `party_basic_attack_vs_gobu_gobu` (solo Vahn parked on
+/// the screen): plates at `(84, 82)` and `(172, 82)`, labels at `(92, 86)` and
+/// `(180, 86)`, and the `FUN_801DB8F4(0x98, 0x58)` D-pad at `(152, 84)`.
+pub const CLUSTER_COMMIT_CONFIRM: ChipCluster = ChipCluster {
+    centre: (160, 92),
+    dx: 44,
+    dy: 0,
+    interior_w: 48,
+};
+
 /// The per-actor command cluster (`Item` / `Attack` / the element command /
 /// `Spirit`): a four-way diamond seated on the right of the stage.
 pub const CLUSTER_COMMAND: ChipCluster = ChipCluster {
@@ -617,6 +631,90 @@ pub const fn gold_plate_matches_tab_banner() -> bool {
         && cr_w == PLATE_CAP_W as u32
         && cr_h == PLATE_H as u32
         && title_pak::OVERLAY_SYSTEM_UI_TAB_CLUT_ROW == SUBPAL_PLATE_GOLD
+}
+
+// --- the target-select plaque (placement record 0x29) -----------------------
+
+/// Placement record the target cursor's name plaque lives in.
+pub const TARGET_SELECT_RECORD: usize = 0x29;
+/// Centre the plaque's content box is laid on (`li v1,0xe8` at `0x801D5B58`).
+pub const TARGET_SELECT_CENTRE_X: i16 = 0xE8;
+/// Right edge the content box may not pass (`slti 0x131` / `li 0x130` at
+/// `0x801D5B68..0x801D5B78`).
+pub const TARGET_SELECT_RIGHT_LIMIT: i16 = 0x130;
+/// Content-box row: record `0x29`'s disc `y`, and the `0xA2` every arm of
+/// `FUN_801D388C` re-stamps into both its seats (`0x801D3E28..0x801D3E34`).
+pub const TARGET_SELECT_Y: i16 = 162;
+/// The slide-in start never sits left of this (`slti 0x148` at `0x801D5B9C`).
+pub const TARGET_SELECT_SLIDE_MIN_X: i16 = 0x148;
+/// How far right of its rest seat the slide starts (`addiu v0,v0,0x80`).
+pub const TARGET_SELECT_SLIDE_DX: i16 = 0x80;
+
+/// Rest `x` of the target-select plaque's content box for a measured content
+/// width (`FUN_80035F04` over the target's name payload `actor[+0x1BC]`):
+/// centred on `0xE8`, pulled left so the box ends at or before `0x130`.
+///
+/// ```text
+/// 801d5b50  sll  v0,a1,0x10
+/// 801d5b54  sra  a0,v0,0x11        ; w >> 1 (signed)
+/// 801d5b58  li   v1,0xe8
+/// 801d5b5c  subu v1,v1,a0          ; x = 0xE8 - w/2
+/// 801d5b64  addu v0,v1,v0
+/// 801d5b68  slti v0,v0,0x131       ; x + w <= 0x130 ?
+/// 801d5b74  _sh  v1,0x3e2(s1)      ; record 0x29 second seat x
+/// 801d5b78  li   v0,0x130
+/// 801d5b7c  subu v0,v0,a1          ; else x = 0x130 - w
+/// ```
+///
+/// The same arm, before it measures, copies the old name's seat, width and
+/// payload into record `0x2A` (`0x801D5B10..0x801D5B24`) - the plaque it is
+/// replacing, which slides back out. A second copy of the arm sits at
+/// `0x801D5C84..0x801D5CDC`.
+///
+/// PORT: FUN_801D5854 (`0x801D5B4C..0x801D5BAC`, the target-select plaque seat)
+pub const fn target_select_plaque_x(width: u16) -> i16 {
+    let w = width as i16;
+    let x = TARGET_SELECT_CENTRE_X - (w >> 1);
+    if x.wrapping_add(w) > TARGET_SELECT_RIGHT_LIMIT {
+        TARGET_SELECT_RIGHT_LIMIT - w
+    } else {
+        x
+    }
+}
+
+/// Where the plaque's live seat starts its slide in from: `rest + 0x80`,
+/// never left of `0x148` (`0x801D5B84..0x801D5BAC`), so it always enters
+/// from off the right edge.
+pub const fn target_select_slide_start(rest_x: i16) -> i16 {
+    let x = rest_x.wrapping_add(TARGET_SELECT_SLIDE_DX);
+    if x < TARGET_SELECT_SLIDE_MIN_X {
+        TARGET_SELECT_SLIDE_MIN_X
+    } else {
+        x
+    }
+}
+
+#[cfg(test)]
+mod target_select_tests {
+    use super::*;
+
+    #[test]
+    fn the_plaque_centres_on_0xe8_and_clamps_its_right_edge() {
+        // Captured: "Gobu Gobu" measures 55 and rests at x = 205
+        // (party_basic_attack_vs_gobu_gobu, record 0x29 second seat).
+        assert_eq!(target_select_plaque_x(55), 205);
+        // A box ending exactly on 0x130 stays centred ...
+        assert_eq!(target_select_plaque_x(0x90), 0xE8 - 0x48);
+        // ... one pixel wider and it is pulled back to end on 0x130.
+        assert_eq!(target_select_plaque_x(0x92), 0x130 - 0x92);
+    }
+
+    #[test]
+    fn the_slide_starts_off_the_right_edge() {
+        // Captured live x = 333 for the 205 rest seat.
+        assert_eq!(target_select_slide_start(205), 333);
+        assert_eq!(target_select_slide_start(100), TARGET_SELECT_SLIDE_MIN_X);
+    }
 }
 
 #[cfg(test)]
@@ -864,6 +962,20 @@ mod tests {
                 (140, 216, 8),
             ]
         );
+    }
+
+    #[test]
+    fn commit_confirm_cluster_reproduces_the_begin_reselect_capture() {
+        // `party_basic_attack_vs_gobu_gobu`: the 0x6E screen's two plates
+        // run x 84..148 and 172..236 at y 82..102, their glyphs start at x 92
+        // and 180 on y 86, and the D-pad sits at (152, 84).
+        let c = CLUSTER_COMMIT_CONFIRM;
+        assert_eq!(c.plate_origin(ChipSeat::Left), (84, 82));
+        assert_eq!(c.plate_origin(ChipSeat::Right), (172, 82));
+        assert_eq!(c.label_seat(ChipSeat::Left), (92, 86));
+        assert_eq!(c.label_seat(ChipSeat::Right), (180, 86));
+        assert_eq!(c.dpad_rect(), (152, 84, 15, 15));
+        assert_eq!(plate_width(c.interior_w), 64);
     }
 
     #[test]

@@ -1,4 +1,5 @@
-//! Field screen-space effects on the play page: the fog sheets.
+//! Field screen-space effects on the play page: the fog sheets and the
+//! op `0x34` sub-1 attached lights.
 //!
 //! Retail draws the field fog pool from the field render pass
 //! (`FUN_8003F348` at `0x80026F24`, gated on game mode `3` and
@@ -25,14 +26,64 @@ use crate::runtime::LegaiaRuntime;
 
 impl LegaiaRuntime {
     /// Run the fog pool's render step for this tick and return its sheets as
-    /// screen primitives. Empty outside a field scene or while the script
-    /// gate is clear.
+    /// screen primitives. Empty outside game mode 3 (a field scene or the
+    /// kingdom overworld) or while the script gate is clear.
     pub(crate) fn tick_field_fog_prims(&mut self) -> Vec<ScreenPrim> {
         let Some(host) = self.scene_host.as_mut() else {
             return Vec::new();
         };
         let world = &mut host.world;
-        if world.mode != SceneMode::Field || !world.fog.gate {
+        if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
+            return Vec::new();
+        }
+        let frame = resolve_field_camera(world, &self.camera, None, [0.0, 0.0]);
+        // The field follow pose, or the overworld walk pose in the field
+        // frame - retail's overworld is a game-mode-3 scene and draws the
+        // same pool through the same pass.
+        let Some(view) = frame.field_view() else {
+            return Vec::new();
+        };
+        world
+            .fog_render_step(&view)
+            .iter()
+            .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
+            .collect()
+    }
+}
+
+impl LegaiaRuntime {
+    /// This tick's move-VM strip spans (the extension sub-op `0x2C` callee
+    /// `FUN_801D31B0`) as screen primitives - the native window's
+    /// `take_move_strip_prims` twin, through the same shared kernel and the
+    /// same follow camera as the fog sheets. The captured requests drain on
+    /// every call; only a field scene draws them.
+    pub(crate) fn tick_move_strip_prims(&mut self) -> Vec<ScreenPrim> {
+        let Some(host) = self.scene_host.as_mut() else {
+            return Vec::new();
+        };
+        let world = &mut host.world;
+        let requests = world.move_vm.take_strip_requests();
+        if requests.is_empty() || world.mode != SceneMode::Field {
+            return Vec::new();
+        }
+        let frame = resolve_field_camera(world, &self.camera, None, [0.0, 0.0]);
+        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
+            return Vec::new();
+        };
+        legaia_engine_ui::move_strip::move_strip_prims(&requests, &view)
+    }
+
+    /// This frame's attached lights (the field VM's op `0x34` sub-1 light
+    /// pools, `World::field_light_draws`) as screen primitives, through the
+    /// same follow camera as the fog and the shared
+    /// `legaia_engine_ui::screen_prim::light_pool_prims` wrapper - the native
+    /// window's `field_light_screen_prims` twin. Empty outside a field scene.
+    pub(crate) fn field_light_prims(&self) -> Vec<ScreenPrim> {
+        let Some(host) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        let world = &host.world;
+        if world.mode != SceneMode::Field || world.script_actors.lights.is_empty() {
             return Vec::new();
         }
         let frame = resolve_field_camera(world, &self.camera, None, [0.0, 0.0]);
@@ -40,9 +91,9 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         world
-            .fog_render_step(&view)
+            .field_light_draws(&view)
             .iter()
-            .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index))
+            .flat_map(|d| legaia_engine_ui::screen_prim::light_pool_prims(d.abr, &d.polys))
             .collect()
     }
 }

@@ -369,7 +369,7 @@ reference.
 | `801D5C2C` | 0972 `fishing` | 3-D segment clip + projection | [`minigame-fishing.md`](../subsystems/minigame-fishing.md) |
 | `801DAD6C` | 0899 `menu` | five-step menu open sequence | [`menus.md`](../reference/functions/menus.md) |
 | `801DBA90` | 0898 `battle_action` | reward-banner composer | [`battle.md`](../reference/functions/battle.md) |
-| `801E5834` / `801E58A8` | 0897 `field` | pooled menu-actor spawn + list row-count seed | [`menus.md`](../reference/functions/menus.md) |
+| `801E5834` / `801E58A8` | 0897 `field` | pooled actor spawn + actor anim-clip pick | [`menus.md`](../reference/functions/menus.md) |
 
 Every row was checked with `locate-entry-image.py` first, so each is a routine
 that begins where it is said to begin. The last two groups needed `--home`: the

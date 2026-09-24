@@ -134,6 +134,13 @@ impl FieldClipPlayer {
 /// [`crate::world::World::set_field_player_anim`]; [`crate::world::World`]
 /// ticks it after the locomotion step each field frame and folds the output
 /// into the player actor's `pose_frame`.
+///
+/// Built by [`Self::from_locomotion_bank`] it also carries the leader's whole
+/// seven-record bank, and the settle tail
+/// ([`crate::world::World::step_field_vertical`], retail `FUN_801D1BA0`)
+/// selects the slot retail's clip base names each frame through
+/// [`Self::select_retail_slot`] - the run clip, the hop's two clips, and the
+/// walk-in-place a warp holds, none of which the idle/walk pair can express.
 #[derive(Debug, Clone)]
 pub struct FieldPlayerAnim {
     pub idle: FieldClipPlayer,
@@ -144,6 +151,11 @@ pub struct FieldPlayerAnim {
     /// (held pad or nav step - a wall-blocked step still walks in place, as
     /// retail does). Consumed and cleared by the anim tick.
     pub moved_this_frame: bool,
+    /// Set by the pad step on every frame it ran and wrote the clip base -
+    /// the frames whose clip retail's pick owns. A frame that moved the
+    /// player without it (a cutscene `MoveTo`, a channel walk-on) keeps the
+    /// motion-derived walk instead. Consumed and cleared by the anim tick.
+    pub pad_drove_this_frame: bool,
     /// Queued scripted one-shot clips (field-VM `A2 F8 <move_id>` ExecMove
     /// pokes against the player). Each plays through exactly once - front of
     /// the queue first - overriding idle/walk; the retail player actor's
@@ -153,6 +165,17 @@ pub struct FieldPlayerAnim {
     pub scripted: std::collections::VecDeque<FieldClipPlayer>,
     /// Engine ticks left on the front scripted clip.
     scripted_ticks_left: u32,
+    /// The leader's bank, indexed by bank slot (`0..7`); empty for a pair
+    /// built with [`Self::new`].
+    bank: Vec<Option<FieldClipPlayer>>,
+    /// Party leader the bank belongs to (retail `_DAT_8007B8F8`).
+    pub leader: u16,
+    /// The bank slot the settle tail last picked, when it picked a
+    /// party-bank clip.
+    retail_slot: Option<usize>,
+    /// The bank slot currently playing, for the rewind-on-change rule
+    /// (`FUN_800204F8` rewinds when `+0x5C != +0x5E`).
+    playing_slot: Option<usize>,
 }
 
 impl FieldPlayerAnim {
@@ -162,9 +185,53 @@ impl FieldPlayerAnim {
             walk,
             walking: false,
             moved_this_frame: false,
+            pad_drove_this_frame: false,
             scripted: std::collections::VecDeque::new(),
             scripted_ticks_left: 0,
+            bank: Vec::new(),
+            leader: 0,
+            retail_slot: None,
+            playing_slot: None,
         }
+    }
+
+    /// Build the player's clips from the party locomotion bundle: the
+    /// capture-pinned idle / walk pair plus every record of `leader`'s bank.
+    /// `None` when the bundle lacks the leader's idle or walk record.
+    ///
+    /// Both play hosts build the player's clips here, so a bank slot one host
+    /// can play the other can too.
+    pub fn from_locomotion_bank(bundle: &PlayerAnmBundle, leader: usize) -> Option<Self> {
+        use legaia_asset::character_pack::{
+            LOCOMOTION_BANK_STRIDE, LOCOMOTION_IDLE_SLOT, LOCOMOTION_WALK_SLOT,
+            locomotion_record_index,
+        };
+        let rec = |slot| locomotion_record_index(leader, slot);
+        let idle = FieldClipPlayer::from_record(bundle, rec(LOCOMOTION_IDLE_SLOT))?;
+        let walk = FieldClipPlayer::from_record(bundle, rec(LOCOMOTION_WALK_SLOT))?;
+        let mut anim = Self::new(idle, walk);
+        anim.leader = leader as u16;
+        anim.bank = (0..LOCOMOTION_BANK_STRIDE)
+            .map(|slot| FieldClipPlayer::from_record(bundle, rec(slot)))
+            .collect();
+        Some(anim)
+    }
+
+    /// Whether bank slot `slot` has a playable clip.
+    pub fn has_bank_slot(&self, slot: usize) -> bool {
+        self.bank.get(slot).is_some_and(Option::is_some)
+    }
+
+    /// The settle tail's pick for this frame: a party-bank slot, or `None`
+    /// when the pick did not land in the leader's bank (the scene-sentinel
+    /// clip, a zero clip), which falls back to the motion-derived pair.
+    pub fn select_retail_slot(&mut self, slot: Option<usize>) {
+        self.retail_slot = slot;
+    }
+
+    /// The bank slot the settle tail last picked.
+    pub fn retail_slot(&self) -> Option<usize> {
+        self.retail_slot
     }
 
     /// Queue a scripted one-shot clip (an `A2 F8` ExecMove resolution). The
@@ -180,12 +247,30 @@ impl FieldPlayerAnim {
         !self.scripted.is_empty()
     }
 
+    /// Frame count of whichever locomotion clip is playing now.
+    pub fn active_frame_count(&self) -> usize {
+        if let Some(clip) = self
+            .playing_slot
+            .and_then(|s| self.bank.get(s))
+            .and_then(Option::as_ref)
+        {
+            return clip.frame_count();
+        }
+        if self.walking {
+            self.walk.frame_count()
+        } else {
+            self.idle.frame_count()
+        }
+    }
+
     /// One field tick: a queued scripted one-shot takes priority (playing
-    /// through once, then handing back); otherwise switch idle/walk clips on
+    /// through once, then handing back); then the settle tail's retail pick
+    /// on the frames the pad step owned; otherwise switch idle/walk clips on
     /// a movement-state edge (rewinding the incoming clip) and emit the
     /// active clip's pose.
     pub fn tick(&mut self) -> PoseFrame {
         let moved = std::mem::take(&mut self.moved_this_frame);
+        let pad_drove = std::mem::take(&mut self.pad_drove_this_frame);
         if let Some(front) = self.scripted.front_mut() {
             if self.scripted_ticks_left == 0 {
                 // Freshly-promoted front clip: arm its full playthrough.
@@ -199,8 +284,27 @@ impl FieldPlayerAnim {
                 // Restart whichever locomotion loop resumes underneath.
                 self.idle.rewind();
                 self.walk.rewind();
+                self.playing_slot = None;
             }
             return pose;
+        }
+        // A move nobody's pad made (a script walked the player) keeps the
+        // motion-derived walk: retail would hold whatever base the script
+        // last set, which the port does not track for script moves.
+        let script_moved = moved && !pad_drove;
+        if !script_moved && let Some(slot) = self.retail_slot.filter(|&s| self.has_bank_slot(s)) {
+            let rewind = self.playing_slot != Some(slot);
+            self.playing_slot = Some(slot);
+            self.walking = slot == legaia_asset::character_pack::LOCOMOTION_WALK_SLOT;
+            let clip = self.bank[slot].as_mut().expect("has_bank_slot");
+            if rewind {
+                clip.rewind();
+            }
+            return clip.tick();
+        }
+        if self.playing_slot.take().is_some() {
+            // Leaving the bank: the pair restarts from the edge below.
+            self.walking = !moved;
         }
         if moved != self.walking {
             self.walking = moved;

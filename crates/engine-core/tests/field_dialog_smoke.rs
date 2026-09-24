@@ -25,11 +25,10 @@ fn field_interact_opens_dialog_and_panel_emits_glyphs() {
     // `0x00`-terminated.
     world.npcs.dialog.insert(3, vec![0x1F, b'h', b'i', 0x00]);
 
-    // Field VM op 0x3E with op0 = 5 (< 100 -> field interact), op1 = slot 3.
-    world.load_field_record(&[0x3E, 0x05, 0x03]);
-
-    // Step once - the field-interact op should open the actor's dialogue.
-    let _ = world.step_field();
+    // The interaction path (what the talk probe calls) on slot 3. No field-VM
+    // opcode opens dialogue - op 0x3E with op0 < 100 is the scripted-battle
+    // install.
+    world.trigger_field_interact(0x05, 0x03);
     let req = world
         .dialog
         .current
@@ -66,8 +65,7 @@ fn dialog_clear_unblocks_world() {
         ..World::default()
     };
     world.npcs.dialog.insert(3, vec![0x1F, b'h', b'i', 0x00]);
-    world.load_field_record(&[0x3E, 0x05, 0x03]);
-    let _ = world.step_field();
+    world.trigger_field_interact(0x05, 0x03);
     assert!(world.dialog.current.is_some());
     world.dialog.current = None;
     assert!(world.dialog.current.is_none());

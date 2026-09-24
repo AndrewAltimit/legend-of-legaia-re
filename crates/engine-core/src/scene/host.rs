@@ -251,6 +251,7 @@ pub struct SceneHost {
 
 mod audio_dialog;
 mod battle_intro_inputs;
+mod battle_stage;
 mod effects;
 mod lifecycle;
 mod minigame_warp;

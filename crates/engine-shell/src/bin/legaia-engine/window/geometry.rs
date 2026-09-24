@@ -187,17 +187,6 @@ pub(crate) fn effect_sprite_line_geometry(
     (pos, col, idx)
 }
 
-/// RGBA colour of a world-map entity marker, keyed by its kind: portals
-/// (town/dungeon entrances) cyan, NPCs green, encounter zones warm red.
-fn world_map_entity_marker_color(kind: legaia_engine_core::world::WorldMapEntityKind) -> [u8; 4] {
-    use legaia_engine_core::world::WorldMapEntityKind as K;
-    match kind {
-        K::Portal => [0, 200, 255, 255],
-        K::Npc => [80, 220, 80, 255],
-        K::EncounterZone => [230, 80, 40, 255],
-    }
-}
-
 /// Convert a [`WalkHeightfield`] into a renderer [`VramMesh`]. The heightfield
 /// supplies per-vertex UVs (the `+0x14` atlas tile) **and** per-vertex
 /// `[clut, tpage]` (the cell's terrain page + palette from `+0x15` /
@@ -228,88 +217,6 @@ pub(crate) fn heightfield_to_vram_mesh(
         colors: hf.colors.clone(),
         indices,
     }
-}
-
-/// MAN), so they sit correctly relative to the player even while the kingdom
-/// terrain mesh renders at its own pack-local coordinates.
-pub(crate) fn world_map_entity_line_geometry(
-    markers: &[legaia_engine_core::world::WorldMapEntityMarker],
-    aabb_lo: [f32; 3],
-    aabb_hi: [f32; 3],
-) -> (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>) {
-    let diag = (Vec3::from(aabb_hi) - Vec3::from(aabb_lo))
-        .length()
-        .max(1.0);
-    let post_h = diag * 0.06;
-    let arm = diag * 0.02;
-    let mut pos: Vec<[f32; 3]> = Vec::with_capacity(markers.len() * 6);
-    let mut col: Vec<[u8; 4]> = Vec::with_capacity(markers.len() * 6);
-    let mut idx: Vec<u32> = Vec::with_capacity(markers.len() * 6);
-    for m in markers {
-        let [x, y, z] = m.world_pos;
-        let c = world_map_entity_marker_color(m.kind);
-        let base = pos.len() as u32;
-        // 0: base, 1: top (up = world -Y under the geometry convention),
-        // 2..=5: base-cross arm ends along +/-X and +/-Z.
-        let verts = [
-            [x, y, z],
-            [x, y - post_h, z],
-            [x - arm, y, z],
-            [x + arm, y, z],
-            [x, y, z - arm],
-            [x, y, z + arm],
-        ];
-        for v in verts {
-            pos.push(v);
-            col.push(c);
-        }
-        // Vertical post + the two base-cross segments.
-        for &(a, b) in &[(0u32, 1u32), (2, 3), (4, 5)] {
-            idx.push(base + a);
-            idx.push(base + b);
-        }
-    }
-    (pos, col, idx)
-}
-
-/// Build a LineList for the overworld player marker: a taller upright post (so
-/// the player reads above the kind-coded entity markers), a base cross, and a
-/// facing tick pointing in the player's heading. White-yellow, sized relative
-/// to the scene AABB. Same Y-flip convention as the entity markers.
-pub(crate) fn world_map_player_line_geometry(
-    marker: &legaia_engine_core::world::WorldMapPlayerMarker,
-    aabb_lo: [f32; 3],
-    aabb_hi: [f32; 3],
-) -> (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>) {
-    let diag = (Vec3::from(aabb_hi) - Vec3::from(aabb_lo))
-        .length()
-        .max(1.0);
-    let post_h = diag * 0.09;
-    let arm = diag * 0.025;
-    let tick = diag * 0.05;
-    let [x, y, z] = marker.world_pos;
-    let c = [255u8, 230, 60, 255];
-    // Heading: PSX 12-bit angle, 0 = +Z, quarter turn (1024) = +X.
-    let angle = (marker.facing as f32) / 4096.0 * std::f32::consts::TAU;
-    let (sin, cos) = angle.sin_cos();
-    let verts = [
-        [x, y, z],                           // 0 base
-        [x, y - post_h, z],                  // 1 top
-        [x - arm, y, z],                     // 2 -X arm
-        [x + arm, y, z],                     // 3 +X arm
-        [x, y, z - arm],                     // 4 -Z arm
-        [x, y, z + arm],                     // 5 +Z arm
-        [x + sin * tick, y, z + cos * tick], // 6 facing tick end
-    ];
-    let mut pos: Vec<[f32; 3]> = Vec::with_capacity(7);
-    let mut col: Vec<[u8; 4]> = Vec::with_capacity(7);
-    for v in verts {
-        pos.push(v);
-        col.push(c);
-    }
-    // Post + base-cross (X/Z arms) + facing tick.
-    let idx = vec![0, 1, 2, 3, 4, 5, 0, 6];
-    (pos, col, idx)
 }
 
 /// Build a LineList plot of a kingdom's slot-4 **animation bank**
@@ -362,6 +269,31 @@ pub(crate) fn world_map_slot4_line_geometry(
         idx.push(base + 1);
     }
     (pos, col, idx)
+}
+
+/// The 3D pass's viewport and projection aspect for a `surface_w` x
+/// `surface_h` window: the 2D stage rect (`pause_menu::stage_transform`, the
+/// integer-scaled, centred 320x240 stage every text and sprite draw uses) at
+/// the stage's 4:3 aspect, so 3D that has to line up with the stage - the
+/// naming screen's actor inside its windows, the field party HUD's
+/// projected-player row - does at any window size. The browser play page's
+/// canvas *is* a stage, so this is the one frame both hosts now draw 3D into.
+///
+/// `None` (whole surface, surface aspect) only when the window is smaller
+/// than one stage and the rect would not fit.
+pub(crate) fn scene_viewport_for(
+    surface_w: u32,
+    surface_h: u32,
+) -> (Option<(u32, u32, u32, u32)>, f32) {
+    let ((x0, y0), scale) = legaia_engine_render::pause_menu::stage_transform(surface_w, surface_h);
+    let (w, h) = (
+        legaia_engine_render::BOOT_UI_STAGE_W * scale,
+        legaia_engine_render::BOOT_UI_STAGE_H * scale,
+    );
+    if x0 < 0 || y0 < 0 || x0 as u32 + w > surface_w || y0 as u32 + h > surface_h {
+        return (None, surface_w as f32 / surface_h.max(1) as f32);
+    }
+    (Some((x0 as u32, y0 as u32, w, h)), w as f32 / h as f32)
 }
 
 #[cfg(test)]

@@ -933,14 +933,24 @@ The opening narration is a **bottom-up scrolling crawl**, not a one-caption-at-a
 - one roller actor owns all `N` pages of a block, spawned as a **child context**: the PARENT timeline **keeps executing** while the pages scroll, so the camera cuts / fades / `WaitFrames` authored between the crawl blocks play **under** the scrolling text (a cold-boot capture of `opdeene` crawl-1 shows the eye cut from an establishing shot through the Genesis-grove foliage to the villager-tableau while the creation crawl scrolls continuously - the probe is [`scripts/pcsx-redux/autorun_crawl1_capture.lua`](../../scripts/pcsx-redux/autorun_crawl1_capture.lua)). The parent only blocks before a **new** crawl block (so two rollers never stack) and before the record's terminal SceneChange (so the final pages finish);
 - each line is drawn centered with **all glyphs at once** (no typewriter), scrolling upward inside a clipped window; several lines are visible concurrently.
 
-The geometry and speed are **pixel-capture-pinned** (PCSX-Redux cold boot, per-frame text-band tracking): 0.5 px/frame everywhere except `opurud` (1.0 px/frame); `opdeene` runs the tall window (enter ~y188, exit ~y64, 18 px line spacing, up to 8 lines visible); `opstati` / `map01` enter ~y203 and exit at y128 with 16 px spacing; `opurud` enters ~y187 and exits at y128.
+The geometry and speed come from the **scene**, not from a per-scene table. The roller reads a config block through `*0x801C6EA4` (`+0x4C` window top, `+0x4E` line slots, `+0x50` scroll divisor, `+0x52` release count); the scene reset `FUN_8003A024` stores `0x40 / 8 / 4 / 0` and a `CC F8 E8` seed op overwrites the first three. Every crawl block on the disc runs on a seed op placed immediately before it or on the one an earlier block of the same scene left:
 
-The engine's [`CutsceneNarration`](../../crates/engine-core/src/cutscene_narration.rs) is that roller as a state machine, with per-scene [`RollerParams::for_scene`](../../crates/engine-core/src/cutscene_narration.rs) carrying the capture-pinned values.
+| Scene | Seeds (`top / slots / divisor`), in script order |
+|---|---|
+| `opdeene` | `0x40 / 8 / 4` (all three words zero - the defaults) for both blocks |
+| `opstati` | `0x80 / 5 / 5`, then `0x80 / 5 / 4` |
+| `opurud` | `0x80 / 4 / 4` twice, then `0x80 / 4 / 3` (the second block reuses the first seed) |
+| `map01` | `0x80 / 5 / 4` |
+
+The line pitch is a fixed 16 (retail `addiu s3,s3,0x10`); an earlier capture-fitted model gave `opdeene` 18 px spacing, which no retail store produces. The clock is the adaptive frame step `DAT_1F800393`: the accumulator gains it each frame and a pixel of climb happens when it reaches the divisor, the remainder dropped.
+
+The cold-boot `opdeene` capture (`s1_newgame_field`) holds the frame-step floor `DAT_8007B9D8` at `3` and a live roller's accumulator at `3` one frame after a step, so at divisor 4 the crawl climbs a pixel every two frames - 10 px/s, the realtime-video figure the capture-fitted model had approximated with a frame count. The same capture pins the roller's `n + 1 = 9` slot states and its sub-scroll. The floor's writer is the scene: `opdeene`'s prescript record 16 opens with move-VM ext sub-op `0x2F` operand `3` (stored to `DAT_8007B9D8` at `0x801D45E4`, PROT 0897). The engine's field scene entry installs the loader's `2`, the stager raises it to `3` before the first crawl opens, and the roller takes the world's cadence at open.
+
 The timeline stepper installs each block's pages when its PC reaches the block's op ([`NarrationSite`](../../crates/engine-core/src/cutscene_timeline.rs)) and, mirroring the child-context spawn, lets the timeline **continue** (non-blocking) - for **every** block, the last included - so the record's own choreography plays under the crawl. Its two holds are exactly retail's: at a **new** block's op while a prior roller still scrolls, and at the record's **terminal SceneChange op** while any pages are still up. `World::tick` advances the roller independent of the timeline; the host renders `visible_lines()`.
 
 The blocks-at-SceneChange placement (not at the last crawl's own op) is load-bearing for wall-time: `map01`'s fly-in record follows its final crawl with `WaitFrames` 600 + 330, and the retail capture's leg span only fits those waits running **concurrent** with the 3-page roller - a stepper that parks at the crawl op instead serializes the roller against the authored tail and overshoots the leg by the whole roller duration (~14 s). In the three `op*` legs the last crawl sits close to the SceneChange, so the two park placements are nearly indistinguishable there; `map01` is the discriminating case.
 
-The `RollerParams` px/frame values are pinned against retail's **~60 Hz** field frames, but the engine sim ticks at **100 Hz** ([`redraw`](../../crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw.rs) `advance_tick(100)`). Advancing the roller once per sim tick would scroll it 1.67× too fast and drain the crawl ~6 s early, opening the inter-crawl gap. `World::tick` therefore drives the roller off a **60 fps sub-clock** (`field_frame_accum += 60; step = accum >= 100`, ~0.6 roller-frames per sim tick), so the crawl duration matches retail wall-time.
+The roller counts display vsyncs: `World::tick` is one retail vsync and hands it `display_frame_step`, and the roller runs one pass of the handler per `frame_step` vsyncs (the cadence it was opened at), adding that step to its accumulator the way retail adds `DAT_1F800393`.
 
 The old "field-VM step-parallelism" reading of the residual inter-crawl dead-air is **retired**. Retail has no hidden parallelism to catch up with: its actor lists are walked in full every frame (`FUN_8002519C`), so every script context - the timeline, the crawl roller, the camera mover - already gets one run-until-yield slice per frame, and the engine already runs the roller and the helper contexts that way. The measured gap was a **units** error instead: the engine's timeline was stepped once per 100 Hz sim tick while every duration a record can express is counted in retail's 60 Hz display frames, so `WaitFrames` drained 1.67x fast. See [Record pacing](#record-pacing---the-60-hz-sub-clock).
 
@@ -963,10 +973,12 @@ The spawner and the crawl-geometry config are two distinct sub-ops of field-VM o
 
 | offset | role | default |
 |---|---|---|
-| `+0x4C` | window **top Y** (line base). Line `i` draws at `Y = (+0x4C) - subscroll + 16*i`. | `0x40` (64) |
-| `+0x4E` | **visible line count** (window height in 16 px lines). Bottom clip `Y = (+0x4C) + 16*(+0x4E)`, clamped `<= 232`; also the length of the roller's per-line state array `actor+0x80…`. | `0x08` (8) |
-| `+0x50` | scroll-cadence **divisor**. A per-actor accumulator advances by the scratchpad speed byte `DAT_1F800393`/frame; on reaching `+0x50` the 1 px sub-scroll `actor+0x9E` (0..15) steps and the accumulator resets, so `px/frame = DAT_1F800393 / (+0x50)`. | `0x04` (4) |
-| `+0x52` | **stop-after-N-lines** trigger. When the lines-scrolled counter `actor+0x6A` reaches `+0x52`, the roller pauses (`actor+0x10 |= 0x80000`) and `+0x52` is cleared. Written only by the `word3 == 1` sub-mode. | (unset) |
+| `+0x4C` | window **top Y**. Slot `i` draws at `Y = (+0x4C) - subscroll + 16*i`. | `0x40` (64) |
+| `+0x4E` | **line-slot count** `n`. The roller keeps `n + 1` slot states at `actor+0x80…` (`0xFF` empty, `0xFE` blank page, `1` text). | `0x08` (8) |
+| `+0x50` | scroll **divisor**. A per-actor accumulator gains the frame step `DAT_1F800393` each frame (not while paused); on reaching `+0x50` it resets to zero and the sub-scroll `actor+0x9E` (0..15) steps. | `0x04` (4) |
+| `+0x52` | **release line count**. With it non-zero and slot 1 occupied, the roller pauses itself (`actor+0x10 |= 0x80000`) and clears `+0x52` when the pages retired so far (`actor+0x6A`, plus one if slot 0 is occupied) equal it. Written only by the `word3 == 1` sub-mode. | `0` |
+
+The **clip window** is `Y` from `(+0x4C) + 4` to `min((+0x4C) + 16*n - 1, 0xE8)`, `X` from `0` to `0x13F`, so lines enter and leave it a pixel at a time. A full 16-pixel climb shifts the slot states up one, counts a retired page when slot 0 held one, and admits the next page at slot `n`. The block ends when the retired count reaches the page count: the roller clears its parent's `+0x10` bit `0x400` and kills itself. The port is [`CutsceneNarration`](../../crates/engine-core/src/cutscene_narration.rs); its [`RollerSeed`](../../crates/engine-core/src/cutscene_narration.rs) is read off the seed op before each block, and because neither host scissors the text, `visible_lines` returns only the rows wholly inside the clip window.
 
 A prior model - "one caption per page, 120 frames each, killing its predecessor, drawn at `Y = 180` / mid-screen" - described the separate **`4C E1` single-balloon op** (spawner `FUN_8003C764`, handler `FUN_801DA7F0`, dispatcher case at `0x801E30B8`/`C8`). That op is real but it is **not the crawl**.
 The *"It was the Seru."* caption appears between `opdeene`'s two crawls, as a centered line over the villager-tableau shot (between the creation crawl's last page and the Seru-history crawl's first). It is **not a text balloon at all** and **not any live-rendered font string**: it is a **pre-rendered image**. The caption is a baked **112×32 4bpp TIM** (two CLUT palettes - the fade steps) in the `opdeene` geometry pack **PROT entry 0749** at LZS-decoded offset `0x01EC30`, VRAM `fb=(384,0)`, sitting among that pack's scene textures (the cloth grades, the Genesis-tree flame, the foliage; `tim-scan extracted/PROT/0749_opdeene.BIN`). The scene renderer draws it as a screen-space textured quad; there is no font string to source.
@@ -1192,9 +1204,9 @@ Two single-shared-VM accommodations, **approximate by design**:
   This mirrors retail's `FUN_801DE084`, which writes each masked param into a persistent camera struct slot (`0x801C6EA8 + 0x02 + i*4`) - a beat that omits a slot keeps its prior value.
   It matters: one of opdeene's nine op-`0x45` beats sets **only slot 9 (H)** (`[(9, 792)]`), so a wholesale replace would drop that shot's focus / pitch / eye-depth and snap the camera to `cutscene_view`'s fall-back framing (lead-actor focus + default depth); the per-slot merge keeps the staged shot and only tweaks the focal length.
   The set is cleared on scene entry so cutscene shots don't leak across scenes.
-- **Camera model.** The native `play-window` renders the cutscene with the **exact retail GTE model** whenever a cutscene timeline is installed: the shell's `compute_scene_camera` cutscene branch builds `psx_camera_mvp(pitch, yaw, H, tr_eye, focus)` (the same `screen = H·(R·(v − focus) + tr_eye)/Ze` builder the field follow camera uses; `FUN_800172c0`), composed with `FIELD_WORLD_FLIP` exactly like `field_follow_camera_mvp` (the internal Y-flip and the world flip cancel, so the raw retail Y-down `focus` and native-`1×` geometry pass through unchanged).
+- **Camera model.** The native `play-window` renders the cutscene with the **exact retail GTE model** whenever a cutscene timeline is installed: the shell's `compute_scene_camera` hands the glided view to `camera_view::resolve_field_camera`, whose `Cutscene` arm draws through `FieldCameraView::vp` (the same `screen = H·(R·(v − focus) + tr_eye)/Ze` builder the field follow camera uses; `FUN_800172c0`), composed with `FIELD_WORLD_FLIP` like every resolver arm (the internal Y-flip and the world flip cancel, so the raw retail Y-down `focus` and native-`1×` geometry pass through unchanged). The browser play page resolves the same frame.
   `SceneHost`'s `cutscene_view` decodes the pinned params: **focus** `(-param6, param7, -param8)` (Y defaults to retail's `0`), **pitch/yaw** from params 0/1 (`4096` = full turn), **H** straight from param 9, and **tr_eye** = the eye-space translation trio (params 3/4/5, `0x800840B8`) - the eye-back depth is `param5`. There is **no eye-distance heuristic**: the depth is a real decoded param.
-  Because retail folds a `6×` world scale into `R` (base matrix `DAT_8007BF10`) while the engine renders geometry at native `1×`, `tr_eye` is divided by `6` - the perspective divide makes `6×`-geometry-at-`z` and `1×`-geometry-at-`z/6` project to identical pixels (the same `depth/6` trick `field_follow_camera_mvp`'s `FIELD_CAM_DEPTH = 1200 = 7200/6` uses). `opdeene` supplies all three offset slots per beat.
+  Because retail folds a `6×` world scale into `R` (base matrix `DAT_8007BF10`) while the engine renders geometry at native `1×`, `tr_eye` is divided by `6` - the perspective divide makes `6×`-geometry-at-`z` and `1×`-geometry-at-`z/6` project to identical pixels (the same `depth/6` trick the follow view's `FIELD_CAM_DEPTH = 1200 = 7200/6` uses). `opdeene` supplies all three offset slots per beat.
   The shot re-targets each time the timeline executes a new Camera Configure op; rather than
   cutting, `play-window` moves the rendered `(focus, pitch, yaw, H, tr_eye)` toward each new beat
   through [`window::CutsceneCameraInterp`](../../crates/engine-render/src/window.rs), which
@@ -1511,17 +1523,38 @@ the same capture close the older readings:
   authored gouraud words, not a DPCS pull.
 - **Packet colours split by source.** The GP0 draw list's textured prims carry either the
   runtime-emitted neutral `0x80,0x80,0x80` (the ground tile kernel's quads - drawn gold
-  purely by their law-collapsed CLUT) or a small **amber family** `≈ (M, 0.94·M, 0.43·M)` -
-  the collapse of each loaded TMD's authored full-colour word (the `0749` pack authors these
-  meshes in green/blue) to the same gold ray. Near-field graded surfaces land `B/R ≈ 0.44`
-  (`(L >> 1) / L`), matching the law.
+  purely by their law-collapsed CLUT) or a small **amber family** - the loaded TMDs' authored
+  words after the scripts' `4C E6` rewrite (below).
 
-The `opdeene` MAN itself carries **no** colour op (no op `0x4C 0x8A` ambient, no op
-`0x4C 0x81` far colour), and its motion-VM section carries no per-actor depth-cue op `0x0C`
-either; the grade is applied by the cutscene host to the scene's decoded assets at load. The
-GTE back/ambient colour `DAT_8007B788` is `0x00202020` in `opdeene` vs `0x00FFFFFF` in
-`town01` (`FUN_80043390`), but the field path issues no light op, so it is not the grade
-mechanism.
+The packet half is a script op, not a host pass. Partition 1 record 0 of `opdeene`, `opstati`
+and `opurud` issues field-VM op `4C E6` twice - `4C E6 00 00 00 FF 00 00` then
+`4C E6 38 00 90 00 E2 FF`, the only six `4C E6` sites on the disc (`asset field-op-census
+--only "4C E6"`). The arm calls `FUN_801D8280`, which walks every resident TMD in
+`DAT_8007C018[0..=DAT_8007BB38]` and hands each object to
+[`FUN_801D5E20`](#fun_801d5e20-rotates-a-meshs-own-colour-words): saturation `-0x100` first
+(every baked word greyed at `W = min(max(r, g, b), 0xF8)`, the `0xF8` cap being
+`FUN_8001A6C8`'s), then hue `+0x38`, saturation `+0x90`, value `-0x1E`. The second pass starts
+from a grey, so a word ends as a function of its `max` alone:
+
+```
+V = max(min(max(r, g, b), 0xF8) - 30, 0)   ->   (V, V*246 >> 8, V*112 >> 8)
+```
+
+(`FUN_8001A8DC`'s sector-0 arm at hue `0x38`: `f = 238`, `t = V*(256 - (0x90*18 >> 8)) >> 8`,
+`p = V*(256 - 0x90) >> 8`). The retail state `s1_newgame_field` (`opdeene` at field-run) holds
+all 18425 baked colour words of its 77 resident TMDs on that curve with none off it, an
+authored `0x80` word at `(98, 94, 42)` -
+`crates/engine-core/tests/prologue_sepia_retail_capture.rs`. So the amber family is not
+`gold · max` but this curve, and it carries a value drop of 30 the older ratio reading could
+not see (`G/R` is `246/256`, `B/R` is `112/256`; the draw list's `0.94` / `0.43` were the same
+curve, which the older draw-list ratio reading approximated). Only baked-colour rows are touched: the colour counts at
+`0x801F26F0` in the field overlay are non-zero for `flags >> 1` in `12..=19` alone (flags
+`0x18..=0x27`), so the light-source rows `0x10..=0x17` keep their GTE colour.
+
+The `opdeene` MAN carries no ambient op (`0x4C 0x8A`), no far-colour op (`0x4C 0x81`) and no
+per-actor depth-cue op `0x0C` in its motion-VM section. The GTE back/ambient colour
+`DAT_8007B788` is `0x00202020` in `opdeene` vs `0x00FFFFFF` in `town01` (`FUN_80043390`); it
+reaches only the light-source rows. What rewrites the CLUT rows is still open (below).
 
 **Engine port.** The engine keeps the disc palettes in its software VRAM and applies the law
 in the mesh shaders instead - exactly equivalent, because a 4/8bpp texel *is* a palette entry:
@@ -1529,11 +1562,9 @@ in the mesh shaders instead - exactly equivalent, because a 4/8bpp texel *is* a 
 **palette-collapse mode** (`palette_law_word` / `palette_collapse_prim` in
 [`shaders.rs`](../../crates/engine-render/src/shaders.rs), CPU mirrors + lockstep tests in
 [`psx_light.rs`](../../crates/engine-render/src/psx_light.rs)): each decoded texel word goes
-through the exact 5-bit law, each non-neutral packet colour collapses to
-`gold · max(r, g, b)` (gold = the staged
-[`ColorGrade::PROLOGUE_SEPIA`](../../crates/engine-core/src/fade.rs) coefficients
-`(1.0, 0.94, 0.43)`, the measured amber-family ratio), exact-neutral words stay neutral (the
-ground tile kernel's runtime word, retail-verified), and the view-depth cue ramp is inert
+through the exact 5-bit law, each non-neutral packet colour takes the `4C E6` curve of its
+`max` (`prologue_sepia_word`; the page shader carries the twin), exact-neutral words stay
+neutral (the ground tile kernel's runtime word, retail-verified), and the view-depth cue ramp is inert
 (no node carries `IR0` in the capture). The op `0x4C 0x12` screen tint rides the palette
 uniform's `rgb` so scene fades still multiply every graded pixel.
 [`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) still owns the
@@ -1569,13 +1600,15 @@ is no such law to port:
   same shape as the XA-clip-table writer under "Open items").
 - **The palette grade is faithful; the gap is source colour + region.** With `IR0 = 0` on
   every node (above), no DPCS pull acts on the far prims, and both halves of the grade are
-  capture-pinned (CLUT law in VRAM, amber packet in the GP0 list) and reproduced by the
-  engine. A far prim drawn with a baked amber packet lands `B/R ≈ 0.44 × 0.43 ≈ 0.19` on both
-  sides. The engine's `0.27` excess is un-darkened **neutral** packets in the sampled region:
+  capture-pinned (CLUT law in VRAM, the `4C E6` curve in the resident TMDs) and reproduced
+  by the engine. A far prim drawn with a baked amber packet lands `B/R ≈ 0.44 × 0.44 ≈ 0.19`
+  on both sides. The engine's `0.27` excess is un-darkened **neutral** packets in the sampled region:
   lit-descriptor prims (rows 0/1 of `DAT_8007326C`, `byte1 = 0`, no baked colour block) are
   fed neutral `0x80` by the mesh builder (`prim.colors...unwrap_or([128,128,128])` in
   `crates/tmd/src/mesh/{color,vram}.rs`), so `palette_collapse_prim`'s neutral guard leaves
-  them un-graded. Retail draws those same lit prims through the scene GTE back/far colour that
+  them un-graded. The same guard also leaves an authored word of exactly `(0x80, 0x80, 0x80)`
+  neutral, which retail's rewrite takes to `(98, 94, 42)`; the renderer cannot tell the two
+  apart at the shader. Retail draws those same lit prims through the scene GTE back/far colour that
   its field renderer `FUN_80029888` loads (opdeene's ambient `DAT_8007B788 = 0x00202020`, dim,
   vs `town01`'s `0x00FFFFFF`; writer `FUN_80043390`) - the field-path GTE colour the engine
   deliberately omits (no field light source). That omission is a scene-wide boundary that only
@@ -2122,7 +2155,14 @@ per primitive **and** once more after the group's loop (`801d5FF8` inside,
 Against the `count x ilen*4` body [`tmd.md`](../formats/tmd.md) documents, that
 over-runs by one primitive per group.
 
-Port: `legaia_engine_core::cutscene_script_elements::shift_primitive_colours`.
+The table at `0x801F26F0` holds `[1, 1, 3, 4, 1, 1, 3, 4]` at indices `12..=19` and zero
+everywhere else, so the walker rewrites the baked-colour rows (flat, gouraud, flat-textured
+baked, gouraud-textured baked) and skips the light-source rows. The disc's only callers are the
+prologue's six `4C E6` sites; what their two-op pair does to a word, and the capture that pins
+it, is under [the sepia grade](#full-scene-sepia-grade-the-gold-prologue-look).
+
+Port: `legaia_engine_core::cutscene_script_elements::shift_primitive_colours`; the renderers'
+`prologue_sepia_word` is its two-op result in closed form.
 
 ### What the tween and the emitter do beyond the one-line role
 

@@ -115,6 +115,13 @@ pub struct TileBoardHeader {
     pub radius: u8,
     /// Mode flag: full-board draw vs. windowed draw (`+6`).
     pub mode_flag: u8,
+    /// Event-flag base A (`+7..+8`, read by `FUN_8003CE9C` as a
+    /// sign-extended little-endian halfword): the SET base the event-cell
+    /// arrival writes from.
+    pub flag_base_set: i16,
+    /// Event-flag base B (`+9..+0xA`, same reader): the TEST base the
+    /// event-cell arrival gates on.
+    pub flag_base_test: i16,
     /// Player actor template id (`+0xb`).
     pub player_template: u8,
     /// Tile-actor template base id (`+0xc`), one per drawable cell value.
@@ -140,6 +147,8 @@ impl TileBoardHeader {
             height: window[4],
             radius: window[5],
             mode_flag: window[6],
+            flag_base_set: i16::from_le_bytes([window[7], window[8]]),
+            flag_base_test: i16::from_le_bytes([window[9], window[0xa]]),
             player_template: window[0xb],
             tile_template_base: window[0xc],
         };
@@ -148,6 +157,70 @@ impl TileBoardHeader {
         }
         Some(h)
     }
+}
+
+/// What the walk SM's arrival state (state 3) does with the cell the player
+/// just reached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArrivalAction {
+    /// Cell `7`: leave the board with no flag write (states `7 -> 9 -> 0xA`
+    /// fade, `0xD` park, `0xE` teardown).
+    ExitTrigger,
+    /// Cells `8..=0xA`: the event arm (state 8) writes the flags
+    /// [`event_cell_flag_writes`] names, then leaves through the same fade
+    /// (`0xB -> 0xC -> 0xD -> 0xE`).
+    ExitEvent,
+    /// Any other cell: advance every animated cell on the board one step
+    /// ([`advance_animated_cells`]) and return to input (state 4).
+    Continue,
+}
+
+/// Classify an arrival cell the way state 3 does (`0x801EF6FC..0x801EF760`):
+/// `== 7` first, then `cell - 8 < 3` (unsigned).
+pub fn arrival_action(cell: u8) -> ArrivalAction {
+    if cell == CELL_TRIGGER {
+        ArrivalAction::ExitTrigger
+    } else if (CELL_EVENT_FIRST..=CELL_EVENT_LAST).contains(&cell) {
+        ArrivalAction::ExitEvent
+    } else {
+        ArrivalAction::Continue
+    }
+}
+
+/// The animated-cell pass of state 3 (`0x801EF764..0x801EF81C`): every cell
+/// on the **whole board** whose value is in `0xB..=0xE` steps to the next
+/// value, `0xE` wrapping to `0xB` (`v + 1`, then `0xB` when `v + 1 >= 0xF`).
+/// Retail runs it on every arrival that is not a trigger or event cell, not
+/// only on the arrived cell.
+pub fn advance_animated_cells(cells: &mut [u8]) {
+    for c in cells {
+        if (CELL_ANIM_FIRST..=CELL_ANIM_LAST).contains(c) {
+            let next = *c + 1;
+            *c = if next < 0x0F { next } else { CELL_ANIM_FIRST };
+        }
+    }
+}
+
+/// The event-cell flag writes of walk-SM state 8 (`0x801EFC38..0x801EFCC8`).
+///
+/// With `v = cell - 8`, `a = header +7` and `b = header +9` (both through the
+/// sign-extending halfword reader `FUN_8003CE9C`), retail first **sets**
+/// system flag `a + v + 1` (`FUN_8003CE08`), then **tests** flag `b + v`
+/// (`FUN_8003CE64`) and, when it is clear, also sets flag `a`. Returns the
+/// indices to set in order; `test` answers the system-flag test.
+pub fn event_cell_flag_writes(
+    header: &TileBoardHeader,
+    cell: u8,
+    mut test: impl FnMut(u16) -> bool,
+) -> Vec<u16> {
+    let v = i32::from(cell) - i32::from(CELL_EVENT_FIRST);
+    let a = i32::from(header.flag_base_set);
+    let b = i32::from(header.flag_base_test);
+    let mut out = vec![(a + v + 1) as u16];
+    if !test((b + v) as u16) {
+        out.push(a as u16);
+    }
+    out
 }
 
 /// The retail procedural board fill (the `0x801EF334` arm of `FUN_801EF2B0`), cells only
@@ -523,6 +596,11 @@ mod tests {
         assert_eq!((h.width, h.height), (6, 4));
         assert_eq!((h.radius, h.mode_flag), (2, 1));
         assert_eq!((h.player_template, h.tile_template_base), (0x21, 0x30));
+        // The two flag bases are sign-extended LE halfwords (`FUN_8003CE9C`).
+        let mut flagged = window;
+        flagged[7..11].copy_from_slice(&[0x34, 0x12, 0xFE, 0xFF]);
+        let hf = TileBoardHeader::parse(&flagged).unwrap();
+        assert_eq!((hf.flag_base_set, hf.flag_base_test), (0x1234, -2));
         // Short window / zero dims reject.
         assert_eq!(TileBoardHeader::parse(&window[..12]), None);
         let mut degenerate = window;

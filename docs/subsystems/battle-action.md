@@ -478,7 +478,9 @@ cast inspects the party side only. `ctx[+0x01]` is its monster-side twin, read
 by the seed arm's pre-emptive-strike branch (`0x801E2B18`).
 
 `ctx[+0x25]` is the **round-skip count** - combatants dropped out of this
-round's order *without acting*. It has one writer of each kind:
+round's order *without acting*. It has one writer of each kind (every other
+`sb ...,0x25(...)` in PROT 0898 stores a `u`/`v` byte of a GPU packet, not
+this context byte):
 
 - **reset**, `0x801DAB84` - `sb zero,0x25(v0)`, in the delay slot of the
   `jal 0x801DABA4` that ends the initiative seeder `FUN_801DA780`. So it clears
@@ -502,9 +504,14 @@ living actor holds an unspent key, and that is the round end
 directions: an actor that dies **after** acting had its key consumed at its
 dispatch (retail: its cursor position was consumed), and one that dies
 **before** acting has its key zeroed by the pick's first loop (retail: the
-`0x801DABF8` clear plus the `+0x25` skip bump). `ctx[+0x00]`, `ctx[+0x01]` and
-`ctx[+0x25]` are therefore not modelled on `BattleActionCtx`; what they
-compute is recovered from the keys.
+`0x801DABF8` clear plus the `+0x25` skip bump). The action SM's own bound is
+modelled too: `BattleActionCtx::round_skip` is `ctx[+0x25]`, cleared by
+`World::begin_battle_round` every round and bumped by the dead-slot sweep in
+`World::next_combatant_by_initiative`, and `end_of_action` compares the
+turn cursor against the seated party plus the seated monsters (a monster seat
+the battle loaded, `max_hp != 0`) less that skip - so an actor that dies
+*after* acting no longer shortens the round, as it did while the bound read
+the living count.
 
 **Port.** `legaia_engine_vm::battle_action::BattleActionCtx::turn_cursor`. The
 port previously modelled `+0x1A` on `BattleActor` and stamped it at `Begin`
@@ -1828,8 +1835,9 @@ the randomizer edits), builds a weighted candidate pool - dropping any command
 whose per-command elemental/status guard mask `DAT_801F672C[cmd-0xC]` collides
 with the target's status word `actor[+0x16E]` - then draws from the pool with
 `func_0x80056798` (RNG) until the actor's special gauge `actor[+0x154]` no longer
-covers the cheapest command, halving the budget when the AP-Used-Down passive bit
-`0x800` is set. It is the natural producer of the observed delegated
+covers the cheapest command. (The record `+0xF8 & 0x800` halving an earlier
+reading put here belongs to the art insertion tail below, where it halves the
+per-arrow Spirit cost, not this gauge.) It is the natural producer of the observed delegated
 `[0x22,0x26,0x25,0x22,0x21]` multi-strike, but the outer gate keys on `+0xF8 &
 0x2000` / `+0x16E & 0x404` rather than the `0x380` delegation bits directly, so
 confirming it is *the* Rage-delegate path (versus a shared auto-fight assembler)
@@ -1854,6 +1862,46 @@ at `8`, which is enough pushes to overrun the `0x10`-byte candidate scratch.
 Both arms plus the ladder, the guard reject and the gauge-spend loop are ported
 as `engine-vm::battle_arts_auto_combo`; the arm-by-arm decode lives in
 [`reference/functions/battle.md`](../reference/functions/battle.md#801f0450).
+The pool arm's gate `ctx[+0x266 + slot]` is the per-fighter **Auto** flag the
+command SM's Auto pick writes (see
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md)), so the pool arm and its
+tail are the Auto command's queue builder.
+
+#### The art insertion tail (`0x801F0B4C..0x801F1274`)
+
+After the spend loop has written a run of direction swings, the tail walks
+the character's art-animation bank (`*(DAT_801C9360[slot] + 0x58)`, `0xD0`
+stride, [battle-data-pack.md](../formats/battle-data-pack.md#art-animation-bank-record0-0x58))
+and splices learned arts' arrow strings over the end of the still-free part of
+the queue, paying out of a **local copy** of the Spirit gauge `actor[+0x170]`
+(nothing is stored back):
+
+- The walk starts at record `rand() % 5 + 0xB` - bank index `0xB` is
+  learned-art id `0` - and Noa (`char_id == 2`) steps over `0xD` / `0xE`.
+- **Spirit gate**: each pass stops the walk unless `rand() % 7 + 0x12` is
+  below the budget and at least two free slots remain.
+- A record needs at least two arrows (byte `1` non-zero). Its need is counted
+  from byte `1` on - byte `0` is spliced but never counted (`li s2,0x1` at
+  `0x801F0DA0`) - against a census of the free region.
+- Cost is `len * per_input`, with `per_input` `0xB` on the first pass, `0xA`
+  after, `6` from the fifth, halved under record `+0xF8 & 0x800`. Without the
+  slot's Miracle marker `ctx[+0x25F + slot]` the first four passes demand
+  `100` of arrow `1`, so nothing can be spliced before the cheap passes.
+- Then a `rand() % 100` roll under `50` (below the tier bound: `0x11` for Noa,
+  `0xF` otherwise) or `75`, a learned-list hit, not the art just placed, and
+  not below the floor a placed low-tier art raises to that bound.
+- Accept: the free region's head is refilled with `rand() % 4` directions
+  drawn from what the census has left, its last `len` slots become the combo
+  as `arrow + 0xB`, the region shrinks by `len` and the walk re-seeds at
+  `rand() % 3 + 0xB`.
+- Reject: skip ahead by twice the zero-terminated run at record `+0x0B` - the
+  loop's `a0` is loaded once and its delay-slot increment fires on both
+  edges. On the retail banks that run is empty on every Vahn and Gala record
+  and one byte on one Noa record.
+- Every pass then steps `rand() % 2 + 1`.
+
+Port: `battle_arts_auto_combo::insert_arts`, not wired - the engine's command
+flow offers no Auto pick.
 
 ### Enemy AGL action-budget (`FUN_801E9FD4`)
 
@@ -2954,6 +3002,51 @@ with the counter on `BattleActionCtx::attack_x2_pass` and the marks carried
 from the builder on `BattleActor::starter_marks`
 (`BUILD_STARTER_MARK` / `SUPER_STARTER_MARK`).
 
+#### The per-frame drift and the `0x801F696C` flag
+
+Both the stage path and the in-flight hold (`bne v1,zero,0x801E37C0` at
+`0x801E3718`) fall into one block at `0x801E37C0` that runs on every frame of
+the loop for a party actor (`ctx[+0x13] < 3`). It moves two actors a little
+along their facings: the acting actor's live pair by
+`trig(facing) * -3 * frame_dt * rate >> 15` and the target's by
+`trig(target facing) * +3 * frame_dt * rate >> 15`, both scaled by the
+**acting** actor's rate byte `+0x21D` (`0x801E386C..0x801E3994`; `frame_dt`
+is the scratchpad byte `0x1F800393`). Two arms gate it on the committed
+clip's header byte `ctx[+0x243]`:
+
+- `ctx[+0x243] == 0`: the character record's `+0xF4` (`+0x6BC` off the
+  record base) carries the War God Icon bit `0x2000`;
+- `ctx[+0x243] != 0`: the global `0x801F696C` is non-zero (`lw` at
+  `0x801E3840`, the flag's one reader) and the latched clip id `+0x1DB` is
+  outside `0x10..=0x1A`.
+
+`0x801F696C` is the queue builder's special-trigger flag. `FUN_801EED1C`
+clears it at its head (`sw zero,0x696c` at `0x801EED88`) and three sites set
+it to `1`: the Miracle arm (`0x801EF5B8`), the Super tail match
+(`0x801EFBD4`) and the auto-combo assembler `FUN_801F0450` (`0x801F0518`).
+The last store heads that routine's **auto-fill** arm - it is the first
+instruction past the `+0x16E & 0x404` veto - not its art insertion tail, so the
+flag goes up for every party slot that arm takes, and a delegated member never
+runs `FUN_801EED1C` to clear it again.
+
+Port: `swing_drift_armed` / `swing_drift` in `attack_chain`, with the flag on
+`BattleActionCtx::super_trigger` (set by
+`finish_action_queue_with_trigger`; the basic-attack build clears it; the
+auto-fill arm in `battle_action::dispatch` raises it).
+
+#### The War God Icon's per-stage bump
+
+The stage site's tail (`0x801E3768..0x801E37BC`) re-reads the acting
+character's record `+0xF4` and, when it carries `0x2000`, increments
+`ctx[+0x16]` - but only while the counter is already non-zero
+(`beq v0,zero,0x801E37C0` at `0x801E37B4`). So the first pass stages with the
+counter at `0`, the end-of-stream refill lifts it to `1` while the first
+pass's last clip is still in flight (its hits read `1` and still carry), and
+the second pass's first stage lifts it to `2` - the value that ends the damage
+kernel's carry arm (`s2 = 0xFF` only while `ctx[+0x16] < 2`). Each further
+second-pass stage bumps it once more. The refill's own `== 0` guard keeps the
+pair at exactly two passes. Port: `attack_x2_stage_bump` in `attack_chain`.
+
 ### 3. Damage is one power byte per animation hit event
 
 `FUN_801EC3E4` is called from the **anim** tick `FUN_80047430`
@@ -3092,7 +3185,8 @@ also what fills the no-input attack queue's own class input
 (`World::attack_swing_class_of`). A synthetic catalog leaves it `0` - the class
 that connects with everything - so a disc-free session behaves exactly as it
 did. The `ctx[+0x16]` pair counter the carry arm reads is written by the strike
-loop's own Attack x2 refill, described in §2.
+loop's own Attack x2 refill and by the stage site's per-stage bump, both
+described in §2.
 
 **What the builder tokenizes against.** The records retail's inner loop walks
 are the character's art-animation bank records (`record[0] +0x58`,
@@ -3901,6 +3995,17 @@ the ribbon at every value. Port:
 `engine-render::streak_pass::streak_quads_scheduled` +
 `MoveFxStreak::tick_counter`.
 
+The ribbon has a second caller outside that dispatcher: the per-clip pass of
+`FUN_8004CE2C` (SCUS), whose Gala tag-`0x67` arm (`0x8004D1E8..0x8004D248`)
+calls `FUN_801E1D98(&target[+0x3C], 0xC)` on every frame the committed clip's
+cursor sits in `0xB0..=0xF0` - `addiu a0,s1,0x3c` in the branch delay slot at
+`0x8004D220`, `li a1,0xc` at `0x8004D224`. The anchor is the target's seat
+vector (`+0x3C..+0x43`, copied verbatim from the spawn node by the battle
+setup at `0x8005158C..0x80051598`) rather than the launch point `ctx[+0x1144]`,
+and the trail id is the literal `0xC` rather than the move record's `+0x0B`.
+Port: the impact pass stores the frame's source in `BattleState::clip_ribbon`
+and both hosts draw it through `streak_pass::clip_ribbon_quads`.
+
 ## Screen-element placement table `0x80076C10` and its copy helpers
 
 The battle animation dispatcher [`FUN_801D388C`](../reference/functions.md)
@@ -4078,6 +4183,29 @@ kind**, loaded once per call at `0x801D8E8C` and handed to `FUN_8003541C` as its
 The `0x03` / `0x07` / `0x44` values quoted against those rows are their
 `+0x0E`/`+0x0F` **frame style**, not their kind. `+0x11` and `+0x12` are zero in
 all 103 records and no image reads them.
+
+
+### The target-select plaque (record `0x29`)
+
+While a target cursor rests on a monster, retail draws one blue plaque with
+that monster's name - placement record `0x29` (disc seats `(328, 162)` /
+`(200, 162)`, width `96`, kind pair `0x0101`). `FUN_801D5854`'s target arm
+(`0x801D5B08..0x801D5BAC`, a second copy at `0x801D5C58..0x801D5CDC`) first
+copies the outgoing name's seat, width and payload into record `0x2A`, then
+measures the new target's name payload `actor[+0x1BC]` (`FUN_80035F04`) and
+seats the content box at `x = 0xE8 - w/2`, pulled back to `0x130 - w` when the
+box would pass `0x130`; the live seat starts at `max(x + 0x80, 0x148)` and
+slides in. Captured on `party_basic_attack_vs_gobu_gobu`: "Gobu Gobu" measures
+`55`, rests at `(205, 162)` and reads `x = 333` mid-slide. The commit arms of
+`FUN_801D388C` later copy this record into the commit log's target column
+(`jal 0x801D5718` with `a1 = 0x29`, `0x801D3E64..0x801D3E70`).
+
+Both hosts draw it from the shared battle-HUD builder
+(`BattleHudFrame::target_select`, seat law
+`battle_chrome::target_select_plaque_x`); the slide is not modelled. It
+replaces the dedup-name strip the hosts drew at stage row `166` with the
+battle-intro banner's layout (`FUN_801D9D3C`), which overprinted the commit
+log's target column.
 
 ## Overlay-local PRNG `FUN_801D0290`
 

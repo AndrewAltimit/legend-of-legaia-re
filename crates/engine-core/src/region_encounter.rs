@@ -70,6 +70,50 @@ pub const ENCOUNTER_COUNTER_BASE: i32 = 0x3ce;
 /// Counter reset modulus (`0x1e7` = 487) applied to each of the two RNG draws.
 pub const ENCOUNTER_COUNTER_MOD: u32 = 0x1e7;
 
+/// The encounter step-counter reroll: `r1 % 487 - r2 % 487 + 0x3CE`, a
+/// triangular distribution over `488..=1460` centred on 974.
+///
+/// Retail has this as its own field-overlay leaf, not only inline in the
+/// region roll: two `jal 0x80056798` draws, each reduced by the
+/// `0x43491159` / `>> 7` reciprocal (the `* 487` rebuild is
+/// `((a*16 - a)*4 + a)*8 - a`), then `s0 - (v0 - 0x3CE)`. The FIRST draw is
+/// the added term. It has four callers, every one of which stores the result
+/// into `_DAT_8007B5FC`: the region roll's trigger reset (inlined here in
+/// [`RegionEncounterTracker::on_step`]), field-VM op `4C EC`
+/// (`0x801E34F8`), the op-`0x3E` scripted-formation arm (`0x801E076C`), and
+/// the scene-entry top-up in the SCUS system-script installer
+/// (`0x8003AC90`, see [`encounter_counter_scene_entry_top_up`]).
+///
+/// `rng` is the retail `rand()` (`0..=0x7FFF`); any non-negative draw gives
+/// the same result because the reduction is a truncating signed modulus.
+///
+/// PORT: FUN_801DDF48
+pub fn encounter_counter_reroll(mut rng: impl FnMut() -> u32) -> i32 {
+    let ra = (rng() % ENCOUNTER_COUNTER_MOD) as i32;
+    let rb = (rng() % ENCOUNTER_COUNTER_MOD) as i32;
+    ENCOUNTER_COUNTER_BASE + ra - rb
+}
+
+/// The scene-entry top-up of the step counter.
+///
+/// The SCUS system-script installer (`FUN_8003AB2C`, reached once per field
+/// scene entry from the MAN decoder `FUN_8003AEB0`) tests
+/// `_DAT_8007B5FC < 0x1E7` (`0x8003AC84`); only then does it add half a fresh
+/// reroll, rounding toward zero (`srl 31; addu; sra 1` at `0x8003AC98`).
+/// A counter at or above 487 is carried across the door unchanged - retail
+/// never re-seeds it per scene. Returns the new counter.
+///
+/// REF: FUN_8003AB2C (the top-up slice at `0x8003AC78..0x8003ACAC`)
+pub fn encounter_counter_scene_entry_top_up(counter: i32, rng: impl FnMut() -> u32) -> i32 {
+    if counter >= ENCOUNTER_COUNTER_MOD as i32 {
+        return counter;
+    }
+    let r = encounter_counter_reroll(rng);
+    // `(r + (r >>> 31)) >> 1` - signed halve toward zero; `r` is always
+    // positive here, kept for fidelity.
+    counter.wrapping_add(r / 2)
+}
+
 /// One scene encounter region: an AABB in 128-unit tiles, a per-step rate
 /// increment, and the formation slice it rolls into.
 ///
@@ -88,6 +132,115 @@ pub struct EncounterRegion {
     pub formation_base: u8,
     /// Number of formations in the roll range (`region[+7]`).
     pub formation_count: u8,
+    /// The bytes the reader's battle-setup half takes from the same record
+    /// ([`region_battle_setup`]).
+    pub setup: RegionSetupBytes,
+}
+
+/// The region-record bytes past the roll fields that `FUN_801D9E1C`'s
+/// battle-setup half reads (`0x801DA058..0x801DA12C`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct RegionSetupBytes {
+    /// `region[+5]`, the high byte of the halfword the rate is the low byte
+    /// of (`FUN_8003CE9C(region + 4)`); its low seven bits are the high byte
+    /// of the world-map return word.
+    pub byte5: u8,
+    /// `region[+8]`. Read on every layout (`lbu v0, 8(s2)` at `0x801DA064`,
+    /// before the stride test) - on an 8-byte record it is the **next**
+    /// record's first byte, which is what the decoder stores then too.
+    pub byte8: u8,
+    /// `region[+9..+0xC]`, read only when the region stride `ctrl[+0x5F]`
+    /// is at least `0xC` (`sltiu v0, v0, 0xc` at `0x801DA090`).
+    pub ext: Option<[u8; 3]>,
+}
+
+/// Where the travel art puts the party back on the world map: the triple
+/// `0x80084628` (map word) / `0x80084624` (tile X) / `0x8008462C` (tile Z)
+/// the world-map panel's resolve scan compares against
+/// ([`crate::world_map_panel_host::VisitedMap`]). A region record on the
+/// long layout writes it; so do the Door of Wind commit and a field-VM arm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WorldMapReturn {
+    /// `region[+9] | (region[+5] & 0x7F) << 8`.
+    pub map_word: u16,
+    /// `region[+0xA]`.
+    pub tile_x: u8,
+    /// `region[+0xB]`.
+    pub tile_z: u8,
+}
+
+/// What the battle-setup half of `FUN_801D9E1C` stores when the player's
+/// tile lands in a region - on every step of the random-roll path
+/// (`a1 = 1`) and on the op-`0x3E` scripted-battle install (`a1 = 0`,
+/// `0x801E0710`), before either path's roll or battle request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RegionBattleSetup {
+    /// `_DAT_8007BD60 = region[+8] & 0x1F` (`0x801DA064..0x801DA070`): the
+    /// battle-stage variant. Battle init `FUN_800513F0` loads the backdrop
+    /// from PROT entry `scene_index + variant` through `FUN_8001FA88`
+    /// (`0x80051A0C..0x80051A3C`), `scene_index` being the CDNAME index word
+    /// `0x80084540` - see [`battle_stage_entry_for_variant`].
+    pub stage_variant: u8,
+    /// `_DAT_8007B64B = (region[+8] >> 5) & 1` (`0x801DA09C..0x801DA0AC`):
+    /// battle init keeps the backdrop shell's object 1 when set
+    /// (`legaia_asset::battle_backdrop`). `None` on the short layout, which
+    /// leaves the byte alone.
+    pub keep_backdrop_object_1: Option<bool>,
+    /// Scratchpad `0x1F800394 & 0x100000` after the half: raised on every
+    /// hit (`lui a0, 0x30; or` at `0x801DA068..0x801DA084`) and dropped on
+    /// the long layout when `region[+8] & 0x80`. The item list dims the Door
+    /// of Light row while it is set (`0x8003093C..0x8003094C`).
+    pub door_of_light_blocked: bool,
+    /// The same for bit `0x200000` (dropped by `region[+8] & 0x40`) and the
+    /// Door of Wind row (`0x80030958..0x80030970`).
+    pub door_of_wind_blocked: bool,
+    /// The world-map return triple, long layout only.
+    pub world_map_return: Option<WorldMapReturn>,
+}
+
+/// The battle-setup half of the region reader: `FUN_801D9E1C` at
+/// `0x801DA058..0x801DA12C`, the part that runs whether or not the call rolls
+/// (`a1`, tested at `0x801DA16C` after it).
+///
+/// PORT: FUN_801D9E1C (the region battle-setup half, `0x801DA058..0x801DA12C`)
+pub fn region_battle_setup(bytes: &RegionSetupBytes) -> RegionBattleSetup {
+    let b8 = bytes.byte8;
+    let mut setup = RegionBattleSetup {
+        stage_variant: b8 & 0x1F,
+        keep_backdrop_object_1: None,
+        door_of_light_blocked: true,
+        door_of_wind_blocked: true,
+        world_map_return: None,
+    };
+    if let Some([b9, ba, bb]) = bytes.ext {
+        setup.keep_backdrop_object_1 = Some((b8 >> 5) & 1 != 0);
+        if b8 & 0x80 != 0 {
+            setup.door_of_light_blocked = false;
+        }
+        if b8 & 0x40 != 0 {
+            setup.door_of_wind_blocked = false;
+        }
+        setup.world_map_return = Some(WorldMapReturn {
+            map_word: u16::from(b9) | (u16::from(bytes.byte5 & 0x7F) << 8),
+            tile_x: ba,
+            tile_z: bb,
+        });
+    }
+    setup
+}
+
+/// The PROT extraction index of the battle backdrop a stage variant names:
+/// battle init passes `scene_index + variant` to `FUN_8001FA88`
+/// (`0x80051A20..0x80051A3C`), which reads raw TOC entry `a0 + 5`
+/// (`addiu a1, s0, 5` at `0x8001FAF0`) - extraction index `a0 + 3`.
+/// `scene_index` is the CDNAME `#define` number of the field scene
+/// (`0x80084540`).
+///
+/// REF: FUN_800513F0, FUN_8001FA88
+pub fn battle_stage_entry_for_variant(scene_index: u32, variant: u8) -> u32 {
+    scene_index
+        + u32::from(variant & 0x7F)
+        + legaia_asset::battle_backdrop::RUNTIME_ID_TO_PROT_OFFSET
 }
 
 impl EncounterRegion {
@@ -412,7 +565,13 @@ pub fn region_encounter_table_from_man(
     let es = man_section::parse_encounter_section(body).ok()?;
 
     let mut table = RegionEncounterTable::new(scene_label);
-    for region in man_section::region_records(body, &es).flatten() {
+    let stride = usize::from(es.region_stride);
+    let array = body.get(es.region_range.0..).unwrap_or(&[]);
+    for (i, region) in man_section::region_records(body, &es).enumerate() {
+        let Some(region) = region else {
+            continue;
+        };
+        let raw = |k: usize| array.get(i * stride + k).copied();
         table.regions.push(EncounterRegion {
             tile_x_min: region.aabb_x_min,
             tile_z_min: region.aabb_y_min,
@@ -421,6 +580,13 @@ pub fn region_encounter_table_from_man(
             rate_increment: region.rate_increment,
             formation_base: region.formation_range_base,
             formation_count: region.formation_range_count,
+            setup: RegionSetupBytes {
+                byte5: region.reserved_5,
+                byte8: raw(8).unwrap_or(0),
+                ext: (stride >= 0xC)
+                    .then(|| Some([raw(9)?, raw(10)?, raw(11)?]))
+                    .flatten(),
+            },
         });
     }
 
@@ -533,6 +699,14 @@ impl RegionEncounterTracker {
         self.counter
     }
 
+    /// Overwrite the step counter (`_DAT_8007B5FC`). The counter is one retail
+    /// global shared by every scene, so the world seeds a freshly installed
+    /// tracker from its carried value and the non-roll writers (op `4C EC`,
+    /// the op-`0x3E` formation arm, the scene-entry top-up) land here.
+    pub fn set_counter(&mut self, counter: i32) {
+        self.counter = counter;
+    }
+
     /// Reset per-scene state (scene change). Re-seeds the counter and clears
     /// the anti-repeat latch.
     pub fn reset(&mut self) {
@@ -586,9 +760,7 @@ impl RegionEncounterTracker {
         self.last_formation = Some(formation_id);
 
         // Counter reset: 0x3ce + (rng_a % 0x1e7) - (rng_b % 0x1e7).
-        let ra = (rng() % ENCOUNTER_COUNTER_MOD) as i32;
-        let rb = (rng() % ENCOUNTER_COUNTER_MOD) as i32;
-        self.counter = ENCOUNTER_COUNTER_BASE + ra - rb;
+        self.counter = encounter_counter_reroll(&mut rng);
 
         Some(RegionEncounterRoll { formation_id })
     }
@@ -607,7 +779,52 @@ mod tests {
             rate_increment: rate,
             formation_base: base,
             formation_count: count,
+            setup: RegionSetupBytes::default(),
         }
+    }
+
+    #[test]
+    fn the_setup_half_on_the_short_layout_only_stamps_the_variant_and_blocks() {
+        let s = region_battle_setup(&RegionSetupBytes {
+            byte5: 0,
+            byte8: 0xE3,
+            ext: None,
+        });
+        assert_eq!(s.stage_variant, 3);
+        assert_eq!(s.keep_backdrop_object_1, None);
+        assert!(s.door_of_light_blocked && s.door_of_wind_blocked);
+        assert_eq!(s.world_map_return, None);
+    }
+
+    #[test]
+    fn the_setup_half_on_the_long_layout() {
+        let s = region_battle_setup(&RegionSetupBytes {
+            byte5: 0x81,
+            byte8: 0xA1,
+            ext: Some([0x55, 0x12, 0x34]),
+        });
+        assert_eq!(s.stage_variant, 1);
+        assert_eq!(s.keep_backdrop_object_1, Some(true));
+        assert!(!s.door_of_light_blocked, "bit 7 opens the Door of Light");
+        assert!(
+            s.door_of_wind_blocked,
+            "bit 6 clear keeps Door of Wind shut"
+        );
+        assert_eq!(
+            s.world_map_return,
+            Some(WorldMapReturn {
+                map_word: 0x0155,
+                tile_x: 0x12,
+                tile_z: 0x34,
+            })
+        );
+    }
+
+    #[test]
+    fn the_stage_entry_is_the_scene_index_plus_the_variant_plus_three() {
+        // map01 is CDNAME 85 and fights on extraction 88 with variant 0.
+        assert_eq!(battle_stage_entry_for_variant(85, 0), 88);
+        assert_eq!(battle_stage_entry_for_variant(3, 1), 7);
     }
 
     #[test]
@@ -841,5 +1058,38 @@ mod tests {
         let mut draws2 = [0u32, 0, 0].into_iter().cycle();
         let second = tracker.on_step(0, 0, || draws2.next().unwrap()).unwrap();
         assert_eq!(second.formation_id, 11, "duplicate pick advanced by one");
+    }
+
+    #[test]
+    fn counter_reroll_is_first_draw_minus_second_plus_974() {
+        // Retail order: the first `rand()` is the added term.
+        let mut draws = [1000u32, 3].into_iter();
+        // 1000 % 487 = 26; 974 + 26 - 3 = 997.
+        assert_eq!(encounter_counter_reroll(|| draws.next().unwrap()), 997);
+        // Extremes of the triangular range.
+        let mut hi = [486u32, 0].into_iter();
+        assert_eq!(encounter_counter_reroll(|| hi.next().unwrap()), 1460);
+        let mut lo = [0u32, 486].into_iter();
+        assert_eq!(encounter_counter_reroll(|| lo.next().unwrap()), 488);
+    }
+
+    #[test]
+    fn scene_entry_top_up_only_below_487() {
+        // At or above 487 the counter is carried unchanged and no RNG is drawn.
+        let mut drew = false;
+        assert_eq!(
+            encounter_counter_scene_entry_top_up(487, || {
+                drew = true;
+                0
+            }),
+            487
+        );
+        assert!(!drew);
+        // Below: add half a reroll (974 + 100 - 0 = 1074 -> +537).
+        let mut d = [100u32, 0].into_iter();
+        assert_eq!(
+            encounter_counter_scene_entry_top_up(-5, || d.next().unwrap()),
+            -5 + 537
+        );
     }
 }

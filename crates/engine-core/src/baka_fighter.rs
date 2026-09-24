@@ -322,6 +322,14 @@ pub struct BakaFight {
     cabinet: crate::baka_cabinet::BakaCabinet,
     /// The cabinet frame the last tick produced.
     cabinet_frame: crate::baka_cabinet::CabinetFrame,
+    /// The roster + action tables the fight was built from, kept so the
+    /// cabinet's between-rung opponent install (`ST_OPPONENT_INSTALL`) can
+    /// seat the next rung's fighter. `None` for a fight built from bare
+    /// configs, which re-seats the same opponent instead.
+    tables: Option<std::sync::Arc<(Vec<BakaOpponent>, Vec<BakaActionSet>)>>,
+    /// The packed pad edge the host handed over for the next cabinet tick
+    /// (consumed by it). See [`Self::set_cabinet_pad`].
+    cabinet_pad: u16,
 }
 
 /// The two per-round score-bonus tables the overlay carries as rodata: the
@@ -419,7 +427,52 @@ impl BakaFight {
                 c
             },
             cabinet_frame: crate::baka_cabinet::CabinetFrame::default(),
+            tables: None,
+            cabinet_pad: 0,
         }
+    }
+
+    /// Hand the cabinet this frame's **packed** pad edge (`_DAT_8007B874`,
+    /// Legaia's layout - `baka_cabinet::CABINET_*`).
+    ///
+    /// The cabinet reads it only once the match is decided **and** it has
+    /// left its duel state: the tally, the "NEXT GAME / PAY OUT" choice and
+    /// the exit. While the cabinet is in the duel state the port keeps
+    /// feeding zero, because that state's one pad read is the pause edge
+    /// `0x110`, and Triangle - one of its bits - is the port's special attack
+    /// button; the in-duel pause menu stays unreached on every host. The
+    /// port's cabinet stays in the duel state up to `0xB5` frames past the
+    /// deciding exchange (its round timer is its own), so gating on the
+    /// match alone let a special thrown in that window open the pause menu.
+    pub fn set_cabinet_pad(&mut self, edge: u16) {
+        self.cabinet_pad = edge;
+    }
+
+    /// The roster id of the fighter in the opponent seat.
+    pub fn opponent_roster(&self) -> usize {
+        self.cfg[1].roster_id
+    }
+
+    /// Seat the next rung's opponent, the port side of the cabinet's
+    /// `ST_OPPONENT_INSTALL` (`0x1E`): the roster record the rung fold names
+    /// replaces slot 1, and both fighters start a fresh match (retail's round
+    /// setup `0x32` refills HP to `0xC80` and clears the bracket). The pot is
+    /// untouched - it is the global accumulator, not the fight's.
+    fn install_rung(&mut self, roster: usize) {
+        if let Some(t) = self.tables.clone()
+            && let (Some(opp), Some(act)) = (t.0.get(roster), t.1.get(roster))
+        {
+            self.cfg[1] = FighterConfig::from_tables(opp, act);
+            let kf = act.keyframes[legaia_asset::baka_opponents::ACTION_SPECIAL];
+            self.special_full_frames[1] = kf.max(0) as u32 * SPECIAL_CHARGE_FRAMES_PER_KEYFRAME;
+        }
+        self.f = [FighterState::new(), FighterState::new()];
+        self.round = 0;
+        self.settle_timer = 0;
+        self.phase = MatchPhase::Fighting;
+        self.last_exchange = None;
+        self.tally = None;
+        self.score_rows = [0; 3];
     }
 
     /// Supply the two overlay score-bonus tables so the per-round score rows
@@ -487,25 +540,36 @@ impl BakaFight {
     fn tick_cabinet(&mut self, frame_step: i32) {
         let input = crate::baka_cabinet::CabinetInput {
             frame_step,
-            // The duel band's only pad read is the pause-menu edge `0x110`,
-            // and the port's host does not surface a raw pad word here. The
-            // tally's face-button flag is *not* a substitute: `0xF0` and
-            // `0x110` overlap on Triangle, so feeding it across would open the
-            // pause menu whenever the player fast-forwards the tally. Left at
-            // zero until the world hands the real edge over.
-            pad_edge: 0,
+            // The host's packed edge, but only once the match is decided and
+            // the cabinet has left the duel state (see `set_cabinet_pad`): the
+            // duel band's one read is the pause edge `0x110`, which overlaps
+            // the port's Triangle special, and the port's cabinet sits in the
+            // duel state for up to `0xB5` frames after the deciding exchange.
+            pad_edge: if matches!(self.phase, MatchPhase::MatchOver(_))
+                && self.cabinet.state() != crate::baka_cabinet::ST_DUEL
+            {
+                std::mem::take(&mut self.cabinet_pad)
+            } else {
+                self.cabinet_pad = 0;
+                0
+            },
             pad_edge_alt: 0,
             pad_held: 0,
             dev_menu_enabled: false,
             player_round_wins: self.f[0].round_wins,
             opponent_round_wins: self.f[1].round_wins,
             win_target: ROUND_WIN_TARGET,
-            rung_prize: 0,
+            rung_prize: self.cfg[1].gold_reward,
             hp: [self.f[0].hp, self.f[1].hp],
             combo_taken: [self.f[0].combo, self.f[1].combo],
         };
         self.cabinet_frame = self.cabinet.tick(&input);
         self.cues.append(&mut self.cabinet_frame.cues);
+        if let Some((roster, _mesh)) = self.cabinet_frame.install_opponent
+            && let Ok(roster) = usize::try_from(roster)
+        {
+            self.install_rung(roster);
+        }
         // The intro title card belongs to the cabinet, not to the duel: both
         // `jal 0x801D59D4` sites in PROT 0976 are attract arms of this same
         // state machine, and those arms are what advance its clock. Hand the
@@ -556,8 +620,11 @@ impl BakaFight {
             actions[opponent_roster].keyframes[legaia_asset::baka_opponents::ACTION_SPECIAL],
         ];
         // The cabinet's developer editor dumps these same tables, so a duel
-        // built from the disc hands them straight over.
-        Some(Self::new(p, o, kf, seed).with_action_tables(actions.to_vec()))
+        // built from the disc hands them straight over; the fight keeps both
+        // for the between-rung installs.
+        let mut fight = Self::new(p, o, kf, seed).with_action_tables(actions.to_vec());
+        fight.tables = Some(std::sync::Arc::new((opponents.to_vec(), actions.to_vec())));
+        Some(fight)
     }
 
     /// Current match phase.
@@ -1018,6 +1085,15 @@ impl BakaFight {
     }
 }
 
+/// The roster id the cabinet serves first on every visit: the rung fold of
+/// the stage counter `FUN_801CF00C` seeds (`DAT_801DC10C = 2`, so roster
+/// `2 + 3 = 5`). Every later rung comes from the cabinet's own stage advance
+/// through [`crate::baka_cabinet::rung_fold`].
+pub fn first_rung_roster() -> usize {
+    let cab = crate::baka_cabinet::BakaCabinet::new();
+    crate::baka_cabinet::rung_fold(cab.stage(), cab.secret_opponent()).0 as usize
+}
+
 // ---------------------------------------------------------------- ladder run
 
 /// Phase of a cabinet [`LadderRun`].
@@ -1045,11 +1121,16 @@ pub enum RunPhase {
 /// same sheet as "GET COIN" + its digit strip - see
 /// `docs/subsystems/minigame-baka-fighter.md`). Fighting on keeps the
 /// accumulated prize pot at risk; paying out banks it and ends the run.
-/// Two rules are host readings of the risk (stated, not overlay-pinned):
-/// a mid-run loss forfeits the whole pot, and clearing the final rung pays
-/// the pot out automatically. The rung prizes are the roster records' own
-/// gold column, so a full 14-rung clear from rung 0 pays the full-clear
-/// total (460 on the retail disc).
+/// A mid-run loss forfeits the whole pot (the cabinet's "GAME OVER" state
+/// zeroes `_DAT_80084440`), and clearing the final rung pays the pot out.
+/// The rung prizes are the roster records' own gold column, so a full
+/// 14-rung clear from rung 0 pays the full-clear total (460 on the retail
+/// disc).
+///
+/// This is the **standalone minigames page's** run model: a fixed serve
+/// order with no secret rungs, driven by page calls. The field-warp hosts
+/// run the cabinet port itself ([`crate::baka_cabinet::BakaCabinet`], which
+/// every [`BakaFight`] carries) - see [`BakaFight::set_cabinet_pad`].
 #[derive(Debug, Clone)]
 pub struct LadderRun {
     /// `(roster_id, prize_gold)` per rung, in cabinet serve order.

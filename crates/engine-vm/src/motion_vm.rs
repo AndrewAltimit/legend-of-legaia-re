@@ -92,9 +92,50 @@ pub struct MotionTarget {
     pub x: i16,
     pub y: i16,
     pub z: i16,
-    /// Actor's record-id field at retail `+0x14`. Used for linear search of
-    /// the linked-actor list. Not consumed by the per-frame math.
+    /// The target actor's id, retail `+0x50` - the field the selector scan
+    /// compares ([`TargetSelector`]). Not consumed by the per-frame math.
     pub id: u16,
+}
+
+/// Which actor a target-select op (`op_byte & 0x80`) runs its body on, as
+/// `0x8003774C..0x80037858` decodes the byte that follows the opcode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetSelector {
+    /// No select bit, or the byte equals the running actor's own `+0x50`
+    /// (`beq v1,v0` at `0x80037798`): the body runs on the script's actor.
+    Own,
+    /// `0xF8` - the player actor `*0x8007C364`.
+    Player,
+    /// `0xFB` - the first node of the list at `*0x8007C34C` whose handler
+    /// word `+0xC` is `0x801DA51C` (the world-map entity SM).
+    WorldMapEntity,
+    /// Any other id - the first node of the list at `*0x8007C354` whose
+    /// `+0x50` equals it. An id nothing carries ends the call, returning 0.
+    Id(u8),
+}
+
+/// Decode the target selector of the entry at `pc`
+/// (`0x80037770..0x80037858`). The comparison against the running actor's
+/// id comes first, so an actor naming its own id - even `0xF8` or `0xFB` -
+/// runs the body on itself.
+pub fn target_selector(bytecode: &[u8], pc: usize, own_id: u16) -> TargetSelector {
+    let Some(&op) = bytecode.get(pc) else {
+        return TargetSelector::Own;
+    };
+    if op & 0x80 == 0 {
+        return TargetSelector::Own;
+    }
+    let Some(&id) = bytecode.get(pc + 1) else {
+        return TargetSelector::Own;
+    };
+    if u16::from(id) == own_id {
+        return TargetSelector::Own;
+    }
+    match id {
+        0xF8 => TargetSelector::Player,
+        0xFB => TargetSelector::WorldMapEntity,
+        other => TargetSelector::Id(other),
+    }
 }
 
 /// Per-actor motion-VM state, tracking the bytecode pointer and the per-frame
@@ -1281,6 +1322,20 @@ mod tests {
         };
         let bc = [0x47];
         assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Done);
+    }
+
+    #[test]
+    fn target_selector_decodes_player_linked_and_id_forms() {
+        assert_eq!(target_selector(&[0x47], 0, 3), TargetSelector::Own);
+        assert_eq!(target_selector(&[0xC7, 0xF8], 0, 3), TargetSelector::Player);
+        assert_eq!(
+            target_selector(&[0xC7, 0xFB], 0, 3),
+            TargetSelector::WorldMapEntity
+        );
+        assert_eq!(target_selector(&[0xC7, 0x05], 0, 3), TargetSelector::Id(5));
+        // The own-id compare runs first, even for the special ids.
+        assert_eq!(target_selector(&[0xC7, 0x05], 0, 5), TargetSelector::Own);
+        assert_eq!(target_selector(&[0xC7, 0xF8], 0, 0xF8), TargetSelector::Own);
     }
 
     #[test]

@@ -209,6 +209,18 @@ cold or supplied flags): `man_field_scripts::placement_spawn_relocation`,
 applied by `npc_catalog`; roster pinned against a live fresh-game capture's
 actor list (`_DAT_8007C354`).
 
+The partition-1 spawn loop itself runs only when the scene load actually
+loaded a MAN. The field-scene initializer (`FUN_801D6704` in PROT 0897) passes
+`a0 = loader mask & 4` to `FUN_8003AEB0` (`0x801D6D98`; bit `4` is the MAN
+dispatch's return bit, [`asset-type.md`](../formats/asset-type.md)), and
+`FUN_8003AEB0` skips the `FUN_8003A1E4` loop at `0x8003B8A0` when it is zero,
+while the scene system script (`FUN_8003AB2C`, `0x8003BAD8`) and the object
+binds (`FUN_8003A55C`) run either way. So a spawn section's story-flag write
+lands on every MAN-loading entry and on no same-scene reload that keeps the
+MAN resident. `kor5`'s `P1[2]` `SET 0x619` shows both halves in captures: set
+at the card-boot entry, then cleared by `P2[4]` and never re-set across two
+post-battle reloads.
+
 Three consequences worth stating plainly, because they retire the intuition
 that long cutscenes need catching up:
 
@@ -372,10 +384,100 @@ These are sub-dispatchers - the operand byte selects a sub-command.
 | Sub | Encoding | Effect |
 |---|---|---|
 | 0 | `[34, op0, r, g, b, intensity_lo, intensity_hi]` (7 bytes) | Effect-global colour + intensity setup. Rewrites `_DAT_8007BCCC..BCE0` colour-mode globals. Fade pipeline gated on `_DAT_1F800394 & 0x800000`. |
-| 1 | base 13 bytes; +2+payload when peek-at-`pc+13` byte is 0x40 | Effect / sprite spawn with optional captured-PC. Walks actor list at `_DAT_8007C354`; if found, skips spawn. Otherwise calls `FUN_801E5668(ctx, ..., pos, packed24, mode)`; `mode = 1 + (op0 & 1)`. When `capture_flag == 0x40`, captures payload bytes onto the spawned actor's `+0x94`. |
+| 1 | `[34, 1x, r, g, b, ext_w: s16, ext_h: s16, lift: s16, 2 unread]` (13 bytes, 14 extended); a spawn also consumes a following `0x40` block | **Attached light** spawn - see [below](#0x34-sub-1-is-an-attached-light). |
 | 2 | 2 bytes (`[34, 2N]`); the byte after is peeked, not consumed | Actor-pool capture-and-yield. Walks list looking for entry whose `+0x90 == ctx`; if found AND the next byte is `0x40`, captures the forward PC and emits `caseD_4` (STATE_RESUME → Yield). That `0x40` is the `DATA_BLOCK` op carrying the captured payload, which the dispatcher skips on its own once the capture has yielded; the fall-through advance is `PC += 2` (`code_r0x801df098`). A decoder that consumed it as an operand landed inside the data block. |
 | 3 | 4 bytes | Play 3D animation via `func_0x800252EC(operand1+1, ctx+0x14, ctx+0x24)`. Looks up an offset in the buffer at `_DAT_8007B8D0` (in the field that is the scene's `efect.dat` prescript window, `*(0x1F8003EC) + 0x12800`; the `bse.dat` battle bank is the *other* occupant of the same pointer - see [`bse-dat.md`](../formats/bse-dat.md)) using `*(u16*)(buf + 2 + idx*2)`, then spawns an actor via `FUN_80021B04(pos, ?, buf+ofs, 0x1000)`. Buffer layout matches the [ANM container shape](../formats/anm.md). |
 | 4..=15 | - | No `case` arm in `FUN_801de840`; falls through `if (bVar35 != 2) { if (bVar35 != 3) { return param_2; } }` - halts at PC. |
+
+##### 0x34 sub-1 is an attached light
+
+The sub-1 arm (`0x801DFEFC..0x801E0018`) walks the actor list at
+`_DAT_8007C354` for an actor ticked by `FUN_801E4470` whose `+0x90` is
+already the target (`FUN_8003CF04`), and skips the spawn when one exists.
+Otherwise `jal 0x801E5668` at `0x801DFFE0` allocates from template
+`0x801F28B8`: `+0x90` = the target, offset `(0, -lift, 0)`, `+0x3C` /
+`+0x3E` = the two extents, and the packed colour into `+0x74` with `+0x88 = 0`
+and `+0x5A = 1` when op0 bit 0 is clear, or into `+0x88` with `+0x74 = 0` and
+`+0x5A = 2` when it is set. A following `0x40` byte makes `+0x94` point past the
+block header and the instruction grow by `2 + len`; on the skip path the block
+stays in the stream as its own `0x40` op. The exit adds `0xD` to an `s8` the
+prologue has already moved past any extended channel byte, so the extended
+form is fourteen bytes.
+
+The tick `FUN_801E4470` projects the parent-plus-offset point with the two
+extents as view-space half sizes (`FUN_800195A8`) and hands the rect to
+`FUN_801E3984`, which draws **no sprite**: an untextured, semi-transparent
+ellipse - a gouraud fan from `+0x74` at the centre to a quarter mix at half
+radius, a ring out to `+0x88` at the rim, and, when `+0x88` is non-zero, flat
+`+0x88` fills from the rim to both screen edges and the bands above and below
+- all at blend mode `+0x5A`. Mode 1 is an additive glow (the night-time lamp
+pools a `town01` placement script lights on flag `0x147`); mode 2 is a
+subtractive darkness mask with a lit hole (`cave01`'s `B4 F8 11 80 80 20 ...`
+round the player). `+0x94`, when set, is a keyframe script `FUN_801E3E00`
+steps once per drawn frame: `0x02` records `[dur][ext_w][ext_h][A rgb][B rgb]
+[lift]` interpolated by `t / dur`, `0x40` block headers stepped over, `0x01`
+restart, `0x00` retire - the lamp pools breathe.
+
+The engine seats the light on the op's target (the player for channel `0xF8`,
+else the running placement's NPC) in `World::script_actors`
+(`engine-core::world::field_script_actors`) and both play hosts draw it
+through `legaia_engine_ui::screen_prim::light_pool_prims`. The ports:
+`legaia_engine_vm::field_actor_billboard`. `34 10` has 415 clean sites in 43
+scenes (`asset field-op-census`).
+
+##### The extents are view-space units (retail capture)
+
+`FUN_800195A8` adds the two extents to the parent point **after**
+`FUN_8003D344` has MVMVA'd it through the field view matrix, then projects
+the four corners through an identity rotation (`FUN_8003D178`,
+`FUN_8005BAC8`). The view matrix `FUN_800172C0` composes at `0x1F8003C8`
+carries the base-matrix scale `_DAT_8007BF10` (`24576 * I`, six times world
+scale - [`renderer.md`](renderer.md)), so the rim radius on screen is
+`H * ext / vz` with `vz` the eye depth in that scaled space: an extent of
+`0x1000` is a sixth of `0x1000` world units. `FUN_801E4470` then passes the
+full projected span and `FUN_801E3984` halves it through the `0x1000` entry of
+its cosine table (`0x801F2904`), so the radius is the extent itself, not half
+of it.
+
+The catalogued retail state `drake_castle_to_worldmap` (`dolk`, retail
+SCUS) holds the `dolk` mask live: one actor ticked by `FUN_801E4470` (callback
+word `+0x0C`) on the player, extents `(0x1000, 0x1000)`, `+0x74 = 0`,
+`+0x88 = 0x909060`, `+0x5A = 2`, offset `(0, -0x60, 0)`, no keyframe script -
+the engine's spawn of the same op matches every field. The frame's packets
+put the rim at `201` px round `(153, 93)` with `H = 768` (`_DAT_8007B6F4`) and
+`vz = 15635`, exactly `H * ext / vz`; so the ring reaches the screen corners
+and the rim-colour fills darken everything beyond it. `FUN_801E4470` rebuilds
+the field view matrix (`FUN_800172C0`) immediately before the call, so `vz` is
+the parent point's eye depth in the scaled view, and `H` is the live GTE `H`.
+
+`World::field_light_draws` projects the same way: the engine's eye space is the
+`1x` reduction of retail's (`tr_eye / S`), so the extents divide by the same
+`S` before the `H / z` scale. Fed the state's own camera globals with the
+player at the state's position, the engine puts the rim at `201` px round
+`(154, 94)`, within a pixel of the packets. Both hosts draw the pool beneath
+the party HUD, as the capture's frame shows it, sorted in one ordering-table
+list with the fog sheets and move strips (the page's single screen-prim pass;
+the native window's `under_overlay` list).
+Pinned, retail side and engine side, by
+`crates/engine-core/tests/attached_light_retail_capture_disc.rs`.
+
+A second scene at a second extent holds the same law. `cave01_attached_light`
+(retail SCUS, tile-poked in from `s3_rimelm_freeroam` through `map01`'s cave
+portal) carries one `FUN_801E4470` actor on the player built by `cave01`
+`P1[0]`'s `B4 F8 11 80 80 20 00 0C 00 0C 60 00 00 00`: extents
+`(0xC00, 0xC00)`, `+0x74 = 0`, `+0x88 = 0x808020`, `+0x5A = 2`, offset
+`(0, -0x60, 0)`, no script, and the engine's spawn matches every field. Its
+rim is `180` px round `(155, 116)` with `H = 512` and `vz = 8710`
+(`512 * 0xC00 / 8710 = 180`); the world-unit reading would give `1080` px.
+Pinned by `crates/engine-core/tests/attached_light_cave01_retail_capture_disc.rs`.
+The rim scan there accepts a colour match only behind a well-formed
+ordering-table tag (word count `5`, a RAM link): in `cave01` the rim colour's
+bytes also occur outside the frame's packets, and an unfiltered scan reads a
+rim tens of thousands of pixels wide. `jiji`'s one attached-light site
+(`P1[0]` `+0x73`, a white `B4 F8 11 FF FF FF ...`) did not spawn on either of
+two retail entries from `map02` (story flag `0x2AD` set as the card left it,
+then cleared by a poke): no `FUN_801E4470` actor in the lists, so that scene
+stays unpinned.
 
 #### 0x35 BGM
 
@@ -489,7 +591,7 @@ at PC). Otherwise bit 15 of `sel` picks the arm:
 | bit 15 set, sub `0` | `func_0x80035B50(arg)` - enqueue SFX cue `arg` into the four-slot pending ring, parking its slot at `gp+0x15A`. |
 | bit 15 set, sub `1` | `_DAT_8007BABC = arg` - **guarded**, see below. |
 | bit 15 set, sub `2` | Gate only: halt unless `_DAT_8007BABC == _DAT_8007BAA0`. |
-| bit 15 set, sub `3` | `FUN_801D8450()` - the side-band stream **teardown**: `FUN_800653C8(0x17)` then `(0x16)`, `FUN_8001FF58(6)` (release SEQ slot 6), then `_DAT_8007BA88 = 0` and `_DAT_8007BAFC = 0`. Ungated, and it *yields the frame* rather than falling through. |
+| bit 15 set, sub `3` | `FUN_801D8450()` - the side-band stream **teardown**: `FUN_800653C8(0x17)` then `(0x16)`, `FUN_8001FF58(6)` (close VAB slot 6 - the field bank, or a side-band bank streamed over it), then `_DAT_8007BA88 = 0` and the field-bank latch `_DAT_8007BAFC = 0`, so the next field init reloads PROT 0876 ([`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)). Ungated, and it *yields the frame* rather than falling through. |
 | bit 15 set, sub `4` | `func_0x80035BAC(arg)` - store `arg` as the parked slot's delay, scheduling the cue instead of firing it. Ungated. Port: `engine-core::scus_leaf_kernels::SfxCueDelays`. |
 
 #### The stream gates on op 0x36
@@ -543,7 +645,7 @@ script parks - the same "satisfied on arrival" shape the BGM barrier has.
 | 0x3B | `SET_ITEM_COUNT` | `[3B, slot, count]` | Set inventory entry: `*(byte*)(0x80084340 + (slot & 0xF) + (slot >> 4) * 0x414) = count`, then `func_0x80042558()` to refresh inventory display. Inventory pages of 0x414 bytes. |
 | 0x3C | `PARTY_ADD` | `[3C, char_id]` | Add character to party (sorted insertion into `_DAT_80084598..` array, count at `DAT_80084594`). Caps at 4 members. Updates `_DAT_8007B8F8` (party leader) when count was 0. Calls `FUN_801DE190()` (refresh display). Special: if count becomes 2 with `_DAT_80084598 == 0x100`, calls `func_0x800423E0()` and returns. |
 | 0x3D | `PARTY_REMOVE` | `[3D, char_id]` | Remove character (linear search, shift, count--). Updates leader if affected. Refresh via `FUN_801DE190()`. |
-| 0x3E | `WARP / INTERACT` | `[3E, op0, op1, …]` | If `op0 == 0xFF` or `op0 < 100`: trigger field interact at index `op1` on system context (`func_0x8003C83C(0xFB)`); writes `sys_ctx[+0x94] = scene_data + op1 * stride + 1`, calls `func_0x8003CE08(0xE)`. Else (`op0 >= 100`): **minigame door-warp** - `_DAT_8007BA34 = op0 - 100` (sub-id), `_DAT_8007B83C = 0x18` (mode 24 OTHER INIT), zero the session-winnings accumulator `_DAT_80084440` and `0x8007BAC0`, clear `player[+0x10] & 0x80000`, call `func_0x8003CE08(0xE)`. The op carries **no destination name**; full pre-warp/return behaviour in [§ 0x3E WARP](#0x3e-warp-mode-24-minigame-door-warp) below. |
+| 0x3E | `SCRIPTED_BATTLE / WARP` | `[3E, op0, op1, …]` | If `op0 == 0xFF` or `op0 < 100`: **scripted-battle install** of formation-table row `op1` on the system context (`func_0x8003C83C(0xFB)`): `sys_ctx[+0x94] = formation_table + op1 * stride + 1`, step-counter reroll, `func_0x8003CE08(0xE)`; `op0` is not read further - see [§ 0x3E scripted battle](#0x3e-scripted-battle-op0--100). Else (`op0 >= 100`): **minigame door-warp** - `_DAT_8007BA34 = op0 - 100` (sub-id), `_DAT_8007B83C = 0x18` (mode 24 OTHER INIT), zero the session-winnings accumulator `_DAT_80084440` and `0x8007BAC0`, clear `player[+0x10] & 0x80000`, call `func_0x8003CE08(0xE)`. The op carries **no destination name**; full pre-warp/return behaviour in [§ 0x3E WARP](#0x3e-warp-mode-24-minigame-door-warp) below. |
 | 0x3F | `SCENE_CHANGE` (named warp) | `[3F, idx_lo, idx_hi, name_len, [name_len name bytes], entry_x, entry_z, dir]` | **Named scene-change ("warp by name"), NOT a dialog op.** Full encoding + behaviour in [§ 0x3F SCENE_CHANGE](#0x3f-scene_change-named-warp) below. |
 | 0x40 | `DATA_BLOCK` | `[40, len, ...len bytes]` | Skips `len` bytes after header - embeds raw inline data. PC += 2 + len. |
 | 0x42 | `COND_JMP` | `[42, mode, op1, op2, op3]` | Multi-mode conditional. `mode == 0`: test `_DAT_8007B8F4 & (1 << (op1 & 0x1F))` - if clear, return `pc + 5` (skip). `mode == 1`: test screen-mode (`_DAT_8007B850`) against `_DAT_801F28D0[op1*4]` (8-entry table) for `op1 < 8`, bit 0x20 for `op1 == 8`, 0x40 for 9, 0x80 for 10, 0x10 for 11; **`op1 >= 0xC` falls through to the unconditional take-jump path** (no test). `mode >= 2` hits the dispatcher's default arm - halts at PC. Successful jump target = `pc + 3 + LE_u16(op2,op3)`; skip target = `pc + 5`. |
@@ -595,6 +697,75 @@ the live give-item is inlined in the dispatcher here.) NB the chest's announceme
 - PC += 7 + name_len.
 
 A scene's controller script lists every reachable destination as one of these ops - see [world-map § scene destinations](world-map.md). (This op only *looks* like dialog when the over-approximating walk desyncs on a literal `?` = `0x3F` inside message text. Field **dialogue** has no dedicated opcode - see [§ Field dialogue](#field-dialogue-has-no-opcode).)
+
+#### 0x3E scripted battle (`op0 < 100`)
+
+Both `op0 == 0xFF` and every `op0 < 100` run one body, the **scripted-battle
+install** - not a field interaction, and not a dialogue opener. The arm
+(`FUN_801DE840`, field overlay PROT 0897, from `0x801E06D4`) reads `op0`
+exactly twice: `beq v1,0xFF` at `0x801E06FC`, and `sltiu v0,v1,0x64` in its
+delay slot feeding `beqz` at `0x801E0704`, which sends `op0 >= 100` to the
+door-warp below. Nothing after that reads the byte, so `3E 00 02` installs
+row 2 exactly as `3E FF 02` would. The body, in order:
+
+1. Both arms first store `0xFF` to `player[+0x8E]` and `player[+0x8F]`
+   (`0x801E06E4` / `0x801E06F0`; player = `*(0x8007C348 + 0x1C)`) - the
+   region reader's cached tile, forced stale.
+2. `FUN_801D9E1C(player, 0)`. With `a1 = 0` the region reader re-derives the
+   player's region and re-seats its battle setup, then returns at `beqz fp`
+   (`0x801DA16C`) before the step roll - see
+   [the region battle setup](#the-region-battle-setup).
+3. `_DAT_8007B868 != 0` (the dev word) skips the rest; so does a missing
+   system entity (`FUN_8003C83C(0xFB)` returning null). Either way the PC
+   still advances by 3 (`0x801E00B8`).
+4. `sys[+0x8A] = 1`; `sys[+0x94] = *(ctrl+0x20) + op1 * ctrl[+0x5D] + 1`
+   with `ctrl = *0x801C6EA4` - the formation-table row, the same table
+   `FUN_801D9E1C` rolls into (`*(ctrl+0x20)` leads with the row count).
+5. `_DAT_8007B5FC = FUN_801DDF48()` (the step-counter reroll), then
+   `FUN_8003CE08(0xE)` (the battle mode request); PC += 3.
+
+The disc carries ten clean non-`0xFF` sites (`asset field-op-census --only
+3E`): `town0b` `3E 00 02` five times, `stone` `3E 00 03` four times and
+`jagaroom` `3E 01 00` once, each behind a flag SET and a wait or a battle
+BGM cue - the shape of every `3E FF` boss entry. Engine:
+`FieldHost::scripted_battle` → `World::trigger_scripted_battle` for every
+`op0`; `engine-core/tests/scripted_battle_low_op0_disc.rs` steps one site per
+scene into `SceneMode::Battle` against the named MAN row.
+
+#### The region battle setup
+
+The half of the region reader ([`FUN_801D9E1C`](../reference/functions/world-map.md#fun_801d9e1c-world_map-overlay))
+that runs on every region hit, whether or not the call then rolls (`0x801DA058..0x801DA12C`). The random-roll path reaches it
+on each player tile step; op `0x3E` reaches it with `a1 = 0` after presetting
+the player's `+0x8E` / `+0x8F` to `0xFF` so the same-tile early-out cannot
+fire; so does `0x801F12F8`. Every shipped region record is 12 bytes. What it
+stores, and who reads each:
+
+| Store | From | Reader |
+|---|---|---|
+| `_DAT_8007BD60` | `region[+8] & 0x1F` | battle init `FUN_800513F0` loads the backdrop from entry `0x80084540 + variant` via `FUN_8001FA88`, raw TOC `+5` = extraction `+3` |
+| `0x1F800394 \|= 0x300000` | every hit | the item list dims Door of Light (`0x100000`) / Door of Wind (`0x200000`) (`0x8003093C..0x80030970`) |
+| clear `0x100000` / `0x200000` | `region[+8]` bit 7 / bit 6 | the same two rows, re-opened |
+| `_DAT_8007B64B` | `(region[+8] >> 5) & 1` | `FUN_800513F0` keeps the backdrop's object 1 when set (`0x80051ABC`) |
+| `0x80084628` / `0x80084624` / `0x8008462C` | `region[+9] \| (region[+5] & 0x7F) << 8`, `region[+0xA]`, `region[+0xB]` | the world-map return point: the map word is the overworld scene's CDNAME index, the pair its tile |
+
+The disc bears the reading out: every `map01` region carries `0x40` (Door of
+Wind only), every `cave01` region `0x80` or `0xA0` (Door of Light) with a
+return point on `map01` (`0x55`), and `town01` neither. The pinned
+per-scene backdrops are this arithmetic - `town01`'s village regions carry
+variant `1` (CDNAME `3` + 1 + 3 = entry 7), `map01`'s variant `0`
+(`85 + 0 + 3 = 88`).
+
+Engine: `region_encounter::region_battle_setup` over the bytes
+`region_encounter_table_from_man` keeps per region;
+`World::on_field_step` and `World::trigger_scripted_battle` store it in
+`World::encounters.region_setup` (a short record would leave `_DAT_8007B64B`
+and the return triple as they were, and the store does too).
+`SceneHost::battle_stage_entry` and `battle_stage_keeps_object_1` are what
+both play hosts build the battle backdrop from; `World::bag_use_rows` reads
+the Door gates. Not modelled: the world-map return triple's consumer
+(the world map keeps its own visit table) and the world-map region tracker's
+setup half. Tests `engine-core/tests/region_battle_setup_disc.rs`.
 
 #### 0x3E WARP (mode-24 minigame door-warp)
 
@@ -656,7 +827,7 @@ before its `0x3F` -> `map01` tail, and a target of zero restarted the record.
 
 22+ sub-ops, keyed on operand byte 0:
 
-#### 0x43 sub-0/1/A/B - halt-acquire dispatcher
+#### 0x43 sub-0/1/A/B - scripted arc jump
 
 ```c
 // Acquire halt if not already halted (or if system channel can override):
@@ -676,8 +847,8 @@ if (((ctx[+0x94] != 0) || ctx == _DAT_8007C364) &&
 If `pbVar47[1] == 0 && pbVar47[2] == 0`: use ctx's current position (read `+0x14/+0x16/+0x18`); store negated-Y at `ctx[+0x8E]`. Else: decode target XZ from operand bytes via `(b & 0x7F) * 0x80 + 0x40` (or `+0x80` if high bit set); call `func_0x80019278(ctx)` for collision lookup of Y.
 
 None of the operand halfwords is a resume PC. All three go through the
-unaligned signed-16 reader `FUN_8003CE9C` and end up as arguments to the walk
-dispatcher `FUN_801D25EC`:
+unaligned signed-16 reader `FUN_8003CE9C` and end up as arguments to the arc-hop
+spawner `FUN_801D25EC`:
 
 - `+3` and `+5` are its `a2` / `a3` (read at `0x801DF54C` / `0x801DF558` on the
   non-player arm and `0x801DF57C` / `0x801DF588` on the player one).
@@ -697,6 +868,78 @@ sent `urudre2` `P2[9]` backwards to body `0x00A0` on every arrival - its
 
 If halt was *not* acquired: `j 0x801DEE4C`, which restores `s8` from the
 invocation's entry PC (`s4`) instead of advancing.
+
+**The op is a scripted jump.** `FUN_801D25EC(actor, &landing, apex = +3,
+frames = +5, release_ctx, 0x400, follow)` (`jal` at `0x801DF5AC`) builds the
+same quadratic-Bezier clip as the player's ledge hop - peak `apex` units above
+the higher endpoint, cursor step `0x1000 / frames` - on a helper ticked by
+`FUN_801D5C08`, which writes the curve into the actor's `+0x14..+0x18` (and
+`-Y` into `+0x8E` for a non-player actor). The chained record is a **release
+watcher** (`FUN_801D5D60`): when the arc lands it clears `0x400` - the halt
+bit this arm's acquire raised - from the arced actor, or, when the actor is the
+player, from the calling context and the player both. `follow` is `1` for
+sub-`1`/`0xB` and makes the watcher run the follow-camera ease on the player
+while the arc flies. The disc carries 492 clean sites across the four sub-ops
+(`asset field-op-census`: `43 01` 293, `43 0A` 124, `43 00` 68, `43 0B` 7).
+All 492 are extended: 323 arc the player (`0xF8`), the rest an NPC
+channel, and all but six sit in partition-2 cutscene records.
+
+The engine runs the arc. `legaia_engine_vm::field_ledge_hop_arc::ScriptArcRequest`
+decodes the operand from the arm's loads; the cutscene timeline's `C3 F8` park
+and `FieldHost::op43_arc_jump` (NPC channels) both reach
+`World::start_field_script_arc`, and `World::tick_field_script_arcs` advances
+the clip and the watcher. An NPC's height lives in
+`World::script_actors.npc_heights` for as long as it stands where the arc put
+it - the NPC position map carries X / Z only - and both play hosts place NPCs
+through `World::field_npc_render_y`.
+
+**The follow camera during an arc.** `FUN_801DB510(player)` is the whole
+free-roam follow step, not just an ease: on a frame the player moved it
+re-composes the shot (`jal 0x801DAB90` at `0x801DB5B4`), eases the live globals
+toward it, and pins the focus to `-player` unless the zone's mode nibble is `5`
+(`0x801DB724..0x801DB734`, `0x801DB820..0x801DB83C`). The watcher calling it
+every frame therefore hands the camera back to the follow step for the length
+of a sub-`1` / `0xB` player arc, cutscene or not. The engine does the same:
+`World::script_arc_follow_camera` is true while such an arc flies, and the
+camera's tick runs its follow writeback and zone step through a cutscene for
+those frames, without the snap a cutscene hand-back takes (the watcher never
+calls `FUN_801DB8EC`). A glide in flight keeps the frame. Under the
+`Cinematic` camera mode an op-`0x45` apply selects, the port's view does not
+read the follow globals, so the arc's follow reaches only the `Follow` mode.
+
+**The acquire refuses an actor already mid arc.** The arm's acquire
+(`0x801DF384..0x801DF40C`) fails when the target carries the halt bit `0x400`
+and the scene word `*(_DAT_801C6EA4) + 8` is zero, and a failed acquire
+leaves the PC on the instruction (`beqz v0, 0x801DEE4C`; `0x801DEE4C` is
+`move s8, s4`) - the op waits and retries, it is never skipped. The scene word
+is non-zero only while a placement's spawn section is being pre-run (set and
+cleared around the spawn loop at SCUS `0x8003B73C` / `0x8003B928` and around
+the two field-VM re-runs at `0x801E2820` / `0x801E2BBC`). The engine reads the
+halt it can see - an arc still in flight on that actor
+(`World::script_arc_target_halted`, the `FieldHost::op43_arc_target_halted`
+hook) - and the VM returns `Halt` at the op on any refusal; it previously
+advanced past the op, skipping the jump. The acquire's other clause (an NPC
+target with no `+0x94` owner) is not modelled.
+
+**Retail capture of a player arc.** `town01`'s walk-on tiles `(30..32, 19)`
+spawn `P2[12..14]`, each a player arc `C3 F8 01 <x> 10 60 00 18 00` (sub-`1`,
+apex `0x60`, frames `0x18`) behind a pad-direction test. From
+`s3_rimelm_freeroam` with a position poke to `(3904, 2700)` and Down held
+([`autorun_w5b_field_watch.lua`](../../scripts/pcsx-redux/autorun_w5b_field_watch.lua)),
+the crossing onto `(30,19)` spawns `P2[12]` (`FUN_8003BDE0(0x1E, 0x13, 12, 1)`
+from `ra 0x801D218C`), `FUN_801D25EC` runs six vsyncs later with `a2 = 0x60`,
+`a3 = 0x18` from `ra 0x801DF5B4`, and `FUN_801D5C08` / `FUN_801D5D60` tick
+once per field tick for thirteen ticks. The player's `(Y, Z)` per tick is
+`(-235, 2519) (-267, 2482) (-288, 2445) (-299, 2408) (-299, 2371)
+(-289, 2334) (-268, 2298) (-236, 2261) (-194, 2224) (-141, 2187)
+(-78, 2150) (-4, 2113) (0, 2112)` from a start of `(-192, 2556)` - every
+sample equal to `bezier_at` over `build_hop_arc`'s control point with the
+cursor stepping `2 * (0x1000 / 0x18)` a tick. The landing is the decoded
+tile's centre, `(3904, 2112)` = tile `(30, 16)`, on the floor at `0`. The
+peak is `-299`: `96` above the higher endpoint at `t = 0.5`, as the
+construction states, and `107` above it at the curve's true minimum
+(`t = 0.375` for these endpoints), so "peaks `apex` above" is the midpoint
+height, not the extremum.
 
 #### 0x43 sub-2/3-6/7/8/9/C/D/E/F - actor / sound / face / position cluster
 
@@ -1903,11 +2146,15 @@ Ported: [`legaia_engine_vm::field_passive_hud`](../../crates/engine-vm/src/field
 There is **no dedicated "open dialogue" field-VM opcode.** Talking to a field
 NPC is the **interaction pipeline**, not a text-carrying instruction:
 
-1. **Trigger** - the field-interact op (`0x3E` with `op0 < 100`) arms the actor's
-   interaction context: it sets `sys_ctx[+0x94]` to the actor's interaction-script
-   pointer (`scene_data + op1*stride + 1`) and `sys_ctx[+0x8a] = 1`. (`0x3E` with
-   `op0 >= 100` is the door-warp; `0x3F` is the named scene-change - neither is
-   dialogue.)
+1. **Trigger** - the touch / button-press interaction: the entity SM
+   `FUN_801DA51C` resumes the touched actor's parked script (the facing probe
+   `FUN_801CF9F4` picks the actor; see
+   [`field-locomotion.md`](field-locomotion.md)). No field-VM opcode is involved.
+   Op `0x3E` in particular is not: with `op0 < 100` it is the
+   [scripted-battle install](#0x3e-scripted-battle-op0--100) - the pointer it
+   writes into `sys_ctx[+0x94]` is a **formation-table** row, not an
+   interaction script - and with `op0 >= 100` it is the door-warp. `0x3F` is
+   the named scene-change.
 2. **Text source** - the dialogue text is the **actor's own inline
    interaction-script MES** at `actor[+0x90] + actor[+0x9e]` (the actor's script
    buffer base + the running text offset). Confirmed by `FUN_80039b7c`, which sets
@@ -1988,15 +2235,78 @@ derives the cursor structurally instead
 segment so the walk can never desync inside message bytes and read an ASCII `!`
 as a terminator).
 
-**The port applies it to door records only.** The rule is general, but moving
-the talk-NPC path onto it regresses at least one pinned conversation: `retock`'s
-innkeeper resolves its 2-option picker and then runs neither its gold debit nor
-its HP/MP restore (`engine-core/tests/inn_stay_field_vm_disc.rs`). What the port
-does between an NPC record's spawn terminator and its first line does not come
-out where the old entry did, and until that is understood the corrected cursor
-ships for the records it was derived on. The two entry points are
-`placement_interaction_record` (cursor) and `placement_inline_prologue`
-(`script_pc0`).
+**The port applies it to every placement, talk NPCs included.** Entering a
+talk record at `script_pc0` re-ran its spawn section on every talk - its seat
+pokes, and any story-flag write it carries - then tripped the terminator and
+fell through to the first line, skipping the record's own segment-selection
+prologue. `kor5`'s `P1[2]` is the flag-write case: its spawn section is `0x25`,
+`SET 0x619`, a `CamCfg`, `0x21`, so every talk re-latched a flag retail writes
+only at scene load. The two entry points are `placement_interaction_record`
+(cursor, the interaction dispatch) and `placement_inline_prologue`
+(`script_pc0`, for whole-record disc sweeps).
+
+The inn regression that once kept talk NPCs on `script_pc0` was the runner,
+not the cursor. `retock`'s innkeeper opens its interaction with `CC F8 85`, a
+halt-acquire on the player. Retail's acquire for sub `5` is the arm at
+`0x801E2148..0x801E21DC` (jump table `0x801CEF48`, entries `5`, `0xE` and `0xF`
+all point there; `0x801E1ECC..0x801E1F54`, cited here before, is the same-shaped
+arm of sub `0`, `4C 80`). It halts the target and, for the player target, the
+caller too, then advances by its width in `s7`; `s7 = 0` is the refusal,
+`beqz s7, 0x801DEE4C` at `0x801E21D0`. The runner hands such an op the record's
+own context as the target's stand-in, and the halt bit it left there turned each
+later cross-context op into a `Halt`, ending the stay before its gold gate. The
+runner keeps the caller's halt state across a cross-context op. The acquire's
+own refusal is for a target that already carries `0x400` while the scene word
+`*(_DAT_801C6EA4) + 8` is `0` (`0x801E2168..0x801E218C`), the same test the
+dispatcher's halted-target early-out makes (`0x801DE90C..0x801DE940`, which also
+lets a caller whose `+0x50` is `0xFB` through).
+
+**Where retail ends it (capture).** `retock_innkeeper_talk_open`, a Cross
+cadence, exec-BPs on the arm's entry and on `0x801E21D0`
+([`autorun_w5b_field_watch.lua`](../../scripts/pcsx-redux/autorun_w5b_field_watch.lua)):
+one stay runs to its last page, and when that page is dismissed the player's
+movement lock (`+0x10 & 0x80000`) clears with the innkeeper's cursor `+0x9E`
+parked **on** the `26 9D FE` loop-back at `+0x18A` - not executed. Nothing more
+runs until the next Cross on the innkeeper; that talk's first VM step executes
+the loop-back to `+0x28`, the two selector tests, and the acquire at `+0x30`,
+which **succeeds** (`s7 = 5`, target the player, caller the innkeeper): both
+take `0x400`, the cursor advances to `+0x36`, and the second conversation opens
+there. So the talk ends at the page close before the loop-back, and a failing
+acquire plays no part - the earlier reading that "the acquire fails once the
+window has closed" is falsified. It also misread its gate: the scene word
+`*(_DAT_801C6EA4) + 8` reads `0` on every sampled vsync of both conversations,
+consistent with its one documented use (non-zero only while a placement's spawn
+section is pre-run, [above](#0x43-sub-01ab---scripted-arc-jump)), so it is not
+a modal-window flag. The two `0x400` bits the acquire set are clear again 18
+vsyncs later with the second conversation still open; what clears them is not
+identified.
+
+**The end rule is the dialog SM's, not the acquire's.** Once a box's lines are
+scanned, `FUN_80039B7C` hands the byte after them to `FUN_80038050`
+(`jal 0x80038050` at `0x80039C84`) and ends the talk when it returns `0`
+(`bne v0,zero,0x80039D64` at `0x80039C8C`; the fall-through clears the actor's
+`+0x10 & 0x100`, zeroes `+0x9C` and releases the player lock). `FUN_80038050`'s
+jump table (`0x80010F38`, 44 entries for `0x21..0x4C`) continues on `0x24`,
+`0x25` and `0x48` (cursor `+1`), on the option bytes `0x27..0x2A`, and on
+`0x4C FF` / `0x4C FE` (`+2` / `+3`); `0x21` steps past itself and ends; every
+other byte - a `0x26` jump, any opcode - takes the default and ends with the
+cursor left on it. In the placement interaction records of every scene, the
+parking bytes found after a box are almost all `0x26` jumps (forward to a shared
+tail or back to the top selector; a handful are other opcodes), so this is how a
+talk ends: parked on that jump, which the next talk then runs. The capture above
+is one instance.
+
+The engine ports the classification as
+`legaia_engine_core::inline_dialogue::talk_dispatch`: when a dismissed box's
+next byte parks, the runner ends the talk with the cursor recorded
+(`InlineDialogue::parked_pc`), and `World::drive_inline_dialogue` stores it as
+the placement's interaction entry, so the next talk on the same actor resumes
+there - through the loop-back, the selectors and the acquire, which is not an
+end. `crates/engine-core/tests/inn_stay_field_vm_disc.rs` pins the innkeeper: the
+stay parks at `+0x18A` and the second talk opens at the greeting again. Not
+modelled: a talk that ends on a raw `0x21` keeps its entry (retail's cursor
+moves past the `0x21`), and prop-bound records (doors, cupboards) run their tail
+through, since only NPC talks are captured.
 
 An earlier engine model drove `0x3F → open_dialog(text_id, inline, …)`, which is
 wrong twice over: `0x3F` is the named scene-change, and field dialogue is the
@@ -2005,10 +2315,12 @@ interaction-driven actor-text pipeline above, not an inline-text opcode. (The
 **not** the dialog open/poll an earlier note assumed.)
 
 **Engine wiring (re-grounded).** The from-scratch engine now matches this:
-`field_interact` (`0x3E` with `op0 < 100`) opens the interacted actor's inline
-dialogue from `World::npcs.dialog` (the per-actor inline interaction-script
-text, keyed by `slot` = the actor's MAN record index, populated at field-scene
-entry), via the host's `open_dialog` primitive. `0x3F` is now a **live named
+`World::trigger_field_interact` (the interaction probe and the walk-touch
+post) opens the interacted actor's inline dialogue from `World::npcs.dialog`
+(the per-actor inline interaction-script text, keyed by `slot` = the actor's
+MAN record index, populated at field-scene entry), via the host's
+`open_dialog` primitive. An earlier port routed op `0x3E` with `op0 < 100`
+here too, which opened dialogue where retail starts a fight. `0x3F` is now a **live named
 scene-change** (`host.scene_transition_named` → `SceneHost::tick`), no longer a
 dialog opener. The dialog-dismiss gate stays on the `0x4C` nibble-5 sub-4 poll.
 
@@ -2026,7 +2338,7 @@ discs and translation packs.
 ## Connection to other crates
 
 - [`crates/mdt`](../formats/mdt.md) - opcode `0x22` `EXEC_MOVE` drives the move-table consumer at `FUN_800204F8`. Move IDs in scripts feed straight into the .mdt parsers.
-- [`crates/mes`](../formats/mes.md) - field **dialogue** has no dedicated opcode (see [§ Field dialogue](#field-dialogue-has-no-opcode)): it is the **actor's inline interaction-script MES text**, shown by the per-frame actor-dialog SM (`FUN_80039b7c`) + pager (`FUN_801D84D0`), triggered by the **field-interact op** (`0x3E` with `op0 < 100`). The text `crates/mes` parses is that inline `0x1F`/glyph stream. (Opcode `0x3F` is the named scene-change, not a dialog opener.)
+- [`crates/mes`](../formats/mes.md) - field **dialogue** has no dedicated opcode (see [§ Field dialogue](#field-dialogue-has-no-opcode)): it is the **actor's inline interaction-script MES text**, shown by the per-frame actor-dialog SM (`FUN_80039b7c`) + pager (`FUN_801D84D0`), triggered by the touch / button-press interaction (no opcode). The text `crates/mes` parses is that inline `0x1F`/glyph stream. (Opcode `0x3F` is the named scene-change, not a dialog opener.)
 - [`crates/anm`](../formats/anm.md) - opcode `0x34` sub-op 3 plays 3D animations via `func_0x800252EC` - likely the ANM consumer.
 - [`crates/engine-vm`](../../crates/engine-vm/src/field.rs) - destination for the from-scratch Rust port. Adds a `field_vm` module sister to the existing actor VM. Reuses the `Host` trait pattern.
 

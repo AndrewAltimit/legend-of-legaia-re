@@ -1,17 +1,18 @@
 use super::*;
 
-/// Field dialogue opens from the **field-interact op** (`0x3E` with
-/// `op0 < 100`) reading the interacted actor's inline interaction-script
-/// text (keyed by the op's `slot` = the actor's MAN record index) - the real
-/// field-dialogue mechanism that replaces the `0x3F`-as-dialog stand-in.
+/// Field dialogue opens from the **interaction path**
+/// ([`World::trigger_field_interact`], what the talk probe calls) reading the
+/// interacted actor's inline interaction-script text (keyed by `slot` = the
+/// actor's MAN record index). No field-VM opcode opens dialogue: op `0x3E`
+/// with `op0 < 100` is the scripted-battle install
+/// (see `field_op_3e_low_op0_installs_scripted_battle_row`).
 #[test]
 fn field_interact_opens_actor_inline_dialogue() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     // Seed actor slot 3's inline interaction-script dialogue.
     world.npcs.dialog.insert(3, vec![0x1F, b'h', b'i', 0x00]);
-    // 0x3E with op0 = 5 (< 100 -> field interact), op1 = slot 3.
-    world.load_field_script(vec![0x3E, 0x05, 0x03]);
+    world.trigger_field_interact(0x05, 0x03);
     let _ = world.tick();
     let req = world
         .dialog
@@ -43,7 +44,7 @@ fn field_interact_opens_actor_inline_dialogue() {
 fn field_interact_without_inline_text_opens_no_dialogue() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.load_field_script(vec![0x3E, 0x05, 0x07]);
+    world.trigger_field_interact(0x05, 0x07);
     let _ = world.tick();
     assert!(
         world.dialog.current.is_none(),
@@ -53,8 +54,8 @@ fn field_interact_without_inline_text_opens_no_dialogue() {
 
 /// The field-VM dialogue-accept auto-arms a scripted-encounter carrier.
 ///
-/// Interacting with the carrier's placement (field-interact op `0x3E`,
-/// `op0 < 100`) opens its dialogue and arms the engage; accepting the prompt
+/// Interacting with the carrier's placement (the talk path,
+/// [`World::trigger_field_interact`]) opens its dialogue and arms the engage; accepting the prompt
 /// (the dialog-advance dismiss, op `0x4C` n5 sub-4) engages the carrier, so the
 /// SM (`FUN_801DA51C`) runs its scene-transition and flips Field -> Battle -
 /// with no manual `engage_field_carrier` call. This is the field-VM-driven
@@ -84,7 +85,8 @@ fn field_dialogue_accept_auto_arms_scripted_carrier() {
     world.npcs.dialog.insert(7, vec![0x1F, b'y', b'o', 0x00]);
 
     // Interact with the scripted carrier's slot, then poll the dialog.
-    world.load_field_script(vec![0x3E, 0x05, 0x03, 0x4C, 0x54]);
+    world.trigger_field_interact(0x05, 0x03);
+    world.load_field_script(vec![0x4C, 0x54]);
     world.input.set_pad(0);
     let _ = world.tick();
     assert!(
@@ -390,11 +392,15 @@ fn spar_menu_of_derives_fight_option_from_the_scripted_battle_install() {
 /// `3E FF 04` install) must still run once the frames elapse, not be dropped
 /// when the wait first halts. Before the resume fix the WaitFrames halt ended
 /// the conversation and the SET never ran.
+///
+/// The box carries a `0x25` after it, the byte retail's dialog SM continues
+/// the talk on (`FUN_80038050`); an opcode straight after a box would end the
+/// talk parked on it instead.
 #[test]
 fn inline_runner_resumes_across_wait_frames_to_run_the_post_wait_effect() {
-    // First box "hi", then WaitFrames 16, then SET system flag 7 (the effect),
-    // then reply "ok", then end.
-    let mut buf = vec![0x1F, b'h', b'i', 0x00];
+    // First box "hi" + `0x25`, then WaitFrames 16, then SET system flag 7 (the
+    // effect), then reply "ok", then end.
+    let mut buf = vec![0x1F, b'h', b'i', 0x00, 0x25];
     buf.extend_from_slice(&[0x4A, 0x10, 0x00]); // WaitFrames 16 (u16 LE target)
     buf.extend_from_slice(&[0x50, 0x07]); // SET system flag 7 - the gated effect
     buf.extend_from_slice(&[0x1F, b'o', b'k', 0x00]); // reply box
@@ -595,7 +601,8 @@ fn field_dialogue_accept_on_plain_npc_does_not_arm_battle() {
     // No scripted carrier -> field_carrier_slots stays empty.
     world.npcs.dialog.insert(7, vec![0x1F, b'y', b'o', 0x00]);
 
-    world.load_field_script(vec![0x3E, 0x05, 0x07, 0x4C, 0x54]);
+    world.trigger_field_interact(0x05, 0x07);
+    world.load_field_script(vec![0x4C, 0x54]);
     world.input.set_pad(0);
     let _ = world.tick();
     assert!(

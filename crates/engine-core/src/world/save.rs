@@ -399,6 +399,34 @@ impl World {
         self.party.scene_save_allowed = man.is_some_and(|m| m.header.low_flag);
     }
 
+    /// Release an op-`0x49` **menu-entry-context** park once the pause menu
+    /// has closed. Returns whether a park was released.
+    ///
+    /// Retail's menu teardown leaf `FUN_8003540C` is three instructions -
+    /// `sw zero,0x148(gp)` / `sw zero,0x138(gp)` / `jr ra` - and it clears the
+    /// entry-context word `gp+0x138` (`_DAT_8007B450`) **unconditionally**,
+    /// whatever sub-op parked it. That store is what releases a kind-`0x0D`
+    /// park: the op-`0x49` dispatcher leaves a `-1` table row standing (see
+    /// [`crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`]), and the
+    /// menu's close is the only thing that ends it. Under that gate the root
+    /// picker's cancel opens the ready check, and only its **Yes** closes the
+    /// menu, so the release reads as "the player answered ready". Hosts call
+    /// this from their pause-menu close path.
+    ///
+    /// The other store, `gp+0x148` (`_DAT_8007B460`), zeroes the live
+    /// window-list head; the port's menu windows are owned by the menu
+    /// session, which the same close drops, so there is no separate word to
+    /// clear.
+    ///
+    /// PORT: FUN_8003540C
+    pub fn release_menu_entry_context_park(&mut self) -> bool {
+        if self.field_vm.submode_screen.park_sub_op.is_none() {
+            return false;
+        }
+        self.clear_op49_park();
+        true
+    }
+
     /// Kind byte of the op-`0x49` entry context the pause menu tests - the
     /// engine's read of retail `*_DAT_8007B450`.
     ///
@@ -442,40 +470,6 @@ impl World {
     ///
     /// REF: FUN_801de840 (op `0x49` Idle arm, `_DAT_8007B450 = operand`)
     /// REF: FUN_801dc6b4 (the routing consumer)
-    /// Release an op-`0x49` **menu-entry-context** park once the pause menu
-    /// it gated has closed. Returns whether a park was released.
-    ///
-    /// Only the park-preserving sub-ops
-    /// ([`crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`], i.e.
-    /// kind `0x0D`) are affected - every other sub-op unparks through its own
-    /// screen's Done edge and must not be disturbed by a menu that merely
-    /// happened to be open.
-    ///
-    /// **This is the port's clearer, not a traced one.** Retail's op-`0x49`
-    /// dispatcher returns on a `-1` table row without touching
-    /// `_DAT_8007B450` (see the const's docs), so the park it leaves standing
-    /// is cleared by something outside that routine which is not decoded. The
-    /// engine picks the one exit a kind-`0x0D` gate structurally has: under
-    /// that gate the root picker's cancel cannot close the menu, it opens the
-    /// ready check (sub-screen `3`), and only that check's **Yes** reaches
-    /// sub-screen `0` and ends the session - so a closed kind-`0x0D` menu is
-    /// a player who answered "ready". Resuming the parked script there is
-    /// what the prompt reads as. Hosts call this from their menu-close path.
-    ///
-    /// PORT: FUN_8003540C (the SCUS menu-teardown leaf: `sw zero,0x148(gp)`
-    /// / `sw zero,0x138(gp)` / `jr ra` - the live-window list head and the
-    /// entry-context word cleared together, which is what releases the park).
-    pub fn release_menu_entry_context_park(&mut self) -> bool {
-        let Some(sub_op) = self.field_vm.submode_screen.park_sub_op else {
-            return false;
-        };
-        if !crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS.contains(&sub_op) {
-            return false;
-        }
-        self.clear_op49_park();
-        true
-    }
-
     pub fn menu_entry_context_kind(&self) -> Option<u8> {
         if let Some(sub_op) = self.field_vm.submode_screen.park_sub_op {
             return Some(sub_op);

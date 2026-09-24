@@ -46,7 +46,9 @@ The cells are filled at install by the procedural fill at **`0x801EF334`** (see 
 
 Two corrections this table carries against an earlier reading of these bytes: the four animated tiles are **not** all value `0xB`, and only the *event* tiles use the half-height modulus - the animated ones scatter over the full board. `legaia_engine_core::tile_board::procedural_fill` already implements both correctly; it was the prose that drifted.
 
-The cell buffer **is** heap-allocated at install: `DAT_801F35C0 = FUN_80017888(0, width * height)` at `0x801EF3E8..0x801EF3F4`, immediately before the base fill, with `width` and `height` re-read from the header (`_DAT_8007B450[3]` / `[4]`) and multiplied - so the buffer is exactly one byte per cell and nothing pads it. `FUN_80017888` is the logging wrapper over the game's allocator `FUN_8002B468` (a best-fit walk of a doubly-linked free list, `(size + 3) & ~3` alignment, heap index in `a0`); its failure arm prints `malloc err size %d` and bumps a byte counter at `gp+0x510`. Nothing frees it - the per-scene control-block reset zeroes `_DAT_8007B450`, not this pointer.
+The cell buffer **is** heap-allocated at install: `DAT_801F35C0 = FUN_80017888(0, width * height)` at `0x801EF3E8..0x801EF3F4`, immediately before the base fill, with `width` and `height` re-read from the header (`_DAT_8007B450[3]` / `[4]`) and multiplied - so the buffer is exactly one byte per cell and nothing pads it. `FUN_80017888` is the logging wrapper over the game's allocator `FUN_8002B468` (a best-fit walk of a doubly-linked free list, `(size + 3) & ~3` alignment, heap index in `a0`); its failure arm prints `malloc err size %d` and bumps a byte counter at `gp+0x510`.
+
+The walk SM's teardown state `0xE` frees it, together with the tile-actor table `DAT_801F35BC`, through the matching wrapper `FUN_80017B94` (`0x801EFE78` / `0x801EFE88`; it decrements the live-allocation count at `gp+0x488` that `FUN_80017888` raises). An earlier reading here said nothing frees the buffer; it had only looked at the per-scene control-block reset, which zeroes `_DAT_8007B450` and not this pointer.
 
 The pointer has exactly **one** writer in the whole disc corpus (`find-gp-relative-refs.py --va 0x801f35c0`: 12 references across 84 images, one store), so the install site above is the allocation, not one of several. (`func_0x800204f8`, also called on the install path, is the move-table consumer, not an allocator.)
 
@@ -184,16 +186,28 @@ left standing at the last cell the board pass moved it to.
 
 ## Walk state machine
 
-The board controller is a small state machine keyed on the controller actor's `+0x54` field (`overlay_0897_801ef2b0.txt`, switch on `*(param_1 + 0x54)`):
+The board controller is a state machine keyed on the controller actor's `+0x54` field: fifteen states, bounded by `sltiu 0xF` and dispatched through the jump table at `0x801CF65C` (read from the PROT 0897 image; `overlay_0897_801ef2b0.txt` is the matching dump). Every arm falls into the render tail at `0x801EFEA0`.
 
-| State | Role |
-|---|---|
-| `0` | init: allocate the cell tile-actor table + runtime board, spawn the player + tile actors from header ids |
-| `1` | fade-in (ramps `actor[+0x9c]`) |
-| `2` | interpolate the actor's world position toward the target cell centre (`DAT_801f35d0`/`d4`); on arrival → `3` |
-| `3` | arrival: read the current cell; `7` → trigger sub-state, `8..10` → event sub-state, otherwise run the animated-tile decay pass, then → `4` |
-| `4` | **read input + collision + commit**: see below |
-| `5` | menu / confirm (entered when the menu button edge `_DAT_8007b874 & 0x10` fires) |
+| State | Entry | Role |
+|---|---|---|
+| `0` | `0x801EF310` | init: allocate the cell buffer + tile-actor table, spawn the player + tile actors from header ids, run the procedural fill at `0x801EF334` |
+| `1` | `0x801EF680` | fade-in (ramps `actor[+0x9c]`) |
+| `2` | `0x801EFA88` | interpolate the actor's world position toward the target cell centre (`DAT_801f35d0`/`d4`); on arrival → `3` |
+| `3` | `0x801EF6FC` | arrival: cell `7` → state `7`; cells `8..0xA` → state `8`; otherwise every animated cell **on the whole board** steps `0xB → 0xC → 0xD → 0xE → 0xB`, then → `4` |
+| `4` | `0x801EF824` | **read input + collision + commit**: see below |
+| `5` | `0x801EFBD0` | quit prompt (entered on the menu edge `_DAT_8007b874 & 0x10`): `FUN_80031D00`, then the two-choice picker `FUN_801E9DC8(0x8007BB88, 2, 1)`; confirm with `*0x8007BB88 == 0` → `6`, anything else back to `4` |
+| `6`, `7` | `0x801EFC2C` | → `9` (quit, trigger cell) |
+| `8` | `0x801EFC38` | event cell: the flag writes below, then → `0xB` |
+| `9`, `0xB` | `0x801EFCD0` | `+0x54 += 1` |
+| `0xA`, `0xC` | `0x801EFCE4` | fade-out: `+0x9C -= DAT_1F800393 << 8`, copied into every tile actor's `+0x72`; below zero → `0xD` |
+| `0xD` | `0x801EFDA8` | park every tile actor at `(0x3FC0, 0x3FC0)` (`FUN_8003D344`), → `0xE` |
+| `0xE` | `0x801EFE64` | teardown: free the cell buffer and the tile-actor table (`FUN_80017B94`), restore `_DAT_8007B5F0` from `DAT_801F35C4`, zero the scene control block's `+0x3E` |
+
+Zeroing `+0x3E` is how the board ends: the op-`0x49` subsystem actor (descriptor `0x8007065C`) polls it (`0x801F163C..0x801F16AC`), retires, and sets `_DAT_8007B450 = 1`, which the parked op reads as "done" and advances past its operand block.
+
+### Event-cell flags (state 8)
+
+With `v = cell - 8` and the two header bases read through the sign-extending halfword reader `FUN_8003CE9C` (`A` = `+7`, `B` = `+9`), state 8 **sets** system flag `A + v + 1` (`FUN_8003CE08`), **tests** flag `B + v` (`FUN_8003CE64`), and when that test is clear also **sets** flag `A`. So each of the three event cells owns one flag above the base, the base flag records "an event cell was reached", and the `B` bank lets a script pre-mark cells whose reach should not raise the base flag.
 
 ### State 4 - input, collision, commit
 
@@ -227,10 +241,13 @@ every cell `rand()%6 + 2`, four animated tiles `0xB..0xE` at random cells
 anywhere on the board, three event tiles `8..0xA` scattered into the bottom
 half-board), seats the
 player at the start-cell centre, and holds the script suspended through the
-op-49 tristate. The arrival pass mirrors the walk SM's case 3: an event /
-transition cell (`8..=0xA`) exits the board mode - the suspended script reads
-`Done` and resumes past the install op - and an animated cell cycles
-`0xB -> 0xE -> 0xB`. The header's actor-template ids are kept on
+op-49 tristate. The arrival pass mirrors the walk SM's state 3: a trigger cell (`7`) or an
+event cell (`8..=0xA`) exits the board mode - the suspended script reads
+`Done` and resumes past the install op - and an event cell first writes the
+state-8 flags above (`tile_board::event_cell_flag_writes`); any other arrival
+advances every animated cell on the board (`tile_board::advance_animated_cells`).
+The exit is immediate - the fade states `9..0xD` and the quit prompt (state
+`5`) are not ported, because no shipped script installs a board. The header's actor-template ids are kept on
 `World::board.header` for the render consumers.
 
 **Tile-actor spawn + reposition.** At install `World::try_install_tile_board`
@@ -257,9 +274,10 @@ table + draw list so they don't leak into the next scene; the player actor
 ## Open
 
 - ~~Whether any board is *fixed* (inline-script cells) rather than procedurally filled.~~ **Resolved (negative):** sub-op-5 boards are **always procedural**. The install op advances the script cursor a constant `+0xe` regardless of `width × height` (`addiu fp,fp,0xe` at `0x801e0948`), so a cell array cannot ride the operand stream, and the cells are rand-filled at `0x801EF334`. There is no fixed-board variant to lift. See [always procedural](#always-procedural-no-inline-cell-boards).
-- ~~The event-cell arrival's header `+7`/`+9` flag-operand consumption.~~ **Resolved:** `+7` (base A) is the event-SET base and `+9` (base B) the TEST/gate base, both into the system-flag bank `DAT_80085758` (SET `func_0x8003ce08` / TEST `func_0x8003ce64`, reader `func_0x8003ce9c`), consumed in walk SM case 8. See [event-flag bases](#cell-value-semantics). The engine still surfaces only the exit through the op-49 resume.
+- ~~The event-cell arrival's header `+7`/`+9` flag-operand consumption.~~ **Resolved and ported:** `+7` (base A) is the event-SET base and `+9` (base B) the TEST/gate base, both into the system-flag bank `DAT_80085758`, consumed in walk SM state 8 - see [event-cell flags](#event-cell-flags-state-8).
 - ~~Per-cell tile-actor **rendering**.~~ **Resolved, on both hosts.** See [Rendering the board](#rendering-the-board).
-- **No retail scene installs a board.** A disc-wide census (every partition record of all scene MANs, scripted-table + v12-embedded forms, walked with the field-VM disassembler, plus a raw byte-pair sweep) finds zero op-`0x49` sub-5 sites - the board is a script-reachable but retail-unused mode (pinned by the negative census test in `tile_board_draw_live.rs`). The play-window `LEGAIA_TILE_BOARD_DEMO=1` env var synthesizes a retail-shaped 14-byte install near the player for that reason. Consequences: the intended per-cell tile *art* (retail header `+0xc` template base into `DAT_801f35bc`) and the board-plane Y behaviour have no retail reference to compare against - only a live capture of a debug-menu entry into the mode could pin them.
+- **No retail scene installs a board.** A disc-wide census (every partition record of all scene MANs, scripted-table + v12-embedded forms, walked with the field-VM disassembler, plus a raw byte-pair sweep) finds zero op-`0x49` sub-5 sites - the board is a script-reachable but retail-unused mode (pinned by the negative census test in `tile_board_draw_live.rs`).
+  The [field-op census](../tooling/field-op-census.md) agrees: `asset field-op-census --only "49 05"` finds **0** clean occurrences across every scene MAN and event-script carrier, and its single non-clean decode (in `deene`'s event carrier) sits past a decode error. The board's states beyond the walk are therefore ported only as far as a synthetic board exercises them. The play-window `LEGAIA_TILE_BOARD_DEMO=1` env var synthesizes a retail-shaped 14-byte install near the player for that reason. Consequences: the intended per-cell tile *art* (retail header `+0xc` template base into `DAT_801f35bc`) and the board-plane Y behaviour have no retail reference to compare against - only a live capture of a debug-menu entry into the mode could pin them.
 
 ## Rendering the board
 

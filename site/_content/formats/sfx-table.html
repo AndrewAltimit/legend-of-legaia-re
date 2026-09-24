@@ -75,7 +75,7 @@
   <p>Raw TOC indices run two above extraction indices (<a href="cdname.html#numbering-space">CDNAME numbering</a>); CDNAME labels read <code>battle_data</code> for 0868 and <code>monster_data</code> for 0869 - a label is a hint, the byte match is the verdict.</p>
 
   <h3 id="aliased-slots">Slots share sound RAM in pairs</h3>
-  <p>The field bank (slot 6) and the class-2 battle bank (slot 2) occupy the <strong>same physical SPU region</strong>, refilled per mode, so they are never resident together. Field modes open slots <code>0, 1, 3, 6</code>; battle opens <code>0, 1, 2, 7</code>.</p>
+  <p>The field bank (slot 6) and the class-2 battle bank (slot 2) occupy the <strong>same physical SPU region</strong>, refilled per mode, so they are never resident together. Field modes open slots <code>0, 1, 3, 6</code>; battle opens <code>0, 1, 2, 7</code>. The battle mode init closes slot 6 and clears the field-bank latch <code>0x8007BAFC</code> (so do the minigame warp and field-VM op <code>0x36</code> sub 3); the next field init sees the latch clear and reloads PROT 0876. A cue whose slot is closed is skipped, not rerouted.</p>
   <table>
     <thead><tr><th>Slot pair</th><th>SPU base</th><th>Region size</th><th>Bank bodies</th></tr></thead>
     <tbody>
@@ -124,7 +124,7 @@
   <details class="disclosure" id="spu-budget">
     <summary>SPU budget: both pinned banks in one region</summary>
     <div class="disclosure-body">
-      <p>The engine stages slots 0 and 2 together; the BGM region is what remains of the console's 512 KiB of sound RAM.</p>
+      <p>The engine stages slot 0 plus the current mode's slot-2 / slot-6 bank together; the BGM region is what remains of the console's 512 KiB of sound RAM.</p>
       <table>
         <thead><tr><th>Region</th><th>Bytes</th></tr></thead>
         <tbody>
@@ -135,7 +135,7 @@
           <tr><td>Largest scene BGM VAB staged</td><td>269 632</td></tr>
         </tbody>
       </table>
-      <p>One step larger silences music that plays; one step smaller does not fit both banks. Category 6 / 11 cues fall back to the class-2 bank - a residency limit, matching retail, where slot 6 <em>is</em> slot 2's region. A host that wants the field cues exact reloads the shared region on the field / battle transition.</p>
+      <p>One step larger silences music that plays; one step smaller does not fit slot 0 plus PROT 0869. Slot 6 <em>is</em> slot 2's region in retail, and both play hosts refill it per mode the way retail's inits do: PROT 0876 (the field bank) in the field and on the world map, PROT 0869 in battle, a minigame's own bank in its mode. A cue whose slot is closed is silent, as retail's drainer skips it.</p>
     </div>
   </details>
   <details class="disclosure" id="ids-above-0x200">

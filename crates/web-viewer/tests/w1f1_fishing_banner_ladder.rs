@@ -29,9 +29,10 @@
 //!
 //! ## Host symmetry
 //!
-//! The browser **play page** owns the simpler `FishingSession` loop and services
-//! the same five timers from `tick_frame`; its hook / reel-in / auxiliary edges
-//! are driven here too. The native window's `window/minigames.rs` runs the
+//! The browser **play page** runs the same `PondSession` through
+//! `World::tick_fishing` and services the same five timers from `tick_frame`,
+//! off the world's per-tick fishing events; its hook / resolution / auxiliary
+//! edges are driven here too. The native window's `window/minigames.rs` runs the
 //! identical `FishingBanners` edge map but lives in a `bin/` target no test can
 //! call - that host is covered by inspection, not by this ladder.
 
@@ -320,9 +321,9 @@ fn the_miss_banner_runs_when_reeling_hard_loses_the_line() {
     );
 }
 
-/// Host symmetry: the browser play page services the same five timers off its
-/// own `FishingSession` phase edges, from `tick_frame`. Drive a cast to its
-/// hook and its landing there too, so the banner set is not one host's.
+/// Host symmetry: the browser play page services the same five timers off the
+/// world's per-tick fishing events, from `tick_frame`. Drive casts to a hook
+/// and a resolution there too, so the banner set is not one host's.
 #[test]
 fn the_play_page_services_the_same_banner_timers() {
     let Some(bytes) = disc_bytes() else {
@@ -339,42 +340,65 @@ fn the_play_page_services_the_same_banner_timers() {
         return;
     }
 
-    let phase = |rt: &LegaiaRuntime| -> String {
-        let v: serde_json::Value =
-            serde_json::from_str(&rt.play_fishing_state_json()).expect("state json");
-        v["phase"].as_str().unwrap_or_default().to_string()
+    let state = |rt: &LegaiaRuntime| -> serde_json::Value {
+        serde_json::from_str(&rt.play_fishing_state_json()).expect("state json")
+    };
+    let phase = |rt: &LegaiaRuntime| state(rt)["phase"].as_str().unwrap_or_default().to_string();
+    let tick = |rt: &mut LegaiaRuntime, pad: u16, n: usize| {
+        rt.set_pad(pad);
+        for _ in 0..n {
+            rt.tick_frame().expect("tick");
+        }
     };
     const CROSS: u16 = 0x4000;
+    const CIRCLE: u16 = 0x2000;
+    let cast = |rt: &mut LegaiaRuntime| {
+        tick(rt, 0, 1);
+        tick(rt, CIRCLE, 1);
+        tick(rt, 0, 40);
+        tick(rt, CIRCLE, 1);
+        tick(rt, 0, 30);
+    };
 
-    // Cross locks the cast: the Casting -> Fighting edge seeds the hook and
-    // splash timers.
-    assert_eq!(phase(&rt), "casting");
-    rt.set_pad(0);
-    rt.tick_frame().expect("tick");
-    rt.set_pad(CROSS);
-    rt.tick_frame().expect("tick");
-    assert_eq!(phase(&rt), "fighting", "Cross must lock the cast");
+    assert_eq!(phase(&rt), "idle");
+    // Hold Cross through the pre-hook loop, recasting whenever the empty line
+    // is reeled all the way in, until a fish strikes.
+    cast(&mut rt);
+    let mut hooked = false;
+    for _ in 0..60_000 {
+        tick(&mut rt, CROSS, 1);
+        match phase(&rt).as_str() {
+            "hooked" => {
+                hooked = true;
+                break;
+            }
+            "idle" => cast(&mut rt),
+            _ => {}
+        }
+    }
+    assert!(hooked, "no strike on the play page within the budget");
+    let hud: serde_json::Value =
+        serde_json::from_str(&rt.play_fishing_hud_json(320, 240)).expect("hud json");
+    assert_eq!(hud["open"].as_bool(), Some(true), "{hud}");
 
-    // Hold Cross: reeling both accrues landing progress and loads the gauge,
-    // so the fight resolves one way or the other. Either resolution is a
-    // banner edge (reel-in on a catch, miss on a snap).
+    // Reel while the gauge is safe until the fight resolves - either
+    // resolution is a banner edge (reel-in on a catch, miss on a snap).
     let mut resolved = false;
-    for _ in 0..20_000 {
-        rt.tick_frame().expect("tick");
-        if phase(&rt) == "done" {
+    for _ in 0..60_000 {
+        let t = state(&rt)["tension"].as_i64().unwrap_or(0);
+        tick(&mut rt, if t < 0x800 { CROSS } else { 0 }, 1);
+        if matches!(phase(&rt).as_str(), "landed" | "snapped") {
             resolved = true;
             break;
         }
     }
     assert!(resolved, "the play page's fight never resolved");
 
-    // Recast off the result: the Done -> Casting edge is the auxiliary
+    // Circle dismisses the result: the recast event is the auxiliary
     // banner's seed on this host.
-    rt.set_pad(0);
-    rt.tick_frame().expect("tick");
-    rt.set_pad(CROSS);
-    rt.tick_frame().expect("tick");
-    assert_eq!(phase(&rt), "casting", "Cross must recast off the result");
+    tick(&mut rt, 0, 1);
+    tick(&mut rt, CIRCLE, 1);
+    assert_eq!(phase(&rt), "idle", "Circle must return to the shore");
 
     // The HUD still composes while the banners run - the page reads it every
     // frame and a live banner must not close the payload.

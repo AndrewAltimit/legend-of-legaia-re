@@ -79,7 +79,7 @@ impl ApplicationHandler for PlayWindowApp {
             // Left-mouse drag-orbit. Horizontal drag rotates the field camera
             // around the player (`Camera::manual_orbit`); the movement
             // compass reads the same field, so the d-pad remap tracks the
-            // orbited view (see `field_follow_camera_mvp`). Field free-roam
+            // orbited view (see `camera_view::field_follow_view`). Field free-roam
             // only - world map / battle / menus keep their own cameras.
             //
             // Vertical drag pitches the `F3` debug orbit vantage, which is

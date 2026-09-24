@@ -552,6 +552,9 @@ impl World {
     fn tick_battle_impact_fx(&mut self) {
         use vm::battle_formulas::{FadeInputs, TintWords, tint_sm_step};
         use vm::battle_impact_fx as ifx;
+        // The tag-`0x67` ribbon is a per-frame call in retail: re-derived
+        // below every tick, so it drops the frame the window closes.
+        self.battle.clip_ribbon = None;
         if self.mode != SceneMode::Battle {
             return;
         }
@@ -594,32 +597,79 @@ impl World {
                     vm::battle_action::ActorFlags(vm::battle_action::ActorFlags::WINDUP_DONE);
             }
         }
-        // The per-clip arms: acting party actor's committed record key +
-        // cursor window select the write onto its target.
+        // The per-clip arms: the acting actor's committed record key + cursor
+        // window select the writes onto it and its target.
         let acting = self.battle_ctx.active_actor as usize;
         let Some(actor) = self.actors.get(acting) else {
             return;
         };
-        if actor.battle_monster_id.is_some() {
-            // Party arms only (the monster arm - tag 0x3B - is decoded in
-            // `8004ce2c.txt` but not ported).
-            return;
-        }
         let Some(player) = &actor.battle_animation else {
             return;
         };
         let key = player.attach_key();
         let cursor = player.cursor_sixteenths();
-        let char_id = self.party_roster_slot(acting) as u8 + 1;
         let target = actor.battle.active_target as usize;
+        if actor.battle_monster_id.is_some() {
+            // The monster arm (tag `0x3B`, `0x8004D2DC..0x8004D32C`).
+            if let Some((own, tgt)) = ifx::monster_render_arm(key, actor.battle.hit_count_bound) {
+                if let Some(t) = self.actors.get_mut(target) {
+                    t.battle.render_flag = tgt;
+                }
+                if let Some(a) = self.actors.get_mut(acting) {
+                    a.battle.render_flag = own;
+                }
+            }
+            return;
+        }
+        let char_id = self.party_roster_slot(acting) as u8 + 1;
+        let hit_index = actor.battle.input_cursor;
         if let Some(sel) = ifx::clip_impact_acting_selector(char_id, key)
             && let Some(a) = self.actors.get_mut(acting)
         {
             a.battle.impact_state = sel;
         }
+        // Vahn's tag-`0x2B` arm writes the acting actor's `+0x21C`.
+        if let Some(flag) = ifx::vahn_render_arm(char_id, key, cursor)
+            && let Some(a) = self.actors.get_mut(acting)
+        {
+            a.battle.render_flag = flag;
+        }
+        // Noa's tag-`0x29` / `0x2D` status arm.
+        let first_monster = self
+            .battle_monster_slots()
+            .into_iter()
+            .find(|&(_, _, slot)| slot == 0)
+            .map_or(0, |(_, id, _)| id as u8);
+        let scripted = self.battle.scripted_fight;
+        if ifx::noa_status_arm(char_id, key, hit_index, scripted, first_monster, || {
+            self.next_rng()
+        }) && let Some(t) = self.actors.get_mut(target)
+        {
+            t.battle.field_flags |= ifx::NOA_STATUS_BITS;
+        }
         let Some(w) = ifx::clip_impact(char_id, key, cursor) else {
             return;
         };
+        // `w.effect_at_target` is tag `0x67`'s per-frame
+        // `FUN_801E1D98(&target[+0x3C], 0xC)` (`addiu a0,s1,0x3c` in the
+        // delay slot at `0x8004D220`, `li a1,0xc` at `0x8004D224`): the
+        // chained streak ribbon anchored on the target's seat vector.
+        // `+0x3C..+0x43` is the spawn node's seat copied verbatim by the
+        // battle setup (`0x8005158C..0x80051598`); the engine keeps its
+        // `x`/`z` as `BattleActor::seat` and every retail seat row has
+        // `y = 0` (`crate::battle_seats`), so the seat's Y is `0`.
+        if w.effect_at_target
+            && let Some(t) = self.actors.get(target)
+        {
+            let (sx, sz) = t
+                .battle
+                .seat
+                .unwrap_or((t.move_state.world_x, t.move_state.world_z));
+            self.battle.clip_ribbon = Some(super::ClipRibbon {
+                seat: [sx, 0, sz],
+                trail_id: ifx::GALA_EFFECT_ARG,
+            });
+        }
         let tint = self
             .tables
             .move_power
@@ -636,9 +686,9 @@ impl World {
             t.battle.render_color = word;
         }
         // The selector + full blend arm even without disc data (the freeze
-        // is data-free; the tint word just has nothing to carry). Both arms
-        // stamp `+0x0C = 0x1000` (`sw v0,0xc(s1)` at `0x8004D1DC` /
-        // `0x8004D294`).
+        // is data-free; the tint word just has nothing to carry). Every tint
+        // arm stamps `+0x0C = 0x1000` (`sw v0,0xc(s1)` at `0x8004D180` /
+        // `0x8004D1DC` / `0x8004D234` / `0x8004D294`).
         t.battle.impact_state = w.impact_selector;
         t.battle.render_blend = vm::battle_formulas::TINT_BLEND_FULL;
     }
@@ -1245,10 +1295,7 @@ impl World {
         self.locomotion
             .player_anim
             .as_ref()
-            .map(|a| {
-                let clip = if a.walking { &a.walk } else { &a.idle };
-                clip.frame_count() as u16
-            })
+            .map(|a| a.active_frame_count() as u16)
             .filter(|n| *n > 0)
             .unwrap_or(crate::field_env::PLAYER_CLIP_STANDIN_FRAMES)
     }

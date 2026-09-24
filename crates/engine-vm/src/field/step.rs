@@ -472,10 +472,12 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x3E - WARP / INTERACT. Two paths:
+        // 0x3E - SCRIPTED BATTLE / MINIGAME WARP. Two paths:
         //
-        // - INTERACT (`op0 == 0xFF` or `op0 < 100`): `[3E, op0, op1]`,
-        //   PC += 3. Calls `host.field_interact(op0, op1)`.
+        // - SCRIPTED BATTLE (`op0 == 0xFF` or `op0 < 100`): `[3E, op0, op1]`,
+        //   PC += 3. Installs formation-table row `op1` and requests the
+        //   battle mode switch; `op0` is not read past this test. Calls
+        //   `host.scripted_battle(op0, op1)`.
         //
         // - WARP (`op0 >= 100`): `[3E, op0, _, _, _, _]`, PC += 6. This is the
         //   **mode-24 minigame door-warp**, not a scene change: `sub_id =
@@ -493,7 +495,7 @@ pub fn step<H: FieldHost>(
                 let Some(&op1) = bytecode.get(operand + 1) else {
                     return StepResult::Unknown { opcode, pc };
                 };
-                host.field_interact(op0, op1);
+                host.scripted_battle(op0, op1);
                 StepResult::Advance {
                     next_pc: pc + header_size + 2,
                 }

@@ -15,6 +15,22 @@ pub struct CaptureImage {
     pub height: u32,
 }
 
+/// Cut an `(x, y, w, h)` window out of a captured frame. The caller has
+/// bounded the window by the image.
+fn crop_capture(img: &CaptureImage, x: u32, y: u32, w: u32, h: u32) -> CaptureImage {
+    let stride = img.width as usize * 4;
+    let mut rgba = Vec::with_capacity(w as usize * h as usize * 4);
+    for row in y..y + h {
+        let start = row as usize * stride + x as usize * 4;
+        rgba.extend_from_slice(&img.rgba[start..start + w as usize * 4]);
+    }
+    CaptureImage {
+        rgba,
+        width: w,
+        height: h,
+    }
+}
+
 /// Panic message for the two arms that `encode_frame`'s normalisation makes
 /// unreachable. Kept as one constant so the invariant is stated once.
 const NORMALISED: &str =
@@ -54,19 +70,23 @@ impl Renderer {
         // `SceneWithScreenPrims` is a `Scene` plus a composited ordering-table
         // pass; unwrap it here so the scene arms below stay single-purpose and
         // the overlay is drawn as a tail on top of whatever the scene emitted.
-        let (target, composited_prims) = match target {
-            RenderTarget::SceneWithScreenPrims { scene, prims } => {
-                (RenderTarget::Scene(scene), prims)
-            }
-            other => (other, &[] as &[crate::screen_overlay::ScreenPrim]),
+        let empty: &[crate::screen_overlay::ScreenPrim] = &[];
+        let (target, composited_prims, under_prims) = match target {
+            RenderTarget::SceneWithScreenPrims {
+                scene,
+                prims,
+                under_overlay,
+            } => (RenderTarget::Scene(scene), prims, under_overlay),
+            other => (other, empty, empty),
         };
         let composited_vram = match &target {
             RenderTarget::Scene(s) => Some(s.vram),
             _ => None,
         };
-        let composite_overlay = composited_vram.is_some() && !composited_prims.is_empty();
+        let composite_overlay =
+            composited_vram.is_some() && !(composited_prims.is_empty() && under_prims.is_empty());
         if composited_vram.is_some() {
-            self.stage_screen_overlay(composited_prims);
+            self.stage_screen_overlay_split(under_prims, composited_prims);
         }
         // Stage uniform writes before begin_render_pass.
         match &target {
@@ -180,7 +200,14 @@ impl Renderer {
                 }),
                 stencil_ops: None,
             });
+            // With a scene viewport set, the clear colour belongs to the
+            // stage rect only: the letterbox around it is black (retail has
+            // no letterbox - its clear colour covers exactly the 320x240
+            // display), and the stage rect is filled with the clear colour
+            // by `viewport_fill` as the scene pass's first draw.
+            let viewport_fill = self.stage_viewport_fill(&target);
             let clear_rgba = match &target {
+                RenderTarget::Scene(_) if viewport_fill.is_some() => wgpu::Color::BLACK,
                 RenderTarget::Scene(s) => s
                     .clear_color
                     .map(|c| wgpu::Color {
@@ -202,6 +229,7 @@ impl Renderer {
                     a: 1.0,
                 },
             };
+            let viewport_fill = viewport_fill.is_some();
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("legaia frame pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -217,6 +245,24 @@ impl Renderer {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+            // The stage rect the 3D pass and the screen-primitive overlay are
+            // confined to (see `set_scene_viewport`); the text / sprite
+            // overlays are in surface pixels and take the whole target.
+            let (full_w, full_h) = (self.config.width, self.config.height);
+            let scene_vp = self
+                .scene_viewport
+                .get()
+                .filter(|&(x, y, w, h)| w > 0 && h > 0 && x + w <= full_w && y + h <= full_h);
+            let set_scene_vp = |rp: &mut wgpu::RenderPass<'_>| {
+                if let Some((x, y, w, h)) = scene_vp {
+                    rp.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
+                }
+            };
+            let set_full_vp = |rp: &mut wgpu::RenderPass<'_>| {
+                if scene_vp.is_some() {
+                    rp.set_viewport(0.0, 0.0, full_w as f32, full_h as f32, 0.0, 1.0);
+                }
+            };
             match target {
                 RenderTarget::Clear => {}
                 RenderTarget::Texture(t) => {
@@ -284,6 +330,20 @@ impl Renderer {
                     rp.draw_indexed(0..mesh.index_count, 0, 0..1);
                 }
                 RenderTarget::Scene(scene) => {
+                    set_scene_vp(&mut rp);
+                    if viewport_fill {
+                        // Depth test passes against the cleared far plane and
+                        // the pipeline writes no depth, so every 3D draw
+                        // below still lands over the fill.
+                        rp.set_pipeline(&self.screen_overlay_pipeline);
+                        rp.set_bind_group(0, &scene.vram.bind_group, &[]);
+                        rp.set_vertex_buffer(0, self.viewport_fill_vbuf.slice(..));
+                        rp.set_index_buffer(
+                            self.viewport_fill_ibuf.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                        rp.draw_indexed(0..6, 0, 0..1);
+                    }
                     let bg_borrow = self.scene_uniforms_bg.borrow();
                     let bg: &wgpu::BindGroup = &bg_borrow;
                     rp.set_pipeline(&self.scene_vram_mesh_pipeline);
@@ -423,6 +483,14 @@ impl Renderer {
                             rp.draw_indexed(start..start + count, 0, 0..1);
                         });
                     }
+                    // The composited prims that sit UNDER the 2D overlays
+                    // (`SceneWithScreenPrims::under_overlay`): the field
+                    // attached-light pools, which retail draws beneath the
+                    // party HUD.
+                    if composite_overlay {
+                        set_scene_vp(&mut rp);
+                        self.draw_screen_overlay_runs(&mut rp, scene.vram, true);
+                    }
                     let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(3);
                     if let Some(s) = scene.overlay_sprites {
                         overlays.push(s);
@@ -434,6 +502,7 @@ impl Renderer {
                         overlays.push(t);
                     }
                     if !overlays.is_empty() {
+                        set_full_vp(&mut rp);
                         let ranges = self.scene_quad_ranges.borrow();
                         if !ranges.iter().all(|(_, n)| *n == 0) {
                             rp.set_pipeline(&self.text_pipeline);
@@ -471,6 +540,7 @@ impl Renderer {
                     }
                 }
                 RenderTarget::ScreenOverlay { vram, .. } => {
+                    set_scene_vp(&mut rp);
                     self.draw_screen_overlay(&mut rp, vram);
                 }
                 // Rebound to `Scene` at the top of this function.
@@ -480,7 +550,8 @@ impl Renderer {
             // drawn last so the quads sit over the scene's meshes, sprites and
             // text, at the reversed-Z near plane.
             if let (true, Some(vram)) = (composite_overlay, composited_vram) {
-                self.draw_screen_overlay(&mut rp, vram);
+                set_scene_vp(&mut rp);
+                self.draw_screen_overlay_runs(&mut rp, vram, false);
             }
         }
         crate::profile::mark("encode");
@@ -516,10 +587,27 @@ impl Renderer {
         dst: crate::vram_capture::VramRect,
         opts: crate::vram_capture::CaptureOpts,
     ) -> Result<usize> {
-        let img = self.capture_rgba(target)?;
+        let img = self.capture_scene_rgba(target)?;
         Ok(crate::vram_capture::blit_rgba_into_vram(
             &img.rgba, img.width, img.height, vram, dst, opts,
         ))
+    }
+
+    /// [`Self::capture_rgba`], cropped to the scene viewport
+    /// ([`Self::set_scene_viewport`]) when one is set: the picture the 3D
+    /// pass drew, without the letterbox around it. What a frame-into-VRAM
+    /// capture wants - retail's framebuffer *is* the 320x240 display, so the
+    /// bars are not part of it.
+    pub fn capture_scene_rgba(&self, target: RenderTarget<'_>) -> Result<CaptureImage> {
+        let img = self.capture_rgba(target)?;
+        let Some((x, y, w, h)) = self
+            .scene_viewport
+            .get()
+            .filter(|&(x, y, w, h)| w > 0 && h > 0 && x + w <= img.width && y + h <= img.height)
+        else {
+            return Ok(img);
+        };
+        Ok(crop_capture(&img, x, y, w, h))
     }
 
     /// Render one frame into an offscreen texture at the current surface
@@ -1091,11 +1179,34 @@ impl Renderer {
     /// the top-left corner of a larger frame. See
     /// [`crate::screen_overlay::build_geometry`].
     fn stage_screen_overlay(&self, prims: &[crate::screen_overlay::ScreenPrim]) {
-        let geo = crate::screen_overlay::build_geometry(
-            prims,
+        self.stage_screen_overlay_split(&[], prims);
+    }
+
+    /// Stage two ordering-table lists into the one overlay buffer: `under`
+    /// (drawn before the 2D sprite / text overlays) first, then `over`. Each
+    /// list is ordered on its own by the shared builder; the split point is
+    /// the number of runs `under` produced.
+    fn stage_screen_overlay_split(
+        &self,
+        under: &[crate::screen_overlay::ScreenPrim],
+        over: &[crate::screen_overlay::ScreenPrim],
+    ) {
+        let (w, h) = (
             crate::vram_capture::PSX_SCREEN_WIDTH as u32,
             crate::vram_capture::PSX_SCREEN_HEIGHT as u32,
         );
+        let mut geo = crate::screen_overlay::build_geometry(under, w, h);
+        self.screen_overlay_under_runs.set(geo.runs.len());
+        if !over.is_empty() {
+            let tail = crate::screen_overlay::build_geometry(over, w, h);
+            let (vbase, ibase) = (geo.vertices.len() as u32, geo.indices.len() as u32);
+            geo.vertices.extend(tail.vertices);
+            geo.indices.extend(tail.indices.iter().map(|i| i + vbase));
+            geo.runs.extend(tail.runs.into_iter().map(|mut r| {
+                r.index_start += ibase;
+                r
+            }));
+        }
         self.screen_overlay_runs.borrow_mut().clone_from(&geo.runs);
         if geo.is_empty() {
             return;
@@ -1136,9 +1247,71 @@ impl Renderer {
     /// draw per [`crate::screen_overlay::DrawRun`], binding the opaque
     /// pipeline or the matching per-ABR blend pipeline. Groups 0 = the shared
     /// PSX VRAM texture.
+    /// Stage the scene-viewport fill for this frame: when the target is a
+    /// scene with a non-black clear colour and a
+    /// [`scene viewport`](Self::set_scene_viewport) narrower than the target,
+    /// write one flat quad in that colour over the viewport and return the
+    /// colour. The render pass then clears the whole target black and draws
+    /// the quad first, so only the stage rect reads as the clear colour -
+    /// before this, a stage battle's sky clear filled the letterbox bars too.
+    fn stage_viewport_fill(&self, target: &RenderTarget<'_>) -> Option<[f32; 4]> {
+        let RenderTarget::Scene(scene) = target else {
+            return None;
+        };
+        let c = scene.clear_color?;
+        if c[0] == 0.0 && c[1] == 0.0 && c[2] == 0.0 {
+            return None;
+        }
+        let (x, y, w, h) = self.scene_viewport.get()?;
+        let (full_w, full_h) = (self.config.width, self.config.height);
+        if w == 0 || h == 0 || x + w > full_w || y + h > full_h || (w, h) == (full_w, full_h) {
+            return None;
+        }
+        let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let (sw, sh) = (
+            crate::vram_capture::PSX_SCREEN_WIDTH as i16,
+            crate::vram_capture::PSX_SCREEN_HEIGHT as i16,
+        );
+        let quad = crate::screen_overlay::ScreenPrim::Flat(crate::screen_overlay::FlatQuad {
+            xy: [(0, 0), (sw, 0), (0, sh), (sw, sh)],
+            color: [byte(c[0]), byte(c[1]), byte(c[2]), 255],
+            gouraud: None,
+            semi_transparent: false,
+            abr_mode: 0,
+            ot_index: 0,
+            depth: None,
+        });
+        let geo = crate::screen_overlay::build_geometry(&[quad], sw as u32, sh as u32);
+        self.queue.write_buffer(
+            &self.viewport_fill_vbuf,
+            0,
+            bytemuck::cast_slice(&geo.vertices),
+        );
+        self.queue.write_buffer(
+            &self.viewport_fill_ibuf,
+            0,
+            bytemuck::cast_slice(&geo.indices),
+        );
+        Some(c)
+    }
+
     fn draw_screen_overlay(&self, rp: &mut wgpu::RenderPass<'_>, vram: &UploadedVram) {
+        self.draw_screen_overlay_runs(rp, vram, false);
+    }
+
+    /// Draw one half of the staged runs: `under == true` draws the runs of
+    /// the `under` list [`Self::stage_screen_overlay_split`] staged, `false`
+    /// the rest.
+    fn draw_screen_overlay_runs(
+        &self,
+        rp: &mut wgpu::RenderPass<'_>,
+        vram: &UploadedVram,
+        under: bool,
+    ) {
         use crate::screen_overlay::BlendClass;
-        let runs = self.screen_overlay_runs.borrow();
+        let all = self.screen_overlay_runs.borrow();
+        let split = self.screen_overlay_under_runs.get().min(all.len());
+        let runs = if under { &all[..split] } else { &all[split..] };
         if runs.is_empty() {
             return;
         }

@@ -440,8 +440,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <div class="mg-row" id="baka-throw-row">
           <button class="mg-btn mg-throw" type="button" data-baka="1">Throw 1<span class="mg-key" data-pad-key="Square">V</span></button>
           <button class="mg-btn mg-throw" type="button" data-baka="2">Throw 2<span class="mg-key" data-pad-key="Circle">X</span></button>
-          <button class="mg-btn mg-throw" type="button" data-baka="3">Throw 3<span class="mg-key" data-pad-key="Triangle">C</span></button>
-          <button class="mg-btn mg-throw" type="button" data-baka="4">Special<span class="mg-key">SPACE</span></button>
+          <button class="mg-btn mg-throw" type="button" data-baka="3">Throw 3<span class="mg-key" data-pad-key="Cross">Z</span></button>
+          <button class="mg-btn mg-throw" type="button" data-baka="4">Special<span class="mg-key" data-pad-key="Triangle">C</span></button>
         </div>
         <div class="mg-hud">
           <span>Stage <b id="baka-stage">&mdash;</b></span>
@@ -453,8 +453,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         </div>
         <p class="mg-controls">
           <b>Keys:</b> <kbd data-pad-key="Square">V</kbd> / <kbd data-pad-key="Circle">X</kbd> /
-          <kbd data-pad-key="Triangle">C</kbd> are throws 1 / 2 / 3, <kbd>Space</kbd> is the
-          Special. <em>Pot at risk</em> is everything won this run that a loss would wipe;
+          <kbd data-pad-key="Cross">Z</kbd> are throws 1 / 2 / 3 - Square, Circle and Cross, the
+          buttons the cabinet reads - and <kbd data-pad-key="Triangle">C</kbd> is the Special. <em>Pot at risk</em> is everything won this run that a loss would wipe;
           <em>Banked</em> is what PAY OUT has already kept.
         </p>
         <details class="disclosure">
@@ -511,10 +511,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <div class="mg-verdict" id="slot-verdict"></div>
         <p class="mg-controls">
           <b><kbd>Space</kbd> is the whole machine.</b> Press it to spin, then once more per
-          reel to stop them left to right - three presses, three reels, which is exactly what
-          the cabinet's three stop buttons do. A win banks itself; when the coins run out, a
-          press racks a fresh machine. Clicking the machine counts as a press, and
-          <kbd data-pad-key="Cross">Z</kbd> (Cross) works for pad players.
+          reel to stop them left to right. The cabinet itself has a stop button per reel -
+          <kbd data-pad-key="Square">V</kbd> (Square), <kbd data-pad-key="Cross">Z</kbd> (Cross)
+          and <kbd data-pad-key="Circle">X</kbd> (Circle) stop the left, middle and right reel
+          in any order. A win banks itself; when the coins run out, a press racks a fresh
+          machine. Clicking the machine counts as a press.
         </p>
         <div class="mg-hud">
           <span>Coins <b class="mg-big" id="slot-balance">0</b></span>
@@ -1745,7 +1746,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }
     const st = JSON.parse(api.baka_state_json());
     if (bakaView && bakaView.ok && !$('baka-duel').hidden) {
-      bakaView.frame(st.live ? st : null, bakaMeta);
+      /* The engine's round chrome rides along with the stage meta. */
+      let chrome = [];
+      try {
+        if (typeof api.baka_chrome_json === 'function') chrome = JSON.parse(api.baka_chrome_json());
+      } catch (e) { chrome = []; }
+      bakaView.frame(st.live ? st : null, Object.assign({}, bakaMeta, { chrome }));
     }
 
     /* Post-win intermission: let the victory flourish play, then raise the
@@ -2738,8 +2744,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
   /* ---- the one control ----
    *
-   * The cabinet has three stop buttons and a payout tray. A web page has one
-   * key, so the three stops are taken in sequence and the tray tallies itself:
+   * The cabinet has three stop buttons and a payout tray. Space folds them
+   * onto one key - the per-reel buttons are in the keydown handler - so the
+   * three stops are taken in sequence and the tray tallies itself:
    * press to spin, press once per reel, and the win is already in the balance
    * by the time the reels settle. `slot_press` (the WASM API) is the dispatch;
    * this only decides what to SAY about it, and what an empty machine means. */
@@ -2930,6 +2937,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   /* The three "pad" lanes the dance chart and the Baka exchange are played
    * on, and the fourth Baka move: the face buttons, in retail's own order. */
   const FACE_LANES = { Square: 1, Circle: 2, Triangle: 3, Cross: 4 };
+  /* The Baka duel's own map: retail's slot-0 read is Square 0x80 -> 1,
+   * Circle 0x20 -> 2, Cross 0x40 -> 3; its type 4 is an auto-finisher, so the
+   * port's chargeable Special takes the one face button the duel leaves free. */
+  const BAKA_LANES = { Square: 1, Circle: 2, Cross: 3, Triangle: 4 };
 
   document.addEventListener('keydown', (e) => {
     if (!api || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
@@ -2964,7 +2975,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           bakaChoiceCommit();
         }
       } else {
-        const m = FACE_LANES[b];
+        /* The cabinet reads Square / Circle / Cross as throws 1 / 2 / 3
+         * (FUN_801D3F44's slot-0 branch); Triangle is this port's Special. */
+        const m = BAKA_LANES[b];
         if (m) { e.preventDefault(); bakaChoose(m); }
         else if (n >= 1 && n <= 4) { e.preventDefault(); bakaChoose(n); }
       }
@@ -2974,7 +2987,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
        * the engine's default table answers Start to both Space and Enter -
        * so the dispatch stays on pad buttons and a rebind follows it.
        * Cross still lands for pad-consistency with the other games. */
-      if ((b === 'Start' || b === 'Cross') && slotOnScreen()) { e.preventDefault(); slotPress(); }
+      /* While the reels run, each has its own stop button, as on the
+       * cabinet (FUN_801CF0D8 state 3): Square / Cross / Circle stop reels
+       * 0 / 1 / 2 - the play window's map too. Space stays the page's
+       * one-button fold (spin, then one stop per press, left to right). */
+      const reelOf = { Square: 0, Cross: 1, Circle: 2 }[b];
+      const st = (reelOf !== undefined && slotOnScreen() && api.slot_stop_reel)
+        ? JSON.parse(api.slot_state_json()) : null;
+      if (st && st.can_stop) { e.preventDefault(); api.slot_stop_reel(reelOf); }
+      else if ((b === 'Start' || b === 'Cross') && slotOnScreen()) { e.preventDefault(); slotPress(); }
     } else if (active === 'fishing') {
       /* Retail pad map: Circle casts, Cross (reel bit 0x40) = reel A, Square
        * (reel bit 0x80) = reel B; every FRESH press also feeds the strike

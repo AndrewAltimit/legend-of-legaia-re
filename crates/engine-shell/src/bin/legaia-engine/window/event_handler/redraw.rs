@@ -12,11 +12,16 @@ use super::super::*;
 fn present_target<'a>(
     scene: &'a RenderScene<'a>,
     prims: &'a [legaia_engine_render::screen_overlay::ScreenPrim],
+    under_overlay: &'a [legaia_engine_render::screen_overlay::ScreenPrim],
 ) -> RenderTarget<'a> {
-    if prims.is_empty() {
+    if prims.is_empty() && under_overlay.is_empty() {
         RenderTarget::Scene(scene)
     } else {
-        RenderTarget::SceneWithScreenPrims { scene, prims }
+        RenderTarget::SceneWithScreenPrims {
+            scene,
+            prims,
+            under_overlay,
+        }
     }
 }
 
@@ -338,9 +343,8 @@ impl PlayWindowApp {
             // Minigame side-channels: the dance count-in + tutorial + effect
             // spawns, the fishing venue actors (wander / line / floor solve /
             // camera publish / sway), the Baka round chrome, and the shared
-            // effect pool. Runs BEFORE tick_fishing_banners so
-            // `fishing_prev_phase` still holds last frame's phase for its own
-            // edge detection.
+            // effect pool. Both it and tick_fishing_banners read the fishing
+            // events this world tick raised.
             self.tick_minigame_extras();
             // Fishing: advance the HUD's one-shot banner animations (hook /
             // reel-in / miss / auxiliary / strike splash) and cache their
@@ -693,13 +697,19 @@ impl PlayWindowApp {
         // (`FUN_8003F348` runs inside retail's field render pass, so it is a
         // draw-path step on both hosts). Empty outside a gated field scene.
         let field_fog_prims = self.take_field_fog_prims();
+        // Move-VM strip spans (`FUN_801D31B0`), through the same camera.
+        let move_strip_prims = self.take_move_strip_prims();
         if let (Some(r), Some(vram), Some(atlas)) = (
             self.win.renderer.as_ref(),
             self.uploaded_vram.as_ref(),
             self.font_atlas.as_ref(),
         ) {
             let (w, h) = r.surface_size();
-            let aspect = w as f32 / h.max(1) as f32;
+            // The 3D pass draws into the 2D stage rect at the stage's 4:3,
+            // so it lines up with every stage-anchored draw at any window
+            // size (`scene_viewport_for`); the browser canvas is a stage.
+            let (scene_viewport, aspect) = scene_viewport_for(w, h);
+            r.set_scene_viewport(scene_viewport);
             // Upload (or drop) the opdeene "It was the Seru." caption sprite
             // atlas to track World state. The caption image is present only
             // while opdeene is loaded and never changes, so upload it once on
@@ -739,10 +749,10 @@ impl PlayWindowApp {
             match (self.session.host.world.scene_color_grade(), tint) {
                 // Prologue grade: staged as the renderer's PALETTE-COLLAPSE
                 // mode - the retail mechanism's true altitude (the scene's
-                // uploaded CLUTs + TMD colour words are rewritten to the gold
-                // law at load; the engine's shaders apply the identical law
-                // per texel / packet colour). `set_color_grade` carries the
-                // gold coefficients for the packet collapse; the screen tint
+                // uploaded CLUTs are rewritten to the gold law and the
+                // resident TMD colour words by the two `4C E6` HSV ops; the
+                // engine's shaders apply the identical laws per texel /
+                // packet colour, `prologue_sepia_word`). The screen tint
                 // rides the palette slot so the ground's neutral modulation
                 // still fades. The view-depth cue ramp is inert in this mode
                 // (retail's prologue nodes hold `IR0 = 0`).
@@ -1678,7 +1688,10 @@ impl PlayWindowApp {
                         if w.field_npc_render_scale(d.slot as usize) == Some(0) {
                             continue;
                         }
-                        let y = w.sample_field_floor_height(x as i32, z as i32) as f32;
+                        // The floor under the NPC, or the height a
+                        // scripted arc (op `0x43`) left it at - the same
+                        // accessor the browser play page places NPCs with.
+                        let y = w.field_npc_render_y(d.slot, x, z) as f32;
                         // Raw retail-convention transform (no model
                         // flip): the field camera's FIELD_WORLD_FLIP
                         // provides the single net Y negation. Walkers
@@ -2182,18 +2195,22 @@ impl PlayWindowApp {
             // (`cutscene_caption_alpha`) over the gap between the two narration
             // crawls. One textured quad sampling the caption atlas - the
             // background palette entry is transparent, so only the white text
-            // draws over the scene; alpha 0 emits nothing. Scaled by `h/240` to
-            // preserve the PSX 320x240 framing (retail centers it horizontally,
-            // mid-screen ~y110 over the villager tableau).
+            // draws over the scene; alpha 0 emits nothing. Placed through the
+            // stage transform the rest of the stage-space overlay uses (retail
+            // centers it horizontally, mid-screen ~y110 over the villager
+            // tableau): scaling by `h / 240` in window pixels drew it larger
+            // than the stage and off its centre whenever the window is not a
+            // stage multiple, where the page's overlay canvas is the stage.
             let caption_draw_vec: Vec<legaia_engine_render::SpriteDraw> = {
                 let alpha = self.session.host.world.cutscene.caption_alpha;
                 match self.caption_atlas.as_ref() {
                     Some((_, cw, ch)) if alpha > 0.001 => {
-                        let scale = h as f32 / 240.0;
-                        let dw = (*cw as f32 * scale).round().max(0.0) as u32;
-                        let dh = (*ch as f32 * scale).round().max(0.0) as u32;
-                        let dx = (w as i32 - dw as i32) / 2;
-                        let dy = ((110.0 / 240.0) * h as f32).round() as i32 - dh as i32 / 2;
+                        let (origin, s) = self.save_select_stage(w, h);
+                        let s = s.max(1);
+                        let dw = *cw * s;
+                        let dh = *ch * s;
+                        let dx = origin.0 + (320 * s as i32 - dw as i32) / 2;
+                        let dy = origin.1 + 110 * s as i32 - dh as i32 / 2;
                         vec![legaia_engine_render::SpriteDraw {
                             dst: (dx, dy, dw, dh),
                             src: (0, 0, *cw, *ch),
@@ -2316,16 +2333,11 @@ impl PlayWindowApp {
                     cue: None,
                 });
             }
-            // World-map overlay lines: a kind-coded upright marker for
-            // each placed entity (portal / NPC / encounter zone, from
-            // `World::world_map_entity_markers`) plus the player marker
-            // (`World::world_map_player_marker`) - the player's own mesh
-            // isn't drawn in world-map mode. Both build into one Lines
-            // mesh, routed through the same overlay slot as the effect
-            // outlines (mutually exclusive: no effects spawn on the
-            // world map). Without this the installed entities + player
-            // carry positions but never appear on screen.
-            let world_map_entity_lines = self.build_world_map_overlay_lines(r, in_world_map);
+            // World-map overlay lines: only the env-gated slot-4 inspection
+            // wireframe now. The entity and player markers draw as screen
+            // primitives through the kernel the browser play page shares
+            // (`world_map_marker_prims`, appended to `screen_prims` below).
+            let world_map_slot4_lines = self.build_world_map_overlay_lines(r, in_world_map);
             // Effect 3D models (`etmd.dat`): spell effects like Tail
             // Fire are small Gouraud-shaded `etmd` meshes textured by
             // the resident `etim` texels, not billboards. Build a
@@ -2417,8 +2429,8 @@ impl PlayWindowApp {
                 color_draws: &color_draws,
                 // Effect outlines share the billboards' `fx_cam` (the two
                 // sources are mutually exclusive, and off the battle stage
-                // `fx_cam == cam`, so the world-map markers are unaffected).
-                overlay_lines: world_map_entity_lines
+                // `fx_cam == cam`, so the slot-4 inspection lines are unaffected).
+                overlay_lines: world_map_slot4_lines
                     .as_ref()
                     .or(effect_lines.as_ref())
                     .map(|m| (m, fx_cam)),
@@ -2463,9 +2475,17 @@ impl PlayWindowApp {
             // weapon-trail bands (mutually exclusive in practice - the
             // trail only draws once a swing clip plays inside the battle).
             let mut screen_prims = battle_intro_prims;
-            // The field fog sheets (`fog_particles`), through the same
-            // `fog_puff_prim` wrapper the browser play page composites with.
-            screen_prims.extend(field_fog_prims);
+            // The field scene's own ordering-table effects, drawn UNDER the
+            // 2D overlays and sorted as one list: the fog sheets
+            // (`fog_particles`, `fog_puff_prim`), the move strips, and the
+            // field VM's attached lights (op `0x34` sub-1,
+            // `light_pool_prims`). Retail's darkness mask leaves the party
+            // HUD bright (the `dolk` capture); the browser play page draws
+            // the same three through one sorted pass with its HUD a layer
+            // above the canvas.
+            let mut light_prims = field_fog_prims;
+            light_prims.extend(move_strip_prims);
+            light_prims.extend(self.field_light_screen_prims());
             screen_prims.extend(self.weapon_trail_screen_prims(r));
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel
@@ -2519,7 +2539,11 @@ impl PlayWindowApp {
             // same residency predicate decides for both hosts whether the
             // sprite or the letterforms draw.
             screen_prims.extend(self.dance_countin_prims());
-            let target = |scene| present_target(scene, &screen_prims);
+            // The overworld's entity + player markers: the shared
+            // `world_map_markers` kernel's quads, the browser play page's
+            // twin (`crate::play_world_map_markers` there).
+            screen_prims.extend(self.world_map_marker_prims());
+            let target = |scene| present_target(scene, &screen_prims, &light_prims);
             // Periodic sweep (`--screenshot-every`): capture a frame every N
             // ticks into the sweep dir (named for the tick), keep running,
             // and exit after the capture at/past `--screenshot-last-tick`.

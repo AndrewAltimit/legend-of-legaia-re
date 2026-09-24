@@ -343,8 +343,8 @@ fn training_reaches_battle_via_field_carrier_sm() {
 
 /// The fully field-VM-driven path: no manual `engage_field_carrier`. A cold boot
 /// auto-installs the town01 carriers **and** their interact-slot map, so a real
-/// field-interact (`0x3E`, `op0 < 100`) on the sparring partner's placement
-/// slot, driven through the field VM, opens its dialogue and arms the engage;
+/// interaction (the talk probe's `World::trigger_field_interact`) on the
+/// sparring partner's placement slot opens its dialogue and arms the engage;
 /// accepting the prompt (the `0x4C` n5 sub-4 dialog dismiss on a just-pressed
 /// Cross) engages the carrier and the SM flips Field -> Battle against the real
 /// per-scene MAN formation, with Tetsu (`0x4F`) in the enemy slot. This is the
@@ -399,8 +399,10 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         "the sparring carrier's slot carries inline dialogue"
     );
 
-    // Drive a real field-interact on that slot, then a dialog-advance poll.
-    world.load_field_script(vec![0x3E, 0x05, slot, 0x4C, 0x54]);
+    // Drive a real interaction on that slot (the talk probe's entry), then a
+    // dialog-advance poll.
+    world.trigger_field_interact(0, slot);
+    world.load_field_script(vec![0x4C, 0x54]);
     world.input.set_pad(0);
     let _ = world.tick();
     assert!(

@@ -20,7 +20,7 @@
 //! against the cataloged retail anchors that bracket the transition: the
 //! pre-fight dialogue-accept frame reads Field and the battle-loading frame
 //! reads Battle. Two flavours: the dialogue-accept auto-arm (drives the
-//! field-interact op directly), and the fully **emergent** path where the
+//! talk path directly), and the fully **emergent** path where the
 //! player walks to the partner and talks to it through the interaction probe.
 //! (Still open: the dialogue box's Yes/No selection is undecoded - the engine
 //! treats accept as dismiss, faithful for the forced tutorial.)
@@ -545,8 +545,8 @@ fn print_scene_mode_transitions(scenario_label: &str, trace: &[ModeTraceFrame]) 
 
 /// The v0.1 oracle's Battle leg: a NEW GAME cold boot reaches `SceneMode::Battle`
 /// for the opening Rim Elm training fight, driven entirely by the field-VM
-/// dialogue-accept (no manual engage, no script injection beyond the real
-/// field-interact op).
+/// dialogue-accept (no manual engage, no script injection beyond the talk
+/// path's interaction and the dialog-advance poll).
 ///
 /// **Story-seed.** `BootSession::begin_new_game` seeds the opening party (Vahn,
 /// 180 HP) from the `SCUS_942.54` template. The Tetsu fight is the game's first
@@ -618,13 +618,14 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
         slots[0]
     };
 
-    // Drive the dialogue-accept: a real field-interact on the carrier's slot
+    // Drive the dialogue-accept: a real interaction on the carrier's slot
     // opens its dialogue with the faithful 4-option spar picker
     // (`World::carriers.menu`); the index-2 "practice" option is the one that
     // arms the fight, so navigate the cursor Down twice (releases between -
     // the menu keys off just-pressed edges), then confirm with Cross.
     let mut modes: Vec<SceneMode> = vec![w.mode];
-    w.load_field_script(vec![0x3E, 0x05, slot, 0x4C, 0x54]);
+    w.trigger_field_interact(0, slot);
+    w.load_field_script(vec![0x4C, 0x54]);
     w.set_pad(0);
     let _ = w.tick();
     modes.push(w.mode);

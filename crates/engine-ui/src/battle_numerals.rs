@@ -89,6 +89,7 @@ pub fn readout_quad(rect: (i32, i32, u32, u32), uv: (u8, u8, u8, u8), ot_index: 
         gouraud: None,
         semi_transparent: false,
         ot_index,
+        depth: None,
     })
 }
 
@@ -173,6 +174,7 @@ pub fn arts_banner_prims(
                 // Retail's GP0 code, `0x2C | semi << 1`.
                 semi_transparent: q.code & 0x02 != 0,
                 ot_index,
+                depth: None,
             })
         })
         .collect()

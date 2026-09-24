@@ -275,6 +275,17 @@ Save states are gitignored Sony RAM - cite the `backup_fingerprint` from
 Both anchors are cataloged in `scripts/scenarios.toml` + `saves/library` by
 `backup_fingerprint`, resolvable via `run_probe.sh --scenario <label>`.
 
+**S1..S5 are retail captures.** The chain was first driven from a cold boot
+of an image carrying the shiny-seru + enemy-ally charm build, so those
+anchors held that build's SCUS in RAM (and `s5_tetsu_battle` its `0898` hook
+sites). Every anchor is re-shot on a staged, unpatched image at the same
+moment - same scene, mode and player position, S5 the same battle context -
+and the manifest labels point at the retail files; the drivers, and what the
+re-shoot taught about them, are in
+[Re-shooting the S1..S5 anchors](pcsx-redux-automation.md#re-shooting-the-s1s5-anchors-on-an-unpatched-image).
+S2..S4 now run on the recompiler (`autorun_chain_fast.lua`,
+`autorun_s3_fast.lua`); S1 and S5 keep the breakpoint drivers below.
+
 **The universal field tick made chaining work.** The breakthrough was a second
 per-frame exec-bp on `FUN_8001698C` (the default mode handler's vsync-sync,
 `FUN_80025EEC`), which fires every frame at field-run + 12-13 of 14 modes - where

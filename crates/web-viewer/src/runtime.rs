@@ -226,8 +226,6 @@ pub struct LegaiaRuntime {
     pub(crate) fishing_banners: legaia_engine_ui::FishingBanners,
     /// This tick's live banner draws, folded into the fishing HUD list.
     pub(crate) fishing_banner_draws: Vec<legaia_engine_ui::HudDraw>,
-    /// Last observed fishing phase, so the banner timers seed on phase *edges*.
-    pub(crate) fishing_prev_phase: Option<legaia_engine_core::fishing::FishingPhase>,
     /// The two point-exchange venue pages decoded alongside the species table
     /// when a fishing session starts. `None` until then (or if they don't
     /// decode).
@@ -444,7 +442,6 @@ impl LegaiaRuntime {
             cards: [const { None }; crate::cards::CARD_SLOTS],
             fishing_banners: Default::default(),
             fishing_banner_draws: Vec::new(),
-            fishing_prev_phase: None,
             fishing_venues: None,
             equip_stats: None,
             seru_names: None,
@@ -665,6 +662,10 @@ impl LegaiaRuntime {
         // browser draws the port's own fallback wording instead.
         host.world.battle.ui_strings =
             legaia_engine_core::battle_open::battle_ui_strings_from_prot(&host.index);
+        // The party cast trigger's per-spell anim-pair lists, off the same
+        // battle-overlay image - twin of the native window's read.
+        host.world.battle.spell_anim_pairs =
+            legaia_engine_core::battle_open::spell_anim_pairs_from_prot(&host.index);
         // ... and the SCUS half - the chip words plus the sparring fight's
         // opening caption (`FUN_80056208` -> `0x80078CB4`), which the tutorial
         // side-band raises off `battle_ui_strings`.
@@ -2060,20 +2061,11 @@ impl LegaiaRuntime {
             flat,
             posed,
         });
-        // Live idle/walk playback: the world's field tick picks the clip off the
-        // locomotion movement flag and folds the pose into the player actor.
+        // Live locomotion playback: the leader's whole bank, from which the
+        // world's settle tail picks idle / walk / run / hop each field tick
+        // and folds the pose into the player actor.
         let anim = locomotion.as_ref().and_then(|bundle| {
-            let idle = legaia_engine_core::field_anim::FieldClipPlayer::from_record(
-                bundle,
-                rec(legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT),
-            )?;
-            let walk = legaia_engine_core::field_anim::FieldClipPlayer::from_record(
-                bundle,
-                rec(legaia_asset::character_pack::LOCOMOTION_WALK_SLOT),
-            )?;
-            Some(legaia_engine_core::field_anim::FieldPlayerAnim::new(
-                idle, walk,
-            ))
+            legaia_engine_core::field_anim::FieldPlayerAnim::from_locomotion_bank(bundle, lead)
         });
         host.world.set_field_player_anim(anim);
     }

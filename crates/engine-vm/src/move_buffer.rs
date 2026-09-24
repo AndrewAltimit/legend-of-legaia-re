@@ -452,7 +452,7 @@ pub fn cursor_advance<H: MoveBufferHost>(state: &mut MoveBufferState, host: &H, 
         if e & REVERSE != 0 {
             // Begin at end of record (count - 1) * 16.
             let initial = i32::from(frame_count.saturating_sub(1)) * 16;
-            state.phase = initial.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            state.phase = initial as i16;
         } else {
             state.phase = 0;
         }
@@ -460,6 +460,8 @@ pub fn cursor_advance<H: MoveBufferHost>(state: &mut MoveBufferState, host: &H, 
     }
 
     state.env_flags &= !CLAMPED;
+    // Every cursor store below is retail's `sh` - a 16-bit truncation, so an
+    // out-of-range sum wraps rather than saturating.
     let e_step = state.env_flags;
     if e_step & PAUSE == 0 {
         let step = rate * i32::from(frame_delta);
@@ -468,7 +470,7 @@ pub fn cursor_advance<H: MoveBufferHost>(state: &mut MoveBufferState, host: &H, 
         } else {
             i32::from(state.phase) + step
         };
-        state.phase = new.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+        state.phase = new as i16;
     }
 
     let max = i32::from(frame_count) * 16 - 1;
@@ -477,7 +479,7 @@ pub fn cursor_advance<H: MoveBufferHost>(state: &mut MoveBufferState, host: &H, 
             state.phase = 0;
         } else {
             let wrap = i32::from(state.phase) + i32::from(frame_count) * 16;
-            state.phase = wrap.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            state.phase = wrap as i16;
         }
         state.env_flags |= CLAMPED;
     }
@@ -485,7 +487,7 @@ pub fn cursor_advance<H: MoveBufferHost>(state: &mut MoveBufferState, host: &H, 
         if state.env_flags & CLAMP_ENDS == 0 {
             state.phase = 0;
         } else {
-            state.phase = max.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            state.phase = max as i16;
         }
         state.env_flags |= CLAMPED;
     }

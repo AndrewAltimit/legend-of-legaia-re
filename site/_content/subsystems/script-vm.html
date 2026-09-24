@@ -205,7 +205,7 @@
   <h2>Field dialogue has no opcode</h2>
   <p>Press the action button in front of a villager and a text box opens - but there is no "show dialogue" instruction. Talking is a three-step pipeline over the NPC's own bytes.</p>
   <ol>
-    <li><strong>Trigger.</strong> Op <code>0x3E</code> with <code>op0 &lt; 100</code> arms the actor's interaction script on the system context.</li>
+    <li><strong>Trigger.</strong> The touch / button-press interaction: the facing probe picks the actor and the entity state machine resumes its parked script. No opcode is involved - op <code>0x3E</code> with <code>op0 &lt; 100</code> is the scripted-battle install, which points the system context at a formation-table row, not at an interaction script.</li>
     <li><strong>Text.</strong> The NPC's record carries <em>two</em> scripts back to back under one cursor: a prologue (turn, walk) and the conversation - a <code>0x1F</code>-led glyph stream in the <a href="../formats/mes.html">MES</a> encoding.</li>
     <li><strong>Display.</strong> A per-frame actor-dialogue state machine walks the glyph bytes and feeds the pager one box at a time. Each branch ends by jumping back to the record's flag selector, so the NPC is parked ready for the next talk.</li>
   </ol>

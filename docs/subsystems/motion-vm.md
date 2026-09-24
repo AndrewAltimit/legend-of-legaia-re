@@ -530,6 +530,16 @@ accept a hit inside the ±40 moving-actor box. These are the same two tables
 the player's own locomotion reads (see
 [field-locomotion.md](field-locomotion.md)).
 
+The box is the routine's **class arm** (`+0x10 & 0x01020000`), and every
+ambient walker takes it: the MAN spawner `FUN_8003A1E4` ORs `0x20000` into
+each placement it seats (`0x8003A3A8..0x8003A3B4`), and `0x01000000` too for a
+`>= 0xF0` party model. The no-class arm - `±80` plus a model-bbox offset from
+the 32-byte `.MAP` object record at `*(0x1F8003EC) + actor[+0x60] * 32` - is
+for pool actors spawned elsewhere. On a hit the routine links the pair through
+`+0x98` both ways and returns class `1` for these walkers; the port keeps
+neither the link nor the `+0x10 & 3` collision-exempt early-out, since the
+ambient channel has no pooled flag word or target slot to hold them.
+
 So an ambient walker's containment is the AABB its op authored, and the only
 thing that can stop a step is the player standing in it. A blocked
 directional step re-runs its op next tick without advancing the cursor or the
@@ -621,9 +631,15 @@ tick, and that terminal tick does **not** consume the frame (retail never
 increments the did-work counter `s8` on that arm), so the snap and the
 following op execute together.
 
-Each tick also reloads the actor's requested-move / anim pair
-(`+0x88`/`+0x5C`) from the per-actor default-move record while it is set -
-the same `0x801C6470` table op `0x17` writes.
+The requested move / anim pair (`+0x88`/`+0x5C`) is restamped twice, from
+two different bytes of the per-actor default-move record (the `0x801C6470`
+table op `0x17` writes), and only while its move byte is not the `0x8C`
+sentinel. The case head `0x8003859C..0x800385C8` stores the record's
+**anim** byte (`+1`) on every tick, stepping or terminal. The terminal arm
+then leaves through the shared epilogue `0x800390A8` (`j` at `0x80038610`),
+which stores the **move** byte (`+0`) - so a turn plays the record's turning
+clip and hands back to its idle move on the tick it snaps. The port is
+`AmbientMotion::step_facing_ramp`.
 
 #### Op `0x0D` `[0D, b1, b2, b3]` - pre-unwrap + tween
 
@@ -1115,7 +1131,7 @@ channel - but it is the thing to check before filing "op X does nothing".
 | `0x10` / `0x11` / `0x12` | the actor flag word and clip-control word on the channel; the global halves are seeded from and written back to `World::flags.story_flags` each tick |
 | `0x14` | published into the field-VM channel's `+0x72` so `World::field_npc_render_scale` - the accessor both hosts consult before drawing an NPC - sees it |
 | `0x02` / `0x0A` / `0x0B` | the requested-move pair reaches `carry_npc_run_anim`; the translucency bit has no consumer |
-| `0x09` | runs the same enqueue the field VM's op `0x36` sub-`0` runs - `World::audio.sfx_cue_cursor` / `sfx_parked_slot` / `sfx_cue_delays` - so a following delay write lands on the slot this op parked; the cue **id** is kept on the channel's ring copy and no host plays a field SFX cue yet |
+| `0x09` | runs the same enqueue the field VM's op `0x36` sub-`0` runs - `World::audio.sfx_cue_cursor` / `sfx_parked_slot` / `sfx_cue_delays` - so a following delay write lands on the slot this op parked; the cue **id** crosses to the hosts as `SfxRingOp::Push`, which both replay into their SFX ring and play |
 | `0x0C` | tint and draw-mode ramp on the channel; no NPC tint reaches either host's draw list |
 | `0x0E` | `World::npcs.models`, keyed by placement slot, read back through `World::field_npc_live_model`; each host resolves the bytes through `SceneHost::model_bank` (`model_bank::SceneModelBank::tmd_bytes`, all 215 authored sites) and re-uploads that slot's mesh |
 | `0x13` | no VRAM blit is reachable from a field-actor tick; `engine-render` owns the only VRAM |

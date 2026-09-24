@@ -55,6 +55,20 @@ pub struct EncounterState {
     /// [`crate::world::World::arm_live_loop`] when the loop lands on such a scene and aged
     /// by [`crate::world::World::tick`]. Read through [`crate::world::World::show_encounter_hint`].
     pub scene_hint_frames: u16,
+    /// `_DAT_8007B5FC` - the encounter step counter. One retail global, not
+    /// per scene: the region trackers (field + overworld) are seeded from it
+    /// when a scene installs them and write it back after every step, and the
+    /// non-roll writers (field-VM op `4C EC`, the op-`0x3E` formation arm,
+    /// the scene-entry top-up) set it through
+    /// [`crate::world::World::set_encounter_step_counter`].
+    pub step_counter: i32,
+    /// The last region battle setup `FUN_801D9E1C` applied - on a field step
+    /// that landed in a region, and on the op-`0x3E` scripted-battle install.
+    /// Its fields are the retail globals battle entry reads: the stage
+    /// variant `_DAT_8007BD60`, the backdrop keep bit `_DAT_8007B64B`, and
+    /// the two Door gates of scratchpad `0x1F800394`. `None` until a region
+    /// has been stood in; retail's globals are sticky, and so is this.
+    pub region_setup: Option<crate::region_encounter::RegionBattleSetup>,
 }
 
 impl EncounterState {
@@ -66,6 +80,8 @@ impl EncounterState {
             session: None,
             scene_rollable: false,
             scene_hint_frames: 0,
+            step_counter: crate::region_encounter::ENCOUNTER_COUNTER_BASE,
+            region_setup: None,
         }
     }
 }

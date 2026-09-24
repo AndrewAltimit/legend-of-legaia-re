@@ -197,6 +197,9 @@ pub struct BattleState {
     /// function that drains the counter, so the values are a per-frame
     /// product of the tick rather than something a renderer derives.
     pub escape_timer_hud: Option<(i32, i32, i32, vm::escape_timer::TimerInk)>,
+    /// The HUD actor that owns the countdown (`FUN_801D2EBC` is its handler):
+    /// alive from the arming op until its expired readout's hold runs out.
+    pub escape_timer_actor: Option<vm::escape_timer::EscapeTimerHud>,
     /// Per-actor status-effect tracker (Toxic / Numb / Venom /
     /// Sleep / Confuse / Curse / Stone / Faint). Populated by
     /// [`crate::world::World::fold_battle_event`] on `ApplyArtStrike` events whose
@@ -351,6 +354,11 @@ pub struct BattleState {
     /// to read - the port's own wording is used then, so the surfaces still
     /// draw rather than going blank.
     pub ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings,
+    /// The party cast trigger's per-spell anim-pair lists
+    /// (`legaia_asset::spell_anim_pairs`), read off the user's PROT 0898 by
+    /// the host next to [`Self::ui_strings`]. Empty without a disc read, in
+    /// which case a spell id below `0x25` stages no clip and folds at once.
+    pub spell_anim_pairs: legaia_asset::spell_anim_pairs::SpellAnimPairs,
     /// The next [`crate::world::World::enter_battle`] is the sparring fight and should arm
     /// [`crate::world::BattleState::tutorial`]. Set by
     /// [`crate::world::World::prime_battle_tutorial`]; the engine's stand-in for retail's
@@ -436,6 +444,27 @@ pub struct BattleState {
     /// a field encounter to [`crate::world::SceneMode::Field`]). Defaults to
     /// [`crate::world::SceneMode::Field`].
     pub return_mode: SceneMode,
+    /// This frame's clip-tag streak ribbon, raised by `FUN_8004CE2C` pass
+    /// 2's Gala tag-`0x67` arm (`0x8004D1E8..0x8004D248`): on every frame the
+    /// clip cursor sits in `0xB0..=0xF0` retail calls
+    /// `FUN_801E1D98(&target[+0x3C], 0xC)` - the chained ribbon anchored on
+    /// the **target's seat** with trail id `0xC`. Re-derived every tick by
+    /// the impact pass (`None` off the window), so it lives exactly as long
+    /// as the retail per-frame call does. Hosts draw it through
+    /// `legaia_engine_ui::streak_pass::clip_ribbon_quads`.
+    pub clip_ribbon: Option<ClipRibbon>,
+}
+
+/// One frame's tag-`0x67` ribbon source: the `8`-byte seat vector the
+/// retail call hands `FUN_801E1D98` in `$a0` (actor `+0x3C/+0x3E/+0x40`,
+/// the seat `FUN_800513F0` copies verbatim from the spawn node at
+/// `0x8005158C..0x80051598`) and its `$a1` trail id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClipRibbon {
+    /// Target seat, battle-world `x, y, z` (`+0x3C/+0x3E/+0x40`).
+    pub seat: [i16; 3],
+    /// Trail id - the `li a1,0xc` at `0x8004D224`.
+    pub trail_id: u8,
 }
 
 impl BattleState {
@@ -465,6 +494,7 @@ impl BattleState {
             escape_timer: Default::default(),
             escape_timer_flag_word: 0,
             escape_timer_hud: None,
+            escape_timer_actor: None,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             guarding: [false; 3],
@@ -494,6 +524,7 @@ impl BattleState {
             tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),
             tutorial_boxes: std::collections::VecDeque::new(),
             ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings::default(),
+            spell_anim_pairs: legaia_asset::spell_anim_pairs::SpellAnimPairs::default(),
             tutorial_pending: false,
             active_formation: None,
             last_rewards: None,
@@ -501,6 +532,7 @@ impl BattleState {
             victory: None,
             loot_applied: false,
             return_mode: SceneMode::Field,
+            clip_ribbon: None,
         }
     }
 }

@@ -176,11 +176,12 @@ fn inline_dialogue_resident_loop_ends_after_one_pass() {
 }
 
 #[test]
-fn inline_dialogue_menu_reemission_survives_wrap_rule() {
+fn a_menu_reply_parks_on_its_jump_back_and_the_next_talk_reopens_the_menu() {
     // A menu record that re-emits its menu by jumping BACK after a branch
-    // reply (the izumi book-menu shape). The picker commit clears the wrap
-    // map, so the backward jump re-opens the menu instead of ending the
-    // conversation.
+    // reply (the izumi book-menu shape). The reply box is followed directly
+    // by the `0x26` jump, a byte retail's dialog SM does not continue on
+    // (`FUN_80038050`'s default): the talk ends there with the cursor parked
+    // on the jump, and the NEXT talk runs it and re-opens the menu.
     let mut b = vec![0x1F, b'M', 0x00]; // menu prompt @ 0
     let open = b.len(); // 3
     b.push(0x27); // 2-option picker
@@ -232,14 +233,23 @@ fn inline_dialogue_menu_reemission_survives_wrap_rule() {
             );
         }
     }
-    // Dismiss the reply: the backward jump must RE-OPEN the menu (the wrap
-    // map was cleared by the picker commit), not end the conversation.
+    // Dismiss the reply: the talk ends parked on the backward jump, which
+    // does not run in this talk.
     world.step_inline_dialogue(true, false, false);
+    let id = world.dialog.inline.as_ref().unwrap();
+    assert!(id.is_done(), "the reply's parking byte ends the talk");
+    assert_eq!(id.parked_pc, Some(back_at - 1), "parked on the 0x26");
+    // The next talk resumes at the parked jump and re-opens the menu.
+    let body = std::sync::Arc::clone(&id.bytecode);
+    world.dialog.inline = Some(crate::inline_dialogue::InlineDialogue::new(
+        body,
+        back_at - 1,
+    ));
     let mut guard = 0;
     while !world.dialog.inline.as_ref().unwrap().menu_active() {
         assert!(
             !world.dialog.inline.as_ref().unwrap().is_done(),
-            "menu re-emission must survive the wrap rule"
+            "the next talk re-emits the menu"
         );
         world.step_inline_dialogue(false, false, false);
         guard += 1;

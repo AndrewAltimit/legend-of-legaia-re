@@ -38,6 +38,9 @@ SPAWN_HELPERS = (0x80021B04, 0x80050ED4)
 # Instructions of `$a2` context scanned back from a spawn call - the window
 # `legaia_asset::summon_overlay::parse` uses.
 A2_WINDOW_INSNS = 22
+# Backward reach while following a saved register (`s0`-`s8`); mirrors
+# `slot_b_module::SAVED_REG_WINDOW_INSNS`.
+SAVED_REG_WINDOW_INSNS = 256
 # `FUN_80021B04` dispatches `model_sel` as: < 0 transform node, `0x4000` /
 # `0x4001` render-mode nodes, otherwise an effect-model-library index. A first
 # word outside that set is not a record the helper would seat.
@@ -178,31 +181,128 @@ def framed_functions(image):
     return out
 
 
-def _resolve_a2(w, site):
-    """`$a2` at word index `site`, from the `lui`/`addiu` writes before it.
+def _writes(y):
+    """The register a MIPS word writes, or None (mirrors `slot_b_module::writes`)."""
+    op, rt = y >> 26, (y >> 16) & 31
+    if op == 0x00:
+        funct = y & 0x3F
+        if funct == 0x08 or funct in (0x18, 0x19, 0x1A, 0x1B, 0x11, 0x13):
+            return None
+        if funct == 0x09:
+            return 31
+        return (y >> 11) & 31
+    if op in (0x01, 0x02, 0x04, 0x05, 0x06, 0x07):
+        return None
+    if op == 0x03:
+        return 31
+    if 0x08 <= op <= 0x0F or 0x20 <= op <= 0x26:
+        return rt
+    if op in (0x10, 0x12):
+        return rt if ((y >> 21) & 31) in (0x00, 0x02) else None
+    return None
 
-    `None` when the last write is one the static window cannot follow, or when
-    another `jal` intervenes: `$a2` is caller-saved, so a value formed across a
-    call is not the one the consumer reads.
+
+def _caller_saved(r):
+    return 1 <= r <= 15 or r in (24, 25, 31)
+
+
+def _reg_back(w, start, reg, skip):
+    """`reg` on reaching the word after index `start`, walking back from it.
+
+    Mirrors `slot_b_module::reg_back`: straight-line, skipping index `skip`
+    (the consuming call); `A2_WINDOW_INSNS + 1` words while the followed
+    register is caller-saved, `SAVED_REG_WINDOW_INSNS + 1` while it is a saved
+    one (a routine forms a record base in `s4` once and hands it over many
+    calls later - PROT 0912's `lui s4` at `0x801F6C38`). The walk also ends
+    above the delay slot of an unconditional jump, which never falls through.
+    The last writer must be a `lui` - through any chain of `addiu` adds and
+    register copies (`move a2,s0`) - or an `addiu` off `$zero`. A call crossed
+    while following a caller-saved register, a `jr ra` above `start`, or the
+    routine's `addiu sp,sp,-N` prologue names nothing.
     """
-    a2 = None
-    for j in range(max(0, site - A2_WINDOW_INSNS), site):
+    add = 0
+    j = start
+    steps = 0
+    while True:
+        cap = A2_WINDOW_INSNS if _caller_saved(reg) else SAVED_REG_WINDOW_INSNS
+        if steps > cap:
+            return None
+        steps += 1
+        if j < 0 or j >= len(w):
+            return None
         y = w[j]
-        op, rs, rt, imm = y >> 26, (y >> 21) & 31, (y >> 16) & 31, y & 0xFFFF
-        if op == 3:
-            a2 = None
-            continue
-        if rt != 6:
-            continue
-        if op == 0x0F:
-            a2 = imm << 16
-        elif op == 0x09 and rs == 6 and a2 is not None:
-            a2 = (a2 + (imm - 0x10000 if imm & 0x8000 else imm)) & 0xFFFFFFFF
-        elif op == 0x09 and rs == 0:
-            a2 = (imm - 0x10000 if imm & 0x8000 else imm) & 0xFFFFFFFF
-        else:
-            a2 = None
-    return a2
+        if j != skip:
+            op = y >> 26
+            if (op == 3 or (op == 0 and (y & 0x3F) == 0x09)) and _caller_saved(reg):
+                return None
+            if y == MIPS_JR_RA and j < start:
+                return None
+            if (y >> 16) == 0x27BD and (y & 0x8000):
+                return None
+            if _writes(y) == reg:
+                rs, rt = (y >> 21) & 31, (y >> 16) & 31
+                imm = y & 0xFFFF
+                simm = imm - 0x10000 if imm & 0x8000 else imm
+                if op == 0x0F:
+                    return ((imm << 16) + add) & 0xFFFFFFFF
+                if op == 0x09 and rs == 0:
+                    return (simm + add) & 0xFFFFFFFF
+                if op == 0x09:
+                    add += simm
+                    reg = rs
+                elif op == 0x00 and (y & 0x3F) in (0x21, 0x25) and ((rs == 0) != (rt == 0)):
+                    reg = rs | rt
+                else:
+                    return None
+        # The word above is the delay slot of an unconditional jump (`j`,
+        # `jr`, `b`) that never falls through to here: the straight line ends.
+        if j >= 2 and _unconditional(w[j - 2]):
+            return None
+        j -= 1
+
+
+def _unconditional(y):
+    """`j`, `jr`, or `b` (`beq $zero,$zero`): never falls through past its
+    delay slot. Mirrors `slot_b_module::unconditional`."""
+    op = y >> 26
+    return (op == 0x02 or (op == 0x00 and (y & 0x3F) == 0x08)
+            or (op == 0x04 and ((y >> 16) & 0x3FF) == 0))
+
+
+def _a2_values(w, base_va, site, own):
+    """Every `$a2` the spawn call at word index `site` is handed.
+
+    Mirrors `slot_b_module::a2_values`: the fall-through value, resolved from
+    the call's delay slot back, plus one per `j` (inside this image's own code)
+    that lands on the call or up to three words above it with nothing between
+    writing `$a2` or transferring control - a `switch` whose arms each load
+    `$a2` in the delay slot of a jump to one shared `jal`.
+    """
+    out = set()
+    v = _reg_back(w, site + 1, 6, site)
+    if v is not None:
+        out.add(v)
+    targets = {site}
+    t = site
+    for _ in range(3):
+        if t - 1 < 0:
+            break
+        y = w[t - 1]
+        op = y >> 26
+        flow = 0x01 <= op <= 0x07 or (op == 0 and (y & 0x3F) in (0x08, 0x09))
+        if _writes(y) == 6 or flow:
+            break
+        t -= 1
+        targets.add(t)
+    for j in range(len(w) - 1):
+        y = w[j]
+        if (y >> 26) == 0x02 and own(j):
+            va = (((base_va + j * 4 + 4) & 0xF0000000) | ((y & 0x03FFFFFF) << 2))
+            if ((va - base_va) & 0xFFFFFFFF) // 4 in targets and (va - base_va) % 4 == 0:
+                v = _reg_back(w, j + 1, 6, j)
+                if v is not None:
+                    out.add(v)
+    return sorted(out)
 
 
 @functools.lru_cache(maxsize=None)
@@ -232,6 +332,10 @@ def spawn_record_band(image, base_va):
     fns = framed_functions(image)
     calls = {_jal_word(a) for a in SPAWN_HELPERS}
     offs = set()
+
+    def own(j):
+        return any(s <= j * 4 < e for s, e in fns)
+
     for i, x in enumerate(w):
         if x not in calls:
             continue
@@ -240,19 +344,17 @@ def spawn_record_band(image, base_va):
         # module's routine, whose record pointer belongs to that sibling's load.
         if not any(s <= i * 4 < e for s, e in fns):
             continue
-        a2 = _resolve_a2(w, i)
-        if a2 is None:
-            continue
-        f = (a2 - base_va) & 0xFFFFFFFF
-        if f + 4 > len(image):
-            continue
-        if any(s <= f < e for s, e in fns):
-            continue
-        sel = struct.unpack_from("<h", image, f)[0]
-        if not (sel == -1 or 0 <= sel < _LIBRARY_MESH_SEL_MAX
-                or sel in _RENDER_NODE_SELS):
-            continue
-        offs.add(f)
+        for a2 in _a2_values(w, base_va, i, own):
+            f = (a2 - base_va) & 0xFFFFFFFF
+            if f + 4 > len(image):
+                continue
+            if any(s <= f < e for s, e in fns):
+                continue
+            sel = struct.unpack_from("<h", image, f)[0]
+            if not (sel == -1 or 0 <= sel < _LIBRARY_MESH_SEL_MAX
+                    or sel in _RENDER_NODE_SELS):
+                continue
+            offs.add(f)
     offs = sorted(offs)
     if not offs:
         return ()

@@ -51,7 +51,7 @@ pub trait FieldHost {
 
     /// Open a dialog box. The text ID + inline buffer feed the MES bytecode that
     /// `crates/mes` parses. **Not** wired to a field-VM opcode: it is the host's
-    /// dialogue-open primitive, invoked from [`Self::field_interact`] with the
+    /// dialogue-open primitive, invoked by the host's interaction path with the
     /// interacted actor's inline interaction-script text (the real field-dialogue
     /// source - retail `actor[+0x90]`). Field dialogue has no dedicated opcode;
     /// `0x3F` is the named scene-change, not a dialog op (see
@@ -160,12 +160,25 @@ pub trait FieldHost {
         None
     }
 
-    /// Trigger an in-scene field interaction (op 0x3E, `op0 < 100` path).
-    /// `interact_id` is `op0` (with `0xFF` representing "current"); `slot` is
-    /// `op1`. The original writes `sys_ctx[+0x94]` with a per-scene table
-    /// offset and dispatches `func_0x8003CE08(0xE)`.
-    fn field_interact(&mut self, interact_id: u8, slot: u8) {
-        let _ = (interact_id, slot);
+    /// The **scripted-battle install** (op `0x3E` with `op0 < 100` or
+    /// `op0 == 0xFF`). `row` is `op1`, an index into the scene MAN's
+    /// formation table; `op0` is carried for visibility only - the arm never
+    /// reads it past the `0xFF` / `< 100` test.
+    ///
+    /// The arm (`FUN_801DE840` `0x801E06D4..0x801E0788`, PROT 0897) first
+    /// stamps `player[+0x8E] = player[+0x8F] = 0xFF` (both arms share this
+    /// head), then calls `FUN_801D9E1C(player, 0)` - the region reader with
+    /// its roll disabled, so it only re-seats the current region's battle
+    /// setup - and, unless the dev word `_DAT_8007B868` is set or the system
+    /// entity (`FUN_8003C83C(0xFB)`) is missing, installs the row:
+    /// `sys[+0x8A] = 1`, `sys[+0x94] = formation_table + row * stride + 1`
+    /// (table `*(ctrl+0x20)`, stride byte `ctrl+0x5D`, `ctrl = *0x801C6EA4`),
+    /// rerolls the step counter (`FUN_801DDF48` into `_DAT_8007B5FC`) and
+    /// requests the battle mode switch (`FUN_8003CE08(0xE)`). It opens no
+    /// dialogue: talking to an NPC never goes through this op.
+    // REF: FUN_801DE840 case 0x3e at 0x801E06D4
+    fn scripted_battle(&mut self, op0: u8, row: u8) {
+        let _ = (op0, row);
     }
 
     /// Trigger a scene transition by map id.
@@ -972,68 +985,30 @@ pub trait FieldHost {
         let _ = (op0, rgb, intensity);
     }
 
-    /// Op 0x34 sub-1 (effect / sprite spawn with optional captured-PC).
+    /// Op 0x34 sub-1: spawn an **attached light** on the target actor -
+    /// retail `FUN_801E5668` (template `0x801F28B8`, ticked by
+    /// `FUN_801E4470`), see `crate::field_actor_billboard`.
     ///
-    /// **Base instruction is 13 bytes** (opcode + 12 operand bytes). The
-    /// `capture_flag` byte at the position immediately past the instruction
-    /// is **peeked** by the runtime - when it equals `0x40`, two extra
-    /// header bytes plus a variable-length payload are consumed before PC
-    /// advances. Total instruction length is therefore 13 (no capture) or
-    /// `13 + 2 + payload_len` (with capture).
+    /// The arm first walks the actor list at `_DAT_8007C354` for a light
+    /// whose `+0x90` is already this actor (`FUN_8003CF04` keyed on the tick
+    /// `0x801E4470`) and skips the spawn when it finds one. `ext` is the
+    /// instruction's extended channel byte (`Some(0xF8)` = the player
+    /// anchor); `script` is the bytecode after a following `0x40` block
+    /// header - retail stores that pointer into `+0x94` - or `None` when no
+    /// `0x40` follows.
     ///
-    /// Operand layout (offsets relative to the operand byte at `pc + 1`):
-    ///
-    /// ```text
-    /// +0x00  op0 (= 0x10..0x1F; bit 0 selects spawn-mode for FUN_801E5668)
-    /// +0x01  byte_24[0]   ; high byte of 24-bit packed value
-    /// +0x02  byte_24[1]
-    /// +0x03  byte_24[2]   ; low byte
-    /// +0x04  s16 lo, hi   ; world_x (`local_a0`)
-    /// +0x06  s16 lo, hi   ; world_z (`local_9e`)
-    /// +0x08  s16 lo, hi   ; raw -world_y (`local_a6`, NEGATED before spawn)
-    /// +0x0A  s16 lo, hi   ; reserved (`local_a8` and `local_a4`, both stay 0)
-    /// + (peek at pc + 13) capture_flag ; 0x40 = capture next PC into spawned actor
-    /// + (peek at pc + 14) pc_payload_len  ; only when capture_flag == 0x40
-    /// + (peek at pc + 15..) captured PC payload (only when capture_flag == 0x40)
-    /// ```
-    ///
-    /// The original at `0x801E1F0C+`:
-    /// 1. Walks the actor list at `_DAT_8007C354` looking for an entry whose
-    ///    `+0x90` slot equals the active ctx - if found, jumps directly to
-    ///    `LAB_801E2EA0` and returns `pc + 13` (skips the spawn).
-    /// 2. Otherwise calls `FUN_801E5668(ctx, ..., pos, packed24, mode)` to
-    ///    spawn a new actor at the world position. `mode = 1` if `op0 & 1`
-    ///    is clear, else `mode = 2` (selects which of the two
-    ///    24-bit-packed-value slots gets populated on the spawned actor).
-    /// 3. If `capture_flag == 0x40`: captures the operand bytes at offset
-    ///    0x0E onto the spawned actor's `+0x94` slot (a forwarded-PC
-    ///    pointer), then advances PC by an extra `2 + pc_payload_len` past
-    ///    the standard 13.
-    ///
-    /// Returns the **PC delta from the opcode byte** - the VM applies it as
-    /// `Advance { next_pc: pc + delta }`. Default impl emits the
-    /// "no actor pool" branch (skips the spawn), but it must still consume the
-    /// whole instruction: the base is 13 bytes, and a `0x40` capture marker
-    /// appends a 1-byte payload-length field + the captured-PC payload, so the
-    /// delta grows by `2 + payload_len` (matching the disassembler's width and
-    /// step.rs's own slicing of `captured_pc_payload`). Returning a constant 13
-    /// when the capture extension is present under-advances the PC into the
-    /// middle of the payload and desyncs the rest of the script.
-    fn op34_sub1_spawn_or_skip(
+    /// Returns `true` when a light was spawned: only then does the VM consume
+    /// the `0x40` block as part of the instruction. Default: no light pool,
+    /// the skip path.
+    fn op34_sub1_spawn_attached(
         &mut self,
         ctx: &FieldCtx,
-        op0: u8,
-        packed24: u32,
-        pos: [i16; 3],
-        capture_flag: u8,
-        captured_pc_payload: &[u8],
-    ) -> usize {
-        let _ = (ctx, op0, packed24, pos);
-        13 + if capture_flag == 0x40 {
-            2 + captured_pc_payload.len()
-        } else {
-            0
-        }
+        ext: Option<u8>,
+        spawn: &crate::field_actor_billboard::AttachedSpriteSpawn,
+        script: Option<&[u8]>,
+    ) -> bool {
+        let _ = (ctx, ext, spawn, script);
+        false
     }
 
     /// Op 0x4C outer-nibble-4 ctx-slot ramp.
@@ -1875,9 +1850,13 @@ pub trait FieldHost {
 
     /// Op 0x4C outer-nibble-E sub-0xC - write `_DAT_8007B5FC` from `FUN_801DDF48`.
     ///
-    /// 2-byte instruction `[4C, 0xEC]`. Writes `_DAT_8007B5FC = FUN_801DDF48()`
-    /// (captures the return of an overlay-resident helper into the global).
-    /// Hosts model the call. PC += 2.
+    /// 2-byte instruction `[4C, 0xEC]`. Writes `_DAT_8007B5FC = FUN_801DDF48()`:
+    /// the encounter step-counter reroll `r1 % 487 - r2 % 487 + 0x3CE`
+    /// (triangular over `488..=1460`), ported as
+    /// `legaia_engine_core::region_encounter::encounter_counter_reroll` and
+    /// seated by the engine host into the shared counter. No shipped script
+    /// issues a clean `4C EC`. PC += 2.
+    // REF: FUN_801DDF48
     fn op4c_n_e_sub_c_capture_ddf48(&mut self) {}
 
     /// Op 0x4C outer-nibble-E sub-0xD - write `_DAT_8007BA66`.
@@ -2269,9 +2248,10 @@ pub trait FieldHost {
     /// - setting `ctx.flags |= 0x400` (HALT bit),
     /// - clearing `ctx.wait_accum`.
     ///
-    /// For op 0x43 sub-0/1/A/B the resume PC is encoded in the operand:
-    /// - Sub-0/1: `target = operand + 3` → bytecode bytes `pc+4..pc+6`.
-    /// - Sub-A/B: `target = operand + 7` → bytecode bytes `pc+8..pc+10`.
+    /// For op 0x43 sub-0/1/A/B the resume PC is the fall-through past the
+    /// 8-byte (sub-0/1) or 10-byte (sub-A/B) instruction; none of the operand
+    /// halfwords is a jump target (they are the arc's apex, frame count and
+    /// sub-A/B's negated Y).
     ///
     /// For op 0x38 the resume PC is `pc + 3` (post-instruction); there is no
     /// operand-encoded target.
@@ -2282,10 +2262,10 @@ pub trait FieldHost {
     ///   `_DAT_801C6EA4 + 0x8` is non-zero.
     ///
     /// On success: VM emits `Yield { resume_pc: target_pc }` (the host's
-    /// state-resume layer drives re-entry). On failure for op 0x43 the VM
-    /// advances PC by the default amount (5 for sub-0/1, 9 for sub-A/B); on
-    /// failure for op 0x38 the VM `Halt`s at the current PC (matching the
-    /// original's `switchD_801e00f4::default()` fallthrough).
+    /// state-resume layer drives re-entry). On failure the VM `Halt`s at the
+    /// current PC: for op 0x43 that is the arm's own `j 0x801DEE4C`
+    /// (`move s8, s4` - retry next frame), for op 0x38 the original's
+    /// `switchD_801e00f4::default()` fallthrough.
     ///
     /// `which` is the originating opcode/sub-op tag so hosts that need to
     /// distinguish the call site can - it's `0x38` for op 0x38, and the raw
@@ -2297,6 +2277,17 @@ pub trait FieldHost {
     fn field_halt_acquire_predicate(&self, ctx: &FieldCtx, which: u8) -> bool {
         let _ = (ctx, which);
         true
+    }
+
+    /// Op `0x43` sub-`0`/`1`/`0xA`/`0xB`: `true` when the arm's acquire must
+    /// refuse because its target already carries the halt bit `0x400` and
+    /// the scene word `*(_DAT_801C6EA4) + 8` is zero (`0x801DF3A4..0x801DF3CC`);
+    /// in practice, an actor still in the air from an earlier arc. `ext`
+    /// is the instruction's extended channel byte. A refused acquire leaves
+    /// the PC on the instruction for a retry next frame. Default `false`.
+    fn op43_arc_target_halted(&self, ctx: &FieldCtx, ext: Option<u8>) -> bool {
+        let _ = (ctx, ext);
+        false
     }
 
     /// Side effect of [`field_halt_acquire_predicate`] returning `true`.
@@ -2318,6 +2309,26 @@ pub trait FieldHost {
         coords: [i16; 3],
     ) {
         let _ = (ctx, which, resume_pc, coords);
+    }
+
+    /// Op 0x43 sub-0/1/A/B's arc spawn - retail `FUN_801D25EC(actor,
+    /// &landing, apex, frames, release_ctx, 0x400, camera_follow)` at
+    /// `0x801DF5AC`, called on the success side of the halt-acquire.
+    ///
+    /// `ctx` is the arced actor's context (already halted), `ext` the
+    /// instruction's extended channel byte (`Some(0xF8)` = the player
+    /// anchor), `req` the decoded operand. The host resolves the actor,
+    /// samples the floor under a tile target, seeds the arc
+    /// (`crate::field_ledge_hop_arc::spawn_arc_with_emitter`) and releases the
+    /// halt when the arc lands (`FUN_801D5D60`). Default: no arc channel -
+    /// the halt stays raised, which is the pre-arc behaviour.
+    fn op43_arc_jump(
+        &mut self,
+        ctx: &FieldCtx,
+        ext: Option<u8>,
+        req: &crate::field_ledge_hop_arc::ScriptArcRequest,
+    ) {
+        let _ = (ctx, ext, req);
     }
 
     // -- Round 18: 0x4C n8 actor-allocator + nE camera + nD/n5 dialog --

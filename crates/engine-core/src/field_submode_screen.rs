@@ -693,6 +693,11 @@ impl World {
                     self.party.money = self.party.money.saturating_sub(gold_cost).max(0);
                 }
                 HubAction::ClearCursorRow => self.field_vm.submode_screen.counter.cursor = 0,
+                // The hub's two ring producers cross to the host ring the way
+                // field-VM op `0x36`'s do: `FUN_80035BD0(id)` overwrites the
+                // last-written slot, `FUN_80035B50(id)` pushes.
+                HubAction::ConfirmCue(id) => self.replace_last_sfx_cue(i16::from(id)),
+                HubAction::EntryCue(id) => self.push_sfx_cue(i16::from(id)),
                 _ => {}
             }
         }

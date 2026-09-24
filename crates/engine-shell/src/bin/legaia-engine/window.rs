@@ -493,6 +493,9 @@ struct MuscleHubAssets {
     /// the same atlas (`0` = extraction 1221, `1` = 1222), laid out as the
     /// VRAM region `(384, 0)` the loader uploads it to.
     stills: Vec<(u32, u32)>,
+    /// Atlas y of a small all-white block - the texel the untextured
+    /// backdrop shade (`FUN_801D1610`) is drawn with.
+    white_y: u32,
 }
 
 /// One placed NPC's skinned mesh halves for one clip frame: the textured
@@ -724,8 +727,14 @@ struct PlayWindowApp {
     ground_heightfield: Option<UploadedVramMesh>,
     /// `C`-key toggle: when `true`, the field render uses the wide debug
     /// orbit vantage (`camera_mvp`) instead of the retail follow camera
-    /// (`field_follow_camera_mvp`). Defaults to the retail view.
+    /// (`camera_view::field_follow_view`). Defaults to the retail view.
     field_debug_camera: bool,
+    /// The pause menu is up because the title's Options row opened it, not
+    /// because Start did: its sub-screen's exit closes the whole menu and
+    /// returns to the title (retail's title reaches the options screen and
+    /// comes straight back). The browser play page keeps the same flag on
+    /// its `PlayMenu`.
+    menu_from_title: bool,
     /// Kingdom slot-4 clip-bank inspection overlay, as raw line geometry
     /// `(positions, colors, line-indices)` in world space. `Some` only on a
     /// world-map scene when `LEGAIA_WORLDMAP_SLOT4=1` is set; `None`
@@ -842,9 +851,6 @@ struct PlayWindowApp {
     /// This frame's live fishing banner draws, produced by servicing
     /// `fishing_banners`. Empty whenever no banner is running.
     fishing_banner_draws: Vec<legaia_engine_render::HudDraw>,
-    /// The fishing phase seen on the previous frame, so the redraw handler can
-    /// detect the hook / landed / snapped / recast edges that seed the banners.
-    fishing_prev_phase: Option<legaia_engine_core::fishing::FishingPhase>,
     // The dance pre-song count-in and the Disco King how-to tutorial used to
     // live here, as a host phase holding the parsed game pending. They are
     // `World::minigames.dance_countin` / `dance_tutorial` now, stepped by the
@@ -859,13 +865,6 @@ struct PlayWindowApp {
     /// The venue scene's `.MAP` extended footprint, read at fishing entry -
     /// the engine's `_DAT_1F8003EC` floor buffer the ground solver reads.
     fishing_floor: Option<Vec<u8>>,
-    /// That map's `+0x10000` region block, for the lure's water-class walk.
-    fishing_regions: Option<Vec<u8>>,
-    /// The cast lure and its last probe (`0x801D9174` / the water class).
-    fish_lure: Option<(
-        legaia_engine_core::fishing_actors::LureActor,
-        legaia_engine_core::fishing_actors::LureProbe,
-    )>,
     /// The fishing sub-screens' idle-sway phase (`0x801D9118`).
     fishing_sway_angle: i32,
     /// This frame's sway offset, applied to the point-exchange panel.
@@ -882,11 +881,12 @@ struct PlayWindowApp {
     baka_chrome_frame: Vec<ResolvedChromeDraw>,
     /// Muscle Dome hub-screen atlas + sprite table (see [`MuscleHubAssets`]).
     muscle_hub: Option<MuscleHubAssets>,
-    /// The "Welcome to the Muscle Dome!" intro card's retail fade / hold
-    /// envelope, armed when a leg opens on a freshly staged contest.
-    muscle_intro_card: Option<legaia_engine_core::muscle_dome::HubScreen>,
-    /// The ROUND banner: `(displayed round number, envelope)`, armed on
-    /// every leg entry (after the intro card on a fresh contest).
+    /// The hub's first visit (intro strip, wall, title zoom, course card,
+    /// ROUND card - `legaia_engine_core::muscle_ringside::FirstVisitHub`),
+    /// armed when a leg opens on a freshly staged contest.
+    muscle_first_visit: Option<legaia_engine_core::muscle_ringside::FirstVisitHub>,
+    /// A leg-open ROUND card `(displayed round number, envelope)` for a leg
+    /// no hub screen has introduced - retail arms `0x15` / `0x16`.
     muscle_round_banner: Option<(i32, legaia_engine_core::muscle_dome::HubScreen)>,
     /// The round a re-entered hub's backdrop last drew its ROUND card for, so
     /// the leg that opens after it does not replay the card
@@ -1191,8 +1191,6 @@ enum BootUiState {
     Title(legaia_engine_core::title::TitleSession),
     /// Save-select panel is active.
     SaveSelect(legaia_engine_core::save_select::SaveSelectSession),
-    /// Options / config panel is active.
-    Options(legaia_engine_core::options::OptionsSession),
     /// Field (pause) menu is active. The menu session itself is hosted by
     /// the [`BootSession`]
     /// (`session.field_menu`, the retail CARD mode pair / `game_mode 0x17`;
@@ -1232,6 +1230,9 @@ mod dev_menu;
 mod event_handler;
 #[path = "window/field_render.rs"]
 mod field_render;
+#[cfg(test)]
+#[path = "window/fog_texture_tests.rs"]
+mod fog_texture_tests;
 #[path = "window/geometry.rs"]
 mod geometry;
 #[path = "window/hud.rs"]
@@ -1262,7 +1263,7 @@ use record::{RecordLog, RecordTarget};
 // them at the same effective scope they had before the split.
 pub(crate) use geometry::{
     LineGeometry, effect_billboard_mesh, effect_sprite_line_geometry, heightfield_to_vram_mesh,
-    world_map_entity_line_geometry, world_map_player_line_geometry, world_map_slot4_line_geometry,
+    scene_viewport_for, world_map_slot4_line_geometry,
 };
 // The procedural battle ground grid lives in `legaia-asset` so all three
 // hosts share one implementation (the native window, the asset-viewer and

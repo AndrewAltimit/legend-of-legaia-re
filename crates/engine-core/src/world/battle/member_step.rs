@@ -17,6 +17,18 @@
 //! below the cursor are the same condition: the forward walk that raised the
 //! counter stops on every selectable member, so it has walked past exactly
 //! the ones the backward scan can land on. The port asks the scan.
+//!
+//! The commit-confirm screen's **Reselect** (`0x6E`, `0x801D3054..0x801D30CC`)
+//! is the same step taken from one place further on. By `0x6E` the forward
+//! walk has already stepped past the last member - the
+//! `party_basic_attack_vs_gobu_gobu` capture holds `ctx[+0x13] = 1` on a
+//! one-member party - so `FUN_801D388C(0x21)`'s `FUN_801D32BC(1)`
+//! (`0x801D4750`) lands on the **last** member that can act, the flow returns
+//! to that member's ring, and the dispatcher refunds the landing member's item
+//! with the same `FUN_800421D4(+0x1DF, 1)` pair (`0x801D30BC..0x801D30C0`).
+//! When no member can act at all, retail's `FUN_801DBA04` test sends the
+//! press back to the round prompt instead (`0x801D30D0..0x801D30E0`), which is
+//! this walk's "nothing behind the cursor" arm.
 
 use super::*;
 
@@ -27,6 +39,26 @@ impl World {
     /// REF: FUN_801D0748 (`0x801D11B4..0x801D12B8`, the ring's cancel arm)
     /// REF: FUN_801D388C (case `0x10`, `0x801D4010`)
     pub(in crate::world) fn step_back_battle_command(&mut self, actor: u8) {
+        self.step_member_cursor_back(actor, actor);
+    }
+
+    /// `Reselect` on the commit-confirm screen: step back from **past the
+    /// party's end** to the last member that can act, re-opening its ring.
+    /// `actor` is the member whose commit raised the screen; it owns the
+    /// round prompt if nobody can act.
+    ///
+    /// REF: FUN_801D0748 (`0x801D3054..0x801D30CC`, the `0x6E` cancel arm)
+    /// REF: FUN_801D388C (case `0x21`, `0x801D4750`)
+    pub(in crate::world) fn reselect_battle_commands(&mut self, actor: u8) {
+        let party_count = self.party.party_count.clamp(1, 3);
+        self.step_member_cursor_back(party_count, actor);
+    }
+
+    /// The shared backward step: scan down from `from` with the
+    /// `FUN_801D32BC(1)` kernel, refund the landing member's committed item,
+    /// and open its ring - or, with nothing behind the cursor, reopen the
+    /// round prompt on `prompt_actor`.
+    fn step_member_cursor_back(&mut self, from: u8, prompt_actor: u8) {
         use crate::battle_flow::BattleFlowState as Flow;
         use crate::battle_round::PendingPartyAction;
         use vm::battle_cursor_pose::{ActorCursor, CursorActor, CursorStep, step_actor_cursor};
@@ -42,7 +74,7 @@ impl World {
             })
             .collect();
         let mut cursor = ActorCursor {
-            active: actor,
+            active: from,
             ..ActorCursor::default()
         };
         step_actor_cursor(&mut cursor, CursorStep::Backward, party_count, &seats);
@@ -50,7 +82,7 @@ impl World {
         if prev >= party_count {
             // Counter zero: the first member's cancel reopens the prompt.
             self.set_battle_flow(Flow::TurnPrompt);
-            self.open_battle_command(actor);
+            self.open_battle_command(prompt_actor);
             return;
         }
         let slot = usize::from(prev);

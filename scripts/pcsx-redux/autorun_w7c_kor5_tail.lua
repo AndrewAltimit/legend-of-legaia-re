@@ -68,6 +68,14 @@
 --                       listed scene, at most LEGAIA_SHOT_MAX (default 12)
 --                       per scene
 --   LEGAIA_CKPT_SCENE / LEGAIA_CKPT_LABEL   as the poke-walk
+--   LEGAIA_CKPT_EVERY   write `<CKPT_LABEL>_v<vsync>.rawsstate` every N vsyncs
+--                       from arming - the resume points for a second,
+--                       breakpoint-mode pass over a stretch a `--fast` pass
+--                       located
+--   LEGAIA_POLL_FLAGS   comma list of flag hexes; log every per-vsync change
+--                       of their bank bits ("POLL 0x436 0->1 at f=..."). A
+--                       poll, not a breakpoint, so it works under `--fast`,
+--                       where the SET / CLEAR firehose is dead
 --
 -- Output: w7c_kor5_route.csv (per vsync), w7c_kor5_flags.csv (every
 -- helper hit), w7c_kor5_flags_first.csv, w7c_kor5_hits.csv (tint
@@ -135,6 +143,11 @@ local WANT_TINT  = probe.getenv("LEGAIA_TINT", "") == "1"
 local OUT_DIR    = probe.getenv("LEGAIA_OUT_DIR", "captures/w7c_kor5_tail")
 local CKPT_FLAG  = tonumber(probe.getenv("LEGAIA_CKPT_FLAG", ""), 16)
 local CKPT_DELAY = probe.getenv_num("LEGAIA_CKPT_DELAY", 120)
+local CKPT_EVERY = probe.getenv_num("LEGAIA_CKPT_EVERY", 0)
+local poll_flags = {}
+for tok in string.gmatch(probe.getenv("LEGAIA_POLL_FLAGS", ""), "[^,%s]+") do
+    poll_flags[#poll_flags + 1] = { flag = tonumber(tok, 16), last = nil }
+end
 local ckpt_flag_at = nil
 -- The pool-block write-watch fires on every list relink (a Lua callback per
 -- store), which slows the interpreter several-fold: opt in.
@@ -461,6 +474,15 @@ local function on_vsync()
     end
 
     local l = route[leg]
+    -- A `!<flag>` leg whose record fires on its first crossing raises the
+    -- movement lock before LEGAIA_POKE_FOR pokes accumulate; under
+    -- LEGAIA_WAIT_UNLOCK the pokes then resume once the beat ends and cross
+    -- the trigger again, re-running the record. The flag reading set ends
+    -- the leg whatever the poke count.
+    if l ~= nil and l.stay and l.until_flag ~= nil and not l.waiting
+        and flag_bit(l.until_flag) == 1 then
+        l.waiting = true
+    end
     if l ~= nil and l.waiting then
         if flag_bit(l.until_flag) == 1 then
             log(string.format("stay leg %d: flag 0x%03X set at tick %d", leg, l.until_flag, vsync))
@@ -546,6 +568,23 @@ local function on_vsync()
             ckpt_done = true
             checkpoint()
         end
+    end
+
+    for _, pf in ipairs(poll_flags) do
+        local b = flag_bit(pf.flag)
+        if pf.last ~= nil and b ~= pf.last then
+            log(string.format("POLL 0x%03X %d->%d at f=%d scene=%s mode=0x%02X player=(%d,%d)",
+                pf.flag, pf.last, b, vsync, sc, md, px, pz))
+        end
+        pf.last = b
+    end
+    if CKPT_EVERY > 0 and vsync % CKPT_EVERY == 0 then
+        local ok, err = pcall(function()
+            local w = PCSX.createSaveState()
+            local fh = Support.File.open(string.format("%s/%s_v%05d.rawsstate", OUT_DIR, CKPT_LABEL, vsync), "CREATE")
+            fh:writeMoveSlice(w); fh:close()
+        end)
+        log(string.format("periodic checkpoint f=%d %s %s", vsync, tostring(ok), tostring(err)))
     end
 
     if leg > #route and md == 0x03 then

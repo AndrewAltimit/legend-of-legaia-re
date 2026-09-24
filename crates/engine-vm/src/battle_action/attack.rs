@@ -225,6 +225,10 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
         .map(|a| a.flag_bits.has(ActorFlags::ADVANCE_DONE))
         .unwrap_or(false);
     if in_flight {
+        // Retail's in-flight branch (`0x801E3718`) lands on the drift block
+        // at `0x801E37C0`, which the stage path also falls into - so the
+        // drift runs on every frame of the loop, staged or holding.
+        swing_drift(host, ctx);
         return stay(ctx);
     }
     let next_byte = host.actor(slot).map(|a| a.read_param(0)).unwrap_or(0xFF);
@@ -255,6 +259,8 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
         actor.flag_bits.set(ActorFlags::ADVANCE_DONE);
         actor.strike_index = actor.strike_index.saturating_add(1);
     }
+    attack_x2_stage_bump(host, ctx);
+    swing_drift(host, ctx);
     // The terminator is tested at the **new** cursor on the same step
     // (`0x801E3998..0x801E39AC`, `0x00` routing to `0x1F` at `0x801E3A7C`):
     // the last byte is staged and the band leaves the loop together, so the
@@ -267,6 +273,133 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
         return transition(ctx, ActionState::AttackRecovery);
     }
     stay(ctx)
+}
+
+/// The War God Icon's **per-stage pass bump** - `FUN_801E295C`
+/// `0x801E3768..0x801E37BC`, the tail of the stage site.
+///
+/// ```text
+/// 801e3798  lw    v0,0x6bc(v0)     ; char record +0xF4 (roster DAT_8007BD10[ctx+0x13])
+/// 801e37a0  andi  v0,v0,0x2000     ; War God Icon "Attack x2"
+/// 801e37ac  lbu   v0,0x5(s5)       ; ctx[+0x16]
+/// 801e37b4  beq   v0,zero,801e37c0 ; zero: the pair has not started - no bump
+/// 801e37b8  _addiu v0,v0,0x1
+/// 801e37bc  sb    v0,0x5(s5)       ; ctx[+0x16] += 1
+/// ```
+///
+/// Runs on every **staged** byte (only the stage path reaches it - the
+/// in-flight hold branches straight to `0x801E37C0`). On the first pass the
+/// counter reads `0` and nothing moves; the refill
+/// ([`attack_x2_refill`]) raises it to `1` on the step the terminator is
+/// read, while the first pass's last clip is still in flight - so that clip's
+/// hits read `1` and still carry. The second pass's first stage then lifts it
+/// to `2`, which is what ends the damage kernel's carry arm (`s2 = 0xFF`
+/// only while `ctx[+0x16] < 2`, [`crate::battle_action::apply_mode`]): the
+/// whole second pass applies. Without this bump the counter sat at `1`
+/// through the second pass and the carry arm never released.
+///
+/// Retail's record read indexes the roster by `ctx[+0x13]` with no party
+/// test in front of it; the engine asks the host's ability word only for a
+/// seated party slot (the same narrowing [`attack_x2_refill`] makes), since a
+/// monster ordinal indexes past the three roster bytes.
+///
+/// PORT: FUN_801E295C (`0x801E37AC..0x801E37BC`, the ctx[+0x16] stage bump)
+fn attack_x2_stage_bump<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) {
+    let slot = ctx.active_actor;
+    if usize::from(slot) >= usize::from(host.party_count()) {
+        return;
+    }
+    if host.character_ability_bits(slot) & WAR_GOD_ATTACK_X2_BIT == 0 {
+        return;
+    }
+    if ctx.attack_x2_pass != 0 {
+        ctx.attack_x2_pass = ctx.attack_x2_pass.wrapping_add(1);
+    }
+}
+
+/// Whether the strike loop's **per-frame drift** runs this frame -
+/// `FUN_801E295C` `0x801E37C0..0x801E3868`.
+///
+/// Party actors only (`ctx[+0x13] < 3`, `0x801E37C8`). Two arms, keyed on
+/// the committed clip's header byte `ctx[+0x243]`
+/// ([`BattleActionCtx::gauge_rearm_latch`]):
+///
+/// * `+0x243 == 0`: the character's ability word `+0x6BC` (record `+0xF4`)
+///   carries the War God Icon bit `0x2000` (`0x801E37EC..0x801E3830`);
+/// * `+0x243 != 0`: the builder's special-trigger flag `0x801F696C`
+///   ([`BattleActionCtx::super_trigger`]) is set **and** the latched clip id
+///   `+0x1DB` is outside `0x10..=0x1A` (`addiu -0x10; sltiu 0xB` at
+///   `0x801E3858..0x801E385C`) - the `0x801E3840` read.
+///
+/// PORT: FUN_801E295C (`0x801E37C0..0x801E3868`, the `0x801F696C` reader at `0x801E3840`)
+pub fn swing_drift_armed(
+    acting_party: bool,
+    clip_header: u8,
+    super_trigger: bool,
+    latched_anim: u8,
+    ability_bits: u32,
+) -> bool {
+    if !acting_party {
+        return false;
+    }
+    if clip_header != 0 {
+        super_trigger && !(0x10..=0x1A).contains(&latched_anim)
+    } else {
+        ability_bits & WAR_GOD_ATTACK_X2_BIT != 0
+    }
+}
+
+/// Signed drift speed per frame the arm applies, before `frame_dt` and the
+/// acting actor's rate: the acting actor backs off along its facing at `-3`,
+/// the target moves along *its* facing at `+3` (`negu` only on the acting
+/// side, `0x801E3890`).
+pub const SWING_DRIFT_SPEED: i16 = 3;
+
+/// The drift itself (`0x801E386C..0x801E3994`): the acting actor's live pair
+/// steps `trig(facing) * -3 * frame_dt * rate >> 15`, and the target's live
+/// pair `trig(target facing) * 3 * frame_dt * rate >> 15` - both scaled by
+/// the **acting** actor's rate byte `+0x21D`. The same arithmetic as the anim
+/// tick's root-motion step ([`motion::root_motion_step`]).
+fn swing_drift<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActionCtx) {
+    let slot = ctx.active_actor;
+    let acting_party = usize::from(slot) < usize::from(host.party_count());
+    let Some(actor) = host.actor(slot) else {
+        return;
+    };
+    let (latched, facing, rate, target) = (
+        actor.latched_anim,
+        actor.facing_angle,
+        actor.anim_rate.0,
+        actor.active_target,
+    );
+    let bits = if acting_party {
+        host.character_ability_bits(slot)
+    } else {
+        0
+    };
+    if !swing_drift_armed(
+        acting_party,
+        ctx.gauge_rearm_latch,
+        ctx.super_trigger,
+        latched,
+        bits,
+    ) {
+        return;
+    }
+    let dt = host.frame_dt().clamp(0, 0xFF) as u8;
+    let nudge = |host: &mut H, who: u8, angle: u16, speed: i16| {
+        let Some((x, z)) = host.actor_position(who) else {
+            return;
+        };
+        let (sin, cos) = motion::trig12(angle);
+        let (dx, dz) = motion::root_motion_step(sin, cos, speed, dt, rate);
+        host.set_actor_position(who, x.wrapping_add(dx as i16), z.wrapping_add(dz as i16));
+    };
+    nudge(host, slot, facing, -SWING_DRIFT_SPEED);
+    let target_facing = host.actor(target).map(|a| a.facing_angle);
+    if let Some(tf) = target_facing {
+        nudge(host, target, tf, SWING_DRIFT_SPEED);
+    }
 }
 
 /// PORT: FUN_801E295C (`0x801E39B4..0x801E3A64`) - the strike loop's

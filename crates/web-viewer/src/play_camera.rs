@@ -76,7 +76,7 @@ impl LegaiaRuntime {
     /// authored about its own origin while the geometry that draws sits at
     /// placement coordinates. The top view framed the origin corner and the
     /// map sat off-centre.
-    fn scene_aabb(&mut self) -> ([f32; 3], [f32; 3]) {
+    pub(crate) fn scene_aabb(&mut self) -> ([f32; 3], [f32; 3]) {
         if let Some(b) = self.scene_aabb {
             return b;
         }
@@ -160,7 +160,7 @@ impl LegaiaRuntime {
     /// Empty when the engine has no camera for this frame - no player actor
     /// and no scripted shot - which is where the page falls back to its own
     /// debug vantage, the same fallback the native window's
-    /// `field_follow_camera_mvp` takes.
+    /// `compute_scene_camera` takes on `HostDebugOrbit`.
     ///
     /// The matrix is for the page's **Y-up** render frame: the page's model
     /// matrices carry the PSX `scale(1,-1,1)` and the projection's trailing

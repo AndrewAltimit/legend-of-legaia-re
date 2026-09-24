@@ -80,12 +80,14 @@ calls any of them. The containment is total, and it lines up exactly with a
 boundary that [`crates/asset/data/static-overlays.toml`](../../crates/asset/data/static-overlays.toml)
 derives independently.
 
-That file keeps PROT 0896 (CDNAME `bat_back_dat`) out of the static-overlay
-map on the grounds that its widely-cited base `0x801C5818` is an over-read
-artifact: the entry's footprint runs into the neighbouring overlay's bytes, so
-whole-file base recovery is dominated by the neighbour's code and returns
-`0x801CE818 - 0x9000` by construction. PROT 0896's own link base is
-unrecovered.
+That file records PROT 0896's (CDNAME `bat_back_dat`) widely-cited base
+`0x801C5818` as an over-read artifact: the old entry footprint ran into the
+neighbouring overlay's bytes, so whole-file base recovery was dominated by the
+neighbour's code and returned `0x801CE818 - 0x9000` by construction. Head-only
+recovery over the corrected `0x9000`-byte entry lands at `0x801D4DF0`, which
+is the image's own link base and its `jp_options_status` row in the map. The
+`overlay_0896` dumps are printed at the `0x801C5818` import base, not that
+one.
 
 The resolve rate splits on precisely that seam. `overlay_0896` dumps at or
 above `0x801CE818` - the over-read neighbour's code, correctly based - resolve
@@ -109,11 +111,29 @@ retail executable's layout under any single offset.
 | Are they trustworthy below `0x801CE818`? | No. |
 | Is the wider corpus affected? | No. The failures are confined to that window. |
 
-The blast radius is contained. Citation edges derived from `overlay_0896`
+The blast radius is contained. The same bytes imported at the image's own
+base, as the `overlay_jp_options_status_0896` dumps, keep their foreign
+targets - rebasing cannot change a decoded target - and add more, because that
+import reaches functions the `0x801C5818` one never split out
+([below](#the-image-at-its-own-base-still-misses)). Every one of the misses
+from either import originates in PROT 0896's bytes and nowhere else. Citation edges derived from `overlay_0896`
 dumps below `0x801CE818` should not be relied on; edges from every other
 program stand. What the window actually holds is a separate question, tracked
 with the other PROT 0896 threads in
 [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+
+## The image at its own base still misses
+
+Importing PROT 0896 at `0x801D4DF0`
+([`static-overlay-pipeline.md`](static-overlay-pipeline.md#prot-0896-the-image-with-a-map-row-and-no-loader))
+fixes the printed call-site addresses and leaves every target where it was.
+That import's dumps cite twenty-nine SCUS-range targets the older import never
+reached; each lands on a body instruction or a delay slot of this disc's
+`SCUS_942.54`, none on a frame adjust, and no dump of any other image calls any
+of them. That is the signature of a link against another build's executable,
+which is what the image is. The targets are in the baseline for that reason:
+they measure which executable the image was linked against, not a defect in the
+corpus, and no `jal` edge out of this image is evidence about a USA routine.
 
 ## Detecting it
 

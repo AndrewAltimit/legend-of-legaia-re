@@ -337,7 +337,14 @@ pub fn cutscene_view(world: &World, fallback_focus_xz: [f32; 2]) -> FieldCameraV
     }
 }
 
-/// The **overworld walk view**'s inputs for a controller zoom.
+/// The **terrain-less fallback** overworld walk view, for a controller zoom.
+///
+/// A world-map scene with its field terrain loaded frames through the zone
+/// camera instead ([`resolve_field_camera`]'s world-map arm), which is what
+/// retail runs; this pinned pose is only what a world with no zone table
+/// (unit worlds, a headless overworld) is framed with. Two resident states
+/// sit on it, but the per-region captures in `docs/subsystems/world-map.md`
+/// show it is not one zoom axis.
 ///
 /// Pinned from the two resident overworld savestates (sebucus / karisto):
 /// `screen = H * (R*(6*(v - player)) + TR) / Ez` with `H = 368`, `R` from the
@@ -365,6 +372,23 @@ pub fn world_map_walk_view(azimuth: i32, zoom: i32) -> FieldCameraView {
             tr0[1] + t * (tr1[1] - tr0[1]),
             tr0[2] + t * (tr1[2] - tr0[2]),
         ],
+    }
+}
+
+/// Re-express a zone-camera [`field_follow_view`] pose in the overworld walk
+/// frame [`world_map_walk_vp`] composes: focus at the origin (the player
+/// translation carries it), eye trio back in retail GTE units (the follow
+/// view divides it by the 6x world scale; the walk frame scales the world
+/// instead - the same transform, and the one whose eye-space depth is
+/// retail's). `azimuth` is the top-view controller's, which retail leaves
+/// at `0` in walk mode; it is folded into the yaw so the camera-relative
+/// d-pad remap, which reads it, keeps agreeing with the frame.
+pub fn world_map_view_from_follow(v: &FieldCameraView, azimuth: i32) -> FieldCameraView {
+    FieldCameraView {
+        focus: [0.0; 3],
+        yaw: v.yaw + to_rad(azimuth as f32),
+        tr_eye: v.tr_eye.map(|c| c * WORLD_MAP_WORLD_SCALE),
+        ..*v
     }
 }
 
@@ -413,6 +437,28 @@ pub enum FieldCameraFrame {
     /// No player actor to follow and no scripted shot - the host frames the
     /// scene with its own debug vantage.
     HostDebugOrbit,
+}
+
+impl FieldCameraFrame {
+    /// This frame's pose in the **field** frame - 1x world, focus on the
+    /// player, eye trio reduced by the 6x world scale - the form the screen
+    /// effects that project raw world points take (the fog pool, the move-VM
+    /// strips, the attached lights). The overworld walk arm converts back
+    /// from its scaled-world form; the transform is the same one, so a sheet
+    /// projected through this view lands where the terrain does. `None` for
+    /// the two vantages with no retail pose (the top-view debug camera and
+    /// the host's orbit).
+    pub fn field_view(&self) -> Option<FieldCameraView> {
+        match *self {
+            FieldCameraFrame::Cutscene(v) | FieldCameraFrame::Follow(v) => Some(v),
+            FieldCameraFrame::WorldMapWalk { view, player } => Some(FieldCameraView {
+                focus: player,
+                tr_eye: view.tr_eye.map(|c| c / WORLD_MAP_WORLD_SCALE),
+                ..view
+            }),
+            FieldCameraFrame::WorldMapTopView { .. } | FieldCameraFrame::HostDebugOrbit => None,
+        }
+    }
 }
 
 /// Retail GTE **NCLIP** winding-rejection mode for this frame's scene pass -
@@ -467,6 +513,17 @@ pub fn resolve_field_camera(
                 azimuth: az,
                 zoom,
                 pan: [px, pz],
+            };
+        }
+        // The retail walk camera is the field zone camera (see
+        // `camera::zone_camera_scene`): the pose the kingdom MAN's
+        // section-3 records compose for the player's tile, eased per region.
+        if cam.zone.active
+            && let Some(v) = field_follow_view(cam, world)
+        {
+            return FieldCameraFrame::WorldMapWalk {
+                view: world_map_view_from_follow(&v, az),
+                player: v.focus,
             };
         }
         let player = world
@@ -791,5 +848,69 @@ mod tests {
         assert!((v.tr_eye[2] - 12000.0 / CUTSCENE_WORLD_SCALE).abs() < 1e-3);
         // Slot 9 absent -> the field H.
         assert_eq!(v.h, FIELD_H);
+    }
+
+    /// On the overworld the zone camera owns the walk frame: the resolver
+    /// hands back the zone pose's retail words (eye trio in GTE units, focus
+    /// on the player), and the field-frame view the screen effects project
+    /// through lands every world point on the same screen pixel.
+    #[test]
+    fn overworld_walk_frame_is_the_zone_pose() {
+        let mut w = world_with_player(8266, 8700);
+        w.mode = SceneMode::WorldMap;
+        let mut cam = Camera::default();
+        cam.zone.active = true;
+        // The `keikoku_chest_preload` live words: pitch 370, eye
+        // (-69, 776, 8875), H 368.
+        cam.globals.0[0] = 370;
+        cam.globals.0[1] = 0;
+        cam.globals.0[3] = -69;
+        cam.globals.0[4] = 776;
+        cam.globals.0[5] = 8875;
+        cam.globals.0[9] = 368;
+        let frame = resolve_field_camera(&w, &cam, None, [0.0, 0.0]);
+        let FieldCameraFrame::WorldMapWalk { view, player } = frame else {
+            panic!("expected the walk frame, got {frame:?}");
+        };
+        assert_eq!(player, [8266.0, 0.0, 8700.0]);
+        assert_eq!(view.h, 368.0);
+        assert!((view.pitch - to_rad(370.0)).abs() < 1e-6);
+        for (got, want) in view.tr_eye.iter().zip([-69.0f32, 776.0, 8875.0]) {
+            assert!((got - want).abs() < 1e-2, "{got} vs {want}");
+        }
+        // Not the pinned fallback.
+        assert_ne!(view.tr_eye, world_map_walk_view(0, 0).tr_eye);
+
+        let fv = frame.field_view().expect("field-frame view");
+        let a = frame_vp(&frame, ([0.0; 3], [1.0; 3]), 4.0 / 3.0).unwrap();
+        let b = fv.vp(4.0 / 3.0);
+        let project = |m: &[f32; 16], p: [f32; 3]| {
+            let v = [p[0], p[1], p[2], 1.0];
+            let mut c = [0.0f32; 4];
+            for (r, o) in c.iter_mut().enumerate() {
+                *o = m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2] + m[12 + r] * v[3];
+            }
+            [c[0] / c[3], c[1] / c[3]]
+        };
+        for p in [
+            [8266.0, 0.0, 8700.0],
+            [8400.0, 150.0, 9000.0],
+            [8000.0, -300.0, 9500.0],
+        ] {
+            let (pa, pb) = (project(&a, p), project(&b, p));
+            assert!(
+                (pa[0] - pb[0]).abs() < 1e-4 && (pa[1] - pb[1]).abs() < 1e-4,
+                "{p:?}: {pa:?} vs {pb:?}"
+            );
+        }
+
+        // Without a zone pose the terrain-less fallback still frames it.
+        cam.zone.active = false;
+        let FieldCameraFrame::WorldMapWalk { view, .. } =
+            resolve_field_camera(&w, &cam, None, [0.0, 0.0])
+        else {
+            panic!("expected the walk frame");
+        };
+        assert_eq!(view, world_map_walk_view(0, 0));
     }
 }

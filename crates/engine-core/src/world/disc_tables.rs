@@ -164,6 +164,11 @@ pub struct DiscTables {
     /// [`crate::world::World::install_seru_trade_config`]; `None` (or `enabled == false`)
     /// disables vendor seru trading. See [`crate::seru_trade`].
     pub seru_trade_config: Option<legaia_asset::seru_trade::SeruTradeConfig>,
+    /// The battle draw's per-character Rot limb object ranges
+    /// (`SCUS_942.54` `0x80077998`, [`legaia_engine_vm::battle_actor_draw`]).
+    /// Installed by [`crate::world::World::install_menu_text`]; while `None`
+    /// (disc-free) no rotted limb dims.
+    pub rot_limb_table: Option<legaia_engine_vm::battle_actor_draw::RotLimbTable>,
 }
 
 impl DiscTables {
@@ -190,6 +195,7 @@ impl DiscTables {
             accessory_passives: Default::default(),
             scene_toc_names: legaia_prot::cdname::IndexMap::new(),
             victory_pose_table: None,
+            rot_limb_table: None,
         }
     }
 }

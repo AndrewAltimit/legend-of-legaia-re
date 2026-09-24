@@ -72,6 +72,19 @@ fn psyq_rand_in_range() {
 }
 
 #[test]
+fn bios_rand_shape_is_psyq_rand_over_the_same_state() {
+    // `psyq_rand_step` = one BIOS step then the shape; the shape alone over
+    // any state is the same high-half read.
+    let mut seed = 0x0BAD_F00D;
+    for _ in 0..100 {
+        let r = psyq_rand_step(&mut seed);
+        assert_eq!(u32::from(r), bios_rand_shape(seed));
+    }
+    assert_eq!(bios_rand_shape(0xFFFF_FFFF), 0x7FFF);
+    assert_eq!(bios_rand_shape(0x0000_FFFF), 0);
+}
+
+#[test]
 fn accuracy_roll_zero_stats_auto_hits() {
     let mut s = 0;
     assert!(accuracy_roll(0, 0, &mut s));

@@ -284,6 +284,12 @@ impl World {
         if let Ok(menu) = legaia_asset::worldmap_menu::parse_scus(scus) {
             self.menu.worldmap_menu = Some(menu);
         }
+        // The battle draw's Rot limb ranges (`0x80077998`) - the one
+        // per-object colour rule of `FUN_80048A08`, read by both hosts'
+        // battle actor draws through [`Self::battle_limb_dim_plan`].
+        if let Some(t) = legaia_engine_vm::battle_actor_draw::RotLimbTable::from_scus(scus) {
+            self.tables.rot_limb_table = Some(t);
+        }
     }
 
     /// Install the menu-overlay data tables (PROT 0899 as-loaded image):
@@ -714,6 +720,53 @@ impl World {
         Some(formation_id)
     }
 
+    /// The battle-setup half of `FUN_801D9E1C` for the region the player
+    /// stands in under the live story-flag state - retail's `a1 = 0` call.
+    /// Leaves the previous setup in place when the tile is in no region,
+    /// as retail's globals would be.
+    ///
+    /// REF: FUN_801D9E1C (ported as
+    /// [`crate::region_encounter::region_battle_setup`])
+    pub fn apply_region_battle_setup_at_player(&mut self) {
+        let Some((wx, wz)) = self
+            .player_actor_slot
+            .and_then(|s| self.actors.get(s as usize))
+            .map(|a| (a.move_state.world_x, a.move_state.world_z))
+        else {
+            return;
+        };
+        let Some(mut tracker) = self.terrain.region_tracker.take() else {
+            return;
+        };
+        tracker.select_group(|flag| self.system_flag_test(flag));
+        if let Some(region) = tracker.table().region_at_world(wx, wz) {
+            let setup = crate::region_encounter::region_battle_setup(&region.setup);
+            self.store_region_battle_setup(setup);
+        }
+        self.terrain.region_tracker = Some(tracker);
+    }
+
+    /// Store a region setup the way retail's globals take it: a short-layout
+    /// record leaves `_DAT_8007B64B` and the world-map return triple as they
+    /// were, so those two carry over from the previous setup.
+    fn store_region_battle_setup(&mut self, mut setup: crate::region_encounter::RegionBattleSetup) {
+        if let Some(prev) = self.encounters.region_setup {
+            setup.keep_backdrop_object_1 =
+                setup.keep_backdrop_object_1.or(prev.keep_backdrop_object_1);
+            setup.world_map_return = setup.world_map_return.or(prev.world_map_return);
+        }
+        self.encounters.region_setup = Some(setup);
+    }
+
+    /// The Door of Light / Door of Wind gates the last region setup left in
+    /// scratchpad `0x1F800394` (`0x100000` / `0x200000`): `(light, wind)`,
+    /// `true` = blocked. Open until a region has been stood in.
+    pub fn region_door_gates(&self) -> (bool, bool) {
+        self.encounters.region_setup.map_or((false, false), |s| {
+            (s.door_of_light_blocked, s.door_of_wind_blocked)
+        })
+    }
+
     /// Enter the scripted battle the field-VM op `3E FF <row>` selects: the
     /// per-scene MAN formation-table row `row`, latched for immediate battle
     /// entry (no field step required).
@@ -744,6 +797,17 @@ impl World {
     /// Returns `false` (and enters nothing) when the row isn't registered or
     /// has no monsters, mirroring the reader's `count == 0` no-spawn arm.
     pub fn trigger_scripted_battle(&mut self, row: u8) -> bool {
+        // `FUN_801D9E1C(player, 0)` first (`0x801E0710`, the player's `+0x8E`
+        // / `+0x8F` preset to `0xFF` so the same-tile early-out cannot fire):
+        // the region battle setup for the tile the fight starts on, with
+        // `a1 = 0` returning before the step roll.
+        self.apply_region_battle_setup_at_player();
+        // The arm rerolls the encounter step counter right after the `+0x94`
+        // install (`jal 0x801DDF48` at `0x801E076C`, `sw v0, _DAT_8007B5FC`
+        // at `0x801E0780`) and before the mode request - unconditionally, so
+        // a fight that ends back in a rolling region starts from a fresh
+        // `488..=1460` count rather than the pre-fight residue.
+        self.reroll_encounter_step_counter();
         let formation_id = u16::from(row);
         let has_slots = self
             .tables
@@ -1070,7 +1134,13 @@ impl World {
             // laid end to end, so the group choice decides which rates,
             // formations and backdrop the step can see at all.
             tracker.select_group(|flag| self.system_flag_test(flag));
-            let roll = tracker.on_step(wx, wz, || self.next_rng());
+            // The reader's battle-setup half runs on every step that lands in
+            // a region, before - and regardless of - the roll.
+            if let Some(region) = tracker.table().region_at_world(wx, wz) {
+                let setup = crate::region_encounter::region_battle_setup(&region.setup);
+                self.store_region_battle_setup(setup);
+            }
+            let roll = tracker.on_step(wx, wz, || self.next_rand());
             // Per-step roll diagnostics (trace level; off in normal runs):
             // which tile the step landed on and how far the region counter
             // has drained. A step outside every region logs no counter
@@ -1079,6 +1149,7 @@ impl World {
                 "field step at ({wx}, {wz}): region counter {}",
                 tracker.counter()
             );
+            self.encounters.step_counter = tracker.counter();
             self.terrain.region_tracker = Some(tracker);
             return match roll {
                 Some(r) => {

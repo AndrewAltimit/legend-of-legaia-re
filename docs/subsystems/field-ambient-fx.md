@@ -638,7 +638,7 @@ byte layout):
 
 | Routine | Image | Role |
 |---|---|---|
-| `FUN_801D629C` | field overlay (0897, file `0x7A84`) | **Spawner.** Rejects a tile outside the walk-region box `0x1F800384..87`; finds the first MAN section-4 region whose open box holds the tile and stops if it is disabled; requires `_DAT_8007BCA8 < _DAT_8007BCB0` (live count under the cap, `0x18` from the field reset); pops a slot off the pool's free stack (`FUN_8001FA34`); fills the record - drift from the region's angle base + random spread through the sin/cos LUTs times its speed, height `-(rand & 0x7F)`, grey `rand & 0x7F`, age rate `(rand & 7) + 8`. |
+| `FUN_801D629C` | field overlay (0897, file `0x7A84`) | **Spawner.** Rejects a tile outside the walk-region box `0x1F800384..87`; finds the first MAN section-4 region whose open box holds the tile and stops if it is disabled; requires `_DAT_8007BCA8 < _DAT_8007BCB0` (live count under the cap, `0x18` from the field reset); on the overworld drops a tile whose camera-space depth passes `0x4000` (see below); pops a slot off the pool's free stack (`FUN_8001FA34`); fills the record - drift from the region's angle base + random spread through the sin/cos LUTs times its speed, height `-(rand & 0x7F)`, grey `rand & 0x7F`, age rate `(rand & 7) + 8`. |
 | `FUN_8003F348` | SCUS | **Walk.** Called only from the render pass's gated site (`0x80026F24`); pushes the matrix stack, folds `RotMatrixX(0x400)` into the camera rotation, then runs the update on every one of the 80 records whose alive byte is set. |
 | `FUN_8003F3FC` | SCUS | **Per-particle update + draw.** Kills a record outside the walk box; brightness ramps `0..0xFF` over age `0..0x400`, holds to `0xC00`, then fades and kills; colour is `grey * tint * brightness >> 15` per channel with the tint the op `0x4C 0x12` global multiply (`_DAT_8007BCB8..BA`, `0x80` neutral); drift and age advance by `DAT_1F800393`; the player's `+-0x180 / +-0x80 / +-0x80` box ages it again, three times more with a d-pad bit held; then two halves through `FUN_8003F86C`, and a record whose two halves both cull is freed (`FUN_8001FA68`). |
 | `FUN_8003F86C` | SCUS | **Half-sheet emitter.** One `POLY_FT4` (tag `0x09` words, command `0x2E`: textured, semi-transparent, texture-blended) between two projected points - the particle, and the point `2 * half_width` to one side and `0x80` above it - axis-aligned in screen space; culled when both points are off the `[-8, 0x148)` columns, both above row `0`, or both below row `0x190`; kept but not drawn between rows `0xF0` and `0x190`; NCLIP-culled at a signed area past `0x1F40` quarter-pixels; linked at OT bucket `view_z >> 5`. |
@@ -647,10 +647,173 @@ The half-width is `(0x180 + (age >> 4)) >> 1`. Retail adds a byte from
 `FUN_8003F838` here, but it seeds that PRNG's state with the record's age
 rate first, and the step `v = state * 12 + 2; state = (v << 16) + (v >> 16)`
 leaves a zero low byte for every rate the spawner can write - the random
-term is dead code. The art is the effect atlas: texture page `0x27` (VRAM
-`(448, 256)`, 4bpp, ABR `1` additive) through CLUT `0x7640` (`(0, 473)`);
-the left half samples staged row 1 (`v 0x58..0x6F`), the right half row 0
-(`v 0x40..0x57`), each `u 0..0x3F`. Rows 2 and 3 are staged and unread.
+term is dead code. The art is two cloud wisps in the effect-texture pool:
+texture page `0x0027` (VRAM `(448, 0)`, 4bpp, ABR `1` additive) through
+CLUT `0x7640` (`(0, 473)`); the left half samples staged row 1
+(`v 0x58..0x6F`), the right half row 0 (`v 0x40..0x57`), each `u 0..0x3F`.
+Rows 2 and 3 are staged and unread.
+
+### Where the fog texels come from
+
+The page halfword is the upper half of the second staged UV word
+(`0x0027403F` at `0x8007323C`), a GP0 texpage: bits `0..3` give X `7 * 64 =
+448`, bit 4 - the Y-base bit - is clear, bits `5..6` are ABR `1`. So the
+sheets sample `(448, 0)`, not `(448, 256)`, and the cells they read are
+rows `0x40..0x6F` of the `(448, 0)` 64x256 page of the PROT 0874 section-2
+effect-texture pool (`legaia_engine_core::scene::upload_effect_textures_into_vram`),
+whose CLUT strip also lands on row 473. Retail keeps that pool resident in
+field and world-map VRAM: the fog cells and the row-473 CLUT are
+byte-identical in nine PCSX-Redux states across `retona`, `town01`,
+`chitei2`, `dolk`, `map01`, `son`, `vozz`, `map03` and `vell`
+(`scripts/pcsx-redux/extract_vram_from_sstate.py`).
+
+The pool is resident **before** the scene loads. Where a scene TIM covers a
+pool rect the scene's texels win: `dolk`'s TIMs reach into the `(448, 0)`
+page, and its capture holds the scene's texels on all 1010 halfwords where
+the two differ. So a port layers the pool *under* its scene build
+(`Vram::underlay`, the order `SceneResources` already uses for the
+boot-resident system-UI bundle); writing it over the build clobbers those
+texels. Both builds underlay it: the native window's
+(`engine-shell` `window/run.rs`) and the engine host's own field entry
+(`engine-core::scene::host::scene_entry`), which is the VRAM the browser
+play page draws from; the disc-gated
+`crates/engine-core/tests/scene_host_effect_pool_underlay_disc.rs` pins the
+host side on `dolk` and `vell`. A disc-wide census of
+every CDNAME scene built the window's way finds the overlap in `dolk` and
+`dolk2` (the `(448, 0)` page), `bubu2` (the CLUT rows), the `ed*` ending
+scenes (mostly the `(320, 256)` page) and the non-field `other4..6` /
+`befect_data` blocks; every other scene's TIMs miss the pool entirely.
+
+A host whose scene VRAM lacks the pool draws the fog quads against zero
+words, and a textured fragment on a zero word is transparent: the pool is
+live, the quads are emitted, and nothing reaches the frame. That was the
+native window's state until its scene build gained the underlay
+(`crates/engine-shell/src/bin/legaia-engine/window/run.rs`, disc-gated
+`window/fog_texture_tests.rs`, which pins both retail hashes).
+
+### Pool density against retail
+
+A per-vsync poll of the pool in `vell`
+([`autorun_w1a_fog_pool_poll.lua`](../../scripts/pcsx-redux/autorun_w1a_fog_pool_poll.lua),
+1800 vsyncs standing at the `map01` entrance, gate raised, cap `0x18`)
+reads the alive-record population at 21 to 38, mean 25.9, with the frame
+step `DAT_1F800393` at `2` on every sample - `vell` runs at 30 frames a
+second. The live-count word itself is a poor sample: the walk zeroes it
+before it counts (`sw zero,0x990(gp)` at `0x8003F398`) and adds as it goes
+(`sw v0,0x990(gp)` at `0x8003F3C8`), so a vsync that lands inside the walk
+reads a partial count. The spawner compares that word as the last walk left
+it, so one frame's spawns can overshoot the cap by what one frame can
+spawn - which is all retail does.
+
+The emitter and the spawner draw BIOS `rand()` (`FUN_80056798` is the
+`A(2Fh)` thunk), which returns the **high** half of its LCG state,
+`(seed >> 16) & 0x7FFF`, and both test low bits of the result (`rand & 0xF`
+for the burst gate, `& 7`, `& 0x7F`). A port that hands them a raw 32-bit
+LCG state gets bits whose low nibble cycles with period 16: the burst gate
+then fails on almost every frame and passes on all 24 draws of one frame,
+which dropped fifty-odd records into the pool at once past the stale count -
+the engine's `vell` pool read 40 to 62 against retail's 21 to 38 until the
+element channel shaped its draws the BIOS way
+(`engine-vm::battle_formulas::bios_rand_shape`, the one shaping every
+world draw that stands in for a `jal 0x80056798` goes through -
+`World::next_rand`). Shaped, the
+engine's `vell` pool over 2400 ticks after a 600-tick settle reads 19 to
+35, mean 26.4, at most twelve spawns in one tick
+(`w1h_fog_gate_census.rs`, `vell_fog_density_tracks_the_retail_poll`).
+
+The cap is not a debug switch. The MAN installer `FUN_8003AEB0` stores
+`MAN[1] & 1` into `_DAT_8007B6A8` (`0x8003AF54`, the per-scene save-allow /
+overworld flag), then at `0x8003B6BC..0x8003B6E8` writes `0x48` into
+`_DAT_8007BCB0` when `MAN[1] & 4` or that flag is set, `0x18` otherwise. So
+every kingdom overworld runs the pool at `0x48` - the value every
+PCSX-Redux `map01` / `map03` library state holds - and a field scene
+reaches it only through header bit 2. Across the 101 scene MANs on the disc
+four raise it: `map01`, `map02` and `map03` (bit 0) and `opurud` (bit 2).
+The engine seats the cap from the MAN at scene entry
+(`fog_particles::fog_cap_for_man`); the census is
+`crates/engine-core/tests/scene_host_effect_pool_underlay_disc.rs`.
+
+### The pool on the kingdom overworld
+
+The overworld is a game-mode-3 field-run scene, so the render pass's gate
+at `0x80026EA4..0x80026EC4` (`_DAT_8007B83C == 3` and `_DAT_8007B854 != 0`)
+passes there exactly as in a field, and retail draws the fog over the
+continent. On `keikoku_chest_preload` (`map01`) the gate is raised and all
+`0x48` records of the raised cap are alive, every one at a height in
+`-0x28 - 0x7F ..= -0x28`: the spawner's overworld arm, not the field arm,
+wrote them.
+
+That arm keys on scratchpad `_DAT_1F800394` bit 0. Across the mednafen
+library the bit is set on all nine non-battle kingdom-overworld states
+(`map01` / `map02` / `map03`, field-run and pause menu) and clear on the
+other 89, the battles fought on an overworld included - it is the overworld
+flag. Read off `FUN_801D629C`'s disassembly, the bit changes three things:
+
+- **Depth test before the pop.** After the height draw the spawner builds an
+  `SVECTOR` of `(tile_x << 7, y, tile_z << 7)` on its stack and transforms
+  it with `FUN_8003D344` (`0x801D6460`) - one `MVMVA` of `V0` by the
+  rotation matrix plus the translation, i.e. the resident camera. A result
+  depth past `0x4000` (`slti v0,v0,0x4001` at `0x801D6470`) ends the spawn
+  before the slot pop, having consumed two draws.
+- **A further lift.** After the record is filled, `0x801D651C..0x801D653C`
+  subtract `0x28` from its height.
+- **The emitter's dense profile.** `FUN_801D6058` switches its burst span
+  bias and offset from `(2, 1)` to `(6, 0x0E)` on the same bit
+  (`cutscene_script_elements::AmbientProfile`).
+
+What puts the fog *ahead* of the player is the emitter's span. The burst
+arm samples its tiles across the visible-tile window `0x1F8003E8..EB`,
+read afresh every frame (`lb` of `0xD4..0xD7(s0)` with `s0 = 0x1F800314`,
+`0x801D6158..0x801D6168`), and `map01`'s entry script (`P1[0]`) sets that
+window to `(-18, -12, 18, 32)` (`46 24 EE F4 12 20`) two ops before it
+raises the gate (`4C 30`, unconditional). The field default
+`(-8, -6, 6, 10)` with the dense profile places every burst behind the
+player; the overworld window reaches 32 tiles ahead. On
+`keikoku_chest_preload` the pool spans 1075 units behind to 1337 ahead of
+the player. Fed that pool, retail's camera words and retail's vertical
+offset, the port's render step emits 66 half-sheets whose sizes and vertical
+spread match the state's own display-list fog packets (median `122 x 31`
+against retail's `106 x 27` pixels; centres from row `-10` down to about
+`250` on both) - a shape comparison, not a packet-for-packet one, since the
+walked ordering table holds 104 fog packets against the pool's 72 records.
+
+The GTE matrix at the spawner's `MVMVA` is read as the camera the frame
+draws with (the port uses the last camera its render step projected
+through); that attribution is an inference from the operands - the routine
+never loads a matrix of its own. The engine models the arm as
+`FogPool::overworld` + `FogPool::depth_view`, set from the world mode by the
+element channel and from the draw path by `World::fog_render_step`, and
+both hosts run the render step in either mode (`World::fog_mode`), handing
+it the frame's field-frame pose
+(`camera_view::FieldCameraFrame::field_view`). The live window reaches the
+emitter as `FogPool::view_window`, published by `Camera::route_camera_events`
+(the window is camera state); the world-map frame arm steps the scene
+system script the way the field arm does, which is what runs `map01`'s
+`P1[0]`. The disc-gated oracle is
+`crates/engine-shell/tests/world_map_fog_oracle.rs`.
+
+On the overworld each half-sheet is also depth-tested against the
+continent the frame already drew (`FogQuad::depth`, the bottom-right
+point's depth - the point the OT bucket comes from), because retail links
+the sheets into the same ordering table as the terrain; the field keeps its
+composite-over-the-frame draw.
+
+Frame-paired at `keikoku_chest_preload`'s seat, both hosts place the fog
+where retail's display list does - retail's 104 fog packets cover the same
+band from the ridge line down to the foreground - but the port's sheets read
+denser and brighter than the retail frame, where the haze is visible only
+as the white band above the ridges. Retail's 72 records modulate at a
+median `rgb` of 41 (`grey * brightness >> 15`, tint neutral), so each
+foreground sheet adds under a third of its texel; the per-sheet intensity
+on the port's screen-primitive pass is the open question, not the
+placement.
+
+The one input still off retail on the overworld is the camera vertical
+offset `_DAT_8007BCAC` the render step subtracts from every particle
+height: 252 on `keikoku_chest_preload` against the port's 192. The ease
+walks toward `scene_ctrl[+0x4A] - player[+0x16]`, and the port's scene
+control word reads `0` where retail's reads `60`; the particles draw 60
+units lower than retail's.
 
 The region table is MAN section 4 (`DAT_80073ED8`, count `DAT_80073EDC`):
 `0xB`-byte records of `[enable][x0][z0][x1][z1][angle base][angle
@@ -672,7 +835,8 @@ on the element channel `engine-core::world::cutscene_elements`; the producer is
 `engine-core::fog_particles::FogPool` (spawn, walk, update, emit), installed
 from section 4 at scene entry (`World::install_fog_regions`) and rendered by
 `World::fog_render_step` - which both hosts call from their draw path with
-the follow camera, wrapping the quads through
+the frame's camera (the field follow pose, or the overworld walk pose),
+wrapping the quads through
 `engine-ui::screen_prim::fog_puff_prim` into their screen-primitive pass.
 Fuller spawn-site provenance is in [`cutscene.md`](cutscene.md); the
 disc-wide census of the gate-raising scripts and the two oracles are

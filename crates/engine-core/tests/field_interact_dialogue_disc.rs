@@ -5,22 +5,24 @@
 //! each placed actor's dialogue is its own inline interaction-script MES (retail
 //! `actor[+0x90]`), keyed by the actor's **partition-1 placement index**. On
 //! field entry the engine populates [`crate::world::FieldNpcState::dialog`] from that real
-//! placement table ([`World::install_field_carriers_from_man`]). A field-VM
-//! field-interact op (`0x3E` with `op0 < 100`) then carries that index as its
-//! `slot` operand, and the host opens `field_npc_dialog[slot]`.
+//! placement table ([`World::install_field_carriers_from_man`]). The talk path
+//! (`World::trigger_field_interact`, what the interaction probe calls) then
+//! addresses that index as its `slot`, and opens `field_npc_dialog[slot]`.
+//! (No field-VM opcode opens dialogue: op `0x3E` with `op0 < 100` is the
+//! scripted-battle install.)
 //!
 //! The placement-decode, classification, and segment-pool layers are already
 //! pinned on real data elsewhere (`field_actor_placements_disc`,
 //! `rim_elm_sparring_carrier`). The gap this closes is the **round-trip**: that
-//! driving a real `[0x3E, op0, slot]` interact through the field VM opens
+//! driving a real interaction on `slot` through the talk path opens
 //! exactly the interacted placement's own inline dialogue, for every populated
 //! slot - previously exercised only with hand-seeded `field_npc_dialog` entries.
 //!
 //! It also pins two correctness properties of the mapping:
 //!   - **install == classify**: the dialogue map the engine installs matches an
 //!     independent `classify_placements` pass over the same bytes.
-//!   - **lossless slot space**: every NPC placement index fits the `u8` the
-//!     field-VM interact operand carries (so the `u8::try_from` in
+//!   - **lossless slot space**: every NPC placement index fits the `u8` slot
+//!     the talk path addresses (so the `u8::try_from` in
 //!     `install_field_carriers_from_man` never silently drops an NPC).
 //!
 //! No Sony text is asserted - only structural shape (slot keys, byte-identical
@@ -158,8 +160,7 @@ fn field_interact_slot_opens_real_npc_dialogue() {
         "at least one town01 NPC must carry a pre-first-segment interaction prologue"
     );
 
-    // End-to-end: feed each populated slot through the field VM as a real
-    // [0x3E, op0, slot] interact (op0 = 5 < 100 -> field-interact arm) and assert
+    // End-to-end: feed each populated slot through the talk path and assert
     // it opens exactly that placement's own inline dialogue.
     world.mode = SceneMode::Field;
     let mut verified = 0usize;
@@ -167,7 +168,7 @@ fn field_interact_slot_opens_real_npc_dialogue() {
         let slot = *idx as u8;
         world.dialog.current = None;
         let _ = world.drain_field_events();
-        world.load_field_script(vec![0x3E, 0x05, slot]);
+        world.trigger_field_interact(0x05, slot);
         let _ = world.tick();
         let req = world.dialog.current.as_ref().unwrap_or_else(|| {
             panic!("field-interact on NPC slot {slot} must open a dialogue box")
@@ -197,9 +198,9 @@ fn field_interact_slot_opens_real_npc_dialogue() {
 ///     populates matches an independent `classify_placements` pass (keys cast to
 ///     `u8`), so the install loop drops no NPC.
 ///   - **lossless slot space**: every NPC placement index fits the `u8`
-///     field-interact operand.
-///   - **round-trip**: driving a real `[0x3E, op0<100, slot]` op through the
-///     field VM opens exactly that placement's own inline dialogue.
+///     talk-path slot.
+///   - **round-trip**: driving a real interaction on `slot` through the talk
+///     path opens exactly that placement's own inline dialogue.
 ///
 /// This is the corpus generalisation of the single-scene check above - the
 /// mapping was previously validated only on town01, so a scene whose partition
@@ -276,13 +277,13 @@ fn field_interact_slot_mapping_holds_across_field_scene_corpus() {
             );
         }
 
-        // Round-trip every populated slot through a real field-VM interact op.
+        // Round-trip every populated slot through the talk path.
         world.mode = SceneMode::Field;
         for (idx, inline) in &expected {
             let slot = *idx as u8;
             world.dialog.current = None;
             let _ = world.drain_field_events();
-            world.load_field_script(vec![0x3E, 0x05, slot]);
+            world.trigger_field_interact(0x05, slot);
             let _ = world.tick();
             let req = world.dialog.current.as_ref().unwrap_or_else(|| {
                 panic!("[{name}] field-interact on NPC slot {slot} must open a dialogue box")

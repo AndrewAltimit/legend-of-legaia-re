@@ -5,11 +5,14 @@
 //!
 //! - a **disc-free content gate** (always runs, including in CI): every shipped
 //!   pack parses, carries no `source:` / `context:` field (the repo must never
-//!   hold the game's own script), keys are well-formed and unique, and every
-//!   translation both encodes into the retail glyph set and fits its byte
-//!   budget. This is what keeps a bad pack from being committed.
+//!   hold the game's own script), keys are well-formed and unique, every
+//!   translation encodes into the retail glyph set, and every name / label
+//!   fits its byte budget (a dialog line may not: the importer relocates it
+//!   inside its own scene, which the disc-gated layer proves). This is what
+//!   keeps a bad pack from being committed.
 //! - **disc-gated proofs** (skip + pass without `LEGAIA_DISC_BIN`): each pack
-//!   applies to a real disc through the same code path the browser uses, the
+//!   applies to a real disc through the same code path the browser uses
+//!   (and next to nothing of it is rolled back for want of room), the
 //!   patched image still parses, its SCUS name table reads back the translated
 //!   names, every touched sector stays EDC/ECC-valid, and a translated **and**
 //!   randomized image composes (translate first, then randomize).
@@ -91,8 +94,12 @@ fn shipped_packs_carry_no_source_text() {
 }
 
 /// Every translation encodes into the retail glyph set (printable ASCII - the
-/// font has no accented Latin, so packs must be ASCII-folded) and fits the byte
-/// budget of the string it replaces.
+/// font has no accented Latin, so packs must be ASCII-folded), and every name
+/// and label fits the byte budget of the string it replaces. A dialog line's
+/// `budget` is the English line's length, not a bound: a longer (or shorter)
+/// line is relocated inside its scene's MAN and the whole scene must fit its
+/// compressed footprint - which only a disc can check
+/// ([`shipped_packs_apply_to_a_real_disc`]).
 #[test]
 fn shipped_pack_translations_encode_within_budget() {
     for (name, pack) in shipped_packs() {
@@ -113,9 +120,10 @@ fn shipped_pack_translations_encode_within_budget() {
                 } else {
                     Target::Segment
                 };
+                let dialog = e.key.starts_with("man:") || e.key.starts_with("raw:");
                 match markup::encode(&e.translation, target) {
                     Ok(bytes) => assert!(
-                        bytes.len() <= e.budget,
+                        dialog || bytes.len() <= e.budget,
                         "{name}.yaml [{section}] {}: {} bytes over its {} byte budget",
                         e.key,
                         bytes.len(),
@@ -243,6 +251,30 @@ fn shipped_packs_apply_to_a_real_disc() {
             "{name}: only {} entries applied",
             report.applied
         );
+        // A scene whose padded same-size write no longer recompresses is fitted
+        // by the relocator at exact line lengths before any line is rolled
+        // back, so a shipped pack loses next to nothing for want of room. The
+        // padded-only importer rolled back a third of one pack's dialog here.
+        let dialog = pack.sections.scene_dialog.len() + pack.sections.inline_text.len();
+        let rolled_back = report
+            .issues
+            .iter()
+            .filter(|(_, m)| m.contains("rolled back"))
+            .count();
+        assert!(
+            rolled_back * 100 <= dialog,
+            "{name}: {rolled_back} of {dialog} dialog lines rolled back for want of room"
+        );
+        // The Brazilian Portuguese pack is generated from what the same-size
+        // import writes, so every line of it lands.
+        if name == "pt-BR" {
+            assert!(
+                report.issues.is_empty(),
+                "{name}: {} entries skipped, e.g. {:?}",
+                report.issues.len(),
+                report.issues.first()
+            );
+        }
         let patched = patcher.into_image();
         assert_eq!(patched.len(), original.len(), "{name}: same-size image");
 

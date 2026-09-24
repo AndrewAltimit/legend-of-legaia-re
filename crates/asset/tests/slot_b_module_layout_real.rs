@@ -73,42 +73,91 @@ fn word_at(b: &[u8], off: usize) -> u32 {
     u32::from_le_bytes(b[off..off + 4].try_into().unwrap())
 }
 
+/// The value `$a2` holds after running the words `[from, to)` forward from an
+/// unknown register file: `lui` / `addiu` / register copies are tracked, a
+/// call clobbers the caller-saved registers, anything else writing a register
+/// forgets it.
+fn a2_after(b: &[u8], from: usize, to: usize, skip: usize) -> Option<u32> {
+    let mut regs: [Option<u32>; 32] = [None; 32];
+    regs[0] = Some(0);
+    let mut p = from;
+    while p + 4 <= to {
+        let w = word_at(b, p);
+        p += 4;
+        if p - 4 == skip {
+            continue;
+        }
+        let (op, rs, rt, rd) = (w >> 26, (w >> 21) & 31, (w >> 16) & 31, (w >> 11) & 31);
+        let s = (w & 0xFFFF) as i16 as i32;
+        if op == 3 || (op == 0 && w & 0x3F == 0x09) {
+            for r in [
+                1usize, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 24, 25, 31,
+            ] {
+                regs[r] = None;
+            }
+            continue;
+        }
+        match op {
+            0x0F => regs[rt as usize] = Some((w & 0xFFFF) << 16),
+            0x09 => {
+                regs[rt as usize] = regs[rs as usize].map(|v| (v as i32).wrapping_add(s) as u32)
+            }
+            0x00 if matches!(w & 0x3F, 0x21 | 0x25) && (rs == 0 || rt == 0) => {
+                regs[rd as usize] = regs[(rs | rt) as usize];
+            }
+            0x00 if !matches!(w & 0x3F, 0x08 | 0x18..=0x1B | 0x11 | 0x13) => {
+                regs[rd as usize] = None
+            }
+            0x08 | 0x0A..=0x0E | 0x20..=0x26 | 0x10 | 0x12 => regs[rt as usize] = None,
+            _ => {}
+        }
+        regs[0] = Some(0);
+    }
+    regs[6]
+}
+
 /// Every `$a2` a spawn-helper `jal` in this image is handed, resolved from the
-/// raw words. Deliberately a second implementation of the parser's rule, so
-/// the test is not asserting the parser against itself.
+/// raw words by a forward register simulation from the enclosing routine's
+/// prologue - deliberately a second
+/// implementation of the parser's backward walk, so the test is not asserting
+/// the parser against itself. Both paths into a call count: the fall-through
+/// one through the call's own delay slot, and every `j` that lands on the call
+/// (or up to three words above it) through that `j`'s delay slot.
 fn spawn_a2_values(b: &[u8]) -> Vec<u32> {
+    // Simulate from the enclosing routine's prologue (`addiu sp,sp,-N`), or
+    // from the image start when there is none above the word.
+    let entry = |at: usize| {
+        let mut p = at;
+        while p >= 4 {
+            p -= 4;
+            let w = word_at(b, p);
+            if w >> 16 == 0x27BD && w & 0x8000 != 0 {
+                return p;
+            }
+        }
+        0
+    };
     let mut out = Vec::new();
     let calls: Vec<u32> = SPAWN
         .iter()
         .map(|a| 0x0C00_0000 | ((a >> 2) & 0x03FF_FFFF))
         .collect();
     let mut off = 0usize;
-    while off + 4 <= b.len() {
+    while off + 8 <= b.len() {
         if calls.contains(&word_at(b, off)) {
-            let mut a2: Option<u32> = None;
-            let mut p = off.saturating_sub(22 * 4);
-            while p + 4 <= off {
-                let w = word_at(b, p);
-                let (op, rs, rt, imm) = (w >> 26, (w >> 21) & 31, (w >> 16) & 31, w & 0xFFFF);
-                if op == 3 {
-                    a2 = None;
-                } else if rt == 6 {
-                    let s = if imm & 0x8000 != 0 {
-                        imm as i32 - 0x1_0000
-                    } else {
-                        imm as i32
-                    };
-                    a2 = match op {
-                        0x0F => Some(imm << 16),
-                        0x09 if rs == 6 => a2.map(|v| (v as i32).wrapping_add(s) as u32),
-                        0x09 if rs == 0 => Some(s as u32),
-                        _ => None,
-                    };
+            out.extend(a2_after(b, entry(off), off + 8, off));
+            let mut j = 0usize;
+            while j + 8 <= b.len() {
+                let w = word_at(b, j);
+                if w >> 26 == 0x02 {
+                    let va = ((SLOT_B_LINK_BASE + j as u32 + 4) & 0xF000_0000)
+                        | ((w & 0x03FF_FFFF) << 2);
+                    let t = va.wrapping_sub(SLOT_B_LINK_BASE) as usize;
+                    if t <= off && off - t <= 12 {
+                        out.extend(a2_after(b, entry(j), j + 8, j));
+                    }
                 }
-                p += 4;
-            }
-            if let Some(v) = a2 {
-                out.push(v);
+                j += 4;
             }
         }
         off += 4;
@@ -257,4 +306,95 @@ fn byte_account_credits_the_records_structurally() {
         acc.structural >= record_bytes,
         "structural must include the record claims"
     );
+}
+
+/// Record for record against `scripts/ghidra-analysis/slot_b_band.py`'s
+/// `spawn_record_band`, the mirror `disc-coverage.py` and
+/// `attribute-dump-extents.py` read. Both sides resolve the spawn pointer by
+/// the same widened rule (delay slot, register copies, `switch` arms into a
+/// shared call), and a divergence here would make the two instruments
+/// disagree about which bytes are records.
+#[test]
+fn rust_and_python_spawn_records_agree() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] slot-B record parity: no LEGAIA_DISC_BIN / extracted/");
+        return;
+    };
+    let Some(script_dir) = ["scripts/ghidra-analysis", "../../scripts/ghidra-analysis"]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|p| p.join("slot_b_band.py").is_file())
+    else {
+        eprintln!("[skip] scripts/ghidra-analysis not found from this cwd");
+        return;
+    };
+    let prot = dir.join("PROT");
+    let prog = format!(
+        r#"
+import glob, os, sys, json
+sys.path.insert(0, {script_dir:?})
+import slot_b_band
+out = {{}}
+for idx in range({first}, {last} + 1):
+    hits = sorted(glob.glob(os.path.join({prot:?}, "%04d_*" % idx)))
+    if not hits:
+        continue
+    data = open(hits[0], "rb").read()
+    out[str(idx)] = [len(data), [[lo, hi] for lo, hi in slot_b_band.spawn_record_band(data, slot_b_band.SLOT_B_LINK_BASE)]]
+print(json.dumps(out))
+"#,
+        script_dir = script_dir.to_string_lossy(),
+        prot = prot.to_string_lossy(),
+        first = SLOT_B_PROT_FIRST,
+        last = SLOT_B_PROT_LAST,
+    );
+    let out = std::process::Command::new("python3")
+        .arg("-c")
+        .arg(&prog)
+        .output()
+        .expect("run python3");
+    if !out.status.success() {
+        eprintln!(
+            "[skip] python side failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        return;
+    }
+    type PyBand = std::collections::BTreeMap<String, (usize, Vec<(u32, u32)>)>;
+    let py: PyBand = serde_json::from_str(String::from_utf8_lossy(&out.stdout).trim())
+        .expect("parse python records");
+    let mut compared = 0usize;
+    let mut records = 0usize;
+    for entry in SLOT_B_PROT_FIRST..=SLOT_B_PROT_LAST {
+        let Some((len, band)) = py.get(&entry.to_string()) else {
+            continue;
+        };
+        let bytes = read_entry(&dir, entry);
+        assert_eq!(
+            bytes.len(),
+            *len,
+            "PROT {entry}: file and archive lengths differ"
+        );
+        let layout = slot_b_module::parse(&bytes);
+        let mut rust: Vec<(u32, u32)> = layout
+            .records
+            .iter()
+            .chain(&layout.chained_records)
+            .map(|r| {
+                (
+                    SLOT_B_LINK_BASE + r.start as u32,
+                    SLOT_B_LINK_BASE + r.end as u32,
+                )
+            })
+            .collect();
+        rust.sort_unstable();
+        assert_eq!(
+            &rust, band,
+            "PROT {entry}: Rust and Python spawn records differ"
+        );
+        compared += 1;
+        records += rust.len();
+    }
+    eprintln!("[ok] slot-B record parity: {compared} images, {records} records identical");
+    assert!(compared >= 60, "only {compared} band images compared");
 }

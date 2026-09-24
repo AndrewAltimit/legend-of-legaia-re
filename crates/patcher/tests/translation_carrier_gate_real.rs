@@ -145,6 +145,13 @@ fn full_fill_import_only_touches_carriers_mans_and_scus() {
             }
         }
     }
+    // The `monster_names` section rewrites names inside the monster archive's
+    // records (each slot re-packed in place), so the archive is allowed too.
+    if let Some((lba, secs)) = clamped_sectors(legaia_patcher::disc::MONSTER_ARCHIVE_ENTRY) {
+        for s in 0..secs {
+            allowed.insert(lba + s);
+        }
+    }
     let mut carrier_entries = 0usize;
     for idx in 0..n {
         let Ok(entry) = base.read_entry(idx) else {

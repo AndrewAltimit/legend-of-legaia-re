@@ -20,9 +20,15 @@ pub struct MinigameState {
     /// each frame a directional press is judged.
     pub dance_last_judge: Option<crate::dance::Judge>,
     /// Fishing minigame session. `Some` while `mode == SceneMode::Fishing`; the
-    /// cast / fight / score loop runs each tick. See
-    /// [`crate::fishing::FishingSession`] and [`crate::world::World::enter_fishing`].
-    pub fishing: Option<crate::fishing::FishingSession>,
+    /// retail cast / wait / strike / fight / score loop runs each tick. See
+    /// [`crate::fishing::PondSession`] and [`crate::world::World::enter_fishing`].
+    pub fishing: Option<crate::fishing::PondSession>,
+    /// The [`crate::fishing::PondEvent`]s the last
+    /// [`crate::world::World::tick`] raised (hook, landed, snapped, cadence
+    /// splash, recast). Refreshed every fishing frame; the play hosts seed
+    /// their HUD banner one-shots from it, the way the minigames page does
+    /// from its own tick's return.
+    pub fishing_events: Vec<crate::fishing::PondEvent>,
     /// The scene mode to restore when the fishing minigame ends
     /// ([`crate::world::World::enter_fishing`] snapshots the interrupted mode).
     pub fishing_return_mode: SceneMode,
@@ -47,6 +53,15 @@ pub struct MinigameState {
     /// bit `row + venue * 8` latches when a `limit == 1` exchange row is
     /// bought (see [`legaia_asset::fishing_exchange`]).
     pub fishing_prizes_purchased: u32,
+    /// Persistent equipped-lure row (`0..=2`), mirroring retail's
+    /// `_DAT_80084450`: the spawn-table row, the HUD's lure label and the
+    /// item whose count the lures-remaining row shows. The bring-up re-points
+    /// it at an owned lure ([`crate::world::World::enter_fishing_session`]).
+    pub fishing_lure: u32,
+    /// Persistent best single-catch award, mirroring retail's `_DAT_80084458`.
+    pub fishing_best_points: i32,
+    /// Species id of the best catch, mirroring retail's `_DAT_8008445C`.
+    pub fishing_best_fish: u32,
     /// Fishing point-exchange (prize shop) session. `Some` while the exchange
     /// list is open on the host's fishing screen; purchases commit through
     /// [`crate::world::World::fishing_exchange_buy`].
@@ -210,6 +225,10 @@ impl MinigameState {
             fishing_rod: 0,
             fishing_casts: 0,
             fishing_prizes_purchased: 0,
+            fishing_lure: 0,
+            fishing_best_points: 0,
+            fishing_best_fish: 0,
+            fishing_events: Vec::new(),
             fishing_exchange: None,
             slot_machine: None,
             slot_return_mode: SceneMode::Field,

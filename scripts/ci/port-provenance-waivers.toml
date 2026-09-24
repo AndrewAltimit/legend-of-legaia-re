@@ -1182,19 +1182,6 @@ base+0x18EBC.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/anim_vm.rs:80024cfc"
-reason = """
-A three-store stub cannot corroborate anything. The tag's own text is the
-evidence: FUN_80024CFC stows the record pointer in actor[+0x4C], sets
-actor[+0x56] = 0xB and actor[+0x68] = 100, and returns - its ONE distinctive
-datum is 0x8007B7C8 and it calls nothing. The module's six siblings are the
-battle anim ticks that consume those fields. The finding's lift line places
-0x8007B7C8 under FUN_8001F05C and FUN_801D6704, the asset dispatcher and the
-scene-entry init, which is where the anim payload is installed - consistent with
-the stub, not against it.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f1b64"
 reason = """
 The painter shape port-provenance.md documents, one level up: this is a
@@ -1381,3 +1368,37 @@ where 0x801F7644 is a shared tail exiting `j 0x80043580`; the tag is PROT 0949
 (cast_water_crystals), where the attribution CSV has a unique 5-instruction
 entry at this VA as one of the stager's eight entry points.
 """
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/battle.md:801f138c:801dac54+801dac5c"
+reason = """
+The row corrects a falsified reading and names the real site: the refund lives in FUN_801DABA4's dead-slot sweep (0x801DAC54..0x801DAC5C), not in the 0x801F138C phantom-VA print. The cited addresses are the other routine's, by design.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/menus.md:801e58a8:801d1d88+801d1eac"
+reason = """
+The row names FUN_801D1BA0's anim-clip tail (0x801D1D88..0x801D1EAC) as the twin whose arithmetic FUN_801E58A8 repeats; the range is the sibling routine's, not this one's.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/minigames-debug.md:801d57bc:801d7e28+801db788"
+reason = """
+The row gives the extent of the per-fighter move-record blocks FUN_801D57BC reads through a pointer table; the bounds are data addresses reached by an indexed load, which the dump does not print as literals.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/script-vms.md:801ddf48:801da2d4+801da35c"
+reason = """
+The row cites the inlined copy of this routine's arithmetic inside FUN_801D9E1C (0x801DA2D4..0x801DA35C) as its fifth site; the range is the other routine's body, cited as a cross-reference.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/menus.md:801e9b3c:801f3340"
+reason = """
+0x801F3340 is where the window programs this interpreter walks begin; callers pass them as a0, so the base is formed at the call sites, not in the interpreter's own bytes.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-vm/src/field_warp_tile.rs:801da51c"
+reason = "CORRECT. clear_landed_sentinel ports the tail of FUN_801DA51C (PROT 0897): lw v1,-0x4950(a0) / li v0,-0x3e8 / bne / sw zero,-0x4950(a0) at 0x801DA7C8..0x801DA7D8, the -1000 clear of _DAT_8007B6B0, read from the disassembly; it shares the warp timer global with its module siblings, which the lui+lw form hides from the data-address signal."

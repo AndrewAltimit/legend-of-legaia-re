@@ -34,7 +34,7 @@
 //! `pen = (rec.x, rec.y - 2)`, `plate = (rec.x - 8, rec.y - 6)` sized
 //! `(rec.w + 16, 20)`.
 //!
-//! ## The two clusters are three phases
+//! ## The three clusters are four phases
 //!
 //! Retail runs the clusters in **different phases** and their pinned
 //! rects overlap, so it can never show two at once. Which phase a frame
@@ -45,6 +45,7 @@
 //! | `0x1E` | `RoundPrompt` | [`CLUSTER_TOP_LEVEL`] | `Begin` \| `Run` |
 //! | `0x28` | `CommandRing` | [`CLUSTER_COMMAND`] | `Item` / `Attack` / magic / `Spirit` |
 //! | `0x78` | `AttackMode` | [`CLUSTER_COMMAND`] | `Auto` \| `Command` |
+//! | `0x6E` | `CommitConfirm` | [`CLUSTER_COMMIT_CONFIRM`] | `Begin` \| `Reselect` |
 //!
 //! The ring's four arms are the placement table's records `8..=11` in up /
 //! left / right / down order, and the attack-mode pair re-uses the same
@@ -123,6 +124,17 @@ pub const CLUSTER_TOP_LEVEL: ChipCluster = ChipCluster {
     interior_w: 36,
 };
 
+/// The party-wide commit-confirm `Begin | Reselect` pair
+/// (`battle_chrome::CLUSTER_COMMIT_CONFIRM`): the round prompt's centre and
+/// D-pad seat, with the wider `48` interior of placement records `0x10` /
+/// `0x13`.
+pub const CLUSTER_COMMIT_CONFIRM: ChipCluster = ChipCluster {
+    centre: (160, 92),
+    dx: 44,
+    dy: 0,
+    interior_w: 48,
+};
+
 impl ChipCluster {
     /// On-screen width of one of this cluster's plates.
     pub const fn plate_width(&self) -> i32 {
@@ -163,6 +175,8 @@ pub enum CommandSeat {
     Diamond(ChipSeat),
     /// A seat on the pinned round-prompt pair ([`CLUSTER_TOP_LEVEL`]).
     TopLevel(ChipSeat),
+    /// A seat on the pinned commit-confirm pair ([`CLUSTER_COMMIT_CONFIRM`]).
+    Commit(ChipSeat),
 }
 
 impl CommandSeat {
@@ -171,13 +185,14 @@ impl CommandSeat {
         match self {
             Self::Diamond(_) => CLUSTER_COMMAND,
             Self::TopLevel(_) => CLUSTER_TOP_LEVEL,
+            Self::Commit(_) => CLUSTER_COMMIT_CONFIRM,
         }
     }
 
     /// The arm within the cluster.
     pub const fn seat(self) -> ChipSeat {
         match self {
-            Self::Diamond(s) | Self::TopLevel(s) => s,
+            Self::Diamond(s) | Self::TopLevel(s) | Self::Commit(s) => s,
         }
     }
 
@@ -210,6 +225,13 @@ pub const ROUND_PROMPT_SEATS: [CommandSeat; 2] = [
     CommandSeat::TopLevel(ChipSeat::Right),
 ];
 
+/// Seat of each entry of `battle_input::CommitChoice::PROMPT` (`Begin`,
+/// `Reselect`) - the commit-confirm pair's left / right chips.
+pub const COMMIT_CONFIRM_SEATS: [CommandSeat; 2] = [
+    CommandSeat::Commit(ChipSeat::Left),
+    CommandSeat::Commit(ChipSeat::Right),
+];
+
 /// Seat of each entry of `battle_input::AttackMode::PROMPT` (`Auto`,
 /// `Command`) - the diamond's own left / right arms, which is where the
 /// placement records `85` / `84` put them.
@@ -229,6 +251,8 @@ pub enum ChipPhase {
     CommandRing,
     /// Retail `0x78` - the `Auto | Command` attack-mode prompt.
     AttackMode,
+    /// Retail `0x6E` - the party-wide `Begin | Reselect` commit confirm.
+    CommitConfirm,
 }
 
 impl ChipPhase {
@@ -238,17 +262,20 @@ impl ChipPhase {
             Self::RoundPrompt => &ROUND_PROMPT_SEATS,
             Self::CommandRing => &MENU_SEATS,
             Self::AttackMode => &ATTACK_MODE_SEATS,
+            Self::CommitConfirm => &COMMIT_CONFIRM_SEATS,
         }
     }
 
     /// The cluster whose centre carries this phase's D-pad glyph.
-    /// Retail draws it every frame of all three states - at `(152, 84)` for
-    /// the round prompt (`801d102c`) and `(220, 62)` for the ring and the
-    /// attack-mode prompt (`801d1188` / `801d16e8`).
+    /// Retail draws it every frame of all four states - at `(152, 84)` for
+    /// the round prompt (`801d102c`) and the commit confirm (`801d3024`), and
+    /// `(220, 62)` for the ring and the attack-mode prompt (`801d1188` /
+    /// `801d16e8`).
     pub const fn cluster(self) -> ChipCluster {
         match self {
             Self::RoundPrompt => CLUSTER_TOP_LEVEL,
             Self::CommandRing | Self::AttackMode => CLUSTER_COMMAND,
+            Self::CommitConfirm => CLUSTER_COMMIT_CONFIRM,
         }
     }
 }

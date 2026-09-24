@@ -413,6 +413,20 @@ pub struct ZoneFollow {
     /// ([`Camera::route_camera_events`]) - retail's order is seed, then
     /// whichever of those the scene's script runs.
     pub view_window: [i8; 4],
+    /// The jitter pair the follow ease last added into the eye X / Y
+    /// globals (retail's scene control block `+0x18` / `+0x1C`,
+    /// `*(0x801C6EA4)`), subtracted back out at the top of the next ease.
+    pub shake_offset: [i32; 2],
+    /// PsyQ `rand()` state for the follow ease's shake draws. Retail draws
+    /// from the one global `rand` stream; the port keeps the camera's draws
+    /// on their own stream so a shake never perturbs gameplay RNG.
+    shake_seed: u32,
+    /// The focus pair (`_DAT_80089118` / `_DAT_80089120`) this follow
+    /// camera left at the end of its previous tick. A mode-5 fixed shot
+    /// eases its focus from here - retail's `FUN_801DB510` pins the focus
+    /// onto the player (`0x801DB820`) only for the other modes, and a
+    /// stationary mode-5 frame leaves it where it was.
+    focus_held: Option<[i32; 2]>,
 }
 
 impl Default for ZoneFollow {
@@ -434,6 +448,9 @@ impl Default for ZoneFollow {
                 let (a, b, c, d) = crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
                 [a, b, c, d]
             },
+            shake_offset: [0, 0],
+            shake_seed: 1,
+            focus_held: None,
         }
     }
 }
@@ -457,6 +474,7 @@ impl ZoneFollow {
         self.tile = None;
         self.prev_player = None;
         self.active = false;
+        self.focus_held = None;
     }
 }
 
@@ -689,6 +707,12 @@ impl Camera {
             }
         }
         world.pending_field_events.extend(leftover);
+        // Publish the live visible-tile window to the fog pool: the ambient
+        // emitter samples its burst span from the same scratchpad bytes
+        // `0x1F8003E8..EB` every frame (`lb` at `0x801D6158..`), and those
+        // bytes live here, not on the world the emitter ticks in. A record
+        // load in this frame's `tick` reaches the emitter one frame later.
+        world.fog.view_window = Some(self.zone.view_window);
         applied
     }
 
@@ -773,6 +797,13 @@ impl Camera {
         // only on `!gliding` re-pins the focus to the player on every settled
         // frame and turns those two values into ~1000.
         let scripted = gliding || self.script_owns_focus || world.cutscene_timeline_active();
+        // A player arc whose release watcher runs the follow camera
+        // (`FUN_801D5D60` calling `FUN_801DB510(player)` + `FUN_801DAA50`
+        // every frame the arc flies) hands a cutscene's shot back to the
+        // follow step for the arc's duration. A glide in flight keeps the
+        // frame: it is the shot the script is actively moving.
+        let arc_follow = !gliding && world.script_arc_follow_camera();
+        let scripted = scripted && !arc_follow;
         if !scripted
             && self.mode == CameraMode::Follow
             && let Some(a) = world
@@ -786,10 +817,14 @@ impl Camera {
 
         // The zone-driven follow camera: retail's per-scene / per-tile camera
         // parameters composed into the same ten globals, then eased. It runs
-        // only in a field scene with terrain loaded (the zone table and the
+        // in any walkable scene with terrain loaded (the zone table and the
         // walk-region table are what it queries) and only while nothing
-        // scripted owns the shot.
-        let zone_scene = world.mode == crate::world::SceneMode::Field && has_field_terrain(world);
+        // scripted owns the shot - the kingdom overworld included: retail's
+        // overworld is an ordinary mode-`0x03` field-run scene, and on all
+        // three resident overworld states the live pitch / yaw / eye trio /
+        // `H` equal the follow composer's staging descriptor at `0x801F3580`
+        // field for field (see [`zone_camera_scene`]).
+        let zone_scene = zone_camera_scene(world);
         if zone_scene {
             // A scripted shot handing the camera back snaps. Retail's
             // scripts do this themselves through the `[4C 39]` / `[4C 3E]`
@@ -801,7 +836,9 @@ impl Camera {
             // stays as the port's backstop for a shot the script drops
             // without one, and it snaps from the resident block rather than
             // re-querying (retail's hand-back does not re-query either).
-            if self.zone.prev_scripted && !scripted {
+            // The arc's follow is an ease, not a hand-back: retail's
+            // watcher calls the ease, never the snap.
+            if self.zone.prev_scripted && !scripted && !arc_follow {
                 self.zone.snap_pending = true;
                 self.zone.prev_player = None;
             }
@@ -998,6 +1035,20 @@ impl Camera {
         ];
         let t = zone.target;
         let g = &mut self.globals.0;
+        // The free-roam writeback in [`Camera::tick_globals`] pins the focus
+        // onto the player every frame. Retail's ease does that too
+        // (`0x801DB820`: focus = `-player`), but only when the shot is not
+        // mode 5: `0x801DB724..0x801DB734` sends a mode-5 frame to the focus
+        // ease instead, which starts from the focus the previous frame left,
+        // and a mode-5 frame the player did not move on skips both. So a
+        // fixed shot gets its own focus back before it eases.
+        if mode5
+            && zone.active
+            && let Some([fx, fz]) = zone.focus_held
+        {
+            g[6] = fx;
+            g[8] = fz;
+        }
         if zone.snap_pending {
             let (p, yw, eye, h) = snap(&t);
             g[0] = p;
@@ -1025,6 +1076,26 @@ impl Camera {
             }
         }
 
+        // 5b. The ease's shake arm (`FUN_801DB510` head `0x801DB51C..0x801DB55C`
+        //     and tail `0x801DB844..0x801DB8D4`): the previous jitter pair
+        //     comes back out of eye X / Y, and with a non-zero amplitude
+        //     `_DAT_8007B630` (field-VM `[4C 84 amp]`) two fresh draws go in
+        //     - X centred on zero, Y upward only. Retail runs it on every
+        //     call, moved or not, snapped or not, so it sits outside the
+        //     ease branch; the arithmetic is `FUN_801D9D30`'s, which the
+        //     ease tail duplicates verbatim.
+        {
+            let mut eye = [g[3], g[4]];
+            legaia_engine_vm::battle_camera::apply_shake(
+                &mut eye,
+                &mut zone.shake_offset,
+                u32::from(world.camera.shake_amplitude),
+                &mut zone.shake_seed,
+            );
+            g[3] = eye[0];
+            g[4] = eye[1];
+        }
+
         // 6. The focus edge clamp (`FUN_801DAA50`), which every retail
         //    caller of the ease and the snap runs immediately after them.
         //    Keeps the focus inside the latched walk region widened by the
@@ -1043,6 +1114,7 @@ impl Camera {
         );
         g[6] = clamped[0];
         g[8] = clamped[1];
+        zone.focus_held = Some([g[6], g[8]]);
         zone.active = true;
     }
 
@@ -1050,11 +1122,7 @@ impl Camera {
     /// free-roam scene, so a scripted beat that is about to capture the live
     /// globals sees the zone camera's pose rather than the field reset.
     fn prime_zone_before_script(&mut self, world: &World) {
-        if self.zone.snap_pending
-            && self.mode == CameraMode::Follow
-            && world.mode == crate::world::SceneMode::Field
-            && has_field_terrain(world)
-        {
+        if self.zone.snap_pending && self.mode == CameraMode::Follow && zone_camera_scene(world) {
             self.zone_follow_tick(world, 1);
         }
     }
@@ -1255,6 +1323,25 @@ impl Camera {
 /// Whether a world carries the per-scene field terrain the zone camera
 /// queries - the walk-region table, the MAN section-3 zone table, or the
 /// collision grid the floor sampler reads.
+/// Whether the zone-driven follow camera owns this world's walk camera: a
+/// walkable scene - the field or the kingdom overworld - with field terrain.
+///
+/// The overworld is not a separate camera. Retail runs it as an ordinary
+/// mode-`0x03` field-run scene through the field overlay's own per-frame
+/// chain, and its walk camera is the zone camera: on the three resident
+/// overworld states (`keikoku_chest_preload` on `map01`,
+/// `sebucus_overworld_resident` on `map02`, `karisto_overworld_resident` on
+/// `map03`) the live pitch `0x8007B790`, yaw, eye trio `0x800840B8/BC/C0` and
+/// GTE `H` `0x8007B6F4` equal the `FUN_801DAB90` staging descriptor at
+/// `0x801F3580` exactly, the block at `0x8007B606` carries `H = 0x170`, and
+/// the eye X is the composer's `-(depth >> 7)` on all three.
+pub(crate) fn zone_camera_scene(world: &World) -> bool {
+    matches!(
+        world.mode,
+        crate::world::SceneMode::Field | crate::world::SceneMode::WorldMap
+    ) && has_field_terrain(world)
+}
+
 fn has_field_terrain(world: &World) -> bool {
     !world.terrain.zone_table.is_empty()
         || !world.terrain.map_region_block.is_empty()
@@ -1871,6 +1958,61 @@ mod tests {
         assert_eq!(c2.globals.angles()[0], 0x1B8);
         assert_eq!(c2.globals.angles()[1], 0);
         assert_eq!(c2.globals.h(), 0x300);
+    }
+
+    /// A mode-5 fixed shot keeps its own focus across the free-roam
+    /// writeback: retail's `FUN_801DB510` pins the focus onto the player only
+    /// outside mode 5 (`0x801DB724..0x801DB734` -> `0x801DB820`), eases a
+    /// mode-5 focus from where the previous frame left it, and leaves it
+    /// alone on a frame the player did not move.
+    #[test]
+    fn zone_camera_mode5_focus_eases_from_its_own_value_not_the_player() {
+        use crate::field_regions::ZONE_RECORD_STRIDE;
+        let mut w = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w.actors[0].move_state.world_x = 0x1040;
+        w.actors[0].move_state.world_z = 0x2040;
+        let mut rec = [0u8; ZONE_RECORD_STRIDE];
+        rec[0] = 1;
+        rec[1..5].copy_from_slice(&[0, 0, 0x7F, 0x7F]);
+        rec[5] = 0x10;
+        rec[16..18].copy_from_slice(&512i16.to_le_bytes());
+        let mut zone_table = vec![1u8];
+        zone_table.extend_from_slice(&rec);
+        w.load_field_region_tables(&[], &zone_table);
+        let mut c = Camera::default();
+        c.reset_globals_for_scene_entry();
+        w.tick();
+        c.tick(&w);
+        assert!(c.zone.active);
+
+        // Turn the resident block into a fixed shot on tile (4, 6), ease
+        // code 1 (`>> 5`), and snap it in: the focus sits on the anchor.
+        c.zone.config.mode = 0x50;
+        c.zone.config.b60b = 0x10;
+        c.zone.config.anchor_x = 4;
+        c.zone.config.anchor_z = 6;
+        c.zone.snap_pending = true;
+        w.tick();
+        c.tick(&w);
+        let anchor = [-(4 << 7) - 0x40, -(6 << 7) - 0x40];
+        assert_eq!([c.globals.0[6], c.globals.0[8]], anchor, "snapped");
+
+        // Standing still: the focus holds on the anchor, not the player.
+        w.tick();
+        c.tick(&w);
+        assert_eq!([c.globals.0[6], c.globals.0[8]], anchor, "held");
+
+        // Walking: the focus eases from the anchor toward the anchor - it
+        // stays put - rather than restarting from the player's position.
+        w.actors[0].move_state.world_x += 2;
+        w.tick();
+        c.tick(&w);
+        assert_eq!([c.globals.0[6], c.globals.0[8]], anchor, "eased in place");
     }
 
     #[test]

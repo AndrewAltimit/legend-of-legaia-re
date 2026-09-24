@@ -19,10 +19,13 @@
 //! count `ctx+0x19` and both are detailed at their sites in
 //! [`ArtsCommandInputSession::input`].
 //!
-//! The review screen's next press reaches the **Begin | Reselect** menu
-//! (`0x6E`): Begin plays the round out, Reselect returns to a clean input.
-//! **Triangle** cycles the learned arts list (closed -> page 1 -> ... ->
-//! closed) and is inert when the character has no learned art.
+//! The review screen's next press picks the art's target and commits it.
+//! **Begin | Reselect** (`0x6E`) is not this session's: retail raises it once
+//! for the whole party, after the last member that can act has committed
+//! (`crate::battle_input::CommandPhase::CommitConfirm`), and only a party of
+//! one reaches it straight off an arts entry. **Triangle** cycles the learned
+//! arts list (closed -> page 1 -> ... -> closed) and is inert when the
+//! character has no learned art.
 //!
 //! The four accepted presses are **d-pad directions**. `FUN_801D0748` tests
 //! them against `s2 = _DAT_8007B874 | _DAT_8007B938`, which is the
@@ -61,7 +64,7 @@
 //! they rested on ("retail entry only auto-ends", "retail's Arts command
 //! cannot be backed out of at all") is falsified by the disassembly.
 //!
-//! PORT: FUN_801D0748 (state 0x50 / 0x5A / 0x6E flow)
+//! PORT: FUN_801D0748 (state 0x50 / 0x5A flow)
 //! PORT: FUN_801D388C (case 9 cost read + case 0xB pool debit)
 
 use crate::target_picker::{
@@ -100,13 +103,11 @@ pub struct ArtsCommandPad {
 pub enum ArtsInputPhase {
     /// Accepting directional presses (retail `0x50`).
     Entering,
-    /// The committed bar review (retail `0x5A`) - any press advances.
+    /// The committed bar review (retail `0x5A`) - any press but the cancel
+    /// opens the target picker.
     Review,
-    /// The Begin | Reselect menu (retail `0x6E`). `cursor` 0 = Begin,
-    /// 1 = Reselect.
-    BeginMenu { cursor: u8 },
-    /// Begin chosen; picking the art's target (engine flow - retail
-    /// pre-picks the target with the Attack command).
+    /// Picking the art's target (retail's `0x5A` target cursor, with the
+    /// committed bar still up).
     Targeting { picker: TargetPickerSession },
     /// Resolved: run the entered sequence against the target.
     Confirmed {
@@ -300,63 +301,38 @@ impl ArtsCommandInputSession {
                 }
             }
             ArtsInputPhase::Review => {
-                // Any press reaches the Begin | Reselect menu.
-                self.phase = if ev.cross || ev.circle || ev.up || ev.down || ev.left || ev.right {
-                    ArtsInputPhase::BeginMenu { cursor: 0 }
+                if ev.circle {
+                    // Retail's `0x5A` cancel (`0x801D2304..0x801D23DC`) wipes
+                    // the sixteen queue bytes and, for an entry opened from
+                    // the arts input, returns to it (`0x50`, case `0xF`).
+                    self.buffer.clear();
+                    self.spent.clear();
+                    self.pool = self.pool_max;
+                    self.phase = ArtsInputPhase::Entering;
+                } else if ev.cross || ev.up || ev.down || ev.left || ev.right {
+                    // Any other press opens the target picker; the commit it
+                    // resolves to walks the ring on, and the last member's
+                    // commit raises the party's Begin | Reselect.
+                    let picker = TargetPickerSession::new(
+                        TargetKind::SingleEnemy,
+                        self.party_slot,
+                        party,
+                        monsters,
+                    );
+                    self.phase = match picker.outcome() {
+                        Some(PickerOutcome::Single { slot, row }) => ArtsInputPhase::Confirmed {
+                            target_row: row,
+                            target_slot: slot,
+                        },
+                        Some(PickerOutcome::Sweep { row }) => ArtsInputPhase::Confirmed {
+                            target_row: row,
+                            target_slot: 0,
+                        },
+                        Some(PickerOutcome::NoCandidates) => ArtsInputPhase::Aborted,
+                        _ => ArtsInputPhase::Targeting { picker },
+                    };
                 } else {
-                    ArtsInputPhase::Review
-                };
-            }
-            ArtsInputPhase::BeginMenu { cursor } => {
-                // Spatial seating on the drawn pair: the menu is two stacked
-                // rows (`Begin` above `Reselect` -
-                // `legaia_engine_ui::arts_input::BEGIN_MENU_SEAT` + pitch), so
-                // Up is always the top row and Down the bottom one - and the
-                // direction press itself commits the row, like every other
-                // battle prompt. Cross commits the cursor's row.
-                let (cursor, pressed) = if ev.up {
-                    (0, true)
-                } else if ev.down {
-                    (1, true)
-                } else {
-                    (cursor, false)
-                };
-                if pressed || ev.cross {
-                    if cursor == 0 {
-                        // Begin: pick the target, then run.
-                        let picker = TargetPickerSession::new(
-                            TargetKind::SingleEnemy,
-                            self.party_slot,
-                            party,
-                            monsters,
-                        );
-                        self.phase = match picker.outcome() {
-                            Some(PickerOutcome::Single { slot, row }) => {
-                                ArtsInputPhase::Confirmed {
-                                    target_row: row,
-                                    target_slot: slot,
-                                }
-                            }
-                            Some(PickerOutcome::Sweep { row }) => ArtsInputPhase::Confirmed {
-                                target_row: row,
-                                target_slot: 0,
-                            },
-                            Some(PickerOutcome::NoCandidates) => ArtsInputPhase::Aborted,
-                            _ => ArtsInputPhase::Targeting { picker },
-                        };
-                    } else {
-                        // Reselect: clean input, full pool (retail: the
-                        // previous round's pennants clear on the first
-                        // fresh press; the port clears on entry).
-                        self.buffer.clear();
-                        self.spent.clear();
-                        self.pool = self.pool_max;
-                        self.phase = ArtsInputPhase::Entering;
-                    }
-                } else if ev.circle {
                     self.phase = ArtsInputPhase::Review;
-                } else {
-                    self.phase = ArtsInputPhase::BeginMenu { cursor };
                 }
             }
             ArtsInputPhase::Targeting { mut picker } => {
@@ -377,7 +353,7 @@ impl ArtsCommandInputSession {
                         target_row: row,
                         target_slot: 0,
                     },
-                    Some(PickerOutcome::Cancelled) => ArtsInputPhase::BeginMenu { cursor: 0 },
+                    Some(PickerOutcome::Cancelled) => ArtsInputPhase::Review,
                     Some(PickerOutcome::NoCandidates) => ArtsInputPhase::Aborted,
                     None => ArtsInputPhase::Targeting { picker },
                 };
@@ -396,9 +372,7 @@ pub enum ArtsInputScreen {
     Entering,
     /// Committed-bar review - the chips are gone, the bar stays.
     Review,
-    /// The Begin | Reselect pick (`cursor` 0 = Begin).
-    BeginMenu { cursor: u8 },
-    /// Picking the Begin target; the bar stays up behind the picker.
+    /// Picking the art's target; the bar stays up behind the picker.
     Targeting,
 }
 
@@ -407,7 +381,6 @@ impl From<&ArtsInputPhase> for ArtsInputScreen {
         match p {
             ArtsInputPhase::Entering => Self::Entering,
             ArtsInputPhase::Review => Self::Review,
-            ArtsInputPhase::BeginMenu { cursor } => Self::BeginMenu { cursor: *cursor },
             ArtsInputPhase::Targeting { .. } => Self::Targeting,
             // A resolved session is torn down the same frame; nothing
             // draws from it.
@@ -639,30 +612,27 @@ mod tests {
     }
 
     #[test]
-    fn begin_reselect_round_trip_restores_the_pool() {
+    fn circle_on_the_review_restarts_the_entry() {
         let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 0);
         s.input(press("U"), party3(), one_monster());
         s.input(press("D"), party3(), one_monster());
         assert!(matches!(s.phase, ArtsInputPhase::Review));
-        // Any press reaches Begin | Reselect.
-        s.input(press("c"), party3(), one_monster());
-        assert!(matches!(s.phase, ArtsInputPhase::BeginMenu { cursor: 0 }));
-        // One Down press takes Reselect (the bottom drawn row) on the press
-        // itself - spatial seating with retail's direct commit, same as
-        // every other battle prompt.
-        s.input(press("D"), party3(), one_monster());
+        s.input(press("o"), party3(), one_monster());
         assert!(matches!(s.phase, ArtsInputPhase::Entering));
         assert!(s.buffer.is_empty());
-        assert_eq!(s.pool, 60, "Reselect restores the pool");
+        assert_eq!(s.pool, 60, "the cancel re-seeds the pool");
     }
 
+    /// The review's press goes straight to the target: there is no per-member
+    /// Begin | Reselect in the session - that screen is the party's, raised by
+    /// the World after the last member commits.
     #[test]
-    fn begin_resolves_through_the_target_picker() {
+    fn the_review_press_resolves_through_the_target_picker() {
         let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 0);
         s.input(press("U"), party3(), one_monster());
         s.input(press("U"), party3(), one_monster());
-        s.input(press("c"), party3(), one_monster()); // review -> menu
-        s.input(press("c"), party3(), one_monster()); // Begin
+        assert!(matches!(s.phase, ArtsInputPhase::Review));
+        s.input(press("c"), party3(), one_monster()); // review -> target
         // One monster: the picker may resolve immediately or need one
         // confirm.
         if s.resolved().is_none() {

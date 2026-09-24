@@ -160,9 +160,10 @@ fn a_cast_cue_declines_on_the_voice_leg_instead_of_keying_a_truncated_descriptor
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    // The truncated form (0x18) is a real, audible descriptor on this disc -
-    // which is exactly why truncation was wrong rather than silent.
-    assert!(rt.play_sfx_probe_peak(0x18, 44_100) > 0);
+    // The truncated form (0x18) is a real, populated descriptor on this disc
+    // (category 2, audible wherever the class-2 bank is resident) - which is
+    // exactly why truncation was wrong rather than silent.
+    assert_eq!(rt.play_sfx_cue_slot(0x18), 2);
     // The cast cue itself renders nothing through the descriptor probe...
     assert_eq!(rt.play_sfx_probe_peak(0x118, 44_100), 0);
     // ...and a live request is declined on the voice leg and counted.
@@ -181,7 +182,7 @@ fn a_cast_cue_declines_on_the_voice_leg_instead_of_keying_a_truncated_descriptor
 }
 
 #[test]
-fn level_up_cue_names_slot_11_and_falls_back_to_class_two_until_staged() {
+fn level_up_cue_names_slot_11_and_is_silent_until_staged() {
     let Some((_, mut rt)) = loaded_in_town() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
@@ -191,8 +192,8 @@ fn level_up_cue_names_slot_11_and_falls_back_to_class_two_until_staged() {
     assert_eq!(v["reward_bank_staged"], false);
     assert_eq!(
         rt.play_sfx_cue_bank_prot(0x50),
-        869,
-        "unstaged slot 11 keys the class-2 fallback bank"
+        0,
+        "an unstaged slot 11 is closed, and a closed slot is silent"
     );
     // The duck starts at its reference level on a fresh runtime.
     assert_eq!(v["duck_level"], 0xD7);

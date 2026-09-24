@@ -253,6 +253,16 @@
   </ul>
 </section>
 
+<section class="doc-section" id="patched-disc-taint">
+  <h2>Patched-disc taint</h2>
+  <p>A capture can measure a patched game while its log names the retail image. Two routes carry a patch in. The <strong>image route</strong>: PCSX-Redux applies <code>&lt;image&gt;.ppf</code> from beside the image, and the randomizer writes its <code>.ppf</code> beside its input disc, so every unstaged run on that path read patched sectors. The <strong>state route</strong>: the executable is read from the disc once, at boot, so a save state made on a patched disc keeps the patched executable forever - staging the disc does nothing for it.</p>
+  <ul class="bullets">
+    <li><code>patch_taint_audit.py states</code> checks every library state's resident executable at the patcher's own hook sites; the manifest records the result as <code>resident_patch</code>. The S1..S5 playthrough anchors carry a shiny-seru + enemy-ally charm build; others carry a starting-bag preset, a town rename or the arts AP override.</li>
+    <li><code>patch_taint_audit.py logs</code> lists every run the emulator patched, and <code>ppf</code> decodes a patch file into disc files, PROT entries and executable addresses.</li>
+    <li>A patched byte matters only if the run reads it. The re-checked capture claims stand; one run (a field-to-battle load that jumped into an unpatched arena) is void.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="gdb-bridge">
   <h2>One-shot queries: the GDB bridge</h2>
   <p>PCSX-Redux also exposes a GDB remote stub on TCP 3333. <code>gdb_probe.py</code> speaks it directly for ad-hoc reads, register dumps and single "break here, read there" questions - no scenario, no state machine. Use a <code>.probe.toml</code> instead when the capture must be repeatable and gated.</p>

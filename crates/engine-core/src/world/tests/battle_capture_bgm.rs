@@ -408,12 +408,14 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
+    take_commit_begin(&mut world);
     assert!(world.battle.arts_menu.is_some(), "still picking a target");
 
     // Frame 2: Cross confirms the monster; the art runs.
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
+    take_commit_begin(&mut world);
 
     assert!(world.battle.arts_menu.is_none(), "arts menu closed");
     // The confirm arms the SM's attack band with the queue the builder made
@@ -550,9 +552,11 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
+    take_commit_begin(&mut world);
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_arts_menu();
+    take_commit_begin(&mut world);
 
     // The confirm resolves no damage: it builds retail's action queue from
     // the row's arrows and arms the SM's attack band with it verbatim. The

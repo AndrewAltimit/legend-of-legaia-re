@@ -373,7 +373,7 @@ pub enum AddOutcome {
 /// source function address for provenance.
 ///
 /// See `docs/reference/functions.md` (`800421D4` caller list) and the per-site
-/// entries (`8004E568`, `801C36B0`, `801F138C`, `801D0F60`, `8020E748`).
+/// entries (`8004E568`, `801C36B0`, `801DABA4`, `801D0F60`, `8020E748`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddHelperCaller {
     /// Battle-end reward resolution (`FUN_8004E568`, add at `0x8004F380` /
@@ -383,9 +383,12 @@ pub enum AddHelperCaller {
     /// **variable-quantity** give of the selected catalog record's item.
     /// Written id = the catalog record's item id (`rec+8`).
     ShopBuyConfirm,
-    /// Captured-monster item pay (`FUN_801F138C`, overlay 0897): on a resolved
-    /// capture, pays `actor[+0x1DF]` into the bag. Written id = captured id.
-    CaptureItemPay,
+    /// Dead-slot Item refund in the battle-order rebuild `FUN_801DABA4`
+    /// (PROT 0898, `jal 0x800421d4` at `0x801DAC58`): a fallen fighter still
+    /// holding a committed Item command (`actor[+0x1DE] == 1`) gets its item
+    /// `actor[+0x1DF]` back, quantity `1`, and the category byte is cleared.
+    /// Written id = the committed item's id. No capture is involved.
+    DeadSlotItemRefund,
     /// One-shot minigame completion reward (`FUN_801D0F60`, overlay 0977 at slot-A base `0x801CE818`; formerly mis-cited as `FUN_801C2748` off a `0x801C0000`-band import):
     /// awards a single fixed item `0xCD`. Written id = `0xCD` (fixed).
     MinigameReward,
@@ -399,7 +402,7 @@ impl AddHelperCaller {
     pub const ALL: [AddHelperCaller; 5] = [
         AddHelperCaller::BattleLoot,
         AddHelperCaller::ShopBuyConfirm,
-        AddHelperCaller::CaptureItemPay,
+        AddHelperCaller::DeadSlotItemRefund,
         AddHelperCaller::MinigameReward,
         AddHelperCaller::EquipSwapBackRefund,
     ];
@@ -411,8 +414,8 @@ impl AddHelperCaller {
         match self {
             AddHelperCaller::BattleLoot => 0x8004_E568,
             AddHelperCaller::ShopBuyConfirm => 0x801C_36B0,
-            AddHelperCaller::CaptureItemPay => 0x801F_138C,
-            AddHelperCaller::MinigameReward => 0x801C_2748,
+            AddHelperCaller::DeadSlotItemRefund => 0x801D_ABA4,
+            AddHelperCaller::MinigameReward => 0x801D_0F60,
             AddHelperCaller::EquipSwapBackRefund => 0x8020_E748,
         }
     }
@@ -1091,8 +1094,8 @@ mod tests {
             vec![
                 0x8004_E568,
                 0x801C_36B0,
-                0x801F_138C,
-                0x801C_2748,
+                0x801D_ABA4,
+                0x801D_0F60,
                 0x8020_E748
             ]
         );
@@ -1108,14 +1111,15 @@ mod tests {
         // Model each caller's full-bag add with a representative written id and
         // assert the primitive fires at the fixed key-item address. The value
         // column reflects each site's control over the written byte (per the
-        // `AddHelperCaller` docs): shop = catalog id, loot = drop id, capture =
-        // monster id, minigame = fixed 0xCD, refund = displaced equip id.
+        // `AddHelperCaller` docs): shop = catalog id, loot = drop id, dead-slot
+        // refund = committed item id, minigame = fixed 0xCD, swap-back refund =
+        // displaced equip id.
         // Representative ids chosen > ITEM_WINDOW_SLOTS (72) so they don't
         // collide with full_distinct_bag's 1..=72 fill (which would merge).
         let site_ids = [
             (AddHelperCaller::BattleLoot, 0x80u8),
             (AddHelperCaller::ShopBuyConfirm, 0x91),
-            (AddHelperCaller::CaptureItemPay, 0xA5),
+            (AddHelperCaller::DeadSlotItemRefund, 0xA5),
             (AddHelperCaller::MinigameReward, 0xCD),
             (AddHelperCaller::EquipSwapBackRefund, 0xB0),
         ];

@@ -218,6 +218,28 @@ pub struct FieldLocomotion {
     /// use (live-pinned: the `town01` post-naming ExecMove 48/49 land the
     /// retail player anim pointer on scene records 47/48).
     pub player_move_cues: Vec<u8>,
+    /// The clip base `_DAT_8007BDD8`: the 1-based slot inside the leader's
+    /// seven-record locomotion bank the settle tail strides into the player's
+    /// clip id. Written by the pad step (idle `2` / walk `1` / run `3`, or
+    /// the scene sentinel `99`), the hop phase machine (`6` / `7` / `1`) and
+    /// the walk-on dispatcher; seeded `2` on scene entry. See
+    /// [`legaia_engine_vm::field_player_clip`].
+    pub clip_base: u16,
+    /// The player actor's clip id `+0x5C`, as the settle tail last stored it.
+    /// The pad step writes a base only while it is positive.
+    pub player_clip: i16,
+    /// The player actor's party-bank bit `+0x10 & 0x01000000`
+    /// ([`legaia_engine_vm::field_player_clip::PARTY_BANK_FLAG`]): raised by
+    /// every pad step that writes a base, dropped by the scene-sentinel pick.
+    pub player_party_bank: bool,
+    /// The kind-0 warp's globals `_DAT_8007B6B0` (timer), `_DAT_8007B6B4`
+    /// (post-warp pad hold) and the destination pair - see
+    /// [`legaia_engine_vm::field_warp_tile`].
+    pub warp: legaia_engine_vm::field_warp_tile::WarpTimer,
+    /// Frames left before the warp's fade-in (the second `FUN_801D58F0`,
+    /// delayed `0x29` frames from the crossing) replaces the fade-out in the
+    /// one fade slot the port has.
+    pub warp_fade_in_in: Option<i32>,
 }
 
 impl FieldLocomotion {
@@ -243,6 +265,11 @@ impl FieldLocomotion {
             ledge_hop: None,
             eased_mirror_y: None,
             player_move_cues: Vec::new(),
+            clip_base: legaia_engine_vm::field_player_clip::BASE_IDLE,
+            player_clip: legaia_engine_vm::field_player_clip::BASE_IDLE as i16,
+            player_party_bank: true,
+            warp: legaia_engine_vm::field_warp_tile::WarpTimer::default(),
+            warp_fade_in_in: None,
         }
     }
 }

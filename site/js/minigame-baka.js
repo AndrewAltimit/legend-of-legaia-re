@@ -653,8 +653,9 @@
       return q;
     }
 
-    _widget(g, id, cx, cy, alpha, flipX) {
-      const q = this._widgetQuad(id, cx, cy, 0x80, 0x1000, flipX);
+    _widget(g, id, cx, cy, alpha, flipX, brightness, size) {
+      const q = this._widgetQuad(id, cx, cy, brightness === undefined ? 0x80 : brightness,
+                                 size === undefined ? 0x1000 : size, flipX);
       if (!q) return;
       const img = this._page(q.page, q.palette);
       if (!img) return;
@@ -785,10 +786,33 @@
         g.globalAlpha = 1;
       }
 
+      /* The engine's round chrome (BakaChrome - intro card, ROUND banner,
+       * READY / FIGHT countdown), drawn at retail's emitter arguments. While
+       * it is up it owns the round framing, so the page's own round banner
+       * stands down. */
+      const chrome = (meta && Array.isArray(meta.chrome)) ? meta.chrome : [];
+      for (const d of chrome) {
+        const alpha = Math.max(0, Math.min(1, d.b / 128));
+        if (d.g != null) {
+          /* Widget 5's strip paged to cell g (u = g * 24), 24 x 32. */
+          const w5 = this.widgets[W.STAGE_DIGIT];
+          if (!w5) continue;
+          g.save();
+          g.globalAlpha = alpha;
+          this._cell(g, w5.page, w5.palette, (((d.g % 10) + 10) % 10) * 24, w5.v, 24, 32,
+                     d.x - 12, d.y - 16);
+          g.restore();
+        } else {
+          this._widget(g, d.w, d.x, d.y, alpha, false, d.b, d.s);
+        }
+      }
+
       /* Banners. */
       if (this.banner && this.tick < this.banner.until) {
         const b = this.banner;
-        if (b.kind === 'round') {
+        if (b.kind === 'round' && chrome.length) {
+          /* the engine chrome above is framing the round */
+        } else if (b.kind === 'round') {
           if (meta && meta.final) {
             this._widget(g, W.FINAL, 120, 100);
           } else {

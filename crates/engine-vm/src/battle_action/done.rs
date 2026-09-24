@@ -670,12 +670,12 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
     // initiative key (`+0x16C != 0`, guard `0x801DABE8`) - i.e. a combatant
     // that died before its turn came up.
     //
-    // The engine counts the **living** instead. The two agree while nobody
-    // dies mid-round; they diverge for an actor that dies *after* acting,
-    // which shrinks this bound but not retail's, so the engine can end a round
-    // one action early. Closing that needs all three bytes on the context -
-    // "seated" is not recoverable from the actor table once a slot is dead.
-    // See `docs/subsystems/battle-action.md` § "The three bytes the bound is
+    // The seated counts stay put when an occupant dies, which is what keeps
+    // an actor that died *after* acting in the bound. The party side is the
+    // host's seated slots; a monster seat is one the battle loaded a
+    // combatant into (`max_hp != 0`), since the host reports every slot above
+    // the party as seated. The skip is `ctx.round_skip`. See
+    // `docs/subsystems/battle-action.md` § "The three bytes the bound is
     // built from".
     //
     // REF: FUN_801DABA4 (the round-skip bump this bound reads)
@@ -683,8 +683,16 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
     // PORT: FUN_801E295C (`0x801E679C..0x801E67C8`)
     ctx.turn_cursor = ctx.turn_cursor.saturating_add(1);
     let bumped = ctx.turn_cursor;
-    let alive_total = (party_alive + monsters_alive) as u8;
-    if bumped < alive_total {
+    let monsters_seated = (party_count..total)
+        .filter(|&s| {
+            host.slot_seated(s)
+                && host
+                    .actor(s)
+                    .is_some_and(|a| a.max_hp != 0 || a.liveness != 0)
+        })
+        .count();
+    let bound = (party_seated + monsters_seated).saturating_sub(usize::from(ctx.round_skip)) as u8;
+    if bumped < bound {
         return transition(ctx, ActionState::PreActionWait);
     }
     transition(ctx, ActionState::RoundEnd)

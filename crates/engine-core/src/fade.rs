@@ -291,31 +291,36 @@ pub fn spawn_fade(template: &FadeTemplate, id: i16, slot_free: bool) -> Option<F
 ///
 /// ## Retail mechanism
 ///
-/// The grade is two GTE-lighting halves set for the cutscene scene and reset
-/// for the interactive field:
-/// - a **dim neutral ambient/back colour** (`0x8007B788` = `0x00202020`, i.e.
-///   R=G=B=32/255 ≈ ⅛, vs `0x00FFFFFF` white in `town01`), staged into GTE
-///   `RBK/GBK/BBK` (cr13-15) by `FUN_80043390`; and
-/// - a **gold far-colour depth-cue tint** applied per render-node
-///   (`+0x74` → GTE far colour cr21-23 in the TMD renderer `FUN_8002735C`,
-///   written by the actor-VM colour opcode `0x0C`), which crushes the blue
-///   channel to ~40% with R≈G.
+/// The grade is **asset rewrites**, not a pixel multiply or a GTE colour:
+/// - the packet half is the prologue scripts' two field-VM `4C E6` ops
+///   (partition 1 record 0 of `opdeene`, `opstati`, `opurud`), which walk
+///   every resident TMD (`FUN_801D8280` over `DAT_8007C018`) and rewrite
+///   each baked colour word through the SCUS HSV pair (`FUN_801D5E20`):
+///   saturation `-0x100`, then hue `+0x38` / saturation `+0x90` / value
+///   `-0x1E`. A word ends as a function of its `max` alone,
+///   `(V, V*246 >> 8, V*112 >> 8)` with `V = min(max, 0xF8) - 30` -
+///   capture-pinned, every resident colour word of the retail `opdeene`
+///   state (`s1_newgame_field`) lies on that curve, an authored `0x80` word
+///   at `(98, 94, 42)`. Only the baked-colour rows are touched (the
+///   per-mode colour counts at `0x801F26F0` are non-zero for flags
+///   `0x18..=0x27` alone), so the light-source rows keep their GTE colour;
+/// - the texel half is the scene's CLUT rows rewritten to
+///   `(L, L-1, L>>1)`, `L = max(r, g, b)` (a recomp VRAM capture).
 ///
-/// Retail draw-list measurement (recomp GP0 capture of the opening chain):
-/// lit gouraud + modulated-texture prims carry colour words ≈ `255:240:110`
-/// (G/R ≈ 0.94, B/R ≈ 0.43), consistent across `opdeene` and `opurud`, while
-/// bulk backdrop textures draw at *neutral* `0x808080` modulation - their
-/// amber is pre-baked in the texels and retail preserves its chroma. The
-/// engine reproduces the mechanism with a per-channel **multiply tint** (see
-/// `engine-render` `apply_grade`): each shaded pixel becomes `rgb * gold`
-/// cross-faded by `strength`, which crushes blue on neutral content and
-/// leaves the warm backdrop chroma intact, exactly as retail's modulation
-/// multiply does. Whole-frame framebuffer average of the retail cutscene is
-/// RGB `(61, 55, 15)` (G/R ≈ 0.90, B/R ≈ 0.24) - warmer than the tint alone
-/// because the already-amber texels multiply under it.
+/// The hosts reproduce both in the renderer's palette mode
+/// (`engine-render` `palette_law_word` / `prologue_sepia_word`, and the
+/// page's twins), keyed on [`crate::World::scene_color_grade`]. The ratio
+/// the older GP0 measurement read off the draw list (`255:240:110`) is the
+/// same curve's `G/R` and `B/R`; the multiply below is what a host without
+/// palette mode draws.
 ///
-/// REF: FUN_80043390 (ambient → GTE cr13-15)
-/// REF: FUN_8002735C (far colour → GTE cr21-23)
+/// An earlier reading credited the packet colour to a gold DPCS far colour
+/// per render node; it never reaches a pixel, since every render node holds
+/// `IR0 = 0` across the prologue (the palette-mode capture). The dim GTE
+/// ambient `0x8007B788 = 0x00202020` is real but reaches only the
+/// light-source rows, which carry no baked word.
+///
+/// REF: FUN_801D5E20 (the colour-word rewrite)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColorGrade {
     /// Per-channel multiply tint applied to the shaded pixel, `0.0..=1.0`

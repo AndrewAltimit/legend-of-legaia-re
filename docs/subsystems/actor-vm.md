@@ -108,10 +108,22 @@ DAT_1F800393 = max(adaptive, DAT_8007B9D8);
 | `FUN_801CFDA0` | 3 | Field-to-battle intro transition |
 | `FUN_801DC6B4` / `FUN_801DE234` / `FUN_801DD35C` | 1 | Menu family; save/restore idiom |
 | `FUN_801CF678` | 1 / 4 | Baka Fighter duel / scripted beat |
-| `FUN_801D362C` | script | Cutscene dialogue; operand at `param_2 + 4` |
+| `FUN_801D362C` | script | Move-VM `0x2F` `OVERLAY_EXT` sub-op `0x2F`: the halfword at `pc + 4`. `opdeene`'s prescript record 16 opens with it (operand `3`) |
 
 `FUN_801D6704`'s install is `sw s0,-0x4628(v0)` at `0x801D6990`, with `li s0,0x2`
 in the preceding instruction at `0x801D6988` (`overlay_0897`, base `0x801CE818`).
+
+The `FUN_801D362C` row is the move VM's extension dispatcher, not a dialogue
+routine: jump-table slot `0x2F` of `0x801CE868` is `0x801D45D4`, which loads
+`lh v1,4(s3)` and stores it with `sw v1,-0x4628(v0)` at `0x801D45E4`
+([`move-vm-overlay-ext.md`](move-vm-overlay-ext.md)). Across the extracted PROT
+corpus the byte pattern `2F 00 2F 00 <v> 00` occurs in five scene prescripts -
+`opdeene` (`3`), `jagaroom` (`3`), `juui1` (`3`, twice), `dohaty` (`5`, twice),
+`concnow` (`5`) - so the opening cutscene's cadence of 3, which the cold-boot
+`opdeene` capture reads at `DAT_8007B9D8`, is installed by the scene's own
+stager, not by a mode loader. The engine applies it in
+`MoveVmHostImpl::ext_set_8007b9d8`, raising `FrameClock::frame_step_floor`
+and the cadence together.
 
 `FUN_801CFDA0` is more than a floor installer - it is the field-to-battle intro
 particle builder (dump `overlay_field_battle_intro_801cfda0.txt`). After setting
@@ -280,30 +292,34 @@ Read against `FUN_801D77F4`'s walker - `*puVar11 = record_count`, `puVar10 = puV
 
 ## Field-spawned sprite-tick actors
 
-Two field-overlay (PROT 0897) functions spawn and drive *attached-sprite* actors
-on the shared actor list `_DAT_8007C34C` - the same list the
-[field VM](script-vm.md#per-frame-scheduling) walks - rather than being actor-VM
-opcode handlers themselves.
+Two field-overlay (PROT 0897) pool-actor families hang off a parent actor's
+`+0x90` back-link on the shared actor list - the same list the
+[field VM](script-vm.md#per-frame-scheduling) walks - rather than being
+actor-VM opcode handlers themselves. They are two families, not one: an
+earlier reading grouped both as "attached sprites".
 
-`FUN_801D25EC` is the **position-tween spawner**: given a source actor, a target
-`xyz`, and a duration, it allocates an actor from template `0x801F227C`
+`FUN_801D25EC` is the **scripted arc** spawner, reached only from the field
+VM's op `0x43` sub-0/1/A/B: given a source actor, a landing `xyz`, an apex
+height and a frame count, it allocates an actor from template `0x801F227C`
 (`func_0x80020DE0(0x801F227C, _DAT_8007C34C)`), records the source in `+0x90`,
-copies the source position `+0x14/+0x16/+0x18`, stores the target in
+copies the source position `+0x14/+0x16/+0x18`, stores the landing point in
 `+0x24/+0x26/+0x28`, seeds the midpoints `+0x3C/+0x3E/+0x40`, and sets the
-per-frame step `+0x9E = 0x1000 / duration` (fixed-point `1.0` over the duration).
+per-frame step `+0x9E = 0x1000 / duration`; a second record from template
+`0x801F22AC` is the arc's release watcher. See
+[`script-vm.md`](script-vm.md#0x43-sub-01ab---scripted-arc-jump).
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_801d25ec.txt`.
 
-`FUN_801E4470` is the **per-frame tick** for such an actor: it reads the parent
-`+0x90`, adds the parent's world position to its own, screen-projects through the
-GTE wrapper `func_0x800195A8` (using the actor's `+0x3C/+0x3E` bbox), computes the
-projected midpoint + span, and draws via `FUN_801E3984` (control word `+0x74`,
-`+0x88`, byte `+0x5A`). It calls the GTE projection and builds a draw
-primitive, so the packet half is render-track - but the routine as a whole is
-**ported**, not merely documented: `engine-vm::field_actor_billboard` carries
-the parent-relative position fold and the projected span, and `engine-render`
-turns that into a draw. (`locate-entry-image.py 801e4470` puts the entry in
-PROT 0897 with a clean frame, so the field reading of the address is the right
-one.) Its direct `overlay_0897` dump is a truncated alias; the real
+`FUN_801E4470` is the per-frame tick of the other family, the op `0x34`
+sub-1 **attached light** (template `0x801F28B8`, spawner `FUN_801E5668`): it
+reads the parent `+0x90`, adds the parent's world position to its own offset,
+screen-projects through `func_0x800195A8` with the actor's `+0x3C/+0x3E`
+extents, and hands the projected midpoint + span to `FUN_801E3984`, which
+draws an untextured semi-transparent light pool in colours `+0x74` / `+0x88`
+at blend mode `+0x5A`. See
+[`script-vm.md`](script-vm.md#0x34-sub-1-is-an-attached-light). Ported in
+`engine-vm::field_actor_billboard` and drawn on both play hosts.
+(`locate-entry-image.py 801e4470` puts the entry in PROT 0897 with a clean
+frame.) Its direct `overlay_0897` dump is a truncated alias; the real
 83-instruction body is in the cutscene-dialogue field capture.
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_801e4470.txt`.
 
@@ -326,8 +342,9 @@ apex  = min(start.y, target.y) - height   ; height = the arc argument
 ```
 
 `2*apex - mid` is exactly the control point that makes a quadratic Bézier
-pass through `apex` at its half-way parameter, so `arc_height` is "how far
-above the lower endpoint the hop peaks" - a lob, not a straight tween.
+pass through `apex` at its half-way parameter, so `arc_height` is how far
+above the **higher** endpoint the hop peaks (world Y grows downward, so
+`min` picks the higher one) - a lob, not a straight tween.
 The per-frame parameter is the `+0x9E = 0x1000 / duration` step, with
 `0x1000` (fixed-point `1.0`) substituted whole when `duration <= 0`.
 Confidence: **Confirmed**, disassembled from PROT entry 0897 at base

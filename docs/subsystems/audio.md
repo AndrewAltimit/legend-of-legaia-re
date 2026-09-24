@@ -85,7 +85,7 @@ outright.
 |---|---|---|
 | `0` | PROT 0868 system bank | resident |
 | `1` | the current BGM bank (`music_01`, variable) | `FUN_800243F0` |
-| `2` | PROT 0869 class-2 bank (`0875` alternate) | `FUN_800520F0`, `FUN_801CF00C` |
+| `2` | PROT 0869 class-2 bank (`0875` alternate); a minigame's own bank in fishing / slot machine / dance | `FUN_800520F0`, `FUN_801CF00C`, the minigame overlay inits |
 | `3` | a `vab_01` side-band bank (variable) | `FUN_800243F0`, from `_DAT_8007BABC` |
 | `6` | PROT 0876 field bank | field init `FUN_801D6704` |
 | `7` / `8` | the two `monster.snd` banks | `FUN_8003E104` (below) |
@@ -95,7 +95,9 @@ The record initialiser `FUN_8001D424` writes `+8 = record index` for all 16
 records, then assigns their header buffers from one base with four pairs sharing
 one - and `FUN_800265E8` gives those same pairs one SPU base. Slot 6 and slot 2
 are therefore the same physical bank in two modes, which is why retail needs no
-extra SPU room for the field cues. Slot sizes, the SPU map and the structural
+extra SPU room for the field cues: the field init loads PROT 0876 into slot 6
+and the battle mode init closes it before the battle loader fills slot 2
+([per mode](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)). Slot sizes, the SPU map and the structural
 checks behind each pin: [`formats/sfx-table.md`](../formats/sfx-table.md#which-prot-entry-reaches-which-slot).
 
 The seeder and the reader are ported at opposite ends and never meet:
@@ -1035,6 +1037,93 @@ A scene *music* VAB's program 0 is an ordinary melodic instrument instead - in t
 
 Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.rs).
 
+### The field's scripted cues ride the retail ring
+
+The field scripts' cues are not `PendingCue`s. Field-VM op `0x36` sub `0` and
+the motion VM's op `0x09` call the ring enqueue `FUN_80035B50` with the id
+straight from their bytecode, and op `0x36` sub `4` sets that slot's
+countdown through `FUN_80035BAC`
+([`sfx-table.md`](../formats/sfx-table.md#the-fields-producers-op-0x36-and-the-motion-vms-op-0x09)).
+The engine queues each call on the world as a `SfxRingOp`; the native
+`BootSession::route_field_sfx` and the browser play page's `route_field_sfx`
+replay the queue onto their scheduler's four-slot ring every tick, and the
+scheduler returns due ring cues in `SfxFireBatch::ring`, apart from the router
+queue. A ring id is keyed as the drainer `FUN_80016B6C` keys it: below `0x200`
+through the static table and its category's bank, at or above it through the
+scene's own prescript record 0 and the bank that row's `+4` names - the
+side-band slot `3` in a town, staged behind the BGM from the op-`0x36` sub-`1`
+request ([`sfx-table.md`](../formats/sfx-table.md#the-side-band-bank-a-field-script-selects)).
+
+Across every scene MAN on the disc, every scripted id resolves to a row of its
+own scene's bank except one: `balden2`'s scripts push `0x20B`, one row past its
+eleven-row record 0, which reads the next record's header - voice count zero -
+and keys nothing in retail either. `engine-core/tests/field_sfx_ring_disc.rs`
+is the census. No scene reaches either producer with no input in its first
+4000 ticks: the sites sit behind interactions, walk-ons and timeline branches.
+
+The static half of a field cue is mostly category `6` (the rest are category `0`),
+so it keys slot `6` - PROT 0876, the field bank, which shares slot `2`'s SPU
+region and which retail's field init reloads whenever a battle, a minigame or a
+side-band teardown has cleared the field-bank latch `0x8007BAFC`. Both play
+hosts refill that region per mode from `World::sync_sfx_residency`, so a
+category-`6` cue keys PROT 0876 in the field and is silent in battle, where
+retail's slot 6 is closed; the latch, the writers and the closed-slot rule are
+in [`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6).
+
+### Retail capture of the slot-2 / slot-6 residency
+
+The VAB slot records sit at `0x80091508 + slot * 12` (the drainer's `lui t1,
+0x8009; addiu t1,t1,0x1508` at `0x80016CD8`), with the enable byte at `+0xB`;
+slots 2 and 6 share the header pointer `0x8008D708`, so one header copy serves
+whichever of them is open. Two probes of
+[`autorun_w5b_field_watch.lua`](../../scripts/pcsx-redux/autorun_w5b_field_watch.lua)
+watch the latch `0x8007BAFC` for writes, exec-break the VAB loader
+`FUN_8001FC00` (`a0` raw PROT index, `a1` slot), the closer `FUN_8001FF58`, the
+mode initialiser `FUN_8001DCF8` and the warp `FUN_80025980`, and sample both
+enable bytes every vsync.
+
+**Field -> battle -> field** (`retona_field_card_boot`, the step counter
+`0x8007B5FC` poked to `1`, a Cross cadence through the fight; vsyncs):
+
+| vsync | event |
+|---|---|
+| 174 | `FUN_8001DCF8(0x0A)` - the encounter transition; latch still `1` |
+| 444 | `FUN_8001DCF8(0x0C)` with the mode word `0x14`: closes `6` (`0x8001DFB4`) and `3` (`0x8001DFBC`), latch `-> 0` at `0x8001DFC0`; slot 6's enable drops |
+| 638, 674 | the battle scene loader (`ra 0x8005241C`) loads raw `0x367` (PROT 0869) into slot `2`, twice; slot 2 enabled at 675 |
+| 3853 | raw `0x37B` (PROT 0889) into slot `11` at results, closed again at 3886 |
+| 4252 | the field init closes `2`, `7`, `8`, `11` (`0x801D68A4..0x801D68BC`); slot 2's enable drops |
+| 4379 | the field init loads raw `0x36E` (PROT 0876) into slot `6` (`ra 0x801D7034`), latch `-> 1` at `0x801D7028`; slot 6 enabled at 4437 |
+
+Every row is the table in `sfx-table.md`, site for site.
+
+**Field -> minigame** (`baka_fighter_entry_pretransition`; that state's resident
+SCUS carries the new-game starting-bag seed, a patch site outside every audio
+path): the warp `FUN_80025980` (`ra 0x800161A4`) clears the latch at `0x800259A4`
+and closes nothing; `FUN_8001DCF8(0x0C)` runs from the minigame overlay
+(`ra 0x801CF05C`) with the mode word `0x18`, so its close-and-clear arm - keyed on
+the mode word reading `0x14` (`0x8001DF74..0x8001DF80`) - does **not** run; the
+overlay then loads PROT 0869 into slot `2` (`0x801CF250` / `0x801CF288`). From
+vsync 381 on, slots 2 **and** 6 are both enabled over the one region: slot 6's
+header is PROT 0876's, the samples under it PROT 0869's. That is the reading the
+format page gave as an inference for the Muscle Dome, observed here on the Baka
+Fighter's path.
+
+**The Muscle Dome's hub** (`minigame_muscle_dome`, a retail mednafen state at mode
+`0x19`): latch `0`, slot 2 **closed**, slot 6 **open**, and the shared header at
+`0x8008D708` is PROT 0876's (`pBAV`, total size `0x2C090`, the same header bytes
+as the field state `s3_rimelm_freeroam`). So at the dome's hub the region holds
+the field bank intact and no class-2 bank at all. Whether a round (mode
+`0x14` / `0x15`) loads PROT 0869 over it is not captured: the only PCSX-Redux
+dome state carries a patched resident SCUS. The arena enters a round by storing
+mode word `0x14`, which is what `FUN_8001DCF8`'s close arm tests, so the round
+is read as taking the battle residency ([`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)).
+
+**Engine port.** `SfxBankResidency` tracks slot 2's and slot 6's enables
+separately (`slot_open`), so the Baka Fighter state - both open, slot 6 stale
+(`stale_open_slot`) - is represented; the hosts stage only the bank the region
+holds, so a cue on the stale slot is silent rather than played through the wrong
+header. The port's dome mode is a leg and takes the battle arm.
+
 ## XA-ADPCM
 
 `crates/xa` decodes CD-XA 4-bit ADPCM bit-exactly: on a real cutscene track its per-channel PCM matches an external lossless reference decode sample-for-sample. The on-disc `.XA` / `.STR` audio is standard CD-XA Mode 2 Form 2 - the earlier "non-standard interleave" was Form-1 truncation damage in the old extractor, not a bespoke format. The demuxer (`legaia_xa::demux`) splits raw 2352-byte sectors by `(file_no, ch_no)` and the group decoder reconstructs each channel. See [`formats/xa.md`](../formats/xa.md) for the sound-group decode (parameter/nibble layout, full-precision predictor) and [Cutscene / STR](cutscene.md) for the interleaved A/V path.
@@ -1071,7 +1160,7 @@ The engine wires this end-to-end:
   - the same degradation retail applies to an art with no cue-table entry.
   Drain: `World::drain_battle_shout_cues`.
 - **Bank staging** (`engine-shell` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`legaia_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent.
-- **Playback** (`engine-audio` / `engine-shell`): `AudioBgmDirector::play_art_shout` resolves the cue against the bank (deterministic pool pick, no immediate repeat - `// PORT: FUN_8004C140`) and stages the clip through `AudioOut::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
+- **Playback** (`engine-audio` / `engine-shell`): `AudioBgmDirector::play_art_shout` resolves the cue against the bank (`// PORT: FUN_8004C140`: a uniform draw from the art's pool, re-rolled while it equals the party-wide last pick `gp+0xA4A` - one byte for all three characters, not one each - and forced to channel `0xC` when the first formation id `gp+0x9F4` is `0x4F`, an override no host installs the formation for yet) and stages the clip through `AudioOut::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
 
 Two timing behaviours model the retail CD/XA sequencing contract (the recomp cross-reference established that the shout **trails** the art animation - the XA response arrives after the animation begins, never before): a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modeled seek/first-sector latency) gates the clip silent after the animation-start request; and a back-to-back request while a shout is still sounding queues behind it rather than cutting it (only the most recent pending clip is kept), so consecutive arts don't drop the later voice line.
 `OfflineMixer` exposes the same mixing core device-free; the disc-gated oracle `engine-shell/tests/arts_shout_battle.rs` types an art into the live Arts command input and asserts the shout PCM lands in the mix only after the delay window, with `engine-core/tests/battle_shout_cue.rs` as the disc-free cue-emission check - one art, three arts in one entry, and the silent synthetic baseline.
@@ -1608,7 +1697,18 @@ parity comparand. What is left on this axis is the **key-on rate**
 (`VoiceAllocationStats::onsets_per_frame`, and `onset_ratio` on the
 comparison): a key-on is a register write the score performs from the game's
 own vsync handler, so it is on the emulated clock on both sides, and on the
-aligned window the two sides' rates agree. The capture probe that carries the
+aligned window the two sides' rates agree.
+
+The alignment is not optional for this statistic either. Against the
+250-frame `s3_rimelm_freeroam` window, an engine trace of `3601` frames aligns
+at engine frame `3111` and reads `0.560` key-ons per frame against retail's
+`0.488` (ratio `1.148`); the 120-frame window aligns at `3112` and reads
+`0.592` against `0.558` (ratio `1.060`). An engine trace only as long as the
+retail window has nowhere to slide - the best offset is frame `1`, the track's
+opening bars - and the same pairing then reads `0.244` against `0.488`, a
+ratio of `0.5` that is a statement about which bars were compared, not about
+the port. Ask `audio-trace` for at least the aligned frame plus the retail
+window's length. The capture probe that carries the
 wall-clock stamp is
 [`autorun_w1a_audio_clock.lua`](../../scripts/pcsx-redux/autorun_w1a_audio_clock.lua),
 and `scripts/pcsx-redux/analyze_audio_clock.py` is the offline half.

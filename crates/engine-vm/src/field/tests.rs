@@ -2,14 +2,15 @@
 
 use super::*;
 
-/// One observed `op34_sub1_spawn_or_skip` invocation.
+/// One observed `op34_sub1_spawn_attached` invocation.
 #[derive(Debug, Default)]
 struct Op34Sub1Call {
     op0: u8,
+    ext: Option<u8>,
     packed24: u32,
-    pos: [i16; 3],
-    capture_flag: u8,
-    captured_payload: Vec<u8>,
+    /// `[half_w, half_h, height]`.
+    extent_and_height: [i16; 3],
+    script: Option<Vec<u8>>,
 }
 
 /// Recording host: tracks every host-state interaction so tests can
@@ -31,7 +32,7 @@ struct TestHost {
     item_writes: Vec<(u8, u8)>, // (slot_byte, count)
     party_added: Vec<u8>,
     party_removed: Vec<u8>,
-    interacts: Vec<(u8, u8)>,
+    scripted_battles: Vec<(u8, u8)>, // op 0x3E `op0 < 100` / `0xFF` (op0, row)
     scene_transitions: Vec<u8>,
     minigame_door_warps: Vec<u8>, // op 0x3E `op0 >= 100` sub-ids
     named_scene_transitions: Vec<(String, u8, u8, u8)>, // (scene, entry_x, entry_z, dir)
@@ -118,7 +119,7 @@ struct TestHost {
     // 0x34 sub-0 / sub-1.
     op34_sub0_calls: Vec<(u8, [u8; 3], i16)>, // (op0, rgb, intensity)
     op34_sub1_calls: Vec<Op34Sub1Call>,
-    op34_sub1_capture_delta: Option<usize>, // override the default 13
+    op34_sub1_spawns: bool, // report a spawn (consumes a following 0x40 block)
     // 0x4C outer-nibble-4 sub-5 (actor-field block).
     n4_sub5_immediate: Vec<(u8, i16, i16, i16)>, // (b1, w94, w96, w98)
     n4_sub5_ramp: Vec<(u8, i16, i16, i16, u16)>, // (b1, w94, w96, w98, ticks)
@@ -192,6 +193,7 @@ struct TestHost {
     n_e_sub_b_actor_ids: Vec<u8>,
     // 0x43 halt-acquire (sub-0/1/A/B).
     halt_acquire_predicate: bool,
+    arc_target_halted: bool,
     halt_acquire_calls: Vec<(u8, usize, [i16; 3])>,
     // Round 18 - 0x4C n8 actor-allocator + nE camera + nD/n5 dialog.
     n_8_sub_1_set_model_calls: Vec<(u32, u16, u16)>, // (model_id, anim, tween)
@@ -280,8 +282,8 @@ impl FieldHost for TestHost {
             .copied()
             .flatten()
     }
-    fn field_interact(&mut self, interact_id: u8, slot: u8) {
-        self.interacts.push((interact_id, slot));
+    fn scripted_battle(&mut self, op0: u8, row: u8) {
+        self.scripted_battles.push((op0, row));
     }
     fn scene_transition(&mut self, map_id: u8) {
         self.scene_transitions.push(map_id);
@@ -485,23 +487,21 @@ impl FieldHost for TestHost {
     fn op34_sub0_color_intensity_setup(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
         self.op34_sub0_calls.push((op0, rgb, intensity));
     }
-    fn op34_sub1_spawn_or_skip(
+    fn op34_sub1_spawn_attached(
         &mut self,
         _ctx: &FieldCtx,
-        op0: u8,
-        packed24: u32,
-        pos: [i16; 3],
-        capture_flag: u8,
-        captured_pc_payload: &[u8],
-    ) -> usize {
+        ext: Option<u8>,
+        spawn: &crate::field_actor_billboard::AttachedSpriteSpawn,
+        script: Option<&[u8]>,
+    ) -> bool {
         self.op34_sub1_calls.push(Op34Sub1Call {
-            op0,
-            packed24,
-            pos,
-            capture_flag,
-            captured_payload: captured_pc_payload.to_vec(),
+            op0: spawn.op0,
+            ext,
+            packed24: spawn.packed_rgb,
+            extent_and_height: [spawn.half_extent.0, spawn.half_extent.1, spawn.height],
+            script: script.map(|s| s.iter().copied().take(3).collect()),
         });
-        self.op34_sub1_capture_delta.unwrap_or(13)
+        self.op34_sub1_spawns
     }
     fn system_flag_set(&mut self, idx: u16) {
         self.ensure_sys_flag_capacity();
@@ -744,6 +744,9 @@ impl FieldHost for TestHost {
     }
     fn field_halt_acquire_predicate(&self, _ctx: &FieldCtx, _which: u8) -> bool {
         self.halt_acquire_predicate
+    }
+    fn op43_arc_target_halted(&self, _ctx: &FieldCtx, _ext: Option<u8>) -> bool {
+        self.arc_target_halted
     }
     fn field_halt_acquire_apply(
         &mut self,

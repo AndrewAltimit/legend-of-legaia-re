@@ -408,20 +408,25 @@ headings and the tick/records-model injection sites to the native host's.
 ## Fishing minigame (`play_fishing`)
 
 `LegaiaRuntime::play_fishing_start` lifts the fishing overlay (PROT 0972)
-through the static-overlay map, decodes its per-species table plus the two
-point-exchange venue pages off the visitor's own disc, and installs a
-`legaia_engine_core::fishing::FishingSession` with `World::enter_fishing` - the
-same mode-suspend contract the native window uses, so the field scene stays
-intact underneath and comes back on exit. `play_fishing_hud_json` serves the
+through the static-overlay map and hands it to
+`SceneHost::enter_fishing_from_overlay` - the door warp's own entry, which the
+native window's `L` launcher calls too. That decodes the species, spawn and
+cadence tables, runs the rod and lure ownership scans, and installs a
+`legaia_engine_core::fishing::PondSession` seeded from the persistent fishing
+words on `World::minigames` - the same mode-suspend contract the native window
+uses, so the field scene stays intact underneath and comes back on exit with
+the words banked. The two point-exchange venue pages decode alongside. `play_fishing_hud_json` serves the
 retail HUD through the shared `fishing_hud_draws_for` consumer, and
 `play_fishing_prizes_json` / `play_fishing_prize_buy` expose the prize rows with
 retail availability gating.
 
 Nothing here is an input path, and that is the design: the driver is
 `World::tick_fishing`, which reads the pad word the page already routes each
-frame. Cross casts and reels, Square reels harder, Cross recasts - and because
-the ported reel decoder classifies the two held bits, holding both resolves the
-way retail does rather than the way a host `if` chain would.
+frame. Circle casts and locks the power meter, Cross reels, Square reels
+harder - and because the ported reel decoder classifies the two held bits,
+holding both resolves the way retail does rather than the way a host `if` chain
+would. The banner one-shots seed off `World::minigames.fishing_events`, the
+same list the native window reads.
 
 The one place the page draws more than the native window: with the fishing
 sprite page undecoded, `fishing_hud_draws_for`'s atlas is blind on both hosts
@@ -441,9 +446,11 @@ channel, assembled from what already existed rather than as a second audio path.
 The chain is the retail one. `SCUS_942.54`'s static descriptor table
 (`DAT_8006F198 + id*8`) is parsed at `load_disc` into a
 `legaia_engine_audio::SfxBank` - pure data, so it lands whether or not the
-visitor has enabled sound. The resident class-2 program bank (PROT 0869, with
-the documented 0875 alternate as a fallback) uploads into a dedicated region at
-the **top** of SPU RAM the first time a cue fires, and cues key through
+visitor has enabled sound. The slot-0 system bank (PROT 0868) uploads into a
+dedicated region at the **top** of SPU RAM the first time a cue fires, and the
+rest of that region holds whichever bank the current mode's slot-2 / slot-6
+residency names (PROT 0876 in the field, PROT 0869 in battle,
+`World::sync_sfx_residency`), refilled on each mode change. Cues key through
 `SfxBank::play_one_shot` into the **live** `WebAudioOut` SPU - the same mixer the
 BGM sequencer feeds, so a cue and the music share one voice pool as they do on
 hardware.
@@ -853,8 +860,7 @@ table out of the battle overlay 0898. Nothing is shipped with the site.
 
 Per game: `<g>_start` / a step or input method
 (`dance_press` / `baka_choose` / `slot_spin` + `slot_stop` +
-`slot_collect` / `fishing_advance_cast` + `fishing_lock_cast` +
-`fishing_reel` + `fishing_recast` / `muscle_commit` +
+`slot_collect` / `fishing_pond_start` + `fishing_pond_tick` / `muscle_commit` +
 `muscle_end_selection` + `muscle_resolve` + `muscle_next_turn`) /
 `<g>_state_json`. The dome adds a second tier for the contest above a leg
 (`muscle_contest_start` / `muscle_report_leg` / `muscle_contest_settle` /
@@ -868,11 +874,12 @@ press) and `displayed` (the display half's held-sequence substitution); see
 `tests/minigames_wasm_api.rs`.
 
 `minigames_fishing.rs` and `minigames_muscle.rs` are the fishing / Muscle
-Dome shells. Fishing drives [`legaia_engine_core::fishing::FishingSession`]
-from a default rod stat (no save-block record on the web entry point) and
+Dome shells. Fishing drives [`legaia_engine_core::fishing::PondSession`] -
+the one session all three hosts run - directly, with no `World`, seeded from
+the persistent words the page reads off the visitor's memory card, and
 resolves species names against the loaded PROT 0972 overlay image; the
-cast-meter sweep rate and the land/snap glue are the module's engine-side
-reconstruction (`docs/subsystems/minigame-fishing.md`). Muscle Dome drives
+cast-meter sweep rate and the flight / reel-down / snap glue are the module's
+engine-side reconstruction (`docs/subsystems/minigame-fishing.md`). Muscle Dome drives
 [`legaia_engine_core::muscle_dome::MuscleDomeSession`] on the disc's dealt
 hand with the native launcher's flat favored per-card cost (the browser has
 no player battle file for the per-command `+0x74` swing bytes) and a

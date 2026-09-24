@@ -94,7 +94,7 @@
       <tr><td>FUN_801E30E4</td><td>Op <code>0x4C 0xE2</code> FMV trigger: FMV index &rarr; <code>_DAT_8007BA78</code>, mode <code>0x1A</code> &rarr; <code>_DAT_8007B83C</code></td></tr>
       <tr><td>FUN_8003CE9C</td><td>Field-VM context resolver (sign-extended u16 read)</td></tr>
       <tr><td>FUN_80023070</td><td>Move-table VM (71 ops, JT <code>0x80010778</code>)</td></tr>
-      <tr><td>FUN_801D362C</td><td>Move-VM extension (61 sub-ops via op <code>0x2F</code>); same code at the same address in the town / world-map / dialog / cutscene overlays</td></tr>
+      <tr><td>FUN_801D362C</td><td>Move-VM extension (61 sub-ops via op <code>0x2F</code>); one copy, in the field overlay - the world-map, dialog and cutscene modes run on that overlay, not on copies of their own. Its one outward call is the scanline strip emitter <code>FUN_801D31B0</code></td></tr>
       <tr><td>FUN_801D6628</td><td>Window-widget ("actor") VM of the menu overlay (13 ops, JT <code>0x801CED70</code>)</td></tr>
       <tr><td>FUN_80038158</td><td>Per-actor motion / bytecode VM; ops 7 / 8 set / clear story flags in <code>DAT_80085758</code></td></tr>
       <tr><td>FUN_8002519C</td><td>Per-frame actor-list tick iterator (5&times; per frame from <code>FUN_80016444</code>)</td></tr>

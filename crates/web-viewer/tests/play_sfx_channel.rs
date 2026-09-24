@@ -98,19 +98,15 @@ fn advertised_cues_render_a_non_silent_buffer() {
          every cue is silent is not a channel"
     );
 
-    // The class-2 bank has to be one of the staged ones; a fallback to nothing
-    // would make every cue silent for a reason worth surfacing.
+    // In the field the shared slot-2 / slot-6 region holds the field bank:
+    // retail's field init loads PROT 0876 into slot 6 (`FUN_801D6704`).
     let v: serde_json::Value =
         serde_json::from_str(&rt.play_sfx_state_json()).expect("sfx state json");
-    let bank = v["bank_prot"].as_u64().unwrap_or(0);
-    assert!(
-        bank == 869 || bank == 875,
-        "the class-2 program bank must be PROT 869 or its documented alternate \
-         875; got {bank}"
-    );
-    // Both pinned slots must stage - a page with only one of them is the
-    // pre-routing state, and it sounds *plausible* rather than broken, so the
-    // only thing that catches it is asserting the pair.
+    assert_eq!(v["bank_prot"].as_u64(), Some(876), "field region bank: {v}");
+    assert_eq!(v["shared_slot"].as_u64(), Some(6), "field region slot: {v}");
+    // Both field slots must stage - a page with only slot 0 is the state
+    // where every field cue is silent, and a page holding the class-2 bank
+    // here is the old wrong-sample state; asserting the pair catches both.
     let banks = v["banks"].as_array().expect("staged bank list");
     let mut pairs: Vec<(u64, u64)> = banks
         .iter()
@@ -119,8 +115,8 @@ fn advertised_cues_render_a_non_silent_buffer() {
     pairs.sort_unstable();
     assert_eq!(
         pairs,
-        vec![(0, 868), (2, 869)],
-        "both pinned VAB slots stage, each from its own PROT entry"
+        vec![(0, 868), (6, 876)],
+        "the field stages the system bank and the field bank"
     );
 }
 
@@ -149,40 +145,43 @@ fn a_category0_cue_and_a_category2_cue_come_from_different_banks() {
     assert_eq!(rt.play_sfx_cue_slot(0x09), 2, "the duel hit is category 2");
 
     let ui = rt.play_sfx_cue_bank_prot(0x21);
-    let hit = rt.play_sfx_cue_bank_prot(0x09);
     assert_eq!(
         ui, 868,
         "a category-0 cue sounds out of the slot-0 system bank"
     );
-    assert_eq!(hit, 869, "a category-2 cue sounds out of the class-2 bank");
-    assert_ne!(
-        ui, hit,
-        "the menu blip and the duel hit must not share a bank - that is exactly \
-         the state where the pause menu thumped"
+    // Slot 2 is closed in the field (`FUN_801D6704` closes it), and a closed
+    // slot is silent in retail rather than rerouted.
+    assert_eq!(
+        rt.play_sfx_cue_bank_prot(0x09),
+        0,
+        "a category-2 cue has no resident bank in the field"
     );
 
-    // Categories 6 and 11 have no traced PROT entry, so they must keep falling
-    // back to the class-2 bank rather than being invented into slot 6 / 11.
-    // 0x2E / 0x2F are the field script cues (category 6).
+    // Category 6 is the field bank, PROT 0876 in slot 6 - resident here in
+    // town, which is the proof the field cues no longer key the class-2 bank.
+    // 0x2E / 0x2F are the field script cues.
     for id in [0x2Eu32, 0x2F] {
         assert_eq!(rt.play_sfx_cue_slot(id), 6, "cue {id:#x} is category 6");
         assert_eq!(
             rt.play_sfx_cue_bank_prot(id),
-            hit,
-            "an unpinned slot falls back to the class-2 bank, unchanged"
+            876,
+            "a field cue keys the field bank"
+        );
+        assert!(
+            rt.play_sfx_probe_peak(id, legaia_engine_audio::SPU_INTERNAL_RATE / 4) > 0,
+            "cue {id:#x} renders audible PCM out of PROT 0876"
         );
     }
+    eprintln!("[ok] field cues 0x2E / 0x2F key PROT 0876 in slot 6");
 
     // The routed cue still sounds - a bank swap that resolved to silence would
     // be a different bug wearing the same fix.
     let rate = legaia_engine_audio::SPU_INTERNAL_RATE;
     let window = rate / 4;
-    for id in [0x21u32, 0x09] {
-        assert!(
-            rt.play_sfx_probe_peak(id, window) > 0,
-            "cue {id:#x} must still render audible PCM from its routed bank"
-        );
-    }
+    assert!(
+        rt.play_sfx_probe_peak(0x21, window) > 0,
+        "cue 0x21 must still render audible PCM from its routed bank"
+    );
 
     // Report the routed durations. The confirm blip `0x20` is the clearest
     // case: program 0 tone 0 is `center` 72 in PROT 0868 against 83 in
@@ -423,4 +422,74 @@ fn walking_steps_the_cadence_and_standing_still_does_not() {
         walked,
         "standing still again must step the cadence no further"
     );
+}
+
+/// Seed the party, walk to map01, force a fight and tick into it.
+fn enter_forced_battle(rt: &mut LegaiaRuntime) -> Result<(), String> {
+    rt.debug_enter_town01_opening()
+        .map_err(|e| format!("enter town01 opening: {e}"))?;
+    for _ in 0..8 {
+        let _ = rt.tick_frame();
+    }
+    rt.enter_field("map01")
+        .map_err(|_| "enter_field(map01) failed".to_string())?;
+    for _ in 0..5 {
+        let _ = rt.tick_frame();
+    }
+    if !rt.debug_force_battle(-1) {
+        return Err("debug_force_battle(-1) resolved no formation on map01".into());
+    }
+    for _ in 0..400 {
+        let _ = rt.tick_frame();
+        if rt.play_battle_active() {
+            return Ok(());
+        }
+    }
+    Err("forced encounter never reached battle".into())
+}
+
+/// **The per-mode residency oracle.** Retail gives VAB slots 2 and 6 one SPU
+/// region (`FUN_800265E8`) and refills it per mode: the field init loads PROT
+/// 0876 into slot 6, the battle mode init closes slot 6 and the battle scene
+/// loader puts PROT 0869 in slot 2. So the same page, in the field and then in
+/// a battle, must key a category-6 cue out of 0876 and then not at all, and a
+/// category-2 cue not at all and then out of 0869.
+#[test]
+fn battle_swaps_the_shared_region_to_the_class2_bank() {
+    let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let Ok(bytes) = std::fs::read(&disc) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unreadable");
+        return;
+    };
+    let mut rt = LegaiaRuntime::new();
+    rt.load_disc(bytes, String::new()).expect("load disc");
+    if let Err(e) = enter_forced_battle(&mut rt) {
+        panic!("{e}");
+    }
+    assert_eq!(
+        rt.play_sfx_cue_bank_prot(0x09),
+        869,
+        "the duel hit keys the class-2 bank"
+    );
+    assert_eq!(
+        rt.play_sfx_cue_bank_prot(0x2E),
+        0,
+        "slot 6 is closed in battle"
+    );
+    assert_eq!(
+        rt.play_sfx_cue_bank_prot(0x21),
+        868,
+        "slot 0 stays resident"
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(&rt.play_sfx_state_json()).expect("sfx state json");
+    assert_eq!(
+        v["bank_prot"].as_u64(),
+        Some(869),
+        "battle region bank: {v}"
+    );
+    eprintln!("[ok] battle region holds PROT 0869 in slot 2; field cue 0x2E closed");
 }

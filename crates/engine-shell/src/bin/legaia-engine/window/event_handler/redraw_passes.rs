@@ -11,103 +11,78 @@ use super::super::*;
 pub(in crate::window) type CutsceneCam = ([f32; 3], f32, f32, f32, f32, [f32; 3]);
 
 impl PlayWindowApp {
+    /// This frame's scene camera, raw retail Y-down world frame.
+    ///
+    /// **Which camera owns the frame is the shared resolver's answer**
+    /// (`camera_view::resolve_field_camera`), the same call the browser play
+    /// page makes: a scripted op-`0x45` shot wins over every mode-derived
+    /// camera (the world map included - map01's opening leg is the retail
+    /// Rim Elm aerial fly-in; the caller only passes `cutscene_cam` in
+    /// world-map mode when the running timeline actually staged camera
+    /// params), then the two world-map vantages, then the field follow
+    /// camera, and `HostDebugOrbit` when there is no player to follow. The
+    /// matrix is `camera_view::frame_vp` for every one of those arms.
+    ///
+    /// Two arms stay host-side, and neither is a second answer to the
+    /// resolver's question:
+    ///
+    /// - **Battle.** The resolver covers walkable scenes only; the battle
+    ///   camera is its own kernel (`battle_cam_script::battle_vp`, stepped by
+    ///   `window::battle_cam` against the battle phase model), and the page
+    ///   runs that kernel too. Folding it in would mean a `FieldCameraFrame`
+    ///   variant carrying the battle phase state, which buys no sharing the
+    ///   kernel does not already give.
+    /// - **The `F3` debug orbit and `HostDebugOrbit`.** Both are this host's
+    ///   own vantage (`camera_mvp`); the page has its own orbit with the same
+    ///   three knobs.
+    ///
+    /// `FIELD_WORLD_FLIP` cancels the resolver's Y-up frame, so the whole
+    /// composition runs on raw retail Y-down world coordinates.
     pub(in crate::window) fn compute_scene_camera(
         &self,
         aspect: f32,
         in_world_map: bool,
         cutscene_cam: Option<CutsceneCam>,
     ) -> Mat4 {
-        // An active in-engine cutscene camera wins over every mode-derived
-        // camera, INCLUDING the world map: the opening chain's map01 leg is
-        // the retail Rim Elm aerial fly-in, driven by the same op-0x45
-        // camera globals as the field cutscenes (three beats in map01's
-        // opening record; the caller only passes `cutscene_cam` in world-map
-        // mode when the running timeline actually staged camera params).
-        // The continent terrain draws at raw retail world coordinates, so
-        // the same `psx_camera_mvp * FIELD_WORLD_FLIP` composition (with
-        // `tr_eye` pre-divided by the 6x world scale in `cutscene_view`)
-        // frames it exactly like retail's 6x-scaled GTE camera.
-        if let Some((focus, pitch, yaw, roll, h, tr_eye)) = cutscene_cam {
-            // The cutscene camera is the EXACT retail PSX GTE model
-            // `screen = H*(R*(v - focus) + tr_eye)/Ze` (`FUN_800172c0`
-            // view build; `psx_camera_mvp`), driven by the decoded
-            // op-0x45 params - the same builder the field follow
-            // camera uses, so elevation and framing render
-            // retail-correct. The field world frame runs on raw
-            // retail Y-down coordinates: `psx_camera_mvp`'s internal
-            // `F` (Y-flip) and this `FIELD_WORLD_FLIP` post-multiply
-            // cancel (`F*F = I`), and the field draws use UN-flipped
-            // model matrices - so `focus` is passed as the raw retail
-            // world point, exactly like `field_follow_camera_mvp`'s
-            // target. Eye distance is no longer a heuristic: `tr_eye.z`
-            // is the pinned eye-back depth (op-0x45 offset slot 5).
-            Self::psx_camera_mvp(
+        let world = &self.session.host.world;
+        if cutscene_cam.is_none() && world.mode == SceneMode::Battle {
+            // Stage-dome battle: the retail phase-scripted camera; with no
+            // stage, the animated enemies. One selector, shared with the FX
+            // passes.
+            return self.battle_scene_mvp(aspect);
+        }
+        if cutscene_cam.is_none() && !in_world_map && self.field_debug_camera {
+            // Wide debug orbit vantage (`F3` toggles), in the same
+            // one-world-negation field frame as the follow camera.
+            return self.camera_mvp(aspect) * FIELD_WORLD_FLIP;
+        }
+        let cutscene = cutscene_cam.map(|(focus, pitch, yaw, roll, h, tr_eye)| {
+            legaia_engine_vm::psx_camera::FieldCameraView {
+                focus,
                 pitch,
                 yaw,
                 roll,
                 h,
-                Vec3::from(tr_eye),
-                Vec3::from(focus),
-                aspect,
-            ) * FIELD_WORLD_FLIP
-        } else if in_world_map {
-            // The overworld's two cameras are the shared resolver's two
-            // world-map arms, so the browser play page frames the same
-            // vantage from the same controller values:
-            //
-            // - **walk mode**: the RETAIL player-follow camera, pinned from
-            //   the two overworld resident savestates (sebucus / karisto) -
-            //   `screen = H * (R*(6*(v - player)) + TR) / Ez` with `H = 368`,
-            //   a 6x uniform world scale (base matrix `0x8007BF10` =
-            //   `24576 * I`), `R` from the `0x8007B790` trio and the
-            //   controller azimuth, focus = the player's world X/Z
-            //   (`0x80089118/20` hold its negation), `TR` from `0x800840B8`.
-            //   The controller zoom slides along the axis between the two
-            //   pinned states.
-            // - **top-view debug**: the synthetic survey vantage the retail
-            //   R1+R2+Cross chord toggles, framed on the loaded pack.
-            //
-            // `FIELD_WORLD_FLIP` cancels the resolver's Y-up frame, so the
-            // whole composition runs on raw retail Y-down world coordinates
-            // and the overworld elevation renders retail-correct.
-            let frame = legaia_engine_core::camera_view::resolve_field_camera(
-                &self.session.host.world,
-                &self.session.camera,
-                None,
-                [
-                    (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-                    (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-                ],
-            );
-            let vp = legaia_engine_core::camera_view::frame_vp(
-                &frame,
-                (self.scene_aabb.0, self.scene_aabb.1),
-                aspect,
-            )
-            .unwrap_or_else(|| self.camera_mvp(aspect).to_cols_array());
-            Mat4::from_cols_array(&vp) * FIELD_WORLD_FLIP
-        } else if self.session.host.world.mode == SceneMode::Battle {
-            // Stage-dome battle: low front-facing shot into the dome (grass
-            // foreground, mountains on the horizon); with no stage, frame the
-            // animated enemies instead (the battle actors live at the world
-            // origin). One selector, shared with the FX passes below.
-            self.battle_scene_mvp(aspect)
-        } else if self.field_debug_camera {
-            // Wide debug orbit vantage (`C` toggles), in the same
-            // one-world-negation field frame as the follow camera.
-            self.camera_mvp(aspect) * FIELD_WORLD_FLIP
-        } else {
-            // Field: the retail follow camera (savestate-pinned
-            // pitch/yaw/H, player-anchored) when a player actor
-            // exists; the fixed debug orbit vantage otherwise.
-            // `FIELD_WORLD_FLIP` cancels `psx_camera_mvp`'s
-            // internal pre-flip, making the follow composition
-            // exactly the retail GTE model on raw Y-down world
-            // coordinates (elevation renders retail-correct).
-            self.field_follow_camera_mvp(aspect)
-                .unwrap_or_else(|| self.camera_mvp(aspect))
-                * FIELD_WORLD_FLIP
-        }
+                tr_eye,
+            }
+        });
+        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+            world,
+            &self.session.camera,
+            cutscene,
+            [
+                (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+                (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+            ],
+        );
+        let vp = legaia_engine_core::camera_view::frame_vp(
+            &frame,
+            (self.scene_aabb.0, self.scene_aabb.1),
+            aspect,
+        )
+        .map(|m| Mat4::from_cols_array(&m))
+        .unwrap_or_else(|| self.camera_mvp(aspect));
+        vp * FIELD_WORLD_FLIP
     }
 
     pub(super) fn build_posed_actor_overrides(
@@ -173,6 +148,14 @@ impl PlayWindowApp {
             }
             if vmesh.indices.is_empty() {
                 continue;
+            }
+            // Rot limb dimming (`FUN_80048A08`), the browser page's twin in
+            // `web-viewer::play_battle_limb_dim`.
+            if actor.battle_animation.is_some() {
+                self.session
+                    .host
+                    .world
+                    .dim_posed_battle_mesh(ai, tmd, raw, &mut vmesh.colors);
             }
             if std::env::var_os("LEGAIA_DIAG_POSE").is_some() {
                 let (lo, hi) = vmesh.aabb();
@@ -255,72 +238,65 @@ impl PlayWindowApp {
         }
     }
 
+    /// The env-gated slot-4 inspection wireframe (`LEGAIA_WORLDMAP_SLOT4`),
+    /// built once at scene load, as this frame's overlay lines. A diagnostic,
+    /// not a render path: the entity and player markers left this line pass
+    /// for the shared screen-prim kernel ([`Self::world_map_marker_prims`]).
     pub(super) fn build_world_map_overlay_lines(
         &self,
         r: &legaia_engine_render::Renderer,
         in_world_map: bool,
     ) -> Option<legaia_engine_render::UploadedLines> {
-        // The marker overlay is hidden while a cutscene timeline owns the
-        // world map (the opening chain's map01 fly-in): retail's aerial
-        // descent shows the bare continent - no player or entity markers.
-        if in_world_map
-            && !self.boot_ui.is_active()
-            && !self.session.host.world.cutscene_timeline_active()
-        {
-            let markers = self.session.host.world.world_map_entity_markers();
-            let mut pos: Vec<[f32; 3]> = Vec::new();
-            let mut col: Vec<[u8; 4]> = Vec::new();
-            let mut idx: Vec<u32> = Vec::new();
-            if !markers.is_empty() {
-                let (p, c, i) =
-                    world_map_entity_line_geometry(&markers, self.scene_aabb.0, self.scene_aabb.1);
-                pos = p;
-                col = c;
-                idx = i;
-            }
-            // The wireframe player marker is a diagnostic stand-in: it only
-            // draws while the player's real mesh could NOT be uploaded (the
-            // world-map draw branch renders the party leader's field figure
-            // whenever the upload succeeded - drawing both would stamp a
-            // yellow post through the character).
-            let player_mesh_drawn = self
-                .session
-                .host
-                .world
-                .player_actor_slot
-                .is_some_and(|pslot| self.drained_spawn_slots.contains(&pslot));
-            if !player_mesh_drawn
-                && let Some(player) = self.session.host.world.world_map_player_marker()
-            {
-                let (p, c, i) =
-                    world_map_player_line_geometry(&player, self.scene_aabb.0, self.scene_aabb.1);
-                let base = pos.len() as u32;
-                pos.extend(p);
-                col.extend(c);
-                idx.extend(i.into_iter().map(|v| v + base));
-            }
-            // Merge the env-gated slot-4 inspection wireframe (built
-            // once at scene load) into the same overlay-lines buffer.
-            if let Some((p, c, i)) = self.world_map_slot4_lines.as_ref() {
-                let base = pos.len() as u32;
-                pos.extend_from_slice(p);
-                col.extend_from_slice(c);
-                idx.extend(i.iter().map(|v| v + base));
-            }
-            if idx.is_empty() {
-                None
-            } else {
-                match r.upload_lines(&pos, &col, &idx) {
-                    Ok(m) => Some(m),
-                    Err(e) => {
-                        log::warn!("world-map overlay marker lines upload: {e:#}");
-                        None
-                    }
-                }
-            }
-        } else {
-            None
+        if !in_world_map || self.boot_ui.is_active() {
+            return None;
         }
+        let (p, c, i) = self.world_map_slot4_lines.as_ref()?;
+        if i.is_empty() {
+            return None;
+        }
+        match r.upload_lines(p, c, i) {
+            Ok(m) => Some(m),
+            Err(e) => {
+                log::warn!("world-map slot-4 inspection lines upload: {e:#}");
+                None
+            }
+        }
+    }
+
+    /// The overworld's entity and player markers as screen primitives,
+    /// through the kernel the browser play page calls
+    /// (`legaia_engine_core::world_map_markers`) and the shared
+    /// `world_map_marker_prim` wrapper. The camera is the resolver's
+    /// non-scripted frame; the kernel itself draws nothing under a scripted
+    /// shot (the map01 fly-in shows the bare continent).
+    ///
+    /// The player's marker is a stand-in: it only draws while the party
+    /// leader's real mesh could NOT be uploaded (the world-map draw branch
+    /// renders that mesh whenever the upload succeeded, and drawing both
+    /// would stamp a post through the character).
+    pub(super) fn world_map_marker_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        let world = &self.session.host.world;
+        if world.mode != SceneMode::WorldMap || self.boot_ui.is_active() {
+            return Vec::new();
+        }
+        let aabb = (self.scene_aabb.0, self.scene_aabb.1);
+        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+            world,
+            &self.session.camera,
+            None,
+            [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5],
+        );
+        let player_mesh_drawn = world
+            .player_actor_slot
+            .is_some_and(|pslot| self.drained_spawn_slots.contains(&pslot));
+        legaia_engine_core::world_map_markers::marker_quads(world, &frame, aabb, !player_mesh_drawn)
+            .iter()
+            .map(|q| {
+                legaia_engine_render::screen_overlay::world_map_marker_prim(q.xy, q.rgba, q.depth)
+            })
+            .collect()
     }
 
     pub(super) fn build_effect_model_draws(
@@ -484,18 +460,31 @@ impl PlayWindowApp {
         &self,
         r: &legaia_engine_render::Renderer,
     ) -> Vec<legaia_engine_render::afterimage::AfterimageQuad> {
-        use legaia_engine_render::streak_pass::{StreakSource, streak_quads_scheduled};
+        use legaia_engine_render::streak_pass::{
+            StreakSource, clip_ribbon_quads, streak_quads_scheduled,
+        };
         let world = &self.session.host.world;
+        let (w, h) = r.surface_size();
+        let mvp = self.battle_scene_mvp(w as f32 / h.max(1) as f32);
+        // The clip-tag ribbon (`FUN_8004CE2C` tag `0x67` ->
+        // `FUN_801E1D98(&target[+0x3C], 0xC)`) is independent of the move-FX
+        // scene: it rides a physical art's clip, not a staged effect.
+        let mut clip = world
+            .battle
+            .clip_ribbon
+            .map(|c| {
+                let seat = c.seat.map(f32::from);
+                clip_ribbon_quads(seat, c.trail_id, &mvp, world.clock.display_frames as u32)
+            })
+            .unwrap_or_default();
         let trail = world.active_move_fx_trail_texpage();
         if trail.is_none() {
-            return Vec::new();
+            return clip;
         }
         let block = world.move_fx_streak();
         let Some(src) = StreakSource::from_block(block.launch, block.half_width(), trail) else {
-            return Vec::new();
+            return clip;
         };
-        let (w, h) = r.surface_size();
-        let mvp = self.battle_scene_mvp(w as f32 / h.max(1) as f32);
         // The retail emitter schedule keys on the counter word and on the
         // acting side: party = afterimage shrinking toward the ribbon,
         // monster = ribbon throughout (`FUN_801E09F8`).
@@ -506,7 +495,8 @@ impl PlayWindowApp {
         // did not take - so the emitter phase was a property of how fast the
         // host happened to be drawing.
         let frame = world.clock.display_frames as u32;
-        let quads = streak_quads_scheduled(&src, &mvp, frame, block.counter_word, party);
+        let mut quads = streak_quads_scheduled(&src, &mvp, frame, block.counter_word, party);
+        quads.append(&mut clip);
         log::debug!(
             "move-FX streak: launch {:?} counter {:#x} half-width {} -> {} quad(s)",
             block.launch,
@@ -546,8 +536,9 @@ impl PlayWindowApp {
     /// retail's field render pass) through the follow camera this frame
     /// draws the field with, wrapped by the shared `fog_puff_prim` so the
     /// blend class and vertex order are the browser play page's too. Empty
-    /// outside a field scene or while the script gate (`_DAT_8007B854`) is
-    /// clear - the same two tests the pass makes at `0x80026EA4..0x80026EC4`.
+    /// outside game mode 3 (a field scene or the kingdom overworld) or while
+    /// the script gate (`_DAT_8007B854`) is clear - the same two tests the
+    /// pass makes at `0x80026EA4..0x80026EC4`.
     ///
     /// The camera resolves with no cutscene view, on both hosts alike, so a
     /// scripted camera beat projects the fog through the follow pose: a
@@ -555,10 +546,45 @@ impl PlayWindowApp {
     pub(super) fn take_field_fog_prims(
         &mut self,
     ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
-        use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
+        use legaia_engine_core::camera_view::resolve_field_camera;
         use legaia_engine_render::screen_overlay::fog_puff_prim;
         let world = &self.session.host.world;
-        if world.mode != SceneMode::Field || !world.fog.gate {
+        if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
+            return Vec::new();
+        }
+        let center = [
+            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+        ];
+        let frame = resolve_field_camera(world, &self.session.camera, None, center);
+        // The field follow pose, or the overworld walk pose in the field
+        // frame - retail's overworld is a game-mode-3 scene and draws the
+        // same pool through the same pass.
+        let Some(view) = frame.field_view() else {
+            return Vec::new();
+        };
+        self.session
+            .host
+            .world
+            .fog_render_step(&view)
+            .iter()
+            .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
+            .collect()
+    }
+
+    /// This frame's move-VM strip spans: every extension sub-op `0x2C`
+    /// execution the world captured since the last draw (the scanline strip
+    /// emitter `FUN_801D31B0`), projected through the same follow camera as
+    /// the fog sheets by the shared `move_strip_prims` kernel the browser
+    /// play page draws them with. Drained every frame, drawn only in a field
+    /// scene - the extension dispatcher exists only in the field overlay.
+    pub(super) fn take_move_strip_prims(
+        &mut self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
+        let requests = self.session.host.world.move_vm.take_strip_requests();
+        let world = &self.session.host.world;
+        if requests.is_empty() || world.mode != SceneMode::Field {
             return Vec::new();
         }
         let center = [
@@ -569,12 +595,34 @@ impl PlayWindowApp {
         let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
             return Vec::new();
         };
-        self.session
-            .host
-            .world
-            .fog_render_step(&view)
+        legaia_engine_render::move_strip::move_strip_prims(&requests, &view)
+    }
+
+    /// This frame's attached lights - the field VM's op `0x34` sub-1 light
+    /// pools (`World::field_light_draws`, the `FUN_801E4470` draw feeding
+    /// `FUN_801E3984`) - through the same follow camera as the fog sheets and
+    /// the shared `light_pool_prims` wrapper the browser play page uses.
+    /// Empty outside a field scene or with no light live.
+    pub(super) fn field_light_screen_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
+        let world = &self.session.host.world;
+        if world.mode != SceneMode::Field || world.script_actors.lights.is_empty() {
+            return Vec::new();
+        }
+        let center = [
+            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+        ];
+        let frame = resolve_field_camera(world, &self.session.camera, None, center);
+        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
+            return Vec::new();
+        };
+        world
+            .field_light_draws(&view)
             .iter()
-            .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index))
+            .flat_map(|d| legaia_engine_render::screen_overlay::light_pool_prims(d.abr, &d.polys))
             .collect()
     }
 

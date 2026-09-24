@@ -286,7 +286,8 @@ impl World {
             // MANs carry four story-state variants of the overworld region
             // set, and only one is live.
             tracker.select_group(|flag| self.system_flag_test(flag));
-            let roll = tracker.on_step(wx, wz, || self.next_rng());
+            let roll = tracker.on_step(wx, wz, || self.next_rand());
+            self.encounters.step_counter = tracker.counter();
             self.world_map.region_tracker = Some(tracker);
             if let Some(roll) = roll {
                 self.world_map.pending_encounter = Some(roll.formation_id as u16);
@@ -294,12 +295,34 @@ impl World {
         }
     }
 
+    /// Seat the player on raw world `(x, z)` with the floor height sampled
+    /// under it, and refresh the per-tile region tables - a debug seat for
+    /// frame-pairing a host against a retail save state at the state's own
+    /// player position (`play-window`'s `LEGAIA_SEAT`, the play page's
+    /// `play_debug_seat`). The caller re-arms its camera's arrival snap
+    /// (`Camera::zone.arm_arrival()`), which the world does not own.
+    pub fn debug_seat_player(&mut self, x: i16, z: i16) -> bool {
+        let Some(slot) = self.player_actor_slot else {
+            return false;
+        };
+        let y = self.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
+        let Some(a) = self.actors.get_mut(slot as usize) else {
+            return false;
+        };
+        a.move_state.world_x = x;
+        a.move_state.world_y = y;
+        a.move_state.world_z = z;
+        self.refresh_field_regions();
+        true
+    }
+
     /// Route the scene's region-keyed encounter table onto the overworld so
     /// `Self::tick_world_map` rolls random encounters per region. Resets the
     /// step-tile latch. Pair with [`Self::enter_world_map`] (or call after it).
     pub fn set_world_map_regions(&mut self, table: crate::region_encounter::RegionEncounterTable) {
-        self.world_map.region_tracker =
-            Some(crate::region_encounter::RegionEncounterTracker::new(table));
+        let mut tracker = crate::region_encounter::RegionEncounterTracker::new(table);
+        tracker.set_counter(self.encounters.step_counter);
+        self.world_map.region_tracker = Some(tracker);
         self.world_map.last_tile = None;
         self.refresh_encounter_rollable();
     }
@@ -321,9 +344,57 @@ impl World {
         &mut self,
         table: Option<crate::region_encounter::RegionEncounterTable>,
     ) {
-        self.terrain.region_tracker =
-            table.map(crate::region_encounter::RegionEncounterTracker::new);
+        // Every field scene entry (the world map enters through the same
+        // path) runs retail's scene-entry top-up of the shared step counter
+        // before any tracker is seeded from it.
+        self.top_up_encounter_step_counter();
+        self.terrain.region_tracker = table.map(|t| {
+            let mut tracker = crate::region_encounter::RegionEncounterTracker::new(t);
+            tracker.set_counter(self.encounters.step_counter);
+            tracker
+        });
         self.refresh_encounter_rollable();
+    }
+
+    /// The encounter step counter `_DAT_8007B5FC`.
+    pub fn encounter_step_counter(&self) -> i32 {
+        self.encounters.step_counter
+    }
+
+    /// Write the encounter step counter `_DAT_8007B5FC` - the shared global
+    /// and every installed region tracker, which each carry a working copy.
+    pub fn set_encounter_step_counter(&mut self, counter: i32) {
+        self.encounters.step_counter = counter;
+        if let Some(t) = self.terrain.region_tracker.as_mut() {
+            t.set_counter(counter);
+        }
+        if let Some(t) = self.world_map.region_tracker.as_mut() {
+            t.set_counter(counter);
+        }
+    }
+
+    /// Reroll the step counter to a fresh `488..=1460` triangular draw - the
+    /// store field-VM op `4C EC` and the op-`0x3E` scripted-formation arm make
+    /// (`sw v0, _DAT_8007B5FC` after `jal 0x801DDF48` at `0x801E3500` /
+    /// `0x801E077C`).
+    ///
+    /// REF: FUN_801DDF48 (ported as
+    /// [`crate::region_encounter::encounter_counter_reroll`])
+    pub fn reroll_encounter_step_counter(&mut self) {
+        let v = crate::region_encounter::encounter_counter_reroll(|| self.next_rand());
+        self.set_encounter_step_counter(v);
+    }
+
+    /// The scene-entry top-up: below 487 the counter gains half a reroll,
+    /// otherwise it carries across the door untouched.
+    ///
+    /// REF: FUN_8003AB2C (ported as
+    /// [`crate::region_encounter::encounter_counter_scene_entry_top_up`])
+    pub fn top_up_encounter_step_counter(&mut self) {
+        let c = self.encounters.step_counter;
+        let v =
+            crate::region_encounter::encounter_counter_scene_entry_top_up(c, || self.next_rand());
+        self.set_encounter_step_counter(v);
     }
 
     /// Seed `count` overworld entity state machines (all Idle) so
@@ -458,19 +529,20 @@ impl World {
     /// Consume the world-map emitter gate and, when armed, build this
     /// frame's horizon bands.
     ///
-    /// The trig samples come from [`Self::cos_lut`] - the engine's copy of
-    /// the `0x1000`-entry table retail reaches through `_DAT_8007B81C`. An
-    /// empty LUT (no disc loaded) samples as zero, which degrades the bands
-    /// to their scale-only extents rather than panicking.
+    /// The trig samples come from [`Self::sin_lut`] - the engine's copy of
+    /// the `0x1000`-entry table retail reaches through `_DAT_8007B81C`
+    /// (`lw v0,-0x47e4(v0)` at `0x801D7F9C`), which is the **sine** view.
+    /// This read the cosine view while both LUTs were left empty, which hid
+    /// the quarter-revolution phase error; an empty LUT samples as zero.
     ///
     /// REF: FUN_801d7ea0
     fn tick_world_map_horizon(&mut self) {
-        // Take the controller out so the emitter can borrow `self.cos_lut`.
+        // Take the controller out so the emitter can borrow `self.sin_lut`.
         let Some(mut ctrl) = self.world_map.ctrl.take() else {
             return;
         };
         let frame_step = self.clock.frame_step;
-        let lut = &self.cos_lut;
+        let lut = &self.sin_lut;
         ctrl.run_horizon_emitter(frame_step, &|i| lut.get(i as usize).copied().unwrap_or(0));
         self.world_map.ctrl = Some(ctrl);
     }
@@ -600,8 +672,15 @@ impl World {
         let frame = ctrl.panels.tick(edge, held, frame_step, &mut store);
         self.world_map.ctrl = Some(ctrl);
 
-        for cue in &frame.sfx {
-            log::debug!("world-map panel: sfx cue {cue:#04x}");
+        // The panel's ring calls cross to the host ring like the field VM's
+        // op-`0x36` ones (`World::take_sfx_ring_ops`); a replace keeps the
+        // engine-core mirror's parked-slot delay in step as retail's does.
+        for &op in &frame.sfx {
+            match op {
+                SfxRingOp::ReplaceLast(id) => self.replace_last_sfx_cue(id),
+                SfxRingOp::Push(id) => self.push_sfx_cue(id),
+                op => self.audio.sfx_ring_ops.push(op),
+            }
         }
         for id in &frame.flags_set {
             log::info!("world-map panel: flag window set story flag {id}");

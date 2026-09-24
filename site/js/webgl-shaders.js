@@ -292,8 +292,8 @@ uniform vec3 u_cue_far;   /* DPCS far colour, linear 0..1 */
  * palette_collapse_prim) - the gold grade's true altitude: retail rewrites
  * the scene's uploaded CLUT entries and TMD packet words at load, so the law
  * applies per decoded texel and per packet colour rather than as a pixel
- * multiply. While it is on, u_grade.rgb carries the gold coefficients for
- * the packet collapse (not a multiply), the screen tint is the whole-pixel
+ * multiply. While it is on, the packet words take the 4C E6 sepia rewrite
+ * (prologue_sepia_word; u_grade plays no part), the screen tint is the whole-pixel
  * term, and the view-depth cue ramp is inert - every render node holds
  * IR0 = 0 across the retail prologue. */
 uniform vec4 u_palette;
@@ -388,12 +388,21 @@ uint palette_law_word(uint w) {
   return (w & 0x8000u) | ((l >> 1u) << 10u) | (g2 << 5u) | l;
 }
 
-/* The packet-colour half: retail's prologue draw list carries an amber family
- * of modulation words, each the collapse of an authored full-colour TMD word
- * to max(rgb) scaled by the gold ratio (u_grade.rgb), while the ground
- * kernel's runtime-emitted neutral 0x80,0x80,0x80 words stay neutral.
- * prim is normalised 0..1 here (the native twin works in 0..255 colour-byte
- * units), so neutral is 128/255. */
+/* The packet-colour half: the prologue scripts' two 4C E6 ops
+ * (FUN_801D8280 -> FUN_801D5E20) rewrite every baked colour word of every
+ * resident TMD through the SCUS HSV pair, and composed the result depends on
+ * the word's max alone: V = max(min(max, 0xF8) - 30, 0) ->
+ * (V, V*246 >> 8, V*112 >> 8). Twin of the native prologue_sepia_word /
+ * palette_collapse_prim. The ground kernel's runtime-emitted neutral
+ * 0x80,0x80,0x80 words are not TMD words and stay neutral. prim is
+ * normalised 0..1 here (the native twin works in 0..255 colour-byte units),
+ * so neutral is 128/255. */
+vec3 prologue_sepia_word(float m01) {
+  float w = min(floor(m01 * 255.0 + 0.5), 248.0);
+  float v = max(w - 30.0, 0.0);
+  return vec3(v, floor(v * 246.0 / 256.0), floor(v * 112.0 / 256.0)) / 255.0;
+}
+
 vec3 palette_collapse_prim(vec3 prim) {
   const float NEUTRAL = 128.0 / 255.0;
   if (abs(prim.r - NEUTRAL) < (0.5 / 255.0)
@@ -401,7 +410,7 @@ vec3 palette_collapse_prim(vec3 prim) {
       && abs(prim.b - NEUTRAL) < (0.5 / 255.0)) {
     return prim;
   }
-  return u_grade.rgb * max(prim.r, max(prim.g, prim.b));
+  return prologue_sepia_word(max(prim.r, max(prim.g, prim.b)));
 }
 
 /* 4x4 Bayer threshold in [0, 1) for the occlusion fade's screen-door
@@ -524,14 +533,14 @@ void main() {
     /* Untextured prims pull to the DPCS far colour directly (retail: the
      * cue runs on the packet colour and there is no texel multiply).
      *
-     * In prologue palette mode the authored colour word collapses to the
-     * gold family first (no neutral exemption here - an untextured prim IS
+     * In prologue palette mode the authored colour word takes the 4C E6
+     * sepia rewrite first (no neutral exemption here - an untextured prim IS
      * its colour word), the screen tint is the whole-pixel term and the cue
      * ramp is inert. Byte-for-byte the native COLOR_MESH shader's arm. */
     bool flat_palette = u_palette.w > 0.5;
     vec3 flat_base = v_flat_rgba.rgb;
     if (flat_palette) {
-      flat_base = u_grade.rgb * max(flat_base.r, max(flat_base.g, flat_base.b));
+      flat_base = prologue_sepia_word(max(flat_base.r, max(flat_base.g, flat_base.b)));
     }
     vec3 flat_lit = apply_distance_fog(flat_base);
     if (flat_palette) {

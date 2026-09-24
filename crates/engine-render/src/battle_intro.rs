@@ -32,7 +32,7 @@ pub fn update_field_capture<'a>(
     base: &legaia_tim::Vram,
 ) -> anyhow::Result<Option<&'a legaia_tim::Vram>> {
     if intro.needs_capture() {
-        let img = renderer.capture_rgba(target)?;
+        let img = renderer.capture_scene_rgba(target)?;
         intro.land_capture_rgba(&img.rgba, img.width, img.height, base);
     }
     Ok(intro.refresh_captured_page())

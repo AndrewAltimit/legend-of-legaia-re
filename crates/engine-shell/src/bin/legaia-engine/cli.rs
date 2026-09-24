@@ -856,9 +856,12 @@ pub(crate) enum Cmd {
         /// Disable audio output.
         #[arg(long, default_value_t = false)]
         no_audio: bool,
-        /// Enable world-map mode: installs a WorldMapController and shows
-        /// the top-view camera globals in the HUD. Arrow keys scroll the
-        /// top-view camera; Q/W adjust azimuth; A/S adjust zoom.
+        /// Force world-map mode: installs a WorldMapController and shows
+        /// the top-view camera globals in the HUD. An overworld `--scene`
+        /// (`map01`..`map03`) enters world-map mode without it, as the
+        /// browser play page does; the flag forces it for any other label.
+        /// Arrow keys scroll the top-view camera; Q/W adjust azimuth; A/S
+        /// adjust zoom.
         #[arg(long, default_value_t = false)]
         world_map: bool,
         /// Optional path to a raw PSX STR file. When provided, the STR video

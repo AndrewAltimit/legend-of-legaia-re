@@ -234,7 +234,7 @@ fn feature_denominators(net_take: i32) -> Option<(u32, u32)> {
 
 /// Run the per-spin feature roll (`FUN_801d258c`): seed the landing jitter
 /// (`rand%5`) and normal-mode target (`rand%6 + 2`), roll the widen amount
-/// once (`rand%100 + 200`) when `richer_odds` (`DAT_801d3790`) is set, then -
+/// once (`rand%100 + 200`) when `spin_up_pressed` (`DAT_801d3790`) is set, then -
 /// only when no feature is active (`feature_mode == 0`) - roll the net-take
 /// bracket's two `rand % (widen + N) == 0` probabilities (mode 1 then mode
 /// 2) and finally the flat `rand % (widen + 600) == 0` mode-3 roll. Draw
@@ -244,11 +244,11 @@ pub fn feature_roll(
     rand: &mut BiosRand,
     net_take: i32,
     feature_mode: u8,
-    richer_odds: bool,
+    spin_up_pressed: bool,
 ) -> SpinRoll {
     let jitter = (rand.next_u15() % 5) as i32;
     let normal_target = (rand.next_u15() % 6 + 2) as u8;
-    let widen: u32 = if richer_odds {
+    let widen: u32 = if spin_up_pressed {
         (rand.next_u15() % 100 + 200) as u32
     } else {
         0
@@ -427,8 +427,13 @@ pub struct SlotMachine {
     jitter: i32,
     /// Overlay-local playing balance (`DAT_801d4114`).
     balance: i32,
-    /// Richer-odds flag (`DAT_801d3790`).
-    richer_odds: bool,
+    /// The spin-up press latch (`DAT_801d3790`): raised by any face-button
+    /// edge during the spin-up ([`Self::latch_spin_up`]), read by the next
+    /// spin's feature roll and cleared straight after it. It **widens** every
+    /// feature-entry denominator, so a press makes the next spin's features
+    /// *rarer* - the word was once read as a "richer odds" flag, which has
+    /// the effect backwards.
+    spin_up_pressed: bool,
     /// "The bonus round just ended" latch (`DAT_801d3798`): the next spin runs
     /// the long spin-up, so the display strip has time to rotate back to the
     /// symbols before it reaches the payline.
@@ -496,7 +501,7 @@ impl SlotMachine {
             normal_target: 2,
             jitter: 0,
             balance: balance.clamp(0, BALANCE_CAP),
-            richer_odds: false,
+            spin_up_pressed: false,
             bonus_just_ended: false,
             last_result: None,
             caption_payout: 0,
@@ -691,8 +696,12 @@ impl SlotMachine {
             &mut self.rand,
             self.net_take,
             self.feature_mode,
-            self.richer_odds,
+            self.spin_up_pressed,
         );
+        // State 1 clears the latch the moment the roll has read it
+        // (`sw zero,0x3790(v0)` at `0x801CF56C`, right after
+        // `jal 0x801D258C`): one spin-up press widens exactly one roll.
+        self.spin_up_pressed = false;
         self.jitter = roll.jitter;
         self.normal_target = roll.normal_target;
         if let Some(mode) = roll.entered_mode {
@@ -711,6 +720,32 @@ impl SlotMachine {
         self.last_result = None;
         self.phase = SlotPhase::Spinning;
         true
+    }
+
+    /// The spin-up's input latch: a face-button edge (`_DAT_8007B874 & 0xF0`)
+    /// on a spin-up frame whose timer has not run out raises the latch
+    /// `DAT_801D3790`, which widens every feature-entry denominator of the
+    /// **next** spin's roll (`FUN_801D258C`) by `rand % 100 + 200` - so a
+    /// player who mashes buttons while the reels spin up makes the next
+    /// spin's reach / hot modes rarer (`1/700` becomes `1/900..=1/999`).
+    ///
+    /// Call once per frame after [`Self::tick`] with this frame's edge; a no-op
+    /// outside [`SlotPhase::Spinning`] - retail's test lives in state `2`
+    /// alone. One frame differs: retail tests after the decrement that ends
+    /// the spin-up, so an edge on that last frame still latches; the port's
+    /// tick has already left `Spinning` by then.
+    ///
+    /// PORT: FUN_801cf0d8 (`0x801CF6D4`..`0x801CF704`, state 2's latch)
+    pub fn latch_spin_up(&mut self, face_edge: bool) {
+        if face_edge && self.phase == SlotPhase::Spinning && self.spin_timer != 0 {
+            self.spin_up_pressed = true;
+        }
+    }
+
+    /// Whether the spin-up press latch (`DAT_801D3790`) is up for the next
+    /// spin.
+    pub fn spin_up_pressed(&self) -> bool {
+        self.spin_up_pressed
     }
 
     /// The source strip the display strip is currently being refilled from: the
@@ -1400,6 +1435,38 @@ mod tests {
         assert_eq!(credited, result.payout);
         assert_eq!(m.balance(), before + credited);
         assert_eq!(m.phase(), SlotPhase::Idle);
+    }
+
+    #[test]
+    fn a_spin_up_press_latches_for_exactly_one_roll() {
+        let mut m = SlotMachine::new(payouts(), 42, 200);
+        // Idle: the latch is state 2's alone.
+        m.latch_spin_up(true);
+        assert!(!m.spin_up_pressed());
+        assert!(m.spin());
+        m.tick();
+        assert_eq!(m.phase(), SlotPhase::Spinning);
+        m.latch_spin_up(false);
+        assert!(!m.spin_up_pressed(), "no edge, no latch");
+        m.latch_spin_up(true);
+        assert!(m.spin_up_pressed(), "a face edge mid spin-up latches");
+        // Run the spin out and start the next: its roll reads the latch, and
+        // state 1 clears it straight after.
+        while m.phase() == SlotPhase::Spinning {
+            m.tick();
+        }
+        for r in 0..REEL_COUNT {
+            m.stop_reel(r);
+            for _ in 0..0x40 {
+                m.tick();
+            }
+        }
+        if m.phase() == SlotPhase::Payout {
+            m.collect();
+        }
+        assert!(m.spin_up_pressed(), "survives until the next roll");
+        assert!(m.spin());
+        assert!(!m.spin_up_pressed(), "the next spin's roll consumed it");
     }
 
     #[test]

@@ -48,7 +48,10 @@ pub enum FieldEvent {
     PartyAdd { char_id: u8, accepted: bool },
     /// Field-VM op 0x3D (party_remove).
     PartyRemove { char_id: u8 },
-    /// Field-VM op 0x3E `op0 < 100` arm (field interaction trigger).
+    /// A talk-path interaction on placement `slot`
+    /// (`World::trigger_field_interact`: the interaction probe / walk-touch).
+    /// Not a field-VM op - op `0x3E` with `op0 < 100` is the scripted-battle
+    /// install.
     FieldInteract { interact_id: u8, slot: u8 },
     /// Field-VM op 0x4F (scene register write).
     SceneRegisterWrite {

@@ -230,6 +230,18 @@ pub struct PlayMenu {
     /// are *not* in the table yet, and an unbound key has no bit. The native
     /// window latches the same thing in its `pending_key_name`.
     pending_key: Option<String>,
+    /// Opened by the boot title's Continue or Options row, not by Start: the
+    /// sub-screen's exit closes the whole menu, so the title comes back
+    /// instead of a root picker the title never showed. The native window
+    /// keeps the same flag (`menu_from_title`) for Options and runs Continue
+    /// as a standalone save-select, which backs out to the title too.
+    ///
+    /// A card Load that succeeded parks its scene label on this struct for
+    /// the page to collect; the exit then leaves the menu open so the label
+    /// survives until `play_menu_take_load_scene`, and the page closes the
+    /// menu itself once it has it. Continue used to skip the flag for that
+    /// reason alone, which put a backed-out Continue on the pause root.
+    from_title: bool,
 }
 
 /// The open sub-screen. Every row runs the real [`FieldMenuSubsession`] the
@@ -249,6 +261,7 @@ impl PlayMenu {
             sub: None,
             save_flow: SaveScreenFlow::new(),
             pending_load_scene: None,
+            from_title: false,
         }
     }
 }
@@ -570,6 +583,13 @@ impl LegaiaRuntime {
         self.play_menu
             .as_ref()
             .is_some_and(|m| matches!(m.sub, Some(PlaySub::Session(_))))
+    }
+
+    /// Mark the open menu as a boot-title row's (see `PlayMenu::from_title`).
+    pub(crate) fn play_menu_mark_from_title(&mut self) {
+        if let Some(m) = self.play_menu.as_mut() {
+            m.from_title = true;
+        }
     }
 
     /// Whether the open sub-screen is the save-select **and** it is in a
@@ -934,8 +954,19 @@ impl LegaiaRuntime {
                     // Hand control back to the shared picker, which parks the
                     // cursor on the row that opened the sub-screen - the same
                     // `menu.resume(false)` the native shell calls.
-                    if let Some(m) = self.play_menu.as_mut() {
-                        let _ = m.session.resume(false);
+                    // A title-opened menu has no root screen to return to:
+                    // `resume(true)` finishes the session and the menu
+                    // closes on this same tick.
+                    let close = if let Some(m) = self.play_menu.as_mut() {
+                        let _ = m.session.resume(m.from_title);
+                        // A parked Load label must outlive this tick: the
+                        // page collects it and closes the menu itself.
+                        m.from_title && m.pending_load_scene.is_none()
+                    } else {
+                        false
+                    };
+                    if close {
+                        self.play_menu_close();
                     }
                 }
             }

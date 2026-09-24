@@ -704,9 +704,9 @@ fn op_34_sub_0_negative_intensity_sign_extends() {
 }
 
 #[test]
-fn op_34_sub_1_default_advance_is_13() {
-    // No host overrides → default impl returns delta = 13. Capture flag
-    // is 0 so the captured-PC path doesn't fire.
+fn op_34_sub_1_skip_path_is_header_plus_twelve() {
+    // A host that spawns nothing (the test host's default) takes the skip
+    // path: `s8 += 0xD` over the opcode byte, twelve operand bytes.
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(
@@ -720,87 +720,89 @@ fn op_34_sub_1_default_advance_is_13() {
     let call = &host.op34_sub1_calls[0];
     assert_eq!(call.op0, 0x10);
     assert_eq!(call.packed24, 0);
-    assert_eq!(call.pos, [0, 0, 0]);
-    assert_eq!(call.capture_flag, 0);
-    assert!(call.captured_payload.is_empty());
+    assert_eq!(call.extent_and_height, [0, 0, 0]);
+    assert!(call.script.is_none());
 }
 
 #[test]
-fn op_34_sub_1_packed24_and_position_decode() {
-    // packed24 = 0x123456 (b1=0x12, b2=0x34, b3=0x56), world_x = 100,
-    // world_z = -50, world_y = -(-200) = 200 (the original NEGATES the
-    // raw bytes). reserved bytes are 0; capture_flag = 0.
+fn op_34_sub_1_extended_form_counts_the_channel_byte() {
+    // `B4 <id> 1x ...`: the prologue moved `s8` past the channel byte before
+    // the `+0xD`, so the extended form is fourteen bytes.
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let raw = [
-        0x34, 0x10, 0x12, 0x34, 0x56, // op0 + packed24
-        100, 0, // world_x = 100
-        0xCE, 0xFF, // world_z = -50
-        0x38, 0xFF, // raw -y = -200, → world_y = 200
-        0, 0, // reserved
-        0, // capture_flag
+        0xB4, 0x38, 0x10, 0x20, 0x20, 0, 0x6A, 0x03, 0x88, 0x01, 0x80, 0, 0, 0, 0x21,
+    ];
+    let r = step_with_caller(
+        &mut host,
+        &mut ctx,
+        &mut FieldCtx::default(),
+        false,
+        &raw,
+        0,
+    );
+    assert_eq!(r, StepResult::Advance { next_pc: 14 });
+    assert_eq!(host.op34_sub1_calls[0].ext, Some(0x38));
+}
+
+#[test]
+fn op_34_sub_1_decodes_colour_extents_and_height() {
+    // Packed colour R=0x12 G=0x34 B=0x56; `+4` / `+6` are the light's half
+    // extents (100, -50), `+8` its height (-200) - not a world position.
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx::default();
+    let raw = [
+        0x34, 0x10, 0x12, 0x34, 0x56, // op0 + packed colour
+        100, 0, // half extent w = 100
+        0xCE, 0xFF, // half extent h = -50
+        0x38, 0xFF, // height = -200
+        0, 0, // not read
+        0, // next op
     ];
     let r = step(&mut host, &mut ctx, &raw, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 13 });
     let call = &host.op34_sub1_calls[0];
     assert_eq!(call.packed24, 0x123456);
-    assert_eq!(call.pos, [100, 200, -50]);
+    assert_eq!(call.extent_and_height, [100, -50, -200]);
 }
 
 #[test]
-fn op_34_sub_1_capture_path_uses_host_returned_delta() {
-    // capture_flag = 0x40, payload_len = 3. The instruction is 13 base
-    // bytes + 2 (header bytes 0x40, len) + 3 (payload) = 18. This TestHost
-    // injects the delta explicitly; the default impl computes the same 18 (see
-    // `op_34_sub_1_default_host_consumes_the_capture_extension`).
+fn op_34_sub_1_spawned_light_consumes_its_script_block() {
+    // A spawn followed by `40 03 ...`: the block is the light's keyframe
+    // script and the instruction grows by `2 + len`.
     let mut host = TestHost {
-        op34_sub1_capture_delta: Some(18),
+        op34_sub1_spawns: true,
         ..Default::default()
     };
     let mut ctx = FieldCtx::default();
     let raw = [
-        0x34, 0x10, 0x00, 0x00, 0x00, // op0 + packed24
-        0, 0, 0, 0, 0, 0, 0, 0, // pos + reserved
-        0x40, 3, // capture_flag, payload_len
-        0xAA, 0xBB, 0xCC, // captured payload
+        0x34, 0x10, 0x00, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 3, 0xAA, 0xBB, 0xCC,
     ];
     let r = step(&mut host, &mut ctx, &raw, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 18 });
-    let call = &host.op34_sub1_calls[0];
-    assert_eq!(call.capture_flag, 0x40);
-    assert_eq!(call.captured_payload, vec![0xAA, 0xBB, 0xCC]);
+    assert_eq!(
+        host.op34_sub1_calls[0].script.as_deref(),
+        Some(&[0xAAu8, 0xBB, 0xCC][..])
+    );
 }
 
 #[test]
-fn op_34_sub_1_default_host_consumes_the_capture_extension() {
-    // Drive the same 0x40 capture script through a host that uses the trait
-    // DEFAULT `op34_sub1_spawn_or_skip` (no injected delta). The default must
-    // consume the whole instruction (13 base + 2 + payload_len = 18); the old
-    // constant 13 landed the PC mid-payload and desynced the rest of the script.
-    struct DefaultHost;
-    impl FieldHost for DefaultHost {
-        fn global_flags(&self) -> u32 {
-            0
-        }
-        fn set_global_flags(&mut self, _value: u32) {}
-        fn frame_delta(&self) -> u16 {
-            1
-        }
-    }
-    let mut host = DefaultHost;
+fn op_34_sub_1_skip_leaves_the_block_to_run_as_op_40() {
+    // Retail only captures the block on the spawn path; on the skip path
+    // the `0x40` stays in the stream and skips itself - the same end PC one
+    // step later, never a PC landing mid-payload.
+    let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let raw = [
         0x34, 0x10, 0x00, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 3, 0xAA, 0xBB, 0xCC,
     ];
     assert_eq!(
         step(&mut host, &mut ctx, &raw, 0),
-        StepResult::Advance { next_pc: 18 }
-    );
-    // Without the 0x40 marker it is the bare 13-byte instruction.
-    let raw_no_cap = [0x34, 0x10, 0x00, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0x00];
-    assert_eq!(
-        step(&mut host, &mut ctx, &raw_no_cap, 0),
         StepResult::Advance { next_pc: 13 }
+    );
+    assert_eq!(
+        step(&mut host, &mut ctx, &raw, 13),
+        StepResult::Advance { next_pc: 18 }
     );
 }
 
