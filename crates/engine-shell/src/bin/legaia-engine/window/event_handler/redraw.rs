@@ -2195,18 +2195,22 @@ impl PlayWindowApp {
             // (`cutscene_caption_alpha`) over the gap between the two narration
             // crawls. One textured quad sampling the caption atlas - the
             // background palette entry is transparent, so only the white text
-            // draws over the scene; alpha 0 emits nothing. Scaled by `h/240` to
-            // preserve the PSX 320x240 framing (retail centers it horizontally,
-            // mid-screen ~y110 over the villager tableau).
+            // draws over the scene; alpha 0 emits nothing. Placed through the
+            // stage transform the rest of the stage-space overlay uses (retail
+            // centers it horizontally, mid-screen ~y110 over the villager
+            // tableau): scaling by `h / 240` in window pixels drew it larger
+            // than the stage and off its centre whenever the window is not a
+            // stage multiple, where the page's overlay canvas is the stage.
             let caption_draw_vec: Vec<legaia_engine_render::SpriteDraw> = {
                 let alpha = self.session.host.world.cutscene.caption_alpha;
                 match self.caption_atlas.as_ref() {
                     Some((_, cw, ch)) if alpha > 0.001 => {
-                        let scale = h as f32 / 240.0;
-                        let dw = (*cw as f32 * scale).round().max(0.0) as u32;
-                        let dh = (*ch as f32 * scale).round().max(0.0) as u32;
-                        let dx = (w as i32 - dw as i32) / 2;
-                        let dy = ((110.0 / 240.0) * h as f32).round() as i32 - dh as i32 / 2;
+                        let (origin, s) = self.save_select_stage(w, h);
+                        let s = s.max(1);
+                        let dw = *cw * s;
+                        let dh = *ch * s;
+                        let dx = origin.0 + (320 * s as i32 - dw as i32) / 2;
+                        let dy = origin.1 + 110 * s as i32 - dh as i32 / 2;
                         vec![legaia_engine_render::SpriteDraw {
                             dst: (dx, dy, dw, dh),
                             src: (0, 0, *cw, *ch),

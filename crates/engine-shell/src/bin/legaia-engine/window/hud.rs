@@ -1420,38 +1420,40 @@ impl PlayWindowApp {
             }
         }
         // Opening-cutscene narration: the retail bottom-up subtitle CRAWL
-        // (`FUN_80037174`) - every visible line drawn centered at its
-        // current window Y, scrolling upward. Line Ys are PSX-framebuffer
-        // space (240 lines); scale into the surface. Pixel-pinned from the
-        // cold-boot retail capture (multi-line, 0.5 px/frame; the earlier
-        // one-caption-at-a-time reading measured the separate `4C E1`
-        // balloon, not this crawl).
-        if let Some(narration) = &self.session.host.world.cutscene.narration {
-            let white = [1.0f32, 1.0, 1.0, 1.0];
-            let center_x = (w / 2) as i32;
-            let scale = h as f32 / 240.0;
-            for line in narration.visible_lines() {
-                let y = (line.y as f32 * scale) as i32;
-                if y < 0 || y > h as i32 - 8 {
-                    continue;
-                }
-                out.extend(legaia_engine_render::cutscene_narration_draws_for(
-                    &self.font, line.text, center_x, y, white,
-                ));
-            }
-        }
-        // Opening-cutscene static title card (`map01`'s "twilight of
-        // humanity" beat): the pages shown together, centered, at the
-        // capture-pinned band y=92..130.
-        if let Some(card) = &self.session.host.world.cutscene.card {
-            let white = [1.0f32, 1.0, 1.0, 1.0];
-            let center_x = (w / 2) as i32;
-            let scale = h as f32 / 240.0;
-            for (i, text) in card.iter().enumerate() {
-                let y = ((92 + 16 * i as i32) as f32 * scale) as i32;
-                out.extend(legaia_engine_render::cutscene_narration_draws_for(
-                    &self.font, text, center_x, y, white,
-                ));
+        // (`FUN_80037174`) - every visible line centred at its current window
+        // Y, scrolling upward - and the static title card (`map01`'s
+        // "twilight of humanity" beat). Both are laid out in retail's 320x240
+        // stage by the shared `cutscene_text_stage_draws` and upscaled with
+        // the stage transform the rest of the stage-space text uses, so the
+        // glyphs are stage-sized and the rows sit 16 stage lines apart on
+        // every window size (scaling only the row Y drew 1x glyphs at ~3x the
+        // pitch).
+        {
+            let world = &self.session.host.world;
+            let lines = world
+                .cutscene
+                .narration
+                .as_ref()
+                .map(|n| n.visible_lines())
+                .unwrap_or_default();
+            let crawl: Vec<(&str, i32)> = lines.iter().map(|l| (l.text, l.y)).collect();
+            let card: Vec<&str> = world
+                .cutscene
+                .card
+                .iter()
+                .flatten()
+                .map(String::as_str)
+                .collect();
+            if !crawl.is_empty() || !card.is_empty() {
+                let mut draws = legaia_engine_render::cutscene_text_stage_draws(
+                    &self.font,
+                    &crawl,
+                    &card,
+                    [1.0, 1.0, 1.0, 1.0],
+                );
+                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+                legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+                out.extend(draws);
             }
         }
         // Name-entry overlay: the opening `town01` lead-character naming

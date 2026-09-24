@@ -268,3 +268,100 @@ pub fn cutscene_narration_draws_for(
     let left_x = center_x - (layout.advance_x as i32 / 2);
     text_draws_for(&layout, (left_x, top_y), color)
 }
+
+/// Stage-space centre column of the narration crawl and the title card.
+pub const CUTSCENE_TEXT_CENTER_X: i32 = 160;
+/// Stage-space top row of the title card's first page (the capture-pinned
+/// band `y = 92..130`).
+pub const CUTSCENE_CARD_TOP_Y: i32 = 92;
+/// Row pitch between title-card pages, in stage pixels.
+pub const CUTSCENE_CARD_PITCH: i32 = 16;
+
+/// The narration crawl and the title card in retail's **320x240 stage**
+/// pixels, for both play hosts to scale through their stage transform
+/// ([`crate::scale_stage_text_draws`]).
+///
+/// `crawl` is each visible roller line as `(text, top_y)` with `top_y` in the
+/// PSX framebuffer's 240 lines (`NarrationLine::y`); `card` is the title
+/// card's pages in order. Every line is centred on
+/// [`CUTSCENE_TEXT_CENTER_X`] at the font's own 1x glyph size - the retail
+/// crawl (`FUN_80037174`) prints one 16-line-pitch row of stage-sized glyphs,
+/// so a host that scales only the row's Y into its surface draws the glyphs a
+/// fraction of retail's size and the rows further apart than 16 stage lines.
+pub fn cutscene_text_stage_draws(
+    font: &legaia_font::Font,
+    crawl: &[(&str, i32)],
+    card: &[&str],
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    for &(text, y) in crawl {
+        if !(0..=240 - 8).contains(&y) {
+            continue;
+        }
+        out.extend(cutscene_narration_draws_for(
+            font,
+            text,
+            CUTSCENE_TEXT_CENTER_X,
+            y,
+            color,
+        ));
+    }
+    for (i, text) in card.iter().enumerate() {
+        let y = CUTSCENE_CARD_TOP_Y + CUTSCENE_CARD_PITCH * i as i32;
+        out.extend(cutscene_narration_draws_for(
+            font,
+            text,
+            CUTSCENE_TEXT_CENTER_X,
+            y,
+            color,
+        ));
+    }
+    out
+}
+
+#[cfg(test)]
+mod cutscene_text_tests {
+    use super::*;
+
+    #[test]
+    fn crawl_rows_are_stage_space_and_centred_on_the_stage_column() {
+        let font = legaia_font::Font::placeholder();
+        let text = "abc";
+        let width = font.layout_ascii(text).advance_x as i32;
+        let draws = cutscene_text_stage_draws(&font, &[(text, 100), (text, 116)], &[], [1.0; 4]);
+        assert!(!draws.is_empty());
+        let lefts: Vec<i32> = draws.iter().map(|d| d.dst.0).collect();
+        assert_eq!(
+            *lefts.iter().min().unwrap(),
+            CUTSCENE_TEXT_CENTER_X - width / 2
+        );
+        // Two rows, one retail line pitch apart, at their own stage Ys - no
+        // surface scale applied here; the host's stage transform does it.
+        let mut tops: Vec<i32> = draws.iter().map(|d| d.dst.1).collect();
+        tops.sort_unstable();
+        tops.dedup();
+        assert_eq!(tops.first().copied(), Some(100));
+        assert_eq!(tops.last().copied(), Some(116));
+    }
+
+    #[test]
+    fn rows_outside_the_stage_are_dropped_and_card_rows_follow_the_band() {
+        let font = legaia_font::Font::placeholder();
+        assert!(
+            cutscene_text_stage_draws(&font, &[("abc", -1), ("abc", 233)], &[], [1.0; 4])
+                .is_empty()
+        );
+        let card = cutscene_text_stage_draws(&font, &[], &["abc", "abc"], [1.0; 4]);
+        let mut tops: Vec<i32> = card.iter().map(|d| d.dst.1).collect();
+        tops.sort_unstable();
+        tops.dedup();
+        assert_eq!(
+            tops,
+            vec![
+                CUTSCENE_CARD_TOP_Y,
+                CUTSCENE_CARD_TOP_Y + CUTSCENE_CARD_PITCH
+            ]
+        );
+    }
+}
