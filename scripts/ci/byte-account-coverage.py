@@ -57,6 +57,7 @@ import argparse
 import csv
 import json
 import os
+import subprocess
 import sys
 import time
 
@@ -87,6 +88,24 @@ def read_sweep(path):
     with open(path, newline="") as fh:
         rows = list(csv.DictReader(fh))
     return rows, os.path.getmtime(path)
+
+
+def baseline_time():
+    """When the baseline was taken: its last commit time, or the file's
+    mtime when it has uncommitted edits (or git is unavailable)."""
+    try:
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain", "--", BASELINE],
+            cwd=REPO, capture_output=True, text=True, check=True).stdout.strip()
+        if not dirty:
+            out = subprocess.run(
+                ["git", "log", "-1", "--format=%ct", "--", BASELINE],
+                cwd=REPO, capture_output=True, text=True, check=True).stdout.strip()
+            if out:
+                return float(out)
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    return os.path.getmtime(BASELINE)
 
 
 def figures(rows):
@@ -215,6 +234,23 @@ def main() -> int:
               "compared. Run --update-baseline once."
               % os.path.relpath(BASELINE, REPO))
         return 0
+
+    # A sweep older than the baseline measured an older tree than the one the
+    # baseline was taken from, so every difference is between two trees, not
+    # a parser change here - it read as "a parser stopped consuming bytes"
+    # after a merge moved the baseline past a local sweep. Name it.
+    base_t = baseline_time()
+    if mtime < base_t:
+        print("[byte-account] STALE - %s (swept %s) predates the baseline "
+              "(taken %s), so it measures an older tree than the baseline "
+              "did and nothing can be compared. Re-run "
+              "scripts/asset-investigation/byte-account-sweep.py after "
+              "rebuilding `asset` from this tree (cargo build --release -p "
+              "legaia-asset --bin asset)."
+              % (os.path.relpath(args.csv, REPO),
+                 time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime)),
+                 time.strftime("%Y-%m-%d %H:%M", time.localtime(base_t))))
+        return 1
 
     base = json.load(open(BASELINE))
     bad, absent = [], []

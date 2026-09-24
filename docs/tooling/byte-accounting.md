@@ -1409,6 +1409,12 @@ data. The failure mode that leaves is the one the categorize cache has: a CSV sw
 tree reports *that* tree's parsers through a passing gate. Re-run the sweep after a parser change
 and before taking a baseline; `--max-age-days` is the guard for any automated use.
 
+The same cache fails the other way once the baseline moves past it. A merge that lands a new
+baseline leaves every local sweep taken before it measuring an older tree than the baseline did, and
+the comparison then reads the difference between two trees as parsers that stopped consuming bytes.
+`--check` refuses that comparison: a sweep older than the baseline (its last commit, or its mtime
+while edited) reports `STALE` and names the re-sweep, instead of a `REGRESSION` no parser caused.
+
 ## Tests
 
 `crates/asset/tests/byte_account_entries.rs` accounts a fixed set of entries off `extracted/PROT`
