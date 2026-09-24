@@ -510,7 +510,7 @@ pub fn export_pack(patcher: &DiscPatcher) -> Result<LanguagePack> {
         // Scene-bundle MAN (LZS domain).
         let man = SceneManText::locate(&entry);
         if let Some(man) = &man {
-            for seg in segments::scan(&man.decoded) {
+            for seg in segments::scan_man(&man.decoded, false) {
                 let text = &man.decoded[seg.text_off..seg.text_off + seg.len];
                 pack.sections.scene_dialog.push(Entry {
                     key: format!("man:{idx}:0x{off:x}", off = seg.text_off),
@@ -522,26 +522,14 @@ pub fn export_pack(patcher: &DiscPatcher) -> Result<LanguagePack> {
             }
         }
 
-        // Raw carriers (v12 prescripts, streaming MANs, ...), skipping anything
-        // the scanner found inside this entry's compressed MAN stream - those
-        // "strings" are LZS bytes, not text. The `0x1F <text> 0x00` framing
-        // also occurs by coincidence throughout binary asset banks (sequenced
-        // music, VAB, the battle-character packs, monster archives), so an
-        // entry is only treated as a raw text carrier when it carries enough
-        // real prose to be a genuine event-script / dungeon-MAN scene (see
-        // [`segments::is_dialog_carrier`]); writing over a coincidental hit in
+        // Raw carriers (v12 prescripts, streaming MANs, ...). The `0x1F <text>
+        // 0x00` framing also occurs by coincidence throughout binary asset
+        // banks (sequenced music, VAB, the battle-character packs, monster
+        // archives), and inside this entry's own compressed MAN stream; the
+        // scanner gates on a genuine dialog carrier and drops those hits (see
+        // [`segments::scan_raw_carrier`]) - writing over a coincidental hit in
         // a binary bank corrupts the asset and freezes the game.
-        if !segments::is_dialog_carrier(&entry) {
-            continue;
-        }
-        let compressed = man.as_ref().map(|m| m.compressed_span());
-        for seg in segments::scan(&entry) {
-            if compressed
-                .as_ref()
-                .is_some_and(|c| c.contains(&seg.text_off))
-            {
-                continue;
-            }
+        for seg in segments::scan_raw_carrier(&entry, false) {
             let text = &entry[seg.text_off..seg.text_off + seg.len];
             pack.sections.inline_text.push(Entry {
                 key: format!("raw:{idx}:0x{off:x}", off = seg.text_off),

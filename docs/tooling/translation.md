@@ -229,6 +229,20 @@ consecutive segments into one box (`docs/formats/mes.md`), so consecutive
 entries in the pack are consecutive rows on screen. Translate them as a
 group and keep each row inside its own budget.
 
+Which segments count as dialog depends on whether a script says so. Inside a
+MAN - a scene bundle's, or the uncompressed one leading a streaming dungeon
+scene - export keeps every `0x1F` lead that an instruction on its record's
+clean script walk carries as text (`man_edit::text_site` = `Segment`, the same
+structural gate import applies), whatever the text reads like: `Anyway...`,
+`Oh!`, `(Silence)`, a growl, a speaker line built only from name
+substitutions. A lead the walk spans as operand bytes is never exported, even
+when it reads as a word. Only a lead the walk does not reach, and the rest of
+a raw carrier, fall back to the prose-quality gate (`segments::qualifies`),
+which rejects space-less runs that are not a clean word because that is the
+shape of binary noise. Blank spacer lines (spaces only) are skipped. One
+scanner per domain (`segments::scan_man`, `segments::scan_raw_carrier`) feeds
+export, `lift-official` and `diff-disc`, so their keys agree.
+
 ## Text markup + encoding
 
 The glyph atlas is indexed by byte with `0x20..=0x7E` as plain ASCII
@@ -415,10 +429,10 @@ Not covered (out of scope for this pipeline):
 - the world-map label table trailing each kingdom MAN and each scene MAN's
   section-2 banner name (`docs/formats/place-names.md`) - two of the three
   carriers a place name has; only the SCUS quick-travel cells are in the pack;
-- the segment scanner is conservative by design - a dialog line that fails
-  its quality gate is simply not exported and stays English. Junk entries the
-  scanner does export (dev-debug strings, the odd data run that reads as
-  text) are harmless: leave them untranslated.
+- outside a walked MAN the segment scanner is conservative by design - a raw
+  line that fails its quality gate is simply not exported and stays English.
+  Junk entries the scanner does export (dev-debug strings, menu-chrome labels
+  such as `=Next=`) are harmless: leave them untranslated.
 
 The dialog exports the raw source lines including substitution escapes;
 translations must keep grammatical agreement working around them (the

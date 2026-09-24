@@ -182,7 +182,7 @@ fn pct(n: usize, d: usize) -> f64 {
 /// the entry is not a scene bundle / has no MAN.
 fn man_seg_lens(entry: &[u8]) -> Vec<usize> {
     match SceneManText::locate(entry) {
-        Some(man) => segments::scan_ext(&man.decoded, true)
+        Some(man) => segments::scan_man(&man.decoded, true)
             .iter()
             .map(|s| s.len)
             .collect(),
@@ -195,13 +195,8 @@ fn man_seg_lens(entry: &[u8]) -> Vec<usize> {
 /// gating the whole entry on the dialog-carrier check so binary asset banks are
 /// never mistaken for text. Mirrors the export path.
 fn raw_seg_lens(entry: &[u8]) -> Vec<usize> {
-    if !segments::is_dialog_carrier(entry) {
-        return Vec::new();
-    }
-    let compressed = SceneManText::locate(entry).map(|m| m.compressed_span());
-    segments::scan_ext(entry, true)
+    segments::scan_raw_carrier(entry, true)
         .iter()
-        .filter(|s| !compressed.as_ref().is_some_and(|c| c.contains(&s.text_off)))
         .map(|s| s.len)
         .collect()
 }

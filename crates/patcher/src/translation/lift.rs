@@ -587,7 +587,7 @@ pub fn boot_exe_name(patcher: &DiscPatcher) -> Result<String> {
 /// keys follow. `allow_high` widens the gate for a PAL build's accented lines.
 fn man_seg_texts(entry: &[u8], allow_high: bool) -> Vec<(usize, Vec<u8>)> {
     match SceneManText::locate(entry) {
-        Some(man) => segments::scan_ext(&man.decoded, allow_high)
+        Some(man) => segments::scan_man(&man.decoded, allow_high)
             .iter()
             .map(|s| {
                 (
@@ -603,13 +603,8 @@ fn man_seg_texts(entry: &[u8], allow_high: bool) -> Vec<(usize, Vec<u8>)> {
 /// Raw-carrier segment texts of a PROT entry (mirrors [`super::export`]): gated
 /// on the dialog-carrier check, skipping anything inside the compressed MAN.
 fn raw_seg_texts(entry: &[u8], allow_high: bool) -> Vec<(usize, Vec<u8>)> {
-    if !segments::is_dialog_carrier(entry) {
-        return Vec::new();
-    }
-    let compressed = SceneManText::locate(entry).map(|m| m.compressed_span());
-    segments::scan_ext(entry, allow_high)
+    segments::scan_raw_carrier(entry, allow_high)
         .iter()
-        .filter(|s| !compressed.as_ref().is_some_and(|c| c.contains(&s.text_off)))
         .map(|s| (s.text_off, entry[s.text_off..s.text_off + s.len].to_vec()))
         .collect()
 }
