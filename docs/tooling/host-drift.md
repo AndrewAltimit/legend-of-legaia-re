@@ -1901,17 +1901,26 @@ The one input each host answers locally is whether the party leader's mesh
 drew: the native window from its upload set, the page from whether its player
 rig resolved.
 
-The move cost the markers their occlusion, on both hosts at once. The line
-pipeline they left was depth-tested; the screen-primitive pass has no depth
-channel (`ScreenVertex` carries a 2D position), so a marker behind a mountain
-now draws over it. Retail has no marker to compare against, but what the
-marker stands in for - the placement's own actor model - goes through the
-ordering table with the terrain, so a nearer mountain hides it. Blocking
-capability: a depth-tested marker draw on both hosts - a per-corner depth on
-the kernel's quads plus a depth-compared run in each host's screen-primitive
-pass (the native pass already draws inside the scene render pass with the
-depth attachment bound; the page's WebGL pass would need the scene's depth
-buffer kept for it).
+The move cost the markers their occlusion, on both hosts at once: the line
+pipeline they left was depth-tested, and the screen-primitive pass had no
+depth channel. What the marker stands in for - the placement's own actor
+model - goes through the ordering table with the terrain, so a nearer
+mountain hides it. The channel is back on both hosts: the kernel's quads carry
+their corners' scene depth through the frame matrix (`MarkerQuad::depth`),
+`ScreenVertex` carries it with `screen_prim::FLAG_DEPTH_TESTED`, and both
+passes run the depth test armed for the whole list with no depth write. The
+native overlay already drew inside the scene render pass with the depth
+attachment bound, and maps the depth through the scene's reversed-Z remap
+(`1 - z`); the page's pass draws into the default framebuffer the 3D pass
+just filled and puts the depth straight into `gl_Position.z`, the value its
+3D shader produces from the same matrix. The overworld fog sheets take the
+same channel (`fog_puff_prim`'s depth, flat at the bottom-right point retail
+sorts the sheet by), since retail links them into the ordering table with the
+continent. Every other primitive keeps the flag clear and sits on the near
+plane, so it passes against any scene depth as before. Pinned by
+`screen_prim`'s `only_a_depth_carrying_quad_is_depth_tested`,
+`world_map_markers`' `walk_camera_quads_carry_scene_depth` and
+`fog_particles`' `only_overworld_sheets_carry_a_scene_depth`.
 
 ### An overworld label enters the world map on both hosts
 
