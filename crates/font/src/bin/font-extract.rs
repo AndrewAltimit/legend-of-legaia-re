@@ -732,7 +732,7 @@ fn write_metadata_json(
         },
         "rendering_pipeline": {
             "dialog_renderer": "FUN_80036888",
-            "wrapper_with_word_wrap": "FUN_8003CC98",
+            "draw_and_glyph_count": "FUN_8003CC98",
             "preprocessor": "FUN_80036514",
             "gpu_primitive": "GP0 0x64 (variable-size textured rectangle)",
             "newline_byte": "0x7C",

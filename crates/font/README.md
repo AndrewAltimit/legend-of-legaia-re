@@ -26,6 +26,14 @@ for g in &layout.glyphs {
 let total_width = layout.advance_x;
 ```
 
+### Measuring translated text
+
+`Font::measure(bytes, &MeasureOptions)` returns the pen advance of an encoded string the way retail draws it: substitution tokens (`0xC1..=0xC5`, `0xC7`) are expanded through a caller-supplied resolver first, `0xCE` escapes take the escape table's advance (numeric ones `8` px per digit), `0xCF` is free, and each glyph advances `width + glyph_pad + 1`. `glyph_pad` is `1` for the field dialog box (`MeasureOptions::dialog()`) and `0` everywhere else. Tokens the resolver cannot answer are listed in `TextMeasure::unresolved`, so a width is never silently a lower bound.
+
+`limits::TEXT_LIMITS` holds the pinned per-context budgets (`TextLimit { context, max_px, max_lines, wraps, glyph_pad, provenance }`; `limit_for`, `TextLimit::fits`). No retail surface wraps. Derivations: [`docs/formats/dialog-font.md`](../../docs/formats/dialog-font.md#line-width-and-wrapping).
+
+`Font::wrap_bytes` / `layout_wrapped` are engine conveniences with no retail counterpart.
+
 The crate does **not** depend on a renderer - it only produces glyph rectangles in atlas coordinates and screen-relative offsets. Renderer integration lives in `legaia-engine-render`.
 
 ### Disc-only construction (no save state)
