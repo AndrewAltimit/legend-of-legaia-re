@@ -678,6 +678,13 @@ async function openDisc(file) {
   setStatus(`Reading ${file.name} (nothing is uploaded) ...`);
   try {
     const mod = await ensureWasm();
+    // A locally served site/wasm/ is uncommitted build output; one built
+    // before the workbench existed loads fine but has no session type.
+    if (typeof mod.Workbench !== 'function') {
+      setStatus('This copy of the site\'s WebAssembly bundle predates the workbench. '
+        + 'Rebuild it (scripts/ci/build-wasm.sh) and reload the page.', 'err');
+      return;
+    }
     const buf = new Uint8Array(await file.arrayBuffer());
     setStatus('Reading the text on your disc (a few seconds) ...');
     await tick();
