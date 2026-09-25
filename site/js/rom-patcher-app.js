@@ -2357,6 +2357,16 @@ function init() {
   // module): identifies the picked image (serial, region, build, PROT layout)
   // from a few sliced sectors, without reading the whole file.
   if (window.DiscInfo) window.DiscInfo.attachInput(fileInput);
+  // Share the picked disc with the rest of the site (js/rom-cache.js, a
+  // classic script loaded before this module), so the translation workbench
+  // and the viewers open it without a second pick. This page still reads its
+  // own input; the cache is only written, never read, here.
+  if (fileInput && window.RomCache) {
+    fileInput.addEventListener('change', () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (f) window.RomCache.put(f).catch(() => {});
+    });
+  }
   const seedInput = $('rom-seed');
   const startingItemsSel = $('rom-starting-items');
   const startingLevelSel = $('rom-starting-level');
