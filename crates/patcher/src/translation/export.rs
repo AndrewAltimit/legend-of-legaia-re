@@ -116,6 +116,21 @@ struct ScusCollector<'a> {
     scus: &'a [u8],
     /// VA -> (owning section, joined context).
     strings: BTreeMap<u32, (&'static str, String)>,
+    /// VA -> every table slot that points at it (see [`NameRefs`]).
+    refs: BTreeMap<u32, NameRefs>,
+}
+
+/// The pointer-table slots that reach one SCUS name string, as the export walk
+/// found them - what the import-side relocator ([`super::name_pool`]) repoints
+/// when a translation outgrows the string's own span.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NameRefs {
+    /// VAs of the pointer words that hold this string's VA.
+    pub slots: Vec<u32>,
+    /// `false` when any slot reaches the string by something other than its
+    /// pointer - the arts-menu description, whose trailing bytes are where the
+    /// in-battle matcher finds the combo string - so the string must stay put.
+    pub movable: bool,
 }
 
 impl<'a> ScusCollector<'a> {
@@ -123,10 +138,21 @@ impl<'a> ScusCollector<'a> {
         Self {
             scus,
             strings: BTreeMap::new(),
+            refs: BTreeMap::new(),
         }
     }
 
-    fn add(&mut self, section: &'static str, va: u32, context: String) {
+    /// Record that the pointer word at `slot` reaches the string at `va`.
+    /// `movable = false` pins the string (see [`NameRefs::movable`]).
+    fn add(&mut self, section: &'static str, slot: u32, va: u32, context: String, movable: bool) {
+        let r = self.refs.entry(va).or_insert(NameRefs {
+            slots: Vec::new(),
+            movable: true,
+        });
+        if !r.slots.contains(&slot) {
+            r.slots.push(slot);
+        }
+        r.movable &= movable;
         let (_, slot) = self.strings.entry(va).or_insert((section, String::new()));
         if slot.is_empty() {
             *slot = context;
@@ -230,18 +256,17 @@ fn ptr_at(scus: &[u8], va: u32) -> Option<u32> {
     read_u32(scus, item_names::file_offset_for_va(scus, va)?)
 }
 
-fn collect_scus_sections(scus: &[u8], pack: &mut LanguagePack) -> Result<()> {
-    let mut col = ScusCollector::new(scus);
-
+fn walk_name_tables(scus: &[u8], col: &mut ScusCollector) {
     // Item names + the shared type strings (record = [name_ptr][type_ptr][meta]).
     let items = item_names::ItemNameTable::from_scus(scus);
     for id in 0..=255u8 {
-        if let Some((_, ptr)) = item_names::name_ptr_slot(scus, id)
+        let rec = item_names::TABLE_VA + id as u32 * 12;
+        if let Some(ptr) = ptr_at(scus, rec)
             && ptr != 0
         {
-            col.add("items", ptr, format!("item 0x{id:02x}"));
+            col.add("items", rec, ptr, format!("item 0x{id:02x}"), true);
         }
-        if let Some(tp) = ptr_at(scus, item_names::TABLE_VA + id as u32 * 12 + 4)
+        if let Some(tp) = ptr_at(scus, rec + 4)
             && tp != 0
         {
             let name = items
@@ -249,7 +274,13 @@ fn collect_scus_sections(scus: &[u8], pack: &mut LanguagePack) -> Result<()> {
                 .and_then(|t| t.name(id))
                 .unwrap_or("?")
                 .to_string();
-            col.add("item_types", tp, format!("type of 0x{id:02x} {name}"));
+            col.add(
+                "item_types",
+                rec + 4,
+                tp,
+                format!("type of 0x{id:02x} {name}"),
+                true,
+            );
         }
     }
 
@@ -265,7 +296,7 @@ fn collect_scus_sections(scus: &[u8], pack: &mut LanguagePack) -> Result<()> {
                 .and_then(|t| t.name(id as u8))
                 .unwrap_or("?")
                 .to_string();
-            col.add("spells", ptr, format!("spell 0x{id:02x} {name}"));
+            col.add("spells", va, ptr, format!("spell 0x{id:02x} {name}"), true);
         }
     }
 
@@ -280,8 +311,10 @@ fn collect_scus_sections(scus: &[u8], pack: &mut LanguagePack) -> Result<()> {
         {
             col.add(
                 "spells",
+                va,
                 ptr,
                 format!("spell description {idx} ('|' = line break)"),
+                true,
             );
         }
     }
@@ -298,15 +331,17 @@ fn collect_scus_sections(scus: &[u8], pack: &mut LanguagePack) -> Result<()> {
             if let Some(ptr) = ptr_at(scus, rec + 0xC)
                 && ptr != 0
             {
-                col.add("arts", ptr, format!("art '{}'", art.name));
+                col.add("arts", rec + 0xC, ptr, format!("art '{}'", art.name), true);
             }
             if let Some(ptr) = ptr_at(scus, rec + 0x10)
                 && ptr != 0
             {
                 col.add(
                     "arts",
+                    rec + 0x10,
                     ptr,
                     format!("art '{}' description ('|' = line break)", art.name),
+                    false,
                 );
             }
         }
@@ -321,8 +356,10 @@ fn collect_scus_sections(scus: &[u8], pack: &mut LanguagePack) -> Result<()> {
         {
             col.add(
                 "accessory_passives",
+                rec + 4,
                 ptr,
                 format!("passive 0x{idx:02x} name"),
+                true,
             );
         }
         if let Some(ptr) = ptr_at(scus, rec + 8)
@@ -330,12 +367,26 @@ fn collect_scus_sections(scus: &[u8], pack: &mut LanguagePack) -> Result<()> {
         {
             col.add(
                 "accessory_passives",
+                rec + 8,
                 ptr,
                 format!("passive 0x{idx:02x} description ('|' = line break)"),
+                true,
             );
         }
     }
+}
 
+/// Every pointer-addressed SCUS name string the export walks, keyed by string
+/// VA, with the table slots that reach it. The import-side relocator's input.
+pub fn name_table_refs(scus: &[u8]) -> BTreeMap<u32, NameRefs> {
+    let mut col = ScusCollector::new(scus);
+    walk_name_tables(scus, &mut col);
+    col.refs
+}
+
+fn collect_scus_sections(scus: &[u8], pack: &mut LanguagePack) -> Result<()> {
+    let mut col = ScusCollector::new(scus);
+    walk_name_tables(scus, &mut col);
     let all = col.all_vas();
     pack.sections.items = col.entries_for("items", &all);
     pack.sections.item_types = col.entries_for("item_types", &all);

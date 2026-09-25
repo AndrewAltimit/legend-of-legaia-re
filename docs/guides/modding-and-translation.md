@@ -152,7 +152,11 @@ pack** and imports a filled pack back as a same-size in-place patch
 The constraint that shapes every entry: **same-size in place**. Each string's
 `budget:` is its maximum encoded byte length; `stats` and `import` re-measure
 every target on the disc and skip anything that does not fit, summarizing
-skips per reason (`--verbose` for the full per-key list). Partially filled
+skips per reason (`--verbose` for the full per-key list). Names are the
+exception: an item / spell / art / accessory name longer than its budget is
+moved into room other, shorter names give up, and a monster name grows its
+record up to fifteen bytes (see
+[Longer names](../tooling/translation.md#longer-names)). Partially filled
 packs are always playable - untranslated entries stay byte-identical. The
 retail font is printable-ASCII-only, so accented text must be written
 unaccented (`Epee`, not `Épée`).

@@ -203,7 +203,7 @@ Sections and their patch mechanisms:
 
 | Section | Contents | Key shape | Mechanism |
 |---|---|---|---|
-| `items` | item names (MES `{c2:xx}`/`{c4:xx}` substitutions) | `scus:str:0x<va>` | overwrite the NUL-terminated string in `SCUS_942.54` in place, re-terminate (a short write zero-fills the rest of the old span) |
+| `items` | item names (MES `{c2:xx}`/`{c4:xx}` substitutions) | `scus:str:0x<va>` | overwrite the NUL-terminated string in `SCUS_942.54` in place, re-terminate (a short write zero-fills the rest of the old span); a longer one moves - see [Longer names](#longer-names) |
 | `item_types` | shared item "type" strings (second record pointer) | `scus:str:0x<va>` | same |
 | `spells` | spell/magic names (`{c3:xx}`) and the info window's `Name\|effect` descriptions (the pointer table `0x80075DB0` the record's `+4` byte indexes) | `scus:str:0x<va>` | same |
 | `arts` | Tactical Arts names (`{c5:xx}`) and the arts-menu descriptions (record `+0x10`) | `scus:str:0x<va>` | same |
@@ -214,7 +214,7 @@ Sections and their patch mechanisms:
 | `ui_menu` | overlay-resident UI strings: pause-menu / options / shop / equip / status command labels, in-battle system messages and help lines, the Seru-magic effect lines, the field overlay's shop / inn / record-screen / name-entry prompts, the Delilas-bout preamble, the memory-card messages, the sparring-tutorial prompts, the steal and fatal-decision result lines | `ui:<prot>:0x<va>` | overwrite the NUL-terminated string in the PROT **overlay** entry in place at `file offset = va - base_va`, re-terminate (short writes zero-fill the old span) |
 | `system_text` | `SCUS_942.54` system strings outside the name tables: the pause menu's empty-list messages and equipment-slot names, the battle command chips (`Attack` / `Item` / `Run` / `Begin` / `Auto` / `Command`), the level-up lines, `All Allies` / `Reselect`, battle steal / spoils result lines, the sparring-tutorial opener, the equip-screen `Remove` / `Save` labels | `scus:str:0x<va>` | same as the name tables (span + alignment padding), from pinned VA windows (`translation::ui::SCUS_STRING_POOLS`) |
 | `place_names` | world-map quick-travel place names (`legaia_asset::worldmap_menu`) | `scus:cell:0x<va>` | fixed `0x20`-byte NUL-padded cell (31-byte budget) |
-| `monster_names` | enemy names: the battle name plaque and every battle line that names the enemy | `mon:<id>` | rewrite the name inside monster `id`'s record in the monster archive (PROT 867) and re-pack its fixed slot - see [Monster names](#monster-names) |
+| `monster_names` | enemy names: the battle name plaque and every battle line that names the enemy | `mon:<id>` | rewrite the name inside monster `id`'s record in the monster archive (PROT 867) and re-pack its fixed slot; a longer one grows the record - see [Monster names](#monster-names) |
 
 Strings pointer-shared by several table slots export once (the `context`
 lists the referencing ids); interior pointers clamp the `budget`. Duplicate
@@ -275,7 +275,11 @@ Every patch is same-size in place, so a translation's *encoded* length is
 capped by `budget`:
 
 - SCUS strings: the original string's byte span (shorter is fine - the string
-  is re-terminated; bytes past the NUL are never read).
+  is re-terminated; bytes past the NUL are never read). For the pointer-table
+  name sections this is only the *in-place* budget - a longer name moves
+  instead ([Longer names](#longer-names)).
+- Monster names: the record's name slot in place, and up to fifteen bytes by
+  growing the record ([Monster names](#monster-names)).
 - Dialog segments: same-size in place is the fast default - shorter
   translations are space-padded so the `0x1F ... 0x00` framing (and every
   script offset around it) never moves. A dialog line's `budget` is therefore
@@ -312,6 +316,41 @@ capped by `budget`:
   actually writes, never a per-line budget filter: a line over its English
   length usually fits once the scene is relocated, and a set of in-budget
   lines can still overflow the scene when padded.
+
+### Longer names
+
+The `budget` of a SCUS name is its 4-byte-aligned slot: the string plus the
+0..3 bytes of zero padding after it. So the room a name has depends on how
+long the English happens to be - `Potion` has one spare byte, `Antidote` three,
+`Medicine` none - and a translation a byte or two longer than English fits for
+some names and not for others. Import therefore does not stop there.
+
+Every item, item-type, spell (name and description), Tactical Arts name and
+accessory-passive string is reached only through a pointer word in its table
+record: across `SCUS_942.54` and every statically based overlay image, the
+only references to these strings are the table slots the export walks (swept
+with `scripts/ghidra-analysis/find-address-word-refs.py`; no literal word,
+`lui` pair or `jal` outside the tables). A name that outgrows its slot can therefore **move**
+(`translation::name_pool`): the pools are compacted - each run of adjacent
+movable strings is re-laid end to end in its original order, which always
+fits, so the bytes every shorter translation gives up collect into one free
+run per region - the longer names are placed into those runs, and every slot
+that pointed at a moved string is repointed. It is still a same-size edit of
+the executable, so a PPF carries it. A name the pools have no room for keeps
+its English text and is reported (`no free run`) - shorten it, or shorten
+other names in the same tables.
+
+Import checks each move on the disc it patches: a string moves only when its
+table slots are its only aligned-word references in the executable and no
+`lui` pair materialises its address. The arts-menu descriptions never move -
+the in-battle matcher finds each art's combo string in the bytes after the
+description's terminator - and neither does a string sharing its tail with
+another, or the `system_text` / `ui_menu` pools (those are reached from code).
+Moved strings start 4-byte aligned, as every retail name does.
+
+The budget is a byte count, not a width: a list still has the column it has.
+The pause menu's item list draws the quantity at a fixed column, so an item
+name much longer than the longest English one runs into it.
 
 `translate stats` checks all of this offline. On import each target is also
 verified against the pack's `source`; a mismatch (wrong disc revision, or a
@@ -409,15 +448,27 @@ markup - a leading element-badge escape `^X` (exported as the `{5e:xx}` token,
 drawn as badge `X - 'A'`) and a trailing ` $N` variant suffix (the plaque copy
 stops at `$`) - and a translation keeps both.
 
-The budget is the record's own room: from the name to the lowest block-relative
-offset any of the record's pointer words (`+0x04`, `+0x08`, the spell-offset
-array and the effect-offset table ahead of the name) addresses above it, less
-the terminator, and never more than the longest retail name (fifteen bytes) -
-the loader's copy is unbounded, so no name outgrows what retail already puts in
-the actor's buffer. Import decodes the slot, rewrites the name (the rest of the
-old span zeroed), and re-packs the block into its fixed `0x14000`-byte slot, so
-no other slot and no PROT offset moves; every stat reads back unchanged. A
-monster name takes printable glyphs only. Test:
+The in-place budget is the record's own room: from the name to the lowest
+block-relative offset any of the record's pointer words (`+0x04`, `+0x08`, the
+spell-offset array and the effect-offset table ahead of the name) addresses
+above it, less the terminator. The model at `+0x04` follows the name at a
+4-byte boundary, so that room is 7, 11 or 15 bytes. A longer name **grows the
+record**: whole words are inserted after the name and every block-relative
+offset at or past the insertion point is bumped - the only words the battle
+loader (`FUN_800542C8`) turns into pointers - so the model, the spell blobs and
+the texture pool move as one piece and read the same bytes (the model's own
+offsets are relative to the model, `FUN_800268DC`). No name may pass the
+longest retail name (fifteen bytes): the loader's copy into the actor's name
+buffer at `+0x1BC` is unbounded, and a duplicate enemy gets ` A` / ` B` / ...
+appended there, so fifteen bytes plus the suffix and terminator is eighteen of
+the thirty-two zero bytes that precede the actor's next live field (measured
+in a Queen Bee battle on a patched disc). A grown record also stays within the
+largest retail decoded block and loader-kept head
+(`monster_names::RETAIL_MAX_BLOCK` / `RETAIL_MAX_KEPT`), so no load buffer sees
+a size retail never produces. Import decodes the slot, rewrites the name (the
+rest of the old span zeroed), and re-packs the block into its fixed
+`0x14000`-byte slot, so no other slot and no PROT offset moves; every stat
+reads back unchanged. A monster name takes printable glyphs only. Test:
 `crates/patcher/tests/translation_monster_names_real.rs`.
 
 Not covered (out of scope for this pipeline):

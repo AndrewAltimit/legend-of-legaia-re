@@ -1881,6 +1881,10 @@ pub fn read_manual_edit_tables(image: Vec<u8>) -> Result<JsValue, JsValue> {
 fn issue_reason(msg: &str) -> &'static str {
     if msg.contains("recompresses") {
         "scene dialog does not recompress into its footprint"
+    } else if msg.contains("no free run") {
+        "name longer than the name tables have room for"
+    } else if msg.contains("a monster name holds at most") {
+        "monster name longer than 15 bytes"
     } else if msg.contains("budget") {
         "over budget"
     } else if msg.contains("not encodable") || msg.contains("doesn't encode") {
@@ -1949,6 +1953,16 @@ fn lang_report_json(
         &"relayout_sectors".into(),
         &num(report.relayout_sectors_added as usize),
     )?;
+    Reflect::set(
+        &out,
+        &"relocated_names".into(),
+        &num(report.relocated_names),
+    )?;
+    Reflect::set(
+        &out,
+        &"grown_monster_names".into(),
+        &num(report.grown_monster_names),
+    )?;
     // Every skipped line, by key, so a translator can find and shorten it in
     // their own copy of the pack (the page offers these as a CSV download).
     let iarr = js_sys::Array::new();
@@ -1963,17 +1977,25 @@ fn lang_report_json(
     Ok(out.into())
 }
 
-/// The summary line a relayout adds (empty when no scene grew).
+/// The summary lines a relayout and a name move add (empty when neither
+/// happened).
 fn relayout_line(report: &ImportReport) -> String {
-    if report.relayout_entries == 0 {
-        return String::new();
+    let mut out = String::new();
+    if report.relayout_entries > 0 {
+        out.push_str(&format!(
+            "  disc relayout: {} scene(s) grew by {} sector(s) total (image +{} bytes)\n",
+            report.relayout_entries,
+            report.relayout_sectors_added,
+            report.relayout_sectors_added as u64 * 2352
+        ));
     }
-    format!(
-        "  disc relayout: {} scene(s) grew by {} sector(s) total (image +{} bytes)\n",
-        report.relayout_entries,
-        report.relayout_sectors_added,
-        report.relayout_sectors_added as u64 * 2352
-    )
+    if report.relocated_names + report.grown_monster_names > 0 {
+        out.push_str(&format!(
+            "  longer names: {} name(s) moved to free table space, {} monster record(s) grown\n",
+            report.relocated_names, report.grown_monster_names
+        ));
+    }
+    out
 }
 
 /// Validate a `legaia-text-pack-v1` YAML document **against the user's own

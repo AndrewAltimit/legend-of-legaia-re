@@ -34,6 +34,7 @@ pub mod import;
 pub mod lift;
 pub mod markup;
 pub mod monster_names;
+pub mod name_pool;
 pub mod pack;
 pub mod refpair;
 pub mod segments;
