@@ -47,6 +47,7 @@ use crate::disc::DiscPatcher;
 use super::export::SceneManText;
 use super::markup::{self, Target};
 use super::monster_names;
+use super::name_pool::NamePool;
 use super::pack::{Entry, LanguagePack};
 use super::segments;
 use super::stream_man::StreamManText;
@@ -74,6 +75,14 @@ pub struct ImportReport {
     pub relayout_entries: usize,
     /// Total sectors added across all relayout-grown entries.
     pub relayout_sectors_added: u32,
+    /// Names whose translation outgrew their in-place span and were moved into
+    /// free bytes of the executable's name tables, their pointers repointed
+    /// (see [`super::name_pool`]). Counted in [`Self::applied`] too.
+    pub relocated_names: usize,
+    /// Monster names that outgrew their record's name slot and were given
+    /// room by growing the record (see [`super::monster_names`]). Counted in
+    /// [`Self::applied`] too.
+    pub grown_monster_names: usize,
 }
 
 /// Per-section outcome row (see [`ImportReport::section_counts`]).
@@ -109,6 +118,8 @@ impl ImportReport {
         self.already_keys.extend(other.already_keys);
         self.relayout_entries += other.relayout_entries;
         self.relayout_sectors_added += other.relayout_sectors_added;
+        self.relocated_names += other.relocated_names;
+        self.grown_monster_names += other.grown_monster_names;
     }
 
     /// Fold this report against the pack it came from into per-section
@@ -341,14 +352,25 @@ fn scus_writable_span(scus: &[u8], off: usize, cur_len: usize) -> usize {
     (u - 1) - off
 }
 
-/// Plan one SCUS-string write: `(file_offset, bytes)`, or `None` when the
-/// entry was resolved without a write (diagnostic / already applied).
+/// What [`plan_scus_str`] decided for one name.
+enum ScusStrPlan {
+    /// Same-size in place: `(file_offset, bytes)`.
+    Write(usize, Vec<u8>),
+    /// Longer than its span but movable: relocate these bytes (no terminator).
+    Grow(Vec<u8>),
+}
+
+/// Plan one SCUS-string write, or `None` when the entry was resolved without a
+/// write (diagnostic / already applied). A translation over its in-place
+/// budget comes back as [`ScusStrPlan::Grow`] when `pool` can move the string
+/// (see [`super::name_pool`]); otherwise it is diagnosed here.
 fn plan_scus_str(
     scus: &[u8],
     entry: &Entry,
     va: u32,
+    pool: &NamePool,
     report: &mut ImportReport,
-) -> Option<(usize, Vec<u8>)> {
+) -> Option<ScusStrPlan> {
     let source = encode_source(entry, Target::CString, report).ok()?;
     let translated = encode_translation(entry, Target::CString, report)?;
     let Some(off) = item_names::file_offset_for_va(scus, va) else {
@@ -391,6 +413,9 @@ fn plan_scus_str(
     if source.is_none() && !hint_agrees(entry, writable, report) {
         return None;
     }
+    if translated.len() > entry.budget.min(writable) && pool.is_movable(va) {
+        return Some(ScusStrPlan::Grow(translated));
+    }
     if !fits(entry, &translated, entry.budget.min(writable), report) {
         return None;
     }
@@ -403,7 +428,7 @@ fn plan_scus_str(
     if bytes.len() < cur_len + 1 {
         bytes.resize(cur_len + 1, 0);
     }
-    Some((off, bytes))
+    Some(ScusStrPlan::Write(off, bytes))
 }
 
 /// Plan one party-name write (fixed 10-byte NUL-padded field).
@@ -1128,9 +1153,23 @@ pub fn import_pack_phase(
         let mut scus = patcher
             .read_named_file("SCUS_942.54")
             .context("SCUS_942.54 not found in disc image")?;
+        // Measured before any write, so every span is the retail one.
+        let pool = NamePool::build(&scus);
+        let mut grow: Vec<(u32, Vec<u8>)> = Vec::new();
+        let mut grow_entries: BTreeMap<u32, &Entry> = BTreeMap::new();
         for e in &scus_work {
             let plan = match parse_key(&e.key) {
-                Some(Key::ScusStr { va }) => plan_scus_str(&scus, e, va, &mut report),
+                Some(Key::ScusStr { va }) => {
+                    match plan_scus_str(&scus, e, va, &pool, &mut report) {
+                        Some(ScusStrPlan::Grow(bytes)) => {
+                            grow.push((va, bytes));
+                            grow_entries.insert(va, e);
+                            None
+                        }
+                        Some(ScusStrPlan::Write(off, bytes)) => Some((off, bytes)),
+                        None => None,
+                    }
+                }
                 Some(Key::ScusParty { slot }) => plan_scus_party(&scus, e, slot, &mut report),
                 Some(Key::ScusCell { va }) => plan_scus_cell(&scus, e, va, &mut report),
                 _ => unreachable!(),
@@ -1140,6 +1179,36 @@ pub fn import_pack_phase(
                 scus[off..off + bytes.len()].copy_from_slice(&bytes);
                 report.applied += 1;
                 report.applied_keys.push(e.key.clone());
+            }
+        }
+        // Names that outgrew their span: move them into the pools' free bytes
+        // (the in-place writes above already freed every shortened tail).
+        if !grow.is_empty() {
+            let (written, moved, no_room) = pool.relocate(&mut scus, &grow);
+            for (off, len) in written {
+                patcher.patch_named_file("SCUS_942.54", off as u64, &scus[off..off + len])?;
+            }
+            for m in &moved {
+                let e = grow_entries[&m.from];
+                report.applied += 1;
+                report.relocated_names += 1;
+                report.applied_keys.push(e.key.clone());
+            }
+            for va in no_room {
+                let e = grow_entries[&va];
+                let need = grow
+                    .iter()
+                    .find(|(v, _)| *v == va)
+                    .map_or(0, |(_, b)| b.len());
+                report.issue(
+                    &e.key,
+                    format!(
+                        "translation needs {need} bytes but the in-place budget is {} and the \
+                         name tables have no free run that long to move it into (shorten this \
+                         name, or others in the same tables to free room)",
+                        e.budget
+                    ),
+                );
             }
         }
     }
@@ -1564,15 +1633,15 @@ fn import_monster_names(
         if source.is_none() && !hint_agrees(en, budget, report) {
             continue;
         }
-        if !fits(en, &translated, en.budget.min(budget), report) {
-            continue;
-        }
-        match monster_names::rewrite_slot(&archive, id, &translated, budget) {
-            Ok(slot) => {
+        // Past the record's own room the record grows (up to the longest
+        // retail name); `rewrite_slot` enforces both limits.
+        match monster_names::rewrite_slot(&archive, id, &translated) {
+            Ok((slot, grown)) => {
                 let at = monster_names::slot_offset(id);
                 patcher.patch_monster_slot(id, &slot)?;
                 archive[at..at + slot.len()].copy_from_slice(&slot);
                 report.applied += 1;
+                report.grown_monster_names += usize::from(grown);
                 report.applied_keys.push(en.key.clone());
             }
             Err(e) => report.issue(&en.key, format!("{e} - skipped")),

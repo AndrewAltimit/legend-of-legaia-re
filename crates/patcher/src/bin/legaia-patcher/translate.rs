@@ -193,6 +193,29 @@ pub(crate) fn cmd_merge(base: &Path, packs: &[std::path::PathBuf], output: &Path
     Ok(())
 }
 
+/// Pack sections whose names import moves when they outgrow their in-place
+/// budget (`legaia_patcher::translation::name_pool`).
+const GROWABLE_NAME_SECTIONS: [&str; 5] = [
+    "items",
+    "item_types",
+    "spells",
+    "arts",
+    "accessory_passives",
+];
+
+/// `true` when import may still land a `len`-byte translation of `e` past its
+/// in-place budget. An arts-menu description never moves (the in-battle
+/// matcher reads the combo string after it); a distributable pack carries no
+/// context to tell one apart, so only a working pack's is flagged here.
+fn name_can_grow(section: &str, e: &legaia_patcher::translation::Entry, len: usize) -> bool {
+    use legaia_patcher::translation::monster_names::RETAIL_LONGEST_NAME;
+    match section {
+        "monster_names" => len <= RETAIL_LONGEST_NAME,
+        "arts" => !e.context.contains("description"),
+        s => GROWABLE_NAME_SECTIONS.contains(&s),
+    }
+}
+
 /// Offline validation: encodability + the pack's own budget. For a
 /// distributable (source-less) pack the budget is only a hint, so this is a
 /// pre-check - `--input` runs the real thing.
@@ -216,6 +239,11 @@ fn offline_check(pack: &LanguagePack) -> Vec<(String, String)> {
                         format!("not encodable: {}", detail.join("; ")),
                     ));
                 }
+                // A name over its in-place budget can still land: the SCUS
+                // name tables move it into room other names give up, and a
+                // monster record grows up to the longest retail name. Only
+                // `--input` can tell, so offline it is not a problem.
+                Ok(bytes) if bytes.len() > e.budget && name_can_grow(section, e, bytes.len()) => {}
                 Ok(bytes) if bytes.len() > e.budget => {
                     problems.push((
                         format!("[{section}] {}", e.key),
@@ -568,6 +596,13 @@ pub(crate) fn cmd_import(
         );
     }
 
+    if report.relocated_names + report.grown_monster_names > 0 {
+        println!(
+            "longer names: {} executable name(s) moved to free table space, {} monster \
+             record(s) grown",
+            report.relocated_names, report.grown_monster_names
+        );
+    }
     println!(
         "applied {} entr{}, {} already applied, {} untranslated (left vanilla)",
         report.applied,

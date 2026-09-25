@@ -174,6 +174,10 @@ function langCoverageText(lang) {
     lines.push(`  disc relayout: ${lang.relayout_entries} scene(s) grew by ` +
       `${lang.relayout_sectors} sector(s); the patched image is larger than the original`);
   }
+  if (lang.relocated_names || lang.grown_monster_names) {
+    lines.push(`  longer names: ${lang.relocated_names || 0} moved to free table space, ` +
+      `${lang.grown_monster_names || 0} monster record(s) grown`);
+  }
   if ((lang.issues || []).length) {
     lines.push('  "Download skipped lines" lists every one by key, to find and shorten in your pack.');
   }

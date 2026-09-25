@@ -1469,7 +1469,9 @@ passives, new-game party names) and the `0x1F`-segment dialog corpus
 (scene-bundle MANs, LZS-decompressed; plus raw carriers - v12 event-script
 prescripts and the streaming-MAN dungeon scenes). Import applies filled
 `translation:` fields as same-size in-place patches (strings re-terminated -
-budget reclaims the 4-byte-alignment zero padding; dialog segments space-padded
+budget reclaims the 4-byte-alignment zero padding, and a pointer-table name
+that still overflows moves into room the other names give up,
+`translation::name_pool`; a monster name grows its record; dialog segments space-padded
 to their exact framing; a scene whose recompress overflows its LZS footprint
 rolls back its longest lines one at a time), with per-character encodability
 errors for anything outside the retail ASCII glyph set. Untranslated entries
