@@ -38,6 +38,20 @@ use super::export::{NameRefs, name_table_refs};
 /// Longest string the span measurement follows.
 const MAX_STRLEN: usize = 512;
 
+/// What [`NamePool::relocate`] did.
+#[derive(Debug, Clone, Default)]
+pub struct Relocation {
+    /// Byte ranges written (`(file offset, len)`), to mirror onto the disc.
+    pub written: Vec<(usize, usize)>,
+    /// The growing strings that moved.
+    pub moved: Vec<Moved>,
+    /// The growing VAs that found no room (they keep their current text).
+    pub no_room: Vec<u32>,
+    /// The layout applied (with nothing to move, the layout of the pools as
+    /// they read - nothing is written).
+    pub layout: Layout,
+}
+
 /// A string the relocator placed: its old VA, its new VA.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Moved {
@@ -45,6 +59,92 @@ pub struct Moved {
     pub from: u32,
     /// Where its text now lives.
     pub to: u32,
+}
+
+/// Why a name string stays where it is (see [`NamePool::pin_reason`]). The
+/// order is the order the checks run in; a string reports the first that
+/// holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PinReason {
+    /// Not a string the name-table walk reaches (a `system_text` pool
+    /// string, or a VA no table slot points at).
+    NotATableString,
+    /// An arts-menu description: the in-battle matcher reads the combo
+    /// string in the bytes after its terminator.
+    ArtsDescription,
+    /// Its text overlaps another pointed-to string (one starts inside the
+    /// other), so neither may move.
+    TailShared,
+    /// No measurable span (an unmappable VA or an empty string).
+    NoSpan,
+    /// The executable holds more aligned words equal to its address than the
+    /// table slots the walk found - an unknown table would keep pointing at
+    /// the old bytes.
+    WordCountMismatch,
+    /// A `lui` + `addiu` / `ori` / load / store pair materialises its address
+    /// in code.
+    LuiMaterialised,
+}
+
+/// One compaction region: a maximal run of adjacent movable spans, with how
+/// its bytes are used once its strings are re-laid end to end (see
+/// [`NamePool::layout`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RegionUse {
+    /// File offset of the region's first byte in `SCUS_942.54`.
+    pub start_off: usize,
+    /// One past its last byte.
+    pub end_off: usize,
+    /// VA of its first byte.
+    pub start_va: u32,
+    /// VA one past its last byte.
+    pub end_va: u32,
+    /// The string VAs whose retail spans make up the region, in file order.
+    pub vas: Vec<u32>,
+    /// Bytes the laid-out strings occupy (region size minus `free`): every
+    /// kept string, 4-aligned, plus every moved-in string placed here.
+    pub used: usize,
+    /// Bytes of the region's free run left after the layout - the room a
+    /// further longer name could still move into.
+    pub free: usize,
+}
+
+impl RegionUse {
+    /// Region size in bytes.
+    pub fn total(&self) -> usize {
+        self.end_off - self.start_off
+    }
+}
+
+/// One planned compaction of the name pools ([`NamePool::layout`]).
+#[derive(Debug, Clone, Default)]
+pub struct Layout {
+    /// Every region, in file order.
+    pub regions: Vec<RegionUse>,
+    /// Movable string VA -> the file offset its text starts at after the
+    /// layout (kept strings and moved-in ones alike).
+    pub placed: BTreeMap<u32, usize>,
+    /// Growing VAs that found no free run (they keep their current text).
+    pub no_room: Vec<u32>,
+    /// Every movable string's final text (no terminator): the placed growing
+    /// ones' translation, the rest as `scus` reads.
+    pub texts: BTreeMap<u32, Vec<u8>>,
+}
+
+impl Layout {
+    /// Index of the region whose retail spans include `va`.
+    pub fn region_of(&self, va: u32) -> Option<usize> {
+        self.regions.iter().position(|r| r.vas.contains(&va))
+    }
+
+    /// Index of the region holding file offset `off` (where a string was
+    /// placed).
+    pub fn region_at(&self, off: usize) -> Option<usize> {
+        self.regions
+            .iter()
+            .position(|r| (r.start_off..r.end_off).contains(&off))
+    }
 }
 
 /// The pointer-addressed name strings of one executable, with what it takes to
@@ -58,6 +158,10 @@ pub struct NamePool {
     materialised: HashSet<u32>,
     /// String VA -> (file offset, span length incl. terminator + padding).
     spans: BTreeMap<u32, (usize, usize)>,
+    /// VAs whose text overlaps another pointed-to string's.
+    shared: HashSet<u32>,
+    /// One `(va, file offset)` pair, to map offsets back to VAs.
+    anchor: Option<(u32, usize)>,
 }
 
 impl NamePool {
@@ -110,27 +214,59 @@ impl NamePool {
                 spans.insert(va, (off, end - off));
             }
         }
-        for va in shared {
-            spans.remove(&va);
+        for va in &shared {
+            spans.remove(va);
         }
+        let anchor = spans.iter().next().map(|(&va, &(off, _))| (va, off));
         Self {
             refs,
             word_counts,
             materialised,
             spans,
+            shared,
+            anchor,
         }
     }
 
     /// `true` when the string at `va` may move (see the module docs).
     pub fn is_movable(&self, va: u32) -> bool {
-        let Some(r) = self.refs.get(&va) else {
-            return false;
+        self.pin_reason(va).is_none()
+    }
+
+    /// Why the string at `va` may not move, or `None` when it may: the one
+    /// rule behind [`Self::is_movable`], and so behind every move the
+    /// importer makes.
+    pub fn pin_reason(&self, va: u32) -> Option<PinReason> {
+        let Some(r) = self.refs.get(&va).filter(|r| !r.slots.is_empty()) else {
+            return Some(PinReason::NotATableString);
         };
-        r.movable
-            && !r.slots.is_empty()
-            && self.spans.contains_key(&va)
-            && self.word_counts.get(&va).copied().unwrap_or(0) == r.slots.len()
-            && !self.materialised.contains(&va)
+        if !r.movable {
+            return Some(PinReason::ArtsDescription);
+        }
+        if self.shared.contains(&va) {
+            return Some(PinReason::TailShared);
+        }
+        if !self.spans.contains_key(&va) {
+            return Some(PinReason::NoSpan);
+        }
+        if self.word_counts.get(&va).copied().unwrap_or(0) != r.slots.len() {
+            return Some(PinReason::WordCountMismatch);
+        }
+        if self.materialised.contains(&va) {
+            return Some(PinReason::LuiMaterialised);
+        }
+        None
+    }
+
+    /// `(file offset, span length)` of the string at `va`: its text, its
+    /// terminator and the zero alignment padding after it.
+    pub fn span(&self, va: u32) -> Option<(usize, usize)> {
+        self.spans.get(&va).copied()
+    }
+
+    /// Every string VA the name-table walk reaches.
+    pub fn table_vas(&self) -> impl Iterator<Item = u32> + '_ {
+        self.refs.keys().copied()
     }
 
     /// `(va, file offset, span length)` of every string that may move - the
@@ -143,42 +279,22 @@ impl NamePool {
             .collect()
     }
 
-    /// Give every string in `grow` (`(va, text without terminator)`, each a
-    /// translation that overflows its span) room, and rewrite `scus`
-    /// accordingly. `scus` already holds the in-place writes, so every other
-    /// name reads as its final text.
+    /// Plan one compaction of the pools over `scus` as it now reads: each
+    /// maximal run of adjacent movable spans is one region, its strings are
+    /// re-laid end to end (4-byte aligned, original order), and the strings in
+    /// `growing` (`va -> text without terminator`) are placed into the free
+    /// runs that leaves, largest first, each into the tightest run that holds
+    /// it - a run in any region. One that finds no room is dropped and the
+    /// layout is re-planned without it.
     ///
-    /// The freed bytes a shorter translation leaves are scattered - a few
-    /// bytes after each name - so the pools are **compacted**: each maximal
-    /// run of adjacent movable spans is one region, its strings are re-laid
-    /// end to end (4-byte aligned, original order), and every slot is
-    /// repointed. In original order a string never starts later than it did,
-    /// so the rest always fits and each region's spare bytes collect into one
-    /// run at its end; the growing strings are placed into those runs, largest
-    /// first. One that still finds no room keeps its original text (it is
-    /// reported, never truncated) and the layout is re-planned.
-    ///
-    /// Returns the byte ranges written (`(file offset, len)`, to mirror onto
-    /// the disc), the growing strings that moved, and the VAs that found no
-    /// room.
-    pub fn relocate(
-        &self,
-        scus: &mut [u8],
-        grow: &[(u32, Vec<u8>)],
-    ) -> (Vec<(usize, usize)>, Vec<Moved>, Vec<u32>) {
-        let mut growing: BTreeMap<u32, &[u8]> = BTreeMap::new();
-        let mut failed = Vec::new();
-        for (va, text) in grow {
-            if self.is_movable(*va) {
-                growing.insert(*va, text);
-            } else {
-                failed.push(*va);
-            }
-        }
-        if growing.is_empty() {
-            return (Vec::new(), Vec::new(), failed);
-        }
-
+    /// With `growing` empty this is the compaction of the current text: on a
+    /// retail executable, the bytes English uses per region.
+    pub fn layout(&self, scus: &[u8], growing: &BTreeMap<u32, &[u8]>) -> Layout {
+        let mut growing: BTreeMap<u32, &[u8]> = growing
+            .iter()
+            .filter(|(va, _)| self.is_movable(**va))
+            .map(|(&va, &t)| (va, t))
+            .collect();
         // Regions: maximal runs of adjacent movable spans, in file order.
         let mut regions: Vec<(usize, usize, Vec<u32>)> = Vec::new();
         for (&va, &(off, len)) in &self.spans {
@@ -193,8 +309,8 @@ impl NamePool {
                 _ => regions.push((off, off + len, vec![va])),
             }
         }
-        // Every movable string's final text: the growing ones' translation,
-        // the rest as they now read (in-place translation or retail).
+        // Every movable string's current text (in-place translation or
+        // retail).
         let current: BTreeMap<u32, Vec<u8>> = regions
             .iter()
             .flat_map(|(_, _, vas)| vas)
@@ -207,27 +323,93 @@ impl NamePool {
                 (va, scus[off..off + n].to_vec())
             })
             .collect();
-
-        let placed = loop {
+        let mut no_room = Vec::new();
+        let (placed, free) = loop {
             match plan_compaction(&self.spans, &regions, &current, &growing) {
                 Ok(p) => break p,
-                Err(no_room) => {
-                    for va in no_room {
+                Err(failed) => {
+                    for va in failed {
                         growing.remove(&va);
-                        failed.push(va);
+                        no_room.push(va);
                     }
                 }
             }
         };
+        let mut texts = current;
+        for (va, t) in &growing {
+            texts.insert(*va, t.to_vec());
+        }
+        let regions = regions
+            .into_iter()
+            .zip(free)
+            .map(|((start, end, vas), free)| RegionUse {
+                start_off: start,
+                end_off: end,
+                start_va: self.va_of(start),
+                end_va: self.va_of(end),
+                vas,
+                used: end - start - free,
+                free,
+            })
+            .collect();
+        Layout {
+            regions,
+            placed,
+            no_room,
+            texts,
+        }
+    }
+
+    /// VA of executable file offset `off` (the name pools sit in one segment).
+    fn va_of(&self, off: usize) -> u32 {
+        self.anchor.map_or(0, |(va, va_off)| va_at(va, va_off, off))
+    }
+
+    /// Give every string in `grow` (`(va, text without terminator)`, each a
+    /// translation that overflows its span) room, and rewrite `scus`
+    /// accordingly. `scus` already holds the in-place writes, so every other
+    /// name reads as its final text.
+    ///
+    /// The freed bytes a shorter translation leaves are scattered - a few
+    /// bytes after each name - so the pools are **compacted**
+    /// ([`Self::layout`]): in original order a string never starts later than
+    /// it did, so the rest always fits and each region's spare bytes collect
+    /// into one run at its end; the growing strings are placed into those
+    /// runs. One that still finds no room keeps its original text (it is
+    /// reported, never truncated).
+    ///
+    /// See [`Relocation`] for what comes back.
+    pub fn relocate(&self, scus: &mut [u8], grow: &[(u32, Vec<u8>)]) -> Relocation {
+        let mut growing: BTreeMap<u32, &[u8]> = BTreeMap::new();
+        let mut failed = Vec::new();
+        for (va, text) in grow {
+            if self.is_movable(*va) {
+                growing.insert(*va, text);
+            } else {
+                failed.push(*va);
+            }
+        }
+        let layout = self.layout(scus, &growing);
+        if growing.is_empty() {
+            return Relocation {
+                no_room: failed,
+                layout,
+                ..Default::default()
+            };
+        }
+        for va in &layout.no_room {
+            growing.remove(va);
+            failed.push(*va);
+        }
 
         let mut written = Vec::new();
-        for (start, end, _) in &regions {
-            scus[*start..*end].fill(0);
-            written.push((*start, end - start));
+        for r in &layout.regions {
+            scus[r.start_off..r.end_off].fill(0);
+            written.push((r.start_off, r.total()));
         }
         let mut moved = Vec::new();
-        for (&va, &new_off) in &placed {
-            let text = growing.get(&va).copied().unwrap_or(&current[&va]);
+        for (&va, &new_off) in &layout.placed {
+            let text = &layout.texts[&va];
             scus[new_off..new_off + text.len()].copy_from_slice(text);
             let (old_off, _) = self.spans[&va];
             let to = va_at(va, old_off, new_off);
@@ -243,20 +425,28 @@ impl NamePool {
                 moved.push(Moved { from: va, to });
             }
         }
-        (written, moved, failed)
+        Relocation {
+            written,
+            moved,
+            no_room: failed,
+            layout,
+        }
     }
 }
 
-/// Lay out one compaction: `Ok(va -> new file offset)` for every movable
-/// string, or `Err(growing vas that found no room)`.
+/// Lay out one compaction: `Ok((va -> new file offset, free bytes left per
+/// region))` for every movable string, or `Err(growing vas that found no
+/// room)`.
+#[allow(clippy::type_complexity)]
 fn plan_compaction(
     spans: &BTreeMap<u32, (usize, usize)>,
     regions: &[(usize, usize, Vec<u32>)],
     current: &BTreeMap<u32, Vec<u8>>,
     growing: &BTreeMap<u32, &[u8]>,
-) -> Result<BTreeMap<u32, usize>, Vec<u32>> {
+) -> Result<(BTreeMap<u32, usize>, Vec<usize>), Vec<u32>> {
     let mut placed = BTreeMap::new();
-    // Free run per region after the in-order compaction of the rest.
+    // Free run per region after the in-order compaction of the rest (empty
+    // when the region is full), one per region in region order.
     let mut free: Vec<(usize, usize)> = Vec::new();
     for (start, end, vas) in regions {
         let mut cur = *start;
@@ -273,10 +463,7 @@ fn plan_compaction(
             placed.insert(*va, at);
             cur = at + current[va].len() + 1;
         }
-        let cur = align4(cur);
-        if cur < *end {
-            free.push((cur, *end));
-        }
+        free.push((align4(cur).min(*end), *end));
     }
     let mut order: Vec<(&u32, &&[u8])> = growing.iter().collect();
     order.sort_by_key(|(va, t)| (std::cmp::Reverse(t.len()), **va));
@@ -300,7 +487,7 @@ fn plan_compaction(
         }
     }
     if no_room.is_empty() {
-        Ok(placed)
+        Ok((placed, free.iter().map(|(s, e)| e - s).collect()))
     } else {
         Err(no_room)
     }
