@@ -210,6 +210,24 @@ the same way. It costs three things:
 
 It affects only dialog. Names never need it.
 
+### Room on screen
+
+Fitting in bytes is not the same as fitting on screen. The game **never wraps
+text for you**: a dialog row breaks only where you put a `|` (or where a new
+line starts), and a row wider than the box simply runs past its edge. Names
+have the same limit sideways - an item name much wider than the English ones
+runs into the quantity column of the item list.
+
+Rough widths, measured in the game's own proportional font: a dialog row holds
+about 244 pixels (three rows per box), an item name in the pause menu or a
+shop about 104. Narrow letters (`i`, `l`) take far less room than wide ones
+(`M`, `W`), so count pixels, not characters. The full table is in
+[line width and wrapping](../formats/dialog-font.md#line-width-and-wrapping).
+
+To check a whole pack's room from the command line, run
+`legaia-patcher translate space --input DISC.bin --pack my_pack.yaml`
+([seeing your space](../tooling/translation/space-and-budgets.md#seeing-your-space)).
+
 ## Why did my line stay English?
 
 A line stays English when its `translation:` is empty, or when the importer

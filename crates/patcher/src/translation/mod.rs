@@ -29,7 +29,7 @@
 //!
 //! No Sony bytes ship with this crate: packs are generated from the user's
 //! own disc, and exported packs (which contain game text) must not be
-//! committed - see `docs/tooling/translation.md`.
+//! committed - see `docs/tooling/translation/index.md`.
 
 pub mod diff;
 pub mod export;

@@ -247,6 +247,23 @@ nothing is written. That is the only way to validate a distributable pack.
 | `--input <DISC>` | dry-run the pack against this disc image |
 | `--verbose` | print every skipped / over-budget entry instead of the per-reason summary |
 
+### `space`
+
+Room report: how much room every translatable string has, how much English
+uses, and - with `--pack` - how much the pack uses and what `import` does with
+each line (a dry run; nothing is written). Keys and numbers only. See
+[seeing your space](space-and-budgets.md#seeing-your-space).
+
+| Flag | Meaning |
+|---|---|
+| `--input <DISC>` | the disc image |
+| `--pack <PACK>` | dry-run this pack against the disc |
+| `--section <NAME>` | report only this pack section (`items`, `scene_dialog`, ...) |
+| `--allow-relayout` | dry-run with the whole-sector relayout, as `import --allow-relayout` |
+| `--scene <PROT>` | re-fit one scene MAN with the pack's lines only, with its timing |
+| `--json` | print the full report as JSON (schema `legaia-space-v1`) |
+| `--verbose` | print every row instead of the tightest few per table |
+
 ### `strip`
 
 Strips a filled pack down to the distributable shape: filled entries only,

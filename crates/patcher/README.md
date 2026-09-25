@@ -29,7 +29,7 @@ Four patching families share that machinery:
   (`super_arts_pack`).
 - **Translation packs** - the `translate` CLI family: disc text out to an
   editable YAML language pack, filled pack back in as a same-size in-place
-  reimport ([`docs/tooling/translation.md`](../../docs/tooling/translation.md)).
+  reimport ([`docs/tooling/translation/`](../../docs/tooling/translation/index.md)).
 - **Manual edits** - targeted single-record patching for curated mods:
   `monster-block` dumps one monster's decoded `battle_data` block for hex
   editing (stats, element, name) and re-packs it onto a copy of the disc;
@@ -1506,7 +1506,7 @@ so it holds no original script and *is* committable - the shipped
 at import (the in-pack budget is a hint only). `translate init --resume`
 seeds a fresh working pack from a shipped one, `--chunk` splits for a parallel
 bulk fill, `merge` recombines. Full workflow + schema:
-[`docs/tooling/translation.md`](../../docs/tooling/translation.md).
+[`docs/tooling/translation/`](../../docs/tooling/translation/index.md).
 
 ### Space report
 

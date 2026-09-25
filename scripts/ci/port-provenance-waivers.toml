@@ -780,8 +780,8 @@ directory has one coarse row and one detailed one.
 [[waiver]]
 key = "dual-label:80036044"
 reason = """
-Text-width measurement on all three, with the same byte classification and the
-same 0xC0..0xC7 substitution escapes. mes.md carries the format side, and
+Glyph count (the typewriter reveal's length, not a pixel width) on all three,
+with the same byte classification and the same 0xC0..0xC7 substitution escapes. mes.md carries the format side, and
 renderer.md and runtime-libs.md are two directory rows for one routine -
 duplicate coverage inside one directory, not two identities.
 """

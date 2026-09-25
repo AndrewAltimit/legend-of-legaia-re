@@ -46,7 +46,7 @@ parses this variant.
 
 ## Bytecode encoding
 
-Reverse-engineered from the four SCUS interpreter functions ([`FUN_8003CA38`](#fun_8003ca38---glyph-stride-walker), [`FUN_80036044`](#fun_80036044---text-width-measurement), [`FUN_80036888`](#fun_80036888---text-renderer), [`FUN_80036514`](#fun_80036514---substitution-expander)). The same byte-classification table is used by all four; only the action per byte differs.
+Reverse-engineered from the four SCUS interpreter functions ([`FUN_8003CA38`](#fun_8003ca38---glyph-stride-walker), [`FUN_80036044`](#fun_80036044---glyph-count), [`FUN_80036888`](#fun_80036888---text-renderer), [`FUN_80036514`](#fun_80036514---substitution-expander)). The same byte-classification table is used by all four; only the action per byte differs.
 
 | Byte range | Stride | Meaning |
 |---|---|---|
@@ -89,9 +89,9 @@ int FUN_8003CA38(byte *p) {
 
 Used by the dialog window pager to compute line lengths cheaply.
 
-### `FUN_80036044` - text width measurement
+### `FUN_80036044` - glyph count
 
-Walks the bytecode and returns total width. Adds the substitution dispatch on top of the stride walker - for each `0xC1..0xC5` or `0xC7` byte, it follows the substitution pointer into the corresponding name table and recursively walks that string's width too. Calls itself implicitly by re-running the same `(byte > 0x1F)` loop on the substituted string.
+Walks the bytecode and returns a **glyph count**, not a pixel width: every plain byte and every `0xCE` escape adds one, and it never reads the width table at `0x80073F1C`. Adds the substitution dispatch on top of the stride walker - for each `0xC1..0xC5` or `0xC7` byte, it follows the substitution pointer into the corresponding name table and counts that string's glyphs too (a nested `0xC1` inside it is expanded once more). The count paces the dialog typewriter reveal; the pixel measurer is `FUN_80035F04`, and nothing wraps text at run time - see [`dialog-font.md`](dialog-font.md#line-width-and-wrapping). Evidence: the `move v0,a3` return at `0x80036504` over a counter only ever advanced by `addiu ...,0x1` / an expanded-substitution count.
 
 ### `FUN_80036888` - text renderer
 

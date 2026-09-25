@@ -321,7 +321,7 @@ impl ImportReport {
 /// relocation by the door / starting-bag randomizers), SCUS name tables last
 /// (so randomizer passes that classify items by their **English** names -
 /// the equipment-drop gear pool - still see the retail names). See
-/// `docs/tooling/translation.md`.
+/// `docs/tooling/translation/dialog-import.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImportPhase {
     /// Every entry (the CLI single-shot import).

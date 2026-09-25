@@ -190,7 +190,14 @@ Every `raw:` write also passes the
 
 The budget is a byte count, not a width: a list still has the column it has.
 The pause menu's item list draws the quantity at a fixed column, so an item
-name much longer than the longest English one runs into it.
+name much longer than the longest English one runs into it. Retail never wraps
+text at run time either - a dialog row breaks only at `|` or a new segment, and
+anything wider than the box runs past its edge. The per-context pixel limits
+(dialog row, item / shop / spell lists, name entry, battle lines) and how a
+line is measured are in
+[`dialog-font.md`](../../formats/dialog-font.md#line-width-and-wrapping);
+`legaia_font::Font::measure` and `legaia_font::limits::TEXT_LIMITS` are the
+code form.
 
 ## Checks before writing
 
@@ -203,5 +210,46 @@ per-key warning rather than writing blind. A distributable pack, which has no
 
 ## Seeing your space
 
-Today, `translate stats --input` and the ROM patcher's "Check pack against my
-disc" are how to see which lines fit on your disc and which do not.
+`legaia-patcher translate space` reports how much room every translatable
+string has and what uses it:
+
+```bash
+# The retail picture: room per name region, monster record, UI pool and scene.
+legaia-patcher translate space --input DISC.bin
+# What a pack uses, and what import would do with every line (a dry run).
+legaia-patcher translate space --input DISC.bin --pack legaia_fr.yaml [--allow-relayout]
+# One scene only - the fast re-fit an editor runs after each change.
+legaia-patcher translate space --input DISC.bin --pack legaia_fr.yaml --scene 383
+```
+
+On a disc alone it lists:
+
+- the SCUS name compaction regions and the bytes English uses in each, which
+  names may move, and why the rest are pinned (arts description, a shared
+  tail, extra pointer words, a `lui` pair);
+- each monster record's in-place room (7 / 11 / 15) and growth cap;
+- the fixed-room `ui_menu` / `system_text` pools with their slack;
+- every scene MAN's compressed size against its on-disc footprint (zero
+  slack across the USA disc), and the streaming dungeon scenes' sector slack.
+
+With `--pack` it dry-runs `import` on an in-memory copy and adds, per key, the
+encoded length and the outcome (`in_place`, `moved`, `grown`, `relocated`,
+`relayout`, `already_applied`, or a skip class such as `over_budget`,
+`no_free_run`, `rolled_back`); per name region the bytes left free after the
+moves; and per scene the recompressed size, the overflow before rollback, the
+rolled-back keys, whether the relocator refused it, and the sectors
+`--allow-relayout` would add. Tables list the tightest regions, pools and
+scenes first. `--json` prints the full report (schema `legaia-space-v1`,
+documented in `translation::space`); `--section` narrows it to one section and
+`--verbose` prints every row.
+
+Every number is the importer's own: `import` records what it measures and
+decides in `ImportReport::trace`, and the report reads that rather than
+re-deriving the rules, so a line the report says fits is a line import writes.
+The editor fast paths (`space::scene_fit`, `space::NameFitter`) run the
+importer's scene planner and SCUS pass. `crates/patcher/tests/translation_space_real.rs`
+checks every predicted outcome against a real import. Output carries keys and
+numbers only, never game text.
+
+`translate stats --input` and the ROM patcher's "Check pack against my disc"
+give the same verdicts as a per-section summary.

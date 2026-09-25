@@ -1,6 +1,6 @@
 //! Export: walk a user-supplied disc and build the source language pack.
 //!
-//! Coverage (see `docs/tooling/translation.md` for the map):
+//! Coverage (see `docs/tooling/translation/index.md` for the map):
 //!
 //! - `SCUS_942.54` name pools: item names + shared item-type strings
 //!   (`legaia_asset::item_names`), spell names (`legaia_asset::spell_names`),
