@@ -196,6 +196,9 @@
   .wb-empty { color: var(--text-dim); font-style: italic; padding: 0.6rem 0; }
   @media (max-width: 44rem) {
     .wb-row { grid-template-columns: minmax(0, 1fr); }
+    .wb-table .wb-cov-meter { display: none; }
+    .wb-bar { grid-template-columns: minmax(0, 1fr) auto; }
+    .wb-bar .wb-meter { grid-column: 1 / -1; grid-row: 2; }
   }
 
   /* Info tooltips: a "?" bead that opens a popover on hover, keyboard focus,

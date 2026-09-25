@@ -408,10 +408,10 @@ function renderCoverage() {
     }
     rows.set(e.s, r);
   }
-  let html = '<tr><th>Section</th><th class="num">Translated</th><th></th><th class="num">Problems</th></tr>';
+  let html = '<tr><th>Section</th><th class="num">Translated</th><th class="wb-cov-meter"></th><th class="num">Problems</th></tr>';
   for (const [s, r] of rows) {
     html += `<tr class="is-link" data-section="${esc(s)}"><td>${esc(SECTION_LABELS[s] || s)}</td>
-      <td class="num">${r.filled} / ${r.total}</td><td>${meter(0, r.filled, r.total, false)}</td>
+      <td class="num">${r.filled} / ${r.total}</td><td class="wb-cov-meter">${meter(0, r.filled, r.total, false)}</td>
       <td class="num ${r.bad ? 'wb-bad' : ''}">${r.bad || ''}</td></tr>`;
   }
   $('wb-coverage').innerHTML = html;
@@ -419,7 +419,7 @@ function renderCoverage() {
 
 function renderRegions() {
   const regions = (S.regions || (S.disc ? S.disc.name_regions : [])).map((r) => r);
-  regions.sort((a, b) => (a.pack_free ?? a.english_free) - (b.pack_free ?? b.english_free) || b.total - a.total);
+  regions.sort((a, b) => (b.pack_free ?? b.english_free) - (a.pack_free ?? a.english_free) || b.total - a.total);
   const vaHex = (v) => '0x' + (v >>> 0).toString(16);
   let html = '';
   for (const r of regions.slice(0, 12)) {
@@ -430,7 +430,8 @@ function renderRegions() {
       <span class="wb-bar-num">${free} free / ${r.total}</span></div>`;
   }
   const totalFree = regions.reduce((a, r) => a + (r.pack_free ?? r.english_free), 0);
-  html += `<div class="wb-note">${regions.length} regions, ${totalFree} bytes free in total${S.regions ? ' after your pack' : ' (English)'}; tightest shown.</div>`;
+  const full = regions.filter((r) => (r.pack_free ?? r.english_free) === 0).length;
+  html += `<div class="wb-note">${regions.length} regions, ${totalFree} bytes free in total${S.regions ? ' after your pack' : ' (English)'}; the roomiest are shown, ${full} are full. A longer name moves into the free bytes of any region.</div>`;
   $('wb-regions').innerHTML = html;
 }
 
