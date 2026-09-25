@@ -114,31 +114,12 @@
 
 <section class="doc-section" id="translate">
   <h2>5 &middot; Translate the game</h2>
-  <p>The <code>translate</code> family exports the disc's text as an editable YAML <strong>language pack</strong> and imports a filled pack back as a same-size in-place patch:</p>
-<pre><code># 1. Export the text (working pack - contains game text, keep it private).
-./legaia-patcher translate export --input "/path/to/disc.bin" -o legaia_en.yaml
-
-# 2. Make a skeleton for your language and fill the `translation:` fields.
-./legaia-patcher translate init --lang fr --from legaia_en.yaml \
-    --contributor "you" -o legaia_fr.yaml
-
-# 3. Check coverage, encodability, and byte budgets as you go.
-./legaia-patcher translate stats --pack legaia_fr.yaml --input "/path/to/disc.bin"
-
-# 4. Apply to a copy (and emit a shareable PPF).
-./legaia-patcher translate import --input "/path/to/disc.bin" \
-    --pack legaia_fr.yaml --output legaia_fr.bin --patch legaia_fr.ppf</code></pre>
-  <p>The constraint that shapes every entry: <strong>same-size in place</strong>. Each string's <code>budget:</code> is its maximum encoded byte length; <code>stats</code> and <code>import</code> re-measure every target on the disc and skip anything that does not fit, summarizing skips per reason (<code>--verbose</code> for the full per-key list). Partially filled packs are always playable - untranslated entries stay byte-identical. The retail font is printable-ASCII-only, so accented text must be written unaccented (<code>Epee</code>, not <code>Épée</code>).</p>
-  <p>Before sharing a filled pack, <code>translate strip</code> removes every <code>source:</code> field, leaving only your translations keyed by disc coordinates - the only shape that is safe to publish. <code>merge</code> recombines chunked packs.</p>
-  <h3>Lifting a translation from another disc</h3>
-  <p>Owners of an official PAL disc can lift its French / German / Italian / Spanish / English text onto USA coordinates instead of translating from scratch:</p>
-  <div class="cli"><code>./legaia-patcher translate lift-official --from "/path/to/SCES-disc.bin" --target "/path/to/USA.bin" -o legaia_de.yaml</code></div>
-  <p>A fan translation shipped as a binary patch lifts the same way: apply the patch to the disc it was built for, then pass the result as <code>--from</code> with <code>--language</code> naming the language (a patched USA disc included).</p>
-  <p><code>diff-disc</code> and <code>fit-report</code> are the text-free measurements behind this - how well the two discs align and how much official text fits the USA budgets. See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/pal-localizations.md" target="_blank" rel="noopener"><code>tooling/pal-localizations.md</code></a>.</p>
+  <p>The <code>translate</code> family exports the disc's text as an editable YAML <strong>language pack</strong> and imports a filled pack back onto a copy of the disc. It has its own step-by-step guide, written for translators: <a href="translating.html">translating the game</a> covers the browser and command-line paths, how much room a line has, and why a line can stay English.</p>
+  <p>A language pack composes with every randomizer option: on the <a href="../tooling/rom-patcher.html">ROM patcher</a>, pick a language and any randomizer options and patch once. Owners of an official European or a fan-translated disc can lift its text onto the USA disc instead of translating from scratch (<code>translate lift-official</code>; <a href="../tooling/translation.html#official-pal">translations from another disc</a>).</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
+    <a href="translating.html">Guide: translating the game</a>
     <a href="../tooling/translation.html">Translation / language packs</a>
-    <a href="../formats/mes.html">MES dialog containers</a>
     <a href="../formats/dialog-font.html">Dialog font</a>
   </div>
 </section>
@@ -196,6 +177,7 @@
     <a href="getting-started.html">Getting started</a>
     <a href="extracting-assets.html">Extracting assets</a>
     <a href="playing-and-viewing.html">Playing + viewing</a>
+    <a href="translating.html">Translating the game</a>
     <a href="vrchat-world.html">VRChat world</a>
   </div>
   <div class="see-also">

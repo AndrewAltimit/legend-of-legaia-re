@@ -493,6 +493,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("guides/extracting-assets.html","Extracting assets",             "guides/extracting-assets",   "guides/extracting-assets.html"),
     ("guides/playing-and-viewing.html","Playing and viewing",         "guides/playing-and-viewing", "guides/playing-and-viewing.html"),
     ("guides/modding-and-translation.html","Modding and translation", "guides/modding-and-translation","guides/modding-and-translation.html"),
+    ("guides/translating.html",    "Translating the game",           "guides/translating",         "guides/translating.html"),
     ("guides/vrchat-world.html",   "Importing a world into VRChat",  "guides/vrchat-world",        "guides/vrchat-world.html"),
     # Technical write-ups (narrative deep-dives)
     ("writeups/index.html",        "Technical write-ups",           "writeups/index",             "writeups/index.html"),
