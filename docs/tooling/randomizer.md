@@ -22,7 +22,7 @@ retail has no trade UI to hook.
 Crate: [`crates/patcher`](../../crates/patcher/README.md) (`legaia-patcher`) -
 the project's general disc-patching toolkit. The randomizer documented on this
 page is its largest feature family; the same machinery carries the
-[translation packs](translation.md) and the manual per-record edits
+[translation packs](translation/index.md) and the manual per-record edits
 (`monster-block`, in the [modding guide](../guides/modding-and-translation.md)).
 It ships only code - no game bytes - and every test that needs real data is
 disc-gated, so CI runs without a disc. There is also a

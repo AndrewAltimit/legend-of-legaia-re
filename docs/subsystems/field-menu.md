@@ -494,7 +494,7 @@ the `Attack` / `Arts` / `Magic` / `Item` command-ring labels are UI-icon
 sprites, not text. These pools are the coordinate windows the translation
 pipeline's `ui_menu` section patches same-size in place
 (`legaia_patcher::translation::ui`; see
-[`translation.md`](../tooling/translation.md)).
+[`ui-strings.md`](../tooling/translation/ui-strings.md)).
 
 **Money / play-time box (id 49, `FUN_801D0148`)**: money pictogram (ICO
 `0x62`) at `(WX, WY+2)` with the amount as an 8-digit field

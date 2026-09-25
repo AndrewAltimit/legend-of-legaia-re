@@ -673,7 +673,7 @@ Full write-ups for the rows above whose detail outgrew a table cell. Linked from
 
 ### `80054CB0`
 
-The routine's head copies the monster's name - the pointer at record `+0x00` - into actor `+0x1BC` (`0x80054CD4..0x80054D58`): the length is `FUN_8003CA38`'s glyph count masked to a byte, the loop copies that many bytes and stores a terminator, and nothing compares the length against the buffer. A translated name therefore keeps to the longest name retail already writes there ([`translation.md`](../../tooling/translation.md#monster-names)).
+The routine's head copies the monster's name - the pointer at record `+0x00` - into actor `+0x1BC` (`0x80054CD4..0x80054D58`): the length is `FUN_8003CA38`'s glyph count masked to a byte, the loop copies that many bytes and stores a terminator, and nothing compares the length against the buffer. A translated name therefore keeps to the longest name retail already writes there ([`space-and-budgets.md`](../../tooling/translation/space-and-budgets.md#monster-names)).
 
 ### `80047430`
 

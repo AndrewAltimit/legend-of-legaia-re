@@ -148,5 +148,6 @@ Reverse-engineering aids (useful once you go deeper):
 - [extracting-assets.md](extracting-assets.md) - step-by-step asset scenarios.
 - [playing-and-viewing.md](playing-and-viewing.md) - the engine and viewers.
 - [modding-and-translation.md](modding-and-translation.md) - randomizer, translation, saves.
+- [translating.md](translating.md) - translate the game into your language, step by step.
 - [docs/formats/overview.md](../formats/overview.md) - byte-level format specs behind every parser.
 - [docs/tooling/extraction.md](../tooling/extraction.md) - per-stage pipeline reference.

@@ -272,7 +272,7 @@ record format inside each section); no MDFNSVST section walk is required.
 
 ## Accented / non-Latin glyphs (font-patch feasibility)
 
-The [translation pipeline](../tooling/translation.md) writes only bytes the
+The [translation pipeline](../tooling/translation/pack-format.md#text-markup-and-encoding) writes only bytes the
 retail font can already draw - printable ASCII `0x20..=0x7E` - so the shipped
 Spanish/French/German/Italian/Polish packs are **ASCII-folded** (`e` for `é`,
 `ss` for `ß`, `l` for `ł`). Adding real accented or non-Latin glyphs is a
@@ -322,6 +322,6 @@ disc edit.
 ## See also
 
 - [MES dialog](mes.md) - the dialog containers this font renders.
-- [Translation / language packs](../tooling/translation.md) - the ASCII-folded
+- [Translation / language packs](../tooling/translation/index.md) - the ASCII-folded
   packs this feasibility note is the unblock for.
 - [`subsystems/renderer.md`](../subsystems/renderer.md) - the renderer that blits the glyph atlas.
