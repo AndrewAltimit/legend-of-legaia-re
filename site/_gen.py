@@ -78,6 +78,7 @@ TITLE_OVERRIDES: dict[str, str] = {
     "arts": "Legend of Legaia Tactical Arts List - Inputs, AP & Damage",
     "magic": "Legend of Legaia Seru Magic & Summons - Every Cast in 3D",
     "tooling/rom-patcher": "Legend of Legaia Randomizer - In-Browser ROM Patcher",
+    "tooling/translation-workbench": "Legend of Legaia Translation Workbench - Edit a Language Pack in the Browser",
     "guides/vrchat-world": "Legend of Legaia in VRChat - Build a World from Your Own Disc",
 }
 
@@ -150,6 +151,12 @@ DESCRIPTIONS: dict[str, str] = {
         "chests, shops, doors, and more, patched client-side onto your own "
         "disc image - which never leaves your machine."
     ),
+    "tooling/translation-workbench": (
+        "Translate Legend of Legaia in your browser: edit a language pack "
+        "against your own disc with live byte and on-screen width checks, see "
+        "how much room every name, label and scene has, and download a "
+        "shareable pack. The disc never leaves your machine."
+    ),
     "quickstart": (
         "Get started with the Legend of Legaia RE tools: extract every asset "
         "from your disc, view them interactively, and boot the engine port "
@@ -178,6 +185,7 @@ DESCRIPTIONS: dict[str, str] = {
 APP_PAGE_KEYS: set[str] = {
     "play", "viewer", "media", "minigames", "monsters", "characters",
     "npcs", "world-overview", "tooling/rom-patcher",
+    "tooling/translation-workbench",
 }
 
 
@@ -370,6 +378,7 @@ WIDE_PAGES: set[str] = {
     "world-overview",
     "reference/music-tracks",
     "tooling/rom-patcher",
+    "tooling/translation-workbench",
 }
 
 
@@ -611,6 +620,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/byte-accounting.html","Byte accounting",              "tooling/byte-accounting",    "tooling/byte-accounting.html"),
     ("tooling/address-reference-scan.html","Address-reference scan","tooling/address-reference-scan","tooling/address-reference-scan.html"),
     ("tooling/rom-patcher.html",   "ROM patcher (in browser)",      "tooling/rom-patcher",        "tooling/rom-patcher.html"),
+    ("tooling/translation-workbench.html","Translation workbench",   "tooling/translation-workbench","tooling/translation-workbench.html"),
     ("reference/index.html",       "Reference",                     "reference/index",            "reference/index.html"),
     ("reference/functions.html",   "Key functions",                 "reference/functions",        "reference/functions.html"),
     ("reference/memory-map.html",  "PSX RAM map",                   "reference/memory-map",       "reference/memory-map.html"),

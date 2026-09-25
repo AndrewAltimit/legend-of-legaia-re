@@ -1,0 +1,215 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; Translation workbench</div>
+  <h1>Translation workbench</h1>
+  <p class="lede">Edit a Legend of Legaia language pack against your own disc, and see how much room every line has while you type. Everything runs in this tab as WebAssembly - the disc never leaves your machine and nothing is uploaded. To patch a disc with the finished pack, use the <a href="rom-patcher.html">ROM patcher</a>.</p>
+</header>
+
+<section class="doc-section" id="workbench">
+  <div class="wb">
+
+    <div class="wb-warn"><strong>Your working pack holds the game's text from your disc.</strong> Keep it to yourself. Share only the <em>shareable pack</em>, which holds your translations and disc coordinates and nothing else.
+      <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The English beside each line is read from the disc you load here. It is shown to you, saved only in this browser, and written only into the <em>working</em> pack you download.</p><p>The shareable pack drops every English line and every context note, so it can be posted. More: <a href="../guides/translating.html#pack-shapes">working pack and shareable pack</a>.</p></span></span>
+    </div>
+
+    <div class="wb-top">
+      <label class="wb-field">
+        <span class="wb-label">Disc image (<code>.bin</code>, Mode 2/2352)</span>
+        <input type="file" id="wb-file" accept=".bin,application/octet-stream">
+      </label>
+      <div class="wb-field">
+        <span class="wb-label">Pack
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Start from a published pack, from a <code>.yaml</code> of your own (a working or a shareable pack), or from nothing. Whatever you load is laid onto your disc's own export, so every line shows its English and its room.</p><p>Lines whose keys your disc does not carry are counted and dropped.</p></span></span>
+        </span>
+        <div class="wb-inline">
+          <select id="wb-shipped" aria-label="Published pack">
+            <option value="">Published pack...</option>
+            <option value="es">Spanish / Espanol</option>
+            <option value="fr">French / Francais</option>
+            <option value="de">German / Deutsch</option>
+            <option value="it">Italian / Italiano</option>
+            <option value="pl">Polish / Polski</option>
+            <option value="pt-BR">Brazilian Portuguese (by somentedan)</option>
+          </select>
+          <label class="wb-button wb-button-ghost wb-file-button">Open my pack (.yaml)<input type="file" id="wb-pack-file" accept=".yaml,.yml,text/yaml,application/x-yaml" hidden></label>
+          <button type="button" id="wb-fresh" class="wb-button wb-button-ghost">Start fresh</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="wb-resume" class="wb-resume" hidden></div>
+    <div id="wb-status" class="wb-status" role="status"></div>
+
+    <div id="wb-main" hidden>
+      <div class="wb-meta-row">
+        <label class="wb-field wb-field-sm"><span class="wb-label">Language code</span><input type="text" id="wb-lang" size="8" maxlength="16" placeholder="fr"></label>
+        <label class="wb-field"><span class="wb-label">Contributors (comma-separated)</span><input type="text" id="wb-contrib"></label>
+      </div>
+      <div class="wb-actions">
+        <button type="button" id="wb-dl-working" class="wb-button wb-button-ghost">Download working pack</button>
+        <button type="button" id="wb-dl-share" class="wb-button">Download shareable pack</button>
+        <span class="wb-sep"></span>
+        <button type="button" id="wb-check" class="wb-button wb-button-ghost">Check against my disc</button>
+        <label class="wb-check-row"><input type="checkbox" id="wb-relayout">
+          <span>Give translated dialog more room
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The ROM patcher option of the same name. A scene whose translated dialog no longer compresses into its space gets extra 2048-byte sectors instead of having lines put back in English. The check runs the same way when this is ticked.</p><p>It only helps a scene with a line longer than its own slot. Details: <a href="../guides/translating.html#more-room">giving dialog more room</a>.</p></span></span>
+          </span>
+        </label>
+        <button type="button" id="wb-issues" class="wb-button wb-button-ghost" hidden>Download skipped lines (.csv)</button>
+      </div>
+      <div id="wb-check-status" class="wb-status"></div>
+
+      <h2 id="space">Space
+        <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Where the room is, measured on your disc by the same code the patch runs. Click a row to list its lines in the editor.</p><p>Names share free bytes per table region; menu labels have fixed slots; each scene's dialog must compress back into the space it had. Reference: <a href="translation.html">space and budgets</a>.</p></span></span>
+      </h2>
+      <div class="wb-dash">
+        <div class="wb-card">
+          <h3>Coverage</h3>
+          <table class="wb-table" id="wb-coverage"></table>
+        </div>
+        <div class="wb-card">
+          <h3>Name tables <span class="wb-legend"><i class="k-en"></i>English <i class="k-pack"></i>your pack <i class="k-free"></i>free</span></h3>
+          <div id="wb-regions" class="wb-bars"></div>
+          <h3>Monster names</h3>
+          <div id="wb-monsters" class="wb-kv"></div>
+          <h3>Menu and system labels</h3>
+          <div id="wb-pools" class="wb-bars"></div>
+        </div>
+        <div class="wb-card wb-card-wide">
+          <h3>Scenes, fullest first
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Each scene's dialog is stored compressed, and on the USA disc it has no spare room: the translated scene must compress to no more than the English did. The meter is the compressed size against that space.</p><p>A scene that does not fit gets some of its longest lines put back in English ("rolled back"). Shorten lines in that scene, or tick "Give translated dialog more room". The meter updates a moment after you edit one of its lines.</p></span></span>
+          </h3>
+          <div id="wb-scenes"></div>
+        </div>
+      </div>
+
+      <h2 id="editor">Editor
+        <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Each row shows the English, your translation, its size in bytes against its room, and the line drawn in the game's own font with the width it has on screen. Dialog lines are grouped into the boxes the game shows (up to three rows per box).</p><p>Markup such as <code>{c2:79}</code> (an item name) and <code>|</code> (a line break) is explained in the <a href="../guides/translating.html#markup">markup reference</a>. Your edits save in this browser as you type.</p></span></span>
+      </h2>
+      <div class="wb-filters">
+        <select id="wb-f-section" aria-label="Section"></select>
+        <select id="wb-f-status" aria-label="Status">
+          <option value="">Any status</option>
+          <option value="untranslated">Untranslated</option>
+          <option value="translated">Translated</option>
+          <option value="fits">Fits</option>
+          <option value="too_long">Too long</option>
+          <option value="rolled_back">Will roll back</option>
+          <option value="not_encodable">Not encodable</option>
+          <option value="too_wide">Too wide on screen</option>
+        </select>
+        <input type="search" id="wb-f-search" placeholder="Search English, translation or key" aria-label="Search">
+        <span id="wb-f-group" class="wb-chip" hidden></span>
+      </div>
+      <div class="wb-pager" id="wb-pager-top"></div>
+      <div id="wb-list" class="wb-list"></div>
+      <div class="wb-pager" id="wb-pager-bottom"></div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .wb { max-width: none; }
+  .wb-warn { margin: 0 0 1rem; padding: 0.7rem 0.9rem; border: 1px solid var(--warn); border-left-width: 4px; border-radius: 6px; background: var(--warn-soft); color: var(--text); font-size: 0.92em; }
+  .wb-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr)); gap: 0.4rem 1.4rem; }
+  .wb-field { display: block; margin: 0.5rem 0; min-width: 0; }
+  .wb-field-sm { flex: 0 0 auto; }
+  .wb-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+  .wb input[type=text], .wb input[type=search], .wb select, .wb textarea { max-width: 100%; padding: 0.4rem 0.55rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 5px; font: inherit; }
+  .wb input[type=file] { color: var(--text-muted); max-width: 100%; }
+  .wb-inline { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  .wb-meta-row { display: flex; flex-wrap: wrap; gap: 0 1rem; align-items: end; }
+  .wb-meta-row .wb-field:last-child { flex: 1 1 16rem; }
+  .wb-meta-row input[type=text] { width: 100%; }
+  .wb-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.6rem 0; }
+  .wb-sep { flex: 0 0 0.6rem; }
+  .wb-button { padding: 0.5rem 1rem; font: inherit; font-weight: 600; cursor: pointer; background: var(--accent); color: #06231f; border: 1px solid var(--accent); border-radius: 6px; }
+  .wb-button:hover { background: var(--accent-hi); }
+  .wb-button:disabled { opacity: 0.6; cursor: progress; }
+  .wb-button-ghost { background: transparent; color: var(--text); border-color: var(--border); }
+  .wb-button-ghost:hover { background: var(--bg-card-hi); border-color: var(--border-hi); }
+  .wb-file-button { display: inline-block; }
+  .wb-check-row { display: inline-flex; gap: 0.4rem; align-items: center; font-size: 0.92em; }
+  .wb-status { margin: 0.5rem 0; font-family: var(--font-mono); font-size: 0.86em; white-space: pre-wrap; color: var(--text-muted); }
+  .wb-status.is-ok { color: var(--ok); }
+  .wb-status.is-err { color: var(--open); }
+  .wb-resume { margin: 0.6rem 0; padding: 0.6rem 0.8rem; border: 1px solid var(--accent-line); border-radius: 6px; background: var(--accent-soft); display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .wb-resume[hidden] { display: none; }
+  .wb h2 { margin-top: 1.6rem; }
+  .wb h3 { font-size: 0.95em; margin: 0.2rem 0 0.5rem; color: var(--text-bright); }
+  .wb-dash { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr)); gap: 0.9rem; }
+  .wb-card { min-width: 0; padding: 0.8rem 0.9rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .wb-card-wide { grid-column: 1 / -1; }
+  .wb-table { width: 100%; border-collapse: collapse; font-size: 0.86em; }
+  .wb-table td, .wb-table th { padding: 0.22rem 0.4rem; border-bottom: 1px solid var(--line-soft); text-align: left; vertical-align: middle; }
+  .wb-table th { color: var(--text-dim); font-weight: 600; }
+  .wb-table td.num, .wb-table th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .wb-table tr.is-link { cursor: pointer; }
+  .wb-table tr.is-link:hover td { background: var(--bg-card-hi); }
+  .wb-scroll { max-height: 22rem; overflow: auto; }
+  .wb-meter { position: relative; height: 0.7rem; min-width: 5rem; border-radius: 3px; background: var(--bg-code); border: 1px solid var(--border); overflow: hidden; }
+  .wb-meter > span { position: absolute; top: 0; bottom: 0; left: 0; }
+  .wb-meter .m-en { background: var(--text-dim); }
+  .wb-meter .m-pack { background: var(--accent); }
+  .wb-meter .m-over { background: var(--open); }
+  .wb-legend { font-weight: 400; font-size: 0.8em; color: var(--text-dim); margin-left: 0.4rem; }
+  .wb-legend i { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 2px; margin: 0 0.2em 0 0.5em; vertical-align: -0.05em; }
+  .wb-legend .k-en { background: var(--text-dim); }
+  .wb-legend .k-pack { background: var(--accent); }
+  .wb-legend .k-free { background: var(--bg-code); border: 1px solid var(--border-hi); }
+  .wb-bars { display: flex; flex-direction: column; gap: 0.2rem; margin-bottom: 0.7rem; }
+  .wb-bar { display: grid; grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; font-size: 0.82em; padding: 0.1rem 0.25rem; border-radius: 4px; cursor: pointer; }
+  .wb-bar:hover { background: var(--bg-card-hi); }
+  .wb-bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
+  .wb-bar-num { font-variant-numeric: tabular-nums; color: var(--text-dim); white-space: nowrap; }
+  .wb-note { font-size: 0.8em; color: var(--text-dim); margin-top: 0.2rem; }
+  .wb-kv { font-size: 0.86em; color: var(--text-muted); margin-bottom: 0.7rem; cursor: pointer; }
+  .wb-more { margin-top: 0.4rem; font-size: 0.85em; }
+  .wb-bad { color: var(--open); }
+  .wb-okc { color: var(--ok); }
+  .wb-warnc { color: var(--warn); }
+  .wb-filters { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.4rem 0; }
+  .wb-filters input[type=search] { flex: 1 1 14rem; min-width: 0; }
+  .wb-chip { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.6rem; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent-soft); color: var(--accent-hi); font-size: 0.85em; }
+  .wb-chip button { background: none; border: none; color: inherit; cursor: pointer; font: inherit; padding: 0; }
+  .wb-chip[hidden] { display: none; }
+  .wb-pager { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.5rem 0; font-size: 0.88em; color: var(--text-dim); }
+  .wb-pager button { padding: 0.2rem 0.6rem; font: inherit; color: var(--text); background: var(--bg-code); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; }
+  .wb-pager button:disabled { opacity: 0.4; cursor: default; }
+  .wb-list { display: flex; flex-direction: column; gap: 0.35rem; }
+  .wb-group-head { margin: 0.8rem 0 0.1rem; font-weight: 700; font-size: 0.9em; color: var(--accent-hi); }
+  .wb-box { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-raised); padding: 0.3rem; display: flex; flex-direction: column; gap: 0.3rem; }
+  .wb-box-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; font-size: 0.78em; color: var(--text-dim); padding: 0 0.3rem; }
+  .wb-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.3rem 0.8rem; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-left: 3px solid var(--border-hi); border-radius: 6px; background: var(--bg-card); }
+  .wb-row.st-fits { border-left-color: var(--ok); }
+  .wb-row.st-too_long, .wb-row.st-rolled_back, .wb-row.st-not_encodable { border-left-color: var(--open); }
+  .wb-row.st-too_wide { border-left-color: var(--warn); }
+  .wb-row-head { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.2rem 0.7rem; font-size: 0.78em; color: var(--text-dim); }
+  .wb-row-head code { color: var(--text-muted); }
+  .wb-src { font-family: var(--font-mono); font-size: 0.86em; color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+  .wb-edit { min-width: 0; }
+  .wb-edit textarea { width: 100%; min-height: 2.3rem; font-family: var(--font-mono); font-size: 0.86em; resize: vertical; }
+  .wb-info { display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; font-size: 0.78em; color: var(--text-dim); margin-top: 0.15rem; }
+  .wb-marked { font-family: var(--font-mono); font-size: 0.86em; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); margin-top: 0.2rem; }
+  .wb-marked mark { background: var(--open); color: var(--text-bright); border-radius: 2px; }
+  .wb-preview { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; margin-top: 0.35rem; min-width: 0; }
+  .wb-preview canvas { display: block; image-rendering: pixelated; max-width: 100%; min-width: 0; height: auto; border-radius: 3px; }
+  .wb-empty { color: var(--text-dim); font-style: italic; padding: 0.6rem 0; }
+  @media (max-width: 44rem) {
+    .wb-row { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* Info tooltips: a "?" bead that opens a popover on hover, keyboard focus,
+     or tap (tap toggles; Escape and tapping elsewhere close). */
+  .info-tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.25em; height: 1.25em; border-radius: 50%; border: 1px solid var(--border-hi); color: var(--text-dim); font-size: 0.8em; font-weight: 700; cursor: help; user-select: none; margin-left: 0.35em; vertical-align: 0.1em; flex: none; }
+  .info-tip:hover, .info-tip:focus-visible, .info-tip.is-open { color: var(--accent-hi); border-color: var(--accent); }
+  .tip-pop { text-transform: none; letter-spacing: normal; display: none; position: absolute; z-index: 40; top: calc(100% + 0.5rem); left: 50%; transform: translateX(-50%); width: min(34rem, 86vw); padding: 0.8rem 1rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45); color: var(--text-muted); font-size: 0.86rem; font-weight: 400; font-style: normal; line-height: 1.55; text-align: left; cursor: auto; white-space: normal; }
+  .tip-pop p { margin: 0 0 0.6rem; }
+  .tip-pop p:last-child { margin-bottom: 0; }
+  .info-tip:hover > .tip-pop, .info-tip:focus-visible > .tip-pop, .info-tip.is-open > .tip-pop { display: block; }
+  .info-tip.tip-align-right > .tip-pop { left: auto; right: -0.6rem; transform: none; }
+  .info-tip.tip-align-left > .tip-pop { left: -0.6rem; right: auto; transform: none; }
+</style>
+
+<script src="../js/rom-cache.js"></script>
+<script src="../js/disc-info.js"></script>
+<script type="module" src="../js/translate-workbench-app.js"></script>
