@@ -102,6 +102,27 @@ your machine and never uploaded.
 
 The patched disc image is for your own play only; do not share it.
 
+### Editing in the workbench
+
+Steps 3 to 7 can also happen on the site's **Translation workbench** page
+instead of in a text editor. Pick your disc there, then load a published
+pack, your own `.yaml`, or start fresh. Every line is listed with its English,
+a box for your translation, and live feedback as you type:
+
+- its size in bytes against its room (for a name, also the free bytes it could
+  move into), with any character the game cannot draw highlighted;
+- its width on screen in the game's own font, against the width its box or
+  menu column allows, and a picture of the dialog box as the game draws it;
+- a moment after you stop typing, whether its scene still fits.
+
+A dashboard shows where the room is: per section, per name table, per menu
+pool, and every scene from the fullest down. Click a row to list its lines.
+*Check against my disc* runs the full check. Your edits are saved in the
+browser as you type, and the page offers to resume them next time. Download
+the working pack to keep your own copy, and the shareable pack to share. The
+workbench does not patch a disc; load the shareable pack on the ROM patcher
+page for that.
+
 ## Path B: on the command line
 
 The same six steps with `legaia-patcher`. Replace the disc path with yours;
@@ -224,7 +245,9 @@ shop about 104. Narrow letters (`i`, `l`) take far less room than wide ones
 (`M`, `W`), so count pixels, not characters. The full table is in
 [line width and wrapping](../formats/dialog-font.md#line-width-and-wrapping).
 
-To check a whole pack's room from the command line, run
+The [workbench](#editing-in-the-workbench) measures each line as you type and
+draws it in the game's font. To check a whole pack's room from the command
+line, run
 `legaia-patcher translate space --input DISC.bin --pack my_pack.yaml`
 ([seeing your space](../tooling/translation/space-and-budgets.md#seeing-your-space)).
 

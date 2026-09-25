@@ -52,6 +52,14 @@
     <li><strong>Patch.</strong> Optionally tick <em>Give translated dialog more room</em> (<a href="#more-room">below</a>), then press <em>Patch &amp; download</em>. The language patch combines with any randomizer options you also chose. The patched disc image is for your own play only.</li>
     <li><strong>Make a shareable pack (.yaml, no English)</strong> when you are ready to share. The downloaded file holds only your translations - that is the file to pass around.</li>
   </ol>
+  <h3 id="workbench">Editing in the workbench</h3>
+  <p>Steps 3 to 7 can also happen on the <a href="../tooling/translation-workbench.html">translation workbench</a> page instead of in a text editor. Pick your disc there, then load a published pack, your own <code>.yaml</code>, or start fresh. Every line is listed with its English, a box for your translation, and live feedback as you type:</p>
+  <ul class="bullets">
+    <li>its size in bytes against its room (for a name, also the free bytes it could move into), with any character the game cannot draw highlighted;</li>
+    <li>its width on screen in the game's own font, against the width its box or menu column allows, and a picture of the dialog box as the game draws it;</li>
+    <li>a moment after you stop typing, whether its scene still fits.</li>
+  </ul>
+  <p>A dashboard shows where the room is: per section, per name table, per menu pool, and every scene from the fullest down. Click a row to list its lines. <em>Check against my disc</em> runs the full check. Your edits are saved in the browser as you type, and the page offers to resume them next time. Download the working pack to keep your own copy, and the shareable pack to share. The workbench does not patch a disc; load the shareable pack on the ROM patcher page for that.</p>
 </section>
 
 <section class="doc-section" id="cli">
@@ -101,6 +109,10 @@ legaia-patcher translate import --input "Legend of Legaia (USA).bin" \
     <li><strong>No PPF.</strong> A PPF only describes same-size changes, so you get the patched image only.</li>
     <li><strong>Save states break.</strong> A save state made on another layout no longer matches; start from a fresh boot or a memory-card save.</li>
   </ul>
+  <h3 id="screen-room">Room on screen</h3>
+  <p>Fitting in bytes is not the same as fitting on screen. The game <strong>never wraps text for you</strong>: a dialog row breaks only where you put a <code>|</code> (or where a new line starts), and a row wider than the box simply runs past its edge. Names have the same limit sideways - an item name much wider than the English ones runs into the quantity column of the item list.</p>
+  <p>Rough widths, measured in the game's own proportional font: a dialog row holds about 244 pixels (three rows per box), an item name in the pause menu or a shop about 104. Narrow letters (<code>i</code>, <code>l</code>) take far less room than wide ones (<code>M</code>, <code>W</code>), so count pixels, not characters. The full table is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/dialog-font.md#line-width-and-wrapping" target="_blank" rel="noopener">line width and wrapping</a>.</p>
+  <p>The <a href="#workbench">workbench</a> measures each line as you type and draws it in the game's font. From the command line, <code>legaia-patcher translate space --input DISC.bin --pack my_pack.yaml</code> reports a whole pack's room.</p>
   <p class="hint">Every room rule, per section: <a href="../tooling/translation.html#budgets">budgets</a> in the reference.</p>
 </section>
 

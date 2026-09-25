@@ -253,3 +253,25 @@ numbers only, never game text.
 
 `translate stats --input` and the ROM patcher's "Check pack against my disc"
 give the same verdicts as a per-section summary.
+
+### In the browser: the translation workbench
+
+The site's translation workbench page runs the same kernel in the browser tab
+on the user's own disc (`crates/web-viewer/src/translate_workbench.rs`, a
+resident `Workbench` session). It shows the report as a dashboard - coverage
+per section, the name regions' free bytes, monster rooms, label-pool slack and
+the scenes fullest first - next to an editor that checks each line as it is
+typed:
+
+- the encoded length against the key's room, with every character the retail
+  glyph set lacks marked (`space::encoded_len`'s per-character issues);
+- the line's pen width in the disc's own font against the pinned
+  [on-screen limit](#byte-room-is-not-screen-room) for its context, with
+  substitution tokens resolved through the pack's own names, and a preview of
+  the whole dialog box drawn at native resolution;
+- after a pause, the scene re-fit (`space::scene_fit`) for a dialog line and
+  the SCUS pass (`space::NameFitter`) for a name.
+
+"Check against my disc" runs the whole dry run once. The workbench downloads
+the working and the shareable pack; it does not patch a disc (the ROM patcher
+does).
