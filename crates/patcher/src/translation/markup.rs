@@ -18,7 +18,7 @@
 //! anything outside the retail glyph set (accented Latin, Cyrillic, CJK, ...),
 //! after first folding a small set of typographic lookalikes (smart quotes,
 //! dashes, ellipsis) onto their ASCII glyphs. Full non-Latin support would
-//! need a font patch and is out of scope - see `docs/tooling/translation.md`.
+//! need a font patch and is out of scope - see `docs/tooling/translation/textures-and-fonts.md`.
 
 use std::fmt;
 

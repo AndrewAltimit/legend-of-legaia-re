@@ -1,6 +1,6 @@
 //! Export: walk a user-supplied disc and build the source language pack.
 //!
-//! Coverage (see `docs/tooling/translation.md` for the map):
+//! Coverage (see `docs/tooling/translation/index.md` for the map):
 //!
 //! - `SCUS_942.54` name pools: item names + shared item-type strings
 //!   (`legaia_asset::item_names`), spell names (`legaia_asset::spell_names`),
@@ -98,12 +98,22 @@ impl SceneManText {
     /// of retail MANs have zero compressed slack, and translated text is
     /// less repetitive than the source).
     pub fn repack(&self) -> Option<Vec<u8>> {
+        self.repack_measured().ok()
+    }
+
+    /// [`Self::repack`], saying by how much it missed: `Err(n)` = the
+    /// optimal-parse stream is `n` bytes past the footprint.
+    pub fn repack_measured(&self) -> Result<Vec<u8>, usize> {
         let stream = legaia_lzs::compress(&self.decoded);
         if stream.len() <= self.compressed_budget {
-            return Some(stream);
+            return Ok(stream);
         }
         let stream = legaia_lzs::compress_optimal(&self.decoded);
-        (stream.len() <= self.compressed_budget).then_some(stream)
+        if stream.len() <= self.compressed_budget {
+            Ok(stream)
+        } else {
+            Err(stream.len() - self.compressed_budget)
+        }
     }
 }
 

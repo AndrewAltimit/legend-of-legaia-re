@@ -24,7 +24,7 @@
       <div class="rom-group-body">
         <p class="rom-legend-item" style="margin:0 0 .6rem">
           Off by default; composes with every option below.
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The shipped packs cover the item / magic / arts / menu tables plus recurring system messages; the bulk story dialog is not translated yet. The retail font is plain ASCII, so the packs are accent-folded.</p><p>Packs are community-authored YAML; you can import your own or export a starter pack from your disc to begin one. The Brazilian Portuguese pack is <strong>somentedan</strong>'s fan translation (published by joao13traducoes), lifted from their patch onto the USA disc; nearly all of its dialogue lands on the USA disc in place (a line longer or shorter than the English is relocated inside its own scene), and the few lines a scene's footprint cannot hold stay English - the coverage report says which. Lines the patch itself left in Spanish stay English here. Full details: <a href="translation.html">translation packs</a>.</p></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The shipped packs cover the item / magic / arts / menu tables, system messages and most of the story dialog; a line whose scene has no room left stays English, and the coverage report says which. The retail font is plain ASCII, so the packs are accent-folded.</p><p>Packs are community-authored YAML; you can import your own or export a starter pack from your disc to begin one - the <a href="../guides/translating.html#browser">translating guide</a> walks through export, edit, check and share, and explains <a href="../guides/translating.html#stayed-english">why a line stays English</a>. The Brazilian Portuguese pack is <strong>somentedan</strong>'s fan translation (published by joao13traducoes), lifted from their patch onto the USA disc; nearly all of its dialogue lands on the USA disc in place (a line longer or shorter than the English is relocated inside its own scene), and the few lines a scene's footprint cannot hold stay English - the coverage report says which. Lines the patch itself left in Spanish stay English here. Full details: <a href="translation.html">translation packs</a>.</p></span></span>
         </p>
         <label class="rom-row">
           <span class="rom-label">Language</span>
@@ -49,7 +49,7 @@
         <div class="rom-group-body" id="rom-lang-official-row" hidden>
           <p class="rom-legend-item" style="margin:0 0 .6rem">
             Transfers the text of another disc you own onto your USA disc - read here, never uploaded.
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Both discs are read in your browser; the text is yours, from your own disc, and is never bundled with this site.</p><p>The other disc can be an official European release (French, German, Italian, Spanish or English) or a <strong>fan-translated</strong> disc: apply the community patch to the disc it was made for, then hand the result in here and it becomes an editable pack for the USA disc. Japanese discs are not readable this way.</p><p><strong>Not all of it will fit.</strong> The USA disc's scenes are packed to the sector with no spare room, so the shorter lines transfer and the rest stay English. The coverage report after patching says how many landed and why the others did not.</p><p>Full details: <a href="translation.html#official-pal">translations from another disc</a>.</p></span></span>
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Both discs are read in your browser; the text is yours, from your own disc, and is never bundled with this site.</p><p>The other disc can be an official European release (French, German, Italian, Spanish or English) or a <strong>fan-translated</strong> disc: apply the community patch to the disc it was made for, then hand the result in here and it becomes an editable pack for the USA disc. Japanese discs are not readable this way.</p><p><strong>Not all of it will fit.</strong> The USA disc's scenes are packed to the sector with no spare room, so the shorter lines transfer and the rest stay English. The coverage report after patching says how many landed and why the others did not.</p><p>Full details: <a href="translation.html#official-pal">translations from another disc</a>; what may be shared afterwards: <a href="../guides/translating.html#faq">translating FAQ</a>.</p></span></span>
           </p>
           <label class="rom-row">
             <span class="rom-label">Other disc image (<code>.bin</code> - a European release, or a fan-patched disc)</span>
@@ -74,7 +74,7 @@
         <label class="rom-check-row" id="rom-lang-relayout-row" hidden>
           <input type="checkbox" id="rom-lang-relayout">
           <span>Give translated dialog more room (makes the disc image slightly larger)
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Each scene's dialog is stored compressed, and on the USA disc those blocks have no spare room. Without this option, a scene whose translation doesn't fit gets some of its longest lines put back in English.</p><p>With it on, those scenes get extra 2048-byte sectors and the rest of the disc shifts along, so every line fits at full length. The official European discs were mastered with extra room added the same way. Usually only a few scenes grow, by a few KB in total.</p><p>Only affects dialog. Names don't need it: a translated item, spell, art, accessory or monster name that outgrows its slot is moved or given room automatically. Menu labels keep fixed sizes. Test the result from a fresh boot or a memory-card save. An emulator save state made on another disc points at the old layout and will break. Details: <a href="translation.html">translation packs</a>.</p></span></span></span>
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Each scene's dialog is stored compressed, and on the USA disc those blocks have no spare room. Without this option, a scene whose translation doesn't fit gets some of its longest lines put back in English.</p><p>With it on, those scenes get extra 2048-byte sectors and the rest of the disc shifts along, so every line fits at full length. The official European discs were mastered with extra room added the same way. Usually only a few scenes grow, by a few KB in total.</p><p>Only affects dialog. Names don't need it: a translated item, spell, art, accessory or monster name that outgrows its slot is moved or given room automatically. Menu labels keep fixed sizes. Test the result from a fresh boot or a memory-card save. An emulator save state made on another disc points at the old layout and will break. Details: <a href="../guides/translating.html#more-room">giving dialog more room</a>.</p></span></span></span>
         </label>
         <div class="rom-row">
           <button type="button" id="rom-lang-validate" class="rom-button rom-button-ghost">Check pack against my disc</button>
@@ -82,6 +82,7 @@
           <button type="button" id="rom-lang-strip" class="rom-button rom-button-ghost" hidden>Make a shareable pack (.yaml, no English)</button>
           <button type="button" id="rom-lang-issues" class="rom-button rom-button-ghost" hidden>Download skipped lines (.csv)</button>
         </div>
+        <p class="rom-legend-item" style="margin:0.6rem 0 0"><a href="translation-workbench.html">Open the translation workbench</a> to edit a pack line by line, with live room and on-screen width checks.</p>
         <div id="rom-lang-status" class="rom-status"></div>
       </div>
     </details>
@@ -1132,5 +1133,6 @@
   }
 </style>
 
+<script src="../js/rom-cache.js"></script>
 <script src="../js/disc-info.js"></script>
 <script type="module" src="../js/rom-patcher-app.js"></script>

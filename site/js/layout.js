@@ -53,6 +53,7 @@ const NAV = [
       { href: 'guides/extracting-assets.html',       text: 'Extracting assets',        key: 'guides/extracting-assets' },
       { href: 'guides/playing-and-viewing.html',     text: 'Playing + viewing',        key: 'guides/playing-and-viewing' },
       { href: 'guides/modding-and-translation.html', text: 'Modding + translation',    key: 'guides/modding-and-translation' },
+      { href: 'guides/translating.html',             text: 'Translating the game',     key: 'guides/translating', indent: true },
       { href: 'guides/vrchat-world.html',            text: 'VRChat world',             key: 'guides/vrchat-world' },
     ],
   },
@@ -63,6 +64,7 @@ const NAV = [
       { href: 'viewer.html',                    text: 'Asset viewer',             key: 'viewer' },
       { href: 'media.html',                     text: 'Media browser',            key: 'media' },
       { href: 'tooling/rom-patcher.html',       text: 'ROM patcher',              key: 'tooling/rom-patcher' },
+      { href: 'tooling/translation-workbench.html', text: 'Translation workbench', key: 'tooling/translation-workbench' },
       { href: 'world.html',                     text: 'Game world',               key: 'world' },
       { href: 'shops.html',                     text: 'Shops & vendors',          key: 'shops' },
       { href: 'minigames.html',                 text: 'Minigames',                key: 'minigames' },
@@ -227,7 +229,7 @@ const NAV = [
 /* ---------- Zones ---------- */
 /* Interactive pages get app chrome (no sidebar); everything else is docs. */
 const EXPLORE_KEYS = new Set([
-  'home', 'play', 'viewer', 'media', 'tooling/rom-patcher', 'world', 'shops',
+  'home', 'play', 'viewer', 'media', 'tooling/rom-patcher', 'tooling/translation-workbench', 'world', 'shops',
   'minigames', 'arts', 'magic', 'monsters', 'characters', 'npcs', 'world-overview',
 ]);
 /* NAV sections rendered in the docs sidebar (order preserved). The 'explore'
@@ -242,7 +244,7 @@ function zoneForKey(key) {
    so each one is reachable from the left nav on any explore page. */
 const EXPLORE_GROUPS = [
   { label: 'play',           keys: ['play', 'minigames'] },
-  { label: 'modding',        keys: ['tooling/rom-patcher'] },
+  { label: 'modding',        keys: ['tooling/rom-patcher', 'tooling/translation-workbench'] },
   { label: 'browse the disc', keys: ['viewer', 'media', 'world', 'world-overview', 'characters', 'npcs', 'monsters', 'shops', 'arts', 'magic'] },
 ];
 
@@ -261,7 +263,7 @@ const RAIL = [
     icon: '<path d="M4 11.5 12 5l8 6.5"/><path d="M6.5 10.5V19h11v-8.5"/>' },
   { label: 'Play',   href: 'play.html',               match: k => k === 'play' || k === 'minigames',
     icon: '<rect x="3" y="8" width="18" height="9" rx="4.5"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="11.5" r="0.9"/><circle cx="17.8" cy="13.4" r="0.9"/>' },
-  { label: 'Mods',   href: 'tooling/rom-patcher.html', match: k => k === 'tooling/rom-patcher',
+  { label: 'Mods',   href: 'tooling/rom-patcher.html', match: k => k === 'tooling/rom-patcher' || k === 'tooling/translation-workbench',
     icon: '<path d="M4 8h4c3.5 0 4.5 8 8 8h4M4 16h4c1.4 0 2.4-1.1 3.2-2.3M12.8 10.2C13.8 9 14.8 8 16 8h4"/><path d="M18 6l2.5 2L18 10M18 14l2.5 2-2.5 2"/>' },
   { label: 'Browse', href: 'viewer.html',             match: k => ['viewer', 'media', 'world', 'world-overview', 'characters', 'npcs', 'monsters', 'shops', 'arts', 'magic'].includes(k),
     icon: '<path d="M7 9 12 6l5 3v6l-5 3-5-3z"/><path d="M7 9l5 3 5-3M12 12v6"/>' },

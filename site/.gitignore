@@ -65,6 +65,7 @@
 /guides/getting-started.html
 /guides/modding-and-translation.html
 /guides/playing-and-viewing.html
+/guides/translating.html
 /guides/vrchat-world.html
 /index.html
 /magic.html
@@ -137,6 +138,7 @@
 /tooling/rom-patcher.html
 /tooling/spine-flag-writers-capture.html
 /tooling/static-overlay-pipeline.html
+/tooling/translation-workbench.html
 /tooling/translation.html
 /viewer.html
 /world-overview.html

@@ -54,7 +54,8 @@ Choose by what you're trying to do:
 | Capture a runtime overlay | [`tooling/overlay-capture.md`](tooling/overlay-capture.md) |
 | Look up a key function or RAM address | [`reference/functions.md`](reference/functions.md), [`reference/memory-map.md`](reference/memory-map.md) |
 | Cross-reference against a different region's build | [`reference/builds.md`](reference/builds.md) |
-| Patch your own disc (randomizer / translation) | [`guides/modding-and-translation.md`](guides/modding-and-translation.md), then [`tooling/randomizer.md`](tooling/randomizer.md) and [`tooling/translation.md`](tooling/translation.md) |
+| Patch your own disc (randomizer / translation) | [`guides/modding-and-translation.md`](guides/modding-and-translation.md), then [`tooling/randomizer.md`](tooling/randomizer.md) and [`tooling/translation/`](tooling/translation/index.md) |
+| Translate the game into your language | [`guides/translating.md`](guides/translating.md), then [`tooling/translation/`](tooling/translation/index.md) |
 | Find an open question to work on | [`reference/open-rev-eng-threads.md`](reference/open-rev-eng-threads.md) |
 | Look up an answered question, and how firmly it is pinned | [`reference/re-settled-threads.md`](reference/re-settled-threads.md) |
 | Check whether a plausible reading was already disproved | [`reference/re-do-not-re-walk.md`](reference/re-do-not-re-walk.md) |

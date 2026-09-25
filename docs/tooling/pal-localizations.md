@@ -4,7 +4,7 @@ Three official PAL localizations of *Legend of Legaia* exist alongside the
 NTSC/USA reference disc. This page documents their structure, how they align to
 the USA disc coordinate space, and the encoding of their accented text - the
 groundwork for lifting the official French / German / Italian translations into
-the [translation pipeline](translation.md). It contains **no game text** (byte
+the [translation pipeline](translation/index.md). It contains **no game text** (byte
 values, offsets, counts and encodings only).
 
 The cross-region measurement tool is `legaia-patcher translate diff-disc`
@@ -174,7 +174,7 @@ text on NTSC therefore needs **no structural change** - only (1) drawing the
 ~40-cell accented-glyph union into the existing high cells and (2) setting each
 new cell's width byte in the font width table (`SCUS 0x80074050`). This is the
 concrete form of the "accented scripts need a font patch" caveat in
-[`translation.md`](translation.md).
+[`translation/`](translation/index.md).
 
 ## Lifting an official translation
 
@@ -307,7 +307,7 @@ name.
 
 A pool string is also paired through the **code and data that reference it**
 (`translation::refpair`), and for a strict pool (see
-[`translation.md`](translation.md#strict-pools)) that is the only pairing
+[`ui-strings.md`](translation/ui-strings.md#strict-pools)) that is the only pairing
 besides an identical layout. A localized build lays its string pools out by
 length - the compiler puts a string of up to eight bytes in the `$gp`
 small-data pool and a longer one in read-only data - so the Spanish

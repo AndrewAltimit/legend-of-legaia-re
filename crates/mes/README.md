@@ -49,7 +49,7 @@ dialog-rendering overlay is captured) will fill in the meanings.
   plain ASCII. The text-decoding consumers live elsewhere: the engine's
   dialog renderer draws MES glyph streams through `legaia-font`, and the
   translation codec (`legaia-patcher translate export`, see
-  [`docs/tooling/translation.md`](../../docs/tooling/translation.md)) is the
+  [`docs/tooling/translation/`](../../docs/tooling/translation/index.md)) is the
   user-facing dialog-text path.
 - Validate offset tables against the bytecode region. The offset-table
   base/encoding (u24 LE vs another stride) is empirical and not yet

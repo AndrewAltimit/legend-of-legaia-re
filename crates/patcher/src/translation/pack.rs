@@ -5,7 +5,7 @@
 //! entry carries a stable provenance `key` (where on the disc the text lives),
 //! an initially empty `translation`, and the byte `budget` an encoded
 //! translation must fit (same-size in-place patching - see
-//! `docs/tooling/translation.md`).
+//! `docs/tooling/translation/space-and-budgets.md`).
 //!
 //! Only entries whose `translation` is non-empty are ever written to a disc;
 //! everything else is left byte-identical.

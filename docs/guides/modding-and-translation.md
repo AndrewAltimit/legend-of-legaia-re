@@ -130,51 +130,20 @@ thumbnails / preview). Full reference:
 ## 5. Translate the game
 
 The `translate` family exports the disc's text as an editable YAML **language
-pack** and imports a filled pack back as a same-size in-place patch
-([translation.md](../tooling/translation.md) is the full reference):
+pack** and imports a filled pack back onto a copy of the disc. It has its own
+step-by-step guide, written for translators:
+[translating.md](translating.md) - the browser and command-line paths, how
+much room a line has, and why a line can stay English. The full reference is
+[`tooling/translation/`](../tooling/translation/index.md).
 
-```bash
-# 1. Export the text (working pack - contains game text, keep it private).
-./legaia-patcher translate export --input "/path/to/disc.bin" -o legaia_en.yaml
+A language pack composes with every randomizer option: on the site's ROM
+patcher page, pick a language and any randomizer options and patch once. The
+dialog is applied before the randomizer passes and the names after them
+([ordering](../tooling/translation/dialog-import.md#ordering-dialog-before-the-randomizer-names-after)).
 
-# 2. Make a skeleton for your language and fill the `translation:` fields.
-./legaia-patcher translate init --lang fr --from legaia_en.yaml \
-    --contributor "you" -o legaia_fr.yaml
-
-# 3. Check coverage, encodability, and byte budgets as you go.
-./legaia-patcher translate stats --pack legaia_fr.yaml --input "/path/to/disc.bin"
-
-# 4. Apply to a copy (and emit a shareable PPF).
-./legaia-patcher translate import --input "/path/to/disc.bin" \
-    --pack legaia_fr.yaml --output legaia_fr.bin --patch legaia_fr.ppf
-```
-
-The constraint that shapes every entry: **same-size in place**. Each string's
-`budget:` is its maximum encoded byte length; `stats` and `import` re-measure
-every target on the disc and skip anything that does not fit, summarizing
-skips per reason (`--verbose` for the full per-key list). Names are the
-exception: an item / spell / art / accessory name longer than its budget is
-moved into room other, shorter names give up, and a monster name grows its
-record up to fifteen bytes (see
-[Longer names](../tooling/translation.md#longer-names)). Partially filled
-packs are always playable - untranslated entries stay byte-identical. The
-retail font is printable-ASCII-only, so accented text must be written
-unaccented (`Epee`, not `Épée`).
-
-Before sharing a filled pack, `translate strip` removes every `source:` field,
-leaving only your translations keyed by disc coordinates - the only shape that
-is safe to publish. `merge` recombines chunked packs.
-
-Owners of an official PAL disc can lift its French / German / Italian text
-onto USA coordinates instead of translating from scratch:
-
-```bash
-./legaia-patcher translate lift-official --from "/path/to/SCES-disc.bin" \
-    --target "/path/to/USA.bin" -o legaia_de.yaml
-```
-
-`diff-disc` and `fit-report` are the text-free measurements behind this - how
-well the two discs align and how much official text fits the USA budgets. See
+Owners of an official PAL disc, or of a fan-translated disc, can lift its text
+onto USA coordinates instead of translating from scratch
+(`translate lift-official`); see
 [pal-localizations.md](../tooling/pal-localizations.md).
 
 ## 6. Inspect saves
@@ -231,7 +200,8 @@ printing `[]`. Background + pinned offsets: [cheats.md](../reference/cheats.md).
 ## Related docs
 
 - [randomizer.md](../tooling/randomizer.md) - every randomizer feature + how the code hooks work.
-- [translation.md](../tooling/translation.md) - pack schema, markup, budgets, what may be committed.
+- [translating.md](translating.md) - the translator's guide.
+- [translation/](../tooling/translation/index.md) - pack schema, markup, budgets, what may be committed.
 - [pal-localizations.md](../tooling/pal-localizations.md) - the official PAL text and how it lifts.
 - [save-record.md](../formats/save-record.md) - the character-record byte layout.
 - [getting-started.md](getting-started.md) - back to the tool index.

@@ -1,6 +1,7 @@
 //! Proportional dialog-font loader and layout helper.
 //!
-//! PORT: FUN_80036888, FUN_80036044, FUN_80035F04, FUN_8003CC98, FUN_8003CD00
+//! PORT: FUN_80036888, FUN_80035F04, FUN_8003CC98, FUN_8003CD00
+//! REF: FUN_80036044 (typewriter glyph count; see `measure` for what is ported)
 //!
 //! Consumes `extracted/font/dialog_font_atlas.png` (224×210 RGBA atlas of
 //! 14×15-pixel glyph cells, 16 columns × 14 rows) and
@@ -20,6 +21,11 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 pub mod builtin;
+pub mod limits;
+pub mod measure;
+
+pub use limits::{TEXT_LIMITS, TextLimit, limit_for};
+pub use measure::{MeasureOptions, PenItem, TextMeasure};
 
 /// Drawn region within each atlas cell. Source cells are 16×16 with one row
 /// and two columns of inter-glyph guard space; the actual glyph occupies the
@@ -419,9 +425,11 @@ impl Font {
     /// Single words longer than the box width are emitted as-is on their
     /// own line - no mid-word breaking.
     ///
-    /// Mirrors the field VM's pre-layout pass at SCUS `FUN_80036044` -
-    /// engines that drive the dialog renderer's per-line measure step use
-    /// this to feed pre-wrapped glyph streams to [`Font::layout`].
+    /// This is an engine convenience, not a retail behaviour: no retail
+    /// text surface wraps. Every retail line break is an authored `0x7C`
+    /// or a new `0x1F` dialog line, and `FUN_80036044` (once read as a wrap
+    /// pass) returns the string's typewriter glyph count, not a layout. See
+    /// `docs/formats/dialog-font.md` ("Line width and wrapping").
     pub fn layout_wrapped(&self, text: &[u8], box_width_px: u32) -> Layout {
         let wrapped = self.wrap_bytes(text, box_width_px);
         self.layout(&wrapped)
@@ -1382,7 +1390,7 @@ pub fn export_extracted_font_dir(font_tim: &[u8], scus: &[u8], out_dir: &Path) -
         },
         "rendering_pipeline": {
             "dialog_renderer": "FUN_80036888",
-            "wrapper_with_word_wrap": "FUN_8003CC98",
+            "draw_and_glyph_count": "FUN_8003CC98",
             "preprocessor": "FUN_80036514",
             "gpu_primitive": "GP0 0x64 (variable-size textured rectangle)",
             "newline_byte": "0x7C",

@@ -1878,7 +1878,7 @@ pub fn read_manual_edit_tables(image: Vec<u8>) -> Result<JsValue, JsValue> {
 
 /// Short human label for a skip diagnostic, for the per-reason breakdown the
 /// page shows ("over budget", "does not recompress", ...).
-fn issue_reason(msg: &str) -> &'static str {
+pub(crate) fn issue_reason(msg: &str) -> &'static str {
     if msg.contains("recompresses") {
         "scene dialog does not recompress into its footprint"
     } else if msg.contains("no free run") {
@@ -1902,7 +1902,7 @@ fn issue_reason(msg: &str) -> &'static str {
 /// [{name, total, filled, applied, already_applied, skipped}], reasons:
 /// [{reason, count}] }` - the per-section coverage report the page renders
 /// after a language patch.
-fn lang_report_json(
+pub(crate) fn lang_report_json(
     language: &str,
     report: &ImportReport,
     sections: &[legaia_patcher::translation::SectionCounts],

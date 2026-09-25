@@ -53,3 +53,31 @@ fn loads_real_extracted_font_or_skips() {
     assert!(layout.advance_x > 0);
     assert_eq!(layout.advance_y, LINE_HEIGHT);
 }
+
+/// The built-in escape advances `measure` falls back on must agree with
+/// the table decoded off the executable, entry for entry.
+#[test]
+fn builtin_escape_advances_match_extracted_table_or_skips() {
+    use legaia_font::measure::{EscapeAdvance, retail_escape_advance};
+    let Some(root) = extracted_root() else {
+        eprintln!("extracted/font not present - skipping");
+        return;
+    };
+    let Some(table) = Font::load_escape_table(&root).expect("parse metadata") else {
+        eprintln!("no escape table in metadata - skipping");
+        return;
+    };
+    assert_eq!(table.entries.len(), 0x26);
+    for (i, e) in table.entries.iter().enumerate() {
+        let want = if e.string_id == 0 {
+            EscapeAdvance::Numeric
+        } else {
+            EscapeAdvance::Fixed(u32::from(e.advance_px))
+        };
+        assert_eq!(
+            retail_escape_advance(i as u8),
+            Some(want),
+            "escape 0x{i:02X}"
+        );
+    }
+}

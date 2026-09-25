@@ -105,6 +105,23 @@ impl StreamManText {
         start..start + self.man_len
     }
 
+    /// Entry offset one past the last byte [`Self::rebuild`] carries over:
+    /// the stream terminator, or any non-zero trailer past it. Everything
+    /// after it is the footprint's zero sector padding.
+    fn tail_end(&self, foot: &[u8]) -> usize {
+        foot.iter()
+            .rposition(|&b| b != 0)
+            .map_or(self.stream_end, |last| (last + 1).max(self.stream_end))
+    }
+
+    /// Bytes a grown MAN may add before [`Self::rebuild`] needs another
+    /// sector: the footprint's zero padding past [`Self::tail_end`]. A growth
+    /// of `n` bytes (rounded up to 4, the chunk alignment) is a same-size-image
+    /// write when `n <= sector_slack`, and a whole-sector relayout otherwise.
+    pub fn sector_slack(&self, foot: &[u8]) -> usize {
+        foot.len().saturating_sub(self.tail_end(foot))
+    }
+
     /// Rebuild the entry's **full-footprint payload** around a grown (or
     /// shrunk) MAN: same header offset, re-headered chunk, every later byte of
     /// the stream (chunks, terminator, trailer) shifted verbatim, zero-padded
@@ -131,10 +148,7 @@ impl StreamManText {
         // trailer past it, shifts verbatim; the footprint's zero sector padding
         // is re-derived below rather than carried (carrying it would grow the
         // entry by a sector for a one-byte edit).
-        let tail_end = foot
-            .iter()
-            .rposition(|&b| b != 0)
-            .map_or(self.stream_end, |last| (last + 1).max(self.stream_end));
+        let tail_end = self.tail_end(foot);
         out.extend_from_slice(&foot[range.end..tail_end]);
         // Never shorter than the footprint it replaces: the entry's TOC slot
         // is fixed, so a MAN that comes out smaller (a translation shorter

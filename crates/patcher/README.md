@@ -29,7 +29,7 @@ Four patching families share that machinery:
   (`super_arts_pack`).
 - **Translation packs** - the `translate` CLI family: disc text out to an
   editable YAML language pack, filled pack back in as a same-size in-place
-  reimport ([`docs/tooling/translation.md`](../../docs/tooling/translation.md)).
+  reimport ([`docs/tooling/translation/`](../../docs/tooling/translation/index.md)).
 - **Manual edits** - targeted single-record patching for curated mods:
   `monster-block` dumps one monster's decoded `battle_data` block for hex
   editing (stats, element, name) and re-packs it onto a copy of the disc;
@@ -1463,7 +1463,7 @@ bytes and a shared PPF carries only the user's own edit. Format reference:
 
 `translation` module + the `legaia-patcher translate` subcommands
 (`export` / `init` / `strip` / `merge` / `stats` / `diff-disc` /
-`lift-official` / `fit-report` / `import`): community language packs. Exports every cataloged user-facing string into an editable YAML
+`lift-official` / `fit-report` / `space` / `import`): community language packs. Exports every cataloged user-facing string into an editable YAML
 pack - the SCUS name pools (items, item types, spells, Tactical Arts, accessory
 passives, new-game party names) and the `0x1F`-segment dialog corpus
 (scene-bundle MANs, LZS-decompressed; plus raw carriers - v12 event-script
@@ -1506,7 +1506,37 @@ so it holds no original script and *is* committable - the shipped
 at import (the in-pack budget is a hint only). `translate init --resume`
 seeds a fresh working pack from a shipped one, `--chunk` splits for a parallel
 bulk fill, `merge` recombines. Full workflow + schema:
-[`docs/tooling/translation.md`](../../docs/tooling/translation.md).
+[`docs/tooling/translation/`](../../docs/tooling/translation/index.md).
+
+### Space report
+
+`translate space --input DISC [--pack P] [--section S] [--allow-relayout]
+[--scene PROT] [--json] [--verbose]` shows how much room every translatable
+string has and what uses it (`translation::space`, JSON schema
+`legaia-space-v1` in the module docs). Disc only, it lists the SCUS name
+compaction regions (bytes English uses per region), which names may move and
+why the rest are pinned, each monster record's in-place room and growth cap,
+the fixed-room `ui_menu` / `system_text` pools, every scene MAN's compressed
+footprint against its on-disc size, and the streaming dungeon scenes' sector
+slack. With a pack it dry-runs `import` on an in-memory copy and adds what the
+pack uses: per key the encoded length and the outcome (`in_place`, `moved`,
+`grown`, `relocated`, `relayout`, or the skip class), per region the free bytes
+left after the moves, per scene the recompressed size, the overflow before
+rollback, the rolled-back keys, whether the relocator refused it, and the
+sectors `--allow-relayout` would add. Output is keys and numbers only.
+
+Every number comes from the importer, not from a second copy of its rules:
+`import_pack_phase` records what it measures and decides in
+`ImportReport::trace` (`ImportTrace`), and the report reads that. The scene
+planner (`import::plan_scene_man`) and the SCUS pass (`import::apply_scus_work`)
+are split out so the editor fast paths run the same code:
+`space::scene_fit` re-plans one scene without writing (milliseconds for most
+scenes, under a second for a scene that rolls back many lines), and
+`space::NameFitter` runs the SCUS pass over a copy of the executable (the
+compaction is not a local sum - an unaligned retail string keeps its offset
+and a moved name takes the tightest run in any region). Test:
+`tests/translation_space_real.rs` checks the predicted outcome of every filled
+key, and every scene's rolled-back set, against a real import of the same pack.
 
 ## Orchestration (`apply`)
 
