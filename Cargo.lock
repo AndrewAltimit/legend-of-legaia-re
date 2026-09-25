@@ -1614,6 +1614,7 @@ dependencies = [
 name = "legaia-web-viewer"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "console_error_panic_hook",
  "glam",
  "js-sys",

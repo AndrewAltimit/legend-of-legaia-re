@@ -25,7 +25,7 @@ pub mod limits;
 pub mod measure;
 
 pub use limits::{TEXT_LIMITS, TextLimit, limit_for};
-pub use measure::{MeasureOptions, TextMeasure};
+pub use measure::{MeasureOptions, PenItem, TextMeasure};
 
 /// Drawn region within each atlas cell. Source cells are 16×16 with one row
 /// and two columns of inter-glyph guard space; the actual glyph occupies the

@@ -197,10 +197,38 @@ fn expand(text: &[u8], opts: &MeasureOptions<'_>, unresolved: &mut Vec<(u8, u8)>
     out
 }
 
+/// One drawn item of a measured string, at its pen position: what
+/// [`Font::measure`] advanced over, for a caller that draws the line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PenItem {
+    /// A glyph byte (after substitution) at pen `x` on `line`.
+    Glyph { line: u32, x: u32, byte: u8 },
+    /// A `0xCE` escape occupying `width` px from pen `x` on `line`.
+    Escape { line: u32, x: u32, width: u32 },
+}
+
 impl Font {
     /// Pixel width of an encoded string as retail draws it. See the module
     /// docs for the exact rules.
     pub fn measure(&self, text: &[u8], opts: &MeasureOptions<'_>) -> TextMeasure {
+        self.walk(text, opts, |_| {})
+    }
+
+    /// [`Self::measure`] plus every glyph and escape it advanced over, at
+    /// the pen position the measure used - so a preview drawn from these
+    /// items is exactly as wide as the measured width.
+    pub fn pen_items(&self, text: &[u8], opts: &MeasureOptions<'_>) -> (Vec<PenItem>, TextMeasure) {
+        let mut items = Vec::new();
+        let m = self.walk(text, opts, |it| items.push(it));
+        (items, m)
+    }
+
+    fn walk(
+        &self,
+        text: &[u8],
+        opts: &MeasureOptions<'_>,
+        mut emit: impl FnMut(PenItem),
+    ) -> TextMeasure {
         let mut unresolved = Vec::new();
         let expanded = expand(text, opts, &mut unresolved);
         let mut line_widths = Vec::new();
@@ -220,11 +248,22 @@ impl Font {
             if is_two_byte(c) {
                 let arg = expanded.get(i + 1).copied().unwrap_or(0);
                 if c == 0xCE {
-                    pen = pen.saturating_add(self.escape_px(arg, opts));
+                    let w = self.escape_px(arg, opts);
+                    emit(PenItem::Escape {
+                        line: line_widths.len() as u32,
+                        x: pen,
+                        width: w,
+                    });
+                    pen = pen.saturating_add(w);
                 }
                 i += 2;
                 continue;
             }
+            emit(PenItem::Glyph {
+                line: line_widths.len() as u32,
+                x: pen,
+                byte: c,
+            });
             pen = pen
                 .saturating_add(self.advance_of(c))
                 .saturating_add(opts.glyph_pad);
@@ -260,6 +299,49 @@ mod tests {
 
     fn plain(font: &Font, s: &[u8]) -> u32 {
         s.iter().map(|&c| font.advance_of(c)).sum()
+    }
+
+    #[test]
+    fn pen_items_match_the_measure() {
+        let f = synthetic_for_tests();
+        let text = [b'a', b'b', 0xCE, 0x10, b'|', b'c'];
+        let opts = MeasureOptions::dialog();
+        let (items, m) = f.pen_items(&text, &opts);
+        assert_eq!(m, f.measure(&text, &opts));
+        assert_eq!(items.len(), 4);
+        assert_eq!(
+            items[0],
+            PenItem::Glyph {
+                line: 0,
+                x: 0,
+                byte: b'a'
+            }
+        );
+        let bx = f.advance_of(b'a') + 1;
+        assert_eq!(
+            items[1],
+            PenItem::Glyph {
+                line: 0,
+                x: bx,
+                byte: b'b'
+            }
+        );
+        assert!(matches!(
+            items[2],
+            PenItem::Escape {
+                line: 0,
+                width: 12,
+                ..
+            }
+        ));
+        assert_eq!(
+            items[3],
+            PenItem::Glyph {
+                line: 1,
+                x: 0,
+                byte: b'c'
+            }
+        );
     }
 
     #[test]

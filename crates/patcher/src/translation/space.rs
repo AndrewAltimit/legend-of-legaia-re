@@ -632,6 +632,18 @@ pub fn space_report(
     opts: SpaceOptions,
 ) -> Result<SpaceReport> {
     let english = export_pack(patcher)?;
+    space_report_with_export(patcher, &english, pack, opts)
+}
+
+/// [`space_report`] with the disc's export already in hand (`english` must
+/// be [`export_pack`] of `patcher`, untouched): a long-lived editor that
+/// holds the export skips the second whole-disc walk.
+pub fn space_report_with_export(
+    patcher: &DiscPatcher,
+    english: &LanguagePack,
+    pack: Option<&LanguagePack>,
+    opts: SpaceOptions,
+) -> Result<SpaceReport> {
     let dry = match pack {
         Some(p) => {
             let mut scratch = DiscPatcher::open(patcher.image().to_vec())
@@ -645,7 +657,7 @@ pub fn space_report(
         }
         None => None,
     };
-    build_report(patcher, &english, pack, dry.as_ref(), opts.relayout)
+    build_report(patcher, english, pack, dry.as_ref(), opts.relayout)
 }
 
 fn build_report(

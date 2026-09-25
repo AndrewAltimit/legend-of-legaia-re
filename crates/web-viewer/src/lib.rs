@@ -64,6 +64,7 @@ pub mod summon_view;
 pub mod texture_pack;
 pub mod texture_registry;
 pub mod tmd3d;
+pub mod translate_workbench;
 mod viewer_render;
 
 use disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
