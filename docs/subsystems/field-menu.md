@@ -29,6 +29,7 @@ resolved through the window-descriptor table below.
 - [Magic list](#magic-list-submenu-2) · [Moves list](#moves-list-submenu-3) · [Skills page](#skills-page-submenu-1)
 - [Top-level pause menu](#top-level-pause-menu) · [Equip screen](#equip-screen) · [Options screen](#options-screen)
 - [Submenu state machines](#submenu-state-machines) · [Items screen](#items-screen) · [Magic screen](#magic-screen)
+- [Name columns and translated text](#name-columns-and-translated-text)
 - [Prize-exchange windows](#prize-exchange-ticket-counter-windows) · [Inn stay](#inn-stay-there-is-no-inn-screen)
 - [Which screen opens a window](#which-screen-opens-a-window)
 - [Draw primitives + CLUT staging](#draw-primitives--clut-staging)
@@ -1123,9 +1124,10 @@ digit-sprite path leading-zero-suppresses the tens cell.
 at `WY + 0xC` for the item-list rect). Per-row draw switches on the
 entry's class nibble: `0x1000` = bag row (name via the row-name
 resolver `FUN_8002FF8C` at `WX+0xC`; bag count from `0x80085959 +
-slot*2` as 8-px digit cells from `WX+0x6C` with skip-advance
-leading-zero logic - a 1-digit count inks the `WX+0x74` cell, which is
-the capture-pinned field); `0x6000` = bag row with an equip-slot
+slot*2` as a three-cell, 8-px digit field from `WX+0x6C` with
+skip-advance leading-zero logic - the hundreds cell is always blank for
+a count capped at 99, a 2-digit count inks `WX+0x74`/`WX+0x7C` and a
+1-digit count inks `WX+0x7C`); `0x6000` = bag row with an equip-slot
 pictogram (icon id via equip record `+7` bits `0x60` through the
 halfword table `0x80073A90`, name at `WX+0x1C`) - the Equip screen's
 candidate list; `0x9000` = passive row (ICO `0x46` + name at
@@ -1261,9 +1263,10 @@ section](#the-kind-4-list-kernel-scus-fun_80032a44)) over
 class-`0x1000` bag rows built by [the content-id-3
 case](#use-list-row-build-content-id-3-fun_80030628) of
 `FUN_80030628`. Rows start at `(WX+0xC, WY+0xC)`, pitch `0xE`, 12 rows
-per page: item name, then the bag count as 8-px digit cells whose
-2-digit field spans `WX+0x6C..0x7C` (a 1-digit count inks the `WX+0x74`
-cell - the capture-pinned spot). The page draws CLUT-7 white while the
+per page: item name, then the bag count in the kernel's three-cell
+field from `WX+0x6C`; with counts capped at 99 the ink starts at
+`WX+0x74` (tens) or `WX+0x7C` (ones), which is where
+`engine-ui::pause_lists` draws it. The page draws CLUT-7 white while the
 command window has focus (the kernel is *parked*, mode 4, which forces
 white); once the hand enters the list each row shows its own build-time
 ink - white usable, CLUT-0 grey for rows the builder dimmed (`0x800`:
@@ -1770,6 +1773,42 @@ script through `FUN_801D6628`, gated on the slide latch `_DAT_8007BB80 == 0`:
 - **`FUN_801DD310`** is an idle sub-screen tick that only pumps the window
   engine `FUN_80031D00`. `overlay_menu_801dd310.txt`.
 
+## Name columns and translated text
+
+None of these surfaces wraps or clips, so a name longer than its column
+draws over the column. Each budget below is the distance from the name
+pen to the first cell the next column can ink, measured at
+`DAT_800740E8 = 0` (every menu draw leaves it at zero). A number field
+drawn by the list kernel or by `FUN_80034B78` is a run of 8-px cells
+starting at its pen, with leading zeros left blank, so its first *used*
+cell depends on the value's range.
+
+- **Item list (bag rows, class `0x1000`)** - name at `WX+0xC`
+  (`addiu a3,s6,0xc` at `0x8003316C`); count field of three cells from
+  `WX+0x6C` (`0x8003317C`). Bag counts stop at 99, so the tens cell at
+  `WX+0x74` is the first that inks: **104 px**. The same class-`0x6000`
+  row for a non-equipment item draws its count from `WX+0x78`
+  (`0x80033374`), and for equipment draws a pictogram and the name at
+  `WX+0x1C` with no count.
+- **Shop buy list (class `0x3000` / `0xA000`)** - name at `WX+0x18`
+  (`0x800335A8`); price field of five cells from `WX+0x80`
+  (`0x800335B0`). A `u16` price can fill all five: **104 px**.
+- **Item info window (id 17)** - name at `WX` (`FUN_801D0F1C`,
+  `0x801D0F8C`); `FUN_801DCB60` draws the 2-digit count at `WX+0x7C`
+  (`0x801DCBD4`): **124 px**.
+- **Status magic page** - spell name at `WX+0x10` (`0x801D42EC`), level
+  string at `WX+0x78` (`0x801D430C`): **104 px**. The spell string's
+  leading element-icon escape counts against it.
+- **Status moves page** - art name at `WX+0x10` (`0x801D44F4`), 3-cell
+  AP field at `WX+0x82` (`0x801D4538`): **114 px**, or 8 px more while
+  every cost stays under 100.
+
+These budgets are the `legaia_font::limits::TEXT_LIMITS` entries
+`item_list_name`, `shop_buy_name`, `item_info_name`,
+`status_magic_name` and `status_moves_name`; `legaia_font::Font::measure`
+gives a string's advance. The dialog box and battle budgets are on
+[`dialog-font.md`](../formats/dialog-font.md#line-width-and-wrapping).
+
 ## Dialog reading box (FUN_801D84D0)
 
 The field dialog pager `FUN_801D84D0` (dialog overlay) draws the NPC /
@@ -1791,6 +1830,9 @@ framebuffer:
 - **Text pen** = the box origin exactly: each line draws at
   `FUN_80036888(line, 0, 0, ctx+0x12, ctx+0x14 + i*0xF)` with the ink
   staged CLUT 7. Measured first-line ink starts at `x 38, y 18`.
+  Before each row the pager stores `DAT_800740E8 = 1`, so dialogue
+  glyphs advance one pixel wider than menu text - see
+  [`dialog-font.md`](../formats/dialog-font.md#the-field-dialog-box).
 - **Advance hand** (page-wait state `0x19`) = `FUN_8002B994(1, 1,
   0x10A, ctx+0x14 + lines*0xF - 0x13)` - `0x10A = x + w - 0x10` for the
   standard box.

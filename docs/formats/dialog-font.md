@@ -49,7 +49,7 @@ Character codes `0x00..=0x1F` are reserved for control / escape bytes (`0x7C` ne
 advance = widths[c] + DAT_800740E8 + 1
 ```
 
-where `DAT_800740E8` is a per-string padding override that's normally zero (and is reset to zero at the end of each render call). The trailing `+1` is a fixed inter-character gap.
+where `DAT_800740E8` is a per-call padding override, reset to zero at the end of each render call. Menus and battle draw with it at zero; the field dialog pager `FUN_801D84D0` stores `1` before every row it draws, so dialogue runs one pixel wider per glyph than the same text in a menu (see [Line width and wrapping](#line-width-and-wrapping)). The trailing `+1` is a fixed inter-character gap.
 
 The advance is applied by the **common tail** of `FUN_80036888`'s per-byte loop
 (body `0x80036B9C`), which every byte reaches except the four control bytes
@@ -126,9 +126,9 @@ When `string_id != 0`, the renderer calls `FUN_8002C488(x, y + y_offset, string_
 | Step | Function | Notes |
 |---|---|---|
 | Source preprocessor | `FUN_80036514` | Expands authoring-time `^X` (0x5E) escapes into runtime `0xCE (X-0x2D)` escape stream. |
-| Word-wrap pre-pass | `FUN_80036044` | Called from `FUN_8003CC98`. Wraps lines to fit the dialog box width. |
+| Typewriter glyph count | `FUN_80036044` | Called from `FUN_8003CC98`. Counts the units a typewriter reveal steps through; it neither measures pixels nor wraps. |
 | Single-line renderer | `FUN_80036888` | Iterates bytes, dispatches escapes, emits one GP0 0x64 sprite per glyph. |
-| Multi-line wrapper | `FUN_8003CC98` | `FUN_80036044` + `FUN_80036888`. Used by the field dialogue renderer chain. |
+| Draw and count | `FUN_8003CC98` | `FUN_80036044` + `FUN_80036888`: draws one string, returns its glyph count. |
 | Text-actor tick | `FUN_80031D00` | Per-actor text rendering; uses an alternate width-bucketed glyph layout for HUD/status numbers (column-0 stride 8 px, height 12 px) - see `DAT_80073DCC`. |
 
 Per-glyph GP0 packet (variable-size textured rectangle, opaque, with raw-texture color):
@@ -147,7 +147,7 @@ The texture page is set earlier by a separate GP0 0xE1 (DRAWMODE) primitive - it
 
 | Byte | Operand | Meaning |
 |---|---|---|
-| `0x20` | - | Space. No glyph; advance X by `widths[0x20]` (=4). |
+| `0x20` | - | Space. No glyph; advance X like any glyph, `widths[0x20] + DAT_800740E8 + 1`. |
 | `0x7C` | - | Newline. Advance Y by 14 px; reset X to line-start. |
 | `0xCE` | u8 | Escape - index into the table at `0x80074050`. |
 | `0xCF` | u8 | Color change. Sets `DAT_8007B454` (CLUT additive index 0..15). |
@@ -165,7 +165,7 @@ The texture page is set earlier by a separate GP0 0xE1 (DRAWMODE) primitive - it
 | CLUT base | `ghidra/scripts/funcs/80036888.txt` lines 195-196 (`addiu v1,v1,0x7f86`) |
 | Color-change escape | `ghidra/scripts/funcs/80036888.txt` lines 278-280 (case `0xCF`) |
 | Author-time `^X` preprocessor | `ghidra/scripts/funcs/80036514.txt` lines 246-249 |
-| Multi-line wrapper | `ghidra/scripts/funcs/8003cc98.txt` |
+| Draw-and-count wrapper | `ghidra/scripts/funcs/8003cc98.txt` |
 
 This renderer chain draws **field dialogue**, which has no dedicated opcode: a
 field NPC's text is its inline interaction-script MES (retail `actor[+0x90]`),
@@ -176,6 +176,60 @@ op `0x3E` with `op0 < 100` is the scripted-battle install, not a talk) - see [`s
 by the `0x3F` named scene-change; an earlier note mislabeled it. The
 `_DAT_1F800394 |= 0x40` it sets is a scene-transition-pending flag, not a
 "dialog active" lock.)
+
+## Line width and wrapping
+
+Byte room is not screen room. A translated line can fit its byte slot and still run past the box it is drawn in, because **no retail text surface wraps**: every line break is an authored `0x7C` or a new `0x1F` dialog line, and an over-long line is drawn in full, over the box frame and off it. `FUN_80036888` has no clip and no length test, and none of its callers measure a line before drawing it.
+
+### What a line measures
+
+A line's width is its pen advance, computed on the **expanded** string. `FUN_80036888` first runs the source through `FUN_80036514` into the buffer at `0x800740EC`, and the walk then sees:
+
+- **Glyph bytes** advance `widths[c] + DAT_800740E8 + 1`, spaces included.
+- **Substitution tokens** `0xC1..=0xC5` and `0xC7` are replaced by their text before the walk, so they count at the full width of what they splice in: `0xC1` a party member's display name (record `+0x2A7`; argument `0x63` = the character `DAT_80084597` names), `0xC2` / `0xC4` an item name (`0x8007436C + id*0xC`), `0xC3` a spell name (`0x800754D0 + id*0xC`), `0xC5` an arts name (the `0x80075EC4` table, 20-byte stride, matched on `[character, art]`), `0xC7` one of the 8-byte SCUS names at `0x80073F24`. A `0xC1` inside a spliced string is expanded once more; no other nested token is.
+- **`0xC0` and `0xC6`** have no arm in the expander's jump table (`0x80036694` branches them to the copy loop at `0x800367D0`), so they splice in whatever the previous token pointed at. Treat them as undefined.
+- **`0xCE` escapes** advance the table's `+2` byte for a string escape. A numeric escape (`string_id == 0`) draws through `FUN_80034B78` and advances `8` px per digit - not the table's `32`, which only the measurer `FUN_80035F04` uses.
+- **`0xCF`** (and its author alias `0xFF`) changes ink and adds nothing.
+
+`FUN_80036044` is not a width. It returns the string's **glyph count** - one per glyph, `0x7C` or `0xCE`, zero per `0xCF`, the spliced length per substitution - which is what a typewriter reveal steps through (`FUN_80036888`'s third argument caps the count drawn). Retail's pixel measurer is `FUN_80035F04`: the same expansion into a 256-byte stack buffer, then the widest `0x7C`-separated line.
+
+The port is `legaia_font::Font::measure` (`crates/font/src/measure.rs`), which takes the surface's `DAT_800740E8` and a resolver for the runtime substitutions, and reports any token it could not resolve so a width is never silently a lower bound.
+
+### The field dialog box
+
+The pager `FUN_801D84D0` draws each row with `FUN_80036888` at the box's own `x` (`ctx+0x12`) and stores `DAT_800740E8 = 1` before every row (`0x801D96F0`, `0x801D9750`, `0x801D97D8`). A dialogue glyph therefore advances `widths[c] + 2`. The `v0_1_tetsu_dialogue_accept` save state's display list confirms it: the CLUT-7 glyph sprites of the box's first row step exactly `widths[c] + 2` apart.
+
+The box's centre rect is `0xF4` = **244 px** wide (`li a2,0xf4` at `0x801D99CC` into `FUN_8002C69C`), and rows start at its left edge, so a row fits when it measures at most 244 px at pad `1`. The skin draws outside that rect - the fill runs 4 px further and the border 4 px beyond that - so a row of up to 248 px still lands on the fill, but not on clear panel.
+
+A page shows **three rows** (`_DAT_801F2740 = 3`, stored at `0x801D90F0`). Rows are separate `0x1F` lines, pitch `0xF`; a `0x7C` inside a row steps down `0xE` and overlaps the next row, so it is not a way to add one. While a full page waits for confirm, the page-advance hand sits at absolute `x = 0x10A` (`0x801D9834`), `y = box_y + rows*0xF - 0x13`, 16 px square: in the standard box at `x = 0x26` it covers the right end of the page's last two rows from **228 px** in.
+
+Option labels in a picker box draw at `box_x + 0x10` (`0x801D9B6C`), also at pad `1`, so they have **228 px**.
+
+A party name spliced in by `0xC1` is bounded at entry: the name-entry screen `FUN_801F03F0` keeps a typed glyph only while `FUN_80035F04` of the name stays below `0x39` (`0x801F064C..0x801F0654`), so a player-chosen name measures at most **56 px** at pad `0` - up to one more pixel per glyph inside dialogue. The default names are whatever the new-game template and the translation pack carry, and nothing re-checks them.
+
+### Menu, shop and battle columns
+
+The list surfaces draw at pad `0` and stop at the next column, not at a box edge. The pens, all relative to the window's content origin `WX`:
+
+| Surface | Name pen | Next column | Room |
+|---|---|---|---|
+| Item list (bag row) | `WX+0xC` | count tens cell `WX+0x74` | 104 px |
+| Shop buy list | `WX+0x18` | price field `WX+0x80` | 104 px |
+| Item info window | `WX` | count `WX+0x7C` | 124 px |
+| Status magic page | `WX+0x10` | level `WX+0x78` | 104 px |
+| Status moves page | `WX+0x10` | AP field `WX+0x82` | 114 px |
+
+The derivations are in [`field-menu.md`](../subsystems/field-menu.md#name-columns-and-translated-text).
+
+In battle, the message banner and the formation line draw from pen `(16, 12)` in a box **288 px** wide (the `FUN_801D9D3C` immediates that reproduce placement record 67), and the actor-name plaque at `(8, 8)` sizes itself to the measured name, so neither clips; 288 px is the width that keeps a line inside the frame. The battle-intro enemy labels are clamped to `6 <= x <= 0x13A - width`, so one label can reach 308 px, but they share a row and push apart - see [`battle.md`](../subsystems/battle.md#the-battle-intro-enemy-name-banner). Battle text draws at pad `0`: the plaque's measured interior is exactly `widths[c] + 1` per glyph (27 px for a four-letter party name in the captured states).
+
+The pinned budgets are the table `legaia_font::limits::TEXT_LIMITS`, one `TextLimit` per context with its pad and provenance.
+
+### Still open
+
+- The item and spell **description** lines (`FUN_800337B0`, the 27 KB menu-string formatter) have no pinned width; the info window is 144 px wide, which bounds them only by inference.
+- Speaker names, the world-map place-name labels, the title and save screens, and the minigame HUDs are not measured here.
+- The end of the expansion buffer at `0x800740EC` is not pinned. The zero-initialised region it opens runs `0x206` bytes to the next initialised data at `0x800742F2`, and no dumped routine references an address inside it, which makes 518 bytes an upper bound by inference.
 
 ## What's still open
 
