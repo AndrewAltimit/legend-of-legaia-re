@@ -248,6 +248,23 @@ fn main() -> Result<()> {
             cli::TranslateCmd::FitReport { from, target } => {
                 translate::cmd_fit_report(&from, &target)
             }
+            cli::TranslateCmd::Space {
+                input,
+                pack,
+                section,
+                allow_relayout,
+                scene,
+                json,
+                verbose,
+            } => translate::cmd_space(
+                &input,
+                pack.as_deref(),
+                section.as_deref(),
+                allow_relayout,
+                scene,
+                json,
+                verbose,
+            ),
             cli::TranslateCmd::DiffDisc { input, other } => {
                 translate::cmd_diff_disc(&input, &other)
             }

@@ -21,7 +21,11 @@
 //!   raw event-script text, overlay UI menu strings).
 //! - [`ui`] - the pinned menu / battle overlay UI-string pools + their scanner.
 //! - [`import`] - pack -> patched disc via [`crate::disc::DiscPatcher`],
-//!   with per-entry encodability / budget / provenance diagnostics.
+//!   with per-entry encodability / budget / provenance diagnostics, and a
+//!   trace of what it measured and decided ([`ImportTrace`]).
+//! - [`space`] - the space report built on that trace: every string's room,
+//!   what English uses, what a pack uses and what import does with it, plus
+//!   the per-scene / per-name fast paths a live editor calls.
 //!
 //! No Sony bytes ship with this crate: packs are generated from the user's
 //! own disc, and exported packs (which contain game text) must not be
@@ -38,11 +42,13 @@ pub mod name_pool;
 pub mod pack;
 pub mod refpair;
 pub mod segments;
+pub mod space;
 pub mod stream_man;
 pub mod ui;
 
 pub use export::export_pack;
 pub use import::{
-    ImportPhase, ImportReport, SectionCounts, import_pack, import_pack_phase, import_pack_relayout,
+    ImportPhase, ImportReport, ImportTrace, IssueKind, SectionCounts, WritePath, import_pack,
+    import_pack_phase, import_pack_relayout,
 };
 pub use pack::{Entry, LanguagePack, PACK_FORMAT};

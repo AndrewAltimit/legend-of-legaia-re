@@ -5,9 +5,14 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 
 use legaia_patcher::disc::DiscPatcher;
+use std::collections::BTreeMap;
+
 use legaia_patcher::translation::{
-    LanguagePack, diff, export_pack, fit, import_pack, lift,
+    LanguagePack, diff, export_pack, fit,
+    import::WritePath,
+    import_pack, lift,
     markup::{self, Target},
+    space,
 };
 use legaia_patcher::{apply, ppf};
 
@@ -665,4 +670,349 @@ pub(crate) fn cmd_import(
         );
     }
     Ok(())
+}
+
+/// Rows a human-readable space table shows unless `--verbose`.
+const SPACE_ROWS: usize = 12;
+
+fn opt<T: std::fmt::Display>(v: Option<T>) -> String {
+    v.map_or_else(|| "-".to_string(), |v| v.to_string())
+}
+
+fn path_name(p: Option<WritePath>) -> &'static str {
+    match p {
+        None | Some(WritePath::None) => "-",
+        Some(WritePath::Padded) => "padded",
+        Some(WritePath::Relocated) => "relocated",
+        Some(WritePath::Relayout) => "relayout",
+    }
+}
+
+/// `rows` capped at [`SPACE_ROWS`] unless `verbose`, with a "more" line.
+fn capped<T>(rows: &[T], verbose: bool, mut print: impl FnMut(&T)) {
+    let shown = if verbose {
+        rows.len()
+    } else {
+        rows.len().min(SPACE_ROWS)
+    };
+    for r in &rows[..shown] {
+        print(r);
+    }
+    if shown < rows.len() {
+        println!("  ... {} more (--verbose)", rows.len() - shown);
+    }
+}
+
+/// Filled entries that do not land, most over their room first.
+fn misses(entries: &[space::EntrySpace]) -> Vec<&space::EntrySpace> {
+    let mut rows: Vec<&space::EntrySpace> = entries
+        .iter()
+        .filter(|e| {
+            e.outcome
+                .is_some_and(|o| !o.lands() && o != space::Outcome::Untranslated)
+        })
+        .collect();
+    rows.sort_by_key(|e| {
+        (
+            std::cmp::Reverse(e.pack_len.unwrap_or(0) as isize - e.room as isize),
+            e.key.clone(),
+        )
+    });
+    rows
+}
+
+fn print_misses(rows: &[&space::EntrySpace], verbose: bool) {
+    println!("  key                          section             room  pack  over  outcome");
+    capped(rows, verbose, |e| {
+        let over = e.pack_len.map(|p| p as isize - e.room as isize);
+        println!(
+            "  {:<28} {:<18} {:>5}  {:>4}  {:>4}  {}",
+            e.key,
+            e.section,
+            e.room,
+            opt(e.pack_len),
+            opt(over),
+            e.outcome.map_or("-", |o| o.as_str())
+        )
+    });
+}
+
+pub(crate) fn cmd_space(
+    input: &Path,
+    pack_path: Option<&Path>,
+    section: Option<&str>,
+    allow_relayout: bool,
+    scene: Option<usize>,
+    json: bool,
+    verbose: bool,
+) -> Result<()> {
+    let patcher = DiscPatcher::open(load_image(input)?).context("parse disc image")?;
+    let pack = pack_path.map(read_pack).transpose()?;
+
+    if let (Some(prot), Some(pack)) = (scene, pack.as_ref()) {
+        let t0 = std::time::Instant::now();
+        let fit = space::scene_fit(&patcher, pack, prot, allow_relayout);
+        let ms = t0.elapsed().as_secs_f64() * 1000.0;
+        if json {
+            println!("{}", serde_json::to_string_pretty(&fit)?);
+            return Ok(());
+        }
+        let s = &fit.scene;
+        println!(
+            "scene {} ({}): {} keyed, {} filled - footprint {} disc {} slack {}",
+            s.prot,
+            s.scene.as_deref().unwrap_or("?"),
+            s.lines,
+            s.filled.unwrap_or(0),
+            s.footprint,
+            s.disc_len,
+            s.slack
+        );
+        println!(
+            "  path {} written {} full-overflow {} padded-overflow {} refused {} \
+             rolled back {} relayout {} would-add {}",
+            path_name(s.path),
+            opt(s.written_len),
+            opt(s.full_overflow),
+            opt(s.padded_overflow),
+            s.refused,
+            s.rolled_back.len(),
+            opt(s.relayout_sectors),
+            opt(s.relayout_would_add)
+        );
+        let rows = misses(&fit.entries);
+        if !rows.is_empty() {
+            print_misses(&rows, verbose);
+        }
+        println!("scene fit took {ms:.1} ms");
+        return Ok(());
+    }
+
+    let mut report = space::space_report(
+        &patcher,
+        pack.as_ref(),
+        space::SpaceOptions {
+            relayout: allow_relayout,
+        },
+    )?;
+    if let Some(s) = section {
+        report.retain_section(s);
+    }
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
+    print_space(&report, verbose);
+    Ok(())
+}
+
+fn print_name_regions(r: &space::SpaceReport, verbose: bool) {
+    println!(
+        "\n== SCUS name regions ({} bytes, English leaves {} free{}) - fullest first ==",
+        r.summary.name_bytes,
+        r.summary.name_free_english,
+        r.summary
+            .name_free_pack
+            .map_or(String::new(), |f| format!(", the pack leaves {f}"))
+    );
+    println!("  region  VA range                total  strings  english  free  pack  free");
+    let mut rows: Vec<&space::NameRegion> = r.name_regions.iter().collect();
+    rows.sort_by_key(|g| {
+        (
+            g.pack_free.unwrap_or(g.english_free),
+            std::cmp::Reverse(g.total),
+            g.index,
+        )
+    });
+    capped(&rows, verbose, |g| {
+        println!(
+            "  {:>6}  0x{:08x}..0x{:08x}  {:>5}  {:>7}  {:>7}  {:>4}  {:>4}  {:>4}",
+            g.index,
+            g.start_va,
+            g.end_va,
+            g.total,
+            g.strings,
+            g.english_used,
+            g.english_free,
+            opt(g.pack_used),
+            opt(g.pack_free)
+        )
+    });
+    let movable = r.names.iter().filter(|n| n.movable).count();
+    let mut pins: BTreeMap<String, usize> = BTreeMap::new();
+    for p in r.names.iter().filter_map(|n| n.pin) {
+        let name = serde_json::to_string(&p).unwrap_or_default();
+        *pins.entry(name.trim_matches('"').to_string()).or_default() += 1;
+    }
+    let pins: Vec<String> = pins.iter().map(|(k, v)| format!("{k} {v}")).collect();
+    println!(
+        "  names: {movable} movable, {} pinned ({})",
+        r.names.len() - movable,
+        pins.join(", ")
+    );
+}
+
+fn print_scenes(r: &space::SpaceReport, with_pack: bool, verbose: bool) {
+    println!(
+        "\n== scene MANs ({} scenes, room = compressed footprint) - tightest first ==",
+        r.scenes.len()
+    );
+    if with_pack {
+        println!(
+            "  prot  scene       lines  filled  footprint   disc  written  over  path       rolled  +sect"
+        );
+    } else {
+        println!("  prot  scene       lines  footprint   disc  slack");
+    }
+    let mut rows: Vec<&space::SceneSpace> = r.scenes.iter().collect();
+    if with_pack {
+        rows.sort_by_key(|s| {
+            (
+                std::cmp::Reverse(s.rolled_back.len()),
+                std::cmp::Reverse(s.full_overflow.or(s.padded_overflow).unwrap_or(0)),
+                s.prot,
+            )
+        });
+    } else {
+        rows.sort_by_key(|s| (s.slack, s.prot));
+    }
+    capped(&rows, verbose, |s| {
+        let name = s.scene.as_deref().unwrap_or("?");
+        if with_pack {
+            println!(
+                "  {:>4}  {:<10}  {:>5}  {:>6}  {:>9}  {:>5}  {:>7}  {:>4}  {:<9}  {:>6}  {:>5}",
+                s.prot,
+                name,
+                s.lines,
+                opt(s.filled),
+                s.footprint,
+                s.disc_len,
+                opt(s.written_len),
+                opt(s.full_overflow.or(s.padded_overflow)),
+                path_name(s.path),
+                s.rolled_back.len(),
+                opt(s.relayout_sectors.or(s.relayout_would_add))
+            );
+        } else {
+            println!(
+                "  {:>4}  {:<10}  {:>5}  {:>9}  {:>5}  {:>5}",
+                s.prot, name, s.lines, s.footprint, s.disc_len, s.slack
+            );
+        }
+    });
+    if with_pack {
+        println!(
+            "  (over = compressed bytes past the footprint before rollback; +sect = relayout \
+             sectors staged, or that --allow-relayout would add)"
+        );
+    }
+}
+
+fn print_space(r: &space::SpaceReport, verbose: bool) {
+    let with_pack = r.language.is_some();
+    match &r.language {
+        Some(l) => println!(
+            "space report: pack '{l}' ({} filled of {} keys){}",
+            r.summary.filled,
+            r.summary.entries,
+            if r.relayout { ", relayout dry run" } else { "" }
+        ),
+        None => println!("space report: disc only ({} keys)", r.summary.entries),
+    }
+
+    if !r.name_regions.is_empty() {
+        print_name_regions(r, verbose);
+    }
+
+    if !r.monsters.is_empty() {
+        let mut rooms: BTreeMap<usize, usize> = BTreeMap::new();
+        for m in &r.monsters {
+            *rooms.entry(m.room).or_default() += 1;
+        }
+        let rooms: Vec<String> = rooms.iter().map(|(k, v)| format!("{k}: {v}")).collect();
+        let capped_n = r.monsters.iter().filter(|m| m.cap < m.longest).count();
+        println!(
+            "\n== monster names ({} records) ==\n  in-place room {}; a longer name grows its \
+             record to {} bytes ({capped_n} record(s) capped lower by the retail block / head bound)",
+            r.monsters.len(),
+            rooms.join(", "),
+            r.monsters.first().map_or(0, |m| m.longest)
+        );
+    }
+
+    if !r.pools.is_empty() {
+        println!("\n== fixed-room pools (ui_menu / system_text) - least slack first ==");
+        println!(
+            "  pool  section      prot  VA window               strings  english  room  slack  pack"
+        );
+        let mut rows: Vec<&space::PoolSpace> = r.pools.iter().filter(|p| p.strings > 0).collect();
+        rows.sort_by_key(|p| (p.slack, p.index));
+        capped(&rows, verbose, |p| {
+            println!(
+                "  {:>4}  {:<11}  {:>4}  0x{:08x}..0x{:08x}  {:>7}  {:>7}  {:>4}  {:>5}  {:>4}",
+                p.index,
+                p.section,
+                opt(p.prot),
+                p.va_start,
+                p.va_end,
+                p.strings,
+                p.english_bytes,
+                p.room_bytes,
+                p.slack,
+                opt(p.pack_bytes)
+            )
+        });
+    }
+
+    if !r.scenes.is_empty() {
+        print_scenes(r, with_pack, verbose);
+    }
+
+    if !r.carriers.is_empty() {
+        let streaming: Vec<&space::CarrierSpace> =
+            r.carriers.iter().filter(|c| c.streaming).collect();
+        let event: Vec<&space::CarrierSpace> = r.carriers.iter().filter(|c| !c.streaming).collect();
+        println!(
+            "\n== raw carriers: {} streaming dungeon scene(s), {} event carrier(s) \
+             ({} lines, own span only) ==",
+            streaming.len(),
+            event.len(),
+            event.iter().map(|c| c.lines).sum::<usize>()
+        );
+        if !streaming.is_empty() {
+            println!("  prot  scene       lines  footprint  sector slack  path       +sect");
+            let mut rows = streaming.clone();
+            rows.sort_by_key(|c| (c.sector_slack.unwrap_or(0), c.prot));
+            capped(&rows, verbose, |c| {
+                println!(
+                    "  {:>4}  {:<10}  {:>5}  {:>9}  {:>12}  {:<9}  {:>5}",
+                    c.prot,
+                    c.scene.as_deref().unwrap_or("?"),
+                    c.lines,
+                    c.footprint,
+                    opt(c.sector_slack),
+                    path_name(c.path),
+                    opt(c.grown_sectors)
+                )
+            });
+        }
+    }
+
+    if with_pack {
+        println!("\n== outcomes of filled entries ==");
+        for (o, n) in &r.summary.outcomes {
+            println!("  {n:>7}  {o}");
+        }
+        if r.summary.relayout_entries > 0 {
+            println!(
+                "  relayout grows {} entr(ies) by {} sector(s)",
+                r.summary.relayout_entries, r.summary.relayout_sectors
+            );
+        }
+        let rows = misses(&r.entries);
+        if !rows.is_empty() {
+            println!("\n== entries that do not land - most over first ==");
+            print_misses(&rows, verbose);
+        }
+    }
 }

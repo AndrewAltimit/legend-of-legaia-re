@@ -675,6 +675,37 @@ pub(crate) enum TranslateCmd {
         #[arg(long, default_value_t = false)]
         verbose: bool,
     },
+    /// Space report: how much room every translatable string has, how much
+    /// English uses, and - with `--pack` - how much the pack uses and what
+    /// `import` does with each line (a dry run on an in-memory copy; nothing
+    /// is written). Tightest things first: the fullest name regions and
+    /// scenes, the entries that would not land. Numbers and keys only - no
+    /// game text.
+    Space {
+        /// The disc image (`.bin`, Mode 2/2352; a `.cue` is accepted).
+        #[arg(long)]
+        input: PathBuf,
+        /// Dry-run this language pack against the disc.
+        #[arg(long)]
+        pack: Option<PathBuf>,
+        /// Only report this pack section (`items`, `scene_dialog`, ...).
+        #[arg(long)]
+        section: Option<String>,
+        /// Dry-run with the whole-sector relayout enabled, as
+        /// `import --allow-relayout` would.
+        #[arg(long)]
+        allow_relayout: bool,
+        /// Re-fit one scene MAN (PROT entry) with the pack's lines only - the
+        /// editor fast path - and print it with its timing.
+        #[arg(long, requires = "pack")]
+        scene: Option<usize>,
+        /// Print the full report as JSON (schema `legaia-space-v1`).
+        #[arg(long)]
+        json: bool,
+        /// Print every row instead of the tightest few per table.
+        #[arg(long, default_value_t = false)]
+        verbose: bool,
+    },
     /// Cross-region corpus alignment report: compare a **target** disc (the
     /// one the importer would patch, e.g. the retail NTSC/USA build) against an
     /// **official localization** disc (a PAL SCES build) and quantify how well
