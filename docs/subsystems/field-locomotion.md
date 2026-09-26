@@ -384,9 +384,10 @@ lands in the scene bank hands the record to `FieldPlayerAnim::select_scene_recor
 both play hosts load it from the scene's own ANM bundle
 (`FieldPlayerAnim::resolve_scene_clip`, beside their scripted-clip cue drain). A scene
 record whose bone count differs from the player's clips is refused and the motion-derived
-pair plays instead - which is what happens in `jagaroom`, because a player-targeted `4C
-50` has no player-mesh re-bind in the port, so the override clips would pose a skeleton
-the drawn mesh does not have.
+pair plays instead. That guard matters for `jagaroom`: its override records belong to the
+mesh the scene's `4C 50` swaps onto the player, and a player-targeted `4C 50` has no
+player-mesh re-bind in the port, so the drawn mesh stays the party model. Whether the
+guard fires there - whether the two skeletons differ - has not been measured.
 
 A frame that moved the player without the pad step (a script walk) still keeps the motion-derived walk for a party-bank pick; a scene-bank pick binds whoever moved the player, as retail's selector does. Not modelled: the op `0x31` / `0x32` writes of the player's party-bank bit (`B1 F8 18` / `B2 F8 18`), which the port's timeline applies to its own context rather than to `World::locomotion.player_party_bank`.
 
