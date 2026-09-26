@@ -855,8 +855,6 @@ What remains, each with where it is recorded:
 - **Tile board** (`801EF2B0`): the walk-in from column 4, row 0, and the octant
   save / restore around the board
   ([`tile-board.md`](../subsystems/tile-board.md#the-walkers-octant-store)).
-- **`FUN_801DB510`**: `0x8007B606`'s only writer after new-game init is the
-  developer menu's CAMERA row, which the port's dev menu does not carry.
 - **Rula / Riremito** (`801EE328` / `801EE094`): the lift, restore and opener
   run engine-side, but retail has no player-facing installer for either art -
   one developer-table word each, at `0x801F3458` / `0x801F3460` - so the port
