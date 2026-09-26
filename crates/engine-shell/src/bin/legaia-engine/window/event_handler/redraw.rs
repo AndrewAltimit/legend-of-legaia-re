@@ -67,8 +67,9 @@ impl PlayWindowApp {
         // as one held tick (`PadTapLatch`, the browser page's `pulse`).
         let held_pad = self.pad;
         let first_tick_pad = self.pad_taps.take_frame_word(held_pad);
-        for tick_i in 0..run_ticks {
-            self.pad = if tick_i == 0 {
+        let mut first_tick = true;
+        for _ in 0..run_ticks {
+            self.pad = if std::mem::take(&mut first_tick) {
                 first_tick_pad
             } else {
                 held_pad
