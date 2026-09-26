@@ -101,15 +101,26 @@ fn string_units(s: &[u8]) -> u32 {
 /// PORT: FUN_80036044
 ///
 /// NOT WIRED: its consumer is the field dialog pager's row gate
-/// (`0x801D8A6C..0x801D8AA8`: count vs the reveal counter `_DAT_801F2748`, then
-/// the short-row hold `_DAT_801F275C`), and the engine's pager is not built
-/// on that counter. `legaia_engine_core::dialog::OwnedDialogPanel` types one
-/// MES event per tick and ends a row on its terminator byte, so it has no
-/// reveal count to compare this against and no hold to size from it; routing
-/// the count in means re-basing the panel's pacing on retail's counter
-/// (`_DAT_801F2758` accumulating `DAT_1F800393` against the speed word
-/// `_DAT_801F2754`, at most three units a call), which moves every dialogue
-/// frame the replay oracles pin.
+/// (`0x801D8A6C..0x801D8AA8`: count vs the reveal counter `_DAT_801F2748`,
+/// then the short-row hold `_DAT_801F275C`), and the engine's pager is not
+/// built on that counter. What wiring it would change is measured, not
+/// guessed. The reveal *rate* already agrees: every pager open stores the
+/// speed word `_DAT_801F2754 = 1` (`0x801D9118` / `0x801D91D0` /
+/// `0x801D9268` / `0x801D9CA4`, each `sw a0` with `a0 = 1`), so at
+/// `DAT_1F800393 = 1` the counter gains one unit a frame - the one glyph a
+/// tick `legaia_engine_core::dialog::OwnedDialogPanel` types. Two things
+/// differ. A row ends when the counter reaches this count, not on the
+/// terminator byte, so a `0xCF` colour escape costs no frame and each
+/// two-byte unit's post-`NUL` overrun costs one. And a row under `0x22`
+/// units then holds `(0x22 - count) * 4` in `_DAT_801F275C`, drained by
+/// `32 * DAT_1F800393` per pager call - `ceil((0x22 - count) / 8)` frames,
+/// at most five. Adding those frames to every short row shifts every
+/// dialogue after the first, and the committed replays under
+/// `scripts/replays/` press their pads on fixed engine frames recorded
+/// against today's pacing - they are engine recordings, not retail timings,
+/// so nothing committed says which pacing is right. Wiring it means
+/// re-recording those replays against a retail row-timing capture, which no
+/// oracle pins yet.
 pub fn typewriter_glyph_count(text: &[u8], expand: Option<&Expander<'_>>) -> GlyphCount {
     let at = |k: usize| text.get(k).copied().unwrap_or(0);
     let mut out = GlyphCount::default();

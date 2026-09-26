@@ -685,8 +685,17 @@ pub fn shop_buy_row_order(record_count: usize, walk: usize) -> Vec<usize> {
 /// [`crate::shop_catalog`]) builds its rows from typed catalog items and runs
 /// only the order kernel [`shop_buy_row_order`] over them; it never asks for
 /// the class-tagged `[class][dim][id]` row word this builder emits, so the
-/// dim bit is recomputed at draw time by `crate::shop` instead. The host that
-/// owes the call is the shop session's row build, once it adopts the row word.
+/// dim bit is recomputed at draw time by `crate::shop` instead. Two retail
+/// behaviours ride on the word and are therefore absent on both hosts: the
+/// hoisted band's [`CLASS_SHOP_ALT`] ink (the "new in this town" rows draw
+/// in the alternate pen), and the conditional tail - with no empty bag slot
+/// (`FUN_80042F4C(0xFF)` at `0x80030D54`) and no `0xFF` byte in any party
+/// member's equipment block (`0x80030D7C..0x80030DE8`), `n = count - 3` and
+/// the record's last three entries are not offered. The blocker is data,
+/// not a call: `shop_catalog::scene_shops` keeps the permuted, trimmed item
+/// list but drops the record's own count byte and id order, which this
+/// builder needs as input. The owed host is that catalog build keeping the
+/// raw record, then the shop row draw reading the word.
 ///
 /// This, not [`build_price_gated_rows`], is the shop's buy row layout.
 /// Content id `2` is the price-gated *bag* list (the sell side); the buy
