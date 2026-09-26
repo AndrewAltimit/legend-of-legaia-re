@@ -51,29 +51,6 @@ impl PlayWindowApp {
         self.fishing_banner_draws = self.fishing_banners.service_frame(1);
     }
 
-    /// Settle the open Muscle Dome contest if it has reached its end, paying
-    /// the tally into the casino coin bank and awarding the one-shot
-    /// Master-course prize when it is due.
-    ///
-    /// Called wherever a leg can close: the pad path in `tick_muscle_dome`
-    /// and the window's own `M` abort. A contest that is still mid-ladder
-    /// settles nothing.
-    pub(super) fn settle_muscle_contest_if_over(&mut self) {
-        let Some(out) = self.session.host.world.settle_muscle_contest() else {
-            return;
-        };
-        log::info!(
-            "muscle: contest settled - {} coins paid, bank now {}{}",
-            out.score,
-            self.session.host.world.minigames.casino_coins,
-            if out.award_prize {
-                " (War God Icon awarded)"
-            } else {
-                ""
-            },
-        );
-    }
-
     /// Advance the Muscle Dome contest's round **time meter** one frame.
     ///
     /// Retail runs the meter from the arena's per-frame driver with the frame

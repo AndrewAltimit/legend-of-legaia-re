@@ -2793,7 +2793,7 @@ impl World {
                 self.exit_baka_fighter();
             }
             SceneMode::MuscleDome => {
-                self.exit_muscle_dome();
+                self.leave_muscle_dome();
             }
             SceneMode::Dance => {
                 self.exit_dance();
@@ -3108,6 +3108,35 @@ impl World {
         }
         self.minigames.muscle_dome = Some(session);
         self.mode = SceneMode::MuscleDome;
+    }
+
+    /// Leave the arena **at the player's request** - the escape both hosts
+    /// share (`Start` through [`Self::poll_minigame_escape`], and the native
+    /// window's `M` hotkey).
+    ///
+    /// Leaving is not only [`Self::exit_muscle_dome`]: the leg has to be
+    /// reported to the open contest, or the ladder carries on as if the leg
+    /// never happened. A leg left undecided is the arena's run / give-up path
+    /// ([`crate::muscle_dome::LEG_OUTCOME_RAN`], retail's `_DAT_80084448 = 4`
+    /// arm), which ends the contest and voids the tally; a decided leg
+    /// reports its own result, exactly as the Won / Lost confirm does. A
+    /// contest that has run out then settles on the spot.
+    ///
+    /// Only the native hotkey used to report; the shared escape exited
+    /// without a report, so on the browser play page a left leg kept the
+    /// contest open with its tally intact.
+    pub fn leave_muscle_dome(&mut self) -> Option<crate::muscle_dome::MuscleDomeSession> {
+        use crate::muscle_dome::{LEG_OUTCOME_RAN, LegReport, MusclePhase};
+        let s = self.exit_muscle_dome()?;
+        let phase = s.phase();
+        let decided = matches!(phase, MusclePhase::Won | MusclePhase::Lost);
+        self.report_muscle_leg(LegReport {
+            survived: phase != MusclePhase::Lost,
+            outcome: if decided { 0 } else { LEG_OUTCOME_RAN },
+            turns_taken: s.turn(),
+        });
+        self.settle_muscle_contest();
+        Some(s)
     }
 
     /// Leave the Muscle Dome and restore the interrupted mode.
