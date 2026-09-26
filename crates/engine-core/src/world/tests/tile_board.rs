@@ -98,7 +98,29 @@ fn install_board(h: crate::tile_board::TileBoardHeader) -> World {
         h.tile_template_base,
     ];
     assert!(w.try_install_tile_board(&instr), "board installs");
+    // The walk SM's fade-in (state 1) ignores input until the tiles are at
+    // full scale.
+    assert_eq!(w.board.sm, crate::tile_board::sm::FADE_IN);
+    let mut n = 0;
+    while w.board.sm == crate::tile_board::sm::FADE_IN {
+        let _ = w.tick();
+        n += 1;
+        assert!(n < 100, "fade-in finishes");
+    }
     w
+}
+
+/// Tick with no input until the board is torn down, returning the ticks it
+/// took (the exit's step, fade-out, park and teardown states).
+fn tick_until_torn_down(w: &mut World) -> usize {
+    w.set_pad(0);
+    let mut n = 0;
+    while w.board.grid.is_some() {
+        let _ = w.tick();
+        n += 1;
+        assert!(n < 200, "the exit reaches teardown");
+    }
+    n
 }
 
 /// A [`TileBoardHeader`] for the install tests (only the fields the tests
@@ -238,6 +260,11 @@ fn board_exit_despawns_tile_actors() {
         b.cells[idx] = crate::tile_board::CELL_EVENT_FIRST;
     }
     pad_held(&mut w, input::PadButton::Down.mask(), 20);
+    assert!(
+        w.board.grid.is_some(),
+        "the exit fades before it tears down"
+    );
+    tick_until_torn_down(&mut w);
     assert!(w.board.grid.is_none(), "event cell exits the board");
     assert!(w.board.actor_slots.iter().all(|s| s.is_none()));
     assert!(w.board.draw_list.is_empty());
@@ -290,6 +317,7 @@ fn event_cell_arrival_writes_the_state_8_flags() {
             w.system_flag_set(0x300 + 2);
         }
         pad_held(&mut w, input::PadButton::Down.mask(), 20);
+        tick_until_torn_down(&mut w);
         assert!(w.board.grid.is_none(), "event cell exits the board");
         (w.system_flag_test(0x200 + 2 + 1), w.system_flag_test(0x200))
     };
@@ -311,6 +339,7 @@ fn trigger_cell_arrival_exits_without_flags() {
         b.cells[idx] = crate::tile_board::CELL_TRIGGER;
     }
     pad_held(&mut w, input::PadButton::Down.mask(), 20);
+    tick_until_torn_down(&mut w);
     assert!(w.board.grid.is_none(), "trigger cell exits the board");
     assert!(!w.system_flag_test(0x200));
 }
@@ -339,4 +368,99 @@ fn plain_arrival_advances_every_animated_cell() {
         "0xE wraps to 0xB"
     );
     assert_eq!(b.cells[6], crate::tile_board::CELL_ANIM_FIRST + 1);
+}
+
+/// The walk SM's fade (states 1 and `0xA`/`0xC`): the tiles grow in at
+/// install and shrink away at the exit, the event tile under the player
+/// excepted; teardown follows the park.
+#[test]
+fn the_board_fades_in_and_out_around_its_exit() {
+    use crate::tile_board::sm;
+    let mut w = World::new();
+    w.mode = SceneMode::Field;
+    w.player_actor_slot = Some(0);
+    w.actors[0].active = true;
+    let instr = [0x49, 0x05, 0, 0, 3, 3, 8, 0, 0, 0, 0, 0, 0, 0x30];
+    assert!(w.try_install_tile_board(&instr));
+    assert_eq!((w.board.sm, w.board.fade), (sm::FADE_IN, 0));
+    // Input is ignored while fading in.
+    pad_held(&mut w, input::PadButton::Right.mask(), 1);
+    assert_eq!(w.board.grid.as_ref().unwrap().player_col, 0);
+    assert!(w.board.fade > 0 && w.board.fade < crate::tile_board::FADE_FULL);
+    let v = w.board.draw_list.first().map(|d| d.cell_value).unwrap();
+    let s = w.tile_board_cell_scale(v);
+    assert!(s > 0.0 && s < 1.0, "a tile mid-fade draws small: {s}");
+    let mut n = 1;
+    while w.board.sm == sm::FADE_IN {
+        pad_held(&mut w, 0, 1);
+        n += 1;
+    }
+    // `+0x9C += 96` a vsync to `0x1000`.
+    assert_eq!(n, (0x1000 + 95) / 96);
+    assert_eq!(w.tile_board_cell_scale(v), 1.0);
+    // Event cell below: step onto it.
+    {
+        let b = w.board.grid.as_mut().unwrap();
+        let idx = b.width as usize;
+        b.cells[idx] = crate::tile_board::CELL_EVENT_FIRST;
+    }
+    let mut seen = Vec::new();
+    w.set_pad(input::PadButton::Down.mask());
+    for _ in 0..200 {
+        let _ = w.tick();
+        w.set_pad(0);
+        if w.board.grid.is_none() {
+            break;
+        }
+        seen.push(w.board.sm);
+        if w.board.sm == sm::EVENT_FADE_OUT {
+            // The event tile the player stands on keeps its size.
+            assert_eq!(
+                w.tile_board_cell_scale(crate::tile_board::CELL_EVENT_FIRST),
+                1.0
+            );
+        }
+    }
+    assert!(w.board.grid.is_none(), "torn down");
+    for st in [sm::EVENT_STEP, sm::EVENT_FADE_OUT, sm::PARK, sm::TEARDOWN] {
+        assert!(seen.contains(&st), "passed state {st:#x}: {seen:?}");
+    }
+    // `+0x9C -= 256` a vsync from `0x1000`: sixteen fade frames and one more
+    // to go below zero.
+    let fade_frames = seen.iter().filter(|&&s| s == sm::EVENT_FADE_OUT).count();
+    assert_eq!(fade_frames, 17);
+}
+
+/// Triangle opens the quit prompt on its second row; Up + confirm quits
+/// through the exit fade; cancel returns to walking.
+#[test]
+fn the_quit_prompt_opens_on_triangle_and_quits_on_row_0() {
+    use crate::tile_board::sm;
+    let mut w = install_board(hdr(3, 3, 0, 0, 8, 0, 0x30));
+    let press = |w: &mut World, b: input::PadButton| {
+        w.set_pad(b.mask());
+        let _ = w.tick();
+        w.set_pad(0);
+        let _ = w.tick();
+    };
+    press(&mut w, input::PadButton::Triangle);
+    assert_eq!(w.board.sm, sm::PROMPT);
+    assert_eq!(w.tile_board_prompt_cursor(), Some(1));
+    // Cancel: back to walking.
+    press(&mut w, input::PadButton::Circle);
+    assert_eq!(w.board.sm, sm::WALK);
+    assert_eq!(w.tile_board_prompt_cursor(), None);
+    // Confirm on row 1 goes back too.
+    press(&mut w, input::PadButton::Triangle);
+    press(&mut w, input::PadButton::Cross);
+    assert_eq!(w.board.sm, sm::WALK);
+    // Up to row 0 and confirm: the board leaves.
+    press(&mut w, input::PadButton::Triangle);
+    press(&mut w, input::PadButton::Up);
+    assert_eq!(w.tile_board_prompt_cursor(), Some(0));
+    press(&mut w, input::PadButton::Cross);
+    assert_ne!(w.board.sm, sm::PROMPT);
+    tick_until_torn_down(&mut w);
+    assert!(w.board.grid.is_none());
+    assert!(w.board.armed, "the op-49 script reads Done next");
 }

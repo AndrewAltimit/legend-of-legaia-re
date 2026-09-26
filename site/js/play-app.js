@@ -2464,14 +2464,16 @@ void main() {
        * board-owned slots entirely, because a tile actor's own transform only
        * carries the last repositioned cell. */
       if (typeof rt.play_tile_board_transforms === 'function') {
+        /* Stride 5: slot, x, y, z, scale (TILE_DRAW_STRIDE in
+         * play_tile_board.rs) - the board fade scales each tile. */
         const tb = rt.play_tile_board_transforms();
-        for (let i = 0; i + 3 < tb.length; i += 4) {
+        for (let i = 0; i + 4 < tb.length; i += 5) {
           const slot = tb[i] | 0;
           if (this.tileMeshSlots.indexOf(slot) < 0) continue;
           draws.push({
             meshId: TILE_MESH_BASE + slot,
             x: tb[i + 1], y: -tb[i + 2], z: tb[i + 3],
-            rotY: 0, scale: 1.0,
+            rotY: 0, scale: tb[i + 4],
           });
         }
       }

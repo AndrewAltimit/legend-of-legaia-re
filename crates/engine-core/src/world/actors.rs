@@ -1993,7 +1993,9 @@ impl World {
             .find(|(_, a)| !a.active)
             .map(|(i, _)| i)?;
         let actor = &mut self.actors[slot_idx];
-        actor.active = true;
+        // A retired occupant's handler, reflection link and move state must
+        // not leak into the new actor (retail's allocator rewrites them).
+        actor.init_allocated();
         actor.kind = kind;
         actor.variant = variant;
         actor.tmd_ref = tmd_ref;

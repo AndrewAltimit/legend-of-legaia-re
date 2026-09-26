@@ -454,6 +454,18 @@ pub trait PanelFlagStore {
     fn flag_clear(&mut self, id: i32);
 }
 
+/// The two world reads a travel art takes each frame.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TravelEnv {
+    /// The player actor's live Y (`+0x16`), which Rula's lift moves.
+    /// `None` leaves the lift on the kernel's own running Y (a host with no
+    /// player actor).
+    pub player_y: Option<i16>,
+    /// `FUN_8003CE64(0x0B)`: the opener program queued at phase 0 is still
+    /// running (it clears flag `0x0B` in its state 4).
+    pub effect_busy: bool,
+}
+
 /// What one host frame produced, for the caller to apply and a renderer to
 /// draw.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -482,6 +494,17 @@ pub struct PanelFrame {
     pub warp: Option<TravelDestination>,
     /// The travel-art scan missed and the actor parked in its diagnostic phase.
     pub travel_unfound: bool,
+    /// The travel art's phase 0 asked for its opener: the caller sets flag
+    /// `0x0B` and spawns scripted-scene program `n` (`FUN_801D5A24(n)`).
+    pub travel_queue_program: Option<u16>,
+    /// Rula's lift moved the player to this Y this frame, raising the
+    /// player's `+0x10` bit 0 and scratchpad `0x1F800394` bit 24.
+    pub lift_player_y: Option<i16>,
+    /// Rula's lift ended: clear the post-warp pad hold `_DAT_8007B6B4`.
+    pub clear_warp_hold: bool,
+    /// Riremito's resolve: restore the player's render scale `+0x72` and
+    /// clear its `+0x10` bit `0x200000`.
+    pub restore_player: bool,
     /// The actor retired this frame.
     pub retired: bool,
     /// The sub-list took its state-3 hand-off (row 1 confirm).
@@ -548,6 +571,9 @@ pub struct PanelActorHost {
     pub text_actor_ticks: u64,
     /// The travel-art actor, when one is installed.
     pub travel: Option<TravelArtActor>,
+    /// What the travel art reads off the world each frame - the caller
+    /// stores it before [`Self::tick`].
+    pub travel_env: TravelEnv,
     /// The visited-map table the travel art scans.
     pub visited: Vec<VisitedMap>,
     /// The party HUD's idle countdown (`_DAT_801F348C`).
@@ -596,6 +622,7 @@ impl Default for PanelActorHost {
             scene_obj_flags: 0,
             text_actor_ticks: 0,
             travel: None,
+            travel_env: TravelEnv::default(),
             visited: Vec::new(),
             hud_timer: 0,
             hud_cached_pos: None,
@@ -1019,12 +1046,19 @@ impl PanelActorHost {
         // is standing - the same `0x80084628` read the retail scan compares.
         let current = self.visited.last().map(|v| v.map_id).unwrap_or(0);
         let table: Vec<VisitedMap> = self.visited.clone();
-        let out = actor.tick(false, i16::from(frame_delta), || {
+        if let Some(y) = self.travel_env.player_y {
+            actor.player_y = y;
+        }
+        let out = actor.tick(self.travel_env.effect_busy, i16::from(frame_delta), || {
             let idx = find_visited_map(table.len(), current, |i| table[i].map_id)?;
             let v = table[idx];
             Some(destination_for(idx, v.tile_x, v.tile_z))
         });
         self.travel = Some(actor);
+        frame.travel_queue_program = out.queue_effect.map(|p| p as u16);
+        frame.lift_player_y = out.lift_player_y;
+        frame.clear_warp_hold = out.clear_warp_hold;
+        frame.restore_player = out.restore_player;
         if out.spawn_flash {
             frame.brightness = Some(legaia_engine_vm::world_map_panel_actors::BRIGHTNESS_MAX);
         }

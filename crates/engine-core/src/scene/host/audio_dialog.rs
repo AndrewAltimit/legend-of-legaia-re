@@ -55,6 +55,15 @@ impl SceneHost {
         Ok(self.index.entry_bytes(entry).ok())
     }
 
+    /// The tile board's quit-prompt lines (title, then the two rows), read
+    /// off the field overlay's image (extraction entry `0897`) the way the
+    /// render tail reads them out of its own data segment. `None` when the
+    /// entry cannot be read. See [`crate::tile_board::prompt_strings`].
+    pub fn tile_board_prompt_lines(&self) -> Option<[Vec<u8>; 3]> {
+        let bytes = self.index.entry_bytes(897).ok()?;
+        crate::tile_board::prompt_strings(&bytes)
+    }
+
     /// First VAB-bearing entry in the scene, with the byte offset of the
     /// `pBAV` magic inside it. Mirrors the asset chain's "load the scene's
     /// bank before the first sound plays" pre-pass. Returns `None` when no

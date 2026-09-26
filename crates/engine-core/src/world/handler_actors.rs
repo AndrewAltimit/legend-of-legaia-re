@@ -547,16 +547,27 @@ impl World {
             if !self.system_flag_test(u16::from(flag)) {
                 continue;
             }
-            let Some(slot) = self.spawn_handler_actor(ActorHandler::ScriptedScene) else {
+            if self.spawn_scene_program(program).is_none() {
                 break;
-            };
-            let a = crate::field_actor_program::spawn_program(program);
-            self.actors[slot].state_50 = a.program;
-            self.actors[slot].state_54 = a.state;
-            self.actors[slot].scene_program = Some(a);
+            }
             spawned.push(program);
         }
         spawned
+    }
+
+    /// Seat one scripted-scene program actor (`FUN_801D5A24(program)`): the
+    /// MAN loader's closers above, and the travel arts' openers
+    /// (`FUN_801EE094` / `FUN_801EE328` phase 0). Stepped by
+    /// [`Self::tick_scene_programs`]. `None` when the pool is full.
+    ///
+    /// REF: FUN_801D5A24 (ported as [`crate::field_actor_program::spawn_program`])
+    pub fn spawn_scene_program(&mut self, program: u16) -> Option<usize> {
+        let slot = self.spawn_handler_actor(ActorHandler::ScriptedScene)?;
+        let a = crate::field_actor_program::spawn_program(program);
+        self.actors[slot].state_50 = a.program;
+        self.actors[slot].state_54 = a.state;
+        self.actors[slot].scene_program = Some(a);
+        Some(slot)
     }
 
     /// Install a colour tween on `slot`, seating the handler the sweep and the

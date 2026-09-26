@@ -107,9 +107,11 @@ impl World {
         self.field_ctx = FieldCtx::default();
     }
 
-    /// Activate a slot and return a mutable reference to the actor.
+    /// Activate a slot and return a mutable reference to the actor, keeping
+    /// whatever state it holds - a test and viewer convenience. The retail
+    /// allocator's initialisation is [`Actor::init_allocated`].
     ///
-    /// PORT: FUN_80020DE0
+    /// REF: FUN_80020DE0
     pub fn spawn_actor(&mut self, slot: usize) -> &mut Actor {
         let a = &mut self.actors[slot];
         a.active = true;

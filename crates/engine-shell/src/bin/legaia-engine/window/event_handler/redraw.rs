@@ -1152,6 +1152,14 @@ impl PlayWindowApp {
                 // whose record doesn't resolve (e.g. the low walk-move
                 // ids the locomotion controller already covers) drop out
                 // harmlessly.
+                // A settle pick that binds from the scene bank (the `4C CE`
+                // override, the `99` sentinel) names a record of the same
+                // bundle the cues below resolve through.
+                if let Some(bundle) = self.npc_anim_bundles.0.as_ref()
+                    && let Some(anim) = self.session.host.world.locomotion.player_anim.as_mut()
+                {
+                    anim.resolve_scene_clip(bundle);
+                }
                 let move_cues =
                     std::mem::take(&mut self.session.host.world.locomotion.player_move_cues);
                 if !move_cues.is_empty()
@@ -1795,9 +1803,11 @@ impl PlayWindowApp {
                             // Raw retail-convention transform, like the NPC
                             // draws: the field camera's FIELD_WORLD_FLIP
                             // provides the single net Y negation.
+                            // The board's fade scales each tile about
+                            // its own origin (the tile actor's `+0x72`).
                             let model = Mat4::from_translation(Vec3::new(
                                 d.world[0], d.world[1], d.world[2],
-                            ));
+                            )) * Mat4::from_scale(Vec3::splat(d.scale));
                             draws.push(SceneDraw {
                                 mesh,
                                 mvp: cam * model,

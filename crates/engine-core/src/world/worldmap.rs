@@ -600,6 +600,17 @@ impl World {
                 .get(slot as usize)
                 .map(|a| (a.move_state.world_x, a.move_state.world_z))
         });
+        // What a travel art reads off the world: the player's live Y (Rula's
+        // lift re-reads `+0x16` every frame) and flag `0x0B`, which its
+        // opener program holds until its state 4.
+        let travel_env = crate::world_map_panel_host::TravelEnv {
+            player_y: self
+                .player_actor_slot
+                .and_then(|slot| self.actors.get(slot as usize))
+                .map(|a| a.move_state.world_y),
+            effect_busy: self
+                .system_flag_test(u16::from(crate::field_actor_program::FLAG_PLAYER_BUSY)),
+        };
 
         // Take the controller out so the flag-bank adapter can borrow the
         // world mutably (the same borrow window `tick_world_map_horizon` uses).
@@ -668,6 +679,7 @@ impl World {
         ctrl.panels
             .tick_party_hud(false, i32::from(ctrl.view_mode), held, player_pos, 1, None);
 
+        ctrl.panels.travel_env = travel_env;
         let mut store = WorldPanelFlags { world: self };
         let frame = ctrl.panels.tick(edge, held, frame_step, &mut store);
         self.world_map.ctrl = Some(ctrl);
@@ -720,6 +732,7 @@ impl World {
         if frame.reload_executable {
             log::info!("world-map: soft reset reached its executable reload (not acted on)");
         }
+        self.apply_travel_art_frame(&frame);
         if let Some(dest) = frame.warp
             && let Some(slot) = self.player_actor_slot
             && let Some(actor) = self.actors.get_mut(slot as usize)
@@ -728,12 +741,63 @@ impl World {
                 dest.x.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
             actor.move_state.world_z =
                 dest.z.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            // `*0x80073EFC = 0`: the arrival's Y term.
+            actor.move_state.world_y = dest.y as i16;
             self.world_map.last_tile = None;
             log::info!(
                 "world-map: travel art warped the party to ({}, {})",
                 dest.x,
                 dest.z
             );
+            // Retail's resolve stages the destination's scene load
+            // (`FUN_8001FD44`), and that load's MAN init resumes the
+            // program whose opener ran - Rula's descent (program 2, flag
+            // `0x17`) or Riremito's speed restore (program 3, flag `0x0C`).
+            // The engine's warp stays on the loaded map, so it runs the
+            // same resume here.
+            let resumed = self.man_load_resume_programs();
+            if !resumed.is_empty() {
+                log::info!("world-map: travel-art arrival resumed programs {resumed:?}");
+            }
+        }
+    }
+
+    /// Apply what a travel-art frame did to the world: the phase-0 opener
+    /// (flag `0x0B` + scripted-scene program `n`, `0x801EE39C` / Riremito's
+    /// twin), Rula's lift on the player (`0x801EE400..0x801EE4C4`: live
+    /// `+0x16`, `+0x10 |= 1`, scratchpad `0x1F800394 |= 0x1000000`) and its
+    /// exit's pad-hold clear (`0x801EE478`), and Riremito's resolve-time
+    /// restore of the player (`0x801EE268..0x801EE294`).
+    ///
+    /// REF: FUN_801EE328, FUN_801EE094 (the kernel is
+    /// `legaia_engine_vm::travel_art_actor::TravelArtActor::tick`)
+    fn apply_travel_art_frame(&mut self, frame: &crate::world_map_panel_host::PanelFrame) {
+        use legaia_engine_vm::travel_art_actor as ta;
+        if let Some(program) = frame.travel_queue_program {
+            self.system_flag_set(u16::from(crate::field_actor_program::FLAG_PLAYER_BUSY));
+            if self.spawn_scene_program(program).is_some() {
+                log::info!("world-map: travel art queued opener program {program}");
+            }
+        }
+        if frame.clear_warp_hold {
+            self.locomotion.warp.hold = 0;
+        }
+        if frame.lift_player_y.is_some() {
+            self.flags.story_flags |= ta::RULA_LIFT_SCRATCH_FLAG;
+        }
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let Some(actor) = self.actors.get_mut(slot as usize) else {
+            return;
+        };
+        if let Some(y) = frame.lift_player_y {
+            actor.move_state.world_y = y;
+            actor.move_state.flags |= ta::RULA_LIFT_PLAYER_FLAG;
+        }
+        if frame.restore_player {
+            actor.move_state.field_72 = ta::RIREMITO_RESTORE_SCALE as u16;
+            actor.move_state.flags &= !ta::RIREMITO_RESTORE_CLEARED_FLAG;
         }
     }
 

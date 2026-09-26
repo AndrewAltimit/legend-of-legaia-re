@@ -159,6 +159,133 @@ impl TileBoardHeader {
     }
 }
 
+/// The walk SM's state halfword (the controller actor's `+0x54`), for the
+/// states the port keeps as their own phase. Values are retail's.
+pub mod sm {
+    /// Fade-in (`0x801EF680`): input ignored while the tiles scale up.
+    pub const FADE_IN: u8 = 1;
+    /// Walking - reading input (state 4) or interpolating (state 2); the
+    /// port keeps the two apart with `TileBoardState::target`.
+    pub const WALK: u8 = 4;
+    /// The quit prompt (`0x801EFBD0`).
+    pub const PROMPT: u8 = 5;
+    /// Quit confirmed (`0x801EFC2C`, shared with `7`): `-> 9`.
+    pub const QUIT: u8 = 6;
+    /// Trigger-cell exit (`0x801EFC2C`): `-> 9`.
+    pub const TRIGGER_EXIT: u8 = 7;
+    /// One-tick step before the exit fade (`0x801EFCD0`): `+= 1`.
+    pub const EXIT_STEP: u8 = 9;
+    /// The exit fade-out (`0x801EFCE4`).
+    pub const FADE_OUT: u8 = 0xA;
+    /// One-tick step before the event exit's fade (`0x801EFCD0`).
+    pub const EVENT_STEP: u8 = 0xB;
+    /// The event exit's fade-out (`0x801EFCE4`, shared with `0xA`).
+    pub const EVENT_FADE_OUT: u8 = 0xC;
+    /// Park every tile actor off-board (`0x801EFDA8`): `-> 0xE`.
+    pub const PARK: u8 = 0xD;
+    /// Teardown (`0x801EFE64`).
+    pub const TEARDOWN: u8 = 0xE;
+}
+
+/// Full tile scale, `+0x72 = 0x1000` (4.12 fixed point).
+pub const FADE_FULL: i16 = 0x1000;
+
+/// One fade-in tick (`0x801EF680..0x801EF6F0`): `+0x9C += (d * 3) << 5`,
+/// clamped to [`FADE_FULL`]; `true` once it reached it (then `-> 2`, the
+/// walk-in). `d` is `DAT_1F800393`.
+pub fn fade_in_step(fade: i16, d: u8) -> (i16, bool) {
+    let next = i32::from(fade) + ((i32::from(d) * 3) << 5);
+    if next >= i32::from(FADE_FULL) {
+        (FADE_FULL, true)
+    } else {
+        (next as i16, false)
+    }
+}
+
+/// One fade-out tick (`0x801EFCE4..0x801EFD48`): `+0x9C -= d << 8`; below
+/// zero it clamps to `0` and reports done (then `-> 0xD`).
+pub fn fade_out_step(fade: i16, d: u8) -> (i16, bool) {
+    let next = i32::from(fade) - (i32::from(d) << 8);
+    if next < 0 {
+        (0, true)
+    } else {
+        (next as i16, false)
+    }
+}
+
+/// The tile value the exit fade and park leave alone: when the player
+/// stands on an event cell (`8..=0xA`), its own tile actor keeps its scale
+/// and position (`0x801EFD50..0x801EFD7C`, the same test in `0x801EFDA8`).
+pub fn fade_exempt_value(cell_under_player: Option<u8>) -> Option<u8> {
+    cell_under_player.filter(|c| (CELL_EVENT_FIRST..=CELL_EVENT_LAST).contains(c))
+}
+
+/// Where the quit prompt goes on a picker result (`FUN_801E9DC8`'s return
+/// read at `0x801EFBF0..0x801EFC24`): confirm on row `0` quits, confirm on
+/// row `1` and cancel go back to walking, anything else stays.
+pub fn prompt_next(nav: crate::menu_input::CursorNav, cursor: u32) -> u8 {
+    use crate::menu_input::CursorNav;
+    match nav {
+        CursorNav::Confirm if cursor & crate::menu_input::CURSOR_INDEX_MASK == 0 => sm::QUIT,
+        CursorNav::Confirm | CursorNav::Cancel => sm::WALK,
+        _ => sm::PROMPT,
+    }
+}
+
+/// The quit prompt's panel (render tail `0x801EFED8..0x801EFFA8`): the
+/// frame `FUN_8002C69C(100, 92, 120, 40)`, the title pen at `(100, 92)`,
+/// the two rows at `(152, 105)` / `(152, 118)`, the hand cursor
+/// (`FUN_8002B994`) at `x = 132` on the selected row. The strings are the
+/// field overlay's own (`0x801CF650` title, `0x801CF10C` / `0x801CF110`
+/// rows); the port draws the panel's geometry, not its text.
+pub const PROMPT_FRAME: (i16, i16, i16, i16) = (100, 92, 120, 40);
+/// The two rows' pen Y (`105`, `118`).
+pub const PROMPT_ROW_Y: [i16; 2] = [105, 118];
+/// Both rows' pen X.
+pub const PROMPT_ROW_X: i16 = 152;
+/// The hand cursor's X.
+pub const PROMPT_CURSOR_X: i16 = 132;
+
+/// `(frame rect, the two row pens, cursor x)`, in stage pixels.
+pub type PromptLayout = ((i32, i32, i32, i32), [(i32, i32); 2], i32);
+
+/// The prompt panel's geometry as the shared UI builder takes it
+/// (`legaia_engine_ui::TileBoardPromptLayout`'s fields, in stage pixels):
+/// `(frame, rows, cursor_x)`.
+pub fn prompt_layout() -> PromptLayout {
+    let (x, y, w, h) = PROMPT_FRAME;
+    let row = |i: usize| (i32::from(PROMPT_ROW_X), i32::from(PROMPT_ROW_Y[i]));
+    (
+        (i32::from(x), i32::from(y), i32::from(w), i32::from(h)),
+        [row(0), row(1)],
+        i32::from(PROMPT_CURSOR_X),
+    )
+}
+
+/// The field overlay's load base (PROT 0897, slot A).
+const FIELD_OVERLAY_BASE: u32 = 0x801C_E818;
+/// VAs of the prompt's three strings in the field overlay's data segment:
+/// the title and the two rows (the `a0` of the render tail's three
+/// `FUN_80036888` calls).
+pub const PROMPT_STRING_VAS: [u32; 3] = [0x801C_F650, 0x801C_F10C, 0x801C_F110];
+
+/// Read the prompt's three NUL-terminated strings out of the field overlay
+/// image (PROT entry `0897`, as the disc holds it). `None` when the image
+/// is too short to hold them.
+pub fn prompt_strings(field_overlay: &[u8]) -> Option<[Vec<u8>; 3]> {
+    let read = |va: u32| -> Option<Vec<u8>> {
+        let off = va.checked_sub(FIELD_OVERLAY_BASE)? as usize;
+        let tail = field_overlay.get(off..)?;
+        let end = tail.iter().position(|&b| b == 0)?;
+        Some(tail[..end].to_vec())
+    };
+    Some([
+        read(PROMPT_STRING_VAS[0])?,
+        read(PROMPT_STRING_VAS[1])?,
+        read(PROMPT_STRING_VAS[2])?,
+    ])
+}
+
 /// What the walk SM's arrival state (state 3) does with the cell the player
 /// just reached.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -448,6 +575,9 @@ pub struct TileActorDraw {
     /// World-space draw position `(x, y, z)` in the retail Y-down field
     /// frame (the same convention the field NPC / placement draws use).
     pub world: [f32; 3],
+    /// Uniform scale, the tile actor's `+0x72` over `0x1000`: the board's
+    /// fade grows the tiles in at install and shrinks them away at exit.
+    pub scale: f32,
 }
 
 /// Assemble the per-cell tile-actor draw set from the world's per-frame
@@ -485,6 +615,7 @@ pub fn tile_board_actor_draws(world: &crate::world::World) -> Vec<TileActorDraw>
                 slot: d.slot,
                 cell_value: d.cell_value,
                 world: [d.world_x as f32, y, d.world_z as f32],
+                scale: world.tile_board_cell_scale(d.cell_value),
             }
         })
         .collect()

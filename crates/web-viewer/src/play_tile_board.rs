@@ -34,6 +34,11 @@ use legaia_engine_core::tile_board;
 use legaia_engine_core::world::SceneMode;
 use wasm_bindgen::prelude::*;
 
+/// Floats per cell in [`LegaiaRuntime::play_tile_board_transforms`]:
+/// `slot, x, y, z, scale`. `site/js/play-app.js` walks the array at the same
+/// stride.
+pub const TILE_DRAW_STRIDE: usize = 5;
+
 /// A tile-actor mesh staged for upload: `(slot, mesh, per-vertex object ids,
 /// flat RGBA + textured flag)`. One at a time, like the NPC path's `cur`.
 pub(crate) type StagedTileMesh = (u8, legaia_tmd::mesh::VramMesh, Vec<u32>, Vec<u8>);
@@ -117,7 +122,9 @@ impl LegaiaRuntime {
             .collect()
     }
 
-    /// This frame's per-cell draw set, flattened `[slot, x, y, z, ...]`.
+    /// This frame's per-cell draw set, flattened `[slot, x, y, z, scale,
+    /// ...]` - [`TILE_DRAW_STRIDE`] floats per cell. `scale` is the board
+    /// fade's render scale (the tile actor's `+0x72` over `0x1000`).
     ///
     /// One entry per drawn cell, so a cell value repeated across the board
     /// yields several entries sharing one slot - that per-cell instancing is
@@ -129,10 +136,11 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         let draws = tile_board::tile_board_actor_draws(&h.world);
-        let mut out = Vec::with_capacity(draws.len() * 4);
+        let mut out = Vec::with_capacity(draws.len() * TILE_DRAW_STRIDE);
         for d in draws {
             out.push(f32::from(d.slot));
             out.extend_from_slice(&d.world);
+            out.push(d.scale);
         }
         out
     }

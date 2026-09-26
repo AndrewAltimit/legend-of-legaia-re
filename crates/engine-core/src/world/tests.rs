@@ -277,7 +277,9 @@ fn gimard_spell_def() -> crate::spells::SpellDef {
     }
 }
 
+mod actor_alloc_init;
 mod actor_cadence;
+mod ambient_collision_exempt;
 mod battle_anim;
 mod battle_auto_command;
 mod battle_capture_bgm;
@@ -317,6 +319,7 @@ mod move_vm_ext;
 mod move_vm_flags;
 mod party_composition;
 mod physics_steal_shop;
+mod player_clip_pick;
 mod save_state;
 mod script_teleport;
 mod seru_absorb;

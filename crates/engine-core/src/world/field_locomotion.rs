@@ -232,6 +232,13 @@ pub struct FieldLocomotion {
     /// ([`legaia_engine_vm::field_player_clip::PARTY_BANK_FLAG`]): raised by
     /// every pad step that writes a base, dropped by the scene-sentinel pick.
     pub player_party_bank: bool,
+    /// The clip override `_DAT_8007B6AC`: field-VM op `4C CE <value>`
+    /// (`0x801E2A20..0x801E2A30`) stores its byte here, and scene entry
+    /// zeroes it (SCUS `0x8003B6F0`, inside `FUN_8003AEB0`). While it is
+    /// non-zero a party-flagged pick binds `base + override - 1` from the
+    /// **scene** bank - the two disc users (`jagaroom`, `urudre1`) point the
+    /// player's walk / idle / run at scene-bundle records this way.
+    pub clip_override: u32,
     /// The kind-0 warp's globals `_DAT_8007B6B0` (timer), `_DAT_8007B6B4`
     /// (post-warp pad hold) and the destination pair - see
     /// [`legaia_engine_vm::field_warp_tile`].
@@ -268,6 +275,7 @@ impl FieldLocomotion {
             clip_base: legaia_engine_vm::field_player_clip::BASE_IDLE,
             player_clip: legaia_engine_vm::field_player_clip::BASE_IDLE as i16,
             player_party_bank: true,
+            clip_override: 0,
             warp: legaia_engine_vm::field_warp_tile::WarpTimer::default(),
             warp_fade_in_in: None,
         }

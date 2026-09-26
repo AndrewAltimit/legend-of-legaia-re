@@ -1547,6 +1547,17 @@ impl PlayWindowApp {
             legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }
+        // The tile board's quit prompt (walk-SM state 5): the title and the
+        // two rows, read off the field overlay's own strings.
+        if let Some(lay) = self.tile_board_prompt_layout()
+            && let Some(lines) = self.session.host.tile_board_prompt_lines()
+        {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            let mut draws =
+                legaia_engine_render::tile_board_prompt_text_draws_for(&self.font, &lay, &lines);
+            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            out.extend(draws);
+        }
         // Opt-in developer menu: its row list draws over everything else.
         //
         // Through the canonical 320x240 stage, like every other retail screen
@@ -1842,6 +1853,18 @@ impl PlayWindowApp {
     /// timeline, or inline field-VM runner) into plain strings the
     /// text and chrome layers both consume. `None` when no box is
     /// open this frame.
+    /// The tile board's quit-prompt geometry while its walk SM sits in the
+    /// prompt state, `None` otherwise.
+    fn tile_board_prompt_layout(&self) -> Option<legaia_engine_render::TileBoardPromptLayout> {
+        self.session.host.world.tile_board_prompt_cursor()?;
+        let (frame, rows, cursor_x) = legaia_engine_core::tile_board::prompt_layout();
+        Some(legaia_engine_render::TileBoardPromptLayout {
+            frame,
+            rows,
+            cursor_x,
+        })
+    }
+
     pub(super) fn dialog_snapshot(&self) -> Option<DialogSnapshot> {
         let to_ascii = |bytes: &[u8]| -> String {
             bytes
@@ -2033,6 +2056,17 @@ impl PlayWindowApp {
             out.extend(legaia_engine_render::text_balloon_chrome_draws_for(
                 &assets.rects,
                 rect,
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        if let Some(lay) = self.tile_board_prompt_layout()
+            && let Some(cursor) = self.session.host.world.tile_board_prompt_cursor()
+        {
+            out.extend(legaia_engine_render::tile_board_prompt_sprites_for(
+                &assets.rects,
+                &lay,
+                cursor,
                 stage_origin,
                 stage_scale,
             ));

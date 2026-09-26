@@ -1772,24 +1772,40 @@ impl World {
         }
     }
 
-    /// Tile-board player step: read one d-pad direction from
-    /// [`World.input`](Self::input), gate it against the board's
-    /// collision cells, and interpolate the player actor toward the
-    /// destination tile centre. Drives the puzzle / board minigame mode,
-    /// not general town locomotion.
+    /// One frame of the tile board's walk state machine (`FUN_801EF2B0`,
+    /// states in [`crate::tile_board::sm`]):
     ///
-    /// PORT: the walk state machine in `overlay_0897_801ef2b0`. The
-    /// player is either *idle* (`tile_board_target == None`, accepting a
-    /// new direction) or *interpolating* toward a committed target tile
-    /// (case 2). A direction is only consumed while idle, so holding the
-    /// d-pad steps tile-by-tile - matching retail, where the SM re-reads
-    /// the pad only after the previous step's interpolation completes.
+    /// - **fade-in** (`1`): input is ignored while `+0x9C` - every tile
+    ///   actor's render scale - ramps up to `0x1000`;
+    /// - **walking** (`4`, and `2` while the player interpolates toward a
+    ///   committed tile, [`crate::world::TileBoardState::target`]): read one
+    ///   d-pad direction, gate it against the board's cells, step. The menu
+    ///   edge (Triangle, `_DAT_8007B874 & 0x10`) opens the quit prompt with
+    ///   the cursor on its second row (`0x801EF824..0x801EF84C`);
+    /// - **quit prompt** (`5`): the two-row picker `FUN_801E9DC8` (wrapping,
+    ///   Up/Down); confirm on row `0` quits, confirm on row `1` or cancel go
+    ///   back to walking;
+    /// - **exit** (`6`/`7` -> `9` -> `0xA`, the event exit `0xB` -> `0xC`):
+    ///   one tick per step state, then the fade-out shrinks every tile actor
+    ///   (the event tile under the player excepted), `0xD` parks them and
+    ///   `0xE` tears the board down.
+    ///
+    /// A direction is only consumed while idle, so holding the d-pad steps
+    /// tile-by-tile - retail re-reads the pad only after the previous step's
+    /// interpolation completes. The fades count one `DAT_1F800393` unit per
+    /// world tick, which is one vsync: the same wall-clock ramp as retail's
+    /// per-game-tick `d = 2`.
     ///
     /// No-ops without a player actor slot or an installed
     /// [`tile_board`](crate::tile_board), and while a dialog box is up
-    /// (the field VM owns the frame). Reads only pad bits + board state,
-    /// so it is deterministic across identical pad streams.
+    /// (the field VM owns the frame). Deterministic across identical pad
+    /// streams.
+    ///
+    /// PORT: FUN_801EF2B0 (states 1, 2, 4, 5, 6, 7, 9..0xE; the arrival
+    /// state 3 and event state 8 are [`Self::tile_board_arrival`])
     fn tick_tile_board(&mut self) {
+        use crate::tile_board::sm;
+        const D: u8 = 1;
         if self.dialogue_owns_input() {
             return;
         }
@@ -1799,6 +1815,60 @@ impl World {
         let slot = player_slot as usize;
         if self.board.grid.is_none() || slot >= self.actors.len() {
             return;
+        }
+        match self.board.sm {
+            sm::FADE_IN => {
+                let (fade, done) = crate::tile_board::fade_in_step(self.board.fade, D);
+                self.board.fade = fade;
+                if done {
+                    self.board.sm = sm::WALK;
+                }
+                return;
+            }
+            sm::PROMPT => {
+                let nav_in = crate::menu_input::NavButtons::new(
+                    self.input.just_pressed(input::PadButton::Cross),
+                    self.input.just_pressed(input::PadButton::Circle),
+                    self.input.just_pressed(input::PadButton::Up),
+                    self.input.just_pressed(input::PadButton::Down),
+                );
+                let nav = crate::menu_input::menu_cursor_nav(
+                    &mut self.board.prompt_cursor,
+                    2,
+                    true,
+                    nav_in,
+                );
+                if let Some(cue) = nav.sfx_cue() {
+                    self.push_sfx_cue(i16::from(cue));
+                }
+                self.board.sm = crate::tile_board::prompt_next(nav, self.board.prompt_cursor);
+                return;
+            }
+            sm::QUIT | sm::TRIGGER_EXIT => {
+                self.board.sm = sm::EXIT_STEP;
+                return;
+            }
+            sm::EXIT_STEP | sm::EVENT_STEP => {
+                self.board.sm += 1;
+                return;
+            }
+            sm::FADE_OUT | sm::EVENT_FADE_OUT => {
+                let (fade, done) = crate::tile_board::fade_out_step(self.board.fade, D);
+                self.board.fade = fade;
+                if done {
+                    self.board.sm = sm::PARK;
+                }
+                return;
+            }
+            sm::PARK => {
+                self.board.sm = sm::TEARDOWN;
+                return;
+            }
+            sm::TEARDOWN => {
+                self.tile_board_teardown();
+                return;
+            }
+            _ => {}
         }
 
         // Interpolating toward a committed target tile.
@@ -1815,13 +1885,44 @@ impl World {
             return;
         }
 
-        // Idle: decode one direction and try to step.
+        // Idle (state 4): the menu edge first, then one direction.
+        if self.input.just_pressed(input::PadButton::Triangle) {
+            self.board.fade = crate::tile_board::FADE_FULL;
+            self.board.prompt_cursor = 1;
+            self.board.sm = sm::PROMPT;
+            return;
+        }
         let Some(dir) = tile_step_from_input(&self.input) else {
             return;
         };
         if let Some((tx, tz)) = self.board.grid.as_mut().and_then(|b| b.try_step(dir)) {
             self.board.target = Some((tx, tz));
         }
+    }
+
+    /// The quit prompt's cursor row while the tile board's walk SM sits in
+    /// state `5`, for the hosts' panel draw; `None` otherwise.
+    pub fn tile_board_prompt_cursor(&self) -> Option<usize> {
+        (self.board.grid.is_some() && self.board.sm == crate::tile_board::sm::PROMPT)
+            .then_some((self.board.prompt_cursor & crate::menu_input::CURSOR_INDEX_MASK) as usize)
+    }
+
+    /// The render scale a board tile of `value` draws at this frame: the
+    /// walk SM's fade (`+0x9C` copied into every tile actor's `+0x72`),
+    /// except the event tile the player stands on during the exit fade,
+    /// which keeps its full size. `1.0` with no board up.
+    pub fn tile_board_cell_scale(&self, value: u8) -> f32 {
+        use crate::tile_board::sm;
+        let Some(board) = self.board.grid.as_ref() else {
+            return 1.0;
+        };
+        if matches!(self.board.sm, sm::FADE_OUT | sm::EVENT_FADE_OUT | sm::PARK) {
+            let under = board.cell(board.player_col as i32, board.player_row as i32);
+            if crate::tile_board::fade_exempt_value(under) == Some(value) {
+                return 1.0;
+            }
+        }
+        f32::from(self.board.fade) / f32::from(crate::tile_board::FADE_FULL)
     }
 
     /// Advance the screen-effect widgets one frame and refresh
@@ -1847,25 +1948,19 @@ impl World {
     /// when the player's interpolation reaches the committed tile centre. The
     /// arrived cell picks one of three arms ([`crate::tile_board::arrival_action`]):
     ///
-    /// - a **trigger cell** (`7`) leaves the board with no flag write;
+    /// - a **trigger cell** (`7`) starts the exit with no flag write
+    ///   (state `7`);
     /// - an **event cell** (`8..=0xA`) first writes the state-8 system flags
     ///   ([`crate::tile_board::event_cell_flag_writes`]: SET `A + v + 1`, and
     ///   SET `A` when TEST `B + v` is clear, `v = cell - 8`, `A`/`B` the header
-    ///   `+7`/`+9` bases), then leaves the board;
+    ///   `+7`/`+9` bases), then starts the event exit (state `0xB`);
     /// - any other cell advances **every** animated cell on the board one step
     ///   (`0xB -> 0xC -> 0xD -> 0xE -> 0xB`) and returns to input.
     ///
-    /// Leaving uninstalls the board and despawns its tile actors;
-    /// `tile_board_armed` stays set, so the suspended op-0x49 script reads
-    /// `Done` and resumes past the install op - the engine form of retail's
-    /// teardown state `0xE` zeroing the controller's `+0x3E`, which the op-49
-    /// handler reads to raise `_DAT_8007B450 = 1`. Retail spends a fade
-    /// (states `9..0xD`, `+0x9C` ramped down by `DAT_1F800393 << 8`) before
-    /// that teardown; the engine exits on the arrival frame.
+    /// The exits run the fade in [`Self::tick_tile_board`] and end in
+    /// [`Self::tile_board_teardown`].
     ///
-    /// PORT: FUN_801EF2B0 (states 3 and 8; the op-49 menu state 5 and the
-    /// fade states `9..0xD` are not ported - no shipped script installs a
-    /// board, see docs/subsystems/tile-board.md)
+    /// PORT: FUN_801EF2B0 (states 3 and 8)
     fn tile_board_arrival(&mut self) {
         use crate::tile_board::ArrivalAction;
         let Some(board) = self.board.grid.as_mut() else {
@@ -1879,10 +1974,9 @@ impl World {
             ArrivalAction::Continue => {
                 crate::tile_board::advance_animated_cells(&mut board.cells);
             }
-            action => {
-                if action == ArrivalAction::ExitEvent
-                    && let Some(header) = self.board.header
-                {
+            ArrivalAction::ExitTrigger => self.board.sm = crate::tile_board::sm::TRIGGER_EXIT,
+            ArrivalAction::ExitEvent => {
+                if let Some(header) = self.board.header {
                     let writes = crate::tile_board::event_cell_flag_writes(&header, cell, |i| {
                         self.system_flag_test(i)
                     });
@@ -1890,11 +1984,23 @@ impl World {
                         self.system_flag_set(idx);
                     }
                 }
-                self.board.grid = None;
-                self.board.header = None;
-                self.despawn_tile_actors();
+                self.board.sm = crate::tile_board::sm::EVENT_STEP;
             }
         }
+    }
+
+    /// Teardown (state `0xE`, `0x801EFE64`): the board and its tile actors go,
+    /// and `tile_board_armed` stays set, so the suspended op-0x49 script
+    /// reads `Done` and resumes past the install op - the engine form of
+    /// retail zeroing the controller's `+0x3E`, which the op-49 handler reads
+    /// to raise `_DAT_8007B450 = 1`.
+    fn tile_board_teardown(&mut self) {
+        self.board.grid = None;
+        self.board.header = None;
+        self.board.target = None;
+        self.board.sm = crate::tile_board::sm::WALK;
+        self.board.fade = crate::tile_board::FADE_FULL;
+        self.despawn_tile_actors();
     }
 
     /// Install a tile board from a field-VM op-0x49 **sub-op 5** instruction
@@ -1969,11 +2075,18 @@ impl World {
             }
         }
 
+        // State 0's tail clears the header's four set-base flags
+        // (`FUN_8003CE34(A + i)`, `i < 4`) before the fade-in starts.
+        for i in 0..4 {
+            self.system_flag_clear((header.flag_base_set as u16).wrapping_add(i));
+        }
         self.board.actor_slots = tile_slots;
         self.board.target = None;
         self.board.grid = Some(board);
         self.board.header = Some(header);
         self.board.armed = true;
+        self.board.sm = crate::tile_board::sm::FADE_IN;
+        self.board.fade = 0;
         true
     }
 
@@ -2017,11 +2130,26 @@ impl World {
             return;
         };
         let mut list = Vec::new();
+        // State 0xD parks every tile actor off-board but the event tile the
+        // player stands on, and 0xE draws nothing (`0x801EFDA8`, the render
+        // tail's state gate).
+        let parked = match self.board.sm {
+            crate::tile_board::sm::PARK => Some(crate::tile_board::fade_exempt_value(
+                board.cell(board.player_col as i32, board.player_row as i32),
+            )),
+            crate::tile_board::sm::TEARDOWN => Some(None),
+            _ => None,
+        };
         for (col, row) in board.draw_cells(header.mode_flag, header.radius) {
             let Some(cell) = board.cell(col, row) else {
                 continue;
             };
             if !crate::tile_board::is_drawable_cell(cell) {
+                continue;
+            }
+            if let Some(keep) = parked
+                && keep != Some(cell)
+            {
                 continue;
             }
             let Some(slot) = self.board.actor_slots[cell as usize] else {

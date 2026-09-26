@@ -1408,6 +1408,9 @@ impl World {
                         host.world
                             .pending_field_events
                             .push(FieldEvent::ExecMove { move_id });
+                        // Retail's player arm of op 0x22: the move id becomes
+                        // the clip base and is picked + bound at once.
+                        host.world.field_player_script_clip(move_id);
                         // Cue the scripted player clip: the windowed host
                         // resolves scene-ANM record `move_id - 1` and plays
                         // it once over idle/walk (live-pinned: the town01
@@ -2081,15 +2084,23 @@ impl World {
                 };
                 // Cross-context poke: resolve the extended target to another
                 // channel and run the op against that context.
-                let target = vm::field::peek_extended(bc, pc).and_then(|t| {
+                let ext = vm::field::peek_extended(bc, pc);
+                let target = ext.and_then(|t| {
                     let ci = crate::field_channels::resolve_target(&channels, t)?;
                     (ci != i).then_some(ci)
+                });
+                let self_target = ext.is_some_and(|t| {
+                    crate::field_channels::resolve_target(&channels, t) == Some(i)
                 });
                 self.field_vm.executing_channel = match target {
                     // Object-bind targets carry a flat record index, not a
                     // placement slot - no placement-keyed attribution.
                     Some(ci) if channels[ci].object_bind => None,
                     Some(ci) => Some(channels[ci].placement_index as u8),
+                    // An extended op aimed at something that is not a
+                    // channel (the player `0xF8`, the system `0xFB`) is not
+                    // this placement's to receive.
+                    None if ext.is_some() && !self_target => None,
                     None => Some(channels[i].placement_index as u8),
                 };
                 let result = {
@@ -2590,8 +2601,11 @@ impl World {
                     .props
                     .bank
                     .bind_actor_clip(target, move_id, fallback);
-                if target == crate::field_env::PLAYER_ANCHOR_TARGET && move_id > 2 {
-                    host.world.locomotion.player_move_cues.push(move_id);
+                if target == crate::field_env::PLAYER_ANCHOR_TARGET {
+                    host.world.field_player_script_clip(move_id);
+                    if move_id > 2 {
+                        host.world.locomotion.player_move_cues.push(move_id);
+                    }
                 }
             }
             // Bind the poked actor's `+0x62` into the executing context for the

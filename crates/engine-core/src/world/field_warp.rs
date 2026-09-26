@@ -84,8 +84,8 @@ impl World {
     /// player `MoveTo` event so the hosts' camera re-pins the way retail's
     /// `FUN_801DAA50` call does.
     ///
-    /// Retail also tags the pool actor running `0x801DA7F0` for tear-down
-    /// on every running frame; the port has no such actor to tag.
+    /// Each running frame (and the landing frame) also tears down the live
+    /// text balloon - retail tags the pool actor running `0x801DA7F0`.
     ///
     /// Every frame ends with the system channel's clear of the `-1000`
     /// landed sentinel ([`warp_tile::clear_landed_sentinel`]), which retail
@@ -114,6 +114,15 @@ impl World {
                     0,
                 );
             }
+        }
+        // The timer-running half opens by tagging the live `4C E1` text
+        // balloon (the first pool actor whose handler is `0x801DA7F0`, found
+        // through `FUN_8003CF04`) for tear-down: `ori v0, v0, 8` into its
+        // `+0x10` at `0x801D1F14..0x801D1F20`, on every frame the timer
+        // enters positive - the landing frame included. So a caption up at
+        // the crossing does not survive the fade.
+        if self.locomotion.warp.timer > 0 {
+            self.cutscene.text_balloon = None;
         }
         let counter = self.encounters.step_counter;
         match warp_tile::tick_warp_timer(&mut self.locomotion.warp, delta, counter) {
@@ -167,13 +176,16 @@ impl World {
     }
 
     /// Scene entry's reset of the warp and clip globals: no warp carries
-    /// across a scene change, and the clip base starts at idle (SCUS
-    /// `0x8003B364`, `addiu v0, zero, 2; sw v0, _DAT_8007BDD8`).
+    /// across a scene change, the clip base starts at idle (SCUS
+    /// `0x8003B364`, `addiu v0, zero, 2; sw v0, _DAT_8007BDD8`) and the
+    /// op-`4C CE` clip override is dropped (SCUS `0x8003B6F0`,
+    /// `sw zero, _DAT_8007B6AC`) - both inside the map init `FUN_8003AEB0`.
     pub fn reset_field_warp_and_clip(&mut self) {
         self.locomotion.warp = vm::field_warp_tile::WarpTimer::default();
         self.locomotion.warp_fade_in_in = None;
         self.locomotion.clip_base = vm::field_player_clip::BASE_IDLE;
         self.locomotion.player_party_bank = true;
+        self.locomotion.clip_override = 0;
     }
 }
 

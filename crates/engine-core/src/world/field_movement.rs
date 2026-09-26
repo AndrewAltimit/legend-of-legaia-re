@@ -43,25 +43,35 @@ pub(crate) struct PropDirProbe {
 /// ambient channels are exactly those placements. The same bit makes the
 /// hit's result class `1` (`+0x10 & 0x40020000`), never `4`.
 ///
-/// So of the routine's other parts, the **no-class arm**
-/// (`0x801CF8D4..0x801CF930`: box `0x40 + 0x10` = ±80 plus the model-bbox
-/// offset of the 32-byte record `*(0x1F8003EC) + actor[+0x60] * 32`) serves
-/// pool actors spawned elsewhere and is not an ambient walker's to take.
-/// Two parts stay unmodelled, both because the ambient channel carries no
-/// pooled actor to hold them:
+/// The routine's **collision-exempt early-out** is ported too
+/// ([`Self::exempt`]): `+0x10 & 3` non-zero returns `0` before any box test
+/// (`andi v0, v0, 3; bnez` at `0x801CF8B8`), and the directional caller
+/// skips the call outright under `+0x10 & 1` (`0x80038484..0x80038490`). A
+/// script sets those bits with op `0x31` (`31 00` / `31 01`), and the
+/// placement channel's live flag word
+/// ([`World::field_channel_flags`]) is where the port keeps them - so a walker
+/// a script has made collision-exempt walks through the player, as in retail.
 ///
-/// - the `+0x10 & 3` early-out (`0x801CF8B8`): a walker a script has made
-///   collision-exempt never hits the player - the channel has no flag word
-///   for a script to set those bits in;
-/// - the hit's mutual contact link (`0x801CF9BC..0x801CF9C8`):
-///   `player[+0x98] = actor`, `actor[+0x98] = player` - the port's player
-///   keeps its interaction target on the talk probe's side, not on a pooled
-///   `+0x98`.
+/// The rest of the routine changes nothing an ambient walker can observe:
+///
+/// - the **no-class arm** (`0x801CF8D4..0x801CF930`: box `0x40 + 0x10` = ±80
+///   plus the model-bbox offset of the 32-byte record
+///   `*(0x1F8003EC) + actor[+0x60] * 32`) is unreachable for a placement,
+///   which leaves the class arm only if bit 17 is cleared and no disc script
+///   clears it; and its result is `4`, which every caller drops - all three
+///   sites (`0x800384C0`, `0x80038A78`, `0x80038F3C`) test `result & 1`;
+/// - the hit's mutual contact link (`0x801CF9BC..0x801CF9C8`,
+///   `player[+0x98] = actor`, `actor[+0x98] = player`) is overwritten before
+///   it is read: the player-side readers (`0x801D0750`, `0x801D0868`) run
+///   only on a hit of the player's own probe, which rewrites `+0x98` first.
 ///
 /// PORT: FUN_801cf8ac
 /// REF: FUN_801d5a68
 struct AmbientPlayerProbe {
     player: Option<(i16, i16)>,
+    /// The walker's `+0x10 & 3` collision-exempt bits are up: every probe
+    /// misses.
+    exempt: bool,
 }
 
 /// The 12-bit engine heading that points along `(dx, dz)` - the engine's
@@ -96,6 +106,9 @@ fn stream_has_walk_op(code: &[u8]) -> bool {
 
 impl AmbientPlayerProbe {
     fn hit(&self, x: i16, z: i16, dx: i16, dz: i16) -> bool {
+        if self.exempt {
+            return false;
+        }
         let Some((px, pz)) = self.player else {
             return false;
         };
@@ -1686,12 +1699,10 @@ impl World {
         // mid-scene, which no real entry path does - it is set once at boot
         // (`play-window`, opt-out `--no-live-npcs`).
         let live_walk = self.npcs.animate;
-        let blocking = AmbientPlayerProbe {
-            player: if live_walk {
-                self.player_field_position()
-            } else {
-                None
-            },
+        let player = if live_walk {
+            self.player_field_position()
+        } else {
+            None
         };
         let slots: Vec<u8> = self.npcs.ambient.keys().copied().collect();
         let mut globals_in = self.flags.story_flags;
@@ -1703,6 +1714,12 @@ impl World {
                 .get(&slot)
                 .and_then(|c| c.select_variant(|f| self.system_flag_test(f)));
             let Some(pick) = pick else { continue };
+            // The walker's own collision-exempt bits, off its live placement
+            // context (op `0x31` sets them).
+            let blocking = AmbientPlayerProbe {
+                player,
+                exempt: self.field_channel_flags(slot) & 3 != 0,
+            };
             let Some(chan) = self.npcs.ambient.get_mut(&slot) else {
                 continue;
             };
@@ -3265,14 +3282,14 @@ impl World {
 
     /// The anim-clip tail of the settle (`FUN_801D1BA0` at
     /// `0x801D1D88..0x801D1EAC`): stride the clip base into the leader's
-    /// bank, store the player's clip id, and hand the picked bank slot to the
-    /// player's clip player.
+    /// bank, store the player's clip id, and hand the picked clip to the
+    /// player's clip player - a party-bank slot, or a scene-bank record when
+    /// the pick binds from the scene's own bundle (the op-`4C CE` override
+    /// [`crate::world::FieldLocomotion::clip_override`], the `99` scene
+    /// sentinel, or a player whose party-bank bit is down).
     ///
-    /// The op-`4C CE` override word `_DAT_8007B6AC` is read as `0`: the field
-    /// VM's host stores nothing for it, and its only two disc users
-    /// (`jagaroom`, `urudre1`) bind scene-bank records the party bank cannot
-    /// play. Scratchpad `0x1F800394 & 0x400` (the bind block) has no writer
-    /// the port models, so the bind always runs.
+    /// Scratchpad `0x1F800394 & 0x400` (the bind block) has no writer the
+    /// port models, so the bind always runs.
     ///
     /// REF: FUN_801D1BA0 (the tail is ported as
     /// [`vm::field_player_clip::settle_clip_pick`])
@@ -3281,19 +3298,61 @@ impl World {
         let pick = vm::field_player_clip::settle_clip_pick(
             self.locomotion.clip_base,
             leader,
-            0,
+            self.locomotion.clip_override,
             self.locomotion.player_party_bank,
             false,
         );
+        self.apply_player_clip_pick(&pick, leader);
+    }
+
+    /// Store one clip pick on the player and hand what it binds to the clip
+    /// player. Shared by the settle tail and the script arms that aim a clip
+    /// at the player ([`Self::field_player_script_clip`]).
+    fn apply_player_clip_pick(
+        &mut self,
+        pick: &vm::field_player_clip::SettleClipPick,
+        leader: u16,
+    ) {
         self.locomotion.player_clip = pick.clip as i16;
         self.locomotion.player_party_bank = pick.party_flag;
         if !pick.binds {
             return;
         }
-        let slot = vm::field_player_clip::party_bank_slot(&pick, leader);
+        let slot = vm::field_player_clip::party_bank_slot(pick, leader);
+        let scene = match pick.bound() {
+            Some((vm::field_player_clip::ClipBank::Scene, record)) => Some(record),
+            _ => None,
+        };
         if let Some(anim) = &mut self.locomotion.player_anim {
             anim.select_retail_slot(slot);
+            anim.select_scene_record(scene);
         }
+    }
+
+    /// A script aiming a clip at the **player**: op `0x22` `EXEC_MOVE`
+    /// (`0x801DE998..0x801DEAB8`) and the player arm of op `4C 51`
+    /// (`0x801E1954..0x801E1A3C`) both test the context against the player
+    /// pointer `_DAT_8007C364`, store their clip operand into the clip base
+    /// `_DAT_8007BDD8`, and run the settle tail's pick on it at once -
+    /// `99` names scene record `leader`, a party-flagged actor strides into
+    /// the leader's bank (or, under the `4C CE` override, into the scene
+    /// bank at the override), and an unflagged one binds scene record
+    /// `move_id - 1`. Neither arm tests the settle's bind block, so the bind
+    /// always runs.
+    ///
+    /// REF: FUN_801DE840 (the two player arms; the pick is
+    /// [`vm::field_player_clip::settle_clip_pick`])
+    pub fn field_player_script_clip(&mut self, move_id: u8) {
+        self.locomotion.clip_base = u16::from(move_id);
+        let leader = self.locomotion.player_anim.as_ref().map_or(0, |a| a.leader);
+        let pick = vm::field_player_clip::settle_clip_pick(
+            self.locomotion.clip_base,
+            leader,
+            self.locomotion.clip_override,
+            self.locomotion.player_party_bank,
+            false,
+        );
+        self.apply_player_clip_pick(&pick, leader);
     }
 
     /// Advance actor `slot` by `speed` world units in the direction encoded by

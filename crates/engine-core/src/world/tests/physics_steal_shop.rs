@@ -357,6 +357,11 @@ fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
         assert!(matches!(r, FieldStepResult::Halt { .. }));
     }
 
+    // The walk SM fades the board in before it takes input.
+    world.set_pad(0);
+    while world.board.sm == crate::tile_board::sm::FADE_IN {
+        let _ = world.tick();
+    }
     // Simulate the walk reaching an event/transition cell: plant one under
     // the player and run the arrival pass (the interpolation-complete path).
     {
@@ -365,8 +370,17 @@ fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
         b.cells[idx] = crate::tile_board::CELL_EVENT_FIRST;
         let (tx, tz) = b.player_world();
         world.board.target = Some((tx, tz));
-        world.set_pad(0);
         let _ = world.tick();
+    }
+    // The exit runs its fade, park and teardown before the board goes.
+    let mut n = 0;
+    while world.board.grid.is_some() && n < 200 {
+        {
+            let host = FieldHostImpl { world: &mut world };
+            assert_eq!(host.op49_state(), Op49State::Armed, "armed until teardown");
+        }
+        let _ = world.tick();
+        n += 1;
     }
     assert!(
         world.board.grid.is_none(),

@@ -47,7 +47,14 @@
 //!    by `B60B >> 4`. Roll is not in the list: the follow camera never rolls.
 //!    A mode-5 shot additionally eases the focus X/Z toward its anchor tile.
 //!    A player who stops mid-glide leaves the live camera where the ease got
-//!    to - retail does not finish the glide until he moves again.
+//!    to - retail does not finish the glide until he moves again, unless
+//!    scratchpad `0x1F800394 & 0x40000` (field-VM `2E 12`) forces the ease
+//!    on a standing player (`0x801DB578..0x801DB5A4`). With `DAT_8007B606`
+//!    clear or `0x1F800394 & 0x400` set, the routine takes its pin leg
+//!    (`0x801DB820`) instead: focus = `-player`, no compose, no ease. The
+//!    three gates are applied by `Camera::zone_follow_tick`
+//!    (`crate::world::CAMERA_HOLD_FLAG`, `crate::world::CAMERA_FORCE_EASE_FLAG`,
+//!    `ZoneFollow::follow_enabled`).
 //! 4. **Snap** - `FUN_801DB8EC(player)` ([`snap`]) is the same compose + list
 //!    walk with a plain copy instead of the ease, then `FUN_8003D254(H)`;
 //!    the arrival actor, `[4C 39]` / `[4C 3E]`, and the leader-swap flow

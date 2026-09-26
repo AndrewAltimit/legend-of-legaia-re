@@ -42,6 +42,15 @@ pub struct TileBoardState {
     /// `+5` radius); empty otherwise. The deferred renderer consumes this
     /// to draw each tile actor's mesh at every listed cell.
     pub draw_list: Vec<crate::tile_board::TileDraw>,
+    /// The walk SM's state (the controller's `+0x54`, values in
+    /// [`crate::tile_board::sm`]): the fade-in, walking, the quit prompt and
+    /// the exit states down to teardown.
+    pub sm: u8,
+    /// The fade value (`+0x9C`, 4.12): what the SM copies into every tile
+    /// actor's `+0x72` render scale while it fades.
+    pub fade: i16,
+    /// The quit prompt's cursor (`_DAT_8007BB88`, row `0` = quit).
+    pub prompt_cursor: u32,
 }
 
 impl TileBoardState {
@@ -53,6 +62,9 @@ impl TileBoardState {
             header: None,
             actor_slots: [None; crate::tile_board::TILE_ACTOR_TABLE_LEN],
             draw_list: Vec::new(),
+            sm: crate::tile_board::sm::WALK,
+            fade: crate::tile_board::FADE_FULL,
+            prompt_cursor: 0,
         }
     }
 }
