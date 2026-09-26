@@ -93,16 +93,9 @@ impl LegaiaRuntime {
             (now & !prev, now)
         };
 
-        {
-            let mut records: Vec<&mut [u8]> = world
-                .party
-                .roster
-                .members
-                .iter_mut()
-                .map(|m| m.raw.as_mut_slice())
-                .collect();
-            session.tick(edge, held, &mut records);
-        }
+        // The shared tick the native window makes: party records, plus the
+        // CAMERA row's follow switch on this page's camera.
+        session.tick_host(world, &mut self.camera, edge, held);
 
         // The EQUIP row's confirm commits against the engine's own bag,
         // exactly as the native window's arm does.

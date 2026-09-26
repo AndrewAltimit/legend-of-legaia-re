@@ -231,12 +231,12 @@ impl DevMenuRow {
 /// Those six words have no other reference, so after the pass the box again
 /// holds what the region refresh latched.
 ///
-/// NOT WIRED: the port's dev menu carries five of the retail rows and no
-/// CAMERA row. The box it would read is published
-/// (`World::terrain.region_attributes`); what is missing is the row itself -
-/// `legaia_engine_core::dev_menu_host::DevMenuSession::row_value` takes no
-/// world, so the session would need the box word handed to it each tick by
-/// both hosts' dev-menu step.
+/// Wired: `legaia_engine_core::dev_menu_host::camera_row_readout` formats
+/// the `CAMERA` row through here, from `DevMenuSession::row_value`, which both
+/// hosts' dev-menu list draw calls per row per frame (`PlayWindowApp::
+/// tick_dev_menu` -> `build_dev_menu_draws`, and the play page's
+/// `LegaiaRuntime::tick_dev_menu` -> its list draw). The box word is loaded
+/// by `DevMenuSession::tick_host` from `World::terrain.region_attributes`.
 /// PORT: FUN_801EAD98 (case 3)
 pub fn decode_camera_readout(cam_word: u32) -> Option<(i32, i32)> {
     if cam_word == 0x7F7F_0000 {
