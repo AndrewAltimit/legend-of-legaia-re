@@ -188,3 +188,24 @@ fn a_fresh_world_boots_with_the_pair_settled() {
         }
     );
 }
+
+/// BGM sub-op 5's timed release, on expiry, detaches the field BGM - the
+/// expiry arm of `FUN_800267FC` is `FUN_800266E0`'s body on the BGM slot
+/// `0x8007052C`, sub-op 2's primitive - so the port surfaces it as that pause
+/// on the field-event stream both hosts' BGM routing drains. Before, the
+/// expiry only set a flag no host read, and the voice played on.
+#[test]
+fn the_timed_release_expiry_reaches_the_hosts_as_a_bgm_pause() {
+    let mut w = World::default();
+    w.arm_sound_release(2);
+    let mut pauses = 0;
+    for _ in 0..40 {
+        w.tick();
+        pauses += w
+            .drain_field_events()
+            .iter()
+            .filter(|e| matches!(e, crate::field_events::FieldEvent::Bgm { sub_op: 2, .. }))
+            .count();
+    }
+    assert_eq!(pauses, 1, "one pause, on the expiry frame");
+}

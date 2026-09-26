@@ -1166,6 +1166,18 @@ impl World {
                 self.audio.sound_release.tick(step, true, false)
             {
                 self.audio.pending_sound_release = true;
+                // What the expiry does is the field-BGM detach, inline: the
+                // released record is the BGM slot `0x8007052C`, and the arm
+                // at `0x80026828..0x8002686C` is `FUN_800266E0`'s body - pan
+                // reset `FUN_8002657C(0, slot)`, `FUN_80064370(slot[+0xA])`,
+                // `DAT_8007B708 = 0` - behind the same `_DAT_8007B868` gate.
+                // `FUN_800266E0` is BGM sub-op 2's primitive, so the expiry
+                // reaches both hosts' BGM routing as that pause.
+                self.pending_field_events
+                    .push(crate::field_events::FieldEvent::Bgm {
+                        text_id: 0,
+                        sub_op: 2,
+                    });
             }
         }
         // Step the active full-screen fade. A template with a hold countdown

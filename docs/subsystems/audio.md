@@ -323,6 +323,22 @@ an artifact and less faithful than retail. `crossfade_to` and its `pending_seq`
 fade-out-then-swap machinery remain for callers that genuinely want a symmetric
 cross-fade; BGM transitions no longer use it.
 
+### The timed release is a scheduled BGM pause
+
+Op `0x35` sub-op `5` arms a deadline in vsyncs (`FUN_800267A8(0, operand)` at
+`0x801E01B4`); the frame-begin driver's tick `FUN_800267FC` counts it down.
+What the expiry does is read off its own arm: the record it releases is the
+field-BGM slot `0x8007052C` (`addiu s0,v0,0x52c` at `0x80026828`), and the
+arm is `FUN_800266E0`'s body inline - behind the same `_DAT_8007B868` gate,
+`FUN_8002657C(0, slot)`, `FUN_80064370(slot[+0xA])`, then
+`DAT_8007B708 = 0` (`0x80026834..0x8002686C`; see
+`ghidra/scripts/funcs/800267fc.txt`). `FUN_800266E0` is sub-op `2`'s primitive,
+so the expiry is a pause the script scheduled in advance. The port surfaces it
+as exactly that: `World::tick` pushes a sub-op `2` BGM event on the expiry
+frame, and `SceneHost::route_bgm_events` hands it to either host's director.
+The raw expiry flag (`World::take_pending_sound_release`) stays for the mode
+seat's own reader.
+
 ### Global-pool BGM: the `music_01` bank
 
 Every real music track on the disc lives in the **`music_01` bank**, not in scene-local
