@@ -17,12 +17,13 @@
 //! REF: FUN_800589D0 (`PutDispEnv` - the caller of `FUN_800597C8`, declined
 //! rather than pending; see [`screen_x_mirror`])
 //!
-//! # NOT WIRED
+//! # Wiring status
 //!
-//! [`top_up_cooldown`] is the one leaf still waiting, and what it waits on is
-//! outside the battle code despite the module it lives in.
+//! Every leaf here is wired. [`top_up_cooldown`] was the last, and what it
+//! waited on was outside the battle code despite the module it lives in: its
+//! host is the pause Items Incense confirm (below).
 //!
-//! [`screen_x_mirror`] is not on that list: it is the file's one **replaced**
+//! [`screen_x_mirror`] is the file's one **replaced**
 //! anchor and carries its own `REPLACED-BY:` marker. Its retail caller
 //! `FUN_800589D0` is `PutDispEnv` - PsyQ libgpu, carried on the port-catalog
 //! ignore list (`scripts/ci/port-catalog-ignore.toml`) precisely because a
