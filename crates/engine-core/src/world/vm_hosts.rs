@@ -2717,38 +2717,20 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world
             .pending_battle_events
             .push(BattleEvent::UiElement { effect_id, mode });
-        // mode == 0: spawn/reset. Route directly into the effect pool so
-        // the VM's state machine drives the effect lifecycle while engines
-        // also receive the event for visual dispatch.
+        // This is retail's HUD screen-element spawner `FUN_801D8DE8(id, mode)`:
+        // it seats placement record `0x80076C10 + id * 0x18` as a text / chrome
+        // widget (`FUN_8003541C`) and glides it between the record's two seats
+        // (`FUN_801DB7B0`). It spawns **no effect script** - its only calls are
+        // `FUN_8003541C`, `FUN_801DB7B0`, `FUN_8003563C`, `FUN_80035F04` and the
+        // two string helpers, and none of the effect spawner `FUN_801DFDF0`'s
+        // callers (`FUN_801DEA50`, `FUN_801E09F8`, `FUN_801E22C8`, SCUS
+        // `FUN_8004998C` / `FUN_80047430`) is the action SM. The id is a
+        // placement-record index, not an `efect.dat` script id, so routing it
+        // into the effect pool played an unrelated script at every HUD raise.
+        // Effect scripts reach the pool through `World::route_battle_effect_spawns`.
         //
-        // Retail seeds the spawn position from the ACTING actor's own world
-        // position and facing, never the world origin: the effect-script
-        // spawn arm copies `actor+0x34..0x3B` into the position buffer,
-        // rotates the per-effect offsets by the facing's sin/cos, and passes
-        // `actor+0x46` as the spawn angle (`FUN_8004998C` spawn sites
-        // `0x8004A634..0x8004A81C` -> `FUN_801DFDF0(id, sp+0x10, +0x46)`,
-        // disassembly-graded). The engine equivalents are the actor's battle
-        // seat on `move_state` (the retail `+0x34/+0x38` pair
-        // `BattleActionHost::actor_position` already reads) and
-        // `BattleActor::facing_angle` (`+0x46`).
-        if mode == 0 {
-            let (at, angle) = self
-                .world
-                .actors
-                .get(self.world.battle_ctx.active_actor as usize)
-                .map(|a| {
-                    (
-                        [
-                            a.move_state.world_x,
-                            a.move_state.world_y,
-                            a.move_state.world_z,
-                        ],
-                        a.battle.facing_angle & 0xFFF,
-                    )
-                })
-                .unwrap_or(([0, 0, 0], 0));
-            self.world.try_spawn_effect(effect_id, at, angle);
-        }
+        // The two message elements keep their line on the world here.
+        self.world.message_banner_ui_element(effect_id, mode);
     }
     fn camera_bounds(&mut self) {
         self.world

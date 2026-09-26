@@ -98,3 +98,59 @@ fn magic_boost_adds_thirty_points() {
     }
     assert!((20..=110).contains(&landed), "~30% of 200, got {landed}");
 }
+
+/// The Done band's grant raises screen element `0x59`, and the line it
+/// carries - the caption table's prefix for the acting character, the Seru's
+/// spell name, the suffix - is what both hosts' banner read returns until the
+/// matching unload retires it.
+#[test]
+fn the_absorb_raise_carries_the_caption_line_until_its_unload() {
+    use legaia_engine_vm::battle_action::BattleActionHost;
+    let mut world = absorb_world(100, true);
+    world.tables.absorb_caption = Some(legaia_asset::absorb_caption::AbsorbCaption {
+        prefixes: vec!["A0 ".into(), "A1 ".into(), "A2 ".into()],
+        suffix: "!".into(),
+    });
+    world.mode = SceneMode::Battle;
+    world.battle_ctx.multi_cast_gate = 1;
+    world.battle_ctx.active_actor = 0;
+    // No spell row installed: the name degrades to the id label.
+    let name = "Spell 0x81";
+    {
+        let mut host = BattleHostImpl { world: &mut world };
+        host.learn_absorbed_seru(0, 1);
+        host.ui_element(crate::world::ABSORB_BANNER_ELEMENT, 0);
+    }
+    assert_eq!(
+        crate::battle_hud::battle_banner_message(&world).as_deref(),
+        Some(format!("A0 {name}!").as_str())
+    );
+    // An unload of a different element leaves it standing.
+    BattleHostImpl { world: &mut world }.ui_element(0x51, 1);
+    assert!(world.battle.message_banner.is_some());
+    BattleHostImpl { world: &mut world }.ui_element(crate::world::ABSORB_BANNER_ELEMENT, 1);
+    assert!(world.battle.message_banner.is_none());
+    assert_eq!(crate::battle_hud::battle_banner_message(&world), None);
+}
+
+/// `FUN_801D8DE8` is the HUD screen-element spawner; it calls no effect
+/// spawner, so a raise must not seat an `efect.dat` script in the pool.
+#[test]
+fn a_hud_element_raise_spawns_no_effect_script() {
+    use legaia_engine_vm::battle_action::BattleActionHost;
+    let mut world = World {
+        mode: SceneMode::Battle,
+        ..World::default()
+    };
+    let script = vm::effect_vm::EffectScript {
+        child_count: 1,
+        flags: 0,
+        spread: 0,
+        body: vec![],
+    };
+    world.effect_catalog = vm::effect_vm::EffectCatalog::new(vec![(script, vec![])]);
+    for id in [0x00u8, 0x0F, 0x43, 0x4C, 0x52, 0x59] {
+        BattleHostImpl { world: &mut world }.ui_element(id, 0);
+    }
+    assert_eq!(world.effect_pool.active_count(), 0);
+}
