@@ -7,7 +7,8 @@
 -- one CSV row per vsync:
 --
 --   v, dt, state, counter, acc, hold, row, rows_on_page, rows, skip,
---   ptr0..ptr3 (row pointers, as offsets from the NPC's +0x90 record)
+--   ptr0..ptr3 (row pointers, as offsets from the NPC's +0x90 record),
+--   scroll, press
 --
 -- dt       = DAT_1F800393 (vsyncs per game tick; the pager runs once a tick)
 -- state    = _DAT_801F2734 (pager state; 0x0B typing, 0x19 page end)
@@ -16,6 +17,8 @@
 -- hold     = _DAT_801F275C (short-row hold)
 -- row      = _DAT_801F3530 (row being typed), rows_on_page = _DAT_801F3534,
 -- rows     = _DAT_801F2740, skip = _DAT_801F2750 (0x24 / 0x25 skip latch)
+-- scroll   = _DAT_801F2738 (row scroll, 1/16 px; the draw adds scroll >> 4)
+-- press    = 1 on a vsync the probe holds CROSS, else 0
 --
 -- Counts and addresses only - no text bytes leave the emulator. The row
 -- bytes are the disc's (the NPC record in the scene MAN), so the engine side
@@ -24,10 +27,15 @@
 -- After a page ends (state 0x19) the probe waits LEGAIA_PAGE_WAIT vsyncs and
 -- taps CROSS to turn it, so every page of the conversation is traced.
 --
+-- LEGAIA_SKIP_PAGES ("page:delay,...") also taps CROSS `delay` vsyncs after
+-- that page's first typing vsync (state 0x0B), to trace the confirm-completes-
+-- the-page arms (skip latch 0x25, state 0x0D). Pages count from 0 and advance
+-- each time the pager leaves state 0x19.
+--
 -- Recompiler-safe (vsync-driven, no breakpoints); run with --fast.
 -- Env: LEGAIA_SSTATE, LEGAIA_NPC_P90 (hex), LEGAIA_POKE_POS ("x,z"),
 --      LEGAIA_TRACE_VSYNCS (default 900), LEGAIA_PAGE_WAIT (default 40),
---      LEGAIA_OUT_DIR.
+--      LEGAIA_SKIP_PAGES (default none), LEGAIA_OUT_DIR.
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local env    = require("probe.env")
 local mem    = require("probe.mem")
@@ -41,6 +49,10 @@ local START   = env.getenv("LEGAIA_SSTATE", "")
 local P90     = tonumber(env.getenv("LEGAIA_NPC_P90", "0")) or 0
 local TRACE_V = tonumber(env.getenv("LEGAIA_TRACE_VSYNCS", "900")) or 900
 local WAIT    = tonumber(env.getenv("LEGAIA_PAGE_WAIT", "40")) or 40
+local SKIPS = {}
+for pg, dl in string.gmatch(env.getenv("LEGAIA_SKIP_PAGES", ""), "(%d+):(%d+)") do
+    SKIPS[tonumber(pg)] = tonumber(dl)
+end
 local POKE = nil
 do
     local px, pz = string.match(env.getenv("LEGAIA_POKE_POS", ""), "(%-?%d+),(%-?%d+)")
@@ -84,6 +96,7 @@ local held = {}
 local function hold(b) if not held[b] then pad.force(b); held[b] = true end end
 local function release_all() for b in pairs(held) do pad.release(b) end; held = {} end
 local page_end_v, release_v = nil, nil
+local page, page_type_v, skip_done, prev_st = 0, nil, {}, nil
 
 local function trace_row(t)
     local function ptr(i)
@@ -91,11 +104,13 @@ local function trace_row(t)
         if p == 0 then return "" end
         return string.format("%d", p - P90)
     end
-    CSV:write(string.format("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%s,%s,%s\n",
+    local pressed = 0
+    if held[pad.BTN.CROSS] then pressed = 1 end
+    CSV:write(string.format("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%s,%s,%s,%d,%d\n",
         t, mem.read_scratch_u8(0x1F800393),
         s32(0x801F2734), s32(0x801F2748), s32(0x801F2758), s32(0x801F275C),
         s32(0x801F3530), s32(0x801F3534), s32(0x801F2740), s32(0x801F2750),
-        ptr(0), ptr(1), ptr(2), ptr(3)))
+        ptr(0), ptr(1), ptr(2), ptr(3), s32(0x801F2738), pressed))
 end
 
 local function on_vsync()
@@ -135,7 +150,7 @@ local function on_vsync()
         if t0 then
             if not CSV then
                 CSV = io.open(OUT_DIR .. "/trace.csv", "w")
-                CSV:write("t,dt,state,counter,acc,hold,row,rows_on_page,rows,skip,ptr0,ptr1,ptr2,ptr3\n")
+                CSV:write("t,dt,state,counter,acc,hold,row,rows_on_page,rows,skip,ptr0,ptr1,ptr2,ptr3,scroll,press\n")
                 log(string.format("vsync %d: first CROSS; player (%d,%d) npc (%d,%d)", v, px, pz, nx, nz))
             end
             trace_row(v - t0)
@@ -153,6 +168,15 @@ local function on_vsync()
     trace_row(t)
     local st = s32(0x801F2734)
     if release_v and v >= release_v then release_all(); release_v = nil end
+    if prev_st == 0x19 and st ~= 0x19 then page = page + 1; page_type_v = nil end
+    prev_st = st
+    if st == 0x0B and not page_type_v then page_type_v = v end
+    local dl = SKIPS[page]
+    if dl and page_type_v and not skip_done[page] and not release_v
+        and v - page_type_v == dl then
+        hold(pad.BTN.CROSS); release_v = v + 4; skip_done[page] = true
+        log(string.format("vsync %d: page %d skip tap (state %d)", v, page, st))
+    end
     if st == 0x19 and not release_v then
         page_end_v = page_end_v or v
         if v - page_end_v == WAIT then
