@@ -422,6 +422,28 @@ impl MenuRuntime {
         self.ctx.state != MenuState::Closed.as_byte() || self.prize_session.is_some()
     }
 
+    /// `true` while the open screen is one retail runs as a **menu-overlay
+    /// session**, under which the field does not advance at all.
+    ///
+    /// A gold shop and the casino prize exchange are both menu-overlay
+    /// sessions: their UI and tables live in the menu overlay (PROT 0899),
+    /// which shares slot A with the field overlay (PROT 0897) and replaces it
+    /// while it runs. A save state taken inside the ticket-counter prize shop
+    /// holds game mode `0x17` with 0899's clean prefix resident and the field
+    /// overlay swapped out (`scripts/scenarios.toml` `casino_prize_shop`), so
+    /// no field code - locomotion, NPC motion, the field VM - can run under
+    /// the screen. The inn is not one of these: retail's inn is an ordinary
+    /// field-VM dialogue ([`crate::inn`]), so the field keeps its tick under
+    /// the prompt.
+    ///
+    /// Hosts skip the world tick while this holds. The browser page always
+    /// froze the field under a shop; the native window used to tick it with a
+    /// neutral pad, so NPCs kept walking and scene programs kept running
+    /// behind the buy list.
+    pub fn suspends_field(&self) -> bool {
+        self.prize_session.is_some() || (self.is_open() && self.inn_session.is_none())
+    }
+
     /// Open the casino prize-exchange screen (field-VM op-`0x49` sub-op 7) -
     /// the counterpart of [`Self::open_shop_menu`] for the session drained
     /// from `World::take_pending_prize_exchange`.
@@ -1608,6 +1630,28 @@ mod tests {
         let mut world = World::default();
         world.load_party(Party { members });
         world
+    }
+
+    /// A shop is a menu-overlay session (the field is swapped out under it);
+    /// an inn prompt is a field dialogue and keeps the field running.
+    #[test]
+    fn a_shop_suspends_the_field_and_an_inn_does_not() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mut rt = MenuRuntime::new(tmp.path().to_path_buf());
+        assert!(!rt.suspends_field(), "nothing open");
+        rt.open_shop_menu(crate::shop::ShopSession::new(
+            crate::shop::ShopInventory::new(0, Vec::new()),
+        ));
+        assert!(rt.is_open());
+        assert!(rt.suspends_field(), "a shop freezes the field");
+
+        // The inn prompt as `open_scene_inn` enters it: the session plus
+        // the `InnConfirm` state - open, but the field keeps ticking.
+        let mut inn = MenuRuntime::new(tmp.path().to_path_buf());
+        inn.open_inn(100);
+        inn.ctx.state = MenuState::InnConfirm.as_byte();
+        assert!(inn.is_open());
+        assert!(!inn.suspends_field(), "an inn is a field dialogue");
     }
 
     #[test]

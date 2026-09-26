@@ -767,6 +767,7 @@ impl PlayWindowApp {
             let prev = self.pad;
             if state == ElementState::Pressed {
                 self.pad |= button.mask();
+                self.pad_taps.press(button.mask());
             } else {
                 self.pad &= !button.mask();
             }

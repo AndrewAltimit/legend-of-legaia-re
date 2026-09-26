@@ -926,6 +926,9 @@ struct PlayWindowApp {
     scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.
     pad: u16,
+    /// Presses since the last frame, so a key tapped between two redraws
+    /// still reaches a tick (the browser page's `pulse` set).
+    pad_taps: legaia_engine_core::input::PadTapLatch,
     /// Input binding loaded from file (or default).
     mapping: legaia_engine_core::input::Mapping,
     /// Physical keys currently held.

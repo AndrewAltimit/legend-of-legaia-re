@@ -185,8 +185,12 @@ impl PlayWindowApp {
             .and_then(|s| world.actors.get(s))
             .map(|a| (a.move_state.world_x, a.move_state.world_z));
         // The suppress mask is the PACKED d-pad, so the raw word has to be
-        // converted or nothing ever suppresses.
-        let pad = legaia_engine_core::world_map_panel_host::packed_pad(self.pad);
+        // converted or nothing ever suppresses. The word is the one the
+        // world was handed this tick (`World::input`), as on the browser
+        // page - not the window's held keys, which keep the HUD hidden while
+        // the world itself was fed a neutral pad (a shop, the narration
+        // crawl, a locked cutscene).
+        let pad = legaia_engine_core::world_map_panel_host::packed_pad(world.input.pad());
         self.field_party_hud
             .tick(suppressed, view_mode, pad, player_pos, 1, projected_y);
     }
