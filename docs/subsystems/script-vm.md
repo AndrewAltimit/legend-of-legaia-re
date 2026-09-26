@@ -2302,9 +2302,24 @@ cross-context op aimed at the player inside it returns at its own PC. The
 engine carries the window as `InlineDialogue::face_ramp`
 (`legaia_engine_core::inline_dialogue::TalkFaceRamp`), stepped once a frame
 through the ported motion VM by `World::step_talk_face_ramp`; the runner
-parks a player-targeted op while it is open. The port resolves the face-at
-bind to the conversation's own actor - true of the captured acquire, not
-checked disc-wide.
+parks a player-targeted op while it is open.
+
+**The face-at bind names an actor, not the conversation.** The kernel's
+FaceTarget arm reads the bind at op `+3` and resolves it like any
+cross-context id: `0xF8` to the player, `0xFB` to the world-map entity, anything
+else to the node of the `_DAT_8007C354` list whose `+0x50` equals it
+(`0x80037E00..0x80037EA8` in `ghidra/scripts/funcs/8003774c.txt`); an id no
+node carries takes the default arm and ends the leg. In `retock` the bind is
+the innkeeper's own, but that is not the rule: of the disc's clean-decoded
+`CC F8 85|8E|8F` acquires, 40 of the 146 in placement records name another
+actor, across 14 scenes (`tunnelc` 9, `koin1` 6, `balden` / `balden2` /
+`bubu1` / `koin4` 4 each) - often the neighbouring placement, sometimes a
+second actor the same talk turns to - and the 24 in object
+records and 861 in cutscene records have no own actor to fall back on. The
+port resolves the bind through the scene's channel set
+(`World::talk_face_target`), falling back to the conversation's own placement
+only for an id no channel carries. The census is
+`crates/engine-core/tests/talk_face_acquire_bind_disc.rs`.
 
 **The end rule is the dialog SM's, not the acquire's.** Once a box's lines are
 scanned, `FUN_80039B7C` hands the byte after them to `FUN_80038050`

@@ -2798,23 +2798,32 @@ impl World {
 
     /// One walk-kernel visit on a talk's halt window
     /// ([`crate::inline_dialogue::TalkFaceRamp`]): turn the player toward the
-    /// conversation's actor and, on the leg's terminal frame, close the
+    /// actor the acquire names and, on the leg's terminal frame, close the
     /// window. No-op without a window.
     ///
-    /// The face-at operand is an actor bind (`+0x50`); the port resolves it
-    /// to the conversation's own placement, which is what the one captured
-    /// acquire names (`retock`'s innkeeper, bind `0x33`, faced by `CC F8 85
-    /// 14 00 33`). A window with no player or no placed actor to face closes
-    /// at once rather than holding the talk's player-targeted ops.
+    /// The face-at operand is an actor bind (`+0x50`), and the walk kernel
+    /// resolves it the way every cross-context id resolves: the actor-list
+    /// node whose `+0x50` equals it (`lhu v0,0x50(v1)` at `0x80037E88`), so the
+    /// port resolves it through the scene's channel set, not through the
+    /// conversation. The two differ often: of the disc's clean-decoded
+    /// `CC F8 85|8E|8F` acquires, 40 of the 146 in placement records name an
+    /// actor other than the record's own (often the neighbouring placement,
+    /// sometimes a second actor the same talk turns to), and
+    /// the 24 in object records and 861 in cutscene records have no own
+    /// actor at all (`crates/engine-core/tests/talk_face_acquire_bind_disc.rs`).
+    /// A bind the channel set cannot resolve falls back to the conversation's
+    /// own placement; a window with no player or nothing to face closes at
+    /// once rather than holding the talk's player-targeted ops.
     ///
     /// REF: FUN_8003774C (the kernel visit), FUN_8003BC08 (visits it on `0x400`)
     pub fn step_talk_face_ramp(&mut self, id: &mut crate::inline_dialogue::InlineDialogue) {
         let Some(mut ramp) = id.face_ramp else {
             return;
         };
-        let target = id
-            .npc_slot
-            .and_then(|slot| self.npcs.positions.get(&slot).copied());
+        let target = self.talk_face_target(ramp.program[4]).or_else(|| {
+            id.npc_slot
+                .and_then(|slot| self.npcs.positions.get(&slot).copied())
+        });
         let player = self
             .player_actor_slot
             .and_then(|slot| self.actors.get(usize::from(slot)))
@@ -2837,6 +2846,22 @@ impl World {
             actor.move_state.render_26 = yaw as i16;
         }
         id.face_ramp = if done { None } else { Some(ramp) };
+    }
+
+    /// Where the actor a talk's face-at bind names stands: the channel whose
+    /// script id (`+0x50`) equals `bind` (`FUN_8003C83C`'s list walk) - a
+    /// placement's live position, or an object-bind context's own seat.
+    /// `None` for the specials and for an id no channel carries.
+    // REF: FUN_8003C83C (the id resolve the kernel's FaceTarget arm shares)
+    fn talk_face_target(&self, bind: u8) -> Option<(i16, i16)> {
+        let view = self.channel_view();
+        let ch = &view[crate::field_channels::resolve_target(view, bind)?];
+        let own = (ch.ctx.world_x as i16, ch.ctx.world_z as i16);
+        if ch.object_bind {
+            return Some(own);
+        }
+        let slot = u8::try_from(ch.placement_index).ok()?;
+        Some(self.npcs.positions.get(&slot).copied().unwrap_or(own))
     }
 
     /// Live-loop bridge for the inline-script runner: when [`crate::world::WorldToggles::use_vm_dialogue`]
