@@ -93,6 +93,8 @@ Used by the dialog window pager to compute line lengths cheaply.
 
 Walks the bytecode and returns a **glyph count**, not a pixel width: every plain byte and every `0xCE` escape adds one, and it never reads the width table at `0x80073F1C`. Adds the substitution dispatch on top of the stride walker - for each `0xC1..0xC5` or `0xC7` byte, it follows the substitution pointer into the corresponding name table and counts that string's glyphs too (a nested `0xC1` inside it is expanded once more). The count paces the dialog typewriter reveal; the pixel measurer is `FUN_80035F04`, and nothing wraps text at run time - see [`dialog-font.md`](dialog-font.md#line-width-and-wrapping). Evidence: the `move v0,a3` return at `0x80036504` over a counter only ever advanced by `addiu ...,0x1` / an expanded-substitution count.
 
+Two properties of the loop are easy to miss. It is sized by a pre-walk that returns the string's **byte** length to its `NUL`, and it decrements that size once per iteration however many bytes the iteration consumed - so each two-byte unit (`0xCE`, `0xCF`, a substitution) runs the loop one byte past the `NUL`, counting whatever follows. And `0xC0` / `0xC6` count nothing: `0xC0` fails the jump-table bound and `0xC6`'s table word is the no-string exit. The field pager calls it at `0x801D8A6C` on the row it is typing, lead byte included, to decide when the row is finished. Port: `legaia_font::typewriter_glyph_count`.
+
 ### `FUN_80036888` - text renderer
 
 The actual draw loop. Same byte classification, but emits glyphs into the text-actor buffer and forwards spacing ops to the cursor advancer. Calls [`FUN_80036514`](#fun_80036514---substitution-expander) at the start to expand substitutions into a working buffer.
