@@ -2856,9 +2856,6 @@ Recorded rather than fixed; each names the host that lacks it. None is gated.
 - **Overworld CLUT walk.** Implemented twice (`window/field_render.rs`
   `WaterAnim`, the page's `step_field_vram_fx`), already differing in which
   scenes patch strip rows and which column is checked.
-- **Battle camera without a render.** The page's battle camera state lives on
-  its render resource and does not tick when that fails to build; the window
-  removed the same gate.
 - **Monster action-tag clips** are installed from each host's render path, so a
   monster with no mesh - or a native frame's first battle ticks - reads no tag
   table.
@@ -2889,6 +2886,20 @@ The audio rows of the same pass are closed or settled in
   light pools resolved the follow camera with a pinned `[0, 0]` fallback focus
   on the page and the scene AABB centre natively; the page passes the AABB
   centre now.
+- **Battle camera without a render.** The page held the phase-scripted
+  camera's state on its battle render build, so a fight whose build failed
+  ran no camera at all, and both hosts carried their own copy of the input
+  derivation. The derivation is `engine-core::battle_cam_inputs` now and the
+  state is `BattleState::camera`, stepped from `World::tick`; both hosts only
+  read `World::battle_cam_pose`
+  ([`battle.md`](../subsystems/battle.md#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it)
+  carries the camera's port note beside the phase script).
+- **Battle-intro names and the commit-log launch**, absent from both hosts.
+  The flow-`0x0A` enemy-name banner and the commit log's slide off the ring
+  are engine state (`BattleState::intro_names_frames`,
+  `BattleState::commit_log_launch`) read by one builder each
+  (`battle_hud::battle_intro_names`, `battle_hud::battle_commit_log`), and
+  both hosts pass them through the shared battle HUD frame.
 - **The battle message banner.** Screen elements `0x59` (Seru absorbed) and
   `0x65` (magic level increased) share one string, the context buffer
   `ctx + 0x1F9`; neither host drew either, and the two drains threw away the
