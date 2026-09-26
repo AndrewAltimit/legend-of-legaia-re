@@ -17,6 +17,7 @@
 use anyhow::{Result, bail};
 use serde::Serialize;
 
+pub mod absorb_caption;
 pub mod accessory_passive;
 pub mod anm_detect;
 pub mod baka_opponents;
