@@ -2693,6 +2693,14 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .push(BattleEvent::CameraBounds);
     }
 
+    fn monster_action_tags(&self, slot: u8) -> Option<Vec<u8>> {
+        self.world.battle_monster_action_tags(slot)
+    }
+
+    fn learn_absorbed_seru(&mut self, slot: u8, seru: u8) {
+        self.world.learn_absorbed_seru(slot, seru);
+    }
+
     fn monster_size_class(&self, actor_slot: u8) -> u8 {
         // Retail reads `0x801C9348[slot - 3] + 0x1F`. The engine's equivalent
         // is the slot's seated monster id resolved through the catalog; a slot
