@@ -2248,11 +2248,22 @@ impl LegaiaRuntime {
     ///   `0x0400` anim-speed step. Each self-gates to a no-op when nothing is
     ///   live.
     fn tick_world_effects(&mut self) {
+        // The native window's order, leg for leg: seat the summon creature,
+        // spawn the move-FX, then tick the scene graphs - so a summon cast
+        // ticks its creature's first frame on the same tick on both hosts.
+        // The creature seat needs `&mut self`, so it runs between two host
+        // borrows.
+        let summon = match self.scene_host.as_mut() {
+            Some(host) => host.world.take_pending_summon_spawn(),
+            None => return,
+        };
+        if let Some((spell_id, _origin)) = summon {
+            self.spawn_summon_creature_web(spell_id);
+        }
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
         let world = &mut host.world;
-        let summon = world.take_pending_summon_spawn();
         let mut cue = None;
         if let Some((move_id, origin)) = world.take_pending_move_fx_spawn()
             && world.spawn_move_fx(move_id, origin)
@@ -2261,11 +2272,6 @@ impl LegaiaRuntime {
         }
         // The shared frame-tail kernel the native window's loop calls.
         world.tick_effect_scene_graphs();
-        // Both remaining legs need `&mut self`, so they run after the host
-        // borrow ends.
-        if let Some((spell_id, _origin)) = summon {
-            self.spawn_summon_creature_web(spell_id);
-        }
         // The full ring value goes through: `enqueue_sfx` takes
         // `impl Into<u16>`, and the `u8::try_from` this used to narrow
         // through dropped cue id `0`, whose ring value is `0xFFFF`.
