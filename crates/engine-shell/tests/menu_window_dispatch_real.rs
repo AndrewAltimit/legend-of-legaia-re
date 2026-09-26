@@ -76,6 +76,8 @@ fn expected() -> Vec<(usize, MenuWindowPainter)> {
         (5, P::TwoLineChoicePanel),
         (6, P::LabelList),
         (7, P::CharPrompt),
+        // The notify window - the art-learned notice (`FUN_801DCD58`).
+        (8, P::NotifyPrompt),
         (24, P::CountPanel),
         (25, P::ActiveStatCompare),
         (31, P::AmountPrompt),

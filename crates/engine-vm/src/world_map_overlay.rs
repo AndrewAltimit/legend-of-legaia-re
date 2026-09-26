@@ -227,9 +227,9 @@ impl DevMenuRow {
 /// The world map does not substitute its own values. The render overlay
 /// (PROT `0901`) **saves** the box's two low bytes and the four visible-tile
 /// window bytes `0x1F8003E8..EB` into `0x801F8EE0..0x801F8EF4` on entry
-/// (`0x801F6AA0..0x801F6B04`) and copies them back at `0x801F7344..0x801F73A4`
-/// - those six words have no other reference - so after the pass the box
-/// again holds what the region refresh latched.
+/// (`0x801F6AA0..0x801F6B04`) and copies them back at `0x801F7344..0x801F73A4`.
+/// Those six words have no other reference, so after the pass the box again
+/// holds what the region refresh latched.
 ///
 /// NOT WIRED: the port's dev menu carries five of the retail rows and no
 /// CAMERA row. The box it would read is published
