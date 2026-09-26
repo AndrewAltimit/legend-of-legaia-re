@@ -1064,9 +1064,11 @@ missing subsystem.
 | `801f90dc` | `acquisition_caption` | `REPLACE` - the routine is `FUN_801D0F1C`; see below |
 
 The painters are the row worth reading twice. They are **not**
-`PTR_FUN_801F33B4` slots; they are the `+0x14` callback of a `0x801F2C0C`
-panel-window record. A disclosure that names the wrong table names the wrong
-blocker.
+`PTR_FUN_801F33B4` slots; they are the `+0x18` callback of a record in the
+`0x801F2B98` panel-window table
+([`script-vm.md`](../subsystems/script-vm.md#the-panel-window-records-and-the-descriptors-that-install-them);
+a reading based four records later, at `0x801F2C0C`, numbered every record
+four low). A disclosure that names the wrong table names the wrong blocker.
 
 `acquisition_caption`'s ownership question is answered by the attribution
 table rather than by a new dump: every dump at `0x801F90DC` is class

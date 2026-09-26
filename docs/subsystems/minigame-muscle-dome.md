@@ -227,8 +227,9 @@ The trap the split hides is that both boundaries reach a host as "the turn's
 playback ended". A host that keys the hub screen on the match phase alone
 draws an intermission every turn. The verdict therefore lives in one shared
 place, `engine-core::muscle_dome::leg_boundary_raises_interval`, called at the
-leg boundary by the native window (`tick_muscle_hub`) and by the browser dome
-page (through the `muscle_leg_shows_interval` binding);
+leg boundary by the hub's screen-timer kernel both play hosts drive
+(`engine-core::muscle_ringside::HubTimers`) and by the browser dome page
+(through the `muscle_leg_shows_interval` binding);
 `MusclePhase::ends_turn` / `ends_leg` name the same split on the session side.
 Locked by `engine-core/tests/muscle_intermission_cadence.rs` and
 `web-viewer/tests/muscle_page_cadence.rs`.
@@ -1432,9 +1433,11 @@ and reseed to `0x10`, and the arm writes the cue ring
 countdown `DAT_8007C338 = [0, 0x1E, 0x3C, 0x5A]` - the four "ka-ching" cues
 staggered 0 / 30 / 60 / 90 frames (`0x801CFCAC..0x801CFCEC`).
 
-Port: `engine-core::muscle_dome::HubScreen` carries the envelope, the native
-window ticks it in `tick_muscle_hub`, and the browser page samples the same
-kernel through `muscle_hub_screen_json` - so neither host picks a count or a
+Port: `engine-core::muscle_dome::HubScreen` carries the envelope,
+`engine-core::muscle_ringside::HubTimers` arms and ticks it on both play hosts
+(the native window's and the play page's `tick_muscle_hub` are each that one
+call plus the sounds it fires), and the standalone page samples the same
+kernel through `muscle_hub_screen_json` - so no host picks a count or a
 brightness of its own.
 
 Two instrument notes fall out of pinning this. `find-address-word-refs.py`

@@ -1223,6 +1223,14 @@ most of that work does reach both hosts.
 The native `tick_dance_side` sub-step is not in the table because it no
 longer exists: everything it did was the duplicate spawn below.
 
+The two `tick_muscle_hub` steps used to be the same hub timer state machine
+written twice - the first visit, the leg-open ROUND card, the INTERVAL +
+tally screen and the re-entered backdrop, with their leg edges, as eight
+fields on each host. They are one engine kernel now,
+`muscle_ringside::HubTimers::tick`, which each host drives once a frame and
+reads its draws from; what stays per host is how the XA line and the tally
+voices it returns get played.
+
 The **effect-part pool** is no longer a native-only sink. It is
 `legaia_engine_core::minigame_fx::MinigameFxPool` on
 `World::minigames.fx`, aged inside `World::tick` (so every host that ticks

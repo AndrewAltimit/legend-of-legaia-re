@@ -1488,15 +1488,25 @@ conflating them is the error to avoid.
 | `0x28` | `FUN_801f1fdc` | prompt |
 | `0x32` | `FUN_801f1e48` | Incense wear-off notice ([`script-vm.md`](script-vm.md)) |
 
-`0x801f2c0c` is the **panel-window record** table: 13 records of `0x1c` bytes,
-`[u32 kind = 0x00030000][3 geometry words][u32 0x0c][u32 painter][u32 0]`. The
-painters are *not* handler slots - a state machine installs a panel descriptor
-through `FUN_801e9b3c` and the descriptor names the window whose `+0x14`
-callback draws it. Records `1` / `2` / `3` / `7` / `8` / `11` / `12` are
-`FUN_801f1950` / `FUN_801f1a1c` / `FUN_801f16c0` / `FUN_801f1890` /
-`FUN_801f17d8` / `FUN_801f1ab0` / `FUN_801f1b64`. Two records cross-validate
-the read: `9` is the name-entry renderer `FUN_801e6b34` and `10` is
-`FUN_801e6984`, both pinned independently.
+`0x801f2b98` is the **panel-window record** table: 17 records of `0x1c` bytes,
+`[u32 0][u32 kind][3 geometry words][u32 0x0c][u32 painter]`. The base and the
+stride are the installer's own arithmetic, not a fit to where the painters
+land: `FUN_801e9b3c` forms `0x801F2B98` (`addiu s4,v0,0x2b98` at `0x801E9B70`)
+and indexes it by the descriptor entry's window halfword times `0x1C`
+(`0x801E9B78..0x801E9B8C`). The painters are *not* handler slots - a state
+machine installs a panel descriptor through `FUN_801e9b3c` and the descriptor
+names the window whose `+0x18` callback draws it. Records `0`..`3` are kind
+`0x2A` with no painter; records `4`..`16` are kind `3`, and records `5` / `6` /
+`7` / `11` / `12` / `15` / `16` are `FUN_801f1950` / `FUN_801f1a1c` /
+`FUN_801f16c0` / `FUN_801f1890` / `FUN_801f17d8` / `FUN_801f1ab0` /
+`FUN_801f1b64`; `13` is the name-entry renderer `FUN_801e6b34` and `14` is
+`FUN_801e6984`. An earlier reading put the table at `0x801f2c0c` with the
+painter at `+0x14`: the records are periodic, so a frame one word late still
+lands on every painter, but it starts four records late and numbered every
+record four low (`9` / `10` for the two name-entry records). Its
+cross-check was taken inside the shifted frame, so it could not catch the
+shift; the port (`engine-vm::baka_hub_actors::window`) carries the corrected
+indices.
 
 Every handler shares one shape. It reads its own sub-state `+0x54`, installs
 its panel, and - where it takes input - hands the actor back on a confirm:
