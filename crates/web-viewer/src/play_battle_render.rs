@@ -396,6 +396,9 @@ pub(crate) struct BattleRender {
     /// Ground-grid depth-cue far colour, display `0..1`, applied by the page
     /// as a **per-draw** cue on the grid mesh (the native `DrawCue` seam).
     grid_far: Option<[f32; 3]>,
+    /// `DAT_80078C1C` outdoor-table membership of the stage - the battle
+    /// tint pass's `DAT_8007BDA8` flag (`World::battle_actor_draw_plan`).
+    outdoor: bool,
     actors: Vec<BattleActorRender>,
     /// How many of the five battle texture slots the entry build consumed.
     /// A mid-battle summon injects its creature texture into the next one
@@ -484,6 +487,7 @@ struct WebBattleStage {
     dome: (legaia_tmd::Tmd, Vec<u8>),
     second: legaia_asset::battle_backdrop::SecondCopy,
     grid_far: [f32; 3],
+    outdoor: bool,
 }
 
 /// Everything one actor bind needs applied to the world after the read-only
@@ -583,11 +587,17 @@ impl LegaiaRuntime {
             .and_then(legaia_engine_vm::battle_ground_grid::OutdoorCueTable::from_scus)
             .map(|t| t.far_colour_for_prot_index(stage_entry))
             .unwrap_or(legaia_engine_vm::battle_ground_grid::GRID_FAR_INDOOR);
+        let outdoor = self
+            .scus
+            .as_deref()
+            .and_then(legaia_engine_vm::battle_ground_grid::OutdoorCueTable::from_scus)
+            .is_some_and(|t| t.contains_prot_index(stage_entry));
         Some(WebBattleStage {
             vram,
             dome: (dome.tmd.clone(), dome.raw.clone()),
             second,
             grid_far: grid_far_bytes.map(|c| f32::from(c) / 255.0),
+            outdoor,
         })
     }
 
@@ -632,6 +642,7 @@ impl LegaiaRuntime {
         let mut backdrop = None;
         let mut ground = None;
         let mut grid_far = None;
+        let outdoor = stage.as_ref().is_some_and(|st| st.outdoor);
         // REF: FUN_800513f0 - the backdrop registration whose object-list
         // edit + second-copy transform this host consumes through
         // `legaia_asset::battle_backdrop`, exactly like the native window.
@@ -865,6 +876,7 @@ impl LegaiaRuntime {
             backdrop,
             ground,
             grid_far,
+            outdoor,
             actors,
             tex_slots_used,
             camera: None,
@@ -1448,8 +1460,11 @@ impl LegaiaRuntime {
     ///
     /// `active` is the draw gate: it also carries the summon band's hide
     /// (`+0x21C = 0xFF`, `RENDER_FLAG_HIDDEN`) - every party seat and living
-    /// monster is off screen while the creature performs - the browser twin
-    /// of the native draw loop's skip.
+    /// monster is off screen while the creature performs - and retail's
+    /// per-body battle draw verdict ([`Self::battle_draw_plan`]: the
+    /// `FUN_800480D8` colour-word / grey gate over the `FUN_8004A908` tint,
+    /// plus the dispatcher's near-plane reject) - the browser twin of the
+    /// native draw loop's skips.
     pub fn play_battle_actor_transforms(&self) -> Vec<f32> {
         use legaia_engine_vm::battle_target_group::RENDER_FLAG_HIDDEN;
         let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.as_ref()) else {
@@ -1463,7 +1478,10 @@ impl LegaiaRuntime {
                     actor.move_state.world_y as f32,
                     actor.move_state.world_z as f32,
                     if a.monster { 1.0 } else { 0.0 },
-                    if actor.active && actor.battle.render_flag != RENDER_FLAG_HIDDEN {
+                    if actor.active
+                        && actor.battle.render_flag != RENDER_FLAG_HIDDEN
+                        && self.battle_draw_plan(a.actor_idx).is_none_or(|p| p.drawn)
+                    {
                         1.0
                     } else {
                         0.0
@@ -1685,6 +1703,21 @@ impl LegaiaRuntime {
             Some(P::ActionEnd) => "action-end",
             Some(P::Menu) | None => "menu",
         }
+    }
+
+    /// Battle body `actor_idx`'s draw decision this frame - the shared
+    /// `World::battle_actor_draw_plan` under the camera this page projects
+    /// with, judged at retail's parked depth when no stage dome is up (the
+    /// native window's rule).
+    pub(crate) fn battle_draw_plan(
+        &self,
+        actor_idx: usize,
+    ) -> Option<legaia_engine_core::world::BattleActorDrawPlan> {
+        let br = self.battle_render.as_ref()?;
+        let host = self.scene_host.as_ref()?;
+        let pose = br.backdrop.is_some().then(|| self.battle_cam_pose());
+        host.world
+            .battle_actor_draw_plan(actor_idx, pose.as_ref(), BATTLE_WORLD_SCALE, br.outdoor)
     }
 
     pub(crate) fn battle_cam_pose(&self) -> legaia_engine_vm::battle_cam_script::BattleCamPose {
