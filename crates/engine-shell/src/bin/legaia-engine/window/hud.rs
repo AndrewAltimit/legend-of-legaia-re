@@ -1558,6 +1558,18 @@ impl PlayWindowApp {
             legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }
+        // The Incense wear-off notice (`FUN_801F1E48`): one line of the field
+        // overlay's own text.
+        if let Some(line) = self.session.host.incense_notice_line() {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            let mut draws = legaia_engine_render::incense_notice_text_draws_for(
+                &self.font,
+                legaia_engine_core::incense_notice::notice_text_pen(),
+                &line,
+            );
+            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            out.extend(draws);
+        }
         // Opt-in developer menu: its row list draws over everything else.
         //
         // Through the canonical 320x240 stage, like every other retail screen
@@ -2067,6 +2079,14 @@ impl PlayWindowApp {
                 &assets.rects,
                 &lay,
                 cursor,
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        if self.session.host.world.incense_notice_shown() {
+            out.extend(legaia_engine_render::incense_notice_sprites_for(
+                &assets.rects,
+                legaia_engine_core::incense_notice::notice_frame_rect(),
                 stage_origin,
                 stage_scale,
             ));
