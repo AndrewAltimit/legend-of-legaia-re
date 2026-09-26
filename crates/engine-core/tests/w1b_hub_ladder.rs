@@ -74,9 +74,12 @@ fn op49_script(sub_op: u8, entries: [u8; 3]) -> Vec<u8> {
     out
 }
 
-/// One world frame with `mask` held.
+/// One world frame with `mask` held. `mask` is in the **packed** Legaia
+/// layout the submode masks are written in; the world takes the host's raw
+/// PSX word, so it is converted back to what a host would send.
 fn step(w: &mut World, mask: u16) {
-    w.input.set_pad(mask);
+    w.input
+        .set_pad(legaia_engine_core::dev_menu::retail_packed(mask));
     let _ = w.tick();
 }
 

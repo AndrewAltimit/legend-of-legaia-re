@@ -394,8 +394,7 @@ impl World {
             && self.field_vm.submode_screen.actor.sub == 2
             && self.field_vm.submode_screen.picker_result == 0
         {
-            let pad = self.input.pad() as u32;
-            let prev = self.input.pad_prev() as u32;
+            let (pad, prev) = self.submode_pad_words();
             let edge = (pad & !prev) | self.field_vm.submode_screen.pad_edge_latch;
             let toggle = (crate::dev_menu::PACK_UP
                 | crate::dev_menu::PACK_DOWN
@@ -631,14 +630,31 @@ impl World {
             self.field_vm.submode_screen.pad_edge_latch = 0;
             return;
         }
-        let pad = self.input.pad() as u32;
-        let prev = self.input.pad_prev() as u32;
+        let (pad, prev) = self.submode_pad_words();
         self.field_vm.submode_screen.pad_edge_latch |= pad & !prev;
     }
 
+    /// The current and previous pad words in the **packed** Legaia layout
+    /// every mask this family tests is written in ([`SUBMODE_ACCEPT_MASK`],
+    /// [`SUBMODE_BACK_MASK`], the hub's `PAD_CURSOR_*`).
+    ///
+    /// `World::input` holds the host's **raw** PSX word (`PadButton`: Cross
+    /// `0x4000`, Down `0x0040`), while retail's dispatcher reads the packed
+    /// words `FUN_8001822C` builds (Cross `0x0040`, Down `0x4000`). Testing the
+    /// raw word against the packed masks cross-wired every submode screen:
+    /// Cross did nothing, Down accepted, Right backed out and the face
+    /// buttons stepped the cursor. The conversion is
+    /// [`crate::dev_menu::retail_packed`], the same one the Incense notice
+    /// and both hosts' dev menus use.
+    fn submode_pad_words(&self) -> (u32, u32) {
+        (
+            u32::from(crate::dev_menu::retail_packed(self.input.pad())),
+            u32::from(crate::dev_menu::retail_packed(self.input.pad_prev())),
+        )
+    }
+
     fn submode_env(&self, frame_delta: u8) -> HubEnv {
-        let pad = self.input.pad() as u32;
-        let prev = self.input.pad_prev() as u32;
+        let (pad, prev) = self.submode_pad_words();
         let edge = (pad & !prev) | self.field_vm.submode_screen.pad_edge_latch;
         HubEnv {
             // `DAT_801F2734` is the submode context's state word, which
@@ -924,7 +940,8 @@ mod tests {
         // Type 12 coins.
         w.field_vm.submode_screen.counter.set_entered(12);
         // Frame 2: accept.
-        w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
+        w.input
+            .set_pad(crate::dev_menu::retail_packed(SUBMODE_ACCEPT_MASK as u16));
         w.tick_submode_screen(1);
         assert_eq!(
             w.field_vm.submode_screen.actor.sub, 2,
@@ -977,7 +994,8 @@ mod tests {
         w.tick_submode_screen(1);
         assert_eq!(w.field_vm.submode_screen.installed_windows, vec![0, 10, 10]);
         w.field_vm.submode_screen.counter.set_entered(2);
-        w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
+        w.input
+            .set_pad(crate::dev_menu::retail_packed(SUBMODE_ACCEPT_MASK as u16));
         w.tick_submode_screen(1);
         assert_eq!(
             w.field_vm.submode_screen.installed_windows,
