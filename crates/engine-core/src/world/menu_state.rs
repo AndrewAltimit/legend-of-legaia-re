@@ -63,6 +63,15 @@ pub struct MenuState {
     /// Run against it via [`crate::world::World::run_shop_widget_open`] /
     /// [`crate::world::World::run_shop_widget_sell_away`].
     pub widgets: crate::menu_widget::MenuWidgetState,
+    /// The notify window's message template (menu overlay `0x801E4700`,
+    /// [`crate::pause_screens::notify_template_from_menu_overlay`]).
+    /// Installed by [`crate::world::World::install_menu_overlay_tables`];
+    /// `None` without the overlay, and no art-learned notice is composed then.
+    pub notify_template: Option<Vec<u8>>,
+    /// A pause-menu item use taught an art: the window-8 notice waiting for
+    /// a host to park it on its menu runtime
+    /// (`crate::field_menu_dispatch::apply_inventory_outcome` fills it).
+    pub pending_art_notice: Option<crate::pause_screens::ArtLearnedNotice>,
 }
 
 impl MenuState {
@@ -77,6 +86,8 @@ impl MenuState {
             pending_warp: None,
             pending_escape: false,
             widgets: Default::default(),
+            notify_template: None,
+            pending_art_notice: None,
         }
     }
 }

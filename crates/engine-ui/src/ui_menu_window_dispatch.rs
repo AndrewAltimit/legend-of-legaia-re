@@ -42,6 +42,7 @@
 //! | `FUN_801DCF14` | 33 | `record_title_tab_draws_for` |
 //! | `FUN_801DCF84` / `FUN_801DD028` | 32 / 45 | `counter_panel_draws_for` |
 //! | `FUN_801DCCB4` | 7 | `char_prompt_draws_for` |
+//! | `FUN_801DCD58` | 8 | `notify_prompt_draws_for` |
 //! | `FUN_801DCE20` | 31 | `amount_prompt_draws_for` |
 //! | `FUN_801DCC20` | 24 | `count_panel_draws_for` |
 //! | `FUN_801D603C` | 46 | `choice_panel_draws_for` |
@@ -96,6 +97,8 @@ pub const RENDERER_COUNTER_GOLD: u32 = 0x801D_CF84;
 pub const RENDERER_COUNTER_COINS: u32 = 0x801D_D028;
 /// One-line prompt with a substituted record character (id 7).
 pub const RENDERER_CHAR_PROMPT: u32 = 0x801D_CCB4;
+/// Notify window (id 8) - the art-learned notice.
+pub const RENDERER_NOTIFY_PROMPT: u32 = 0x801D_CD58;
 /// Heading + wide number + unit label (id 31).
 pub const RENDERER_AMOUNT_PROMPT: u32 = 0x801D_CE20;
 /// Two-digit count over a reserved sub-rect (id 24).
@@ -157,6 +160,9 @@ pub enum MenuWindowPainter {
     },
     /// One prompt line with a substituted character + the corner cursor.
     CharPrompt,
+    /// The notify window's patched template (character + arts name), one
+    /// row per `0x7C` line, + the same corner cursor.
+    NotifyPrompt,
     /// Heading, wide number field, trailing unit label, corner cursor. The
     /// number is the Point Card counter `_DAT_800845B4`.
     AmountPrompt,
@@ -204,6 +210,7 @@ pub fn painter_for_renderer_va(renderer_va: u32) -> Option<MenuWindowPainter> {
             source: CounterSource::CasinoCoins,
         },
         RENDERER_CHAR_PROMPT => P::CharPrompt,
+        RENDERER_NOTIFY_PROMPT => P::NotifyPrompt,
         RENDERER_AMOUNT_PROMPT => P::AmountPrompt,
         RENDERER_COUNT_PANEL => P::CountPanel,
         RENDERER_CHOICE_PANEL => P::ChoicePanel,

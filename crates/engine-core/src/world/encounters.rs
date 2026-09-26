@@ -319,6 +319,11 @@ impl World {
         if labels.is_installed() {
             self.menu.context_labels = labels;
         }
+        // The notify window's message template (`0x801E4700`) - window 8,
+        // the art-learned notice a Hyper-Art book raises.
+        if let Some(t) = crate::pause_screens::notify_template_from_menu_overlay(overlay) {
+            self.menu.notify_template = Some(t);
+        }
         // The window-widget bytecode programs the window-script VM
         // (`legaia_engine_vm::run`, retail `FUN_801D6628`) interprets -
         // resident data in this same image (`legaia_asset::widget_script`).

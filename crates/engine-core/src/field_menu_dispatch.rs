@@ -371,10 +371,56 @@ pub fn apply_inventory_outcome(session: &InventoryUseSession, world: &mut World)
             // all-party one). `current_item` is unavailable here - it
             // returns `None` once the session reaches `Done`.
             for &slot in &session.used_slots {
-                world.use_item(id, slot);
+                if let crate::items::ItemOutcome::ArtLearned {
+                    character, art_id, ..
+                } = world.use_item(id, slot)
+                {
+                    // Retail's applier calls `FUN_80035C00(slot, art)` here
+                    // and the Items use sub-screen opens window 8 on it.
+                    world.menu.pending_art_notice = art_learned_notice(world, character, art_id);
+                }
             }
         }
     }
+}
+
+/// Compose the window-8 "learned an art" notice: the disc template
+/// (`0x801E4700`) patched the way `FUN_801DCD58` patches it
+/// ([`crate::pause_screens::patch_notify_template`]) and expanded against the
+/// party names and the arts-name table.
+///
+/// `None` when the menu overlay's template is not installed - the notice is
+/// disc text and the engine does not invent it.
+pub fn art_learned_notice(
+    world: &World,
+    character: u8,
+    art_id: u8,
+) -> Option<crate::pause_screens::ArtLearnedNotice> {
+    let mut template = world.menu.notify_template.clone()?;
+    crate::pause_screens::patch_notify_template(&mut template, i16::from(character), art_id);
+    let names = &world.party.party_names;
+    let lines = crate::pause_screens::expand_notify_lines(
+        &template,
+        |slot| {
+            // `0xC1 0x63` names the leader (`DAT_80084597`); any other
+            // operand is a roster slot.
+            let i = if slot == 0x63 { 0 } else { usize::from(slot) };
+            names.get(i).cloned()
+        },
+        |ch, art| {
+            world
+                .menu
+                .text
+                .as_ref()
+                .and_then(|t| t.art_name(ch, art))
+                .map(str::to_string)
+        },
+    );
+    Some(crate::pause_screens::ArtLearnedNotice {
+        character,
+        art_id,
+        lines,
+    })
 }
 
 /// Apply a finished pause **Items screen** to the world: the inner use

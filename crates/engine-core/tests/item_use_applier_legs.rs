@@ -381,3 +381,76 @@ fn the_status_clear_arm_lifts_both_poisons_and_skips_a_dead_target() {
     // Nothing to clear: no effect either.
     assert_eq!(world.use_item(0x7E, 0), ItemOutcome::NoEffect);
 }
+
+/// The pause-menu path of a book: the finished Items use composes retail's
+/// window-8 notice off the menu overlay's template - patched the way
+/// `FUN_801DCD58` patches it (`0xC1` <- the slot, `0xC5` <- `slot * 0x40 +
+/// art`) and expanded against the party names and the arts-name table.
+///
+/// The template here is synthetic (same token shape, no disc text), and the
+/// contrast is the same use without a template: no notice, because the
+/// engine does not invent the message.
+#[test]
+fn a_pause_menu_book_use_composes_the_window_8_notice() {
+    use legaia_art::arts_table::ArtTableEntry;
+    use legaia_art::queue::Character;
+    use legaia_engine_core::field_menu_dispatch::apply_inventory_outcome;
+    use legaia_engine_core::inventory_use::{
+        InventoryContext, InventoryUseSession, InventoryUseState,
+    };
+    use legaia_engine_core::pause_screens::MenuTextTables;
+
+    let finished = |world: &World| {
+        let mut s = InventoryUseSession::new(
+            world.tables.item_catalog.clone(),
+            vec![0x92],
+            Vec::new(),
+            InventoryContext::Field,
+        );
+        s.used_item = Some(0x92);
+        s.used_slots = vec![0];
+        s.state = InventoryUseState::Done(ItemOutcome::NoEffect);
+        s
+    };
+    let art = |character, index, name: &str| ArtTableEntry {
+        character,
+        index,
+        name: name.into(),
+        ap: 0,
+        commands: Vec::new(),
+        is_miracle: false,
+    };
+
+    let mut world = world_with(&book_rows(), 3);
+    world.party.party_names = vec!["Vahn".into(), "Noa".into(), "Gala".into()];
+    world.menu.text = Some(MenuTextTables {
+        arts: Some(vec![
+            art(Character::Vahn, 5, "Wrong Row"),
+            art(Character::Noa, 5, "Noa Five"),
+        ]),
+        ..Default::default()
+    });
+    // `[C1 00] learns|[CF 06][C5 00][CF 07]!` - both operands are
+    // placeholders the patch must overwrite.
+    let mut template = vec![0xC1, 0x00];
+    template.extend_from_slice(b" learns|");
+    template.extend_from_slice(&[0xCF, 0x06, 0xC5, 0x00, 0xCF, 0x07]);
+    template.push(b'!');
+    world.menu.notify_template = Some(template);
+
+    // Wind Book I: class 12 -> roster slot 1, tier 5.
+    apply_inventory_outcome(&finished(&world), &mut world);
+    let notice = world
+        .menu
+        .pending_art_notice
+        .take()
+        .expect("a taught art raises the window-8 notice");
+    assert_eq!((notice.character, notice.art_id), (1, 5));
+    assert_eq!(notice.lines, vec!["Noa learns", "Noa Five!"]);
+
+    // Contrast: without the overlay template there is no notice at all.
+    let mut bare = world_with(&book_rows(), 3);
+    apply_inventory_outcome(&finished(&bare), &mut bare);
+    assert_eq!(skills(&bare, 1), vec![5], "the art is still taught");
+    assert!(bare.menu.pending_art_notice.is_none());
+}

@@ -382,6 +382,47 @@ pub fn char_prompt_draws_for(
     )
 }
 
+/// Line pitch of a `0x7C` break inside a menu string: the string primitive
+/// steps down `0xE` (`docs/formats/dialog-font.md`).
+pub const MENU_STRING_LINE_PITCH: i32 = 0xE;
+
+/// Window 8, the notify window: the patched message at the content origin,
+/// one row per `0x7C` line, and the corner cursor.
+///
+/// `FUN_801DCD58` refills the template's two operand bytes (ported as
+/// `engine-core::pause_screens::notify_window_operands`, which the caller's
+/// composition runs), draws the string in ink `7` at `(WX, WY)` and puts the
+/// hand sprite (kind 1, mode 1) at `(WX + 0xE6, WY + 0xD)` - the same pens as
+/// window 7's [`char_prompt_draws_for`]. The lines arrive expanded: the string
+/// primitive splices the `0xC1` / `0xC5` names at draw time, and the host
+/// resolves them from the same tables before calling this.
+///
+/// REF: FUN_801DCD58
+pub fn notify_prompt_draws_for(
+    font: &legaia_font::Font,
+    rect: PainterRect,
+    lines: &[String],
+) -> (Vec<TextDraw>, PainterSprite) {
+    let mut out = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let l = font.layout_ascii(line);
+        out.extend(text_draws_for(
+            &l,
+            (rect.x, rect.y + i as i32 * MENU_STRING_LINE_PITCH),
+            MENU_TEXT_WHITE,
+        ));
+    }
+    (
+        out,
+        PainterSprite {
+            sprite: 1,
+            variant: 1,
+            x: rect.x + 0xE6,
+            y: rect.y + 0x0D,
+        },
+    )
+}
+
 /// Window 31: a heading, then a wide number field with a trailing label on
 /// the row below, then the same corner cursor as window 7.
 ///
@@ -1538,5 +1579,26 @@ mod tests {
         let (_, b) = amount_prompt_draws_for(&font, rect, "head", 12, "unit");
         assert_eq!((a.x, a.y), (rect.x + 0xE6, rect.y + 0x0D));
         assert_eq!((b.x, b.y), (a.x, a.y));
+    }
+
+    /// Window 8 shares window 7's pens, and a `0x7C` break drops the second
+    /// line one string-primitive pitch (`0xE`) below the first.
+    #[test]
+    fn the_notify_window_stacks_its_lines_and_shares_the_cursor() {
+        let font = legaia_font::Font::placeholder();
+        let rect = PainterRect::new(38, 100, 244, 28);
+        let lines = vec!["a".to_string(), "a".to_string()];
+        let (draws, cursor) = notify_prompt_draws_for(&font, rect, &lines);
+        let (_, prompt) = char_prompt_draws_for(&font, rect, "line");
+        assert_eq!((cursor.x, cursor.y), (prompt.x, prompt.y));
+        let (one, _) = notify_prompt_draws_for(&font, rect, &lines[..1]);
+        assert!(!one.is_empty() && draws.len() > one.len());
+        let top = draws.iter().map(|d| d.dst.1).min().unwrap();
+        let bottom = draws.iter().map(|d| d.dst.1).max().unwrap();
+        assert_eq!(bottom - top, MENU_STRING_LINE_PITCH);
+        assert_eq!(
+            crate::painter_for_renderer_va(0x801D_CD58),
+            Some(crate::MenuWindowPainter::NotifyPrompt)
+        );
     }
 }
