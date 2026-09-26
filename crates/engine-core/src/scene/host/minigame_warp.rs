@@ -171,12 +171,12 @@ impl SceneHost {
             return false;
         };
         let balance = self.world.minigames.casino_coins as i32;
-        self.world
-            .enter_slot_machine(crate::slot_machine::SlotMachine::new(
-                payouts,
-                SLOT_RNG_SEED,
-                balance,
-            ));
+        let paylines =
+            legaia_asset::minigame_slot_scene::parse_paylines(loaded).unwrap_or_default();
+        self.world.enter_slot_machine(
+            crate::slot_machine::SlotMachine::new(payouts, SLOT_RNG_SEED, balance)
+                .with_paylines(paylines),
+        );
         true
     }
 
@@ -202,6 +202,10 @@ impl SceneHost {
         else {
             return false;
         };
+        let index = &self.index;
+        let fight = fight.with_roster_clip_headers(crate::baka_fighter::roster_clip_headers(|i| {
+            index.entry_bytes(i as u32).ok().map(|b| b.to_vec())
+        }));
         self.world.enter_baka_fighter(fight);
         true
     }
