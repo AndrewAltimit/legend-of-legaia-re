@@ -1285,13 +1285,42 @@ native window resolves its draws with, and the page samples widget 5's strip
 there - where it used to compute `(g % 10) * 24` itself, which disagrees with
 retail's byte store past the tenth cell.
 
-What stays open is the chrome's **sprite effects**, not its widgets: the
-mirrored two-pass sprite draw (`FUN_801D49E8`) and the impact effect pair
-(`FUN_801D4DF8`) are actor callbacks that want the animator `FUN_801D6310` to
-pick a clip out of the runtime sprite archives `_DAT_8007B888` /
-`_DAT_8007B840`, which no minigame host loads. And the native window resolves
-each glyph draw's stamped cell rect without sampling it, because its duel HUD
-has no textured-quad surface.
+**The duel's strike timing is one engine clock on all three hosts.** The
+exchange is booked on the frame the winner's strike keyframe is crossed
+(`BakaFight`'s `StrikeClock`, the retail combat tick's `FUN_801D6E5C` lookup),
+and each host stages the same clip headers through
+`baka_fighter::roster_clip_headers` - the native window and the play page off
+their PROT index, the minigames page off its disc - so a double-step clip
+strikes at the same frame everywhere. The minigames page also poses the swing
+off that clock (`baka_state_json`'s `clock`), where it used to start the swing
+when the exchange report arrived.
+
+What stays open was misnamed "sprite effects". None of the three routines
+draws a sprite: the two banks `_DAT_8007B888` / `_DAT_8007B840` are the
+scene's type-`0x05` / `0x0B` ANM clip banks the clip selector `FUN_800204F8`
+resolves, and each routine drives a **model** through them.
+
+- The special's afterimage (`FUN_801D49E8`) is engine state every host steps,
+  and the minigames page draws it as darkened copies of the thrower's mesh.
+  The native window and the play page draw the duel as labels with no fighter
+  meshes, so they have nothing to ghost. That is the gap - a 3D duel surface
+  on those two hosts - not the afterimage.
+- The impact pair (`FUN_801D4DF8`) spawns `FUN_80021B04` effect templates at
+  the winner's strike offset, and no minigame host runs that effect runtime.
+- The round-start cameo (`FUN_801D6310`) spawns only on a held Triangle, and
+  no host hands the duel a held pad word; it also wants scene model `0` drawn
+  camera-relative plus a VRAM move, which no host does.
+
+And the native window resolves each glyph draw's stamped cell rect without
+sampling it, because its duel HUD has no textured-quad surface.
+
+**The slot machine's paylines are one projection on all three hosts.**
+`slot_machine::projected_paylines` runs the ported payline pass
+(`FUN_801D3380`) and projects both endpoints through the machine's fitted
+projection; both browser pages stroke those segments (`sa` / `sb` in the prims
+JSON) and the native window draws them as one-pixel flat quads through
+`engine-ui::ui_slot_paylines`. The native window still draws no cabinet mesh
+around them.
 
 ### A `web-ahead` builder is not by itself a gap
 
