@@ -2643,7 +2643,7 @@ recipe rules came out of it, on top of the ones [above](#a-second-pass-frames-ma
 |---|---|---|---|
 | `vell` fog underlay | sheets drawn, textured | same | same on settled frames; an additive glow by the player at the frame's edge reads whiter natively (not chased) |
 | `dolk` / `cave01` attached light, HUD above screen prims | darkness mask, rim on the player, HUD bright | same | same; the page's subtractive run is now pinned by `attached_light_page_prims.rs` |
-| prologue sepia (`opdeene`) | sepia tableau | same tint | differs: see [the prologue meshes](#a-prologue-mesh-set-drawn-black-natively) |
+| prologue sepia (`opdeene`) | sepia tableau | same tint | same billboards since the lit-row mask; the page stages no lit-row ambient - see [the prologue meshes](#a-prologue-mesh-set-drawn-black-natively) |
 | narration crawl | 1x glyphs, rows at the window's `h / 240` | 1x glyphs, rows at the canvas's `h / 240` | both wrong against retail, differently; fixed on both, and a native frame now lays its rows over the retail frame's line for line |
 | "It was the Seru." caption | scaled by `h / 240` in window pixels | the overlay canvas is the stage | native larger than the stage and off centre; fixed |
 | `0x6E` Begin / Reselect, commit log, target plaque | labels, log rows, plaque at `x = 0xE8 - w / 2` | same | same |
@@ -2685,12 +2685,29 @@ frames.
 
 ### A prologue mesh set drawn black natively
 
-In the `opdeene` jungle the native window draws a set of plants - the twisted
+In the `opdeene` jungle the native window drew a set of plants - the twisted
 branches and the dark bushes - as black silhouettes, where the page and the
 retail frame (`captures/crawl1_capture`) draw them pale and textured. Both
-hosts share the sepia word law (`prologue_sepia_word`), so the difference sits
-upstream of it, in what each host feeds that law for those primitives. Not
-fixed here.
+hosts share the sepia word law (`prologue_sepia_word`); the difference sat
+upstream of it, in a native-only restage. Fixed.
+
+The silhouettes are the scene pack's **one-quad billboards** (pack slots
+`4 8 9 10 11 13 16 28`, each a single `FT4` on descriptor row 4): dropping
+those slots from the native draw list removes every silhouette, and dropping
+the multi-prim plants whose words the grade takes near black does not. Their
+disc word is exactly `0x80`, retail rewrites it to `(98, 94, 42)` (the resident
+copies in `run_w3a_captures.sh opdeene`'s checkpoints, and `FT4` packets at
+that colour in the same frames' ordering tables), and their texture pages and
+CLUT rows match retail texel for texel under the palette law. The native
+builder then gave the prologue's dim lit-row ambient (`0x20`,
+`DAT_8007B788`) to every vertex whose colour read `0x80` - the marker the mesh
+builder uses for the light-source rows, which carry no word - so an authored
+`0x80` was restaged along with them, and the grade's packet half took `0x20`
+to `V = 2`. The restage now keys on a per-vertex lit-row mask
+(`legaia_tmd::mesh::tmd_to_vram_mesh_filtered_lit`, applied by
+`engine-core::fade::apply_prologue_lit_ambient`). The page stages no lit-row
+ambient at all, so its light-source rows still draw at neutral where the
+native window draws them at the dim ambient.
 
 ## Gaps absent from both hosts: overworld curvature, ground shadow
 
@@ -2726,15 +2743,13 @@ rasteriser with no drawing mechanism behind it, is gone, and so is the
 `libgte` row that read `FUN_800460AC`'s `RTPT` (`cop2 0x280030`) as `NCDS`.
 
 **The `opdeene` plant silhouettes** ([above](#a-prologue-mesh-set-drawn-black-natively))
-are measured, not fixed: the native frame reproduces them, `--no-entry-pulse`
-leaves them black (the VDF pulse is not the cause), and with the palette grade
-forced off they draw dim green. So the grade's packet half takes them to black:
-on `opdeene`, 1565 of the 6532 prims in the baked-colour rows (`flags >> 1` in
-`12..=19`) carry a colour word whose `max` is at most `30`, which
-`prologue_sepia_word` maps to `V = 0`. Retail draws the same plants bright, so
-either those words are not what retail modulates by or retail's rewrite does
-not reach them; the capture that pins the curve (`s1_newgame_field`) is taken
-at the black start of the crawl and cannot say which.
+were not a gap of this kind: the page drew them right, and the native defect
+is fixed. The earlier reading here - that the grade's packet half takes 1565
+of the scene's baked-row prims to `V = 0` and retail's rewrite might not reach
+them - is falsified by a mid-crawl capture: the resident colour words are the
+same at the crawl's black start and mid-crawl with the jungle lit, every one of
+them on the sepia curve, and retail holds its own exactly-black words
+(`2712` of `18425`) and draws those meshes dark where they are in view.
 
 ## A side-by-side pass over boots, hand-offs and door entries
 
