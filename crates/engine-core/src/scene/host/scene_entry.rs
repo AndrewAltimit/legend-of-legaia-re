@@ -538,7 +538,15 @@ impl SceneHost {
             }
         });
         match map_bytes {
-            Some(bytes) => {
+            Some(mut bytes) => {
+                // `MAIN_INIT` runs the grid-mark refresh over the freshly
+                // streamed `.MAP` before anything reads its cells
+                // (`jal 0x80017BEC` at `0x801D6BF8`, unconditional). The
+                // disc's cells are already stamped almost everywhere, but not
+                // everywhere: `retona`'s tile `(0x1D, 0x18)` carries
+                // `0x3000` in a live capture and not on the disc.
+                // PORT: FUN_80017BEC (scene-load call site)
+                crate::field_regions::refresh_object_grid_marks(&mut bytes);
                 self.world.load_field_object_cells(
                     bytes
                         .get(legaia_asset::field_objects::OBJECT_GRID_OFFSET..)
