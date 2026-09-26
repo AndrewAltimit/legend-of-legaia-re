@@ -1535,17 +1535,38 @@ the content-id-3 build asks `FUN_8003043C`, which runs the validator
 `FUN_8003FB10` on the effect class, and arm `0x82` is `FUN_80046898` -
 `_DAT_8007B600 < 0xE0`. On the tick the window reaches zero the walk tick
 installs the field-overlay record `0x801F2278` (kind byte `0x0B`) as the
-entry context `_DAT_8007B450` and spawns the menu actor; what the menu driver
-shows for that kind is not decoded.
+entry context `_DAT_8007B450`, raises the movement lock `+0x10 |= 0x80000`,
+and spawns the submode driver - the field overlay's actor, not the menu
+overlay. Its enter half `FUN_801F1278` maps the kind byte through the table at
+`0x801F33A4` (`lb` at `0x801F1468`): kind `0x0B` is handler slot `0x32`,
+`FUN_801F1E48`, a three-state **wear-off notice**. State `0` shows window
+record `16` (descriptor `0x801F3294`), whose painter `FUN_801F1B64` draws one
+string of the field overlay's data segment, `0x801CF1A4`: the `0xC2 0x8A`
+item-name escape (the Incense) followed by the line saying its effect is gone.
+State `1` waits for a confirm or cancel edge, plays cue `0x20` and hides the
+window (`0x801F32A4`); state `2` zeroes `_DAT_8007B450` and hands the actor
+back, whose retire drops the movement lock. See
+[script-vm.md](script-vm.md#which-screen-a-sub-op-opens-the-table-at-0x801f33a4),
+where the same handler is sub-op `0xB`'s.
 
 Engine: `PauseItemsSession` counts each committed Incense and
 `field_menu_dispatch::apply_pause_items_outcome` tops
 `FieldLocomotion::walk_regen_window` up through
 `engine-vm::battle_helpers::top_up_cooldown` once per use; the screen greys
 the row off the same window through `item_count_gate`; `World::on_field_step`
-skips the region roll while it is open. The overworld roll is not gated: the
-port's world map runs no walk-regen tick, so the window would never drain
-there.
+skips the region roll while it is open. The **overworld** runs the same
+walk tick: a kingdom map is a mode-3 field-run scene with the field overlay
+resident (the walk tick, the frame driver `FUN_801D1344`, the region roll and
+`FUN_801F1E48` are byte-identical to the PROT 0897 image in the
+`sebucus_overworld_resident` state), and `FUN_801D1344` calls
+`FUN_801D0B90` (`jal` at `0x801D16EC`) right before the locomotion
+controller. So the window drains while the party walks the continent, the
+overworld region roll skips while it is open, and the wear-off fires there
+too; `World::tick_world_map` runs the same fill, tick and gate. The zero edge
+raises `World::raise_incense_notice` (`engine-core::incense_notice`), which
+runs the ported `FUN_801F1E48` body; both play hosts draw the panel
+(`engine-ui::incense_notice_sprites_for` / `incense_notice_text_draws_for`)
+with the line read off the disc (`SceneHost::incense_notice_line`).
 
 Engine port of the three special routes:
 `engine-core::pause_screens::SpecialUseSession` (+ the fixed consume

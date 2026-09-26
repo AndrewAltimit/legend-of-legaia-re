@@ -263,11 +263,28 @@ overlay's image (`SceneHost::tile_board_prompt_lines`). The fades count one
 `DAT_1F800393` unit per world tick (one vsync), the same wall-clock ramp as
 retail's `d = 2` per game tick.
 
-Two parts of state `0` are not modelled: the walk-in from the player's
-position to column `4`, row `0` (the port seats the player on the board's
-start cell at install and returns to input after the fade-in, so the state-3
-arrival pass does not run on the start cell), and the octant save/restore
-around the board (`_DAT_8007B5F0` into `DAT_801F35C4` and back at teardown).
+State `0`'s seat and walk-in are modelled as retail runs them: the install
+puts the player's cell at column `4`, row `0` (`tile_board::START_COL` /
+`START_ROW`, from `sw` at `0x801EF634` / `0x801EF640`) without moving the
+actor, and aims the walk-in at that cell's centre (`0x801EF650` /
+`0x801EF67C`). Once the fade-in ends the interpolation (state `2`) walks the
+actor there from wherever it stood, and the arrival pass (state `3`) then runs
+on the start cell - so a trigger cell the fill dropped there ends the board at
+once, as it does in retail, whose fill does not protect the start cell. A board
+narrower than five columns seats the player off its east edge, which is also
+retail's arithmetic.
+
+The octant word is `FieldLocomotion::pad_octant` (`gp+0x2D8`). The install
+saves it (`TileBoardState::saved_octant`, retail `DAT_801F35C4` at
+`0x801EF320`) and the teardown puts it back (`0x801EFE7C`). Every idle frame
+of state `4` stores the walker's octant off the cell under the player
+(`tile_board::walker_octant`, the two bands above) and remaps the held pad
+through it (`World::remap_pad_direction`, the `FUN_800467E8` port), then
+decodes one step in retail's priority order (`tile_board::step_for_mask`):
+`0x1000` is row `+1`, `0x4000` row `-1`, `0x2000` column `+1`, `0x8000`
+column `-1`. The port had decoded screen-up as row `-1` under a note that
+called the remap unported; screen-up walks row `+1` - into the board from the
+row-`0` start cell - as `0x1000` walks `Z+` on the field.
 The header's actor-template ids are kept on `World::board.header` for the
 render consumers.
 

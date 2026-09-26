@@ -184,6 +184,7 @@ pub mod field_submode;
 pub mod mode_entry_init;
 
 pub mod field_submode_screen;
+pub mod incense_notice;
 pub mod world_map_panel_host;
 
 use anyhow::{Context, Result};

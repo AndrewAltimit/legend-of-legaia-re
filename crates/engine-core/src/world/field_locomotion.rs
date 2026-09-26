@@ -45,11 +45,25 @@ pub struct FieldLocomotion {
     /// ticks: the pause Items Incense confirm tops it up by `0x40` (cap
     /// `0x100`, `crate::field_menu_dispatch::apply_pause_items_outcome`), the
     /// walk-regen tick drains it by one, and the field region encounter roll
-    /// skips while it is non-zero. On its zero edge retail installs the
-    /// field-overlay record `0x801F2278` (kind byte `0x0B`) as the entry
-    /// context `_DAT_8007B450` and spawns the menu actor
-    /// (`0x801D0CEC..0x801D0D24`); the engine drops that edge.
+    /// skips while it is non-zero - on the field and on the overworld alike,
+    /// since both run the field overlay's walk tick. On its zero edge retail
+    /// installs the field-overlay record `0x801F2278` (kind byte `0x0B`) as
+    /// the entry context `_DAT_8007B450` and spawns the submode driver
+    /// (`0x801D0CEC..0x801D0D24`), which shows the wear-off notice
+    /// ([`Self::incense_notice`]).
     pub walk_regen_window: i32,
+    /// The Incense wear-off notice while it is up (`FUN_801F1E48` via the
+    /// kind-`0x0B` entry context; see [`crate::incense_notice`]).
+    pub incense_notice: Option<crate::incense_notice::IncenseNotice>,
+    /// The pad-rotation octant `gp+0x2D8` (`_DAT_8007B5F0`): how many
+    /// eighth-turns the pad remapper `FUN_800467E8` rotates the held
+    /// direction by. Retail's writers are field-VM op `4C 2x` and the tile
+    /// board's walker, which also saves the incoming value on entry and
+    /// restores it at teardown. The port's free-roaming field walk derives
+    /// its rotation from the camera instead
+    /// ([`crate::world::World::field_pad_ring_rotation`]); this word is what
+    /// the tile board reads and restores.
+    pub pad_octant: u32,
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
     /// direction `func_0x800467e8` remaps the held pad against. `0` maps
@@ -260,6 +274,8 @@ impl FieldLocomotion {
             leading_edge_wall_probes: false,
             walk_regen_steps: 0,
             walk_regen_window: 0,
+            incense_notice: None,
+            pad_octant: 0,
             camera_azimuth: 0,
             precise_movement: false,
             run_default: false,

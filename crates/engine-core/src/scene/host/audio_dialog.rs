@@ -64,6 +64,25 @@ impl SceneHost {
         crate::tile_board::prompt_strings(&bytes)
     }
 
+    /// The Incense wear-off notice's line while it is up: the field
+    /// overlay's string at `0x801CF1A4` (extraction entry `0897`) with its
+    /// `0xC2` item-name escape expanded through the live item names. `None`
+    /// while no notice is shown or the entry cannot be read. See
+    /// [`crate::incense_notice`].
+    pub fn incense_notice_line(&self) -> Option<Vec<u8>> {
+        if !self.world.incense_notice_shown() {
+            return None;
+        }
+        let bytes = self
+            .index
+            .entry_bytes(crate::incense_notice::FIELD_OVERLAY_PROT_INDEX)
+            .ok()?;
+        let text = self.world.menu.text.as_ref();
+        crate::incense_notice::notice_line(&bytes, |id| {
+            text.and_then(|t| t.item_name(id)).map(str::to_string)
+        })
+    }
+
     /// First VAB-bearing entry in the scene, with the byte offset of the
     /// `pBAV` magic inside it. Mirrors the asset chain's "load the scene's
     /// bank before the first sound plays" pre-pass. Returns `None` when no

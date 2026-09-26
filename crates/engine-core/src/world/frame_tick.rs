@@ -1544,8 +1544,11 @@ impl World {
                 self.refresh_tile_board_draw_list();
                 self.step_field_locomotion();
                 // Walk-regen: drain the accumulator the step above just fed
-                // and apply the three accessory-gated restore bumps.
+                // and apply the three accessory-gated restore bumps. Its
+                // Incense zero edge raises the wear-off notice, which runs
+                // here too.
                 self.tick_field_walk_regen();
+                self.tick_incense_notice();
                 // Vertical settle + ledge-hop trigger. Retail runs this as a
                 // separate per-frame controller after the walk commits, so
                 // it reads the step-delta pair the walk just wrote.
@@ -1708,19 +1711,23 @@ impl World {
     /// [`Self::step_field_locomotion`] adds [`crate::world::FrameClock::display_frame_step`] once per
     /// sim tick, which is the same rate under the 1:1 denomination.
     ///
-    /// One honest gap remains:
+    /// The kernel's return value is the edge where the Incense window
+    /// [`crate::world::FieldLocomotion::walk_regen_window`] (`_DAT_8007B600`,
+    /// armed by the pause Items Incense confirm) runs out. Retail then
+    /// installs the entry-context record `0x801F2278` (kind byte `0x0B`) and
+    /// spawns the submode driver (`0x801D0CEC..0x801D0D24`), which maps kind
+    /// `0x0B` to `FUN_801F1E48` - the one-line wear-off notice. That edge
+    /// raises [`Self::raise_incense_notice`].
     ///
-    /// - The kernel's return value is the edge where the Incense window
-    ///   [`crate::world::FieldLocomotion::walk_regen_window`]
-    ///   (`_DAT_8007B600`, armed by the pause Items Incense confirm) runs
-    ///   out. Retail then installs the entry-context record `0x801F2278`
-    ///   (kind byte `0x0B`) and spawns the menu actor
-    ///   (`0x801D0CEC..0x801D0D24`); what the menu driver shows for kind
-    ///   `0x0B` is not decoded, so the edge is dropped here.
+    /// The same tick runs on the **overworld**: a kingdom map is a mode-3
+    /// field-run scene with the field overlay resident, and the frame driver
+    /// `FUN_801D1344` calls this routine (`jal` at `0x801D16EC`) right before
+    /// the locomotion controller. The WorldMap arm therefore calls it as
+    /// well ([`Self::tick_world_map`]).
     ///
     /// Member order is the present party (retail walks the member-id table
     /// at `0x80084598`), resolved through [`Self::party_roster_slot`].
-    fn tick_field_walk_regen(&mut self) {
+    pub(crate) fn tick_field_walk_regen(&mut self) {
         use crate::walk_regen::{WalkGauge, WalkRegenMember};
         if self.locomotion.walk_regen_steps <= crate::walk_regen::WALK_REGEN_STEP_COST {
             return;
@@ -1755,10 +1762,12 @@ impl World {
         }
         let mut counter = self.locomotion.walk_regen_steps;
         let mut window = self.locomotion.walk_regen_window;
-        // The Incense-expiry edge (see the note above) has no consumer.
-        let _armed = crate::walk_regen::tick_walk_regen(&mut counter, &mut members, &mut window);
+        let armed = crate::walk_regen::tick_walk_regen(&mut counter, &mut members, &mut window);
         self.locomotion.walk_regen_steps = counter;
         self.locomotion.walk_regen_window = window;
+        if armed {
+            self.raise_incense_notice();
+        }
         for (&rslot, m) in slots.iter().zip(members.iter()) {
             let Some(rec) = self.party.roster.members.get_mut(rslot) else {
                 continue;
@@ -1894,7 +1903,18 @@ impl World {
             self.board.sm = sm::PROMPT;
             return;
         }
-        let Some(dir) = tile_step_from_input(&self.input) else {
+        // The walker's octant store off the cell under the player
+        // (`0x801EF8A4..0x801EF8CC`), then the held pad remapped through it
+        // (`jal 0x800467E8` at `0x801EF8D0`) and decoded in retail order.
+        if let Some(board) = self.board.grid.as_ref() {
+            let under = board
+                .cell(board.player_col as i32, board.player_row as i32)
+                .unwrap_or(0);
+            self.locomotion.pad_octant = crate::tile_board::walker_octant(under);
+        }
+        let held = tile_board_held_mask(&self.input);
+        let remapped = Self::remap_pad_direction(held, self.locomotion.pad_octant);
+        let Some(dir) = crate::tile_board::step_for_mask(remapped) else {
             return;
         };
         if let Some((tx, tz)) = self.board.grid.as_mut().and_then(|b| b.try_step(dir)) {
@@ -1997,6 +2017,8 @@ impl World {
     /// retail zeroing the controller's `+0x3E`, which the op-49 handler reads
     /// to raise `_DAT_8007B450 = 1`.
     fn tile_board_teardown(&mut self) {
+        // Put the incoming pad-rotation octant back (`0x801EFE7C`).
+        self.locomotion.pad_octant = self.board.saved_octant;
         self.board.grid = None;
         self.board.header = None;
         self.board.target = None;
@@ -2010,9 +2032,10 @@ impl World {
     /// `FieldHost::op49_menu_request`). Parses the 13-byte inline header
     /// (`instr[1..]`, the window retail points `_DAT_8007b450` at), fills the
     /// cells with the retail procedural fill (`overlay_0897_801e0b1c`, seeded
-    /// from the world RNG the way retail seeds from BIOS `rand`), seats the
-    /// player actor at the board's start-cell centre, and holds the script
-    /// suspended (`tile_board_armed`) until the board exits.
+    /// from the world RNG the way retail seeds from BIOS `rand`), puts the
+    /// player's cell at column 4, row 0 and aims the walk-in at its centre,
+    /// saves the pad-rotation octant, and holds the script suspended
+    /// (`tile_board_armed`) until the board exits.
     ///
     /// Returns `false` (leaving the op merely suspended, matching the other
     /// op-49 consumers) when a board is already up or the header is
@@ -2035,7 +2058,11 @@ impl World {
         };
         let cells =
             crate::tile_board::procedural_fill(header.width, header.height, || self.next_rand());
-        let board = crate::tile_board::TileBoard::from_header(&header, cells);
+        let mut board = crate::tile_board::TileBoard::from_header(&header, cells);
+        // State 0 seats the player's cell at column 4, row 0; the actor
+        // walks there after the fade-in (below).
+        board.player_col = crate::tile_board::START_COL;
+        board.player_row = crate::tile_board::START_ROW;
 
         // Spawn one tile actor per distinct drawn cell value present on the
         // board (retail `DAT_801f35bc[value]`, slots `2..=14`): resolve the
@@ -2060,22 +2087,21 @@ impl World {
             }
         }
         // Table slot 0 = the player actor (retail spawns it from header
-        // `+0xb`). The engine reuses the existing player actor: seat it at
-        // the start cell's tile centre so the first step interpolates from
-        // the board frame, and bind its mesh from `player_template` when the
-        // global TMD pool carries it (else keep the field mesh).
+        // `+0xb`). The engine reuses the existing player actor and binds its
+        // mesh from `player_template` when the global TMD pool carries it
+        // (else keeps the field mesh). It is **not** seated: retail leaves
+        // it where it stands and aims the walk-in at the start cell's centre
+        // (`DAT_801F35D0/D4`), which state 2 walks to once the fade-in ends.
         if let Some(slot) = self.player_actor_slot {
             tile_slots[0] = Some(slot);
-            let (x, z) = board.player_world();
             let player_tmd = self.global_tmd(header.player_template as i16).cloned();
-            if let Some(a) = self.actors.get_mut(slot as usize) {
-                a.move_state.world_x = x as i16;
-                a.move_state.world_z = z as i16;
-                if let Some(tmd) = player_tmd {
-                    a.tmd_ref = Some(tmd);
-                }
+            if let Some(a) = self.actors.get_mut(slot as usize)
+                && let Some(tmd) = player_tmd
+            {
+                a.tmd_ref = Some(tmd);
             }
         }
+        let walk_in = board.player_world();
 
         // State 0's tail clears the header's four set-base flags
         // (`FUN_8003CE34(A + i)`, `i < 4`) before the fade-in starts.
@@ -2083,7 +2109,9 @@ impl World {
             self.system_flag_clear((header.flag_base_set as u16).wrapping_add(i));
         }
         self.board.actor_slots = tile_slots;
-        self.board.target = None;
+        self.board.target = Some(walk_in);
+        // Save the incoming pad-rotation octant (`0x801EF320`).
+        self.board.saved_octant = self.locomotion.pad_octant;
         self.board.grid = Some(board);
         self.board.header = Some(header);
         self.board.armed = true;

@@ -156,3 +156,68 @@ fn backing_out_of_the_incense_confirm_arms_nothing() {
     apply_pause_items_outcome(&s, &mut w);
     assert_eq!(w.locomotion.walk_regen_window, 0);
 }
+
+/// The zero edge (`FUN_801D0B90` `0x801D0CEC..0x801D0D24`): the walk tick
+/// that drains the last Incense tick installs the kind-`0x0B` record, locks
+/// the player and the driver maps the kind to `FUN_801F1E48` - the wear-off
+/// notice. A confirm edge hides it, plays cue `0x20` and hands back, which
+/// drops the lock.
+#[test]
+fn the_window_running_out_shows_the_wear_off_notice_until_confirmed() {
+    let mut w = field_world();
+    w.locomotion.walk_regen_window = 2;
+    w.locomotion.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
+    let _ = w.tick();
+    assert_eq!(w.locomotion.walk_regen_window, 1);
+    assert!(
+        w.locomotion.incense_notice.is_none(),
+        "a tick that leaves the window open raises nothing"
+    );
+
+    w.locomotion.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
+    let _ = w.tick();
+    assert_eq!(w.locomotion.walk_regen_window, 0);
+    assert!(w.incense_notice_shown(), "the zero edge shows the notice");
+    assert_ne!(
+        w.actors[0].move_state.flags & 0x0008_0000,
+        0,
+        "the player is locked under the notice"
+    );
+
+    // No confirm: it stays up.
+    for _ in 0..5 {
+        let _ = w.tick();
+    }
+    assert!(w.incense_notice_shown());
+
+    // Cross (raw) - the handler reads the packed confirm mask.
+    w.set_pad(PadButton::Cross.mask());
+    let _ = w.tick();
+    w.set_pad(0);
+    assert!(!w.incense_notice_shown(), "the confirm hides the window");
+    for _ in 0..3 {
+        let _ = w.tick();
+    }
+    assert!(
+        w.locomotion.incense_notice.is_none(),
+        "the notice handed back"
+    );
+    assert_eq!(
+        w.actors[0].move_state.flags & 0x0008_0000,
+        0,
+        "lock released"
+    );
+}
+
+/// The notice line is the field overlay's own string with its item escape
+/// expanded; the escape names item `0x8A`.
+#[test]
+fn the_notice_line_expands_the_incense_name() {
+    let off = (legaia_engine_core::incense_notice::NOTICE_STRING_VA - 0x801C_E818) as usize;
+    let mut img = vec![0u8; off + 16];
+    img[off..off + 5].copy_from_slice(&[0xC2, 0x8A, b' ', b'x', 0]);
+    let line = legaia_engine_core::incense_notice::notice_line(&img, |id| {
+        (id == INCENSE_ITEM_ID).then(|| "Incense".to_string())
+    });
+    assert_eq!(line.as_deref(), Some(&b"Incense x"[..]));
+}

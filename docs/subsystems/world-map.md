@@ -1291,6 +1291,20 @@ from the region's `[base, base + count)` slice and latches
 `SceneMode::WorldMap → SceneMode::Battle` transition that returns to the
 overworld. A camera-only world map (no region table routed) is unchanged.
 
+The overworld also runs the field overlay's **walk tick** `FUN_801D0B90`: the
+frame driver `FUN_801D1344` calls it (`jal` at `0x801D16EC`) right before the
+locomotion controller, on the overworld as in a town, because a kingdom map is
+a mode-3 field-run scene with PROT 0897 resident (the tick, the driver, the
+region roll's Incense test at `0x801DA174` and the notice handler are
+byte-identical to the image in the `sebucus_overworld_resident` state). So the
+walk-regen passives restore on the continent, the **Incense** window
+(`_DAT_8007B600`) drains there, the region roll skips while it is open - the
+step counter does not move - and its zero edge shows the wear-off notice.
+`World::tick_world_map` runs the same fill (`walk_regen_steps`, bumped on a
+committed step), `World::tick_field_walk_regen`, `World::tick_incense_notice`
+and the Incense gate in `World::live_world_map_tick`; see
+[field-menu.md](field-menu.md#command-sub-flows-use--throw-out--arrange).
+
 In walk mode the native `play-window` camera **follows the player**: it passes
 the player's AABB-relative world position as the `pan` offset to
 [`window::world_map_camera_mvp`](../../crates/engine-render/src/window.rs), so

@@ -774,3 +774,95 @@ fn world_map_npc_talk_to_opens_and_dismisses_dialogue() {
         "dismiss emits DialogDismissed"
     );
 }
+
+/// The overworld runs the field overlay's walk tick (`FUN_801D1344` calls
+/// `FUN_801D0B90` at `0x801D16EC`), so an open Incense window drains while
+/// the party walks the continent and the region roll (`FUN_801D9E1C`,
+/// `0x801DA174`) skips while it is open. The contrast is
+/// [`world_map_region_walk_triggers_battle`], the same walk with no window.
+#[test]
+fn an_open_incense_window_drains_and_suppresses_overworld_rolls() {
+    use crate::region_encounter::{EncounterRegion, RegionEncounterTable};
+
+    let mut world = World {
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.toggles.live_gameplay_loop = true;
+    world.enter_world_map();
+    if let Some(ctrl) = world.world_map.ctrl.as_mut() {
+        ctrl.azimuth = 1024;
+    }
+    world.install_field_player(0);
+    let mut table = RegionEncounterTable::new("test");
+    table.regions.push(EncounterRegion {
+        tile_x_min: 0,
+        tile_z_min: 0,
+        tile_x_max: 60,
+        tile_z_max: 60,
+        rate_increment: 255,
+        formation_base: 5,
+        formation_count: 1,
+        setup: Default::default(),
+    });
+    world.set_world_map_regions(table);
+    world.locomotion.walk_regen_window = 0x40;
+
+    world.set_pad(input::PadButton::Right.mask());
+    let p0 = (
+        i32::from(world.actors[0].move_state.world_x),
+        i32::from(world.actors[0].move_state.world_z),
+    );
+    for _ in 0..200 {
+        let _ = world.tick();
+        assert!(
+            world.world_map.pending_encounter.is_none() && world.mode == SceneMode::WorldMap,
+            "no overworld roll while the Incense window is open"
+        );
+    }
+    let moved = (i32::from(world.actors[0].move_state.world_x) - p0.0).abs()
+        + (i32::from(world.actors[0].move_state.world_z) - p0.1).abs();
+    assert!(moved > 256, "the player crossed tiles (moved {moved})");
+    assert!(
+        world.locomotion.walk_regen_window < 0x40,
+        "walking the overworld drains the window"
+    );
+}
+
+/// The wear-off edge fires on the overworld too, and the notice holds the
+/// player until it is confirmed.
+#[test]
+fn the_incense_wear_off_notice_raises_on_the_overworld() {
+    let mut world = World::default();
+    world.enter_world_map();
+    if let Some(ctrl) = world.world_map.ctrl.as_mut() {
+        ctrl.azimuth = 1024;
+    }
+    world.install_field_player(0);
+    world.locomotion.walk_regen_window = 1;
+    world.set_pad(input::PadButton::Right.mask());
+    let mut raised = false;
+    for _ in 0..200 {
+        let _ = world.tick();
+        if world.incense_notice_shown() {
+            raised = true;
+            break;
+        }
+    }
+    assert!(raised, "walking the last Incense tick off shows the notice");
+    let at = (
+        world.actors[0].move_state.world_x,
+        world.actors[0].move_state.world_z,
+    );
+    for _ in 0..10 {
+        let _ = world.tick();
+    }
+    let now = (
+        world.actors[0].move_state.world_x,
+        world.actors[0].move_state.world_z,
+    );
+    assert_eq!(now, at, "the notice locks the walk");
+}

@@ -400,7 +400,7 @@ pub mod slot {
     pub const START_MENU: u16 = 0x27;
     /// `FUN_801F1FDC`.
     pub const PROMPT: u16 = 0x28;
-    /// `FUN_801F1E48`.
+    /// `FUN_801F1E48` - the Incense wear-off notice (entry kind `0x0B`).
     pub const SUBMENU: u16 = 0x32;
     /// Slots in the table.
     pub const COUNT: usize = 52;
@@ -1044,11 +1044,16 @@ pub fn start_menu(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> Hub
     out
 }
 
-/// PORT: FUN_801f1e48 - the hub sub-menu state machine.
+/// PORT: FUN_801f1e48 - the Incense wear-off notice.
 ///
-/// Three states: `0` clears the cursor row and installs the idle panel, `1`
-/// waits for a confirm and swaps to the confirm panel, `2` clears the board
-/// flag and hands the actor back.
+/// Three states: `0` clears the cursor row and shows window record `16`
+/// (whose painter [`single_label`] draws the field overlay's one line at
+/// [`STR_SINGLE`] - the Incense's name and that its effect is gone), `1`
+/// waits for a confirm and hides it, `2` clears the board flag and hands the
+/// actor back. The walk tick `FUN_801D0B90` reaches it: its zero edge stores
+/// the kind-`0x0B` record `0x801F2278` as the entry context, and the enter
+/// half maps kind `0x0B` to this slot (`engine-core::incense_notice`). Also
+/// op-`0x49` sub-op `0xB`'s screen.
 pub fn submenu(actor: &mut HubActor, env: &HubEnv, grid: &mut HubGrid) -> HubFrame {
     let mut out = HubFrame::default();
     match actor.sub {

@@ -350,6 +350,47 @@ pub fn event_cell_flag_writes(
     out
 }
 
+/// The cell state 0 seats the player on: column `4`, row `0` (`0x801EF630`
+/// `sw 4 -> DAT_801F35C8`, `0x801EF640` `sw 0 -> DAT_801F35CC`), with the
+/// walk-in target `(hdr[1] * 128 + 0x240, hdr[2] * 128 + 0x40)` - that
+/// cell's centre. The player walks there from wherever it stood (state `2`
+/// after the fade-in), and the arrival pass (state `3`) then runs on it.
+pub const START_COL: u8 = 4;
+/// See [`START_COL`].
+pub const START_ROW: u8 = 0;
+
+/// The walker's octant store (`0x801EF8A4..0x801EF8CC`, state `4`, off the
+/// cell under the player): the delay-slot clear always runs, terrain cells
+/// `3..=6` then store `(cell - 3) * 2`, and the animated band `0xB..=0xE`
+/// stores the **same** expression - `v1` is still `cell - 3` - so it writes
+/// `16..=22`, which the remapper's `& 7` folds onto `0, 2, 4, 6`. Every
+/// other cell leaves `0`. The raw stored value is returned.
+pub fn walker_octant(cell: u8) -> u32 {
+    let v1 = u32::from(cell).wrapping_sub(3);
+    if (3..=6).contains(&cell) || (CELL_ANIM_FIRST..=CELL_ANIM_LAST).contains(&cell) {
+        v1 << 1
+    } else {
+        0
+    }
+}
+
+/// Decode one step from the octant-remapped pad mask (`0x801EF8D8..0x801EF918`),
+/// in retail's priority order: `0x1000` row `+1`, `0x4000` row `-1`,
+/// `0x2000` column `+1`, `0x8000` column `-1`. `None` for no direction.
+pub fn step_for_mask(mask: u16) -> Option<TileStep> {
+    if mask & 0x1000 != 0 {
+        Some(TileStep::Down)
+    } else if mask & 0x4000 != 0 {
+        Some(TileStep::Up)
+    } else if mask & 0x2000 != 0 {
+        Some(TileStep::Right)
+    } else if mask & 0x8000 != 0 {
+        Some(TileStep::Left)
+    } else {
+        None
+    }
+}
+
 /// The retail procedural board fill (the `0x801EF334` arm of `FUN_801EF2B0`), cells only
 /// (the tile-actor spawns from the header template ids are host concerns).
 /// `rand` supplies the BIOS `rand` draws (`func_0x80056798`, non-negative
@@ -382,13 +423,10 @@ pub fn procedural_fill(width: u8, height: u8, mut rand: impl FnMut() -> u32) -> 
     cells
 }
 
-/// One of the four grid-step directions. The retail walk SM decodes
-/// these from the camera-facing-remapped pad
-/// (`func_0x800467e8` then mask bits `0x1000`/`0x2000`/`0x4000`/`0x8000`);
-/// callers map screen d-pad directions to board axes here. The
-/// camera-relative remap is not yet ported (the facing transform is an
-/// open RE item), so this is the camera-neutral mapping: screen-up
-/// decrements the row.
+/// One of the four grid-step directions, named for the row / column delta
+/// ([`TileBoard::neighbor`]): `Up` decrements the row, `Down` increments
+/// it. The walk SM reaches them from the octant-remapped pad mask through
+/// [`step_for_mask`] - which is where screen directions meet board axes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TileStep {
     Up,
@@ -686,6 +724,26 @@ mod tests {
         assert!(b.is_blocked(3, 3)); // oob
         assert!(!b.is_blocked(0, 0)); // floor
         assert!(!b.is_blocked(2, 2)); // floor
+    }
+
+    #[test]
+    fn walker_octant_bands_alias_the_animated_cells() {
+        assert_eq!(walker_octant(2), 0);
+        assert_eq!(walker_octant(3), 0);
+        assert_eq!(walker_octant(6), 6);
+        assert_eq!(walker_octant(7), 0);
+        assert_eq!(walker_octant(0x0B), 16);
+        assert_eq!(walker_octant(0x0E) & 7, 6);
+    }
+
+    #[test]
+    fn step_for_mask_takes_retail_priority() {
+        assert_eq!(step_for_mask(0x1000), Some(TileStep::Down));
+        assert_eq!(step_for_mask(0x3000), Some(TileStep::Down));
+        assert_eq!(step_for_mask(0x6000), Some(TileStep::Up));
+        assert_eq!(step_for_mask(0xA000), Some(TileStep::Right));
+        assert_eq!(step_for_mask(0x8000), Some(TileStep::Left));
+        assert_eq!(step_for_mask(0x0010), None);
     }
 
     #[test]

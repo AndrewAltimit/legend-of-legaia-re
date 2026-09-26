@@ -69,6 +69,7 @@ mod battle_tutorial_box;
 pub mod billboard;
 pub mod field_party_hud;
 pub mod gte;
+mod incense_notice_box;
 pub mod minigame_fx;
 pub mod move_strip;
 pub mod other_game_hud;
@@ -95,6 +96,7 @@ pub mod vram_capture;
 
 pub use battle_timed_fight_strip::*;
 pub use battle_tutorial_box::*;
+pub use incense_notice_box::*;
 pub use text_balloon_box::*;
 pub use tile_board_prompt::*;
 pub use ui_fishing::*;

@@ -51,6 +51,10 @@ pub struct TileBoardState {
     pub fade: i16,
     /// The quit prompt's cursor (`_DAT_8007BB88`, row `0` = quit).
     pub prompt_cursor: u32,
+    /// The pad-rotation octant as it stood when the board installed
+    /// (`DAT_801F35C4`, saved at `0x801EF320` and put back into `gp+0x2D8`
+    /// at teardown, `0x801EFE7C`).
+    pub saved_octant: u32,
 }
 
 impl TileBoardState {
@@ -65,6 +69,7 @@ impl TileBoardState {
             sm: crate::tile_board::sm::WALK,
             fade: crate::tile_board::FADE_FULL,
             prompt_cursor: 0,
+            saved_octant: 0,
         }
     }
 }

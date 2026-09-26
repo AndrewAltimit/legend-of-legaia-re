@@ -88,6 +88,12 @@ impl World {
         // below fires the portal's transition the *same* tick.
         self.step_world_map_locomotion();
         self.auto_engage_world_map_portals();
+        // The overworld runs the field overlay's walk tick too (the frame
+        // driver `FUN_801D1344` calls `FUN_801D0B90` right before the
+        // locomotion controller, `0x801D16EC`): walk-regen passives, the
+        // Incense window drain and its wear-off notice.
+        self.tick_field_walk_regen();
+        self.tick_incense_notice();
 
         if !self.world_map.entities.is_empty() {
             // Take the entity list out so the SM's host bridge can borrow the
@@ -226,7 +232,24 @@ impl World {
         if dx != 0 && dz != 0 {
             speed -= speed >> 2;
         }
+        let before = {
+            let ms = &self.actors[slot].move_state;
+            (ms.world_x, ms.world_z)
+        };
         self.advance_with_collision(slot, dir_bits, speed);
+        // The walk-regen accumulator `_DAT_801F2274`: the locomotion
+        // controller's tail adds `DAT_1F800393` on every frame whose step
+        // committed (`0x801D08F4..0x801D0928`), on the overworld as on the
+        // field - same fill as `step_field_locomotion`.
+        {
+            let ms = &self.actors[slot].move_state;
+            if (ms.world_x, ms.world_z) != before {
+                self.locomotion.walk_regen_steps = self
+                    .locomotion
+                    .walk_regen_steps
+                    .saturating_add(self.clock.display_frame_step as i32);
+            }
+        }
         // Terrain follow (gated, like the field walk): snap the player's Y to
         // the continent floor at the new tile. The field path snaps inside
         // `step_field_locomotion`; this path advances directly, so without
@@ -280,6 +303,12 @@ impl World {
         }
         // Roll the active region. Take the tracker out so the RNG closure can
         // borrow `self` (same pattern as the entity-SM borrow window).
+        // The Incense window skips the whole roll while it is non-zero
+        // (`FUN_801D9E1C` at `0x801DA174`, the same routine the field steps
+        // through), so the step counter does not drain either.
+        if self.locomotion.walk_regen_window != 0 {
+            return;
+        }
         if let Some(mut tracker) = self.world_map.region_tracker.take() {
             tracker.set_modifiers(self.encounter_rate_modifiers());
             // Same per-step condition walk the field path runs: the kingdom

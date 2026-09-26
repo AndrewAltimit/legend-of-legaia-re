@@ -1926,12 +1926,22 @@ The length is the VM's own bound (op `0x49` rejects `sub_op > 0xD`,
 | `8` | `0x27` | `FUN_801F1138` - the start / confirm menu |
 | `9` | `0x28` | `FUN_801F1FDC` - the prompt |
 | `0xA` | `0x31` | `FUN_801ED590` |
-| `0xB` | `0x32` | `FUN_801F1E48` - the sub-menu |
+| `0xB` | `0x32` | `FUN_801F1E48` - the Incense wear-off notice (below) |
 | `0xC` | `0x33` | `FUN_801EDF00` |
 
 Rows `3` and `5` cross-validate the read: they name the name-entry screen and
 the tile-board walk, the two sub-ops identified independently elsewhere on
-this page. Port: `legaia_engine_vm::baka_hub_actors::OP49_SUBOP_SLOTS`, with
+this page.
+
+Row `0xB` is not a sub-menu. `FUN_801F1E48` shows window record `16`, whose
+painter `FUN_801F1B64` draws exactly one string, `0x801CF1A4` - the `0xC2
+0x8A` item-name escape (item `0x8A`, the Incense) and the line saying its
+effect is gone - then waits for a confirm or cancel edge and hands back. Its
+real caller is not a script: the walk tick `FUN_801D0B90` stores the static
+record `0x801F2278`, whose first byte is `0x0B`, into `_DAT_8007B450` on the
+tick the Incense window reaches zero, so the enter half's table read lands on
+this row ([field-menu.md](field-menu.md#command-sub-flows-use--throw-out--arrange)). The "sub-menu"
+name described the state machine's shape, not what it draws. Port: `legaia_engine_vm::baka_hub_actors::OP49_SUBOP_SLOTS`, with
 the disc pin in `crates/engine-core/tests/w1b_hub_tables_disc.rs`.
 
 #### The panel-window records and the descriptors that install them

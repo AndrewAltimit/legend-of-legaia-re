@@ -678,25 +678,24 @@ pub(crate) fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {
     }
 }
 
-/// Decode one tile-step direction from the pad. Mirrors the single-
-/// direction decode in the walk SM (`overlay_0897_801ef2b0` case 4):
-/// vertical takes priority over horizontal, and only one axis moves per
-/// step. D-pad only (board movement is digital).
-pub(crate) fn tile_step_from_input(
-    input: &input::InputState,
-) -> Option<crate::tile_board::TileStep> {
-    use crate::tile_board::TileStep;
-    if input.pressed(input::PadButton::Up) {
-        Some(TileStep::Up)
-    } else if input.pressed(input::PadButton::Down) {
-        Some(TileStep::Down)
-    } else if input.pressed(input::PadButton::Left) {
-        Some(TileStep::Left)
-    } else if input.pressed(input::PadButton::Right) {
-        Some(TileStep::Right)
-    } else {
-        None
+/// The held d-pad as retail's direction nibble (`0x1000` up, `0x4000` down,
+/// `0x2000` right, `0x8000` left) - the mask the tile board's walker hands
+/// the remapper `FUN_800467E8` (`_DAT_8007B850`, the held word). Opposite
+/// keys cancel, as in the field decode: a d-pad cannot press both, and a
+/// mask outside the compass ring would fall out of the remapper's scan.
+pub(crate) fn tile_board_held_mask(input: &input::InputState) -> u16 {
+    let up = input.pressed(input::PadButton::Up);
+    let down = input.pressed(input::PadButton::Down);
+    let right = input.pressed(input::PadButton::Right);
+    let left = input.pressed(input::PadButton::Left);
+    let mut held = 0u16;
+    if up != down {
+        held |= if up { 0x1000 } else { 0x4000 };
     }
+    if right != left {
+        held |= if right { 0x2000 } else { 0x8000 };
+    }
+    held
 }
 
 /// Bit 19 of the scratchpad word `0x1F800394` (`World::flags.story_flags`):
