@@ -226,10 +226,6 @@ pub struct LegaiaRuntime {
     pub(crate) fishing_banners: legaia_engine_ui::FishingBanners,
     /// This tick's live banner draws, folded into the fishing HUD list.
     pub(crate) fishing_banner_draws: Vec<legaia_engine_ui::HudDraw>,
-    /// The two point-exchange venue pages decoded alongside the species table
-    /// when a fishing session starts. `None` until then (or if they don't
-    /// decode).
-    pub(crate) fishing_venues: Option<[legaia_engine_core::fishing::PrizeExchange; 2]>,
     /// Whether [`Self::enter_field`] arms the live gameplay loop (step-driven
     /// random encounters, Field -> Battle -> Field with loot). Defaults on -
     /// the page is the playable host - and is the browser twin of the native
@@ -442,7 +438,6 @@ impl LegaiaRuntime {
             cards: [const { None }; crate::cards::CARD_SLOTS],
             fishing_banners: Default::default(),
             fishing_banner_draws: Vec::new(),
-            fishing_venues: None,
             equip_stats: None,
             seru_names: None,
             dev_menu: None,
@@ -528,6 +523,14 @@ impl LegaiaRuntime {
             // dropped the whole feature - a shop root row short.
             host.world.install_seru_trade_config(s);
             self.seru_names = legaia_asset::spell_names::SpellNameTable::from_scus(s);
+            // The static progression tables (XP curve + correction divisors,
+            // stat growth, victory pose, XA cue durations, magic-XP
+            // thresholds, accessory passives) - the same single engine install
+            // the native boot calls. Without it this host levelled on the flat
+            // placeholder growth, never levelled a summon, granted no
+            // accessory passives, dropped every melee grunt / cast voice and
+            // skipped the victory pose's `rand()`.
+            host.world.install_retail_progression_tables(s);
         }
         // Sound-effect descriptors from the same executable (`DAT_8006F198`,
         // see docs/formats/sfx-table.md). Data only - the program bank uploads
@@ -988,7 +991,12 @@ impl LegaiaRuntime {
         // The engine camera, ticked in the native session's order
         // (`BootSession::tick`): free-roam reset, compass azimuth into the
         // world, op-`0x45` event routing, then the per-frame globals advance.
-        self.tick_camera(matches!(event, SceneTickEvent::SceneEntered { .. }));
+        // The post-FMV hand-off swaps the scene outside the field VM's
+        // transition op (no `SceneEntered`), and is a scene entry all the
+        // same: the camera globals reset on it too, as on a door.
+        self.tick_camera(
+            matches!(event, SceneTickEvent::SceneEntered { .. }) || !fmv_handoff_scene.is_empty(),
+        );
         // Effect scene-graphs, ticked exactly where the native window ticks
         // them: drain the two production spawn requests (a player Seru-magic
         // cast, and a non-summon move whose power record carries a spawnable
