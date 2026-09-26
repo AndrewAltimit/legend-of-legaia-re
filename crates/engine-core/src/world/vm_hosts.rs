@@ -645,6 +645,10 @@ pub(super) struct FieldHostImpl<'a> {
 }
 
 impl<'a> FieldHost for FieldHostImpl<'a> {
+    fn player_cflag(&mut self, bit: u8, set: bool) -> bool {
+        self.world.field_player_cflag(bit, set)
+    }
+
     fn global_flags(&self) -> u32 {
         self.world.flags.story_flags
     }
