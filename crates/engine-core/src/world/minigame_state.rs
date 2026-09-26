@@ -194,6 +194,11 @@ pub struct MinigameState {
     /// (the sequence-clear banner fires from the judge) rather than
     /// presentation the host drives.
     pub fx: crate::minigame_fx::MinigameFxPool,
+    /// The fishing **venue actors** (wander fish, reeling line, sub-screen
+    /// sway), stepped by [`crate::fishing_venue::tick_fishing_venue`] from
+    /// each host's minigame frame so the ripples, bursts, venue camera and
+    /// swaying prize panel reach every host that runs the pond.
+    pub fishing_venue: crate::fishing_venue::FishingVenue,
 }
 
 impl MinigameState {
@@ -252,6 +257,7 @@ impl MinigameState {
             pending_sfx: Vec::new(),
             dance_hud_art_staged: false,
             fx: crate::minigame_fx::MinigameFxPool::new(),
+            fishing_venue: crate::fishing_venue::FishingVenue::default(),
         }
     }
 }

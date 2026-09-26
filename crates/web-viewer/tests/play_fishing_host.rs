@@ -150,6 +150,48 @@ fn pad_word_and_tick_frame_drive_the_cast() {
     );
 }
 
+/// The fishing venue actors run on this host too, through the shared engine
+/// kernel (`fishing_venue::tick_fishing_venue_on_host`) the native window's
+/// minigame frame calls. With the page's `tick_fishing_actors` unwired the
+/// wander actor is never armed, the held D-pad steers nothing and no retarget
+/// ripple reaches the world's effect pool.
+#[test]
+fn the_venue_actors_run_on_the_play_page() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    assert!(rt.play_fishing_start());
+    let state = |rt: &LegaiaRuntime| -> serde_json::Value {
+        serde_json::from_str(&rt.play_fishing_state_json()).expect("state json")
+    };
+    rt.set_pad(0);
+    rt.tick_frame().expect("tick");
+    let st = state(&rt);
+    let facing0 = st["wander"]["facing"]
+        .as_i64()
+        .unwrap_or_else(|| panic!("the wander actor was never armed: {st}"));
+    // Hold D-pad right at the idle shore: the fish turns, and its retarget
+    // rolls spawn ripples into the shared pool.
+    const RIGHT: u16 = 0x0020;
+    rt.set_pad(RIGHT);
+    let mut peak_parts = 0;
+    for _ in 0..600 {
+        rt.tick_frame().expect("tick");
+        peak_parts = peak_parts.max(state(&rt)["fx_parts"].as_i64().unwrap_or(0));
+    }
+    let st = state(&rt);
+    assert_ne!(
+        st["wander"]["facing"].as_i64(),
+        Some(facing0),
+        "the held D-pad did not steer the wander: {st}"
+    );
+    assert!(
+        peak_parts > 0,
+        "no retarget ripple reached the world's effect pool"
+    );
+}
+
 /// Leaving the minigame has to restore the suspended scene and bank the
 /// points, or entering it once would strand the field for the rest of the
 /// session.

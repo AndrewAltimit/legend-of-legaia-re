@@ -605,7 +605,7 @@ impl PlayWindowApp {
             // dev-menu session (the engine's `_DAT_8007B9B0` print-flag
             // stand-in) is up AND the held pad carries the modifier bit -
             // the same two-sided gate retail applies.
-            if let Some(wd) = &self.fish_wander {
+            if let Some(wd) = &self.session.host.world.minigames.fishing_venue.wander {
                 use legaia_engine_core::fishing_actors::{
                     debug_readout_visible, debug_tile, tracked_point_separation,
                 };
@@ -699,7 +699,7 @@ impl PlayWindowApp {
             // menu-picker rect, centre-x converted to a left edge with the
             // two-left / six-down skin bias, swaying on the overlay's idle
             // sway triple (FUN_801d03b0). The list is anchored inside it.
-            let sway = self.fishing_sway_offset;
+            let sway = world.minigames.fishing_venue.sway_offset;
             let panel = legaia_engine_core::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50);
             let (px, py) = panel
                 .map(|p| (p.x as i32 + sway.0 as i32, p.y as i32 + sway.1 as i32))

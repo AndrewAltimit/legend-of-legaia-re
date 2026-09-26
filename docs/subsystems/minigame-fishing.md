@@ -804,8 +804,11 @@ and queue the hook / celebration cues. `P` opens the [point
 exchange](#point-exchange-prize-shop) (Up/Down move, Left/Right switch venue,
 Enter trades), which owns the pad while open.
 
-The same host also runs the overlay's **actor-side frame**
-(`window/minigames.rs`, `tick_fishing_actors`):
+Both play hosts also run the overlay's **actor-side frame**, through one
+engine kernel (`engine-core::fishing_venue::tick_fishing_venue_on_host`, its
+actors on `World::minigames.fishing_venue`); each host's
+`tick_fishing_actors` is that call plus applying the returned venue-camera
+writes to its own engine camera:
 
 - a free-swimming fish (`fishing_actors::FishWander` - the `FUN_801d2278`
   facing step / wander re-roll / camera publish as one advancing object),

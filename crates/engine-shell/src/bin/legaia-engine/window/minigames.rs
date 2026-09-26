@@ -309,156 +309,20 @@ impl PlayWindowApp {
         }
     }
 
-    /// The venue scene's `.MAP` extended footprint - the engine's
-    /// `_DAT_1F8003EC` floor buffer (tile records at `+0`, height/wall grid
-    /// at `+0x4000`, cell grid at `+0x8000`). `None` when the current scene
-    /// carries no field map.
-    fn venue_floor_bytes(&self) -> Option<Vec<u8>> {
-        let scene = self.session.host.scene.as_ref()?;
-        let idx = scene.field_map_index(&self.session.host.index)?;
-        self.session.host.index.entry_bytes_extended(idx).ok()
-    }
-
     /// The fishing venue's actor-side frame: the free-swimming fish wander
-    /// (at the shore, before the lure flies), the venue floor solve for its
-    /// height, the retail camera publish, the reeling-line actor across
-    /// hook -> fight -> celebration, and the sub-screen idle sway.
+    /// and its retarget ripple, the venue floor solve, the retail camera
+    /// publish, the reeling-line actor and its catch bursts, and the
+    /// sub-screen idle sway.
     ///
-    /// The cast lure itself is the session's
-    /// ([`PondSession::lure_actor`](legaia_engine_core::fishing::PondSession::lure_actor)),
-    /// cast from the venue the engine attached at entry, so its walk-grid
-    /// drift and water class are the same on every host; this frame only
-    /// reads it, to hang the celebration bursts off it.
+    /// All of it is the shared engine kernel
+    /// ([`legaia_engine_core::fishing_venue::tick_fishing_venue_on_host`]),
+    /// whose actors live on `World::minigames.fishing_venue`; the browser play
+    /// page runs the same call. This host only applies the camera writes to
+    /// its own session camera.
     pub(super) fn tick_fishing_actors(&mut self) {
-        use legaia_engine_core::fishing::{PondEvent, PondPhase};
-        use legaia_engine_core::fishing_actors as fa;
-        use legaia_engine_core::fishing_chrome as fc;
-        if self.session.host.world.mode != SceneMode::Fishing {
-            self.fish_wander = None;
-            self.fish_line = None;
-            self.fishing_floor = None;
-            self.fishing_sway_offset = (0, 0);
-            return;
-        }
-        let Some(phase) = self
-            .session
-            .host
-            .world
-            .minigames
-            .fishing
-            .as_ref()
-            .map(|s| s.phase())
-        else {
-            return;
-        };
-        // One-time venue arm: the wander actor, the floor buffer, and the
-        // venue camera reset (through the engine camera's retail global
-        // trios; axis 4 = `TR.y` deliberately untouched, as retail leaves
-        // `_DAT_800840BC` alone).
-        if self.fish_wander.is_none() {
-            self.fish_wander = Some(fa::FishWander::new(0x400, 0, 0x400));
-            self.fishing_floor = self.venue_floor_bytes();
-            let reset = fc::venue_camera_reset();
-            let g = &mut self.session.camera.globals.0;
-            g[0] = reset.rot[0] as i32;
-            g[1] = reset.rot[1] as i32;
-            g[2] = reset.rot[2] as i32;
-            g[3] = reset.tr_x;
-            g[5] = reset.tr_z;
-        }
-        // The wander runs while the cast is idle (retail's shore states
-        // `0xc` / `0xd` / `0x14`, before the lure flies); the D-pad steers
-        // the fish.
-        if matches!(
-            phase,
-            PondPhase::Idle | PondPhase::WindUp | PondPhase::Power
-        ) {
-            let held = self.pad.rotate_right(8);
-            let mut rng = self.minigame_rng;
-            let rolled = self.fish_wander.as_mut().and_then(|w| {
-                w.tick(held, || {
-                    let mut x = rng;
-                    x ^= x << 13;
-                    x ^= x >> 17;
-                    x ^= x << 5;
-                    rng = x;
-                    x
-                })
-            });
-            self.minigame_rng = rng;
-            if rolled.is_some()
-                && let Some(w) = self.fish_wander.as_ref()
-                && let Some(r) = fc::ripple_spawn(w.x, w.z, 0)
-            {
-                self.session.host.world.minigames.fx.spawn_ripple(&r);
-            }
-        }
-        // Settle the actor onto the venue floor (the `.MAP` height grid
-        // through the shared ground solver) and publish its camera.
-        if let (Some(w), Some(buf)) = (self.fish_wander.as_mut(), self.fishing_floor.as_ref()) {
-            let ramp = legaia_engine_core::minigame_floor::height_ramp();
-            let grid = legaia_engine_core::minigame_floor::FloorGrid::new(buf);
-            let t = fc::float_actor_tick(grid, w.x, w.z, 0, &ramp);
-            w.y = t.y;
-        }
-        if let Some(w) = self.fish_wander.as_ref() {
-            let cam = w.camera();
-            let g = &mut self.session.camera.globals.0;
-            g[1] = cam.yaw as i32;
-            g[4] = cam.pitch_term;
-            g[6] = cam.translation.0;
-            g[7] = cam.translation.1;
-            g[8] = cam.translation.2;
-        }
-        // The line actor: armed on the hook event, landed on the catch
-        // event, dropped on a snap.
-        let events = self.session.host.world.minigames.fishing_events.clone();
-        for e in &events {
-            match *e {
-                PondEvent::Hooked(_) => self.fish_line = Some(fa::LineActorSim::hooked()),
-                PondEvent::Landed(points) => match self.fish_line.as_mut() {
-                    Some(line) => line.land(points),
-                    None => self.fish_line = None,
-                },
-                PondEvent::Snapped => self.fish_line = None,
-                PondEvent::Splash | PondEvent::Recast => {}
-            }
-        }
-        if let Some(mut line) = self.fish_line.take() {
-            let f = line.tick(1);
-            // Retail's celebration bursts ride the line actor, which sits on
-            // the lure - not on the free-swimming fish the venue also draws.
-            let origin = self
-                .session
-                .host
-                .world
-                .minigames
-                .fishing
-                .as_ref()
-                .and_then(|s| s.lure_actor())
-                .map(|l| (l.x(), l.z))
-                .or_else(|| self.fish_wander.as_ref().map(|w| (w.x, w.z)))
-                .unwrap_or((0, 0));
-            // The bursts' *visuals* are this actor's. Their **cues** are not -
-            // the hook cue and the celebration tiers are queued by
-            // `World::tick_fishing` off the session's own events, where all
-            // three hosts drain them (`drain_minigame_sfx_cues`). Firing them
-            // here as well would play each one twice on this host alone.
-            for b in &f.bursts {
-                self.session.host.world.minigames.fx.spawn_burst(b, origin);
-            }
-            if !f.done {
-                self.fish_line = Some(line);
-            }
-        }
-        // Sub-screen idle sway while the point-exchange list is up.
-        if self.session.host.world.minigames.fishing_exchange.is_some() {
-            let (v, next) = fc::sway_vector(sway_sine_table(), self.fishing_sway_angle, 1);
-            self.fishing_sway_angle = next;
-            self.fishing_sway_offset = (v.x, v.y);
-        } else {
-            self.fishing_sway_offset = (0, 0);
-        }
+        let writes =
+            legaia_engine_core::fishing_venue::tick_fishing_venue_on_host(&mut self.session.host);
+        writes.apply(&mut self.session.camera);
     }
 
     /// Consume the Baka Fighter round-chrome frame the duel produced this
@@ -1593,23 +1457,6 @@ impl PlayWindowApp {
             .start_global_bgm(legaia_engine_core::music_labels::BATTLE_THEME_1_BGM_ID);
         true
     }
-}
-
-/// The 4096-step sine table the sub-screen sway samples. Retail reads the
-/// shared table through `*_DAT_8007B81C` (runtime data the port does not
-/// stage); the host synthesizes an equivalent once.
-fn sway_sine_table() -> &'static [i16] {
-    use std::sync::OnceLock;
-    static TABLE: OnceLock<Vec<i16>> = OnceLock::new();
-    TABLE.get_or_init(|| {
-        (0..legaia_engine_core::fishing_chrome::SINE_TURN)
-            .map(|i| {
-                let f = (i as f64) * std::f64::consts::TAU
-                    / legaia_engine_core::fishing_chrome::SINE_TURN as f64;
-                (f.sin() * 4096.0).round() as i16
-            })
-            .collect()
-    })
 }
 
 /// Rows the backdrop shade's vertical Gouraud ramp is cut into for the

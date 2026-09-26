@@ -857,20 +857,8 @@ struct PlayWindowApp {
     // world's own dance tick, so the browser play page counts in on the same
     // frames and the **door-warp** entry gets a count-in at all. The HUD
     // builder reads `dance_countin_banner` / `dance_tutorial_frame` off the
-    // world.
-    /// The fishing venue's free-swimming fish actor (idle/cast phases).
-    fish_wander: Option<legaia_engine_core::fishing_actors::FishWander>,
-    /// The reeling-line actor sim (hook -> fight -> celebration).
-    fish_line: Option<legaia_engine_core::fishing_actors::LineActorSim>,
-    /// The venue scene's `.MAP` extended footprint, read at fishing entry -
-    /// the engine's `_DAT_1F8003EC` floor buffer the ground solver reads.
-    fishing_floor: Option<Vec<u8>>,
-    /// The fishing sub-screens' idle-sway phase (`0x801D9118`).
-    fishing_sway_angle: i32,
-    /// This frame's sway offset, applied to the point-exchange panel.
-    fishing_sway_offset: (i16, i16),
-    /// Small xorshift state for the minigame actors' `rand()` draws.
-    minigame_rng: u32,
+    // world. The fishing venue actors moved the same way, onto
+    // `World::minigames.fishing_venue`.
     /// The duel overlay's parsed HUD widget table, for resolving chrome
     /// glyph draws (`parse_baka_hud`).
     baka_hud_widgets: Option<Vec<legaia_asset::baka_opponents::BakaHudWidget>>,
