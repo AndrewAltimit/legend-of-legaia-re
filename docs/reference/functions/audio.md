@@ -272,7 +272,22 @@ leg's whole retail contract; see
 
 ### `8001E54C`
 
-**Asset / SEQ stream installer.** `(packed_slot, record_array, budget)`. The opcode-driven asset-upload interpreter: walks a packed command array (each record carries a `u24` size + `u8` op at byte `+3`, advancing `size>>2` words), dispatching per op - `0x00` SEQ-slot release (`FUN_8001FF58`) + raw blit; `0x01` VAB/asset transfer (`FUN_8002630C`); `0x02`/`0x0C` actor-sound teardown+release (`FUN_800266E0`/`FUN_80026520`) then blit + finalize (`FUN_80026410`); `0x03` chunked `FUN_8002630C` transfer with a partial-budget split (returns the leftover); `0x04` raises the in-progress flag `gp+0x700`. Per-slot SEQ state lives in the 12-byte-stride table at `0x80091508` (the loaded flag at `+0xB` that `FUN_8001FF58` clears on release). Gated on the field/dual-mode flag `_DAT_8007B868`.
+**Asset / SEQ stream installer.** `(packed_slot, record_array, budget)`. The
+opcode-driven asset-upload interpreter: walks a packed command array (each
+record carries a `u24` size + `u8` op at byte `+3`, advancing `size>>2` words),
+dispatching per op through the jump table at `0x80010600` - `0x00` SEQ-slot
+release (`FUN_8001FF58`) + header copy; `0x01` VAB open + body transfer
+(`FUN_8002630C`); `0x02` the **SEQ install**: detach and close the slot's SEQ
+player (`FUN_800266E0` / `FUN_80026520`), copy the payload into the slot's
+staging buffer and open it with `SsSeqOpen` through `FUN_80026410`; `0x0C` the
+same open on the fixed record `0x800705AC`; `0x03` chunked `FUN_8002630C`
+transfer with a partial-budget split (returns the leftover); `0x04` raises the
+in-progress flag `gp+0x700`. Per-slot SEQ state lives in the 12-byte-stride
+table at `0x80091508` (the loaded flag at `+0xB` that `FUN_8001FF58` clears on
+release). Gated on the field/dual-mode flag `_DAT_8007B868`. No arm is a VRAM
+upload and none decodes LZS; every disc entry with a `pQES` score past offset 0
+carries it as a type-`2` chunk (90 of 90), and no stream carries type `0x0C`.
+Port `legaia_engine_core::chunk_install`.
 
 The install counterpart of the SEQ-slot release `FUN_8001FF58`; reused by the flame-effect loader `FUN_80020050`. `see ghidra/scripts/funcs/8001e54c.txt`.
 

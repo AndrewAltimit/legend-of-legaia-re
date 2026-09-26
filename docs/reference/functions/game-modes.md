@@ -22,7 +22,7 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `800204F8` | **Actor animation-clip selector + cursor clock.** Picks one of three clip banks from `actor[+0x10] & 0x01000000` / `actor[+0x5C] < 0x400` (`0x80020534..0x80020598`: party `_DAT_8007B75C`, low-id `_DAT_8007B888` = the scene's type-`0x05` bank, on the world map kingdom slot 4; high-id `_DAT_8007B840` = type `0x0B` MOVE2), resolves `rec = bank + *(u32*)(bank + (id & 0x3FF) * 4)` **1-based** (`0x80020584`), stores it at `actor[+0x4C]`, sets `actor[+0x56] = 1`, and advances the 1/16-frame cursor `actor[+0x68]` by `_DAT_1F800393 * step` with wrap at `frame_count << 4`. Not a Tactical-Arts move-table parser. See [`world-map-overlay.md`](../../formats/world-map-overlay.md). |
 | `80020740` | **Morph-weight ramp envelope.** Move-buffer pre-tick helper, called from `FUN_800204F8` when actor flag bit `0x1000` is set. Ramps each lane's weight at `+0xA0 + lane*2` up to `0x1000` and back down, cascading lane by lane, with the completion bitfield at `+0x7C`. The up / down velocities at `+0xB8 + lane*2` / `+0xC8 + lane*2` are read **per lane** (`0xb8(a1)` with `a1 = actor + lane*2`), authored one triple per lane by move-VM op `0x0A`. Ported as `legaia_engine_vm::move_buffer::envelope_tick`. `see ghidra/scripts/funcs/80020740.txt`. |
 | `80023070` | **Move-table opcode interpreter.** 71 opcodes (`0x00..0x46`); JT at `0x80010778`. Walks the per-actor move buffer at `actor[+0x48]` indexed by PC at `actor[+0x70]` (u16 units). Opcode `0x2F` escapes to `FUN_801D362C`. See [`subsystems/move-vm.md`](../../subsystems/move-vm.md). |
-| `8003774C` | **Per-actor walk kernel: interprets the field-VM yield-class ops in place** from the pointer the dispatcher parks at `actor[+0x94]` (`0x37/0x41/0x47`, `0x38` with nonzero duration), resolving the same `0x80` extended-target convention. `0x37/0x41` = glide-step (axis `_DAT_80073F14[b0 & 7]`, base step `4 << ((b0>>5 & 4)\|(b1>>6))`, distance `(b1 & 0x3F) * base`), `0x38` = bearing ramp toward `0x80073F04[b0 & 0xF]`, `0x47` = XZ approach at base step `4 << (b2 & 7)`, mode nibble `b2 >> 4`, `0x4C` = line-of-sight. Reads `_DAT_1F800393` (dt); cursor `actor[+0x54]`; drives `+0x14/+0x18/+0x26`. Dispatched per frame by `FUN_8003BC08` on flag `0x400` (the HALT bit the yield ops set). No separate motion-bytecode stream exists - the record bytes are the stream. |
+| `8003774C` | Per-actor walk kernel over the field-VM yield-class ops - [details ↓](#8003774c) |
 | `80021934` | **Scene-transition streaming actor** (5-state SM over `actor+0x1A`, jump table `0x80010760`; real entry 3 insns before the `0x80021940` prologue, in never-analyzed space). Spawned on demand by `FUN_8001FD44` via `FUN_80020DE0` from the spawn descriptor at `0x80070734` (of the phase-misaligned family `0x800705FC..0x80070763`, NOT a mode-table row). Streams the destination scene's `DATA\FIELD\<scene>.LZS` bundle (raw `scene_base+3`) into `_DAT_8007B85C`, then hands off with `_DAT_8007B83C = 2` (MAIN INIT). Closes the `_DAT_8007B85C` staging question in [`asset-loader.md`](../../subsystems/asset-loader.md). [details ↓](#80021934). Port [`engine-core::scene_transition_actor`](../../../crates/engine-core/src/scene_transition_actor.rs). |
 | `80021B04` | Actor-spawn helper. Builds per-actor OBJECT pointer table at `actor[0x44]+4`. Calls `FUN_80023070` once at spawn to run the initialisation opcodes in the move buffer. |
 | `80050ED4` | **Summon / effect-actor pool allocator.** Scans the 0x60-slot pointer pool at `DAT_801C90F0`; on the first null slot calls `FUN_80021B04` (the actor-spawn helper above), stores the new actor pointer into the slot, and returns it (returns `0` when the pool is full). The alternate spawn path the effect VM takes for the "summon" effect kind instead of the generic spawn helper. Cited from `crates/engine-vm/src/effect_vm.rs` (`func_0x80050ed4` summon handler). `see ghidra/scripts/funcs/80050ed4.txt`. |
@@ -111,6 +111,21 @@ The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § 
 ## Function details
 
 Full write-ups for the rows above whose detail outgrew a table cell. Linked from each section table by **[details ↓]**.
+
+### `8003774C`
+
+**Per-actor walk kernel: interprets the field-VM yield-class ops in place** from
+the pointer the dispatcher parks at `actor[+0x94]` (`0x37/0x41/0x47`, `0x38`
+with nonzero duration), resolving the same `0x80` extended-target convention.
+`0x37/0x41` = glide-step (axis `_DAT_80073F14[b0 & 7]`, base step `4 << ((b0>>5
+& 4)\|(b1>>6))`, distance `(b1 & 0x3F) * base`), `0x38` = bearing ramp toward
+`0x80073F04[b0 & 0xF]`, `0x47` = XZ approach at base step `4 << (b2 & 7)`, mode
+nibble `b2 >> 4`, `0x4C` = FaceTarget. Reads `_DAT_1F800393` (dt); cursor
+`actor[+0x54]`; drives `+0x14/+0x18/+0x26`. Dispatched per frame by
+`FUN_8003BC08` on flag `0x400` (the HALT bit the yield ops set). No separate
+motion-bytecode stream exists - the record bytes are the stream. Its FaceTarget
+leg releases an inn halt
+([`script-vm.md`](../../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)).
 
 ### `8001AA68`
 
