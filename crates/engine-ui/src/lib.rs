@@ -88,6 +88,7 @@ pub mod ui_menu_window_painters;
 mod ui_menu_window_painters_large;
 mod ui_overlay;
 pub mod ui_prize_exchange;
+pub mod ui_slot_paylines;
 mod ui_title_save;
 pub mod vram_capture;
 

@@ -684,6 +684,17 @@ fn the_payline_prims_come_from_the_ported_pass() {
             // Model-space endpoints, straight out of the parsed table.
             assert_eq!(p["a"], scene["paylines"][i]["a"]);
             assert_eq!(p["b"], scene["paylines"][i]["b"]);
+            // Screen endpoints from the engine's one projection - the ones
+            // the native window draws too.
+            let a = &scene["paylines"][i]["a"];
+            let (sx, sy) = legaia_asset::minigame_slot_scene::project(
+                a[0].as_i64().unwrap() as i32,
+                a[1].as_i64().unwrap() as i32,
+                a[2].as_i64().unwrap() as i32,
+            );
+            assert!((p["sa"][0].as_f64().unwrap() - sx as f64).abs() < 1e-3);
+            assert!((p["sa"][1].as_f64().unwrap() - sy as f64).abs() < 1e-3);
+            assert!(p["sb"].is_array());
         }
     }
 }
