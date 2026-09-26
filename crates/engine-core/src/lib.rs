@@ -38,6 +38,7 @@ pub mod camera_zone;
 pub mod capture_observations;
 pub mod card_bu_io;
 pub mod card_flow;
+pub mod card_write;
 pub mod cd_dma;
 pub mod cheat_applier;
 pub mod chunk_install;

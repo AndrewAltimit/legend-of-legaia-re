@@ -307,6 +307,11 @@ pub struct MountedCard {
     /// `true` once a save has written into this card and the host has not
     /// exported it since.
     pub dirty: bool,
+    /// The file this card was mounted from, when it was mounted from one
+    /// ([`Self::open`]). [`Self::persist`] writes the card back here; a card
+    /// mounted from bytes (an upload, a fixture) has none and its host
+    /// exports it instead.
+    pub path: Option<std::path::PathBuf>,
 }
 
 impl MountedCard {
@@ -323,6 +328,7 @@ impl MountedCard {
             label: label.into(),
             view,
             dirty: false,
+            path: None,
         })
     }
 
@@ -337,8 +343,29 @@ impl MountedCard {
             .and_then(|n| n.to_str())
             .unwrap_or("MEMORY CARD")
             .to_string();
-        Self::from_bytes(bytes, label)
-            .with_context(|| format!("mount memory-card image {}", path.display()))
+        let mut card = Self::from_bytes(bytes, label)
+            .with_context(|| format!("mount memory-card image {}", path.display()))?;
+        card.path = Some(path.to_path_buf());
+        Ok(card)
+    }
+
+    /// Write a dirty card back to the file it was mounted from, and clear
+    /// the dirty bit. A clean card, or one with no [`Self::path`], writes
+    /// nothing and returns `Ok(false)`.
+    ///
+    /// The bytes are the container exactly as mounted plus the in-place block
+    /// writes, never re-encoded, so every save the card held before is still
+    /// there byte for byte.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn persist(&mut self) -> Result<bool> {
+        use anyhow::Context;
+        let Some(path) = self.path.as_ref().filter(|_| self.dirty) else {
+            return Ok(false);
+        };
+        std::fs::write(path, &self.bytes)
+            .with_context(|| format!("write memory-card image {}", path.display()))?;
+        self.dirty = false;
+        Ok(true)
     }
 
     /// The save in grid `cell`, or `None` when the block holds none.
@@ -388,6 +415,29 @@ mod tests {
         let b = BLOCK_SIZE;
         buf[b..b + 2].copy_from_slice(&SAVE_BLOCK_MAGIC);
         buf
+    }
+
+    /// `persist` writes a dirty card back to the file it was opened from,
+    /// and a clean card (or one mounted from bytes) writes nothing.
+    #[test]
+    fn persist_writes_a_dirty_card_back_to_its_file() {
+        let dir = std::env::temp_dir().join(format!("legaia-card-persist-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("card.mcr");
+        std::fs::write(&path, raw_card()).unwrap();
+        let mut card = MountedCard::open(&path).unwrap();
+        assert_eq!(card.path.as_deref(), Some(path.as_path()));
+        assert!(!card.persist().unwrap(), "a clean card writes nothing");
+        let b = BLOCK_SIZE;
+        card.bytes[b + 0x100] = 0xAB;
+        card.dirty = true;
+        assert!(card.persist().unwrap());
+        assert!(!card.dirty);
+        assert_eq!(std::fs::read(&path).unwrap()[b + 0x100], 0xAB);
+        let mut loose = MountedCard::from_bytes(raw_card(), "upload").unwrap();
+        loose.dirty = true;
+        assert!(!loose.persist().unwrap(), "no file to write back to");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

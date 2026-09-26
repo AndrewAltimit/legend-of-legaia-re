@@ -22,7 +22,7 @@
 //! Persistence (localStorage, base64) and file downloads stay on the JS
 //! side (`site/js/legaia-saves.js`) - this module is serialization only.
 
-use legaia_save::{SaveFile, emu};
+use legaia_save::{SaveFile, SaveResume, emu};
 use wasm_bindgen::prelude::*;
 
 use crate::runtime::LegaiaRuntime;
@@ -281,11 +281,27 @@ impl LegaiaRuntime {
                     .to_string(),
             );
         }
-        let sf =
-            SaveFile::parse(bytes).map_err(|e| format!("import_save: invalid LGSF file: {e}"))?;
-        let summary = lgsf_summary(&sf).to_string();
+        let (sf, resume) = SaveFile::parse_with_resume(bytes)
+            .map_err(|e| format!("import_save: invalid LGSF file: {e}"))?;
+        let mut summary = lgsf_summary(&sf);
+        summary["scene"] = serde_json::Value::from(resume.scene.clone());
+        self.land_imported_save(sf, &resume.scene);
+        Ok(summary.to_string())
+    }
+
+    /// Land an imported save the way the in-canvas card Load does: now (so
+    /// the next frame reads the party), and - when the save names the scene
+    /// it was written in, which the page then enters - parked for that entry,
+    /// which skips the picker's story baseline and re-applies the save after
+    /// the scene swap. Loading first and entering after, with nothing parked,
+    /// let the baseline clear system flags `0x141` / `0x147` in every
+    /// imported save; `BootSession::enter_field_live_from_save` is the native
+    /// order this matches.
+    fn land_imported_save(&mut self, sf: SaveFile, scene: &str) {
+        if !scene.is_empty() {
+            self.pending_card_resume = Some(sf.clone());
+        }
         self.world_mut().load_full(sf);
-        Ok(summary)
     }
 
     /// JsValue-free core of [`Self::import_card_save`].
@@ -306,7 +322,8 @@ impl LegaiaRuntime {
             return Err("import_card_save: save block holds no character records".to_string());
         }
         let summary = card_save_summary(sc, &save_ref).to_string();
-        self.world_mut().load_full(sf);
+        let scene = SaveResume::from_retail_sc_block(sc).scene;
+        self.land_imported_save(sf, &scene);
         Ok(summary)
     }
 }
@@ -317,7 +334,12 @@ impl LegaiaRuntime {
     /// (`World::save_full().write()`). The page offers this as a `.lgsf`
     /// download and persists it (base64) in localStorage.
     pub fn export_save(&mut self) -> Vec<u8> {
-        self.world_mut().save_full().write()
+        // The resume trailer the native window's slot files carry
+        // (`write_slot_save`): the scene the save was written in and its
+        // banner name, so an import re-enters it rather than whatever the
+        // page last had open.
+        let resume = self.current_resume();
+        self.world_mut().save_full().write_with_resume(&resume)
     }
 
     /// Import an LGSF save into the live engine session. Validates the
@@ -367,6 +389,37 @@ mod tests {
         assert!(summary.contains("\"money\":777"), "{summary}");
         assert_eq!(rt2.world_mut().party.money, 777);
         assert_eq!(rt2.world_mut().party.inventory.get(&0x77).copied(), Some(5));
+    }
+
+    /// An LGSF written with a resume trailer - what the native window's slot
+    /// files carry and what `export_save` now writes - reports the scene to
+    /// the page and parks the save for that scene's entry, so the entry skips
+    /// the picker's story baseline and re-lands the save after the swap.
+    #[test]
+    fn an_lgsf_resume_trailer_reaches_the_page_and_parks_the_save() {
+        let mut rt = roundtrip_runtime();
+        rt.world_mut().party.money = 55;
+        let resume = SaveResume {
+            scene: "town01".into(),
+            location: "Rim Elm".into(),
+        };
+        let bytes = rt.world_mut().save_full().write_with_resume(&resume);
+
+        let mut rt2 = roundtrip_runtime();
+        let summary = rt2.import_save_core(&bytes).expect("import");
+        assert!(summary.contains("\"scene\":\"town01\""), "{summary}");
+        assert!(
+            rt2.pending_card_resume.is_some(),
+            "a save naming its scene is parked for that scene's entry"
+        );
+        assert_eq!(rt2.world_mut().party.money, 55, "and lands now as well");
+
+        // A trailer-less file names no scene and parks nothing.
+        let plain = rt.world_mut().save_full().write();
+        let mut rt3 = roundtrip_runtime();
+        let summary = rt3.import_save_core(&plain).expect("import");
+        assert!(summary.contains("\"scene\":\"\""), "{summary}");
+        assert!(rt3.pending_card_resume.is_none());
     }
 
     #[test]
