@@ -2539,6 +2539,9 @@ impl PlayWindowApp {
             // same residency predicate decides for both hosts whether the
             // sprite or the letterforms draw.
             screen_prims.extend(self.dance_countin_prims());
+            // The slot machine's paylines, off the machine's own ported pass
+            // and projection - the segments both browser pages stroke.
+            screen_prims.extend(self.slot_payline_screen_prims());
             // The overworld's entity + player markers: the shared
             // `world_map_markers` kernel's quads, the browser play page's
             // twin (`crate::play_world_map_markers` there).
