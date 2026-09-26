@@ -79,7 +79,8 @@ VRAM capture (`minigame_baka_fighter` scenario) except the `(832, 0)` sheet
 merges several sources onto them. Descriptor 1 (type `0x02`) is a **pack of 4
 Legaia TMDs** - the stage set (a single-object arena wall/room whose floor
 plane is `y = 0`, two single-object props, and a 10-object piece whose objects
-are object-local and need placement transforms). Descriptor 2 (type `0x05`) is
+are object-local and need placement transforms - the round-start cameo's ring
+girl, [below](#the-round-start-cameo)). Descriptor 2 (type `0x05`) is
 the 30-record battle-form ANM bank ([`../formats/anm.md`](../formats/anm.md)).
 
 Confidence: **Confirmed** for the load path and PROT-entry indices (traced in
@@ -772,8 +773,13 @@ mis-based image from yielding eight plausible-looking pointers.
 `FUN_801d6310`, prototype record 3 (`0x801D7624`), is spawned by the round
 setup (`0x32`) only while Triangle is **held** - `_DAT_8007B850 & 0x10`, the
 packed held-pad word (`0x801D0190..0x801D01C4`). The prototype's `+0x04` half
-is `0`, which `FUN_80020DE0` copies to the actor's model word `+0x64`, so the
-walk-on is scene model `0`. Each frame the animator forces `+0x6a = 8`, raises
+is `0` on the disc but not at spawn: the cabinet init zeroes the scene-bank
+base `_DAT_8007B6F8` (`0x801CF1C0`), loads the PROT 1203 stage pack, then
+stamps base `+ 3` into the prototype (`lhu v0,-0x4908(s3)` / `addiu v0,v0,3` /
+`sh v0,0x7628(v1)` at `0x801CF2C8..0x801CF2D8`; records 2 and 4 read `6` and
+`9` in the same captured RAM, written by other init stores). `FUN_80020DE0` copies that half to the actor's model word
+`+0x64`, so the walk-on is scene model `3` - the stage pack's fourth TMD, the
+10-object piece. Each frame the animator forces `+0x6a = 8`, raises
 `+0x10 |= 0x200000` and the camera-relative bit `+0x52 |= 0x400`, poses from
 its phase `+0x22`, runs the clip selector and advances the phase by the frame
 step:
@@ -789,13 +795,22 @@ step:
 with `y = 0x8C`, `z = 0x400` throughout and the retire bit from phase `0xF0`.
 So a figure walks in side-on, turns to the camera, strikes clip `0x1C`, turns
 back and walks off. The cell column is the blit helper: index `0` runs every
-frame from phase `0`, index `1` every frame from `0x40`, both into the one
-cell at `(0x340, 0x86)` - so the cell swaps once, at the pose, and stays
-swapped. An earlier reading had the blit fire "at two band edges". The clips
-are the two records past the three party fighters' 27 in the PROT 1203 bank
-(display ids `0x1C` / `0x1D` = records 27 / 28), which makes the figure a
-party model - which one, and what the swapped cell shows, is **Inferred** and
-not captured.
+frame from phase `0`, index `1` every frame from `0x40`, both a `MoveImage` of
+a `6 x 0x18` rect (24 x 24 texels at 4bpp) into the one cell at `(0x340,
+0x86)`, sourced from `(0x340, 0xC8)` and `(0x340, 0xE0)` - so the cell swaps
+once, at the pose, and stays swapped. An earlier reading had the blit fire "at
+two band edges".
+
+**Captured** (`run_w3a_captures.sh baka_cameo`: `baka_fighter_entry_pretransition`,
+Triangle held, and a control run without it). The cameo spawns only in the
+held run (first `FUN_801D6310` hit at vsync 886; none in the control). The spawn
+store at `0x80020E70` writes `3` into `+0x64`, the sampled phase / `x` / yaw /
+clip follow the table above frame for frame, and the figure is a purple-haired
+girl in a blue jacket and cap - a ring girl, not a party model; the earlier
+"party model" and "scene model `0`" readings were both taken from the
+prototype's static bytes. The VRAM cell hashes equal source `0` before the pose
+and source `1` from it on, and the two sources are the page's eye sprites: an
+open eye and a closed one. The swap is a **wink** at the pose.
 
 Ports: `engine-core::baka_fighter_chrome::{impact_effect_pair, afterimage_pass,
 sprite_blit, cameo_pose}`. The cameo and the blit are not wired: no host hands
@@ -1025,8 +1040,9 @@ placement (spun 180° to the page camera's behind-the-fighters side). The
 stage set carries **no floor mesh**, so the page tiles a floor from the wall's
 own dominant textured face (its exact uv cell + CLUT, repeated on
 `y = 0`); the tiling is a stated fit. The three prop meshes (two identical
-single-object pieces + the 10-object figure) need placement transforms the
-static page hasn't traced and stay out.
+single-object pieces + the 10-object figure, which is the
+[cameo](#the-round-start-cameo)) need placement transforms the static page
+hasn't traced and stay out.
 
 The run opens on the retail **PLAYER SELECT** screen - the three party
 fighters' battle-form models idling in front of the arena under the sheet's

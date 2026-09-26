@@ -1405,6 +1405,12 @@ pub const CAMEO_Y: i16 = 0x8C;
 pub const CAMEO_Z: i16 = 0x400;
 /// Phase at which the cameo raises its retire bit.
 pub const CAMEO_RETIRE_PHASE: i16 = 0xF0;
+/// The cameo's scene-bank model: the PROT 1203 stage pack's fourth TMD, the
+/// 10-object ring girl. The prototype's `+0x04` half is `0` on the disc; the
+/// cabinet init zeroes the bank base `_DAT_8007B6F8` (`0x801CF1C0`) and stamps
+/// base `+ 3` into it (`0x801CF2C8..0x801CF2D8`) before `FUN_80020DE0` copies
+/// it to `+0x64` (captured: the spawn store at `0x80020E70` writes `3`).
+pub const CAMEO_SCENE_MODEL: u16 = 3;
 
 /// The cameo's pose for one frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1433,11 +1439,11 @@ pub struct CameoPose {
 // round-setup arm (`0x32`) under a held Triangle, and none of the three hosts
 // hands the duel a *held* pad word - they feed attack edges, and the port uses
 // Triangle as its special. Past the spawn it needs a host that can draw scene
-// model `0` (the prototype's `+0x04` half is `0`, copied to `+0x64` by
-// `FUN_80020DE0`) posed by clips `0x1C` / `0x1D` of the scene's type-`0x05`
-// clip bank in the camera-relative frame, and apply [`sprite_blit`]'s VRAM
-// move to the texture it samples; no minigame host draws a model
-// camera-relative or edits its VRAM copy after upload.
+// model [`CAMEO_SCENE_MODEL`] posed by clips `0x1C` / `0x1D` of the scene's
+// type-`0x05` clip bank in the camera-relative frame, and apply
+// [`sprite_blit`]'s VRAM move (an eye sprite: open, then closed - a wink) to
+// the texture it samples; no minigame host draws a model camera-relative or
+// edits its VRAM copy after upload.
 /// PORT: FUN_801D6310 - the round-start **cameo walk-on** animator.
 ///
 /// Each frame it forces the actor's step `+0x6A = 8`, raises flag
