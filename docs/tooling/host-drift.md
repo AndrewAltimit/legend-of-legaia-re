@@ -1212,8 +1212,8 @@ most of that work does reach both hosts.
 |---|---|---|
 | `drain_minigame_sfx_cues` | `drain_minigame_sfx_cues_web` | per-game cue drain |
 | `stage_dance_hud_art` | `sync_dance_hud_residency` + `ensure_minigame_art` | `dance_art_*` exports |
-| `tick_fishing_actors` | pond session only | pond session only |
-| `tick_baka_chrome` | **absent** | **absent** |
+| `tick_fishing_actors` | `tick_fishing_actors` | pond session only |
+| `tick_baka_chrome` | `tick_baka_ui` | `baka_chrome_json` |
 | `tick_muscle_hub` | `tick_muscle_hub` | `muscle_*` exports |
 | effect-pool ageing | `World::tick` | own pool, own tick |
 
@@ -1245,10 +1245,23 @@ time.
 **The fishing splash is a session event, not a venue actor.** The strike splash
 spawns from the session's cadence-match `PondEvent::Splash`, which every host
 sees, so `World::tick_fishing` spawns it and the venue's wander / line actors
-are not a prerequisite. What genuinely still needs those actors is the wander-retarget
-ripple and the catch-celebration bursts, because their *seats* come from
-actors only the play window installs - they spawn into the shared pool from
-there.
+are not a prerequisite. What does need those actors is the wander-retarget
+ripple and the catch-celebration bursts, because their *seats* come from the
+actors.
+
+**The venue actors are one engine kernel on both play hosts.**
+`legaia_engine_core::fishing_venue::tick_fishing_venue_on_host` is the whole
+venue frame - the wander fish and its retarget ripple, the `.MAP` floor solve,
+the reeling line and its catch bursts, the sub-screen sway - with its actors on
+`World::minigames.fishing_venue`, and it returns the venue camera's writes
+(`VenueCameraWrites`) for the host to apply to its own engine camera. The
+native `tick_fishing_actors` and the play page's `tick_fishing_actors` are each
+that one call plus the apply, so the ripples and bursts land in the shared pool
+on both hosts and the play page's prize panel sways on the same phase. The
+logic used to live inside the native window, which made every one of those
+native-only. The minigames page runs the pond without a `World` or a venue
+scene, so it has no actors to step; its strike splash comes from its own tick's
+events.
 
 **The pool does not borrow the dance's emit dispatch.**
 `legaia_engine_core::dance::sprite_part_emit` (`FUN_801d387c`) is the *dance*
@@ -1257,12 +1270,28 @@ assert a shared draw dispatch the dump corpus does not show. A pool part's
 pair is stage pixels, already through whatever shift its own producer applies.
 The fade ramp is shared, because that ramp is the port's decision either way.
 
-`tick_baka_chrome` is the one sub-step with no browser twin. The chrome frame
-itself is portable (`engine_core::baka_fighter_chrome`); what it has no
-resolver for is the **draw**, which wants the animator `FUN_801D6310` to pick
-a clip index out of the runtime sprite archives `_DAT_8007B888` /
-`_DAT_8007B840` that no minigame host loads. The pool was named as that work's
-prerequisite and is now in place; the archives are not.
+**The Baka round chrome reaches all three hosts.** A table row here once read
+`tick_baka_chrome` as having no browser twin on either page; both pages were
+already consuming the duel's chrome frame. The frame is the duel's own
+(`BakaFight::chrome_frame`, stepped inside the rules tick). The two play hosts
+do the same two things with it: sound the announcer line it fired - the native
+window through `AudioBgmDirector::play_xa_clip`, the play page through its
+CD-XA clip path (`tick_baka_ui`) - and print its widgets through the shared
+label kernel (`baka_fighter_chrome::chrome_labels`). The minigames page plays
+no announcer line (see the Baka cabinet section below), but draws the widgets
+from the duel's own art: `baka_chrome_json` carries each glyph
+draw's texel column, stamped by the same `baka_fighter_chrome::glyph_u` the
+native window resolves its draws with, and the page samples widget 5's strip
+there - where it used to compute `(g % 10) * 24` itself, which disagrees with
+retail's byte store past the tenth cell.
+
+What stays open is the chrome's **sprite effects**, not its widgets: the
+mirrored two-pass sprite draw (`FUN_801D49E8`) and the impact effect pair
+(`FUN_801D4DF8`) are actor callbacks that want the animator `FUN_801D6310` to
+pick a clip out of the runtime sprite archives `_DAT_8007B888` /
+`_DAT_8007B840`, which no minigame host loads. And the native window resolves
+each glyph draw's stamped cell rect without sampling it, because its duel HUD
+has no textured-quad surface.
 
 ### A `web-ahead` builder is not by itself a gap
 
@@ -2256,11 +2285,16 @@ used to hand it a fight's reel progress as the line record.
 
 What stays per host is what each host owns. The minigames page drives the
 session directly, with no `World`: it has no field scene to suspend, and its
-persistent words come from the visitor's memory card. The native window keeps
-its venue actors (the wandering fish, the line actor, the floor solve and
-camera publish), which read the session's events and its lure; the page has no
-venue pass. The play hosts' status rows are one engine text
-(`PondSession::status_rows`) with each host's own key names.
+persistent words come from the visitor's memory card. The two play hosts run
+the venue actors (the wandering fish, the line actor, the floor solve and
+camera publish) through one engine kernel,
+`fishing_venue::tick_fishing_venue_on_host`, which reads the session's events
+and its lure; the minigames page has no venue scene and no venue pass. The
+play hosts' status rows are one engine text (`PondSession::status_rows`) with
+each host's own key names. The strike credit's pad nudge is one kernel on all
+three, `fishing_actors::bite_pad_nudge`: `World::tick_fishing` counts it off
+the engine pad and the minigames page's `fishing_pond_tick` off the packed
+pressed word its script assembles.
 
 ## The Baka cabinet's ladder: one on the field hosts, another on the standalone page
 
