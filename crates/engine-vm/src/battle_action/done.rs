@@ -565,9 +565,17 @@ pub(super) fn done_multi_cast<H: BattleActionHost + ?Sized>(
 /// that agreement: a living charmed monster can be the acting actor here,
 /// and retail then indexes the roster out of bounds (the charm battle
 /// softlock - see `docs/subsystems/battle.md`). The port therefore triggers
-/// the re-pick whenever the acting slot is **not a living party slot**, and
-/// picks uniformly among eligible slots instead of rejection-sampling, so it
-/// cannot spin.
+/// the re-pick whenever the acting slot is **not a living party slot**. The
+/// re-pick itself is retail's rejection loop on the shared `rand()` stream -
+/// same draws, same slot - with an all-ineligible roster (where retail spins)
+/// taking the first living slot instead, and a draw bound
+/// ([`VICTORY_REPICK_DRAW_BOUND`]) so a degenerate host cannot spin either.
+/// Draw bound on the victory re-pick's rejection loop. Retail's loop is
+/// unbounded; with an eligible slot present, a full-period stream lands one
+/// in a handful of draws, so this only ever trips on a host whose `rng` is
+/// constant.
+const VICTORY_REPICK_DRAW_BOUND: u32 = 0x1000;
+
 fn victory_pose_fixup<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) -> u8 {
     let party_count = host.party_count();
     let acting = ctx.active_actor;
@@ -593,7 +601,21 @@ fn victory_pose_fixup<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut Batt
                 .find(|&s| host.actor(s).is_some_and(|a| a.liveness != 0))
                 .unwrap_or(0)
         } else {
-            eligible[host.rng() as usize % eligible.len()]
+            // Retail's own draw loop: `rand() % party_count` (a signed `div`
+            // at `0x801E66BC`, equal to the unsigned one on a non-negative
+            // draw) until the slot passes the living / `0x404` test. An
+            // eligible slot exists, so a full-period generator reaches one;
+            // the bound only guards a host whose `rng` is degenerate (the
+            // trait default returns `0` forever).
+            let mut pick = None;
+            for _ in 0..VICTORY_REPICK_DRAW_BOUND {
+                let s = (host.rng() % u32::from(party_count.max(1))) as u8;
+                if eligible.contains(&s) {
+                    pick = Some(s);
+                    break;
+                }
+            }
+            pick.unwrap_or(eligible[0])
         }
     };
     // Formation override (retail 0x801E6728..0x801E676C).

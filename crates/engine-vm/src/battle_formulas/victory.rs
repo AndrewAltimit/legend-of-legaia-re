@@ -62,6 +62,77 @@ pub fn victory_exp_per_member(exp_sum: u32, alive: u32) -> u32 {
     scaled.div_ceil(alive)
 }
 
+/// The "Items Up" drop bonus: a living party member whose record `+0xF8`
+/// word carries bit `0x20000` adds this many points to every monster's drop
+/// chance (`li s4,0x1e` at `0x8004F464`, carried as `s7`).
+pub const VICTORY_DROP_ITEMS_UP_BONUS: u32 = 0x1E;
+
+/// One enemy seat as the victory drop roll sees it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct VictoryDropSeat {
+    /// Record `+0x48` - the drop item id, `0` for none.
+    pub item: u8,
+    /// Record `+0x49` - the drop chance in percent.
+    pub chance_pct: u8,
+    /// Actor `+0x227` non-zero - the capture takedown bumps it, and a seat
+    /// that carries it cannot supply the drop.
+    pub captured: bool,
+}
+
+/// The victory drop roll of `FUN_8004E568` (`0x8004F478..0x8004F5A0`).
+///
+/// Returns the one item id retail offers (`0` = no drop). The caller still
+/// owes the held-count check (`FUN_80042F4C(item) == 99` skips the grant,
+/// `0x8004F5A8..0x8004F5BC`) and the bag add.
+///
+/// ```text
+/// item = 0; best = 0
+/// if no_reward_word == 0:                          // _DAT_8007BAC0, 0x8004F488
+///   for seat in monsters:                          // record table 0x801C9348
+///     best = max(best, seat.chance)                // 0x8004F4C8
+///     if rand() % 100 < seat.chance + bonus        // 0x8004F4D8..0x8004F520
+///        and seat.actor[+0x227] == 0:              // 0x8004F53C
+///       item = seat.item                           // last winner wins; a zero id clears
+/// if best < 100 and bonus == 0:                    // 0x8004F570 / 0x8004F57C
+///   if rand() & 3 != 0: item = 0                   // 0x8004F584..0x8004F598
+/// ```
+///
+/// One `rand()` per seat is drawn whether or not the seat can drop anything,
+/// and the trailing 1-in-4 draw is taken even in a no-reward battle. `rand`
+/// is the BIOS `rand()` stream - a shaped `0..=0x7FFF` value.
+///
+// REF: FUN_8004E568 (`0x8004F3D8..0x8004F5A0`: the victory drop roll; the
+// routine's `PORT:` tag is the module-level one in `battle_formulas.rs`)
+pub fn victory_drop_roll(
+    seats: &[VictoryDropSeat],
+    items_up: bool,
+    no_reward: bool,
+    mut rand: impl FnMut() -> u32,
+) -> u8 {
+    let bonus = if items_up {
+        VICTORY_DROP_ITEMS_UP_BONUS
+    } else {
+        0
+    };
+    let mut item = 0u8;
+    let mut best = 0u8;
+    if !no_reward {
+        for seat in seats {
+            best = best.max(seat.chance_pct);
+            // `rand` is non-negative, so retail's signed `% 100` (the
+            // `0x51EB851F` reciprocal) and this unsigned one agree.
+            let r = rand() % 100;
+            if r < u32::from(seat.chance_pct) + bonus && !seat.captured {
+                item = seat.item;
+            }
+        }
+    }
+    if best < 100 && bonus == 0 && rand() & 3 != 0 {
+        item = 0;
+    }
+    item
+}
+
 // ---------------------------------------------------------------------------
 // Summon-magic spell XP + level-up (FUN_801DDB30 tail / FUN_801E70BC)
 // ---------------------------------------------------------------------------

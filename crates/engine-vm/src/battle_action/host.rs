@@ -142,8 +142,12 @@ pub trait BattleActionHost {
         None
     }
 
-    /// Equivalent of `func_0x80056798()` (PSX rand BIOS, `A0 0x2E`). Default
-    /// returns 0 for deterministic tests.
+    /// One BIOS `rand()` draw - `jal 0x80056798`, the `A(2Fh)` thunk - so a
+    /// value in `0..=0x7FFF` (the LCG state's high half, see
+    /// [`crate::battle_formulas::bios_rand_shape`]). Every consumer in this
+    /// state machine tests its low bits or takes a `%` of it, so a host must
+    /// hand over a shaped draw, never a raw generator state. Default returns
+    /// 0 for deterministic tests.
     fn rng(&mut self) -> u32 {
         0
     }

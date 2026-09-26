@@ -424,8 +424,8 @@ impl Pool {
         // per-child render state.
         //
         // The remainder is the C-style `%` (truncated toward zero) the MIPS
-        // `div` produces - negative RNG samples yield negative remainders.
-        // Retail traps on `spread == 0` (a zero divisor); the port clamps to
+        // `div` produces; a BIOS `rand()` draw is never negative, so it only
+        // matters for a host that hands over something else. Retail traps on `spread == 0` (a zero divisor); the port clamps to
         // 1 instead of crashing.
         let _ = children; // record fields are read back through the catalog.
         let spread = script.spread.max(1);
