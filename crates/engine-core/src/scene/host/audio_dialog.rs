@@ -48,7 +48,30 @@ impl SceneHost {
     /// the retail `FUN_800243F0` resolver that [`Self::bgm_seq_bytes`] left
     /// unmodeled - every real music cue (field, battle, minigame) is a global
     /// track, so this is the path most BGM actually takes.
+    ///
+    /// The ending theme [`crate::mode_entry_init::FIELD_BGM_TWO_PART_ID`] is
+    /// the one id retail does not play from its bank slot: the field
+    /// initialiser stages its score and instruments from two other entries on
+    /// sound slot 10 ([`crate::mode_entry_init::field_bgm_plan`]). Its bytes
+    /// here are that pair composed into one stream
+    /// ([`crate::mode_entry_init::two_part_bgm_stream`]), so both play hosts
+    /// stage it through the same owned-VAB path as every other track.
     pub fn music_bank_entry_bytes(&self, bgm_id: u16) -> Result<Option<Arc<Vec<u8>>>> {
+        use crate::mode_entry_init::{field_bgm_plan, two_part_bgm_stream};
+        // No latch and no playing slot: re-starts are the director's to
+        // suppress, as for every other track.
+        if let Some([seq_raw, vab_raw]) =
+            field_bgm_plan(u32::from(bgm_id), 0, u32::MAX, false).two_part_streams
+        {
+            let read = |raw: u32| {
+                legaia_asset::boot_overlay::raw_to_extraction(raw)
+                    .and_then(|e| self.index.entry_bytes(e).ok())
+            };
+            let (Some(seq), Some(vab)) = (read(seq_raw), read(vab_raw)) else {
+                return Ok(None);
+            };
+            return Ok(two_part_bgm_stream(&seq, &vab).map(Arc::new));
+        }
         let Some(entry) = crate::music_labels::prot_entry_for_bgm_id(bgm_id) else {
             return Ok(None);
         };

@@ -363,6 +363,20 @@ have no pair.
 
 The site's minigame pages take exactly this path per game (`crates/web-viewer/src/minigames.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the from-scratch `Spu` + `Sequencer` - the same components the live `AudioBgmDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
 
+#### The ending theme: two entries on sound slot 10
+
+One id does not play from a bank entry at all. The field initialiser `FUN_801D6704` (PROT 0897) special-cases `0x814` (`2068`, sound-test `#68` "Ending"), which `edteien` and `edbalden` start: while `_DAT_8007BAC8 == 0x814` and the one-shot latch `_DAT_8007B9B8` is clear (`0x801D71A0..0x801D7274`), it sets the latch, detaches and closes the BGM record `0x8007052C`, and stages the track on **sound slot 10** - the `0x80091508 + 10*12` table row and the `0x800705BC` sequence record:
+
+1. `FUN_8001FC00(0x428, ..)` reads raw TOC `0x428` - extraction `1062`, one type-2 SEQ chunk (the "slot `72`" above that carries a score and no bank) - into the streaming buffer `*0x8007B85C`, and `FUN_8001E54C(10, ..)` installs it as slot 10's sequence.
+2. `FUN_8001FC00(0x422, ..)` reads raw `0x422` - extraction `1056`, the gap's VAB-only bank (53 programs) - and the same walker opens its head as VAB `10` and sends the first part of the body. The body is larger than the `0x39800`-byte buffer and is a type-3 chunk, which ends the walk, so a second read in append mode and `FUN_8002630C(.., vab 10, 1, size)` send the rest. That split is the "two part".
+3. `FUN_80026478(0x800705BC)` starts the sequence, and `_DAT_8007BA9C` takes `_DAT_8007BAB8`, so the ordinary resolver `FUN_800243F0` treats the track as loaded and never fetches it.
+
+So the slot-10 load is not a sound-effect bank: it is the credits music. Raw `0x422` is also what the resolver's own law gives `2068` (`990 + 68`) - the instruments with no score - which is why the id needs the arm; `music_labels::prot_entry_for_bgm_id` sends `2068` to extraction `1058` instead, and the arm is the only field path that id takes.
+
+The mednafen ending states confirm the staging (`ending_banner_mask_closed`, `ending_vignette_fullscreen`, `ending_panel_corner` in `edteien`; `ending_vignette_biron` in `edbylon`): slot 10's sequence record is open (`+8 = 1`, VAB id `+0xC = 10`) while the BGM record is closed, its sequence buffer holds extraction `1062`'s SEQ chunk byte for byte, VAB 10's SPU base is slot 0's (`0x800917B0[10] == 0x1010`), and the sounding voices start inside the region that bank was sent to. Every program change in the score names a program only `1056` defines. The credits then run on the park sentinel `0x1000`, so the track keeps playing across the vignette scenes.
+
+The engine composes the pair into one owned-VAB stream (`mode_entry_init::two_part_bgm_stream`, score first) whenever `SceneHost::music_bank_entry_bytes` is asked for `0x814`, so both play hosts stage it through the path above; `engine-core/tests/credits_two_part_bgm_disc.rs` pins it. One residual is the hosts' SPU layout: the bank's VAG bodies total `0x631B0` bytes, more than the BGM region either host carves below its resident SFX banks (`0x42000`), so the last seven bodies do not upload and three of the score's sixteen programs sound nothing. Retail has no such region - VAB 10 overwrites every resident bank below `0x6C810`.
+
 ## SsAPI sequencer (`0x80061-0x80067` cluster)
 
 Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driven music. The cluster lives in SCUS at `0x80061B18..0x800681D8` and uses the standard SsAPI globals.
