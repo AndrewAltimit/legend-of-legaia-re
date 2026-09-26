@@ -325,7 +325,25 @@ cross-fade; BGM transitions no longer use it.
 
 ### Global-pool BGM: the `music_01` bank
 
-Every real music track on the disc lives in the **`music_01` bank**, not in scene-local slots - scenes carry no SEQ of their own (see [`reference/music-tracks.md`](../reference/music-tracks.md) for the sound-test join). A global-pool id (`>= 2000`) is `2000 + slot`, and each bank entry is one self-contained `[VAB][SEQ]` pair (a chunk-header, a `pBAV` VAB body, then a `pQES` score). The bank is **piecewise** in extraction space (`988 + i` for index `i <= 67`, `990 + i` for `i >= 68`, a 2-entry gap at `1056`/`1057`); `music_labels::prot_entry_for_bgm_id` owns that map. Playing one means uploading **that entry's own VAB** into SPU RAM and driving the sequencer against it, rather than the scene VAB the field path stages.
+Every real music track on the disc lives in the **`music_01` bank**, not in scene-local
+slots - scenes carry no SEQ of their own (see
+[`reference/music-tracks.md`](../reference/music-tracks.md) for the sound-test join). A
+global-pool id (`>= 2000`) is `2000 + slot`, and a bank entry is normally one
+self-contained `[VAB][SEQ]` pair - a DATA_FIELD chunk stream whose type-`0` chunk is the
+`pBAV` header part, whose type-`1` chunk carries the VAG bodies and whose type-`2` chunk
+is the `pQES` score, in `(0, 1, 2)` or `(0, 2, 1)` order. Not every slot is one: of the
+81, slot `72` carries a score and no bank, slots `76..=79` are one-sector placeholder
+fills, and slot `80` is a bank with no score, so those six have no pair to play
+(`engine-core/tests/seq_chunk_walk_disc.rs`). The bank is **piecewise** in extraction
+space (`988 + i` for index `i <= 67`, `990 + i` for `i >= 68`, a 2-entry gap at
+`1056`/`1057`); `music_labels::prot_entry_for_bgm_id` owns that map. Playing one means
+uploading **that entry's own VAB** into SPU RAM and driving the sequencer against it,
+rather than the scene VAB the field path stages. Both play hosts' owned-VAB staging
+(`AudioBgmDirector` and the audio-trace director natively, `WebBgmDirector` on the play
+page) split the entry with `engine-core::chunk_install::owned_bank_offsets` - the
+installer walk's type-0 bank and type-2 score - rather than hunting it for the two magics;
+the disc-gated test pins that the two readings agree on every slot, including which six
+have no pair.
 
 The site's minigame pages take exactly this path per game (`crates/web-viewer/src/minigames.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the from-scratch `Spu` + `Sequencer` - the same components the live `AudioBgmDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
 

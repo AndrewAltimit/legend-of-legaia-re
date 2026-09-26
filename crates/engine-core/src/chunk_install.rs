@@ -136,6 +136,66 @@ pub fn seq_chunk_offset(stream: &[u8]) -> Option<usize> {
     host.hit
 }
 
+/// Where a global-pool `music_01` entry's own bank and score sit: the byte
+/// offsets of the `pBAV` VAB header part and of the `pQES` score, both as the
+/// installer walk reaches them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OwnedBankOffsets {
+    /// Offset of the VAB header part - the payload of the first type-0 / 1 /
+    /// 3 chunk that opens with `pBAV`.
+    pub vab: usize,
+    /// Offset of the score - [`seq_chunk_offset`].
+    pub seq: usize,
+}
+
+/// Split a track that brings its own instruments (`[type-0 VAB header part]
+/// [type-1 VAG bodies][type-2 score]`) the way the installer walk sees it.
+///
+/// Both play hosts' owned-VAB staging reads the pair through this instead of
+/// hunting the entry for the two magics: a byte hunt stops at the first
+/// `pQES` anywhere after the bank, which inside a VAG body is sample data,
+/// while the walk stops at the chunk the retail type-2 arm opens as the SEQ.
+/// `None` when either half is missing.
+pub fn owned_bank_offsets(stream: &[u8]) -> Option<OwnedBankOffsets> {
+    struct Locator {
+        base: usize,
+        vab: Option<usize>,
+    }
+    impl Locator {
+        fn note(&mut self, data: &[u8]) {
+            if self.vab.is_none() && data.starts_with(b"pBAV") {
+                self.vab = Some(data.as_ptr() as usize - self.base);
+            }
+        }
+    }
+    impl InstallHost for Locator {
+        fn seq_release(&mut self, _id: i8) {}
+        fn raw_copy(&mut self, dest: CopyDest, data: &[u8]) {
+            if dest == CopyDest::SlotDest {
+                self.note(data);
+            }
+        }
+        fn vab_upload(&mut self, _id: i8, data: &[u8], _budget: Option<usize>) {
+            self.note(data);
+        }
+        fn seq_install(&mut self, _record: SeqRecord, _id: i8, _data: &[u8]) {}
+        fn set_stream_flag(&mut self) {}
+        fn transfer_mode(&self) -> u32 {
+            // Mode 2 keeps the type-4 staging copy out of the search.
+            2
+        }
+    }
+    let mut host = Locator {
+        base: stream.as_ptr() as usize,
+        vab: None,
+    };
+    install_chunks(&mut host, &mut SeqSlot::default(), stream, usize::MAX);
+    Some(OwnedBankOffsets {
+        vab: host.vab?,
+        seq: seq_chunk_offset(stream)?,
+    })
+}
+
 // PORT: FUN_8001E54C - streaming-chunk list walker + 13-case type dispatch
 // (raw copy / VAB upload / SEQ install / stream flag / budget stop), with the
 // hardware sinks behind [`InstallHost`] and the `0x80091508` slot
@@ -402,6 +462,32 @@ mod tests {
         stream.extend(chunk(1, &[0u8; 8]));
         stream.extend(&0u32.to_le_bytes());
         assert_eq!(seq_chunk_offset(&stream), Some(score_at));
+    }
+
+    #[test]
+    fn owned_bank_split_ignores_a_magic_inside_the_bodies() {
+        // A byte hunt (first `pBAV`, then the first `pQES` after it) lands in
+        // the VAG body; the walk lands on the type-2 chunk.
+        let mut body = vec![0u8; 16];
+        body[8..12].copy_from_slice(b"pQES");
+        let mut stream = chunk(0, b"pBAVxxxx");
+        stream.extend(chunk(1, &body));
+        let score_at = stream.len() + 4;
+        stream.extend(chunk(2, b"pQES\0\0\0\x01"));
+        stream.extend(&0u32.to_le_bytes());
+        let hunted_seq = stream.windows(4).position(|w| w == b"pQES").unwrap();
+        assert_ne!(hunted_seq, score_at, "fixture must fool the hunt");
+        assert_eq!(
+            owned_bank_offsets(&stream),
+            Some(OwnedBankOffsets {
+                vab: 4,
+                seq: score_at
+            })
+        );
+        // No bank chunk, no split.
+        let mut bare = chunk(2, b"pQES\0\0\0\x01");
+        bare.extend(&0u32.to_le_bytes());
+        assert_eq!(owned_bank_offsets(&bare), None);
     }
 
     #[test]

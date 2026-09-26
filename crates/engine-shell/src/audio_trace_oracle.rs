@@ -347,10 +347,10 @@ impl TraceBgmDirector {
     /// including its allocator region, so the two directors program the same
     /// `start_addr` for the same track.
     fn stage_owned_vab(&mut self, entry_bytes: &[u8]) -> Option<Vec<u8>> {
-        let vab_off = entry_bytes.windows(4).position(|w| w == b"pBAV")?;
-        let seq_rel = entry_bytes[vab_off..]
-            .windows(4)
-            .position(|w| w == b"pQES")?;
+        // The installer walk's split (type-0 bank, type-2 score), not a
+        // magic hunt - see `chunk_install::owned_bank_offsets`.
+        let split = legaia_engine_core::chunk_install::owned_bank_offsets(entry_bytes)?;
+        let vab_off = split.vab;
         let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
         let body = &entry_bytes[vab_off..];
         let mut alloc = SpuAllocator::new(
@@ -360,7 +360,7 @@ impl TraceBgmDirector {
                 - crate::boot::SFX_BANK_SPU_BYTES,
         );
         self.bank = Some(VabBank::upload(&mut self.spu, &mut alloc, &report, body));
-        Some(entry_bytes[vab_off + seq_rel..].to_vec())
+        Some(entry_bytes[split.seq..].to_vec())
     }
 
     fn start_inner(&mut self, bgm_id: u16, seq_bytes: &[u8]) -> Result<()> {
