@@ -64,7 +64,9 @@ fn window_vram(extracted: &std::path::Path, scene: &str) -> legaia_tim::Vram {
 #[test]
 fn window_vram_holds_the_retail_fog_texels() {
     let Some(extracted) = extracted() else { return };
-    for scene in ["vell", "retona", "town01", "chitei2", "dolk", "son", "vozz"] {
+    for scene in [
+        "map01", "map03", "vell", "retona", "town01", "chitei2", "dolk", "son", "vozz",
+    ] {
         let vram = window_vram(&extracted, scene);
         let cells = fnv((0x40..0x70)
             .flat_map(|y| (448..464).map(move |x| (x, y)))
