@@ -1002,8 +1002,9 @@ impl World {
 
     /// Spawn effect `ui_id` at `world_pos` / `angle` via the pool, looking
     /// up the script in `self.effect_catalog`. No-op when the catalog is
-    /// empty or the id is out of range. Mirrors the retail path through
-    /// `FUN_801D8DE8 → FUN_801DFDF8`.
+    /// empty or the id is out of range. Mirrors the retail pool spawner
+    /// `FUN_801DFDF0` as the effect-script walk `FUN_801DEA50` reaches it
+    /// ([`Self::route_battle_effect_spawns`]).
     pub fn try_spawn_effect(&mut self, ui_id: u8, world_pos: [i16; 3], angle: u16) {
         let catalog_ptr: *const vm::effect_vm::EffectCatalog = &self.effect_catalog;
         let pool_ptr: *mut vm::effect_vm::Pool = &mut self.effect_pool;

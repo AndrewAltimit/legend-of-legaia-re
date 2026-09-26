@@ -458,7 +458,9 @@ impl Pool {
 
     /// Look up `ui_id` in `catalog` and spawn the effect at `world_pos` /
     /// `angle`. Returns `None` if the id is out of range or the pool is full.
-    /// Mirrors the retail `FUN_801D8DE8(ui_id, mode)` → `FUN_801DFDF8` path.
+    /// Mirrors the retail pool spawner `FUN_801DFDF0` / `FUN_801DFDF8` as the
+    /// effect-script walk `FUN_801DEA50` calls it (the HUD spawner
+    /// `FUN_801D8DE8` is not a caller).
     pub fn spawn_by_ui_id<H: EffectHost + ?Sized>(
         &mut self,
         host: &mut H,

@@ -189,37 +189,17 @@ impl PlayWindowApp {
         // the 2D effect pool (effect billboards / outline markers), the
         // table form stages a 0x801F6324 prototype scene whose parts ride
         // the move-FX part-draw seam.
-        let fx_spawns = self.session.host.world.drain_battle_effect_spawns();
-        for s in &fx_spawns {
-            let at = [
-                s.at.0.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-                s.at.1.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-                s.at.2.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-            ];
-            if s.direct {
-                self.session
-                    .host
-                    .world
-                    .try_spawn_effect(s.effect, at, s.facing);
-                log::debug!(
-                    "effect-script spawn (direct) effect {:#04x} actor {} at {:?}",
-                    s.effect,
-                    s.actor_slot,
-                    at
-                );
-            } else {
-                let staged = self
-                    .session
-                    .host
-                    .world
-                    .spawn_action_table_effect(s.effect, at);
-                log::debug!(
-                    "effect-script spawn (table) effect {:#04x} actor {} at {:?} staged={staged}",
-                    s.effect,
-                    s.actor_slot,
-                    at
-                );
-            }
+        // The routing is the engine's (`World::route_battle_effect_spawns`),
+        // shared with the browser play page.
+        for r in self.session.host.world.route_battle_effect_spawns() {
+            log::debug!(
+                "effect-script spawn effect {:#04x} actor {} at {:?} direct={} staged={:?}",
+                r.spawn.effect,
+                r.spawn.actor_slot,
+                r.spawn.at,
+                r.spawn.direct,
+                r.table_staged
+            );
         }
 
         // Refresh per-slot rows + status icons, then age the popups one frame.

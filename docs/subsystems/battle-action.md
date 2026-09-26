@@ -1944,10 +1944,53 @@ entries' cost bytes in place
 
 `FUN_801E295C` does **not** call `FUN_801DFDF8` directly. Effect spawning happens through one of two indirections:
 
-- **`FUN_801D8DE8(effect_id, mode)`** - the hottest battle utility (3 KB / 77 incoming refs), called 30+ times across the state machine. This is the wrapper that lays out a battle UI element (damage popup, weapon-slash trail, spell-icon banner, run-status banner, etc.) and internally schedules its visuals. Effect IDs surfaced in this function: `0x07` (party weapon-slash), `0x0F` (damage popup setup), `0x34` (Originals burst), `0x43` (run banner), `0x44` (terminate banner), `0x4C` (spell-name HUD), `0x4E`/`0x4F` (monster effect pair), `0x51` (combo continue), `0x52` (damage text), `0x59` (queue marker), `0x66` (counter-attack flash). The `mode` argument is `0` for "spawn / reset" and `1` for "terminate / unload."
+- **`FUN_801D8DE8(element, mode)`** - the hottest battle utility, called 30+
+  times across the state machine. It is the **screen-element spawner**, not an
+  effect spawner: `element` indexes the placement table `0x80076C10 + element *
+  0x18`
+  ([`memory-map.md`](../reference/memory-map.md#0x80076c10---one-table-three-names)),
+  the record is seated as a text / chrome widget through `FUN_8003541C`, and
+  `FUN_801DB7B0` glides it between the record's two seats (`mode & 1` picks the
+  spawn seat, `mode & 2` suppresses the glide). Its only calls are
+  `FUN_8003541C`, `FUN_801DB7B0`, `FUN_8003563C`, `FUN_80035F04` and the string
+  helpers `FUN_8003CA78` / `FUN_8003CAC4` (`see
+  ghidra/scripts/funcs/overlay_battle_action_801d8de8.txt`) - none reaches the
+  effect pool. Element `0x59` is the Seru-absorb message and `0x65` the
+  magic-level message, both rendering the context buffer `ctx + 0x1F9`
+  ([below](#the-battle-message-banner-elements-0x59-and-0x65)). An earlier
+  revision of this bullet called the argument an effect id and routed it into
+  the effect pool; the port followed it and played an unrelated `efect.dat`
+  script at every HUD raise.
 - **`FUN_801DBF9C(party, spell_id)`** + **`FUN_801DC0A0(actor, anim_id)`** - chained from state `0x29` and `0x2A..0x2D` to drive spell visuals. These ultimately fan out to the [effect VM](effect-vm.md) which uses `FUN_801DFDF8` for the actual sprite-anim spawn.
 
-So the dataflow is `FUN_801E295C` → `FUN_801D8DE8` / `FUN_801DBF9C` / `FUN_801DC0A0` → effect VM (`FUN_801DE914` / `FUN_801E0088`) → `FUN_801DFDF8`. The state machine never names an effect ID directly; it names *UI element* IDs which the effect VM resolves. Note this path drives the **2D UI/sprite** layer (`FUN_801DFDF8` emits `POLY_FT4` billboard quads into the effect pool); the 3D summon model is a separate mechanism (next).
+So the effect dataflow is `FUN_801E295C` → `FUN_801DBF9C` / `FUN_801DC0A0` → effect VM (`FUN_801DE914` / `FUN_801E0088`) → `FUN_801DFDF8`; `FUN_801D8DE8` is the HUD's path, not this one. The callers of the pool spawner `FUN_801DFDF0` are the per-actor effect-script walk `FUN_801DEA50`, `FUN_801E09F8`, `FUN_801E22C8` and SCUS `FUN_8004998C` / `FUN_80047430`; the port routes the walk's requests through `World::route_battle_effect_spawns` on both hosts. Note this path drives the **2D UI/sprite** layer (`FUN_801DFDF8` emits `POLY_FT4` billboard quads into the effect pool); the 3D summon model is a separate mechanism (next).
+
+### The battle message banner (elements `0x59` and `0x65`)
+
+Two screen elements carry a sentence rather than a label: `0x59`, raised by the
+Done band right after `FUN_801E92DC` teaches an absorbed Seru (`0x801E6240`),
+and `0x65`, raised by the magic-level arm of `FUN_801E70BC` (`0x801E722C`).
+Both render the same string: the result-message builder `FUN_801D84C0` points
+each record's `+0x14` content word at the context's message buffer
+(`sw v1,0x86c(a0)` / `sw v1,0x98c(a0)` at `0x801D850C` / `0x801D8514`, with
+`a0 = 0x80076C10`). The two records share their geometry - seat A `(16, -24)`,
+seat B `(16, 14)`, width 280, kind 3 - so a raise glides the framed line down
+onto the top banner's pen and the unload glides it back out.
+
+Who writes the buffer differs. The spawner's own `0x59` arm composes it on a
+raise only (`bne s5,zero` at `0x801D914C`): `strcpy(ctx + 0x1F9,
+prefix[char - 1])`, then the Seru's spell name (`0x800754C8[(ctx[+0x269] +
+0x80) * 12 + 8]`), then a suffix (`0x801D9154..0x801D91D0`). The prefix table
+`0x801F4DFC` is indexed by character and names that character's Ra-Seru
+(parser `legaia_asset::absorb_caption`). `0x65`'s line is composed by
+`FUN_801F452C` before its raise.
+
+The port keeps the line on `World::battle.message_banner` from the raise to the
+matching unload (`world::battle::message_banner`), and both play hosts draw it
+through `engine-core::battle_hud::battle_banner_message` into the top banner
+widget. A newly learned **art** is not announced here: retail's cue for it is
+the `NEW ARTS!!` sprite banner the SpecialStarter `0x1A` commit raises
+(`engine-vm::battle_action::flash_ramp`).
 
 ### `FUN_801F30C4` - the move VM's battle escape (op `0x17`)
 

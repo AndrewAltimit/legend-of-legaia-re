@@ -172,6 +172,9 @@ impl SceneHost {
                         "[scene] battle-camera height table (PROT {entry}) parse failed - fallback height stays active"
                     );
                 }
+                // The Seru-absorb banner's caption pieces (0x801F4DFC /
+                // 0x801F4C28) are sibling rodata in the same overlay.
+                self.world.tables.absorb_caption = legaia_asset::absorb_caption::parse(&bytes);
                 // The Seru side-effect table (0x801F6870) is sibling static
                 // data in the same overlay. A failure leaves the stager off,
                 // so levelled Seru casts carry no secondary debuff.

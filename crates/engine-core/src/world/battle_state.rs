@@ -453,6 +453,10 @@ pub struct BattleState {
     /// as the retail per-frame call does. Hosts draw it through
     /// `legaia_engine_ui::streak_pass::clip_ribbon_quads`.
     pub clip_ribbon: Option<ClipRibbon>,
+    /// The top-of-screen message line screen elements `0x59` (Seru absorbed)
+    /// and `0x65` (magic level increased) carry, from the raise to the
+    /// matching unload - see `world::battle::message_banner`.
+    pub message_banner: Option<crate::world::BattleMessageBanner>,
 }
 
 /// One frame's tag-`0x67` ribbon source: the `8`-byte seat vector the
@@ -533,6 +537,7 @@ impl BattleState {
             loot_applied: false,
             return_mode: SceneMode::Field,
             clip_ribbon: None,
+            message_banner: None,
         }
     }
 }

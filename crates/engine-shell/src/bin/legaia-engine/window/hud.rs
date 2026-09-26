@@ -2412,48 +2412,17 @@ impl PlayWindowApp {
         self.save_menu.as_ref().map(|a| a.badges)
     }
 
-    /// The message holding retail's top-of-screen banner this frame, if any.
-    ///
-    /// The port's two battle messages are the level-up and Seru-capture
-    /// lines, and retail draws exactly those in this widget -
-    /// `noa_levelup_banner` is one of the two save states the banner's
-    /// geometry was read out of.
-    ///
-    /// Not gated on `SceneMode::Battle`, and that is a **port ordering
-    /// difference worth naming**: retail raises the level-up message on the
-    /// battle result screen, still in battle, while the port grants XP after
-    /// the mode has already flipped back to Field - so gating on battle mode
-    /// would leave the widget wired and never drawn. The message goes in
-    /// retail's own widget wherever the port raises it; the sprite half
-    /// follows through [`Self::battle_chrome_sprite_draws`].
+    /// The message holding retail's top-of-screen banner this frame, if any:
+    /// the engine's shared read
+    /// ([`legaia_engine_core::battle_hud::battle_banner_message`] - the absorb
+    /// / magic-level element line, then level-up, then Seru capture), which the
+    /// browser page draws too.
     ///
     /// `None` without the system-UI atlas: there is no frame to put a
     /// message in, so a chrome-less host keeps the loose pens instead.
     pub(super) fn battle_banner_message(&self) -> Option<String> {
         self.save_menu.as_ref()?;
-        let w = &self.session.host.world;
-        if let Some(b) = &w.party.current_level_up_banner {
-            // Name the character, not their roster ordinal: the banner reads
-            // to a player, and `P3` is an index only this codebase knows.
-            // `char_id` is the ROSTER slot the level-up applier wrote, so it
-            // indexes `roster.members` directly (not the battle order).
-            let who = w
-                .party
-                .roster
-                .members
-                .get(b.char_id as usize)
-                .map(|r| r.name())
-                .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| format!("P{}", b.char_id + 1));
-            return Some(format!(
-                "LEVEL UP!  {who} -> LV {}\nHP +{}  MP +{}",
-                b.new_level, b.hp_gained, b.mp_gained
-            ));
-        }
-        w.party
-            .current_capture_banner
-            .as_ref()
-            .and_then(|b| b.current_banner())
+        legaia_engine_core::battle_hud::battle_banner_message(&self.session.host.world)
     }
 
     /// The engine-core battle-item-window projection (shared with the

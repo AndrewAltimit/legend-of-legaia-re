@@ -299,27 +299,12 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
-        let world = &mut host.world;
-        let spawns = world.drain_battle_effect_spawns();
-        for s in &spawns {
-            let at = [
-                s.at.0.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-                s.at.1.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-                s.at.2.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-            ];
-            if s.direct {
-                world.try_spawn_effect(s.effect, at, s.facing);
-                crate::play_battle_render::web_log(&format!(
-                    "play battle FX: direct effect {:#04x} actor {} at {at:?}",
-                    s.effect, s.actor_slot
-                ));
-            } else {
-                let staged = world.spawn_action_table_effect(s.effect, at);
-                crate::play_battle_render::web_log(&format!(
-                    "play battle FX: table effect {:#04x} actor {} at {at:?} staged={staged}",
-                    s.effect, s.actor_slot
-                ));
-            }
+        // The routing is the engine's, shared with the native window.
+        for r in host.world.route_battle_effect_spawns() {
+            crate::play_battle_render::web_log(&format!(
+                "play battle FX: effect {:#04x} actor {} at {:?} direct={} staged={:?}",
+                r.spawn.effect, r.spawn.actor_slot, r.spawn.at, r.spawn.direct, r.table_staged
+            ));
         }
     }
 

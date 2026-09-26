@@ -2075,6 +2075,62 @@ pub fn encounter_banner_label(world: &crate::world::World) -> String {
     names.join("  ")
 }
 
+/// The line retail's top-of-screen message banner holds this frame, if any -
+/// the one read both play hosts draw into that widget.
+///
+/// Three sources, in precedence order:
+///
+/// 1. the **battle message banner** - screen element `0x59` (a Seru absorbed
+///    on a killing blow) or `0x65` (a Seru spell's magic level went up), live
+///    from its raise to its unload ([`crate::world::BattleMessageBanner`]).
+///    Battle mode only: the Done band retires it, and a line a battle left
+///    standing must not follow the party back into the field;
+/// 2. the post-battle **level-up** line;
+/// 3. the **Seru-capture** line.
+///
+/// The last two are deliberately not gated on battle mode: the port grants XP
+/// after the mode has flipped back to Field, where retail still shows the
+/// result screen, so a battle-mode gate would leave them wired and never
+/// drawn.
+///
+/// The tactical-arts learn line ([`crate::world::PartyState::current_art_banner`])
+/// is **not** a source: retail announces a newly learned art with the
+/// `NEW ARTS!!` sprite banner (`World::battle_arts_banner_quads`), not with a
+/// line in this widget, and the engine's `Learned <art>!` string is its own.
+///
+/// Before this read existed each host carried a copy of sources 2 and 3 and
+/// neither drew source 1, so no host ever showed the absorb or magic-level
+/// line.
+pub fn battle_banner_message(world: &crate::world::World) -> Option<String> {
+    if world.mode == crate::world::SceneMode::Battle
+        && let Some(b) = &world.battle.message_banner
+    {
+        return Some(b.text.clone());
+    }
+    if let Some(b) = &world.party.current_level_up_banner {
+        // Name the character, not their roster ordinal - `P3` is an index
+        // only this codebase knows. `char_id` is the ROSTER slot the level-up
+        // applier wrote, so it indexes `roster.members` directly.
+        let who = world
+            .party
+            .roster
+            .members
+            .get(b.char_id as usize)
+            .map(|r| r.name())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| format!("P{}", b.char_id + 1));
+        return Some(format!(
+            "LEVEL UP!  {who} -> LV {}\nHP +{}  MP +{}",
+            b.new_level, b.hp_gained, b.mp_gained
+        ));
+    }
+    world
+        .party
+        .current_capture_banner
+        .as_ref()
+        .and_then(|b| b.current_banner())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
