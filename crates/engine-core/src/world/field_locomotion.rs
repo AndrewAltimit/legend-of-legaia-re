@@ -41,11 +41,14 @@ pub struct FieldLocomotion {
     /// is retail-pinned, the fill unit is the engine's - see
     /// [`crate::world::World::tick_field_walk_regen`].
     pub walk_regen_steps: i32,
-    /// The walk-regen tick's secondary countdown (retail `_DAT_8007B600`),
-    /// which arms a dialog-window callback on its zero edge. Nothing in the
-    /// engine arms it, so it stays `0` and the edge never fires - the
-    /// window descriptor it schedules (`_DAT_8007B450`) has no engine
-    /// analogue.
+    /// The **Incense window** (retail `_DAT_8007B600`), counted in walk-regen
+    /// ticks: the pause Items Incense confirm tops it up by `0x40` (cap
+    /// `0x100`, `crate::field_menu_dispatch::apply_pause_items_outcome`), the
+    /// walk-regen tick drains it by one, and the field region encounter roll
+    /// skips while it is non-zero. On its zero edge retail installs the
+    /// field-overlay record `0x801F2278` (kind byte `0x0B`) as the entry
+    /// context `_DAT_8007B450` and spawns the menu actor
+    /// (`0x801D0CEC..0x801D0D24`); the engine drops that edge.
     pub walk_regen_window: i32,
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view

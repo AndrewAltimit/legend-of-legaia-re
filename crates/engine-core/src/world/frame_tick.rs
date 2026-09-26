@@ -1710,11 +1710,13 @@ impl World {
     ///
     /// One honest gap remains:
     ///
-    /// - The kernel's return value is the edge where retail arms a
-    ///   dialog-window callback off [`crate::world::FieldLocomotion::walk_regen_window`]
-    ///   (`_DAT_8007B600`). The engine has no such window slot and nothing
-    ///   arms the countdown, so the edge cannot fire and the result is
-    ///   dropped here.
+    /// - The kernel's return value is the edge where the Incense window
+    ///   [`crate::world::FieldLocomotion::walk_regen_window`]
+    ///   (`_DAT_8007B600`, armed by the pause Items Incense confirm) runs
+    ///   out. Retail then installs the entry-context record `0x801F2278`
+    ///   (kind byte `0x0B`) and spawns the menu actor
+    ///   (`0x801D0CEC..0x801D0D24`); what the menu driver shows for kind
+    ///   `0x0B` is not decoded, so the edge is dropped here.
     ///
     /// Member order is the present party (retail walks the member-id table
     /// at `0x80084598`), resolved through [`Self::party_roster_slot`].
@@ -1753,7 +1755,7 @@ impl World {
         }
         let mut counter = self.locomotion.walk_regen_steps;
         let mut window = self.locomotion.walk_regen_window;
-        // The dialog-window arm edge (see the note above) has no consumer.
+        // The Incense-expiry edge (see the note above) has no consumer.
         let _armed = crate::walk_regen::tick_walk_regen(&mut counter, &mut members, &mut window);
         self.locomotion.walk_regen_steps = counter;
         self.locomotion.walk_regen_window = window;
