@@ -621,7 +621,7 @@ pub(crate) fn baka_state_json_for(f: &legaia_engine_core::baka_fighter::BakaFigh
         concat!(
             r#"{{"live":true,"phase":{},"round":{},"hp":[{},{}],"hp_start":{},"#,
             r#""wins":[{},{}],"combo":[{},{}],"chosen":[{},{}],"can_choose":{},"#,
-            r#""clock":[{},{}],"ghosts":[{}],"#,
+            r#""clock":[{},{}],"motion":[[{},{}],[{},{}]],"ghosts":[{}],"#,
             r#""gold":{},"winner":{},"last":{}}}"#
         ),
         jstr(phase),
@@ -638,6 +638,10 @@ pub(crate) fn baka_state_json_for(f: &legaia_engine_core::baka_fighter::BakaFigh
         f.can_choose(0),
         clock(0),
         clock(1),
+        f.motion(0).record,
+        f.motion(0).frame(),
+        f.motion(1).record,
+        f.motion(1).frame(),
         ghosts,
         f.gold_reward(),
         winner,

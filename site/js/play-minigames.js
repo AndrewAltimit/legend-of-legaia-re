@@ -876,7 +876,9 @@
       flat: rt.play_mg_baka_scene_flat_rgba(),
       idx: rt.play_mg_baka_scene_indices(),
     };
-    if (!takeRenderer(view, rt.play_mg_baka_scene_vram(), buf, {})) return null;
+    /* The arena's lamp glow is semi-transparent (ABE) prims: the two-pass
+     * draw keeps them from painting opaque. */
+    if (!takeRenderer(view, rt.play_mg_baka_scene_vram(), buf, { semiTwoPass: true })) return null;
     return { kind: 'baka', gen };
   }
 
