@@ -710,6 +710,9 @@ impl PlayWindowApp {
         let field_fog_prims = self.take_field_fog_prims();
         // Move-VM strip spans (`FUN_801D31B0`), through the same camera.
         let move_strip_prims = self.take_move_strip_prims();
+        // The Baka duel's 3D surface: posed and uploaded here, outside the
+        // renderer borrow (`window::minigames`).
+        self.refresh_baka_duel_gpu();
         if let (Some(r), Some(vram), Some(atlas)) = (
             self.win.renderer.as_ref(),
             self.uploaded_vram.as_ref(),
@@ -721,6 +724,8 @@ impl PlayWindowApp {
             // size (`scene_viewport_for`); the browser canvas is a stage.
             let (scene_viewport, aspect) = scene_viewport_for(w, h);
             r.set_scene_viewport(scene_viewport);
+            // A live Baka duel draws against its own VRAM.
+            let vram = self.baka_gpu.as_ref().map_or(vram, |g| &g.vram);
             // Upload (or drop) the opdeene "It was the Seru." caption sprite
             // atlas to track World state. The caption image is present only
             // while opdeene is loaded and never changes, so upload it once on
@@ -1258,6 +1263,22 @@ impl PlayWindowApp {
             let mut color_draws: Vec<ColorSceneDraw<'_>> = Vec::new();
             if self.boot_ui.is_active() && !game_over_hold {
                 // Boot UI is fullscreen - suppress 3D draws.
+            } else if let Some(g) = self.baka_gpu.as_ref() {
+                // The Baka duel owns the 3D frame: the engine-posed fighters,
+                // ghosts, walls and floor under the arena camera.
+                if let Some(m) = g.textured.as_ref() {
+                    draws.push(SceneDraw {
+                        mesh: m,
+                        mvp: g.mvp,
+                        cue: None,
+                    });
+                }
+                if let Some(m) = g.untextured.as_ref() {
+                    color_draws.push(ColorSceneDraw {
+                        mesh: m,
+                        mvp: g.mvp,
+                    });
+                }
             } else if in_world_map {
                 // World-map continent = two layers, both in the shared
                 // player / entity-marker world frame:
