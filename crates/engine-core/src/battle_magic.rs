@@ -122,13 +122,11 @@ impl BattleSpellSession {
         caster_mp: u16,
         ability_bits: u32,
     ) -> Self {
-        use legaia_engine_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
-        let modifier = MpCostModifier::from_ability_flags(ability_bits);
         let spells: Vec<SpellRow> = learned
             .iter()
             .filter_map(|id| {
                 let def = catalog.get(*id)?;
-                let cost = mp_cost_after_ability_bits(def.mp_cost as u16, modifier);
+                let cost = crate::spells::caster_mp_cost(def, ability_bits);
                 Some(SpellRow {
                     id: *id,
                     name: def.name.clone(),

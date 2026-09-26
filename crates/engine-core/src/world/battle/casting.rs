@@ -95,9 +95,7 @@ impl World {
         } else {
             0
         };
-        let base_cost = def.mp_cost as u16;
-        let modifier = vm::battle_formulas::MpCostModifier::from_ability_flags(ability_bits);
-        let cost = vm::battle_formulas::mp_cost_after_ability_bits(base_cost, modifier);
+        let cost = crate::spells::caster_mp_cost(def, ability_bits);
         let (caster_hp, caster_max_hp, caster_mp_now) = match self.actors.get(caster as usize) {
             Some(a) => (a.battle.hp, a.battle.max_hp, a.battle.mp),
             None => return false,
@@ -175,6 +173,7 @@ impl World {
                 caster_hp,
                 caster_max_hp,
                 caster_mp: caster_mp_before,
+                caster_ability_bits: ability_bits,
                 target_mdef: self.battle.defense.get(t as usize).copied().unwrap_or(0),
                 target_hp: actor.battle.hp,
                 target_hp_max: actor.battle.max_hp,
@@ -1728,5 +1727,44 @@ mod one_spell_model_tests {
             live_charge,
             "the state machine would charge the very same MP for this cast"
         );
+    }
+
+    /// The prepaid fold re-checks affordability through the shared
+    /// `cast_spell` gate, so that gate must read the **discounted** price the
+    /// band's `0x28` charged (`0x801E4568`, the inline `FUN_80035394` fold).
+    /// A Half-bit caster (`+0xF4 & 0x20`) who had exactly the discounted
+    /// Theeder price (24 -> 12) used to fold a `NotEnoughMp` failure against
+    /// the raw 24 and deal no damage.
+    #[test]
+    fn a_prepaid_mp_saver_cast_resolves_at_exactly_the_discounted_price() {
+        let mut world = World::new();
+        world.party.party_count = 1;
+        world.party.character_ability_bits[0] = 0x20;
+        world.set_spell_catalog(crate::retail_magic::retail_seru_magic_catalog());
+        for i in 0..2usize {
+            let a = world.spawn_actor(i);
+            a.battle.liveness = 1;
+            a.battle.hp = 500;
+            a.battle.max_hp = 500;
+            a.battle.mp = 0;
+        }
+        world.battle.magic[0] = 40;
+        let def = world
+            .tables
+            .spell_catalog
+            .get(0x82)
+            .cloned()
+            .expect("Theeder is in the retail block");
+        assert_eq!(crate::spells::caster_mp_cost(&def, 0x20), 12);
+        // The band already charged 12 of the caster's 12: 0 left.
+        world.cast_spell_on_slots_prepaid(0, &def, &[1]);
+        assert!(
+            world.actors[1].battle.hp < 500,
+            "the cast resolved against the discounted price"
+        );
+        // The direct path charges the same discounted price.
+        world.actors[0].battle.mp = 12;
+        world.cast_spell_on_slots(0, &def, &[1]);
+        assert_eq!(world.actors[0].battle.mp, 0);
     }
 }

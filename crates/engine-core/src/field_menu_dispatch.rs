@@ -495,10 +495,24 @@ pub fn apply_spell_outcome(
         return None;
     };
     let def = session.catalog().get(spell_id).cloned();
-    let mp_cost = def.as_ref().map(|d| d.mp_cost).unwrap_or(0);
+    // Retail debits the **discounted** price: `jal 0x80035394` at
+    // `0x801D93C0` (group cast: `0x801D972C`), then `record+0x10A -= v0`
+    // at `0x801D9404..0x801D9418` - the same number the list build greyed
+    // the row against, so the gate and the charge cannot disagree.
+    let mp_cost = def
+        .as_ref()
+        .map(|d| {
+            session
+                .party()
+                .iter()
+                .find(|c| c.slot == caster_slot)
+                .map(|c| c.mp_cost(d))
+                .unwrap_or(d.mp_cost as u16)
+        })
+        .unwrap_or(0);
     if let Some(caster) = world.party.roster.members.get_mut(caster_slot as usize) {
         let mut hms = caster.hp_mp_sp();
-        hms.mp_cur = hms.mp_cur.saturating_sub(mp_cost as u16);
+        hms.mp_cur = hms.mp_cur.saturating_sub(mp_cost);
         caster.set_hp_mp_sp(hms);
     }
     // Menu-cast spell-XP arm: only the HP-heal effect classes accrue
@@ -907,15 +921,12 @@ fn build_spell_session(world: &World, catalog: &SpellCatalog) -> SpellMenuSessio
                 level: member.magic_rank(),
                 spells: list.ids[..n].to_vec(),
                 spell_levels: list.levels[..n].to_vec(),
-                // Per-caster MP-cost ability bits (record `+0xF4`, kept live
-                // in `character_ability_bits`) so the Magic screen displays the
-                // MP-saver-discounted cost (`FUN_80035394`).
-                ability_bits: world
-                    .party
-                    .character_ability_bits
-                    .get(i)
-                    .copied()
-                    .unwrap_or(0),
+                // Per-caster MP-cost ability bits: retail's kernel reads the
+                // caster's own record `+0xF4` word (`0x800353B4`), so this is
+                // keyed by the roster record, not by battle ordinal (the
+                // `character_ability_bits` mirror is ordinal-indexed and
+                // names a different member once `active_party` reorders).
+                ability_bits: crate::spells::record_ability_word(member),
                 // Retail resolves the Ra-Seru slot through the
                 // per-character offset table at 0x8007B424; the engine's
                 // roster always carries the Ra-Seru equipped, so the

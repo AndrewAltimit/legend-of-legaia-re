@@ -1420,15 +1420,10 @@ impl MuscleDomeSession {
     pub fn spell_mp_cost(&self, slot: usize, spell_id: u8) -> Option<u16> {
         let m = self.magic(slot)?;
         let def = m.spells.iter().find(|s| s.id == spell_id)?;
-        let modifier = legaia_engine_vm::battle_formulas::MpCostModifier::from_ability_flags(
+        Some(crate::spells::caster_mp_cost(
+            def,
             u32::from(m.ability_bits),
-        );
-        Some(
-            legaia_engine_vm::battle_formulas::mp_cost_after_ability_bits(
-                def.mp_cost as u16,
-                modifier,
-            ),
-        )
+        ))
     }
 
     /// The Ra-Seru list as rows, priced through [`Self::spell_mp_cost`] so
@@ -1619,6 +1614,7 @@ impl MuscleDomeSession {
         // Retail charges the cast at the shared band's `0x28`, not at the
         // ring - so the debit lands here, when the turn plays out.
         let caster_mag = self.magic(slot).map_or(0, |m| m.magic_power);
+        let caster_ability_bits = self.magic(slot).map_or(0, |m| u32::from(m.ability_bits));
         if let Some(m) = self.magic[slot].as_mut() {
             m.mp = m.mp.saturating_sub(cost);
         }
@@ -1630,6 +1626,7 @@ impl MuscleDomeSession {
             caster_max_hp: self.f[slot].max_hp.clamp(0, u16::MAX as i32) as u16,
             // The gauge is already debited; the shared rule re-checks it.
             caster_mp: self.mp(slot).saturating_add(cost),
+            caster_ability_bits,
             target_mdef: self
                 .damage
                 .as_ref()

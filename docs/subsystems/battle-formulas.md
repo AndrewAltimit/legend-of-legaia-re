@@ -1740,6 +1740,29 @@ reached. Dump-confirmed at `FUN_801E295C` `0x801E4568` (state `0x28`); the same
 block recurs in state `0x3C` at `0x801E3D0C`. Ported verbatim in
 `battle_formulas::mp_cost_after_ability_bits` + `MpCostModifier::from_ability_flags`.
 
+#### Field casts pay the same discounted price
+
+The fold is not a battle-only rule. Its SCUS home is `FUN_80035394(caster,
+cost)` (`lw v1,0x6bc(v0)` off `0x80084140` at `0x800353B4` = record `+0xF4`),
+and every field cast path reads its return for **both** the compare and the
+debit:
+
+| Site | What it does with the discounted cost |
+|---|---|
+| `0x8003118C..0x800311A4` (SCUS, Magic list build) | inline copy of the fold; the row greys on `record+0x10A < cost` at `0x80031204` |
+| `0x801D3064`, `0x801D4344` (PROT 0899) | the list and status panels draw it (`FUN_80034B78`, three digits) |
+| `0x801D93C0` / `0x801D972C` (PROT 0899) | single and group cast: `record+0x10A -= v0` at `0x801D9404..0x801D9418` |
+| `0x801D9534` / `0x801D989C` (PROT 0899) | the re-cast gates compare `record+0x10A` against it |
+
+So a Spirit Jewel or Spirit Talisman discounts a menu heal exactly as it
+discounts a battle cast, and a caster below the raw price but at the
+discounted one can cast. The engine routes every path through one kernel,
+`legaia_engine_core::spells::caster_mp_cost` (the fold above over the
+caster's record `+0xF4` word): the Magic list, the confirm gate, the shared
+`cast_spell` affordability test, the field debit
+(`field_menu_dispatch::apply_spell_outcome`), the battle list, the battle
+fold and the Muscle Dome price.
+
 `spell_table` is the static `SCUS_942.54` table at `DAT_800754C8` (stats) / `DAT_800754D0` (name pointers) - 12-byte stride, `+3` = MP cost. See [spell-table.md](../formats/spell-table.md) for the full record layout + the pinned player Seru-magic block (`0x81..=0x8b`).
 
 `character_record.ability_bits` is the 4-byte field at `+0xF4` of the per-character record (record stride `0x414`, base `0x80084708`). See [battle.md](battle.md#character-record-layout).

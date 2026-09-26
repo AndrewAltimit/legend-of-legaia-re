@@ -259,9 +259,11 @@ passive index + party-wide scope flags, built from the same parse at boot).
 pass: each party member's record `+0xF4` field is rebuilt from the eight
 equipment slots, all members OR into the engine's global-mask mirror
 (`World::party.party_ability_mask`, bit-tested by `World::party_has_ability` - the
-`FUN_800431D0` port), and the per-member word 0 feeds the MP-cost consumers
-(`MpCostModifier::from_ability_flags`), so an equipped MP-saver halves /
-quarter-shaves the live cast cost. The percent stat boosts apply inside
+`FUN_800431D0` port), and the record's word 0 feeds the one MP-cost kernel
+(`spells::caster_mp_cost`, over `MpCostModifier::from_ability_flags`), so an
+equipped MP-saver halves / quarter-shaves the cast cost on the field Magic
+screen and in battle alike - retail runs both through `FUN_80035394`
+([battle-formulas.md](../subsystems/battle-formulas.md#field-casts-pay-the-same-discounted-price)). The percent stat boosts apply inside
 `compute_battle_stats_with_passives` (percent of the **base** stat window,
 truncating division, retail clamp block) and the max-HP boost lands on the
 live battle actor in `World::seed_party_battle_stats`. Disc-gated coverage:

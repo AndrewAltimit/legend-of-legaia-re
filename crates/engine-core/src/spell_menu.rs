@@ -99,6 +99,13 @@ impl CasterSlot {
         self.hp > 0
     }
 
+    /// MP this caster pays for `def` - the one discounted-cost kernel
+    /// ([`crate::spells::caster_mp_cost`]) the list greying, the confirm
+    /// gate, the cast resolve and the debit all read.
+    pub fn mp_cost(&self, def: &crate::spells::SpellDef) -> u16 {
+        crate::spells::caster_mp_cost(def, self.ability_bits)
+    }
+
     /// Learned level of the `idx`-th spell (1 when the level list is
     /// absent / short - a freshly-learned spell is level 1).
     pub fn spell_level(&self, idx: usize) -> u8 {
@@ -380,14 +387,15 @@ impl SpellMenuSession {
                 let name = def
                     .map(|d| d.name.clone())
                     .unwrap_or_else(|| format!("Spell {id}"));
-                let cost = def.map(|d| d.mp_cost).unwrap_or(0);
                 // Retail's list build (`FUN_80030628`, `0x8003118C..0x80031228`):
-                // a field-castable record, MP for the cost, and a party
-                // member the spell would affect (`FUN_8003053C`).
+                // a field-castable record, MP for the **discounted** cost
+                // (the `+0xF4` fold is inlined at `0x8003118C..0x800311A4`),
+                // and a party member the spell would affect (`FUN_8003053C`).
+                let cost = def.map(|d| c.mp_cost(d)).unwrap_or(0);
                 let admissible = match def {
                     Some(d) => {
                         is_field_usable(&d.effect)
-                            && c.mp >= d.mp_cost as u16
+                            && c.mp >= cost
                             && !self.spell_affects_nobody(*id)
                     }
                     None => false,
@@ -395,7 +403,7 @@ impl SpellMenuSession {
                 SpellRowView {
                     spell_id: *id,
                     name,
-                    mp_cost: cost,
+                    mp_cost: cost.min(u8::MAX as u16) as u8,
                     admissible,
                 }
             })
@@ -524,8 +532,12 @@ impl SpellMenuSession {
                         });
                         return events;
                     }
-                    let caster_mp = self.party.get(caster as usize).map(|c| c.mp).unwrap_or(0);
-                    if caster_mp < def.mp_cost as u16 {
+                    let (caster_mp, cost) = self
+                        .party
+                        .get(caster as usize)
+                        .map(|c| (c.mp, c.mp_cost(def)))
+                        .unwrap_or((0, def.mp_cost as u16));
+                    if caster_mp < cost {
                         events.push(SpellMenuEvent::InvalidConfirm {
                             reason: InvalidReason::NotEnoughMp,
                         });
@@ -589,6 +601,7 @@ impl SpellMenuSession {
                 };
                 let caster_slot = c.slot;
                 let caster_mp = c.mp;
+                let caster_ability_bits = c.ability_bits;
                 // One `cast_spell` per party row, which is what the
                 // `HealAll` arm asks its caller for: it returns the amount
                 // the formula grants *that* member, clipped by that
@@ -597,6 +610,7 @@ impl SpellMenuSession {
                 for row in &self.targets {
                     let snap = crate::spells::SpellSnapshot {
                         caster_mp,
+                        caster_ability_bits,
                         target_hp: row.hp,
                         target_hp_max: row.hp_max,
                         target_alive: row.alive(),
@@ -683,6 +697,7 @@ impl SpellMenuSession {
                     };
                     let snap = crate::spells::SpellSnapshot {
                         caster_mp: c.mp,
+                        caster_ability_bits: c.ability_bits,
                         target_hp: target.hp,
                         target_hp_max: target.hp_max,
                         target_alive: target.alive(),

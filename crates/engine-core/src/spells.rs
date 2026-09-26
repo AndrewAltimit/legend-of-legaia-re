@@ -561,6 +561,10 @@ pub struct SpellSnapshot {
     pub caster_hp: u16,
     pub caster_max_hp: u16,
     pub caster_mp: u16,
+    /// Caster's active-abilities word (record `+0xF4`). The MP gate reads
+    /// the cost through [`caster_mp_cost`], so an MP-saver accessory lowers
+    /// the threshold exactly as it lowers the debit. `0` = no discount.
+    pub caster_ability_bits: u32,
     /// Target's Magic Defense scalar.
     pub target_mdef: u16,
     pub target_hp: u16,
@@ -627,6 +631,39 @@ pub enum SpellOutcome {
     Failed { reason: SpellFailReason },
 }
 
+/// The MP a caster whose record `+0xF4` word is `ability_bits` pays for
+/// `spell` - the spell record's `+3` byte folded through the MP-saver bits
+/// (`0x20` = half off, `0x10` = a quarter off, half winning).
+///
+/// Retail runs every cast's price through the one SCUS kernel
+/// `FUN_80035394(caster, cost)` or an inline copy of it, and the compare and
+/// the debit read the same number: the Magic list build inlines it at
+/// `0x8003118C..0x800311A4` and greys a row on `record+0x10A < cost`
+/// (`0x80031204`); the single-target cast debits its return at
+/// `0x801D93C0..0x801D9418` and the group cast at `0x801D972C` (both in
+/// PROT 0899, the menu overlay); the re-cast gates compare against it at
+/// `0x801D953C` / `0x801D98A4`; the list and status panels draw it
+/// (`0x801D3064`, `0x801D4344`); battle inlines it in `FUN_801E295C`.
+/// Every engine cast path routes through this function so none of them can
+/// compare one price and charge another.
+///
+/// REF: FUN_80035394 (the fold is [`legaia_engine_vm::battle_formulas::mp_cost_after_ability_bits`])
+pub fn caster_mp_cost(spell: &SpellDef, ability_bits: u32) -> u16 {
+    use legaia_engine_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
+    mp_cost_after_ability_bits(
+        spell.mp_cost as u16,
+        MpCostModifier::from_ability_flags(ability_bits),
+    )
+}
+
+/// Record `+0xF4` word 0 of a character record - the word
+/// [`caster_mp_cost`]'s bits live in (retail `lw 0x6bc(v)` off the
+/// `0x80084140` window at `0x800353B4` / `0x80031174`).
+pub fn record_ability_word(rec: &legaia_save::CharacterRecord) -> u32 {
+    let b = rec.ability_bits();
+    u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+}
+
 /// Resolve a spell cast.
 ///
 /// Pure function. Engines pass per-target snapshots because the catalog
@@ -634,7 +671,7 @@ pub enum SpellOutcome {
 /// matching shape (`AllAllies` -> 3 snapshots, `AllEnemies` -> N enemy
 /// snapshots).
 pub fn cast_spell(spell: &SpellDef, target_slot: u8, snap: &SpellSnapshot) -> SpellOutcome {
-    if snap.caster_mp < spell.mp_cost as u16 {
+    if snap.caster_mp < caster_mp_cost(spell, snap.caster_ability_bits) {
         return SpellOutcome::Failed {
             reason: SpellFailReason::NotEnoughMp,
         };
@@ -749,6 +786,7 @@ mod tests {
             caster_hp: 100,
             caster_max_hp: 100,
             caster_mp: 50,
+            caster_ability_bits: 0,
             target_mdef: mag_def,
             target_hp: hp,
             target_hp_max: hp,
