@@ -2736,6 +2736,130 @@ either those words are not what retail modulates by or retail's rewrite does
 not reach them; the capture that pins the curve (`s1_newgame_field`) is taken
 at the black start of the crawl and cannot say which.
 
+## A side-by-side pass over boots, hand-offs and door entries
+
+A pass over the two play hosts' boot, their post-movie hand-off and the
+minigame doors found five gaps with every tier green. Four of them share one
+shape: **the host-side step lived next to one entry, and the other entry
+skipped it.** The engine kernel was shared each time; the call around it was
+not.
+
+### A boot install only one host ran
+
+The native boot installed six static-SCUS progression tables one read at a
+time - the XP curve and the Noa / Gala threshold divisors, the stat-growth
+curves, the victory-pose table, the XA cue durations, the magic-XP thresholds
+and the accessory passives. The page's `load_disc` installed none of them.
+Every consumer has a disc-free fallback, so nothing failed: the page levelled
+on the flat placeholder growth, never levelled a summon, granted no accessory
+passive (no Ivory Book on the capture roll), played no melee grunt or cast
+voice (a zero cue duration), and skipped the victory pose's `rand()` - so its
+RNG stream left the native one's after every battle. Both boots now call one
+engine entry, `World::install_retail_progression_tables`, and
+`crates/web-viewer/tests/play_boot_tables_parity.rs` drives the page's own
+`load_disc` against it.
+
+This one is gated: **tier 13** takes every `world.install_*` / `world.set_*`
+call in `crates/engine-shell/src/boot.rs` and requires a shipped
+`crates/web-viewer` source to call the same method, or a `[[boot_install]]`
+waiver in `ui-host-drift-waivers.toml`. Run over the old boot it fails on
+`install_magic_xp_thresholds` and `set_accessory_passives`. It cannot see the
+other four, which the old boot wrote as field assignments - which is the
+argument for the single entry: a table installed through a method both boots
+must call is one the tier can pair.
+
+### The hand-off that is a scene entry too
+
+Retail's post-FMV dispatch enters a new scene (`town01` -> movie 1 ->
+`town0b`) without the field VM's transition op, so no `SceneEntered` event
+follows it. The page rebuilt its render state on the hand-off anyway; the
+native window only logged the outcome - it kept drawing the trigger scene's
+meshes, kept its camera shot, and left the trigger scene's VAB bank staged.
+The page, for its part, keyed its camera reset on `SceneEntered` alone and
+carried the trigger scene's shot too. Both now treat the hand-off as the entry
+it is: `BootSession::apply_pending_fmv_handoff` runs the same session-side swap
+a door runs (camera globals reset, SFX queue dropped, VAB restaged) and the
+window rebuilds on `FmvHandoffOutcome::Entered`; the page resets the camera on
+the hand-off tick
+(`crates/web-viewer/tests/play_fmv_real.rs`,
+`the_fmv_handoff_resets_the_camera_like_a_door`).
+
+### A held word into an edge-driven runtime
+
+`MenuRuntime::tick` filters no repeats - every screen it drives moves a cursor
+or commits on the input it is handed. The page hands it one edge per press;
+the native window handed it the **held** pad word, so one key press lasting a
+few ticks stepped the shop cursor several rows or walked through the buy
+confirm. Both hosts now decode through
+`menu_runtime::menu_input_from_pad_edges`, and the window passes the edge it
+already computed for every other modal screen. Nothing here was a missing
+call - both hosts called the same runtime with a well-formed `MenuInput` - so
+the shape to look for is a shared kernel whose **input contract** (edge or
+level) one host does not honour.
+
+### A launcher decode the door never ran
+
+Two minigame entries did host-side work in each host's debug launcher that the
+shared door entry (`SceneHost::drain_minigame_warp`) never did - the phase
+shape [tier 10](#tier-10---entry-symmetry-is-the-phase-armed-only-from-a-debug-key)
+exists for, except that here the missing step was data, not a `World` phase,
+so the tier had nothing to pair:
+
+- **The fishing point exchange.** Both hosts' launchers decoded the two venue
+  pages beside the session tables; the door decoded none, so the exchange was
+  unusable after walking into the venue on either host.
+  `SceneHost::enter_fishing_from_overlay` now decodes them into
+  `World::minigames.fishing_prize_venues`
+  (`play_fishing_host.rs`, `a_door_entered_fishing_session_has_the_prize_exchange`).
+- **The Muscle Dome fighter.** The native `M` launcher read the lead's swing
+  costs, live HP, AGL pool and INT / UDF / LDF; the door fielded flat `0x1E`
+  costs, a 120 AP pool and a 60 / 40 / 40 stand-in profile - on both hosts,
+  since the door is the shared path. `SceneHost::dome_lead_fighter` is the one
+  builder now (`play_minigames_host.rs`,
+  `arena_door_warp_draws_the_muscle_dome_and_start_leaves`).
+
+### Open drift the same pass found
+
+Recorded rather than fixed; each names the host that lacks it. None is gated.
+
+- **Narration crawl.** The native window's crawl / title-card arm `continue`s
+  after the session tick, skipping the FX ticks, CLUT effects, field-event
+  drain, NPC re-bind, balloon sync and play clock the page runs every frame
+  (`window/event_handler/redraw.rs`, the `boot_ui` / narration arm).
+- **Movie frames.** The page gates only `host.tick()` on a live FMV; its FX,
+  CLUT walker, NPC clips and SFX keep advancing behind the picture.
+- **Anim-cue drains.** The window drains player gestures and NPC animate cues
+  in `SceneMode::Field` only; the page drains them in every mode, so overworld
+  gestures play on one host.
+- **Shop tick.** The window ticks the world under an open shop with a neutral
+  pad; the page freezes the world.
+- **Sub-tick taps.** The window sets and clears its pad straight from key
+  events, so a press and release between two ticks never reaches `set_pad`;
+  the page latches it.
+- **Overworld CLUT walk.** Implemented twice (`window/field_render.rs`
+  `WaterAnim`, the page's `step_field_vram_fx`), already differing in which
+  scenes patch strip rows and which column is checked.
+- **Movie-end unpause.** The page does not reopen the sequencer's pause gate
+  when a movie ends without a new BGM start; the window does.
+- **Card load order.** The page loads a card save before entering its scene,
+  so the scene picker's story baseline (flags `0x141` / `0x147` outside
+  `town0c`) and seat heuristic run over the loaded state; the window enters
+  first.
+- **Battle camera without a render.** The page's battle camera state lives on
+  its render resource and does not tick when that fails to build; the window
+  removed the same gate.
+- **Monster action-tag clips** are installed from each host's render path, so a
+  monster with no mesh - or a native frame's first battle ticks - reads no tag
+  table.
+- **Baka on the play page** carries no strike clock or afterimage in its JSON;
+  the minigames page does.
+
+And absent from both hosts, so no host is "behind": the art-learned /
+magic-level banner (`party.current_art_banner`) and the Seru-absorb grant text,
+the casino coins / Point Card / fishing progress in `World::save_full`, the
+`tick_scene_programs` XA legs, the op-`0x35` timed sound release
+(`take_pending_sound_release`), and `BgmDirector::reattach_volume`.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
@@ -2744,6 +2868,9 @@ at the black start of the crawl and cannot say which.
 - a trait joins tier 4 by having a default method body and two implementers;
 - a diagnostic joins tier 6 by being declared in `DIAG_GATES` - which is not
   optional: an undeclared `LEGAIA_DIAG_*` fails the gate.
+- a boot install joins tier 13 by being a `world.install_*` / `world.set_*`
+  call in the native boot - fold a new table into an engine install both
+  boots call rather than a field assignment the tier cannot see.
 
 Each script self-tests its own detectors on every run and refuses to report a
 pass when a control fails - a "0 orphans" verdict from a classifier that
