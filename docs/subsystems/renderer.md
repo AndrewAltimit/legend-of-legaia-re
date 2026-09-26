@@ -679,6 +679,23 @@ object `0x50` ordering-table buckets deeper. The function row is
 [`80048A08` in the battle function table](../reference/functions/battle.md#80048a08);
 see `ghidra/scripts/funcs/80048a08.txt`.
 
+### Which bodies reach it, and with what colour
+
+The draw is reached through the draw tick `FUN_800480D8`, which the render
+dispatcher's mode-2 arm calls only for a body at view depth `>= 0xA1` - a
+near-plane reject on the `MVMVA`'d `+0x34`, not an id window. The tick first
+runs the tint pass `FUN_8004A908`, which writes the colour word `+0x74` and
+weight `+0x78` this draw stages: the actor's lanes, a distance fade that darkens
+a body past half its radius (brightens it on the outdoor stages), the status
+colours and the cursor-dim arm. A zero word skips the draw unless a lone
+defeated monster in a scripted fight is stamped grey. Both play hosts run the
+pair per body per frame through `World::battle_actor_draw_plan`; the decode
+and the capture match are in
+[`battle.md`](battle.md#the-distance-fade). Bit 26 of the word, which the tint
+pass sets for a body at depth `>= 0x180 * 16` (and for a near one carrying any
+of `0x8300_0000`) on every seat but `7`, is the dispatcher's alpha-bank raise
+([per-prim dispatch](#per-prim-dispatch-table-fun_80043390)).
+
 ### Rotted limbs draw dark
 
 The colour word `actor+0x74` and blend `actor+0x78` are reloaded for **each

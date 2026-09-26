@@ -1229,6 +1229,7 @@ pub(super) fn cmd_play_window_with_record(
         battle_stage_color_mesh: None,
         battle_ground_mesh: None,
         battle_ground_cue_far: None,
+        battle_stage_outdoor: false,
         prev_scene_mode: None,
         monster_archive: None,
         battle_mesh_base: 0,

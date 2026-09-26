@@ -332,6 +332,9 @@ pub(super) struct BattleStage {
     /// Ground-grid depth-cue far colour, display `0..1` - the backdrop far
     /// colour per stage class (`DAT_80078C1C` outdoor table).
     pub(super) grid_far: [f32; 3],
+    /// `DAT_80078C1C` outdoor-table membership - the battle tint pass's
+    /// `DAT_8007BDA8` flag (`World::battle_actor_draw_plan`).
+    pub(super) outdoor: bool,
 }
 
 impl PlayWindowApp {
@@ -403,6 +406,10 @@ impl PlayWindowApp {
             .map(|t| t.far_colour_for_prot_index(stage_entry))
             .unwrap_or(legaia_engine_vm::battle_ground_grid::GRID_FAR_INDOOR);
         let grid_far = grid_far_bytes.map(|c| f32::from(c) / 255.0);
+        let outdoor = scus
+            .as_deref()
+            .and_then(legaia_engine_vm::battle_ground_grid::OutdoorCueTable::from_scus)
+            .is_some_and(|t| t.contains_prot_index(stage_entry));
         log::info!(
             "play-window: battle stage = scene '{scene_name}' PROT {stage_entry} \
              ({} objects, drawn twice, {} second copy, {restored} stage TIM(s) re-uploaded)",
@@ -414,6 +421,7 @@ impl PlayWindowApp {
             dome: (dome.tmd.clone(), dome.raw.clone()),
             second,
             grid_far,
+            outdoor,
         })
     }
 
@@ -471,6 +479,7 @@ impl PlayWindowApp {
         // it away with the monster meshes.
         self.battle_stage_mesh = None;
         self.battle_stage_color_mesh = None;
+        self.battle_stage_outdoor = false;
         // REF: FUN_800513f0 - the backdrop registration whose object-list edit
         // and second-copy transform this host consumes through
         // `legaia_asset::battle_backdrop`.
@@ -478,6 +487,7 @@ impl PlayWindowApp {
             dome: (tmd, raw),
             second,
             grid_far,
+            outdoor,
             ..
         }) = &stage
         {
@@ -552,6 +562,7 @@ impl PlayWindowApp {
                 // `build_battle_ground_grid`).
                 self.battle_ground_mesh = None;
                 self.battle_ground_cue_far = None;
+                self.battle_stage_outdoor = *outdoor;
                 let grid = build_battle_ground_grid();
                 match r.upload_vram_mesh(
                     &grid.positions,
@@ -1716,6 +1727,7 @@ impl PlayWindowApp {
         self.battle_stage_color_mesh = None;
         self.battle_ground_mesh = None;
         self.battle_ground_cue_far = None;
+        self.battle_stage_outdoor = false;
         self.battle_faces.clear();
     }
 

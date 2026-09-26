@@ -29,6 +29,7 @@ mod tutorial;
 mod validator_host;
 mod victory;
 
+pub use actor_draw::{BattleActorDrawPlan, PARTY_BODY_RADIUS};
 pub use cast_band::{
     PendingCast, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager,
 };

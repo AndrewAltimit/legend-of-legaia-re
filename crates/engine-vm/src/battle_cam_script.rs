@@ -2329,9 +2329,55 @@ pub fn battle_vp(pose: &BattleCamPose, world_scale: f32, aspect: f32) -> [f32; 1
     )
 }
 
+/// View-space depth of a raw battle-world point under `pose` - the `MAC3`
+/// an `MVMVA` of the point leaves, which the battle tint pass
+/// (`crate::battle_actor_tint`) reads back as the node's `+0x34`.
+///
+/// `raw_pos` is in raw retail battle units (Y down, the actor's `+0x14`
+/// trio); both it and the focus are lifted by `world_scale` exactly as
+/// [`battle_vp`] lifts them, and the depth is the third row of
+/// `R * (s*p - s*focus) + tr` with `R = Rx(pitch) * Ry(yaw)`. Measured
+/// against the stored `+0x34` of the battle bodies in the catalogued battle
+/// states (camera trio `0x8007B790`, translation `0x800840B8`, focus
+/// `0x80089118` negated, position `node[+0x14]`): 296 of 379 within two
+/// units and 341 within 32; the rest read as states where the camera
+/// globals or the body moved after the frame drew it.
+pub fn battle_view_depth(pose: &BattleCamPose, world_scale: f32, raw_pos: [f32; 3]) -> f32 {
+    let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
+    let (sa, ca) = to_rad(pose.pitch).sin_cos();
+    let (sb, cb) = to_rad(pose.yaw).sin_cos();
+    let row = [-ca * sb, sa, ca * cb];
+    let v = [
+        (raw_pos[0] - pose.focus[0]) * world_scale,
+        (raw_pos[1] - pose.focus[1]) * world_scale,
+        (raw_pos[2] - pose.focus[2]) * world_scale,
+    ];
+    row[0] * v[0] + row[1] * v[1] + row[2] * v[2] + pose.tr[2]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn view_depth_reproduces_a_captured_battle_frame() {
+        // party_battle_gobu_gobu: camera (32, 2828), tr (0, 1280, 7800),
+        // focus origin; two bodies' stored view depths (the other two sit
+        // about 20 units off, read as moved after the frame drew them).
+        let pose = BattleCamPose {
+            pitch: 32.0,
+            yaw: 2828.0,
+            tr: [0.0, 1280.0, 7800.0],
+            focus: [0.0; 3],
+        };
+        for (pos, z) in [
+            ([0.0, 0.0, -812.0], 8986.0),
+            ([600.0, 0.0, -762.0], 11143.0),
+        ] {
+            let got = battle_view_depth(&pose, 4.0, pos);
+            assert!((got - z).abs() <= 2.0, "{pos:?}: {got} vs {z}");
+        }
+    }
 
     /// The formation behind the traced Tetsu fight. The trace pins the far
     /// framing's TR.z at `7680` = `prescale(0x12C0)`, and case 9 builds that

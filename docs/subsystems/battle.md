@@ -845,8 +845,8 @@ TMD walk:
   distinct variants duplicated across the row" - was wrong on both counts: the
   tiling is deterministic, and the variant count is a claim about the texture's
   content rather than about the renderer. The random corner mirror is real but
-  belongs to the *particle* scatter `FUN_801E0080` (`rand() % 4` → two mirror
-  bits). See [`functions/battle.md`](../reference/functions/battle.md#801d02c0).
+  belongs to the effect-VM walker `FUN_801E0080` (`rand() % 4` → two mirror
+  bits on each child billboard). See [`functions/battle.md`](../reference/functions/battle.md#801d02c0).
   The *address* is scene-independent - the
   scene's battle VRAM build is what places that scene's own ground tile
   there (`town01` = warm sandy pebbles; an earlier engine heuristic that
@@ -2861,13 +2861,49 @@ violet and white (`0x801F53D4`, parsed by
 `0` is the summon-hide's "not drawn" value (`FUN_800480D8`'s word-zero
 arm), not a black tint.
 
-Both hosts render that law through the per-draw depth-cue seam (far = the
-unpacked lanes, `IR0 = blend / 0x1000` via
-`engine-vm::battle_impact_fx::tint_ir0`), one rule for every writer. The
-capture / defeat fade (`+0x21C == 2`, arm 2) additionally ORs
-`0x81000000` into the node's mode word so the fading actor draws additive;
-neither host has a per-draw blend override yet, so that state is left
-un-cued rather than drawn as an opaque black silhouette.
+Both hosts render that law through the per-draw depth-cue seam, one rule for
+every writer, and the rule is the whole tint pass rather than only its blend
+arm: `World::battle_actor_draw_plan` runs `engine-vm::battle_actor_tint` (the
+port of `FUN_8004A908`) and the draw tick `engine-vm::battle_actor_tick`
+(`FUN_800480D8`) per body per frame, and both hosts take the far colour and
+`IR0` from it and skip the bodies it does not draw. The capture / defeat fade
+(`+0x21C == 2`, arm 2) additionally ORs `0x81000000` into the node's mode
+word so the fading actor draws additive; neither host has a per-draw blend
+override yet, so that state is left un-cued rather than drawn as an opaque
+black silhouette, and the body drops out once its lanes reach zero.
+
+#### The distance fade
+
+With no blend running the pass still writes both words. The view depth `a3 =
+node[+0x34] / 16` (the `MVMVA` of the node position, `FUN_8003D344`) is set
+against `a2 = radius / 2`, the radius being `*(actor[+0x22C]) + 0x58`: `640`
+on the party seats and the record size class `<< 5` on a monster. A near body
+(`a3 < a2`) takes its lanes at weight `a3 * 4`; a far one takes each lane
+scaled by `a2 / a3` (floored at `4`) at weight `3 * (2*a3 - a2)`, saturated at
+`0x1000`, so it is pushed toward a darker copy of itself. On the thirteen
+outdoor stages (`DAT_8007BDA8`, the `DAT_80078C1C` table) a grey result is
+complemented and its weight divided by eight - the far body brightens a
+little instead. Then the `+0x16E` status colours (`0x1` -> `0xFF2020`, `0x2`
+-> `0xFF0420`, `0x380` -> `0xF020F0`, weight `0x800`), bit 26 of the word, and
+the `+0x226` additive fade. The view depth itself is one row of the battle
+camera: `R * (4p - 4*focus) + tr` with `R = Rx(pitch) * Ry(yaw)` over the
+camera trio `0x8007B790` and translation `0x800840B8`
+(`battle_cam_script::battle_view_depth`), which reproduces the stored `+0x34`
+of 296 of 379 captured bodies to within two units (341 within 32; the rest
+read as states where the camera or the body moved after the draw).
+
+Measured over the 97 catalogued battle states: recomputing the pass from each
+seated actor's fields reproduces the stored `+0x74` / `+0x78` exactly for 258
+of 266 drawn bodies, 54 of them on the distance-fade arm (e.g. the Tetsu
+command menu's monster at depth `9098`: colour `0x48` a channel at weight
+`0x990`). The eight that differ are frames where a later writer touched the
+node after the draw.
+
+The cursor-dim state (`+0x21C == 0xC8`, the target cursor's non-pointed
+monsters) is its own arm: colour `0x010101` at weight `0x1000` unless the
+seat's formation cell (`0x8007BD09 + seat`) holds monster `0xA8`, which reads
+as a black silhouette. No catalogued state holds that flag, so both hosts keep
+their own cursor cue for the two cursor flags until one does.
 
 ## Per-frame actor maintenance (`FUN_8004CE2C`)
 
@@ -4865,8 +4901,8 @@ stated by the concrete writes.
 | `FUN_80055B6C` | Battle scene initializer: clears the actor/effect pools, resolves the party-slot composition (dedup + fill from `DAT_8007BD0C..`), sizes the LZS scratch, allocates the `0x7A34`-word monster-object arena at `_DAT_801C9370`, and programs the disp/draw environment. |
 | `FUN_80055B20` | Seeds the fallback party-slot id table `DAT_8007BD10 = {1, 2, 3}` (Vahn/Noa/Gala); `FUN_80055B6C` overwrites it from the live party. Slot bytes index character records as `(id-1)*0x414`. |
 | `FUN_80054A6C` | Battle party-file loader: builds the `data\battle\` filename (`s_data_battle_800153B8`), then streams each live party member's player battle file keyed on the party-id table `DAT_8007BD0C` at file stride `(id-1)*0x14000`. Dual-mode on `_DAT_8007B8C2`: retail ISO9660 (`FUN_800608F0`/`FUN_80060920`/`FUN_80060944` async CD reads) vs dev PROT-TOC (`FUN_8003E8A8`/`FUN_8003E964`/`FUN_8003E800`, entry `0x365`); bumps the loaded-count `DAT_8007B649`. CD/loader I/O infra: scope row in `asset_load_plumbing` - the port streams the same four files through `SceneAssets`, from the disc image, with no drive command sequence. |
-| `FUN_800480D8` | Per-actor battle tick / teardown: on the scene-clear byte `gp[0xA0C]+0x272` (guarded by `DAT_8007BD71 == -1`) runs the four overlay shutdowns and voids the effect-node table `DAT_801C90F0`, else forwards to the tint pass `FUN_8004A908` and the death / `0x808080` greyscale path. |
-| `FUN_8004A908` | Battle-actor tint: writes the colour word `+0x74` and blink halfword `+0x78` from the actor's transformed depth vs the monster-object depth threshold, with hard overrides for the `+0x16E` status bits (`0x01`→red, `0x02`→red-violet, `0x380`→magenta) and a greyscale-invert path gated on `DAT_8007BDA8`. The two arithmetic cores are ported (with tests): the per-channel depth-brightness ramp as `scus_battle_helpers::depth_cue_scale_channel` (min-4 dim floor, clamp-to-base), the negative-colour recolour as `scus_battle_helpers::invert_bgr24`. The GTE transform (`FUN_8003D344`) and colour-word packing stay render-track. |
+| `FUN_800480D8` | Per-actor battle draw tick, called by the render dispatcher's mode-2 arm on bodies at view depth `>= 0xA1`. The first body each frame runs the battle's per-frame global passes (effect-VM walker `FUN_801E0080`, cast census, damage popup, effect-node sweep) off the latch `ctx[+0x272]` the frame driver `FUN_80046A20` raises; then the tint pass and the zero-colour / lone-monster grey gate decide whether and how the body draws. Ported `engine-vm::battle_actor_tick`, live - [details](#the-distance-fade). |
+| `FUN_8004A908` | Battle-actor tint pass: writes the colour word `+0x74` and blend weight `+0x78` from the body's view depth against half its radius (the distance fade), with the `+0x16E` status colours, the outdoor-stage invert on `DAT_8007BDA8` and the cursor-dim arm. Ported whole as `engine-vm::battle_actor_tint`, live on both hosts; capture-matched 258 / 266 - [details](#the-distance-fade). |
 | `FUN_80046A20` | **Not a small helper** - this is the battle-scene per-frame tick (2576 bytes, 644 instructions), listed here only because the rows below are the routines it drives. It calls the scene loader `FUN_800520F0`, the seat stager `FUN_800513F0`, the party-file loader `FUN_80054A6C`, the main dispatcher `FUN_801D0748`, the action SM `FUN_801E295C`, the separation driver `FUN_80051078` and the actor-presentation tick `FUN_80050120`. Its one self-contained kernel is the HP/MP gauge-fill colour selector keyed on `+0x172`/`+0x174` vs `+0x14E>>1`/`>>2` and the status word `+0x16E`, ported as `battle_gauge::gauge_colors`. Full row in [`functions/battle.md`](../reference/functions/battle.md). |
 | `FUN_8004DC68` | Target-highlight pass: OR/clears the actor draw-flag bits `0x83000000` by 2D distance from the acting actor (angle+radius via `FUN_80019B28`), dimming out-of-range targets during command selection; boss/target ids are special-cased. |
 | `FUN_8004C650` | **Move-name** banner placement (placement records 76/77 - captured as the art name, e.g. `Poisonous Sting`, at `(117, 148)`; not the enemy-name banner, which `FUN_801D9D3C` composes): measures a name string width (`FUN_80035F04`) and centres its four banner X coords around `0xA0`, with `0xCF`/`0xC1` leading-byte nudges. |

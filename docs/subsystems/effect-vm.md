@@ -2,7 +2,8 @@
 
 The runtime that drives battle-spawn effects: spell casts, item-use animations, hit
 sparks. It lives in the battle overlay (`0898_xxx_dat`); the per-frame walker is
-`FUN_801E0088`. Port:
+`FUN_801E0080`, called once per battle frame by the draw tick `FUN_800480D8`
+(`jal 0x801e0080` at `0x80048128`, the per-frame global passes). Port:
 [`legaia_engine_vm::effect_vm`](../../crates/engine-vm/src/effect_vm.rs).
 
 **What catches people out: this is the one member of
@@ -30,7 +31,7 @@ Three functions:
 |---|---|---|
 | `0x801DE914` | 0x13C | Init / pack-fixup. Called from `FUN_800520F0` case `0xE` with `(id=0x1000, param=0xA00)`. |
 | `0x801DFDF0` | 0x288 | Public spawn-effect API: `(byte effect_id, short* world_pos, ushort angle)`. Pages that cite `0x801DFDF8` name its prologue word: the entry is two words earlier, where the pool-ready byte `0x8007BD58` is loaded, and every `jal` to the routine on the disc names `0x801DFDF0`. Ids `4` and `0x13` make a side call to `0x80050ED4` (descriptor `0x801F5D90` / `0x801F5CF8`) and then take the ordinary spawn path. |
-| `0x801E0088` | 0x970 | Per-frame walker (update + render). |
+| `0x801E0080` | 0x978 | Per-frame walker (update + render). Like the spawn API, the entry is two words ahead of the prologue at `0x801E0088` - `lui v0,0x8008` / `lbu v0,-0x42a8(v0)` load the pool-ready byte `0x8007BD58` - and the disc's one `jal` to it names `0x801E0080`. Pages and dumps that cite `0x801E0088` name the prologue word. |
 
 The on-disc input format is the [runtime 2-pack wrapper](../formats/effect.md) (PROT entry 873, `data\battle\efect.dat`). Each pack0 entry is a frame-batch animation record; each pack1 entry is an effect-ID script.
 
@@ -103,25 +104,30 @@ the separate flag halfword `actor[+0x9E]`: `0x4000` selects `FUN_8002A5A4`,
 `legaia_engine_core::effect_ribbon`), and `& 0x6000 == 0` falls through to the
 default `FUN_80028158`.
 
-Only the default arm is reachable on the shipped disc. `actor[+0x9E]` is zeroed
-for every actor by the allocator `FUN_80020DE0` at `0x80020ECC`, and a byte
-census over `SCUS_942.54`, all 86 base-mapped overlay images and all 1233
-extracted `PROT.DAT` entries - covering `sh` at `+0x9E`, `sb` at `+0x9E`/`+0x9F`,
-`sw` at `+0x9C`, and any store at `+0x1C`/`+0x1E` through a register formed as
-`actor + 0x80`, the base the dispatcher itself reads through - finds no site
-that writes a value carrying `0x2000` or `0x4000`. The stores that do exist
-write small literals, a motion-script cursor (paired with the program base at
-`actor+0x90`) or the field VM's own return value. Nine stores carry a
-`0x2000`-class immediate within 24 instructions and none of them writes one:
-eight are pad-button tests (`lw ...,0xBB84(rX)` then `andi`) in a field-overlay
-cursor whose `+0x9E` is a counter, and the ninth is a `0xDFFF_FFFF` clear mask
-on a different word that the proximity window swept in.
+All three arms carry shipped content. The selector halfword and the render mode
+are written by the **move VM** itself: op `0x42` (jump-table arm `0x80023F94`)
+sets `actor[+0x56] = 4`, `+0x5A = 2` and `+0x9E = op[1] | 0x2000` (`ori 0x2000`
+at `0x80023FBC`, `sh v0,0x1e(s1)` at `0x80023FC0`, where `s1 = actor + 0x80` from
+`addiu s1,s2,0x80` at `0x80023088`), and fills the ribbon's inputs - `+0x9C`,
+`+0xC8`, `+0xB4..+0xBA`, `+0xA8`, and two packed colour words at `+0xA0` /
+`+0xA4`. Op `0x23` (arm `0x800237D8`) is the `0x4000` sibling. The dispatcher
+hands the emitter `src = actor + 0x9C`, so the ribbon's "record" is the actor.
 
-That is a statement about the static writers, not a proof: a value loaded out
-of an effect record could carry the bit, and no parser decodes the five `src`
-fields the ribbon builder reads (`+0x0C` / `+0x18` / `+0x1A` / `+0x1C` /
-`+0x1E` off `actor+0x9C`). It does mean an engine-side ribbon emitter has no
-shipped program to drive it.
+An earlier census on this page swept stores at `+0x9E` / `+0x9C` and through a
+register formed as `actor + 0x80`, found none carrying `0x2000` or `0x4000`, and
+concluded the default arm was the only reachable one. Both stores above are that
+exact form, in the SCUS move VM, so the census missed its own target. Walking
+the disc's move programs through the engine's decoder at instruction boundaries
+finds op `0x42` five times, all in slot-B cast / summon images (PROT 0923, 0934
+twice, 0957, 0964), and none in the PROT 0898 move-FX prototypes or the field
+stager records. The captures agree on the other two arms: the 97 catalogued
+battle states hold 188 render-mode-4 nodes, 128 on the default emitter and 60 on
+the `0x4000` sprite arm; none holds a live ribbon.
+
+Neither play host draws render-mode-4 actors yet (any arm), and the engine's
+move-VM port of ops `0x42` / `0x23` does not yet store those fields at
+retail's offsets, which is what the ribbon port
+(`legaia_engine_core::effect_ribbon`, `NOT WIRED`) waits on.
 
 ## Lifetime + render bridge (engine port)
 

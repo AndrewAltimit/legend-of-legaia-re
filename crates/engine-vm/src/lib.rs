@@ -94,6 +94,8 @@ pub mod anim_vm;
 pub mod baka_hub_actors;
 pub mod battle_action;
 pub mod battle_actor_draw;
+pub mod battle_actor_tick;
+pub mod battle_actor_tint;
 pub mod battle_anim_rate;
 pub mod battle_approach;
 pub mod battle_arts_auto_combo;

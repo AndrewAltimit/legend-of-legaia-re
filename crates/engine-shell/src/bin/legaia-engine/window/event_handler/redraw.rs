@@ -1864,6 +1864,17 @@ impl PlayWindowApp {
                             }),
                     });
                 }
+                // The camera the battle bodies' tint pass judges depth under
+                // (`World::battle_actor_draw_plan`): the phase-scripted dome
+                // camera this pass projects with, or none outside a
+                // stage-dome battle (the body is then judged at retail's
+                // parked depth).
+                let battle_pose = (in_battle && self.battle_stage_mesh.is_some()).then(|| {
+                    self.battle_camera
+                        .as_ref()
+                        .map(|c| c.pose())
+                        .unwrap_or(legaia_engine_vm::battle_cam_script::BOOT_POSE)
+                });
                 for (i, actor) in self.session.host.world.actors.iter().enumerate() {
                     let Some(tmd_idx) = actor.tmd_binding else {
                         continue;
@@ -1884,6 +1895,24 @@ impl PlayWindowApp {
                         && actor.battle.render_flag
                             == legaia_engine_vm::battle_target_group::RENDER_FLAG_HIDDEN
                     {
+                        continue;
+                    }
+                    // Retail's per-body battle draw (`FUN_800480D8` over the
+                    // tint pass `FUN_8004A908`): a body whose colour word
+                    // comes out zero is not drawn unless the lone-monster
+                    // grey gate stamps it, and one nearer than view depth
+                    // `0xA1` is rejected by the render dispatcher.
+                    let battle_plan = if in_battle {
+                        self.session.host.world.battle_actor_draw_plan(
+                            i,
+                            battle_pose.as_ref(),
+                            BATTLE_WORLD_SCALE,
+                            self.battle_stage_outdoor,
+                        )
+                    } else {
+                        None
+                    };
+                    if battle_plan.is_some_and(|p| !p.drawn) {
                         continue;
                     }
                     // Board-owned tile actors draw once per cell through the
@@ -1999,35 +2028,37 @@ impl PlayWindowApp {
                             // keep their own cue (their retail look is the
                             // same rule; that thread is not this one's).
                             //
-                            // NOT WIRED: `render_flag == 2` (the capture /
-                            // defeat fade, SM arm 2) also ORs `0x81000000`
+                            // Not modelled: `render_flag == 2` (the capture
+                            // / defeat fade, SM arm 2) also ORs `0x81000000`
                             // into the node's mode word, so the fading actor
-                            // draws ABE|ABR1 additive and black = gone; a
-                            // colour word of `0` then skips the draw
-                            // outright (`FUN_800480D8`'s word-zero arm). The
+                            // draws ABE|ABR1 additive and black = gone. The
                             // renderer has no per-`SceneDraw` blend override,
                             // so the fade is left un-cued (drawn opaque and
                             // untinted) rather than as an opaque black
-                            // silhouette. Colour `0` is likewise left alone:
-                            // it is the summon-hide's "not drawn" word.
-                            if b.render_blend != 0
-                                && b.render_color != 0
+                            // silhouette; once its lanes reach zero the draw
+                            // plan above skips the body (`FUN_800480D8`'s
+                            // word-zero arm), as it does the summon hide.
+                            // The two cursor flags keep their own cue.
+                            //
+                            // The cue is the whole tint pass, not only its
+                            // blend arm: with no blend running retail still
+                            // stages the lanes as the far colour, weighted by
+                            // view depth, and a body past half its radius
+                            // (in `/16` depth units) takes the depth-cue arm
+                            // - a darker copy of its colour, or a brighter
+                            // one on the outdoor stages - plus the status
+                            // colours. `World::battle_actor_draw_plan`.
+                            if let Some(p) = battle_plan
                                 && !matches!(
                                     b.render_flag,
                                     ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED | 2
                                 )
                             {
-                                use legaia_engine_vm::battle_impact_fx as ifx;
-                                let c = ifx::unpack_actor_state_rgb(b.render_color);
                                 cue = Some(legaia_engine_render::DrawCue {
-                                    far: [
-                                        f32::from(c[0]) / 255.0,
-                                        f32::from(c[1]) / 255.0,
-                                        f32::from(c[2]) / 255.0,
-                                    ],
+                                    far: p.cue_far(),
                                     near_z: -1.0,
                                     far_z: 0.0,
-                                    max_ir0: ifx::tint_ir0(b.render_blend),
+                                    max_ir0: p.cue_ir0(),
                                 });
                             }
                         }

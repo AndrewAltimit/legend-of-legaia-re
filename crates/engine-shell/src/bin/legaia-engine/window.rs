@@ -918,6 +918,11 @@ struct PlayWindowApp {
     /// stages). Resolved per battle in `build_battle_stage`;
     /// `None` outside a stage-dome battle.
     battle_ground_cue_far: Option<[f32; 3]>,
+    /// Whether the current battle stage is on the `DAT_80078C1C` outdoor
+    /// table - the tint pass's `DAT_8007BDA8` input
+    /// (`World::battle_actor_draw_plan`). Resolved per battle in
+    /// `build_battle_stage`; `false` outside a stage-dome battle.
+    battle_stage_outdoor: bool,
     scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.
     pad: u16,

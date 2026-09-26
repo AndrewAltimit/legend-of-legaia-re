@@ -31,70 +31,64 @@
 //! dump `overlay_menu_801cfa48.txt` is only a citation pointer (its own header
 //! says so) - the enclosing function there is a different one.
 //!
-//! NOT WIRED (whole module), and the missing pieces are two, not one.
+//! NOT WIRED (whole module): no play host draws render-mode-4 actors at all -
+//! none of the three emitters `FUN_8001ADA4` case 4 selects is drawn on the
+//! native window or the browser play page - and the engine's move-VM port
+//! does not yet leave this emitter's inputs where retail does (below). Both
+//! are needed before a draw pass has anything true to draw; the geometry
+//! here is correct and waits on them.
 //!
-//! The first is the selector: no crate here emits actor render-mode-4
-//! primitives, so there is no `actor[+0x9E]` flag word for the `0x2000` arm to
-//! be picked off. The second is the parameters - nothing in the workspace
-//! produces a [`RibbonParams`], because its five fields are reads off an
-//! effect `src` record (`+0x0C` / `+0x18` / `+0x1A` / `+0x1C` / `+0x1E`) that
-//! no parser here decodes. A draw pass added now would have to invent both,
-//! which is why one is not added: the geometry is correct and the inputs do
-//! not exist.
+//! ## Who selects this arm, and what `src` is
 //!
-//! ## What the disc puts in the selector
+//! Read off the disassembly (`ghidra/scripts/funcs/8001ada4.txt`
+//! `0x8001B060..0x8001B124`, `ghidra/scripts/funcs/80023070.txt`):
 //!
-//! A byte census settles how far the first half is from existing, and the
-//! answer is "further than a host". The render mode itself is
-//! `actor[+0x56]`, loaded as the switch variable at `0x8001AE60`; mode `4`
-//! is written
-//! at four sites, three of them in the move VM (`0x80023460`, `0x800237E4`,
-//! `0x80023F98`) and one at `0x8004D574`, so mode-4 actors *are* shipped
-//! content. The emitter select is the separate halfword `actor[+0x9E]`,
-//! zeroed for every actor by the allocator `FUN_80020DE0` at `0x80020ECC`.
+//! * The call is `(scratch, actor[+0x9E], (s16)actor[+0x9C] +
+//!   (((s16)actor[+0xC8] >> 3) << 8), actor + 0x9C)`. `src` is **the actor
+//!   itself** from `+0x9C`, not an effect record, so the five fields below are
+//!   actor fields: `src[+0x0C]` = `actor[+0xA8]`, `src[+0x18..+0x1E]` =
+//!   `actor[+0xB4..+0xBA]`, and the packet half's two colour words `src[+0x04]`
+//!   / `src[+0x08]` = `actor[+0xA0]` / `actor[+0xA4]`.
+//! * The writer is the **move VM's op `0x42`** (jump-table arm `0x80023F94`,
+//!   fifteen halfwords): render mode `actor[+0x56] = 4`, physics byte
+//!   `+0x5A = 2`, `+0x10 &= ~2`, then `+0x9E = op[1] | 0x2000` (`ori 0x2000`
+//!   at `0x80023FBC`, `sh v0,0x1e(s1)` at `0x80023FC0` with
+//!   `s1 = actor + 0x80` from `addiu s1,s2,0x80` at `0x80023088`),
+//!   `+0x9C = op[2]`, `+0xC8 = op[3]`, `+0xB4..+0xBA = op[4..7]`,
+//!   `+0xA8 = op[8]`, and the two colour words packed
+//!   `op[9] + op[10]<<8 + op[11]<<16` into `+0xA0` and `op[12..14]` the same
+//!   way into `+0xA4`. Op `0x23` (arm `0x800237D8`) is the `0x4000` sibling
+//!   (`ori 0x4000` at `0x80023800`).
 //!
-//! Scanning `SCUS_942.54`, all 86 base-mapped overlay images and all 1233
-//! extracted `PROT.DAT` entries for every store that can reach that halfword
-//! (`sh` at `+0x9E`, `sb` at `+0x9E`/`+0x9F`, `sw` at `+0x9C`, and any store
-//! at `+0x1C`/`+0x1E` through a register formed as `actor + 0x80`, which is
-//! the base the dispatcher itself reads through) finds **no site that writes
-//! a value carrying bit `0x2000` or `0x4000`**. The totals: 21 `sh` sites in
-//! SCUS, 81 in PROT 0897, 5 in 0900, 2 in 0980, one each in 0208 / 0408 /
-//! 0874 / 0894, one `sb` pair in 0898, zero `actor + 0x80`-relative stores
-//! anywhere. Every literal stored is small; the computed ones are a motion
-//! script cursor (paired with the program base at `actor+0x90`) or the field
-//! VM's own return value. Nine stores have a `0x2000`-class immediate within
-//! 24 instructions and none of them is a write of one: eight are pad-button
-//! tests (`lw ...,0xBB84(rX)` then `andi 0x2000` / `0x4000` / `0x8000`) in a
-//! field-overlay cursor whose `+0x9E` is a counter, and the ninth is a
-//! `0xDFFF_FFFF` clear mask applied to a different word (`+0x10`) that the
-//! proximity window swept in.
+//! An earlier census here reported that no store anywhere writes `0x2000` or
+//! `0x4000` into `+0x9E` and that no `actor + 0x80`-relative store exists; both
+//! are false - the two stores above are exactly that form, in the SCUS move VM
+//! itself. Walking the disc's move programs through the engine's decoder at
+//! instruction boundaries (default branch path), op `0x42` occurs five times,
+//! all in slot-B cast / summon images: PROT 0923, PROT 0934 (twice), PROT 0957
+//! and PROT 0964, each a transform-node record (`model_sel -1`) with a
+//! seed word `0x3039` at `+0xB8` and a cap of 7..12 steps in `+0x9C`; none
+//! occurs in the PROT 0898 move-FX prototypes or the field stager records.
+//! So the lightning arm is shipped content. The 97 catalogued battle states
+//! hold 188 render-mode-4 nodes - 128 on the default emitter, 60 on the
+//! `0x4000` sprite arm, none on this one - so no capture yet shows a live
+//! bolt.
 //!
-//! There is no disc-side census to set against that, because the render mode
-//! is not a disc field. `actor[+0x56]` has **no carrier in any asset**: no MAN
-//! placement or actor record contains it, and every write of `4` is code - the
-//! three move-VM arms above and the one SCUS site - each of which also sets the
-//! physics dispatch byte `+0x5A = 2` and clears `+0x10 & 2`. So "does a scene
-//! ship a mode-4 actor" is not a question the bytes of a scene can answer; it
-//! is a question about which move-VM programs run. The port names the same
-//! halfword from its other reader - `legaia_engine_vm::move_vm`'s
-//! `+0x56` is the "move-table sub-state" cleared by ops `0x13` / `0x42` - which
-//! is the usual shape of one word with two readers, not a disagreement.
+//! ## What a wire needs
 //!
-//! So on the shipped disc `FUN_8001ADA4` case 4 always finds `& 0x6000 == 0`
-//! and takes the default emitter `FUN_80028158`; the `0x2000` arm is a call
-//! site the flag never opens. That is a statement about the *static* writers,
-//! not a proof - a value loaded from an effect record could carry the bit,
-//! and the record parser that would show it is the same one this row's second
-//! half is missing. It does mean a host wired today would have no shipped
-//! program to drive it.
+//! * The engine's move-VM port of op `0x42` (`legaia_engine_vm::move_vm`)
+//!   routes `op[2]`, `op[3]` and `op[8]` through its anim-block window based
+//!   at `+0xAC`, where they land at the wrong offsets or out of range, and
+//!   never writes the two colour words; op `0x23` has the same shape. Those
+//!   stores have to land before a [`RibbonParams`] can be read off a live
+//!   actor.
+//! * A render-mode-4 draw path on both hosts (this arm, the `0x4000` sprite
+//!   arm and the default `FUN_80028158`).
 //!
-//! This is absent on **both** hosts, native and browser, so it is not a
-//! host-drift case - `check-ui-host-drift.py` has nothing to pair. What would
-//! close it is an effect-record parser for the five fields plus a render-mode
-//! channel on the battle actor; the emitter already takes its RNG and its two
-//! LUTs as parameters so the consumer can live in `engine-render` or
-//! `engine-ui` rather than here.
+//! The `src[+0x1C]` word is the overlay RNG's **seed** - the emitter stores
+//! it `>> 2` into `0x801F6950` (`lhu v0,0x1c(t8)` at `0x801CFC08`,
+//! `sw v0,0x6950(v1)` at `0x801CFC18`) before the first draw - which is why
+//! every shipped carrier's `0x3039` redraws one fixed bolt shape.
 //!
 //! REF: FUN_8001ADA4 (the render dispatcher arm that selects this emitter),
 //! FUN_80028158, FUN_8002A5A4 (the other two arms), FUN_801D0290 (the RNG)
@@ -168,9 +162,9 @@ pub struct RibbonParams {
     /// `src[+0x1A]` (`i16`) - base step length; the emitter halves it and adds
     /// `rand % half` per step.
     pub step_len: i16,
-    /// `src[+0x1C]` (`i16`) - a per-call scalar the emitter quarters and
-    /// publishes to `_DAT_801F6950` for the packet half to read.
-    pub depth_cue: i16,
+    /// `src[+0x1C]` (`i16`) - the overlay RNG seed: the emitter stores it
+    /// `>> 2` into `0x801F6950`, the state of `FUN_801D0290`, before the walk.
+    pub rng_seed: i16,
     /// `src[+0x1E]` (`i16`) - constant heading advance per step, on top of the
     /// wander.
     pub turn_rate: i16,
@@ -232,9 +226,9 @@ pub struct Ribbon {
     pub plane: RibbonPlane,
     /// Header + packet-chain layout.
     pub packets: RibbonPackets,
-    /// The value the emitter publishes to `_DAT_801F6950`
-    /// (`depth_cue >> 2`).
-    pub depth_cue: i32,
+    /// The value the emitter stores to `0x801F6950` - the RNG state it
+    /// then draws from (`rng_seed >> 2`).
+    pub rng_seed: i32,
 }
 
 /// Split the emitter's packed count argument.
@@ -248,10 +242,10 @@ pub struct Ribbon {
 /// which is the "draw the whole ribbon" form.
 ///
 /// NOT WIRED: this decodes the third argument of [`build_ribbon`], which has no
-/// caller - `engine-core` emits no actor render-mode-4 primitives. Same missing
-/// input as the emitter itself: an actor render-mode channel carrying the
-/// `+0x9E` flag word that selects this arm. Split out as its own function
-/// because the cap/total packing is the part a caller has to construct.
+/// caller - neither play host draws render-mode-4 actors (module doc). The
+/// argument is `(s16)actor[+0x9C] + (((s16)actor[+0xC8] >> 3) << 8)`, both
+/// written by move-VM op `0x42`. Split out as its own function because the
+/// cap/total packing is the part a caller has to construct.
 pub fn split_packed_count(packed: u32) -> (i32, i32) {
     let cap = (packed & 0xFF) as i32;
     let total = (packed >> 8) as i32;
@@ -360,14 +354,12 @@ fn narrow_advance(v: i64) -> i32 {
 /// The RNG modulus is guarded at `1`; retail divides by the raw radius / step
 /// and would trap on a zero one, which the emitter is never handed.
 ///
-/// NOT WIRED: nothing in this crate emits actor render-mode-4 primitives.
-/// The emitter's only retail caller is the render dispatcher `FUN_8001ADA4`
-/// case 4, which is render-track - `engine-core` is renderer-free and carries
-/// no GPU packet chain, no `_DAT_801F6950` depth-cue channel, and no
-/// `actor[+0x9E]` flag word to select the arm from. Wiring this needs the
-/// battle effect renderer to ask for ribbon geometry per frame; the emitter is
-/// pure and takes its RNG and LUTs as parameters precisely so that consumer can
-/// be `engine-render` rather than this crate.
+/// NOT WIRED: neither play host draws render-mode-4 actors. The emitter's only
+/// retail caller is the render dispatcher `FUN_8001ADA4` case 4 on an actor
+/// move-VM op `0x42` set up (module doc), and the engine's port of that op
+/// does not yet store the fields a caller would read the params from. The
+/// emitter is pure and takes its RNG and LUTs as parameters so the consumer
+/// can be a host's battle effect pass rather than this crate.
 pub fn build_ribbon<T: TrigTable, R: FnMut() -> u32>(
     mode: u32,
     packed: u32,
@@ -472,7 +464,7 @@ pub fn build_ribbon<T: TrigTable, R: FnMut() -> u32>(
             packets_per_step: 6,
             command_base: RIBBON_COMMAND_BASE,
         },
-        depth_cue: i32::from(params.depth_cue) >> 2,
+        rng_seed: i32::from(params.rng_seed) >> 2,
     }
 }
 
@@ -496,8 +488,8 @@ pub fn build_ribbon<T: TrigTable, R: FnMut() -> u32>(
 /// (`bgez v0` at `0x801cfef4`) can never be taken - `w >> 2` of a negative `w`
 /// is at most `-1` - so the fall-through really is unconditional.
 ///
-/// NOT WIRED: only [`build_ribbon`] calls this, and nothing calls that - same
-/// missing actor render-mode channel. Exposed rather than inlined because the
+/// NOT WIRED: only [`build_ribbon`] calls this, and nothing calls that - no
+/// render-mode-4 draw path exists on either host (module doc). Exposed rather than inlined because the
 /// asymmetric fold is the emitter's least obvious behaviour and is worth being
 /// separately testable.
 pub fn damp_wander(w: i32) -> i32 {
@@ -520,7 +512,7 @@ mod tests {
             wander_spread: 0x40,
             radius: 0x80,
             step_len: 0x200,
-            depth_cue: 0x40,
+            rng_seed: 0x40,
             turn_rate: 0x20,
         }
     }
@@ -602,7 +594,7 @@ mod tests {
         );
         // The emitter walks one step past the drawn count.
         assert_eq!(r.steps.len(), 9);
-        assert_eq!(r.depth_cue, 0x40 >> 2);
+        assert_eq!(r.rng_seed, 0x40 >> 2);
     }
 
     #[test]
