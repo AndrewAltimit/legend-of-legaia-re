@@ -1801,10 +1801,54 @@ pub fn root_menu_cancel_route(entry_context_kind: Option<u8>) -> u8 {
 /// off the entry-context kind and off nothing else.
 ///
 /// PORT: FUN_801DC6B4 (`0x801dc8d0..0x801dc8e4`)
-/// NOT WIRED: the cancel-side twin below is consumed by the field menu's
-/// root-menu cancel route; nothing in the engine yet routes entry-context
-/// kind `0xd` to this entry-side sub-screen id.
+///
+/// Live: [`menu_entry_subscreen`] answers this id for kind `0x0D`, and
+/// [`crate::field_menu::FieldMenuSession::open_entry_screen`] - which both
+/// play hosts call at menu-open - opens the notice panel exactly when the
+/// decode lands here.
 pub const CONTEXT_LOCKED_ENTRY_SUBSCREEN: u8 = 4;
+
+/// Sub-screen the menu driver opens on when no entry context is installed:
+/// the root command picker (`sw s1,0x46a4(a1)` with `s1 = 1` at `0x801DC86C`).
+pub const ROOT_PICKER_SUBSCREEN: u8 = 1;
+/// Entry-context kind `0` (an inline shop, op-`0x49` sub-op `0`) opens `0x1A`.
+pub const CONTEXT_SHOP_ENTRY_SUBSCREEN: u8 = 0x1A;
+/// Entry-context kind `1` (a field save point) opens `0x19`, the save card
+/// driver - the same id the root picker's Save row routes to.
+pub const CONTEXT_SAVE_ENTRY_SUBSCREEN: u8 = 0x19;
+/// Entry-context kind `7` opens `0x20`, the casino prize exchange.
+pub const CONTEXT_PRIZE_ENTRY_SUBSCREEN: u8 = 0x20;
+
+/// The menu driver's **entry decode**: which sub-screen a menu opens on,
+/// from the entry-context kind byte `*_DAT_8007B450`.
+///
+/// `FUN_801DC6B4` state 0 (`0x801DC85C..0x801DC8E4`) stores the root picker
+/// (`1`) first, then overwrites it once per matching kind with four
+/// independent `lbu (a0)` compares - `0` -> `0x1A`, `1` -> `0x19`, `7` ->
+/// `0x20`, `0x0D` -> `4` - so any other kind, and a null context pointer,
+/// keeps the picker.
+///
+/// One arm is outside this function's domain: a context pointer equal to
+/// the literal `1` (not a record) opens sub-screen `2` and clears the
+/// pointer (`0x801DC868..0x801DC878`). The port's context is a kind byte, not
+/// a pointer, and nothing in it produces that sentinel.
+///
+/// Only the `0x0D` arm has a consumer that routes on the decoded id -
+/// [`crate::field_menu::FieldMenuSession::open_entry_screen`]. The shop, save
+/// point and prize exchange reach their screens through dedicated host paths
+/// (the shop session, the save flow, the prize-exchange session) that open
+/// them directly rather than through the pause menu.
+///
+/// PORT: FUN_801DC6B4 (`0x801DC85C..0x801DC8E4`, the entry decode)
+pub fn menu_entry_subscreen(entry_context_kind: Option<u8>) -> u8 {
+    match entry_context_kind {
+        Some(0) => CONTEXT_SHOP_ENTRY_SUBSCREEN,
+        Some(1) => CONTEXT_SAVE_ENTRY_SUBSCREEN,
+        Some(7) => CONTEXT_PRIZE_ENTRY_SUBSCREEN,
+        Some(ROOT_MENU_CONTEXT_LOCKED) => CONTEXT_LOCKED_ENTRY_SUBSCREEN,
+        _ => ROOT_PICKER_SUBSCREEN,
+    }
+}
 
 /// Sub-screen the root picker's **cancel** hands to under the same kind -
 /// the ready check that draws window 5. See [`root_menu_cancel_route`].
@@ -3308,5 +3352,24 @@ mod tests {
             compare_category_for_item(0x11, &ctx),
             COMPARE_CATEGORY_DEFAULT
         );
+    }
+
+    /// The four kind arms of `FUN_801DC6B4`'s entry decode, plus the
+    /// fall-through: any other kind and a null context keep the root picker.
+    #[test]
+    fn the_entry_decode_routes_the_four_context_kinds() {
+        assert_eq!(menu_entry_subscreen(Some(0)), 0x1A);
+        assert_eq!(menu_entry_subscreen(Some(1)), 0x19);
+        assert_eq!(menu_entry_subscreen(Some(7)), 0x20);
+        assert_eq!(
+            menu_entry_subscreen(Some(ROOT_MENU_CONTEXT_LOCKED)),
+            CONTEXT_LOCKED_ENTRY_SUBSCREEN
+        );
+        for kind in [None, Some(2), Some(5), Some(0x0B), Some(0x0C), Some(0xFF)] {
+            assert_eq!(menu_entry_subscreen(kind), ROOT_PICKER_SUBSCREEN);
+        }
+        // The save-point arm opens the same card driver the root picker's
+        // Save row routes to.
+        assert_eq!(CONTEXT_SAVE_ENTRY_SUBSCREEN, ROOT_MENU_ROUTES[6]);
     }
 }
