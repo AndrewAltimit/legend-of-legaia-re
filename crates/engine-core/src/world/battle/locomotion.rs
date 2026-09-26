@@ -78,7 +78,7 @@ impl World {
     /// The slot's seat (anchor) pair - retail `+0x3C`/`+0x40`. Falls back to
     /// the live position for a not-yet-seeded actor (an unmoved actor's two
     /// pairs are equal by construction).
-    fn battle_seat_of(&self, slot: usize) -> (i16, i16) {
+    pub(in crate::world) fn battle_seat_of(&self, slot: usize) -> (i16, i16) {
         let Some(a) = self.actors.get(slot) else {
             return (0, 0);
         };

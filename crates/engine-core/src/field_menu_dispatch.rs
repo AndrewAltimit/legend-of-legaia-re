@@ -371,10 +371,56 @@ pub fn apply_inventory_outcome(session: &InventoryUseSession, world: &mut World)
             // all-party one). `current_item` is unavailable here - it
             // returns `None` once the session reaches `Done`.
             for &slot in &session.used_slots {
-                world.use_item(id, slot);
+                if let crate::items::ItemOutcome::ArtLearned {
+                    character, art_id, ..
+                } = world.use_item(id, slot)
+                {
+                    // Retail's applier calls `FUN_80035C00(slot, art)` here
+                    // and the Items use sub-screen opens window 8 on it.
+                    world.menu.pending_art_notice = art_learned_notice(world, character, art_id);
+                }
             }
         }
     }
+}
+
+/// Compose the window-8 "learned an art" notice: the disc template
+/// (`0x801E4700`) patched the way `FUN_801DCD58` patches it
+/// ([`crate::pause_screens::patch_notify_template`]) and expanded against the
+/// party names and the arts-name table.
+///
+/// `None` when the menu overlay's template is not installed - the notice is
+/// disc text and the engine does not invent it.
+pub fn art_learned_notice(
+    world: &World,
+    character: u8,
+    art_id: u8,
+) -> Option<crate::pause_screens::ArtLearnedNotice> {
+    let mut template = world.menu.notify_template.clone()?;
+    crate::pause_screens::patch_notify_template(&mut template, i16::from(character), art_id);
+    let names = &world.party.party_names;
+    let lines = crate::pause_screens::expand_notify_lines(
+        &template,
+        |slot| {
+            // `0xC1 0x63` names the leader (`DAT_80084597`); any other
+            // operand is a roster slot.
+            let i = if slot == 0x63 { 0 } else { usize::from(slot) };
+            names.get(i).cloned()
+        },
+        |ch, art| {
+            world
+                .menu
+                .text
+                .as_ref()
+                .and_then(|t| t.art_name(ch, art))
+                .map(str::to_string)
+        },
+    );
+    Some(crate::pause_screens::ArtLearnedNotice {
+        character,
+        art_id,
+        lines,
+    })
 }
 
 /// Apply a finished pause **Items screen** to the world: the inner use
@@ -392,6 +438,15 @@ pub fn apply_pause_items_outcome(
     world: &mut World,
 ) -> Option<u32> {
     apply_inventory_outcome(&session.inner, world);
+    // Incense (item `0x8A`, effect class `0x82`): the confirm runs the SCUS
+    // item applier, whose class-`0x82` arm (`0x800421A0`) is one
+    // `jal 0x80046870` - `+0x40` walk ticks on `_DAT_8007B600`, capped at
+    // `0x100`. The field walk tick drains it and the region encounter roll
+    // skips while it is non-zero (`World::on_field_step`).
+    for _ in 0..session.incense_uses() {
+        world.locomotion.walk_regen_window =
+            legaia_engine_vm::battle_helpers::top_up_cooldown(world.locomotion.walk_regen_window);
+    }
     if let Some(warp) = session.staged_warp() {
         world.menu.pending_warp = Some(warp);
     }
@@ -440,10 +495,24 @@ pub fn apply_spell_outcome(
         return None;
     };
     let def = session.catalog().get(spell_id).cloned();
-    let mp_cost = def.as_ref().map(|d| d.mp_cost).unwrap_or(0);
+    // Retail debits the **discounted** price: `jal 0x80035394` at
+    // `0x801D93C0` (group cast: `0x801D972C`), then `record+0x10A -= v0`
+    // at `0x801D9404..0x801D9418` - the same number the list build greyed
+    // the row against, so the gate and the charge cannot disagree.
+    let mp_cost = def
+        .as_ref()
+        .map(|d| {
+            session
+                .party()
+                .iter()
+                .find(|c| c.slot == caster_slot)
+                .map(|c| c.mp_cost(d))
+                .unwrap_or(d.mp_cost as u16)
+        })
+        .unwrap_or(0);
     if let Some(caster) = world.party.roster.members.get_mut(caster_slot as usize) {
         let mut hms = caster.hp_mp_sp();
-        hms.mp_cur = hms.mp_cur.saturating_sub(mp_cost as u16);
+        hms.mp_cur = hms.mp_cur.saturating_sub(mp_cost);
         caster.set_hp_mp_sp(hms);
     }
     // Menu-cast spell-XP arm: only the HP-heal effect classes accrue
@@ -852,15 +921,12 @@ fn build_spell_session(world: &World, catalog: &SpellCatalog) -> SpellMenuSessio
                 level: member.magic_rank(),
                 spells: list.ids[..n].to_vec(),
                 spell_levels: list.levels[..n].to_vec(),
-                // Per-caster MP-cost ability bits (record `+0xF4`, kept live
-                // in `character_ability_bits`) so the Magic screen displays the
-                // MP-saver-discounted cost (`FUN_80035394`).
-                ability_bits: world
-                    .party
-                    .character_ability_bits
-                    .get(i)
-                    .copied()
-                    .unwrap_or(0),
+                // Per-caster MP-cost ability bits: retail's kernel reads the
+                // caster's own record `+0xF4` word (`0x800353B4`), so this is
+                // keyed by the roster record, not by battle ordinal (the
+                // `character_ability_bits` mirror is ordinal-indexed and
+                // names a different member once `active_party` reorders).
+                ability_bits: crate::spells::record_ability_word(member),
                 // Retail resolves the Ra-Seru slot through the
                 // per-character offset table at 0x8007B424; the engine's
                 // roster always carries the Ra-Seru equipped, so the
@@ -885,7 +951,20 @@ fn build_spell_session(world: &World, catalog: &SpellCatalog) -> SpellMenuSessio
             }
         })
         .collect();
-    SpellMenuSession::new(party, targets, catalog.clone())
+    // Retail's list build asks the spell-record broadcast `FUN_8003053C`
+    // whether each spell would affect anybody (`0x80031210`), and both cast
+    // flows ask again before they commit (`0x801D954C` / `0x801D98B4`).
+    let mut unaffected: Vec<u8> = Vec::new();
+    for c in &party {
+        for &id in &c.spells {
+            if crate::menu_validator::spell_affects_anyone(world, id) == Some(false)
+                && !unaffected.contains(&id)
+            {
+                unaffected.push(id);
+            }
+        }
+    }
+    SpellMenuSession::new(party, targets, catalog.clone()).with_unaffected_spells(unaffected)
 }
 
 fn build_inventory_session(world: &World) -> InventoryUseSession {
@@ -1024,6 +1103,7 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
         .with_arrange_rank(world.menu.arrange_rank.clone())
         .with_warp_destinations(warp_destinations(world))
         .with_throw_out_row_order(throw_out_slots)
+        .with_incense_window(world.locomotion.walk_regen_window)
 }
 
 /// The visible rows of the quick-travel landmark list - the Door of Wind

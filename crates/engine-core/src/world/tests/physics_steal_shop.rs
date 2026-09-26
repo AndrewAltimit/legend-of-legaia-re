@@ -199,9 +199,10 @@ fn apply_steal_grants_item_on_hit_and_respects_non_stealable() {
         },
     ]);
 
-    // Seed so the first roll is 0 (lands for any chance >= 1).
+    // Seed so the first roll is 0 (lands for any chance >= 1): seed 324's
+    // first shaped draw is 23700.
     let mut world = World {
-        rng_state: 32937,
+        rng_state: 324,
         ..World::default()
     };
     let got = world.apply_steal(3, &table);
@@ -302,12 +303,13 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
 // --- Tile-board runtime install via field-VM op-0x49 sub-5 ---
 
 /// A field script carrying an op `0x49` sub-5 board install: 13-byte inline
-/// header `[5][ox=0][oz=0][w=4][h=4][radius=2][mode=0][flags×4][player_tpl]
-/// [tile_base]`, followed by a sentinel op the script resumes onto.
+/// header `[5][ox=0][oz=0][w=5][h=4][radius=2][mode=0][flags×4][player_tpl]
+/// [tile_base]`, followed by a sentinel op the script resumes onto. Five
+/// columns so the retail start cell (column 4, row 0) is on the board.
 #[cfg(test)]
 fn tile_board_op49_script() -> Vec<u8> {
     vec![
-        0x49, 0x05, 0x00, 0x00, 0x04, 0x04, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x30,
+        0x49, 0x05, 0x00, 0x00, 0x05, 0x04, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x30,
     ]
 }
 
@@ -336,17 +338,18 @@ fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
         );
     }
     let board = world.board.grid.as_ref().expect("board installed");
-    assert_eq!((board.width, board.height), (4, 4));
-    assert_eq!(board.cells.len(), 16);
+    assert_eq!((board.width, board.height), (5, 4));
+    assert_eq!(board.cells.len(), 20);
     // The retail fill only produces cells in the known value classes.
     assert!(board.cells.iter().all(|&c| (2..=0xE).contains(&c)));
     let header = world.board.header.expect("header kept");
     assert_eq!(header.player_template, 0x21);
     assert_eq!(header.tile_template_base, 0x30);
-    // The player actor was seated at the start-cell centre.
-    let (px, pz) = world.board.grid.as_ref().unwrap().player_world();
-    assert_eq!(world.actors[0].move_state.world_x as i32, px);
-    assert_eq!(world.actors[0].move_state.world_z as i32, pz);
+    // The player's cell is the start cell (4, 0) and the walk-in aims at its
+    // centre; the actor itself is not seated.
+    let b = world.board.grid.as_ref().unwrap();
+    assert_eq!((b.player_col, b.player_row), (4, 0));
+    assert_eq!(world.board.target, Some(b.player_world()));
 
     // While the board is up the op stays Armed at the same pc.
     {
@@ -356,16 +359,28 @@ fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
         assert!(matches!(r, FieldStepResult::Halt { .. }));
     }
 
-    // Simulate the walk reaching an event/transition cell: plant one under
-    // the player and run the arrival pass (the interpolation-complete path).
+    // The walk SM fades the board in before it takes input.
+    world.set_pad(0);
+    while world.board.sm == crate::tile_board::sm::FADE_IN {
+        let _ = world.tick();
+    }
+    // Plant an event cell on the start cell: the walk-in's arrival pass
+    // lands on it and exits.
     {
         let b = world.board.grid.as_mut().unwrap();
         let idx = b.player_row as usize * b.width as usize + b.player_col as usize;
         b.cells[idx] = crate::tile_board::CELL_EVENT_FIRST;
-        let (tx, tz) = b.player_world();
-        world.board.target = Some((tx, tz));
-        world.set_pad(0);
         let _ = world.tick();
+    }
+    // The exit runs its fade, park and teardown before the board goes.
+    let mut n = 0;
+    while world.board.grid.is_some() && n < 200 {
+        {
+            let host = FieldHostImpl { world: &mut world };
+            assert_eq!(host.op49_state(), Op49State::Armed, "armed until teardown");
+        }
+        let _ = world.tick();
+        n += 1;
     }
     assert!(
         world.board.grid.is_none(),

@@ -423,20 +423,6 @@ says that and keeps the address so the falsified reading stays searchable.
 
 
 [[waiver]]
-key = "doc-citation:docs/reference/functions/battle.md:801e91e8:801c9348"
-reason = """
-DAT_801C9348 is the caller's monster-record table, not this routine's. The
-row's evidence is a call site one level up, verified in the caller's dump:
-overlay_battle_action_801ec3e4.txt line 1844 is `801ee2c0  jal 0x801e91e8`,
-reached with `801ee2bc  lbu a0,0x3e(v0)` off `s1 = (&DAT_801C9348)[slot-3]`
-(formed at `801ee23c  lui v0,0x801d` / `801ee240  addiu v0,v0,-0x6cb8`).
-FUN_801E91E8's own 61 instructions form only 0x8007BD24, 0x8007BAC0,
-0x8007BD10 and the character-record base 0x80084140 - a caller's table and a
-caller's instruction address cannot appear in them. The row names both dumps
-so the citation is locatable.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/world/battle/monster_ai.rs:801e9fd4"
 reason = """
 Correct tag, read against the disassembly rather than the C. The dump
@@ -1402,3 +1388,18 @@ reason = """
 [[waiver]]
 key = "module-orphan:crates/engine-vm/src/field_warp_tile.rs:801da51c"
 reason = "CORRECT. clear_landed_sentinel ports the tail of FUN_801DA51C (PROT 0897): lw v1,-0x4950(a0) / li v0,-0x3e8 / bne / sw zero,-0x4950(a0) at 0x801DA7C8..0x801DA7D8, the -1000 clear of _DAT_8007B6B0, read from the disassembly; it shares the warp timer global with its module siblings, which the lui+lw form hides from the data-address signal."
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/vm_hosts.rs:801dbf9c"
+reason = """
+Read against overlay_battle_action_801dbf9c.txt (entry 0x801DBF9C, 65
+instructions): it indexes the byte table at 0x801F4E63 by the spell id and
+walks the 8-byte records at 0x801F4EDC (lui 0x801f at 0x801DBFA8 / 0x801DBFB8),
+which is exactly what BattleHostImpl::spell_anim_trigger ports. vm_hosts.rs is
+not one module in the checker's sense: it holds seven VM host impls (actor,
+move, effect, two world-map entity hosts, field, battle action), and this tag
+sits in the battle-action impl while its "siblings" are mostly field-VM host
+arms. The finding surfaced when the field host gained its FUN_80024E08 tag
+(the op-4C 50 model re-stage), which tipped the file's field majority past the
+orphan test's floor; nothing about FUN_801DBF9C's own evidence changed.
+"""

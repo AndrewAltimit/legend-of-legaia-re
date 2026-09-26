@@ -330,6 +330,42 @@ pub fn fog_puff_prim(
     })
 }
 
+/// One cell of a field actor's drop shadow as the `POLY_FT4` retail's
+/// `FUN_8001C394` links: textured, semi-transparent, texture-blended
+/// (command `0x2E`, colour `0x808080`), texpage `0x001F` - ABR 0, so the
+/// blob's grey averages with the ground under it. The fields are the
+/// engine-core `drop_shadow::DropShadowQuad` both hosts take from
+/// `World::field_drop_shadows`; both wrap through this so the blend class and
+/// vertex order cannot differ.
+///
+/// `depth` is the cell's per-corner scene depth ([`CornerDepth`]): retail's
+/// blob sorts behind the actor standing on it and in front of the far-bucket
+/// ground, which a host with a depth buffer gets by testing it against the
+/// scene it already drew ([`FLAG_DEPTH_TESTED`]).
+///
+/// REF: FUN_8001C394
+pub fn drop_shadow_prim(
+    xy: [(i16, i16); 4],
+    uv: [(u8, u8); 4],
+    clut: u16,
+    tpage: u16,
+    rgb: [u8; 3],
+    ot_index: u32,
+    depth: Option<[f32; 4]>,
+) -> ScreenPrim {
+    ScreenPrim::Textured(ScreenQuad {
+        xy,
+        uv,
+        clut,
+        tpage,
+        color: (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]),
+        gouraud: None,
+        semi_transparent: true,
+        ot_index,
+        depth: depth.map(CornerDepth::new),
+    })
+}
+
 /// OT bucket a field attached light links at: retail's `FUN_801E3984` links
 /// every packet into `*0x1F8003F4 + 8`, slot `2` of the field overlay table.
 pub const FIELD_LIGHT_POOL_OT: u32 = 2;

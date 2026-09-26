@@ -1348,3 +1348,60 @@ fn init_party_battle_stats_bonuses_reach_the_working_copies() {
 fn party_reaction_map_is_the_identity_family() {
     assert_eq!(PARTY_REACTION_MAP, [2, 3, 4, 5, 0x0B]);
 }
+
+/// The victory drop roll, hand-traced against `FUN_8004E568`
+/// `0x8004F478..0x8004F5A0` with scripted draws.
+#[test]
+fn victory_drop_roll_matches_the_retail_walk() {
+    let seat = |item: u8, chance_pct: u8| VictoryDropSeat {
+        item,
+        chance_pct,
+        captured: false,
+    };
+    // Draws pulled in order from a fixed list, counted.
+    fn run(
+        seats: &[VictoryDropSeat],
+        items_up: bool,
+        no_reward: bool,
+        draws: &[u32],
+    ) -> (u8, usize) {
+        let mut i = 0;
+        let item = victory_drop_roll(seats, items_up, no_reward, || {
+            let d = draws[i];
+            i += 1;
+            d
+        });
+        (item, i)
+    }
+    // One 10% seat: 109 % 100 = 9 < 10 wins, then the 1-in-4 gate reads
+    // 8 & 3 = 0 and keeps it.
+    assert_eq!(run(&[seat(0x77, 10)], false, false, &[109, 8]), (0x77, 2));
+    // Same win, gate 9 & 3 = 1 clears it.
+    assert_eq!(run(&[seat(0x77, 10)], false, false, &[109, 9]), (0, 2));
+    // 110 % 100 = 10 is not < 10: no win, but the gate is still drawn.
+    assert_eq!(run(&[seat(0x77, 10)], false, false, &[110, 8]), (0, 2));
+    // Items Up adds 30 to every chance (10 + 30 = 40 > 39) and skips the
+    // gate draw entirely.
+    assert_eq!(run(&[seat(0x77, 10)], true, false, &[39],), (0x77, 1));
+    // A 100% seat anywhere skips the gate; the last winning seat's item is
+    // the drop, even a zero id.
+    assert_eq!(
+        run(&[seat(0x11, 100), seat(0x22, 100)], false, false, &[0, 0]),
+        (0x22, 2)
+    );
+    assert_eq!(
+        run(&[seat(0x11, 100), seat(0x00, 100)], false, false, &[0, 0]),
+        (0, 2)
+    );
+    // A captured seat still draws, but cannot supply the item.
+    let caught = VictoryDropSeat {
+        captured: true,
+        ..seat(0x33, 100)
+    };
+    assert_eq!(
+        run(&[seat(0x11, 100), caught], false, false, &[0, 0]),
+        (0x11, 2)
+    );
+    // The no-reward word skips the seat walk but not the trailing gate.
+    assert_eq!(run(&[seat(0x77, 100)], false, true, &[4]), (0, 1));
+}

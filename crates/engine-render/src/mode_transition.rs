@@ -4,23 +4,29 @@
 //!
 //! PORT: FUN_80016230
 //!
-//! NOT WIRED: the three things it acts on are all outside this crate. The
-//! frame-pacing ring is `FUN_80016B6C`'s (ported in
-//! `legaia_engine_audio::sfx_ring`, which models the *SFX* ring at
-//! `0x8007B6D8`, not this hblank-sample ring at `0x80084098`); the overlay
-//! cache is `legaia_engine_core::overlay_loader`'s; and the field snapshot
-//! writes `legaia_engine_core`'s warp-coordinate globals. The engine also does
-//! not need the VRAM stash at all - it keeps the actor pool in host memory
-//! across a mode change instead of parking it in spare VRAM - so
-//! [`ACTOR_POOL_STASH_RECT`] is documented rather than executed.
+//! REPLACED-BY: `legaia_engine_core::world::World::field_return` (the
+//! actor-pool snapshot a battle entry takes and `World::finish_battle`
+//! restores) for the field stash, on-demand PROT resolution for the overlay
+//! cache, and the fixed-rate sim for the pacing ring.
 //!
-//! An earlier note here said the gap closes when "`legaia_engine_core`'s mode
-//! dispatcher calls [`mode_entry_prologue`]". It cannot: `legaia-engine-core`
-//! does not depend on `legaia-engine-render`, and the reverse edge does not
-//! exist either - the two are siblings over `legaia-engine-vm`, so neither can
-//! name the other's items. A caller has to be `engine-shell` (the crate that
-//! sees both) driving this around the core's mode change, or the pass has to
-//! move down into a crate the dispatcher can reach.
+//! Each of the three jobs is a retail residency the port does not have. The
+//! field snapshot parks the `0x7B0C`-byte actor pool in spare VRAM
+//! ([`ACTOR_POOL_STASH_RECT`]) and the player's X / Z in the warp slots so the
+//! field can be rebuilt after a battle; the engine never lets go of the field:
+//! a battle runs inside the same `World`, and `field_return` holds the
+//! actors, the player slot and the party count across it. The overlay-cache
+//! checksum guards a RAM-cached copy of the battle overlay against the CD;
+//! the engine keeps no overlay images in RAM and resolves what a mode needs
+//! from `PROT.DAT` when it is entered. The pacing ring feeds the adaptive
+//! frame-skip of `FUN_80016B6C`, which the engine's fixed-rate simulation
+//! does not run (its cadence port carries its own disclosure, on
+//! `World::resolve_frame_step`). The pass is kept because its constants are
+//! the retail layout a faithful-mode stash would need.
+//!
+//! The crate edge is also why no call is owed from here: `legaia-engine-core`
+//! does not depend on `legaia-engine-render` (the two are siblings over
+//! `legaia-engine-vm`), so the core's mode dispatcher cannot name
+//! [`mode_entry_prologue`] at all.
 //!
 //! REF: FUN_80016b6c - the adaptive frame-skip pass whose 16-sample hblank ring
 //! this clears.

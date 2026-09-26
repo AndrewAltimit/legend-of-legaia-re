@@ -164,7 +164,9 @@ fn play_one_cast(mg: &mut LegaiaMinigames, seen: &mut Seen, budget: usize, fight
         mg.fishing_pond_tick(
             if held { REEL_A } else { 0 },
             false,
-            i32::from(f.is_multiple_of(6)),
+            // The reel press's own newly-pressed edge, in the packed retail
+            // layout the export now counts through `bite_pad_nudge`.
+            if f.is_multiple_of(6) { REEL_A } else { 0 },
         );
         seen.absorb(&mg.fishing_pond_hud_json());
         f += 1;

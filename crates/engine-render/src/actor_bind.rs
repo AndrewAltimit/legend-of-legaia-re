@@ -4,23 +4,20 @@
 //!
 //! PORT: FUN_80020f88
 //!
-//! NOT WIRED: this crate holds no actor state. Retail's inputs are three fields
-//! of the `0xD8`-byte scene actor (`+0x10` flag word, `+0x60` placement slot,
-//! `+0x56` kind) and the per-scene `.MAP` record table at `_DAT_1F8003EC`; its
-//! outputs are four more actor fields plus a `0x9C`-byte heap allocation. The
-//! actor pool lives in `legaia_engine_core` (scene host + actor list) and the
-//! engine resolves scene geometry per placement record at scene-build time
-//! rather than per actor per frame, so nothing here owns the struct to write
-//! into.
+//! REPLACED-BY: `legaia_asset::field_objects` placement resolution (each
+//! object's mesh = placement record `+0x10` plus the kingdom-TMD prefix,
+//! resolved once per placement at scene build) feeding the hosts' typed
+//! per-placement draw lists, in place of per-actor `0x9C`-byte render nodes.
 //!
-//! What closes the gap is **not** "the scene host calls [`bind_actor_render`]",
-//! which an earlier note said and the crate graph forbids: `legaia-engine-core`
-//! does not depend on `legaia-engine-render` (and the reverse edge does not
-//! exist either - the two are siblings over `legaia-engine-vm`). The scene host
-//! cannot name this function. The two routes that do exist are `engine-shell`,
-//! the one crate that sees both, driving the pass over the core's actor list;
-//! or moving the binding rule down into `engine-vm`, where the actor state
-//! already lives. Either is a structural change, not a call insertion.
+//! Retail re-derives the binding per actor per frame off three fields of the
+//! `0xD8`-byte scene actor (`+0x10` flag word, `+0x60` placement slot, `+0x56`
+//! kind) and the `.MAP` record table at `_DAT_1F8003EC`, and allocates a
+//! render node the draw path walks. The port resolves the same mesh index
+//! from the same record field when it builds the scene and draws from typed
+//! lists the backend owns, so there is no node to allocate and no per-frame
+//! refresh to run. The crate edge agrees: `legaia-engine-core` does not depend
+//! on `legaia-engine-render`, so the scene host could not name
+//! [`bind_actor_render`] even if a node were owed.
 //!
 //! The **mesh-index rule** the pass establishes is what matters most and is
 //! already load-bearing elsewhere: an object's mesh id is its placement

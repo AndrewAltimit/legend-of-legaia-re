@@ -368,12 +368,12 @@ the Baka Fighter's path shows the stale-header state from the overlay's load on,
 and the Muscle Dome's hub (mode `0x19`) holds slot 2 **closed** and slot 6 open
 over PROT 0876 - the field bank the warp left behind, not the class-2 bank. An
 earlier reading here took the dome as a whole to hold the class-2 bank; that
-holds for a round at most. A round is an ordinary battle entered by the arena's
+holds for a round only. A round is an ordinary battle entered by the arena's
 store of mode word `0x14` (`0x801D15B8`, PROT 0977,
 [minigame-muscle-dome.md](../subsystems/minigame-muscle-dome.md#what-ends-a-leg-a-knockout-and-nothing-else)),
-so it takes the battle arm - slot 6 closed, PROT 0869 staged into slot 2 - by
-the same code path the field-to-battle capture observes; a round's residency
-itself is not captured. The dance's PROT 1231 (234 400 bytes of samples) is
+and a retail capture of one shows it taking the battle arm - slots 6 and 3
+closed, PROT 0869 staged into slot 2 by the battle scene loader, the shared
+header PROT 0869's - by the same code path the field-to-battle capture observes. The dance's PROT 1231 (234 400 bytes of samples) is
 larger than the region's gap to slot 3's base and overruns it, legal while slot
 3 is closed.
 

@@ -224,6 +224,18 @@ impl ResolvedTmd {
         })
     }
 
+    /// [`ResolvedTmd::build_filtered_vram_mesh`] plus the per-vertex
+    /// lit-row mask ([`legaia_tmd::mesh::tmd_to_vram_mesh_filtered_lit`]) -
+    /// what [`crate::fade::apply_prologue_lit_ambient`] keys on.
+    pub fn build_filtered_vram_mesh_lit(
+        &self,
+        vram: &Vram,
+    ) -> (legaia_tmd::mesh::VramMesh, Vec<bool>) {
+        legaia_tmd::mesh::tmd_to_vram_mesh_filtered_lit(&self.tmd, &self.raw, |cba, tsb, uvs| {
+            vram.prim_has_texture_data(cba, tsb, uvs)
+        })
+    }
+
     /// Same as [`ResolvedTmd::build_filtered_vram_mesh`] but also
     /// returns [`legaia_tmd::mesh::FilterStats`] so callers can report
     /// how many prims fell through the VRAM-coverage filter. Engines

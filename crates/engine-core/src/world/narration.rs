@@ -1408,6 +1408,9 @@ impl World {
                         host.world
                             .pending_field_events
                             .push(FieldEvent::ExecMove { move_id });
+                        // Retail's player arm of op 0x22: the move id becomes
+                        // the clip base and is picked + bound at once.
+                        host.world.field_player_script_clip(move_id);
                         // Cue the scripted player clip: the windowed host
                         // resolves scene-ANM record `move_id - 1` and plays
                         // it once over idle/walk (live-pinned: the town01
@@ -2081,15 +2084,23 @@ impl World {
                 };
                 // Cross-context poke: resolve the extended target to another
                 // channel and run the op against that context.
-                let target = vm::field::peek_extended(bc, pc).and_then(|t| {
+                let ext = vm::field::peek_extended(bc, pc);
+                let target = ext.and_then(|t| {
                     let ci = crate::field_channels::resolve_target(&channels, t)?;
                     (ci != i).then_some(ci)
+                });
+                let self_target = ext.is_some_and(|t| {
+                    crate::field_channels::resolve_target(&channels, t) == Some(i)
                 });
                 self.field_vm.executing_channel = match target {
                     // Object-bind targets carry a flat record index, not a
                     // placement slot - no placement-keyed attribution.
                     Some(ci) if channels[ci].object_bind => None,
                     Some(ci) => Some(channels[ci].placement_index as u8),
+                    // An extended op aimed at something that is not a
+                    // channel (the player `0xF8`, the system `0xFB`) is not
+                    // this placement's to receive.
+                    None if ext.is_some() && !self_target => None,
                     None => Some(channels[i].placement_index as u8),
                 };
                 let result = {
@@ -2412,6 +2423,12 @@ impl World {
         // actor tick runs before the dialog SM: the spin must see the latch the
         // clip earned on *this* frame, not last frame's.
         self.props.bank.tick_actor_clips_for_frame();
+        // The halt window a talk's `CC F8 85` acquire opened: one walk-kernel
+        // visit a frame on the player's face-the-speaker turn, closing the
+        // window on its terminal frame. The acquire's own frame took its
+        // first visit inside the slice below (retail's actor tick runs the
+        // dialog SM and then, same visit, the walk kernel).
+        self.step_talk_face_ramp(&mut id);
 
         // A box is open: tick the typewriter + route input.
         if let Some(panel) = id.panel.as_mut() {
@@ -2559,6 +2576,14 @@ impl World {
             } else {
                 None
             };
+            // Inside a halt window the player carries `0x400`, and the
+            // dispatcher's halted-target early-out (`0x801DE90C..0x801DE940`)
+            // returns an extended op aimed at it at its own PC: the dialog SM
+            // sees a PC that did not move and retries next frame.
+            if id.face_ramp.is_some() && ext_target == Some(crate::field_env::PLAYER_ANCHOR_TARGET)
+            {
+                break;
+            }
             // `A2 <target> <clip>` - a cross-context ExecMove. Retail writes
             // the target's `+0x5C` and calls the anim tick, which re-points its
             // `+0x4C` clip pointer and zeroes its cursor; the port binds the
@@ -2576,8 +2601,11 @@ impl World {
                     .props
                     .bank
                     .bind_actor_clip(target, move_id, fallback);
-                if target == crate::field_env::PLAYER_ANCHOR_TARGET && move_id > 2 {
-                    host.world.locomotion.player_move_cues.push(move_id);
+                if target == crate::field_env::PLAYER_ANCHOR_TARGET {
+                    host.world.field_player_script_clip(move_id);
+                    if move_id > 2 {
+                        host.world.locomotion.player_move_cues.push(move_id);
+                    }
                 }
             }
             // Bind the poked actor's `+0x62` into the executing context for the
@@ -2624,13 +2652,15 @@ impl World {
             // unless that scene word is non-zero or the caller's `+0x50` is
             // `0xFB`) would then turn every later cross-context op of the talk into a
             // `Halt` - `retock`'s innkeeper opens with `CC F8 85` and never
-            // reached its gold gate. Retail's talk does not stall there: in the
-            // captured stay both `0x400` bits are clear again 18 vsyncs after
-            // the acquire, before the first player gesture (which follows a
-            // text box and a picker); the writer is not identified. The runner
-            // therefore keeps the caller's halt state across the op. A talk's
-            // later re-acquire of the same target is not an end: the capture
-            // shows the next talk's acquire succeeding.
+            // reached its gold gate. Retail's halt is a window, not a stall:
+            // the acquire's bytes are also a walk-kernel FaceTarget leg on the
+            // player, and the leg's terminal frame clears both `0x400` bits
+            // (`FUN_8003774C`, `0x80038004` / `0x80038028`; captured 18 vsyncs
+            // after the acquire). The runner therefore keeps the caller's own
+            // halt state across the op and carries the window as
+            // `InlineDialogue::face_ramp`. A talk's later re-acquire of the
+            // same target is not an end: the capture shows the next talk's
+            // acquire succeeding.
             let caller_halt =
                 ext_target.map(|_| (id.ctx.flags & 0x400, id.ctx.saved_pc, id.ctx.wait_accum));
             let step = vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc);
@@ -2641,6 +2671,17 @@ impl World {
                 id.ctx.flags &= !0x400;
                 id.ctx.saved_pc = saved_pc;
                 id.ctx.wait_accum = wait_accum;
+                // The halt does not vanish, it moves: a `CC F8 85|8E|8F`
+                // acquire hands the player the walk kernel's FaceTarget leg,
+                // and that leg's terminal frame is what clears both bits
+                // (`0x80038004` / `0x80038028`). The runner models the window
+                // on `face_ramp` rather than on the stand-in context.
+                if let Some(ramp) =
+                    crate::inline_dialogue::TalkFaceRamp::from_acquire(&id.bytecode, id.pc)
+                {
+                    id.face_ramp = Some(ramp);
+                    host.world.step_talk_face_ramp(&mut id);
+                }
             }
             if let Some(target) = bound
                 && let Some(actor) = host.world.props.bank.actor_clip_mut(target)
@@ -2753,6 +2794,74 @@ impl World {
         }
         self.dialog.stepping_inline_npc = None;
         self.dialog.inline = Some(id);
+    }
+
+    /// One walk-kernel visit on a talk's halt window
+    /// ([`crate::inline_dialogue::TalkFaceRamp`]): turn the player toward the
+    /// actor the acquire names and, on the leg's terminal frame, close the
+    /// window. No-op without a window.
+    ///
+    /// The face-at operand is an actor bind (`+0x50`), and the walk kernel
+    /// resolves it the way every cross-context id resolves: the actor-list
+    /// node whose `+0x50` equals it (`lhu v0,0x50(v1)` at `0x80037E88`), so the
+    /// port resolves it through the scene's channel set, not through the
+    /// conversation. The two differ often: of the disc's clean-decoded
+    /// `CC F8 85|8E|8F` acquires, 40 of the 146 in placement records name an
+    /// actor other than the record's own (often the neighbouring placement,
+    /// sometimes a second actor the same talk turns to), and
+    /// the 24 in object records and 861 in cutscene records have no own
+    /// actor at all (`crates/engine-core/tests/talk_face_acquire_bind_disc.rs`).
+    /// A bind the channel set cannot resolve falls back to the conversation's
+    /// own placement; a window with no player or nothing to face closes at
+    /// once rather than holding the talk's player-targeted ops.
+    ///
+    /// REF: FUN_8003774C (the kernel visit), FUN_8003BC08 (visits it on `0x400`)
+    pub fn step_talk_face_ramp(&mut self, id: &mut crate::inline_dialogue::InlineDialogue) {
+        let Some(mut ramp) = id.face_ramp else {
+            return;
+        };
+        let target = self.talk_face_target(ramp.program[4]).or_else(|| {
+            id.npc_slot
+                .and_then(|slot| self.npcs.positions.get(&slot).copied())
+        });
+        let player = self
+            .player_actor_slot
+            .and_then(|slot| self.actors.get(usize::from(slot)))
+            .map(|a| {
+                (
+                    a.move_state.world_x,
+                    a.move_state.world_z,
+                    a.move_state.render_26,
+                )
+            });
+        let (Some((tx, tz)), Some((px, pz, yaw))) = (target, player) else {
+            id.face_ramp = None;
+            return;
+        };
+        let speed = self.clock.display_frame_step.max(1);
+        let (yaw, done) = ramp.step(px, pz, yaw as u16, tx, tz, speed);
+        if let Some(slot) = self.player_actor_slot
+            && let Some(actor) = self.actors.get_mut(usize::from(slot))
+        {
+            actor.move_state.render_26 = yaw as i16;
+        }
+        id.face_ramp = if done { None } else { Some(ramp) };
+    }
+
+    /// Where the actor a talk's face-at bind names stands: the channel whose
+    /// script id (`+0x50`) equals `bind` (`FUN_8003C83C`'s list walk) - a
+    /// placement's live position, or an object-bind context's own seat.
+    /// `None` for the specials and for an id no channel carries.
+    // REF: FUN_8003C83C (the id resolve the kernel's FaceTarget arm shares)
+    fn talk_face_target(&self, bind: u8) -> Option<(i16, i16)> {
+        let view = self.channel_view();
+        let ch = &view[crate::field_channels::resolve_target(view, bind)?];
+        let own = (ch.ctx.world_x as i16, ch.ctx.world_z as i16);
+        if ch.object_bind {
+            return Some(own);
+        }
+        let slot = u8::try_from(ch.placement_index).ok()?;
+        Some(self.npcs.positions.get(&slot).copied().unwrap_or(own))
     }
 
     /// Live-loop bridge for the inline-script runner: when [`crate::world::WorldToggles::use_vm_dialogue`]

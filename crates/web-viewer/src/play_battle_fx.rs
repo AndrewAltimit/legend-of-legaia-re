@@ -299,27 +299,12 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
-        let world = &mut host.world;
-        let spawns = world.drain_battle_effect_spawns();
-        for s in &spawns {
-            let at = [
-                s.at.0.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-                s.at.1.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-                s.at.2.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-            ];
-            if s.direct {
-                world.try_spawn_effect(s.effect, at, s.facing);
-                crate::play_battle_render::web_log(&format!(
-                    "play battle FX: direct effect {:#04x} actor {} at {at:?}",
-                    s.effect, s.actor_slot
-                ));
-            } else {
-                let staged = world.spawn_action_table_effect(s.effect, at);
-                crate::play_battle_render::web_log(&format!(
-                    "play battle FX: table effect {:#04x} actor {} at {at:?} staged={staged}",
-                    s.effect, s.actor_slot
-                ));
-            }
+        // The routing is the engine's, shared with the native window.
+        for r in host.world.route_battle_effect_spawns() {
+            crate::play_battle_render::web_log(&format!(
+                "play battle FX: effect {:#04x} actor {} at {:?} direct={} staged={:?}",
+                r.spawn.effect, r.spawn.actor_slot, r.spawn.at, r.spawn.direct, r.table_staged
+            ));
         }
     }
 
@@ -1017,35 +1002,27 @@ impl LegaiaRuntime {
         let mut out = Vec::with_capacity(br.actor_slots().len() * 6);
         for actor_idx in br.actor_slots() {
             let b = host.world.actors.get(actor_idx).map(|a| &a.battle);
-            // Retail's one tint seam (the native window's twin in
-            // `redraw.rs` carries the instruction cites): a non-zero
-            // `+0x0C` makes the `+0x04` lanes the GTE far colour and the
-            // blend the IR0, so the mesh's modulation colour is pushed
-            // toward the tint by `blend / 0x1000` and the texel still
-            // multiplies through. One rule for every writer - the impact
-            // triple, the cue-group flash, the presentation SM's colour
-            // arms. `render_flag == 2` (the capture / defeat fade) is left
-            // un-cued: retail draws it additive and the page has no
-            // per-draw blend override; colour `0` is the summon-hide's
-            // "not drawn" word and is left alone too.
+            // Retail's tint pass (the native window's twin in `redraw.rs`
+            // carries the instruction cites): the whole `FUN_8004A908`
+            // word - the lanes as the GTE far colour, the blend or the
+            // view-depth weight as the IR0, the depth-cue arm that darkens
+            // (or, outdoors, brightens) a far body, the status colours - so
+            // the mesh's modulation colour is pushed toward the far colour
+            // and the texel still multiplies through. Resolved engine-side
+            // by `World::battle_actor_draw_plan` so both hosts stage the
+            // same word. `render_flag == 2` (the capture / defeat fade) is
+            // left un-cued: retail draws it additive and the page has no
+            // per-draw blend override; its zero-lanes end is the draw gate
+            // in `play_battle_actor_transforms`.
             if let Some(b) = b
-                && b.render_blend != 0
-                && b.render_color != 0
                 && !matches!(
                     b.render_flag,
                     ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED | 2
                 )
+                && let Some(p) = self.battle_draw_plan(actor_idx)
             {
-                use legaia_engine_vm::battle_impact_fx as ifx;
-                let c = ifx::unpack_actor_state_rgb(b.render_color);
-                out.extend_from_slice(&[
-                    1.0,
-                    f32::from(c[0]) / 255.0,
-                    f32::from(c[1]) / 255.0,
-                    f32::from(c[2]) / 255.0,
-                    ifx::tint_ir0(b.render_blend),
-                    1.0,
-                ]);
+                let far = p.cue_far();
+                out.extend_from_slice(&[1.0, far[0], far[1], far[2], p.cue_ir0(), 1.0]);
                 continue;
             }
             match b.map(|b| b.render_flag) {

@@ -79,7 +79,8 @@ VRAM capture (`minigame_baka_fighter` scenario) except the `(832, 0)` sheet
 merges several sources onto them. Descriptor 1 (type `0x02`) is a **pack of 4
 Legaia TMDs** - the stage set (a single-object arena wall/room whose floor
 plane is `y = 0`, two single-object props, and a 10-object piece whose objects
-are object-local and need placement transforms). Descriptor 2 (type `0x05`) is
+are object-local and need placement transforms - the round-start cameo's ring
+girl, [below](#the-round-start-cameo)). Descriptor 2 (type `0x05`) is
 the 30-record battle-form ANM bank ([`../formats/anm.md`](../formats/anm.md)).
 
 Confidence: **Confirmed** for the load path and PROT-entry indices (traced in
@@ -95,11 +96,11 @@ poses). Per record the fields that the fight code reads are:
 
 | Offset | Meaning |
 |---|---|
-| `+0x04` | per-action motion speed (scaled by the global frame-rate divisor) |
+| `+0x04` | clip speed: the combat tick's cursor step is `speed * DAT_1F80037D >> 3` |
 | `+0x18` | base attack power for this action (used by the damage formula) |
 | `+0x1c` | sub-keyframe count for this action |
-| `+0x20`/`+0x22`/`+0x24` | per-keyframe XYZ translation (TRS), `0x08`-byte stride |
-| `+0x26` | keyframe's frame index, in **whole frames** |
+| `+0x20`/`+0x22`/`+0x24` | per-keyframe strike offset (the impact pair's position), `0x08`-byte stride |
+| `+0x26` | keyframe's **strike frame**, in whole clip frames |
 
 `FUN_801d6e5c(char, action, from, to)` returns the index of the first
 sub-keyframe whose frame index falls in the `[from, to]` range, or `-1` when
@@ -107,7 +108,11 @@ the range is inverted, the action has no sub-keyframes, or none match. The
 fixed point sits on the **query**, not on the record: the function shifts
 `from` and `to` right by 4 (rounding toward zero) and compares the `+0x26`
 field raw, so callers pass a `<< 4` fixed-point frame range against
-whole-frame keyframe indices. `FUN_801d57bc` / `FUN_801d58e0` are leftover developer "add frame" /
+whole-frame keyframe indices. Parser: `legaia_asset::baka_opponents::parse_actions`
+(`BakaActionSet::{speed, sub_keyframes}`); across all 17 tables every attack
+and special record carries at least one strike, every strike frame is in
+`0..=64`, and a record's strikes are in frame order (disc-gated in
+`crates/asset/tests/baka_opponents_real.rs`). `FUN_801d57bc` / `FUN_801d58e0` are leftover developer "add frame" /
 "delete frame" editor helpers, and `FUN_801d553c` writes a human-readable dump
 of the whole action table to a debug file (`ot5stat.txt`, "ot5" = `other5`).
 There are 0x11 (17) table entries of 9 actions each in the dump loop.
@@ -409,10 +414,58 @@ attack type, and stored to the fighter record `+0x10` (disasm at
 `anim - base - 1` = attack type - the record index and the attack type are the
 same value. Debug strings emitted under
 `DAT_801dbf94`: `%d %d`, `stat no %d %d %d`, `hit frame %d fo %d fn %d`,
-`mot speed %d`. The knockdown / launch playback (after a lost exchange) is
-`FUN_801d4df8` (an effect spawn rather than an animation play - see
-[Impact, cue and mirror](#impact-cue-and-mirror)), and `FUN_801d49e8` is the
-mirrored sprite pass that draws it.
+`mot speed %d`. The spawn a decided exchange makes is `FUN_801d4df8` (an
+effect spawn rather than an animation play - see
+[Impact, cue and afterimage](#impact-cue-and-afterimage)); `FUN_801d49e8` is not its
+draw but the special attack's **afterimage**, spawned on the special's commit.
+
+### The strike clock
+
+The exchange is not booked when both fighters have chosen; it is booked on the
+frame the winner's **strike keyframe** is crossed. Three words of the fighter
+block `&DAT_801dbfbc[slot * 0xa8]` carry it, and the debug print at
+`0x801D439C` names them - `hit frame %d fo %d fn %d` is the landed keyframe,
+the cursor before the step ("frame old") and after it ("frame new"):
+
+| Block word | Meaning |
+|---|---|
+| `+0x0C` (`DAT_801dbfc8`) | strike state: `0` armed (a fresh commit), `1` landed, `2` consumed |
+| `+0x90` | the clip cursor before the last step |
+| `+0x98` (`DAT_801dc054`) | the sub-keyframe last landed; `-1` at commit |
+
+Each combat tick (`FUN_801d3f44`), unless the state is `1`, calls
+`FUN_801d6e5c(table, action, block[+0x90], actor[+0x68])` at `0x801D4334` - the
+range the cursor covered on its last step - and a hit on a keyframe other than
+the cached one stores it at `+0x98` and sets the state to `1`. The tick then
+stores the cursor into `+0x90` (`0x801D47EC`) and lets the clip selector
+`FUN_800204F8` advance it by `frame_step * step`, where the step `+0x6A` is
+recomputed every tick as record `+0x04` times the frame-rate divisor
+`DAT_1F80037D`, shifted right three (`0x801D4780..0x801D47CC`). The round
+setup stores `8` there (`0x801D01A4`), so the step is the record speed; a
+clip whose ANM record has bit 0 of byte `+1` set is stepped by `(step * 2 + n
+- 1) / n` instead (`n` = record byte `+6`), which the party bank and two
+ladder packs (PROT 1209 / 1210) use.
+
+The resolution SM (`FUN_801d3468`) reads the state before every damage call:
+a fighter-0 win needs block 0's `+0x0C == 1` (`0x801D36DC`), a fighter-1 win
+block 1's (`0x801D3730`), a draw either (`0x801D378C..0x801D37A4`). The damage
+kernel then writes `2` to the winner's word (`0x801D3EB0`), which re-arms the
+lookup - the special's second strike lands the same way, and its round win is
+the kernel's test that the landed keyframe is the record's last
+(`0x801D3C00..0x801D3C0C`). A commit zeroes both fighters' words
+(`0x801D44B8` / `0x801D44BC`).
+
+A **special** commit also lowers `DAT_1F80037D` to `4` (`0x801D4568`), which
+halves both fighters' steps for the rest of the round - the special plays in
+slow motion - and raises the special latch `DAT_801DBF50`.
+
+Port: `engine-core::baka_fighter::{StrikeClock, StrikeTable, ClipHeader}`,
+running inside `BakaFight::tick_with_input` for every duel built from the disc
+tables on all three hosts; `roster_clip_headers` stages each fighter's ANM
+record headers off PROT 1203 and the ladder packs. What the port does not
+model is the clip **tail**: retail plays each attack to its ANM frame count
+before dropping to idle, where the port clears the exchange once it is booked
+and paces re-entry with the cooldown decay.
 
 **How a display id becomes an ANM bank record.** The anim play path
 resolves `actor + 0x5c` **through the ANM container header**: at
@@ -620,10 +673,10 @@ in `actor + 0x50`, drawn by the `FUN_801d67f0` hook) over the "YOU" / "WIN!" /
 "LOSE..." / "DRAW" / "ROUND" / "FIGHT!" / "PERFECT!!" / "GAME OVER" cells of
 the widget table.
 
-### Impact, cue and mirror
+### Impact, cue and afterimage
 
-Three small bodies sit under the exchange-resolution path, and two of them
-have shapes their names invite a reader to guess wrong.
+Three small bodies sit under the exchange path, and all three have shapes
+their names invited a reader to guess wrong.
 
 **`FUN_801d4df8` is an effect spawn, not a knockdown playback.** Nothing in it
 touches the fighter's action id or frame cursor. It zeroes the fighter's
@@ -636,20 +689,34 @@ and Z is added with a further `0x32` taken off unless the special latch
 instead of the fighter's live cursor `&DAT_801dc054[slot]`. Both spawns go
 through the shared part-spawn API `FUN_80021b04` at scale `0x1000`: the first
 with no rotation, the second with a yaw of `-0x400` for slot 0 and `+0x400`
-for slot 1, which is what mirrors the effect across the arena.
+for slot 1, which is what mirrors the effect across the arena. Its callers are
+the resolution SM's booking arms: `0x801D36F0` (fighter 0 wins, `(0, 0)`),
+`0x801D3744` (fighter 1, `(1, 0)`) and the draw's `0x801D37B4` / `0x801D37C0`
+(`(0, 1)` / `(1, 1)` - both slots, keyframe reset). So the spawn sits at the
+winner's strike offset: the fist, on the frame the strike lands.
 
-**`FUN_801d49e8` is the mirrored sprite pass.** An empty live mask
-(`+0x5a == 0`) retires the actor and nothing else runs. Otherwise the clip id
-`+0x5c` picks a sprite archive (below `0x400` the `_DAT_8007b888` bank, at or
-above it `_DAT_8007b840`), the id's low `0x3ff` bits index that bank's
-word-offset table, and the record reached is cached in `+0x4c`. The actor
-copies its owner's world position and advances its frame cursor by
-`(anim * 2 + n - 1) / n * frame_step` for `n` = record byte `+6`, then runs
-**two** passes over the live mask's low bits: each drops the cursor by `0x30`
-and, for a set bit, draws while the cursor is inside `0 ..< record[+2] * 0x10
-- 1` and clears the bit once it has run past that end. The yaw `+0x78` steps
-`0x400` per pass from `0x800`, which is what mirrors the two copies. Every
-scratch field the passes touch is restored on the way out.
+**`FUN_801d49e8` is the special's afterimage, not a mirrored sprite pass.**
+The combat tick spawns it on every special commit (`0x801D4538..0x801D4634`,
+prototype `0x801D7684`): it copies the thrower's position, rotation and clip
+id, sets live mask `+0x5a = 3`, colour word `+0x74 = 0x81000000` and
+`+0x78 = 0x800`, and takes the step `+0x6a = record[+4] * 4 >> 3` against the
+divisor the commit just lowered. Each frame an empty live mask retires it;
+otherwise it re-copies the owner's position, advances its own cursor by
+`(step * 2 + n - 1) / n * frame_step` (`n` = the clip record's byte `+6` - the
+clip selector's double-step formula, applied unconditionally, so the ghosts'
+clip runs at the pre-slow-motion rate), and runs **two** passes, each setting
+the cursor back another `0x30` (three frames) and drawing the actor through
+the animated mesh renderer `FUN_8001b964` while the lagged cursor is inside
+`0 ..< record[+2] * 0x10 - 1`, clearing its bit once it has run past. `+0x78`
+steps `0x800 -> 0xC00` between passes, and both passes draw with the
+ordering-table offset `_DAT_1F8003F4 + 0x40`.
+
+An earlier reading made `+0x78` a yaw and the two copies a mirrored pair.
+`+0x78` is the depth-cue level `FUN_8001b964` hands its colour-blend call with
+the colour word `+0x74` (`lw a1,0x74(s0); lhu a2,0x78(s0)` at `0x8001BC7C`),
+so the passes are two ghosts of the same pose family, three and six frames
+behind the cursor, pulled half and three quarters of the way to black, sorted
+behind the fighter - and the draw is a model, not a sprite.
 
 The body reads `s5` without ever writing it - `s5` is saved and restored
 around the frame but is never assigned, so the transform call
@@ -657,6 +724,12 @@ around the frame but is never assigned, so the transform call
 the register. That is visible in the disassembly, not a decompiler artifact
 (Ghidra renders it `unaff_s5`), and the port takes no such argument rather
 than reproducing the uninitialised read.
+
+Port: `engine-core::baka_fighter_chrome::{afterimage_pass, AfterimageActor}`,
+spawned and stepped by `BakaFight`; the minigames page draws the ghosts as
+darkened copies of the thrower's mesh. The native window and the play page
+draw no fighter meshes at all, so neither draws them (see
+[`../tooling/host-drift.md`](../tooling/host-drift.md)).
 
 **`FUN_801d65f8` is only defined for its mode-0 call.** It builds a VRAM
 `RECT` out of the 4-byte record at `&DAT_801dbe84 + index * 4` - source
@@ -667,7 +740,8 @@ VRAM-to-VRAM blit, not a sound call (`docs/formats/effect.md` carried the same
 misreading of that routine). The table pointer *and* the rect's
 `(w, h) = (6, 0x18)` (`0x801D6610` / `0x801D6618`) are written **only** inside
 the first argument's `== 0` arm, so any other value reads the table through an
-uninitialised register; retail's one call site (`FUN_801d6310`) passes `0`.
+uninitialised register; retail's one caller (`FUN_801d6310`, `jal` at
+`0x801D6354` for index 0 and `0x801D63B0` for index 1) passes `0`.
 
 **The table is two records long, and the image's own bytes say so.**
 `DAT_801dbe84` is the **last initialised data in the overlay**: its eight bytes
@@ -694,8 +768,54 @@ as-loaded overlay image, both covered by the disc-gated
 image whose records break the band's uniform shape, which is what keeps a
 mis-based image from yielding eight plausible-looking pointers.
 
-Ports: `engine-core::baka_fighter_chrome::{impact_effect_pair,
-mirrored_sprite_pass, sprite_blit}`.
+### The round-start cameo
+
+`FUN_801d6310`, prototype record 3 (`0x801D7624`), is spawned by the round
+setup (`0x32`) only while Triangle is **held** - `_DAT_8007B850 & 0x10`, the
+packed held-pad word (`0x801D0190..0x801D01C4`). The prototype's `+0x04` half
+is `0` on the disc but not at spawn: the cabinet init zeroes the scene-bank
+base `_DAT_8007B6F8` (`0x801CF1C0`), loads the PROT 1203 stage pack, then
+stamps base `+ 3` into the prototype (`lhu v0,-0x4908(s3)` / `addiu v0,v0,3` /
+`sh v0,0x7628(v1)` at `0x801CF2C8..0x801CF2D8`; records 2 and 4 read `6` and
+`9` in the same captured RAM, written by other init stores). `FUN_80020DE0` copies that half to the actor's model word
+`+0x64`, so the walk-on is scene model `3` - the stage pack's fourth TMD, the
+10-object piece. Each frame the animator forces `+0x6a = 8`, raises
+`+0x10 |= 0x200000` and the camera-relative bit `+0x52 |= 0x400`, poses from
+its phase `+0x22`, runs the clip selector and advances the phase by the frame
+step:
+
+| Phase | `x` (`+0x14`) | yaw (`+0x26`) | clip (`+0x5c`) | VRAM cell |
+|---|---|---|---|---|
+| `0..0x20` | `0x100 - 8p` | `0x400` | `0x1D`, looping | 0 |
+| `0x20..0x40` | `0` | `0x400 - 32(p - 0x20)` | `0x1D` | 0 |
+| `0x40..0x90` | `0` | `0` | `0x1C`, held on its last frame | 1 |
+| `0x90..0xB0` | `0` | `32(p - 0x90)` | `0x1D`, looping | 1 |
+| `0xB0..` | `8(0xB0 - p)` | `0x400` | `0x1D` | 1 |
+
+with `y = 0x8C`, `z = 0x400` throughout and the retire bit from phase `0xF0`.
+So a figure walks in side-on, turns to the camera, strikes clip `0x1C`, turns
+back and walks off. The cell column is the blit helper: index `0` runs every
+frame from phase `0`, index `1` every frame from `0x40`, both a `MoveImage` of
+a `6 x 0x18` rect (24 x 24 texels at 4bpp) into the one cell at `(0x340,
+0x86)`, sourced from `(0x340, 0xC8)` and `(0x340, 0xE0)` - so the cell swaps
+once, at the pose, and stays swapped. An earlier reading had the blit fire "at
+two band edges".
+
+**Captured** (`run_w3a_captures.sh baka_cameo`: `baka_fighter_entry_pretransition`,
+Triangle held, and a control run without it). The cameo spawns only in the
+held run (first `FUN_801D6310` hit at vsync 886; none in the control). The spawn
+store at `0x80020E70` writes `3` into `+0x64`, the sampled phase / `x` / yaw /
+clip follow the table above frame for frame, and the figure is a purple-haired
+girl in a blue jacket and cap - a ring girl, not a party model; the earlier
+"party model" and "scene model `0`" readings were both taken from the
+prototype's static bytes. The VRAM cell hashes equal source `0` before the pose
+and source `1` from it on, and the two sources are the page's eye sprites: an
+open eye and a closed one. The swap is a **wink** at the pose.
+
+Ports: `engine-core::baka_fighter_chrome::{impact_effect_pair, afterimage_pass,
+sprite_blit, cameo_pose}`. The cameo and the blit are not wired: no host hands
+the duel a held pad word, and none draws a model camera-relative or edits its
+VRAM copy after upload.
 
 ### The developer keyframe editor
 
@@ -714,10 +834,14 @@ name pool that opens the roster table, and they carry `FUN_801cf388` /
 `FUN_801d3468` / `FUN_801d3390` / `FUN_801d6310` / `FUN_801d3f44` /
 `FUN_801d6f18` / `FUN_801d4fc8` / `FUN_801d49e8` in that order. The spawn
 `FUN_80020DE0` takes **one** record: it allocates an actor, copies the record's
-`+0x08` callback to `actor[+0x0C]` and its `+0x04` / `+0x14` halfwords onward,
-so a site names a record rather than a run. Two sites do, both by `lui`+`addiu`
-- `0x801CF184` names `0x801D75DC`, `0x801D01C4` names `0x801D7624` - which is
-what puts the band's two ends in the image's own operands. The editor's own
+`+0x08` callback to `actor[+0x0C]`, its `+0x04` half to the model word
+`+0x64` and its `+0x14` half onward, so a site names a record rather than a
+run. Every record is named, each by `lui`+`addiu` (a five-form sweep of the
+image): `0x801D75DC` at `0x801CF184`, `0x801D75F4` at `0x801CFC94`,
+`0x801D760C` at `0x801CF8A0`, `0x801D7624` at `0x801D01C4`, `0x801D763C` at
+`0x801CFBC0` and `0x801CFD98`, `0x801D7654` at `0x801D1ACC`, `0x801D766C` at
+`0x801D1D68` and `0x801D7684` at `0x801D4558`. (An earlier note said two sites
+name the band; that was the two it had looked at.) The editor's own
 record is at `0x801D766C` and the mirrored
 sprite pass's, its immediate sibling, at `0x801D7684`. (Two earlier readings
 were off: both records were first cited four bytes high, at their `0xFFFF0000`
@@ -746,8 +870,19 @@ really has no reference of any form).
   fighter by writing `actor + 0x5c` and re-entering the actor dispatcher.
 
 So the keyframe lookup `FUN_801d6e5c` has two callers: this editor, and the
-per-fighter combat tick `FUN_801d3f44`, which uses it to detect the exchange's
-commit frame. Only the second is on a shipping path.
+per-fighter combat tick `FUN_801d3f44`, which uses it to land the strike (see
+[The strike clock](#the-strike-clock)). Only the second is on a shipping path.
+
+**Retail never opens the editor.** Its band `0x190` / `0x191` is written in
+exactly one place, the developer menu arm (`0x801D19DC`, state `0xC8`), and
+the cabinet enters `0xC8` only when `_DAT_8007B868` is non-zero
+(`0x801D08E8`, the pause-menu edge; otherwise state `0xBF`). A disc-wide
+`find-gp-relative-refs.py --va 0x8007b868 --prot` sweep finds two stores to
+that word in any image: the boot store of `FUN_8002B92C`'s result
+(`0x80015F18`), whose whole body is `jr ra; move v0, zero`, and a bit-clear
+(`0x8001E008`). So the word boots to zero and is only ever cleared: the
+editor, its two slot helpers and the developer menu are dev-kit screens a
+shipped disc cannot reach. The ports carry `REPLACED-BY:` tags saying so.
 
 ### Round chrome timelines
 
@@ -905,8 +1040,9 @@ placement (spun 180° to the page camera's behind-the-fighters side). The
 stage set carries **no floor mesh**, so the page tiles a floor from the wall's
 own dominant textured face (its exact uv cell + CLUT, repeated on
 `y = 0`); the tiling is a stated fit. The three prop meshes (two identical
-single-object pieces + the 10-object figure) need placement transforms the
-static page hasn't traced and stay out.
+single-object pieces + the 10-object figure, which is the
+[cameo](#the-round-start-cameo)) need placement transforms the static page
+hasn't traced and stay out.
 
 The run opens on the retail **PLAYER SELECT** screen - the three party
 fighters' battle-form models idling in front of the arena under the sheet's
@@ -1012,7 +1148,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `DAT_801dbf06` | secret-opponent override (`0` none / `1` / `2`), armed by the high-score gate |
 | `DAT_801dbf58` | second running-max latch, fed from `DAT_801dc094` alongside `DAT_801dbec8` |
 | `DAT_801dbec0` | screen-shake amplitude the epilogue decays toward zero |
-| `_DAT_8007b868` | non-zero routes the in-duel menu to the developer menu (state `0xC8`) |
+| `_DAT_8007b868` | non-zero routes the in-duel menu to the developer menu (state `0xC8`); retail boots it to zero and never sets it |
 | `DAT_801dbf94` | difficulty / debug-verbosity mode (enables `func_0x8001a068` traces; `== 2` = mirror input mode) |
 | `DAT_801dbf50` | special-attack-in-progress latch |
 | `DAT_801dbf54` | per-exchange settle timer (guards `FUN_801d3a14`); **vestigial** - only ever decremented / zeroed in `FUN_801d3a14`, never positively stored anywhere in the overlay, so it stays `0` and the guard is a no-op. Exchange pacing comes from the cooldown timers `DAT_801dbea0` / `DAT_801dbea4` instead. |
@@ -1024,7 +1160,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `&DAT_801dbfc4[slot*0x2a]` | per-fighter HP |
 | `&DAT_801dbfe0[slot*0x2a]` | chosen attack type this exchange (0/1/2/3/4) |
 | `DAT_801dc088` | opponent's chosen attack type (P2 side of the matchup) |
-| `&DAT_801dbfc8[slot*0x2a]` | exchange phase per fighter (0 idle / 1 windup / 2 committed) |
+| `&DAT_801dbfc8[slot*0x2a]` | strike state per fighter (0 armed / 1 landed / 2 consumed) - see [The strike clock](#the-strike-clock) |
 | `&DAT_801dbfe8[slot*0x2a]` | "already committed this exchange" flag |
 | `&DAT_801dc05c[slot*0x2a]` | critical-hit-pending flag (set by `FUN_801d6660`) |
 | `&DAT_801dc060[slot*0x2a]` | per-fighter stat POINTER → the fighter's roster record (`0x801d769c + id*0x6c`; ATK/DEF tiers, crit chance, damage mod live in the record) |
@@ -1063,8 +1199,8 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d2afc` | HUD renderer (HP bars, combo, round pips, timer, high score), called from the cabinet SM's epilogue (port `engine-core::baka_cabinet::hud_frame`) |
 | `FUN_801d239c` | end-of-match score tally → gold payout |
 | `FUN_801d21fc` | round-start READY/FIGHT banner + countdown |
-| `FUN_801d4df8` | per-slot **impact effect pair** spawn at the current action keyframe's TRS offset (see [Impact, cue and mirror](#impact-cue-and-mirror)) |
-| `FUN_801d49e8` | mirrored two-pass sprite draw over the actor's `+0x5a` live mask (same section) |
+| `FUN_801d4df8` | per-slot **impact effect pair** spawn at the current action keyframe's TRS offset (see [Impact, cue and afterimage](#impact-cue-and-afterimage)) |
+| `FUN_801d49e8` | the special's **afterimage**: two ghosts of the thrower, three and six frames behind, depth-cued toward black (same section) |
 | `FUN_801d6e5c` | action-table keyframe lookup by frame range (port `engine-core::baka_fighter::keyframe_in_range`) |
 | `FUN_801d67f0` | per-frame fighter sprite-actor draw callback (`_DAT_8007ba2c`) |
 | `FUN_801d5ed0` | textured-quad GPU emitter for every HUD glyph / banner sprite (indexes the widget table `DAT_801d7160`) |
@@ -1086,7 +1222,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d6f18` | effect-part flag setter + spawn (`actor +0x10 \|= 0x200000`, `FUN_800204f8`) |
 | `FUN_801d3390` | per-fighter idle / reset pose setter (match phase `DAT_801dbf78 == 0`; seeds display anim `+0x6a` from the action table) |
 | `FUN_801d6300` | do-nothing stub (`jr ra`); a disabled hook the SM family still calls |
-| `FUN_801d6310` | scripted-arc effect-actor animator: phase `+0x22` (frame-delta stepped) drives a piecewise trajectory (`+0x14` / `+0x26`) with display-anim / flag swaps over phase bands `0..0xef`, fires a sprite blit via `FUN_801d65f8` at two band edges, and raises the done flag (`+0x10 \| 8`) past phase `0xef` |
+| `FUN_801d6310` | the **round-start cameo** animator, spawned only while Triangle is held at round setup (see [The round-start cameo](#the-round-start-cameo)) |
 | `FUN_801d65f8` | VRAM blit helper: builds a `RECT` from table `&DAT_801dbe84` (index `arg * 4`) - `x = 0x340 + (byte0 >> 2)`, `y = 0x80 + byte1`, `w = 6`, `h = 0x18` - and blits it to `(0x340, 0x86)` via `FUN_80058490` (`MoveImage`) |
 
 Provenance: each row corresponds to `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt`.
@@ -1210,7 +1346,7 @@ conflating them is the error to avoid.
 | `0x25` | `FUN_801f0adc` | casino coin counter |
 | `0x27` | `FUN_801f1138` | start / confirm menu |
 | `0x28` | `FUN_801f1fdc` | prompt |
-| `0x32` | `FUN_801f1e48` | sub-menu |
+| `0x32` | `FUN_801f1e48` | Incense wear-off notice ([`script-vm.md`](script-vm.md)) |
 
 `0x801f2c0c` is the **panel-window record** table: 13 records of `0x1c` bytes,
 `[u32 kind = 0x00030000][3 geometry words][u32 0x0c][u32 painter][u32 0]`. The
@@ -1301,7 +1437,7 @@ commit credits behind a `FUN_80042f4c(0xfe)` inventory-has gate
 | `FUN_801f1c88` / `FUN_801f1cb0` / `FUN_801f1d20` | thin wrappers over `FUN_801eca08(actor, lo, hi, mode)` for frame bands `0..7` / `8..0x10` / `0x11..0x17` (modes `0` / `1` / `2`) |
 | `FUN_801f1cd8` / `FUN_801f1d48` | actor deactivate / reset: draw, stash `+0x50` into `DAT_801c6ea4`, zero `+0x50` / `+0x54` (identical bodies) |
 | `FUN_801f1d90` | actor deactivate with the re-arm state (`+0x50 = 0x2c` vs `2`) chosen from hub-progress flags |
-| `FUN_801f1e48` | hub sub-menu SM (3 states): clear `_DAT_8007b450` + draw, wait-confirm + draw, deactivate / re-arm to `0x1a` |
+| `FUN_801f1e48` | Incense wear-off notice (3 states): show window record 16, wait for confirm/cancel (cue `0x20`, hide), clear `_DAT_8007b450` and hand back - not a hub sub-menu ([`field-menu.md`](field-menu.md)) |
 | `FUN_801f1fdc` | hub prompt SM (2 states): entry sting `FUN_80035b50(0x26)` + draw, then wait-confirm + deactivate |
 | `FUN_801f2134` | hub draw tick that clears the grid actor's `+0x3e` when `_DAT_8007bb80 == 0` |
 | `FUN_801f69ec` | shared minigame-hub 3D tile-grid GTE rasterizer: per visible tile (attr bit `0x1000`) of the scene map (`_DAT_1f8003ec + 0x8000`) runs RTPT + depth-cue and links a textured `POLY_GT` into the OT `_DAT_1f8003a0` - render-track |

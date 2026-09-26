@@ -102,7 +102,7 @@ pub(crate) use legaia_engine_ui::pause_menu::stage_transform;
 use legaia_engine_ui::pause_menu::{
     GenericContent, ItemsScreenView, KeyRebindView, MagicScreenView, MenuRects, OptionsScreenView,
     PauseMenuCtx, PauseScreen, SpecialConfirmView, StatusScreenView, TopLevelView,
-    equip_screen_compose, pause_screen_draws, spell_level_notice_draws,
+    art_learned_notice_draws, equip_screen_compose, pause_screen_draws, spell_level_notice_draws,
 };
 
 /// The disc-sourced menu chrome (assembled atlas + its band rects) plus the
@@ -814,6 +814,14 @@ impl LegaiaRuntime {
         ) {
             return;
         }
+        // Window 8 (art learned): the Items use sub-screen's same stall.
+        if self.menu.dismiss_art_learned_notice(
+            pressed(edge, PadButton::Cross),
+            pressed(edge, PadButton::Circle),
+            pressed(edge, PadButton::Triangle),
+        ) {
+            return;
+        }
         // Sub-screen active: route to its session, then check for exit.
         let has_sub = self
             .play_menu
@@ -913,6 +921,11 @@ impl LegaiaRuntime {
                                     // ride `s.inner` either way.
                                     FieldMenuSubsession::Items(s) => {
                                         let _ = apply_pause_items_outcome(&s, world);
+                                        // A Hyper-Art book taught an art:
+                                        // window 8, same as the native window.
+                                        if let Some(notice) = world.menu.pending_art_notice.take() {
+                                            self.menu.arm_art_learned_notice(notice);
+                                        }
                                     }
                                     FieldMenuSubsession::Spells(s) => {
                                         // A leveled menu cast returns the
@@ -1110,6 +1123,14 @@ impl LegaiaRuntime {
             texts.extend(spell_level_notice_draws(
                 &assets.menu_ctx(origin, scale),
                 &notice.line,
+            ));
+        }
+        // Window 8 - the art-learned notice, through the same shared
+        // composition the native window calls.
+        if let Some(notice) = self.menu.art_learned_notice() {
+            texts.extend(art_learned_notice_draws(
+                &assets.menu_ctx(origin, scale),
+                &notice.lines,
             ));
         }
 

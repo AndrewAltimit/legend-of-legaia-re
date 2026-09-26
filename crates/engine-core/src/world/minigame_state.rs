@@ -66,6 +66,12 @@ pub struct MinigameState {
     /// list is open on the host's fishing screen; purchases commit through
     /// [`crate::world::World::fishing_exchange_buy`].
     pub fishing_exchange: Option<crate::fishing::PrizeExchange>,
+    /// The two point-exchange venue pages (`0` Buma, `1` Vidna) PROT 0972
+    /// carries beside the session tables, decoded by
+    /// [`crate::scene::SceneHost::enter_fishing_from_overlay`] - the one
+    /// entry the door warp and both play hosts' launchers share. `None` until
+    /// a fishing session has been entered on a disc whose pages decode.
+    pub fishing_prize_venues: Option<[crate::fishing::PrizeExchange; 2]>,
     /// Slot-machine minigame session. `Some` while
     /// `mode == SceneMode::SlotMachine`; the reel state machine runs each
     /// tick. See [`crate::slot_machine::SlotMachine`] and
@@ -194,6 +200,11 @@ pub struct MinigameState {
     /// (the sequence-clear banner fires from the judge) rather than
     /// presentation the host drives.
     pub fx: crate::minigame_fx::MinigameFxPool,
+    /// The fishing **venue actors** (wander fish, reeling line, sub-screen
+    /// sway), stepped by [`crate::fishing_venue::tick_fishing_venue`] from
+    /// each host's minigame frame so the ripples, bursts, venue camera and
+    /// swaying prize panel reach every host that runs the pond.
+    pub fishing_venue: crate::fishing_venue::FishingVenue,
 }
 
 impl MinigameState {
@@ -230,6 +241,7 @@ impl MinigameState {
             fishing_best_fish: 0,
             fishing_events: Vec::new(),
             fishing_exchange: None,
+            fishing_prize_venues: None,
             slot_machine: None,
             slot_return_mode: SceneMode::Field,
             baka_fighter: None,
@@ -252,6 +264,7 @@ impl MinigameState {
             pending_sfx: Vec::new(),
             dance_hud_art_staged: false,
             fx: crate::minigame_fx::MinigameFxPool::new(),
+            fishing_venue: crate::fishing_venue::FishingVenue::default(),
         }
     }
 }

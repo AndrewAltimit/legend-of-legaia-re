@@ -226,16 +226,18 @@ pub struct LegaiaRuntime {
     pub(crate) fishing_banners: legaia_engine_ui::FishingBanners,
     /// This tick's live banner draws, folded into the fishing HUD list.
     pub(crate) fishing_banner_draws: Vec<legaia_engine_ui::HudDraw>,
-    /// The two point-exchange venue pages decoded alongside the species table
-    /// when a fishing session starts. `None` until then (or if they don't
-    /// decode).
-    pub(crate) fishing_venues: Option<[legaia_engine_core::fishing::PrizeExchange; 2]>,
     /// Whether [`Self::enter_field`] arms the live gameplay loop (step-driven
     /// random encounters, Field -> Battle -> Field with loot). Defaults on -
     /// the page is the playable host - and is the browser twin of the native
     /// window's `--live-loop` / `--player-battle` flags. [`Self::set_live_battles`]
     /// turns it off for walk-only sessions.
     pub(crate) live_battles: bool,
+    /// The save an in-canvas card **Load** lifted, parked until the page
+    /// enters the scene it resumes in (`cards.rs`). `enter_field` takes it:
+    /// the loaded save's flags replace the picker's free-roam story baseline
+    /// and the save is re-applied after the scene swap, the native
+    /// `enter_field_live_from_save` order (enter, then load).
+    pub(crate) pending_card_resume: Option<legaia_save::SaveFile>,
     /// Battle<->Field BGM swap track override, the browser twin of the native
     /// window's `--battle-bgm <id>`. `None` = no page-side override, so the
     /// shipped default battle theme plays (`LiveLoopOpts::playable`);
@@ -442,7 +444,6 @@ impl LegaiaRuntime {
             cards: [const { None }; crate::cards::CARD_SLOTS],
             fishing_banners: Default::default(),
             fishing_banner_draws: Vec::new(),
-            fishing_venues: None,
             equip_stats: None,
             seru_names: None,
             dev_menu: None,
@@ -452,6 +453,7 @@ impl LegaiaRuntime {
             play_clock_secs: 0,
             play_clock_origin_ms: None,
             live_battles: true,
+            pending_card_resume: None,
             battle_bgm: None,
             battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
             encounter_banner: None,
@@ -528,6 +530,14 @@ impl LegaiaRuntime {
             // dropped the whole feature - a shop root row short.
             host.world.install_seru_trade_config(s);
             self.seru_names = legaia_asset::spell_names::SpellNameTable::from_scus(s);
+            // The static progression tables (XP curve + correction divisors,
+            // stat growth, victory pose, XA cue durations, magic-XP
+            // thresholds, accessory passives) - the same single engine install
+            // the native boot calls. Without it this host levelled on the flat
+            // placeholder growth, never levelled a summon, granted no
+            // accessory passives, dropped every melee grunt / cast voice and
+            // skipped the victory pose's `rand()`.
+            host.world.install_retail_progression_tables(s);
         }
         // Sound-effect descriptors from the same executable (`DAT_8006F198`,
         // see docs/formats/sfx-table.md). Data only - the program bank uploads
@@ -734,6 +744,7 @@ impl LegaiaRuntime {
     /// Returns the same JSON as [`Self::state_json`]. Throws when the disc isn't
     /// loaded or the label is unknown.
     pub fn enter_field(&mut self, name: &str) -> Result<String, JsValue> {
+        let resumed_save = self.pending_card_resume.take();
         let host = self
             .scene_host
             .as_mut()
@@ -751,7 +762,12 @@ impl LegaiaRuntime {
         // Free-roam story staging for PICKER entries only: the opening
         // chain's legs re-enter through here too, and their authored
         // presentation (silent dawn, pre-event scenery) must stay untouched.
-        if !host.world.cutscene.opening_chain_active && !host.world.cutscene_timeline_active() {
+        // A card Load's resume is not a picker visit either - the save's own
+        // story flags are the state (the baseline would clear 0x141 / 0x147).
+        if resumed_save.is_none()
+            && !host.world.cutscene.opening_chain_active
+            && !host.world.cutscene_timeline_active()
+        {
             host.world.seed_free_roam_story_baseline(name);
         }
         let world_map = legaia_engine_core::scene::is_world_map_scene(name);
@@ -811,6 +827,15 @@ impl LegaiaRuntime {
         });
         if !in_opening {
             self.seat_player();
+        }
+        // The card Load's save lands after the scene swap, as the native
+        // window lands it (`BootSession::enter_field_live_from_save`): scene
+        // entry resets per-scene world state, the save then restores the
+        // party, purses, bag and flags over it.
+        if let Some(sf) = resumed_save
+            && let Some(host) = self.scene_host.as_mut()
+        {
+            host.world.load_full(sf);
         }
         // A deliberate scene boot restages BGM from scratch: clear the dedupe
         // latch (so the scene's own op-`0x35` start is honoured even if it names
@@ -988,7 +1013,12 @@ impl LegaiaRuntime {
         // The engine camera, ticked in the native session's order
         // (`BootSession::tick`): free-roam reset, compass azimuth into the
         // world, op-`0x45` event routing, then the per-frame globals advance.
-        self.tick_camera(matches!(event, SceneTickEvent::SceneEntered { .. }));
+        // The post-FMV hand-off swaps the scene outside the field VM's
+        // transition op (no `SceneEntered`), and is a scene entry all the
+        // same: the camera globals reset on it too, as on a door.
+        self.tick_camera(
+            matches!(event, SceneTickEvent::SceneEntered { .. }) || !fmv_handoff_scene.is_empty(),
+        );
         // Effect scene-graphs, ticked exactly where the native window ticks
         // them: drain the two production spawn requests (a player Seru-magic
         // cast, and a non-summon move whose power record carries a spawnable
@@ -1854,6 +1884,17 @@ impl LegaiaRuntime {
     /// Move ids `<= 2` are the locomotion walk moves the movement controller
     /// already animates; the native drain skips them and so does this one.
     fn drive_player_move_cues(&mut self) {
+        // The settle pick's scene-bank record (the `4C CE` override, the
+        // `99` sentinel) resolves through the same bundle as the cues -
+        // the native window does the same beside its cue drain.
+        if let (Some(bundle), Some(anim)) = (
+            self.scene_anm.as_ref(),
+            self.scene_host
+                .as_mut()
+                .and_then(|h| h.world.locomotion.player_anim.as_mut()),
+        ) {
+            anim.resolve_scene_clip(bundle);
+        }
         let cues: Vec<u8> = match self.scene_host.as_mut() {
             Some(h) => std::mem::take(&mut h.world.locomotion.player_move_cues),
             None => return,

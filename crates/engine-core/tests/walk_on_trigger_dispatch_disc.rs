@@ -417,3 +417,70 @@ fn tick_pressing_through_dialogs(world: &mut legaia_engine_core::world::World, t
     }
     world.tick();
 }
+
+/// A walk-on record that raises the re-poll bit (`2E 13`, scratchpad
+/// `0x1F800394 & 0x80000`) is re-run every tick the player stays on its
+/// tile (`FUN_801D1EC4` `0x801D2090..0x801D20F8`), which is how Rim Elm's
+/// "stand here and press" beats read the pad: `town01` P2[12] at `(30,19)`
+/// sets the bit, tests the held d-pad for Down (`42 01 00 ..`, compass
+/// entry 0 of `0x801F28D0`), and on a match clears it (`2F 13`) and runs
+/// its beat. Fired on the crossing only, the poll would run once - with
+/// nothing held - and a later press on the tile would never be seen.
+#[test]
+fn a_repoll_record_reruns_until_the_press() {
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    host.enter_field_scene("town01", 0).expect("enter town01");
+    for _ in 0..5 {
+        host.tick().expect("tick");
+    }
+    let repoll = legaia_engine_core::world::WALK_ON_REPOLL_FLAG;
+    seat_at_tile(&mut host.world, 30, 19);
+    for _ in 0..4 {
+        host.tick().expect("tick");
+    }
+    assert_ne!(
+        host.world.flags.story_flags & repoll,
+        0,
+        "the poll record raised the re-poll bit on the crossing"
+    );
+    // Stand and wait: the bit stays up while nothing is pressed.
+    for _ in 0..20 {
+        host.tick().expect("tick");
+    }
+    assert_ne!(host.world.flags.story_flags & repoll, 0);
+    // Each tick re-spawns the record fresh (the dispatcher runs after the
+    // world tick that stepped - and finished - the previous one).
+    assert_eq!(
+        host.world.cutscene.timeline.as_ref().map(|t| t.frames),
+        Some(0),
+        "the poll record was re-spawned this tick"
+    );
+    // Hold Down on the tile: the next re-run sees it, clears the bit and
+    // runs the beat. The seat is re-pinned each tick so the held d-pad
+    // cannot walk the player off the tile first.
+    let slot = host.world.player_actor_slot.expect("player") as usize;
+    let seat = (
+        host.world.actors[slot].move_state.world_x,
+        host.world.actors[slot].move_state.world_z,
+    );
+    let mut cleared = false;
+    for _ in 0..10 {
+        host.world
+            .set_pad(legaia_engine_core::input::PadButton::Down.mask());
+        host.tick().expect("tick");
+        host.world.actors[slot].move_state.world_x = seat.0;
+        host.world.actors[slot].move_state.world_z = seat.1;
+        if host.world.flags.story_flags & repoll == 0 {
+            cleared = true;
+            break;
+        }
+    }
+    host.world.set_pad(0);
+    assert!(
+        cleared,
+        "a press while standing on the tile reaches the re-run record"
+    );
+    eprintln!("[ok] town01 (30,19) re-poll record saw the Down press");
+}

@@ -179,6 +179,10 @@ pub struct Renderer {
     /// `0.0` (default) = draw both sides; `1.0` / `2.0` = discard back /
     /// front-facing fragments. Set with [`Renderer::set_backface_cull`].
     pub(super) backface_cull: std::cell::Cell<f32>,
+    /// The kingdom overworld's per-vertex screen-Y curvature, staged into
+    /// `MeshUniforms.flags[3]`: the `clip.w`-to-`SZ` factor, `0.0` (the
+    /// default) = identity. Set with [`Renderer::set_overworld_curvature`].
+    pub(super) overworld_curve: std::cell::Cell<f32>,
     /// PSX semi-transparency (ABE) blending, staged into `MeshUniforms.flags[1]`.
     /// When `true` (the default), a semi-transparent prim's blended fragments
     /// are deferred out of the opaque pass and re-drawn by the per-ABR-mode
@@ -656,6 +660,18 @@ impl Renderer {
     /// retail's NCLIP is what makes the near wall invisible.
     pub fn set_backface_cull(&self, mode: u32) {
         self.backface_cull.set(mode.min(2) as f32);
+    }
+
+    /// Bend every scene draw's vertices down the screen by the overworld
+    /// curvature table (`FUN_800271A8`, `OVERWORLD_CURVE_WGSL`): retail's
+    /// overworld prim leaves add the depth-indexed entry to each vertex's
+    /// `SY`, so the continent falls away over the horizon. `sz_scale` is the
+    /// frame's `clip.w`-to-`SZ` factor
+    /// (`legaia_engine_core::overworld_curvature::frame_curve_scale`); `0.0`
+    /// (the default) is the identity, which every scene but the kingdom
+    /// overworld (retail's overworld bit `_DAT_1F800394 & 1`) keeps.
+    pub fn set_overworld_curvature(&self, sz_scale: f32) {
+        self.overworld_curve.set(sz_scale.max(0.0));
     }
 
     /// Read the current colour grade `(gold_r, gold_g, gold_b, strength)`.

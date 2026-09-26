@@ -452,7 +452,7 @@ impl World {
         let Some(head) = vm::battle_cast_cue::module_head_cue(&module.bytes) else {
             return;
         };
-        let id = head.resolve(|| self.next_rng());
+        let id = head.resolve(|| self.next_rand());
         let raw = self
             .audio
             .xa_cue_durations
@@ -1210,10 +1210,10 @@ impl World {
                 .is_some_and(|def| def.wide_texture_page != 0);
         // Retail's character id is 1-based over the present-party list.
         let caster_character = self.party_roster_slot(caster_slot as usize) as u8 + 1;
-        let kill_roll = self.next_rng();
-        let resist_roll = self.next_rng();
+        let kill_roll = self.next_rand();
+        let resist_roll = self.next_rand();
         let extra_roll =
-            (caster_character == ticks_a::NIGHTO_EXTRA_ROLL_CHARACTER).then(|| self.next_rng());
+            (caster_character == ticks_a::NIGHTO_EXTRA_ROLL_CHARACTER).then(|| self.next_rand());
         let outcome = ticks_a::nighto_outcome(&ticks_a::NightoRoll {
             kill_roll,
             resist_roll,
@@ -1477,7 +1477,7 @@ impl World {
                     Some(ticks::white_shield_tick(&mut ctx, &mut caster, record))
                 }
                 (955, Some(ticks::KISS_OF_DEATH_TICK)) => {
-                    let roll = Some(self.next_rng());
+                    let roll = Some(self.next_rand());
                     let (step, refund) = ticks::kiss_of_death_tick(&mut ctx, &mut victim, roll);
                     run.item_refund = refund;
                     Some(step)
@@ -1495,7 +1495,7 @@ impl World {
                     Some(ticks::power_charge_tick(&mut ctx, &mut caster))
                 }
                 (955, Some(ticks::VOID_ACCESSORIES_TICK)) => {
-                    let rolls = Some((self.next_rng(), self.next_rng()));
+                    let rolls = Some((self.next_rand(), self.next_rand()));
                     let accessories = self.cast_victim_accessories(victim_slot);
                     let (step, outcome) =
                         ticks::void_accessories_tick(&mut ctx, &mut victim, accessories, rolls);
@@ -1513,7 +1513,7 @@ impl World {
                     let mut rolls: Vec<u32> = Vec::new();
                     if ctx.phase == 0 {
                         for _ in 0..=ticks::ELEMENT_CHANGE_MAX_REROLLS {
-                            rolls.push(self.next_rng());
+                            rolls.push(self.next_rand());
                         }
                     }
                     let mut cursor = rolls.into_iter();
@@ -1547,7 +1547,7 @@ impl World {
                 (940, Some(arms::GLARE_DIVIDE_SPLIT_TICK)) => {
                     let ext = self.cast_arm_ext_state(caster_slot);
                     let saved = self.casting.module_split_saved_target.unwrap_or(0);
-                    let roll = (ctx.phase == 2).then(|| self.next_rng());
+                    let roll = (ctx.phase == 2).then(|| self.next_rand());
                     let (step, split) = arms::glare_divide_split_tick(
                         &mut ctx,
                         &mut caster,
@@ -1674,7 +1674,7 @@ impl World {
                     let rolls =
                         self.cast_arm_sweep_rolls(&ctx, 956, arms::WATER_HAZARD_TICK, caster_slot);
                     let status: Vec<(u8, u32)> = if ctx.phase == 2 {
-                        rolls.iter().map(|(s, _)| (*s, self.next_rng())).collect()
+                        rolls.iter().map(|(s, _)| (*s, self.next_rand())).collect()
                     } else {
                         Vec::new()
                     };
@@ -2195,9 +2195,9 @@ impl World {
             guard: 0,
         };
         let rng = [
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
+            self.next_rand() as u16,
+            self.next_rand() as u16,
+            self.next_rand() as u16,
         ];
         Some(roll_module_hit(
             shape,
@@ -2206,7 +2206,7 @@ impl World {
             &d,
             element_affinity_pct,
             rng,
-            || (self.next_rng() & 0x7fff) as u16,
+            || self.next_rand() as u16,
         ))
     }
 
@@ -2267,7 +2267,7 @@ impl World {
                 Some(sh) => self.capture_module_roll(sh, caster, seat).unwrap_or(0),
                 None => 0,
             };
-            out.push((seat, damage, (self.next_rng(), self.next_rng())));
+            out.push((seat, damage, (self.next_rand(), self.next_rand())));
         }
         out
     }
@@ -2436,7 +2436,7 @@ impl World {
                 .get(victim_slot as usize)
                 .and_then(|a| a.battle_monster_id)
                 .and_then(|id| self.tables.steal_table.as_ref()?.entry(id))?;
-            let roll = (self.next_rng() % 100) as u8;
+            let roll = (self.next_rand() % 100) as u8;
             return Some(StealOutcome::FromMonster {
                 chance: entry.chance_pct,
                 item: entry.item_id,
@@ -2462,13 +2462,13 @@ impl World {
         // fabricate one, so the arm needs both.
         let floor = (self.party.party_count > 1 && self.party_roster_slot(1) as u8 + 1 == 4)
             .then(|| self.party.inventory.window_bounds().0.min(0xFF) as u8);
-        // One `next_rng` per rejected slot, not a pre-drawn batch: retail
+        // One `next_rand` per rejected slot, not a pre-drawn batch: retail
         // advances the shared cursor once per draw, so over-drawing would
         // desynchronise every later roll in the battle.
         let slot = vm::cast_arm_ticks::steal_pick_bag_slot(
             &bag,
             floor,
-            || self.next_rng(),
+            || self.next_rand(),
             |id| priced[id as usize],
         );
         match slot.and_then(|s| bag.get(s as usize).copied()) {

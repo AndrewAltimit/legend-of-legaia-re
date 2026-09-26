@@ -832,7 +832,15 @@ impl LegaiaMinigames {
         };
         match BakaFight::from_tables(opponents, actions, 0, opponent, seed) {
             Some(f) => {
-                self.baka = Some(f);
+                // Every roster fighter's clip headers, off the same banks this
+                // page poses the fighters from, through the engine's one
+                // loader (the play hosts stage the same) - so the strike clock
+                // and the special's afterimage step and expire on the real
+                // clips.
+                let headers = legaia_engine_core::baka_fighter::roster_clip_headers(|i| {
+                    self.baka_entry(i).map(<[u8]>::to_vec)
+                });
+                self.baka = Some(f.with_roster_clip_headers(headers));
                 true
             }
             None => false,
@@ -870,9 +878,13 @@ impl LegaiaMinigames {
     /// ```
     ///
     /// `w` is the HUD widget id, `x`/`y` the quad centre, `b` the brightness
-    /// (`0x80` = the descriptor's own RGB), `s` the 20.12 size scale and `g`
+    /// (`0x80` = the descriptor's own RGB), `s` the 20.12 size scale, `g`
     /// the glyph-strip cell a digit draw pages widget 5 to (`null` for a
-    /// plain widget). `[]` outside a duel.
+    /// plain widget) and `u` the texel column that paging stamps into widget
+    /// 5's record - [`legaia_engine_core::baka_fighter_chrome::glyph_u`], the
+    /// byte store retail's glyph wrapper performs (so it wraps at 256), and
+    /// the same stamp the native window resolves its chrome draws with.
+    /// `[]` outside a duel.
     pub fn baka_chrome_json(&self) -> String {
         let Some(f) = self.baka.as_ref() else {
             return "[]".to_string();
@@ -885,6 +897,7 @@ impl LegaiaMinigames {
                 serde_json::json!({
                     "w": d.widget, "x": d.x, "y": d.y,
                     "b": d.brightness, "s": d.size, "g": d.glyph,
+                    "u": d.glyph.map(legaia_engine_core::baka_fighter_chrome::glyph_u),
                 })
             })
             .collect();
@@ -910,10 +923,17 @@ impl LegaiaMinigames {
     /// { "live": true, "phase": "fighting"|"round_over"|"match_over",
     ///   "round": 0, "hp": [3200, 2900], "hp_start": 3200,
     ///   "wins": [0, 1], "combo": [0, 2], "chosen": [2, null],
-    ///   "can_choose": true, "gold": 30, "winner": null,
+    ///   "can_choose": true, "clock": [96, 0],
+    ///   "ghosts": [ { "owner": 0, "passes": [ { "bit": 0, "frame": 3, "cue": 2048 } ] } ],
+    ///   "gold": 30, "winner": null,
     ///   "last": { "winner": 0, "draw": false, "damage": 512,
     ///             "critical": false, "special": false } }
     /// ```
+    ///
+    /// `clock` is each fighter's strike-clock cursor (1/16 clip frame) over
+    /// its chosen attack - the frame the retail clip is on, since the strike
+    /// lands when it crosses the action's keyframe. `ghosts` are the special's
+    /// afterimage passes that drew this tick.
     pub fn baka_state_json(&self) -> String {
         let Some(f) = self.baka.as_ref() else {
             return r#"{"live":false}"#.to_string();
@@ -938,10 +958,37 @@ impl LegaiaMinigames {
             Some(w) => w.to_string(),
             None => "null".to_string(),
         };
+        // The special's afterimage ghosts (`FUN_801D49E8`): per live actor,
+        // the fighter it trails and each drawn ghost's whole clip frame and
+        // depth-cue level (`0x1000` = fully the black colour word).
+        let ghosts = f
+            .afterimages()
+            .iter()
+            .map(|(owner, fr)| {
+                let passes = fr
+                    .passes
+                    .iter()
+                    .filter(|p| p.drawn)
+                    .map(|p| {
+                        format!(
+                            r#"{{"bit":{},"frame":{},"cue":{}}}"#,
+                            p.bit,
+                            p.cursor >> 4,
+                            p.cue
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!(r#"{{"owner":{owner},"passes":[{passes}]}}"#)
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let clock = |s: usize| f.strike_clock(s).cursor;
         format!(
             concat!(
                 r#"{{"live":true,"phase":{},"round":{},"hp":[{},{}],"hp_start":{},"#,
                 r#""wins":[{},{}],"combo":[{},{}],"chosen":[{},{}],"can_choose":{},"#,
+                r#""clock":[{},{}],"ghosts":[{}],"#,
                 r#""gold":{},"winner":{},"last":{}}}"#
             ),
             jstr(phase),
@@ -956,6 +1003,9 @@ impl LegaiaMinigames {
             chosen(0),
             chosen(1),
             f.can_choose(0),
+            clock(0),
+            clock(1),
+            ghosts,
             f.gold_reward(),
             winner,
             last,
@@ -1541,6 +1591,61 @@ impl LegaiaMinigames {
     /// Whether the machine's 3D scene graph decoded off this disc.
     pub fn slot_scene_ready(&self) -> bool {
         self.slot_scene.is_some()
+    }
+
+    /// The five payline **line prims** for one frame, built by the ported
+    /// payline pass (`FUN_801d3380`,
+    /// [`legaia_engine_core::slot_machine::payline_prims`]) over this disc's
+    /// geometry table:
+    ///
+    /// ```json
+    /// [ { "i":0, "a":[-640,-192,-768], "b":[640,-192,-768],
+    ///     "sa":[82.1,112.9], "sb":[423.9,112.9],
+    ///     "rgb":[128,128,128], "semi":true, "lit":false }, ... ]
+    /// ```
+    ///
+    /// `sa` / `sb` are the endpoints already projected onto the 640x240 slot
+    /// framebuffer by the engine's one projection pass
+    /// ([`legaia_engine_core::slot_machine::projected_paylines`]) - the same
+    /// segments the native window draws.
+    ///
+    /// `winning_line` is retail's `DAT_801d3c8c`, compared for equality, so
+    /// any value outside `0..5` (the page passes `-1` before a win) lights
+    /// nothing. The endpoints stay model-space: the page RTPS-projects each
+    /// through the same fitted projection the rest of the cabinet uses, which
+    /// is the projection pass the prim builder leaves caller-side, and draws a
+    /// two-point line in `rgb` - half-blended over the scene when `semi`
+    /// (GP0 `0x43` carries the semi-transparency bit, and the lit colour
+    /// rewrites only the three colour bytes). `[]` when the scene did not
+    /// decode.
+    pub fn slot_payline_prims_json(&self, winning_line: i32) -> String {
+        let Some(sc) = self.slot_scene.as_ref() else {
+            return "[]".to_string();
+        };
+        let pos = |p: &slot_scene::Pos3| format!("[{},{},{}]", p.x, p.y, p.z);
+        let rows = legaia_engine_core::slot_machine::projected_paylines(&sc.paylines, winning_line)
+            .iter()
+            .map(|p| {
+                let l = &p.prim;
+                format!(
+                    r#"{{"i":{},"a":{},"b":{},"sa":[{},{}],"sb":[{},{}],"rgb":[{},{},{}],"semi":{},"lit":{}}}"#,
+                    l.index,
+                    pos(&l.a),
+                    pos(&l.b),
+                    p.a.0,
+                    p.a.1,
+                    p.b.0,
+                    p.b.1,
+                    l.color.0,
+                    l.color.1,
+                    l.color.2,
+                    l.code & 0x02 != 0,
+                    l.lit
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("[{rows}]")
     }
 
     /// The slot machine's **3D scene**, as the overlay's own rodata defines it,

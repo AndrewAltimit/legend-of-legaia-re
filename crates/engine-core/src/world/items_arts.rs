@@ -462,6 +462,9 @@ impl World {
                 None => return crate::items::ItemOutcome::NoEffect,
             }
         };
+        if let Some(outcome) = self.apply_status_clear_item(item_id, target_slot, snapshot.hp) {
+            return outcome;
+        }
         let outcome = crate::items::apply_effect(entry.effect, &snapshot);
         match outcome {
             crate::items::ItemOutcome::HealedHp { amount } => {
@@ -555,6 +558,52 @@ impl World {
     /// field-menu item just wrote the persistent record, and any live
     /// projection of it must not keep the stale value. No-op when no party
     /// ordinal maps to the slot (e.g. a reserve member).
+    /// The applier's **selector-8** arm for an item whose disc effect class is
+    /// `8` (Antidote): `None` for any other class, so the caller falls through
+    /// to the catalog path.
+    ///
+    /// Retail's arm is not "cure the one ailment the item names". It skips a
+    /// target at zero HP outright (`beq v0,zero` at `0x80041BCC`), and
+    /// otherwise masks the target's packed status word with `0xFFFC` - clearing
+    /// **both** poison bits, Venom `0x0001` and Toxic `0x0002` - whatever the
+    /// item's tier byte says. The word is the tracker's packed `+0x16E` /
+    /// `+0x12E` view ([`StatusEffectTracker::display_flags`]), and every
+    /// tracked kind whose bit the mask removed is cured.
+    ///
+    /// A target the mask leaves unchanged reports `NoEffect`, as the catalog's
+    /// cure does for an unafflicted target.
+    ///
+    /// [`StatusEffectTracker::display_flags`]: legaia_engine_vm::status_effects::StatusEffectTracker::display_flags
+    fn apply_status_clear_item(
+        &mut self,
+        item_id: u8,
+        target_slot: u8,
+        hp: u16,
+    ) -> Option<crate::items::ItemOutcome> {
+        use legaia_engine_vm::status_effects::StatusKind;
+        let class = self.tables.item_effects.as_ref()?.effect(item_id)?.class;
+        if class != vm::battle_action::EFFECT_SELECTOR_STATUS_CLEAR {
+            return None;
+        }
+        let word = self.battle.status_effects.display_flags(target_slot);
+        let Some(after) = vm::battle_action::selector_status_clear(hp, word) else {
+            return Some(crate::items::ItemOutcome::NoEffect);
+        };
+        let cleared = word & !after;
+        let mut first = None;
+        for kind in [StatusKind::Venom, StatusKind::Toxic] {
+            if kind.display_bit() & cleared != 0
+                && self.battle.status_effects.cure(target_slot, kind)
+            {
+                first.get_or_insert(kind);
+            }
+        }
+        Some(match first {
+            Some(kind) => crate::items::ItemOutcome::Cured { kind },
+            None => crate::items::ItemOutcome::NoEffect,
+        })
+    }
+
     fn mirror_roster_hp_mp(&mut self, rslot: usize) {
         let Some(rec) = self.party.roster.members.get(rslot) else {
             return;
@@ -1102,7 +1151,9 @@ impl World {
     /// finalize it through the +25% bonus + halve
     /// ([`vm::battle_formulas::victory_gold_finalize`]) and add it to
     /// [`crate::world::PartyState::money`]; sum the enemy EXP and distribute it (scaled 3/4,
-    /// ceiling-split) via [`World::apply_battle_xp`]. Returns the aggregated
+    /// ceiling-split) via [`World::apply_battle_xp`]; roll the one drop
+    /// retail offers ([`vm::battle_formulas::victory_drop_roll`], one BIOS
+    /// `rand()` per enemy seat plus the 1-in-4 gate). Returns the aggregated
     /// [`BattleRewards`] (`gold` is the **credited** amount, not the raw sum) so
     /// engines can surface the post-battle banner ("got N XP, M gold,
     /// learned spell X").
@@ -1120,28 +1171,66 @@ impl World {
         // in `FUN_8004E568`); finalized below via the `>> 1` halve + optional
         // +25% bonus. NOT the raw record-gold sum.
         let mut gold_acc: u32 = 0;
-        let mut drops: Vec<u8> = Vec::new();
+        let mut drop_seats = Vec::with_capacity(formation.slots.len());
+        // Captured seats cannot supply the drop (actor `+0x227`, bumped by the
+        // capture takedown). The engine logs captures by monster id, so each
+        // logged id claims the earliest formation seat carrying it.
+        let mut captured = self.seru.battle_captures.clone();
         for slot in &formation.slots {
+            let taken = captured
+                .iter()
+                .position(|&id| id == slot.monster_id)
+                .map(|i| captured.remove(i))
+                .is_some();
             let Some(def) = catalog.get(slot.monster_id) else {
                 continue;
             };
             xp_total = xp_total.saturating_add(def.exp as u32);
             gold_acc =
                 gold_acc.saturating_add(vm::battle_formulas::victory_gold_per_monster(def.gold));
-            if let Some(item_id) = def.drop_item
-                && def.drop_rate_q8 > 0
-            {
-                // 1-in-256 fixed-point drop roll: pull one byte from the
-                // deterministic RNG and compare. `drop_rate_q8 == 255`
-                // makes the drop near-guaranteed (1/256 floor); `0`
-                // already short-circuited above.
-                let roll = (self.next_rng() & 0xFF) as u8;
-                if roll < def.drop_rate_q8 {
-                    drops.push(item_id);
-                    let entry = self.party.inventory.entry(item_id).or_insert(0);
-                    *entry = entry.saturating_add(1);
-                }
-            }
+            drop_seats.push(vm::battle_formulas::VictoryDropSeat {
+                item: def.drop_item.unwrap_or(0),
+                chance_pct: def.drop_chance_pct,
+                captured: taken,
+            });
+        }
+        // The drop roll (`0x8004F3D8..0x8004F5A0`). The Items Up bonus reads
+        // the living members' second ability word (`+0xF8 & 0x20000`, the
+        // bit the steal attack's doubling also reads); the no-reward gate is
+        // `_DAT_8007BAC0`, which the engine carries as the arena's special
+        // word.
+        let party_n = self.party.party_count as usize;
+        let items_up = (0..party_n).any(|i| {
+            self.actors.get(i).is_some_and(|a| a.battle.hp > 0)
+                && self
+                    .party
+                    .roster
+                    .members
+                    .get(self.party_roster_slot(i))
+                    .is_some_and(|rec| {
+                        let b = rec.ability_bits();
+                        u32::from_le_bytes([b[4], b[5], b[6], b[7]])
+                            & crate::battle_steal::ITEMS_UP_BIT
+                            != 0
+                    })
+        });
+        let no_reward = self
+            .minigames
+            .muscle_dome
+            .as_ref()
+            .is_some_and(|s| s.special_word() != 0);
+        let item = vm::battle_formulas::victory_drop_roll(&drop_seats, items_up, no_reward, || {
+            self.next_rand()
+        });
+        let mut drops: Vec<u8> = Vec::new();
+        // `FUN_80042F4C(item) == 99` skips the grant (`0x8004F5A8..0x8004F5BC`).
+        if item != 0
+            && self.party.inventory.get(&item).copied().unwrap_or(0)
+                != crate::battle_steal::HELD_CAP
+        {
+            drops.push(item);
+            let entry = self.party.inventory.entry(item).or_insert(0);
+            *entry = entry.saturating_add(1);
         }
         // The +25% gold bonus fires when a living party member carries bit
         // `0x10000` of the SECOND ability word (`FUN_8004E568` tests the u32
@@ -1204,7 +1293,7 @@ impl World {
         steal_table: &legaia_asset::steal_table::StealTable,
     ) -> Option<u8> {
         let entry = steal_table.entry(monster_id).filter(|e| e.is_stealable())?;
-        let roll = (self.next_rng() % 100) as u8;
+        let roll = (self.next_rand() % 100) as u8;
         if roll < entry.chance_pct {
             let slot = self.party.inventory.entry(entry.item_id).or_insert(0);
             *slot = slot.saturating_add(1);

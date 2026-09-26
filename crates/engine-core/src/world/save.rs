@@ -260,6 +260,17 @@ impl World {
                 money: self.party.money,
                 inventory,
                 item_slots,
+                minigames: legaia_save::MinigameSave {
+                    casino_coins: self.minigames.casino_coins,
+                    point_card: self.minigames.point_card,
+                    fishing_points: self.minigames.fishing_points,
+                    fishing_lure: self.minigames.fishing_lure,
+                    fishing_rod: self.minigames.fishing_rod,
+                    fishing_best_points: self.minigames.fishing_best_points,
+                    fishing_best_fish: self.minigames.fishing_best_fish,
+                    fishing_casts: self.minigames.fishing_casts,
+                    fishing_prizes_purchased: self.minigames.fishing_prizes_purchased,
+                },
             },
             ext_v2: legaia_save::SaveExtV2 {
                 play_time_seconds: self.clock.play_time_seconds,
@@ -301,6 +312,18 @@ impl World {
             self.flags.system_flags = window;
         }
         self.party.money = sf.ext.money;
+        // The minigame purses and records - retail keeps all of them in the
+        // live-state window a save block mirrors (`legaia_save::minigame_save`).
+        let m = sf.ext.minigames;
+        self.minigames.casino_coins = m.casino_coins;
+        self.minigames.point_card = m.point_card;
+        self.minigames.fishing_points = m.fishing_points;
+        self.minigames.fishing_lure = m.fishing_lure;
+        self.minigames.fishing_rod = m.fishing_rod;
+        self.minigames.fishing_best_points = m.fishing_best_points;
+        self.minigames.fishing_best_fish = m.fishing_best_fish;
+        self.minigames.fishing_casts = m.fishing_casts;
+        self.minigames.fishing_prizes_purchased = m.fishing_prizes_purchased;
         // Prefer the physical array: it is the only form that carries slot
         // order and the holes a played-through bag has, and PROT 0941's Steal
         // samples both. A file written before the `LGX6` block - or an

@@ -302,8 +302,9 @@ impl World {
         // no-directional-input arm sets nothing.
         self.battle_ctx.super_trigger = false;
         let mut queue = [0u8; vm::battle_action::ACTION_QUEUE_CAP];
-        let written =
-            vm::battle_action::basic_attack_queue(&mut queue, swing_class, &mut || self.next_rng());
+        let written = vm::battle_action::basic_attack_queue(&mut queue, swing_class, &mut || {
+            self.next_rand()
+        });
         if let Some(a) = self.actors.get_mut(actor as usize) {
             let len = a.battle.params.len().min(queue.len());
             a.battle.params[..len].copy_from_slice(&queue[..len]);

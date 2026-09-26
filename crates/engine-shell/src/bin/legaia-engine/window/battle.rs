@@ -189,37 +189,17 @@ impl PlayWindowApp {
         // the 2D effect pool (effect billboards / outline markers), the
         // table form stages a 0x801F6324 prototype scene whose parts ride
         // the move-FX part-draw seam.
-        let fx_spawns = self.session.host.world.drain_battle_effect_spawns();
-        for s in &fx_spawns {
-            let at = [
-                s.at.0.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-                s.at.1.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-                s.at.2.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-            ];
-            if s.direct {
-                self.session
-                    .host
-                    .world
-                    .try_spawn_effect(s.effect, at, s.facing);
-                log::debug!(
-                    "effect-script spawn (direct) effect {:#04x} actor {} at {:?}",
-                    s.effect,
-                    s.actor_slot,
-                    at
-                );
-            } else {
-                let staged = self
-                    .session
-                    .host
-                    .world
-                    .spawn_action_table_effect(s.effect, at);
-                log::debug!(
-                    "effect-script spawn (table) effect {:#04x} actor {} at {:?} staged={staged}",
-                    s.effect,
-                    s.actor_slot,
-                    at
-                );
-            }
+        // The routing is the engine's (`World::route_battle_effect_spawns`),
+        // shared with the browser play page.
+        for r in self.session.host.world.route_battle_effect_spawns() {
+            log::debug!(
+                "effect-script spawn effect {:#04x} actor {} at {:?} direct={} staged={:?}",
+                r.spawn.effect,
+                r.spawn.actor_slot,
+                r.spawn.at,
+                r.spawn.direct,
+                r.table_staged
+            );
         }
 
         // Refresh per-slot rows + status icons, then age the popups one frame.
@@ -246,38 +226,6 @@ impl PlayWindowApp {
     /// function so it can be exercised against a bare `World`.
     pub(super) fn sync_battle_hud_rows(&mut self) {
         sync_battle_hud_rows(&mut self.battle_hud, &self.session.host.world);
-    }
-
-    /// The lead roster character's four weapon-swing AP costs (runtime slots
-    /// `0xC..=0xF` → indices 0..3), from their player battle file's equipped
-    /// sections. `None` when any stage of the decode fails.
-    pub(super) fn lead_swing_costs(&self) -> Option<[u8; 4]> {
-        let raw = self.session.host.index.entry_bytes_extended(863).ok()?;
-        let pack = legaia_asset::battle_data_pack::parse(&raw).ok()?;
-        let equipped: [u8; 5] = self
-            .session
-            .host
-            .world
-            .party
-            .roster
-            .members
-            .first()
-            .map(|rec| {
-                let slots = rec.equipment().slots;
-                [slots[0], slots[1], slots[2], slots[3], slots[4]]
-            })
-            .unwrap_or_default();
-        let swings =
-            legaia_asset::battle_char_assembly::swing_battle_animations(&raw, &pack, &equipped)
-                .ok()?;
-        let mut costs = [0u8; 4];
-        for s in &swings {
-            let i = s.slot.checked_sub(0xC)? as usize;
-            if i < 4 {
-                costs[i] = s.cost;
-            }
-        }
-        Some(costs)
     }
 
     /// React to a `Field <-> Battle` scene-mode change once per transition:
@@ -364,6 +312,9 @@ pub(super) struct BattleStage {
     /// Ground-grid depth-cue far colour, display `0..1` - the backdrop far
     /// colour per stage class (`DAT_80078C1C` outdoor table).
     pub(super) grid_far: [f32; 3],
+    /// `DAT_80078C1C` outdoor-table membership - the battle tint pass's
+    /// `DAT_8007BDA8` flag (`World::battle_actor_draw_plan`).
+    pub(super) outdoor: bool,
 }
 
 impl PlayWindowApp {
@@ -435,6 +386,10 @@ impl PlayWindowApp {
             .map(|t| t.far_colour_for_prot_index(stage_entry))
             .unwrap_or(legaia_engine_vm::battle_ground_grid::GRID_FAR_INDOOR);
         let grid_far = grid_far_bytes.map(|c| f32::from(c) / 255.0);
+        let outdoor = scus
+            .as_deref()
+            .and_then(legaia_engine_vm::battle_ground_grid::OutdoorCueTable::from_scus)
+            .is_some_and(|t| t.contains_prot_index(stage_entry));
         log::info!(
             "play-window: battle stage = scene '{scene_name}' PROT {stage_entry} \
              ({} objects, drawn twice, {} second copy, {restored} stage TIM(s) re-uploaded)",
@@ -446,6 +401,7 @@ impl PlayWindowApp {
             dome: (dome.tmd.clone(), dome.raw.clone()),
             second,
             grid_far,
+            outdoor,
         })
     }
 
@@ -503,6 +459,7 @@ impl PlayWindowApp {
         // it away with the monster meshes.
         self.battle_stage_mesh = None;
         self.battle_stage_color_mesh = None;
+        self.battle_stage_outdoor = false;
         // REF: FUN_800513f0 - the backdrop registration whose object-list edit
         // and second-copy transform this host consumes through
         // `legaia_asset::battle_backdrop`.
@@ -510,6 +467,7 @@ impl PlayWindowApp {
             dome: (tmd, raw),
             second,
             grid_far,
+            outdoor,
             ..
         }) = &stage
         {
@@ -584,6 +542,7 @@ impl PlayWindowApp {
                 // `build_battle_ground_grid`).
                 self.battle_ground_mesh = None;
                 self.battle_ground_cue_far = None;
+                self.battle_stage_outdoor = *outdoor;
                 let grid = build_battle_ground_grid();
                 match r.upload_vram_mesh(
                     &grid.positions,
@@ -1748,6 +1707,7 @@ impl PlayWindowApp {
         self.battle_stage_color_mesh = None;
         self.battle_ground_mesh = None;
         self.battle_ground_cue_far = None;
+        self.battle_stage_outdoor = false;
         self.battle_faces.clear();
     }
 

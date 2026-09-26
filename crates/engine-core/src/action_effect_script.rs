@@ -149,6 +149,12 @@ pub const HOMING_SLOT_COUNT: usize = 4;
 /// over the table form.
 pub const EFFECT_DIRECT_BIT: u8 = 0x80;
 
+/// The two direct-form effect bytes whose Z offset is clamped into the
+/// attacker-target separation before rotation (`0x801DEDAC..0x801DEDB8`:
+/// `li v0,0x93` / `li v0,0x84` compared against the **whole** `+0x01` byte).
+/// See [`EffectScriptActor::approach`].
+pub const APPROACH_CLAMPED_EFFECTS: [u8; 2] = [0x93, 0x84];
+
 /// Exclusive upper bound of the table-form codes that consult the per-effect
 /// **CLUT map** (`0x801F6418`): the table arm's gate is `sltiu v0,v1,0x32`
 /// (`0x801df0d8`), so only plain codes `0x00..=0x31` can stage a palette row,
@@ -639,6 +645,35 @@ pub struct EffectScriptActor {
     /// `+0x1DC` bit `0x8` - "this actor's effects are suppressed", which makes
     /// the whole call a no-op.
     pub suppressed: bool,
+    /// The attacker's live pair (`+0x34` / `+0x38`) with its target's **seat**
+    /// pair (`+0x3C` / `+0x40` of `pool[+0x1DD]`) - what `FUN_801DF570`
+    /// measures the separation over. `None` when the scope byte names no
+    /// single actor; the [`APPROACH_CLAMPED_EFFECTS`] records then keep their
+    /// authored offset.
+    pub approach: Option<legaia_engine_vm::battle_approach::ApproachPose>,
+}
+
+/// The direct branch's approach clamp (`0x801DEDC0..0x801DEDD0`): the scaled
+/// Z offset, sign-extended to a halfword, goes through `FUN_801DF570` and the
+/// result replaces it before the facing rotation - so a `0x93` / `0x84`
+/// effect lands inside `[3d/4, d]` of the attacker-target separation `d`
+/// rather than at its authored distance.
+///
+/// The separation reads the same LUT pair the rotation does, at the bearing
+/// from the target's seat back to the attacker plus a half-turn:
+/// `_DAT_8007B81C` ([`RotationLut::b`]) scales the X delta and `_DAT_8007B7F8`
+/// ([`RotationLut::a`]) the Z delta (`0x801DF5D8..0x801DF60C`).
+fn approach_clamped_z<L: RotationLut>(
+    lut: &L,
+    pose: legaia_engine_vm::battle_approach::ApproachPose,
+    requested: i16,
+) -> i16 {
+    use legaia_engine_vm::battle_approach::{approach_angle, approach_distance};
+    let bearing = legaia_engine_vm::battle_action::bearing_12bit_approx(
+        pose.ref_z, pose.ref_x, pose.z, pose.x,
+    );
+    let a = approach_angle(bearing);
+    approach_distance(pose, requested, lut.b(a) as i16, lut.a(a) as i16)
 }
 
 /// Walk the effect script for one frame.
@@ -700,7 +735,12 @@ pub fn step_effect_script<L: RotationLut>(
         // what the homing seed copies out as the launch position.
         let sx = scale_offset(rec.off_x, actor.scale);
         let sy = scale_offset(rec.off_y, actor.scale);
-        let sz = scale_offset(rec.off_z, actor.scale);
+        let mut sz = scale_offset(rec.off_z, actor.scale);
+        if APPROACH_CLAMPED_EFFECTS.contains(&rec.effect)
+            && let Some(pose) = actor.approach
+        {
+            sz = i32::from(approach_clamped_z(lut, pose, sz as i16));
+        }
         let (dx, dz) = rotate_offset(
             lut,
             actor.facing,
@@ -768,6 +808,7 @@ mod tests {
             scope: 9,
             action: 5,
             suppressed: false,
+            approach: None,
         }
     }
 
@@ -1061,5 +1102,44 @@ mod tests {
         let a = actor();
         let s = step_effect_script(&lut, &b, a, 1, &[]);
         assert_eq!(s.spawns[0].at.1, a.world.1 - 300);
+    }
+
+    /// The direct `0x93` / `0x84` records clamp their Z offset into the
+    /// attacker-target separation before rotating it (`FUN_801DF570` at
+    /// `0x801DEDC8`); every other record - and a `0x93` with no single
+    /// target - keeps its authored offset.
+    #[test]
+    fn the_approach_effects_clamp_their_z_offset_into_the_separation() {
+        use legaia_engine_vm::battle_approach::ApproachPose;
+        let lut = retail_rotation_lut();
+        // Attacker 400 units down +Z from its target's seat, facing it.
+        let pose = ApproachPose {
+            x: 0,
+            z: 400,
+            ref_x: 0,
+            ref_z: 0,
+        };
+        let mut a = actor();
+        a.world = (0, 0, 400);
+        a.approach = Some(pose);
+        // A 1000-unit authored reach overshoots the 400-unit gap: clamped to d.
+        let far = step_effect_script(lut, &block(&[(1, 0x93, 0, 0, 1000)]), a, 0, &[]);
+        let near = approach_clamped_z(lut, pose, 1000);
+        assert_eq!(near, 400, "min(requested, d)");
+        let expect = rotate_offset(lut, a.facing, FacingBias::None, 0, i32::from(near));
+        assert_eq!(
+            far.spawns[0].at,
+            (a.world.0 + expect.0, a.world.1, a.world.2 + expect.1)
+        );
+        // A 10-unit reach is floored at three quarters of the gap.
+        assert_eq!(approach_clamped_z(lut, pose, 10), 300);
+        // A plain direct record is untouched.
+        let plain = step_effect_script(lut, &block(&[(1, 0x92, 0, 0, 1000)]), a, 0, &[]);
+        let raw = rotate_offset(lut, a.facing, FacingBias::None, 0, 1000);
+        assert_eq!(plain.spawns[0].at, (raw.0, 0, 400 + raw.1));
+        // No single target: the authored offset stands.
+        a.approach = None;
+        let open = step_effect_script(lut, &block(&[(1, 0x84, 0, 0, 1000)]), a, 0, &[]);
+        assert_eq!(open.spawns[0].at, (raw.0, 0, 400 + raw.1));
     }
 }

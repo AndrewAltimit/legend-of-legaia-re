@@ -246,6 +246,11 @@ impl LegaiaRuntime {
     /// Per-tick presentation step. Cheap no-op outside a minigame mode.
     pub(crate) fn tick_minigame_ui(&mut self) {
         self.drain_minigame_sfx_cues_web();
+        // The fishing venue actors (wander / ripple / floor / camera publish /
+        // line / catch bursts / sway): the shared kernel the native window's
+        // minigame frame runs, reading the fishing events this world tick
+        // raised.
+        self.tick_fishing_actors();
         // The dance's song-over arm restores the interrupted mode but leaves
         // the run installed so a host can read the final score; closing it is
         // the host's job, and `World::exit_dance` is what gives the hall its

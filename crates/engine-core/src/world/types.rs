@@ -569,6 +569,13 @@ pub struct Actor {
     /// Stepped once per game tick by [`World::tick_handler_actors`].
     pub reflection: Option<ReflectionLink>,
 
+    /// `+0x50` / `+0x54` / `+0x9E` / `+0x10` / `+0x16` - the scripted-scene
+    /// program block, present only on actors whose [`Self::handler`] is
+    /// [`ActorHandler::ScriptedScene`](crate::actor_handler::ActorHandler::ScriptedScene)
+    /// (seated by [`World::man_load_resume_programs`]). Stepped once per game
+    /// tick by [`World::tick_handler_actors`].
+    pub scene_program: Option<crate::field_actor_program::ProgramActor>,
+
     /// This frame's `FUN_80024EE4` full-screen colour push, if the actor's
     /// handler emitted one. Cleared at the top of every
     /// [`World::tick_handler_actors`] pass, so it is always "this frame's",
@@ -790,6 +797,34 @@ pub struct Actor {
 impl Actor {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Initialise a freshly allocated pool actor the way the retail allocator
+    /// `FUN_80020DE0` does before it hands the actor back
+    /// (`0x80020E34..0x80020F6C`): every per-actor state word is written - the
+    /// handler from the descriptor, the SM state `+0x54`, position, angles, the
+    /// clip id and cursor, the timers `+0x9C` / `+0x9E`, the scratch bytes
+    /// `+0x80..+0x8F` - so nothing a previous occupant left in the slot
+    /// survives. The port reaches the same end by starting from a fresh
+    /// [`Actor`]; of the non-zero defaults it stores, the render scale `+0x72 =
+    /// 0x1000` has a port field (the move state's `field_72`).
+    ///
+    /// The scene pre-binds a slot may carry (its TMD binding and active
+    /// animation, `World::ensure_actor`'s two survivors) are kept: they are
+    /// the port's stand-in for the model the descriptor's `+4` names, which the
+    /// caller then overrides where it has one.
+    ///
+    /// PORT: FUN_80020DE0 (the slot initialisation; allocation is the caller's
+    /// first-free-slot scan, the descriptor's model / handler are the caller's
+    /// arguments)
+    pub(crate) fn init_allocated(&mut self) {
+        let tmd_binding = self.tmd_binding;
+        let active_animation = self.active_animation.take();
+        *self = Actor::new();
+        self.tmd_binding = tmd_binding;
+        self.active_animation = active_animation;
+        self.active = true;
+        self.move_state.field_72 = 0x1000;
     }
 
     /// Mark this slot as active. Returns `&mut Self` for chaining.
@@ -1130,9 +1165,10 @@ pub struct BattleRewards {
     pub xp: u32,
     pub gold: u32,
     pub level_ups: Vec<LevelUpResult>,
-    /// Item drops the post-battle loot roll surfaced. One entry per
-    /// monster slot that *both* (a) had a non-`None` `drop_item` in the
-    /// catalog and (b) rolled below `drop_rate_q8 / 256`.
+    /// Item drops the post-battle loot roll surfaced: at most one entry, the
+    /// item retail's victory drop roll offers
+    /// ([`legaia_engine_vm::battle_formulas::victory_drop_roll`]), and none
+    /// when the bag already holds 99 of it.
     pub drops: Vec<u8>,
 }
 

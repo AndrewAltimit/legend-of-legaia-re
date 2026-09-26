@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use glam::{Mat4, Vec3, Vec4};
-use legaia_engine_core::menu_runtime::{MenuInput, MenuRuntime, MenuState};
+use legaia_engine_core::menu_runtime::{MenuRuntime, MenuState};
 use legaia_engine_core::scene::Scene;
 use legaia_engine_core::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
@@ -838,11 +838,6 @@ struct PlayWindowApp {
     /// list has the pad; retail reaches the same readout from a row of the
     /// world-map dev menu this screen stands in for.
     dev_menu_records: bool,
-    /// The two fishing point-exchange venue pages (0 = Buma, 1 = Vidna),
-    /// decoded from the fishing overlay when the minigame starts
-    /// ([`legaia_asset::fishing_exchange`]) and named from the SCUS item
-    /// table when readable. `P` toggles the list while fishing.
-    fishing_prize_venues: Option<[legaia_engine_core::fishing::PrizeExchange; 2]>,
     /// The fishing HUD's five one-shot banner timers (hook / reel-in / miss /
     /// auxiliary / strike splash). Seeded from the session's phase edges and
     /// serviced once a frame in the redraw handler; the draws they produce are
@@ -857,20 +852,8 @@ struct PlayWindowApp {
     // world's own dance tick, so the browser play page counts in on the same
     // frames and the **door-warp** entry gets a count-in at all. The HUD
     // builder reads `dance_countin_banner` / `dance_tutorial_frame` off the
-    // world.
-    /// The fishing venue's free-swimming fish actor (idle/cast phases).
-    fish_wander: Option<legaia_engine_core::fishing_actors::FishWander>,
-    /// The reeling-line actor sim (hook -> fight -> celebration).
-    fish_line: Option<legaia_engine_core::fishing_actors::LineActorSim>,
-    /// The venue scene's `.MAP` extended footprint, read at fishing entry -
-    /// the engine's `_DAT_1F8003EC` floor buffer the ground solver reads.
-    fishing_floor: Option<Vec<u8>>,
-    /// The fishing sub-screens' idle-sway phase (`0x801D9118`).
-    fishing_sway_angle: i32,
-    /// This frame's sway offset, applied to the point-exchange panel.
-    fishing_sway_offset: (i16, i16),
-    /// Small xorshift state for the minigame actors' `rand()` draws.
-    minigame_rng: u32,
+    // world. The fishing venue actors moved the same way, onto
+    // `World::minigames.fishing_venue`.
     /// The duel overlay's parsed HUD widget table, for resolving chrome
     /// glyph draws (`parse_baka_hud`).
     baka_hud_widgets: Option<Vec<legaia_asset::baka_opponents::BakaHudWidget>>,
@@ -935,6 +918,11 @@ struct PlayWindowApp {
     /// stages). Resolved per battle in `build_battle_stage`;
     /// `None` outside a stage-dome battle.
     battle_ground_cue_far: Option<[f32; 3]>,
+    /// Whether the current battle stage is on the `DAT_80078C1C` outdoor
+    /// table - the tint pass's `DAT_8007BDA8` input
+    /// (`World::battle_actor_draw_plan`). Resolved per battle in
+    /// `build_battle_stage`; `false` outside a stage-dome battle.
+    battle_stage_outdoor: bool,
     scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.
     pad: u16,

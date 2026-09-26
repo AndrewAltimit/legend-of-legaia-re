@@ -654,14 +654,11 @@ impl LegaiaRuntime {
         )
     }
 
-    /// The message holding retail's top-of-screen banner this frame, if any -
-    /// the browser twin of the native window's `battle_banner_message`.
-    ///
-    /// The port's two battle messages are the level-up and Seru-capture
-    /// lines, and retail draws exactly those in this widget. Deliberately NOT
-    /// gated on `SceneMode::Battle`: the port grants XP after the mode has
-    /// flipped back to Field, so a battle-mode gate would leave the widget
-    /// wired and never drawn.
+    /// The message holding retail's top-of-screen banner this frame, if any:
+    /// the engine's shared read
+    /// (`legaia_engine_core::battle_hud::battle_banner_message` - the absorb /
+    /// magic-level element line, then level-up, then Seru capture), the same
+    /// one the native window draws.
     ///
     /// `None` without the system-UI atlas - there is no frame to put a
     /// message in, so a chrome-less host keeps the loose pens instead.
@@ -670,30 +667,7 @@ impl LegaiaRuntime {
         assets: &crate::play_menu::PlayMenuAssets,
     ) -> Option<String> {
         assets.chrome_rects()?;
-        let w = &self.scene_host.as_ref()?.world;
-        if let Some(b) = &w.party.current_level_up_banner {
-            // Name the character, not their roster ordinal - `P3` is an index
-            // only this codebase knows. `char_id` is the ROSTER slot the
-            // level-up applier wrote, so it indexes `roster.members`
-            // directly (not the battle order). Twin of the native window's
-            // `battle_banner_message`.
-            let who = w
-                .party
-                .roster
-                .members
-                .get(b.char_id as usize)
-                .map(|r| r.name())
-                .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| format!("P{}", b.char_id + 1));
-            return Some(format!(
-                "LEVEL UP!  {who} -> LV {}\nHP +{}  MP +{}",
-                b.new_level, b.hp_gained, b.mp_gained
-            ));
-        }
-        w.party
-            .current_capture_banner
-            .as_ref()
-            .and_then(|b| b.current_banner())
+        legaia_engine_core::battle_hud::battle_banner_message(&self.scene_host.as_ref()?.world)
     }
 
     /// The live battle command surface projected into the shared chip-cluster
@@ -1961,6 +1935,9 @@ impl LegaiaRuntime {
         // pool's render step through the follow camera, the native window's
         // `take_field_fog_prims` twin ([`crate::play_field_fx`]).
         prims.extend(self.tick_field_fog_prims());
+        // The actor drop shadows (`FUN_8001C394`), depth-tested against the
+        // field - the native window's `field_drop_shadow_prims` twin.
+        prims.extend(self.field_drop_shadow_prims());
         // Move-VM strip spans (`FUN_801D31B0`), same camera, same kernel as
         // the native window's `take_move_strip_prims`.
         prims.extend(self.tick_move_strip_prims());

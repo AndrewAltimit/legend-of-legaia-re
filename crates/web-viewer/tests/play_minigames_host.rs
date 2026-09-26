@@ -200,6 +200,26 @@ fn arena_door_warp_draws_the_muscle_dome_and_start_leaves() {
     let st: serde_json::Value =
         serde_json::from_str(&rt.play_mg_muscle_state_json()).expect("state json");
     assert_eq!(st["live"].as_bool(), Some(true));
+    // The door stages the lead record's own fighter - the AP pool is its live
+    // AGL and the entry HP its live HP - through the builder the native
+    // launcher shares (`SceneHost::dome_lead_fighter`), not the flat 120 AP /
+    // 400 HP stand-in the door used to field on both hosts.
+    let lead: serde_json::Value =
+        serde_json::from_str(&rt.debug_lead_live_stats_json()).expect("lead json");
+    let agl = lead["agl"].as_u64().expect("a lead record");
+    assert!(agl > 0, "the page's party has a live AGL: {lead}");
+    assert_eq!(
+        st["budget"].as_u64(),
+        Some(agl),
+        "dome AP pool = lead AGL: {st} vs {lead}"
+    );
+    assert_eq!(
+        st["hp"][0].as_u64(),
+        lead["hp"].as_u64(),
+        "dome entry HP = lead HP"
+    );
+    assert_eq!(st["costs"].as_array().map(|c| c.len()), Some(4), "{st}");
+    eprintln!("[ok] door-staged dome fighter {st} from lead {lead}");
     // The intro card + ROUND banner arm on the fresh contest's first leg.
     tick(&mut rt, 4);
     let hub: serde_json::Value =

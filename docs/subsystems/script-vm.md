@@ -648,7 +648,7 @@ script parks - the same "satisfied on arrival" shape the BGM barrier has.
 | 0x3E | `SCRIPTED_BATTLE / WARP` | `[3E, op0, op1, …]` | If `op0 == 0xFF` or `op0 < 100`: **scripted-battle install** of formation-table row `op1` on the system context (`func_0x8003C83C(0xFB)`): `sys_ctx[+0x94] = formation_table + op1 * stride + 1`, step-counter reroll, `func_0x8003CE08(0xE)`; `op0` is not read further - see [§ 0x3E scripted battle](#0x3e-scripted-battle-op0--100). Else (`op0 >= 100`): **minigame door-warp** - `_DAT_8007BA34 = op0 - 100` (sub-id), `_DAT_8007B83C = 0x18` (mode 24 OTHER INIT), zero the session-winnings accumulator `_DAT_80084440` and `0x8007BAC0`, clear `player[+0x10] & 0x80000`, call `func_0x8003CE08(0xE)`. The op carries **no destination name**; full pre-warp/return behaviour in [§ 0x3E WARP](#0x3e-warp-mode-24-minigame-door-warp) below. |
 | 0x3F | `SCENE_CHANGE` (named warp) | `[3F, idx_lo, idx_hi, name_len, [name_len name bytes], entry_x, entry_z, dir]` | **Named scene-change ("warp by name"), NOT a dialog op.** Full encoding + behaviour in [§ 0x3F SCENE_CHANGE](#0x3f-scene_change-named-warp) below. |
 | 0x40 | `DATA_BLOCK` | `[40, len, ...len bytes]` | Skips `len` bytes after header - embeds raw inline data. PC += 2 + len. |
-| 0x42 | `COND_JMP` | `[42, mode, op1, op2, op3]` | Multi-mode conditional. `mode == 0`: test `_DAT_8007B8F4 & (1 << (op1 & 0x1F))` - if clear, return `pc + 5` (skip). `mode == 1`: test screen-mode (`_DAT_8007B850`) against `_DAT_801F28D0[op1*4]` (8-entry table) for `op1 < 8`, bit 0x20 for `op1 == 8`, 0x40 for 9, 0x80 for 10, 0x10 for 11; **`op1 >= 0xC` falls through to the unconditional take-jump path** (no test). `mode >= 2` hits the dispatcher's default arm - halts at PC. Successful jump target = `pc + 3 + LE_u16(op2,op3)`; skip target = `pc + 5`. |
+| 0x42 | `COND_JMP` | `[42, mode, op1, op2, op3]` | Multi-mode conditional. `mode == 0`: test `_DAT_8007B8F4 & (1 << (op1 & 0x1F))` - if clear, return `pc + 5` (skip). `mode == 1`: test the **held pad** (`_DAT_8007B850`, packed: d-pad in `0xF000`, face buttons in `0x10..0x80`) - `& 0xF000` equal to the compass entry `_DAT_801F28D0[op1*4]` (Down, Down+Left, Left, Left+Up, Up, Up+Right, Right, Right+Down) for `op1 < 8`, Circle `0x20` for `op1 == 8`, Cross `0x40` for 9, Square `0x80` for 10, Triangle `0x10` for 11 (the jump is taken on a match); **`op1 >= 0xC` falls through to the unconditional take-jump path** (no test). `mode >= 2` hits the dispatcher's default arm - halts at PC. Successful jump target = `pc + 3 + LE_u16(op2,op3)`; skip target = `pc + 5`. |
 
 #### 0x37 / 0x41 / 0x47 YIELD family (motion ops)
 
@@ -1926,12 +1926,22 @@ The length is the VM's own bound (op `0x49` rejects `sub_op > 0xD`,
 | `8` | `0x27` | `FUN_801F1138` - the start / confirm menu |
 | `9` | `0x28` | `FUN_801F1FDC` - the prompt |
 | `0xA` | `0x31` | `FUN_801ED590` |
-| `0xB` | `0x32` | `FUN_801F1E48` - the sub-menu |
+| `0xB` | `0x32` | `FUN_801F1E48` - the Incense wear-off notice (below) |
 | `0xC` | `0x33` | `FUN_801EDF00` |
 
 Rows `3` and `5` cross-validate the read: they name the name-entry screen and
 the tile-board walk, the two sub-ops identified independently elsewhere on
-this page. Port: `legaia_engine_vm::baka_hub_actors::OP49_SUBOP_SLOTS`, with
+this page.
+
+Row `0xB` is not a sub-menu. `FUN_801F1E48` shows window record `16`, whose
+painter `FUN_801F1B64` draws exactly one string, `0x801CF1A4` - the `0xC2
+0x8A` item-name escape (item `0x8A`, the Incense) and the line saying its
+effect is gone - then waits for a confirm or cancel edge and hands back. Its
+real caller is not a script: the walk tick `FUN_801D0B90` stores the static
+record `0x801F2278`, whose first byte is `0x0B`, into `_DAT_8007B450` on the
+tick the Incense window reaches zero, so the enter half's table read lands on
+this row ([field-menu.md](field-menu.md#command-sub-flows-use--throw-out--arrange)). The "sub-menu"
+name described the state machine's shape, not what it draws. Port: `legaia_engine_vm::baka_hub_actors::OP49_SUBOP_SLOTS`, with
 the disc pin in `crates/engine-core/tests/w1b_hub_tables_disc.rs`.
 
 #### The panel-window records and the descriptors that install them
@@ -2277,9 +2287,49 @@ window has closed" is falsified. It also misread its gate: the scene word
 `*(_DAT_801C6EA4) + 8` reads `0` on every sampled vsync of both conversations,
 consistent with its one documented use (non-zero only while a placement's spawn
 section is pre-run, [above](#0x43-sub-01ab---scripted-arc-jump)), so it is not
-a modal-window flag. The two `0x400` bits the acquire set are clear again 18
-vsyncs later with the second conversation still open; what clears them is not
-identified.
+a modal-window flag.
+
+**What ends the halt (capture).** The two `0x400` bits the acquire set are
+cleared by the walk kernel `FUN_8003774C`, which the same bit dispatches
+(`FUN_8003BC08` runs the dialog SM at `0x8003BD34` and then, on `+0x10 &
+0x400`, the kernel at `0x8003BD50`). The acquire stored the op's own address
+in both actors' `+0x94`, and the kernel reads those bytes back as a
+[motion-VM](motion-vm.md#opcodes) op: `CC F8 85 14 00 33` is a `0x4C`
+FaceTarget on the player (target byte `F8`), sub-mode `85`, a `0x14`-frame
+budget, facing actor bind `0x33` - the innkeeper. Its terminal frame snaps
+the heading, then clears `0x400` from the player (`sw v0,0x10(s0)` at
+`0x80038004`) and, because the target is the player, from the kernel's own
+actor (`sw v0,0x10(s4)` at `0x80038028`; see
+`ghidra/scripts/funcs/8003774c.txt`). A PCSX-Redux write watch on both
+`+0x10` words across the second talk
+([`run_w1a_halt_and_offset_watch.sh halt`](../../scripts/pcsx-redux/run_w1a_halt_and_offset_watch.sh))
+sees exactly that: set by the acquire
+(`0x801E21A4` player, `0x801E21CC` innkeeper), then cleared by those two
+PCs 18 vsyncs later, the player's `+0x54` cursor stepping 2 per game tick to
+18. The conversation's box opens on the acquire's own frame, so the halt is a
+window over the open box: the player turns to face the speaker, and a
+cross-context op aimed at the player inside it returns at its own PC. The
+engine carries the window as `InlineDialogue::face_ramp`
+(`legaia_engine_core::inline_dialogue::TalkFaceRamp`), stepped once a frame
+through the ported motion VM by `World::step_talk_face_ramp`; the runner
+parks a player-targeted op while it is open.
+
+**The face-at bind names an actor, not the conversation.** The kernel's
+FaceTarget arm reads the bind at op `+3` and resolves it like any
+cross-context id: `0xF8` to the player, `0xFB` to the world-map entity, anything
+else to the node of the `_DAT_8007C354` list whose `+0x50` equals it
+(`0x80037E00..0x80037EA8` in `ghidra/scripts/funcs/8003774c.txt`); an id no
+node carries takes the default arm and ends the leg. In `retock` the bind is
+the innkeeper's own, but that is not the rule: of the disc's clean-decoded
+`CC F8 85|8E|8F` acquires, 40 of the 146 in placement records name another
+actor, across 14 scenes (`tunnelc` 9, `koin1` 6, `balden` / `balden2` /
+`bubu1` / `koin4` 4 each) - often the neighbouring placement, sometimes a
+second actor the same talk turns to - and the 24 in object
+records and 861 in cutscene records have no own actor to fall back on. The
+port resolves the bind through the scene's channel set
+(`World::talk_face_target`), falling back to the conversation's own placement
+only for an id no channel carries. The census is
+`crates/engine-core/tests/talk_face_acquire_bind_disc.rs`.
 
 **The end rule is the dialog SM's, not the acquire's.** Once a box's lines are
 scanned, `FUN_80039B7C` hands the byte after them to `FUN_80038050`

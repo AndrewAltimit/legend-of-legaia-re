@@ -152,6 +152,7 @@ pub mod ambient;
 mod cutscene_elements;
 mod field_script_actors;
 pub use field_script_actors::FieldLightDraw;
+mod drop_shadow_render;
 mod fog_render;
 pub use cutscene_elements::{
     AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, CutsceneElement, ElementFrame,
@@ -162,10 +163,11 @@ mod bag_rows;
 pub use bag_rows::BagRow;
 mod battle;
 pub use battle::{
-    BattleSpoilsBanner, LEVEL_UP_CUE, PendingCast, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND,
-    SummonPhase, SummonStager, VICTORY_EXIT_PHASE, VICTORY_FADE_PHASE_SEED, VICTORY_LOAD_FRAMES,
-    VICTORY_RESULTS_HOLD_FRAMES, VictoryPhase, VictorySequence, victory_pose_column,
-    victory_pose_id, victory_pose_tier,
+    ABSORB_BANNER_ELEMENT, BattleActorDrawPlan, BattleMessageBanner, BattleSpoilsBanner,
+    LEVEL_UP_CUE, MAGIC_LEVEL_BANNER_ELEMENT, PARTY_BODY_RADIUS, PendingCast, RoutedEffectSpawn,
+    SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager, VICTORY_EXIT_PHASE,
+    VICTORY_FADE_PHASE_SEED, VICTORY_LOAD_FRAMES, VICTORY_RESULTS_HOLD_FRAMES, VictoryPhase,
+    VictorySequence, victory_pose_column, victory_pose_id, victory_pose_tier,
 };
 mod effects;
 pub use effects::{
@@ -189,7 +191,11 @@ pub use handler_actors::TransitionSweepReport;
 mod items_arts;
 mod narration;
 mod prop_interact;
+mod retail_progression;
+pub use retail_progression::RetailProgressionTables;
 mod save;
+mod scene_program;
+pub use scene_program::SceneProgramFrame;
 mod vm_hosts;
 mod vram_rect_fx;
 pub use vram_rect_fx::OT_LEN_UNBOUNDED;

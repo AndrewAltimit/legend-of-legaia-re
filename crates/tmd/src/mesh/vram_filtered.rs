@@ -23,10 +23,34 @@ use super::{VramMesh, compute_smooth_normals, pack_tsb_semi};
 /// `crates/asset-viewer` for a concrete VRAM-backed predicate.
 ///
 /// [`tmd_to_vram_mesh`]: super::tmd_to_vram_mesh
-pub fn tmd_to_vram_mesh_filtered<F>(tmd: &Tmd, buf: &[u8], mut keep_prim: F) -> VramMesh
+pub fn tmd_to_vram_mesh_filtered<F>(tmd: &Tmd, buf: &[u8], keep_prim: F) -> VramMesh
 where
     F: FnMut(u16, u16, &[(u8, u8)]) -> bool,
 {
+    tmd_to_vram_mesh_filtered_lit(tmd, buf, keep_prim).0
+}
+
+/// [`tmd_to_vram_mesh_filtered`] plus a per-vertex **lit-row** mask,
+/// parallel to [`VramMesh::positions`]: `true` where the vertex belongs to a
+/// prim of descriptor rows 0 / 1 (group flags `0x10..=0x17`), the
+/// light-source rows that carry no colour word.
+///
+/// The mask is the only way to tell those vertices apart from a baked word
+/// that happens to be authored at exactly `0x80`: both come back as
+/// [`legaia_prims::MODULATION_NEUTRAL`] in [`VramMesh::colors`], but retail
+/// colours them differently - a lit row through the GTE lighting sum, a baked
+/// word as itself (and the prologue's `4C E6` rewrite takes an authored
+/// `0x80` to `(98, 94, 42)`). A host that restages the lit rows by testing the
+/// colour for `0x80` darkens every such baked prim along with them.
+pub fn tmd_to_vram_mesh_filtered_lit<F>(
+    tmd: &Tmd,
+    buf: &[u8],
+    mut keep_prim: F,
+) -> (VramMesh, Vec<bool>)
+where
+    F: FnMut(u16, u16, &[(u8, u8)]) -> bool,
+{
+    let mut lit = Vec::new();
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
     let mut cba_tsb = Vec::new();
@@ -54,6 +78,7 @@ where
                     continue;
                 }
                 let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
+                let lit_row = (0x10..=0x17).contains(&g.header.flags);
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;
@@ -62,6 +87,7 @@ where
                     uvs.push([u8v, v8v]);
                     cba_tsb.push(ct);
                     colors.push(prim_color(prim, uv_idx));
+                    lit.push(lit_row);
                     i
                 };
                 match raw_idx.len() {
@@ -85,14 +111,17 @@ where
     }
 
     let normals = compute_smooth_normals(&positions, &indices);
-    VramMesh {
-        positions,
-        uvs,
-        cba_tsb,
-        indices,
-        normals,
-        colors,
-    }
+    (
+        VramMesh {
+            positions,
+            uvs,
+            cba_tsb,
+            indices,
+            normals,
+            colors,
+        },
+        lit,
+    )
 }
 
 /// Per-build accounting for [`tmd_to_vram_mesh_filtered_stats`]. Tracks

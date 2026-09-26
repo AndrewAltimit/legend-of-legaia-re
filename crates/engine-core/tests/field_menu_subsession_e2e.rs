@@ -516,3 +516,101 @@ fn spell_swap_permutes_the_magic_screen_order() {
         "the parallel `+0x161` byte moves with its id"
     );
 }
+
+/// Put an MP-saver bit into roster record `slot`'s `+0xF4` word - the word
+/// retail's cast-price kernel `FUN_80035394` reads (`0x800353B4`).
+fn equip_mp_saver(world: &mut World, slot: usize, bit: u8) {
+    let mut bits = world.party.roster.members[slot].ability_bits();
+    bits[0] = bit;
+    world.party.roster.members[slot].set_ability_bits(bits);
+}
+
+/// Retail debits the **discounted** price on a field cast: `jal 0x80035394`
+/// at `0x801D972C` (group) / `0x801D93C0` (single), then `record+0x10A -= v0`.
+/// A Spirit Talisman (`+0xF4 & 0x20`, "consume 50% less MP") halves the
+/// vanilla Heal All's 8 MP to 4, so the caster keeps 8 of 12.
+#[test]
+fn a_field_group_cast_debits_the_mp_saver_discounted_price() {
+    let mut world = fresh_world();
+    for member in world.party.roster.members.iter_mut() {
+        let mut hms = member.hp_mp_sp();
+        hms.hp_cur = 10;
+        member.set_hp_mp_sp(hms);
+    }
+    let mut spells = world.party.roster.members[0].spell_list();
+    spells.count = 1;
+    spells.ids[0] = 0x11;
+    world.party.roster.members[0].set_spell_list(spells);
+    equip_mp_saver(&mut world, 0, 0x20);
+
+    let mut sub = build(FieldMenuRow::Magic, &world, &OptionsState::default());
+    sub.tick_pad_edge(PadButton::Cross.mask()); // caster 0
+    sub.tick_pad_edge(PadButton::Cross.mask()); // Heal All -> group flow
+    sub.tick_pad_edge(PadButton::Cross.mask()); // commit
+    let FieldMenuSubsession::Spells(s) = &sub else {
+        panic!("expected Spells sub");
+    };
+    assert!(s.is_done());
+    apply_spell_outcome(s, &mut world);
+    assert_eq!(
+        world.party.roster.members[0].hp_mp_sp().mp_cur,
+        12 - 4,
+        "Half: cost - (cost >> 1) = 8 - 4"
+    );
+}
+
+/// The list build greys a row on `record+0x10A < discounted cost`
+/// (`0x8003118C..0x80031204`), so a caster below the raw price but at or
+/// above the discounted one can still cast - and is charged the discounted
+/// price, leaving exactly zero. Without the saver the same caster is refused.
+#[test]
+fn an_mp_saver_admits_a_cast_the_raw_price_would_refuse() {
+    let setup = |saver: bool| -> World {
+        let mut world = fresh_world();
+        let mut hms = world.party.roster.members[0].hp_mp_sp();
+        hms.mp_cur = 6; // Heal All raw 8, Quarter-off 6
+        world.party.roster.members[0].set_hp_mp_sp(hms);
+        let mut spells = world.party.roster.members[0].spell_list();
+        spells.count = 1;
+        spells.ids[0] = 0x11;
+        world.party.roster.members[0].set_spell_list(spells);
+        if saver {
+            equip_mp_saver(&mut world, 0, 0x10);
+        }
+        world
+    };
+
+    // Without the saver: the row is inadmissible and confirming it is refused.
+    let world = setup(false);
+    let mut sub = build(FieldMenuRow::Magic, &world, &OptionsState::default());
+    sub.tick_pad_edge(PadButton::Cross.mask());
+    let FieldMenuSubsession::Spells(s) = &sub else {
+        panic!("expected Spells sub");
+    };
+    let rows = s.current_spell_rows();
+    assert_eq!(rows[0].mp_cost, 8);
+    assert!(!rows[0].admissible);
+
+    // With the Spirit Jewel (`0x10`, a quarter off): 8 - (8 >> 2) = 6.
+    let mut world = setup(true);
+    let mut sub = build(FieldMenuRow::Magic, &world, &OptionsState::default());
+    sub.tick_pad_edge(PadButton::Cross.mask());
+    let FieldMenuSubsession::Spells(s) = &sub else {
+        panic!("expected Spells sub");
+    };
+    let rows = s.current_spell_rows();
+    assert_eq!(rows[0].mp_cost, 6, "the list quotes the discounted price");
+    assert!(rows[0].admissible);
+    sub.tick_pad_edge(PadButton::Cross.mask()); // Heal All -> group flow
+    sub.tick_pad_edge(PadButton::Cross.mask()); // commit
+    let FieldMenuSubsession::Spells(s) = &sub else {
+        panic!("expected Spells sub");
+    };
+    assert!(s.is_done());
+    apply_spell_outcome(s, &mut world);
+    assert_eq!(world.party.roster.members[0].hp_mp_sp().mp_cur, 0);
+    assert!(
+        world.party.roster.members[1].hp_mp_sp().hp_cur > 50,
+        "the cast resolved - the shared cast_spell gate reads the same price"
+    );
+}

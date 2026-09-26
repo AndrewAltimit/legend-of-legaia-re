@@ -54,7 +54,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x0B` | Action queued from menu | Holds while `ctx[+0x276] != 0` (menu still open). | `0x0A` once cleared. |
 | `0x0C` | **Action seed** - reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band. Calls `FUN_801EED1C` (the arts queue-builder; slot < 3) or, for a monster slot with the `+0x16E & 0x380` bits, `FUN_801E7320` (random-retarget: the rolled action - including a Magic cast - is kept, only its target re-rolls to the opposite side; see the [`0x380` notes](#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)). Reads RNG via `func_0x80056798()`. Calls `FUN_801EFE44` (camera bounds) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category). | `0x14`/`0x28`/`0x3C`/`0x46`/`0x50`/`0x64`/`0x68` per category. |
 | `0x14` | **Attack - face target** | `FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the 8-actor table at `0x801C9370` writing AI-side facing offsets at `ctx[+0x6E6 + i*2]`; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Party arm: stages approach anim `+0x1DA = 1` (the walk entry) → short-step. Monster arm: first-byte tag search over its action-record array (`FUN_80050E2C`, tag `0x20`, retry `1`) stages the returned entry index. | `0x15` (monster, tag-0x20 found); `0x19` (party, **or** a monster whose action table has no tag-`0x20` walk - the fallback stages tag `1` and skips the walk chain entirely); `0x1E` (in range). |
-| `0x15` | Attack - windup | Same idle pose + facing update; advances anim cursor `actor[+0x1DA]` until it matches `actor[+0x1D9]`, then re-queries swing table. | `0x16`. |
+| `0x15` | Attack - windup | Same idle pose + facing update; waits until the staged `actor[+0x1DA]` matches the committed `actor[+0x1D9]` (the pre-approach clip has started), then stages the monster's tag-`1` walk (`FUN_80050E2C` at `0x801E3340`). | `0x16`. |
 | `0x16` | Attack - advance | Pose + facing recompute; range recheck. Out of range → stalls (`0x801E35D0`) - **no attacker movement here**; the walk is the clip's root motion in the anim tick (`FUN_80047430` `0x80047D20..0x80047E18`, gated on the same range check). On range 0: stages the tag-`0x21` close-in, then the **arrival shove** (`0x801E33EC..0x801E3490`): steps the *target's* live `+0x34`/`+0x38` **and** seat `+0x3C`/`+0x40` pairs along the attacker's facing by `sin/cos >> 9`, looping while still in range - pushing the target back out to the range boundary. (An earlier revision read this as the attacker's advance loop; all four stores go through `s8`, the target.) | `0x17`. |
 | `0x17` | Attack - close-range | Anim/facing update; matches `actor[+0x1DA]` against `actor[+0x1D9]`. | `0x18`. |
 | `0x18` | Attack - strike | Final anim match → falls into the swing apex frame. | `0x1E`. |
@@ -78,7 +78,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x38` | Summon - done | OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`. | `0x50`. |
 | `0x3C` | **Spirit / Item - pre-arm** | `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DA] = actor[+0x1E7]` (queued anim). Sets `ctx[+0x243] = 1` ("action in progress" marker). **Seeds the `(class, tier)` pair `actor[+0x1E8]` / `+0x1E9`** ([below](#the-class-tier-seed-at-state-0x3c)). Item leg also writes HUD via `_DAT_80077332..+0x35C`; `actor[+0x1DF] == 0xFE` (Pomander) → label = `s_Points_returned_801CED34`. Non-Item computes MP cost (with ability-bit half/quarter), subtracts from `actor[+0x150]`; for party_id < 3 fires `FUN_801D8DE8(7, 0)` (UI element). Always fires `FUN_801D8DE8(0x4C, 0)` (HUD label). | `0x3D`. |
 | `0x3D` | Spirit - wait | `FUN_801D5854(actor, 6)`. Holds while `actor[+0x1DA] != actor[+0x1D9]`. When matched, clears `actor[+0x1DA]`, calls `func_0x801F3990` (the [cast audio-cue dispatcher](#battle-helper-functions)). This is the **only** state that reaches that dispatcher, and an ordinary item use is the door into it - see [the one caller](#the-one-caller-is-state-0x3d-and-it-is-an-item--spirit-state). | `0x3E`. |
-| `0x3E` | Spirit - fire | `FUN_801D5854(actor, 6)`. Holds while `actor[+0x1D9] != 0`. Calls `func_0x800319A8(0x21)` and `FUN_801D8DE8(0x4C, 1)`. For spirit-type 4 (Originals) on party, fires `FUN_801D8DE8(0x34, 1)`. For type 5 (Spirit-arts variant), invokes the Damage UI: writes `_DAT_80076D7E` (damage value) from target HP+formula, calls `FUN_801D8DE8(0xF, 0)` (damage popup) and `FUN_801D8DE8(0x52, 0)` (damage text); RNG via `func_0x80056798`; computes damage scaling: `((target_HP * 7) / 5) + 8`, capped at 0x120 or 100. Otherwise re-fires UI elements 6/0x4E/0x4F (monster effect) or 7 (party effect) per slot. Sets `ctx[+0x6D8] = 0x20` (post-cast timer). | `0x3F`. |
+| `0x3E` | Spirit - fire | `FUN_801D5854(actor, 6)`. Holds while `actor[+0x1D9] != 0`. Calls `func_0x800319A8(0x21)` and `FUN_801D8DE8(0x4C, 1)`. For spirit-type 4 (Originals) on party, fires `FUN_801D8DE8(0x34, 1)`. For item class 5 (gauge extension, `0x801E3E90..0x801E4018`) it raises HUD elements `0x0F` / `0x52`, draws one `rand()` (`0x801E3F2C`) for the camera variant `(rand % 2) * 2`, stages the extended gauge `min(0x120, target base * 7 / 5 + 8)` into `ctx[+0x6DC]` and the actor's spirit `+8` (`+10` with ability bit `0x200`) capped at 100 into `ctx[+0x6DE]`, a gauge extension rather than damage (`spirit::gauge_extend_fire`). Otherwise re-fires UI elements 6/0x4E/0x4F (monster effect) or 7 (party effect) per slot. Sets `ctx[+0x6D8] = 0x20` (post-cast timer). | `0x3F`. |
 | `0x3F` | Spirit - wait & fire damage | Decrements `ctx[+0x6D8]`. On expiration: calls `func_0x800402F4(actor[+0x1E8], actor[+0x1E9], target, party_id-1)` - the **damage application primitive**. Sets `ctx[+0x6D8] = 0x80` (post-damage cooldown). | `0x40`. |
 | `0x40` | Spirit - post-damage | `FUN_801D5854(target, 6)`. Iterates HP-bar widget at `ctx[+0x1080]+0xE`: ramps it toward `ctx[+0x6DC]` (target HP) by `DAT_1F800393` per frame; mirrors damage-popup widget at `_DAT_801F6968+0x10`. When `ctx[+0x6D8] < 0` and target is no longer valid (dead or out of slot), sets `actor[+0x1DE] = 0` and clears HUD. | `0x50`. |
 | `0x46` | **Spirit super-arts - entry variant** | `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DC] = 2` (overrides flags). Stages anim `actor[+0x1DA] = actor[+0x1E7]`. Computes damage = `((target_HP * 7) / 5) + 8` (capped 0x120 / 100); HP-bar target = `actor[+0x170] + 0x20` (or `+0x28`/`+0x23` per ability-flag bits). | `0x47`. |
@@ -1607,13 +1607,25 @@ fallback), so a melee attacker physically closes on its target, strikes and
 walks back to its seat. The port still cannot reproduce this park, now for a
 stronger reason: the locomotion drive runs in every approach state whether
 or not a clip is playing - the engine-native form of the
-`--approach-softlock-fix` guard - so an approach state always closes. Two
-routing differences from retail stand: out-of-range monsters take
-`0x15/0x16` with entry 1 staged instead of the tag-`0x20` scan (walk-less
-monsters therefore also take the windup chain rather than `0x19`), and the
-walk-back targets the seat directly (with off-turn actors continuing home)
-rather than replaying per-clip retreat root motion - retail's committed
-forward drift re-seats exactly in the engine.
+`--approach-softlock-fix` guard - so an approach state always closes. The
+monster routing is retail's: every `FUN_80050E2C` call site the action SM
+carries - the `0x20` / `1` pair in `0x14`, the walk in `0x15`, the close-in
+in `0x16`, the capture takedown's walk and the `0x22` knockout taunt below -
+runs the tag search over the monster's installed action table
+(`legaia_engine_vm::battle_action::monster_action_by_tag`, fed by
+`World::battle_monster_action_tags`), so the 180 records with no
+tag-`0x20` entry take `0x19` exactly as retail does and the six that carry
+one play their own pre-approach and close-in clips. The walk-back targets
+the seat directly (with off-turn actors continuing home) rather than
+replaying per-clip retreat root motion - retail's committed forward drift
+re-seats exactly in the engine.
+
+**The knockout taunt.** On the way into the Done band (`0x801E5594..
+0x801E5658`), a monster whose attack has left its target at zero HP searches
+its action table for tag `0x22` and, while at least one party member still
+stands, stages that entry with the stage latch `+0x1DC |= 2`. The wiping blow
+therefore plays no taunt, and most of the roster (166 of 186 records) carries
+no `0x22` entry at all. Port: `attack::stage_ko_taunt`.
 
 ## Cross-references with other battle helpers
 
@@ -1932,10 +1944,53 @@ entries' cost bytes in place
 
 `FUN_801E295C` does **not** call `FUN_801DFDF8` directly. Effect spawning happens through one of two indirections:
 
-- **`FUN_801D8DE8(effect_id, mode)`** - the hottest battle utility (3 KB / 77 incoming refs), called 30+ times across the state machine. This is the wrapper that lays out a battle UI element (damage popup, weapon-slash trail, spell-icon banner, run-status banner, etc.) and internally schedules its visuals. Effect IDs surfaced in this function: `0x07` (party weapon-slash), `0x0F` (damage popup setup), `0x34` (Originals burst), `0x43` (run banner), `0x44` (terminate banner), `0x4C` (spell-name HUD), `0x4E`/`0x4F` (monster effect pair), `0x51` (combo continue), `0x52` (damage text), `0x59` (queue marker), `0x66` (counter-attack flash). The `mode` argument is `0` for "spawn / reset" and `1` for "terminate / unload."
+- **`FUN_801D8DE8(element, mode)`** - the hottest battle utility, called 30+
+  times across the state machine. It is the **screen-element spawner**, not an
+  effect spawner: `element` indexes the placement table `0x80076C10 + element *
+  0x18`
+  ([`memory-map.md`](../reference/memory-map.md#0x80076c10---one-table-three-names)),
+  the record is seated as a text / chrome widget through `FUN_8003541C`, and
+  `FUN_801DB7B0` glides it between the record's two seats (`mode & 1` picks the
+  spawn seat, `mode & 2` suppresses the glide). Its only calls are
+  `FUN_8003541C`, `FUN_801DB7B0`, `FUN_8003563C`, `FUN_80035F04` and the string
+  helpers `FUN_8003CA78` / `FUN_8003CAC4` (`see
+  ghidra/scripts/funcs/overlay_battle_action_801d8de8.txt`) - none reaches the
+  effect pool. Element `0x59` is the Seru-absorb message and `0x65` the
+  magic-level message, both rendering the context buffer `ctx + 0x1F9`
+  ([below](#the-battle-message-banner-elements-0x59-and-0x65)). An earlier
+  revision of this bullet called the argument an effect id and routed it into
+  the effect pool; the port followed it and played an unrelated `efect.dat`
+  script at every HUD raise.
 - **`FUN_801DBF9C(party, spell_id)`** + **`FUN_801DC0A0(actor, anim_id)`** - chained from state `0x29` and `0x2A..0x2D` to drive spell visuals. These ultimately fan out to the [effect VM](effect-vm.md) which uses `FUN_801DFDF8` for the actual sprite-anim spawn.
 
-So the dataflow is `FUN_801E295C` → `FUN_801D8DE8` / `FUN_801DBF9C` / `FUN_801DC0A0` → effect VM (`FUN_801DE914` / `FUN_801E0088`) → `FUN_801DFDF8`. The state machine never names an effect ID directly; it names *UI element* IDs which the effect VM resolves. Note this path drives the **2D UI/sprite** layer (`FUN_801DFDF8` emits `POLY_FT4` billboard quads into the effect pool); the 3D summon model is a separate mechanism (next).
+So the effect dataflow is `FUN_801E295C` → `FUN_801DBF9C` / `FUN_801DC0A0` → effect VM (`FUN_801DE914` / `FUN_801E0088`) → `FUN_801DFDF8`; `FUN_801D8DE8` is the HUD's path, not this one. The callers of the pool spawner `FUN_801DFDF0` are the per-actor effect-script walk `FUN_801DEA50`, `FUN_801E09F8`, `FUN_801E22C8` and SCUS `FUN_8004998C` / `FUN_80047430`; the port routes the walk's requests through `World::route_battle_effect_spawns` on both hosts. Note this path drives the **2D UI/sprite** layer (`FUN_801DFDF8` emits `POLY_FT4` billboard quads into the effect pool); the 3D summon model is a separate mechanism (next).
+
+### The battle message banner (elements `0x59` and `0x65`)
+
+Two screen elements carry a sentence rather than a label: `0x59`, raised by the
+Done band right after `FUN_801E92DC` teaches an absorbed Seru (`0x801E6240`),
+and `0x65`, raised by the magic-level arm of `FUN_801E70BC` (`0x801E722C`).
+Both render the same string: the result-message builder `FUN_801D84C0` points
+each record's `+0x14` content word at the context's message buffer
+(`sw v1,0x86c(a0)` / `sw v1,0x98c(a0)` at `0x801D850C` / `0x801D8514`, with
+`a0 = 0x80076C10`). The two records share their geometry - seat A `(16, -24)`,
+seat B `(16, 14)`, width 280, kind 3 - so a raise glides the framed line down
+onto the top banner's pen and the unload glides it back out.
+
+Who writes the buffer differs. The spawner's own `0x59` arm composes it on a
+raise only (`bne s5,zero` at `0x801D914C`): `strcpy(ctx + 0x1F9,
+prefix[char - 1])`, then the Seru's spell name (`0x800754C8[(ctx[+0x269] +
+0x80) * 12 + 8]`), then a suffix (`0x801D9154..0x801D91D0`). The prefix table
+`0x801F4DFC` is indexed by character and names that character's Ra-Seru
+(parser `legaia_asset::absorb_caption`). `0x65`'s line is composed by
+`FUN_801F452C` before its raise.
+
+The port keeps the line on `World::battle.message_banner` from the raise to the
+matching unload (`world::battle::message_banner`), and both play hosts draw it
+through `engine-core::battle_hud::battle_banner_message` into the top banner
+widget. A newly learned **art** is not announced here: retail's cue for it is
+the `NEW ARTS!!` sprite banner the SpecialStarter `0x1A` commit raises
+(`engine-vm::battle_action::flash_ramp`).
 
 ### `FUN_801F30C4` - the move VM's battle escape (op `0x17`)
 
@@ -2810,22 +2865,21 @@ they are documented here rather than lifted whole into `engine-vm`.
   where every cast module's equivalent store faces it away. The reaction pick
   has three legs, not two: a dead victim takes `+0x1F1` regardless of the
   `+0x1F2` gate, and a zero `+0x1EF` falls on to `+0x1F0`.
-- **`FUN_801E0080` - battle particle/sprite-cloud animator.** Gated on
+- **`FUN_801E0080` - the effect-VM per-frame walker.** Gated on
   `DAT_8007BD58 != 0 && DAT_8007BD71 == 0xFF` (battle live, no end signal).
-  Advances per-frame animation cursors across two effect pools (a 32-slot
-  `0x1C`-stride pool and a 128-slot pool at `_DAT_8007BD30 + 0x10`), applies the
-  same sin/cos-LUT rigid rotation (`_DAT_8007B7F8` / `_DAT_8007B81C`, shifts
-  `>>4` / `>>0xC`) per part, then in a third pass builds textured-sprite GPU
-  primitives (`0x09000000` command word, per-particle brightness) into the OT at
-  `_DAT_1F8003A0`, projecting each via `FUN_800195A8` and linking with
-  `FUN_8003D2C4`. The two pools are **emitters and their particles**, not two
-  parallel effect pools: the `0x1C`-stride pool spawns into the `0x20`-stride one
-  and each record runs its own byte script. Record layouts, the two *different*
-  script-advance shapes, the countdown drain, the position integration, the
-  brightness ramp and the mirror-bit UV assignment are ported as
-  `engine-vm::battle_scatter`; the GTE projection and the OT link are not. See
-  `overlay_battle_action_801e0080.txt` and
-  [`reference/functions/battle.md`](../reference/functions/battle.md#801e0080).
+  The 32-slot `0x1C`-stride pool at `_DAT_8007BD30 + 0x1010` is the effect
+  **master** slots and the 128-slot `0x20`-stride pool at `_DAT_8007BD30 + 0x10`
+  their **children**; their scripts are the `efect.dat` 2-pack (PROT 0873) the
+  init `FUN_801DE914` fixes up, and the zeroed pools themselves are a slice of
+  the battle heap block `FUN_800513F0` allocates. The third pass builds one
+  textured-sprite primitive per live child (`0x09000000` tag, brightness
+  envelope, random UV mirror). This is the routine
+  [`effect-vm.md`](effect-vm.md) documents from its prologue word `0x801E0088`;
+  its entry is `0x801E0080`, where the pool-ready byte is loaded, and the one
+  `jal` to it is the draw tick `FUN_800480D8`'s per-frame pass. Ported as
+  `engine-vm::effect_vm` (`Pool::tick_retail` / `Pool::child_billboards`), live
+  through `World::tick_effects`; a second port that read it as a separate
+  "arena scatter" with unparsed data pools duplicated it and was removed.
 - **`FUN_801DF6B8` - damage-number popup renderer.** Draws a scaling decimal
   number sprite for one actor's accumulated damage `ctx[+0x83C]`: extracts each
   base-10 digit (`* 0x66666667` / `>>0x22` = divide-by-10), indexes the digit
@@ -3434,7 +3488,10 @@ The two arms carry per-code behaviour worth pinning:
   below); codes `4..=6` spawn two extra parts from the fixed prototypes
   `0x801F5E28` / `0x801F5E6C`.
 - **Direct arm** (bit `0x80` set, `0x801ded54..0x801def54`). Codes `0x93` /
-  `0x84` re-aim the Y through `FUN_801DF570` first; `0xFF` terminates;
+  `0x84` pass the scaled **Z** offset (record `+6`, the forward reach) through
+  `FUN_801DF570` before the rotation (`0x801DEDC0..0x801DEDD0`), clamping it
+  into `[3d/4, d]` of the attacker-to-target-seat separation `d` (engine:
+  `action_effect_script::step_effect_script`); `0xFF` terminates;
   codes `0x81..=0x83` follow the digit spawn with a secondary part from
   prototype `0x801F5EB0` seated at the actor's `+0x3C..+0x43` position plus
   a screen-shake global write when the `+0x45C8` context word is clear.
@@ -3561,13 +3618,16 @@ tile-board install pointer at `gp+0x138` = `_DAT_8007B450`). So `gp + 0x2E8` is
 `_DAT_8007B600` - in the `0x8007Bxxx` overlay-scratch band, not the `0x80084xxx` save/game-state
 window an inventory length lives in.
 
-Both overlay sites that reach that word by absolute address read it as a **frame countdown**:
-one decrements it by 1 and fires its expiry action only on the transition to zero, the other
-refuses to proceed while it is non-zero. Its writer `FUN_80046870`
-(`battle_helpers::advance_gauge`) tops it up by `0x40` and caps it at `0x100`. The pair is a
-cooldown window measured in frames, so `0xE0` is a threshold on remaining time rather than a
-capacity - which is why a host should return `0` ("no cooldown outstanding") and not plumb an
-inventory length in.
+It is the **Incense window**. Its one writer, `FUN_80046870`
+(`battle_helpers::top_up_cooldown`), is the whole of the applier's selector-`0x82` arm - class
+`0x82` being Incense (item `0x8A`) - and tops it up by `0x40`, capped at `0x100`. The two overlay
+sites that reach it by absolute address count it in field **walk-regen ticks**, not frames: the
+walk tick `FUN_801D0B90` (PROT 0897, `0x801D0CD4..0x801D0CE8`) decrements it once per running tick
+and, on the transition to zero, hands the field a "wore off" event (`_DAT_8007B450 = 0x801F2278`),
+and the region encounter roll `FUN_801D9E1C` skips its whole roll while it is non-zero
+(`0x801DA174`). So an Incense suppresses encounters outright for its window, and `0xE0` is the
+threshold below which another may be used - which is why a host should return `0` ("no window
+outstanding") and not plumb an inventory length in.
 
 ## Action queue and Tactical Arts trigger ordering
 

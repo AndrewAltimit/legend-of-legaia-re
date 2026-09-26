@@ -191,7 +191,13 @@ A line's width is its pen advance, computed on the **expanded** string. `FUN_800
 - **`0xCE` escapes** advance the table's `+2` byte for a string escape. A numeric escape (`string_id == 0`) draws through `FUN_80034B78` and advances `8` px per digit - not the table's `32`, which only the measurer `FUN_80035F04` uses.
 - **`0xCF`** (and its author alias `0xFF`) changes ink and adds nothing.
 
-`FUN_80036044` is not a width. It returns the string's **glyph count** - one per glyph, `0x7C` or `0xCE`, zero per `0xCF`, the spliced length per substitution - which is what a typewriter reveal steps through (`FUN_80036888`'s third argument caps the count drawn). Retail's pixel measurer is `FUN_80035F04`: the same expansion into a 256-byte stack buffer, then the widest `0x7C`-separated line.
+`FUN_80036044` is not a width. It returns the string's **glyph count** - one per glyph, `0x7C` or `0xCE`, zero per `0xCF`, the spliced length per substitution - which is what a typewriter reveal steps through (`FUN_80036888`'s third argument caps the count drawn). Retail's pixel measurer is `FUN_80035F04`: the same expansion into a 256-byte stack buffer, then the widest `0x7C`-separated line. The count is ported as `legaia_font::typewriter_glyph_count`; its consumer, the pager's row gate at `0x801D8A6C`, compares it against the reveal counter `_DAT_801F2748` and holds a short row for `(0x22 - count) * 4` units of `_DAT_801F275C`.
+
+### Typewriter pacing
+
+The pager's reveal rate is fixed at one unit per frame. Every pager open stores the speed word `_DAT_801F2754 = 1` (`0x801D9118`, `0x801D91D0`, `0x801D9268`, `0x801D9CA4`), and each call adds `DAT_1F800393` (capped at `4`) to the accumulator `_DAT_801F2758` and moves the reveal counter by as many whole speed units as that holds, at most three (`0x801D8A08..0x801D8A70`).
+
+A row ends when the counter reaches the glyph count above, not on the terminator byte, so a colour escape costs no frame. A row under `0x22` units then holds `(0x22 - count) * 4` in `_DAT_801F275C`, which each call drains by `32 * DAT_1F800393` (`0x801D866C..0x801D8690`) - `ceil((0x22 - count) / 8)` frames, never more than five - before the pager moves on. The engine's panel types one glyph per tick, which is the same rate; it does not yet end a row on the count or run the short-row hold (see `legaia_font::typewriter_glyph_count`).
 
 The port is `legaia_font::Font::measure` (`crates/font/src/measure.rs`), which takes the surface's `DAT_800740E8` and a resolver for the runtime substitutions, and reports any token it could not resolve so a width is never silently a lower bound.
 

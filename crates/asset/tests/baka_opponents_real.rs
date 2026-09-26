@@ -167,4 +167,39 @@ fn stat_fields_and_action_tables_decode_sane() {
     }
     assert!(powered >= 10, "most fighters have positive attack powers");
     assert!(charged >= 10, "most fighters have a charged special");
+
+    // The sub-keyframe column the lookup `FUN_801D6E5C` scans (`+0x26`):
+    // every attack and the special carries at least one strike, every strike
+    // frame is a small whole-frame index, a record's strikes are in frame
+    // order (the lookup returns the FIRST in range, so an unsorted column
+    // would skip a strike), and every clip the combat tick steps has a
+    // positive speed (`+0x04`).
+    for a in &actions {
+        for action in 1..=baka::ACTION_SPECIAL {
+            let frames = a.strike_frames(action);
+            assert!(
+                !frames.is_empty(),
+                "fighter {} action {action} has a strike keyframe",
+                a.index
+            );
+            assert!(
+                frames.iter().all(|&f| (0..=64).contains(&f)),
+                "fighter {} action {action} strike frames sane ({frames:?})",
+                a.index
+            );
+            assert!(
+                frames.windows(2).all(|w| w[0] <= w[1]),
+                "fighter {} action {action} strikes in frame order ({frames:?})",
+                a.index
+            );
+        }
+        for action in 0..=6 {
+            assert!(
+                a.speed[action] > 0,
+                "fighter {} action {action} clip speed ({})",
+                a.index,
+                a.speed[action]
+            );
+        }
+    }
 }

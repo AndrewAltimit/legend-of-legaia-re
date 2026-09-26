@@ -309,156 +309,20 @@ impl PlayWindowApp {
         }
     }
 
-    /// The venue scene's `.MAP` extended footprint - the engine's
-    /// `_DAT_1F8003EC` floor buffer (tile records at `+0`, height/wall grid
-    /// at `+0x4000`, cell grid at `+0x8000`). `None` when the current scene
-    /// carries no field map.
-    fn venue_floor_bytes(&self) -> Option<Vec<u8>> {
-        let scene = self.session.host.scene.as_ref()?;
-        let idx = scene.field_map_index(&self.session.host.index)?;
-        self.session.host.index.entry_bytes_extended(idx).ok()
-    }
-
     /// The fishing venue's actor-side frame: the free-swimming fish wander
-    /// (at the shore, before the lure flies), the venue floor solve for its
-    /// height, the retail camera publish, the reeling-line actor across
-    /// hook -> fight -> celebration, and the sub-screen idle sway.
+    /// and its retarget ripple, the venue floor solve, the retail camera
+    /// publish, the reeling-line actor and its catch bursts, and the
+    /// sub-screen idle sway.
     ///
-    /// The cast lure itself is the session's
-    /// ([`PondSession::lure_actor`](legaia_engine_core::fishing::PondSession::lure_actor)),
-    /// cast from the venue the engine attached at entry, so its walk-grid
-    /// drift and water class are the same on every host; this frame only
-    /// reads it, to hang the celebration bursts off it.
+    /// All of it is the shared engine kernel
+    /// ([`legaia_engine_core::fishing_venue::tick_fishing_venue_on_host`]),
+    /// whose actors live on `World::minigames.fishing_venue`; the browser play
+    /// page runs the same call. This host only applies the camera writes to
+    /// its own session camera.
     pub(super) fn tick_fishing_actors(&mut self) {
-        use legaia_engine_core::fishing::{PondEvent, PondPhase};
-        use legaia_engine_core::fishing_actors as fa;
-        use legaia_engine_core::fishing_chrome as fc;
-        if self.session.host.world.mode != SceneMode::Fishing {
-            self.fish_wander = None;
-            self.fish_line = None;
-            self.fishing_floor = None;
-            self.fishing_sway_offset = (0, 0);
-            return;
-        }
-        let Some(phase) = self
-            .session
-            .host
-            .world
-            .minigames
-            .fishing
-            .as_ref()
-            .map(|s| s.phase())
-        else {
-            return;
-        };
-        // One-time venue arm: the wander actor, the floor buffer, and the
-        // venue camera reset (through the engine camera's retail global
-        // trios; axis 4 = `TR.y` deliberately untouched, as retail leaves
-        // `_DAT_800840BC` alone).
-        if self.fish_wander.is_none() {
-            self.fish_wander = Some(fa::FishWander::new(0x400, 0, 0x400));
-            self.fishing_floor = self.venue_floor_bytes();
-            let reset = fc::venue_camera_reset();
-            let g = &mut self.session.camera.globals.0;
-            g[0] = reset.rot[0] as i32;
-            g[1] = reset.rot[1] as i32;
-            g[2] = reset.rot[2] as i32;
-            g[3] = reset.tr_x;
-            g[5] = reset.tr_z;
-        }
-        // The wander runs while the cast is idle (retail's shore states
-        // `0xc` / `0xd` / `0x14`, before the lure flies); the D-pad steers
-        // the fish.
-        if matches!(
-            phase,
-            PondPhase::Idle | PondPhase::WindUp | PondPhase::Power
-        ) {
-            let held = self.pad.rotate_right(8);
-            let mut rng = self.minigame_rng;
-            let rolled = self.fish_wander.as_mut().and_then(|w| {
-                w.tick(held, || {
-                    let mut x = rng;
-                    x ^= x << 13;
-                    x ^= x >> 17;
-                    x ^= x << 5;
-                    rng = x;
-                    x
-                })
-            });
-            self.minigame_rng = rng;
-            if rolled.is_some()
-                && let Some(w) = self.fish_wander.as_ref()
-                && let Some(r) = fc::ripple_spawn(w.x, w.z, 0)
-            {
-                self.session.host.world.minigames.fx.spawn_ripple(&r);
-            }
-        }
-        // Settle the actor onto the venue floor (the `.MAP` height grid
-        // through the shared ground solver) and publish its camera.
-        if let (Some(w), Some(buf)) = (self.fish_wander.as_mut(), self.fishing_floor.as_ref()) {
-            let ramp = legaia_engine_core::minigame_floor::height_ramp();
-            let grid = legaia_engine_core::minigame_floor::FloorGrid::new(buf);
-            let t = fc::float_actor_tick(grid, w.x, w.z, 0, &ramp);
-            w.y = t.y;
-        }
-        if let Some(w) = self.fish_wander.as_ref() {
-            let cam = w.camera();
-            let g = &mut self.session.camera.globals.0;
-            g[1] = cam.yaw as i32;
-            g[4] = cam.pitch_term;
-            g[6] = cam.translation.0;
-            g[7] = cam.translation.1;
-            g[8] = cam.translation.2;
-        }
-        // The line actor: armed on the hook event, landed on the catch
-        // event, dropped on a snap.
-        let events = self.session.host.world.minigames.fishing_events.clone();
-        for e in &events {
-            match *e {
-                PondEvent::Hooked(_) => self.fish_line = Some(fa::LineActorSim::hooked()),
-                PondEvent::Landed(points) => match self.fish_line.as_mut() {
-                    Some(line) => line.land(points),
-                    None => self.fish_line = None,
-                },
-                PondEvent::Snapped => self.fish_line = None,
-                PondEvent::Splash | PondEvent::Recast => {}
-            }
-        }
-        if let Some(mut line) = self.fish_line.take() {
-            let f = line.tick(1);
-            // Retail's celebration bursts ride the line actor, which sits on
-            // the lure - not on the free-swimming fish the venue also draws.
-            let origin = self
-                .session
-                .host
-                .world
-                .minigames
-                .fishing
-                .as_ref()
-                .and_then(|s| s.lure_actor())
-                .map(|l| (l.x(), l.z))
-                .or_else(|| self.fish_wander.as_ref().map(|w| (w.x, w.z)))
-                .unwrap_or((0, 0));
-            // The bursts' *visuals* are this actor's. Their **cues** are not -
-            // the hook cue and the celebration tiers are queued by
-            // `World::tick_fishing` off the session's own events, where all
-            // three hosts drain them (`drain_minigame_sfx_cues`). Firing them
-            // here as well would play each one twice on this host alone.
-            for b in &f.bursts {
-                self.session.host.world.minigames.fx.spawn_burst(b, origin);
-            }
-            if !f.done {
-                self.fish_line = Some(line);
-            }
-        }
-        // Sub-screen idle sway while the point-exchange list is up.
-        if self.session.host.world.minigames.fishing_exchange.is_some() {
-            let (v, next) = fc::sway_vector(sway_sine_table(), self.fishing_sway_angle, 1);
-            self.fishing_sway_angle = next;
-            self.fishing_sway_offset = (v.x, v.y);
-        } else {
-            self.fishing_sway_offset = (0, 0);
-        }
+        let writes =
+            legaia_engine_core::fishing_venue::tick_fishing_venue_on_host(&mut self.session.host);
+        writes.apply(&mut self.session.camera);
     }
 
     /// Consume the Baka Fighter round-chrome frame the duel produced this
@@ -515,6 +379,35 @@ impl PlayWindowApp {
             .collect();
     }
 
+    /// The slot machine's five paylines as screen primitives: the ported
+    /// payline pass (`FUN_801D3380`) with its projection
+    /// (`SlotMachine::payline_segments`), turned into one-pixel flat quads by
+    /// the shared `ui_slot_paylines` builder. Both browser pages stroke the
+    /// same projected segments. Empty outside the slot machine or when the
+    /// overlay's payline table did not decode.
+    pub(super) fn slot_payline_screen_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_render::ui_slot_paylines as usp;
+        if self.session.host.world.mode != SceneMode::SlotMachine {
+            return Vec::new();
+        }
+        let Some(m) = self.session.host.world.minigames.slot_machine.as_ref() else {
+            return Vec::new();
+        };
+        let segments: Vec<usp::PaylineSegment> = m
+            .payline_segments()
+            .iter()
+            .map(|l| usp::PaylineSegment {
+                a: [l.a.0, l.a.1],
+                b: [l.b.0, l.b.1],
+                rgb: [l.prim.color.0, l.prim.color.1, l.prim.color.2],
+                semi: l.prim.code & 0x02 != 0,
+            })
+            .collect();
+        usp::payline_screen_prims(&segments)
+    }
+
     /// Per-frame driver for every minigame side-channel this window hosts:
     /// the minigame cue queue, the fishing venue actors, the Baka round
     /// chrome and the Muscle Dome hub-screen timers. The effect pool itself
@@ -556,12 +449,12 @@ impl PlayWindowApp {
     pub(super) fn tick_muscle_hub(&mut self) {
         use legaia_engine_core::muscle_dome::HubScreen;
         // A dome leg the player WALKED into (the mode-24 door warp, drained
-        // by the shared scene host) carries no contest: the warp arm opens
-        // the leg and deliberately stages no `(course, round)`, because a
-        // door warp does not carry one. The debug launcher below opened the
-        // contest and loaded the hub page itself, so until now the window
-        // showed a contest line and a hub screen only for a fight started
-        // from a hotkey. Do what the browser play page does on every entry.
+        // by the shared scene host) already carries its contest: the warp
+        // arm opens it off the unlock flags (`DomeContest::from_overlay`)
+        // and seats the lead fighter's costs, so `open_muscle_contest` is a
+        // no-op there. It stays as the guard for a leg opened any other way;
+        // the hub page's assets are this window's own and load here on every
+        // entry, as the browser play page does.
         if self.session.host.world.minigames.muscle_dome.is_some() {
             self.open_muscle_contest();
             self.load_muscle_hub_assets();
@@ -735,10 +628,10 @@ impl PlayWindowApp {
     /// Stage the dome contest (`(course, round)` off the arena overlay and
     /// the party's story flags) unless one is already open.
     ///
-    /// The mode-24 door warp opens a leg without one on purpose - the warp
-    /// operand names an overlay, not a ladder position - so whichever host
-    /// runs the dome has to do this. The browser play page has always done it
-    /// on entry; this window used to do it only inside its `M` launcher.
+    /// The shared mode-24 door warp now opens the contest itself (the warp
+    /// operand names an overlay, not a ladder position, so it stages the
+    /// rung off the unlock flags), which makes this a no-op on a door entry;
+    /// it covers the `M` launcher and any leg opened without the warp.
     pub(super) fn open_muscle_contest(&mut self) {
         if self.session.host.world.minigames.muscle_contest.is_some() {
             return;
@@ -1133,33 +1026,6 @@ impl PlayWindowApp {
                 return false;
             }
         };
-        // Decode the two point-exchange venue pages alongside the session
-        // tables, naming rows from the SCUS item table when it's readable
-        // (P toggles the prize list while fishing).
-        self.fishing_prize_venues = legaia_asset::fishing_exchange::parse(&loaded).map(|ex| {
-            use legaia_engine_core::Vfs;
-            let scus = if let Some(root) = self.extracted_root.as_deref() {
-                legaia_engine_core::DirVfs::new(root)
-                    .ok()
-                    .and_then(|v| v.read("SCUS_942.54").ok())
-            } else if let Some(disc) = self.disc_path.as_deref() {
-                legaia_engine_core::DiscVfs::open(disc)
-                    .ok()
-                    .and_then(|v| v.read("SCUS_942.54").ok())
-            } else {
-                None
-            };
-            let names = scus
-                .as_deref()
-                .and_then(legaia_asset::item_names::ItemNameTable::from_scus);
-            [0usize, 1].map(|venue| {
-                legaia_engine_core::fishing::PrizeExchange::from_asset(
-                    venue,
-                    &ex.venues[venue],
-                    names.as_ref(),
-                )
-            })
-        });
         if !self.session.host.enter_fishing_from_overlay(&loaded) {
             log::warn!("fishing: species / spawn / cadence tables did not decode");
             return false;
@@ -1220,7 +1086,17 @@ impl PlayWindowApp {
         // Seed from the frame counter: deterministic across a replayed pad
         // stream (retail reseeds from BIOS rand at machine init).
         let seed = 0x5107_5EED ^ self.session.host.world.frame as u32;
-        let machine = legaia_engine_core::slot_machine::SlotMachine::new(payouts, seed, balance);
+        // The payline geometry the machine draws its five lines from
+        // (`DAT_801d3680`), staged so this window's payline pass
+        // (`slot_payline_screen_prims`) reads the same prims both browser
+        // pages do.
+        let paylines =
+            legaia_asset::minigame_slot_scene::parse_paylines(&loaded).unwrap_or_else(|e| {
+                log::warn!("slots: payline geometry did not decode: {e:#}");
+                Vec::new()
+            });
+        let machine = legaia_engine_core::slot_machine::SlotMachine::new(payouts, seed, balance)
+            .with_paylines(paylines);
         self.session.host.world.enter_slot_machine(machine);
         true
     }
@@ -1323,6 +1199,14 @@ impl PlayWindowApp {
             log::warn!("baka: fight construction failed (roster 0 vs {opponent})");
             return false;
         };
+        // Every roster fighter's clip headers (the fighter packs + the party
+        // bank), so the strike clock steps the way the clip selector does -
+        // the same loader both browser pages stage.
+        let index = &self.session.host.index;
+        let fight =
+            fight.with_roster_clip_headers(legaia_engine_core::baka_fighter::roster_clip_headers(
+                |i| index.entry_bytes(i as u32).ok().map(|b| b.to_vec()),
+            ));
         log::info!(
             "baka: round 1 vs roster fighter {opponent} (gold prize {})",
             fight.gold_reward()
@@ -1375,27 +1259,20 @@ impl PlayWindowApp {
             log::warn!("muscle: hand command-id table failed its structural check");
             return false;
         };
-        // Player card costs: the lead character's equipped-section swing
-        // records, keyed by runtime slot = the command id.
-        const FAVORED_COST: u16 = 0x1E;
-        let mut player_costs = [FAVORED_COST; 4];
-        if let Some(costs) = self.lead_swing_costs() {
-            for (i, &cmd) in commands.iter().enumerate() {
-                if let Some(&c) = costs.get((cmd - 0x0C) as usize)
-                    && c > 0
-                {
-                    player_costs[i] = c as u16;
-                }
-            }
-        } else {
-            log::info!("muscle: lead swing costs unavailable - flat favored costs");
-        }
+        // The lead fighter - card costs, HP, AP pool, stat profile - through
+        // the shared builder the arena-door warp stages too, so the hotkey
+        // and the door cannot field different fighters.
+        let lead_fighter = self.session.host.dome_lead_fighter(&commands);
+        let player_costs = lead_fighter.costs;
+        use legaia_engine_core::scene::{
+            DOME_FAVORED_COST, DOME_STANDIN_BUDGET, DOME_STANDIN_COMBATANT, DOME_STANDIN_HP,
+        };
         let card = |cmd: u8, cost: u16| MuscleCard {
             command_id: cmd,
             cost,
         };
         let player_hand = std::array::from_fn(|i| card(commands[i], player_costs[i]));
-        let opp_hand = std::array::from_fn(|i| card(commands[i], FAVORED_COST));
+        let opp_hand = std::array::from_fn(|i| card(commands[i], DOME_FAVORED_COST));
         // The opponent is the *real* one: PROT 0977's course ladder names a
         // monster id per (course, round) and `FUN_801D1510` stores it into
         // formation slot 0, so the arena's foe is an ordinary battle monster
@@ -1406,8 +1283,6 @@ impl PlayWindowApp {
         // unlock seeds and the round walks the ladder as legs are cleared.
         // Opening the contest here is the arena entry retail runs when the
         // sub-id word is still zero.
-        const STANDIN_BUDGET: u16 = 120;
-        const STANDIN_HP: i32 = 400;
         let arena_raw = self
             .session
             .host
@@ -1441,22 +1316,8 @@ impl PlayWindowApp {
             let archive = self.monster_archive_bytes()?;
             legaia_asset::monster_archive::record(&archive, r.monster_id as u16).ok()?
         });
-        let lead = self.session.host.world.party.roster.members.first();
-        // The fighter enters at the lead record's live HP (`+0x106`), as the
-        // arena door does - the battle end writes the fight's HP back there
-        // and the ringside pick reads it.
-        let player_hp_max = lead
-            .map(|r| r.hp_mp_sp().hp_max as i32)
-            .filter(|&hp| hp > 0)
-            .unwrap_or(500);
-        let player_hp = lead
-            .map(|r| r.hp_mp_sp().hp_cur as i32)
-            .filter(|&hp| hp > 0)
-            .unwrap_or(player_hp_max);
-        let player_budget = lead
-            .map(|r| r.live_stats().agl)
-            .filter(|&agl| agl > 0)
-            .unwrap_or(STANDIN_BUDGET);
+        let player_hp = lead_fighter.hp;
+        let player_budget = lead_fighter.budget;
         // Resolve through the *retail* damage kernel, the same one the
         // browser host uses: the move-power table, its id -> index map and
         // the element-affinity matrix all come off this raw PROT 0898 entry.
@@ -1465,14 +1326,6 @@ impl PlayWindowApp {
         // battle-entry profile, the same `battle_stats()` the battle loader
         // stages. The constants below survive only as the fallback for a
         // disc whose ladder or archive does not decode.
-        const STANDIN_OPPONENT: legaia_engine_core::muscle_dome::DomeCombatant =
-            legaia_engine_core::muscle_dome::DomeCombatant {
-                hp_max: STANDIN_HP as u16,
-                int: 40,
-                udf: 30,
-                ldf: 30,
-                element: 0,
-            };
         let opponent = opponent_record
             .as_ref()
             .map(|r| {
@@ -1485,29 +1338,18 @@ impl PlayWindowApp {
                     element: r.element,
                 }
             })
-            .unwrap_or(STANDIN_OPPONENT);
+            .unwrap_or(DOME_STANDIN_COMBATANT);
         let opponent_hp = opponent_record
             .as_ref()
             .map(|r| r.hp as i32)
             .filter(|&hp| hp > 0)
-            .unwrap_or(STANDIN_HP);
+            .unwrap_or(DOME_STANDIN_HP);
         let opponent_budget = opponent_record
             .as_ref()
             .map(|r| r.battle_stats()[0])
             .filter(|&agl| agl > 0)
-            .unwrap_or(STANDIN_BUDGET);
-        let player_profile = lead
-            .map(|r| {
-                let live = r.live_stats();
-                legaia_engine_core::muscle_dome::DomeCombatant {
-                    hp_max: player_hp_max.clamp(0, u16::MAX as i32) as u16,
-                    int: live.int,
-                    udf: live.udf,
-                    ldf: live.ldf,
-                    element: 0,
-                }
-            })
-            .unwrap_or(STANDIN_OPPONENT);
+            .unwrap_or(DOME_STANDIN_BUDGET);
+        let player_profile = lead_fighter.profile;
         // The victory caption's Seru index. It names a *string*, not a prize:
         // a contest pays casino coins, and nothing in the arena grants a
         // Seru. See `legaia_engine_core::muscle_dome::reward_spell_id`.
@@ -1593,23 +1435,6 @@ impl PlayWindowApp {
             .start_global_bgm(legaia_engine_core::music_labels::BATTLE_THEME_1_BGM_ID);
         true
     }
-}
-
-/// The 4096-step sine table the sub-screen sway samples. Retail reads the
-/// shared table through `*_DAT_8007B81C` (runtime data the port does not
-/// stage); the host synthesizes an equivalent once.
-fn sway_sine_table() -> &'static [i16] {
-    use std::sync::OnceLock;
-    static TABLE: OnceLock<Vec<i16>> = OnceLock::new();
-    TABLE.get_or_init(|| {
-        (0..legaia_engine_core::fishing_chrome::SINE_TURN)
-            .map(|i| {
-                let f = (i as f64) * std::f64::consts::TAU
-                    / legaia_engine_core::fishing_chrome::SINE_TURN as f64;
-                (f.sin() * 4096.0).round() as i16
-            })
-            .collect()
-    })
 }
 
 /// Rows the backdrop shade's vertical Gouraud ramp is cut into for the

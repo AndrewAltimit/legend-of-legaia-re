@@ -950,6 +950,14 @@ Three functions in the menu overlay (PROT 0899, base `0x801CE818`):
   row, bit `0x1000` = editing, bit `0x4000` = cursor hidden). The options
   submenu's tick entry is the thin wrapper `FUN_801DD330`, a single tail call
   `FUN_801DA9F8(0, 9, 0x30, 1)` (`ghidra/scripts/funcs/overlay_menu_801dd330.txt`).
+  The four arguments are the display-row span, a **window id** and the exit
+  sub-screen: state 0 stores the third into bytes `+5` and `+9` of the window
+  script at `0x801E4E08` (`0x801DAA78` / `0x801DAA7C`, the window-id bytes of
+  its first two instructions), so `0x30` is window 48, the settings window -
+  not an init word - and the exit arm stores the fourth into `DAT_801E46A4`
+  (`0x801DAC24`), handing back to the root command picker (sub-screen 1).
+  The engine's display set is that span sliced out of the layout table
+  (`engine-core::options::options_display_rows`).
 - **Value-popup renderer** `FUN_801D2B44` (window id 47).
 
 Three data tables drive the rows:
@@ -1406,6 +1414,25 @@ message then draws in ink `7` at the window content origin, with the hand
 sprite (kind 1, mode 1) at `(WX+0xE6, WY+0xD)`. Engine port:
 `engine-core::pause_screens::notify_window_operands`.
 
+The template is not a runtime buffer: `0x801E4700` is in the menu overlay's
+own data segment, and its only reference on the disc is this renderer's
+`lui`/`addiu` pair (`0x801DCD68` / `0x801DCD6C`). What the two globals hold is
+fixed by their one writer on this path. The applier's Hyper-Art-book arm
+(`0x80042040..0x80042090`) inserts the art and calls `FUN_80035C00` - two
+stores, `sh a0,0x858(gp)` / `sh a1,0x860(gp)` - with `a0 = class - 0xB` (the
+roster slot) and `a1` the art id, skipped only when the mode word is `0x15`
+(battle). So `_DAT_8007BB70` is the learning character, `_DAT_8007BB78` the
+art, the `0xC1` operand names the character, and the `0xC5` operand
+`slot * 0x40 + art` is exactly the arts-name token's `[character, art]` key:
+window 8 is the **art-learned notice** a Hyper-Art book raises. The engine
+reads the template out of the overlay image
+(`pause_screens::notify_template_from_menu_overlay`), patches it with the same
+operand arithmetic, expands the two names against the party names and the
+`DAT_80075EC4` arts table, and both hosts paint window 8
+(`engine-ui::pause_menu::art_learned_notice_draws`) while
+`MenuRuntime::art_learned_notice` holds the beat, dismissed by a confirm or
+cancel press.
+
 **Preview-mode derivation `FUN_801D6A54`**: mode 0 unless the item's
 record kind byte is `2` **and** its effect class is `6` - the
 permanent-stat Waters. The effect arg maps `0 -> 1` (Life Water),
@@ -1493,6 +1520,53 @@ the class/arg read live from Incense's own item-effect record (the
 `lbu 0x49e1(0x8007xxxx)` at `801d8e78` is item record `0x8A`'s `+1`
 effect-index byte), then returns to the Use list (submenu 6). No
 menu exit - the flow stays on the Items screen.
+
+What the applier does with class `0x82` is one call: its arm at
+`0x800421A0` is `jal 0x80046870`, which adds `0x40` to `_DAT_8007B600`
+(`gp+0x2E8`) and caps it at `0x100`. That word is the **Incense window**,
+counted in walk-regen ticks: the field walk tick `FUN_801D0B90` decrements it
+once per running tick (`0x801D0CD4..0x801D0CE8`), and the region encounter
+roll `FUN_801D9E1C` skips the whole roll while it is non-zero (`0x801DA174`) -
+after the region's battle-setup half, before the rate scale, so the step
+counter does not drain either. One Incense therefore suppresses encounters
+outright for `0x40` walk ticks rather than lowering the rate, and uses stack
+to `0x100`. The Use list greys the row once the window holds `0xE0` or more:
+the content-id-3 build asks `FUN_8003043C`, which runs the validator
+`FUN_8003FB10` on the effect class, and arm `0x82` is `FUN_80046898` -
+`_DAT_8007B600 < 0xE0`. On the tick the window reaches zero the walk tick
+installs the field-overlay record `0x801F2278` (kind byte `0x0B`) as the
+entry context `_DAT_8007B450`, raises the movement lock `+0x10 |= 0x80000`,
+and spawns the submode driver - the field overlay's actor, not the menu
+overlay. Its enter half `FUN_801F1278` maps the kind byte through the table at
+`0x801F33A4` (`lb` at `0x801F1468`): kind `0x0B` is handler slot `0x32`,
+`FUN_801F1E48`, a three-state **wear-off notice**. State `0` shows window
+record `16` (descriptor `0x801F3294`), whose painter `FUN_801F1B64` draws one
+string of the field overlay's data segment, `0x801CF1A4`: the `0xC2 0x8A`
+item-name escape (the Incense) followed by the line saying its effect is gone.
+State `1` waits for a confirm or cancel edge, plays cue `0x20` and hides the
+window (`0x801F32A4`); state `2` zeroes `_DAT_8007B450` and hands the actor
+back, whose retire drops the movement lock. See
+[script-vm.md](script-vm.md#which-screen-a-sub-op-opens-the-table-at-0x801f33a4),
+where the same handler is sub-op `0xB`'s.
+
+Engine: `PauseItemsSession` counts each committed Incense and
+`field_menu_dispatch::apply_pause_items_outcome` tops
+`FieldLocomotion::walk_regen_window` up through
+`engine-vm::battle_helpers::top_up_cooldown` once per use; the screen greys
+the row off the same window through `item_count_gate`; `World::on_field_step`
+skips the region roll while it is open. The **overworld** runs the same
+walk tick: a kingdom map is a mode-3 field-run scene with the field overlay
+resident (the walk tick, the frame driver `FUN_801D1344`, the region roll and
+`FUN_801F1E48` are byte-identical to the PROT 0897 image in the
+`sebucus_overworld_resident` state), and `FUN_801D1344` calls
+`FUN_801D0B90` (`jal` at `0x801D16EC`) right before the locomotion
+controller. So the window drains while the party walks the continent, the
+overworld region roll skips while it is open, and the wear-off fires there
+too; `World::tick_world_map` runs the same fill, tick and gate. The zero edge
+raises `World::raise_incense_notice` (`engine-core::incense_notice`), which
+runs the ported `FUN_801F1E48` body; both play hosts draw the panel
+(`engine-ui::incense_notice_sprites_for` / `incense_notice_text_draws_for`)
+with the line read off the disc (`SceneHost::incense_notice_line`).
 
 Engine port of the three special routes:
 `engine-core::pause_screens::SpecialUseSession` (+ the fixed consume
@@ -1601,6 +1675,25 @@ single string whose leading `0xCE` escape draws the element icon plate,
 so the name ink starts 25 px right of the row pen (the wider winged
 Ra-Seru-magic icon advances 22 px - "Meta" indents differently in the
 capture).
+
+Which rows draw white is decided in the list build, not the renderer. The
+out-of-battle arm of `FUN_80030628` (`0x80031130..0x80031264`) writes each
+learned spell as `0x5800 | id` - class 5, disabled - and rewrites it as
+`0x5000 | id` only when three tests pass: the record's `+2` bit `0x02`
+(ally-side, the field-castable shape), current MP at least the cost after
+the per-caster discount (ability bit `0x20` halves, `0x10` takes a quarter
+off - the same `FUN_80035394` rule), and the spell-record broadcast
+`FUN_8003053C` answering non-zero (`0x80031210`). That broadcast runs the
+action validator `FUN_8003FB10` with the record's `+0` / `+1` as arm and
+sub-case - once on slot 0 when `+2` bit `0x20` is set, otherwise once per
+present member - so a heal greys while the whole party is at full HP. The
+two cast flows ask it again before they commit (`0x801D954C` in
+`FUN_801D9280`, `0x801D98B4` in `FUN_801D9594`), returning to the list on
+`0`. Engine: `engine-core::menu_validator::spell_affects_anyone` (the
+validator over the roster records) feeds `SpellMenuSession`'s greying and
+confirm refusal. The engine's MP test still compares the undiscounted cost,
+and `apply_spell_outcome` debits it, where both cast flows debit the
+discounted figure (`0x801D93C0..0x801D9418`).
 
 **Info window (id 20, `FUN_801D2E74`)** - draws only while a spell id is
 staged in `DAT_801E46B0`: the spell-name string (CLUT 6, leading element

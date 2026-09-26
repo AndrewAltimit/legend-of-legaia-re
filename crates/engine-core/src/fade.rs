@@ -251,38 +251,32 @@ impl FadeState {
 /// ghidra/scripts/funcs/80024e80.txt`), the most-cited helper in the dump
 /// corpus: every subsystem that stages a full-screen fade goes through it.
 ///
-/// Retail body: allocate a slot from the system-actor pool
-/// (`actor_free(&DAT_80070674, _DAT_8007C34C)` - the generic effect-actor
-/// list), and only on success stamp the caller's id into the template's
-/// last word (`*(u16 *)(template + 0x18) = id`, i.e. i16 index 12 =
-/// [`FadeTemplate::mode`]`[2]`) and run the loader ([`FadeState::load`] =
-/// `FUN_80020B00`) on the actor's `+0x7C` block. Pool exhaustion returns 0
-/// without touching the template.
+/// Retail body (eighteen instructions): allocate a slot from the system-actor
+/// pool (`jal 0x80020DE0` with `a0 = 0x80070674`, `a1 = _DAT_8007C34C` - the
+/// generic effect-actor list), and only on success stamp the caller's id into
+/// the template's last word (`sh s2,0x18(s1)`: byte `+0x18`, i.e. i16 index
+/// 12 = [`FadeTemplate::mode`]`[2]`) and run the loader
+/// ([`FadeState::load`] = `FUN_80020B00`) on the actor's `+0x7C` block.
 ///
-/// The engine has no fixed-capacity fade-actor pool; `slot_free`
-/// models the retail alloc outcome for hosts that cap concurrent fades
-/// (pass `true` when a slot is available). The template is copied rather
-/// than mutated in place - retail stamps a scratch buffer (e.g. the
-/// battle-escape template at `DAT_801C9070`) that callers rebuild before
-/// every spawn, so the copy is semantics-preserving.
+/// The engine's fade pool is **one seat**: `World::presentation.fade`, the
+/// `Option<FadeState>` both hosts composite through `World::screen_fade_draw`.
+/// A spawn replaces whatever fade holds it, so the allocation arm always
+/// succeeds; retail's pool-exhausted return (no stamp, no load) has no engine
+/// counterpart and is not modelled. The template is copied rather than
+/// mutated in place - retail stamps a scratch buffer (a stack frame in the
+/// field overlay's `FUN_801D58F0`, `DAT_801C9070` for the battle escape) that
+/// callers rebuild before every spawn, so the copy is semantics-preserving.
 ///
 /// PORT: FUN_80024E80
 ///
-/// NOT WIRED: the engine's fades are host-driven state
-/// ([`crate::world::ScreenFxState::fade`], a plain `Option<FadeState>`), not
-/// entries in a fixed-capacity system-actor pool. The `slot_free` argument
-/// models a pool allocation outcome that no engine caller can supply an
-/// answer for, so every call site would have to invent `true`. Wiring it
-/// needs the retail system-actor pool (`actor_free(&DAT_80070674, ..)`)
-/// behind the fade spawn.
-pub fn spawn_fade(template: &FadeTemplate, id: i16, slot_free: bool) -> Option<FadeState> {
-    if !slot_free {
-        // Retail `iVar1 == 0` branch: no stamp, no load.
-        return None;
-    }
+/// Live: the field walk-on warp's two fades (`World::arm_field_warp` and
+/// its held-back fade-in, retail `FUN_801D58F0`, which passes `id = 0` -
+/// `move a1,zero` at `0x801D593C`) and the summon band's flash-in / -out
+/// (`World`'s battle-action host).
+pub fn spawn_fade(seat: &mut Option<FadeState>, template: &FadeTemplate, id: i16) {
     let mut t = *template;
     t.mode[2] = id;
-    Some(FadeState::load(&t))
+    *seat = Some(FadeState::load(&t));
 }
 
 /// A persistent full-scene colour grade - the warm gold/sepia the opening
@@ -504,6 +498,36 @@ impl SceneTintRamp {
     }
 }
 
+/// The GTE back/ambient colour the prologue legs stage, `DAT_8007B788`'s low
+/// byte (`0x00202020` in `opdeene` vs `0x00FFFFFF` in `town01`, staged into
+/// GTE cr13-15 by `FUN_80043390`).
+pub const PROLOGUE_LIT_AMBIENT: u8 = 0x20;
+
+/// Give a prologue mesh's **light-source-row** vertices the dim prologue
+/// ambient as their modulation colour, leaving every baked colour word alone.
+///
+/// The lit rows (descriptor rows 0 / 1) carry no colour word; retail colours
+/// them through the GTE lighting sum, whose floor in the prologue is
+/// [`PROLOGUE_LIT_AMBIENT`]. The baked rows keep their own words (the
+/// `4C E6` rewrite grades them in the renderer's palette mode). `lit` is the
+/// per-vertex mask from
+/// [`crate::scene_resources::ResolvedTmd::build_filtered_vram_mesh_lit`],
+/// parallel to `colors`.
+///
+/// The mask is the point: a lit row and a baked word authored at exactly
+/// `0x80` read the same colour out of the mesh builder, and keying the
+/// restage on the colour instead darkened every such baked prim - on
+/// `opdeene`, the one-quad jungle billboards (the scene pack's bushes and
+/// branch sprites) drew black natively where retail draws them at
+/// `(98, 94, 42)`.
+pub fn apply_prologue_lit_ambient(colors: &mut [[u8; 3]], lit: &[bool]) {
+    for (c, &is_lit) in colors.iter_mut().zip(lit) {
+        if is_lit {
+            *c = [PROLOGUE_LIT_AMBIENT; 3];
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -671,7 +695,9 @@ mod tests {
         // runs - byte offset 0x18 = i16 index 12 = mode[2]. The loader
         // copies template[12] onto the state (retail state word 0x11).
         let t = escape_fade_template();
-        let f = spawn_fade(&t, 0x1234, true).expect("slot free");
+        let mut seat = None;
+        spawn_fade(&mut seat, &t, 0x1234);
+        let f = seat.expect("the seat always takes the spawn");
         assert_eq!(f.mode, [0, -1i16, 0x1234], "id lands in mode[2] only");
         // Everything else matches a plain load of the same template.
         let plain = FadeState::load(&t);
@@ -681,15 +707,18 @@ mod tests {
     }
 
     #[test]
-    fn spawn_fade_pool_exhausted_returns_none() {
-        // Retail `iVar1 == 0` branch: alloc failed, nothing stamped/loaded.
-        assert_eq!(spawn_fade(&escape_fade_template(), 7, false), None);
+    fn spawn_fade_replaces_the_fade_in_the_seat() {
+        // The engine's pool is one seat: a second spawn supersedes the first.
+        let mut seat = None;
+        spawn_fade(&mut seat, &escape_fade_template(), 1);
+        spawn_fade(&mut seat, &escape_fade_template(), 7);
+        assert_eq!(seat.map(|f| f.mode[2]), Some(7));
     }
 
     #[test]
     fn spawn_fade_does_not_mutate_the_caller_template() {
         let t = escape_fade_template();
-        let _ = spawn_fade(&t, 0x7FFF, true);
+        spawn_fade(&mut None, &t, 0x7FFF);
         assert_eq!(t.mode, [0, -1i16, 0], "caller copy untouched");
     }
 
@@ -702,5 +731,16 @@ mod tests {
         let [r, ..] = f.rgb();
         // 0xFF*0x40/0x40 per frame in q6: after 32 frames ≈ 127.
         assert!((126..=128).contains(&r), "halfway ≈ mid grey, got {r}");
+    }
+
+    #[test]
+    fn prologue_ambient_restages_lit_rows_only() {
+        // A lit-row vertex and a baked vertex authored at exactly 0x80 carry
+        // the same colour; only the mask tells them apart.
+        let mut colors = [[0x80; 3], [0x80; 3], [0x30, 0x28, 0x00]];
+        apply_prologue_lit_ambient(&mut colors, &[true, false, false]);
+        assert_eq!(colors[0], [PROLOGUE_LIT_AMBIENT; 3]);
+        assert_eq!(colors[1], [0x80; 3], "a baked 0x80 word keeps its colour");
+        assert_eq!(colors[2], [0x30, 0x28, 0x00]);
     }
 }

@@ -259,6 +259,9 @@ mod scene_entry;
 mod sustained_sfx;
 
 pub use effects::*;
-pub use minigame_warp::MinigameWarpOutcome;
+pub use minigame_warp::{
+    DOME_FAVORED_COST, DOME_STANDIN_BUDGET, DOME_STANDIN_COMBATANT, DOME_STANDIN_HP,
+    DomeLeadFighter, MinigameWarpOutcome,
+};
 pub use scene_entry::FmvHandoffOutcome;
 pub use sustained_sfx::{SPU_VOICE_COUNT, SUSTAINED_BASE_VOICE, SustainedSfx};

@@ -251,6 +251,7 @@ Small per-actor / per-scene writes (slot table, camera-zone query, sound trigger
 - **Sub-0xA/0xB/0xC** are the 5-byte slot-table writes `[4C, 0xCN, slot, lo, hi]` on the u16 array at `0x801C6460`: sub-A sets, sub-B adds, sub-C subtracts (B/C substitute the per-frame tick `_DAT_1F800393` when the literal is `0xFFFF`). The read side is op `0x4E` sub-ops 5..8 (`slot = sub - 5`; [script-vm.md](script-vm.md) op table) - together they form script-visible counters/timers (e.g. cave01's interact counter gating the `0x15D` beat-key spawn).
 - **Sub-0xF** is the **script camera-focus override**, not a "position broadcast": 4-byte `[4C, 0xCF, x, z]`, arm at `0x801E2A34`. See [below](#4c-cf-is-the-script-camera-focus-override) for where the two values go and who reads them.
 - **Sub-9** is a 2-byte global-pair compare gate: PC += 2 unless `_DAT_8007BAB8 != _DAT_8007BA9C`, then halts.
+- **Sub-0xE** is the 3-byte **player clip override** `[4C, 0xCE, value]` (`0x801E2A20..0x801E2A30`): `_DAT_8007B6AC = value`, which points a party-flagged player's walk, idle and run at scene-bank records (`base + value - 1`). Scene entry zeroes it. Two scenes use it (`jagaroom`, `urudre1`); see [`field-locomotion.md`](field-locomotion.md#the-clip-base-and-the-settle-tail).
 
 ##### `4C CF` is the script camera-focus override
 
@@ -680,11 +681,27 @@ against a **5-entry** jump table at VA `0x801CEF30` (field overlay 0897, file
 
 | Sub | Arm | Instruction | What it does |
 |---|---|---|---|
-| 0 | `0x801E17AC` | `[4C, 50, lo, hi]` | Actor model select; `>= 0xF0` sets ctx flag `0x01000000`. |
-| 1 | `0x801E1828` | `[4C, 51, x, z, depth, move_id]` | NPC / player move-to-tile with run dispatch. |
+| 0 | `0x801E17AC` | `[4C, 50, lo, hi]` | Actor model select; `>= 0xF0` sets ctx flag `0x01000000`. See [sub-0](#sub-0-the-model-set-re-stages-the-actor). |
+| 1 | `0x801E1828` | `[4C, 51, x, z, depth, move_id]` | NPC / player move-to-tile with run dispatch. On the player (`0x801E1954..0x801E1A3C`) the `move_id` is also the clip base `_DAT_8007BDD8`, picked and bound at once ([`field-locomotion.md`](field-locomotion.md#the-clip-base-and-the-settle-tail)). |
 | 2 | `0x801E1ABC` | `[4C, 52, item_id]` | **TAKE_ITEM** - see below. |
 | 3 | `0x801E1AF8` | `[4C, 53]` | Dialog-wait poll, `FUN_801D65D8(1)`. |
 | 4 | `0x801E1B0C` | `[4C, 54]` | Dialog-advance poll, `FUN_801D65D8(0)`. |
+
+#### Sub-0: the model set re-stages the actor
+
+The arm resolves the operand against the scene bank (`_DAT_8007B6F8 + value`
+below `0xF0`, clearing ctx flag `0x01000000`) or the player bank
+(`_DAT_8007B824 + value - 0xF0`, setting it) and calls `FUN_80024E08(ctx,
+model)`: `+0x5C = 0`, `+0x64 = model`, `+0x10 &= ~0x1000`, the `+0x60` mirror
+on the world map, then the re-stage `FUN_80020F88`, which binds the actor's
+render node to the TMD at pool slot `+0x64` - the actor starts drawing the new
+mesh. The selection is `engine-core::model_bank::resolve_model_id`, the same
+one the placement spawner and motion op `0x0E` use. The port hands the raw
+operand to a placement's live model seat (`World::field_npc_live_model`),
+which both play hosts re-bind mid-scene from; the census counts hundreds of
+clean sites across most field scenes. An operand aimed at the player
+(`CC F8 50 ..`) changes the context's state words only - the port has no
+player-mesh re-bind.
 
 #### Sub-2 is TAKE_ITEM, not a menu poll
 

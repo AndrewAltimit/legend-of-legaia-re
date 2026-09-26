@@ -176,6 +176,16 @@ pub struct FieldPlayerAnim {
     /// The bank slot currently playing, for the rewind-on-change rule
     /// (`FUN_800204F8` rewinds when `+0x5C != +0x5E`).
     playing_slot: Option<usize>,
+    /// The **scene-bank** record the settle tail last picked (0-based), when
+    /// its pick bound from the scene's own ANM bundle rather than the party
+    /// bank: the op-`4C CE` override arm, the `99` scene sentinel, or an
+    /// actor whose party-bank bit is down. See [`Self::select_scene_record`].
+    scene_record: Option<u16>,
+    /// The scene-bank clip the host resolved for [`Self::scene_record`] -
+    /// `(record, clip)` - through [`Self::resolve_scene_clip`].
+    scene_clip: Option<(u16, FieldClipPlayer)>,
+    /// Whether the scene clip was the one playing last tick (rewind rule).
+    playing_scene: Option<u16>,
 }
 
 impl FieldPlayerAnim {
@@ -192,6 +202,9 @@ impl FieldPlayerAnim {
             leader: 0,
             retail_slot: None,
             playing_slot: None,
+            scene_record: None,
+            scene_clip: None,
+            playing_scene: None,
         }
     }
 
@@ -234,6 +247,38 @@ impl FieldPlayerAnim {
         self.retail_slot
     }
 
+    /// The settle tail's pick when it binds from the **scene** bank
+    /// (`FUN_800204F8` with the party-bank bit down, `+0x5C < 0x400`):
+    /// record `clip - 1` of the scene's own ANM bundle. `None` for every
+    /// other pick. The host resolves the record through
+    /// [`Self::resolve_scene_clip`], since the scene bundle is host-owned.
+    pub fn select_scene_record(&mut self, record: Option<u16>) {
+        self.scene_record = record;
+    }
+
+    /// The scene-bank record the last pick asked for.
+    pub fn scene_record(&self) -> Option<u16> {
+        self.scene_record
+    }
+
+    /// Load the scene-bank clip the pick asked for from `bundle` (the scene's
+    /// own ANM bundle, retail `*(0x8007B888)`), once per record change. A
+    /// record whose bone count differs from the player's locomotion clips is
+    /// refused - a pose for another skeleton would tear the mesh - and the
+    /// pick then falls back to the motion-derived pair. Both play hosts call
+    /// this once per frame with the bundle they bind scripted clips from.
+    pub fn resolve_scene_clip(&mut self, bundle: &PlayerAnmBundle) {
+        let Some(record) = self.scene_record else {
+            return;
+        };
+        if self.scene_clip.as_ref().is_some_and(|(r, _)| *r == record) {
+            return;
+        }
+        self.scene_clip = FieldClipPlayer::from_record(bundle, record as usize)
+            .filter(|c| c.bone_count() == self.idle.bone_count())
+            .map(|c| (record, c));
+    }
+
     /// Queue a scripted one-shot clip (an `A2 F8` ExecMove resolution). The
     /// clip starts at frame 0 when it reaches the front of the queue and
     /// plays `frame_count * ticks_per_frame` engine ticks.
@@ -249,6 +294,13 @@ impl FieldPlayerAnim {
 
     /// Frame count of whichever locomotion clip is playing now.
     pub fn active_frame_count(&self) -> usize {
+        if let Some((_, clip)) = self
+            .scene_clip
+            .as_ref()
+            .filter(|(r, _)| self.playing_scene == Some(*r))
+        {
+            return clip.frame_count();
+        }
         if let Some(clip) = self
             .playing_slot
             .and_then(|s| self.bank.get(s))
@@ -292,6 +344,25 @@ impl FieldPlayerAnim {
         // motion-derived walk: retail would hold whatever base the script
         // last set, which the port does not track for script moves.
         let script_moved = moved && !pad_drove;
+        // A scene-bank pick binds every frame it is the pick, whoever moved
+        // the player: retail's `FUN_800204F8` binds whatever the settle
+        // picked, and a scene-bank id is never the motion pair's to replace.
+        if let Some(record) = self.scene_record
+            && let Some((r, clip)) = self.scene_clip.as_mut()
+            && *r == record
+        {
+            if self.playing_scene != Some(record) {
+                clip.rewind();
+            }
+            self.playing_scene = Some(record);
+            self.playing_slot = None;
+            return clip.tick();
+        }
+        if self.playing_scene.take().is_some() {
+            // Leaving the scene clip: the next pick restarts from frame 0.
+            self.idle.rewind();
+            self.walk.rewind();
+        }
         if !script_moved && let Some(slot) = self.retail_slot.filter(|&s| self.has_bank_slot(s)) {
             let rewind = self.playing_slot != Some(slot);
             self.playing_slot = Some(slot);
@@ -320,6 +391,35 @@ impl FieldPlayerAnim {
             self.idle.tick()
         }
     }
+}
+
+/// Test fixture: a synthetic ANM bundle whose record `r` has `bones[r]`
+/// bones and `frames[r]` frames, each frame's bone `b` tagging `t_x` with
+/// `r * 100 + f * 10 + b` (low byte).
+#[cfg(test)]
+pub(crate) fn synth_anm_bundle(records: &[(u16, u8)]) -> PlayerAnmBundle {
+    use legaia_asset::player_anm::{ANM_MARKER_1, parse};
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&(records.len() as u32).to_le_bytes());
+    let mut off = (4 + 4 * records.len()) as u32;
+    for &(bones, frames) in records {
+        buf.extend_from_slice(&off.to_le_bytes());
+        off += (8 + 8 * bones as usize * frames as usize + 8) as u32;
+    }
+    for (rec, &(bones, frames)) in records.iter().enumerate() {
+        buf.extend_from_slice(&bones.to_le_bytes());
+        buf.extend_from_slice(&(frames as u16).to_le_bytes());
+        buf.extend_from_slice(&ANM_MARKER_1.to_le_bytes());
+        buf.extend_from_slice(&0x0002u16.to_le_bytes());
+        for f in 0..frames {
+            for b in 0..bones {
+                let tag = (rec as u32 * 100 + f as u32 * 10 + b as u32) as u8;
+                buf.extend_from_slice(&[tag, 0, 0, 0, 0, 0, 0, 0]);
+            }
+        }
+        buf.extend_from_slice(&[0u8; 8]);
+    }
+    parse(&buf).expect("synthetic bundle parses")
 }
 
 #[cfg(test)]
@@ -514,5 +614,35 @@ mod tests {
         // Release: idle restarts at frame 0.
         assert_eq!(anim.tick().bone_outputs[0].0[0], 100);
         assert!(!anim.walking);
+    }
+
+    #[test]
+    fn a_scene_bank_pick_plays_the_scene_record_once_resolved() {
+        // Party bank: walk (rec 0) / idle (rec 1), two bones each.
+        let party = synth_anm_bundle(&[(2, 3), (2, 2)]);
+        let idle = FieldClipPlayer::from_record(&party, 1).unwrap();
+        let walk = FieldClipPlayer::from_record(&party, 0).unwrap();
+        let mut anim = FieldPlayerAnim::new(idle, walk);
+        // Scene bundle: record 0 has 3 bones (another skeleton), record 1
+        // two bones and 4 frames.
+        let scene = synth_anm_bundle(&[(3, 2), (2, 4)]);
+        anim.select_scene_record(Some(1));
+        // Nothing resolved yet: the motion pair still plays.
+        assert_eq!(anim.tick().bone_outputs[0].0[0], 100);
+        anim.resolve_scene_clip(&scene);
+        // The scene record plays from frame 0 (tag 100 + 0 = record 1).
+        let pose = anim.tick();
+        assert_eq!(pose.bone_outputs[0].0[0], 100);
+        assert_eq!(anim.active_frame_count(), 4);
+        anim.tick();
+        assert_eq!(anim.tick().bone_outputs[0].0[0], 110, "second frame");
+        // A record for another skeleton is refused; the pair takes over.
+        anim.select_scene_record(Some(0));
+        anim.resolve_scene_clip(&scene);
+        assert_eq!(anim.tick().bone_outputs.len(), 2);
+        assert_eq!(anim.active_frame_count(), 2, "back on the idle clip");
+        // Dropping the scene pick hands back to the motion pair too.
+        anim.select_scene_record(None);
+        assert_eq!(anim.tick().bone_outputs.len(), 2);
     }
 }

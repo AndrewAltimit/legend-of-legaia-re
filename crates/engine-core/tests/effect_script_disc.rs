@@ -144,6 +144,7 @@ fn player_walk_clip_effect_script_steps_to_positioned_spawns() {
                 scope: 9,
                 action: 0,
                 suppressed: false,
+                approach: None,
             };
             let step = step_effect_script(
                 retail_rotation_lut(),

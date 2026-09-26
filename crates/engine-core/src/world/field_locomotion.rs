@@ -41,12 +41,29 @@ pub struct FieldLocomotion {
     /// is retail-pinned, the fill unit is the engine's - see
     /// [`crate::world::World::tick_field_walk_regen`].
     pub walk_regen_steps: i32,
-    /// The walk-regen tick's secondary countdown (retail `_DAT_8007B600`),
-    /// which arms a dialog-window callback on its zero edge. Nothing in the
-    /// engine arms it, so it stays `0` and the edge never fires - the
-    /// window descriptor it schedules (`_DAT_8007B450`) has no engine
-    /// analogue.
+    /// The **Incense window** (retail `_DAT_8007B600`), counted in walk-regen
+    /// ticks: the pause Items Incense confirm tops it up by `0x40` (cap
+    /// `0x100`, `crate::field_menu_dispatch::apply_pause_items_outcome`), the
+    /// walk-regen tick drains it by one, and the field region encounter roll
+    /// skips while it is non-zero - on the field and on the overworld alike,
+    /// since both run the field overlay's walk tick. On its zero edge retail
+    /// installs the field-overlay record `0x801F2278` (kind byte `0x0B`) as
+    /// the entry context `_DAT_8007B450` and spawns the submode driver
+    /// (`0x801D0CEC..0x801D0D24`), which shows the wear-off notice
+    /// ([`Self::incense_notice`]).
     pub walk_regen_window: i32,
+    /// The Incense wear-off notice while it is up (`FUN_801F1E48` via the
+    /// kind-`0x0B` entry context; see [`crate::incense_notice`]).
+    pub incense_notice: Option<crate::incense_notice::IncenseNotice>,
+    /// The pad-rotation octant `gp+0x2D8` (`_DAT_8007B5F0`): how many
+    /// eighth-turns the pad remapper `FUN_800467E8` rotates the held
+    /// direction by. Retail's writers are field-VM op `4C 2x` and the tile
+    /// board's walker, which also saves the incoming value on entry and
+    /// restores it at teardown. The port's free-roaming field walk derives
+    /// its rotation from the camera instead
+    /// ([`crate::world::World::field_pad_ring_rotation`]); this word is what
+    /// the tile board reads and restores.
+    pub pad_octant: u32,
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
     /// direction `func_0x800467e8` remaps the held pad against. `0` maps
@@ -232,6 +249,13 @@ pub struct FieldLocomotion {
     /// ([`legaia_engine_vm::field_player_clip::PARTY_BANK_FLAG`]): raised by
     /// every pad step that writes a base, dropped by the scene-sentinel pick.
     pub player_party_bank: bool,
+    /// The clip override `_DAT_8007B6AC`: field-VM op `4C CE <value>`
+    /// (`0x801E2A20..0x801E2A30`) stores its byte here, and scene entry
+    /// zeroes it (SCUS `0x8003B6F0`, inside `FUN_8003AEB0`). While it is
+    /// non-zero a party-flagged pick binds `base + override - 1` from the
+    /// **scene** bank - the two disc users (`jagaroom`, `urudre1`) point the
+    /// player's walk / idle / run at scene-bundle records this way.
+    pub clip_override: u32,
     /// The kind-0 warp's globals `_DAT_8007B6B0` (timer), `_DAT_8007B6B4`
     /// (post-warp pad hold) and the destination pair - see
     /// [`legaia_engine_vm::field_warp_tile`].
@@ -250,6 +274,8 @@ impl FieldLocomotion {
             leading_edge_wall_probes: false,
             walk_regen_steps: 0,
             walk_regen_window: 0,
+            incense_notice: None,
+            pad_octant: 0,
             camera_azimuth: 0,
             precise_movement: false,
             run_default: false,
@@ -268,6 +294,7 @@ impl FieldLocomotion {
             clip_base: legaia_engine_vm::field_player_clip::BASE_IDLE,
             player_clip: legaia_engine_vm::field_player_clip::BASE_IDLE as i16,
             player_party_bank: true,
+            clip_override: 0,
             warp: legaia_engine_vm::field_warp_tile::WarpTimer::default(),
             warp_fade_in_in: None,
         }

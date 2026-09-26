@@ -322,6 +322,12 @@ impl LegaiaRuntime {
             return Err("that block holds no character records".to_string());
         }
         let scene = SaveResume::from_retail_sc_block(sc).scene;
+        // Land it now (the menu's next frame reads the party) and park it for
+        // the scene entry the page performs next, which re-applies it after
+        // the swap instead of staging the picker's story baseline over it.
+        if !scene.is_empty() {
+            self.pending_card_resume = Some(sf.clone());
+        }
         self.world_mut().load_full(sf);
         Ok(scene)
     }
@@ -768,6 +774,50 @@ mod tests {
         assert_eq!(rt.world_mut().party.money, 555);
         assert_eq!(rt.world_mut().party.roster.members.len(), 1);
         assert_eq!(rt.world_mut().party.roster.members[0].name(), "Gala");
+    }
+
+    /// A card Load resumes the save's own story state. The page lifts the
+    /// block, then enters the scene the save names; that entry used to stage
+    /// the scene picker's free-roam baseline over the loaded flags, clearing
+    /// system flags `0x141` / `0x147` (the Rim Elm south-gate beat) in every
+    /// resumed save. Disc-gated: `enter_field` needs the disc.
+    #[test]
+    fn a_card_load_keeps_the_saves_story_flags_across_the_scene_entry() {
+        let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+            return;
+        };
+        let Ok(bytes) = std::fs::read(&disc) else {
+            eprintln!("[skip] disc unreadable (disc-gated)");
+            return;
+        };
+        let mut buf = card_with_save(1, "Vahn", 321);
+        let b = card::BLOCK_SIZE;
+        {
+            let sc = &mut buf[b..b + card::BLOCK_SIZE];
+            // System flags live at story-flag window `+0x158`, MSB-first.
+            let mut bits = vec![0u8; card::RETAIL_STORY_FLAGS_SIZE];
+            for f in [0x141u16, 0x147] {
+                bits[0x158 + usize::from(f >> 3)] |= 0x80 >> (f & 7);
+            }
+            card::write_retail_story_flags(sc, &bits).unwrap();
+            card::write_retail_resume(sc, "town01", "Rim Elm").unwrap();
+        }
+        let mut rt = LegaiaRuntime::new();
+        rt.load_disc(bytes, String::new()).expect("load_disc");
+        rt.insert_card_core(0, buf, "test card".into()).unwrap();
+        let scene = rt.load_session_from_card(0, 1).expect("load");
+        assert_eq!(scene, "town01");
+        rt.enter_field(&scene).expect("enter_field");
+        let w = rt.world_mut();
+        assert!(w.system_flag_test(0x141), "0x141 survived the resume");
+        assert!(w.system_flag_test(0x147), "0x147 survived the resume");
+        assert_eq!(w.party.money, 321);
+        assert!(
+            !w.field_vm.free_roam_staging,
+            "a resume is not a picker visit"
+        );
+        eprintln!("[ok] card resume kept 0x141 / 0x147");
     }
 
     #[test]

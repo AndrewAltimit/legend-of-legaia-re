@@ -492,10 +492,6 @@ rather than emit geometry. Each is pure, unit-tested and carries a
   the rule [`renderer.md`](../../docs/subsystems/renderer.md) records as
   replacing the falsified positional one) and reports whether a `0x9C`-byte
   render node must be allocated.
-- [`battle_actor_tick`](src/battle_actor_tick.rs) (`FUN_800480d8`) - the
-  ordered tint / signature-effect / after-image / draw schedule for one
-  battle actor, plus the defeated-monster grey stamp (`0x00808080`, a
-  24-bit RGB colour word - not a `0x80808080` flag).
 - [`attach_swap`](src/attach_swap.rs) (`FUN_8004ccd4`) - picks default vs
   variant equipment mesh per attach-bone channel from the playing entry's
   `+0xA4` frame windows, with the part-count-mismatch escape. Layout in
@@ -512,10 +508,12 @@ rather than emit geometry. Each is pure, unit-tested and carries a
   mode-entry prologue: frame-pacing reset, the RAM-cached-overlay word-sum
   verdict, and the field snapshot a battle / cutscene / minigame mode is
   entered behind.
-- [`actor_cull`](src/actor_cull.rs) - the camera-frame actor projector +
-  visibility cull. The port draws every loaded body every frame: no frustum
-  cull, no draw distance, no per-object radius test (the scene clip volume is
-  `SCENE_FAR`, see [`renderer.md`](../../docs/subsystems/renderer.md)).
+- [`actor_cull`](src/actor_cull.rs) (`FUN_801CF754`) - the field actor-contact
+  **broad phase**, not a render cull: the per-frame candidate list (a
+  `+/-0x180` window around the player, capped at `0x20`, falling back to the
+  full actor walk when full) that the contact probe `FUN_801CFC40` reads.
+  `REPLACED-BY` the engine's contact probes, which test every candidate
+  directly; the retail-numbering reference stays here.
 
 [`gte_trace`](src/gte_trace.rs) sits beside them as the harness rather than a
 kernel: a deterministic record of the cop2 register state before and after

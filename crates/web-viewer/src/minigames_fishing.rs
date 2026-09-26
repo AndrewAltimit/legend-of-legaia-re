@@ -328,8 +328,15 @@ impl LegaiaMinigames {
 
     /// Advance the pond one frame. `reel_mask` carries the held pad bits
     /// (`0x40` Cross / reel A, `0x80` Square / reel B), `cast_edge` the cast /
-    /// confirm press, `edge_bonus` the count of fresh input edges this frame
-    /// (each feeds the strike credit). Returns the events raised this frame:
+    /// confirm press, `pressed_mask` the **packed** retail newly-pressed word
+    /// this frame (`_DAT_8007B874` layout: `0x8000` D-pad left, `0x2000`
+    /// D-pad right, `0x40` / `0x80` the reel buttons). The strike credit's pad
+    /// nudge is counted from it by the shared kernel
+    /// [`legaia_engine_core::fishing_actors::bite_pad_nudge`] - the same count
+    /// `World::tick_fishing` feeds the play hosts - rather than by this page's
+    /// script, which used to add one per key event and so also counted the
+    /// cast press and both reel buttons separately. Returns the events raised
+    /// this frame:
     ///
     /// ```json
     /// [ {"e":"splash"}, {"e":"hooked","id":3,"name":"..."},
@@ -339,11 +346,12 @@ impl LegaiaMinigames {
         &mut self,
         reel_mask: u32,
         cast_edge: bool,
-        edge_bonus: i32,
+        pressed_mask: u32,
     ) -> String {
         let Some(p) = self.fishing_pond.as_mut() else {
             return "[]".to_string();
         };
+        let edge_bonus = legaia_engine_core::fishing_actors::bite_pad_nudge(pressed_mask);
         self.fx.tick(1);
         p.tick(
             PondInput {

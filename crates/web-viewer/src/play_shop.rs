@@ -149,16 +149,7 @@ const CAPTURE_PEN: (i32, i32) = (8, 40);
 
 /// Pack a pad word into the `MenuInput` the menu VM steps on.
 fn menu_input(edge: u16) -> MenuInput {
-    MenuInput {
-        cross: edge & 0x4000 != 0,
-        circle: edge & 0x2000 != 0,
-        triangle: edge & 0x1000 != 0,
-        square: edge & 0x8000 != 0,
-        up: edge & 0x0010 != 0,
-        down: edge & 0x0040 != 0,
-        left: edge & 0x0080 != 0,
-        right: edge & 0x0020 != 0,
-    }
+    legaia_engine_core::menu_runtime::menu_input_from_pad_edges(edge)
 }
 
 impl LegaiaRuntime {

@@ -64,7 +64,7 @@ impl ActorAllocatorHost for World {
         // scan since per-frame churn is bounded by MAX_ACTORS.
         let slot = self.actors.iter().position(|a| !a.active)?;
         let actor = &mut self.actors[slot];
-        actor.active = true;
+        actor.init_allocated();
         actor.move_state.world_x = position.x;
         actor.move_state.world_y = position.y;
         actor.move_state.world_z = position.z;

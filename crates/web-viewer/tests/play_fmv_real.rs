@@ -299,3 +299,41 @@ fn title_attract_plays_mv1_and_a_face_button_skips_it() {
     assert!(skipped, "the unsupported attract was counted as a skip");
     assert!(rt.boot_title_is_active());
 }
+
+/// The post-FMV hand-off is a scene entry: the page resets the camera globals
+/// on it exactly as on a door. The hand-off loads its scene outside the field
+/// VM's transition op, so no `SceneEntered` event follows it, and the page's
+/// camera tick keyed its reset on that event alone - the trigger scene's shot
+/// carried into the new scene. (The native window's session had the same
+/// hole plus a missing render rebuild; both now route through one
+/// session-side swap.)
+#[test]
+fn the_fmv_handoff_resets_the_camera_like_a_door() {
+    let Some(disc) = disc_bytes() else {
+        eprintln!("LEGAIA_DISC_BIN unset; skipping");
+        return;
+    };
+    use legaia_engine_core::camera::RetailCamGlobals;
+    let mut rt = loaded_in(&disc, "town01");
+    assert!(rt.play_fmv_trigger(1));
+    // Stand in for the trigger scene's scripted shot: every reset axis off
+    // its reset value, checked so the assert below is not vacuous.
+    rt.debug_perturb_camera_globals();
+    let before = rt.debug_camera_globals();
+    for axis in RetailCamGlobals::FIELD_RESET_AXES {
+        assert_ne!(before[axis], RetailCamGlobals::FIELD_RESET.0[axis]);
+    }
+    // An unsupported page auto-finishes the movie the frame it arms, and the
+    // hand-off enters `town0b` on that tick.
+    let entered = rt.tick_frame().expect("tick");
+    assert_eq!(entered, "town0b");
+    let after = rt.debug_camera_globals();
+    eprintln!("[ok] camera globals after the fmv 1 hand-off: {after:?}");
+    for axis in RetailCamGlobals::FIELD_RESET_AXES {
+        assert_eq!(
+            after[axis],
+            RetailCamGlobals::FIELD_RESET.0[axis],
+            "axis {axis} kept the trigger scene's value across the hand-off"
+        );
+    }
+}

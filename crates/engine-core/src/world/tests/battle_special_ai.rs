@@ -33,9 +33,9 @@ fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
     world.actors[1].battle.liveness = 1;
     world.actors[1].battle_monster_id = Some(5);
     world.set_battle_magic(1, 40);
-    // Seed 0: the action picker's first `rand % (1 + magic_count)` (magic
-    // count 2 -> `% 3`) lands on 1, so it casts magic[0] = Flame (0x20).
-    world.rng_state = 0;
+    // The action picker's first `rand % (1 + magic_count)` (magic count 2 ->
+    // `% 3`) lands on 1, so it casts magic[0] = Flame (0x20).
+    world.rng_state = BANDIT_BOSS_FLAME_SEED;
 
     let party_hp_before = world.actors[0].battle.hp;
     world.take_monster_turn(1);
@@ -184,7 +184,8 @@ fn move_power_table_drives_monster_special_attack_damage() {
         world.actors[0].battle.liveness = 1;
         world.battle.accuracy[0] = 30;
         world.battle.defense[0] = 40;
-        // Bandit Boss (id 5) at slot 1: casts magic[0] = Flame (0x20) on seed 0.
+        // Bandit Boss (id 5) at slot 1: casts magic[0] = Flame (0x20) on
+        // `BANDIT_BOSS_FLAME_SEED`.
         world.actors[1].battle.max_hp = 120;
         world.actors[1].battle.hp = 120;
         world.actors[1].battle.mp = 10;
@@ -200,7 +201,7 @@ fn move_power_table_drives_monster_special_attack_damage() {
                 "synthetic table installs"
             );
         }
-        world.rng_state = 0;
+        world.rng_state = BANDIT_BOSS_FLAME_SEED;
 
         let before = world.actors[0].battle.hp;
         world.take_monster_turn(1);
@@ -295,7 +296,7 @@ fn elemental_guard_accessory_halves_matching_monster_special() {
         }
         world.party.roster = party;
         world.refresh_party_ability_bits();
-        world.rng_state = 0;
+        world.rng_state = BANDIT_BOSS_FLAME_SEED;
 
         let before = world.actors[0].battle.hp;
         world.take_monster_turn(1);
@@ -429,7 +430,12 @@ fn escape_accessories_fold_from_the_ability_bitfield() {
 
     let mut base = 0;
     let mut boosted = 0;
-    for seed in 0..200u32 {
+    for i in 0..200u32 {
+        // Spread the seeds over the state space: the shaped draw is the
+        // state's high half, which consecutive small seeds barely move (one
+        // seed step moves the first state by `1664525`, about 25 in the high
+        // half), so `0..200` would replay nearly one first draw 200 times.
+        let seed = i.wrapping_mul(0x9E37_79B9);
         let mut w = escape_world(30, 45, None);
         w.rng_state = seed;
         base += u32::from(w.roll_battle_escape());
@@ -744,7 +750,7 @@ fn element_affinity_scales_monster_special_attack_damage() {
                 summon_power: [[100; 8]; 3],
             });
         }
-        world.rng_state = 0;
+        world.rng_state = BANDIT_BOSS_FLAME_SEED;
 
         let before = world.actors[0].battle.hp;
         world.take_monster_turn(1);
@@ -935,12 +941,14 @@ fn player_summon_cast_matches_the_summon_kernel_composition() {
     }
 
     // Expected value: the kernels composed directly, drawing from the same
-    // LCG in the same order (attacker, defender, lazy bonus, lazy floor).
+    // LCG in the same order (attacker, defender, lazy bonus, lazy floor),
+    // each draw shaped the way BIOS `rand()` returns it (the state's high
+    // half).
     struct Lcg(u32);
     impl Lcg {
         fn draw(&mut self) -> u16 {
             self.0 = self.0.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-            (self.0 & 0x7fff) as u16
+            ((self.0 >> 16) & 0x7fff) as u16
         }
     }
     let mut lcg = Lcg(SEED);
@@ -1076,7 +1084,7 @@ fn overlay_flame_with_impact(impact: u8) -> Vec<u8> {
 }
 
 /// A 1-vs-1 battle where Bandit Boss (monster id 5) at slot 1 casts its
-/// `magic_attacks[0]` = Flame (`0x20`) at the lone party member on seed 0.
+/// `magic_attacks[0]` = Flame (`0x20`) at the lone party member on `BANDIT_BOSS_FLAME_SEED`.
 fn flame_caster_battle(impact: u8) -> World {
     use crate::monster_catalog::vanilla_monster_catalog;
     use crate::move_power::MovePowerCatalog;
@@ -1110,7 +1118,7 @@ fn flame_caster_battle(impact: u8) -> World {
         world.tables.move_power.is_some(),
         "synthetic table installs"
     );
-    world.rng_state = 0;
+    world.rng_state = BANDIT_BOSS_FLAME_SEED;
     world
 }
 

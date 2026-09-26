@@ -345,3 +345,91 @@ fn the_world_hand_off_installs_riremito_and_warps_to_the_frozen_tile() {
     // suppresses nothing, which is the trap the host's own docs name.
     assert_ne!(packed_pad(PadButton::Square.mask()), 0);
 }
+
+// ---------------------------------------------------------------------------
+// The world applies the arts: opener, lift, arrival
+// ---------------------------------------------------------------------------
+
+fn program_actors(w: &World) -> Vec<u16> {
+    w.actors
+        .iter()
+        .filter(|a| a.active)
+        .filter_map(|a| a.scene_program.map(|p| p.program))
+        .collect()
+}
+
+/// Rula on a live world: phase 0 raises flag `0x0B` and seats opener
+/// program 0 on the scripted-scene actor, the dwell waits for that program
+/// to drop the flag, the lift carries the **player actor** up past
+/// `-0x618` (raising its `+0x10` bit 0), and the warp puts it back on the
+/// ground at the stored tile.
+#[test]
+fn rula_lifts_the_player_actor_and_lands_it_at_the_stored_tile() {
+    let mut w = overworld();
+    w.world_map
+        .ctrl
+        .as_mut()
+        .expect("controller")
+        .panels
+        .install(PanelActorKind::TravelArt(TravelArt::Rula), 0x1A);
+    frame(&mut w, 0);
+    assert!(
+        w.system_flag_test(0x0B),
+        "phase 0 raises the opener's busy flag"
+    );
+    assert!(
+        program_actors(&w).contains(&0),
+        "phase 0 seats Rula's opener, program 0: {:?}",
+        program_actors(&w)
+    );
+    let mut min_y = 0i16;
+    let mut lifted_flag = false;
+    let mut warped = false;
+    for _ in 0..4000 {
+        frame(&mut w, 0);
+        let ms = &w.actors[0].move_state;
+        min_y = min_y.min(ms.world_y);
+        lifted_flag |= ms.flags & 1 != 0 && ms.world_y < 0;
+        if !w.world_map.ctrl.as_ref().unwrap().panels.is_active() {
+            warped = true;
+            break;
+        }
+    }
+    assert!(warped, "the art resolved and retired");
+    assert!(
+        min_y < legaia_engine_vm::travel_art_actor::RULA_LIFT_EXIT_Y,
+        "the lift moved the player actor above -0x618 (min Y {min_y})"
+    );
+    assert!(lifted_flag, "the lift raised the player's +0x10 bit 0");
+    let ms = &w.actors[0].move_state;
+    assert_eq!(ms.world_y, 0, "the arrival's Y term is zero");
+    assert_eq!(
+        ((ms.world_x - 0x40) >> 7, (ms.world_z - 0x40) >> 7),
+        (20, 30),
+        "landed on the tile recorded before the art"
+    );
+}
+
+/// Riremito's resolve restores the player it shrank: render scale `+0x72`
+/// back to `0x1000`, `+0x10` bit `0x200000` cleared.
+#[test]
+fn riremito_restores_the_player_actor_at_the_resolve() {
+    let mut w = overworld();
+    w.actors[0].move_state.field_72 = 0;
+    w.actors[0].move_state.flags |= 0x0020_0000;
+    w.world_map
+        .ctrl
+        .as_mut()
+        .expect("controller")
+        .panels
+        .install(PanelActorKind::TravelArt(TravelArt::Riremito), 0x1A);
+    for _ in 0..4000 {
+        frame(&mut w, 0);
+        if !w.world_map.ctrl.as_ref().unwrap().panels.is_active() {
+            break;
+        }
+    }
+    let ms = &w.actors[0].move_state;
+    assert_eq!(ms.field_72, 0x1000);
+    assert_eq!(ms.flags & 0x0020_0000, 0);
+}

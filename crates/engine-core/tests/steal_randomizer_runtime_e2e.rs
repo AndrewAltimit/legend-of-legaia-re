@@ -35,7 +35,7 @@
 //! A baseline pass over the *unpatched* table first confirms the engine grants
 //! that monster's original steal at all, so the patched assertion can't pass
 //! vacuously. The world RNG is seeded so the steal roll always lands
-//! (`next_rng() % 100 == 0`), keeping both passes comparable. Skips without
+//! (`next_rand() % 100 == 0`), keeping both passes comparable. Skips without
 //! `LEGAIA_DISC_BIN` (CLAUDE.md convention).
 
 use legaia_asset::steal_table::{self, StealTable};
@@ -43,10 +43,12 @@ use legaia_engine_core::world::World;
 use legaia_patcher::disc::DiscPatcher;
 
 /// World RNG seed for which the first `apply_steal` roll is `0`
-/// (`next_rng() % 100 == 0`), so the steal lands for any positive chance. A
-/// fresh `World` per pass reuses it, so the baseline and patched rolls are
-/// identical and the only variable is the disc byte.
-const ROLL_LANDS_SEED: u32 = 32937;
+/// (`next_rand() % 100 == 0`), so the steal lands for any positive chance. On
+/// the shaped stream (`s' = s * 1_664_525 + 1_013_904_223`, draw =
+/// `(s' >> 16) & 0x7FFF`) seed `324` draws 23700. A fresh `World` per pass
+/// reuses it, so the baseline and patched rolls are identical and the only
+/// variable is the disc byte.
+const ROLL_LANDS_SEED: u32 = 324;
 
 /// keikoku-capture anchor: the Skeleton (monster id 13) steals Incense (0x8a) at
 /// 30% - the table entry the live `player_steal_skeleton_*` save pair pinned.

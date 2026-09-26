@@ -196,7 +196,23 @@ impl LegaiaRuntime {
             .scene_host
             .as_ref()
             .is_some_and(|h| h.world.text_balloon_drawing().is_some());
-        if (self.dialog_snapshot().is_none() && !has_balloon) || !self.ensure_menu_assets() {
+        // The tile board's quit prompt (walk-SM state 5) draws in this
+        // channel too - the native window puts it beside the balloon.
+        let prompt = self.scene_host.as_ref().and_then(|h| {
+            let cursor = h.world.tile_board_prompt_cursor()?;
+            Some((cursor, h.tile_board_prompt_lines()?))
+        });
+        // The Incense wear-off notice (`FUN_801F1E48`) shares the channel.
+        let notice = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.incense_notice_line());
+        if (self.dialog_snapshot().is_none()
+            && !has_balloon
+            && prompt.is_none()
+            && notice.is_none())
+            || !self.ensure_menu_assets()
+        {
             return CLOSED.to_string();
         }
         // The `4C E1` balloon: measure the line in the host font, hand the
@@ -220,6 +236,35 @@ impl LegaiaRuntime {
                 ));
             }
             texts.extend(ui::text_balloon_text_draws_for(font, text, *pen));
+        }
+        if let Some((cursor, lines)) = prompt.as_ref() {
+            let (frame, rows, cursor_x) = legaia_engine_core::tile_board::prompt_layout();
+            let lay = ui::TileBoardPromptLayout {
+                frame,
+                rows,
+                cursor_x,
+            };
+            if let Some(rects) = assets.chrome_rects() {
+                sprites.extend(ui::tile_board_prompt_sprites_for(
+                    rects, &lay, *cursor, origin, scale,
+                ));
+            }
+            texts.extend(ui::tile_board_prompt_text_draws_for(font, &lay, lines));
+        }
+        if let Some(line) = notice.as_ref() {
+            if let Some(rects) = assets.chrome_rects() {
+                sprites.extend(ui::incense_notice_sprites_for(
+                    rects,
+                    legaia_engine_core::incense_notice::notice_frame_rect(),
+                    origin,
+                    scale,
+                ));
+            }
+            texts.extend(ui::incense_notice_text_draws_for(
+                font,
+                legaia_engine_core::incense_notice::notice_text_pen(),
+                line,
+            ));
         }
 
         let Some(snap) = snap else {

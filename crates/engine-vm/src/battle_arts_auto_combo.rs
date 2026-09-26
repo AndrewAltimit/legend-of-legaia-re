@@ -531,7 +531,10 @@ pub struct ArtsTailResult {
 /// index reaches the bank count. `queue.len()` is the spend loop's count (the
 /// free region's starting size); bytes past it are not touched.
 ///
-/// PORT: FUN_801F0450 (`0x801F0B4C..0x801F1274`, the art insertion tail) NOT WIRED: its one host is the pool arm, reached for a party slot whose per-fighter Auto flag `ctx[+0x266 + slot]` is set by the command SM's Auto pick (`FUN_801D0748` phase `0x78`), and the engine's battle command flow offers no Auto pick - see `docs/subsystems/battle-action.md`
+/// PORT: FUN_801F0450 (`0x801F0B4C..0x801F1274`, the art insertion tail) NOT WIRED: its one host is the pool arm, reached for a party slot whose per-fighter Auto flag `ctx[+0x266 + slot]` is set by the command SM's Auto pick, and the engine's battle command flow offers no Auto pick - see `docs/subsystems/battle-action.md`
+///
+/// The Auto pick is the command SM's phase `0x78` (`FUN_801D0748`); named on
+/// its own line so the port catalog does not read this anchor as a port of it.
 pub fn insert_arts(
     queue: &mut [u8],
     input: &ArtsTailInput,

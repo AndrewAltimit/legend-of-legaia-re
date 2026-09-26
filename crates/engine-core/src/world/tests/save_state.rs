@@ -100,6 +100,47 @@ fn save_full_round_trips_globals() {
     assert_eq!(world2.party.party_count, 2);
 }
 
+/// Casino coins, the Point Card bank and the fishing point record survive a
+/// save / load - through the LGSF `LGX7` block and through a retail SC block,
+/// where retail keeps all nine words in its live-state window.
+#[test]
+fn save_full_round_trips_the_minigame_purses() {
+    let mut world = World::new();
+    world.load_party(legaia_save::Party::zeroed(1));
+    world.minigames.casino_coins = 4321;
+    world.minigames.point_card = 765;
+    world.minigames.fishing_points = 12_000;
+    world.minigames.fishing_lure = 2;
+    world.minigames.fishing_rod = 1;
+    world.minigames.fishing_best_points = 480;
+    world.minigames.fishing_best_fish = 9;
+    world.minigames.fishing_casts = 55;
+    world.minigames.fishing_prizes_purchased = 0x81;
+    let check = |w: &World| {
+        assert_eq!(w.minigames.casino_coins, 4321);
+        assert_eq!(w.minigames.point_card, 765);
+        assert_eq!(w.minigames.fishing_points, 12_000);
+        assert_eq!(w.minigames.fishing_lure, 2);
+        assert_eq!(w.minigames.fishing_rod, 1);
+        assert_eq!(w.minigames.fishing_best_points, 480);
+        assert_eq!(w.minigames.fishing_best_fish, 9);
+        assert_eq!(w.minigames.fishing_casts, 55);
+        assert_eq!(w.minigames.fishing_prizes_purchased, 0x81);
+    };
+    let sf = world.save_full();
+
+    let mut from_file = World::new();
+    from_file.load_full(legaia_save::SaveFile::parse(&sf.write()).unwrap());
+    check(&from_file);
+
+    let mut block = vec![0u8; legaia_save::card::BLOCK_SIZE];
+    sf.write_into_retail_sc_block(&mut block).unwrap();
+    assert_eq!(legaia_save::read_retail_coins(&block), Some(4321));
+    let mut from_block = World::new();
+    from_block.load_full(legaia_save::SaveFile::from_retail_sc_block(&block, 1).unwrap());
+    check(&from_block);
+}
+
 #[test]
 fn load_full_clears_old_inventory() {
     let mut world = World::new();

@@ -339,7 +339,11 @@ pub fn element_placement_land(slots: &mut [ElementPlacement], dst: usize, src: u
 /// value shifted one screen width. The subtraction is `addiu`, i.e. wrapping
 /// 16-bit.
 ///
-/// PORT: FUN_801D5778 NOT WIRED: the commit log's round-start launch (retail slides every log element one screen left); the port draws the log's resting seats and removes the log when the round begins, so there is no slide for this copy to stage until the element glide (`FUN_801D8DE8` / `FUN_801DB7B0`) is modelled.
+/// PORT: FUN_801D5778 NOT WIRED: the commit log's round-start launch (retail slides every log element one screen left); the port draws the log's resting seats and removes the log when the round begins, so there is no slide for this copy to stage until the element glide is modelled.
+///
+/// The glide is the UI-element dispatcher's per-frame arm and the routine it
+/// hands each placement to (`FUN_801D8DE8` / `FUN_801DB7B0`); named on their
+/// own line so the port catalog does not read this anchor as a port of either.
 pub fn element_placement_copy_remapped(slots: &mut [ElementPlacement], dst: usize, src: usize) {
     if dst >= slots.len() || src >= slots.len() {
         return;

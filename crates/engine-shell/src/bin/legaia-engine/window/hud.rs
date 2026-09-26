@@ -605,7 +605,7 @@ impl PlayWindowApp {
             // dev-menu session (the engine's `_DAT_8007B9B0` print-flag
             // stand-in) is up AND the held pad carries the modifier bit -
             // the same two-sided gate retail applies.
-            if let Some(wd) = &self.fish_wander {
+            if let Some(wd) = &self.session.host.world.minigames.fishing_venue.wander {
                 use legaia_engine_core::fishing_actors::{
                     debug_readout_visible, debug_tile, tracked_point_separation,
                 };
@@ -699,7 +699,7 @@ impl PlayWindowApp {
             // menu-picker rect, centre-x converted to a left edge with the
             // two-left / six-down skin bias, swaying on the overlay's idle
             // sway triple (FUN_801d03b0). The list is anchored inside it.
-            let sway = self.fishing_sway_offset;
+            let sway = world.minigames.fishing_venue.sway_offset;
             let panel = legaia_engine_core::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50);
             let (px, py) = panel
                 .map(|p| (p.x as i32 + sway.0 as i32, p.y as i32 + sway.1 as i32))
@@ -1547,6 +1547,29 @@ impl PlayWindowApp {
             legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }
+        // The tile board's quit prompt (walk-SM state 5): the title and the
+        // two rows, read off the field overlay's own strings.
+        if let Some(lay) = self.tile_board_prompt_layout()
+            && let Some(lines) = self.session.host.tile_board_prompt_lines()
+        {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            let mut draws =
+                legaia_engine_render::tile_board_prompt_text_draws_for(&self.font, &lay, &lines);
+            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            out.extend(draws);
+        }
+        // The Incense wear-off notice (`FUN_801F1E48`): one line of the field
+        // overlay's own text.
+        if let Some(line) = self.session.host.incense_notice_line() {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            let mut draws = legaia_engine_render::incense_notice_text_draws_for(
+                &self.font,
+                legaia_engine_core::incense_notice::notice_text_pen(),
+                &line,
+            );
+            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            out.extend(draws);
+        }
         // Opt-in developer menu: its row list draws over everything else.
         //
         // Through the canonical 320x240 stage, like every other retail screen
@@ -1842,6 +1865,18 @@ impl PlayWindowApp {
     /// timeline, or inline field-VM runner) into plain strings the
     /// text and chrome layers both consume. `None` when no box is
     /// open this frame.
+    /// The tile board's quit-prompt geometry while its walk SM sits in the
+    /// prompt state, `None` otherwise.
+    fn tile_board_prompt_layout(&self) -> Option<legaia_engine_render::TileBoardPromptLayout> {
+        self.session.host.world.tile_board_prompt_cursor()?;
+        let (frame, rows, cursor_x) = legaia_engine_core::tile_board::prompt_layout();
+        Some(legaia_engine_render::TileBoardPromptLayout {
+            frame,
+            rows,
+            cursor_x,
+        })
+    }
+
     pub(super) fn dialog_snapshot(&self) -> Option<DialogSnapshot> {
         let to_ascii = |bytes: &[u8]| -> String {
             bytes
@@ -2033,6 +2068,25 @@ impl PlayWindowApp {
             out.extend(legaia_engine_render::text_balloon_chrome_draws_for(
                 &assets.rects,
                 rect,
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        if let Some(lay) = self.tile_board_prompt_layout()
+            && let Some(cursor) = self.session.host.world.tile_board_prompt_cursor()
+        {
+            out.extend(legaia_engine_render::tile_board_prompt_sprites_for(
+                &assets.rects,
+                &lay,
+                cursor,
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        if self.session.host.world.incense_notice_shown() {
+            out.extend(legaia_engine_render::incense_notice_sprites_for(
+                &assets.rects,
+                legaia_engine_core::incense_notice::notice_frame_rect(),
                 stage_origin,
                 stage_scale,
             ));
@@ -2358,48 +2412,17 @@ impl PlayWindowApp {
         self.save_menu.as_ref().map(|a| a.badges)
     }
 
-    /// The message holding retail's top-of-screen banner this frame, if any.
-    ///
-    /// The port's two battle messages are the level-up and Seru-capture
-    /// lines, and retail draws exactly those in this widget -
-    /// `noa_levelup_banner` is one of the two save states the banner's
-    /// geometry was read out of.
-    ///
-    /// Not gated on `SceneMode::Battle`, and that is a **port ordering
-    /// difference worth naming**: retail raises the level-up message on the
-    /// battle result screen, still in battle, while the port grants XP after
-    /// the mode has already flipped back to Field - so gating on battle mode
-    /// would leave the widget wired and never drawn. The message goes in
-    /// retail's own widget wherever the port raises it; the sprite half
-    /// follows through [`Self::battle_chrome_sprite_draws`].
+    /// The message holding retail's top-of-screen banner this frame, if any:
+    /// the engine's shared read
+    /// ([`legaia_engine_core::battle_hud::battle_banner_message`] - the absorb
+    /// / magic-level element line, then level-up, then Seru capture), which the
+    /// browser page draws too.
     ///
     /// `None` without the system-UI atlas: there is no frame to put a
     /// message in, so a chrome-less host keeps the loose pens instead.
     pub(super) fn battle_banner_message(&self) -> Option<String> {
         self.save_menu.as_ref()?;
-        let w = &self.session.host.world;
-        if let Some(b) = &w.party.current_level_up_banner {
-            // Name the character, not their roster ordinal: the banner reads
-            // to a player, and `P3` is an index only this codebase knows.
-            // `char_id` is the ROSTER slot the level-up applier wrote, so it
-            // indexes `roster.members` directly (not the battle order).
-            let who = w
-                .party
-                .roster
-                .members
-                .get(b.char_id as usize)
-                .map(|r| r.name())
-                .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| format!("P{}", b.char_id + 1));
-            return Some(format!(
-                "LEVEL UP!  {who} -> LV {}\nHP +{}  MP +{}",
-                b.new_level, b.hp_gained, b.mp_gained
-            ));
-        }
-        w.party
-            .current_capture_banner
-            .as_ref()
-            .and_then(|b| b.current_banner())
+        legaia_engine_core::battle_hud::battle_banner_message(&self.session.host.world)
     }
 
     /// The engine-core battle-item-window projection (shared with the

@@ -21,8 +21,8 @@
 //! PORT: FUN_801DD864 (summon-roll scale stage - `apply_element_affinity` /
 //! `apply_status_weaken` / `apply_magic_power`).
 //! PORT: FUN_8004E568 (victory-spoils gold + EXP scaling - `victory_gold_*` /
-//! `victory_exp_per_member`. The reward resolver's drop roll + level-up
-//! application live in engine-core `apply_battle_loot` / `apply_battle_xp`.)
+//! `victory_exp_per_member` - and the drop roll, `victory_drop_roll`. The
+//! level-up application lives in engine-core `apply_battle_xp`.)
 //! PORT: FUN_801DDB30 (damage finisher - the closed-form damage-finalisation
 //! arithmetic (`damage_finish`: equipment elemental-resistance halving, the
 //! guard halve, the no-damage `rand%9+8` floor, the summon power-percent scale,

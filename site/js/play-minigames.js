@@ -524,12 +524,20 @@
     const strips = [0, 1, 2].map(r => rt.play_mg_slot_strip(r));
     slotDrawReels(g, rt.play_mg_slot_reel_pos(), strips);
     g.restore();
-    for (let i = 0; i < a.scene.paylines.length; i++) {
-      const l = a.scene.paylines[i];
-      const p = slotProject(l.a[0], l.a[1], l.a[2]);
-      const q = slotProject(l.b[0], l.b[1], l.b[2]);
-      g.strokeStyle = (i === winLine) ? 'rgba(255,255,128,0.95)' : 'rgba(190,190,190,0.35)';
-      g.lineWidth = (i === winLine) ? 2 : 1;
+    /* The paylines: the engine's ported payline pass (FUN_801d3380) picks
+     * each line's colour, lit state and semi-transparency; the page runs the
+     * RTPS projection it leaves caller-side and strokes the segment. */
+    let lines = [];
+    try { lines = JSON.parse(rt.play_mg_slot_payline_prims_json(winLine == null ? -1 : winLine)); }
+    catch (e) { lines = []; }
+    for (const l of lines) {
+      /* Endpoints projected by the engine (slot_machine::projected_paylines),
+       * the same segments the native window draws; the page-side projection
+       * is only the fallback for a bundle that predates the fields. */
+      const p = l.sa || slotProject(l.a[0], l.a[1], l.a[2]);
+      const q = l.sb || slotProject(l.b[0], l.b[1], l.b[2]);
+      g.strokeStyle = `rgba(${l.rgb[0]},${l.rgb[1]},${l.rgb[2]},${l.semi ? 0.5 : 1})`;
+      g.lineWidth = l.lit ? 2 : 1;
       g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke();
     }
     a.scene.medallions.forEach((m) => {

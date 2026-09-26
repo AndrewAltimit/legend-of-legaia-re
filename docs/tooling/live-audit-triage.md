@@ -301,9 +301,9 @@ blocker is a table is the same error this page records for the panel painters.
 | addr | symbol | site | verdict |
 |---|---|---|---|
 | `8001d7f8` | `sync_scene_name` | `crates/engine-core/src/scene_name_sync.rs:73` | DISCLOSE |
-| `8001e54c` | `install_chunks` | `crates/engine-core/src/chunk_install.rs:86` | DISCLOSE |
+| `8001e54c` | `install_chunks` | `crates/engine-core/src/chunk_install.rs` | WIRED |
 | `80021b04` | `from_model_sel` | `crates/engine-core/src/summon.rs:236` | FALSE INERT |
-| `80024e80` | `spawn_fade` | `crates/engine-core/src/fade.rs:161` | DISCLOSE |
+| `80024e80` | `spawn_fade` | `crates/engine-core/src/fade.rs` | WIRED |
 | `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick.rs:910` | WIRE |
 | `80038050` | `confirm_menu` | `crates/engine-core/src/dialog.rs:409` | FALSE INERT |
 | `8003a55c` | `MapObject` | `crates/engine-core/src/field_regions.rs:270` | FALSE INERT |
@@ -565,13 +565,15 @@ anchor. Wrap to the file's comment width.
   host, and carries no staged-name / active-buffer / scene-index-word triple for
   this bridge to resolve between. Wiring it needs a name-based scene-change
   packet path, which the dialog port routes around.
-- **`install_chunks`** - the engine resolves scene sub-assets through the typed
-  `legaia_asset` dispatcher and uploads VRAM and VAB directly from those.
-  Nothing produces retail's `[type, size, data]` side-band chunk list, so the
-  walker has no stream to walk.
-- **`spawn_fade`** - the engine's fades are host-driven state, not entries in a
-  fixed-capacity system-actor pool. The `slot_free` argument models a pool
-  allocation outcome that no engine caller can supply an answer for.
+- **`install_chunks`** - since wired. The disclosure was wrong twice: every
+  `scene_vab_stream` entry *is* the `[type, size, data]` list, and the arm it
+  called a VRAM upload (types `2` / `0xC`) is the SEQ install. The scene loader
+  now finds each stream's score by walking the list
+  (`chunk_install::seq_chunk_offset`) in place of a `pQES` byte hunt.
+- **`spawn_fade`** - since wired. The engine's fade pool is one seat
+  (`World::presentation.fade`), so the allocation arm always succeeds and the
+  `slot_free` argument is gone; the field warp's two fades and the summon
+  band's flash route through it.
 - **`load_overlay_a` / `load_overlay_b` / the module** - the host trait is
   already implemented (`OverlayLoaderHost for ProtCdDmaHost` in
   `crates/engine-core/src/cd_dma.rs`); what is missing is the caller. The engine
@@ -774,12 +776,13 @@ other two arms are unreachable. Closing that is a one-line mirror at battle
 entry plus a decision about which of the two latch sites survives - both in
 `crates/engine-core/src/world/`, so it is a sibling lane's edit.
 
-**`approach_distance` was not unblocked**, and the claim here that it would be
-is withdrawn. Its blocker is not geometry: it clamps a *requested* step length,
-and the port's attack band (`attack_advance` / `attack_short_step`) polls
-`range_check` rather than requesting a distance, so no call site holds a value
-for it to clamp. `FUN_801DF570` is also not called from the action SM at all -
-its caller is `FUN_801DEA50`.
+**`approach_distance` is live, through the effect-script walker, not the
+attack band.** It clamps a *requested* length, and the attack band
+(`attack_advance` / `attack_short_step`) polls `range_check` rather than
+requesting one; its only caller is `FUN_801DEA50`'s direct-spawn branch, which
+passes a `0x93` / `0x84` record's scaled Z offset (`0x801DEDC8`). That branch is
+`engine-core::action_effect_script::step_effect_script`, which now makes the
+call.
 
 ### `expand_cue_group`: the table was not the prerequisite
 
@@ -1265,8 +1268,11 @@ into four:
   two-point draws; neither `engine-ui`'s draw list nor its PSX screen-space
   primitive set (`screen_prim`, a textured and a flat **quad**) has a line
   kind. Read the qualifier: there *is* a screen-space primitive path, live on
-  both hosts, and a line kind alone would still not reach `payline_prims`,
-  whose endpoints are model-space and want a GTE projection pass first.
+  both hosts. `payline_prims` left this group: its endpoints are model-space,
+  and what it needed was a projection pass, not a line kind -
+  `slot_machine::projected_paylines` projects them once for every host, both
+  browser pages draw the result, and the native window appends it to its
+  screen pass (with no cabinet mesh around it).
 - **No minigame effect-part pool.** `step_mark_effect_spawn`,
   `good_banner_spawn`, `splash_burst`, `ripple_spawn`,
   `dance_hit_sting_voices`. Closed for the spawn wrappers: the dance's two
@@ -1566,11 +1572,15 @@ which also says what it builds.
 
 ### Two rows that read as dead code and are not
 
-`mirrored_sprite_pass` (`801d49e8`) and `editor_tick` (`801d4fc8`) have no
-`jal` anywhere, which invites the `project_segment` verdict. Both are wrong for
-it: each address is the callback word of a `0x18`-byte actor prototype in the
-Baka overlay's rodata (`0x801D7688` and `0x801D7670`, adjacent records). They
-are spawnable; what never happens for the editor is its *band* gate. "No `jal`"
+`afterimage_pass` (`801d49e8`, once misnamed `mirrored_sprite_pass`) and
+`editor_tick` (`801d4fc8`) have no `jal` anywhere, which invites the
+`project_segment` verdict. Both are wrong for it: each address is the callback
+word of a `0x18`-byte actor prototype in the Baka overlay's rodata - the
+adjacent records at `0x801D7684` and `0x801D766C`, whose callback words sit at
+`0x801D768C` and `0x801D7674`. They are spawnable. The afterimage is spawned on
+every special commit and is live; what never happens for the editor is its
+*band* gate, which only the developer menu enters, and that menu's gate
+`_DAT_8007B868` is `0` on a retail disc. "No `jal`"
 is not "unreachable" until the literal-word form has been checked too - which
 is the whole point of sweeping five reference forms rather than one.
 
@@ -1734,18 +1744,16 @@ the fields by category, so the player sees the wrong rows today.
 
 ### Rows settled by a reference sweep rather than by reading source
 
-- `queue_applier::miracle_command_position` (`801E91E8`) is **not
-  dead-in-retail**. A five-form sweep finds exactly one reference corpus-wide:
-  a single `jal` from battle overlay 0898 at `0x801EE2C0`, inside the arms
-  resolver `FUN_801EC3E4`; zero data words, so it is in no dispatch table. The
-  per-slot Miracle marker it reads is a guard *inside* the routine, not a
-  precondition for entering it, which is why "the marker has no input
-  recognizer" does not make it unreachable. The applicability decision it
-  gates is live in the port (`World::miracle_marker_armed_for` and the
-  whole-string match in `finish_action_queue`); what is unconsumed is its
-  **return value**, a 1-based command position its caller stages into
-  `ctx[+0x269]`, which no engine type models. So: replaced for the decision,
-  inert for the value - and a row that would have been mis-filed as dead.
+- `queue_applier::learned_seru_position` (`801E91E8`) is **not
+  dead-in-retail**, and it is not a Miracle routine either. A five-form sweep
+  finds exactly one reference corpus-wide: a single `jal` from battle overlay
+  0898 at `0x801EE2C0`, inside the arms resolver `FUN_801EC3E4`, on the
+  killing-blow Seru absorb leg; zero data words, so it is in no dispatch
+  table. The list it scans (`+0x704` / `+0x705..` off `0x80084140`) is the
+  character's learned-spell list that `FUN_801E92DC` prepends to, and the
+  "marker" it gates on, `ctx[+0x25F + slot]`, is the Ra-Seru marker; its
+  return decides whether the absorbed Seru is staged into `ctx[+0x269]` for
+  the Done band's grant. It is live through `World::roll_seru_absorb`.
 - `move_vm/spawn.rs::spawn_move_actor` (`80021B04`) is not a move-VM leaf but a
   move-VM *producer*: its own tail is `jal FUN_80023070`, the dispatcher. The
   sweep finds 815 `jal` sites, all in the summon / cast band and the script-VM
@@ -1930,7 +1938,7 @@ for it would have to build first.
 | **No host produces the retail input shape** | a backend or a channel that does not exist yet exists. | `input::set_pad_reports` (raw two-port libpad reports), `frame_tick::resolve_frame_step` (an hblank sampler), `effect_ribbon` x3 (an actor render-mode-4 flag word plus a packet chain). |
 | **The record or table has no parser** | `legaia_asset` grows one. | `move_no_effect_guard` x3 - the `[element][band]` follow-up table at `0x801F6870` is the only input still missing; its sibling input, the affinity matrix, is already disc-parsed and live. |
 | **Retail-unreachable** | never. Not a wiring gap; the routine is linked and unreferenced on the whole disc. | `menu_open_sequence::menu_open_step`, `save::add_to_slot`, `fishing_actors::project_segment`, `baka_fighter_chrome::editor_tick` (linked as an actor prototype's callback word, but its band is a phase no shipping path enters). |
-| **A geometry kind the port has no sink for** | the sink is built - and the sink is usually not the obvious one. | `slot_machine::payline_prims` needs a *projection pass*, not a `ScreenPrim::Line`; the endpoints are model-space. |
+| **A geometry kind the port has no sink for** | the sink is built - and the sink is usually not the obvious one. | `slot_machine::payline_prims` needed a *projection pass*, not a `ScreenPrim::Line` - the endpoints are model-space; `projected_paylines` is that pass, and the row is live. |
 | **Host drift is the blocker, not the caller** | the *other* host gets the missing half; wiring one alone is the drift `host-drift.md` exists to catch. | `field_passive_hud` x2 - the native side could take it today and the browser has no projector at that seam at all. |
 
 Inside the retail-unreachable class, the **dev-only** members need calling out,
@@ -1938,7 +1946,7 @@ because they fail the test a reader applies to the rest of it: a dev screen is
 *spawnable* and its gate is what never fires, so a reference sweep finds a
 reference and the row reads as wireable. `baka_fighter_chrome::editor_tick` is the worked example - nothing
 `jal`s `0x801D4FC8`, but its address is the callback word of the `0x18`-byte
-actor prototype at `0x801D7670`.
+actor prototype at `0x801D766C` (callback word `0x801D7674`).
 
 ## Three rows closed, and one whose blocker was the wrong shape
 
@@ -2072,10 +2080,12 @@ a retail claim - the disassembly. Nothing to paste; the record is that they were
 checked.
 
 `80016230`, `800195a8`, `8001d088`, `80020f88`, `8002174c`, `80029724`,
-`8003cb54` (both anchors), `8003cbf8`, `80046870`, `800480d8`, `8005126c`
-(both anchors), `80056208`, `80064090`, `801cf754`, `801d32bc` (both
+`8003cb54` (both anchors), `8003cbf8`, `8005126c`
+(both anchors), `80056208`, `80064090`, `801d32bc` (both
 anchors), `801d4df8`, `801d65f8`, `801d820c`, `801d9ae8` (module), `801dcc20`,
-`801e4140`, `801ddb30`, `801de37c`, `801e0080`, `801e2650`, `801f81dc`.
+`801e4140`, `801ddb30`, `801de37c`, `801e2650`, `801f81dc`. (`800480d8` is
+since live, `801cf754` is `REPLACED-BY` the contact probes, and `801e0080`'s
+duplicate port is deleted in favour of the live effect-VM walker.)
 
 Two of them are worth singling out. `8005126c` is a documented **negative**, not
 a gap: the five-form reference sweep found no reference to the on-screen test
@@ -2280,16 +2290,21 @@ structure they blamed and are rewritten; every row stays held.
 |---|---|---|
 | `801cf00c` `duel_overlay_init` | held | the mode-24 door warp's `enter_baka_from_overlay` is the overlay-entry host the tag said did not exist; of the seeds only the win target and fighter slots have a consumer (both already the rules engine's constants), and the stage seed, arena camera, `6 x 6` window and the two stream ids have no duel-side counterpart |
 | `801d6704` `field_bgm_plan` | held | the slot arithmetic is live elsewhere (`SceneHost::bgm_seq_bytes`); the two-part arm and its one-shot latch have no scene-entry analogue |
-| `801d4a60` `step_scene_program` / `lift_step` / `entry_successor` | held | spawned by `World::man_load_actor_reset`, never ticked: the BGM request/acknowledge pair it parks on has no counterpart in a synchronous director |
+| `801d4a60` `step_scene_program` / `lift_step` / `entry_successor` | wired | the pair it parks on is the side-band **bank** request / acknowledge, live as `World::audio.sound_stream`, not a BGM latch; `World::tick_scene_programs` now steps each resumed program from the handler pass |
 | `801d72a0` `help_panel_layout` | held | every row is the overlay's own string-pointer tables `0x801D8130` / `0x801D8168`, and no fishing help page exists to open |
-| `801d26cc` `bite_pad_nudge` | held | the engine does see `_DAT_8007B874` (`retail_pad().pressed`); only the standalone minigames page ticks the bite band, and its script counts the credit itself with a different mask, while the play hosts' fishing runs no band |
+| `801d26cc` `bite_pad_nudge` | wired | the play hosts' `PondSession::tick` did run the band; what was off was the count - retail adds one per mask hit on `_DAT_8007B874` (`0x8000`, `0x2000`, and `0xC0` as one mask; the cast press none, `0x801D343C..0x801D3468`), and all three hosts now count through `PondInput::from_engine_pad` |
 | `801d56e4` `clip_segment_2d` | held | its one caller clips a GPU line packet (`0x801D3D00`); no screen-space two-point primitive exists on either host |
-| `801dc6b4` `CONTEXT_LOCKED_ENTRY_SUBSCREEN` / `801dcd58` `notify_window_operands` | held | entry-context kind `0xD` is routed nowhere; no staged notify-window template exists for the operands to patch |
-| `80017bec` `refresh_object_grid_marks` / `801d7b50` `window_rebuild_spawns` | held | the `.MAP` object-descriptor region is dropped after scene load, and no windowed placement actor list exists to rebuild |
+| `801dc6b4` `CONTEXT_LOCKED_ENTRY_SUBSCREEN` / `801dcd58` `notify_window_operands` | wired | the entry decode (`0x801DC85C..0x801DC8E4`) is ported as `pause_screens::menu_entry_subscreen`, and window 8 is the art-learned notice: its template `0x801E4700` is resident menu data and a Hyper-Art book stages its operands through `FUN_80035C00`, painted on both hosts |
+| `801dd330` `OPTIONS_SUBSCREEN_ROW_SPAN` | wired | its `0x30` is the settings window's id and its `1` the exit sub-screen; the retail display set is sliced from the sub-screen `0x17` row span |
+| `8003053c` `spell_party_broadcast::broadcast` | wired | its three `jal` sites are menu code; the out-of-battle validator host `menu_validator` greys and refuses a Magic row that would affect nobody, on both hosts |
+| `80046870` `top_up_cooldown` | wired | the Incense window: an Incense confirm tops it up, the field region roll skips while it is open, and the Use list greys the row from `0xE0`. The world map runs no walk-regen tick, so its encounters are not gated |
+| `80030628` `build_shop_buy_rows` | held | the hoisted rows' alternate ink and the conditional tail need the shop catalog to keep the record's count byte and id order, which it drops |
+| `80017bec` `refresh_object_grid_marks` | wired | retail runs it once at field init (`0x801D6BF8`) over the fresh `.MAP`, which is where the engine's field entry now runs it; the `retona` capture holds a refreshed cell the disc lacks |
+| `801d7b50` `window_rebuild_spawns` | held | no windowed placement actor list exists to rebuild, and the descriptor region it indexes is dropped after scene load |
 | `801cef54` `dance_scene_entry` | held | the dance suspends the current mode instead of loading the venue bundle, so the scene seeds have no seat |
-| `801d6e5c` `keyframe_in_range` | held | the action record's `+0x26` frame column is not parsed, so nothing can build the slice |
+| `801d6e5c` `keyframe_in_range` | wired | the `+0x26` column is parsed, and the combat tick's call at `0x801D4334` is ported as `baka_fighter::StrikeClock`, which books each exchange on the winner's strike keyframe on all three hosts |
 | `8003c9ac` `motion_pause_kick` | held | every input has a home; the requested-move write target (`+0x5C` / `+0x88`) does not |
 | `801d25ec` `spawn_arc_with_emitter` | held | op `0x43` sub-`0`/`1`/`0xA`/`0xB` reaches it at `0x801DF5AC`; the engine's arc channel is the player's alone |
 | `801e4470` `sprite_rect` / `attached_sprite_tick` | held | no engine actor kind carries the `+0x90` back-link its one filler (`FUN_801D25EC`'s emitter) sets |
 | `80021248` `normalize_camera_relative_params` | held | the producer is ported; the actor family (`DAT_8007071C`, list `_DAT_8007C34C`) has no engine counterpart |
-| `801ead98` `decode_camera_readout` | held | the "camera word" is the scratchpad region box `0x1F800384..87`; its field half is published, but on the world map - the one menu that draws the row - the render overlay restamps its low two bytes from globals whose meaning is not pinned |
+| `801ead98` `decode_camera_readout` | held | the "camera word" is the scratchpad region box `0x1F800384..87`, and the world map reads the same box the field publishes - PROT 0901's `0x801F8EE0..0x801F8EF4` is only a save / restore of it and the view-window bytes. What is missing is the developer menu's CAMERA row itself, and a box word handed to the menu each tick |

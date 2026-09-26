@@ -284,7 +284,7 @@ impl Default for Pool {
 /// out-of-range cursors exactly as retail's u32 arithmetic does (the clamp
 /// then floors the wrapped quotient at neutral).
 ///
-/// PORT: FUN_801E0088 (pass-2 brightness envelope)
+/// PORT: FUN_801E0080 (pass-2 brightness envelope)
 pub fn pass2_brightness(frame_count: u8, frame_cursor: u8) -> u8 {
     let count = frame_count as u32;
     let cursor = frame_cursor as u32;
@@ -424,8 +424,8 @@ impl Pool {
         // per-child render state.
         //
         // The remainder is the C-style `%` (truncated toward zero) the MIPS
-        // `div` produces - negative RNG samples yield negative remainders.
-        // Retail traps on `spread == 0` (a zero divisor); the port clamps to
+        // `div` produces; a BIOS `rand()` draw is never negative, so it only
+        // matters for a host that hands over something else. Retail traps on `spread == 0` (a zero divisor); the port clamps to
         // 1 instead of crashing.
         let _ = children; // record fields are read back through the catalog.
         let spread = script.spread.max(1);
@@ -458,7 +458,9 @@ impl Pool {
 
     /// Look up `ui_id` in `catalog` and spawn the effect at `world_pos` /
     /// `angle`. Returns `None` if the id is out of range or the pool is full.
-    /// Mirrors the retail `FUN_801D8DE8(ui_id, mode)` → `FUN_801DFDF8` path.
+    /// Mirrors the retail pool spawner `FUN_801DFDF0` / `FUN_801DFDF8` as the
+    /// effect-script walk `FUN_801DEA50` calls it (the HUD spawner
+    /// `FUN_801D8DE8` is not a caller).
     pub fn spawn_by_ui_id<H: EffectHost + ?Sized>(
         &mut self,
         host: &mut H,
@@ -512,7 +514,7 @@ impl Pool {
     /// The `DAT_8007BD71 == 0xFF` ready-flag gate stays with the caller.
     /// Pass 2 (render) is [`Pool::child_billboards`].
     ///
-    /// PORT: FUN_801E0088
+    /// PORT: FUN_801E0080
     pub fn tick_retail<H: EffectHost + ?Sized>(
         &mut self,
         host: &mut H,
@@ -744,7 +746,7 @@ impl Pool {
     /// resolution off the current frame, the sprite scaling, and the random
     /// UV-mirror corner order - is computed here.
     ///
-    /// PORT: FUN_801E0088 (pass 2)
+    /// PORT: FUN_801E0080 (pass 2)
     pub fn child_billboards(&self, catalog: &EffectCatalog) -> Vec<ChildBillboard> {
         let sprite_scale = self.head.sprite_scale as i16 as i32;
         let mut out = Vec::new();

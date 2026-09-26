@@ -126,7 +126,7 @@ impl Renderer {
                             self.backface_cull.get(),
                             if self.semi_blend.get() { 1.0 } else { 0.0 },
                             0.0,
-                            0.0,
+                            self.overworld_curve.get(),
                         ],
                         light_dir: self.dyn_light_dir_uniform(),
                         light_color: self.dyn_light_color_uniform(),
@@ -952,7 +952,7 @@ impl Renderer {
             self.backface_cull.get(),
             if self.semi_blend.get() { 1.0 } else { 0.0 },
             0.0,
-            0.0,
+            self.overworld_curve.get(),
         ];
         let (occl_env_textured, occl_env_color) = self.occl_env_counts.get();
         let light_dir = self.dyn_light_dir_uniform();

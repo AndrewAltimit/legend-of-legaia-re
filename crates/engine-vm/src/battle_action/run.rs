@@ -76,9 +76,9 @@ pub(super) fn run_escape<H: BattleActionHost + ?Sized>(
 /// Applied to the captured monster's slot (the state-0x68 arm calls it with
 /// `ctx[+0x13]`, the active actor). Per the dump:
 ///
-/// - queued anim (`+0x1DA`) = the monster-record action-table pick
-///   (`FUN_80050E2C(rec + 0x4C, 1, rec[0x4A])` - surfaced as
-///   [`BattleActionHost::capture_anim`]);
+/// - queued anim (`+0x1DA`) = the monster's tag-`1` walk entry
+///   (`FUN_80050E2C(rec + 0x4C, 1, rec[0x4A])` at `0x801E7858`, through
+///   [`monster_action_by_tag`]; `0xFF` when the record carries none);
 /// - the per-actor flag byte `+0x1DC` is **incremented** (raw `+1`, not a
 ///   bit set);
 /// - HP-bar display (`+0x172`) and live HP (`+0x14C`) both zeroed - the
@@ -91,7 +91,7 @@ pub(super) fn run_escape<H: BattleActionHost + ?Sized>(
 ///   host-side rendering concerns), and opens the run UI banner
 ///   (`FUN_801D8DE8(0x43, 0)` - surfaced as `ui_element(0x43, 0)`).
 pub(super) fn capture_takedown<H: BattleActionHost + ?Sized>(host: &mut H, slot: u8) {
-    let anim = host.capture_anim(slot);
+    let anim = monster_action_by_tag(host, slot, WALK_TAG);
     if let Some(actor) = host.actor_mut(slot) {
         if let Some(anim) = anim {
             actor.queued_anim = anim;

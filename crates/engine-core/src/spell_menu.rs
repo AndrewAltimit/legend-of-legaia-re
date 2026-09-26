@@ -99,6 +99,13 @@ impl CasterSlot {
         self.hp > 0
     }
 
+    /// MP this caster pays for `def` - the one discounted-cost kernel
+    /// ([`crate::spells::caster_mp_cost`]) the list greying, the confirm
+    /// gate, the cast resolve and the debit all read.
+    pub fn mp_cost(&self, def: &crate::spells::SpellDef) -> u16 {
+        crate::spells::caster_mp_cost(def, self.ability_bits)
+    }
+
     /// Learned level of the `idx`-th spell (1 when the level list is
     /// absent / short - a freshly-learned spell is level 1).
     pub fn spell_level(&self, idx: usize) -> u8 {
@@ -242,6 +249,10 @@ pub enum InvalidReason {
     /// *(i16*)(0x8007B424 + char*2)] == 0` buzzes `0x23` at
     /// `0x801d908c..0x801d90b8`).
     NoRaSeru,
+    /// Nobody in the party would be affected - retail's spell-record
+    /// broadcast `FUN_8003053C` answered `0`, which greys the row in the
+    /// list build and refuses the cast in both cast flows.
+    NobodyAffected,
 }
 
 /// Spell-table flag deciding which target flow a confirmed spell opens:
@@ -299,6 +310,11 @@ pub struct SpellMenuSession {
     targets: Vec<TargetRow>,
     catalog: SpellCatalog,
     phase: SpellMenuPhase,
+    /// Spell ids the party-wide relevance probe refused: retail's
+    /// `FUN_8003053C` broadcast answered `0` for them, so nobody present
+    /// would be affected. Empty = no probe ran (a disc-free session), which
+    /// leaves every row to the MP and field-use gates.
+    unaffected: Vec<u8>,
 }
 
 impl SpellMenuSession {
@@ -308,7 +324,22 @@ impl SpellMenuSession {
             targets,
             catalog,
             phase: SpellMenuPhase::CharSelect { cursor: 0 },
+            unaffected: Vec::new(),
         }
+    }
+
+    /// Attach the relevance probe's refusals - spell ids for which
+    /// `FUN_8003053C` found no party member the spell would affect
+    /// (`crate::menu_validator::spell_affects_anyone`). Those rows grey,
+    /// and a confirm on one is [`InvalidReason::NobodyAffected`].
+    pub fn with_unaffected_spells(mut self, spell_ids: Vec<u8>) -> Self {
+        self.unaffected = spell_ids;
+        self
+    }
+
+    /// Whether the relevance probe refused `spell_id`.
+    pub fn spell_affects_nobody(&self, spell_id: u8) -> bool {
+        self.unaffected.contains(&spell_id)
     }
 
     pub fn party(&self) -> &[CasterSlot] {
@@ -356,15 +387,23 @@ impl SpellMenuSession {
                 let name = def
                     .map(|d| d.name.clone())
                     .unwrap_or_else(|| format!("Spell {id}"));
-                let cost = def.map(|d| d.mp_cost).unwrap_or(0);
+                // Retail's list build (`FUN_80030628`, `0x8003118C..0x80031228`):
+                // a field-castable record, MP for the **discounted** cost
+                // (the `+0xF4` fold is inlined at `0x8003118C..0x800311A4`),
+                // and a party member the spell would affect (`FUN_8003053C`).
+                let cost = def.map(|d| c.mp_cost(d)).unwrap_or(0);
                 let admissible = match def {
-                    Some(d) => is_field_usable(&d.effect) && c.mp >= d.mp_cost as u16,
+                    Some(d) => {
+                        is_field_usable(&d.effect)
+                            && c.mp >= cost
+                            && !self.spell_affects_nobody(*id)
+                    }
                     None => false,
                 };
                 SpellRowView {
                     spell_id: *id,
                     name,
-                    mp_cost: cost,
+                    mp_cost: cost.min(u8::MAX as u16) as u8,
                     admissible,
                 }
             })
@@ -493,10 +532,20 @@ impl SpellMenuSession {
                         });
                         return events;
                     }
-                    let caster_mp = self.party.get(caster as usize).map(|c| c.mp).unwrap_or(0);
-                    if caster_mp < def.mp_cost as u16 {
+                    let (caster_mp, cost) = self
+                        .party
+                        .get(caster as usize)
+                        .map(|c| (c.mp, c.mp_cost(def)))
+                        .unwrap_or((0, def.mp_cost as u16));
+                    if caster_mp < cost {
                         events.push(SpellMenuEvent::InvalidConfirm {
                             reason: InvalidReason::NotEnoughMp,
+                        });
+                        return events;
+                    }
+                    if self.spell_affects_nobody(row.spell_id) {
+                        events.push(SpellMenuEvent::InvalidConfirm {
+                            reason: InvalidReason::NobodyAffected,
                         });
                         return events;
                     }
@@ -552,6 +601,7 @@ impl SpellMenuSession {
                 };
                 let caster_slot = c.slot;
                 let caster_mp = c.mp;
+                let caster_ability_bits = c.ability_bits;
                 // One `cast_spell` per party row, which is what the
                 // `HealAll` arm asks its caller for: it returns the amount
                 // the formula grants *that* member, clipped by that
@@ -560,6 +610,7 @@ impl SpellMenuSession {
                 for row in &self.targets {
                     let snap = crate::spells::SpellSnapshot {
                         caster_mp,
+                        caster_ability_bits,
                         target_hp: row.hp,
                         target_hp_max: row.hp_max,
                         target_alive: row.alive(),
@@ -646,6 +697,7 @@ impl SpellMenuSession {
                     };
                     let snap = crate::spells::SpellSnapshot {
                         caster_mp: c.mp,
+                        caster_ability_bits: c.ability_bits,
                         target_hp: target.hp,
                         target_hp_max: target.hp_max,
                         target_alive: target.alive(),

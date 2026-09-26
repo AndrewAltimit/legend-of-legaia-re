@@ -679,6 +679,23 @@ object `0x50` ordering-table buckets deeper. The function row is
 [`80048A08` in the battle function table](../reference/functions/battle.md#80048a08);
 see `ghidra/scripts/funcs/80048a08.txt`.
 
+### Which bodies reach it, and with what colour
+
+The draw is reached through the draw tick `FUN_800480D8`, which the render
+dispatcher's mode-2 arm calls only for a body at view depth `>= 0xA1` - a
+near-plane reject on the `MVMVA`'d `+0x34`, not an id window. The tick first
+runs the tint pass `FUN_8004A908`, which writes the colour word `+0x74` and
+weight `+0x78` this draw stages: the actor's lanes, a distance fade that darkens
+a body past half its radius (brightens it on the outdoor stages), the status
+colours and the cursor-dim arm. A zero word skips the draw unless a lone
+defeated monster in a scripted fight is stamped grey. Both play hosts run the
+pair per body per frame through `World::battle_actor_draw_plan`; the decode
+and the capture match are in
+[`battle.md`](battle.md#the-distance-fade). Bit 26 of the word, which the tint
+pass sets for a body at depth `>= 0x180 * 16` (and for a near one carrying any
+of `0x8300_0000`) on every seat but `7`, is the dispatcher's alpha-bank raise
+([per-prim dispatch](#per-prim-dispatch-table-fun_80043390)).
+
 ### Rotted limbs draw dark
 
 The colour word `actor+0x74` and blend `actor+0x78` are reloaded for **each
@@ -716,6 +733,58 @@ subtracted from the frame - only while the actor is neither pitched nor rolled
 `battle_actor_draw::shadow_plan` models those numbers; neither host draws the
 disc, because `FUN_80028158`'s case-1 geometry is not ported (only its case-0
 annulus parameters are, for the battle-entry ring).
+
+## The field drop shadow (`FUN_8001C394`)
+
+Every field actor the animated-actor renderer `FUN_8001B964` draws can end
+with a dark blob under its feet. The gate is the last thing the renderer
+runs (`0x8001BE20..0x8001BE48`): the actor's flag word, which the actor pass
+`FUN_8001ADA4` stages into scratchpad `0x1F8002D0`, must carry a class bit of
+`0x01020000` and must not carry `0x200000`. The MAN placement seater
+`FUN_8003A1E4` ORs `0x20000` into every partition-1 actor it seats
+(`0x8003A3A4..0x8003A3B4`) and `0x01000000` into a party-bank one, the player
+carries `0x01000000`, and `0x200000` is what the jump take-off and the
+scripted vanish raise ([`field-locomotion.md`](field-locomotion.md)). The
+renderer's own `+0x72 == 0` early-out branches to the gate, not past it, so an
+actor collapsed to a point still casts its blob unless `0x200000` is up.
+
+`FUN_800460AC(actor + 0x14)` projects the grid with the camera matrix the
+renderer has just restored from `0x1F8003C8`: three `RTPT`s over the rows
+`z + 0x20`, `z` and `z - 0x20`, each row `x - 0x20`, `x`, `x + 0x20`, all at
+the actor's own `y`. Each point lands as an `[SXY, SZ]` word pair from
+scratchpad `0x1F800020`, a row every `0x18` bytes. `FUN_8001C394` walks the
+four cells and links one `POLY_FT4` per cell:
+
+| field | value |
+|---|---|
+| command + colour | `0x2E808080`: textured, semi-transparent, texture-blended, neutral |
+| texpage | `0x001F`: `(960, 256)`, 4-bit, ABR `0` (`B / 2 + F / 2`) |
+| CLUT | `0x7F86`: row 510, `x = 96` |
+| UVs | `u = 0xE0 + 8c .. 0xE7 + 8c`, `v = 8r .. 8r + 7` |
+| OT slot | `((SZ_a + SZ_b + SZ_c + SZ_d + 0xA0) >> 4) >> DAT_1F8003A4`, ten slots nearer when the actor carries `0x800000` |
+
+So the four cells tile one `16 x 16` blob of the menu-glyph atlas page, the
+fill a dark grey with the STP bit set and the surround the transparent index
+`0`. The `0xA0` bias sorts the blob behind the actor standing on it; a field
+ground tile without the `0x8000` sort bit goes into the fixed far bucket
+([the field ground pass](#the-field-ground-pass-two-emitters-one-gate)), so
+the blob draws over it. On the overworld every corner's
+`SY` also takes the curvature entry at `(sum >> 2) >> 5` - the mean depth,
+with **no** `+1`, unlike the prim leaves and the fog. Nothing culls.
+
+The port is `legaia_engine_core::drop_shadow` (the grid and the packet, both
+tagged) under `World::field_drop_shadows`, which walks the player and every
+partition-1 channel whose clip id `+0x5C` is non-zero - the port's stand-in
+for draw kind `1`, which an actor with no clip never reaches. Both hosts wrap
+the cells through `screen_prim::drop_shadow_prim` into their field screen-prim
+pass with each corner's scene depth, taken six units above the floor, so the
+depth test does the job retail's ordering does: under the actor, over the
+ground. `crates/engine-core/tests/drop_shadow_retail_capture_disc.rs` rebuilds
+the packets from `town01`, `map01` and `map03` states' own actor lists and
+camera matrix and matches every retail blob packet exactly, vertices and UVs,
+and checks the blob's texels and palette in the engine's scene VRAM against
+the state's VRAM word for word. See `ghidra/scripts/funcs/8001c394.txt`,
+`800460ac.txt` and `8001b964.txt`.
 
 ## Per-primitive TMD render helpers (`FUN_8002735C` family)
 
@@ -847,11 +916,34 @@ misses the `addiu v0, v0, 0x40b8` that re-bases the next two.
 
 ## Frame setup + present
 
-- **`FUN_800271A8`** - graphics-scratch init. Allocates two `0x8000`-byte buffers
-  (`FUN_80017888`) into `0x8007BB04` / `0x8007BB08`, fills the second with a
-  `0x4000`-entry `u16` depth ramp (`sra(acc, 18)`, `acc` stepping quadratically),
-  then resets the GTE / primitive buffers (`FUN_8005B268`, `FUN_8003D1A4`,
-  `FUN_8003D254`). Runs once before the emitters have a buffer to write into. See
+- **`FUN_800271A8`** - the overworld's scratch init and **screen-Y curvature
+  table**. Gated on the overworld byte `_DAT_8007B6A8`; the MAN installer
+  `FUN_8003AEB0` calls it as `(0x28, 0x2AB980)` (`0x8003AF90..9C`, the low half
+  in the delay slot). It sets the overworld bit `_DAT_1F800394 & 1`, allocates
+  two `0x8000`-byte buffers (`FUN_80017888`, each first-use-guarded) into
+  `0x8007BB04` / `0x8007BB08`, fills the second with a `0x4000`-entry quadratic
+  drop (`ramp[k] = s0 >> 18`, `s0` stepping by a running sum of `0x28`), then
+  sets `H = 0x3C0` (`FUN_8003D254`) and the base matrix (`FUN_8003D1A4`) and
+  `RTPS`es `(0, ramp[3n / 2], 2000)` to fill the first with `SY - 0x78`, two
+  iterations behind the transform. The result is a `0x2000`-entry `i16` table,
+  flat near the eye and growing with depth, that the overworld consumers index
+  at `(SZ >> 5) + 1` and add to a vertex's `SY`: the overworld mesh dispatch
+  hands it to its prim leaves (`FUN_80043390`, `0x800435E8..0x80043600`), and
+  the fog emitter `FUN_8003F86C` and the drop-shadow emitter `FUN_8001C394`
+  add it themselves. The leaves bend **per vertex**: after the `NCLIP` and the
+  OT depth, each corner's `SY` takes the entry its own `SZ` indexes
+  (`0x801F7770..0x801F77E4` in the world-map leaf at `0x801F7644`). Only the
+  eight overlay leaves (rows `12..19`) read the pointer; the four SCUS lit
+  rows (`8..11`) never bend. Port: `engine-core::overworld_curvature` (pinned
+  entry for entry against the `keikoku_chest_preload` capture). The fog
+  sheets and the drop shadow add it on the CPU; the continent, its landmarks
+  and the player mesh bend in the hosts' mesh shaders, which evaluate the
+  table in closed form (`OVERWORLD_CURVE_WGSL`, the page's `overworldCurve`,
+  both pinned by `curvature_closed_form`) with a per-frame scale
+  (`frame_curve_scale`: `1` under the walk camera, whose matrix carries the
+  6x world scale, `6` under a `1x` scripted shot, `0` under the top-view
+  debug camera). The port bends every overworld scene draw, lit rows
+  included, and the overworld markers bend with the ground they stand on. See
   `ghidra/scripts/funcs/800271a8.txt`.
 - **`FUN_8003DAA8`** is **not** a present driver, despite the counters it
   advances. It is the CD load-kick / completion driver the asset queue drains
@@ -1145,7 +1237,9 @@ than from an actor: when the game mode is `3` and the script gate
 `0x8007322C` into scratchpad `0x1F8002D0` and calls `FUN_8003F348`, which
 walks the 80-record fog pool at `_DAT_8007B7E0` and, per live record, ages,
 drifts, colours and emits two `POLY_FT4` halves (command `0x2E`, page
-`0x27`, CLUT `0x7640`, OT bucket `view_z >> 5`) through `FUN_8003F86C`. The
+`0x27`, CLUT `0x7640`, OT bucket `SZ >> 5`) through `FUN_8003F86C`. Each half
+is a view-space billboard at the particle's depth, not a world-space quad
+([`field-ambient-fx.md`](field-ambient-fx.md#the-sheet-is-a-view-space-billboard)). The
 records come from the ambient emitter's spawner `FUN_801D629C`
 ([`field-ambient-fx.md`](field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)).
 The port keeps that shape: `engine-core::fog_particles` is the pool and the

@@ -41,6 +41,7 @@ pub mod play_field_fx;
 pub mod play_field_hud;
 pub mod play_fishing;
 pub mod play_fmv;
+pub mod play_host_parity;
 pub mod play_menu;
 pub mod play_minigame_arena;
 pub mod play_minigame_slots;

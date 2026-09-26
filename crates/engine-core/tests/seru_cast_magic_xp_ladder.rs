@@ -145,6 +145,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     let mut leveled: Vec<(u8, u8, u8)> = Vec::new();
     let mut casts = 0usize;
     let mut summon_requests = 0usize;
+    let mut seen_banner: Option<legaia_engine_core::world::BattleMessageBanner> = None;
     for _ in 0..12 {
         if !wait_for_prompt(&mut w, &mut summon_requests) {
             panic!(
@@ -209,6 +210,12 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
             }
             w.set_pad(0);
             let _ = w.tick();
+            if let Some(b) = &w.battle.message_banner {
+                seen_banner = Some(b.clone());
+            }
+        }
+        if let Some(b) = &w.battle.message_banner {
+            seen_banner = Some(b.clone());
         }
         assert!(
             w.casting.pending_cast.is_none(),
@@ -247,18 +254,18 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
         "each Seru cast stages exactly one summon spawn request"
     );
     // The FUN_801F452C banner: "<spell name>'s magic level increased." on the
-    // world's banner channel, composed through the spell-name table.
+    // battle message banner (screen element 0x65), composed through the spell-name table.
     let name = w
         .tables
         .spell_catalog
         .get(0x81)
         .map(|d| d.name.clone())
         .unwrap();
-    let banner = w
-        .party
-        .current_art_banner
-        .as_ref()
-        .expect("the level-up staged the retail banner");
+    let banner = seen_banner.expect("the level-up raised the retail banner (element 0x65)");
+    assert_eq!(
+        banner.element,
+        legaia_engine_core::world::MAGIC_LEVEL_BANNER_ELEMENT
+    );
     assert_eq!(
         banner.text,
         legaia_engine_core::magic_xp::magic_level_increased_message(&name)

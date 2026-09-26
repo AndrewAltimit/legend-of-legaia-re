@@ -1,7 +1,7 @@
 //! Proportional dialog-font loader and layout helper.
 //!
 //! PORT: FUN_80036888, FUN_80035F04, FUN_8003CC98, FUN_8003CD00
-//! REF: FUN_80036044 (typewriter glyph count; see `measure` for what is ported)
+//! REF: FUN_80036044 (typewriter glyph count; ported in `glyph_count`)
 //!
 //! Consumes `extracted/font/dialog_font_atlas.png` (224×210 RGBA atlas of
 //! 14×15-pixel glyph cells, 16 columns × 14 rows) and
@@ -21,9 +21,11 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 pub mod builtin;
+pub mod glyph_count;
 pub mod limits;
 pub mod measure;
 
+pub use glyph_count::{GlyphCount, typewriter_glyph_count};
 pub use limits::{TEXT_LIMITS, TextLimit, limit_for};
 pub use measure::{MeasureOptions, PenItem, TextMeasure};
 

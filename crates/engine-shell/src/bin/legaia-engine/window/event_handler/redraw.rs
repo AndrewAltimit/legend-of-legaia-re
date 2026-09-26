@@ -58,9 +58,7 @@ impl PlayWindowApp {
             // (`town01` -> fmv 1 -> `town0b`). The shared kernel performs the
             // transfer; without it the window put the player back where the
             // movie started.
-            if let Some(outcome) = self.session.host.apply_pending_fmv_handoff() {
-                log::info!("cutscene: {outcome}");
-            }
+            self.apply_fmv_handoff();
             self.cutscene = None;
         }
         let run_ticks = if self.cutscene.is_some() { 0 } else { ticks };
@@ -486,17 +484,12 @@ impl PlayWindowApp {
             // texture this frame (and restore it).
             self.check_battle_vram_residency();
             if self.menu_runtime.is_open() {
-                let p = self.pad;
-                let input = MenuInput {
-                    cross: p & 0x4000 != 0,
-                    circle: p & 0x2000 != 0,
-                    triangle: p & 0x1000 != 0,
-                    square: p & 0x8000 != 0,
-                    up: p & 0x0010 != 0,
-                    down: p & 0x0040 != 0,
-                    left: p & 0x0080 != 0,
-                    right: p & 0x0020 != 0,
-                };
+                // Edges, not the held word: the runtime filters no repeats,
+                // so a held key used to step the shop cursor / commit a
+                // screen every tick it stayed down. The browser page sends
+                // one edge per press through the same decode.
+                let input =
+                    legaia_engine_core::menu_runtime::menu_input_from_pad_edges(pressed_edge);
                 self.menu_runtime.tick(&mut self.session.host.world, input);
             }
             // A field-VM-triggered shop the player has now closed: tell
@@ -578,9 +571,7 @@ impl PlayWindowApp {
             // here too. Safe beside the drain at the top of this handler:
             // both go through `World::take_finished_fmv`, so whichever runs
             // first is the only one that transfers.
-            if let Some(outcome) = self.session.host.apply_pending_fmv_handoff() {
-                log::info!("cutscene: {outcome}");
-            }
+            self.apply_fmv_handoff();
         }
         // While a cutscene plays, the window shows the video and the
         // scene render is skipped entirely.
@@ -806,6 +797,11 @@ impl PlayWindowApp {
                 in_world_map_now,
             );
             r.set_backface_cull(nclip_mode);
+            // The overworld's per-vertex screen-Y bend (`FUN_800271A8`'s
+            // table, applied by retail's overworld prim leaves), scaled for
+            // this frame's camera - the same kernel the browser play page
+            // stages `u_curve` from.
+            r.set_overworld_curvature(self.overworld_curve_scale(cutscene_cam));
             if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
                 r.set_semi_blend(false);
             }
@@ -1152,6 +1148,14 @@ impl PlayWindowApp {
                 // whose record doesn't resolve (e.g. the low walk-move
                 // ids the locomotion controller already covers) drop out
                 // harmlessly.
+                // A settle pick that binds from the scene bank (the `4C CE`
+                // override, the `99` sentinel) names a record of the same
+                // bundle the cues below resolve through.
+                if let Some(bundle) = self.npc_anim_bundles.0.as_ref()
+                    && let Some(anim) = self.session.host.world.locomotion.player_anim.as_mut()
+                {
+                    anim.resolve_scene_clip(bundle);
+                }
                 let move_cues =
                     std::mem::take(&mut self.session.host.world.locomotion.player_move_cues);
                 if !move_cues.is_empty()
@@ -1795,9 +1799,11 @@ impl PlayWindowApp {
                             // Raw retail-convention transform, like the NPC
                             // draws: the field camera's FIELD_WORLD_FLIP
                             // provides the single net Y negation.
+                            // The board's fade scales each tile about
+                            // its own origin (the tile actor's `+0x72`).
                             let model = Mat4::from_translation(Vec3::new(
                                 d.world[0], d.world[1], d.world[2],
-                            ));
+                            )) * Mat4::from_scale(Vec3::splat(d.scale));
                             draws.push(SceneDraw {
                                 mesh,
                                 mvp: cam * model,
@@ -1858,6 +1864,17 @@ impl PlayWindowApp {
                             }),
                     });
                 }
+                // The camera the battle bodies' tint pass judges depth under
+                // (`World::battle_actor_draw_plan`): the phase-scripted dome
+                // camera this pass projects with, or none outside a
+                // stage-dome battle (the body is then judged at retail's
+                // parked depth).
+                let battle_pose = (in_battle && self.battle_stage_mesh.is_some()).then(|| {
+                    self.battle_camera
+                        .as_ref()
+                        .map(|c| c.pose())
+                        .unwrap_or(legaia_engine_vm::battle_cam_script::BOOT_POSE)
+                });
                 for (i, actor) in self.session.host.world.actors.iter().enumerate() {
                     let Some(tmd_idx) = actor.tmd_binding else {
                         continue;
@@ -1878,6 +1895,24 @@ impl PlayWindowApp {
                         && actor.battle.render_flag
                             == legaia_engine_vm::battle_target_group::RENDER_FLAG_HIDDEN
                     {
+                        continue;
+                    }
+                    // Retail's per-body battle draw (`FUN_800480D8` over the
+                    // tint pass `FUN_8004A908`): a body whose colour word
+                    // comes out zero is not drawn unless the lone-monster
+                    // grey gate stamps it, and one nearer than view depth
+                    // `0xA1` is rejected by the render dispatcher.
+                    let battle_plan = if in_battle {
+                        self.session.host.world.battle_actor_draw_plan(
+                            i,
+                            battle_pose.as_ref(),
+                            BATTLE_WORLD_SCALE,
+                            self.battle_stage_outdoor,
+                        )
+                    } else {
+                        None
+                    };
+                    if battle_plan.is_some_and(|p| !p.drawn) {
                         continue;
                     }
                     // Board-owned tile actors draw once per cell through the
@@ -1993,35 +2028,37 @@ impl PlayWindowApp {
                             // keep their own cue (their retail look is the
                             // same rule; that thread is not this one's).
                             //
-                            // NOT WIRED: `render_flag == 2` (the capture /
-                            // defeat fade, SM arm 2) also ORs `0x81000000`
+                            // Not modelled: `render_flag == 2` (the capture
+                            // / defeat fade, SM arm 2) also ORs `0x81000000`
                             // into the node's mode word, so the fading actor
-                            // draws ABE|ABR1 additive and black = gone; a
-                            // colour word of `0` then skips the draw
-                            // outright (`FUN_800480D8`'s word-zero arm). The
+                            // draws ABE|ABR1 additive and black = gone. The
                             // renderer has no per-`SceneDraw` blend override,
                             // so the fade is left un-cued (drawn opaque and
                             // untinted) rather than as an opaque black
-                            // silhouette. Colour `0` is likewise left alone:
-                            // it is the summon-hide's "not drawn" word.
-                            if b.render_blend != 0
-                                && b.render_color != 0
+                            // silhouette; once its lanes reach zero the draw
+                            // plan above skips the body (`FUN_800480D8`'s
+                            // word-zero arm), as it does the summon hide.
+                            // The two cursor flags keep their own cue.
+                            //
+                            // The cue is the whole tint pass, not only its
+                            // blend arm: with no blend running retail still
+                            // stages the lanes as the far colour, weighted by
+                            // view depth, and a body past half its radius
+                            // (in `/16` depth units) takes the depth-cue arm
+                            // - a darker copy of its colour, or a brighter
+                            // one on the outdoor stages - plus the status
+                            // colours. `World::battle_actor_draw_plan`.
+                            if let Some(p) = battle_plan
                                 && !matches!(
                                     b.render_flag,
                                     ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED | 2
                                 )
                             {
-                                use legaia_engine_vm::battle_impact_fx as ifx;
-                                let c = ifx::unpack_actor_state_rgb(b.render_color);
                                 cue = Some(legaia_engine_render::DrawCue {
-                                    far: [
-                                        f32::from(c[0]) / 255.0,
-                                        f32::from(c[1]) / 255.0,
-                                        f32::from(c[2]) / 255.0,
-                                    ],
+                                    far: p.cue_far(),
                                     near_z: -1.0,
                                     far_z: 0.0,
-                                    max_ir0: ifx::tint_ir0(b.render_blend),
+                                    max_ir0: p.cue_ir0(),
                                 });
                             }
                         }
@@ -2484,6 +2521,10 @@ impl PlayWindowApp {
             // the same three through one sorted pass with its HUD a layer
             // above the canvas.
             let mut light_prims = field_fog_prims;
+            // The actor drop shadows (`FUN_8001C394`), depth-tested against
+            // the scene just drawn - the play page's `tick_field_drop_shadow_prims`
+            // twin, through the same `World::field_drop_shadows` kernel.
+            light_prims.extend(self.field_drop_shadow_prims());
             light_prims.extend(move_strip_prims);
             light_prims.extend(self.field_light_screen_prims());
             screen_prims.extend(self.weapon_trail_screen_prims(r));
@@ -2539,6 +2580,9 @@ impl PlayWindowApp {
             // same residency predicate decides for both hosts whether the
             // sprite or the letterforms draw.
             screen_prims.extend(self.dance_countin_prims());
+            // The slot machine's paylines, off the machine's own ported pass
+            // and projection - the segments both browser pages stroke.
+            screen_prims.extend(self.slot_payline_screen_prims());
             // The overworld's entity + player markers: the shared
             // `world_map_markers` kernel's quads, the browser play page's
             // twin (`crate::play_world_map_markers` there).

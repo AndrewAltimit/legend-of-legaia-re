@@ -495,31 +495,56 @@ pub const OPTIONS_DISPLAY_ROWS_WITH_KEY_CONFIG: [OptionsRowDef; 11] = {
 
 /// The display set for a session armed with (`true`) or without (`false`) a
 /// binding table. One accessor so a host cannot pick the wrong array.
+///
+/// The retail set is the row span sub-screen `0x17` hands the generic picker
+/// ([`OPTIONS_SUBSCREEN_ROW_SPAN`]), sliced out of the layout table - so the
+/// span, not the table's length, is what bounds the browse cursor.
 pub fn options_display_rows(key_config: bool) -> &'static [OptionsRowDef] {
+    static RETAIL: [OptionsRowDef; 10] = OPTIONS_DISPLAY_ROWS;
     if key_config {
         &OPTIONS_DISPLAY_ROWS_WITH_KEY_CONFIG
     } else {
-        &OPTIONS_DISPLAY_ROWS
+        let (start, end) = OPTIONS_SUBSCREEN_ROW_SPAN;
+        &RETAIL[usize::from(start)..=usize::from(end)]
     }
 }
 
 /// The options screen's row span when it runs as menu sub-screen `0x17`:
 /// retail's table slot is a thin wrapper handing the generic picker
 /// `FUN_801DA9F8` the fixed argument tuple `(start = 0, end = 9,
-/// init = 0x30, return_subscreen = 1)` - all ten display rows, the
-/// `0x30` init word, and the `0x01` slot-selector sub-screen as the
-/// exit destination.
+/// window = 0x30, return_subscreen = 1)` - all ten display rows, the
+/// window the picker raises, and the root command picker (sub-screen `1`)
+/// as the exit destination.
+///
+/// The picker's state 0 stores the third argument into bytes `+5` and `+9`
+/// of the window script at `0x801E4E08` (`0x801DAA78` / `0x801DAA7C`) - the
+/// window-id bytes of its first two 4-byte instructions - so `0x30` is a
+/// window id, not an init word. The fourth argument is what its exit arm
+/// stores into the sub-screen id `DAT_801E46A4` (`sw s6,0x46a4(v0)` at
+/// `0x801DAC24`).
 ///
 /// PORT: FUN_801dd330 (see
-/// `ghidra/scripts/funcs/overlay_menu_801dd330.txt` - 11 instructions,
-/// nothing but the call)
-/// NOT WIRED: the engine's options screen runs [`OptionsPhase`] directly;
-/// no host consumes the sub-screen `0x17` wrapper tuple (this span and the
-/// two constants below) yet.
+/// `ghidra/scripts/funcs/overlay_menu_801dd330.txt` - nothing but the call)
+///
+/// Live: [`options_display_rows`] slices the retail display set out of the
+/// layout table with this span, and every [`OptionsSession`] both play hosts
+/// open browses that slice. The wrapper's other two arguments have engine
+/// counterparts rather than readers: the exit destination `1` is the root
+/// command picker (`FUN_801D6B20`) that `FieldMenuSession::resume` drops back
+/// to, and window `0x30` (48) is the settings window the hosts draw off the
+/// disc-parsed descriptor table.
 pub const OPTIONS_SUBSCREEN_ROW_SPAN: (u8, u8) = (0, 9);
-/// The wrapper's `init` argument (`li a2, 0x30`).
+
+// The span must cover the layout table exactly - a longer span would read
+// past it, a shorter one hide retail rows.
+const _: () = assert!(
+    OPTIONS_SUBSCREEN_ROW_SPAN.1 as usize + 1 - OPTIONS_SUBSCREEN_ROW_SPAN.0 as usize
+        == OPTIONS_DISPLAY_ROWS.len()
+);
+/// The wrapper's third argument (`li a2, 0x30`): the window id the picker
+/// patches into its window script.
 pub const OPTIONS_SUBSCREEN_INIT: u32 = 0x30;
-/// The wrapper's exit destination (`li a3, 0x1` - the slot selector).
+/// The wrapper's exit destination (`li a3, 0x1` - the root command picker).
 pub const OPTIONS_SUBSCREEN_RETURN: u8 = 0x01;
 
 /// Phase of the SM. Mirrors the retail flow: browse over the display

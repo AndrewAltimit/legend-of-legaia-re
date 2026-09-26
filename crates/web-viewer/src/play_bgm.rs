@@ -139,10 +139,10 @@ impl WebBgmDirector<'_> {
         &mut self,
         entry_bytes: &[u8],
     ) -> Option<(legaia_seq::Seq, legaia_engine_audio::VabBank)> {
-        let vab_off = entry_bytes.windows(4).position(|w| w == b"pBAV")?;
-        let seq_rel = entry_bytes[vab_off..]
-            .windows(4)
-            .position(|w| w == b"pQES")?;
+        // The installer walk's split (type-0 bank, type-2 score), not a
+        // magic hunt - see `chunk_install::owned_bank_offsets`.
+        let split = legaia_engine_core::chunk_install::owned_bank_offsets(entry_bytes)?;
+        let vab_off = split.vab;
         let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
         let body = &entry_bytes[vab_off..];
         let bank = self.out.with_spu(|spu| {
@@ -158,7 +158,7 @@ impl WebBgmDirector<'_> {
             );
             legaia_engine_audio::VabBank::upload(spu, &mut alloc, &report, body)
         });
-        let seq = legaia_seq::Seq::parse(&entry_bytes[vab_off + seq_rel..]).ok()?;
+        let seq = legaia_seq::Seq::parse(&entry_bytes[split.seq..]).ok()?;
         *self.bank = Some(bank.clone());
         Some((seq, bank))
     }

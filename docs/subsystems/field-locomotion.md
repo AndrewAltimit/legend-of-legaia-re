@@ -370,7 +370,28 @@ is skipped the settle reads `2` and the player idles - which is what the [timed 
 
 The system channel's per-tick store of `2` is `World::field_system_channel_clip_reset`, applied on the ticks a kind-0 warp keeps the pad controller off - the only ticks on which it reaches the settle, since the controller rewrites the base first on every other tick. The other ticks retail skips the controller on (an open conversation, a cutscene timeline, the movement lock) are not routed through it.
 
-A frame that moved the player without the pad step (a script walk) keeps the motion-derived walk above, since the port does not carry op `0x22`'s base for script moves. Not modelled: the op-`4C CE` override `_DAT_8007B6AC` (read as `0`; its two disc users, `jagaroom` and `urudre1`, bind scene-bank records) and the scene-bank sentinel, which falls back to the motion-derived pair.
+The script arms that aim a clip at the player write the base the same way: op `0x22` `EXEC_MOVE` (`0x801DE998..0x801DEAB8`) and the player arm of op `4C 51` (`0x801E1954..0x801E1A3C`) each test the context against `_DAT_8007C364`, store their clip operand into `_DAT_8007BDD8`, and run the pick and bind at once, without the settle's bind block. The port routes both through `World::field_player_script_clip`.
+
+**The clip override `_DAT_8007B6AC`.** Op `4C CE <value>` stores its byte there
+(`0x801E2A20..0x801E2A30`) and scene entry zeroes it (SCUS `0x8003B6F0`, inside
+`FUN_8003AEB0`). While it is non-zero a party-flagged pick binds `base + override - 1`
+from the **scene** bank, the party-bank bit cleared around the bind. Its two disc users
+point the player's walk, idle and run at scene-bundle records this way: `jagaroom` (`4C CE
+24`, after `CC F8 50 26 00` swaps the player's mesh to scene model `0x26`) and `urudre1`
+(`4C CE 12`, cleared again by `4C CE 00`). The `99` sentinel binds scene record `leader`
+the same way. The port keeps the word on `World::locomotion.clip_override`; a pick that
+lands in the scene bank hands the record to `FieldPlayerAnim::select_scene_record`, and
+both play hosts load it from the scene's own ANM bundle
+(`FieldPlayerAnim::resolve_scene_clip`, beside their scripted-clip cue drain). A scene
+record whose bone count differs from the player's clips is refused and the motion-derived
+pair plays instead. That guard matters for `jagaroom`: its override records belong to the
+mesh the scene's `4C 50` swaps onto the player, and a player-targeted `4C 50` has no
+player-mesh re-bind in the port, so the drawn mesh stays the party model. Whether the
+guard fires there - whether the two skeletons differ - has not been measured.
+
+A frame that moved the player without the pad step (a script walk) still keeps the motion-derived walk for a party-bank pick; a scene-bank pick binds whoever moved the player, as retail's selector does. A script also writes the bit directly: `B1 F8 18` / `B2 F8 18` are op `0x31` / `0x32` (`CFLAG_SET` / `CFLAG_CLR`) with the extended target `0xF8`, which the prologue resolves through `FUN_8003C83C` to the player object, so the arm's `+0x10` write lands on the player.
+
+The field VM hands every `0xF8`-targeted `0x31` / `0x32` to the host (`FieldHost::player_cflag`), and the port routes bit `24` to `World::locomotion.player_party_bank` (`World::field_player_cflag`) - on the cutscene timeline, the field channels and the scene script alike. The disc census finds the player's other bits written the same way (`0x01`, `0x0A`, `0x0D`, `0x13`, `0x15`, `0x1D`, `0x1F`); those stay on the caller's context, because the port has no single player `+0x10` word their readers consult.
 
 ### Wall-slide resolution (`FUN_80046494`)
 
@@ -1010,7 +1031,22 @@ From `s3_rimelm_freeroam` with Down held, a position poke onto `town01`'s kind-0
 So the landing is `38` vsyncs after the crossing and the pad returns `40` vsyncs after that, and the `-1000` sentinel lives for the rest of the landing tick only - it is gone before the next tick's readers (op `0x4C 2x`'s facing turn, the settle's hop gate) look, in any scene whose system channel runs `FUN_801DA51C`. The player's clip id `+0x5C` reads `2` (idle) from vsync 64 to 136 while Down stays held, and `1` again from 140. Each drain tick also stores the clamped `0` at `0x801D1630` after the `-2` at `0x801D162C` when the hold is already empty.
 
 **Engine port.** `legaia_engine_vm::field_warp_tile` carries the timer, the landing, the hold drain, the pad gate and the system channel's sentinel clear (`clear_landed_sentinel`); `World::arm_field_warp` / `World::tick_field_warp` apply them to the world, and `SceneHost::dispatch_walk_on_trigger` ticks the warp before its tile compare and runs the landing tile's kind-1 record on the landing frame. `tick_field_warp` ends every frame with the clear, so the timer reads `-1000` only inside the landing frame, as in retail; the channel's own gates (its `+0x8A`, the scratchpad dialogue bit, its movement lock) are not modelled. The pad-off ticks bind the idle clip through `World::field_system_channel_clip_reset`, and
-`engine-core/tests/field_player_clip_disc.rs` pins the captured sequence: walk on the crossing frame, idle from the next frame through the landing (`0x26` frames) and the hold, walk again `0x28` frames after the landing with Down still held. The port has one fade slot, so the fade-in replaces the held fade-out when its delay runs out. Not modelled: the `0x801DA7F0` actor tag, the `0x1F800394 & 0x80000` same-tile re-run, and the camera re-pin beyond the player `MoveTo` event the hosts follow.
+`engine-core/tests/field_player_clip_disc.rs` pins the captured sequence: walk on the crossing frame, idle from the next frame through the landing (`0x26` frames) and the hold, walk again `0x28` frames after the landing with Down still held. The port has one fade slot, so the fade-in replaces the held fade-out when its delay runs out. The `0x801DA7F0` actor tag is the `4C E1` text balloon (`FUN_8003C764`'s handler): each running frame and the landing frame drop `World::cutscene.text_balloon`, so a caption up at the crossing does not survive the fade. Not modelled: the camera re-pin beyond the player `MoveTo` event the hosts follow.
+
+#### The same-tile re-poll
+
+On an unchanged tile the dispatcher re-runs the tile's kind-1 record every tick while
+scratchpad `0x1F800394 & 0x80000` is set and the player's movement lock is clear
+(`0x801D2090..0x801D20F8`; kind-1 only, and without the changed-tile arm's clip reset). A
+crossing clears the bit before anything else (`0x801D2110..0x801D2120`). Its only setter
+is field-VM op `2E 13` and its script clear is `2F 13`; every mode entry clears it too.
+The users are Rim Elm's "stand here and press" beats - `town01` P2[12..14] on tiles
+`(30..32, 19)` and their `town0b..0e` twins: each record raises the bit, tests the held
+pad (`42 01 00 05 00`), and on a press clears it and runs its beat. Fired on the crossing
+only, the poll ran once with nothing held and a later press on the tile was never seen.
+The port is `SceneHost::dispatch_walk_on_trigger` with `world::WALK_ON_REPOLL_FLAG`;
+`engine-core/tests/walk_on_trigger_dispatch_disc.rs`
+(`a_repoll_record_reruns_until_the_press`) drives the `town01` tile on the disc.
 
 The partition-2 gate bitmap (`DAT_80085758`) **is** the field VM's `0x50`/`0x60`/`0x70` system-flag bank - one store, shared by the record dispatcher's C1/C2 test (`World::p2_gate_flag_set` = `system_flag_test`) and the VM's flag writes, so an opening-timeline `set` is immediately visible to the next record's gate. It also overlaps the saved story-flag window at byte `+0x158` (`0x80085758 - 0x80085600`); the engine save mirrors the bank into that window and reloads seed it back. Disc-gated coverage: `crates/engine-core/tests/walk_on_trigger_dispatch_disc.rs` (opening-to-free-roam progression, south-gate exit to `map01`, house-door contact teleport, ambient no-lock, gate-flag save round-trip).
 
@@ -1813,11 +1849,13 @@ The scene MAN loader `FUN_8003AEB0` spawns two of the programs, each gated on a 
 
 Those are the flags programs 0 and 1 **set** and programs 2 and 3 **clear**. So the loader is not starting cutscenes - it is finishing ones a scene change interrupted. Programs 0 and 1 are openers, 2 and 3 their closers, and the flag is the handshake that survives the scene boundary.
 
+The openers belong to the two world-map **travel arts**: the only other `jal 0x801D5A24` sites on the disc are phase 0 of the Riremito handler `FUN_801EE094` (`0x801EE110`, program 1) and of the Rula handler `FUN_801EE328` (`0x801EE3A4`, program 0) - see [`travel_art_actor`](../../crates/engine-vm/src/travel_art_actor.rs). So each program pair is one travel art's cast, split across the warp: the opener plays in the scene being left, the closer in the scene arrived at.
+
 | program | states | what it does |
 |---|---|---|
-| 0 | `1..=5` | Set flag `0x17`, clear `0x18`; request BGM `0x7F3` and wait for the acknowledge; SFX `0x200`; stage the `0x801F2658` ambient record until `+0x9E >= 0x28`, then the `0x801F2498`/`0x801F250C` pair and clear flag `0x0B`; then idle, staging the ambient record forever. |
+| 0 | `1..=5` | Set flag `0x17`, clear `0x18`; request side-band sound bank `0x7F3` and wait for the acknowledge; SFX `0x200`; stage the `0x801F2658` ambient record until `+0x9E >= 0x28`, then the `0x801F2498`/`0x801F250C` pair and clear flag `0x0B`; then idle, staging the ambient record forever. |
 | 1 | `11..=15` | Set flag `0x0C`, clear `0x18`, SFX `0x1B`; two staged part-pair beats at `0x14` and `0x32`; a third at `0x14` that clears flag `0x0B`, zeroes the player's `+0x72` and raises `player[+0x10] \|= 0x200000`; retire at `0x64`. |
-| 2 | `21..=26` | Engage the player, park its speed on the actor's `+0x72`; wait for the BGM acknowledge then stream **XA17** (`FUN_80019794(0x10)`); at `0x28` set scratchpad story bit `0x01000000`, seed the lift, stage the `0x801F2580`/`0x801F25EC` pair and fire the chunked cue `FUN_8003D53C(0x10, 7, 0x135)`; wind the lift down; wait out the clip; clear flag `0x17` and the story bit, release, retire. |
+| 2 | `21..=26` | Engage the player, park its speed on the actor's `+0x72`; wait for the bank acknowledge then stream **XA17** (`FUN_80019794(0x10)`); at `0x28` set scratchpad story bit `0x01000000`, seed the lift, stage the `0x801F2580`/`0x801F25EC` pair and fire the chunked cue `FUN_8003D53C(0x10, 7, 0x135)`; wind the lift down; wait out the clip; clear flag `0x17` and the story bit, release, retire. |
 | 3 | `31..=37` | Engage as program 2 does; SFX `0x1B` at `0x28`; the same two part-pair beats as program 1; restore the parked speed and drop `0x200000`; a `0x40` beat; clear flag `0x0C`, release, retire. |
 
 ### Three shapes that make the 23 live arms short
@@ -1835,6 +1873,28 @@ Both closers end at `0x801D55E0`: test flag `0x18` (`func_0x8003ce64`), clear `p
 ### Provenance, and why the old reading was wrong
 
 The static `overlay_0897_801d4a60.txt` dump stops at **690** instructions. Five independent live-RAM field captures agree on **756**, and so does capstone over `extracted/overlays/overlay_field_0897.bin` at the committed base `0x801CE818` (file `0x006248`), which decodes 756 instructions ending on the `jr ra` epilogue at `0x801D5628`. The 66 dropped instructions are states `0x22`..`0x25` and the shared tail - most of program 3 - which is how a four-program state machine came to be documented as a single "scripted actor-approach controller".
+
+The request word is `_DAT_8007BABC` against the acknowledge `_DAT_8007BAA0` - the **side-band sound-bank** pair `FUN_800243F0` settles into VAB slot 3, the same pair the field VM's op `0x36` subs `1` / `2` drive, and not a BGM track: state `0x02`'s guard is the one inlined at `0x801D4B58..0x801D4B90` ([`audio.md`](audio.md#vab-slots---one-installer-twelve-records) slot `3`).
+
+In the engine, `World::tick_scene_programs` steps every live program once per actor tick from the handler pass, feeding the pair from `World::audio.sound_stream` and applying the flag, SFX, request and player effects. The part stages and the XA legs are counted and not rendered: the staged records live in the field overlay's data segment, which no engine loader reads, and neither host has a field-side XA sink.
+
+The openers are seated by the travel arts themselves. Phase 0 of each handler raises flag
+`0x0B` and calls `FUN_801D5A24(n)`; the world applies that
+(`World::apply_travel_art_frame`, through `World::spawn_scene_program`), and the phase-1
+dwell waits on flag `0x0B`, which the opener clears in its state 4 (program 0) or its
+third beat (program 1). Rula's phase 2 (`0x801EE400..0x801EE4C4`) re-reads the player's
+live `+0x16` every frame, subtracts the accumulating velocity, raises the player's `+0x10`
+bit 0 and scratchpad `0x1F800394` bit 24, and on crossing `-0x618` clears the post-warp
+pad hold `_DAT_8007B6B4` along with the flash; the world applies each of those to the
+player actor. Riremito's resolve restores the render scale its opener zeroed (`+0x72 =
+0x1000`) and drops `+0x10 & 0x200000` (`0x801EE268..0x801EE294`). The warp seats the
+player at the stored tile with Y `0` (`*0x80073EFC = 0`) and then runs the MAN loader's
+resume (`World::man_load_resume_programs`) - the engine's warp stays on the loaded map, so
+that stands in for the scene load `FUN_8001FD44` stages, whose MAN init is where retail
+starts the closer. Neither travel art has a retail player-facing installer (both handlers
+are reached only through the dev handler-id table, one word each at `0x801F3458` /
+`0x801F3460`); the engine installs Riremito from the world-map debug sub-list's hand-off
+and Rula from tests only.
 
 The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), "scripted-scene voice stream". That call site is program 2's state `0x16`.
 

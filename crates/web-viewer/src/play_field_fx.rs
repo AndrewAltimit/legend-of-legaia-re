@@ -1,5 +1,5 @@
-//! Field screen-space effects on the play page: the fog sheets and the
-//! op `0x34` sub-1 attached lights.
+//! Field screen-space effects on the play page: the fog sheets, the actor
+//! drop shadows and the op `0x34` sub-1 attached lights.
 //!
 //! Retail draws the field fog pool from the field render pass
 //! (`FUN_8003F348` at `0x80026F24`, gated on game mode `3` and
@@ -47,6 +47,40 @@ impl LegaiaRuntime {
             .fog_render_step(&view)
             .iter()
             .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
+            .collect()
+    }
+}
+
+impl LegaiaRuntime {
+    /// This tick's actor drop shadows (`legaia_engine_core::drop_shadow`,
+    /// retail's `FUN_8001C394` blob) as screen primitives: the native
+    /// window's `field_drop_shadow_prims` twin - `World::field_drop_shadows`
+    /// through the same follow camera as the fog sheets, wrapped by the shared
+    /// `drop_shadow_prim`. Each cell carries its corners' scene depth, so the
+    /// page's screen-prim pass tests it against the field it already drew:
+    /// under the actor standing on it, over the ground. The blob texels live
+    /// on the menu-glyph atlas page `(960, 256)`, resident in the field VRAM
+    /// through the boot system-UI underlay. Empty outside game mode 3.
+    pub(crate) fn field_drop_shadow_prims(&self) -> Vec<ScreenPrim> {
+        let Some(host) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        let world = &host.world;
+        if !legaia_engine_core::world::World::fog_mode(world.mode) {
+            return Vec::new();
+        }
+        let frame = resolve_field_camera(world, &self.camera, None, [0.0, 0.0]);
+        let Some(view) = frame.field_view() else {
+            return Vec::new();
+        };
+        world
+            .field_drop_shadows(&view)
+            .iter()
+            .map(|q| {
+                legaia_engine_ui::screen_prim::drop_shadow_prim(
+                    q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth,
+                )
+            })
             .collect()
     }
 }

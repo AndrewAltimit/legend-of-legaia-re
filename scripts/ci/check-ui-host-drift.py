@@ -3891,6 +3891,90 @@ def _selftest_content_case(kernel: str, src: str, api: set[str]) -> set[str]:
     return kernel_engine_calls(kernel, bodies, api)[0]
 
 
+# ---------------------------------------------------------------------------
+# Tier 13 - boot installs: does the page's disc load install every World
+# table the native boot does?
+#
+# The native boot (`crates/engine-shell/src/boot.rs`) installs disc tables
+# onto the world one call at a time, and the page's `load_disc` repeats the
+# list by hand. Nothing failed when the page's copy fell behind: every
+# consumer has a disc-free fallback, so six progression tables (XP curve +
+# divisors, stat growth, victory pose, XA cue durations, magic-XP thresholds,
+# accessory passives) were missing on the page for as long as nobody read the
+# two lists side by side - placeholder growth, silent melee grunts, summons
+# that never level, and an RNG stream that diverged after every victory. None
+# of tiers 1-12 look at a boot. This one takes every `world.install_*` /
+# `world.set_*` call in the native boot source and requires the page's
+# shipped sources to call the same method, or a `[[boot_install]]` waiver
+# with a reason. The cure for the six was one engine entry both boots call
+# (`World::install_retail_progression_tables`), which is also what keeps this
+# list short.
+# ---------------------------------------------------------------------------
+
+BOOT_NATIVE = REPO / "crates/engine-shell/src/boot.rs"
+BOOT_WEB_ROOT = REPO / "crates/web-viewer/src"
+BOOT_INSTALL_RE = re.compile(r"\bworld\s*\.\s*((?:install|set)_[a-z0-9_]+)\s*\(")
+
+SELFTEST_BOOT_INSTALL = [
+    ("dotted on one line", "host.world.install_menu_text(&scus);", {"install_menu_text"}),
+    ("dot on the next line", "host.world\n    .set_item_catalog(x);", {"set_item_catalog"}),
+    ("a definition is not a call", "pub fn install_menu_text(&mut self) {}", set()),
+    ("a non-world receiver is not a boot install", "tracker.set_growth(x);", set()),
+]
+
+
+def boot_install_calls(text: str) -> set[str]:
+    return set(BOOT_INSTALL_RE.findall(strip_all_comments(text)))
+
+
+def check_boot_installs() -> tuple[list[str], list[str], int]:
+    """Tier 13. `(problems, waived_notes, native_installs_checked)`."""
+    if not BOOT_NATIVE.is_file():
+        return [f"boot installs: {BOOT_NATIVE.relative_to(REPO)} missing"], [], 0
+    native = boot_install_calls(BOOT_NATIVE.read_text(encoding="utf-8"))
+    web: set[str] = set()
+    for path in sorted(BOOT_WEB_ROOT.rglob("*.rs")):
+        if is_test_source(path):
+            continue
+        web |= set(
+            re.findall(
+                r"\.\s*((?:install|set)_[a-z0-9_]+)\s*\(",
+                strip_all_comments(path.read_text(encoding="utf-8")),
+            )
+        )
+    waivers: dict[str, dict] = {}
+    if WAIVERS.is_file():
+        for row in tomllib.loads(WAIVERS.read_text(encoding="utf-8")).get("boot_install", []):
+            waivers[str(row.get("method", ""))] = row
+    problems: list[str] = []
+    notes: list[str] = []
+    for m in sorted(native):
+        if m in web:
+            if m in waivers:
+                problems.append(
+                    f"STALE BOOT-INSTALL WAIVER {m}: the page calls it now. Drop the waiver."
+                )
+            continue
+        if m in waivers:
+            if not str(waivers[m].get("reason", "")).strip():
+                problems.append(f"BOOT-INSTALL WAIVER {m}: needs a non-empty `reason`.")
+            notes.append(m)
+            continue
+        problems.append(
+            f"BOOT DRIFT world.{m}: the native boot ({BOOT_NATIVE.relative_to(REPO)}) "
+            f"installs it and no shipped crates/web-viewer source calls it. Install it "
+            f"in the page's load_disc (better: fold it into one engine install both "
+            f"boots call), or add a [[boot_install]] waiver with a reason."
+        )
+    for m in sorted(waivers):
+        if m not in native:
+            problems.append(
+                f"STALE BOOT-INSTALL WAIVER {m}: the native boot no longer calls it. "
+                f"Drop the waiver."
+            )
+    return problems, notes, len(native)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--quiet", action="store_true", help="findings only")
@@ -4027,6 +4111,16 @@ def main() -> int:
             )
             return 2
 
+    for _label, src, want in SELFTEST_BOOT_INSTALL:
+        if boot_install_calls(src) != want:
+            print(
+                "ERROR: built-in boot-install control failed; a scan that "
+                "misses a split-line call or counts a definition reports the "
+                "two boots as matching when they are not. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+
     builders = collect_builders()
     if not builders:
         print("[ui-drift] no draw builders found - is crates/engine-ui/src present?", file=sys.stderr)
@@ -4158,6 +4252,12 @@ def main() -> int:
     content_problems, content_notes, content_pairs = check_frame_content()
     problems.extend(content_problems)
 
+    # The boot half: a World table the native boot installs and the page's
+    # disc load does not - invisible to every tier above because each
+    # consumer falls back quietly.
+    boot_problems, boot_notes, boot_checked = check_boot_installs()
+    problems.extend(boot_problems)
+
     if not args.quiet:
         print(
             f"[ui-drift] engine-ui draw builders: {len(builders)} "
@@ -4234,6 +4334,12 @@ def main() -> int:
         )
         for note in content_notes:
             print(f"[ui-drift] {note}")
+        print(
+            f"[ui-drift] native boot world installs checked against the page: "
+            f"{boot_checked} ({len(boot_notes)} waived)"
+        )
+        for note in boot_notes:
+            print(f"[ui-drift] boot install waived: {note}")
         if web_ahead:
             print(f"[ui-drift] web-ahead (informational): {', '.join(web_ahead)}")
         # Name every native-only builder, waived or not, for the same reason

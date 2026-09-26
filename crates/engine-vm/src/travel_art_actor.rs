@@ -207,6 +207,10 @@ pub struct TravelArtFrame {
     /// [`RIREMITO_RESTORE_SCALE`] and [`RIREMITO_RESTORE_CLEARED_FLAG`] is
     /// cleared from its `+0x10`.
     pub restore_player: bool,
+    /// Rula's lift ended this frame: the post-warp pad hold `_DAT_8007B6B4`
+    /// is cleared (`sw zero, -0x494c(at)` at `0x801EE478`) along with the
+    /// flash quad.
+    pub clear_warp_hold: bool,
 }
 
 /// Riremito / Rula actor state.
@@ -218,8 +222,10 @@ pub struct TravelArtActor {
     pub phase: u16,
     /// Dwell counter `actor[+0x9E]` - in Rula's phase 2, the lift velocity.
     pub dwell: i16,
-    /// The player actor's Y (`+0x16`) the lift moves. Seed it with
-    /// [`Self::with_player_y`]; a host that never does lifts from `0`.
+    /// The player actor's Y (`+0x16`) the lift moves. Retail re-reads the
+    /// live `+0x16` every lift frame (`lhu v0, 0x16(a0)` off
+    /// `*0x8007C364`), so a host stores the player's current Y here before
+    /// each [`Self::tick`]; [`Self::with_player_y`] seeds it once.
     pub player_y: i16,
 }
 
@@ -258,13 +264,11 @@ impl TravelArtActor {
     /// to the world-map sub-list picker's state-3 hand-off instead, and that
     /// binding is named on `World::tick_world_map_panels`.
     ///
-    /// The `effect_busy` gate is passed as `false` there - the engine has no
-    /// effect queue for `FUN_8003CE64(0x0B)` to report on, so the dwell starts
-    /// on the frame after the install rather than after the flourish clears.
-    /// Neither host applies [`TravelArtFrame::lift_player_y`] or
-    /// [`TravelArtFrame::restore_player`] yet: the panel host carries no
-    /// handle on the player actor, so the Rula lift's arc times the phase
-    /// but moves nothing on screen.
+    /// The world applies every output: `effect_busy` is system flag `0x0B`
+    /// (set here through [`TravelArtFrame::queue_effect`], cleared by the
+    /// opener program's state 4), the queued opener program runs on the
+    /// scripted-scene actor, and the lift, the pad-hold clear and the
+    /// Riremito restore land on the player actor.
     pub fn tick(
         &mut self,
         effect_busy: bool,
@@ -307,6 +311,7 @@ impl TravelArtActor {
                     out.lift_player_y = Some(self.player_y);
                     if self.player_y < RULA_LIFT_EXIT_Y {
                         out.spawn_flash = true;
+                        out.clear_warp_hold = true;
                         self.phase = 3;
                     }
                 }
@@ -393,6 +398,10 @@ mod tests {
             let y = f.lift_player_y.expect("the lift writes Y every frame");
             assert!(y < last_y, "the player rises every frame");
             last_y = y;
+            assert_eq!(
+                f.clear_warp_hold, f.spawn_flash,
+                "the lift's exit clears the pad hold with the flash"
+            );
             if f.spawn_flash {
                 break;
             }

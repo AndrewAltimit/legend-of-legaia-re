@@ -153,6 +153,14 @@ pub struct MenuRuntime {
     /// `char_prompt_draws_for`) while this is `Some` and holds the pad
     /// until a press clears it.
     spell_level_notice: Option<crate::magic_xp::SpellLevelNotice>,
+    /// The live **art-learned notice**: `Some` while retail's window 8 is
+    /// up. The Items use sub-screen opens it (script `0x801E4C60`, `[open
+    /// window 8]`) when the applier changed `_DAT_8007BB78` - the Hyper-Art
+    /// book arm's `FUN_80035C00(slot, art)` - and stalls for a confirm /
+    /// cancel press before closing it (`0x801E4C68`). Hosts arm it from
+    /// [`crate::world::MenuState::pending_art_notice`] and paint window 8
+    /// (`engine-ui`'s `art_learned_notice_draws`) while this is `Some`.
+    art_learned_notice: Option<crate::pause_screens::ArtLearnedNotice>,
     /// Pending operation flagged by the host hooks; consumed inside
     /// [`MenuRuntime::tick`].
     pending: Option<PendingOp>,
@@ -212,6 +220,31 @@ fn menu_input_pad_word(input: MenuInput) -> u16 {
     w
 }
 
+/// The [`MenuInput`] a host hands [`MenuRuntime::tick`] for one tick, from
+/// the pad word's **edges** (`held & !previous_held`) - the one decode both
+/// play hosts use, so neither can feed the runtime a held word.
+///
+/// Nothing inside the runtime filters repeats: every screen it drives moves
+/// a cursor or commits on the input it is handed. The native window used to
+/// build its input from the held word, so one key press lasting a few ticks
+/// moved the shop cursor several rows or walked straight through the buy
+/// confirm, while the browser play page (which sends one edge per press)
+/// stepped once. The inverse of [`menu_input_pad_word`].
+pub fn menu_input_from_pad_edges(edge: u16) -> MenuInput {
+    use crate::input::PadButton;
+    let on = |b: PadButton| edge & b.mask() != 0;
+    MenuInput {
+        cross: on(PadButton::Cross),
+        circle: on(PadButton::Circle),
+        triangle: on(PadButton::Triangle),
+        square: on(PadButton::Square),
+        up: on(PadButton::Up),
+        down: on(PadButton::Down),
+        left: on(PadButton::Left),
+        right: on(PadButton::Right),
+    }
+}
+
 #[derive(Debug, Clone)]
 enum PendingOp {
     Save { slot: u8 },
@@ -237,6 +270,7 @@ impl MenuRuntime {
             stay_cursor: None,
             point_card_toast: None,
             spell_level_notice: None,
+            art_learned_notice: None,
             pending: None,
             widget_state_seen: 0,
         }
@@ -256,6 +290,35 @@ impl MenuRuntime {
     /// [`Self::dismiss_spell_level_notice`] instead of the screen below.
     pub fn spell_level_notice(&self) -> Option<&crate::magic_xp::SpellLevelNotice> {
         self.spell_level_notice.as_ref()
+    }
+
+    /// The live art-learned notice (retail window 8), or `None`.
+    pub fn art_learned_notice(&self) -> Option<&crate::pause_screens::ArtLearnedNotice> {
+        self.art_learned_notice.as_ref()
+    }
+
+    /// Park a pause-menu art-learned notice on the window-8 beat - hosts
+    /// take it off [`crate::world::MenuState::pending_art_notice`] after
+    /// applying a finished Items screen.
+    pub fn arm_art_learned_notice(&mut self, notice: crate::pause_screens::ArtLearnedNotice) {
+        self.art_learned_notice = Some(notice);
+    }
+
+    /// One frame of the window-8 hold: the confirm or cancel mask closes it.
+    /// Returns `true` while the notice owns the pad.
+    pub fn dismiss_art_learned_notice(
+        &mut self,
+        cross: bool,
+        circle: bool,
+        triangle: bool,
+    ) -> bool {
+        if self.art_learned_notice.is_none() {
+            return false;
+        }
+        if cross || circle || triangle {
+            self.art_learned_notice = None;
+        }
+        true
     }
 
     /// Park a menu-cast level-up on the window-7 beat - the engine's
@@ -454,6 +517,10 @@ impl MenuRuntime {
         if self.dismiss_spell_level_notice(input.cross, input.circle, input.triangle) {
             // Window 7 (spell level-up): the cast sub-screens stall on the
             // same confirm | cancel masks before returning to the list.
+            return MenuTickEvent::Stepped;
+        }
+        if self.dismiss_art_learned_notice(input.cross, input.circle, input.triangle) {
+            // Window 8 (art learned): the Items use sub-screen's same stall.
             return MenuTickEvent::Stepped;
         }
         let mut host = MenuRuntimeHost {
@@ -1541,6 +1608,23 @@ mod tests {
         let mut world = World::default();
         world.load_party(Party { members });
         world
+    }
+
+    #[test]
+    fn menu_input_from_pad_edges_inverts_the_pad_word_fold() {
+        // Every single button and a chord survive the round trip, so the two
+        // decodes cannot drift apart on a bit.
+        for bit in 0..16u16 {
+            let word = 1u16 << bit;
+            let back = menu_input_pad_word(menu_input_from_pad_edges(word));
+            assert_eq!(
+                back,
+                word & menu_input_pad_word(menu_input_from_pad_edges(0xFFFF))
+            );
+        }
+        let chord = 0x4000 | 0x0040;
+        assert_eq!(menu_input_pad_word(menu_input_from_pad_edges(chord)), chord);
+        assert_eq!(menu_input_from_pad_edges(0), MenuInput::default());
     }
 
     #[test]

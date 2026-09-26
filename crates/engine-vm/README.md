@@ -18,7 +18,7 @@ scene's MAN - use `legaia-engine man-scripts` instead.
 
 - [The window-widget VM - `FUN_801D6628`](#the-window-widget-vm---fun_801d6628)
 - [`field_vm` - `FUN_801DE840`](#field_vm---fun_801de840-the-fieldevent-script-vm)
-- [`effect_vm` - `FUN_801DE914` / `FUN_801DFDF8` / `FUN_801E0088`](#effect_vm---fun_801de914--fun_801dfdf8--fun_801e0088)
+- [`effect_vm` - `FUN_801DE914` / `FUN_801DFDF0` / `FUN_801E0080`](#effect_vm---fun_801de914--fun_801dfdf0--fun_801e0080)
 - [`move_vm` - `FUN_80023070`](#move_vm---fun_80023070)
 - [`motion_vm` - `FUN_8003774C` / `FUN_80038158`](#motion_vm---fun_8003774c--fun_80038158)
 - [`world_map` - `FUN_801DA51C`](#world_map---fun_801da51c)
@@ -29,6 +29,7 @@ scene's MAN - use `legaia-engine man-scripts` instead.
 - [`battle_action` - `FUN_801E295C`](#battle_action---fun_801e295c)
 - [`battle_cam_script` - `FUN_801D5854`](#battle_cam_script---fun_801d5854)
 - [`psx_camera` - the shared retail GTE camera](#psx_camera---the-shared-retail-gte-camera)
+- [`battle_actor_tick` / `battle_actor_tint` - `FUN_800480D8` / `FUN_8004A908`](#battle_actor_tick--battle_actor_tint---fun_800480d8--fun_8004a908)
 - [Battle-overlay leaves outside the action SM](#battle-overlay-leaves-outside-the-action-sm)
 - [`field_party_cursor` - `FUN_801F1278`](#field_party_cursor---fun_801f1278)
 - [`battle_formulas`](#battle_formulas)
@@ -90,9 +91,12 @@ SET / CLEAR / TEST against a 256-bit bitfield at `DAT_80085758` and
 exposed via `FieldHost::system_flag_{set,clear,test}`. Distinct from
 the actor VM above.
 
-## `effect_vm` - `FUN_801DE914` / `FUN_801DFDF8` / `FUN_801E0088`
+## `effect_vm` - `FUN_801DE914` / `FUN_801DFDF0` / `FUN_801E0080`
 
-Effect VM with a 32-master + 128-child slot pool.
+Effect VM with a 32-master + 128-child slot pool. Both retail entries sit two
+words ahead of their prologues (`0x801DFDF8`, `0x801E0088`), where the
+pool-ready byte `0x8007BD58` is loaded; the walker is called once per battle
+frame from the draw tick `FUN_800480D8`.
 `Pool::init` / `Pool::spawn` / `Pool::tick_retail` are the three API entries
 (`Pool::child_billboards` is the pass-2 render snapshot); the lifecycle is
 pure data (the catalog's spawn records + animation frames), so `EffectHost`
@@ -245,7 +249,9 @@ overwrite from the resident Miracle row at `0x801F64F4`), `clear_queue_msb`
 (the sweep that strips the row's on-disc `0x8C..0x8F` quirk),
 `apply_super_tail_replace` (`FUN_801EF9E4`, first-matching-row tail replace
 from `0x801F6524` / `0x801F65E8`), plus the still-inert `preseed_action_queue`
-/ `save_action_queue` / `check_and_learn_art` / `miracle_command_position`.
+/ `save_action_queue` / `check_and_learn_art`. (`learned_seru_position`, the
+`FUN_801E91E8` port beside them, is not a queue routine: it is the
+already-learned check of the killing-blow Seru absorb, and it is live.)
 `resolve_action_queue` - the entry point `engine-core` calls once per committed
 arts input - runs the first three in retail's finish order, so the live path is
 byte-level rather than structural; `legaia_art`'s matchers remain the *table*
@@ -316,15 +322,26 @@ the browser play page ease a scripted shot instead of snapping every
 Which camera owns a given frame, and what its inputs are, is one layer up:
 `engine-core::camera_view`.
 
+## `battle_actor_tick` / `battle_actor_tint` - `FUN_800480D8` / `FUN_8004A908`
+
+The per-body battle draw decision: the draw tick (whether the body draws, the
+lone-monster grey stamp, the order of its tint / trail / draw calls) and the
+whole tint pass it runs first (the colour word and blend weight the draw hands
+the GTE depth cue - lanes, the distance fade past half the body radius, the
+outdoor-stage invert, status colours, the cursor-dim arm). The view depth the
+tint reads is `battle_cam_script::battle_view_depth`. Both play hosts reach the
+pair per body per frame through `engine-core`'s
+`World::battle_actor_draw_plan`; the decode and its capture match are in
+[`battle.md`](../../docs/subsystems/battle.md#the-distance-fade).
+
 ## Battle-overlay leaves outside the action SM
 
-Five more `0898` bodies whose kernels are ported here, each with its own
+More `0898` bodies whose kernels are ported here, each with its own
 `NOT WIRED` disclosure naming the caller or the disc table it still needs:
 
 | Module | Retail | What is ported |
 |---|---|---|
 | `battle_ground_grid` | `FUN_801D02C0` | The procedural battle floor's CPU side: grid origin, the three-valued per-cell depth class, the `3x3` projection lattice, the four-corner screen reject and the 2x2 sub-tile UVs. |
-| `battle_scatter` | `FUN_801E0080` | The arena's emitter/particle pools: record layouts, both script advances, the countdown drain, the position integration, the brightness ramp and the mirror-bit UVs. |
 | `battle_arts_auto_combo` | `FUN_801F0450` | The AI-side Arts assembler's two arms - the learned-arts auto-fill and the weighted candidate pool with its AP-gauge spend loop. |
 | `battle_attack_camera` | `FUN_801D71B8` | The per-art attack camera: gate, pose seed, character / art dispatch and animation-frame push. Dispatch is three per-character jump tables (17 / 20 / 17 slots) reaching 13 distinct arms; the row folds come from `legaia_asset::battle_attack_camera_table`. |
 | `battle_value_readout` | `FUN_801E805C` | The battle value readout: the landed-hit numeral's sheet, cells and pop/rise envelope, plus the multi-cast half's decimal split, teardown pairing, slot-to-widget indirection and label quad. |

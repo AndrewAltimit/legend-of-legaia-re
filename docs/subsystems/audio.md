@@ -81,6 +81,16 @@ at `0x800917B0` holds) → `SsVabTransBody`. So every call site's
 `FUN_8001FC00` / `FUN_8001E54C` pair names one `(PROT entry, slot)` binding
 outright.
 
+The same walk installs the stream's **score**: a type-`2` chunk is copied into
+the slot's staging buffer and opened with `SsSeqOpen` (`FUN_80026410` on the
+SEQ record `0x8007051C + slot * 0x10`), after the slot's previous sequence is
+detached and closed (`FUN_800266E0` / `FUN_80026520`). On the disc every
+entry that carries a `pQES` score past offset 0 carries it as a type-`2`
+chunk - chunk order `(0, 1, 2)`, or `(0, 2, 1)` where the score precedes the
+VAG bodies. The engine's scene loader finds a stream's score the same way,
+walking the list with the port (`legaia_engine_core::chunk_install::seq_chunk_offset`)
+rather than searching the bytes for the magic.
+
 | Slot | Bank | Installed by |
 |---|---|---|
 | `0` | PROT 0868 system bank | resident |
@@ -313,9 +323,43 @@ an artifact and less faithful than retail. `crossfade_to` and its `pending_seq`
 fade-out-then-swap machinery remain for callers that genuinely want a symmetric
 cross-fade; BGM transitions no longer use it.
 
+### The timed release is a scheduled BGM pause
+
+Op `0x35` sub-op `5` arms a deadline in vsyncs (`FUN_800267A8(0, operand)` at
+`0x801E01B4`); the frame-begin driver's tick `FUN_800267FC` counts it down.
+What the expiry does is read off its own arm: the record it releases is the
+field-BGM slot `0x8007052C` (`addiu s0,v0,0x52c` at `0x80026828`), and the
+arm is `FUN_800266E0`'s body inline - behind the same `_DAT_8007B868` gate,
+`FUN_8002657C(0, slot)`, `FUN_80064370(slot[+0xA])`, then
+`DAT_8007B708 = 0` (`0x80026834..0x8002686C`; see
+`ghidra/scripts/funcs/800267fc.txt`). `FUN_800266E0` is sub-op `2`'s primitive,
+so the expiry is a pause the script scheduled in advance. The port surfaces it
+as exactly that: `World::tick` pushes a sub-op `2` BGM event on the expiry
+frame, and `SceneHost::route_bgm_events` hands it to either host's director.
+The raw expiry flag (`World::take_pending_sound_release`) stays for the mode
+seat's own reader.
+
 ### Global-pool BGM: the `music_01` bank
 
-Every real music track on the disc lives in the **`music_01` bank**, not in scene-local slots - scenes carry no SEQ of their own (see [`reference/music-tracks.md`](../reference/music-tracks.md) for the sound-test join). A global-pool id (`>= 2000`) is `2000 + slot`, and each bank entry is one self-contained `[VAB][SEQ]` pair (a chunk-header, a `pBAV` VAB body, then a `pQES` score). The bank is **piecewise** in extraction space (`988 + i` for index `i <= 67`, `990 + i` for `i >= 68`, a 2-entry gap at `1056`/`1057`); `music_labels::prot_entry_for_bgm_id` owns that map. Playing one means uploading **that entry's own VAB** into SPU RAM and driving the sequencer against it, rather than the scene VAB the field path stages.
+Every real music track on the disc lives in the **`music_01` bank**, not in scene-local
+slots - scenes carry no SEQ of their own (see
+[`reference/music-tracks.md`](../reference/music-tracks.md) for the sound-test join). A
+global-pool id (`>= 2000`) is `2000 + slot`, and a bank entry is normally one
+self-contained `[VAB][SEQ]` pair - a DATA_FIELD chunk stream whose type-`0` chunk is the
+`pBAV` header part, whose type-`1` chunk carries the VAG bodies and whose type-`2` chunk
+is the `pQES` score, in `(0, 1, 2)` or `(0, 2, 1)` order. Not every slot is one: of the
+81, slot `72` carries a score and no bank, slots `76..=79` are one-sector placeholder
+fills, and slot `80` is a bank with no score, so those six have no pair to play
+(`engine-core/tests/seq_chunk_walk_disc.rs`). The bank is **piecewise** in extraction
+space (`988 + i` for index `i <= 67`, `990 + i` for `i >= 68`, a 2-entry gap at
+`1056`/`1057`); `music_labels::prot_entry_for_bgm_id` owns that map. Playing one means
+uploading **that entry's own VAB** into SPU RAM and driving the sequencer against it,
+rather than the scene VAB the field path stages. Both play hosts' owned-VAB staging
+(`AudioBgmDirector` and the audio-trace director natively, `WebBgmDirector` on the play
+page) split the entry with `engine-core::chunk_install::owned_bank_offsets` - the
+installer walk's type-0 bank and type-2 score - rather than hunting it for the two magics;
+the disc-gated test pins that the two readings agree on every slot, including which six
+have no pair.
 
 The site's minigame pages take exactly this path per game (`crates/web-viewer/src/minigames.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the from-scratch `Spu` + `Sequencer` - the same components the live `AudioBgmDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
 
@@ -1112,11 +1156,27 @@ Fighter's path.
 `0x19`): latch `0`, slot 2 **closed**, slot 6 **open**, and the shared header at
 `0x8008D708` is PROT 0876's (`pBAV`, total size `0x2C090`, the same header bytes
 as the field state `s3_rimelm_freeroam`). So at the dome's hub the region holds
-the field bank intact and no class-2 bank at all. Whether a round (mode
-`0x14` / `0x15`) loads PROT 0869 over it is not captured: the only PCSX-Redux
-dome state carries a patched resident SCUS. The arena enters a round by storing
-mode word `0x14`, which is what `FUN_8001DCF8`'s close arm tests, so the round
-is read as taking the battle residency ([`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)).
+the field bank intact and no class-2 bank at all.
+
+**A Muscle Dome round** takes the battle residency, exactly as a field battle
+does. [`run_w3a_captures.sh dome`](../../scripts/pcsx-redux/run_w3a_captures.sh)
+starts from `baka_fighter_entry_pretransition` (the same seed-only SCUS as
+above), re-pokes the warp's `u16` sub-id `0x8007BA34` from `4` to `5` so the
+mode-24 init streams the arena (PROT 0977) instead of the Baka overlay, and
+drives a Cross cadence into a round (vsyncs):
+
+| vsync | event |
+|---|---|
+| 140 | the warp `FUN_80025980` clears the latch at `0x800259A4` |
+| 347 | the hub runs (mode `0x19`): slot 2 closed, slot 6 open, header at `0x8008D708` PROT 0876's |
+| 933 | `FUN_8001DCF8(0x0C)` from `0x80055D64` with the mode word `0x14`: closes `6` (`0x8001DFB4`) and `3` (`0x8001DFBC`); slot 6's enable drops |
+| 1095, 1131 | the battle scene loader (`ra 0x800523B4`, `0x8005241C`) loads raw `0x367` (PROT 0869) into slot `2`; slot 2 enabled at 1132 |
+
+In the round the shared header at `0x8008D708` is PROT 0869's (`pBAV`, total
+size `0x2FB00`). So the class-2 bank replaces the field bank in the region for a
+round, which is the port's model: `World::sync_sfx_residency` runs
+`battle_init` on entering `SceneMode::MuscleDome`
+([`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)).
 
 **Engine port.** `SfxBankResidency` tracks slot 2's and slot 6's enables
 separately (`slot_open`), so the Baka Fighter state - both open, slot 6 stale

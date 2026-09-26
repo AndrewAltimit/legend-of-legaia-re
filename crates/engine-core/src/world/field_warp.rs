@@ -33,7 +33,8 @@ pub enum FieldWarpTick {
     },
 }
 
-/// A `FUN_801D58F0` fade as the template `FUN_80024E80` loads.
+/// A `FUN_801D58F0` fade as the template `FUN_80024E80` loads. The trailing
+/// id word is left `0` for [`crate::fade::spawn_fade`] to stamp.
 fn warp_fade_template(f: &warp_tile::WarpFade, delay: i16) -> crate::fade::FadeTemplate {
     crate::fade::FadeTemplate {
         kind: f.kind,
@@ -57,9 +58,11 @@ impl World {
     /// REF: FUN_801D1EC4 (ported as [`warp_tile::arm_warp`]), FUN_801D58F0
     pub fn arm_field_warp(&mut self, dest: (u8, u8)) {
         let [out, fade_in] = warp_tile::arm_warp(&mut self.locomotion.warp, dest);
-        self.presentation.fade = Some(crate::fade::FadeState::load(&warp_fade_template(
-            &out, out.delay,
-        )));
+        crate::fade::spawn_fade(
+            &mut self.presentation.fade,
+            &warp_fade_template(&out, out.delay),
+            0,
+        );
         self.locomotion.warp_fade_in_in = Some(i32::from(fade_in.delay));
         if let Some(slot) = self.player_actor_slot
             && let Some(actor) = self.actors.get_mut(slot as usize)
@@ -81,8 +84,8 @@ impl World {
     /// player `MoveTo` event so the hosts' camera re-pins the way retail's
     /// `FUN_801DAA50` call does.
     ///
-    /// Retail also tags the pool actor running `0x801DA7F0` for tear-down
-    /// on every running frame; the port has no such actor to tag.
+    /// Each running frame (and the landing frame) also tears down the live
+    /// text balloon - retail tags the pool actor running `0x801DA7F0`.
     ///
     /// Every frame ends with the system channel's clear of the `-1000`
     /// landed sentinel ([`warp_tile::clear_landed_sentinel`]), which retail
@@ -105,11 +108,21 @@ impl World {
             *left -= i32::from(delta);
             if *left <= 0 {
                 self.locomotion.warp_fade_in_in = None;
-                self.presentation.fade = Some(crate::fade::FadeState::load(&warp_fade_template(
-                    &warp_tile::WARP_FADE_IN,
+                crate::fade::spawn_fade(
+                    &mut self.presentation.fade,
+                    &warp_fade_template(&warp_tile::WARP_FADE_IN, 0),
                     0,
-                )));
+                );
             }
+        }
+        // The timer-running half opens by tagging the live `4C E1` text
+        // balloon (the first pool actor whose handler is `0x801DA7F0`, found
+        // through `FUN_8003CF04`) for tear-down: `ori v0, v0, 8` into its
+        // `+0x10` at `0x801D1F14..0x801D1F20`, on every frame the timer
+        // enters positive - the landing frame included. So a caption up at
+        // the crossing does not survive the fade.
+        if self.locomotion.warp.timer > 0 {
+            self.cutscene.text_balloon = None;
         }
         let counter = self.encounters.step_counter;
         match warp_tile::tick_warp_timer(&mut self.locomotion.warp, delta, counter) {
@@ -163,13 +176,16 @@ impl World {
     }
 
     /// Scene entry's reset of the warp and clip globals: no warp carries
-    /// across a scene change, and the clip base starts at idle (SCUS
-    /// `0x8003B364`, `addiu v0, zero, 2; sw v0, _DAT_8007BDD8`).
+    /// across a scene change, the clip base starts at idle (SCUS
+    /// `0x8003B364`, `addiu v0, zero, 2; sw v0, _DAT_8007BDD8`) and the
+    /// op-`4C CE` clip override is dropped (SCUS `0x8003B6F0`,
+    /// `sw zero, _DAT_8007B6AC`) - both inside the map init `FUN_8003AEB0`.
     pub fn reset_field_warp_and_clip(&mut self) {
         self.locomotion.warp = vm::field_warp_tile::WarpTimer::default();
         self.locomotion.warp_fade_in_in = None;
         self.locomotion.clip_base = vm::field_player_clip::BASE_IDLE;
         self.locomotion.player_party_bank = true;
+        self.locomotion.clip_override = 0;
     }
 }
 

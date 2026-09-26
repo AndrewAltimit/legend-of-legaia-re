@@ -14,8 +14,8 @@ use super::*;
 use legaia_engine_render::pause_menu::{
     EquipComposeInput, GenericContent, ItemsScreenView, KeyRebindView, MagicScreenView, MenuRects,
     OptionsScreenView, PauseMenuCtx, PauseMenuDraws, PauseScreen, SpecialConfirmView,
-    StatusScreenView, TopLevelView, equip_screen_compose, pause_screen_draws,
-    spell_level_notice_draws,
+    StatusScreenView, TopLevelView, art_learned_notice_draws, equip_screen_compose,
+    pause_screen_draws, spell_level_notice_draws,
 };
 
 impl PlayWindowApp {
@@ -92,6 +92,23 @@ impl PlayWindowApp {
             return Vec::new();
         };
         spell_level_notice_draws(&self.menu_ctx(surface_w, surface_h), &notice.line)
+    }
+
+    /// Window 8 - the art-learned notice, drawn while the menu runtime holds
+    /// the beat a Hyper-Art book use armed (`apply_pause_items_outcome` ->
+    /// `MenuState::pending_art_notice` -> `arm_art_learned_notice`). The Items
+    /// use sub-screen opens it with script `0x801E4C60` (`[open window 8]`)
+    /// and stalls for a press - the input side lives in the field-menu arm
+    /// of `tick_boot_ui`. Twin of the browser page's arm in `play_menu`.
+    pub(super) fn art_learned_notice_window_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<TextDraw> {
+        let Some(notice) = self.menu_runtime.art_learned_notice() else {
+            return Vec::new();
+        };
+        art_learned_notice_draws(&self.menu_ctx(surface_w, surface_h), &notice.lines)
     }
 
     /// Top-level pause menu: the command list, the money / play-time box and

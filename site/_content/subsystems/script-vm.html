@@ -145,7 +145,7 @@
       <tr><td><code>3E</code></td><td>INTERACT / WARP</td><td>var</td><td><code>op0 &lt; 100</code>: arm NPC interaction <code>op1</code>; <code>op0 &gt;= 100</code>: enter minigame <code>op0 &minus; 100</code> (0 fishing, 3 slots, 4 Baka Fighter, 6 dance)</td></tr>
       <tr><td><code>3F</code></td><td>SCENE_CHANGE</td><td>var</td><td>Named warp: <code>[idx:i16][len][name][x][z][dir]</code> - a door, not dialogue</td></tr>
       <tr><td><code>40</code></td><td>DATA_BLOCK</td><td>2+len</td><td>Skip <code>len</code> inline data bytes</td></tr>
-      <tr><td><code>42</code></td><td>COND_JMP</td><td>5</td><td>Mode 0 tests a flag bit, mode 1 the screen mode; taken = <code>pc + 3 + delta</code>, else skip 5</td></tr>
+      <tr><td><code>42</code></td><td>COND_JMP</td><td>5</td><td>Mode 0 tests a flag bit, mode 1 the held d-pad (against a compass) or a face button; taken = <code>pc + 3 + delta</code>, else skip 5</td></tr>
       <tr><td><code>43</code></td><td>ACTOR_CTRL</td><td>var</td><td>22+ sub-ops: halt-acquire, 3-actor talk, camera zone ramps, facing, position tween, actor allocation, emitters</td></tr>
       <tr><td><code>44</code></td><td>SPAWN_RECORD</td><td>2</td><td>Spawn partition-2 record <code>global_index</code> as a new context if its flag gates pass</td></tr>
       <tr><td><code>45</code></td><td>CAMERA</td><td>var</td><td><code>op0 &amp; 0xC0</code>: configure / load / save / apply</td></tr>

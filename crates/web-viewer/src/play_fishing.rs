@@ -45,7 +45,7 @@
 //! consumer on both.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::fishing::{PondEvent, PondPhase, PondSession, PrizeExchange, TENSION_MAX};
+use legaia_engine_core::fishing::{PondEvent, PondPhase, PondSession, TENSION_MAX};
 use legaia_engine_ui::{
     self as ui, BarAxis, CatchHudState, FishingCaptions, FishingHudAtlas, HudDraw, TextDraw,
 };
@@ -105,6 +105,21 @@ impl LegaiaRuntime {
             }
         }
         self.fishing_banner_draws = self.fishing_banners.service_frame(1);
+    }
+
+    /// The fishing venue's actor-side frame - the browser twin of the native
+    /// window's `tick_fishing_actors`, through the same engine kernel
+    /// ([`legaia_engine_core::fishing_venue::tick_fishing_venue_on_host`]):
+    /// the wander fish and its retarget ripple, the floor solve, the reeling
+    /// line and its catch bursts, the sub-screen sway, and the venue camera
+    /// writes, applied here to this page's engine camera. The ripples and
+    /// bursts land in `World::minigames.fx`, which this page already draws.
+    pub(crate) fn tick_fishing_actors(&mut self) {
+        let Some(host) = self.scene_host.as_mut() else {
+            return;
+        };
+        let writes = legaia_engine_core::fishing_venue::tick_fishing_venue_on_host(host);
+        writes.apply(&mut self.camera);
     }
 
     /// The live fishing session, when one is installed on the scene host's
@@ -225,12 +240,9 @@ impl LegaiaRuntime {
         if !host.enter_fishing_from_overlay(&loaded) {
             return false;
         }
-        // The two point-exchange venue pages ride the same overlay image; row
-        // labels resolve through the SCUS item table the page already parsed.
-        let names = self.item_names.as_ref();
-        self.fishing_venues = legaia_asset::fishing_exchange::parse(&loaded).map(|ex| {
-            [0usize, 1].map(|venue| PrizeExchange::from_asset(venue, &ex.venues[venue], names))
-        });
+        // The two point-exchange venue pages were decoded by the shared entry
+        // above (`World::minigames.fishing_prize_venues`), the one the venue
+        // door reaches too.
         self.fishing_banners = Default::default();
         self.fishing_banner_draws.clear();
         true
@@ -262,12 +274,29 @@ impl LegaiaRuntime {
     /// ```json
     /// { "live": true, "phase": "idle", "cast_power": 0, "cast_max": 0,
     ///   "tension": 0, "tension_max": 0, "record": 0, "points": 0,
-    ///   "best": 0, "casts": 0, "lure": 0, "rod": 0, "venue": 0 }
+    ///   "best": 0, "casts": 0, "lure": 0, "rod": 0, "venue": 0,
+    ///   "wander": {"x":1024,"y":0,"z":1024,"facing":2048}|null,
+    ///   "line": false, "fx_parts": 0 }
     /// ```
+    ///
+    /// `wander` / `line` are the venue actors the shared step
+    /// ([`Self::tick_fishing_actors`]) runs, and `fx_parts` the live parts in
+    /// the world's effect pool their ripples and bursts land in.
     pub fn play_fishing_state_json(&self) -> String {
         let Some(s) = self.fishing_session() else {
             return r#"{"live":false}"#.to_string();
         };
+        let (wander, line, fx_parts) =
+            self.scene_host
+                .as_ref()
+                .map(|h| {
+                    let v = &h.world.minigames.fishing_venue;
+                    let wander = v.wander.as_ref().map(
+                        |w| serde_json::json!({"x": w.x, "y": w.y, "z": w.z, "facing": w.facing}),
+                    );
+                    (wander, v.line.is_some(), h.world.minigames.fx.len())
+                })
+                .unwrap_or((None, false, 0));
         serde_json::json!({
             "live": true,
             "phase": pond_phase_name(s.phase()),
@@ -282,6 +311,9 @@ impl LegaiaRuntime {
             "lure": s.lure,
             "rod": s.rod,
             "venue": s.venue,
+            "wander": wander,
+            "line": line,
+            "fx_parts": fx_parts,
         })
         .to_string()
     }
@@ -358,10 +390,10 @@ impl LegaiaRuntime {
     ///
     /// `null` when the venue pages did not decode.
     pub fn play_fishing_prizes_json(&self, venue: u32) -> String {
-        let Some(venues) = self.fishing_venues.as_ref() else {
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
             return "null".to_string();
         };
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(venues) = world.minigames.fishing_prize_venues.as_ref() else {
             return "null".to_string();
         };
         let ex = &venues[(venue as usize).min(1)];
@@ -404,9 +436,9 @@ impl LegaiaRuntime {
     /// composition.
     ///
     /// The panel anchor is the same one the native window resolves - retail's
-    /// menu-picker rect (`FUN_801d74b0`) - minus the idle sway, which is an
-    /// overlay actor this host does not install; the rows sit at the panel's
-    /// resting top-left instead of swaying with it.
+    /// menu-picker rect (`FUN_801d74b0`) - offset by the venue's idle sway
+    /// (`FUN_801d03b0`), which the shared venue step
+    /// ([`Self::tick_fishing_actors`]) advances on the world for both hosts.
     fn fishing_exchange_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         use legaia_engine_ui::ui_fishing_exchange as fx;
         let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
@@ -452,8 +484,9 @@ impl LegaiaRuntime {
             first_visible: ex.first_visible(world.minigames.fishing_points),
             rows: &rows,
         };
+        let sway = world.minigames.fishing_venue.sway_offset;
         let pen = legaia_engine_core::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50)
-            .map(|p| (p.x as i32, p.y as i32))
+            .map(|p| (p.x as i32 + sway.0 as i32, p.y as i32 + sway.1 as i32))
             .unwrap_or((8, 98));
         fx::exchange_screen_draws_for(
             font,
@@ -479,12 +512,13 @@ impl LegaiaRuntime {
         let Some(input) = ExchangeInput::from_code(code) else {
             return -1;
         };
-        let Some(venues) = self.fishing_venues.as_ref() else {
-            return -1;
-        };
         let Some(host) = self.scene_host.as_mut() else {
             return -1;
         };
+        let Some(venues) = host.world.minigames.fishing_prize_venues.clone() else {
+            return -1;
+        };
+        let venues = &venues;
         match host.world.fishing_exchange_input(venues, input) {
             ExchangeOutcome::Bought(_) => host.world.minigames.fishing_points,
             ExchangeOutcome::Refused => -1,
@@ -516,12 +550,13 @@ impl LegaiaRuntime {
     /// few points, a latched one-time prize, or a full stack).
     pub fn play_fishing_prize_buy(&mut self, venue: u32, row: usize) -> i32 {
         use legaia_engine_core::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
-        let Some(venues) = self.fishing_venues.as_ref() else {
-            return -1;
-        };
         let Some(host) = self.scene_host.as_mut() else {
             return -1;
         };
+        let Some(venues) = host.world.minigames.fishing_prize_venues.clone() else {
+            return -1;
+        };
+        let venues = &venues;
         let world = &mut host.world;
         let want = (venue as usize).min(1);
         if world.minigames.fishing_exchange.is_none() {

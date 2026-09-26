@@ -654,64 +654,40 @@ pub fn check_and_learn_art(
     ArtUseCheck::Learned
 }
 
-/// NOT WIRED: `FUN_801E91E8` is **not** called by the queue-builder
-/// `FUN_801EED1C` (whose only `jal`s are `0x80056798`, `0x801EFBFC` and
-/// `0x801EF9E4`).
+/// The **already-learned Seru** lookup: the 1-based position of Seru `token`
+/// in the acting character's learned-spell list, `0` when the list does not
+/// hold it.
 ///
-/// It has exactly **one** retail caller: the arms execution resolver
-/// `FUN_801EC3E4`, `jal` at `0x801EE2C0`, which reads a strike record's
-/// `+0x3E` token and, on a zero position, stages the token into the reward
-/// byte `ctx[+0x269]`.
+/// An earlier reading named this a "Miracle-command token position lookup"
+/// and the list a Miracle command string. Both are wrong, and the bytes say
+/// so. The list it scans - count at `0x80084140 + char*0x414 + 0x704`, ids
+/// from `+0x705` - is the **spell** list: `FUN_801E92DC` prepends there
+/// (`sb v1,0x705(v0)` at `0x801E93AC`, ported as
+/// `engine-core::magic_xp::learn_spell_prepend`), and the ids it holds are
+/// full `0x8x` spell ids, which is why the compare subtracts `0x80`
+/// (`addiu v0,v0,-0x80` at `0x801E92B0`). The token is monster record `+0x3E`,
+/// the Seru a killing blow can absorb. Its one caller is the arts resolver
+/// `FUN_801EC3E4` (`jal` at `0x801EE2C0`, five-form sweep: `jal = 1`, no other
+/// reference), right after the absorb roll succeeds: a `0` answer stages the
+/// Seru into `ctx[+0x269]` for the Done band to grant.
 ///
-/// An earlier note here claimed a second caller family - a "per-keypress
-/// arts-input recognizer `FUN_80202BCC`" reached at `0x80204AA8` - and that
-/// is the same function counted twice. `overlay_0897_80202bcc.txt` is
-/// `FUN_801EC3E4` printed at a wrong load base: the two prologues are
-/// instruction-for-instruction identical and the whole call neighbourhood
-/// matches under a constant `+0x167E8` print shift
-/// (`0x80204AA8 - 0x801EE2C0`). See
-/// [`phantom-print-index.md`](../../../../docs/tooling/phantom-print-index.md) -
-/// a dump's printed addresses are a property of its load base, so counting
-/// caller *sites* across differently-based dumps of one image inflates them.
+/// The "not applicable" answer is `1` - "already known" - so none of these
+/// can absorb: an acting slot `>= 3`; a slot whose `ctx[+0x25F + slot]` is
+/// clear, which is the **Ra-Seru** marker ([`miracle_marker_armed`] - the
+/// character's Ra-Seru equipment slot is occupied), not a Miracle marker; and
+/// a battle whose `_DAT_8007BAC0` word is set.
 ///
-/// A five-form reference sweep over SCUS plus every based overlay image
-/// reproduces that independently: `jal = 1`, `word = 0`, `j = 0`, `branch = 0`,
-/// `lui = 0`. Zero data-word references means the address sits in **no**
-/// dispatch or handler table, and the one `jal` is the site above.
+/// PORT: FUN_801E91E8
 ///
-/// So this is neither replaced nor dead in retail, and both readings have been
-/// offered. It is reached once per resolved strike; the per-slot Miracle marker
-/// it consults is a guard *inside* the body, not a precondition for entering
-/// it, which is why "the marker has no input recognizer" does not make the
-/// routine unreachable.
-///
-/// The engine's Miracle gate is now both halves of retail's: the per-slot
-/// marker `ctx[+0x25F + slot]` ([`miracle_marker_armed`]) and the whole-string
-/// match in [`finish_action_queue`](super::finish_action_queue). What still
-/// has no consumer is `ctx[+0x269]` - the reward byte this lookup's single
-/// caller stages a zero-position token into - so the per-token position itself
-/// remains unconsumed, and that byte is the host this row is owed.
-///
-/// PORT: FUN_801E91E8 - Miracle-command token position lookup.
-///
-/// Maps an input token to its 1-based position in the character's
-/// MSB-masked Miracle command string (char record count `+0x704`, bytes
-/// `+0x705..`, each stored as `value + 0x80` - the on-disc MSB-set quirk
-/// `docs/formats/art-data.md` documents for the Miracle strings).
-///
-/// Laws (disassembly `overlay_battle_action_801e91e8.txt`):
-/// - when the lookup is not applicable - retail: acting slot `>= 3`
-///   (non-player), the slot's Miracle marker `ctx[+0x25F + slot]` clear,
-///   or the global `_DAT_8007BAC0` non-zero - the function returns `1`
-///   unconditionally (`miracle_pending == false` here);
-/// - otherwise the first `i` with `token == cmds[i] - 0x80` returns
-///   `i + 1` (truncated to u8);
-/// - no match (or an empty string) returns `0`.
-pub fn miracle_command_position(token: u8, miracle_pending: bool, cmds_msb: &[u8]) -> u8 {
-    if !miracle_pending {
+/// Called by `engine-core`'s killing-blow absorb
+/// (`World::roll_seru_absorb`, from the melee hit fold both hosts run each
+/// battle frame). `pending` is the three gates above folded to one bool;
+/// `spell_ids` is the list as stored (`0x8x` ids).
+pub fn learned_seru_position(token: u8, pending: bool, spell_ids: &[u8]) -> u8 {
+    if !pending {
         return 1;
     }
-    for (i, &c) in cmds_msb.iter().enumerate() {
+    for (i, &c) in spell_ids.iter().enumerate() {
         if token == c.wrapping_sub(0x80) {
             return (i as u8).wrapping_add(1);
         }
@@ -1179,11 +1155,11 @@ mod queue_applier_tests {
     #[test]
     fn miracle_position_bypass_and_lookup() {
         // Not applicable -> unconditional 1.
-        assert_eq!(miracle_command_position(0x0C, false, &[0x8C, 0x8D]), 1);
+        assert_eq!(learned_seru_position(0x0C, false, &[0x8C, 0x8D]), 1);
         // Match -> 1-based position of the masked byte.
-        assert_eq!(miracle_command_position(0x0D, true, &[0x8C, 0x8D, 0x8E]), 2);
+        assert_eq!(learned_seru_position(0x0D, true, &[0x8C, 0x8D, 0x8E]), 2);
         // Absent (or empty string) -> 0.
-        assert_eq!(miracle_command_position(0x0F, true, &[0x8C, 0x8D, 0x8E]), 0);
-        assert_eq!(miracle_command_position(0x0F, true, &[]), 0);
+        assert_eq!(learned_seru_position(0x0F, true, &[0x8C, 0x8D, 0x8E]), 0);
+        assert_eq!(learned_seru_position(0x0F, true, &[]), 0);
     }
 }

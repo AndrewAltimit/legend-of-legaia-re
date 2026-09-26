@@ -7,18 +7,25 @@
 //! action tables ([`legaia_asset::baka_opponents`]). This is the *rules*
 //! layer: it consumes chosen attack types (pad presses on the player side)
 //! and produces resolved exchanges, damage, round wins and the gold prize,
-//! exactly as the retail overlay does. The side-view sprite presentation
-//! (billboard actors, banners, HUD) is a host concern and is not covered here.
+//! exactly as the retail overlay does. The duel's 3D presentation (fighter
+//! meshes, clips, banners, HUD) is a host concern and is not covered here.
 //!
 //! Every formula and constant is the reading from
 //! [`docs/subsystems/minigame-baka-fighter.md`](../../../docs/subsystems/minigame-baka-fighter.md),
-//! re-derived from the overlay dumps cited on each item. Two aspects are host
-//! simplifications, called out inline: exchange pacing (retail sequences
-//! per-action keyframes through the sprite system; this port clears the
-//! exchange immediately after resolution and paces re-entry with the retail
-//! cooldown decay), and the special's charge (retail lands the round-winning
-//! special only on its final keyframe; this port exposes the charge as the
-//! time the special has been held before the exchange settles).
+//! re-derived from the overlay dumps cited on each item.
+//!
+//! **Exchange timing.** A fight built from the disc tables
+//! ([`BakaFight::from_tables`]) carries each fighter's action-record speed and
+//! strike-frame column ([`StrikeTable`]) and runs retail's frame cursor over
+//! the chosen attack ([`StrikeClock`]): the exchange is booked on the tick the
+//! winner's strike keyframe is crossed, the special's round win is its *last*
+//! strike landing, and a special with strikes left keeps playing after its
+//! first. What the port still does not model is the clip **tail** - retail
+//! plays each attack clip to its ANM frame count and only then drops back to
+//! idle, while the port clears the exchange once it is booked and paces
+//! re-entry with the retail cooldown decay. A fight built from bare configs
+//! ([`BakaFight::new`]) has no strike data and resolves the tick both sides
+//! have chosen, with the special's charge standing in for its keyframe gate.
 //!
 //! Chain: retail `FUN_801d3468` (match resolution SM) → `FUN_801d3a14`
 //! (exchange win-condition) → `FUN_801d3b18` (damage) → `FUN_801d6660`
@@ -199,8 +206,12 @@ struct FighterState {
     /// CPU scripted-pattern cursor (`&DAT_801dc044[slot]`, counts DOWN).
     ai_cursor: usize,
     /// Frames the current special has charged (host view of the retail
-    /// keyframe gate - see [`BakaFight::choose`]).
+    /// keyframe gate - see [`BakaFight::choose`]). Used only by a fight built
+    /// without strike tables; with them the real keyframe gate replaces it
+    /// ([`StrikeClock`]).
     special_charge: u32,
+    /// The combat tick's frame cursor over the chosen attack's action record.
+    clock: StrikeClock,
 }
 
 impl FighterState {
@@ -216,6 +227,7 @@ impl FighterState {
             cooldown: 0,
             ai_cursor: 0,
             special_charge: 0,
+            clock: StrikeClock::default(),
         }
     }
 
@@ -227,7 +239,227 @@ impl FighterState {
         self.crit_pending = false;
         self.cooldown = COOLDOWN_RESET;
         self.special_charge = 0;
+        self.clock = StrikeClock::default();
     }
+}
+
+/// Where a fighter's strike clock stands: the per-fighter word at block
+/// `+0x0C` (`&DAT_801dbfc8[slot * 0x2a]`) the combat tick and the damage
+/// kernel hand between them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StrikeState {
+    /// `0` - a fresh commit; the keyframe lookup runs every tick.
+    #[default]
+    Armed,
+    /// `1` - the cursor crossed a new sub-keyframe; the resolution SM may
+    /// book the exchange (`FUN_801D3468` tests `== 1` before every damage
+    /// call, `0x801D36DC` / `0x801D3730` / `0x801D378C`).
+    Landed,
+    /// `2` - the damage kernel consumed the strike (`FUN_801D3B18` writes it
+    /// to the winner at `0x801D3EB0`); the lookup re-arms, so a later
+    /// sub-keyframe of the same clip can land again (the special's second
+    /// strike).
+    Consumed,
+}
+
+/// One fighter's strike clock - the frame cursor the retail combat tick
+/// `FUN_801D3F44` runs over the chosen attack, and the lookup it feeds.
+///
+/// Per tick, while an attack is chosen: unless a strike is already
+/// [`StrikeState::Landed`], look the cursor's last step up through
+/// [`keyframe_in_range`] (`0x801D4334`: `from` = the cursor before the step,
+/// block `+0x90`; `to` = after it, actor `+0x68`), and a hit on a sub-keyframe
+/// other than the one cached at block `+0x98` lands it. Then the step itself:
+/// `from = to; to += frame_step * speed * 8 >> 3` (`+0x6A` from record `+0x04`
+/// times the frame-rate divisor `DAT_1F80037D`, which the round setup seeds to
+/// `8` at `0x801D01A4`; the clip selector `FUN_800204F8` adds it).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StrikeClock {
+    /// Actor `+0x68` - the clip cursor, 1/16-frame fixed point.
+    pub cursor: i32,
+    /// Block `+0x90` - the cursor before the last step.
+    pub prev: i32,
+    /// Block `+0x98` - the sub-keyframe last landed (`-1` = `None` at commit).
+    pub landed: Option<usize>,
+    /// Block `+0x0C`.
+    pub state: StrikeState,
+    /// Set on the commit tick: retail's lookup that tick ran *before* the
+    /// commit, against the previous clip, so the new clip's first lookup is
+    /// the next tick's `[0, step]`.
+    fresh: bool,
+}
+
+/// The frame-rate divisor the round setup stores at `DAT_1F80037D`
+/// (`0x801D01A4`); the cursor step is `speed * divisor >> 3`, so at `8` the
+/// step is the record's speed verbatim. A special's commit lowers it to
+/// [`crate::baka_fighter_chrome::SPECIAL_RATE_DIVISOR`] for the rest of the
+/// round (`0x801D4568`), and the tick recomputes both fighters' steps from it
+/// every frame (`0x801D4780..0x801D47CC`) - the special plays in slow motion.
+pub const STRIKE_RATE_DIVISOR: i32 = 8;
+
+/// The three ANM record header fields the clip selector `FUN_800204F8` and
+/// the afterimage read off a fighter's clip record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClipHeader {
+    /// Record `+0x02` - the clip's frame count.
+    pub frames: u16,
+    /// Record `+0x01` bit 0: the selector steps the cursor by
+    /// `(step * 2 + n - 1) / n` instead of `step` (`0x800205B4..0x800205E4`).
+    pub double_step: bool,
+    /// Record `+0x06` - the `n` of that formula.
+    pub n: u8,
+}
+
+impl ClipHeader {
+    /// From a parsed record's header words (`legaia_asset::player_anm`
+    /// `PlayerAnmRecord { a, b, flag, .. }`: `a` = bytes `+0/+1`, `b` =
+    /// `+2/+3`, `flag` = `+6/+7`).
+    pub fn from_record_words(a: u16, b: u16, flag: u16) -> Self {
+        ClipHeader {
+            frames: b,
+            double_step: (a >> 8) & 1 != 0,
+            n: (flag & 0xFF) as u8,
+        }
+    }
+
+    /// The cursor step the clip selector applies for an actor step `step`.
+    pub fn selector_step(&self, step: i32) -> i32 {
+        if self.double_step {
+            let n = i32::from(self.n.max(1));
+            (step * 2 + n - 1) / n
+        } else {
+            step
+        }
+    }
+}
+
+/// One fighter's nine clip headers, by action.
+pub type ClipHeaders = [Option<ClipHeader>; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER];
+
+/// A clip bank's headers for the nine actions starting at `first_record`.
+pub fn clip_headers_from_bundle(
+    bundle: &legaia_asset::player_anm::PlayerAnmBundle,
+    first_record: usize,
+) -> ClipHeaders {
+    std::array::from_fn(|action| {
+        let r = bundle.record(first_record + action).ok()?;
+        Some(ClipHeader::from_record_words(r.a, r.b, r.flag))
+    })
+}
+
+/// Every roster fighter's clip headers, indexed by roster id, read off the
+/// disc through `read_prot` (extraction PROT index -> entry bytes).
+///
+/// The party fighters (roster `0..3`) pose off the PROT 1203 battle-form bank,
+/// nine records each (`id * 9 + action`); the ladder fighters (`3..`) off
+/// their own pack's bank (PROT `1206 + id - 3`, record = action) - the same
+/// two banks the duel's clip ids resolve into (see
+/// `legaia_asset::baka_opponents::action_slot_label`). A fighter whose bank
+/// does not decode gets all-`None` headers.
+pub fn roster_clip_headers(read_prot: impl Fn(usize) -> Option<Vec<u8>>) -> Vec<ClipHeaders> {
+    use legaia_asset::baka_opponents as bo;
+    let party = read_prot(bo::BAKA_HUD_ART_PROT_INDEX).and_then(|e| {
+        legaia_asset::player_anm::find_in_entry(&e, 4)
+            .into_iter()
+            .next()
+    });
+    (0..bo::OPPONENT_COUNT)
+        .map(|roster| {
+            if roster < bo::FIGHTER_PACK_FIRST_ROSTER_ID {
+                party
+                    .as_ref()
+                    .map(|b| clip_headers_from_bundle(b, roster * bo::ACTIONS_PER_FIGHTER))
+                    .unwrap_or([None; bo::ACTIONS_PER_FIGHTER])
+            } else {
+                bo::fighter_pack_prot_index(roster)
+                    .and_then(&read_prot)
+                    .and_then(|e| bo::parse_fighter_pack(&e))
+                    .and_then(|p| legaia_asset::player_anm::parse(&p.anim_bytes).ok())
+                    .map(|b| clip_headers_from_bundle(&b, 0))
+                    .unwrap_or([None; bo::ACTIONS_PER_FIGHTER])
+            }
+        })
+        .collect()
+}
+
+/// One fighter's strike data - the action records' `+0x04` speed and `+0x26`
+/// strike-frame column, indexed by action (the attack types are actions
+/// `1..=4`), plus the clip headers when a host staged the fighter's clip bank.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StrikeTable {
+    pub speed: [i32; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
+    pub frames: [Vec<i16>; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
+    /// Per-action clip header; `None` until a host supplies the fighter's
+    /// clip bank ([`BakaFight::set_clip_headers`]). Without it the strike
+    /// clock steps by the record speed alone, which is exact for every clip
+    /// whose record leaves the double-step bit clear.
+    pub clips: [Option<ClipHeader>; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
+}
+
+impl StrikeTable {
+    /// Lift a fighter's parsed action set.
+    pub fn from_actions(actions: &BakaActionSet) -> Self {
+        let mut frames: [Vec<i16>; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER] =
+            Default::default();
+        for (a, f) in frames.iter_mut().enumerate() {
+            *f = actions.strike_frames(a);
+        }
+        StrikeTable {
+            speed: actions.speed,
+            frames,
+            clips: [None; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
+        }
+    }
+
+    /// The action record an attack type plays (types `1..=4` are actions
+    /// `1..=4`: `record[+0x10] = anim - base - 1`).
+    fn action_of(attack: BakaAttack) -> usize {
+        attack.type_id() as usize
+    }
+}
+
+impl StrikeClock {
+    /// A commit: cursor to the clip start, nothing landed (`+0x98 = -1`,
+    /// `+0x68 = 0`, both blocks' `+0x0C = 0` at `0x801D44B8..0x801D44D8`).
+    fn commit(&mut self) {
+        *self = StrikeClock {
+            fresh: true,
+            ..StrikeClock::default()
+        };
+    }
+
+    /// One combat-tick step of the clock over `frames` at `speed`.
+    ///
+    /// REF: FUN_801d3f44 (`0x801D4304..0x801D435C` lookup, `0x801D47E0..
+    /// 0x801D47EC` the `+0x90` store before the clip selector's advance)
+    fn step(
+        &mut self,
+        frames: &[i16],
+        speed: i32,
+        divisor: i32,
+        clip: Option<ClipHeader>,
+        frame_step: i32,
+    ) {
+        if !self.fresh
+            && self.state != StrikeState::Landed
+            && let Some(i) = keyframe_in_range(frames, self.prev, self.cursor)
+            && self.landed != Some(i)
+        {
+            self.landed = Some(i);
+            self.state = StrikeState::Landed;
+        }
+        self.fresh = false;
+        let step = sra3_round_to_zero(speed * divisor);
+        let step = clip.map_or(step, |c| c.selector_step(step));
+        self.prev = self.cursor;
+        self.cursor = self.cursor.wrapping_add(frame_step * step);
+    }
+}
+
+/// `x >> 3` rounding toward zero - the `bgez; addiu 7; sra 3` idiom at
+/// `0x801D47AC..0x801D47C4`.
+fn sra3_round_to_zero(v: i32) -> i32 {
+    (if v < 0 { v + 7 } else { v }) >> 3
 }
 
 /// Match phase.
@@ -330,6 +562,19 @@ pub struct BakaFight {
     /// The packed pad edge the host handed over for the next cabinet tick
     /// (consumed by it). See [`Self::set_cabinet_pad`].
     cabinet_pad: u16,
+    /// Both fighters' strike data. With it installed an exchange is booked
+    /// only on the tick the winner's strike lands (retail's `+0x0C == 1`
+    /// gate); without it (a fight built from bare configs) the exchange
+    /// resolves the tick both sides have chosen.
+    strike: Option<[StrikeTable; 2]>,
+    /// `DAT_1F80037D` - the frame-rate divisor both clips step by.
+    rate_divisor: i32,
+    /// The live afterimage actors (one per special commit).
+    afterimages: Vec<crate::baka_fighter_chrome::AfterimageActor>,
+    /// What each afterimage drew on the last tick, by owner slot.
+    afterimage_frames: Vec<(usize, crate::baka_fighter_chrome::AfterimageFrame)>,
+    /// Every roster fighter's clip headers, when a host staged them.
+    roster_clips: Option<std::sync::Arc<Vec<ClipHeaders>>>,
 }
 
 /// The two per-round score-bonus tables the overlay carries as rodata: the
@@ -429,7 +674,104 @@ impl BakaFight {
             cabinet_frame: crate::baka_cabinet::CabinetFrame::default(),
             tables: None,
             cabinet_pad: 0,
+            strike: None,
+            rate_divisor: STRIKE_RATE_DIVISOR,
+            afterimages: Vec::new(),
+            afterimage_frames: Vec::new(),
+            roster_clips: None,
         }
+    }
+
+    /// Install both fighters' strike data (action-record speed + strike
+    /// frames), switching exchange booking to the retail keyframe gate.
+    pub fn with_strike_tables(mut self, tables: [StrikeTable; 2]) -> Self {
+        self.strike = Some(tables);
+        self
+    }
+
+    /// A fighter's strike clock, for a host that paces the swing off it.
+    pub fn strike_clock(&self, slot: usize) -> StrikeClock {
+        self.f[slot].clock
+    }
+
+    /// Stage one fighter's clip headers (its ANM bank's records for actions
+    /// `0..9`), so the strike clock honours the double-step bit and the
+    /// afterimage expires on the special clip's real end. A no-op on a fight
+    /// without strike tables.
+    pub fn set_clip_headers(&mut self, slot: usize, clips: ClipHeaders) {
+        if let Some(st) = self.strike.as_mut()
+            && let Some(t) = st.get_mut(slot)
+        {
+            t.clips = clips;
+        }
+    }
+
+    /// Stage every roster fighter's clip headers ([`roster_clip_headers`]):
+    /// both seats take theirs now, and each rung the cabinet installs takes
+    /// its own.
+    pub fn with_roster_clip_headers(mut self, headers: Vec<ClipHeaders>) -> Self {
+        for slot in 0..2 {
+            if let Some(h) = headers.get(self.cfg[slot].roster_id) {
+                self.set_clip_headers(slot, *h);
+            }
+        }
+        self.roster_clips = Some(std::sync::Arc::new(headers));
+        self
+    }
+
+    /// The frame-rate divisor both fighters' clips step by (`DAT_1F80037D`).
+    pub fn rate_divisor(&self) -> i32 {
+        self.rate_divisor
+    }
+
+    /// The afterimages the last tick drew: `(owner slot, frame)` per live
+    /// actor, with each ghost pass's lagged cursor and depth-cue level.
+    pub fn afterimages(&self) -> &[(usize, crate::baka_fighter_chrome::AfterimageFrame)] {
+        &self.afterimage_frames
+    }
+
+    /// The combat tick's commit, for either side: the clock restarts, and a
+    /// special halves the round's clip rate and spawns its afterimage
+    /// (`0x801D4538..0x801D4634`).
+    fn commit(&mut self, slot: usize, attack: BakaAttack) {
+        self.f[slot].clock.commit();
+        if attack == BakaAttack::Special
+            && let Some(st) = self.strike.as_ref()
+        {
+            self.rate_divisor = crate::baka_fighter_chrome::SPECIAL_RATE_DIVISOR;
+            let speed = st[slot].speed[legaia_asset::baka_opponents::ACTION_SPECIAL];
+            self.afterimages
+                .push(crate::baka_fighter_chrome::AfterimageActor::spawn(
+                    slot, speed,
+                ));
+        }
+    }
+
+    /// Step every live afterimage one frame (retail's actor pool runs the
+    /// `0x801D7684` callback once per frame per actor).
+    fn tick_afterimages(&mut self, frame_step: i32) {
+        use legaia_asset::baka_opponents::ACTION_SPECIAL;
+        self.afterimage_frames.clear();
+        let strike = self.strike.as_ref();
+        let chosen = [self.f[0].chosen, self.f[1].chosen];
+        let mut out = Vec::new();
+        self.afterimages.retain_mut(|a| {
+            let clip = strike
+                .and_then(|st| st[a.owner].clips[ACTION_SPECIAL])
+                .map(|c| (c.n, c.frames));
+            // With no clip header nothing can expire the ghosts; they go with
+            // the special's own exchange instead.
+            if clip.is_none() && chosen[a.owner] != Some(BakaAttack::Special) {
+                return false;
+            }
+            let f = a.tick(frame_step, clip);
+            if f.retire {
+                return false;
+            }
+            out.push((a.owner, f));
+            true
+        });
+        self.afterimage_frames = out;
     }
 
     /// Hand the cabinet this frame's **packed** pad edge (`_DAT_8007B874`,
@@ -465,9 +807,18 @@ impl BakaFight {
             self.cfg[1] = FighterConfig::from_tables(opp, act);
             let kf = act.keyframes[legaia_asset::baka_opponents::ACTION_SPECIAL];
             self.special_full_frames[1] = kf.max(0) as u32 * SPECIAL_CHARGE_FRAMES_PER_KEYFRAME;
+            if let Some(st) = self.strike.as_mut() {
+                st[1] = StrikeTable::from_actions(act);
+                if let Some(h) = self.roster_clips.as_ref().and_then(|r| r.get(roster)) {
+                    st[1].clips = *h;
+                }
+            }
         }
         self.f = [FighterState::new(), FighterState::new()];
         self.round = 0;
+        self.rate_divisor = STRIKE_RATE_DIVISOR;
+        self.afterimages.clear();
+        self.afterimage_frames.clear();
         self.settle_timer = 0;
         self.phase = MatchPhase::Fighting;
         self.last_exchange = None;
@@ -622,7 +973,13 @@ impl BakaFight {
         // The cabinet's developer editor dumps these same tables, so a duel
         // built from the disc hands them straight over; the fight keeps both
         // for the between-rung installs.
-        let mut fight = Self::new(p, o, kf, seed).with_action_tables(actions.to_vec());
+        let strike = [
+            StrikeTable::from_actions(&actions[player_roster]),
+            StrikeTable::from_actions(&actions[opponent_roster]),
+        ];
+        let mut fight = Self::new(p, o, kf, seed)
+            .with_action_tables(actions.to_vec())
+            .with_strike_tables(strike);
         fight.tables = Some(std::sync::Arc::new((opponents.to_vec(), actions.to_vec())));
         Some(fight)
     }
@@ -731,6 +1088,7 @@ impl BakaFight {
         }
         self.f[slot].chosen = Some(attack);
         self.f[slot].special_charge = 0;
+        self.commit(slot, attack);
         true
     }
 
@@ -778,10 +1136,20 @@ impl BakaFight {
         // pacing: a held special resolves once fully charged (the retail
         // final-keyframe hit = the round win) or the moment the opponent
         // commits an attack (guard-break: an ordinary exchange win).
-        if p1 == 4 && (self.f[0].special_charge >= self.special_full_frames[0] || p2 != 0) {
+        //
+        // With strike tables the special wins outright, exactly as the retail
+        // resolver's first two tests do (`0x801D3A54` / `0x801D3A5C`: a type
+        // of 4 on either side returns that side before any other check); the
+        // keyframe gate in the tick is what paces it.
+        let striking = self.strike.is_some();
+        if p1 == 4
+            && (striking || self.f[0].special_charge >= self.special_full_frames[0] || p2 != 0)
+        {
             return ExchangeOutcome::FighterWins(0);
         }
-        if p2 == 4 && (self.f[1].special_charge >= self.special_full_frames[1] || p1 != 0) {
+        if p2 == 4
+            && (striking || self.f[1].special_charge >= self.special_full_frames[1] || p1 != 0)
+        {
             return ExchangeOutcome::FighterWins(1);
         }
         if p1 == 0 && p2 == 0 {
@@ -818,8 +1186,24 @@ impl BakaFight {
 
         // Special full-hit: only a fully-charged special scores the immediate
         // round win (retail: landed on the action's final sub-keyframe).
+        //
+        // With strike tables this is retail's own test: the winner's landed
+        // sub-keyframe (block `+0x98`) is the special record's last
+        // (`record[+0x1C] - 1`, `0x801D3C00..0x801D3C0C`). The damage kernel
+        // also hands the winner's strike back to the lookup (`+0x0C = 2`,
+        // `0x801D3EB0`), which is what lets the special's next strike land.
+        let full_hit = match self.strike.as_ref() {
+            Some(st) => {
+                let n = st[winner].frames[legaia_asset::baka_opponents::ACTION_SPECIAL].len();
+                n > 0 && self.f[winner].clock.landed == Some(n - 1)
+            }
+            None => self.f[winner].special_charge >= self.special_full_frames[winner],
+        };
+        if self.f[winner].clock.state == StrikeState::Landed {
+            self.f[winner].clock.state = StrikeState::Consumed;
+        }
         let mut special_round_win = false;
-        if winner_type == 4 && self.f[winner].special_charge >= self.special_full_frames[winner] {
+        if winner_type == 4 && full_hit {
             self.f[winner].round_wins += 1;
             self.f[loser].committed = true;
             special_round_win = true;
@@ -984,6 +1368,9 @@ impl BakaFight {
                 self.round += 1;
                 self.f[0].reset_round();
                 self.f[1].reset_round();
+                // The round setup (`0x32`) restores the clip rate the
+                // special lowered (`0x801D01A4`).
+                self.rate_divisor = STRIKE_RATE_DIVISOR;
                 self.phase = MatchPhase::Fighting;
                 return;
             }
@@ -1005,6 +1392,7 @@ impl BakaFight {
             if self.ai_controlled[s] && self.can_choose(s) {
                 let pick = self.ai_pick(s);
                 self.f[s].chosen = Some(pick);
+                self.commit(s, pick);
             }
         }
 
@@ -1015,7 +1403,43 @@ impl BakaFight {
             }
         }
 
-        match self.resolve(frame_step) {
+        // The strike clocks (retail's per-fighter combat tick, which runs
+        // before the resolution SM reads the `+0x0C` words it leaves).
+        if let Some(st) = self.strike.as_ref() {
+            for (fs, table) in self.f.iter_mut().zip(st.iter()) {
+                if let Some(attack) = fs.chosen {
+                    let a = StrikeTable::action_of(attack);
+                    fs.clock.step(
+                        &table.frames[a],
+                        table.speed[a],
+                        self.rate_divisor,
+                        table.clips[a],
+                        frame_step,
+                    );
+                }
+            }
+        }
+        self.tick_afterimages(frame_step);
+
+        let outcome = self.resolve(frame_step);
+        // The keyframe gate: the resolution SM books a decided exchange only
+        // while the winner's strike has landed (`0x801D36DC` / `0x801D3730`),
+        // and a draw while either side's has (`0x801D378C..0x801D37A4`).
+        let outcome = match (self.strike.is_some(), outcome) {
+            (true, ExchangeOutcome::FighterWins(w))
+                if self.f[w].clock.state != StrikeState::Landed =>
+            {
+                ExchangeOutcome::Undecided
+            }
+            (true, ExchangeOutcome::Draw)
+                if self.f[0].clock.state != StrikeState::Landed
+                    && self.f[1].clock.state != StrikeState::Landed =>
+            {
+                ExchangeOutcome::Undecided
+            }
+            (_, o) => o,
+        };
+        match outcome {
             ExchangeOutcome::Undecided => {}
             ExchangeOutcome::FighterWins(w) => {
                 let l = w ^ 1;
@@ -1039,7 +1463,21 @@ impl BakaFight {
                     self.f[0].cooldown = COOLDOWN_RESET;
                     self.f[1].cooldown = COOLDOWN_RESET;
                 }
-                self.end_exchange();
+                // A special that has strikes left keeps playing: retail's
+                // clip runs on and its next sub-keyframe lands again (the
+                // kernel re-armed it). Only the struck side's exchange ends.
+                let special_continues = self.strike.as_ref().is_some_and(|st| {
+                    self.f[w].chosen == Some(BakaAttack::Special)
+                        && !special_round_win
+                        && self.f[w].clock.landed.map_or(0, |i| i + 1)
+                            < st[w].frames[legaia_asset::baka_opponents::ACTION_SPECIAL].len()
+                });
+                if special_continues {
+                    self.f[l].chosen = None;
+                    self.f[l].committed = false;
+                } else {
+                    self.end_exchange();
+                }
                 self.last_exchange = Some(ExchangeReport {
                     winner: w,
                     draw: false,
@@ -1602,15 +2040,13 @@ fn sra4_round_to_zero(v: i32) -> i32 {
     (if v < 0 { v + 0xF } else { v }) >> 4
 }
 
-// NOT WIRED: nothing can build the `frame_indices` slice. It is the action
-// record's per-sub-keyframe `+0x26` column, and
-// `legaia_asset::baka_opponents::parse_actions` decodes only the record's power
-// and sub-keyframe count. The clip playback the browser duel does run walks ANM
-// frame indices directly - a different id space - and never asks which action
-// sub-keyframe a frame range covers, so adding a caller needs the parser column
-// first, not a host. The native window stages no fighter clip at all, so the row
-// is open on both hosts for different reasons.
 /// PORT: FUN_801d6e5c - action-table keyframe lookup by frame range.
+///
+/// Wired: the combat tick's call at `0x801D4334` is [`StrikeClock`]'s
+/// per-tick lookup (`a0` = the fighter's table `s2[+0x94]`, `a1` = the action
+/// `s4[+0x5C] - (s2[+0x14] + 1)`, `a2` = the pre-step cursor `s2[+0x90]`,
+/// `a3` = the cursor `s4[+0x68]`), which every duel built from the disc
+/// tables runs on all three hosts through [`BakaFight::tick_with_input`].
 ///
 /// Returns the index of the first sub-keyframe whose whole-frame index (the
 /// action record's `+0x26` field, one per `0x08`-byte sub-keyframe) falls
@@ -2747,5 +3183,228 @@ mod tests {
         // Empty tables never panic; both increments fall back to zero.
         let s = baka_round_score(5, &[], 0x500, &[]);
         assert_eq!(s, BakaRoundScore::default());
+    }
+
+    // --- The strike clock (retail's `+0x0C` keyframe gate) ------------------
+
+    /// A strike table where every attack plays at `speed` 16ths of a frame
+    /// per tick and strikes on `frames`; the special strikes on `special`.
+    fn strike_table(speed: i32, frames: &[i16], special: &[i16]) -> StrikeTable {
+        let mut t = StrikeTable {
+            speed: [speed; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
+            ..StrikeTable::default()
+        };
+        for a in 1..=3 {
+            t.frames[a] = frames.to_vec();
+        }
+        t.frames[4] = special.to_vec();
+        t
+    }
+
+    fn striking_fight(speed: i32, frames: &[i16], special: &[i16]) -> BakaFight {
+        let tab = strike_table(speed, frames, special);
+        let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), [2, 2], 1)
+            .with_strike_tables([tab.clone(), tab]);
+        f.ai_controlled = [false, false];
+        f
+    }
+
+    #[test]
+    fn strike_clock_lands_on_the_keyframe_crossing_the_tick_after_commit() {
+        // Speed 16 = one whole frame per tick. Strike on frame 3.
+        let mut c = StrikeClock::default();
+        c.commit();
+        // Commit tick: no lookup (retail's ran against the old clip), step.
+        c.step(&[3], 16, STRIKE_RATE_DIVISOR, None, 1);
+        assert_eq!((c.prev, c.cursor, c.state), (0, 16, StrikeState::Armed));
+        // Ranges [0,1], [1,2] miss; [2,3] holds frame 3... the lookup runs on
+        // the range the LAST step covered, so frame 3 lands on the tick whose
+        // pre-step range is [2 << 4, 3 << 4].
+        c.step(&[3], 16, STRIKE_RATE_DIVISOR, None, 1); // looks up [0, 1]
+        c.step(&[3], 16, STRIKE_RATE_DIVISOR, None, 1); // [1, 2]
+        assert_eq!(c.state, StrikeState::Armed);
+        c.step(&[3], 16, STRIKE_RATE_DIVISOR, None, 1); // [2, 3] -> lands
+        assert_eq!(c.state, StrikeState::Landed);
+        assert_eq!(c.landed, Some(0));
+        // Once landed it stays landed (the lookup is skipped) until consumed.
+        c.step(&[3], 16, STRIKE_RATE_DIVISOR, None, 1);
+        assert_eq!(c.state, StrikeState::Landed);
+    }
+
+    #[test]
+    fn strike_step_is_speed_times_the_divisor_over_eight() {
+        // `+0x6A = record[+4] * DAT_1F80037D >> 3`, divisor 8, times the
+        // frame step the clip selector multiplies in.
+        let mut c = StrikeClock::default();
+        c.step(&[], 5, STRIKE_RATE_DIVISOR, None, 2);
+        assert_eq!(c.cursor, 10);
+        c.step(&[], -3, STRIKE_RATE_DIVISOR, None, 1);
+        assert_eq!(c.cursor, 7, "a negative speed rounds toward zero");
+        // The special's divisor halves it: 5 * 4 >> 3 = 2.
+        c.step(
+            &[],
+            5,
+            crate::baka_fighter_chrome::SPECIAL_RATE_DIVISOR,
+            None,
+            1,
+        );
+        assert_eq!(c.cursor, 9);
+        // A double-step clip (record `+1` bit 0) at n = 1 doubles it back.
+        let dbl = ClipHeader {
+            frames: 30,
+            double_step: true,
+            n: 1,
+        };
+        c.step(
+            &[],
+            5,
+            crate::baka_fighter_chrome::SPECIAL_RATE_DIVISOR,
+            Some(dbl),
+            1,
+        );
+        assert_eq!(c.cursor, 13);
+        assert_eq!(ClipHeader::from_record_words(0x0114, 30, 0x0201), dbl);
+    }
+
+    #[test]
+    fn a_special_commit_slows_the_round_and_spawns_its_afterimage() {
+        let mut f = striking_fight(16, &[20], &[30, 40]);
+        assert_eq!(f.rate_divisor(), STRIKE_RATE_DIVISOR);
+        assert!(f.choose(0, BakaAttack::Special));
+        assert_eq!(
+            f.rate_divisor(),
+            crate::baka_fighter_chrome::SPECIAL_RATE_DIVISOR
+        );
+        f.tick(1);
+        let ghosts = f.afterimages();
+        assert_eq!(ghosts.len(), 1);
+        assert_eq!(ghosts[0].0, 0, "it trails the special's thrower");
+        assert_eq!(ghosts[0].1.passes.len(), 2);
+        // With a staged clip header the ghosts expire on the special clip's
+        // end rather than with the exchange.
+        let mut hdr = [None; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER];
+        hdr[legaia_asset::baka_opponents::ACTION_SPECIAL] = Some(ClipHeader {
+            frames: 2,
+            double_step: false,
+            n: 1,
+        });
+        f.set_clip_headers(0, hdr);
+        for _ in 0..20 {
+            f.tick(1);
+        }
+        assert!(
+            f.afterimages().is_empty(),
+            "both ghosts ran off a 2-frame clip"
+        );
+    }
+
+    #[test]
+    fn a_decided_exchange_waits_for_the_winners_strike() {
+        // Strike on frame 2 at one frame per tick.
+        let mut f = striking_fight(16, &[2], &[1, 3]);
+        assert!(f.choose(0, BakaAttack::B)); // B beats A: slot 0 wins
+        assert!(f.choose(1, BakaAttack::A));
+        let mut ticks = 0;
+        while f.last_exchange().is_none() {
+            f.tick(1);
+            ticks += 1;
+            assert!(ticks < 10, "the strike lands");
+        }
+        // Commit tick + [0,1] + [1,2] -> booked on the third tick.
+        assert_eq!(ticks, 3);
+        let r = f.last_exchange().unwrap();
+        assert_eq!(r.winner, 0);
+        assert_eq!(f.hp(1), HP_START - 256);
+    }
+
+    #[test]
+    fn a_losers_strike_alone_books_nothing() {
+        // Slot 0 (the loser, A vs B) commits first and strikes; slot 1 has
+        // not chosen yet, then chooses later - the exchange waits for slot
+        // 1's own strike rather than booking on slot 0's.
+        let mut f = striking_fight(16, &[1], &[1]);
+        assert!(f.choose(0, BakaAttack::A));
+        for _ in 0..4 {
+            f.tick(1);
+        }
+        assert_eq!(f.strike_clock(0).state, StrikeState::Landed);
+        assert!(f.last_exchange().is_none());
+        assert!(f.choose(1, BakaAttack::B));
+        f.tick(1); // commit tick
+        assert!(f.last_exchange().is_none(), "slot 1 has not struck yet");
+        f.tick(1); // [0,1] -> slot 1 lands
+        let r = f.last_exchange().expect("booked on the winner's strike");
+        assert_eq!(r.winner, 1);
+    }
+
+    #[test]
+    fn the_special_wins_the_round_only_on_its_last_strike() {
+        // Special strikes on frames 1 and 3.
+        let mut f = striking_fight(16, &[2], &[1, 3]);
+        assert!(f.choose(0, BakaAttack::Special));
+        let mut first = None;
+        for t in 0..10 {
+            f.tick(1);
+            if let Some(r) = f.last_exchange() {
+                match first {
+                    None => first = Some((t, r)),
+                    Some((t0, r0)) if r.special_round_win => {
+                        // Retail's final-strike test: landed == count - 1.
+                        assert_eq!(f.round_wins(0), 1);
+                        assert!(t > t0, "the second strike is later");
+                        assert!(!r0.special_round_win);
+                        return;
+                    }
+                    Some(_) => {}
+                }
+            }
+        }
+        panic!("the special's last strike never landed: {first:?}");
+    }
+
+    #[test]
+    fn from_tables_runs_the_strike_clock() {
+        use legaia_asset::baka_opponents::{BakaActionSet, BakaOpponent, BakaSubKeyframe};
+        let opp = |i| BakaOpponent {
+            index: i,
+            gold_reward: 10,
+            damage_mod: 100,
+            def_tiers: [0; 3],
+            crit_chance: 0,
+            atk_tiers: [0; 3],
+            ai_pattern: vec![],
+        };
+        let kf = |frame| BakaSubKeyframe {
+            offset: [0; 3],
+            frame,
+        };
+        let act = |i| BakaActionSet {
+            index: i,
+            power: [0, 10, 10, 10, 0, 0, 0, 0, 0],
+            keyframes: [0, 1, 1, 1, 2, 0, 0, 0, 0],
+            speed: [16; 9],
+            sub_keyframes: [
+                vec![],
+                vec![kf(4)],
+                vec![kf(4)],
+                vec![kf(4)],
+                vec![kf(1), kf(5)],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+            ],
+        };
+        let mut f =
+            BakaFight::from_tables(&[opp(0), opp(1)], &[act(0), act(1)], 0, 1, 3).expect("fight");
+        f.ai_controlled = [false, false];
+        assert!(f.choose(0, BakaAttack::B));
+        assert!(f.choose(1, BakaAttack::A));
+        for _ in 0..4 {
+            f.tick(1);
+            assert!(f.last_exchange().is_none(), "strike frame 4 not reached");
+        }
+        f.tick(1);
+        assert_eq!(f.last_exchange().map(|r| r.winner), Some(0));
     }
 }

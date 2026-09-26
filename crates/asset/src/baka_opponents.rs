@@ -47,8 +47,10 @@
 //! is the record count - so display id `base+k` is bank record `k-1` and the
 //! two index spaces are record-aligned (see [`action_slot_label`] for the
 //! resolved layout + disasm provenance); don't conflate the two. Per record
-//! the fight code reads `+0x18` (base attack power) and `+0x1c`
-//! (sub-keyframe count). [`parse_actions`] decodes the 17 tables.
+//! the fight code reads `+0x04` (clip speed), `+0x18` (base attack power),
+//! `+0x1c` (sub-keyframe count) and the sub-keyframe slots from `+0x20`
+//! (strike offset + the `+0x26` whole-frame strike index, see
+//! [`BakaSubKeyframe`]). [`parse_actions`] decodes the 17 tables.
 //!
 //! ## Extent - 17 fighters
 //!
@@ -137,6 +139,22 @@ pub const ACTION_POWER_OFFSET: usize = 0x18;
 
 /// Byte offset of the sub-keyframe count within an action record.
 pub const ACTION_KEYFRAME_COUNT_OFFSET: usize = 0x1C;
+
+/// Byte offset of the per-action clip speed within an action record: the
+/// combat tick `FUN_801D3F44` multiplies it by the frame-rate divisor
+/// `DAT_1F80037D` and shifts right three to get the actor's cursor step
+/// `+0x6A` (`0x801D4788..0x801D47CC`).
+pub const ACTION_SPEED_OFFSET: usize = 0x04;
+
+/// Byte offset of the first sub-keyframe within an action record.
+pub const ACTION_SUB_KEYFRAME_OFFSET: usize = 0x20;
+
+/// Byte stride of one sub-keyframe (`sll 3` in the lookup `FUN_801D6E5C`).
+pub const ACTION_SUB_KEYFRAME_STRIDE: usize = 8;
+
+/// Sub-keyframe slots one record has room for: `(0x60 - 0x20) / 8`.
+pub const ACTION_SUB_KEYFRAME_SLOTS: usize =
+    (ACTION_RECORD_STRIDE - ACTION_SUB_KEYFRAME_OFFSET) / ACTION_SUB_KEYFRAME_STRIDE;
 
 /// Action record of the first of the three attacks (types 1/2/3 → records
 /// 1/2/3 in the current-action id space the damage kernel indexes).
@@ -245,6 +263,22 @@ impl BakaOpponent {
     }
 }
 
+/// One sub-keyframe of an action record: the strike offset and the frame it
+/// lands on.
+///
+/// `+0x20 + i * 8`: three `i16` translation offsets, then the `i16` frame
+/// index in **whole** clip frames. The lookup `FUN_801D6E5C` reads the frame
+/// (`lh v1, 0x26(v0)` at `0x801D6EE0`); the impact pair `FUN_801D4DF8` reads
+/// the three offsets as the effect's position relative to the fighter.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BakaSubKeyframe {
+    /// `+0x00` / `+0x02` / `+0x04` - the strike offset from the fighter.
+    pub offset: [i16; 3],
+    /// `+0x06` (record `+0x26` for the first slot) - the whole-frame index
+    /// the strike lands on.
+    pub frame: i16,
+}
+
 /// One fighter's decoded action table: per-slot base power + keyframe count.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BakaActionSet {
@@ -254,6 +288,13 @@ pub struct BakaActionSet {
     pub power: [i32; ACTIONS_PER_FIGHTER],
     /// `+0x1c` per action record - sub-keyframe count.
     pub keyframes: [i32; ACTIONS_PER_FIGHTER],
+    /// `+0x04` per action record - the clip speed the combat tick turns into
+    /// the actor's cursor step ([`ACTION_SPEED_OFFSET`]).
+    pub speed: [i32; ACTIONS_PER_FIGHTER],
+    /// The live sub-keyframes per action record: the first `keyframes[a]`
+    /// of the record's [`ACTION_SUB_KEYFRAME_SLOTS`] slots (a count outside
+    /// `0..=8` is clamped - no record on the disc carries one).
+    pub sub_keyframes: [Vec<BakaSubKeyframe>; ACTIONS_PER_FIGHTER],
 }
 
 impl BakaActionSet {
@@ -266,6 +307,19 @@ impl BakaActionSet {
             _ => None,
         }
     }
+
+    /// The whole-frame strike indices of action `action`, in slot order -
+    /// the column `FUN_801D6E5C` scans.
+    pub fn strike_frames(&self, action: usize) -> Vec<i16> {
+        self.sub_keyframes
+            .get(action)
+            .map(|k| k.iter().map(|s| s.frame).collect())
+            .unwrap_or_default()
+    }
+}
+
+fn read_i16(overlay: &[u8], off: usize) -> i16 {
+    i16::from_le_bytes([overlay[off], overlay[off + 1]])
 }
 
 fn read_i32(overlay: &[u8], off: usize) -> i32 {
@@ -353,15 +407,34 @@ pub fn parse_actions(overlay: &[u8]) -> Option<Vec<BakaActionSet>> {
         }
         let mut power = [0i32; ACTIONS_PER_FIGHTER];
         let mut keyframes = [0i32; ACTIONS_PER_FIGHTER];
-        for (a, (pw, kf)) in power.iter_mut().zip(keyframes.iter_mut()).enumerate() {
+        let mut speed = [0i32; ACTIONS_PER_FIGHTER];
+        let mut sub_keyframes: [Vec<BakaSubKeyframe>; ACTIONS_PER_FIGHTER] = Default::default();
+        for a in 0..ACTIONS_PER_FIGHTER {
             let r = table + a * ACTION_RECORD_STRIDE;
-            *pw = read_i32(overlay, r + ACTION_POWER_OFFSET);
-            *kf = read_i32(overlay, r + ACTION_KEYFRAME_COUNT_OFFSET);
+            power[a] = read_i32(overlay, r + ACTION_POWER_OFFSET);
+            keyframes[a] = read_i32(overlay, r + ACTION_KEYFRAME_COUNT_OFFSET);
+            speed[a] = read_i32(overlay, r + ACTION_SPEED_OFFSET);
+            let live = keyframes[a].clamp(0, ACTION_SUB_KEYFRAME_SLOTS as i32) as usize;
+            sub_keyframes[a] = (0..live)
+                .map(|k| {
+                    let o = r + ACTION_SUB_KEYFRAME_OFFSET + k * ACTION_SUB_KEYFRAME_STRIDE;
+                    BakaSubKeyframe {
+                        offset: [
+                            read_i16(overlay, o),
+                            read_i16(overlay, o + 2),
+                            read_i16(overlay, o + 4),
+                        ],
+                        frame: read_i16(overlay, o + 6),
+                    }
+                })
+                .collect();
         }
         out.push(BakaActionSet {
             index: i,
             power,
             keyframes,
+            speed,
+            sub_keyframes,
         });
     }
     Some(out)
@@ -786,9 +859,23 @@ mod tests {
                     .copy_from_slice(&((i * 10 + a) as i32).to_le_bytes());
                 buf[r + ACTION_KEYFRAME_COUNT_OFFSET..r + ACTION_KEYFRAME_COUNT_OFFSET + 4]
                     .copy_from_slice(&(a as i32 + 1).to_le_bytes());
+                buf[r + ACTION_SPEED_OFFSET..r + ACTION_SPEED_OFFSET + 4]
+                    .copy_from_slice(&(a as i32 + 3).to_le_bytes());
+                for k in 0..=a.min(ACTION_SUB_KEYFRAME_SLOTS - 1) {
+                    let o = r + ACTION_SUB_KEYFRAME_OFFSET + k * ACTION_SUB_KEYFRAME_STRIDE;
+                    buf[o..o + 2].copy_from_slice(&(-(k as i16) - 1).to_le_bytes());
+                    buf[o + 6..o + 8].copy_from_slice(&(k as i16 * 4 + 5).to_le_bytes());
+                }
             }
         }
         let sets = parse_actions(&buf).expect("parses");
+        assert_eq!(sets[1].speed[2], 5);
+        // Record 2 carries three live slots; the strike frame is `+0x26`.
+        assert_eq!(sets[1].strike_frames(2), vec![5, 9, 13]);
+        assert_eq!(sets[1].sub_keyframes[2][1].offset, [-2, 0, 0]);
+        // A count past the record's eight slots is clamped, not over-read.
+        assert_eq!(sets[1].sub_keyframes[8].len(), ACTION_SUB_KEYFRAME_SLOTS);
+        assert_eq!(ACTION_SUB_KEYFRAME_SLOTS, 8);
         assert_eq!(sets.len(), OPPONENT_COUNT);
         assert_eq!(sets[1].power[2], 12);
         assert_eq!(sets[1].attack_power(1), Some(11));

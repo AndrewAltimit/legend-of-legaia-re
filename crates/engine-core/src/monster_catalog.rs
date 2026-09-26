@@ -94,9 +94,10 @@ pub struct MonsterDef {
     pub gold: u16,
     /// Optional drop item id (`None` = no drop).
     pub drop_item: Option<u8>,
-    /// `1/256` drop-rate. Engines roll one byte; if it falls below this the
-    /// drop fires. `0` means never; `255` means always.
-    pub drop_rate_q8: u8,
+    /// Drop chance in percent (record `+0x49`), as the victory drop roll
+    /// reads it: `rand() % 100 < chance (+ the Items Up bonus)`, see
+    /// [`legaia_engine_vm::battle_formulas::victory_drop_roll`].
+    pub drop_chance_pct: u8,
     /// Seru id attached to this monster, if it carries one. A successful
     /// capture (capture spell / Genocide Crystal) feeds this id into the
     /// [`crate::seru_learning::SeruRegistry`]. `None` = no Seru to capture.
@@ -180,6 +181,16 @@ pub struct MonsterDef {
     /// signal [`Self::installed_stats`] uses to answer with the built fields
     /// unchanged - so a disc-free battle keeps exactly the stats it had.
     pub raw_stats: [u16; 6],
+    /// Record `+0x3E` - the Seru a killing blow can **absorb**, as the
+    /// player-magic index (`spell id - 0x80`, Gimard's `1` -> spell `0x81`);
+    /// `0` for a monster carrying no Seru. Read by the arts resolver's
+    /// killing-blow arm ([`crate::world::World`]'s Seru absorb roll).
+    /// Distinct from [`Self::seru_id`], which keys the engine's capture-spell
+    /// registry.
+    pub absorb_seru: u8,
+    /// Record `+0x3F` - that absorb's chance in percent, before the Ivory
+    /// Book's `+30`.
+    pub absorb_chance_pct: u8,
 }
 
 impl MonsterDef {
@@ -202,7 +213,7 @@ impl MonsterDef {
             exp: hp / 2,
             gold: hp / 4,
             drop_item: None,
-            drop_rate_q8: 0,
+            drop_chance_pct: 0,
             seru_id: None,
             magic_attacks: Vec::new(),
             element: 7,
@@ -211,6 +222,8 @@ impl MonsterDef {
             wide_texture_page: 0,
             plaque_badge: None,
             raw_stats: [0; 6],
+            absorb_seru: 0,
+            absorb_chance_pct: 0,
         }
     }
 
@@ -338,11 +351,11 @@ impl MonsterCatalog {
 ///
 /// `exp` / `gold` /
 /// `drop_item` /
-/// `drop_rate_q8` come from the
+/// `drop_chance_pct` come from the
 /// record's reward fields (`+0x44..+0x49`) - these are the **base** values;
 /// the retail victory-spoils formula scales them (EXP `* 3/4` then split among
-/// the party; gold `(Σ base>>1) * 0.5`). The drop chance is stored as a `u8`
-/// percent in the record and converted to the engine's `1/256` rate.
+/// the party; gold `(Σ base>>1) * 0.5`). The drop chance stays the record's
+/// `u8` percent, which is what the retail roll compares against.
 pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecord) -> MonsterDef {
     // The battle-load boosted profile (`FUN_80054CB0`), in record-stat order:
     // `[AGL, ATK, UDF, LDF, INT, SPD]`. Every stat below that the live actor
@@ -376,7 +389,7 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     def.exp = rec.exp;
     def.gold = rec.gold;
     def.drop_item = (rec.drop_item != 0).then_some(rec.drop_item);
-    def.drop_rate_q8 = ((rec.drop_chance_pct as u16 * 256 / 100).min(255)) as u8;
+    def.drop_chance_pct = rec.drop_chance_pct;
     // Castable spells: the record's 3-slot global-id array (`+0x21..=+0x23`);
     // the parser already filters out the empty `<= 1` slots.
     def.magic_attacks = rec.magic_attacks.clone();
@@ -387,6 +400,10 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     // Record `+0x1F` - the battle camera's framing input (`FUN_801F0348`).
     def.size_class = rec.size_class;
     def.wide_texture_page = rec.wide_texture_page;
+    // Record `+0x3E` / `+0x3F` - the killing-blow Seru absorb the arts
+    // resolver rolls (`FUN_801EC3E4`, `0x801EE250..0x801EE2E8`).
+    def.absorb_seru = rec.seru_id;
+    def.absorb_chance_pct = rec.catch_rate_pct;
     def
 }
 
@@ -585,7 +602,7 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             exp,
             gold,
             drop_item: None,
-            drop_rate_q8: 0,
+            drop_chance_pct: 0,
             seru_id: None,
             magic_attacks: Vec::new(),
             element: 7,
@@ -596,6 +613,8 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             // No record behind a synthetic monster: `installed_stats` answers
             // with the fields above whatever the fight class is.
             raw_stats: [0; 6],
+            absorb_seru: 0,
+            absorb_chance_pct: 0,
         };
         cat.insert(def_struct);
     }

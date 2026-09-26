@@ -376,7 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <tr><td><code>0x8007B6A8</code></td><td>u8</td><td>Save-anywhere allow flag: bit 0 of the scene header's second byte, stored at scene entry. The same bit raises the field-fog cap on every overworld.</td></tr>
       <tr><td><code>0x8007B6F4</code> / <code>0x8007B790</code></td><td>u16</td><td>GTE <code>H</code> projection register (focal length / zoom; the "camera mode word" and "small maps" labels come from a cheat database reading the same word outside world-map mode) / camera pitch, the first of the angle trio.</td></tr>
       <tr><td><code>0x8007BB80..0x8007BBA0</code></td><td>u32 / i32</td><td>Menu list-kernel state cluster: window-slide latch, pad-edge word, selected-row payload, scroll top, mode/result, selected row, class nibble, row count (<a href="../subsystems/field-menu.html">field menu</a>).</td></tr>
-      <tr><td><code>0x8007BB04</code> / <code>0x8007BB08</code></td><td>ptr</td><td>Two <code>0x8000</code>-byte render scratch buffers; the second holds a <code>u16</code> depth ramp feeding the GTE / primitive-buffer reset.</td></tr>
+      <tr><td><code>0x8007BB04</code> / <code>0x8007BB08</code></td><td>ptr</td><td>The overworld's screen-curvature pair: the second holds a quadratic drop ramp, the first the table of screen-Y offsets built from it, which the overworld's leaves, the fog and the drop shadow add to each vertex's screen Y.</td></tr>
     </tbody>
   </table>
   <div class="see-also">
@@ -501,7 +501,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <tr><td><code>0x8007B850</code></td><td>Per-frame held button mask, packed (face/shoulder byte in bits 0-7, dpad/system byte in bits 8-15); port 1 fills the high half only in debug mode. Engine mirror <code>retail_pad</code>.</td></tr>
       <tr><td><code>0x8007B7C4</code> / <code>0x8007B874</code></td><td>Changed-this-frame mask / newly-pressed edge mask.</td></tr>
       <tr><td><code>0x80089128</code> / <code>0x8007B938</code> / <code>0x8007B93C</code></td><td>32-entry held-mask history ring / its AND (held for the full window) / the auto-repeat pulse the menus use, rearming every 8 vsyncs.</td></tr>
-      <tr><td><code>0x8007B868</code></td><td>Dev/dual-mode gate the actor-sound family checks (retail <code>0</code>); no static writer sets it.</td></tr>
+      <tr><td><code>0x8007B868</code></td><td>Dev/dual-mode gate the actor-sound family checks (retail <code>0</code>); its only stores are a boot store of a constant <code>0</code> and a bit-clear, so the developer screens it gates (Baka Fighter's keyframe editor among them) are unreachable on a retail disc.</td></tr>
     </tbody>
   </table>
   <details class="disclosure">
@@ -603,7 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <tr><td>Mode-switch prologue</td><td><code>FUN_8001DCF8</code> @ <code>0x8001E17C</code></td><td>Sole non-RMW writer of the field-VM flag word's low 16 bits</td><td><code>funcs/8001dcf8.txt</code></td></tr>
       <tr><td>Mode-entry snapshot</td><td><code>FUN_80016230</code></td><td>Gates the field-state snapshot on <code>0x8007B7AC == 3</code></td><td><code>funcs/80016230.txt</code></td></tr>
       <tr><td>CONFIG screen</td><td><code>FUN_800188C8</code></td><td>Indexes the mode table at stride 24 - confirms the entry stride</td><td><code>funcs/800188c8.txt</code></td></tr>
-      <tr><td>Render scratch allocator</td><td><code>FUN_800271A8</code></td><td>The two <code>0x8000</code>-byte buffers and the depth ramp</td><td><code>funcs/800271a8.txt</code></td></tr>
+      <tr><td>Overworld curvature builder</td><td><code>FUN_800271A8</code></td><td>The two <code>0x8000</code>-byte buffers: a drop ramp and the screen-Y curvature table</td><td><code>funcs/800271a8.txt</code></td></tr>
       <tr><td>TMD installer</td><td><code>FUN_80026B4C</code> @ <code>0x80026BA8</code></td><td>Sole writer of the global TMD table; the hidden <code>gp[+0x820]</code> counter store</td><td><code>funcs/80026b4c.txt</code></td></tr>
       <tr><td>Flag ops</td><td><code>FUN_8003CE08</code> / <code>_CE34</code> / <code>_CE64</code></td><td>The fourth flag bank's <code>(idx &gt;&gt; 3, 0x80 &gt;&gt; (idx &amp; 7))</code> addressing</td><td><code>funcs/8003ce08.txt</code></td></tr>
       <tr><td>Inventory window installer</td><td><code>FUN_8004313C</code></td><td>The only writer of the bag's active window (128 or 256 slots)</td><td><code>funcs/8004313c.txt</code></td></tr>

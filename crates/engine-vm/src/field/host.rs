@@ -146,9 +146,12 @@ pub trait FieldHost {
         0
     }
 
-    /// Read the screen-mode word `_DAT_8007B850` (op 0x42 mode 1). Bits
-    /// `0x10/0x20/0x40/0x80` are individually testable; bits `0xF000` are
-    /// matched against an 8-entry lookup table at `_DAT_801F28D0`.
+    /// Read the word op 0x42 mode 1 tests, `_DAT_8007B850` - the **held
+    /// pad**, packed (d-pad in `0xF000`, Triangle / Circle / Cross / Square
+    /// in `0x10` / `0x20` / `0x40` / `0x80`). The name is historical: the
+    /// word is not a screen mode. Bits `0x10/0x20/0x40/0x80` are
+    /// individually testable; bits `0xF000` are matched against the
+    /// 8-entry compass table at `_DAT_801F28D0`.
     fn screen_mode(&self) -> u32 {
         0
     }
@@ -550,6 +553,19 @@ pub trait FieldHost {
     /// state and not threaded through the VM, so the host owns the write.
     /// PC += 2.
     fn copy_dialog_depth_to_player(&mut self) {}
+
+    /// Op `0x31` / `0x32` (`CFLAG_SET` / `CFLAG_CLR`) aimed at the player
+    /// channel `0xF8`: retail's extended prologue resolves `0xF8` to the
+    /// player object `_DAT_8007C364` (`FUN_8003C83C`), so `B1 F8 <bit>` /
+    /// `B2 F8 <bit>` write the **player's** `+0x10` word, not the caller's.
+    /// The player object is host state the VM does not thread through, so
+    /// the host owns the write. Return `true` when the host applied it (the
+    /// VM then advances without touching `ctx`); the default `false` keeps
+    /// the op on the context the caller passed.
+    fn player_cflag(&mut self, bit: u8, set: bool) -> bool {
+        let _ = (bit, set);
+        false
+    }
 
     /// Op 0x4C sub-3 sub-D - **walk-region attribute refresh** at the
     /// player's tile.
@@ -1715,8 +1731,13 @@ pub trait FieldHost {
     /// Op 0x4C outer-nibble-C sub-0xE - write `_DAT_8007B6AC`.
     ///
     /// 3-byte instruction `[4C, 0xCE, value]`. Writes `_DAT_8007B6AC = value`
-    /// (zero-extended). The slot is read by op 0x43 sub-1 (the move-table
-    /// stride accumulator). PC += 3.
+    /// (zero-extended, `0x801E2A24..0x801E2A30`): the player **clip
+    /// override**. Its readers are the player clip picks - the settle tail
+    /// `FUN_801D1BA0` (`0x801D1DD8`, `0x801D1E58`), op `0x22`'s and op
+    /// `4C 51`'s player arms (`0x801DEA04`, `0x801E19B4`) and the
+    /// unreferenced `FUN_801E58A8`; a `lui`-pair sweep of every image finds
+    /// no other. (An earlier note here named op `0x43` sub-1 as its reader;
+    /// no instruction of that arm touches the word.) PC += 3.
     fn op4c_n_c_sub_e_set_b6ac(&mut self, value: u8) {
         let _ = value;
     }

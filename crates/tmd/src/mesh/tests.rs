@@ -379,3 +379,36 @@ fn basic_mesh_append_scaled_offsets_indices() {
         assert_eq!(both.positions[n + i], [-p[0], p[1], -p[2]]);
     }
 }
+
+#[test]
+fn lit_mask_separates_lit_rows_from_a_baked_neutral_word() {
+    // Baked row (flags 0x20, FT3 with a leading colour word): author the
+    // word at exactly 0x80 so the colour alone reads like a lit row's fill.
+    let mut baked = synth_pyramid_tmd();
+    for p in 0..4 {
+        let at = 12 + 28 + 8 + p * 20; // object table at 12, prim_top 28 past it
+        baked[at..at + 4].copy_from_slice(&[0x80, 0x80, 0x80, 0x24]);
+    }
+    let tmd = parse(&baked).unwrap();
+    let (m, lit) = tmd_to_vram_mesh_filtered_lit(&tmd, &baked, |_, _, _| true);
+    assert_eq!(lit.len(), m.positions.len());
+    assert!(!lit.is_empty());
+    assert!(m.colors.iter().all(|c| *c == [0x80; 3]));
+    assert!(lit.iter().all(|l| !l), "a baked 0x80 word is not a lit row");
+
+    // The same prims on descriptor row 0 (flags 0x10): the light-source row,
+    // whose texture block starts at offset 0 and which carries no colour.
+    let mut lit_rows = synth_pyramid_tmd();
+    lit_rows[42..44].copy_from_slice(&0x0010u16.to_le_bytes());
+    let tmd = parse(&lit_rows).unwrap();
+    let (m, lit) = tmd_to_vram_mesh_filtered_lit(&tmd, &lit_rows, |_, _, _| true);
+    assert_eq!(lit.len(), m.positions.len());
+    assert!(!lit.is_empty());
+    assert!(m.colors.iter().all(|c| *c == [0x80; 3]));
+    assert!(lit.iter().all(|l| *l));
+
+    // The plain builder is the same mesh without the mask.
+    let plain = tmd_to_vram_mesh_filtered(&tmd, &lit_rows, |_, _, _| true);
+    assert_eq!(plain.positions, m.positions);
+    assert_eq!(plain.colors, m.colors);
+}

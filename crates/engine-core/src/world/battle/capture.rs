@@ -7,7 +7,7 @@ use super::*;
 /// The UI element id retail raises for the "magic level increased" banner
 /// (`FUN_801D8DE8(0x65, 0)` at `0x801E722C`, then stored on the battle
 /// context at `0x801E723C`).
-const LEVELUP_BANNER_ELEMENT: u8 = 0x65;
+const LEVELUP_BANNER_ELEMENT: u8 = super::MAGIC_LEVEL_BANNER_ELEMENT;
 
 impl World {
     /// Default chance (percent) that a capturable enemy spawns shiny.
@@ -33,7 +33,7 @@ impl World {
         if self.seru.shiny_chance_pct == 0 {
             return;
         }
-        if (self.next_rng() % 100) as u8 >= self.seru.shiny_chance_pct {
+        if (self.next_rand() % 100) as u8 >= self.seru.shiny_chance_pct {
             return;
         }
         // Gather capturable monster slots (those whose monster id maps to a
@@ -52,7 +52,7 @@ impl World {
         if candidates.is_empty() {
             return;
         }
-        let pick = candidates[(self.next_rng() as usize) % candidates.len()];
+        let pick = candidates[(self.next_rand() as usize) % candidates.len()];
         self.boost_shiny_stats(pick);
         self.seru.shiny_enemy_slots.insert(pick);
     }
@@ -98,7 +98,7 @@ impl World {
         }
         let missing = max.saturating_sub(hp);
         let effective = (hit_pct as u32 * missing / max).min(100);
-        let roll = self.next_rng() % 100;
+        let roll = self.next_rand() % 100;
         if roll >= effective {
             return;
         }
@@ -250,20 +250,19 @@ impl World {
             // the context store; the accrual/threshold half is above)
             self.battle_ctx.levelup_banner_element = LEVELUP_BANNER_ELEMENT;
             // Retail composes "<spell>'s magic level increased." into the
-            // shared message buffer and raises UI element 0x65
-            // (`FUN_801F452C`). The engine has one banner channel; the line
-            // goes there so the text a host draws is the retail one rather
-            // than an engine-invented string.
+            // context message buffer `ctx + 0x1F9` (`FUN_801F452C`) and raises
+            // screen element 0x65, whose content word the result-message
+            // builder points at that buffer. The Done band's teardown unloads
+            // it through `levelup_banner_element`, which retires the line.
             let spell_name = self
                 .tables
                 .spell_catalog
                 .get(spell_id)
                 .map(|d| d.name.clone())
                 .unwrap_or_else(|| format!("Spell {spell_id:#04X}"));
-            self.party.current_art_banner = Some(crate::tactical_arts::ArtLearnedBanner {
-                text: crate::magic_xp::magic_level_increased_message(&spell_name),
-                frames_remaining: crate::tactical_arts::ArtLearnedBanner::DEFAULT_FRAMES,
-            });
+            self.raise_magic_level_banner(crate::magic_xp::magic_level_increased_message(
+                &spell_name,
+            ));
         }
     }
 

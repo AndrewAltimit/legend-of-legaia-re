@@ -101,8 +101,9 @@ fn a_byte_flipped_after_composition_invalidates_the_block() {
 /// That is the documented contract (`SaveFile::write_into_retail_sc_block`,
 /// "in place"), and it is right for editing an existing save. It has a sharp
 /// edge for a *new* one: `RETAIL_GAME_DATA_OFFSET..` carries the location
-/// name (`0x200`), the scene label (`0x408`) and the coin bank (`0x464`)
-/// beside the gold slot, and only gold is composed. A host that claims a
+/// name (`0x200`) and the scene label (`0x408`) beside the gold slot, and
+/// only gold and the minigame words (coin bank `0x464` among them) are
+/// composed there. A host that claims a
 /// previously-free card block and composes into it (the browser rack's
 /// `write_session_into_card` -> `claim_block`, which writes the directory
 /// frame and does not clear the data block) therefore ships a save whose
@@ -152,6 +153,24 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
             || (RETAIL_INVENTORY_OFFSET..RETAIL_INVENTORY_OFFSET + RETAIL_ITEM_WINDOW_SIZE)
                 .contains(&i)
             || (RETAIL_GOLD_OFFSET..RETAIL_GOLD_OFFSET + 4).contains(&i)
+            // The nine minigame words (coins, Point Card, fishing record) -
+            // live-state window words retail saves like the gold.
+            || {
+                use legaia_save::minigame_save::*;
+                [
+                    RETAIL_FISHING_POINTS_OFFSET,
+                    RETAIL_FISHING_LURE_OFFSET,
+                    RETAIL_FISHING_ROD_OFFSET,
+                    RETAIL_FISHING_BEST_POINTS_OFFSET,
+                    RETAIL_FISHING_BEST_FISH_OFFSET,
+                    RETAIL_FISHING_CASTS_OFFSET,
+                    RETAIL_FISHING_PRIZES_OFFSET,
+                    legaia_save::card::RETAIL_COINS_OFFSET,
+                    RETAIL_POINT_CARD_OFFSET,
+                ]
+                .iter()
+                .any(|&o| (o..o + 4).contains(&i))
+            }
             || (RETAIL_BLOCK_CHECKSUM_OFFSET..RETAIL_BLOCK_CHECKSUM_OFFSET + 4).contains(&i)
     };
     let stray: Vec<usize> = touched.into_iter().filter(|&i| !owned(i)).collect();
@@ -167,7 +186,6 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
     for off in [
         legaia_save::card::RETAIL_LOCATION_NAME_OFFSET,
         legaia_save::card::RETAIL_SCENE_LABEL_OFFSET,
-        legaia_save::card::RETAIL_COINS_OFFSET,
     ] {
         assert_eq!(
             patched[off], pristine[off],

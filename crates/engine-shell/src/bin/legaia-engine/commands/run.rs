@@ -131,7 +131,7 @@ pub(crate) fn cmd_play(
             // NOT re-derived here. The edge it drains is
             // `World::take_finished_fmv`, so this cannot double-apply with the
             // windowed / browser hosts' own calls.
-            if let Some(outcome) = session.host.apply_pending_fmv_handoff() {
+            if let Some(outcome) = session.apply_pending_fmv_handoff() {
                 println!("frame {tick_count}: {outcome}");
             }
         }

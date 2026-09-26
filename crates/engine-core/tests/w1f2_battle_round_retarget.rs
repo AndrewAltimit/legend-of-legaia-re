@@ -58,6 +58,11 @@ fn live_three_monster_battle() -> World {
     world.enter_battle(PARTY, MONSTERS);
     world.toggles.live_gameplay_loop = true;
     world.battle.player_driven = false;
+    // No monster may leave on its own: the picker's once-per-pass flee
+    // checkpoint (`FUN_801EC0DC`) is a live roll on the battle stream, and a
+    // band that flees ends the fight before a round boundary can re-pick. The
+    // scripted no-escape flag (`ctx+0x287`) is the gate retail tests first.
+    world.battle.no_escape = true;
     for slot in 0..(PARTY + MONSTERS) as usize {
         if let Some(s) = world.battle.speed.get_mut(slot) {
             *s = 10;

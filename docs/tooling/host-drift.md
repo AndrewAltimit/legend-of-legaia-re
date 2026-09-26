@@ -1212,8 +1212,8 @@ most of that work does reach both hosts.
 |---|---|---|
 | `drain_minigame_sfx_cues` | `drain_minigame_sfx_cues_web` | per-game cue drain |
 | `stage_dance_hud_art` | `sync_dance_hud_residency` + `ensure_minigame_art` | `dance_art_*` exports |
-| `tick_fishing_actors` | pond session only | pond session only |
-| `tick_baka_chrome` | **absent** | **absent** |
+| `tick_fishing_actors` | `tick_fishing_actors` | pond session only |
+| `tick_baka_chrome` | `tick_baka_ui` | `baka_chrome_json` |
 | `tick_muscle_hub` | `tick_muscle_hub` | `muscle_*` exports |
 | effect-pool ageing | `World::tick` | own pool, own tick |
 
@@ -1245,10 +1245,23 @@ time.
 **The fishing splash is a session event, not a venue actor.** The strike splash
 spawns from the session's cadence-match `PondEvent::Splash`, which every host
 sees, so `World::tick_fishing` spawns it and the venue's wander / line actors
-are not a prerequisite. What genuinely still needs those actors is the wander-retarget
-ripple and the catch-celebration bursts, because their *seats* come from
-actors only the play window installs - they spawn into the shared pool from
-there.
+are not a prerequisite. What does need those actors is the wander-retarget
+ripple and the catch-celebration bursts, because their *seats* come from the
+actors.
+
+**The venue actors are one engine kernel on both play hosts.**
+`legaia_engine_core::fishing_venue::tick_fishing_venue_on_host` is the whole
+venue frame - the wander fish and its retarget ripple, the `.MAP` floor solve,
+the reeling line and its catch bursts, the sub-screen sway - with its actors on
+`World::minigames.fishing_venue`, and it returns the venue camera's writes
+(`VenueCameraWrites`) for the host to apply to its own engine camera. The
+native `tick_fishing_actors` and the play page's `tick_fishing_actors` are each
+that one call plus the apply, so the ripples and bursts land in the shared pool
+on both hosts and the play page's prize panel sways on the same phase. The
+logic used to live inside the native window, which made every one of those
+native-only. The minigames page runs the pond without a `World` or a venue
+scene, so it has no actors to step; its strike splash comes from its own tick's
+events.
 
 **The pool does not borrow the dance's emit dispatch.**
 `legaia_engine_core::dance::sprite_part_emit` (`FUN_801d387c`) is the *dance*
@@ -1257,12 +1270,57 @@ assert a shared draw dispatch the dump corpus does not show. A pool part's
 pair is stage pixels, already through whatever shift its own producer applies.
 The fade ramp is shared, because that ramp is the port's decision either way.
 
-`tick_baka_chrome` is the one sub-step with no browser twin. The chrome frame
-itself is portable (`engine_core::baka_fighter_chrome`); what it has no
-resolver for is the **draw**, which wants the animator `FUN_801D6310` to pick
-a clip index out of the runtime sprite archives `_DAT_8007B888` /
-`_DAT_8007B840` that no minigame host loads. The pool was named as that work's
-prerequisite and is now in place; the archives are not.
+**The Baka round chrome reaches all three hosts.** A table row here once read
+`tick_baka_chrome` as having no browser twin on either page; both pages were
+already consuming the duel's chrome frame. The frame is the duel's own
+(`BakaFight::chrome_frame`, stepped inside the rules tick). The two play hosts
+do the same two things with it: sound the announcer line it fired - the native
+window through `AudioBgmDirector::play_xa_clip`, the play page through its
+CD-XA clip path (`tick_baka_ui`) - and print its widgets through the shared
+label kernel (`baka_fighter_chrome::chrome_labels`). The minigames page plays
+no announcer line (see the Baka cabinet section below), but draws the widgets
+from the duel's own art: `baka_chrome_json` carries each glyph
+draw's texel column, stamped by the same `baka_fighter_chrome::glyph_u` the
+native window resolves its draws with, and the page samples widget 5's strip
+there - where it used to compute `(g % 10) * 24` itself, which disagrees with
+retail's byte store past the tenth cell.
+
+**The duel's strike timing is one engine clock on all three hosts.** The
+exchange is booked on the frame the winner's strike keyframe is crossed
+(`BakaFight`'s `StrikeClock`, the retail combat tick's `FUN_801D6E5C` lookup),
+and each host stages the same clip headers through
+`baka_fighter::roster_clip_headers` - the native window and the play page off
+their PROT index, the minigames page off its disc - so a double-step clip
+strikes at the same frame everywhere. The minigames page also poses the swing
+off that clock (`baka_state_json`'s `clock`), where it used to start the swing
+when the exchange report arrived.
+
+What stays open was misnamed "sprite effects". None of the three routines
+draws a sprite: the two banks `_DAT_8007B888` / `_DAT_8007B840` are the
+scene's type-`0x05` / `0x0B` ANM clip banks the clip selector `FUN_800204F8`
+resolves, and each routine drives a **model** through them.
+
+- The special's afterimage (`FUN_801D49E8`) is engine state every host steps,
+  and the minigames page draws it as darkened copies of the thrower's mesh.
+  The native window and the play page draw the duel as labels with no fighter
+  meshes, so they have nothing to ghost. That is the gap - a 3D duel surface
+  on those two hosts - not the afterimage.
+- The impact pair (`FUN_801D4DF8`) spawns `FUN_80021B04` effect templates at
+  the winner's strike offset, and no minigame host runs that effect runtime.
+- The round-start cameo (`FUN_801D6310`) spawns only on a held Triangle, and
+  no host hands the duel a held pad word; it also wants scene model `0` drawn
+  camera-relative plus a VRAM move, which no host does.
+
+And the native window resolves each glyph draw's stamped cell rect without
+sampling it, because its duel HUD has no textured-quad surface.
+
+**The slot machine's paylines are one projection on all three hosts.**
+`slot_machine::projected_paylines` runs the ported payline pass
+(`FUN_801D3380`) and projects both endpoints through the machine's fitted
+projection; both browser pages stroke those segments (`sa` / `sb` in the prims
+JSON) and the native window draws them as one-pixel flat quads through
+`engine-ui::ui_slot_paylines`. The native window still draws no cabinet mesh
+around them.
 
 ### A `web-ahead` builder is not by itself a gap
 
@@ -2256,11 +2314,16 @@ used to hand it a fight's reel progress as the line record.
 
 What stays per host is what each host owns. The minigames page drives the
 session directly, with no `World`: it has no field scene to suspend, and its
-persistent words come from the visitor's memory card. The native window keeps
-its venue actors (the wandering fish, the line actor, the floor solve and
-camera publish), which read the session's events and its lure; the page has no
-venue pass. The play hosts' status rows are one engine text
-(`PondSession::status_rows`) with each host's own key names.
+persistent words come from the visitor's memory card. The two play hosts run
+the venue actors (the wandering fish, the line actor, the floor solve and
+camera publish) through one engine kernel,
+`fishing_venue::tick_fishing_venue_on_host`, which reads the session's events
+and its lure; the minigames page has no venue scene and no venue pass. The
+play hosts' status rows are one engine text (`PondSession::status_rows`) with
+each host's own key names. The strike credit's pad nudge is one kernel on all
+three, `fishing_actors::bite_pad_nudge`: `World::tick_fishing` counts it off
+the engine pad and the minigames page's `fishing_pond_tick` off the packed
+pressed word its script assembles.
 
 ## The Baka cabinet's ladder: one on the field hosts, another on the standalone page
 
@@ -2580,7 +2643,7 @@ recipe rules came out of it, on top of the ones [above](#a-second-pass-frames-ma
 |---|---|---|---|
 | `vell` fog underlay | sheets drawn, textured | same | same on settled frames; an additive glow by the player at the frame's edge reads whiter natively (not chased) |
 | `dolk` / `cave01` attached light, HUD above screen prims | darkness mask, rim on the player, HUD bright | same | same; the page's subtractive run is now pinned by `attached_light_page_prims.rs` |
-| prologue sepia (`opdeene`) | sepia tableau | same tint | differs: see [the prologue meshes](#a-prologue-mesh-set-drawn-black-natively) |
+| prologue sepia (`opdeene`) | sepia tableau | same tint | same billboards since the lit-row mask; the page stages no lit-row ambient - see [the prologue meshes](#a-prologue-mesh-set-drawn-black-natively) |
 | narration crawl | 1x glyphs, rows at the window's `h / 240` | 1x glyphs, rows at the canvas's `h / 240` | both wrong against retail, differently; fixed on both, and a native frame now lays its rows over the retail frame's line for line |
 | "It was the Seru." caption | scaled by `h / 240` in window pixels | the overlay canvas is the stage | native larger than the stage and off centre; fixed |
 | `0x6E` Begin / Reselect, commit log, target plaque | labels, log rows, plaque at `x = 0xE8 - w / 2` | same | same |
@@ -2622,12 +2685,226 @@ frames.
 
 ### A prologue mesh set drawn black natively
 
-In the `opdeene` jungle the native window draws a set of plants - the twisted
+In the `opdeene` jungle the native window drew a set of plants - the twisted
 branches and the dark bushes - as black silhouettes, where the page and the
 retail frame (`captures/crawl1_capture`) draw them pale and textured. Both
-hosts share the sepia word law (`prologue_sepia_word`), so the difference sits
-upstream of it, in what each host feeds that law for those primitives. Not
-fixed here.
+hosts share the sepia word law (`prologue_sepia_word`); the difference sat
+upstream of it, in a native-only restage. Fixed.
+
+The silhouettes are the scene pack's **one-quad billboards** (pack slots
+`4 8 9 10 11 13 16 28`, each a single `FT4` on descriptor row 4): dropping
+those slots from the native draw list removes every silhouette, and dropping
+the multi-prim plants whose words the grade takes near black does not. Their
+disc word is exactly `0x80`, retail rewrites it to `(98, 94, 42)` (the resident
+copies in `run_w3a_captures.sh opdeene`'s checkpoints, and `FT4` packets at
+that colour in the same frames' ordering tables), and their texture pages and
+CLUT rows match retail texel for texel under the palette law. The native
+builder then gave the prologue's dim lit-row ambient (`0x20`,
+`DAT_8007B788`) to every vertex whose colour read `0x80` - the marker the mesh
+builder uses for the light-source rows, which carry no word - so an authored
+`0x80` was restaged along with them, and the grade's packet half took `0x20`
+to `V = 2`. The restage now keys on a per-vertex lit-row mask
+(`legaia_tmd::mesh::tmd_to_vram_mesh_filtered_lit`, applied by
+`engine-core::fade::apply_prologue_lit_ambient`). The page stages no lit-row
+ambient at all, so its light-source rows still draw at neutral where the
+native window draws them at the dim ambient.
+
+## Gaps absent from both hosts: overworld curvature, ground shadow
+
+Two retail draws were missing from **both** play hosts, so no tier failed on
+them. Both now draw on both hosts through one kernel each; what is left of
+them, and the third gap still open, sits here in the form a waiver takes.
+
+**The overworld curvature table on the continent.** `FUN_800271A8` builds a
+depth-indexed screen-Y table every overworld consumer adds to `SY`
+([`renderer.md`](../subsystems/renderer.md#frame-setup--present)). The fog
+sheets and the drop shadow add it on the CPU; the continent bends per vertex
+in the native mesh shaders (`OVERWORLD_CURVE_WGSL`, staged through
+`Renderer::set_overworld_curvature`) and in the page's GLSL twin
+(`overworldCurve`, staged through `play_render_curve_scale` ->
+`setOverworldCurve`). Both hosts take the per-frame scale from the one kernel
+`overworld_curvature::frame_curve_scale`, and both shaders evaluate the table
+in closed form, pinned against it by `curvature_closed_form`. Residual, the
+same on both hosts: the port bends every overworld scene draw, where retail's
+four SCUS lit rows (`8..11`) do not bend. The `/world-overview/` viewer's
+ocean plane shares the page's renderer but not its program, and stays flat
+with the rest of that viewer (it never stages a scale).
+
+**The field drop shadow.** `FUN_8001C394` (called from the animated-actor
+renderer `FUN_8001B964`) is ported as `engine-core::drop_shadow` and walked by
+`World::field_drop_shadows`. The native window's `field_drop_shadow_prims` and
+the play page's `field_drop_shadow_prims` both wrap its cells through
+`screen_prim::drop_shadow_prim` into their field screen-prim pass with
+per-corner scene depth, which keeps the blob under the actor and over the
+ground. `crates/engine-core/tests/drop_shadow_retail_capture_disc.rs` matches
+the kernel's packets to retail's exactly on three captured frames. The ignore
+list's `render_pipeline` scope row, which read the routine as replaced by the
+rasteriser with no drawing mechanism behind it, is gone, and so is the
+`libgte` row that read `FUN_800460AC`'s `RTPT` (`cop2 0x280030`) as `NCDS`.
+
+**The `opdeene` plant silhouettes** ([above](#a-prologue-mesh-set-drawn-black-natively))
+were not a gap of this kind: the page drew them right, and the native defect
+is fixed. The earlier reading here - that the grade's packet half takes 1565
+of the scene's baked-row prims to `V = 0` and retail's rewrite might not reach
+them - is falsified by a mid-crawl capture: the resident colour words are the
+same at the crawl's black start and mid-crawl with the jungle lit, every one of
+them on the sepia curve, and retail holds its own exactly-black words
+(`2712` of `18425`) and draws those meshes dark where they are in view.
+
+## A side-by-side pass over boots, hand-offs and door entries
+
+A pass over the two play hosts' boot, their post-movie hand-off and the
+minigame doors found five gaps with every tier green. Four of them share one
+shape: **the host-side step lived next to one entry, and the other entry
+skipped it.** The engine kernel was shared each time; the call around it was
+not.
+
+### A boot install only one host ran
+
+The native boot installed six static-SCUS progression tables one read at a
+time - the XP curve and the Noa / Gala threshold divisors, the stat-growth
+curves, the victory-pose table, the XA cue durations, the magic-XP thresholds
+and the accessory passives. The page's `load_disc` installed none of them.
+Every consumer has a disc-free fallback, so nothing failed: the page levelled
+on the flat placeholder growth, never levelled a summon, granted no accessory
+passive (no Ivory Book on the capture roll), played no melee grunt or cast
+voice (a zero cue duration), and skipped the victory pose's `rand()` - so its
+RNG stream left the native one's after every battle. Both boots now call one
+engine entry, `World::install_retail_progression_tables`, and
+`crates/web-viewer/tests/play_boot_tables_parity.rs` drives the page's own
+`load_disc` against it.
+
+This one is gated: **tier 13** takes every `world.install_*` / `world.set_*`
+call in `crates/engine-shell/src/boot.rs` and requires a shipped
+`crates/web-viewer` source to call the same method, or a `[[boot_install]]`
+waiver in `ui-host-drift-waivers.toml`. Run over the old boot it fails on
+`install_magic_xp_thresholds` and `set_accessory_passives`. It cannot see the
+other four, which the old boot wrote as field assignments - which is the
+argument for the single entry: a table installed through a method both boots
+must call is one the tier can pair.
+
+### The hand-off that is a scene entry too
+
+Retail's post-FMV dispatch enters a new scene (`town01` -> movie 1 ->
+`town0b`) without the field VM's transition op, so no `SceneEntered` event
+follows it. The page rebuilt its render state on the hand-off anyway; the
+native window only logged the outcome - it kept drawing the trigger scene's
+meshes, kept its camera shot, and left the trigger scene's VAB bank staged.
+The page, for its part, keyed its camera reset on `SceneEntered` alone and
+carried the trigger scene's shot too. Both now treat the hand-off as the entry
+it is: `BootSession::apply_pending_fmv_handoff` runs the same session-side swap
+a door runs (camera globals reset, SFX queue dropped, VAB restaged) and the
+window rebuilds on `FmvHandoffOutcome::Entered`; the page resets the camera on
+the hand-off tick
+(`crates/web-viewer/tests/play_fmv_real.rs`,
+`the_fmv_handoff_resets_the_camera_like_a_door`). The page also reopens the
+sequencer's pause gate when a movie ends, as the window's drain always did; it
+had only stopped the XA, so a movie that handed back to a scene with no BGM
+start of its own left the score paused. That half is wasm-only (the headless
+runtime has no audio output) and rests on reading the two drains.
+
+### A held word into an edge-driven runtime
+
+`MenuRuntime::tick` filters no repeats - every screen it drives moves a cursor
+or commits on the input it is handed. The page hands it one edge per press;
+the native window handed it the **held** pad word, so one key press lasting a
+few ticks stepped the shop cursor several rows or walked through the buy
+confirm. Both hosts now decode through
+`menu_runtime::menu_input_from_pad_edges`, and the window passes the edge it
+already computed for every other modal screen. Nothing here was a missing
+call - both hosts called the same runtime with a well-formed `MenuInput` - so
+the shape to look for is a shared kernel whose **input contract** (edge or
+level) one host does not honour.
+
+### A launcher decode the door never ran
+
+Two minigame entries did host-side work in each host's debug launcher that the
+shared door entry (`SceneHost::drain_minigame_warp`) never did - the phase
+shape [tier 10](#tier-10---entry-symmetry-is-the-phase-armed-only-from-a-debug-key)
+exists for, except that here the missing step was data, not a `World` phase,
+so the tier had nothing to pair:
+
+- **The fishing point exchange.** Both hosts' launchers decoded the two venue
+  pages beside the session tables; the door decoded none, so the exchange was
+  unusable after walking into the venue on either host.
+  `SceneHost::enter_fishing_from_overlay` now decodes them into
+  `World::minigames.fishing_prize_venues`
+  (`play_fishing_host.rs`, `a_door_entered_fishing_session_has_the_prize_exchange`).
+- **The Muscle Dome fighter.** The native `M` launcher read the lead's swing
+  costs, live HP, AGL pool and INT / UDF / LDF; the door fielded flat `0x1E`
+  costs, a 120 AP pool and a 60 / 40 / 40 stand-in profile - on both hosts,
+  since the door is the shared path. `SceneHost::dome_lead_fighter` is the one
+  builder now (`play_minigames_host.rs`,
+  `arena_door_warp_draws_the_muscle_dome_and_start_leaves`).
+
+### Open drift the same pass found
+
+Recorded rather than fixed; each names the host that lacks it. None is gated.
+
+- **Narration crawl.** The native window's crawl / title-card arm `continue`s
+  after the session tick, skipping the FX ticks, CLUT effects, field-event
+  drain, NPC re-bind, balloon sync and play clock the page runs every frame
+  (`window/event_handler/redraw.rs`, the `boot_ui` / narration arm).
+- **Movie frames.** The page gates only `host.tick()` on a live FMV; its FX,
+  CLUT walker, NPC clips and SFX keep advancing behind the picture.
+- **Anim-cue drains.** The window drains player gestures and NPC animate cues
+  in `SceneMode::Field` only; the page drains them in every mode, so overworld
+  gestures play on one host.
+- **Shop tick.** The window ticks the world under an open shop with a neutral
+  pad; the page freezes the world.
+- **Sub-tick taps.** The window sets and clears its pad straight from key
+  events, so a press and release between two ticks never reaches `set_pad`;
+  the page latches it.
+- **Overworld CLUT walk.** Implemented twice (`window/field_render.rs`
+  `WaterAnim`, the page's `step_field_vram_fx`), already differing in which
+  scenes patch strip rows and which column is checked.
+- **Battle camera without a render.** The page's battle camera state lives on
+  its render resource and does not tick when that fails to build; the window
+  removed the same gate.
+- **Monster action-tag clips** are installed from each host's render path, so a
+  monster with no mesh - or a native frame's first battle ticks - reads no tag
+  table.
+- **Baka on the play page** carries no strike clock or afterimage in its JSON;
+  the minigames page does.
+
+And absent from both hosts, so no host is "behind": the `tick_scene_programs`
+XA legs and `BgmDirector::reattach_volume` (sub-op `8`, which re-attaches the
+slot at `0x8007057C` - not the field-BGM slot `0x8007052C` the other sub-ops
+drive - with a level whose boot value is `-1`, so no director applies it yet).
+
+### Closed from the same list
+
+- **The battle message banner.** Screen elements `0x59` (Seru absorbed) and
+  `0x65` (magic level increased) share one string, the context buffer
+  `ctx + 0x1F9`; neither host drew either, and the two drains threw away the
+  `UiElement` event that would have told them. The line now lives on
+  `World::battle.message_banner` from raise to unload, and both hosts read it
+  through one engine function, `battle_hud::battle_banner_message`, which also
+  replaced the two hand-copied level-up / capture readers
+  ([`battle-action.md`](../subsystems/battle-action.md#the-battle-message-banner-elements-0x59-and-0x65)).
+  The **art-learned** line is not in it on purpose: retail announces a new
+  art with the `NEW ARTS!!` sprite banner, which both hosts already draw.
+- **A HUD raise that spawned an effect.** `BattleActionHost::ui_element` routed
+  every raise into the effect pool. The id is a placement-record index for
+  the HUD spawner `FUN_801D8DE8`, which calls no effect routine, so each raise
+  played an unrelated `efect.dat` script on both hosts. Effect scripts now
+  reach the pool only through `World::route_battle_effect_spawns`, the one
+  routing both hosts call (each had carried its own copy of that loop).
+- **Minigame purses in a save.** `World::save_full` / `load_full` dropped the
+  casino coins, the Point Card bank and the fishing record, so a save / load
+  zeroed them on either host. Retail keeps all nine words in the save block's
+  live-state window; they now ride there and in the `LGSF` `LGX7` block
+  ([`save-screen.md`](../subsystems/save-screen.md#the-minigame-purses-are-live-state-words-too)).
+- **Card load order.** The page loaded a card save and then entered its scene,
+  whose picker story baseline cleared system flags `0x141` / `0x147` in every
+  resumed save. The runtime now parks the loaded save, skips the baseline for
+  that entry and re-applies the save after the swap - the native
+  `enter_field_live_from_save` order
+  (`cards.rs`, `a_card_load_keeps_the_saves_story_flags_across_the_scene_entry`).
+- **The op-`0x35` timed release.** Its expiry set a flag no host read. The
+  expiry arm is `FUN_800266E0`'s body on the field-BGM slot - sub-op `2`'s
+  pause - so `World::tick` now emits that pause and both hosts' BGM routing
+  acts on it ([`audio.md`](../subsystems/audio.md#the-timed-release-is-a-scheduled-bgm-pause)).
 
 ## Adding coverage
 
@@ -2637,6 +2914,9 @@ fixed here.
 - a trait joins tier 4 by having a default method body and two implementers;
 - a diagnostic joins tier 6 by being declared in `DIAG_GATES` - which is not
   optional: an undeclared `LEGAIA_DIAG_*` fails the gate.
+- a boot install joins tier 13 by being a `world.install_*` / `world.set_*`
+  call in the native boot - fold a new table into an engine install both
+  boots call rather than a field assignment the tier cannot see.
 
 Each script self-tests its own detectors on every run and refuses to report a
 pass when a control fails - a "0 orphans" verdict from a classifier that

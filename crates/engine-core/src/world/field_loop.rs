@@ -598,7 +598,13 @@ impl World {
         let mode = self.mode;
         // Re-seat the system context's position anchor on the live player
         // before the slice runs. See [`Self::sync_field_ctx_player_anchor`].
-        if mode == crate::world::SceneMode::Field {
+        // The kingdom overworld is a mode-3 field-run scene in retail and its
+        // `P1[0]` park loop opens on the same `CD F8` whole-map box test, so
+        // it needs the anchor as much as a field does.
+        if matches!(
+            mode,
+            crate::world::SceneMode::Field | crate::world::SceneMode::WorldMap
+        ) {
             self.sync_field_ctx_player_anchor();
         }
         let mut last = None;

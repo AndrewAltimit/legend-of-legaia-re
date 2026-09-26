@@ -210,10 +210,13 @@ impl SfxBankResidency {
 /// round), and retail runs a round as an ordinary battle - the arena stores
 /// mode word `0x14` (`0x801D15B8`, PROT 0977), so `FUN_8001DCF8`'s close arm
 /// runs and the battle scene loader stages the class-2 bank, the
-/// [`SfxBankResidency::battle_init`] path. The arena's hub (retail mode
-/// `0x19`) holds slot 2 closed and slot 6 open over the field bank the warp
-/// left (retail capture); the port has no hub mode - its hub is the field it
-/// returns to, whose init reloads that bank.
+/// [`SfxBankResidency::battle_init`] path. A retail capture of a round
+/// (`scripts/pcsx-redux/run_w3a_captures.sh dome`) sees exactly that: the
+/// close arm shuts slots 6 and 3, and the battle scene loader stages PROT
+/// 0869 into slot 2. The arena's hub (retail mode `0x19`) holds slot 2 closed
+/// and slot 6 open over the field bank the warp left (retail capture); the
+/// port has no hub mode - its hub is the field it returns to, whose init
+/// reloads that bank.
 pub fn minigame_slot2_bank(mode: SceneMode) -> Option<Option<u32>> {
     Some(match mode {
         SceneMode::Fishing => Some(FISHING_SLOT2_PROT_INDEX),

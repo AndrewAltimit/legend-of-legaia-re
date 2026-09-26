@@ -133,30 +133,24 @@ impl PlayWindowApp {
                 // matches the asset-viewer's cleanup and avoids the "flat
                 // green CLUT[0]" shells over correctly-textured geometry
                 // that the unfiltered builder produces.
-                let mut vmesh = rtmd.build_filtered_vram_mesh(&res.vram);
+                let (mut vmesh, lit_rows) = rtmd.build_filtered_vram_mesh_lit(&res.vram);
                 // Prologue dim ambient on the LIT prim rows. Retail stages the
                 // GTE back/ambient colour `DAT_8007B788` = `0x00202020` (dim,
                 // R=G=B=32) for the prologue cutscene legs vs `0x00FFFFFF` in
-                // town01 (`FUN_80043390` stages it into GTE cr13-15; byte-exact
-                // across save states - see docs/subsystems/cutscene.md "Full-
-                // scene sepia grade"). The lit rows (0/1) carry no baked colour
-                // word - the builder marks them MODULATION_NEUTRAL - and in
-                // retail their GPU modulation colour comes out of the GTE
-                // lighting sum, whose prologue floor is that dim ambient. Give
-                // them the pinned ambient so the opdeene cave-wall shells
-                // render dark like the retail tableau backdrop instead of
-                // full-bright gold walls that bury the crater-rim camera
-                // (the baked-colour rows - the monument / wings - keep their
-                // own words, which is exactly retail's bright-on-dark
-                // contrast). Scoped to the prologue legs by the same gate as
-                // the sepia grade; everything else keeps neutral.
+                // town01; the lit rows (0/1) carry no baked colour word, and
+                // their GPU modulation colour comes out of the GTE lighting
+                // sum, whose prologue floor is that dim ambient - so the
+                // opdeene cave-wall shells render dark like the retail tableau
+                // backdrop. Keyed on the builder's lit-row MASK, not on the
+                // colour: a baked word authored at exactly 0x80 reads the same
+                // colour, and the colour test turned every such prim (the
+                // jungle's one-quad bush / branch billboards) black. Scoped to
+                // the prologue legs by the same gate as the sepia grade.
                 if self.session.host.world.scene_color_grade().is_some() {
-                    const PROLOGUE_AMBIENT: u8 = 0x20; // DAT_8007B788 low byte
-                    for c in &mut vmesh.colors {
-                        if *c == [legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3] {
-                            *c = [PROLOGUE_AMBIENT; 3];
-                        }
-                    }
+                    legaia_engine_core::fade::apply_prologue_lit_ambient(
+                        &mut vmesh.colors,
+                        &lit_rows,
+                    );
                 }
                 // Coplanar z-fight resolution (`legaia_tmd::mesh::coplanar`):
                 // flag double-sided prim pairs for the shaders' per-prim

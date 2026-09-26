@@ -23,6 +23,19 @@ fn take_commit_begin(w: &mut World) -> bool {
 
 /// Tile-board world: 3x3 board, all floor except a wall at (1,1);
 /// player actor in slot 0 placed at its start-tile centre.
+/// The world seed on which Bandit Boss (monster id 5, magic `[Flame 0x20,
+/// Thunder Bolt 0x23]`) picks Flame against a lone party member. Derived by
+/// hand off the shaped stream (`s' = s * 1664525 + 1013904223`, draw =
+/// `(s' >> 16) & 0x7FFF`), which for seed 10 runs 15724, 12163, 10919, 2492,
+/// 3194, 6482. The picker draws them in this order: the pick
+/// `rand % (1 + 2)` (`15724 % 3 = 1`, so `magic[0]`), the single-target pick
+/// `rand % 1`, the monster's scripted `0x51` override `rand & 3 == 0`
+/// (`10919 & 3 = 3`, so it stays off), then the flee checkpoint's two score
+/// draws and its `rand & 7 == 0` gate (`6482 & 7 = 2`, so no flee). The raw
+/// stream's seed `0` did the same job only because its first **raw** word is
+/// `1 mod 3`.
+const BANDIT_BOSS_FLAME_SEED: u32 = 10;
+
 /// Run the live loop until the armed cast's owed outcome has folded - the
 /// band's `0x29` exit for a non-summon cast, the stager's strike for a Seru
 /// one (`World::casting.pending_cast` goes `None`). A world with nothing armed
@@ -264,7 +277,9 @@ fn gimard_spell_def() -> crate::spells::SpellDef {
     }
 }
 
+mod actor_alloc_init;
 mod actor_cadence;
+mod ambient_collision_exempt;
 mod battle_anim;
 mod battle_auto_command;
 mod battle_capture_bgm;
@@ -304,8 +319,10 @@ mod move_vm_ext;
 mod move_vm_flags;
 mod party_composition;
 mod physics_steal_shop;
+mod player_clip_pick;
 mod save_state;
 mod script_teleport;
+mod seru_absorb;
 mod seru_side_effect_live_disc;
 mod shiny;
 mod slide;

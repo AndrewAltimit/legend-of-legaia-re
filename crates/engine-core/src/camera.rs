@@ -427,6 +427,13 @@ pub struct ZoneFollow {
     /// onto the player (`0x801DB820`) only for the other modes, and a
     /// stationary mode-5 frame leaves it where it was.
     focus_held: Option<[i32; 2]>,
+    /// The follow switch `_DAT_8007B606` (byte): off, `FUN_801DB510` only
+    /// pins the focus onto the player and neither composes nor eases
+    /// (`0x801DB550`). New-game init stores `1` (SCUS `0x80034B60`, the
+    /// `_DAT_8007B868 == 0` test, which is true on retail); its only other
+    /// writers are the dev menu's CAMERA row (`0x801EAD38`, `0x801EA1C8`),
+    /// which the port's dev menu does not carry.
+    pub follow_enabled: bool,
 }
 
 impl Default for ZoneFollow {
@@ -451,6 +458,7 @@ impl Default for ZoneFollow {
             shake_offset: [0, 0],
             shake_seed: 1,
             focus_held: None,
+            follow_enabled: true,
         }
     }
 }
@@ -1007,6 +1015,21 @@ impl Camera {
             }
         }
 
+        // The ease's two hold gates (`0x801DB550` / `0x801DB564`): the
+        // follow switch off, or scratchpad `0x1F800394 & 0x400` (the
+        // top-view freeze, also the settle's bind block), sends the frame to
+        // the pin leg `0x801DB820` - focus = `-player`, no compose, no ease,
+        // no mode-5 focus ease - which falls into the shake tail. The arrival
+        // snap waits (retail's `FUN_801DB8EC` tests the switch too).
+        let story = world.flags.story_flags;
+        let hold = !zone.follow_enabled || story & crate::world::CAMERA_HOLD_FLAG != 0;
+        if hold {
+            zone.prev_player = Some([x, y, z]);
+            let g = &mut self.globals.0;
+            g[6] = -x;
+            g[8] = -z;
+        }
+
         // 4. Compose (`FUN_801DAB90`).
         let inputs = ComposeInputs {
             player: [x, y, z],
@@ -1018,11 +1041,13 @@ impl Camera {
             live_yaw: self.globals.0[1],
             half_eye_y: world.party.scene_save_allowed,
         };
-        let composed = compose(&zone.config, &inputs);
-        if let Some(ly) = composed.live_yaw {
-            self.globals.0[1] = i32::from(ly);
+        if !hold {
+            let composed = compose(&zone.config, &inputs);
+            if let Some(ly) = composed.live_yaw {
+                self.globals.0[1] = i32::from(ly);
+            }
+            zone.target = composed.target;
         }
-        zone.target = composed.target;
 
         // 5. Snap on arrival (`FUN_801DB8EC`), else ease on a frame the
         //    player moved (`FUN_801DB510`'s settle test).
@@ -1044,12 +1069,20 @@ impl Camera {
         // fixed shot gets its own focus back before it eases.
         if mode5
             && zone.active
+            && !hold
             && let Some([fx, fz]) = zone.focus_held
         {
             g[6] = fx;
             g[8] = fz;
         }
-        if zone.snap_pending {
+        // The stationary test (`0x801DB578..0x801DB5A4`): an unmoved player
+        // skips the compose-and-ease unless scratchpad `0x1F800394 &
+        // 0x40000` forces it - field-VM `2E 12` raises the bit for the
+        // scenes whose camera must keep settling on a standing player.
+        let forced = story & crate::world::CAMERA_FORCE_EASE_FLAG != 0;
+        if hold {
+            // Pin leg: nothing more until the shake tail.
+        } else if zone.snap_pending {
             let (p, yw, eye, h) = snap(&t);
             g[0] = p;
             g[1] = yw;
@@ -1060,7 +1093,7 @@ impl Camera {
                 g[8] = focus_anchor[1];
             }
             zone.snap_pending = false;
-        } else if moved || !zone.active {
+        } else if moved || forced || !zone.active {
             let code = zone.config.ease_shift();
             for _ in 0..dt.clamp(1, 8) {
                 g[0] = i32::from(ease_step_i16(g[0] as i16, t.pitch, code));
@@ -2013,6 +2046,89 @@ mod tests {
         w.tick();
         c.tick(&w);
         assert_eq!([c.globals.0[6], c.globals.0[8]], anchor, "eased in place");
+    }
+
+    /// A whole-map zone record world, snapped in: the fixture for the ease's
+    /// three gates.
+    fn gated_zone_world() -> (World, Camera) {
+        use crate::field_regions::ZONE_RECORD_STRIDE;
+        let mut w = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w.actors[0].move_state.world_x = 0x1040;
+        w.actors[0].move_state.world_z = 0x2040;
+        let mut rec = [0u8; ZONE_RECORD_STRIDE];
+        rec[0] = 1;
+        rec[1..5].copy_from_slice(&[0, 0, 0x7F, 0x7F]);
+        rec[5] = 0x10;
+        rec[6] = 0x10;
+        rec[7] = 0x30;
+        rec[9] = 0x20;
+        rec[10..12].copy_from_slice(&(-160i16).to_le_bytes());
+        rec[12..14].copy_from_slice(&450i16.to_le_bytes());
+        rec[14..16].copy_from_slice(&0x3000i16.to_le_bytes());
+        rec[16..18].copy_from_slice(&512i16.to_le_bytes());
+        let mut zone_table = vec![1u8];
+        zone_table.extend_from_slice(&rec);
+        w.load_field_region_tables(&[], &zone_table);
+        let mut c = Camera::default();
+        c.reset_globals_for_scene_entry();
+        w.tick();
+        c.tick(&w);
+        assert_eq!(c.globals.angles()[0], 450, "snapped");
+        (w, c)
+    }
+
+    /// `FUN_801DB510`'s stationary test: a standing player leaves the camera
+    /// where it is, unless scratchpad `0x1F800394 & 0x40000` (`2E 12`)
+    /// forces the compose-and-ease (`0x801DB578..0x801DB5A4`).
+    #[test]
+    fn a_standing_player_eases_only_under_the_force_bit() {
+        let (mut w, mut c) = gated_zone_world();
+        c.zone.config.pitch = 600;
+        w.tick();
+        c.tick(&w);
+        assert_eq!(c.globals.angles()[0], 450, "unmoved: no ease");
+        w.flags.story_flags |= crate::world::CAMERA_FORCE_EASE_FLAG;
+        w.tick();
+        c.tick(&w);
+        let p = c.globals.angles()[0];
+        assert!(p > 450 && p <= 600, "forced: eases toward 600, got {p}");
+    }
+
+    /// The hold gates (`0x801DB550` / `0x801DB564`): with the follow switch
+    /// off or scratchpad `0x1F800394 & 0x400` up, a moving player gets the
+    /// pin leg - the focus on the player, no compose, no ease.
+    #[test]
+    fn the_hold_gates_pin_the_focus_and_skip_the_ease() {
+        for switch_off in [false, true] {
+            let (mut w, mut c) = gated_zone_world();
+            c.zone.config.pitch = 600;
+            if switch_off {
+                c.zone.follow_enabled = false;
+            } else {
+                w.flags.story_flags |= crate::world::CAMERA_HOLD_FLAG;
+            }
+            w.actors[0].move_state.world_x += 2;
+            w.tick();
+            c.tick(&w);
+            assert_eq!(c.globals.angles()[0], 450, "held: no ease");
+            let x = i32::from(w.actors[0].move_state.world_x);
+            let z = i32::from(w.actors[0].move_state.world_z);
+            let clamped = crate::camera_zone::clamp_focus(
+                [-x, -z],
+                c.zone.config.mode_nibble(),
+                c.zone.attrs.kind != 0,
+                c.zone.attrs.box_bytes,
+                c.zone.view_window,
+                w.party.scene_save_allowed,
+                [0, 0],
+            );
+            assert_eq!([c.globals.0[6], c.globals.0[8]], clamped, "pinned");
+        }
     }
 
     #[test]

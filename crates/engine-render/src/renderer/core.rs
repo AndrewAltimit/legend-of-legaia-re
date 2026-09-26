@@ -1363,6 +1363,7 @@ impl Renderer {
             cue_ramp: std::cell::Cell::new([0.0, 0.0, 0.0, 0.0]),
             palette_grade: std::cell::Cell::new([0.0, 0.0, 0.0, 0.0]),
             backface_cull: std::cell::Cell::new(0.0),
+            overworld_curve: std::cell::Cell::new(0.0),
             // Semi-transparency (ABE) blending on by default: retail's GPU
             // always blends ABE prims, so field water / glass / effects should
             // composite in the clean render, not just under LEGAIA_PSX_RENDER.

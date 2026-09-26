@@ -118,6 +118,7 @@ class TmdRenderer {
     this.locPalette = gl.getUniformLocation(this.program, 'u_palette');
     this.locPairFront = gl.getUniformLocation(this.program, 'u_pair_front');
     this.locNclipCull = gl.getUniformLocation(this.program, 'u_nclip_cull');
+    this.locCurve = gl.getUniformLocation(this.program, 'u_curve');
     this.locOcclFocus  = gl.getUniformLocation(this.program, 'u_occl_focus');
     this.locOcclParams = gl.getUniformLocation(this.program, 'u_occl_params');
     this.locOcclAllow  = gl.getUniformLocation(this.program, 'u_occl_allow');
@@ -140,6 +141,7 @@ class TmdRenderer {
      * `set_backface_cull`), staged per frame by the play page. 0 = both
      * sides, the default every other page keeps. */
     this.nclipCull = 0;
+    this.overworldCurve = 0;
     /* Camera-occlusion fade focus: the player's WORLD-space body centre
      * (draw frame, i.e. the Y-flipped coords every placement uses), staged
      * per frame by the play page via setOcclusionFocus / cleared with
@@ -434,6 +436,14 @@ class TmdRenderer {
    * it at 0. */
   setNclipCull(mode) {
     this.nclipCull = (mode | 0);
+  }
+
+  /* The kingdom overworld's per-vertex screen-Y curvature for the assembled
+   * scene pass: `scale` is the frame's clip.w-to-SZ factor from the shared
+   * `overworld_curvature::frame_curve_scale` kernel (the native renderer's
+   * `set_overworld_curvature` word). 0 - every other page - is flat. */
+  setOverworldCurve(scale) {
+    this.overworldCurve = scale > 0 ? +scale : 0;
   }
 
   /* Set the context-global `a_flat_rgba` constant that a draw with no bound
@@ -760,6 +770,9 @@ class TmdRenderer {
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, mvp);
     gl.uniformMatrix4fv(this.locModel, false, IDENTITY4);
+    /* The single-mesh viewer never bends (the curve is an overworld
+     * scene-pass term, staged by renderAssembled). */
+    if (this.locCurve) gl.uniform1f(this.locCurve, 0);
     /* buildMvp = single reflection (Y flip): a double-sided pair's visible
      * copy is the front-facing one under this projection. */
     gl.uniform1i(this.locPairFront, 1);
@@ -1137,6 +1150,8 @@ class TmdRenderer {
     /* Retail NCLIP winding rejection (0 unless the play page staged a
      * cutscene-camera frame this tick). */
     if (this.locNclipCull) gl.uniform1i(this.locNclipCull, this.nclipCull);
+    /* Overworld curvature (0 = flat unless the play page staged a scale). */
+    if (this.locCurve) gl.uniform1f(this.locCurve, this.overworldCurve);
     /* Prologue grade + depth cue (identity / off unless the play page
      * staged them this frame). */
     this._applyGradeCue();

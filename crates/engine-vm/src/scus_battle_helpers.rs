@@ -16,10 +16,10 @@
 //! - [`bgr555_to_grey`] - the desaturate step of the stone/petrify CLUT-fade
 //!   builder `FUN_8004ce2c`. **Wired**: `engine-core::battle_status_clut`
 //!   calls it per latched party slot; see the note below.
-//! - [`depth_cue_scale_channel`] - the per-channel depth-brightness ramp of the
-//!   actor colour/OTZ setup `FUN_8004a908`.
-//! - [`invert_bgr24`] - the "negative colour" status recolour, also from
-//!   `FUN_8004a908`.
+//!
+//! The two cores of the battle tint pass `FUN_8004a908` that used to live
+//! here (the depth-brightness ramp and the negative-colour recolour) moved to
+//! [`crate::battle_actor_tint`] when that routine was ported whole.
 //!
 //! Every claim below is read out of the instruction stream in the reference
 //! dumps, not the decompiled C.
@@ -36,9 +36,12 @@
 //!
 //! # NOT WIRED
 //!
-//! Three of the four. [`bgr555_to_grey`] is no longer one of them - the note
-//! it used to carry is kept below, rewritten, because *how* it got a consumer
-//! is the pattern the other three still lack.
+//! Two of the four rows below: [`scale_rgb24`] and [`copy_nested_records`].
+//! [`bgr555_to_grey`] is live through `engine-core::battle_status_clut`, and
+//! the tint-pass cores are live in [`crate::battle_actor_tint`], which both
+//! play hosts reach per battle body per frame. The notes those three used to carry are kept
+//! below, rewritten, because *how* each got a consumer is the pattern the
+//! other two still lack.
 //!
 //! "The battle path is expected to grow a consumer" is a forecast, not a
 //! reason, and it is not the one that holds. Each kernel is the arithmetic
@@ -53,7 +56,7 @@
 //! | Kernel | Retail caller | Call site | Port of the caller |
 //! |---|---|---|---|
 //! | [`scale_rgb24`] | `FUN_80016444` | `80016748` | `engine-core::world::frame_tick` |
-//! | [`depth_cue_scale_channel`] / [`invert_bgr24`] | `FUN_80047430`, `FUN_800480D8` | `800476C8`; `800481B4`/`8004825C`/`800482E8` | `engine-vm::battle_hp_bar`; `engine-render::battle_actor_tick` (itself inert) |
+//! | the tint-pass cores (now [`crate::battle_actor_tint`]) | `FUN_80047430`, `FUN_800480D8` | `800476C8`; `800481B4`/`8004825C`/`800482E8` | `engine-vm::battle_hp_bar`; `engine-vm::battle_actor_tint` (live) |
 //! | [`bgr555_to_grey`] | `FUN_8004DA00` | `8004DC4C` | `engine-audio::battle_voice` |
 //! | [`copy_nested_records`] | `FUN_80052FA0` | `80053438`, `800534F4` | `asset::battle_char_palette` |
 //!
@@ -125,11 +128,13 @@
 //!   item/effect band around `FUN_800402F4` - and that one is unported. Since
 //!   `BattleHud::sync_status` arms the CLUT latch on `StatusKind::Stone` only,
 //!   rows `481..=483` stay unexercised until that applier lands.
-//! * [`depth_cue_scale_channel`] and [`invert_bgr24`] belong to the actor
-//!   colour/OTZ setup, whose depth term comes from the GTE transform
-//!   `FUN_8003D344` per actor per frame. `engine-render` computes its own
-//!   depth cue in the shader from the transformed Z, so nothing on the CPU
-//!   side holds a `(num, den)` pair to scale with.
+//! * The tint-pass cores belong to the actor
+//!   tint pass, whose depth term comes from the GTE transform `FUN_8003D344`
+//!   per actor per frame. The earlier note here said nothing on the CPU side
+//!   holds a `(num, den)` pair; the pair is `(radius / 2, view_z / 16)`, and
+//!   the view depth is one row of the shared battle camera
+//!   (`battle_cam_script::battle_view_depth`), so the whole routine is now
+//!   ported as `crate::battle_actor_tint` and these two are its arithmetic.
 //!
 //! They are ported because each edge case (the do-while floor, the
 //! pre-multiply saturation, the luminance clamp, the min-4 dim floor) is
@@ -329,60 +334,6 @@ pub fn bgr555_to_grey(pixel: u16) -> u16 {
     lum | (lum << 5) | (lum << 10)
 }
 
-// ---------------------------------------------------------------------------
-// FUN_8004a908 - actor depth-cue brightness + negative-colour recolour
-// ---------------------------------------------------------------------------
-
-/// Scale one 10-bit colour channel by a depth ratio `num/den`, clamped so a
-/// near actor never brightens past its base and a far one never fades to
-/// black - the per-channel core of the actor colour/OTZ setup `FUN_8004a908`.
-///
-/// PORT: FUN_8004a908
-///
-/// The retail routine computes, per channel, exactly (`0x8004aac8`):
-///
-/// - `p = (raw * num) / den` - an unsigned 10-bit `*` 16-bit product then
-///   `divu` (`den` is the transformed depth `>> 4`; `num` is the mesh's
-///   half-range `mesh[+0x58]`).
-/// - `if raw < p { p = raw }` - clamp to the base channel, so an actor closer
-///   than the half-range stays at full brightness rather than over-driving.
-/// - `if p == 0 { p = 4 }` - a dim floor; a fully-faded channel still shows a
-///   4/1024 ember rather than pure black.
-///
-/// Retail guarantees `den >= 1` (the caller replaces a zero depth with 1
-/// before this runs); this port maps `den == 0` to `1` to match. The result
-/// is the scaled 10-bit value; retail then quantises it to 8 bits per channel
-/// (`>> 2` / `& 0x3FC`) when packing the GPU colour word - that packing, and
-/// the `FUN_8003d344` GTE transform the depth comes from, are render-track and
-/// live in `docs/subsystems/battle.md`.
-pub fn depth_cue_scale_channel(raw10: u16, num: u16, den: u16) -> u16 {
-    let raw = (raw10 & 0x3FF) as u32;
-    let den = den.max(1) as u32;
-    let mut p = (raw * num as u32) / den;
-    if raw < p {
-        p = raw;
-    }
-    if p == 0 {
-        p = 4;
-    }
-    p as u16
-}
-
-/// Invert the low 24 bits (`0x00BBGGRR`) of a packed actor colour word while
-/// preserving the top byte - the "negative colour" status recolour from
-/// `FUN_8004a908`.
-///
-/// PORT: FUN_8004a908
-///
-/// Off the disassembly (`0x8004abf4`): `out = (0xFFFFFF - (c & 0xFFFFFF)) |
-/// (c & 0xFF000000)`. Retail applies it only when the three channels are
-/// already equal (a greyscale word) - that guard belongs to the caller; this
-/// function is the recolour itself, which is a plain complement of the colour
-/// bits with the GPU code/attribute byte in bits 24..31 left intact.
-pub fn invert_bgr24(color: u32) -> u32 {
-    (0x00FF_FFFF - (color & 0x00FF_FFFF)) | (color & 0xFF00_0000)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -518,50 +469,6 @@ mod tests {
             assert_eq!((g >> 5) & 0x1F, lum);
             assert_eq!((g >> 10) & 0x1F, lum);
             assert!(g < 0x8000, "no STP bit, so top bit clear");
-        }
-    }
-
-    #[test]
-    fn depth_cue_full_brightness_when_closer_than_half_range() {
-        // den (depth) < num (half-range) -> (raw*num)/den >= raw -> clamp to raw.
-        assert_eq!(depth_cue_scale_channel(0x200, 0x40, 0x10), 0x200);
-    }
-
-    #[test]
-    fn depth_cue_dims_when_farther_than_half_range() {
-        // raw=0x100, num=8, den=0x20 -> (0x100*8)/0x20 = 0x40.
-        assert_eq!(depth_cue_scale_channel(0x100, 8, 0x20), 0x40);
-    }
-
-    #[test]
-    fn depth_cue_floor_is_four_not_zero() {
-        // Product rounds to 0 -> dim floor of 4.
-        assert_eq!(depth_cue_scale_channel(1, 1, 0x40), 4);
-    }
-
-    #[test]
-    fn depth_cue_masks_input_to_ten_bits_and_guards_zero_den() {
-        // Bits above bit 9 in raw are dropped before scaling.
-        assert_eq!(
-            depth_cue_scale_channel(0xFC00 | 0x100, 1, 1),
-            depth_cue_scale_channel(0x100, 1, 1)
-        );
-        // den == 0 is treated as 1 (retail guarantees >= 1 upstream).
-        assert_eq!(depth_cue_scale_channel(0x080, 1, 0), 0x080);
-    }
-
-    #[test]
-    fn invert_complements_colour_bits_keeps_top_byte() {
-        assert_eq!(invert_bgr24(0x00_00_00_00), 0x00FF_FFFF);
-        assert_eq!(invert_bgr24(0x00_FF_FF_FF), 0x0000_0000);
-        // Top byte (GPU code/attr) survives untouched.
-        assert_eq!(invert_bgr24(0xC5_10_20_30), 0xC5_EF_DF_CF);
-    }
-
-    #[test]
-    fn invert_is_self_inverse_on_the_colour_bits() {
-        for c in [0x00_12_34_56u32, 0x81_00_80_FF, 0x00_7F_7F_7F] {
-            assert_eq!(invert_bgr24(invert_bgr24(c)), c);
         }
     }
 }

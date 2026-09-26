@@ -378,9 +378,11 @@ impl LegaiaRuntime {
     }
 
     /// Pause the scene sequencer under the movie, the way the native window
-    /// does when it stages the XA track. Not resumed here: the post-movie
-    /// hand-off enters a scene whose script starts its own BGM (which
-    /// un-pauses), exactly as native; the attract resumes explicitly.
+    /// does when it stages the XA track. The cutscene service reopens it when
+    /// the movie ends ([`Self::fmv_resume_sequencer`]), as the native window
+    /// does on its drain - a hand-off that stays in the trigger scene, or a
+    /// new scene that issues no BGM start, otherwise left the page silent.
+    /// The attract resumes explicitly.
     fn fmv_pause_sequencer(&self) {
         #[cfg(target_arch = "wasm32")]
         if let Some(out) = self.audio_out.as_ref() {
@@ -512,6 +514,11 @@ impl LegaiaRuntime {
         }
         if finished {
             self.fmv_audio_stop();
+            // The native window's movie-end drain reopens the sequencer
+            // (`out.set_sequencer_paused(false)` beside `stop_xa`); this host
+            // only stopped the XA, so a movie that handed back to a scene with
+            // no BGM start of its own kept the score paused.
+            self.fmv_resume_sequencer();
         }
         fmv_handoff_scene
     }

@@ -554,7 +554,8 @@ impl FieldMenuSession {
     /// Hosts call this right after [`Self::set_gate`], so the two hosts
     /// cannot disagree about which screen a locked context opens on.
     ///
-    /// PORT: FUN_801DC6B4 (`0x801dc8d0..0x801dc8e4`)
+    /// REF: FUN_801DC6B4 (the entry decode, ported as
+    /// [`crate::pause_screens::menu_entry_subscreen`])
     ///
     /// ## How a real script's `0x0D` park reaches this call
     ///
@@ -580,7 +581,9 @@ impl FieldMenuSession {
     /// exit this gate structurally has - the ready check's Yes - and hosts
     /// call it from their menu-close path.
     pub fn open_entry_screen(&mut self) {
-        if self.gate.entry_context_kind == Some(crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED) {
+        if crate::pause_screens::menu_entry_subscreen(self.gate.entry_context_kind)
+            == crate::pause_screens::CONTEXT_LOCKED_ENTRY_SUBSCREEN
+        {
             self.phase = FieldMenuPhase::Notice;
         }
     }

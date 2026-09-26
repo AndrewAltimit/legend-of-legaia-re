@@ -220,8 +220,9 @@ pub enum HandlerKernel {
     CameraMover,
     /// One of the four [`crate::screen_fx`] widget handlers.
     ScreenWidget,
-    /// [`crate::field_actor_program::step_scene_program`] - ported, but not yet run by the
-    /// actor loop; see that function's disclosure.
+    /// [`crate::field_actor_program::step_scene_program`], run by
+    /// [`crate::world::World::tick_handler_actors`] over the programs the MAN
+    /// loader resumes.
     ScriptedScene,
     /// [`legaia_engine_vm::actor_tick::clip_fraction_step`], run by
     /// [`crate::world::World::tick_handler_actors`] over the clones the field

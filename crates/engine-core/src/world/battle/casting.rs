@@ -95,9 +95,7 @@ impl World {
         } else {
             0
         };
-        let base_cost = def.mp_cost as u16;
-        let modifier = vm::battle_formulas::MpCostModifier::from_ability_flags(ability_bits);
-        let cost = vm::battle_formulas::mp_cost_after_ability_bits(base_cost, modifier);
+        let cost = crate::spells::caster_mp_cost(def, ability_bits);
         let (caster_hp, caster_max_hp, caster_mp_now) = match self.actors.get(caster as usize) {
             Some(a) => (a.battle.hp, a.battle.max_hp, a.battle.mp),
             None => return false,
@@ -175,6 +173,7 @@ impl World {
                 caster_hp,
                 caster_max_hp,
                 caster_mp: caster_mp_before,
+                caster_ability_bits: ability_bits,
                 target_mdef: self.battle.defense.get(t as usize).copied().unwrap_or(0),
                 target_hp: actor.battle.hp,
                 target_hp_max: actor.battle.max_hp,
@@ -378,9 +377,9 @@ impl World {
         // the closure below, only when the bonus arm fires, so the shared RNG
         // cursor advances exactly as retail's does (three or five draws).
         let rng3 = [
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
+            self.next_rand() as u16,
+            self.next_rand() as u16,
+            self.next_rand() as u16,
         ];
         let (atk, def) = arts_physical_predamage_lazy(
             power,
@@ -388,12 +387,7 @@ impl World {
             &target_roll,
             element_affinity_pct,
             rng3,
-            || {
-                [
-                    (self.next_rng() & 0x7fff) as u16,
-                    (self.next_rng() & 0x7fff) as u16,
-                ]
-            },
+            || [self.next_rand() as u16, self.next_rand() as u16],
         );
         // Closed-form finisher stages (FUN_801ddb30). The attacker element is
         // the monster record's `+0x1D` byte, read record-direct the way the
@@ -428,7 +422,7 @@ impl World {
             summon_power_pct: 100,
             floor_rand: 0,
         };
-        let over = damage_finish_lazy(&finish, || (self.next_rng() & 0x7fff) as u16);
+        let over = damage_finish_lazy(&finish, || self.next_rand() as u16);
         Some(over.min(9999) as u16)
     }
 
@@ -497,12 +491,9 @@ impl World {
             guard: 0,
         };
         let power = power.max(0) as u32;
-        let rng2 = [
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
-        ];
+        let rng2 = [self.next_rand() as u16, self.next_rand() as u16];
         let (atk, def) = atk_wrapper_predamage(power, &a, &d, element_affinity_pct, rng2, || {
-            (self.next_rng() & 0x7fff) as u16
+            self.next_rand() as u16
         });
 
         let attacker_element = self
@@ -530,7 +521,7 @@ impl World {
             summon_power_pct: 100,
             floor_rand: 0,
         };
-        let over = damage_finish_lazy(&finish, || (self.next_rng() & 0x7fff) as u16);
+        let over = damage_finish_lazy(&finish, || self.next_rand() as u16);
         Some(over.min(9999) as u16)
     }
 
@@ -679,12 +670,12 @@ impl World {
         };
         let power_u = power.max(0) as u32;
         let rng3 = [
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
+            self.next_rand() as u16,
+            self.next_rand() as u16,
+            self.next_rand() as u16,
         ];
         let (atk, def) = int_wrapper_predamage(power_u, &a, &d, element_affinity_pct, rng3, || {
-            (self.next_rng() & 0x7fff) as u16
+            self.next_rand() as u16
         });
 
         let attacker_element = self
@@ -712,7 +703,7 @@ impl World {
             summon_power_pct: 100,
             floor_rand: 0,
         };
-        let over = damage_finish_lazy(&finish, || (self.next_rng() & 0x7fff) as u16);
+        let over = damage_finish_lazy(&finish, || self.next_rand() as u16);
         Some(over.min(9999) as u16)
     }
 
@@ -908,10 +899,7 @@ impl World {
         let element_affinity_pct = self.cast_affinity_pct(spell_id, target);
         let magic_power_byte = self.caster_magic_power_byte(caster, spell_id);
 
-        let rng2 = [
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
-        ];
+        let rng2 = [self.next_rand() as u16, self.next_rand() as u16];
         let (atk, def) = summon_predamage_lazy(
             &summon,
             caster_agl,
@@ -919,7 +907,7 @@ impl World {
             element_affinity_pct,
             magic_power_byte,
             rng2,
-            || (self.next_rng() & 0x7fff) as u16,
+            || self.next_rand() as u16,
         );
 
         // Closed-form finisher stages (FUN_801ddb30). The defender is an
@@ -946,7 +934,7 @@ impl World {
             summon_power_pct,
             floor_rand: 0,
         };
-        let over = damage_finish_lazy(&finish, || (self.next_rng() & 0x7fff) as u16);
+        let over = damage_finish_lazy(&finish, || self.next_rand() as u16);
         Some(over.min(9999) as u16)
     }
 
@@ -1504,8 +1492,22 @@ mod capture_bypass_tests {
     /// REF: FUN_801DD6B4 (bonus arm), FUN_801DD4B0 (the same arm)
     #[test]
     fn the_bonus_arm_floor_makes_a_bypass_hit_defence_insensitive() {
+        // The stream the bypass casts run on, chosen so the arm fires at every
+        // sampled defence. Derived by hand: the synthetic record's power is
+        // 500, so the attacker roll is `r0 % 126 + (4000 >> 8) + 500` and the
+        // arm fires when that falls short of `def_roll + 500`, where
+        // `def_roll >= (9999 >> 8) = 39` at any defence. Seed `0xC0FFEE20`'s
+        // first shaped draw (`s' = s * 1664525 + 1013904223`, draw =
+        // `(s' >> 16) & 0x7FFF`) is 17262 = `126 * 137`, so the attacker roll
+        // is 515 and `515 < 39 + 500` holds for every defence. The world's
+        // own seed draws `16475 % 126 = 95`, which fires only once the
+        // defence reaches about 144.
+        const BONUS_ARM_SEED: u32 = 0xC0FF_EE20;
         let with_defence = |move_id: u8, defence: u16| -> i32 {
             let mut world = world_with_resisting_party();
+            if move_id == BYPASS_MOVE_ID {
+                world.rng_state = BONUS_ARM_SEED;
+            }
             if let Some(m) = world.party.roster.members.get_mut(0) {
                 let mut bits = m.ability_bits();
                 bits[3] &= !0x20;
@@ -1725,5 +1727,44 @@ mod one_spell_model_tests {
             live_charge,
             "the state machine would charge the very same MP for this cast"
         );
+    }
+
+    /// The prepaid fold re-checks affordability through the shared
+    /// `cast_spell` gate, so that gate must read the **discounted** price the
+    /// band's `0x28` charged (`0x801E4568`, the inline `FUN_80035394` fold).
+    /// A Half-bit caster (`+0xF4 & 0x20`) who had exactly the discounted
+    /// Theeder price (24 -> 12) used to fold a `NotEnoughMp` failure against
+    /// the raw 24 and deal no damage.
+    #[test]
+    fn a_prepaid_mp_saver_cast_resolves_at_exactly_the_discounted_price() {
+        let mut world = World::new();
+        world.party.party_count = 1;
+        world.party.character_ability_bits[0] = 0x20;
+        world.set_spell_catalog(crate::retail_magic::retail_seru_magic_catalog());
+        for i in 0..2usize {
+            let a = world.spawn_actor(i);
+            a.battle.liveness = 1;
+            a.battle.hp = 500;
+            a.battle.max_hp = 500;
+            a.battle.mp = 0;
+        }
+        world.battle.magic[0] = 40;
+        let def = world
+            .tables
+            .spell_catalog
+            .get(0x82)
+            .cloned()
+            .expect("Theeder is in the retail block");
+        assert_eq!(crate::spells::caster_mp_cost(&def, 0x20), 12);
+        // The band already charged 12 of the caster's 12: 0 left.
+        world.cast_spell_on_slots_prepaid(0, &def, &[1]);
+        assert!(
+            world.actors[1].battle.hp < 500,
+            "the cast resolved against the discounted price"
+        );
+        // The direct path charges the same discounted price.
+        world.actors[0].battle.mp = 12;
+        world.cast_spell_on_slots(0, &def, &[1]);
+        assert_eq!(world.actors[0].battle.mp, 0);
     }
 }

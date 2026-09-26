@@ -50,15 +50,12 @@
 //!
 //! # Wiring status
 //!
-//! Split, so the module carries no blanket tag. [`projected_separation`] and
-//! [`approach_angle`] are **live**: the battle locomotion drive
-//! (`World::tick_battle_locomotion`) and the attack band's motion kernels
-//! measure attacker-to-target reach with them every frame. The clamp itself,
-//! [`approach_distance`], is the part with no caller, and its own note carries
-//! that disclosure.
+//! All three pieces are live. [`projected_separation`] and [`approach_angle`]
+//! serve the battle locomotion drive (`World::tick_battle_locomotion`) and
+//! the attack band's motion kernels every frame; the clamp itself,
+//! [`approach_distance`], serves the effect-script walker described next.
 //!
-//! The `requested` producer, which earlier
-//! revisions of this note could not name, is now pinned from the caller's
+//! The `requested` producer is pinned from the caller's
 //! disassembly (`overlay_battle_action_801dea50.txt`). `FUN_801DEA50` is the
 //! per-clip **battle effect-script walker** (ported as
 //! `engine-core::action_effect_script`), and this clamp is a placement rule
@@ -73,10 +70,10 @@
 //! tick's root-motion term (`FUN_80047430`; engine
 //! `World::tick_battle_locomotion`), which never calls this.
 //!
-//! Wiring therefore belongs in `action_effect_script::step_effect_script`'s
-//! direct branch (intercept effect ids `0x93`/`0x84`, replace the scaled Z
-//! offset with [`approach_distance`] over the attacker's live pair and the
-//! target's seat pair) - outside this crate.
+//! `engine-core::action_effect_script::step_effect_script` is that branch:
+//! a direct record whose whole effect byte is `0x93` or `0x84` has its
+//! scaled Z offset replaced by [`approach_distance`] over the attacker's live
+//! pair and the target's seat pair, before the facing rotation.
 
 /// Half-turn added to the bearing before the LUT lookup (`0x800` of a 12-bit
 /// angle).
@@ -144,11 +141,11 @@ pub fn clamp_step(requested: i16, separation: i32) -> i16 {
 ///
 /// PORT: FUN_801DF570
 ///
-/// NOT WIRED: nothing produces a `requested` step for it yet. The producer is
-/// pinned (see the module doc): the effect-script walker's direct-spawn branch
-/// for effect ids `0x93` / `0x84`, so the wiring site is
-/// `engine-core::action_effect_script`'s direct branch, not the attack band -
-/// the approach *movement* is root motion and never calls this.
+/// Called from the effect-script walker's direct-spawn branch for the effect
+/// bytes `0x93` / `0x84` (`engine-core::action_effect_script`, the
+/// `0x801DEDC8` site), which `World::step_actor_effect_script` drives once
+/// per battle frame per actor with a committed clip - the approach
+/// *movement* is root motion and never calls this.
 pub fn approach_distance(pose: ApproachPose, requested: i16, sin: i16, cos: i16) -> i16 {
     let d = projected_separation(pose.x, pose.z, pose.ref_x, pose.ref_z, sin, cos);
     clamp_step(requested, d)

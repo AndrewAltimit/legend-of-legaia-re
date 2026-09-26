@@ -127,6 +127,21 @@ impl SceneHost {
             .map_or(0, |id| crate::fishing::venue_for_departure_scene(id, 0));
         let venue_map = self.fishing_venue_map(0);
         self.world.enter_fishing_session(&tables, venue, venue_map);
+        // The point-exchange venue pages ride the same overlay image. Decoded
+        // here, on the entry the door warp shares, rather than by each host's
+        // own launcher: the door path used to install none, so the exchange
+        // was unusable after walking into the venue on either host. Row names
+        // come off the SCUS item table the boot already installed.
+        let names = self
+            .world
+            .menu
+            .text
+            .as_ref()
+            .and_then(|t| t.item_names.as_ref());
+        let venues = legaia_asset::fishing_exchange::parse(loaded).map(|ex| {
+            [0usize, 1].map(|v| crate::fishing::PrizeExchange::from_asset(v, &ex.venues[v], names))
+        });
+        self.world.minigames.fishing_prize_venues = venues;
         true
     }
 
@@ -171,12 +186,12 @@ impl SceneHost {
             return false;
         };
         let balance = self.world.minigames.casino_coins as i32;
-        self.world
-            .enter_slot_machine(crate::slot_machine::SlotMachine::new(
-                payouts,
-                SLOT_RNG_SEED,
-                balance,
-            ));
+        let paylines =
+            legaia_asset::minigame_slot_scene::parse_paylines(loaded).unwrap_or_default();
+        self.world.enter_slot_machine(
+            crate::slot_machine::SlotMachine::new(payouts, SLOT_RNG_SEED, balance)
+                .with_paylines(paylines),
+        );
         true
     }
 
@@ -202,6 +217,10 @@ impl SceneHost {
         else {
             return false;
         };
+        let index = &self.index;
+        let fight = fight.with_roster_clip_headers(crate::baka_fighter::roster_clip_headers(|i| {
+            index.entry_bytes(i as u32).ok().map(|b| b.to_vec())
+        }));
         self.world.enter_baka_fighter(fight);
         true
     }
@@ -220,22 +239,8 @@ impl SceneHost {
         use legaia_asset::muscle_dome as md;
         use legaia_asset::static_overlay;
 
-        /// Flat favored-class swing cost, until the lead's equipped swing
-        /// records are threaded through the warp.
-        const FAVORED_COST: u16 = 0x1E;
-        /// Stand-in turn budget for the lead, and the opponent's fallback
-        /// when the arena ladder or the monster archive does not decode.
-        const STANDIN_BUDGET: u16 = 120;
-        const STANDIN_HP: i32 = 400;
         /// The victory caption's Seru index. It names a *string*, not a prize.
         const CAPTION_SERU_INDEX: u8 = 1;
-        const STANDIN_COMBATANT: DomeCombatant = DomeCombatant {
-            hp_max: STANDIN_HP as u16,
-            int: 60,
-            udf: 40,
-            ldf: 40,
-            element: 0,
-        };
 
         let Some(rec) =
             static_overlay::overlay_map().by_prot_index(md::MUSCLE_OVERLAY_PROT_INDEX as u32)
@@ -251,22 +256,19 @@ impl SceneHost {
         let Some(commands) = md::hand_command_ids(&battle) else {
             return false;
         };
+        // The lead fighter - swing costs, HP, AP pool, stat profile - through
+        // the one builder the native window's launcher uses too.
+        let lead = self.dome_lead_fighter(&commands);
         let hand: [MuscleCard; crate::muscle_dome::HAND_SLOTS] =
             std::array::from_fn(|i| MuscleCard {
                 command_id: commands[i],
-                cost: FAVORED_COST,
+                cost: lead.costs[i],
             });
-        // The lead fighter is the lead party record, as retail's battle load
-        // copies it: live HP `+0x106` and its effective maximum `+0x104`.
-        // A record with no HP (a hand-built party) keeps the stand-in.
-        let lead_hp = self
-            .world
-            .party
-            .roster
-            .members
-            .first()
-            .map(|r| r.hp_mp_sp())
-            .filter(|h| h.hp_cur > 0 && h.hp_max > 0);
+        let opp_hand: [MuscleCard; crate::muscle_dome::HAND_SLOTS] =
+            std::array::from_fn(|i| MuscleCard {
+                command_id: commands[i],
+                cost: DOME_FAVORED_COST,
+            });
         // The opponent is the contest's own ladder rung: the arena stages
         // `(course, round)` off its unlock flags (`DomeContest::from_overlay`,
         // the entry `FUN_801CEA6C` runs on a zero sub-id word), and the rung
@@ -313,29 +315,24 @@ impl SceneHost {
                         element: r.element,
                     },
                     i32::from(r.hp),
-                    Some(bs[0]).filter(|&a| a > 0).unwrap_or(STANDIN_BUDGET),
+                    Some(bs[0])
+                        .filter(|&a| a > 0)
+                        .unwrap_or(DOME_STANDIN_BUDGET),
                 )
             }
-            None => (STANDIN_COMBATANT, STANDIN_HP, STANDIN_BUDGET),
+            None => (DOME_STANDIN_COMBATANT, DOME_STANDIN_HP, DOME_STANDIN_BUDGET),
         };
-        let hp = [
-            lead_hp.map_or(STANDIN_HP, |h| i32::from(h.hp_cur)),
-            opponent_hp,
-        ];
-        let lead_combatant = DomeCombatant {
-            hp_max: lead_hp.map_or(STANDIN_COMBATANT.hp_max, |h| h.hp_max),
-            ..STANDIN_COMBATANT
-        };
+        let hp = [lead.hp, opponent_hp];
         let mut session = MuscleDomeSession::new(
             hand,
-            hand,
-            [STANDIN_BUDGET, opponent_budget],
+            opp_hand,
+            [lead.budget, opponent_budget],
             hp,
             CAPTION_SERU_INDEX,
         );
         let seed = 0x4D55_5343 ^ self.world.frame as u32;
         if let Some(model) =
-            DomeDamageModel::from_battle_overlay(&raw, [lead_combatant, opponent], hp, seed)
+            DomeDamageModel::from_battle_overlay(&raw, [lead.profile, opponent], hp, seed)
         {
             session.install_damage_model(model);
         }
@@ -385,5 +382,127 @@ impl SceneHost {
         };
         self.world.enter_dance(game);
         true
+    }
+}
+
+/// Flat favored-class swing cost: the opponent's every card, and a lead card
+/// whose swing record does not resolve.
+pub const DOME_FAVORED_COST: u16 = 0x1E;
+/// Stand-in turn budget, for a fighter with no AGL.
+pub const DOME_STANDIN_BUDGET: u16 = 120;
+/// Stand-in HP, for a fighter with no HP.
+pub const DOME_STANDIN_HP: i32 = 400;
+/// Stand-in stat profile, for a fighter with no record.
+pub const DOME_STANDIN_COMBATANT: crate::muscle_dome::DomeCombatant =
+    crate::muscle_dome::DomeCombatant {
+        hp_max: DOME_STANDIN_HP as u16,
+        int: 60,
+        udf: 40,
+        ldf: 40,
+        element: 0,
+    };
+
+/// The Muscle Dome's lead fighter as a contest stages it: the card costs,
+/// entry HP, AP pool and damage-roll profile. See
+/// [`SceneHost::dome_lead_fighter`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DomeLeadFighter {
+    /// Per-card AP cost, in hand order.
+    pub costs: [u16; crate::muscle_dome::HAND_SLOTS],
+    /// Entry HP (the lead record's live `+0x106`).
+    pub hp: i32,
+    /// AP pool (the lead record's live AGL `+0x110`).
+    pub budget: u16,
+    /// Damage-roll profile (max HP `+0x104`, live INT / UDF / LDF).
+    pub profile: crate::muscle_dome::DomeCombatant,
+}
+
+impl SceneHost {
+    /// The lead fighter a Muscle Dome contest stages, for the hand's
+    /// `commands`: per-card cost from the lead's equipped-section swing
+    /// records (`+0x74`, the bytes the Arts gauge reads; the player battle
+    /// file PROT 0863), entry HP from the lead record's live `+0x106` over its
+    /// `+0x104` maximum, the AP pool from live AGL (`+0x110`) and the damage
+    /// profile from live INT / UDF / LDF - the `+0x14e` / `+0x154` battle-actor
+    /// fields retail copies them into.
+    ///
+    /// The one builder for every entry. The arena-door warp used flat
+    /// favored costs, a 120 AP pool and a 60/40/40 stand-in profile while the
+    /// native window's debug launcher read all four off the lead record, so
+    /// a player who walked into the dome fought a different fighter from
+    /// the one the hotkey staged - on both hosts, because the door is the
+    /// shared path. A field that does not resolve keeps its stand-in.
+    pub fn dome_lead_fighter(
+        &self,
+        commands: &[u8; crate::muscle_dome::HAND_SLOTS],
+    ) -> DomeLeadFighter {
+        let lead = self.world.party.roster.members.first();
+        let swing = self.lead_swing_costs();
+        let costs = std::array::from_fn(|i| {
+            swing
+                .and_then(|c| c.get(usize::from(commands[i].wrapping_sub(0x0C))).copied())
+                .filter(|&c| c > 0)
+                .map_or(DOME_FAVORED_COST, u16::from)
+        });
+        let hp_mp = lead.map(|r| r.hp_mp_sp());
+        let hp_max = hp_mp
+            .map(|h| h.hp_max)
+            .filter(|&h| h > 0)
+            .unwrap_or(DOME_STANDIN_COMBATANT.hp_max);
+        let hp = hp_mp
+            .map(|h| i32::from(h.hp_cur))
+            .filter(|&h| h > 0)
+            .unwrap_or(i32::from(hp_max));
+        let live = lead.map(|r| r.live_stats());
+        let budget = live
+            .map(|l| l.agl)
+            .filter(|&a| a > 0)
+            .unwrap_or(DOME_STANDIN_BUDGET);
+        let profile = match live {
+            Some(l) => crate::muscle_dome::DomeCombatant {
+                hp_max,
+                int: l.int,
+                udf: l.udf,
+                ldf: l.ldf,
+                element: 0,
+            },
+            None => DOME_STANDIN_COMBATANT,
+        };
+        DomeLeadFighter {
+            costs,
+            hp,
+            budget,
+            profile,
+        }
+    }
+
+    /// The lead's four direction-swing AP costs (commands `0x0C..=0x0F`), off
+    /// the lead's equipped sections of the player battle file (PROT 0863).
+    /// `None` when the file or its equipped sections do not decode.
+    pub fn lead_swing_costs(&self) -> Option<[u8; 4]> {
+        let raw = self.index.entry_bytes_extended(863).ok()?;
+        let pack = legaia_asset::battle_data_pack::parse(&raw).ok()?;
+        let equipped: [u8; 5] = self
+            .world
+            .party
+            .roster
+            .members
+            .first()
+            .map(|rec| {
+                let slots = rec.equipment().slots;
+                [slots[0], slots[1], slots[2], slots[3], slots[4]]
+            })
+            .unwrap_or_default();
+        let swings =
+            legaia_asset::battle_char_assembly::swing_battle_animations(&raw, &pack, &equipped)
+                .ok()?;
+        let mut costs = [0u8; 4];
+        for s in &swings {
+            let i = s.slot.checked_sub(0xC)? as usize;
+            if i < 4 {
+                costs[i] = s.cost;
+            }
+        }
+        Some(costs)
     }
 }

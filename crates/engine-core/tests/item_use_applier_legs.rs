@@ -328,3 +328,129 @@ fn a_table_without_a_class_14_row_seeds_no_strike_item() {
         .count();
     assert_eq!(strikes, 0);
 }
+
+/// Selector `8` - the Antidote's class. Retail masks the target's status word
+/// with `0xFFFC` (`0x80041C04` / `0x80041C34`), so ONE Antidote lifts Venom
+/// and Toxic together, whatever the catalog names; and it skips a target at
+/// zero HP (`beq v0,zero` at `0x80041BCC`) before touching the word.
+#[test]
+fn the_status_clear_arm_lifts_both_poisons_and_skips_a_dead_target() {
+    use legaia_engine_vm::status_effects::StatusKind;
+    let rows = [Row {
+        id: 0x7E,
+        kind: 2,
+        class: 8,
+        tier: 1,
+        flags: 0x86,
+    }];
+    let mut world = world_with(&rows, 3);
+    for (slot, hp) in [(0usize, 50u16), (1, 0)] {
+        let rec = &mut world.party.roster.members[slot];
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_cur = hp;
+        hms.hp_max = 100;
+        rec.set_hp_mp_sp(hms);
+        world
+            .battle
+            .status_effects
+            .apply(slot as u8, StatusKind::Venom);
+        world
+            .battle
+            .status_effects
+            .apply(slot as u8, StatusKind::Toxic);
+        world
+            .battle
+            .status_effects
+            .apply(slot as u8, StatusKind::Sleep);
+    }
+    // Living target: both poison bits clear, the Sleep bit survives.
+    let out = world.use_item(0x7E, 0);
+    assert_eq!(
+        out,
+        ItemOutcome::Cured {
+            kind: StatusKind::Venom
+        }
+    );
+    let left = world.battle.status_effects.display_flags(0);
+    assert_eq!(left & 0x0003, 0, "Venom and Toxic both lifted");
+    assert_ne!(left & 0x0800, 0, "Sleep is outside the 0xFFFC mask");
+    // Dead target: nothing written.
+    let before = world.battle.status_effects.display_flags(1);
+    assert_eq!(world.use_item(0x7E, 1), ItemOutcome::NoEffect);
+    assert_eq!(world.battle.status_effects.display_flags(1), before);
+    // Nothing to clear: no effect either.
+    assert_eq!(world.use_item(0x7E, 0), ItemOutcome::NoEffect);
+}
+
+/// The pause-menu path of a book: the finished Items use composes retail's
+/// window-8 notice off the menu overlay's template - patched the way
+/// `FUN_801DCD58` patches it (`0xC1` <- the slot, `0xC5` <- `slot * 0x40 +
+/// art`) and expanded against the party names and the arts-name table.
+///
+/// The template here is synthetic (same token shape, no disc text), and the
+/// contrast is the same use without a template: no notice, because the
+/// engine does not invent the message.
+#[test]
+fn a_pause_menu_book_use_composes_the_window_8_notice() {
+    use legaia_art::arts_table::ArtTableEntry;
+    use legaia_art::queue::Character;
+    use legaia_engine_core::field_menu_dispatch::apply_inventory_outcome;
+    use legaia_engine_core::inventory_use::{
+        InventoryContext, InventoryUseSession, InventoryUseState,
+    };
+    use legaia_engine_core::pause_screens::MenuTextTables;
+
+    let finished = |world: &World| {
+        let mut s = InventoryUseSession::new(
+            world.tables.item_catalog.clone(),
+            vec![0x92],
+            Vec::new(),
+            InventoryContext::Field,
+        );
+        s.used_item = Some(0x92);
+        s.used_slots = vec![0];
+        s.state = InventoryUseState::Done(ItemOutcome::NoEffect);
+        s
+    };
+    let art = |character, index, name: &str| ArtTableEntry {
+        character,
+        index,
+        name: name.into(),
+        ap: 0,
+        commands: Vec::new(),
+        is_miracle: false,
+    };
+
+    let mut world = world_with(&book_rows(), 3);
+    world.party.party_names = vec!["Vahn".into(), "Noa".into(), "Gala".into()];
+    world.menu.text = Some(MenuTextTables {
+        arts: Some(vec![
+            art(Character::Vahn, 5, "Wrong Row"),
+            art(Character::Noa, 5, "Noa Five"),
+        ]),
+        ..Default::default()
+    });
+    // `[C1 00] learns|[CF 06][C5 00][CF 07]!` - both operands are
+    // placeholders the patch must overwrite.
+    let mut template = vec![0xC1, 0x00];
+    template.extend_from_slice(b" learns|");
+    template.extend_from_slice(&[0xCF, 0x06, 0xC5, 0x00, 0xCF, 0x07]);
+    template.push(b'!');
+    world.menu.notify_template = Some(template);
+
+    // Wind Book I: class 12 -> roster slot 1, tier 5.
+    apply_inventory_outcome(&finished(&world), &mut world);
+    let notice = world
+        .menu
+        .pending_art_notice
+        .take()
+        .expect("a taught art raises the window-8 notice");
+    assert_eq!((notice.character, notice.art_id), (1, 5));
+    assert_eq!(notice.lines, vec!["Noa learns", "Noa Five!"]);
+
+    // Contrast: without the overlay template there is no notice at all.
+    let mut bare = world_with(&book_rows(), 3);
+    apply_inventory_outcome(&finished(&bare), &mut bare);
+    assert_eq!(skills(&bare, 1), vec![5], "the art is still taught");
+    assert!(bare.menu.pending_art_notice.is_none());
+}

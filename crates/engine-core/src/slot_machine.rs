@@ -447,6 +447,9 @@ pub struct SlotMachine {
     /// caption in over the first [`PAYOUT_SLIDE_ROWS`] frames, so this has to
     /// advance for the caption to finish arriving.
     caption_frame: i32,
+    /// The five payline segments' model-space geometry (`DAT_801d3680`), when
+    /// the host staged it ([`Self::with_paylines`]).
+    paylines: Vec<legaia_asset::minigame_slot_scene::PayLine>,
 }
 
 /// Spin-up frames before the reels may be stopped (visual pacing constant;
@@ -506,7 +509,33 @@ impl SlotMachine {
             last_result: None,
             caption_payout: 0,
             caption_frame: 0,
+            paylines: Vec::new(),
         }
+    }
+
+    /// Stage the overlay's payline geometry
+    /// ([`legaia_asset::minigame_slot_scene::parse_paylines`]) so every host
+    /// draws the paylines off the machine itself ([`Self::payline_segments`]).
+    pub fn with_paylines(
+        mut self,
+        paylines: Vec<legaia_asset::minigame_slot_scene::PayLine>,
+    ) -> Self {
+        self.paylines = paylines;
+        self
+    }
+
+    /// The winning-line word the payline pass compares against
+    /// (`DAT_801d3c8c`): the last spin's line, or `-1` - which lights none.
+    pub fn winning_line_word(&self) -> i32 {
+        self.last_result
+            .and_then(|r| r.line)
+            .map_or(-1, |l| l as i32)
+    }
+
+    /// This frame's paylines, built by the ported pass and projected onto the
+    /// 640x240 slot framebuffer. Empty when no geometry was staged.
+    pub fn payline_segments(&self) -> Vec<ProjectedPayline> {
+        projected_paylines(&self.paylines, self.winning_line_word())
     }
 
     /// Current phase.
@@ -1130,27 +1159,19 @@ pub struct PaylinePrim {
 /// endpoint on its own through `FUN_8003d368` and links the packet at
 /// [`payline_ot_depth`] of the **second** endpoint's returned depth.
 // REF: FUN_8003d368 (the SCUS RTPS wrapper each endpoint goes through; the
-// projection pass this row waits on is a host that runs it for the cabinet)
-// NOT WIRED: the blocker is a **projection pass**, and it is worth being exact
-// because "no line draw kind exists in the engine" has been said here and is
-// only half right. There is indeed no `ScreenPrim::Line` -
-// `legaia_engine_ui::screen_prim` carries a textured and a flat *quad* and
-// nothing two-point - but adding one would not wire this row, because a
-// payline's two endpoints are **model-space** (`legaia_asset::
-// minigame_slot_scene::SlotScene::paylines`, disc data at `DAT_801d3680`) and
-// retail `RTPS`-projects each on its own through `FUN_8003d368` before linking
-// the packet at [`payline_ot_depth`] of the second endpoint's depth. Neither
-// host runs that projection for the cabinet: the native window draws the
-// machine as a text HUD and the browser play page draws its cabinet from JS
-// geometry of its own. A 3D slot-cabinet pass is the prerequisite; the line
-// primitive is the step after it.
-//
-// The cabinet's own geometry is no longer missing: it is PROT 1200 descriptor 1,
-// a 1-object Legaia TMD (65 verts, 76 untextured prims) the overlay init
-// installs into the shared model bank and spawns as an ordinary actor, so a
-// cabinet pass is a model draw rather than a packet builder. See
-// docs/subsystems/minigame-slot-machine.md, "The cabinet is a mesh".
+// browser pages run its equivalent caller-side, over the fitted projection)
 // PORT: FUN_801d3380 (payline 3D line segments)
+//
+// Wired on all three hosts through one projection, [`projected_paylines`]:
+// the minigames page (`slot_payline_prims_json`) and the play page
+// (`play_mg_slot_payline_prims_json`) hand their page each prim with its
+// projected endpoints, which the page strokes as a two-point line in the
+// prim's colour, half-blended when the `0x43` code carries the
+// semi-transparency bit; the native window draws the same segments as
+// one-pixel flat quads (`legaia_engine_ui::ui_slot_paylines`) off
+// [`SlotMachine::payline_segments`]. The native window still has no model draw
+// of the cabinet mesh (PROT 1200 descriptor 1) around them - see
+// docs/subsystems/minigame-slot-machine.md, "The cabinet is a mesh".
 pub fn payline_prims(
     paylines: &[legaia_asset::minigame_slot_scene::PayLine],
     winning_line: i32,
@@ -1172,6 +1193,38 @@ pub fn payline_prims(
                 code: PAYLINE_GP0_CODE,
                 lit,
             }
+        })
+        .collect()
+}
+
+/// One payline prim with both endpoints projected onto the retail 640x240
+/// slot framebuffer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ProjectedPayline {
+    pub prim: PaylinePrim,
+    /// Screen position of each endpoint.
+    pub a: (f32, f32),
+    pub b: (f32, f32),
+}
+
+/// The projection pass [`payline_prims`] leaves caller-side, run once for
+/// every host: each endpoint goes through
+/// [`legaia_asset::minigame_slot_scene::project`] - the machine's fitted
+/// projection (the stand-in for `FUN_8003D368`'s `RTPS` under the camera the
+/// overlay installs) that the rest of the cabinet is drawn with.
+///
+/// REF: FUN_801d3380 (the two `FUN_8003D368` calls per segment)
+pub fn projected_paylines(
+    paylines: &[legaia_asset::minigame_slot_scene::PayLine],
+    winning_line: i32,
+) -> Vec<ProjectedPayline> {
+    use legaia_asset::minigame_slot_scene::project;
+    payline_prims(paylines, winning_line)
+        .into_iter()
+        .map(|prim| ProjectedPayline {
+            prim,
+            a: project(prim.a.x as i32, prim.a.y as i32, prim.a.z as i32),
+            b: project(prim.b.x as i32, prim.b.y as i32, prim.b.z as i32),
         })
         .collect()
 }

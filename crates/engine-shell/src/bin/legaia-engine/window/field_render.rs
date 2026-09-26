@@ -1219,6 +1219,26 @@ impl PlayWindowApp {
         }
     }
 
+    /// Retail's post-FMV control transfer, through the session (which also
+    /// resets the camera globals and restages the scene VAB on a scene swap),
+    /// plus the render-side rebuild when the hand-off entered a new scene.
+    /// The hand-off loads its scene outside the field VM's transition op, so
+    /// no `SceneEntered` event follows it - the window used to only log the
+    /// outcome and draw the trigger scene's meshes over the new world, which
+    /// the browser play page already rebuilt (`runtime.rs`, the
+    /// `fmv_handoff_scene` arm of `tick_frame`).
+    pub(super) fn apply_fmv_handoff(&mut self) {
+        if let Some(outcome) = self.session.apply_pending_fmv_handoff() {
+            log::info!("cutscene: {outcome}");
+            if matches!(
+                outcome,
+                legaia_engine_core::scene::FmvHandoffOutcome::Entered { .. }
+            ) {
+                self.rebuild_scene_render_state();
+            }
+        }
+    }
+
     /// Rebuild the window's render-side scene state after the host swapped
     /// scenes under it (a door transition: `SceneTickEvent::SceneEntered`).
     /// Rebuilds [`SceneResources`] for the newly loaded scene and re-runs

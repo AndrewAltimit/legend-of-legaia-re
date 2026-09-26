@@ -342,3 +342,82 @@ fn two_talks_in_a_row_both_open_the_innkeepers_greeting() {
         "declining charges nothing"
     );
 }
+
+/// The acquire's halt is a **window**, and what closes it is the player's
+/// face-the-speaker turn. `CC F8 85 14 00 33` is also a walk-kernel leg:
+/// `FUN_8003BC08` visits `FUN_8003774C` on the `0x400` the acquire raised,
+/// the kernel reads the same bytes as a `0x4C` FaceTarget on the player
+/// (budget `0x14`, face bind `0x33`), and its terminal frame clears both
+/// bits (`0x80038004` player, `0x80038028` innkeeper). Captured on
+/// `retock_innkeeper_talk_open` (retail SCUS, PCSX-Redux write watch on both
+/// `+0x10` words): set at the acquire frame, cleared by those two stores 18
+/// vsyncs later, the player's `+0x54` cursor stepping 2 a game tick to 18.
+/// The port credits one frame a sim tick, so the same budget closes on the
+/// twentieth visit, the first of which is the acquire's own frame.
+#[test]
+fn the_acquire_turns_the_player_to_the_innkeeper_and_then_releases() {
+    use legaia_engine_core::world::SceneMode;
+    let Some((mut world, _cost, slot)) = retock_world() else {
+        return;
+    };
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    let (nx, nz) = world.npcs.positions[&slot];
+    // West of the innkeeper (the capture's approach side), facing +Z: a
+    // quarter turn to make.
+    world.actors[0].move_state.world_x = nx - 160;
+    world.actors[0].move_state.world_z = nz;
+    world.actors[0].move_state.render_26 = 0;
+
+    // Talk 1 runs the stay and parks on the loop-back; talk 2 re-runs the
+    // acquire from there.
+    let _ = first_box_of_next_talk(&mut world, slot);
+    world.dialog.inline = None;
+    world.dialog.current = None;
+    stay_at_the_inn(&mut world, slot, 1);
+    world.actors[0].move_state.render_26 = 0;
+
+    world.trigger_field_interact(0xFF, slot);
+    let mut window = 0u32;
+    let mut opened = false;
+    let mut headings = Vec::new();
+    for _ in 0..200 {
+        world.input.set_pad(0);
+        world.drive_inline_dialogue();
+        let live = world
+            .dialog
+            .inline
+            .as_ref()
+            .is_some_and(|d| d.face_ramp.is_some());
+        headings.push(world.actors[0].move_state.render_26);
+        if live {
+            opened = true;
+            window += 1;
+        } else if opened {
+            break;
+        }
+    }
+    eprintln!("[inn] halt window {window} frames; headings {headings:?}");
+    assert!(opened, "talk 2's `CC F8 85` acquire opened no halt window");
+    assert_eq!(
+        window, 19,
+        "the window stays open until the leg's terminal (20th) visit"
+    );
+    assert_eq!(
+        *headings.last().unwrap() & 0x0FFF,
+        0x400,
+        "the terminal frame snaps the player onto the innkeeper's bearing (+X)"
+    );
+    assert!(
+        headings.windows(2).all(|w| w[0] <= w[1]),
+        "the turn is a monotone ramp, not a snap"
+    );
+    assert!(
+        world
+            .dialog
+            .inline
+            .as_ref()
+            .is_some_and(|d| d.panel.is_some()),
+        "the conversation is still open when the window closes"
+    );
+}

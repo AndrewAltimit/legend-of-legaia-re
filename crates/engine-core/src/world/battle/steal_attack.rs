@@ -82,7 +82,7 @@ impl World {
             .and_then(|e| self.party.inventory.get(&e.item_id).copied())
             .unwrap_or(0);
         let mut band = self.battle.steal;
-        let spoils = bs::resolve_death_spoils(&mut band, m, &inputs, || self.next_rng(), |_| held);
+        let spoils = bs::resolve_death_spoils(&mut band, m, &inputs, || self.next_rand(), |_| held);
         self.battle.steal = band;
         self.raise_death_spoils(spoils);
     }

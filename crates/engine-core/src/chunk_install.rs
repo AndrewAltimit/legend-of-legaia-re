@@ -1,23 +1,40 @@
 //! Streaming-chunk installer - the `[type, size, data]` list walker that
-//! routes scene-load side-band chunks into their hardware sinks.
+//! routes a sound stream's chunks into the SPU and the SEQ player.
 //!
-//! Retail `FUN_8001E54C` (`ghidra/scripts/funcs/8001e54c.txt`; the
-//! scene-load chunk loader pinned by the working-buffer write capture in
-//! [`docs/formats/world-map-overlay.md`]) walks a word-aligned chunk list:
-//! each chunk opens with a u32 header whose low 24 bits are the payload
-//! **byte** size and whose top byte is the chunk type, followed by the
-//! payload; the walker advances `size >> 2` words past the payload and stops
-//! at a zero-size header. Types `0..=0xC` dispatch through a jump table:
+//! Retail `FUN_8001E54C` (`ghidra/scripts/funcs/8001e54c.txt`) walks a
+//! word-aligned chunk list: each chunk opens with a u32 header whose low 24
+//! bits are the payload **byte** size and whose top byte is the chunk type,
+//! followed by the payload; the walker advances `size >> 2` words past the
+//! payload and stops at a zero-size header. Types `0..=0xC` dispatch through
+//! the jump table at `0x80010600` (thirteen words read straight off
+//! `SCUS_942.54`; `5..=0xB` all land on the advance-only tail `0x8001E824`):
 //!
-//! | type | action |
-//! |---|---|
-//! | `0` | release the slot's open SEQ handle (`FUN_8001FF58`), then raw-copy the payload into the slot's destination buffer |
-//! | `1` | VAB bank upload (`FUN_8002630C` = SsVabOpenHead/TransBody wrapper), set the slot's loaded flag |
-//! | `2` | VRAM rect upload via the slot's staging buffer + finalize (`FUN_80026410`) |
-//! | `3` | budget-bounded VAB upload (remaining transfer budget), set the loaded flag, stop the walk, return the leftover byte count |
-//! | `4` | set the cross-call stream flag (`gp+0x700`), and copy into the staging buffer when the transfer-mode global (`_DAT_8007B8B8`) is 0 |
-//! | `0xC` | VRAM rect upload into the fixed globals window (`_DAT_80091574..7C`), finalize |
-//! | `5..=0xB` | reserved - advance only |
+//! | type | arm | action |
+//! |---|---|---|
+//! | `0` | `0x8001E6C0` | release the slot's open SEQ handle (`FUN_8001FF58`), then `memcpy` the payload into the slot's destination buffer (record `+0x0`) |
+//! | `1` | `0x8001E6DC` | VAB open + body transfer (`FUN_8002630C` = the `SsVabOpenHead` / `SsVabTransBody` wrapper), set the slot's loaded flag |
+//! | `2` | `0x8001E6F8` | **SEQ install**: detach + close the slot's SEQ player (`FUN_800266E0` / `FUN_80026520`) unless the transfer mode reads `2`, `memcpy` the payload into the slot's staging buffer (record `+0x4`), stamp the SEQ record's `+0xC` with the slot id, then `FUN_80026410` (`SsSeqOpen` through `FUN_80062340`) |
+//! | `3` | `0x8001E7C0` | budget-bounded VAB upload (remaining transfer budget), set the loaded flag, stop the walk, return the leftover byte count |
+//! | `4` | `0x8001E7F8` | set the cross-call stream flag (`gp+0x700`), and copy into the staging buffer when the transfer-mode global (`_DAT_8007B8B8`) is 0 |
+//! | `0xC` | `0x8001E6F8` | the type-2 arm's SEQ open, on the fixed SEQ record `0x800705AC` instead of the slot's |
+//! | `5..=0xB` | `0x8001E824` | reserved - advance only |
+//!
+//! The SEQ record the type-2 arm drives is `0x8007051C + slot * 0x10`; its
+//! `+0x0` is the score pointer and `+0xA` the handle `FUN_80026410` stores
+//! (see `ghidra/scripts/funcs/80026410.txt`: `jal 0x80062340` with
+//! `a0 = record[+0x0]`, `a1 = record[+0xC]`, result to `+0xA`). So type `2`
+//! is where a stream's **sequence** lands, and the chunk after the VAB's
+//! header part and body is exactly that: on the disc every entry that carries
+//! a `pQES` score past offset 0 carries it as the payload of a type-2 chunk
+//! (`(0, 1, 2)` in most carriers, `(0, 2, 1)` where the score precedes the VAG
+//! bodies - see `docs/formats/vab.md`). An earlier reading of this module
+//! called types `2` / `0xC` VRAM rect uploads; the callees say otherwise, and
+//! no disc stream carries a type-`0xC` chunk at all.
+//!
+//! The type-`0xC` arm's copy is odd and recorded as the bytes say: its three
+//! `memcpy` arguments are the words at `0x80091574` / `0x80091578` /
+//! `0x8009157C` (resource record 9), not the chunk payload, which sits in
+//! `a3` and on the stack where the three-argument copy never reads it.
 //!
 //! Types `>= 0xD` skip the dispatch but still advance (the retail
 //! `sltiu 0xd` guard). Slot bookkeeping targets the 12-byte-stride resource
@@ -28,7 +45,7 @@
 //! The sibling direct arm (high half set: one whole-buffer VAB upload plus
 //! the deferred stage/finalize keyed off the stream flag) and the
 //! `_DAT_8007B868` busy gate are host-side re-entry plumbing, not list
-//! decoding. // REF: FUN_8002630C // REF: FUN_8001FF58
+//! decoding. // REF: FUN_8002630C // REF: FUN_8001FF58 // REF: FUN_80026410
 
 /// Where a raw chunk copy lands (the two per-slot pointers of the
 /// `0x80091508` record the retail dispatcher dereferences).
@@ -40,18 +57,17 @@ pub enum CopyDest {
     SlotStage,
 }
 
-/// Which VRAM rect window a type-2 / type-0xC chunk targets.
+/// Which SEQ record a type-2 / type-0xC chunk opens its score on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VramRectKind {
-    /// Type 2: the slot's own staging window (`DAT_8007051C + slot*0x10`).
+pub enum SeqRecord {
+    /// Type 2: the slot's own record (`0x8007051C + slot * 0x10`).
     Slot,
-    /// Type 0xC: the fixed globals window (`_DAT_80091574..7C`,
-    /// finalized through the `0x800705AC` record).
+    /// Type 0xC: the fixed record at `0x800705AC`.
     Fixed,
 }
 
 /// Host-owned leaf actions of the chunk dispatch. Hardware sinks (SPU DMA,
-/// VRAM upload, the destination heap) stay behind this trait; the walker
+/// the SEQ player, the destination heap) stay behind this trait; the walker
 /// only decodes framing and routing.
 pub trait InstallHost {
     /// Type-0 prelude: release the slot's open SEQ handle
@@ -62,8 +78,9 @@ pub trait InstallHost {
     /// Types 1 / 3: VAB bank upload. `budget` is `None` on the plain type-1
     /// path and `Some(remaining_bytes)` on the type-3 bounded path.
     fn vab_upload(&mut self, id: i8, data: &[u8], budget: Option<usize>);
-    /// Types 2 / 0xC: VRAM rect upload + finalize into `kind`'s window.
-    fn vram_rect(&mut self, kind: VramRectKind, id: i8, data: &[u8]);
+    /// Types 2 / 0xC: install `data` as the score of `record` and open it
+    /// (`SsSeqOpen` with the slot id as the VAB id).
+    fn seq_install(&mut self, record: SeqRecord, id: i8, data: &[u8]);
     /// Type 4: set the cross-call stream flag (retail `gp+0x700`, consumed
     /// by the direct arm's deferred finalize).
     fn set_stream_flag(&mut self);
@@ -83,15 +100,107 @@ pub struct SeqSlot {
     pub loaded: bool,
 }
 
+/// Byte offset of the score a sound stream installs - the payload of its
+/// first type-2 / type-0xC chunk - when that payload opens with the `pQES`
+/// magic `SsSeqOpen` requires.
+///
+/// This is how the scene loader finds a stream's sequence: it walks the
+/// stream with [`install_chunks`] and keeps the first chunk the walk would
+/// hand the SEQ player, rather than hunting the bytes for the magic. The two
+/// agree on every disc carrier, but only the walk is immune to a `pQES` that
+/// happens to sit inside a VAG body ahead of the real score.
+pub fn seq_chunk_offset(stream: &[u8]) -> Option<usize> {
+    struct Locator {
+        base: usize,
+        hit: Option<usize>,
+    }
+    impl InstallHost for Locator {
+        fn seq_release(&mut self, _id: i8) {}
+        fn raw_copy(&mut self, _dest: CopyDest, _data: &[u8]) {}
+        fn vab_upload(&mut self, _id: i8, _data: &[u8], _budget: Option<usize>) {}
+        fn seq_install(&mut self, _record: SeqRecord, _id: i8, data: &[u8]) {
+            if self.hit.is_none() && data.starts_with(b"pQES") {
+                self.hit = Some(data.as_ptr() as usize - self.base);
+            }
+        }
+        fn set_stream_flag(&mut self) {}
+        fn transfer_mode(&self) -> u32 {
+            0
+        }
+    }
+    let mut host = Locator {
+        base: stream.as_ptr() as usize,
+        hit: None,
+    };
+    install_chunks(&mut host, &mut SeqSlot::default(), stream, usize::MAX);
+    host.hit
+}
+
+/// Where a global-pool `music_01` entry's own bank and score sit: the byte
+/// offsets of the `pBAV` VAB header part and of the `pQES` score, both as the
+/// installer walk reaches them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OwnedBankOffsets {
+    /// Offset of the VAB header part - the payload of the first type-0 / 1 /
+    /// 3 chunk that opens with `pBAV`.
+    pub vab: usize,
+    /// Offset of the score - [`seq_chunk_offset`].
+    pub seq: usize,
+}
+
+/// Split a track that brings its own instruments (`[type-0 VAB header part]
+/// [type-1 VAG bodies][type-2 score]`) the way the installer walk sees it.
+///
+/// Both play hosts' owned-VAB staging reads the pair through this instead of
+/// hunting the entry for the two magics: a byte hunt stops at the first
+/// `pQES` anywhere after the bank, which inside a VAG body is sample data,
+/// while the walk stops at the chunk the retail type-2 arm opens as the SEQ.
+/// `None` when either half is missing.
+pub fn owned_bank_offsets(stream: &[u8]) -> Option<OwnedBankOffsets> {
+    struct Locator {
+        base: usize,
+        vab: Option<usize>,
+    }
+    impl Locator {
+        fn note(&mut self, data: &[u8]) {
+            if self.vab.is_none() && data.starts_with(b"pBAV") {
+                self.vab = Some(data.as_ptr() as usize - self.base);
+            }
+        }
+    }
+    impl InstallHost for Locator {
+        fn seq_release(&mut self, _id: i8) {}
+        fn raw_copy(&mut self, dest: CopyDest, data: &[u8]) {
+            if dest == CopyDest::SlotDest {
+                self.note(data);
+            }
+        }
+        fn vab_upload(&mut self, _id: i8, data: &[u8], _budget: Option<usize>) {
+            self.note(data);
+        }
+        fn seq_install(&mut self, _record: SeqRecord, _id: i8, _data: &[u8]) {}
+        fn set_stream_flag(&mut self) {}
+        fn transfer_mode(&self) -> u32 {
+            // Mode 2 keeps the type-4 staging copy out of the search.
+            2
+        }
+    }
+    let mut host = Locator {
+        base: stream.as_ptr() as usize,
+        vab: None,
+    };
+    install_chunks(&mut host, &mut SeqSlot::default(), stream, usize::MAX);
+    Some(OwnedBankOffsets {
+        vab: host.vab?,
+        seq: seq_chunk_offset(stream)?,
+    })
+}
+
 // PORT: FUN_8001E54C - streaming-chunk list walker + 13-case type dispatch
-// (raw copy / VAB upload / VRAM rect / stream flag / budget stop), with the
+// (raw copy / VAB upload / SEQ install / stream flag / budget stop), with the
 // hardware sinks behind [`InstallHost`] and the `0x80091508` slot
-// bookkeeping on [`SeqSlot`].
-// NOT WIRED: the engine resolves scene sub-assets through the typed
-// `legaia_asset` dispatcher and uploads VRAM and VAB directly from those.
-// Nothing produces retail's `[type, size, data]` side-band chunk list, so
-// the walker has no stream to walk. Wiring it needs a producer that emits
-// that side band - i.e. the retail streaming loader, not the typed one.
+// bookkeeping on [`SeqSlot`]. Live through [`seq_chunk_offset`], which the
+// scene loader (`SceneAssets::build`) walks every scene entry with.
 /// Walk `stream` as a `[header, payload]` chunk list and dispatch each chunk.
 ///
 /// `budget` mirrors the retail third argument (the remaining transfer-byte
@@ -135,8 +244,8 @@ pub fn install_chunks<H: InstallHost>(
                 host.vab_upload(slot.id, payload, None);
                 slot.loaded = true;
             }
-            2 => host.vram_rect(VramRectKind::Slot, slot.id, payload),
-            0xC => host.vram_rect(VramRectKind::Fixed, slot.id, payload),
+            2 => host.seq_install(SeqRecord::Slot, slot.id, payload),
+            0xC => host.seq_install(SeqRecord::Fixed, slot.id, payload),
             3 => {
                 // Budget stop: `remaining = budget - payload byte offset`;
                 // upload what fits and report the leftover.
@@ -186,9 +295,9 @@ mod tests {
             self.calls
                 .push(format!("vab id={id} len={} budget={budget:?}", data.len()));
         }
-        fn vram_rect(&mut self, kind: VramRectKind, id: i8, data: &[u8]) {
+        fn seq_install(&mut self, record: SeqRecord, id: i8, data: &[u8]) {
             self.calls
-                .push(format!("vram {kind:?} id={id} len={}", data.len()));
+                .push(format!("seq {record:?} id={id} len={}", data.len()));
         }
         fn set_stream_flag(&mut self) {
             self.calls.push("flag".into());
@@ -211,8 +320,8 @@ mod tests {
         let mut stream = Vec::new();
         stream.extend(chunk(0, &[1, 2, 3, 4])); // release + copy
         stream.extend(chunk(1, &[5, 6, 7, 8])); // VAB upload
-        stream.extend(chunk(2, &[9, 10, 11, 12])); // VRAM rect (slot)
-        stream.extend(chunk(0xC, &[13, 14, 15, 16])); // VRAM rect (fixed)
+        stream.extend(chunk(2, &[9, 10, 11, 12])); // SEQ install (slot)
+        stream.extend(chunk(0xC, &[13, 14, 15, 16])); // SEQ install (fixed)
         stream.extend(&0u32.to_le_bytes()); // terminator
         let mut host = SpyHost::default();
         let mut slot = SeqSlot {
@@ -227,8 +336,8 @@ mod tests {
                 "release id=7".to_string(),
                 "copy SlotDest [01, 02, 03, 04]".to_string(),
                 "vab id=7 len=4 budget=None".to_string(),
-                "vram Slot id=7 len=4".to_string(),
-                "vram Fixed id=7 len=4".to_string(),
+                "seq Slot id=7 len=4".to_string(),
+                "seq Fixed id=7 len=4".to_string(),
             ]
         );
         assert!(slot.loaded, "type-1 VAB upload sets the loaded flag");
@@ -328,5 +437,64 @@ mod tests {
         tiny.extend_from_slice(&[0x66; 8]);
         assert_eq!(install_chunks(&mut host, &mut slot, &tiny, 0), 0);
         assert!(host.calls.len() <= 2, "no runaway walk on sub-word sizes");
+    }
+
+    #[test]
+    fn the_score_is_the_type_2_payload_not_the_first_magic() {
+        // A VAG body that happens to carry the magic ahead of the real score:
+        // a byte hunt stops in the body, the walk stops at the SEQ chunk.
+        let mut body = vec![0u8; 16];
+        body[4..8].copy_from_slice(b"pQES");
+        let mut stream = chunk(0, b"pBAVxxxx");
+        stream.extend(chunk(1, &body));
+        let score_at = stream.len() + 4;
+        stream.extend(chunk(2, b"pQES\0\0\0\x01"));
+        stream.extend(&0u32.to_le_bytes());
+        assert_eq!(seq_chunk_offset(&stream), Some(score_at));
+    }
+
+    #[test]
+    fn a_score_ahead_of_the_bodies_is_found_too() {
+        // The `(0, 2, 1)` order six disc carriers use.
+        let mut stream = chunk(0, b"pBAVxxxx");
+        let score_at = stream.len() + 4;
+        stream.extend(chunk(2, b"pQES\0\0\0\x01"));
+        stream.extend(chunk(1, &[0u8; 8]));
+        stream.extend(&0u32.to_le_bytes());
+        assert_eq!(seq_chunk_offset(&stream), Some(score_at));
+    }
+
+    #[test]
+    fn owned_bank_split_ignores_a_magic_inside_the_bodies() {
+        // A byte hunt (first `pBAV`, then the first `pQES` after it) lands in
+        // the VAG body; the walk lands on the type-2 chunk.
+        let mut body = vec![0u8; 16];
+        body[8..12].copy_from_slice(b"pQES");
+        let mut stream = chunk(0, b"pBAVxxxx");
+        stream.extend(chunk(1, &body));
+        let score_at = stream.len() + 4;
+        stream.extend(chunk(2, b"pQES\0\0\0\x01"));
+        stream.extend(&0u32.to_le_bytes());
+        let hunted_seq = stream.windows(4).position(|w| w == b"pQES").unwrap();
+        assert_ne!(hunted_seq, score_at, "fixture must fool the hunt");
+        assert_eq!(
+            owned_bank_offsets(&stream),
+            Some(OwnedBankOffsets {
+                vab: 4,
+                seq: score_at
+            })
+        );
+        // No bank chunk, no split.
+        let mut bare = chunk(2, b"pQES\0\0\0\x01");
+        bare.extend(&0u32.to_le_bytes());
+        assert_eq!(owned_bank_offsets(&bare), None);
+    }
+
+    #[test]
+    fn a_type_2_payload_without_the_magic_is_not_a_score() {
+        let mut stream = chunk(2, &[0x11; 8]);
+        stream.extend(&0u32.to_le_bytes());
+        assert_eq!(seq_chunk_offset(&stream), None);
+        assert_eq!(seq_chunk_offset(&[]), None);
     }
 }

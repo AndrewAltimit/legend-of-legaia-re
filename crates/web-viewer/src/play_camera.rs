@@ -244,6 +244,34 @@ impl LegaiaRuntime {
         camera_view::nclip_cull_mode(self.cutscene_owns_frame(), in_world_map)
     }
 
+    /// This frame's overworld-curvature scale for the scene pass - the
+    /// `clip.w`-to-`SZ` factor the page hands `TmdRenderer.setOverworldCurve`
+    /// (the GLSL `u_curve`), from the shared
+    /// `legaia_engine_core::overworld_curvature::frame_curve_scale` the
+    /// native window's `Renderer::set_overworld_curvature` call also reads.
+    /// `0` (flat) off the kingdom overworld and under the top-view debug
+    /// camera. A query, not a step: it resolves the frame's **arm** without
+    /// advancing the cutscene glide, and the scale depends on nothing else.
+    pub fn play_render_curve_scale(&mut self) -> f32 {
+        if !self
+            .scene_host
+            .as_ref()
+            .is_some_and(|h| h.world.overworld_bit())
+        {
+            return 0.0;
+        }
+        let centre = {
+            let (lo, hi) = self.scene_aabb();
+            [(lo[0] + hi[0]) * 0.5, (lo[2] + hi[2]) * 0.5]
+        };
+        let world = &self.scene_host.as_ref().expect("checked above").world;
+        let cutscene = self
+            .cutscene_owns_frame()
+            .then(|| camera_view::cutscene_view(world, centre));
+        let frame = camera_view::resolve_field_camera(world, &self.camera, cutscene, centre);
+        legaia_engine_core::overworld_curvature::frame_curve_scale(true, &frame)
+    }
+
     /// The camera-occlusion fade's focus point for this frame, in the page's
     /// **Y-up draw frame**, or empty when the engine side of the arming gate
     /// says no ([`legaia_engine_core::field_occlusion::fade_armed`] + a live

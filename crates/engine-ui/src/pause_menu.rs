@@ -32,8 +32,8 @@
 //! GPU and no host.
 
 use crate::ui_menu_window_painters::{
-    ChoiceFlags, char_prompt_draws_for, label_list_draws_for, title_tab_draws_for,
-    two_line_choice_panel_draws_for,
+    ChoiceFlags, char_prompt_draws_for, label_list_draws_for, notify_prompt_draws_for,
+    title_tab_draws_for, two_line_choice_panel_draws_for,
 };
 use crate::{
     ArtsEditorDrawArgs, EquipScreenView, FieldMenuPartyView, FieldMenuRowView,
@@ -47,6 +47,8 @@ use legaia_asset::menu_windows::{MenuWindowTable, window_ids};
 /// Menu-overlay descriptor id of the **spell level-up notice** window
 /// (renderer `FUN_801DCCB4`, the [`MenuWindowPainter::CharPrompt`] painter).
 pub const WIN_MAGIC_LEVEL_NOTICE: usize = 7;
+/// The notify window - the art-learned notice a Hyper-Art book raises.
+pub const WIN_ART_LEARNED_NOTICE: usize = 8;
 /// Descriptor id of the kind-`0x0D` **notice panel** (`FUN_801D6360`, the
 /// [`MenuWindowPainter::LabelList`] painter), opened by menu sub-screen `4`'s
 /// script `0x801E4BE0`.
@@ -997,6 +999,24 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
             compare: input.compare,
         }),
     )
+}
+
+/// Window 8 - the art-learned notice, drawn over whichever menu screen is
+/// current while the shared menu runtime holds the beat a Hyper-Art book use
+/// armed. Same shape and gating as [`spell_level_notice_draws`]: content
+/// only, off the disc-parsed id-8 rect, nothing without the real table.
+pub fn art_learned_notice_draws(ctx: &PauseMenuCtx, lines: &[String]) -> Vec<TextDraw> {
+    let Some((d, _)) = ctx
+        .rects
+        .table()
+        .and_then(|t| painter_at(t, WIN_ART_LEARNED_NOTICE, MenuWindowPainter::NotifyPrompt))
+    else {
+        return Vec::new();
+    };
+    let (mut out, cursor) = notify_prompt_draws_for(ctx.font, painter_rect(d), lines);
+    out.extend(ctx.hand(cursor.x, cursor.y));
+    crate::scale_stage_text_draws(&mut out, ctx.origin, ctx.scale);
+    out
 }
 
 /// Window 7 - the spell level-up notice, drawn over whichever menu screen is

@@ -678,26 +678,47 @@ pub(crate) fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {
     }
 }
 
-/// Decode one tile-step direction from the pad. Mirrors the single-
-/// direction decode in the walk SM (`overlay_0897_801ef2b0` case 4):
-/// vertical takes priority over horizontal, and only one axis moves per
-/// step. D-pad only (board movement is digital).
-pub(crate) fn tile_step_from_input(
-    input: &input::InputState,
-) -> Option<crate::tile_board::TileStep> {
-    use crate::tile_board::TileStep;
-    if input.pressed(input::PadButton::Up) {
-        Some(TileStep::Up)
-    } else if input.pressed(input::PadButton::Down) {
-        Some(TileStep::Down)
-    } else if input.pressed(input::PadButton::Left) {
-        Some(TileStep::Left)
-    } else if input.pressed(input::PadButton::Right) {
-        Some(TileStep::Right)
-    } else {
-        None
+/// The held d-pad as retail's direction nibble (`0x1000` up, `0x4000` down,
+/// `0x2000` right, `0x8000` left) - the mask the tile board's walker hands
+/// the remapper `FUN_800467E8` (`_DAT_8007B850`, the held word). Opposite
+/// keys cancel, as in the field decode: a d-pad cannot press both, and a
+/// mask outside the compass ring would fall out of the remapper's scan.
+pub(crate) fn tile_board_held_mask(input: &input::InputState) -> u16 {
+    let up = input.pressed(input::PadButton::Up);
+    let down = input.pressed(input::PadButton::Down);
+    let right = input.pressed(input::PadButton::Right);
+    let left = input.pressed(input::PadButton::Left);
+    let mut held = 0u16;
+    if up != down {
+        held |= if up { 0x1000 } else { 0x4000 };
     }
+    if right != left {
+        held |= if right { 0x2000 } else { 0x8000 };
+    }
+    held
 }
+
+/// Bit 19 of the scratchpad word `0x1F800394` (`World::flags.story_flags`):
+/// while it is up, the walk-on dispatcher `FUN_801D1EC4` re-runs the kind-1
+/// record of the tile the player is standing on every tick
+/// (`0x801D2090..0x801D20F8`), and a tile crossing clears it
+/// (`0x801D2110..0x801D2120`). Field-VM op `2E 13` is its only setter and
+/// `2F 13` its script clear.
+pub const WALK_ON_REPOLL_FLAG: u32 = 0x0008_0000;
+
+/// Bit 10 of the scratchpad word `0x1F800394` (`World::flags.story_flags`):
+/// the follow ease `FUN_801DB510` takes its pin leg (`0x801DB564`), the
+/// settle skips its clip bind (`0x801D1E30`) and hop, and the player tick
+/// skips the pad step (`0x801D16A8`). Retail's only setter is the world-map
+/// top-view debug toggle (`0x801E7748`, gated on the debug word), and every
+/// mode entry clears it.
+pub const CAMERA_HOLD_FLAG: u32 = 0x0000_0400;
+
+/// Bit 18 of the scratchpad word `0x1F800394`: the follow ease composes and
+/// eases even on a frame the player did not move (`0x801DB578..0x801DB5A4`).
+/// Field-VM `2E 12` sets it and `2F 12` clears it (`conc`, `opurud`,
+/// `rikuroa`, `urudre2`, `bubu1` and their twins).
+pub const CAMERA_FORCE_EASE_FLAG: u32 = 0x0004_0000;
 
 #[cfg(test)]
 mod tests {

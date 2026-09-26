@@ -347,7 +347,8 @@ pub fn parse_map_objects(map: &[u8]) -> Vec<MapObject> {
 ///
 /// PORT: FUN_80017bec (SCUS_942.54; the Ghidra dump carries no instruction
 /// stream - ported from the static-recomp rendering of `func_80017BEC`,
-/// 428 bytes / 18 blocks, instruction-grade).
+/// 428 bytes / 18 blocks, and re-read against a capstone decode of the SCUS
+/// bytes `0x80017BEC..0x80017D94`, which the three passes below match).
 ///
 /// Three passes over the scene buffer at `_DAT_1F8003EC` (the `.MAP` image):
 ///
@@ -365,30 +366,23 @@ pub fn parse_map_objects(map: &[u8]) -> Vec<MapObject> {
 ///    ([`MAP_OBJECT_TRIGGER_BITS`]) the walk-on dispatch tests and the `0x800`
 ///    elevation-override marker `FUN_80019278` routes on.
 ///
-/// Pass 3 is set-only (never cleared); retail runs this over the freshly
-/// streamed `.MAP` where the bits start clear.
+/// Pass 3 is set-only (never cleared).
 ///
-/// NOT WIRED: the blocker is **which region** of the `.MAP` survives scene
-/// load, not whether any of it does - "the engine does not keep one" is too
-/// strong and hides where the real gap is.
+/// Live: `SceneHost`'s field entry (`scene/host/scene_entry.rs`) runs it
+/// over the scene's `.MAP` bytes before `World::load_field_object_cells`
+/// decodes the cell words, which is where retail's `MAIN_INIT` calls it
+/// (`jal 0x80017BEC` at `0x801D6BF8`, unconditional, after the bundle walk).
+/// Pass 1 sees the disc's descriptor countdowns there, exactly as retail's
+/// load-time call does; nothing in the engine decrements `+0x16` later, and
+/// retail's other two callers are the fishing and dance overlays' own inits.
 ///
-/// Three of the four regions are resident. `World::terrain.collision_grid`
-/// holds `+0x4000..+0x8000` verbatim and is *mutated at runtime* by the
-/// field-VM `0x4C` nibble-7 wall paints; `World::terrain.map_region_block`
-/// holds `+0x10000..+0x12000` verbatim; and the whole image stays cached
-/// behind `ProtIndex::entry_cache` for the session, one clone from mutable.
-/// `World::terrain.object_cells` holds the `+0x8000` cell words, decoded to
-/// `u16` but bit-for-bit the same values passes 2 and 3 stamp.
-///
-/// What is genuinely absent is the region pass 1 walks: the `+0x0000..0x4000`
-/// **object-descriptor table** is read transiently at scene load by
-/// `legaia_asset::field_objects::parse_placements` and never retained, so the
-/// per-descriptor `+0x12`/`+0x16` words have no home - and with them no owner
-/// for the `+0x16` countdown, which nothing in the engine decrements, leaving
-/// the flag decay without an input even if the bytes were kept. Passes 2 and
-/// 3 would also need their consumers switched: the walk-on dispatch and floor
-/// sampler read the decoded vectors, not the stamped bytes, so stamping alone
-/// would change nothing observable.
+/// The pass is not a no-op over the disc. On every block-start `.MAP` it
+/// changes cells in three scenes only - one cell of `retona` (`+0x3000`),
+/// one of `juui1` (`+0x1000`) and two of `noaru` (the `0x800`
+/// elevation-override stamp, which moves the floor sampler) - and the
+/// `retona_field_card_boot` capture has the stamped value at `retona`'s tile
+/// `(0x1D, 0x18)`, which the disc bytes lack. So the live cells are the
+/// refreshed ones, not the disc's.
 pub fn refresh_object_grid_marks(map: &mut [u8]) {
     let rd16 = |m: &[u8], o: usize| u16::from_le_bytes([m[o], m[o + 1]]);
     let wr16 = |m: &mut [u8], o: usize, v: u16| m[o..o + 2].copy_from_slice(&v.to_le_bytes());

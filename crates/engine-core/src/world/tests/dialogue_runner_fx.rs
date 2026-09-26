@@ -221,7 +221,7 @@ fn battle_special_attack_requests_move_fx_spawn() {
         world.actors[0].move_state.world_z = 200;
         world.battle.accuracy[0] = 30;
         world.battle.defense[0] = 40;
-        // Bandit Boss (id 5) at slot 1 casts Flame (0x20) on seed 0.
+        // Bandit Boss (id 5) at slot 1 casts Flame (0x20) on `BANDIT_BOSS_FLAME_SEED`.
         world.actors[1].battle.max_hp = 120;
         world.actors[1].battle.hp = 120;
         world.actors[1].battle.mp = 10;
@@ -230,7 +230,7 @@ fn battle_special_attack_requests_move_fx_spawn() {
         world.battle.accuracy[1] = 25;
         world.set_battle_magic(1, 40);
         world.tables.move_power = MovePowerCatalog::from_overlay_0898(&overlay(with_fx));
-        world.rng_state = 0;
+        world.rng_state = BANDIT_BOSS_FLAME_SEED;
 
         world.take_monster_turn(1);
         assert_eq!(world.actors[1].battle.params[0], 0x20, "picker chose Flame");

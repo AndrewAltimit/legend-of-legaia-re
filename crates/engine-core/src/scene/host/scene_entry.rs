@@ -172,6 +172,9 @@ impl SceneHost {
                         "[scene] battle-camera height table (PROT {entry}) parse failed - fallback height stays active"
                     );
                 }
+                // The Seru-absorb banner's caption pieces (0x801F4DFC /
+                // 0x801F4C28) are sibling rodata in the same overlay.
+                self.world.tables.absorb_caption = legaia_asset::absorb_caption::parse(&bytes);
                 // The Seru side-effect table (0x801F6870) is sibling static
                 // data in the same overlay. A failure leaves the stager off,
                 // so levelled Seru casts carry no secondary debuff.
@@ -538,7 +541,15 @@ impl SceneHost {
             }
         });
         match map_bytes {
-            Some(bytes) => {
+            Some(mut bytes) => {
+                // `MAIN_INIT` runs the grid-mark refresh over the freshly
+                // streamed `.MAP` before anything reads its cells
+                // (`jal 0x80017BEC` at `0x801D6BF8`, unconditional). The
+                // disc's cells are already stamped almost everywhere, but not
+                // everywhere: `retona`'s tile `(0x1D, 0x18)` carries
+                // `0x3000` in a live capture and not on the disc.
+                // PORT: FUN_80017BEC (scene-load call site)
+                crate::field_regions::refresh_object_grid_marks(&mut bytes);
                 self.world.load_field_object_cells(
                     bytes
                         .get(legaia_asset::field_objects::OBJECT_GRID_OFFSET..)
@@ -1672,7 +1683,9 @@ impl SceneHost {
                     landing_tile,
                 } => {
                     self.last_trigger_tile = Some(landing_tile);
-                    self.dispatch_kind1_walk_on(query_tile, false);
+                    // The landing calls `FUN_8003BDE0` straight (no clip
+                    // reset - that store is the changed-tile arm's).
+                    self.dispatch_kind1_walk_on(query_tile, false, false);
                     return;
                 }
             }
@@ -1706,11 +1719,25 @@ impl SceneHost {
             return;
         }
         let tile = (tx as u8, tz as u8);
+        let locked = actor.move_state.flags & legaia_engine_vm::field_warp_tile::MOVEMENT_LOCK != 0;
+        let repoll = crate::world::WALK_ON_REPOLL_FLAG;
         if self.last_trigger_tile == Some(tile) {
-            return; // same tile as last tick - triggers fire on crossings
+            // Same tile as last tick: triggers fire on crossings, except
+            // that a record which raised the re-poll bit (op `2E 13`) is
+            // re-run every tick the player stays - kind-1 only, and not
+            // under the player's movement lock (`0x801D2090..0x801D20F8`).
+            // Rim Elm's "stand here and press" beats (`town01` P2[12..14]
+            // and their `town0b..0e` twins) poll the pad this way.
+            if self.world.flags.story_flags & repoll != 0 && !locked {
+                self.dispatch_kind1_walk_on(tile, on_world_map, false);
+            }
+            return;
         }
         self.last_trigger_tile = Some(tile);
-        self.dispatch_kind1_walk_on(tile, on_world_map);
+        // A crossing drops the re-poll bit before anything else
+        // (`0x801D2110..0x801D2120`), so a poll never outlives its tile.
+        self.world.flags.story_flags &= !repoll;
+        self.dispatch_kind1_walk_on(tile, on_world_map, true);
         // Retail runs the kind-0 arm on the SAME crossing, after the kind-1
         // spawn (`FUN_801D1EC4` falls through to `0x801d21c0`), so a tile can
         // both spawn its record and teleport.
@@ -1722,7 +1749,11 @@ impl SceneHost {
     /// The kind-1 arm of the tile-crossing dispatch: a gate-1 trigger spawns
     /// its partition-2 record.
     // REF: FUN_801D1EC4, FUN_8003BDE0
-    fn dispatch_kind1_walk_on(&mut self, tile: (u8, u8), on_world_map: bool) {
+    ///
+    /// `clip_reset` is the changed-tile arm's store under `_DAT_8007B6A8`;
+    /// the same-tile re-run and the warp landing call `FUN_8003BDE0`
+    /// without it.
+    fn dispatch_kind1_walk_on(&mut self, tile: (u8, u8), on_world_map: bool, clip_reset: bool) {
         let (primary, fallback) = &self.field_triggers;
         let Some(trigger) =
             crate::field_regions::lookup_tile_trigger(primary, fallback, tile.0, tile.1)
@@ -1732,7 +1763,9 @@ impl SceneHost {
         };
         // Under `_DAT_8007B6A8` a kind-1 hit also resets the clip base to
         // idle (`0x801D218C..0x801D21BC`).
-        self.world.field_walk_on_clip_reset();
+        if clip_reset {
+            self.world.field_walk_on_clip_reset();
+        }
         let Some(man_bytes) = self.field_man_cache.clone() else {
             return;
         };

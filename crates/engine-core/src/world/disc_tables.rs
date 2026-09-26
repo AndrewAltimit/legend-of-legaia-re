@@ -98,6 +98,10 @@ pub struct DiscTables {
     /// ([`crate::world::World::stage_seru_side_effect`]) from running at
     /// all - so a synthetic battle stages nothing and draws no `rand()`.
     pub seru_side_effects: Option<legaia_asset::seru_side_effect::SeruSideEffectTable>,
+    /// The Seru-absorb banner's caption pieces (PROT 0898 `0x801F4DFC` /
+    /// `0x801F4C28`), installed with the move-power table. `None` on a
+    /// disc-free host, where the banner shows the Seru's name alone.
+    pub absorb_caption: Option<legaia_asset::absorb_caption::AbsorbCaption>,
     /// Player Seru spell id (`0x81..=0x8B`) -> the **summon creature's**
     /// record element (`+0x1D`), the byte the side-effect stager switches on
     /// and the affinity scale reads as the attacker element.
@@ -188,6 +192,7 @@ impl DiscTables {
             element_affinity: None,
             battle_camera_heights: None,
             seru_side_effects: None,
+            absorb_caption: None,
             summon_elements: std::collections::HashMap::new(),
             steal_table: None,
             equipment_table: crate::battle_stats::EquipmentTable::new(),

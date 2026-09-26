@@ -12,9 +12,11 @@
 /// [`Pool::tick_retail`]: super::Pool::tick_retail
 /// [`Pool::spawn`]: super::Pool::spawn
 pub trait EffectHost {
-    /// Equivalent of `func_0x80056798` - uniform random `i32`. The retail
-    /// PRNG is an LCG seeded by `_DAT_8007AB80`; engines plug whatever RNG
-    /// they have. Default impl returns `0` (deterministic for tests).
+    /// Equivalent of `func_0x80056798` - one BIOS `rand()` draw, so a value
+    /// in `0..=0x7FFF` (the kernel LCG's high half,
+    /// [`crate::battle_formulas::bios_rand_shape`]); retail never sees a
+    /// negative draw here. Default impl returns `0` (deterministic for
+    /// tests).
     fn next_random(&mut self) -> i32 {
         0
     }

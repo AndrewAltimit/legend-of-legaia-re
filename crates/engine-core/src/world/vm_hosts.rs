@@ -367,7 +367,10 @@ impl<'a> EffectHost for EffectHostImpl<'a> {
     // lifecycle from the catalog's spawn records + animation frames; the
     // host only supplies the RNG (mirror bits + spawn-offset rewrites).
     fn next_random(&mut self) -> i32 {
-        self.world.next_rng() as i32
+        // The walker ports battle-overlay `FUN_801DFDF0` / `FUN_801E0088`,
+        // whose draws are `jal 0x80056798` (`0x801DFF64` / `0x801DFFCC`,
+        // `0x801E01CC`): a shaped, never-negative `rand()`.
+        self.world.next_rand() as i32
     }
 }
 
@@ -642,6 +645,10 @@ pub(super) struct FieldHostImpl<'a> {
 }
 
 impl<'a> FieldHost for FieldHostImpl<'a> {
+    fn player_cflag(&mut self, bit: u8, set: bool) -> bool {
+        self.world.field_player_cflag(bit, set)
+    }
+
     fn global_flags(&self) -> u32 {
         self.world.flags.story_flags
     }
@@ -864,8 +871,28 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             self.world.cutscene.prologue_naming_armed = true;
         }
     }
+    /// Op `0x42` mode 1's word is the **held pad** `_DAT_8007B850` in its
+    /// packed form (`lw v0, -0x47B0(at)` at `0x801DFC08`): the d-pad in
+    /// `0xF000`, Triangle / Circle / Cross / Square in `0x10` / `0x20` /
+    /// `0x40` / `0x80` - the word the tile board and the world-map panels
+    /// read. An earlier port kept a never-written `screen_mode` field here,
+    /// so every mode-1 test missed; Rim Elm's "stand here and press Down"
+    /// polls (`42 01 00 ..`, `town01` P2[12..14]) never saw the press.
     fn screen_mode(&self) -> u32 {
-        self.world.screen_mode
+        u32::from(crate::world_map_panel_host::packed_pad(
+            self.world.input.pad(),
+        ))
+    }
+
+    /// The compass table at `0x801F28D0` (field overlay data): the
+    /// `0xF000` d-pad value op `0x42` mode 1 compares the held pad against
+    /// (`bne v0, v1` at `0x801DFC14`) - Down, Down+Left, Left, Left+Up,
+    /// Up, Up+Right, Right, Right+Down.
+    fn screen_mode_table(&self, index: u8) -> Option<u32> {
+        const PAD_COMPASS: [u32; 8] = [
+            0x4000, 0xC000, 0x8000, 0x9000, 0x1000, 0x3000, 0x2000, 0x6000,
+        ];
+        PAD_COMPASS.get(usize::from(index)).copied()
     }
 
     // Op-0x43 screen-effect widget sub-ops (the PROT-0900 mask / sprite /
@@ -2158,6 +2185,42 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::ExecMove { move_id });
     }
 
+    /// Op `4C 50` - the actor model set. The state writes are the VM
+    /// default's (`+0x64`, `+0x5C = 0`, the `0x1000` clear, the world-map
+    /// `+0x60` mirror); the re-stage `FUN_80024E08` runs through
+    /// `FUN_80020F88` - the actor starts drawing the named TMD - is the live
+    /// model id a placement carries on [`World::field_npc_live_model`],
+    /// which both play hosts already re-bind mid-scene from (the same seat
+    /// motion op `0x0E` writes). The id stays raw: the `>= 0xF0` player-bank
+    /// select is [`crate::model_bank::resolve_model_id`]'s, the `4C 50`
+    /// arm's own `0x801E17AC..0x801E1824` select instruction for instruction.
+    ///
+    /// Only a placement channel receives it; an op aimed at the player
+    /// (`CC F8 50 ..`, e.g. `jagaroom`'s costume swap) has no player-mesh
+    /// re-bind seat and changes the state words only.
+    ///
+    /// PORT: FUN_80024E08 (the model re-stage, through the live-model seat)
+    fn op4c_n5_sub0_set_actor_model(&mut self, ctx: &mut FieldCtx, value: i16, _high: bool) {
+        ctx.model_id = value as u16;
+        ctx.move_id = 0;
+        ctx.flags &= 0xffff_efff;
+        if self.model_pool_is_world_map() {
+            ctx.model_id_high = value as u16;
+        }
+        if let Some(slot) = self.world.field_vm.executing_channel {
+            self.world.set_field_npc_live_model(slot, value);
+        }
+    }
+
+    /// Op `4C CE <value>` - store the player clip override `_DAT_8007B6AC`
+    /// (`lbu v1, 1(s6); sw v1, -0x4954(v0)` at `0x801E2A24..0x801E2A30`),
+    /// which the settle tail and the player clip arms read.
+    ///
+    /// REF: FUN_801DE840 (the nibble-C sub-`0xE` arm)
+    fn op4c_n_c_sub_e_set_b6ac(&mut self, value: u8) {
+        self.world.locomotion.clip_override = u32::from(value);
+    }
+
     /// Op `0x4C 0x61` - scripted CLUT-cell effect (one-shot cell write /
     /// cross-fade spawn). Decodes the 14-byte operand payload and queues the
     /// effect on the world; [`World::step_clut_fx`] applies it against the
@@ -2361,6 +2424,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             return;
         }
         if is_player {
+            // The player arm also aims its move id at the player's clip
+            // (`0x801E1954..0x801E1A3C`: clip base + pick + bind).
+            self.world.field_player_script_clip(move_id);
             let y = self
                 .world
                 .sample_field_floor_height(i32::from(world_x as i16), i32::from(world_z as i16))
@@ -2504,7 +2570,8 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .map(|a| &mut a.battle)
     }
     fn rng(&mut self) -> u32 {
-        self.world.next_rng()
+        // Every draw the state machine takes is a retail `jal 0x80056798`.
+        self.world.next_rand()
     }
     /// Retail reads `_DAT_8007B874 | _DAT_8007B938` and only tests it for
     /// zero-vs-non-zero (`0x801E6088..0x801E609C`). The port models the first
@@ -2650,43 +2717,33 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world
             .pending_battle_events
             .push(BattleEvent::UiElement { effect_id, mode });
-        // mode == 0: spawn/reset. Route directly into the effect pool so
-        // the VM's state machine drives the effect lifecycle while engines
-        // also receive the event for visual dispatch.
+        // This is retail's HUD screen-element spawner `FUN_801D8DE8(id, mode)`:
+        // it seats placement record `0x80076C10 + id * 0x18` as a text / chrome
+        // widget (`FUN_8003541C`) and glides it between the record's two seats
+        // (`FUN_801DB7B0`). It spawns **no effect script** - its only calls are
+        // `FUN_8003541C`, `FUN_801DB7B0`, `FUN_8003563C`, `FUN_80035F04` and the
+        // two string helpers, and none of the effect spawner `FUN_801DFDF0`'s
+        // callers (`FUN_801DEA50`, `FUN_801E09F8`, `FUN_801E22C8`, SCUS
+        // `FUN_8004998C` / `FUN_80047430`) is the action SM. The id is a
+        // placement-record index, not an `efect.dat` script id, so routing it
+        // into the effect pool played an unrelated script at every HUD raise.
+        // Effect scripts reach the pool through `World::route_battle_effect_spawns`.
         //
-        // Retail seeds the spawn position from the ACTING actor's own world
-        // position and facing, never the world origin: the effect-script
-        // spawn arm copies `actor+0x34..0x3B` into the position buffer,
-        // rotates the per-effect offsets by the facing's sin/cos, and passes
-        // `actor+0x46` as the spawn angle (`FUN_8004998C` spawn sites
-        // `0x8004A634..0x8004A81C` -> `FUN_801DFDF0(id, sp+0x10, +0x46)`,
-        // disassembly-graded). The engine equivalents are the actor's battle
-        // seat on `move_state` (the retail `+0x34/+0x38` pair
-        // `BattleActionHost::actor_position` already reads) and
-        // `BattleActor::facing_angle` (`+0x46`).
-        if mode == 0 {
-            let (at, angle) = self
-                .world
-                .actors
-                .get(self.world.battle_ctx.active_actor as usize)
-                .map(|a| {
-                    (
-                        [
-                            a.move_state.world_x,
-                            a.move_state.world_y,
-                            a.move_state.world_z,
-                        ],
-                        a.battle.facing_angle & 0xFFF,
-                    )
-                })
-                .unwrap_or(([0, 0, 0], 0));
-            self.world.try_spawn_effect(effect_id, at, angle);
-        }
+        // The two message elements keep their line on the world here.
+        self.world.message_banner_ui_element(effect_id, mode);
     }
     fn camera_bounds(&mut self) {
         self.world
             .pending_battle_events
             .push(BattleEvent::CameraBounds);
+    }
+
+    fn monster_action_tags(&self, slot: u8) -> Option<Vec<u8>> {
+        self.world.battle_monster_action_tags(slot)
+    }
+
+    fn learn_absorbed_seru(&mut self, slot: u8, seru: u8) {
+        self.world.learn_absorbed_seru(slot, seru);
     }
 
     fn monster_size_class(&self, actor_slot: u8) -> u8 {
@@ -2848,16 +2905,20 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// and runs the loader on its `+0x7C` block; the engine's
     /// [`crate::fade::FadeState`] is that block.
     ///
-    /// PORT: FUN_80024E80
+    /// REF: FUN_80024E80 (ported as [`crate::fade::spawn_fade`], which
+    /// stamps `id` into the template's last word)
     fn spawn_screen_fade(&mut self, template: &vm::battle_action::SummonFadeTemplate, id: i16) {
-        self.world.presentation.fade =
-            Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
+        crate::fade::spawn_fade(
+            &mut self.world.presentation.fade,
+            &crate::fade::FadeTemplate {
                 kind: template.kind,
                 duration: template.duration,
                 start_rgb: template.start_rgb,
                 end_rgb: template.end_rgb,
-                mode: [template.delay, template.hold, id],
-            }));
+                mode: [template.delay, template.hold, 0],
+            },
+            id,
+        );
     }
     fn summon_stager_tick(&mut self) -> bool {
         self.world.summon_stager_tick()

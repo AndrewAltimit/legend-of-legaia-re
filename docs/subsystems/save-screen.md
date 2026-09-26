@@ -86,7 +86,7 @@ Internal step counter in `DAT_801E46AC`:
 | 0 | Set `_DAT_8007B44C = DAT_801C6EA0` (memory-card handle from overlay init); run actor VM (`FUN_801D6628`) with `&DAT_801E4E30` (the save-slot menu bytecode). |
 | 1 | Wait while `_DAT_8007BB80 != 0` (menu-active flag); advance to step 2 once it reads zero. |
 | 2 | Call `FUN_801DD35C(1, 1)` - the save (RAM → card) direction; advance to step 3 on success. |
-| 3 | Write `DAT_801E46A4 = 1` unconditionally, returning to the `0x01` slot selector; then, only when `_DAT_8007B450 != 0`, overwrite it with `0` (the `0x00` final-exit screen). The unconditional write sits in the branch's delay slot, so the `0x01` return is the default and the exit is the override - a save raised from a parked field script hands control back to the script instead of to the menu.
+| 3 | Write `DAT_801E46A4 = 1` unconditionally, returning to the `0x01` root command picker; then, only when `_DAT_8007B450 != 0`, overwrite it with `0` (the `0x00` final-exit screen). The unconditional write sits in the branch's delay slot, so the `0x01` return is the default and the exit is the override - a save raised from a parked field script hands control back to the script instead of to the menu.
 
 Each step calls `func_0x80031D00()` (text-actor tick / MES advance) before
 returning.
@@ -195,7 +195,7 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x14` | `FUN_801D9C14` | Equip screen **candidate list + commit** (see [field-menu.md](field-menu.md#equip-screen); the old "record serialisation" label is falsified - the `0x414`-stride reads are the live party record, the `DAT_801EF0C8` staging is the trial-equip save/restore) |
 | `0x15` | `FUN_801DA2A0` | per-character list screen - one body serving three lists (abilities / magic / a third), selected by the step counter; see [below](#sub-screen-0x15---the-per-character-list-screen-fun_801da2a0) |
 | `0x16` | `FUN_801DD310` | no-op tick: tail-calls `func_0x80031D00` (frame-end / actor-tick flush) with no other work |
-| `0x17` | `FUN_801DD330` | thin wrapper invoking the generic picker `FUN_801DA9F8(start=0, end=9, init=0x30, return_subscreen=1)` |
+| `0x17` | `FUN_801DD330` | thin wrapper invoking the generic picker `FUN_801DA9F8(start=0, end=9, window=0x30, return_subscreen=1)` - the third argument is a window id (48, the settings window), patched into the picker's window script; see [field-menu.md](field-menu.md#options-screen) |
 | `0x18` | `FUN_801DAE24` | load-card driver entry. State 0 installs the card handle (`_DAT_8007B44C = DAT_801C6EA0`) and invokes actor `&DAT_801E4E28`; state 1 waits `_DAT_8007BB80 == 0`; state 2 calls `FUN_801DD35C(1, 2)` (saving-overlay main; drives `FUN_801E3294` libcd state machine via the per-frame ticker `FUN_801E1114`); state 3 returns to sub-screen `0x01` |
 | `0x19` | `FUN_801DAEF4` | save-to-slot path (entry-context `*ptr == '\x01'`, a field script's save point) |
 | `0x1A` | `FUN_801DAFD4` | shop **Buy / Sell / Quit mode select** (the earlier "save-slot confirm" reading is superseded - the "existence table at `0x80084140 + 0x1818`" its row-1 validation scans is the **inventory array** at `0x80085958`, i.e. "own anything to sell"). Row `0` → `0x1B` buy list; row `1` → the sell list `0x1E` on a non-empty bag (empty bag buzzes `0x23` in place); row `2` / cancel → `0x00` exit. See [shop.md](shop.md) |
@@ -360,7 +360,7 @@ place: the **card op**.
   1 blocks on the display script going idle and step 2 blocks on the op
   finishing; the flow answers the first with "the I/O machine has published
   nothing yet" and the second with "it published success", so the graph's move
-  to the slot selector `0x01` is caused by the backend, not by a frame counter.
+  to the root command picker `0x01` is caused by the backend, not by a frame counter.
 - The outer fade runs, and the flow deliberately does **not** gate the pad on
   it. Retail suppresses input while the fade is above `FADE_INPUT_THRESHOLD`,
   and by the time a player is choosing a card port that fade is long finished -
@@ -926,23 +926,39 @@ to slice them from a raw SC block.
 
 ### The composer is an in-place patch
 
-`SaveFile::write_into_retail_sc_block` stamps the SC magic and four regions -
-the four-slot character-record array, the story-flag bitmap, the inventory and
-the gold slot - restamping the block checksum as it goes, so what comes out is
+`SaveFile::write_into_retail_sc_block` stamps the SC magic and five regions -
+the four-slot character-record array, the story-flag bitmap, the inventory,
+the gold slot and the nine minigame words - restamping the block checksum as it goes, so what comes out is
 a block retail's loader accepts. It does **not** rewrite the block: every byte
 outside those regions survives, which is right for editing an existing save
 and is the sharp edge for a new one.
 
 The global game-data header at `RETAIL_GAME_DATA_OFFSET` carries the location
 name (`0x200`), the scene label (`0x408`) and the coin bank (`0x464`) beside
-the gold slot, and the composer itself writes only gold there. The location
+the gold slot. The composer writes the gold and the coin bank there, the coin
+bank as one of the minigame words below. The location
 and scene label are the **resume point** and have their own writer,
 `SaveResume::write_into_retail_sc_block` (`card::write_retail_resume`): the
 CDNAME label NUL-padded to its `0x10`-byte field and the banner name to its
 `0x24`-byte field - the same two copies retail's own compose path makes, so a
 block written by a host that claims a previously-free card block no longer
 inherits whatever the card held there. The browser's card Save composes both
-after the payload; the coin bank stays the card's.
+after the payload.
+
+### The minigame purses are live-state words too
+
+The casino coin bank, the Point Card bank and the fishing point record all sit
+inside the `0x1A18`-byte live-state window, so retail saves and restores them
+with everything else, each at SC offset `VA - 0x80084140`: the fishing pool
+`0x8008444C` (`0x30C`), lure row `0x80084450` (`0x310`), rod `0x80084454`
+(`0x314`), best award `0x80084458` (`0x318`), best species `0x8008445C`
+(`0x31C`), cast counter `0x80084460` (`0x320`), prize bitmask `0x8008446C`
+(`0x32C`), coins `0x800845A4` (`0x464`) and Point Card `0x800845B4` (`0x474`).
+`legaia_save::MinigameSave` carries the nine words: `SaveFile::from_retail_sc_block`
+reads them, `write_into_retail_sc_block` writes them, and an engine `LGSF` file
+holds them in the optional `LGX7` block (emitted only when one is non-zero).
+`World::save_full` / `load_full` map them to `World::minigames`; before that,
+a save / load round trip on either host zeroed all nine.
 
 Two properties keep the aliasing benign and are worth not re-deriving: slot 3
 (Terra)'s record tail overlaps the story-flag bitmap by design, and the

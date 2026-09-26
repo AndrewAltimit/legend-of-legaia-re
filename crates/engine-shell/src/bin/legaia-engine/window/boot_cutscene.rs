@@ -586,6 +586,14 @@ impl PlayWindowApp {
                 {
                     return true;
                 }
+                // Window 8 (art learned) - the Items use sub-screen's same
+                // confirm | cancel stall after `[open window 8]`.
+                if self
+                    .menu_runtime
+                    .dismiss_art_learned_notice(cross, circle, triangle)
+                {
+                    return true;
+                }
                 // A bind committed inside the Options sub-session's Key
                 // Config screen this tick. Held in a local because
                 // `self.mapping` cannot be written while `sub` borrows
@@ -612,6 +620,12 @@ impl PlayWindowApp {
                         match finished {
                             FieldMenuSubsession::Items(s) => {
                                 let _ = apply_pause_items_outcome(&s, &mut self.session.host.world);
+                                // A Hyper-Art book taught an art: window 8.
+                                if let Some(notice) =
+                                    self.session.host.world.menu.pending_art_notice.take()
+                                {
+                                    self.menu_runtime.arm_art_learned_notice(notice);
+                                }
                             }
                             FieldMenuSubsession::Equip { session, char_slot } => {
                                 let _ = apply_equip_outcome(
@@ -1066,6 +1080,7 @@ impl PlayWindowApp {
                 // Window 7 - the spell level-up notice - overlays whichever
                 // menu screen is current while `MenuRuntime` holds the beat.
                 draws.extend(self.magic_level_notice_draws(surface_w, surface_h));
+                draws.extend(self.art_learned_notice_window_draws(surface_w, surface_h));
                 draws
             }
             // The wipe hand-off draws nothing: retail's next frame after the
