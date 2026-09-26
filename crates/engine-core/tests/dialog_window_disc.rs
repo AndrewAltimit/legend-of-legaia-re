@@ -68,7 +68,7 @@ fn engine_trace(extracted: &std::path::Path, skips: &[(usize, usize)]) -> Vec<Ro
     let (mut page, mut page_type_v, mut prev_st) = (0usize, None::<usize>, None::<u8>);
     let mut page_end_v = None::<usize>;
     let mut release_v = None::<usize>;
-    let mut skip_done = vec![false; 16];
+    let mut skip_done = [false; 16];
     for _ in 0..3000 {
         host.world.set_pad(pad_next);
         host.tick().expect("tick");
