@@ -1813,11 +1813,13 @@ The scene MAN loader `FUN_8003AEB0` spawns two of the programs, each gated on a 
 
 Those are the flags programs 0 and 1 **set** and programs 2 and 3 **clear**. So the loader is not starting cutscenes - it is finishing ones a scene change interrupted. Programs 0 and 1 are openers, 2 and 3 their closers, and the flag is the handshake that survives the scene boundary.
 
+The openers belong to the two world-map **travel arts**: the only other `jal 0x801D5A24` sites on the disc are phase 0 of the Riremito handler `FUN_801EE094` (`0x801EE110`, program 1) and of the Rula handler `FUN_801EE328` (`0x801EE3A4`, program 0) - see [`travel_art_actor`](../../crates/engine-vm/src/travel_art_actor.rs). So each program pair is one travel art's cast, split across the warp: the opener plays in the scene being left, the closer in the scene arrived at.
+
 | program | states | what it does |
 |---|---|---|
-| 0 | `1..=5` | Set flag `0x17`, clear `0x18`; request BGM `0x7F3` and wait for the acknowledge; SFX `0x200`; stage the `0x801F2658` ambient record until `+0x9E >= 0x28`, then the `0x801F2498`/`0x801F250C` pair and clear flag `0x0B`; then idle, staging the ambient record forever. |
+| 0 | `1..=5` | Set flag `0x17`, clear `0x18`; request side-band sound bank `0x7F3` and wait for the acknowledge; SFX `0x200`; stage the `0x801F2658` ambient record until `+0x9E >= 0x28`, then the `0x801F2498`/`0x801F250C` pair and clear flag `0x0B`; then idle, staging the ambient record forever. |
 | 1 | `11..=15` | Set flag `0x0C`, clear `0x18`, SFX `0x1B`; two staged part-pair beats at `0x14` and `0x32`; a third at `0x14` that clears flag `0x0B`, zeroes the player's `+0x72` and raises `player[+0x10] \|= 0x200000`; retire at `0x64`. |
-| 2 | `21..=26` | Engage the player, park its speed on the actor's `+0x72`; wait for the BGM acknowledge then stream **XA17** (`FUN_80019794(0x10)`); at `0x28` set scratchpad story bit `0x01000000`, seed the lift, stage the `0x801F2580`/`0x801F25EC` pair and fire the chunked cue `FUN_8003D53C(0x10, 7, 0x135)`; wind the lift down; wait out the clip; clear flag `0x17` and the story bit, release, retire. |
+| 2 | `21..=26` | Engage the player, park its speed on the actor's `+0x72`; wait for the bank acknowledge then stream **XA17** (`FUN_80019794(0x10)`); at `0x28` set scratchpad story bit `0x01000000`, seed the lift, stage the `0x801F2580`/`0x801F25EC` pair and fire the chunked cue `FUN_8003D53C(0x10, 7, 0x135)`; wind the lift down; wait out the clip; clear flag `0x17` and the story bit, release, retire. |
 | 3 | `31..=37` | Engage as program 2 does; SFX `0x1B` at `0x28`; the same two part-pair beats as program 1; restore the parked speed and drop `0x200000`; a `0x40` beat; clear flag `0x0C`, release, retire. |
 
 ### Three shapes that make the 23 live arms short
@@ -1835,6 +1837,10 @@ Both closers end at `0x801D55E0`: test flag `0x18` (`func_0x8003ce64`), clear `p
 ### Provenance, and why the old reading was wrong
 
 The static `overlay_0897_801d4a60.txt` dump stops at **690** instructions. Five independent live-RAM field captures agree on **756**, and so does capstone over `extracted/overlays/overlay_field_0897.bin` at the committed base `0x801CE818` (file `0x006248`), which decodes 756 instructions ending on the `jr ra` epilogue at `0x801D5628`. The 66 dropped instructions are states `0x22`..`0x25` and the shared tail - most of program 3 - which is how a four-program state machine came to be documented as a single "scripted actor-approach controller".
+
+The request word is `_DAT_8007BABC` against the acknowledge `_DAT_8007BAA0` - the **side-band sound-bank** pair `FUN_800243F0` settles into VAB slot 3, the same pair the field VM's op `0x36` subs `1` / `2` drive, and not a BGM track: state `0x02`'s guard is the one inlined at `0x801D4B58..0x801D4B90` ([`audio.md`](audio.md#vab-slots---one-installer-twelve-records) slot `3`).
+
+In the engine, `World::tick_scene_programs` steps every resumed program once per actor tick from the handler pass, feeding the pair from `World::audio.sound_stream` and applying the flag, SFX, request and player effects. The part stages and the XA legs are counted and not rendered: the staged records live in the field overlay's data segment, which no engine loader reads, and neither host has a field-side XA sink.
 
 The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), "scripted-scene voice stream". That call site is program 2's state `0x16`.
 

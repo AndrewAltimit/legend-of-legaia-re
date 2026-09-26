@@ -98,7 +98,9 @@ pub const RECORD_PAIR_D: (u32, u32) = (0x801F_2580, 0x801F_25EC);
 /// Scale argument every `FUN_80021B04` call passes (`a3 = 0x1000`).
 pub const STAGE_SCALE: i32 = 0x1000;
 
-/// BGM track the programs request (`_DAT_8007BABC = 0x7F3`).
+/// Side-band sound-bank id the programs request (`_DAT_8007BABC = 0x7F3`).
+/// Named for the BGM reading this word once had; it is the bank request
+/// `FUN_800243F0` installs into VAB slot 3.
 pub const BGM_TRACK: i32 = 0x7F3;
 
 /// The request values state `0x02` treats as "already one of ours" and only
@@ -239,9 +241,9 @@ pub struct ProgramPlayer {
 pub struct ProgramEnv {
     /// `DAT_1F800393` - vsyncs this game tick spans.
     pub frame_delta: u8,
-    /// `_DAT_8007BABC` - the requested BGM track.
+    /// `_DAT_8007BABC` - the requested side-band bank id.
     pub bgm_request: i32,
-    /// `_DAT_8007BAA0` - the track the driver has acknowledged.
+    /// `_DAT_8007BAA0` - the bank id the driver has acknowledged.
     pub bgm_current: i32,
     /// `_DAT_8007B868` - the dev/retail discriminator (retail `0`).
     pub dev_flags: u32,
@@ -315,11 +317,8 @@ pub fn snapshot(player: &ProgramPlayer) -> (Vec3, Vec3) {
 /// is what maps program `p` onto entry state `1 + 10p`; the `+ 1` is on the
 /// *current* state, not a constant, so the arithmetic is kept general.
 ///
-/// NOT WIRED: its only non-test caller is [`step_scene_program`], the entry
-/// arm it belongs to, and nothing ticks that - see its note for the specific
-/// missing input (the BGM request/acknowledge pair and the CD-XA in-flight
-/// counter that three of its states park on). This helper needs no host of its
-/// own; it becomes live the moment the program is stepped.
+/// Live through [`step_scene_program`]'s entry arm, which
+/// `World::tick_scene_programs` steps every actor tick.
 pub fn entry_successor(state: u16, program: u16) -> u16 {
     state
         .wrapping_add(1)
@@ -337,8 +336,7 @@ pub fn entry_successor(state: u16, program: u16) -> u16 {
 /// negative sum steps the lift *up*; retail relies on that not happening
 /// because the leg only runs after the lift was seeded positive.
 ///
-/// NOT WIRED: same blocker as [`entry_successor`] above - its only non-test
-/// caller is [`step_scene_program`]'s lift leg, and nothing ticks that program.
+/// Live through [`step_scene_program`]'s lift leg (state `0x18`).
 pub fn lift_step(lift: i16, angle: i16) -> i16 {
     let raw = (i32::from(lift) + i32::from(angle) + i32::from(LIFT_STEP_BIAS)) >> LIFT_STEP_SHIFT;
     let raw = raw as i16;
@@ -371,27 +369,25 @@ enum Flow {
 /// A state outside `0..STATE_COUNT` falls straight to the epilogue and nothing
 /// happens - retail's `sltiu` bound with no default arm.
 ///
-/// NOT WIRED: the actor is spawned (`World::man_load_actor_reset` runs
-/// [`MAN_LOAD_RESUME`] on every scene load, so a resumed program's actor is on
-/// the pool carrying [`ActorHandler::ScriptedScene`]), but nothing ticks it.
-/// The specific missing input narrows to **one** of [`ProgramEnv`]'s middle
-/// three fields: the BGM request/acknowledge pair `_DAT_8007BABC` /
-/// `_DAT_8007BAA0`. The engine's BGM model is synchronous - `BgmDirector`'s
-/// calls do not return an acknowledgement and `World::audio.current_bgm` is a single
-/// latch - so there is no `request == ack` condition for states `0x02`,
-/// `0x16` and `0x19` to park on, and a step driven with an invented value
-/// would either stall the program forever or run it through its voice line in
-/// one frame.
+/// Live: `World::tick_handler_actors` runs `World::tick_scene_programs`
+/// every actor tick, which steps each actor [`MAN_LOAD_RESUME`] seated
+/// (`World::man_load_actor_reset` on every scene load, carrying
+/// [`ActorHandler::ScriptedScene`]) and applies the flag, SFX, request and
+/// player effects.
 ///
-/// The CD-XA in-flight counter `_DAT_8007BC20` is **not** part of the
-/// blocker, and saying it had no counterpart was wrong: four ports already
-/// model it as an input (`scene_transition_actor`, `baka_fighter_chrome`,
-/// `fishing`, and `engine-audio`'s `anim_cue`), and a live truth source
-/// exists in `AudioOut::xa_active()`. A caller could supply that field today.
-/// The rest is present too: the player
-/// transform, the flag bank ([`crate::world::World::system_flag_test`]), the
-/// cadence byte and the actor's own `+0x50`/`+0x54`/`+0x9E` all have engine
-/// homes.
+/// The request/acknowledge pair this reads is **not** a BGM track. It is the
+/// side-band sound-bank pair `_DAT_8007BABC` / `_DAT_8007BAA0` that
+/// `FUN_800243F0` settles - the guard state `0x02` runs is the one
+/// `crate::scus_leaf_kernels::SoundStreamRequest` documents as inlined at
+/// `0x801D4B58..0x801D4B90` - and the engine models it live, as
+/// `World::audio.sound_stream`. An earlier disclosure here named that pair as
+/// the blocker on the reading that the engine had only a synchronous BGM
+/// latch; the pair was already there under its bank name.
+///
+/// What the driver does not render is disclosed on it: the part stages
+/// ([`ProgramEffect::StagePart`]) name effect records resident in the field
+/// overlay's data segment, and the CD-XA legs have no field-side XA sink on
+/// either host.
 ///
 /// Named `step_scene_program` and not `step` on purpose, and it must stay that
 /// way. `port-catalog.py` never gates a *free* function edge - the receiver
@@ -400,8 +396,8 @@ enum Flow {
 /// tree that spell `step`: the live `engine_vm::motion_vm::step`, and every
 /// reachable function that merely names a local or parameter `step` (the
 /// browser's `LegaiaMinigames::fishing_advance_cast(&mut self, step: i32)` was
-/// the one that fired). Under the old name this correct `NOT WIRED:` was
-/// reported as a stale disclosure.
+/// the one that fired). Under the old name the then-correct disclosure was
+/// reported as stale.
 ///
 /// [`ActorHandler::ScriptedScene`]: crate::actor_handler::ActorHandler::ScriptedScene
 pub fn step_scene_program(

@@ -569,6 +569,13 @@ pub struct Actor {
     /// Stepped once per game tick by [`World::tick_handler_actors`].
     pub reflection: Option<ReflectionLink>,
 
+    /// `+0x50` / `+0x54` / `+0x9E` / `+0x10` / `+0x16` - the scripted-scene
+    /// program block, present only on actors whose [`Self::handler`] is
+    /// [`ActorHandler::ScriptedScene`](crate::actor_handler::ActorHandler::ScriptedScene)
+    /// (seated by [`World::man_load_resume_programs`]). Stepped once per game
+    /// tick by [`World::tick_handler_actors`].
+    pub scene_program: Option<crate::field_actor_program::ProgramActor>,
+
     /// This frame's `FUN_80024EE4` full-screen colour push, if the actor's
     /// handler emitted one. Cleared at the top of every
     /// [`World::tick_handler_actors`] pass, so it is always "this frame's",

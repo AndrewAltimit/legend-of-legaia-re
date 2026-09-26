@@ -190,6 +190,8 @@ mod items_arts;
 mod narration;
 mod prop_interact;
 mod save;
+mod scene_program;
+pub use scene_program::SceneProgramFrame;
 mod vm_hosts;
 mod vram_rect_fx;
 pub use vram_rect_fx::OT_LEN_UNBOUNDED;

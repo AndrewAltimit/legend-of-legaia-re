@@ -250,6 +250,9 @@ impl World {
         // in `crate::field_submode_screen`, which retires the actor itself
         // when a screen hands back - hence before the retire sweep below.
         self.tick_submode_screen(frame_delta);
+        // The scripted-scene programs the MAN loader resumed
+        // (`FUN_801D4A60`); a closer retires itself, so before the sweep.
+        self.tick_scene_programs(frame_delta);
         self.retire_yielded_actors()
     }
 
@@ -266,6 +269,7 @@ impl World {
                 a.active = false;
                 a.colour_tween = None;
                 a.morph_weights = None;
+                a.scene_program = None;
                 a.tint_push = None;
                 n += 1;
             }
@@ -528,8 +532,8 @@ impl World {
     /// its closer did not - the loader starts the closer. Returns the programs
     /// it spawned.
     ///
-    /// Nothing ticks the spawned actor yet; the gap is disclosed on
-    /// [`crate::field_actor_program::step_scene_program`].
+    /// The spawned actor is stepped by [`Self::tick_scene_programs`] from
+    /// the handler pass.
     ///
     /// Carries the same deliberate divergence as the scene-actor spawn above:
     /// a previous load's program actor is retired first, standing in for the
@@ -549,6 +553,7 @@ impl World {
             let a = crate::field_actor_program::spawn_program(program);
             self.actors[slot].state_50 = a.program;
             self.actors[slot].state_54 = a.state;
+            self.actors[slot].scene_program = Some(a);
             spawned.push(program);
         }
         spawned
