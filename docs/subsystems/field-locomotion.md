@@ -389,7 +389,9 @@ mesh the scene's `4C 50` swaps onto the player, and a player-targeted `4C 50` ha
 player-mesh re-bind in the port, so the drawn mesh stays the party model. Whether the
 guard fires there - whether the two skeletons differ - has not been measured.
 
-A frame that moved the player without the pad step (a script walk) still keeps the motion-derived walk for a party-bank pick; a scene-bank pick binds whoever moved the player, as retail's selector does. Not modelled: the op `0x31` / `0x32` writes of the player's party-bank bit (`B1 F8 18` / `B2 F8 18`), which the port's timeline applies to its own context rather than to `World::locomotion.player_party_bank`.
+A frame that moved the player without the pad step (a script walk) still keeps the motion-derived walk for a party-bank pick; a scene-bank pick binds whoever moved the player, as retail's selector does. A script also writes the bit directly: `B1 F8 18` / `B2 F8 18` are op `0x31` / `0x32` (`CFLAG_SET` / `CFLAG_CLR`) with the extended target `0xF8`, which the prologue resolves through `FUN_8003C83C` to the player object, so the arm's `+0x10` write lands on the player.
+
+The field VM hands every `0xF8`-targeted `0x31` / `0x32` to the host (`FieldHost::player_cflag`), and the port routes bit `24` to `World::locomotion.player_party_bank` (`World::field_player_cflag`) - on the cutscene timeline, the field channels and the scene script alike. The disc census finds the player's other bits written the same way (`0x01`, `0x0A`, `0x0D`, `0x13`, `0x15`, `0x1D`, `0x1F`); those stay on the caller's context, because the port has no single player `+0x10` word their readers consult.
 
 ### Wall-slide resolution (`FUN_80046494`)
 

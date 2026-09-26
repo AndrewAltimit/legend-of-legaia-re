@@ -554,6 +554,19 @@ pub trait FieldHost {
     /// PC += 2.
     fn copy_dialog_depth_to_player(&mut self) {}
 
+    /// Op `0x31` / `0x32` (`CFLAG_SET` / `CFLAG_CLR`) aimed at the player
+    /// channel `0xF8`: retail's extended prologue resolves `0xF8` to the
+    /// player object `_DAT_8007C364` (`FUN_8003C83C`), so `B1 F8 <bit>` /
+    /// `B2 F8 <bit>` write the **player's** `+0x10` word, not the caller's.
+    /// The player object is host state the VM does not thread through, so
+    /// the host owns the write. Return `true` when the host applied it (the
+    /// VM then advances without touching `ctx`); the default `false` keeps
+    /// the op on the context the caller passed.
+    fn player_cflag(&mut self, bit: u8, set: bool) -> bool {
+        let _ = (bit, set);
+        false
+    }
+
     /// Op 0x4C sub-3 sub-D - **walk-region attribute refresh** at the
     /// player's tile.
     ///

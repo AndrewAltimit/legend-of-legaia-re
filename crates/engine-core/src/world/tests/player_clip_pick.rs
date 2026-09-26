@@ -105,3 +105,51 @@ fn a_running_warp_tears_down_the_text_balloon() {
         "the timer-running half tags 0x801DA7F0 for tear-down"
     );
 }
+
+/// `B1 F8 18` / `B2 F8 18`: op `0x31` / `0x32` with the extended target
+/// `0xF8`, which retail resolves to the player object - so bit 24 is the
+/// player's party-bank bit, not a bit of whichever context ran the op.
+#[test]
+fn player_targeted_cflag_bit_24_writes_the_party_bank_bit() {
+    let mut w = World::new();
+    assert!(w.locomotion.player_party_bank);
+    let mut ctx = FieldCtx::default();
+    {
+        let mut host = FieldHostImpl { world: &mut w };
+        match vm::field::step(&mut host, &mut ctx, &[0xB2, 0xF8, 0x18], 0) {
+            FieldStepResult::Advance { next_pc } => assert_eq!(next_pc, 3),
+            other => panic!("B2 F8 18 should advance 3 bytes, got {other:?}"),
+        }
+    }
+    assert!(!w.locomotion.player_party_bank, "CFLAG_CLR dropped it");
+    assert_eq!(ctx.flags, 0, "the caller's context is untouched");
+    {
+        let mut host = FieldHostImpl { world: &mut w };
+        let _ = vm::field::step(&mut host, &mut ctx, &[0xB1, 0xF8, 0x18], 0);
+    }
+    assert!(w.locomotion.player_party_bank, "CFLAG_SET raised it");
+    assert_eq!(ctx.flags, 0);
+    // A bit the port has no player word for stays on the caller's context,
+    // and a non-player target never reaches the hook.
+    {
+        let mut host = FieldHostImpl { world: &mut w };
+        let _ = vm::field::step(&mut host, &mut ctx, &[0xB1, 0xF8, 0x15], 0);
+        let _ = vm::field::step(&mut host, &mut ctx, &[0xB2, 0x05, 0x18], 0);
+    }
+    assert_eq!(ctx.flags, 1 << 0x15);
+    assert!(w.locomotion.player_party_bank);
+}
+
+/// The dropped bit is what the next clip pick reads: with it down, a script
+/// clip on the player binds a scene-bank record (`move_id - 1`).
+#[test]
+fn a_script_dropped_party_bank_bit_sends_the_next_pick_to_the_scene_bank() {
+    let mut w = world_with_anim();
+    let mut ctx = FieldCtx::default();
+    {
+        let mut host = FieldHostImpl { world: &mut w };
+        let _ = vm::field::step(&mut host, &mut ctx, &[0xB2, 0xF8, 0x18], 0);
+    }
+    w.field_player_script_clip(0x30);
+    assert_eq!(scene_record(&w), Some(0x2F));
+}

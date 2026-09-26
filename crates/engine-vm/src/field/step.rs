@@ -193,6 +193,11 @@ pub fn step<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             };
             let bit = b & 0x1F;
+            if extended && bytecode.get(pc + 1) == Some(&0xF8) && host.player_cflag(bit, true) {
+                return StepResult::Advance {
+                    next_pc: pc + header_size + 1,
+                };
+            }
             ctx.flags |= 1u32 << bit;
             if (1u32 << bit) == 0x100 {
                 ctx.saved_26 = ctx.field_26;
@@ -207,6 +212,12 @@ pub fn step<H: FieldHost>(
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
             };
+            if extended && bytecode.get(pc + 1) == Some(&0xF8) && host.player_cflag(b & 0x1F, false)
+            {
+                return StepResult::Advance {
+                    next_pc: pc + header_size + 1,
+                };
+            }
             ctx.flags &= !(1u32 << (b & 0x1F));
             StepResult::Advance {
                 next_pc: pc + header_size + 1,

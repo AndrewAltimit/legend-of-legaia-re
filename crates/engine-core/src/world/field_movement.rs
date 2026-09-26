@@ -3329,6 +3329,31 @@ impl World {
         }
     }
 
+    /// A script writing a flag bit of the **player** object: `B1 F8 <bit>` /
+    /// `B2 F8 <bit>` (op `0x31` `CFLAG_SET` / `0x32` `CFLAG_CLR` with the
+    /// extended target `0xF8`). Retail's extended prologue resolves `0xF8`
+    /// through `FUN_8003C83C` to the player object `_DAT_8007C364`, so the
+    /// arm's `ctx[+0x10] |= / &= ~(1 << bit)` lands on the player's `+0x10`
+    /// word rather than on the calling script's context.
+    ///
+    /// Bit `24` (`0x01000000`) is the player's **party-bank** bit
+    /// ([`vm::field_player_clip::PARTY_BANK_FLAG`]), which the settle tail's
+    /// clip pick reads: raised, the clip base strides into the leader's
+    /// locomotion bank; dropped, it binds a scene-bank record instead. The
+    /// port keeps that bit as [`crate::world::FieldLocomotion::player_party_bank`],
+    /// so this routes it there and reports the op handled. Every other bit
+    /// returns `false` and stays on the caller's context, because the port
+    /// has no single player `+0x10` word those readers consult.
+    ///
+    /// REF: FUN_801DE840 (ops `0x31` / `0x32`), FUN_8003C83C (the `0xF8` arm)
+    pub fn field_player_cflag(&mut self, bit: u8, set: bool) -> bool {
+        if 1u32 << (bit & 0x1F) != vm::field_player_clip::PARTY_BANK_FLAG {
+            return false;
+        }
+        self.locomotion.player_party_bank = set;
+        true
+    }
+
     /// A script aiming a clip at the **player**: op `0x22` `EXEC_MOVE`
     /// (`0x801DE998..0x801DEAB8`) and the player arm of op `4C 51`
     /// (`0x801E1954..0x801E1A3C`) both test the context against the player
