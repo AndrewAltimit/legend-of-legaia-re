@@ -817,6 +817,49 @@ pub fn decrement_wait_timer(state: &mut ActorState, delta: u16) {
     state.wait_timer = state.wait_timer.wrapping_sub(delta as i16);
 }
 
+/// The part tick's **channel integration** for render modes `2` and `6` - the
+/// block of `FUN_80021DF4` right after the `+0x22` spin (`0x80021E78..0x80021FA0`,
+/// taken when `actor[+0x5A]` is `2` or `6`, with `s6 = actor + 0x80`).
+///
+/// Five halfword channels step by their rate halfwords, each rate scaled by the
+/// two scratchpad speed bytes and shifted `>> 6`:
+///
+/// ```text
+///   +0xB4 += (s16 +0xC0 * DAT_1F800393 * DAT_1F80037D) >> 6
+///   +0xB6 += (s16 +0xC2 * ...) >> 6
+///   +0xB8 += (s16 +0xC4 * ...) >> 6
+///   +0xBA += (s16 +0xC6 * ...) >> 6
+///   +0xC8 += (s16 +0xCA * ...) >> 6;  if (s16)+0xC8 < 0 then +0xC8 = 0
+/// ```
+///
+/// `delta` is the product of the two speed bytes, the same factor
+/// [`decrement_wait_timer`] takes. On a draw-kind-4 ribbon node (move-VM op
+/// `0x42`) the channels are the emitter's radius, step length, RNG seed, turn
+/// rate and step total, so `+0xC8` growing is what extends a bolt over its
+/// life; the clamp keeps a shrinking one from wrapping.
+///
+/// PORT: FUN_80021DF4 (`0x80021E78..0x80021FA0`, the mode-`2`/`6` channel block)
+pub fn integrate_draw_channels(state: &mut ActorState, delta: u16) {
+    if state.move_submode != 2 && state.move_submode != 6 {
+        return;
+    }
+    let delta = i32::from(delta);
+    for (dst, rate) in [
+        (0xB4, 0xC0),
+        (0xB6, 0xC2),
+        (0xB8, 0xC4),
+        (0xBA, 0xC6),
+        (0xC8, 0xCA),
+    ] {
+        let step = (i32::from(state.actor_u16(rate) as i16).wrapping_mul(delta)) >> 6;
+        let v = state.actor_u16(dst).wrapping_add(step as u16);
+        state.set_actor_u16(dst, v);
+    }
+    if (state.actor_u16(0xC8) as i16) < 0 {
+        state.set_actor_u16(0xC8, 0);
+    }
+}
+
 /// The 24-bit packed word ops `0x13` / `0x23` / `0x42` build from three
 /// operands: each is loaded **sign-extended** (`lh`) and the three are summed
 /// as `a + (b << 8) + (c << 16)` with no masking, so a negative operand

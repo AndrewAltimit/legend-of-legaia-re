@@ -1891,3 +1891,27 @@ fn op34_setup_stores_sign_extended_words_through_actor_plus_0x90() {
     assert_eq!(state.actor_u32(0xA4), 0xFFFF_FFF0);
     assert_eq!(state.field_a8, 0x77, "op[8], not op[6]");
 }
+
+/// `FUN_80021DF4`'s mode-2/6 channel block (`0x80021E78..0x80021FA0`): each
+/// of `+0xB4..+0xBA` and `+0xC8` steps by its rate at `+0xC0..+0xC6` / `+0xCA`,
+/// `(rate * delta) >> 6`, and `+0xC8` clamps at zero.
+#[test]
+fn draw_channels_integrate_in_modes_2_and_6_only() {
+    let mut s = ActorState::new();
+    s.set_actor_u16(0xCA, 0x40);
+    s.set_actor_u16(0xC0, (-0x20i16) as u16);
+    s.set_actor_u16(0xB4, 100);
+    integrate_draw_channels(&mut s, 8);
+    assert_eq!(s.actor_u16(0xC8), 0, "mode 0 does not integrate");
+    s.move_submode = 2;
+    integrate_draw_channels(&mut s, 8);
+    assert_eq!(s.actor_u16(0xC8), 8, "0x40 * 8 >> 6");
+    assert_eq!(s.actor_u16(0xB4), 96, "-0x20 * 8 >> 6 = -4");
+    s.set_actor_u16(0xCA, (-0x400i16) as u16);
+    integrate_draw_channels(&mut s, 8);
+    assert_eq!(s.actor_u16(0xC8), 0, "negative total clamps to zero");
+    s.move_submode = 6;
+    s.set_actor_u16(0xCA, 0x40);
+    integrate_draw_channels(&mut s, 8);
+    assert_eq!(s.actor_u16(0xC8), 8);
+}

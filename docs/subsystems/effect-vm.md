@@ -124,10 +124,33 @@ stager records. The captures agree on the other two arms: the 97 catalogued
 battle states hold 188 render-mode-4 nodes, 128 on the default emitter and 60 on
 the `0x4000` sprite arm; none holds a live ribbon.
 
-Neither play host draws render-mode-4 actors yet (any arm), and the engine's
-move-VM port of ops `0x42` / `0x23` does not yet store those fields at
-retail's offsets, which is what the ribbon port
-(`legaia_engine_core::effect_ribbon`, `NOT WIRED`) waits on.
+### The ribbon's draw
+
+The emitter does not draw anything itself. It writes a **Legaia TMD object**
+into a scratch buffer (`*(0x8007B85C) + 0x5DC00`): the object header at
+`out + 0xC` (vertex top `out + 0x28`, `(steps + 2) * 6` vertices, no normals,
+the primitive block, `steps * 6` primitives), the step vertices, and one
+primitive group - `count = steps * 6`, flags `0x26` (the baked-colour `GT4`
+row), `ilen = 9`, mode `0x3C` (`0x801D000C..0x801D0024`). The render
+dispatcher then stores `out + 0xC` into every slot of the actor's model list
+`actor[+0x44]` (`0x8001B08C..0x8001B0B4`), so the ribbon is drawn as the
+actor's own model through the ordinary TMD path.
+
+Each step contributes six packets joining its six vertices to the next step's:
+a core strip between the `±1` pair in the core colour (`src[+4]`), stored
+**twice**; two inner flares out to the `±2` pair graded core to flare
+(`src[+8]`); two outer fringes out to the `±8` pair graded flare to black. Every
+packet samples the same 2x2 texel patch, UVs `(0..2, 0xF0..0xF2)` in texture
+page `0x001F` (`(960, 256)`, 4bpp) through CLUT `0x7F84` (`(64, 510)`), and the
+chain ends in twenty zero words.
+
+Both battle hosts draw the result: `World::active_effect_ribbons` rebuilds each
+live ribbon node's mesh every frame (`legaia_engine_core::effect_ribbon`) and
+the native part pass and the browser play page's FX frame compose it like a
+mesh part. In play that is **Gilium**'s summon (spell `0x95`, PROT 0923); Ozma
+(`0xA0`, PROT 0934) and the two capture-class carriers (PROT 0957, 0964) are
+not staged as scenes by the engine yet. The `0x4000` sprite arm and the default
+`FUN_80028158` arm are still undrawn on both hosts.
 
 ## Lifetime + render bridge (engine port)
 

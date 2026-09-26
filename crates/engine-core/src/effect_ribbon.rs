@@ -22,23 +22,28 @@
 //!   how a growing bolt is animated: the same buffer is rebuilt each frame with
 //!   fewer suppressed steps.
 //!
-//! The emitter is the geometry half only. `801CFA48` also assembles the GPU
-//! packet chain that draws the vertices (`0x3C` Gouraud-textured quads, 9 words
-//! each, colour words derived from `src[+4]` / `src[+8]`); that half is
-//! render-track and is described by [`RibbonPackets`] rather than emitted here.
+//! [`build_ribbon`] is the geometry half. `801CFA48` also assembles the packet
+//! chain that draws the vertices - a Legaia TMD object (header at
+//! `out_buf + 0xC`, vertex block, one `GT4` group of 9-word packets, colour
+//! words from `src[+4]` / `src[+8]`) that the render dispatcher installs as the
+//! actor's model - ported as [`ribbon_quads`] / [`ribbon_vram_mesh`].
 //!
 //! `see ghidra/scripts/funcs/overlay_battle_action_801cfa48.txt`. The sibling
 //! dump `overlay_menu_801cfa48.txt` is only a citation pointer (its own header
 //! says so) - the enclosing function there is a different one.
 //!
-//! NOT WIRED (whole module): no play host draws draw-kind-4 actors at all -
-//! none of the three emitters `FUN_8001ADA4` case 4 selects is drawn on the
-//! native window or the browser play page. The inputs are no longer the
-//! gap: the move VM's op `0x42` now stores every field this emitter reads,
-//! and [`RibbonParams::from_actor`] / [`ribbon_call_args`] read them back off
-//! a live summon part (pinned on the four shipped carrier images by
-//! `tests/effect_ribbon_carriers_real.rs`). What waits is the battle-side
-//! draw pass, described under "What a wire needs".
+//! Wired on both battle hosts: `World::active_effect_ribbons` walks the live
+//! summon, move-FX and effect-script scenes
+//! ([`crate::summon::SummonScene::ribbon_draws`] -> [`ribbon_mesh_for_actor`]),
+//! and the native window's part pass (`redraw_passes.rs`,
+//! `build_summon_and_move_fx_part_draws`) and the browser play page's FX
+//! frame (`play_battle_fx.rs`, `build_battle_fx`) both draw that list,
+//! composed like a mesh part. In play the ribbon belongs to **Gilium**'s
+//! summon (spell `0x95`, PROT 0923, one node); the other carriers are Ozma
+//! (`0xA0`, PROT 0934, two nodes), PROT 0957 (Death Game / Thunder Storm) and
+//! PROT 0964 (Element Change and the Rogue spells), which the engine does not
+//! stage as scenes yet. The other two draw-kind-4 emitters (`0x4000` sprite
+//! arm, default `FUN_80028158`) are still undrawn.
 //!
 //! ## Who selects this arm, and what `src` is
 //!
@@ -76,23 +81,20 @@
 //! `0x4000` sprite arm, none on this one - so no capture yet shows a live
 //! bolt.
 //!
-//! ## What a wire needs
+//! ## Growth over a node's life
 //!
-//! * A draw-kind-4 draw path on both hosts' battle effect pass (this arm, the
-//!   `0x4000` sprite arm and the default `FUN_80028158`), reading
-//!   [`ribbon_call_args`] / [`RibbonParams::from_actor`] /
-//!   [`ribbon_colour_words`] off each live summon part, plus the packet half
-//!   ([`RibbonPackets`]) turned into textured quads. The `jal 0x801CFA48` at
-//!   `0x8001B120` reaches this routine only while the battle overlay holds
-//!   slot A, so the pass belongs to battle, not to the field.
-//! * The part tick's mode-`2` channel integration (`FUN_80021DF4`, the
-//!   `+0xB4..+0xC8` ramp), which is what grows `+0xC8` and with it the
-//!   packed total, so a bolt extends over its lifetime. Without it every
-//!   carrier draws its first frame's `count` for its whole life.
-//!
-//! On the disc the carriers leave `+0x9C` itself packed as `total << 8 | cap`
-//! (`0x040C` in PROT 0923: cap 12, total 4) with `+0xC8 = 0`, so the first
-//! frame's ribbon is four steps.
+//! The part tick's mode-`2` channel block (`FUN_80021DF4`
+//! `0x80021E78..0x80021FA0`, ported as
+//! `legaia_engine_vm::move_vm::integrate_draw_channels`) steps `+0xB4..+0xBA`
+//! and `+0xC8` by the rates at `+0xC0..+0xC6` / `+0xCA`, so a carrier that
+//! sets a `+0xCA` rate extends its bolt over time. The shipped carriers set
+//! none: `+0x9C` is the plain step cap op `0x42` stores (12 / 10 / 10 / 10 / 7
+//! across the five nodes) and `+0xC8` stays `0`, so each bolt draws its whole
+//! length from its first frame. An earlier note here read `+0x9C` as
+//! `0x040C` (cap 12, total 4) on PROT 0923; that value was the engine's
+//! summon translation glide adding its `0x400` frame step to `+0x9C`, which it
+//! treated as a clock on every node - the glide now leaves draw-kind-4 nodes'
+//! `+0x9C` / `+0x9E` alone.
 //!
 //! The `src[+0x1C]` word is the overlay RNG's **seed** - the emitter stores
 //! it `>> 2` into `0x801F6950` (`lhu v0,0x1c(t8)` at `0x801CFC08`,
@@ -102,10 +104,13 @@
 //! REF: FUN_8001ADA4 (the render dispatcher arm that selects this emitter),
 //! FUN_80028158, FUN_8002A5A4 (the other two arms), FUN_801D0290 (the RNG)
 
+use legaia_engine_vm::battle_action::OverlayRng;
+
 /// PSX angle units in a full revolution - the sin / cos LUT index space.
 pub const ANGLE_MASK: i32 = 0xFFF;
 
-/// Fixed-point shift of the sin / cos LUT entries.
+/// The lateral offsets' narrowing shift (`sra 0xd` at `0x801CFD58`). The LUTs
+/// are `1 << 12`, so this also halves the offset.
 const TRIG_SHIFT: u32 = 13;
 
 /// Fixed-point shift of the per-step advance (the walk integrates position at
@@ -296,11 +301,9 @@ pub struct Ribbon {
 /// radius. A zero total leaves the cap untouched and the remainder at zero,
 /// which is the "draw the whole ribbon" form.
 ///
-/// NOT WIRED: this decodes the third argument of [`build_ribbon`], which no
-/// host calls - neither play host has a draw-kind-4 pass in its battle effect
-/// draw (module doc). The argument is built by [`ribbon_call_args`] off an
-/// actor move-VM op `0x42` has set up. Split out as its own function because
-/// the cap/total packing is the part a caller has to construct.
+/// Reached from both battle hosts through [`build_ribbon`] (module doc).
+/// Split out as its own function because the cap/total packing is the part a
+/// caller has to construct.
 pub fn split_packed_count(packed: u32) -> (i32, i32) {
     let cap = (packed & 0xFF) as i32;
     let total = (packed >> 8) as i32;
@@ -323,12 +326,13 @@ pub fn split_packed_count(packed: u32) -> (i32, i32) {
 /// `0x801cff8c`/`0x801cffa8` for the advance), so that pairing - not the
 /// sin-versus-cos naming - is what the port depends on. `sin` here is the
 /// `_DAT_8007B7F8` table and `cos` the `_DAT_8007B81C` one, following the
-/// naming the subsystem docs already use.
+/// naming the subsystem docs already use - although `_DAT_8007B7F8` is in fact
+/// the cosine view and `_DAT_8007B81C` the sine ([`RetailTrig`]).
 pub trait TrigTable {
-    /// The `_DAT_8007B7F8` table (walk X) in `1 << 13` fixed point, angle
+    /// The `_DAT_8007B7F8` table (walk X) in `1 << 12` fixed point, angle
     /// masked to 12 bits.
     fn sin(&self, angle: i32) -> i32;
-    /// The `_DAT_8007B81C` table (walk Y) in `1 << 13` fixed point, angle
+    /// The `_DAT_8007B81C` table (walk Y) in `1 << 12` fixed point, angle
     /// masked to 12 bits.
     fn cos(&self, angle: i32) -> i32;
 }
@@ -350,7 +354,7 @@ impl Default for AnalyticTrig {
 impl AnalyticTrig {
     /// Build the table.
     pub fn new() -> Self {
-        let one = f64::from(1 << TRIG_SHIFT);
+        let one = f64::from(1 << STEP_SHIFT);
         let sin = (0..4096)
             .map(|i| {
                 let a = f64::from(i) * std::f64::consts::TAU / 4096.0;
@@ -409,14 +413,10 @@ fn narrow_advance(v: i64) -> i32 {
 /// The RNG modulus is guarded at `1`; retail divides by the raw radius / step
 /// and would trap on a zero one, which the emitter is never handed.
 ///
-/// NOT WIRED: neither play host has a draw-kind-4 pass in its battle effect
-/// draw. The emitter's only retail caller is the render dispatcher
-/// `FUN_8001ADA4` case 4 on an actor move-VM op `0x42` set up (module doc);
-/// the engine's port of that op now stores every field, and
-/// [`ribbon_call_args`] + [`RibbonParams::from_actor`] build this call's
-/// arguments off a live summon part. The emitter is pure and takes its RNG
-/// and LUTs as parameters so the consumer can be a host's battle effect pass
-/// rather than this crate.
+/// The emitter's only retail caller is the render dispatcher `FUN_8001ADA4`
+/// case 4 on an actor move-VM op `0x42` set up; the engine's caller is
+/// [`ribbon_mesh_for_actor`], which both battle hosts reach (module doc). The
+/// emitter is pure and takes its RNG and LUTs as parameters.
 pub fn build_ribbon<T: TrigTable, R: FnMut() -> u32>(
     mode: u32,
     packed: u32,
@@ -545,10 +545,9 @@ pub fn build_ribbon<T: TrigTable, R: FnMut() -> u32>(
 /// (`bgez v0` at `0x801cfef4`) can never be taken - `w >> 2` of a negative `w`
 /// is at most `-1` - so the fall-through really is unconditional.
 ///
-/// NOT WIRED: only [`build_ribbon`] calls this, and nothing calls that - no
-/// draw-kind-4 draw path exists on either host (module doc). Exposed rather than inlined because the
-/// asymmetric fold is the emitter's least obvious behaviour and is worth being
-/// separately testable.
+/// Reached through [`build_ribbon`] (module doc). Exposed rather than inlined
+/// because the asymmetric fold is the emitter's least obvious behaviour and is
+/// worth being separately testable.
 pub fn damp_wander(w: i32) -> i32 {
     let mut w = w;
     if w < 0 {
@@ -558,6 +557,220 @@ pub fn damp_wander(w: i32) -> i32 {
         w = -(w >> 2);
     }
     w
+}
+
+/// The retail sin / cos LUT pair behind `_DAT_8007B7F8` / `_DAT_8007B81C`,
+/// generated from its definition ([`crate::action_effect_script::retail_rotation_lut`]).
+///
+/// The emitter reads the `_DAT_8007B7F8` pointer (`lw v1,-0x4808(t8)` at
+/// `0x801CFD0C`, `t8 = 0x80080000`) into walk X and the `_DAT_8007B81C` one
+/// (`lw v0,-0x47e4(t8)` at `0x801CFD28`) into walk Y. `_DAT_8007B7F8` is the
+/// table a quarter turn on (cosine) and `_DAT_8007B81C` the sine
+/// (`FUN_80026BE0`), both in `1 << 12` fixed point - so the lateral `>> 13`
+/// narrowing halves the offset, and the advance's `>> 12` does not.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RetailTrig;
+
+impl TrigTable for RetailTrig {
+    fn sin(&self, angle: i32) -> i32 {
+        use crate::action_effect_script::RotationLut;
+        crate::action_effect_script::retail_rotation_lut().a(angle)
+    }
+    fn cos(&self, angle: i32) -> i32 {
+        use crate::action_effect_script::RotationLut;
+        crate::action_effect_script::retail_rotation_lut().b(angle)
+    }
+}
+
+/// Texture page word every ribbon packet carries (`0x801D005C`: `0x001F`) -
+/// page `(960, 256)`, 4bpp, no semi-transparency bit.
+pub const RIBBON_TPAGE: u16 = 0x001F;
+
+/// CLUT word every ribbon packet carries (`0x801D003C`: `0x7F84`) - CLUT at
+/// `(64, 510)`.
+pub const RIBBON_CLUT: u16 = 0x7F84;
+
+/// The four corner UVs every ribbon packet carries, in packet order: a 2x2
+/// texel patch at `(0..2, 0xF0..0xF2)` of [`RIBBON_TPAGE`]
+/// (`0x801D0038..0x801D0074`).
+pub const RIBBON_UVS: [[u8; 2]; 4] = [[0, 0xF0], [2, 0xF0], [0, 0xF2], [2, 0xF2]];
+
+/// The group header's `flags` halfword (`0x801D0010`: `0x26`) - row 5 of the
+/// per-mode table, the quad half: a baked-colour Gouraud textured quad (`GT4`).
+pub const RIBBON_GROUP_FLAGS: u16 = 0x26;
+
+/// Which colour word a packet corner carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RibbonShade {
+    /// `src[+0x04]` (`actor[+0xA0]`) - the core colour.
+    Core,
+    /// `src[+0x08]` (`actor[+0xA4]`) - the flare colour.
+    Flare,
+    /// The bare command word `0x3C000000` - black, the fringe.
+    Black,
+}
+
+/// One packet of the chain: four vertex indices into [`Ribbon::steps`]'
+/// flattened vertex list (step `i`'s vertex `k` is `i * 6 + k`) and the
+/// corner shades, in GPU corner order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RibbonQuad {
+    /// `[v0, v1, v2, v3]`: packet words `+0x1C` (low / high) then `+0x20`.
+    pub verts: [usize; 4],
+    /// Corner colours, packet words `+0x00..+0x0C`.
+    pub shades: [RibbonShade; 4],
+}
+
+/// The packet half of `FUN_801CFA48` (`0x801CFFF4..0x801D025C`): the six
+/// `GT4` packets each step contributes, joining step `i`'s six vertices to
+/// step `i + 1`'s.
+///
+/// PORT: FUN_801CFA48 (`0x801CFFF4..0x801D025C`, the packet loop)
+///
+/// Per step, with `b = 6 * i` and the vertex order [`build_ribbon`] emits
+/// (`0/1` = the ±1 pair, `2/3` = ±2, `4/5` = ±8):
+///
+/// | packet | vertices | shades |
+/// |---|---|---|
+/// | 1, 2 | `b, b+1, b+6, b+7` | core ×4 |
+/// | 3 | `b+2, b, b+8, b+6` | flare, core, flare, core |
+/// | 4 | `b+1, b+3, b+7, b+9` | core, flare, core, flare |
+/// | 5 | `b+4, b+2, b+10, b+8` | black, flare, black, flare |
+/// | 6 | `b+3, b+5, b+9, b+11` | flare, black, flare, black |
+///
+/// The first packet is written **twice** - the loop body stores the same
+/// words at `t3` and `t3 + 0x24` (`0x801D00A4..0x801D00F4`) - so the core
+/// strip draws twice; the port keeps both. The group header is
+/// `count = steps * 6`, `flags = 0x26`, `ilen = 9`, `mode = 0x3C`
+/// (`0x801D000C..0x801D0024`), and the chain is closed by twenty zero words
+/// (`0x801D0248..0x801D025C`).
+pub fn ribbon_quads(ribbon: &Ribbon) -> Vec<RibbonQuad> {
+    use RibbonShade::{Black as K, Core as A, Flare as B};
+    let count = ribbon.packets.emitted_verts / RIBBON_VERTS_PER_STEP;
+    let mut out = Vec::with_capacity(count * ribbon.packets.packets_per_step);
+    for i in 0..count {
+        let b = i * RIBBON_VERTS_PER_STEP;
+        let core = RibbonQuad {
+            verts: [b, b + 1, b + 6, b + 7],
+            shades: [A, A, A, A],
+        };
+        out.push(core);
+        out.push(core);
+        out.push(RibbonQuad {
+            verts: [b + 2, b, b + 8, b + 6],
+            shades: [B, A, B, A],
+        });
+        out.push(RibbonQuad {
+            verts: [b + 1, b + 3, b + 7, b + 9],
+            shades: [A, B, A, B],
+        });
+        out.push(RibbonQuad {
+            verts: [b + 4, b + 2, b + 10, b + 8],
+            shades: [K, B, K, B],
+        });
+        out.push(RibbonQuad {
+            verts: [b + 3, b + 5, b + 9, b + 11],
+            shades: [B, K, B, K],
+        });
+    }
+    out
+}
+
+/// The ribbon as a local-space VRAM mesh - what the TMD renderer draws off the
+/// object header the emitter builds at `out_buf + 0xC` (`FUN_8001ADA4` stores
+/// that header into every slot of the actor's `+0x44` model list,
+/// `0x8001B08C..0x8001B0B4`, so the ribbon is drawn as the actor's own model).
+///
+/// Positions are the step vertices laid out by [`RibbonPlane`]; each packet
+/// becomes four vertices (`[v0, v1, v2]` + `[v2, v1, v3]`), textured from the
+/// fixed 2x2 patch ([`RIBBON_UVS`] / [`RIBBON_CLUT`] / [`RIBBON_TPAGE`]) and
+/// modulated by the corner shade, `core` / `flare` being the two colour words'
+/// low 24 bits (`and` with `0x00FFFFFF` at `0x801CFABC` / `0x801CFAC8`).
+///
+/// PORT: FUN_801CFA48 (the object header + packet words it hands the renderer)
+pub fn ribbon_vram_mesh(ribbon: &Ribbon, core: u32, flare: u32) -> legaia_tmd::mesh::VramMesh {
+    let rgb = |w: u32| {
+        [
+            (w & 0xFF) as u8,
+            ((w >> 8) & 0xFF) as u8,
+            ((w >> 16) & 0xFF) as u8,
+        ]
+    };
+    let (ox, oy, _) = ribbon.plane.component_offsets();
+    let vertex = |idx: usize| -> [f32; 3] {
+        let step = &ribbon.steps[idx / RIBBON_VERTS_PER_STEP];
+        let (wx, wy) = step.verts[idx % RIBBON_VERTS_PER_STEP];
+        let mut v = [0.0f32; 3];
+        v[ox / 2] = f32::from(wx);
+        v[oy / 2] = f32::from(wy);
+        v
+    };
+    let mut mesh = legaia_tmd::mesh::VramMesh {
+        positions: Vec::new(),
+        uvs: Vec::new(),
+        cba_tsb: Vec::new(),
+        indices: Vec::new(),
+        normals: Vec::new(),
+        colors: Vec::new(),
+    };
+    for q in ribbon_quads(ribbon) {
+        if q.verts
+            .iter()
+            .any(|&v| v / RIBBON_VERTS_PER_STEP >= ribbon.steps.len())
+        {
+            continue;
+        }
+        let base = mesh.positions.len() as u32;
+        for (corner, &vi) in q.verts.iter().enumerate() {
+            mesh.positions.push(vertex(vi));
+            mesh.uvs.push(RIBBON_UVS[corner]);
+            mesh.cba_tsb.push([RIBBON_CLUT, RIBBON_TPAGE]);
+            mesh.normals.push([0.0; 3]);
+            mesh.colors.push(match q.shades[corner] {
+                RibbonShade::Core => rgb(core),
+                RibbonShade::Flare => rgb(flare),
+                RibbonShade::Black => [0, 0, 0],
+            });
+        }
+        mesh.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 1, base + 3]);
+    }
+    mesh
+}
+
+/// The whole per-frame ribbon a live move-VM node draws, or `None` when the
+/// node is not on the ribbon arm - [`ribbon_call_args`] +
+/// [`RibbonParams::from_actor`] + [`build_ribbon`] (retail RNG
+/// [`legaia_engine_vm::battle_action::OverlayRng`], reseeded from `+0xB8` on
+/// every call, and the retail LUTs) + [`ribbon_vram_mesh`].
+///
+/// A pure function of the node's state, exactly as retail's emitter is: it
+/// rebuilds the buffer every draw from the same seed.
+pub fn ribbon_mesh_for_actor(
+    s: &legaia_engine_vm::move_vm::ActorState,
+) -> Option<legaia_tmd::mesh::VramMesh> {
+    let (mode, packed) = ribbon_call_args(s)?;
+    let params = RibbonParams::from_actor(s);
+    // `lhu` / `sll 0x10` / `sra 0x12` / `sw` at `0x801CFC08..0x801CFC18`: the
+    // seed halfword sign-extended and shifted into the RNG state word.
+    let mut rng = OverlayRng::new((i32::from(params.rng_seed) >> 2) as u32);
+    let ribbon = build_ribbon(mode, packed, params, &RetailTrig, || rng.draw());
+    let (core, flare) = ribbon_colour_words(s);
+    Some(ribbon_vram_mesh(&ribbon, core, flare))
+}
+
+/// One live ribbon, ready to draw: the local-space mesh and the node's
+/// transform, in the same `(world_pos, rot)` form as
+/// [`crate::summon::SummonPartDraw`] so a host composes it exactly like a
+/// mesh part (`T * Ry * Rx * Rz * flip`).
+#[derive(Debug, Clone)]
+pub struct RibbonDraw {
+    /// [`ribbon_vram_mesh`] of the node's current state.
+    pub mesh: legaia_tmd::mesh::VramMesh,
+    /// World position (move-VM `world_x/y/z`).
+    pub world_pos: [f32; 3],
+    /// Euler XYZ rotation in radians (from the move-VM rotation banks).
+    pub rot: [f32; 3],
 }
 
 #[cfg(test)]
@@ -726,6 +939,49 @@ mod tests {
         assert_eq!(r.plane, RibbonPlane::Xz);
         // A node that has not run op 0x42 is not on this arm.
         assert_eq!(ribbon_call_args(&ActorState::new()), None);
+    }
+
+    /// The packet loop's per-step table (`0x801D0080..0x801D0230`), including
+    /// the duplicated core packet.
+    #[test]
+    fn each_step_emits_the_six_retail_packets() {
+        use RibbonShade::{Black as K, Core as A, Flare as B};
+        let r = build_ribbon(0, 2, params(), &RetailTrig, lcg());
+        let q = ribbon_quads(&r);
+        assert_eq!(q.len(), 12);
+        let b = 6;
+        assert_eq!(q[6].verts, [b, b + 1, b + 6, b + 7]);
+        assert_eq!(q[6], q[7], "the core packet is stored twice");
+        assert_eq!(q[8].verts, [b + 2, b, b + 8, b + 6]);
+        assert_eq!(q[8].shades, [B, A, B, A]);
+        assert_eq!(q[9].verts, [b + 1, b + 3, b + 7, b + 9]);
+        assert_eq!(q[10].verts, [b + 4, b + 2, b + 10, b + 8]);
+        assert_eq!(q[10].shades, [K, B, K, B]);
+        assert_eq!(q[11].verts, [b + 3, b + 5, b + 9, b + 11]);
+        assert_eq!(q[11].shades, [B, K, B, K]);
+    }
+
+    /// The mesh lays the walk into the `mode & 3` plane and carries the fixed
+    /// patch and the two colour words' RGB.
+    #[test]
+    fn the_mesh_uses_the_plane_patch_and_colour_words() {
+        let r = build_ribbon(1, 3, params(), &RetailTrig, lcg());
+        let m = ribbon_vram_mesh(&r, 0x3C11_2233, 0x3C44_5566);
+        assert_eq!(m.positions.len(), 3 * 6 * 4);
+        assert!(
+            m.positions.iter().all(|p| p[1] == 0.0),
+            "XZ plane: Y is zero"
+        );
+        assert_eq!(m.uvs[..4], RIBBON_UVS);
+        assert_eq!(m.cba_tsb[0], [RIBBON_CLUT, RIBBON_TPAGE]);
+        assert_eq!(
+            m.colors[0],
+            [0x33, 0x22, 0x11],
+            "core, command byte dropped"
+        );
+        // Packet 5's first corner is black, its second the flare word.
+        assert_eq!(m.colors[4 * 4], [0, 0, 0]);
+        assert_eq!(m.colors[4 * 4 + 1], [0x66, 0x55, 0x44]);
     }
 
     #[test]

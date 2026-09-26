@@ -380,7 +380,7 @@ render half.
 |---|---|
 | `FUN_80028158` | Scope row (`render_pipeline`): procedural POLY_FT4 builder, no game state. |
 | `FUN_8002A5A4` | Scope row (`render_pipeline`): billboard quad packet builder over a caller buffer. |
-| `FUN_801CFA48` | **Ported** - `legaia_engine_core::effect_ribbon` carries the random-walk geometry; only the GPU packet chain is render-track. |
+| `FUN_801CFA48` | **Ported and drawn** - `legaia_engine_core::effect_ribbon`: the random-walk geometry and the TMD packet chain it installs as the actor's model; both battle hosts draw it. |
 | `FUN_80019D50` | **Ported** - `legaia_engine_core::clut_cell_fx`, live through `world::ambient`. |
 | `FUN_800351C0` | Scope row (`render_pipeline`): one full-screen backdrop packet. |
 | `FUN_8001B73C` | Scope row (`libgte`): a cull probe, not an emitter. |

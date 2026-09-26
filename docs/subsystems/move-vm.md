@@ -385,9 +385,18 @@ A packed word is `lh a + (lh b << 8) + (lh c << 16)`, an unmasked `addu`
 chain, so a negative operand borrows from the byte above it. For the ribbon arm
 the dispatcher then passes `(s16)+0x9C + (((s16)+0xC8 >> 3) << 8)` as the
 emitter's count argument; the shipped carriers (one or two parts each in PROT
-0923, 0934, 0957 and 0964) leave `+0x9C` itself packed as `total << 8 | cap`
-with `+0xC8 = 0`, and every one seeds the emitter's RNG with `0x3039` at
-`+0xB8`. The engine port stores these through
+0923, 0934, 0957 and 0964) store a plain step cap in `+0x9C` (12, 10, 10, 10
+and 7) with `+0xC8 = 0` and no `+0xCA` rate, so each bolt draws its full length
+from its first frame, and every one seeds the emitter's RNG with `0x3039` at
+`+0xB8`. (An earlier reading here had `+0x9C` packed as `0x040C`, cap 12 total 4;
+that was the engine's summon translation glide adding its `0x400` frame step to
+`+0x9C`, which it treated as a clock on every node.)
+
+The part tick grows these words: for render modes `2` and `6`, `FUN_80021DF4`
+steps `+0xB4..+0xBA` and `+0xC8` by the rates at `+0xC0..+0xC6` and `+0xCA`,
+each `(rate * DAT_1F800393 * DAT_1F80037D) >> 6`, and clamps a negative `+0xC8`
+to zero (`0x80021E78..0x80021FA0`), ahead of its move-VM call. Port:
+`move_vm::integrate_draw_channels`. The engine port stores these through
 `ActorState::set_actor_u16` (absolute offsets); the emitter and its readers are
 `legaia_engine_core::effect_ribbon`.
 

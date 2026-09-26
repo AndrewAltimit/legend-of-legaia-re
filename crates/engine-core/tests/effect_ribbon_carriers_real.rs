@@ -112,3 +112,67 @@ fn shipped_ribbon_carriers_arm_the_emitter_from_their_own_operands() {
          readers regressed"
     );
 }
+
+/// The draw half, end to end on the shipped carriers: staged through
+/// `World::spawn_summon` in battle and ticked through `World::tick_summon`,
+/// every carrier yields a live ribbon on `World::active_effect_ribbons` - the
+/// one list both battle hosts draw - whose mesh is the retail packet chain
+/// (six `GT4` packets a step, the fixed 2x2 patch at `(0..2, 0xF0..0xF2)`).
+/// Also reports how the part tick's mode-2 channel moves `+0xC8`.
+#[test]
+fn shipped_ribbon_carriers_reach_the_battle_draw_list() {
+    use legaia_engine_core::effect_ribbon::{RIBBON_CLUT, RIBBON_TPAGE};
+    use legaia_engine_core::world::{SceneMode, World};
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(prot) = prot() else {
+        eprintln!("[skip] extracted/PROT.DAT missing");
+        return;
+    };
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let mut drawn = Vec::new();
+    for idx in [923usize, 934, 957, 964] {
+        let entry = archive.entries[idx].clone();
+        let mut bytes = Vec::new();
+        archive.read_entry(&entry, &mut bytes).expect("read");
+        let overlay = summon_overlay::parse(&bytes, SUMMON_OVERLAY_LINK_BASE);
+        let mut world = World::default();
+        world.enter_battle(3, 2);
+        assert_eq!(world.mode, SceneMode::Battle);
+        world.spawn_summon(&overlay, &bytes, 0, [0, 0, 0]);
+        let mut first: Option<(usize, usize)> = None;
+        let mut max_quads = 0usize;
+        for frame in 0..600 {
+            world.tick_summon(8);
+            let ribbons = world.active_effect_ribbons();
+            for rb in &ribbons {
+                let quads = rb.mesh.indices.len() / 6;
+                assert_eq!(rb.mesh.positions.len(), quads * 4);
+                assert_eq!(quads % 6, 0, "six packets a step");
+                assert!(
+                    rb.mesh
+                        .cba_tsb
+                        .iter()
+                        .all(|&ct| ct == [RIBBON_CLUT, RIBBON_TPAGE]),
+                    "PROT {idx:04}: fixed patch"
+                );
+                first.get_or_insert((frame, quads));
+                max_quads = max_quads.max(quads);
+            }
+            if world.casting.active_summon.is_none() {
+                break;
+            }
+        }
+        if let Some((f, q)) = first {
+            eprintln!(
+                "[ok] PROT {idx:04}: first ribbon at frame {f} with {q} quads, peak {max_quads} quads"
+            );
+            drawn.push(idx);
+        } else {
+            eprintln!("PROT {idx:04}: no ribbon reached the draw list");
+        }
+    }
+    assert!(!drawn.is_empty(), "no carrier reached the battle draw list");
+}

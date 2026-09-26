@@ -448,7 +448,19 @@ pub struct SummonScene {
     pub origin: [i16; 3],
     /// Frames ticked since spawn.
     pub frame: u32,
+    /// The retail per-frame speed product the part tick's channel block
+    /// scales its rates by - `DAT_1F800393 * DAT_1F80037D`
+    /// ([`move_vm::integrate_draw_channels`]). Kept apart from `tick`'s
+    /// `frame_delta`, which is the engine's own wait-timer drain convention
+    /// ([`crate::world::EFFECT_SCENE_GRAPH_STEP`]) and not retail's scale.
+    /// Defaults to [`RETAIL_CHANNEL_DELTA`]; the world re-stamps it from its
+    /// live frame step before each tick.
+    pub channel_delta: u16,
 }
+
+/// `DAT_1F800393 * DAT_1F80037D` at one vsync per frame and the rate byte's
+/// boot value `8` (planted at `0x80055FB4` / `0x80055FBC`).
+pub const RETAIL_CHANNEL_DELTA: u16 = 8;
 
 /// One mesh-bearing part's render draw. The transform is the engine's
 /// interpretation of the move-VM state (see the module docs).
@@ -500,6 +512,7 @@ impl SummonScene {
             model_base,
             origin,
             frame: 0,
+            channel_delta: RETAIL_CHANNEL_DELTA,
         }
     }
 
@@ -531,6 +544,10 @@ impl SummonScene {
                 continue;
             }
             move_vm::decrement_wait_timer(&mut part.state, frame_delta);
+            // The mode-2/6 channel block runs next in retail's part tick,
+            // ahead of the move-VM call (`0x80021E78` vs `jal 0x80023070` at
+            // `0x80022BA4`); it is what grows a ribbon node's `+0xC8` total.
+            move_vm::integrate_draw_channels(&mut part.state, self.channel_delta);
             match move_vm::actor_tick(host, &mut part.state, &part.buf, SUMMON_PART_BUDGET) {
                 ActorTickOutcome::Halted | ActorTickOutcome::EndOfBuffer { .. } => {
                     part.finished = true;
@@ -566,6 +583,32 @@ impl SummonScene {
                         (s.render_28 as f32) * A,
                     ],
                 }
+            })
+            .collect()
+    }
+
+    /// The draw-kind-4 ribbon nodes (move-VM op `0x42`) this scene holds, each
+    /// rebuilt from its current state ([`crate::effect_ribbon::ribbon_mesh_for_actor`]).
+    /// Ribbon carriers are transform nodes (`model_sel == -1`), so
+    /// [`Self::part_draws`] never lists them: retail draws them because the
+    /// render dispatcher points the actor's model list at the emitter's own
+    /// output (`FUN_8001ADA4` case 4, `0x8001B08C..0x8001B0B4`).
+    pub fn ribbon_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
+        const A: f32 = std::f32::consts::TAU / 4096.0;
+        self.parts
+            .iter()
+            .filter_map(|p| {
+                let s = &p.state;
+                let mesh = crate::effect_ribbon::ribbon_mesh_for_actor(s)?;
+                (!mesh.indices.is_empty()).then(|| crate::effect_ribbon::RibbonDraw {
+                    mesh,
+                    world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
+                    rot: [
+                        (s.render_24 as f32) * A,
+                        (s.y_rot.wrapping_add(s.render_26) as f32) * A,
+                        (s.render_28 as f32) * A,
+                    ],
+                })
             })
             .collect()
     }
@@ -663,6 +706,20 @@ fn lerp_axis(target: i32, cur: i32, t: i32, d: i32) -> i32 {
 // REF: FUN_801F811C (faithful port: screen_fx::MaskWidget)
 // REF: FUN_801DE648 (sized store of the lerp result; here a plain field write)
 fn apply_translation_update(state: &mut ActorState, origin: [i16; 3], frame_delta: u16) {
+    // A draw-kind-4 node (`+0x56 == 4`, the multi-target emitters move-VM ops
+    // `0x13` / `0x23` / `0x42` set up) carries the emitter's arguments in
+    // `+0x9C` / `+0x9E` - the packed step count and the emitter-select flags
+    // `FUN_8001ADA4` reads at `0x8001B0B8..0x8001B124` - not a glide clock.
+    // Running the glide over them advanced the count every frame and cleared
+    // the `0x2000` ribbon flag at the "latch". Seat the node at its target and
+    // leave the words alone.
+    if state.move_substate == 4 {
+        state.world_x = origin[0].wrapping_add(state.anim_3c);
+        state.world_y = origin[1].wrapping_add(state.anim_3e);
+        state.world_z = origin[2].wrapping_add(state.anim_40);
+        state.world_y_mirror = state.world_y;
+        return;
+    }
     // Retail reads `*(i16)(actor+0x9C)` (low half of the i32 field_9c) and
     // `*(i16)(actor+0x9E)` (field_9e). Targets are summon-local anim banks +
     // origin (the cast target).
@@ -771,6 +828,50 @@ mod tests {
 
     struct H;
     impl MoveHost for H {}
+
+    /// A ribbon carrier (a `model_sel -1` node that runs move-VM op `0x42`)
+    /// keeps its emitter arguments across ticks and reaches the ribbon draw
+    /// list. The translation glide used to treat `+0x9C` / `+0x9E` as its
+    /// clock on every node, advancing the packed count by `frame_delta` each
+    /// tick (`12` read back as `0x040C` after one) and clearing the `0x2000`
+    /// ribbon flag at its latch.
+    #[test]
+    fn a_ribbon_node_keeps_its_emitter_words_and_draws() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(-1i16).to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        let program: [u16; 17] = [
+            0x42, 1, 12, 0, 28, 96, 0x3039, 0, 512, 0x80, 0x80, 0x80, 0x40, 0x40, 0x40, 0x09,
+            0x0FFF,
+        ];
+        for w in program {
+            bytes.extend_from_slice(&w.to_le_bytes());
+        }
+        let parts = vec![SummonPart {
+            record_off: 0,
+            model_sel: -1,
+            reserved: 0,
+            bytecode: 4..bytes.len(),
+        }];
+        let mut scene = SummonScene::spawn_parts(&parts, &bytes, 0, [0, 0, 0]);
+        for _ in 0..5 {
+            scene.tick(&mut H, 0x0400);
+        }
+        let st = &scene.parts[0].state;
+        assert_eq!(st.actor_u16(0x9C), 12, "the packed count is not a clock");
+        assert_eq!(st.field_9e, 0x2001, "the ribbon flag survives");
+        assert!(
+            scene.part_draws().is_empty(),
+            "a transform node has no mesh part"
+        );
+        let ribbons = scene.ribbon_draws();
+        assert_eq!(ribbons.len(), 1);
+        assert_eq!(
+            ribbons[0].mesh.indices.len(),
+            12 * 6 * 6,
+            "six GT4 packets a step"
+        );
+    }
 
     #[test]
     fn spawns_one_state_per_part() {

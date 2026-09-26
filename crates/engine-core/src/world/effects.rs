@@ -554,6 +554,7 @@ impl World {
     /// summon is playing; drains the scene once every part has finished.
     /// `frame_delta` is the per-part wait-timer drain (anim-speed × frame-rate).
     pub fn tick_summon(&mut self, frame_delta: u16) {
+        let channel_delta = self.effect_channel_delta();
         let Some(mut scene) = self.casting.active_summon.take() else {
             return;
         };
@@ -569,11 +570,19 @@ impl World {
                 field_record_words: None,
                 child_spawns: Vec::new(),
             };
+            scene.channel_delta = channel_delta;
             scene.tick(&mut host, frame_delta);
         }
         if !scene.finished() {
             self.casting.active_summon = Some(scene);
         }
+    }
+
+    /// The part tick's channel scale, `DAT_1F800393 * DAT_1F80037D`: the live
+    /// frame step (`MoveVmGlobals::ramp_ratio`, the `DAT_1F800393` stand-in)
+    /// times the rate byte's boot value.
+    fn effect_channel_delta(&self) -> u16 {
+        u16::from(self.move_vm.ramp_ratio.max(1)) * crate::summon::RETAIL_CHANNEL_DELTA
     }
 
     /// Per-part render draws for the active summon's mesh-bearing parts (empty
@@ -643,6 +652,7 @@ impl World {
     /// per-effect teardown (when retail removes a finished field effect) is a
     /// future refinement. No-op when none are live.
     pub fn tick_field_fx(&mut self, frame_delta: u16) {
+        let channel_delta = self.effect_channel_delta();
         if self.props.active_fx.is_empty() {
             return;
         }
@@ -655,6 +665,7 @@ impl World {
                 field_record_words: None,
                 child_spawns: Vec::new(),
             };
+            scene.channel_delta = channel_delta;
             scene.tick(&mut host, frame_delta);
         }
         self.props.active_fx = scenes;
@@ -876,6 +887,7 @@ impl World {
     /// move-FX sibling of [`Self::tick_summon`]). No-op when none is playing;
     /// drains the scene once every part has finished.
     pub fn tick_move_fx(&mut self, frame_delta: u16) {
+        let channel_delta = self.effect_channel_delta();
         // Effect-script table-form scenes advance on the same clock. Take
         // the list, tick each, keep the unfinished.
         let mut action_fx = std::mem::take(&mut self.casting.active_action_fx);
@@ -887,6 +899,7 @@ impl World {
                 field_record_words: None,
                 child_spawns: Vec::new(),
             };
+            scene.channel_delta = channel_delta;
             scene.tick(&mut host, frame_delta);
         }
         action_fx.retain(|s| !s.finished());
@@ -903,6 +916,7 @@ impl World {
                 field_record_words: None,
                 child_spawns: Vec::new(),
             };
+            scene.channel_delta = channel_delta;
             scene.tick(&mut host, frame_delta);
         }
         if !scene.finished() {
@@ -928,6 +942,34 @@ impl World {
             .unwrap_or_default();
         for scene in &self.casting.active_action_fx {
             out.extend(scene.part_draws());
+        }
+        out
+    }
+
+    /// This frame's effect ribbons - every draw-kind-4 ribbon node (move-VM op
+    /// `0x42`) in the live summon, move-FX and effect-script scenes, rebuilt
+    /// from its state ([`crate::summon::SummonScene::ribbon_draws`]). Both
+    /// battle hosts draw these in their FX pass, composed like a mesh part.
+    ///
+    /// Battle only: the emitter `FUN_801CFA48` is battle-overlay code reached
+    /// by a direct `jal` from the SCUS render dispatcher (`0x8001B120`), so it
+    /// exists only while PROT 0898 holds slot A.
+    ///
+    /// PORT: FUN_8001ADA4 (case 4's `0x2000` arm, `0x8001B060..0x8001B124`:
+    /// the emitter call and the model-list repoint)
+    pub fn active_effect_ribbons(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
+        if self.mode != crate::world::SceneMode::Battle {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        let scenes = self
+            .casting
+            .active_summon
+            .iter()
+            .chain(self.casting.active_move_fx.iter())
+            .chain(self.casting.active_action_fx.iter());
+        for scene in scenes {
+            out.extend(scene.ribbon_draws());
         }
         out
     }
