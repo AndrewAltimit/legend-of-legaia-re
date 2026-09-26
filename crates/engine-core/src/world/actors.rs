@@ -1581,6 +1581,13 @@ impl World {
     pub fn enter_battle(&mut self, party_count: u8, monster_count: u8) {
         self.mode = SceneMode::Battle;
         self.battle.monster_flee_attempted = false;
+        // The magic-level-up queue is a per-battle oracle record, not a host
+        // hand-off: the banner the level-up raises is the battle message
+        // banner (`raise_magic_level_banner`, screen element `0x65`), which
+        // both hosts draw through `battle_hud::battle_banner_message`. No
+        // host drains the queue, so it is bounded here - one battle's events
+        // at most - instead of growing for the whole session.
+        self.seru.magic_level_ups.clear();
         self.party.party_count = party_count.min(3);
         let monster_count = monster_count.min(5);
         let actor_count =
