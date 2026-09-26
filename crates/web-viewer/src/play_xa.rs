@@ -133,6 +133,10 @@ pub struct PendingXaStage {
     pub slot: u8,
     pub channel: u8,
     pub duration_sectors: u32,
+    /// Whether a clip request is waiting on this span (play it once the span
+    /// installs), or the span was only staged ahead of a cast
+    /// ([`LegaiaRuntime::prestage_xa_clip`]).
+    pub replay: bool,
 }
 
 /// One CD-XA channel demuxed out of a run of raw sectors: the concatenated
@@ -337,7 +341,7 @@ impl LegaiaRuntime {
             .as_ref()
             .and_then(|b| cut_clip(b, slot, ch, duration_sectors))
         else {
-            if self.defer_xa_clip(slot, ch, duration_sectors) {
+            if self.defer_xa_clip(slot, ch, duration_sectors, true) {
                 self.sfx.xa.clips_deferred += 1;
             } else {
                 self.sfx.xa.clips_unstaged += 1;
@@ -371,12 +375,34 @@ impl LegaiaRuntime {
 }
 
 impl LegaiaRuntime {
+    /// Stage `(clip_slot, channel)` ahead of the cast that will ask for it:
+    /// queue a lazy staging request that installs the span **without**
+    /// playing it, unless the bank already holds the channel. The engine
+    /// lists the round's candidates at the round's start
+    /// (`World::drain_battle_xa_prestage`), so by the time the cast raises its
+    /// clip the page has sliced and decoded it and [`Self::play_xa_clip`] cuts
+    /// it on the same call, as the native window does.
+    pub(crate) fn prestage_xa_clip(&mut self, clip_slot: u32, channel: u32, duration_sectors: u32) {
+        let (Ok(slot), Ok(ch)) = (u8::try_from(clip_slot), u8::try_from(channel)) else {
+            return;
+        };
+        let held = self
+            .sfx
+            .xa
+            .clip_bank
+            .as_ref()
+            .is_some_and(|b| cut_clip(b, slot, ch, duration_sectors).is_some());
+        if !held {
+            self.defer_xa_clip(slot, ch, duration_sectors, false);
+        }
+    }
+
     /// Queue a lazy staging request for `(slot, ch)` when the disc carries
     /// `XA<slot + 1>.XA`: the file's first `read_span_sectors(dur)` sectors
     /// (capped at the file), the span the clip starter would have read.
     /// One request per `(slot, ch)` at a time. `false` when the disc has no
     /// such file (or no disc is loaded).
-    fn defer_xa_clip(&mut self, slot: u8, ch: u8, duration_sectors: u32) -> bool {
+    fn defer_xa_clip(&mut self, slot: u8, ch: u8, duration_sectors: u32, replay: bool) -> bool {
         let name = format!("XA{}.XA", u32::from(slot) + 1);
         let Some(f) = self.disc_files.iter().find(|f| file_key(&f.path) == name) else {
             return false;
@@ -392,6 +418,7 @@ impl LegaiaRuntime {
             slot,
             channel: ch,
             duration_sectors,
+            replay,
         };
         let pending = &mut self.sfx.xa.pending_stage;
         if let Some(p) = pending
@@ -401,7 +428,11 @@ impl LegaiaRuntime {
             // Re-requested before the page served it: keep the wider span
             // and the latest request.
             p.sectors = p.sectors.max(sectors);
-            p.duration_sectors = duration_sectors;
+            if replay {
+                // A live request takes over a prestage one.
+                p.duration_sectors = duration_sectors;
+                p.replay = true;
+            }
         } else {
             pending.push(req);
         }
@@ -470,7 +501,9 @@ impl LegaiaRuntime {
             .get_or_insert_with(XaClipBank::new)
             .insert_lazy(req.slot, ch, clip, width);
         self.sfx.xa.lazy_installed += 1;
-        self.play_xa_clip(u32::from(req.slot), u32::from(ch), req.duration_sectors);
+        if req.replay {
+            self.play_xa_clip(u32::from(req.slot), u32::from(ch), req.duration_sectors);
+        }
         true
     }
 }
@@ -829,6 +862,39 @@ mod tests {
     /// The request counters are the readout: a shout with no bank is
     /// counted as unvoiced, a clip with no bank as unstaged, and neither
     /// panics without audio.
+    /// A cast voice staged at the round's start installs without playing,
+    /// and the cast's own request then plays on the call that raises it -
+    /// the native window's timing. Without the prestage the request was
+    /// deferred and sounded only after the page served the slice.
+    #[test]
+    fn a_prestaged_cast_voice_installs_silently_and_plays_on_its_cast() {
+        let mut rt = LegaiaRuntime::new();
+        rt.disc_files.push(crate::disc::FileEntry {
+            path: "XA/XA7.XA;1".into(),
+            lba: 1000,
+            size: 8 * 2048 * 300,
+        });
+        rt.prestage_xa_clip(6, 4, 686);
+        assert_eq!(rt.sfx.xa.pending_stage.len(), 1);
+        assert!(!rt.sfx.xa.pending_stage[0].replay);
+        let mut run = Vec::new();
+        for _ in 0..4 {
+            for ch in 0..8u8 {
+                run.extend(sector(1, ch, 0x00, if ch == 4 { 0x77 } else { 0x00 }));
+            }
+        }
+        assert!(rt.play_xa_install_span("XA/XA7.XA;1", &run, 4));
+        assert_eq!(rt.sfx.xa.clips_fired, 0, "a prestage plays nothing");
+        assert!(
+            rt.play_xa_clip(6, 4, 686),
+            "the cast's request plays at once"
+        );
+        assert_eq!(rt.sfx.xa.clips_deferred, 0);
+        // Prestaging a held channel queues nothing.
+        rt.prestage_xa_clip(6, 4, 686);
+        assert!(rt.sfx.xa.pending_stage.is_empty());
+    }
+
     #[test]
     fn requests_without_banks_are_counted_not_dropped_silently() {
         let mut rt = LegaiaRuntime::new();

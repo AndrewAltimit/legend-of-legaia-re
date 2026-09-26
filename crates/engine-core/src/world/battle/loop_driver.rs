@@ -815,6 +815,9 @@ impl World {
         // leg and the formation arm, once per round, before the first action
         // dispatches (a first-round Run rolls its escape at dispatch).
         self.run_round_state_zero();
+        // The committed spells' cast voices, listed for hosts that decode
+        // clips asynchronously - before the first dispatch takes `pending`.
+        self.list_round_cast_voices();
         self.battle.command = None;
         self.set_battle_flow(BattleFlowState::Idle);
         // A round entered without its start (a host or test that opened a

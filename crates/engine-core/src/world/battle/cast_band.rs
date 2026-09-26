@@ -478,6 +478,85 @@ impl World {
         }
     }
 
+    /// Every cast-voice clip `spell_id`'s module can raise - the
+    /// [`Self::emit_cast_module_voice`] resolution without its gates or its
+    /// coin flip: a literal head cue gives one request, a random one
+    /// (`base + rand() % span`, PROT 0936 / 0937) one per candidate. Empty
+    /// when the module, its head cue or the span table is missing.
+    pub(in crate::world) fn cast_module_voice_candidates(
+        &self,
+        spell_id: u8,
+    ) -> Vec<crate::sfx_cue::XaVoiceClip> {
+        let Some(entry) = self.cast_module_for(spell_id) else {
+            return Vec::new();
+        };
+        let Some(module) = self
+            .casting
+            .effect_pool
+            .as_ref()
+            .and_then(|pool| pool.module(entry))
+        else {
+            return Vec::new();
+        };
+        let ids: Vec<u16> = match vm::battle_cast_cue::module_head_cue(&module.bytes) {
+            Some(vm::battle_cast_cue::ModuleHeadCue::Literal(id)) => vec![id],
+            Some(vm::battle_cast_cue::ModuleHeadCue::Random { base, span }) => {
+                (0..u16::from(span.max(1)))
+                    .map(|k| base.wrapping_add(k))
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+        let open = vm::battle_cast_cue::VoiceCueGates {
+            side_band_stage: 0,
+            clip_span_left: 0,
+        };
+        ids.into_iter()
+            .filter_map(|id| {
+                let raw = self
+                    .audio
+                    .xa_cue_durations
+                    .as_deref()
+                    .and_then(|t| t.get(usize::from(id).wrapping_sub(0x100)).copied());
+                match vm::battle_cast_cue::admit_voice_cue(id, open, raw) {
+                    vm::battle_cast_cue::VoiceCueVerdict::Play(req) => {
+                        Some(crate::sfx_cue::XaVoiceClip {
+                            clip: req.clip_slot,
+                            channel: req.channel,
+                            duration_sectors: req.duration_sectors,
+                        })
+                    }
+                    _ => None,
+                }
+            })
+            .collect()
+    }
+
+    /// List the cast voices the round's committed party spells may raise onto
+    /// [`crate::world::AudioState::battle_xa_prestage`] - called at the
+    /// round's start, before the first action dispatches.
+    pub fn list_round_cast_voices(&mut self) {
+        let spells: Vec<u8> = self
+            .battle
+            .round_flow
+            .pending
+            .iter()
+            .filter_map(|p| match p {
+                Some(crate::battle_round::PendingPartyAction::Spell { spell_id, .. }) => {
+                    Some(*spell_id)
+                }
+                _ => None,
+            })
+            .collect();
+        for spell in spells {
+            for clip in self.cast_module_voice_candidates(spell) {
+                if !self.audio.battle_xa_prestage.contains(&clip) {
+                    self.audio.battle_xa_prestage.push(clip);
+                }
+            }
+        }
+    }
+
     /// A host seated the summon creature at actor `slot`: adopt the seat,
     /// place it at the stager's spawn point wearing the caster's facing (the
     /// capture's slot-7 record), and mark it active. Hosts call this right

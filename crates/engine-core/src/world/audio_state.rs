@@ -22,6 +22,13 @@ pub struct AudioState {
     /// funnel resolves (`XA27` for `0x10C`). Drained by the hosts into the
     /// XA mixing path ([`crate::world::World::drain_battle_xa_cues`]).
     pub battle_xa_cues: Vec<crate::sfx_cue::XaVoiceClip>,
+    /// Cast voices this round's committed spells **may** raise, listed at the
+    /// round's start so a host whose clip decode is asynchronous can have
+    /// them resident before the cast arms
+    /// ([`crate::world::World::drain_battle_xa_prestage`]). Advisory: nothing
+    /// plays from this list; the cast still raises its clip on
+    /// [`Self::battle_xa_cues`].
+    pub battle_xa_prestage: Vec<crate::sfx_cue::XaVoiceClip>,
     /// Frames the modelled CD drive stays busy after a clip start - the
     /// read span in vsyncs (`dur * 2.5` sectors at 150/s = `dur / 60` s). The
     /// funnel's voice leg drops a request while it is non-zero
@@ -158,6 +165,7 @@ impl AudioState {
             sound_bank_ready: true,
             battle_sfx_cues: Vec::new(),
             battle_xa_cues: Vec::new(),
+            battle_xa_prestage: Vec::new(),
             battle_xa_busy_frames: 0,
             field_xa_cues: Vec::new(),
             field_xa_busy_frames: 0,

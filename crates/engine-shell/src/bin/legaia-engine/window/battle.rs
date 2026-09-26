@@ -103,6 +103,11 @@ impl PlayWindowApp {
         // `(clip_slot, channel, dur)` in the retail starter's terms, played
         // off the boot-staged clip bank through the same XA mixing path.
         let xa_cues = self.session.host.world.drain_battle_xa_cues();
+        // The round's cast-voice prestage list is for a host that decodes
+        // clips asynchronously (the browser play page); this director cuts
+        // clips out of its boot-staged bank on demand, so it has nothing to
+        // stage ahead. Drained so the list does not grow.
+        let _ = self.session.host.world.drain_battle_xa_prestage();
         // The level-up jingle's bank (PROT 0889, cue `0x50`, category 11)
         // is loaded at results time in retail and lives nowhere resident in
         // the port's SFX region; stage it transiently behind the battle
