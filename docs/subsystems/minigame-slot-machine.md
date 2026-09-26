@@ -563,15 +563,17 @@ so the shift truncates toward zero.
 
 Ported as `legaia_engine_core::slot_machine::payline_prims` +
 `payline_ot_depth`; the geometry comes from the parsed table
-(`legaia_asset::minigame_slot_scene::SlotScene::paylines`), and projection plus
-OT linkage stay caller-side as they do for the rest of the machine's furniture.
-Both browser pages are that caller: the minigames page's
-`slot_payline_prims_json` and the play page's `play_mg_slot_payline_prims_json`
-hand the page the prims, and the page projects each endpoint through the same
-fitted projection it draws the medallions and lamps with, then strokes the
-segment in the prim's colour, half-blended for the `0x43` code. The native
-window runs the machine as a text HUD with no cabinet pass, so it draws no
-paylines.
+(`legaia_asset::minigame_slot_scene::SlotScene::paylines`). The projection runs
+once for every host, in `slot_machine::projected_paylines`: each endpoint goes
+through the machine's fitted projection
+(`legaia_asset::minigame_slot_scene::project`, the one the medallions and lamps
+are drawn with). Both browser pages stroke those projected segments in the
+prim's colour, half-blended for the `0x43` code (`sa` / `sb` in
+`slot_payline_prims_json` / `play_mg_slot_payline_prims_json`). The native
+window stages the geometry on the machine itself (`SlotMachine::with_paylines`)
+and draws the same segments as one-pixel flat quads through
+`engine-ui::ui_slot_paylines`; it still draws no cabinet mesh around them. OT
+linkage stays caller-side: all three hosts draw the lines over the reels.
 
 ### The furniture is billboards - `FUN_801d08e4`
 
