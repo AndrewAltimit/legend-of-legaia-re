@@ -2152,6 +2152,17 @@ impl LegaiaRuntime {
             Some(h) => h,
             None => return,
         };
+        // A global-pool track carried across the swap owns the region; the
+        // scene bank would overwrite its samples (the native
+        // `after_scene_swap` makes the same call).
+        let live = out
+            .sequencer_progress()
+            .is_some()
+            .then_some(self.bgm_last_started)
+            .flatten();
+        if !legaia_engine_core::scene::scene_bank_restage_wanted(live) {
+            return;
+        }
         let (vab_bytes, vab_off) = match host.scene_vab_bytes() {
             Ok(Some(b)) => b,
             _ => return,
