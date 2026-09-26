@@ -2028,6 +2028,8 @@ mod tests {
             index: 0,
             power: [1, 2, 3, 4, 5, 6, 7, 8, 9],
             keyframes: [0, 0, 1, 2, 3, 4, 0, 0, 0],
+            speed: [0; 9],
+            sub_keyframes: Default::default(),
         }];
         let mut cab = BakaCabinet::new().with_action_tables(tables);
         cab.state = ST_DEV_EDITOR_RUN;
