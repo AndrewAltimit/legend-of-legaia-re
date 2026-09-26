@@ -2047,17 +2047,19 @@ impl LegaiaMinigames {
 // ------------------------------------------------------------- minigame BGM
 
 /// True when a `music_01` entry carries the wrapped `[VAB][SEQ]` pair the
-/// retail BGM path streams (chunk header, `pBAV` body, `pQES` score).
+/// retail BGM path streams, located by the installer walk both play hosts use
+/// (`chunk_install::owned_bank_offsets`) rather than a magic hunt - a hunt
+/// stops at the first `pQES` byte run after the bank, which inside a VAG body
+/// is sample data.
 pub(crate) fn music01_pair_ok(buf: &[u8]) -> bool {
-    let Some(vab) = buf.windows(4).position(|w| w == b"pBAV") else {
-        return false;
-    };
-    buf[vab..].windows(4).any(|w| w == b"pQES")
+    legaia_engine_core::chunk_install::owned_bank_offsets(buf).is_some()
 }
 
 /// Stage one `music_01` entry's `[VAB][SEQ]` pair through the from-scratch SPU:
-/// find the `pBAV`/`pQES` bodies, upload the VAB into SPU RAM, and build a
-/// [`Sequencer`] over it - the exact path the engine's BGM director takes.
+/// locate the bank and score with the installer walk
+/// (`chunk_install::owned_bank_offsets`), upload the VAB into SPU RAM, and
+/// build a [`Sequencer`] over it - the exact path the engine's BGM director
+/// takes.
 /// `None` when the pair doesn't decode. The returned sequencer has a
 /// loop-to-0 fallback installed so marker-less tracks still repeat (retail
 /// BGM loops), which the loop-region detector relies on.
@@ -2067,10 +2069,10 @@ fn stage_music01_seq(
     legaia_engine_audio::Spu,
     legaia_engine_audio::sequencer::Sequencer,
 )> {
-    let vab_off = buf.windows(4).position(|w| w == b"pBAV")?;
-    let seq_rel = buf[vab_off..].windows(4).position(|w| w == b"pQES")?;
+    let split = legaia_engine_core::chunk_install::owned_bank_offsets(buf)?;
+    let vab_off = split.vab;
     let vab_report = legaia_vab::parse(buf, vab_off).ok()?;
-    let seq = legaia_seq::Seq::parse(&buf[vab_off + seq_rel..]).ok()?;
+    let seq = legaia_seq::Seq::parse(buf.get(split.seq..)?).ok()?;
     let mut spu = legaia_engine_audio::Spu::new();
     let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(0x1000, 0x40_000);
     let bank =

@@ -1141,9 +1141,22 @@ impl BootSession {
     /// every other cue is.
     fn route_field_sfx(&mut self) {
         let ops = self.host.world.take_sfx_ring_ops();
+        // The field's CD-XA one-shots (op `0x36`'s XA arm, the scripted-scene
+        // voice leg) - drained every tick so none outlives its frame.
+        let field_xa = self.host.world.drain_field_xa_cues();
         let Some(bgm) = self.bgm.as_mut() else {
             return;
         };
+        for xa in &field_xa {
+            let fired = bgm.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
+            log::debug!(
+                "field XA clip slot {} ch {} dur {} -> {}",
+                xa.clip,
+                xa.channel,
+                xa.duration_sectors,
+                if fired { "playing" } else { "not staged" }
+            );
+        }
         let world = &self.host.world;
         // One `World::tick` is one vsync, and the director's scheduler ticks
         // once per `World::tick`, so the ring ages by the vsyncs one tick
@@ -1187,9 +1200,15 @@ impl BootSession {
         self.camera.reset_globals_for_scene_entry();
         if let (Some(bgm), Some(audio)) = (self.bgm.as_mut(), self.audio.as_ref()) {
             // New scene -> upload its VAB bank and drop any SFX cues that
-            // were queued against the previous scene's VAB.
+            // were queued against the previous scene's VAB. Not while a
+            // global-pool track owns the region: a track carried across the
+            // door would play on over the scene bank's samples
+            // (`scene_bank_restage_wanted`, the page's gate too).
             bgm.clear_sfx();
-            if let Err(e) = stage_scene_vab(bgm, audio.as_ref(), &self.host) {
+            let live = bgm.is_attached().then_some(bgm.last_started).flatten();
+            if legaia_engine_core::scene::scene_bank_restage_wanted(live)
+                && let Err(e) = stage_scene_vab(bgm, audio.as_ref(), &self.host)
+            {
                 log::warn!("BGM bank not staged after scene enter: {e:#}");
             }
             // Nothing is flushed here. Op-`0x35` sub-op 9 - the op a cutscene
@@ -1383,7 +1402,27 @@ impl BootSession {
         // above stay here - they are disc-derived on native.
         world.arm_live_loop(scene, &opts.to_live_loop_opts());
 
-        Ok(world.mode)
+        self.restage_audio_for_direct_entry();
+        Ok(self.host.world.mode)
+    }
+
+    /// The audio half of a **direct** scene entry (dev warp, prologue skip,
+    /// save load) - the browser play page's `enter_field` makes the same
+    /// three moves. A deliberate scene boot restages BGM from scratch: SFX
+    /// cues queued against the old scene are dropped, the dedupe latch is
+    /// cleared so the scene's own op-`0x35` start is honoured even when it
+    /// names the track already playing, and the new scene's VAB is staged.
+    /// A door does not come through here; [`Self::after_scene_swap`] keeps
+    /// the latch so a carried track keeps its playhead. No-op until audio is
+    /// up.
+    fn restage_audio_for_direct_entry(&mut self) {
+        if let (Some(bgm), Some(audio)) = (self.bgm.as_mut(), self.audio.as_ref()) {
+            bgm.clear_sfx();
+            bgm.last_started = None;
+            if let Err(e) = stage_scene_vab(bgm, audio.as_ref(), &self.host) {
+                log::warn!("BGM bank not staged after direct scene entry: {e:#}");
+            }
+        }
     }
 
     /// Enter a world-map scene live: load the scene's resources, route its

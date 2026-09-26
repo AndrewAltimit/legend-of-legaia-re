@@ -133,7 +133,9 @@ impl PlayWindowApp {
             }
         }
 
-        for cue in session.drain_sfx() {
+        // The screen's cues ride the world's SFX ring (retail
+        // `FUN_80035B50`), which `route_field_sfx` replays.
+        for cue in session.route_sfx(world) {
             log::debug!("dev-menu: sfx cue {cue:#04x}");
         }
 
