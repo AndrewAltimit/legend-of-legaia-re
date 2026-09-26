@@ -222,16 +222,21 @@ impl DevMenuRow {
 /// The word is not a packed camera: `0x1F800384..87` is the scratchpad
 /// region box `(x0, z0, x1, z1)` the field's per-tile refresh latches, so the
 /// two "angles" are the box's centre tile, and the sentinel `0x7F7F0000` is
-/// the box `(0, 0, 0x7F, 0x7F)` - the whole map. On the world map the box's
-/// low two bytes are restamped every frame by the render overlay (PROT
-/// `0901`, file `0x9A0..0x9AC`, from `0x801F8EE0` / `0x801F8EE4`).
+/// the box `(0, 0, 0x7F, 0x7F)` - the whole map.
+///
+/// The world map does not substitute its own values. The render overlay
+/// (PROT `0901`) **saves** the box's two low bytes and the four visible-tile
+/// window bytes `0x1F8003E8..EB` into `0x801F8EE0..0x801F8EF4` on entry
+/// (`0x801F6AA0..0x801F6B04`) and copies them back at `0x801F7344..0x801F73A4`
+/// - those six words have no other reference - so after the pass the box
+/// again holds what the region refresh latched.
 ///
 /// NOT WIRED: the port's dev menu carries five of the retail rows and no
-/// CAMERA row, and the half it would read is the world map's: the field
-/// half of the box is published (`World::terrain.region_attributes`), but
-/// what the render overlay's two world-map globals hold is not pinned, so a
-/// row built on the field box would show the wrong numbers on the one menu
-/// that draws it.
+/// CAMERA row. The box it would read is published
+/// (`World::terrain.region_attributes`); what is missing is the row itself -
+/// `legaia_engine_core::dev_menu_host::DevMenuSession::row_value` takes no
+/// world, so the session would need the box word handed to it each tick by
+/// both hosts' dev-menu step.
 /// PORT: FUN_801EAD98 (case 3)
 pub fn decode_camera_readout(cam_word: u32) -> Option<(i32, i32)> {
     if cam_word == 0x7F7F_0000 {
