@@ -1140,6 +1140,14 @@ impl World {
                 let setup = crate::region_encounter::region_battle_setup(&region.setup);
                 self.store_region_battle_setup(setup);
             }
+            // The Incense window (`_DAT_8007B600`) skips the roll outright
+            // while it is non-zero - `lw v0,-0x4a00(v0)` / `bne v0,zero` at
+            // `0x801DA174`, after the setup half and before the rate scale,
+            // so the step counter does not move either.
+            if self.locomotion.walk_regen_window != 0 {
+                self.terrain.region_tracker = Some(tracker);
+                return false;
+            }
             let roll = tracker.on_step(wx, wz, || self.next_rand());
             // Per-step roll diagnostics (trace level; off in normal runs):
             // which tile the step landed on and how far the region counter
@@ -1177,6 +1185,10 @@ impl World {
                 }
                 None => false,
             };
+        }
+        // Same Incense gate on the mean-rate stand-in (see the region arm).
+        if self.locomotion.walk_regen_window != 0 {
+            return false;
         }
         let rng = self.next_rng();
         let modifiers = self.encounter_rate_modifiers();
