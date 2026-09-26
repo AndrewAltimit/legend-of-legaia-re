@@ -808,12 +808,33 @@ foreground sheet adds under a third of its texel; the per-sheet intensity
 on the port's screen-primitive pass is the open question, not the
 placement.
 
-The one input still off retail on the overworld is the camera vertical
-offset `_DAT_8007BCAC` the render step subtracts from every particle
-height: 252 on `keikoku_chest_preload` against the port's 192. The ease
-walks toward `scene_ctrl[+0x4A] - player[+0x16]`, and the port's scene
-control word reads `0` where retail's reads `60`; the particles draw 60
-units lower than retail's.
+The render step subtracts the camera vertical offset `_DAT_8007BCAC` from
+every particle height. On `keikoku_chest_preload` it reads 252: the ease
+walks toward `scene_ctrl[+0x4A] - player[+0x16]`, the control word reads
+`60` and the player stands on the `-192` floor.
+
+The `60` is `map01`'s own entry script. `P1[0]`'s per-frame park loop
+(`+0x142..+0x1BD`) opens on `CD F8 00 00 7E 7E`, a whole-map box test on
+the player, and its first pass after an entry (system flag `0x528` is
+cleared by the prologue and set by that pass) runs `2E 18`, `4C 49 3C 00
+00 00`, `2F 18` at `+0x1B0`. The prologue's `2E 19` at `+0x2E` has already
+raised `_DAT_1F800394` bit 25, and op `0x4C` sub-9 tests that bit before
+bit 24 (`0x801E1488`), so the op takes the delta arm: `sh s0,0x4a(v1)` at
+`0x801E14BC` stores `60`, and `0x801E14D4` stores `60 - player[+0x16]`
+straight into `_DAT_8007BCAC` (see `ghidra/scripts/funcs/overlay_0897_801de840.txt`).
+A PCSX-Redux run of `drake_castle_to_worldmap` across the castle-to-`map01`
+entry pins it
+([`run_w1a_halt_and_offset_watch.sh offset`](../../scripts/pcsx-redux/run_w1a_halt_and_offset_watch.sh)): the scene reset `FUN_8003A024` zeroes the word at
+`0x8003A0D4`, and the only later store is `0x801E14BC`, once, two frames
+into game mode 3, from `P1[0]` `+0x1B2` (the player there stands at `-276`,
+so the accumulator lands on `336`).
+
+The port used to read `0` / `192` here. Its system-context position anchor
+was re-seated on the player only in field mode, so on the overworld the
+`CD F8` box test read tile `(-1, -1)`, failed every frame, and the loop
+never reached the op. `World::step_field_frame_slice` now seats the anchor
+in both modes, and `crates/engine-shell/tests/world_map_camera_offset_oracle.rs`
+pins `60` / `252` at the `keikoku_chest_preload` seat.
 
 The region table is MAN section 4 (`DAT_80073ED8`, count `DAT_80073EDC`):
 `0xB`-byte records of `[enable][x0][z0][x1][z1][angle base][angle
