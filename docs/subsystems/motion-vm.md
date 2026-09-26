@@ -75,9 +75,18 @@ override is `World::locomotion.eased_mirror_y` (an eased move publishes `-Y` int
 `_DAT_1F800394 & 0x400` is set. Otherwise four routines fire on their own
 guards: `FUN_80039B7C` (`+0x10 & 0x100` and path target `+0x90` present),
 the pursue VM `FUN_8003774C` (`+0x10 & 0x400`), the scripted VM
-`FUN_80038158` (no modal window `*(_DAT_801C6EA4 + 8) == 0`, bytecode `+0x80`
-present, `+0x10 & 8` clear), and the move-table consumer `FUN_800204F8`
+`FUN_80038158` (the scene record's bracket guard `*(u16 *)(_DAT_801C6EA4 + 8)`
+clear, bytecode `+0x80` present, `+0x10 & 8` clear), and the move-table consumer `FUN_800204F8`
 (`+0x5C > 0` or `+0x10 & 0x1000`).
+
+The `+8` word is not a dialogue or modal-window flag, which is how it was
+first read. Its writers are two brackets that set it to `1` before a call and
+clear it after: the scene-init bind sweep `FUN_8003AEB0` (`0x8003B73C` /
+`0x8003B928`) and the field VM around its script-context spawn calls
+(`0x801E2820` / `0x801E282C` around `FUN_8003CF7C`, `0x801E2BBC` /
+`0x801E2BD8` around `FUN_8003A1E4`, PROT 0897). None is held across a frame,
+so between frames the scripted VM's gate is open; the engine's ambient tick
+runs every actor game tick with no dialogue gate, which is the same answer.
 
 ### The cutscene event-script arm - `FUN_80039B7C`
 

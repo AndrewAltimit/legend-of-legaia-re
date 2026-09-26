@@ -2038,8 +2038,11 @@ So an actor running both a scripted leg and an ambient wander stream in the
 same frame ends up facing wherever the **ambient** stream put it - stage 3
 overwrites stage 2. Stage 3 is also the only one with a scene-wide off switch:
 whenever `*(s16 *)(_DAT_801C6EA4 + 8)` is non-zero the ambient layer stands
-down and stage 2's pose is what survives the frame. What sets that word is not
-pinned here.
+down and stage 2's pose is what survives the frame. The word is a bracket
+guard, not a pause: the scene-init bind sweep `FUN_8003AEB0` and the field VM's
+script-context spawn calls set it around one call and clear it after, so it is
+never held across a frame
+([motion-vm.md](motion-vm.md#the-driver-fun_8003bc08)).
 
 Outside this tick the field VM's spawn-prologue pre-run writes the heading
 once at scene load ([NPC initial facing](#npc-initial-facing)), and the player

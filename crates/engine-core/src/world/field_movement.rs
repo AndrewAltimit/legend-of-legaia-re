@@ -1742,7 +1742,31 @@ impl World {
             // the tick and the drain below writes any change back. One
             // channel ticks at a time, so no two can race the word.
             vm.globals = globals_in;
-            vm.tick_with(code, speed, &blocking);
+            // Retail reaches this VM only through the field-actor driver
+            // `FUN_8003BC08`, whose dispatch skips it on a set global freeze
+            // (`_DAT_1F800394 & 0x400`) or a set `+0x10 & 8` on the actor -
+            // both words the channel carries (`globals`, `actor_flags`). The
+            // scene bracket guard is never held across a frame, and every
+            // ambient channel has a stream bound, so those two inputs are
+            // constant here. The ramp pool is its own actor and keeps
+            // running either way.
+            let plan = vm::motion_vm::field_actor_plan(vm::motion_vm::FieldActorInputs {
+                lifetime: vm.move_pair.unwrap_or(0),
+                flags: vm.actor_flags,
+                field_8e: 0,
+                path_target_present: false,
+                scripted_present: true,
+                ambient_gate: false,
+                frame_step: speed,
+                scene_guard_clear: true,
+                global_suppress: globals_in & crate::world::CAMERA_HOLD_FLAG != 0,
+            });
+            if plan.dispatch.run_scripted {
+                vm.tick_with(code, speed, &blocking);
+            } else {
+                vm.moved = false;
+                vm.tick_ramps(speed);
+            }
             let moved = vm.moved && live_walk;
             let (nx, nz) = (vm.x, vm.z);
             let anim = vm.requested_move;
