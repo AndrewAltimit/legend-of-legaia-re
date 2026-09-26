@@ -997,7 +997,8 @@ impl LegaiaRuntime {
         // arrived at the far side of a 40-second movie 2400 ticks ahead of
         // where the native window leaves it. The FMV service below still
         // runs: it is what advances the picture and ends the cutscene.
-        let event = if self.fmv.armed_for().is_some() {
+        let movie_held = self.fmv.armed_for().is_some();
+        let event = if movie_held {
             SceneTickEvent::Stepped
         } else {
             host.tick()
@@ -1006,6 +1007,17 @@ impl LegaiaRuntime {
         // FMV beats: the movie path lives in [`crate::play_fmv`]; it hands
         // back the scene label when the post-movie hand-off entered one.
         let fmv_handoff_scene = self.service_cutscene_fmv();
+        // ...and the rest of the frame tail is the world's, so it freezes
+        // with the scene tick. The native window runs zero sim ticks while
+        // its movie plays, which skips every step below at once; this host
+        // only gated the scene tick, so under a movie the effect
+        // scene-graphs, the CLUT / VRAM effects, NPC clips, the camera and
+        // the SFX scheduler all kept running. A movie that ends this frame
+        // falls through, as it does natively (the finish is drained before
+        // the window counts its ticks).
+        if movie_held && fmv_handoff_scene.is_empty() && self.fmv.armed_for().is_some() {
+            return Ok(String::new());
+        }
         // Advance the world's play clock off the page's wall clock, the same
         // delta-against-a-high-water-mark the native window runs. The `host`
         // borrow is dead from here, so this can re-borrow.
@@ -1781,13 +1793,12 @@ impl LegaiaRuntime {
             anim.set_frame_step(host.world.clock.frame_step);
             dirty |= anim.tick(1, &mut res.vram);
         }
-        dirty |= host.world.apply_script_vram_moves(&mut res.vram);
-        // Field-VM op `0x43` sub-`0x12` rect copies, drained where the native
-        // window drains them (`field_render::apply_world_clut_fx`); the page
-        // presents one framebuffer page, so the back-buffer bias is off.
-        dirty |= host.world.apply_vram_rect_copies(&mut res.vram, false);
-        dirty |= host.world.step_ambient_fx(&mut res.vram);
-        dirty |= host.world.step_clut_fx(&mut res.vram);
+        // The scripted VRAM effects (op-`0x43` stamps + rect copies, the
+        // ambient move-VM tree, CLUT-cell one-shots and blend fades) through
+        // the shared frame-tail kernel the native window's
+        // `apply_world_clut_fx` calls; the page presents one framebuffer
+        // page, so the back-buffer bias is off.
+        dirty |= host.world.step_field_vram_effects(&mut res.vram, false);
         self.field_vram_dirty |= dirty;
     }
 
@@ -1835,90 +1846,28 @@ impl LegaiaRuntime {
     /// (`current_pose`), so clip cadence is tied to the 60 Hz sim clock, not
     /// the display refresh - the native window's sim-tick anim contract.
     fn drive_npc_clips(&mut self) {
-        /// One drained ANIMATE cue: `(slot, (count, base_anim_id, frames))`,
-        /// the `World::npcs.anim_cues` entry shape.
-        type AnimCue = (u8, (u8, u8, Vec<u8>));
-        let cues: Vec<AnimCue> = match self.scene_host.as_mut() {
-            Some(h) => h.world.npcs.anim_cues.drain().collect(),
-            None => return,
+        // Both ANIMATE-cue queues drain through the shared frame-tail kernel
+        // (`World::drain_field_anim_cues`) the native window calls every sim
+        // tick: the player's `A2 F8` gestures land on the world's clip
+        // player, and each op-`0x4B` NPC re-target comes back resolved
+        // against the bundle the slot poses from.
+        let Some(host) = self.scene_host.as_mut() else {
+            return;
         };
-        for (slot, (_count, base_id, _frames)) in cues {
-            let Some(clip) = self.npc_clips.get_mut(&slot) else {
-                continue;
-            };
-            let bundle = if clip.special {
-                self.locomotion_anm.as_ref()
-            } else {
-                self.scene_anm.as_ref()
-            };
-            let (Some(b), Some(rec)) = (bundle, (base_id as usize).checked_sub(1)) else {
-                continue;
-            };
-            if let Some(player) =
-                legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec)
-            {
-                clip.player = player;
+        let clips = &self.npc_clips;
+        let retargets = host.world.drain_field_anim_cues(
+            self.scene_anm.as_ref(),
+            self.locomotion_anm.as_ref(),
+            |slot| clips.get(&slot).map(|c| c.special),
+        );
+        for r in retargets {
+            if let Some(clip) = self.npc_clips.get_mut(&r.slot) {
+                clip.player = r.player;
                 clip.generation = clip.generation.wrapping_add(1);
             }
         }
         for clip in self.npc_clips.values_mut() {
             clip.player.advance(1);
-        }
-        self.drive_player_move_cues();
-    }
-
-    /// Drain `World::locomotion.player_move_cues` - the cross-context ExecMove
-    /// pokes a script aims at the **player** channel (`A2 F8 <move_id>`) -
-    /// and queue each as a scripted one-shot over the idle/walk pair, the
-    /// browser twin of the native window's cue drain in
-    /// `window/event_handler/redraw.rs`.
-    ///
-    /// Both the cutscene timeline and (since the inn wire) the inline-dialogue
-    /// runner raise these, and the runner's clip-end spin
-    /// (`AD F8 08`) holds the conversation while
-    /// [`legaia_engine_core::field_anim::FieldPlayerAnim::scripted_active`]
-    /// reports one playing - so a page that never drained the queue both
-    /// dropped every scripted player gesture and ran the beat behind it on a
-    /// different clock than native.
-    ///
-    /// Move ids `<= 2` are the locomotion walk moves the movement controller
-    /// already animates; the native drain skips them and so does this one.
-    fn drive_player_move_cues(&mut self) {
-        // The settle pick's scene-bank record (the `4C CE` override, the
-        // `99` sentinel) resolves through the same bundle as the cues -
-        // the native window does the same beside its cue drain.
-        if let (Some(bundle), Some(anim)) = (
-            self.scene_anm.as_ref(),
-            self.scene_host
-                .as_mut()
-                .and_then(|h| h.world.locomotion.player_anim.as_mut()),
-        ) {
-            anim.resolve_scene_clip(bundle);
-        }
-        let cues: Vec<u8> = match self.scene_host.as_mut() {
-            Some(h) => std::mem::take(&mut h.world.locomotion.player_move_cues),
-            None => return,
-        };
-        for id in cues {
-            if id <= 2 {
-                continue;
-            }
-            let (Some(bundle), Some(rec)) = (self.scene_anm.as_ref(), (id as usize).checked_sub(1))
-            else {
-                continue;
-            };
-            let Some(clip) =
-                legaia_engine_core::field_anim::FieldClipPlayer::from_record(bundle, rec)
-            else {
-                continue;
-            };
-            if let Some(anim) = self
-                .scene_host
-                .as_mut()
-                .and_then(|h| h.world.locomotion.player_anim.as_mut())
-            {
-                anim.push_scripted(clip);
-            }
         }
     }
 
@@ -2310,9 +2259,8 @@ impl LegaiaRuntime {
         {
             cue = world.take_pending_move_fx_cue();
         }
-        world.tick_summon(0x0400);
-        world.tick_move_fx(0x0400);
-        world.tick_field_fx(0x0400);
+        // The shared frame-tail kernel the native window's loop calls.
+        world.tick_effect_scene_graphs();
         // Both remaining legs need `&mut self`, so they run after the host
         // borrow ends.
         if let Some((spell_id, _origin)) = summon {
