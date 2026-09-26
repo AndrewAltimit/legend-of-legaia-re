@@ -119,7 +119,7 @@ The container parser is documented in [`formats/anm.md`](../../formats/anm.md). 
 
 | Address | Role |
 |---|---|
-| `80024CFC` | `play_anm_by_id(id, actor, ?)` - allocates an actor (via `FUN_80020DE0`), reads the per-record offset from `_DAT_8007B7C8 + (id*4) + 4` (the kingdom slot-5 CLUT-walk table installed by `FUN_8001F05C` case 6; parser `legaia_asset::clut_walk`), and stores `(table_base + record_offset)` in `actor[+0x4C]`. Writes `0xB` to `actor[+0x56]` (render mode) and `100` to `actor[+0x68]` (accumulator seed, `>=` any hold so the first copy fires at scene entry). The per-frame walk is `FUN_8001ADA4` case `0xB`; spawner = field-init `FUN_801D6704`, one actor per table entry. |
+| `80024CFC` | `play_anm_by_id(id, actor, ?)` - allocates an actor (via `FUN_80020DE0`), reads the per-record offset from `_DAT_8007B7C8 + (id*4) + 4` (the kingdom slot-5 CLUT-walk table installed by `FUN_8001F05C` case 6; parser `legaia_asset::clut_walk`), and stores `(table_base + record_offset)` in `actor[+0x4C]`. Writes `0xB` to `actor[+0x56]` (render mode) and `100` to `actor[+0x68]` (accumulator seed, `>=` any hold so the first copy fires at scene entry). The per-frame walk is `FUN_8001ADA4` case `0xB`; spawner = field-init `FUN_801D6704`, one actor per table entry. Its only caller, the field init's spawn loop at `0x801D6CA4`, runs only while bit `0x20` of the `FUN_80020224` summary word is set (`andi s4,0x20` at `0x801D6C74`). |
 
 ## MES / dialog text interpreter
 -
