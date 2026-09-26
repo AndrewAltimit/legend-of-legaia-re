@@ -3072,10 +3072,14 @@ impl World {
         } else {
             None
         };
+        let held = crate::dev_menu::retail_packed(self.input.pad());
         if let Some(fight) = self.minigames.baka_fighter.as_mut() {
             if let Some(attack) = attack {
                 fight.choose(0, attack);
             }
+            // The held word the round setup reads for the cameo
+            // (`_DAT_8007B850`).
+            fight.set_held_pad(held);
             fight.tick(1);
         }
     }

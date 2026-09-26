@@ -1153,14 +1153,11 @@ pub const BLIT_SRC_Y_BASE: i16 = 0x80;
 /// Destination `y` the blit always writes to.
 pub const BLIT_DST_Y: i32 = 0x86;
 
-// NOT WIRED: its one retail caller is the round-start cameo animator
-// [`cameo_pose`] (`FUN_801D6310`, `jal` at `0x801D6354` / `0x801D63B0`), which
-// is ported now and reports the table index each frame leaves showing
-// (`CameoPose::blit_index`); the table itself is parsed
-// (`legaia_asset::baka_opponents::parse_blit_rects`, disc-gated in
-// `crates/asset/tests/baka_presentation_real.rs`). What no host has is the
-// consumer: the move edits the texture the cameo's model samples, and nothing
-// spawns or draws the cameo (see [`cameo_pose`]'s note).
+// Called from the duel surface's VRAM build
+// (`crate::baka_duel_scene::BakaDuelAssets::apply_wink`), for the row the
+// cameo's frame leaves showing ([`CameoPose::blit_index`]); the surface bumps
+// its generation when the row changes so each host re-uploads the edited
+// VRAM.
 /// PORT: FUN_801d65f8 - the **sprite-blit helper**.
 ///
 /// Builds a VRAM source `RECT` out of the 4-byte record at
@@ -1435,15 +1432,13 @@ pub struct CameoPose {
     pub retire: bool,
 }
 
-// NOT WIRED: nothing in the port spawns the cameo. Its spawn is the cabinet's
-// round-setup arm (`0x32`) under a held Triangle, and none of the three hosts
-// hands the duel a *held* pad word - they feed attack edges, and the port uses
-// Triangle as its special. Past the spawn it needs a host that can draw scene
-// model [`CAMEO_SCENE_MODEL`] posed by clips `0x1C` / `0x1D` of the scene's
-// type-`0x05` clip bank in the camera-relative frame, and apply
-// [`sprite_blit`]'s VRAM move (an eye sprite: open, then closed - a wink) to
-// the texture it samples; no minigame host draws a model camera-relative or
-// edits its VRAM copy after upload.
+// Spawned by `BakaFight` at a round setup under a held Triangle (the host
+// hands the duel its packed held word through `BakaFight::set_held_pad`),
+// stepped per frame as `crate::baka_fighter::CameoActor`, and drawn by the
+// duel's 3D surface (`crate::baka_duel_scene`): stage model
+// [`CAMEO_SCENE_MODEL`] posed by records `0x1B` / `0x1C` of the PROT 1203
+// clip bank in the camera-relative frame, with [`sprite_blit`]'s wink
+// applied to the surface's VRAM.
 /// PORT: FUN_801D6310 - the round-start **cameo walk-on** animator.
 ///
 /// Each frame it forces the actor's step `+0x6A = 8`, raises flag

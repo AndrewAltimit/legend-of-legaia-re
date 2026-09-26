@@ -297,6 +297,10 @@ pub struct StrikeClock {
 /// every frame (`0x801D4780..0x801D47CC`) - the special plays in slow motion.
 pub const STRIKE_RATE_DIVISOR: i32 = 8;
 
+/// The cameo's clip step: its animator forces `+0x6A = 8` every frame
+/// (`0x801D6320..0x801D632C`) - half a frame per tick.
+pub const CAMEO_STEP: i32 = 8;
+
 /// The three ANM record header fields the clip selector `FUN_800204F8` and
 /// the afterimage read off a fighter's clip record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -586,6 +590,34 @@ pub struct BakaFight {
     stand_z: [i32; 2],
     /// The player's special-commit camera glides, by party fighter.
     special_cameras: Vec<[i16; 20]>,
+    /// The packed held pad word (`_DAT_8007B850`) the host handed over for
+    /// the next tick ([`Self::set_held_pad`]).
+    held_pad: u16,
+    /// A round setup (cabinet state `0x32`) is due on the next presentation
+    /// tick - the first round's and every later one's.
+    setup_pending: bool,
+    /// The round-start cameo's actor, while it walks: its phase `+0x22` and
+    /// the clip cursor `+0x68` its clip selector advances.
+    cameo: Option<CameoActor>,
+}
+
+/// The round-start cameo actor (`FUN_801D6310`'s record): its phase and the
+/// clip cursor under the clip it is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CameoActor {
+    /// `+0x22`.
+    pub phase: i16,
+    /// `+0x68`, 1/16 frame.
+    pub cursor: i32,
+    /// `+0x5C` the cursor belongs to.
+    pub clip: i16,
+}
+
+impl CameoActor {
+    /// This frame's pose ([`crate::baka_fighter_chrome::cameo_pose`]).
+    pub fn pose(&self) -> Option<crate::baka_fighter_chrome::CameoPose> {
+        crate::baka_fighter_chrome::cameo_pose(self.phase)
+    }
 }
 
 /// The two per-round score-bonus tables the overlay carries as rodata: the
@@ -695,6 +727,9 @@ impl BakaFight {
             stand_off: [0; 2],
             stand_z: [0; 2],
             special_cameras: Vec::new(),
+            held_pad: 0,
+            setup_pending: true,
+            cameo: None,
         }
     }
 
@@ -756,6 +791,19 @@ impl BakaFight {
     pub fn with_special_cameras(mut self, rows: Vec<[i16; 20]>) -> Self {
         self.special_cameras = rows;
         self
+    }
+
+    /// Hand the duel this frame's **packed** held pad word (`_DAT_8007B850`,
+    /// Legaia's layout). Its one reader is the round setup's cameo test
+    /// (`0x801D0190..0x801D01C4`): Triangle held (`0x10`) at a round setup
+    /// sends the ring girl on.
+    pub fn set_held_pad(&mut self, packed: u16) {
+        self.held_pad = packed;
+    }
+
+    /// The round-start cameo, while it is on stage.
+    pub fn cameo(&self) -> Option<CameoActor> {
+        self.cameo
     }
 
     /// The roster id in the player seat.
@@ -897,6 +945,7 @@ impl BakaFight {
         self.motion = Default::default();
         self.stand_z = [0; 2];
         self.camera.round_setup();
+        self.setup_pending = true;
         self.round = 0;
         self.rate_divisor = STRIKE_RATE_DIVISOR;
         self.afterimages.clear();
@@ -1452,6 +1501,18 @@ impl BakaFight {
                 self.stand_z[0] += crate::baka_duel_scene::RESULT_STEP_Z;
             }
         }
+        if std::mem::take(&mut self.setup_pending)
+            && crate::baka_fighter_chrome::cameo_spawns(self.held_pad)
+        {
+            // The round setup's spawn of prototype `0x801D7624` (phase and
+            // cursor zeroed by the allocator).
+            self.cameo = Some(CameoActor {
+                phase: 0,
+                cursor: 0,
+                clip: crate::baka_fighter_chrome::CAMEO_CLIP_WALK,
+            });
+        }
+        self.tick_cameo(frame_step);
         if let Some(st) = self.strike.as_ref() {
             for (m, t) in self.motion.iter_mut().zip(st.iter()) {
                 let r = m
@@ -1461,6 +1522,32 @@ impl BakaFight {
             }
         }
         self.camera.tick(frame_step);
+    }
+
+    /// One frame of the cameo's actor: the animator's pose, the clip
+    /// selector's advance at the forced step `+0x6A = 8`, then the phase
+    /// advance by the frame step; the actor retires once the pose raises its
+    /// retire bit.
+    ///
+    /// REF: FUN_801D6310
+    fn tick_cameo(&mut self, frame_step: i32) {
+        let Some(c) = self.cameo.as_mut() else {
+            return;
+        };
+        let Some(pose) = crate::baka_fighter_chrome::cameo_pose(c.phase) else {
+            self.cameo = None;
+            return;
+        };
+        if pose.retire {
+            self.cameo = None;
+            return;
+        }
+        if pose.clip != c.clip {
+            c.clip = pose.clip;
+            c.cursor = 0;
+        }
+        c.cursor += CAMEO_STEP * frame_step;
+        c.phase = c.phase.wrapping_add(frame_step as i16);
     }
 
     /// The rules half of [`Self::tick_with_input`].
@@ -1501,6 +1588,7 @@ impl BakaFight {
                 self.rate_divisor = STRIKE_RATE_DIVISOR;
                 self.motion = Default::default();
                 self.camera.round_setup();
+                self.setup_pending = true;
                 self.phase = MatchPhase::Fighting;
                 return;
             }
@@ -2623,6 +2711,24 @@ mod tests {
             gold_reward: 30,
             ai_pattern: vec![1, 2, 3],
         }
+    }
+
+    #[test]
+    fn a_held_triangle_at_the_round_setup_sends_the_cameo_on() {
+        let mut f = fight();
+        f.set_held_pad(crate::baka_fighter_chrome::CAMEO_HOLD_MASK);
+        f.tick(1);
+        let c = f.cameo().expect("the cameo spawns on the held word");
+        assert_eq!(c.phase, 1);
+        // It walks, poses, walks off and retires by the retire phase.
+        for _ in 0..crate::baka_fighter_chrome::CAMEO_RETIRE_PHASE {
+            f.tick(1);
+        }
+        assert!(f.cameo().is_none(), "retired");
+        // No held word, no cameo.
+        let mut g = fight();
+        g.tick(1);
+        assert!(g.cameo().is_none());
     }
 
     fn fight() -> BakaFight {

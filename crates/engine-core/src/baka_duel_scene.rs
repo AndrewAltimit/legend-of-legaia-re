@@ -384,6 +384,14 @@ pub struct BakaDuelAssets {
     pub party_atlases: Vec<legaia_tim::Tim>,
     /// Each ladder fighter's own atlas, by roster id.
     pub fighter_tims: Vec<Option<legaia_tim::Tim>>,
+    /// Stage-pack TMD `3` - the round-start cameo's ring girl
+    /// ([`crate::baka_fighter_chrome::CAMEO_SCENE_MODEL`]).
+    pub cameo: Option<(legaia_tmd::Tmd, Vec<u8>)>,
+    /// The PROT 1203 clip bank the cameo's clips `0x1C` / `0x1D` resolve
+    /// into (display id `k` = record `k - 1`).
+    pub cameo_bank: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    /// The overlay's two-record blit table (`&DAT_801DBE84`), the wink.
+    pub blit_rects: Vec<bo::BakaBlitRect>,
 }
 
 impl BakaDuelAssets {
@@ -401,12 +409,24 @@ impl BakaDuelAssets {
         if let Some(e) = art_entry.as_deref() {
             out.art = legaia_asset::minigame_art::parse_art_pack(e).unwrap_or_default();
             out.wall = stage_tmd(e, 0);
+            out.cameo = stage_tmd(
+                e,
+                usize::from(crate::baka_fighter_chrome::CAMEO_SCENE_MODEL),
+            );
         }
         let party_bank = art_entry.as_deref().and_then(|e| {
             legaia_asset::player_anm::find_in_entry(e, 4)
                 .into_iter()
                 .next()
         });
+        out.cameo_bank = party_bank.clone();
+        if let Some(rec) = legaia_asset::static_overlay::overlay_map()
+            .by_prot_index(bo::BAKA_OVERLAY_PROT_INDEX as u32)
+            && let Some(raw) = read_prot(bo::BAKA_OVERLAY_PROT_INDEX)
+            && let Ok(img) = legaia_asset::static_overlay::as_loaded(&raw, rec)
+        {
+            out.blit_rects = bo::parse_blit_rects(&img).unwrap_or_default();
+        }
         let party_slots = read_prot(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX as usize)
             .and_then(|raw| legaia_asset::battle_char_pack::parse_slots(&raw).ok());
         if let Some(raw) =
@@ -470,6 +490,32 @@ impl BakaDuelAssets {
             vram.upload_tim(tim);
         }
         vram
+    }
+
+    /// Apply the cameo's blit for table row `index`
+    /// ([`crate::baka_fighter_chrome::sprite_blit`]): a `MoveImage` of the
+    /// stored eye cell into the live one. `false` when the table did not
+    /// decode or has no such row.
+    pub fn apply_wink(&self, vram: &mut legaia_tim::Vram, index: usize) -> bool {
+        let Some(rect) = self.blit_rects.get(index) else {
+            return false;
+        };
+        let raw = [
+            ((rect.src_x - crate::baka_fighter_chrome::BLIT_SRC_X_BASE as u16) << 2) as u8,
+            (rect.src_y - crate::baka_fighter_chrome::BLIT_SRC_Y_BASE as u16) as u8,
+        ];
+        let Some(b) = crate::baka_fighter_chrome::sprite_blit(0, raw) else {
+            return false;
+        };
+        vram.move_image(
+            b.src_x as u16,
+            b.src_y as u16,
+            b.size.0 as u16,
+            b.size.1 as u16,
+            b.dst_x as u16,
+            b.dst_y as u16,
+        );
+        true
     }
 }
 
@@ -543,6 +589,7 @@ pub struct BakaDuelScene {
     pub untextured_indices: Vec<u32>,
     fighter: [Range<usize>; 2],
     ghost: [[Range<usize>; 2]; 2],
+    cameo: Range<usize>,
     walls: Vec<(Range<usize>, StagePlacement)>,
 }
 
@@ -565,6 +612,7 @@ impl BakaDuelScene {
             untextured_indices: Vec::new(),
             fighter: [0..0, 0..0],
             ghost: [[0..0, 0..0], [0..0, 0..0]],
+            cameo: 0..0,
             walls: Vec::new(),
         };
         s.fighter[0] = s.push_tmd(&p.tmd, &p.raw, 1.0);
@@ -578,6 +626,9 @@ impl BakaDuelScene {
                 let r = s.push_tmd(tmd, raw, 1.0);
                 s.walls.push((r, placement));
             }
+        }
+        if let Some((tmd, raw)) = assets.cameo.as_ref() {
+            s.cameo = s.push_tmd(tmd, raw, 1.0);
         }
         s.push_floor();
         s.positions = s.base.clone();
@@ -669,7 +720,8 @@ impl BakaDuelScene {
             let origin = fight.fighter_position(slot);
             let yaw = fight.fighter_yaw(slot);
             let range = self.fighter[slot].clone();
-            self.pose_range(asset, m.record, m.frame(), range, origin, yaw);
+            let rec = asset.first_record + m.record;
+            self.pose_range(&asset.tmd, &asset.bank, rec, m.frame(), range, origin, yaw);
             let mut drawn = [false; 2];
             for (owner, frame) in fight.afterimages() {
                 if *owner != slot {
@@ -685,7 +737,8 @@ impl BakaDuelScene {
                     ];
                     let f = (i32::from(pass.cursor).max(0) >> 4) as usize;
                     let range = self.ghost[slot][k].clone();
-                    self.pose_range(asset, bo::ACTION_SPECIAL, f, range, o, yaw);
+                    let rec = asset.first_record + bo::ACTION_SPECIAL;
+                    self.pose_range(&asset.tmd, &asset.bank, rec, f, range, o, yaw);
                     drawn[k] = true;
                 }
             }
@@ -696,10 +749,68 @@ impl BakaDuelScene {
                 }
             }
         }
+        self.pose_cameo(assets, fight, &view, &r);
         for i in 0..self.walls.len() {
             let (range, (pos, yaw)) = self.walls[i].clone();
             let (base, out) = (&self.base[range.clone()], &mut self.positions[range]);
             place_stage_model(camera, pos, yaw, base, out);
+        }
+    }
+
+    /// Pose the round-start cameo, or drop it when none is on stage. The
+    /// actor is camera-relative (`+0x52 & 0x400`): `FUN_8001CF50` loads the
+    /// base matrix alone (`0x8001D018`) instead of the camera rotation, so
+    /// its eye position is `6 * (Ry(yaw) . pose(v) + pos)`, which this maps
+    /// back into the world frame the scene's view-projection takes.
+    fn pose_cameo(
+        &mut self,
+        assets: &BakaDuelAssets,
+        fight: &BakaFight,
+        view: &FieldCameraView,
+        r: &[f32; 16],
+    ) {
+        let range = self.cameo.clone();
+        let (Some(actor), Some((tmd, _)), Some(bank)) = (
+            fight.cameo(),
+            assets.cameo.as_ref(),
+            assets.cameo_bank.as_ref(),
+        ) else {
+            self.collapse(range);
+            return;
+        };
+        let Some(pose) = actor.pose() else {
+            self.collapse(range);
+            return;
+        };
+        let record = (pose.clip.max(1) - 1) as usize;
+        let frames = bank
+            .record(record)
+            .map(|h| usize::from(h.frame_count))
+            .unwrap_or(1)
+            .max(1);
+        let raw = (actor.cursor.max(0) >> 4) as usize;
+        let frame = if pose.hold_last_frame {
+            raw.min(frames - 1)
+        } else {
+            raw % frames
+        };
+        let origin = [f32::from(pose.x), f32::from(pose.y), f32::from(pose.z)];
+        let yaw = i32::from(pose.yaw);
+        self.pose_range(tmd, bank, record, frame, range.clone(), origin, yaw);
+        // eye/6 -> world: p = focus + R^T (q - tr/6).
+        for p in &mut self.positions[range] {
+            let d = [
+                p[0] - view.tr_eye[0],
+                p[1] - view.tr_eye[1],
+                p[2] - view.tr_eye[2],
+            ];
+            let mut w = view.focus;
+            for (i, wi) in w.iter_mut().enumerate() {
+                for (j, dj) in d.iter().enumerate() {
+                    *wi += r[i * 4 + j] * dj;
+                }
+            }
+            *p = w;
         }
     }
 
@@ -711,26 +822,26 @@ impl BakaDuelScene {
 
     /// Pose one fighter range: per object `Rz.Ry.Rx . v + T` from the bank
     /// record at `frame`, then the actor's yaw about Y and its position.
+    #[allow(clippy::too_many_arguments)]
     fn pose_range(
         &mut self,
-        asset: &DuelFighterAsset,
-        action: usize,
+        tmd: &legaia_tmd::Tmd,
+        bank: &legaia_asset::player_anm::PlayerAnmBundle,
+        record: usize,
         frame: usize,
         range: Range<usize>,
         origin: [f32; 3],
         yaw: i32,
     ) {
-        let record = asset.first_record + action;
-        let frames = asset
-            .bank
+        let frames = bank
             .record(record)
             .map(|r| usize::from(r.frame_count))
             .unwrap_or(0);
         let frame = frame.min(frames.saturating_sub(1));
-        let parts = asset.tmd.objects.len();
+        let parts = tmd.objects.len();
         let xf: Vec<Option<[f32; 9]>> = (0..parts)
             .map(|p| {
-                let t = asset.bank.bone_transform(record, frame, p)?;
+                let t = bank.bone_transform(record, frame, p)?;
                 let (sx, cx) = angle(t.r_x).sin_cos();
                 let (sy, cy) = angle(t.r_y).sin_cos();
                 let (sz, cz) = angle(t.r_z).sin_cos();
@@ -824,6 +935,9 @@ pub struct BakaDuelSurface {
     assets: Option<Arc<BakaDuelAssets>>,
     scene: Option<BakaDuelScene>,
     generation: u32,
+    /// The blit row the cameo's cell last showed; a change is a VRAM edit
+    /// the host must re-upload (a new generation).
+    wink: Option<usize>,
 }
 
 impl BakaDuelSurface {
@@ -851,6 +965,11 @@ impl BakaDuelSurface {
             self.scene = BakaDuelScene::build(&assets, want[0], want[1]);
             self.generation = self.generation.wrapping_add(1);
         }
+        let wink = fight.cameo().and_then(|c| c.pose()).map(|p| p.blit_index);
+        if wink.is_some() && wink != self.wink {
+            self.wink = wink;
+            self.generation = self.generation.wrapping_add(1);
+        }
         let scene = self.scene.as_mut()?;
         scene.pose(&assets, fight);
         Some(scene)
@@ -869,7 +988,12 @@ impl BakaDuelSurface {
     /// The duel VRAM for the seated opponent.
     pub fn vram(&self) -> Option<legaia_tim::Vram> {
         let s = self.scene.as_ref()?;
-        Some(self.assets.as_ref()?.vram(s.roster[1]))
+        let assets = self.assets.as_ref()?;
+        let mut vram = assets.vram(s.roster[1]);
+        if let Some(i) = self.wink {
+            assets.apply_wink(&mut vram, i);
+        }
+        Some(vram)
     }
 }
 
