@@ -1484,23 +1484,20 @@ impl PlayWindowApp {
             let lay = Self::dialog_stage_layout(&snap);
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
             let has_chrome = self.save_menu.is_some();
-            let mut draws: Vec<TextDraw> = Vec::new();
             let (bx, by, _, _) = lay.main;
-            // Main text: one row per 0x7C-separated line at the retail
-            // 15-px pitch. The pager draws each reading-box line at the
-            // box origin exactly - `FUN_80036888(line, 0, 0, ctx+0x12,
-            // ctx+0x14 + i*0xF)` - with the string ink staged CLUT 7
-            // (`_DAT_8007B454 = 7` before every line), the (206,206,206)
-            // menu white.
-            for (i, line) in snap.page.split('|').enumerate() {
-                let row_layout = self.font.layout_ascii(line);
-                let pen = (bx, by + i as i32 * 0xF);
-                draws.extend(text_draws_for(
-                    &row_layout,
-                    pen,
-                    legaia_engine_render::MENU_TEXT_WHITE,
-                ));
-            }
+            // Main text: the pager's row window - one row per
+            // 0x7C-separated line at the retail 15-px pitch from the box
+            // origin, offset by the window's scroll and clipped to the rows
+            // band (`FUN_801D84D0` draws `FUN_80036888(row, 0, 0, ctx+0x12,
+            // ctx+0x14 + (scroll >> 4) + i*0xF)` in the staged CLUT-7 menu
+            // white). The shared builder is the browser page's too.
+            let mut draws: Vec<TextDraw> = legaia_engine_render::dialog_reading_box_text_draws_for(
+                &self.font,
+                &snap.page,
+                (bx, by),
+                snap.scroll_px,
+                snap.box_rows,
+            );
             // Option-picker labels: retail draws them CLUT-7 white at
             // `box_x + 0x10`, 15-px pitch from the box origin row; the
             // pointing-hand sprite (drawn in the chrome layer) marks the
@@ -1914,6 +1911,8 @@ impl PlayWindowApp {
             };
             Some(DialogSnapshot {
                 page,
+                scroll_px: panel.scroll_px(),
+                box_rows: panel.box_rows(),
                 options,
                 cursor,
                 // The advance hand shows at a page break AND on the final
@@ -1967,7 +1966,7 @@ impl PlayWindowApp {
         // (`_DAT_801F2740 = 3` in both box-init arms) regardless of how
         // much text has typed in; only over-long simplified pages grow
         // it to a 4th row.
-        let lines = snap.page.split('|').count().clamp(3, 4) as i32;
+        let lines = legaia_engine_render::dialog_reading_box_lines(&snap.page, snap.box_rows);
         let main_w = 0xF4;
         let main_h = lines * 0xF - 3;
         let picker = if snap.options.is_empty() {
@@ -2271,6 +2270,12 @@ impl PlayWindowApp {
 pub(super) struct DialogSnapshot {
     /// Current typed-out page, `|` (0x7C) separating rows.
     pub page: String,
+    /// Whole pixels the rows draw above their slots (the pager window's
+    /// scroll, `<= 0`).
+    pub scroll_px: i32,
+    /// The pager window's height in rows (`None` for the plain-MES panel,
+    /// whose box grows with its page); also the text clip band.
+    pub box_rows: Option<usize>,
     /// Decoded option labels when a picker menu is open (empty
     /// otherwise).
     pub options: Vec<String>,
