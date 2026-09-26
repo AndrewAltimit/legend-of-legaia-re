@@ -637,7 +637,13 @@ impl LegaiaRuntime {
                 // the native window suppresses on.
                 plaque_seat_taken: self.battle_tutorial_stage_rect(font).is_some()
                     || world
-                        .is_some_and(|w| w.dialog.current.is_some() || w.dialog.inline.is_some()),
+                        .is_some_and(|w| w.dialog.current.is_some() || w.dialog.inline.is_some())
+                    // Koru's timed-fight strip draws over the plaque in
+                    // retail (the native window parks it for the same
+                    // reason: a text run cannot go under the strip's frame
+                    // in either host's layer order).
+                    || world
+                        .is_some_and(|w| legaia_engine_core::timed_fight::timed_fight_strip(w).is_some()),
                 badges: badges.as_ref(),
                 // The same tutorial box that takes the plaque's seat also
                 // sits on a party surface's row; naming its rect is what

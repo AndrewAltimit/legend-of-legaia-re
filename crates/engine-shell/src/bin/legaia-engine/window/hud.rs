@@ -2392,7 +2392,14 @@ impl PlayWindowApp {
                 // two text runs land on the same pixels.
                 plaque_seat_taken: self.battle_tutorial_stage_rect().is_some()
                     || w_ref.dialog.current.is_some()
-                    || w_ref.dialog.inline.is_some(),
+                    || w_ref.dialog.inline.is_some()
+                    // Koru's timed-fight strip: retail draws it OVER the
+                    // plaque (text actor key 1 walks before the plaque's
+                    // 0x23 on the same ordering-table slot), so the plaque
+                    // sits under the strip's fill. This host composites
+                    // every text run above every sprite and cannot put the
+                    // plaque's name under the strip's frame - it parks it.
+                    || legaia_engine_core::timed_fight::timed_fight_strip(w_ref).is_some(),
                 badges: badges.as_ref(),
                 // The same box, tested against the party surfaces' own rows:
                 // a bottom-anchored prompt lands on the active-actor bar

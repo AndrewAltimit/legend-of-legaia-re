@@ -1622,9 +1622,22 @@ re-register it from the two stored bytes.
 **Port.** `engine-core::timed_fight` (gate, numbers, lifetime) and
 `legaia_engine_ui::battle_timed_fight_strip` (the draw: the format string off
 the user's PROT 0898 at the registered rect, in the tutorial box's skin, the
-two numbers at `+0x68` / `+0xD2`), drawn by both hosts. The order against the
-`(16, 14)` tab that shares its seat is not pinned - no capture holds the Koru
-fight - and the port draws the strip on top.
+two numbers at `+0x68` / `+0xD2`), drawn by both hosts.
+
+**The strip draws over the name plaque.** Both are text actors on the one
+`gp+0x148` list, which `FUN_8003541C` keeps sorted by key: it walks from the
+head while the node's key is below the new one (`0x800354FC..0x80035518`) and
+links the new node in front of the first that is not. The strip registers key
+`1` (`addiu a0,zero,1` at `0x801D0F98`); the plaque registers its placement
+record's element id (`lbu a0,0(s0)` at `0x801D92E8`), `0x23` for record 68 in
+the executable's rodata. The per-frame walker `FUN_80031D00` visits the list
+head to tail, and every glyph and frame packet of every node goes on the same
+ordering-table entry, `[0x1F8003F4] + 4`, through `FUN_8003D2C4`, which links
+at the head - so the GPU meets the last-walked node first. The plaque is
+therefore drawn first and the strip's frame, translucent fill and text land
+over it. The port cannot put a text run under a later frame (each host draws
+all chrome sprites, then all text), so while the strip is up both hosts park
+the plaque (`plaque_seat_taken`) rather than draw its name over the strip.
 
 Three facts the earlier readings of the *arithmetic* got wrong, each corrected from the disassembly, and all still standing:
 
