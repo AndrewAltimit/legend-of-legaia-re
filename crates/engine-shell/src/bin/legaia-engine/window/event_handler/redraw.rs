@@ -806,6 +806,11 @@ impl PlayWindowApp {
                 in_world_map_now,
             );
             r.set_backface_cull(nclip_mode);
+            // The overworld's per-vertex screen-Y bend (`FUN_800271A8`'s
+            // table, applied by retail's overworld prim leaves), scaled for
+            // this frame's camera - the same kernel the browser play page
+            // stages `u_curve` from.
+            r.set_overworld_curvature(self.overworld_curve_scale(cutscene_cam));
             if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
                 r.set_semi_blend(false);
             }
@@ -2494,6 +2499,10 @@ impl PlayWindowApp {
             // the same three through one sorted pass with its HUD a layer
             // above the canvas.
             let mut light_prims = field_fog_prims;
+            // The actor drop shadows (`FUN_8001C394`), depth-tested against
+            // the scene just drawn - the play page's `tick_field_drop_shadow_prims`
+            // twin, through the same `World::field_drop_shadows` kernel.
+            light_prims.extend(self.field_drop_shadow_prims());
             light_prims.extend(move_strip_prims);
             light_prims.extend(self.field_light_screen_prims());
             screen_prims.extend(self.weapon_trail_screen_prims(r));

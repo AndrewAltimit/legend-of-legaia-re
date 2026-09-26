@@ -1961,6 +1961,9 @@ impl LegaiaRuntime {
         // pool's render step through the follow camera, the native window's
         // `take_field_fog_prims` twin ([`crate::play_field_fx`]).
         prims.extend(self.tick_field_fog_prims());
+        // The actor drop shadows (`FUN_8001C394`), depth-tested against the
+        // field - the native window's `field_drop_shadow_prims` twin.
+        prims.extend(self.field_drop_shadow_prims());
         // Move-VM strip spans (`FUN_801D31B0`), same camera, same kernel as
         // the native window's `take_move_strip_prims`.
         prims.extend(self.tick_move_strip_prims());

@@ -41,6 +41,46 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 "#;
 
+/// The kingdom overworld's **screen-Y curvature**, prepended to every shaded
+/// 3D shader alongside [`PSX_DITHER_WGSL`]. Retail's overworld prim leaves
+/// (the world-map dispatch rows `12..19` at `0x801F8968`, e.g.
+/// `0x801F7770..0x801F77E4`) add `T[(SZ >> 5) + 1]` to every vertex's `SY`
+/// after the `RTPT`, `T` being the table `FUN_800271A8` builds into
+/// `_DAT_8007BB04` (`legaia_engine_core::overworld_curvature`). The table is
+/// a closed form of its index, so the shader evaluates it instead of
+/// sampling it: entry `i >= 2` is the drop `960 * ramp[3(i - 2) / 2] / 2000`
+/// saturated at `SY = 1023`, `ramp[k] = (0x2AB980 + 20 k (k + 1)) >> 18`
+/// (entries `0` and `1` are `0`). `SZ` saturates at `0xFFFF`, so no index
+/// past `2048` is reachable and the 32-bit accumulator never wraps.
+/// `legaia_engine_core::overworld_curvature::curvature_closed_form` is the
+/// CPU twin, pinned entry for entry against the built table; the browser
+/// play page's GLSL (`site/js/webgl-shaders.js`) carries the same law.
+///
+/// `SZ` is `clip.w` times the frame's scale
+/// (`legaia_engine_core::overworld_curvature::frame_curve_scale`: `1` under
+/// the overworld walk camera, whose matrix carries the 6x world scale, `6`
+/// under a `1x` scripted shot), and the bend moves `SY` in PSX stage rows,
+/// `240` to the NDC span of `2`. A scale of `0` is the identity.
+pub(crate) const OVERWORLD_CURVE_WGSL: &str = r#"
+fn overworld_curvature_entry(i: i32) -> i32 {
+    if (i < 2) {
+        return 0;
+    }
+    let k = (3 * (i - 2)) / 2;
+    let y = (0x2AB980 + 20 * k * (k + 1)) >> 18u;
+    return min((960 * y) / 2000 + 120, 1023) - 120;
+}
+
+fn overworld_curve_clip(clip: vec4<f32>, sz_scale: f32) -> vec4<f32> {
+    if (sz_scale <= 0.0 || clip.w <= 0.0) {
+        return clip;
+    }
+    let sz = clamp(i32(round(clip.w * sz_scale)), 0, 0xFFFF);
+    let t = f32(overworld_curvature_entry((sz >> 5u) + 1));
+    return vec4<f32>(clip.x, clip.y - t * (2.0 / 240.0) * clip.w, clip.z, clip.w);
+}
+"#;
+
 /// PSX 24-bit -> 15-bit ordered-dither helper, prepended to every shaded
 /// 3D shader via [`compose_psx_shader`]. Mirrors [`psx_dither`] on the CPU
 /// (kept in lockstep - see that module's tests). Gated on `enable` so the
@@ -486,14 +526,14 @@ pub(crate) fn scene_lights_wgsl_for_tests() -> &'static str {
 /// layouts carry no lights group, so the point-light layer is the zero
 /// stub.
 pub(crate) fn compose_psx_shader(base: &str) -> String {
-    format!("{PSX_DITHER_WGSL}\n{SCENE_LIGHTS_STUB_WGSL}\n{base}")
+    format!("{PSX_DITHER_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{SCENE_LIGHTS_STUB_WGSL}\n{base}")
 }
 
 /// The scene-pipeline twin of [`compose_psx_shader`]: same prelude but
 /// with the REAL per-scene point-light layer ([`SCENE_LIGHTS_REAL_WGSL`] -
 /// lights uniform + shadow-map array at group 2) in place of the stub.
 pub(crate) fn compose_scene_lit_shader(base: &str) -> String {
-    format!("{PSX_DITHER_WGSL}\n{SCENE_LIGHTS_REAL_WGSL}\n{base}")
+    format!("{PSX_DITHER_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{SCENE_LIGHTS_REAL_WGSL}\n{base}")
 }
 
 /// Mesh shader: transforms positions by the host-supplied MVP, computes a
@@ -790,7 +830,9 @@ fn vs_main(
     @location(4) color_in: vec4<u32>,
 ) -> VsOut {
     var out: VsOut;
-    var clip = u.mvp * vec4<f32>(position, 1.0);
+    // The overworld's per-vertex screen-Y bend (see OVERWORLD_CURVE_WGSL),
+    // ahead of the pixel snap - retail bends SY before the packet is written.
+    var clip = overworld_curve_clip(u.mvp * vec4<f32>(position, 1.0), u.flags.w);
     if u.psx_params.z >= 0.5 {
         clip = psx_snap_clip(clip, u.psx_params.x, u.psx_params.y);
     }
@@ -1116,7 +1158,7 @@ fn vs_main(
     @location(2) blend: u32,
 ) -> VsOut {
     var out: VsOut;
-    out.clip_pos = u.mvp * vec4<f32>(position, 1.0);
+    out.clip_pos = overworld_curve_clip(u.mvp * vec4<f32>(position, 1.0), u.flags.w);
     out.world_pos = position;
     out.color = color;
     out.blend = blend;

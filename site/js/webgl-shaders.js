@@ -179,6 +179,31 @@ uniform float u_fog_far_ref; /* retail gp-0x2E0; far-plane reference Z */
 uniform float u_fog_z_shift; /* retail gp+0x90; exponent for Z_far = Z >> shift */
 uniform int u_fog_enable;    /* 0 = no fog; mirrors gp-0x2D1 & 0x10 gate */
 
+/* The kingdom overworld's per-vertex screen-Y curvature - the GLSL twin of
+ * engine-render's OVERWORLD_CURVE_WGSL. Retail's overworld prim leaves add
+ * T[(SZ >> 5) + 1] to every vertex's SY after the RTPT (FUN_800271A8's
+ * table at _DAT_8007BB04), evaluated here in closed form: entry i >= 2 is
+ * 960 * ((0x2AB980 + 20 k (k + 1)) >> 18) / 2000 at k = 3 (i - 2) / 2,
+ * saturated at SY = 1023 (legaia_engine_core::overworld_curvature::
+ * curvature_closed_form, pinned against the table). u_curve is the frame's
+ * clip.w-to-SZ factor (play_render_curve_scale -> setOverworldCurve);
+ * 0.0 - every page but the play page on an overworld - is the identity. */
+uniform float u_curve;
+
+int overworldCurveEntry(int i) {
+  if (i < 2) return 0;
+  int k = (3 * (i - 2)) / 2;
+  int y = (0x2AB980 + 20 * k * (k + 1)) >> 18;
+  return min((960 * y) / 2000 + 120, 1023) - 120;
+}
+
+vec4 overworldCurve(vec4 clip) {
+  if (u_curve <= 0.0 || clip.w <= 0.0) return clip;
+  int sz = clamp(int(floor(clip.w * u_curve + 0.5)), 0, 0xFFFF);
+  float t = float(overworldCurveEntry((sz >> 5) + 1));
+  return vec4(clip.x, clip.y - t * (2.0 / 240.0) * clip.w, clip.z, clip.w);
+}
+
 in vec3 a_position;
 in vec2 a_uv_byte;       /* 0..255 each, sent as Uint8x2 normalised=false */
 in uvec2 a_cba_tsb;
@@ -224,7 +249,7 @@ void main() {
   } else {
     v_fog_t = 0.0;
   }
-  gl_Position = u_mvp * world_pos;
+  gl_Position = overworldCurve(u_mvp * world_pos);
   v_view_z = gl_Position.w;
 }
 `;

@@ -419,6 +419,17 @@ impl FogView {
         ))
     }
 
+    /// [`Self::project`] in the GTE's own output registers: `SX/SY`
+    /// saturated to `-1024..=1023` and `SZ` retail's **scaled** view depth
+    /// (the engine's `1x` eye depth times the base matrix's `S`), saturated
+    /// to `0..=0xFFFF`. `None` at or behind the eye.
+    pub fn project_gte(&self, p: [i32; 3]) -> Option<(i16, i16, u16)> {
+        let (sx, sy, w) = self.project_f(p)?;
+        let px = |v: f32| (v.round() as i32).clamp(-1024, 1023) as i16;
+        let sz = (w * crate::camera_view::CUTSCENE_WORLD_SCALE).round();
+        Some((px(sx), px(sy), sz.clamp(0.0, 65535.0) as u16))
+    }
+
     /// [`Self::project`] unrounded: stage pixels and the eye depth (the
     /// engine's `1x` eye space, `clip.w`).
     fn project_f(&self, p: [i32; 3]) -> Option<(f32, f32, f32)> {

@@ -152,6 +152,7 @@ pub mod ambient;
 mod cutscene_elements;
 mod field_script_actors;
 pub use field_script_actors::FieldLightDraw;
+mod drop_shadow_render;
 mod fog_render;
 pub use cutscene_elements::{
     AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, CutsceneElement, ElementFrame,

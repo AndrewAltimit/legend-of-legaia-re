@@ -54,6 +54,7 @@ pub mod debug_char_editor;
 pub mod dev_menu;
 pub mod dev_menu_host;
 pub mod dialog;
+pub mod drop_shadow;
 pub mod encounter;
 pub mod encounter_man;
 pub mod encounter_record;

@@ -66,7 +66,9 @@ pub(super) struct MeshUniforms {
     /// occlusion-fade permission: `1.0` on environment draws below the
     /// [`Renderer::set_occlusion_env_draws`] watermark, `0.0` on actor
     /// draws (the player / NPCs), which the see-through fade must never
-    /// dissolve. `[3]` reserved.
+    /// dissolve. `[3]` = the overworld's per-vertex screen-Y curvature: the
+    /// frame's `clip.w`-to-`SZ` factor, `0.0` (the default) the identity.
+    /// Set with [`Renderer::set_overworld_curvature`].
     pub(super) flags: [f32; 4],
     /// Opt-in dynamic-lighting enhancement (NON-RETAIL - the field path has
     /// no light source; see the `dyn_light` WGSL helper). `[0..3]` = unit

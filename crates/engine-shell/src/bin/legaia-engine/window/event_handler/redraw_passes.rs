@@ -85,6 +85,41 @@ impl PlayWindowApp {
         vp * FIELD_WORLD_FLIP
     }
 
+    /// The overworld curvature's `clip.w`-to-`SZ` factor for this frame's
+    /// scene pass (`overworld_curvature::frame_curve_scale`), over the same
+    /// frame [`Self::compute_scene_camera`] resolves - `0.0` off the kingdom
+    /// overworld or under a camera with no retail eye. The browser play page
+    /// stages its `u_curve` from the same kernel.
+    pub(in crate::window) fn overworld_curve_scale(
+        &self,
+        cutscene_cam: Option<CutsceneCam>,
+    ) -> f32 {
+        let world = &self.session.host.world;
+        if !world.overworld_bit() {
+            return 0.0;
+        }
+        let cutscene = cutscene_cam.map(|(focus, pitch, yaw, roll, h, tr_eye)| {
+            legaia_engine_vm::psx_camera::FieldCameraView {
+                focus,
+                pitch,
+                yaw,
+                roll,
+                h,
+                tr_eye,
+            }
+        });
+        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+            world,
+            &self.session.camera,
+            cutscene,
+            [
+                (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+                (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+            ],
+        );
+        legaia_engine_core::overworld_curvature::frame_curve_scale(true, &frame)
+    }
+
     pub(super) fn build_posed_actor_overrides(
         &self,
         r: &legaia_engine_render::Renderer,
@@ -569,6 +604,38 @@ impl PlayWindowApp {
             .fog_render_step(&view)
             .iter()
             .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
+            .collect()
+    }
+
+    /// This frame's actor drop shadows (`legaia_engine_core::drop_shadow`,
+    /// retail's `FUN_8001C394` blob): `World::field_drop_shadows` through the
+    /// same follow camera as the fog sheets, wrapped by the shared
+    /// `drop_shadow_prim` so the blend class and vertex order are the browser
+    /// play page's too. Each cell is depth-tested against the scene already
+    /// drawn, which keeps it under the actor standing on it and over the
+    /// ground - retail's `+0xA0` OT bias and far-bucket ground, in depth-buffer
+    /// terms. Empty outside game mode 3.
+    pub(super) fn field_drop_shadow_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_core::camera_view::resolve_field_camera;
+        use legaia_engine_render::screen_overlay::drop_shadow_prim;
+        let world = &self.session.host.world;
+        if !legaia_engine_core::world::World::fog_mode(world.mode) {
+            return Vec::new();
+        }
+        let center = [
+            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+        ];
+        let frame = resolve_field_camera(world, &self.session.camera, None, center);
+        let Some(view) = frame.field_view() else {
+            return Vec::new();
+        };
+        world
+            .field_drop_shadows(&view)
+            .iter()
+            .map(|q| drop_shadow_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
             .collect()
     }
 

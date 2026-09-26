@@ -2607,6 +2607,15 @@ void main() {
         try { mode = rt.play_render_nclip_mode(); } catch (_) { mode = 0; }
         this.renderer.setNclipCull(mode);
       }
+      /* The overworld's per-vertex screen-Y bend (FUN_800271A8's table,
+       * applied by retail's overworld prim leaves), scaled for this frame's
+       * camera arm by the shared `overworld_curvature::frame_curve_scale`
+       * kernel the native window's `set_overworld_curvature` reads. */
+      if (this.renderer.setOverworldCurve && typeof rt.play_render_curve_scale === 'function') {
+        let scale = 0;
+        try { scale = rt.play_render_curve_scale(); } catch (_) { scale = 0; }
+        this.renderer.setOverworldCurve(scale);
+      }
       this._applySceneClear(rt);
       this._draws = draws;
       /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw

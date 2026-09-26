@@ -125,7 +125,6 @@
 "8005ba68" = "GTE 3-point transform helper (RTPT)"
 "8003d344" = "GTE ApplyMatrix (cop2 0x480012 = MVMVA, rotation x V0 + TR, sf=1): loads VXY0/VZ0 from param_1, reads MAC1..3 back into param_2[0..3] - the view-space transform the billboard projector 800195a8 centers on. Pure COP2 plumbing; engine reproduces it as engine-render gte::rot_trans"
 "80026988" = "Euler-angle (x,y,z) -> 3x3 rotation matrix via sin/cos LUTs at DAT_8007B7F8 / DAT_8007B81C; engine uses glam::Mat3::from_euler"
-"800460ac" = "GTE NCDS (cop2 0x280030) - 3-iter normal color-depth color single loop; engine emits lighting via wgpu fragment shader"
 "800172c0" = "Camera / geometry init (Euler -> matrix via 80026988 + SetGeomScreen/Offset/Translation 8005B648/B3A8/B4B8 + NCLIP 8003D344); pure libgte chain replaced by glam Mat4 + wgpu pipeline"
 "8005bb48" = "InitGeom - exception-handler table install + FlushCache"
 "8005b7d8" = "SetColorMatrix-family GTE control-word loader (three ctc2 writes: a0<<4 -> 0xA800, a1<<4 -> 0xB000, a2<<4 -> 0xB800 = cop2 control regs 21/22/23, the color/light matrix region); sibling of 8005b7c0 SetRotMatrix / 8005b7cc SetTransMatrix"
@@ -283,7 +282,6 @@
 [render_pipeline]
 "8001763c" = "double-buffer swap + clear-color setup (gp+0x434 flip, GPU env)"
 "8001a374" = "debug glyph -> GPU SPRT primitive emitter into _DAT_1f8003a0"
-"8001c394" = "floor/grid GPU poly emitter (0x9000000 prim) + OT insert"
 "8001c93c" = "HUD text/number draw dispatcher over record list (draw-string/draw-number)"
 "8001cd68" = "GPU gouraud quad primitive emitter (0x9000000, 10-word prim) + OT insert"
 "8001d230" = "VRAM framebuffer/handle setup (fb rects, alloc + register into gp+0x6d8..)"
