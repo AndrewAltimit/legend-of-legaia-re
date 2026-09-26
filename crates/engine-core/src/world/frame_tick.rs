@@ -880,14 +880,18 @@ impl World {
     /// exactly what the replay / trace oracles need. Wall-clock-paced hosts
     /// pass their measured frame time and `true`.
     ///
-    /// NOT WIRED: no host calls it, and the paragraph above is why. The
-    /// engine ticks at a fixed sim rate, nothing samples retail's `VSync(1)`
-    /// hblank count (`FUN_800173BC`) to supply `elapsed_hblanks`, and the
-    /// replay / trace oracles require the floor to stay where the scene
-    /// loader installed it. Wiring it needs a host frame-time sampler **and**
-    /// a decision that the adaptive cadence is on (retail gates the whole
-    /// path behind the boot config word `gp+0x4CE == 0x10`); until then
-    /// [`crate::world::FrameClock::frame_step`] is scene-driven and this has nothing to resolve.
+    /// REPLACED-BY: the fixed-rate simulation plus the scene-installed floor
+    /// [`crate::world::FrameClock::frame_step_floor`], which is what this
+    /// resolves to on every frame that keeps up with vsync.
+    ///
+    /// The adaptive term is the running maximum of the last sixteen
+    /// `VSync(1)` hblank samples against thresholds just under one, two and
+    /// three NTSC fields, so it only rises above `1` on a frame the renderer
+    /// missed. The engine's simulation never misses one - its tick is
+    /// scheduled, not measured - so the resolver's answer is the floor the
+    /// scene loader already installed, and nothing samples `FUN_800173BC`'s
+    /// hblank count to ask it otherwise. The replay / trace oracles rely on
+    /// that: a wall-clock-fed cadence would make them non-deterministic.
     pub fn resolve_frame_step(&mut self, elapsed_hblanks: i32, frameskip_enabled: bool) -> u8 {
         let cadence = self.clock.frame_step_telemetry.resolve(
             elapsed_hblanks,

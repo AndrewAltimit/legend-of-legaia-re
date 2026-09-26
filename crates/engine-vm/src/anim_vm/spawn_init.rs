@@ -48,7 +48,22 @@ pub fn pack_record_offset(pack: &[u8], index: i16) -> Option<usize> {
 
 /// The stores `FUN_80024CFC` makes once its allocation succeeded.
 ///
-/// PORT: FUN_80024CFC NOT WIRED: the only retail caller is the field overlay's MAIN_INIT, and the engine's scene host seats its actors through its own install path, never through this pack-record resolve
+/// PORT: FUN_80024CFC
+///
+/// REPLACED-BY: `legaia_asset::clut_walk::parse` (the same
+/// `base + word[index + 1]` record resolve, over the same table) plus the
+/// hosts' per-entry walker state seeded with
+/// `legaia_asset::clut_walk::ACCUMULATOR_SEED` (this spawn's `+0x68 = 100`).
+///
+/// Its one retail caller is the field overlay's `MAIN_INIT` loop at
+/// `0x801D6CA4..0x801D6CD4`: for `i in 0..*table` it calls this with the
+/// CLUT-walk table `*0x8007B7C8` (spawn descriptor `0x801F2704`, list
+/// `_DAT_8007C34C`), gated on `_DAT_8007B8B8 == 0` and on bit `0x20` of the
+/// summary word `FUN_80020224` returned for the scene bundle (`andi v0,s4,0x20`
+/// at `0x801D6C74`; `s4` is the walker's return, `0x801D6B14`). The `+0x56 =
+/// 0xB` it stores is the CLUT-walk render mode the SCUS actor walker runs. The
+/// hosts decode the same table when the bundle carries one and step one
+/// walker per entry, which is the actor this seats.
 ///
 /// Retail truncates `index` to 16 bits and sign-extends it (`sll 0x10` /
 /// `sra 0xe`), which is why it is an `i16` here.

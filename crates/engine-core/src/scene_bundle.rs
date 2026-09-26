@@ -702,13 +702,20 @@ pub struct FieldLoadEntryPlan {
 ///
 /// PORT: FUN_80020118
 ///
-/// NOT WIRED: the prerequisite is a staged-bundle mode the scene loader does
-/// not have. Retail's entry step exists only to decide whether to request the
-/// DATA_FIELD streaming bundle into `_DAT_8007B85C` ahead of the `.MAP` walk;
-/// the port hands each scene a [`crate::scene::Scene`] whose resources already
-/// own their bytes, so no caller ever forms the "is a stage needed" question.
-/// Every call site is in this file's own test module. Closing it means giving
-/// the scene loader a staging buffer, not inserting a call.
+/// REPLACED-BY: `crate::scene::Scene` resolution - the scene loader hands
+/// each scene its CDNAME block's entries, bundle included, so the "is a
+/// DATA_FIELD stage needed" question this answers never arises.
+///
+/// Retail's entry step exists to decide whether to request the streaming
+/// bundle into `_DAT_8007B85C` ahead of the `.MAP` walk; the port resolves
+/// PROT entries on demand and owns their bytes per scene. The step's other
+/// writes are unobservable in the port: the kingdom-TMD prefix reset only
+/// re-bases a global mesh pool the port does not keep (it indexes each
+/// scene's own pack, `legaia_asset::field_objects::pack_mesh_index`), the
+/// player pack is loaded by the scene resources, and the clear of descriptor
+/// 0's flags word only drops that descriptor's bit `0x10` (every retail
+/// `.MAP` that sets any of its flags sets exactly `0x10`) - neither of the
+/// two bits the grid-mark refresh mirrors into cells.
 pub fn field_load_entry_plan(field_record: i16, staged_index: i16) -> FieldLoadEntryPlan {
     FieldLoadEntryPlan {
         data_field_chunk: field_record + 3,
