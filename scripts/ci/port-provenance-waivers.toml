@@ -423,20 +423,6 @@ says that and keeps the address so the falsified reading stays searchable.
 
 
 [[waiver]]
-key = "doc-citation:docs/reference/functions/battle.md:801e91e8:801c9348"
-reason = """
-DAT_801C9348 is the caller's monster-record table, not this routine's. The
-row's evidence is a call site one level up, verified in the caller's dump:
-overlay_battle_action_801ec3e4.txt line 1844 is `801ee2c0  jal 0x801e91e8`,
-reached with `801ee2bc  lbu a0,0x3e(v0)` off `s1 = (&DAT_801C9348)[slot-3]`
-(formed at `801ee23c  lui v0,0x801d` / `801ee240  addiu v0,v0,-0x6cb8`).
-FUN_801E91E8's own 61 instructions form only 0x8007BD24, 0x8007BAC0,
-0x8007BD10 and the character-record base 0x80084140 - a caller's table and a
-caller's instruction address cannot appear in them. The row names both dumps
-so the citation is locatable.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/world/battle/monster_ai.rs:801e9fd4"
 reason = """
 Correct tag, read against the disassembly rather than the C. The dump
