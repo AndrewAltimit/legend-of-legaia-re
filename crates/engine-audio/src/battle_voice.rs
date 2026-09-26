@@ -1,21 +1,17 @@
-//! Battle **XA voice-stream selector** - which whole-clip voice stream, if
-//! any, a battle action arms this frame.
+//! Battle **XA seek-ahead selector** - which clip file, if any, a battle
+//! action parks the CD drive on this frame.
 //!
 //! PORT: FUN_8004DA00
 //!
-//! NOT WIRED: no host builds the selector's inputs, and the clip shape has no
-//! player. Its three tables are runtime state - the seat maps `DAT_8007BD10`
-//! (seat -> party slot) and `DAT_8007BD09` (seat -> monster voice index),
-//! written at battle load, plus the voice-index -> clip table at `0x800787AF`,
-//! which nothing parses - so a caller would have nothing to hand over. What it
-//! arms is also a whole `XA<n>` channel played from the file start; the
-//! engine's [`crate::XaClipBank`] holds pre-decoded cut clips and
-//! `AudioBgmDirector` plays those, so there is no whole-channel stream player
-//! for the [`BattleVoiceStep::Arm`] outcome to reach. The drive-side transport
-//! (`FUN_8003EAE4`'s seek plus the `gp+0x908` / `gp+0x910` driver flags,
-//! serviced by the `FUN_8003D764` callback ring decoded in
-//! [`crate::xa_transport`]) is device layer the port replaces rather than
-//! reproduces, and is not what holds this row open.
+//! REPLACED-BY: the engine has no CD drive. What this pass arms is a seek, not
+//! playback - its only device call, `FUN_8003EAE4(0, clip)`, issues `CdlSetloc`
+//! and `CdlSeekL` (`li a0,0x15` at `0x8003EB68`) and never a read, and the pass
+//! then zeroes the drive-state word `_DAT_8007BC20` itself (`sw zero` right
+//! after each `jal`). It pre-positions the head on the file the action's
+//! voice one-shot will read, to hide seek latency. The port decodes every clip
+//! ahead of time or lazily at its start (`crate::XaClipBank`,
+//! `XaClipBank::decode_channel_span`), so there is no latency to hide and
+//! nothing audible to reproduce.
 //!
 //! Retail reaches this pass through a **static actor template**
 //! (`docs/reference/functions/runtime-libs.md`), not a call: the battle
@@ -25,28 +21,32 @@
 //! battle. That is why no `jal` in any image targets `0x8004DA00`; its single
 //! reference on the disc is the template word.
 //!
-//! REF: FUN_8003EAE4 - the drive seek + driver-flag arm this hands the chosen
-//! clip id to. This module is device-free and only decides.
+//! REF: FUN_8003EAE4 - the drive seek this hands the chosen clip id to.
 //!
 //! REF: FUN_800513F0 - the battle scene loader that spawns the template.
 //!
 //! # What it decides
 //!
-//! A stream is armed at most once per action. Four gates have to pass, the
+//! A seek is armed at most once per action. Four gates have to pass, the
 //! acting seat then selects a party slot (or a monster), and the action's
-//! **class** byte picks the clip. The full table lives in
-//! `docs/reference/functions/battle.md`; the shape that matters here is that
-//! the routine has three distinct outcomes, and the retail code treats the
+//! **class** byte picks the clip. The shape that matters here is that the
+//! routine has three distinct outcomes, and the retail code treats the
 //! difference between two of them as load-bearing:
 //!
-//! * [`BattleVoiceStep::Arm`] - start the clip and latch its id.
+//! * [`BattleVoiceStep::Arm`] - seek to the clip and latch its id.
 //! * [`BattleVoiceStep::ClearLatch`] - the three "not ready yet" gates
-//!   (`ctx[+0x26B]`, `_DAT_8007BD71`, `ctx[+0x276]`) each fall through to the
-//!   latch store with `-1` in hand, so the frames *between* actions are what
-//!   re-arms the pass.
+//!   (`ctx[+0x26B] != 0`, `_DAT_8007BD71 != 0xFF`, `ctx[+0x276] != 0`) each
+//!   fall through to the latch store with `-1` in hand, so the frames
+//!   *between* actions are what re-arms the pass.
 //! * [`BattleVoiceStep::Hold`] - the remaining exits (`ctx[+0x7] == 0x5A`, a
 //!   latch that is already set, and a class with no voice) branch **past** the
 //!   store and leave the latch alone.
+//!
+//! `ctx[+0x276]` is the side-band applier's **stage** byte, and the pass
+//! declines while it is **non-zero** (`beq v0,zero,0x8004DA60` at
+//! `0x8004DA50`: zero continues, anything else jumps to the `-1` store) - the
+//! same polarity as the cue dispatcher's decline in `FUN_8004FCC8`. An earlier
+//! port and its doc row had it inverted ("zero suppresses").
 //!
 //! Source: `ghidra/scripts/funcs/8004da00.txt` (disassembly).
 
@@ -73,7 +73,7 @@ pub const SEAT_PARTY_COUNT: u8 = 3;
 /// What one tick of the selector resolves to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BattleVoiceStep {
-    /// Start `clip` through the whole-clip stream player and latch its id.
+    /// Seek the drive to `clip` (`FUN_8003EAE4`) and latch its id.
     Arm { clip: u8 },
     /// Reset the latch to [`NO_CLIP`] - the pass is idle and re-armable.
     ClearLatch,
@@ -89,8 +89,9 @@ pub enum BattleVoiceStep {
 pub struct BattleVoiceCtx {
     /// `ctx[+0x26B]` - non-zero suppresses and clears.
     pub suppress: u8,
-    /// `ctx[+0x276]` - zero suppresses and clears.
-    pub action_live: u8,
+    /// `ctx[+0x276]` - the side-band applier's stage byte; **non-zero**
+    /// suppresses and clears.
+    pub side_band_stage: u8,
     /// `ctx[+0x7]` - [`PHASE_SUPPRESS`] suppresses without clearing.
     pub phase: u8,
     /// `ctx[+0x274]` - the acting seat.
@@ -138,7 +139,7 @@ pub fn battle_voice_step(
 ) -> BattleVoiceStep {
     // The three gates that reset the latch. `cd_busy` short-circuits into the
     // same store (retail jumps straight to it with -1 already loaded).
-    if cd_busy || ctx.suppress != 0 || stream_gate != 0xFF || ctx.action_live == 0 {
+    if cd_busy || ctx.suppress != 0 || stream_gate != 0xFF || ctx.side_band_stage != 0 {
         return BattleVoiceStep::ClearLatch;
     }
     // The two that leave it alone.
@@ -211,7 +212,7 @@ mod tests {
     fn ready_ctx(seat: u8) -> BattleVoiceCtx {
         BattleVoiceCtx {
             suppress: 0,
-            action_live: 1,
+            side_band_stage: 0,
             phase: 0,
             seat,
         }
@@ -233,9 +234,19 @@ mod tests {
         busy.suppress = 1;
         assert_eq!(voice_step(busy, action, 0x1A), BattleVoiceStep::ClearLatch);
 
-        let mut idle = ready_ctx(0);
-        idle.action_live = 0;
-        assert_eq!(voice_step(idle, action, 0x1A), BattleVoiceStep::ClearLatch);
+        // A live side-band stage declines: `ctx[+0x276] != 0` jumps to the
+        // `-1` store (`0x8004DA50`), and a zero stage is the ready one.
+        let mut streaming = ready_ctx(0);
+        streaming.side_band_stage = 1;
+        assert_eq!(
+            voice_step(streaming, action, 0x1A),
+            BattleVoiceStep::ClearLatch
+        );
+        assert_eq!(
+            voice_step(ready_ctx(0), action, NO_CLIP),
+            BattleVoiceStep::Arm { clip: 0x1A },
+            "a zero stage passes the gate"
+        );
 
         let spells = voice_spell_classes();
         assert_eq!(

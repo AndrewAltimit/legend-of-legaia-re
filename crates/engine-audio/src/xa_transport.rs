@@ -1,9 +1,11 @@
-//! The CD-callback ring an armed XA voice clip runs on - `FUN_8003D764`.
+//! The CD-callback ring a one-shot XA voice clip runs on - `FUN_8003D764`.
 //!
-//! `battle_voice`'s `NOT WIRED` note used to rest on "the CD-callback state
-//! machine that would chain a `CdlReadS` once the seek lands is not traced".
-//! This is that machine, decoded off `ghidra/scripts/funcs/8003d764.txt` and
-//! the state table at `0x800111C4` in `extracted/SCUS_942.54`.
+//! Decoded off `ghidra/scripts/funcs/8003d764.txt` and the state table at
+//! `0x800111C4` in `extracted/SCUS_942.54`. The ring is installed only by the
+//! one-shot starter `FUN_8003D53C` (`FUN_8005BECC(0x8003D764)` at
+//! `0x8003D714` / `0x8003D72C`). The battle seek-ahead
+//! ([`crate::battle_voice`], `FUN_8003EAE4`) installs no callback and issues
+//! no read, so no clip it names ever reaches this machine.
 //!
 //! **No `PORT:` marker, deliberately.**
 //! `scripts/ci/port-catalog-ignore.toml` files `8003d764` under
@@ -75,14 +77,12 @@ pub const XA_RING_LOCATION_PARAMS: u32 = 0x8007_BBF0;
 pub const XA_RING_MODE_PARAMS: u32 = 0x8007_BBC0;
 
 /// One edge of the CD-callback ring `FUN_8003D764`, the state machine that
-/// actually streams the clip [`battle_voice_step`] arms.
+/// streams a clip `FUN_8003D53C` starts.
 ///
-/// This is the read chain this module's `NOT WIRED` note named as its
-/// prerequisite. It is a **transport** sequence, and the port keeps it as a
-/// decoded sequence rather than driving anything: the engine has no drive,
-/// and its clips are already decoded ([`crate::XaClipBank`]). What the
-/// decode buys is that the note no longer stands on "not traced", and that
-/// the order of operations is checkable against a capture.
+/// It is a **transport** sequence, and the port keeps it as a decoded
+/// sequence rather than driving anything: the engine has no drive, and its
+/// clips are already decoded ([`crate::XaClipBank`]). What the decode buys is
+/// that the order of operations is checkable against a capture.
 ///
 /// The eleven states, off the jump table at `0x800111C4` and each arm's own
 /// `jal 0x8005C034`:

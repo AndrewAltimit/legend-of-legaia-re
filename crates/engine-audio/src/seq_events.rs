@@ -114,14 +114,15 @@ pub fn start_channel(ch: &mut SeqChannel) {
 /// The five clears are five separate load / mask / store trios in retail, one
 /// per bit, which is why the surviving bits are exactly the ones not listed.
 // PORT: FUN_80064090
-// NOT WIRED: reached in retail only from the track-end handler's chain arm, and
-// the chain names a *different* `(slot, channel)`. `crate::seq_calc::track_end`
-// is ported and reports it as data (`TrackEnd::Finished { chain }`), but no
-// host owns a second record to apply this to: `note-trace --seq-calc` seeds one
-// channel because a `music_01` entry carries one SEQ, and `crate::Sequencer`
-// plays one SEQ per BGM slot with no retail slot table behind it. What has to
-// exist first is a multi-slot channel table, not a call site - and until a
-// chained retail SEQ is found on the disc there is nothing to point one at.
+// REPLACED-BY: nothing - retail never reaches it. Its one reference on the disc
+// is the `jal` at `0x80063C94` in the track-end handler `FUN_80063AA8`, behind
+// `channel[+0x22] != 0xFF` (the chain byte, `lbu v1,0x22(s0)` at
+// `0x80063C7C`). A five-form reference scan plus a byte sweep for every store
+// that can reach `+0x22` (`sb` / `sh` at `+0x22`, `sw` at `+0x20`) finds exactly
+// two writers, both storing `0xFF`: the close path `FUN_80061D18`
+// (`0x80061DAC`) and the open path `FUN_800644C0` (`0x80064580`). The
+// `SsSeqSetNext`-shaped setter that would chain a successor is not linked into
+// this build, so the arm is dead on every disc read and no host is owed it.
 pub fn restart_channel(ch: &mut SeqChannel) {
     ch.repeat_target = 1;
     ch.repeat_count = 0;
