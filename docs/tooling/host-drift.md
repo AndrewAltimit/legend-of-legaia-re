@@ -2694,29 +2694,36 @@ fixed here.
 
 ## Gaps absent from both hosts: overworld curvature, ground shadow
 
-Two retail draws are missing from **both** play hosts, so no tier fails on
-them; they sit here in the form a waiver takes.
+Two retail draws were missing from **both** play hosts, so no tier failed on
+them. Both now draw on both hosts through one kernel each; what is left of
+them, and the third gap still open, sits here in the form a waiver takes.
 
 **The overworld curvature table on the continent.** `FUN_800271A8` builds a
 depth-indexed screen-Y table every overworld consumer adds to `SY`
-([`renderer.md`](../subsystems/renderer.md#frame-setup--present)). The port
-builds it (`engine-core::overworld_curvature`) and the shared fog kernel applies
-it, so both hosts' overworld sheets land where retail's walked packets do; the
-continent meshes draw without it on both hosts, flatter toward the horizon than
-retail's. Blocking capability: a per-vertex depth-to-`SY` term in the native
-mesh shaders and the page's GLSL twin, fed the one table.
+([`renderer.md`](../subsystems/renderer.md#frame-setup--present)). The fog
+sheets and the drop shadow add it on the CPU; the continent bends per vertex
+in the native mesh shaders (`OVERWORLD_CURVE_WGSL`, staged through
+`Renderer::set_overworld_curvature`) and in the page's GLSL twin
+(`overworldCurve`, staged through `play_render_curve_scale` ->
+`setOverworldCurve`). Both hosts take the per-frame scale from the one kernel
+`overworld_curvature::frame_curve_scale`, and both shaders evaluate the table
+in closed form, pinned against it by `curvature_closed_form`. Residual, the
+same on both hosts: the port bends every overworld scene draw, where retail's
+four SCUS lit rows (`8..11`) do not bend. The `/world-overview/` viewer's
+ocean plane shares the page's renderer but not its program, and stays flat
+with the rest of that viewer (it never stages a scale).
 
 **The field drop shadow.** `FUN_8001C394` (called from the animated-actor
-renderer `FUN_8001B964`) projects a three-by-three grid of points `0x20` apart
-around the actor's feet (`FUN_800460AC`) and emits four textured quads -
-command `0x2E`, colour `0x808080`, texpage `0x1F` (ABR 0), CLUT `0x7F86`, one
-`8 x 8` cell each of the `16 x 16` blob at `u 0xE0`, `v 0` - linked at
-`((sum_z + 0xA0) >> 4) >> shift`, the `0xA0` bias putting the blob behind the
-actor it sits under. Neither host draws it, and the ignore list's
-`render_pipeline` scope, which reads it as replaced by the rasteriser, has no
-drawing mechanism behind it. Blocking capability: a per-actor blob draw in each
-host's scene pass that orders under the actor and over the ground without
-fighting the ground's depth.
+renderer `FUN_8001B964`) is ported as `engine-core::drop_shadow` and walked by
+`World::field_drop_shadows`. The native window's `field_drop_shadow_prims` and
+the play page's `field_drop_shadow_prims` both wrap its cells through
+`screen_prim::drop_shadow_prim` into their field screen-prim pass with
+per-corner scene depth, which keeps the blob under the actor and over the
+ground. `crates/engine-core/tests/drop_shadow_retail_capture_disc.rs` matches
+the kernel's packets to retail's exactly on three captured frames. The ignore
+list's `render_pipeline` scope row, which read the routine as replaced by the
+rasteriser with no drawing mechanism behind it, is gone, and so is the
+`libgte` row that read `FUN_800460AC`'s `RTPT` (`cop2 0x280030`) as `NCDS`.
 
 **The `opdeene` plant silhouettes** ([above](#a-prologue-mesh-set-drawn-black-natively))
 are measured, not fixed: the native frame reproduces them, `--no-entry-pulse`
