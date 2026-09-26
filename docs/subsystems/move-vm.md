@@ -280,7 +280,7 @@ carrying structure are called out below the table.
 | `0x10` | 2 | `+0x42 = v1` |
 | `0x11` | 2 | `+0x94 = v1 << 3` (tween source Z) |
 | `0x12` | 2 | `+0x7A = v1` (scale Z) |
-| `0x13` | 0x10 | render-mode-6 keyframe-mesh child - see below |
+| `0x13` | 0x10 | draw-kind-4 node on the default emitter - see [draw-kind-4 setup ops](#draw-kind-4-setup-ops-0x13-0x23-0x42) |
 | `0x14` | 5 | `+0xC0/+0xC2/+0xC4/+0xC6 = v1..v4 << 3` (duration + colour channels) |
 | `0x15` | 2 | `+0x52 = v1`; if `v1 & 0x400` also clears actor flag bit `0x80` |
 | `0x17` | 2 | **battle-overlay extension escape** - see below |
@@ -295,7 +295,7 @@ carrying structure are called out below the table.
 | `0x20` | 3 | **indirect call** `(*(gp+0x714))(actor, v1, v2)` - the **slot-B module hook**. In battle the SM installs the paged module's spawn stager from the 64-word entry table `PTR_801F6734[row]` (row = extraction - 903; `0x801E44C8` / `0x801E4630`) and the `jalr` at SCUS `0x80023764` calls it; in the fishing / Baka Fighter minigames the overlay installs its own per-frame sprite callback. Same `gp[+0x714]` slot (`0x8007BA2C`), different tenant. See [`cast-module.md`](cast-module.md#the-entry-tables-and-where-the-addresses-live). |
 | `0x21` | 7 | per-id record write to `DAT_8007BE60 + v1*0xC` (5 halfwords + i32); `+0x6D = v1` |
 | `0x22` | 1 | continue-epilogue (no-op that advances PC) |
-| `0x23` | 0xD | render-mode-2 child spawn (`+0x9E = v1 \| 0x4000`) + tween block |
+| `0x23` | 0xD | draw-kind-4 node on the `0x4000` sprite arm - see [draw-kind-4 setup ops](#draw-kind-4-setup-ops-0x13-0x23-0x42) |
 | `0x24` | 3 | `+0xA8 += v1; +0xAC += v1; +0xAA += v2; +0xAE += v2` (sprite pos/UV double-add) |
 | `0x25` | 2 | **spawn child from the prescript stager** - see below |
 | `0x26` | 5 | `+0xA8/+0xAA/+0xAC/+0xAE = v1..v4` (absolute sprite pos/UV) |
@@ -308,7 +308,7 @@ carrying structure are called out below the table.
 | `0x3E` | 2 | `+0x22 = v1` (morph interpolation cursor, 12-bit) |
 | `0x3F` | 2 | `+0xD0 = v1` |
 | `0x41` | 2 | `+0xB2 = v1` |
-| `0x42` | 0xF | render-mode-2 child spawn variant (`+0x9E = v1 \| 0x2000`) + tween block |
+| `0x42` | 0xF | draw-kind-4 node on the `0x2000` ribbon arm - see [draw-kind-4 setup ops](#draw-kind-4-setup-ops-0x13-0x23-0x42) |
 | `0x43` | 1 | `+0x86 \|= 0x2000` |
 | `0x44` | 4 | `+0x9E = v1; +0x68 = v2; +0x6A = v3 << 3` |
 | `0x45` | 8 | render-mode-7 matrix/billboard setup: `+0x5A = 7`, `+0xC4/+0xCC/+0xCE/+0xD4/+0xD6/+0xD0/+0xD2 = v1..v7` |
@@ -343,16 +343,51 @@ the live body to the **battle overlay (0898)** (563 instructions; the
 is field-resident-only. The two escapes are symmetric: `0x2F` → field ext VM,
 `0x17` → battle ext VM.
 
-**`0x13` / `0x3D` keyframe-mesh interpolation.** `0x13` seats a render-mode-6
-keyframe-mesh child (`+0x5A = 2`, `+0x56 = 4`, clears flag `0x2`, loads the
-`+0xA0`/`+0xA4` 24-bit endpoints and the `+0xB4..+0xBE` block). `0x3D` is the
-per-tick driver: when a prior keyframe is armed (`+0xCE != 0`) it LERPs the vertex
+**`0x3D` keyframe-mesh interpolation.** `0x3D` is the per-tick driver: when a prior keyframe is armed (`+0xCE != 0`) it LERPs the vertex
 buffer at `+0x4C` toward the next keyframe by the 12-bit cursor `+0x22`
 (`a + ((b - a) * cursor >> 12)`, six components per vertex), then latches the new
 keyframe (`+0xCE = PC`) and copies `count` vertices' worth of operand data in
 (size `3 + 6*count`). This is the move-VM authoring side of the mode-6
 keyframe-mesh blend the [part render-tail](#part-render-tail-the-0x5a-render-modes-fun_80021df4)
 consumes.
+
+### Draw-kind-4 setup ops (`0x13`, `0x23`, `0x42`)
+
+Three opcodes put a part into the render dispatcher's **draw kind 4**, the
+multi-target arm of `FUN_8001ADA4`. Two different fields are involved and they
+are easy to conflate: `+0x56` is the **draw kind** `FUN_8001ADA4` switches on
+(`lhu v0,0x56(s0)` at `0x8001AE60`), while `+0x5A` is the part tick's
+integration mode (`FUN_80021DF4`, the [render-tail table](#part-render-tail-the-0x5a-render-modes-fun_80021df4)).
+All three ops write `+0x56 = 4` and `+0x5A = 2` and clear flag `0x2`; what
+differs is `+0x9E`, whose bits pick the emitter case 4 calls:
+
+| op | arm | `+0x9E` | emitter |
+|---|---|---|---|
+| `0x13` | `0x80023454` | `v1` | default `FUN_80028158` |
+| `0x23` | `0x800237D8` | `v1 \| 0x4000` | sprite arm `FUN_8002A5A4` |
+| `0x42` | `0x80023F94` | `v1 \| 0x2000` | ribbon `FUN_801CFA48` (battle overlay) |
+
+All stores go through `s1 = actor + 0x80` (`addiu s1,s2,0x80` at
+`0x80023088`), so `sh v0,0x1c(s1)` is `+0x9C`:
+
+- **`0x13`**: `+0x9C = v2`, `+0xC8 = v3 << 3`, the packed words `+0xA0` from
+  `v4..v6` and `+0xA4` from `v7..v9`, then `+0xB4..+0xBE = v10..v15`.
+- **`0x23`**: the packed word `+0xA0` from `v2..v4`, then `+0xB4 = v5`,
+  `+0xB6 = v6`, `+0xB0 = v7`, `+0xB2 = v8`, and `+0xA8/+0xAA/+0xAC/+0xAE =
+  v9..v12`.
+- **`0x42`**: `+0x9C = v2`, `+0xC8 = v3` (no shift), `+0xB4..+0xBA = v4..v7`,
+  `+0xA8 = v8`, and the packed words `+0xA0` from `v9..v11` and `+0xA4` from
+  `v12..v14`.
+
+A packed word is `lh a + (lh b << 8) + (lh c << 16)`, an unmasked `addu`
+chain, so a negative operand borrows from the byte above it. For the ribbon arm
+the dispatcher then passes `(s16)+0x9C + (((s16)+0xC8 >> 3) << 8)` as the
+emitter's count argument; the shipped carriers (one or two parts each in PROT
+0923, 0934, 0957 and 0964) leave `+0x9C` itself packed as `total << 8 | cap`
+with `+0xC8 = 0`, and every one seeds the emitter's RNG with `0x3039` at
+`+0xB8`. The engine port stores these through
+`ActorState::set_actor_u16` (absolute offsets); the emitter and its readers are
+`legaia_engine_core::effect_ribbon`.
 
 ## Control flow
 

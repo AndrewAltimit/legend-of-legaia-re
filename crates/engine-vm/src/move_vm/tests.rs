@@ -1760,3 +1760,109 @@ fn op2f_subop_3b_is_four_wide_on_both_lookup_paths() {
     step(&mut host2, &mut state2, &ext_program(0x3B));
     assert_eq!(state2.pc, 4, "lookup hit");
 }
+
+// ---- draw-kind-4 multi-target setup ops (`0x13` / `0x23` / `0x42`) --------
+//
+// Each test's expected offsets are read off the arm's own stores in
+// `ghidra/scripts/funcs/80023070.txt` (`s1 = actor + 0x80`, so `sh v0,0x1c(s1)`
+// is `+0x9C`). The earlier port routed these through the `+0xAC`-relative
+// block with eight-bit-wrapped offsets and missed every field below `+0xAC`.
+
+#[test]
+fn op42_ribbon_setup_lands_every_field_the_emitter_reads() {
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    let bc = program(&[
+        0x42, 0x0001, 9, 0x40, 0x30, 0x60, 0x3039, 0x20, 0x0123, // v1..v8
+        0x10, 0x20, 0x30, // +0xA0 colour
+        0x40, 0x50, 0x60, // +0xA4 colour
+    ]);
+    assert_eq!(step(&mut host, &mut state, &bc), StepResult::Advance);
+    assert_eq!(state.pc, 0xF);
+    assert_eq!(state.move_substate, 4, "+0x56 draw kind");
+    assert_eq!(state.move_submode, 2, "+0x5A");
+    assert_eq!(state.actor_u16(0x9E), 0x2001);
+    assert_eq!(state.actor_u16(0x9C), 9);
+    assert_eq!(state.actor_u16(0xC8), 0x40, "unshifted, unlike op 0x13");
+    assert_eq!(state.actor_u16(0xB4), 0x30);
+    assert_eq!(state.actor_u16(0xB6), 0x60);
+    assert_eq!(state.actor_u16(0xB8), 0x3039);
+    assert_eq!(state.actor_u16(0xBA), 0x20);
+    assert_eq!(state.actor_u16(0xA8), 0x0123);
+    assert_eq!(state.actor_u32(0xA0), 0x0030_2010);
+    assert_eq!(state.actor_u32(0xA4), 0x0060_5040);
+}
+
+#[test]
+fn op23_sprite_setup_writes_below_the_anim_block() {
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    let bc = program(&[0x23, 0x0002, 0x11, 0x22, 0x33, 5, 6, 7, 8, 9, 10, 11, 12]);
+    assert_eq!(step(&mut host, &mut state, &bc), StepResult::Advance);
+    assert_eq!(state.pc, 0xD);
+    assert_eq!(state.actor_u16(0x9E), 0x4002);
+    assert_eq!(state.actor_u32(0xA0), 0x0033_2211);
+    for (off, want) in [
+        (0xB4, 5),
+        (0xB6, 6),
+        (0xB0, 7),
+        (0xB2, 8),
+        (0xA8, 9),
+        (0xAA, 10),
+        (0xAC, 11),
+        (0xAE, 12),
+    ] {
+        assert_eq!(state.actor_u16(off), want, "+{off:#X}");
+    }
+    // `+0xA8` / `+0xAA` are the halves of `field_a8`, which the strip slab
+    // reader consumes as its `(u0, v0)` pair.
+    assert_eq!(state.field_a8, (10 << 16) | 9);
+}
+
+#[test]
+fn op13_default_emitter_setup_shifts_c8_and_fills_b4_to_be() {
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    let mut words = vec![0x13, 0x0000, 7, 2, 1, 2, 3, 4, 5, 6];
+    words.extend(10u16..=15);
+    let bc = program(&words);
+    assert_eq!(step(&mut host, &mut state, &bc), StepResult::Advance);
+    assert_eq!(state.pc, 0x10);
+    assert_eq!(state.move_substate, 4);
+    assert_eq!(state.actor_u16(0x9E), 0);
+    assert_eq!(state.actor_u16(0x9C), 7);
+    assert_eq!(state.actor_u16(0xC8), 16, "v3 << 3");
+    assert_eq!(state.actor_u32(0xA0), 0x0003_0201);
+    assert_eq!(state.actor_u32(0xA4), 0x0006_0504);
+    for (i, off) in (0xB4..=0xBE).step_by(2).enumerate() {
+        assert_eq!(state.actor_u16(off), 10 + i as u16);
+    }
+}
+
+#[test]
+fn packed_word_borrows_on_a_negative_operand() {
+    // `lh` sign-extends, and the sum is an unmasked `addu` chain.
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    let bc = program(&[0x23, 0, 0xFFFF, 0x01, 0x00, 0, 0, 0, 0, 0, 0, 0, 0]);
+    step(&mut host, &mut state, &bc);
+    assert_eq!(state.actor_u32(0xA0), 0x0000_00FF);
+}
+
+#[test]
+fn op24_and_op26_address_field_a8_not_a_phantom_block_slot() {
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    let bc = program(&[0x26, 1, 2, 3, 4]);
+    step(&mut host, &mut state, &bc);
+    assert_eq!(state.field_a8, (2 << 16) | 1);
+    assert_eq!(state.anim_block_u16(0), 3);
+    assert_eq!(state.anim_block_u16(2), 4);
+    let mut state2 = state.clone();
+    state2.pc = 0;
+    let bc = program(&[0x24, 10, 20]);
+    step(&mut host, &mut state2, &bc);
+    assert_eq!(state2.field_a8, (22 << 16) | 11);
+    assert_eq!(state2.anim_block_u16(0), 13);
+    assert_eq!(state2.anim_block_u16(2), 24);
+}

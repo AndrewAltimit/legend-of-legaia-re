@@ -31,12 +31,14 @@
 //! dump `overlay_menu_801cfa48.txt` is only a citation pointer (its own header
 //! says so) - the enclosing function there is a different one.
 //!
-//! NOT WIRED (whole module): no play host draws render-mode-4 actors at all -
+//! NOT WIRED (whole module): no play host draws draw-kind-4 actors at all -
 //! none of the three emitters `FUN_8001ADA4` case 4 selects is drawn on the
-//! native window or the browser play page - and the engine's move-VM port
-//! does not yet leave this emitter's inputs where retail does (below). Both
-//! are needed before a draw pass has anything true to draw; the geometry
-//! here is correct and waits on them.
+//! native window or the browser play page. The inputs are no longer the
+//! gap: the move VM's op `0x42` now stores every field this emitter reads,
+//! and [`RibbonParams::from_actor`] / [`ribbon_call_args`] read them back off
+//! a live summon part (pinned on the four shipped carrier images by
+//! `tests/effect_ribbon_carriers_real.rs`). What waits is the battle-side
+//! draw pass, described under "What a wire needs".
 //!
 //! ## Who selects this arm, and what `src` is
 //!
@@ -76,14 +78,21 @@
 //!
 //! ## What a wire needs
 //!
-//! * The engine's move-VM port of op `0x42` (`legaia_engine_vm::move_vm`)
-//!   routes `op[2]`, `op[3]` and `op[8]` through its anim-block window based
-//!   at `+0xAC`, where they land at the wrong offsets or out of range, and
-//!   never writes the two colour words; op `0x23` has the same shape. Those
-//!   stores have to land before a [`RibbonParams`] can be read off a live
-//!   actor.
-//! * A render-mode-4 draw path on both hosts (this arm, the `0x4000` sprite
-//!   arm and the default `FUN_80028158`).
+//! * A draw-kind-4 draw path on both hosts' battle effect pass (this arm, the
+//!   `0x4000` sprite arm and the default `FUN_80028158`), reading
+//!   [`ribbon_call_args`] / [`RibbonParams::from_actor`] /
+//!   [`ribbon_colour_words`] off each live summon part, plus the packet half
+//!   ([`RibbonPackets`]) turned into textured quads. The `jal 0x801CFA48` at
+//!   `0x8001B120` reaches this routine only while the battle overlay holds
+//!   slot A, so the pass belongs to battle, not to the field.
+//! * The part tick's mode-`2` channel integration (`FUN_80021DF4`, the
+//!   `+0xB4..+0xC8` ramp), which is what grows `+0xC8` and with it the
+//!   packed total, so a bolt extends over its lifetime. Without it every
+//!   carrier draws its first frame's `count` for its whole life.
+//!
+//! On the disc the carriers leave `+0x9C` itself packed as `total << 8 | cap`
+//! (`0x040C` in PROT 0923: cap 12, total 4) with `+0xC8 = 0`, so the first
+//! frame's ribbon is four steps.
 //!
 //! The `src[+0x1C]` word is the overlay RNG's **seed** - the emitter stores
 //! it `>> 2` into `0x801F6950` (`lhu v0,0x1c(t8)` at `0x801CFC08`,
@@ -170,6 +179,52 @@ pub struct RibbonParams {
     pub turn_rate: i16,
 }
 
+impl RibbonParams {
+    /// Read the five shape fields off a move-VM actor, from the `src =
+    /// actor + 0x9C` view the render dispatcher hands the emitter
+    /// (`addiu a3,s1,0x1c` at `0x8001B104`, `s1 = actor + 0x80`):
+    /// `src[+0x0C..]` is `actor[+0xA8]`, `src[+0x18..+0x1E]` is
+    /// `actor[+0xB4..+0xBA]`.
+    ///
+    /// Move-VM op `0x42` is the writer of every one of them
+    /// (`legaia_engine_vm::move_vm`, arm `0x80023F94`), so an actor that has
+    /// run that op reads back the carrier's own parameters here.
+    pub fn from_actor(s: &legaia_engine_vm::move_vm::ActorState) -> Self {
+        Self {
+            wander_spread: s.actor_u16(0xA8),
+            radius: s.actor_u16(0xB4) as i16,
+            step_len: s.actor_u16(0xB6) as i16,
+            rng_seed: s.actor_u16(0xB8) as i16,
+            turn_rate: s.actor_u16(0xBA) as i16,
+        }
+    }
+}
+
+/// The emitter's `mode` and packed-count arguments as the render dispatcher
+/// builds them off an actor (`0x8001B104..0x8001B124`): `mode` is
+/// `actor[+0x9E]` (the emitter reads only its low two bits), and `packed` is
+/// `(s16)actor[+0x9C] + (((s16)actor[+0xC8] >> 3) << 8)` - the `sll 0x10` /
+/// `sra 0x13` pair is a sign-extending `>> 3` of the halfword.
+///
+/// Returns `None` unless the actor is a draw-kind-4 node on this arm
+/// (`+0x56 == 4` and `+0x9E & 0x2000`), which is exactly the state op `0x42`
+/// leaves.
+pub fn ribbon_call_args(s: &legaia_engine_vm::move_vm::ActorState) -> Option<(u32, u32)> {
+    if s.move_substate != 4 || s.field_9e & 0x2000 == 0 {
+        return None;
+    }
+    let count = i32::from(s.actor_u16(0x9C) as i16);
+    let total = i32::from(s.actor_u16(0xC8) as i16) >> 3;
+    Some((u32::from(s.field_9e), count.wrapping_add(total << 8) as u32))
+}
+
+/// The two packed colour words the emitter's packet half reads at `src[+0x04]`
+/// / `src[+0x08]` - `actor[+0xA0]` / `actor[+0xA4]`, which op `0x42` builds
+/// from its last six operands.
+pub fn ribbon_colour_words(s: &legaia_engine_vm::move_vm::ActorState) -> (u32, u32) {
+    (s.actor_u32(0xA0), s.actor_u32(0xA4))
+}
+
 /// One emitted ribbon step: six vertices in `(walk_x, walk_y)` pairs, in the
 /// order the emitter stores them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -241,11 +296,11 @@ pub struct Ribbon {
 /// radius. A zero total leaves the cap untouched and the remainder at zero,
 /// which is the "draw the whole ribbon" form.
 ///
-/// NOT WIRED: this decodes the third argument of [`build_ribbon`], which has no
-/// caller - neither play host draws render-mode-4 actors (module doc). The
-/// argument is `(s16)actor[+0x9C] + (((s16)actor[+0xC8] >> 3) << 8)`, both
-/// written by move-VM op `0x42`. Split out as its own function because the
-/// cap/total packing is the part a caller has to construct.
+/// NOT WIRED: this decodes the third argument of [`build_ribbon`], which no
+/// host calls - neither play host has a draw-kind-4 pass in its battle effect
+/// draw (module doc). The argument is built by [`ribbon_call_args`] off an
+/// actor move-VM op `0x42` has set up. Split out as its own function because
+/// the cap/total packing is the part a caller has to construct.
 pub fn split_packed_count(packed: u32) -> (i32, i32) {
     let cap = (packed & 0xFF) as i32;
     let total = (packed >> 8) as i32;
@@ -354,12 +409,14 @@ fn narrow_advance(v: i64) -> i32 {
 /// The RNG modulus is guarded at `1`; retail divides by the raw radius / step
 /// and would trap on a zero one, which the emitter is never handed.
 ///
-/// NOT WIRED: neither play host draws render-mode-4 actors. The emitter's only
-/// retail caller is the render dispatcher `FUN_8001ADA4` case 4 on an actor
-/// move-VM op `0x42` set up (module doc), and the engine's port of that op
-/// does not yet store the fields a caller would read the params from. The
-/// emitter is pure and takes its RNG and LUTs as parameters so the consumer
-/// can be a host's battle effect pass rather than this crate.
+/// NOT WIRED: neither play host has a draw-kind-4 pass in its battle effect
+/// draw. The emitter's only retail caller is the render dispatcher
+/// `FUN_8001ADA4` case 4 on an actor move-VM op `0x42` set up (module doc);
+/// the engine's port of that op now stores every field, and
+/// [`ribbon_call_args`] + [`RibbonParams::from_actor`] build this call's
+/// arguments off a live summon part. The emitter is pure and takes its RNG
+/// and LUTs as parameters so the consumer can be a host's battle effect pass
+/// rather than this crate.
 pub fn build_ribbon<T: TrigTable, R: FnMut() -> u32>(
     mode: u32,
     packed: u32,
@@ -489,7 +546,7 @@ pub fn build_ribbon<T: TrigTable, R: FnMut() -> u32>(
 /// is at most `-1` - so the fall-through really is unconditional.
 ///
 /// NOT WIRED: only [`build_ribbon`] calls this, and nothing calls that - no
-/// render-mode-4 draw path exists on either host (module doc). Exposed rather than inlined because the
+/// draw-kind-4 draw path exists on either host (module doc). Exposed rather than inlined because the
 /// asymmetric fold is the emitter's least obvious behaviour and is worth being
 /// separately testable.
 pub fn damp_wander(w: i32) -> i32 {
@@ -629,6 +686,46 @@ mod tests {
         let head = r.steps[0].verts[0];
         let tail = r.steps.last().unwrap().verts[0];
         assert_ne!(head, tail);
+    }
+
+    #[test]
+    fn op_42_on_the_move_vm_feeds_the_emitter_its_own_operands() {
+        use legaia_engine_vm::move_vm::{ActorState, MoveHost, StepResult, step};
+        struct NoHost;
+        impl MoveHost for NoHost {
+            fn rotation_lut(&self, _: u16) -> (i16, i16) {
+                (0, 0)
+            }
+        }
+        // The shape every shipped carrier has: a `0x3039` seed, a step cap in
+        // `+0x9C`, no total in `+0xC8`.
+        let program: Vec<u16> = vec![
+            0x42, 0x0001, 9, 0, 0x40, 0x200, 0x3039, 0x20, 0x40, 0x80, 0x80, 0xFF, 0x10, 0x10,
+            0x40, 0x08,
+        ];
+        let mut s = ActorState::new();
+        assert_eq!(step(&mut NoHost, &mut s, &program), StepResult::Advance);
+        let (mode, packed) = ribbon_call_args(&s).expect("op 0x42 arms the ribbon arm");
+        assert_eq!(mode & 3, 1);
+        assert_eq!(split_packed_count(packed), (9, 0));
+        let p = RibbonParams::from_actor(&s);
+        assert_eq!(
+            p,
+            RibbonParams {
+                wander_spread: 0x40,
+                radius: 0x40,
+                step_len: 0x200,
+                rng_seed: 0x3039,
+                turn_rate: 0x20,
+            }
+        );
+        assert_eq!(ribbon_colour_words(&s), (0x00FF_8080, 0x0040_1010));
+        let r = build_ribbon(mode, packed, p, &AnalyticTrig::new(), lcg());
+        assert_eq!(r.steps.len(), 10);
+        assert_eq!(r.rng_seed, 0x3039 >> 2);
+        assert_eq!(r.plane, RibbonPlane::Xz);
+        // A node that has not run op 0x42 is not on this arm.
+        assert_eq!(ribbon_call_args(&ActorState::new()), None);
     }
 
     #[test]

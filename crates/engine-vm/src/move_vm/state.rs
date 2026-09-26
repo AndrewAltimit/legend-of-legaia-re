@@ -205,6 +205,63 @@ impl ActorState {
         self.anim_block_u16_set(byte_off, merged);
     }
 
+    /// Read the halfword at **absolute** actor offset `off` in the
+    /// `+0x9C..` window: `+0x9C` is the low half of [`Self::field_9c`],
+    /// `+0x9E` is [`Self::field_9e`], `+0xA0..+0xA6` the
+    /// [`Self::keyframe_desc`] halfwords, `+0xA8` / `+0xAA` the low / high
+    /// halves of [`Self::field_a8`], and `+0xAC..` the
+    /// [`Self::anim_block`] window. Offsets outside the window read `0`.
+    ///
+    /// This exists because the anim-block setter is relative to `+0xAC` and
+    /// an opcode that stores below `+0xAC` cannot be expressed through it: an
+    /// earlier port spelled `+0xA8` as the block offset `0xFC` (`0xAC + 0xFC`
+    /// wrapped to eight bits), which landed in a slot of the block that no
+    /// reader looks at instead of in [`Self::field_a8`].
+    pub fn actor_u16(&self, off: usize) -> u16 {
+        match off {
+            0x9C => self.field_9c as u16,
+            0x9E => self.field_9e,
+            0xA0..=0xA7 => self.keyframe_desc[(off - 0xA0) / 2],
+            0xA8 | 0xA9 => self.field_a8 as u16,
+            0xAA | 0xAB => (self.field_a8 as u32 >> 16) as u16,
+            0xAC.. => self.anim_block_u16(off - 0xAC),
+            _ => 0,
+        }
+    }
+
+    /// Write the halfword at absolute actor offset `off` - the mutating
+    /// sibling of [`Self::actor_u16`], with the same field routing. A `+0x9C`
+    /// store sign-extends into [`Self::field_9c`], the convention the other
+    /// `+0x9C` writers (ops `0x2C`, `0x34`) already use.
+    pub fn set_actor_u16(&mut self, off: usize, value: u16) {
+        match off {
+            0x9C => self.field_9c = i32::from(value as i16),
+            0x9E => self.field_9e = value,
+            0xA0..=0xA7 => self.keyframe_desc[(off - 0xA0) / 2] = value,
+            0xA8 | 0xA9 => {
+                self.field_a8 = ((self.field_a8 as u32 & 0xFFFF_0000) | u32::from(value)) as i32;
+            }
+            0xAA | 0xAB => {
+                self.field_a8 =
+                    ((self.field_a8 as u32 & 0x0000_FFFF) | (u32::from(value) << 16)) as i32;
+            }
+            0xAC.. => self.anim_block_u16_set(off - 0xAC, value),
+            _ => {}
+        }
+    }
+
+    /// Store a 32-bit word at absolute actor offset `off` (`+0xA0` or
+    /// `+0xA4` in practice) as two halfwords, little-endian.
+    pub fn set_actor_u32(&mut self, off: usize, value: u32) {
+        self.set_actor_u16(off, value as u16);
+        self.set_actor_u16(off + 2, (value >> 16) as u16);
+    }
+
+    /// Read a 32-bit word at absolute actor offset `off`.
+    pub fn actor_u32(&self, off: usize) -> u32 {
+        u32::from(self.actor_u16(off)) | (u32::from(self.actor_u16(off + 2)) << 16)
+    }
+
     /// Zero the morph-weight halfword at `actor + 0xA0 + lane*2` - op
     /// `0x0A`'s `sh zero, 0xa0(a1)` with `a1 = actor + lane*2`.
     ///
