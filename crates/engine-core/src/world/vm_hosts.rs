@@ -2852,16 +2852,20 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// and runs the loader on its `+0x7C` block; the engine's
     /// [`crate::fade::FadeState`] is that block.
     ///
-    /// PORT: FUN_80024E80
+    /// REF: FUN_80024E80 (ported as [`crate::fade::spawn_fade`], which
+    /// stamps `id` into the template's last word)
     fn spawn_screen_fade(&mut self, template: &vm::battle_action::SummonFadeTemplate, id: i16) {
-        self.world.presentation.fade =
-            Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
+        crate::fade::spawn_fade(
+            &mut self.world.presentation.fade,
+            &crate::fade::FadeTemplate {
                 kind: template.kind,
                 duration: template.duration,
                 start_rgb: template.start_rgb,
                 end_rgb: template.end_rgb,
-                mode: [template.delay, template.hold, id],
-            }));
+                mode: [template.delay, template.hold, 0],
+            },
+            id,
+        );
     }
     fn summon_stager_tick(&mut self) -> bool {
         self.world.summon_stager_tick()
