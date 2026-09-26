@@ -301,9 +301,9 @@ blocker is a table is the same error this page records for the panel painters.
 | addr | symbol | site | verdict |
 |---|---|---|---|
 | `8001d7f8` | `sync_scene_name` | `crates/engine-core/src/scene_name_sync.rs:73` | DISCLOSE |
-| `8001e54c` | `install_chunks` | `crates/engine-core/src/chunk_install.rs:86` | DISCLOSE |
+| `8001e54c` | `install_chunks` | `crates/engine-core/src/chunk_install.rs` | WIRED |
 | `80021b04` | `from_model_sel` | `crates/engine-core/src/summon.rs:236` | FALSE INERT |
-| `80024e80` | `spawn_fade` | `crates/engine-core/src/fade.rs:161` | DISCLOSE |
+| `80024e80` | `spawn_fade` | `crates/engine-core/src/fade.rs` | WIRED |
 | `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick.rs:910` | WIRE |
 | `80038050` | `confirm_menu` | `crates/engine-core/src/dialog.rs:409` | FALSE INERT |
 | `8003a55c` | `MapObject` | `crates/engine-core/src/field_regions.rs:270` | FALSE INERT |
@@ -565,13 +565,15 @@ anchor. Wrap to the file's comment width.
   host, and carries no staged-name / active-buffer / scene-index-word triple for
   this bridge to resolve between. Wiring it needs a name-based scene-change
   packet path, which the dialog port routes around.
-- **`install_chunks`** - the engine resolves scene sub-assets through the typed
-  `legaia_asset` dispatcher and uploads VRAM and VAB directly from those.
-  Nothing produces retail's `[type, size, data]` side-band chunk list, so the
-  walker has no stream to walk.
-- **`spawn_fade`** - the engine's fades are host-driven state, not entries in a
-  fixed-capacity system-actor pool. The `slot_free` argument models a pool
-  allocation outcome that no engine caller can supply an answer for.
+- **`install_chunks`** - since wired. The disclosure was wrong twice: every
+  `scene_vab_stream` entry *is* the `[type, size, data]` list, and the arm it
+  called a VRAM upload (types `2` / `0xC`) is the SEQ install. The scene loader
+  now finds each stream's score by walking the list
+  (`chunk_install::seq_chunk_offset`) in place of a `pQES` byte hunt.
+- **`spawn_fade`** - since wired. The engine's fade pool is one seat
+  (`World::presentation.fade`), so the allocation arm always succeeds and the
+  `slot_free` argument is gone; the field warp's two fades and the summon
+  band's flash route through it.
 - **`load_overlay_a` / `load_overlay_b` / the module** - the host trait is
   already implemented (`OverlayLoaderHost for ProtCdDmaHost` in
   `crates/engine-core/src/cd_dma.rs`); what is missing is the caller. The engine
@@ -2280,12 +2282,13 @@ structure they blamed and are rewritten; every row stays held.
 |---|---|---|
 | `801cf00c` `duel_overlay_init` | held | the mode-24 door warp's `enter_baka_from_overlay` is the overlay-entry host the tag said did not exist; of the seeds only the win target and fighter slots have a consumer (both already the rules engine's constants), and the stage seed, arena camera, `6 x 6` window and the two stream ids have no duel-side counterpart |
 | `801d6704` `field_bgm_plan` | held | the slot arithmetic is live elsewhere (`SceneHost::bgm_seq_bytes`); the two-part arm and its one-shot latch have no scene-entry analogue |
-| `801d4a60` `step_scene_program` / `lift_step` / `entry_successor` | held | spawned by `World::man_load_actor_reset`, never ticked: the BGM request/acknowledge pair it parks on has no counterpart in a synchronous director |
+| `801d4a60` `step_scene_program` / `lift_step` / `entry_successor` | wired | the pair it parks on is the side-band **bank** request / acknowledge, live as `World::audio.sound_stream`, not a BGM latch; `World::tick_scene_programs` now steps each resumed program from the handler pass |
 | `801d72a0` `help_panel_layout` | held | every row is the overlay's own string-pointer tables `0x801D8130` / `0x801D8168`, and no fishing help page exists to open |
 | `801d26cc` `bite_pad_nudge` | held | the engine does see `_DAT_8007B874` (`retail_pad().pressed`); only the standalone minigames page ticks the bite band, and its script counts the credit itself with a different mask, while the play hosts' fishing runs no band |
 | `801d56e4` `clip_segment_2d` | held | its one caller clips a GPU line packet (`0x801D3D00`); no screen-space two-point primitive exists on either host |
 | `801dc6b4` `CONTEXT_LOCKED_ENTRY_SUBSCREEN` / `801dcd58` `notify_window_operands` | held | entry-context kind `0xD` is routed nowhere; no staged notify-window template exists for the operands to patch |
-| `80017bec` `refresh_object_grid_marks` / `801d7b50` `window_rebuild_spawns` | held | the `.MAP` object-descriptor region is dropped after scene load, and no windowed placement actor list exists to rebuild |
+| `80017bec` `refresh_object_grid_marks` | wired | retail runs it once at field init (`0x801D6BF8`) over the fresh `.MAP`, which is where the engine's field entry now runs it; the `retona` capture holds a refreshed cell the disc lacks |
+| `801d7b50` `window_rebuild_spawns` | held | no windowed placement actor list exists to rebuild, and the descriptor region it indexes is dropped after scene load |
 | `801cef54` `dance_scene_entry` | held | the dance suspends the current mode instead of loading the venue bundle, so the scene seeds have no seat |
 | `801d6e5c` `keyframe_in_range` | held | the action record's `+0x26` frame column is not parsed, so nothing can build the slice |
 | `8003c9ac` `motion_pause_kick` | held | every input has a home; the requested-move write target (`+0x5C` / `+0x88`) does not |
