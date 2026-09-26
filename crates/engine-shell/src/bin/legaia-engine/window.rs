@@ -862,6 +862,12 @@ struct PlayWindowApp {
     /// `glyph_u`, plus the record's `v/w/h`) when the draw pages the glyph
     /// strip and the widget table is resident.
     baka_chrome_frame: Vec<ResolvedChromeDraw>,
+    /// The duel's 3D surface (`legaia_engine_core::baka_duel_scene`): the
+    /// engine cache every duel host drives once a frame.
+    baka_surface: legaia_engine_core::baka_duel_scene::BakaDuelSurface,
+    /// This frame's GPU copy of that surface (see
+    /// `PlayWindowApp::refresh_baka_duel_gpu`).
+    baka_gpu: Option<minigames::BakaDuelGpu>,
     /// Muscle Dome hub-screen atlas + sprite table (see [`MuscleHubAssets`]).
     muscle_hub: Option<MuscleHubAssets>,
     /// The hub's first visit (intro strip, wall, title zoom, course card,

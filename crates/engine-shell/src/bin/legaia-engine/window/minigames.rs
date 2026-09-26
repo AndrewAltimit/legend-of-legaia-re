@@ -2,6 +2,19 @@
 
 use super::*;
 
+/// The Baka duel surface on the GPU: the duel VRAM (re-uploaded when the
+/// engine's surface generation moves - a rung seats a new opponent) and this
+/// frame's posed meshes, the textured and untextured halves of the one
+/// buffer set `BakaDuelScene` builds.
+pub(super) struct BakaDuelGpu {
+    pub(super) generation: u32,
+    pub(super) vram: UploadedVram,
+    pub(super) textured: Option<UploadedVramMesh>,
+    pub(super) untextured: Option<UploadedColorMesh>,
+    /// `DuelCamera::vp_raw` for this frame's aspect.
+    pub(super) mvp: Mat4,
+}
+
 impl PlayWindowApp {
     // The mode-24 minigame door warp (`World::arm_minigame_warp` /
     // `World::minigame_return_warp`, retail `FUN_80025980` / `FUN_80026018`)
@@ -383,6 +396,94 @@ impl PlayWindowApp {
             })
             .collect();
         usp::payline_screen_prims(&segments)
+    }
+
+    /// Pose the Baka duel's 3D surface for this frame and put it on the GPU.
+    ///
+    /// The pose, the arena camera and the buffers are the engine's
+    /// (`legaia_engine_core::baka_duel_scene::BakaDuelSurface::frame`, the
+    /// call the browser play page makes too); this host uploads the duel
+    /// VRAM on a generation change and the posed meshes every frame, and
+    /// the redraw's duel branch draws them under `DuelCamera::vp_raw`.
+    /// Drops the GPU copy whenever no duel is on screen.
+    pub(super) fn refresh_baka_duel_gpu(&mut self) {
+        let live = self.session.host.world.mode == SceneMode::BakaFighter;
+        let index = self.session.host.index.clone();
+        let read = |i: usize| index.entry_bytes(i as u32).ok().map(|b| b.to_vec());
+        let fight = if live {
+            self.session.host.world.minigames.baka_fighter.as_ref()
+        } else {
+            None
+        };
+        let generation_before = self.baka_surface.generation();
+        if self.baka_surface.frame(read, fight).is_none() {
+            self.baka_gpu = None;
+            return;
+        }
+        let (Some(r), Some(scene)) = (self.win.renderer.as_ref(), self.baka_surface.scene()) else {
+            return;
+        };
+        let generation = self.baka_surface.generation();
+        let (sw, sh) = r.surface_size();
+        let (_, aspect) = super::geometry::scene_viewport_for(sw, sh);
+        let mvp = Mat4::from_cols_array(
+            &fight
+                .map(|f| f.duel_camera().vp_raw(aspect))
+                .unwrap_or(Mat4::IDENTITY.to_cols_array()),
+        );
+        let normals = vec![[0.0f32; 3]; scene.positions.len()];
+        let textured = r
+            .upload_vram_mesh(
+                &scene.positions,
+                &scene.uvs,
+                &scene.cba_tsb,
+                &normals,
+                &scene.colors,
+                &scene.textured_indices,
+            )
+            .map_err(|e| log::warn!("baka duel: textured upload failed: {e:#}"))
+            .ok();
+        let fill: Vec<[u8; 3]> = scene
+            .flat_rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| [c[0], c[1], c[2]])
+            .collect();
+        let untextured = (!scene.untextured_indices.is_empty())
+            .then(|| {
+                r.upload_color_mesh(&scene.positions, &fill, &scene.untextured_indices)
+                    .map_err(|e| log::warn!("baka duel: untextured upload failed: {e:#}"))
+                    .ok()
+            })
+            .flatten();
+        let stale = generation != generation_before
+            || self
+                .baka_gpu
+                .as_ref()
+                .is_none_or(|g| g.generation != generation);
+        let vram = if stale {
+            match self.baka_surface.vram().map(|v| r.upload_vram(&v)) {
+                Some(Ok(v)) => v,
+                Some(Err(e)) => {
+                    log::warn!("baka duel: vram upload failed: {e:#}");
+                    return;
+                }
+                None => return,
+            }
+        } else {
+            match self.baka_gpu.take() {
+                Some(g) => g.vram,
+                None => return,
+            }
+        };
+        self.baka_gpu = Some(BakaDuelGpu {
+            generation,
+            vram,
+            textured,
+            untextured,
+            mvp,
+        });
     }
 
     /// Per-frame driver for every minigame side-channel this window hosts:
@@ -1180,9 +1281,12 @@ impl PlayWindowApp {
         // bank), so the strike clock steps the way the clip selector does -
         // the same loader both browser pages stage.
         let index = &self.session.host.index;
-        let fight =
-            fight.with_roster_clip_headers(legaia_engine_core::baka_fighter::roster_clip_headers(
-                |i| index.entry_bytes(i as u32).ok().map(|b| b.to_vec()),
+        let fight = fight
+            .with_roster_clip_headers(legaia_engine_core::baka_fighter::roster_clip_headers(|i| {
+                index.entry_bytes(i as u32).ok().map(|b| b.to_vec())
+            }))
+            .with_special_cameras(legaia_engine_core::baka_duel_scene::parse_special_cameras(
+                &loaded,
             ));
         log::info!(
             "baka: round 1 vs roster fighter {opponent} (gold prize {})",

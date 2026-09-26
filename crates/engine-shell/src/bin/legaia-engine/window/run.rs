@@ -1215,6 +1215,8 @@ pub(super) fn cmd_play_window_with_record(
         fishing_banner_draws: Vec::new(),
         baka_hud_widgets: None,
         baka_chrome_frame: Vec::new(),
+        baka_surface: Default::default(),
+        baka_gpu: None,
         muscle_hub: None,
         muscle_first_visit: None,
         muscle_round_banner: None,
