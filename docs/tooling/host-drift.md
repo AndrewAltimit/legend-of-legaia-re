@@ -1296,7 +1296,23 @@ and each host stages the same clip headers through
 their PROT index, the minigames page off its disc - so a double-step clip
 strikes at the same frame everywhere. The minigames page also poses the swing
 off that clock (`baka_state_json`'s `clock`), where it used to start the swing
-when the exchange report arrived.
+when the exchange report arrived. Both browser pages read the duel's state
+through one builder, `minigames::baka_state_json_for`; the play page's own
+copy carried no `clock` and no `ghosts`.
+
+**The duel's 3D surface is one engine kernel on the two play hosts.**
+`engine-core::baka_duel_scene` builds the buffers (both fighters, two ghost
+copies each, the four arena walls, the floor), poses them from the fighters'
+display clips and the afterimage passes, and owns the arena camera; the
+native window (`refresh_baka_duel_gpu`) and the play page
+(`play_mg_baka_scene_*`) each drive one `BakaDuelSurface`, upload what it
+posed and draw it under `DuelCamera::vp_raw`. Before it, the native window
+drew the duel as labels only, and the play page drew the fighter meshes
+under a fitted orbit camera, timed each clip off its own tick and drew no
+ghosts - so "both play hosts draw labels only" was true of one of them.
+The standalone minigames page still poses its own buffers under its fitted
+camera: it holds a `BakaFight` but no surface, the same blocking shape as the
+rest of that page (below).
 
 What stays open was misnamed "sprite effects". None of the three routines
 draws a sprite: the two banks `_DAT_8007B888` / `_DAT_8007B840` are the
@@ -1304,15 +1320,15 @@ scene's type-`0x05` / `0x0B` ANM clip banks the clip selector `FUN_800204F8`
 resolves, and each routine drives a **model** through them.
 
 - The special's afterimage (`FUN_801D49E8`) is engine state every host steps,
-  and the minigames page draws it as darkened copies of the thrower's mesh.
-  The native window and the play page draw the duel as labels with no fighter
-  meshes, so they have nothing to ghost. That is the gap - a 3D duel surface
-  on those two hosts - not the afterimage.
+  and every host now draws it as darkened copies of the thrower's mesh.
 - The impact pair (`FUN_801D4DF8`) spawns `FUN_80021B04` effect templates at
   the winner's strike offset, and no minigame host runs that effect runtime.
+  The fighter positions it offsets from are engine state now
+  (`BakaFight::fighter_position`); the template runtime is what is missing.
 - The round-start cameo (`FUN_801D6310`) spawns only on a held Triangle, and
-  no host hands the duel a held pad word; it also wants scene model `0` drawn
-  camera-relative plus a VRAM move, which no host does.
+  no host hands the duel a held pad word; it also wants scene model `3`
+  drawn camera-relative plus a VRAM move, which the duel surface does not
+  do.
 
 And the native window resolves each glyph draw's stamped cell rect without
 sampling it, because its duel HUD has no textured-quad surface.

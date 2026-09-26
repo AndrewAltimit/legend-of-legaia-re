@@ -462,10 +462,39 @@ slow motion - and raises the special latch `DAT_801DBF50`.
 Port: `engine-core::baka_fighter::{StrikeClock, StrikeTable, ClipHeader}`,
 running inside `BakaFight::tick_with_input` for every duel built from the disc
 tables on all three hosts; `roster_clip_headers` stages each fighter's ANM
-record headers off PROT 1203 and the ladder packs. What the port does not
-model is the clip **tail**: retail plays each attack to its ANM frame count
-before dropping to idle, where the port clears the exchange once it is booked
-and paces re-entry with the cooldown decay.
+record headers off PROT 1203 and the ladder packs. The strike clock books
+the exchange; what the fighter *shows* is a separate clip, below.
+
+### The display clip
+
+The clip a fighter shows is not the strike clock. It is the actor's clip id
+`+0x5C` and cursor `+0x68`, which the clip selector `FUN_800204F8` advances
+once per combat tick, and it outlives the exchange: an attack plays to its
+ANM frame count even after the exchange it struck in is booked, and only
+then drops to the idle. Four writers set it, all in the disassembly:
+
+| Writer | Clip | `+0x62` bit `8` (hold) |
+|---|---|---|
+| commit (`0x801D44D8` / `0x801D44DC`) | the attack's record, cursor `0` | set only for the special (`0x801D4640`) |
+| damage kernel on the struck side (`0x801D3C60..0x801D3CA0`) | record `5` (hit), or `7` (knockdown) when the landed keyframe is the special's last | set |
+| round setup `0x32` (`0x801CFFB0` / `0x801CFFC0`) | record `0` (idle) | clear |
+| tally exit `0x66` / secret variant `0x6D` (`0x801D0AA4`, `0x801D100C`) | record `8` (win flourish), player seat | set |
+
+The selector's law (`0x800205F0..0x8002072C`): the cursor steps by
+`+0x6A * DAT_1F800393`, `+0x6A` being the record's speed times the rate
+divisor `>> 3` (and the double-step formula when the record's bit is set);
+once it reaches `frames * 16 - 1` it holds there when bit `8` is set and
+wraps to `0` when it is not, and either way raises bit `0x100` for that
+tick. The combat tick's **idle reset** (`0x801D411C..0x801D415C`) reads
+that bit on the next tick and, unless the block's knockdown latch `+0x2C`
+is set, stores the idle and clears bit `8`. So a normal attack plays out
+once and idles, a hit reaction plays out, holds one tick and idles, and a
+knockdown holds until the next round setup.
+
+Port: `engine-core::baka_duel_scene::FighterMotion`, one per seat in
+`BakaFight` (`BakaFight::motion`), stepped every tick after the rules. It
+feeds only the presentation - the exchange still books off the strike
+clock, and cooldowns still pace re-entry.
 
 **How a display id becomes an ANM bank record.** The anim play path
 resolves `actor + 0x5c` **through the ANM container header**: at
@@ -478,14 +507,110 @@ takes `container + word` as the record pointer. The container layout is
 record 0 *is* the idle (display `base + 1`: the idle reset at
 `0x801d4144..50` and both round-start seeds in
 `overlay_baka_fighter_801d0fe4.txt` store `base + 1`; the party base is
-`_DAT_801dbfd0 = DAT_801dbf70 * 9`). The match-result state `0x6d` and the
-tally screen store `base + 9` - bank record 8, the **win flourish**.
+`_DAT_801dbfd0 = DAT_801dbf70 * 9`). The tally state's exit (`0x66`,
+`0x801D0AA4`) and the secret opponent's tally variant (`0x6D`, `0x801D100C`)
+store `base + 9` - bank record 8, the **win flourish**. (An earlier reading
+called `0x6D` the match-result state; the dispatcher enters it only from
+the tally's exit when the halfword `0x801DBF06` is non-zero.)
 Record-space labels: `legaia_asset::baka_opponents::action_slot_label`.
 
 Confidence: **Confirmed** the button-bit → type mapping, the named physical
 buttons (Square/Circle/Cross from the slot-0 branch of
 `overlay_baka_fighter_801d3f44.txt`), the display-id → bank-record
 resolution above, and the special-attack auto-finisher gate.
+
+## The arena in 3D
+
+Everything the duel draws in 3D is placed by the cabinet state machine and
+the combat tick, not fitted: the camera globals, the fighters' stand, the
+four walls and the floor are all immediates in PROT 0976.
+
+### The camera
+
+The world goes through the field view build `FUN_800172C0`, called once a
+frame from the cabinet's epilogue (`0x801D2074`), with the base matrix at
+`0x6000` (6x) and `H = 0x200` - both read off the parked
+`minigame_baka_fighter` state, and `H` stored by the init at `0x801CF080`.
+The globals move through four writers:
+
+| Writer | Pitch / yaw / roll | Eye trio `0x800840B8` | Focus |
+|---|---|---|---|
+| round setup `0x32` (`0x801CFF34..0x801CFF7C`) | `0` / `0x2F8` / `0` | `(0xC8, 0x708, 0x1FE0)` | zero |
+| state `0x35` spin (`0x801D0324..0x801D03C8`) | yaw `+= dt << 6` until it passes `0x1000`, then `0` | Y `+= dt << 2`, Z `+= dt << 5` | - |
+| the spin's glide (`0x801D03D0..0x801D0454`) | parked | Y to `0x898` at `0x1E`, Z to `0x3520` at `0xC8` | parked |
+| tally exit `0x66` / `0x6D` (`0x801D0A38`, `0x801D0FBC`) | `0` (`0x64` on `0x6D`) / `0x3D4` / `0` | `(0, 0x8FC, 0x1900)` | - |
+
+So every round opens on an oblique shot that swings round a full turn while
+backing off, and settles side-on: yaw `0`, eye `(0xC8, 0x898, 0x3520)`. The
+duel state `0x64` writes no camera global. The only thing that moves the
+camera during a round is a **special commit** (`0x801D4644..0x801D4740`): the
+player's special glides to its row of the table at `0x801D7DC8` (three
+`0x20`-byte rows, one per party fighter, indexed by the actor's `+0x5A`), the
+opponent's to a fixed record - pitch `-0x14`, yaw `0xA8C`, eye
+`(-0x3C, 0x80C, 0x2120)`.
+
+Both glides are the SCUS camera-relative glide family: `FUN_801D6910` /
+`FUN_801D693C` / `FUN_801D6968` / `FUN_801D6994` fill the ten `(step, target)`
+halfword pairs of the record at `0x80070764` (the angles, the eye trio, the
+focus, `H`), and `FUN_80021248` normalizes it against the live globals and
+spawns the actor whose tick `FUN_8002149C` walks them there. An earlier
+reading had the four setters "assembling a scratch primitive"; the record is
+handed to `FUN_80021248` two instructions later at both call sites
+(`0x801D044C`, `0x801D4738`).
+
+### Placement
+
+The round setup stands the player at `X = -(stand_off + 200)` and the
+opponent at `+(stand_off + 200)` on `Y = Z = 0` (`0x801D005C..0x801D00F4`),
+`stand_off` being the roster record's `+0x44` - `0` for the first three
+ladder rungs, up to `140` for the widest. The combat tick sets each yaw
+every frame from the block's facing word `+0x28`: `0x400` while it is clear,
+`-0x400` while it is set (`0x801D4070..0x801D4084`); the round setup clears it
+for the player and sets it for the opponent. The tally exit steps the player
+`0x3C` along Z when the actor's `+0x5A` is `1` (`0x801D0A74..0x801D0A90`).
+
+### Walls and floor
+
+The epilogue draws stage model `0` - the patterned wall with its lattice
+fence and lamps - **four** times through `FUN_801D6D60` (`0x801D20E4..0x801D2188`):
+at `(0, 0x64, 0x640)` yaw `0`, `(0x640, 0x64, 0)` yaw `0x400`,
+`(-0x640, 0x64, 0)` yaw `-0x400` and `(0, 0x64, -0x640)` yaw `0x800` - a room.
+`FUN_801D6D60` transforms the position through the camera and draws only
+when the resulting depth is past `0x2710` (`slti v0,v0,0x2711` at
+`0x801D6D98`), which is what drops the wall between the camera and the
+fighters. The floor is `FUN_801CEB84`, which is the battle ground grid's
+emitter (`FUN_801D02C0` in PROT 0898) relocated: the same `0x200`-pitch
+cells of four quarter quads on the `(832, 0)` page's `(0xC0, 0xC0)` window,
+over the `6 x 6` window the init seeds at `0x1F8003F8` / `0x1F8003FA`
+(`0x801CF20C..0x801CF218`), gated off only when the pitch drops below `-0x4F`
+(`0x801D20B4..0x801D20C4`).
+
+### In the port
+
+`engine-core::baka_duel_scene` is the whole 3D surface, and every duel host
+draws through it:
+
+- `DuelCamera` holds the ten globals, runs the round setup's snap, the spin,
+  the glides (through `legaia_engine_vm::camera_rel_actor` and
+  `engine-core::camera_rel_glide`) and the tally-exit close-up, and hands a
+  host one view-projection (`vp_raw`) for raw Y-down world vertices.
+  `BakaFight` owns it and steps it every tick; `parse_special_cameras` reads
+  the player's table.
+- `BakaDuelScene` builds one buffer set - both fighters, two darkened ghost
+  copies of each, the four walls, the floor
+  (`legaia_asset::battle_backdrop::build_ground_grid_sized`) - and poses it
+  each frame from the display clips, the afterimage passes and the wall
+  cull.
+- `BakaDuelSurface` is the per-host cache: it decodes the assets once
+  (PROT 1203 / 1204 / 1205 and the ladder packs), rebuilds the buffers when
+  a rung seats a new opponent, and poses them.
+
+The native play window uploads the posed buffers and the duel VRAM
+(`window/minigames.rs`, `refresh_baka_duel_gpu`) and draws them in place of
+the field; the browser play page reads the same buffers and matrix through
+the `play_mg_baka_scene_*` exports (`site/js/play-minigames.js`). The
+standalone minigames page still poses its own buffers under a fitted camera;
+see [Site presentation](#site-presentation).
 
 ## Opponent + scoring
 
@@ -511,7 +636,9 @@ record; the historical `0x801d76bc` table view is the same records at `+0x20`.
 Record layout (base `0x801d769c`): `+0x20` **gold reward** (`FUN_801d0fe4`
 loads the prize on a player win as `DAT_801dbee8 = *(u32*)(opp*0x6c +
 0x801d76bc)`), `+0x24` damage modifier, `+0x28/+0x2c/+0x30` DEF tiers,
-`+0x34` critical chance, `+0x38/+0x3c/+0x40` ATK tiers, `+0x44` actor anchor,
+`+0x34` critical chance, `+0x38/+0x3c/+0x40` ATK tiers, `+0x44` duel
+stand-off (the round setup stands the fighter at `X = ±(stand_off + 200)`,
+see [the arena](#the-arena-in-3d)),
 `+0x4c` AI pattern (= `DAT_801d76e8`). The picker consumes the pattern
 **backward**: an idle-cursor roll `>= 3` seeds the cursor to the pattern
 length and each pick steps it down, returning `pattern[cursor-1] - 1` (`% 3`).
@@ -726,10 +853,10 @@ the register. That is visible in the disassembly, not a decompiler artifact
 than reproducing the uninitialised read.
 
 Port: `engine-core::baka_fighter_chrome::{afterimage_pass, AfterimageActor}`,
-spawned and stepped by `BakaFight`; the minigames page draws the ghosts as
-darkened copies of the thrower's mesh. The native window and the play page
-draw no fighter meshes at all, so neither draws them (see
-[`../tooling/host-drift.md`](../tooling/host-drift.md)).
+spawned and stepped by `BakaFight`. Every host draws the ghosts as darkened
+copies of the thrower's mesh: the native window and the play page through
+the engine's duel surface ([the arena](#the-arena-in-3d)), the minigames
+page from its own mesh buffers.
 
 **`FUN_801d65f8` is only defined for its mode-0 call.** It builds a VRAM
 `RECT` out of the 4-byte record at `&DAT_801dbe84 + index * 4` - source
@@ -814,8 +941,8 @@ open eye and a closed one. The swap is a **wink** at the pose.
 
 Ports: `engine-core::baka_fighter_chrome::{impact_effect_pair, afterimage_pass,
 sprite_blit, cameo_pose}`. The cameo and the blit are not wired: no host hands
-the duel a held pad word, and none draws a model camera-relative or edits its
-VRAM copy after upload.
+the duel a held pad word, and the duel surface draws no camera-relative model
+and edits no VRAM after its upload.
 
 ### The developer keyframe editor
 
@@ -1028,10 +1155,11 @@ from the visitor's disc in the browser (`crates/web-viewer/src/minigames_baka.rs
 PROT 1203 bank (`char*9 + action`), the opponent mesh + anim bank from its own
 pack, the arena from the 1203 TMD pack, and the HUD from the widget table
 at the `FUN_801d2afc` positions above. Traced vs fitted is stated on the page:
-the 3D camera, the fighters' spacing and the select/tally screen layouts are
-fitted by eye (the duel's GTE matrices live in COP2 and the parked capture sits
-at the title screen), and the bar-frame cells fall back to an outline because
-their cell table is runtime-built.
+this page's 3D camera, the fighters' spacing and the select/tally screen
+layouts are fitted by eye, and the bar-frame cells fall back to an outline
+because their cell table is runtime-built. The camera and the placements are
+traced now ([The arena in 3D](#the-arena-in-3d)) and the two play hosts draw
+the traced ones; this page has not moved onto that surface yet.
 
 The **arena** is stage TMD 0 (the pack's only world-framed piece): the tall
 patterned backdrop wall with lattice fences and two ceiling lamps, base on the
@@ -1039,10 +1167,12 @@ patterned backdrop wall with lattice fences and two ceiling lamps, base on the
 placement (spun 180° to the page camera's behind-the-fighters side). The
 stage set carries **no floor mesh**, so the page tiles a floor from the wall's
 own dominant textured face (its exact uv cell + CLUT, repeated on
-`y = 0`); the tiling is a stated fit. The three prop meshes (two identical
-single-object pieces + the 10-object figure, which is the
-[cameo](#the-round-start-cameo)) need placement transforms the static page
-hasn't traced and stay out.
+`y = 0`); the tiling is a stated fit - retail's floor is the battle ground
+grid's routine on the `(832, 0)` page ([Walls and floor](#walls-and-floor)),
+and retail draws the wall four times, as a room. The three prop meshes (two
+identical single-object pieces + the 10-object figure, which is the
+[cameo](#the-round-start-cameo)) stay out; the epilogue places only model
+`0`.
 
 The run opens on the retail **PLAYER SELECT** screen - the three party
 fighters' battle-form models idling in front of the arena under the sheet's
@@ -1214,11 +1344,12 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `FUN_801d69a8` | stage-digit draw helper: patches widget 5's `u` (`DAT_801d71cc = stage * 0x18`) then draws widget 5 through `FUN_801d5ed0` |
 | `FUN_801d6cbc` | "How to Play Baka Fighter" instructions-screen text drawer (11 lines from `PTR_..._801d7134`, `0xd` px apart). See [the pointer table](#the-help-panels-pointer-table) below. |
 | `FUN_801d2a28` | per-exchange score accumulator (see [Score-bonus tables](#score-bonus-tables)) |
-| `FUN_801ceb84` | scratchpad GPU packet-template initializer (fills the OT / primitive scratch `0x1f800034+` with gouraud packet words) - render-track |
+| `FUN_801ceb84` | the arena **floor**: the battle ground grid's emitter (`FUN_801D02C0` in PROT 0898) relocated, over the `6 x 6` tile window the init seeds (see [the arena](#the-arena-in-3d)) |
 | `FUN_801d6480` / `FUN_801d6770` | raw GPU quad emitters into the OT scratch `_DAT_1f8003a0` (gouraud code `0x3a` / flat `0x28`; `FUN_801d6770` links through `FUN_8003d2c4`) - render-track |
 | `FUN_801d657c` | vertex-colour packet build (two packed RGBs → 6 components) + GTE submit `FUN_80024e80` - render-track |
-| `FUN_801d6910` / `FUN_801d693c` / `FUN_801d6968` / `FUN_801d6994` | vertex-packet field setters assembling the scratch primitive at `0x80070764` (three 12-byte vertex blocks + a trailing pair) - render-track |
-| `FUN_801d6bb8` / `FUN_801d6d60` | matrix-stacked placed-3D draw (`FUN_8005b268` / `FUN_8005b308` GTE push/pop, local transform `FUN_8003d20c` / `FUN_8003d344`) - render-track |
+| `FUN_801d6910` / `FUN_801d693c` / `FUN_801d6968` / `FUN_801d6994` | setters of the camera-glide record at `0x80070764`: angles, eye trio, focus, `H`, each a `(step, target)` halfword pair, handed to `FUN_80021248` (see [the arena](#the-arena-in-3d)) |
+| `FUN_801d6d60` | placed stage-model draw: position through the camera, a view-depth test that draws only past `0x2710`, `RotMatrixY` (`FUN_8004629C`) of the rotation's `Y`, then scene model `DAT_8007C018[_DAT_8007B6F8]` - the arena walls |
+| `FUN_801d6bb8` | a flat marker drawn at a world point (the combat tick passes each fighter's position, the epilogue the focus X) - not ported |
 | `FUN_801d6f18` | effect-part flag setter + spawn (`actor +0x10 \|= 0x200000`, `FUN_800204f8`) |
 | `FUN_801d3390` | per-fighter idle / reset pose setter (match phase `DAT_801dbf78 == 0`; seeds display anim `+0x6a` from the action table) |
 | `FUN_801d6300` | do-nothing stub (`jr ra`); a disabled hook the SM family still calls |
@@ -1515,6 +1646,12 @@ loaded at duel start) with the `glyph_u` stamp paging widget 5's cell rect -
 the byte store `FUN_801d69a8` performs - and the resolved draws render as
 placeholder text at their stage positions (the glyph page's texels are not
 uploaded).
+
+The **3D duel** - both fighters posed by their display clips, the special's
+ghosts, the walls, the floor and the arena camera - is
+`engine-core::baka_duel_scene`, drawn by the play window and the browser
+play page from one buffer set and one view-projection; see
+[The arena in 3D](#in-the-port).
 
 ## Open
 
