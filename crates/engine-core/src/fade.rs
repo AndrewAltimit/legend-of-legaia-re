@@ -498,6 +498,36 @@ impl SceneTintRamp {
     }
 }
 
+/// The GTE back/ambient colour the prologue legs stage, `DAT_8007B788`'s low
+/// byte (`0x00202020` in `opdeene` vs `0x00FFFFFF` in `town01`, staged into
+/// GTE cr13-15 by `FUN_80043390`).
+pub const PROLOGUE_LIT_AMBIENT: u8 = 0x20;
+
+/// Give a prologue mesh's **light-source-row** vertices the dim prologue
+/// ambient as their modulation colour, leaving every baked colour word alone.
+///
+/// The lit rows (descriptor rows 0 / 1) carry no colour word; retail colours
+/// them through the GTE lighting sum, whose floor in the prologue is
+/// [`PROLOGUE_LIT_AMBIENT`]. The baked rows keep their own words (the
+/// `4C E6` rewrite grades them in the renderer's palette mode). `lit` is the
+/// per-vertex mask from
+/// [`crate::scene_resources::ResolvedTmd::build_filtered_vram_mesh_lit`],
+/// parallel to `colors`.
+///
+/// The mask is the point: a lit row and a baked word authored at exactly
+/// `0x80` read the same colour out of the mesh builder, and keying the
+/// restage on the colour instead darkened every such baked prim - on
+/// `opdeene`, the one-quad jungle billboards (the scene pack's bushes and
+/// branch sprites) drew black natively where retail draws them at
+/// `(98, 94, 42)`.
+pub fn apply_prologue_lit_ambient(colors: &mut [[u8; 3]], lit: &[bool]) {
+    for (c, &is_lit) in colors.iter_mut().zip(lit) {
+        if is_lit {
+            *c = [PROLOGUE_LIT_AMBIENT; 3];
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -701,5 +731,16 @@ mod tests {
         let [r, ..] = f.rgb();
         // 0xFF*0x40/0x40 per frame in q6: after 32 frames ≈ 127.
         assert!((126..=128).contains(&r), "halfway ≈ mid grey, got {r}");
+    }
+
+    #[test]
+    fn prologue_ambient_restages_lit_rows_only() {
+        // A lit-row vertex and a baked vertex authored at exactly 0x80 carry
+        // the same colour; only the mask tells them apart.
+        let mut colors = [[0x80; 3], [0x80; 3], [0x30, 0x28, 0x00]];
+        apply_prologue_lit_ambient(&mut colors, &[true, false, false]);
+        assert_eq!(colors[0], [PROLOGUE_LIT_AMBIENT; 3]);
+        assert_eq!(colors[1], [0x80; 3], "a baked 0x80 word keeps its colour");
+        assert_eq!(colors[2], [0x30, 0x28, 0x00]);
     }
 }
