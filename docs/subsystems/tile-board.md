@@ -190,17 +190,17 @@ The board controller is a state machine keyed on the controller actor's `+0x54` 
 
 | State | Entry | Role |
 |---|---|---|
-| `0` | `0x801EF310` | init: allocate the cell buffer + tile-actor table, spawn the player + tile actors from header ids, run the procedural fill at `0x801EF334` |
-| `1` | `0x801EF680` | fade-in (ramps `actor[+0x9c]`) |
+| `0` | `0x801EF310` | init: allocate the cell buffer + tile-actor table, spawn the player + tile actors from header ids, run the procedural fill at `0x801EF334`; its tail clears system flags `A..A+3` (`FUN_8003CE34`, `A` = header `+7`), seats the player cell at column `4`, row `0` with the walk-in target `(hdr[1] * 128 + 0x240, hdr[2] * 128 + 0x40)`, saves the octant `_DAT_8007B5F0` into `DAT_801F35C4` and zeroes `+0x9C` |
+| `1` | `0x801EF680` | fade-in: `+0x9C += (d * 3) << 5` (`d` = `DAT_1F800393`), copied into every tile actor's `+0x72` render scale; at `0x1000` it clamps and goes to `2`, the walk-in |
 | `2` | `0x801EFA88` | interpolate the actor's world position toward the target cell centre (`DAT_801f35d0`/`d4`); on arrival → `3` |
 | `3` | `0x801EF6FC` | arrival: cell `7` → state `7`; cells `8..0xA` → state `8`; otherwise every animated cell **on the whole board** steps `0xB → 0xC → 0xD → 0xE → 0xB`, then → `4` |
 | `4` | `0x801EF824` | **read input + collision + commit**: see below |
-| `5` | `0x801EFBD0` | quit prompt (entered on the menu edge `_DAT_8007b874 & 0x10`): `FUN_80031D00`, then the two-choice picker `FUN_801E9DC8(0x8007BB88, 2, 1)`; confirm with `*0x8007BB88 == 0` → `6`, anything else back to `4` |
+| `5` | `0x801EFBD0` | quit prompt (entered on the menu edge `_DAT_8007b874 & 0x10`, Triangle, which also sets `+0x9C = 0x1000` and the cursor `_DAT_8007BB88 = 1`): `FUN_80031D00`, then the two-choice picker `FUN_801E9DC8(0x8007BB88, 2, 1)` - Up/Down wrap (SFX `0x21`), confirm SFX `0x36`, cancel SFX `0x37`; confirm with `*0x8007BB88 == 0` → `6`, confirm on row `1` or cancel back to `4` |
 | `6`, `7` | `0x801EFC2C` | → `9` (quit, trigger cell) |
 | `8` | `0x801EFC38` | event cell: the flag writes below, then → `0xB` |
 | `9`, `0xB` | `0x801EFCD0` | `+0x54 += 1` |
-| `0xA`, `0xC` | `0x801EFCE4` | fade-out: `+0x9C -= DAT_1F800393 << 8`, copied into every tile actor's `+0x72`; below zero → `0xD` |
-| `0xD` | `0x801EFDA8` | park every tile actor at `(0x3FC0, 0x3FC0)` (`FUN_8003D344`), → `0xE` |
+| `0xA`, `0xC` | `0x801EFCE4` | fade-out: `+0x9C -= DAT_1F800393 << 8`, copied into every tile actor's `+0x72` except the event tile the player stands on (cell `8..0xA` under the player skips the slot of that value); below zero → `0xD` |
+| `0xD` | `0x801EFDA8` | park every tile actor at `(0x3FC0, 0x3FC0)` (`FUN_8003D344`), the same event tile excepted, → `0xE` |
 | `0xE` | `0x801EFE64` | teardown: free the cell buffer and the tile-actor table (`FUN_80017B94`), restore `_DAT_8007B5F0` from `DAT_801F35C4`, zero the scene control block's `+0x3E` |
 
 Zeroing `+0x3E` is how the board ends: the op-`0x49` subsystem actor (descriptor `0x8007065C`) polls it (`0x801F163C..0x801F16AC`), retires, and sets `_DAT_8007B450 = 1`, which the parked op reads as "done" and advances past its operand block.
@@ -246,9 +246,30 @@ event cell (`8..=0xA`) exits the board mode - the suspended script reads
 `Done` and resumes past the install op - and an event cell first writes the
 state-8 flags above (`tile_board::event_cell_flag_writes`); any other arrival
 advances every animated cell on the board (`tile_board::advance_animated_cells`).
-The exit is immediate - the fade states `9..0xD` and the quit prompt (state
-`5`) are not ported, because no shipped script installs a board. The header's actor-template ids are kept on
-`World::board.header` for the render consumers.
+The exits are not immediate: the arrival sets the walk SM's state
+(`World::board.sm`, values in `tile_board::sm`) to `7` or `0xB`, and
+`World::tick_tile_board` walks it through the one-tick step states, the
+fade-out, the park and the teardown before the board goes and the op-`0x49`
+script reads `Done`. The install starts in the fade-in, which ignores input
+until the tiles reach full scale, and clears the header's four set-base flags
+as state `0` does. The Triangle edge on an idle frame opens the quit prompt
+(state `5`), a wrapping two-row picker on the menu cursor
+(`menu_input::menu_cursor_nav`). The fade value `World::board.fade` is what
+every tile actor's render scale follows (`World::tile_board_cell_scale`,
+carried on `TileActorDraw::scale` to both hosts), and both hosts draw the
+prompt panel through `legaia_engine_ui::tile_board_prompt_sprites_for` /
+`tile_board_prompt_text_draws_for` with its three lines read off the field
+overlay's image (`SceneHost::tile_board_prompt_lines`). The fades count one
+`DAT_1F800393` unit per world tick (one vsync), the same wall-clock ramp as
+retail's `d = 2` per game tick.
+
+Two parts of state `0` are not modelled: the walk-in from the player's
+position to column `4`, row `0` (the port seats the player on the board's
+start cell at install and returns to input after the fade-in, so the state-3
+arrival pass does not run on the start cell), and the octant save/restore
+around the board (`_DAT_8007B5F0` into `DAT_801F35C4` and back at teardown).
+The header's actor-template ids are kept on `World::board.header` for the
+render consumers.
 
 **Tile-actor spawn + reposition.** At install `World::try_install_tile_board`
 spawns one field actor per distinct drawable cell value present on the board

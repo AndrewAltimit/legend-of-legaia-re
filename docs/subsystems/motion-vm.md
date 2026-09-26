@@ -535,10 +535,25 @@ ambient walker takes it: the MAN spawner `FUN_8003A1E4` ORs `0x20000` into
 each placement it seats (`0x8003A3A8..0x8003A3B4`), and `0x01000000` too for a
 `>= 0xF0` party model. The no-class arm - `±80` plus a model-bbox offset from
 the 32-byte `.MAP` object record at `*(0x1F8003EC) + actor[+0x60] * 32` - is
-for pool actors spawned elsewhere. On a hit the routine links the pair through
-`+0x98` both ways and returns class `1` for these walkers; the port keeps
-neither the link nor the `+0x10 & 3` collision-exempt early-out, since the
-ambient channel has no pooled flag word or target slot to hold them.
+unreachable for a placement: it leaves the class arm only if bit 17 is
+cleared, and no disc script clears it. It would not matter if it were - its
+result class is `4`, and all three callers test `result & 1` (`0x800384C0`,
+`0x80038A78`, `0x80038F3C`).
+
+The routine opens with a **collision-exempt early-out**: `+0x10 & 3` non-zero
+returns `0` before any box test (`0x801CF8B8`), and the directional caller
+skips the call outright under `+0x10 & 1` (`0x80038484..0x80038490`). Scripts
+raise those bits with op `0x31` (`31 00` / `31 01`) - own-context in many
+placement records (`vell`, `bylon`) and as cross-context pokes from
+partition-2 beats - so a walker a script has made exempt walks through the
+player. The port reads the bits off the placement channel's live flag word
+(`World::field_channel_flags`) and applies the same early-out
+(`AmbientPlayerProbe::exempt`).
+
+On a hit the routine links the pair through `+0x98` both ways and returns
+class `1` for these walkers. The port keeps no link: the player-side readers
+(`0x801D0750`, `0x801D0868`) run only on a hit of the player's own probe,
+which rewrites `+0x98` first, so the walker's write is never read.
 
 So an ambient walker's containment is the AABB its op authored, and the only
 thing that can stop a step is the player standing in it. A blocked
