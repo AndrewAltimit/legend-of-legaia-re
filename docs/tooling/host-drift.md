@@ -789,7 +789,10 @@ clip player and drains the player move cues. A `{}` body pairs perfectly with
 anything, and the alias row's reason asserted that both sides "advance the
 scene's posed actors" - a sentence no line of native code supported. The
 window does that work; it does it inline in its own tick loop, which is a
-different claim, and the one the row makes now.
+different claim, and the one the row made next. Both hosts now name the
+step (`drain_anim_cues` natively) and both bodies call the one engine kernel
+`World::drain_field_anim_cues`; the `[[frame_content]]` row carries the one
+remaining difference, the page advancing its clip players inside the step.
 
 This tier asks the next question with the only evidence a source scan carries:
 for each paired kernel, the set of **engine functions** each host's body
@@ -1706,7 +1709,7 @@ are the two things a reader should compare:
 | host | call | camera |
 |---|---|---|
 | native window | `take_field_fog_prims` in `window/event_handler/redraw_passes.rs`, before the renderer borrow, composited with the rest of `screen_prims` | `resolve_field_camera(world, camera, None, aabb centre)` |
-| play page | `tick_field_fog_prims` in `play_field_fx.rs`, from `tick_battle_intro`'s prim assembly | `resolve_field_camera(world, camera, None, [0, 0])` |
+| play page | `tick_field_fog_prims` in `play_field_fx.rs`, from `tick_battle_intro`'s prim assembly | `resolve_field_camera(world, camera, None, aabb centre)` |
 
 Both wrap the quads through `screen_prim::fog_puff_prim`, so the blend class
 (semi-transparent, the record's ABR `1`) and the `POLY_FT4` vertex order come
@@ -2841,15 +2844,10 @@ so the tier had nothing to pair:
 
 Recorded rather than fixed; each names the host that lacks it. None is gated.
 
-- **Narration crawl.** The native window's crawl / title-card arm `continue`s
-  after the session tick, skipping the FX ticks, CLUT effects, field-event
-  drain, NPC re-bind, balloon sync and play clock the page runs every frame
-  (`window/event_handler/redraw.rs`, the `boot_ui` / narration arm).
-- **Movie frames.** The page gates only `host.tick()` on a live FMV; its FX,
-  CLUT walker, NPC clips and SFX keep advancing behind the picture.
-- **Anim-cue drains.** The window drains player gestures and NPC animate cues
-  in `SceneMode::Field` only; the page drains them in every mode, so overworld
-  gestures play on one host.
+- **NPC clip advance off the field.** Both hosts drain the ANIMATE cues
+  every tick, but the window advances its NPC clip players in its draw pass
+  and only in `SceneMode::Field` (the frame index keys its pose cache), while
+  the page advances them every tick in every mode.
 - **Shop tick.** The window ticks the world under an open shop with a neutral
   pad; the page freezes the world.
 - **Sub-tick taps.** The window sets and clears its pad straight from key
@@ -2872,6 +2870,25 @@ The audio rows of the same pass are closed or settled in
 
 ### Closed from the same list
 
+- **The field frame tail.** Three one-host tails moved onto engine kernels in
+  `engine-core`'s `world/field_frame_tail.rs`, each called by both hosts:
+  `World::tick_effect_scene_graphs` (summon / move-FX / field-FX),
+  `World::step_field_vram_effects` (op-`0x43` stamps and rect copies, the
+  ambient move-VM tree, CLUT-cell one-shots and blend fades) and
+  `World::drain_field_anim_cues`. With them: the native narration crawl /
+  title-card arm no longer returns after the scene tick, so the whole tail
+  runs under the crawl as it does on the page (only the pad freeze and the
+  Start gate remain); the page freezes its tail while a movie holds the frame,
+  as the window's zero-tick loop does; and the window drains ANIMATE cues every
+  tick in every mode instead of in its field draw pass. The native CLUT step
+  also carried a defect of its own: it skipped every call while four effect
+  lists were empty, a test that left out the `4C DB` blend fades (a lone
+  blend fade never stepped natively) and that left each list's tick backlog
+  banked for the next effect to consume at once.
+- **The page's screen-prim camera centre.** Fog, drop shadows, move strips and
+  light pools resolved the follow camera with a pinned `[0, 0]` fallback focus
+  on the page and the scene AABB centre natively; the page passes the AABB
+  centre now.
 - **The battle message banner.** Screen elements `0x59` (Seru absorbed) and
   `0x65` (magic level increased) share one string, the context buffer
   `ctx + 0x1F9`; neither host drew either, and the two drains threw away the
