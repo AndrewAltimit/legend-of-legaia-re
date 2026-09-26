@@ -1130,27 +1130,22 @@ pub struct PaylinePrim {
 /// endpoint on its own through `FUN_8003d368` and links the packet at
 /// [`payline_ot_depth`] of the **second** endpoint's returned depth.
 // REF: FUN_8003d368 (the SCUS RTPS wrapper each endpoint goes through; the
-// projection pass this row waits on is a host that runs it for the cabinet)
-// NOT WIRED: the blocker is a **projection pass**, and it is worth being exact
-// because "no line draw kind exists in the engine" has been said here and is
-// only half right. There is indeed no `ScreenPrim::Line` -
-// `legaia_engine_ui::screen_prim` carries a textured and a flat *quad* and
-// nothing two-point - but adding one would not wire this row, because a
-// payline's two endpoints are **model-space** (`legaia_asset::
-// minigame_slot_scene::SlotScene::paylines`, disc data at `DAT_801d3680`) and
-// retail `RTPS`-projects each on its own through `FUN_8003d368` before linking
-// the packet at [`payline_ot_depth`] of the second endpoint's depth. Neither
-// host runs that projection for the cabinet: the native window draws the
-// machine as a text HUD and the browser play page draws its cabinet from JS
-// geometry of its own. A 3D slot-cabinet pass is the prerequisite; the line
-// primitive is the step after it.
-//
-// The cabinet's own geometry is no longer missing: it is PROT 1200 descriptor 1,
-// a 1-object Legaia TMD (65 verts, 76 untextured prims) the overlay init
-// installs into the shared model bank and spawns as an ordinary actor, so a
-// cabinet pass is a model draw rather than a packet builder. See
-// docs/subsystems/minigame-slot-machine.md, "The cabinet is a mesh".
+// browser pages run its equivalent caller-side, over the fitted projection)
 // PORT: FUN_801d3380 (payline 3D line segments)
+//
+// Wired on both browser hosts, which is where the projection pass this row
+// used to wait on already ran: the minigames page (`slot_payline_prims_json`)
+// and the play page (`play_mg_slot_payline_prims_json`) each hand the page
+// these prims, and the page RTPS-projects each endpoint through the fitted
+// cabinet projection it draws the rest of the machine with, then strokes a
+// two-point line in the prim's colour, half-blended when the `0x43` code
+// carries the semi-transparency bit. An earlier note here said neither host
+// projected the cabinet; both browser pages did, and drew the paylines from
+// the raw geometry table with colours of their own. The native window is the
+// one host without a cabinet pass (it runs the machine as a text HUD), so it
+// has no payline draw either - a model draw of PROT 1200 descriptor 1 plus a
+// line kind in `screen_prim` is that host's prerequisite. See
+// docs/subsystems/minigame-slot-machine.md, "The cabinet is a mesh".
 pub fn payline_prims(
     paylines: &[legaia_asset::minigame_slot_scene::PayLine],
     winning_line: i32,

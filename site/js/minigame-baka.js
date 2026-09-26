@@ -794,12 +794,15 @@
       for (const d of chrome) {
         const alpha = Math.max(0, Math.min(1, d.b / 128));
         if (d.g != null) {
-          /* Widget 5's strip paged to cell g (u = g * 24), 24 x 32. */
+          /* Widget 5's strip paged to cell g. The texel column is the
+           * engine's stamp (`u`, baka_fighter_chrome::glyph_u - a byte store,
+           * so it wraps at 256), not page arithmetic; 24 x 32. */
           const w5 = this.widgets[W.STAGE_DIGIT];
           if (!w5) continue;
+          const u = (d.u != null) ? d.u : ((d.g * 24) & 0xFF);
           g.save();
           g.globalAlpha = alpha;
-          this._cell(g, w5.page, w5.palette, (((d.g % 10) + 10) % 10) * 24, w5.v, 24, 32,
+          this._cell(g, w5.page, w5.palette, u, w5.v, 24, 32,
                      d.x - 12, d.y - 16);
           g.restore();
         } else {

@@ -649,3 +649,91 @@ fn slot_and_baka_bgm_and_the_spin_motor_decode_off_the_disc() {
     assert!(!spin.is_empty(), "spin-motor tone decoded");
     assert!(mg.slot_spin_rate() > 0);
 }
+
+/// The paylines the page strokes come from the ported payline pass
+/// (`FUN_801d3380`, `slot_machine::payline_prims`) over this disc's geometry
+/// table: five model-space segments in retail's packet colours, exactly the
+/// winning line lit, every line on the semi-transparent `0x43` code. The page
+/// used to draw the raw table in colours of its own.
+#[test]
+fn the_payline_prims_come_from_the_ported_pass() {
+    use legaia_engine_core::slot_machine as sm;
+    let Some((mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let scene: serde_json::Value = serde_json::from_str(&mg.slot_scene_json()).unwrap();
+    let rgb = |c: (u8, u8, u8)| serde_json::json!([c.0, c.1, c.2]);
+    for win in [-1i32, 0, 3] {
+        let prims: serde_json::Value =
+            serde_json::from_str(&mg.slot_payline_prims_json(win)).unwrap();
+        let prims = prims.as_array().unwrap();
+        assert_eq!(prims.len(), 5, "five paylines");
+        for (i, p) in prims.iter().enumerate() {
+            let lit = i as i32 == win;
+            assert_eq!(p["lit"], lit, "line {i} win {win}");
+            assert_eq!(
+                p["rgb"],
+                rgb(if lit {
+                    sm::PAYLINE_COLOR_LIT
+                } else {
+                    sm::PAYLINE_COLOR_IDLE
+                })
+            );
+            assert_eq!(p["semi"], true, "GP0 0x43 is semi-transparent");
+            // Model-space endpoints, straight out of the parsed table.
+            assert_eq!(p["a"], scene["paylines"][i]["a"]);
+            assert_eq!(p["b"], scene["paylines"][i]["b"]);
+        }
+    }
+}
+
+/// The Baka chrome's glyph draws carry the engine's stamped texel column
+/// (`baka_fighter_chrome::glyph_u`, a byte store) - the page samples widget 5
+/// there instead of computing a column of its own.
+#[test]
+fn the_baka_chrome_glyph_draws_carry_the_engine_stamp() {
+    use legaia_engine_core::baka_fighter_chrome as bc;
+    let Some((mut mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    assert!(mg.baka_start(5, 0x1234_5678));
+    // The ROUND banner pages the strip to the round number, and it only rises
+    // once a round has ended - so fight: throw the counter to whatever the
+    // opponent committed (2 beats 1, 3 beats 2, 1 beats 3).
+    let mut glyphs = 0;
+    for _ in 0..20_000 {
+        if glyphs > 0 {
+            break;
+        }
+        let st: serde_json::Value = serde_json::from_str(&mg.baka_state_json()).unwrap();
+        if st["phase"] == "match_over" {
+            break;
+        }
+        if st["can_choose"] == true {
+            let pick = match st["chosen"][1].as_u64() {
+                Some(1) => 2,
+                Some(2) => 3,
+                Some(3) => 1,
+                _ => 1,
+            };
+            mg.baka_choose(pick);
+        }
+        let rows: serde_json::Value = serde_json::from_str(&mg.baka_chrome_json()).unwrap();
+        for r in rows.as_array().unwrap() {
+            match r["g"].as_i64() {
+                Some(g) => {
+                    glyphs += 1;
+                    assert_eq!(r["u"].as_i64(), Some(i64::from(bc::glyph_u(g as i32))));
+                }
+                None => assert!(r["u"].is_null()),
+            }
+        }
+        mg.baka_tick(1);
+    }
+    assert!(
+        glyphs > 0,
+        "the ROUND banner pages the glyph strip at least once"
+    );
+}

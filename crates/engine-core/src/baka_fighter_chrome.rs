@@ -107,10 +107,15 @@ pub const BANNER_CLUT_FLASH: u16 = 0x7742;
 /// PORT: FUN_801D69A8 (the store half) / FUN_801D67F0 mode 2.
 ///
 /// Wired: the duel's own [`BakaChrome`] produces the draws
-/// ([`crate::baka_fighter::BakaFight::chrome_frame`]), and the play window
-/// resolves each glyph-carrying [`ChromeDraw`] against the overlay's parsed
-/// widget table (`legaia_asset::baka_opponents::parse_baka_hud`), performing
-/// this `u` stamp per draw (`window/minigames.rs`).
+/// ([`crate::baka_fighter::BakaFight::chrome_frame`]). The minigames page's
+/// `baka_chrome_json` export stamps each glyph-carrying [`ChromeDraw`] through
+/// this and the page samples widget 5's strip at the stamped column - the one
+/// host that draws the chrome from the duel's own art. The play window
+/// performs the same stamp against the overlay's parsed widget table
+/// (`legaia_asset::baka_opponents::parse_baka_hud`, `window/minigames.rs`) and
+/// carries the resolved rect beside each draw, but prints the chrome as
+/// labels: its duel HUD has no textured-quad surface, so the rect is not yet
+/// sampled there. The browser play page prints the same labels.
 pub fn glyph_u(index: i32) -> u8 {
     (index.wrapping_mul(GLYPH_CELL_WIDTH) & 0xFF) as u8
 }

@@ -2660,13 +2660,18 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     slotDrawReels(g, st, api.slot_reel_pos());
     g.restore();
 
-    /* 2. the paylines: 3D segments, both endpoints projected */
-    for (let i = 0; i < slotScene.paylines.length; i++) {
-      const l = slotScene.paylines[i];
+    /* 2. the paylines: 3D segments, both endpoints projected. The prims -
+     *    colour, lit state, the GP0 0x43 semi-transparency - come from the
+     *    engine's ported payline pass (FUN_801d3380); the projection is the
+     *    caller-side half that pass leaves to its host. */
+    let lines = [];
+    try { lines = JSON.parse(api.slot_payline_prims_json(winLine == null ? -1 : winLine)); }
+    catch (e) { lines = []; }
+    for (const l of lines) {
       const a = slotProject(l.a[0], l.a[1], l.a[2]);
       const b = slotProject(l.b[0], l.b[1], l.b[2]);
-      g.strokeStyle = (i === winLine) ? 'rgba(255,255,128,0.95)' : 'rgba(190,190,190,0.35)';
-      g.lineWidth = (i === winLine) ? 2 : 1;
+      g.strokeStyle = `rgba(${l.rgb[0]},${l.rgb[1]},${l.rgb[2]},${l.semi ? 0.5 : 1})`;
+      g.lineWidth = l.lit ? 2 : 1;
       g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
     }
 

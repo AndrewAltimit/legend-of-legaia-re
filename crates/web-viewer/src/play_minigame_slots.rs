@@ -247,6 +247,14 @@ impl LegaiaRuntime {
         self.minigame_art().is_some_and(|a| a.slot_scene_ready())
     }
 
+    /// The payline line prims (`LegaiaMinigames::slot_payline_prims_json`,
+    /// the ported `FUN_801d3380` pass) for `winning_line`.
+    pub fn play_mg_slot_payline_prims_json(&self, winning_line: i32) -> String {
+        self.minigame_art()
+            .map(|a| a.slot_payline_prims_json(winning_line))
+            .unwrap_or_else(|| "[]".to_string())
+    }
+
     /// The scene graph + projection (`LegaiaMinigames::slot_scene_json`).
     pub fn play_mg_slot_scene_json(&self) -> String {
         self.minigame_art()

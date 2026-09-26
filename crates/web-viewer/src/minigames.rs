@@ -870,9 +870,13 @@ impl LegaiaMinigames {
     /// ```
     ///
     /// `w` is the HUD widget id, `x`/`y` the quad centre, `b` the brightness
-    /// (`0x80` = the descriptor's own RGB), `s` the 20.12 size scale and `g`
+    /// (`0x80` = the descriptor's own RGB), `s` the 20.12 size scale, `g`
     /// the glyph-strip cell a digit draw pages widget 5 to (`null` for a
-    /// plain widget). `[]` outside a duel.
+    /// plain widget) and `u` the texel column that paging stamps into widget
+    /// 5's record - [`legaia_engine_core::baka_fighter_chrome::glyph_u`], the
+    /// byte store retail's glyph wrapper performs (so it wraps at 256), and
+    /// the same stamp the native window resolves its chrome draws with.
+    /// `[]` outside a duel.
     pub fn baka_chrome_json(&self) -> String {
         let Some(f) = self.baka.as_ref() else {
             return "[]".to_string();
@@ -885,6 +889,7 @@ impl LegaiaMinigames {
                 serde_json::json!({
                     "w": d.widget, "x": d.x, "y": d.y,
                     "b": d.brightness, "s": d.size, "g": d.glyph,
+                    "u": d.glyph.map(legaia_engine_core::baka_fighter_chrome::glyph_u),
                 })
             })
             .collect();
@@ -1541,6 +1546,50 @@ impl LegaiaMinigames {
     /// Whether the machine's 3D scene graph decoded off this disc.
     pub fn slot_scene_ready(&self) -> bool {
         self.slot_scene.is_some()
+    }
+
+    /// The five payline **line prims** for one frame, built by the ported
+    /// payline pass (`FUN_801d3380`,
+    /// [`legaia_engine_core::slot_machine::payline_prims`]) over this disc's
+    /// geometry table:
+    ///
+    /// ```json
+    /// [ { "i":0, "a":[-640,-192,-768], "b":[640,-192,-768],
+    ///     "rgb":[128,128,128], "semi":true, "lit":false }, ... ]
+    /// ```
+    ///
+    /// `winning_line` is retail's `DAT_801d3c8c`, compared for equality, so
+    /// any value outside `0..5` (the page passes `-1` before a win) lights
+    /// nothing. The endpoints stay model-space: the page RTPS-projects each
+    /// through the same fitted projection the rest of the cabinet uses, which
+    /// is the projection pass the prim builder leaves caller-side, and draws a
+    /// two-point line in `rgb` - half-blended over the scene when `semi`
+    /// (GP0 `0x43` carries the semi-transparency bit, and the lit colour
+    /// rewrites only the three colour bytes). `[]` when the scene did not
+    /// decode.
+    pub fn slot_payline_prims_json(&self, winning_line: i32) -> String {
+        let Some(sc) = self.slot_scene.as_ref() else {
+            return "[]".to_string();
+        };
+        let pos = |p: &slot_scene::Pos3| format!("[{},{},{}]", p.x, p.y, p.z);
+        let rows = legaia_engine_core::slot_machine::payline_prims(&sc.paylines, winning_line)
+            .iter()
+            .map(|l| {
+                format!(
+                    r#"{{"i":{},"a":{},"b":{},"rgb":[{},{},{}],"semi":{},"lit":{}}}"#,
+                    l.index,
+                    pos(&l.a),
+                    pos(&l.b),
+                    l.color.0,
+                    l.color.1,
+                    l.color.2,
+                    l.code & 0x02 != 0,
+                    l.lit
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("[{rows}]")
     }
 
     /// The slot machine's **3D scene**, as the overlay's own rodata defines it,
