@@ -2867,10 +2867,8 @@ Recorded rather than fixed; each names the host that lacks it. None is gated.
 - **Baka on the play page** carries no strike clock or afterimage in its JSON;
   the minigames page does.
 
-And absent from both hosts, so no host is "behind": the `tick_scene_programs`
-XA legs and `BgmDirector::reattach_volume` (sub-op `8`, which re-attaches the
-slot at `0x8007057C` - not the field-BGM slot `0x8007052C` the other sub-ops
-drive - with a level whose boot value is `-1`, so no director applies it yet).
+The audio rows of the same pass are closed or settled in
+[their own section](#audio-legs-one-kernel-per-decision).
 
 ### Closed from the same list
 
@@ -2905,6 +2903,57 @@ drive - with a level whose boot value is `-1`, so no director applies it yet).
   expiry arm is `FUN_800266E0`'s body on the field-BGM slot - sub-op `2`'s
   pause - so `World::tick` now emits that pause and both hosts' BGM routing
   acts on it ([`audio.md`](../subsystems/audio.md#the-timed-release-is-a-scheduled-bgm-pause)).
+
+## Audio legs: one kernel per decision
+
+A side-by-side read of the two play hosts' audio paths found each of the rows
+below. Every fix moves the decision into an `engine-core` / `engine-audio`
+kernel both hosts call, so the two cannot drift on it again.
+
+- **Field CD-XA voice lines.** Field-VM op `0x36`'s XA arm and the
+  scripted-scene programs' voice state both start `FUN_8003D53C` one-shots, and
+  neither reached a host: the op pushed an event nobody read, and
+  `World::tick_scene_programs` counted its legs into a report nobody consumed.
+  Both now land on `World::push_field_xa_cue`, drained by both hosts'
+  `route_field_sfx` into their `play_xa_clip`; the drive's busy span feeds the
+  program's `xa_busy` wait. The programs' other XA leg (`FUN_80019794`) is a
+  seek-ahead that plays nothing ([`audio.md`](../subsystems/audio.md#streamed-cue-census-fun_8003eae4--fun_80019794)).
+- **Cues raised off the field VM.** The world map's map-display cue (`0x20`)
+  and the developer menu's cursor / confirm cues are `FUN_80035B50` calls in
+  retail. Each was queued on its controller and dropped by both hosts; both now
+  ride the SFX ring (`World::tick_world_map`, `DevMenuSession::route_sfx`).
+- **A settled duck.** Both hosts re-applied the battle duck only while the
+  level moved, so a track started under a held duck played at full volume.
+  `legaia_engine_audio::duck::duck_apply` re-applies a level resting below the
+  reference every frame on both.
+- **A carried global track.** A door under a `music_01` track restaged the
+  scene VAB over the region that track's own samples occupy, while both
+  directors kept the track playing as a duplicate start.
+  `scene::scene_bank_restage_wanted` skips the restage while a global track
+  owns the region; no disc script starts a scene-local id, so nothing reads
+  the skipped bank.
+- **The reward bank.** The page placed PROT 0889 above the BGM but not above
+  a staged side-band bank, and dropped it on every scene change where the
+  native director kept it. It now takes the highest tail end, and both keep it
+  until a BGM restage re-owns the region.
+- **Owned-bank order.** Both directors uploaded a global track's VAB before
+  parsing its score; both now validate both halves first.
+- **Direct scene entry.** The native `enter_field_live` restaged no VAB,
+  dropped no queued cue and kept the dedupe latch; the page's `enter_field`
+  did all three. `BootSession::restage_audio_for_direct_entry` makes the same
+  three moves.
+
+Two rows stay open on purpose:
+
+- **Op `0x35` sub-op `8`.** `FUN_80019898` replays the sequence bound to the
+  record at `0x8007057C` through `FUN_80026478`. In every captured state that
+  record either names a sequence whose channel holds no stream or is inactive,
+  so the retail effect is silence, and the trait's default no-op is the
+  faithful director behaviour ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)).
+- **Cast-voice latency on the page.** A cast voice whose `(slot, channel)` the
+  clip bank lacks is sliced out of the disc by the page's script and installed
+  a frame or more later; the native window reads it synchronously. Closing it
+  needs the cast spans pre-staged at battle entry.
 
 ## Adding coverage
 

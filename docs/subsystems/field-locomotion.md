@@ -1896,7 +1896,7 @@ are reached only through the dev handler-id table, one word each at `0x801F3458`
 `0x801F3460`); the engine installs Riremito from the world-map debug sub-list's hand-off
 and Rula from tests only.
 
-The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), "scripted-scene voice stream". That call site is program 2's state `0x16`.
+The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), the scripted-scene voice file. That call site is program 2's state `0x16`, and it is a seek-ahead (`CdlSeekL`, no read), not a stream: the voice itself is state `0x17`'s `FUN_8003D53C(0x10, 7, 0x135)` one-shot.
 
 `FUN_801d567c` advances a per-actor **motion keyframe**: when the actor's frame timer expires it reads the next motion bytes from `actor[+0x94] + actor[+0x9e]` through the flag/stream reader `func_0x8003ce9c`; otherwise, when `+0x9c == 0`, it latches the current motion transform (copying `+0x3c` -> `+0x40`, `+0x16` -> `+0x6a`, and packing `+0x74`/`+0x88` into `+0x80..+0x85`) and runs `FUN_801e4404`.
 
