@@ -392,6 +392,15 @@ pub fn apply_pause_items_outcome(
     world: &mut World,
 ) -> Option<u32> {
     apply_inventory_outcome(&session.inner, world);
+    // Incense (item `0x8A`, effect class `0x82`): the confirm runs the SCUS
+    // item applier, whose class-`0x82` arm (`0x800421A0`) is one
+    // `jal 0x80046870` - `+0x40` walk ticks on `_DAT_8007B600`, capped at
+    // `0x100`. The field walk tick drains it and the region encounter roll
+    // skips while it is non-zero (`World::on_field_step`).
+    for _ in 0..session.incense_uses() {
+        world.locomotion.walk_regen_window =
+            legaia_engine_vm::battle_helpers::top_up_cooldown(world.locomotion.walk_regen_window);
+    }
     if let Some(warp) = session.staged_warp() {
         world.menu.pending_warp = Some(warp);
     }
@@ -1024,6 +1033,7 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
         .with_arrange_rank(world.menu.arrange_rank.clone())
         .with_warp_destinations(warp_destinations(world))
         .with_throw_out_row_order(throw_out_slots)
+        .with_incense_window(world.locomotion.walk_regen_window)
 }
 
 /// The visible rows of the quick-travel landmark list - the Door of Wind

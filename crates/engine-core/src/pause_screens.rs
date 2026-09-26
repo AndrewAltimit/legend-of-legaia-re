@@ -216,6 +216,15 @@ pub struct PauseItemsSession {
     /// Set when the player backs out of the command window (Circle /
     /// Triangle) - the screen is finished without an item use.
     closed: bool,
+    /// Incense confirms committed while the screen was up. Each one is a
+    /// `FUN_800402F4` class-`0x82` apply - one `FUN_80046870` top-up of the
+    /// Incense window - which
+    /// [`crate::field_menu_dispatch::apply_pause_items_outcome`] replays onto
+    /// the world when the screen finishes.
+    incense_uses: u8,
+    /// The Use list's Incense row is greyed: the Incense window already
+    /// holds `0xE0` or more walk ticks. See [`Self::with_incense_window`].
+    incense_blocked: bool,
 }
 
 impl PauseItemsSession {
@@ -236,7 +245,34 @@ impl PauseItemsSession {
             throw_out_slots: Vec::new(),
             cursor: 0,
             closed: false,
+            incense_uses: 0,
+            incense_blocked: false,
         }
+    }
+
+    /// Seed the Incense row's gate from the live Incense window
+    /// (`_DAT_8007B600`, the engine's
+    /// [`crate::world::FieldLocomotion::walk_regen_window`]).
+    ///
+    /// Retail greys the row in the Use-list build: content id 3 asks
+    /// `FUN_8003043C` whether the item would do anything, which runs the
+    /// action validator `FUN_8003FB10` on the item-effect record's class byte,
+    /// and Incense's class `0x82` arm is the three-instruction leaf
+    /// `FUN_80046898` - `_DAT_8007B600 < 0xE0` (`slti v0,v0,0xe0` at
+    /// `0x800468A0`). A greyed row's confirm is a buzz in the kind-4 list
+    /// kernel, so a window at or past `0xE0` ticks refuses another Incense
+    /// before its Yes/No window ever opens.
+    ///
+    /// REF: FUN_80046898 (the gate; ported as
+    /// `legaia_engine_vm::battle_action::item_count_gate`)
+    pub fn with_incense_window(mut self, window: i32) -> Self {
+        self.incense_blocked = !legaia_engine_vm::battle_action::item_count_gate(window);
+        self
+    }
+
+    /// Incense confirms this screen committed (see [`Self::with_incense_window`]).
+    pub fn incense_uses(&self) -> u8 {
+        self.incense_uses
     }
 
     /// Attach the **Throw Out** row order (`FUN_80030628` content id `0x22`)
@@ -423,6 +459,11 @@ impl PauseItemsSession {
                         .get(self.cursor)
                         .and_then(|r| special_use_route_for_item(r.id))
                     {
+                        // A greyed Incense row buzzes in the list kernel
+                        // (`with_incense_window`) - no confirm window opens.
+                        if route == UseRoute::Incense && self.incense_blocked {
+                            return;
+                        }
                         // Only the Door of Wind route reads the landmark
                         // list; the two Yes/No routes open with an empty
                         // one, exactly as `SpecialUseSession::new` expects.
@@ -531,7 +572,11 @@ impl PauseItemsSession {
                         self.exit_code = Some(MENU_EXIT_CODE_WORLD_MAP_WARP);
                         self.closed = true;
                     }
-                    SpecialUseOutcome::EncounterSuppress | SpecialUseOutcome::Cancelled => {
+                    SpecialUseOutcome::EncounterSuppress => {
+                        self.incense_uses = self.incense_uses.saturating_add(1);
+                        self.focus = PauseItemsFocus::List;
+                    }
+                    SpecialUseOutcome::Cancelled => {
                         self.focus = PauseItemsFocus::List;
                     }
                 }

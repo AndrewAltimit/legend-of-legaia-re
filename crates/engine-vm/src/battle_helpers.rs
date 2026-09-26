@@ -63,13 +63,14 @@
 //!   - the validator's arm-`0x82` gate `FUN_80046898` admits another use only
 //!     while fewer than `0xE0` ticks remain.
 //!
-//!   Every host of that is field or pause-menu code. The engine already
-//!   carries the counter (`engine-core`'s `FieldLocomotion::walk_regen_window`,
-//!   decremented by `walk_regen::tick_walk_regen`), but nothing arms it: the
-//!   pause Items Incense confirm ends in `SpecialUseOutcome::EncounterSuppress`
-//!   and drops it, and the encounter roll does not read the window. Wiring is
-//!   those two edits - top the window up through this kernel on the
-//!   Incense outcome, and gate the region roll on it being zero.
+//!   Every host of that is field or pause-menu code, and the engine runs all
+//!   three: the counter is `engine-core`'s `FieldLocomotion::walk_regen_window`
+//!   (decremented by `walk_regen::tick_walk_regen`), the pause Items screen
+//!   counts each Incense confirm and `field_menu_dispatch::apply_pause_items_outcome`
+//!   tops the window up through this kernel once per confirm, the same
+//!   screen greys the Incense row through `item_count_gate` at build, and
+//!   `World::on_field_step` skips the region roll while the window is
+//!   non-zero.
 
 /// Byte offset of a MES-markup string's terminator - the write cursor
 /// [`mes_append_escape`] splices at.
@@ -213,22 +214,24 @@ pub fn screen_x_mirror(orient: ScreenOrient, mirror: bool, x: i16, width: i16) -
 ///
 // PORT: FUN_80046870
 ///
-/// The retail word `gp+0x2e8` (`_DAT_8007B600`) is a **frame cooldown**, not a
-/// charge gauge: each call tops it up by `+0x40` frames and saturates it at
-/// `0x100`, and two overlay sites count it down by one per frame and gate on
-/// zero (see the module notes). Faithful to the original `slti v0,v0,0x100`
-/// clamp: the sum is clamped only when it reaches or exceeds `0x100`.
+/// The retail word `gp+0x2e8` (`_DAT_8007B600`) is the **Incense window**,
+/// not a charge gauge: each call tops it up by `+0x40` walk-regen ticks and
+/// saturates it at `0x100`, the field walk tick counts it down by one per
+/// running tick and the region encounter roll gates on zero (see the module
+/// notes). Faithful to the original `slti v0,v0,0x100` clamp: the sum is
+/// clamped only when it reaches or exceeds `0x100`.
 pub const COOLDOWN_STEP: i32 = 0x40;
 /// Ceiling the cooldown saturates at.
 pub const COOLDOWN_MAX: i32 = 0x100;
 
 /// See [`COOLDOWN_STEP`] / [`COOLDOWN_MAX`].
 ///
-// PORT: FUN_80046870 NOT WIRED: its host is the pause Items Incense confirm
-// (`SpecialUseOutcome::EncounterSuppress`, which ends the flow without arming
-// anything) topping up `FieldLocomotion::walk_regen_window`, with the region
-// encounter roll gating on that window - field and menu code, see the module
-// notes.
+// PORT: FUN_80046870
+//
+// WIRED: `legaia_engine_core::field_menu_dispatch::apply_pause_items_outcome`
+// tops up `FieldLocomotion::walk_regen_window` once per Incense confirm the
+// pause Items screen committed; both play hosts apply the finished screen
+// through it.
 pub fn top_up_cooldown(value: i32) -> i32 {
     let next = value + COOLDOWN_STEP;
     if next < COOLDOWN_MAX {
