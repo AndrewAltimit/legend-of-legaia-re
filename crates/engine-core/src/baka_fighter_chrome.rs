@@ -600,7 +600,7 @@ pub struct ChromeActorBind {
     pub clear_accum: bool,
 }
 
-/// Animation-id threshold that picks between the two sprite banks.
+/// Animation-id threshold that picks between the two clip banks.
 pub const ANIM_BANK_SPLIT: i16 = 0x400;
 /// Mask applied to the animation id before the bank offset lookup.
 pub const ANIM_ID_MASK: u16 = 0x3FF;
@@ -616,8 +616,9 @@ pub const ANIM_ID_MASK: u16 = 0x3FF;
 /// whether its `+0x5A` owner id matches either focused fighter
 /// (`DAT_801DBF70` / `DAT_801DBF74`) - `0` when it does, `0x800` when it does
 /// not - and resolves the animation record: the `+0x5C` id picks the
-/// `_DAT_8007B888` bank below [`ANIM_BANK_SPLIT`] and the `_DAT_8007B840`
-/// bank at or above it (the at-or-above arm also clears `+0x74`), the id's
+/// scene's type-`0x05` clip bank `_DAT_8007B888` below [`ANIM_BANK_SPLIT`] and
+/// the type-`0x0B` bank `_DAT_8007B840` at or above it (the same two banks the
+/// clip selector `FUN_800204F8` resolves - ANM containers, not sprite sheets) (the at-or-above arm also clears `+0x74`), the id's
 /// low [`ANIM_ID_MASK`] bits index a word offset table at the bank base, and
 /// byte `+0x07` of the record that offset reaches becomes the actor's
 /// `+0x6A` frame count.
@@ -691,12 +692,10 @@ pub struct AnimSlotInstall {
     pub full: bool,
 }
 
-// NOT WIRED: its only caller is the overlay's keyframe-editor tick
-// `FUN_801D4FC8`, whose body runs only while the phase word `DAT_801DBF44`
-// sits in `400..500` (the gate at `0x801D5018..0x801D5028`). The port models
-// neither that phase nor the per-fighter animation-slot block it edits -
-// `BakaFight`'s fighter state carries action ids, not an 8-slot key array - so
-// there is no editor state for an installer to mutate.
+// REPLACED-BY: nothing is owed a port - retail never reaches it. Its only
+// caller is the keyframe-editor tick `FUN_801D4FC8` (see [`editor_tick`] for
+// the gate evidence), a development screen behind `_DAT_8007B868`, which the
+// shipped disc boots to zero and never sets.
 /// PORT: FUN_801D57BC - the animation-slot installer.
 ///
 /// `(bank, fighter, key)`: the routine resolves the fighter's slot block, then
@@ -757,10 +756,10 @@ pub struct AnimSlotDelete {
     pub count: i32,
 }
 
-// NOT WIRED: same caller and same gate as its installer sibling -
-// `FUN_801D4FC8`, live only in the `DAT_801DBF44` `400..500` phase window,
-// which the port does not model and whose per-fighter slot block it does not
-// carry.
+// REPLACED-BY: nothing is owed a port - retail never reaches it. Same caller
+// and same gate as its installer sibling: the editor tick `FUN_801D4FC8`
+// behind `_DAT_8007B868`, which the shipped disc never sets (evidence at
+// [`editor_tick`]).
 /// PORT: FUN_801D58E0 - the animation-slot **remover**, sibling of
 /// [`anim_slot_install`].
 ///
@@ -950,7 +949,7 @@ impl BakaChrome {
 
     /// Advance every armed timeline one frame and service the sprite pool.
     ///
-    /// `banks` are the two runtime sprite archives the bind resolves frame
+    /// `banks` are the two runtime clip banks the bind resolves frame
     /// counts out of (`_DAT_8007B888` below [`ANIM_BANK_SPLIT`],
     /// `_DAT_8007B840` at or above). A host with neither staged passes empty
     /// slices, in which case the resolved frame count is `None` and every
@@ -1058,12 +1057,17 @@ pub const IMPACT_YAW: [i16; 2] = [-0x400, 0x400];
 /// Z lift applied unless the special latch `DAT_801DBF50` is up.
 pub const IMPACT_Z_LIFT: i16 = 0x32;
 
-// NOT WIRED: `BakaFight` models the duel as rules only - it carries no
-// fighter world position and no per-action keyframe TRS, which are this
-// routine's two position inputs (the actor's `+0x14/+0x16/+0x18` and the
-// action record's `+0x20/+0x22/+0x24`). The keyframe column is the same one
-// `legaia_asset::baka_opponents::parse_actions` does not decode, so no host
-// can supply it either.
+// NOT WIRED: the inputs are all in the port now - the resolution arms that
+// call it are `BakaFight`'s booking (`0x801D36F0` winner 0, `0x801D3744`
+// winner 1, `0x801D37B4` / `0x801D37C0` the draw with the keyframe reset), the
+// keyframe TRS column is parsed (`legaia_asset::baka_opponents::
+// BakaSubKeyframe::offset`) and the landed keyframe is the strike clock's
+// (`crate::baka_fighter::StrikeClock::landed`). What no host has is the
+// output: the two spawns are `FUN_80021B04` effect-part templates in the
+// overlay's rodata (`0x801DB8FC` / `0x801DB960` / `0x801DBBA4` /
+// `0x801DBBD4`), and no minigame host runs that effect runtime or knows the
+// fighters' world positions the offsets are relative to - so a call from the
+// booking would produce spawns nothing draws.
 /// PORT: FUN_801d4df8 - the per-slot **impact effect pair**.
 ///
 /// Retail calls it on a decided exchange. It first zeroes the fighter's
@@ -1149,16 +1153,14 @@ pub const BLIT_SRC_Y_BASE: i16 = 0x80;
 /// Destination `y` the blit always writes to.
 pub const BLIT_DST_Y: i32 = 0x86;
 
-// NOT WIRED: the blocker is now one thing, not two. The table is parsed -
-// `legaia_asset::baka_opponents::parse_blit_rects` reads its two records off
-// the as-loaded overlay, and the disc-gated
-// `crates/asset/tests/baka_presentation_real.rs` pins them - so what is left
-// is the caller. The only retail one is the scripted-arc effect animator
-// `FUN_801d6310`, prototype record 3 of the band at `0x801D75DC`; the port
-// models neither that animator nor the VRAM-to-VRAM move its result feeds,
-// and `BakaFight` draws the impact sprite through the ordinary chrome pass
-// instead. Calling this from the chrome pass would pick an index nothing
-// chose.
+// NOT WIRED: its one retail caller is the round-start cameo animator
+// [`cameo_pose`] (`FUN_801D6310`, `jal` at `0x801D6354` / `0x801D63B0`), which
+// is ported now and reports the table index each frame leaves showing
+// (`CameoPose::blit_index`); the table itself is parsed
+// (`legaia_asset::baka_opponents::parse_blit_rects`, disc-gated in
+// `crates/asset/tests/baka_presentation_real.rs`). What no host has is the
+// consumer: the move edits the texture the cameo's model samples, and nothing
+// spawns or draws the cameo (see [`cameo_pose`]'s note).
 /// PORT: FUN_801d65f8 - the **sprite-blit helper**.
 ///
 /// Builds a VRAM source `RECT` out of the 4-byte record at
@@ -1190,110 +1192,120 @@ pub fn sprite_blit(mode: i32, entry: [u8; 2]) -> Option<SpriteBlit> {
     })
 }
 
-/// The two passes the mirrored sprite draw runs.
-pub const MIRROR_PASSES: usize = 2;
-/// Frame cursor decrement applied at the top of every pass.
-pub const MIRROR_CURSOR_STEP: i16 = 0x30;
-/// Yaw step added to `+0x78` between passes.
-pub const MIRROR_YAW_STEP: u16 = 0x400;
-/// Yaw the first pass starts from.
-pub const MIRROR_YAW_START: u16 = 0x800;
+/// The ghost passes the special's afterimage draws.
+pub const AFTERIMAGE_PASSES: usize = 2;
+/// How far each pass sets its ghost back along the clip: `0x30` sixteenths,
+/// three whole frames (`addiu v0, v0, -0x30` at `0x801D4B7C`, cumulative).
+pub const AFTERIMAGE_LAG_STEP: i16 = 0x30;
+/// The depth-cue level (`+0x78`, the `IR0` factor the mesh pass hands the
+/// colour-blend call) the first ghost draws at - halfway to the colour word.
+pub const AFTERIMAGE_CUE_START: u16 = 0x800;
+/// Depth-cue step per pass: the second ghost draws three quarters of the way.
+pub const AFTERIMAGE_CUE_STEP: u16 = 0x400;
+/// Ordering-table push the ghosts draw under (`_DAT_1F8003F4 + 0x40`, the
+/// same for both passes): they sort behind the fighter they trail.
+pub const AFTERIMAGE_OT_PUSH: i32 = 0x40;
+/// The colour word the spawn stores at `+0x74` (`0x801D4588`): the blend
+/// target the depth cue pulls the ghost toward - black, with the
+/// blend-enable byte `0x81` on top.
+pub const AFTERIMAGE_COLOR_WORD: u32 = 0x8100_0000;
+/// The frame-rate divisor the special's commit installs at `DAT_1F80037D`
+/// (`0x801D4568`): half the round's `8`, so every clip that recomputes its
+/// step from the divisor - both fighters' - runs at half speed for the rest of
+/// the round.
+pub const SPECIAL_RATE_DIVISOR: i32 = 4;
 
-/// One pass of the mirrored sprite draw.
+/// One ghost pass of the afterimage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MirrorPass {
+pub struct AfterimagePass {
     /// Which live-mask bit this pass belongs to.
     pub bit: u32,
-    /// `true` when the pass emitted a draw.
+    /// `true` when the pass drew its ghost (`FUN_8001B964`).
     pub drawn: bool,
-    /// `true` when the pass instead cleared its live-mask bit (the clip ran
-    /// past its end).
+    /// `true` when the pass instead cleared its live-mask bit (its lagged
+    /// cursor ran past the clip end).
     pub expired: bool,
-    /// The frame cursor the pass ran at.
+    /// The lagged clip cursor the ghost is posed at (1/16 frame).
     pub cursor: i16,
-    /// The yaw the pass ran at.
-    pub yaw: u16,
+    /// The depth-cue level it draws at.
+    pub cue: u16,
 }
 
-/// What [`mirrored_sprite_pass`] resolved for one actor.
+/// What [`afterimage_pass`] resolved for one afterimage actor.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct MirrorFrame {
+pub struct AfterimageFrame {
     /// The actor retires this frame (its live mask was already empty).
     pub retire: bool,
     /// The live mask after the passes.
     pub live_mask: u16,
-    /// The frame cursor the actor keeps (the pre-pass value; the passes'
-    /// decrements are scratch and are restored on the way out).
+    /// The clip cursor the actor keeps (the advanced value; the passes'
+    /// lags are scratch and are restored on the way out).
     pub cursor: i16,
-    pub passes: Vec<MirrorPass>,
+    pub passes: Vec<AfterimagePass>,
 }
 
-// NOT WIRED: this is a draw callback over the minigame sprite-actor pool, and
-// that is now byte-evidence rather than a reading - nothing `jal`s it, but its
-// address sits at `+0x08` of the `0x18`-byte actor prototype at `0x801D7684`
-// (`[0, 0xFFFF0000, callback, 0x00020080, 0, 1]`, the last of the eight
-// records tiling `0x801D75DC..0x801D769C`, which ends at the `Vahn` name pool
-// opening the roster table). Two earlier notes were off: the record's base was
-// first given as `0x801D7688`, its `+0x04` word, and the run was then given as
-// five records from `0x801D7618`, which is the previous record's `+0x0C` word.
-// The band itself is now parsed
-// (`legaia_asset::baka_opponents::parse_actor_prototypes`, eight records,
-// disc-gated), so the reachability claim rests on bytes end to end. What is
-// still missing is the actor: this needs the spawned actor's `+0x5A` live
-// mask, `+0x5C` clip id and `+0x68` frame cursor plus the runtime sprite
-// archives `_DAT_8007B888` / `_DAT_8007B840` to resolve the clip record.
-// `BakaChrome`'s pool carries banner widgets, not clip records, so there is
-// nothing to hand it.
-/// PORT: FUN_801d49e8 - the **mirrored two-pass sprite draw**.
+/// PORT: FUN_801d49e8 - the special attack's **afterimage** (two lagged,
+/// darkened ghosts of the attacker).
 ///
-/// An empty live mask (`+0x5A == 0`) retires the actor outright and nothing
-/// else runs. Otherwise the clip id `+0x5C` picks a sprite archive - below
-/// [`ANIM_BANK_SPLIT`] the `_DAT_8007B888` bank, at or above it
-/// `_DAT_8007B840` - the id's low [`ANIM_ID_MASK`] bits index that bank's
-/// word-offset table, and the record reached is cached in `+0x4C`. The actor
-/// copies its owner's world position (`&DAT_801dbfac[+0x50]` `+0x14..+0x1B`)
-/// and advances its frame cursor by `(anim * 2 + n - 1) / n * frame_step`,
-/// where `n` is record byte `+6`.
+/// Wired: [`crate::baka_fighter::BakaFight`] spawns one [`AfterimageActor`]
+/// on every special commit, exactly where the combat tick `FUN_801D3F44`
+/// spawns the `0x801D7684` prototype (`0x801D4538..0x801D4634`), steps it
+/// every tick, and exposes the ghosts through
+/// [`crate::baka_fighter::BakaFight::afterimages`]; the minigames page draws
+/// them as darkened copies of the attacker's mesh posed at each ghost's frame.
+/// The native window and the play page draw the duel as labels with no fighter
+/// meshes at all, so neither has a model to ghost - see
+/// `docs/tooling/host-drift.md`.
 ///
-/// Then it runs [`MIRROR_PASSES`] passes over the live mask's low bits. Each
-/// pass drops the cursor by [`MIRROR_CURSOR_STEP`] and, for a set bit, draws
-/// when the cursor is in `0 ..< record[+2] * 0x10 - 1` and clears the bit
-/// when it has run past that end; the yaw `+0x78` steps
-/// [`MIRROR_YAW_STEP`] per pass from [`MIRROR_YAW_START`], which is what
-/// mirrors the two copies. Every scratch field the passes touched (`+0x62`,
-/// `+0x68`, `+0x74`, `+0x78`) is restored before returning.
+/// This was read as a "mirrored two-pass sprite draw" whose second copy was
+/// yawed `0x400` further. The field it steps is `+0x78`, which is not a yaw:
+/// it is the depth-cue level `FUN_8001B964` hands the colour-blend call with
+/// the colour word `+0x74`, and the spawn sets that word to
+/// [`AFTERIMAGE_COLOR_WORD`]. The draw call is the animated mesh renderer, not
+/// a sprite emitter. So the two copies are the same pose family drawn
+/// [`AFTERIMAGE_LAG_STEP`] and twice that behind the cursor, pulled half and
+/// three quarters of the way to black, and sorted [`AFTERIMAGE_OT_PUSH`]
+/// deeper than the fighter.
 ///
-/// The body reads `s5` without ever writing it - the register holds whatever
-/// the caller left there when the transform call `FUN_8003D344(s5 + 0x14,
-/// s5 + 0x2C)` runs. That is in the disassembly, not a decompiler artifact,
-/// so the port takes no such argument rather than reproducing the
-/// uninitialised read.
-pub fn mirrored_sprite_pass(
+/// Per frame: an empty live mask (`+0x5A == 0`) retires the actor outright.
+/// Otherwise the clip record the id `+0x5C` reaches is cached, the owner's
+/// position is copied in, and the cursor advances by `(step * 2 + n - 1) / n *
+/// frame_step` for `n` = record byte `+6` - the clip selector's formula with
+/// its `+1` flag test dropped, so it always applies. Then each of the
+/// [`AFTERIMAGE_PASSES`] passes lags the cursor one more step and, for a set
+/// bit, draws while the lagged cursor is in `0 ..< record[+2] * 0x10 - 1` and
+/// clears the bit once it has run past that end.
+///
+/// The body reads `s5` without ever writing it - the transform call
+/// `FUN_8003D344(s5 + 0x14, s5 + 0x2C)` runs against whatever the caller left
+/// in the register. That is in the disassembly, not a decompiler artifact, so
+/// the port takes no such argument rather than reproducing the read.
+pub fn afterimage_pass(
     live_mask: u16,
     cursor: i16,
     frame_step: i32,
-    anim: i16,
-    keyframe_count: u8,
+    step: i16,
+    record_n: u8,
     clip_frames: u16,
-) -> MirrorFrame {
+) -> AfterimageFrame {
     if live_mask == 0 {
-        return MirrorFrame {
+        return AfterimageFrame {
             retire: true,
             live_mask,
             cursor,
             passes: Vec::new(),
         };
     }
-    let n = keyframe_count.max(1) as i32;
-    let advance = ((anim as i32 * 2 + n - 1) / n) * frame_step;
-    let mut running = (cursor as i32 + advance) as i16;
-    let kept = running;
+    let n = record_n.max(1) as i32;
+    let advance = ((step as i32 * 2 + n - 1) / n) * frame_step;
+    let kept = (cursor as i32 + advance) as i16;
+    let mut running = kept;
     let end = (clip_frames as i32 * 0x10 - 1) as i16;
     let mut mask = live_mask;
     let mut passes = Vec::new();
-    for i in 0..MIRROR_PASSES {
-        running = running.wrapping_sub(MIRROR_CURSOR_STEP);
-        let yaw = MIRROR_YAW_START.wrapping_add(MIRROR_YAW_STEP * i as u16);
+    for i in 0..AFTERIMAGE_PASSES {
+        running = running.wrapping_sub(AFTERIMAGE_LAG_STEP);
+        let cue = AFTERIMAGE_CUE_START.wrapping_add(AFTERIMAGE_CUE_STEP * i as u16);
         if live_mask >> i & 1 == 0 {
             continue;
         }
@@ -1306,20 +1318,192 @@ pub fn mirrored_sprite_pass(
                 expired = true;
             }
         }
-        passes.push(MirrorPass {
+        passes.push(AfterimagePass {
             bit: i as u32,
             drawn,
             expired,
             cursor: running,
-            yaw,
+            cue,
         });
     }
-    MirrorFrame {
+    AfterimageFrame {
         retire: false,
         live_mask: mask,
         cursor: kept,
         passes,
     }
+}
+
+/// One live afterimage actor: the state [`afterimage_pass`] runs over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AfterimageActor {
+    /// `+0x50` - the fighter slot it trails (its position is re-copied from
+    /// that fighter every frame).
+    pub owner: usize,
+    /// `+0x5A` - live mask, `3` at spawn: both ghosts.
+    pub live_mask: u16,
+    /// `+0x68` - its own clip cursor, zeroed by the spawn.
+    pub cursor: i16,
+    /// `+0x6A` - the step the spawn computes:
+    /// `record[+4] * DAT_1F80037D >> 3` against the divisor the special's
+    /// commit has just lowered to [`SPECIAL_RATE_DIVISOR`].
+    pub step: i16,
+}
+
+impl AfterimageActor {
+    /// The spawn at a special commit: owner `slot`, the special record's
+    /// speed `special_speed` (`+0x04`).
+    pub fn spawn(slot: usize, special_speed: i32) -> Self {
+        let raw = special_speed * SPECIAL_RATE_DIVISOR;
+        // `bgez; addiu 7; sra 3` at `0x801D4624..0x801D4630`.
+        let step = (if raw < 0 { raw + 7 } else { raw }) >> 3;
+        AfterimageActor {
+            owner: slot,
+            live_mask: 3,
+            cursor: 0,
+            step: step as i16,
+        }
+    }
+
+    /// One frame. `record_n` / `clip_frames` are the special clip's ANM
+    /// record byte `+6` and frame count `+2`; `None` when the host did not
+    /// stage the fighter's clip bank, in which case the ghosts carry their
+    /// cursor but no clip end can expire them and they retire with the
+    /// special's exchange instead.
+    pub fn tick(&mut self, frame_step: i32, clip: Option<(u8, u16)>) -> AfterimageFrame {
+        let (n, frames) = clip.unwrap_or((1, i16::MAX as u16 / 0x10));
+        let f = afterimage_pass(
+            self.live_mask,
+            self.cursor,
+            frame_step,
+            self.step,
+            n,
+            frames,
+        );
+        self.live_mask = f.live_mask;
+        self.cursor = f.cursor;
+        f
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The round-start cameo walk-on (FUN_801D6310)
+// ---------------------------------------------------------------------------
+
+/// Pad bit (`_DAT_8007B850` held mask, Legaia's packed layout) whose hold at
+/// round setup spawns the cameo: `0x10` = Triangle. The round-setup arm of the
+/// cabinet (`0x32`) tests it at `0x801D0190..0x801D01AC` and spawns the
+/// `0x801D7624` prototype, whose callback is [`cameo_pose`]'s routine.
+pub const CAMEO_HOLD_MASK: u16 = 0x10;
+/// Clip the cameo walks on (`+0x5C = 0x1D`).
+pub const CAMEO_CLIP_WALK: i16 = 0x1D;
+/// Clip it strikes its pose on (`+0x5C = 0x1C`).
+pub const CAMEO_CLIP_POSE: i16 = 0x1C;
+/// Fixed `y` / `z` of the cameo (`+0x16 = 0x8C`, `+0x18 = 0x400`), in the
+/// camera-relative frame `+0x52 |= 0x400` selects.
+pub const CAMEO_Y: i16 = 0x8C;
+pub const CAMEO_Z: i16 = 0x400;
+/// Phase at which the cameo raises its retire bit.
+pub const CAMEO_RETIRE_PHASE: i16 = 0xF0;
+
+/// The cameo's pose for one frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CameoPose {
+    /// `+0x14` - screen-relative `x`: slides in from `0x100`, holds at `0`,
+    /// slides out to the negative side.
+    pub x: i16,
+    pub y: i16,
+    pub z: i16,
+    /// `+0x26` - yaw: side-on (`0x400`) while walking, turned to face the
+    /// camera (`0`) for the pose.
+    pub yaw: i16,
+    /// `+0x5C` - [`CAMEO_CLIP_WALK`] or [`CAMEO_CLIP_POSE`].
+    pub clip: i16,
+    /// `+0x62` bit 3: the pose clip holds its last frame instead of looping.
+    pub hold_last_frame: bool,
+    /// The VRAM cell the frame leaves showing, through [`sprite_blit`]'s
+    /// table index (`0` until the pose, `1` from it on: both blits run every
+    /// frame past phase `0x40`, and the second lands last).
+    pub blit_index: usize,
+    /// The retire bit rose this frame.
+    pub retire: bool,
+}
+
+// NOT WIRED: nothing in the port spawns the cameo. Its spawn is the cabinet's
+// round-setup arm (`0x32`) under a held Triangle, and none of the three hosts
+// hands the duel a *held* pad word - they feed attack edges, and the port uses
+// Triangle as its special. Past the spawn it needs a host that can draw scene
+// model `0` (the prototype's `+0x04` half is `0`, copied to `+0x64` by
+// `FUN_80020DE0`) posed by clips `0x1C` / `0x1D` of the scene's type-`0x05`
+// clip bank in the camera-relative frame, and apply [`sprite_blit`]'s VRAM
+// move to the texture it samples; no minigame host draws a model
+// camera-relative or edits its VRAM copy after upload.
+/// PORT: FUN_801D6310 - the round-start **cameo walk-on** animator.
+///
+/// Each frame it forces the actor's step `+0x6A = 8`, raises flag
+/// `0x200000` and the camera-relative bit `+0x52 |= 0x400`, then poses the
+/// actor from its phase `+0x22` (which it advances by the frame step after
+/// the clip selector `FUN_800204F8` has run):
+///
+/// | phase | `x` | yaw | clip | cell |
+/// |---|---|---|---|---|
+/// | `0..0x20` | `0x100 - 8p` (walks in) | `0x400` | walk, looping | 0 |
+/// | `0x20..0x40` | `0` | `0x400 - 32(p - 0x20)` (turns to camera) | walk | 0 |
+/// | `0x40..0x90` | `0` | `0` | pose, held | 1 |
+/// | `0x90..0xB0` | `0` | `32(p - 0x90)` (turns back) | walk, looping | 1 |
+/// | `0xB0..` | `8(0xB0 - p)` (walks out) | `0x400` | walk | 1 |
+///
+/// and raises the retire bit from phase [`CAMEO_RETIRE_PHASE`] on. The cell
+/// column is the blit helper [`sprite_blit`]: index `0` runs every frame from
+/// phase `0`, index `1` every frame from `0x40`, both into the same VRAM cell.
+///
+/// A negative phase leaves `x` unwritten from an uninitialised register;
+/// the spawn zeroes `+0x22` and the phase only ever grows, so no frame reaches
+/// it, and the port returns `None` there.
+pub fn cameo_pose(phase: i16) -> Option<CameoPose> {
+    if phase < 0 {
+        return None;
+    }
+    let p = phase as i32;
+    let (mut x, mut yaw, mut clip, mut hold) = (0x100 - p * 8, 0x400, CAMEO_CLIP_WALK, false);
+    let mut blit = 0;
+    if p >= 0x20 {
+        x = 0;
+        yaw = 0x400 - (p - 0x20) * 32;
+    }
+    if p >= 0x40 {
+        yaw = 0;
+        clip = CAMEO_CLIP_POSE;
+        hold = true;
+        blit = 1;
+    }
+    if p >= 0x90 {
+        yaw = (p - 0x90) * 32;
+        clip = CAMEO_CLIP_WALK;
+        hold = false;
+    }
+    if p >= 0xB0 {
+        x = (0xB0 - p) * 8;
+        yaw = 0x400;
+    }
+    Some(CameoPose {
+        x: x as i16,
+        y: CAMEO_Y,
+        z: CAMEO_Z,
+        yaw: yaw as i16,
+        clip,
+        hold_last_frame: hold,
+        blit_index: blit,
+        retire: phase >= CAMEO_RETIRE_PHASE,
+    })
+}
+
+/// Whether the round setup spawns the cameo: the held pad word carries
+/// [`CAMEO_HOLD_MASK`].
+///
+/// REF: FUN_801cf388 (`0x801D0190..0x801D01C4`)
+pub fn cameo_spawns(held_pad: u16) -> bool {
+    held_pad & CAMEO_HOLD_MASK != 0
 }
 
 // ---------------------------------------------------------------------------
@@ -1374,24 +1558,21 @@ pub fn editor_band_open(match_timer: i32) -> bool {
     (match_timer.wrapping_sub(EDITOR_PHASE_BASE) as u32) < EDITOR_PHASE_SPAN
 }
 
-// NOT WIRED: the editor is a leftover development screen, and it is *linked*
-// rather than dead - nothing `jal`s `0x801D4FC8`, but its address is the
-// callback word of the `0x18`-byte actor prototype at `0x801D766C`, the
-// immediate sibling of [`mirrored_sprite_pass`]'s. (Two earlier notes were
-// off: the prototype was put at `0x801D7670`, its `+0x04` `0xFFFF0000` word,
-// and the run at five records from `0x801D7618`; the band is eight records of
-// `0x18` bytes over `0x801D75DC..0x801D769C`, callback at `+0x08`, and
-// `FUN_80020DE0` spawns one record per site - `0x801CF184` names the first,
-// `0x801D01C4` names `0x801D7624`.) Its band is reachable too:
-// the overlay's phase dispatcher writes `400` into `DAT_801DBF44` at
-// `0x801D19DC` (`li v0,0x190; sw v0,-0x40bc(v1)`) on the arm taken when the
-// selection word `0x801DBF90` holds `4` under the pad-bit test at
-// `0x801D194C`, and the dispatcher carries explicit `0x190` / `0x191` /
-// `0x1F4` arms at `0x801CF654..0x801CF684`. What the port lacks is the state:
-// driving this needs the whole edit-cursor global cluster (`DAT_801DBF04`
-// action, `DAT_801DBF12` frame, `DAT_801DBF10` mode, `DAT_801DBF0A..0E` TRS)
-// plus a writable action table, and `BakaFight` holds parsed, read-only action
-// sets.
+// REPLACED-BY: nothing is owed a port - retail never reaches it. The editor
+// is *linked* rather than dead: nothing `jal`s `0x801D4FC8`, but its address
+// is the callback word of the `0x18`-byte actor prototype at `0x801D766C`,
+// which the `0x190` arm spawns (`lui`+`addiu` at `0x801D1D68`).
+// The whole editor is a development screen behind a flag the shipped disc
+// never raises. The band `0x190` / `0x191` is written in exactly one place,
+// the developer menu arm (`0x801D19DC`, cabinet state `0xC8`), and the cabinet
+// enters `0xC8` only when `_DAT_8007B868` is non-zero (`lw v1,-0x4798(v1)` at
+// `0x801D08E8`, `beqz` to the pause menu `0xBF` otherwise). A disc-wide
+// `find-gp-relative-refs.py --va 0x8007b868 --prot` sweep (SCUS, every based
+// overlay image and every raw PROT entry) finds exactly two stores to that
+// word: the boot store of `FUN_8002B92C`'s result (`0x80015F18`), a stub whose
+// whole body is `jr ra; move v0, zero`, and a bit-clear (`and ~2` at
+// `0x8001E008`). So retail boots it to zero and only ever clears it, and no
+// shipped path reaches the editor or its two slot helpers.
 /// PORT: FUN_801d4fc8 - the **developer action-table keyframe editor** tick.
 ///
 /// It is not the fight's pose path. Outside the [`editor_band_open`] window it
@@ -1662,31 +1843,81 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_live_mask_retires_the_mirrored_actor() {
-        let f = mirrored_sprite_pass(0, 0, 1, 0, 1, 1);
+    fn an_empty_live_mask_retires_the_afterimage() {
+        let f = afterimage_pass(0, 0, 1, 0, 1, 1);
         assert!(f.retire);
         assert!(f.passes.is_empty());
     }
 
     #[test]
-    fn mirrored_passes_step_the_yaw_and_expire_on_the_clip_end() {
-        // Both bits live, cursor far past the clip end -> both expire.
-        let f = mirrored_sprite_pass(0b11, 0x400, 0, 0, 1, 1);
-        assert_eq!(f.passes.len(), 2);
-        assert!(f.passes.iter().all(|p| p.expired && !p.drawn));
-        assert_eq!(f.live_mask, 0);
-        assert_eq!(f.passes[0].yaw, MIRROR_YAW_START);
-        assert_eq!(f.passes[1].yaw, MIRROR_YAW_START + MIRROR_YAW_STEP);
-        // The cursor the actor keeps is the pre-pass value, not the scratch.
-        assert_eq!(f.cursor, 0x400);
+    fn afterimage_ghosts_lag_three_frames_each_and_darken() {
+        // Both bits live, one frame past the spawn: step 8 at n = 1 advances
+        // 16 (one whole frame); the ghosts sit 3 and 6 frames behind it and
+        // both are still before the clip start.
+        let f = afterimage_pass(0b11, 0, 1, 8, 1, 30);
+        assert_eq!(f.cursor, 16);
+        assert_eq!(f.passes[0].cursor, 16 - 0x30);
+        assert_eq!(f.passes[1].cursor, 16 - 0x60);
+        assert_eq!(f.passes[0].cue, AFTERIMAGE_CUE_START);
+        assert_eq!(f.passes[1].cue, AFTERIMAGE_CUE_START + AFTERIMAGE_CUE_STEP);
+        assert!(f.passes.iter().all(|p| !p.drawn && !p.expired));
     }
 
     #[test]
-    fn a_mirrored_pass_inside_the_clip_draws() {
-        let f = mirrored_sprite_pass(0b01, 0x100, 0, 0, 1, 0x40);
-        assert_eq!(f.passes.len(), 1);
+    fn afterimage_ghosts_expire_on_the_clip_end() {
+        // Cursor far past a one-frame clip: both expire, mask clears.
+        let f = afterimage_pass(0b11, 0x400, 0, 0, 1, 1);
+        assert!(f.passes.iter().all(|p| p.expired && !p.drawn));
+        assert_eq!(f.live_mask, 0);
+        assert_eq!(f.cursor, 0x400);
+        // Inside the clip a ghost draws.
+        let f = afterimage_pass(0b01, 0x100, 0, 0, 1, 0x40);
         assert!(f.passes[0].drawn);
         assert_eq!(f.live_mask, 0b01);
+    }
+
+    #[test]
+    fn afterimage_spawn_halves_the_special_speed() {
+        // `speed * 4 >> 3`, rounded toward zero.
+        assert_eq!(AfterimageActor::spawn(1, 13).step, 6);
+        assert_eq!(AfterimageActor::spawn(0, -3).step, -1);
+        let mut a = AfterimageActor::spawn(0, 8);
+        assert_eq!((a.live_mask, a.cursor, a.step), (3, 0, 4));
+        // n = 1: the pass doubles the step, so the ghost clip runs at the
+        // pre-special rate while the fighter plays at half.
+        a.tick(1, Some((1, 30)));
+        assert_eq!(a.cursor, 8);
+    }
+
+    #[test]
+    fn cameo_walks_in_turns_poses_and_walks_out() {
+        let p = cameo_pose(0).unwrap();
+        assert_eq!(
+            (p.x, p.yaw, p.clip, p.blit_index),
+            (0x100, 0x400, CAMEO_CLIP_WALK, 0)
+        );
+        assert_eq!((p.y, p.z), (CAMEO_Y, CAMEO_Z));
+        assert_eq!(cameo_pose(0x10).unwrap().x, 0x80);
+        let p = cameo_pose(0x30).unwrap();
+        assert_eq!((p.x, p.yaw), (0, 0x200));
+        let p = cameo_pose(0x40).unwrap();
+        assert_eq!(
+            (p.yaw, p.clip, p.hold_last_frame, p.blit_index),
+            (0, CAMEO_CLIP_POSE, true, 1)
+        );
+        let p = cameo_pose(0xA0).unwrap();
+        assert_eq!(
+            (p.yaw, p.clip, p.hold_last_frame),
+            (0x200, CAMEO_CLIP_WALK, false)
+        );
+        let p = cameo_pose(0xC0).unwrap();
+        assert_eq!(
+            (p.x, p.yaw, p.blit_index, p.retire),
+            (-0x80, 0x400, 1, false)
+        );
+        assert!(cameo_pose(CAMEO_RETIRE_PHASE).unwrap().retire);
+        assert!(cameo_pose(-1).is_none());
+        assert!(cameo_spawns(0x10) && cameo_spawns(0x110) && !cameo_spawns(0x40));
     }
 
     #[test]

@@ -37,7 +37,7 @@ struct FighterMesh {
 }
 
 impl LegaiaMinigames {
-    fn baka_entry(&self, prot_index: usize) -> Option<&[u8]> {
+    pub(crate) fn baka_entry(&self, prot_index: usize) -> Option<&[u8]> {
         entry_bytes(&self.prot, &self.entries, prot_index as u32)
     }
 

@@ -379,6 +379,35 @@ impl PlayWindowApp {
             .collect();
     }
 
+    /// The slot machine's five paylines as screen primitives: the ported
+    /// payline pass (`FUN_801D3380`) with its projection
+    /// (`SlotMachine::payline_segments`), turned into one-pixel flat quads by
+    /// the shared `ui_slot_paylines` builder. Both browser pages stroke the
+    /// same projected segments. Empty outside the slot machine or when the
+    /// overlay's payline table did not decode.
+    pub(super) fn slot_payline_screen_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_render::ui_slot_paylines as usp;
+        if self.session.host.world.mode != SceneMode::SlotMachine {
+            return Vec::new();
+        }
+        let Some(m) = self.session.host.world.minigames.slot_machine.as_ref() else {
+            return Vec::new();
+        };
+        let segments: Vec<usp::PaylineSegment> = m
+            .payline_segments()
+            .iter()
+            .map(|l| usp::PaylineSegment {
+                a: [l.a.0, l.a.1],
+                b: [l.b.0, l.b.1],
+                rgb: [l.prim.color.0, l.prim.color.1, l.prim.color.2],
+                semi: l.prim.code & 0x02 != 0,
+            })
+            .collect();
+        usp::payline_screen_prims(&segments)
+    }
+
     /// Per-frame driver for every minigame side-channel this window hosts:
     /// the minigame cue queue, the fishing venue actors, the Baka round
     /// chrome and the Muscle Dome hub-screen timers. The effect pool itself
@@ -1084,7 +1113,17 @@ impl PlayWindowApp {
         // Seed from the frame counter: deterministic across a replayed pad
         // stream (retail reseeds from BIOS rand at machine init).
         let seed = 0x5107_5EED ^ self.session.host.world.frame as u32;
-        let machine = legaia_engine_core::slot_machine::SlotMachine::new(payouts, seed, balance);
+        // The payline geometry the machine draws its five lines from
+        // (`DAT_801d3680`), staged so this window's payline pass
+        // (`slot_payline_screen_prims`) reads the same prims both browser
+        // pages do.
+        let paylines =
+            legaia_asset::minigame_slot_scene::parse_paylines(&loaded).unwrap_or_else(|e| {
+                log::warn!("slots: payline geometry did not decode: {e:#}");
+                Vec::new()
+            });
+        let machine = legaia_engine_core::slot_machine::SlotMachine::new(payouts, seed, balance)
+            .with_paylines(paylines);
         self.session.host.world.enter_slot_machine(machine);
         true
     }
@@ -1187,6 +1226,14 @@ impl PlayWindowApp {
             log::warn!("baka: fight construction failed (roster 0 vs {opponent})");
             return false;
         };
+        // Every roster fighter's clip headers (the fighter packs + the party
+        // bank), so the strike clock steps the way the clip selector does -
+        // the same loader both browser pages stage.
+        let index = &self.session.host.index;
+        let fight =
+            fight.with_roster_clip_headers(legaia_engine_core::baka_fighter::roster_clip_headers(
+                |i| index.entry_bytes(i as u32).ok().map(|b| b.to_vec()),
+            ));
         log::info!(
             "baka: round 1 vs roster fighter {opponent} (gold prize {})",
             fight.gold_reward()

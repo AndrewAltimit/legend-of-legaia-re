@@ -180,28 +180,54 @@
        * so. */
       const stage = this._stageBuffers(api, Math.max(halfP, halfO));
 
-      /* Combined buffers: player verts, opponent verts, stage verts. */
-      const nP = P.pos.length / 3, nO = O.pos.length / 3, nS = stage.pos.length / 3;
-      const n = nP + nO + nS;
+      /* Combined buffers: player verts, opponent verts, stage verts, then
+       * the special's afterimage ghosts (FUN_801d49e8) - two copies of each
+       * fighter, one per ghost pass, their packet colour pulled toward the
+       * black colour word by the pass's depth-cue level (0x800 = half,
+       * 0xC00 = three quarters). A ghost that is not drawing this frame is
+       * collapsed to a point. */
+      const GHOST_KEEP = [0.5, 0.25];
+      const parts = [P, O, stage, P, P, O, O];
+      const counts = parts.map(m => m.pos.length / 3);
+      const offs = [];
+      let n = 0;
+      for (const c of counts) { offs.push(n); n += c; }
+      const nP = counts[0], nO = counts[1], nS = counts[2];
       const pos = new Float32Array(n * 3);
-      pos.set(P.pos, 0); pos.set(O.pos, nP * 3); pos.set(stage.pos, (nP + nO) * 3);
       const uvs = new Uint8Array(n * 2);
-      uvs.set(P.uvs, 0); uvs.set(O.uvs, nP * 2); uvs.set(stage.uvs, (nP + nO) * 2);
       const ct = new Uint16Array(n * 2);
-      ct.set(P.ct, 0); ct.set(O.ct, nP * 2); ct.set(stage.ct, (nP + nO) * 2);
       const flat = new Uint8Array(n * 4);
-      flat.set(P.flat, 0); flat.set(O.flat, nP * 4); flat.set(stage.flat, (nP + nO) * 4);
-      const idx = new Uint32Array(P.idx.length + O.idx.length + stage.idx.length);
-      idx.set(P.idx, 0);
-      for (let i = 0; i < O.idx.length; i++) idx[P.idx.length + i] = O.idx[i] + nP;
-      for (let i = 0; i < stage.idx.length; i++)
-        idx[P.idx.length + O.idx.length + i] = stage.idx[i] + nP + nO;
+      let idxLen = 0;
+      for (const m of parts) idxLen += m.idx.length;
+      const idx = new Uint32Array(idxLen);
+      let ip = 0;
+      parts.forEach((m, k) => {
+        const o = offs[k];
+        pos.set(m.pos, o * 3); uvs.set(m.uvs, o * 2); ct.set(m.ct, o * 2);
+        if (k >= 3) {
+          const keep = GHOST_KEEP[(k - 3) & 1];
+          for (let i = 0; i < m.flat.length; i += 4) {
+            flat[o * 4 + i] = m.flat[i] * keep;
+            flat[o * 4 + i + 1] = m.flat[i + 1] * keep;
+            flat[o * 4 + i + 2] = m.flat[i + 2] * keep;
+            flat[o * 4 + i + 3] = m.flat[i + 3];
+          }
+        } else {
+          flat.set(m.flat, o * 4);
+        }
+        for (let i = 0; i < m.idx.length; i++) idx[ip++] = m.idx[i] + o;
+      });
 
       this.scene = {
         P, O, nP, nO, nS,
+        /* ghost vertex bases: [fighter][pass] */
+        ghostBase: [[offs[3], offs[4]], [offs[5], offs[6]]],
         base: pos.slice(),      /* pristine object-local vertices */
         out: pos,               /* per-frame posed copy */
       };
+      [nP, nO].forEach((count, fi) => {
+        for (const gb of this.scene.ghostBase[fi]) this._collapse(gb, count);
+      });
 
       if (!this.renderer) this.renderer = new window.TmdRenderer(this.glCanvas);
       this.renderer.uploadVram(api.baka_duel_vram(opponentRoster));
@@ -212,11 +238,16 @@
       this.center = [0, -halfP * 0.8, 0];
       this.radius = this.gap * 0.95 + Math.max(halfP, halfO) * 0.4;
 
-      /* Per-fighter live action state. */
+      /* Per-fighter live action state. `engine` marks an attack whose frame
+       * is the duel's own strike clock (st.clock) rather than this page's
+       * tick: the swing starts at the commit and lands its strike on the
+       * frame the engine books the exchange. */
       this.action = [
         { id: ACT.IDLE, start: 0, loop: true },
         { id: ACT.IDLE, start: 0, loop: true },
       ];
+      this.chosenSeen = [null, null];
+      this.state = null;
       this.banner = null;
       this.victory = null;   /* winner's post-match punch flourish */
       this.choice = null;    /* the NEXT GAME / PAY OUT tally menu */
@@ -489,6 +520,12 @@
       }
     }
 
+    /* Collapse `count` vertices from `vertBase` to a point (an undrawn
+     * ghost: zero-area triangles rasterise nothing). */
+    _collapse(vertBase, count) {
+      this.scene.out.fill(0, vertBase * 3, (vertBase + count) * 3);
+    }
+
     /* Trigger a one-shot clip on fighter `fi` (falls back to idle if the
      * record is missing / empty). `hold` freezes the clip on its final frame
      * instead of dropping back to idle - the loser's stay-down knockdown. */
@@ -507,8 +544,31 @@
     frame(st, meta) {
       if (!this.ok || this.mode !== 'duel') return;
       this.tick++;
+      this.state = st;
 
-      /* Exchange reactions: winner swings, loser takes the hit. */
+      /* A commit starts the swing, driven off the engine's strike clock; a
+       * cleared choice hands the clip back to this page's tick for its tail
+       * (retail plays the clip out, then drops to idle). */
+      const atkOf = (t) => t === 4 ? ACT.SPECIAL : t === 2 ? ACT.ATTACK2
+        : t === 3 ? ACT.ATTACK3 : ACT.ATTACK1;
+      if (st && st.chosen && st.clock) {
+        for (let fi = 0; fi < 2; fi++) {
+          const t = st.chosen[fi];
+          const a = this.action[fi];
+          if (t != null && t !== this.chosenSeen[fi]) {
+            this.play(fi, atkOf(t));
+            this.action[fi].engine = true;
+          } else if (t == null && a.engine) {
+            const f = Math.max(0, st.clock[fi] >> 4);
+            this.action[fi] = { id: a.id, start: this.tick - Math.round(f * 60 / ANIM_FPS),
+                                loop: false, hold: false };
+          }
+          this.chosenSeen[fi] = t;
+        }
+      }
+
+      /* Exchange reactions: the loser takes the hit; the winner is already
+       * swinging when the engine drove its clip from the commit. */
       if (st && st.last) {
         const key = JSON.stringify(st.last) + ':' + st.round;
         if (key !== this.lastKey) {
@@ -519,13 +579,14 @@
           if (!l.draw) {
             const winner = l.winner, loser = 1 - l.winner;
             const t = st.chosen && st.chosen[winner];
-            const atk = l.special ? ACT.SPECIAL
-              : t === 2 ? ACT.ATTACK2 : t === 3 ? ACT.ATTACK3 : ACT.ATTACK1;
-            this.play(winner, atk);
+            const atk = l.special ? ACT.SPECIAL : atkOf(t);
+            if (!this.action[winner].engine && this.action[winner].id !== atk) {
+              this.play(winner, atk);
+            }
             this.play(loser, ACT.HIT);
           } else {
-            this.play(0, ACT.ATTACK1);
-            this.play(1, ACT.ATTACK1);
+            if (!this.action[0].engine) this.play(0, ACT.ATTACK1);
+            if (!this.action[1].engine) this.play(1, ACT.ATTACK1);
           }
         }
       }
@@ -576,10 +637,11 @@
       const S = this.scene;
       /* One-shot clips drop back to idle when they run out (held clips
        * freeze on their final frame instead - the stay-down knockdown). */
+      const st = this.state;
       for (let fi = 0; fi < 2; fi++) {
         const a = this.action[fi];
         const c = this.clipFor(fi, a.id);
-        if (!a.loop && !a.hold && c) {
+        if (!a.loop && !a.hold && !a.engine && c) {
           const f = Math.floor((this.tick - a.start) * (ANIM_FPS / 60));
           if (f >= c.frameCount) this.action[fi] = { id: ACT.IDLE, start: this.tick, loop: true };
         }
@@ -588,10 +650,34 @@
         const a = this.action[fi];
         const c = this.clipFor(fi, a.id) || this.clipFor(fi, ACT.IDLE);
         if (!c) return;
-        const rawF = Math.floor((this.tick - a.start) * (ANIM_FPS / 60));
+        const rawF = a.engine && st && st.clock
+          ? Math.max(0, st.clock[fi] >> 4)
+          : Math.floor((this.tick - a.start) * (ANIM_FPS / 60));
         const frame = a.loop ? rawF % c.frameCount
                              : Math.min(rawF, c.frameCount - 1);
         poseInto(S.out, S.base, f.oid, c, frame, vertBase, dx, yaw);
+      };
+      /* The special's afterimage (FUN_801d49e8): each drawn ghost pass poses
+       * a darkened copy of the thrower on the special clip at the ghost's own
+       * lagged frame. Retail sorts the ghosts 0x40 deeper in the ordering
+       * table, so the fighter always covers them; this depth-tested renderer
+       * gets the same by setting each ghost a little further back. */
+      const GHOST_SETBACK = 6;
+      const poseGhosts = (fi, f, count, dx, yaw) => {
+        const bases = S.ghostBase[fi];
+        const drawn = [false, false];
+        const c = this.clipFor(fi, ACT.SPECIAL);
+        for (const g of (st && st.ghosts) || []) {
+          if (g.owner !== fi || !c) continue;
+          for (const p of g.passes) {
+            const k = p.bit & 1;
+            const frame = Math.min(Math.max(0, p.frame), c.frameCount - 1);
+            poseInto(S.out, S.base, f.oid, c, frame, bases[k], dx, yaw,
+                     -GHOST_SETBACK * (k + 1));
+            drawn[k] = true;
+          }
+        }
+        for (let k = 0; k < 2; k++) if (!drawn[k]) this._collapse(bases[k], count);
       };
       /* Face the fighters at each other from the layout data. Both mesh
        * families share the same intrinsic authored facing, so they take
@@ -603,6 +689,8 @@
       const fp = this.facing.player, fo = this.facing.opponent;
       poseFighter(0, S.P, 0, fp.side * this.gap / 2, fp.facing * Math.PI / 2);
       poseFighter(1, S.O, S.nP, fo.side * this.gap / 2, fo.facing * Math.PI / 2);
+      poseGhosts(0, S.P, S.nP, fp.side * this.gap / 2, fp.facing * Math.PI / 2);
+      poseGhosts(1, S.O, S.nO, fo.side * this.gap / 2, fo.facing * Math.PI / 2);
       /* Stage verts stay at their TMD coordinates (already world-framed). */
       this.renderer.updatePositions(S.out);
     }
