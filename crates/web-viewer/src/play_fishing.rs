@@ -45,7 +45,7 @@
 //! consumer on both.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::fishing::{PondEvent, PondPhase, PondSession, PrizeExchange, TENSION_MAX};
+use legaia_engine_core::fishing::{PondEvent, PondPhase, PondSession, TENSION_MAX};
 use legaia_engine_ui::{
     self as ui, BarAxis, CatchHudState, FishingCaptions, FishingHudAtlas, HudDraw, TextDraw,
 };
@@ -240,12 +240,9 @@ impl LegaiaRuntime {
         if !host.enter_fishing_from_overlay(&loaded) {
             return false;
         }
-        // The two point-exchange venue pages ride the same overlay image; row
-        // labels resolve through the SCUS item table the page already parsed.
-        let names = self.item_names.as_ref();
-        self.fishing_venues = legaia_asset::fishing_exchange::parse(&loaded).map(|ex| {
-            [0usize, 1].map(|venue| PrizeExchange::from_asset(venue, &ex.venues[venue], names))
-        });
+        // The two point-exchange venue pages were decoded by the shared entry
+        // above (`World::minigames.fishing_prize_venues`), the one the venue
+        // door reaches too.
         self.fishing_banners = Default::default();
         self.fishing_banner_draws.clear();
         true
@@ -393,10 +390,10 @@ impl LegaiaRuntime {
     ///
     /// `null` when the venue pages did not decode.
     pub fn play_fishing_prizes_json(&self, venue: u32) -> String {
-        let Some(venues) = self.fishing_venues.as_ref() else {
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
             return "null".to_string();
         };
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+        let Some(venues) = world.minigames.fishing_prize_venues.as_ref() else {
             return "null".to_string();
         };
         let ex = &venues[(venue as usize).min(1)];
@@ -515,12 +512,13 @@ impl LegaiaRuntime {
         let Some(input) = ExchangeInput::from_code(code) else {
             return -1;
         };
-        let Some(venues) = self.fishing_venues.as_ref() else {
-            return -1;
-        };
         let Some(host) = self.scene_host.as_mut() else {
             return -1;
         };
+        let Some(venues) = host.world.minigames.fishing_prize_venues.clone() else {
+            return -1;
+        };
+        let venues = &venues;
         match host.world.fishing_exchange_input(venues, input) {
             ExchangeOutcome::Bought(_) => host.world.minigames.fishing_points,
             ExchangeOutcome::Refused => -1,
@@ -552,12 +550,13 @@ impl LegaiaRuntime {
     /// few points, a latched one-time prize, or a full stack).
     pub fn play_fishing_prize_buy(&mut self, venue: u32, row: usize) -> i32 {
         use legaia_engine_core::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
-        let Some(venues) = self.fishing_venues.as_ref() else {
-            return -1;
-        };
         let Some(host) = self.scene_host.as_mut() else {
             return -1;
         };
+        let Some(venues) = host.world.minigames.fishing_prize_venues.clone() else {
+            return -1;
+        };
+        let venues = &venues;
         let world = &mut host.world;
         let want = (venue as usize).min(1);
         if world.minigames.fishing_exchange.is_none() {

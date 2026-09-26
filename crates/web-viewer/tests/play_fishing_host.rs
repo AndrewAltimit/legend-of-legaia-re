@@ -245,3 +245,42 @@ fn prize_rows_decode_with_retail_gating() {
     // Buying an unaffordable row is refused rather than granted.
     assert_eq!(rt.play_fishing_prize_buy(1, 0), -1);
 }
+
+/// A session **walked into** through the venue door (the mode-24 warp, sub-id
+/// `0`) carries the point-exchange pages too. They used to be decoded only by
+/// each host's own launcher (the page's `play_fishing_start`, the native `L`
+/// key), so the exchange was unusable on the player-reachable path on both
+/// hosts; the shared `SceneHost::enter_fishing_from_overlay` decodes them now.
+#[test]
+fn a_door_entered_fishing_session_has_the_prize_exchange() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    assert_eq!(
+        rt.play_fishing_prizes_json(0),
+        "null",
+        "no pages before any fishing session"
+    );
+    assert!(rt.play_mg_debug_warp(0), "a scene must be loaded");
+    for _ in 0..2 {
+        rt.tick_frame().expect("tick_frame");
+    }
+    assert_eq!(rt.scene_mode(), "Fishing", "the door warp lands in fishing");
+    for venue in 0..2u32 {
+        let v: serde_json::Value =
+            serde_json::from_str(&rt.play_fishing_prizes_json(venue)).expect("prizes json");
+        let rows = v["rows"].as_array().map_or(0, |r| r.len());
+        eprintln!("[ok] door-entered venue {venue}: {rows} prize rows");
+        assert!(
+            rows > 0,
+            "venue {venue} exchange pages missing on the door path: {v}"
+        );
+        assert!(
+            v["rows"][0]["name"]
+                .as_str()
+                .is_some_and(|n| !n.starts_with("item 0x")),
+            "rows are named off the boot's SCUS item table: {v}"
+        );
+    }
+}

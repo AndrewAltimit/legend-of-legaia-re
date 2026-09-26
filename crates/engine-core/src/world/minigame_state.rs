@@ -66,6 +66,12 @@ pub struct MinigameState {
     /// list is open on the host's fishing screen; purchases commit through
     /// [`crate::world::World::fishing_exchange_buy`].
     pub fishing_exchange: Option<crate::fishing::PrizeExchange>,
+    /// The two point-exchange venue pages (`0` Buma, `1` Vidna) PROT 0972
+    /// carries beside the session tables, decoded by
+    /// [`crate::scene::SceneHost::enter_fishing_from_overlay`] - the one
+    /// entry the door warp and both play hosts' launchers share. `None` until
+    /// a fishing session has been entered on a disc whose pages decode.
+    pub fishing_prize_venues: Option<[crate::fishing::PrizeExchange; 2]>,
     /// Slot-machine minigame session. `Some` while
     /// `mode == SceneMode::SlotMachine`; the reel state machine runs each
     /// tick. See [`crate::slot_machine::SlotMachine`] and
@@ -235,6 +241,7 @@ impl MinigameState {
             fishing_best_fish: 0,
             fishing_events: Vec::new(),
             fishing_exchange: None,
+            fishing_prize_venues: None,
             slot_machine: None,
             slot_return_mode: SceneMode::Field,
             baka_fighter: None,

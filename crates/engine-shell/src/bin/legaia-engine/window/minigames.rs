@@ -1026,33 +1026,6 @@ impl PlayWindowApp {
                 return false;
             }
         };
-        // Decode the two point-exchange venue pages alongside the session
-        // tables, naming rows from the SCUS item table when it's readable
-        // (P toggles the prize list while fishing).
-        self.fishing_prize_venues = legaia_asset::fishing_exchange::parse(&loaded).map(|ex| {
-            use legaia_engine_core::Vfs;
-            let scus = if let Some(root) = self.extracted_root.as_deref() {
-                legaia_engine_core::DirVfs::new(root)
-                    .ok()
-                    .and_then(|v| v.read("SCUS_942.54").ok())
-            } else if let Some(disc) = self.disc_path.as_deref() {
-                legaia_engine_core::DiscVfs::open(disc)
-                    .ok()
-                    .and_then(|v| v.read("SCUS_942.54").ok())
-            } else {
-                None
-            };
-            let names = scus
-                .as_deref()
-                .and_then(legaia_asset::item_names::ItemNameTable::from_scus);
-            [0usize, 1].map(|venue| {
-                legaia_engine_core::fishing::PrizeExchange::from_asset(
-                    venue,
-                    &ex.venues[venue],
-                    names.as_ref(),
-                )
-            })
-        });
         if !self.session.host.enter_fishing_from_overlay(&loaded) {
             log::warn!("fishing: species / spawn / cadence tables did not decode");
             return false;
@@ -1286,27 +1259,20 @@ impl PlayWindowApp {
             log::warn!("muscle: hand command-id table failed its structural check");
             return false;
         };
-        // Player card costs: the lead character's equipped-section swing
-        // records, keyed by runtime slot = the command id.
-        const FAVORED_COST: u16 = 0x1E;
-        let mut player_costs = [FAVORED_COST; 4];
-        if let Some(costs) = self.lead_swing_costs() {
-            for (i, &cmd) in commands.iter().enumerate() {
-                if let Some(&c) = costs.get((cmd - 0x0C) as usize)
-                    && c > 0
-                {
-                    player_costs[i] = c as u16;
-                }
-            }
-        } else {
-            log::info!("muscle: lead swing costs unavailable - flat favored costs");
-        }
+        // The lead fighter - card costs, HP, AP pool, stat profile - through
+        // the shared builder the arena-door warp stages too, so the hotkey
+        // and the door cannot field different fighters.
+        let lead_fighter = self.session.host.dome_lead_fighter(&commands);
+        let player_costs = lead_fighter.costs;
+        use legaia_engine_core::scene::{
+            DOME_FAVORED_COST, DOME_STANDIN_BUDGET, DOME_STANDIN_COMBATANT, DOME_STANDIN_HP,
+        };
         let card = |cmd: u8, cost: u16| MuscleCard {
             command_id: cmd,
             cost,
         };
         let player_hand = std::array::from_fn(|i| card(commands[i], player_costs[i]));
-        let opp_hand = std::array::from_fn(|i| card(commands[i], FAVORED_COST));
+        let opp_hand = std::array::from_fn(|i| card(commands[i], DOME_FAVORED_COST));
         // The opponent is the *real* one: PROT 0977's course ladder names a
         // monster id per (course, round) and `FUN_801D1510` stores it into
         // formation slot 0, so the arena's foe is an ordinary battle monster
@@ -1317,8 +1283,6 @@ impl PlayWindowApp {
         // unlock seeds and the round walks the ladder as legs are cleared.
         // Opening the contest here is the arena entry retail runs when the
         // sub-id word is still zero.
-        const STANDIN_BUDGET: u16 = 120;
-        const STANDIN_HP: i32 = 400;
         let arena_raw = self
             .session
             .host
@@ -1352,22 +1316,8 @@ impl PlayWindowApp {
             let archive = self.monster_archive_bytes()?;
             legaia_asset::monster_archive::record(&archive, r.monster_id as u16).ok()?
         });
-        let lead = self.session.host.world.party.roster.members.first();
-        // The fighter enters at the lead record's live HP (`+0x106`), as the
-        // arena door does - the battle end writes the fight's HP back there
-        // and the ringside pick reads it.
-        let player_hp_max = lead
-            .map(|r| r.hp_mp_sp().hp_max as i32)
-            .filter(|&hp| hp > 0)
-            .unwrap_or(500);
-        let player_hp = lead
-            .map(|r| r.hp_mp_sp().hp_cur as i32)
-            .filter(|&hp| hp > 0)
-            .unwrap_or(player_hp_max);
-        let player_budget = lead
-            .map(|r| r.live_stats().agl)
-            .filter(|&agl| agl > 0)
-            .unwrap_or(STANDIN_BUDGET);
+        let player_hp = lead_fighter.hp;
+        let player_budget = lead_fighter.budget;
         // Resolve through the *retail* damage kernel, the same one the
         // browser host uses: the move-power table, its id -> index map and
         // the element-affinity matrix all come off this raw PROT 0898 entry.
@@ -1376,14 +1326,6 @@ impl PlayWindowApp {
         // battle-entry profile, the same `battle_stats()` the battle loader
         // stages. The constants below survive only as the fallback for a
         // disc whose ladder or archive does not decode.
-        const STANDIN_OPPONENT: legaia_engine_core::muscle_dome::DomeCombatant =
-            legaia_engine_core::muscle_dome::DomeCombatant {
-                hp_max: STANDIN_HP as u16,
-                int: 40,
-                udf: 30,
-                ldf: 30,
-                element: 0,
-            };
         let opponent = opponent_record
             .as_ref()
             .map(|r| {
@@ -1396,29 +1338,18 @@ impl PlayWindowApp {
                     element: r.element,
                 }
             })
-            .unwrap_or(STANDIN_OPPONENT);
+            .unwrap_or(DOME_STANDIN_COMBATANT);
         let opponent_hp = opponent_record
             .as_ref()
             .map(|r| r.hp as i32)
             .filter(|&hp| hp > 0)
-            .unwrap_or(STANDIN_HP);
+            .unwrap_or(DOME_STANDIN_HP);
         let opponent_budget = opponent_record
             .as_ref()
             .map(|r| r.battle_stats()[0])
             .filter(|&agl| agl > 0)
-            .unwrap_or(STANDIN_BUDGET);
-        let player_profile = lead
-            .map(|r| {
-                let live = r.live_stats();
-                legaia_engine_core::muscle_dome::DomeCombatant {
-                    hp_max: player_hp_max.clamp(0, u16::MAX as i32) as u16,
-                    int: live.int,
-                    udf: live.udf,
-                    ldf: live.ldf,
-                    element: 0,
-                }
-            })
-            .unwrap_or(STANDIN_OPPONENT);
+            .unwrap_or(DOME_STANDIN_BUDGET);
+        let player_profile = lead_fighter.profile;
         // The victory caption's Seru index. It names a *string*, not a prize:
         // a contest pays casino coins, and nothing in the arena grants a
         // Seru. See `legaia_engine_core::muscle_dome::reward_spell_id`.

@@ -248,38 +248,6 @@ impl PlayWindowApp {
         sync_battle_hud_rows(&mut self.battle_hud, &self.session.host.world);
     }
 
-    /// The lead roster character's four weapon-swing AP costs (runtime slots
-    /// `0xC..=0xF` → indices 0..3), from their player battle file's equipped
-    /// sections. `None` when any stage of the decode fails.
-    pub(super) fn lead_swing_costs(&self) -> Option<[u8; 4]> {
-        let raw = self.session.host.index.entry_bytes_extended(863).ok()?;
-        let pack = legaia_asset::battle_data_pack::parse(&raw).ok()?;
-        let equipped: [u8; 5] = self
-            .session
-            .host
-            .world
-            .party
-            .roster
-            .members
-            .first()
-            .map(|rec| {
-                let slots = rec.equipment().slots;
-                [slots[0], slots[1], slots[2], slots[3], slots[4]]
-            })
-            .unwrap_or_default();
-        let swings =
-            legaia_asset::battle_char_assembly::swing_battle_animations(&raw, &pack, &equipped)
-                .ok()?;
-        let mut costs = [0u8; 4];
-        for s in &swings {
-            let i = s.slot.checked_sub(0xC)? as usize;
-            if i < 4 {
-                costs[i] = s.cost;
-            }
-        }
-        Some(costs)
-    }
-
     /// React to a `Field <-> Battle` scene-mode change once per transition:
     /// on entering battle, decode each enemy's mesh and inject it; on leaving,
     /// restore the clean field VRAM and drop the battle meshes. Called each

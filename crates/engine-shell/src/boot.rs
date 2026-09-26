@@ -295,53 +295,6 @@ fn read_starting_inventory(
     legaia_asset::new_game::StartingInventory::from_scus(&scus)
 }
 
-/// Read + parse the retail XP-to-next-level curve from a boot source's
-/// `SCUS_942.54` (the static `DAT_80076AF4` table + `FUN_801E9504`'s formula).
-/// Returns `None` (not an error) when the executable isn't reachable, so the
-/// tracker keeps its placeholder curve rather than failing the boot.
-fn read_retail_xp_curve(source: &SceneSource<'_>) -> Option<(Vec<u32>, Option<Vec<i16>>)> {
-    use legaia_engine_core::Vfs;
-    let scus = match source {
-        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-        #[cfg(not(target_arch = "wasm32"))]
-        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-    };
-    let curve = legaia_asset::level_up_tables::xp_thresholds_from_scus(&scus)?;
-    // The slots-1/2 threshold-correction divisor table rides along: its
-    // runtime pointer (_DAT_8007B81C) is constant across the whole save
-    // corpus, so the table is plain static SCUS data.
-    let corrections = legaia_asset::level_up_tables::xp_correction_divisors_from_scus(&scus);
-    Some((curve, corrections))
-}
-
-/// Read + parse the static-SCUS per-character stat-growth tables (`DAT_800769CC`
-/// curves + `DAT_80076918` parameter block) read by `FUN_801E9504`. Returns
-/// `None` (not an error) when the executable isn't reachable, so the tracker
-/// keeps its flat-rate placeholder growth rather than failing the boot.
-fn read_retail_growth_tables(
-    source: &SceneSource<'_>,
-) -> Option<legaia_asset::level_up_tables::GrowthTables> {
-    use legaia_engine_core::Vfs;
-    let scus = match source {
-        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-        #[cfg(not(target_arch = "wasm32"))]
-        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-    };
-    legaia_asset::level_up_tables::growth_tables_from_scus(&scus)
-}
-
 /// Read the raw `SCUS_942.54` bytes from a boot source. Returns `None`
 /// (not an error) when the executable isn't reachable.
 fn read_scus(source: &SceneSource<'_>) -> Option<Vec<u8>> {
@@ -604,33 +557,6 @@ fn read_retail_item_effects(
     legaia_asset::item_effect::ItemEffectTable::from_scus(&scus)
 }
 
-/// Read + parse the accessory ("Goods") passive-effect tables (the
-/// descriptor-`+3` / equip-`+5` index bytes + the `0x8007625C` scope records,
-/// see `accessory-passive-table.md`) from a boot source's `SCUS_942.54` and
-/// build the engine catalog
-/// ([`legaia_engine_core::accessory_passives::AccessoryPassives`]). Returns
-/// `None` when the executable isn't reachable or the tables don't parse, so a
-/// boot never fails on missing passive data - the engine then grants no
-/// accessory passives (the disc-free default).
-fn read_accessory_passives(
-    source: &SceneSource<'_>,
-) -> Option<legaia_engine_core::accessory_passives::AccessoryPassives> {
-    use legaia_engine_core::Vfs;
-    let scus = match source {
-        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-        #[cfg(not(target_arch = "wasm32"))]
-        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
-            .ok()?
-            .read("SCUS_942.54")
-            .ok()?,
-    };
-    let table = legaia_asset::accessory_passive::AccessoryPassiveTable::from_scus(&scus)?;
-    Some(legaia_engine_core::accessory_passives::AccessoryPassives::from_disc(&table))
-}
-
 /// Read the static equipment stat-bonus table (`DAT_80074F68`, see
 /// `equipment-table.md`) from a boot source's `SCUS_942.54` and build both the
 /// disc-accurate equipment modifier table (stat bonuses keyed by real item ids)
@@ -757,46 +683,14 @@ impl BootSession {
                     inventory: starting_inventory.clone(),
                 });
 
-        // Install the real retail XP curve (static SCUS table + FUN_801E9504
-        // formula) over the tracker's fabricated sin-LUT placeholder, when the
-        // executable is reachable, together with the slots-1/2 threshold
-        // correction divisors (Noa levels slightly earlier, Gala slightly
-        // later). Set once at boot; begin_new_game doesn't reset the tracker,
-        // so it persists across New Game.
-        if let Some((curve, corrections)) = read_retail_xp_curve(&source) {
-            host.world.party.level_up_tracker.xp_table = curve;
-            host.world.party.level_up_tracker.xp_corrections = corrections;
-        }
-
-        // Install the real per-character HP/MP growth curves (static SCUS
-        // DAT_800769CC / DAT_80076918 via FUN_801E9504's validated jitter-free
-        // core) over the flat 10/5 placeholder, when the executable is
-        // reachable. Persists across New Game like the XP curve.
-        if let Some(tables) = read_retail_growth_tables(&source) {
-            let tracker = std::mem::take(&mut host.world.party.level_up_tracker);
-            host.world.party.level_up_tracker = tracker.with_growth_tables(&tables);
-        }
-
-        // Install the static-SCUS victory-pose table (`0x800788A0`) the
-        // battle results frame picks the leader's win pose from
-        // (`world::battle::victory`). Best-effort: absent on a disc-free
-        // build, where the pose actor keeps its idle.
+        // The static-SCUS progression tables (XP curve + Noa/Gala correction
+        // divisors, stat growth, victory pose, XA cue durations, magic-XP
+        // thresholds, accessory passives) through the one engine install the
+        // browser play page's `load_disc` calls too. Best-effort: absent on a
+        // disc-free build, where each consumer keeps its default. Persists
+        // across New Game.
         if let Some(scus) = read_scus(&source) {
-            host.world.tables.victory_pose_table =
-                legaia_asset::victory_pose::victory_pose_table_from_scus(&scus);
-            // The XA cue duration table (`DAT_800788B8`) the sound funnel's
-            // voice leg reads for its read span.
-            host.world.audio.xa_cue_durations =
-                legaia_asset::xa_cue_table::xa_cue_durations_from_scus(&scus);
-        }
-
-        // Install the summon-magic spell-XP level-up thresholds (the static
-        // SCUS table the battle overlay's level-up check reads) so Seru-magic
-        // casts accrue spell XP against the retail curve and level the
-        // record's spell-level byte. Best-effort: absent on disc-free builds,
-        // where no spell XP accrues. Persists across New Game.
-        if let Some(scus) = read_scus(&source) {
-            host.world.install_magic_xp_thresholds(&scus);
+            host.world.install_retail_progression_tables(&scus);
             // The SCUS half of the battle chip / caption labels (`Begin`,
             // `Run`, `Attack`, ... and the sparring fight's opening caption).
             // The overlay half merges in when a player battle is requested
@@ -827,15 +721,6 @@ impl BootSession {
         // catalog keeps its curated usability flags.
         if let Some(effects) = read_retail_item_effects(&source) {
             host.world.set_item_effects(effects);
-        }
-
-        // Install the accessory ("Goods") passive-effect catalog so equipped
-        // accessories grant their ability bits (MP savers, guards, party-wide
-        // reward/encounter modifiers) and percent stat boosts through
-        // `World::refresh_party_ability_bits` / `seed_party_battle_stats`.
-        // Best-effort: absent on disc-free builds, where no passives fire.
-        if let Some(passives) = read_accessory_passives(&source) {
-            host.world.set_accessory_passives(passives);
         }
 
         host.load_scene(&cfg.scene)
@@ -1288,6 +1173,54 @@ impl BootSession {
         bgm.stop_sfx_voices(&self.host.world.take_sfx_voice_stops());
     }
 
+    /// The session-side half of a scene swap under the host: the camera
+    /// globals reset and the scene VAB restage (with the SFX queue dropped).
+    /// A door (`SceneTickEvent::SceneEntered`) and the post-FMV hand-off
+    /// ([`Self::apply_pending_fmv_handoff`]) both swap the scene, and only the
+    /// first used to reach this - so a movie that handed off into a new scene
+    /// kept the trigger scene's camera shot and VAB bank.
+    fn after_scene_swap(&mut self) {
+        // Field entry resets the camera globals (`FUN_80025C24`) and kills
+        // any mover in flight, so a departing scene's shot can't leak its
+        // eye-space depth or focus into the next one. The sibling reset of
+        // the op-0x45 param set lives in `SceneHost`'s scene entry.
+        self.camera.reset_globals_for_scene_entry();
+        if let (Some(bgm), Some(audio)) = (self.bgm.as_mut(), self.audio.as_ref()) {
+            // New scene -> upload its VAB bank and drop any SFX cues that
+            // were queued against the previous scene's VAB.
+            bgm.clear_sfx();
+            if let Err(e) = stage_scene_vab(bgm, audio.as_ref(), &self.host) {
+                log::warn!("BGM bank not staged after scene enter: {e:#}");
+            }
+            // Nothing is flushed here. Op-`0x35` sub-op 9 - the op a cutscene
+            // changes music with - is a *start* behind a load barrier, not a
+            // queue for the next scene; it plays the moment
+            // `route_bgm_events` hands it over. Deferring it to this point is
+            // what left every Biron Monastery cutscene silent and then
+            // started its score over the next scene.
+        }
+    }
+
+    /// Run retail's post-FMV control transfer
+    /// ([`SceneHost::apply_pending_fmv_handoff`]) and, when it entered a new
+    /// scene, the same session-side swap a door runs. Every engine-shell host
+    /// calls this rather than the bare host kernel; the render-side rebuild
+    /// stays with the caller, keyed on [`FmvHandoffOutcome::Entered`].
+    ///
+    /// [`FmvHandoffOutcome::Entered`]: legaia_engine_core::scene::FmvHandoffOutcome::Entered
+    pub fn apply_pending_fmv_handoff(
+        &mut self,
+    ) -> Option<legaia_engine_core::scene::FmvHandoffOutcome> {
+        let outcome = self.host.apply_pending_fmv_handoff()?;
+        if matches!(
+            outcome,
+            legaia_engine_core::scene::FmvHandoffOutcome::Entered { .. }
+        ) {
+            self.after_scene_swap();
+        }
+        Some(outcome)
+    }
+
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
         // The mode table's outer level, once per frame, ahead of everything
         // else - retail's `main` (`FUN_80015E90`, `0x8001615C..0x8001620C`)
@@ -1360,27 +1293,7 @@ impl BootSession {
         // After events: camera tick + scene-transition BGM rebind.
         self.camera.tick(&self.host.world);
         if let SceneTickEvent::SceneEntered { .. } = &event {
-            // Field entry resets the camera globals (`FUN_80025C24`) and kills
-            // any mover in flight, so a departing scene's shot can't leak its
-            // eye-space depth or focus into the next one. The sibling reset of
-            // the op-0x45 param set lives in `SceneHost`'s scene entry.
-            self.camera.reset_globals_for_scene_entry();
-        }
-        if let SceneTickEvent::SceneEntered { .. } = &event
-            && let (Some(bgm), Some(audio)) = (self.bgm.as_mut(), self.audio.as_ref())
-        {
-            // New scene -> upload its VAB bank and drop any SFX cues that
-            // were queued against the previous scene's VAB.
-            bgm.clear_sfx();
-            if let Err(e) = stage_scene_vab(bgm, audio.as_ref(), &self.host) {
-                log::warn!("BGM bank not staged after scene enter: {e:#}");
-            }
-            // Nothing is flushed here. Op-`0x35` sub-op 9 - the op a cutscene
-            // changes music with - is a *start* behind a load barrier, not a
-            // queue for the next scene; it plays the moment
-            // `route_bgm_events` hands it over, one call above. Deferring it
-            // to this point is what left every Biron Monastery cutscene
-            // silent and then started its score over the next scene.
+            self.after_scene_swap();
         }
         self.route_field_sfx();
         // Reconcile the word with wherever the scene sessions left the world.

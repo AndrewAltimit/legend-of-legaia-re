@@ -440,8 +440,10 @@ impl PlayWindowApp {
                 _ => None,
             };
             if let Some(input) = input {
-                match &self.fishing_prize_venues {
-                    Some(venues) => match world.fishing_exchange_input(venues, input) {
+                // Decoded by the shared fishing entry, so a session walked
+                // into through the venue door has them too.
+                match world.minigames.fishing_prize_venues.clone() {
+                    Some(venues) => match world.fishing_exchange_input(&venues, input) {
                         ExchangeOutcome::Bought(p) => log::info!(
                             "fishing exchange: bought item {:#04x} x{} for {} points ({} left)",
                             p.item_id,

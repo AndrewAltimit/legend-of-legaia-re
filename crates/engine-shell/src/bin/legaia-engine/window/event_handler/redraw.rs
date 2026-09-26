@@ -58,9 +58,7 @@ impl PlayWindowApp {
             // (`town01` -> fmv 1 -> `town0b`). The shared kernel performs the
             // transfer; without it the window put the player back where the
             // movie started.
-            if let Some(outcome) = self.session.host.apply_pending_fmv_handoff() {
-                log::info!("cutscene: {outcome}");
-            }
+            self.apply_fmv_handoff();
             self.cutscene = None;
         }
         let run_ticks = if self.cutscene.is_some() { 0 } else { ticks };
@@ -486,17 +484,12 @@ impl PlayWindowApp {
             // texture this frame (and restore it).
             self.check_battle_vram_residency();
             if self.menu_runtime.is_open() {
-                let p = self.pad;
-                let input = MenuInput {
-                    cross: p & 0x4000 != 0,
-                    circle: p & 0x2000 != 0,
-                    triangle: p & 0x1000 != 0,
-                    square: p & 0x8000 != 0,
-                    up: p & 0x0010 != 0,
-                    down: p & 0x0040 != 0,
-                    left: p & 0x0080 != 0,
-                    right: p & 0x0020 != 0,
-                };
+                // Edges, not the held word: the runtime filters no repeats,
+                // so a held key used to step the shop cursor / commit a
+                // screen every tick it stayed down. The browser page sends
+                // one edge per press through the same decode.
+                let input =
+                    legaia_engine_core::menu_runtime::menu_input_from_pad_edges(pressed_edge);
                 self.menu_runtime.tick(&mut self.session.host.world, input);
             }
             // A field-VM-triggered shop the player has now closed: tell
@@ -578,9 +571,7 @@ impl PlayWindowApp {
             // here too. Safe beside the drain at the top of this handler:
             // both go through `World::take_finished_fmv`, so whichever runs
             // first is the only one that transfers.
-            if let Some(outcome) = self.session.host.apply_pending_fmv_handoff() {
-                log::info!("cutscene: {outcome}");
-            }
+            self.apply_fmv_handoff();
         }
         // While a cutscene plays, the window shows the video and the
         // scene render is skipped entirely.

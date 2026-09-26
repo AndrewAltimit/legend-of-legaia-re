@@ -190,6 +190,8 @@ pub use handler_actors::TransitionSweepReport;
 mod items_arts;
 mod narration;
 mod prop_interact;
+mod retail_progression;
+pub use retail_progression::RetailProgressionTables;
 mod save;
 mod scene_program;
 pub use scene_program::SceneProgramFrame;

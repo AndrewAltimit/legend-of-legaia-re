@@ -805,7 +805,8 @@ impl LegaiaRuntime {
     ///
     /// ```json
     /// { "live": true, "phase": "select", "turn": 2, "hp": [400, 310],
-    ///   "budget": 120, "spent": 60, "queued": 2, "last_damage": [0, 90],
+    ///   "budget": 120, "costs": [30, 30, 30, 30], "spent": 60, "queued": 2,
+    ///   "last_damage": [0, 90],
     ///   "plays": [ { "attacker": 0, "cmd": 12, "damage": 90 } ],
     ///   "turns_resolved": 1, "time_meter": 3, "magic_open": false }
     /// ```
@@ -837,6 +838,7 @@ impl LegaiaRuntime {
             "turn": s.turn(),
             "hp": [s.hp(0), s.hp(1)],
             "budget": s.budget(0),
+            "costs": s.hand(0).iter().map(|c| c.cost).collect::<Vec<_>>(),
             "spent": s.spent(0),
             "queued": s.queue(0).len(),
             "last_damage": s.last_turn_damage(),

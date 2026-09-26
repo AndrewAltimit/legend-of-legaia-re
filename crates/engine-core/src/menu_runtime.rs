@@ -220,6 +220,31 @@ fn menu_input_pad_word(input: MenuInput) -> u16 {
     w
 }
 
+/// The [`MenuInput`] a host hands [`MenuRuntime::tick`] for one tick, from
+/// the pad word's **edges** (`held & !previous_held`) - the one decode both
+/// play hosts use, so neither can feed the runtime a held word.
+///
+/// Nothing inside the runtime filters repeats: every screen it drives moves
+/// a cursor or commits on the input it is handed. The native window used to
+/// build its input from the held word, so one key press lasting a few ticks
+/// moved the shop cursor several rows or walked straight through the buy
+/// confirm, while the browser play page (which sends one edge per press)
+/// stepped once. The inverse of [`menu_input_pad_word`].
+pub fn menu_input_from_pad_edges(edge: u16) -> MenuInput {
+    use crate::input::PadButton;
+    let on = |b: PadButton| edge & b.mask() != 0;
+    MenuInput {
+        cross: on(PadButton::Cross),
+        circle: on(PadButton::Circle),
+        triangle: on(PadButton::Triangle),
+        square: on(PadButton::Square),
+        up: on(PadButton::Up),
+        down: on(PadButton::Down),
+        left: on(PadButton::Left),
+        right: on(PadButton::Right),
+    }
+}
+
 #[derive(Debug, Clone)]
 enum PendingOp {
     Save { slot: u8 },
@@ -1583,6 +1608,23 @@ mod tests {
         let mut world = World::default();
         world.load_party(Party { members });
         world
+    }
+
+    #[test]
+    fn menu_input_from_pad_edges_inverts_the_pad_word_fold() {
+        // Every single button and a chord survive the round trip, so the two
+        // decodes cannot drift apart on a bit.
+        for bit in 0..16u16 {
+            let word = 1u16 << bit;
+            let back = menu_input_pad_word(menu_input_from_pad_edges(word));
+            assert_eq!(
+                back,
+                word & menu_input_pad_word(menu_input_from_pad_edges(0xFFFF))
+            );
+        }
+        let chord = 0x4000 | 0x0040;
+        assert_eq!(menu_input_pad_word(menu_input_from_pad_edges(chord)), chord);
+        assert_eq!(menu_input_from_pad_edges(0), MenuInput::default());
     }
 
     #[test]
