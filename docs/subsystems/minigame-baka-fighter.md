@@ -1346,7 +1346,7 @@ conflating them is the error to avoid.
 | `0x25` | `FUN_801f0adc` | casino coin counter |
 | `0x27` | `FUN_801f1138` | start / confirm menu |
 | `0x28` | `FUN_801f1fdc` | prompt |
-| `0x32` | `FUN_801f1e48` | sub-menu |
+| `0x32` | `FUN_801f1e48` | Incense wear-off notice ([`script-vm.md`](script-vm.md)) |
 
 `0x801f2c0c` is the **panel-window record** table: 13 records of `0x1c` bytes,
 `[u32 kind = 0x00030000][3 geometry words][u32 0x0c][u32 painter][u32 0]`. The
@@ -1437,7 +1437,7 @@ commit credits behind a `FUN_80042f4c(0xfe)` inventory-has gate
 | `FUN_801f1c88` / `FUN_801f1cb0` / `FUN_801f1d20` | thin wrappers over `FUN_801eca08(actor, lo, hi, mode)` for frame bands `0..7` / `8..0x10` / `0x11..0x17` (modes `0` / `1` / `2`) |
 | `FUN_801f1cd8` / `FUN_801f1d48` | actor deactivate / reset: draw, stash `+0x50` into `DAT_801c6ea4`, zero `+0x50` / `+0x54` (identical bodies) |
 | `FUN_801f1d90` | actor deactivate with the re-arm state (`+0x50 = 0x2c` vs `2`) chosen from hub-progress flags |
-| `FUN_801f1e48` | hub sub-menu SM (3 states): clear `_DAT_8007b450` + draw, wait-confirm + draw, deactivate / re-arm to `0x1a` |
+| `FUN_801f1e48` | Incense wear-off notice (3 states): show window record 16, wait for confirm/cancel (cue `0x20`, hide), clear `_DAT_8007b450` and hand back - not a hub sub-menu ([`field-menu.md`](field-menu.md)) |
 | `FUN_801f1fdc` | hub prompt SM (2 states): entry sting `FUN_80035b50(0x26)` + draw, then wait-confirm + deactivate |
 | `FUN_801f2134` | hub draw tick that clears the grid actor's `+0x3e` when `_DAT_8007bb80 == 0` |
 | `FUN_801f69ec` | shared minigame-hub 3D tile-grid GTE rasterizer: per visible tile (attr bit `0x1000`) of the scene map (`_DAT_1f8003ec + 0x8000`) runs RTPT + depth-cue and links a textured `POLY_GT` into the OT `_DAT_1f8003a0` - render-track |
