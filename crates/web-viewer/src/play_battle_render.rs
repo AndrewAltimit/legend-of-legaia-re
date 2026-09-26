@@ -109,12 +109,11 @@ const READEF_PROT_INDEX: u32 = 894;
 /// phase, acting actor, formation box. The browser mirror of the native
 /// window's `battle_cam_inputs` (`engine-shell` `window/camera.rs`) over the
 /// same `World` type: same phase booleans, same acting-actor formula
-/// (facing `render_26 & 0xFFF`, height keyed on `party_slot + 1` through the
-/// disc table, focus = the actor's world position), same case-9 min/max
-/// walk. The one host difference is the presence predicate: this host keys
-/// monsters on `battle_monster_id` (the world-side fact) where the native
-/// window keys on its own `tmd_binding` mesh bind - the two coincide for
-/// every monster whose mesh decodes. Pinned to the native derivation by
+/// (facing the battle heading `battle.facing_angle & 0xFFF`, height keyed on
+/// `party_slot + 1` through the disc table, focus = the actor's world
+/// position), same case-9 min/max walk, and the same presence predicate - a
+/// monster seat counts by `battle_monster_id` (the world-side fact) on both
+/// hosts, never by a mesh bind. Pinned to the native derivation by
 /// `web_pose_matches_the_native_recipe`.
 fn derive_battle_cam(
     world: &legaia_engine_core::world::World,

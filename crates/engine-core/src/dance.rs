@@ -2075,7 +2075,7 @@ pub const fn dance_scene_stage() -> DanceSceneStage {
 //
 // What is still not retail-pinned is the *producer* of `+0x78`: no caller of
 // `FUN_801d387c` exists in the dump corpus (its address sits as a callback
-// word, the same shape as the duel's mirrored sprite pass), so nothing shows
+// word, the same shape as the duel's afterimage pass), so nothing shows
 // which quantity the dance overlay parks there. The port drives it as the
 // part's age on the prologue's own
 // [`crate::minigame_actor::BEAT_FADE_CEILING`] ramp - a port decision, stated
@@ -2091,7 +2091,7 @@ pub fn sprite_part_fade_weight(beat: u16) -> u8 {
 ///
 /// **Not pinned to retail.** `FUN_801d387c` takes its mode from its caller and
 /// no caller of that address is in the dump corpus - the address sits as an
-/// actor-prototype callback word, the same shape as the duel's mirrored sprite
+/// actor-prototype callback word, the same shape as the duel's afterimage
 /// pass. Mode `2` is the shadowed arm, the two-emit draw that applies the
 /// `>> 3` inverse of the spawn's `<< 3`; the port uses it and says so rather
 /// than implying a disassembly reading.

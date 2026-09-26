@@ -449,12 +449,12 @@ impl PlayWindowApp {
     pub(super) fn tick_muscle_hub(&mut self) {
         use legaia_engine_core::muscle_dome::HubScreen;
         // A dome leg the player WALKED into (the mode-24 door warp, drained
-        // by the shared scene host) carries no contest: the warp arm opens
-        // the leg and deliberately stages no `(course, round)`, because a
-        // door warp does not carry one. The debug launcher below opened the
-        // contest and loaded the hub page itself, so until now the window
-        // showed a contest line and a hub screen only for a fight started
-        // from a hotkey. Do what the browser play page does on every entry.
+        // by the shared scene host) already carries its contest: the warp
+        // arm opens it off the unlock flags (`DomeContest::from_overlay`)
+        // and seats the lead fighter's costs, so `open_muscle_contest` is a
+        // no-op there. It stays as the guard for a leg opened any other way;
+        // the hub page's assets are this window's own and load here on every
+        // entry, as the browser play page does.
         if self.session.host.world.minigames.muscle_dome.is_some() {
             self.open_muscle_contest();
             self.load_muscle_hub_assets();
@@ -628,10 +628,10 @@ impl PlayWindowApp {
     /// Stage the dome contest (`(course, round)` off the arena overlay and
     /// the party's story flags) unless one is already open.
     ///
-    /// The mode-24 door warp opens a leg without one on purpose - the warp
-    /// operand names an overlay, not a ladder position - so whichever host
-    /// runs the dome has to do this. The browser play page has always done it
-    /// on entry; this window used to do it only inside its `M` launcher.
+    /// The shared mode-24 door warp now opens the contest itself (the warp
+    /// operand names an overlay, not a ladder position, so it stages the
+    /// rung off the unlock flags), which makes this a no-op on a door entry;
+    /// it covers the `M` launcher and any leg opened without the warp.
     pub(super) fn open_muscle_contest(&mut self) {
         if self.session.host.world.minigames.muscle_contest.is_some() {
             return;

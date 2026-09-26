@@ -8,7 +8,7 @@
 //! the port had no equivalent for it. [`crate::dance::sprite_part_emit`],
 //! [`crate::dance::sprite_part_fade_weight`],
 //! [`crate::dance::dance_clip_driver_gate`] and
-//! [`crate::baka_fighter_chrome::mirrored_sprite_pass`] each take a handful of
+//! [`crate::baka_fighter_chrome::afterimage_pass`] each take a handful of
 //! loose integers because that is all a caller could hand them; every one of
 //! those integers is a field of this record in retail, and the reason those
 //! kernels were inert was that nothing in the engine held the record they read.
@@ -33,7 +33,7 @@
 //! REF: FUN_80021B04 (the shared part-spawn API every minigame spawn goes
 //! through: `(pos, rot, record, scale)`)
 //! REF: FUN_801d387c, FUN_801d4098 (dance: the emit dispatch and the clip
-//! gate), FUN_801d49e8 (duel: the mirrored sprite pass)
+//! gate), FUN_801d49e8 (duel: the special attack's afterimage)
 
 /// Fixed-point scale every minigame part spawn passes to the shared spawn API
 /// (`a3 = 0x1000`, i.e. 1.0).
@@ -76,13 +76,14 @@ pub struct MinigameActor {
     /// `+0x26` - the yaw accumulator the groovy-move spin drives (retail
     /// wraps it at `0x1000` per turn).
     pub yaw: i16,
-    /// `+0x4C` - the clip record the mirrored sprite pass caches after
-    /// resolving `+0x5C` against a sprite archive. `None` until resolved.
+    /// `+0x4C` - the clip record the duel's afterimage pass caches after
+    /// resolving `+0x5C` against the scene's ANM clip bank (`_DAT_8007B888`
+    /// type `0x05` / `_DAT_8007B840` type `0x0B`). `None` until resolved.
     pub clip_record: Option<u32>,
     /// `+0x50` - the sprite word the emit dispatch ORs its semi-transparency
     /// flags into, and whose low nibble the marker arm stamps as a CLUT byte.
     pub sprite: u16,
-    /// `+0x5A` - the live mask. The mirrored sprite pass retires an actor
+    /// `+0x5A` - the live mask. The duel's afterimage pass retires an actor
     /// outright when this is empty, and clears one bit per pass whose cursor
     /// has run past its clip's end.
     pub live_mask: u16,
@@ -90,12 +91,12 @@ pub struct MinigameActor {
     /// spawner writes `kind_desc[0x10] & 0x1FF` here (`FUN_801d0190` at
     /// `801d031c`) and `FUN_801d1358` rewrites it with each judge-returned move
     /// pair, so `FUN_801d4098`'s `> 0` test means "this actor has a clip
-    /// bound"; the duel's sprite pool indexes an archive with the same slot's
-    /// low bits (`FUN_801d49e8`). The field keeps its offset for a name because
-    /// the *magnitude* is an archive-relative id in one overlay and a
-    /// placement-space anim id in the other.
+    /// bound"; the duel's afterimage resolves the same slot against the
+    /// scene's ANM clip bank (`FUN_801d49e8`). The field keeps its offset for
+    /// a name because the *magnitude* is a bank-relative clip id in one
+    /// overlay and a placement-space anim id in the other.
     pub field_5c: i16,
-    /// `+0x68` - the frame cursor the mirrored sprite pass steps and restores.
+    /// `+0x68` - the frame cursor the afterimage pass steps back and restores.
     pub cursor: i16,
     /// `+0x78` - the beat / yaw halfword the fade-weight prologue reads.
     /// Retail compares it against [`BEAT_FADE_CEILING`] as a *signed 32-bit*
@@ -225,7 +226,7 @@ impl MinigameActorPool {
 
     /// Retire every actor whose [`FLAG_KILLED`] bit is up, and every actor
     /// whose live mask has emptied - the two retirement conditions the
-    /// mirrored sprite pass and the shared teardown apply.
+    /// duel's afterimage pass and the shared teardown apply.
     pub fn retire_dead(&mut self) {
         self.actors.retain(|a| !a.killed());
     }

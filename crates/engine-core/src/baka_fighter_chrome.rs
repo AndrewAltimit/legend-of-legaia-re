@@ -1033,7 +1033,7 @@ fn merge_frame(out: &mut ChromeFrame, f: ChromeFrame) {
 }
 
 // ---------------------------------------------------------------------------
-// Impact effect pair, positional cue, mirrored sprite pass
+// Impact effect pair, positional cue, special-attack afterimage
 // ---------------------------------------------------------------------------
 
 /// One effect-part spawn the impact pair emits: a world position, a Euler
