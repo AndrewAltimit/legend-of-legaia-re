@@ -225,9 +225,10 @@ Damage  = Offense - Defense                 (cap 9999; underdog rewrite below)</
       <tr><td><code>+0x44</code> u16</td><td>base gold</td><td>scaled, then committed to the wallet (clamp 99,999,999)</td></tr>
       <tr><td><code>+0x46</code> u16</td><td>base EXP</td><td>&times;3/4, split among living members</td></tr>
       <tr><td><code>+0x48</code> u8</td><td>drop item id</td><td>0 = no drop</td></tr>
-      <tr><td><code>+0x49</code> u8</td><td>drop chance %</td><td>per dead enemy, <code>rand()%100 &lt; chance</code></td></tr>
+      <tr><td><code>+0x49</code> u8</td><td>drop chance %</td><td>one <code>rand()%100 &lt; chance</code> per enemy (+30 with Items Up); at most one item, then a 1-in-4 gate</td></tr>
     </tbody>
   </table>
+  <p>The drop is one item per battle, not one per enemy. Every enemy costs one <code>rand() % 100</code> against its chance (plus 30 when a living member carries Items Up), and the last enemy whose roll wins supplies the item - a captured one cannot. Then, unless some enemy has a 100% chance or the bonus applies, a further <code>rand() &amp; 3</code> must come up zero or the drop is lost: a lone 10% enemy drops 2.5% of the time. The item is not granted when 99 are already held.</p>
   <p>Runtime-confirmed by write-watchpoint (Gimard credits exactly +15 gold) and cross-checked against the curated <a href="../reference/gamedata.html">game-data tables</a> (Gimard drops Healing Leaf at 10%). The engine wires the scaling into <code>World::apply_battle_loot</code> / <code>apply_battle_xp</code>, so the credited reward is the scaled amount, not the raw record sum; the per-battle no-gold flag on certain scripted fights is the one unmodelled gold gate.</p>
 </section>
 

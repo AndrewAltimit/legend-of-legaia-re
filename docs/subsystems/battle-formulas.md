@@ -1635,7 +1635,7 @@ by the loader `FUN_800542C8`) and computes:
 | `+0x44` u16 | base gold | `Σ (gold >> 1)` over dead enemies, `* 1.25` if a living party member has ability bit `0x10000`, then total halved. Lone enemy: `floor((gold >> 1) / 2)`. |
 | `+0x46` u16 | base EXP | `Σ (exp)` then `* 3/4` (`v - v>>2`), split evenly among living party members. |
 | `+0x48` u8 | drop item id | `0` = no drop. |
-| `+0x49` u8 | drop chance % | per dead enemy, `rand() % 100 < (chance + bonus)` grants the item (added to the win banner at actor `+0xA9` and to inventory via `FUN_800421D4`). |
+| `+0x49` u8 | drop chance % | one `rand() % 100` per enemy seat against `chance` (+30 with Items Up); **one** item at most, and a 1-in-4 gate - see [the drop roll](#the-victory-drop-roll) below. |
 
 Gold commits to party gold `0x8008459C` (clamp `99,999,999`); EXP is divided
 among the living members inside `FUN_8004E568` itself (`divu` by the alive
@@ -1658,6 +1658,26 @@ the scaled amount, not the raw record sum. The +25% gold bonus reads the living
 party members' `+0xF4` ability bit `0x10000`; the per-battle no-gold flag
 (`_DAT_8007BAC0`, certain scripted fights) is the one remaining unmodelled gold
 gate.
+
+#### The victory drop roll
+
+The drop is not a per-enemy grant. `FUN_8004E568` walks every seat of the record-pointer table once and settles on at most **one** item (`0x8004F3D8..0x8004F5A0`, `see ghidra/scripts/funcs/8004e568.txt`):
+
+```text
+bonus = 30 if a living member's record +0xF8 has bit 0x20000 (Items Up) else 0
+item = 0; best = 0
+if _DAT_8007BAC0 == 0:                                    // no-reward battles skip the walk
+  for seat i:                                             // records 0x801C9348[i], actors 0x801C9370[3 + i]
+    best = max(best, record[+0x49])
+    if rand() % 100 < record[+0x49] + bonus
+       and actor[+0x227] == 0:                            // the capture takedown bumps +0x227
+      item = record[+0x48]                                // last winner wins; a zero id clears
+if best < 100 and bonus == 0:
+  if rand() & 3 != 0: item = 0                            // 0x8004F584..0x8004F598
+if item != 0 and FUN_80042F4C(item) != 99: grant + banner
+```
+
+Every seat costs one `rand()` whether or not it carries an item, and the trailing 1-in-4 draw is taken even in a no-reward battle. So without Items Up a lone 10% enemy drops 2.5% of the time, not 10%: the gate only stands aside for a 100% seat or the bonus. Items Up is the same `+0xF8` bit the steal attack's doubling reads. The port is `battle_formulas::victory_drop_roll`, called from `World::apply_battle_loot`; the engine logs captures by monster id rather than per seat, so a captured id claims the earliest formation seat that carries it.
 
 #### Regional difference - the PAL executables pay more
 
@@ -1746,7 +1766,11 @@ There is **one** seed. The executable carries no `srand` (`A(30h)`) thunk, and e
 
 A caller tests the **low** bits of the result (`rand & 1` coin flips, `& 0xF` gates, `% n`) and divides it as a 15-bit quantity, so what matters is the shape, not the generator. The world's stream (`World::next_rng`) is a raw 32-bit LCG state; its low bit strictly alternates, its low nibble has period 16, and as an `i32` it is negative half the time. `World::next_rand` is the retail draw - the next state through `battle_formulas::bios_rand_shape`, `(state >> 16) & 0x7FFF`. The tile-board fill and the overworld region-encounter counter draw through it, and the ambient element channel shapes its own draws the same way.
 
-The battle-side consumers still take the raw state - most mask it `& 0x7FFF` (the **low** fifteen bits, the wrong half) or take `% n` of the whole word - and several battle unit tests pin outcomes under that raw stream, so moving them is a change to the test fixtures as well as to the draws. The engine's own step tracker (`encounter::EncounterTracker::on_step`) is not a retail port and splits one raw word into a low trigger byte and a high pick half. Minigames and pure kernels that keep a private seed use the already-shaped `psyq_rand_step` / `BiosRand`.
+Every battle-side consumer draws through `World::next_rand`: the battle-action host's `rng` (the state machine's camera variants, the capture timer, the victory re-pick, the delegated auto-fill), the damage kernels' rolls, initiative, escape and flee, the monster action picker and its scripted overrides, the status appliers, the cast and summon modules' rolls, the steal attack, the capture roll, the victory pose and drop rolls, and the battle effect pool's spawn offsets.
+
+On the disc, every one of the corresponding routines reaches the generator by `jal 0x80056798`; the battle overlay's only other generator is `FUN_801D0290`, which feeds ribbon geometry. Where a port used to mask the raw word `& 0x7FFF` (the **low** fifteen bits, the wrong half), the shaped draw replaces it; where a port's own arithmetic differed from retail's around the draw, the retail instructions replaced it (the victory re-pick is retail's `rand() % party_count` rejection loop, and the drop roll above replaced a one-byte roll against a 1/256 rate).
+
+Three draw sites still do not sit on that stream. The field overlay's move-VM extension `FUN_801D362C` (sub-ops `0x05` / `0x30`) still hands over a raw state. The battle camera script and the camera's own shake draw from a private, already-shaped seed. The Muscle Dome session keeps a per-session seed. The engine's own step tracker (`encounter::EncounterTracker::on_step`) is not a retail port and splits one raw word into a low trigger byte and a high pick half. Minigames and pure kernels that keep a private seed use the already-shaped `psyq_rand_step` / `BiosRand`.
 
 ## Engine-side mirror - `engine-vm::battle_formulas`
 

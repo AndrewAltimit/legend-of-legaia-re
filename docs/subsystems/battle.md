@@ -4513,7 +4513,7 @@ Implementation: [`crates/engine-core::tactical_arts_editor`](../../crates/engine
 
 - Sums each `MonsterDef::exp` and distributes the total via `World::apply_battle_xp`, which splits the pool equally among the surviving party members (integer divide, remainder dropped; dead members get zero) and runs per-character level-up checks against `LevelUpTracker::xp_table`.
 - Sums each `MonsterDef::gold` and adds it to `World::party.money` (saturating).
-- For each defeated monster with a non-`None` `drop_item` and `drop_rate_q8 > 0`, pulls one byte from `World::next_rng` and compares against `drop_rate_q8 / 256`. On hit, the item id is appended to `BattleRewards::drops` and incremented in `World::party.inventory`.
+- Rolls the one drop retail offers through `battle_formulas::victory_drop_roll` - one `rand() % 100` per enemy seat against its percent chance, the last winning seat's item, then a 1-in-4 gate (see [battle-formulas.md](battle-formulas.md#victory-spoils-rewards)). The item is appended to `BattleRewards::drops` and added to `World::party.inventory` unless 99 are already held.
 - Returns `BattleRewards { xp, gold, level_ups, drops }` for the engine to surface as the post-battle banner ("got N XP, M gold, level up, found Healing Leaf!").
 
 Monster ids missing from the catalog contribute zero (silently skipped) so a partially-populated catalog still drives a battle-end transition. Implementation: [`crates/engine-core::world::World::apply_battle_loot`](../../crates/engine-core/src/world.rs).
