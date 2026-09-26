@@ -113,14 +113,16 @@
 
 <section class="doc-section" id="dialog-window-pager-fun-801d84d0">
   <h2>The dialog window pager</h2>
-  <p>Above the byte-level interpreter sits the per-frame state machine that opens the speech box, scrolls lines in, waits for a button press, and turns the page. It lives in the dialog overlay: 26 states covering load / scroll / drain / wait / done, with per-line bytecode pointers in a 16-line buffer. Rust port: the dialog-window SM in <code>crates/engine-vm</code>.</p>
+  <p>Above the byte-level interpreter sits the per-frame state machine that opens the speech box, scrolls lines in, waits for a button press, and turns the page. It lives in the dialog overlay: 26 states covering load / scroll / drain / wait / done, with per-line bytecode pointers in a 16-line buffer. Rust port: <code>engine-core</code>'s <code>dialog_window</code> (rows, scroll, confirm) and <code>dialog_pacing</code> (the typewriter), driven by <code>dialog::OwnedDialogPanel</code> on the path both play hosts share.</p>
   <h3 id="box-packing">Box packing</h3>
   <ul class="bullets">
-    <li>A box holds up to <strong>3 rows</strong>; three box-open states each pin the limit to 3.</li>
-    <li>Consecutive <code>0x1F</code> lines pack into one box: a <code>0x1F</code> right after a line's <code>0x00</code> means "same box, next row".</li>
+    <li>The window shows <strong>3 rows</strong>; three box-open states each pin the limit to 3. It is a window height, not a page length.</li>
+    <li>Consecutive <code>0x1F</code> lines are one page: a line right after a line's <code>0x00</code> means "same page, next row". A fourth line scrolls the window up a row with no button press; the page ends only at a control byte.</li>
     <li>A <code>0xC?</code> escape whose argument falls in <code>0x00..0x1E</code> (e.g. <code>0xC1 0x00</code>) does not end the line; the advance loop consumes the argument as part of the token.</li>
-    <li>Multi-page speech is several boxes chained by <code>0x24</code>. <code>dialog_box::pack_box</code> / <code>pack_boxes</code> decode this; the Rim Elm sparring partner's narration packs into three full pages then a 2-row box opening a 4-option menu.</li>
+    <li>Multi-page speech is several pages chained by <code>0x24</code>. <code>dialog_box::pack_page</code> decodes a page; <code>pack_box</code> / <code>pack_boxes</code> cut the same lines into window-sized chunks. The Rim Elm sparring partner's narration packs into three full pages then a 2-row box opening a 4-option menu.</li>
   </ul>
+  <h3 id="row-window">Row window and scrolling</h3>
+  <p>The row table is a scrolling window. State <code>0x0B</code> types the last row; a line after a full window scrolls it (<code>0x0C</code>, 15 px per row at <code>0x24 * dt</code> sixteenths a call); at a page end, rows the previous page left above scroll away (<code>0x0F</code>) before the page waits (<code>0x19</code>). A <code>0x24</code> page turn keeps the rows and types the next page beneath them. A confirm press while a row types or holds latches <code>0x25</code> and completes the page (<code>0x0D</code>, then <code>0x0E</code> for overflow). The text is clipped to the box's rows band; the frame does not scroll. A <code>town01</code> PCSX-Redux trace pins every arm, and the engine reproduces it vsync for vsync.</p>
   <h3 id="post-page-dispatch">Post-page control byte</h3>
   <p>When the page is full and the player confirms, the pager reads the next control byte (masked <code>&amp; 0x7F</code>) and picks the follow-on state:</p>
   <table>
@@ -155,8 +157,8 @@ N * [ 0x1F label segment 0x00 ]       the on-screen option labels</code></pre>
   <details class="disclosure">
     <summary>Box geometry and render</summary>
     <div class="disclosure-body">
-      <p>The three box-open init arms (states 0, 6, 9) are near-copies differing in one word: the successor state each writes (1, 7, 0xA). States 1 and 7 clear the 16-entry row buffer; state 4 (from <code>0x24</code>) returns early and preserves it; state 0xA ramps the open animation to <code>0x1000</code> then drops into state 1.</p>
-      <p>Picker box rect: <code>x = 0x26</code>, <code>y = 0x94 + ((4-N)*0xF)/2</code>, <code>w = 0xF4</code>, <code>h = 0x38 - (4-N)*0xF</code> - 244 wide, shrinking 15 px per absent option. The main reading box is emitted as <code>(ctx+0x12, ctx+0x14 + scroll, 0xF4, lines*0xF - 3)</code> with skin <code>0x61</code>.</p>
+      <p>The three box-open init arms (states 0, 6, 9) are near-copies differing in one word: the successor state each writes (1, 7, 0xA). States 1 and 7 clear the 16-entry row buffer; state 4 (from <code>0x24</code>) returns early and preserves it; state 0xA ramps <code>_DAT_801F274C</code> to <code>0x1000</code>, which the draw reads as the box collapsing to its centre line, then hides the box for <code>0x18</code> steps and drops into state 1.</p>
+      <p>Picker box rect: <code>x = 0x26</code>, <code>y = 0x94 + ((4-N)*0xF)/2</code>, <code>w = 0xF4</code>, <code>h = 0x38 - (4-N)*0xF</code> - 244 wide, shrinking 15 px per absent option. The main reading box is emitted as <code>(ctx+0x12, ctx+0x14 + d, 0xF4, lines*0xF - 3)</code> with skin <code>0x61</code>, where <code>d</code> moves only with the <code>0x48</code> collapse animation - the rows scroll, the frame does not.</p>
       <p>The box emitter composes a 9-slice gold frame from the system-UI sheet plus an interior fill of <strong>two identical semi-transparent gouraud quads</strong> (mode <code>B/2 + F/2</code>, top RGB <code>(0x18,0x18,0x28)</code>, bottom <code>(0x40,0x40,0xA0)</code>), which composes to <code>0.25 back + 0.75 gradient</code>. The engine bakes the gradient at alpha 191/255 and draws it once. The page-advance hand draws at <code>(0x10A, box_y + lines*0xF - 0x13)</code>; the picker hand at <code>(box_x - 6, box_y + cursor*0xF)</code>; labels render CLUT 7 at <code>box_x + 0x10</code>.</p>
     </div>
   </details>

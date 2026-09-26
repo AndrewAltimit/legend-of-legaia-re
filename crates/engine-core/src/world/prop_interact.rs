@@ -212,6 +212,10 @@ impl World {
                         id.pc = panel.pc;
                         id.panel = None;
                     }
+                } else {
+                    // Still typing or scrolling: the pager's skip latch
+                    // completes the page (`crate::dialog_window`).
+                    panel.confirm_while_typing();
                 }
             }
             if id.done {

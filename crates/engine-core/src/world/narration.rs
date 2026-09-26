@@ -824,6 +824,10 @@ impl World {
                         tl.pc = panel.pc;
                         tl.dialog = None;
                     }
+                } else {
+                    // Still typing or scrolling: the pager's skip latch
+                    // completes the page (`crate::dialog_window`).
+                    panel.confirm_while_typing();
                 }
             }
             if tl.dialog.is_some() && !tl.done {
@@ -2501,6 +2505,10 @@ impl World {
                             }
                         }
                     }
+                } else {
+                    // Still typing or scrolling: the pager's skip latch
+                    // completes the page (`crate::dialog_window`).
+                    panel.confirm_while_typing();
                 }
             }
             self.dialog.inline = Some(id);

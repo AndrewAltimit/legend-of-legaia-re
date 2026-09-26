@@ -49,7 +49,7 @@
 pub mod dialog_box;
 pub mod interp;
 pub mod picker;
-pub use dialog_box::{DialogBox, Dispatch, LINES_PER_BOX, pack_box, pack_boxes};
+pub use dialog_box::{DialogBox, Dispatch, LINES_PER_BOX, pack_box, pack_boxes, pack_page};
 pub use interp::{
     DialogPlayer, EventStats, Interpreter, MesEvent, PlayerState, SubstituteKind,
     extract_all_messages, extract_message,

@@ -67,6 +67,7 @@ mod battle_timed_fight_strip;
 pub mod battle_trail;
 mod battle_tutorial_box;
 pub mod billboard;
+mod dialog_reading_box;
 pub mod field_party_hud;
 pub mod gte;
 mod incense_notice_box;
@@ -96,6 +97,7 @@ pub mod vram_capture;
 
 pub use battle_timed_fight_strip::*;
 pub use battle_tutorial_box::*;
+pub use dialog_reading_box::*;
 pub use incense_notice_box::*;
 pub use text_balloon_box::*;
 pub use tile_board_prompt::*;

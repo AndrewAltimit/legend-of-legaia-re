@@ -46,6 +46,15 @@ pub const SHORT_ROW_UNITS: u32 = 0x22;
 /// (`0x801D9118` / `0x801D91D0` / `0x801D9268` / `0x801D9CA4`).
 pub const PAGER_SPEED: i32 = 1;
 
+/// A pacer with nothing typing (every word zero) - what a panel off the
+/// pager path reports.
+pub const IDLE_PACER: TypewriterPacer = TypewriterPacer {
+    counter: 0,
+    acc: 0,
+    hold: 0,
+    setup: false,
+};
+
 /// What one pager call did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PagerCall {
