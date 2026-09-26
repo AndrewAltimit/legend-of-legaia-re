@@ -525,7 +525,6 @@ impl PlayWindowApp {
     ///
     /// [`MusclePhase::ends_turn`]: legaia_engine_core::muscle_dome::MusclePhase::ends_turn
     pub(super) fn tick_muscle_hub(&mut self) {
-        use legaia_engine_core::muscle_dome::HubScreen;
         // A dome leg the player WALKED into (the mode-24 door warp, drained
         // by the shared scene host) already carries its contest: the warp
         // arm opens it off the unlock flags (`DomeContest::from_overlay`)
@@ -544,155 +543,42 @@ impl PlayWindowApp {
         // The engine holds no live mirror of that word, so this is its cold
         // reset - the value a freshly booted game keys the cue at.
         let volume_word = legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
-        let world = &self.session.host.world;
-        let leg_open = world.minigames.muscle_dome.is_some();
-        let contest_open = world.minigames.muscle_contest.is_some();
-        if leg_open && !self.muscle_prev_leg_open {
-            let round = world
-                .minigames
-                .muscle_contest
-                .as_ref()
-                .map_or(1, |c| c.round() as i32 + 1);
-            // The card runs once per leg: a re-entered hub already played it
-            // over the still, so the leg that opens after it does not.
-            let raise = legaia_engine_core::muscle_ringside::leg_open_raises_round_card(
-                self.muscle_card_round.take(),
-                round,
+        // The screen timers are one engine kernel on both play hosts; this
+        // window only sounds what they fired.
+        let frame = self
+            .muscle_timers
+            .tick(&self.session.host.world, pad, volume_word);
+        // The first visit's two announcer lines (`FUN_8003D53C` at arms 0 and
+        // 0x15), through the same XA path the battle clips use.
+        if let Some(c) = frame.xa
+            && let Some(bgm) = self.session.bgm.as_mut()
+        {
+            let fired = bgm.play_xa_clip(
+                u32::from(c.clip),
+                u32::from(c.channel),
+                u32::from(c.duration_sectors),
             );
-            if contest_open && !self.muscle_prev_contest_open {
-                // A fresh contest opens on the hub's first visit, whose own
-                // arms end in the ROUND card (`FirstVisitHub`).
-                self.muscle_first_visit =
-                    Some(legaia_engine_core::muscle_ringside::FirstVisitHub::new());
-            } else if raise {
-                // Retail's ROUND card is arms 0x15 / 0x16 - the opponent-card
-                // envelope.
-                self.muscle_round_banner = Some((round, HubScreen::opponent_card()));
-            }
-            self.muscle_interval = None;
-            self.muscle_backdrop = None;
-        }
-        if !leg_open && self.muscle_prev_leg_open && self.muscle_prev_contest_open {
-            // The leg boundary the arena hub sees. Whether it shows the tally
-            // screen is the shared rule's call, not this host's.
-            let raises = legaia_engine_core::muscle_dome::leg_boundary_raises_interval(
-                world.minigames.muscle_contest.as_ref().map(|c| c.state()),
+            log::debug!(
+                "dome hub XA clip slot {} ch {} dur {} -> {}",
+                c.clip,
+                c.channel,
+                c.duration_sectors,
+                if fired { "playing" } else { "not staged" }
             );
-            // The tally roll is data-dependent; its four lanes step one row
-            // per tick after the shared lead-in, and the last cue lands on
-            // the staggered vsync countdown, so the roll cannot be shorter
-            // than that stagger.
-            let roll = legaia_engine_core::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS
-                + *legaia_engine_core::muscle_dome::HUB_TALLY_CUE_STAGGER
-                    .last()
-                    .unwrap_or(&0) as i32;
-            self.muscle_interval = raises.then(|| HubScreen::interval(roll));
-            // A hub re-entered after a leg draws the still that leg's end
-            // left resident as its backdrop (retail's `_DAT_801D1AE0` arm).
-            self.muscle_backdrop = world
-                .minigames
-                .muscle_ringside_still
-                .filter(|_| raises)
-                .map(legaia_engine_core::muscle_ringside::HubBackdrop::reentry);
-            // Arm the tally roll with the screen: the contest is already
-            // settled, so the roll only decides what the six rows read while
-            // the screen is up, and it ends on the settled values.
-            self.muscle_tally = raises
-                .then(|| {
-                    world
-                        .minigames
-                        .muscle_contest
-                        .as_ref()
-                        .map(|c| c.tally_roll())
-                })
-                .flatten();
-            self.muscle_first_visit = None;
-            self.muscle_round_banner = None;
         }
-        // Retail runs one arm at a time: the first visit's arms walk intro,
-        // title, course card and ROUND card in turn.
-        if let Some(hub) = self.muscle_first_visit.as_mut() {
-            hub.tick(1, pad);
-            // The first visit's two announcer lines (`FUN_8003D53C` at arms
-            // 0 and 0x15), through the same XA path the battle clips use.
-            let xa = hub.take_xa();
-            if hub.done() {
-                self.muscle_first_visit = None;
-            }
-            if let Some(c) = xa
-                && let Some(bgm) = self.session.bgm.as_mut()
-            {
-                let fired = bgm.play_xa_clip(
-                    u32::from(c.clip),
-                    u32::from(c.channel),
-                    u32::from(c.duration_sectors),
-                );
-                log::debug!(
-                    "dome hub XA clip slot {} ch {} dur {} -> {}",
-                    c.clip,
-                    c.channel,
-                    c.duration_sectors,
-                    if fired { "playing" } else { "not staged" }
-                );
-            }
-        } else if let Some((_, banner)) = self.muscle_round_banner.as_mut() {
-            banner.tick(1, pad);
-            if banner.done() {
-                self.muscle_round_banner = None;
+        // Each drained tally lane keys a voice directly, with no cue id in
+        // sight (`FUN_801D1288` builds the whole attr set); the director's
+        // explicit key-on is the only path that takes it.
+        if let Some(bgm) = self.session.bgm.as_mut() {
+            for cue in frame.voice_cues {
+                bgm.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
+                    cue.voice,
+                    cue.vab_program_tone,
+                    cue.note_and_fine,
+                    cue.volume,
+                ));
             }
         }
-        // The backdrop rides the INTERVAL screen's arms, then runs its own
-        // return + ROUND-card arms once the screen has gone.
-        if let Some(backdrop) = self.muscle_backdrop.as_mut() {
-            let lane0_full = self.muscle_tally.as_ref().is_some_and(|(ramp, _)| {
-                ramp.fade[0] >= legaia_engine_core::other_game_overlay::LANE_FADE_FULL
-            });
-            backdrop.tick(1, pad, self.muscle_interval.map(|i| i.stage()), lane0_full);
-            if backdrop.card_brightness().is_some() {
-                self.muscle_card_round = Some(
-                    self.session
-                        .host
-                        .world
-                        .minigames
-                        .muscle_contest
-                        .as_ref()
-                        .map_or(1, |c| c.round() as i32 + 1),
-                );
-            }
-            if backdrop.done() {
-                self.muscle_backdrop = None;
-            }
-        }
-        if let Some(interval) = self.muscle_interval.as_mut() {
-            interval.tick(1, pad);
-            // The tally rolls on the same clock. `boost` is retail's bypass
-            // flag `DAT_801D1AB4`, which this host never raises, and the
-            // volume word is the voice-volume setting the cue halves.
-            if let Some((ramp, tally)) = self.muscle_tally.as_mut() {
-                let step = ramp.tick(1, false, volume_word);
-                *tally += step.tally_gain;
-                // Each drained lane keys a voice directly, with no cue id in
-                // sight (`FUN_801D1288` builds the whole attr set). The
-                // director's explicit key-on is the only path that takes it.
-                let cues = step.cues.clone();
-                if let Some(bgm) = self.session.bgm.as_mut() {
-                    for cue in cues {
-                        bgm.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
-                            cue.voice,
-                            cue.vab_program_tone,
-                            cue.note_and_fine,
-                            cue.volume,
-                        ));
-                    }
-                }
-            }
-            if interval.done() {
-                self.muscle_interval = None;
-                self.muscle_tally = None;
-            }
-        }
-        self.muscle_prev_leg_open = leg_open;
-        self.muscle_prev_contest_open = contest_open;
     }
 
     /// Load the Muscle Dome hub-screen assets once: the two hub page TIMs
@@ -921,7 +807,7 @@ impl PlayWindowApp {
             // A first visit's frame: the brick wall + shade (the backdrop
             // emitter's latch-0 arm) behind the arm's screens, all composed
             // by the shared kernel the play page draws with.
-            if let Some(hub) = self.muscle_first_visit {
+            if let Some(hub) = self.muscle_timers.first_visit {
                 let f = hub.frame();
                 let levels = legaia_engine_render::ringside_backdrop::FirstVisitLevels {
                     backdrop: f.backdrop,
@@ -941,14 +827,14 @@ impl PlayWindowApp {
                 quads.extend(d.tiles);
                 shade = d.shade;
                 front.extend(d.hud);
-            } else if let Some((round, banner)) = self.muscle_round_banner {
+            } else if let Some((round, banner)) = self.muscle_timers.round_banner {
                 quads.extend(hud::hub_screen_quads(
                     &mut table,
                     &hud::round_banner_draws(round),
                     banner.brightness(),
                 ));
             }
-        } else if let Some(interval) = self.muscle_interval {
+        } else if let Some(interval) = self.muscle_timers.interval {
             let bright = interval.brightness();
             quads.extend(hud::hub_screen_quads(
                 &mut table,
@@ -960,7 +846,7 @@ impl PlayWindowApp {
             // lane counting down and the coin tally counting up. With no roll
             // armed the screen draws the settled values, which is where the
             // roll ends anyway.
-            let (values, row_bright) = match self.muscle_tally.as_ref() {
+            let (values, row_bright) = match self.muscle_timers.tally.as_ref() {
                 Some((ramp, tally)) => (ramp.row_values(*tally), ramp.row_brightness(bright)),
                 None => {
                     let (rows, tally) = world
@@ -975,8 +861,11 @@ impl PlayWindowApp {
         }
         // The re-entered hub's ROUND card (arms 0x15 / 0x16) over the still.
         if !in_dome
-            && self.muscle_interval.is_none()
-            && let Some(card) = self.muscle_backdrop.and_then(|b| b.card_brightness())
+            && self.muscle_timers.interval.is_none()
+            && let Some(card) = self
+                .muscle_timers
+                .backdrop
+                .and_then(|b| b.card_brightness())
         {
             let round = world
                 .minigames
@@ -993,7 +882,7 @@ impl PlayWindowApp {
         // The backdrop goes first: retail links the still's two packets at
         // the ordering table's far end (`OT + 0xFA0`), behind every sprite.
         if !in_dome
-            && let Some(b) = self.muscle_backdrop.filter(|b| b.visible())
+            && let Some(b) = self.muscle_timers.backdrop.filter(|b| b.visible())
             && let Some(&(_, still_y)) = assets.stills.iter().find(|(v, _)| *v == b.variant())
         {
             use legaia_engine_render::ringside_backdrop as rb;
