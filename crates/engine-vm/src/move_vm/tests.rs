@@ -1866,3 +1866,28 @@ fn op24_and_op26_address_field_a8_not_a_phantom_block_slot() {
     assert_eq!(state2.anim_block_u16(0), 13);
     assert_eq!(state2.anim_block_u16(2), 24);
 }
+
+/// Op `0x34`'s arm (`0x80023B64`, `s4 = actor + 0x90`) stores its `lh`
+/// operands as sign-extended words. The earlier port wrote op[6] into
+/// `+0xA8`, op[7] into the block offset `0xF8` (`+0xA4` only after an
+/// eight-bit wrap, so into a slot nothing reads), and dropped op[8] and the
+/// sign halves altogether.
+#[test]
+fn op34_setup_stores_sign_extended_words_through_actor_plus_0x90() {
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    let bc = program(&[
+        0x34, 0xFFFE, 0x1234, 0x0011, 0x0022, 0x8001, 0x0005, 0xFFF0, 0x0077,
+    ]);
+    assert_eq!(step(&mut host, &mut state, &bc), StepResult::Advance);
+    assert_eq!(state.pc, 9);
+    assert_eq!(state.actor_u32(0xAC), 0xFFFF_FFFE, "op[1] sign-extended");
+    assert_eq!(state.actor_u16(0xB0), 0x1234);
+    assert_eq!(state.tween_src_x, 0x11, "+0x90");
+    assert_eq!(state.tween_src_y, 0x22, "+0x92");
+    assert_eq!(state.actor_u16(0x9C), 0x8001);
+    assert_eq!(state.actor_u16(0x9E), 0xFFFF, "word store's sign half");
+    assert_eq!(state.actor_u32(0xA0), 5);
+    assert_eq!(state.actor_u32(0xA4), 0xFFFF_FFF0);
+    assert_eq!(state.field_a8, 0x77, "op[8], not op[6]");
+}

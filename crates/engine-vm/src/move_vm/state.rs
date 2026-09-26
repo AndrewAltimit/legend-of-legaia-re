@@ -1,8 +1,8 @@
 //! Core move-VM value types: per-actor state, opcode enum, step/ext results.
 
 /// u16 slots covered by [`ActorState::anim_block`], counted from `+0xAC`.
-/// Covers every byte offset the ported opcodes address (the deepest is
-/// `0xF8`, op `0x38`).
+/// Covers every byte offset the ported opcodes address; the variable-length
+/// op `0x0A` walks deepest.
 pub const ANIM_BLOCK_SLOTS: usize = 128;
 
 /// The `+0xAC..` u16 window as a newtype, purely so [`ActorState`] can keep
@@ -147,9 +147,7 @@ pub struct ActorState {
     /// addressable by byte-offset for opcodes that touch deep into it.
     /// Indices are in u16 units relative to `+0xAC`.
     ///
-    /// Sized to the **highest byte offset any ported opcode writes**
-    /// (`0xF8`, from op `0x38`) rather than to the `+0xCA` slot names
-    /// alone: a short array silently swallowed the per-slot writes of
+    /// Sized past the `+0xCA` slot names rather than to them: a short array silently swallowed the per-slot writes of
     /// the variable-length opcodes (op `0x0A` walks `0x0C + 2*i` and
     /// `0x1C + 2*i`), which reads as "the opcode ran" while the data
     /// went nowhere.

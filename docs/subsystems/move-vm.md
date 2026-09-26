@@ -89,7 +89,7 @@ The move VM rewrites a wide swath of the actor struct:
 | `+0x80`/`+0x82`/`+0x84` | u16 | Animation slots, `[v << 3]` (op `0x04`). |
 | `+0x90`/`+0x92`/`+0x94` | u16 | Tween source (op `0x35`/`0x37` absolute / increment). |
 | `+0x96`/`+0x98`/`+0x9A` | u16 | Tween scale (op `0x2E`, `[v << 3]`). |
-| `+0x9C`/`+0xA0`/`+0xA4`/`+0xA8` | i32 | Tween block (op `0x34`, 9-word setup). |
+| `+0x9C`/`+0xA0`/`+0xA4`/`+0xA8` | i32 | Word block (op `0x34` stores all four sign-extended; `+0x9E` is the `+0x9C` word's high half). |
 | `+0xAC..+0xCA` | mixed | Per-frame anim slots (key/curve data; op `0x2C` configures, `+0xC0` is the duration). |
 | `+0xB0..` | u8 | Per-keyframe descriptor (op `0x0A` writes `count` 3-byte slots). |
 | `+0xB2` | i16 | Misc (op `0x38` add). |
@@ -214,7 +214,9 @@ If `actor[+0xA8]` was heap-allocated, calls `FUN_800583C8(actor + 0xA0, buf)`; e
 
 ### 0x34 - `TWEEN_SETUP` (size 9)
 
-Loads 8 i16 operands into `actor[+0xAC..+0xC8]` (with `+0xAC`/`+0x9C..0xA8` zero-extended to i32). 9-u16 instruction.
+Arm `0x80023B64` (jump-table word at `0x80010848`) stores through `s4 = actor + 0x90`. The `lh` operands go out as **sign-extended words** (`sw`): `v1 -> +0xAC`, `v5 -> +0x9C`, `v6 -> +0xA0`, `v7 -> +0xA4`, `v8 -> +0xA8`. The `lhu` operands go out as halfwords: `v2 -> +0xB0`, `v3 -> +0x90`, `v4 -> +0x92`. The `+0x9C` word store also writes `+0x9E`, the emitter-select word, with the sign half of `v5`. Nothing here touches `+0xAE..+0xC8` beyond `+0xAC`'s own sign half.
+
+An earlier reading had the operands land in `+0xAC..+0xC8` zero-extended, and the port wrote `v6` into `+0xA8` and `v7` into the `+0xAC`-relative offset `0xF8` - `+0xA4` only after an eight-bit wrap, so a block slot no reader looks at - and dropped `v8`. It is the same wrap class as the six setup arms in [Draw-kind-4 setup ops](#draw-kind-4-setup-ops-0x13-0x23-0x42).
 
 ### 0x35 - `WORLD_INC_VARIANT2` (size 3)
 

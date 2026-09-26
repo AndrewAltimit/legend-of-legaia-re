@@ -505,18 +505,23 @@ pub fn step<H: MoveHost + ?Sized>(
             state.field_74 &= !0x4000_0000u32;
             size = 1;
         }
-        // 0x34 - TWEEN_SETUP. size 9.
+        // 0x34 - TWEEN_SETUP. size 9. Arm 0x80023B64 (jump-table word
+        // 0x80010848) stores every operand through `s4 = actor + 0x90`: the
+        // `lh` operands go out as sign-extended **words** (`sw`), the `lhu`
+        // ones as halfwords. Word stores: op[1] -> +0xAC, op[5] -> +0x9C,
+        // op[6] -> +0xA0, op[7] -> +0xA4, op[8] -> +0xA8; halfwords: op[2] ->
+        // +0xB0, op[3] -> +0x90, op[4] -> +0x92.
         0x34 => {
-            state.anim_block_u16_set(0x00, read(1)); // +0xAC
-            state.anim_block_u16_set(0x04, read(2)); // +0xB0
+            let word = |n: usize| read(n) as i16 as i32 as u32;
+            state.set_actor_u32(0xAC, word(1));
+            state.set_actor_u16(0xB0, read(2));
             state.tween_src_x = read(3) as i16;
             state.tween_src_y = read(4) as i16;
-            state.field_9c = read(5) as i16 as i32;
-            state.field_a8 = read(6) as i16 as i32;
-            state.anim_block_u16_set(0xF8, read(7));
-            // Original writes `(int) op[8]` at +0xA8 - we update field_a8 too
-            // since the slot overlaps; for the test surface we treat it as
-            // the 32-bit value.
+            // A word store at +0x9C also writes +0x9E (the sign half).
+            state.set_actor_u32(0x9C, word(5));
+            state.set_actor_u32(0xA0, word(6));
+            state.set_actor_u32(0xA4, word(7));
+            state.set_actor_u32(0xA8, word(8));
             size = 9;
         }
         // 0x35 - WORLD_INC_VARIANT2. size 3.
