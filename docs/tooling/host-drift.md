@@ -2971,17 +2971,47 @@ kernel both hosts call, so the two cannot drift on it again.
   did all three. `BootSession::restage_audio_for_direct_entry` makes the same
   three moves.
 
-Two rows stay open on purpose:
+One row stays open on purpose:
 
 - **Op `0x35` sub-op `8`.** `FUN_80019898` replays the sequence bound to the
   record at `0x8007057C` through `FUN_80026478`. In every captured state that
   record either names a sequence whose channel holds no stream or is inactive,
   so the retail effect is silence, and the trait's default no-op is the
   faithful director behaviour ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)).
+
+Closed since:
+
 - **Cast-voice latency on the page.** A cast voice whose `(slot, channel)` the
-  clip bank lacks is sliced out of the disc by the page's script and installed
-  a frame or more later; the native window reads it synchronously. Closing it
-  needs the cast spans pre-staged at battle entry.
+  clip bank lacked was sliced out of the disc by the page's script and
+  installed a frame or more after the cast asked for it; the native window
+  reads it synchronously. The engine now lists the round's committed spells'
+  cast voices at the round's start (`World::drain_battle_xa_prestage`, every
+  candidate of a coin-flip module included), and the page stages each one
+  silently (`prestage_xa_clip`), so the cast's own request finds it resident.
+  The native window drains the list and drops it. A monster's cast is picked
+  at its own dispatch, so it has no lead time and keeps the page's lazy path.
+
+## Battle FX: the effect ribbon and the summon seat order
+
+- **The effect ribbon.** Move-VM op `0x42` nodes (the lightning ribbon
+  `FUN_801CFA48` builds) were drawn by neither battle host. Both now draw
+  `World::active_effect_ribbons` - one engine list, rebuilt from each live
+  node's state every frame (`legaia_engine_core::effect_ribbon`) - composed like
+  a mesh part: the native window uploads each mesh in its part pass
+  (`build_summon_and_move_fx_part_draws`), the page bakes it into its FX
+  billboard stream (`build_battle_fx`). The list, the mesh and the transform
+  are the engine's; only the upload differs. In play the carrier is Gilium's
+  summon (PROT 0923).
+- **Summon seat before the scene tick.** The native window seated a player
+  cast's summon creature before ticking the effect scene graphs, the page
+  after; the page now takes the native order (`tick_world_effects`), so a cast
+  ticks its creature's first frame on the same tick on both hosts.
+- **The battle label merge order is not a drift.** The native window merges
+  the SCUS labels at boot and the battle overlay's on top at play start; the
+  page reads the overlay's first and merges the SCUS ones on top. The two label
+  sets (`battle_ui_strings::SCUS_LABELS`, `OVERLAY_LABELS`) share no key and
+  only the overlay half carries the Ra-Seru names, so both orders build the same
+  table.
 
 ## Menus, saves and minigame exits: one call per decision
 
