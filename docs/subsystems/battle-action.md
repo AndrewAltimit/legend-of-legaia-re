@@ -2822,22 +2822,21 @@ they are documented here rather than lifted whole into `engine-vm`.
   where every cast module's equivalent store faces it away. The reaction pick
   has three legs, not two: a dead victim takes `+0x1F1` regardless of the
   `+0x1F2` gate, and a zero `+0x1EF` falls on to `+0x1F0`.
-- **`FUN_801E0080` - battle particle/sprite-cloud animator.** Gated on
+- **`FUN_801E0080` - the effect-VM per-frame walker.** Gated on
   `DAT_8007BD58 != 0 && DAT_8007BD71 == 0xFF` (battle live, no end signal).
-  Advances per-frame animation cursors across two effect pools (a 32-slot
-  `0x1C`-stride pool and a 128-slot pool at `_DAT_8007BD30 + 0x10`), applies the
-  same sin/cos-LUT rigid rotation (`_DAT_8007B7F8` / `_DAT_8007B81C`, shifts
-  `>>4` / `>>0xC`) per part, then in a third pass builds textured-sprite GPU
-  primitives (`0x09000000` command word, per-particle brightness) into the OT at
-  `_DAT_1F8003A0`, projecting each via `FUN_800195A8` and linking with
-  `FUN_8003D2C4`. The two pools are **emitters and their particles**, not two
-  parallel effect pools: the `0x1C`-stride pool spawns into the `0x20`-stride one
-  and each record runs its own byte script. Record layouts, the two *different*
-  script-advance shapes, the countdown drain, the position integration, the
-  brightness ramp and the mirror-bit UV assignment are ported as
-  `engine-vm::battle_scatter`; the GTE projection and the OT link are not. See
-  `overlay_battle_action_801e0080.txt` and
-  [`reference/functions/battle.md`](../reference/functions/battle.md#801e0080).
+  The 32-slot `0x1C`-stride pool at `_DAT_8007BD30 + 0x1010` is the effect
+  **master** slots and the 128-slot `0x20`-stride pool at `_DAT_8007BD30 + 0x10`
+  their **children**; their scripts are the `efect.dat` 2-pack (PROT 0873) the
+  init `FUN_801DE914` fixes up, and the zeroed pools themselves are a slice of
+  the battle heap block `FUN_800513F0` allocates. The third pass builds one
+  textured-sprite primitive per live child (`0x09000000` tag, brightness
+  envelope, random UV mirror). This is the routine
+  [`effect-vm.md`](effect-vm.md) documents from its prologue word `0x801E0088`;
+  its entry is `0x801E0080`, where the pool-ready byte is loaded, and the one
+  `jal` to it is the draw tick `FUN_800480D8`'s per-frame pass. Ported as
+  `engine-vm::effect_vm` (`Pool::tick_retail` / `Pool::child_billboards`), live
+  through `World::tick_effects`; a second port that read it as a separate
+  "arena scatter" with unparsed data pools duplicated it and was removed.
 - **`FUN_801DF6B8` - damage-number popup renderer.** Draws a scaling decimal
   number sprite for one actor's accumulated damage `ctx[+0x83C]`: extracts each
   base-10 digit (`* 0x66666667` / `>>0x22` = divide-by-10), indexes the digit

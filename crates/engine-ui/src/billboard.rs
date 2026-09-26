@@ -162,10 +162,11 @@ pub struct BillboardCorners {
 /// No host is owed a call.
 ///
 /// This is a measurement, not a shrug. A `jal 0x800195a8` sweep of the dump
-/// corpus returns **17** distinct retail riders over 24 call sites, and ten of
-/// them have ports: `world_map_panel_actors`, `move_vm_overlay_ext`,
-/// `battle_scatter`, `effect_vm::pool`, `afterimage` (two), `field_actor_billboard`,
-/// `screen_fx` and `battle_on_screen`. Every one of those ports reached its
+/// corpus returns **17** retail riders over 24 call sites, and the ported ones
+/// are `world_map_panel_actors`, `move_vm_overlay_ext`, `effect_vm::pool`
+/// (the effect-VM walker `FUN_801E0080`, whose older `0x801E0088` dump is the
+/// same body), `afterimage` (two), `field_actor_billboard`, `screen_fx` and
+/// `battle_on_screen`. Every one of those ports reached its
 /// result through one of the two surfaces above, so the projector is the step
 /// each of them **replaced**, not a step any of them is missing - which is
 /// what makes a shared call site something no future wiring produces either.

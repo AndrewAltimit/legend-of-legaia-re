@@ -123,7 +123,6 @@ pub mod battle_intro_tiles;
 pub mod battle_intro_transition;
 pub mod battle_party_panel;
 pub mod battle_record_writer;
-pub mod battle_scatter;
 pub mod battle_separation;
 pub mod battle_stream_slot;
 pub mod battle_target_group;

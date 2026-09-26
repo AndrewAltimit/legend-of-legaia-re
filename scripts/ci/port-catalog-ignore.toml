@@ -1071,6 +1071,7 @@
 "80035874" = "INTERIOR: the shared tail of FUN_800357FC (the window start-slide), reached by its `bne a0,zero,0x80035874` once the node lookup succeeds; no `addiu sp` prologue and no jal targets it. Ported with its head as the engine-vm window-widget Host::set_position callback."
 "80035938" = "INTERIOR: the shared tail of FUN_800358C0 (the window snap), reached by its `bne a0,zero,0x80035938`; no prologue and no jal targets it. Ported with its head as the engine-vm window-widget Host::start_motion callback."
 "801dfdf8" = "INTERIOR: the effect-spawn API's prologue word; the entry is 801dfdf0, whose first two words load the pool-ready byte 0x8007BD58, and every jal to the routine on the disc names 801dfdf0 (none names 801dfdf8). Ported as effect_vm::Pool::spawn under FUN_801DFDF0."
+"801e0088" = "INTERIOR: the effect-VM per-frame walker's prologue word; the entry is 801e0080, whose first two words load the pool-ready byte 0x8007BD58, and the one jal to the routine on the disc (FUN_800480D8 at 0x80048128) names 801e0080. Ported as effect_vm::Pool::tick_retail / child_billboards under FUN_801E0080."
 "801dff48" = "INTERIOR: dump resolves entry=801dfdf0, not 801dff48"
 "801e0df0" = "INTERIOR: no `addiu sp,sp,-N` prologue; body reads s2/s4/s8 and a caller stack slot it never writes - a tail fragment reaching the parent's epilogue"
 "801e0f24" = "INTERIOR: dump resolves entry=801de840, not 801e0f24"
