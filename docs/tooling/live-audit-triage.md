@@ -1113,7 +1113,7 @@ old reason got wrong.
 | `motion_pause_kick` (`8003c9ac`) | no view can be projected to gate the sweep | both gates and the default-move table are projectable from the per-slot maps |
 | `state_pick` (`801f1f4c`) | the engine models neither actor `+0x50` nor `+0x54` | `Actor::state_50` and `Actor::state_54`, at those offsets |
 | `field_audio_release_steps` (`801d8450`) | no per-voice stop, no `0x80091508` table | `SustainedSfx::stop_voice` and `SeqResourceTable::release`, the module's own two `REF:` addresses |
-| `submode_panel_rows` (`801e6984`) | the context block `open_submode` cannot reach | `open_submode` is live and seeds `World::field_vm.submode_context`, which is read every frame |
+| `submode_panel_rows` (`801e6984`) | the context block `open_submode` cannot reach | `open_submode` is live and seeds `World::field_vm.submode_context`, which is read every frame; the real blocker is the unported op-`0x49` sub-op-4 handler `FUN_801EF014`, the only installer of panel record 14 |
 | `field_actor_plan` (`8003bc08`) | the engine has no `+0x10` flag word | `move_vm::ActorState::flags` is that word, tested in production on pool actors |
 | `tick_reflection` (`801e5154`) | the actor carries none of the fields this reads | `ActorState` carries all but `+0x64`, at retail offsets |
 | `refresh_object_grid_marks` (`80017bec`) | the engine keeps no `.MAP` image | three of four regions are resident, and the collision grid is mutated live |

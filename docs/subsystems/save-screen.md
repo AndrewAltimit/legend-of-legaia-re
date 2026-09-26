@@ -571,8 +571,11 @@ than `NOT WIRED`, naming `legaia_save`'s synchronous card writer as the
 mechanism. The distinction matters: no host is *owed* here. Both card-image backends the
 port has are synchronous - the browser card rack patches the container bytes
 through `legaia_save`, and the native window mounts a real `.mcr` in
-save-select port 2 (`play-window --card`) but only **reads** it, refusing a
-Save into a mounted card. Neither leaves an asynchronous BIOS beat for an
+save-select port 2 (`play-window --card`), writes a Save into it and writes the
+image file back. Both writes go through one kernel,
+[`engine-core::card_write::write_save_into_card`](../../crates/engine-core/src/card_write.rs)
+(save number, payload, engine ext tail, resume fields, block identity,
+directory claim). Neither leaves an asynchronous BIOS beat for an
 issue-then-poll machine to sequence; wiring one would re-host the device layer
 rather than add behaviour. The `bu` layer below it is likewise ported, as
 [`engine-core::card_bu_io`](../../crates/engine-core/src/card_bu_io.rs).

@@ -2983,6 +2983,59 @@ Two rows stay open on purpose:
   a frame or more later; the native window reads it synchronously. Closing it
   needs the cast spans pre-staged at battle entry.
 
+## Menus, saves and minigame exits: one call per decision
+
+A second side-by-side read, over the menu, save and minigame-exit paths, found
+each row below. As with the audio legs, the fix is a kernel both hosts call,
+or - where the defect was one host deviating from a behaviour the other already
+had - the deviating host adopting it.
+
+- **Submode screens were cross-wired on both hosts.** `World::input` holds the
+  host's **raw** PSX word (`PadButton`, Cross `0x4000`), while the op-`0x49`
+  submode family tests the **packed** masks `FUN_8001822C` builds (Cross
+  `0x0040`). Cross did nothing on a coin cabinet, Down accepted and Right backed
+  out. The tests fed the packed constant straight into `set_pad`, so they
+  asserted the defect. `World::submode_pad_words` now converts through
+  `dev_menu::retail_packed`, the conversion the Incense notice and both dev
+  menus already used.
+- **Card Save.** The browser rack wrote cards through page-private code; the
+  native `--card` port refused a Save. Both call
+  `engine-core::card_write::write_save_into_card` now, and the native window
+  writes the image file back (`MountedCard::persist`).
+- **LGSF resume point.** The native slot files carried the resume trailer and
+  the page's export did not; the page's two imports loaded first and entered
+  after, so the picker baseline cleared flags `0x141` / `0x147` in the import -
+  the card-Load defect on a second path. `export_save` writes the trailer and
+  both imports park the save for the scene entry.
+- **Leaving a Muscle Dome leg.** Only the native `M` hotkey reported the left
+  leg (the run / give-up path); the `Start` escape both hosts share did not, so
+  the page kept the contest open with its tally. `World::leave_muscle_dome`
+  reports and settles, and both paths call it.
+- **A shop freezes the field.** Retail runs a shop as a menu-overlay session:
+  the field overlay is swapped out under it (a prize-shop save state holds game
+  mode `0x17` with PROT 0899 resident). The page froze the world; the native
+  window ticked it with a neutral pad, so NPCs walked behind the buy list.
+  `MenuRuntime::suspends_field` names the rule (an inn prompt is a field
+  dialogue and is not suspended) and the native loop skips its tick under it.
+- **Sub-frame key taps.** A key pressed and released between two native
+  redraws never reached a tick; the page latched it in its `pulse` set.
+  `input::PadTapLatch` is that rule as a type, and the native window feeds the
+  frame's first tick through it.
+- **Party HUD pad.** The native HUD read the window's held keys, the page read
+  the word the world was handed; the native HUD now reads `World::input` too.
+- **Dance end.** `World::exit_dance` already queues the hall track's restart
+  (`restore_minigame_bgm`); the native window then started it a second time.
+- **Developer menu CAMERA row.** Absent on both; `DevMenuSession::tick_host`
+  is the one call both hosts make, and it carries the row
+  ([`world-map.md`](../subsystems/world-map.md#the-camera-row)).
+
+Two rows of the same read were already closed when re-checked: the minigame
+purses in `save_full` and the card-Load order (both in the section above).
+Still open, and on neither host: the scene-entry place-name banner (the
+submode-driver handler table's slot `0x2E`, `0x801EE5D4`, whose body opens the
+panel script `0x801F32B4` at `0x801EE628`) and the
+world-map location labels ([`place-names.md`](../formats/place-names.md)).
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
