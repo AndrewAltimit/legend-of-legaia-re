@@ -259,19 +259,25 @@ impl StagedCharacterSelector {
     /// `FUN_80035C00(a, b)`.
     ///
     /// PORT: FUN_80035C00
-    /// REF: FUN_800402F4 - the battle action resolver, the only writer.
+    /// REF: FUN_800402F4 - the battle action resolver, the only setter.
     ///
-    /// NOT WIRED: the pair is read back by the pause-menu notify /
-    /// message-box path as a character-record selector, but the **writer** is
-    /// not a menu path at all - all three `jal`s to `0x80035C00` in the corpus
+    /// NOT WIRED: the only caller that stores real values is the battle
+    /// action resolver - all three `jal`s to `0x80035C00` on the disc
     /// (`0x80040884`, `0x80040CC8`, `0x8004208C`) sit inside `FUN_800402F4`,
-    /// the battle action resolver, each on the arm that has just stored the
-    /// actor's reaction byte at `+0x729`. So a producer would have to be the
-    /// battle damage arm staging "who to show a message about", and the engine
-    /// resolves that per action instead: it addresses party members by roster
-    /// slot and its notify path takes the character with the draw. Wiring this
-    /// means giving the battle round a staged-selector cell for the notify
-    /// screen to read, on both sides at once.
+    /// each on the arm that has just stored the actor's reaction byte at
+    /// `+0x729`. The menu overlay (PROT 0899) is the consumer, not a second
+    /// setter: it reads the pair at `0x801DCCD8` / `0x801DCCF4` and forms
+    /// `secondary + primary * 0x414` - an offset into the `0x414`-stride
+    /// character records - and it writes both cells straight back to `0xFF`
+    /// through `lui`-pair stores at three site pairs (`0x801D850C` /
+    /// `0x801D8510`, `0x801D93DC` / `0x801D93F8`, `0x801D9748` /
+    /// `0x801D9764`, base `0x801CE818`) - an earlier note here said the
+    /// writer "is not a menu path at all", which holds for this setter and
+    /// not for the cells. So the pair is a battle-to-menu handshake: battle
+    /// stages which record field to show, the menu consumes and clears it.
+    /// The engine's notify path takes the character with the draw instead of
+    /// through a staged cell; wiring this means giving the battle round a
+    /// staged-selector cell for the menu to read, on both sides at once.
     pub fn set_pair(&mut self, primary: u16, secondary: u16) {
         self.primary = primary;
         self.secondary = secondary;

@@ -529,7 +529,11 @@ pub struct WindowSpawn {
 /// [`crate::field_env::resolve_placed_env_draws`], which already honours this
 /// sweep's `0x400` gate as the *ownership* rule; nothing re-runs a windowed
 /// rebuild. Wiring it needs the descriptor region held resident and a
-/// placement actor list to re-plan on every region-box change.
+/// placement actor list to re-plan on every region-box change. Its retail
+/// callers are two SCUS `jal`s (`0x80017E14`, `0x80017F08`); it is not
+/// `REPLACED-BY` the whole-map draw, because the actors it spawns carry
+/// descriptor-flag state (the `template_kind`, `+0x74` and `+0x10` bits on
+/// [`WindowSpawn`]) that no check has shown the static draw path reproduces.
 // REF: FUN_8003A55C (the complementary init sweep), FUN_80024C88 (the spawn),
 // FUN_801D7518 (the per-list free the sweep opens with)
 pub fn window_rebuild_spawns(
