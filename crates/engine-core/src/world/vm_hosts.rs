@@ -867,8 +867,28 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             self.world.cutscene.prologue_naming_armed = true;
         }
     }
+    /// Op `0x42` mode 1's word is the **held pad** `_DAT_8007B850` in its
+    /// packed form (`lw v0, -0x47B0(at)` at `0x801DFC08`): the d-pad in
+    /// `0xF000`, Triangle / Circle / Cross / Square in `0x10` / `0x20` /
+    /// `0x40` / `0x80` - the word the tile board and the world-map panels
+    /// read. An earlier port kept a never-written `screen_mode` field here,
+    /// so every mode-1 test missed; Rim Elm's "stand here and press Down"
+    /// polls (`42 01 00 ..`, `town01` P2[12..14]) never saw the press.
     fn screen_mode(&self) -> u32 {
-        self.world.screen_mode
+        u32::from(crate::world_map_panel_host::packed_pad(
+            self.world.input.pad(),
+        ))
+    }
+
+    /// The compass table at `0x801F28D0` (field overlay data): the
+    /// `0xF000` d-pad value op `0x42` mode 1 compares the held pad against
+    /// (`bne v0, v1` at `0x801DFC14`) - Down, Down+Left, Left, Left+Up,
+    /// Up, Up+Right, Right, Right+Down.
+    fn screen_mode_table(&self, index: u8) -> Option<u32> {
+        const PAD_COMPASS: [u32; 8] = [
+            0x4000, 0xC000, 0x8000, 0x9000, 0x1000, 0x3000, 0x2000, 0x6000,
+        ];
+        PAD_COMPASS.get(usize::from(index)).copied()
     }
 
     // Op-0x43 screen-effect widget sub-ops (the PROT-0900 mask / sprite /
@@ -2161,6 +2181,42 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::ExecMove { move_id });
     }
 
+    /// Op `4C 50` - the actor model set. The state writes are the VM
+    /// default's (`+0x64`, `+0x5C = 0`, the `0x1000` clear, the world-map
+    /// `+0x60` mirror); the re-stage `FUN_80024E08` runs through
+    /// `FUN_80020F88` - the actor starts drawing the named TMD - is the live
+    /// model id a placement carries on [`World::field_npc_live_model`],
+    /// which both play hosts already re-bind mid-scene from (the same seat
+    /// motion op `0x0E` writes). The id stays raw: the `>= 0xF0` player-bank
+    /// select is [`crate::model_bank::resolve_model_id`]'s, the `4C 50`
+    /// arm's own `0x801E17AC..0x801E1824` select instruction for instruction.
+    ///
+    /// Only a placement channel receives it; an op aimed at the player
+    /// (`CC F8 50 ..`, e.g. `jagaroom`'s costume swap) has no player-mesh
+    /// re-bind seat and changes the state words only.
+    ///
+    /// PORT: FUN_80024E08 (the model re-stage, through the live-model seat)
+    fn op4c_n5_sub0_set_actor_model(&mut self, ctx: &mut FieldCtx, value: i16, _high: bool) {
+        ctx.model_id = value as u16;
+        ctx.move_id = 0;
+        ctx.flags &= 0xffff_efff;
+        if self.model_pool_is_world_map() {
+            ctx.model_id_high = value as u16;
+        }
+        if let Some(slot) = self.world.field_vm.executing_channel {
+            self.world.set_field_npc_live_model(slot, value);
+        }
+    }
+
+    /// Op `4C CE <value>` - store the player clip override `_DAT_8007B6AC`
+    /// (`lbu v1, 1(s6); sw v1, -0x4954(v0)` at `0x801E2A24..0x801E2A30`),
+    /// which the settle tail and the player clip arms read.
+    ///
+    /// REF: FUN_801DE840 (the nibble-C sub-`0xE` arm)
+    fn op4c_n_c_sub_e_set_b6ac(&mut self, value: u8) {
+        self.world.locomotion.clip_override = u32::from(value);
+    }
+
     /// Op `0x4C 0x61` - scripted CLUT-cell effect (one-shot cell write /
     /// cross-fade spawn). Decodes the 14-byte operand payload and queues the
     /// effect on the world; [`World::step_clut_fx`] applies it against the
@@ -2364,6 +2420,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             return;
         }
         if is_player {
+            // The player arm also aims its move id at the player's clip
+            // (`0x801E1954..0x801E1A3C`: clip base + pick + bind).
+            self.world.field_player_script_clip(move_id);
             let y = self
                 .world
                 .sample_field_floor_height(i32::from(world_x as i16), i32::from(world_z as i16))

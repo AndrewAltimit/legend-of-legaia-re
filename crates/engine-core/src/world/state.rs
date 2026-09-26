@@ -64,10 +64,6 @@ pub struct World {
     /// Field script actors: op `0x43` scripted arcs and the NPC height
     /// channel they write, and op `0x34` sub-1 attached lights.
     pub script_actors: FieldScriptActorState,
-    /// Field-VM `screen_mode` register read by op 0x42 mode 1 - packed mode
-    /// bits (bits 4 / 5 / 6 / 7 individually testable; bits 12..15 indexed
-    /// against `screen_mode_table`).
-    pub screen_mode: u32,
 
     /// PRNG state consumed by every VM that calls `host.rng()`. Default uses
     /// a deterministic LCG so tests are reproducible.
@@ -316,7 +312,6 @@ impl World {
             flags: StoryFlagState::new(),
             fog: crate::fog_particles::FogPool::new(),
             script_actors: FieldScriptActorState::default(),
-            screen_mode: 0,
             rng_state: 0x1234_5678,
             casting: CastFxState::new(),
             sin_lut: crate::action_effect_script::retail_rotation_lut()
