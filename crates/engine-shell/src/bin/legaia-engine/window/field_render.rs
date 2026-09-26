@@ -929,28 +929,16 @@ impl PlayWindowApp {
     /// [`Self::advance_ocean_animation`]: while a battle is up the GPU
     /// texture holds the battle VRAM and a field re-upload would clobber it.
     pub(super) fn apply_world_clut_fx(&mut self) {
-        if self.session.host.world.mode == SceneMode::Battle {
-            return;
-        }
-        if self.session.host.world.ambient.clut_fx.is_empty()
-            && self.session.host.world.ambient.script_vram_moves.is_empty()
-            && self.session.host.world.ambient.vram_rect_copies.is_empty()
-            && self.session.host.world.ambient.fx.is_empty()
-        {
-            return;
-        }
+        // The shared frame-tail kernel runs every step every tick (each
+        // drains its own tick backlog and self-gates) and holds the battle
+        // guard. This used to skip the whole call while four effect lists
+        // were empty - a test that left out the `4C DB` blend fades, so a
+        // lone blend fade never stepped, and that banked the idle ticks a
+        // later effect then consumed at once.
         let Some(base) = self.cpu_vram_base.as_mut() else {
             return;
         };
-        let moved = self.session.host.world.apply_script_vram_moves(base);
-        // Field-VM op `0x43` sub-`0x12` rect copies: the same software VRAM,
-        // the same frame. `back_buffer` is `false` - the window presents one
-        // page, so there is no second framebuffer to bias a source into.
-        let copied = self.session.host.world.apply_vram_rect_copies(base, false);
-        // The ambient move-VM effect parts (jou's flesh-palette cyclers /
-        // lightning) run on the same game-tick bank and write the same VRAM.
-        let ambient = self.session.host.world.step_ambient_fx(base);
-        if !self.session.host.world.step_clut_fx(base) && !moved && !copied && !ambient {
+        if !self.session.host.world.step_field_vram_effects(base, false) {
             return;
         }
         if let Some(r) = self.win.renderer.as_ref() {

@@ -205,28 +205,16 @@ impl PlayWindowApp {
                 continue;
             }
             // While the opening narration crawl / title card is on screen the
-            // pad is frozen (the timeline owns the scene) but the world keeps
-            // ticking so the crawl advances and the timeline's terminal
-            // SceneChange can fire (rebuilding render state on a swap).
-            if self.session.host.world.cutscene_narration_active()
-                || self.session.host.world.cutscene.card.is_some()
-            {
-                self.session.host.world.set_pad(0);
-                match self.session.tick() {
-                    Ok(legaia_engine_core::scene::SceneTickEvent::SceneEntered { name }) => {
-                        log::info!("opening chain: entered '{name}'");
-                        self.rebuild_scene_render_state();
-                    }
-                    Ok(_) => {}
-                    Err(e) => log::error!("session tick (narration): {e:#}"),
-                }
-                // The world DID tick on this arm, so the readout's kernel has
-                // a fresh frame to read and the crawl is one of the states its
-                // predicate suppresses on.
-                self.tick_field_party_hud();
-                self.prev_pad = self.pad;
-                continue;
-            }
+            // pad is frozen (the timeline owns the scene) and Start opens
+            // nothing, but the frame is otherwise an ordinary one: the scene
+            // ticks and the whole tail below runs. This arm used to `continue`
+            // straight after the scene tick, so under the crawl the effect
+            // scene-graphs, the scripted CLUT / VRAM effects, the field-event
+            // drain, the NPC rebind, the balloon sync and the play clock all
+            // stood still while the browser page ran them - and the prologue's
+            // 3D keeps playing under the crawl in retail.
+            let narration = self.session.host.world.cutscene_narration_active()
+                || self.session.host.world.cutscene.card.is_some();
             // Start opens the pause menu wherever retail's locomotion
             // controller runs, which is the field **and the overworld**.
             // The guard used to be `!menu_runtime.is_open()` alone, so Start
@@ -243,7 +231,8 @@ impl PlayWindowApp {
             // so this asks the engine instead
             // ([`World::field_menu_open_allowed`]) and every host that opens
             // the menu asks the same question.
-            if pressed_edge & 0x0008 != 0
+            if !narration
+                && pressed_edge & 0x0008 != 0
                 && self.session.host.world.field_menu_open_allowed()
                 && !self.menu_runtime.is_open()
             {
@@ -281,7 +270,7 @@ impl PlayWindowApp {
             // menu-runtime overlay (shop / inn) is up the pad drives
             // the menu, not the field, so feed the field a neutral pad
             // (the player must not walk while shopping).
-            let field_pad = if self.menu_runtime.is_open() {
+            let field_pad = if narration || self.menu_runtime.is_open() {
                 0
             } else {
                 self.pad
@@ -452,17 +441,12 @@ impl PlayWindowApp {
                     }
                 }
             }
-            // Advance an active Seru-magic summon scene-graph (the cast
-            // above, or the `G` debug spawn) through the move VM.
-            self.session.host.world.tick_summon(0x0400);
-            // Advance an active battle move-FX scene-graph (the `H` debug
-            // spawn) through the same move VM.
-            self.session.host.world.tick_move_fx(0x0400);
-            // Advance any field move-VM scene-graph effects spawned by the
-            // field-VM op 0x34 sub-3 ("Play 3D animation") - the per-scene
-            // prescript stagers (`FUN_800252EC` → `FUN_80021DF4`). No-op
-            // when none are live (off the field / no trigger fired).
-            self.session.host.world.tick_field_fx(0x0400);
+            // Advance the three move-VM effect scene-graphs - an active
+            // Seru-magic summon (the cast above, or the `G` debug spawn), a
+            // battle move-FX (`H`), and the field op-`0x34` sub-3 prescript
+            // stagers - through the shared frame-tail kernel the browser page
+            // calls too. Each self-gates when nothing is live.
+            self.session.host.world.tick_effect_scene_graphs();
             // In battle, re-stamp the party's eye/mouth face frames
             // from the playing clips' facial tracks (the retail
             // per-frame facial animator). The clips themselves are
@@ -528,6 +512,12 @@ impl PlayWindowApp {
             // is still mutable; the `&self` draw passes read the committed
             // pen/rect off the record.
             self.sync_text_balloon();
+            // ANIMATE cues (op `0x4B` for NPCs, `A2 F8` ExecMove for the
+            // player), drained every tick in every mode through the shared
+            // kernel. This used to run inside the draw pass and only in
+            // `SceneMode::Field`, so a cue raised anywhere else waited in the
+            // queue for the next field frame.
+            self.drain_anim_cues();
             // Advance the field party-status HUD's idle countdown
             // (`FUN_801D0D38`). Its decision is read back in the draw pass.
             self.tick_field_party_hud();
@@ -1132,82 +1122,9 @@ impl PlayWindowApp {
             // render, so the draw pass below can look its mesh up in the cache.
             let mut npc_frames: Vec<(u8, usize)> = Vec::new();
             if self.session.host.world.mode == SceneMode::Field {
-                // Channel op-0x4B ANIMATE cues re-target the NPC's clip
-                // player before this frame's tick: the cue's anim id names
-                // a bundle record the same way the placement anim byte does
-                // (`record = id - 1`), against whichever bundle the
-                // placement originally resolved through. This is what makes
-                // the prologue-vignette actors *perform* their scripted
-                // beats instead of looping the placement clip.
-                // Timeline `A2 F8 <move_id>` ExecMove cues against the
-                // PLAYER: resolve scene-ANM-bundle record `move_id - 1`
-                // (the same `id - 1` record space as the NPC cues; pinned
-                // live - town01's post-naming ExecMove 48/49 land the
-                // retail player anim pointer on scene records 47/48) and
-                // queue it as a one-shot over the idle/walk pair. Cues
-                // whose record doesn't resolve (e.g. the low walk-move
-                // ids the locomotion controller already covers) drop out
-                // harmlessly.
-                // A settle pick that binds from the scene bank (the `4C CE`
-                // override, the `99` sentinel) names a record of the same
-                // bundle the cues below resolve through.
-                if let Some(bundle) = self.npc_anim_bundles.0.as_ref()
-                    && let Some(anim) = self.session.host.world.locomotion.player_anim.as_mut()
-                {
-                    anim.resolve_scene_clip(bundle);
-                }
-                let move_cues =
-                    std::mem::take(&mut self.session.host.world.locomotion.player_move_cues);
-                if !move_cues.is_empty()
-                    && let Some(bundle) = self.npc_anim_bundles.0.as_ref()
-                {
-                    for id in move_cues {
-                        // Moves 1/2 are the locomotion walk moves - the
-                        // live trace keeps the retail anim pointer on the
-                        // PROT 0874 walk/idle clips across them, and the
-                        // engine's movement controller already animates
-                        // those - so only higher ids re-target the clip.
-                        if id <= 2 {
-                            continue;
-                        }
-                        if let Some(clip) =
-                            legaia_engine_core::field_anim::FieldClipPlayer::from_record(
-                                bundle,
-                                id as usize - 1,
-                            )
-                            && let Some(anim) =
-                                self.session.host.world.locomotion.player_anim.as_mut()
-                        {
-                            anim.push_scripted(clip);
-                        }
-                    }
-                }
-                let cues: Vec<_> = self.session.host.world.npcs.anim_cues.drain().collect();
-                for (slot, (_count, base_id, _frames)) in cues {
-                    if !self.npc_anim_srcs.contains_key(&slot) {
-                        continue;
-                    }
-                    let special = self.npc_bundle_special.get(&slot).copied().unwrap_or(false);
-                    let bundle = if special {
-                        self.npc_anim_bundles.1.as_ref()
-                    } else {
-                        self.npc_anim_bundles.0.as_ref()
-                    };
-                    let (Some(b), Some(rec_idx)) = (bundle, (base_id as usize).checked_sub(1))
-                    else {
-                        continue;
-                    };
-                    if let Some(player) =
-                        legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec_idx)
-                    {
-                        self.npc_clip_players.insert(slot, player);
-                        // The incoming clip restarts at frame 0 and reuses the
-                        // same low frame indices, so the outgoing clip's memo
-                        // entries for this slot would alias it. Drop them.
-                        self.npc_pose_cache.retain(|(s, _), _| *s != slot);
-                        self.npc_pose_verify.retain(|(s, _), _| *s != slot);
-                    }
-                }
+                // (The op-`0x4B` / `A2 F8` cue drain that re-targets these
+                // players runs per sim tick in the loop above -
+                // `Self::drain_anim_cues`.)
                 let verify = std::env::var_os("LEGAIA_POSE_CACHE_VERIFY").is_some();
                 let cache = &mut self.npc_pose_cache;
                 let verify_poses = &mut self.npc_pose_verify;
@@ -2678,6 +2595,32 @@ impl PlayWindowApp {
 const VALUE_READOUT_ACTOR_LIFT: i32 = 26;
 
 impl PlayWindowApp {
+    /// One sim tick of ANIMATE-cue handling through the shared kernel
+    /// (`World::drain_field_anim_cues`): the player's scripted gestures land
+    /// on the world's own clip player, and each NPC re-target swaps this
+    /// window's clip player for the slot.
+    ///
+    /// The incoming clip restarts at frame 0 and reuses the same low frame
+    /// indices, so the outgoing clip's pose-cache entries for the slot would
+    /// alias it; they are dropped.
+    fn drain_anim_cues(&mut self) {
+        let srcs = &self.npc_anim_srcs;
+        let special = &self.npc_bundle_special;
+        let retargets = self.session.host.world.drain_field_anim_cues(
+            self.npc_anim_bundles.0.as_ref(),
+            self.npc_anim_bundles.1.as_ref(),
+            |slot| {
+                srcs.contains_key(&slot)
+                    .then(|| special.get(&slot).copied().unwrap_or(false))
+            },
+        );
+        for r in retargets {
+            self.npc_clip_players.insert(r.slot, r.player);
+            self.npc_pose_cache.retain(|(s, _), _| *s != r.slot);
+            self.npc_pose_verify.retain(|(s, _), _| *s != r.slot);
+        }
+    }
+
     /// Screen-space stage position (retail 320x240) an actor's origin
     /// projects to under `cam`, or `None` when it is behind the camera.
     pub(super) fn actor_stage_point(&self, slot: usize, cam: Mat4) -> Option<(i32, i32)> {

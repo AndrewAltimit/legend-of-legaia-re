@@ -255,6 +255,7 @@ skips = [
     "check_battle_vram_residency",
     "drain_and_log_battle_events",
     "drain_and_route_field_events",
+    "drain_anim_cues",
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
     "rebind_live_npc_models",
@@ -282,6 +283,7 @@ skips = [
     "check_battle_vram_residency",
     "drain_and_log_battle_events",
     "drain_and_route_field_events",
+    "drain_anim_cues",
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
     "rebind_live_npc_models",
@@ -311,34 +313,7 @@ skips = [
     "check_battle_vram_residency",
     "drain_and_log_battle_events",
     "drain_and_route_field_events",
-    "drain_baka_sfx_cues",
-    "maybe_install_demo_tile_board",
-    "rebind_live_npc_models",
-    "sync_dialog_panel",
-    "sync_text_balloon",
-    "tick_dev_menu",
-    "tick_fishing_banners",
-    "tick_minigame_extras",
-    "tick_muscle_time_meter",
-    "tick_play_clock",
-]
-
-[[frame_arm]]
-host = "native"
-arm = "cutscene_narration_active()"
-reason = """
-The opening crawl / title card owns the frame: the pad is frozen and the world
-IS ticked here (the crawl advances and the timeline's terminal scene change
-can fire), so this arm is a pad freeze rather than a world freeze. The skipped
-kernels are field and battle presentation with nothing on screen to present -
-the narration draws over a scene the player does not control.
-"""
-skips = [
-    "advance_ocean_animation",
-    "apply_world_clut_fx",
-    "check_battle_vram_residency",
-    "drain_and_log_battle_events",
-    "drain_and_route_field_events",
+    "drain_anim_cues",
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
     "rebind_live_npc_models",
@@ -367,6 +342,7 @@ skips = [
     "check_battle_vram_residency",
     "drain_and_log_battle_events",
     "drain_and_route_field_events",
+    "drain_anim_cues",
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
     "rebind_live_npc_models",
@@ -397,6 +373,38 @@ skips = [
     "poll_game_over",
     "route_bgm_wasm",
     "service_cutscene_fmv",
+    "step_field_vram_fx",
+    "tick_battle_intro",
+    "tick_battle_presentation",
+    "tick_camera",
+    "tick_dev_menu",
+    "tick_field_party_hud",
+    "tick_fishing_banners",
+    "tick_minigame_ui",
+    "tick_mode_seat",
+    "tick_passive_hud",
+    "tick_play_clock",
+    "tick_sfx",
+    "tick_world_effects",
+]
+
+[[frame_arm]]
+host = "web"
+arm = "movie_held && fmv_handoff_scene.is_empty()"
+reason = """
+A movie owns the frame. The native window runs zero sim ticks while its movie
+plays, so every kernel of its frame path is skipped at once; this arm is the
+page doing the same after its FMV service has advanced the picture. Every
+kernel in `skips` advances world or scene presentation behind the movie. A
+movie that finishes this frame falls through, as the native window's finish
+is drained before it counts ticks.
+"""
+skips = [
+    "drain_and_route_field_events_web",
+    "drive_npc_clips",
+    "poll_field_shop",
+    "poll_game_over",
+    "route_bgm_wasm",
     "step_field_vram_fx",
     "tick_battle_intro",
     "tick_battle_presentation",
@@ -502,10 +510,9 @@ web = "tick_minigame_ui"
 reason = "Each host's one per-frame minigame step. What each reaches inside it is measured by the `[[frame_content]]` row for this pair; the sub-step table is host-drift.md's `The minigame side-channel step is paired; its contents are not`."
 
 [[frame_kernel]]
-host = "web"
-kernel = "drive_npc_clips"
-host_only = true
-reason = "The page's one named step for the op-`0x4B` ANIMATE cue drain, the per-tick NPC clip advance and the player move-cue drain. The native window does all three inline in its own tick loop (`window/event_handler/redraw.rs`, the `SceneMode::Field` block), so it has no named kernel for them. This row replaces an alias to `tick_field_prop_anims`, which was an EMPTY host shim - a `{}` body pairs by name with anything."
+native = "drain_anim_cues"
+web = "drive_npc_clips"
+reason = "Each host's per-tick ANIMATE cue step, both a wrapper over the one engine kernel `World::drain_field_anim_cues` (op-`0x4B` NPC re-targets resolved against the slot's bundle, `A2 F8` player gestures pushed onto the world's clip player). The page's step also advances its NPC clip players one tick; the native window advances its own in the draw pass by the ticks the redraw ran, because its players key the pose cache the draw reads. The native drain used to run inside that draw pass and only in `SceneMode::Field`."
 
 # --- kernel pairing: one host's frame path only ----------------------------
 
@@ -573,7 +580,7 @@ reason = "The page drives the engine camera itself; the native window gets the s
 host = "web"
 kernel = "tick_world_effects"
 host_only = true
-reason = "One page-side wrapper over the five effect steps the native loop spells out inline (the two spawn-request drains plus `tick_summon` / `tick_move_fx` / `tick_field_fx`)."
+reason = "One page-side wrapper over the effect steps the native loop spells out inline: the two spawn-request drains, then the shared `World::tick_effect_scene_graphs` kernel (summon / move-FX / field-FX) both hosts call."
 
 [[frame_kernel]]
 host = "web"
@@ -630,6 +637,13 @@ web = "tick_battle_presentation"
 native_only = []
 web_only = ["action_id", "armed", "battle_monster_slots", "battle_stage_entry", "battle_stage_keeps_object_1", "build_targeted_with_options", "clear_popups", "contains_prot_index", "current_frame", "drain_battle_clut_stages", "drive", "duck_target_for_pct", "enqueue", "equipment", "far_colour_for_prot_index", "hybrid", "install_art_bank_records", "party_roster_slot", "play_xa_shout", "read_span_sectors", "reset", "scale", "set_actor_battle_action_clips", "set_actor_battle_animation", "set_actor_battle_art_bank", "shout", "slot", "stage_effect_clut", "system_ui_bundle", "tmd_bytes", "upload", "upload_battle_stage_tims_into_vram", "upload_flame_atlas_into_vram", "with_actors", "with_spu"]
 reason = "The page folds its whole battle presentation frame into this one named step: stage and atlas upload, per-actor clip and art-bank staging, the CLUT stage drain, the shout XA request, and the popup retire. The native window does that same work, but spread across its draw section and window/battle.rs rather than inside the kernel its frame path names, so the difference is where the code sits and not whether the host does it. Checked name by name: thirty-one of the thirty-two have a call site in the native sources (most of them in window/battle.rs). The exception is packet_color::hybrid, which is not presentation work the window skips - it is the CPU-side per-vertex colour stream the page has to hand WebGL, and the wgpu renderer resolves the same packet colour in its fragment shader instead. The empty native-only side is the other half of the check: nothing the window reaches here is missing from the page. `duck_target_for_pct` is the shared duck kernel (`legaia_engine_audio::duck`) the page's `set_duck_pct` reaches inside this step; the native window reaches the same kernel through `AudioBgmDirector::set_duck_pct` in window/battle.rs, an output this kernel does not name."
+
+[[frame_content]]
+native = "drain_anim_cues"
+web = "drive_npc_clips"
+native_only = []
+web_only = ["advance"]
+reason = "The cue drain is one engine kernel on both hosts; `advance` is the page stepping its NPC clip players one tick inside the same step. The native window advances its players in its draw pass by the sim ticks the redraw ran, and only in `SceneMode::Field`, because the frame index keys the pose cache that pass reads - so off the field the native NPC clips hold still while the page's run on. That residue is listed under host-drift.md's known gaps."
 
 [[frame_content]]
 native = "tick_dev_menu"

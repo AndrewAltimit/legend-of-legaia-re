@@ -9,7 +9,8 @@
 //! seam; this file is the page's draw-path call into it, the twin of the
 //! native window's `take_field_fog_prims`. Both wrap the quads through
 //! `legaia_engine_ui::screen_prim::fog_puff_prim`, and both resolve the
-//! camera with `resolve_field_camera(.., None, ..)` - the follow pose - so a
+//! camera with `resolve_field_camera(.., None, centre)` - the follow pose, with
+//! the scene-AABB centre as the fallback focus on both hosts - so a
 //! scripted camera beat projects the fog the same way on either host.
 //!
 //! The prims ride the page's existing screen-prim pass (`ScreenPrimPass` in
@@ -25,10 +26,30 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::runtime::LegaiaRuntime;
 
 impl LegaiaRuntime {
+    /// The follow camera's fallback focus for these screen-space passes: the
+    /// loaded scene's AABB centre in X / Z, the value the page's own camera
+    /// resolve ([`crate::play_camera`]) and every native field pass hand
+    /// `resolve_field_camera`. These four passes used to pin `[0, 0]`, so on
+    /// a frame whose camera fell back to the host centre (a cutscene beat
+    /// staging no focus with no lead actor, the overworld walk arm) the fog,
+    /// shadows, strips and lights projected through a camera aimed at the
+    /// world origin while the scene itself drew through one aimed at the map.
+    ///
+    /// Read off the AABB cache rather than through `scene_aabb()`, because two
+    /// of these passes borrow `&self`: the page's per-frame camera resolve
+    /// fills the cache before any draw pass runs, and before the first
+    /// resolve there is no scene camera to fall back from.
+    fn field_camera_centre(&self) -> [f32; 2] {
+        self.scene_aabb
+            .map(|(lo, hi)| [(lo[0] + hi[0]) * 0.5, (lo[2] + hi[2]) * 0.5])
+            .unwrap_or([0.0, 0.0])
+    }
+
     /// Run the fog pool's render step for this tick and return its sheets as
     /// screen primitives. Empty outside game mode 3 (a field scene or the
     /// kingdom overworld) or while the script gate is clear.
     pub(crate) fn tick_field_fog_prims(&mut self) -> Vec<ScreenPrim> {
+        let centre = self.field_camera_centre();
         let Some(host) = self.scene_host.as_mut() else {
             return Vec::new();
         };
@@ -36,7 +57,7 @@ impl LegaiaRuntime {
         if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
             return Vec::new();
         }
-        let frame = resolve_field_camera(world, &self.camera, None, [0.0, 0.0]);
+        let frame = resolve_field_camera(world, &self.camera, None, centre);
         // The field follow pose, or the overworld walk pose in the field
         // frame - retail's overworld is a game-mode-3 scene and draws the
         // same pool through the same pass.
@@ -62,6 +83,7 @@ impl LegaiaRuntime {
     /// on the menu-glyph atlas page `(960, 256)`, resident in the field VRAM
     /// through the boot system-UI underlay. Empty outside game mode 3.
     pub(crate) fn field_drop_shadow_prims(&self) -> Vec<ScreenPrim> {
+        let centre = self.field_camera_centre();
         let Some(host) = self.scene_host.as_ref() else {
             return Vec::new();
         };
@@ -69,7 +91,7 @@ impl LegaiaRuntime {
         if !legaia_engine_core::world::World::fog_mode(world.mode) {
             return Vec::new();
         }
-        let frame = resolve_field_camera(world, &self.camera, None, [0.0, 0.0]);
+        let frame = resolve_field_camera(world, &self.camera, None, centre);
         let Some(view) = frame.field_view() else {
             return Vec::new();
         };
@@ -92,6 +114,7 @@ impl LegaiaRuntime {
     /// same follow camera as the fog sheets. The captured requests drain on
     /// every call; only a field scene draws them.
     pub(crate) fn tick_move_strip_prims(&mut self) -> Vec<ScreenPrim> {
+        let centre = self.field_camera_centre();
         let Some(host) = self.scene_host.as_mut() else {
             return Vec::new();
         };
@@ -100,7 +123,7 @@ impl LegaiaRuntime {
         if requests.is_empty() || world.mode != SceneMode::Field {
             return Vec::new();
         }
-        let frame = resolve_field_camera(world, &self.camera, None, [0.0, 0.0]);
+        let frame = resolve_field_camera(world, &self.camera, None, centre);
         let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
             return Vec::new();
         };
@@ -113,6 +136,7 @@ impl LegaiaRuntime {
     /// `legaia_engine_ui::screen_prim::light_pool_prims` wrapper - the native
     /// window's `field_light_screen_prims` twin. Empty outside a field scene.
     pub(crate) fn field_light_prims(&self) -> Vec<ScreenPrim> {
+        let centre = self.field_camera_centre();
         let Some(host) = self.scene_host.as_ref() else {
             return Vec::new();
         };
@@ -120,7 +144,7 @@ impl LegaiaRuntime {
         if world.mode != SceneMode::Field || world.script_actors.lights.is_empty() {
             return Vec::new();
         }
-        let frame = resolve_field_camera(world, &self.camera, None, [0.0, 0.0]);
+        let frame = resolve_field_camera(world, &self.camera, None, centre);
         let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
             return Vec::new();
         };
