@@ -53,9 +53,16 @@ pub const BANNER_ROW_PITCH: i32 = 14;
 /// the interior's right edge lands on `pen.x + w`, which is the packet-read
 /// "its right column starts at `16 + measured_width`".
 pub const fn banner_interior(w: i32, h: i32) -> (i32, i32, i32, i32) {
+    banner_interior_at(BANNER_PEN, w, h)
+}
+
+/// [`banner_interior`] for a class-0 frame on any content pen - the law is
+/// the widget record's, not the seat's: the battle-intro enemy-name labels
+/// wear the same frame on pen `(x, 48)`.
+pub const fn banner_interior_at(pen: (i32, i32), w: i32, h: i32) -> (i32, i32, i32, i32) {
     (
-        BANNER_PEN.0 - BANNER_PEN_INSET,
-        BANNER_PEN.1 - BANNER_PEN_INSET,
+        pen.0 - BANNER_PEN_INSET,
+        pen.1 - BANNER_PEN_INSET,
         w + BANNER_PEN_INSET,
         h,
     )
@@ -67,7 +74,12 @@ pub const fn banner_interior(w: i32, h: i32) -> (i32, i32, i32, i32) {
 /// For retail's captured single-line frame (`w` measured, `h = 20`) this is
 /// origin `(8, 4)` and height `28`.
 pub const fn banner_frame(w: i32, h: i32) -> (i32, i32, i32, i32) {
-    let (ix, iy, iw, ih) = banner_interior(w, h);
+    banner_frame_at(BANNER_PEN, w, h)
+}
+
+/// [`banner_frame`] on any content pen ([`banner_interior_at`]).
+pub const fn banner_frame_at(pen: (i32, i32), w: i32, h: i32) -> (i32, i32, i32, i32) {
+    let (ix, iy, iw, ih) = banner_interior_at(pen, w, h);
     (
         ix - BANNER_BORDER,
         iy - BANNER_BORDER,
@@ -98,8 +110,23 @@ pub fn message_banner_chrome_draws_for(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
-    let (fx, fy, fw, fh) = banner_frame(content.0, content.1);
-    let (ix, iy, iw, ih) = banner_interior(content.0, content.1);
+    class0_frame_draws_at(rects, BANNER_PEN, content, stage_origin, stage_scale)
+}
+
+/// The class-0 frame (widget record `3`) around `content` on content pen
+/// `pen` - [`message_banner_chrome_draws_for`] is this on [`BANNER_PEN`], and
+/// the battle-intro enemy-name labels are this on `(x, 48)`: retail spawns
+/// both through `FUN_8003541C` with kind `3`
+/// (`docs/subsystems/battle.md`, the intro-banner section).
+pub fn class0_frame_draws_at(
+    rects: &SaveMenuAtlasRects,
+    pen: (i32, i32),
+    content: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let (fx, fy, fw, fh) = banner_frame_at(pen, content.0, content.1);
+    let (ix, iy, iw, ih) = banner_interior_at(pen, content.0, content.1);
     let s = stage_scale as i32;
     let mut out = Vec::new();
     let mut blit = |src: (u32, u32, u32, u32), x: i32, y: i32, w: u32, h: u32| {

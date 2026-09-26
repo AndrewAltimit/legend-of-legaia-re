@@ -332,4 +332,6 @@ mod take_item;
 mod tile_board;
 mod worldmap;
 
+mod battle_auto_attack;
+mod battle_intro_names;
 mod battle_target_ring;

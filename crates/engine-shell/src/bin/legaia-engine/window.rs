@@ -1157,10 +1157,6 @@ struct PlayWindowApp {
     /// Trade screens can label each offer ("Gimard (Vahn) -> Orb"). `None` on
     /// disc-free runs or before the first lookup.
     seru_names: Option<legaia_asset::spell_names::SpellNameTable>,
-    /// The phase-scripted retail battle camera (see [`battle_cam`]): `Some`
-    /// while a stage-dome battle is on screen, stepped once per 2 retail
-    /// display frames by `tick_battle_camera`, dropped on battle exit.
-    battle_camera: Option<battle_cam::BattleCamera>,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is

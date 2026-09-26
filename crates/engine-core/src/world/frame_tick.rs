@@ -1000,6 +1000,15 @@ impl World {
     // PORT: FUN_80016444 (frame-pass sequencing; render/flip halves are the
     //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
+        let outcome = self.tick_modes();
+        // The battle camera observes the frame this tick produced, in every
+        // mode (outside battle it drops its state) - once, here, for every
+        // host (`crate::battle_cam_inputs`).
+        self.tick_battle_camera();
+        outcome
+    }
+
+    fn tick_modes(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
         // Does retail run the master frame driver on a frame in this mode?
         //

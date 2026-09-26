@@ -86,7 +86,10 @@ pub fn spell_anim_pairs_from_prot(
 pub const BANNER_FRAMES: u16 = 0x78;
 
 /// Frames an ordinary (no-advantage) battle open holds - retail's `0x5A`.
-/// Nothing is drawn during it; kept here because it is the same field.
+/// What is drawn during it is the enemy-name banner the same `0x0A` arm
+/// composes (`battle_hud::battle_intro_names`, timer
+/// `BattleState::intro_names_frames`); the formation line is the part an
+/// ordinary open skips.
 pub const PLAIN_OPEN_FRAMES: u16 = 0x5A;
 
 /// The tutorial-box style the port raises the banner with: left margin, top

@@ -43,7 +43,7 @@
 //! after the `+0x16E & 0x404` veto), so it is raised for every slot that arm
 //! takes - see `auto_fill_party_queues` in `battle_action::dispatch`.
 //!
-//! # Wiring: the auto-fill arm is live, the pool arm is not
+//! # Wiring: both arms are live
 //!
 //! The retail caller is the action SM itself: `jal 0x801f0450` at
 //! `0x801E2AB8` in `overlay_battle_action_801e295c.txt`, the **first**
@@ -66,25 +66,20 @@
 //! (record `+0x185` count, `+0x186..` ids) and the per-character floor keys on
 //! `DAT_8007BD10[slot]`, the roster character id, not the battle slot.
 //!
-//! **The pool arm stays inert.** Its caller-side gate is the per-fighter
-//! Auto flag `ctx[+0x266 + slot]` (`0x801F0704`), which only the command SM's
-//! Auto pick writes (`FUN_801D0748` phase `0x78`, see
-//! `docs/subsystems/minigame-muscle-dome.md`) and which the engine's battle
-//! command flow does not offer. Two disc-side inputs were also missing when
-//! it was ported:
-//!
-//! * the per-(character, weapon) arts-command records at
-//!   `DAT_801C9360[slot][cmd]` with their `+0x74` AP costs (see
-//!   [`docs/subsystems/arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md)),
-//!   which reach the disc only as far as the equipped-swing decode and never
-//!   into a battle-setup table, and
-//! * the four-entry status-guard mask table at `0x801F672C`, which no parser
-//!   extracts at all.
-//!
-//! So [`build_candidate_pool`], [`command_weight`], [`weight_family`] and
-//! [`spend_gauge`] would draw from an empty pool if called; `engine-core`
-//! keeps driving auto-fighting party members through its own stand-in
-//! physical action on that leg.
+//! **The pool arm is the player's Auto attack.** Its caller-side gate is the
+//! per-fighter Auto flag `ctx[+0x266 + slot]` (`0x801F0704`), which the
+//! command SM writes on the attack-mode prompt (`1` on `Auto` at
+//! `0x801D17D0` or under the `Automatic` option at `0x801D164C`, `0` on
+//! `Command`, `0` every frame the ring is up), and the routine runs every
+//! round: the Begin confirm moves the flow to `0xFE`, whose arm writes
+//! `ctx[7] = 0` (`0x801D3224`), and state `0x00` opens with this `jal`. So an
+//! Auto pick does not replay the saved command string - that string is what
+//! the review screen shows - it runs this arm, which rebuilds the queue.
+//! `engine-core`'s `World::run_auto_attack_pool_arms` drives
+//! [`build_candidate_pool`] + [`spend_gauge`] + [`insert_arts`] from
+//! `begin_round_execution`, with the per-(character, weapon) command costs
+//! and leading entry bytes and the four status-guard masks at `0x801F672C`
+//! read off the disc at scene entry.
 
 use crate::battle_formulas::FleeActor;
 
@@ -531,10 +526,11 @@ pub struct ArtsTailResult {
 /// index reaches the bank count. `queue.len()` is the spend loop's count (the
 /// free region's starting size); bytes past it are not touched.
 ///
-/// PORT: FUN_801F0450 (`0x801F0B4C..0x801F1274`, the art insertion tail) NOT WIRED: its one host is the pool arm, reached for a party slot whose per-fighter Auto flag `ctx[+0x266 + slot]` is set by the command SM's Auto pick, and the engine's battle command flow offers no Auto pick - see `docs/subsystems/battle-action.md`
+/// PORT: FUN_801F0450 (`0x801F0B4C..0x801F1274`, the art insertion tail)
 ///
-/// The Auto pick is the command SM's phase `0x78` (`FUN_801D0748`); named on
-/// its own line so the port catalog does not read this anchor as a port of it.
+/// Wired: `engine-core`'s `World::run_auto_attack_pool_arms`, run from
+/// `begin_round_execution` for every Attack a player committed off an Auto
+/// pick - the command flow both hosts drive.
 pub fn insert_arts(
     queue: &mut [u8],
     input: &ArtsTailInput,

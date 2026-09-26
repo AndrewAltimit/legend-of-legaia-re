@@ -1148,12 +1148,20 @@ the off-class widths) wants a placement-table read on
 `arts_bar_offclass_gala_nail` / `arts_bar_astral_sword_vahn` diffed against
 `arts_bar_ideal_gala_club`.
 
-### The Auto arm picks nothing - it replays a saved string
+### The Auto arm reloads a saved string, and the round rebuilds it
 
-There is no command picker, no RNG roll, no fixed cycle and no favored-class
-rule behind Auto. The string it commits was **already in the actor's queue**
-before the Auto/Command menu opened, copied there out of the character's own
-save record, and Auto's whole job is to skip the editing screen.
+The command SM itself picks nothing for Auto. The string the review screen
+shows was **already in the actor's queue** before the Auto/Command menu
+opened, copied there out of the character's own save record, and the pick's
+job on this screen is to skip the editing screen. What the round then *plays*
+is not that string: the pick sets the per-fighter flag `ctx[+0x266 + seat]`,
+and the action SM's state `0x00` - entered every round, through the flow's
+`0xFE` arm - runs `FUN_801F0450`, whose pool arm rebuilds a flagged Attack
+seat's queue from a weighted, AP-budgeted draw of the four direction commands
+and splices learned arts over it
+([`battle-action.md`](battle-action.md#the-routine-runs-every-round-and-auto-rebuilds-the-queue)).
+That reader is in the same battle overlay the dome runs; the dome-side effect
+is read off the disassembly, not captured.
 
 The two halves, both in the battle overlay:
 
@@ -1181,8 +1189,8 @@ command-block restore / persist pair
 ([`functions/battle.md`](../reference/functions/battle.md)); what was missing is
 that they *are* the Auto arm - nothing else supplies its string.
 
-So Auto = *repeat the last string you confirmed for this character, in this AP
-band*. Two corollaries fall out of the same code and are worth stating because
+So on this screen Auto = *show the last string you confirmed for this
+character, in this AP band*, and let the round's pool arm replace it. Two corollaries fall out of the same code and are worth stating because
 they read as separate features:
 
 - The doc's "previous round's pennants persist in the bar when the input
@@ -1198,10 +1206,10 @@ What the `0x78` arm itself does is only bookkeeping: the Command branch
 per-fighter Auto flag `ctx[+0x266 + ctx[+0x13]] = 0` and opens the entry screen
 (`FUN_801dbb8c`); the Auto branch (`s2 & 0x8000`, or the confirm mask
 `*(0x800846D0)`) sets phase `0x5A` and writes that flag `1`. The flag is a
-*memo*, not a mode: its only behavioural reader is the cancel arm of phase
-`0x5A` at `0x801D23A0`, which returns to `0x78` when it is set and to `0x50`
-when it is clear; the two other readers (`0x801D5198`, `0x801D54BC`) only gate
-a HUD element. Whether the pick screen is shown at all comes from the option
+*mode*, not a memo: besides the cancel arm of phase `0x5A` at `0x801D23A0`
+(back to `0x78` when set, `0x50` when clear) and two HUD gates (`0x801D5198`,
+`0x801D54BC`), `FUN_801F0450` reads it at `0x801F0704` and rebuilds the seat's
+queue. An earlier reading here missed that reader and called the flag a memo. Whether the pick screen is shown at all comes from the option
 global `*(0x800846C4)` at `0x801D15DC` - `0` opens the `0x78` menu, `1` goes
 straight to review, `2` takes a third arm.
 
@@ -1988,7 +1996,7 @@ to the emitter it names).
 ## Open
 
 - The exact phase ordering and meaning of every `ctx+6` value - partially confirmed. The **input chain is now capture-pinned**: `0x1e` menu idle -> `0x28` command cluster -> `0x78` Auto|Command -> `0x50` direction entry -> `0x5a` queue review -> `0x6e` Begin|Reselect -> `0xfe/0xff` playback -> `0x1e` (recomp phase-byte watch across a driven round); the deal/interval arms outside that chain remain to be walked.
-- ~~The Auto arm's command picker~~ **resolved**: there is no picker. Auto commits the 16-byte string `FUN_801DA34C` had already reloaded out of the character record (`+0x1A7` / `+0x1B7`, chosen by the `actor+0x156 < actor+0x154` AP-band test) and `FUN_801DA59C` saves back on the review confirm - see [The Auto arm picks nothing](#the-auto-arm-picks-nothing---it-replays-a-saved-string). ~~Still open on the same screen: the pennant/bar geometry for off-class (non-30) costs~~ **resolved** - the pennant is `cost - 6` wide at `x = 16 + spent-AP-before` and the chip recentres by `(cost - 30) * K[slot] / 2`, see [the cost law](#the-pennant-geometry-is-linear-in-the-commands-ap-cost).
+- ~~The Auto arm's command picker~~ **resolved**: the command SM has no picker - the review screen shows the 16-byte string `FUN_801DA34C` reloaded out of the character record (`+0x1A7` / `+0x1B7`, chosen by the `actor+0x156 < actor+0x154` AP-band test) and `FUN_801DA59C` saves back on the review confirm - and the round's `FUN_801F0450` pool arm rebuilds the flagged queue - see [the Auto arm](#the-auto-arm-reloads-a-saved-string-and-the-round-rebuilds-it). ~~Still open on the same screen: the pennant/bar geometry for off-class (non-30) costs~~ **resolved** - the pennant is `cost - 6` wide at `x = 16 + spent-AP-before` and the chip recentres by `(cost - 30) * K[slot] / 2`, see [the cost law](#the-pennant-geometry-is-linear-in-the-commands-ap-cost).
 - ~~The per-arm assignment of the three UI cue ids~~ **resolved**: `0x21` = accept/confirm, `0x22` = highlight moved, `0x23` = refused-or-back, over **37** call sites (not 34) - see [Which blip is which](#which-blip-is-which-0x21--0x22--0x23) for the per-arm table and the two shared tails.
 - A live `_DAT_8007B864` byte-match during a dome contest, to upgrade the arena-backdrop residency (extraction 1225) from Inferred to capture-Confirmed.
 - ~~What arms the panel-still load~~ **resolved**: `ctx[+0xC] = 1` is written only by the per-frame battle anim-node tick `FUN_80047430` (`0x800474C4`) for an enemy seat under `gp[+0xA48] & 0x80`, and `ctx[+0x7] == 0x67` is the escape path's entry into the same shared teardown, not a condition of its own - see [What arms the load](#what-arms-the-load). Still open on the same page: no draw site for the VRAM rect the stills land in, and no image outside the loaders names `(384, 0)` at all.

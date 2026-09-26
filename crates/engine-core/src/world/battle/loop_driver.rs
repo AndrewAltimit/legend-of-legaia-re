@@ -244,6 +244,10 @@ impl World {
         // player staring at an instruction for a prompt that never appeared.
         // REF: FUN_801D0748 (states 0x14 / 0x1E)
         self.arm_round_open_prompt();
+        // The commit log's launch glide runs every battle frame, whichever
+        // surface owns the pad (`FUN_801D9BBC` is not gated on the flow).
+        self.step_commit_log_launch();
+        self.step_battle_intro_names();
 
         // A message box on screen parks the entire battle - retail's
         // `FUN_801D0748` returns before it reads the flow state when
@@ -798,6 +802,11 @@ impl World {
         use vm::battle_action::ActionState;
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.battle.round_flow.flat_walk_last = None;
+        self.battle.commit_log_launch = None;
+        // Retail's Begin moves the flow to `0xFE`, whose arm restarts the
+        // action SM at `0x00`, and `0x00` opens with `FUN_801F0450`: the pool
+        // arm runs here, once per round, for every Auto-flagged Attack.
+        self.run_auto_attack_pool_arms();
         self.battle.command = None;
         self.set_battle_flow(BattleFlowState::Idle);
         // A round entered without its start (a host or test that opened a
@@ -832,6 +841,13 @@ impl World {
         use crate::battle_round::PendingPartyAction;
         let party_count = self.party.party_count.clamp(1, 3);
         let run = matches!(action, PendingPartyAction::Run);
+        // The commit arms re-land the log at rest; a launch in flight ends.
+        self.battle.commit_log_launch = None;
+        // The Auto flag stands only for an Attack committed off an Auto pick;
+        // every other commit leaves it clear (the ring clears it each frame).
+        let auto =
+            matches!(action, PendingPartyAction::Attack { .. }) && self.battle.auto_combo.pending;
+        self.commit_auto_attack_flag(actor, auto);
         if let Some(slot) = self.battle.round_flow.pending.get_mut(usize::from(actor)) {
             *slot = Some(action);
         }

@@ -28,8 +28,10 @@ use std::path::PathBuf;
 /// The summon seat every body in the band poses (`actor_table[7]`).
 const SUMMON_SLOT: usize = 7;
 /// Frames stepped per id before the ladder gives up. Every chain here is at
-/// most 21 arms plus a settle arm plus the terminal, so this is generous.
-const FRAME_BOUND: usize = 96;
+/// most 21 arms plus a settle arm plus the terminal; PROT 0910 also runs its
+/// own arm timers (`cast_seru_ticks_b::swordie_tick`), several hundred frames
+/// at a frame step of one.
+const FRAME_BOUND: usize = 1024;
 
 fn extracted_dir() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -172,10 +174,17 @@ fn every_player_seru_tick_body_walks_its_phase_chain() {
                     "PROT 0909's terminal arm leaves the summon seat on 2"
                 );
             }
-            910 => assert_ne!(
-                world.actors[SUMMON_SLOT].battle.queued_anim, 0,
-                "PROT 0910 stages clips on the summon seat and nothing else"
-            ),
+            910 => {
+                assert_ne!(
+                    world.actors[SUMMON_SLOT].battle.queued_anim, 0,
+                    "PROT 0910 stages clips on the summon seat"
+                );
+                assert_eq!(
+                    world.casting.module_swordie.hits,
+                    u32::from(seru::SWORDIE_SLASHES),
+                    "PROT 0910's arm timers land all four slashes"
+                );
+            }
             911 => {
                 assert!(
                     !phases.contains(&6) && !phases.contains(&7) && !phases.contains(&8),

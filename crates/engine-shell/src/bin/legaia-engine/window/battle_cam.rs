@@ -4,16 +4,16 @@
 //! projection - lives in [`legaia_engine_vm::battle_cam_script`], the ONE
 //! implementation the native play-window and the browser play page both
 //! drive (host-drift rule: same model, not parallel reimplementations).
-//! This module re-exports it under the window's historical path and keeps
-//! the native-only tests: the retail seat-table cross-checks (which need
-//! `legaia_engine_core::battle_seats`) and the disc-gated per-character
-//! height check (which needs `legaia_prot` + `extracted/`).
+//! The camera's state and inputs are the engine's
+//! (`legaia_engine_core::battle_cam_inputs`, stepped from `World::tick`);
+//! this module keeps the native-only tests: the retail seat-table
+//! cross-checks (which need `legaia_engine_core::battle_seats`) and the
+//! disc-gated per-character height check (which needs `legaia_prot` +
+//! `extracted/`).
 //!
 //! Provenance, the trace-pinned laws and the full doc live on the shared
 //! module. REF: FUN_801D5854 (framing cases), FUN_801D829C (angle-tween
 //! builder).
-
-pub(crate) use legaia_engine_vm::battle_cam_script::{BattleCamera, FormationBox};
 
 #[cfg(test)]
 mod tests {

@@ -4,8 +4,8 @@
 //!
 //! Each routine's port tag sits on the item that implements it
 //! (`FUN_801D32BC`, `FUN_801D5718`, `FUN_801D57E8`, `FUN_801D5778`,
-//! `FUN_801D9AE8`), so each carries its own class - three wired, one pending,
-//! one replaced.
+//! `FUN_801D9AE8`), so each carries its own class - four wired, one
+//! replaced.
 //!
 //! REF: FUN_801D388C - the only retail caller of the three movers, and
 //! itself a further writer of the same placement table.
@@ -40,11 +40,14 @@
 //!   `battle_commit_log::commit_log_layout` stages, which the battle HUD
 //!   builder both hosts share reads each frame.
 //! * `FUN_801D5778` ([`element_placement_copy_remapped`]) is the log's
-//!   **launch**: two identical loops (`0x801D50A0`, `0x801D50F8`) over `i` in
-//!   `0..3*ctx[+0x1F]` copy record `0x2B + i` into `0x35 + i` with seat B one
-//!   display width (`0x140`) left of seat A - the whole log sliding off-screen
-//!   when the round begins. The port draws resting seats and drops the log at
-//!   the round start instead of gliding it, so it is not wired; see its tag.
+//!   **launch**, and is **wired**: two identical loops (`0x801D50A0`,
+//!   `0x801D50F8`) over `i` in `0..3*ctx[+0x1F]` copy record `0x2B + i` into
+//!   `0x35 + i` with seat B one display width (`0x140`) left of seat A, and
+//!   open each clone as a gliding widget - the whole log sliding off the left
+//!   edge when the member leaves the ring for a sub-screen (item / magic
+//!   window, the `Auto | Command` prompt, the arts entry, the target cursor)
+//!   and back when they return. The round's Begin is **not** a launch. See
+//!   `crate::battle_commit_log::LogLaunch` for the step table.
 //!
 //! The array is the **screen-element placement table** at `0x80076C10`
 //! (`legaia_asset::screen_elements`), which is disc data; the port stages
@@ -339,11 +342,16 @@ pub fn element_placement_land(slots: &mut [ElementPlacement], dst: usize, src: u
 /// value shifted one screen width. The subtraction is `addiu`, i.e. wrapping
 /// 16-bit.
 ///
-/// PORT: FUN_801D5778 NOT WIRED: the commit log's round-start launch (retail slides every log element one screen left); the port draws the log's resting seats and removes the log when the round begins, so there is no slide for this copy to stage until the element glide is modelled.
+/// PORT: FUN_801D5778
 ///
-/// The glide is the UI-element dispatcher's per-frame arm and the routine it
-/// hands each placement to (`FUN_801D8DE8` / `FUN_801DB7B0`); named on their
-/// own line so the port catalog does not read this anchor as a port of either.
+/// WIRED: `crate::battle_commit_log::LogLaunch::x_offset` builds the launch
+/// clone with it - the commit log sliding off the left edge when the member
+/// leaves the ring for a sub-screen and back when they return - and the
+/// battle HUD builder both hosts share draws every row at that offset. The
+/// glide between the clone's two seats is `FUN_801D9BBC`'s linear step
+/// (`LogLaunch::step`).
+///
+/// REF: FUN_801D8DE8 (opens each clone as a gliding widget, mode `0` out / `1` in)
 pub fn element_placement_copy_remapped(slots: &mut [ElementPlacement], dst: usize, src: usize) {
     if dst >= slots.len() || src >= slots.len() {
         return;

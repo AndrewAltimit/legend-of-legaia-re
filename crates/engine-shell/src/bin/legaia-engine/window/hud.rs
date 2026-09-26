@@ -2352,6 +2352,9 @@ impl PlayWindowApp {
         let move_name = bh::battle_move_name(w_ref);
         let message_bar = bh::battle_message_bar(w_ref);
         let commit_log = bh::battle_commit_log(w_ref);
+        // The battle-intro enemy-name banner (retail flow `0x0A`), laid out
+        // with this window's font - the same builder the browser page calls.
+        let intro_names = bh::battle_intro_names(w_ref, &self.font);
         let badges = self.battle_badge_rects();
         let banner = self.battle_banner_message();
         battle_hud_draws_for(
@@ -2396,6 +2399,7 @@ impl PlayWindowApp {
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: bh::battle_ring_ap_plate_value(w_ref),
                 commit_log: &commit_log,
+                intro_names: &intro_names,
                 diag: legaia_engine_render::diag_hud_enabled(),
             },
             BATTLE_HUD_PEN,

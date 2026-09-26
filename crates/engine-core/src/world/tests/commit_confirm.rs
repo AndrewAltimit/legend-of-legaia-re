@@ -210,3 +210,60 @@ fn the_round_skip_count_bumps_for_a_combatant_that_died_holding_its_turn() {
         "its key is spent: no second bump"
     );
 }
+
+/// Leaving the ring for the `Auto | Command` prompt launches the log off the
+/// left edge over sixteen frames (`FUN_801D388C` step `0x2A`, mode `0`);
+/// cancelling back onto the ring slides it home (step `0x2B`, mode `1`).
+#[test]
+fn the_commit_log_launches_off_screen_for_the_attack_prompt_and_back() {
+    use crate::battle_hud::battle_commit_log;
+    use crate::battle_input::BattleCommand;
+    let mut world = party_world(2);
+    // One vsync a frame, so each step is one of the glide's sixteen.
+    world.clock.frame_step = 1;
+    world.battle.round_flow.phase = crate::battle_round::RoundPhase::Command;
+    commit_spirit(&mut world, 0);
+    let attack = BattleCommand::MENU
+        .iter()
+        .position(|c| *c == BattleCommand::Attack)
+        .unwrap() as u8;
+    world.battle.command.as_mut().unwrap().phase = CommandPhase::Menu { cursor: attack };
+    assert_eq!(
+        battle_commit_log(&world)[0].slide_x,
+        0,
+        "at rest on the ring"
+    );
+
+    press(&mut world, PadButton::Cross);
+    assert!(matches!(
+        world.battle.command.as_ref().map(|c| &c.phase),
+        Some(CommandPhase::AttackMode { .. })
+    ));
+    let launch = world
+        .battle
+        .commit_log_launch
+        .expect("the prompt launches the log");
+    assert!(!launch.inbound);
+    world.step_commit_log_launch();
+    assert_eq!(battle_commit_log(&world)[0].slide_x, -20);
+    for _ in 0..15 {
+        world.step_commit_log_launch();
+    }
+    assert!(
+        battle_commit_log(&world).is_empty(),
+        "a landed outbound launch has the log off screen"
+    );
+
+    press(&mut world, PadButton::Circle);
+    let launch = world
+        .battle
+        .commit_log_launch
+        .expect("the cancel brings it back");
+    assert!(launch.inbound);
+    assert_eq!(battle_commit_log(&world)[0].slide_x, -0x140);
+    for _ in 0..16 {
+        world.step_commit_log_launch();
+    }
+    assert!(world.battle.commit_log_launch.is_none());
+    assert_eq!(battle_commit_log(&world)[0].slide_x, 0);
+}

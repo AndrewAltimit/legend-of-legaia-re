@@ -632,24 +632,11 @@ impl PlayWindowApp {
                             log::warn!("play-window: monster {monster_id} idle anim decode: {e:#}")
                         }
                     }
-                    // Install the full archive-order action-clip set -
-                    // positional, one slot per `+0x4C` entry with holes
-                    // kept, since a monster's staged anim ids (the AI
-                    // picker's swing entries) are these indices - so the
-                    // hit-reaction family (action tags 2..5, the retail
-                    // `+0x1EF` map) and the picked swings can play.
-                    match legaia_asset::monster_archive::animations_by_entry(&archive, monster_id) {
-                        Ok(Some(clips)) if clips.iter().any(Option::is_some) => {
-                            self.session.host.world.set_actor_battle_action_clips(
-                                actor_idx,
-                                std::sync::Arc::new(clips),
-                            );
-                        }
-                        Ok(_) => {}
-                        Err(e) => {
-                            log::warn!("play-window: monster {monster_id} action clips: {e:#}")
-                        }
-                    }
+                    // The archive-order action-clip set (the `+0x4C` tag
+                    // table the hit-reaction family and the AI's picked
+                    // swings index) is the engine's to install:
+                    // `SceneHost::tick` stages it the tick a battle is up,
+                    // for a monster this window draws or not.
                     bound += 1;
                 }
                 Err(e) => log::warn!("play-window: monster {monster_id} mesh upload: {e:#}"),
@@ -1691,14 +1678,8 @@ impl PlayWindowApp {
         let keep_color = self.battle_color_mesh_base.min(self.color_meshes.len());
         self.color_meshes.truncate(keep_color);
         // Tear down a spawned player-summon creature.
-        if let Some(slot) = self.summon_actor_slot.take()
-            && let Some(a) = self.session.host.world.actors.get_mut(slot)
-        {
-            a.active = false;
-            a.tmd_binding = None;
-            a.battle_tex_slot = None;
-            a.battle_animation = None;
-            a.pose_frame = None;
+        if let Some(slot) = self.summon_actor_slot.take() {
+            self.session.host.world.release_summon_seat(slot);
         }
         self.battle_vram = None;
         self.battle_vram_generation = None;

@@ -169,6 +169,7 @@ pub use battle::{
     VICTORY_FADE_PHASE_SEED, VICTORY_LOAD_FRAMES, VICTORY_RESULTS_HOLD_FRAMES, VictoryPhase,
     VictorySequence, victory_pose_column, victory_pose_id, victory_pose_tier,
 };
+pub use battle::{AutoComboInputs, AutoComboState};
 mod effects;
 pub use effects::{
     ClutBlendFx, ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES, MAX_DEBUG_EFFECTS,

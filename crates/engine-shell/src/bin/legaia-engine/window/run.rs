@@ -1277,7 +1277,6 @@ pub(super) fn cmd_play_window_with_record(
         cutscene_cam_frames: 0,
         active_dialog: None,
         seru_names: None,
-        battle_camera: None,
         dynamic_lighting,
         dyn_shadows,
         occlusion_fade,

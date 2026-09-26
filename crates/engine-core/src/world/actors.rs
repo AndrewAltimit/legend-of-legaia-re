@@ -1637,6 +1637,13 @@ impl World {
         self.battle.tutorial_boxes.clear();
         self.battle.flow = crate::battle_flow::BattleFlowState::Idle;
         self.battle.round_flow = crate::battle_round::RoundFlow::default();
+        self.battle.commit_log_launch = None;
+        self.battle.intro_names_frames = 0;
+        // The per-fighter Auto flags and parked queues are battle state; the
+        // disc inputs beside them are scene state and stay.
+        self.battle.auto_combo.flags = [false; 3];
+        self.battle.auto_combo.pending = false;
+        self.battle.auto_combo.queues = Default::default();
         // `ctx[+0x289]`: the side-band's stage-1 phase starts at 0 with the
         // rest of the battle context.
         self.battle.sparring_phase = 0;

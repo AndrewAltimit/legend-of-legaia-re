@@ -1786,12 +1786,8 @@ impl PlayWindowApp {
                 // camera this pass projects with, or none outside a
                 // stage-dome battle (the body is then judged at retail's
                 // parked depth).
-                let battle_pose = (in_battle && self.battle_stage_mesh.is_some()).then(|| {
-                    self.battle_camera
-                        .as_ref()
-                        .map(|c| c.pose())
-                        .unwrap_or(legaia_engine_vm::battle_cam_script::BOOT_POSE)
-                });
+                let battle_pose = (in_battle && self.battle_stage_mesh.is_some())
+                    .then(|| self.session.host.world.battle_cam_pose());
                 for (i, actor) in self.session.host.world.actors.iter().enumerate() {
                     let Some(tmd_idx) = actor.tmd_binding else {
                         continue;

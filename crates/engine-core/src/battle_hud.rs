@@ -932,32 +932,86 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
 pub fn battle_enemy_target_rows(
     world: &crate::world::World,
 ) -> Vec<crate::target_picker::EnemyMenuRow> {
-    use crate::target_picker::{DEDUP_GLYPH_FALLBACK, FORMATION_SLOTS, enemy_menu_rows};
+    use crate::target_picker::{DEDUP_SUFFIX, FORMATION_SLOTS, enemy_menu_rows};
     let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     let mut ids = [0u8; FORMATION_SLOTS];
     let mut names: Vec<String> = vec![String::new(); FORMATION_SLOTS];
+    // The catalog name per seated slot (`max_hp != 0`), dead or alive: the
+    // per-instance letter a duplicate wears is assigned over the seated
+    // formation, so a twin dying does not re-letter the survivor.
+    let seated: Vec<Option<String>> = (0..FORMATION_SLOTS)
+        .map(|i| {
+            let a = world.actors.get(pc + i)?;
+            (a.battle.max_hp != 0).then(|| {
+                a.battle_monster_id
+                    .and_then(|id| world.tables.monster_catalog.get(id))
+                    .map(|d| d.name.clone())
+                    .unwrap_or_else(|| format!("M{}", i + 1))
+            })
+        })
+        .collect();
     for i in 0..FORMATION_SLOTS {
         let Some(a) = world.actors.get(pc + i) else {
             continue;
         };
-        if a.battle.max_hp == 0 || a.battle.hp == 0 {
+        let Some(name) = seated[i].clone() else {
+            continue;
+        };
+        if a.battle.hp == 0 {
             continue;
         }
-        let name = a
-            .battle_monster_id
-            .and_then(|id| world.tables.monster_catalog.get(id))
-            .map(|d| d.name.clone())
-            .unwrap_or_else(|| format!("M{}", i + 1));
-        let pos = names[..i].iter().position(|n| !n.is_empty() && n == &name);
+        let pos = names[..i].iter().position(|n| n == &name);
         ids[i] = (pos.unwrap_or(i) + 1) as u8;
         names[i] = name;
     }
-    enemy_menu_rows(
-        ids,
-        DEDUP_GLYPH_FALLBACK,
-        |slot| names[slot as usize].clone(),
-        |_| 0,
-    )
+    // The label source is the actor's display name (`+0x1BC`), which carries
+    // an instance letter when the formation seats the same monster twice -
+    // the letter the composer's run arm drops before it appends the suffix.
+    let display = |slot: u8| -> String {
+        let i = slot as usize;
+        let name = names[i].clone();
+        let twins: Vec<usize> = (0..FORMATION_SLOTS)
+            .filter(|&j| seated[j].as_deref() == Some(name.as_str()))
+            .collect();
+        if twins.len() < 2 {
+            return name;
+        }
+        let ordinal = twins.iter().position(|&j| j == i).unwrap_or(0) as u8;
+        format!("{name} {}", (b'A' + ordinal) as char)
+    };
+    enemy_menu_rows(ids, DEDUP_SUFFIX, display, |_| 0)
+}
+
+/// The battle-**intro** enemy-name banner this frame: one label per monster
+/// group, laid out by retail's composer and pen-seated at `(x, 48)`.
+///
+/// Retail's flow state `0x0A` calls `FUN_801D9D3C`, which groups the
+/// formation ([`crate::target_picker::enemy_menu_rows`]), lays the labels out
+/// ([`crate::target_picker::layout_enemy_menu_rows`]) and spawns each as a
+/// text actor with the message banner's class-0 frame; the labels live until
+/// the `0x0B` expiry sweeps every text actor, which is the
+/// [`crate::world::BattleState::intro_names_frames`] timer. The pair returned
+/// is `(label, pen x)`; the drawer takes the pen y from
+/// [`crate::target_picker::MENU_ROW_Y`]'s value, `48`.
+///
+/// `font` is the width measure retail's `FUN_80035F04` is (the `legaia-font`
+/// layout advance). The projected screen X each group averages is left at
+/// `0` (see [`battle_enemy_target_rows`]), so the groups centre and the
+/// relaxation pass spreads them rather than seating each over its monsters.
+pub fn battle_intro_names(
+    world: &crate::world::World,
+    font: &legaia_font::Font,
+) -> Vec<(String, i32)> {
+    if world.mode != crate::world::SceneMode::Battle || world.battle.intro_names_frames == 0 {
+        return Vec::new();
+    }
+    let mut rows = battle_enemy_target_rows(world);
+    crate::target_picker::layout_enemy_menu_rows(&mut rows, |s| {
+        font.layout_ascii(s).advance_x as i16
+    });
+    rows.into_iter()
+        .map(|r| (r.label, i32::from(r.x)))
+        .collect()
 }
 
 /// Which of retail's HUD phases the frame is in.
@@ -1713,8 +1767,12 @@ pub use legaia_engine_vm::battle_commit_log::{CommitLogRow, CommitLogTarget};
 
 /// The commit-log rows retail shows this frame, row 0 first.
 ///
-/// Retail keeps the log up through the whole command phase and launches it
-/// off-screen when the round begins. A row belongs to each member the command
+/// Retail keeps the log up on the ring through the whole command phase and
+/// **launches** it - slides it one display width off the left edge - when the
+/// member leaves the ring for a sub-screen, sliding it back when they return
+/// (`legaia_engine_vm::battle_commit_log::LogLaunch`, carried per row as
+/// `slide_x`). The round's Begin is not a launch: the log leaves with the
+/// command phase. A row belongs to each member the command
 /// cursor has already walked past: every member ahead of the one entering a
 /// command, and every committed member once the `Begin | Reselect` screen
 /// (`0x6E`) is up. A member the `Reselect` step lands back on has its row
@@ -1737,6 +1795,12 @@ pub fn battle_commit_log(world: &crate::world::World) -> Vec<CommitLogRow> {
     {
         return Vec::new();
     }
+    // An outbound launch that has landed has the log off the left edge.
+    let slide_x = match world.battle.commit_log_launch {
+        Some(l) if l.gone() => return Vec::new(),
+        Some(l) => l.x_offset(),
+        None => 0,
+    };
     let pc = party_count(world) as u8;
     let confirm = world
         .battle
@@ -1819,6 +1883,7 @@ pub fn battle_commit_log(world: &crate::world::World) -> Vec<CommitLogRow> {
             command,
             command_record,
             target,
+            slide_x,
         });
     }
     rows
@@ -1882,8 +1947,18 @@ pub mod subdraw_steps {
     pub const ALL_COMMITTED: usize = 0x23;
     /// `0x78` Auto -> `0x5A` target cursor (`0x801D179C`).
     pub const TARGET_CURSOR: usize = 0x2D;
-    /// `0x28` Attack -> `0x78` attack-mode prompt (`0x801D161C`).
-    pub const ATTACK_MODE: usize = 0x30;
+    /// `0x28` Attack -> `0x78` attack-mode prompt (option `Select`): the
+    /// `li v0,0x78` at `0x801D1604` jumps to the shared `jal 0x801d388c` at
+    /// `0x801D31D8` with `a0 = 0x2A` in the delay slot. Its script opens the
+    /// `Auto` / `Command` chips (records `0x55` / `0x54`) and snaps the bar and
+    /// the plate (`7/3`, `0x52/3`).
+    pub const ATTACK_MODE: usize = 0x2A;
+    /// `0x28` Attack -> `0x5A` target cursor under the `Automatic` option,
+    /// skipping the prompt (`li a0,0x30` at `0x801D1614`, `jal` at
+    /// `0x801D161C`, `0x5A` stored in its delay slot). An earlier label here
+    /// called this step the attack-mode prompt; the `0x5A` store and its
+    /// target plaque (`0x29/0`) say otherwise.
+    pub const AUTOMATIC_TARGET: usize = 0x30;
 }
 
 /// Screen-element placement records (`0x80076C10 + id * 0x18`) the battle
@@ -2679,17 +2754,18 @@ mod tests {
         assert_eq!(rows.len(), 2, "the Gimard pair collapses into one row");
         assert_eq!(rows[0].first_slot, 0);
         assert_eq!(rows[0].members, 2);
-        // The second member overwrites the label's final character with the
-        // dedup glyph (fallback 'A'), keeping the byte length.
-        assert_eq!(rows[0].label, "GimarA");
+        // The first twin's display name is `Gimard A`; the second member
+        // drops the letter and appends the composer's `* 2`.
+        assert_eq!(rows[0].label, "Gimard * 2");
         assert_eq!(rows[1].label, "Zenoir");
         assert_eq!(rows[1].first_slot, 2);
 
-        // Kill the second Gimard: the run breaks and no dedup glyph remains.
+        // Kill the second Gimard: the run breaks, and the survivor keeps the
+        // instance letter the seated formation gave it.
         w.actors[2].battle.hp = 0;
         let rows = battle_enemy_target_rows(&w);
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].label, "Gimard");
+        assert_eq!(rows[0].label, "Gimard A");
         assert_eq!(rows[0].members, 1);
     }
 

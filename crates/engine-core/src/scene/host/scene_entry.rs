@@ -283,6 +283,117 @@ impl SceneHost {
         }
     }
 
+    /// Install every seated monster's archive-order action clips - the
+    /// `+0x4C` entry table the battle action SM's tag lookups
+    /// (`FUN_80050E2C`, `World::battle_monster_action_tags`) and the reaction
+    /// family read - the tick a battle is up, for any monster that has none.
+    ///
+    /// Retail's battle loader stages them with the monster at battle load,
+    /// independent of anything drawn. Each host used to install them from its
+    /// own render build - the native window only after its GPU upload, past
+    /// the first multi-tick loop - so a monster without a mesh, or a battle's
+    /// first ticks, read no tag table. Positional, holes kept: a monster's
+    /// staged anim ids are these indices.
+    ///
+    /// REF: FUN_80050E2C
+    fn install_battle_monster_action_clips(&mut self) {
+        let pending: Vec<(usize, u16)> = self
+            .world
+            .actors
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.battle_action_clips.is_none())
+            .filter_map(|(i, a)| a.battle_monster_id.map(|id| (i, id)))
+            .collect();
+        if pending.is_empty() {
+            return;
+        }
+        let Some(archive) = self.monster_archive_bytes() else {
+            return;
+        };
+        for (slot, id) in pending {
+            if let Ok(Some(clips)) =
+                legaia_asset::monster_archive::animations_by_entry(&archive, id)
+                && clips.iter().any(Option::is_some)
+            {
+                self.world
+                    .set_actor_battle_action_clips(slot, Arc::new(clips));
+            }
+        }
+    }
+
+    /// Refresh the **Auto** attack's disc inputs
+    /// ([`crate::world::AutoComboState`]): per roster character, the four
+    /// direction commands' leading entry bytes (the pool arm's weight input)
+    /// and the raw art-animation bank records (the insertion tail's walk),
+    /// plus the four status-guard masks in the battle overlay
+    /// (`0x801F672C`, PROT 0898). Same files and same moment as
+    /// [`Self::refresh_battle_swing_costs`]; anything that fails to resolve
+    /// is left as it was, which a disc-free host reads as "default weights,
+    /// no arts, no guards".
+    ///
+    /// REF: FUN_801F0450
+    fn refresh_battle_auto_combo_inputs(&mut self) {
+        use legaia_asset::battle_char_assembly as bca;
+        const PLAYER_FILE_PROT: [u32; 3] = [863, 864, 865];
+        const GUARD_TABLE_VA: u32 = 0x801F_672C;
+        for (slot, &prot) in PLAYER_FILE_PROT.iter().enumerate() {
+            let Some(record) = self.world.party.roster.members.get(slot) else {
+                continue;
+            };
+            let s = record.equipment().slots;
+            let equipped = [s[0], s[1], s[2], s[3], s[4]];
+            let Ok(bytes) = self.index.entry_bytes_extended(prot) else {
+                continue;
+            };
+            let inputs = &mut self.world.battle.auto_combo.inputs[slot];
+            if let Some(pack) = legaia_asset::battle_data_pack::detect(&bytes)
+                && let Ok(swings) = bca::swing_battle_animations(&bytes, &pack, &equipped)
+            {
+                let mut heads = [[0u8; 4]; 4];
+                for sw in &swings {
+                    if let Some(i) = sw.slot.checked_sub(bca::SWING_SLOT_BASE)
+                        && let Some(h) = heads.get_mut(usize::from(i))
+                    {
+                        for (d, b) in h.iter_mut().zip(sw.anim.effect_script.iter()) {
+                            *d = *b;
+                        }
+                    }
+                }
+                inputs.command_heads = Some(heads);
+            }
+            if let Ok(record0) = bca::decode_record0(&bytes)
+                && let Some(bank_off) = record0
+                    .get(0x58..0x5C)
+                    .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]) as usize)
+                && let Some(count) = record0.get(bank_off).copied()
+            {
+                let first = bank_off + 4;
+                inputs.art_records = (0..usize::from(count))
+                    .filter_map(|i| {
+                        let at = first + i * bca::ART_RECORD_STRIDE;
+                        record0
+                            .get(at..at + bca::ART_RECORD_STRIDE)
+                            .and_then(|r| <[u8; 0xD0]>::try_from(r).ok())
+                    })
+                    .collect();
+                inputs.art_count = count;
+            }
+        }
+        if let Some(rec) = legaia_asset::static_overlay::overlay_map().by_label("battle_action")
+            && let Ok(bytes) = self.index.entry_bytes(rec.prot_index)
+            && let Ok(image) = legaia_asset::static_overlay::as_loaded(&bytes, rec)
+            && let Some(off) = GUARD_TABLE_VA.checked_sub(rec.base_va)
+            && let Some(raw) = image.get(off as usize..off as usize + 8)
+        {
+            let mut guards = [0u16; 4];
+            for (i, g) in guards.iter_mut().enumerate() {
+                *g = u16::from_le_bytes([raw[i * 2], raw[i * 2 + 1]]);
+            }
+            self.world.battle.auto_combo.guards = Some(guards);
+        }
+    }
+
     /// Load `name`, switch the world to [`crate::world::SceneMode::Field`],
     /// and load the requested event-script record (default 0) into the
     /// field-VM bytecode buffer. Returns `Err` if the scene has no event
@@ -787,6 +898,8 @@ impl SceneHost {
                 // ... and the per-(character, equipped set) swing-cost
                 // bytes the Arts command input charges per press.
                 self.refresh_battle_swing_costs();
+                // ... and the Auto attack's pool-arm inputs from the same files.
+                self.refresh_battle_auto_combo_inputs();
             }
         }
         // Route the per-region random-encounter table from the same MAN so
@@ -1855,6 +1968,9 @@ impl SceneHost {
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
         let was_battle = matches!(self.world.mode, crate::world::SceneMode::Battle);
         let _ = self.world.tick();
+        if matches!(self.world.mode, crate::world::SceneMode::Battle) {
+            self.install_battle_monster_action_clips();
+        }
         // Post-battle field return: retail re-enters the field scene after a
         // battle (game-mode battle -> field reload), which re-runs the
         // scene-entry system script `P1[0]` from the MAN - the "P2 timeline

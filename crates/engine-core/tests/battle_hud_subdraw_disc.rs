@@ -180,14 +180,36 @@ fn windows_show_panels_and_their_target_steps_show_the_bar() {
     assert!(magic_target.shows(rec::BAR), "magic target: the bar is up");
 }
 
-/// The attack-mode prompt and the target cursor park the bar and drop the
-/// plate but keep the tab + plaque; the arts-entry screen parks the bar,
-/// raises the AP bar in its seat and keeps the plate.
+/// Both target cursors - the prompt's `Auto` pick and the `Automatic`
+/// option's straight jump - park the bar and drop the plate but keep the tab
+/// and the plaque; the arts-entry screen parks the bar, raises the AP bar in
+/// its seat and keeps the plate. The attack-mode prompt itself snaps the bar and
+/// the plate away (mode `3`) and opens its two chips.
 #[test]
 fn attack_mode_target_cursor_and_arts_input_park_the_bar() {
     let Some(steps) = steps() else { return };
+    let prompt = &steps[step_of::ATTACK_MODE];
+    assert_eq!(
+        prompt.mode_of(rec::BAR),
+        Some(3),
+        "attack mode: the bar snaps"
+    );
+    assert_eq!(
+        prompt.mode_of(rec::AP_PLATE),
+        Some(3),
+        "attack mode: the plate snaps"
+    );
+    assert_eq!(
+        prompt.mode_of(rec::BEGIN_TAB),
+        Some(3),
+        "attack mode: the tab stays"
+    );
+    assert!(
+        prompt.shows(0x55) && prompt.shows(0x54),
+        "attack mode: both chips open"
+    );
     for (name, i) in [
-        ("attack mode", step_of::ATTACK_MODE),
+        ("automatic target", step_of::AUTOMATIC_TARGET),
         ("target cursor", step_of::TARGET_CURSOR),
     ] {
         let s = &steps[i];

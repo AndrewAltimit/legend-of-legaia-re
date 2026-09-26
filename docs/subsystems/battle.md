@@ -731,9 +731,27 @@ covers a whole side, `FUN_801D57E8` has already swapped record `0x29`'s
 content for record `0x3D` (`"  All"`, width 36) or `0x3E` (`"All Allies"`,
 width 48), so an all-target commit logs that label. The `0x6E` screen's
 `Reselect` (case `0x21`, `0x801D45A8`) parks the landing member's row at
-`x = 328`, and the round's start launches the whole log off-screen through
-`FUN_801D5778` (the two loops at `0x801D50A0` / `0x801D50F8`, copying record
-`0x2B + i` into `0x35 + i` with seat B one display width to the left).
+`x = 328`.
+
+The log is **launched** - slid one display width off the left edge - when the
+member leaves the ring for a sub-screen, and slid back when they return, not
+when the round begins. `FUN_801D388C`'s shared tail dispatches through a
+second jump table at `0x801CE948` (indexed by `step - 5`), and the steps that
+land on its two launch loops (`0x801D50A0` / `0x801D50F8`) are `0x05` (item
+window), `0x07` (magic window), `0x09` (arts entry under the `Command`
+option), `0x2A` (the `Auto | Command` prompt), `0x30` (target cursor under the
+`Automatic` option), `0x2B` (prompt cancelled), `0x31` (target cursor
+cancelled) and `0x08` (magic window cancelled). Each loop runs
+`FUN_801D5778` over `i` in `0..3*ctx[+0x1F]` - record `0x2B + i` into
+`0x35 + i`, seat A the element's resting seat and seat B one display width
+left - and opens every clone with `FUN_801D8DE8(0x35 + i, a1)`, where `a1` is
+the step's own mode argument: `0` on the five outbound steps (spawn at A,
+glide to B), `1` on the three returns (spawn at B, glide home). The step's
+script has already reset the handle list (`FUN_801D99BC`), so the clones are
+the only log on screen. The glide is `FUN_801D9BBC`'s linear step over
+`ctx[+0x1C]` frames, which the round reset `FUN_801D88CC` seeds to `0x10`. The
+Begin confirm's steps `0x24` / `0x29` take the tail table's plain exit - the
+log leaves with the command phase, it does not slide.
 
 The capture `party_basic_attack_vs_gobu_gobu` (solo Vahn at `0x6E`,
 `ctx[+0x1F] = 1`) holds records `0x2B` / `0x2C` / `0x2D` at seat B
@@ -747,10 +765,14 @@ all-target labels); `engine-core::battle_hud::battle_commit_log` lists the
 members the cursor has walked past - all of them once `0x6E` is up - from
 `RoundFlow::pending`; and `engine-ui`'s battle HUD builder draws each element
 as a gold plate (kind `2`) with its text at the pen `(x, y - 2)`. Both hosts
-pass the rows through `BattleHudFrame::commit_log`. What is drawn is each
-element's resting seat: the glide from seat A (`FUN_801D8DE8` /
-`FUN_801DB7B0`) and the round-start launch are not modelled, so
-`FUN_801D5778` is still unwired. Which chip an Item or magic commit logs
+pass the rows through `BattleHudFrame::commit_log`. A commit draws each
+element at its resting seat (the landing glide is not modelled); the launch
+is - `battle_commit_log::LogLaunch` builds the clone with `FUN_801D5778` and
+steps `FUN_801D9BBC`'s glide, `engine-core::world::battle::commit_log_launch`
+raises it on the engine's ring transitions (the prompt, the `Automatic` target
+cursor, the arts entry, the item and magic windows out; a cancel or a
+sub-screen backed out of in), and every row carries the offset as
+`CommitLogRow::slide_x`. Which chip an Item or magic commit logs
 (records `0x0C` / `0x0E`) and whether an Item row carries a target are
 inferred from the ring's arm order, not read off a commit arm.
 
@@ -1536,15 +1558,16 @@ height table `0x801F4D2C`, and the focus trio are covered under
 [`battle-action.md`](battle-action.md#case-0---the-submenu-close-up-framing).
 Engine mirror: the phase script lives ONCE, in
 `legaia_engine_vm::battle_cam_script` (phases, poses, glides, plus
-`battle_vp` - the retail GTE view-projection as one matrix), and both hosts
-drive it: the native `play-window` (`window/battle_cam.rs` adapter;
-`battle_cam_inputs` derives phase / acting actor / formation from the live
-dialogue / command-session state) and the browser play page
-(`web-viewer::play_battle_render`, same derivation, handing the page a ready
-view-projection via `play_battle_camera_vp`), each stepping on the retail
-display-frame clock. The glide-table kernel port stays at
-`legaia_engine_vm::battle_camera` (`FUN_801D829C`); a cross-host recipe test
-in each host pins both derivations to the same literal pose.
+`battle_vp` - the retail GTE view-projection as one matrix), and so do its
+inputs and its state: `engine-core::battle_cam_inputs` derives phase / acting
+actor / formation / framing context from the live world, and
+`World::tick_battle_camera` steps the camera from `World::tick` on the retail
+display-frame clock, holding it in `BattleState::camera`. The native
+`play-window` and the browser play page (`play_battle_camera_vp`) only read
+the pose (`World::battle_cam_pose`), so neither host's render build can gate
+the step. The glide-table kernel port stays at
+`legaia_engine_vm::battle_camera` (`FUN_801D829C`); the recipe tests in each
+host pin the shared derivation to the same literal pose.
 
 **Screen shake.** `FUN_801D9D30` jitters the same translation pair
 (`0x800840B8/BC`) by two LCG samples masked to `0xFFFFFF >> (0x15 − amplitude)`,
@@ -3959,7 +3982,27 @@ staging pair over sixteen frames.
 **Lifetime is the intro timer.** The labels live from the `0x0A` edge to the
 `0x0B` expiry, where `FUN_800355F0` destroys every text actor in one sweep, so
 the banner's span is `ctx[+0x6D6]` exactly - `0x5A` frames, or `0x78` when
-`ctx[+0x290]` is set.
+`ctx[+0x290]` is set. A formation whose first monster id byte is `0xB5` skips
+the composer outright (`li v0,0xb5` / `beq` at `0x801D0DF0`, storing flow
+`0x0C`) and still seeds the `0x5A` hold.
+
+**Port.** `engine-core::battle_hud::battle_intro_names` builds the labels
+(the grouping and run suffix of `target_picker::enemy_menu_rows`, the layout
+of `target_picker::layout_enemy_menu_rows`, both `FUN_801D9D3C`), measured with
+the host's `legaia-font`; `engine-core::world::battle::intro_names` owns the
+`ctx[+0x6D6]` timer, armed beside the formation banner and drained by the
+frame step; and `engine-ui`'s battle HUD builder draws each label on the
+class-0 frame (`battle_hud_chrome::class0_frame_draws_at`) at `(x, 48)`. Both
+hosts pass the labels through `BattleHudFrame::intro_names`. Two
+approximations: the projected `actor+0x34` is not plumbed into the HUD layer,
+so the groups centre on `0xA0` and the relaxation spreads them rather than
+seating each over its monsters; and the engine does not hold the round prompt
+back for the span, so the prompt opens with the labels still up. The run
+suffix is the rodata string `* 2` appended after dropping the display name's
+last character (`strlen` / `sb zero` / `strcat` at `0x801D9E34..0x801D9E60`);
+the engine's monster names carry no instance letter, so the port gives each
+member of a seated duplicate group one (`A`, `B`, ...) before the composer
+runs.
 
 **The ids collide with the command chips, and the teardown is why that is
 safe.** Placement records `0..=5` carry element ids `0x03` / `0x04`, the same

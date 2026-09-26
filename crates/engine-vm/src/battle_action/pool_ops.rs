@@ -92,9 +92,14 @@ pub struct FormationPos {
 /// 3. recompute min/max, then subtract the centroid `((max + min) >>u 1)` from
 ///    every included slot and add it back onto the focus accumulators.
 ///
-/// NOT WIRED: this is case `0` of the battle **flow** SM `FUN_801D388C`
-/// (`jal` at `0x801D3908`, jump table `0x801CE880`), and the case is the
-/// unported part, not the SM.
+/// NOT WIRED: this is cases `0` **and** `2` of the battle **flow** SM
+/// `FUN_801D388C` (both jump-table slots at `0x801CE880` land on the
+/// `jal` at `0x801D3908`, which then poses seat 0 with `FUN_801D5854(0, 9)`),
+/// and the case is the unported part, not the SM. Case `0` is the round
+/// start (`0x801D0EE4`, right after the round reset `FUN_801D88CC` and the
+/// initiative seeder `FUN_801DA780`), case `2` the ring cancelled back to the
+/// round prompt (`0x801D11E0`), so retail re-normalises the formation every
+/// round, not once.
 ///
 /// The previous note here read the catalog's live `801d388c` row as "the
 /// Muscle Dome overlay's *different* routine at the same VA", and that is
@@ -108,11 +113,13 @@ pub struct FormationPos {
 /// `engine-core::arts_command_input` says where it ports cases `9` and `0xB`.
 ///
 /// So the live row is this SM, correctly. What blocks case `0` is its own
-/// second half: it shifts the camera-focus accumulators `_DAT_80089118` /
-/// `_DAT_80089120` to compensate for the squash, and the engine frames the
-/// battle camera by a per-action snap (`camera_height_for_frame` through
-/// `BattleActionHost::camera_bounds`) with no focus accumulator for that
-/// compensation to land in.
+/// second half and one input: it shifts the camera-focus accumulators
+/// `_DAT_80089118` / `_DAT_80089120` to compensate for the squash, which the
+/// engine's formation-derived camera has no accumulator for, and its "always
+/// included" rule is on the fixed pool slots `0..3` while the engine compacts
+/// monsters down to `party_count` - so for a party of one or two, which
+/// positions retail's two absent party slots contribute to the extents is not
+/// read off any capture yet.
 ///
 /// PORT: FUN_801DB318
 pub fn normalize_formation_span(

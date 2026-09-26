@@ -105,203 +105,6 @@ const PLAYER_BATTLE_FILE_BASE: u32 = 863;
 /// the per-character art-animation "ME" archives.
 const READEF_PROT_INDEX: u32 = 894;
 
-/// Derive the shared battle-camera drive inputs from the live world state -
-/// phase, acting actor, formation box. The browser mirror of the native
-/// window's `battle_cam_inputs` (`engine-shell` `window/camera.rs`) over the
-/// same `World` type: same phase booleans, same acting-actor formula
-/// (facing the battle heading `battle.facing_angle & 0xFFF`, height keyed on
-/// `party_slot + 1` through the disc table, focus = the actor's world
-/// position), same case-9 min/max walk, and the same presence predicate - a
-/// monster seat counts by `battle_monster_id` (the world-side fact) on both
-/// hosts, never by a mesh bind. Pinned to the native derivation by
-/// `web_pose_matches_the_native_recipe`.
-fn derive_battle_cam(
-    world: &legaia_engine_core::world::World,
-) -> legaia_engine_vm::battle_cam_script::BattleCamInputs {
-    use legaia_engine_vm::battle_cam_script as script;
-    // The submenu close-up frames whoever owns the menu; the action framing
-    // frames whoever is acting (`ctx[+0x13]`).
-    let acting_slot = world
-        .battle
-        .command
-        .as_ref()
-        .map(|c| c.actor)
-        .unwrap_or(world.battle_ctx.active_actor);
-    // The **input** pickers own the close-up; the top-level command chooser
-    // keeps the far framing. Same call the native window makes - see
-    // `script::phase_for_state` for the two retail framebuffers that separate
-    // case 0 from case 9, and for the case-7 / case-8 post-strike bands.
-    // Cases 7 / 8 frame against the acting actor's target (`actor[+0x1DD]`
-    // through the 8-slot actor table) - the browser mirror of the native
-    // `battle_post_action_target`.
-    let target = world
-        .actors
-        .get(acting_slot as usize)
-        .map(|a| a.battle.active_target)
-        .filter(|s| usize::from(*s) < 8)
-        .and_then(|s| world.actors.get(usize::from(s)))
-        .map(|t| script::PostActionTarget {
-            world: [
-                t.move_state.world_x as f32,
-                t.move_state.world_y as f32,
-                t.move_state.world_z as f32,
-            ],
-            live: t.active && t.battle.hp > 0,
-        });
-    // The Done band's per-category fork (`FUN_801E295C` `0x50` / `0x51`
-    // arms): category `actor[+0x1DE]`, party seat, dead target - the browser
-    // mirror of the native `battle_done_band`.
-    let done = script::DoneBandInputs {
-        category: world
-            .actors
-            .get(usize::from(acting_slot))
-            .map_or(0, |a| a.battle.action_category),
-        party_slot: usize::from(acting_slot) < world.party.party_count as usize,
-        target_dead: target.is_some_and(|t| !t.live),
-    };
-    let phase = script::phase_for_state(
-        world.dialog.current.is_some() || world.dialog.inline.is_some(),
-        world.battle.arts_menu.is_some()
-            || world.battle.spell_menu.is_some()
-            || world.battle.item_menu.is_some(),
-        world.battle_ctx.action_state,
-        done,
-    );
-    let actor_at = |slot: u8, party_slot: Option<u8>| {
-        let a = world.actors.get(slot as usize)?;
-        // Retail's height key is `DAT_8007BD10[slot]`, the 1-based
-        // party-record selector; the engine's party rows are that record
-        // order, so the row index + 1 is the same id.
-        let height = party_slot.and_then(|p| {
-            world
-                .tables
-                .battle_camera_heights
-                .as_ref()
-                .and_then(|t| t.height_for_char_id(p + 1))
-                .map(|h| h as f32)
-        });
-        Some(script::BattleCamActor {
-            // The **battle** heading `actor[+0x46]`, not the field heading
-            // `+0x26` - the same source the native host feeds (see
-            // `legaia-engine::window::camera::battle_cam_inputs` for the
-            // `FUN_801E295C` case-`0x14` citation). Written by the action SM
-            // as `(bearing(target -> attacker) + 0x800) & 0xFFF`; the port
-            // keeps it in `Actor::battle.facing_angle`.
-            facing: i32::from(a.battle.facing_angle & 0xFFF),
-            world: [
-                a.move_state.world_x as f32,
-                a.move_state.world_y as f32,
-                a.move_state.world_z as f32,
-            ],
-            height,
-        })
-    };
-    let acting = match world.battle.command.as_ref() {
-        Some(c) => actor_at(c.actor, Some(c.party_slot)),
-        None => actor_at(acting_slot, None),
-    };
-    // The far menu framing sizes its depth to - and centres on - the live
-    // formation's X/Z bounding box (`FUN_801D5854` case 9). Presence is the
-    // **world** fact `battle_monster_id`, never the render fact
-    // `tmd_binding`: retail's walk gates on the live-HP halfword
-    // `actor[+0x14c]` (`0x801D7000`) and touches no mesh, so keying on a
-    // per-host mesh binding would let two hosts derive different formations
-    // from one identical `World`. Pinned against the native host by
-    // `the_formation_box_is_a_world_fact_not_a_render_fact`.
-    let pc = world.party.party_count as usize;
-    let mut formation: Option<script::FormationBox> = None;
-    for (i, a) in world.actors.iter().enumerate() {
-        if !(i < pc || a.battle_monster_id.is_some()) {
-            continue;
-        }
-        script::FormationBox::extend(
-            &mut formation,
-            a.move_state.world_x as f32,
-            a.move_state.world_z as f32,
-        );
-    }
-    // `FUN_801D5854` case 6: `party_slot` is retail's `ctx[+0x13] < 3` over
-    // the engine's party band, `char_id` its `DAT_8007BD10[slot]`, and
-    // `depth_raw` is `ctx[+0x6D0]` - what `camera_height_for_frame` last
-    // computed. `battle_over` is `DAT_8007BD71 == 0xFE`, the battle-end
-    // signal - `0xFF` for the whole of a running fight, so `false` here
-    // (same as the native host; the victory-pose arm is not modelled).
-    // `style` is the live `ctx[+0xD]` framing variant - the same byte, from
-    // the same place, as the native host's `battle_action_framing`.
-    let party = usize::from(acting_slot) < pc;
-    script::BattleCamInputs {
-        phase,
-        acting,
-        target,
-        formation,
-        action: script::ActionFraming {
-            party_slot: party,
-            battle_over: false,
-            depth_raw: world.battle.camera_frame_height as i32,
-            yaw_base: 0,
-            style: world.battle_ctx.camera_variant,
-            char_id: if party { acting_slot + 1 } else { 0 },
-        },
-        // `_DAT_8007B792` is one global shared with the field camera, and
-        // nothing on the battle-entry path zeroes it - a fight inherits the
-        // live azimuth (see `BattleCamInputs::entry_yaw`). Through the shared
-        // guard, which this host used to skip: the port's compass publishes a
-        // constant `0` while nobody is orbiting, and `0` is the one azimuth
-        // that puts the eye down the seat axis, so every browser fight that
-        // opened without a manual orbit framed both rows at the same screen X.
-        entry_yaw: script::battle_entry_yaw(world.locomotion.camera_azimuth),
-        shake_amplitude: world.camera.shake_amplitude,
-        attack: attack_channels(world, world.battle_ctx.active_actor),
-        // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's
-        // state edges (`BattleCamera::observe_action_state`) - same field
-        // the native host fills.
-        action_state: world.battle_ctx.action_state,
-    }
-}
-
-/// The per-art attack camera's per-actor channels - the browser mirror of the
-/// native window's `battle_attack_channels`. Same gate order
-/// (`FUN_801D71B8` `0x801D71B8..0x801D72D4` plus the call site's outer gate),
-/// same three bytes, same `<< 4` conversion of the engine's whole-keyframe
-/// animation cursor into retail's sixteenths.
-fn attack_channels(
-    world: &legaia_engine_core::world::World,
-    acting_slot: u8,
-) -> Option<legaia_engine_vm::battle_cam_script::AttackCamChannels> {
-    use legaia_engine_vm::battle_attack_camera as cam;
-    if usize::from(acting_slot) >= world.party.party_count as usize {
-        return None;
-    }
-    let a = world.actors.get(acting_slot as usize)?;
-    if a.battle.action_category != cam::CATEGORY_ATTACK {
-        return None;
-    }
-    if !cam::outer_gate(0, a.battle.active_target) {
-        return None;
-    }
-    let character = cam::character_arm(acting_slot + 1)?;
-    Some(legaia_engine_vm::battle_cam_script::AttackCamChannels {
-        character,
-        art_id: a.battle.latched_anim,
-        arm_select: a.battle.hit_count_bound,
-        anim_frame: a
-            .battle_animation
-            .as_ref()
-            .map(|p| p.current_frame().saturating_mul(16))
-            .unwrap_or(0),
-    })
-}
-
-/// The per-art camera's disc track table, re-read from the battle-action
-/// overlay the scene loader retains. The browser mirror of the native
-/// window's `battle_attack_tracks`.
-fn attack_tracks(
-    world: &legaia_engine_core::world::World,
-) -> Option<legaia_asset::battle_attack_camera_table::AttackCameraTracks> {
-    let overlay = world.tables.move_power_overlay.as_ref()?;
-    legaia_asset::battle_attack_camera_table::parse(overlay)
-}
-
 /// Host-safe log: the browser console on wasm, stderr on the native test
 /// build (`crate::console_log` is a hard wasm-only stub that panics off-web,
 /// and this module runs under the disc-gated native oracles).
@@ -405,10 +208,6 @@ pub(crate) struct BattleRender {
     /// ([`LegaiaRuntime::spawn_summon_creature_web`]) - the browser twin of
     /// the native window's `battle_tex_slots_used`.
     pub(crate) tex_slots_used: u8,
-    /// The shared phase-scripted battle camera - the SAME
-    /// [`legaia_engine_vm::battle_cam_script::BattleCamera`] the native
-    /// window steps, driven by [`LegaiaRuntime::tick_battle_camera_web`].
-    camera: Option<legaia_engine_vm::battle_cam_script::BattleCamera>,
     /// Bumped per battle entry - and once more per mid-battle summon spawn -
     /// so the page knows to re-upload.
     pub(crate) generation: u32,
@@ -725,13 +524,11 @@ impl LegaiaRuntime {
                 .and_then(|a| a.frames.first())
                 .map(|f| flatten_frame(f))
                 .unwrap_or_default();
-            // Positional (one slot per `+0x4C` entry, holes kept): a monster's
-            // staged anim ids are these indices.
-            let action_clips =
-                match legaia_asset::monster_archive::animations_by_entry(&archive, monster_id) {
-                    Ok(Some(anims)) if anims.iter().any(Option::is_some) => Some(anims),
-                    _ => None,
-                };
+            // The monster's action clips (the `+0x4C` tag table) are the
+            // engine's to install - `SceneHost::tick` stages them the tick a
+            // battle is up, independent of this build - so none is staged
+            // here.
+            let action_clips = None;
             actors.push(BattleActorRender {
                 actor_idx,
                 monster: true,
@@ -879,7 +676,6 @@ impl LegaiaRuntime {
             outdoor,
             actors,
             tex_slots_used,
-            camera: None,
             generation: self.battle_render_generation,
             faces,
         });
@@ -895,42 +691,13 @@ impl LegaiaRuntime {
         // the engine actor table, but the slot index is this host's and used
         // to survive into the next fight, where the second cast would reuse a
         // seat the new battle had already handed out.
+        // The same release the native window runs (`World::release_summon_seat`):
+        // mesh binding, texture slot, clip and pose all go with the seat.
         if let Some(slot) = self.summon_actor_slot.take()
             && let Some(host) = self.scene_host.as_mut()
-            && let Some(a) = host.world.actors.get_mut(slot)
         {
-            a.active = false;
-            a.tmd_binding = None;
+            host.world.release_summon_seat(slot);
         }
-    }
-
-    /// Drive the shared phase-scripted battle camera one sim tick: derive
-    /// the retail phase + acting actor + formation from the live world
-    /// state (the browser twin of the native `tick_battle_camera` /
-    /// `battle_cam_inputs`) and step the SAME
-    /// [`legaia_engine_vm::battle_cam_script::drive`] on the world's
-    /// display-frame counter (one camera step per 2 frames). No-op outside
-    /// battle - the render state only exists while one is up, and dropping
-    /// it drops the camera so the next battle re-snaps.
-    pub(crate) fn tick_battle_camera_web(&mut self) {
-        let Some(br) = self.battle_render.as_mut() else {
-            return;
-        };
-        let Some(host) = self.scene_host.as_ref() else {
-            br.camera = None;
-            return;
-        };
-        let world = &host.world;
-        let active = world.mode == SceneMode::Battle;
-        let inputs = derive_battle_cam(world);
-        let tracks = attack_tracks(world);
-        legaia_engine_vm::battle_cam_script::drive(
-            &mut br.camera,
-            active,
-            inputs,
-            world.clock.display_frames,
-            tracks.as_ref(),
-        );
     }
 
     /// Assemble one party member's battle form: the browser port of the
@@ -1691,9 +1458,9 @@ impl LegaiaRuntime {
     fn battle_cam_phase_label(&self) -> &'static str {
         use legaia_engine_vm::battle_cam_script::BattleCamPhase as P;
         match self
-            .battle_render
+            .scene_host
             .as_ref()
-            .and_then(|b| b.camera.as_ref())
+            .and_then(|h| h.world.battle.camera.as_ref())
             .map(|c| c.phase())
         {
             Some(P::Dialogue) => "dialogue",
@@ -1720,11 +1487,13 @@ impl LegaiaRuntime {
             .battle_actor_draw_plan(actor_idx, pose.as_ref(), BATTLE_WORLD_SCALE, br.outdoor)
     }
 
+    /// The engine's battle-camera pose (`World::battle_cam_pose` - the state
+    /// `World::tick` steps for every host), or the shared boot pose off a
+    /// scene host.
     pub(crate) fn battle_cam_pose(&self) -> legaia_engine_vm::battle_cam_script::BattleCamPose {
-        self.battle_render
+        self.scene_host
             .as_ref()
-            .and_then(|b| b.camera.as_ref())
-            .map(|c| c.pose())
+            .map(|h| h.world.battle_cam_pose())
             .unwrap_or(legaia_engine_vm::battle_cam_script::BOOT_POSE)
     }
 }
@@ -1748,7 +1517,7 @@ mod battle_cam_web_tests {
             let mut world = World::default();
             world.locomotion.camera_azimuth = az;
             assert_eq!(
-                derive_battle_cam(&world).entry_yaw,
+                legaia_engine_core::battle_cam_inputs::battle_cam_inputs(&world).entry_yaw,
                 script::BATTLE_ENTRY_YAW_SAMPLE,
                 "azimuth {az} frames both rows at the same screen X"
             );
@@ -1762,7 +1531,10 @@ mod battle_cam_web_tests {
         for az in [224u16, 2632, 3136, 3808, 3882] {
             let mut world = World::default();
             world.locomotion.camera_azimuth = az;
-            assert_eq!(derive_battle_cam(&world).entry_yaw, f32::from(az));
+            assert_eq!(
+                legaia_engine_core::battle_cam_inputs::battle_cam_inputs(&world).entry_yaw,
+                f32::from(az)
+            );
         }
     }
 
@@ -1807,7 +1579,7 @@ mod battle_cam_web_tests {
             Vec::new(),
         ));
 
-        let inputs = derive_battle_cam(&world);
+        let inputs = legaia_engine_core::battle_cam_inputs::battle_cam_inputs(&world);
         assert_eq!(inputs.phase, script::BattleCamPhase::Submenu);
         let acting = inputs.acting.expect("acting actor");
         assert_eq!(acting.facing, i32::from(BATTLE_46), "actor[+0x46]");
@@ -1845,7 +1617,7 @@ mod battle_cam_web_tests {
         tetsu.tmd_binding = None;
         world.actors = vec![vahn, tetsu];
 
-        let formation = derive_battle_cam(&world).formation;
+        let formation = legaia_engine_core::battle_cam_inputs::battle_cam_inputs(&world).formation;
         assert_eq!(
             formation,
             Some(script::FormationBox {
@@ -1900,7 +1672,7 @@ mod battle_cam_web_tests {
             Vec::new(),
         ));
 
-        let inputs = derive_battle_cam(&world);
+        let inputs = legaia_engine_core::battle_cam_inputs::battle_cam_inputs(&world);
         assert_eq!(inputs.phase, script::BattleCamPhase::Submenu);
         assert_eq!(
             inputs.acting,

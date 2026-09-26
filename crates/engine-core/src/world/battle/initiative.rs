@@ -316,6 +316,9 @@ impl World {
         // below clears it - retail reads it in state `0x0A` (`FUN_801D9D3C`),
         // one state before the action SM's `0x00` latch runs.
         self.raise_battle_open_banner();
+        // Flow state `0x0A`'s other half: the enemy-name banner and its
+        // `ctx[+0x6D6]` hold, whose length reads the same unlatched byte.
+        self.arm_battle_intro_names();
         let party = self.party.party_count;
         // `ctx[+0x01]` is the seated monster count, not the width of the
         // 8-slot table - the tail of it is empty in most formations.

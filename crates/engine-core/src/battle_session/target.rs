@@ -81,7 +81,7 @@ impl BattleSession {
         }
         self.enemy_menu_rows = crate::target_picker::enemy_menu_rows(
             ids,
-            crate::target_picker::DEDUP_GLYPH_FALLBACK,
+            crate::target_picker::DEDUP_SUFFIX,
             |slot| names[slot as usize].clone(),
             |_| 0,
         );
