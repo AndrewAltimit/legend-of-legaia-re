@@ -5,10 +5,11 @@
 //! reveal steps through. The field dialog pager `FUN_801D84D0` calls it on the
 //! row being typed (`jal 0x80036044` at `0x801D8A6C`, argument the row pointer
 //! `_DAT_801F3540[_DAT_801F3530]`) and compares the result against its reveal
-//! counter `_DAT_801F2748`: below the count the row keeps typing, at or above
-//! it the row is finished, and a row shorter than `0x22` units then holds for
-//! `(0x22 - count) * 4` (`_DAT_801F275C`, drained by `32 * DAT_1F800393` per
-//! pager call). `FUN_8003CC98` (draw one string, return its count) and
+//! counter `_DAT_801F2748`: the row finishes only once the count is **below**
+//! the counter (`slt v1,s0,v1` at `0x801D8A7C`) - one pager call after the
+//! counter reaches the count, not on reaching it - and a row shorter than
+//! `0x22` units then holds for `(0x22 - count) * 4` (`_DAT_801F275C`, drained
+//! by `32 * DAT_1F800393` per pager call). `FUN_8003CC98` (draw one string, return its count) and
 //! `FUN_8003CD00` are the other callers.
 //!
 //! ## The walk, read off the disassembly
@@ -100,27 +101,17 @@ fn string_units(s: &[u8]) -> u32 {
 ///
 /// PORT: FUN_80036044
 ///
-/// NOT WIRED: its consumer is the field dialog pager's row gate
-/// (`0x801D8A6C..0x801D8AA8`: count vs the reveal counter `_DAT_801F2748`,
-/// then the short-row hold `_DAT_801F275C`), and the engine's pager is not
-/// built on that counter. What wiring it would change is measured, not
-/// guessed. The reveal *rate* already agrees: every pager open stores the
-/// speed word `_DAT_801F2754 = 1` (`0x801D9118` / `0x801D91D0` /
-/// `0x801D9268` / `0x801D9CA4`, each `sw a0` with `a0 = 1`), so at
-/// `DAT_1F800393 = 1` the counter gains one unit a frame - the one glyph a
-/// tick `legaia_engine_core::dialog::OwnedDialogPanel` types. Two things
-/// differ. A row ends when the counter reaches this count, not on the
-/// terminator byte, so a `0xCF` colour escape costs no frame and each
-/// two-byte unit's post-`NUL` overrun costs one. And a row under `0x22`
-/// units then holds `(0x22 - count) * 4` in `_DAT_801F275C`, drained by
-/// `32 * DAT_1F800393` per pager call - `ceil((0x22 - count) / 8)` frames,
-/// at most five. Adding those frames to every short row shifts every
-/// dialogue after the first, and the committed replays under
-/// `scripts/replays/` press their pads on fixed engine frames recorded
-/// against today's pacing - they are engine recordings, not retail timings,
-/// so nothing committed says which pacing is right. Wiring it means
-/// re-recording those replays against a retail row-timing capture, which no
-/// oracle pins yet.
+/// Its consumer is the field dialog pager's row gate (`0x801D8A6C..0x801D8AA8`:
+/// the count against the reveal counter `_DAT_801F2748`, then the short-row
+/// hold `_DAT_801F275C`). The engine's pager counts each packed-box row with
+/// it (`legaia_engine_core::dialog::OwnedDialogPanel`, lead byte included and
+/// the rest of the buffer after it), and `legaia_engine_core::dialog_pacing`
+/// runs the gate: the row ends on the call whose counter passes the count,
+/// and a row under `0x22` units holds before the next. Both play hosts reach
+/// it through `World::step_inline_dialogue`, the cutscene timeline's dialog
+/// park and the prop-interaction box. A PCSX-Redux trace of a town01
+/// conversation pins the counts and the per-vsync timeline
+/// (`crates/engine-core/tests/dialog_typewriter_pacing_disc.rs`).
 pub fn typewriter_glyph_count(text: &[u8], expand: Option<&Expander<'_>>) -> GlyphCount {
     let at = |k: usize| text.get(k).copied().unwrap_or(0);
     let mut out = GlyphCount::default();

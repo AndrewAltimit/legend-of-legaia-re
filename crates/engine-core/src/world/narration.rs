@@ -793,7 +793,7 @@ impl World {
             // One-frame rule (see `step_inline_dialogue`): a menu that opened
             // on this tick is shown before any confirm can commit it.
             let menu_was_open = panel.menu_active();
-            panel.tick();
+            panel.tick_at(self.clock.frame_step);
             if confirm {
                 if panel.menu_active() && !menu_was_open {
                     // Opened this frame: nothing to commit yet.
@@ -2451,7 +2451,7 @@ impl World {
             // and reads the choice in the next, so the commit is always at
             // least one frame behind the open.
             let menu_was_open = panel.menu_active();
-            panel.tick();
+            panel.tick_at(self.clock.frame_step);
             if confirm {
                 if panel.menu_active() && !menu_was_open {
                     // The menu opened this frame: show it, commit next frame.

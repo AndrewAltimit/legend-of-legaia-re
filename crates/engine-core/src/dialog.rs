@@ -293,6 +293,23 @@ pub struct OwnedDialogPanel {
     state: PanelState,
     waiting_for_input: bool,
     done: bool,
+    /// Vsyncs per game tick (`DAT_1F800393`) the host runs the panel at. The
+    /// box path runs one retail pager call every `frame_step` [`Self::tick`]s
+    /// (one tick = one vsync); set it from
+    /// [`crate::world::FrameClock::frame_step`] before ticking (the World's
+    /// dialog paths do, through [`Self::tick_at`]). `0` is treated as `1`.
+    pub frame_step: u8,
+    /// Vsync phase within the current game tick (`0` = a pager call runs).
+    vsync_phase: u8,
+    /// Retail reveal counter / accumulator / short-row hold (box path).
+    pacer: crate::dialog_pacing::TypewriterPacer,
+    /// Units of the current row already pushed to [`Self::page`].
+    row_units: u32,
+    /// `FUN_80036044` count of the current row, computed on first use.
+    row_count: Option<u32>,
+    /// Glyphs of a substitution already decoded but not yet revealed (each
+    /// costs one unit, as the draw counts the spliced string).
+    pending_sub: std::collections::VecDeque<u8>,
 }
 
 /// Host-installed name-substitution table for a dialog panel: `(kind key,
@@ -333,6 +350,12 @@ impl OwnedDialogPanel {
             state: PanelState::Typing,
             waiting_for_input: false,
             done: false,
+            frame_step: 1,
+            vsync_phase: 0,
+            pacer: crate::dialog_pacing::TypewriterPacer::new(),
+            row_units: 0,
+            row_count: None,
+            pending_sub: Default::default(),
         }
     }
 
@@ -405,6 +428,8 @@ impl OwnedDialogPanel {
     fn seed_box_at_lead(&mut self, lead: usize) {
         self.row_index = 0;
         self.pending_box_advance = false;
+        self.reset_row_pacing();
+        self.pacer.begin_box();
         match legaia_mes::pack_box(&self.bytes, lead) {
             Some(bx) => {
                 self.pc = bx.lines[0].start;
@@ -530,7 +555,23 @@ impl OwnedDialogPanel {
         self.glyphs_per_frame = n.max(1);
     }
 
-    /// Advance one frame and return the new state.
+    /// Advance one vsync at `frame_step` (`DAT_1F800393`) and return the new
+    /// state: [`Self::frame_step`] is set first, then [`Self::tick`] runs.
+    pub fn tick_at(&mut self, frame_step: u8) -> PanelState {
+        self.frame_step = frame_step;
+        self.tick()
+    }
+
+    /// Advance one frame (one vsync) and return the new state.
+    ///
+    /// A packed box (every field-pager path: [`Self::from_inline_dialog`] /
+    /// [`Self::at_segment`]) types at the retail pager's pace
+    /// ([`crate::dialog_pacing`]): one pager call every
+    /// [`Self::frame_step`] ticks, the row revealed up to the reveal counter,
+    /// the row ended when the counter passes the row's `FUN_80036044` glyph
+    /// count, and a short row held before the next. The plain-MES paths
+    /// ([`Self::new`] / [`Self::from_scene_mes`]) keep one event per
+    /// [`Self::glyphs_per_frame`] ticks.
     pub fn tick(&mut self) -> PanelState {
         if self.done {
             self.state = PanelState::Done;
@@ -541,93 +582,229 @@ impl OwnedDialogPanel {
             return self.state;
         }
         self.tick_count += 1;
-        if !self.tick_count.is_multiple_of(self.glyphs_per_frame as u64) {
+        if self.current_box.is_none() {
+            if !self.tick_count.is_multiple_of(self.glyphs_per_frame as u64) {
+                return self.state;
+            }
+            let mut interp = Interpreter::new_at(&self.bytes, self.pc);
+            let next = interp.next_event();
+            self.pc = interp.pc();
+            match next {
+                Some(MesEvent::EndOfMessage(_)) | None => self.end_row(),
+                Some(ev) => {
+                    self.apply_event(ev);
+                }
+            }
             return self.state;
         }
-        let mut interp = Interpreter::new_at(&self.bytes, self.pc);
-        let next = interp.next_event();
-        self.pc = interp.pc();
-        match next {
-            Some(MesEvent::Glyph(g)) => self.page.push(PanelGlyph {
-                byte: g,
-                clut: self.current_clut,
-            }),
-            Some(MesEvent::WideGlyph(_op, arg)) => self.page.push(PanelGlyph {
-                byte: arg,
-                clut: self.current_clut,
-            }),
-            Some(MesEvent::Control(_)) => {
+        let dt = self.frame_step.max(1);
+        let run = self.vsync_phase == 0;
+        self.vsync_phase = (self.vsync_phase + 1) % dt;
+        if !run {
+            return self.state;
+        }
+        let count = self.current_row_count();
+        match self.pacer.call(dt, count) {
+            crate::dialog_pacing::PagerCall::Held => {}
+            crate::dialog_pacing::PagerCall::Typed => {
+                let units = self.pacer.visible_units();
+                self.reveal_row_to(units);
+            }
+            crate::dialog_pacing::PagerCall::RowFinished => {
+                // The finished row draws whole (retail draws every row above
+                // the typing one without a cap).
+                if self.reveal_row_to(u32::MAX) {
+                    let mut interp = Interpreter::new_at(&self.bytes, self.pc);
+                    interp.next_event();
+                    self.pc = interp.pc();
+                    self.end_row();
+                }
+            }
+        }
+        self.state
+    }
+
+    /// The retail pager's typewriter words for the row being typed (box
+    /// path; see [`crate::dialog_pacing`]).
+    pub fn pacer(&self) -> &crate::dialog_pacing::TypewriterPacer {
+        &self.pacer
+    }
+
+    /// Clear the per-row reveal bookkeeping (a new row, box or page).
+    fn reset_row_pacing(&mut self) {
+        self.row_units = 0;
+        self.row_count = None;
+        self.pending_sub.clear();
+    }
+
+    /// `FUN_80036044` on the current row, lead byte included and the rest of
+    /// the buffer after it (the count's walk overruns the row's `NUL` by one
+    /// byte per two-byte unit). Substitutions resolve through
+    /// [`Self::substitutions`]; an unresolved one counts nothing, as the
+    /// panel then types nothing for it either.
+    fn current_row_count(&mut self) -> u32 {
+        if let Some(c) = self.row_count {
+            return c;
+        }
+        let lead = self
+            .current_box
+            .as_ref()
+            .and_then(|bx| bx.lines.get(self.row_index))
+            .map(|l| l.start.saturating_sub(1))
+            .unwrap_or(self.pc);
+        let subs = self.substitutions.clone();
+        let expand = move |op: u8, arg: u8| -> Option<Vec<u8>> {
+            let key = match op {
+                0xC1 => 1,
+                0xC2 | 0xC4 => 2,
+                0xC3 => 3,
+                0xC5 => 5,
+                0xC7 => 7,
+                _ => return None,
+            };
+            subs.as_ref()?.get(&(key, arg)).cloned()
+        };
+        let text = self.bytes.get(lead..).unwrap_or(&[]);
+        let c = legaia_font::typewriter_glyph_count(text, Some(&expand)).count;
+        self.row_count = Some(c);
+        c
+    }
+
+    /// Push the current row's events until `units` of it are visible, the
+    /// row's terminator is next, or an event stops the typewriter. Returns
+    /// `true` when the terminator is next (the row is fully revealed).
+    fn reveal_row_to(&mut self, units: u32) -> bool {
+        loop {
+            if self.waiting_for_input || self.done {
+                return false;
+            }
+            if self.row_units >= units {
+                return false;
+            }
+            if let Some(b) = self.pending_sub.pop_front() {
+                self.page.push(PanelGlyph {
+                    byte: b,
+                    clut: self.current_clut,
+                });
+                self.row_units += 1;
+                continue;
+            }
+            let mut interp = Interpreter::new_at(&self.bytes, self.pc);
+            let next = interp.next_event();
+            match next {
+                Some(MesEvent::EndOfMessage(_)) | None => return true,
+                Some(ev) => {
+                    self.pc = interp.pc();
+                    self.row_units += self.apply_event(ev);
+                }
+            }
+        }
+    }
+
+    /// Apply one non-terminator event to the page; returns the units it
+    /// costs the reveal counter (the draw's count: one per glyph and per
+    /// `0xCE` escape, none for a `0xCF` colour pair; a substitution queues
+    /// its glyphs, one unit each).
+    fn apply_event(&mut self, ev: MesEvent) -> u32 {
+        match ev {
+            MesEvent::Glyph(g) => {
+                self.page.push(PanelGlyph {
+                    byte: g,
+                    clut: self.current_clut,
+                });
+                1
+            }
+            MesEvent::WideGlyph(_op, arg) => {
+                self.page.push(PanelGlyph {
+                    byte: arg,
+                    clut: self.current_clut,
+                });
+                1
+            }
+            MesEvent::Control(_) => {
                 self.waiting_for_input = true;
                 self.state = PanelState::PageBreak;
+                0
             }
-            Some(MesEvent::SkipTwo(arg)) => self.page.push(PanelGlyph {
-                byte: arg,
-                clut: self.current_clut,
-            }),
-            Some(MesEvent::EndOfMessage(_)) | None => {
-                // A row terminator, not necessarily the box's end: the pager
-                // groups up to `_DAT_801F2740 = 3` consecutive `0x1F` lines
-                // into one window (`FUN_801D84D0`; decoded by `pack_box`).
-                // With rows left, drop the pen to the next row and keep
-                // typing in the same window.
-                if let Some(bx) = self.current_box.clone()
-                    && self.row_index + 1 < bx.lines.len()
-                {
-                    self.row_index += 1;
-                    self.pc = bx.lines[self.row_index].start;
-                    self.page.push(PanelGlyph {
-                        byte: legaia_font::NEWLINE,
-                        clut: self.current_clut,
-                    });
-                    return self.state;
-                }
-                // Last row done: act on the box's post-page dispatch. A menu
-                // box stops at the prompt terminator and waits on the option
-                // list instead of tearing down: the retail inline-script
-                // handler `FUN_80038050` reads the chosen index here and
-                // jumps via the picker's relative-offset table.
-                if self.picker.is_some() && !self.menu_active {
-                    self.menu_active = true;
-                    self.waiting_for_input = true;
-                    self.state = PanelState::PageBreak;
-                } else if self
-                    .current_box
-                    .as_ref()
-                    .is_some_and(|bx| bx.dispatch.continues())
-                {
-                    // `0x24` next-page / `0x48` new-box / `0x2A` resize /
-                    // implicit next lead: more dialogue follows in the same
-                    // conversation. Page-break and wait for the dismiss;
-                    // `advance_page` re-seeds on the next packed box.
-                    self.pending_box_advance = true;
-                    self.waiting_for_input = true;
-                    self.state = PanelState::PageBreak;
-                } else {
-                    self.done = true;
-                    self.state = PanelState::Done;
-                }
+            MesEvent::SkipTwo(arg) => {
+                self.page.push(PanelGlyph {
+                    byte: arg,
+                    clut: self.current_clut,
+                });
+                0
             }
-            Some(MesEvent::Substitute { kind, arg }) => {
+            MesEvent::Substitute { kind, arg } => {
                 // Resolve through the host-installed name table (item /
                 // character names). An absent entry emits nothing - the
                 // pre-wiring behaviour.
                 if let Some(subs) = self.substitutions.as_ref()
                     && let Some(name) = subs.get(&(substitute_kind_key(kind), arg))
                 {
-                    for &b in name {
-                        self.page.push(PanelGlyph {
-                            byte: b,
-                            clut: self.current_clut,
-                        });
+                    if self.current_box.is_some() {
+                        self.pending_sub.extend(name.iter().copied());
+                    } else {
+                        for &b in name {
+                            self.page.push(PanelGlyph {
+                                byte: b,
+                                clut: self.current_clut,
+                            });
+                        }
                     }
                 }
+                0
             }
-            Some(_) => {
-                // Spacing / Truncated - engine-side routing isn't wired
-                // yet; leave the pen alone.
-            }
+            // `0xCE` spacing counts one unit in the draw; the engine's
+            // routing for it (and Truncated) leaves the pen alone.
+            MesEvent::Spacing(_) => 1,
+            _ => 0,
         }
-        self.state
+    }
+
+    /// The current row's terminator has been consumed: drop to the next row
+    /// of the box, or act on the box's post-page dispatch.
+    fn end_row(&mut self) {
+        // A row terminator, not necessarily the box's end: the pager
+        // groups up to `_DAT_801F2740 = 3` consecutive `0x1F` lines
+        // into one window (`FUN_801D84D0`; decoded by `pack_box`).
+        // With rows left, drop the pen to the next row and keep
+        // typing in the same window.
+        if let Some(bx) = self.current_box.clone()
+            && self.row_index + 1 < bx.lines.len()
+        {
+            self.row_index += 1;
+            self.pc = bx.lines[self.row_index].start;
+            self.reset_row_pacing();
+            self.page.push(PanelGlyph {
+                byte: legaia_font::NEWLINE,
+                clut: self.current_clut,
+            });
+            return;
+        }
+        // Last row done: act on the box's post-page dispatch. A menu
+        // box stops at the prompt terminator and waits on the option
+        // list instead of tearing down: the retail inline-script
+        // handler `FUN_80038050` reads the chosen index here and
+        // jumps via the picker's relative-offset table.
+        if self.picker.is_some() && !self.menu_active {
+            self.menu_active = true;
+            self.waiting_for_input = true;
+            self.state = PanelState::PageBreak;
+        } else if self
+            .current_box
+            .as_ref()
+            .is_some_and(|bx| bx.dispatch.continues())
+        {
+            // `0x24` next-page / `0x48` new-box / `0x2A` resize /
+            // implicit next lead: more dialogue follows in the same
+            // conversation. Page-break and wait for the dismiss;
+            // `advance_page` re-seeds on the next packed box.
+            self.pending_box_advance = true;
+            self.waiting_for_input = true;
+            self.state = PanelState::PageBreak;
+        } else {
+            self.done = true;
+            self.state = PanelState::Done;
+        }
     }
 
     /// Resume from a page break. No-op when the panel isn't paused.
@@ -684,6 +861,17 @@ mod tests {
     use super::*;
     use legaia_mes::{DialogPlayer, Interpreter};
 
+    /// Tick until the panel stops typing (page break, menu or done).
+    fn type_until_wait(panel: &mut OwnedDialogPanel) -> PanelState {
+        for _ in 0..512 {
+            let st = panel.tick();
+            if st != PanelState::Typing {
+                return st;
+            }
+        }
+        panic!("the panel never stopped typing");
+    }
+
     /// Minimal Compact-format MES blob: a single message with three glyphs
     /// then End. Avoids dragging the full container parser into tests.
     fn three_glyph_program() -> Vec<u8> {
@@ -735,6 +923,10 @@ mod tests {
             assert_eq!(panel.tick(), PanelState::Typing);
         }
         assert_eq!(panel.page_bytes(), vec![b'H', b'i']);
+        // Retail pacing: the row's glyph count is 3 (lead included), so the
+        // row finishes on the call whose counter passes 3 - two calls after
+        // the last glyph shows.
+        assert_eq!(panel.tick(), PanelState::Typing);
         assert_eq!(panel.tick(), PanelState::Done);
     }
 
@@ -766,9 +958,7 @@ mod tests {
         let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).expect("has a 0x1F lead");
         assert!(panel.picker().is_some(), "the following picker decodes");
         // Type the prompt "OK?" then hit the terminator.
-        for _ in 0..4 {
-            panel.tick();
-        }
+        type_until_wait(&mut panel);
         assert_eq!(panel.page_bytes(), vec![b'O', b'K', b'?']);
         assert!(panel.menu_active(), "menu waits after the prompt");
         assert!(!panel.is_done(), "menu box is not Done");
@@ -813,29 +1003,22 @@ mod tests {
 
         // Choose option 1 ("No") and confirm -> should type the "N!" reply.
         let mut panel = OwnedDialogPanel::from_inline_dialog(&b).unwrap();
-        for _ in 0..4 {
-            panel.tick();
-        }
+        type_until_wait(&mut panel);
         assert!(panel.menu_active());
         panel.move_picker_cursor(1);
         assert_eq!(panel.confirm_menu(), Some(1));
         assert!(!panel.menu_active(), "menu resolved");
-        for _ in 0..2 {
-            panel.tick();
-        }
+        assert_eq!(type_until_wait(&mut panel), PanelState::Done);
         assert_eq!(panel.page_bytes(), vec![b'N', b'!']);
-        assert_eq!(panel.tick(), PanelState::Done);
 
         // Option 0 ("Yes") -> "Y!".
         let mut panel = OwnedDialogPanel::from_inline_dialog(&b).unwrap();
-        for _ in 0..4 {
-            panel.tick();
-        }
+        type_until_wait(&mut panel);
         assert_eq!(panel.confirm_menu(), Some(0));
-        for _ in 0..2 {
-            panel.tick();
-        }
-        assert_eq!(panel.page_bytes(), vec![b'Y', b'!']);
+        type_until_wait(&mut panel);
+        // The two reply lines are consecutive `0x1F` rows, so they share the
+        // box; the chosen reply is its first row.
+        assert!(panel.page_bytes().starts_with(b"Y!"));
     }
 
     /// `confirm_menu` is a no-op (returns `None`) when no menu is active.
@@ -940,10 +1123,7 @@ mod tests {
         let inline = vec![0x1F, b'H', b'i', 0x00];
         let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).unwrap();
         assert!(panel.picker().is_none());
-        for _ in 0..2 {
-            panel.tick();
-        }
-        assert_eq!(panel.tick(), PanelState::Done);
+        assert_eq!(type_until_wait(&mut panel), PanelState::Done);
         assert!(!panel.menu_active());
     }
 

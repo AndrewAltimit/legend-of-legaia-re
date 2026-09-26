@@ -416,6 +416,20 @@ fn inline_runner_resumes_across_wait_frames_to_run_the_post_wait_effect() {
         guard += 1;
         assert!(guard < 50, "first box never typed");
     }
+    // The row ends on its glyph count (retail pacing), after its glyphs show.
+    while world
+        .dialog
+        .inline
+        .as_ref()
+        .unwrap()
+        .panel
+        .as_ref()
+        .is_some_and(|p| p.state() == crate::dialog::PanelState::Typing)
+    {
+        world.step_inline_dialogue(false, false, false);
+        guard += 1;
+        assert!(guard < 50, "first box never finished");
+    }
     world.step_inline_dialogue(true, false, false); // dismiss "hi"
 
     // The very next VM step hits WaitFrames: it must NOT end the conversation,

@@ -182,7 +182,7 @@ impl World {
             // on this frame's tick is shown first and commits on a later
             // confirm, so a mashed confirm never picks option 0 unseen.
             let menu_was_open = panel.menu_active();
-            panel.tick();
+            panel.tick_at(self.clock.frame_step);
             if confirm {
                 self.dialog.input_consumed = true;
                 if panel.menu_active() && !menu_was_open {
