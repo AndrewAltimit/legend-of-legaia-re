@@ -119,6 +119,7 @@ pub mod npc_catalog;
 pub mod options;
 pub mod other_game_overlay;
 pub mod overlay_loader;
+pub mod overworld_curvature;
 pub mod packet_color;
 pub mod pause_screens;
 pub mod prize_exchange;

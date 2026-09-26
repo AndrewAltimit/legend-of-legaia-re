@@ -184,7 +184,7 @@
       <tr><td>Screen constants</td><td>GTE control file, GPU registers</td><td><code>OFX/OFY</code>, clip, offsets, display window constant across a save-state corpus</td><td><code>gte_projection_real.rs</code></td></tr>
       <tr><td>Depth cue identity</td><td>town0c capture</td><td>A GT3 prim's corner colours leave <code>DPCS</code> byte-unchanged at <code>IR0 = 0</code></td><td>mednafen state</td></tr>
       <tr><td>Dither bit</td><td><code>0x8002004C</code>, <code>0x80017208</code>, <code>0x8001D520</code>, <code>0x801E350C</code></td><td>Init stamps 0; frame driver re-stamps from <code>_DAT_8007BA66</code> (boots 1); a field op writes it</td><td><code>funcs/80016b6c.txt</code></td></tr>
-      <tr><td>Graphics scratch</td><td><code>FUN_800271A8</code></td><td>Two <code>0x8000</code> buffers, a <code>0x4000</code>-entry depth ramp</td><td><code>funcs/800271a8.txt</code></td></tr>
+      <tr><td>Overworld curvature</td><td><code>FUN_800271A8</code></td><td>Two <code>0x8000</code> buffers: a <code>0x4000</code>-entry drop ramp and the <code>0x2000</code>-entry screen-Y curvature table the overworld adds to <code>SY</code></td><td><code>funcs/800271a8.txt</code></td></tr>
       <tr><td>TMD pointer table</td><td><code>FUN_80026B4C</code> &rarr; <code>0x8007C018</code></td><td>Registered meshes by index; party in slots 0..4; 28-byte OBJECT copies at <code>actor+0x44</code></td><td><code>funcs/80026b4c.txt</code></td></tr>
       <tr><td>Colour space</td><td><code>tests::color_space</code></td><td>Attachment never sRGB; a known BGR555 texel presents at retail's byte</td><td>engine-render tests</td></tr>
     </tbody>

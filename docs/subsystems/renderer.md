@@ -847,12 +847,23 @@ misses the `addiu v0, v0, 0x40b8` that re-bases the next two.
 
 ## Frame setup + present
 
-- **`FUN_800271A8`** - graphics-scratch init. Allocates two `0x8000`-byte buffers
-  (`FUN_80017888`) into `0x8007BB04` / `0x8007BB08`, fills the second with a
-  `0x4000`-entry `u16` depth ramp (`sra(acc, 18)`, `acc` stepping quadratically),
-  then resets the GTE / primitive buffers (`FUN_8005B268`, `FUN_8003D1A4`,
-  `FUN_8003D254`). Runs once before the emitters have a buffer to write into. See
-  `ghidra/scripts/funcs/800271a8.txt`.
+- **`FUN_800271A8`** - the overworld's scratch init and **screen-Y curvature
+  table**. Gated on the overworld byte `_DAT_8007B6A8`; the MAN installer
+  `FUN_8003AEB0` calls it as `(0x28, 0x2AB980)` (`0x8003AF90..9C`, the low half
+  in the delay slot). It sets the overworld bit `_DAT_1F800394 & 1`, allocates
+  two `0x8000`-byte buffers (`FUN_80017888`, each first-use-guarded) into
+  `0x8007BB04` / `0x8007BB08`, fills the second with a `0x4000`-entry quadratic
+  drop (`ramp[k] = s0 >> 18`, `s0` stepping by a running sum of `0x28`), then
+  sets `H = 0x3C0` (`FUN_8003D254`) and the base matrix (`FUN_8003D1A4`) and
+  `RTPS`es `(0, ramp[3n / 2], 2000)` to fill the first with `SY - 0x78`, two
+  iterations behind the transform. The result is a `0x2000`-entry `i16` table,
+  flat near the eye and growing with depth, that the overworld consumers index
+  at `(SZ >> 5) + 1` and add to a vertex's `SY`: the overworld mesh dispatch
+  hands it to its prim leaves (`FUN_80043390`, `0x800435E8..0x80043600`), and
+  the fog emitter `FUN_8003F86C` and the drop-shadow emitter `FUN_8001C394`
+  add it themselves. Port: `engine-core::overworld_curvature` (pinned entry for
+  entry against the `keikoku_chest_preload` capture); the fog sheets apply it,
+  the continent does not yet. See `ghidra/scripts/funcs/800271a8.txt`.
 - **`FUN_8003DAA8`** is **not** a present driver, despite the counters it
   advances. It is the CD load-kick / completion driver the asset queue drains
   through - the four routines it calls are the **libcd** family, not libgpu:
@@ -1145,7 +1156,9 @@ than from an actor: when the game mode is `3` and the script gate
 `0x8007322C` into scratchpad `0x1F8002D0` and calls `FUN_8003F348`, which
 walks the 80-record fog pool at `_DAT_8007B7E0` and, per live record, ages,
 drifts, colours and emits two `POLY_FT4` halves (command `0x2E`, page
-`0x27`, CLUT `0x7640`, OT bucket `view_z >> 5`) through `FUN_8003F86C`. The
+`0x27`, CLUT `0x7640`, OT bucket `SZ >> 5`) through `FUN_8003F86C`. Each half
+is a view-space billboard at the particle's depth, not a world-space quad
+([`field-ambient-fx.md`](field-ambient-fx.md#the-sheet-is-a-view-space-billboard)). The
 records come from the ambient emitter's spawner `FUN_801D629C`
 ([`field-ambient-fx.md`](field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)).
 The port keeps that shape: `engine-core::fog_particles` is the pool and the

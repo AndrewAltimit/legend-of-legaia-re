@@ -72,13 +72,25 @@
 //! is clear; the set bit 5 is the low bit of ABR, not a Y offset. The left half takes
 //! UV row 1 of the staged table (`v 0x58..0x6F`), the right half row 0
 //! (`v 0x40..0x57`); rows 2 and 3 are staged too but this routine never
-//! reads them. The quad is axis-aligned in screen space between two
-//! projected world points: the top-left corner sits `0x80` units **above**
-//! the particle (`RotMatrixX(0x400)` folded into the matrix the pass sets at
-//! `0x8003F384..0x8003F394`, so the packet's `+0x80 z` becomes a world `-y`),
-//! the bottom-right at the particle itself, and each half is `2 * half_width`
-//! wide - see [`FogParticle::half_width`] for why that width has no random
-//! term despite the PRNG call.
+//! reads them. Each half is a **view-space billboard**: `FUN_8003F3FC`
+//! transforms the particle through the field view (`0x1F8003C8`) into the
+//! translation of the matrix at `0x1F800334`, whose rotation is the base
+//! matrix `_DAT_8007BF10` (`S * I`, `S = 6`) with `RotMatrixX(0x400)` folded
+//! in (`0x8003F374..0x8003F394`) - `[[S,0,0],[0,0,-S],[0,S,0]]` in the
+//! capture. `FUN_8003F86C` then `RTPT`s `(dx0, 0, 0x80)` and `(dx1, 0, 0)`
+//! through it, so the corners are the particle's view point offset by
+//! `(dx0 * S, -0x80 * S, 0)` and `(dx1 * S, 0, 0)`: screen-aligned, both at
+//! the particle's depth, `H * 0x80 * S / vz` pixels tall whatever the camera
+//! pitch. Each half is `2 * half_width` wide - see
+//! [`FogParticle::half_width`] for why that width has no random term despite
+//! the PRNG call. On the overworld (`_DAT_1F800394 & 1`) the routine also
+//! culls a half whose depth is under `0x310`, links it at `(SZ - 0x10) >> 5`,
+//! and adds the per-depth screen-Y table `*_DAT_8007BB04` (the curvature
+//! table `FUN_800271A8` builds, [`crate::overworld_curvature`]) to both
+//! corners. The overworld's mesh dispatch hands the same table to its prim
+//! leaves; the port applies it to the sheets only, so on the overworld the
+//! continent draws flatter than retail's while the sheets sit where retail's
+//! do.
 
 use crate::action_effect_script::RotationLut;
 use legaia_engine_vm::psx_camera::FieldCameraView;
@@ -164,8 +176,16 @@ pub const FOG_RIGHT_UV_ROW: usize = 0;
 pub const FOG_FADE_IN_END: u16 = 0x400;
 /// Age above which it ramps down (`sltiu v0,a0,0xc01`).
 pub const FOG_FADE_OUT_START: u16 = 0xC00;
-/// Vertical extent of each sheet above the particle (`addi a2,a2,0x80`).
+/// Vertical extent of each sheet above the particle (`addi a2,a2,0x80`), in
+/// the units of the base matrix's unscaled space: on screen it is
+/// `H * FOG_SHEET_HEIGHT * S / vz` (see the module docs).
 pub const FOG_SHEET_HEIGHT: i32 = 0x80;
+/// Overworld near cull (`addi t7,t7,-0x310` / `bltz` at `0x8003F978`): a
+/// half whose view depth (retail's scaled space) is under this is dropped.
+pub const FOG_OVERWORLD_NEAR_Z: f32 = 0x310 as f32;
+/// Overworld OT bias (`addi t7,t7,0x300` after the near test): the bucket is
+/// `(SZ - 0x10) >> 5`.
+pub const FOG_OVERWORLD_OT_BIAS: f32 = 0x10 as f32;
 /// Base of the half-width term (`addiu v0,v0,0x180`).
 pub const FOG_WIDTH_BASE: i32 = 0x180;
 /// NCLIP tolerance (`addi t6,t6,0x1f40`): a half is culled once the signed
@@ -286,6 +306,19 @@ impl FogParticle {
         Some(s.min(0xFF))
     }
 
+    /// The modulation colour both halves of this record's sheet carry this
+    /// frame (`0x8003F4F4..0x8003F5DC`): `grey * tint[k] * brightness >> 15`
+    /// per channel, from the **pre-update** age - the colour is taken before
+    /// the same pass advances the age. `None` when the age has run past the
+    /// fade-out tail (the kill).
+    ///
+    /// Pinned record for record against a retail frame by
+    /// `crates/engine-core/tests/fog_sheet_colour_retail_capture_disc.rs`.
+    pub fn sheet_rgb(&self, tint: [u8; 3]) -> Option<[u8; 3]> {
+        let bright = Self::brightness(self.age)?;
+        Some(tint.map(|t| ((i32::from(self.grey) * i32::from(t) * bright) >> 15) as u8))
+    }
+
     /// Half-width of each sheet half, from the post-update age
     /// (`0x8003F730..0x8003F748`).
     ///
@@ -313,12 +346,14 @@ pub struct FogQuad {
     pub tpage: u16,
     /// The modulation colour written into the command word.
     pub rgb: [u8; 3],
-    /// `view_z >> 5` of the bottom-right point (`SZ2`).
+    /// `SZ >> 5` of the particle (`SZ2`, the `RTPT`'s second point), with
+    /// `SZ` retail's scaled view depth; `(SZ - 0x10) >> 5` on the overworld.
     pub ot_index: u32,
     /// The sheet's scene depth for a depth-tested draw, in the frame
     /// matrix's normalised depth (`legaia_engine_ui::screen_prim::CornerDepth`'s
-    /// convention): the bottom-right point's - the same point the OT bucket
-    /// is taken from, so the sheet is flat at the depth retail sorts it at.
+    /// convention): the particle's - the billboard's one depth and the one
+    /// the OT bucket is taken from, so the sheet is flat at the depth retail
+    /// sorts it at.
     /// Set on the overworld arm only ([`FogPool::overworld`]), where the
     /// sheets float over a continent whose ridges retail's ordering table
     /// draws in front of the fog behind them; `None` keeps the field's
@@ -332,6 +367,8 @@ pub struct FogQuad {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FogView {
     vp: [f32; 16],
+    /// GTE `H`, which scales the sheets' view-space extents onto the screen.
+    h: f32,
 }
 
 /// PSX stage size the projection maps NDC back onto.
@@ -342,13 +379,20 @@ impl FogView {
     /// From a resolved field camera, at the retail 4:3 aspect (so the NDC to
     /// stage-pixel map is exact).
     pub fn from_field_view(view: &FieldCameraView) -> Self {
-        Self::from_vp(view.vp(4.0 / 3.0))
+        Self {
+            vp: view.vp(4.0 / 3.0),
+            h: view.h,
+        }
     }
 
     /// From any column-major view-projection that takes the hosts' Y-up
     /// render frame (raw retail points are Y-negated before multiplying).
+    ///
+    /// `H` is read back off the matrix: the rotation rows are unit length and
+    /// the projection scales X by `H / 160` at the 4:3 aspect.
     pub fn from_vp(vp: [f32; 16]) -> Self {
-        Self { vp }
+        let h = 160.0 * (vp[0] * vp[0] + vp[4] * vp[4] + vp[8] * vp[8]).sqrt();
+        Self { vp, h }
     }
 
     /// A raw retail world point's normalised depth (`clip.z / clip.w`)
@@ -367,6 +411,17 @@ impl FogView {
     /// the GTE would report as a divide overflow - the caller treats that as
     /// a cull.
     pub fn project(&self, p: [i32; 3]) -> Option<(i32, i32, i32)> {
+        let (sx, sy, w) = self.project_f(p)?;
+        Some((
+            (sx.round() as i32).clamp(-1024, 1023),
+            (sy.round() as i32).clamp(-1024, 1023),
+            w.round() as i32,
+        ))
+    }
+
+    /// [`Self::project`] unrounded: stage pixels and the eye depth (the
+    /// engine's `1x` eye space, `clip.w`).
+    fn project_f(&self, p: [i32; 3]) -> Option<(f32, f32, f32)> {
         let m = &self.vp;
         // Y-up render frame: the hosts' meshes carry the PSX flip in their
         // model matrices; a raw point flips here.
@@ -381,13 +436,9 @@ impl FogView {
         }
         let ndc_x = clip[0] / w;
         let ndc_y = clip[1] / w;
-        let sx = ((ndc_x + 1.0) * 0.5 * STAGE_W).round();
-        let sy = ((1.0 - ndc_y) * 0.5 * STAGE_H).round();
-        Some((
-            (sx as i32).clamp(-1024, 1023),
-            (sy as i32).clamp(-1024, 1023),
-            w.round() as i32,
-        ))
+        let sx = (ndc_x + 1.0) * 0.5 * STAGE_W;
+        let sy = (1.0 - ndc_y) * 0.5 * STAGE_H;
+        Some((sx, sy, w))
     }
 }
 
@@ -654,16 +705,9 @@ impl FogPool {
             let mut rgb = [0u8; 3];
             if alive {
                 // 0x8003F4F4..0x8003F5DC: brightness, then the tinted grey.
-                let bright = match FogParticle::brightness(rec.age) {
-                    Some(b) => b,
-                    None => {
-                        alive = false;
-                        0
-                    }
-                };
-                for (k, c) in rgb.iter_mut().enumerate() {
-                    let v = i32::from(rec.grey) * i32::from(env.tint[k]) * bright;
-                    *c = (v >> 15) as u8;
+                match rec.sheet_rgb(env.tint) {
+                    Some(c) => rgb = c,
+                    None => alive = false,
                 }
                 // 0x8003F5E0..0x8003F648: drift + age.
                 rec.x += i32::from(rec.vx) * dt;
@@ -715,10 +759,12 @@ impl FogPool {
 
 /// One half-sheet - `FUN_8003F86C`.
 ///
-/// `p` is the particle's pre-update world position; the half spans world X
-/// `p.x + dx0 ..= p.x + dx1` and rises [`FOG_SHEET_HEIGHT`] above `p`. The
-/// bool is what the routine returns (`1` = keep the particle), the quad is
-/// present only when it drew.
+/// `p` is the particle's pre-update world position. The half is a
+/// view-space billboard at `p`'s depth (see the module docs): it spans
+/// `dx0 ..= dx1` and rises [`FOG_SHEET_HEIGHT`] in the base matrix's
+/// unscaled units, which the engine's `1x` eye space (retail's view divided
+/// by `S`) turns into `H * extent / w` pixels. The bool is what the routine
+/// returns (`1` = keep the particle), the quad is present only when it drew.
 ///
 /// PORT: FUN_8003F86C
 fn emit_half(
@@ -728,15 +774,36 @@ fn emit_half(
     dx1: i32,
     row: usize,
     rgb: [u8; 3],
-    depth_tested: bool,
+    overworld: bool,
 ) -> (bool, Option<FogQuad>) {
-    let top_left = [p[0] + dx0, p[1] - FOG_SHEET_HEIGHT, p[2]];
-    let bottom_right = [p[0] + dx1, p[1], p[2]];
-    let (Some((x0, y0, _)), Some((x1, y1, z1))) =
-        (view.project(top_left), view.project(bottom_right))
-    else {
+    let Some((sx, sy, w)) = view.project_f(p) else {
         return (false, None);
     };
+    // Retail's view depth `SZ`, in the base matrix's scaled space.
+    let sz = w * crate::camera_view::CUTSCENE_WORLD_SCALE;
+    // 0x8003F958..0x8003F984: the overworld near cull and OT bias.
+    if overworld && sz < FOG_OVERWORLD_NEAR_Z {
+        return (false, None);
+    }
+    let bucket_z = if overworld {
+        sz - FOG_OVERWORLD_OT_BIAS
+    } else {
+        sz
+    };
+    // 0x8003F98C..0x8003F9A0: the overworld's curvature term, added to both
+    // corners' `SY` before the row tests.
+    let nudge = if overworld {
+        crate::overworld_curvature::curvature_at(sz as i32) as f32
+    } else {
+        0.0
+    };
+    let k = view.h / w;
+    let px = |v: f32| (v.round() as i32).clamp(-1024, 1023);
+    let (x0, y0) = (
+        px(sx + dx0 as f32 * k),
+        px(sy - FOG_SHEET_HEIGHT as f32 * k + nudge),
+    );
+    let (x1, y1) = (px(sx + dx1 as f32 * k), px(sy + nudge));
     // 0x8003F91C..0x8003F954: both left of -8, or both at/right of 0x148.
     if x0 + 8 <= 0 && x1 + 8 <= 0 {
         return (false, None);
@@ -776,12 +843,8 @@ fn emit_half(
             clut: (words[0] >> 16) as u16,
             tpage: (words[1] >> 16) as u16,
             rgb,
-            ot_index: (z1.max(0) >> 5) as u32,
-            depth: if depth_tested {
-                view.ndc_depth(bottom_right)
-            } else {
-                None
-            },
+            ot_index: (bucket_z.max(0.0) as u32) >> 5,
+            depth: if overworld { view.ndc_depth(p) } else { None },
         }),
     )
 }
@@ -1021,7 +1084,9 @@ mod tests {
         for q in &quads {
             assert_eq!(q.tpage, FOG_TPAGE);
             assert_eq!(q.clut, FOG_CLUT);
-            assert_eq!(q.ot_index, 2000 >> 5);
+            // The bucket is retail's `SZ >> 5`, and `SZ` is the engine's
+            // `1x` eye depth times the base matrix's `S`.
+            assert_eq!(q.ot_index, (2000 * 6) >> 5);
             // Axis-aligned rectangle in POLY_FT4 order.
             assert_eq!(q.xy[0].1, q.xy[1].1);
             assert_eq!(q.xy[2].1, q.xy[3].1);
@@ -1037,6 +1102,15 @@ mod tests {
         // Sheet rises above the particle: the top row is smaller than the
         // bottom row in screen space.
         assert!(quads[0].xy[0].1 < quads[0].xy[2].1);
+        // A view-space billboard at the particle's depth: `H * 0x80 / w`
+        // tall and `H * 2 * half_width / w` wide (the base matrix's `S`
+        // cancels against the `1x` eye depth).
+        let hw = FogParticle::half_width(0x800 + 15);
+        for q in &quads {
+            let (w, h) = (q.xy[1].0 - q.xy[0].0, q.xy[2].1 - q.xy[0].1);
+            assert!((i32::from(h) - 512 * FOG_SHEET_HEIGHT / 2000).abs() <= 1);
+            assert!((i32::from(w) - 512 * 2 * hw / 2000).abs() <= 1);
+        }
         // Grey 0x7F * tint 0x80 * bright 0xFF >> 15 = 126.
         assert_eq!(quads[0].rgb, [126; 3]);
         assert_eq!(pool.live, 1);
@@ -1046,8 +1120,9 @@ mod tests {
         assert_eq!(pool.records[slot].age, 0x800 + 15);
     }
 
-    /// The overworld arm's sheets carry the bottom-right point's scene
-    /// depth for the hosts' depth test; the field's carry none.
+    /// The overworld arm's sheets carry the particle's scene depth (the
+    /// billboard's one depth) for the hosts' depth test; the field's carry
+    /// none.
     #[test]
     fn only_overworld_sheets_carry_a_scene_depth() {
         let trig = lut();
@@ -1068,22 +1143,11 @@ mod tests {
             for q in &quads {
                 if overworld {
                     let d = q.depth.expect("an overworld sheet is depth-tested");
-                    assert_eq!(Some(d), view.ndc_depth([q_particle_x(q), 0, 2000]));
+                    assert_eq!(Some(d), view.ndc_depth([0, 0, 2000]));
                 } else {
                     assert_eq!(q.depth, None);
                 }
             }
-        }
-    }
-
-    /// The bottom-right world X of a half-sheet under [`plain_view`]: the
-    /// left half ends at the particle (x `0`), the right half ends
-    /// `2 * half_width` to its right.
-    fn q_particle_x(q: &FogQuad) -> i32 {
-        if q.uv[0].1 == 0x58 {
-            0
-        } else {
-            2 * FogParticle::half_width(0x800 + 15)
         }
     }
 

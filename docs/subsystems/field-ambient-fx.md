@@ -641,7 +641,7 @@ byte layout):
 | `FUN_801D629C` | field overlay (0897, file `0x7A84`) | **Spawner.** Rejects a tile outside the walk-region box `0x1F800384..87`; finds the first MAN section-4 region whose open box holds the tile and stops if it is disabled; requires `_DAT_8007BCA8 < _DAT_8007BCB0` (live count under the cap, `0x18` from the field reset); on the overworld drops a tile whose camera-space depth passes `0x4000` (see below); pops a slot off the pool's free stack (`FUN_8001FA34`); fills the record - drift from the region's angle base + random spread through the sin/cos LUTs times its speed, height `-(rand & 0x7F)`, grey `rand & 0x7F`, age rate `(rand & 7) + 8`. |
 | `FUN_8003F348` | SCUS | **Walk.** Called only from the render pass's gated site (`0x80026F24`); pushes the matrix stack, folds `RotMatrixX(0x400)` into the camera rotation, then runs the update on every one of the 80 records whose alive byte is set. |
 | `FUN_8003F3FC` | SCUS | **Per-particle update + draw.** Kills a record outside the walk box; brightness ramps `0..0xFF` over age `0..0x400`, holds to `0xC00`, then fades and kills; colour is `grey * tint * brightness >> 15` per channel with the tint the op `0x4C 0x12` global multiply (`_DAT_8007BCB8..BA`, `0x80` neutral); drift and age advance by `DAT_1F800393`; the player's `+-0x180 / +-0x80 / +-0x80` box ages it again, three times more with a d-pad bit held; then two halves through `FUN_8003F86C`, and a record whose two halves both cull is freed (`FUN_8001FA68`). |
-| `FUN_8003F86C` | SCUS | **Half-sheet emitter.** One `POLY_FT4` (tag `0x09` words, command `0x2E`: textured, semi-transparent, texture-blended) between two projected points - the particle, and the point `2 * half_width` to one side and `0x80` above it - axis-aligned in screen space; culled when both points are off the `[-8, 0x148)` columns, both above row `0`, or both below row `0x190`; kept but not drawn between rows `0xF0` and `0x190`; NCLIP-culled at a signed area past `0x1F40` quarter-pixels; linked at OT bucket `view_z >> 5`. |
+| `FUN_8003F86C` | SCUS | **Half-sheet emitter.** One `POLY_FT4` (tag `0x09` words, command `0x2E`: textured, semi-transparent, texture-blended), a **view-space billboard** at the particle's depth - see [the sheet is a billboard](#the-sheet-is-a-view-space-billboard); culled when both corners are off the `[-8, 0x148)` columns, both above row `0`, or both below row `0x190`; kept but not drawn between rows `0xF0` and `0x190`; NCLIP-culled at a signed area past `0x1F40` quarter-pixels; linked at OT bucket `SZ >> 5`. On the overworld it also drops a half nearer than `SZ 0x310`, links at `(SZ - 0x10) >> 5` and adds the curvature table's `SY` term. |
 
 The half-width is `(0x180 + (age >> 4)) >> 1`. Retail adds a byte from
 `FUN_8003F838` here, but it seeds that PRNG's state with the record's age
@@ -771,11 +771,9 @@ raises the gate (`4C 30`, unconditional). The field default
 player; the overworld window reaches 32 tiles ahead. On
 `keikoku_chest_preload` the pool spans 1075 units behind to 1337 ahead of
 the player. Fed that pool, retail's camera words and retail's vertical
-offset, the port's render step emits 66 half-sheets whose sizes and vertical
-spread match the state's own display-list fog packets (median `122 x 31`
-against retail's `106 x 27` pixels; centres from row `-10` down to about
-`250` on both) - a shape comparison, not a packet-for-packet one, since the
-walked ordering table holds 104 fog packets against the pool's 72 records.
+offset, the port's render step reproduces the frame's walked fog packets
+nearly one for one - see [the sheet is a view-space
+billboard](#the-sheet-is-a-view-space-billboard).
 
 The GTE matrix at the spawner's `MVMVA` is read as the camera the frame
 draws with (the port uses the last camera its render step projected
@@ -793,20 +791,65 @@ system script the way the field arm does, which is what runs `map01`'s
 `crates/engine-shell/tests/world_map_fog_oracle.rs`.
 
 On the overworld each half-sheet is also depth-tested against the
-continent the frame already drew (`FogQuad::depth`, the bottom-right
-point's depth - the point the OT bucket comes from), because retail links
+continent the frame already drew (`FogQuad::depth`, the particle's depth -
+the billboard's one depth and the one its OT bucket comes from), because retail links
 the sheets into the same ordering table as the terrain; the field keeps its
 composite-over-the-frame draw.
 
-Frame-paired at `keikoku_chest_preload`'s seat, both hosts place the fog
-where retail's display list does - retail's 104 fog packets cover the same
-band from the ridge line down to the foreground - but the port's sheets read
-denser and brighter than the retail frame, where the haze is visible only
-as the white band above the ridges. Retail's 72 records modulate at a
-median `rgb` of 41 (`grey * brightness >> 15`, tint neutral), so each
-foreground sheet adds under a third of its texel; the per-sheet intensity
-on the port's screen-primitive pass is the open question, not the
-placement.
+Frame-paired at `keikoku_chest_preload`'s seat, retail's haze shows mostly
+as the white band above the ridges while the port's sheets read denser and
+brighter across the whole frame. The **colour** is not the cause. Each walked
+fog packet's modulation colour is `FUN_8003F3FC`'s `grey * tint * brightness
+>> 15` of its record rolled back to the pass that built the table (two passes
+of the frame step `2`, libgpu double-buffering the table): all 104 packets of
+the state's walked ordering table match the engine's kernel
+(`FogParticle::sheet_rgb`) that way, median `rgb` 39. What differed was the
+sheet's shape and which sheets survive the culls, both corrected below; what
+still differs is the draw order and the camera.
+
+#### The sheet is a view-space billboard
+
+`FUN_8003F3FC` transforms the particle through the field view (`0x1F8003C8`)
+and stores the result as the translation of the matrix at `0x1F800334`, whose
+rotation the walk `FUN_8003F348` set up: the base matrix `_DAT_8007BF10`
+(`S * I`, `S = 6`) with `RotMatrixX(0x400)` folded in (`0x8003F374..94`) -
+`[[S,0,0],[0,0,-S],[0,S,0]]` in the capture's scratchpad. `FUN_8003F86C` then
+`RTPT`s `(dx0, 0, 0x80)` and `(dx1, 0, 0)` through it (`0x8003F86C..E8`), so
+the two corners are the particle's view point plus `(dx0 * S, -0x80 * S, 0)`
+and `(dx1 * S, 0, 0)`: screen-aligned, both at the particle's depth,
+`H * 0x80 * S / vz` pixels tall whatever the camera pitch. The earlier reading
+put the corners `0x80` world units above the particle and projected them
+through the camera, which foreshortens the sheet by the pitch's cosine (about
+`0.84` at `map01`'s pitch) and moves its bottom edge.
+
+On the overworld (`_DAT_1F800394 & 1`, `0x8003F958..0x8003F9A0`) the emitter
+also drops a half nearer than `SZ 0x310`, links it at `(SZ - 0x10) >> 5`, and
+adds the entry at `*_DAT_8007BB04 + (SZ >> 5) * 2 + 2` to both corners' `SY`
+before the row tests. That table is the overworld's screen-Y curvature
+([`renderer.md`](renderer.md#frame-setup--present), `FUN_800271A8`); without
+it the far sheets at the top of the frame - retail's band above the ridges -
+fail the "both above row `0`" test and are never drawn.
+
+Fed the state's pool (rolled back two passes), its camera words, vertical
+offset and walk box, the engine's render step now emits 103 of the 104 walked
+fog packets, every one within a pixel of retail's and none that retail did not
+draw (`crates/engine-core/tests/fog_sheet_colour_retail_capture_disc.rs`, which
+also pins the curvature table entry for entry). The one it misses is a
+borderline NCLIP case on a sheet `363` pixels wide.
+
+What still separates the frames:
+
+- **Draw order.** Retail links the sheets into the one ordering table with the
+  continent, so terrain in a nearer bucket overdraws the sheets behind it: an
+  opaque-coverage pass over the walked table hides about a fifth of the fog's
+  additive light. The port's overworld sheets are depth-tested per pixel at
+  the particle's depth, which hides almost nothing (the native frame's fog
+  delta moves from `26.7` to `25.3` of `255` with the test off).
+- **The continent draws without the curvature table**, so the corrected
+  sheets sit up to the table's entry (about `4` to `26` pixels over the
+  spawner's `0x4000` depth range) lower relative to the terrain than retail's
+  do.
+- **The camera** (below).
 
 The render step subtracts the camera vertical offset `_DAT_8007BCAC` from
 every particle height. On `keikoku_chest_preload` it reads 252: the ease
