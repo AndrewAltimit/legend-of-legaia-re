@@ -599,8 +599,8 @@ draws through it:
 - `BakaDuelScene` builds one buffer set - both fighters, two darkened ghost
   copies of each, the four walls, the floor
   (`legaia_asset::battle_backdrop::build_ground_grid_sized`) - and poses it
-  each frame from the display clips, the afterimage passes and the wall
-  cull.
+  each frame from the display clips, the afterimage passes, the wall cull
+  and the round-start [cameo](#the-round-start-cameo).
 - `BakaDuelSurface` is the per-host cache: it decodes the assets once
   (PROT 1203 / 1204 / 1205 and the ladder packs), rebuilds the buffers when
   a rung seats a new opponent, and poses them.
@@ -940,9 +940,18 @@ and source `1` from it on, and the two sources are the page's eye sprites: an
 open eye and a closed one. The swap is a **wink** at the pose.
 
 Ports: `engine-core::baka_fighter_chrome::{impact_effect_pair, afterimage_pass,
-sprite_blit, cameo_pose}`. The cameo and the blit are not wired: no host hands
-the duel a held pad word, and the duel surface draws no camera-relative model
-and edits no VRAM after its upload.
+sprite_blit, cameo_pose}`. `BakaFight` spawns the cameo at a round setup
+under a held Triangle - both play hosts hand it the packed held word
+(`BakaFight::set_held_pad`, from `World`'s duel tick) - and steps it as
+`CameoActor`: the pose above, and the clip cursor at the forced step `8`.
+The duel surface draws it: stage model `3` posed by records `0x1B` / `0x1C`
+of the PROT 1203 bank (display ids `0x1C` / `0x1D`), placed camera-relative
+- `FUN_8001CF50` loads the base matrix alone for an actor with `+0x52 &
+0x400` (`0x8001D018`), so its eye position is `6 * (Ry(yaw) . pose(v) +
+pos)` - and it applies the blit row the frame leaves showing to its VRAM,
+bumping its generation so each host re-uploads. The Triangle held for the
+cameo is also the port's special button, so the press that starts the hold
+also commits a special whenever the duel can take one.
 
 ### The developer keyframe editor
 

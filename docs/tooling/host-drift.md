@@ -1325,10 +1325,11 @@ resolves, and each routine drives a **model** through them.
   the winner's strike offset, and no minigame host runs that effect runtime.
   The fighter positions it offsets from are engine state now
   (`BakaFight::fighter_position`); the template runtime is what is missing.
-- The round-start cameo (`FUN_801D6310`) spawns only on a held Triangle, and
-  no host hands the duel a held pad word; it also wants scene model `3`
-  drawn camera-relative plus a VRAM move, which the duel surface does not
-  do.
+- The round-start cameo (`FUN_801D6310`) spawns on a held Triangle: both
+  play hosts hand the duel the held word through `World`'s duel tick, and
+  the duel surface draws the ring girl camera-relative and applies the wink
+  blit to its VRAM. The standalone minigames page passes no held word, so
+  its duel never spawns one.
 
 And the native window resolves each glyph draw's stamped cell rect without
 sampling it, because its duel HUD has no textured-quad surface.
