@@ -1140,11 +1140,27 @@ Fighter's path.
 `0x19`): latch `0`, slot 2 **closed**, slot 6 **open**, and the shared header at
 `0x8008D708` is PROT 0876's (`pBAV`, total size `0x2C090`, the same header bytes
 as the field state `s3_rimelm_freeroam`). So at the dome's hub the region holds
-the field bank intact and no class-2 bank at all. Whether a round (mode
-`0x14` / `0x15`) loads PROT 0869 over it is not captured: the only PCSX-Redux
-dome state carries a patched resident SCUS. The arena enters a round by storing
-mode word `0x14`, which is what `FUN_8001DCF8`'s close arm tests, so the round
-is read as taking the battle residency ([`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)).
+the field bank intact and no class-2 bank at all.
+
+**A Muscle Dome round** takes the battle residency, exactly as a field battle
+does. [`run_w3a_captures.sh dome`](../../scripts/pcsx-redux/run_w3a_captures.sh)
+starts from `baka_fighter_entry_pretransition` (the same seed-only SCUS as
+above), re-pokes the warp's `u16` sub-id `0x8007BA34` from `4` to `5` so the
+mode-24 init streams the arena (PROT 0977) instead of the Baka overlay, and
+drives a Cross cadence into a round (vsyncs):
+
+| vsync | event |
+|---|---|
+| 140 | the warp `FUN_80025980` clears the latch at `0x800259A4` |
+| 347 | the hub runs (mode `0x19`): slot 2 closed, slot 6 open, header at `0x8008D708` PROT 0876's |
+| 933 | `FUN_8001DCF8(0x0C)` from `0x80055D64` with the mode word `0x14`: closes `6` (`0x8001DFB4`) and `3` (`0x8001DFBC`); slot 6's enable drops |
+| 1095, 1131 | the battle scene loader (`ra 0x800523B4`, `0x8005241C`) loads raw `0x367` (PROT 0869) into slot `2`; slot 2 enabled at 1132 |
+
+In the round the shared header at `0x8008D708` is PROT 0869's (`pBAV`, total
+size `0x2FB00`). So the class-2 bank replaces the field bank in the region for a
+round, which is the port's model: `World::sync_sfx_residency` runs
+`battle_init` on entering `SceneMode::MuscleDome`
+([`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)).
 
 **Engine port.** `SfxBankResidency` tracks slot 2's and slot 6's enables
 separately (`slot_open`), so the Baka Fighter state - both open, slot 6 stale
