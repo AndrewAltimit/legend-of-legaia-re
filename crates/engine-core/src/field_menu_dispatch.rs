@@ -940,7 +940,20 @@ fn build_spell_session(world: &World, catalog: &SpellCatalog) -> SpellMenuSessio
             }
         })
         .collect();
-    SpellMenuSession::new(party, targets, catalog.clone())
+    // Retail's list build asks the spell-record broadcast `FUN_8003053C`
+    // whether each spell would affect anybody (`0x80031210`), and both cast
+    // flows ask again before they commit (`0x801D954C` / `0x801D98B4`).
+    let mut unaffected: Vec<u8> = Vec::new();
+    for c in &party {
+        for &id in &c.spells {
+            if crate::menu_validator::spell_affects_anyone(world, id) == Some(false)
+                && !unaffected.contains(&id)
+            {
+                unaffected.push(id);
+            }
+        }
+    }
+    SpellMenuSession::new(party, targets, catalog.clone()).with_unaffected_spells(unaffected)
 }
 
 fn build_inventory_session(world: &World) -> InventoryUseSession {

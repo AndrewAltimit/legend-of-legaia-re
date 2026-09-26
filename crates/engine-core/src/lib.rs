@@ -99,6 +99,7 @@ pub mod menu_item_category;
 pub mod menu_list_rows;
 pub mod menu_open_sequence;
 pub mod menu_runtime;
+pub mod menu_validator;
 pub mod menu_widget;
 pub mod minigame_actor;
 pub mod minigame_entry;

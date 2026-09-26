@@ -103,7 +103,7 @@ impl BroadcastRoster {
 ///   `0` otherwise (retail computes `sltu v0, zero, hits`, so the count is
 ///   collapsed to a boolean and is *not* the number of hits).
 ///
-/// NOT WIRED: its hosts are the pause-menu Magic screens, not battle. Every
+/// Its hosts are the pause-menu Magic screens, not battle. Every
 /// `jal 0x8003053c` on the disc is menu code: the list-row builder
 /// `FUN_80030628` (`0x80031210`, greying a spell row the caster has the MP
 /// for but no target would accept) and the menu overlay's two cast confirms
@@ -111,13 +111,12 @@ impl BroadcastRoster {
 /// refusing the cast) - three `jal` sites, no other reference form. So the
 /// question it answers is "can this spell be cast from the menu right now",
 /// with `FUN_8003FB10` run as a *validity* gate per roster member - not an
-/// effect broadcast. The validator has an engine host now
-/// (`World`'s `WorldActionValidator`, `world/battle/validator_host.rs`), so
-/// what is missing is the call from the pause Magic list builder and its
-/// confirm, both of which gate on MP alone today (`spell_menu`'s MP test).
-/// That is menu code; the roster bytes at `0x80084140 + 0x454` / `+0x458` are
-/// the present-party count and ids the engine keeps as `Party::party_count` /
-/// `World::party_roster_slot`.
+/// effect broadcast.
+///
+/// WIRED: `crate::menu_validator::spell_affects_anyone` runs it with the
+/// validator over the roster records (`menu_validator::RosterValidator`), and
+/// `field_menu_dispatch::build_spell_session` - the Magic screen both play
+/// hosts open - greys and refuses every spell it answers `0` for.
 pub fn broadcast<F>(rec: SpellDispatchRecord, roster: &BroadcastRoster, mut apply: F) -> u32
 where
     F: FnMut(u8, u8, u8) -> u32,

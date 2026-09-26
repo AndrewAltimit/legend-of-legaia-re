@@ -242,6 +242,10 @@ pub enum InvalidReason {
     /// *(i16*)(0x8007B424 + char*2)] == 0` buzzes `0x23` at
     /// `0x801d908c..0x801d90b8`).
     NoRaSeru,
+    /// Nobody in the party would be affected - retail's spell-record
+    /// broadcast `FUN_8003053C` answered `0`, which greys the row in the
+    /// list build and refuses the cast in both cast flows.
+    NobodyAffected,
 }
 
 /// Spell-table flag deciding which target flow a confirmed spell opens:
@@ -299,6 +303,11 @@ pub struct SpellMenuSession {
     targets: Vec<TargetRow>,
     catalog: SpellCatalog,
     phase: SpellMenuPhase,
+    /// Spell ids the party-wide relevance probe refused: retail's
+    /// `FUN_8003053C` broadcast answered `0` for them, so nobody present
+    /// would be affected. Empty = no probe ran (a disc-free session), which
+    /// leaves every row to the MP and field-use gates.
+    unaffected: Vec<u8>,
 }
 
 impl SpellMenuSession {
@@ -308,7 +317,22 @@ impl SpellMenuSession {
             targets,
             catalog,
             phase: SpellMenuPhase::CharSelect { cursor: 0 },
+            unaffected: Vec::new(),
         }
+    }
+
+    /// Attach the relevance probe's refusals - spell ids for which
+    /// `FUN_8003053C` found no party member the spell would affect
+    /// (`crate::menu_validator::spell_affects_anyone`). Those rows grey,
+    /// and a confirm on one is [`InvalidReason::NobodyAffected`].
+    pub fn with_unaffected_spells(mut self, spell_ids: Vec<u8>) -> Self {
+        self.unaffected = spell_ids;
+        self
+    }
+
+    /// Whether the relevance probe refused `spell_id`.
+    pub fn spell_affects_nobody(&self, spell_id: u8) -> bool {
+        self.unaffected.contains(&spell_id)
     }
 
     pub fn party(&self) -> &[CasterSlot] {
@@ -357,8 +381,15 @@ impl SpellMenuSession {
                     .map(|d| d.name.clone())
                     .unwrap_or_else(|| format!("Spell {id}"));
                 let cost = def.map(|d| d.mp_cost).unwrap_or(0);
+                // Retail's list build (`FUN_80030628`, `0x8003118C..0x80031228`):
+                // a field-castable record, MP for the cost, and a party
+                // member the spell would affect (`FUN_8003053C`).
                 let admissible = match def {
-                    Some(d) => is_field_usable(&d.effect) && c.mp >= d.mp_cost as u16,
+                    Some(d) => {
+                        is_field_usable(&d.effect)
+                            && c.mp >= d.mp_cost as u16
+                            && !self.spell_affects_nobody(*id)
+                    }
                     None => false,
                 };
                 SpellRowView {
@@ -497,6 +528,12 @@ impl SpellMenuSession {
                     if caster_mp < def.mp_cost as u16 {
                         events.push(SpellMenuEvent::InvalidConfirm {
                             reason: InvalidReason::NotEnoughMp,
+                        });
+                        return events;
+                    }
+                    if self.spell_affects_nobody(row.spell_id) {
+                        events.push(SpellMenuEvent::InvalidConfirm {
+                            reason: InvalidReason::NobodyAffected,
                         });
                         return events;
                     }
