@@ -33,7 +33,8 @@ pub enum FieldWarpTick {
     },
 }
 
-/// A `FUN_801D58F0` fade as the template `FUN_80024E80` loads.
+/// A `FUN_801D58F0` fade as the template `FUN_80024E80` loads. The trailing
+/// id word is left `0` for [`crate::fade::spawn_fade`] to stamp.
 fn warp_fade_template(f: &warp_tile::WarpFade, delay: i16) -> crate::fade::FadeTemplate {
     crate::fade::FadeTemplate {
         kind: f.kind,
@@ -57,9 +58,11 @@ impl World {
     /// REF: FUN_801D1EC4 (ported as [`warp_tile::arm_warp`]), FUN_801D58F0
     pub fn arm_field_warp(&mut self, dest: (u8, u8)) {
         let [out, fade_in] = warp_tile::arm_warp(&mut self.locomotion.warp, dest);
-        self.presentation.fade = Some(crate::fade::FadeState::load(&warp_fade_template(
-            &out, out.delay,
-        )));
+        crate::fade::spawn_fade(
+            &mut self.presentation.fade,
+            &warp_fade_template(&out, out.delay),
+            0,
+        );
         self.locomotion.warp_fade_in_in = Some(i32::from(fade_in.delay));
         if let Some(slot) = self.player_actor_slot
             && let Some(actor) = self.actors.get_mut(slot as usize)
@@ -105,10 +108,11 @@ impl World {
             *left -= i32::from(delta);
             if *left <= 0 {
                 self.locomotion.warp_fade_in_in = None;
-                self.presentation.fade = Some(crate::fade::FadeState::load(&warp_fade_template(
-                    &warp_tile::WARP_FADE_IN,
+                crate::fade::spawn_fade(
+                    &mut self.presentation.fade,
+                    &warp_fade_template(&warp_tile::WARP_FADE_IN, 0),
                     0,
-                )));
+                );
             }
         }
         let counter = self.encounters.step_counter;

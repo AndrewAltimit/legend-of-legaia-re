@@ -251,38 +251,32 @@ impl FadeState {
 /// ghidra/scripts/funcs/80024e80.txt`), the most-cited helper in the dump
 /// corpus: every subsystem that stages a full-screen fade goes through it.
 ///
-/// Retail body: allocate a slot from the system-actor pool
-/// (`actor_free(&DAT_80070674, _DAT_8007C34C)` - the generic effect-actor
-/// list), and only on success stamp the caller's id into the template's
-/// last word (`*(u16 *)(template + 0x18) = id`, i.e. i16 index 12 =
-/// [`FadeTemplate::mode`]`[2]`) and run the loader ([`FadeState::load`] =
-/// `FUN_80020B00`) on the actor's `+0x7C` block. Pool exhaustion returns 0
-/// without touching the template.
+/// Retail body (eighteen instructions): allocate a slot from the system-actor
+/// pool (`jal 0x80020DE0` with `a0 = 0x80070674`, `a1 = _DAT_8007C34C` - the
+/// generic effect-actor list), and only on success stamp the caller's id into
+/// the template's last word (`sh s2,0x18(s1)`: byte `+0x18`, i.e. i16 index
+/// 12 = [`FadeTemplate::mode`]`[2]`) and run the loader
+/// ([`FadeState::load`] = `FUN_80020B00`) on the actor's `+0x7C` block.
 ///
-/// The engine has no fixed-capacity fade-actor pool; `slot_free`
-/// models the retail alloc outcome for hosts that cap concurrent fades
-/// (pass `true` when a slot is available). The template is copied rather
-/// than mutated in place - retail stamps a scratch buffer (e.g. the
-/// battle-escape template at `DAT_801C9070`) that callers rebuild before
-/// every spawn, so the copy is semantics-preserving.
+/// The engine's fade pool is **one seat**: `World::presentation.fade`, the
+/// `Option<FadeState>` both hosts composite through `World::screen_fade_draw`.
+/// A spawn replaces whatever fade holds it, so the allocation arm always
+/// succeeds; retail's pool-exhausted return (no stamp, no load) has no engine
+/// counterpart and is not modelled. The template is copied rather than
+/// mutated in place - retail stamps a scratch buffer (a stack frame in the
+/// field overlay's `FUN_801D58F0`, `DAT_801C9070` for the battle escape) that
+/// callers rebuild before every spawn, so the copy is semantics-preserving.
 ///
 /// PORT: FUN_80024E80
 ///
-/// NOT WIRED: the engine's fades are host-driven state
-/// ([`crate::world::ScreenFxState::fade`], a plain `Option<FadeState>`), not
-/// entries in a fixed-capacity system-actor pool. The `slot_free` argument
-/// models a pool allocation outcome that no engine caller can supply an
-/// answer for, so every call site would have to invent `true`. Wiring it
-/// needs the retail system-actor pool (`actor_free(&DAT_80070674, ..)`)
-/// behind the fade spawn.
-pub fn spawn_fade(template: &FadeTemplate, id: i16, slot_free: bool) -> Option<FadeState> {
-    if !slot_free {
-        // Retail `iVar1 == 0` branch: no stamp, no load.
-        return None;
-    }
+/// Live: the field walk-on warp's two fades (`World::arm_field_warp` and
+/// its held-back fade-in, retail `FUN_801D58F0`, which passes `id = 0` -
+/// `move a1,zero` at `0x801D593C`) and the summon band's flash-in / -out
+/// (`World`'s battle-action host).
+pub fn spawn_fade(seat: &mut Option<FadeState>, template: &FadeTemplate, id: i16) {
     let mut t = *template;
     t.mode[2] = id;
-    Some(FadeState::load(&t))
+    *seat = Some(FadeState::load(&t));
 }
 
 /// A persistent full-scene colour grade - the warm gold/sepia the opening
@@ -671,7 +665,9 @@ mod tests {
         // runs - byte offset 0x18 = i16 index 12 = mode[2]. The loader
         // copies template[12] onto the state (retail state word 0x11).
         let t = escape_fade_template();
-        let f = spawn_fade(&t, 0x1234, true).expect("slot free");
+        let mut seat = None;
+        spawn_fade(&mut seat, &t, 0x1234);
+        let f = seat.expect("the seat always takes the spawn");
         assert_eq!(f.mode, [0, -1i16, 0x1234], "id lands in mode[2] only");
         // Everything else matches a plain load of the same template.
         let plain = FadeState::load(&t);
@@ -681,15 +677,18 @@ mod tests {
     }
 
     #[test]
-    fn spawn_fade_pool_exhausted_returns_none() {
-        // Retail `iVar1 == 0` branch: alloc failed, nothing stamped/loaded.
-        assert_eq!(spawn_fade(&escape_fade_template(), 7, false), None);
+    fn spawn_fade_replaces_the_fade_in_the_seat() {
+        // The engine's pool is one seat: a second spawn supersedes the first.
+        let mut seat = None;
+        spawn_fade(&mut seat, &escape_fade_template(), 1);
+        spawn_fade(&mut seat, &escape_fade_template(), 7);
+        assert_eq!(seat.map(|f| f.mode[2]), Some(7));
     }
 
     #[test]
     fn spawn_fade_does_not_mutate_the_caller_template() {
         let t = escape_fade_template();
-        let _ = spawn_fade(&t, 0x7FFF, true);
+        spawn_fade(&mut None, &t, 0x7FFF);
         assert_eq!(t.mode, [0, -1i16, 0], "caller copy untouched");
     }
 
