@@ -6,7 +6,7 @@ fn apply_battle_loot_never_drops_when_rate_zero() {
     let mut cat = MonsterCatalog::new();
     let mut def = MonsterDef::new(7, "Slime", 10, 5);
     def.drop_item = Some(0x42);
-    def.drop_rate_q8 = 0;
+    def.drop_chance_pct = 0;
     cat.insert(def);
     let formation = FormationDef::new(1000, vec![FormationSlot::new(7)]);
     let mut world = World {

@@ -1130,9 +1130,10 @@ pub struct BattleRewards {
     pub xp: u32,
     pub gold: u32,
     pub level_ups: Vec<LevelUpResult>,
-    /// Item drops the post-battle loot roll surfaced. One entry per
-    /// monster slot that *both* (a) had a non-`None` `drop_item` in the
-    /// catalog and (b) rolled below `drop_rate_q8 / 256`.
+    /// Item drops the post-battle loot roll surfaced: at most one entry, the
+    /// item retail's victory drop roll offers
+    /// ([`legaia_engine_vm::battle_formulas::victory_drop_roll`]), and none
+    /// when the bag already holds 99 of it.
     pub drops: Vec<u8>,
 }
 

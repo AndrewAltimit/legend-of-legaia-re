@@ -94,9 +94,10 @@ pub struct MonsterDef {
     pub gold: u16,
     /// Optional drop item id (`None` = no drop).
     pub drop_item: Option<u8>,
-    /// `1/256` drop-rate. Engines roll one byte; if it falls below this the
-    /// drop fires. `0` means never; `255` means always.
-    pub drop_rate_q8: u8,
+    /// Drop chance in percent (record `+0x49`), as the victory drop roll
+    /// reads it: `rand() % 100 < chance (+ the Items Up bonus)`, see
+    /// [`legaia_engine_vm::battle_formulas::victory_drop_roll`].
+    pub drop_chance_pct: u8,
     /// Seru id attached to this monster, if it carries one. A successful
     /// capture (capture spell / Genocide Crystal) feeds this id into the
     /// [`crate::seru_learning::SeruRegistry`]. `None` = no Seru to capture.
@@ -202,7 +203,7 @@ impl MonsterDef {
             exp: hp / 2,
             gold: hp / 4,
             drop_item: None,
-            drop_rate_q8: 0,
+            drop_chance_pct: 0,
             seru_id: None,
             magic_attacks: Vec::new(),
             element: 7,
@@ -338,11 +339,11 @@ impl MonsterCatalog {
 ///
 /// `exp` / `gold` /
 /// `drop_item` /
-/// `drop_rate_q8` come from the
+/// `drop_chance_pct` come from the
 /// record's reward fields (`+0x44..+0x49`) - these are the **base** values;
 /// the retail victory-spoils formula scales them (EXP `* 3/4` then split among
-/// the party; gold `(Σ base>>1) * 0.5`). The drop chance is stored as a `u8`
-/// percent in the record and converted to the engine's `1/256` rate.
+/// the party; gold `(Σ base>>1) * 0.5`). The drop chance stays the record's
+/// `u8` percent, which is what the retail roll compares against.
 pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecord) -> MonsterDef {
     // The battle-load boosted profile (`FUN_80054CB0`), in record-stat order:
     // `[AGL, ATK, UDF, LDF, INT, SPD]`. Every stat below that the live actor
@@ -376,7 +377,7 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     def.exp = rec.exp;
     def.gold = rec.gold;
     def.drop_item = (rec.drop_item != 0).then_some(rec.drop_item);
-    def.drop_rate_q8 = ((rec.drop_chance_pct as u16 * 256 / 100).min(255)) as u8;
+    def.drop_chance_pct = rec.drop_chance_pct;
     // Castable spells: the record's 3-slot global-id array (`+0x21..=+0x23`);
     // the parser already filters out the empty `<= 1` slots.
     def.magic_attacks = rec.magic_attacks.clone();
@@ -585,7 +586,7 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             exp,
             gold,
             drop_item: None,
-            drop_rate_q8: 0,
+            drop_chance_pct: 0,
             seru_id: None,
             magic_attacks: Vec::new(),
             element: 7,

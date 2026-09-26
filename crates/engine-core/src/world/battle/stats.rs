@@ -113,10 +113,7 @@ impl World {
                 flags.fold_ability_word1(u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]));
             }
         }
-        let rand = [
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
-        ];
+        let rand = [self.next_rand() as u16, self.next_rand() as u16];
         escape_roll(
             escape_party_score(&party),
             escape_enemy_score(&enemies),
@@ -180,7 +177,7 @@ impl World {
             &ability_word1,
             target,
             target_int,
-            || self.next_rng(),
+            || self.next_rand(),
         )
     }
 
@@ -561,7 +558,7 @@ impl World {
         // scripted arm) comes off the shared cursor, lazily - `stage` calls
         // the closure only on the arm that rolls, so a random encounter and a
         // sub-level-3 cast advance it not at all.
-        let outcome = stage_side_effect(&table, &inp, || self.next_rng() as i32);
+        let outcome = stage_side_effect(&table, &inp, || self.next_rand() as i32);
         // The stager's own store: retail writes the staged percent into
         // `0x801F6960` (`0x801F4444..`), which is the latch the summon's
         // return-from-fade pass reads to decide whether to print

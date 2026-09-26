@@ -529,6 +529,14 @@ mod tests {
         use crate::world::SceneMode;
         let mut world = live_round_battle();
         world.actors[0].battle.params[0] = 0x42;
+        // Put the party member to sleep as well, so no turn of its own
+        // re-queues a swing between the boundary and the end of the tick -
+        // otherwise whether the zeroed byte is ever observable depends on the
+        // initiative draws ordering the monster ahead of it in some round.
+        world
+            .battle
+            .status_effects
+            .apply_with_duration(0, StatusKind::Sleep, 255);
 
         let mut cleared = false;
         for _ in 0..600 {

@@ -624,8 +624,9 @@ fn battle_magic_capture_downs_a_weakened_monster_and_logs_the_id() {
         ..World::default()
     };
     world.mode = SceneMode::Battle;
-    // rng_state 0 -> first next_rng() % 100 == 23 (deterministic).
-    world.rng_state = 0;
+    // Seed 6 -> first retail draw `(s' >> 16) & 0x7FFF` = 15623 with
+    // `s' = 6 * 1664525 + 1013904223`, and `15623 % 100 == 23`.
+    world.rng_state = 6;
     world.actors[1].battle.max_hp = 100;
     world.actors[1].battle.hp = 10; // missing 90
     world.actors[1].battle.liveness = 1;
@@ -653,7 +654,7 @@ fn battle_magic_capture_downs_a_weakened_monster_and_logs_the_id() {
         ..World::default()
     };
     world.mode = SceneMode::Battle;
-    world.rng_state = 0; // roll 23
+    world.rng_state = 6; // roll 23
     world.actors[1].battle.max_hp = 100;
     world.actors[1].battle.hp = 95; // missing 5 -> effective 3
     world.actors[1].battle.liveness = 1;

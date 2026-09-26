@@ -1363,7 +1363,7 @@ impl World {
             // Rot's applier rolls the disabled limb (`rand % 3`, the retail
             // `1 << (rand%3 + 3)` bit pick).
             if applied == Some(legaia_engine_vm::status_effects::StatusKind::Rot) {
-                let limb = (self.next_rng() % 3) as u8;
+                let limb = (self.next_rand() % 3) as u8;
                 self.battle.status_effects.set_rot_limb(target, limb);
             }
         }
@@ -1460,9 +1460,8 @@ impl World {
             defender_guarding: target_guarding,
             ..Default::default()
         };
-        let mut raw = vm::battle_formulas::physical_predamage(&hit_inputs, &mut || {
-            (self.next_rng() & 0x7FFF) as u16
-        });
+        let mut raw =
+            vm::battle_formulas::physical_predamage(&hit_inputs, &mut || self.next_rand() as u16);
         if self.toggles.use_damage_finish {
             // The finisher's *post* stages only: the defender's equipment
             // elemental-guard / All-Guard ladder, the 9999 cap and the
@@ -1471,11 +1470,7 @@ impl World {
             // the Spirit stance - taking the finisher's halve as well would
             // charge the stance twice. The floor draws a rand only when the
             // hit zeroes out, which the melee kernel's chip floor makes rare.
-            let floor_rand = if raw == 0 {
-                (self.next_rng() & 0x7FFF) as u16
-            } else {
-                0
-            };
+            let floor_rand = if raw == 0 { self.next_rand() as u16 } else { 0 };
             let attacker_is_party = attacker < self.party.party_count;
             let target_is_party = target < self.party.party_count;
             let defender_resist = self.defender_resist(target);
@@ -1824,7 +1819,7 @@ impl World {
             if !alive || status & STATUS_BIT_0X400 == 0 {
                 continue;
             }
-            let roll = self.next_rng() as u16;
+            let roll = self.next_rand() as u16;
             if let Some(next) = status_0x400_wakes(status, alive, || roll) {
                 self.actors[slot].battle.field_flags = next;
             }

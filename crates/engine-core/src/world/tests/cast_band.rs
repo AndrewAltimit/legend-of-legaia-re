@@ -242,7 +242,7 @@ fn a_monster_cast_runs_the_magic_band_and_folds_on_leaving_the_wait() {
     world.actors[1].battle.liveness = 1;
     world.actors[1].battle_monster_id = Some(5);
     world.set_battle_magic(1, 40);
-    world.rng_state = 0;
+    world.rng_state = BANDIT_BOSS_FLAME_SEED;
 
     world.take_monster_turn(1);
     assert_eq!(world.actors[1].battle.params[0], 0x20, "picker chose Flame");
@@ -553,8 +553,9 @@ fn the_nighto_verdict_is_drawn_once_and_held_for_the_whole_cast() {
 #[test]
 fn a_wide_texture_page_monster_resists_nighto_only_in_a_scripted_fight() {
     use legaia_engine_vm::cast_seru_ticks_a::NightoOutcome;
-    let verdict = |wide: u8, scripted: u8| -> NightoOutcome {
+    let verdict = |wide: u8, scripted: u8, seed: u32| -> NightoOutcome {
         let mut world = module_code_world();
+        world.rng_state = seed;
         let mut def = crate::monster_catalog::MonsterDef::new(77, "Big", 300, 20);
         def.wide_texture_page = wide;
         world.tables.monster_catalog.insert(def);
@@ -569,18 +570,26 @@ fn a_wide_texture_page_monster_resists_nighto_only_in_a_scripted_fight() {
     // independent bits, and the kill word still picks which leg the cast
     // takes - so a forced resist is `KillResisted` or `ConfuseResisted`
     // depending on a roll this test does not pin.
+    // A stream on which the plain throw does not resist, so a resist below
+    // can only be the forced one. Scanned rather than pinned: the resist
+    // throw's draw index depends on how many draws the band takes first, and
+    // roughly half of all streams pass.
+    let seed = (0..64u32)
+        .map(|i| i.wrapping_mul(0x9E37_79B9).wrapping_add(1))
+        .find(|&s| !verdict(0, 0, s).resisted())
+        .expect("some stream throws no natural resist");
     assert!(
-        verdict(1, 4).resisted(),
+        verdict(1, 4, seed).resisted(),
         "the byte plus the scripted flag forces the resist"
     );
     // Same monster, same rolls, random encounter: the gate is open, so the
     // fork runs. Whichever side it lands on, it is not the forced resist.
     assert!(
-        !verdict(1, 0).resisted(),
+        !verdict(1, 0, seed).resisted(),
         "a random encounter must not force the resist"
     );
     assert!(
-        !verdict(0, 4).resisted(),
+        !verdict(0, 4, seed).resisted(),
         "a monster without the byte must not force the resist"
     );
 }

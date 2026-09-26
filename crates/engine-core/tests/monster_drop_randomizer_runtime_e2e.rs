@@ -34,8 +34,8 @@
 //! A baseline pass over the *unpatched* record first confirms the engine grants
 //! that monster's original drop at all, so the patched assertion can't pass
 //! vacuously. The drop roll is made deterministic by seeding the world RNG so
-//! the roll lands for any non-zero rate (`roll == 0`), keeping both passes
-//! comparable. Skips without `LEGAIA_DISC_BIN` (CLAUDE.md convention).
+//! the roll lands for any non-zero rate (roll `0`, gate open), keeping both
+//! passes comparable. Skips without `LEGAIA_DISC_BIN` (CLAUDE.md convention).
 
 use legaia_engine_core::monster_catalog::{
     FormationDef, FormationSlot, catalog_from_monster_archive,
@@ -43,13 +43,14 @@ use legaia_engine_core::monster_catalog::{
 use legaia_engine_core::world::World;
 use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
-/// World RNG seed for which the first `apply_battle_loot` drop roll is `0`
-/// (`(next_rng() & 0xFF) == 0`), so the drop lands for any positive rate. The
-/// LCG is `state*1_664_525 + 1_013_904_223`; `229` solves
-/// `(13*state + 95) mod 256 == 0`. A fresh `World` per pass reuses it, so the
-/// baseline and patched rolls are identical and the only variable is the disc
-/// byte.
-const ROLL_LANDS_SEED: u32 = 229;
+/// World RNG seed on which the victory drop roll lands for any positive
+/// chance. The one-monster roll draws twice: `rand() % 100 < chance`, then -
+/// with no 100% seat and no Items Up bonus - the `rand() & 3 == 0` gate. On the
+/// shaped stream (`s' = s * 1_664_525 + 1_013_904_223`, draw =
+/// `(s' >> 16) & 0x7FFF`) seed `387` draws 25300 (`% 100 == 0`) then 24964
+/// (`& 3 == 0`). A fresh `World` per pass reuses it, so the baseline and
+/// patched rolls are identical and the only variable is the disc byte.
+const ROLL_LANDS_SEED: u32 = 387;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

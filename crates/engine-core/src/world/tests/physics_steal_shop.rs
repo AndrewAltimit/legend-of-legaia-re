@@ -199,9 +199,10 @@ fn apply_steal_grants_item_on_hit_and_respects_non_stealable() {
         },
     ]);
 
-    // Seed so the first roll is 0 (lands for any chance >= 1).
+    // Seed so the first roll is 0 (lands for any chance >= 1): seed 324's
+    // first shaped draw is 23700.
     let mut world = World {
-        rng_state: 32937,
+        rng_state: 324,
         ..World::default()
     };
     let got = world.apply_steal(3, &table);

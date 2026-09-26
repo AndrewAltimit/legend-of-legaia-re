@@ -159,6 +159,11 @@ fn battle_world(
     w.actors[CASTER as usize].battle_monster_id = Some(monster_id);
     w.mode = SceneMode::Battle;
     w.toggles.live_gameplay_loop = true;
+    // The caster must not leave before it casts: the picker's once-per-pass
+    // flee checkpoint (`FUN_801EC0DC`) is a live roll on the battle stream,
+    // and the scripted no-escape flag (`ctx+0x287`) is the gate retail tests
+    // first.
+    w.battle.no_escape = true;
     w.rng_state = SEED;
     w
 }

@@ -33,11 +33,14 @@ fn steal_world(cells: &[(usize, u8, u8)], rng_seed: u32) -> World {
     world
 }
 
-/// The LCG seed whose first `next_rng() % 0x100` is `slot` (found by
-/// enumeration; the generator is `World::next_rng`).
-const SEED_DRAWS_SLOT_0: u32 = 229;
-const SEED_DRAWS_SLOT_200: u32 = 205;
-const SEED_DRAWS_SLOT_3: u32 = 52;
+/// The world seed whose first retail draw (`World::next_rand`, the BIOS
+/// `rand()` shape) `% 0x100` is `slot`. Derived off the stream by hand:
+/// `s' = s * 1664525 + 1013904223`, draw = `(s' >> 16) & 0x7FFF`, and the
+/// slot is the draw's low byte - seed 167 -> draw `0x4D00`, seed 64 ->
+/// `0x42C8`, seed 26 -> `0x3F03`.
+const SEED_DRAWS_SLOT_0: u32 = 167;
+const SEED_DRAWS_SLOT_200: u32 = 64;
+const SEED_DRAWS_SLOT_3: u32 = 26;
 
 #[test]
 fn the_bag_is_slot_indexed_with_holes() {

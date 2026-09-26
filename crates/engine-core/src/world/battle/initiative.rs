@@ -163,7 +163,7 @@ impl World {
                     0
                 },
             };
-            let roll = (self.next_rng() % initiative_roll_modulus(actor.speed)) as u16;
+            let roll = (self.next_rand() % initiative_roll_modulus(actor.speed)) as u16;
             let key = seed_initiative(&actor, roll);
             if let Some(a) = self.actors.get_mut(i) {
                 a.battle.init_key = key;
@@ -285,7 +285,7 @@ impl World {
         };
         // The score inputs are owned locals, so the RNG closure can hold the
         // only borrow of `self` - draws stay on the shared determinism stream.
-        let mut rand = || self.next_rng();
+        let mut rand = || self.next_rand();
         let rolled = roll_formation_advantage(&party_spd, &enemy_spd, &inputs, &mut rand);
         self.set_battle_formation(rolled);
     }
@@ -454,7 +454,7 @@ impl World {
         let keys: Vec<u16> = (0..BATTLE_SLOTS)
             .map(|i| self.actors.get(i).map_or(0, |a| a.battle.init_key))
             .collect();
-        let pick = initiative_tie_pick(|i| keys[i], || self.next_rng())?;
+        let pick = initiative_tie_pick(|i| keys[i], || self.next_rand())?;
         if let Some(a) = self.actors.get_mut(pick as usize) {
             a.battle.init_key = 0; // consume this turn
         }

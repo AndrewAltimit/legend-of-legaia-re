@@ -249,7 +249,7 @@ impl World {
                 0
             };
             let rolled = {
-                let rng = &mut || self.next_rng();
+                let rng = &mut || self.next_rand();
                 enemy_impact_status_proc(selector, target_is_party, ability_bits, rng)
             };
             let Some(proc) = rolled else {
@@ -343,7 +343,7 @@ impl World {
             }
             let target_agl = self.battle.accuracy.get(t as usize).copied().unwrap_or(0);
             // One draw per rolled target, in retail call order.
-            let rand = self.next_rng();
+            let rand = self.next_rand();
             if !agl_status_inflict_roll(attacker_agl, target_agl, rand) {
                 continue;
             }
@@ -461,7 +461,7 @@ impl World {
             return;
         }
         if targets.len() == 1 {
-            let pick = living[(self.next_rng() as usize) % living.len()];
+            let pick = living[(self.next_rand() as usize) % living.len()];
             *targets = vec![pick];
         } else {
             *targets = living;
@@ -540,7 +540,7 @@ impl World {
             .collect();
         let mut rolls: Vec<u32> = Vec::new();
         for _ in 0..(2 + vm::battle_action::AI_COMPANION_MAX_TARGET_DRAWS + 2) {
-            rolls.push(self.next_rng());
+            rolls.push(self.next_rand());
         }
         let mut cursor = rolls.into_iter();
         let pick = ai_companion_pick(
@@ -719,7 +719,7 @@ impl World {
         };
         self.battle.monster_strike_budget = if agl > 0 && !costs.is_empty() {
             let stream =
-                vm::battle_action::enemy_action_budget(agl, &costs, &mut || self.next_rng());
+                vm::battle_action::enemy_action_budget(agl, &costs, &mut || self.next_rand());
             // Retail's budget loop spends the gauge it walked. Only do so on
             // the SPD-seeded path: the round-robin fallback has no round
             // boundary to restore it, so an unrestorable gauge would drain to
@@ -802,7 +802,7 @@ impl World {
         // Roll over (1 + live_magic_count); 0 => physical. Always consumes one
         // RNG draw, exactly like retail.
         let denom = 1 + magic.len() as u32;
-        let roll = self.next_rng() % denom;
+        let roll = self.next_rand() % denom;
         // Provisional choice (category 3 = physical strike, 2 = magic).
         let (mut category, mut spell_id) = (3u8, 0u8);
         let mut target_class;
@@ -865,7 +865,7 @@ impl World {
             };
             let mut ai = std::mem::take(&mut self.battle.monster_ai_state);
             let mut spirit_writeback = None;
-            if let Some(cast) = crate::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rng()) {
+            if let Some(cast) = crate::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rand()) {
                 category = cast.category;
                 spell_id = cast.spell_id;
                 target_class = cast.target_class;
@@ -885,7 +885,7 @@ impl World {
                 spell_id,
                 pc,
                 &mut ai,
-                &mut || self.next_rng(),
+                &mut || self.next_rand(),
             );
             self.battle.monster_ai_state = ai;
         }
@@ -1038,7 +1038,7 @@ impl World {
             return None;
         }
         loop {
-            let t = (self.next_rng() % pc as u32) as u8;
+            let t = (self.next_rand() % pc as u32) as u8;
             if self
                 .actors
                 .get(t as usize)
@@ -1128,7 +1128,7 @@ impl World {
         if class < 3 {
             // Target a living monster (the caster's own band).
             loop {
-                let t = (self.next_rng() % mc as u32) as u8 + pc;
+                let t = (self.next_rand() % mc as u32) as u8 + pc;
                 set_target(self, t);
                 if self
                     .actors
@@ -1144,7 +1144,7 @@ impl World {
         } else if class < 7 {
             // Target a living party member.
             loop {
-                let t = (self.next_rng() % pc as u32) as u8;
+                let t = (self.next_rand() % pc as u32) as u8;
                 set_target(self, t);
                 if self
                     .actors
@@ -1155,12 +1155,12 @@ impl World {
                 }
             }
         } else if class == 8 {
-            if self.next_rng().is_multiple_of(3) {
+            if self.next_rand().is_multiple_of(3) {
                 set_target(self, 9);
             } else {
                 clear_category_self(self);
             }
-        } else if self.next_rng().is_multiple_of(3) {
+        } else if self.next_rand().is_multiple_of(3) {
             set_target(self, 8);
         } else {
             clear_category_self(self);

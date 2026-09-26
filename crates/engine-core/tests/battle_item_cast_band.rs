@@ -123,6 +123,11 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
         w.actors[i].battle.liveness = 1;
     }
     w.actors[0].battle.hp = 40;
+    // The lone monster must not leave on its own: the picker's once-per-pass
+    // flee checkpoint (`FUN_801EC0DC`) is a live roll on the battle stream, and
+    // a flee ends the battle before the command session can reopen. The
+    // scripted no-escape flag (`ctx+0x287`) is the gate retail tests first.
+    w.battle.no_escape = true;
     let mut trace: Vec<u8> = Vec::new();
 
     // Round prompt (`Begin | Run`): Cross takes Begin -> the command ring.

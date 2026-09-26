@@ -642,7 +642,7 @@ impl World {
             .map_or(0, |(_, id, _)| id as u8);
         let scripted = self.battle.scripted_fight;
         if ifx::noa_status_arm(char_id, key, hit_index, scripted, first_monster, || {
-            self.next_rng()
+            self.next_rand()
         }) && let Some(t) = self.actors.get_mut(target)
         {
             t.battle.field_flags |= ifx::NOA_STATUS_BITS;

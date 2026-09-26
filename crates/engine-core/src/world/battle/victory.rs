@@ -311,7 +311,7 @@ impl World {
         let tier = victory_pose_tier(hp, hp_max, round, status);
         // `DAT_8007BD10[seat]` is 1-based; the roster slot is 0-based.
         let char_id = (self.party_roster_slot(seat) as u8).saturating_add(1);
-        let mut rng = || self.next_rng();
+        let mut rng = || self.next_rand();
         let pose = victory_pose_id(&table, char_id, tier, &mut rng);
         log::info!(
             "battle end: seat {seat} (char {char_id}) hp {hp}/{hp_max} round {round} \

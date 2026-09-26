@@ -907,7 +907,10 @@ impl World {
         self.clock.frame_step_telemetry.vsync_wait()
     }
 
-    /// Increment the deterministic LCG and return the new value.
+    /// Increment the deterministic LCG and return the new **raw** state.
+    ///
+    /// Not a retail draw: a port of a `jal 0x80056798` site goes through
+    /// [`Self::next_rand`]. The raw word's low bits have short periods.
     pub fn next_rng(&mut self) -> u32 {
         // Numerical Recipes LCG. Cheap, deterministic.
         self.rng_state = self
@@ -923,8 +926,8 @@ impl World {
     ///
     /// A port that stands in for a `jal 0x80056798` should draw through this
     /// rather than the raw state: retail callers test the result's low bits
-    /// and divide it as a 15-bit value. The battle-side consumers still draw
-    /// raw (see `docs/subsystems/battle-formulas.md`, RNG primitive). Retail's `rand()` has one
+    /// and divide it as a 15-bit value. Every battle-side consumer draws
+    /// here (see `docs/subsystems/battle-formulas.md`, RNG primitive). Retail's `rand()` has one
     /// kernel seed shared by every caller in SCUS and every overlay (the
     /// executable carries no `srand` thunk), which is why this is one world
     /// stream rather than a generator per subsystem.

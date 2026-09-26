@@ -378,9 +378,9 @@ impl World {
         // the closure below, only when the bonus arm fires, so the shared RNG
         // cursor advances exactly as retail's does (three or five draws).
         let rng3 = [
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
+            self.next_rand() as u16,
+            self.next_rand() as u16,
+            self.next_rand() as u16,
         ];
         let (atk, def) = arts_physical_predamage_lazy(
             power,
@@ -388,12 +388,7 @@ impl World {
             &target_roll,
             element_affinity_pct,
             rng3,
-            || {
-                [
-                    (self.next_rng() & 0x7fff) as u16,
-                    (self.next_rng() & 0x7fff) as u16,
-                ]
-            },
+            || [self.next_rand() as u16, self.next_rand() as u16],
         );
         // Closed-form finisher stages (FUN_801ddb30). The attacker element is
         // the monster record's `+0x1D` byte, read record-direct the way the
@@ -428,7 +423,7 @@ impl World {
             summon_power_pct: 100,
             floor_rand: 0,
         };
-        let over = damage_finish_lazy(&finish, || (self.next_rng() & 0x7fff) as u16);
+        let over = damage_finish_lazy(&finish, || self.next_rand() as u16);
         Some(over.min(9999) as u16)
     }
 
@@ -497,12 +492,9 @@ impl World {
             guard: 0,
         };
         let power = power.max(0) as u32;
-        let rng2 = [
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
-        ];
+        let rng2 = [self.next_rand() as u16, self.next_rand() as u16];
         let (atk, def) = atk_wrapper_predamage(power, &a, &d, element_affinity_pct, rng2, || {
-            (self.next_rng() & 0x7fff) as u16
+            self.next_rand() as u16
         });
 
         let attacker_element = self
@@ -530,7 +522,7 @@ impl World {
             summon_power_pct: 100,
             floor_rand: 0,
         };
-        let over = damage_finish_lazy(&finish, || (self.next_rng() & 0x7fff) as u16);
+        let over = damage_finish_lazy(&finish, || self.next_rand() as u16);
         Some(over.min(9999) as u16)
     }
 
@@ -679,12 +671,12 @@ impl World {
         };
         let power_u = power.max(0) as u32;
         let rng3 = [
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
+            self.next_rand() as u16,
+            self.next_rand() as u16,
+            self.next_rand() as u16,
         ];
         let (atk, def) = int_wrapper_predamage(power_u, &a, &d, element_affinity_pct, rng3, || {
-            (self.next_rng() & 0x7fff) as u16
+            self.next_rand() as u16
         });
 
         let attacker_element = self
@@ -712,7 +704,7 @@ impl World {
             summon_power_pct: 100,
             floor_rand: 0,
         };
-        let over = damage_finish_lazy(&finish, || (self.next_rng() & 0x7fff) as u16);
+        let over = damage_finish_lazy(&finish, || self.next_rand() as u16);
         Some(over.min(9999) as u16)
     }
 
@@ -908,10 +900,7 @@ impl World {
         let element_affinity_pct = self.cast_affinity_pct(spell_id, target);
         let magic_power_byte = self.caster_magic_power_byte(caster, spell_id);
 
-        let rng2 = [
-            (self.next_rng() & 0x7fff) as u16,
-            (self.next_rng() & 0x7fff) as u16,
-        ];
+        let rng2 = [self.next_rand() as u16, self.next_rand() as u16];
         let (atk, def) = summon_predamage_lazy(
             &summon,
             caster_agl,
@@ -919,7 +908,7 @@ impl World {
             element_affinity_pct,
             magic_power_byte,
             rng2,
-            || (self.next_rng() & 0x7fff) as u16,
+            || self.next_rand() as u16,
         );
 
         // Closed-form finisher stages (FUN_801ddb30). The defender is an
@@ -946,7 +935,7 @@ impl World {
             summon_power_pct,
             floor_rand: 0,
         };
-        let over = damage_finish_lazy(&finish, || (self.next_rng() & 0x7fff) as u16);
+        let over = damage_finish_lazy(&finish, || self.next_rand() as u16);
         Some(over.min(9999) as u16)
     }
 
@@ -1504,8 +1493,22 @@ mod capture_bypass_tests {
     /// REF: FUN_801DD6B4 (bonus arm), FUN_801DD4B0 (the same arm)
     #[test]
     fn the_bonus_arm_floor_makes_a_bypass_hit_defence_insensitive() {
+        // The stream the bypass casts run on, chosen so the arm fires at every
+        // sampled defence. Derived by hand: the synthetic record's power is
+        // 500, so the attacker roll is `r0 % 126 + (4000 >> 8) + 500` and the
+        // arm fires when that falls short of `def_roll + 500`, where
+        // `def_roll >= (9999 >> 8) = 39` at any defence. Seed `0xC0FFEE20`'s
+        // first shaped draw (`s' = s * 1664525 + 1013904223`, draw =
+        // `(s' >> 16) & 0x7FFF`) is 17262 = `126 * 137`, so the attacker roll
+        // is 515 and `515 < 39 + 500` holds for every defence. The world's
+        // own seed draws `16475 % 126 = 95`, which fires only once the
+        // defence reaches about 144.
+        const BONUS_ARM_SEED: u32 = 0xC0FF_EE20;
         let with_defence = |move_id: u8, defence: u16| -> i32 {
             let mut world = world_with_resisting_party();
+            if move_id == BYPASS_MOVE_ID {
+                world.rng_state = BONUS_ARM_SEED;
+            }
             if let Some(m) = world.party.roster.members.get_mut(0) {
                 let mut bits = m.ability_bits();
                 bits[3] &= !0x20;

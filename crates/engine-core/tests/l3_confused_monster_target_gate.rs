@@ -123,9 +123,22 @@ fn armed_actions(w: &mut World, slot: u8, frames: usize) -> Vec<(u8, u8)> {
     seen
 }
 
-/// The four seeds every case sweeps. A single seed measures one draw of a
-/// re-roll loop, and the resolver's arms are chosen by that draw.
-const SEEDS: [u32; 4] = [0x1234_5678, 0x0BAD_F00D, 0xDEAD_BEEF, 0x5EED_0001];
+/// The seeds every case sweeps. A single seed measures one draw of a re-roll
+/// loop, and the resolver's arms are chosen by that draw. The self-target arm
+/// is a one-in-three draw per confused swing and a seed yields only a few
+/// swings in its tick budget, so four seeds did not reach it on every stream;
+/// the last four are golden-ratio steps (`i * 0x9E3779B9`) spread over the
+/// state space.
+const SEEDS: [u32; 8] = [
+    0x1234_5678,
+    0x0BAD_F00D,
+    0xDEAD_BEEF,
+    0x5EED_0001,
+    0x9E37_79B9,
+    0x3C6E_F372,
+    0xDAA6_6D2B,
+    0x78DD_E6E4,
+];
 
 #[test]
 fn an_unconfused_monster_only_ever_arms_a_party_target() {
@@ -207,7 +220,7 @@ fn a_confused_monster_swings_at_its_own_band() {
     );
     assert!(
         any_self_clear,
-        "the self-target arm was never taken across four seeds - the branch \
+        "the self-target arm was never taken across the seeds - the branch \
          that clears the action category is unmeasured here"
     );
 }
@@ -393,6 +406,6 @@ fn a_confused_party_member_is_flipped_the_other_way() {
     }
     assert!(
         any,
-        "no confused party member ever armed an action across four seeds"
+        "no confused party member ever armed an action across the seeds"
     );
 }

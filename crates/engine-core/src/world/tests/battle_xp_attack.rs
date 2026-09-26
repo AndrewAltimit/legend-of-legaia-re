@@ -135,12 +135,14 @@ fn apply_battle_xp_no_alive_returns_empty() {
 }
 
 #[test]
-fn apply_battle_loot_rolls_drop_item_when_rate_is_max() {
+fn apply_battle_loot_drops_item_when_chance_is_100() {
     use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
     let mut cat = MonsterCatalog::new();
     let mut def = MonsterDef::new(7, "Slime", 10, 5);
     def.drop_item = Some(0x42);
-    def.drop_rate_q8 = 255; // near-guaranteed roll
+    // 100%: every `rand() % 100` wins, and a best chance of 100 skips the
+    // trailing 1-in-4 gate, so the drop lands on any stream.
+    def.drop_chance_pct = 100;
     cat.insert(def);
     let formation = FormationDef::new(1000, vec![FormationSlot::new(7)]);
     let mut world = World {

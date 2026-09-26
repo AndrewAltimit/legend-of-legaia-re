@@ -33,7 +33,7 @@ impl World {
         if self.seru.shiny_chance_pct == 0 {
             return;
         }
-        if (self.next_rng() % 100) as u8 >= self.seru.shiny_chance_pct {
+        if (self.next_rand() % 100) as u8 >= self.seru.shiny_chance_pct {
             return;
         }
         // Gather capturable monster slots (those whose monster id maps to a
@@ -52,7 +52,7 @@ impl World {
         if candidates.is_empty() {
             return;
         }
-        let pick = candidates[(self.next_rng() as usize) % candidates.len()];
+        let pick = candidates[(self.next_rand() as usize) % candidates.len()];
         self.boost_shiny_stats(pick);
         self.seru.shiny_enemy_slots.insert(pick);
     }
@@ -98,7 +98,7 @@ impl World {
         }
         let missing = max.saturating_sub(hp);
         let effective = (hit_pct as u32 * missing / max).min(100);
-        let roll = self.next_rng() % 100;
+        let roll = self.next_rand() % 100;
         if roll >= effective {
             return;
         }
