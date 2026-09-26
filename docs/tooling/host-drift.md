@@ -2858,10 +2858,6 @@ Recorded rather than fixed; each names the host that lacks it. None is gated.
 - **Overworld CLUT walk.** Implemented twice (`window/field_render.rs`
   `WaterAnim`, the page's `step_field_vram_fx`), already differing in which
   scenes patch strip rows and which column is checked.
-- **Card load order.** The page loads a card save before entering its scene,
-  so the scene picker's story baseline (flags `0x141` / `0x147` outside
-  `town0c`) and seat heuristic run over the loaded state; the window enters
-  first.
 - **Battle camera without a render.** The page's battle camera state lives on
   its render resource and does not tick when that fails to build; the window
   removed the same gate.
@@ -2871,11 +2867,44 @@ Recorded rather than fixed; each names the host that lacks it. None is gated.
 - **Baka on the play page** carries no strike clock or afterimage in its JSON;
   the minigames page does.
 
-And absent from both hosts, so no host is "behind": the art-learned /
-magic-level banner (`party.current_art_banner`) and the Seru-absorb grant text,
-the casino coins / Point Card / fishing progress in `World::save_full`, the
-`tick_scene_programs` XA legs, the op-`0x35` timed sound release
-(`take_pending_sound_release`), and `BgmDirector::reattach_volume`.
+And absent from both hosts, so no host is "behind": the `tick_scene_programs`
+XA legs and `BgmDirector::reattach_volume` (sub-op `8`, which re-attaches the
+slot at `0x8007057C` - not the field-BGM slot `0x8007052C` the other sub-ops
+drive - with a level whose boot value is `-1`, so no director applies it yet).
+
+### Closed from the same list
+
+- **The battle message banner.** Screen elements `0x59` (Seru absorbed) and
+  `0x65` (magic level increased) share one string, the context buffer
+  `ctx + 0x1F9`; neither host drew either, and the two drains threw away the
+  `UiElement` event that would have told them. The line now lives on
+  `World::battle.message_banner` from raise to unload, and both hosts read it
+  through one engine function, `battle_hud::battle_banner_message`, which also
+  replaced the two hand-copied level-up / capture readers
+  ([`battle-action.md`](../subsystems/battle-action.md#the-battle-message-banner-elements-0x59-and-0x65)).
+  The **art-learned** line is not in it on purpose: retail announces a new
+  art with the `NEW ARTS!!` sprite banner, which both hosts already draw.
+- **A HUD raise that spawned an effect.** `BattleActionHost::ui_element` routed
+  every raise into the effect pool. The id is a placement-record index for
+  the HUD spawner `FUN_801D8DE8`, which calls no effect routine, so each raise
+  played an unrelated `efect.dat` script on both hosts. Effect scripts now
+  reach the pool only through `World::route_battle_effect_spawns`, the one
+  routing both hosts call (each had carried its own copy of that loop).
+- **Minigame purses in a save.** `World::save_full` / `load_full` dropped the
+  casino coins, the Point Card bank and the fishing record, so a save / load
+  zeroed them on either host. Retail keeps all nine words in the save block's
+  live-state window; they now ride there and in the `LGSF` `LGX7` block
+  ([`save-screen.md`](../subsystems/save-screen.md#the-minigame-purses-are-live-state-words-too)).
+- **Card load order.** The page loaded a card save and then entered its scene,
+  whose picker story baseline cleared system flags `0x141` / `0x147` in every
+  resumed save. The runtime now parks the loaded save, skips the baseline for
+  that entry and re-applies the save after the swap - the native
+  `enter_field_live_from_save` order
+  (`cards.rs`, `a_card_load_keeps_the_saves_story_flags_across_the_scene_entry`).
+- **The op-`0x35` timed release.** Its expiry set a flag no host read. The
+  expiry arm is `FUN_800266E0`'s body on the field-BGM slot - sub-op `2`'s
+  pause - so `World::tick` now emits that pause and both hosts' BGM routing
+  acts on it ([`audio.md`](../subsystems/audio.md#the-timed-release-is-a-scheduled-bgm-pause)).
 
 ## Adding coverage
 
