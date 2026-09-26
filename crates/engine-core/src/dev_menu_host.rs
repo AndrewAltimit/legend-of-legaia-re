@@ -397,6 +397,24 @@ impl DevMenuSession {
     pub fn drain_sfx(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.pending_sfx)
     }
+
+    /// Hand the cues raised since the last call to `world`'s SFX ring, and
+    /// return them for a host that logs them.
+    ///
+    /// Every cue this screen raises is a `jal 0x80035B50` in retail - the
+    /// cursor move (`li a0,0x21` in the delay slot of each arm of
+    /// `FUN_801E9DC8`) and the confirm row's `0x25` (`0x801D7270` in
+    /// `FUN_801D6E18`) - which is the field SFX-ring producer
+    /// [`crate::world::World::push_sfx_cue`] ports. Both hosts replay that
+    /// ring, so routing here is what makes the menu audible on both; each
+    /// host used to drain the queue and drop it.
+    pub fn route_sfx(&mut self, world: &mut crate::world::World) -> Vec<u8> {
+        let cues = self.drain_sfx();
+        for &cue in &cues {
+            world.push_sfx_cue(i16::from(cue));
+        }
+        cues
+    }
 }
 
 /// [`EquipCommitHost`] over the engine's id-keyed bag.
@@ -633,6 +651,22 @@ mod tests {
         assert_eq!(s.drain_sfx(), vec![SFX_CURSOR_MOVE as u8]);
         drive(&mut s, &mut r, 0, 0);
         assert!(s.drain_sfx().is_empty(), "an idle frame raises nothing");
+    }
+
+    /// The menu's cues reach the world's SFX ring - the `FUN_80035B50`
+    /// producer both hosts replay - rather than a queue the hosts dropped.
+    #[test]
+    fn dev_menu_cues_route_onto_the_world_sfx_ring() {
+        let mut s = DevMenuSession::new();
+        let mut r = records();
+        let mut w = crate::world::World::default();
+        drive(&mut s, &mut r, PACK_DOWN, 0);
+        assert_eq!(s.route_sfx(&mut w), vec![SFX_CURSOR_MOVE as u8]);
+        assert_eq!(
+            w.take_sfx_ring_ops(),
+            vec![crate::world::SfxRingOp::Push(SFX_CURSOR_MOVE as i16)]
+        );
+        assert!(s.drain_sfx().is_empty(), "routing drains the queue");
     }
 
     /// The `CLOSED` gate is retail's, taken on retail's own row index - so it

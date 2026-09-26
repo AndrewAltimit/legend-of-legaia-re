@@ -179,6 +179,7 @@ pub use encounters::FieldBossStager;
 mod field_carriers;
 pub mod field_elevation;
 mod field_hud;
+mod field_xa;
 pub use field_elevation::{CELL_ELEVATION_OVERRIDE, ElevationOverride};
 pub use field_hud::PassiveHudPoints;
 mod field_loop;

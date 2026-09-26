@@ -219,7 +219,8 @@ pub struct WorldMapController {
     /// is the screen, not a consumer of the flag.
     pub map_display_requested: bool,
     /// SFX cues the controller raised this tick ([`MAP_DISPLAY_SFX`] is the
-    /// only producer). Drained by whoever owns the cue bank.
+    /// only producer). `World::tick_world_map` drains it onto the SFX ring
+    /// every frame (`World::push_sfx_cue`, retail's `FUN_80035B50`).
     pub pending_sfx: Vec<u8>,
     /// The three scene globals `FUN_801D1344` forwards into
     /// [`EmitterGate::arm`]: `(_DAT_8007BCD0, _DAT_8007BCD4, _DAT_8007BCD8)`.
@@ -317,8 +318,9 @@ impl WorldMapController {
         // bind L1, and those are the port's own binding rather than retail's,
         // so the developer band shadows this arm while it is enabled.
         if self.map_display_enabled && !self.debug_enabled && edge & MAP_DISPLAY_ARM != 0 {
-            // Bounded: no host drains this yet (see the field doc), and an
-            // unbounded queue on a per-frame path is a leak, not a cue bank.
+            // Bounded: `World::tick_world_map` drains it into the SFX ring
+            // every frame, but a controller ticked on its own keeps no more
+            // than the cap.
             if self.pending_sfx.len() >= PENDING_SFX_CAP {
                 self.pending_sfx.remove(0);
             }

@@ -1153,6 +1153,9 @@ impl World {
                 self.ambient.pending_game_ticks = (self.ambient.pending_game_ticks + 1).min(600);
             }
         }
+        // The modelled CD drive under a field XA one-shot: one vsync of its
+        // read span elapses per world tick (`World::push_field_xa_cue`).
+        self.tick_field_xa_busy();
         // Retail's frame-begin driver services the timed sound-source
         // auto-release before anything else in the frame (`FUN_800267FC`,
         // called at `0x800169FC`). Its accumulator advances by the frame step,

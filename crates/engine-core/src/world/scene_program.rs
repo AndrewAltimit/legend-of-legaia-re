@@ -27,10 +27,17 @@
 //! What the engine does not yet render: the part stages
 //! ([`ProgramEffect::StagePart`]) name move-VM effect records resident in the
 //! field overlay's data segment (`0x801F22F8..0x801F2658`), which no engine
-//! loader reads, and the CD-XA voice legs ([`ProgramEffect::XaCue`] /
-//! [`ProgramEffect::XaStream`]) have no field-side XA sink on either host (the
-//! only drained XA queue is the battle one). Both are counted into
-//! [`SceneProgramFrame`] so a caller can see them, and left there.
+//! loader reads, so they are only counted into [`SceneProgramFrame`].
+//!
+//! The CD-XA voice legs are played. [`ProgramEffect::XaCue`] is
+//! `FUN_8003D53C(clip, chan, dur)` and lands on the field XA queue both hosts
+//! drain ([`World::push_field_xa_cue`]); the drive stays busy for its span,
+//! which is what the voice state's `xa_busy` wait reads. [`ProgramEffect::XaStream`]
+//! is `FUN_80019794(clip)`, whose body issues `CdlSetloc` + `CdlSeekL` and
+//! no read - a seek-ahead to the file the following one-shot plays from, with
+//! nothing to render in an engine that has no drive (see
+//! [`crate::world::field_xa`]'s module docs). Both are still reported in
+//! [`SceneProgramFrame::xa`].
 //!
 //! REF: FUN_8002519C (the frame walker whose `jalr` this is)
 
@@ -105,9 +112,9 @@ impl World {
                 bgm_request: self.audio.sound_stream.requested,
                 bgm_current: self.audio.sound_stream.acked,
                 dev_flags: self.audio.dual_mode_gate as u32,
-                // No field-side XA leg is modelled in flight (module docs), so
-                // the drive always reads idle to the voice programs.
-                xa_busy: 0,
+                // `_DAT_8007BC20 != 0`: a field one-shot still in its read
+                // span (the voice state `0x19` waits it out).
+                xa_busy: u32::from(self.field_xa_busy()),
                 story_flags: self.flags.story_flags,
                 release_guard_set: self.system_flag_test(RELEASE_GUARD_FLAG),
             };
@@ -154,7 +161,11 @@ impl World {
                         }
                     }
                     ProgramEffect::StagePart { .. } => out.part_stages += 1,
-                    ProgramEffect::XaCue { clip, chan, .. } => out.xa.push((clip, Some(chan))),
+                    ProgramEffect::XaCue { clip, chan, dur } => {
+                        self.push_field_xa_cue(clip, chan, dur);
+                        out.xa.push((clip, Some(chan)));
+                    }
+                    // The seek-ahead: nothing to play (module docs).
                     ProgramEffect::XaStream { clip } => out.xa.push((clip, None)),
                 }
             }
@@ -169,7 +180,7 @@ mod tests {
     use super::*;
     use crate::field_actor_program::{
         FLAG_PLAYER_BUSY, FLAG_PROGRAM_1, FLAG_SCENE_ACTIVE, PLAYER_ENGAGED, PLAYER_MOTION_HELD,
-        SFX_BEAT, STORY_FLAG_BIT, VOICE_CLIP,
+        SFX_BEAT, STORY_FLAG_BIT, VOICE_CHANNEL, VOICE_CLIP, VOICE_DURATION,
     };
 
     /// A world with a live player in slot 0 carrying a real speed multiplier.
@@ -237,19 +248,26 @@ mod tests {
         while w
             .find_actor_by_handler(ActorHandler::ScriptedScene)
             .is_some()
-            && frames < 400
+            && frames < 800
         {
             // Drive the program directly so the frame reports are visible.
             let f = w.tick_scene_programs(2);
             xa.extend(f.xa);
             w.retire_yielded_actors();
             lifted |= w.locomotion.eased_mirror_y.is_some();
+            // The voice one-shot holds the drive busy; one vsync per step
+            // lets its span run out so the closing wait releases.
+            w.tick_field_xa_busy();
             frames += 1;
         }
-        assert!(frames < 400, "the closer never retired");
+        assert!(frames < 800, "the closer never retired");
         assert!(
             xa.contains(&(VOICE_CLIP, None)),
-            "the whole-clip voice stream"
+            "the seek-ahead to the voice file"
+        );
+        assert!(
+            xa.contains(&(VOICE_CLIP, Some(VOICE_CHANNEL))),
+            "the voice one-shot"
         );
         assert!(lifted, "the lift published the +0x8E mirror");
         assert_eq!(w.locomotion.eased_mirror_y, None, "and took it back down");
@@ -258,6 +276,50 @@ mod tests {
             w.flags.story_flags & STORY_FLAG_BIT,
             0,
             "0x1A clears the bit"
+        );
+    }
+
+    #[test]
+    fn the_voice_leg_reaches_the_field_xa_queue_and_holds_the_wait() {
+        // Program 2's voice one-shot lands on the queue both hosts drain, and
+        // its read span is what state 0x19's `xa_busy` wait reads - the
+        // program may not retire while the line is still sounding.
+        let mut w = world_with_player();
+        w.system_flag_set(u16::from(FLAG_SCENE_ACTIVE));
+        assert_eq!(w.man_load_resume_programs(), vec![2]);
+        let mut clips = Vec::new();
+        let mut first_clip_frame = None;
+        let mut retired_frame = None;
+        for frame in 0..800 {
+            if w.find_actor_by_handler(ActorHandler::ScriptedScene)
+                .is_none()
+            {
+                retired_frame = Some(frame);
+                break;
+            }
+            w.tick_scene_programs(2);
+            w.retire_yielded_actors();
+            let got = w.drain_field_xa_cues();
+            if !got.is_empty() && first_clip_frame.is_none() {
+                first_clip_frame = Some(frame);
+            }
+            clips.extend(got);
+            // One world vsync per step, as `World::tick` runs it.
+            w.tick_field_xa_busy();
+        }
+        assert_eq!(
+            clips,
+            vec![crate::sfx_cue::XaVoiceClip {
+                clip: u32::from(VOICE_CLIP),
+                channel: u32::from(VOICE_CHANNEL),
+                duration_sectors: u32::from(VOICE_DURATION),
+            }],
+            "exactly one voice one-shot, and no clip for the seek-ahead"
+        );
+        let (start, end) = (first_clip_frame.unwrap(), retired_frame.unwrap());
+        assert!(
+            end - start >= usize::from(VOICE_DURATION),
+            "the program waited out the {VOICE_DURATION}-vsync span ({start}..{end})"
         );
     }
 }

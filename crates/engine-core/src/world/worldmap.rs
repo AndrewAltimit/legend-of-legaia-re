@@ -58,6 +58,7 @@ impl World {
     pub(crate) fn tick_world_map(&mut self) {
         let pad = self.input.pad();
         let pad_held = pad & !self.input.pad_prev();
+        let mut ctrl_sfx = Vec::new();
         if let Some(ctrl) = &mut self.world_map.ctrl {
             ctrl.tick(pad, pad_held);
             // Retail runs the top-view screen-dim pass (`FUN_801E75DC`)
@@ -66,6 +67,14 @@ impl World {
             // `WorldMapController::run_screen_dim`. Walk-mode frames clear it,
             // so this costs one flag test on the common path.
             ctrl.run_screen_dim();
+            ctrl_sfx = ctrl.drain_sfx();
+        }
+        // The map-display arm's cue is a `jal FUN_80035B50` (`0x801D0220`) -
+        // the same SFX-ring producer the field VM's op `0x36` sub `0` calls -
+        // so it rides the ring both hosts already replay
+        // (`World::take_sfx_ring_ops`) instead of a queue only tests drained.
+        for id in ctrl_sfx {
+            self.push_sfx_cue(i16::from(id));
         }
         // Player is "walking" on the overworld this frame when any d-pad
         // direction is held. These are the Up/Right/Down/Left bits the
