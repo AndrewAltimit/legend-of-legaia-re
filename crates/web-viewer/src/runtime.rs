@@ -1854,6 +1854,17 @@ impl LegaiaRuntime {
     /// Move ids `<= 2` are the locomotion walk moves the movement controller
     /// already animates; the native drain skips them and so does this one.
     fn drive_player_move_cues(&mut self) {
+        // The settle pick's scene-bank record (the `4C CE` override, the
+        // `99` sentinel) resolves through the same bundle as the cues -
+        // the native window does the same beside its cue drain.
+        if let (Some(bundle), Some(anim)) = (
+            self.scene_anm.as_ref(),
+            self.scene_host
+                .as_mut()
+                .and_then(|h| h.world.locomotion.player_anim.as_mut()),
+        ) {
+            anim.resolve_scene_clip(bundle);
+        }
         let cues: Vec<u8> = match self.scene_host.as_mut() {
             Some(h) => std::mem::take(&mut h.world.locomotion.player_move_cues),
             None => return,
