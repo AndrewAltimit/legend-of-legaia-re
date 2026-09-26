@@ -81,6 +81,16 @@ at `0x800917B0` holds) → `SsVabTransBody`. So every call site's
 `FUN_8001FC00` / `FUN_8001E54C` pair names one `(PROT entry, slot)` binding
 outright.
 
+The same walk installs the stream's **score**: a type-`2` chunk is copied into
+the slot's staging buffer and opened with `SsSeqOpen` (`FUN_80026410` on the
+SEQ record `0x8007051C + slot * 0x10`), after the slot's previous sequence is
+detached and closed (`FUN_800266E0` / `FUN_80026520`). On the disc every
+entry that carries a `pQES` score past offset 0 carries it as a type-`2`
+chunk - chunk order `(0, 1, 2)`, or `(0, 2, 1)` where the score precedes the
+VAG bodies. The engine's scene loader finds a stream's score the same way,
+walking the list with the port (`legaia_engine_core::chunk_install::seq_chunk_offset`)
+rather than searching the bytes for the magic.
+
 | Slot | Bank | Installed by |
 |---|---|---|
 | `0` | PROT 0868 system bank | resident |

@@ -202,12 +202,14 @@ impl SceneAssets {
                 Class::SceneVabStream => vab_entries.push(entry.idx),
                 _ => {}
             }
-            // Search for pQES magic past offset 0 - most retail SEQ data
-            // lives inside `scene_vab_stream` chunk wrappers, not at the
-            // entry start. Entries already classified as `SeqContainer`
-            // are tracked separately above.
+            // Most retail SEQ data lives inside a `scene_vab_stream` chunk
+            // list, not at the entry start: walk the list the way the
+            // retail installer `FUN_8001E54C` does and keep the score its
+            // type-2 arm would open. Entries already classified as
+            // `SeqContainer` are tracked separately above.
             if entry.class != Class::SeqContainer
-                && let Some(off) = find_seq_magic(&entry.bytes)
+                && let Some(off) = crate::chunk_install::seq_chunk_offset(&entry.bytes)
+                && validate_seq_header(&entry.bytes[off..])
             {
                 seq_in_stream_entries.push((entry.idx, off));
             }
@@ -290,22 +292,15 @@ impl SceneAssets {
     }
 }
 
-/// Search a buffer for the `pQES` magic past offset 0 (i.e. wrapped in a
-/// chunk-header container). Returns the offset of the first `p` byte, or
-/// `None` if no pQES sub-string lives past offset 0.
-///
-/// Legaia SEQ data uses a u32 BE version field (rather than the u16 BE
-/// PsyQ-doc form), so the validation reads 4 reserved/version bytes
-/// before the PPQN word - see [`legaia_seq::parse_header`] for the
-/// canonical reader.
+/// Search a buffer for the `pQES` magic past offset 0 - the byte hunt the
+/// chunk walk replaced, kept as the disc-gated comparand that proves the two
+/// agree.
+#[cfg(test)]
 fn find_seq_magic(buf: &[u8]) -> Option<usize> {
     const MAGIC: &[u8; 4] = b"pQES";
     if buf.len() < MAGIC.len() + 1 {
         return None;
     }
-    // Cap the scan to a sensible budget - SEQ-wrapped entries are
-    // typically small (< 256 KB). Anything past 4 MB is almost certainly
-    // not a real wrapper.
     let scan_end = buf.len().min(4 * 1024 * 1024);
     for i in 1..scan_end.saturating_sub(MAGIC.len()) {
         if &buf[i..i + MAGIC.len()] == MAGIC && validate_seq_header(&buf[i..]) {
@@ -529,6 +524,47 @@ mod tests {
         let assets = SceneAssets::default();
         assert!(assets.bgm_seq_entry(2000).is_none());
         assert!(assets.bgm_seq_entry(3000).is_none());
+    }
+
+    /// `[type | size]` DATA_FIELD chunk.
+    fn chunk(ty: u8, payload: &[u8]) -> Vec<u8> {
+        let mut out = ((u32::from(ty) << 24) | payload.len() as u32)
+            .to_le_bytes()
+            .to_vec();
+        out.extend_from_slice(payload);
+        while !out.len().is_multiple_of(4) {
+            out.push(0);
+        }
+        out
+    }
+
+    #[test]
+    fn the_stream_score_is_the_chunk_the_installer_opens() {
+        // A VAG body carrying a well-formed score header ahead of the real
+        // SEQ chunk: the byte hunt stops in the body, the installer walk
+        // (`FUN_8001E54C`'s type-2 arm) stops at the SEQ chunk.
+        let score = make_pqes_bytes();
+        let mut body = vec![0u8; 8];
+        body.extend_from_slice(&score);
+        body.resize(0x40, 0);
+        let mut stream = chunk(0, b"pBAV\0\0\0\0");
+        stream.extend(chunk(1, &body));
+        let score_at = stream.len() + 4;
+        stream.extend(chunk(2, &score));
+        stream.extend(0u32.to_le_bytes());
+        assert_ne!(
+            find_seq_magic(&stream),
+            Some(score_at),
+            "the decoy wins a hunt"
+        );
+        let scene = make_scene(vec![SceneEntry {
+            idx: 108,
+            class: Class::SceneVabStream,
+            bytes: Arc::new(stream),
+        }]);
+        let assets = SceneAssets::build(&scene);
+        assert_eq!(assets.seq_in_stream_entries, vec![(108, score_at)]);
+        assert_eq!(assets.bgm_seq_offset(0), Some(score_at));
     }
 
     fn make_pqes_bytes() -> Vec<u8> {

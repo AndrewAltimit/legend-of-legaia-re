@@ -896,11 +896,16 @@ procedural mesh generator (probably waves / sky / particle-emitter
 sheets), not a slot-4 transcoder.
 
 **`FUN_8001E54C`** is the `[type, size, data]` streaming chunk
-dispatcher: it switches on `*(char*)(chunk + 3)` (the chunk type byte)
-and routes each chunk to one of memcpy (case 0/2), LZS decode (case
-1/3), or another decoder (case 12). Its 4 captured writes at
-`0x801C0000` are scene-load chunk copies that land deeper into the
-buffer than cluster A's per-frame inputs at `+0x7F8` / `+0x8E4`.
+installer of a sound stream: it switches on `*(char*)(chunk + 3)` (the
+chunk type byte, jump table `0x80010600`) and routes each chunk to a
+`memcpy` into the slot's header buffer (case 0), the VAB open + body
+transfer `FUN_8002630C` (cases 1 and 3, the latter budget-bounded), or
+a copy into the slot's staging buffer followed by `SsSeqOpen` through
+`FUN_80026410` (case 2; case 12 opens the fixed SEQ record
+`0x800705AC`). None of its arms decodes LZS. Its 4 captured writes at
+`0x801C0000` are those copies, landing deeper into the buffer than
+cluster A's per-frame inputs at `+0x7F8` / `+0x8E4`. The port is
+`legaia_engine_core::chunk_install`.
 
 **Neither writer is a slot-4 transcoder.** `FUN_80028158` populates
 the working buffer procedurally and `FUN_8001E54C` copies *other*
