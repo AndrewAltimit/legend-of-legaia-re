@@ -1061,13 +1061,15 @@ pub const IMPACT_Z_LIFT: i16 = 0x32;
 // call it are `BakaFight`'s booking (`0x801D36F0` winner 0, `0x801D3744`
 // winner 1, `0x801D37B4` / `0x801D37C0` the draw with the keyframe reset), the
 // keyframe TRS column is parsed (`legaia_asset::baka_opponents::
-// BakaSubKeyframe::offset`) and the landed keyframe is the strike clock's
-// (`crate::baka_fighter::StrikeClock::landed`). What no host has is the
-// output: the two spawns are `FUN_80021B04` effect-part templates in the
-// overlay's rodata (`0x801DB8FC` / `0x801DB960` / `0x801DBBA4` /
-// `0x801DBBD4`), and no minigame host runs that effect runtime or knows the
-// fighters' world positions the offsets are relative to - so a call from the
-// booking would produce spawns nothing draws.
+// BakaSubKeyframe::offset`), the landed keyframe is the strike clock's
+// (`crate::baka_fighter::StrikeClock::landed`) and the fighters' world
+// positions and facing are the duel surface's
+// (`crate::baka_fighter::BakaFight::fighter_position` / `fighter_yaw`). What
+// no host has is the output: the two spawns are `FUN_80021B04` effect-part
+// templates in the overlay's rodata (`0x801DB8FC` / `0x801DB960` /
+// `0x801DBBA4` / `0x801DBBD4`), and the duel surface runs no effect-part
+// runtime to draw them, so a call from the booking would produce spawns
+// nothing draws.
 /// PORT: FUN_801d4df8 - the per-slot **impact effect pair**.
 ///
 /// Retail calls it on a decided exchange. It first zeroes the fighter's
