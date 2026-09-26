@@ -232,6 +232,12 @@ pub struct LegaiaRuntime {
     /// window's `--live-loop` / `--player-battle` flags. [`Self::set_live_battles`]
     /// turns it off for walk-only sessions.
     pub(crate) live_battles: bool,
+    /// The save an in-canvas card **Load** lifted, parked until the page
+    /// enters the scene it resumes in (`cards.rs`). `enter_field` takes it:
+    /// the loaded save's flags replace the picker's free-roam story baseline
+    /// and the save is re-applied after the scene swap, the native
+    /// `enter_field_live_from_save` order (enter, then load).
+    pub(crate) pending_card_resume: Option<legaia_save::SaveFile>,
     /// Battle<->Field BGM swap track override, the browser twin of the native
     /// window's `--battle-bgm <id>`. `None` = no page-side override, so the
     /// shipped default battle theme plays (`LiveLoopOpts::playable`);
@@ -447,6 +453,7 @@ impl LegaiaRuntime {
             play_clock_secs: 0,
             play_clock_origin_ms: None,
             live_battles: true,
+            pending_card_resume: None,
             battle_bgm: None,
             battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
             encounter_banner: None,
@@ -737,6 +744,7 @@ impl LegaiaRuntime {
     /// Returns the same JSON as [`Self::state_json`]. Throws when the disc isn't
     /// loaded or the label is unknown.
     pub fn enter_field(&mut self, name: &str) -> Result<String, JsValue> {
+        let resumed_save = self.pending_card_resume.take();
         let host = self
             .scene_host
             .as_mut()
@@ -754,7 +762,12 @@ impl LegaiaRuntime {
         // Free-roam story staging for PICKER entries only: the opening
         // chain's legs re-enter through here too, and their authored
         // presentation (silent dawn, pre-event scenery) must stay untouched.
-        if !host.world.cutscene.opening_chain_active && !host.world.cutscene_timeline_active() {
+        // A card Load's resume is not a picker visit either - the save's own
+        // story flags are the state (the baseline would clear 0x141 / 0x147).
+        if resumed_save.is_none()
+            && !host.world.cutscene.opening_chain_active
+            && !host.world.cutscene_timeline_active()
+        {
             host.world.seed_free_roam_story_baseline(name);
         }
         let world_map = legaia_engine_core::scene::is_world_map_scene(name);
@@ -814,6 +827,15 @@ impl LegaiaRuntime {
         });
         if !in_opening {
             self.seat_player();
+        }
+        // The card Load's save lands after the scene swap, as the native
+        // window lands it (`BootSession::enter_field_live_from_save`): scene
+        // entry resets per-scene world state, the save then restores the
+        // party, purses, bag and flags over it.
+        if let Some(sf) = resumed_save
+            && let Some(host) = self.scene_host.as_mut()
+        {
+            host.world.load_full(sf);
         }
         // A deliberate scene boot restages BGM from scratch: clear the dedupe
         // latch (so the scene's own op-`0x35` start is honoured even if it names
