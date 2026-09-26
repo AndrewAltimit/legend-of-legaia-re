@@ -2663,6 +2663,43 @@ hosts share the sepia word law (`prologue_sepia_word`), so the difference sits
 upstream of it, in what each host feeds that law for those primitives. Not
 fixed here.
 
+## Gaps absent from both hosts: overworld curvature, ground shadow
+
+Two retail draws are missing from **both** play hosts, so no tier fails on
+them; they sit here in the form a waiver takes.
+
+**The overworld curvature table on the continent.** `FUN_800271A8` builds a
+depth-indexed screen-Y table every overworld consumer adds to `SY`
+([`renderer.md`](../subsystems/renderer.md#frame-setup--present)). The port
+builds it (`engine-core::overworld_curvature`) and the shared fog kernel applies
+it, so both hosts' overworld sheets land where retail's walked packets do; the
+continent meshes draw without it on both hosts, flatter toward the horizon than
+retail's. Blocking capability: a per-vertex depth-to-`SY` term in the native
+mesh shaders and the page's GLSL twin, fed the one table.
+
+**The field drop shadow.** `FUN_8001C394` (called from the animated-actor
+renderer `FUN_8001B964`) projects a three-by-three grid of points `0x20` apart
+around the actor's feet (`FUN_800460AC`) and emits four textured quads -
+command `0x2E`, colour `0x808080`, texpage `0x1F` (ABR 0), CLUT `0x7F86`, one
+`8 x 8` cell each of the `16 x 16` blob at `u 0xE0`, `v 0` - linked at
+`((sum_z + 0xA0) >> 4) >> shift`, the `0xA0` bias putting the blob behind the
+actor it sits under. Neither host draws it, and the ignore list's
+`render_pipeline` scope, which reads it as replaced by the rasteriser, has no
+drawing mechanism behind it. Blocking capability: a per-actor blob draw in each
+host's scene pass that orders under the actor and over the ground without
+fighting the ground's depth.
+
+**The `opdeene` plant silhouettes** ([above](#a-prologue-mesh-set-drawn-black-natively))
+are measured, not fixed: the native frame reproduces them, `--no-entry-pulse`
+leaves them black (the VDF pulse is not the cause), and with the palette grade
+forced off they draw dim green. So the grade's packet half takes them to black:
+on `opdeene`, 1565 of the 6532 prims in the baked-colour rows (`flags >> 1` in
+`12..=19`) carry a colour word whose `max` is at most `30`, which
+`prologue_sepia_word` maps to `V = 0`. Retail draws the same plants bright, so
+either those words are not what retail modulates by or retail's rewrite does
+not reach them; the capture that pins the curve (`s1_newgame_field`) is taken
+at the black start of the crawl and cannot say which.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
