@@ -845,10 +845,12 @@ What still separates the frames:
   additive light. The port's overworld sheets are depth-tested per pixel at
   the particle's depth, which hides almost nothing (the native frame's fog
   delta moves from `26.7` to `25.3` of `255` with the test off).
-- **The continent draws without the curvature table**, so the corrected
-  sheets sit up to the table's entry (about `4` to `26` pixels over the
-  spawner's `0x4000` depth range) lower relative to the terrain than retail's
-  do.
+- **The curvature is per vertex on the continent, per sheet on the fog.**
+  Both hosts' mesh shaders bend the continent by the same table
+  ([`renderer.md`](renderer.md#frame-setup--present)), so sheet and ground
+  now move together; what remains is the granularity - a sheet takes one
+  entry at its particle's depth while the ground under it takes one per
+  vertex, as retail's do.
 - **The camera** (below).
 
 The render step subtracts the camera vertical offset `_DAT_8007BCAC` from
