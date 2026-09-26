@@ -1661,7 +1661,7 @@ backwards in one direction:
 | `vram_rect_copy` | `DISCLOSE` | `engine-render`, which implements no `FieldHost::op43_vram_rect_copy`; the software VRAM it would blit inside already exists |
 | `panel_backread_loader` | `DISCLOSE` | its only retail caller `FUN_80025358` is unported |
 | `mode::mode_init_bare` | `DISCLOSE` | a production owner of `ModeDriver` - `engine-shell`'s `BootSession::tick` handing frame sequencing to the driver |
-| `mode_entry_init::field_bgm_plan` | `DISCLOSE` | the two-part BGM arm has no engine analogue; the slot arithmetic itself is already live in `SceneHost::bgm_seq_bytes` |
+| `mode_entry_init::field_bgm_plan` | `DISCLOSE`, since closed as `WIRE` | the two-part arm is the credits theme; `mode_entry_init::two_part_bgm_stream` stages its score and bank at scene entry, so the plan is live |
 | `mode_entry_init::duel_overlay_init` | `DISCLOSE` | the duel's engine entry is the `baka_fighter` rules engine, which starts from a match state and not an overlay load |
 | `save_subscreen::sub15_*` | `DISCLOSE` | no engine screen offers the per-character list reorder; the backing array is the character record and does permute the Magic screen |
 
@@ -2289,7 +2289,7 @@ structure they blamed and are rewritten; every row stays held.
 | anchor | verdict | the call site, and the structure |
 |---|---|---|
 | `801cf00c` `duel_overlay_init` | held | the mode-24 door warp's `enter_baka_from_overlay` is the overlay-entry host the tag said did not exist; of the seeds only the win target and fighter slots have a consumer (both already the rules engine's constants), and the stage seed, arena camera, `6 x 6` window and the two stream ids have no duel-side counterpart |
-| `801d6704` `field_bgm_plan` | held | the slot arithmetic is live elsewhere (`SceneHost::bgm_seq_bytes`); the two-part arm and its one-shot latch have no scene-entry analogue |
+| `801d6704` `field_bgm_plan` | live | the two-part arm is the credits theme, now staged at scene entry through `mode_entry_init::two_part_bgm_stream`; the one-shot latch's stand-in is the directors' same-track suppression |
 | `801d4a60` `step_scene_program` / `lift_step` / `entry_successor` | wired | the pair it parks on is the side-band **bank** request / acknowledge, live as `World::audio.sound_stream`, not a BGM latch; `World::tick_scene_programs` now steps each resumed program from the handler pass |
 | `801d72a0` `help_panel_layout` | held | every row is the overlay's own string-pointer tables `0x801D8130` / `0x801D8168`, and no fishing help page exists to open |
 | `801d26cc` `bite_pad_nudge` | wired | the play hosts' `PondSession::tick` did run the band; what was off was the count - retail adds one per mask hit on `_DAT_8007B874` (`0x8000`, `0x2000`, and `0xC0` as one mask; the cast press none, `0x801D343C..0x801D3468`), and all three hosts now count through `PondInput::from_engine_pad` |

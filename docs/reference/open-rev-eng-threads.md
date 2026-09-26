@@ -110,6 +110,7 @@ cheapest place to look for a claim that is still wrong.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready | [details ↓](#region-story-flag-gate-families) |
+| Who sets a field NPC's moving-class bit `+0x10 & 0x20000`? | open - the consumer is pinned, the writer is not | `FUN_8003C9AC` (the motion-pause kick; callers `jal` at `0x801D5BF0` in PROT 0897 and `0x8003C0D4` in SCUS) acts only on an actor carrying the bit, and the engine never seeds it: its actor flags start at zero and only motion ops write them, so `legaia_engine_vm::motion_pause` stays unwired. A write sweep for `0x20000` into actor `+0x10` across SCUS and the field images, or a watch on a walking NPC's flag word, closes it. |
 
 Five rows closed here. **What clears the two halt bits an inn acquire sets** is
 the walk kernel `FUN_8003774C`, which `FUN_8003BC08` runs on `+0x10 & 0x400`:
@@ -588,9 +589,9 @@ performs either cast ([settled](re-settled-threads.md#battle--arts--level-up)).
 
 ## Audio / BGM
 
-| Thread | Status | What would close it |
-|---|---|---|
-| What does the field init's slot-10 load serve? | open (narrowed) - its scenes and its latch are pinned, its cues are not | `FUN_801D6704` loads raw `0x428` then `0x422` into slot 10, over slot 0's SPU base, only while the current track `*(0x8007BAC8)` is `0x814` and the one-shot latch `0x8007B9B8` is clear (`0x801D71A0..0x801D7274`). Track `0x814` is started by `edteien` and `edbalden` (`P1[0]` `+0x0C`, `35 14 08 01`); the load sets the latch in its own delay slot (`0x801D71CC`), SCUS reads it at `0x800243F4`, and its only clearer is the DEBUG MODE init (PROT 0971, `0x801CE9B4`) - a reference sweep, not a capture. Which category-10 cues those two ending scenes name closes it. |
+No open threads.
+
+**What does the field init's slot-10 load serve** closed as the credits theme, by disassembly and capture. The load is not a cue bank: `FUN_801D6704`'s two-part arm (`0x801D71A0..0x801D72D0`) stages the score from raw `0x428` (extraction 1062, one SEQ chunk) and its instruments from raw `0x422` (extraction 1056, a VAB-only bank), starts the sequence with `FUN_80026478(0x800705BC)` and sets the latch `0x8007B9B8`, while which `FUN_800243F0` returns at once (`0x8002440C`) - so the ordinary BGM loader stands aside for the credits. The ending states hold extraction 1062's SEQ chunk in slot 10's sequence buffer byte for byte ([settled](re-settled-threads.md#audio)).
 
 **Does a Muscle Dome round load the class-2 bank** closed as yes, by capture.
 From the arena's hub into a round, `FUN_8001DCF8(0x0C)` runs with the mode word
@@ -873,9 +874,7 @@ What remains, each with where it is recorded:
   camera-relative model draw and a VRAM edit after upload; and an attack clip
   stops at the booked exchange instead of playing out its tail
   ([`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#impact-cue-and-afterimage)).
-- **Battle**: `801F0450`'s art insertion tail is ported
-  (`battle_arts_auto_combo::insert_arts`) but not wired - its one host is the
-  command SM's Auto pick, which the engine does not offer; `FUN_8004AD80`'s
+- **Battle**: `FUN_8004AD80`'s
   kind ladder; `FUN_80048A08`'s ground shadow, which needs `FUN_80028158`'s
   case-1 disc geometry (the draw's per-object decisions, Rot limbs included,
   are ported on both hosts); and the Seru absorb's per-hit kill-check gates
@@ -883,9 +882,10 @@ What remains, each with where it is recorded:
   the target's HP ([`battle.md`](../subsystems/battle.md#the-retail-capture-roll-fun_801ec3e4)).
   The `0x801F0518` flag write, the ribbon's per-clip caller and the War God
   Icon's per-stage bump are modelled.
-- **Audio / anim**: `8004DA00`, `80064090` and `800480D8`, each blocked on a
-  host structure (no XA channel streamer, no multi-slot SEQ table, a crate
-  barrier between `engine-core` and `engine-render`).
+- **Anim**: `800480D8`, blocked on a crate barrier between `engine-core` and
+  `engine-render`. The two audio rows that stood beside it left the list without
+  a port: `FUN_8004DA00` only seeks the drive and `FUN_80064090` is unreachable
+  ([settled](re-settled-threads.md#audio)).
 
 Rows of the audit not named here were not re-read after it; the audit's own
 evidence column is the place to start before trusting one.

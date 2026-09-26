@@ -188,6 +188,7 @@
     <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
     <tbody>
       <tr data-row="region-story-flag-gate-families-record-header-c1c2-gates"><td>Region story-flag gate families (record-header C1/C2 gates)</td><td><span class="tag tag-partial">partial</span> - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready</td><td><a href="#d-region-gate-families">details &darr;</a></td></tr>
+      <tr data-row="who-sets-a-field-npcs-moving-class-bit-0x10--0x20000"><td>Who sets a field NPC's moving-class bit <code>+0x10 &amp; 0x20000</code>?</td><td><span class="tag tag-open">open</span> - the consumer is pinned, the writer is not</td><td>The motion-pause kick acts only on an actor carrying this bit, and the engine never sets it, so that port stays unwired. A write sweep for the bit across the executable and the field images, or a watch on a walking NPC's flag word, closes it.</td></tr>
     </tbody>
   </table>
   <p>Five rows closed here. <strong>What clears the two halt bits an inn conversation sets</strong> is the conversation's own opening op, read a second time by the per-actor walk kernel as a twenty-frame "turn to face" order: its last frame clears both bits, 18 frames after they went up, with the text box already open - so the halt is a window in which the player turns toward the speaker, not a stall. <strong>Whom that turn faces</strong> is whatever actor the op names, not always the speaker: 40 of the 146 such ops in placement scripts name another actor. <strong>The field's attached light</strong> was already fixed when its row was written; the dark rim matches retail on both captured scenes. <strong>A script jump read as a screen-mode test</strong> tests the held d-pad against a compass table, and <strong>a scratchpad bit</strong> turns out to be the "stand on this tile and press Down" re-poll Rim Elm's beats use (<a href="re-settled-threads.html">settled</a>).</p>
@@ -274,12 +275,8 @@
 
 <section class="doc-section" id="audio" data-doc="audio--bgm">
   <h2>Audio / BGM</h2>
-  <table>
-    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
-    <tbody>
-      <tr data-row="what-does-the-field-inits-slot-10-load-serve"><td>What does the field init's slot-10 load serve?</td><td><span class="tag tag-open">open</span> - narrowed: its scenes and its latch are pinned, its cues are not</td><td>The field init loads two extra sound banks into slot 10 only while one music track is playing and a one-shot latch is clear. That track is started by the two ending scenes' scripts; the load sets the latch itself, and only the debug-mode overlay clears it. Which sound cues those ending scenes play from the slot closes it.</td></tr>
-    </tbody>
-  </table>
+  <p>No open threads.</p>
+  <p><strong>What the field init's slot-10 load serves</strong> closed as the <em>credits theme</em>, by disassembly and capture. It is not a bank of sound effects: the field init stages the credits score and its instrument bank into sound slot 10, starts the score itself, and raises a latch that makes the ordinary music loader stand aside. The ending save states hold that score in slot 10's buffer byte for byte, and the engine now plays it from the same two disc entries (<a href="re-settled-threads.html">settled</a>).</p>
   <p><strong>Does a Muscle Dome round load the battle sound bank</strong> closed as yes, by capture: entering a round closes the field bank's slots and the battle loader stages the class-2 bank, exactly as an ordinary field battle does - which is what the port already did (<a href="re-settled-threads.html">settled</a>).</p>
   <p><strong>Do the hosts play the field's scripted SFX cues</strong> closed as yes, on both. The two script opcodes hand their cue ids to the same four-slot ring retail keeps; both hosts replay it, the field's own sound bank is resident and swapped per mode with the battle bank it shares memory with, and a cue whose bank is closed is silent rather than played from the wrong bank.</p>
   <p>The last three threads before it closed the same way: by fixing the instrument rather than the engine.</p>
