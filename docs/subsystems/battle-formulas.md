@@ -979,7 +979,7 @@ own epilogue:
 | `0x0A` | `0x80041E64` | **Opposed INT roll** that sets status bit `0x1000`. |
 | `0x0B`, `0x0C`, `0x0D` | `0x80041FB4` | **Learn a Tactical Art** for party slot `selector - 0x0B`. |
 | `0x0E` | `0x8004209C` | **Point Card discharge**. |
-| `0x82` | `0x800421A0` | `jal FUN_80046870` - the brightness ramp-up - then falls into the epilogue. |
+| `0x82` | `0x800421A0` | `jal FUN_80046870` - the Incense window top-up (`+0x40` walk ticks of encounter suppression, capped at `0x100`; see [battle-action.md](battle-action.md)) - then falls into the epilogue. |
 | `0x0F`..`0x81`, `0x83` | `0x800421A8` | **The epilogue.** 116 slots, all no-ops. |
 
 `0x800421A8` is where the register restore and `jr ra` live, and it is also the

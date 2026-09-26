@@ -4467,17 +4467,33 @@ Retail decides a capture inside the arms execution resolver `FUN_801EC3E4`
    `+30` percentage points is added first (`0x801ee238`). Then
    `rand() % 100 < chance` (rand at `jal 0x80056798`, the `%100` folded
    through the `0x51EB851F` reciprocal multiply).
-4. **Success**: after an eligibility check (`jal 0x801e91e8` - the
-   already-learned filter), the Seru id is stored into the battle context at
-   `+0x269` (`sb v0,0x269(a0)` at `0x801ee2e8` - the byte the shiny-Seru
-   patch hooks), which routes the action SM into the capture cinematic
-   (states `0x68..0x6B`) and the post-battle grant `FUN_801E92DC` teaches
-   spell `seru_id + 0x80`.
+4. **Success**: `FUN_801E91E8` (`jal` at `0x801EE2C0`) asks whether the
+   acting character already knows the Seru - it scans the learned-spell list
+   at `0x80084140 + char*0x414 + 0x704`, whose ids are full `0x8x` spell
+   ids - and answers "known" outright for a slot without its Ra-Seru
+   (`ctx[+0x25F + slot]`) or in a no-reward battle (`_DAT_8007BAC0`). Only an
+   unknown Seru is stored into the battle context at `+0x269` (`sb
+   v0,0x269(a0)` at `0x801ee2e8` - the byte the shiny-Seru patch hooks). The
+   roll's `rand()` is drawn on every Seru kill, before that check.
+5. **The grant is in the same action**, not after the battle: the action
+   SM's Done band reads `ctx[+0x269]` (`0x801E6224`), calls `FUN_801E92DC`
+   with it (`0x801E6234`) - which prepends spell `seru_id + 0x80` to the
+   character's list - raises the learn banner `0x59`, and holds its `0x52`
+   arm `0xB4` frames so the banner can be read. An earlier revision of this
+   section said success "routes the action SM into the capture cinematic
+   (states `0x68..0x6B`)"; those states belong to the capture *spells*, and
+   the Done band's own disassembly is where this byte goes.
 
-The engine port's missing-HP-fraction model (`World::resolve_capture`) is a
-engine-side approximation of the same "reliable only on a weakened Seru" feel;
-retail's actual condition is the killing blow plus the flat per-monster
-percent. The catch-rate byte is the `--seru-catch-rate` randomizer target
+The engine runs this path: `World::roll_seru_absorb`
+(`world/battle/seru_absorb.rs`) sits on the melee hit fold's kill check and
+reads the record's `+0x3E` / `+0x3F` off the monster catalog, and the Done
+band hands the staged byte to `World::learn_absorbed_seru`. Its one bound:
+retail reaches the kill check only for hits that pass the resolver's per-hit
+gates (`0x801EE134..0x801EE1A4`), which the port does not model, so it rolls
+on the hit that first reaches the target's HP. The engine's capture-spell
+path (`World::resolve_capture`, a missing-HP-fraction roll feeding the Seru
+registry) is a separate mechanism for the capture spells. The catch-rate byte
+is the `--seru-catch-rate` randomizer target
 ([randomizer.md](../tooling/randomizer.md#seru-catch-rate)).
 
 ## Arts command input

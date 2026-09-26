@@ -776,12 +776,13 @@ other two arms are unreachable. Closing that is a one-line mirror at battle
 entry plus a decision about which of the two latch sites survives - both in
 `crates/engine-core/src/world/`, so it is a sibling lane's edit.
 
-**`approach_distance` was not unblocked**, and the claim here that it would be
-is withdrawn. Its blocker is not geometry: it clamps a *requested* step length,
-and the port's attack band (`attack_advance` / `attack_short_step`) polls
-`range_check` rather than requesting a distance, so no call site holds a value
-for it to clamp. `FUN_801DF570` is also not called from the action SM at all -
-its caller is `FUN_801DEA50`.
+**`approach_distance` is live, through the effect-script walker, not the
+attack band.** It clamps a *requested* length, and the attack band
+(`attack_advance` / `attack_short_step`) polls `range_check` rather than
+requesting one; its only caller is `FUN_801DEA50`'s direct-spawn branch, which
+passes a `0x93` / `0x84` record's scaled Z offset (`0x801DEDC8`). That branch is
+`engine-core::action_effect_script::step_effect_script`, which now makes the
+call.
 
 ### `expand_cue_group`: the table was not the prerequisite
 
@@ -1736,18 +1737,16 @@ the fields by category, so the player sees the wrong rows today.
 
 ### Rows settled by a reference sweep rather than by reading source
 
-- `queue_applier::miracle_command_position` (`801E91E8`) is **not
-  dead-in-retail**. A five-form sweep finds exactly one reference corpus-wide:
-  a single `jal` from battle overlay 0898 at `0x801EE2C0`, inside the arms
-  resolver `FUN_801EC3E4`; zero data words, so it is in no dispatch table. The
-  per-slot Miracle marker it reads is a guard *inside* the routine, not a
-  precondition for entering it, which is why "the marker has no input
-  recognizer" does not make it unreachable. The applicability decision it
-  gates is live in the port (`World::miracle_marker_armed_for` and the
-  whole-string match in `finish_action_queue`); what is unconsumed is its
-  **return value**, a 1-based command position its caller stages into
-  `ctx[+0x269]`, which no engine type models. So: replaced for the decision,
-  inert for the value - and a row that would have been mis-filed as dead.
+- `queue_applier::learned_seru_position` (`801E91E8`) is **not
+  dead-in-retail**, and it is not a Miracle routine either. A five-form sweep
+  finds exactly one reference corpus-wide: a single `jal` from battle overlay
+  0898 at `0x801EE2C0`, inside the arms resolver `FUN_801EC3E4`, on the
+  killing-blow Seru absorb leg; zero data words, so it is in no dispatch
+  table. The list it scans (`+0x704` / `+0x705..` off `0x80084140`) is the
+  character's learned-spell list that `FUN_801E92DC` prepends to, and the
+  "marker" it gates on, `ctx[+0x25F + slot]`, is the Ra-Seru marker; its
+  return decides whether the absorbed Seru is staged into `ctx[+0x269]` for
+  the Done band's grant. It is live through `World::roll_seru_absorb`.
 - `move_vm/spawn.rs::spawn_move_actor` (`80021B04`) is not a move-VM leaf but a
   move-VM *producer*: its own tail is `jal FUN_80023070`, the dispatcher. The
   sweep finds 815 `jal` sites, all in the summon / cast band and the script-VM

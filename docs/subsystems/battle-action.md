@@ -54,7 +54,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x0B` | Action queued from menu | Holds while `ctx[+0x276] != 0` (menu still open). | `0x0A` once cleared. |
 | `0x0C` | **Action seed** - reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band. Calls `FUN_801EED1C` (the arts queue-builder; slot < 3) or, for a monster slot with the `+0x16E & 0x380` bits, `FUN_801E7320` (random-retarget: the rolled action - including a Magic cast - is kept, only its target re-rolls to the opposite side; see the [`0x380` notes](#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)). Reads RNG via `func_0x80056798()`. Calls `FUN_801EFE44` (camera bounds) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category). | `0x14`/`0x28`/`0x3C`/`0x46`/`0x50`/`0x64`/`0x68` per category. |
 | `0x14` | **Attack - face target** | `FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the 8-actor table at `0x801C9370` writing AI-side facing offsets at `ctx[+0x6E6 + i*2]`; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Party arm: stages approach anim `+0x1DA = 1` (the walk entry) → short-step. Monster arm: first-byte tag search over its action-record array (`FUN_80050E2C`, tag `0x20`, retry `1`) stages the returned entry index. | `0x15` (monster, tag-0x20 found); `0x19` (party, **or** a monster whose action table has no tag-`0x20` walk - the fallback stages tag `1` and skips the walk chain entirely); `0x1E` (in range). |
-| `0x15` | Attack - windup | Same idle pose + facing update; advances anim cursor `actor[+0x1DA]` until it matches `actor[+0x1D9]`, then re-queries swing table. | `0x16`. |
+| `0x15` | Attack - windup | Same idle pose + facing update; waits until the staged `actor[+0x1DA]` matches the committed `actor[+0x1D9]` (the pre-approach clip has started), then stages the monster's tag-`1` walk (`FUN_80050E2C` at `0x801E3340`). | `0x16`. |
 | `0x16` | Attack - advance | Pose + facing recompute; range recheck. Out of range → stalls (`0x801E35D0`) - **no attacker movement here**; the walk is the clip's root motion in the anim tick (`FUN_80047430` `0x80047D20..0x80047E18`, gated on the same range check). On range 0: stages the tag-`0x21` close-in, then the **arrival shove** (`0x801E33EC..0x801E3490`): steps the *target's* live `+0x34`/`+0x38` **and** seat `+0x3C`/`+0x40` pairs along the attacker's facing by `sin/cos >> 9`, looping while still in range - pushing the target back out to the range boundary. (An earlier revision read this as the attacker's advance loop; all four stores go through `s8`, the target.) | `0x17`. |
 | `0x17` | Attack - close-range | Anim/facing update; matches `actor[+0x1DA]` against `actor[+0x1D9]`. | `0x18`. |
 | `0x18` | Attack - strike | Final anim match → falls into the swing apex frame. | `0x1E`. |
@@ -1607,13 +1607,25 @@ fallback), so a melee attacker physically closes on its target, strikes and
 walks back to its seat. The port still cannot reproduce this park, now for a
 stronger reason: the locomotion drive runs in every approach state whether
 or not a clip is playing - the engine-native form of the
-`--approach-softlock-fix` guard - so an approach state always closes. Two
-routing differences from retail stand: out-of-range monsters take
-`0x15/0x16` with entry 1 staged instead of the tag-`0x20` scan (walk-less
-monsters therefore also take the windup chain rather than `0x19`), and the
-walk-back targets the seat directly (with off-turn actors continuing home)
-rather than replaying per-clip retreat root motion - retail's committed
-forward drift re-seats exactly in the engine.
+`--approach-softlock-fix` guard - so an approach state always closes. The
+monster routing is retail's: every `FUN_80050E2C` call site the action SM
+carries - the `0x20` / `1` pair in `0x14`, the walk in `0x15`, the close-in
+in `0x16`, the capture takedown's walk and the `0x22` knockout taunt below -
+runs the tag search over the monster's installed action table
+(`legaia_engine_vm::battle_action::monster_action_by_tag`, fed by
+`World::battle_monster_action_tags`), so the 180 records with no
+tag-`0x20` entry take `0x19` exactly as retail does and the six that carry
+one play their own pre-approach and close-in clips. The walk-back targets
+the seat directly (with off-turn actors continuing home) rather than
+replaying per-clip retreat root motion - retail's committed forward drift
+re-seats exactly in the engine.
+
+**The knockout taunt.** On the way into the Done band (`0x801E5594..
+0x801E5658`), a monster whose attack has left its target at zero HP searches
+its action table for tag `0x22` and, while at least one party member still
+stands, stages that entry with the stage latch `+0x1DC |= 2`. The wiping blow
+therefore plays no taunt, and most of the roster (166 of 186 records) carries
+no `0x22` entry at all. Port: `attack::stage_ko_taunt`.
 
 ## Cross-references with other battle helpers
 
@@ -3434,7 +3446,10 @@ The two arms carry per-code behaviour worth pinning:
   below); codes `4..=6` spawn two extra parts from the fixed prototypes
   `0x801F5E28` / `0x801F5E6C`.
 - **Direct arm** (bit `0x80` set, `0x801ded54..0x801def54`). Codes `0x93` /
-  `0x84` re-aim the Y through `FUN_801DF570` first; `0xFF` terminates;
+  `0x84` pass the scaled **Z** offset (record `+6`, the forward reach) through
+  `FUN_801DF570` before the rotation (`0x801DEDC0..0x801DEDD0`), clamping it
+  into `[3d/4, d]` of the attacker-to-target-seat separation `d` (engine:
+  `action_effect_script::step_effect_script`); `0xFF` terminates;
   codes `0x81..=0x83` follow the digit spawn with a secondary part from
   prototype `0x801F5EB0` seated at the actor's `+0x3C..+0x43` position plus
   a screen-shake global write when the `+0x45C8` context word is clear.
@@ -3561,13 +3576,16 @@ tile-board install pointer at `gp+0x138` = `_DAT_8007B450`). So `gp + 0x2E8` is
 `_DAT_8007B600` - in the `0x8007Bxxx` overlay-scratch band, not the `0x80084xxx` save/game-state
 window an inventory length lives in.
 
-Both overlay sites that reach that word by absolute address read it as a **frame countdown**:
-one decrements it by 1 and fires its expiry action only on the transition to zero, the other
-refuses to proceed while it is non-zero. Its writer `FUN_80046870`
-(`battle_helpers::advance_gauge`) tops it up by `0x40` and caps it at `0x100`. The pair is a
-cooldown window measured in frames, so `0xE0` is a threshold on remaining time rather than a
-capacity - which is why a host should return `0` ("no cooldown outstanding") and not plumb an
-inventory length in.
+It is the **Incense window**. Its one writer, `FUN_80046870`
+(`battle_helpers::top_up_cooldown`), is the whole of the applier's selector-`0x82` arm - class
+`0x82` being Incense (item `0x8A`) - and tops it up by `0x40`, capped at `0x100`. The two overlay
+sites that reach it by absolute address count it in field **walk-regen ticks**, not frames: the
+walk tick `FUN_801D0B90` (PROT 0897, `0x801D0CD4..0x801D0CE8`) decrements it once per running tick
+and, on the transition to zero, hands the field a "wore off" event (`_DAT_8007B450 = 0x801F2278`),
+and the region encounter roll `FUN_801D9E1C` skips its whole roll while it is non-zero
+(`0x801DA174`). So an Incense suppresses encounters outright for its window, and `0xE0` is the
+threshold below which another may be used - which is why a host should return `0` ("no window
+outstanding") and not plumb an inventory length in.
 
 ## Action queue and Tactical Arts trigger ordering
 

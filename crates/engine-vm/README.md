@@ -245,7 +245,9 @@ overwrite from the resident Miracle row at `0x801F64F4`), `clear_queue_msb`
 (the sweep that strips the row's on-disc `0x8C..0x8F` quirk),
 `apply_super_tail_replace` (`FUN_801EF9E4`, first-matching-row tail replace
 from `0x801F6524` / `0x801F65E8`), plus the still-inert `preseed_action_queue`
-/ `save_action_queue` / `check_and_learn_art` / `miracle_command_position`.
+/ `save_action_queue` / `check_and_learn_art`. (`learned_seru_position`, the
+`FUN_801E91E8` port beside them, is not a queue routine: it is the
+already-learned check of the killing-blow Seru absorb, and it is live.)
 `resolve_action_queue` - the entry point `engine-core` calls once per committed
 arts input - runs the first three in retail's finish order, so the live path is
 byte-level rather than structural; `legaia_art`'s matchers remain the *table*

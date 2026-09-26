@@ -68,7 +68,7 @@ The entry's first byte (`+0x00`) is a semantic **tag**, not just an index:
 | `7`, `8`, `9` | ready / recover / defeat poses (player files) |
 | `0x0B` | block |
 | `0x0C..0x1F` | castable spell / special actions (monster AI roll space); within it `0x0D`, `0x0E`, `0x0F` are the monster's **attack moves** (each a distinct move per monster, gameplay-verified across the archive) |
-| `0x20`, `0x21`, `0x22` | attack pre-approach / close-in / victory (monster files) |
+| `0x20`, `0x21`, `0x22` | attack pre-approach / close-in / knockout taunt - `0x22` plays when the monster's attack downs its target while a party member still stands, see [battle-action.md](../subsystems/battle-action.md) (monster files) |
 
 At battle init the monster installer `FUN_80054CB0` scans the entry table and
 caches the **entry index** of each tag in `{2,3,4,5,0x0B}` into battle-actor
