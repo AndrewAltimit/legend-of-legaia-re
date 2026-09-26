@@ -11,6 +11,7 @@ pub mod actor_handler;
 pub mod ap_gauge;
 pub mod art_strike;
 pub mod arts_command_input;
+pub mod baka_duel_scene;
 pub mod baka_fighter;
 pub mod baka_fighter_chrome;
 pub mod battle_afterimage;

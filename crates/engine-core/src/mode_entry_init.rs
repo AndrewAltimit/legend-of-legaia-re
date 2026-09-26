@@ -594,9 +594,11 @@ pub struct DuelOverlayInit {
     pub screen_width: u16,
     /// Ordering-table depth handed to `FUN_8001DCF8`.
     pub ot_depth: u8,
-    /// Constant third argument of the BGM start call `FUN_80062004`. Not
-    /// identified as a volume: the field initialiser passes `0x78` on one arm
-    /// and `0xB4` on another, so it is a per-site tuning constant.
+    /// Third argument of `FUN_80062004` - `SsSeqSetVol(voice, vol, ramp)`
+    /// through `FUN_80061EDC` (`docs/subsystems/cutscene.md`) - so the ramp
+    /// length re-applying the live level to the bound voice
+    /// `DAT_80070536`. The field initialiser passes `0x78` on one arm and
+    /// `0xB4` on another.
     pub bgm_arg3: u16,
     /// `_DAT_801DBED0` - the round-win **target**, and the drawn round-win pip
     /// count. Best of three, so `2`.
@@ -623,17 +625,15 @@ pub struct DuelOverlayInit {
 ///
 /// PORT: FUN_801CF00C (`0x801cf00c..0x801cf384`).
 ///
-/// NOT WIRED: the overlay-entry host exists - the mode-24 door warp's
-/// `SceneHost::enter_baka_from_overlay` reads PROT `0976` and builds the
-/// `BakaFight`, which is exactly where retail's mode table calls this
-/// initialiser - but none of the seeds it would hand over has a consumer
-/// there. `round_win_target` and `fighter_slots` are already the rules
-/// engine's own constants and agree; `screen_width` / `ot_depth` belong to
-/// the libgpu display setup the renderer replaces; and the rest - the stage
-/// counter seed, the arena camera pair, the `6 x 6` view window and the two
-/// streaming ids (SFX bank `0x367`, voice archive `0x415`) - have no duel-side
-/// counterpart, because the port stages no arena scene, camera or duel
-/// stream loads. A caller appears with the first of those.
+/// Read by the duel's 3D surface: `crate::baka_duel_scene::BakaDuelScene`
+/// sizes the arena floor from `window_tiles` - the `0x1F8003F8` /
+/// `0x1F8003FA` pair the floor emitter `FUN_801CEB84` loops over - so the
+/// seed is live on both play hosts through `BakaDuelSurface::frame`. The
+/// other seeds stay informational: `round_win_target` and `fighter_slots`
+/// agree with the rules engine's own constants, `screen_width` / `ot_depth`
+/// belong to the libgpu display setup the renderer replaces, the camera pair
+/// is overwritten by the round setup before any duel frame draws, and the
+/// port makes no duel stream loads for the two streaming ids.
 pub const fn duel_overlay_init() -> DuelOverlayInit {
     DuelOverlayInit {
         screen_width: 0x140,

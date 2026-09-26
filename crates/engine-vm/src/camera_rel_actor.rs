@@ -51,17 +51,18 @@
 //! camera-relative glide" is false by construction - the family is reached
 //! from a battle or a duel, never from a scene load.
 //!
-//! ## NOT WIRED
+//! ## Where it runs
 //!
-//! The camera half is available
-//! (`legaia_engine_core::camera::RetailCamGlobals::camera_snapshot` is the ten
-//! axes [`CameraSnapshot`] wants) and the record can now be laid out by
-//! [`glide_spawn_record`]. What is still missing is the **actor**: the
-//! camera-anchored family (spawn descriptor `DAT_8007071C`, actor list
-//! `_DAT_8007C34C`) has no engine counterpart, so nothing holds a spawned
-//! glide between frames. `engine-shell`'s `window/battle_cam.rs` drives its
-//! own `Glide` off `build_camera_angle_tween`'s slots directly instead, which
-//! is why the chain stops at the actor rather than at a missing kernel.
+//! The Baka Fighter duel hosts the family: its arena camera
+//! (`legaia_engine_core::baka_duel_scene::DuelCamera`) holds the one glide a
+//! duel can have live - the round-start spin's settle and a special commit's
+//! swing, both records PROT 0976 builds at `0x80070764` - normalizes it here
+//! and walks it with `legaia_engine_core::camera_rel_glide`, every tick of
+//! `BakaFight`. The battle's own producer does not reach it: the
+//! camera-anchored actor seat (spawn descriptor `DAT_8007071C`, actor list
+//! `_DAT_8007C34C`) has no engine counterpart in a battle, and
+//! `engine-shell`'s `window/battle_cam.rs` drives its own `Glide` off
+//! `build_camera_angle_tween`'s slots directly instead.
 
 /// Halfword pairs in a spawn record - nine tweened globals plus the GTE `H`
 /// channel, `20` halfwords in all.
@@ -134,13 +135,10 @@ pub struct NormalizedParams {
 ///
 /// PORT: FUN_80021248
 ///
-/// NOT WIRED: the camera half is available
-/// (`legaia_engine_core::camera::RetailCamGlobals::camera_snapshot`) and the
-/// record's producer is ported (`FUN_801D829C` ->
-/// [`crate::battle_camera::build_camera_angle_tween`] -> [`glide_spawn_record`]),
-/// but this normalizer's actor family - spawn descriptor `DAT_8007071C`,
-/// actor list `_DAT_8007C34C` - has no engine counterpart, so no host holds
-/// the spawned glide. See the module docs.
+/// Called by `legaia_engine_core::baka_duel_scene::DuelCamera::arm_glide`,
+/// which `BakaFight` reaches on a special commit and at the end of the
+/// round-start spin - live on both play hosts through `World::tick`. The
+/// battle's producer (`FUN_801D829C`) stays off it; see the module docs.
 pub fn normalize_camera_relative_params(
     record: &[i16; 20],
     cam: &CameraSnapshot,

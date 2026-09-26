@@ -546,7 +546,17 @@ pub fn cell_offscreen(corners: [(i32, i32); 4]) -> bool {
 ///
 /// [`VramMesh`]: legaia_tmd::mesh::VramMesh
 pub fn build_ground_grid() -> legaia_tmd::mesh::VramMesh {
-    let (x0, z0) = grid_origin(GRID_CELLS, GRID_CELLS);
+    build_ground_grid_sized(GRID_CELLS, GRID_CELLS)
+}
+
+/// [`build_ground_grid`] for a `width x height` cell field - the two words
+/// `_DAT_1F8003F8` / `_DAT_1F8003FA` the emitter reads its loop counts from.
+///
+/// The battle overlay seeds them to [`GRID_CELLS`]; the Baka Fighter overlay
+/// carries the same routine relocated (`FUN_801CEB84` in PROT 0976, the
+/// duel's floor) and its initialiser `FUN_801CF00C` seeds `6 x 6`.
+pub fn build_ground_grid_sized(width: i32, height: i32) -> legaia_tmd::mesh::VramMesh {
+    let (x0, z0) = grid_origin(width, height);
     let sub = GRID_SUB_STEP as f32;
 
     let mut m = legaia_tmd::mesh::VramMesh {
@@ -557,8 +567,8 @@ pub fn build_ground_grid() -> legaia_tmd::mesh::VramMesh {
         normals: Vec::new(),
         colors: Vec::new(),
     };
-    for iz in 0..GRID_CELLS {
-        for ix in 0..GRID_CELLS {
+    for iz in 0..height {
+        for ix in 0..width {
             let cx = (x0 + ix * GRID_CELL_PITCH) as f32;
             let cz = (z0 + iz * GRID_CELL_PITCH) as f32;
             // The 2x2 sub-quads of this cell, each a `0x100` step of the
