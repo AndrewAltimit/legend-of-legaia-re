@@ -37,7 +37,9 @@
 //! `+0x04` blend word, the per-arm frame gating (every body times its arms on
 //! the scratchpad frame-delta pair `0x1F80037D` / `0x1F800393` against a
 //! module-local countdown word, which is capture-pinned timing and not static
-//! shape), and the text draws (`FUN_8003541C`).
+//! shape - except PROT 0910's arms `6..=0x0A`, whose timers are what schedule
+//! its four slashes and are ported in [`swordie_tick`] / [`SwordieSlashes`]),
+//! and the text draws (`FUN_8003541C`).
 //!
 //! ## Three clamp shapes, not two
 //!
@@ -221,9 +223,14 @@ fn run_latched(
 /// nor heal - a negative roll reads as a huge unsigned value and clamps to
 /// the cap, leaving the victim on 1 HP.
 ///
+/// The cap is formed with `lhu` then `addiu -1` in a 32-bit register, so a
+/// victim already on `0` HP has a cap of `0xFFFFFFFF`: nothing clamps and the
+/// `sh` wraps HP below zero. The port keeps that wrap rather than saturating
+/// the cap to `0`.
+///
 /// Returns the damage actually applied.
 pub fn apply_hit_unsigned_floor_one(victim: &mut CastActorState, roll: i32) -> u32 {
-    let cap = u32::from(victim.hp).saturating_sub(1);
+    let cap = u32::from(victim.hp).wrapping_sub(1);
     let mut dmg = roll as u32;
     if cap < dmg {
         dmg = cap;
@@ -541,6 +548,47 @@ pub const SWORDIE_LETHAL_HIT: u32 = 4;
 /// [`swordie_slash`].
 pub const SWORDIE_APPLIED_SHIFT: u32 = 2;
 
+/// PROT 0910's module words and the context timer its arms `6..=0x0A` pace
+/// on - the state the four slashes live in.
+///
+/// Retail keeps the first three in the module's own image (`0x801F8D9C`,
+/// `0x801F8DAC`, `0x801F8DB0`, all zero in the image as loaded) and the fourth
+/// in the battle context (`ctx[+0x6D8]`, a signed halfword the Done band's
+/// tail timer also uses). The engine resets it when a cast is armed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SwordieSlashes {
+    /// `0x801F8D9C + slash * 4` - each slash's progress. Arm `8` zeroes all
+    /// four; [`swordie_slash_step`] grows one by `rate * speed` a call and
+    /// lands the hit on the call that carries it to `speed << 6`.
+    pub progress: [u32; SWORDIE_SLASHES as usize],
+    /// `0x801F8DAC` - hits landed this cast, zeroed by arms `0` and `2`
+    /// (`0x801F6C84`, `0x801F6E54`). The fourth landing is the lethal one.
+    pub hits: u32,
+    /// `0x801F8DB0` - the settle countdown: arm `9` arms it with `speed << 7`
+    /// (`0x801F79EC`), arm `0x0A` drains it by `rate * speed` once the last
+    /// slash has landed.
+    pub countdown: i32,
+    /// `ctx[+0x6D8]` - arm `6` loads `speed << 8`, arm `7` drains it until it
+    /// goes negative, arm `8` zeroes it and arm `9` grows it by `rate * speed`.
+    pub timer: i16,
+}
+
+/// The two scratchpad scalars PROT 0910's timers are built from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwordieClock {
+    /// `0x1F800393` - vsyncs per game tick (`lbu 0x7f(0x1F800314)`).
+    pub rate: u8,
+    /// `0x1F80037D` - the game-speed scalar (`lbu 0x69(0x1F800314)`); every
+    /// threshold scales by it, so the dwell in ticks depends on `rate` only.
+    pub speed: u8,
+}
+
+impl SwordieClock {
+    fn step(self) -> u32 {
+        u32::from(self.rate) * u32::from(self.speed)
+    }
+}
+
 /// PROT 0910 (Swordie, action id `0x88`) tick body.
 ///
 /// A `beq`/`slti` chain at `0x801F6A8C..0x801F6B30` over phases `0..=0x0A`
@@ -552,38 +600,58 @@ pub const SWORDIE_APPLIED_SHIFT: u32 = 2;
 ///
 /// Simulation writes, by arm:
 ///
-/// * `0` - `ctx[+0x278] = 0`;
-/// * `2` - summon `+0x1DA = 1`, `+0x1DC = 1`, `+0x21C = 0`, `+0x225 = 0`;
+/// * `0` - `ctx[+0x278] = 0`, hit counter `0x801F8DAC = 0`;
+/// * `2` - summon `+0x1DA = 1`, `+0x1DC = 1`, `+0x21C = 0`, `+0x225 = 0`,
+///   hit counter `= 0`;
 /// * `3` - summon `+0x1DA = 0` when its ramp crosses `0x40`, plus `+0x21C = 0`;
 /// * `5` - summon `+0x1DA = 2` (a plain store), `+0x1DC += 1`, `+0x21C = 7`;
-/// * `7` - summon `+0x21D = scratch[0x37D]`, i.e. the animation rate is set to
-///   the **frame delta** for the strike, then restored by the next clip;
-/// * `8` - victim `+0x21C = 0`;
-/// * `0x0A` - hold until the victim is idle, then write phase `0xFF`;
+/// * `6` - `ctx[+0x6D8] = speed << 8` (`0x801F76A8`);
+/// * `7` - drain `ctx[+0x6D8]` by `rate * speed` and **hold** while it is not
+///   negative (`bgez` at `0x801F76E0`); then summon `+0x21D = speed`
+///   (`0x801F7718`), i.e. the animation rate is set to the game-speed scalar
+///   for the strike;
+/// * `8` - `ctx[+0x6D8] = 0`, victim `+0x21C = 0`, all four slash progress
+///   words zeroed (`0x801F77E0..0x801F77F0`);
+/// * `9` - grow `ctx[+0x6D8]` by `rate * speed`; per slash `i`, run
+///   [`swordie_slash_step`] if it has started, or once the timer passes
+///   `(i + 2) * speed * 16` (`0x801F78D8..0x801F7938`) - so the slashes start
+///   staggered and overlap; hold until the timer passes `96 * speed`
+///   (`0x801F7960`), then arm the settle countdown with `speed << 7`;
+/// * `0x0A` - run all four steps unconditionally (`0x801F7A04..0x801F7A18`);
+///   once the last slash has landed, drain the countdown by `rate * speed`;
+///   when it is spent, hold until the victim is idle, then write phase `0xFF`;
 /// * `0xFF` - return zero.
+///
+/// With `rate = 4` those gates give arm `7` 65 ticks, arm `9` 25 and each
+/// slash 16 - the dwell `docs/subsystems/cast-module.md` measured for this
+/// body (arm `7` 65, arm `9` 25), which pins `rate` at retail's battle
+/// cadence of four vsyncs per tick. The arms before `6` are not gated here.
 ///
 /// **The tick body itself writes no HP and calls no damage wrapper.** That is
 /// what `docs/subsystems/cast-module.md`'s "`0` wrappers, `0` HP" cell
 /// measures, and it is true only of the tick's own extent: the cast's damage
 /// is [`swordie_slash`], a separate framed routine the tick calls four times.
-///
-/// `frame_delta` is the scratchpad byte at `0x1F80037D` - the per-frame tick
-/// count every body in the band paces on. It has no engine mirror, so arm `7`
-/// takes it as an argument rather than inventing one.
+/// `roll` is that routine's wrapper call (`FUN_801DD0AC(0x12, 7, target)`),
+/// drawn only on the call that lands a hit; the returned hits are
+/// `(victim_seat, applied)` per landing.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F69EC (PROT 0910 tick; phase chain + staging, packet/camera arms unported)
+/// PORT: FUN_801F69EC (PROT 0910 tick; phase chain, staging and the arm 6..0xA timers, packet/camera arms unported)
 pub fn swordie_tick(
     ctx: &mut CastModuleCtx,
     seats: &mut [CastActorState],
     summon_seat: u8,
     victim_seat: u8,
-    frame_delta: u8,
-) -> CastTickStep {
-    run_latched(ctx, |c| match c.phase {
+    slashes: &mut SwordieSlashes,
+    clock: SwordieClock,
+    mut roll: impl FnMut(u8) -> i32,
+) -> (CastTickStep, Vec<SweepHit>) {
+    let mut hits = Vec::new();
+    let step = run_latched(ctx, |c| match c.phase {
         0 => {
             c.ctx_278 = 0;
+            slashes.hits = 0;
             CastArmStep::Advance
         }
         2 => {
@@ -592,6 +660,7 @@ pub fn swordie_tick(
                 s.restage = SWORDIE_ARM2_CLIP;
                 s.render_flag = 0;
             }
+            slashes.hits = 0;
             CastArmStep::Advance
         }
         3 => {
@@ -609,19 +678,72 @@ pub fn swordie_tick(
             }
             CastArmStep::Advance
         }
+        6 => {
+            slashes.timer = (u32::from(clock.speed) << 8) as i16;
+            CastArmStep::Advance
+        }
         7 => {
+            slashes.timer = (slashes.timer as u16).wrapping_sub(clock.step() as u16) as i16;
+            if slashes.timer >= 0 {
+                return CastArmStep::Hold;
+            }
             if let Some(s) = seats.get_mut(summon_seat as usize) {
-                s.anim_rate = frame_delta;
+                s.anim_rate = clock.speed;
             }
             CastArmStep::Advance
         }
         8 => {
+            slashes.timer = 0;
+            slashes.progress = [0; SWORDIE_SLASHES as usize];
             if let Some(s) = seats.get_mut(victim_seat as usize) {
                 s.render_flag = 0;
             }
             CastArmStep::Advance
         }
+        9 => {
+            slashes.timer = (slashes.timer as u16).wrapping_add(clock.step() as u16) as i16;
+            for slash in 0..SWORDIE_SLASHES {
+                let started = slashes.progress[slash as usize] != 0;
+                // `sltu` against the timer loaded with `lh`: a negative timer
+                // reads as a huge unsigned value and opens every gate.
+                let gate = (u32::from(slash) + 2) * u32::from(clock.speed) * 16;
+                if (started || gate < i32::from(slashes.timer) as u32)
+                    && let Some(v) = seats.get_mut(victim_seat as usize)
+                    && let Some(applied) =
+                        swordie_slash_step(slashes, slash, v, clock, || roll(slash))
+                {
+                    hits.push(SweepHit {
+                        seat: victim_seat,
+                        applied,
+                    });
+                }
+            }
+            if i32::from(slashes.timer) <= 96 * i32::from(clock.speed) {
+                return CastArmStep::Hold;
+            }
+            slashes.countdown = i32::from(clock.speed) << 7;
+            CastArmStep::Advance
+        }
         SWORDIE_SETTLE_PHASE => {
+            for slash in 0..SWORDIE_SLASHES {
+                if let Some(v) = seats.get_mut(victim_seat as usize)
+                    && let Some(applied) =
+                        swordie_slash_step(slashes, slash, v, clock, || roll(slash))
+                {
+                    hits.push(SweepHit {
+                        seat: victim_seat,
+                        applied,
+                    });
+                }
+            }
+            let last = slashes.progress[SWORDIE_SLASHES as usize - 1];
+            let landed = last >= u32::from(clock.speed) << 6;
+            if landed && slashes.countdown > 0 {
+                slashes.countdown -= clock.step() as i32;
+            }
+            if slashes.countdown > 0 {
+                return CastArmStep::Hold;
+            }
             let settled = seats
                 .get(victim_seat as usize)
                 .map(|v| v.hp == 0 || v.playing_anim == 0)
@@ -632,9 +754,51 @@ pub fn swordie_tick(
             CastArmStep::Hold
         }
         SERU_B_DONE_PHASE => CastArmStep::Finish,
-        1 | 4 | 6 | 9 => CastArmStep::Advance,
+        1 | 4 => CastArmStep::Advance,
         _ => CastArmStep::Finish,
-    })
+    });
+    (step, hits)
+}
+
+/// One call of PROT 0910's `FUN_801F81DC` for `slash`: the progress half of
+/// the routine, then [`swordie_slash`] on the call that completes it.
+///
+/// ```text
+/// limit = speed << 6
+/// if progress[slash] >= limit { return }          ; 0x801F8264, a finished slash is inert
+/// progress[slash] += rate * speed                 ; 0x801F8280
+/// if progress[slash] < limit { draw the blade; return }   ; 0x801F8294, FUN_80021B04
+/// hits += 1                                       ; 0x801F885C
+/// ... land the hit ([`swordie_slash`])
+/// ```
+///
+/// A slash therefore takes `64 / rate` calls from its start to its hit, and
+/// the tick keeps calling it every frame after that without effect. The
+/// wrapper `roll` is drawn only on the landing call - retail's
+/// `jal 0x801DD0AC` sits past the early returns - so a caller's RNG cursor
+/// advances once per hit, not once per frame.
+///
+/// Returns the damage applied on a landing call, `None` otherwise.
+///
+/// PORT: FUN_801F81DC (the whole routine: progress accumulator, hit counter, and the landing through `swordie_slash`)
+pub fn swordie_slash_step(
+    slashes: &mut SwordieSlashes,
+    slash: u8,
+    victim: &mut CastActorState,
+    clock: SwordieClock,
+    roll: impl FnOnce() -> i32,
+) -> Option<u32> {
+    let limit = u32::from(clock.speed) << 6;
+    let progress = slashes.progress.get_mut(slash as usize)?;
+    if *progress >= limit {
+        return None;
+    }
+    *progress = progress.wrapping_add(clock.step());
+    if *progress < limit {
+        return None;
+    }
+    slashes.hits = slashes.hits.wrapping_add(1);
+    Some(swordie_slash(victim, slash, slashes.hits, roll()))
 }
 
 /// PROT 0910's per-slash applier - three `jal` sites inside [`SWORDIE_TICK`],
@@ -675,16 +839,10 @@ pub fn swordie_tick(
 ///
 /// Returns the damage applied.
 ///
-/// PORT: FUN_801F81DC NOT WIRED: the host that should call it is
-/// [`swordie_tick`]'s arms `9` and `0x0A`, which is where retail's three
-/// `jal` sites live. They stay silent here for two reasons: the per-slash
-/// firing order is the module's own frame gate (`slot[i] != 0` at
-/// `0x801F78D8`, then `(i + 2) * scratch[0x37D] * 16 < ctx[+0x6D8]` at
-/// `0x801F7900..0x801F7920`), which is capture-pinned timing this port does
-/// not carry; and the cast-band seam folds a cast's HP outcome once at
-/// `World::cast_spell_on_slots_prepaid`, so a second application here would
-/// double it. The kernel is exercised by this module's own tests.
-/// REF: FUN_801F69EC
+/// This is the landing half only; [`swordie_slash_step`] is the routine
+/// the tick calls, and it passes the incremented counter in.
+///
+/// REF: FUN_801F69EC, FUN_801F81DC
 pub fn swordie_slash(
     victim: &mut CastActorState,
     slash: u8,
@@ -1313,25 +1471,103 @@ mod tests {
         assert_eq!(ctx.ctx_27a, 0);
     }
 
+    const RETAIL_CLOCK: SwordieClock = SwordieClock { rate: 4, speed: 1 };
+
     /// PROT 0910's tick writes the summon seat and never HP.
     #[test]
     fn swordie_tick_stages_and_never_touches_hp() {
         let mut ctx = ctx_at(2);
         let mut s = seats(8);
-        assert_eq!(swordie_tick(&mut ctx, &mut s, 7, 3, 1), CastTickStep::Busy);
+        let mut st = SwordieSlashes::default();
+        let (step, hits) = swordie_tick(&mut ctx, &mut s, 7, 3, &mut st, RETAIL_CLOCK, |_| 0);
+        assert_eq!(step, CastTickStep::Busy);
+        assert!(hits.is_empty());
         assert_eq!(s[7].staged_anim, SWORDIE_ARM2_CLIP);
         assert_eq!(s[7].restage, SWORDIE_ARM2_CLIP);
         assert!(s.iter().all(|a| a.hp == 400));
     }
 
-    /// Arm 7 sets the animation rate to the frame delta, which is the strike
-    /// slow-down the move is known for.
+    /// Arm 7 holds on the `ctx[+0x6D8]` countdown arm 6 loads, then sets the
+    /// summon's animation rate to the game-speed scalar.
     #[test]
-    fn swordie_arm_seven_writes_the_frame_delta_as_anim_rate() {
-        let mut ctx = ctx_at(7);
+    fn swordie_arm_seven_holds_then_writes_the_speed_as_anim_rate() {
+        let mut ctx = ctx_at(6);
         let mut s = seats(8);
-        swordie_tick(&mut ctx, &mut s, 7, 3, 3);
+        let mut st = SwordieSlashes::default();
+        let clock = SwordieClock { rate: 4, speed: 3 };
+        swordie_tick(&mut ctx, &mut s, 7, 3, &mut st, clock, |_| 0);
+        assert_eq!(ctx.phase, 7);
+        assert_eq!(st.timer, 3 << 8);
+        let mut ticks = 0;
+        while ctx.phase == 7 {
+            swordie_tick(&mut ctx, &mut s, 7, 3, &mut st, clock, |_| 0);
+            ticks += 1;
+        }
+        // `speed << 8` drained by `rate * speed` a tick until it is negative.
+        assert_eq!(ticks, 65);
         assert_eq!(s[7].anim_rate, 3);
+    }
+
+    /// The measured dwell (`docs/subsystems/cast-module.md`, PROT 0910: arm
+    /// `7` 65 ticks, arm `9` 25) falls out of the timers at retail's battle
+    /// cadence of four vsyncs a tick, and every slash lands exactly once.
+    #[test]
+    fn swordie_timers_reproduce_the_measured_dwell_and_land_four_hits() {
+        let mut ctx = ctx_at(6);
+        let mut s = seats(8);
+        let mut st = SwordieSlashes::default();
+        let mut dwell = std::collections::BTreeMap::<u8, u32>::new();
+        let mut landed = Vec::new();
+        for _ in 0..1000 {
+            let phase = ctx.phase;
+            let (step, hits) =
+                swordie_tick(&mut ctx, &mut s, 7, 3, &mut st, RETAIL_CLOCK, |_| 40_000);
+            *dwell.entry(phase).or_default() += 1;
+            landed.extend(hits);
+            if step == CastTickStep::Done {
+                break;
+            }
+        }
+        assert_eq!(dwell[&7], 65);
+        assert_eq!(dwell[&9], 25);
+        assert_eq!(landed.len(), 4, "one landing per slash");
+        assert!(landed.iter().all(|h| h.seat == 3));
+        // Three non-lethal quarter-hits then the lethal one.
+        assert_eq!(landed[0].applied, 399);
+        assert_eq!(s[3].hp, 0, "the fourth landing is the kill-capable one");
+        assert_eq!(st.hits, 4);
+    }
+
+    /// A finished slash is inert: the settle arm keeps calling it every frame.
+    #[test]
+    fn swordie_slash_step_lands_once() {
+        let mut st = SwordieSlashes::default();
+        let mut v = seats(1)[0];
+        let mut calls = 0;
+        let mut lands = 0;
+        for _ in 0..40 {
+            if swordie_slash_step(&mut st, 0, &mut v, RETAIL_CLOCK, || {
+                calls += 1;
+                8
+            })
+            .is_some()
+            {
+                lands += 1;
+            }
+        }
+        assert_eq!(lands, 1);
+        assert_eq!(calls, 1, "the wrapper is drawn on the landing call only");
+        assert_eq!(st.progress[0], 64);
+    }
+
+    /// A victim already on 0 HP has a cap of `0xFFFFFFFF` (`lhu` + `addiu -1`),
+    /// so nothing clamps and HP wraps.
+    #[test]
+    fn unsigned_floor_one_wraps_on_a_dead_victim() {
+        let mut v = seats(1)[0];
+        v.hp = 0;
+        assert_eq!(apply_hit_unsigned_floor_one(&mut v, 5), 5);
+        assert_eq!(v.hp, 0xFFFB);
     }
 
     /// The finding: the first three slashes cannot kill, the fourth can.

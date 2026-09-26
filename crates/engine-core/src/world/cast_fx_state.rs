@@ -78,6 +78,11 @@ pub struct CastFxState {
     /// `None` outside that choreography.
     pub module_split_saved_target: Option<u8>,
     // --- end W1-D ---
+    /// PROT 0910 (Swordie)'s per-slash progress words, hit counter, settle
+    /// countdown and `ctx[+0x6D8]` arm timer
+    /// ([`legaia_engine_vm::cast_seru_ticks_b::SwordieSlashes`]) - the module
+    /// image's own words in retail, so a fresh cast starts them at zero.
+    pub module_swordie: legaia_engine_vm::cast_seru_ticks_b::SwordieSlashes,
     /// The action id whose **capture-band** module is resident, i.e. the one
     /// battle phase `0x70` re-enters every frame through `FUN_801F2160`.
     ///
@@ -152,6 +157,7 @@ impl CastFxState {
             // --- W1-D ---
             module_split_saved_target: None,
             // --- end W1-D ---
+            module_swordie: Default::default(),
             capture_spell: None,
             pending_move_fx_spawn: None,
             active_move_fx: None,

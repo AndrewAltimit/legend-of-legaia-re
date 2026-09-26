@@ -396,6 +396,24 @@ on slash 4 (`0x801F88E8`) - with one `sltu` at `0x801F88F0` either way. Kill
 capability there is per **hit**, not per module, so a damage-shape table keyed
 on the routine is one level too coarse for it.
 
+The applier is a per-slash state machine, not a one-shot hit. Each slash owns
+a progress word at `0x801F8D9C + slash * 4`; a call returns at once when the
+word has reached `speed << 6` (`0x801F8264`), otherwise grows it by
+`rate * speed` (`0x801F8280`, `rate` the frame step `0x1F800393`, `speed` the
+scalar `0x1F80037D`) and only lands the hit - counter, wrapper roll, cap,
+reaction - on the call that carries it over the limit. The tick's arm `9`
+starts slash `i` once `ctx[+0x6D8]` passes `(i + 2) * speed * 16`, so the four
+slashes overlap, and arm `0x0A` keeps calling all four until the last one has
+landed and a `speed << 7` countdown (`0x801F8DB0`) has drained. At the battle
+cadence of four vsyncs a tick those gates give arm `7` 65 ticks and arm `9`
+25, the dwell [measured below](#per-arm-dwell-in-module-ticks). A cap of
+`HP - 1` on a victim already at `0` is `0xFFFFFFFF` (`lhu` then `addiu -1`),
+so nothing clamps. The whole routine is ported as
+`cast_seru_ticks_b::swordie_slash_step`, and it is the one body in the band
+whose arm timers the engine runs: `World::run_cast_module_code` drives the
+four slashes on the world's frame step, with a neutral wrapper return, so each
+landing stages its reaction clip while the HP outcome stays the fold's.
+
 ### The two AoE sweeps
 
 Those same two routines are the band's only row-wide appliers **among the
@@ -1781,7 +1799,8 @@ All eleven are ported, one function per body:
 drives the capture-class bodies from, so a player summon in `play-window` or
 on the browser play page runs the module's own phase machine. What they leave
 out is what the static window cannot answer: the GPU-packet and camera arms,
-and the per-arm frame gating. The damage half still folds once, at
+and the per-arm frame gating (PROT 0910's arm `6..=0x0A` timers excepted,
+above). The damage half still folds once, at
 `World::cast_spell_on_slots_prepaid`, with the module's magnitudes routed into
 the fold - Vera's `level * 0x20 + 0xE0` and Orb's `(level << 6) + 0x1C0` - so
 no body applies HP twice.

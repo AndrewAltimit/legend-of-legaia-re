@@ -403,6 +403,7 @@ impl World {
         // starts from zero for the same reason.
         self.casting.module_nighto_outcome = None;
         self.casting.module_ring_angle = 0;
+        self.casting.module_swordie = Default::default();
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,
@@ -728,6 +729,7 @@ impl World {
         }
         self.casting.module_phase = 0;
         self.casting.module_ctx_278 = 0;
+        self.casting.module_swordie = Default::default();
         self.casting.capture_spell = Some(spell_id);
         self.emit_cast_module_voice(spell_id);
     }
@@ -2028,10 +2030,31 @@ impl World {
                 let (step, sweep) = seru::viguro_tick(ctx, seats, caster_slot, summon_slot, |_| 0);
                 (step, lift(&sweep.hits))
             }
-            910 => (
-                seru::swordie_tick(ctx, seats, summon_slot, victim_slot, FRAME_DELTA),
-                Vec::new(),
-            ),
+            // PROT 0910 paces its strike on two timers - arm 7's wind-up and
+            // arm 9's staggered slashes - built from the frame step
+            // (`0x1F800393`) and the speed scalar (`0x1F80037D`), so the slash
+            // reactions land on retail's cadence. Each of the four landings
+            // runs `swordie_slash_step` with a neutral wrapper return: the
+            // clamp, the hit counter and the per-slash reaction clip are
+            // live, the HP outcome stays the fold's.
+            910 => {
+                let clock = seru::SwordieClock {
+                    rate: self.clock.frame_step.max(1),
+                    speed: FRAME_DELTA,
+                };
+                let mut slashes = self.casting.module_swordie;
+                let (step, hits) = seru::swordie_tick(
+                    ctx,
+                    seats,
+                    summon_slot,
+                    victim_slot,
+                    &mut slashes,
+                    clock,
+                    |_| 0,
+                );
+                self.casting.module_swordie = slashes;
+                (step, lift(&hits))
+            }
             911 => {
                 let maxes: Vec<u16> = self.actors.iter().map(|a| a.battle.max_hp).collect();
                 // Spell id for a `cast_seru_ticks_b` entry: the player
