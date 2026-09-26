@@ -1904,9 +1904,11 @@ The port runs the pool arm and the tail from `World::begin_round_execution`
 committed off an Auto pick, and the member's dispatch plays the parked queue.
 The command costs and leading entry bytes come from the equipped swing
 records, the four guard masks from PROT 0898 at `0x801F672C`, and the tail's
-records from the character's art-animation bank. The port's **delegated** arm
-(record `+0xF8 & 0x2000`) still runs once per battle from the action SM's
-`Begin`, where retail runs it every round - a known divergence of that arm.
+records from the character's art-animation bank. The **delegated** arm
+(record `+0xF8 & 0x2000`) and the formation arm run in the same place, once per
+round, through `vm::battle_action::round_state_zero` (`World::run_round_state_zero`),
+before the round's first action dispatches; the per-action `Begin` the port
+re-arms finds the round's pass done and skips it.
 
 #### The art insertion tail (`0x801F0B4C..0x801F1274`)
 
@@ -2323,7 +2325,9 @@ bit, and carries the same caveat: it makes the compare unfailable, not the escap
 roll only ever tests against `2`, so a back attack costs the party its round-one initiative keys
 and nothing else. Because the roll reads only the *latched* copy, a state-`0x00` that clears
 `+0x290` without copying it - or an engine that stores the latch and never reads it back -
-silently disables pre-emptive-strike escapes for the whole battle.
+silently disables pre-emptive-strike escapes for the whole battle. The latch
+also runs **every round**, so round two's pass copies the `+0x290` round one
+cleared: a pre-emptive strike's unfailable escape compare lasts one round.
 
 On success the routine also stages the flee scene: every party actor is marked fleeing
 (`+0x1DA`/`+0x1DC` = 1, facing `+0x46` = `0x800`, pose byte `+0x1DD` = 9), positions are

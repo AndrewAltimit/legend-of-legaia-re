@@ -971,38 +971,37 @@ pub struct BattleActionCtx {
     /// `[+0x290]` - the formation advantage the battle-setup roll
     /// (`FUN_80051D84`) wrote: `1` back attack, `2` pre-emptive strike. `Begin`
     /// **latches** it into [`Self::formation_latched`] and then clears it, so
-    /// this field is only live for the first pass through state `0x00`.
+    /// this field is only live until round one's pass through state `0x00`.
     ///
     /// REF: FUN_80051D84
     pub formation_advantage: u8,
     /// `[+0x291]` - the latched copy of [`Self::formation_advantage`], written
-    /// by `Begin`. This is the copy that survives the battle, and it is what
-    /// the escape roll reads: `== 2` (pre-emptive strike) means escape is
+    /// by `Begin` at every round's state `0x00`. This is the copy that
+    /// survives the round, and it is what the escape roll reads: `== 2` (pre-emptive strike) means escape is
     /// assured. Clearing `+0x290` without latching it here silently disables
     /// pre-emptive-strike escapes.
     ///
     /// REF: FUN_801E791C
     pub formation_latched: u8,
-    /// Port-only: has the state-`0x00` formation arm
-    /// ([`crate::battle_action::begin_formation_arm`]) already run for this
-    /// battle?
+    /// Port-only: has state `0x00`'s once-per-round pass
+    /// ([`crate::battle_action::round_state_zero`] - the auto-fill leg and the
+    /// formation arm) already run for **this round**?
     ///
-    /// Retail needs no such flag because it enters state `0x00` **once per
-    /// round**, never per action: `ctx[7]` has exactly one zero-writer in the
+    /// Retail needs no such flag because it enters state `0x00` once per
+    /// round, never per action: `ctx[7]` has exactly one zero-writer in the
     /// corpus, the battle flow SM's `0xFE` arm (`FUN_801D0748`,
     /// `0x801D3224`), the flow reaches `0xFE` from the commit confirm's Begin
     /// (`0x801D31AC`) and the Run confirm, and the end-of-action gate hands
-    /// the next actor `0x0A`, never `0x00`. (An earlier note here said once
-    /// per *battle*; the Begin path to `0xFE` falsifies it.) The port re-arms
-    /// [`ActionState::Begin`] per action instead, and an unguarded re-entry
-    /// would rewind the turn cursor mid-round and copy the already-cleared
-    /// `+0x290` over `+0x291` (`+0x291` has one writer, `0x801E2B38`, and one
-    /// reader, the escape roll at `0x801E7AD8`). This flag makes the arm once
-    /// per battle, which keeps round 1's latch for the whole fight; retail's
-    /// round-2 entry copies the cleared `+0x290`, so its pre-emptive escape
-    /// bonus lasts one round - a divergence of this flag, not of the kernel.
+    /// the next actor `0x0A`, never `0x00`. The port re-arms
+    /// [`ActionState::Begin`] per action instead, so this flag keeps the
+    /// pass to the round's first entry: an unguarded re-entry would rewind
+    /// the turn cursor mid-round and re-run the delegated fill.
     ///
-    /// Reset with the rest of the context at battle entry.
+    /// The host clears it at the round boundary, so round two's pass copies
+    /// the `+0x290` round one cleared over `+0x291` exactly as retail's does
+    /// (`+0x291` has one writer, `0x801E2B38`, and one reader, the escape roll
+    /// at `0x801E7AD8`): a pre-emptive strike's assured escape lasts one
+    /// round. Reset with the rest of the context at battle entry.
     pub formation_armed: bool,
     /// `[+0x269]` - the Seru a killing blow absorbed this action (the
     /// player-magic index, spell `id - 0x80`), staged by the arts resolver

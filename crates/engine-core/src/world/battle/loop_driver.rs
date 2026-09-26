@@ -696,6 +696,8 @@ impl World {
     /// PORT: FUN_801E295C (state `0xFF`, `0x801E67E8..0x801E6810`)
     pub(in crate::world) fn end_battle_round(&mut self) {
         self.advance_battle_mode();
+        // The next round's `0xFE` re-enters state `0x00` (`0x801D3224`).
+        self.battle_ctx.formation_armed = false;
         self.tick_status_0x400_wakes();
     }
 
@@ -707,9 +709,8 @@ impl World {
     /// through that prompt, and nothing executes until the last commit.
     ///
     /// The keys are re-seeded only when none is live: the battle-open path
-    /// ([`World::enter_battle_from_formation`]) seeds them itself ahead of the
-    /// formation latch, because the seeder is the one reader of the unlatched
-    /// `ctx+0x290` and the side lockout would otherwise be lost; every later
+    /// ([`World::enter_battle_from_formation`]) seeds them itself, reading the
+    /// unlatched `ctx+0x290` for the side lockout before any latch; every later
     /// round finds them all spent and re-rolls.
     ///
     /// A **back attack** on the opening round takes retail's `0x0B -> 0xFE`
@@ -759,9 +760,12 @@ impl World {
             }
         }
         let first_round = self.battle_mode() == 0;
+        // `0x0B` reads the unlatched `+0x290` (round one's latch runs at its
+        // `0xFE`, after this). A battle staged by `enter_battle` alone stepped
+        // its parked Begin first, so its roll already sits in `+0x291`.
+        let back = vm::battle_formulas::FormationAdvantage::BackAttack;
         let ambushed = first_round
-            && self.battle_formation_latched()
-                == vm::battle_formulas::FormationAdvantage::BackAttack;
+            && (self.battle_formation() == back || self.battle_formation_latched() == back);
         if ambushed {
             // `0x0B`'s `ctx[+0x290] == 1` arm stores `0xFE` outright.
             self.begin_round_execution();
@@ -807,6 +811,10 @@ impl World {
         // action SM at `0x00`, and `0x00` opens with `FUN_801F0450`: the pool
         // arm runs here, once per round, for every Auto-flagged Attack.
         self.run_auto_attack_pool_arms();
+        // ...and the rest of that state-`0x00` pass: the delegated auto-fill
+        // leg and the formation arm, once per round, before the first action
+        // dispatches (a first-round Run rolls its escape at dispatch).
+        self.run_round_state_zero();
         self.battle.command = None;
         self.set_battle_flow(BattleFlowState::Idle);
         // A round entered without its start (a host or test that opened a

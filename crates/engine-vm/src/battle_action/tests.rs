@@ -300,6 +300,31 @@ fn begin_seeds_the_turn_cursor_from_the_formation_advantage() {
     assert_eq!(seed(3, 9), 9, "unmapped advantage stores nothing");
 }
 
+/// State `0x00` runs once per **round** (flow `0xFE` writes `ctx[7] = 0` at
+/// `0x801D3224` each round): within a round the pass is a no-op, and once the
+/// host clears the flag at the round boundary the next pass copies the
+/// already-cleared `+0x290` over `+0x291`.
+#[test]
+fn round_state_zero_runs_once_per_round_and_relatches_the_cleared_byte() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    ctx.formation_advantage = 2;
+    assert!(round_state_zero(&mut host, &mut ctx));
+    assert_eq!(ctx.formation_latched, 2);
+    assert_eq!(ctx.formation_advantage, 0);
+    ctx.turn_cursor = 4;
+    assert!(!round_state_zero(&mut host, &mut ctx), "same round: no-op");
+    assert_eq!(ctx.turn_cursor, 4);
+    assert_eq!(ctx.formation_latched, 2);
+    // Round boundary.
+    ctx.formation_armed = false;
+    assert!(round_state_zero(&mut host, &mut ctx));
+    assert_eq!(
+        ctx.formation_latched, 0,
+        "round two latches the cleared byte"
+    );
+    assert_eq!(ctx.turn_cursor, 0);
+}
+
 #[test]
 fn begin_without_menu_routes_to_pre_action_wait() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);

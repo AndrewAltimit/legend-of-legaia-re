@@ -402,12 +402,10 @@ impl World {
         // very first turn (see the opener pick below). A no-SPD battle leaves
         // every key at 0 and stays on the round-robin fallback.
         self.seed_battle_initiative();
-        // Run the action SM's state-`0x00` formation arm: seed the turn cursor
-        // from `+0x290`, then latch it into `+0x291` and clear the original.
-        // It must run *after* the seeder, which is the only reader of the
-        // unlatched copy; the latched copy is what `roll_battle_escape` reads
-        // for the rest of the battle.
-        self.latch_battle_formation();
+        // Flow state `0x0A`'s banners off the unlatched `+0x290`. The action
+        // SM's latch is not here: retail's state `0x00` runs at each round's
+        // `0xFE` (`World::run_round_state_zero`), after round one's commands.
+        self.open_battle_formation();
         // Switch to the battle track (if configured) - the host's BGM
         // director cross-fades from the field music.
         self.swap_to_battle_bgm();

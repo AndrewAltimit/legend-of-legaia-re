@@ -39,7 +39,7 @@ impl World {
     }
 
     /// Write `ctx+0x291` directly, bypassing the latch. Tests only - production
-    /// reaches it through [`Self::latch_battle_formation`].
+    /// reaches it through [`Self::run_round_state_zero`].
     pub fn set_battle_formation_latched(
         &mut self,
         advantage: vm::battle_formulas::FormationAdvantage,
@@ -290,42 +290,47 @@ impl World {
         self.set_battle_formation(rolled);
     }
 
-    /// Run the action SM's state-`0x00` **formation arm** on the live battle
-    /// context - [`vm::battle_action::begin_formation_arm`], which seeds the
-    /// turn cursor `ctx[+0x1A]` from `ctx[+0x290]` and then latches `+0x290`
-    /// into `+0x291` and clears it.
+    /// Flow state `0x0A`'s battle-open reads of the **unlatched** formation
+    /// byte: the formation banner and the enemy-name banner's hold.
     ///
-    /// The engine calls it at battle open because that is where retail runs
-    /// it: the flow SM's `0xFE` arm is the corpus' only writer of `ctx[7] = 0`
-    /// (`FUN_801D0748`, `0x801D3224`), so `FUN_801E295C` reaches `0x00` on the
-    /// first battle frame and then holds in `0x0B` while the command menu is
-    /// up. The port parks its whole SM while a command session is open, so the
-    /// arm has to be driven here or a first-turn Run would roll its escape
-    /// against an unlatched `+0x291`.
+    /// This no longer latches. Retail's action SM reaches state `0x00` only
+    /// from the flow's `0xFE` arm (`FUN_801D0748`, `0x801D3224` - the corpus'
+    /// one writer of `ctx[7] = 0`), which the commit confirm's Begin
+    /// (`0x801D31AC`) or the round-one back-attack jump reaches - so the latch
+    /// runs after round one's commands, not at battle open, and again every
+    /// round after ([`Self::run_round_state_zero`]). Everything that reads the
+    /// byte before that point - the seeder's side lockout (`0x801DAA40`), the
+    /// back-attack jump (`0x0B`), these banners - reads `+0x290` itself.
     ///
-    /// Must run **after** [`Self::seed_battle_initiative`]: the seeder is the
-    /// only reader of the unlatched `+0x290` (`0x801DAA40`), so arming before
-    /// it would silently disable the side lockout, and never arming at all
-    /// silently disables pre-emptive-strike escapes
-    /// ([`Self::roll_battle_escape`]).
-    ///
-    /// REF: FUN_801E295C (state 0x00; the kernel carries the `PORT:` tag)
-    /// REF: FUN_801D0748 (the flow arm that writes `ctx[7] = 0` at battle open)
-    pub(in crate::world) fn latch_battle_formation(&mut self) {
-        // The banner is chosen from the **unlatched** copy, because the arm
-        // below clears it - retail reads it in state `0x0A` (`FUN_801D9D3C`),
-        // one state before the action SM's `0x00` latch runs.
+    /// REF: FUN_801D9D3C
+    pub(in crate::world) fn open_battle_formation(&mut self) {
+        // The banner is chosen from the **unlatched** copy - retail reads it
+        // in state `0x0A` (`FUN_801D9D3C`).
         self.raise_battle_open_banner();
         // Flow state `0x0A`'s other half: the enemy-name banner and its
         // `ctx[+0x6D6]` hold, whose length reads the same unlatched byte.
         self.arm_battle_intro_names();
-        let party = self.party.party_count;
-        // `ctx[+0x01]` is the seated monster count, not the width of the
-        // 8-slot table - the tail of it is empty in most formations.
-        let monsters = ((party as usize)..self.actors.len())
-            .filter(|&slot| self.actors[slot].battle.liveness != 0)
-            .count() as u8;
-        vm::battle_action::begin_formation_arm(party, monsters, &mut self.battle_ctx);
+    }
+
+    /// The action SM's state `0x00` as retail runs it **once per round**, at
+    /// the round's `0xFE` - [`vm::battle_action::round_state_zero`]: the
+    /// delegated auto-fill leg of `FUN_801F0450`, then the formation arm
+    /// (turn-cursor seed from `+0x290`, latch into `+0x291`, clear).
+    ///
+    /// It runs before the round's first action, so a Run committed in round
+    /// one rolls its escape (at dispatch) against the latched pre-emptive
+    /// strike, and round two's pass copies the cleared byte, ending it. A
+    /// no-op when a Begin already ran the pass this round (a battle staged by
+    /// `World::enter_battle` alone steps its parked Begin first);
+    /// [`Self::end_battle_round`] re-arms it.
+    ///
+    /// REF: FUN_801E295C (state 0x00; the kernel carries the `PORT:` tag)
+    /// REF: FUN_801D0748 (the `0xFE` arm that writes `ctx[7] = 0`)
+    pub(in crate::world) fn run_round_state_zero(&mut self) {
+        let mut ctx = self.battle_ctx.clone();
+        let mut host = crate::world::vm_hosts::BattleHostImpl { world: self };
+        vm::battle_action::round_state_zero(&mut host, &mut ctx);
+        self.battle_ctx = ctx;
     }
 
     /// Queue the battle-open formation banner - `Ambushed!` or the

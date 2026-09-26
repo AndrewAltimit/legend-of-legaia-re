@@ -562,7 +562,7 @@ fn seed_then_latch_feeds_both_formation_consumers() {
     assert!(w.actors[1].battle.init_key > 0);
     assert!(w.actors[2].battle.init_key > 0);
 
-    w.latch_battle_formation();
+    w.run_round_state_zero();
     assert_eq!(
         w.battle_formation_latched(),
         FormationAdvantage::Preemptive,
@@ -1282,4 +1282,25 @@ fn enemy_move_status_applier_rejects_a_party_caster() {
         !world.battle.status_effects.is_afflicted(1),
         "a party-slot caster is rejected by the applier's own seat guard"
     );
+}
+
+/// Retail runs action state `0x00` at every round's `0xFE` (`0x801D3224`), so
+/// a pre-emptive strike's assured escape (`+0x291 == 2`) lasts one round:
+/// round two's pass copies the `+0x290` round one cleared. The port ran the
+/// pass once per battle and kept the latch for the whole fight.
+#[test]
+fn the_pre_emptive_escape_latch_lasts_one_round() {
+    use legaia_engine_vm::battle_formulas::FormationAdvantage;
+
+    let mut w = escape_world(40, 40, None);
+    w.set_battle_formation(FormationAdvantage::Preemptive);
+    w.run_round_state_zero();
+    assert_eq!(w.battle_formation_latched(), FormationAdvantage::Preemptive);
+    // A second pass in the same round is a no-op.
+    w.run_round_state_zero();
+    assert_eq!(w.battle_formation_latched(), FormationAdvantage::Preemptive);
+    // Round boundary: the next round's pass latches the cleared byte.
+    w.end_battle_round();
+    w.run_round_state_zero();
+    assert_eq!(w.battle_formation_latched(), FormationAdvantage::None);
 }
