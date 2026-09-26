@@ -62,7 +62,17 @@ impl PlayWindowApp {
             self.cutscene = None;
         }
         let run_ticks = if self.cutscene.is_some() { 0 } else { ticks };
-        for _ in 0..run_ticks {
+        // A key tapped between two redraws is set and cleared before any
+        // tick samples `pad`; the latch hands it to this frame's first tick
+        // as one held tick (`PadTapLatch`, the browser page's `pulse`).
+        let held_pad = self.pad;
+        let first_tick_pad = self.pad_taps.take_frame_word(held_pad);
+        for tick_i in 0..run_ticks {
+            self.pad = if tick_i == 0 {
+                first_tick_pad
+            } else {
+                held_pad
+            };
             self.tick_no += 1;
             // Scripted keyboard harness (`--key-script`): deliver this tick's
             // keys through the real keyboard arms, press then release, before
@@ -275,6 +285,10 @@ impl PlayWindowApp {
             } else {
                 self.pad
             };
+            // A shop / prize exchange is a menu-overlay session in retail
+            // (the field overlay is swapped out under it), so the world does
+            // not tick at all while one is up - the browser page's freeze.
+            let field_suspended = self.menu_runtime.suspends_field();
             // Re-assert the precise-movement toggle each tick: scene / New
             // Game transitions can reseed world state, and the toggle is
             // host policy (options file + `R` key), not world state.
@@ -297,7 +311,11 @@ impl PlayWindowApp {
             // `set_pad` also latches the run button off the same word, so
             // there is nothing host-side to keep in sync.
             self.session.host.world.set_pad(field_pad);
-            match self.session.tick() {
+            match if field_suspended {
+                Ok(legaia_engine_core::scene::SceneTickEvent::Stepped)
+            } else {
+                self.session.tick()
+            } {
                 // Door transition: the host loaded a new scene under
                 // the window (field-VM op 0x3E/0x3F or a walk-touch
                 // door). Rebuild the render-side scene state so the
@@ -361,7 +379,10 @@ impl PlayWindowApp {
             // mode when the song timer runs out but leaves the game
             // installed for one frame. Detect that (mode no longer
             // Dance while a game is still present), log the final grade,
-            // and clear it.
+            // and clear it. `exit_dance` gives the hall its own track back
+            // itself (`restore_minigame_bgm` queues the start this host's
+            // BGM routing plays), as on the browser page; a second start
+            // here restarted the field track on top of it.
             if self.session.host.world.mode != SceneMode::Dance
                 && let Some(g) = self.session.host.world.exit_dance()
             {
@@ -370,7 +391,6 @@ impl PlayWindowApp {
                     g.score(),
                     g.passed()
                 );
-                self.session.restore_field_bgm();
             }
             // A field-VM shop op (`0x49` sub-0 inline shop record) opened
             // a priced gold shop this tick: hand the player into its buy
@@ -521,6 +541,15 @@ impl PlayWindowApp {
             // Advance the field party-status HUD's idle countdown
             // (`FUN_801D0D38`). Its decision is read back in the draw pass.
             self.tick_field_party_hud();
+        }
+        // The tap was one tick held; the word the key events maintain is
+        // the held set again. The scripted harnesses own the pad word and
+        // press through `handle_key`, so their presses are not taps.
+        if run_ticks > 0 && self.screenshot.is_none() {
+            self.pad = held_pad;
+        }
+        if self.screenshot.is_some() {
+            self.pad_taps.clear();
         }
         legaia_engine_render::profile::mark("tick");
         // The scene floor-height ladder is script-animated (op `0x4C`
