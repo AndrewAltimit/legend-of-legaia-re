@@ -57,6 +57,9 @@ struct RecHost {
     capture_busy_frames: RefCell<u32>,
     /// How many times `capture_stager_tick` was entered.
     capture_ticks: RefCell<u32>,
+    /// Per-slot monster action-tag tables (`monster_action_tags`); absent =
+    /// the host resolves no record for that slot.
+    monster_tags: std::collections::HashMap<u8, Vec<u8>>,
 }
 
 impl RecHost {
@@ -111,6 +114,9 @@ impl BattleActionHost for RecHost {
     }
     fn first_monster_id(&self) -> u8 {
         self.first_monster_id
+    }
+    fn monster_action_tags(&self, slot: u8) -> Option<Vec<u8>> {
+        self.monster_tags.get(&slot).cloned()
     }
     fn victory_stage(&mut self, party_slot: u8) {
         self.record(Event::VictoryStage(party_slot));
@@ -800,12 +806,20 @@ fn attack_face_out_of_range_party_routes_to_short_step() {
     ));
 }
 
+/// Monster 73's tag table off PROT 0867: the pre-approach (`0x20`) sits at
+/// entry 10 and the close-in (`0x21`) at entry 11 - far from the literal
+/// `1` a party arm stages.
+const TAGS_WITH_PRE_APPROACH: [u8; 12] = [
+    0x00, 0x01, 0x0B, 0x02, 0x04, 0x05, 0x0D, 0x0E, 0x11, 0x23, 0x20, 0x21,
+];
+
 #[test]
-fn attack_face_out_of_range_monster_routes_to_windup() {
+fn attack_face_out_of_range_monster_with_a_pre_approach_routes_to_windup() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 4);
     ctx.action_state = ActionState::AttackFace.as_byte();
     host.actors[4].active_target = 1;
     host.ranges.insert((4, 1), 100);
+    host.monster_tags.insert(4, TAGS_WITH_PRE_APPROACH.to_vec());
     let out = step(&mut host, &mut ctx);
     assert!(matches!(
         out,
@@ -814,6 +828,84 @@ fn attack_face_out_of_range_monster_routes_to_windup() {
             ..
         } if to == ActionState::AttackWindup.as_byte()
     ));
+    // The tag-0x20 entry's INDEX is what lands in `+0x1DA`.
+    assert_eq!(host.actors[4].queued_anim, 10);
+}
+
+/// 180 of the 186 populated monster records carry no tag-`0x20` entry;
+/// retail stages their tag-`1` walk and routes them to the party's `0x19`
+/// short step (`0x801E3284..0x801E32D0`), not the windup chain.
+#[test]
+fn attack_face_out_of_range_monster_without_a_pre_approach_takes_the_short_step() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 4);
+    ctx.action_state = ActionState::AttackFace.as_byte();
+    host.actors[4].active_target = 1;
+    host.ranges.insert((4, 1), 100);
+    host.monster_tags.insert(4, vec![0x00, 0x02, 0x01, 0x04]);
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition {
+            to,
+            ..
+        } if to == ActionState::AttackShortStep.as_byte()
+    ));
+    assert_eq!(host.actors[4].queued_anim, 2, "the tag-1 entry's index");
+}
+
+/// The windup stages the walk once the pre-approach has committed, and the
+/// advance stages the close-in on arrival - each by tag.
+#[test]
+fn the_monster_approach_chain_stages_walk_then_close_in_by_tag() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 4);
+    host.actors[4].active_target = 1;
+    host.monster_tags.insert(4, TAGS_WITH_PRE_APPROACH.to_vec());
+    ctx.action_state = ActionState::AttackWindup.as_byte();
+    host.actors[4].queued_anim = 10;
+    host.actors[4].current_anim = 10;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::AttackAdvance.as_byte());
+    assert_eq!(host.actors[4].queued_anim, 1, "tag-1 walk is entry 1 here");
+    // In range (the test host's default range is 0): arrival.
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::AttackCloseRange.as_byte());
+    assert_eq!(host.actors[4].queued_anim, 11, "tag-0x21 close-in");
+}
+
+/// A monster that downs its target plays its tag-`0x22` entry - unless the
+/// blow wiped the party.
+#[test]
+fn a_monster_that_downs_its_target_stages_its_ko_taunt_while_the_party_stands() {
+    let tags = vec![0x00, 0x01, 0x02, 0x22];
+    // Target down, another member standing: the taunt is staged.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 4);
+    host.actors[4].active_target = 1;
+    host.actors[1].liveness = 0;
+    host.monster_tags.insert(4, tags.clone());
+    ctx.action_state = ActionState::AttackReturn.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
+    assert_eq!(host.actors[4].queued_anim, 3);
+    assert!(host.actors[4].flag_bits.has(ActorFlags::ADVANCE_DONE));
+
+    // The wiping blow: nobody left standing, nothing staged.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 4);
+    host.actors[4].active_target = 1;
+    for p in 0..3 {
+        host.actors[p].liveness = 0;
+    }
+    host.monster_tags.insert(4, tags.clone());
+    ctx.action_state = ActionState::AttackReturn.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(host.actors[4].queued_anim, 0);
+
+    // Target still up: nothing staged.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 4);
+    host.actors[4].active_target = 1;
+    host.monster_tags.insert(4, tags);
+    ctx.action_state = ActionState::AttackReturn.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(host.actors[4].queued_anim, 0);
 }
 
 #[test]
@@ -3411,4 +3503,44 @@ fn done_band_teardown_honours_the_category_and_spirit_gates() {
         vec![DONE_SPIRIT_ELEMENT_A, DONE_SPIRIT_ELEMENT_B],
         "Run drops 0x44, the Spirit latch adds its pair"
     );
+}
+
+/// State `0x3E`'s class-5 arm (`0x801E3E80..0x801E4018`): the gauge-extension
+/// item raises the two gauge elements, bumps their teardown latch, draws the
+/// camera variant `(rand % 2) * 2` and stages the extended gauge and the
+/// spirit target. Any other class draws nothing here.
+#[test]
+fn the_gauge_extend_class_draws_its_camera_variant_in_spirit_fire() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Item, 0);
+    ctx.action_state = ActionState::SpiritFire.as_byte();
+    host.actors[0].cast_class = 5;
+    host.actors[0].active_target = 1;
+    host.actors[0].spirit_gauge = 95;
+    host.actors[1].agl_base = 150;
+    host.rng_seq = vec![7];
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::SpiritFireDamage.as_byte());
+    assert_eq!(*host.rng_pos.borrow(), 1, "one draw");
+    assert_eq!(ctx.camera_variant, 2, "(7 % 2) * 2");
+    assert_eq!(ctx.spirit_action_count, 1);
+    assert_eq!(ctx.damage_target, 150 * 7 / 5 + 8);
+    assert_eq!(ctx.hp_bar_target, 100, "95 + 8 capped at 100");
+    let events = host.take();
+    assert!(events.contains(&Event::Ui(0x0F, 0)));
+    assert!(events.contains(&Event::Ui(0x52, 0)));
+
+    // A big gauge caps at 0x120; another class draws nothing.
+    let (mut ctx, mut host) = fresh(ActionCategory::Item, 0);
+    ctx.action_state = ActionState::SpiritFire.as_byte();
+    host.actors[0].cast_class = 5;
+    host.actors[0].active_target = 1;
+    host.actors[1].agl_base = 400;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.damage_target, 0x120);
+    let (mut ctx, mut host) = fresh(ActionCategory::Item, 0);
+    ctx.action_state = ActionState::SpiritFire.as_byte();
+    host.actors[0].cast_class = 0;
+    host.rng_seq = vec![7];
+    step(&mut host, &mut ctx);
+    assert_eq!(*host.rng_pos.borrow(), 0, "no draw off class 5");
 }

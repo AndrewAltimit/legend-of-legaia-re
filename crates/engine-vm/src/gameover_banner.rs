@@ -78,17 +78,23 @@
 //! selector - so the glyph byte picks the mesh and everything else about the
 //! letters is identical.
 //!
-//! # NOT WIRED
+//! # Replaced, not pending
 //!
-//! Nothing dispatches retail mode 18
-//! (`engine-core::mode::GameMode::GameOverInit`); `engine-core::mode` models
-//! its stage plan (`mode_init_stage`, the port of the caller `FUN_80025B30`)
-//! and nothing enters it. The port's party wipe is the mode-22 title hand-off
-//! in `engine-core::game_over`, which is a different screen and is already
-//! host-wired. Two inputs this stager needs also have no producer: the
-//! nine-byte label the PROT `0902` overlay carries and the letter-mesh library
-//! its pak walk installs - both disc data, which is why [`banner_slots`] takes
-//! the label as an argument and reproduces neither.
+//! REPLACED-BY: `engine-core::game_over` - the party wipe's mode-22 title hand-off, which is the path retail's own wipe takes; nothing on the disc dispatches mode 18, so no host is owed this stager.
+//!
+//! The four retail sites that end a lost game (`FUN_8003AEB0`'s
+//! back-from-battle arm, `FUN_8003C7EC`, `FUN_801D84B4` and the STR attract
+//! exit, tabulated in `engine-core::game_over`) all store game mode `0x16`
+//! (CARD INIT) and the title context `1`; none stores `0x12`. Mode 18
+//! (`engine-core::mode::GameMode::GameOverInit`, whose stage plan
+//! `mode_init_stage` ports the caller `FUN_80025B30`) is therefore a dev
+//! entry, and this overlay's `GAME OVER` letters are content no retail
+//! playthrough shows. The port keeps the stager for what it documents - the
+//! smallest complete overlay-init shape - and so that a host wanting the
+//! screen as an enhancement has its layout. Two inputs it would need have no
+//! producer: the nine-byte label PROT `0902` carries and the letter-mesh
+//! library its pak walk installs, which is why [`banner_slots`] takes the
+//! label as an argument.
 
 /// Slots the banner lays out (`slti $v0, $s2, 9`).
 pub const BANNER_SLOTS: usize = 9;

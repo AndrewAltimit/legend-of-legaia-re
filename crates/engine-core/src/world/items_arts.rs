@@ -462,6 +462,9 @@ impl World {
                 None => return crate::items::ItemOutcome::NoEffect,
             }
         };
+        if let Some(outcome) = self.apply_status_clear_item(item_id, target_slot, snapshot.hp) {
+            return outcome;
+        }
         let outcome = crate::items::apply_effect(entry.effect, &snapshot);
         match outcome {
             crate::items::ItemOutcome::HealedHp { amount } => {
@@ -555,6 +558,52 @@ impl World {
     /// field-menu item just wrote the persistent record, and any live
     /// projection of it must not keep the stale value. No-op when no party
     /// ordinal maps to the slot (e.g. a reserve member).
+    /// The applier's **selector-8** arm for an item whose disc effect class is
+    /// `8` (Antidote): `None` for any other class, so the caller falls through
+    /// to the catalog path.
+    ///
+    /// Retail's arm is not "cure the one ailment the item names". It skips a
+    /// target at zero HP outright (`beq v0,zero` at `0x80041BCC`), and
+    /// otherwise masks the target's packed status word with `0xFFFC` - clearing
+    /// **both** poison bits, Venom `0x0001` and Toxic `0x0002` - whatever the
+    /// item's tier byte says. The word is the tracker's packed `+0x16E` /
+    /// `+0x12E` view ([`StatusEffectTracker::display_flags`]), and every
+    /// tracked kind whose bit the mask removed is cured.
+    ///
+    /// A target the mask leaves unchanged reports `NoEffect`, as the catalog's
+    /// cure does for an unafflicted target.
+    ///
+    /// [`StatusEffectTracker::display_flags`]: legaia_engine_vm::status_effects::StatusEffectTracker::display_flags
+    fn apply_status_clear_item(
+        &mut self,
+        item_id: u8,
+        target_slot: u8,
+        hp: u16,
+    ) -> Option<crate::items::ItemOutcome> {
+        use legaia_engine_vm::status_effects::StatusKind;
+        let class = self.tables.item_effects.as_ref()?.effect(item_id)?.class;
+        if class != vm::battle_action::EFFECT_SELECTOR_STATUS_CLEAR {
+            return None;
+        }
+        let word = self.battle.status_effects.display_flags(target_slot);
+        let Some(after) = vm::battle_action::selector_status_clear(hp, word) else {
+            return Some(crate::items::ItemOutcome::NoEffect);
+        };
+        let cleared = word & !after;
+        let mut first = None;
+        for kind in [StatusKind::Venom, StatusKind::Toxic] {
+            if kind.display_bit() & cleared != 0
+                && self.battle.status_effects.cure(target_slot, kind)
+            {
+                first.get_or_insert(kind);
+            }
+        }
+        Some(match first {
+            Some(kind) => crate::items::ItemOutcome::Cured { kind },
+            None => crate::items::ItemOutcome::NoEffect,
+        })
+    }
+
     fn mirror_roster_hp_mp(&mut self, rslot: usize) {
         let Some(rec) = self.party.roster.members.get(rslot) else {
             return;

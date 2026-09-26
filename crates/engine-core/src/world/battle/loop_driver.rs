@@ -1501,13 +1501,21 @@ impl World {
         // Accumulate: the combo total and the bar's owed delta, never live HP
         // (`0x801EDB40` / `0x801EDB58`; the bar ramp is what the player sees
         // falling hit by hit).
-        let survives = {
+        let (was_standing, survives) = {
             let t = &mut self.actors[target_i].battle;
+            let was_standing = t.damage_accum < u32::from(t.hp);
             t.damage_accum = t.damage_accum.saturating_add(u32::from(dmg));
             t.arm_hp_bar();
             t.accumulate_hp_bar(i32::from(dmg));
-            t.damage_accum < u32::from(t.hp)
+            (was_standing, t.damage_accum < u32::from(t.hp))
         };
+        // The kill check's Seru absorb (`0x801EE1C0..0x801EE2E8`), ahead of
+        // the impact tint as in retail - its `rand()` sits between the
+        // damage rolls and the tint. Rolled on the hit that first reaches the
+        // target's HP (see `seru_absorb`'s module note).
+        if was_standing && !survives {
+            self.roll_seru_absorb(attacker, target);
+        }
         // Surface the strike for HUD damage popups.
         self.battle.hit_fx.push(BattleHitFx {
             target_slot: target,

@@ -461,15 +461,18 @@ fn done_band_ui_teardown<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut B
 /// Three arms, and the port covers the two whose inputs the action context
 /// already carries.
 ///
-/// **The capture grant.** `ctx[+0x269]` is the byte the Done band's exit test
+/// **The Seru grant.** `ctx[+0x269]` is the byte the Done band's exit test
 /// routes on, and this is its *other* reader: it is passed to
-/// `FUN_801E92DC`, whose parameter is a **spell id** - the routine walks
-/// `0x80084140 + char*0x414 + 0x704` for the acting character and prepends
-/// there (`legaia_engine_core::magic_xp::learn_spell_prepend`). Element
-/// `0x59` raised in the same breath is the banner that announces it. The
-/// grant itself needs a host hook this trait does not have, so the port
-/// raises the banner and leaves the record write to `engine-core`'s own
-/// capture path, which already performs it.
+/// `FUN_801E92DC`, which walks `0x80084140 + char*0x414 + 0x704` for the
+/// acting character and prepends spell `byte + 0x80` there
+/// (`legaia_engine_core::magic_xp::learn_spell_prepend`). The byte is the Seru
+/// the arts resolver's killing-blow absorb staged (`FUN_801EC3E4`
+/// `0x801EE2E8`), so this is where an absorbed Seru is learned - in the
+/// action's own Done band, not after the battle. Element `0x59` raised in the
+/// same breath is the banner that announces it. The port hands the grant to
+/// [`BattleActionHost::learn_absorbed_seru`].
+///
+/// REF: FUN_801E92DC (the grant, `jal` at `0x801E6234`)
 ///
 /// **The multi-cast unload loop** is gated on the readout value window
 /// `0x801F6980` and driven by `_DAT_801F6974` / `_DAT_801F6834`. Its kernels
@@ -495,6 +498,7 @@ fn done_band_capture_and_banner_sweep<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) {
     if ctx.multi_cast_gate != 0 {
+        host.learn_absorbed_seru(ctx.active_actor, ctx.multi_cast_gate);
         host.ui_element(DONE_CAPTURE_BANNER_ELEMENT, UI_RAISE);
     }
     let Some(actor) = host.actor(ctx.active_actor) else {

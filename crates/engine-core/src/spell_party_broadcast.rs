@@ -103,17 +103,21 @@ impl BroadcastRoster {
 ///   `0` otherwise (retail computes `sltu v0, zero, hits`, so the count is
 ///   collapsed to a boolean and is *not* the number of hits).
 ///
-/// NOT WIRED: the `apply` closure has nothing to bind to. Retail's applier is
-/// `FUN_8003FB10`, ported as
-/// [`legaia_engine_vm::battle_action::validator::validate_action`], and
-/// nothing implements that port's `ActionValidatorHost` either - the engine
-/// gates spells with per-menu checks (`spell_menu`'s MP test,
-/// `spells::cast_spell`'s own target resolve) rather than through the retail
-/// 16-arm gate. Both halves close together: until a host exists for the
-/// applier, this dispatcher has no effect to broadcast, and the roster walk
-/// would run against a closure the caller had to invent. The `0x80084140`
-/// roster bytes it reads are equally unmodelled - `World` keeps a typed party,
-/// not that save-block window.
+/// NOT WIRED: its hosts are the pause-menu Magic screens, not battle. Every
+/// `jal 0x8003053c` on the disc is menu code: the list-row builder
+/// `FUN_80030628` (`0x80031210`, greying a spell row the caster has the MP
+/// for but no target would accept) and the menu overlay's two cast confirms
+/// `FUN_801D9280` / `FUN_801D9594` (`0x801D954C` / `0x801D98B4` in PROT 0899,
+/// refusing the cast) - three `jal` sites, no other reference form. So the
+/// question it answers is "can this spell be cast from the menu right now",
+/// with `FUN_8003FB10` run as a *validity* gate per roster member - not an
+/// effect broadcast. The validator has an engine host now
+/// (`World`'s `WorldActionValidator`, `world/battle/validator_host.rs`), so
+/// what is missing is the call from the pause Magic list builder and its
+/// confirm, both of which gate on MP alone today (`spell_menu`'s MP test).
+/// That is menu code; the roster bytes at `0x80084140 + 0x454` / `+0x458` are
+/// the present-party count and ids the engine keeps as `Party::party_count` /
+/// `World::party_roster_slot`.
 pub fn broadcast<F>(rec: SpellDispatchRecord, roster: &BroadcastRoster, mut apply: F) -> u32
 where
     F: FnMut(u8, u8, u8) -> u32,

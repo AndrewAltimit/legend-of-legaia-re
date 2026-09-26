@@ -374,6 +374,23 @@ impl World {
                 .battle
                 .flag_bits
                 .has(vm::battle_action::ActorFlags::FX_SUPPRESSED),
+            // `FUN_801DF570`'s inputs: this actor's live pair and its
+            // target's seat pair. A scope byte naming no seated actor (the
+            // `8` / `9` whole-side codes) leaves the clamp without a
+            // separation to measure.
+            approach: self
+                .actors
+                .get(usize::from(actor.battle.active_target))
+                .map(|_| {
+                    let (ref_x, ref_z) =
+                        self.battle_seat_of(usize::from(actor.battle.active_target));
+                    vm::battle_approach::ApproachPose {
+                        x: actor.move_state.world_x,
+                        z: actor.move_state.world_z,
+                        ref_x,
+                        ref_z,
+                    }
+                }),
         };
         // The catalog's map is based at 0x801F4E63 (`map[move_id]`); the
         // stepper's terminator reads the 0x801F4E64-based view (`map[action
@@ -1030,12 +1047,15 @@ impl World {
         // dropped. Dropping the latch here also stops the end-of-clip get-up
         // chain in `tick_battle_animations` from stealing the clip back.
         a.battle_reaction = None;
-        // Id 1 is the walk/approach: it loops until the SM stages something
-        // else (AttackShortStep clears it to 0 on arrival). Engine
-        // assumption - the loop-vs-once bit retail derives from the record
-        // kind isn't modelled on MonsterAnimation.
+        // The walk (action tag 1) loops until the SM stages something else
+        // (AttackShortStep clears it to 0 on arrival). Keyed on the clip's
+        // own tag, not its id: a party file's walk is entry 1, but a
+        // monster's is wherever its record put the tag-1 entry, and the SM
+        // stages that index (`monster_action_by_tag`). Engine assumption -
+        // the loop-vs-once bit retail derives from the record kind isn't
+        // modelled on MonsterAnimation.
         let player = clip.as_ref().and_then(|c| {
-            if committed == 1 {
+            if c.action_id == vm::battle_action::WALK_TAG {
                 crate::battle_anim::MonsterAnimPlayer::new(c)
             } else {
                 crate::battle_anim::MonsterAnimPlayer::new_one_shot(c)
@@ -1103,6 +1123,36 @@ impl World {
     /// family identity-ordered; monster archives at arbitrary indices - so
     /// the lookup is by each clip's `action_id`, exactly like
     /// `FUN_80054CB0`'s first-byte scan.
+    /// The action **tag** of every installed action clip of the monster in
+    /// `slot`, in entry order - the `+0x4C` table the battle action SM's
+    /// `FUN_80050E2C` lookups scan
+    /// (`legaia_engine_vm::battle_action::monster_action_by_tag`).
+    ///
+    /// The clips are installed positionally
+    /// (`legaia_asset::monster_archive::animations_by_entry`), so a clip's
+    /// index is its entry index and its `action_id` is the entry's first
+    /// byte. A hole - an entry with no decodable stream - has no byte to
+    /// report and reads as [`legaia_asset::monster_archive::NO_ACTION_ENTRY`],
+    /// which no searched tag equals; PROT 0867 carries no holes, so the list
+    /// is the record's own. `None` for a party slot, an empty slot, or a
+    /// monster whose clips were never installed.
+    pub(in crate::world) fn battle_monster_action_tags(&self, slot: u8) -> Option<Vec<u8>> {
+        let actor = self.actors.get(usize::from(slot))?;
+        actor.battle_monster_id?;
+        let clips = actor.battle_action_clips.as_ref()?;
+        Some(
+            clips
+                .iter()
+                .map(|c| {
+                    c.as_ref()
+                        .map_or(legaia_asset::monster_archive::NO_ACTION_ENTRY, |c| {
+                            c.action_id
+                        })
+                })
+                .collect(),
+        )
+    }
+
     fn battle_reaction_clip(&self, slot: usize, key: u8) -> Option<MonsterAnimation> {
         let clips = self.actors.get(slot)?.battle_action_clips.as_ref()?;
         clips.iter().flatten().find(|c| c.action_id == key).cloned()

@@ -181,6 +181,16 @@ pub struct MonsterDef {
     /// signal [`Self::installed_stats`] uses to answer with the built fields
     /// unchanged - so a disc-free battle keeps exactly the stats it had.
     pub raw_stats: [u16; 6],
+    /// Record `+0x3E` - the Seru a killing blow can **absorb**, as the
+    /// player-magic index (`spell id - 0x80`, Gimard's `1` -> spell `0x81`);
+    /// `0` for a monster carrying no Seru. Read by the arts resolver's
+    /// killing-blow arm ([`crate::world::World`]'s Seru absorb roll).
+    /// Distinct from [`Self::seru_id`], which keys the engine's capture-spell
+    /// registry.
+    pub absorb_seru: u8,
+    /// Record `+0x3F` - that absorb's chance in percent, before the Ivory
+    /// Book's `+30`.
+    pub absorb_chance_pct: u8,
 }
 
 impl MonsterDef {
@@ -212,6 +222,8 @@ impl MonsterDef {
             wide_texture_page: 0,
             plaque_badge: None,
             raw_stats: [0; 6],
+            absorb_seru: 0,
+            absorb_chance_pct: 0,
         }
     }
 
@@ -388,6 +400,10 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     // Record `+0x1F` - the battle camera's framing input (`FUN_801F0348`).
     def.size_class = rec.size_class;
     def.wide_texture_page = rec.wide_texture_page;
+    // Record `+0x3E` / `+0x3F` - the killing-blow Seru absorb the arts
+    // resolver rolls (`FUN_801EC3E4`, `0x801EE250..0x801EE2E8`).
+    def.absorb_seru = rec.seru_id;
+    def.absorb_chance_pct = rec.catch_rate_pct;
     def
 }
 
@@ -597,6 +613,8 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             // No record behind a synthetic monster: `installed_stats` answers
             // with the fields above whatever the fight class is.
             raw_stats: [0; 6],
+            absorb_seru: 0,
+            absorb_chance_pct: 0,
         };
         cat.insert(def_struct);
     }

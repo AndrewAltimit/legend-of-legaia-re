@@ -44,7 +44,7 @@ pub struct MonsterAnimation {
     /// `0` idle loop, `1` walk/approach, `2`/`3` light hit reactions, `4`
     /// knockdown (heavy hit / death fall), `5` get-up, `0x0B` block; monster
     /// archives additionally carry the attack family (`0x20` pre-approach,
-    /// `0x21` close-in, `0x22` victory) and spell actions. The battle loaders
+    /// `0x21` close-in, `0x22` knockout taunt) and spell actions. The battle loaders
     /// cache a tag → entry-index map at actor `+0x1EF..+0x1F3` for tags
     /// `{2,3,4,5,0x0B}` (`FUN_80054CB0` scans the entry table; `FUN_80053CB8`
     /// hardcodes `[2,3,4,5,0xB]` for party files, whose layout is identity).
@@ -643,8 +643,9 @@ pub fn light_flinch_window(entry: &[u8], id: u16) -> Result<Option<JuggleWindow>
 /// the raw retail byte can map `None` to `0xFF`.
 ///
 /// The battle-action SM resolves a monster's attack animations through this with
-/// tags `0x20` (pre-approach), `1` (walk), `0x21` (close-in) and `0x22`
-/// (victory), staging the returned index into actor `+0x1DA`.
+/// tags `0x20` (pre-approach), `1` (walk), `0x21` (close-in) and `0x22` (the
+/// taunt after downing a target), staging the returned index into actor
+/// `+0x1DA`.
 ///
 /// Note the first byte is a semantic **tag**, not the entry's own index - a
 /// monster may carry several entries sharing a tag (the search takes the first)
@@ -667,13 +668,11 @@ pub fn light_flinch_window(entry: &[u8], id: u16) -> Result<Option<JuggleWindow>
 /// 80050e68  addiu v0,zero,0xff   ; not found
 /// ```
 ///
-/// NOT WIRED: the owner is the battle action SM's monster-animation resolve,
-/// which is not ported - so there is no caller holding a monster's tag table
-/// and an action tag to look up in it. The contrast that makes this a real
-/// gap rather than a shape the port routes around: its file-mate
-/// [`reaction_map`] parses the *same* per-action table and the
-/// `legaia-patcher` CLI reaches it through [`light_flinch_window`], so the
-/// table itself is live; only the runtime lookup into it is missing.
+/// Called by the battle action SM's monster-animation lookups
+/// (`legaia_engine_vm::battle_action::monster_action_by_tag`): the approach
+/// chain's `0x20` / `1` / `0x21` stages, the knockout taunt's `0x22` and the
+/// capture takedown's walk, over the tag list of the monster's installed
+/// action clips.
 ///
 /// PORT: FUN_80050e2c
 pub fn find_action_by_tag(tags: &[u8], tag: u8) -> Option<u8> {

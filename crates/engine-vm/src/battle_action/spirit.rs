@@ -119,8 +119,75 @@ pub(super) fn spirit_fire<H: BattleActionHost + ?Sized>(
         return stay(ctx);
     }
     host.ui_element(0x4C, 1);
+    let class = host.actor(slot).map(|a| a.cast_class).unwrap_or(0);
+    if class == GAUGE_EXTEND_CLASS {
+        gauge_extend_fire(host, ctx, slot);
+    }
     ctx.frame_timer = 0x20;
     transition(ctx, ActionState::SpiritFireDamage)
+}
+
+/// The committed effect class whose `0x3E` arm this is: `5`, the item-effect
+/// table's "extend action gauge for one battle" class (Fury Boost) -
+/// `lbu v1,0x1e8(s3)` / `li v0,0x5` / `bne` at `0x801E3E80..0x801E3E88`.
+pub const GAUGE_EXTEND_CLASS: u8 = 5;
+
+/// Ceiling of the extended gauge the arm stages (`slti v0,v0,0x121` /
+/// `li v0,0x120` at `0x801E3F90..0x801E3F98`).
+pub const GAUGE_EXTEND_CEILING: i16 = 0x120;
+
+/// Ceiling of the spirit-gauge target the arm stages (`slti v0,v0,0x65` /
+/// `li v0,0x64` at `0x801E4004..0x801E4010`).
+pub const SPIRIT_TARGET_CEILING: i16 = 100;
+
+/// Ability-word `+0xF8` bit that makes the arm's spirit bump `+10` instead of
+/// `+8` (`andi v0,v0,0x200` at `0x801E3FEC`).
+pub const SPIRIT_BUMP_PLUS_BIT: u32 = 0x200;
+
+/// State `0x3E`'s class-5 arm (`0x801E3E90..0x801E4018`), run once the cast
+/// clip has settled: the gauge-extension item's presentation.
+///
+/// - raises the two gauge HUD elements `0x0F` and `0x52` (`a1 = 0` at
+///   `0x801E3F04` / `0x801E3F10`) and bumps their teardown latch
+///   [`BattleActionCtx::spirit_action_count`] (`0x801E3F20..0x801E3F30`);
+/// - draws one `rand()` for the camera variant, `(rand % 2) * 2`
+///   (`jal 0x80056798` at `0x801E3F2C`, stored at `0x801E3F58`) - the draw is
+///   unconditional on this arm, so skipping it desynchronises every later
+///   battle draw;
+/// - stages the extended gauge `min(0x120, target base * 7 / 5 + 8)` into
+///   `ctx[+0x6DC]` (the `0x66666667` reciprocal at `0x801E3F60..0x801E3F80`
+///   is `/ 5`, applied to `base * 7`);
+/// - stages the acting actor's spirit gauge `+ 8` - `+ 10` with the `0x200`
+///   passive - capped at `100`, into `ctx[+0x6DE]`.
+///
+/// The arm also writes a HUD scratch halfword (`0x80076D7E`) off the target's
+/// `+0x1F9` / `+0x16C` / `+0x1DE` bytes, which the port has no slot for.
+///
+/// PORT: FUN_801E295C (`0x801E3E80..0x801E4018`, the class-5 arm of state
+/// `0x3E`)
+fn gauge_extend_fire<H: BattleActionHost + ?Sized>(
+    host: &mut H,
+    ctx: &mut BattleActionCtx,
+    slot: u8,
+) {
+    host.ui_element(0x0F, 0);
+    host.ui_element(0x52, 0);
+    ctx.spirit_action_count = ctx.spirit_action_count.wrapping_add(1);
+    ctx.camera_variant = ((host.rng() % 2) * 2) as u8;
+    let target = host.actor(slot).map(|a| a.active_target).unwrap_or(0);
+    let base = host
+        .actor(target)
+        .map(|t| i32::from(t.agl_base))
+        .unwrap_or(0);
+    let extended = (base * 7 / 5 + 8) as i16;
+    ctx.damage_target = extended.min(GAUGE_EXTEND_CEILING);
+    let spirit = host.actor(slot).map(|a| a.spirit_gauge).unwrap_or(0) as i16;
+    let bump = if host.character_ability_bits_high(slot) & SPIRIT_BUMP_PLUS_BIT != 0 {
+        10
+    } else {
+        8
+    };
+    ctx.hp_bar_target = spirit.wrapping_add(bump).min(SPIRIT_TARGET_CEILING);
 }
 
 pub(super) fn spirit_fire_damage<H: BattleActionHost + ?Sized>(

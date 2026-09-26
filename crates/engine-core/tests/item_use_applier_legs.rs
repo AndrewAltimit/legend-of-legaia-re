@@ -328,3 +328,56 @@ fn a_table_without_a_class_14_row_seeds_no_strike_item() {
         .count();
     assert_eq!(strikes, 0);
 }
+
+/// Selector `8` - the Antidote's class. Retail masks the target's status word
+/// with `0xFFFC` (`0x80041C04` / `0x80041C34`), so ONE Antidote lifts Venom
+/// and Toxic together, whatever the catalog names; and it skips a target at
+/// zero HP (`beq v0,zero` at `0x80041BCC`) before touching the word.
+#[test]
+fn the_status_clear_arm_lifts_both_poisons_and_skips_a_dead_target() {
+    use legaia_engine_vm::status_effects::StatusKind;
+    let rows = [Row {
+        id: 0x7E,
+        kind: 2,
+        class: 8,
+        tier: 1,
+        flags: 0x86,
+    }];
+    let mut world = world_with(&rows, 3);
+    for (slot, hp) in [(0usize, 50u16), (1, 0)] {
+        let rec = &mut world.party.roster.members[slot];
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_cur = hp;
+        hms.hp_max = 100;
+        rec.set_hp_mp_sp(hms);
+        world
+            .battle
+            .status_effects
+            .apply(slot as u8, StatusKind::Venom);
+        world
+            .battle
+            .status_effects
+            .apply(slot as u8, StatusKind::Toxic);
+        world
+            .battle
+            .status_effects
+            .apply(slot as u8, StatusKind::Sleep);
+    }
+    // Living target: both poison bits clear, the Sleep bit survives.
+    let out = world.use_item(0x7E, 0);
+    assert_eq!(
+        out,
+        ItemOutcome::Cured {
+            kind: StatusKind::Venom
+        }
+    );
+    let left = world.battle.status_effects.display_flags(0);
+    assert_eq!(left & 0x0003, 0, "Venom and Toxic both lifted");
+    assert_ne!(left & 0x0800, 0, "Sleep is outside the 0xFFFC mask");
+    // Dead target: nothing written.
+    let before = world.battle.status_effects.display_flags(1);
+    assert_eq!(world.use_item(0x7E, 1), ItemOutcome::NoEffect);
+    assert_eq!(world.battle.status_effects.display_flags(1), before);
+    // Nothing to clear: no effect either.
+    assert_eq!(world.use_item(0x7E, 0), ItemOutcome::NoEffect);
+}

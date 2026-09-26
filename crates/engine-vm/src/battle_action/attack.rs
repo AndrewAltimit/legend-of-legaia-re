@@ -60,17 +60,24 @@ pub(super) fn attack_face<H: BattleActionHost + ?Sized>(
         }
         ActionState::AttackShortStep
     } else {
-        // Monster arm: retail scans the record's action table for the
-        // tag-`0x20` walk (`FUN_80050E2C`) and stages the found entry index
-        // (fallback: the tag-`1` Move clip, which routes to `0x19` instead).
-        // The engine stages entry 1 - the walk/approach slot of the action
-        // tag space (`MonsterAnimation::action_id` 1) - and keeps the
-        // windup/advance chain for every monster; the routing difference is
-        // disclosed in `docs/subsystems/battle-action.md` (engine port note).
-        if let Some(actor) = host.actor_mut(actor_slot) {
-            actor.queued_anim = 1;
+        // Monster arm (`0x801E3244..0x801E32D0`): stage the record's
+        // tag-`0x20` pre-approach entry and take the windup chain; a monster
+        // with none stages its tag-`1` walk instead and takes the party's
+        // `0x19` short step. Both stores are unconditional - a miss stages
+        // the `0xFF` sentinel - and a host with no action table leaves the
+        // queued anim alone.
+        let pre = monster_action_by_tag(host, actor_slot, APPROACH_TRANSITION_TAG);
+        let (anim, next) = match pre {
+            Some(legaia_asset::monster_archive::NO_ACTION_ENTRY) | None => (
+                monster_action_by_tag(host, actor_slot, WALK_TAG),
+                ActionState::AttackShortStep,
+            ),
+            Some(idx) => (Some(idx), ActionState::AttackWindup),
+        };
+        if let (Some(anim), Some(actor)) = (anim, host.actor_mut(actor_slot)) {
+            actor.queued_anim = anim;
         }
-        ActionState::AttackWindup
+        next
     };
     transition(ctx, next)
 }
@@ -91,6 +98,13 @@ pub(super) fn attack_windup<H: BattleActionHost + ?Sized>(
     } else {
         return stay(ctx);
     }
+    // The pre-approach clip has committed: stage the walk
+    // (`0x801E331C..0x801E3348`) before `0x16` polls the range.
+    if let Some(walk) = monster_action_by_tag(host, slot, WALK_TAG)
+        && let Some(actor) = host.actor_mut(slot)
+    {
+        actor.queued_anim = walk;
+    }
     transition(ctx, ActionState::AttackAdvance)
 }
 
@@ -109,6 +123,13 @@ pub(super) fn attack_advance<H: BattleActionHost + ?Sized>(
         // (`FUN_80047430` `0x80047D20..0x80047E18`; engine
         // `World::tick_battle_locomotion`), gated on this same range check.
         return stay(ctx);
+    }
+    // Arrived: stage the close-in clip (`0x801E33AC..0x801E33D8`) that
+    // `0x17` then waits on.
+    if let Some(close_in) = monster_action_by_tag(host, slot, CLOSE_IN_TAG)
+        && let Some(actor) = host.actor_mut(slot)
+    {
+        actor.queued_anim = close_in;
     }
     // Arrival shove (retail `0x801E33EC..0x801E3490`): after staging the
     // close-in, the SM steps the *target's* live and seat pairs along the
@@ -525,5 +546,45 @@ pub(super) fn attack_return<H: BattleActionHost + ?Sized>(
         ctx.turn_cursor = ctx.turn_cursor.saturating_add(1);
         return transition(ctx, ActionState::AttackChain);
     }
+    stage_ko_taunt(host, slot);
     transition(ctx, ActionState::DoneCleanup)
+}
+
+/// The monster's **KO taunt** (`0x801E5594..0x801E5658`), run on the way into
+/// the Done band: when a monster's attack has left its target at zero HP,
+/// it stages its tag-[`KO_TAUNT_TAG`] entry with the stage latch (`+0x1DC |=
+/// 2`) - but only while at least one party member still stands, so the
+/// wiping blow plays no taunt. A monster carrying no such entry (most of the
+/// roster) stages nothing, and a party attacker never reaches the lookup
+/// (`sltiu v0,v0,0x3` at `0x801E559C`).
+///
+/// Retail's loop re-stages once per standing party slot; the writes are
+/// identical, so one is the same state.
+fn stage_ko_taunt<H: BattleActionHost + ?Sized>(host: &mut H, slot: u8) {
+    let party_count = host.party_count();
+    if slot < party_count {
+        return;
+    }
+    let Some(target) = host.actor(slot).map(|a| a.active_target) else {
+        return;
+    };
+    // `lhu v0,0x14c(s8)` - the target's HP halfword, whose zero the engine
+    // carries as `liveness` (the capture / petrify paths clear it without
+    // zeroing HP).
+    if host.actor(target).is_none_or(|t| t.liveness != 0) {
+        return;
+    }
+    let Some(taunt) = monster_action_by_tag(host, slot, KO_TAUNT_TAG)
+        .filter(|&t| t != legaia_asset::monster_archive::NO_ACTION_ENTRY)
+    else {
+        return;
+    };
+    let party_standing = (0..party_count).any(|i| host.actor(i).is_some_and(|a| a.liveness != 0));
+    if !party_standing {
+        return;
+    }
+    if let Some(actor) = host.actor_mut(slot) {
+        actor.queued_anim = taunt;
+        actor.flag_bits.set(ActorFlags::ADVANCE_DONE);
+    }
 }

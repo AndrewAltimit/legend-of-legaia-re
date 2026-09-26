@@ -20,6 +20,7 @@ mod loop_driver;
 mod member_step;
 mod monster_ai;
 mod selectable;
+mod seru_absorb;
 mod stage;
 mod stats;
 mod steal_attack;

@@ -43,6 +43,9 @@ pub use dispatch::*;
 mod attack;
 use attack::*;
 
+mod action_tags;
+pub use action_tags::*;
+
 pub mod motion;
 
 mod magic;

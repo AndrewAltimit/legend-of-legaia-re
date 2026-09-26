@@ -999,8 +999,15 @@ pub struct BattleActionCtx {
     ///
     /// Reset with the rest of the context at battle entry.
     pub formation_armed: bool,
-    /// `[+0x269]` - multi-cast queue gate read at `DoneFadeDown`. Non-zero
-    /// routes to `DoneMultiCast`; zero routes to `EndOfAction`.
+    /// `[+0x269]` - the Seru a killing blow absorbed this action (the
+    /// player-magic index, spell `id - 0x80`), staged by the arts resolver
+    /// `FUN_801EC3E4` at `0x801EE2E8`. Non-zero routes `DoneFadeDown` to
+    /// `DoneMultiCast` - the `0xB4`-frame hold behind the learn banner - and
+    /// the Done teardown grants the spell through
+    /// [`BattleActionHost::learn_absorbed_seru`]; zero routes to
+    /// `EndOfAction`. The run band also carries its escape outcome here (a
+    /// port choice; retail tests a pointer), which never meets a staged Seru
+    /// because an escape leaves the battle.
     pub multi_cast_gate: u8,
     /// `[+0x243]` - the byte the gauge re-arm clears once it has run
     /// (`FUN_801E93C8`'s tail store at `0x801E94F8`, reached only on the arm

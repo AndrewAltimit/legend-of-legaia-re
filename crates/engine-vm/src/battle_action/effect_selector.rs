@@ -15,8 +15,8 @@
 //!
 //! Selector `0x82` is not an arm either in any real sense: its slot points at
 //! `0x800421A0`, two instructions above the epilogue, which is one
-//! `jal 0x80046870` - the brightness ramp already ported as
-//! [`crate::battle_helpers::top_up_cooldown`].
+//! `jal 0x80046870` - the Incense window top-up (class `0x82` is Incense)
+//! already ported as [`crate::battle_helpers::top_up_cooldown`].
 //!
 //! So the applier's whole behavioural surface is selectors `0x00..=0x0E`, and
 //! `0x0B` / `0x0C` / `0x0D` share one arm - fourteen bodies over fifteen
@@ -35,8 +35,8 @@ pub const EFFECT_SELECTOR_BOUND: u16 = 0x84;
 /// Where the 116 dead slots point - `FUN_800402F4`'s epilogue.
 pub const EFFECT_SELECTOR_DEFAULT_ARM: u32 = 0x8004_21A8;
 
-/// The applier's brightness-ramp selector, whose whole arm is one
-/// `jal 0x80046870`.
+/// The applier's Incense selector (item-effect class `0x82`), whose whole
+/// arm is one `jal 0x80046870` - the encounter-suppression window top-up.
 pub const EFFECT_SELECTOR_GAUGE_RAMP: u8 = 0x82;
 
 /// Every selector the jump table at `0x80014FA0` sends anywhere but the
@@ -88,6 +88,10 @@ pub fn effect_selector_dispatches(selector: u8) -> bool {
 // The three live arms above the documented `0x00..=0x07` band
 // ---------------------------------------------------------------------------
 
+/// The status-clear selector - the item-effect class byte `8` (Antidote,
+/// "Cure Venom") dispatches here.
+pub const EFFECT_SELECTOR_STATUS_CLEAR: u8 = 0x08;
+
 /// Selector `8`'s status mask - it clears the bottom **two** bits only
 /// (`andi v0, v0, 0xfffc` at `0x80041C04` in battle and `0x80041C34` out of
 /// it).
@@ -107,14 +111,17 @@ pub const STATUS_CLEAR_MASK: u16 = 0xFFFC;
 /// ([`crate::battle_cue_group::cue_group_for`] class `8`) is battle-only and
 /// is the caller's, exactly as it is for every other arm.
 ///
+/// The mask leaves bits `0x0001` (Venom) and `0x0002` (Toxic) clear, so the
+/// class-8 item cures **both** poisons, not just the one its description
+/// names.
+///
 /// PORT: FUN_800402F4 (selector `8`, `0x80041BB0..0x80041C3C`)
-/// NOT WIRED: the host that would call it is `World::use_item`
-/// (`engine-core::world::items_arts`), the engine's stand-in for the applier.
-/// It does not, because the engine clears status through the typed
-/// `StatusEffect` list (`engine-vm::status_effects::StatusKind`) rather than
-/// through the raw `+0x16E` bit word this arm masks, so adopting the arm
-/// means deciding which of the two representations is canonical - a model
-/// choice, not a wiring gap.
+///
+/// Called by `World::use_item` (`engine-core::world::items_arts`) for every
+/// item whose disc effect class is [`EFFECT_SELECTOR_STATUS_CLEAR`], field
+/// and battle alike, over the tracker's packed word
+/// (`StatusEffectTracker::display_flags`); the kinds whose bits it removed
+/// are then cured on the typed list.
 pub fn selector_status_clear(hp: u16, status: u16) -> Option<u16> {
     if hp == 0 {
         return None;

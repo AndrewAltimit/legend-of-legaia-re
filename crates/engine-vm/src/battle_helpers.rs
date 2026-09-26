@@ -9,7 +9,7 @@
 //!
 //! Port provenance (disassembly, not the decompiled C):
 //! `see ghidra/scripts/funcs/8003cb54.txt`, `.../800597c8.txt`,
-//! `.../80046870.txt`, `.../801cee80.txt`.
+//! `.../80046870.txt`.
 //!
 //! REF: FUN_8004AD80 (the one dumped caller of `FUN_8003CB54`)
 //! REF: FUN_8003CA78 (its sibling: the marked-up string copy that seeds the
@@ -19,12 +19,8 @@
 //!
 //! # NOT WIRED
 //!
-//! Each of these leaves is waiting on a different piece of engine state:
-//!
-//! | Kernel | Retail caller | Call site | Port of the caller |
-//! |---|---|---|---|
-//! | [`top_up_cooldown`] | `FUN_800402F4` | `800421A0` | ported piecewise, no single-function port |
-//! | [`ease_quad_interp`] | unidentified - see below | - | - |
+//! [`top_up_cooldown`] is the one leaf still waiting, and what it waits on is
+//! outside the battle code despite the module it lives in.
 //!
 //! [`screen_x_mirror`] is not on that list: it is the file's one **replaced**
 //! anchor and carries its own `REPLACED-BY:` marker. Its retail caller
@@ -37,13 +33,6 @@
 //! all - one wgpu surface, one orientation - so there is no state for the
 //! `< 2` gate at `80058A2C` to read and no host is owed a call.
 //!
-//! `801CEE80` additionally sits in the VA-aliased band: the same address is a
-//! **jump-table slot** in overlay 0897 and ordinary mid-function code in the
-//! debug-menu and STR-FMV overlays, so a corpus grep for it returns three
-//! programs' unrelated bytes. The body ported here is the one whose dump opens
-//! `sh a1,0x16(v0)`; see
-//! [`docs/tooling/phantom-print-index.md`](../../../docs/tooling/phantom-print-index.md).
-//!
 //! - `FUN_8003CB54` ([`mes_string_end_offset`] / [`mes_append_escape`]) is
 //!   **wired**, and so off this list. Its buffer is a **MES-markup text
 //!   string**: the `< 0x1f` stop is the terminator/control range and the
@@ -54,42 +43,33 @@
 //!   death-spoils captions (steal attack / thief's loot, HUD element `0x5B`),
 //!   and `legaia_engine_core::battle_steal::compose_caption` makes the same
 //!   call when a slain monster's knockdown ends.
-//! - `FUN_80046870` ([`top_up_cooldown`]) ramps the `gp + 0x2E8` word, which the
-//!   validator's arm-`0x82` gate `FUN_80046898` tests against `0xE0`. **That
-//!   word's identity is now settled, and it is not an inventory count.**
-//!   `gp` is `0x8007B318` (`80026ca8` `lui gp,0x8008` + `80026cac`
-//!   `addiu gp,gp,-0x4ce8`), so `gp + 0x2E8` is `_DAT_8007B600` - the same
-//!   `0x8007Bxxx` overlay-scratch band that holds the camera pitch
-//!   (`gp+0x478`) and the tile-board install pointer (`gp+0x138`), not the
-//!   `0x80084xxx` save/game-state window an inventory length would live in.
-//!   Two overlay sites reach it by its absolute address and both read it as a
-//!   **frame countdown**: one decrements it by 1 and stores it back, firing
-//!   its expiry action only on the transition to zero
-//!   (`lui v1,0x8008` / `lw v0,-0x4a00(v1)` / `addiu v0,v0,-0x1` /
-//!   `sw v0,-0x4a00(v1)`), and one gates on it being zero before proceeding
-//!   (`lw v0,-0x4a00(v0)` / `bne v0,zero,<skip>`). A count of held items is
-//!   neither ticked down per frame nor tested for zero as a busy gate.
+//! - `FUN_80046870` ([`top_up_cooldown`]) is the whole of the item applier's
+//!   selector-`0x82` arm (`0x800421A0`, the jump table's slot `0x82`), and
+//!   `0x82` is the effect class of **Incense** (item `0x8A`, "Decrease
+//!   encounter rate for a period of time"). The word it ramps, `gp + 0x2E8` =
+//!   `_DAT_8007B600` (`gp` is `0x8007B318`: `80026ca8` `lui gp,0x8008` +
+//!   `80026cac` `addiu gp,gp,-0x4ce8`), is the **Incense window**, counted in
+//!   walk-regen ticks rather than frames:
 //!
-//!   So the pair is a **cooldown**: [`top_up_cooldown`] tops the window up by
-//!   `0x40` frames and caps it at `0x100`, and the arm-`0x82` gate asks
-//!   whether fewer than `0xE0` remain. What blocks the wire is therefore no
-//!   longer the identity but the engine's shape: it carries no such suppression
-//!   timer, and the expiry action the countdown fires (an install into
-//!   `_DAT_8007B450` plus a bit-set and a `FUN_80020DE0` call) is not ported,
-//!   so nothing would arm or observe the window.
-//! - `FUN_801CEE80` ([`ease_quad_interp`]) - no engine structure supplies the
-//!   indirection this writes through. The kernel reads a tween quad (`+0x18`
-//!   start, `+0x28` target with `-1` disabling, `+0x50` progress, `+0x9E`
-//!   duration) and stores the eased value through the word **pointer** at
-//!   `+0x90` into that node's `+0x18`. `move_vm::ActorState` carries the first
-//!   four offsets - ext op `0x0D` even advances `+0x50` - but its `+0x90` is an
-//!   `i16` tween source, so this belongs to the VDF / render-node actor family
-//!   whose node the port does not model. Its caller is also unidentified: the
-//!   arm at `0x80025AA0` is a per-sub-id jump-table entry into the slot-A
-//!   minigame overlay's own routine at this VA, not this fragment, and the
-//!   fragment's dump opens mid-function on a store through an unset register -
-//!   so whether this VA is a function entry at all wants a re-dump before a
-//!   caller search means anything.
+//!   - the field walk tick `FUN_801D0B90` (PROT 0897) decrements it once per
+//!     running tick (`0x801D0CD4..0x801D0CE8`) and, on the transition to zero,
+//!     installs `0x801F2278` as the field event pointer `_DAT_8007B450`, sets
+//!     `0x80000` in the player actor's flag word and registers it with
+//!     `FUN_80020DE0` - the "the Incense wore off" hand-off;
+//!   - the region encounter roll `FUN_801D9E1C` skips the whole roll while it
+//!     is non-zero (`lw v0,-0x4a00(v0)` / `bne v0,zero` at `0x801DA174`), so
+//!     an Incense suppresses encounters outright for its window rather than
+//!     scaling the rate;
+//!   - the validator's arm-`0x82` gate `FUN_80046898` admits another use only
+//!     while fewer than `0xE0` ticks remain.
+//!
+//!   Every host of that is field or pause-menu code. The engine already
+//!   carries the counter (`engine-core`'s `FieldLocomotion::walk_regen_window`,
+//!   decremented by `walk_regen::tick_walk_regen`), but nothing arms it: the
+//!   pause Items Incense confirm ends in `SpecialUseOutcome::EncounterSuppress`
+//!   and drops it, and the encounter roll does not read the window. Wiring is
+//!   those two edits - top the window up through this kernel on the
+//!   Incense outcome, and gate the region roll on it being zero.
 
 /// Byte offset of a MES-markup string's terminator - the write cursor
 /// [`mes_append_escape`] splices at.
@@ -244,58 +224,17 @@ pub const COOLDOWN_MAX: i32 = 0x100;
 
 /// See [`COOLDOWN_STEP`] / [`COOLDOWN_MAX`].
 ///
-// PORT: FUN_80046870
+// PORT: FUN_80046870 NOT WIRED: its host is the pause Items Incense confirm
+// (`SpecialUseOutcome::EncounterSuppress`, which ends the flow without arming
+// anything) topping up `FieldLocomotion::walk_regen_window`, with the region
+// encounter roll gating on that window - field and menu code, see the module
+// notes.
 pub fn top_up_cooldown(value: i32) -> i32 {
     let next = value + COOLDOWN_STEP;
     if next < COOLDOWN_MAX {
         next
     } else {
         COOLDOWN_MAX
-    }
-}
-
-/// Quadratic ease of a scalar from `start` toward `target` over `dur` steps at
-/// progress `t`, using the retail's exact double-truncating integer division.
-///
-// PORT: FUN_801cee80
-///
-/// The retail motion helper interpolates a coordinate as
-///
-/// ```text
-///   d      = (target - start)
-///   p      = (d * t) / dur          // first truncating div
-///   result = (p * t) / dur + start  // second truncating div
-/// ```
-///
-/// i.e. `result ~= start + (target - start) * (t/dur)^2`, but with the
-/// truncation applied at **each** division exactly as the R3000 `div`
-/// instruction does (round toward zero). Reproducing the two-stage truncation
-/// (rather than a single `d*t*t/(dur*dur)`) is what keeps the interpolated
-/// path bit-identical to retail.
-///
-/// The interpolation only runs when `target != start` and `t < dur` (the
-/// original's `beq v1,a3` / `slt v0,a2,a1` guards); otherwise `target` is
-/// returned unchanged. The whole computation is skipped by the caller when the
-/// target index (`actor+0x28`) is `-1`; that guard lives on the host side.
-///
-/// `t` (`actor+0x50`) is treated as **unsigned** in the original (`lhu`), so
-/// callers pass a non-negative progress. `dur` (`actor+0x9e`) must be
-/// non-zero when `t < dur` holds; `dur == 0` cannot reach the divide because
-/// `t < 0` is impossible for the unsigned `t`. The result is truncated to
-/// `i16` to match the `sh` store.
-pub fn ease_quad_interp(start: i16, target: i16, t: u16, dur: i16) -> i16 {
-    let start_i = start as i32;
-    let target_i = target as i32;
-    let t_i = t as i32;
-    let dur_i = dur as i32;
-    if target_i != start_i && t_i < dur_i {
-        // dur_i > t_i >= 0, so dur_i > 0: division is safe.
-        let d = target_i - start_i;
-        let p = (d * t_i) / dur_i;
-        let r = (p * t_i) / dur_i + start_i;
-        r as i16
-    } else {
-        target
     }
 }
 
@@ -397,50 +336,5 @@ mod tests {
         assert_eq!(top_up_cooldown(0xC0), 0x100);
         assert_eq!(top_up_cooldown(0x100), 0x100);
         assert_eq!(top_up_cooldown(0x1000), 0x100);
-    }
-
-    #[test]
-    fn ease_returns_target_when_start_equals_target() {
-        assert_eq!(ease_quad_interp(100, 100, 5, 10), 100);
-    }
-
-    #[test]
-    fn ease_returns_target_when_progress_at_or_past_duration() {
-        assert_eq!(ease_quad_interp(0, 200, 10, 10), 200);
-        assert_eq!(ease_quad_interp(0, 200, 20, 10), 200);
-    }
-
-    #[test]
-    fn ease_quadratic_midpoint() {
-        // start 0, target 400, t=5, dur=10 -> (400*5/10=200)*5/10 = 100.
-        assert_eq!(ease_quad_interp(0, 400, 5, 10), 100);
-    }
-
-    #[test]
-    fn ease_matches_double_truncation_not_single() {
-        // start 0, target 7, t=3, dur=10.
-        // faithful: (7*3/10 = 2) then (2*3/10 = 0) -> 0.
-        // single-div would be 7*9/100 = 0 here; pick a case where they differ.
-        // start 0, target 10, t=7, dur=10:
-        //   double: (10*7/10=7)*7/10 = 4
-        //   single: 10*49/100 = 4  (same) -> choose another
-        // start 0, target 9, t=4, dur=5:
-        //   double: (9*4/5=7)*4/5 = 5
-        //   single: 9*16/25 = 5   -> still same; verify the double path value.
-        assert_eq!(ease_quad_interp(0, 9, 4, 5), 5);
-    }
-
-    #[test]
-    fn ease_with_nonzero_start_offsets_result() {
-        // start 50, target 250, t=5, dur=10:
-        //   d=200; (200*5/10=100)*5/10 = 50; +start = 100.
-        assert_eq!(ease_quad_interp(50, 250, 5, 10), 100);
-    }
-
-    #[test]
-    fn ease_descending_target() {
-        // start 400, target 0, t=5, dur=10:
-        //   d=-400; (-400*5/10=-200)*5/10 = -100; +400 = 300.
-        assert_eq!(ease_quad_interp(400, 0, 5, 10), 300);
     }
 }

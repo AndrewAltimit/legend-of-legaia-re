@@ -132,15 +132,27 @@ pub trait BattleActionHost {
     /// end-of-action gate). Default no-op.
     fn victory_stage(&mut self, _party_slot: u8) {}
 
-    /// Capture-pose animation pick for the captured monster: retail
-    /// `FUN_80050E2C(record + 0x4C, 1, record[0x4A])` selects an anim id
-    /// from the monster archive record's action table
-    /// (`(&DAT_801C9348)[slot - 3]`). `None` keeps the actor's queued anim
-    /// unchanged (hosts that don't resolve monster records). Called by the
-    /// `FUN_801E7824` port during `CaptureStart`.
-    fn capture_anim(&mut self, _monster_slot: u8) -> Option<u8> {
+    /// The first-byte **action tag** of every entry in monster `slot`'s
+    /// action-record array, in table order - the `(record + 0x4C,
+    /// record[0x4A])` pair every `FUN_80050E2C` call site in this state
+    /// machine hands over, with `record = (&DAT_801C9348)[slot - 3]`.
+    ///
+    /// An entry's index in this list is the anim id the SM stages into
+    /// `+0x1DA`, so the list must cover every entry, holes included. See
+    /// [`super::monster_action_by_tag`] for the lookups that read it.
+    ///
+    /// `None` means the host resolves no monster records; the lookups then
+    /// leave the actor's queued anim alone rather than inventing retail's
+    /// empty-table answer. Default `None`.
+    fn monster_action_tags(&self, _slot: u8) -> Option<Vec<u8>> {
         None
     }
+
+    /// `FUN_801E92DC(ctx[+0x269])` - the Done band's grant of a Seru a
+    /// killing blow absorbed: prepend spell `seru + 0x80` to the character
+    /// seated in `slot` (`_DAT_8007BD10[slot]`). Called once per action, on
+    /// the latched teardown pass, with `seru` non-zero. Default no-op.
+    fn learn_absorbed_seru(&mut self, _slot: u8, _seru: u8) {}
 
     /// One BIOS `rand()` draw - `jal 0x80056798`, the `A(2Fh)` thunk - so a
     /// value in `0..=0x7FFF` (the LCG state's high half, see
