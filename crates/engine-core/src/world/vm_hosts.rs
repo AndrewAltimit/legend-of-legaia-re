@@ -367,7 +367,10 @@ impl<'a> EffectHost for EffectHostImpl<'a> {
     // lifecycle from the catalog's spawn records + animation frames; the
     // host only supplies the RNG (mirror bits + spawn-offset rewrites).
     fn next_random(&mut self) -> i32 {
-        self.world.next_rng() as i32
+        // The walker ports battle-overlay `FUN_801DFDF0` / `FUN_801E0088`,
+        // whose draws are `jal 0x80056798` (`0x801DFF64` / `0x801DFFCC`,
+        // `0x801E01CC`): a shaped, never-negative `rand()`.
+        self.world.next_rand() as i32
     }
 }
 
@@ -2504,7 +2507,8 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .map(|a| &mut a.battle)
     }
     fn rng(&mut self) -> u32 {
-        self.world.next_rng()
+        // Every draw the state machine takes is a retail `jal 0x80056798`.
+        self.world.next_rand()
     }
     /// Retail reads `_DAT_8007B874 | _DAT_8007B938` and only tests it for
     /// zero-vs-non-zero (`0x801E6088..0x801E609C`). The port models the first
