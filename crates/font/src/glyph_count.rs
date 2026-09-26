@@ -183,33 +183,33 @@ pub fn typewriter_glyph_count(text: &[u8], expand: Option<&Expander<'_>>) -> Gly
 mod tests {
     use super::*;
 
-    fn count(text: &[u8]) -> u32 {
+    fn plain_units(text: &[u8]) -> u32 {
         typewriter_glyph_count(text, None).count
     }
 
     #[test]
     fn a_plain_row_counts_every_byte_to_its_nul_lead_included() {
         // The pager passes the row pointer, lead byte and all.
-        assert_eq!(count(b"\x1FHello\0"), 6);
-        assert_eq!(count(b"A\0"), 1);
+        assert_eq!(plain_units(b"\x1FHello\0"), 6);
+        assert_eq!(plain_units(b"A\0"), 1);
     }
 
     #[test]
     fn a_leading_control_byte_counts_nothing() {
-        assert_eq!(count(b"\x00abc"), 0);
-        assert_eq!(count(b"\x1Eabc\0"), 0);
+        assert_eq!(plain_units(b"\x00abc"), 0);
+        assert_eq!(plain_units(b"\x1Eabc\0"), 0);
     }
 
     #[test]
     fn a_two_byte_unit_runs_the_loop_one_byte_past_the_nul() {
         // `A`, `0xCE 05`, `B`: three glyphs, four bytes, four iterations - the
         // fourth reads the NUL and counts it.
-        assert_eq!(count(b"A\xCE\x05B\0"), 4);
+        assert_eq!(plain_units(b"A\xCE\x05B\0"), 4);
         // Two escapes overrun two bytes: the second extra iteration reads
         // the byte *after* the NUL, whatever it is.
-        assert_eq!(count(b"\xCE\x01\xCE\x02\0X"), 4);
+        assert_eq!(plain_units(b"\xCE\x01\xCE\x02\0X"), 4);
         // Colour changes count nothing themselves but still overrun.
-        assert_eq!(count(b"A\xCF\x02BC\0"), 4);
+        assert_eq!(plain_units(b"A\xCF\x02BC\0"), 4);
     }
 
     #[test]
@@ -250,6 +250,6 @@ mod tests {
     fn the_first_byte_is_not_tested_for_the_escape_nibble_by_the_pre_walk() {
         // `0xCE 41 42`: the pre-walk sizes it as three units (the operand is
         // walked as a plain byte), the main loop consumes the escape as two.
-        assert_eq!(count(b"\xCE\x41\x42\0"), 1 + 1 + 1);
+        assert_eq!(plain_units(b"\xCE\x41\x42\0"), 1 + 1 + 1);
     }
 }
