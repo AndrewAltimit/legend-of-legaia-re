@@ -2782,7 +2782,11 @@ a door runs (camera globals reset, SFX queue dropped, VAB restaged) and the
 window rebuilds on `FmvHandoffOutcome::Entered`; the page resets the camera on
 the hand-off tick
 (`crates/web-viewer/tests/play_fmv_real.rs`,
-`the_fmv_handoff_resets_the_camera_like_a_door`).
+`the_fmv_handoff_resets_the_camera_like_a_door`). The page also reopens the
+sequencer's pause gate when a movie ends, as the window's drain always did; it
+had only stopped the XA, so a movie that handed back to a scene with no BGM
+start of its own left the score paused. That half is wasm-only (the headless
+runtime has no audio output) and rests on reading the two drains.
 
 ### A held word into an edge-driven runtime
 
@@ -2839,8 +2843,6 @@ Recorded rather than fixed; each names the host that lacks it. None is gated.
 - **Overworld CLUT walk.** Implemented twice (`window/field_render.rs`
   `WaterAnim`, the page's `step_field_vram_fx`), already differing in which
   scenes patch strip rows and which column is checked.
-- **Movie-end unpause.** The page does not reopen the sequencer's pause gate
-  when a movie ends without a new BGM start; the window does.
 - **Card load order.** The page loads a card save before entering its scene,
   so the scene picker's story baseline (flags `0x141` / `0x147` outside
   `town0c`) and seat heuristic run over the loaded state; the window enters
