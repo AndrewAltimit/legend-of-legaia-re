@@ -2412,6 +2412,12 @@ impl World {
         // actor tick runs before the dialog SM: the spin must see the latch the
         // clip earned on *this* frame, not last frame's.
         self.props.bank.tick_actor_clips_for_frame();
+        // The halt window a talk's `CC F8 85` acquire opened: one walk-kernel
+        // visit a frame on the player's face-the-speaker turn, closing the
+        // window on its terminal frame. The acquire's own frame took its
+        // first visit inside the slice below (retail's actor tick runs the
+        // dialog SM and then, same visit, the walk kernel).
+        self.step_talk_face_ramp(&mut id);
 
         // A box is open: tick the typewriter + route input.
         if let Some(panel) = id.panel.as_mut() {
@@ -2559,6 +2565,14 @@ impl World {
             } else {
                 None
             };
+            // Inside a halt window the player carries `0x400`, and the
+            // dispatcher's halted-target early-out (`0x801DE90C..0x801DE940`)
+            // returns an extended op aimed at it at its own PC: the dialog SM
+            // sees a PC that did not move and retries next frame.
+            if id.face_ramp.is_some() && ext_target == Some(crate::field_env::PLAYER_ANCHOR_TARGET)
+            {
+                break;
+            }
             // `A2 <target> <clip>` - a cross-context ExecMove. Retail writes
             // the target's `+0x5C` and calls the anim tick, which re-points its
             // `+0x4C` clip pointer and zeroes its cursor; the port binds the
@@ -2624,13 +2638,15 @@ impl World {
             // unless that scene word is non-zero or the caller's `+0x50` is
             // `0xFB`) would then turn every later cross-context op of the talk into a
             // `Halt` - `retock`'s innkeeper opens with `CC F8 85` and never
-            // reached its gold gate. Retail's talk does not stall there: in the
-            // captured stay both `0x400` bits are clear again 18 vsyncs after
-            // the acquire, before the first player gesture (which follows a
-            // text box and a picker); the writer is not identified. The runner
-            // therefore keeps the caller's halt state across the op. A talk's
-            // later re-acquire of the same target is not an end: the capture
-            // shows the next talk's acquire succeeding.
+            // reached its gold gate. Retail's halt is a window, not a stall:
+            // the acquire's bytes are also a walk-kernel FaceTarget leg on the
+            // player, and the leg's terminal frame clears both `0x400` bits
+            // (`FUN_8003774C`, `0x80038004` / `0x80038028`; captured 18 vsyncs
+            // after the acquire). The runner therefore keeps the caller's own
+            // halt state across the op and carries the window as
+            // `InlineDialogue::face_ramp`. A talk's later re-acquire of the
+            // same target is not an end: the capture shows the next talk's
+            // acquire succeeding.
             let caller_halt =
                 ext_target.map(|_| (id.ctx.flags & 0x400, id.ctx.saved_pc, id.ctx.wait_accum));
             let step = vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc);
@@ -2641,6 +2657,17 @@ impl World {
                 id.ctx.flags &= !0x400;
                 id.ctx.saved_pc = saved_pc;
                 id.ctx.wait_accum = wait_accum;
+                // The halt does not vanish, it moves: a `CC F8 85|8E|8F`
+                // acquire hands the player the walk kernel's FaceTarget leg,
+                // and that leg's terminal frame is what clears both bits
+                // (`0x80038004` / `0x80038028`). The runner models the window
+                // on `face_ramp` rather than on the stand-in context.
+                if let Some(ramp) =
+                    crate::inline_dialogue::TalkFaceRamp::from_acquire(&id.bytecode, id.pc)
+                {
+                    id.face_ramp = Some(ramp);
+                    host.world.step_talk_face_ramp(&mut id);
+                }
             }
             if let Some(target) = bound
                 && let Some(actor) = host.world.props.bank.actor_clip_mut(target)
@@ -2753,6 +2780,49 @@ impl World {
         }
         self.dialog.stepping_inline_npc = None;
         self.dialog.inline = Some(id);
+    }
+
+    /// One walk-kernel visit on a talk's halt window
+    /// ([`crate::inline_dialogue::TalkFaceRamp`]): turn the player toward the
+    /// conversation's actor and, on the leg's terminal frame, close the
+    /// window. No-op without a window.
+    ///
+    /// The face-at operand is an actor bind (`+0x50`); the port resolves it
+    /// to the conversation's own placement, which is what the one captured
+    /// acquire names (`retock`'s innkeeper, bind `0x33`, faced by `CC F8 85
+    /// 14 00 33`). A window with no player or no placed actor to face closes
+    /// at once rather than holding the talk's player-targeted ops.
+    ///
+    /// REF: FUN_8003774C (the kernel visit), FUN_8003BC08 (visits it on `0x400`)
+    pub fn step_talk_face_ramp(&mut self, id: &mut crate::inline_dialogue::InlineDialogue) {
+        let Some(mut ramp) = id.face_ramp else {
+            return;
+        };
+        let target = id
+            .npc_slot
+            .and_then(|slot| self.npcs.positions.get(&slot).copied());
+        let player = self
+            .player_actor_slot
+            .and_then(|slot| self.actors.get(usize::from(slot)))
+            .map(|a| {
+                (
+                    a.move_state.world_x,
+                    a.move_state.world_z,
+                    a.move_state.render_26,
+                )
+            });
+        let (Some((tx, tz)), Some((px, pz, yaw))) = (target, player) else {
+            id.face_ramp = None;
+            return;
+        };
+        let speed = self.clock.display_frame_step.max(1);
+        let (yaw, done) = ramp.step(px, pz, yaw as u16, tx, tz, speed);
+        if let Some(slot) = self.player_actor_slot
+            && let Some(actor) = self.actors.get_mut(usize::from(slot))
+        {
+            actor.move_state.render_26 = yaw as i16;
+        }
+        id.face_ramp = if done { None } else { Some(ramp) };
     }
 
     /// Live-loop bridge for the inline-script runner: when [`crate::world::WorldToggles::use_vm_dialogue`]

@@ -113,6 +113,86 @@ pub struct InlineDialogue {
     /// ([`TalkDispatch::EndParked`]) - retail's `actor[+0x9E]`, which the
     /// next talk on the same actor resumes from. `None` for every other end.
     pub parked_pc: Option<usize>,
+    /// The player's face-the-speaker turn a cross-context halt-acquire
+    /// started, while it is in flight - see [`TalkFaceRamp`]. `Some` is the
+    /// halt window: the player and the talking actor both carry `0x400`, and
+    /// a cross-context op aimed at the player parks until it closes.
+    pub face_ramp: Option<TalkFaceRamp>,
+}
+
+/// The walk-kernel leg a talk's `CC F8 85|8E|8F <lo> <hi> <id>` halt-acquire
+/// hands the player.
+///
+/// The acquire (`0x801E2148..0x801E21DC` in the field VM) does not only
+/// suspend: it stores the op's own address into the player's and the calling
+/// actor's `+0x94` and raises `0x400` on both, and bit `0x400` is what
+/// `FUN_8003BC08` dispatches the walk kernel `FUN_8003774C` on
+/// (`0x8003BD44..0x8003BD50`, right after the same visit's dialog SM at
+/// `0x8003BD34`). The kernel reads the acquire's bytes back as a motion-VM
+/// op: `0x4C` FaceTarget with sub-mode `85` / `8E` / `8F`, a `u16` frame
+/// budget, and the actor bind `<id>` to face - on the player, because the
+/// `0x80` target byte `F8` resolves there. Its terminal frame snaps the
+/// heading and clears `0x400` from the player (`sw v0,0x10(s0)` at
+/// `0x80038004`) and, the target being the player, from the kernel's own
+/// actor too (`sw v0,0x10(s4)` at `0x80038028`). That is the store that ends
+/// the halt: a PCSX-Redux write watch on both `+0x10` words across
+/// `retock_innkeeper_talk_open`'s second talk sees the acquire set both at
+/// the acquire frame and those two PCs clear both 18 vsyncs later, with the
+/// player's `+0x54` cursor stepping `2` per game tick up to `18` of a `0x14`
+/// budget.
+///
+/// REF: FUN_8003774C (the walk kernel - ported as `legaia_engine_vm::motion_vm`,
+/// whose `0x4C` arm this runs), FUN_801DE840 (the acquire arm)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TalkFaceRamp {
+    /// The leg as a motion-VM program: `[0x4C, sub-mode, budget lo, budget
+    /// hi, face-at bind]` - the acquire's bytes after its target byte.
+    pub program: [u8; 5],
+    /// Frames of the budget already consumed (retail player `+0x54`).
+    pub accum: u16,
+}
+
+impl TalkFaceRamp {
+    /// The leg a halt-acquire at `pc` starts, when the op there is the
+    /// cross-context `CC F8 85|8E|8F` form; `None` for any other op.
+    pub fn from_acquire(bytes: &[u8], pc: usize) -> Option<Self> {
+        let op = bytes.get(pc..pc + 6)?;
+        if op[0] != 0xCC || op[1] != 0xF8 || !matches!(op[2], 0x85 | 0x8E | 0x8F) {
+            return None;
+        }
+        Some(Self {
+            program: [0x4C, op[2], op[3], op[4], op[5]],
+            accum: 0,
+        })
+    }
+
+    /// One visit of the walk kernel: turn `yaw` (engine heading space) at
+    /// `(x, z)` toward `(tx, tz)` by `speed` frames of the budget. Returns
+    /// the new heading and whether this was the terminal frame - the one on
+    /// which retail clears both halt bits.
+    pub fn step(&mut self, x: i16, z: i16, yaw: u16, tx: i16, tz: i16, speed: u16) -> (u16, bool) {
+        use legaia_engine_vm::motion_vm;
+        let mut state = motion_vm::MotionState {
+            world_x: x,
+            world_z: z,
+            speed: speed.max(1),
+            yaw,
+            op_accum: self.accum,
+            ..Default::default()
+        };
+        let target = motion_vm::MotionTarget {
+            x: tx,
+            y: 0,
+            z: tz,
+            id: 0,
+        };
+        let done = matches!(
+            motion_vm::step(&mut state, target, &self.program),
+            motion_vm::StepResult::Done
+        );
+        self.accum = state.op_accum;
+        (state.yaw, done)
+    }
 }
 
 /// What the dialog SM does with the byte after a finished text box: the
@@ -177,6 +257,7 @@ impl InlineDialogue {
             park_frames: 0,
             visited,
             parked_pc: None,
+            face_ramp: None,
         }
     }
 
@@ -208,6 +289,7 @@ impl InlineDialogue {
             park_frames: 0,
             visited,
             parked_pc: None,
+            face_ramp: None,
         }
     }
 

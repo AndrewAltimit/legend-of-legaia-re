@@ -2277,9 +2277,34 @@ window has closed" is falsified. It also misread its gate: the scene word
 `*(_DAT_801C6EA4) + 8` reads `0` on every sampled vsync of both conversations,
 consistent with its one documented use (non-zero only while a placement's spawn
 section is pre-run, [above](#0x43-sub-01ab---scripted-arc-jump)), so it is not
-a modal-window flag. The two `0x400` bits the acquire set are clear again 18
-vsyncs later with the second conversation still open; what clears them is not
-identified.
+a modal-window flag.
+
+**What ends the halt (capture).** The two `0x400` bits the acquire set are
+cleared by the walk kernel `FUN_8003774C`, which the same bit dispatches
+(`FUN_8003BC08` runs the dialog SM at `0x8003BD34` and then, on `+0x10 &
+0x400`, the kernel at `0x8003BD50`). The acquire stored the op's own address
+in both actors' `+0x94`, and the kernel reads those bytes back as a
+[motion-VM](motion-vm.md#opcodes) op: `CC F8 85 14 00 33` is a `0x4C`
+FaceTarget on the player (target byte `F8`), sub-mode `85`, a `0x14`-frame
+budget, facing actor bind `0x33` - the innkeeper. Its terminal frame snaps
+the heading, then clears `0x400` from the player (`sw v0,0x10(s0)` at
+`0x80038004`) and, because the target is the player, from the kernel's own
+actor (`sw v0,0x10(s4)` at `0x80038028`; see
+`ghidra/scripts/funcs/8003774c.txt`). A PCSX-Redux write watch on both
+`+0x10` words across the second talk
+([`run_w1a_halt_and_offset_watch.sh halt`](../../scripts/pcsx-redux/run_w1a_halt_and_offset_watch.sh))
+sees exactly that: set by the acquire
+(`0x801E21A4` player, `0x801E21CC` innkeeper), then cleared by those two
+PCs 18 vsyncs later, the player's `+0x54` cursor stepping 2 per game tick to
+18. The conversation's box opens on the acquire's own frame, so the halt is a
+window over the open box: the player turns to face the speaker, and a
+cross-context op aimed at the player inside it returns at its own PC. The
+engine carries the window as `InlineDialogue::face_ramp`
+(`legaia_engine_core::inline_dialogue::TalkFaceRamp`), stepped once a frame
+through the ported motion VM by `World::step_talk_face_ramp`; the runner
+parks a player-targeted op while it is open. The port resolves the face-at
+bind to the conversation's own actor - true of the captured acquire, not
+checked disc-wide.
 
 **The end rule is the dialog SM's, not the acquire's.** Once a box's lines are
 scanned, `FUN_80039B7C` hands the byte after them to `FUN_80038050`
