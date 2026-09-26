@@ -1605,11 +1605,16 @@ fn sra4_round_to_zero(v: i32) -> i32 {
 // NOT WIRED: nothing can build the `frame_indices` slice. It is the action
 // record's per-sub-keyframe `+0x26` column, and
 // `legaia_asset::baka_opponents::parse_actions` decodes only the record's power
-// and sub-keyframe count. The clip playback the browser duel does run walks ANM
-// frame indices directly - a different id space - and never asks which action
-// sub-keyframe a frame range covers, so adding a caller needs the parser column
-// first, not a host. The native window stages no fighter clip at all, so the row
-// is open on both hosts for different reasons.
+// and sub-keyframe count. The owed caller is the shipping one: the per-fighter
+// combat tick `FUN_801d3f44` calls it at `0x801D4334` with `a0 = s2[+0x94]`,
+// `a1 = s4[+0x5C] - (s2[+0x14] + 1)` (the actor's frame word against the
+// fighter block's) and `a2 = s2[+0x90]`, and on a non-negative result that
+// differs from the index cached at `s2[+0x98]` it stores the new index there
+// and writes `1` to `s2[+0xC]`. The editor's call at `0x801D50D8` is the other
+// one. `BakaFight` decides its exchange commit without a frame cursor, so
+// wiring needs the parser column and a clip-driven commit together; the clip
+// playback the browser duel runs walks ANM frame indices directly, a different
+// id space, and the native window stages no fighter clip at all.
 /// PORT: FUN_801d6e5c - action-table keyframe lookup by frame range.
 ///
 /// Returns the index of the first sub-keyframe whose whole-frame index (the
