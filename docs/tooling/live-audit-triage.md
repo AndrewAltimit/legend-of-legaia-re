@@ -2080,10 +2080,12 @@ a retail claim - the disassembly. Nothing to paste; the record is that they were
 checked.
 
 `80016230`, `800195a8`, `8001d088`, `80020f88`, `8002174c`, `80029724`,
-`8003cb54` (both anchors), `8003cbf8`, `800480d8`, `8005126c`
-(both anchors), `80056208`, `80064090`, `801cf754`, `801d32bc` (both
+`8003cb54` (both anchors), `8003cbf8`, `8005126c`
+(both anchors), `80056208`, `80064090`, `801d32bc` (both
 anchors), `801d4df8`, `801d65f8`, `801d820c`, `801d9ae8` (module), `801dcc20`,
-`801e4140`, `801ddb30`, `801de37c`, `801e0080`, `801e2650`, `801f81dc`.
+`801e4140`, `801ddb30`, `801de37c`, `801e2650`, `801f81dc`. (`800480d8` is
+since live, `801cf754` is `REPLACED-BY` the contact probes, and `801e0080`'s
+duplicate port is deleted in favour of the live effect-VM walker.)
 
 Two of them are worth singling out. `8005126c` is a documented **negative**, not
 a gap: the five-form reference sweep found no reference to the on-screen test

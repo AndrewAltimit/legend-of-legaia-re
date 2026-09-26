@@ -142,7 +142,7 @@ Per-frame substeps of `FUN_801D1344`, the player actor's tick in the field overl
 
 | Address | Role |
 |---|---|
-| `FUN_801CF754` (dialog overlay) | Camera-frame projector. Caches `_DAT_1F800020/24` from the active camera struct (`+0x14/+0x18`), then walks the linked actor list at `*param_2`, looking up each actor's tile descriptor at `_DAT_1F8003EC + slot * 0x20` and computing screen-space `(X, Y)` via the `(s8 << 7) + (s8 << 4)` packing the renderer expects. Skips actors with state bits `0x3` set. |
+| `FUN_801CF754` (dialog overlay) | **Field actor-contact broad phase**, not a render cull. `(player, &list_head)` from `FUN_801D1344` (`0x801D1658`); fills the table at `0x801C93C8` (count `_DAT_8007B6B8`, at most `0x20`) with actors within `±0x180` of the player, skipping `+0x10 & 3`. Read only by the contact probe `FUN_801CFC40`, which falls back to the full-list walk `FUN_801CF9F4` when the table is full. `REPLACED-BY` the engine's contact probes, which walk the whole list. |
 | `FUN_801D0B90` (dialog overlay) | Walk-regen tick (the "recover while walking" accessory passives). Runs only while `_DAT_801F2274` exceeds `0x20` (minus `0x20` per call); walks the member-id table at `+0x458` from `0x80084140` (count `+0x454`, stride `0x414`), three flag→(field, step, cap) bumps gated on the u32 at `+0x6C0` (record `+0xF8`, ability-bitfield word 1): `0x1000000` (bit `0x38` HP Walk) bumps `+0x6CE` by 8 clamp `+0x6CC`; `0x2000000` (`0x39` MP Walk) `+0x6D2` by 2 clamp `+0x6D0`; `0x4000000` (`0x3A` AP Walk) `+0x6D6` by 1 clamp `+0x6D4` - record-space: the HP/MP/AP currents `+0x106/+0x10A/+0x10E` toward the effective maxima `+0x104/+0x108/+0x10C`. Tail drains the Incense window `_DAT_8007B600` ([memory map](../memory-map.md)). Port: `engine-core::walk_regen`. |
 | `FUN_801F1E48` (field overlay 0897) | Incense wear-off notice, reached when `FUN_801D0B90`'s tail sees the Incense window hit zero: it stores record `0x801F2278` (kind `0x0B`), locks the player (`+0x10 |= 0x80000`) and spawns the submode driver, whose slot `0x32` is this routine - window record 16, confirm plays cue `0x20`, hide, hand back. The walk tick's one caller `FUN_801D1344` (`0x801D16EC`) runs on field and overworld alike. Port `engine-core::incense_notice`. |
 | `FUN_801D1BA0` (dialog overlay) | Vertical-step physics for the active actor. Computes `step = DAT_1F800393 * 0xC` (halved when actor flag `0x2000` is set), clamps Y delta by ground-collision via `FUN_801D1878`, and writes back to `actor[+0x16]`. Also resolves the special "frozen drop" path when `actor[+0x9E] == 0`. |
@@ -164,7 +164,7 @@ leaf whose setup is not visible as a call or is vestigial. Recorded as an
 [open thread](../open-rev-eng-threads.md#battle--rendering) rather than as a
 finding: a `cop2` read census over the frame following the write settles it.
 
-Its case `4` is a three-way pick the disc only ever resolves one way: `actor[+0x9E] & 0x4000` selects `FUN_8002A5A4`, `& 0x2000` the battle overlay's ribbon builder `FUN_801CFA48`, and `& 0x6000 == 0` the default `FUN_80028158`. The allocator zeroes `+0x9E`, and no store in `SCUS_942.54`, the 86 based images or the 1233 PROT entries writes either bit into it, so the ribbon arm has no shipped program behind it ([`effect-vm.md`](../../subsystems/effect-vm.md#the-three-render-mode-4-emitters-and-which-one-the-disc-uses)).
+Its case `4` is a three-way pick the disc only ever resolves one way: `actor[+0x9E] & 0x4000` selects `FUN_8002A5A4`, `& 0x2000` the battle overlay's ribbon builder `FUN_801CFA48`, and `& 0x6000 == 0` the default `FUN_80028158`. The allocator zeroes `+0x9E`; the bits are set by the move VM itself - op `0x42` ORs `0x2000` (`0x80023FBC`, stored through `actor + 0x80`) and op `0x23` `0x4000` - and the five shipped op-`0x42` programs all sit in slot-B images (PROT 0923, 0934 twice, 0957, 0964). A census of 188 live render-mode-4 nodes over 97 states found none on the `0x2000` arm and 60 on `0x4000` ([`effect-vm.md`](../../subsystems/effect-vm.md#the-three-render-mode-4-emitters-and-which-one-the-disc-uses)).
 
 The same routine hands `actor+0x24` **whole** to `FUN_80026988` (`addiu
 a0,s0,0x24` / `jal 0x80026988` at `0x8001AF04`, the `jal` at `0x8001AF08` with
@@ -241,9 +241,9 @@ position in the pack** - is the one recorded in
 **Per-actor battle draw tick.** `(actor)`. Returns immediately on
 `actor+0x10 & 8`.
 
-A set `ctx+0x272` first runs the scene-teardown preamble, itself guarded on the
-effect-VM ready flag `DAT_8007BD71 == 0xFF`: four battle-overlay shutdowns
-(`FUN_801E0080`, `FUN_801E09F8`, `FUN_801DF6B8`, `FUN_801E2524`), then a sweep
+A set `ctx+0x272` - a per-frame latch `FUN_80046A20` raises every frame (`0x80047104`), so the first body drawn runs the frame's global passes - first runs that preamble, itself guarded on the
+effect-VM ready flag `DAT_8007BD71 == 0xFF`: four battle-overlay passes
+(`FUN_801E0080` - the effect-VM walker, see [`effect-vm.md`](../../subsystems/effect-vm.md) - `FUN_801E09F8`, `FUN_801DF6B8`, `FUN_801E2524`), then a sweep
 voiding every `DAT_801C90F0[0..0x80]` entry whose target carries flag bit `0x8`,
 plus `FUN_801F7B88` when `_DAT_8007BDC0 != 0`. The byte is cleared whether or not
 the ready flag let the body run.
@@ -252,7 +252,7 @@ Then `FUN_8004A908` (the tint / fade pass) unconditionally, and a split on
 `actor+0x74 & 0x00FFFFFF`:
 
 - **zero** - the actor is drawn **only** if a four-way gate passes: seat
-  `actor+0x5A` in `3..=6` (the monster seats), `ctx+0x287` set, `gp+0x9F5` clear,
+  `actor+0x5A >= 3` (a signed test with no upper bound), `ctx+0x287` set, `gp+0x9F5` (`0x8007BD0D`, the formation's second monster id) clear,
   and `*(DAT_801C9370 + seat*4) + 0x21C == 2`. Failing it means no draw at all
   this frame.
 - **non-zero** - `FUN_8005112C`, trail flag `actor+0x6A = 1`, `FUN_80049348`,
@@ -263,8 +263,9 @@ Passing the gate stamps `actor+0x74 = 0x00808080` and draws. That constant is
 **24-bit mid-grey RGB** - `lui v0,0x80 ; ori v0,v0,0x8080` - the same `0x808080`
 the after-image ghost and the move-FX streak use, and the mask beside it is
 `0x00FFFFFF`. It is not a `0x80808080` flag word. Ported as
-`legaia_engine_render::battle_actor_tick`, `NOT WIRED` (none of the five passes it
-sequences live in that crate). `see ghidra/scripts/funcs/800480d8.txt`.
+`legaia_engine_vm::battle_actor_tick`, live on both play hosts through
+`World::battle_actor_draw_plan`. Its caller's gate (`slti 0xa1` at `0x8001AEE8`)
+tests the body's view depth `+0x34` against a near plane, not an actor id. `see ghidra/scripts/funcs/800480d8.txt`.
 
 ### `801F69D8`
 
