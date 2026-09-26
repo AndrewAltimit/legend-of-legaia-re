@@ -163,9 +163,11 @@ Template 0 is the only path that pins band 0 by choice rather than the ~4.9%
 roll.
 
 **The countdown doubles as the strike credit.** The per-frame strike roll is
-`rand % denom < credit` with `credit = DAT_801d90ec + 2`, plus one per fresh
-input edge (D-pad left/right, either reel button), plus the bonus-cell boosts
-below; the credit is zeroed while the length readout `DAT_801d9280` is under
+`rand % denom < credit` with `credit = DAT_801d90ec + 2`, plus one per
+**pad mask** that hits the newly-pressed word `_DAT_8007B874`
+(`0x801D343C..0x801D3468`: D-pad left `0x8000`, D-pad right `0x2000`, and the
+two reel bits `0xC0` tested as one mask, so both reels pressed on one frame
+are one nudge and the cast press is none), plus the bonus-cell boosts below; the credit is zeroed while the length readout `DAT_801d9280` is under
 `100`, and a strike can only land on a frame where a reel button is **held**
 (`_DAT_8007b850 & 0xc0`). A cadence match therefore also arms the bite: the
 credit jumps from ~2 to `0x42` and decays with the countdown, so a strike is

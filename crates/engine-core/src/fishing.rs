@@ -1119,8 +1119,8 @@ impl BandCheck {
     ///
     /// `record` is the line record (`DAT_801d927c`), `readout` the HUD length
     /// term (`DAT_801d9280` = `max(record - 300, 0)`), `cadence` the
-    /// recogniser's match this frame, `edge_bonus` the count of fresh input
-    /// edges (D-pad left/right, either reel button), `water_bonus` the
+    /// recogniser's match this frame, `edge_bonus` the pad nudge
+    /// ([`crate::fishing_actors::bite_pad_nudge`]), `water_bonus` the
     /// water-class addend the tile under the lure contributes
     /// ([`crate::fishing_actors::water_tile_class`]; `0` off water), and
     /// `reel_held` whether a reel button is held (`_DAT_8007b850 & 0xc0`).
@@ -1128,8 +1128,8 @@ impl BandCheck {
     ///
     /// `edge_bonus` and `water_bonus` stay separate arguments because they
     /// are separate retail addends onto one register - `addu s1,s1,s2` at
-    /// `0x801D3434` for the water class, then one `addiu s1,s1,1` per held
-    /// pad bit from `0x801D3450` - and not two readings of one quantity.
+    /// `0x801D3434` for the water class, then one `addiu s1,s1,1` per newly-pressed
+    /// pad mask from `0x801D3450` - and not two readings of one quantity.
     ///
     /// Pinned: the every-frame re-entry (countdown clamped at 0), the
     /// cadence-match band store + `0x40` hold + splash, the roll cutoffs, the
@@ -1352,9 +1352,38 @@ pub struct PondInput {
     /// The cast / confirm edge (Circle `0x20` in retail; `X` on both browser pages, and Space as well
     /// on the minigames page).
     pub cast_edge: bool,
-    /// Count of fresh input edges this frame (D-pad left/right, either reel
-    /// button) - each adds one to the strike credit.
+    /// The strike credit's pad nudge this frame - what
+    /// [`crate::fishing_actors::bite_pad_nudge`] counts off the newly-pressed
+    /// word (D-pad left, D-pad right, the reel pair as one mask).
     pub edge_bonus: i32,
+}
+
+impl PondInput {
+    /// One frame's input off the engine pad pair (PSX pad layout, this frame
+    /// and the last) - the build `World::tick_fishing` runs for the play
+    /// hosts.
+    ///
+    /// The reel bits are **held** Cross / Square (`_DAT_8007b850 & 0xc0`),
+    /// the cast edge a **new** Circle press, and the strike credit's nudge
+    /// is [`crate::fishing_actors::bite_pad_nudge`] over the newly-pressed
+    /// word rotated into the packed retail layout (`_DAT_8007B874`): D-pad
+    /// left, D-pad right and the reel pair as one mask, never the cast.
+    pub fn from_engine_pad(pad: u16, pad_prev: u16) -> Self {
+        use crate::input::PadButton as B;
+        let mut reel_mask = 0u32;
+        if pad & B::Cross.mask() != 0 {
+            reel_mask |= REEL_A_PAD_BIT;
+        }
+        if pad & B::Square.mask() != 0 {
+            reel_mask |= REEL_B_PAD_BIT;
+        }
+        let pressed = pad & !pad_prev;
+        PondInput {
+            reel_mask,
+            cast_edge: pressed & B::Circle.mask() != 0,
+            edge_bonus: crate::fishing_actors::bite_pad_nudge(u32::from(pressed.rotate_right(8))),
+        }
+    }
 }
 
 /// A per-frame event the presentation layer reacts to.
@@ -1993,6 +2022,29 @@ mod tests {
     /// about the one-time bit. Reading availability as the latch is what
     /// printed "sold" beside every unaffordable one-time prize on a fresh
     /// save.
+    #[test]
+    fn engine_pad_input_counts_retail_pad_nudges() {
+        use crate::input::PadButton as B;
+        let m = |bs: &[B]| bs.iter().fold(0u16, |a, b| a | b.mask());
+        // Cross + Square pressed together: ONE nudge (the reel pair is one
+        // mask at `0x801D3458`), both reel bits held.
+        let i = PondInput::from_engine_pad(m(&[B::Cross, B::Square]), 0);
+        assert_eq!(i.edge_bonus, 1);
+        assert_eq!(i.reel_mask, REEL_A_PAD_BIT | REEL_B_PAD_BIT);
+        // Left + Right + a reel: three.
+        let i = PondInput::from_engine_pad(m(&[B::Left, B::Right, B::Cross]), 0);
+        assert_eq!(i.edge_bonus, 3);
+        // The cast press is an edge but not a nudge.
+        let i = PondInput::from_engine_pad(m(&[B::Circle]), 0);
+        assert!(i.cast_edge);
+        assert_eq!(i.edge_bonus, 0);
+        // A held (not newly pressed) button nudges nothing.
+        let held = m(&[B::Left, B::Cross]);
+        let i = PondInput::from_engine_pad(held, held);
+        assert_eq!(i.edge_bonus, 0);
+        assert_eq!(i.reel_mask, REEL_A_PAD_BIT);
+    }
+
     #[test]
     fn the_one_time_latch_is_not_the_same_question_as_availability() {
         let rows = vec![

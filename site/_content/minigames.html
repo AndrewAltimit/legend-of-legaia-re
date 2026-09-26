@@ -2998,15 +2998,18 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       else if ((b === 'Start' || b === 'Cross') && slotOnScreen()) { e.preventDefault(); slotPress(); }
     } else if (active === 'fishing') {
       /* Retail pad map: Circle casts, Cross (reel bit 0x40) = reel A, Square
-       * (reel bit 0x80) = reel B; every FRESH press also feeds the strike
-       * credit. The two reel bits are the fishing session's own ReelInput
-       * word, not pad bits - only the buttons that drive them are bindings. */
+       * (reel bit 0x80) = reel B. Every FRESH press is ORed into the packed
+       * newly-pressed word (retail _DAT_8007B874 layout: 0x8000 Left, 0x2000
+       * Right, 0x40 / 0x80 the reels); the engine's bite_pad_nudge counts the
+       * strike-credit nudge from it - three masks, the two reels as one, and
+       * never the cast press. */
       if (b === 'Circle') { e.preventDefault(); fishingCastPress(); }
-      else if (b === 'Cross') { e.preventDefault(); if (!e.repeat) { fishHold |= 0x40; fishEdges++; } }
-      else if (b === 'Square') { e.preventDefault(); if (!e.repeat) { fishHold |= 0x80; fishEdges++; } }
+      else if (b === 'Cross') { e.preventDefault(); if (!e.repeat) { fishHold |= 0x40; fishPressed |= 0x40; } }
+      else if (b === 'Square') { e.preventDefault(); if (!e.repeat) { fishHold |= 0x80; fishPressed |= 0x80; } }
       else if (b === 'Left' || b === 'Right') {
         e.preventDefault();
-        if (!e.repeat) fishEdges++;   /* bait twitch: a fresh D-pad edge */
+        /* bait twitch: a fresh D-pad edge */
+        if (!e.repeat) fishPressed |= (b === 'Left') ? 0x8000 : 0x2000;
       }
     } else if (active === 'muscle') {
       /* Retail pad map: D-pad drives the command menu (Left=Attack,
@@ -3068,7 +3071,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    * runs the prize counter, and bridges the save bar's fishing record. */
   let fishR = null;          /* MgFishing renderer (null = flat fallback) */
   let fishHold = 0;          /* held reel mask: 0x40 Cross (J), 0x80 Square (K) */
-  let fishEdges = 0;         /* fresh input edges since the last frame */
+  let fishPressed = 0;       /* packed newly-pressed word since the last frame */
   let fishCastEdge = false;  /* one-shot cast / confirm press */
   let fishSave = null;       /* fishing record read from the loaded save */
   let fishLive = false;
@@ -3192,7 +3195,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     api.fishing_pond_start(venue, lure, rod, s.casts | 0, s.points | 0,
                            s.best | 0, s.best_fish >>> 0, s.purchased >>> 0, seed);
     fishLive = true;
-    fishHold = 0; fishEdges = 0; fishCastEdge = false;
+    fishHold = 0; fishPressed = 0; fishCastEdge = false;
     fishingExchangeRender();
     fishingPrizesRender();
     verdict($('fishing-verdict'),
@@ -3203,7 +3206,6 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   function fishingCastPress() {
     if (!api || !fishLive) return;
     fishCastEdge = true;
-    fishEdges++;
   }
 
   function fishingAnnounce(events, st) {
@@ -3237,18 +3239,18 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     if (!api || !fishLive) return;
     /* Step the retail 60 Hz simulation by wall-clock, so a throttled rAF
      * (background tab, slow machine, headless) still plays at game speed.
-     * The one-shot cast edge and input-edge bonus ride the first step. */
+     * The one-shot cast edge and newly-pressed word ride the first step. */
     const now = performance.now();
     const frames = fishClock ? Math.min(4, Math.max(1, Math.round((now - fishClock) / 16.6))) : 1;
     fishClock = now;
     let events = [];
     for (let i = 0; i < frames; i++) {
       const ev = JSON.parse(api.fishing_pond_tick(
-        fishHold, i === 0 && fishCastEdge, i === 0 ? fishEdges : 0));
+        fishHold, i === 0 && fishCastEdge, i === 0 ? fishPressed : 0));
       if (ev.length) events = events.concat(ev);
     }
     fishCastEdge = false;
-    fishEdges = 0;
+    fishPressed = 0;
     const st = JSON.parse(api.fishing_pond_state_json());
     if (!st.live) return;
     if (events.length) {
@@ -3336,7 +3338,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     const hold = (id, bit) => {
       const b = $(id);
       if (!b) return;
-      const down = (e) => { e.preventDefault(); fishHold |= bit; fishEdges++; };
+      const down = (e) => { e.preventDefault(); fishHold |= bit; fishPressed |= bit; };
       const up = () => { fishHold &= ~bit; };
       b.addEventListener('pointerdown', down);
       b.addEventListener('pointerup', up);
@@ -3655,7 +3657,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   window.__mgFishing = { load: fishingLoad, start: fishingStart,
                          cast: fishingCastPress,
                          hold: (m) => { fishHold = m; },
-                         edge: (n) => { fishEdges += (n || 1); },
+                         press: (m) => { fishPressed |= (m >>> 0); },
                          buy: fishingBuy,
                          renderer: () => fishR,
                          state: () => api && JSON.parse(api.fishing_pond_state_json()),

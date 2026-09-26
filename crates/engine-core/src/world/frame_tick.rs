@@ -2442,8 +2442,10 @@ impl World {
     ///   (`0x80`, reel B) pair, rebuilt into the retail held word
     ///   `_DAT_8007b850` and classified by the ported decoder inside the
     ///   session, so holding both resolves to reel A as retail does.
-    /// - **Strike credit**: every fresh D-pad left/right or reel edge adds
-    ///   one, the input-edge term of the pre-hook band check.
+    /// - **Strike credit**: the pre-hook band check's pad nudge, counted by
+    ///   [`crate::fishing_actors::bite_pad_nudge`] - one per fresh D-pad
+    ///   left, D-pad right, and reel press, the reel pair counting once
+    ///   ([`PondInput::from_engine_pad`](crate::fishing::PondInput::from_engine_pad)).
     ///
     /// The frame's [`PondEvent`](crate::fishing::PondEvent)s land in
     /// [`crate::world::MinigameState::fishing_events`] for the hosts' banner
@@ -2485,23 +2487,7 @@ impl World {
             self.minigames.fishing_events.clear();
             return;
         }
-        use input::PadButton as B;
-        let mut reel_mask = 0u32;
-        if self.input.pressed(B::Cross) {
-            reel_mask |= crate::fishing::REEL_A_PAD_BIT;
-        }
-        if self.input.pressed(B::Square) {
-            reel_mask |= crate::fishing::REEL_B_PAD_BIT;
-        }
-        let edge_bonus = [B::Left, B::Right, B::Cross, B::Square]
-            .iter()
-            .filter(|&&b| self.input.just_pressed(b))
-            .count() as i32;
-        let pond_input = PondInput {
-            reel_mask,
-            cast_edge: self.input.just_pressed(B::Circle),
-            edge_bonus,
-        };
+        let pond_input = PondInput::from_engine_pad(self.input.pad(), self.input.pad_prev());
         let events = match self.minigames.fishing.as_mut() {
             Some(s) => {
                 s.tick(pond_input, 1, FISHING_CAST_STEP);
