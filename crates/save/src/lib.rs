@@ -44,6 +44,7 @@ pub mod card;
 pub mod character;
 pub mod emu;
 pub mod ext;
+pub mod minigame_save;
 pub mod retail_inventory;
 
 pub use card::{
@@ -76,6 +77,7 @@ pub use ext::{
     SAVE_FILE_VERSION_V2, SAVE_FILE_VERSION_V3, SaveExt, SaveExtV2, SaveFile, SaveResume,
     SavedChainRecord, displayed_level,
 };
+pub use minigame_save::MinigameSave;
 pub use retail_inventory::{
     AddOutcome, FULL_WINDOW_STORY_FLAG, GENERAL_ITEM_PAGE_SLOTS, ITEM_SLOTS_HALF, ITEM_SLOTS_TOTAL,
     ITEM_WINDOW_BASE, ITEM_WINDOW_SLOTS, ItemWindow, RefusedGrant, RetailInventory, STACK_CAP,

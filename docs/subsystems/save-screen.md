@@ -926,23 +926,39 @@ to slice them from a raw SC block.
 
 ### The composer is an in-place patch
 
-`SaveFile::write_into_retail_sc_block` stamps the SC magic and four regions -
-the four-slot character-record array, the story-flag bitmap, the inventory and
-the gold slot - restamping the block checksum as it goes, so what comes out is
+`SaveFile::write_into_retail_sc_block` stamps the SC magic and five regions -
+the four-slot character-record array, the story-flag bitmap, the inventory,
+the gold slot and the nine minigame words - restamping the block checksum as it goes, so what comes out is
 a block retail's loader accepts. It does **not** rewrite the block: every byte
 outside those regions survives, which is right for editing an existing save
 and is the sharp edge for a new one.
 
 The global game-data header at `RETAIL_GAME_DATA_OFFSET` carries the location
 name (`0x200`), the scene label (`0x408`) and the coin bank (`0x464`) beside
-the gold slot, and the composer itself writes only gold there. The location
+the gold slot. The composer writes the gold and the coin bank there, the coin
+bank as one of the minigame words below. The location
 and scene label are the **resume point** and have their own writer,
 `SaveResume::write_into_retail_sc_block` (`card::write_retail_resume`): the
 CDNAME label NUL-padded to its `0x10`-byte field and the banner name to its
 `0x24`-byte field - the same two copies retail's own compose path makes, so a
 block written by a host that claims a previously-free card block no longer
 inherits whatever the card held there. The browser's card Save composes both
-after the payload; the coin bank stays the card's.
+after the payload.
+
+### The minigame purses are live-state words too
+
+The casino coin bank, the Point Card bank and the fishing point record all sit
+inside the `0x1A18`-byte live-state window, so retail saves and restores them
+with everything else, each at SC offset `VA - 0x80084140`: the fishing pool
+`0x8008444C` (`0x30C`), lure row `0x80084450` (`0x310`), rod `0x80084454`
+(`0x314`), best award `0x80084458` (`0x318`), best species `0x8008445C`
+(`0x31C`), cast counter `0x80084460` (`0x320`), prize bitmask `0x8008446C`
+(`0x32C`), coins `0x800845A4` (`0x464`) and Point Card `0x800845B4` (`0x474`).
+`legaia_save::MinigameSave` carries the nine words: `SaveFile::from_retail_sc_block`
+reads them, `write_into_retail_sc_block` writes them, and an engine `LGSF` file
+holds them in the optional `LGX7` block (emitted only when one is non-zero).
+`World::save_full` / `load_full` map them to `World::minigames`; before that,
+a save / load round trip on either host zeroed all nine.
 
 Two properties keep the aliasing benign and are worth not re-deriving: slot 3
 (Terra)'s record tail overlaps the story-flag bitmap by design, and the

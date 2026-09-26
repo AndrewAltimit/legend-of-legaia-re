@@ -166,6 +166,11 @@ pub const SAVE_FILE_EXT6_MAGIC: [u8; 4] = *b"LGX6";
 /// Magic of the engine-ext blob a retail SC block carries in its unread tail
 /// ([`SaveFile::write_engine_ext_into_retail_sc_block`]).
 pub const RETAIL_ENGINE_EXT_MAGIC: [u8; 4] = *b"LGXE";
+
+/// Optional minigame-purse block ([`crate::MinigameSave`]): the casino coin
+/// bank, the Point Card bank and the fishing point record. Emitted only when
+/// one of them is non-zero, like `LGX6`.
+pub const SAVE_FILE_EXT7_MAGIC: [u8; 4] = *b"LGX7";
 /// Byte offset of the engine-ext blob inside a retail SC block: the first
 /// byte past the `0x1A18`-byte live-state copy retail composes and loads.
 pub const RETAIL_ENGINE_EXT_OFFSET: usize = crate::card::RETAIL_LIVE_STATE_SIZE;
@@ -232,6 +237,12 @@ pub struct SaveExt {
     /// because one retail consumer indexes the bag by slot (PROT 0941's
     /// Steal); every other one addresses it by id and cannot tell.
     pub item_slots: Vec<(u8, u8)>,
+    /// The minigame purses and records (casino coins, Point Card, fishing
+    /// point record). Retail keeps all nine words in its live-state window,
+    /// so a retail block carries them at their own offsets
+    /// ([`crate::minigame_save`]); an `LGSF` file carries them in the optional
+    /// `LGX7` block.
+    pub minigames: crate::MinigameSave,
 }
 
 /// Per-character v2 extension data. Engines populate this from
@@ -547,6 +558,16 @@ impl SaveFile {
             out.extend_from_slice(&ext6_block);
         }
 
+        // Optional LGX7 block: the minigame purses. Emitted only when one is
+        // non-zero, so a save without minigame progress is byte-identical to
+        // a pre-block file.
+        if !self.ext.minigames.is_empty() {
+            let body = self.ext.minigames.body();
+            out.extend_from_slice(&SAVE_FILE_EXT7_MAGIC);
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(&body);
+        }
+
         out
     }
 
@@ -724,6 +745,21 @@ impl SaveFile {
             cursor = ext6_end;
         }
 
+        // Optional LGX7 minigame-purse block.
+        if cursor + 8 <= buf.len() && buf[cursor..cursor + 4] == SAVE_FILE_EXT7_MAGIC {
+            cursor += 4;
+            let ext7_total_size =
+                u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            let ext7_end = cursor
+                .checked_add(ext7_total_size)
+                .filter(|&e| e <= buf.len())
+                .ok_or_else(|| anyhow::anyhow!("LGSF: LGX7 minigame block truncated"))?;
+            ext.minigames = crate::MinigameSave::parse_body(&buf[cursor..ext7_end])
+                .context("parse LGSF LGX7 minigame block")?;
+            cursor = ext7_end;
+        }
+
         // Optional LGX5 resume trailer: present only when the writer had a
         // scene / location to record. Absent = empty, never an error, so a
         // pre-trailer v4 file and a trailer-less v4 file read the same.
@@ -789,6 +825,7 @@ impl SaveFile {
             .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
             .unwrap_or(0);
         let money = crate::card::read_retail_gold(sc_block).unwrap_or(0);
+        let minigames = crate::MinigameSave::from_retail_sc_block(sc_block).unwrap_or_default();
         // The engine-ext blob in the block's unread tail. A retail block is
         // zero there (no magic) and reads as the default, exactly as before.
         let ext_v2 = Self::read_engine_ext_from_retail_sc_block(sc_block).unwrap_or_default();
@@ -800,6 +837,7 @@ impl SaveFile {
                 money,
                 inventory,
                 item_slots,
+                minigames,
             },
             ext_v2,
         })
@@ -906,6 +944,8 @@ impl SaveFile {
             crate::card::write_retail_item_window(sc_block, &self.ext.item_slots)?;
         }
         crate::card::write_retail_gold(sc_block, self.ext.money)?;
+        // The minigame purses sit in the same live-state window as the gold.
+        self.ext.minigames.write_into_retail_sc_block(sc_block)?;
         Ok(())
     }
 }
