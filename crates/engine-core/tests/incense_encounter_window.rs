@@ -28,11 +28,13 @@ use legaia_engine_core::walk_regen::{WALK_REGEN_STEP_COST, tick_walk_regen};
 use legaia_engine_core::world::{SceneMode, World};
 
 /// A field world with a seated player standing in one whole-map region whose
-/// rate drains any step counter in one step, holding a Healing Leaf and one
+/// rate drains any step counter in one step, holding a Healing Leaf and two
 /// Incense.
 fn field_world() -> World {
-    let mut w = World::default();
-    w.mode = SceneMode::Field;
+    let mut w = World {
+        mode: SceneMode::Field,
+        ..Default::default()
+    };
     w.spawn_actor(0).active = true;
     w.player_actor_slot = Some(0);
     w.party.roster = legaia_save::Party::zeroed(3);
