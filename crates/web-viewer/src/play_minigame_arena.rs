@@ -544,15 +544,9 @@ impl LegaiaRuntime {
     /// exchange hit, `BAKA_CUE_HIT`) into the page's scheduler - the native
     /// window's `drain_baka_sfx_cues`.
     pub(crate) fn tick_baka_ui(&mut self) {
-        // The cabinet's NEXT GAME seats the next rung inside the same visit:
-        // follow it, and bump the scene generation so the page rebuilds the
-        // opponent's mesh and duel VRAM.
-        if let Some(roster) = self.baka_session().map(|f| f.opponent_roster())
-            && roster != self.minigame_ui.baka.opponent
-        {
-            self.minigame_ui.baka.opponent = roster;
-            self.minigame_ui.generation = self.minigame_ui.generation.wrapping_add(1);
-        }
+        // A rung the cabinet seats inside the visit needs nothing here: the
+        // duel surface (`play_mg_baka_scene_frame`) rebuilds its buffers and
+        // VRAM when the seated pair changes, on both play hosts.
         let (cues, xa): (Vec<u8>, _) = self
             .scene_host
             .as_mut()
@@ -1074,42 +1068,97 @@ impl LegaiaRuntime {
 
     // ----------------------------------------------------- Baka Fighter
 
-    /// The live duel's state in the standalone page's `baka_state_json`
-    /// shape, read off the world's session.
+    /// The live duel's state, through the one builder the standalone page's
+    /// `baka_state_json` uses (`crate::minigames::baka_state_json_for`) - so
+    /// the play page reads the strike clock, the display clips and the
+    /// afterimage passes too.
     pub fn play_mg_baka_state_json(&self) -> String {
-        let Some(f) = self.baka_session() else {
-            return r#"{"live":false}"#.to_string();
-        };
-        let phase = match f.phase() {
-            MatchPhase::Fighting => "fighting",
-            MatchPhase::RoundOver(_) => "round_over",
-            MatchPhase::MatchOver(_) => "match_over",
-        };
-        let chosen = |s: usize| f.chosen(s).map(|a| a.type_id());
-        let last = f.last_exchange().map(|e| {
-            serde_json::json!({
-                "winner": e.winner,
-                "draw": e.draw,
-                "damage": e.damage,
-                "critical": e.critical,
-                "special": e.special_round_win,
-            })
-        });
-        serde_json::json!({
-            "live": true,
-            "phase": phase,
-            "round": f.round(),
-            "hp": [f.hp(0), f.hp(1)],
-            "hp_start": legaia_engine_core::baka_fighter::HP_START,
-            "wins": [f.round_wins(0), f.round_wins(1)],
-            "combo": [f.combo(0), f.combo(1)],
-            "chosen": [chosen(0), chosen(1)],
-            "can_choose": f.can_choose(0),
-            "gold": f.gold_reward(),
-            "winner": f.winner(),
-            "last": last,
-        })
-        .to_string()
+        match self.baka_session() {
+            Some(f) => crate::minigames::baka_state_json_for(f),
+            None => r#"{"live":false}"#.to_string(),
+        }
+    }
+
+    /// Pose the duel's 3D surface for this frame
+    /// (`legaia_engine_core::baka_duel_scene::BakaDuelSurface::frame`, the
+    /// call the native window makes too) and return its generation - or `-1`
+    /// when no duel is live. A generation the page has not seen means the
+    /// static buffers and the VRAM changed (a rung seated a new opponent):
+    /// re-read them before the positions.
+    pub fn play_mg_baka_scene_frame(&mut self) -> i32 {
+        let host = self.scene_host.as_ref();
+        let fight = host.and_then(|h| h.world.minigames.baka_fighter.as_ref());
+        let read =
+            |i: usize| host.and_then(|h| h.index.entry_bytes(i as u32).ok().map(|b| b.to_vec()));
+        let surface = &mut self.minigame_ui.baka_surface;
+        match surface.frame(read, fight) {
+            Some(_) => surface.generation() as i32,
+            None => -1,
+        }
+    }
+
+    /// This frame's posed positions, `[x, y, z]` per vertex, raw retail world
+    /// coordinates (Y down).
+    pub fn play_mg_baka_scene_positions(&self) -> Vec<f32> {
+        self.minigame_ui
+            .baka_surface
+            .scene()
+            .map(|s| s.positions.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[u, v]`.
+    pub fn play_mg_baka_scene_uvs(&self) -> Vec<u8> {
+        self.minigame_ui
+            .baka_surface
+            .scene()
+            .map(|s| s.uvs.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[cba, tsb]`.
+    pub fn play_mg_baka_scene_cba_tsb(&self) -> Vec<u16> {
+        self.minigame_ui
+            .baka_surface
+            .scene()
+            .map(|s| s.cba_tsb.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[r, g, b, flag]` (the hybrid textured / fill layout).
+    pub fn play_mg_baka_scene_flat_rgba(&self) -> Vec<u8> {
+        self.minigame_ui
+            .baka_surface
+            .scene()
+            .map(|s| s.flat_rgba.clone())
+            .unwrap_or_default()
+    }
+
+    /// Triangle indices.
+    pub fn play_mg_baka_scene_indices(&self) -> Vec<u32> {
+        self.minigame_ui
+            .baka_surface
+            .scene()
+            .map(|s| s.indices.clone())
+            .unwrap_or_default()
+    }
+
+    /// The duel VRAM for the seated opponent.
+    pub fn play_mg_baka_scene_vram(&self) -> Vec<u8> {
+        self.minigame_ui
+            .baka_surface
+            .vram()
+            .map(|v| v.as_bytes().to_vec())
+            .unwrap_or_default()
+    }
+
+    /// The arena camera's view-projection for a raw (Y-down) world vertex,
+    /// column-major (`DuelCamera::vp_raw`, the matrix the native window
+    /// draws the duel with).
+    pub fn play_mg_baka_scene_vp(&self, aspect: f32) -> Vec<f32> {
+        self.baka_session()
+            .map(|f| f.duel_camera().vp_raw(aspect).to_vec())
+            .unwrap_or_default()
     }
 
     /// Whether the Baka roster / art / stage packs decoded.

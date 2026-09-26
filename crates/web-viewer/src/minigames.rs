@@ -28,6 +28,7 @@ use super::*;
 // live in a child module so this file stays the rules-engine shell.
 #[path = "minigames_baka.rs"]
 mod baka_presentation;
+pub(crate) use baka_presentation::baka_state_json_for;
 
 // Dance presentation exports (PROT 1230 HUD art, the overlay's widget table,
 // the dancer face-stamp rig, SFX + BGM) live in a child module too.
@@ -840,7 +841,17 @@ impl LegaiaMinigames {
                 let headers = legaia_engine_core::baka_fighter::roster_clip_headers(|i| {
                     self.baka_entry(i).map(<[u8]>::to_vec)
                 });
-                self.baka = Some(f.with_roster_clip_headers(headers));
+                let cameras = overlay_image(
+                    &self.prot,
+                    &self.entries,
+                    legaia_asset::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32,
+                )
+                .map(|img| legaia_engine_core::baka_duel_scene::parse_special_cameras(&img))
+                .unwrap_or_default();
+                self.baka = Some(
+                    f.with_roster_clip_headers(headers)
+                        .with_special_cameras(cameras),
+                );
                 true
             }
             None => false,
@@ -935,81 +946,10 @@ impl LegaiaMinigames {
     /// lands when it crosses the action's keyframe. `ghosts` are the special's
     /// afterimage passes that drew this tick.
     pub fn baka_state_json(&self) -> String {
-        let Some(f) = self.baka.as_ref() else {
-            return r#"{"live":false}"#.to_string();
-        };
-        let phase = match f.phase() {
-            MatchPhase::Fighting => "fighting",
-            MatchPhase::RoundOver(_) => "round_over",
-            MatchPhase::MatchOver(_) => "match_over",
-        };
-        let chosen = |s: usize| match f.chosen(s) {
-            Some(a) => a.type_id().to_string(),
-            None => "null".to_string(),
-        };
-        let last = match f.last_exchange() {
-            Some(e) => format!(
-                r#"{{"winner":{},"draw":{},"damage":{},"critical":{},"special":{}}}"#,
-                e.winner, e.draw, e.damage, e.critical, e.special_round_win
-            ),
-            None => "null".to_string(),
-        };
-        let winner = match f.winner() {
-            Some(w) => w.to_string(),
-            None => "null".to_string(),
-        };
-        // The special's afterimage ghosts (`FUN_801D49E8`): per live actor,
-        // the fighter it trails and each drawn ghost's whole clip frame and
-        // depth-cue level (`0x1000` = fully the black colour word).
-        let ghosts = f
-            .afterimages()
-            .iter()
-            .map(|(owner, fr)| {
-                let passes = fr
-                    .passes
-                    .iter()
-                    .filter(|p| p.drawn)
-                    .map(|p| {
-                        format!(
-                            r#"{{"bit":{},"frame":{},"cue":{}}}"#,
-                            p.bit,
-                            p.cursor >> 4,
-                            p.cue
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(",");
-                format!(r#"{{"owner":{owner},"passes":[{passes}]}}"#)
-            })
-            .collect::<Vec<_>>()
-            .join(",");
-        let clock = |s: usize| f.strike_clock(s).cursor;
-        format!(
-            concat!(
-                r#"{{"live":true,"phase":{},"round":{},"hp":[{},{}],"hp_start":{},"#,
-                r#""wins":[{},{}],"combo":[{},{}],"chosen":[{},{}],"can_choose":{},"#,
-                r#""clock":[{},{}],"ghosts":[{}],"#,
-                r#""gold":{},"winner":{},"last":{}}}"#
-            ),
-            jstr(phase),
-            f.round(),
-            f.hp(0),
-            f.hp(1),
-            legaia_engine_core::baka_fighter::HP_START,
-            f.round_wins(0),
-            f.round_wins(1),
-            f.combo(0),
-            f.combo(1),
-            chosen(0),
-            chosen(1),
-            f.can_choose(0),
-            clock(0),
-            clock(1),
-            ghosts,
-            f.gold_reward(),
-            winner,
-            last,
-        )
+        match self.baka.as_ref() {
+            Some(f) => baka_presentation::baka_state_json_for(f),
+            None => r#"{"live":false}"#.to_string(),
+        }
     }
 
     // ------------------------------------------------- baka fighter: ladder run

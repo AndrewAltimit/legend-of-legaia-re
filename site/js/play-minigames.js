@@ -25,12 +25,8 @@
 
   const A2R = (Math.PI * 2) / 4096;   /* PSX angle units -> radians */
   const SYM_PX = 64;                  /* a reel symbol cell, in texels */
-  const ANIM_FPS = 14;                /* Baka clip rate */
   const HUD_W = 320, HUD_H = 240;     /* retail stage */
 
-  /* Baka anim record slots (minigame-baka.js): 0 idle, 1..3 attacks, 4
-   * special, 5 hit, 8 win flourish. */
-  const ACT = { IDLE: 0, ATTACK1: 1, ATTACK2: 2, ATTACK3: 3, SPECIAL: 4, HIT: 5, WIN: 8 };
   /* Player battle-form clip slots (minigame-muscle.js P_ANIM). */
   const P_ANIM = { IDLE: 0, HIT: 2, KO: 4 };
 
@@ -863,178 +859,58 @@
   }
 
   /* ================================================================== */
-  /* Baka Fighter: the two fighters over the PROT 1203 stage wall + a floor
-   * tiled from the wall's own dominant face (minigame-baka.js). */
+  /* Baka Fighter: the engine's duel surface (`engine-core::baka_duel_scene`
+   * through the `play_mg_baka_scene_*` exports) - the fighters posed by the
+   * duel's own clip clocks, the special's afterimage ghosts, the four arena
+   * walls and the floor grid, drawn under the arena camera's ready
+   * view-projection. The native window uploads the same buffers and draws
+   * them with the same matrix; nothing is posed or framed here. */
 
-  function bakaStageBuffers(rt, clearance) {
-    const stage = { pos: [], uvs: [], ct: [], idx: [], flat: [] };
-    const zBack = -Math.max(360, (clearance || 0) * 1.9);
-    let wallNearZ = zBack;
-    const sp = Array.from(rt.play_mg_baka_stage_positions(0));
-    if (sp.length) {
-      for (let i = 0; i < sp.length; i += 3) {
-        sp[i] = -sp[i];
-        sp[i + 2] = zBack - sp[i + 2];
-        if (sp[i + 2] > wallNearZ) wallNearZ = sp[i + 2];
-      }
-      const base = stage.pos.length / 3;
-      stage.pos.push(...sp);
-      stage.uvs.push(...rt.play_mg_baka_stage_uvs(0));
-      stage.ct.push(...rt.play_mg_baka_stage_cba_tsb(0));
-      stage.flat.push(...rt.play_mg_baka_stage_flat_rgba(0));
-      for (const ix of rt.play_mg_baka_stage_indices(0)) stage.idx.push(base + ix);
-    }
-    /* Floor: the wall's dominant textured face tiled on y = 0. */
-    let best = null, bestArea = 0;
-    for (let t = 0; t + 2 < stage.idx.length; t += 3) {
-      const a = stage.idx[t], b = stage.idx[t + 1], c = stage.idx[t + 2];
-      if (stage.flat[a * 4 + 3] === 0) continue;
-      const us = [stage.uvs[a * 2], stage.uvs[b * 2], stage.uvs[c * 2]];
-      const vs = [stage.uvs[a * 2 + 1], stage.uvs[b * 2 + 1], stage.uvs[c * 2 + 1]];
-      const xs = [stage.pos[a * 3], stage.pos[b * 3], stage.pos[c * 3]];
-      const ys = [stage.pos[a * 3 + 1], stage.pos[b * 3 + 1], stage.pos[c * 3 + 1]];
-      const ww = Math.max(...xs) - Math.min(...xs);
-      const wh = Math.max(...ys) - Math.min(...ys);
-      if (ww * wh <= bestArea) continue;
-      bestArea = ww * wh;
-      best = { u0: Math.min(...us), u1: Math.max(...us), v0: Math.min(...vs), v1: Math.max(...vs),
-        cba: stage.ct[a * 2], tsb: stage.ct[a * 2 + 1], tw: Math.max(64, ww), th: Math.max(64, wh) };
-    }
-    if (best) {
-      const X0 = -1750, X1 = 1750, Z0 = wallNearZ, Z1 = 520;
-      const nx = Math.ceil((X1 - X0) / best.tw), nz = Math.ceil((Z1 - Z0) / best.th);
-      for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) {
-        const x0 = X0 + ix * best.tw, x1 = Math.min(x0 + best.tw, X1);
-        const z0 = Z0 + iz * best.th, z1 = Math.min(z0 + best.th, Z1);
-        const base = stage.pos.length / 3;
-        stage.pos.push(x0, 0, z0, x1, 0, z0, x1, 0, z1, x0, 0, z1);
-        stage.uvs.push(best.u0, best.v0, best.u1, best.v0, best.u1, best.v1, best.u0, best.v1);
-        for (let k = 0; k < 4; k++) { stage.ct.push(best.cba, best.tsb); stage.flat.push(128, 128, 128, 255); }
-        stage.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-      }
-    }
-    return stage;
+  function bakaUpload(rt, view, gen) {
+    const pos = rt.play_mg_baka_scene_positions();
+    if (!pos.length) return null;
+    const buf = {
+      pos,
+      uvs: rt.play_mg_baka_scene_uvs(),
+      ct: rt.play_mg_baka_scene_cba_tsb(),
+      flat: rt.play_mg_baka_scene_flat_rgba(),
+      idx: rt.play_mg_baka_scene_indices(),
+    };
+    if (!takeRenderer(view, rt.play_mg_baka_scene_vram(), buf, {})) return null;
+    return { kind: 'baka', gen };
   }
 
-  function bakaBuild(rt, view, info) {
-    const b = info.baka || {};
-    const playerChar = b.player_char | 0, opponent = b.opponent | 0;
-    /* Roster rows 0..2 are the party-side fighters (one shared pack, side
-     * 0); the ladder rows 3..16 carry their own packs (side 1). */
-    const oppSide = b.opponent_side | 0;
-    if (!opponent) return null;
-    if (!rt.play_mg_baka_presentation_ready || !rt.play_mg_baka_presentation_ready()) return null;
-    const facing = parse(() => rt.play_mg_baka_duel_facing_json())
-      || { player: { side: -1, facing: 1 }, opponent: { side: 1, facing: -1 } };
-    const side = (s, id) => {
-      const pos = rt.play_mg_baka_fighter_positions(s, id);
-      if (!pos.length) return null;
-      return {
-        pos, uvs: rt.play_mg_baka_fighter_uvs(s, id), ct: rt.play_mg_baka_fighter_cba_tsb(s, id),
-        idx: rt.play_mg_baka_fighter_indices(s, id), oid: rt.play_mg_baka_fighter_object_ids(s, id),
-        flat: rt.play_mg_baka_fighter_flat_rgba(s, id), parts: rt.play_mg_baka_fighter_part_count(s, id),
-      };
-    };
-    const P = side(0, playerChar), O = side(oppSide, opponent);
-    if (!P || !O) return null;
-    const cache = new Map();
-    const clipFor = (fi, action) => {
-      const key = fi + ':' + action;
-      if (!cache.has(key)) {
-        const s = fi === 0 ? 0 : oppSide, id = fi === 0 ? playerChar : opponent, parts = fi === 0 ? P.parts : O.parts;
-        const dims = rt.play_mg_baka_anim_dims(s, id, action);
-        let clip = null;
-        if (dims[0] && dims[1]) {
-          const frames = rt.play_mg_baka_anim_pose_frames(s, id, action, parts);
-          if (frames.length) clip = { frames, frameCount: dims[1], parts };
-        }
-        cache.set(key, clip);
-      }
-      return cache.get(key);
-    };
-    const idleP = clipFor(0, ACT.IDLE), idleO = clipFor(1, ACT.IDLE);
-    if (!idleP || !idleO) return null;
-    const halfP = poseExtent(P, idleP).half, halfO = poseExtent(O, idleO).half;
-    const gap = Math.max(halfP, halfO) * 2.4;
-    const stage = bakaStageBuffers(rt, Math.max(halfP, halfO));
-    const buf = concatBuffers([P, O, stage]);
-    const sc = {
-      kind: 'baka', P, O, nP: P.pos.length / 3, clipFor, facing,
-      base: buf.pos.slice(), out: buf.pos, gap,
-      center: [0, -halfP * 0.8, 0],
-      radius: gap * 0.95 + Math.max(halfP, halfO) * 0.4,
-      cam: { yaw: 0.0, pitch: 0.1, distance: 1.7 },
-      action: [{ id: ACT.IDLE, start: 0, loop: true }, { id: ACT.IDLE, start: 0, loop: true }],
-      tick: 0, lastKey: '', victory: null, overSeen: false,
-    };
-    if (!takeRenderer(view, rt.play_mg_baka_duel_vram(opponent), buf, {})) return null;
-    return sc;
-  }
-
-  function bakaPlay(sc, fi, actionId, hold) {
-    const c = sc.clipFor(fi, actionId);
-    sc.action[fi] = c ? { id: actionId, start: sc.tick, loop: actionId === ACT.IDLE, hold: !!hold }
-                      : { id: ACT.IDLE, start: sc.tick, loop: true };
+  function bakaBuild(rt, view) {
+    if (typeof rt.play_mg_baka_scene_frame !== 'function') return null;
+    const gen = rt.play_mg_baka_scene_frame();
+    return gen < 0 ? null : bakaUpload(rt, view, gen);
   }
 
   function bakaFrame(rt, view, skipDraw) {
-    const sc = S.scene;
-    const st = parse(() => rt.play_mg_baka_state_json());
-    if (sc && st && st.live) {
-      sc.tick++;
-      if (st.last) {
-        const key = JSON.stringify(st.last) + ':' + st.round;
-        if (key !== sc.lastKey) {
-          sc.lastKey = key;
-          const l = st.last;
-          if (!l.draw) {
-            const winner = l.winner, loser = 1 - l.winner;
-            const t = st.chosen && st.chosen[winner];
-            const atk = l.special ? ACT.SPECIAL : t === 2 ? ACT.ATTACK2 : t === 3 ? ACT.ATTACK3 : ACT.ATTACK1;
-            bakaPlay(sc, winner, atk);
-            bakaPlay(sc, loser, ACT.HIT);
-          } else {
-            bakaPlay(sc, 0, ACT.ATTACK1);
-            bakaPlay(sc, 1, ACT.ATTACK1);
-          }
-        }
-      }
-      if (st.phase === 'match_over' && !sc.overSeen && st.winner != null) {
-        sc.overSeen = true;
-        sc.victory = { fi: st.winner, step: 0, nextAt: sc.tick + 12 };
-        bakaPlay(sc, 1 - st.winner, ACT.HIT, true);
-      }
-      if (sc.victory) {
-        const v = sc.victory;
-        if (sc.tick >= v.nextAt) {
-          if (v.step < 5) {
-            bakaPlay(sc, v.fi, [ACT.ATTACK1, ACT.ATTACK3, ACT.ATTACK2][v.step % 3]);
-            v.nextAt = sc.tick + 34; v.step++;
-          } else sc.victory = null;
-        }
-      }
-      for (let fi = 0; fi < 2; fi++) {
-        const a = sc.action[fi];
-        const c = sc.clipFor(fi, a.id);
-        if (!a.loop && !a.hold && c) {
-          const f = Math.floor((sc.tick - a.start) * (ANIM_FPS / 60));
-          if (f >= c.frameCount) sc.action[fi] = { id: ACT.IDLE, start: sc.tick, loop: true };
-        }
-      }
-      const poseFighter = (fi, f, vertBase, dx, yaw) => {
-        const a = sc.action[fi];
-        const c = sc.clipFor(fi, a.id) || sc.clipFor(fi, ACT.IDLE);
-        if (!c) return;
-        const rawF = Math.floor((sc.tick - a.start) * (ANIM_FPS / 60));
-        const frame = a.loop ? rawF % c.frameCount : Math.min(rawF, c.frameCount - 1);
-        poseInto(sc.out, sc.base, f.oid, c, frame, vertBase, dx, yaw, 0);
-      };
-      const F = sc.facing;
-      poseFighter(0, sc.P, 0, F.player.side * sc.gap / 2, F.player.facing * Math.PI / 2);
-      poseFighter(1, sc.O, sc.nP, F.opponent.side * sc.gap / 2, F.opponent.facing * Math.PI / 2);
+    if (typeof rt.play_mg_baka_scene_frame !== 'function') {
+      if (!skipDraw) clearGl(view);
+      return;
     }
+    const gen = rt.play_mg_baka_scene_frame();
+    if (gen < 0) {
+      if (!skipDraw) clearGl(view);
+      return;
+    }
+    /* A new generation is a new seated opponent: re-read the static
+     * buffers and the duel VRAM. */
+    if (!S.scene || S.scene.gen !== gen) S.scene = bakaUpload(rt, view, gen);
     if (skipDraw) return;
-    if (sc) renderScene(view, sc); else clearGl(view);
+    const r = view.renderer;
+    if (!S.scene || !r) {
+      clearGl(view);
+      return;
+    }
+    r.updatePositions(rt.play_mg_baka_scene_positions());
+    const c = r.canvas;
+    const vp = rt.play_mg_baka_scene_vp(c.width / Math.max(c.height, 1));
+    r.mvpOverride = vp.length === 16 ? Float32Array.from(vp) : null;
+    r.render(0, 0, 1, 0, 0, [0, 0, 0], 1);
+    r.mvpOverride = null;
   }
 
   /* ================================================================== */
@@ -1341,7 +1217,7 @@
     if (!info.art) return;
     try {
       if (info.game === 'muscle') S.scene = muscleBuild(rt, view, info);
-      else if (info.game === 'baka') S.scene = bakaBuild(rt, view, info);
+      else if (info.game === 'baka') S.scene = bakaBuild(rt, view);
       else if (info.game === 'dance') S.scene = danceBuild(rt, view);
     } catch (e) {
       try { console.warn('play-minigames: scene build failed', e); } catch (_) { /* no console */ }

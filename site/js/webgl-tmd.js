@@ -765,7 +765,12 @@ class TmdRenderer {
 
     if (this.indexCount === 0) return;
 
-    const mvp = buildMvp(yaw, pitch, distance, panX, panY, center, radius, w, h, fovY);
+    /* `mvpOverride` (a column-major Float32Array(16)), when a caller sets
+     * one, replaces the orbit framing for this draw: a page whose engine
+     * hands it a ready view-projection (the Baka duel's arena camera) draws
+     * through it instead of re-framing the mesh. */
+    const mvp = this.mvpOverride
+      || buildMvp(yaw, pitch, distance, panX, panY, center, radius, w, h, fovY);
 
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, mvp);
