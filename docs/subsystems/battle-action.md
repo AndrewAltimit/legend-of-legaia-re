@@ -3298,11 +3298,11 @@ Still divergent after this, each with its prerequisite:
 
 - **`0x20` is left at once.** Retail's return state holds while the target's
   committed anim is not idle / `8` and the actor's node `+0x74` still counts
-  (`FUN_801E295C` state `0x20`), so the last clip finishes and the recover
-  pose plays - with its negative `+0x0C` root speed, the backstep - before
-  `0x50`. The port transitions immediately, so the last clip's hit lands
-  under `0x51` (still with the cursor parked, so the total applies) and the
-  recover pose is dropped while the clip plays. Prerequisite: a host query
+  (`FUN_801E295C` state `0x20`), so the last clip finishes and the target
+  settles - back to idle, or onto entry `8`, the downed party member's
+  kneel the clip-tag ladder ends on - before `0x50`. The port transitions
+  immediately, so the last clip's hit lands under `0x51` (still with the
+  cursor parked, so the total applies). Prerequisite: a host query
   for "clip in flight" on the `BattleActionHost` trait (every host impl).
 - **Empty-event art clips deal nothing through the driver.** The Miracle
   entry (Vahn's Craze, `0x1B`: 50 frames, `+0x10..+0x13 = 0`) has no hit
@@ -3377,7 +3377,11 @@ An action does **not** return its combatants to their authored formation seats. 
 
 The capture evidence is four save states of one solo fight. Two read the authored formation (party `z = -800`, monster `z = +800`, 1600 apart); two later ones read the party member at `z ~ -540` and the monster at `z ~ -250`, ~300 apart and both far off the formation. Across every mid-battle state in the library each actor's `+0x3C`/`+0x40` pair sits within ~110 units of its live `+0x34`/`+0x38` pair, so the reference pair cannot be a seat the actor has walked away from.
 
-Holding the seat still for the *duration* of an action and committing it at the end is what keeps the range law honest: the approach has a fixed goal and the separation pass a stable reference while the action runs, and once it ends a parked actor is again *at* the pair the gate measures - so the next attacker walks at where its target actually stands. Retail's recovery backstep is the recover clip's own negative `+0x0C` root speed, and `tick_battle_locomotion` drives it off the playing clip (`drive_playing_root_motion`, the signed `0x80047D20..0x80047E18` term: `bltz` routes a negative speed straight to the step with no range test, a positive one steps only while the range poll fails, and the `+0x1DC` bit-3 knockdown latch blocks both).
+Holding the seat still for the *duration* of an action and committing it at the end is what keeps the range law honest: the approach has a fixed goal and the separation pass a stable reference while the action runs, and once it ends a parked actor is again *at* the pair the gate measures - so the next attacker walks at where its target actually stands.
+
+`tick_battle_locomotion` drives every playing clip's own `+0x0C` root speed (`drive_playing_root_motion`, the signed `0x80047D20..0x80047E18` term: `bltz` routes a negative speed straight to the step with no range test, a positive one steps only while the range poll fails, and the `+0x1DC` bit-3 latch blocks both).
+
+The negative speeds in the player files are the reactions' - knockdown, block, some flinches - so a struck actor slides back; there is no recover backstep. Entry 8, which an earlier reading took for a recover clip with a negative speed, carries `0` in every file and is the downed party member's kneel ([battle.md](battle.md#the-commits-clip-tag-ladder)); the SM's pose `8` is a camera program.
 
 ### The sound a melee swing makes, and which half of it the port has
 

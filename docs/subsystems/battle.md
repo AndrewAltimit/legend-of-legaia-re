@@ -1769,24 +1769,50 @@ new entry is installed at node `+0x4C`, `+0x1D9 = +0x1DA`, the entry's
 entry's tag byte `+0x00` once per commit (`0x8004BE30..0x8004BF4C`; see
 `ghidra/scripts/funcs/8004ad80.txt`):
 
-| Tag | Condition | Writes | Engine |
-|---|---|---|---|
-| `2` | first monster `0xB3` or `0xB5`, committing actor at HP `0` | the entry's tag byte becomes `4` in place; for `0xB3` also entry `+0x56 += 1` | not modelled |
-| `4` | HP not `0` | `+0x1DA = +0x1F2` (the get-up, staged behind the knockdown), `+0x1DC = 0` | the end-of-clip get-up (`battle_reaction` key `5`) |
-| `4` | HP `0`, party seat | `+0x1DA = 7`, `+0x1DC = 0` | not modelled - the engine holds the downed keyframe |
-| `5` | - | `+0x1DC` bit `0x4` set (idle at the natural end) | the get-up's end resumes idle |
-| `7` | - | `+0x1DA = 8` | not modelled |
-| `8` | - | `+0x1DC` bit `0x8` set (the latch that stops root motion, `0x80047D20`) | not modelled - the engine's latch is "reaction `4` playing" |
+| Tag | Condition | Writes |
+|---|---|---|
+| `2` | first monster `0xB3` or `0xB5`, committing actor at HP `0` | the entry's tag byte becomes `4` in place (the tag-`4` row then runs); for `0xB3` also entry `+0x56 += 1` |
+| `4` | HP not `0` | `+0x1DA = +0x1F2` (the get-up, staged behind the knockdown), `+0x1DC = 0` |
+| `4` | HP `0`, party seat | `+0x1DA = 7`, `+0x1DC = 0` |
+| `5` | - | `+0x1DC` bit `0x4` set (idle at the natural end) |
+| `7` | - | `+0x1DA = 8` |
+| `8` | - | `+0x1DC` bit `0x8` set (the latch that stops root motion, `0x80047D20`) |
 
-So a downed party member's chain is knockdown, then entry `7`, then entry `8`,
-and it is the entry-`8` commit, not the knockdown, that sets the root-motion
-latch; the knockdown's own commit clears `+0x1DC`. The monster-death arm
-earlier in the routine (`0x8004B094..0x8004B6A0`, the committing monster's
-**previous** entry tagged `4` at HP `0`) re-installs that entry held on its last
-frame, runs the death spoils (ported: `battle_steal`), sets `+0x21C = 2` and
-the same bit-`3` latch, and - with a Seru staged in `ctx[+0x269]` - restages the
-get-up `+0x1F2` with `+0x1DC = 4` (`0x8004B688..0x8004B6A0`); the engine ports
-the spoils and not the Seru get-up.
+`+0x1DA` is what the natural-end path commits next: `FUN_80047430`
+(`0x80047B30..0x80047B58`) replaces it with `0` when `+0x1DC` bit `0x4` is
+set, masks `+0x1DC &= 0xF8` - bit `0x8` survives - and calls the commit. So a
+downed party member's chain is knockdown, then entry `7`, then entry `8`,
+and entry `8` re-commits itself at every natural end with the latch raised;
+it is the entry-`8` commit, not the knockdown, that sets the latch, and the
+knockdown's own commit clears `+0x1DC`. Three catalogued battle states each
+read a dead party member at `+0x1D9 = +0x1DA = 8`, `+0x1DC = 8`. The party
+files carry entries `7` and `8` with `tag == slot` (Terra's hold empty
+streams), so this chain is where those entries play; the action SM never
+stages either id (its literal `+0x1DA` stores are `0`, `9` and `0x15`, the
+rest come from the queue bytes and the tag searches).
+
+The monster-death arm earlier in the routine (`0x8004B094..0x8004B6A0`, the
+committing monster's **previous** entry tagged `4` at HP `0`) re-installs
+that entry held on its last frame, runs the death spoils (ported:
+`battle_steal`), sets `+0x21C = 2` and the same bit-`3` latch, and - with a
+Seru staged in `ctx[+0x269]` - overwrites `+0x1DC = 4` and restages the
+get-up `+0x1F2` (`0x8004B688..0x8004B6A0`), so the fallen monster rises for
+the absorb. Captures hold both: dead monsters on their knockdown entry with
+`+0x1DC = 8` and `ctx[+0x269] = 0`, and one on its get-up entry with
+`+0x1DC = 4` while `ctx[+0x269] = 1`.
+
+**Engine.** `engine-core::world::battle::clip_ladder` ports the ladder as a
+pure kernel (`commit_tag_ladder`) and runs it on the reaction channel: a hit
+commits the `+0x1EF` / `+0x1F1` entry (the `FUN_80054CB0` map - last match
+wins, a missing knockdown takes the flinch entry), the ladder's staged entry
+is committed at the clip's natural end, the downed party chain and the
+monster-death arm (latch, spoils, Seru get-up) follow the table, and the
+root-motion drive reads the latch in `battle.flag_bits` rather than "a
+knockdown is playing". One timing seam remains: the port stages the reaction
+inside the hit, ahead of the combo total's HP write, so the tag-`4` row is
+evaluated at the knockdown's natural end on the landed HP instead of at its
+commit. The tag-`2` rewrite changes the clip's tag, not the disc entry, and
+the `+0x56` bump has no engine field.
 
 ## Battle action state machine (`FUN_801E295C`)
 
@@ -2066,7 +2092,11 @@ Save-state validation: seven battle library captures (the four camera-orbit angl
 
 Nothing walks a combatant home after an action (`World::tick_battle_locomotion`), so this is what pulls a wandered formation back into frame; on an authored formation it is the recentre alone, which is `-13` for `z = -825 ..= 800`. The focus pair it also shifts (`_DAT_80089118` / `_DAT_80089120`, the negated camera target) is re-derived by the far framing it arms next (`FUN_801D5854(0, 9)`). Engine: `World::normalize_battle_formation`, called from `begin_battle_round` and the ring cancel.
 
-**The alternate family is the scripted flag.** The monster row index is `ctx[+1] + ((DAT_8007BD60 >> 5) & 4) + s4` (`0x80051838..0x8005184C`), so the scripted-fight bit alone moves a fight to rows `5..8`; `s4 = 4` is the map-gated arm (first monster `0x3D..=0x3F` on `_DAT_80084540` `0x0C` / `0x15`). The engine seats a scripted fight on the alternate family (`World::seat_scripted_monster_family`); the map-gated arm needs the numeric map id the formation roll's scripted-ambush arm also lacks.
+**The alternate family is the scripted flag.** The monster row index is `ctx[+1] + ((DAT_8007BD60 >> 5) & 4) + s4` (`0x80051838..0x8005184C`), so the scripted-fight bit alone moves a fight to rows `5..8`; `s4 = 4` is the map-gated arm (first monster `0x3D..=0x3F` on `_DAT_80084540` `0x0C` / `0x15`).
+
+The engine counts both addends (`World::seat_monster_family`): one selects the alternate family, both select rows `9..12`, which the disc leaves zero-filled.
+
+The map id is `_DAT_80084540`, the loaded scene's **raw CDNAME define** (`town01` = `3`, `town0b` = `0x0C`, `town0c` = `0x15`, `map01` = `0x55`; every catalogued save state reads the define of the scene named at `0x80084548`), carried as `BattleState::map_id` and also read by the formation roll's scripted-ambush arm and the intro style picker. It is two above the extraction index `Scene::start` holds, which the intro picker had been reading - so its `0x3E` / `0x3F` arm on `3` / `0x0C` / `0x15` could never match.
 
 Engine mirror: [`engine-core::battle_seats`](../../crates/engine-core/src/battle_seats.rs) (consumed by `World::enter_battle`).
 
@@ -2963,6 +2993,62 @@ monsters) is its own arm: colour `0x010101` at weight `0x1000` unless the
 seat's formation cell (`0x8007BD09 + seat`) holds monster `0xA8`, which reads
 as a black silhouette. No catalogued state holds that flag, so both hosts keep
 their own cursor cue for the two cursor flags until one does.
+
+#### The near-camera ghost pass (`FUN_8004DC68`)
+
+The tint pass's colour word takes its top byte from the pool actor's `+0x8`
+word (`0x8004AA44..0x8004AA50`), and that byte is the draw's mode: bit 31
+raises semi-transparency, bits 24/25 pick the blend rule. One routine owns
+the bits that matter, `FUN_8004DC68`, called once per battle frame by the
+frame driver `FUN_80046A20` (`jal` at `0x80047124`, between the camera update
+and the tint SM `FUN_80050120`). It only ever sets or clears `0x83000000` -
+mode `3`, `B + F/4`, a faint ghost of the body (see
+`ghidra/scripts/funcs/8004dc68.txt`):
+
+- **Near the camera.** It forms a point on the view axis - the focus trio
+  `0x80089118` / `0x80089120` pulled back by `dist * 25 / 128` along the yaw
+  `0x8007B792`, `dist` being the eye depth `0x800840C0` - and for each of
+  pool slots `0..=6` measures the planar distance to it (the sum
+  `|dx| |sin b| + |dz| |cos b|` over the `FUN_80019B28` bearing `b`). Within
+  `dist / 4` a body ghosts - unless it is the acting actor, the command-flow
+  byte `ctx[+6]` is below `0x1F` or one of `0x32` / `0x6E` / `0xFE`, the
+  action state is below `0x0B`, or it is the actor's target while `ctx[+6]` is
+  `0x64` / `0x65` (or `0xFF` with the actor's category in `1..=3`).
+- **Whole-side scopes** clear a side: target byte `8` keeps the party's
+  bits, `9` keeps the monsters', anything above clears both.
+- **Nothing ghosts** during a run (category `5`), on a pre-emptive round
+  (`ctx[+0x290] == 1`), in action state `0x0B`, or after the battle ends
+  with `ctx[+0x26B]` raised.
+- **Magic casts** (action states `0x28..=0x2E`, `MagicCastBegin` through
+  `MagicExit`) ghost the caster's whole side, then clear the caster and its
+  target: the allies fade while the spell plays and the one it lands on
+  stays solid.
+
+The action SM's `0x5A` end-of-action sweep clears the bits on every slot
+(`0x801E6478`), and `FUN_801D5854`'s out-of-range guard does the same through
+`FUN_801DB9C4`. Recomputing the pass from RAM over the catalogued battle
+states reproduces the stored bits on 277 of 279 seated slots. The two misses
+are bits set where the pass would clear them (action states `0x1E` and
+`0x35`, flow `0xFF`); the driver skips the call while `gp[+0x330]` is
+non-negative, which would leave a previous frame's bits standing, but that
+cause is not measured.
+
+An earlier reading here and in `port-catalog-ignore.toml` called the routine
+a "target-highlight pass" measuring distance from the **acting actor**. The
+reference point is the camera, not an actor, and the effect is translucency,
+not dimming.
+
+**Engine.** `engine-vm::battle_action::camera_ghost_pass` is the kernel;
+`World::tick_battle_camera_ghost` runs it every frame after the battle camera
+tick (slots converted from the engine's compacted seating to retail's fixed
+pool slots) and keeps the word in `BattleActor::flag_word`, which
+`battle_actor_draw_plan` hands the tint pass as its top byte
+(`BattleActorDrawPlan::semi_mode`). Two inputs have no engine mirror and are
+inferred: `ctx[+6]` reads `0xFF` in every catalogued state of a running
+action and is taken as `0xFF` whenever no command menu is open (`0` while one
+is), and `ctx[+0x26B]` is taken as idle; the driver's `gp[+0x330]` gate is not modelled (the pass runs every battle frame). Neither host draws a body with a
+per-draw blend override yet, so the ghost is carried to the draw plan and
+not rendered - the same gap as the capture / defeat fade above.
 
 ## Per-frame actor maintenance (`FUN_8004CE2C`)
 
@@ -4996,7 +5082,7 @@ stated by the concrete writes.
 | `FUN_800480D8` | Per-actor battle draw tick, called by the render dispatcher's mode-2 arm on bodies at view depth `>= 0xA1`. The first body each frame runs the battle's per-frame global passes (effect-VM walker `FUN_801E0080`, cast census, damage popup, effect-node sweep) off the latch `ctx[+0x272]` the frame driver `FUN_80046A20` raises; then the tint pass and the zero-colour / lone-monster grey gate decide whether and how the body draws. Ported `engine-vm::battle_actor_tick`, live - [details](#the-distance-fade). |
 | `FUN_8004A908` | Battle-actor tint pass: writes the colour word `+0x74` and blend weight `+0x78` from the body's view depth against half its radius (the distance fade), with the `+0x16E` status colours, the outdoor-stage invert on `DAT_8007BDA8` and the cursor-dim arm. Ported whole as `engine-vm::battle_actor_tint`, live on both hosts; capture-matched 258 / 266 - [details](#the-distance-fade). |
 | `FUN_80046A20` | **Not a small helper** - this is the battle-scene per-frame tick (2576 bytes, 644 instructions), listed here only because the rows below are the routines it drives. It calls the scene loader `FUN_800520F0`, the seat stager `FUN_800513F0`, the party-file loader `FUN_80054A6C`, the main dispatcher `FUN_801D0748`, the action SM `FUN_801E295C`, the separation driver `FUN_80051078` and the actor-presentation tick `FUN_80050120`. Its one self-contained kernel is the HP/MP gauge-fill colour selector keyed on `+0x172`/`+0x174` vs `+0x14E>>1`/`>>2` and the status word `+0x16E`, ported as `battle_gauge::gauge_colors`. Full row in [`functions/battle.md`](../reference/functions/battle.md). |
-| `FUN_8004DC68` | Target-highlight pass: OR/clears the actor draw-flag bits `0x83000000` by 2D distance from the acting actor (angle+radius via `FUN_80019B28`), dimming out-of-range targets during command selection; boss/target ids are special-cased. |
+| `FUN_8004DC68` | Near-camera ghost pass: sets / clears the `+0x8` mode bits `0x83000000` (semi-transparent, blend `3`) on bodies within `dist / 4` of the camera's view point, and on a caster's allies during a magic cast. Ported as `engine-vm::battle_action::camera_ghost_pass` - [details](#the-near-camera-ghost-pass-fun_8004dc68). |
 | `FUN_8004C650` | **Move-name** banner placement (placement records 76/77 - captured as the art name, e.g. `Poisonous Sting`, at `(117, 148)`; not the enemy-name banner, which `FUN_801D9D3C` composes): measures a name string width (`FUN_80035F04`) and centres its four banner X coords around `0xA0`, with `0xCF`/`0xC1` leading-byte nudges. |
 | `FUN_8004CCD4` | Per-command display resolver (battle-data-pack): for each of the actor's up-to-2 command slots, tests a threshold value against the `+0xA4` range pairs and writes the matching `+0x1034` (hit) or `+0x1030` (fallback) display pointer into the caller's output table. |
 | `FUN_80046978` | Screen-flash colour submit: when trigger `gp[0x9D4]` is set, scales stored colour `gp[0x9D0]` by scratch byte `0x1F800393` and submits via `FUN_80024EE4`. The per-channel saturating scale is ported as `scale_rgb24`; the trigger + submit stay caller-side. |

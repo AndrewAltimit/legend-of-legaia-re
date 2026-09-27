@@ -183,18 +183,27 @@ The pointer stored at `actor[+0x234]` (and shadowed into the render
 context at `+0x4C` via `FUN_80049348` line 213 -
 `*(undefined4 *)(param_1 + 0x4c) = *(undefined4 *)(iVar6 + uVar4 * 4 + 0x234)`)
 points at a **runtime per-record control struct**, not a bytecode
-program. The per-frame consumer is the ladder in `FUN_8004AD80`
-(SCUS_942.54, `ghidra/scripts/funcs/8004ad80.txt` lines ~1363..1706),
-which dispatches on the byte at offset `+0x00` of the struct:
+program. The staged-anim commit `FUN_8004AD80` (SCUS_942.54, see
+`ghidra/scripts/funcs/8004ad80.txt`) tests its byte `+0x00` - the entry's
+action **tag** - once per commit, not per frame (`0x8004BE30..0x8004BF4C`):
 
-| `kind` byte | Behaviour |
+| tag | Behaviour |
 |---|---|
-| `0x02` | Handshake: when the global character action byte `(unaff_gp + 0x9F4)` is `-0x4D` / `-0x4B` AND `actor[+0x14C] == 0`, advance to kind `0x04` and tick the per-record counter at `+0x56`. |
-| `0x04` | Action engaged. If actor's anim-flag at `+0x14C` is zero, set `actor[+0x1DA] = 7` (next sub-state). Else copy `actor[+0x1F2]` into `+0x1DA`. |
-| `0x05` | OR `actor[+0x1DC] |= 4` (set bit 2 of per-actor flag byte). |
-| `0x07` | Set `actor[+0x1DA] = 8`. |
-| `0x08` | OR `actor[+0x1DC] |= 8` (set bit 3 of per-actor flag byte). |
-| other | No kind-specific branch; the record is consumed by the surrounding fields below. |
+| `0x02` | When the battle's first monster id `0x8007BD0C` (`gp[+0x9F4]`) is `0xB3` or `0xB5` (the Songi fights) and the committing actor's HP `+0x14C` is `0`, the tag is rewritten to `0x04` in place (and for `0xB3` the entry's `+0x56` is incremented), so the tag-`0x04` row runs next. |
+| `0x04` | HP not `0`: `actor[+0x1DA] = actor[+0x1F2]` (the get-up) and `+0x1DC = 0`. HP `0` on a party seat: `+0x1DA = 7` and `+0x1DC = 0`. A dead monster stages nothing here; its death arm runs at the next commit. |
+| `0x05` | `actor[+0x1DC] \|= 4` (return to idle at the natural end). |
+| `0x07` | `actor[+0x1DA] = 8`. |
+| `0x08` | `actor[+0x1DC] \|= 8` (the root-motion latch). |
+| other | No tag-specific branch. |
+
+The ladder is the chain a downed party member plays - knockdown, entry
+`7`, entry `8` - described in
+[battle.md](../subsystems/battle.md#the-commits-clip-tag-ladder). An
+earlier reading of this table, taken from the decompiled C, called it a
+per-frame consumer, read `gp[+0x9F4]` as a "global character action
+byte" and `+0x14C` as an anim flag, and missed that only a party seat
+takes entry `7` and that both tag-`0x04` arms clear `+0x1DC`; the
+disassembly above is the correction.
 
 So the "per-record dispatch jump table" the actor record's `+0x234`
 slot points at is a **flat struct** consumed via field-offset reads,
