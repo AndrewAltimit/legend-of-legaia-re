@@ -353,13 +353,11 @@ impl TraceBgmDirector {
         let vab_off = split.vab;
         let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
         let body = &entry_bytes[vab_off..];
-        let mut alloc = SpuAllocator::new(
-            crate::boot::SPU_RESERVED_BYTES,
-            crate::boot::SPU_RAM_BYTES
-                - crate::boot::SPU_RESERVED_BYTES
-                - crate::boot::SFX_BANK_SPU_BYTES,
-        );
-        self.bank = Some(VabBank::upload(&mut self.spu, &mut alloc, &report, body));
+        // The shared placement kernel, so a bank over the BGM region (the
+        // ending theme's) lands where the live director puts it.
+        let staged =
+            legaia_engine_audio::spu_layout::upload_owned_bank(&mut self.spu, &report, body);
+        self.bank = Some(staged.bank);
         Some(entry_bytes[split.seq..].to_vec())
     }
 

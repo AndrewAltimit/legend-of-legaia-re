@@ -82,7 +82,7 @@ pub const DEFAULT_BOOT_SCENE: &str = "town01";
 pub(crate) const SPU_RAM_BYTES: u32 = 512 * 1024;
 /// Byte offset reserved for voice-0 / scratchpad - banks are allocated
 /// above this. Mirrors the asset-viewer SEQ playback path.
-pub(crate) const SPU_RESERVED_BYTES: u32 = 0x1000;
+pub(crate) const SPU_RESERVED_BYTES: u32 = legaia_engine_audio::spu_layout::SPU_RESERVED_BYTES;
 /// SPU RAM reserved at the TOP of the map for the resident SFX banks: the
 /// slot-0 system bank, and above it the region VAB slots `2` and `6` share
 /// (one SPU base in retail, refilled per game mode). Carving a dedicated top
@@ -96,7 +96,9 @@ pub(crate) const SPU_RESERVED_BYTES: u32 = 0x1000;
 /// and one step up (`0x3E000`) leaves 266240 - under the two largest scene BGM
 /// VABs on the disc (269632, 268496), i.e. it would start silencing music that
 /// plays today.
-pub const SFX_BANK_SPU_BYTES: u32 = 0x3D000;
+/// One value with the browser host's by construction: both re-export
+/// [`legaia_engine_audio::spu_layout::SFX_REGION_BYTES`].
+pub const SFX_BANK_SPU_BYTES: u32 = legaia_engine_audio::spu_layout::SFX_REGION_BYTES;
 
 /// One-time configuration for [`BootSession::open`].
 #[derive(Debug, Clone)]
@@ -753,7 +755,7 @@ impl BootSession {
                     // slot 2 = PROT 0869) into the shared SPU region so a cue
                     // resolves against the bank its own category names, not
                     // whatever BGM VAB is open. Best-effort.
-                    if let Err(e) = stage_sfx_vab(&mut director, audio.as_ref(), &host) {
+                    if let Err(e) = stage_sfx_vab(&mut director, &host) {
                         log::warn!("resident SFX banks not staged: {e:#}");
                     }
                     // Demux + decode the arts-voice shout banks (XA2/XA4/XA6)
@@ -1600,35 +1602,20 @@ fn stage_scene_vab(
 ///
 /// Each entry is a scene-VAB-style stream (`[u32 chunk header][VAB]...`), so
 /// the VAB starts at `+4` (with a `+0` fallback for a bare bank).
-fn stage_sfx_vab(
-    director: &mut AudioBgmDirector,
-    audio: &AudioOut,
-    host: &SceneHost,
-) -> Result<()> {
+fn stage_sfx_vab(director: &mut AudioBgmDirector, host: &SceneHost) -> Result<()> {
     use legaia_asset::sfx_table::SLOT0_SYSTEM_BANK_PROT_INDEX;
     use legaia_engine_core::world::SharedRegionBank;
 
-    let region = SPU_RAM_BYTES - SFX_BANK_SPU_BYTES;
     let bytes = host
         .index
         .entry_bytes_extended(SLOT0_SYSTEM_BANK_PROT_INDEX)
         .context("read the slot-0 system bank")?;
-    let (report, vab_off) = [4usize, 0]
-        .into_iter()
-        .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
-        .ok_or_else(|| anyhow::anyhow!("no VAB header at +4 or +0 in PROT 0868"))?;
-    let mut alloc = SpuAllocator::new(region, SFX_BANK_SPU_BYTES);
-    let bank = audio
-        .with_spu(|spu: &mut Spu| VabBank::upload(spu, &mut alloc, &report, &bytes[vab_off..]));
-    let slot0_end = bank
-        .samples
-        .iter()
-        .flatten()
-        .map(|s| s.addr + s.size)
-        .max()
-        .unwrap_or(region);
-    director.set_sfx_vab(0, bank);
-    director.set_shared_region_base(slot0_end);
+    // At the SFX region's floor, through the layout kernel the page shares;
+    // the director keeps the bytes to re-stage the bank after a track that
+    // overran the region (the ending theme's) lets it go.
+    if !director.stage_resident_slot0(bytes) {
+        anyhow::bail!("no VAB header at +4 or +0 in PROT 0868");
+    }
     if !director.sync_shared_region(Some(SharedRegionBank::CLASS2), |e| {
         host.index.entry_bytes_extended(e).ok()
     }) {
