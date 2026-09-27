@@ -2322,6 +2322,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.camera.shake_amplitude = value;
     }
 
+    /// `[4C, 0x89, lo, hi]` - the pager's automatic-press countdown
+    /// `_DAT_80073F00`, which a waiting box page counts down and then
+    /// presses through ([`crate::dialog::OwnedDialogPanel::tick_at_auto`]).
+    fn op4c_n8_sub9_set_73f00(&mut self, value: i16) {
+        self.world.dialog.auto_press = value;
+    }
+
     fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
         // In the spawned opening-cutscene context (target 0xF8) this op is the
         // inline-narration text-draw, not an actor spawn - the separate
