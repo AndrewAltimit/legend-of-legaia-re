@@ -5,15 +5,14 @@
 use super::*;
 
 impl SceneHost {
-    /// Resolve a BGM id to the raw SEQ bytes the runtime would pass to its
-    /// sequencer. Mirrors `FUN_800243F0` (the BGM resolver): scene-local ids
-    /// (`< 2000`) live at `block_start + 6 + id`; global-pool ids
-    /// (`>= 2000`) are not modeled. Returns `None` when no scene is loaded
-    /// or no SEQ-bearing entry maps to the id.
-    ///
-    /// Engines parse the returned bytes with [`legaia_seq::Seq::parse`] and
-    /// attach to [`legaia_engine_audio::Sequencer::new`] alongside the
-    /// scene's VAB bank.
+    /// The SEQ bytes at the scene block's `block_start + 6 + id` for a
+    /// scene-local id (`< 2000`) - the index `FUN_800243F0` stores into
+    /// `_DAT_8007BAB8` for change detection. It is **not** what retail
+    /// loads: the resolver overwrites the load index with the `music_01`
+    /// fallback ([`super::SCENE_LOCAL_BGM_FALLBACK_ID`]), and
+    /// [`Self::route_bgm_events`] plays that. Kept for the audio-trace
+    /// oracle's scene-local sweep. Returns `None` when no scene is loaded or
+    /// no SEQ-bearing entry maps to the id.
     // PORT: FUN_800243F0 (the BGM-id -> PROT-slot resolution; the retail
     // double-buffered async load poller around it is host-replaced by the
     // engine-audio Sequencer + this synchronous byte access)
@@ -217,11 +216,17 @@ impl SceneHost {
                     // 1 = start; 9 = start behind a load barrier this host
                     // never has to wait on (see the doc comment above).
                     1 | 9 => {
-                        if let Some(bytes) = self.bgm_seq_bytes(text_id)? {
-                            director.start(text_id, &bytes);
-                            acted += 1;
-                        } else if let Some(entry) = self.music_bank_entry_bytes(text_id)? {
-                            // Global-pool track: it brings its own VAB.
+                        // Every track brings its own VAB. A scene-local id
+                        // loads retail's fallback track, not a scene bank
+                        // (`SCENE_LOCAL_BGM_FALLBACK_ID`); the id itself is
+                        // kept so the director's same-track suppression
+                        // compares what retail's `_DAT_8007BAB8` does.
+                        let bank_id = if text_id < super::GLOBAL_BGM_BASE {
+                            super::SCENE_LOCAL_BGM_FALLBACK_ID
+                        } else {
+                            text_id
+                        };
+                        if let Some(entry) = self.music_bank_entry_bytes(bank_id)? {
                             director.start_owned_vab(text_id, &entry);
                             acted += 1;
                         }
