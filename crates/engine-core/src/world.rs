@@ -187,6 +187,7 @@ pub use field_elevation::{CELL_ELEVATION_OVERRIDE, ElevationOverride};
 pub use field_hud::PassiveHudPoints;
 mod field_loop;
 mod field_movement;
+pub mod field_npc_cull;
 mod field_npc_height;
 mod field_warp;
 mod motion_pause_host;

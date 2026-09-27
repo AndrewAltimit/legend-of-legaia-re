@@ -31,13 +31,16 @@ impl World {
     /// The `flags & 2` hold is retail's per-tick visibility cull
     /// (`FUN_801D79E8` sets bit 1 on an actor outside the camera's region
     /// box / visible tile window and clears it inside, before the arm reads
-    /// the word); the engine draws the whole scene and does not cull, so no
-    /// placement holds on it here.
+    /// the word), ported as [`World::field_npc_culled`] over the camera view
+    /// the hosts publish: a culled glider keeps the Y it had. The engine
+    /// still draws the whole scene, so the hold shows only on a glider the
+    /// player walks back into view of.
     ///
     /// A slot a scripted arc is carrying keeps the arc's height: the arc
     /// writes `+0x16` itself and [`World::field_npc_render_y`] reads it first.
     ///
-    /// REF: FUN_8003BC08 (the height arm), FUN_80019278, FUN_801D79E8
+    /// REF: FUN_8003BC08 (the height arm), FUN_80019278, FUN_801D79E8 (ported
+    /// as `field_actor_culled`)
     pub fn tick_field_npc_heights(&mut self) {
         if self.npcs.positions.is_empty() {
             self.npcs.glide_y.clear();
@@ -56,8 +59,11 @@ impl World {
                 .get(&slot)
                 .map(|c| (c.vm.actor_flags, c.vm.move_pair.unwrap_or(0)));
             let flags = self.field_channel_flags(slot) | channel.map_or(0, |c| c.0) | MOVING_CLASS;
-            // The cull bit is the engine's no-op (see above).
-            let flags = flags & !2;
+            let flags = if self.field_npc_culled(x, z) {
+                flags | 2
+            } else {
+                flags & !2
+            };
             let plan = field_actor_plan(FieldActorInputs {
                 lifetime: channel.map_or(0, |c| c.1),
                 flags,

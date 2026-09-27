@@ -198,6 +198,11 @@ pub struct FieldNpcState {
     /// Stepped by [`crate::world::World::tick_field_npc_heights`] and read by
     /// [`crate::world::World::field_npc_render_y`].
     pub glide_y: std::collections::HashMap<u8, i16>,
+    /// The camera state the visibility cull `FUN_801D79E8` reads (focus,
+    /// region box, visible tile window), as the camera last left it.
+    /// Published by [`crate::camera::Camera::route_camera_events`], which
+    /// both play hosts call every frame; `None` culls nothing.
+    pub cull_view: Option<crate::world::field_npc_cull::FieldCullView>,
 }
 
 impl FieldNpcState {
@@ -221,6 +226,7 @@ impl FieldNpcState {
             anim_cues: std::collections::HashMap::new(),
             clip_current: std::collections::HashMap::new(),
             glide_y: std::collections::HashMap::new(),
+            cull_view: None,
         }
     }
 }

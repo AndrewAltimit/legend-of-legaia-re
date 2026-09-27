@@ -64,6 +64,27 @@ the word, so an off-window actor holds its Y. A write-watch over the
 `town01` actor pool sees both stores fire for every placement, through
 both of the routine's callers (`FUN_8003BC08` and the field VM).
 
+The two tests measure different things. The region box compares the
+actor's raw `+0x14` / `+0x18` against `box << 7` - **world** tiles, `x_lo`
+/ `z_lo` inclusive and `x_hi` / `z_hi` exclusive. The window compares the
+**focus-relative** tile `(X + _DAT_80089118) >> 7` (the focus pair is stored
+negated) against the signed window bytes, open on every edge, widened by
+the signed radius, and with two more tiles on the near-Z edge alone:
+`win[0] - r < tx < win[2] + r`, `win[1] - r - 2 < tz < win[3] + r`
+(`0x801D7AA0..0x801D7B00`). `scripts/pcsx-redux/autorun_field_actor_cull.lua`
+logs every call's inputs and exit on `first_town_interactive` with a held
+DOWN; all 600 distinct rows it saw (547 culled, 53 visible) reproduce
+through the engine kernel `legaia_engine_core::world::field_npc_cull::field_actor_culled`,
+and every town01 placement (`+0x50` `0x25..0x58`) read `+0x58 = 0`. No culled
+actor's `+0x16` changed while it stayed culled.
+
+The engine culls its placement NPCs with that kernel in
+`World::tick_field_npc_heights`, against the focus, region box and window
+the follow camera publishes each frame (`Camera::route_camera_events` ->
+`FieldNpcState::cull_view`, both play hosts): a culled glider keeps its Y.
+The engine still draws the whole scene, so the hold shows only on a glider
+the player walks back into view of.
+
 Every partition-1 placement passes the `0x20200` test on its own class bit
 `0x20000` (the seater `FUN_8003A1E4` ORs it in at `0x8003A3A4..0x8003A3B4`),
 so retail rewrites every visible placement's Y on every actor tick.

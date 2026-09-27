@@ -2980,7 +2980,7 @@ Standard tick functions observed in the world-map render passes:
 | Tick function | Where | Role |
 |---|---|---|
 | `FUN_80021DF4` (SCUS) | per-frame actor tick | Steps the move VM via `FUN_80023070(actor)`. The eight actors in list `_DAT_8007C350` use this tick. |
-| `FUN_8003BC08` (SCUS) | per-actor tick | Calls the motion VM (`FUN_8003774C`), move-buffer setup (`FUN_800204F8`), and overlay helper `FUN_801D79E8`. The fourteen actors in list `_DAT_8007C354` use this tick. |
+| `FUN_8003BC08` (SCUS) | per-actor tick | Calls the motion VM (`FUN_8003774C`), move-buffer setup (`FUN_800204F8`), and the field overlay's visibility cull `FUN_801D79E8` ([motion-vm.md](motion-vm.md)). The fourteen actors in list `_DAT_8007C354` use this tick. |
 | `FUN_801E76D4` (world_map overlay) | top-view debug controller | Top-view toggle + camera scroll/azimuth/zoom + dev-menu render. Returns immediately when top view is off - it is not the overworld walk tick. |
 | `FUN_801DA51C` (world_map overlay) | per-entity tick | 5-state SM on `entity[+0x8A]` (see [actor-vm](actor-vm.md)). |
 | `FUN_801D1344` (world_map overlay) | horizon gate-arm wrapper | See the gate-arm chain below. |
