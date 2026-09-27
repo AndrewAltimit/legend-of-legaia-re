@@ -939,8 +939,35 @@ prototype's static bytes. The VRAM cell hashes equal source `0` before the pose
 and source `1` from it on, and the two sources are the page's eye sprites: an
 open eye and a closed one. The swap is a **wink** at the pose.
 
+**What the impact pair spawns.** The four templates are move-VM records in the
+overlay's rodata. Template A (`0x801DB8FC` / `0x801DB960`) is a transform node
+(`model_sel = -1`): op `0x0C` sets the colour word `+0x74` to mode byte `0xC9`
+(ABE on, ABR 1 - additive), op `0x23` makes it a draw-kind-4 node on the
+render dispatcher's `0x4000` **sprite arm** `FUN_8002A5A4` - one textured
+quad `0xA0` units square in the XY plane - and two loop pairs step its UV rect
+`0x20` texels at a time with op `0x24`, eight cells along one row and seven
+along the next, then halt. A flip-book flash. Template B (`0x801DBBA4` /
+`0x801DBBD4`) is a mesh node, `model_sel` `1` / `2`: `FUN_80021B04` adds
+`gp[+0x754]` (`0x8007BA6C`), which the duel's init zeroes at `0x801CF1B0` next
+to the scene-bank base (`0x801CF1C0`), so the meshes are the stage pack's TMDs
+`1` and `2` - the two single-object props. Its colour word starts at depth-cue
+level `+0x78 = 0x1000`, fully toward the word's black far colour (the prim
+dispatcher `FUN_80043390` loads the word's RGB into the GTE far colour and
+`+0x78` into `IR0`), so under additive blending the mesh starts invisible. Op
+`0x0D` sets `+0x90`, which is `+0x78`'s **rate** in the part tick's motion
+block (`FUN_80021DF4` `0x80022B4C..0x80022B7C`), not a tween source: the level
+falls to zero and the mesh flashes on, then a second `0x0D` fades it back out
+before the halt. The yawed second spawn is this mesh.
+
+The part tick runs at `DAT_1F800393 * DAT_1F80037D`, and on the duel the
+second factor is the rate divisor the special halves, so a special's impact
+plays in slow motion with the fighters.
+
 Ports: `engine-core::baka_fighter_chrome::{impact_effect_pair, afterimage_pass,
-sprite_blit, cameo_pose}`. `BakaFight` spawns the cameo at a round setup
+sprite_blit, cameo_pose}`; the impact parts are `engine-core::baka_impact_fx`
+(seat, tick, `FUN_8002A5A4`'s quad build, the colour word), spawned from
+`BakaFight`'s booking arms and drawn by the duel surface into reserved ranges
+of its buffers, on both play hosts. `BakaFight` spawns the cameo at a round setup
 under a held Triangle - both play hosts hand it the packed held word
 (`BakaFight::set_held_pad`, from `World`'s duel tick) - and steps it as
 `CameoActor`: the pose above, and the clip cursor at the forced step `8`.

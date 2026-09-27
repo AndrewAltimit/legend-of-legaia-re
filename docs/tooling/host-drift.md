@@ -1322,17 +1322,24 @@ The standalone minigames page still poses its own buffers under its fitted
 camera: it holds a `BakaFight` but no surface, the same blocking shape as the
 rest of that page (below).
 
-What stays open was misnamed "sprite effects". None of the three routines
-draws a sprite: the two banks `_DAT_8007B888` / `_DAT_8007B840` are the
+What stays open was misnamed "sprite effects". The afterimage and the cameo
+draw no sprite: the two banks `_DAT_8007B888` / `_DAT_8007B840` are the
 scene's type-`0x05` / `0x0B` ANM clip banks the clip selector `FUN_800204F8`
-resolves, and each routine drives a **model** through them.
+resolves, and each of those routines drives a **model** through them. The
+impact pair is half sprite after all: one of its two templates is a
+draw-kind-4 node on the render dispatcher's `0x4000` sprite arm.
 
 - The special's afterimage (`FUN_801D49E8`) is engine state every host steps,
   and every host now draws it as darkened copies of the thrower's mesh.
-- The impact pair (`FUN_801D4DF8`) spawns `FUN_80021B04` effect templates at
-  the winner's strike offset, and no minigame host runs that effect runtime.
-  The fighter positions it offsets from are engine state now
-  (`BakaFight::fighter_position`); the template runtime is what is missing.
+- The impact pair (`FUN_801D4DF8`) is engine state every host steps too:
+  `BakaFight`'s booking arms spawn its four `FUN_80021B04` templates as
+  `engine-core::baka_impact_fx` parts, run on the duel's tick through the
+  shared move-VM kernels. The two play hosts draw them through the duel
+  surface - the flip-book flash as sprite-arm quads (`FUN_8002A5A4`'s port),
+  the prop flashes as additive copies of stage TMDs `1` / `2` - and the play
+  page re-uploads the mesh attributes when `play_mg_baka_scene_attr_generation`
+  moves. The standalone minigames page steps the same parts and draws none:
+  it has no surface to draw them into.
 - The round-start cameo (`FUN_801D6310`) spawns on a held Triangle: both
   play hosts hand the duel the held word through `World`'s duel tick, and
   the duel surface draws the ring girl camera-relative and applies the wink
@@ -2422,7 +2429,15 @@ under the intro strip, title zoom and course card) is not in that position:
 its clock is `muscle_ringside::FirstVisitHub`, which needs no `World`, so the
 standalone page replays it by tick through `muscle_first_visit_json` and
 draws the frame the play hosts draw, from the same
-`ringside_backdrop::first_visit_hub_draw` kernel.
+`ringside_backdrop::first_visit_hub_draw` kernel. What it does not do is
+sound the two announcer lines the walk starts (`FUN_8003D53C(0x1E, 0xB,
+0xA9)` at arm `0`, `FUN_8003D53C(0x1F, round, 0x54)` at arm `0x15`): the
+native window and the play page hand `HubFrame::xa` to their CD-XA clip path,
+and the standalone page has no XA path at all. The walk still waits the
+lines' modelled span (`FirstVisitHub`'s `_DAT_8007BC20`), so the timing
+matches the play hosts and only the voice is missing. Blocking capability:
+an XA clip decoder on that page (the play page's lives in `play_xa.rs`,
+behind its `World` runtime).
 
 The dome's command ring has the same shape one level down. Its chip marks
 (the red cross-out X is `FUN_801DBC30`, placed by the engine as
