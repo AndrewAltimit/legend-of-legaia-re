@@ -1,19 +1,20 @@
 //! The field dialog box scrolls, carries rows across page turns and completes
 //! a page on confirm the way the retail pager does.
 //!
-//! Retail reference: two PCSX-Redux traces of `town01` placement `P1[16]`'s
+//! Retail reference: three PCSX-Redux traces of `town01` placement `P1[16]`'s
 //! conversation (`scripts/pcsx-redux/autorun_dialog_typewriter_trace.lua`
 //! from `s4_rimelm_door_transition`, `DAT_1F800393 = 2`), one row per vsync
 //! of the pager state `_DAT_801F2734`, reveal counter, short-row hold,
 //! `_DAT_801F3534`, scroll word `_DAT_801F2738` and the row table
 //! `_DAT_801F3540[]` as record offsets of each row's `0x1F` lead. The probe
 //! turns each page 40 vsyncs after it waits; the second trace also taps
-//! confirm while pages type and scroll (`LEGAIA_SKIP_PAGES=0:10,1:33,2:4,3:60`).
+//! confirm while pages type and scroll (`LEGAIA_SKIP_PAGES=0:10,1:33,2:4,3:60`),
+//! and a third taps once on a short-row hold (`LEGAIA_SKIP_PAGES=3:16`).
 //! Only states, counts, offsets and timings are pinned - no disc text.
 //!
 //! The engine drives the same conversation through the path both hosts share
 //! (`World::step_inline_dialogue`), pressing confirm on the same vsyncs, and
-//! must reproduce every row of both traces from the first typing call to
+//! must reproduce every row of every trace from the first typing call to
 //! the last page's wait.
 //!
 //! Disc-gated: skip-passes when `LEGAIA_DISC_BIN` is unset or `extracted/`
@@ -392,6 +393,126 @@ const RETAIL_TAPS: &[Run] = &[
     (41, 0x19, 0, 0, 3, 0, &[203, 217]),
 ];
 
+/// The third trace: one confirm tap 16 vsyncs into page 3's typing
+/// (`LEGAIA_SKIP_PAGES=3:16`), which lands on the finished row's `72` hold.
+/// The next pager call clears the hold and latches the skip speed `0x25`
+/// (dispatch case `0x10`, `0x801D86BC`) - where the untouched trace steps the
+/// hold to `8` - and the call after completes the page (`0x0D`).
+#[rustfmt::skip]
+const RETAIL_HOLD_PRESS: &[Run] = &[
+    (2, 0x0B, 1, 0, 1, 0, &[76]),
+    (2, 0x0B, 3, 0, 1, 0, &[76]),
+    (2, 0x0B, 5, 0, 1, 0, &[76]),
+    (2, 0x0B, 7, 0, 1, 0, &[76]),
+    (2, 0x0B, 9, 0, 1, 0, &[76]),
+    (2, 0x0B, 11, 0, 1, 0, &[76]),
+    (2, 0x0B, 13, 0, 1, 0, &[76]),
+    (2, 0x0B, 15, 0, 1, 0, &[76]),
+    (2, 0x0B, 17, 0, 1, 0, &[76]),
+    (2, 0x0B, 19, 0, 1, 0, &[76]),
+    (2, 0x0B, 21, 0, 1, 0, &[76]),
+    (2, 0x0B, 23, 0, 1, 0, &[76]),
+    (2, 0x0B, 25, 0, 1, 0, &[76]),
+    (2, 0x0B, 0, 36, 2, 0, &[76, 99]),
+    (2, 0x0B, 0, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 2, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 4, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 6, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 8, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 10, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 12, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 14, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 16, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 18, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 20, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 22, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 24, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 26, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 28, 0, 2, 0, &[76, 99]),
+    (2, 0x0B, 30, 0, 2, 0, &[76, 99]),
+    (2, 0x19, 0, 16, 3, 0, &[76, 99]),
+    (40, 0x19, 0, 0, 3, 0, &[76, 99]),
+    (2, 0x05, 0, 0, 0, 0, &[76, 99]),
+    (2, 0x0B, 1, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 3, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 5, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 7, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 9, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 11, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 13, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 15, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 17, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 19, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 21, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 23, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 25, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 27, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 29, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0B, 31, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0C, 0, 8, 1, 0, &[76, 99, 131]),
+    (2, 0x0C, 0, 0, 1, 0, &[76, 99, 131]),
+    (2, 0x0C, 0, 0, 1, -72, &[76, 99, 131]),
+    (2, 0x0C, 0, 0, 1, -144, &[76, 99, 131]),
+    (2, 0x0C, 0, 0, 1, -216, &[76, 99, 131]),
+    (2, 0x0B, 0, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0B, 2, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0B, 4, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0B, 6, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0B, 8, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0B, 10, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0B, 12, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0B, 14, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0B, 16, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0B, 18, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0B, 20, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0B, 22, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0B, 24, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0F, 0, 40, 2, 0, &[99, 131, 164]),
+    (2, 0x0F, 0, 0, 2, 0, &[99, 131, 164]),
+    (2, 0x0F, 0, 0, 2, -54, &[99, 131, 164]),
+    (2, 0x0F, 0, 0, 2, -108, &[99, 131, 164]),
+    (2, 0x0F, 0, 0, 2, -162, &[99, 131, 164]),
+    (2, 0x0F, 0, 0, 2, -216, &[99, 131, 164]),
+    (42, 0x19, 0, 0, 3, 0, &[131, 164]),
+    (2, 0x05, 0, 0, 0, 0, &[131, 164]),
+    (2, 0x0B, 1, 0, 1, 0, &[131, 164, 190]),
+    (2, 0x0B, 3, 0, 1, 0, &[131, 164, 190]),
+    (2, 0x0B, 5, 0, 1, 0, &[131, 164, 190]),
+    (2, 0x0B, 7, 0, 1, 0, &[131, 164, 190]),
+    (2, 0x0B, 9, 0, 1, 0, &[131, 164, 190]),
+    (2, 0x0B, 11, 0, 1, 0, &[131, 164, 190]),
+    (2, 0x0F, 0, 92, 1, 0, &[131, 164, 190]),
+    (2, 0x0F, 0, 28, 1, 0, &[131, 164, 190]),
+    (2, 0x0F, 0, 0, 1, 0, &[131, 164, 190]),
+    (2, 0x0F, 0, 0, 1, -54, &[131, 164, 190]),
+    (2, 0x0F, 0, 0, 1, -108, &[131, 164, 190]),
+    (2, 0x0F, 0, 0, 1, -162, &[131, 164, 190]),
+    (2, 0x0F, 0, 0, 1, -216, &[131, 164, 190]),
+    (2, 0x0F, 0, 0, 2, -30, &[164, 190]),
+    (2, 0x0F, 0, 0, 2, -84, &[164, 190]),
+    (2, 0x0F, 0, 0, 2, -138, &[164, 190]),
+    (2, 0x0F, 0, 0, 2, -192, &[164, 190]),
+    (42, 0x19, 0, 0, 3, 0, &[190]),
+    (2, 0x05, 0, 0, 0, 0, &[190]),
+    (2, 0x0B, 1, 0, 1, 0, &[190, 203]),
+    (2, 0x0B, 3, 0, 1, 0, &[190, 203]),
+    (2, 0x0B, 5, 0, 1, 0, &[190, 203]),
+    (2, 0x0B, 7, 0, 1, 0, &[190, 203]),
+    (2, 0x0B, 9, 0, 1, 0, &[190, 203]),
+    (2, 0x0B, 11, 0, 1, 0, &[190, 203]),
+    (2, 0x0B, 13, 0, 1, 0, &[190, 203]),
+    (2, 0x0B, 15, 0, 1, 0, &[190, 203]),
+    (2, 0x0B, 0, 72, 2, 0, &[190, 203, 217]),
+    (2, 0x0B, 0, 0, 2, 0, &[190, 203, 217]),
+    (2, 0x0D, 0, 0, 2, 0, &[190, 203, 217]),
+    (2, 0x0F, 0, 0, 2, 0, &[190, 203, 217]),
+    (2, 0x0F, 0, 0, 2, -56, &[190, 203, 217]),
+    (2, 0x0F, 0, 0, 2, -112, &[190, 203, 217]),
+    (2, 0x0F, 0, 0, 2, -168, &[190, 203, 217]),
+    (2, 0x0F, 0, 0, 2, -224, &[190, 203, 217]),
+    (41, 0x19, 0, 0, 3, 0, &[203, 217]),
+];
+
 fn first_divergence(got: &[Row], want: &[Row]) -> String {
     let i = got
         .iter()
@@ -429,6 +550,19 @@ fn town01_npc16_confirm_completes_pages_like_the_retail_pager() {
     assert!(got == want, "{}", first_divergence(&got, &want));
     eprintln!(
         "[ok] town01 P1[16] with confirm taps: {} vsyncs match retail (skip latch, state 0x0D, faster scrolls)",
+        got.len()
+    );
+}
+
+#[test]
+fn town01_npc16_a_press_during_a_hold_latches_the_skip_like_the_retail_pager() {
+    let Some(extracted) = gate() else { return };
+    let got = engine_trace(&extracted, &[(3, 16)]);
+    dump(&got);
+    let want = expand(RETAIL_HOLD_PRESS);
+    assert!(got == want, "{}", first_divergence(&got, &want));
+    eprintln!(
+        "[ok] town01 P1[16] with a press on a short-row hold: {} vsyncs match retail (hold cleared, skip latched, state 0x0D)",
         got.len()
     );
 }
