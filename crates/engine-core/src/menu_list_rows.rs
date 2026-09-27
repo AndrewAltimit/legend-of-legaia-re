@@ -1294,4 +1294,31 @@ mod shop_tail_tests {
         assert!(shop_tail_rows_allowed(false, worn));
         assert!(!shop_tail_rows_allowed(false, std::iter::empty()));
     }
+
+    /// Retail capture (`scripts/pcsx-redux/autorun_shop_buy_list.lua`, state
+    /// `retock_field_card_boot`, Retock's "Items Shop", P1[36]): the row words
+    /// the SCUS builder emitted at its exit jump `0x80030F94`, with the
+    /// party's Platinum Card left in the bag and with it cleared. Every stock
+    /// id is held at 99 in that save, so every row carries the dim bit.
+    #[test]
+    fn retock_items_shop_rows_match_the_retail_capture_with_and_without_the_card() {
+        let ids = [
+            0xE8, 0xF5, 0xF6, 0xD2, 0x78, 0x7A, 0x7C, 0x80, 0x88, 0x89, 0xC0, 0xC6, 0xC9,
+        ];
+        let card = build_shop_buy_rows(&ids, true, 0, |_| 1, |_| 99);
+        assert_eq!(
+            card,
+            vec![
+                0xA8C0, 0xA8C6, 0xA8C9, 0x38E8, 0x38F5, 0x38F6, 0x38D2, 0x3878, 0x387A, 0x387C,
+                0x3880, 0x3888, 0x3889,
+            ]
+        );
+        let none = build_shop_buy_rows(&ids, false, 0, |_| 1, |_| 99);
+        assert_eq!(
+            none,
+            vec![
+                0x38E8, 0x38F5, 0x38F6, 0x38D2, 0x3878, 0x387A, 0x387C, 0x3880, 0x3888, 0x3889,
+            ]
+        );
+    }
 }

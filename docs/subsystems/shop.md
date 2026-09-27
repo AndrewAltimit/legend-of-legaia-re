@@ -353,6 +353,19 @@ the disc's shop records, the ones carrying a band are the ones a card-less
 party sees shortened (`crates/engine-core/tests/shop_catalog_disc.rs` pins that
 the card-less list is always the card list minus its band).
 
+Retail confirms the gate. `scripts/pcsx-redux/autorun_shop_buy_list.lua`
+opens Retock's "Items Shop" (P1 placement 36, a 13-id record with no template
+padding) from the `retock_field_card_boot` state, whose party carries a
+Platinum Card, and logs the builder at three breakpoints: the bag probe's
+answer at `0x80030D5C`, the walk count `s4` at `0x80030E54`, and the emitted
+row words at the exit jump `0x80030F94`. With the card in the bag the probe
+answers `1`, the walk is `13`, and the three last record entries come first
+with class `0xA000`. With the bag slot cleared before the conversation (no
+party member wears one), the probe answers `0`, the walk is `10`, and the list
+is the first ten entries in record order, all class `0x3000`. The unit test
+`retock_items_shop_rows_match_the_retail_capture_with_and_without_the_card` in
+`engine-core::menu_list_rows` pins both word lists.
+
 This page used to call the probe "the held-count lookup for the empty-slot
 marker id" and to say both probes are "all but always satisfied", with the port
 passing `true`. Both were wrong: `0xFF` is an item, the retail captures in the
