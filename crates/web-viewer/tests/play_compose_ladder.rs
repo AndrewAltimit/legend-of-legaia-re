@@ -846,12 +846,16 @@ fn rung10_overworld(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result<(), Str
     if !rt.play_scene_save_allowed() {
         return Err("kingdom overworld must permit menu saving".into());
     }
-    // Walk a few tiles of overworld.
+    // Walk a few tiles of overworld. Up, not Down: the entry seat sits half a
+    // sub-cell north of a `.MAP` wall, so a Down hold only turns the player
+    // (`engine-core/tests/map01_overworld_walk_disc.rs`). The check is on the
+    // position, not the whole transform, so a turn in place does not pass.
     let start = rt.player_transform();
-    rt.set_pad(PadButton::Down.mask());
+    rt.set_pad(PadButton::Up.mask());
     run(rt, tally, 60);
     rt.set_pad(0);
-    if rt.player_transform() == start {
+    let end = rt.player_transform();
+    if (end[0], end[2]) == (start[0], start[2]) {
         return Err("overworld walk never moved the player".into());
     }
     // Forced encounter through the page's own route: the field-to-battle
