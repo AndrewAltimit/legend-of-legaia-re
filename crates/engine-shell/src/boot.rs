@@ -1482,10 +1482,34 @@ impl BootSession {
         let mut live_opts = opts.to_live_loop_opts();
         live_opts.live_loop = true;
         world.arm_live_loop(scene, &live_opts);
-        Ok(world.mode)
+        // A direct overworld entry (picker, save load) is a deliberate scene
+        // boot like the field entry above, and gets the same audio restage;
+        // the browser page's `enter_field` makes it for both kinds.
+        self.restage_audio_for_direct_entry();
+        Ok(self.host.world.mode)
     }
 
-    /// Enter a field scene live, then seed the world from a saved game.
+    /// Enter `scene` live through whichever entry the scene's own label
+    /// names: an overworld label ([`legaia_engine_core::scene::is_world_map_scene`])
+    /// through [`Self::enter_world_map_live`], anything else through
+    /// [`Self::enter_field_live`]. The same one-predicate branch the browser
+    /// play page's `enter_field` and the in-world door transition take.
+    pub fn enter_scene_live(&mut self, scene: &str, opts: &FieldLiveOpts) -> Result<SceneMode> {
+        if legaia_engine_core::scene::is_world_map_scene(scene) {
+            self.enter_world_map_live(scene, opts)
+        } else {
+            self.enter_field_live(scene, opts)
+        }
+    }
+
+    /// Enter a scene live, then seed the world from a saved game.
+    ///
+    /// The entry goes through [`Self::enter_scene_live`], so a save written
+    /// on a kingdom overworld (`mapNN` - where most saves are written)
+    /// resumes in world-map mode. It used to call [`Self::enter_field_live`]
+    /// unconditionally, which loaded the overworld as a plain field scene
+    /// with no region table and no overworld controller, while the browser
+    /// page's card Load routed the same label through the world-map entry.
     ///
     /// [`Self::enter_field_live`] cold-boots the scene at record 0 (a fresh
     /// party, no story progress). This variant runs that path and then
@@ -1508,7 +1532,7 @@ impl BootSession {
         opts: &FieldLiveOpts,
         save: legaia_save::SaveFile,
     ) -> Result<SceneMode> {
-        self.enter_field_live(scene, opts)?;
+        self.enter_scene_live(scene, opts)?;
         self.host.world.load_full(save);
         log::info!("seeded world from save ({} party records)", {
             self.host.world.party.party_count
