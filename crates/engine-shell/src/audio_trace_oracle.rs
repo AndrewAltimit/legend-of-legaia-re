@@ -286,7 +286,7 @@ impl TraceBgmDirector {
     /// Parse a scene VAB stream's header at `vab_off`, upload its samples
     /// into the private SPU, and make it the active bank.
     ///
-    /// Region math mirrors `boot::stage_scene_vab` exactly - the BGM region
+    /// Region math mirrors the play hosts' BGM region exactly - the BGM region
     /// is capped below the resident SFX bank at the top of SPU RAM - so a
     /// voice's `start_addr` in this trace is the address the windowed host
     /// would program for the same bank.
@@ -455,9 +455,9 @@ pub fn build_engine_audio_trace(
     };
     enter_scene_for_trace(&mut session, &opts.scene)?;
 
-    // Stage the scene's VAB bank into the director's private SPU - mirrors
-    // the BootSession's own pre-boot bank staging (boot.rs `stage_scene_vab`)
-    // but without an AudioOut handle. Scenes that carry no VAB entry of their
+    // Stage the scene's VAB bank into the director's private SPU, for this
+    // oracle's own scene-local sweep (the play hosts stage no scene bank:
+    // retail loads a bank only with its track). Scenes that carry no VAB entry of their
     // own leave the bank empty; their music is a global-pool track that
     // brings its own (see `TraceBgmDirector::start_owned_vab`).
     let mut director = TraceBgmDirector::new();

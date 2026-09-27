@@ -19,7 +19,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use legaia_engine_audio::{AudioOut, Spu, SpuAllocator, VabBank};
+use legaia_engine_audio::AudioOut;
 use legaia_engine_core::camera::Camera;
 use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuInput, FieldMenuSession};
 use legaia_engine_core::field_menu_dispatch::{
@@ -738,10 +738,11 @@ impl BootSession {
                     // director a refcounted handle.
                     #[allow(clippy::arc_with_non_send_sync)]
                     let audio = Arc::new(audio);
+                    // No scene bank is staged: retail loads a bank only with
+                    // its track, into the one BGM slot, and a scene-local id
+                    // plays a global fallback track
+                    // (`legaia_engine_core::scene::SCENE_LOCAL_BGM_FALLBACK_ID`).
                     let mut director = AudioBgmDirector::new(audio.clone());
-                    if let Err(e) = stage_scene_vab(&mut director, audio.as_ref(), &host) {
-                        log::warn!("BGM bank not staged (scene VAB resolution failed): {e:#}");
-                    }
                     // Decode the static SFX descriptor bank from the same
                     // executable once; it names the program/tone/voice-count
                     // for each cue id, and the VAB slot each cue's category
@@ -1189,7 +1190,7 @@ impl BootSession {
     }
 
     /// The session-side half of a scene swap under the host: the camera
-    /// globals reset and the scene VAB restage (with the SFX queue dropped).
+    /// globals reset and the SFX queue dropped (no bank is staged).
     /// A door (`SceneTickEvent::SceneEntered`) and the post-FMV hand-off
     /// ([`Self::apply_pending_fmv_handoff`]) both swap the scene, and only the
     /// first used to reach this - so a movie that handed off into a new scene
@@ -1200,19 +1201,13 @@ impl BootSession {
         // eye-space depth or focus into the next one. The sibling reset of
         // the op-0x45 param set lives in `SceneHost`'s scene entry.
         self.camera.reset_globals_for_scene_entry();
-        if let (Some(bgm), Some(audio)) = (self.bgm.as_mut(), self.audio.as_ref()) {
-            // New scene -> upload its VAB bank and drop any SFX cues that
-            // were queued against the previous scene's VAB. Not while a
-            // global-pool track owns the region: a track carried across the
-            // door would play on over the scene bank's samples
-            // (`scene_bank_restage_wanted`, the page's gate too).
+        if let Some(bgm) = self.bgm.as_mut() {
+            // New scene -> drop any SFX cues queued against the previous
+            // one. No bank is staged: retail's field init loads no scene
+            // bank (its only bank loads are slot 6 and the ending arm), and
+            // the BGM slot changes only with the track, so a track carried
+            // across the door keeps its samples.
             bgm.clear_sfx();
-            let live = bgm.is_attached().then_some(bgm.last_started).flatten();
-            if legaia_engine_core::scene::scene_bank_restage_wanted(live)
-                && let Err(e) = stage_scene_vab(bgm, audio.as_ref(), &self.host)
-            {
-                log::warn!("BGM bank not staged after scene enter: {e:#}");
-            }
             // Nothing is flushed here. Op-`0x35` sub-op 9 - the op a cutscene
             // changes music with - is a *start* behind a load barrier, not a
             // queue for the next scene; it plays the moment
@@ -1413,17 +1408,14 @@ impl BootSession {
     /// three moves. A deliberate scene boot restages BGM from scratch: SFX
     /// cues queued against the old scene are dropped, the dedupe latch is
     /// cleared so the scene's own op-`0x35` start is honoured even when it
-    /// names the track already playing, and the new scene's VAB is staged.
+    /// names the track already playing (which re-stages that track's bank).
     /// A door does not come through here; [`Self::after_scene_swap`] keeps
     /// the latch so a carried track keeps its playhead. No-op until audio is
     /// up.
     fn restage_audio_for_direct_entry(&mut self) {
-        if let (Some(bgm), Some(audio)) = (self.bgm.as_mut(), self.audio.as_ref()) {
+        if let Some(bgm) = self.bgm.as_mut() {
             bgm.clear_sfx();
             bgm.last_started = None;
-            if let Err(e) = stage_scene_vab(bgm, audio.as_ref(), &self.host) {
-                log::warn!("BGM bank not staged after direct scene entry: {e:#}");
-            }
         }
     }
 
@@ -1559,34 +1551,6 @@ impl Drop for BootSession {
     fn drop(&mut self) {
         self.shutdown();
     }
-}
-
-/// Pull the scene's first VAB-bearing entry through the scene host, parse
-/// it, upload its samples into the SPU, and stash the resulting [`VabBank`]
-/// in the director.
-fn stage_scene_vab(
-    director: &mut AudioBgmDirector,
-    audio: &AudioOut,
-    host: &SceneHost,
-) -> Result<()> {
-    let Some((bytes, vab_off)) = host.scene_vab_bytes()? else {
-        return Ok(());
-    };
-    // The entry is a chunk stream, so the bank starts at the offset the
-    // stream reports (`+4` in retail), never at 0 - parsing at 0 errors out
-    // and the scene runs silent.
-    let report = legaia_vab::parse(&bytes, vab_off).context("parse scene VAB header")?;
-    let bank = audio.with_spu(|spu: &mut Spu| {
-        // Cap the BGM region below the resident class-2 SFX bank at the top of
-        // SPU RAM, so a scene-BGM upload never stomps the SFX samples.
-        let mut alloc = SpuAllocator::new(
-            SPU_RESERVED_BYTES,
-            SPU_RAM_BYTES - SPU_RESERVED_BYTES - SFX_BANK_SPU_BYTES,
-        );
-        VabBank::upload(spu, &mut alloc, &report, &bytes)
-    });
-    director.set_bank(bank);
-    Ok(())
 }
 
 /// Stage the reserved SFX region the way retail's SPU map lays it out:

@@ -994,11 +994,12 @@ impl AudioBgmDirector {
 
     /// Split a raw `music_01` bank entry (`[chunk][pBAV VAB][pQES SEQ]`),
     /// upload the entry's **own** VAB into the SPU BGM region (capped below
-    /// the resident SFX bank, exactly like `stage_scene_vab`), stash it as the
+    /// the resident SFX region, or across it for a bank too large for the
+    /// BGM region - `legaia_engine_audio::spu_layout`), stash it as the
     /// active bank, and return the SEQ bytes. `None` when the pair is absent
-    /// or the VAB header doesn't parse. This is the global-pool half of BGM
-    /// playback - the track brings its own instruments, unlike the scene-local
-    /// path that reuses the pre-staged scene VAB.
+    /// or the VAB header doesn't parse. Every track the field VM starts comes
+    /// through here - a scene-local id plays retail's fallback track - so
+    /// the track always brings its own instruments.
     fn stage_owned_vab(&mut self, entry_bytes: &[u8]) -> Option<Vec<u8>> {
         // The installer walk's split (type-0 bank, type-2 score), not a
         // magic hunt - see `chunk_install::owned_bank_offsets`.
