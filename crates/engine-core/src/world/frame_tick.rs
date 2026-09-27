@@ -646,9 +646,14 @@ impl World {
     ///
     /// **Door of Light** ([`crate::world::MenuState::pending_escape`]): exit
     /// code `4` (`FUN_801D8A58`), so the session hands on to Riremito
-    /// (`FUN_801EE094`). The three words then hold the kingdom map the party
-    /// last stood on, which the engine keeps as the world-map panel host's last
-    /// recorded map.
+    /// (`FUN_801EE094`). The three words then hold what the last long-layout
+    /// region record the player stood in stored (`region[+9..+0xB]`,
+    /// [`crate::region_encounter::WorldMapReturn`]): a retail capture of a
+    /// Door of Light in cave01 reads `0x55 @ (37, 109)` there and seats the
+    /// party at `(37 << 7) + 0x40, (109 << 7) + 0x40` on map01. Only when no
+    /// region has stored a triple yet (an engine-only state: a scene with no
+    /// region table, or a use before the first step) does the drain fall back
+    /// to the world-map panel host's last recorded map.
     ///
     /// A target that does not resolve logs retail's `UNFIND MAP NUMBER %d`
     /// diagnostic and drops the use before anything is installed - see
@@ -677,6 +682,36 @@ impl World {
         }
         if self.menu.pending_escape {
             self.menu.pending_escape = false;
+            // The menu's installer refreshes the region setup before the
+            // menu opens (`FUN_801F1278` calls `FUN_801D9E1C(player, 0)` at
+            // `0x801F12F8`, with `+0x8E` / `+0x8F` preset to `0xFF`); the
+            // player cannot move between that open and this drain, so the
+            // refresh here reads the same tile.
+            self.apply_region_battle_setup_at_player();
+            // Retail's resolve reads the triple the last long-layout region
+            // record stored (`FUN_801D9E1C`); the capture has cave01 leave
+            // `0x55 @ (37, 109)` - the tile outside the cave mouth, not the
+            // tile the party entered from - and the art seats the party there.
+            if let Some(ret) = self
+                .encounters
+                .region_setup
+                .and_then(|s| s.world_map_return)
+            {
+                match self.tables.scene_toc_names.get(&u32::from(ret.map_word)) {
+                    Some(name) => {
+                        let target = PauseTravelTarget {
+                            scene: name.clone(),
+                            tile_x: ret.tile_x,
+                            tile_z: ret.tile_z,
+                        };
+                        self.begin_pause_session_exit(MENU_EXIT_CODE_FIELD_ESCAPE, target);
+                    }
+                    None => {
+                        log::warn!("menu escape: UNFIND MAP NUMBER {}", ret.map_word);
+                    }
+                }
+                return;
+            }
             let visited = self
                 .world_map
                 .ctrl

@@ -1961,6 +1961,49 @@ The menu button's own hop is ported too. `FUN_801F1278` stores handler id `7` at
 all three hosts open the pause menu behind - opens only when it picks `0x30`. The debug
 word is the overworld controller's `debug_enabled`; field scenes carry retail's zero.
 
+### A Door use, captured
+
+`scripts/pcsx-redux/autorun_door_item_use.lua` pokes a Door into the bag, walks the pause
+menu (Items, Use, the row, the confirm) and logs, per field tick, the subsystem actor's
+handler id `+0x50`, phase `+0x54` and dwell `+0x9E` at the dispatcher's `jalr`
+(`0x801F1634`, `s0` = the actor), with `_DAT_8007B43C`, `_DAT_8007B440` and every
+`FUN_80024E80` fade spawn. A Door of Light in cave01 (`cave01_attached_light`, frame step 2)
+runs, from the first field tick after the menu overlay swaps back out:
+
+| Ticks | Handler | Phase | What |
+|---|---|---|---|
+| 1 | `0x30` | 2 -> 4 | the counter the close left (`4 + 3`) is past the park; level `0xF2` |
+| 12 | `0x30` | 4 | level `222 .. 2`, `-10` per frame step |
+| 1 | `0x30` | 4 -> 6 | level `0`, counter cleared |
+| 1 | `0x30` -> `0x29` | 6 -> 0 | Riremito installed |
+| 1 | `0x29` | 0 -> 1 | opener effect queued |
+| 47 | `0x29` | 1 | gated on the effect (`FUN_8003CE64(0x0B)`) |
+| 40 | `0x29` | 1 -> 2 | dwell to `0x50`; fade spawn (kind 2, `0x20` frames, hold `-1`), dwell zeroed |
+| 20 | `0x29` | 2 -> 3 | dwell to `0x28`, **not** zeroed (`0x801EE1D4` only bumps the phase) |
+| 1 | `0x29` | 3 -> 4 | `FUN_8001FD44(record, 0x55)`; seat `0x80073EF4` / `F8` |
+
+The scene load itself (game mode `2`) follows 36 ticks later. A Door of Wind on map03
+(`karisto_sol_pre_encounter`, frame step 3) runs the same session with the counter at
+`5 + 3`, phase 7 and handler `0x2B`; Rula's phase 1 waits on its own opener and dwells to
+`0x28`, phase 2 lifts, and the fade spawns on the lift's exit. The session reached the park
+at phase 2, not 3, before the menu opened: phase 2's saturating path (the counter already
+`>= 6`) jumps into phase 3's body, so the two seeds are indistinguishable after one tick.
+
+The Door of Light's destination is **not** where the party last stood on the world map.
+The resolve reads `0x80084628` / `24` / `2C`, and in cave01 those hold `0x55 @ (37, 109)` -
+what cave01's long-layout region record stored (`region[+9..+0xB]`,
+[`script-vm.md`](script-vm.md)) - although the party had entered the cave from `(37, 110)`.
+The menu's installer refreshes that record before the menu opens: `FUN_801F1278` presets the
+player's `+0x8E` / `+0x8F` to `0xFF` and calls `FUN_801D9E1C(player, 0)` at `0x801F12F8`, so
+the capture sees the triple and the Door gates (`0x1F800394`) rewritten on the frame the menu
+button is pressed. The seat lands at `(37 << 7) + 0x40, (109 << 7) + 0x40` on map01.
+
+The engine follows both: `World::drain_staged_menu_warp` refreshes the region setup, reads the
+Door of Light's target off `RegionBattleSetup::world_map_return` and falls back to the
+world-map panel host's last map only when no region has stored a triple, and
+`TravelArtActor::tick` keeps Riremito's dwell across the phase-2 exit.
+`tests/door_item_retail_timeline.rs` pins the session and Riremito shape tick for tick.
+
 The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), the scripted-scene voice file. That call site is program 2's state `0x16`, and it is a seek-ahead (`CdlSeekL`, no read), not a stream: the voice itself is state `0x17`'s `FUN_8003D53C(0x10, 7, 0x135)` one-shot.
 
 `FUN_801d567c` advances a per-actor **motion keyframe**: when the actor's frame timer expires it reads the next motion bytes from `actor[+0x94] + actor[+0x9e]` through the flag/stream reader `func_0x8003ce9c`; otherwise, when `+0x9c == 0`, it latches the current motion transform (copying `+0x3c` -> `+0x40`, `+0x16` -> `+0x6a`, and packing `+0x74`/`+0x88` into `+0x80..+0x85`) and runs `FUN_801e4404`.

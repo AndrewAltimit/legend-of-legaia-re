@@ -35,7 +35,9 @@
 //! panel host records the kingdom map the party stands on
 //! (`legaia_engine_core::world_map_panel_host`), and the pause-menu session
 //! resolves the staged scene word through the CDNAME map the scene host
-//! installs (`legaia_engine_core::world::pause_session`).
+//! installs (`legaia_engine_core::world::pause_session`). For a Door of Light
+//! that word is the region record's return triple, which a retail capture
+//! reads as `0x55 @ (37, 109)` in cave01.
 //!
 //! `<< 7` plus a half-tile `0x40` is the 128-unit field tile grid's
 //! tile-index → world-centre conversion, the same law the walk collision
@@ -364,7 +366,10 @@ impl TravelArtActor {
                     }
                     out.spawn_flash = self.art.flash_phase() == 2;
                     out.clear_warp_hold = out.spawn_flash;
-                    self.dwell = 0;
+                    // No `+0x9E` reset here: Riremito's phase-2 exit
+                    // (`0x801EE1D4` -> `0x801EE1DC`) only bumps the phase,
+                    // unlike phase 1's (`sh zero, 0x9e` at `0x801EE1AC`). A
+                    // retail capture reads `+0x9E = 0x28` through phases 3/4.
                     self.phase = 3;
                 }
                 None => {

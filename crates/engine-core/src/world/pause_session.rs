@@ -28,8 +28,17 @@
 //! The resolve reads three words retail keeps at `0x80084624` / `0x80084628`
 //! / `0x8008462C`: the destination's tile X, its raw CDNAME TOC index, and its
 //! tile Z. A Door of Wind use writes all three from the picked quick-travel
-//! record (`FUN_801D8B90`); for a Door of Light they hold the kingdom map the
-//! party last stood on. The engine carries them as a [`PauseTravelTarget`].
+//! record (`FUN_801D8B90`); for a Door of Light they hold what the last
+//! long-layout region record stored (`region[+9..+0xB]`, refreshed by the
+//! menu's installer `FUN_801F1278` at `0x801F12F8`) - in cave01 that is
+//! `0x55 @ (37, 109)`, the map01 tile outside the cave mouth. The engine
+//! carries them as a [`PauseTravelTarget`].
+//!
+//! A retail capture of both uses (`scripts/pcsx-redux/autorun_door_item_use.lua`;
+//! the tick-by-tick shape is pinned in `tests/door_item_retail_timeline.rs`)
+//! agrees with this module phase for phase: the first post-menu tick lands on
+//! phase 4 at `0xF2`, twelve ticks ramp it down by `10 * frame_step`, the
+//! thirteenth stores phase 6 / 7, the next installs the art.
 //!
 //! One deliberate divergence: retail runs the art whether or not the word
 //! resolves and parks in the `UNFIND MAP NUMBER` phase on a miss, with the
