@@ -18,6 +18,12 @@
  * convenience; every access is wrapped) and a returning visitor is offered
  * "resume".
  *
+ * Accented characters: the pack's `accents:` header (strict / fold / font)
+ * decides how typed accents reach the disc, and every per-character verdict,
+ * fold and cell escape comes from the session (`check` notes, `fold_line`,
+ * `cells_line`, `latin_palette`), which reads the one Rust table
+ * (legaia_font::latin). This file keeps no accent table of its own.
+ *
  * Imports resolve relative to THIS file (site/js/), so the package at
  * site/wasm/ is `../wasm/...`; shipped packs are `../lang/<code>.yaml`.
  */
@@ -133,6 +139,9 @@ const S = {
   page: 0,
   pageSize: 40,
   filtered: [],
+  accents: '',        // the pack's accent mode: '' (strict), 'fold', 'font'
+  accentInfo: null,   // {disc_font, preview, palette} from the session
+  lastTa: null,       // the textarea the palette inserts into
 };
 
 function setStatus(msg, kind) {
@@ -160,6 +169,7 @@ function protOf(key) {
 function statusOf(e) {
   if (!e.t || !e.t.trim()) return 'untranslated';
   if (e.bad > 0) return 'not_encodable';
+  if (e.ud > 0) return 'undrawable';
   const o = S.outcome.get(e.k);
   if (o === 'rolled_back') return 'rolled_back';
   if (o === 'over_budget' || o === 'no_free_run' || o === 'refused') return 'too_long';
@@ -185,6 +195,8 @@ function matches(e) {
       if (st === 'untranslated') return false;
     } else if (f.status === 'too_wide') {
       if (!(e.ovpx > 0)) return false;
+    } else if (f.status === 'chars') {
+      if (!(e.t && e.t.trim() && (e.ud > 0 || e.bad > 0 || e.fd > 0))) return false;
     } else if (st !== f.status) return false;
   }
   if (f.q) {
@@ -204,6 +216,9 @@ function applyCheck(e, c) {
   e.px = c.px;
   e.ovpx = c.over_px || 0;
   e.unres = c.unresolved || 0;
+  e.notes = c.notes || [];
+  e.ud = c.undrawable || 0;
+  e.fd = e.notes.length - e.ud;
 }
 
 function roomText(e) {
@@ -245,13 +260,46 @@ function outcomeText(e) {
   return `<span class="${bad ? 'wb-bad' : 'wb-okc'}" ${msg ? `title="${esc(msg)}"` : ''}>${esc(label)}</span>`;
 }
 
+// Every character of the line the game will not draw as typed, marked in
+// place with its reason, plus the one-click fixes that apply. The verdicts
+// are the session's (encode errors + accent notes); the fixes call its fold /
+// cell rewriters.
 function markedText(e) {
-  if (!e.errors || !e.errors.length) return '';
-  const bad = new Set(e.errors.map((x) => x.index));
+  const errs = e.errors || [];
+  const notes = e.notes || [];
+  if (!errs.length && !notes.length) return '';
+  const cls = new Map();
+  const why = new Map();
+  for (const n of notes) {
+    cls.set(n.index, n.undrawable ? 'm-warn' : 'm-fold');
+    why.set(n.index, n.msg);
+  }
+  for (const x of errs) {
+    cls.set(x.index, 'm-bad');
+    if (!why.has(x.index)) why.set(x.index, x.msg);
+  }
   const chars = Array.from(e.t || '');
-  const html = chars.map((ch, i) => (bad.has(i) ? `<mark>${esc(ch)}</mark>` : esc(ch))).join('');
-  const why = esc(e.errors[0].msg);
-  return `<div class="wb-marked" title="${why}">${html}</div><div class="wb-info wb-bad">${e.errors.length} character(s) the game cannot draw: ${why}</div>`;
+  let html = '';
+  for (let i = 0; i < chars.length; i++) {
+    const c = cls.get(i);
+    // A `{xx}` cell escape is one note spanning four characters.
+    const span = c && chars[i] === '{' && chars[i + 3] === '}' ? 4 : 1;
+    const text = esc(chars.slice(i, i + span).join(''));
+    html += c ? `<mark class="${c}" title="${esc(why.get(i))}">${text}</mark>` : text;
+    i += span - 1;
+  }
+  const reasons = [];
+  for (const m of why.values()) if (!reasons.includes(m)) reasons.push(m);
+  const bad = errs.length || notes.some((n) => n.undrawable);
+  const head = errs.length
+    ? `${errs.length} character(s) will not encode`
+    : (bad ? `${e.ud} character(s) will not draw as typed` : `${notes.length} character(s) fold to plain letters on import`);
+  const canFold = notes.some((n) => n.fold) || errs.length;
+  const canCell = notes.some((n) => n.cell && n.kind === 'accent');
+  const canFont = notes.some((n) => n.cell);
+  const fixes = `<span class="wb-fixes">${canFold ? '<button type="button" data-fix="fold" title="Replace every accent with its plain letter (the fold the patcher uses)">Fold to plain letters</button>' : ''}${canFont && S.accents !== 'font' ? '<button type="button" data-fix="font" title="Switch the whole pack to the accent font: the patch draws these letters">Use the accent font</button>' : ''}${canCell ? '<button type="button" data-fix="cells" title="Write each accent as its {xx} cell markup">Write as {xx} markup</button>' : ''}</span>`;
+  const list = reasons.slice(0, 3).map((r) => `<li>${esc(r)}</li>`).join('') + (reasons.length > 3 ? `<li>... ${reasons.length - 3} more</li>` : '');
+  return `<div class="wb-marked">${html}</div><div class="wb-info ${bad ? 'wb-bad' : ''}"><span>${head}</span>${fixes}</div><ul class="wb-reasons">${list}</ul>`;
 }
 
 // The rows of a preview: the line's whole box for dialog, else the line.
@@ -404,7 +452,7 @@ function renderCoverage() {
     if (e.t && e.t.trim()) {
       r.filled++;
       const st = statusOf(e);
-      if (st === 'too_long' || st === 'rolled_back' || st === 'not_encodable') r.bad++;
+      if (st === 'too_long' || st === 'rolled_back' || st === 'not_encodable' || st === 'undrawable') r.bad++;
     }
     rows.set(e.s, r);
   }
@@ -525,6 +573,106 @@ function renderDashboard() {
   renderScenes();
 }
 
+// --- Accents --------------------------------------------------------------------
+const MODE_LABEL = { '': 'strict', fold: 'fold', font: 'font' };
+
+function renderAccents() {
+  if (!S.wb) return;
+  let info = null;
+  try { info = JSON.parse(S.wb.accent_info()); } catch (e) { info = null; }
+  S.accentInfo = info;
+  S.accents = info ? info.mode : '';
+  $('wb-accent-mode').value = MODE_LABEL[S.accents] || 'strict';
+  const disc = info && info.disc_font;
+  const note = {
+    applied: 'Your disc already carries the accent font.',
+    partial: 'Your disc carries a different font patch in some accent cells.',
+    absent: 'Your disc has the retail font: it draws plain letters only.',
+  }[disc] || '';
+  const how = {
+    '': 'Every accent is reported until you fold it or switch modes.',
+    fold: 'On import every accent is written as its plain letter (Épée becomes Epee).',
+    font: 'On import the patch also draws accented letters into the game font, built from your disc\'s own letters, and every accent is kept. The previews below use that font.',
+  }[S.accents] || '';
+  $('wb-accent-note').textContent = `${note} ${how}`;
+  renderPalette();
+  renderCharStats();
+}
+
+function renderPalette() {
+  const info = S.accentInfo;
+  if (!info || !info.palette) return;
+  const sel = $('wb-pal-lang');
+  if (!sel.options.length) {
+    sel.innerHTML = info.palette.map((l) => `<option value="${esc(l.code)}">${esc(l.name)}</option>`).join('');
+    const guess = (languageOf() || '').toLowerCase().split('-')[0];
+    if (info.palette.some((l) => l.code === guess)) sel.value = guess;
+  }
+  const lang = info.palette.find((l) => l.code === sel.value) || info.palette[0];
+  $('wb-palette').innerHTML = lang.chars.map((c) => {
+    const drawn = c.cell && (S.accents === 'font' || info.disc_font === 'applied');
+    const t = drawn ? `draws in the accent font as ${c.cell}` : `folds to "${c.fold}"${c.cell ? ` (the accent font draws it as ${c.cell})` : ' (no glyph, even in the accent font)'}`;
+    return `<button type="button" class="wb-pal-key ${drawn ? 'is-drawn' : ''}" data-ch="${esc(c.ch)}" title="${esc(t)}">${esc(c.ch)}</button>`;
+  }).join('');
+}
+
+function renderCharStats() {
+  if (!S.wb) return;
+  let st = null;
+  try { st = JSON.parse(S.wb.char_stats()); } catch (e) { st = null; }
+  const el = $('wb-char-stats');
+  if (!st) { el.textContent = ''; return; }
+  let html = st.undrawable_lines
+    ? `<span class="wb-bad">${st.undrawable_lines} line(s) contain ${st.undrawable_chars} character(s) the game will not draw as typed</span>`
+    : '<span class="wb-okc">Every translated line draws as typed</span>';
+  if (st.fold_lines) html += `; ${st.fold_lines} line(s) fold accents to plain letters on import`;
+  if (st.top && st.top.length) html += `. Most frequent: ${st.top.slice(0, 10).map((t) => `<code>${esc(t.char)}</code>&times;${t.count}`).join(' ')}`;
+  if (st.undrawable_lines || st.fold_lines) html += ' <button type="button" class="wb-button wb-button-ghost wb-mini" id="wb-show-chars">Show these lines</button>';
+  el.innerHTML = html;
+}
+
+// Re-run the live check of every translated line (after the accent mode
+// changes, every verdict and width can change).
+function recheckAll() {
+  for (const e of S.entries) {
+    if (!e.t || !e.t.trim()) continue;
+    try { applyCheck(e, JSON.parse(S.wb.check(e.k, e.t))); } catch (err) { console.warn(err); }
+  }
+}
+
+async function setAccentMode(mode) {
+  if (!S.wb) return;
+  S.wb.set_accents(mode);
+  recheckAll();
+  renderAccents();
+  refilter(false);
+  renderCoverage();
+  scheduleSave();
+  if (S.report) setCheckStatus('The accent mode changed - run "Check against my disc" again for the scene fits.', '');
+}
+
+function insertChar(ch) {
+  const ta = S.lastTa && document.body.contains(S.lastTa) ? S.lastTa : null;
+  if (!ta) { setStatus('Click into a translation first, then pick a character.', ''); return; }
+  const a = ta.selectionStart ?? ta.value.length;
+  const b = ta.selectionEnd ?? a;
+  ta.value = ta.value.slice(0, a) + ch + ta.value.slice(b);
+  ta.focus();
+  ta.selectionStart = ta.selectionEnd = a + ch.length;
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function applyFix(el, e, fix) {
+  if (fix === 'font') { setAccentMode('font'); return; }
+  const mod = wasmMod;
+  if (!mod) return;
+  const text = fix === 'fold' ? mod.fold_line(e.t || '') : mod.cells_line(e.t || '');
+  const ta = el.querySelector('textarea');
+  ta.value = text;
+  autoGrow(ta);
+  onEdit(el, e, text);
+}
+
 // --- Fast paths after edits ------------------------------------------------------
 const pendingScenes = new Set();
 let sceneTimer = null;
@@ -592,7 +740,7 @@ function scheduleSave() {
 
 function scheduleDash() {
   clearTimeout(dashTimer);
-  dashTimer = setTimeout(() => { renderCoverage(); renderMonsters(); }, 500);
+  dashTimer = setTimeout(() => { renderCoverage(); renderMonsters(); renderCharStats(); }, 500);
 }
 
 // Re-draw the info line + preview of every row on the page (after a fit).
@@ -667,6 +815,7 @@ async function afterPackChange(msg) {
   applyNamesFit();
   fillSectionFilter();
   $('wb-main').hidden = false;
+  renderAccents();
   renderDashboard();
   refilter(true);
   setStatus(msg, 'ok');
@@ -918,6 +1067,37 @@ function init() {
   };
   $('wb-pager-top').addEventListener('click', pagerClick);
   $('wb-pager-bottom').addEventListener('click', pagerClick);
+
+  $('wb-accent-mode').addEventListener('change', (ev) => setAccentMode(ev.target.value));
+  $('wb-pal-lang').addEventListener('change', renderPalette);
+  $('wb-palette').addEventListener('mousedown', (ev) => {
+    // Keep the textarea's caret: insert on mousedown, before focus moves.
+    const k = ev.target.closest('[data-ch]');
+    if (!k) return;
+    ev.preventDefault();
+    insertChar(k.dataset.ch);
+  });
+  $('wb-palette').addEventListener('keydown', (ev) => {
+    const k = ev.target.closest('[data-ch]');
+    if (k && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); insertChar(k.dataset.ch); }
+  });
+  $('wb-char-stats').addEventListener('click', (ev) => {
+    if (ev.target.id !== 'wb-show-chars') return;
+    S.filter.status = 'chars';
+    $('wb-f-status').value = 'chars';
+    refilter(true);
+    $('editor').scrollIntoView({ behavior: 'smooth' });
+  });
+  $('wb-list').addEventListener('focusin', (ev) => {
+    const ta = ev.target.closest('textarea');
+    if (ta) S.lastTa = ta;
+  });
+  $('wb-list').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-fix]');
+    if (!b) return;
+    const el = b.closest('.wb-row');
+    applyFix(el, S.entries[+el.dataset.i], b.dataset.fix);
+  });
 
   $('wb-list').addEventListener('input', (ev) => {
     const ta = ev.target.closest('textarea');

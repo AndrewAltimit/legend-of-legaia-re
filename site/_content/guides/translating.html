@@ -55,11 +55,11 @@
   <h3 id="workbench">Editing in the workbench</h3>
   <p>Steps 3 to 7 can also happen on the <a href="../tooling/translation-workbench.html">translation workbench</a> page instead of in a text editor. Pick your disc there, then load a published pack, your own <code>.yaml</code>, or start fresh. Every line is listed with its English, a box for your translation, and live feedback as you type:</p>
   <ul class="bullets">
-    <li>its size in bytes against its room (for a name, also the free bytes it could move into), with any character the game cannot draw highlighted;</li>
+    <li>its size in bytes against its room (for a name, also the free bytes it could move into), with any character the game cannot draw highlighted and the reason beside it, plus one-click fixes (fold the accents, or switch the pack to the accent font);</li>
     <li>its width on screen in the game's own font, against the width its box or menu column allows, and a picture of the dialog box as the game draws it;</li>
     <li>a moment after you stop typing, whether its scene still fits.</li>
   </ul>
-  <p>A dashboard shows where the room is: per section, per name table, per menu pool, and every scene from the fullest down. Click a row to list its lines. <em>Check against my disc</em> runs the full check. Your edits are saved in the browser as you type, and the page offers to resume them next time. Download the working pack to keep your own copy, and the shareable pack to share. The workbench does not patch a disc; load the shareable pack on the ROM patcher page for that.</p>
+  <p>An <em>Accents</em> panel sets how accented letters reach the disc (see <a href="#accents">accents</a>), shows how many lines still hold a character the game will not draw, and has a character palette per language that types into the line you are editing. A dashboard shows where the room is: per section, per name table, per menu pool, and every scene from the fullest down. Click a row to list its lines. <em>Check against my disc</em> runs the full check. Your edits are saved in the browser as you type, and the page offers to resume them next time. Download the working pack to keep your own copy, and the shareable pack to share. The workbench does not patch a disc; load the shareable pack on the ROM patcher page for that.</p>
 </section>
 
 <section class="doc-section" id="cli">
@@ -133,7 +133,8 @@ legaia-patcher translate import --input "Legend of Legaia (USA).bin" \
       <tr><th colspan="3">Monster name longer than 15 bytes</th></tr>
       <tr><td><code>monster N: name needs N bytes but a monster name holds at most 15</code></td><td>the game's limit for enemy names</td><td>shorten to 15 bytes</td></tr>
       <tr><th colspan="3">Not encodable in the retail glyph set</th></tr>
-      <tr><td><code>translation not encodable: '&eacute;' (U+00E9) is not in the retail glyph set</code></td><td>the font has no such letter</td><td>drop the accent (<code>e</code>)</td></tr>
+      <tr><td><code>translation not encodable: '&eacute;' is not in the retail NTSC font - fold it to 'e', or turn on the accent font</code></td><td>the pack is in the default accent mode</td><td>set <code>accents: font</code> (the letter draws) or <code>accents: fold</code> (it becomes <code>e</code>); see <a href="#accents">accents</a></td></tr>
+      <tr><td><code>translation not encodable: '&#x416;' (U+0416) is not in the retail glyph set and has no fold</code></td><td>no font here can draw it</td><td>write it with Latin letters</td></tr>
       <tr><td><code>translation not encodable: malformed escape</code> / <code>stray '}'</code></td><td>a brace that is not a valid token</td><td>fix the token; write literal braces as <code>{7b}</code> / <code>{7d}</code></td></tr>
       <tr><td><code>translation not encodable: 0xNN is not a 2-byte opcode</code></td><td>a <code>{xx:yy}</code> token with the wrong first byte</td><td>copy the token exactly from <code>source:</code></td></tr>
       <tr><td><code>pack source doesn't encode (corrupted pack?)</code></td><td>the <code>source:</code> field was changed</td><td>restore it, or re-export</td></tr>
@@ -170,7 +171,14 @@ legaia-patcher translate import --input "Legend of Legaia (USA).bin" \
     </tbody>
   </table>
   <p>The substituted names come from the tables you are also translating, so write sentences that stay grammatical whichever name appears.</p>
-  <p><strong>No accents.</strong> The game's font has only plain English letters, digits and common punctuation (printable ASCII): no <code>&eacute;</code>, <code>&ntilde;</code>, <code>&szlig;</code> or <code>&ccedil;</code>, and no Cyrillic, Greek or CJK. Write <code>Epee</code>, not <code>&Eacute;p&eacute;e</code>. Adding letters to the font is a separate, much larger project (<a href="../tooling/translation.html#markup-encoding">font patch</a>).</p>
+  <h3 id="accents">Accents</h3>
+  <p>The game's own font draws plain English letters only. Type accents as you normally would and pick, once per pack, what happens to them:</p>
+  <ul class="bullets">
+    <li><strong>Draw them</strong> (<code>accents: font</code> in the pack, <em>Draw them</em> on the workbench): the patch adds accented letters to the game's font, built from your disc's own letters, and your text shows as typed. It covers the Western European accents (<code>&eacute; &egrave; &ecirc; &euml; &agrave; &acirc; &auml; &aacute; &atilde; &aring; &ccedil; &ntilde; &iacute; &igrave; &icirc; &iuml; &oacute; &ograve; &ocirc; &ouml; &otilde; &uacute; &ugrave; &ucirc; &uuml; &yuml; &szlig; &aelig; &oelig; &iquest; &iexcl; &deg;</code> and their capitals).</li>
+    <li><strong>Fold to plain letters</strong> (<code>accents: fold</code>): <code>&Eacute;p&eacute;e</code> is written <code>Epee</code>.</li>
+    <li><strong>Report them</strong> (the default): every accent is listed until you fold it or switch modes.</li>
+  </ul>
+  <p>Letters outside that set (Polish <code>&#x142;</code>, Czech <code>&#x10D;</code>) fold to plain letters in both modes. Cyrillic, Greek, Chinese, Japanese and Korean cannot be drawn at all. The command-line import takes <code>--accents font</code> (or <code>fold</code>) to override the pack. Details: <a href="../tooling/translation.html#markup-encoding">markup and encoding</a>.</p>
   <p><strong>Automatic folding.</strong> A few characters word processors and AI tools like to insert are replaced for you: curly quotes become <code>'</code> and <code>"</code>, en and em dashes and the minus sign become <code>-</code>, the ellipsis becomes <code>...</code>, and a non-breaking space becomes a plain space. Anything else outside the font is reported, character by character.</p>
 </section>
 
@@ -206,7 +214,8 @@ legaia-patcher translate import --input "Legend of Legaia (USA).bin" \
     <dt>Is there a flag to let names grow?</dt><dd>No - there is no <code>--relocate-names</code>. A name longer than its slot moves automatically on every import.</dd>
     <dt>Can I test with a save state?</dt><dd>No. Boot the patched disc fresh, or load a memory-card save.</dd>
     <dt>What may I share publicly?</dt><dd>The shareable pack and a PPF patch. Never a working pack, a lifted pack, or a patched disc image - they contain the game's own text and data.</dd>
-    <dt>Russian, Greek, Japanese, Chinese, Korean?</dt><dd>Not with the retail font, which has only plain English letters; it would need a font patch these tools do not do.</dd>
+    <dt>Can I use accents?</dt><dd>Yes. Set the pack to <em>Draw them</em> (<code>accents: font</code>) and the patch adds the accented letters to the game's font; see <a href="#accents">accents</a>.</dd>
+    <dt>Russian, Greek, Japanese, Chinese, Korean?</dt><dd>Not yet. Those scripts need far more letters than the game's font page holds, which these tools do not attempt.</dd>
     <dt>Can I start from someone else's pack?</dt><dd>Yes: choose it and press <em>Export a working copy of this pack</em>, or pass <code>--resume their-pack.yaml</code> to <code>translate init</code>.</dd>
     <dt>With the randomizer?</dt><dd>Yes - pick a language and any randomizer options and patch once. Dialog is applied before the randomizer and names after it, so neither disturbs the other.</dd>
     <dt>My line is fine but still reported?</dt><dd>Dialog is limited per scene, not per line; another line of the same scene may have used the room.</dd>

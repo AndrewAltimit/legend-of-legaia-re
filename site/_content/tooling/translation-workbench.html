@@ -44,6 +44,24 @@
         <label class="wb-field wb-field-sm"><span class="wb-label">Language code</span><input type="text" id="wb-lang" size="8" maxlength="16" placeholder="fr"></label>
         <label class="wb-field"><span class="wb-label">Contributors (comma-separated)</span><input type="text" id="wb-contrib"></label>
       </div>
+      <div class="wb-accents" id="accents">
+        <div class="wb-field">
+          <span class="wb-label">Accents
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The USA disc's font draws plain letters only, so every accented letter needs a decision. <strong>Report them</strong> marks each one until you fix it. <strong>Fold to plain letters</strong> writes <code>Epee</code> for <code>Épée</code> when the pack is applied. <strong>Draw them</strong> adds accented letters to the game font when the pack is applied, built from your disc's own letters, so <code>Épée</code> shows as typed.</p><p>The choice is saved in the pack (its <code>accents:</code> line), so the ROM patcher and the command-line tool apply it the same way. Letters with no glyph even in the accent font (Polish <code>ł</code>, for one) always fold; Cyrillic, Greek and CJK cannot be drawn at all. Details: <a href="../guides/translating.html#accents">accents and special characters</a>.</p></span></span>
+          </span>
+          <select id="wb-accent-mode" aria-label="How accents reach the disc">
+            <option value="strict">Report them (fix by hand)</option>
+            <option value="fold">Fold to plain letters</option>
+            <option value="font">Draw them (accent font)</option>
+          </select>
+          <div id="wb-accent-note" class="wb-note"></div>
+        </div>
+        <div class="wb-field wb-pal-field">
+          <span class="wb-label">Characters <select id="wb-pal-lang" aria-label="Palette language"></select></span>
+          <div id="wb-palette" class="wb-palette" role="toolbar" aria-label="Insert a character into the translation you are editing"></div>
+        </div>
+        <div id="wb-char-stats" class="wb-char-stats" role="status"></div>
+      </div>
       <div class="wb-actions">
         <button type="button" id="wb-dl-working" class="wb-button wb-button-ghost">Download working pack</button>
         <button type="button" id="wb-dl-share" class="wb-button">Download shareable pack</button>
@@ -95,6 +113,7 @@
           <option value="too_long">Too long</option>
           <option value="rolled_back">Will roll back</option>
           <option value="not_encodable">Not encodable</option>
+          <option value="chars">Has accents or undrawable characters</option>
           <option value="too_wide">Too wide on screen</option>
         </select>
         <input type="search" id="wb-f-search" placeholder="Search English, translation or key" aria-label="Search">
@@ -191,11 +210,26 @@
   .wb-info { display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; font-size: 0.78em; color: var(--text-dim); margin-top: 0.15rem; }
   .wb-marked { font-family: var(--font-mono); font-size: 0.86em; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); margin-top: 0.2rem; }
   .wb-marked mark { background: var(--open); color: var(--text-bright); border-radius: 2px; }
+  .wb-marked mark.m-warn { background: var(--warn); color: #1d1500; }
+  .wb-marked mark.m-fold { background: var(--accent-soft); color: var(--text-bright); outline: 1px solid var(--accent-line); }
+  .wb-row.st-undrawable { border-left-color: var(--warn); }
+  .wb-fixes { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
+  .wb-fixes button, .wb-mini { padding: 0.1rem 0.5rem; font: inherit; font-size: 0.95em; color: var(--text); background: var(--bg-code); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .wb-fixes button:hover { border-color: var(--accent); }
+  .wb-reasons { margin: 0.15rem 0 0 1.1rem; padding: 0; font-size: 0.78em; color: var(--text-dim); }
+  .wb-accents { display: grid; grid-template-columns: minmax(0, 20rem) minmax(0, 1fr); gap: 0.2rem 1.2rem; margin: 0.4rem 0 0.2rem; padding: 0.6rem 0.8rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .wb-pal-field .wb-label select { margin-left: 0.4rem; font-weight: 400; padding: 0.15rem 0.35rem; }
+  .wb-palette { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+  .wb-pal-key { min-width: 2rem; padding: 0.25rem 0.4rem; font: inherit; font-size: 1.05em; color: var(--text-muted); background: var(--bg-code); border: 1px dashed var(--border-hi); border-radius: 5px; cursor: pointer; }
+  .wb-pal-key.is-drawn { color: var(--text-bright); border-style: solid; border-color: var(--accent-line); }
+  .wb-pal-key:hover, .wb-pal-key:focus-visible { border-color: var(--accent); }
+  .wb-char-stats { grid-column: 1 / -1; font-size: 0.86em; color: var(--text-muted); }
   .wb-preview { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; margin-top: 0.35rem; min-width: 0; }
   .wb-preview canvas { display: block; image-rendering: pixelated; max-width: 100%; min-width: 0; height: auto; border-radius: 3px; }
   .wb-empty { color: var(--text-dim); font-style: italic; padding: 0.6rem 0; }
   @media (max-width: 44rem) {
     .wb-row { grid-template-columns: minmax(0, 1fr); }
+    .wb-accents { grid-template-columns: minmax(0, 1fr); }
     .wb-table .wb-cov-meter { display: none; }
     .wb-bar { grid-template-columns: minmax(0, 1fr) auto; }
     .wb-bar .wb-meter { grid-column: 1 / -1; grid-row: 2; }
