@@ -627,6 +627,34 @@ fn minigame_return_warp_restores_scene_and_commits_winnings() {
     assert!(world.minigames.scene_backup.is_none(), "backup consumed");
 }
 
+/// Every minigame exit path closes a door-entered round trip through one
+/// kernel, `close_minigame_round_trip` - the Start escape, the native hotkeys
+/// and the page's fishing button. Those last two used to call the bare
+/// `exit_*`, which left the scene backup armed and the winnings unbanked.
+#[test]
+fn close_minigame_round_trip_closes_a_door_entry_and_nothing_else() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.active_scene_label = "sioro".to_string();
+    world.minigames.casino_coins = 100;
+    world.arm_minigame_warp();
+    world.active_scene_label = "minigame".to_string();
+    world.mode = SceneMode::Fishing;
+    world.minigames.winnings = 40;
+    world.close_minigame_round_trip();
+    assert_eq!(world.active_scene_label, "sioro");
+    assert_eq!(world.minigames.casino_coins, 140);
+    assert_eq!(world.mode, SceneMode::Field);
+    assert!(world.minigames.scene_backup.is_none());
+
+    // A launcher-opened session armed nothing: the call leaves it alone.
+    world.mode = SceneMode::Fishing;
+    world.minigames.winnings = 7;
+    world.close_minigame_round_trip();
+    assert_eq!(world.mode, SceneMode::Fishing);
+    assert_eq!(world.minigames.casino_coins, 140);
+}
+
 #[test]
 fn minigame_return_warp_coin_bank_saturates_at_retail_cap() {
     let mut world = World::new();

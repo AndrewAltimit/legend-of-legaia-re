@@ -18,6 +18,28 @@ impl World {
         self.clock.play_time_seconds = self.clock.play_time_seconds.saturating_add(delta_seconds);
     }
 
+    /// Advance the play clock off a host wall-clock reading `now_secs` (any
+    /// epoch - only deltas are used). Whole seconds only, and by delta
+    /// against a high-water mark rather than absolutely, so a loaded save
+    /// keeps its accumulated total.
+    ///
+    /// The one play-clock law both play hosts call. Each used to keep its own
+    /// origin and high-water mark, and they drifted: the native window
+    /// measured from window creation, so the title screen's time landed in
+    /// the first delta after New Game; the browser page reset its origin on
+    /// New Game but not its high-water mark, so after a second New Game play
+    /// time stood still until the wall clock passed the old mark. The origin
+    /// is set by the first call and dropped by [`Self::begin_new_game`].
+    pub fn tick_play_clock(&mut self, now_secs: f64) {
+        let origin = *self.clock.play_clock_origin.get_or_insert(now_secs);
+        let now = (now_secs - origin).max(0.0) as u32;
+        if now > self.clock.play_clock_high_water {
+            let delta = now - self.clock.play_clock_high_water;
+            self.clock.play_clock_high_water = now;
+            self.advance_play_time(delta);
+        }
+    }
+
     /// Commit a host font measurement of the live `4C E1` balloon's line, so
     /// the record carries the centred `x` retail computes at spawn
     /// (`X = (0x140 - width) >> 1`).
@@ -2863,8 +2885,22 @@ impl World {
             }
             _ => unreachable!("guarded by in_minigame"),
         }
-        // Close the mode-24 round trip when the entry came through the door
-        // warp (`exit_baka_fighter` already does its own).
+        self.close_minigame_round_trip();
+    }
+
+    /// Close the mode-24 round trip after a minigame exit, when the entry
+    /// came through the door warp (a backed-up scene name is armed):
+    /// [`Self::minigame_return_warp`] restores the departure label, banks the
+    /// session winnings and drops back to the field. A no-op for a session a
+    /// debug launcher opened (nothing armed), and after `exit_baka_fighter`,
+    /// which runs its own return warp.
+    ///
+    /// Every exit path calls it after its `exit_*`: the Start escape here,
+    /// the native window's minigame hotkeys and the browser page's fishing
+    /// button. The hotkeys and the button used to call the bare `exit_*`, so
+    /// leaving a door-entered session that way kept the scene backup armed
+    /// and never banked the winnings - only Start closed the trip.
+    pub fn close_minigame_round_trip(&mut self) {
         if self.minigames.scene_backup.is_some() {
             self.minigame_return_warp();
         }

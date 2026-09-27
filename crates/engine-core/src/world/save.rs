@@ -577,10 +577,24 @@ impl World {
     ///    ([`Self::field_menu_button_state`]) is the pause-menu session.
     ///    Only a debug build holding the pad's `0x100` bit picks anything else.
     ///
+    /// 4. No shop / prize counter and no narration crawl or title card holds
+    ///    the screen. A shop runs at game mode `0x17` with the menu overlay
+    ///    resident and the field overlay swapped out, so the locomotion
+    ///    controller whose header reads Start is not running at all; the
+    ///    crawl owns the scene and freezes the pad. The native window used to
+    ///    spell both out beside this call (`menu_runtime.is_open()` and its
+    ///    `narration` local) while the browser page asked only this
+    ///    predicate - and read the pause-menu Start before its shop - so on
+    ///    the page Start opened the pause menu over an open shop.
+    ///
     /// REF: FUN_801D01B0 (`0x801D01F0` engaged bit, `0x801D0250` accept)
     pub fn field_menu_open_allowed(&self) -> bool {
         self.scene_mode_takes_menu_open()
             && !self.dialogue_owns_input()
+            && !self.shops.shop_open
+            && !self.shops.prize_exchange_open
+            && !self.cutscene_narration_active()
+            && self.cutscene.card.is_none()
             && self.field_menu_button_state() == legaia_engine_vm::field_state_pick::STATE_NORMAL
     }
 

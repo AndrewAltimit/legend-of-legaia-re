@@ -303,3 +303,35 @@ fn world_tick_field_mode_no_bytecode_is_noop() {
     let _ = world.tick();
     assert_eq!(world.field_pc, 0);
 }
+
+/// The play clock is one law for every host (`World::tick_play_clock`): whole
+/// seconds by delta against a high-water mark, restarted by New Game. The
+/// browser page once reset only its origin on New Game, so after a second New
+/// Game the clock stood still until the wall clock passed the old mark.
+#[test]
+fn play_clock_counts_by_delta_and_restarts_on_new_game() {
+    let mut world = World::new();
+    world.tick_play_clock(1000.0);
+    assert_eq!(
+        world.clock.play_time_seconds, 0,
+        "the first reading is the origin"
+    );
+    world.tick_play_clock(1002.5);
+    assert_eq!(world.clock.play_time_seconds, 2);
+    world.tick_play_clock(1002.9);
+    assert_eq!(world.clock.play_time_seconds, 2, "whole seconds only");
+    // A loaded save's total is kept: the clock adds deltas, never assigns.
+    world.clock.play_time_seconds = 3600;
+    world.tick_play_clock(1004.0);
+    assert_eq!(world.clock.play_time_seconds, 3602);
+
+    // New Game after a long session: the next reading is a fresh origin, and
+    // the one after it counts at once rather than waiting out the old mark.
+    world.tick_play_clock(5000.0);
+    world.begin_new_game();
+    assert_eq!(world.clock.play_time_seconds, 0);
+    world.tick_play_clock(5010.0);
+    assert_eq!(world.clock.play_time_seconds, 0);
+    world.tick_play_clock(5013.0);
+    assert_eq!(world.clock.play_time_seconds, 3);
+}
