@@ -49,8 +49,14 @@ impl PlayWindowApp {
     /// mid-scene would otherwise never reach the GPU. The comparison is
     /// against the id each draw was built from, so a stream that re-issues
     /// the same swap every frame uploads once.
+    ///
+    /// The player's rig rides the same re-upload: a `CC F8 50` that re-staged
+    /// the player's model raises the world's rig-change signal
+    /// (`World::take_player_rig_change`), and the upload binds the rig from
+    /// `SceneHost::player_rig_mesh`.
     pub(super) fn rebind_live_npc_models(&mut self) {
-        let changed = {
+        let player_changed = self.session.host.world.take_player_rig_change();
+        let changed = player_changed || {
             let world = &self.session.host.world;
             self.field_npc_draws.iter().any(|d| {
                 world
@@ -818,6 +824,9 @@ impl PlayWindowApp {
             .iter()
             .filter_map(|(&slot, &id)| self.live_npc_mesh(id).map(|m| (slot, m)))
             .collect();
+        // The player's rig mesh: the lead's field form, or the model a
+        // `CC F8 50` re-staged the player onto (`SceneHost::player_rig_mesh`).
+        let player_rig = self.session.host.player_rig_mesh();
         let world = &mut self.session.host.world;
         for i in 0..self.scene_tmd_data.len() {
             world.set_actor_tmd_binding(i, i);
@@ -853,25 +862,27 @@ impl PlayWindowApp {
         if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
             && let Some(pslot) = world.player_actor_slot
         {
-            let lead = world.party.active_party.first().copied().unwrap_or(0) as usize;
-            let gtmd = world
-                .global_tmd_pool
-                .get(lead)
-                .and_then(|s| s.as_ref())
-                .map(std::sync::Arc::clone);
-            if let Some(g) = gtmd {
+            let roster_lead = world.party.active_party.first().copied().unwrap_or(0) as usize;
+            if let Some(g) = player_rig {
                 // The party locomotion ANM bundle (PROT 0874 §1; idle = bank
                 // slot 1, walk = bank slot 0, both pinned live - see
                 // `character_pack::LOCOMOTION_IDLE_SLOT` / `_WALK_SLOT`).
                 // Banks cover the Vahn/Noa/Gala trio only.
-                let locomotion = self
+                let locomotion_bank = self
                     .session
                     .host
                     .index
                     .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
                     .ok()
-                    .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok())
-                    .filter(|_| lead <= 2);
+                    .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+                // The rest pose and the bone cap come from the MESH's slot: a
+                // party-slot mesh (the lead's form, or a `CC F8 50` operand
+                // `>= 0xF0`) poses from its own bank, a scene-bank model has
+                // none. The clip player stays the roster lead's - its settle
+                // pick binds scene records itself while the party-bank bit is
+                // down (`FieldPlayerAnim::select_scene_record`).
+                let lead = g.party_slot.unwrap_or(usize::MAX);
+                let locomotion = locomotion_bank.clone().filter(|_| lead <= 2);
                 // Rest pose: frame 0 of the character's standing-idle clip.
                 // Retail caps the live object count to the clip's bone count
                 // (10; groups 10/11 are equipment-swap templates, never drawn
@@ -966,16 +977,20 @@ impl PlayWindowApp {
                             // bank, ticked by the world's field step (the
                             // settle tail picks the slot, the posed rebuild
                             // consumes `pose_frame`).
-                            let anim = locomotion.as_ref().and_then(|bundle| {
-                                legaia_engine_core::field_anim::FieldPlayerAnim::from_locomotion_bank(
-                                    bundle, lead,
-                                )
-                            });
+                            let anim = locomotion_bank
+                                .as_ref()
+                                .filter(|_| roster_lead <= 2)
+                                .and_then(|bundle| {
+                                    legaia_engine_core::field_anim::FieldPlayerAnim::from_locomotion_bank(
+                                        bundle, roster_lead,
+                                    )
+                                });
                             let animated = anim.is_some();
                             world.set_field_player_anim(anim);
                             log::info!(
-                                "play-window: player (roster {lead}) -> pool mesh slot {new_idx} \
-                                 ({}{}{})",
+                                "play-window: player (roster {roster_lead}, model {:?}) -> pool \
+                                 mesh slot {new_idx} ({}{}{})",
+                                g.model_id,
                                 if idle_pose.is_some() {
                                     "rest-posed from locomotion idle frame 0"
                                 } else {
@@ -998,8 +1013,9 @@ impl PlayWindowApp {
                 }
             } else {
                 log::warn!(
-                    "play-window: global TMD pool has no entry for roster slot {lead}; \
-                     player keeps the placeholder binding"
+                    "play-window: no rig mesh for roster slot {roster_lead} (model {:?}); \
+                     player keeps the placeholder binding",
+                    world.locomotion.player_live_model
                 );
             }
         }
