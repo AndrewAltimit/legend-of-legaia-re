@@ -832,10 +832,6 @@ struct PlayWindowApp {
     /// This frame's dev-menu row-list draws, rebuilt by `tick_dev_menu` and
     /// appended by the (immutable) HUD builder. Empty unless the menu is on.
     dev_menu_draws: Vec<TextDraw>,
-    /// Whole seconds of window wall clock already folded into
-    /// `World::clock.play_time_seconds`. The high-water mark `tick_play_clock`
-    /// deltas against, so a loaded save's accumulated total survives.
-    play_clock_secs: u32,
     /// Whether the dev menu is showing the battle-records page
     /// (`FUN_801ED710`) instead of its row list. Square toggles it while the
     /// list has the pad; retail reaches the same readout from a row of the
@@ -1290,20 +1286,13 @@ impl PlayWindowApp {
         legaia_engine_render::pause_menu::MenuRects::new(self.menu_window_table.as_ref()).rect(id)
     }
 
-    /// Advance `World::clock.play_time_seconds` by the whole seconds elapsed since
-    /// the last call.
-    ///
-    /// Kept as a delta against a host-side high-water mark rather than as an
-    /// assignment: the world's counter is restored from a save
-    /// (`SaveExtV2::play_time_seconds`), so an absolute write would discard
-    /// every previously accumulated hour the moment a save loaded.
+    /// Advance `World::clock.play_time_seconds` off the window's wall clock,
+    /// through the engine's one play-clock law (`World::tick_play_clock`) -
+    /// the browser page's `tick_play_clock` calls the same kernel. The origin
+    /// and high-water mark live on the world, so New Game restarts them.
     pub(super) fn tick_play_clock(&mut self) {
-        let now = self.win.elapsed_secs().max(0.0) as u32;
-        if now > self.play_clock_secs {
-            let delta = now - self.play_clock_secs;
-            self.play_clock_secs = now;
-            self.session.host.world.advance_play_time(delta);
-        }
+        let now = f64::from(self.win.elapsed_secs());
+        self.session.host.world.tick_play_clock(now);
     }
 
     /// Apply the live side-effects of [`Self::options_state`] (currently

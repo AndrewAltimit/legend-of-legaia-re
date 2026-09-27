@@ -330,6 +330,16 @@ impl PlayWindowApp {
                 Ok(_) => {}
                 Err(e) => log::error!("session tick: {e:#}"),
             }
+            // The Field <-> Battle mode edge, latched on the tick that
+            // crossed it. The battle load it runs installs gameplay state as
+            // well as meshes - the party's idle / action clips, art banks and
+            // art records - so it cannot wait for the display frame: this call
+            // used to sit only after the tick loop, and the first one to three
+            // battle ticks of a catch-up frame ran without them. The browser
+            // page latches the edge per sim tick too (`tick_battle_presentation`).
+            // Edge-latched, so the call after the loop is a no-op when this one
+            // already fired.
+            self.sync_battle_render();
             // A scripted mesh re-bind this tick (motion-VM op `0x0E`) needs
             // the swapped mesh uploaded; the world holds the new id and the
             // draw holds the old one.

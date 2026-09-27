@@ -65,6 +65,20 @@ impl ApplicationHandler for PlayWindowApp {
                 evl.exit();
             }
             WindowEvent::Resized(size) => self.win.handle_resize(size.width, size.height),
+            // Losing focus drops every held key, as the browser page's `blur`
+            // handler does: the release of a key held while the window lost
+            // focus never arrives here, so the player kept walking into a
+            // wall until the key was pressed and released again.
+            WindowEvent::Focused(false) => {
+                let prev = self.pad;
+                self.pad = 0;
+                self.pad_taps.clear();
+                if prev != 0
+                    && let Some(log) = self.record_log.as_mut()
+                {
+                    log.record_transition(self.session.frames, 0);
+                }
+            }
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {

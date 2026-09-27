@@ -526,7 +526,9 @@ pub(super) fn cmd_play_window_with_record(
         // picker - stage the scene at its canonical free-roam visit (entry
         // BGM pause dropped, story-twin event flags seeded). The boot-UI
         // NEW GAME handler clears the staging again via `begin_new_game`.
-        session.host.world.seed_free_roam_story_baseline(scene);
+        // The engine's one picker rule (`World::stage_picker_entry`), which
+        // the browser page's `enter_field` asks too.
+        session.host.world.stage_picker_entry(scene, false);
         // Drop into the live field scene (run record 0, install the encounter
         // table, arm the live loop). Shared with the v0.1 oracle + headless
         // drivers via `BootSession::enter_field_live`.
@@ -658,21 +660,21 @@ pub(super) fn cmd_play_window_with_record(
         }
     }
 
-    // Play-window demo seeding (NOT part of the shared field-live core): when
-    // a player-driven battle is requested but the boot save carries no items /
-    // saved chains, seed a couple so the Item / Arts submenus are exercisable
-    // by hand. No-ops when the save already has inventory / chains.
     // Battle chip / banner labels off the user's own disc: the `Ambushed!` and
     // `surprised the enemy` lines, `Spirit`, `Escape` and the per-character
-    // Ra-Seru magic-command name. Empty on a partial extraction, in which case
-    // the port's own wording draws instead of nothing.
-    if player_battle {
-        // Both label halves were installed at boot (`boot.rs`, the builder
-        // the browser page shares).
-        // The party cast trigger's per-spell anim-pair lists, off the same
-        // battle-overlay image.
-        session.host.world.battle.spell_anim_pairs =
-            legaia_engine_core::battle_open::spell_anim_pairs_from_prot(&session.host.index);
+    // Ra-Seru magic-command name, both halves installed at boot (`boot.rs`,
+    // the builder the browser page shares). Empty on a partial extraction, in
+    // which case the port's own wording draws instead of nothing.
+    //
+    // The party cast trigger's per-spell anim-pair lists, off the same
+    // battle-overlay image, for every battle - not only player-driven ones.
+    // An auto-battle (`--no-player-battle`) casts spells too, and the browser
+    // page installs the lists unconditionally at disc load; gating them on
+    // the command menu left the native auto-battle's casts without their
+    // trigger animation.
+    session.host.world.battle.spell_anim_pairs =
+        legaia_engine_core::battle_open::spell_anim_pairs_from_prot(&session.host.index);
+    {
         let n = session.host.world.battle.ui_strings.len();
         log::info!("play-window: battle UI labels read off the disc ({n} string(s))");
     }
@@ -759,7 +761,17 @@ pub(super) fn cmd_play_window_with_record(
         }
     }
 
-    if player_battle {
+    // Play-window demo seeding (NOT part of the shared field-live core): two
+    // demo items, two saved chains per character and a one-command demo art
+    // written over every character's `Art1B` record, so the Item / Arts
+    // submenus are exercisable by hand on an empty boot save. Opt-in
+    // (`LEGAIA_DEMO_BATTLE_SEED=1`): it used to ride the default-on
+    // player-battle flag, so every native session that booted without a save
+    // played with free items and a fabricated art the browser page never
+    // had - the same engine, two different parties.
+    let demo_seed = std::env::var("LEGAIA_DEMO_BATTLE_SEED").is_ok_and(|v| v == "1");
+    if player_battle && demo_seed {
+        log::info!("play-window: LEGAIA_DEMO_BATTLE_SEED=1 - seeding demo items / chains / art");
         let world = &mut session.host.world;
         if world.party.inventory.is_empty() {
             world.party.inventory.insert(0x01, 5); // Healing Leaf
@@ -1205,7 +1217,6 @@ pub(super) fn cmd_play_window_with_record(
         face_tables_attempted: false,
         dev_menu: None,
         dev_menu_draws: Vec::new(),
-        play_clock_secs: 0,
         dev_menu_records: false,
         fishing_banners: Default::default(),
         fishing_banner_draws: Vec::new(),

@@ -232,7 +232,7 @@ guard over a fill the port does not perform.
 
 # --- native: the window's redraw tick loop ---------------------------------
 #
-# All five arms skip the same sixteen kernels, and for one reason: the arm
+# All five arms skip the same kernels, and for one reason: the arm
 # exists to keep the world frozen while something else owns the frame. What
 # each arm does NOT skip is the interesting half - every one of them steps the
 # field party HUD's decision kernel, because its answer is read back by a draw
@@ -259,6 +259,7 @@ skips = [
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
     "rebind_live_npc_models",
+    "sync_battle_render",
     "sync_dialog_panel",
     "sync_text_balloon",
     "tick_dev_menu",
@@ -287,6 +288,7 @@ skips = [
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
     "rebind_live_npc_models",
+    "sync_battle_render",
     "sync_dialog_panel",
     "sync_text_balloon",
     "tick_dev_menu",
@@ -317,6 +319,7 @@ skips = [
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
     "rebind_live_npc_models",
+    "sync_battle_render",
     "sync_dialog_panel",
     "sync_text_balloon",
     "tick_dev_menu",
@@ -346,6 +349,7 @@ skips = [
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
     "rebind_live_npc_models",
+    "sync_battle_render",
     "sync_dialog_panel",
     "sync_text_balloon",
     "tick_dev_menu",
@@ -545,6 +549,12 @@ host = "native"
 kernel = "rebind_live_npc_models"
 host_only = true
 reason = "The window has to upload a re-bound mesh before it can draw it, so the swap is a per-frame step. The page resolves the same `World::field_npc_live_model` at read time, from JS, when it asks for the mesh."
+
+[[frame_kernel]]
+host = "native"
+kernel = "sync_battle_render"
+host_only = true
+reason = "The Field <-> Battle mode-edge latch (battle load / teardown: meshes, VRAM, and the party's clips, art banks and art records). The page latches the same edge as the first step of its `tick_battle_presentation` (play_battle.rs), per sim tick, so it has no separately named step; the window names it because the load also rebuilds wgpu buffers. It is called inside the tick loop right after the scene tick - the display-frame-only call left up to three battle ticks of a catch-up frame without party clips - and once more after the loop, where it is a no-op unless no tick ran."
 
 [[frame_kernel]]
 host = "native"

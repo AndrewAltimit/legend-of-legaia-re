@@ -368,6 +368,9 @@ impl PlayWindowApp {
                         g.passed()
                     );
                 }
+                // A door-entered hall closes its mode-24 round trip here as
+                // the Start escape does (a no-op for a `K`-launched one).
+                self.session.host.world.close_minigame_round_trip();
             } else if self.start_dance_minigame(false) {
                 log::info!(
                     "dance: count-in - Square/Circle are the arrows, Triangle spends a groovy move, K to quit"
@@ -408,6 +411,7 @@ impl PlayWindowApp {
                         s.record.best_points
                     );
                 }
+                self.session.host.world.close_minigame_round_trip();
             } else if self.start_fishing_minigame() {
                 log::info!(
                     "fishing: started - Circle casts/locks, Cross reels(A), Square reels(B), L to quit, P = prize exchange"
@@ -479,6 +483,7 @@ impl PlayWindowApp {
                         self.session.host.world.minigames.casino_coins
                     );
                 }
+                self.session.host.world.close_minigame_round_trip();
             } else if self.start_slot_minigame() {
                 log::info!(
                     "slots: started - Cross spins/stops/collects (3 coins a spin), O to cash out"
@@ -497,6 +502,11 @@ impl PlayWindowApp {
             && !self.boot_ui.is_active()
         {
             if self.session.host.world.mode == SceneMode::MuscleDome {
+                // A door-entered dome gets its music back from the round
+                // trip's own restore (`close_minigame_round_trip` below);
+                // only an `M`-launched one needs the window's direct restart,
+                // or the door session's field track would start twice.
+                let door_entered = self.session.host.world.minigames.scene_backup.is_some();
                 // `World::leave_muscle_dome` is the escape both hosts share:
                 // it reports the leg (a leg left undecided is the arena's
                 // run / give-up path, retail's `_DAT_80084448 = 4` arm) and
@@ -513,8 +523,11 @@ impl PlayWindowApp {
                             s.hp_left()
                         ),
                     }
-                    self.session.restore_field_bgm();
+                    if !door_entered {
+                        self.session.restore_field_bgm();
+                    }
                 }
+                self.session.host.world.close_minigame_round_trip();
             } else if self.start_muscle_minigame() {
                 log::info!(
                     "muscle: started - fight to a KO, arrows enter directions, Cross confirms, M to leave"
@@ -532,6 +545,10 @@ impl PlayWindowApp {
             && !self.boot_ui.is_active()
         {
             if self.session.host.world.mode == SceneMode::BakaFighter {
+                // `exit_baka_fighter` runs the round trip (and its music
+                // restore) itself for a door-entered duel; the window's
+                // direct restart is for a `B`-launched one only.
+                let door_entered = self.session.host.world.minigames.scene_backup.is_some();
                 if let Some(f) = self.session.host.world.exit_baka_fighter() {
                     match f.winner() {
                         Some(0) => log::info!(
@@ -542,7 +559,9 @@ impl PlayWindowApp {
                         Some(_) => log::info!("baka: match lost"),
                         None => log::info!("baka: match aborted"),
                     }
-                    self.session.restore_field_bgm();
+                    if !door_entered {
+                        self.session.restore_field_bgm();
+                    }
                 }
             } else if self.start_baka_minigame() {
                 log::info!(
