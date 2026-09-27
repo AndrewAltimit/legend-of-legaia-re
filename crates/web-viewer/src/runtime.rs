@@ -1121,6 +1121,16 @@ impl LegaiaRuntime {
             self.on_scene_change_audio();
             return Ok(name);
         }
+        // A `CC F8 50` re-staged the player's model this tick: rebuild the
+        // rig from the new mesh, the native window's twin
+        // (`rebind_live_npc_models` there drains the same signal).
+        if self
+            .scene_host
+            .as_mut()
+            .is_some_and(|h| h.world.take_player_rig_change())
+        {
+            self.build_player_rig();
+        }
         // A field-VM op-0x49 sub-0 merchant armed a shop this tick: hand it to
         // the menu runtime so the page can open the store. The field VM stays
         // suspended (op-0x49 Armed) until `play_shop_input` sees the session
@@ -1998,32 +2008,35 @@ impl LegaiaRuntime {
         if !matches!(host.world.mode, SceneMode::Field | SceneMode::WorldMap) {
             return;
         }
-        let lead = host.world.party.active_party.first().copied().unwrap_or(0) as usize;
-        let Some(g) = host
-            .world
-            .global_tmd_pool
-            .get(lead)
-            .and_then(|s| s.as_ref())
-            .map(std::sync::Arc::clone)
-        else {
+        let roster_lead = host.world.party.active_party.first().copied().unwrap_or(0) as usize;
+        // The lead's field form, or the model a `CC F8 50` re-staged the
+        // player onto - one resolution for both hosts
+        // (`SceneHost::player_rig_mesh`).
+        let Some(g) = host.player_rig_mesh() else {
             crate::console_log(&format!(
-                "play: global TMD pool has no field mesh for roster slot {lead}"
+                "play: no rig mesh for roster slot {roster_lead} (model {:?})",
+                host.world.locomotion.player_live_model
             ));
             return;
         };
         // The party locomotion bundle (PROT 0874 §1) banks the Vahn / Noa / Gala
-        // trio only; any other lead renders in its TMD-local rest pose.
-        let locomotion = host
+        // trio only. The bone cap follows the MESH's slot (a scene-bank model
+        // has none); the clip player stays the roster lead's, whose settle
+        // pick binds scene records itself while the party-bank bit is down.
+        let locomotion_bank = host
             .index
             .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
             .ok()
-            .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok())
-            .filter(|_| lead <= 2);
+            .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+        let lead = g.party_slot.unwrap_or(usize::MAX);
         let rec = |slot| legaia_asset::character_pack::locomotion_record_index(lead, slot);
-        let bones = locomotion.as_ref().and_then(|bundle| {
-            let idx = rec(legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT);
-            bundle.record(idx).ok().map(|r| r.bone_count as usize)
-        });
+        let bones = locomotion_bank
+            .as_ref()
+            .filter(|_| lead <= 2)
+            .and_then(|bundle| {
+                let idx = rec(legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT);
+                bundle.record(idx).ok().map(|r| r.bone_count as usize)
+            });
         let mut tmd = g.tmd.clone();
         if let Some(b) = bones {
             tmd.objects.truncate(b);
@@ -2045,9 +2058,15 @@ impl LegaiaRuntime {
         // Live locomotion playback: the leader's whole bank, from which the
         // world's settle tail picks idle / walk / run / hop each field tick
         // and folds the pose into the player actor.
-        let anim = locomotion.as_ref().and_then(|bundle| {
-            legaia_engine_core::field_anim::FieldPlayerAnim::from_locomotion_bank(bundle, lead)
-        });
+        let anim = locomotion_bank
+            .as_ref()
+            .filter(|_| roster_lead <= 2)
+            .and_then(|bundle| {
+                legaia_engine_core::field_anim::FieldPlayerAnim::from_locomotion_bank(
+                    bundle,
+                    roster_lead,
+                )
+            });
         host.world.set_field_player_anim(anim);
     }
 
