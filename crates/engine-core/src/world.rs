@@ -196,6 +196,7 @@ mod handler_actors;
 pub use handler_actors::TransitionSweepReport;
 mod items_arts;
 mod narration;
+pub mod pause_session;
 mod prop_interact;
 mod retail_progression;
 pub use retail_progression::RetailProgressionTables;

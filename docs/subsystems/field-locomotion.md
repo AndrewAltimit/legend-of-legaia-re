@@ -1901,8 +1901,11 @@ dwell waits on flag `0x0B`, which the opener clears in its state 4 (program 0) o
 third beat (program 1). Rula's phase 2 (`0x801EE400..0x801EE4C4`) re-reads the player's
 live `+0x16` every frame, subtracts the accumulating velocity, raises the player's `+0x10`
 bit 0 and scratchpad `0x1F800394` bit 24, and on crossing `-0x618` clears the post-warp
-pad hold `_DAT_8007B6B4` along with the flash; the world applies each of those to the
-player actor. Riremito's resolve restores the render scale its opener zeroed (`+0x72 =
+pad hold `_DAT_8007B6B4` along with the fade spawn; the world applies each of those to the
+player actor. Riremito clears the same hold at its own fade spawn (`0x801EE168`). The
+"flash" both arms spawn is one stack template handed to `FUN_80024E80(template, 1)`: kind
+`2`, a `0x20`-frame ramp from black to white, hold `-1` - under the kind-`2` `B - F` blend a
+fade to black that holds until the destination loads. Riremito's resolve restores the render scale its opener zeroed (`+0x72 =
 0x1000`) and drops `+0x10 & 0x200000` (`0x801EE268..0x801EE294`). The warp seats the
 player at the stored tile with Y `0` (`*0x80073EFC = 0`) and then runs the MAN loader's
 resume (`World::man_load_resume_programs`) - the engine's warp stays on the loaded map, so
@@ -1922,10 +1925,37 @@ session `FUN_801ED308`. The menu overlay's item use consumes `0x88` and returns 
 stages the destination from the quick-travel records `0x80073A98` into
 `0x80084624..0x8008462C` and returns `5` (`0x801D8CD0`, `0x801D8D3C`); the menu's close adds
 `3` (`0x801DC9E0`). `FUN_801ED308`'s case 4 stores `code - 1` as its next state, and states
-`6` / `7` (`0x801ED530` / `0x801ED554`) store handler id `0x29` / `0x2B`. The port's pause
-menu takes a direct scene transition for the two items (`World::drain_staged_menu_warp`)
-rather than installing the arts; it installs Riremito from the world-map debug sub-list's
-hand-off and Rula from tests only.
+`6` / `7` (`0x801ED530` / `0x801ED554`) store handler id `0x29` / `0x2B`.
+
+The engine runs that chain on both play hosts through the world tick. A host that closes
+its pause menu on a Door use stages the destination (`World::menu.pending_warp` /
+`pending_escape`); `World::drain_staged_menu_warp` hands it to the session
+(`World::begin_pause_session_exit`), seeded at the park phase with the counter the close
+leaves; `World::tick_pause_session` runs `FUN_801ED308`'s ramp-down (`fade_flash_tick`) to
+its phase-6 or phase-7 arm, installs the art that arm's handler id names
+(`TravelArt::for_handler_id`), runs it, spawns its fade into the world's fade seat, and on
+the resolve frame issues the named scene transition the scene host drains. Two things are
+the port's: the menu itself is the hosts' `MenuRuntime`, so the session starts at its
+park phase rather than at phase 0; and a destination that does not resolve drops the use
+before the art is installed, where retail would run the art and park in `UNFIND MAP NUMBER`
+with the opener still holding the player. The world-map debug sub-list's hand-off still
+installs Riremito on the overworld panel host.
+
+The resolve's scan table is the resident CDNAME define table, not a record of visited
+maps: `FUN_80019788` returns `0x80088758`, the count is the halfword at `0x8007B806`, and
+each `0x10`-byte record is a scene name followed at `+0xC` by its `#define` number, which
+`FUN_8003CE9C` reads as an `s16` (a retail `retock` RAM image holds 125 records, `init_data`
+= 0, `gameover_dat` = 1, `town01` = 3). The scan therefore turns the raw TOC index at
+`0x80084628` into a scene name, and `FUN_8001FD44` copies that name into the scene-name
+buffer `0x80084548`. The menu warp resolves the same index through the CDNAME map the scene
+host installs.
+
+The menu button's own hop is ported too. `FUN_801F1278` stores handler id `7` at
+`0x801F140C`, and `FUN_801F1F4C` (`legaia_engine_vm::field_state_pick::state_pick`) picks
+`0x30` unless a debug build holds the packed pad's `0x100` bit with no op-`0x49` park.
+`World::field_menu_button_state` runs it, and `World::field_menu_open_allowed` - the gate
+all three hosts open the pause menu behind - opens only when it picks `0x30`. The debug
+word is the overworld controller's `debug_enabled`; field scenes carry retail's zero.
 
 The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), the scripted-scene voice file. That call site is program 2's state `0x16`, and it is a seek-ahead (`CdlSeekL`, no read), not a stream: the voice itself is state `0x17`'s `FUN_8003D53C(0x10, 7, 0x135)` one-shot.
 

@@ -754,9 +754,9 @@ impl World {
             // `FUN_801ED308` (handler id `0x30`): a Door of Light / Door of
             // Wind use returns exit code `7` / `8`, and its case 4 turns that
             // into state `6` / `7`, which hand the actor on to handler id
-            // `0x29` (`FUN_801EE094`) / `0x2B` (`FUN_801EE328`). The port's
-            // menu drain takes a direct scene transition for those two items
-            // instead - `World::drain_staged_menu_warp`.)
+            // `0x29` (`FUN_801EE094`) / `0x2B` (`FUN_801EE328`). The engine
+            // runs that hand-off for the two items in
+            // `World::tick_pause_session`.)
             if let Some(ctrl) = self.world_map.ctrl.as_mut() {
                 log::info!("world-map: sub-list hand-off -> Riremito travel art");
                 ctrl.panels
@@ -804,25 +804,44 @@ impl World {
 
     /// Apply what a travel-art frame did to the world: the phase-0 opener
     /// (flag `0x0B` + scripted-scene program `n`, `0x801EE39C` / Riremito's
-    /// twin), Rula's lift on the player (`0x801EE400..0x801EE4C4`: live
-    /// `+0x16`, `+0x10 |= 1`, scratchpad `0x1F800394 |= 0x1000000`) and its
-    /// exit's pad-hold clear (`0x801EE478`), and Riremito's resolve-time
-    /// restore of the player (`0x801EE268..0x801EE294`).
+    /// twin), the phase exit's pad-hold clear (Riremito `0x801EE168`, Rula
+    /// `0x801EE478`), Rula's lift on the player (`0x801EE400..0x801EE4C4`:
+    /// live `+0x16`, `+0x10 |= 1`, scratchpad `0x1F800394 |= 0x1000000`) and
+    /// Riremito's resolve-time restore of the player
+    /// (`0x801EE268..0x801EE294`).
     ///
     /// REF: FUN_801EE328, FUN_801EE094 (the kernel is
     /// `legaia_engine_vm::travel_art_actor::TravelArtActor::tick`)
     fn apply_travel_art_frame(&mut self, frame: &crate::world_map_panel_host::PanelFrame) {
+        self.apply_travel_art_outputs(
+            frame.travel_queue_program,
+            frame.clear_warp_hold,
+            frame.lift_player_y,
+            frame.restore_player,
+        );
+    }
+
+    /// The world half of one travel-art frame, shared by the world-map panel
+    /// binding ([`Self::apply_travel_art_frame`]) and the pause-menu session
+    /// (`World::tick_pause_session`).
+    pub(crate) fn apply_travel_art_outputs(
+        &mut self,
+        queue_program: Option<u16>,
+        clear_warp_hold: bool,
+        lift_player_y: Option<i16>,
+        restore_player: bool,
+    ) {
         use legaia_engine_vm::travel_art_actor as ta;
-        if let Some(program) = frame.travel_queue_program {
+        if let Some(program) = queue_program {
             self.system_flag_set(u16::from(crate::field_actor_program::FLAG_PLAYER_BUSY));
             if self.spawn_scene_program(program).is_some() {
-                log::info!("world-map: travel art queued opener program {program}");
+                log::info!("travel art queued opener program {program}");
             }
         }
-        if frame.clear_warp_hold {
+        if clear_warp_hold {
             self.locomotion.warp.hold = 0;
         }
-        if frame.lift_player_y.is_some() {
+        if lift_player_y.is_some() {
             self.flags.story_flags |= ta::RULA_LIFT_SCRATCH_FLAG;
         }
         let Some(slot) = self.player_actor_slot else {
@@ -831,11 +850,11 @@ impl World {
         let Some(actor) = self.actors.get_mut(slot as usize) else {
             return;
         };
-        if let Some(y) = frame.lift_player_y {
+        if let Some(y) = lift_player_y {
             actor.move_state.world_y = y;
             actor.move_state.flags |= ta::RULA_LIFT_PLAYER_FLAG;
         }
-        if frame.restore_player {
+        if restore_player {
             actor.move_state.field_72 = ta::RIREMITO_RESTORE_SCALE as u16;
             actor.move_state.flags &= !ta::RIREMITO_RESTORE_CLEARED_FLAG;
         }

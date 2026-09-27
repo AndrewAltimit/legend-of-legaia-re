@@ -58,6 +58,9 @@ pub struct MenuState {
     /// `_DAT_8007B43C = 4` dungeon-escape handoff (`FUN_801D8A58`). `None`
     /// until an escape commits.
     pub pending_escape: bool,
+    /// The pause-menu session's post-menu half while a Door item's travel art
+    /// runs ([`crate::world::World::tick_pause_session`]). `None` otherwise.
+    pub pause_session: Option<crate::world::pause_session::PauseSession>,
     /// The window list those programs drive
     /// ([`crate::menu_widget::MenuWidgetState`], the `vm::Host` impl).
     /// Run against it via [`crate::world::World::run_shop_widget_open`] /
@@ -85,6 +88,7 @@ impl MenuState {
             worldmap_menu: None,
             pending_warp: None,
             pending_escape: false,
+            pause_session: None,
             widgets: Default::default(),
             notify_template: None,
             pending_art_notice: None,

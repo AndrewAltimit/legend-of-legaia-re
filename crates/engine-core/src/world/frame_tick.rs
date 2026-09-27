@@ -608,43 +608,44 @@ impl World {
         }
     }
 
-    /// Drain a menu-staged transition into the named scene transition the
-    /// scene host consumes ([`Self::pending_named_scene_transition`]).
+    /// Drain a menu-staged Door use into the pause-menu session's travel-art
+    /// hand-off ([`Self::begin_pause_session_exit`]), which runs the art and
+    /// then issues the named scene transition the scene host consumes
+    /// ([`Self::pending_named_scene_transition`]).
     ///
     /// **Door of Wind** ([`crate::world::MenuState::pending_warp`]): the staged triple is
     /// retail's `0x80084628` scene word + `0x80084624`/`0x8008462C` tile
     /// pair (`FUN_801D8B90` phase 3, from quick-travel placement record
     /// bytes `+2/+4/+5`). The scene word is the destination scene's raw
-    /// CDNAME TOC index ([`crate::world::DiscTables::scene_toc_names`]); the tile pair seats
-    /// the party at `(tile << 7) + 0x40`, the same conversion the world-map
-    /// arrival kernel applies (`FUN_801EE328`: `0x80073EF4/EF8` stores).
-    /// The named-transition drain performs exactly that seat
-    /// (`seat_player_at_tile`), entering the kingdom overworld for the
-    /// three `mapNN` bases and the field scene for the `son` / `korout`
-    /// records. An unresolvable scene word logs retail's
-    /// `UNFIND MAP NUMBER %d` diagnostic (the `FUN_801EE328` phase-`0x63`
-    /// park) and drops the warp.
+    /// CDNAME TOC index ([`crate::world::DiscTables::scene_toc_names`]), the
+    /// same key the art's resolve looks up in the resident define table; the
+    /// tile pair seats the party at `(tile << 7) + 0x40`. Exit code `5`, so
+    /// the session hands on to Rula (`FUN_801EE328`).
     ///
-    /// **Door of Light** ([`crate::world::MenuState::pending_escape`]): retail hands the
-    /// outer menu SM exit code 4 (`FUN_801D8A58`) - the dungeon-escape
-    /// handoff. Its consumer is the field overlay's pause-menu session
-    /// handler `FUN_801ED308`: the menu's close adds `3` (`0x801DC9E0`), and
-    /// case 4 stores `code - 1` as the next state, whose arm hands the actor
-    /// to handler id `0x29` - the Riremito travel art `FUN_801EE094` (Door of
-    /// Wind's `5` -> `8` -> handler `0x2B`, Rula `FUN_801EE328`). The engine
-    /// skips the art and routes the escape onto the last visited-map record
-    /// the art's resolve reads: back to that kingdom overworld at the stored
-    /// tile. With no visited record yet (the party has never stood on a
-    /// kingdom map) the escape is dropped with a diagnostic.
+    /// **Door of Light** ([`crate::world::MenuState::pending_escape`]): exit
+    /// code `4` (`FUN_801D8A58`), so the session hands on to Riremito
+    /// (`FUN_801EE094`). The three words then hold the kingdom map the party
+    /// last stood on, which the engine keeps as the world-map panel host's last
+    /// recorded map.
+    ///
+    /// A target that does not resolve logs retail's `UNFIND MAP NUMBER %d`
+    /// diagnostic and drops the use before anything is installed - see
+    /// [`crate::world::pause_session`] for why that differs from retail.
     ///
     /// REF: FUN_801D8B90 (stage), FUN_801D8A58 (escape exit code),
-    /// FUN_801EE328 (arrival tile math + UNFIND diagnostic)
+    /// FUN_801ED308 (the session), FUN_801EE094 / FUN_801EE328 (the arts)
     pub fn drain_staged_menu_warp(&mut self) {
+        use crate::pause_screens::{MENU_EXIT_CODE_FIELD_ESCAPE, MENU_EXIT_CODE_WORLD_MAP_WARP};
+        use crate::world::pause_session::PauseTravelTarget;
         if let Some(warp) = self.menu.pending_warp.take() {
             match self.tables.scene_toc_names.get(&u32::from(warp.scene_id)) {
                 Some(name) => {
-                    self.pending_named_scene_transition =
-                        Some((name.clone(), warp.menu_x, warp.menu_y, 0));
+                    let target = PauseTravelTarget {
+                        scene: name.clone(),
+                        tile_x: warp.menu_x,
+                        tile_z: warp.menu_y,
+                    };
+                    self.begin_pause_session_exit(MENU_EXIT_CODE_WORLD_MAP_WARP, target);
                 }
                 None => {
                     // Retail's miss arm prints and parks (phase 0x63).
@@ -670,12 +671,12 @@ impl World {
                             return;
                         }
                     };
-                    self.pending_named_scene_transition = Some((
-                        name.to_string(),
-                        v.tile_x.clamp(0, 0xFF) as u8,
-                        v.tile_z.clamp(0, 0xFF) as u8,
-                        0,
-                    ));
+                    let target = PauseTravelTarget {
+                        scene: name.to_string(),
+                        tile_x: v.tile_x.clamp(0, 0xFF) as u8,
+                        tile_z: v.tile_z.clamp(0, 0xFF) as u8,
+                    };
+                    self.begin_pause_session_exit(MENU_EXIT_CODE_FIELD_ESCAPE, target);
                 }
                 None => {
                     log::warn!("menu escape: no visited world-map record to return to");
@@ -1412,10 +1413,14 @@ impl World {
         if runs_master_driver {
             self.tick_three_actor_talk();
         }
-        // Menu-staged transitions (Door of Wind warp / Door of Light
-        // escape): convert the staged record into the named scene
-        // transition the scene host already drains.
+        // Menu-staged Door uses (Door of Wind warp / Door of Light
+        // escape): hand the staged record to the pause-menu session, whose
+        // travel art ends in the named scene transition the scene host
+        // already drains.
         self.drain_staged_menu_warp();
+        // The pause-menu session's post-menu half: the ramp-down to the
+        // travel-art hand-off, then the art itself, on every host.
+        self.tick_pause_session();
         // A minigame the player can enter must be one the player can leave.
         self.poll_minigame_escape();
         // Age the minigame effect-part pool. Here rather than in a host's own

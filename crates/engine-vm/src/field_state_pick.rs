@@ -51,32 +51,13 @@
 //! pad bit has to be held on the frame the handler runs. That is why the
 //! shortcut is invisible in ordinary play even on a debug build.
 //!
-//! # Not wired
+//! # Where the engine runs it
 //!
-//! The blocker is the **route to this slot**, and the actor pair is not part
-//! of it.
-//!
-//! `engine-core` does model `+0x50` / `+0x54`: they are `Actor::state_50` and
-//! `Actor::state_54`, documented at those offsets, and `man_load_actor_reset`
-//! already clears the second on a fresh submode driver. The table this handler
-//! sits in is dispatched live, too - slot `7` of the 52-entry
-//! `PTR_FUN_801F33B4`, whose port is `World::tick_submode_screen`'s `run_slot`
-//! over [`crate::baka_hub_actors::slot`].
-//!
-//! What is missing is anything that puts `7` in an actor's `+0x50`, and the
-//! reason is not the one this note used to give. The op-`0x49` payload **is**
-//! carried: `slot_for_op49_sub_op` indexes retail's own sub-op table
-//! ([`crate::baka_hub_actors::OP49_SUBOP_SLOTS`] at `0x801F33A4`) with the
-//! parked operand's first byte, exactly as the enter half does at
-//! `0x801F145C`. The route cannot come from there for a stronger reason: that
-//! table's fourteen entries name slots `0x21`..`0x33` and `-1`, and **none of
-//! them is `7`**, so no `49 <sub_op>` reaches this handler in retail either.
-//!
-//! Slot `7` is a **return** state, and the writer is the submode enter half
-//! itself - the routine whose table read at `0x801F145C` the port already
-//! cites. Scanning every based overlay image for a store of the immediate `7`
-//! into `+0x50` finds exactly one site, at `0x801F140C`, and its surroundings
-//! are the same four writes this handler makes:
+//! Slot `7` is the subsystem actor's **default** handler. The menu button's
+//! accept in the field overlay's pad controller (`FUN_801D01B0`,
+//! `0x801D0318..0x801D0328`) spawns the actor, and its installer
+//! `FUN_801F1278` stores `7` into `+0x50` at `0x801F140C`, after the same
+//! `scene[+0x2E]` / `scene[+0x40]` pair this handler writes:
 //!
 //! ```text
 //! 801f13f4  sh   v0,0x2e(v1)     ; scene[+0x2E] = -1
@@ -86,29 +67,24 @@
 //! 801f141c  sh   zero,0x54(s4)
 //! ```
 //!
-//! Then, when `_DAT_8007B450` names a sub-op the `0x801F33A4` table gives a
-//! handler for, the same routine immediately does it **again** at
-//! `0x801F1474..0x801F14AC` - saving the `7` it just installed into
-//! `scene[+0x40]` and overwriting `+0x50` with the table's slot. So `7` is what
-//! the screen returns to: the hand-back restores `+0x50` from `scene[+0x40]`,
-//! this handler runs once, and installs `0x30` (or `0x13` on the debug
-//! shortcut).
+//! When `_DAT_8007B450` names a sub-op the `0x801F33A4` table gives a slot
+//! for, the installer immediately overwrites that `7` with the table's slot
+//! (`0x801F1474..0x801F14AC`); none of the table's fourteen entries is `7`.
+//! On the menu-button path nothing overwrites it, so this handler runs once on
+//! the actor's first dispatch and installs [`STATE_NORMAL`] - the pause-menu
+//! session `FUN_801ED308` - or [`STATE_DEBUG`] on the debug shortcut.
 //!
-//! That is what the port has no room for. `field_submode_screen` installs the
-//! table's slot directly, collapsing a two-step chain into one, and carries no
-//! `scene[+0x40]` return slot for the intermediate state to be parked in. The
-//! remaining work is the return slot and the debug-mode word, not a dispatch
-//! arm.
+//! The engine opens its pause menu from the hosts' Start edge rather than
+//! from an actor, behind the shared gate
+//! `legaia_engine_core::world::World::field_menu_open_allowed`. That gate asks
+//! `World::field_menu_button_state`, which runs [`state_pick`] with the
+//! actor's default slot, and opens the menu only on [`STATE_NORMAL`]. The
+//! debug-mode word is the overworld controller's `debug_enabled` flag, the
+//! engine's home for `_DAT_8007B98C`; field scenes carry retail's zero.
 //!
-//! The `+0x2E` / `+0x40` pair the handler writes is **not** homeless: it is
-//! `DAT_801C6EA4`, the submode cursor context, and the port models both cells
-//! as `HubGrid::handback` / `HubGrid::stashed_state`
-//! ([`crate::baka_hub_actors::HubGrid`]), which every hand-back already
-//! writes. What is missing is the use of `+0x40` as a **return** slot - the
-//! enter half parking `7` there, and a hand-back restoring `+0x50` from it -
-//! plus the build's debug-mode word `_DAT_8007B98C`, which the engine's input
-//! path does not carry, so even reached, the handler could only ever pick
-//! [`STATE_NORMAL`].
+//! The op-`0x49` screens' own use of the table
+//! (`legaia_engine_core::field_submode_screen`) installs the sub-op's slot
+//! directly, which is the installer's second store; it never needs slot `7`.
 
 /// The state installed on every non-debug path.
 pub const STATE_NORMAL: u16 = 0x30;
@@ -160,14 +136,11 @@ pub fn picked_state(inputs: StatePickInputs) -> u16 {
 /// Run the handler. `current_state` is the actor's `+0x50` on entry.
 ///
 /// PORT: FUN_801f1f4c
-// NOT WIRED: slot `7` of `PTR_FUN_801F33B4` is a return state, installed by
-// the submode enter half `FUN_801F1278` at `0x801F140C` and parked in the
-// cursor context's `+0x40` when the op-`0x49` sub-op names a screen
-// (`0x801F1474..0x801F14AC`). `World::open_field_submode_screen` installs the
-// screen's slot directly and never parks `7`, and no hand-back restores `+0x50`
-// from `+0x40` (`HubGrid::stashed_state`), so nothing reaches this slot. The
-// debug-mode word `_DAT_8007B98C` has no engine home either. See the module's
-// `Not wired`.
+///
+/// Wired: `legaia_engine_core::world::World::field_menu_button_state`, asked
+/// by `World::field_menu_open_allowed`, the Start-edge gate the native
+/// play-window, `BootSession::tick` and the browser play page all open the
+/// pause menu behind.
 pub fn state_pick(inputs: StatePickInputs, current_state: u16) -> StatePickWrites {
     StatePickWrites {
         scene_slot_2e: -1,

@@ -573,8 +573,45 @@ impl World {
     /// button opens the menu) and `_DAT_8007B6A8` (whether Save is legal
     /// here) as two independent globals.
     ///
+    /// 3. The successor the menu button's subsystem actor picks
+    ///    ([`Self::field_menu_button_state`]) is the pause-menu session.
+    ///    Only a debug build holding the pad's `0x100` bit picks anything else.
+    ///
     /// REF: FUN_801D01B0 (`0x801D01F0` engaged bit, `0x801D0250` accept)
     pub fn field_menu_open_allowed(&self) -> bool {
-        self.scene_mode_takes_menu_open() && !self.dialogue_owns_input()
+        self.scene_mode_takes_menu_open()
+            && !self.dialogue_owns_input()
+            && self.field_menu_button_state() == legaia_engine_vm::field_state_pick::STATE_NORMAL
+    }
+
+    /// The handler id the menu button's subsystem actor moves on to.
+    ///
+    /// Retail's menu-open accept spawns the field overlay's subsystem actor
+    /// (`FUN_80020DE0(0x8007065C, ..)` at `0x801D0324`); its installer
+    /// `FUN_801F1278` stores handler id `7` (`0x801F140C`), and handler `7`
+    /// is `FUN_801F1F4C`, which picks the successor: `0x30`, the pause-menu
+    /// session `FUN_801ED308`, unless a script is parked on op `0x49`, the
+    /// debug word `_DAT_8007B98C` is set and the packed pad holds `0x100` -
+    /// then `0x13`, a debug screen the engine does not have. The engine's
+    /// debug word is the overworld controller's
+    /// [`crate::world_map::WorldMapController::debug_enabled`] (the same
+    /// `_DAT_8007B98C` gate the top-view toggle reads); in a field scene it is
+    /// retail's zero.
+    ///
+    /// PORT driver for FUN_801F1F4C (the kernel is
+    /// `legaia_engine_vm::field_state_pick::state_pick`)
+    pub fn field_menu_button_state(&self) -> u16 {
+        use legaia_engine_vm::field_state_pick::{StatePickInputs, state_pick};
+        let debug = self
+            .world_map
+            .ctrl
+            .as_ref()
+            .is_some_and(|c| c.debug_enabled);
+        let inputs = StatePickInputs {
+            script_resume_slot: u32::from(self.field_vm.submode_screen.park_sub_op.is_some()),
+            debug_mode: u32::from(debug),
+            pad_mask: u32::from(crate::world_map_panel_host::packed_pad(self.input.pad())),
+        };
+        state_pick(inputs, 7).actor_state
     }
 }
