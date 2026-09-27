@@ -670,18 +670,16 @@ impl LegaiaRuntime {
         // per-character Ra-Seru name the command ring's magic arm carries.
         // Twin of the native window's read in `window/run.rs`; without it the
         // browser draws the port's own fallback wording instead.
-        host.world.battle.ui_strings =
-            legaia_engine_core::battle_open::battle_ui_strings_from_prot(&host.index);
+        // Both halves - this overlay read and the SCUS words below - come
+        // through the one builder the native boot calls.
+        host.world.battle.ui_strings = legaia_engine_core::battle_open::battle_ui_strings_for_disc(
+            &host.index,
+            scus.as_deref(),
+        );
         // The party cast trigger's per-spell anim-pair lists, off the same
         // battle-overlay image - twin of the native window's read.
         host.world.battle.spell_anim_pairs =
             legaia_engine_core::battle_open::spell_anim_pairs_from_prot(&host.index);
-        // ... and the SCUS half - the chip words plus the sparring fight's
-        // opening caption (`FUN_80056208` -> `0x80078CB4`), which the tutorial
-        // side-band raises off `battle_ui_strings`.
-        if let Some(s) = scus.as_ref() {
-            host.world.battle.ui_strings.merge_scus(s);
-        }
 
         // Keep the executable bytes for the battle render's per-stage SCUS
         // tables (mirror list / outdoor-cue list). Nothing leaves the browser.
