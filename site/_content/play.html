@@ -822,7 +822,11 @@
           onCardLoad: (scene) => {
             try { runtime.play_menu_close(); } catch (e) {}
             saveMsg(`Loaded from memory card${scene ? ` - ${scene}` : ''}.`);
-            if (sceneKnown(scene) && scene !== active) enter(scene);
+            /* Re-enter even when the save names the scene already on screen:
+             * the load parks the save until a scene entry applies it, so
+             * skipping the entry left the player where they stood and the
+             * parked save waiting for the next scene pick. */
+            if (sceneKnown(scene)) enter(scene);
           },
           /* Party wipe -> the title card, which is retail's only answer
            * here: the wipe arm of FUN_8003AEB0 stores game_mode = 0x16
@@ -838,7 +842,15 @@
                 enter(outcome);
                 return;
               }
+              /* The same fresh slate the boot title's New Game takes - a
+               * party wipe must not carry the wiped run's flags and roster
+               * into the new game. */
+              try { if (typeof runtime.begin_new_game === 'function') runtime.begin_new_game(); }
+              catch (e) { console.warn('begin_new_game', e); }
               enter(OPENING_CUTSCENE_SCENE);
+              if (active !== OPENING_CUTSCENE_SCENE || !window.__playState) {
+                enter(OPENING_SCENE);
+              }
             });
           },
           onError: (msg) => {
