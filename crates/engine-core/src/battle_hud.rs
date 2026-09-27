@@ -923,12 +923,15 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
 /// monsters collapse into one labelled run exactly as retail's identical-id
 /// runs do. Names come from the same live catalog the HUD rows use.
 ///
-/// The projected screen X each row averages is the battle actor's `+0x34` -
-/// a GTE projection result the renderer owns - so the accumulator is left
-/// at `0` here: every row then centres at `MENU_CENTRE_X` and the retail
-/// overlap-relaxation pass in
-/// [`crate::target_picker::layout_enemy_menu_rows`] spreads them. Callers
-/// run that layout with their own text measurer before drawing.
+/// The X each row averages is the monster actor's `+0x34` - its battle
+/// **world** X (`lhu a0,0x34(v0)` at `0x801D9E00` and `0x801D9ED4`, on the
+/// actor `0x801C9370[slot + 3]`), the same halfword the battle setup
+/// `FUN_800513F0` stamps with the stage seat and the round-start squash
+/// recentres - not a GTE projection. The layout maps it to the screen as
+/// `(avg >> 3) - width / 2 + 0xA0`, so a label sits over its group's seat.
+/// It is read here off the live position; callers run
+/// [`crate::target_picker::layout_enemy_menu_rows`] with their own text
+/// measurer before drawing.
 pub fn battle_enemy_target_rows(
     world: &crate::world::World,
 ) -> Vec<crate::target_picker::EnemyMenuRow> {
@@ -979,7 +982,13 @@ pub fn battle_enemy_target_rows(
         let ordinal = twins.iter().position(|&j| j == i).unwrap_or(0) as u8;
         format!("{name} {}", (b'A' + ordinal) as char)
     };
-    enemy_menu_rows(ids, DEDUP_SUFFIX, display, |_| 0)
+    let world_x = |slot: u8| -> i16 {
+        world
+            .actors
+            .get(pc + usize::from(slot))
+            .map_or(0, |a| a.move_state.world_x)
+    };
+    enemy_menu_rows(ids, DEDUP_SUFFIX, display, world_x)
 }
 
 /// The battle-**intro** enemy-name banner this frame: one label per monster
@@ -995,9 +1004,8 @@ pub fn battle_enemy_target_rows(
 /// [`crate::target_picker::MENU_ROW_Y`]'s value, `48`.
 ///
 /// `font` is the width measure retail's `FUN_80035F04` is (the `legaia-font`
-/// layout advance). The projected screen X each group averages is left at
-/// `0` (see [`battle_enemy_target_rows`]), so the groups centre and the
-/// relaxation pass spreads them rather than seating each over its monsters.
+/// layout advance). The X each group averages is its monsters' battle world
+/// X (see [`battle_enemy_target_rows`]), so each label sits over its group.
 pub fn battle_intro_names(
     world: &crate::world::World,
     font: &legaia_font::Font,
