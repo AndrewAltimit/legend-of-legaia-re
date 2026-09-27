@@ -53,7 +53,7 @@ impl BattleActorDrawPlan {
     /// (`B + F/4`) for a body the near-camera ghost pass `FUN_8004DC68`
     /// flagged. `None` for an opaque body.
     pub fn semi_mode(&self) -> Option<u8> {
-        (self.draw_colour & 0x8000_0000 != 0).then_some(((self.draw_colour >> 24) & 3) as u8)
+        crate::battle_body_blend::draw_colour_semi_mode(self.draw_colour)
     }
 
     /// The GTE `IR0` as the hosts' `DrawCue.max_ir0` (`0x1000` = `1.0`).
