@@ -1186,17 +1186,6 @@ identity is pinned separately in battle-action.md's queue-builder section.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/battle_formulas/round.rs:80051d84"
-reason = """
-The arithmetic half of the same routine as the initiative.rs row. Its own bytes
-(the 0x8007BD24 context load, the +0x287 gate and the 0x8007B64A flag at
-0x80051D84..0x80051DC0) are battle-side; the module's siblings 801d88cc,
-801da780, 801f0348 and 801f45a4 are overlay-resident, so no corroboration can
-cross to a SCUS member. Nothing in the module claims a different subsystem for
-it.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-vm/src/motion_vm.rs:8003d038"
 reason = """
 Eleven instructions, two data addresses, no callee - too small to corroborate.

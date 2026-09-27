@@ -1640,9 +1640,15 @@ pub fn battle_member_has_raseru(world: &crate::world::World, ordinal: u8) -> boo
 /// three (Terra is `char_id` 4) lands on the `-` entry. The label comes off
 /// the disc (`World::battle.ui_strings`) and falls back to the port's own
 /// word only when the overlay strings were not read. `enabled` is the
-/// same gate: retail draws the `-` chip and refuses the arm.
+/// same gate: retail draws the `-` chip and refuses the arm. It is also
+/// cleared while the battle's special word carries
+/// [`legaia_engine_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN`] - retail
+/// keeps the name, crosses the chip out (`FUN_801DBC30(0xF8, 0x42)` at
+/// `0x801D12F0`, [`battle_magic_chip_mark`]) and refuses the arm
+/// (`0x801D1448..0x801D1454`).
 pub fn battle_magic_chip(world: &crate::world::World, ordinal: u8) -> (String, bool) {
     let has_raseru = battle_member_has_raseru(world, ordinal);
+    let forbidden = battle_raseru_forbidden(world);
     let roster = world.party_roster_slot(ordinal as usize);
     let char_id = roster as u8 + 1;
     let idx = if has_raseru && (1..=3).contains(&char_id) {
@@ -1665,7 +1671,23 @@ pub fn battle_magic_chip(world: &crate::world::World, ordinal: u8) -> (String, b
                     .to_string()
             }
         });
-    (label, has_raseru)
+    (label, has_raseru && !forbidden)
+}
+
+/// The special-battle word's Ra-Seru bit is up for this battle (the Rim Elm
+/// ambush, monster `0xAF`; see [`crate::world::BattleState::special_word`]).
+pub fn battle_raseru_forbidden(world: &crate::world::World) -> bool {
+    world.battle.special_word & legaia_engine_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN != 0
+}
+
+/// The mark the Ra-Seru chip wears in a regular battle: the red cross-out
+/// ([`crate::muscle_dome::ChipMark::Forbidden`], `FUN_801DBC30`) while the
+/// special word forbids it, else none. The phase-`0x28` arm draws the mark
+/// before it tests the pad (`0x801D12DC..0x801D12F4`).
+///
+/// PORT: FUN_801D0748 NOT WIRED: the native and browser battle chip passes should place this `etim` quad over the Ra-Seru chip (the regular ring's `0x200` mark test, `0x801D12DC..0x801D12F4`); both grey the chip through [`battle_magic_chip`]'s `enabled` and neither draws a chip mark yet (host-drift.md, "The Ra-Seru chip's cross-out reaches neither host").
+pub fn battle_magic_chip_mark(world: &crate::world::World) -> Option<crate::muscle_dome::ChipMark> {
+    battle_raseru_forbidden(world).then_some(crate::muscle_dome::ChipMark::Forbidden)
 }
 
 /// Which selection surface a chip cluster belongs to - the three clusters

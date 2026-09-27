@@ -2100,6 +2100,17 @@ The map id is `_DAT_80084540`, the loaded scene's **raw CDNAME define** (`town01
 
 Engine mirror: [`engine-core::battle_seats`](../../crates/engine-core/src/battle_seats.rs) (consumed by `World::enter_battle`).
 
+### The Ra-Seru-forbidden bit of the special-battle word
+
+The same two map-gated fights also forbid the Ra-Seru chip, through bit `0x200` of the special-battle word `_DAT_8007BAC0` (the word whose `0x100` bit is the arena's Item restriction). Two routines write it at battle setup:
+
+- **Battle init** (`FUN_800513F0`, `0x800519C0..0x80051A04`) first clears the word when it holds exactly `0x200`, so a lone Ra-Seru bit does not outlive its battle, then raises `0x200` when the formation's first monster (`DAT_8007BD0C`) is `0xAF`.
+- **The formation roll** (`FUN_80051D84`, `0x8005200C..0x8005205C`) raises `0x200` for first monster `0x3D..=0x3F` on map `0x0C` / `0x15` - the Rim Elm ambush. The test sits at the tail of the back-attack arm, which the forced ambush always takes, so a roll that runs on such a formation always raises it; a roll the caller skips (`ctx+0x287`, `DAT_8007B64A`) raises nothing. The `0xA7` force reaches the same tail and raises nothing.
+
+The battle round driver `FUN_801D0748` (PROT 0898) reads the bit twice in the command ring's phase-`0x28` arm: `0x801D12DC..0x801D12F4` draws the red cross-out (`FUN_801DBC30(0xF8, 0x42)`) over the Ra-Seru chip, and `0x801D1448..0x801D1454` returns from the chip's arm without committing. A sweep of SCUS, 0897, 0898 and 0899 for `lw` of `0x8007BAC0` followed by `andi 0x200` finds only those two readers.
+
+Engine: `BattleState::special_word` carries the regular battle's word (the Muscle Dome session keeps its own); the two raisers are `battle_formulas::battle_init_special_word` and `formation_roll_special_word`, run from battle setup. `battle_hud::battle_magic_chip` clears the chip's `enabled` flag and the ring refuses the Magic arm (`World::tick_battle_command`). `battle_hud::battle_magic_chip_mark` answers the cross-out, but neither play host draws the `etim` quad yet. Every other reader of the word - the drop roll, the steal roll, the Seru capture gate, spell XP, the monster flee roll - still reads only the dome's word, so a Rim Elm ambush or a fight against `0xAF` still pays drops and allows steals in the port where retail's `_DAT_8007BAC0 != 0` gates would withhold them.
+
 ## Range / line-of-sight (`FUN_8004E2F0`)
 
 Its first test is the battle-end byte `0x8007BD71`: anything but `0xFF` - the

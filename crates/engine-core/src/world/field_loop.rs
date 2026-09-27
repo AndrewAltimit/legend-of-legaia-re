@@ -392,6 +392,16 @@ impl World {
         // `enter_battle` above installs a fresh `battle_ctx`, so `+0x290` /
         // `+0x291` (and the arm's one-shot flag) are already zero - there is
         // one copy of each and it lives there.
+        // Battle init's pass over the special-battle word (`FUN_800513F0`,
+        // `0x800519C0..0x80051A04`), ahead of the roll that may raise the
+        // same bit again.
+        let lead_monster = formation
+            .slots
+            .first()
+            .map(|s| s.monster_id as u8)
+            .unwrap_or(0);
+        self.battle.special_word =
+            vm::battle_formulas::battle_init_special_word(self.battle.special_word, lead_monster);
         if !self.battle.no_escape {
             self.roll_battle_formation(formation);
         }

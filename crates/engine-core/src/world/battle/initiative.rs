@@ -288,6 +288,8 @@ impl World {
         let mut rand = || self.next_rand();
         let rolled = roll_formation_advantage(&party_spd, &enemy_spd, &inputs, &mut rand);
         self.set_battle_formation(rolled);
+        self.battle.special_word =
+            vm::battle_formulas::formation_roll_special_word(self.battle.special_word, &inputs);
     }
 
     /// Flow state `0x0A`'s battle-open reads of the **unlatched** formation
