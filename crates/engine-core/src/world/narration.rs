@@ -803,7 +803,10 @@ impl World {
             // One-frame rule (see `step_inline_dialogue`): a menu that opened
             // on this tick is shown before any confirm can commit it.
             let menu_was_open = panel.menu_active();
-            panel.tick_at(self.clock.frame_step);
+            panel.tick_at_auto(self.clock.frame_step, &mut self.dialog.auto_press);
+            // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
+            // confirm the player did not make.
+            let confirm = confirm || panel.take_auto_press();
             if confirm {
                 if panel.menu_active() && !menu_was_open {
                     // Opened this frame: nothing to commit yet.
@@ -2466,7 +2469,10 @@ impl World {
             // and reads the choice in the next, so the commit is always at
             // least one frame behind the open.
             let menu_was_open = panel.menu_active();
-            panel.tick_at(self.clock.frame_step);
+            panel.tick_at_auto(self.clock.frame_step, &mut self.dialog.auto_press);
+            // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
+            // confirm the player did not make.
+            let confirm = confirm || panel.take_auto_press();
             if confirm {
                 if panel.menu_active() && !menu_was_open {
                     // The menu opened this frame: show it, commit next frame.

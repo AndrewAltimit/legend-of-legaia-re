@@ -157,7 +157,7 @@ impl SceneHost {
         if !req.inline.is_empty()
             && let Some(panel) = crate::dialog::OwnedDialogPanel::from_inline_dialog(&req.inline)
         {
-            return Some(panel);
+            return Some(panel.opening_menu_at_wait());
         }
         let mes = self.assets.as_ref()?.mes.as_ref()?;
         crate::dialog::OwnedDialogPanel::from_scene_mes(mes, req.text_id)

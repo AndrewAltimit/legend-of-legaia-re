@@ -1,5 +1,16 @@
 use super::*;
 
+/// The inline box's page waits for confirm (a picker prompt: the press
+/// opens its menu).
+fn prompt_waits(world: &World) -> bool {
+    world
+        .dialog
+        .inline
+        .as_ref()
+        .and_then(|d| d.panel.as_ref())
+        .is_some_and(|p| p.is_waiting_for_input() && !p.menu_active())
+}
+
 #[test]
 fn inline_dialogue_runs_branch_flag_set_through_field_vm() {
     // A menu box ("Hi" + A/B picker) whose option branches each SET a distinct
@@ -34,7 +45,10 @@ fn inline_dialogue_runs_branch_flag_set_through_field_vm() {
     // Tick until the menu box is awaiting a choice.
     let mut guard = 0;
     while !world.dialog.inline.as_ref().unwrap().menu_active() {
-        world.step_inline_dialogue(false, false, false);
+        // The prompt's page waits for the press that opens the menu
+        // (`FUN_801D84D0` state `0x19`).
+        let waiting = prompt_waits(&world);
+        world.step_inline_dialogue(waiting, false, false);
         guard += 1;
         assert!(guard < 50, "menu never became active");
     }
@@ -227,7 +241,10 @@ fn a_menu_reply_parks_on_its_jump_back_and_the_next_talk_reopens_the_menu() {
     world.start_inline_dialogue(b);
     let mut guard = 0;
     while !world.dialog.inline.as_ref().unwrap().menu_active() {
-        world.step_inline_dialogue(false, false, false);
+        // The prompt's page waits for the press that opens the menu
+        // (`FUN_801D84D0` state `0x19`).
+        let waiting = prompt_waits(&world);
+        world.step_inline_dialogue(waiting, false, false);
         guard += 1;
         assert!(guard < 50, "menu never became active");
     }
@@ -280,7 +297,8 @@ fn a_menu_reply_parks_on_its_jump_back_and_the_next_talk_reopens_the_menu() {
             !world.dialog.inline.as_ref().unwrap().is_done(),
             "the next talk re-emits the menu"
         );
-        world.step_inline_dialogue(false, false, false);
+        let waiting = prompt_waits(&world);
+        world.step_inline_dialogue(waiting, false, false);
         guard += 1;
         assert!(guard < 80, "menu never re-emitted");
     }
@@ -333,11 +351,19 @@ fn vm_dialogue_tick_executes_branch_through_field_vm() {
         .as_ref()
         .is_some_and(|d| d.menu_active())
     {
-        world.set_pad(0);
+        // A Cross edge on the waiting prompt opens the menu.
+        let press = prompt_waits(&world) && guard % 2 == 0;
+        world.set_pad(if press {
+            input::PadButton::Cross.mask()
+        } else {
+            0
+        });
         let _ = world.tick();
         guard += 1;
         assert!(guard < 60, "menu never became active through tick");
     }
+    world.set_pad(0);
+    let _ = world.tick();
     // Down edge → option B; Cross edge → confirm.
     world.set_pad(input::PadButton::Down.mask());
     let _ = world.tick();
