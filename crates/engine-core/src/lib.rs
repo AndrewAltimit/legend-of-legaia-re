@@ -184,6 +184,7 @@ pub mod action_effect_script;
 pub mod baka_cabinet;
 pub mod camera_ease;
 pub mod effect_ribbon;
+pub mod effect_sprite_arm;
 pub mod field_actor_clone;
 pub mod field_actor_kernels;
 pub mod field_actor_program;

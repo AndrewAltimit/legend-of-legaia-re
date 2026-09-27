@@ -326,7 +326,8 @@ pub struct ColourWord {
 }
 
 impl ColourWord {
-    fn of(st: &ActorState) -> Self {
+    /// Decode the part's `+0x74` word and `+0x78` level.
+    pub fn of(st: &ActorState) -> Self {
         let w = st.field_74;
         let mode = (w >> 24) as u8;
         let mut ir0 = st.field_78;
