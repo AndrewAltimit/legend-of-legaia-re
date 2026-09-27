@@ -2830,6 +2830,17 @@ void main() {
             a.limbKey = limbKey;
           }
         }
+        /* Whole-mesh blend (the near-camera ghost pass FUN_8004DC68, the
+         * capture / defeat fade): re-send the actor's TSB stream with the
+         * colour word's ABE + ABR ORed in when the engine's blend changes.
+         * Guarded against a cached WASM without the export. */
+        if (typeof rt.play_battle_actor_blend_key === 'function') {
+          const blendKey = rt.play_battle_actor_blend_key(i);
+          if (blendKey !== (a.blendKey || 0)) {
+            this.renderer.updateSceneMeshCbaTsb(a.meshId, rt.play_battle_actor_blend_cba_tsb(i));
+            a.blendKey = blendKey;
+          }
+        }
         const c = (cursor && cursor.length >= (i + 1) * 6) ? i * 6 : -1;
         draws.push({
           meshId: a.meshId,

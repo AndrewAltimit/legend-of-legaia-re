@@ -1992,17 +1992,20 @@ impl PlayWindowApp {
                             // keep their own cue (their retail look is the
                             // same rule; that thread is not this one's).
                             //
-                            // Not modelled: `render_flag == 2` (the capture
-                            // / defeat fade, SM arm 2) also ORs `0x81000000`
-                            // into the node's mode word, so the fading actor
-                            // draws ABE|ABR1 additive and black = gone. The
-                            // renderer has no per-`SceneDraw` blend override,
-                            // so the fade is left un-cued (drawn opaque and
-                            // untinted) rather than as an opaque black
-                            // silhouette; once its lanes reach zero the draw
-                            // plan above skips the body (`FUN_800480D8`'s
-                            // word-zero arm), as it does the summon hide.
-                            // The two cursor flags keep their own cue.
+                            // `render_flag == 2` (the capture / defeat fade,
+                            // SM arm 2) also ORs `0x81000000` into the node's
+                            // mode word, so the fading actor draws ABE|ABR1
+                            // additive and black = gone. The posed-mesh
+                            // builder applies that word's blend to every prim
+                            // (`battle_body_blend`, `redraw_passes.rs`), so
+                            // the fade takes its cue whenever the body is
+                            // posed and its word raises ABE; a body drawn off
+                            // its rest mesh has no blend and stays un-cued
+                            // rather than an opaque black silhouette. Once its
+                            // lanes reach zero the draw plan above skips the
+                            // body (`FUN_800480D8`'s word-zero arm), as it
+                            // does the summon hide. The two cursor flags keep
+                            // their own cue.
                             //
                             // The cue is the whole tint pass, not only its
                             // blend arm: with no blend running retail still
@@ -2012,11 +2015,19 @@ impl PlayWindowApp {
                             // - a darker copy of its colour, or a brighter
                             // one on the outdoor stages - plus the status
                             // colours. `World::battle_actor_draw_plan`.
+                            let blended = battle_plan.is_some_and(|p| {
+                                actor.pose_frame.is_some()
+                                    && legaia_engine_core::battle_body_blend::draw_colour_semi_mode(
+                                        p.draw_colour,
+                                    )
+                                    .is_some()
+                            });
                             if let Some(p) = battle_plan
                                 && !matches!(
                                     b.render_flag,
-                                    ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED | 2
+                                    ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED
                                 )
+                                && (b.render_flag != 2 || blended)
                             {
                                 cue = Some(legaia_engine_render::DrawCue {
                                     far: p.cue_far(),

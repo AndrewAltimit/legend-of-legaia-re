@@ -18,6 +18,7 @@ pub mod baka_impact_fx;
 pub mod battle_afterimage;
 pub mod battle_anim;
 pub mod battle_arts;
+pub mod battle_body_blend;
 pub mod battle_cam_inputs;
 pub mod battle_effect_clut;
 pub mod battle_events;

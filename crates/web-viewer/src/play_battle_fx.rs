@@ -1064,16 +1064,21 @@ impl LegaiaRuntime {
             // the mesh's modulation colour is pushed toward the far colour
             // and the texel still multiplies through. Resolved engine-side
             // by `World::battle_actor_draw_plan` so both hosts stage the
-            // same word. `render_flag == 2` (the capture / defeat fade) is
-            // left un-cued: retail draws it additive and the page has no
-            // per-draw blend override; its zero-lanes end is the draw gate
-            // in `play_battle_actor_transforms`.
+            // same word. `render_flag == 2` (the capture / defeat fade)
+            // draws additive: its word's ABE + ABR ride the body's TSB
+            // stream (`play_battle_body_blend`), so it takes its cue only
+            // while that word raises ABE - un-cued it is never an opaque
+            // black silhouette; its zero-lanes end is the draw gate in
+            // `play_battle_actor_transforms`.
             if let Some(b) = b
                 && !matches!(
                     b.render_flag,
-                    ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED | 2
+                    ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED
                 )
                 && let Some(p) = self.battle_draw_plan(actor_idx)
+                && (b.render_flag != 2
+                    || legaia_engine_core::battle_body_blend::draw_colour_semi_mode(p.draw_colour)
+                        .is_some())
             {
                 let far = p.cue_far();
                 out.extend_from_slice(&[1.0, far[0], far[1], far[2], p.cue_ir0(), 1.0]);
