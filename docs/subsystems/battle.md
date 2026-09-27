@@ -2031,7 +2031,15 @@ Every combatant's battle position is stamped at setup from two static `SCUS_942.
 
 The alternate family is selected by `DAT_8007BD60` bit 7 - the same bit the setup stores to `ctx+0x287`, the no-escape flag the run/escape roll honours - or by formation ids `0x3D..0x3F` in modes `0xC`/`0x15` (the scripted / pincer fights).
 
-Save-state validation: seven battle library captures (the four camera-orbit angle saves, the three Tetsu tutorial anchors) read the count-1 seats byte-exactly at actor `+0x34`/`+0x38` (`(0, -800)` vs `(0, +800)`); the full-party capture reads the count-3 rows under a uniform `+13` Z scene offset (mid-battle drift on both sides equally, leaving the authored values unambiguous).
+Save-state validation: seven battle library captures (the four camera-orbit angle saves, the three Tetsu tutorial anchors) read the count-1 seats byte-exactly at actor `+0x34`/`+0x38` (`(0, -800)` vs `(0, +800)`). Every three-on-one capture reads the party at `z = -812 / -762` and the monster at `813` - the authored rows moved `+13` in Z. That offset is not drift: it is the round-start recentre below, and a balanced formation (three on three, one on one, two on two) reads its authored rows unmoved.
+
+**Pool slots are fixed.** Party member `i` takes actor-table slot `i` and monster `k` takes slot `3 + k` whatever the party size (`0x801C9370 + (k+3)*4`, `addiu s0,s2,0x3` at `0x8005185C`), so a party of one leaves slots `1` and `2` empty - the catalogued solo and duo fights read their monsters in slots `3..` and zeros at the unused party slots. The engine compacts monsters down to `party_count + k`; the seat each combatant takes is the same on both, so the difference is an index space, converted where a routine reads a fixed slot (`World::retail_battle_pool_slot`).
+
+**The formation recentres every round.** The battle flow SM runs `FUN_801DB318` at every round start (`FUN_801D388C(0, 0)` at `0x801D0EE4`, between the initiative seeder and the DoT tick) and when the ring's first member cancels back to the round prompt (case `2`, `0x801D11E0`). It takes the X/Z extents over pool slots `0..3` unconditionally and `3..7` with live HP, squashes an axis whose span exceeds `0x800` back to `0x800`, then subtracts the centroid `((max + min) as u32) >> 1` from every included actor.
+
+Nothing walks a combatant home after an action (`World::tick_battle_locomotion`), so this is what pulls a wandered formation back into frame; on an authored formation it is the recentre alone, which is `-13` for `z = -825 ..= 800`. The focus pair it also shifts (`_DAT_80089118` / `_DAT_80089120`, the negated camera target) is re-derived by the far framing it arms next (`FUN_801D5854(0, 9)`). Engine: `World::normalize_battle_formation`, called from `begin_battle_round` and the ring cancel.
+
+**The alternate family is the scripted flag.** The monster row index is `ctx[+1] + ((DAT_8007BD60 >> 5) & 4) + s4` (`0x80051838..0x8005184C`), so the scripted-fight bit alone moves a fight to rows `5..8`; `s4 = 4` is the map-gated arm (first monster `0x3D..=0x3F` on `_DAT_80084540` `0x0C` / `0x15`). The engine seats a scripted fight on the alternate family (`World::seat_scripted_monster_family`); the map-gated arm needs the numeric map id the formation roll's scripted-ambush arm also lacks.
 
 Engine mirror: [`engine-core::battle_seats`](../../crates/engine-core/src/battle_seats.rs) (consumed by `World::enter_battle`).
 
@@ -2383,7 +2391,8 @@ Retail monster AI is two routines in the battle overlay:
   (`FUN_801E295C`) at `ActionSeed` as the `monster_setup` hook, but only for
   monster actors with `actor[+0x16e] & 0x380 != 0`. It reads the targeting class
   the picker left in `actor[+0x1DD]` and expands it: class `0..2` → a living
-  monster slot (`rand % monster_count + party_count`); class `3..6` → a living
+  monster slot (`rand % monster_count + 3`, `addiu a0,v1,0x3` at `0x801E73B8` -
+  pool slot `3` is the first monster whatever the party size); class `3..6` → a living
   party slot (`rand % party_count`); class `8`/other → a `rand % 3` gate
   selecting all-target codes `8`/`9` or self. ctx fields: `ctx[+0]` = party
   count, `ctx[+1]` = monster count, `ctx[+0x13]` = active slot. Dumps:
@@ -3489,7 +3498,7 @@ Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set 
 
 ### Enemy target strip
 
-While a target picker's cursor is on the enemy row, both hosts draw retail's deduplicated monster-name strip instead of a debug label: `battle_hud::battle_enemy_target_rows` builds the rows off the live monster slots (identical adjacent monsters collapse into one run whose label takes the dedup-glyph suffix, `FUN_801D9D3C`), and each host runs the retail centre/relax/clamp layout (`target_picker::layout_enemy_menu_rows`) with its font as the measurer. The projected screen X the layout averages (battle actor `+0x34`) is renderer-owned and not plumbed into the HUD layer, so rows centre at `0xA0` and the retail overlap-relaxation pass spreads them - an approximation of retail's over-the-monster placement with the pass structure exact.
+While a target picker's cursor is on the enemy row, both hosts draw retail's deduplicated monster-name strip instead of a debug label: `battle_hud::battle_enemy_target_rows` builds the rows off the live monster slots (identical adjacent monsters collapse into one run whose label takes the dedup-glyph suffix, `FUN_801D9D3C`), and each host runs the retail centre/relax/clamp layout (`target_picker::layout_enemy_menu_rows`) with its font as the measurer. The X the layout averages is each monster actor's `+0x34`, its battle world X (`0x801D9E00`), which the row builder reads off the live position - so each row sits over its group.
 
 Implementation: [`crates/engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs). The native window folds the live actor table into it each tick in `engine-shell`'s `window/battle.rs::sync_battle_hud_rows`; the browser play page runs the same fold in `web-viewer`'s `play_battle.rs`.
 
@@ -3993,11 +4002,14 @@ the host's `legaia-font`; `engine-core::world::battle::intro_names` owns the
 `ctx[+0x6D6]` timer, armed beside the formation banner and drained by the
 frame step; and `engine-ui`'s battle HUD builder draws each label on the
 class-0 frame (`battle_hud_chrome::class0_frame_draws_at`) at `(x, 48)`. Both
-hosts pass the labels through `BattleHudFrame::intro_names`. Two
-approximations: the projected `actor+0x34` is not plumbed into the HUD layer,
-so the groups centre on `0xA0` and the relaxation spreads them rather than
-seating each over its monsters; and the engine does not hold the round prompt
-back for the span, so the prompt opens with the labels still up. The run
+hosts pass the labels through `BattleHudFrame::intro_names`. The X each group
+averages is the monster actor's `+0x34` (`lhu a0,0x34(v0)` at `0x801D9E00` /
+`0x801D9ED4`), its battle **world** X, laid out as `(avg >> 3) - width / 2 +
+0xA0` - so a label sits over its group's seat. The port reads it off the live
+position; an earlier reading took `+0x34` for a GTE projection result the HUD
+could not see and centred every group on `0xA0`. One approximation remains:
+the engine does not hold the round prompt back for the span, so the prompt
+opens with the labels still up. The run
 suffix is the rodata string `* 2` appended after dropping the display name's
 last character (`strlen` / `sb zero` / `strcat` at `0x801D9E34..0x801D9E60`);
 the engine's monster names carry no instance letter, so the port gives each
@@ -4563,13 +4575,23 @@ Retail decides a capture inside the arms execution resolver `FUN_801EC3E4`
    (states `0x68..0x6B`)"; those states belong to the capture *spells*, and
    the Done band's own disassembly is where this byte goes.
 
+**Which hits reach it.** The kill compare runs on one hit per landing, not on
+every hit. The resolver's per-hit gates (`0x801EE128..0x801EE1A4`) are its apply
+gate: the apply mode `s2` (`0x801EE060..0x801EE128`) of `0xFF` skips the check,
+a non-zero mode on a monster target takes it at once, and otherwise it needs
+the parked strike cursor (`ctx[+0x15] == 0xFF`, `0x801EE15C`) on the clip's
+last beat (`entry[0x11 + idx] == 0` or `idx == 3`,
+`0x801EE180..0x801EE19C`) - the same pair that lands the combo total at
+`0x801EE984`. The compare is then the accumulated total `+0x0` against live HP
+(`sltu v0,a0,a2` at `0x801EE1CC`). So a combo that crosses the target's HP on
+its second hit rolls once, on the hit that lands the total, after every
+damage draw of the chain.
+
 The engine runs this path: `World::roll_seru_absorb`
 (`world/battle/seru_absorb.rs`) sits on the melee hit fold's kill check and
 reads the record's `+0x3E` / `+0x3F` off the monster catalog, and the Done
-band hands the staged byte to `World::learn_absorbed_seru`. Its one bound:
-retail reaches the kill check only for hits that pass the resolver's per-hit
-gates (`0x801EE134..0x801EE1A4`), which the port does not model, so it rolls
-on the hit that first reaches the target's HP. The engine's capture-spell
+band hands the staged byte to `World::learn_absorbed_seru`. The hit fold's
+callers pass the apply gate as the kill check, the way retail shares it. The engine's capture-spell
 path (`World::resolve_capture`, a missing-HP-fraction roll feeding the Seru
 registry) is a separate mechanism for the capture spells. The catch-rate byte
 is the `--seru-catch-rate` randomizer target

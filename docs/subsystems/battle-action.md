@@ -2734,7 +2734,10 @@ transcribed from the disassembly (`overlay_battle_action_801db9c4.txt` /
   matching camera-focus accumulator (`_DAT_80089118` X / `_DAT_80089120` Z)
   likewise; then it recomputes the extents and subtracts the centroid
   `((max + min) as u32) >> 1` from every included slot, shifting the focus
-  accumulators back by the same centroid. Port: `normalize_formation_span`.
+  accumulators back by the same centroid. Port: `normalize_formation_span`,
+  run at every round start and on the ring's cancel back to the round prompt
+  by `World::normalize_battle_formation`
+  ([battle.md](battle.md#stage-seats-fun_800513f0-placement-tables)).
 - **`FUN_801D8A88` - attack target-queue builder.** Builds the ring the cycle
   accessor steps through. Counts live monsters (slots 3..=6) into `ctx[+0x244]`,
   takes the acting actor's `+0x1DD` current target as the wrap slot `+0x245`,
