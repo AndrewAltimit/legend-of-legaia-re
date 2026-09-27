@@ -36,6 +36,10 @@ let total_width = layout.advance_x;
 
 The crate does **not** depend on a renderer - it only produces glyph rectangles in atlas coordinates and screen-relative offsets. Renderer integration lives in `legaia-engine-render`.
 
+### Accented Latin
+
+`latin::LATIN_CELLS` is the byte layout for accented Latin (CP437 / CP850, the bytes the PAL discs write) with each cell's ASCII fold and glyph recipe; `latin::fold_for_char` / `fold_for_byte` / `drawn_byte_for_char` answer the lookups, and `LANGUAGE_SETS` lists the characters per language. `accent_font::build_accent_font(page, widths)` rebuilds every recipe cell from the page's own base letters plus a drawn mark, `accent_font_state` tells whether a disc already carries the result, and `cell_draw` classifies a byte as drawing, overprinting (ink, zero advance) or blank. See [`docs/formats/dialog-font.md`](../../docs/formats/dialog-font.md#the-accent-font).
+
 ### Disc-only construction (no save state)
 
 `Font::from_disc_tim_and_scus(font_tim, scus)` builds the real proportional font straight from a disc: the glyph bitmaps come from the on-disc font TIM (`PROT.DAT` at `FONT_TIM_PROT_DAT_OFFSET` = `0x7F40`, a 4bpp 256×256 page at framebuffer `(896, 0)`), the advances from the SCUS width table. It yields the byte-identical whitewashed atlas `load_from_extracted` produces, so a disc-only consumer - the WASM site's pause menu - renders text exactly like native **without** shipping a save state. See [`docs/formats/dialog-font.md`](../../docs/formats/dialog-font.md#on-disc-carrier). The `font-extract --disc` CLI mode (below) is the same path.
