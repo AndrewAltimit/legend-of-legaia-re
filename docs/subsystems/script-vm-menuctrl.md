@@ -704,8 +704,9 @@ clean sites across most field scenes. An operand aimed at the player
 and then `0xF0`) resolves the actor through `FUN_8003C83C` to the player object, so
 the party-bank bit and the re-stage land on the player. The VM hands it to the host
 (`FieldHost::player_set_model`), and the port writes the player's party-bank bit and
-parks the id on `World::locomotion.player_live_model`; neither play host re-binds
-the player's mesh from that seat yet.
+parks the id on `World::locomotion.player_live_model`; both play hosts rebuild the
+player's rig from it on the change (`World::take_player_rig_change`,
+`SceneHost::player_rig_mesh`).
 
 #### Sub-2 is TAKE_ITEM, not a menu poll
 

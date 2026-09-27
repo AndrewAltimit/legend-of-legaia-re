@@ -263,6 +263,11 @@ pub struct FieldLocomotion {
     /// ([`crate::model_bank::resolve_model_id`]). `None` is the lead's own
     /// field mesh, which scene entry restores.
     pub player_live_model: Option<i16>,
+    /// Raised when a script changes [`Self::player_live_model`] mid-scene, so
+    /// a host rebuilds the player's rig; drained by
+    /// [`crate::world::World::take_player_rig_change`]. Scene entry lowers it,
+    /// because every host builds the rig afresh on entry anyway.
+    pub player_rig_dirty: bool,
     /// The kind-0 warp's globals `_DAT_8007B6B0` (timer), `_DAT_8007B6B4`
     /// (post-warp pad hold) and the destination pair - see
     /// [`legaia_engine_vm::field_warp_tile`].
@@ -303,6 +308,7 @@ impl FieldLocomotion {
             player_party_bank: true,
             clip_override: 0,
             player_live_model: None,
+            player_rig_dirty: false,
             warp: legaia_engine_vm::field_warp_tile::WarpTimer::default(),
             warp_fade_in_in: None,
         }

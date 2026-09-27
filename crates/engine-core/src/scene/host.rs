@@ -284,6 +284,8 @@ mod battle_stage;
 mod effects;
 mod lifecycle;
 mod minigame_warp;
+mod player_rig;
+pub use player_rig::{PlayerRigMesh, PlayerRigSource};
 mod scene_entry;
 mod sustained_sfx;
 

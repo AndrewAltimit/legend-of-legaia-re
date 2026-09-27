@@ -400,9 +400,13 @@ pair plays instead. That guard matters for `jagaroom`: its override records belo
 mesh the scene's `4C 50` swaps onto the player. A player-targeted `4C 50` (`CC F8 50 lo
 hi`) reaches the port as `World::field_player_set_model` - the party-bank bit it writes
 (raised for `>= 0xF0`, dropped below) and the model id on
-`World::locomotion.player_live_model` - but neither play host re-binds the player's mesh
-from that seat yet, so the drawn mesh stays the party model. Whether the guard fires
-there - whether the two skeletons differ - has not been measured.
+`World::locomotion.player_live_model`. A change raises a rig-change signal
+(`World::take_player_rig_change`) that both play hosts drain each frame, rebuilding the
+rig from `SceneHost::player_rig_mesh`: the lead's field form with no re-stage, the
+player-bank slot `value - 0xF0` at or above `0xF0`, the scene-bank model `value` below
+it. A party-slot mesh takes that slot's locomotion rest pose and bone cap; a scene-bank
+mesh takes neither. Whether the guard fires there - whether the two skeletons differ -
+has not been measured.
 
 A frame that moved the player without the pad step (a script walk) still keeps the motion-derived walk for a party-bank pick; a scene-bank pick binds whoever moved the player, as retail's selector does. A script also writes the bit directly: `B1 F8 18` / `B2 F8 18` are op `0x31` / `0x32` (`CFLAG_SET` / `CFLAG_CLR`) with the extended target `0xF8`, which the prologue resolves through `FUN_8003C83C` to the player object, so the arm's `+0x10` write lands on the player.
 

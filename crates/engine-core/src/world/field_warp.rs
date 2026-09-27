@@ -187,6 +187,7 @@ impl World {
         self.locomotion.player_party_bank = true;
         self.locomotion.clip_override = 0;
         self.locomotion.player_live_model = None;
+        self.locomotion.player_rig_dirty = false;
     }
 }
 

@@ -3496,16 +3496,28 @@ impl World {
     /// it back, and `urudre1`'s `CC F8 50 5D 00` leaves it down for the
     /// scene. The model id lands on
     /// [`crate::world::FieldLocomotion::player_live_model`] for the hosts'
-    /// player mesh; neither play host re-binds the player's mesh from it yet
-    /// (both build the rig once per scene from the lead's global-pool mesh).
+    /// player mesh: a change raises
+    /// [`crate::world::FieldLocomotion::player_rig_dirty`], and both play
+    /// hosts drain it ([`Self::take_player_rig_change`]) and rebuild the rig
+    /// from [`crate::scene::SceneHost::player_rig_mesh`].
     ///
     /// REF: FUN_80024E08 (the re-stage; the port for a placement is
     /// `FieldHostImpl::op4c_n5_sub0_set_actor_model`), FUN_8003C83C
     pub fn field_player_set_model(&mut self, value: i16) -> bool {
         self.locomotion.player_party_bank = i32::from(value) >= 0xF0;
         self.locomotion.player_clip = 0;
+        if self.locomotion.player_live_model != Some(value) {
+            self.locomotion.player_rig_dirty = true;
+        }
         self.locomotion.player_live_model = Some(value);
         true
+    }
+
+    /// Take the "the player's model changed" signal a mid-scene `CC F8 50`
+    /// raises. A host that sees `true` rebuilds the player's rig from
+    /// [`crate::scene::SceneHost::player_rig_mesh`].
+    pub fn take_player_rig_change(&mut self) -> bool {
+        std::mem::take(&mut self.locomotion.player_rig_dirty)
     }
 
     /// A script aiming a clip at the **player**: op `0x22` `EXEC_MOVE`
