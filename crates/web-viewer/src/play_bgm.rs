@@ -63,11 +63,13 @@ pub(crate) fn restart_suppressed(
 /// native `AudioBgmDirector`. Borrows the runtime's audio handle plus its
 /// scene-local BGM bank + dedupe latch for the duration of one routing pass.
 ///
-/// Scene-local starts (`bgm_id < 2000`) play their SEQ through the pre-staged
-/// scene bank (`bank`); global-pool tracks (`>= 2000`) carry their own
-/// `[chunk][pBAV VAB][pQES SEQ]` and upload it before playing - the path most
-/// real Legaia music takes. Both loop to the start and land through
-/// [`Self::play`]'s immediate swap.
+/// Every track the field VM starts arrives through `start_owned_vab`: a
+/// global-pool track (`>= 2000`) carries its own
+/// `[chunk][pBAV VAB][pQES SEQ]` and uploads it before playing, and a
+/// scene-local id plays retail's fallback track the same way
+/// (`legaia_engine_core::scene::SCENE_LOCAL_BGM_FALLBACK_ID`). The bare
+/// `start` plays a SEQ over whatever bank is staged. Both loop to the start
+/// and land through [`Self::play`]'s immediate swap.
 ///
 /// The pause latch is the audio output's own sequencer gate
 /// ([`WebAudioOut::sequencer_paused`]) rather than a second bool: the
@@ -149,18 +151,14 @@ impl WebBgmDirector<'_> {
         // playing track's samples where they were.
         let seq = legaia_seq::Seq::parse(entry_bytes.get(split.seq..)?).ok()?;
         let body = &entry_bytes[vab_off..];
+        // Into the BGM region, or - for a bank that does not fit it, the
+        // ending theme's - from the same base across the SFX region, as
+        // retail opens VAB 10 at slot 0's base. The layout kernel the native
+        // director stages through (`legaia_engine_audio::spu_layout`); the
+        // SFX channel drops its resident banks while such a bank holds the
+        // region and re-stages them after (`reconcile_sfx_region`).
         let bank = self.out.with_spu(|spu| {
-            // Cap the BGM region below the resident class-2 SFX bank at the
-            // top of SPU RAM, the way the native boot's `stage_scene_vab`
-            // does, so a BGM upload never stomps the SFX samples
-            // ([`crate::play_sfx`]).
-            let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(
-                crate::play_sfx::SPU_RESERVED_BYTES,
-                legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32
-                    - crate::play_sfx::SPU_RESERVED_BYTES
-                    - crate::play_sfx::SFX_BANK_SPU_BYTES,
-            );
-            legaia_engine_audio::VabBank::upload(spu, &mut alloc, &report, body)
+            legaia_engine_audio::spu_layout::upload_owned_bank(spu, &report, body).bank
         });
         *self.bank = Some(bank.clone());
         Some((seq, bank))

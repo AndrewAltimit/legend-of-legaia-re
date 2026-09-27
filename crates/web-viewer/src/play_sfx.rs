@@ -81,9 +81,9 @@ use wasm_bindgen::prelude::*;
 /// (269632 and 268496) - i.e. the next step up starts silencing music that
 /// plays today. It cannot go lower either: 0x3C000 does not fit both banks.
 /// Pinned by `sfx_bank_region_fits_both_pinned_banks`.
-pub const SFX_BANK_SPU_BYTES: u32 = 0x3D000;
+pub const SFX_BANK_SPU_BYTES: u32 = legaia_engine_audio::spu_layout::SFX_REGION_BYTES;
 /// Bottom of the BGM region, matching the native boot's `SPU_RESERVED_BYTES`.
-pub const SPU_RESERVED_BYTES: u32 = 0x1000;
+pub const SPU_RESERVED_BYTES: u32 = legaia_engine_audio::spu_layout::SPU_RESERVED_BYTES;
 
 /// `_DAT_8007B910`'s reference value (`0xD7`, seeded by the cold reset
 /// `FUN_8001FFA4`): the un-ducked BGM level the battle's `0x51` arm ramps
@@ -391,6 +391,13 @@ pub struct PlaySfx {
     /// came due since the page loaded, whether or not a voice keyed - the
     /// producer-side count the off-wasm tests read.
     pub ring_due: u32,
+    /// A track bank reaches into the SFX region - the ending theme's, laid
+    /// across it as retail lays VAB 10 over the resident banks
+    /// (`legaia_engine_audio::spu_layout`). While set the resident banks are
+    /// dropped and a cue is silent; the first cue after a track that fits
+    /// the BGM region re-stages them ([`LegaiaRuntime::reconcile_sfx_region`]).
+    /// The twin of the native director's `sfx_evicted`.
+    pub sfx_evicted: bool,
 }
 
 impl Default for PlaySfx {
@@ -420,6 +427,7 @@ impl Default for PlaySfx {
             side_band: None,
             side_band_attempt: None,
             ring_due: 0,
+            sfx_evicted: false,
         }
     }
 }
@@ -676,7 +684,6 @@ impl LegaiaRuntime {
     /// SPU, above slot 0's samples. No-op until slot 0 is live.
     #[cfg(target_arch = "wasm32")]
     fn upload_shared_region(&mut self) {
-        use legaia_engine_audio::spu::ram::{SPU_RAM_BYTES, SpuAllocator};
         let Some(want) = self.sfx.shared else {
             return;
         };
@@ -689,17 +696,18 @@ impl LegaiaRuntime {
         let Ok(report) = legaia_vab::parse(&b.bytes, b.vab_offset) else {
             return;
         };
-        let region = SPU_RAM_BYTES as u32 - SFX_BANK_SPU_BYTES;
-        let base = vab_bank_used_end(Some(slot0), region).div_ceil(16) * 16;
-        let room = (SPU_RAM_BYTES as u32).saturating_sub(base);
-        let body_total: u32 = report.vag_samples.iter().map(|v| v.size as u32).sum();
-        if body_total > room {
+        // Above slot 0's samples, through the kernel the native director
+        // shares; `None` when the bank does not fit.
+        let Some(bank) = out.with_spu(|spu| {
+            legaia_engine_audio::spu_layout::upload_shared_region(
+                spu,
+                slot0,
+                &report,
+                &b.bytes[b.vab_offset..],
+            )
+        }) else {
             return;
-        }
-        let bank = out.with_spu(|spu| {
-            let mut alloc = SpuAllocator::new(base, room);
-            VabBank::upload(spu, &mut alloc, &report, &b.bytes[b.vab_offset..])
-        });
+        };
         self.sfx_vabs.insert(want.slot, bank);
     }
 
@@ -752,10 +760,10 @@ impl LegaiaRuntime {
     ///
     /// The transient reward bank is **not** dropped here, which is what the
     /// native director does too: it lives in the BGM region's tail until a
-    /// BGM restage re-owns that region, and a door under a carried global
-    /// track restages nothing (`scene_bank_restage_wanted`). A restage that
-    /// does grow into it is caught at fire time by `reconcile_reward_bank`,
-    /// the page's twin of the native drop inside its two upload sites.
+    /// BGM restage re-owns that region, and a door stages no bank at all
+    /// (retail loads a bank only with its track). A restage that does grow
+    /// into it is caught at fire time by `reconcile_reward_bank`, the page's
+    /// twin of the native drop inside its upload sites.
     pub(crate) fn on_scene_change_audio(&mut self) {
         self.sfx.sched.clear();
         // The side-band request survives a scene change in retail (it is the
@@ -798,8 +806,8 @@ impl LegaiaRuntime {
     }
 
     /// Drop the reward bank if a BGM restage has since grown into its room.
-    /// The two BGM upload sites (`stage_scene_bgm_bank` in the runtime and
-    /// `WebBgmDirector::stage_owned`) re-own the region wholesale, so the
+    /// The BGM upload site (`WebBgmDirector::stage_owned`) re-owns the
+    /// region wholesale, so the
     /// bank is stale the moment the live bank's sample end passes its base -
     /// the native director drops it inside those two sites; this host checks
     /// at fire time instead, which needs no hook in either.
@@ -1139,7 +1147,9 @@ impl LegaiaRuntime {
             // SFX slots did not fit was dropped rather than played out of
             // the wrong bank - silence where the native window is audible.
             let staged = self.stage_sfx_vab();
-            if !staged && self.bgm_bank.is_none() {
+            // No stand-in while a track holds the SFX region: that bank is
+            // the ending theme's, and its programs are not the cue's.
+            if !staged && (self.sfx.sfx_evicted || self.bgm_bank.is_none()) {
                 return;
             }
             // A BGM restage since the reward bank staged makes it stale.
@@ -1185,7 +1195,7 @@ impl LegaiaRuntime {
     // REF: FUN_80016B6C
     #[cfg(target_arch = "wasm32")]
     fn fire_ring_cues(&mut self, ring: &[i16]) {
-        if !self.stage_sfx_vab() && self.bgm_bank.is_none() {
+        if !self.stage_sfx_vab() && (self.sfx.sfx_evicted || self.bgm_bank.is_none()) {
             return;
         }
         let Some(out) = self.audio_out.as_ref() else {
@@ -1251,10 +1261,15 @@ impl LegaiaRuntime {
         #[cfg(target_arch = "wasm32")]
         {
             let slot = u8::try_from(attr.vab_id).unwrap_or(0);
-            if !self.sfx_vabs.contains_key(&slot) {
-                self.stage_sfx_vab();
-            }
-            let Some(vab) = self.sfx_vabs.get(&slot).or(self.bgm_bank.as_ref()) else {
+            // Idempotent; also drops the resident banks first if a track has
+            // since overrun their region.
+            self.stage_sfx_vab();
+            let evicted = self.sfx.sfx_evicted;
+            let Some(vab) = self
+                .sfx_vabs
+                .get(&slot)
+                .or_else(|| self.bgm_bank.as_ref().filter(|_| !evicted))
+            else {
                 return false;
             };
             let Some(out) = self.audio_out.as_ref() else {
@@ -1270,6 +1285,29 @@ impl LegaiaRuntime {
         }
     }
 
+    /// Keep the resident SFX banks consistent with the staged BGM bank, and
+    /// return whether they may be resident. A bank reaching into the SFX
+    /// region (the ending theme's, `WebBgmDirector::stage_owned`) overwrote
+    /// them: drop every one, so no cue keys a stale address. Once the BGM
+    /// bank fits its region again the drop is lifted and the caller
+    /// ([`Self::stage_sfx_vab`]) re-stages slot 0 and the shared region from
+    /// the kept bytes. The twin of the native director's
+    /// `reclaim_sfx_region`, checked at fire time as the reward bank is.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn reconcile_sfx_region(&mut self) -> bool {
+        if !legaia_engine_audio::spu_layout::sfx_region_free(self.bgm_bank.as_ref()) {
+            if !self.sfx.sfx_evicted {
+                self.sfx.sfx_evicted = true;
+                self.sfx_vabs.clear();
+                self.sfx.reward_bank_base = None;
+                self.sfx.side_band = None;
+            }
+            return false;
+        }
+        self.sfx.sfx_evicted = false;
+        true
+    }
+
     /// Upload the slot-0 system bank into the bottom of the dedicated top
     /// region of SPU RAM, then the shared slot-2 / slot-6 region's current
     /// bank above it. Idempotent; returns whether at least one bank is
@@ -1277,6 +1315,9 @@ impl LegaiaRuntime {
     /// rather than at `load_disc`.
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn stage_sfx_vab(&mut self) -> bool {
+        if !self.reconcile_sfx_region() {
+            return false;
+        }
         if self.sfx_vabs.contains_key(&0) {
             return true;
         }
@@ -1290,16 +1331,16 @@ impl LegaiaRuntime {
         let Ok(report) = legaia_vab::parse(&b.bytes, b.vab_offset) else {
             return false;
         };
-        let bank = out.with_spu(|spu| {
-            use legaia_engine_audio::spu::ram::{SPU_RAM_BYTES, SpuAllocator};
-            // Top region, below nothing - the BGM allocator is capped under it.
-            let mut alloc = SpuAllocator::new(
-                SPU_RAM_BYTES as u32 - SFX_BANK_SPU_BYTES,
-                SFX_BANK_SPU_BYTES,
-            );
-            legaia_engine_audio::VabBank::upload(spu, &mut alloc, &report, &b.bytes[b.vab_offset..])
+        // Top region, below nothing - the BGM allocator is capped under it.
+        // The layout kernel the native director stages through.
+        let staged = out.with_spu(|spu| {
+            legaia_engine_audio::spu_layout::upload_resident_sfx(
+                spu,
+                (&report, &b.bytes[b.vab_offset..]),
+                None,
+            )
         });
-        self.sfx_vabs.insert(0, bank);
+        self.sfx_vabs.insert(0, staged.slot0);
         self.upload_shared_region();
         self.sfx.vab_staged = true;
         true
