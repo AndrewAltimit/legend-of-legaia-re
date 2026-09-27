@@ -3114,10 +3114,13 @@ had - the deviating host adopting it.
 
 Two rows of the same read were already closed when re-checked: the minigame
 purses in `save_full` and the card-Load order (both in the section above).
-Still open, and on neither host: the scene-entry place-name banner (the
-submode-driver handler table's slot `0x2E`, `0x801EE5D4`, whose body opens the
-panel script `0x801F32B4` at `0x801EE628`) and the
-world-map location labels ([`place-names.md`](../formats/place-names.md)).
+The scene-entry place-name banner is closed on both hosts at once: it is not
+the slot-`0x2E` fill-fade actor this list used to name (that actor's panel
+script `0x801F32B4` only closes every panel), but a text balloon the MAN
+loader spawns, seated by `engine-core::place_name_banner` from
+`SceneHost::load_scene` and drawn by the balloon builders both hosts already
+share. Still open, and on neither host: the world-map location labels
+([`place-names.md`](../formats/place-names.md)).
 
 ## Adding coverage
 
