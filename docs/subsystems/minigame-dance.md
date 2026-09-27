@@ -490,7 +490,9 @@ Two corrections fall out of that table. The saved string is **not** the literal
 player walked in from, and the exit restores it. And `0x80084540` is not a
 "scene-kind word" - it is the scene's **PROT block base index**, which is why
 the entry writes the literal `0x4CC` into it and the SCUS BGM resolver reads
-`*(0x80084540) + 6 + bgm_id` at `0x8002443C`.
+`*(0x80084540) + 6 + bgm_id` at `0x8002443C` - as its change-test index only;
+the index it loads for a scene-local id is `*(0x8007BC64) + 2`
+([`audio.md`](audio.md#a-scene-local-id-loads-a-fallback-track-not-a-scene-bank)).
 
 **`_DAT_8007BA9C` is not unconsumed - it is the force-reload arm of the BGM
 swap.** `FUN_800243F0` loads it at `0x8002457C`, XORs it against

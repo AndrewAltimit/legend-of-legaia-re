@@ -165,12 +165,13 @@
 
 <section class="doc-section" id="bgm-lookup">
   <h2>Music selection (BGM lookup)</h2>
-  <p>When a scene asks for "music track 3", there is no music table to consult. The number is an <em>offset</em>: scene-local ids count from the scene's own CDNAME block, global ids count from the shared music bank.</p>
+  <p>When a scene asks for "music track 2016", there is no music table to consult. A global id is an <em>offset</em> into the shared music bank. A scene-local id (below 2000) looks like an offset into the scene's own CDNAME block, but that index only drives the "did the track change" test - the load itself is overwritten with global slot 2.</p>
   <pre><code>// FUN_800243F0
 if (bgm_id &lt; 2000) {
-    prot_idx = scene_local_base + 6 + bgm_id;      // scene block, slot +6 onward
+    change_idx = scene_block + 6 + bgm_id;         // compared only
+    load_idx   = global_pool_base + 2;             // 0x800245A4..0x800245BC
 } else {
-    prot_idx = global_pool_base + (bgm_id - 2000); // shared music bank
+    change_idx = load_idx = global_pool_base + (bgm_id - 2000);
 }</code></pre>
   <p>Global id <code>2000+i</code> is sound-test track <code>i</code>, but the <code>music_01</code> bank is <strong>piecewise</strong> in extraction space (<code>988+i</code> for <code>i &le; 67</code>, <code>990+i</code> for <code>i &ge; 68</code>, gap at 1056/1057) - not a flat base. Resolver: <code>engine-core::music_labels</code>; the full cue list is on <a href="../reference/music-tracks.html">music tracks</a>.</p>
 </section>

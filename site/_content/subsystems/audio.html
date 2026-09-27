@@ -131,7 +131,7 @@
   <table class="data-table">
     <thead><tr><th>Id</th><th>Resolved PROT index</th><th>Base</th></tr></thead>
     <tbody>
-      <tr><td><code>&lt; 2000</code> (scene-local)</td><td><code>scene_block + 6 + id</code></td><td>The scene's own bundle (never taken by a field scene)</td></tr>
+      <tr><td><code>&lt; 2000</code> (scene-local)</td><td>change test: <code>scene_block + 6 + id</code>; loaded: <code>music_01_base + 2</code></td><td>Global slot 2 - the load index is overwritten, so no scene bank is ever staged</td></tr>
       <tr><td><code>&ge; 2000</code> (global pool)</td><td><code>music_01_base + (id &minus; 2000)</code></td><td>Raw TOC 990 = extraction 988</td></tr>
     </tbody>
   </table>

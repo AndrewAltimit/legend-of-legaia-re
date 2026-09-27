@@ -1789,27 +1789,22 @@ flanking the player at `(23,43)`/`(22,42)` around tile `(23,42)`).
 
 ## BGM lookup table
 
-There isn't really a "BGM → file" lookup table - the BGM ID is a PROT-relative offset. From `FUN_800243F0` (the per-frame BGM/asset poller):
+There isn't really a "BGM → file" lookup table - a global BGM id is an offset into one bank. `FUN_800243F0` (the per-frame BGM/asset poller) reads the id at `_DAT_8007BAC8` (set by op `0x35` sub-1) and branches on `slti ... 0x7d0`:
 
-```c
-if (_DAT_8007BAC8 < 2000) {
-    _DAT_8007BAB8 = _DAT_80084540 + 6;          // scene-local: current scene PROT base + 6
-} else {
-    _DAT_8007BAB8 = _DAT_8007BC64 - 2000;        // global pool: separate base
-}
-_DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;   // final PROT index
-```
+| Id | Index stored to `_DAT_8007BAB8` (the change test) | Index the loader reads |
+|---|---|---|
+| `bgm_id >= 2000` (global) | `*(0x8007BC64) + bgm_id - 2000` | the same |
+| `bgm_id < 2000` (scene-local) | `*(0x80084540) + 6 + bgm_id` (`0x80024458`) | `*(0x8007BC64) + 2` - overwritten at `0x800245A4..0x800245BC` |
 
-- `_DAT_8007BAC8` - set by op 0x35 sub-1 (the BGM ID from the script).
-- `_DAT_80084540` - current scene's PROT base index (set by the field loader; offset +6 lands at the per-scene BGM block).
-- `_DAT_8007BC64` - global BGM pool base for IDs ≥ 2000.
-- `_DAT_8007BAB8` - final PROT index, consumed downstream by the asset loader.
+- `_DAT_8007BC64` - the `music_01` bank's raw define (`990` on a running image).
+- `_DAT_80084540` - the loaded scene's raw CDNAME define.
+- `_DAT_8007BAB8` - the index the swap compares against the resident one (`_DAT_8007BA9C`); it decides *whether* the track changes, not what loads.
 
 So:
-- `bgm_id < 2000`: scene-local - lives at PROT `current_scene + 6 + bgm_id`. Different scenes have different BGM at the same script ID. Rare in retail: scenes carry almost no local SEQ data (`teien` is the one scene with a local copy).
-- `bgm_id ≥ 2000`: global - lives at PROT `_DAT_8007BC64 + bgm_id - 2000` (raw pool base `990`). The global pool is the **`music_01` bank**, whose pool order is the **debug sound-test order** - so `2000 + i` plays sound-test track `i` and every global id resolves to a curated human name. Pinned by the per-scene op-`0x35` census joining ids to their scenes' known music (`town01` starts `2016` = "Rim Elm theme"). The physical bank is piecewise in extraction space (a 2-entry gap); the resolver `legaia_engine_core::music_labels::prot_entry_for_bgm_id` owns the id→entry map. See [music-tracks](../reference/music-tracks.md#the-disc-side-join-the-music_01-bank-in-sound-test-order).
+- `bgm_id ≥ 2000`: global - lives at PROT `_DAT_8007BC64 + bgm_id - 2000`. The global pool is the **`music_01` bank**, whose pool order is the **debug sound-test order** - so `2000 + i` plays sound-test track `i` and every global id resolves to a curated human name. Pinned by the per-scene op-`0x35` census joining ids to their scenes' known music (`town01` starts `2016` = "Rim Elm theme"). The physical bank is piecewise in extraction space (a 2-entry gap); the resolver `legaia_engine_core::music_labels::prot_entry_for_bgm_id` owns the id→entry map. See [music-tracks](../reference/music-tracks.md#the-disc-side-join-the-music_01-bank-in-sound-test-order).
+- `bgm_id < 2000`: **not** a scene-block entry. The block index `current_scene + 6 + id` is only the change-test index; the load arm replaces it with `*(0x8007BC64) + 2` - extraction `990`, global slot `2`, the track id `2002` plays - and parks the id in `gp+0x728`, whose only reader is the `WARNING BGM NO %d` debug print. Retail stages no scene bank. Engine: `SCENE_LOCAL_BGM_FALLBACK_ID`. Detail and captures: [`audio.md`](audio.md#a-scene-local-id-loads-a-fallback-track-not-a-scene-bank).
 
-The "table" *is* the [CDNAME.TXT name map](../formats/cdname.md)'s per-scene block layout. There's no separate BGM index in `SCUS_942.54`.
+An older reading had a scene-local id load PROT `current_scene + 6 + id` from the scene's own block; it read the stored index as the loaded one and missed the overwrite. There is no separate BGM index in `SCUS_942.54`.
 
 ## Helper functions
 

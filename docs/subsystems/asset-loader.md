@@ -112,7 +112,7 @@ Walks the [asset descriptor format](../formats/asset-descriptor.md) and calls th
 `FUN_801D6704`'s own step order, the BGM-slot resolve it does on the way, and the player seat it ends with are ported as `legaia_engine_core::mode_entry_init` (`FIELD_INIT_STEPS` / `field_bgm_plan` / `field_spawn`); the spawn arms are detailed in [`field-locomotion.md`](field-locomotion.md#spawn-position-on-scene-entry). Two things about the function are easy to get wrong from the corpus:
 
 - **Cite the live-RAM captures, not `overlay_0897_801d6704.txt`.** The static-base dump is correctly based but has a gap - it jumps `0x801d71b4 -> 0x801d72d4` and carries no `jr ra`. The base-`0x801C0000` captures agree with each other across all 901 instructions.
-- **The BGM id is not the slot.** `_DAT_8007BAC8` below `0x7D0` (= 2000) is *relative*: the slot is `id + _DAT_80084540 + 6`. At or above 2000 the id passes straight through, which is the same `2000 + track` global space [`music-tracks.md`](../reference/music-tracks.md) describes. Id `0x814` is special-cased into a **two-stream** load (asset ids `0x428` then `0x422`), latched by `_DAT_8007B9B8` so a re-entry does not re-read them.
+- **The BGM id is not the slot.** At or above `0x7D0` (= 2000) `_DAT_8007BAC8` is an offset into the `music_01` bank. Below it the change-test index is `id + _DAT_80084540 + 6`, but the index the loader reads is overwritten with `*(0x8007BC64) + 2` - a scene-local id plays a fallback track, never a scene-block entry ([`audio.md`](audio.md#a-scene-local-id-loads-a-fallback-track-not-a-scene-bank)). A global id passes through, which is the same `2000 + track` global space [`music-tracks.md`](../reference/music-tracks.md) describes. Id `0x814` is special-cased into a **two-stream** load (asset ids `0x428` then `0x422`), latched by `_DAT_8007B9B8` so a re-entry does not re-read them.
 
 The mapping a scene loads is **positional** - there is no separate slot→asset indirection table; the descriptor's `data_offset` field *is* the indirection. The full chain, traced from the field init at `FUN_801D6704`:
 
@@ -197,7 +197,7 @@ The [player battle file](../formats/battle-data-pack.md) parser remains the entr
 
 ## Music / SFX selection (BGM lookup)
 
-Documented under the [field VM](script-vm.md) → "BGM lookup table" section. The short version: the BGM ID is a PROT-relative offset, not a literal table lookup. `FUN_800243F0` resolves `bgm_id < 2000` to the scene-local PROT slot at `_DAT_80084540 + 6 + bgm_id`, and `bgm_id >= 2000` to the global pool at `_DAT_8007BC64 + bgm_id - 2000`. The "BGM table" *is* the [CDNAME.TXT](../formats/cdname.md) per-scene block layout.
+Documented under the [field VM](script-vm.md) → "BGM lookup table" section. The short version: a global BGM id is an offset, not a literal table lookup. `FUN_800243F0` resolves `bgm_id >= 2000` to the global pool at `_DAT_8007BC64 + bgm_id - 2000`. For `bgm_id < 2000` it stores the scene-block index `_DAT_80084540 + 6 + bgm_id` only as its change test and loads `_DAT_8007BC64 + 2` (global slot 2) instead ([`audio.md`](audio.md#a-scene-local-id-loads-a-fallback-track-not-a-scene-bank)). There is no BGM table in `SCUS_942.54`; the `music_01` bank's order *is* the table.
 
 ## Sound bank loader (`FUN_8001FA88`)
 

@@ -1208,7 +1208,8 @@ impl PlayWindowApp {
     }
 
     /// Retail's post-FMV control transfer, through the session (which also
-    /// resets the camera globals and restages the scene VAB on a scene swap),
+    /// resets the camera globals and drops the queued SFX cues on a scene
+    /// swap - no scene bank is staged, as retail's field init loads none),
     /// plus the render-side rebuild when the hand-off entered a new scene.
     /// The hand-off loads its scene outside the field VM's transition op, so
     /// no `SceneEntered` event follows it - the window used to only log the

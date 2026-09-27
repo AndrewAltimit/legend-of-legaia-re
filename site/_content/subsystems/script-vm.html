@@ -214,11 +214,11 @@
 
 <section class="doc-section" id="bgm-table">
   <h2>BGM ids</h2>
-  <p>A script's "play track 2016" is a PROT-relative offset, not a table lookup.</p>
+  <p>A script's "play track 2016" is an offset into one bank, not a table lookup.</p>
   <table>
     <thead><tr><th>Id</th><th>Resolves to</th></tr></thead>
     <tbody>
-      <tr><td><code>&lt; 2000</code></td><td>Scene-local: the scene's own PROT base + 6 + id (rare - one scene carries a local SEQ)</td></tr>
+      <tr><td><code>&lt; 2000</code></td><td>Scene-local: <em>not</em> a scene-block entry. The resolver keeps the block index (base + 6 + id) only as its change test and loads global slot 2 (the track 2002 plays) instead; retail stages no scene bank (<a href="audio.html#bgm-dispatch">audio</a>)</td></tr>
       <tr><td><code>&gt;= 2000</code></td><td>The global <code>music_01</code> bank in sound-test order: <code>2000 + i</code> = sound-test track <code>i</code> (<a href="../reference/music-tracks.html">names</a>); the bank is piecewise in extraction space</td></tr>
     </tbody>
   </table>
