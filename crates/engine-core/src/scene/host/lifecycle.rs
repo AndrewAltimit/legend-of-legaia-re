@@ -124,6 +124,9 @@ impl SceneHost {
         // `crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET`)
         self.world.reset_scene_control_block();
         let scene = Scene::load(&self.index, name)?;
+        // `_DAT_80084540`: the scene's raw CDNAME define (the `block_range`
+        // start, before the extraction-frame shift `Scene::start` carries).
+        self.world.battle.map_id = self.index.block_range(name).map_or(0, |(raw, _)| raw);
         let assets = crate::scene_assets::SceneAssets::build(&scene);
         self.scene = Some(scene);
         self.assets = Some(assets);

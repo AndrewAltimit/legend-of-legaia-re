@@ -119,7 +119,7 @@ fn intro_labels_sit_over_their_monsters() {
 fn a_scripted_fight_takes_the_alternate_seat_family() {
     let mut world = World::new();
     seat_monsters(&mut world, 3, &[4, 7, 9]);
-    world.seat_scripted_monster_family(3);
+    world.seat_monster_family(3, 1);
     let seats: Vec<(i16, i16)> = (3..6)
         .map(|i| {
             (

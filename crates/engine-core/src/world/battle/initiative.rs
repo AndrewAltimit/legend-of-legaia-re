@@ -243,10 +243,10 @@ impl World {
     /// ([`vm::battle_formulas::FormationAbility`]) fold from the living party
     /// members, matching the escape roll's fold.
     ///
-    /// **Partial**: retail's map-gated scripted ambush arm (monster ids
-    /// `0x3D..=0x3F` on maps `0x0C` / `0x15`) is passed `map_id: 0` because the
-    /// engine has no numeric map-id space at this layer, so that arm never
-    /// fires. The unconditional `monster_id == 0xA7` ambush arm does.
+    /// The map-gated scripted ambush arm (monster ids `0x3D..=0x3F` on maps
+    /// `0x0C` / `0x15`) reads the loaded scene's define
+    /// ([`crate::world::BattleState::map_id`]); the unconditional
+    /// `monster_id == 0xA7` arm needs none.
     ///
     /// PORT: FUN_80051D84 (the caller side; arithmetic in
     /// `battle_formulas::roll_formation_advantage`)
@@ -281,7 +281,7 @@ impl World {
                 .first()
                 .map(|s| s.monster_id as u8)
                 .unwrap_or(0),
-            map_id: 0,
+            map_id: self.battle.map_id as u16,
         };
         // The score inputs are owned locals, so the RNG closure can hold the
         // only borrow of `self` - draws stay on the shared determinism stream.

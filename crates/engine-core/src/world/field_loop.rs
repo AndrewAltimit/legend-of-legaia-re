@@ -269,10 +269,12 @@ impl World {
         // `FUN_800513F0` `0x80051430`), not `1`.
         self.battle_ctx.scripted_fight = if scripted { 4 } else { 0 };
         // The same flag picks the monster seat family (`FUN_800513F0`'s row
-        // index adds it), so a scripted fight is seated on rows `5..8`.
-        if scripted {
-            self.seat_scripted_monster_family(monster_count);
-        }
+        // index adds it), so a scripted fight is seated on rows `5..8`; the
+        // map-gated arm (`0x800517A0..0x800517E0`) adds a second `+4`.
+        let first_id = formation.slots.first().map_or(0, |s| s.monster_id);
+        let map_arm =
+            matches!(self.battle.map_id, 0x0C | 0x15) && (0x3D..=0x3F).contains(&first_id);
+        self.seat_monster_family(monster_count, u8::from(scripted) + u8::from(map_arm));
         let first_monster = party_count;
         for slot in 0..party_count as usize {
             let a = &mut self.actors[slot];

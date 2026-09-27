@@ -133,24 +133,36 @@ impl World {
             }
         }
     }
-    /// Re-seat the monster block on the **alternate** stage-seat family.
+    /// Re-seat the monster block on seat family `family` of the table at
+    /// `0x80077608`.
     ///
-    /// `FUN_800513F0` picks the monster row as `ctx[+1] + sp[+0x20] + s4`,
-    /// where `sp[+0x20]` is `(DAT_8007BD60 >> 5) & 4` (`0x80051430`, the same
-    /// word it stores to the scripted-fight byte `ctx[+0x287]`) - so a
-    /// scripted fight reads rows `5..8` of the table at `0x80077608`. Counts
-    /// one and two are authored identical in both families; three and four
-    /// differ. The second addend `s4 = 4` is the map-gated arm (monster
-    /// `0x3D..=0x3F` first, `_DAT_80084540` `0x0C` / `0x15`,
-    /// `0x800517A0..0x800517E0`), which needs the numeric map id the engine
-    /// does not carry at this layer - the same gap the formation roll's
-    /// scripted-ambush arm discloses.
+    /// `FUN_800513F0` picks the monster row as `ctx[+1] + sp[+0x20] + s4`
+    /// (`0x80051838..0x8005184C`), two independent `+4` addends:
+    ///
+    /// * `sp[+0x20]` is `(DAT_8007BD60 >> 5) & 4` (`0x80051430`, the same word
+    ///   it stores to the scripted-fight byte `ctx[+0x287]`);
+    /// * `s4 = 4` is the map-gated arm (`0x800517A0..0x800517E0`): the loaded
+    ///   scene's define `_DAT_80084540` is `0x0C` / `0x15` (`town0b` /
+    ///   `town0c`) and the first monster id `0x8007BD0C` is in `0x3D..=0x3F`.
+    ///
+    /// `family` counts the addends that fire. One selects rows `5..8`
+    /// ([`crate::battle_seats::MONSTER_SEATS_ALT`]; counts one and two are
+    /// authored identical to the normal family, three and four differ). Both
+    /// select rows `9..12`, which the disc leaves zero-filled - every monster
+    /// on the stage origin - and the port reproduces that.
     ///
     /// REF: FUN_800513F0 (the monster row index, `0x80051838..0x8005184C`)
-    pub(in crate::world) fn seat_scripted_monster_family(&mut self, monster_count: u8) {
+    pub(in crate::world) fn seat_monster_family(&mut self, monster_count: u8, family: u8) {
+        if family == 0 {
+            return;
+        }
         let pc = usize::from(self.party.party_count.clamp(1, 3));
         for k in 0..usize::from(monster_count) {
-            let s = crate::battle_seats::monster_seat(monster_count, k, true);
+            let s = if family == 1 {
+                crate::battle_seats::monster_seat(monster_count, k, true)
+            } else {
+                crate::battle_seats::Seat { x: 0, y: 0, z: 0 }
+            };
             let Some(a) = self.actors.get_mut(pc + k) else {
                 break;
             };
