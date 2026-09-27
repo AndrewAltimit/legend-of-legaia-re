@@ -14,6 +14,7 @@ mod auto_command;
 mod capture;
 mod cast_band;
 mod casting;
+mod clip_ladder;
 mod command_flow;
 mod commit_log_launch;
 mod effect_route;

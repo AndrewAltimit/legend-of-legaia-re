@@ -185,38 +185,20 @@ impl World {
         // XA-template tick ahead of the anim node advance).
         self.tick_battle_impact_fx();
         for i in 0..self.actors.len() {
-            // Hit-reaction chaining first (the FUN_8004AD80 record-type-4 arm):
-            // a finished knockdown re-stages the get-up entry while the actor
-            // lives, and holds its final downed keyframe otherwise. Other
-            // finished reactions fall through to the idle restore below.
-            let reaction = {
+            // Hit-reaction chaining first: a finished reaction clip takes the
+            // natural-end path and the next commit's reaction arms - the
+            // `FUN_8004AD80` clip-tag ladder's staged entry (get-up behind a
+            // knockdown, a downed party member's `7` -> `8` chain) and the
+            // monster-death arm (`world::battle::clip_ladder`).
+            let finished = {
                 let a = &self.actors[i];
                 match (a.battle_reaction, &a.battle_animation) {
-                    (Some(key), Some(p)) if p.finished() => Some((key, a.battle.hp > 0)),
+                    (Some(tag), Some(p)) if p.finished() => Some(tag),
                     _ => None,
                 }
             };
-            match reaction {
-                Some((4, true)) => {
-                    // Knockdown finished on a living actor: play get-up (key 5).
-                    if !self.queue_battle_reaction_key(i, 5) {
-                        self.actors[i].battle_reaction = None;
-                    }
-                }
-                Some((4, false)) => {
-                    // Knockdown finished on a dead actor: hold the downed pose.
-                    // On a monster this is the death commit that hands over
-                    // its spoils - a thief's loot, or the killer's steal
-                    // attack (`FUN_8004AD80` `0x8004B0A4`: tag 4, HP 0).
-                    if i >= usize::from(self.party.party_count) {
-                        self.resolve_monster_death_spoils(i);
-                    }
-                }
-                Some((_, _)) => {
-                    // Flinch / get-up / block finished: resume idle.
-                    self.actors[i].battle_reaction = None;
-                }
-                None => {}
+            if let Some(tag) = finished {
+                self.finish_battle_reaction(i, tag);
             }
             // Staged-clip end - the engine's anim-end signal (retail: the
             // anim system's completion edge). Clear `ADVANCE_DONE` so the
@@ -575,7 +557,15 @@ impl World {
         if self.mode != SceneMode::Battle {
             return;
         }
-        for a in self.actors.iter_mut() {
+        // Whether each actor's reaction channel holds its knockdown entry
+        // `+0x1F1` (which is the flinch entry on an actor without one).
+        let on_knockdown: Vec<bool> = (0..self.actors.len())
+            .map(|i| {
+                let entry = self.actors[i].battle_reaction_entry;
+                entry.is_some() && entry == self.battle_reaction_map(i).map(|m| m[2])
+            })
+            .collect();
+        for (a, on_knockdown) in self.actors.iter_mut().zip(on_knockdown) {
             // `+0x22C == 0` (no battle record) skips the slot.
             if !a.active {
                 continue;
@@ -590,15 +580,12 @@ impl World {
             // The arm-2 gate compares the committed anim against the cached
             // knockdown entry `+0x1F1`; the engine plays a knockdown through
             // the reaction channel without re-pointing `current_anim`, so
-            // the reaction latch stands in for that equality.
+            // the reaction channel's committed entry stands in for that
+            // equality.
             let fade = FadeInputs {
                 party,
                 committed_anim: b.current_anim,
-                knockdown_entry: if a.battle_reaction == Some(4) {
-                    b.current_anim
-                } else {
-                    0xFF
-                },
+                knockdown_entry: if on_knockdown { b.current_anim } else { 0xFF },
                 captured: b.capture_state != 0,
             };
             let (next, fx) = tint_sm_step(b.render_flag, words, fade, 1);
@@ -1047,6 +1034,8 @@ impl World {
         // dropped. Dropping the latch here also stops the end-of-clip get-up
         // chain in `tick_battle_animations` from stealing the clip back.
         a.battle_reaction = None;
+        a.battle_reaction_entry = None;
+        a.battle_reaction_next = None;
         // The walk (action tag 1) loops until the SM stages something else
         // (AttackShortStep clears it to 0 on arrival). Keyed on the clip's
         // own tag, not its id: a party file's walk is entry 1, but a
@@ -1099,30 +1088,36 @@ impl World {
 
     /// Queue the retail hit reaction on a damaged battle actor, mirroring the
     /// damage primitive `FUN_800402F4`: a surviving target with no get-up
-    /// entry (action tag `5`) plays the light flinch (tag `2`, then straight
-    /// back to idle); any other hit plays the knockdown (tag `4`), whose
-    /// end-of-clip chain ([`Self::tick_battle_animations`], the
-    /// `FUN_8004AD80` record-type-4 arm) re-stages the get-up while the actor
-    /// lives and holds the downed keyframe when it dies. No-op for actors
-    /// without installed action clips (or without the needed entries).
+    /// entry plays the light flinch (`+0x1EF`, then straight back to idle);
+    /// any other hit plays the knockdown (`+0x1F1`, which falls back to the
+    /// flinch entry on an actor without one), whose natural end runs the
+    /// commit's clip-tag ladder (`world::battle::clip_ladder`): the get-up
+    /// while the actor lives, a downed party member's `7` -> `8` chain, a
+    /// dead monster's death arm. No-op for actors without installed action
+    /// clips (or without the needed entries).
     // PORT: FUN_800402F4 (damage-arm reaction staging: `+0x1DA = +0x1EF` for
     // a surviving no-get-up target, else `+0x1DA = +0x1F1`; the `+0x1EF..
     // +0x1F3` tag->entry map is built by FUN_80054CB0 / FUN_80053CB8).
     pub fn queue_battle_reaction(&mut self, slot: usize, survives: bool) {
-        let has_getup = self
-            .battle_reaction_clip(slot, 5)
-            .map(|c| c.frame_count > 0)
-            .unwrap_or(false);
-        let key = if survives && !has_getup { 2 } else { 4 };
-        self.queue_battle_reaction_key(slot, key);
+        let Some(map) = self.battle_reaction_map(slot) else {
+            return;
+        };
+        let has_getup = map[3] != 0
+            && self
+                .actors
+                .get(slot)
+                .and_then(|a| a.battle_action_clips.as_ref())
+                .and_then(|c| c.get(usize::from(map[3])))
+                .and_then(|c| c.as_ref())
+                .is_some_and(|c| c.frame_count > 0);
+        let entry = if survives && !has_getup {
+            map[0]
+        } else {
+            map[2]
+        };
+        self.commit_battle_reaction_entry(slot, entry);
     }
 
-    /// Look up actor `slot`'s action clip carrying action tag `key` (the
-    /// retail `+0x1EF` map: tag -> entry, with the loader's tag-4 -> tag-2
-    /// fallback applied by the caller). Player files store the reaction
-    /// family identity-ordered; monster archives at arbitrary indices - so
-    /// the lookup is by each clip's `action_id`, exactly like
-    /// `FUN_80054CB0`'s first-byte scan.
     /// The action **tag** of every installed action clip of the monster in
     /// `slot`, in entry order - the `+0x4C` table the battle action SM's
     /// `FUN_80050E2C` lookups scan
@@ -1151,40 +1146,6 @@ impl World {
                 })
                 .collect(),
         )
-    }
-
-    fn battle_reaction_clip(&self, slot: usize, key: u8) -> Option<MonsterAnimation> {
-        let clips = self.actors.get(slot)?.battle_action_clips.as_ref()?;
-        clips.iter().flatten().find(|c| c.action_id == key).cloned()
-    }
-
-    /// Start the reaction clip for `key` on actor `slot` (one-shot). Applies
-    /// the retail tag-4 -> tag-2 fallback (`FUN_80054CB0` seeds `+0x1F1` from
-    /// `+0x1EF` when no tag-4 entry exists). Returns `false` when no usable
-    /// clip exists.
-    fn queue_battle_reaction_key(&mut self, slot: usize, key: u8) -> bool {
-        let clip = self.battle_reaction_clip(slot, key).or_else(|| {
-            (key == 4)
-                .then(|| self.battle_reaction_clip(slot, 2))
-                .flatten()
-        });
-        let Some(clip) = clip else {
-            return false;
-        };
-        let Some(player) = crate::battle_anim::MonsterAnimPlayer::new_one_shot(&clip) else {
-            return false;
-        };
-        let Some(actor) = self.actors.get_mut(slot) else {
-            return false;
-        };
-        actor.battle_animation = Some(player);
-        actor.battle_reaction = Some(key);
-        actor.battle_pose = None;
-        // Reaction record committed: swap in its effect script + zero the
-        // cursor (retail FUN_8004AD80, `sb zero,0x1f5` on every commit).
-        actor.battle_effect_script = Some(clip.effect_script).filter(|s| !s.is_empty());
-        actor.battle_effect_cursor = 0;
-        true
     }
 
     /// Install the per-slot battle action clips for actor `slot` (see
@@ -1222,18 +1183,31 @@ impl World {
     /// Switch actor `slot`'s battle animation for a battle-action SM pose
     /// request (the retail `FUN_801D5854(actor, pose_id)` call).
     ///
-    /// Pose id → action-stream slot is an explicit engine interpretation
-    /// grounded in the player files' slot census: the SM's pose-id space is
-    /// `6` idle / `7` ready / `8` recover / `9` defeat, and in every player
-    /// battle file slot 6 is EMPTY while slots 7/8/9 are populated (Terra,
-    /// who barely fights, lacks exactly 7/8) and slot 0 is the proven idle
-    /// loop. So: pose 6 plays slot 0 as a loop; poses 7/8/9 play their
-    /// same-numbered slot as a one-shot (defeat holds its last frame via
-    /// [`Self::tick_battle_animations`]); a missing slot falls back to idle.
+    /// Pose id → action-stream slot is an engine interpretation: retail's
+    /// `FUN_801D5854(actor, 6..9)` selects a camera / presentation program
+    /// and writes no anim field. Pose 6 plays slot 0, the idle loop. Poses 7
+    /// and 8 play it too: the same-numbered entries are the **downed**
+    /// chain - the commit's clip-tag ladder stages entry 7 behind a dead
+    /// party member's knockdown and entry 8 behind that
+    /// (`world::battle::clip_ladder`), three catalogued states read a dead
+    /// party member on entry 8, and none of the action SM's literal `+0x1DA`
+    /// stores names 7 or 8 - so a living attacker never plays them. Pose 9
+    /// plays entry 9 as a one-shot (the SM does stage id 9,
+    /// `0x801E4A14`), holding its last frame via
+    /// [`Self::tick_battle_animations`]; a missing slot falls back to idle.
     /// Re-requesting the actor's current pose keeps the playing clip.
     // REF: FUN_801D5854 - the SM's pose dispatch this hook answers; the
     // id->slot mapping is an engine interpretation, not a port of its body.
     pub fn apply_battle_pose(&mut self, slot: usize, pose_id: u8) {
+        use vm::battle_action::Pose;
+        // Ready / recover play the idle loop (doc above): fold them into the
+        // idle request so the loop is not restarted when the SM switches
+        // between them.
+        let pose_id = if pose_id == Pose::Ready as u8 || pose_id == Pose::Recover as u8 {
+            Pose::Idle as u8
+        } else {
+            pose_id
+        };
         let Some(actor) = self.actors.get_mut(slot) else {
             return;
         };
@@ -1268,11 +1242,10 @@ impl World {
         if actor.battle_pose == Some(pose_id) {
             return;
         }
-        let idle_pose = vm::battle_action::Pose::Idle as u8;
-        let clip_slot = if pose_id == idle_pose {
-            0
-        } else {
+        let clip_slot = if pose_id == Pose::Defeat as u8 {
             pose_id as usize
+        } else {
+            0
         };
         let selected = match clips.get(clip_slot).and_then(|c| c.as_ref()) {
             Some(clip) if clip_slot != 0 => {
