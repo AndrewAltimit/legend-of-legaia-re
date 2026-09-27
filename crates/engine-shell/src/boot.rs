@@ -691,13 +691,18 @@ impl BootSession {
         // browser play page's `load_disc` calls too. Best-effort: absent on a
         // disc-free build, where each consumer keeps its default. Persists
         // across New Game.
-        if let Some(scus) = read_scus(&source) {
+        let scus = read_scus(&source);
+        // Both halves of the battle chip / caption labels - the overlay half
+        // (banner sentences, `Spirit`, `Escape`, the Ra-Seru names) and the
+        // SCUS half (`Begin`, `Run`, `Attack`, ... and the sparring fight's
+        // opening caption) - through the one builder the browser runtime's
+        // `load_disc` calls too.
+        host.world.battle.ui_strings = legaia_engine_core::battle_open::battle_ui_strings_for_disc(
+            &host.index,
+            scus.as_deref(),
+        );
+        if let Some(scus) = scus {
             host.world.install_retail_progression_tables(&scus);
-            // The SCUS half of the battle chip / caption labels (`Begin`,
-            // `Run`, `Attack`, ... and the sparring fight's opening caption).
-            // The overlay half merges in when a player battle is requested
-            // (`window/run.rs`); twin of the browser runtime's `load_disc`.
-            host.world.battle.ui_strings.merge_scus(&scus);
             // Pause-menu text: item names + info-window descriptions,
             // spell names / descriptions, accessory passive lines. The
             // Items / Magic pause screens resolve their strings here.

@@ -667,12 +667,8 @@ pub(super) fn cmd_play_window_with_record(
     // Ra-Seru magic-command name. Empty on a partial extraction, in which case
     // the port's own wording draws instead of nothing.
     if player_battle {
-        let strings =
-            legaia_engine_core::battle_open::battle_ui_strings_from_prot(&session.host.index);
-        // Merged, not assigned: the SCUS half (the chip words and the
-        // sparring caption) was read at boot (`boot.rs`), this is the overlay
-        // half.
-        session.host.world.battle.ui_strings.merge(&strings);
+        // Both label halves were installed at boot (`boot.rs`, the builder
+        // the browser page shares).
         // The party cast trigger's per-spell anim-pair lists, off the same
         // battle-overlay image.
         session.host.world.battle.spell_anim_pairs =
