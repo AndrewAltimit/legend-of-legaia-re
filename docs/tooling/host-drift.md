@@ -1243,21 +1243,18 @@ about these is contested.
 | battle body blend modes | Retail semi-transparency on a whole battle body, on neither host. See [below](#a-battle-bodys-blend-mode-reaches-neither-host). |
 | page resume and New Game flow | The page's scene-level Load / New Game choreography lives in `site/_content/play.html` callbacks, not the engine. See [below](#the-page-owns-its-resume-and-new-game-choreography). |
 | movie audio policy | Which movies pause the BGM, and what a finished movie resumes, is decided per host. See [below](#movie-audio-is-a-per-host-policy). |
+| Ra-Seru chip cross-out | The regular ring's red X over a forbidden Ra-Seru chip, on neither host. See [below](#the-ra-seru-chips-cross-out-reaches-neither-host). |
 
 ### The page owns its resume and New Game choreography
 
 The native window resumes a save in one engine call
 (`BootSession::enter_field_live_from_save`: enter the save's scene, then load
 over it) and starts a New Game through `BootSession::begin_new_game`. The page
-splits both across `play.html` callbacks, and three of its paths differ:
-
-- a card Load whose scene is the one already open never re-enters it, so the
-  party lands at the current position rather than at the save point;
-- a Continue or import naming a scene the page does not list falls through to
-  New Game over the loaded save;
-- the party-wipe path's title callback enters the opening without
-  `begin_new_game`, so a New Game after a wipe keeps the wiped party, flags,
-  bag and gold, and the title theme is not stopped.
+splits both across `play.html` callbacks. A card Load re-enters its scene
+even when it is the one already open, and the party-wipe path's New Game
+takes the same `begin_new_game` reset as the boot title; one path still
+differs: a Continue or import naming a scene the page does not list falls
+through to New Game over the loaded save.
 
 A parked resume the page declines to enter no longer survives the next tick
 (`tick_frame` drops it), which was the part that silently re-applied an old
@@ -1307,6 +1304,19 @@ the prims a mesh flags semi-transparent (its semi tail); a whole-mesh override
 needs the opaque range re-issued through the per-ABR blend pipelines, and the
 page's WebGL program the same. See
 [battle.md](../subsystems/battle.md#the-near-camera-ghost-pass-fun_8004dc68).
+
+### The Ra-Seru chip's cross-out reaches neither host
+
+In the Rim Elm ambush and against monster `0xAF` the special-battle word
+carries `0x200`, and retail's command ring crosses the Ra-Seru chip out with
+the red `etim` quad (`FUN_801DBC30(0xF8, 0x42)`) and refuses its arm. Both
+play hosts take the refusal and the greyed chip from the engine
+(`battle_hud::battle_magic_chip`, `World::tick_battle_command`), and
+`battle_hud::battle_magic_chip_mark` answers the mark, but neither host's
+battle chip pass places the quad, so the gap is symmetric and no tier sees
+it. The dome ring draws the same mark ([`muscle_dome::ChipMark`]) on the
+minigames page only. See
+[battle.md](../subsystems/battle.md#the-ra-seru-forbidden-bit-of-the-special-battle-word).
 
 ### The minigame side-channel step is paired; its contents are not
 
