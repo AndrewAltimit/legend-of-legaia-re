@@ -2078,10 +2078,11 @@ pub fn validate_lang_pack(
 /// The pack is filled with the game's copyrighted text: it belongs in the
 /// user's browser (or their own scratchpad), never in the repo.
 ///
-/// `fold_accents` (recommended) rewrites the accented glyph cells the NTSC font
-/// leaves empty onto plain ASCII - `Epee` for `Épée`. With it off the raw PAL
-/// accent bytes are kept, which is byte-faithful but renders blank until the
-/// font atlas is patched; either way the count is reported, never silent.
+/// `fold_accents` rewrites the accented glyph cells the NTSC font does not
+/// draw onto plain ASCII - `Epee` for `Épée`. With it off the raw PAL accent
+/// bytes are kept and the pack is stamped `accents: font`, so the import
+/// writes the accent font and they draw; either way the count is reported,
+/// never silent.
 ///
 /// Returns `{ yaml, language, exe, build, summary, tables: [{name, located,
 /// pal_base, valid_pct, paired}], names_filled, names_unmapped, party_filled,
@@ -2115,6 +2116,11 @@ pub fn lift_official_pack(
     let fold = if fold_accents {
         lift::fold_pack_accents(&mut pack)
     } else {
+        // The PAL accent bytes sit on the accent font's layout: stamp the
+        // pack so the import writes that font and they draw.
+        pack.accents = legaia_patcher::translation::accents::AccentMode::Font
+            .header()
+            .to_string();
         Default::default()
     };
     let yaml = pack.to_yaml().map_err(|e| err(format!("emit YAML: {e}")))?;
@@ -2189,7 +2195,9 @@ pub fn lift_official_pack(
             fold.folded, fold.unmapped
         )
     } else {
-        "  accents: kept as PAL bytes - they render blank without a font patch\n".to_string()
+        "  accents: kept as PAL bytes; the pack asks for the accent font (accents: font), \
+         so the patch draws them\n"
+            .to_string()
     });
     summary.push_str(
         "  menu / system UI strings: not lifted - the overlay string pools sit at \
