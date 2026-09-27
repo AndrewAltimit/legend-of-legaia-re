@@ -1010,6 +1010,9 @@ impl World {
         // mode (outside battle it drops its state) - once, here, for every
         // host (`crate::battle_cam_inputs`).
         self.tick_battle_camera();
+        // The near-camera ghost pass reads the pose this tick settled
+        // (`FUN_80046A20` calls `FUN_8004DC68` after its camera update).
+        self.tick_battle_camera_ghost();
         outcome
     }
 

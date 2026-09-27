@@ -12,6 +12,7 @@ mod actor_draw;
 mod auto_combo;
 mod auto_command;
 mod capture;
+mod camera_ghost;
 mod cast_band;
 mod casting;
 mod clip_ladder;

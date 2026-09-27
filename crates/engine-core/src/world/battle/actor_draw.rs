@@ -48,6 +48,14 @@ impl BattleActorDrawPlan {
         ]
     }
 
+    /// The PSX blend mode the body draws with when its colour word's mode
+    /// byte raises semi-transparency (bit 31; bits 24/25 the rule) - `3`
+    /// (`B + F/4`) for a body the near-camera ghost pass `FUN_8004DC68`
+    /// flagged. `None` for an opaque body.
+    pub fn semi_mode(&self) -> Option<u8> {
+        (self.draw_colour & 0x8000_0000 != 0).then_some(((self.draw_colour >> 24) & 3) as u8)
+    }
+
     /// The GTE `IR0` as the hosts' `DrawCue.max_ir0` (`0x1000` = `1.0`).
     pub fn cue_ir0(&self) -> f32 {
         f32::from(self.tint.weight) / 4096.0
@@ -158,7 +166,8 @@ impl World {
         };
         let t = tint::battle_actor_tint(&tint::BattleTintInputs {
             lanes,
-            top: 0,
+            // `+0x8`'s top byte: the near-camera ghost pass's mode bits.
+            top: b.flag_word & 0xFF00_0000,
             blend: b.render_blend,
             render_flag: b.render_flag,
             status: self.battle.status_effects.display_flags(actor_idx as u8),
