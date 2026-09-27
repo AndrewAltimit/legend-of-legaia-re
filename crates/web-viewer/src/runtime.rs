@@ -838,17 +838,16 @@ impl LegaiaRuntime {
             host.world.load_full(sf);
         }
         // A deliberate scene boot restages BGM from scratch: clear the dedupe
-        // latch (so the scene's own op-`0x35` start is honoured even if it names
-        // the track that was already playing) and stage the new scene's VAB
-        // bank. Both no-op until audio is live (`audio_init`), which itself
-        // restages the current scene's bank.
+        // latch, so the scene's own op-`0x35` start is honoured (and re-stages
+        // its track's bank) even if it names the track already playing. No
+        // scene bank is staged: retail loads a bank only with its track
+        // (`legaia_engine_core::scene::SCENE_LOCAL_BGM_FALLBACK_ID`).
         // New scene -> drop any SFX cues still queued for the old one (the
         // native boot's `clear_sfx` on scene entry).
         self.on_scene_change_audio();
         #[cfg(target_arch = "wasm32")]
         {
             self.bgm_last_started = None;
-            self.stage_scene_bgm_bank();
         }
         Ok(self.state_json())
     }
@@ -1106,8 +1105,6 @@ impl LegaiaRuntime {
         if !fmv_handoff_scene.is_empty() {
             self.rebuild_render_state()?;
             self.on_scene_change_audio();
-            #[cfg(target_arch = "wasm32")]
-            self.stage_scene_bgm_bank();
             return Ok(fmv_handoff_scene);
         }
         if let SceneTickEvent::SceneEntered { name } = event {
@@ -1119,12 +1116,11 @@ impl LegaiaRuntime {
             // taught (a screen armed with nothing to finish it parks the
             // script dead).
             self.rebuild_render_state()?;
+            // A door swapped the scene. No bank is staged and the dedupe
+            // latch is kept, so a track that carries across the transition
+            // keeps its playhead and its samples (the native
+            // `after_scene_swap` does the same).
             self.on_scene_change_audio();
-            // A door swapped the scene: restage its VAB bank (a scene-local
-            // start needs it) without resetting the dedupe latch, so a track
-            // that carries across the transition keeps its playhead.
-            #[cfg(target_arch = "wasm32")]
-            self.stage_scene_bgm_bank();
             return Ok(name);
         }
         // A field-VM op-0x49 sub-0 merchant armed a shop this tick: hand it to
@@ -1291,9 +1287,6 @@ impl LegaiaRuntime {
                 Ok(out) => {
                     out.set_gain(BGM_DEFAULT_GAIN);
                     self.audio_out = Some(out);
-                    // If a scene is already up, stage its VAB now so a
-                    // scene-local BGM start resolves against a live bank.
-                    self.stage_scene_bgm_bank();
                     true
                 }
                 Err(e) => {
@@ -2083,60 +2076,6 @@ impl LegaiaRuntime {
         if let Err(e) = host.route_bgm_events(&mut director) {
             crate::console_log(&format!("play BGM: route failed: {e:#}"));
         }
-    }
-
-    /// Stage the current scene's first VAB entry
-    /// ([`SceneHost::scene_vab_bytes`]) into the SPU as the active scene-local
-    /// BGM bank, mirroring the native boot's `stage_scene_vab` (parse at the
-    /// stream's own VAB offset, SPU RAM allocator from `0x1000`). No-op when
-    /// audio isn't up or the scene has no VAB. A subsequent global-pool track
-    /// replaces this bank with its own on start.
-    #[cfg(target_arch = "wasm32")]
-    fn stage_scene_bgm_bank(&mut self) {
-        let out = match self.audio_out.as_ref() {
-            Some(o) => o,
-            None => return,
-        };
-        let host = match self.scene_host.as_ref() {
-            Some(h) => h,
-            None => return,
-        };
-        // A global-pool track carried across the swap owns the region; the
-        // scene bank would overwrite its samples (the native
-        // `after_scene_swap` makes the same call).
-        let live = out
-            .sequencer_progress()
-            .is_some()
-            .then_some(self.bgm_last_started)
-            .flatten();
-        if !legaia_engine_core::scene::scene_bank_restage_wanted(live) {
-            return;
-        }
-        let (vab_bytes, vab_off) = match host.scene_vab_bytes() {
-            Ok(Some(b)) => b,
-            _ => return,
-        };
-        let report = match legaia_vab::parse(&vab_bytes, vab_off) {
-            Ok(r) => r,
-            Err(e) => {
-                crate::console_log(&format!("play BGM: scene VAB parse failed: {e}"));
-                return;
-            }
-        };
-        let bank = out.with_spu(|spu| {
-            // Cap the BGM region below the resident class-2 SFX bank at the
-            // top of SPU RAM, the way the native boot's `stage_scene_vab`
-            // does, so a BGM upload never stomps the SFX samples
-            // ([`crate::play_sfx`]).
-            let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(
-                crate::play_sfx::SPU_RESERVED_BYTES,
-                legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32
-                    - crate::play_sfx::SPU_RESERVED_BYTES
-                    - crate::play_sfx::SFX_BANK_SPU_BYTES,
-            );
-            legaia_engine_audio::VabBank::upload(spu, &mut alloc, &report, &vab_bytes)
-        });
-        self.bgm_bank = Some(bank);
     }
 }
 
