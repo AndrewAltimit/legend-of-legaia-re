@@ -36,7 +36,8 @@
 //! [`World::man_load_actor_reset`]: crate::world::World::man_load_actor_reset
 //!
 //! [`submode_panel_rows`] stays disclosed and its note says why: the op-`0x49`
-//! sub-op-4 handler that installs its panel is unported.
+//! sub-op-4 handler that installs its panel is ported only on the world-map
+//! panel host, not on the field submode screen the `kor` scripts reach.
 //! [`request_card_mode`] is wired through the mode seat.
 //!
 //! REF: FUN_80020DE0 (actor spawn), FUN_8003CF04 (actor-by-handler search),
@@ -220,21 +221,23 @@ pub struct PanelRow {
 /// `count != 0` test), which is why the frame and labels are emitted separately
 /// from this pass.
 ///
-/// NOT WIRED: the routine's installer is unported. This is the painter of
-/// panel-window record 14 (`0x801F2B98 + 14 * 0x1C`, `+0x18` =
-/// `0x801E6984`), and the only descriptor naming record 14 is `0x801F3304`,
-/// which the submode-driver handler at slot `0x23` (`FUN_801EF014`, the
-/// op-`0x49` sub-op-4 screen: `OP49_SUBOP_SLOTS[4] = 0x23`) installs at
-/// `0x801EF144`. That handler - seed the cursor words `_DAT_8007BB88` /
-/// `_DAT_8007BB9C` from a run of story flags the operand names, run the list
-/// picker `FUN_801E9DC8`, set the picked flag - has no body in
-/// `legaia_engine_vm::baka_hub_actors`, so no engine screen ever names record
-/// 14 and a `PanelRow` would have no frame to join. The disc drives it only
-/// from the `kor` / `kor3` / `kor4` scene scripts (`asset field-op-census
-/// --only "49 04"`). What wiring needs is that handler ported into the hub
-/// dispatcher with this layout as its painter, and a host that draws the
-/// hub's generic `HubDraw` list, which neither play host does yet (the
-/// native window paints only the coin counter off the submode screen).
+/// NOT WIRED: the routine's installer is ported, but not on the path that
+/// installs it. This is the painter of panel-window record 14
+/// (`0x801F2B98 + 14 * 0x1C`, `+0x18` = `0x801E6984`), and the only
+/// descriptor naming record 14 is `0x801F3304`, which the flag-window picker
+/// `FUN_801EF014` runs at `0x801EF144` - handler slot `0x23`, the op-`0x49`
+/// sub-op-4 screen (`OP49_SUBOP_SLOTS[4] = 0x23`). That picker has a port,
+/// `legaia_engine_vm::world_map_panel_actors::flag_window_tick`, hosted by
+/// `crate::world_map_panel_host` behind a world-map pad chord. The field
+/// path retail takes - `49 04` in the `kor` / `kor3` / `kor4` scene scripts
+/// (`asset field-op-census --only "49 04"`) through
+/// `crate::field_submode_screen` - falls into that screen's empty default
+/// arm for slot `0x23`, and neither host draws panel-window records of either
+/// host's panel model. Wiring needs slot `0x23` in the field submode screen
+/// driving `flag_window_tick` over the op-`0x49` operand bytes, and a shared
+/// panel draw for record 14 with this layout as its row pass - whose glyph
+/// runs (`entry + 0x4F` / `0x58`, and `+8`) are sprite-cell codes no host
+/// atlas maps yet.
 ///
 /// An earlier note blamed the context block, and a later one only the missing
 /// host consumer; both skipped the installer. `world-map.md` had also filed
