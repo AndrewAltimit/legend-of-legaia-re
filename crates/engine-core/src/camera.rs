@@ -564,6 +564,21 @@ impl Camera {
         // `World` while these globals live here. Both hosts call this right
         // before `tick`, so this is the one drain point.
         self.zone.pending.extend(world.take_camera_zone_requests());
+        // The field actor visibility cull (`FUN_801D79E8`) reads the focus
+        // pair, the region box and the visible tile window. They live here,
+        // so this drain point - which both hosts reach every frame - is
+        // where the world gets them. Published only while the zone follow
+        // camera owns them; before its first compose the focus is not the
+        // one retail's globals would hold, and a cull against it would hold
+        // gliders the player can see.
+        world.npcs.cull_view =
+            self.zone
+                .active
+                .then(|| crate::world::field_npc_cull::FieldCullView {
+                    focus_stored: [self.globals.0[6], self.globals.0[8]],
+                    attr_box: self.zone.attrs.box_bytes,
+                    window: self.zone.view_window,
+                });
         let mut applied = 0usize;
         let mut leftover = Vec::new();
         for ev in world.drain_field_events() {
