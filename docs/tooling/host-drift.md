@@ -789,7 +789,10 @@ clip player and drains the player move cues. A `{}` body pairs perfectly with
 anything, and the alias row's reason asserted that both sides "advance the
 scene's posed actors" - a sentence no line of native code supported. The
 window does that work; it does it inline in its own tick loop, which is a
-different claim, and the one the row makes now.
+different claim, and the one the row made next. Both hosts now name the
+step (`drain_anim_cues` natively) and both bodies call the one engine kernel
+`World::drain_field_anim_cues`; the `[[frame_content]]` row carries the one
+remaining difference, the page advancing its clip players inside the step.
 
 This tier asks the next question with the only evidence a source scan carries:
 for each paired kernel, the set of **engine functions** each host's body
@@ -1220,6 +1223,14 @@ most of that work does reach both hosts.
 The native `tick_dance_side` sub-step is not in the table because it no
 longer exists: everything it did was the duplicate spawn below.
 
+The two `tick_muscle_hub` steps used to be the same hub timer state machine
+written twice - the first visit, the leg-open ROUND card, the INTERVAL +
+tally screen and the re-entered backdrop, with their leg edges, as eight
+fields on each host. They are one engine kernel now,
+`muscle_ringside::HubTimers::tick`, which each host drives once a frame and
+reads its draws from; what stays per host is how the XA line and the tally
+voices it returns get played.
+
 The **effect-part pool** is no longer a native-only sink. It is
 `legaia_engine_core::minigame_fx::MinigameFxPool` on
 `World::minigames.fx`, aged inside `World::tick` (so every host that ticks
@@ -1293,7 +1304,23 @@ and each host stages the same clip headers through
 their PROT index, the minigames page off its disc - so a double-step clip
 strikes at the same frame everywhere. The minigames page also poses the swing
 off that clock (`baka_state_json`'s `clock`), where it used to start the swing
-when the exchange report arrived.
+when the exchange report arrived. Both browser pages read the duel's state
+through one builder, `minigames::baka_state_json_for`; the play page's own
+copy carried no `clock` and no `ghosts`.
+
+**The duel's 3D surface is one engine kernel on the two play hosts.**
+`engine-core::baka_duel_scene` builds the buffers (both fighters, two ghost
+copies each, the four arena walls, the floor), poses them from the fighters'
+display clips and the afterimage passes, and owns the arena camera; the
+native window (`refresh_baka_duel_gpu`) and the play page
+(`play_mg_baka_scene_*`) each drive one `BakaDuelSurface`, upload what it
+posed and draw it under `DuelCamera::vp_raw`. Before it, the native window
+drew the duel as labels only, and the play page drew the fighter meshes
+under a fitted orbit camera, timed each clip off its own tick and drew no
+ghosts - so "both play hosts draw labels only" was true of one of them.
+The standalone minigames page still poses its own buffers under its fitted
+camera: it holds a `BakaFight` but no surface, the same blocking shape as the
+rest of that page (below).
 
 What stays open was misnamed "sprite effects". None of the three routines
 draws a sprite: the two banks `_DAT_8007B888` / `_DAT_8007B840` are the
@@ -1301,15 +1328,16 @@ scene's type-`0x05` / `0x0B` ANM clip banks the clip selector `FUN_800204F8`
 resolves, and each routine drives a **model** through them.
 
 - The special's afterimage (`FUN_801D49E8`) is engine state every host steps,
-  and the minigames page draws it as darkened copies of the thrower's mesh.
-  The native window and the play page draw the duel as labels with no fighter
-  meshes, so they have nothing to ghost. That is the gap - a 3D duel surface
-  on those two hosts - not the afterimage.
+  and every host now draws it as darkened copies of the thrower's mesh.
 - The impact pair (`FUN_801D4DF8`) spawns `FUN_80021B04` effect templates at
   the winner's strike offset, and no minigame host runs that effect runtime.
-- The round-start cameo (`FUN_801D6310`) spawns only on a held Triangle, and
-  no host hands the duel a held pad word; it also wants scene model `0` drawn
-  camera-relative plus a VRAM move, which no host does.
+  The fighter positions it offsets from are engine state now
+  (`BakaFight::fighter_position`); the template runtime is what is missing.
+- The round-start cameo (`FUN_801D6310`) spawns on a held Triangle: both
+  play hosts hand the duel the held word through `World`'s duel tick, and
+  the duel surface draws the ring girl camera-relative and applies the wink
+  blit to its VRAM. The standalone minigames page passes no held word, so
+  its duel never spawns one.
 
 And the native window resolves each glyph draw's stamped cell rect without
 sampling it, because its duel HUD has no textured-quad surface.
@@ -1706,7 +1734,7 @@ are the two things a reader should compare:
 | host | call | camera |
 |---|---|---|
 | native window | `take_field_fog_prims` in `window/event_handler/redraw_passes.rs`, before the renderer borrow, composited with the rest of `screen_prims` | `resolve_field_camera(world, camera, None, aabb centre)` |
-| play page | `tick_field_fog_prims` in `play_field_fx.rs`, from `tick_battle_intro`'s prim assembly | `resolve_field_camera(world, camera, None, [0, 0])` |
+| play page | `tick_field_fog_prims` in `play_field_fx.rs`, from `tick_battle_intro`'s prim assembly | `resolve_field_camera(world, camera, None, aabb centre)` |
 
 Both wrap the quads through `screen_prim::fog_puff_prim`, so the blend class
 (semi-transparent, the record's ABR `1`) and the `POLY_FT4` vertex order come
@@ -2841,15 +2869,10 @@ so the tier had nothing to pair:
 
 Recorded rather than fixed; each names the host that lacks it. None is gated.
 
-- **Narration crawl.** The native window's crawl / title-card arm `continue`s
-  after the session tick, skipping the FX ticks, CLUT effects, field-event
-  drain, NPC re-bind, balloon sync and play clock the page runs every frame
-  (`window/event_handler/redraw.rs`, the `boot_ui` / narration arm).
-- **Movie frames.** The page gates only `host.tick()` on a live FMV; its FX,
-  CLUT walker, NPC clips and SFX keep advancing behind the picture.
-- **Anim-cue drains.** The window drains player gestures and NPC animate cues
-  in `SceneMode::Field` only; the page drains them in every mode, so overworld
-  gestures play on one host.
+- **NPC clip advance off the field.** Both hosts drain the ANIMATE cues
+  every tick, but the window advances its NPC clip players in its draw pass
+  and only in `SceneMode::Field` (the frame index keys its pose cache), while
+  the page advances them every tick in every mode.
 - **Shop tick.** The window ticks the world under an open shop with a neutral
   pad; the page freezes the world.
 - **Sub-tick taps.** The window sets and clears its pad straight from key
@@ -2858,22 +2881,50 @@ Recorded rather than fixed; each names the host that lacks it. None is gated.
 - **Overworld CLUT walk.** Implemented twice (`window/field_render.rs`
   `WaterAnim`, the page's `step_field_vram_fx`), already differing in which
   scenes patch strip rows and which column is checked.
-- **Battle camera without a render.** The page's battle camera state lives on
-  its render resource and does not tick when that fails to build; the window
-  removed the same gate.
 - **Monster action-tag clips** are installed from each host's render path, so a
   monster with no mesh - or a native frame's first battle ticks - reads no tag
   table.
 - **Baka on the play page** carries no strike clock or afterimage in its JSON;
   the minigames page does.
 
-And absent from both hosts, so no host is "behind": the `tick_scene_programs`
-XA legs and `BgmDirector::reattach_volume` (sub-op `8`, which re-attaches the
-slot at `0x8007057C` - not the field-BGM slot `0x8007052C` the other sub-ops
-drive - with a level whose boot value is `-1`, so no director applies it yet).
+The audio rows of the same pass are closed or settled in
+[their own section](#audio-legs-one-kernel-per-decision).
 
 ### Closed from the same list
 
+- **The field frame tail.** Three one-host tails moved onto engine kernels in
+  `engine-core`'s `world/field_frame_tail.rs`, each called by both hosts:
+  `World::tick_effect_scene_graphs` (summon / move-FX / field-FX),
+  `World::step_field_vram_effects` (op-`0x43` stamps and rect copies, the
+  ambient move-VM tree, CLUT-cell one-shots and blend fades) and
+  `World::drain_field_anim_cues`. With them: the native narration crawl /
+  title-card arm no longer returns after the scene tick, so the whole tail
+  runs under the crawl as it does on the page (only the pad freeze and the
+  Start gate remain); the page freezes its tail while a movie holds the frame,
+  as the window's zero-tick loop does; and the window drains ANIMATE cues every
+  tick in every mode instead of in its field draw pass. The native CLUT step
+  also carried a defect of its own: it skipped every call while four effect
+  lists were empty, a test that left out the `4C DB` blend fades (a lone
+  blend fade never stepped natively) and that left each list's tick backlog
+  banked for the next effect to consume at once.
+- **The page's screen-prim camera centre.** Fog, drop shadows, move strips and
+  light pools resolved the follow camera with a pinned `[0, 0]` fallback focus
+  on the page and the scene AABB centre natively; the page passes the AABB
+  centre now.
+- **Battle camera without a render.** The page held the phase-scripted
+  camera's state on its battle render build, so a fight whose build failed
+  ran no camera at all, and both hosts carried their own copy of the input
+  derivation. The derivation is `engine-core::battle_cam_inputs` now and the
+  state is `BattleState::camera`, stepped from `World::tick`; both hosts only
+  read `World::battle_cam_pose`
+  ([`battle.md`](../subsystems/battle.md#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it)
+  carries the camera's port note beside the phase script).
+- **Battle-intro names and the commit-log launch**, absent from both hosts.
+  The flow-`0x0A` enemy-name banner and the commit log's slide off the ring
+  are engine state (`BattleState::intro_names_frames`,
+  `BattleState::commit_log_launch`) read by one builder each
+  (`battle_hud::battle_intro_names`, `battle_hud::battle_commit_log`), and
+  both hosts pass them through the shared battle HUD frame.
 - **The battle message banner.** Screen elements `0x59` (Seru absorbed) and
   `0x65` (magic level increased) share one string, the context buffer
   `ctx + 0x1F9`; neither host drew either, and the two drains threw away the
@@ -2905,6 +2956,140 @@ drive - with a level whose boot value is `-1`, so no director applies it yet).
   expiry arm is `FUN_800266E0`'s body on the field-BGM slot - sub-op `2`'s
   pause - so `World::tick` now emits that pause and both hosts' BGM routing
   acts on it ([`audio.md`](../subsystems/audio.md#the-timed-release-is-a-scheduled-bgm-pause)).
+
+## Audio legs: one kernel per decision
+
+A side-by-side read of the two play hosts' audio paths found each of the rows
+below. Every fix moves the decision into an `engine-core` / `engine-audio`
+kernel both hosts call, so the two cannot drift on it again.
+
+- **Field CD-XA voice lines.** Field-VM op `0x36`'s XA arm and the
+  scripted-scene programs' voice state both start `FUN_8003D53C` one-shots, and
+  neither reached a host: the op pushed an event nobody read, and
+  `World::tick_scene_programs` counted its legs into a report nobody consumed.
+  Both now land on `World::push_field_xa_cue`, drained by both hosts'
+  `route_field_sfx` into their `play_xa_clip`; the drive's busy span feeds the
+  program's `xa_busy` wait. The programs' other XA leg (`FUN_80019794`) is a
+  seek-ahead that plays nothing ([`audio.md`](../subsystems/audio.md#streamed-cue-census-fun_8003eae4--fun_80019794)).
+- **Cues raised off the field VM.** The world map's map-display cue (`0x20`)
+  and the developer menu's cursor / confirm cues are `FUN_80035B50` calls in
+  retail. Each was queued on its controller and dropped by both hosts; both now
+  ride the SFX ring (`World::tick_world_map`, `DevMenuSession::route_sfx`).
+- **A settled duck.** Both hosts re-applied the battle duck only while the
+  level moved, so a track started under a held duck played at full volume.
+  `legaia_engine_audio::duck::duck_apply` re-applies a level resting below the
+  reference every frame on both.
+- **A carried global track.** A door under a `music_01` track restaged the
+  scene VAB over the region that track's own samples occupy, while both
+  directors kept the track playing as a duplicate start.
+  `scene::scene_bank_restage_wanted` skips the restage while a global track
+  owns the region; no disc script starts a scene-local id, so nothing reads
+  the skipped bank.
+- **The reward bank.** The page placed PROT 0889 above the BGM but not above
+  a staged side-band bank, and dropped it on every scene change where the
+  native director kept it. It now takes the highest tail end, and both keep it
+  until a BGM restage re-owns the region.
+- **Owned-bank order.** Both directors uploaded a global track's VAB before
+  parsing its score; both now validate both halves first.
+- **Direct scene entry.** The native `enter_field_live` restaged no VAB,
+  dropped no queued cue and kept the dedupe latch; the page's `enter_field`
+  did all three. `BootSession::restage_audio_for_direct_entry` makes the same
+  three moves.
+
+One row stays open on purpose:
+
+- **Op `0x35` sub-op `8`.** `FUN_80019898` replays the sequence bound to the
+  record at `0x8007057C` through `FUN_80026478`. In every captured state that
+  record either names a sequence whose channel holds no stream or is inactive,
+  so the retail effect is silence, and the trait's default no-op is the
+  faithful director behaviour ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)).
+
+Closed since:
+
+- **Cast-voice latency on the page.** A cast voice whose `(slot, channel)` the
+  clip bank lacked was sliced out of the disc by the page's script and
+  installed a frame or more after the cast asked for it; the native window
+  reads it synchronously. The engine now lists the round's committed spells'
+  cast voices at the round's start (`World::drain_battle_xa_prestage`, every
+  candidate of a coin-flip module included), and the page stages each one
+  silently (`prestage_xa_clip`), so the cast's own request finds it resident.
+  The native window drains the list and drops it. A monster's cast is picked
+  at its own dispatch, so it has no lead time and keeps the page's lazy path.
+
+## Battle FX: the effect ribbon and the summon seat order
+
+- **The effect ribbon.** Move-VM op `0x42` nodes (the lightning ribbon
+  `FUN_801CFA48` builds) were drawn by neither battle host. Both now draw
+  `World::active_effect_ribbons` - one engine list, rebuilt from each live
+  node's state every frame (`legaia_engine_core::effect_ribbon`) - composed like
+  a mesh part: the native window uploads each mesh in its part pass
+  (`build_summon_and_move_fx_part_draws`), the page bakes it into its FX
+  billboard stream (`build_battle_fx`). The list, the mesh and the transform
+  are the engine's; only the upload differs. In play the carrier is Gilium's
+  summon (PROT 0923).
+- **Summon seat before the scene tick.** The native window seated a player
+  cast's summon creature before ticking the effect scene graphs, the page
+  after; the page now takes the native order (`tick_world_effects`), so a cast
+  ticks its creature's first frame on the same tick on both hosts.
+- **The battle label merge order is not a drift.** The native window merges
+  the SCUS labels at boot and the battle overlay's on top at play start; the
+  page reads the overlay's first and merges the SCUS ones on top. The two label
+  sets (`battle_ui_strings::SCUS_LABELS`, `OVERLAY_LABELS`) share no key and
+  only the overlay half carries the Ra-Seru names, so both orders build the same
+  table.
+
+## Menus, saves and minigame exits: one call per decision
+
+A second side-by-side read, over the menu, save and minigame-exit paths, found
+each row below. As with the audio legs, the fix is a kernel both hosts call,
+or - where the defect was one host deviating from a behaviour the other already
+had - the deviating host adopting it.
+
+- **Submode screens were cross-wired on both hosts.** `World::input` holds the
+  host's **raw** PSX word (`PadButton`, Cross `0x4000`), while the op-`0x49`
+  submode family tests the **packed** masks `FUN_8001822C` builds (Cross
+  `0x0040`). Cross did nothing on a coin cabinet, Down accepted and Right backed
+  out. The tests fed the packed constant straight into `set_pad`, so they
+  asserted the defect. `World::submode_pad_words` now converts through
+  `dev_menu::retail_packed`, the conversion the Incense notice and both dev
+  menus already used.
+- **Card Save.** The browser rack wrote cards through page-private code; the
+  native `--card` port refused a Save. Both call
+  `engine-core::card_write::write_save_into_card` now, and the native window
+  writes the image file back (`MountedCard::persist`).
+- **LGSF resume point.** The native slot files carried the resume trailer and
+  the page's export did not; the page's two imports loaded first and entered
+  after, so the picker baseline cleared flags `0x141` / `0x147` in the import -
+  the card-Load defect on a second path. `export_save` writes the trailer and
+  both imports park the save for the scene entry.
+- **Leaving a Muscle Dome leg.** Only the native `M` hotkey reported the left
+  leg (the run / give-up path); the `Start` escape both hosts share did not, so
+  the page kept the contest open with its tally. `World::leave_muscle_dome`
+  reports and settles, and both paths call it.
+- **A shop freezes the field.** Retail runs a shop as a menu-overlay session:
+  the field overlay is swapped out under it (a prize-shop save state holds game
+  mode `0x17` with PROT 0899 resident). The page froze the world; the native
+  window ticked it with a neutral pad, so NPCs walked behind the buy list.
+  `MenuRuntime::suspends_field` names the rule (an inn prompt is a field
+  dialogue and is not suspended) and the native loop skips its tick under it.
+- **Sub-frame key taps.** A key pressed and released between two native
+  redraws never reached a tick; the page latched it in its `pulse` set.
+  `input::PadTapLatch` is that rule as a type, and the native window feeds the
+  frame's first tick through it.
+- **Party HUD pad.** The native HUD read the window's held keys, the page read
+  the word the world was handed; the native HUD now reads `World::input` too.
+- **Dance end.** `World::exit_dance` already queues the hall track's restart
+  (`restore_minigame_bgm`); the native window then started it a second time.
+- **Developer menu CAMERA row.** Absent on both; `DevMenuSession::tick_host`
+  is the one call both hosts make, and it carries the row
+  ([`world-map.md`](../subsystems/world-map.md#the-camera-row)).
+
+Two rows of the same read were already closed when re-checked: the minigame
+purses in `save_full` and the card-Load order (both in the section above).
+Still open, and on neither host: the scene-entry place-name banner (the
+submode-driver handler table's slot `0x2E`, `0x801EE5D4`, whose body opens the
+panel script `0x801F32B4` at `0x801EE628`) and the
+world-map location labels ([`place-names.md`](../formats/place-names.md)).
 
 ## Adding coverage
 

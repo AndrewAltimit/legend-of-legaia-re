@@ -432,7 +432,8 @@ pub struct ZoneFollow {
     /// (`0x801DB550`). New-game init stores `1` (SCUS `0x80034B60`, the
     /// `_DAT_8007B868 == 0` test, which is true on retail); its only other
     /// writers are the dev menu's CAMERA row (`0x801EAD38`, `0x801EA1C8`),
-    /// which the port's dev menu does not carry.
+    /// which the port's dev menu carries as
+    /// [`crate::dev_menu_host::DevMenuRow::Camera`].
     pub follow_enabled: bool,
 }
 
@@ -472,6 +473,15 @@ impl ZoneFollow {
         }
         self.loaded_record = Some(*rec);
         self.ramp_seen = crate::register_ramp::CameraRegisterFile::DEFAULTS;
+    }
+
+    /// Copy the composed target straight into the globals on the next tick
+    /// instead of easing - `FUN_801DB8EC`'s snap, which the dev menu's
+    /// `CAMERA` row runs when it switches the follow camera on
+    /// (`0x801EA1E4`). Unlike [`Self::arm_arrival`] it keeps the tile and the
+    /// latched region, so it re-frames without re-querying the zone.
+    pub fn request_snap(&mut self) {
+        self.snap_pending = true;
     }
 
     /// Arm a scene-entry / arrival snap: re-query the tile and copy the

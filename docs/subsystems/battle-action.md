@@ -1879,6 +1879,37 @@ command SM's Auto pick writes (see
 [`minigame-muscle-dome.md`](minigame-muscle-dome.md)), so the pool arm and its
 tail are the Auto command's queue builder.
 
+#### The routine runs every round, and Auto rebuilds the queue
+
+State `0x00` is not a once-per-battle arm. Its one zero-writer is the flow SM's
+`0xFE` arm (`sb zero,0x7(v0)` at `0x801D3224`), and the flow reaches `0xFE`
+from the commit confirm's Begin (`li v0,0xfe` at `0x801D31AC`, in the `0x6E`
+handler) and from the Run confirm - so every round opens with `jal 0x801f0450`.
+A seat flagged Auto whose category is Attack therefore has its `+0x1DF` queue
+**rebuilt** by the pool arm at the round's start: the directions drawn from the
+weighted pool and spent against the action gauge, then the tail's arts
+spliced over them (the pool arm's `sb a0,0x1df(v0)` at `0x801F0B04`). The
+saved command string the Attack confirm pre-seeds (`FUN_801DA34C`) is what the
+queue review shows; it is not what an Auto round plays.
+
+The flag's writers, all in `FUN_801D0748`: `0` every frame the ring is up
+(`0x801D11A8`), `1` on the prompt's `Auto` chip (`0x801D17D0`), `0` on
+`Command` (`0x801D1760`), and the option word itself when the `Automatic`
+option skips the prompt (`sb s0,0x266` at `0x801D164C`, `s0 = 1`). Its readers
+are this routine (`0x801F0704`), the queue review's cancel arm (`0x801D23A0`)
+and two HUD gates.
+
+The port runs the pool arm and the tail from `World::begin_round_execution`
+(`engine-core`'s `world::battle::auto_combo`) for every Attack a player
+committed off an Auto pick, and the member's dispatch plays the parked queue.
+The command costs and leading entry bytes come from the equipped swing
+records, the four guard masks from PROT 0898 at `0x801F672C`, and the tail's
+records from the character's art-animation bank. The **delegated** arm
+(record `+0xF8 & 0x2000`) and the formation arm run in the same place, once per
+round, through `vm::battle_action::round_state_zero` (`World::run_round_state_zero`),
+before the round's first action dispatches; the per-action `Begin` the port
+re-arms finds the round's pass done and skips it.
+
 #### The art insertion tail (`0x801F0B4C..0x801F1274`)
 
 After the spend loop has written a run of direction swings, the tail walks
@@ -1912,8 +1943,8 @@ the queue, paying out of a **local copy** of the Spirit gauge `actor[+0x170]`
   and one byte on one Noa record.
 - Every pass then steps `rand() % 2 + 1`.
 
-Port: `battle_arts_auto_combo::insert_arts`, not wired - the engine's command
-flow offers no Auto pick.
+Port: `battle_arts_auto_combo::insert_arts`, run by the player's Auto attack
+(above).
 
 ### Enemy AGL action-budget (`FUN_801E9FD4`)
 
@@ -2294,7 +2325,9 @@ bit, and carries the same caveat: it makes the compare unfailable, not the escap
 roll only ever tests against `2`, so a back attack costs the party its round-one initiative keys
 and nothing else. Because the roll reads only the *latched* copy, a state-`0x00` that clears
 `+0x290` without copying it - or an engine that stores the latch and never reads it back -
-silently disables pre-emptive-strike escapes for the whole battle.
+silently disables pre-emptive-strike escapes for the whole battle. The latch
+also runs **every round**, so round two's pass copies the `+0x290` round one
+cleared: a pre-emptive strike's unfailable escape compare lasts one round.
 
 On success the routine also stages the flee scene: every party actor is marked fleeing
 (`+0x1DA`/`+0x1DC` = 1, facing `+0x46` = `0x800`, pose byte `+0x1DD` = 9), positions are

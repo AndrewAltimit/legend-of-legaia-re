@@ -554,14 +554,11 @@ pub const MENU_ROW_GAP: i16 = 0x14;
 /// Y the rows are drawn at (`0x801da1fc`: the fifth argument `0x30`).
 pub const MENU_ROW_Y: i16 = 0x30;
 
-/// Dedup-glyph stand-in for callers with no font mapping to hand.
-///
-/// Retail's glyph is a one-character string literal in the battle overlay's
-/// rodata at `0x801CECA8`, in the game's own text encoding; it is disc data, so
-/// the port takes it as a parameter and only defaults to a Latin `'A'` (which
-/// increments the same way its successors do) when the caller has nothing
-/// better.
-pub const DEDUP_GLYPH_FALLBACK: u8 = b'A';
+/// The run suffix the composer appends: the rodata string at `0x801CECA8`,
+/// `"* 2"` (`lui a1,0x801d` / `addiu a1,a1,-0x1358` at `0x801D9E4C` /
+/// `0x801D9E5C`, handed to the `strcat` at `FUN_8003CAC4`). Its last byte
+/// is the digit the third and later members of a run increment.
+pub const DEDUP_SUFFIX: &str = "* 2";
 
 /// Row height (`0x801da208`: the seventh argument `0xC`).
 pub const MENU_ROW_HEIGHT: i16 = 0xC;
@@ -591,40 +588,50 @@ pub struct EnemyMenuRow {
 /// PORT: FUN_801D9D3C (`0x801d9d84..0x801d9f0c`).
 ///
 /// Provenance: `FUN_801D9D3C` is the flow-`0x0A` battle-**intro** enemy-name
-/// banner composer (sole reference: the `jal` at `0x801D0DFC`). Retail's
-/// target-select strip is built elsewhere (unpinned); the engine reuses the
-/// composer's group/dedup/label pass for the picker rows.
+/// banner composer (sole reference: the `jal` at `0x801D0DFC`), and the
+/// engine runs it for that banner. Retail's target-select strip is built
+/// elsewhere; the engine's picker draws the record-`0x29` plaque instead.
 ///
 /// `formation` is the four-byte monster-id table `_DAT_8007BD0C`; a zero id is
 /// an empty slot and is skipped without ending the walk. `name_of` supplies the
 /// per-slot display name (retail copies it from the battle actor's `+0x1BC`),
-/// and `dedup_glyph` is the one-character suffix literal the overlay keeps in
-/// its rodata at `0x801CECA8`.
+/// and `dedup_suffix` is the suffix literal the overlay keeps in its rodata at
+/// `0x801CECA8` ([`DEDUP_SUFFIX`]).
 ///
 /// Consecutive identical ids collapse into one row. The **run counter resets on
 /// any id change**, so a formation `A A B A` produces three rows (`A`x2, `B`,
 /// `A`), not two - the dedup is positional, not a set operation.
 ///
-/// The suffix arithmetic is the part worth stating precisely, because it is
-/// destructive: the second member of a run does not *append* a marker, it
-/// overwrites the label's final character with `dedup_glyph`
-/// (`0x801d9e54` stores a `0` over the last byte before the concat), and the
-/// third and later members **increment that character in place**
-/// (`0x801d9ea0`). So the labels stay the same byte length as the plain name.
+/// The suffix arithmetic, read off the disassembly:
+///
+/// * the first member of a run copies its display name (`strcpy` of actor
+///   `+0x1BC`, `0x801D9DF0`);
+/// * the second **drops the name's last character** - `strlen`, then
+///   `sb zero` over byte `len - 1` (`0x801D9E34..0x801D9E54`) - and
+///   **appends** `dedup_suffix` with `strcat` (`0x801D9E60`);
+/// * each further member increments the label's last byte in place
+///   (`0x801D9E7C..0x801D9EA4`), the suffix's digit.
+///
+/// The character dropped is the per-instance letter retail's battle loader
+/// gives duplicate monsters (`Killer Bee A`, `Killer Bee B`), so a run of
+/// three reads `Killer Bee * 3`. An earlier reading here had the second member
+/// overwrite the last character with a one-byte glyph and keep the label's
+/// length; the `strcat` of a three-byte string falsifies it.
 ///
 /// `projected_x` is each slot's projected screen position (the battle actor's
 /// `+0x34` word); the builder accumulates it per row so
 /// [`layout_enemy_menu_rows`] can average it.
 ///
-/// Wired: both hosts' targeting UI reaches this each battle frame through
-/// [`crate::battle_hud::battle_enemy_target_rows`] (native
-/// `window/hud.rs`, browser `play_battle.rs`), which stands occupancy in
-/// for the retail id table and leaves the projected-X accumulator at `0`.
+/// Wired: both hosts reach this each battle frame through
+/// [`crate::battle_hud::battle_intro_names`] (native `window/hud.rs`,
+/// browser `play_battle.rs`) via [`crate::battle_hud::battle_enemy_target_rows`],
+/// which stands occupancy in for the retail id table and leaves the
+/// projected-X accumulator at `0`.
 /// `BattleSession::rebuild_enemy_menu_rows` is a second, session-side
 /// caller that remains off every host path - see its own note.
 pub fn enemy_menu_rows(
     formation: [u8; FORMATION_SLOTS],
-    dedup_glyph: u8,
+    dedup_suffix: &str,
     mut name_of: impl FnMut(u8) -> String,
     mut projected_x: impl FnMut(u8) -> i16,
 ) -> Vec<EnemyMenuRow> {
@@ -652,11 +659,11 @@ pub fn enemy_menu_rows(
             continue; // retail would index row -1; a leading run cannot happen
         };
         if run == 1 {
-            // Overwrite the final character with the dedup glyph.
+            // Drop the final character (the per-instance letter), then
+            // append the suffix.
             let mut bytes = row.label.clone().into_bytes();
-            if let Some(last) = bytes.last_mut() {
-                *last = dedup_glyph;
-            }
+            bytes.pop();
+            bytes.extend_from_slice(dedup_suffix.as_bytes());
             row.label = String::from_utf8_lossy(&bytes).into_owned();
             // Retail bumps the run counter a second time here, which is what
             // makes the *next* member take the increment arm.
@@ -676,7 +683,7 @@ pub fn enemy_menu_rows(
 
 /// Place the enemy menu rows across the screen.
 ///
-/// PORT: FUN_801D9D3C (`0x801d9f1c..0x801da1ac`) NOT WIRED: its retail host is the flow-`0x0A` battle-intro enemy-name banner (labels at y = 48), which neither host draws; the target picker it used to lay out now draws retail's record-`0x29` plaque instead (`battle_hud::battle_target_select_plaque`)
+/// PORT: FUN_801D9D3C (`0x801d9f1c..0x801da1ac`)
 ///
 /// This is the intro banner composer's seat law (labels centred over their
 /// enemies at y = 48, relaxed apart, clamped to the screen).
@@ -700,17 +707,18 @@ pub fn enemy_menu_rows(
 ///
 /// `text_width_of` measures a row's label in pixels (retail's `FUN_80035F04`).
 ///
-/// Wired: both hosts' targeting UI runs this over
-/// [`crate::battle_hud::battle_enemy_target_rows`]'s output each battle
-/// frame, supplying the **text measurer** as the `legaia-font` layout's
-/// advance (the engine's stand-in for retail's proportional
-/// `FUN_80035F04`). The **projected screen X** each row averages is the
-/// battle actor's `+0x34` - a GTE projection result the renderer owns, and
-/// neither host currently plumbs it into the HUD layer - so the accumulator
-/// arrives at `0`, every row centres at [`MENU_CENTRE_X`], and the retail
-/// relaxation pass below spreads them. That is an approximation of retail's
-/// placement (rows cluster around centre instead of over their monsters);
-/// the pass structure itself is exact.
+/// Wired: its retail host, the flow-`0x0A` battle-intro enemy-name banner,
+/// is [`crate::battle_hud::battle_intro_names`], which both hosts feed to the
+/// shared battle HUD builder (`legaia_engine_ui::ui_overlay`, native
+/// `window/hud.rs`, browser `play_battle.rs`) for the intro timer's span. The
+/// **text measurer** is the `legaia-font` layout advance (the engine's
+/// stand-in for retail's proportional `FUN_80035F04`). The **projected
+/// screen X** each row averages is the battle actor's `+0x34` - a GTE
+/// projection result the renderer owns, which neither host plumbs into the
+/// HUD layer - so the accumulator arrives at `0`, every row centres at
+/// [`MENU_CENTRE_X`], and the relaxation pass spreads them. That is an
+/// approximation of retail's placement (labels cluster around centre
+/// instead of over their monsters); the pass structure itself is exact.
 pub fn layout_enemy_menu_rows(
     rows: &mut [EnemyMenuRow],
     mut text_width_of: impl FnMut(&str) -> i16,
@@ -1021,7 +1029,7 @@ mod tests {
         let names: Vec<String> = names.iter().map(|s| s.to_string()).collect();
         enemy_menu_rows(
             formation,
-            b'A',
+            DEDUP_SUFFIX,
             |slot| names[slot as usize].clone(),
             |slot| px[slot as usize],
         )
@@ -1047,14 +1055,17 @@ mod tests {
     }
 
     #[test]
-    fn a_run_collapses_and_the_suffix_overwrites_then_increments() {
-        let r = rows_for([7, 7, 7, 0], &["Bee", "Bee", "Bee", ""], [80, 96, 112, 0]);
+    fn a_run_drops_the_instance_letter_appends_the_suffix_then_increments() {
+        let r = rows_for(
+            [7, 7, 7, 0],
+            &["Killer Bee A", "Killer Bee B", "Killer Bee C", ""],
+            [80, 96, 112, 0],
+        );
         assert_eq!(r.len(), 1);
         assert_eq!(r[0].members, 3);
-        // Member 2 replaces the final character; member 3 increments it. The
-        // label never grows.
-        assert_eq!(r[0].label, "BeB");
-        assert_eq!(r[0].label.len(), "Bee".len());
+        // Member 2 drops the first member's letter and appends `* 2`; member
+        // 3 increments the digit - the capture's `Killer Bee * 3`.
+        assert_eq!(r[0].label, "Killer Bee * 3");
         // The accumulator sums the members' projected positions.
         assert_eq!(r[0].x, 80 + 96 + 112);
         assert_eq!(r[0].first_slot, 0);
@@ -1089,10 +1100,11 @@ mod tests {
 
     #[test]
     fn layout_averages_a_runs_members() {
-        let mut r = rows_for([1, 1, 0, 0], &["Bee", "Bee", "", ""], [800, 1600, 0, 0]);
+        let mut r = rows_for([1, 1, 0, 0], &["Bee A", "Bee B", "", ""], [800, 1600, 0, 0]);
         layout_enemy_menu_rows(&mut r, width);
-        // avg 1200 >> 3 = 150, label "BeB" is 24px wide.
-        assert_eq!(r[0].x, 150 - 12 + 0xA0);
+        // avg 1200 >> 3 = 150, label "Bee * 2" is 56px wide.
+        assert_eq!(r[0].label, "Bee * 2");
+        assert_eq!(r[0].x, 150 - 28 + 0xA0);
     }
 
     #[test]

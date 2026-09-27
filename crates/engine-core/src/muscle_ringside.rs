@@ -532,6 +532,149 @@ pub fn leg_open_raises_round_card(card_shown_round: Option<i32>, round: i32) -> 
     card_shown_round != Some(round)
 }
 
+/// The dome hub's per-frame screen timers - the first visit, the leg-open
+/// ROUND card, the between-legs INTERVAL screen with its score tally, and
+/// the re-entered hub's backdrop - with the leg edges that arm them. One
+/// kernel both play hosts drive once a frame ([`HubTimers::tick`]); each
+/// host keeps its own instance and draws from its fields.
+#[derive(Debug, Clone, Default)]
+pub struct HubTimers {
+    /// The hub's first visit on a freshly opened contest.
+    pub first_visit: Option<FirstVisitHub>,
+    /// A leg-open ROUND card `(displayed round, envelope)` no hub screen has
+    /// introduced - retail arms `0x15` / `0x16`.
+    pub round_banner: Option<(i32, crate::muscle_dome::HubScreen)>,
+    /// The round a re-entered hub's backdrop last drew its ROUND card for
+    /// ([`leg_open_raises_round_card`]).
+    pub card_round: Option<i32>,
+    /// The INTERVAL + score-tally screen's envelope.
+    pub interval: Option<crate::muscle_dome::HubScreen>,
+    /// The score tally's roll-up and the coin tally it counts from.
+    pub tally: Option<(crate::other_game_overlay::ScoreTallyRamp, i32)>,
+    /// The re-entered hub's backdrop.
+    pub backdrop: Option<HubBackdrop>,
+    /// Last frame's "a leg is open".
+    pub prev_leg_open: bool,
+    /// Last frame's "a contest is open".
+    pub prev_contest_open: bool,
+}
+
+/// What one [`HubTimers::tick`] asks the host to sound.
+#[derive(Debug, Default)]
+pub struct HubTimersFrame {
+    /// The first visit's announcer line, through the host's CD-XA path.
+    pub xa: Option<HubXaCue>,
+    /// The tally lanes' voice keys (`FUN_801D1288` builds each attr set).
+    pub voice_cues: Vec<crate::other_game_overlay::VoiceAttrCue>,
+}
+
+impl HubTimers {
+    /// One frame. `pad` is the packed pad edge the skippable holds read
+    /// (retail's `DAT_801D1A9C` snapshot), `volume_word` the voice-volume
+    /// setting each tally cue halves.
+    ///
+    /// REF: FUN_801CF870 (the contest hub's screen arms)
+    pub fn tick(
+        &mut self,
+        world: &crate::world::World,
+        pad: u16,
+        volume_word: u32,
+    ) -> HubTimersFrame {
+        use crate::muscle_dome as md;
+        let mg = &world.minigames;
+        let leg_open = mg.muscle_dome.is_some();
+        let contest_open = mg.muscle_contest.is_some();
+        let round = mg
+            .muscle_contest
+            .as_ref()
+            .map_or(1, |c| c.round() as i32 + 1);
+        let mut out = HubTimersFrame::default();
+        if leg_open && !self.prev_leg_open {
+            // Once per leg: not again after a re-entered hub's own card.
+            let raise = leg_open_raises_round_card(self.card_round.take(), round);
+            if contest_open && !self.prev_contest_open {
+                // A fresh contest opens on the hub's first visit, whose own
+                // arms end in the ROUND card.
+                self.first_visit = Some(FirstVisitHub::new());
+            } else if raise {
+                self.round_banner = Some((round, md::HubScreen::opponent_card()));
+            }
+            self.interval = None;
+            self.backdrop = None;
+        }
+        if !leg_open && self.prev_leg_open && self.prev_contest_open {
+            // The leg boundary the arena hub sees; whether it shows the tally
+            // screen is the shared rule's call.
+            let raises =
+                md::leg_boundary_raises_interval(mg.muscle_contest.as_ref().map(|c| c.state()));
+            // The tally's four lanes step one row per tick after the shared
+            // lead-in, and the last cue lands on the staggered countdown, so
+            // the roll cannot be shorter than that stagger.
+            let roll = md::HUB_TALLY_ROLL_LEAD_TICKS
+                + *md::HUB_TALLY_CUE_STAGGER.last().unwrap_or(&0) as i32;
+            self.interval = raises.then(|| md::HubScreen::interval(roll));
+            self.tally = if raises {
+                mg.muscle_contest.as_ref().map(|c| c.tally_roll())
+            } else {
+                None
+            };
+            // A hub re-entered after a leg draws the still that leg's end
+            // left resident as its backdrop (retail's `_DAT_801D1AE0` arm).
+            self.backdrop = mg
+                .muscle_ringside_still
+                .filter(|_| raises)
+                .map(HubBackdrop::reentry);
+            self.first_visit = None;
+            self.round_banner = None;
+        }
+        // Retail runs one arm at a time.
+        if let Some(hub) = self.first_visit.as_mut() {
+            hub.tick(1, pad);
+            out.xa = hub.take_xa();
+            if hub.done() {
+                self.first_visit = None;
+            }
+        } else if let Some((_, banner)) = self.round_banner.as_mut() {
+            banner.tick(1, pad);
+            if banner.done() {
+                self.round_banner = None;
+            }
+        }
+        // The backdrop rides the INTERVAL screen's arms, then runs its own
+        // return + ROUND-card arms once the screen has gone.
+        if let Some(backdrop) = self.backdrop.as_mut() {
+            let lane0_full = self
+                .tally
+                .as_ref()
+                .is_some_and(|(ramp, _)| ramp.fade[0] >= crate::other_game_overlay::LANE_FADE_FULL);
+            backdrop.tick(1, pad, self.interval.map(|i| i.stage()), lane0_full);
+            if backdrop.card_brightness().is_some() {
+                self.card_round = Some(round);
+            }
+            if backdrop.done() {
+                self.backdrop = None;
+            }
+        }
+        if let Some(interval) = self.interval.as_mut() {
+            interval.tick(1, pad);
+            // `boost` is retail's bypass flag `DAT_801D1AB4`, which no host
+            // raises.
+            if let Some((ramp, tally)) = self.tally.as_mut() {
+                let step = ramp.tick(1, false, volume_word);
+                *tally += step.tally_gain;
+                out.voice_cues.extend(step.cues.iter().copied());
+            }
+            if interval.done() {
+                self.interval = None;
+                self.tally = None;
+            }
+        }
+        self.prev_leg_open = leg_open;
+        self.prev_contest_open = contest_open;
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

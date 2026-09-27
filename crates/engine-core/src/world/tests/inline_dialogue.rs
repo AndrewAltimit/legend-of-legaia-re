@@ -51,6 +51,21 @@ fn inline_dialogue_runs_branch_flag_set_through_field_vm() {
         guard += 1;
         assert!(guard < 50, "branch reply never typed");
     }
+    // The row ends on its glyph count (retail pacing), a call or two after
+    // its last glyph shows; a confirm lands once the box waits.
+    while world
+        .dialog
+        .inline
+        .as_ref()
+        .unwrap()
+        .panel
+        .as_ref()
+        .is_some_and(|p| p.state() == crate::dialog::PanelState::Typing)
+    {
+        world.step_inline_dialogue(false, false, false);
+        guard += 1;
+        assert!(guard < 50, "branch reply never finished");
+    }
     assert!(
         world.system_flag_test(6),
         "option B branch SET flag 6 via the VM"
@@ -232,6 +247,20 @@ fn a_menu_reply_parks_on_its_jump_back_and_the_next_talk_reopens_the_menu() {
                 id.menu_active()
             );
         }
+    }
+    // The row ends on its glyph count (retail pacing), after its glyph shows.
+    while world
+        .dialog
+        .inline
+        .as_ref()
+        .unwrap()
+        .panel
+        .as_ref()
+        .is_some_and(|p| p.state() == crate::dialog::PanelState::Typing)
+    {
+        world.step_inline_dialogue(false, false, false);
+        guard += 1;
+        assert!(guard < 80, "reply never finished");
     }
     // Dismiss the reply: the talk ends parked on the backward jump, which
     // does not run in this talk.

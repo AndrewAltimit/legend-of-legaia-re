@@ -13,9 +13,10 @@
 //!
 //! These tests pin all four halves:
 //!
-//!  1. confirming Attack writes a non-empty swing stream
-//!     ([`legaia_engine_vm::battle_action::basic_attack_queue`], the port of
-//!     `FUN_801EED1C`'s no-directional-input arm);
+//!  1. confirming Attack writes a non-empty swing stream - here, through
+//!     the `Auto` chip, the round-start pool arm of `FUN_801F0450`
+//!     (`legaia_engine_vm::battle_arts_auto_combo`), which spends the action
+//!     gauge on direction commands;
 //!  2. the chain walks it - every queued byte is staged as the next anim and
 //!     the strike cursor advances, instead of exiting on byte 0;
 //!  3. a weapon swing clip actually commits per queued byte;
@@ -173,9 +174,11 @@ fn confirming_attack_seeds_a_non_empty_swing_stream() {
         !swings.is_empty(),
         "confirming Attack must queue at least one strike, got an empty stream"
     );
-    // Retail's no-input arm writes two independently rolled Left/Right arm
-    // swings for an ordinary target.
-    assert_eq!(swings.len(), 2, "two arm swings: {swings:02X?}");
+    // The ladder commits through `Auto`, so the round's start runs the pool
+    // arm: the default 100-AP gauge buys three 0x1E swings, and with no disc
+    // weights every command sits at weight 8, so the 16-byte candidate
+    // scratch holds only Left and Right.
+    assert_eq!(swings.len(), 3, "three pool-arm swings: {swings:02X?}");
     for b in &swings {
         assert!(
             *b == SWING_LEFT || *b == SWING_RIGHT,
@@ -312,7 +315,7 @@ fn damage_lands_exactly_once_per_queued_swing() {
     let slot = acting_slot(&w);
     confirm_attack(&mut w);
     let queued = queued_swings(&w, slot);
-    assert_eq!(queued.len(), 2);
+    assert_eq!(queued.len(), 3, "the Auto pick's pool arm: 100 AP / 0x1E");
     let target = w.actors[slot].battle.active_target as usize;
     assert!(
         target >= w.party.party_count as usize,

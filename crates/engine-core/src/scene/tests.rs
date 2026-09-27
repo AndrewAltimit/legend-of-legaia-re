@@ -716,3 +716,14 @@ fn class_counts_matches_entries() {
     assert_eq!(counts.get(&Class::UnknownOther).copied(), Some(2));
     assert_eq!(counts.get(&Class::Empty).copied(), Some(1));
 }
+
+/// A global-pool track owns the BGM region: a scene swap under it must not
+/// upload the scene bank over its samples. Nothing playing, or a scene-local
+/// track, restages as before.
+#[test]
+fn scene_bank_restage_skips_under_a_live_global_track() {
+    assert!(scene_bank_restage_wanted(None));
+    assert!(scene_bank_restage_wanted(Some(12)));
+    assert!(!scene_bank_restage_wanted(Some(GLOBAL_BGM_BASE)));
+    assert!(!scene_bank_restage_wanted(Some(2016)));
+}

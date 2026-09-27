@@ -715,6 +715,10 @@ pub struct BattleHudFrame<'a> {
     /// this round (`engine-core::battle_hud::battle_commit_log`), laid out by
     /// `legaia_engine_vm::battle_commit_log` and drawn as gold plates.
     pub commit_log: &'a [legaia_engine_vm::battle_commit_log::CommitLogRow],
+    /// The battle-intro enemy-name labels, `(label, pen x)`, pen y
+    /// [`BATTLE_INTRO_NAME_Y`] (`engine-core::battle_hud::battle_intro_names`,
+    /// retail `FUN_801D9D3C`). Empty outside the intro timer.
+    pub intro_names: &'a [(String, i32)],
     /// Diagnostic readout ([`diag_hud_enabled`]): the engine's debug rows -
     /// monster HP numerals/bars (retail draws **no** monster gauge,
     /// `docs/subsystems/battle-action.md`), per-slot LV / AP readouts, and
@@ -1692,7 +1696,7 @@ pub fn battle_hud_draws_for(
                 if content.is_empty() {
                     continue;
                 }
-                let (x, y) = (i32::from(el.x), i32::from(el.y));
+                let (x, y) = (i32::from(el.x) + i32::from(row.slide_x), i32::from(el.y));
                 plate_run(
                     &mut text,
                     &mut sprites,
@@ -1704,6 +1708,27 @@ pub fn battle_hud_draws_for(
                 stage_text(&mut text, font, content, x, y - 2, READOUT_NORMAL);
             }
         }
+    }
+
+    // ---- The battle-intro enemy-name banner ----
+    //
+    // One label per monster group, laid out by retail's composer and each
+    // spawned on the message banner's class-0 frame (kind 3) at pen
+    // `(x, 48)`, with no interior fill. Frame origin is the pen less
+    // `(8, 8)`, so `Moldy Worm` on `(86, 48)` frames `(78, 40)..(159, 67)`.
+    for (label, x) in frame.intro_names.iter().filter(|(l, _)| !l.is_empty()) {
+        let pen = (*x, BATTLE_INTRO_NAME_Y);
+        let w = font.layout_ascii(label).advance_x as i32;
+        if let Some(rects) = frame.chrome {
+            sprites.extend(crate::battle_hud_chrome::class0_frame_draws_at(
+                rects,
+                pen,
+                (w, crate::battle_hud_chrome::BANNER_INTERIOR_H),
+                origin,
+                scale as u32,
+            ));
+        }
+        stage_text(&mut text, font, label, pen.0, pen.1, crate::MENU_TEXT_WHITE);
     }
 
     // ---- The message bar ----
@@ -1914,6 +1939,10 @@ pub fn battle_hud_draws_for(
 
     BattleHudDraws { text, sprites }
 }
+
+/// Pen y of the battle-intro enemy-name labels - the fifth argument `0x30`
+/// `FUN_801D9D3C` hands `FUN_8003541C` (`0x801DA1FC`).
+pub const BATTLE_INTRO_NAME_Y: i32 = 0x30;
 
 /// Stage Y of the enemy target strip. An engine seat: the row layout the
 /// strip reuses is `FUN_801D9D3C`'s, and that routine is the flow-`0x0A`

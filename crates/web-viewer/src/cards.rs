@@ -28,12 +28,9 @@
 //!
 //! Nothing here is uploaded; the bytes live in the tab for the session.
 
-use legaia_engine_core::save_select::{
-    CARD_SLOT_CLASSES, CardDirEntry, SlotContent, SlotSnapshot, card_dir_slot_of,
-    card_directory_scan, card_free_blocks, classify_card_directory,
-};
+use legaia_engine_core::save_select::SlotSnapshot;
 use legaia_save::emu;
-use legaia_save::{SaveFile, SaveResume, card};
+use legaia_save::{SaveFile, SaveResume};
 use wasm_bindgen::prelude::*;
 
 use crate::runtime::LegaiaRuntime;
@@ -47,22 +44,6 @@ pub const CARD_SLOTS: usize = 2;
 /// Save blocks a PSX memory card holds (block 0 is the directory). The
 /// retail load screen lays these out as its 5x3 preview grid.
 pub const CARD_BLOCKS: u8 = 15;
-
-/// The save number this rack *prefers* for a block it claims.
-///
-/// Retail's number comes from the save-select list position
-/// (`_DAT_801F0210`), which is independent of the block the BIOS happens to
-/// place the file in - a real card can hold `-01` in block 1 and `-00` in
-/// block 2. The rack has no such list, so it starts from the block.
-///
-/// That preference is only a starting point, not the answer: see
-/// [`LegaiaRuntime::card_save_index`], which reconciles it against the
-/// numbers the card already carries. Retail cannot collide because it is
-/// standing on the list position it writes; a host that addresses a
-/// **block** has to ask the card.
-fn preferred_slot_for_block(block: u8) -> u32 {
-    u32::from(block.saturating_sub(1))
-}
 
 /// The mounted-card type, shared with the native window's card port.
 ///
@@ -107,80 +88,6 @@ impl LegaiaRuntime {
     /// so the grid's portraits and the info panel's name / level / HP / MP /
     /// location rows come off the real save, exactly as retail reads them
     /// out of its per-slot buffer at `0x801EF1B8 + N * 0x100`.
-    /// Enumerate the card's files off its live directory frames, as the
-    /// [`CardDirEntry`] list the retail scan/budget pair consumes.
-    ///
-    /// The BIOS `firstfile` walk retail's table fill rides builds each
-    /// `DIRENTRY` from the raw 128-byte frame: the 20-byte filename at
-    /// `+0x0A`, the byte size at `+0x04`.
-    fn card_dir_entries(&self, slot: usize) -> Vec<CardDirEntry> {
-        match self.card(slot) {
-            Some(card) => legaia_engine_core::save_select::card_dir_entries(card),
-            None => Vec::new(),
-        }
-    }
-
-    /// The save number to stamp into `block` of the card in rack `slot`.
-    ///
-    /// Two rules, and the first is why this cannot just be the block:
-    ///
-    /// * **The block already carries a Legaia save.** Its number is the one
-    ///   in its own filename, because an overwrite does not re-claim the
-    ///   directory frame - deriving a different number would leave the
-    ///   block's title digits and its filename disagreeing about which save
-    ///   it is, a state retail cannot produce.
-    /// * **The block is free.** Take [`preferred_slot_for_block`] unless the
-    ///   card already files a save under it, in which case take the lowest
-    ///   number it does not. Filenames on a card must be unique - the BIOS
-    ///   directory is keyed by them - and a card written by retail files by
-    ///   list position, so `block - 1` collides as soon as the two spaces
-    ///   disagree.
-    ///
-    /// Which numbers are taken is retail's own question, so it is answered
-    /// by retail's own walk: `classify_card_directory` (`FUN_801E1208`) is
-    /// the pass that stamps [`SlotContent::LegaiaSave`] on every save number
-    /// a directory names, and this reads that class. The free-block budget
-    /// it spends afterwards is the same one the preview grid prices, so both
-    /// are taken off one classification.
-    fn card_save_index(&self, slot: usize, block: u8) -> u32 {
-        let existing = self
-            .card(slot)
-            .filter(|c| c.block_is_save_start(block))
-            .and_then(|c| c.dir_frame(block).map(|f| f.to_vec()))
-            .and_then(|f| card_dir_slot_of(f.get(0x0A..)?));
-        if let Some(index) = existing {
-            return index as u32;
-        }
-
-        let entries = self.card_dir_entries(slot);
-        let (dir_table, dir_count) = card_directory_scan(&entries);
-        let free = card_free_blocks(&dir_table, dir_count).max(0) as u32;
-        let classes = classify_card_directory(&Self::name_frames(&entries), free);
-        let taken = |n: u32| {
-            classes
-                .get(n as usize)
-                .is_some_and(|c| *c == SlotContent::LegaiaSave)
-        };
-
-        let preferred = preferred_slot_for_block(block);
-        if !taken(preferred) {
-            return preferred;
-        }
-        (0..CARD_SLOT_CLASSES as u32)
-            .find(|n| !taken(*n))
-            // A full class array means every number is spoken for; keeping
-            // the preference is then no worse than any other choice and
-            // leaves the collision visible rather than silently renumbering
-            // to a wrong block.
-            .unwrap_or(preferred)
-    }
-
-    /// Directory entries as the filename-leading frames the classifier
-    /// walks (retail's `0x28`-stride record has its name at offset 0).
-    fn name_frames(entries: &[CardDirEntry]) -> Vec<&[u8]> {
-        entries.iter().map(|e| e.name.as_slice()).collect()
-    }
-
     /// The card's fifteen blocks as the 5x3 preview grid reads them, through
     /// the shared `engine_core::save_select::card_block_snapshots` kernel the
     /// native window calls too.
@@ -191,92 +98,32 @@ impl LegaiaRuntime {
         }
     }
 
-    /// The memory-card portrait for save slot `slot`, read off the disc's
-    /// portrait sheet through the live scene host's PROT index.
-    ///
-    /// `None` when no disc is loaded or the slot is one the sheet does not
-    /// cover - the block-identity write then leaves the icon region as found
-    /// rather than stamping a wrong one.
-    pub(crate) fn save_block_icon(&self, slot: u32) -> Option<card::RetailBlockIcon> {
-        let index = &self.scene_host.as_ref()?.index;
-        let entry = index
-            .entry_bytes(legaia_asset::save_icon::PROT_ENTRY as u32)
-            .ok()?;
-        let sheet = legaia_asset::save_icon::parse_entry(&entry).ok()?;
-        // The slot -> tile mapping is retail's own (`0x3C0 + slot * 4`
-        // halfwords), so it goes through the port rather than being
-        // open-coded here even though the map is the identity.
-        let tile = legaia_asset::save_icon::tile_for_slot(slot as usize);
-        if tile >= legaia_asset::save_icon::USABLE_TILE_COUNT {
-            return None;
-        }
-        Some(card::RetailBlockIcon {
-            clut: sheet.tile_clut_bytes(tile).ok()?,
-            pixels: sheet.tile_block_pixels(tile).ok()?,
-        })
-    }
-
     /// Write the live session into `block` of the card in rack slot `slot`.
     ///
-    /// The SC payload is rebuilt from the world through
-    /// [`SaveFile::write_into_retail_sc_block`] and stamped **in place** -
-    /// every byte outside the block (other saves, the container header) is
-    /// preserved, so the result is still the player's own card. A block that
-    /// was free also gets its directory frame claimed.
+    /// The bytes are decided by the shared kernel
+    /// [`legaia_engine_core::card_write::write_save_into_card`] - the same one
+    /// the native window's `--card` port writes through - and stamped **in
+    /// place**, so every byte outside the block is the player's own card. The
+    /// card is left dirty for the page to export.
     pub(crate) fn write_session_into_card(&mut self, slot: usize, block: u8) -> Result<(), String> {
         let sf = self.world_mut().save_full();
-        // Resolve the portrait and the resume point before taking the
-        // mutable borrow on the rack: both go through the scene host, which
-        // lives on the same struct as the cards.
-        let save_slot = self.card_save_index(slot, block);
-        let icon = self.save_block_icon(save_slot);
         let resume = self.current_resume();
+        let index = self.scene_host.as_ref().map(|h| h.index.clone());
         let card_slot = self
             .cards
             .get_mut(slot)
             .and_then(|c| c.as_mut())
             .ok_or_else(|| format!("no memory card in slot {}", slot + 1))?;
-        let view = emu::detect(&card_slot.bytes).map_err(|e| format!("{e}"))?;
-        let was_active = view.block_is_save_start(&card_slot.bytes, block);
-        let sc = view
-            .sc_block_mut(&mut card_slot.bytes, block)
-            .ok_or_else(|| format!("card has no block {block}"))?;
-        sf.write_into_retail_sc_block(sc)
-            .map_err(|e| format!("save: {e}"))?;
-        // The engine-only half of the save - play clock, party composition,
-        // per-character ext, chain library - into the block's unread tail
-        // (`0x1A18..0x1FFC`, zero on every retail card and never copied back
-        // by retail's loader), so a card round-trip keeps it. A blob too big
-        // for the tail is withheld rather than failing the save.
-        if !sf
-            .write_engine_ext_into_retail_sc_block(sc)
-            .map_err(|e| format!("save: {e}"))?
-        {
+        let wrote = legaia_engine_core::card_write::write_save_into_card(
+            card_slot,
+            block,
+            &sf,
+            &resume,
+            index.as_deref(),
+        )?;
+        if !wrote.ext_written {
             crate::console_log("play menu: engine ext too large for the card block; withheld");
         }
-        // The resume point into retail's own fields: the scene label
-        // (`+0x408`) retail's loader re-enters and the banner name
-        // (`+0x200`) its info panel prints - the two fields a
-        // previously-free block otherwise inherited from whatever the card
-        // held there.
-        resume
-            .write_into_retail_sc_block(sc)
-            .map_err(|e| format!("save: {e}"))?;
-        // The payload writer cannot derive the block's *identity*: the save
-        // number in the title and the slot's portrait icon. Without this a
-        // previously-free block carries a correct payload behind a header the
-        // BIOS card browser cannot read.
-        card::write_retail_block_identity(sc, save_slot, icon.as_ref())
-            .map_err(|e| format!("save: {e}"))?;
-        if !was_active {
-            view.claim_block(
-                &mut card_slot.bytes,
-                block,
-                &card::legaia_save_filename(save_slot),
-            )
-            .map_err(|e| format!("{e}"))?;
-        }
-        card_slot.dirty = true;
         Ok(())
     }
 
@@ -336,7 +183,7 @@ impl LegaiaRuntime {
     /// label and its banner name (the scene MAN's section 2). The same
     /// derivation as the native window's
     /// `BootSession::current_resume`; empty with no scene loaded.
-    fn current_resume(&self) -> SaveResume {
+    pub(crate) fn current_resume(&self) -> SaveResume {
         let Some(host) = self.scene_host.as_ref() else {
             return SaveResume::default();
         };
@@ -468,6 +315,8 @@ impl LegaiaRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_engine_core::save_select::SlotContent;
+    use legaia_save::card;
 
     /// A raw 128 KiB card with every block free.
     fn blank_card() -> Vec<u8> {

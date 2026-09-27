@@ -93,16 +93,9 @@ impl LegaiaRuntime {
             (now & !prev, now)
         };
 
-        {
-            let mut records: Vec<&mut [u8]> = world
-                .party
-                .roster
-                .members
-                .iter_mut()
-                .map(|m| m.raw.as_mut_slice())
-                .collect();
-            session.tick(edge, held, &mut records);
-        }
+        // The shared tick the native window makes: party records, plus the
+        // CAMERA row's follow switch on this page's camera.
+        session.tick_host(world, &mut self.camera, edge, held);
 
         // The EQUIP row's confirm commits against the engine's own bag,
         // exactly as the native window's arm does.
@@ -124,9 +117,10 @@ impl LegaiaRuntime {
             }
         }
 
-        // The native window only logs these cues; there is no dev-menu SFX
-        // mapping in the page's cue bank either, so drain them the same way.
-        session.drain_sfx();
+        // The screen's cues ride the world's SFX ring (retail
+        // `FUN_80035B50`), which `route_field_sfx` replays - the same call
+        // the native window makes.
+        session.route_sfx(world);
 
         // Square swaps the row list for the Records page while the list has
         // the pad; the sub-editors keep their own key map.

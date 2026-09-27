@@ -429,6 +429,31 @@ impl PlayWindowApp {
                     Err(e) => log::warn!("summon/move-FX part mesh upload: {e:#}"),
                 }
             }
+            // Effect ribbons (move-VM op `0x42` nodes): transform nodes whose
+            // model is the emitter's own per-frame output, composed like a
+            // part. The browser play page draws the same list
+            // (`play_battle_fx.rs`).
+            for rb in self.session.host.world.active_effect_ribbons() {
+                let v = &rb.mesh;
+                match r.upload_vram_mesh(
+                    &v.positions,
+                    &v.uvs,
+                    &v.cba_tsb,
+                    &v.normals,
+                    &v.colors,
+                    &v.indices,
+                ) {
+                    Ok(m) => {
+                        let model = Mat4::from_translation(Vec3::from(rb.world_pos))
+                            * Mat4::from_rotation_y(rb.rot[1])
+                            * Mat4::from_rotation_x(rb.rot[0])
+                            * Mat4::from_rotation_z(rb.rot[2])
+                            * fx_model_flip;
+                        summon_part_draws.push((m, model));
+                    }
+                    Err(e) => log::warn!("effect ribbon mesh upload: {e:#}"),
+                }
+            }
         }
         summon_part_draws
     }

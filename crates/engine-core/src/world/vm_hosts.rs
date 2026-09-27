@@ -1853,6 +1853,18 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             }
         } else if !dev_gate && !self.world.audio.sound_stream.is_settled() {
             return SceneFadeResult::Busy;
+        } else if op0_word & 0x7FFF != 0 {
+            // The CD-XA arm (`0x801E0420`): `FUN_8003D53C(arg >> 3, arg & 7,
+            // sel)`, `arg` the second s16 operand. It lands on the field XA
+            // queue both hosts drain (`World::push_field_xa_cue`).
+            //
+            // `sel & 0x7FFF == 0` is `FUN_80019794(arg >> 3)` instead - a
+            // seek-ahead that issues no read (`crate::world::field_xa`), which
+            // an engine with no drive completes on arrival.
+            // REF: FUN_8003D53C, FUN_80019794
+            let arg = op1_word as i16;
+            self.world
+                .push_field_xa_cue((arg >> 3) as u8, (arg & 7) as u8, op0_word);
         }
         self.world
             .pending_field_events

@@ -110,6 +110,7 @@ cheapest place to look for a claim that is still wrong.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready | [details ↓](#region-story-flag-gate-families) |
+| Who sets a field NPC's moving-class bit `+0x10 & 0x20000`? | open - the consumer is pinned, the writer is not | `FUN_8003C9AC` (the motion-pause kick; callers `jal` at `0x801D5BF0` in PROT 0897 and `0x8003C0D4` in SCUS) acts only on an actor carrying the bit, and the engine never seeds it: its actor flags start at zero and only motion ops write them, so `legaia_engine_vm::motion_pause` stays unwired. A write sweep for `0x20000` into actor `+0x10` across SCUS and the field images, or a watch on a walking NPC's flag word, closes it. |
 
 Five rows closed here. **What clears the two halt bits an inn acquire sets** is
 the walk kernel `FUN_8003774C`, which `FUN_8003BC08` runs on `+0x10 & 0x400`:
@@ -394,8 +395,9 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Does Koru's timed-fight strip draw over or under the `(16, 14)` tab? | open (narrowed) - both hosts draw the strip; only its order is unpinned | `engine-core::timed_fight` gates the strip on formation slot 0 holding Koru (`0xB6`) and keeps it up for the command phase, and both hosts draw it on top of the name-plate tab that shares its seat ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-four-turn-strip-belongs-to-koru-not-the-dome)). The one capture of the strip never holds the plate in the same frame. A Koru-fight frame with both up, or the two emitters' ordering-table slots read off the disassembly, closes it. |
 | Why do the overworld fog sheets read denser and brighter than retail's? | partial - colour, geometry and camera offset match; draw order does not | On `keikoku_chest_preload`'s walked ordering table the port's colour equals all 104 retail fog packets and its view-space billboard puts 103 within a pixel ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-sheet-is-a-view-space-billboard)). Left is order: in retail's one ordering table nearer terrain overdraws about a fifth of the fog's additive light (an opaque-coverage estimate), while the port's per-sheet depth test hides almost none. A depth policy that reproduces the table's order, measured against it, closes it. |
+
+**Does Koru's timed-fight strip draw over or under the `(16, 14)` tab** closed as over, by disassembly. Both are text actors on the `gp+0x148` list, which `FUN_8003541C` keeps sorted by key (`0x800354FC..0x80035518`); the strip registers key `1` (`0x801D0F98`) and the plaque its record byte `0x23` (`0x801D92E8`). `FUN_80031D00` walks the list head to tail and every packet goes on ordering-table entry `+4` through the head-linking `FUN_8003D2C4`, so the plaque is drawn first and the strip covers it. Both hosts now park the plaque while the strip is up ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-four-turn-strip-belongs-to-koru-not-the-dome)).
 
 Three rows closed here, all on the kingdom overworld. **The overworld camera
 vertical offset** is `map01`'s own entry script: `P1[0]`'s park loop reaches
@@ -588,9 +590,9 @@ performs either cast ([settled](re-settled-threads.md#battle--arts--level-up)).
 
 ## Audio / BGM
 
-| Thread | Status | What would close it |
-|---|---|---|
-| What does the field init's slot-10 load serve? | open (narrowed) - its scenes and its latch are pinned, its cues are not | `FUN_801D6704` loads raw `0x428` then `0x422` into slot 10, over slot 0's SPU base, only while the current track `*(0x8007BAC8)` is `0x814` and the one-shot latch `0x8007B9B8` is clear (`0x801D71A0..0x801D7274`). Track `0x814` is started by `edteien` and `edbalden` (`P1[0]` `+0x0C`, `35 14 08 01`); the load sets the latch in its own delay slot (`0x801D71CC`), SCUS reads it at `0x800243F4`, and its only clearer is the DEBUG MODE init (PROT 0971, `0x801CE9B4`) - a reference sweep, not a capture. Which category-10 cues those two ending scenes name closes it. |
+No open threads.
+
+**What does the field init's slot-10 load serve** closed as the credits theme, by disassembly and capture. The load is not a cue bank: `FUN_801D6704`'s two-part arm (`0x801D71A0..0x801D72D0`) stages the score from raw `0x428` (extraction 1062, one SEQ chunk) and its instruments from raw `0x422` (extraction 1056, a VAB-only bank), starts the sequence with `FUN_80026478(0x800705BC)` and sets the latch `0x8007B9B8`, while which `FUN_800243F0` returns at once (`0x8002440C`) - so the ordinary BGM loader stands aside for the credits. The ending states hold extraction 1062's SEQ chunk in slot 10's sequence buffer byte for byte ([settled](re-settled-threads.md#audio)).
 
 **Does a Muscle Dome round load the class-2 bank** closed as yes, by capture.
 From the arena's hub into a round, `FUN_8001DCF8(0x0C)` runs with the mode word
@@ -854,8 +856,6 @@ What remains, each with where it is recorded:
 - **Tile board** (`801EF2B0`): the walk-in from column 4, row 0, and the octant
   save / restore around the board
   ([`tile-board.md`](../subsystems/tile-board.md#the-walkers-octant-store)).
-- **`FUN_801DB510`**: `0x8007B606`'s only writer after new-game init is the
-  developer menu's CAMERA row, which the port's dev menu does not carry.
 - **Rula / Riremito** (`801EE328` / `801EE094`): the lift, restore and opener
   run engine-side, but retail has no player-facing installer for either art -
   one developer-table word each, at `0x801F3458` / `0x801F3460` - so the port
@@ -873,9 +873,7 @@ What remains, each with where it is recorded:
   camera-relative model draw and a VRAM edit after upload; and an attack clip
   stops at the booked exchange instead of playing out its tail
   ([`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#impact-cue-and-afterimage)).
-- **Battle**: `801F0450`'s art insertion tail is ported
-  (`battle_arts_auto_combo::insert_arts`) but not wired - its one host is the
-  command SM's Auto pick, which the engine does not offer; `FUN_8004AD80`'s
+- **Battle**: `FUN_8004AD80`'s
   kind ladder; `FUN_80048A08`'s ground shadow, which needs `FUN_80028158`'s
   case-1 disc geometry (the draw's per-object decisions, Rot limbs included,
   are ported on both hosts); and the Seru absorb's per-hit kill-check gates
@@ -883,9 +881,10 @@ What remains, each with where it is recorded:
   the target's HP ([`battle.md`](../subsystems/battle.md#the-retail-capture-roll-fun_801ec3e4)).
   The `0x801F0518` flag write, the ribbon's per-clip caller and the War God
   Icon's per-stage bump are modelled.
-- **Audio / anim**: `8004DA00`, `80064090` and `800480D8`, each blocked on a
-  host structure (no XA channel streamer, no multi-slot SEQ table, a crate
-  barrier between `engine-core` and `engine-render`).
+- **Anim**: `800480D8`, blocked on a crate barrier between `engine-core` and
+  `engine-render`. The two audio rows that stood beside it left the list without
+  a port: `FUN_8004DA00` only seeks the drive and `FUN_80064090` is unreachable
+  ([settled](re-settled-threads.md#audio)).
 
 Rows of the audit not named here were not re-read after it; the audit's own
 evidence column is the place to start before trusting one.

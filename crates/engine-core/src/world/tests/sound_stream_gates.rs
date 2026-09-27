@@ -145,6 +145,43 @@ fn the_xa_arm_waits_for_the_pair_too() {
     assert_eq!(pc, 5);
 }
 
+/// The XA arm plays: `FUN_8003D53C(arg >> 3, arg & 7, sel)` lands on the
+/// field XA queue both hosts drain. `sel == 0` is the seek-ahead
+/// `FUN_80019794`, which reads nothing and so queues nothing, and a parked
+/// arm queues nothing either.
+#[test]
+fn the_xa_arm_queues_the_clip_it_starts() {
+    let (mut w, pc) = run_op36(0x0135, (0x10 << 3) | 7, SoundStreamRequest::IDLE_PAIR, 0);
+    assert_eq!(pc, 5);
+    assert_eq!(
+        w.drain_field_xa_cues(),
+        vec![crate::sfx_cue::XaVoiceClip {
+            clip: 0x10,
+            channel: 7,
+            duration_sectors: 0x135,
+        }]
+    );
+    assert!(w.field_xa_busy(), "the drive is busy for the read span");
+
+    let (mut w, pc) = run_op36(0x0000, 0x10 << 3, SoundStreamRequest::IDLE_PAIR, 0);
+    assert_eq!(pc, 5);
+    assert!(
+        w.drain_field_xa_cues().is_empty(),
+        "the seek-ahead plays nothing"
+    );
+
+    let busy = SoundStreamRequest {
+        requested: 12,
+        acked: 7,
+    };
+    let (mut w, pc) = run_op36(0x0135, 0x10 << 3, busy, 0);
+    assert_eq!(pc, 0);
+    assert!(
+        w.drain_field_xa_cues().is_empty(),
+        "a parked arm starts nothing"
+    );
+}
+
 /// `_DAT_8007B868` moves in opposite directions on the two halves: it
 /// *skips* the whole bit-15-set arm and *bypasses* the bit-15-clear
 /// barrier. Retail boots it `0`, so neither fires in play - the engine

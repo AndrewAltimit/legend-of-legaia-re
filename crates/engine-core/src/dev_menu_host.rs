@@ -36,8 +36,8 @@ use crate::dev_menu::{
 use legaia_engine_vm::dev_equip_commit::{EquipCommit, EquipCommitHost, commit_equip};
 use legaia_engine_vm::world_map_dev_menu::{clamp1_255_step, wrap12_step};
 use legaia_engine_vm::world_map_overlay::{
-    DevMenuRow as RetailRow, ListPickerPhase, PanelGeometry, dev_menu_cursor_step,
-    format_fixed_decimal, list_body_draws, panel_geometry,
+    DevMenuRow as RetailRow, ListPickerPhase, PanelGeometry, decode_camera_readout,
+    dev_menu_cursor_step, format_fixed_decimal, list_body_draws, panel_geometry,
 };
 use legaia_engine_vm::world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action};
 
@@ -47,6 +47,9 @@ use legaia_engine_vm::world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action};
 pub enum DevMenuRow {
     /// `MAP CHANGE` - the 12-bit map-id ring.
     MapChange,
+    /// `CAMERA` - the follow-camera switch `_DAT_8007B606`, with the walk
+    /// region box `0x1F800384` read out beside it while the switch is on.
+    Camera,
     /// `ENCOUNT` - the encounter rate, clamped to `1..=255`.
     EncounterRate,
     /// `EVENT_FLAG` - opens the flag editor page.
@@ -59,8 +62,9 @@ pub enum DevMenuRow {
 
 impl DevMenuRow {
     /// The rows in list order.
-    pub const ALL: [DevMenuRow; 5] = [
+    pub const ALL: [DevMenuRow; 6] = [
         DevMenuRow::MapChange,
+        DevMenuRow::Camera,
         DevMenuRow::EncounterRate,
         DevMenuRow::EventFlag,
         DevMenuRow::PlayerParam,
@@ -71,6 +75,7 @@ impl DevMenuRow {
     pub fn label(self) -> &'static str {
         match self {
             DevMenuRow::MapChange => "MAP CHANGE",
+            DevMenuRow::Camera => "CAMERA",
             DevMenuRow::EncounterRate => "ENCOUNT",
             DevMenuRow::EventFlag => "EVENT_FLAG",
             DevMenuRow::PlayerParam => "PLAYER_PARAM",
@@ -88,6 +93,7 @@ impl DevMenuRow {
     pub fn retail_index(self) -> u32 {
         match self {
             DevMenuRow::MapChange => 0x00,
+            DevMenuRow::Camera => 0x03,
             DevMenuRow::EncounterRate => 0x04,
             DevMenuRow::Equip => 0x0C,
             DevMenuRow::PlayerParam => 0x0F,
@@ -173,6 +179,18 @@ pub struct DevMenuSession {
     /// `_DAT_8007B868` - the gate that makes retail's `MAP CHANGE` and
     /// `CARD OPTION` rows read `CLOSED` instead of their label.
     pub closed_gate: u32,
+    /// The `CAMERA` row's switch - retail's `_DAT_8007B606`, mirrored from and
+    /// written back to [`crate::camera::ZoneFollow::follow_enabled`] by
+    /// [`Self::tick_host`].
+    pub camera_follow: bool,
+    /// The walk-region attribute box `0x1F800384..87` as the little-endian
+    /// word the `CAMERA` row's readout loads (`lw v1,0x70(a3)` with
+    /// `a3 = 0x1F800314`, `0x801EB440`).
+    pub camera_box_word: u32,
+    /// Set when the `CAMERA` row switched the follow camera on this tick: the
+    /// edit arm then snaps the camera onto its composed target
+    /// (`FUN_801DB8EC` + the edge clamp `FUN_801DAA50`, `0x801EA1E4..`).
+    camera_snap: bool,
 }
 
 impl DevMenuSession {
@@ -189,6 +207,11 @@ impl DevMenuSession {
         DevMenuRow::ALL[self.row.min(DevMenuRow::ALL.len() - 1)]
     }
 
+    /// Put the list cursor on `row`.
+    pub fn select(&mut self, row: DevMenuRow) {
+        self.row = DevMenuRow::ALL.iter().position(|r| *r == row).unwrap_or(0);
+    }
+
     /// The formatted readout of a row, or `None` for the rows that only open
     /// a page.
     ///
@@ -200,6 +223,7 @@ impl DevMenuSession {
         Some(match row {
             // The 12-bit ring runs to 4095, so three digits would truncate.
             DevMenuRow::MapChange => format_fixed_decimal(i32::from(self.map_id), 4),
+            DevMenuRow::Camera => camera_row_readout(self.camera_follow, self.camera_box_word),
             DevMenuRow::EncounterRate => format_fixed_decimal(self.encounter_rate, 3),
             DevMenuRow::EventFlag => format_fixed_decimal(self.flags.value, 4),
             DevMenuRow::PlayerParam => {
@@ -309,6 +333,16 @@ impl DevMenuSession {
         let pressed = u32::from(pad_edge);
         match self.current_row() {
             DevMenuRow::MapChange => self.map_id = wrap12_step(self.map_id, pressed),
+            DevMenuRow::Camera => {
+                // `FUN_801E9F64`'s arm for row 3 (`0x801EA1A4`): either
+                // horizontal edge (`_DAT_8007B874 & 0xA000`, packed
+                // Right | Left) flips the switch, and while it is on the arm
+                // snaps the camera onto its target.
+                if pad_edge & (PACK_RIGHT | PACK_LEFT) != 0 {
+                    self.camera_follow = !self.camera_follow;
+                    self.camera_snap = self.camera_follow;
+                }
+            }
             DevMenuRow::EncounterRate => {
                 self.encounter_rate = clamp1_255_step(self.encounter_rate, pressed)
             }
@@ -369,6 +403,42 @@ impl DevMenuSession {
         }
     }
 
+    /// One frame of the screen against a live world and its camera - the
+    /// call both hosts make.
+    ///
+    /// Wraps [`Self::tick`] with the state the `CAMERA` row reads and writes,
+    /// so neither host has to know it exists: the switch is loaded from the
+    /// follow camera's [`crate::camera::ZoneFollow::follow_enabled`] (retail
+    /// `_DAT_8007B606`) and the box word from the world's published walk-region
+    /// attributes (`0x1F800384..87`) before the tick, and the switch is written
+    /// back after it. A switch turned on by this tick also queues the snap the
+    /// retail edit arm runs.
+    pub fn tick_host(
+        &mut self,
+        world: &mut crate::world::World,
+        camera: &mut crate::camera::Camera,
+        pad_edge: u16,
+        pad_held: u16,
+    ) {
+        self.camera_follow = camera.zone.follow_enabled;
+        self.camera_box_word = u32::from_le_bytes(world.terrain.region_attributes.box_bytes);
+        self.camera_snap = false;
+        {
+            let mut records: Vec<&mut [u8]> = world
+                .party
+                .roster
+                .members
+                .iter_mut()
+                .map(|m| m.raw.as_mut_slice())
+                .collect();
+            self.tick(pad_edge, pad_held, &mut records);
+        }
+        camera.zone.follow_enabled = self.camera_follow;
+        if std::mem::take(&mut self.camera_snap) {
+            camera.zone.request_snap();
+        }
+    }
+
     /// Commit the staged equip onto the selected character.
     ///
     /// This is the `EQUIP` row's confirm; the host calls it when the row is
@@ -397,6 +467,45 @@ impl DevMenuSession {
     pub fn drain_sfx(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.pending_sfx)
     }
+
+    /// Hand the cues raised since the last call to `world`'s SFX ring, and
+    /// return them for a host that logs them.
+    ///
+    /// Every cue this screen raises is a `jal 0x80035B50` in retail - the
+    /// cursor move (`li a0,0x21` in the delay slot of each arm of
+    /// `FUN_801E9DC8`) and the confirm row's `0x25` (`0x801D7270` in
+    /// `FUN_801D6E18`) - which is the field SFX-ring producer
+    /// [`crate::world::World::push_sfx_cue`] ports. Both hosts replay that
+    /// ring, so routing here is what makes the menu audible on both; each
+    /// host used to drain the queue and drop it.
+    pub fn route_sfx(&mut self, world: &mut crate::world::World) -> Vec<u8> {
+        let cues = self.drain_sfx();
+        for &cue in &cues {
+            world.push_sfx_cue(i16::from(cue));
+        }
+        cues
+    }
+}
+
+/// The `CAMERA` row's readout, as `FUN_801EAD98`'s row-3 arm draws it.
+///
+/// The switch's label is one of two 8-byte strings at `0x801F318C`
+/// (`OFF`, then `ON`), indexed by the switch byte (`sll v0,v0,3` at
+/// `0x801EB42C`). With the switch off the arm draws only that label and
+/// leaves (`bnez` at `0x801EB3E4` not taken, `j 0x801EC96C`); with it on it
+/// draws `ON` and then the box readout: [`decode_camera_readout`]'s two
+/// averages as three digits each, or the fixed `000 000` when the box word is
+/// the whole-map sentinel `0x7F7F0000` (`beq` at `0x801EB448`).
+pub fn camera_row_readout(follow: bool, box_word: u32) -> String {
+    if !follow {
+        return "OFF".to_string();
+    }
+    let (a, b) = decode_camera_readout(box_word).unwrap_or((0, 0));
+    format!(
+        "ON {} {}",
+        format_fixed_decimal(a, 3),
+        format_fixed_decimal(b, 3)
+    )
 }
 
 /// [`EquipCommitHost`] over the engine's id-keyed bag.
@@ -479,7 +588,7 @@ mod tests {
     #[test]
     fn the_encounter_row_holds_its_clamp() {
         let mut s = DevMenuSession::new();
-        s.row = 1;
+        s.select(DevMenuRow::EncounterRate);
         s.encounter_rate = 1;
         let mut r = records();
         drive(&mut s, &mut r, PACK_LEFT, 0);
@@ -492,7 +601,7 @@ mod tests {
     #[test]
     fn cross_opens_and_circle_closes_the_flag_page() {
         let mut s = DevMenuSession::new();
-        s.row = 2;
+        s.select(DevMenuRow::EventFlag);
         let mut r = records();
         drive(&mut s, &mut r, PACK_CROSS, 0);
         assert_eq!(s.page, DevPage::EventFlag);
@@ -539,7 +648,7 @@ mod tests {
     #[test]
     fn the_equip_row_steps_the_staged_item_id() {
         let mut s = DevMenuSession::new();
-        s.row = 4;
+        s.select(DevMenuRow::Equip);
         let mut r = records();
         drive(&mut s, &mut r, PACK_RIGHT, 0);
         assert_eq!(s.equip_item, 1);
@@ -635,6 +744,22 @@ mod tests {
         assert!(s.drain_sfx().is_empty(), "an idle frame raises nothing");
     }
 
+    /// The menu's cues reach the world's SFX ring - the `FUN_80035B50`
+    /// producer both hosts replay - rather than a queue the hosts dropped.
+    #[test]
+    fn dev_menu_cues_route_onto_the_world_sfx_ring() {
+        let mut s = DevMenuSession::new();
+        let mut r = records();
+        let mut w = crate::world::World::default();
+        drive(&mut s, &mut r, PACK_DOWN, 0);
+        assert_eq!(s.route_sfx(&mut w), vec![SFX_CURSOR_MOVE as u8]);
+        assert_eq!(
+            w.take_sfx_ring_ops(),
+            vec![crate::world::SfxRingOp::Push(SFX_CURSOR_MOVE as i16)]
+        );
+        assert!(s.drain_sfx().is_empty(), "routing drains the queue");
+    }
+
     /// The `CLOSED` gate is retail's, taken on retail's own row index - so it
     /// covers exactly the engine row that sits at one of the two gated
     /// indices, and no other.
@@ -683,5 +808,55 @@ mod tests {
             assert!(!row.label().is_empty());
             assert!(s.row_value(row).is_some());
         }
+    }
+
+    /// The `CAMERA` row is retail row 3 and flips the follow switch on either
+    /// horizontal edge, and `tick_host` carries the switch onto the camera.
+    #[test]
+    fn the_camera_row_switches_the_follow_camera() {
+        let mut w = crate::world::World::new();
+        let mut cam = crate::camera::Camera::default();
+        assert!(cam.zone.follow_enabled, "retail boots the switch on");
+        let mut s = DevMenuSession::new();
+        s.select(DevMenuRow::Camera);
+        assert_eq!(DevMenuRow::Camera.retail_index(), 0x03);
+        assert_eq!(
+            DevMenuRow::Camera.retail_row(),
+            Some(RetailRow::Camera),
+            "the row maps onto retail's CAMERA arm"
+        );
+        s.tick_host(&mut w, &mut cam, PACK_RIGHT, 0);
+        assert!(
+            !cam.zone.follow_enabled,
+            "Right turns the follow camera off"
+        );
+        assert_eq!(s.row_value(DevMenuRow::Camera).as_deref(), Some("OFF"));
+        s.tick_host(&mut w, &mut cam, PACK_LEFT, 0);
+        assert!(cam.zone.follow_enabled, "Left turns it back on");
+        // Other edges leave it alone.
+        s.tick_host(&mut w, &mut cam, PACK_CROSS, 0);
+        assert!(cam.zone.follow_enabled);
+    }
+
+    /// The readout is the retail row-3 arm's: `OFF` alone, or `ON` plus the
+    /// region box's two averages - `000 000` for the whole-map sentinel.
+    #[test]
+    fn the_camera_readout_follows_the_region_box() {
+        assert_eq!(camera_row_readout(false, 0x1234_5678), "OFF");
+        assert_eq!(camera_row_readout(true, 0x7F7F_0000), "ON 000 000");
+        // Box (x0, z0, x1, z1) = (0x10, 0x20, 0x30, 0x40): averages 0x20 / 0x30.
+        let word = u32::from_le_bytes([0x10, 0x20, 0x30, 0x40]);
+        assert_eq!(camera_row_readout(true, word), "ON 032 048");
+
+        let mut w = crate::world::World::new();
+        let mut cam = crate::camera::Camera::default();
+        w.terrain.region_attributes.box_bytes = [0x10, 0x20, 0x30, 0x40];
+        let mut s = DevMenuSession::new();
+        s.tick_host(&mut w, &mut cam, 0, 0);
+        assert_eq!(
+            s.row_value(DevMenuRow::Camera).as_deref(),
+            Some("ON 032 048"),
+            "tick_host loads the world's published box"
+        );
     }
 }

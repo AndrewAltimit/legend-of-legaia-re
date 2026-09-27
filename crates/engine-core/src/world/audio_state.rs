@@ -22,6 +22,13 @@ pub struct AudioState {
     /// funnel resolves (`XA27` for `0x10C`). Drained by the hosts into the
     /// XA mixing path ([`crate::world::World::drain_battle_xa_cues`]).
     pub battle_xa_cues: Vec<crate::sfx_cue::XaVoiceClip>,
+    /// Cast voices this round's committed spells **may** raise, listed at the
+    /// round's start so a host whose clip decode is asynchronous can have
+    /// them resident before the cast arms
+    /// ([`crate::world::World::drain_battle_xa_prestage`]). Advisory: nothing
+    /// plays from this list; the cast still raises its clip on
+    /// [`Self::battle_xa_cues`].
+    pub battle_xa_prestage: Vec<crate::sfx_cue::XaVoiceClip>,
     /// Frames the modelled CD drive stays busy after a clip start - the
     /// read span in vsyncs (`dur * 2.5` sectors at 150/s = `dur / 60` s). The
     /// funnel's voice leg drops a request while it is non-zero
@@ -29,6 +36,19 @@ pub struct AudioState {
     /// inside one read span collapse to the first. Counted down once per
     /// battle tick.
     pub battle_xa_busy_frames: u16,
+    /// CD-XA one-shot clip requests the **field** raised this tick - the
+    /// field VM's op `0x36` bit-15-clear arm (`FUN_8003D53C(arg >> 3,
+    /// arg & 7, sel)` at `0x801E0420`) and the scripted-scene programs' voice
+    /// leg. Drained by both hosts' field SFX routing
+    /// ([`crate::world::World::drain_field_xa_cues`]); see
+    /// [`crate::world::World::push_field_xa_cue`].
+    pub field_xa_cues: Vec<crate::sfx_cue::XaVoiceClip>,
+    /// Vsyncs the modelled drive stays busy after a field clip start - the
+    /// field's reading of `_DAT_8007BC20 != 0`, which a one-shot holds at `2`
+    /// until the callback ring's end-of-clip teardown. Same `dur`-vsyncs span
+    /// as [`Self::battle_xa_busy_frames`]; counted down once per
+    /// `World::tick`.
+    pub field_xa_busy_frames: u16,
     /// The static `SCUS_942.54` XA cue duration table (`DAT_800788B8`) the
     /// voice legs read (`legaia_asset::xa_cue_table`); installed at boot,
     /// `None` on a disc-free build (a voice cue then requests no span and
@@ -145,7 +165,10 @@ impl AudioState {
             sound_bank_ready: true,
             battle_sfx_cues: Vec::new(),
             battle_xa_cues: Vec::new(),
+            battle_xa_prestage: Vec::new(),
             battle_xa_busy_frames: 0,
+            field_xa_cues: Vec::new(),
+            field_xa_busy_frames: 0,
             xa_cue_durations: None,
             battle_shout_cues: Vec::new(),
             current_bgm: None,

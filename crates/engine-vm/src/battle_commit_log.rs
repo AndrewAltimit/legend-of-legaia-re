@@ -26,10 +26,14 @@
 //! (`"  All"`, width 36) or `0x3E` (`"All Allies"`, width 48) at `0x801D4414`
 //! / `0x801D4434`, so an all-target commit logs that label.
 //!
-//! What the port models is the **resting** seat of every element (seat B,
-//! `+0x0A` / `+0x0C`). Retail spawns each element at seat A and glides it to
-//! seat B (`FUN_801D8DE8` / `FUN_801DB7B0`); the glide's rate is not pinned,
-//! so the log draws where each element comes to rest.
+//! What the port models for a commit is the **resting** seat of every
+//! element (seat B, `+0x0A` / `+0x0C`). Retail spawns each element at seat A
+//! and glides it to seat B (`FUN_801D8DE8` registers the glide with
+//! `FUN_801DB7B0`, `FUN_801D9BBC` steps it). The glide's rate is pinned - the
+//! record's `total` is `ctx[+0x1C]`, which the round reset seeds to `0x10`,
+//! stepped by the frame step - and the port runs it for the log's
+//! [launch](LogLaunch); the landing glide of a fresh commit still draws at
+//! rest.
 //!
 //! Evidence: the arms are read from the disassembly of PROT 0898 at base
 //! `0x801CE818`; the one-row geometry is capture-confirmed -
@@ -39,7 +43,10 @@
 //!
 //! REF: FUN_801D388C (cases `0x11`, `0x20`, `0x23` - the commit arms)
 
-use crate::battle_cursor_pose::{ElementPlacement, element_placement_copy, element_placement_land};
+use crate::battle_cursor_pose::{
+    ElementPlacement, element_placement_copy, element_placement_copy_remapped,
+    element_placement_land,
+};
 
 /// First record of the log (`0x2B`, row 0's name element).
 pub const LOG_FIRST_RECORD: usize = 0x2B;
@@ -141,6 +148,9 @@ pub struct CommitLogRow {
     /// Placement record of the command chip ([`RECORD_CHIP_ATTACK`] etc).
     pub command_record: usize,
     pub target: CommitLogTarget,
+    /// Horizontal offset of the whole row from its resting seats while the
+    /// log is launching ([`LogLaunch::x_offset`]); `0` at rest.
+    pub slide_x: i16,
 }
 
 /// The whole-enemy-side label - record [`RECORD_ALL_ENEMIES`]'s content,
@@ -272,6 +282,127 @@ pub fn commit_log_layout(commits: &[LogCommit]) -> Vec<[LogElement; 3]> {
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// The launch: the log sliding off, and back on, as the member leaves the ring
+// ---------------------------------------------------------------------------
+
+/// Records the launch clones land in: `0x35 + i` for `i` in
+/// `0..3 * ctx[+0x1F]`, one per logged element (`addiu s0,s3,0x35` at
+/// `0x801D5098` / `0x801D50F0`).
+pub const LAUNCH_FIRST_RECORD: usize = 0x35;
+
+/// Frames a launch glide runs for: the tracked-widget record's `total` byte,
+/// which `FUN_801D8DE8` copies from `ctx[+0x1C]` and which the round reset
+/// `FUN_801D88CC` seeds to `0x10` (`li v0,0x10` / `sb v0,0x1c` at
+/// `0x801D8904..0x801D8914`, beside `ctx[+0x1B] = 1`, the "glide" flag).
+pub const LAUNCH_GLIDE_FRAMES: u8 = 0x10;
+
+/// One launch of the commit log - the tail of `FUN_801D388C` that runs for
+/// the flow steps leaving or re-entering the command ring.
+///
+/// Retail does not keep the log's own records on screen through a sub-screen.
+/// Every step that leaves the ring opens with the handle-list reset
+/// (`FUN_801D99BC`, the step script's `anim` byte `1` / `3`), which drops the
+/// log with every other widget, and the step's tail then rebuilds it as
+/// clones: for each logged element `FUN_801D5778` copies record `0x2B + i`
+/// into `0x35 + i` with seat A the element's resting seat and seat B one
+/// display width (`0x140`) to the left, and `FUN_801D8DE8(0x35 + i, mode)`
+/// opens the clone as a gliding widget. The steps that run it, read off the
+/// tail's jump table at `0x801CE948` and each call's `a1`:
+///
+/// | step | transition | mode |
+/// |---|---|---|
+/// | `0x05` | ring -> item window | `0` (out) |
+/// | `0x07` | ring -> magic window | `0` (out) |
+/// | `0x09` | ring -> arts entry (option `Command`) | `0` (out) |
+/// | `0x2A` | ring -> the `Auto` / `Command` prompt | `0` (out) |
+/// | `0x30` | ring -> target cursor (option `Automatic`) | `0` (out) |
+/// | `0x2B` | prompt cancelled back to the ring | `1` (in) |
+/// | `0x31` | target cursor cancelled back to the ring | `1` (in) |
+/// | `0x08` | magic window cancelled back to the ring | `1` (in) |
+///
+/// Mode bit 0 clear spawns the widget at seat A and glides it to seat B, set
+/// spawns it at B and glides to A (`0x801D92E0` / `0x801D935C`), so an
+/// outbound launch slides the whole log off the left edge and an inbound one
+/// slides it back to rest. The glide is `FUN_801D9BBC`'s linear step over
+/// [`LAUNCH_GLIDE_FRAMES`]. The Begin confirm (steps `0x24` / `0x29`) is
+/// **not** a launch - its tail table entry is the plain exit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LogLaunch {
+    /// `false` = mode `0`, sliding out; `true` = mode `1`, sliding back in.
+    pub inbound: bool,
+    /// The tracked-widget record's `elapsed` byte (`+0x01`).
+    pub elapsed: u8,
+    /// The record's `total` byte (`+0x00`).
+    pub total: u8,
+}
+
+impl LogLaunch {
+    /// A fresh launch in `inbound`'s direction, at the retail glide length.
+    pub const fn new(inbound: bool) -> Self {
+        Self {
+            inbound,
+            elapsed: 0,
+            total: LAUNCH_GLIDE_FRAMES,
+        }
+    }
+
+    /// Has the glide snapped onto its target seat?
+    pub const fn settled(&self) -> bool {
+        self.elapsed >= self.total
+    }
+
+    /// One frame of `FUN_801D9BBC` for this record:
+    ///
+    /// ```text
+    /// if total - elapsed <= step { snap to target }   ; 0x801D9C20 (sltu step < total - elapsed)
+    /// else { elapsed += step; pos = start + (target - start) * elapsed / total }
+    /// ```
+    ///
+    /// `frame_step` is `0x1F800393`.
+    ///
+    /// PORT: FUN_801D9BBC (the per-record step, applied to the log's launch clones; `battle_value_readout::combo_slide` is the same step on record 80)
+    pub fn step(&mut self, frame_step: u8) {
+        if self.settled() {
+            return;
+        }
+        if u32::from(self.total - self.elapsed) <= u32::from(frame_step) {
+            self.elapsed = self.total;
+        } else {
+            self.elapsed += frame_step;
+        }
+    }
+
+    /// The x offset every log element carries this frame, relative to its
+    /// resting seat.
+    ///
+    /// The clone is built exactly as retail builds it - [`element_placement_copy_remapped`]
+    /// over a record resting at `x = 0` - and the offset is the glide between
+    /// its two seats in this launch's direction. All three elements of every
+    /// row shift by the same amount, because the clone's seat B is its seat A
+    /// minus a constant.
+    pub fn x_offset(&self) -> i16 {
+        let mut slots = [ElementPlacement::default(); 2];
+        element_placement_copy_remapped(&mut slots, 1, 0);
+        let (seat_a, seat_b) = (slots[1].f02 as i16, slots[1].f0a as i16);
+        let (start, target) = if self.inbound {
+            (seat_b, seat_a)
+        } else {
+            (seat_a, seat_b)
+        };
+        if self.settled() {
+            return target;
+        }
+        let span = i32::from(target) - i32::from(start);
+        (i32::from(start) + span * i32::from(self.elapsed) / i32::from(self.total.max(1))) as i16
+    }
+
+    /// Is the log off screen for good - an outbound launch that has landed?
+    pub const fn gone(&self) -> bool {
+        !self.inbound && self.settled()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -330,5 +461,50 @@ mod tests {
         assert_eq!((rows[0][2].width, rows[0][2].source), (0, 0));
         assert_eq!(rows[1][2].source, RECORD_ALL_ENEMIES);
         assert_eq!(rows[1][2].width, ALL_ENEMIES_WIDTH as i16);
+    }
+
+    /// An outbound launch slides the log one display width left over sixteen
+    /// frames of step 1, linearly, and then reads as gone.
+    #[test]
+    fn an_outbound_launch_glides_one_screen_left() {
+        let mut l = LogLaunch::new(false);
+        assert_eq!(l.x_offset(), 0);
+        l.step(1);
+        assert_eq!(l.x_offset(), -20);
+        for _ in 0..14 {
+            l.step(1);
+        }
+        assert_eq!(l.x_offset(), -300);
+        assert!(!l.gone());
+        l.step(1);
+        assert_eq!(l.x_offset(), -0x140);
+        assert!(l.gone());
+    }
+
+    /// Mode 1 spawns the clone at seat B and glides it home.
+    #[test]
+    fn an_inbound_launch_slides_back_to_rest() {
+        let mut l = LogLaunch::new(true);
+        assert_eq!(l.x_offset(), -0x140);
+        for _ in 0..16 {
+            l.step(1);
+        }
+        assert_eq!(l.x_offset(), 0);
+        assert!(!l.gone());
+    }
+
+    /// `FUN_801D9BBC` snaps when the remaining frames fit in one step, so a
+    /// step of 4 lands on the fourth call, not past it.
+    #[test]
+    fn a_large_frame_step_snaps_on_arrival() {
+        let mut l = LogLaunch::new(false);
+        for _ in 0..3 {
+            l.step(4);
+        }
+        assert_eq!(l.elapsed, 12);
+        assert_eq!(l.x_offset(), -240);
+        l.step(4);
+        assert!(l.settled());
+        assert_eq!(l.x_offset(), -0x140);
     }
 }

@@ -35,9 +35,9 @@
 //!
 //! [`World::man_load_actor_reset`]: crate::world::World::man_load_actor_reset
 //!
-//! The other two stay disclosed and their notes say why - [`submode_panel_rows`]
-//! wants a GPU-primitive channel, [`request_card_mode`] wants a retail
-//! master-mode word.
+//! [`submode_panel_rows`] stays disclosed and its note says why: the op-`0x49`
+//! sub-op-4 handler that installs its panel is unported.
+//! [`request_card_mode`] is wired through the mode seat.
 //!
 //! REF: FUN_80020DE0 (actor spawn), FUN_8003CF04 (actor-by-handler search),
 //! FUN_8003AEB0 (the MAN loader that calls the first two),
@@ -199,8 +199,9 @@ pub struct PanelRow {
     /// (`0x801e6a0c..0x801e6a2c`). The field name predates that read; the
     /// values are the retail ones either way.
     pub ink: i16,
-    /// `true` when the row draws its second glyph run (retail skips it for
-    /// `entry == 0`).
+    /// `true` when the row draws its second glyph cell (retail skips it for
+    /// `entry == 0`). That cell is not entry-based: it is `ink + 8`
+    /// (`addiu a2,s0,8` at `0x801E6A54`), so `0x57` / `0x60`.
     pub second_run: bool,
 }
 
@@ -219,24 +220,26 @@ pub struct PanelRow {
 /// `count != 0` test), which is why the frame and labels are emitted separately
 /// from this pass.
 ///
-/// NOT WIRED: this is the layout half of a render-track routine, and the
-/// blocker is on the render side only - the inputs are all live.
+/// NOT WIRED: the routine's installer is unported. This is the painter of
+/// panel-window record 14 (`0x801F2B98 + 14 * 0x1C`, `+0x18` =
+/// `0x801E6984`), and the only descriptor naming record 14 is `0x801F3304`,
+/// which the submode-driver handler at slot `0x23` (`FUN_801EF014`, the
+/// op-`0x49` sub-op-4 screen: `OP49_SUBOP_SLOTS[4] = 0x23`) installs at
+/// `0x801EF144`. That handler - seed the cursor words `_DAT_8007BB88` /
+/// `_DAT_8007BB9C` from a run of story flags the operand names, run the list
+/// picker `FUN_801E9DC8`, set the picked flag - has no body in
+/// `legaia_engine_vm::baka_hub_actors`, so no engine screen ever names record
+/// 14 and a `PanelRow` would have no frame to join. The disc drives it only
+/// from the `kor` / `kor3` / `kor4` scene scripts (`asset field-op-census
+/// --only "49 04"`). What wiring needs is that handler ported into the hub
+/// dispatcher with this layout as its painter, and a host that draws the
+/// hub's generic `HubDraw` list, which neither play host does yet (the
+/// native window paints only the coin counter off the submode screen).
 ///
-/// The context clause an earlier reading carried ("the context block it reads
-/// is the same one [`open_submode`] cannot reach") is false, and contradicts
-/// this module's own header: `open_submode` **is** live, its ten seeds land in
-/// `World::field_vm.submode_context`, and `World::submode_env` reads that block every
-/// frame. The row inputs are live with it - the cursor and entry count this
-/// pass wants are already projected into `HubEnv`.
-///
-/// What has no consumer is the output. The submode screen's own draw list
-/// (`World::field_vm.submode_screen.draws()`, built by the ported panel-window
-/// painters) is not read by any host: neither `engine-shell` nor the browser
-/// page renders the op-`0x49` screen at all. So a `PanelRow` would join a
-/// draw list nothing paints. The prerequisite is a host consumer for that
-/// list; the four draw leaves it would then need (`FUN_8002B994` highlight
-/// bar, `FUN_8002C488` glyph run, `FUN_80036888` label, `FUN_8002C69C` frame)
-/// are themselves ported, in `engine-render`, `engine-ui` and `legaia-font`.
+/// An earlier note blamed the context block, and a later one only the missing
+/// host consumer; both skipped the installer. `world-map.md` had also filed
+/// this routine as a developer-menu MAP_CHANGE list; its one descriptor says
+/// otherwise.
 pub fn submode_panel_rows(
     origin: (i16, i16),
     count: u8,

@@ -14,7 +14,7 @@
 //! | `+0x28/+0x2c/+0x30` | DEF tier % (i32×3, HP-keyed high/mid/low) | `FUN_801d3b18` (defender side; the `def %d` debug operand) |
 //! | `+0x34` | critical chance % (i32) | `FUN_801d6660` comeback-crit roll (`rand()%100 < chance`, HP band `(0, 0x280)`) |
 //! | `+0x38/+0x3c/+0x40` | ATK tier % (i32×3, HP-keyed high/mid/low) | `FUN_801d3b18` (attacker side; the `atk %d` debug operand) |
-//! | `+0x44` | actor anchor (i16) | read `+ 200` as a spawn Y in `FUN_801d0fe4` |
+//! | `+0x44` | duel stand-off (i16) | the round setup stands the fighter at `X = ±(stand_off + 200)` (`0x801D005C..0x801D00F4`) |
 //! | `+0x4c` | AI move-pattern (NUL-terminated `1`/`2`/`3` symbols) | `FUN_801d487c` move picker |
 //!
 //! The HP keying picks tier `[0]` while the fighter's HP is `>= 0x8c1`, `[1]`
@@ -114,6 +114,14 @@ pub const RECORD_ATK_TIERS_OFFSET: usize = 0x38;
 
 /// Byte offset of the AI move-pattern string within a record (`DAT_801d76e8`).
 pub const RECORD_AI_PATTERN_OFFSET: usize = 0x4C;
+
+/// Record `+0x44` - the fighter's **stand-off**: the round setup (cabinet
+/// state `0x32`) stores `-(stand_off + 200)` into the player actor's X
+/// (`lhu v0,0x44(v0); addiu v0,v0,0xc8; subu v0,zero,v0; sh v0,0x14(a3)` at
+/// `0x801D005C..0x801D006C`) and `stand_off + 200` into the opponent's
+/// (`0x801D00C0..0x801D00F4`). Actor `+0x14` is X - `+0x16` / `+0x18` are
+/// Y / Z, which the round-start cameo's animator writes as `0x8C` / `0x400`.
+pub const RECORD_STAND_OFF_OFFSET: usize = 0x44;
 
 /// Number of roster fighters (the `0x11` records the action-table loop walks).
 pub const OPPONENT_COUNT: usize = 17;
@@ -245,6 +253,9 @@ pub struct BakaOpponent {
     pub crit_chance: i32,
     /// `+0x38..` - ATK tier % at HP high / mid / low.
     pub atk_tiers: [i32; 3],
+    /// `+0x44` - the duel stand-off ([`RECORD_STAND_OFF_OFFSET`]): the
+    /// fighter stands `stand_off + 200` units from the arena centre.
+    pub stand_off: i16,
     /// `+0x4c` - the CPU attack-type loop (symbols `1`/`2`/`3`), NUL-terminated.
     pub ai_pattern: Vec<u8>,
 }
@@ -380,6 +391,7 @@ pub fn parse_at(overlay: &[u8], off: usize, count: usize) -> Option<Vec<BakaOppo
             def_tiers,
             crit_chance,
             atk_tiers,
+            stand_off: read_i16(overlay, b + RECORD_STAND_OFF_OFFSET),
             ai_pattern,
         });
     }

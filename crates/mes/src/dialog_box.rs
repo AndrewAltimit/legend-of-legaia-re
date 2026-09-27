@@ -79,9 +79,16 @@ use std::ops::Range;
 
 use crate::interp::{Interpreter, MesEvent};
 
-/// Text rows a single dialog box holds before the pager pauses. Retail
-/// `_DAT_801F2740`, pinned at both box-init arms (`case 6` / `case 9`) of the
-/// window pager `FUN_801D84D0`.
+/// Text rows the dialog window shows at once. Retail `_DAT_801F2740`, pinned at
+/// the box-init arms of the window pager `FUN_801D84D0`.
+///
+/// It is the window's height, not a page length: the pager does **not** pause
+/// when a fourth consecutive `0x1F` line follows a full window - the finished
+/// third row scrolls up (pager state `0xC`) and the fourth types beneath it
+/// with no button press (`0x801D8AAC..0x801D8B34`). A page runs until a
+/// control byte (see [`pack_page`]); [`pack_box`] still groups lines in threes
+/// for tools that want window-sized chunks, and marks the cut
+/// [`Dispatch::ImplicitNextPage`].
 pub const LINES_PER_BOX: usize = 3;
 
 /// What the pager does after a box's rows are shown - decoded from the control
@@ -107,7 +114,9 @@ pub enum Dispatch {
     /// [`crate::picker`]).
     Picker(usize),
     /// The box filled to [`LINES_PER_BOX`] and the next byte is another `0x1F`
-    /// lead with no explicit control byte between - an implicit new page.
+    /// lead with no explicit control byte between. A [`pack_box`] packing cut,
+    /// not a pager pause: retail scrolls the window a row and keeps typing
+    /// (see [`LINES_PER_BOX`]); [`pack_page`] never reports it.
     ImplicitNextPage,
     /// Ran off the end of the buffer with no dispatch byte.
     EndOfBuffer,
@@ -209,14 +218,12 @@ fn classify_dispatch(buf: &[u8], idx: usize) -> Dispatch {
 /// per-segment VM stepping; this is the box-packing half it doesn't cover.
 // PORT: FUN_80039B7C
 //
-// The *engine* runtime consumes this grouping too: `OwnedDialogPanel` in
-// `engine-core::dialog` seeds each window off `pack_box`, types the box's
-// rows into one page (rows joined by the `0x7C` newline glyph), and pages
-// through continuing dispatches - so a 3-row retail box renders as one
-// 3-row window, not three 1-row windows. The other hosts of the grouping
-// are the disc-gated `field_dialog_boxpack_disc` oracle and the `mes boxes`
-// subcommand, which is the view a MAN dialog editor needs - which lines
-// share a window, and what the pager does when one ends.
+// The engine runtime types whole pages instead ([`pack_page`], in
+// `engine-core::dialog` over the `dialog_window` row window). The hosts of
+// this window-sized grouping are the disc-gated `field_dialog_boxpack_disc`
+// oracle and the `mes boxes` subcommand, which is the view a MAN dialog
+// editor needs - which lines share the window at once, and what the pager
+// does when a page ends.
 pub fn pack_box(buf: &[u8], pc: usize) -> Option<DialogBox> {
     if buf.get(pc) != Some(&0x1F) {
         return None;
@@ -254,6 +261,42 @@ pub fn pack_box(buf: &[u8], pc: usize) -> Option<DialogBox> {
     }
 }
 
+/// Pack one pager **page** starting at `pc`: every consecutive `0x1F` line up
+/// to the first byte that is not another lead, and the control byte there.
+///
+/// This is the unit the field pager `FUN_801D84D0` types between two waits for
+/// a button press. After a row finishes it tests the byte past the row
+/// (`(b & 0x7F) < 0x20` at `0x801D8AB4`): another line keeps typing - into the
+/// next window slot, or after a one-row scroll once the three slots are full
+/// (state `0xC`) - and anything else ends the page (state `0x19`, or `0xF`
+/// first). So unlike [`pack_box`] the line count is unbounded and the
+/// dispatch is never [`Dispatch::ImplicitNextPage`]. Returns `None` if `pc`
+/// is not a `0x1F` lead.
+// REF: FUN_801D84D0
+pub fn pack_page(buf: &[u8], pc: usize) -> Option<DialogBox> {
+    if buf.get(pc) != Some(&0x1F) {
+        return None;
+    }
+    let mut lines = Vec::new();
+    let mut cur = pc;
+    loop {
+        let glyph_start = cur + 1;
+        let term = line_end(buf, glyph_start);
+        lines.push(glyph_start..term);
+        let after = (term + 1).min(buf.len());
+        if buf.get(after) == Some(&0x1F) && after > cur {
+            cur = after;
+            continue;
+        }
+        return Some(DialogBox {
+            lead: pc,
+            lines,
+            dispatch_at: after,
+            dispatch: classify_dispatch(buf, after),
+        });
+    }
+}
+
 /// Pack the whole conversation branch starting at `pc` - every box reachable by
 /// following [`Dispatch::continues`] dispatches, stopping at the first box that
 /// ends the branch (`End`/`Terminate`/`Picker`/`EndOfBuffer`/unknown) or after
@@ -283,6 +326,25 @@ mod tests {
         v.extend_from_slice(text);
         v.push(0x00);
         v
+    }
+
+    #[test]
+    fn a_page_runs_past_three_lines_to_its_control_byte() {
+        let mut b = Vec::new();
+        for t in [b"a", b"b", b"c", b"d", b"e"] {
+            b.extend(line(t));
+        }
+        b.push(0x24);
+        let page = pack_page(&b, 0).unwrap();
+        assert_eq!(page.lines.len(), 5);
+        assert_eq!(page.dispatch, Dispatch::NextPage);
+        assert_eq!(page.dispatch_at, b.len() - 1);
+        // The window-sized packing cuts the same run after three lines.
+        assert_eq!(
+            pack_box(&b, 0).unwrap().dispatch,
+            Dispatch::ImplicitNextPage
+        );
+        assert!(pack_page(&b, 1).is_none());
     }
 
     #[test]

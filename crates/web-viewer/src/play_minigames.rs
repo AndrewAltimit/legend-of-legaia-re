@@ -106,6 +106,9 @@ pub(crate) struct MinigameUi {
     /// A minigame that uploaded its own VRAM just left: the page must put
     /// the field texture back. Drained by `play_mg_take_vram_restore`.
     pub(crate) vram_restore_pending: bool,
+    /// The Baka duel's 3D surface - the engine cache the native window
+    /// drives too (`legaia_engine_core::baka_duel_scene::BakaDuelSurface`).
+    pub(crate) baka_surface: legaia_engine_core::baka_duel_scene::BakaDuelSurface,
 }
 
 /// The PROT entries the standalone presentation bundle reads, in extraction
@@ -503,6 +506,13 @@ impl LegaiaRuntime {
     /// page draws the text HUD alone and says so.
     pub fn play_mg_game_json(&self) -> String {
         let ui = &self.minigame_ui;
+        // The seated opponent is the live session's (a rung the cabinet
+        // installs mid-visit replaces it), the entry snapshot only without one.
+        let opponent = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.minigames.baka_fighter.as_ref())
+            .map_or(ui.baka.opponent, |f| f.opponent_roster());
         serde_json::json!({
             "game": ui.game.map(ActiveGame::label),
             "gen": ui.generation,
@@ -516,9 +526,9 @@ impl LegaiaRuntime {
             // opponent drawn from one of them is a side-0 mesh; the ladder
             // rows `3..=16` carry their own packs (side 1).
             "baka": {
-                "opponent": ui.baka.opponent,
+                "opponent": opponent,
                 "opponent_side": u32::from(
-                    ui.baka.opponent >= legaia_engine_core::baka_fighter::FIGHTER_PACK_FOLD
+                    opponent >= legaia_engine_core::baka_fighter::FIGHTER_PACK_FOLD
                 ),
                 "player_char": ui.baka.player_char,
             },

@@ -1083,7 +1083,7 @@ The disadvantaged side is turned to face the wrong way (`+0x46 = 0x800` for the 
 
 The pre-emptive arm is commonly shorthanded "escape assured", which overstates it. `FUN_801E791C` sets the party roll equal to the enemy roll at `0x801E7AF0` and only *then* tests the scripted no-escape flag `ctx+0x287` at `0x801E7B14`, so a pre-emptive strike into a no-flee battle is still caught. What the arm actually guarantees is that the `roll_p < roll_e` compare cannot fail.
 
-Ported as `battle_formulas::roll_formation_advantage` / `FormationAdvantage`, wired through `World::roll_battle_formation` (battle setup) → `World::seed_battle_initiative` (lockout) → `World::latch_battle_formation` → `World::roll_battle_escape` (the latched read).
+Ported as `battle_formulas::roll_formation_advantage` / `FormationAdvantage`, wired through `World::roll_battle_formation` (battle setup) → `World::seed_battle_initiative` (lockout) → `World::run_round_state_zero` (each round's state `0x00`) → `World::roll_battle_escape` (the latched read).
 
 **AGL** (`+0x154` current / `+0x156` base): the per-round agility / action gauge. Every action draws it down; the enemy-AI action picker (`overlay_0898_801e9fd4`) deducts each candidate action's `+0x74` cost from `+0x154` and only queues actions it can still afford. Each round `FUN_801D88CC` restores it. Live-RAM confirmed by Zetopheonix: the "Power Up" buff prints *"agility increased!"* and raises this cur/base pair. The damage popup (`_DAT_80076D7E`) reads `+0x154`; this is the HP/MP/AGL triplet at `+0x14C..+0x156` in [battle.md](battle.md).
 

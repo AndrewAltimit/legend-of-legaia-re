@@ -693,3 +693,38 @@ fn the_ring_cone_wraps_at_both_ends() {
     let hit = world.seats_in_cone(centre, 0x0200, THEEDER_CONE_HALF_WIDTH, 3..7);
     assert!(hit.is_empty(), "the cone reached {hit:?} from a gap");
 }
+
+/// PROT 0910 (Swordie, spell `0x88`) lands its four slashes from the cast band
+/// seam: the module's own timers schedule them and each landing stages the
+/// victim's reaction clip, while the HP outcome stays the fold's (a neutral
+/// wrapper return, so no seat's HP moves here).
+#[test]
+fn the_swordie_slashes_land_from_the_cast_band_seam() {
+    let mut world = module_code_world();
+    assert_eq!(world.cast_module_for(0x88), Some(910));
+    world.casting.summon_actor_slot = Some(7);
+    world.actors[0].battle.active_target = 3;
+    world.casting.module_phase = 8;
+    // The victim's alternate reaction clip (`+0x1EF`).
+    world.actors[3].battle.params[0x1EF - 0x1DF] = 0x21;
+    let hp_before: Vec<u16> = world.actors.iter().map(|a| a.battle.hp).collect();
+    let mut hits = 0;
+    let mut done = false;
+    for _ in 0..2000 {
+        let run = world.run_cast_module_code(0x88, 0).expect("band entry");
+        hits += run.aoe_hits.len();
+        if !run.busy {
+            done = true;
+            break;
+        }
+    }
+    assert!(done, "the settle arm finishes the cast");
+    assert_eq!(hits, 4, "one landing per slash");
+    assert_eq!(world.casting.module_swordie.hits, 4);
+    let hp_after: Vec<u16> = world.actors.iter().map(|a| a.battle.hp).collect();
+    assert_eq!(hp_before, hp_after, "the fold owns the HP outcome");
+    assert_eq!(
+        world.actors[3].battle.queued_anim, 0x21,
+        "a live victim takes the alternate reaction on every landing"
+    );
+}

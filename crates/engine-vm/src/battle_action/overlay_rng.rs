@@ -60,11 +60,12 @@
 //! redraws the identical bolt. See
 //! `docs/subsystems/battle-action.md` (overlay-local PRNG).
 //!
-//! # NOT WIRED
+//! # Consumer
 //!
-//! `effect_ribbon` takes its randomness as a parameter and is itself
-//! `NOT WIRED` - nothing in the engine emits actor render-mode-4 primitives
-//! yet - so there is still no live site to attach a draw to.
+//! `legaia_engine_core::effect_ribbon::ribbon_mesh_for_actor` seeds one
+//! generator per ribbon from the node's `+0xB8` halfword and hands its draws to
+//! the emitter; both battle hosts reach it through
+//! `World::active_effect_ribbons`.
 
 /// The battle overlay's private LCG-shaped generator (`FUN_801D0290`).
 ///

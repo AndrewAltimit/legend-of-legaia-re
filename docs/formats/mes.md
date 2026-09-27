@@ -114,24 +114,31 @@ Then it walks the input and inlines `0xC1..0xC5` / `0xC7` substitutions: each su
 
 Lives in the dialog overlay. Distinct from the byte-level interpreter - this is the per-frame state machine that pages text on input. 26 outer states (`_DAT_801F2734`, range `0..0x19`) covering load / scroll / drain / wait-for-input / done. Stores per-line bytecode pointers in `_DAT_801F3540[line]` (16-line buffer at `0x801F3580`). Test `(byte & 0x7F) < 0x20` is used to detect line terminators (catches both `0x00..0x1F` and `0x80..0x9F`).
 
-The crate-level Rust port of this pager lives in [`crates/engine-vm`](../../crates/engine-vm/README.md) as the dialog-window state machine.
+The engine port lives in `engine-core`: `dialog_window` (the row window, the scroll and the confirm arms), `dialog_pacing` (the typing row's reveal counter and hold) and `dialog::OwnedDialogPanel`, which drives both over the page's decoded rows on the path both play hosts share. `engine-vm` only cites the pager. An earlier sentence here placed the port in `engine-vm`; no pager code was ever there.
 
 ### Box geometry
 
-Max lines per box is stored at `_DAT_801F2740`. **Three** init arms pin it to 3, not two: states `0` (`0x801D90BC`), `6` (`0x801D9174`) and `9` (`0x801D920C`) each carry their own `li v0,0x3; sw v0,0x2740(v1)`. State `3` (`0x801D9154`) is not one of them - it runs a four-store prologue and jumps away at `0x801D916C` before reaching the tail. The standard dialog box scrolls in up to three lines, then state `0xD` advances to the "page full, wait for input" state `0xE`. Other consumers (status / quantity panels) reach the pager with different values written in by their own setup.
+Max lines per box is stored at `_DAT_801F2740`. **Three** init arms pin it to 3, not two: states `0` (`0x801D90BC`), `6` (`0x801D9174`) and `9` (`0x801D920C`) each carry their own `li v0,0x3; sw v0,0x2740(v1)`. State `3` (`0x801D9154`) is not one of them - it runs a four-store prologue and jumps away at `0x801D916C` before reaching the tail. That is the height of a scrolling **row window**, not a page length - see [Row window and scrolling](#row-window-and-scrolling). Other consumers (status / quantity panels) reach the pager with different values written in by their own setup.
 
 The three arms are near-copies but **not** byte-identical: over their 0x98-byte extent they differ in exactly one word, the successor state each writes to `_DAT_801F2734` - state `0` hands off to `1`, state `6` to `7`, state `9` to `0xA`. That one word is the whole behavioural difference between the box-open control bytes, so read it before treating any two of these arms as interchangeable.
 
 Where those successors go is what separates teardown from a fresh box:
 
-- States `1`, `4` and `7` share handler `0x801D8708`. It tests `_DAT_801F2734 == 4` and returns immediately when true - so state `4` (reached from `0x24`) **preserves** the row array, which is what makes "next line, same box" work. States `1` and `7` fall through and **clear** the 16-entry row buffer at `_DAT_801F3540`, tearing the box down. States `1` and `7` are otherwise indistinguishable.
-- State `0xA` is a different handler, `0x801D92A4`: a per-frame ramp on `_DAT_801F274C` toward `0x1000` (the box-open animation), which on completion sets `_DAT_801F273C = 0x18` and drops into state `1`.
+- States `1`, `4` and `7` share handler `0x801D8708`. It zeroes the scroll `_DAT_801F2738`, the pending text pointer `_DAT_801F3538` and the typewriter words, then tests `_DAT_801F2734 == 4` and returns when true - so state `4` (reached from `0x24`) **preserves** the row array, which is what makes "next line, same box" work. States `1` and `7` fall through and **clear** the 16-entry row buffer at `_DAT_801F3540` (the init arms `0` / `6` / `9` have already cleared it once). All three are idle: the caller stores the next text pointer in `_DAT_801F3538` and steps the state to `2` / `5` / `8`, whose shared handler `0x801D876C` loads it - and steps back to the idle state while the pointer is still zero.
+- State `0xA` is a different handler, `0x801D92A4`: a ramp on `_DAT_801F274C` of `dt << 9` a call toward `0x1000`, which on completion sets `_DAT_801F273C = 0x18` and drops into state `1`.
+
+  The draw reads the ramp as a **collapse**, not an open: the box goes out at `y + h*a/0x2000` with height `h*(0x1000 - a)/0x1000` (`0x801D9970..0x801D99A0`), so it shrinks to its centre line. `_DAT_801F273C` then makes each call return before the draw (`0x801D8630..0x801D864C`) until `dt` steps have counted it down - the box is gone for that long before the fresh one opens. The `town01` trace below spends five pager calls in state `0xA` at `dt = 2`, the four `0x400` steps plus the call that sees `0x1000`.
 
 The picker arms write their box rect literally: `x = 0x26`, `y = 0x94 + ((4-N)*0xF)/2`, `w = 0xF4`, `h = 0x38 - (4-N)*0xF` - a 244-wide box whose height shrinks 15 px per absent option, recentred on the 4-option anchor `y = 0x94`. Fields `+0x3C/+0x3E` are the slide-animation start position (the resize state `0x11` uses the same pair).
 
 ### Box render
 
-The pager draws the window each frame through the shared SCUS box emitter: `FUN_80034B6C(skin)` stages the window-skin index (standard reading box = skin `0x61`; a box whose `ctx+0x10` class byte is `2` resets to skin `0`), then `FUN_8002C69C(x, y, w, h)` emits the box. For the main reading box the call is `FUN_8002C69C(ctx+0x12, ctx+0x14 + scroll, 0xF4, lines*0xF + 5 - 8)`; the picker box passes its own rect. Draw order inside the frame is text first, box last (a later-submitted prim lands in a deeper OT slot, so the box renders behind its glyphs).
+The pager draws the window each frame through the shared SCUS box emitter: `FUN_80034B6C(skin)` stages the window-skin index (standard reading box = skin `0x61`; a box whose `ctx+0x10` class byte is `2` resets to skin `0`), then `FUN_8002C69C(x, y, w, h)` emits the box. For the main reading box the call is `FUN_8002C69C(ctx+0x12, ctx+0x14 + d, 0xF4, h - 8)` with `h = lines*0xF + 5`; `d` and `h` move only with the `0x48` collapse (state `0xA`, above) - the frame never scrolls, the rows do. An earlier reading here named `d` the scroll. The picker box passes its own rect.
+
+Draw order inside the frame is text first, box last: every packet goes on the same ordering-table entry (`[0x1F8003F4] + 4`) through `FUN_8003D2C4`, which links at the head.
+So the GPU meets the last-added packet first and the box renders behind its glyphs.
+
+The rows are clipped. Two draw-area packets bracket them on that entry (`0x801D95A8..0x801D964C` before the rows, `0x801D9860..0x801D9934` after): the one added after, which the GPU meets first, narrows the drawing area to `y = box_y - 1 ..= box_y + lines*0xF - 1`; the one added before restores the full screen, so the frame is not clipped. A row scrolling out of the top loses its top edge, and the row scrolling in below the third slot stays hidden until it rises into the band.
 
 `FUN_8002C69C` composes two layers (see `ghidra/scripts/funcs/8002c69c.txt`):
 
@@ -142,7 +149,9 @@ Hand sprites come from the cursor family `FUN_8002B994`: the **page-advance hand
 
 ### Multi-segment box packing
 
-A field NPC's interaction text is a flat pool of `0x1F`-lead lines, each `0x1F <glyphs> 0x00`. The SM packs **consecutive** lines into one window of `_DAT_801F2740 = 3` rows: the byte after a line's `0x00` terminator being another `0x1F` means "same box, next row". A box ends after at most three rows, at the post-page control byte the pager reads in state `0x19` (the table below). So a three-line speech box is three back-to-back `0x1F` lines followed by a single `0x24` (next page); multi-page speech is several such boxes chained by `0x24`.
+A field NPC's interaction text is a flat pool of `0x1F`-lead lines, each `0x1F <glyphs> 0x00`. The pager types **consecutive** lines as one **page**: the byte after a line's `0x00` terminator being another line (`(b & 0x7F) < 0x20`, `0x801D8AB4`) means "same page, next row". A page ends only at the post-page control byte the pager reads in state `0x19` (the table below), however many lines precede it - a fourth line scrolls the three-row window rather than waiting ([Row window and scrolling](#row-window-and-scrolling)). So a three-line speech box is three back-to-back `0x1F` lines followed by a single `0x24` (next page); multi-page speech is several such pages chained by `0x24`.
+
+The earlier statement that a box ends after at most three rows was a packing convention read as pager behaviour: nothing in the pager stops at three.
 
 The advance loop in `FUN_80039B7C` (state `0x2`, the `for (; 0x1e < *pbVar4; ...)` walk that skips a line the SM has shown) masks `(*pbVar4 & 0xF0) == 0xC0` and consumes the following data byte as part of the same token. So a `0xC0..=0xCF` escape whose argument byte falls in the `0x00..=0x1E` range - e.g. a `0xC1 0x00` character-name substitution - does **not** terminate the line early; the line ends only at a terminator that is not a `0xC?` escape argument. Every `0xC0..=0xCF` byte is a 2-byte token (see the token table above), so the standard interpreter strides past them correctly.
 
@@ -152,10 +161,30 @@ The engine's segment finder (`man_field_scripts::first_inline_dialog_offset`) wa
 
 Decoded by `legaia_mes::dialog_box`:
 
-- `pack_box` packs one box from a `0x1F` lead, capped at `LINES_PER_BOX = 3`, reporting the terminating `Dispatch`.
+- `pack_page` packs one pager page from a `0x1F` lead: every consecutive line up to the control byte, reporting the terminating `Dispatch`. This is what the engine types.
+- `pack_box` packs window-sized chunks, capped at `LINES_PER_BOX = 3`; a cut with another line after it reports `Dispatch::ImplicitNextPage`, which is a packing cut, not a pause.
 - `pack_boxes` chains pages while the dispatch continues, stopping at `End` / `Terminate` / a `Picker` / field-VM bytecode.
 
 Pinned on real disc bytes by `field_dialog_boxpack_disc`: the Rim Elm sparring partner's (Tetsu) opening narration packs into three full 3-row pages chained by `0x24`, then a 2-row box that opens the 4-option "do you want something today?" topic menu - and that narration's `Mist appeared, .., but` line keeps its tail past a `0xC1 0x00` escape. Note the pool also holds the NPC's *other* story-branch lines; the contiguous box run stops where the pager hands control back to the field VM (a non-pager control byte), which `Dispatch::Unknown` marks.
+
+### Row window and scrolling
+
+The row table `_DAT_801F3540[]` is a scrolling window over the conversation, not a page buffer, and the pager draws every non-null entry of it. Read off the state handlers (jump table `0x801CEBC0`):
+
+| State | Handler | What it does |
+|---|---|---|
+| `0x0B` | `0x801D89B8` | Types the row at the table's last index at the [typewriter pace](dialog-font.md#typewriter-pacing); rows above it draw whole. A finished row followed by another line takes the next slot, or - with all three slots full - hands over to `0x0C`. Any other byte ends the page: `_DAT_801F3534 = rows_on_page - 1 + (3 - last_index)`, then `0x19`, or `0x0F` while that is below three. |
+| `0x0C` | `0x801D8B5C` | Scrolls: `_DAT_801F2738 -= speed * dt` (`speed` = `_DAT_801F2750`, `0x24`). Past `-0xEF` the table shifts up a slot, the next line enters the last slot and the scroll resets; back to `0x0B`, or to `0x0D` if a press raised the speed. No button is involved. |
+| `0x0D` | `0x801D8C64` | Completes the page: one more line into the table a call, the typing row shown whole; with a fourth row in the table, `0x0E`. |
+| `0x0E` | `0x801D8D28` | Scrolls the completed page's overflow through at `0x25`, a line entering per row, then `0x0F` or `0x19` as in `0x0B`. |
+| `0x0F` | `0x801D8E3C` | Scrolls away the rows the previous page left above this one, at `speed - speed/4` a call, until `_DAT_801F3534` reaches three; then `0x19`. |
+| `0x19` | `0x801D8F4C` | Waits for a press with the page-advance hand up, then dispatches on the control byte (below). |
+
+The draw adds `scroll >> 4` to every row's `y` (`0x801D9790`), so a row is `0xF0` scroll units - 15 px - tall; the typing state draws without it. A page turn on `0x24` keeps the table: state `5` puts the next page's first line in the slot below the last row (`0x801D88C8..0x801D89B4`), or goes to `0x0C` first when the table is full, so the previous page stays on screen above the new one until `0x0F` scrolls it away at the new page's end. At `0x19` the window shows exactly that page's rows.
+
+**Confirm while a page types.** Every arm that moves reads the new-press word masked by the confirm buttons (`_DAT_800846D0 | _DAT_800846D4`). In `0x0B` a press stores `speed = 0x25` and jumps to `0x0D` (`0x801D89B8..0x801D8A04`); during a short-row hold (dispatch case `0x10`, `0x801D86BC`) it does the same when `speed` is still `0x24`, and clears the hold; in `0x0C` and `0x0F` it only raises the speed, and `0x0C` then hands over to `0x0D`. State `5` puts the speed back to `0x24` for the next page.
+
+A PCSX-Redux trace of `town01` placement `P1[16]` (`scripts/pcsx-redux/autorun_dialog_typewriter_trace.lua`, the scroll word and the row table as record offsets per vsync) shows every arm at `dt = 2`: a two-row first page; a second page whose first row types beneath the two carried rows and whose next line scrolls in on its own (four calls at `72`), then one carried row scrolled away (`54` a call) before the wait; and, with confirm taps injected, the latch going to `0x25`, state `0x0D` completing the page in two calls, and the scrolls running at `74` and `56`. The engine (`engine-core::dialog_window`) reproduces both traces vsync for vsync - `crates/engine-core/tests/dialog_window_disc.rs`.
 
 ### Post-page dispatch (state `0x19`)
 
@@ -173,6 +202,8 @@ When the page is full and the user presses confirm (`_DAT_800846D0` / `_DAT_8008
 | `0x29` | `0x17` -> `0x18` (init -> 4-option picker) | 4-option menu |
 
 **What the pager does and does not decide.** The state numbers above are read straight off the dispatch chain at `0x801D8FDC` and the jump table at `0x801CEBC0`, and the teardown-vs-fresh-box split is settled by the successor handlers. What is *not* in these instructions is the end of the **conversation**: `0x25` and `0x4C 0xFF` clear the row buffer and stop there - the pager neither returns a status nor signals its caller. Whether the dialogue session ends is decided caller-side, in the actor dialog SM `FUN_80039B7C` and the field VM. Treat "end conversation" / "close the dialog" as a reading of the box teardown, not as a property the pager byte carries; the session-level semantics are open.
+
+The picker states are reached only through this press: a prompt that ends on a picker open byte waits in `0x19` with the advance hand like any other page, and the menu opens on the confirm. The engine opens the menu as soon as the prompt's page is shown and does not wait for that press.
 
 So the picker controls are MES `0x27` / `0x28` / `0x29` **and `0x2A`**:
 

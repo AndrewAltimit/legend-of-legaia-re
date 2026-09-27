@@ -325,12 +325,33 @@ pub struct BattleState {
     /// commands committed so far, and the member cursor `ctx[+0x13]`. See
     /// [`crate::battle_round::RoundPhase`].
     pub round_flow: crate::battle_round::RoundFlow,
+    /// The commit log's launch glide - retail's `0x35 + i` clones gliding the
+    /// log off the left edge when the member leaves the ring for a sub-screen
+    /// and back when they return
+    /// ([`legaia_engine_vm::battle_commit_log::LogLaunch`]). `None` while the
+    /// log rests; cleared by a commit (the next member's row lands fresh).
+    pub commit_log_launch: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
     /// The sparring fight's side-band phase byte - retail `ctx[+0x289]`,
     /// the SCUS tick `FUN_80056208`'s stage-1 cursor: `0` waiting for the
     /// round start, `1` the opening caption up (the flow SM held back),
     /// `2` the prompt machine live. See
     /// [`crate::world::World::raise_sparring_caption_if_due`]. Reset at battle entry.
     pub sparring_phase: u8,
+    /// Frames the battle-**intro** enemy-name banner has left - retail's
+    /// `ctx[+0x6D6]` intro timer, which flow state `0x0A` seeds at `0x5A`
+    /// (`0x78` with a formation advantage, `0x801D0E14..0x801D0E38`) and which
+    /// drains by the frame step until `0x0B` sweeps the labels away. `0`
+    /// = no banner. See `battle_hud::battle_intro_names`.
+    pub intro_names_frames: u16,
+    /// The player's **Auto** attack: the per-fighter flag, the round-start
+    /// pool-arm queues and their disc inputs
+    /// ([`crate::world::AutoComboState`]).
+    pub auto_combo: crate::world::AutoComboState,
+    /// The phase-scripted battle camera's state
+    /// (`legaia_engine_vm::battle_cam_script::BattleCamera`), stepped by
+    /// `World::tick_battle_camera` from `World::tick` for every host; `None`
+    /// outside battle, so each fight re-snaps.
+    pub camera: Option<legaia_engine_vm::battle_cam_script::BattleCamera>,
     /// The sparring-tutorial prompt machine, armed only for the Tetsu
     /// tutorial fight (battle-stage id
     /// [`crate::battle_tutorial::TUTORIAL_STAGE_ID`]) via
@@ -523,7 +544,11 @@ impl BattleState {
             swing_costs: [[crate::arts_command_input::FAVORED_COST; 4]; 3],
             flow: crate::battle_flow::BattleFlowState::Idle,
             round_flow: crate::battle_round::RoundFlow::default(),
+            commit_log_launch: None,
             sparring_phase: 0,
+            intro_names_frames: 0,
+            auto_combo: Default::default(),
+            camera: None,
             tutorial: None,
             tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),
             tutorial_boxes: std::collections::VecDeque::new(),

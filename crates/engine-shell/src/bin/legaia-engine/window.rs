@@ -862,36 +862,18 @@ struct PlayWindowApp {
     /// `glyph_u`, plus the record's `v/w/h`) when the draw pages the glyph
     /// strip and the widget table is resident.
     baka_chrome_frame: Vec<ResolvedChromeDraw>,
+    /// The duel's 3D surface (`legaia_engine_core::baka_duel_scene`): the
+    /// engine cache every duel host drives once a frame.
+    baka_surface: legaia_engine_core::baka_duel_scene::BakaDuelSurface,
+    /// This frame's GPU copy of that surface (see
+    /// `PlayWindowApp::refresh_baka_duel_gpu`).
+    baka_gpu: Option<minigames::BakaDuelGpu>,
     /// Muscle Dome hub-screen atlas + sprite table (see [`MuscleHubAssets`]).
     muscle_hub: Option<MuscleHubAssets>,
-    /// The hub's first visit (intro strip, wall, title zoom, course card,
-    /// ROUND card - `legaia_engine_core::muscle_ringside::FirstVisitHub`),
-    /// armed when a leg opens on a freshly staged contest.
-    muscle_first_visit: Option<legaia_engine_core::muscle_ringside::FirstVisitHub>,
-    /// A leg-open ROUND card `(displayed round number, envelope)` for a leg
-    /// no hub screen has introduced - retail arms `0x15` / `0x16`.
-    muscle_round_banner: Option<(i32, legaia_engine_core::muscle_dome::HubScreen)>,
-    /// The round a re-entered hub's backdrop last drew its ROUND card for, so
-    /// the leg that opens after it does not replay the card
-    /// (`muscle_ringside::leg_open_raises_round_card`).
-    muscle_card_round: Option<i32>,
-    /// The between-legs INTERVAL + score-tally screen's envelope, armed when
-    /// a leg closes while its contest is (or just was) open.
-    muscle_interval: Option<legaia_engine_core::muscle_dome::HubScreen>,
-    /// The score tally's roll-up state and the coin tally it counts up from,
-    /// armed with the INTERVAL screen and stepped once per frame while it is
-    /// up (`legaia_engine_core::other_game_overlay::ScoreTallyRamp`).
-    muscle_tally: Option<(legaia_engine_core::other_game_overlay::ScoreTallyRamp, i32)>,
-    /// The re-entered hub's backdrop - which ringside still the leg left
-    /// resident and the level `*(0x801D1A7C)` it is drawn at - armed with the
-    /// INTERVAL screen and run on past it through the ROUND card
-    /// (`legaia_engine_core::muscle_ringside::HubBackdrop`).
-    muscle_backdrop: Option<legaia_engine_core::muscle_ringside::HubBackdrop>,
-    /// Last frame's `world.minigames.muscle_dome.is_some()`, for the leg edges above.
-    muscle_prev_leg_open: bool,
-    /// Last frame's `world.minigames.muscle_contest.is_some()`, distinguishing a fresh
-    /// contest (intro card) from a mid-ladder re-entry (ROUND banner only).
-    muscle_prev_contest_open: bool,
+    /// The dome hub's screen timers - first visit, ROUND card, INTERVAL +
+    /// tally, re-entered backdrop - the engine kernel the browser play page
+    /// drives too (`legaia_engine_core::muscle_ringside::HubTimers`).
+    muscle_timers: legaia_engine_core::muscle_ringside::HubTimers,
     /// World actor slot the spawned player-summon creature occupies (`>= 8`, so
     /// it never collides with the party/monster battle slots), or `None`.
     summon_actor_slot: Option<usize>,
@@ -926,6 +908,9 @@ struct PlayWindowApp {
     scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.
     pad: u16,
+    /// Presses since the last frame, so a key tapped between two redraws
+    /// still reaches a tick (the browser page's `pulse` set).
+    pad_taps: legaia_engine_core::input::PadTapLatch,
     /// Input binding loaded from file (or default).
     mapping: legaia_engine_core::input::Mapping,
     /// Physical keys currently held.
@@ -1157,10 +1142,6 @@ struct PlayWindowApp {
     /// Trade screens can label each offer ("Gimard (Vahn) -> Orb"). `None` on
     /// disc-free runs or before the first lookup.
     seru_names: Option<legaia_asset::spell_names::SpellNameTable>,
-    /// The phase-scripted retail battle camera (see [`battle_cam`]): `Some`
-    /// while a stage-dome battle is on screen, stepped once per 2 retail
-    /// display frames by `tick_battle_camera`, dropped on battle exit.
-    battle_camera: Option<battle_cam::BattleCamera>,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is

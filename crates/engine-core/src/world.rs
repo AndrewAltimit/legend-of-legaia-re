@@ -169,6 +169,7 @@ pub use battle::{
     VICTORY_FADE_PHASE_SEED, VICTORY_LOAD_FRAMES, VICTORY_RESULTS_HOLD_FRAMES, VictoryPhase,
     VictorySequence, victory_pose_column, victory_pose_id, victory_pose_tier,
 };
+pub use battle::{AutoComboInputs, AutoComboState};
 mod effects;
 pub use effects::{
     ClutBlendFx, ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES, MAX_DEBUG_EFFECTS,
@@ -177,8 +178,11 @@ pub use effects::{
 mod encounters;
 pub use encounters::FieldBossStager;
 mod field_carriers;
+mod field_frame_tail;
+pub use field_frame_tail::{EFFECT_SCENE_GRAPH_STEP, NpcClipRetarget};
 pub mod field_elevation;
 mod field_hud;
+mod field_xa;
 pub use field_elevation::{CELL_ELEVATION_OVERRIDE, ElevationOverride};
 pub use field_hud::PassiveHudPoints;
 mod field_loop;

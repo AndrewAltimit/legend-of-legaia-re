@@ -941,6 +941,16 @@ impl AmbientMotion {
         blocking: &dyn AmbientBlocking,
     ) -> AmbientTick {
         let result = self.step_ops_with(code, speed, blocking);
+        self.tick_ramps(speed);
+        result
+    }
+
+    /// Advance the ramp scheduler alone and apply its writes. Retail's pool
+    /// tick `FUN_80036D80` is its own actor template (the word at
+    /// `0x800742F4`), not a callee of the per-actor op loop, so a frame on
+    /// which the field-actor driver skips `FUN_80038158` still lands the
+    /// ramps already in flight.
+    pub fn tick_ramps(&mut self, speed: u8) {
         for w in self.ramps.tick(speed) {
             if w.owner != self.owner {
                 continue;
@@ -958,7 +968,6 @@ impl AmbientMotion {
                 _ => {}
             }
         }
-        result
     }
 
     /// The op loop alone, without the scheduler tick - for hosts that drive

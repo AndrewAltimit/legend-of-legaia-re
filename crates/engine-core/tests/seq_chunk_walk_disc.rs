@@ -115,6 +115,15 @@ fn every_music_bank_entry_splits_through_the_installer_walk() {
             .unwrap_or_else(|| panic!("bgm {bgm_id}: no bank entry"));
         let walked =
             legaia_engine_core::chunk_install::owned_bank_offsets(&entry).map(|s| (s.vab, s.seq));
+        if u32::from(bgm_id) == legaia_engine_core::mode_entry_init::FIELD_BGM_TWO_PART_ID {
+            // The ending theme is not one bank entry: its score and bank come
+            // from two entries, score first, the way retail's field init
+            // stages them (`credits_two_part_bgm_disc.rs`). A magic hunt for
+            // a bank *then* a score cannot read that order; the walk can.
+            assert!(walked.is_some(), "bgm {bgm_id}: the two-part pair splits");
+            paired += 1;
+            continue;
+        }
         let hunted = entry.windows(4).position(|w| w == b"pBAV").and_then(|vab| {
             let rel = entry[vab..].windows(4).position(|w| w == b"pQES")?;
             Some((vab, vab + rel))

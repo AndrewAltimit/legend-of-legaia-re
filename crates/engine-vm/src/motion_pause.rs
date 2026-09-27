@@ -34,33 +34,35 @@
 //!
 //! ## NOT WIRED
 //!
-//! The blocker is the **write target**, not the inputs - a correction worth
-//! stating plainly, because the inputs are the part an earlier reading
-//! blamed.
+//! The kick has two retail callers, both verified as `jal 0x8003C9AC` in the
+//! bytes: the touch-event post `FUN_801D5B5C` (`0x801D5BF0`, PROT 0897 at
+//! base `0x801CE818`) and SCUS `FUN_8003BDE0` (`0x8003C0D4`). The engine's
+//! analogue of the first is `World::trigger_field_interact`, which the walk
+//! touch and the button interact both reach.
 //!
-//! Everything this kick *reads* has an engine home. The retail caller has an
-//! analogue: `World::check_field_walk_touch` is the `FUN_801D5B5C` touch post
-//! and runs from the locomotion step. The default-move table is harvested at
-//! scene load into `World::npcs.default_moves`, keyed by the same
-//! placement slot. Both gates are derivable from the typed per-slot maps -
-//! `+0x80 != 0` ("a motion stream is installed") is exactly "the placement has
-//! a bound tail-section-1 stream", which is what seeds
-//! `World::npcs.ambient`, and the moving class is the slot set carrying a
-//! route or an in-flight leg. A `[PauseKickActor]` slice is projectable today.
+//! The write target is no longer the gap - an earlier version of this note
+//! said field NPCs carry no `+0x5C` / `+0x88`, and they do now: each NPC with
+//! a bound tail-section-1 stream owns a `legaia_engine_vm::ambient_motion::AmbientMotion`
+//! channel whose `requested_move` / `move_pair` are exactly that pair and
+//! whose `default_move` is its `0x801C6470` record. Two things are still
+//! missing, and both would make a wired kick a no-op that only looks live:
 //!
-//! What has nowhere to land is the result. The kick's whole effect is to
-//! reload `+0x5C` / `+0x88`, the actor's **requested move-table id** and its
-//! motion-VM mirror, and the engine's field NPCs carry neither: they are
-//! per-slot map entries, not actor records, and their animation comes from ANM
-//! clips rather than from the move-table VM that `FUN_8003BC08` runs while
-//! `+0x5C > 0`. So a wired kick would compute correct ids and write them into a
-//! field that does not exist, for a consumer that does not run.
+//! - **The gate bit.** The kick only touches actors with `+0x10 & 0x20000`.
+//!   The channel's `actor_flags` is that word, but nothing seeds it - it
+//!   starts at `0` and only the motion VM's own bit ops write it - so the
+//!   moving-class bit is clear on every channel and the sweep would kick
+//!   nobody. Its retail setter is the spawner, which the port does not model
+//!   per channel.
+//! - **The consumer.** Retail plays `+0x5C` through the move-table consumer
+//!   `FUN_800204F8`, which `FUN_8003BC08` runs whenever `+0x5C > 0`. The
+//!   engine reads `requested_move` only on a frame the channel walked
+//!   (`World::tick_field_npc_ambient` -> `carry_npc_run_anim`), and a
+//!   standing NPC mid-dialogue does not walk, so the reloaded id would not
+//!   change what draws.
 //!
-//! The behaviour itself is not missing - `World::tick_field_npc_motions` holds
-//! autonomous legs while a dialogue is up directly, rather than by snapping
-//! every NPC back onto its default move. Wiring this means giving field NPCs a
-//! requested-move channel and a move-table consumer for it, which is a change
-//! to how field NPCs animate, not a call insertion.
+//! Wiring means seeding the moving-class bit where retail's spawner does and
+//! giving a standing NPC's requested move a consumer - an animation-path
+//! change measured against the field oracles, not a call insertion.
 
 /// Moving-class actor bit in the `+0x10` flag word. Only actors with this
 /// bit set are candidates for the pause kick.

@@ -56,11 +56,13 @@ pub trait BgmDirector {
     fn start_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
         let _ = (bgm_id, entry_bytes);
     }
-    /// Sub-op 8 - re-attach the BGM sound source and re-apply the field
-    /// BGM volume (retail `FUN_80019898`; see [`bgm_reattach_volume`] for
-    /// the level arithmetic). Directors that model per-voice volume apply
-    /// `level` to both channels of the BGM sequencer voice; the default
-    /// is a no-op.
+    /// Sub-op 8 - retail `FUN_80019898` (see [`bgm_reattach_volume`] for
+    /// the level arithmetic). It replays the sequence bound to the sound
+    /// source at `0x8007057C` - not the field-BGM source `0x8007052C` - and
+    /// sets its volume to `level`. In every captured state that record names
+    /// a sequence with no stream or is inactive, so retail sounds nothing,
+    /// and the default no-op is the faithful behaviour
+    /// (`docs/subsystems/audio.md`, "Sub-op 8 replays an empty record").
     fn reattach_volume(&mut self, level: i16) {
         let _ = level;
     }
@@ -104,6 +106,27 @@ pub trait BgmDirector {
 /// [`SceneHost::route_bgm_events`] drives for sub-op `8`.
 pub fn bgm_reattach_volume(raw: i32) -> i16 {
     ((raw << 15) >> 16) as i16
+}
+
+/// First id of the **global BGM pool** - the `music_01` tracks that carry
+/// their own VAB ([`BgmDirector::start_owned_vab`]). Ids below it are
+/// scene-local SEQs played over the scene's own bank.
+pub const GLOBAL_BGM_BASE: u16 = 2000;
+
+/// Whether a scene swap should upload the new scene's VAB into the BGM region,
+/// given the track whose sequencer is attached (paused or not).
+///
+/// Both hosts upload the scene bank at the bottom of the same SPU region a
+/// global-pool track's own VAB occupies. A global track carried across a door
+/// - the new scene's entry script re-issues the same id, which both directors
+///   suppress as a duplicate so the playhead survives - would keep playing
+///   over samples the scene bank had just overwritten. The scene bank is only
+///   read by a scene-local start (`bgm_id < 2000`), and no disc script issues
+///   one: every op-`0x35` sub-`1` / sub-`9` start in the disc-wide field-op
+///   census names a global-pool id. So the restage is skipped while a global
+///   track owns the region; any later start re-stages its own bank anyway.
+pub fn scene_bank_restage_wanted(live_track: Option<u16>) -> bool {
+    !matches!(live_track, Some(id) if id >= GLOBAL_BGM_BASE)
 }
 
 /// Discards every BGM event. Useful for tests + engines that haven't wired

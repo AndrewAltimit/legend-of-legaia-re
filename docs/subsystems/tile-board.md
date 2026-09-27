@@ -224,7 +224,7 @@ With `v = cell - 8` and the two header bases read through the sign-extending hal
    | none | no move |
 
 4. Reject the move (play bonk `func_0x80035bd0(0x23)`, stay put) when the candidate is out of bounds **or** `board[candidate] == 2`.
-5. Otherwise accept: play the step action (`func_0x80035b50(0x21)`), compute the target world position, commit `DAT_801f35c8/cc = candidate`, and go to state `2` to interpolate.
+5. Otherwise accept: play the step action (`func_0x80035b50(0x21)`), compute the target world position, commit `DAT_801f35c8/cc = candidate`, and go to state `2` to interpolate. The target is the candidate cell's centre `((origin + idx) << 7) + 0x40` per axis, **except onto an event cell** (`8`..`0xA`, the unsigned `cell - 8 < 3` test at `0x801EFA0C`): there it is pulled back by half the step, `centre - (((origin + new) << 7) - ((origin + old) << 7)) * 4 >> 3`, so the walker stops on the edge it shares with the cell it came from (`0x801EFA1C..0x801EFA70`). The player cell is committed to the event cell all the same (`0x801EFA74..0x801EFA80`). Port: `TileBoard::try_step`.
 
 Provenance: `overlay_0897_801ef2b0.txt` case 4; a denser duplicate of this logic also appears inside `overlay_0897_801f7b88.txt`.
 

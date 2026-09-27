@@ -1581,6 +1581,13 @@ impl World {
     pub fn enter_battle(&mut self, party_count: u8, monster_count: u8) {
         self.mode = SceneMode::Battle;
         self.battle.monster_flee_attempted = false;
+        // The magic-level-up queue is a per-battle oracle record, not a host
+        // hand-off: the banner the level-up raises is the battle message
+        // banner (`raise_magic_level_banner`, screen element `0x65`), which
+        // both hosts draw through `battle_hud::battle_banner_message`. No
+        // host drains the queue, so it is bounded here - one battle's events
+        // at most - instead of growing for the whole session.
+        self.seru.magic_level_ups.clear();
         self.party.party_count = party_count.min(3);
         let monster_count = monster_count.min(5);
         let actor_count =
@@ -1630,6 +1637,13 @@ impl World {
         self.battle.tutorial_boxes.clear();
         self.battle.flow = crate::battle_flow::BattleFlowState::Idle;
         self.battle.round_flow = crate::battle_round::RoundFlow::default();
+        self.battle.commit_log_launch = None;
+        self.battle.intro_names_frames = 0;
+        // The per-fighter Auto flags and parked queues are battle state; the
+        // disc inputs beside them are scene state and stay.
+        self.battle.auto_combo.flags = [false; 3];
+        self.battle.auto_combo.pending = false;
+        self.battle.auto_combo.queues = Default::default();
         // `ctx[+0x289]`: the side-band's stage-1 phase starts at 0 with the
         // rest of the battle context.
         self.battle.sparring_phase = 0;

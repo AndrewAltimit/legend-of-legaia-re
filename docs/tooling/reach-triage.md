@@ -746,7 +746,7 @@ listed so the bucket count is the whole of what no host reaches.
 | `shop.rs` | 2 | `801db7f4` `801dbd94` | Retail's quantity **steppers** - not a list, and not the engine's list screen. |
 | `camera_rel_glide.rs` | 1 | `8002149c` | No producer for the family's 20-halfword spawn record. |
 | `card_flow.rs` | 1 | `801e13b8` | **`REPLACED-BY`** `legaia_save`'s synchronous card writer - out of the wiring denominator. |
-| `effect_ribbon.rs` | 1 | `801cfa48` | The only production mention of the module is its `pub mod` line. |
+| `effect_ribbon.rs` | 1 | `801cfa48` | Since reached: the op-`0x42` carriers arm it and both battle hosts draw `World::active_effect_ribbons`. |
 | `field_save_screen_actor.rs` | 1 | `80024190` | **`REPLACED-BY`** the save screen as host screen state - out of the wiring denominator, not owed a host. |
 | `scene_transition_actor.rs` | 1 | `80021934` | Scenes load as `Scene` resources, not as a streamed raw bundle, so nothing seats the actor. |
 | `morph_weight_apply.rs` | 1 | `8002174c` | Both anchors disclosed; `MorphWeightEnvelope` is test-only. |
@@ -771,7 +771,7 @@ a missing call. Recorded per row so the decision is not re-derived:
 | `card_bu_io.rs` x4, `card_flow.rs` | already `REPLACED-BY` | nothing - the tree re-verdicted these; a drain pass that re-opens them is counting work that will never be done |
 | `shop.rs` `801db7f4` `801dbd94` | resolved | `MenuRuntime::quantity_session` installs the retail stepper when a list stages a stack and takes the pad for the screen; `ShopConfirm` is no longer reached from the shop flow. See [shop.md](../subsystems/shop.md#the-quantity-screen-is-a-stepper) |
 | `morph_weight_apply.rs` `8002174c` | keep `NOT WIRED` | a spawn site allocating a morph actor from descriptor `0x8007068C`, so something carries `actor+0x4C` / `actor+0x90` |
-| `effect_ribbon.rs` `801cfa48` | keep `NOT WIRED` | a producer emitting actor render-mode-4 primitives; the module has no entry point until one exists |
+| `effect_ribbon.rs` `801cfa48` | resolved | the move VM's op-`0x42` carriers arm it and both battle hosts draw its mesh through `World::active_effect_ribbons` |
 | `scene_transition_actor.rs` `80021934` | keep `NOT WIRED` | a staged-bundle scene loader - a host that parks a raw `.LZS` bundle where the descriptor walker reads it. The engine's `Scene` resource load is not a replacement for the *sequencing*, which is visible (the fade-out / countdown / MAIN INIT order) |
 | `field_save_screen_actor.rs` `80024190` | **`REPLACED-BY`**, taken | see [the verdict below](#the-save-screen-actor-is-a-replacement-not-a-wire) |
 

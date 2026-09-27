@@ -42,6 +42,7 @@ impl LegaiaRuntime {
         let cues = host.world.drain_battle_sfx_cues();
         let shouts = host.world.drain_battle_shout_cues();
         let xa_cues = host.world.drain_battle_xa_cues();
+        let xa_prestage = host.world.drain_battle_xa_prestage();
         // Everything below needs `&mut self`, so it runs after the host
         // borrow ends.
         if let Some(pct) = duck_pct {
@@ -57,6 +58,12 @@ impl LegaiaRuntime {
         }
         for cue in &cues {
             self.enqueue_battle_cue(cue.kind, cue.timing_frames, cue.actor_slot, cue.target_slot);
+        }
+        // Stage the round's cast voices ahead of their casts: the page slices
+        // and decodes a clip the bank lacks asynchronously, so a voice first
+        // asked for at the cast itself sounded a frame or more late.
+        for xa in &xa_prestage {
+            self.prestage_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
         }
         for xa in &xa_cues {
             self.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);

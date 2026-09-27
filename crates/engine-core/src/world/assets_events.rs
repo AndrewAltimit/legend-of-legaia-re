@@ -233,6 +233,16 @@ impl World {
         std::mem::take(&mut self.audio.battle_xa_cues)
     }
 
+    /// Take the cast voices this round's committed spells may raise (see
+    /// [`crate::world::AudioState::battle_xa_prestage`]): every
+    /// `(clip_slot, channel, duration_sectors)` the cast modules' head cues
+    /// can resolve to, both candidates of a coin-flip module included. A host
+    /// that decodes clips lazily stages these ahead; one that decodes on
+    /// demand drains and drops them. Nothing plays from here.
+    pub fn drain_battle_xa_prestage(&mut self) -> Vec<crate::sfx_cue::XaVoiceClip> {
+        std::mem::take(&mut self.audio.battle_xa_prestage)
+    }
+
     /// Drain the hit events the attack band resolved
     /// ([`crate::battle_events::BattleHitEvent`]; one per damage-kernel
     /// resolution). Cosmetic: the accumulate / apply has already happened.

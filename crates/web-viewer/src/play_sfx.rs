@@ -87,8 +87,8 @@ pub const SPU_RESERVED_BYTES: u32 = 0x1000;
 
 /// `_DAT_8007B910`'s reference value (`0xD7`, seeded by the cold reset
 /// `FUN_8001FFA4`): the un-ducked BGM level the battle's `0x51` arm ramps
-/// back to. Same constant as the native director's `DUCK_LEVEL_REF`.
-pub(crate) const DUCK_LEVEL_REF: u8 = 0xD7;
+/// back to. The shared kernel's constant, as the native director's is.
+pub(crate) const DUCK_LEVEL_REF: u8 = legaia_engine_audio::duck::DUCK_LEVEL_REF;
 
 /// VAB slot the battle-end reward bank (PROT 0889, cue `0x50`) is installed
 /// in - retail streams it at results time (`FUN_8004E568` phase 4,
@@ -482,8 +482,7 @@ impl PlaySfx {
     /// magic capture, `100` when the Done band ramps it back. The ramp itself
     /// runs in [`Self::tick_duck`].
     pub fn set_duck_pct(&mut self, pct: u8) {
-        let pct = u32::from(pct.min(100));
-        self.duck_target = (u32::from(DUCK_LEVEL_REF) * pct / 100) as u8;
+        self.duck_target = legaia_engine_audio::duck::duck_target_for_pct(pct);
     }
 
     /// One frame of the duck ramp: step the live level one unit toward the
@@ -494,17 +493,23 @@ impl PlaySfx {
     /// is. `None` when the level already sits at its target (nothing to
     /// re-apply, and the native director skips the call too).
     pub fn tick_duck(&mut self) -> Option<u8> {
-        if self.duck_level == self.duck_target {
-            return None;
-        }
-        self.duck_level = if self.duck_level < self.duck_target {
-            self.duck_level + 1
-        } else {
-            self.duck_level - 1
-        };
-        let vol = u32::from(crate::play_bgm::BGM_MASTER_VOL) * u32::from(self.duck_level)
-            / u32::from(DUCK_LEVEL_REF);
-        Some(vol.min(127) as u8)
+        use legaia_engine_audio::duck;
+        duck::step_duck(&mut self.duck_level, self.duck_target)
+            .then(|| duck::ducked_master_vol(crate::play_bgm::BGM_MASTER_VOL, self.duck_level))
+    }
+
+    /// The volume the live sequencer is owed this frame after
+    /// [`Self::tick_duck`] reported `moved`: the step's, or - with the level
+    /// resting below the reference - the held duck, so a track the director
+    /// attached since starts ducked instead of at full volume. The native
+    /// director's `tick_duck` makes the same call
+    /// ([`legaia_engine_audio::duck::duck_apply`]).
+    pub fn duck_apply(&self, moved: Option<u8>) -> Option<u8> {
+        legaia_engine_audio::duck::duck_apply(
+            moved.is_some(),
+            crate::play_bgm::BGM_MASTER_VOL,
+            self.duck_level,
+        )
     }
     /// The VAB slot a cue's descriptor names, resolved through its `+4`
     /// category. `None` for an id the disc table doesn't carry.
@@ -732,22 +737,27 @@ impl LegaiaRuntime {
     /// sequencer to re-apply to; the level still ramps, so the tests can read
     /// it back).
     pub(crate) fn tick_duck(&mut self) {
-        let _vol = self.sfx.tick_duck();
+        let moved = self.sfx.tick_duck();
+        let _vol = self.sfx.duck_apply(moved);
         #[cfg(target_arch = "wasm32")]
         if let (Some(vol), Some(out)) = (_vol, self.audio_out.as_ref()) {
             out.set_sequencer_master_vol(vol);
         }
     }
 
-    /// Drop every queued SFX cue and the transient reward bank - the scene
-    /// transition / battle abort clear the native window runs as
-    /// `bgm.clear_sfx()` on every `SceneEntered` edge (`boot.rs`). Cues
-    /// queued against the departing scene's timing must not fire into the
-    /// next one, and the reward bank borrowed room in a BGM region the new
-    /// scene's VAB restage re-owns.
+    /// Drop every queued SFX cue - the scene transition / battle abort clear
+    /// the native window runs as `bgm.clear_sfx()` on every `SceneEntered`
+    /// edge (`boot.rs`). Cues queued against the departing scene's timing
+    /// must not fire into the next one.
+    ///
+    /// The transient reward bank is **not** dropped here, which is what the
+    /// native director does too: it lives in the BGM region's tail until a
+    /// BGM restage re-owns that region, and a door under a carried global
+    /// track restages nothing (`scene_bank_restage_wanted`). A restage that
+    /// does grow into it is caught at fire time by `reconcile_reward_bank`,
+    /// the page's twin of the native drop inside its two upload sites.
     pub(crate) fn on_scene_change_audio(&mut self) {
         self.sfx.sched.clear();
-        self.drop_reward_bank();
         // The side-band request survives a scene change in retail (it is the
         // scripts' to change), so only the attempt memo is reset: the next
         // tick re-validates the bank against the new scene's BGM.
@@ -824,6 +834,18 @@ impl LegaiaRuntime {
         let Some(used_end) = self.bgm_bank_used_end() else {
             return false;
         };
+        // Above a staged side-band bank as well as the BGM: both borrow the
+        // same tail, and the native director's `bgm_tail_used_end` takes the
+        // highest of the three. Placing it at the BGM's end alone uploaded
+        // the reward samples over the side-band's.
+        #[cfg(target_arch = "wasm32")]
+        let used_end = used_end.max(
+            self.sfx
+                .side_band
+                .and_then(|(b, _)| self.sfx_vabs.get(&b.slot))
+                .map(|b| vab_bank_used_end(Some(b), 0))
+                .unwrap_or(0),
+        );
         let Some(host) = self.scene_host.as_ref() else {
             return false;
         };
@@ -945,6 +967,10 @@ impl LegaiaRuntime {
             return;
         };
         let ops = host.world.take_sfx_ring_ops();
+        // The field's CD-XA one-shots (op `0x36`'s XA arm, the scripted-scene
+        // voice leg), played below once the host borrow ends - the twin of
+        // the native `route_field_sfx`.
+        let field_xa = host.world.drain_field_xa_cues();
         // One `World::tick` is one vsync and this scheduler ticks once per
         // `World::tick`, so the ring ages by the vsyncs a tick spans
         // (`display_frame_step`, always 1), not by the game-tick cadence.
@@ -986,6 +1012,9 @@ impl LegaiaRuntime {
             if mask != 0 {
                 out.with_spu(|spu| spu.key_off_mask(mask));
             }
+        }
+        for xa in &field_xa {
+            self.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
         }
     }
 
@@ -1659,6 +1688,23 @@ mod tests {
         assert_eq!(sfx.duck_target, DUCK_LEVEL_REF);
     }
 
+    /// A track the director attaches under a **settled** duck starts at the
+    /// full master volume; the frame's re-apply must bring it down even
+    /// though the ramp no longer moves. Before the shared kernel both hosts
+    /// re-applied only on a step, so the new track played un-ducked.
+    #[test]
+    fn a_settled_duck_is_re_applied_to_a_newly_started_track() {
+        let mut sfx = PlaySfx::default();
+        sfx.set_duck_pct(75);
+        while sfx.tick_duck().is_some() {}
+        let moved = sfx.tick_duck();
+        assert_eq!(moved, None, "settled: no step");
+        assert_eq!(sfx.duck_apply(moved), Some(74), "the held duck re-applies");
+        sfx.set_duck_pct(100);
+        while sfx.tick_duck().is_some() {}
+        assert_eq!(sfx.duck_apply(None), None, "full level: nothing owed");
+    }
+
     /// A cast cue is a `FUN_8004FCC8` id (`0x118`, `0x20C`, ...), and the
     /// dispatcher sends it to the CD-XA voice leg. Truncating it to a `u8`
     /// would key descriptor `0x18` / `0x0C` - populated entries - so the
@@ -1728,11 +1774,13 @@ mod tests {
         );
     }
 
-    /// The scene-change clear empties the scheduler and forgets the reward
-    /// bank, so the next scene's cue `0x50` resolves to the fallback again
-    /// until a results frame restages it.
+    /// The scene-change clear empties the scheduler but keeps the reward
+    /// bank, as the native `clear_sfx` does: the bank lives in the BGM
+    /// region's tail until a BGM restage re-owns it (`reconcile_reward_bank`
+    /// catches that at fire time), and a door under a carried global track
+    /// restages nothing. Dropping it here was one host's rule only.
     #[test]
-    fn scene_change_clears_the_queue_and_the_reward_bank() {
+    fn scene_change_clears_the_queue_but_keeps_the_reward_bank() {
         let mut rt = LegaiaRuntime::new();
         rt.enqueue_sfx(0x21u8, 3);
         rt.enqueue_battle_cue(0x118, 5, 0, 3);
@@ -1749,10 +1797,11 @@ mod tests {
         assert!(rt.has_reward_bank());
         rt.on_scene_change_audio();
         assert_eq!(rt.sfx.sched.pending_count(), 0);
-        assert!(!rt.has_reward_bank());
-        assert!(!rt.sfx.bank_bytes.contains_key(&TRANSIENT_REWARD_SLOT));
-        // Without a BGM occupancy reading the bank refuses to stage: the
+        assert!(rt.has_reward_bank());
+        assert!(rt.sfx.bank_bytes.contains_key(&TRANSIENT_REWARD_SLOT));
+        // Without a BGM occupancy reading a fresh bank refuses to stage: the
         // conservative answer, and the one the routing then falls back on.
+        rt.drop_reward_bank();
         assert!(!rt.stage_transient_reward_bank());
     }
 

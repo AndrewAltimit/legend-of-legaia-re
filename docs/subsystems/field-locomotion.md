@@ -1896,7 +1896,7 @@ are reached only through the dev handler-id table, one word each at `0x801F3458`
 `0x801F3460`); the engine installs Riremito from the world-map debug sub-list's hand-off
 and Rula from tests only.
 
-The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), "scripted-scene voice stream". That call site is program 2's state `0x16`.
+The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), the scripted-scene voice file. That call site is program 2's state `0x16`, and it is a seek-ahead (`CdlSeekL`, no read), not a stream: the voice itself is state `0x17`'s `FUN_8003D53C(0x10, 7, 0x135)` one-shot.
 
 `FUN_801d567c` advances a per-actor **motion keyframe**: when the actor's frame timer expires it reads the next motion bytes from `actor[+0x94] + actor[+0x9e]` through the flag/stream reader `func_0x8003ce9c`; otherwise, when `+0x9c == 0`, it latches the current motion transform (copying `+0x3c` -> `+0x40`, `+0x16` -> `+0x6a`, and packing `+0x74`/`+0x88` into `+0x80..+0x85`) and runs `FUN_801e4404`.
 
@@ -2038,8 +2038,11 @@ So an actor running both a scripted leg and an ambient wander stream in the
 same frame ends up facing wherever the **ambient** stream put it - stage 3
 overwrites stage 2. Stage 3 is also the only one with a scene-wide off switch:
 whenever `*(s16 *)(_DAT_801C6EA4 + 8)` is non-zero the ambient layer stands
-down and stage 2's pose is what survives the frame. What sets that word is not
-pinned here.
+down and stage 2's pose is what survives the frame. The word is a bracket
+guard, not a pause: the scene-init bind sweep `FUN_8003AEB0` and the field VM's
+script-context spawn calls set it around one call and clear it after, so it is
+never held across a frame
+([motion-vm.md](motion-vm.md#the-driver-fun_8003bc08)).
 
 Outside this tick the field VM's spawn-prologue pre-run writes the heading
 once at scene load ([NPC initial facing](#npc-initial-facing)), and the player

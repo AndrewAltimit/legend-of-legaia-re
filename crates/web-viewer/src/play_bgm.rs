@@ -144,6 +144,10 @@ impl WebBgmDirector<'_> {
         let split = legaia_engine_core::chunk_install::owned_bank_offsets(entry_bytes)?;
         let vab_off = split.vab;
         let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
+        // Both halves are validated before the SPU is touched, as the native
+        // `stage_owned_vab` does, so a score that does not parse leaves the
+        // playing track's samples where they were.
+        let seq = legaia_seq::Seq::parse(entry_bytes.get(split.seq..)?).ok()?;
         let body = &entry_bytes[vab_off..];
         let bank = self.out.with_spu(|spu| {
             // Cap the BGM region below the resident class-2 SFX bank at the
@@ -158,7 +162,6 @@ impl WebBgmDirector<'_> {
             );
             legaia_engine_audio::VabBank::upload(spu, &mut alloc, &report, body)
         });
-        let seq = legaia_seq::Seq::parse(&entry_bytes[split.seq..]).ok()?;
         *self.bank = Some(bank.clone());
         Some((seq, bank))
     }

@@ -180,9 +180,17 @@ fn rung2_map_display_fade(w: &mut World) -> Result<(), String> {
     ctrl_mut(w).scene_base = 0xF4; // Sebucus - kingdom index 1
     tap(w, raw(packed::MAP_DISPLAY_ARM));
 
-    let sfx = ctrl_mut(w).drain_sfx();
-    if !sfx.contains(&legaia_engine_core::world_map::MAP_DISPLAY_SFX) {
-        return Err(format!("the arm raised no SFX cue: {sfx:?}"));
+    // The cue reaches the SFX ring both hosts replay, not a controller-local
+    // queue: `World::tick_world_map` drains the controller every frame.
+    let sfx = w.take_sfx_ring_ops();
+    let want = legaia_engine_core::world::SfxRingOp::Push(i16::from(
+        legaia_engine_core::world_map::MAP_DISPLAY_SFX,
+    ));
+    if !sfx.contains(&want) {
+        return Err(format!("the arm raised no SFX ring cue: {sfx:?}"));
+    }
+    if !ctrl_mut(w).drain_sfx().is_empty() {
+        return Err("the controller kept a cue the world already routed".into());
     }
 
     // The arm frame already ran one fade tick, so the ramp is live and the

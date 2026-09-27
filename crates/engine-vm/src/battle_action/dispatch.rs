@@ -314,12 +314,12 @@ pub(super) fn tick_frame_timer<H: BattleActionHost + ?Sized>(
 /// caller passes the seated counts (in the engine, the host's party count and
 /// the slots above it).
 ///
-/// Runs at most once per battle - see [`BattleActionCtx::formation_armed`] for
+/// Runs at most once per round - see [`BattleActionCtx::formation_armed`] for
 /// why the port needs a flag where retail does not. Engines that stage the
-/// battle themselves may call this at battle open (retail's placement: the
-/// flow SM arms `ctx[7] = 0` at `0x801D3224` and the action SM runs `0x00` on
-/// the next frame, *before* the command menu resolves); [`begin`] runs it
-/// otherwise.
+/// round themselves call [`round_state_zero`] at the round's `0xFE` (retail's
+/// placement: the commit confirm's Begin moves the flow to `0xFE`, which arms
+/// `ctx[7] = 0` at `0x801D3224`, so state `0x00` runs after the last command
+/// and before the round's first action); [`begin`] runs it otherwise.
 ///
 /// PORT: FUN_801E295C (`0x801E2AC0..0x801E2B48`)
 pub fn begin_formation_arm(
@@ -340,6 +340,31 @@ pub fn begin_formation_arm(
     ctx.formation_latched = ctx.formation_advantage;
     ctx.formation_advantage = 0;
     true
+}
+
+/// Retail's state `0x00` as one call, at the round's start: the AI queue
+/// assembler's auto-fill leg (`jal 0x801f0450` at `0x801E2AB8`, the state's
+/// opening instruction) and then the formation arm.
+///
+/// Retail reaches `0x00` **every round** - the commit confirm's Begin stores
+/// flow `0xFE` (`0x801D31AC`) and `0xFE` writes `ctx[7] = 0` (`0x801D3224`) -
+/// so the delegated members' queues are rebuilt each round, and round two's
+/// pass copies the `+0x290` round one cleared over `+0x291`: a pre-emptive
+/// strike's assured escape lasts one round.
+///
+/// A no-op when the round's pass already ran ([`BattleActionCtx::formation_armed`]);
+/// the host clears that flag at the round boundary. Returns whether it ran.
+///
+/// PORT: FUN_801E295C (state `0x00`, `0x801E2AB8..0x801E2B48`)
+pub fn round_state_zero<H: BattleActionHost + ?Sized>(
+    host: &mut H,
+    ctx: &mut BattleActionCtx,
+) -> bool {
+    if ctx.formation_armed {
+        return false;
+    }
+    auto_fill_party_queues(host, ctx);
+    begin_formation_arm_for(host, ctx)
 }
 
 /// [`begin_formation_arm`] with the two seated counts read off a host.
@@ -462,13 +487,12 @@ pub(super) fn begin<H: BattleActionHost + ?Sized>(
     // Reset ctx counters at +0x6DA..+0x6DB.
     ctx.combo_timer = 0;
     // Seed the turn cursor from the formation advantage, then latch it away.
-    // The AI queue assembler runs in the same once-per-battle pass, and it
+    // The AI queue assembler runs in the same once-per-round pass, and it
     // runs first: retail's opening instruction of state `0x00` is
-    // `jal 0x801f0450` (`0x801E2AB8`), ahead of the formation arm.
-    if !ctx.formation_armed {
-        auto_fill_party_queues(host, ctx);
-    }
-    begin_formation_arm_for(host, ctx);
+    // `jal 0x801f0450` (`0x801E2AB8`), ahead of the formation arm. A host
+    // that already ran the round's pass (`round_state_zero`) makes this a
+    // no-op for every later action of the round.
+    round_state_zero(host, ctx);
     // Branch to QueuedFromMenu if menu still open, otherwise PreActionWait.
     if ctx.menu_open != 0 {
         transition(ctx, ActionState::QueuedFromMenu)

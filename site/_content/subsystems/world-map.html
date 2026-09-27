@@ -290,7 +290,7 @@ sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
     <li><strong>The top-view controller</strong> is <em>only</em> the debug camera: with the view flag clear it returns immediately. The overworld's per-frame update is the ordinary field chain (gate-arm wrapper &rarr; locomotion), the same pair a town runs.</li>
     <li><strong>Toggle:</strong> debug flag set + pad mask <code>0x4A</code> + held mask <code>0x40</code> flips the view flag, snapshots the camera and resets the panel cursor.</li>
     <li><strong>Top-view controls:</strong> d-pad scrolls X/Z by 8 per frame; Circle/Square turn the azimuth by <code>0x14</code>; R1/L1 change zoom by 4.</li>
-    <li><strong>Dev menu:</strong> at least 24 rows; <code>MAP CHANGE</code> and <code>CARD OPTION</code> read <code>CLOSED</code> on a retail flag; <code>CAMERA</code>, <code>ENCOUNT</code> and <code>BGM CALL</code> show live readouts.</li>
+    <li><strong>Dev menu:</strong> at least 24 rows; <code>MAP CHANGE</code> and <code>CARD OPTION</code> read <code>CLOSED</code> on a retail flag; <code>CAMERA</code>, <code>ENCOUNT</code> and <code>BGM CALL</code> show live readouts. <code>CAMERA</code> is the follow-camera switch <code>0x8007B606</code> (the row is its only writer after new game), drawn <code>OFF</code>, or <code>ON</code> plus the walk-region box&rsquo;s centre tile; the port&rsquo;s dev menu carries it on both hosts.</li>
   </ul>
   <details class="disclosure">
     <summary>Globals and engine port of the debug tooling</summary>

@@ -793,7 +793,7 @@ impl World {
             // One-frame rule (see `step_inline_dialogue`): a menu that opened
             // on this tick is shown before any confirm can commit it.
             let menu_was_open = panel.menu_active();
-            panel.tick();
+            panel.tick_at(self.clock.frame_step);
             if confirm {
                 if panel.menu_active() && !menu_was_open {
                     // Opened this frame: nothing to commit yet.
@@ -824,6 +824,10 @@ impl World {
                         tl.pc = panel.pc;
                         tl.dialog = None;
                     }
+                } else {
+                    // Still typing or scrolling: the pager's skip latch
+                    // completes the page (`crate::dialog_window`).
+                    panel.confirm_while_typing();
                 }
             }
             if tl.dialog.is_some() && !tl.done {
@@ -2451,7 +2455,7 @@ impl World {
             // and reads the choice in the next, so the commit is always at
             // least one frame behind the open.
             let menu_was_open = panel.menu_active();
-            panel.tick();
+            panel.tick_at(self.clock.frame_step);
             if confirm {
                 if panel.menu_active() && !menu_was_open {
                     // The menu opened this frame: show it, commit next frame.
@@ -2501,6 +2505,10 @@ impl World {
                             }
                         }
                     }
+                } else {
+                    // Still typing or scrolling: the pager's skip latch
+                    // completes the page (`crate::dialog_window`).
+                    panel.confirm_while_typing();
                 }
             }
             self.dialog.inline = Some(id);

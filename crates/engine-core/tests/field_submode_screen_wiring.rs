@@ -16,6 +16,12 @@ use legaia_engine_core::field_submode_screen::{
 use legaia_engine_core::world::World;
 use legaia_engine_vm::baka_hub_actors::{GOLD_PER_COIN, PICK_ACCEPT, slot};
 
+/// The raw PSX pad word a host sends for a **packed** Legaia mask - the
+/// submode masks are packed, `World::input` holds the raw word.
+fn raw(packed: u16) -> u16 {
+    legaia_engine_core::dev_menu::retail_packed(packed)
+}
+
 /// A world with the submode driver actor the MAN loader spawns.
 fn field_world() -> World {
     let mut w = World::new();
@@ -81,7 +87,7 @@ fn the_coin_counter_draws_the_panel_its_own_descriptor_installs() {
     );
 
     w.field_vm.submode_screen.counter.set_entered(3);
-    w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
+    w.input.set_pad(raw(SUBMODE_ACCEPT_MASK as u16));
     assert!(tick_until(&mut w, 16, |w| w
         .field_vm
         .submode_screen
@@ -115,7 +121,7 @@ fn buying_coins_through_the_frame_loop_moves_gold_into_the_coin_bank() {
     w.field_vm.submode_screen.counter.set_entered(12);
 
     // Accept -> the Yes/No panel.
-    w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
+    w.input.set_pad(raw(SUBMODE_ACCEPT_MASK as u16));
     assert!(
         tick_until(&mut w, 16, |w| w.field_vm.submode_screen.actor.sub == 2),
         "the accept edge never reached the counter"
@@ -162,7 +168,7 @@ fn an_unaffordable_amount_never_reaches_the_bank() {
         == 1));
     w.field_vm.submode_screen.counter.set_entered(9_999);
 
-    w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
+    w.input.set_pad(raw(SUBMODE_ACCEPT_MASK as u16));
     for _ in 0..16 {
         w.tick();
     }
@@ -354,7 +360,7 @@ fn the_coin_confirm_is_pad_driven_without_a_picker_feed() {
     w.field_vm.submode_screen.counter.set_entered(12);
 
     // Accept -> the Yes/No panel (cursor seeded to No).
-    w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
+    w.input.set_pad(raw(SUBMODE_ACCEPT_MASK as u16));
     assert!(tick_until(&mut w, 16, |w| w
         .field_vm
         .submode_screen
@@ -367,7 +373,7 @@ fn the_coin_confirm_is_pad_driven_without_a_picker_feed() {
     // press is a fresh edge.
     w.input.set_pad(0);
     w.tick();
-    w.input.set_pad(legaia_engine_core::dev_menu::PACK_UP);
+    w.input.set_pad(raw(legaia_engine_core::dev_menu::PACK_UP));
     assert!(tick_until(&mut w, 16, |w| w
         .field_vm
         .submode_screen
@@ -378,7 +384,7 @@ fn the_coin_confirm_is_pad_driven_without_a_picker_feed() {
     // Accept on Yes -> commit: coins in, gold out, screen hands back.
     w.input.set_pad(0);
     w.tick();
-    w.input.set_pad(SUBMODE_ACCEPT_MASK as u16);
+    w.input.set_pad(raw(SUBMODE_ACCEPT_MASK as u16));
     assert!(
         tick_until(&mut w, 32, |w| w.minigames.casino_coins != 7),
         "the pad-driven Yes never committed - the state-2 softlock is back"
@@ -389,5 +395,43 @@ fn the_coin_confirm_is_pad_driven_without_a_picker_feed() {
     assert!(
         tick_until(&mut w, 64, |w| w.field_vm.submode_screen.is_done()),
         "the counter never handed back after the commit"
+    );
+}
+
+/// The host-side button, not the packed mask: both play hosts hand
+/// `World::set_pad` the **raw** PSX word (`PadButton`), so pressing Cross on
+/// a coin cabinet must accept and pressing Down (whose raw bit `0x0040` is
+/// the packed Cross value) must not. Before the submode family packed the
+/// host word, the two were exactly swapped.
+#[test]
+fn a_host_cross_press_accepts_and_a_host_down_press_does_not() {
+    use legaia_engine_core::input::PadButton;
+    let open = || {
+        let mut w = field_world();
+        w.party.money = 5_000;
+        w.open_coin_counter();
+        assert!(tick_until(&mut w, 16, |w| w
+            .field_vm
+            .submode_screen
+            .actor
+            .sub
+            == 1));
+        w.field_vm.submode_screen.counter.set_entered(2);
+        w
+    };
+
+    let mut down = open();
+    down.input.set_pad(PadButton::Down.mask());
+    tick_until(&mut down, 16, |_| false);
+    assert_eq!(
+        down.field_vm.submode_screen.actor.sub, 1,
+        "a host Down press was read as the accept edge"
+    );
+
+    let mut cross = open();
+    cross.input.set_pad(PadButton::Cross.mask());
+    assert!(
+        tick_until(&mut cross, 16, |w| w.field_vm.submode_screen.actor.sub == 2),
+        "a host Cross press never reached the counter's accept arm"
     );
 }

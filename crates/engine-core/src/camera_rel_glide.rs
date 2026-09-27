@@ -63,17 +63,17 @@
 //! target on arrival, so an arriving channel is exact - never one frame
 //! past.
 //!
-//! ## NOT WIRED
+//! ## Where it runs
 //!
-//! Same gap as the spawner's, and now stated the same way. The record's
-//! retail producer is `FUN_801D829C`, ported as
-//! `legaia_engine_vm::battle_camera::build_camera_angle_tween` and laid out
-//! by `legaia_engine_vm::camera_rel_actor::glide_spawn_record`, and the camera
-//! half is fully available ([`crate::camera::Camera::globals`] is the ten axes
-//! this tick drives). What is missing is the **actor**: the family's
-//! `DAT_8007071C` / `_DAT_8007C34C` seat has no engine counterpart, so nothing
-//! holds a glide between frames, and the native battle camera runs its own
-//! `Glide` off the tween slots directly instead.
+//! The Baka Fighter duel holds the glide between frames:
+//! [`crate::baka_duel_scene::DuelCamera`] keeps the one live
+//! [`CameraRelGlide`] and ticks it every frame of `BakaFight` - the round-start
+//! spin's settle and a special commit's swing, the two records PROT 0976
+//! hands `FUN_80021248`. The battle's own producer (`FUN_801D829C`, ported as
+//! `legaia_engine_vm::battle_camera::build_camera_angle_tween`) does not reach
+//! it: the family's `DAT_8007071C` / `_DAT_8007C34C` seat has no engine
+//! counterpart in a battle, and the native battle camera runs its own `Glide`
+//! off the tween slots directly instead.
 //!
 //! That producer is also battle-only - 525 `jal` sites over 67 images, all
 //! PROT 0898, a slot-B cast module or one SCUS site, with the normalizer's own
@@ -152,11 +152,9 @@ impl CameraRelGlide {
     ///
     /// PORT: FUN_8002149C
     ///
-    /// NOT WIRED: the record's producer is ported
-    /// (`FUN_801D829C` -> `battle_camera::build_camera_angle_tween` ->
-    /// `camera_rel_actor::glide_spawn_record`), but this family's actor seat
-    /// (`DAT_8007071C` / `_DAT_8007C34C`) has none, so nothing holds a
-    /// [`CameraRelGlide`] across frames in a live session; see the module docs.
+    /// Ticked by [`crate::baka_duel_scene::DuelCamera::tick`], every frame of
+    /// `BakaFight` on both play hosts; see the module docs for the battle's
+    /// producer, which does not reach it.
     pub fn tick(&mut self, cam: &mut RetailCamGlobals, dt: u8) -> GlideTick {
         let dt = i32::from(dt);
         let mut arrived = 0u32;

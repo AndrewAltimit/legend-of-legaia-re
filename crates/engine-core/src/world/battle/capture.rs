@@ -184,8 +184,11 @@ impl World {
     }
 
     /// Drain the summon-magic level-up events (`(party_slot, spell_id,
-    /// new_level)`) resolved since the last drain - the engine analogue of
-    /// the retail level-up banner (`FUN_801e70bc` fires UI element `0x65`).
+    /// new_level)`) resolved since the last drain or battle entry. The
+    /// player-facing half is not this list: the same level-up raises the
+    /// battle message banner (UI element `0x65`, `FUN_801e70bc`) that both
+    /// hosts draw through `battle_hud::battle_banner_message`. This is the
+    /// event record for tests and oracles; `enter_battle` bounds it.
     pub fn drain_magic_level_ups(&mut self) -> Vec<(u8, u8, u8)> {
         std::mem::take(&mut self.seru.magic_level_ups)
     }
@@ -385,6 +388,8 @@ impl World {
     }
 
     /// Drain the capture outcomes from the most recently finished battle.
+    /// The line hosts draw is `PartyState::current_capture_banner` (source 3
+    /// of `battle_hud::battle_banner_message`); this is the record behind it.
     pub fn drain_last_capture_outcomes(&mut self) -> Vec<crate::seru_learning::CaptureOutcome> {
         std::mem::take(&mut self.seru.last_capture_outcomes)
     }

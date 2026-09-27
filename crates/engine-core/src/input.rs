@@ -94,6 +94,42 @@ impl PadButton {
     }
 }
 
+/// Host-side latch for key **taps** shorter than a display frame.
+///
+/// A host that builds its pad word from key events (held keys) and samples it
+/// once per display frame loses a key pressed and released between two
+/// samples: the bit is set and cleared before any tick reads it, so the press
+/// never becomes an edge. The browser page keeps a `pulse` set for exactly
+/// this and ORs it into the first tick of the next frame; this is the same
+/// rule as a type, for the native window.
+///
+/// Rule: every press is latched; the first tick of the next frame sees
+/// `held | latched` and the latch clears, so a tap lands as exactly one
+/// held tick (one press edge, then a release edge) however many ticks the
+/// frame runs, and a key still held is unaffected.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PadTapLatch {
+    pulse: u16,
+}
+
+impl PadTapLatch {
+    /// Latch a press of `mask`.
+    pub fn press(&mut self, mask: u16) {
+        self.pulse |= mask;
+    }
+
+    /// The word the frame's **first** tick sees - `held` plus every press
+    /// latched since the last call - and clear the latch.
+    pub fn take_frame_word(&mut self, held: u16) -> u16 {
+        held | std::mem::take(&mut self.pulse)
+    }
+
+    /// Drop anything latched (a scripted harness that owns the pad word).
+    pub fn clear(&mut self) {
+        self.pulse = 0;
+    }
+}
+
 /// Snapshot + edge-tracking pad state.
 ///
 /// Hosts call [`InputState::set_pad`] each frame with the latest button
@@ -602,6 +638,24 @@ impl Mapping {
 
 #[cfg(test)]
 mod tests {
+    /// A key pressed and released between two frames still reaches the
+    /// first tick of the next frame as a held bit - one press edge - and is
+    /// gone by the following frame; a key still held is unchanged.
+    #[test]
+    fn a_sub_frame_tap_lands_on_exactly_one_tick() {
+        let mut latch = PadTapLatch::default();
+        let cross = PadButton::Cross.mask();
+        latch.press(cross);
+        // Released before the frame: `held` no longer carries it.
+        let mut st = InputState::default();
+        st.set_pad(latch.take_frame_word(0));
+        assert!(st.just_pressed(PadButton::Cross), "the tap is an edge");
+        st.set_pad(latch.take_frame_word(0));
+        assert!(!st.pressed(PadButton::Cross), "and only for one tick");
+        // A held key passes through untouched.
+        assert_eq!(latch.take_frame_word(cross), cross);
+    }
+
     use super::*;
     use crate::retail_pad::{PadReport, REPEAT_PERIOD, REPEAT_WINDOW};
 

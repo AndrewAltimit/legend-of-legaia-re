@@ -92,12 +92,17 @@ fn w1d_dev_menu_equip_ladder() {
     assert!(list["open"] == true, "dev overlay closed after the opt-in");
     assert!(text_count(&list) > 0, "the row list drew nothing");
 
-    // Walk to the last row (`EQUIP`). The list is five rows, so four Downs
-    // land on it from the top whether the picker clamps or wraps; each press
-    // has to move the `>` cursor, which is what makes this a walk and not a
-    // sequence of no-ops.
+    // Walk to the last row (`EQUIP`): `rows - 1` Downs land on it from the
+    // top whether the picker clamps or wraps; each press has to move the `>`
+    // cursor, which is what makes this a walk and not a sequence of no-ops.
+    let rows = legaia_engine_core::dev_menu_host::DevMenuRow::ALL.len();
+    assert_eq!(
+        legaia_engine_core::dev_menu_host::DevMenuRow::ALL[rows - 1],
+        legaia_engine_core::dev_menu_host::DevMenuRow::Equip,
+        "EQUIP is the list's last row"
+    );
     let mut seen = vec![list.to_string()];
-    for i in 0..4 {
+    for i in 0..rows - 1 {
         tap(&mut rt, PadButton::Down.mask());
         let now = dev_draws(&mut rt).to_string();
         assert!(

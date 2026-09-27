@@ -221,7 +221,7 @@ menu list for the world map developer menu. String table at `0x801CF344..`:
 | 0 | `MAP CHANGE` (or `CLOSED` when `_DAT_8007B868 != 0`) |
 | 1 | `CARD OPTION` (or `CLOSED`) |
 | 2 | `PLAYER STATUS` |
-| 3 | `CAMERA` - shows `_DAT_80089120/_DAT_80089118` as `000 000` |
+| 3 | `CAMERA` - the follow switch `_DAT_8007B606` as `OFF` / `ON`; while on, the region box `0x1F800384` as two averages (`000 000` for the whole-map sentinel). See [the CAMERA row](#the-camera-row). |
 | 4 | `ENCOUNT` - shows encounter rate from `DAT_8007B5F8` |
 | 5 | `OTHER SETTINGS` |
 | 6 | `BGM CALL` - shows `_DAT_801F2E90` as `00` |
@@ -305,10 +305,30 @@ The host is `legaia_engine_core::dev_menu_host::DevMenuSession`, the engine's
 opt-in developer screen. Its row list is the subset whose backing state the
 engine owns, but each of its rows carries retail's own list index
 (`DevMenuRow::retail_index`), so the CLOSED gate, the row formatter, the panel
-geometry, the cursor step and the draw gate all run retail's kernels. Two
-leaves stay without a consumer: `decode_camera_readout`, because nothing
-publishes retail's packed scratchpad camera word, and the 18 rows of retail's
-list the engine keeps no state for.
+geometry, the cursor step and the draw gate all run retail's kernels. What
+stays without a consumer is the rows of retail's list the engine keeps no state
+for. Both hosts drive the screen through one call,
+`DevMenuSession::tick_host(world, camera, edge, held)`, which also carries the
+`CAMERA` row's state in and out.
+
+#### The CAMERA row
+
+Row 3 is the follow-camera switch `_DAT_8007B606` - the byte `FUN_801DB510`
+tests before it composes and eases, and whose only writers after new-game init
+are this row's two arms. `FUN_801E9F64`'s row-3 edit arm (`0x801EA1A4`, table
+`0x801CF294` entry 0) flips it on either horizontal edge
+(`_DAT_8007B874 & 0xA000`, packed Right | Left) and, while it is on, snaps the
+camera (`FUN_801DB8EC` then the edge clamp `FUN_801DAA50`); the
+`FUN_801EA9B0` table's row-3 arm (`0x801EAD20`) flips it too. `FUN_801EAD98`'s
+row-3 arm draws one of two 8-byte strings at `0x801F318C` (`OFF`, `ON`) indexed
+by the switch, and with the switch on adds the walk-region box readout: it loads
+`0x1F800384` (`lw v1,0x70(a3)` with `a3 = 0x1F800314`), draws `000 000` for the
+whole-map sentinel `0x7F7F0000`, and otherwise prints
+`(box[0] + box[2]) >> 1` and `(box[1] + box[3]) >> 1` three digits wide - the
+centre tile of the box, not a camera angle. An earlier reading of this table
+had the row showing `_DAT_80089120` / `_DAT_80089118`; neither address is
+formed in the arm. The engine carries it as `DevMenuRow::Camera`
+(`camera_row_readout`), writing the switch to `ZoneFollow::follow_enabled`.
 
 The CLOSED gate reaches the screen the way retail's does - as a **string
 selection, not a post-hoc override**. Cases 0 and 1 of `FUN_801EAD98` read
@@ -806,12 +826,23 @@ world-map overlay data region (`0x801F28F0..0x801F2Fxx`) and the dev context
   `_DAT_8007BB88`. Label strings come from the overlay pointers at
   `0x801F29E4` / `0x801F2AB4..0x801F2AC0`. Render-track (GPU emit), so
   documented-not-ported.
-- **`FUN_801E6984`** (432 bytes, `801e6984.txt`) - the MAP_CHANGE list / cursor
-  renderer. Iterates `_DAT_8007B450[+0x3]` cell entries at `+0x10` row pitch
-  (the tile / map-cell descriptor `_DAT_8007B450`), drawing the map-select
-  cursor sprite (`FUN_8002B994`) on the entry equal to `_DAT_8007BB88`, an icon
-  `0x4F`/`0x58` (`FUN_8002C488`) on the entry equal to `_DAT_8007BB9C`, and a
-  `0x9C x 0x20` frame box (`FUN_8002C69C`). Render-track.
+- **`FUN_801E6984`** (432 bytes, `801e6984.txt`) - the painter of panel-window
+  record 14 in the table at `0x801F2B98` (record `+0x18`), **not** a
+  developer-menu MAP_CHANGE list, which is how this bullet used to read it. The
+  only descriptor naming record 14 is `0x801F3304`, installed by the op-`0x49`
+  sub-op-4 handler (slot `0x23`, `FUN_801EF014`, `lui`/`addiu` at
+  `0x801EF144`), and the painter's VA occurs nowhere else on the disc. Its rows
+  are `_DAT_8007B450[+3]` entries of the op-`0x49` operand (`[+2]` is the
+  scroll base) at `0x10` pitch, bottom-up; it draws the cursor sprite
+  (`FUN_8002B994`) on the entry equal to `_DAT_8007BB88`, a first glyph cell
+  `entry + 0x4F` (`0x58` on the entry equal to `_DAT_8007BB9C`) and, for
+  entries above zero, a second cell `0x57` / `0x60`, then two labels and a
+  `0x9C x 0x20` frame box (`FUN_8002C69C`). The handler seeds both words from
+  a run of story flags named by the operand (`FUN_8003CE64` / `FUN_8003CE34`)
+  and runs the list picker `FUN_801E9DC8` over the rows - a numbered
+  choice list, used by the `kor` / `kor3` / `kor4` scripts only
+  (`asset field-op-census --only "49 04"`). Layout ported as
+  `legaia_engine_core::field_submode::submode_panel_rows`; the handler is not.
 - **`FUN_801E6B34`** (1084 bytes, `overlay_world_map_top_801e6b34.txt`) - the
   top-view MAP_CHANGE **grid** + coordinate readout. Lays the map dots out in a
   102-wide grid (`idx % 0x66`), draws the cursor when `_DAT_8007BB94 != 4`, a

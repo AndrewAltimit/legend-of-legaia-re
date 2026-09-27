@@ -882,7 +882,8 @@ pub(crate) enum Cmd {
         /// Optional PSX memory-card image (`.mcr` / `.mcd` / `.gme` /
         /// `.mcs`) mounted in the save screen's **second** card port, the
         /// one the save directory does not occupy. Its fifteen blocks fill
-        /// that port's preview grid and a Load reads the block's save.
+        /// that port's preview grid and a Load reads the block's save; a
+        /// Save writes the block and writes the image file back in place.
         #[arg(long)]
         card: Option<PathBuf>,
         /// Optional TOML CDNAME→STR map; same format as `play --cutscene-map`.

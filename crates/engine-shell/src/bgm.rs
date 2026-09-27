@@ -144,7 +144,7 @@ pub struct AudioBgmDirector {
 
 /// `_DAT_8007B910`'s reference value (`0xD7`, `FUN_8001FFA4`): the un-ducked
 /// level the `0x51` arm ramps back to.
-pub const DUCK_LEVEL_REF: u8 = 0xD7;
+pub const DUCK_LEVEL_REF: u8 = legaia_engine_audio::duck::DUCK_LEVEL_REF;
 
 /// VAB slot the battle-end reward bank (PROT 0889, cue `0x50`) is installed
 /// in - retail streams it at results time (`FUN_8004E568` phase 4,
@@ -413,8 +413,7 @@ impl AudioBgmDirector {
     /// `100` when the Done band ramps it back. The ramp itself runs in
     /// [`Self::tick_duck`].
     pub fn set_duck_pct(&mut self, pct: u8) {
-        let pct = u32::from(pct.min(100));
-        self.duck_target = (u32::from(DUCK_LEVEL_REF) * pct / 100) as u8;
+        self.duck_target = legaia_engine_audio::duck::duck_target_for_pct(pct);
     }
 
     /// One frame of the duck ramp: step the live level one unit toward the
@@ -422,18 +421,17 @@ impl AudioBgmDirector {
     /// and re-apply it to the BGM as `master_vol * level / ref` - the
     /// `FUN_800267A8` -> `SsSeqSetVol` re-apply, which halves the cell into
     /// the 0..127 volume domain the same way `master_vol` already is.
+    ///
+    /// A level resting below the reference is re-applied every frame too
+    /// ([`legaia_engine_audio::duck::duck_apply`]), so a track started under
+    /// a settled duck comes down on its first frame - the kernel the page's
+    /// `tick_duck` calls.
     pub fn tick_duck(&mut self) {
-        if self.duck_level == self.duck_target {
-            return;
+        use legaia_engine_audio::duck;
+        let moved = duck::step_duck(&mut self.duck_level, self.duck_target);
+        if let Some(vol) = duck::duck_apply(moved, self.master_vol, self.duck_level) {
+            self.audio.set_sequencer_master_vol(vol);
         }
-        self.duck_level = if self.duck_level < self.duck_target {
-            self.duck_level + 1
-        } else {
-            self.duck_level - 1
-        };
-        let vol =
-            u32::from(self.master_vol) * u32::from(self.duck_level) / u32::from(DUCK_LEVEL_REF);
-        self.audio.set_sequencer_master_vol(vol.min(127) as u8);
     }
 
     /// The live duck level in `_DAT_8007B910` units (for tests / traces).
@@ -885,6 +883,12 @@ impl AudioBgmDirector {
         self.bank.as_ref()
     }
 
+    /// `true` if a sequencer is attached, paused or not - the track whose
+    /// samples the BGM region holds.
+    pub fn is_attached(&self) -> bool {
+        self.audio.sequencer_progress().is_some()
+    }
+
     /// `true` if a sequencer is currently attached to the audio output.
     pub fn is_playing(&self) -> bool {
         self.audio.sequencer_progress().is_some() && !self.paused
@@ -903,6 +907,11 @@ impl AudioBgmDirector {
         let split = legaia_engine_core::chunk_install::owned_bank_offsets(entry_bytes)?;
         let vab_off = split.vab;
         let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
+        // Both halves are validated before the SPU is touched - the page's
+        // `stage_owned` keeps the same order - so a score that does not parse
+        // leaves the playing track's samples where they were.
+        let seq_bytes = entry_bytes.get(split.seq..)?;
+        Seq::parse(seq_bytes).ok()?;
         let body = &entry_bytes[vab_off..];
         let bank = self.audio.with_spu(|spu| {
             let mut alloc = legaia_engine_audio::SpuAllocator::new(
@@ -917,7 +926,7 @@ impl AudioBgmDirector {
         // included.
         self.drop_bgm_tail_banks();
         self.bank = Some(bank);
-        Some(entry_bytes[split.seq..].to_vec())
+        Some(seq_bytes.to_vec())
     }
 
     fn start_inner(&mut self, bgm_id: u16, seq_bytes: &[u8]) -> Result<()> {

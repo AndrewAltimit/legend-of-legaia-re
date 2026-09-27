@@ -212,12 +212,24 @@ pub const FIELD_BGM_DIRECT_ID_MIN: u32 = 0x7D0;
 /// The constant the relative form adds after the sequence base.
 pub const FIELD_BGM_BASE_BIAS: u32 = 6;
 
-/// The one BGM id whose load is **two streams**, not one.
+/// The one BGM id whose load is **two streams**, not one: the ending
+/// ("credits") theme, started by `edteien` and `edbalden`.
 pub const FIELD_BGM_TWO_PART_ID: u32 = 0x814;
 
 /// The two streaming-asset ids the [`FIELD_BGM_TWO_PART_ID`] arm loads, in
-/// load order.
+/// load order, as **raw** in-RAM TOC indices (`FUN_8001FC00` indexes the TOC
+/// with them directly): `0x428` is the score - extraction entry `1062`, one
+/// type-2 SEQ chunk and nothing else - and `0x422` the instruments -
+/// extraction `1056`, a VAB-only bank of 53 programs, the largest on the
+/// disc.
 pub const FIELD_BGM_TWO_PART_STREAMS: [u32; 2] = [0x428, 0x422];
+
+/// Retail's sound slot for the two-part track: the `0x80091508 + slot * 12`
+/// table row `FUN_8001E54C` installs into and the `0x8007051C + slot * 16`
+/// sequence record `FUN_80026478` starts. Its VAB id is `10` and its SPU base
+/// is slot 0's (`0x800917B0[10] == 0x800917B0[0] == 0x1010` in every ending
+/// state), so the instruments overwrite the resident banks below `0x6C810`.
+pub const FIELD_BGM_TWO_PART_SOUND_SLOT: u32 = 10;
 
 /// What the initialiser decides about BGM for this scene entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,34 +261,36 @@ pub struct FieldBgmPlan {
 /// track `i`, and `0x7D0` is exactly `2000`, so "below 2000" *is* "not a
 /// global track id".
 ///
-/// NOT WIRED: only the **two-part arm** is unreached; the slot arithmetic is
-/// already live somewhere else, and an earlier reading of this tag ("the
-/// engine has neither of this kernel's two inputs") does not survive a look
-/// at the engine side. It has both. The `< 0x7D0 ? base + id + 6 : id` split
-/// is `SceneHost::bgm_seq_bytes` -> [`crate::scene_assets::SceneAssets`],
-/// which resolves the same id space over the same arithmetic in the
-/// extraction frame (`block_range.0 + 8 + id`, where the extra `2` is the
-/// define-to-extraction skew), and it is reached on every scripted BGM
-/// start. The `already_playing` latch is the director's `last_started`
-/// compare.
+/// ## The two-part arm, read off the disassembly
 ///
-/// What has no engine analogue is [`FIELD_BGM_TWO_PART_ID`]: no scene entry
-/// path loads a second streaming asset for one track, and nothing carries
-/// the one-shot latch `_DAT_8007B9B8` that stops it re-loading. That is one
-/// arm of one id, so the honest read of this kernel is a near-duplicate of
-/// live logic in retail's slot frame rather than a missing step - which is
-/// also why wiring it wants a merge with the live resolver, not a new
-/// caller.
+/// With `_DAT_8007BAC8 == 0x814` and the latch clear the arm sets the latch
+/// (delay slot at `0x801D71CC`), detaches and closes the BGM record
+/// `0x8007052C` (`FUN_800266E0` / `FUN_80026520`), then stages **one track on
+/// sound slot 10**: `FUN_8001FC00(0x428, ..)` reads the score into the
+/// streaming buffer `*0x8007B85C` and `FUN_8001E54C(10, ..)` installs its
+/// type-2 chunk as slot 10's SEQ; `FUN_8001FC00(0x422, ..)` reads the bank
+/// and the same walker opens its VAB head and sends the first `0x39800`
+/// bytes of body; a second read of `0x422` in append mode and
+/// `FUN_8002630C(slot10 head, .., vab 10, 1, size)` send the remainder -
+/// the body is larger than the buffer, which is what "two part" is. Then
+/// `FUN_80026478(0x800705BC)` starts the sequence and `_DAT_8007BA9C` takes
+/// `_DAT_8007BAB8`, so the ordinary resolver `FUN_800243F0` sees the track
+/// as loaded and never fetches `0x814`'s own bank slot (raw `990 + 68`,
+/// extraction `1056` - the same instruments, no score).
 ///
-/// That last sentence is why this row is worth a second look before it is
-/// reclassified. The *slot arithmetic* is replaced; the two-part arm is not,
-/// and it is a scene's second streaming asset failing to load, which a player
-/// hears. A residual that the substitution does not cover keeps the row a
-/// wiring gap, so this stays a disclosure and does not take the
-/// `REPLACED-BY:` marker its file-mate
-/// [`field_prim_buffer_bytes`] carries - see
-/// `docs/tooling/port-catalog.md`. The owner is the BGM director's
-/// scene-entry path, alongside `SceneHost::bgm_seq_bytes`.
+/// So the arm is not a sound-effect load: it *is* the credits music. The
+/// ending save states confirm it (`ending_banner_mask_closed` and the other
+/// `edteien` / `edbylon` states): slot 10's sequence record is open (`+8`
+/// = 1, VAB id `+0xC` = 10) while the BGM record is closed, its sequence
+/// buffer holds extraction `1062`'s SEQ chunk byte for byte, the sounding
+/// SPU voices start inside the region slot 10's bank was sent to, and every
+/// program change in the score names a program only `1056` defines.
+///
+/// The engine's side is [`two_part_bgm_stream`], reached from
+/// `SceneHost::music_bank_entry_bytes` on every start of this id, so both
+/// play hosts stage the pair through their ordinary owned-VAB path. The slot
+/// arithmetic is the engine's `SceneAssets` / [`crate::music_labels`]
+/// resolution; the latch is the BGM directors' same-track suppression.
 pub fn field_bgm_plan(
     bgm_id: u32,
     seq_base: u32,
@@ -296,6 +310,57 @@ pub fn field_bgm_plan(
         two_part_streams: (!two_part_latched && bgm_id == FIELD_BGM_TWO_PART_ID)
             .then_some(FIELD_BGM_TWO_PART_STREAMS),
     }
+}
+
+/// Length of a DATA_FIELD chunk list up to (not including) its zero-length
+/// terminator - the walk `FUN_8001E54C` makes (`u32` header, low 24 bits the
+/// payload length, payload padded to a word). `None` when a header runs off
+/// the buffer.
+fn chunk_list_len(stream: &[u8]) -> Option<usize> {
+    let mut at = 0usize;
+    loop {
+        let Some(h) = stream.get(at..at + 4) else {
+            // No terminator before the end: the list is the whole buffer.
+            return (at == stream.len()).then_some(at);
+        };
+        let len = (u32::from_le_bytes([h[0], h[1], h[2], h[3]]) & 0x00FF_FFFF) as usize;
+        if len == 0 {
+            return Some(at);
+        }
+        let next = at + 4 + len.div_ceil(4) * 4;
+        if next > stream.len() {
+            return None;
+        }
+        at = next;
+    }
+}
+
+/// The two-part track as one owned-VAB install stream: the score's chunk
+/// list (`seq_stream`, extraction `1062`), then the bank's (`vab_stream`,
+/// extraction `1056`), then a terminator.
+///
+/// PORT: FUN_801D6704 (`0x801d71b0..0x801d72d0`: the two reads into sound
+/// slot 10 and the start of its sequence - see [`field_bgm_plan`]).
+///
+/// The score goes first, as retail reads it, and for the same reason the
+/// walker needs it there: the bank's body is a type-3 chunk, and
+/// `FUN_8001E54C` ends its walk on a type-3 chunk (the arm at `0x8001E7C0`
+/// clears the loop flag `s7`), so nothing after the body is ever installed.
+/// Retail then sends the rest of the body in a second transfer because its
+/// streaming buffer is `0x39800` bytes; the engine has the whole entry in
+/// hand, so that split does not survive - only which bank plays which score
+/// does. `None` when either stream is not a well-formed chunk list.
+pub fn two_part_bgm_stream(seq_stream: &[u8], vab_stream: &[u8]) -> Option<Vec<u8>> {
+    let seq = &seq_stream[..chunk_list_len(seq_stream)?];
+    let vab = &vab_stream[..chunk_list_len(vab_stream)?];
+    if vab.is_empty() || seq.is_empty() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(vab.len() + seq.len() + 4);
+    out.extend_from_slice(seq);
+    out.extend_from_slice(vab);
+    out.extend_from_slice(&[0; 4]);
+    Some(out)
 }
 
 /// Bytes of GPU primitive buffer per parsed scene TMD.
@@ -529,9 +594,11 @@ pub struct DuelOverlayInit {
     pub screen_width: u16,
     /// Ordering-table depth handed to `FUN_8001DCF8`.
     pub ot_depth: u8,
-    /// Constant third argument of the BGM start call `FUN_80062004`. Not
-    /// identified as a volume: the field initialiser passes `0x78` on one arm
-    /// and `0xB4` on another, so it is a per-site tuning constant.
+    /// Third argument of `FUN_80062004` - `SsSeqSetVol(voice, vol, ramp)`
+    /// through `FUN_80061EDC` (`docs/subsystems/cutscene.md`) - so the ramp
+    /// length re-applying the live level to the bound voice
+    /// `DAT_80070536`. The field initialiser passes `0x78` on one arm and
+    /// `0xB4` on another.
     pub bgm_arg3: u16,
     /// `_DAT_801DBED0` - the round-win **target**, and the drawn round-win pip
     /// count. Best of three, so `2`.
@@ -558,17 +625,15 @@ pub struct DuelOverlayInit {
 ///
 /// PORT: FUN_801CF00C (`0x801cf00c..0x801cf384`).
 ///
-/// NOT WIRED: the overlay-entry host exists - the mode-24 door warp's
-/// `SceneHost::enter_baka_from_overlay` reads PROT `0976` and builds the
-/// `BakaFight`, which is exactly where retail's mode table calls this
-/// initialiser - but none of the seeds it would hand over has a consumer
-/// there. `round_win_target` and `fighter_slots` are already the rules
-/// engine's own constants and agree; `screen_width` / `ot_depth` belong to
-/// the libgpu display setup the renderer replaces; and the rest - the stage
-/// counter seed, the arena camera pair, the `6 x 6` view window and the two
-/// streaming ids (SFX bank `0x367`, voice archive `0x415`) - have no duel-side
-/// counterpart, because the port stages no arena scene, camera or duel
-/// stream loads. A caller appears with the first of those.
+/// Read by the duel's 3D surface: `crate::baka_duel_scene::BakaDuelScene`
+/// sizes the arena floor from `window_tiles` - the `0x1F8003F8` /
+/// `0x1F8003FA` pair the floor emitter `FUN_801CEB84` loops over - so the
+/// seed is live on both play hosts through `BakaDuelSurface::frame`. The
+/// other seeds stay informational: `round_win_target` and `fighter_slots`
+/// agree with the rules engine's own constants, `screen_width` / `ot_depth`
+/// belong to the libgpu display setup the renderer replaces, the camera pair
+/// is overwritten by the round setup before any duel frame draws, and the
+/// port makes no duel stream loads for the two streaming ids.
 pub const fn duel_overlay_init() -> DuelOverlayInit {
     DuelOverlayInit {
         screen_width: 0x140,
@@ -656,6 +721,25 @@ mod tests {
         // And no other id takes that arm.
         let p = field_bgm_plan(FIELD_BGM_TWO_PART_ID - 1, 0, 0, false);
         assert_eq!(p.two_part_streams, None);
+    }
+
+    #[test]
+    fn the_two_part_stream_is_the_score_then_the_bank() {
+        // bank: [type 0, len 4 "pBAV"][type 1, len 2 + pad][terminator][pad]
+        let mut vab = vec![4, 0, 0, 0];
+        vab.extend_from_slice(b"pBAV");
+        vab.extend_from_slice(&[2, 0, 0, 1, 0xAA, 0xBB, 0, 0]);
+        vab.extend_from_slice(&[0; 8]);
+        // score: [type 2, len 4 "pQES"] then sector fill with no terminator
+        let mut seq = vec![4, 0, 0, 2];
+        seq.extend_from_slice(b"pQES");
+        seq.extend_from_slice(&[0; 4]);
+        let s = two_part_bgm_stream(&seq, &vab).expect("composes");
+        assert_eq!(&s[..8], &seq[..8], "the score's chunk first");
+        assert_eq!(&s[8..24], &vab[..16], "then the bank's, terminator dropped");
+        assert_eq!(&s[24..], &[0; 4], "then one terminator");
+        // A header that runs off its buffer is not a chunk list.
+        assert_eq!(two_part_bgm_stream(&[9, 0, 0, 2, 1], &vab), None);
     }
 
     #[test]

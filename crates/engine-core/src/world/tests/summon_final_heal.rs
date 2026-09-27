@@ -263,3 +263,25 @@ fn final_heal_ignores_members_without_the_bit() {
     assert_eq!(world.actors[0].battle.hp, 0, "stays down without the bit");
     assert_eq!(world.actors[0].battle.liveness, 0);
 }
+
+/// The level-up event list is a per-battle record: no host drains it (the
+/// player-facing half is the `0x65` message banner), so battle entry bounds it
+/// instead of letting it grow for the whole session.
+#[test]
+fn battle_entry_bounds_the_magic_level_up_record() {
+    let mut world = summon_xp_world(50, 4000);
+    world.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
+    let slot = crate::magic_xp::spell_slot(&world.party.roster.members[0], 0x81).unwrap();
+    crate::magic_xp::add_spell_xp(&mut world.party.roster.members[0], slot, 6);
+    world.cast_spell_on_slots(0, &gimard_spell_def(), &[1]);
+    assert_eq!(
+        world.seru.magic_level_ups.len(),
+        1,
+        "the kill levels the spell"
+    );
+    world.enter_battle(1, 1);
+    assert!(
+        world.seru.magic_level_ups.is_empty(),
+        "a new battle starts with an empty level-up record"
+    );
+}

@@ -18,9 +18,12 @@ pub struct SeruState {
     /// downed + logged, but nothing is learned).
     pub registry: crate::seru_learning::SeruRegistry,
     /// Capture outcomes produced by the most recently finished battle, one per
-    /// captured Seru that the registry accepted. Hosts drain this with
-    /// [`crate::world::World::drain_last_capture_outcomes`] to drive the "captured / learned"
-    /// banner ([`crate::seru_learning::SeruCaptureSession`]).
+    /// captured Seru that the registry accepted. Replaced (not appended) by
+    /// every `resolve_captures`, so it holds one battle's outcomes at most.
+    /// The "captured / learned" line both hosts draw is
+    /// [`crate::world::PartyState::current_capture_banner`], built from the
+    /// same resolve; this list is the record behind it, read by
+    /// [`crate::world::World::drain_last_capture_outcomes`].
     pub last_capture_outcomes: Vec<crate::seru_learning::CaptureOutcome>,
     /// Monster ids captured this battle by a capture spell (`SpellEffect::Capture`).
     /// The captured monster is downed immediately; the host drains this for
@@ -44,8 +47,11 @@ pub struct SeruState {
     /// Summon-magic level-ups resolved this session: `(party_slot, spell_id,
     /// new_level)` per event, in resolution order. The engine analogue of the
     /// retail level-up banner (the level-up check fires UI element `0x65` -
-    /// REF: FUN_801e70bc, ported in `world::battle::accrue_summon_spell_xp`);
-    /// hosts drain via [`crate::world::World::drain_magic_level_ups`].
+    /// REF: FUN_801e70bc, ported in `world::battle::accrue_summon_spell_xp`).
+    /// What the player sees is the battle message banner the same level-up
+    /// raises; this list is the per-battle record behind it, cleared at
+    /// [`crate::world::World::enter_battle`] and read by
+    /// [`crate::world::World::drain_magic_level_ups`] (tests and oracles).
     pub magic_level_ups: Vec<(u8, u8, u8)>,
 }
 

@@ -48,6 +48,13 @@ impl World {
         //
         // REF: FUN_801D0748 (states 0x14 / 0x1E / 0x28)
         let round_open = matches!(self.battle.flow, Flow::Idle | Flow::TurnPrompt);
+        // A sub-screen backed out of onto the ring brings a launched log back
+        // (retail's mode-1 launch, step `0x08` for the magic window). A commit
+        // clears the launch before it reopens the ring, so the next member's
+        // ring finds none here.
+        if self.battle.commit_log_launch.is_some() {
+            self.launch_commit_log(true);
+        }
         self.battle.command = Some(if round_open {
             BattleCommandSession::new_round_open(actor, actor, self.battle.no_escape)
         } else {
@@ -90,7 +97,15 @@ impl World {
             select_attack: self.toggles.select_attack,
         };
         let was_round_prompt = matches!(session.phase, CommandPhase::RoundPrompt { .. });
+        let phase_before = session.phase.clone();
         session.input(ev, party, monsters);
+        // Leaving the ring for a sub-screen launches the commit log off the
+        // left edge; cancelling back onto it slides the log home
+        // (`FUN_801D388C`'s launch tail, `super::commit_log_launch`).
+        self.launch_commit_log_for(&phase_before, &session.phase);
+        // ...and the attack-mode pick is the per-fighter Auto flag
+        // (`ctx[+0x266 + seat]`, `super::auto_combo`).
+        self.note_auto_attack_pick(&phase_before, &session.phase);
         // `Begin` with nobody able to act: retail's round-prompt confirm arm
         // finds `FUN_801DBA04` equal to the party count and stores the commit
         // confirm `0x6E` directly (`0x801D10A0`, step `0x27`) instead of
@@ -949,7 +964,20 @@ impl World {
                 // empty. The port keeps the same order - a character that has
                 // confirmed an arts combo replays it, one that has not takes
                 // the roll.
-                if self.preseed_auto_command_string(actor) == 0 {
+                //
+                // An **Auto** pick replaces both: the round-start pool arm of
+                // `FUN_801F0450` rebuilt this seat's queue from the direction
+                // commands and the learned arts (`super::auto_combo`), and
+                // that is what the round plays.
+                if let Some(queue) = self.take_auto_attack_queue(actor) {
+                    if let Some(a) = self.actors.get_mut(actor as usize) {
+                        a.battle.params = [0; vm::battle_action::ACTION_PARAM_BYTES];
+                        for (dst, src) in a.battle.params.iter_mut().zip(queue.iter()) {
+                            *dst = *src;
+                        }
+                        a.battle.strike_index = 0;
+                    }
+                } else if self.preseed_auto_command_string(actor) == 0 {
                     self.seed_basic_attack_queue(actor, target);
                 }
                 self.battle_ctx.queued_action = 3;

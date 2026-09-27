@@ -548,3 +548,103 @@ impl LegaiaMinigames {
         .to_string()
     }
 }
+
+/// The live duel's state as the three duel hosts' pages read it - the one
+/// builder behind the standalone page's `baka_state_json` and the play
+/// page's `play_mg_baka_state_json`.
+///
+/// ```json
+/// { "live": true, "phase": "fighting"|"round_over"|"match_over",
+///   "round": 0, "hp": [3200, 2900], "hp_start": 3200,
+///   "wins": [0, 1], "combo": [0, 2], "chosen": [2, null],
+///   "can_choose": true, "clock": [96, 0], "motion": [[1, 6], [0, 3]],
+///   "ghosts": [ { "owner": 0, "passes": [ { "bit": 0, "frame": 3, "cue": 2048 } ] } ],
+///   "gold": 30, "winner": null,
+///   "last": { "winner": 0, "draw": false, "damage": 512,
+///             "critical": false, "special": false } }
+/// ```
+///
+/// `clock` is each fighter's strike-clock cursor (1/16 clip frame) over its
+/// chosen attack - the frame the retail clip is on, since the strike lands
+/// when it crosses the action's keyframe. `motion` is each fighter's display
+/// clip `[action record, whole frame]` (`BakaFight::motion`, the clip the
+/// actor shows - it plays an attack out past the booked exchange, then
+/// idles). `ghosts` are the special's afterimage passes that drew this tick.
+pub(crate) fn baka_state_json_for(f: &legaia_engine_core::baka_fighter::BakaFight) -> String {
+    let phase = match f.phase() {
+        MatchPhase::Fighting => "fighting",
+        MatchPhase::RoundOver(_) => "round_over",
+        MatchPhase::MatchOver(_) => "match_over",
+    };
+    let chosen = |s: usize| match f.chosen(s) {
+        Some(a) => a.type_id().to_string(),
+        None => "null".to_string(),
+    };
+    let last = match f.last_exchange() {
+        Some(e) => format!(
+            r#"{{"winner":{},"draw":{},"damage":{},"critical":{},"special":{}}}"#,
+            e.winner, e.draw, e.damage, e.critical, e.special_round_win
+        ),
+        None => "null".to_string(),
+    };
+    let winner = match f.winner() {
+        Some(w) => w.to_string(),
+        None => "null".to_string(),
+    };
+    // The special's afterimage ghosts (`FUN_801D49E8`): per live actor,
+    // the fighter it trails and each drawn ghost's whole clip frame and
+    // depth-cue level (`0x1000` = fully the black colour word).
+    let ghosts = f
+        .afterimages()
+        .iter()
+        .map(|(owner, fr)| {
+            let passes = fr
+                .passes
+                .iter()
+                .filter(|p| p.drawn)
+                .map(|p| {
+                    format!(
+                        r#"{{"bit":{},"frame":{},"cue":{}}}"#,
+                        p.bit,
+                        p.cursor >> 4,
+                        p.cue
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(r#"{{"owner":{owner},"passes":[{passes}]}}"#)
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let clock = |s: usize| f.strike_clock(s).cursor;
+    format!(
+        concat!(
+            r#"{{"live":true,"phase":{},"round":{},"hp":[{},{}],"hp_start":{},"#,
+            r#""wins":[{},{}],"combo":[{},{}],"chosen":[{},{}],"can_choose":{},"#,
+            r#""clock":[{},{}],"motion":[[{},{}],[{},{}]],"ghosts":[{}],"#,
+            r#""gold":{},"winner":{},"last":{}}}"#
+        ),
+        jstr(phase),
+        f.round(),
+        f.hp(0),
+        f.hp(1),
+        legaia_engine_core::baka_fighter::HP_START,
+        f.round_wins(0),
+        f.round_wins(1),
+        f.combo(0),
+        f.combo(1),
+        chosen(0),
+        chosen(1),
+        f.can_choose(0),
+        clock(0),
+        clock(1),
+        f.motion(0).record,
+        f.motion(0).frame(),
+        f.motion(1).record,
+        f.motion(1).frame(),
+        ghosts,
+        f.gold_reward(),
+        winner,
+        last,
+    )
+}

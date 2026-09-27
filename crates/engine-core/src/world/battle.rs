@@ -9,13 +9,16 @@ use legaia_engine_vm as vm;
 use vm::battle_action::{BattleEndCause, StepOutcome};
 
 mod actor_draw;
+mod auto_combo;
 mod auto_command;
 mod capture;
 mod cast_band;
 mod casting;
 mod command_flow;
+mod commit_log_launch;
 mod effect_route;
 mod initiative;
+mod intro_names;
 mod locomotion;
 mod loop_driver;
 mod member_step;
@@ -26,12 +29,14 @@ mod seru_absorb;
 mod stage;
 mod stats;
 mod steal_attack;
+mod summon_seat;
 mod teardown;
 mod tutorial;
 mod validator_host;
 mod victory;
 
 pub use actor_draw::{BattleActorDrawPlan, PARTY_BODY_RADIUS};
+pub use auto_combo::{AutoComboInputs, AutoComboState};
 pub use cast_band::{
     PendingCast, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager,
 };

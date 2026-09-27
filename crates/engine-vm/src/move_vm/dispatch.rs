@@ -203,15 +203,23 @@ pub fn step<H: MoveHost + ?Sized>(
             state.field_7a = read(1);
             size = 2;
         }
-        // 0x13 - sub-mode init (16 ops mostly write the descriptor area).
+        // 0x13 - draw-kind-4 multi-target node, default emitter. size 0x10.
+        // Arm `0x80023454..0x80023524`: `+0x5A = 2`, `+0x56 = 4`, flag `0x2`
+        // cleared, `+0x9E = v1` (no `0x2000` / `0x4000` bit, so
+        // `FUN_8001ADA4` case 4 takes its default emitter), `+0x9C = v2`,
+        // `+0xC8 = v3 << 3`, the two packed words `+0xA0` / `+0xA4` from
+        // `v4..v6` / `v7..v9`, then `+0xB4..+0xBE = v10..v15`.
         0x13 => {
             state.move_submode = 2;
             state.move_substate = 4;
             state.flags &= 0xFFFF_FFFD; // clear bit 2
-            // The remaining 14 u16 writes target a chunk of fields we model
-            // as `anim_block`. Map them generically.
-            for i in 1..=15u16 {
-                state.anim_block_u16_set((i as usize) * 2, read(i as usize));
+            state.set_actor_u16(0x9E, read(1));
+            state.set_actor_u16(0x9C, read(2));
+            state.set_actor_u16(0xC8, (read(3) as i16).wrapping_shl(3) as u16);
+            state.set_actor_u32(0xA0, packed_word(read(4), read(5), read(6)));
+            state.set_actor_u32(0xA4, packed_word(read(7), read(8), read(9)));
+            for (n, off) in (10..=15).zip((0xB4..=0xBE).step_by(2)) {
+                state.set_actor_u16(off, read(n));
             }
             size = 0x10;
         }
@@ -322,15 +330,16 @@ pub fn step<H: MoveHost + ?Sized>(
             // Merges current low byte of `+0x9E` into op[1].
             let merged = (state.field_9e & 0xFF) | read(1);
             state.field_9e = merged;
+            // `0x800236F4..0x80023758`: `+0xB0/+0xB2/+0xA8/+0xAA/+0xAC/+0xAE`.
             for (n, off) in [
-                (2, 0x04u16),
-                (3, 0x06),
-                (4, 0xFC),
-                (5, 0xFE),
-                (6, 0x00),
-                (7, 0x02),
+                (2, 0xB0),
+                (3, 0xB2),
+                (4, 0xA8),
+                (5, 0xAA),
+                (6, 0xAC),
+                (7, 0xAE),
             ] {
-                state.anim_block_u16_set(off as usize, read(n));
+                state.set_actor_u16(off, read(n));
             }
             size = 8;
         }
@@ -352,25 +361,27 @@ pub fn step<H: MoveHost + ?Sized>(
         0x22 => {
             size = 1;
         }
-        // 0x23 - table write. size 0xD.
+        // 0x23 - draw-kind-4 sprite node (`+0x9E | 0x4000`). size 0xD.
         0x23 => {
             state.move_submode = 2;
             state.move_substate = 4;
             state.flags &= 0xFFFF_FFFD;
             state.field_9e = read(1) | 0x4000;
-            // The original writes a 24-bit packed value at +0xA0 from op[2..4],
-            // then 9 u16 writes; we approximate as anim_block writes.
+            // Arm `0x800237D8..0x80023888`: the packed word `+0xA0` from
+            // `v2..v4`, then `+0xB4/+0xB6/+0xB0/+0xB2` and the four
+            // `+0xA8..+0xAE` halfwords the `0x4000` sprite arm reads.
+            state.set_actor_u32(0xA0, packed_word(read(2), read(3), read(4)));
             for (n, off) in [
-                (5, 0x18u16),
-                (6, 0x1A),
-                (7, 0x04),
-                (8, 0x06),
-                (9, 0xFC),
-                (10, 0xFE),
-                (11, 0x00),
-                (12, 0x02),
+                (5, 0xB4),
+                (6, 0xB6),
+                (7, 0xB0),
+                (8, 0xB2),
+                (9, 0xA8),
+                (10, 0xAA),
+                (11, 0xAC),
+                (12, 0xAE),
             ] {
-                state.anim_block_u16_set(off as usize, read(n));
+                state.set_actor_u16(off, read(n));
             }
             size = 0xD;
         }
@@ -379,9 +390,9 @@ pub fn step<H: MoveHost + ?Sized>(
             let v1 = read(1) as i16;
             let v2 = read(2) as i16;
             // Shifts add v1 into +0xA8, +0xAC; v2 into +0xAA, +0xAE.
-            for (off, val) in [(0xFC, v1), (0xFE, v2), (0x00, v1), (0x02, v2)] {
-                let cur = state.anim_block_u16(off) as i16;
-                state.anim_block_u16_set(off, cur.wrapping_add(val) as u16);
+            for (off, val) in [(0xA8, v1), (0xAA, v2), (0xAC, v1), (0xAE, v2)] {
+                let cur = state.actor_u16(off) as i16;
+                state.set_actor_u16(off, cur.wrapping_add(val) as u16);
             }
             size = 3;
         }
@@ -392,8 +403,8 @@ pub fn step<H: MoveHost + ?Sized>(
         }
         // 0x26 - write 4 anim_block slots. size 5.
         0x26 => {
-            for (n, off) in [(1, 0xFCu16), (2, 0xFE), (3, 0x00), (4, 0x02)] {
-                state.anim_block_u16_set(off as usize, read(n));
+            for (n, off) in [(1, 0xA8), (2, 0xAA), (3, 0xAC), (4, 0xAE)] {
+                state.set_actor_u16(off, read(n));
             }
             size = 5;
         }
@@ -494,18 +505,23 @@ pub fn step<H: MoveHost + ?Sized>(
             state.field_74 &= !0x4000_0000u32;
             size = 1;
         }
-        // 0x34 - TWEEN_SETUP. size 9.
+        // 0x34 - TWEEN_SETUP. size 9. Arm 0x80023B64 (jump-table word
+        // 0x80010848) stores every operand through `s4 = actor + 0x90`: the
+        // `lh` operands go out as sign-extended **words** (`sw`), the `lhu`
+        // ones as halfwords. Word stores: op[1] -> +0xAC, op[5] -> +0x9C,
+        // op[6] -> +0xA0, op[7] -> +0xA4, op[8] -> +0xA8; halfwords: op[2] ->
+        // +0xB0, op[3] -> +0x90, op[4] -> +0x92.
         0x34 => {
-            state.anim_block_u16_set(0x00, read(1)); // +0xAC
-            state.anim_block_u16_set(0x04, read(2)); // +0xB0
+            let word = |n: usize| read(n) as i16 as i32 as u32;
+            state.set_actor_u32(0xAC, word(1));
+            state.set_actor_u16(0xB0, read(2));
             state.tween_src_x = read(3) as i16;
             state.tween_src_y = read(4) as i16;
-            state.field_9c = read(5) as i16 as i32;
-            state.field_a8 = read(6) as i16 as i32;
-            state.anim_block_u16_set(0xF8, read(7));
-            // Original writes `(int) op[8]` at +0xA8 - we update field_a8 too
-            // since the slot overlaps; for the test surface we treat it as
-            // the 32-bit value.
+            // A word store at +0x9C also writes +0x9E (the sign half).
+            state.set_actor_u32(0x9C, word(5));
+            state.set_actor_u32(0xA0, word(6));
+            state.set_actor_u32(0xA4, word(7));
+            state.set_actor_u32(0xA8, word(8));
             size = 9;
         }
         // 0x35 - WORLD_INC_VARIANT2. size 3.
@@ -601,23 +617,30 @@ pub fn step<H: MoveHost + ?Sized>(
             state.anim_block_u16_set(0x06, read(1));
             size = 2;
         }
-        // 0x42 - anim_block init variant. size 0xF.
+        // 0x42 - draw-kind-4 ribbon node (`+0x9E | 0x2000`). size 0xF.
         0x42 => {
             state.move_substate = 4;
             state.move_submode = 2;
             state.flags &= 0xFFFF_FFFD;
             state.field_9e = read(1) | 0x2000;
+            // Arm `0x80023F94..0x80024058` (`s1 = actor + 0x80`): `+0x9C = v2`,
+            // `+0xC8 = v3` (no shift, unlike op `0x13`), `+0xB4..+0xBA =
+            // v4..v7`, `+0xA8 = v8`, and the two packed colour words `+0xA0` /
+            // `+0xA4` from `v9..v11` / `v12..v14` - every field the ribbon
+            // emitter `FUN_801CFA48` reads off the actor.
             for (n, off) in [
-                (2, 0xF8u16),
-                (3, 0xC4),
-                (4, 0x08),
-                (5, 0x0A),
-                (6, 0x0C),
-                (7, 0x0E),
-                (8, 0xFC),
+                (2, 0x9C),
+                (3, 0xC8),
+                (4, 0xB4),
+                (5, 0xB6),
+                (6, 0xB8),
+                (7, 0xBA),
+                (8, 0xA8),
             ] {
-                state.anim_block_u16_set(off as usize, read(n));
+                state.set_actor_u16(off, read(n));
             }
+            state.set_actor_u32(0xA0, packed_word(read(9), read(10), read(11)));
+            state.set_actor_u32(0xA4, packed_word(read(12), read(13), read(14)));
             size = 0xF;
         }
         // 0x43 - `actor[+0x86] |= 0x2000`. size 1.
@@ -792,4 +815,57 @@ pub fn decrement_wait_timer(state: &mut ActorState, delta: u16) {
     // Retail uses unsigned subtraction with `ushort` truncation. The
     // wrapping i16 sub gives the same bytewise result.
     state.wait_timer = state.wait_timer.wrapping_sub(delta as i16);
+}
+
+/// The part tick's **channel integration** for render modes `2` and `6` - the
+/// block of `FUN_80021DF4` right after the `+0x22` spin (`0x80021E78..0x80021FA0`,
+/// taken when `actor[+0x5A]` is `2` or `6`, with `s6 = actor + 0x80`).
+///
+/// Five halfword channels step by their rate halfwords, each rate scaled by the
+/// two scratchpad speed bytes and shifted `>> 6`:
+///
+/// ```text
+///   +0xB4 += (s16 +0xC0 * DAT_1F800393 * DAT_1F80037D) >> 6
+///   +0xB6 += (s16 +0xC2 * ...) >> 6
+///   +0xB8 += (s16 +0xC4 * ...) >> 6
+///   +0xBA += (s16 +0xC6 * ...) >> 6
+///   +0xC8 += (s16 +0xCA * ...) >> 6;  if (s16)+0xC8 < 0 then +0xC8 = 0
+/// ```
+///
+/// `delta` is the product of the two speed bytes, the same factor
+/// [`decrement_wait_timer`] takes. On a draw-kind-4 ribbon node (move-VM op
+/// `0x42`) the channels are the emitter's radius, step length, RNG seed, turn
+/// rate and step total, so `+0xC8` growing is what extends a bolt over its
+/// life; the clamp keeps a shrinking one from wrapping.
+///
+/// PORT: FUN_80021DF4 (`0x80021E78..0x80021FA0`, the mode-`2`/`6` channel block)
+pub fn integrate_draw_channels(state: &mut ActorState, delta: u16) {
+    if state.move_submode != 2 && state.move_submode != 6 {
+        return;
+    }
+    let delta = i32::from(delta);
+    for (dst, rate) in [
+        (0xB4, 0xC0),
+        (0xB6, 0xC2),
+        (0xB8, 0xC4),
+        (0xBA, 0xC6),
+        (0xC8, 0xCA),
+    ] {
+        let step = (i32::from(state.actor_u16(rate) as i16).wrapping_mul(delta)) >> 6;
+        let v = state.actor_u16(dst).wrapping_add(step as u16);
+        state.set_actor_u16(dst, v);
+    }
+    if (state.actor_u16(0xC8) as i16) < 0 {
+        state.set_actor_u16(0xC8, 0);
+    }
+}
+
+/// The 24-bit packed word ops `0x13` / `0x23` / `0x42` build from three
+/// operands: each is loaded **sign-extended** (`lh`) and the three are summed
+/// as `a + (b << 8) + (c << 16)` with no masking, so a negative operand
+/// borrows from the byte above it exactly as retail's `addu` chain does.
+fn packed_word(a: u16, b: u16, c: u16) -> u32 {
+    let (a, b, c) = (a as i16 as i32, b as i16 as i32, c as i16 as i32);
+    a.wrapping_add(b.wrapping_shl(8))
+        .wrapping_add(c.wrapping_shl(16)) as u32
 }

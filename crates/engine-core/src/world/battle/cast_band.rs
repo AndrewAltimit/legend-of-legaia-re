@@ -403,6 +403,7 @@ impl World {
         // starts from zero for the same reason.
         self.casting.module_nighto_outcome = None;
         self.casting.module_ring_angle = 0;
+        self.casting.module_swordie = Default::default();
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,
@@ -474,6 +475,85 @@ impl World {
                 channel: req.channel,
                 duration_sectors: req.duration_sectors,
             });
+        }
+    }
+
+    /// Every cast-voice clip `spell_id`'s module can raise - the
+    /// [`Self::emit_cast_module_voice`] resolution without its gates or its
+    /// coin flip: a literal head cue gives one request, a random one
+    /// (`base + rand() % span`, PROT 0936 / 0937) one per candidate. Empty
+    /// when the module, its head cue or the span table is missing.
+    pub(in crate::world) fn cast_module_voice_candidates(
+        &self,
+        spell_id: u8,
+    ) -> Vec<crate::sfx_cue::XaVoiceClip> {
+        let Some(entry) = self.cast_module_for(spell_id) else {
+            return Vec::new();
+        };
+        let Some(module) = self
+            .casting
+            .effect_pool
+            .as_ref()
+            .and_then(|pool| pool.module(entry))
+        else {
+            return Vec::new();
+        };
+        let ids: Vec<u16> = match vm::battle_cast_cue::module_head_cue(&module.bytes) {
+            Some(vm::battle_cast_cue::ModuleHeadCue::Literal(id)) => vec![id],
+            Some(vm::battle_cast_cue::ModuleHeadCue::Random { base, span }) => {
+                (0..u16::from(span.max(1)))
+                    .map(|k| base.wrapping_add(k))
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+        let open = vm::battle_cast_cue::VoiceCueGates {
+            side_band_stage: 0,
+            clip_span_left: 0,
+        };
+        ids.into_iter()
+            .filter_map(|id| {
+                let raw = self
+                    .audio
+                    .xa_cue_durations
+                    .as_deref()
+                    .and_then(|t| t.get(usize::from(id).wrapping_sub(0x100)).copied());
+                match vm::battle_cast_cue::admit_voice_cue(id, open, raw) {
+                    vm::battle_cast_cue::VoiceCueVerdict::Play(req) => {
+                        Some(crate::sfx_cue::XaVoiceClip {
+                            clip: req.clip_slot,
+                            channel: req.channel,
+                            duration_sectors: req.duration_sectors,
+                        })
+                    }
+                    _ => None,
+                }
+            })
+            .collect()
+    }
+
+    /// List the cast voices the round's committed party spells may raise onto
+    /// [`crate::world::AudioState::battle_xa_prestage`] - called at the
+    /// round's start, before the first action dispatches.
+    pub fn list_round_cast_voices(&mut self) {
+        let spells: Vec<u8> = self
+            .battle
+            .round_flow
+            .pending
+            .iter()
+            .filter_map(|p| match p {
+                Some(crate::battle_round::PendingPartyAction::Spell { spell_id, .. }) => {
+                    Some(*spell_id)
+                }
+                _ => None,
+            })
+            .collect();
+        for spell in spells {
+            for clip in self.cast_module_voice_candidates(spell) {
+                if !self.audio.battle_xa_prestage.contains(&clip) {
+                    self.audio.battle_xa_prestage.push(clip);
+                }
+            }
         }
     }
 
@@ -728,6 +808,7 @@ impl World {
         }
         self.casting.module_phase = 0;
         self.casting.module_ctx_278 = 0;
+        self.casting.module_swordie = Default::default();
         self.casting.capture_spell = Some(spell_id);
         self.emit_cast_module_voice(spell_id);
     }
@@ -2028,10 +2109,31 @@ impl World {
                 let (step, sweep) = seru::viguro_tick(ctx, seats, caster_slot, summon_slot, |_| 0);
                 (step, lift(&sweep.hits))
             }
-            910 => (
-                seru::swordie_tick(ctx, seats, summon_slot, victim_slot, FRAME_DELTA),
-                Vec::new(),
-            ),
+            // PROT 0910 paces its strike on two timers - arm 7's wind-up and
+            // arm 9's staggered slashes - built from the frame step
+            // (`0x1F800393`) and the speed scalar (`0x1F80037D`), so the slash
+            // reactions land on retail's cadence. Each of the four landings
+            // runs `swordie_slash_step` with a neutral wrapper return: the
+            // clamp, the hit counter and the per-slash reaction clip are
+            // live, the HP outcome stays the fold's.
+            910 => {
+                let clock = seru::SwordieClock {
+                    rate: self.clock.frame_step.max(1),
+                    speed: FRAME_DELTA,
+                };
+                let mut slashes = self.casting.module_swordie;
+                let (step, hits) = seru::swordie_tick(
+                    ctx,
+                    seats,
+                    summon_slot,
+                    victim_slot,
+                    &mut slashes,
+                    clock,
+                    |_| 0,
+                );
+                self.casting.module_swordie = slashes;
+                (step, lift(&hits))
+            }
             911 => {
                 let maxes: Vec<u16> = self.actors.iter().map(|a| a.battle.max_hp).collect();
                 // Spell id for a `cast_seru_ticks_b` entry: the player

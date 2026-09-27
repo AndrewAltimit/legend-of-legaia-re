@@ -568,17 +568,38 @@ impl TileBoard {
 
     /// Attempt a one-cell step in `dir`. On success, commit the player
     /// cell to the destination (matching retail's `DAT_801f35c8/cc =`
-    /// at decision time) and return the destination's world-position
-    /// target the actor interpolates toward. Returns `None` when the
-    /// step is blocked - the player stays put.
+    /// at decision time) and return the world-position target the actor
+    /// interpolates toward. Returns `None` when the step is blocked - the
+    /// player stays put.
+    ///
+    /// The target is the destination cell's centre, except onto an **event
+    /// cell** ([`CELL_EVENT_FIRST`]`..=`[`CELL_EVENT_LAST`]): there retail
+    /// pulls the target back by half the step, so the walker stops on the
+    /// edge between the two cells (`0x801EFA0C..0x801EFA70` in
+    /// `FUN_801EF2B0`). Per axis it takes
+    /// `delta = ((origin + new) << 7) - ((origin + old) << 7)` and subtracts
+    /// `(delta << 2) >> 3` - an arithmetic half - from the centre. The
+    /// player cell is still committed to the event cell, as retail's store
+    /// at `0x801EFA74..0x801EFA80` does after the pull-back.
     pub fn try_step(&mut self, dir: TileStep) -> Option<(i32, i32)> {
         let (col, row) = self.neighbor(dir);
         if self.is_blocked(col, row) {
             return None;
         }
+        let (old_col, old_row) = (i32::from(self.player_col), i32::from(self.player_row));
+        let (mut x, mut z) = self.tile_world(col, row);
+        let value = self.cell(col, row).unwrap_or(0);
+        if (CELL_EVENT_FIRST..=CELL_EVENT_LAST).contains(&value) {
+            let half = |origin: u8, new: i32, old: i32| {
+                let delta = ((i32::from(origin) + new) << 7) - ((i32::from(origin) + old) << 7);
+                delta.wrapping_shl(2) >> 3
+            };
+            x -= half(self.origin_x, col, old_col);
+            z -= half(self.origin_z, row, old_row);
+        }
         self.player_col = col as u8;
         self.player_row = row as u8;
-        Some(self.tile_world(col, row))
+        Some((x, z))
     }
 }
 
@@ -761,6 +782,30 @@ mod tests {
         let target = b.try_step(TileStep::Right);
         assert_eq!((b.player_col, b.player_row), (1, 0));
         assert_eq!(target, Some(b.tile_world(1, 0)));
+    }
+
+    #[test]
+    fn a_step_onto_an_event_cell_stops_on_the_shared_edge() {
+        // 3x1 board: floor, floor, event cell 9.
+        let mut b = TileBoard::new(3, 1, 10, 20, vec![1, 1, 9]);
+        b.player_col = 1;
+        let (cx, cz) = b.tile_world(2, 0);
+        let got = b
+            .try_step(TileStep::Right)
+            .expect("floor-to-event step is open");
+        assert_eq!(
+            got,
+            (cx - 64, cz),
+            "half a tile short of the event cell's centre"
+        );
+        assert_eq!(
+            (b.player_col, b.player_row),
+            (2, 0),
+            "the cell still commits"
+        );
+        // Stepping back off it onto plain floor targets that cell's centre.
+        let back = b.try_step(TileStep::Left).unwrap();
+        assert_eq!(back, b.tile_world(1, 0));
     }
 
     #[test]

@@ -38,6 +38,12 @@ use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 struct DialogSnapshot {
     /// Current typed-out page, `|` (0x7C) separating rows.
     page: String,
+    /// Whole pixels the rows draw above their slots (the pager window's
+    /// scroll, `<= 0`).
+    scroll_px: i32,
+    /// The pager window's height in rows (`None` for the plain-MES panel);
+    /// also the text clip band.
+    box_rows: Option<usize>,
     options: Vec<String>,
     cursor: usize,
     waiting: bool,
@@ -87,6 +93,8 @@ fn from_panel(
     };
     Some(DialogSnapshot {
         page,
+        scroll_px: panel.scroll_px(),
+        box_rows: panel.box_rows(),
         options,
         cursor,
         // The advance hand shows at a page break AND on the final fully-typed
@@ -95,9 +103,10 @@ fn from_panel(
     })
 }
 
-/// Retail reading-box + picker centre rects for a page of `page_lines` rows
-/// and `options` picker entries (`0` = no picker) - the same literal geometry
-/// as the native window's `dialog_stage_layout`:
+/// Retail reading-box + picker centre rects for a box of `page_lines` rows
+/// ([`ui::dialog_reading_box_lines`]) and `options` picker entries (`0` = no
+/// picker) - the same literal geometry as the native window's
+/// `dialog_stage_layout`:
 ///
 /// - main box `(0x26, 0x10, 0xF4, lines*0xF - 3)`, `lines` clamped 3..=4
 ///   (retail's standard box is always 3 rows, `_DAT_801F2740 = 3`);
@@ -120,8 +129,10 @@ pub fn dialog_reading_box_layout(
 }
 
 fn dialog_stage_layout(snap: &DialogSnapshot) -> DialogStageLayout {
-    let (main, picker) =
-        dialog_reading_box_layout(snap.page.split('|').count(), snap.options.len());
+    let (main, picker) = dialog_reading_box_layout(
+        ui::dialog_reading_box_lines(&snap.page, snap.box_rows) as usize,
+        snap.options.len(),
+    );
     DialogStageLayout { main, picker }
 }
 
@@ -306,15 +317,16 @@ impl LegaiaRuntime {
         }
 
         let (bx, by, _, _) = lay.main;
-        // Main text: one row per 0x7C-separated line at the retail 15-px
-        // pitch, pen at the box origin exactly, staged CLUT-7 white ink.
-        for (i, line) in snap.page.split('|').enumerate() {
-            texts.extend(ui::text_draws_for(
-                &font.layout_ascii(line),
-                (bx, by + i as i32 * 0xF),
-                ui::MENU_TEXT_WHITE,
-            ));
-        }
+        // Main text: the pager's row window at the retail 15-px pitch from
+        // the box origin, offset by its scroll and clipped to the rows band
+        // - the native window's builder.
+        texts.extend(ui::dialog_reading_box_text_draws_for(
+            font,
+            &snap.page,
+            (bx, by),
+            snap.scroll_px,
+            snap.box_rows,
+        ));
         // Option-picker labels: CLUT-7 white at box_x + 0x10, 15-px pitch;
         // the hand sprite marks the selection. Keep a text `>` marker only
         // when the chrome atlas is missing (PROT.DAT-only load).

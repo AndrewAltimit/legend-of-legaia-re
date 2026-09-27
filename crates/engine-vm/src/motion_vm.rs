@@ -672,13 +672,15 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
 ///
 /// PORT: FUN_8003BC08 (the `0x8003BCA8..0x8003BCF4` height-clamp arm)
 ///
-/// NOT WIRED: nothing calls **this function**, and that is now a naming
-/// artefact rather than a gap in the behaviour. The law it implements is
-/// live: `World::step_field_vertical` runs the same clamped step against
-/// `World::sample_field_floor_height` (the port of `FUN_80019278`) for the
-/// player every field frame, at retail's own `scalar * 12` rate. What is
-/// still unwired is [`field_actor_plan`] selecting the arm *per NPC*, which
-/// needs the flag word field NPCs do not carry - see the disclosure there.
+/// NOT WIRED: nothing calls **this function**. The same clamped step is live
+/// for the player - `World::step_field_vertical` runs it against
+/// `World::sample_field_floor_height` (the port of `FUN_80019278`) every
+/// field frame, but that is the field overlay's settle `FUN_801D1BA0`
+/// (`0x801D1C30..0x801D1C68`, rate `scalar * 12`), a different routine with
+/// its own rate. The per-NPC height arm this belongs to is decided by
+/// [`field_actor_plan`] (now live as the ambient VM's gate) and applied to no
+/// NPC: field NPCs have no per-frame Y write, and giving them one changes
+/// where every NPC stands, so it lands with the field oracles.
 pub fn rotate_toward_clamped(current: i16, target: i16, rate: i32) -> i16 {
     let mut delta = i32::from(target) - i32::from(current);
     if delta > rate {
@@ -731,7 +733,7 @@ pub enum FieldActorHeight {
     /// `flags & 0x2000`: glide toward the sampled ground height, at most
     /// `rate` per frame - feed the sample and the current `+0x16` to
     /// [`rotate_toward_clamped`], whose clamped-delta step applies unchanged.
-    /// `rate = pad_held * 6`.
+    /// `rate = frame_step * 6`.
     GlideToFloor { rate: i32 },
 }
 
@@ -747,9 +749,10 @@ pub struct FieldMotionDispatch {
     /// `flags & 0x400` -> the pursue / patrol motion VM ported in this
     /// module ([`step`], retail `FUN_8003774C`).
     pub run_pursue: bool,
-    /// `dialog_idle && scripted_present && !(flags & 8)` -> the scripted
-    /// motion VM `FUN_80038158`. `dialog_idle` is `*(_DAT_801C6EA4 + 8) == 0`
-    /// (no modal window open); `scripted_present` is `+0x80 != 0`.
+    /// `scene_guard_clear && scripted_present && !(flags & 8)` -> the
+    /// scripted motion VM `FUN_80038158` (`0x8003BD5C..0x8003BD98`).
+    /// `scene_guard_clear` is `*(u16 *)(_DAT_801C6EA4 + 8) == 0`;
+    /// `scripted_present` is `+0x80 != 0`.
     pub run_scripted: bool,
     /// `lifetime > 0 || flags & 0x1000` -> the move-table consumer
     /// `FUN_800204F8`.
@@ -793,11 +796,24 @@ pub struct FieldActorInputs {
     /// `_DAT_8007B6A8 != 0` - the ambient-facing enable that lets a
     /// non-target actor still face-update.
     pub ambient_gate: bool,
-    /// `_DAT_1F800393` - per-frame pad-held magnitude; the rotate rate is
-    /// this times six.
-    pub pad_held: u8,
-    /// `*(_DAT_801C6EA4 + 8) == 0` - no modal window / dialog open.
-    pub dialog_idle: bool,
+    /// `_DAT_1F800393` - the frame-step scalar (vsyncs per game tick); the
+    /// glide rate is this times six (`0x8003BCA8..0x8003BCC0`).
+    pub frame_step: u8,
+    /// `*(u16 *)(_DAT_801C6EA4 + 8) == 0` - the scene record's **bracket
+    /// guard** is clear.
+    ///
+    /// This was read as "no modal window / dialog open", and no writer
+    /// supports that. Every writer a sweep of the dump corpus finds (a store
+    /// at `+8` through a register loaded from `0x801C6EA4`), re-read in the
+    /// image's own bytes, is one of two brackets, each setting it to `1`
+    /// before a call and back to `0` after: the scene-init
+    /// bind sweep `FUN_8003AEB0` (`0x8003B73C` / `0x8003B928`), and the field
+    /// VM around its script-context spawn calls (`0x801E2820` / `0x801E282C`
+    /// around `jal 0x8003CF7C`, `0x801E2BBC` / `0x801E2BD8` around
+    /// `jal 0x8003A1E4`, PROT 0897 at base `0x801CE818`). Nothing holds it
+    /// across a frame boundary, so between frames the scripted VM's gate is
+    /// open - a dialogue does not close it.
+    pub scene_guard_clear: bool,
     /// `_DAT_1F800394 & 0x400 != 0` - global motion-suppress freeze.
     pub global_suppress: bool,
 }
@@ -815,23 +831,16 @@ pub struct FieldActorInputs {
 ///
 /// PORT: FUN_8003BC08
 ///
-/// NOT WIRED: every input this plan branches on is a bit of the retail
-/// per-actor flag word `+0x10`, and the actors this plan is *for* do not
-/// carry one. Note what that does **not** say: the flag word itself exists -
-/// [`crate::move_vm::ActorState::flags`] is `+0x10` and `engine-core` tests
-/// its bits on pool actors in production (`0x80000` movement-disable in the
-/// locomotion and vertical controllers, `0x2000` slow-fall). The gap is that
-/// **field NPCs are not pool actors**: `World` keys them by placement slot
-/// across typed maps - positions, in-flight walk legs, ambient facing
-/// channels, default-move pairs, glide speeds - and decides what to run from
-/// which map a slot appears in, so a village NPC has no `ActorState` to read
-/// `0x2` / `0x2000` / `0x20000000` / `0x100` / `0x400` / `0x8` / `0x1000`
-/// off. Its NPC tick therefore calls [`step`] directly with a MAN-decoded
-/// program rather than asking this driver first. Wiring means promoting
-/// field NPCs to actor records (or giving the maps a typed equivalent per
-/// predicate) and routing the tick through the plan - which changes which
-/// NPCs move on a given frame, so it lands with the field oracles, not as a
-/// call insertion.
+/// Wired as the gate on the ambient motion VM: `World::tick_field_npc_ambient`
+/// (reached from `World::tick`'s field arm on both play hosts) builds one
+/// plan per ambient channel off the channel's own `+0x10` word
+/// (`AmbientMotion::actor_flags`) and the scratchpad word it carries
+/// (`_DAT_1F800394`), and steps `FUN_80038158`'s op loop only when
+/// [`FieldMotionDispatch::run_scripted`] says so. The other outputs have no
+/// per-NPC consumer yet: field NPCs keep their Y, pursue legs and clips in
+/// typed per-slot maps rather than on an actor record, so the height arm, the
+/// spline / pursue arms and the move-table arm are decided here and not
+/// applied.
 ///
 /// REF: FUN_80019278 (the bilinear ground-height sampler both floor arms
 /// write; **not** a bearing-to-target - see [`FieldActorHeight`]),
@@ -849,7 +858,7 @@ pub fn field_actor_plan(inp: FieldActorInputs) -> FieldActorPlan {
         FieldActorHeight::SnapToFloor
     } else {
         FieldActorHeight::GlideToFloor {
-            rate: i32::from(inp.pad_held) * 6,
+            rate: i32::from(inp.frame_step) * 6,
         }
     };
 
@@ -859,7 +868,7 @@ pub fn field_actor_plan(inp: FieldActorInputs) -> FieldActorPlan {
         FieldMotionDispatch {
             run_spline: inp.flags & 0x100 != 0 && inp.path_target_present,
             run_pursue: inp.flags & 0x400 != 0,
-            run_scripted: inp.dialog_idle && inp.scripted_present && inp.flags & 8 == 0,
+            run_scripted: inp.scene_guard_clear && inp.scripted_present && inp.flags & 8 == 0,
             run_move_table: inp.lifetime > 0 || inp.flags & 0x1000 != 0,
         }
     };
@@ -896,8 +905,8 @@ mod tests {
             path_target_present: false,
             scripted_present: false,
             ambient_gate: false,
-            pad_held: 0,
-            dialog_idle: true,
+            frame_step: 0,
+            scene_guard_clear: true,
             global_suppress: false,
         }
     }
@@ -975,11 +984,11 @@ mod tests {
             FieldActorHeight::Hold
         );
         // 0x2000 with a target bit (0x200) switches to the clamped ramp;
-        // rate = pad_held * 6.
+        // rate = frame_step * 6.
         assert_eq!(
             field_actor_plan(FieldActorInputs {
                 flags: 0x2000 | 0x200,
-                pad_held: 4,
+                frame_step: 4,
                 ..inputs()
             })
             .height,
@@ -1013,10 +1022,10 @@ mod tests {
             ..inputs()
         });
         assert!(!plan.dispatch.run_scripted);
-        // A modal window (dialog not idle) also suppresses it.
+        // A held scene bracket guard also suppresses it.
         let plan = field_actor_plan(FieldActorInputs {
             scripted_present: true,
-            dialog_idle: false,
+            scene_guard_clear: false,
             ..inputs()
         });
         assert!(!plan.dispatch.run_scripted);

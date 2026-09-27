@@ -548,6 +548,37 @@ impl LegaiaRuntime {
                 model,
             });
         }
+        // Effect ribbons (move-VM op `0x42` nodes): the emitter's per-frame
+        // mesh, composed like a part (the native redraw pushes the same list
+        // after its part draws) and baked into the billboard stream, whose
+        // positions are already in the page's 4x-scaled world space.
+        for rb in world.active_effect_ribbons() {
+            let model = mat_mul(
+                &world_scale,
+                &mat_mul(
+                    &fx_translate(rb.world_pos),
+                    &mat_mul(
+                        &fx_rot_y(rb.rot[1]),
+                        &mat_mul(&fx_rot_x(rb.rot[0]), &mat_mul(&fx_rot_z(rb.rot[2]), &flip)),
+                    ),
+                ),
+            );
+            let base = (frame.positions.len() / 3) as u32;
+            let m = &rb.mesh;
+            for (i, p) in m.positions.iter().enumerate() {
+                let w = [
+                    model[0] * p[0] + model[4] * p[1] + model[8] * p[2] + model[12],
+                    model[1] * p[0] + model[5] * p[1] + model[9] * p[2] + model[13],
+                    model[2] * p[0] + model[6] * p[1] + model[10] * p[2] + model[14],
+                ];
+                frame.positions.extend_from_slice(&w);
+                frame.uvs.extend_from_slice(&m.uvs[i]);
+                frame.cba_tsb.extend_from_slice(&m.cba_tsb[i]);
+                let c = m.colors[i];
+                frame.flat.extend_from_slice(&[c[0], c[1], c[2], 255]);
+            }
+            frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
+        }
         self.battle_fx = frame;
     }
 

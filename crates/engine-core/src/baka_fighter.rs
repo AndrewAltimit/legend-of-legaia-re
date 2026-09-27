@@ -297,6 +297,10 @@ pub struct StrikeClock {
 /// every frame (`0x801D4780..0x801D47CC`) - the special plays in slow motion.
 pub const STRIKE_RATE_DIVISOR: i32 = 8;
 
+/// The cameo's clip step: its animator forces `+0x6A = 8` every frame
+/// (`0x801D6320..0x801D632C`) - half a frame per tick.
+pub const CAMEO_STEP: i32 = 8;
+
 /// The three ANM record header fields the clip selector `FUN_800204F8` and
 /// the afterimage read off a fighter's clip record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -575,6 +579,45 @@ pub struct BakaFight {
     afterimage_frames: Vec<(usize, crate::baka_fighter_chrome::AfterimageFrame)>,
     /// Every roster fighter's clip headers, when a host staged them.
     roster_clips: Option<std::sync::Arc<Vec<ClipHeaders>>>,
+    /// Each seat's display clip (actor `+0x5C` / `+0x68`), stepped every
+    /// tick by [`Self::tick_presentation`].
+    motion: [crate::baka_duel_scene::FighterMotion; 2],
+    /// The arena camera.
+    camera: crate::baka_duel_scene::DuelCamera,
+    /// Each seat's roster `+0x44` stand-off (`0` for a bare-config fight).
+    stand_off: [i32; 2],
+    /// Each seat's Z off the duel line (the result close-up's step).
+    stand_z: [i32; 2],
+    /// The player's special-commit camera glides, by party fighter.
+    special_cameras: Vec<[i16; 20]>,
+    /// The packed held pad word (`_DAT_8007B850`) the host handed over for
+    /// the next tick ([`Self::set_held_pad`]).
+    held_pad: u16,
+    /// A round setup (cabinet state `0x32`) is due on the next presentation
+    /// tick - the first round's and every later one's.
+    setup_pending: bool,
+    /// The round-start cameo's actor, while it walks: its phase `+0x22` and
+    /// the clip cursor `+0x68` its clip selector advances.
+    cameo: Option<CameoActor>,
+}
+
+/// The round-start cameo actor (`FUN_801D6310`'s record): its phase and the
+/// clip cursor under the clip it is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CameoActor {
+    /// `+0x22`.
+    pub phase: i16,
+    /// `+0x68`, 1/16 frame.
+    pub cursor: i32,
+    /// `+0x5C` the cursor belongs to.
+    pub clip: i16,
+}
+
+impl CameoActor {
+    /// This frame's pose ([`crate::baka_fighter_chrome::cameo_pose`]).
+    pub fn pose(&self) -> Option<crate::baka_fighter_chrome::CameoPose> {
+        crate::baka_fighter_chrome::cameo_pose(self.phase)
+    }
 }
 
 /// The two per-round score-bonus tables the overlay carries as rodata: the
@@ -679,6 +722,14 @@ impl BakaFight {
             afterimages: Vec::new(),
             afterimage_frames: Vec::new(),
             roster_clips: None,
+            motion: Default::default(),
+            camera: Default::default(),
+            stand_off: [0; 2],
+            stand_z: [0; 2],
+            special_cameras: Vec::new(),
+            held_pad: 0,
+            setup_pending: true,
+            cameo: None,
         }
     }
 
@@ -724,6 +775,59 @@ impl BakaFight {
         self.rate_divisor
     }
 
+    /// A seat's display clip ([`crate::baka_duel_scene::FighterMotion`]).
+    pub fn motion(&self, slot: usize) -> crate::baka_duel_scene::FighterMotion {
+        self.motion[slot & 1]
+    }
+
+    /// The arena camera.
+    pub fn duel_camera(&self) -> &crate::baka_duel_scene::DuelCamera {
+        &self.camera
+    }
+
+    /// Stage the player's special-commit camera glides
+    /// ([`crate::baka_duel_scene::parse_special_cameras`]). Without them a
+    /// player special leaves the camera where it is.
+    pub fn with_special_cameras(mut self, rows: Vec<[i16; 20]>) -> Self {
+        self.special_cameras = rows;
+        self
+    }
+
+    /// Hand the duel this frame's **packed** held pad word (`_DAT_8007B850`,
+    /// Legaia's layout). Its one reader is the round setup's cameo test
+    /// (`0x801D0190..0x801D01C4`): Triangle held (`0x10`) at a round setup
+    /// sends the ring girl on.
+    pub fn set_held_pad(&mut self, packed: u16) {
+        self.held_pad = packed;
+    }
+
+    /// The round-start cameo, while it is on stage.
+    pub fn cameo(&self) -> Option<CameoActor> {
+        self.cameo
+    }
+
+    /// The roster id in the player seat.
+    pub fn player_roster(&self) -> usize {
+        self.cfg[0].roster_id
+    }
+
+    /// A seat's world position: the round setup stands the player at
+    /// `X = -(stand_off + 200)` and the opponent at `+(stand_off + 200)`, on
+    /// the `Y = Z = 0` duel line (`0x801D005C..0x801D00F4`).
+    pub fn fighter_position(&self, slot: usize) -> [f32; 3] {
+        let x = (self.stand_off[slot & 1] + 200) as f32;
+        let z = self.stand_z[slot & 1] as f32;
+        [if slot & 1 == 0 { -x } else { x }, 0.0, z]
+    }
+
+    /// A seat's yaw: the combat tick writes `+0x26 = 0x400` while the block's
+    /// facing word `+0x28` is clear and `-0x400` while it is set
+    /// (`0x801D4070..0x801D4084`); the round setup clears it for the player
+    /// and sets it for the opponent (`0x801CFFF8` / `0x801CFFFC`).
+    pub fn fighter_yaw(&self, slot: usize) -> i32 {
+        if slot & 1 == 0 { 0x400 } else { -0x400 }
+    }
+
     /// The afterimages the last tick drew: `(owner slot, frame)` per live
     /// actor, with each ghost pass's lagged cursor and depth-cue level.
     pub fn afterimages(&self) -> &[(usize, crate::baka_fighter_chrome::AfterimageFrame)] {
@@ -735,6 +839,26 @@ impl BakaFight {
     /// (`0x801D4538..0x801D4634`).
     fn commit(&mut self, slot: usize, attack: BakaAttack) {
         self.f[slot].clock.commit();
+        // The clip store: `+0x5C` = the attack's display id, `+0x68 = 0`
+        // (`0x801D44D8` / `0x801D44DC`), held on its last frame only for the
+        // special (`ori v0,v0,0x8` at `0x801D4640`).
+        self.motion[slot].play(
+            StrikeTable::action_of(attack),
+            attack == BakaAttack::Special,
+        );
+        if attack == BakaAttack::Special && self.strike.is_some() {
+            // The special's camera glide (`0x801D4644..0x801D4740`): the
+            // player's row of the per-fighter table, the opponent's fixed
+            // record.
+            let record = if slot == 0 {
+                self.special_cameras.get(self.cfg[0].roster_id).copied()
+            } else {
+                Some(crate::baka_duel_scene::OPPONENT_SPECIAL_GLIDE)
+            };
+            if let Some(r) = record {
+                self.camera.arm_glide(&r);
+            }
+        }
         if attack == BakaAttack::Special
             && let Some(st) = self.strike.as_ref()
         {
@@ -814,7 +938,14 @@ impl BakaFight {
                 }
             }
         }
+        if let Some(opp) = self.tables.as_ref().and_then(|t| t.0.get(roster)) {
+            self.stand_off[1] = i32::from(opp.stand_off);
+        }
         self.f = [FighterState::new(), FighterState::new()];
+        self.motion = Default::default();
+        self.stand_z = [0; 2];
+        self.camera.round_setup();
+        self.setup_pending = true;
         self.round = 0;
         self.rate_divisor = STRIKE_RATE_DIVISOR;
         self.afterimages.clear();
@@ -980,6 +1111,10 @@ impl BakaFight {
         let mut fight = Self::new(p, o, kf, seed)
             .with_action_tables(actions.to_vec())
             .with_strike_tables(strike);
+        fight.stand_off = [
+            i32::from(opponents[player_roster].stand_off),
+            i32::from(opponents[opponent_roster].stand_off),
+        ];
         fight.tables = Some(std::sync::Arc::new((opponents.to_vec(), actions.to_vec())));
         Some(fight)
     }
@@ -1338,6 +1473,85 @@ impl BakaFight {
     /// this frame's edge-triggered face-button test (`_DAT_8007b874 & 0xf0`),
     /// which snaps the end-of-match tally to its end state.
     pub fn tick_with_input(&mut self, frame_step: i32, face_button: bool) {
+        self.tick_rules(frame_step, face_button);
+        self.tick_presentation(frame_step);
+    }
+
+    /// The fighters' display clips and the arena camera, one frame: what the
+    /// combat tick's clip store / idle reset and the clip selector do to each
+    /// fighter actor (`FUN_801D3F44`, `FUN_800204F8`), and the camera spin /
+    /// glide ([`crate::baka_duel_scene::DuelCamera`]). Nothing here feeds the
+    /// rules - the exchange books off the [`StrikeClock`].
+    fn tick_presentation(&mut self, frame_step: i32) {
+        use crate::baka_cabinet::{ST_CHOICE, ST_CHOICE_SECRET, ST_TALLY_OUT};
+        use crate::baka_duel_scene::MOTION_WIN;
+        let st = self.cabinet.state();
+        if matches!(self.phase, MatchPhase::MatchOver(0))
+            && matches!(st, ST_TALLY_OUT | ST_CHOICE | ST_CHOICE_SECRET)
+            && !self.motion[0].pinned
+        {
+            // The tally's end (state `0x66` leaving, `0x801D0A38..0x801D0AB0`,
+            // and the secret variant `0x6D` at `0x801D0FBC..0x801D1024`): the
+            // result close-up, the player's win flourish held, and Noa one
+            // step toward the camera.
+            self.camera.result_close_up(st == ST_CHOICE_SECRET);
+            self.motion[0].play(MOTION_WIN, true);
+            self.motion[0].pinned = true;
+            if self.cfg[0].roster_id == crate::baka_duel_scene::RESULT_STEP_FIGHTER {
+                self.stand_z[0] += crate::baka_duel_scene::RESULT_STEP_Z;
+            }
+        }
+        if std::mem::take(&mut self.setup_pending)
+            && crate::baka_fighter_chrome::cameo_spawns(self.held_pad)
+        {
+            // The round setup's spawn of prototype `0x801D7624` (phase and
+            // cursor zeroed by the allocator).
+            self.cameo = Some(CameoActor {
+                phase: 0,
+                cursor: 0,
+                clip: crate::baka_fighter_chrome::CAMEO_CLIP_WALK,
+            });
+        }
+        self.tick_cameo(frame_step);
+        if let Some(st) = self.strike.as_ref() {
+            for (m, t) in self.motion.iter_mut().zip(st.iter()) {
+                let r = m
+                    .record
+                    .min(legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER - 1);
+                m.step(t.speed[r], self.rate_divisor, t.clips[r], frame_step);
+            }
+        }
+        self.camera.tick(frame_step);
+    }
+
+    /// One frame of the cameo's actor: the animator's pose, the clip
+    /// selector's advance at the forced step `+0x6A = 8`, then the phase
+    /// advance by the frame step; the actor retires once the pose raises its
+    /// retire bit.
+    ///
+    /// REF: FUN_801D6310
+    fn tick_cameo(&mut self, frame_step: i32) {
+        let Some(c) = self.cameo.as_mut() else {
+            return;
+        };
+        let Some(pose) = crate::baka_fighter_chrome::cameo_pose(c.phase) else {
+            self.cameo = None;
+            return;
+        };
+        if pose.retire {
+            self.cameo = None;
+            return;
+        }
+        if pose.clip != c.clip {
+            c.clip = pose.clip;
+            c.cursor = 0;
+        }
+        c.cursor += CAMEO_STEP * frame_step;
+        c.phase = c.phase.wrapping_add(frame_step as i16);
+    }
+
+    /// The rules half of [`Self::tick_with_input`].
+    fn tick_rules(&mut self, frame_step: i32, face_button: bool) {
         // The HUD renderer latches the running maximum once per frame, so it
         // runs whatever the phase.
         if self.max_combo <= self.f[1].combo {
@@ -1369,8 +1583,12 @@ impl BakaFight {
                 self.f[0].reset_round();
                 self.f[1].reset_round();
                 // The round setup (`0x32`) restores the clip rate the
-                // special lowered (`0x801D01A4`).
+                // special lowered (`0x801D01A4`), seeds both clips back to
+                // the idle (`0x801CFFB0` / `0x801CFFC0`) and snaps the camera.
                 self.rate_divisor = STRIKE_RATE_DIVISOR;
+                self.motion = Default::default();
+                self.camera.round_setup();
+                self.setup_pending = true;
                 self.phase = MatchPhase::Fighting;
                 return;
             }
@@ -1448,6 +1666,18 @@ impl BakaFight {
                     return;
                 }
                 let (damage, critical, special_round_win) = self.apply_damage(l);
+                // The damage kernel's clip store on the struck side: the hit
+                // reaction, or the knockdown when the special's last strike
+                // landed, held on its last frame (`0x801D3C60..0x801D3CA0`).
+                self.motion[l].play(
+                    if special_round_win {
+                        crate::baka_duel_scene::MOTION_KNOCKDOWN
+                    } else {
+                        crate::baka_duel_scene::MOTION_HIT
+                    },
+                    true,
+                );
+                self.motion[l].down = special_round_win;
                 // Winner's own hit streak clears; crit flags reset; the loser
                 // rolls the comeback crit (retail: FUN_801d6660(loser)).
                 self.f[w].combo = 0;
@@ -1495,6 +1725,9 @@ impl BakaFight {
                 // Both take damage, both streaks reset, both roll comebacks.
                 let (d0, c0, _) = self.apply_damage(0);
                 let (d1, c1, _) = self.apply_damage(1);
+                for m in &mut self.motion {
+                    m.play(crate::baka_duel_scene::MOTION_HIT, true);
+                }
                 self.f[0].combo = 0;
                 self.f[1].combo = 0;
                 self.f[0].crit_pending = false;
@@ -2480,6 +2713,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_held_triangle_at_the_round_setup_sends_the_cameo_on() {
+        let mut f = fight();
+        f.set_held_pad(crate::baka_fighter_chrome::CAMEO_HOLD_MASK);
+        f.tick(1);
+        let c = f.cameo().expect("the cameo spawns on the held word");
+        assert_eq!(c.phase, 1);
+        // It walks, poses, walks off and retires by the retire phase.
+        for _ in 0..crate::baka_fighter_chrome::CAMEO_RETIRE_PHASE {
+            f.tick(1);
+        }
+        assert!(f.cameo().is_none(), "retired");
+        // No held word, no cameo.
+        let mut g = fight();
+        g.tick(1);
+        assert!(g.cameo().is_none());
+    }
+
     fn fight() -> BakaFight {
         let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), [2, 2], 1);
         f.ai_controlled = [false, false]; // deterministic: drive both by hand
@@ -3372,6 +3623,7 @@ mod tests {
             def_tiers: [0; 3],
             crit_chance: 0,
             atk_tiers: [0; 3],
+            stand_off: 0,
             ai_pattern: vec![],
         };
         let kf = |frame| BakaSubKeyframe {

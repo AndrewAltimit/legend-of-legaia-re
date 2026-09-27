@@ -217,3 +217,36 @@ fn the_ringside_pick_reads_the_lead_record_after_the_leg() {
         (Some(legaia_asset::ringside_still::PROT_INDEX_DEFAULT), 200)
     );
 }
+
+/// Leaving the arena mid-leg through the escape both hosts share (`Start`,
+/// `World::poll_minigame_escape`) is the run / give-up path: the leg is
+/// reported as ran and the contest ends with nothing paid - the same thing
+/// the native `M` hotkey did alone before the escape reported the leg.
+#[test]
+fn the_shared_escape_reports_a_left_leg_and_ends_the_contest() {
+    use legaia_engine_core::input::PadButton;
+    let mut w = world_with_contest();
+    let card = md::MuscleCard {
+        command_id: 0x0C,
+        cost: 0x1E,
+    };
+    w.enter_muscle_dome(md::MuscleDomeSession::new(
+        [card; md::HAND_SLOTS],
+        [card; md::HAND_SLOTS],
+        [120, 120],
+        [400, 400],
+        1,
+    ));
+    assert!(w.minigames.muscle_contest.is_some());
+    w.set_pad(0);
+    let _ = w.tick();
+    w.set_pad(PadButton::Start.mask());
+    let _ = w.tick();
+    assert!(w.minigames.muscle_dome.is_none(), "Start left the arena");
+    assert!(
+        w.minigames.muscle_contest.is_none(),
+        "the left leg ended the contest and it settled"
+    );
+    assert!(w.system_flag_test(md::CONTEST_GAVE_UP_FLAG));
+    assert_eq!(w.minigames.casino_coins, 0, "a give-up pays nothing");
+}

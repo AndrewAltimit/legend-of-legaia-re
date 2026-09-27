@@ -339,6 +339,31 @@ frame, and `SceneHost::route_bgm_events` hands it to either host's director.
 The raw expiry flag (`World::take_pending_sound_release`) stays for the mode
 seat's own reader.
 
+### Sub-op 8 replays an empty record
+
+Op `0x35` sub-op `8` is `FUN_80019898`, and it does not touch the field-BGM
+slot. It hands the sound-source record at `0x8007057C` to `FUN_80026478`, which
+- behind `_DAT_8007B438 == 0`, the dual-mode word and the record's `+8` active
+halfword - replays the record's sequence once (`FUN_80062880(id, 1, 1)`, the
+`SsSeqPlay` shape), raises `DAT_8007B708` and applies `_DAT_8007B910 >> 1` as
+its level; `FUN_80019898` then sets that sequence's volume to
+`(DAT_8007B6EC << 15) >> 16` through `FUN_80064890`
+(see `ghidra/scripts/funcs/80019898.txt`, `80026478.txt`).
+
+The record is a sibling of the field-BGM record `0x8007052C`: across the
+mednafen state library (98 states) its `+0xA` sequence id is always the other
+of the two ids `{1, 2}` the field-BGM record is not holding, and in 97 of the
+98 the libsnd channel record that id names (`*(0x801CD2C0 + id * 4)`) carries
+no stream - its start pointer is below RAM. The 98th has the record's `+8`
+clear, where `FUN_80026478` returns before replaying anything. A five-form and
+`gp`-relative scan finds no static reference to the record beyond
+`FUN_80019898` itself. So in every captured state the op replays nothing
+audible, and `BgmDirector::reattach_volume`'s default no-op is the faithful
+director behaviour. `DAT_8007B6EC` reads `215` (`0xD7`, the cold audio level)
+in 90 of those states, not the `-1` a boot-table reading gives it. The op is
+issued eleven times on the disc, each right before a `49 08` state resume and
+mostly next to a sub-op `2` pause or a sub-op `0xA` commit.
+
 ### Global-pool BGM: the `music_01` bank
 
 Every real music track on the disc lives in the **`music_01` bank**, not in scene-local
@@ -362,6 +387,20 @@ the disc-gated test pins that the two readings agree on every slot, including wh
 have no pair.
 
 The site's minigame pages take exactly this path per game (`crates/web-viewer/src/minigames.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the from-scratch `Spu` + `Sequencer` - the same components the live `AudioBgmDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
+
+#### The ending theme: two entries on sound slot 10
+
+One id does not play from a bank entry at all. The field initialiser `FUN_801D6704` (PROT 0897) special-cases `0x814` (`2068`, sound-test `#68` "Ending"), which `edteien` and `edbalden` start: while `_DAT_8007BAC8 == 0x814` and the one-shot latch `_DAT_8007B9B8` is clear (`0x801D71A0..0x801D7274`), it sets the latch, detaches and closes the BGM record `0x8007052C`, and stages the track on **sound slot 10** - the `0x80091508 + 10*12` table row and the `0x800705BC` sequence record:
+
+1. `FUN_8001FC00(0x428, ..)` reads raw TOC `0x428` - extraction `1062`, one type-2 SEQ chunk (the "slot `72`" above that carries a score and no bank) - into the streaming buffer `*0x8007B85C`, and `FUN_8001E54C(10, ..)` installs it as slot 10's sequence.
+2. `FUN_8001FC00(0x422, ..)` reads raw `0x422` - extraction `1056`, the gap's VAB-only bank (53 programs) - and the same walker opens its head as VAB `10` and sends the first part of the body. The body is larger than the `0x39800`-byte buffer and is a type-3 chunk, which ends the walk, so a second read in append mode and `FUN_8002630C(.., vab 10, 1, size)` send the rest. That split is the "two part".
+3. `FUN_80026478(0x800705BC)` starts the sequence, and `_DAT_8007BA9C` takes `_DAT_8007BAB8`, so the ordinary resolver `FUN_800243F0` treats the track as loaded and never fetches it.
+
+So the slot-10 load is not a sound-effect bank: it is the credits music. Raw `0x422` is also what the resolver's own law gives `2068` (`990 + 68`) - the instruments with no score - which is why the id needs the arm; `music_labels::prot_entry_for_bgm_id` sends `2068` to extraction `1058` instead, and the arm is the only field path that id takes.
+
+The mednafen ending states confirm the staging (`ending_banner_mask_closed`, `ending_vignette_fullscreen`, `ending_panel_corner` in `edteien`; `ending_vignette_biron` in `edbylon`): slot 10's sequence record is open (`+8 = 1`, VAB id `+0xC = 10`) while the BGM record is closed, its sequence buffer holds extraction `1062`'s SEQ chunk byte for byte, VAB 10's SPU base is slot 0's (`0x800917B0[10] == 0x1010`), and the sounding voices start inside the region that bank was sent to. Every program change in the score names a program only `1056` defines. The credits then run on the park sentinel `0x1000`, so the track keeps playing across the vignette scenes.
+
+The engine composes the pair into one owned-VAB stream (`mode_entry_init::two_part_bgm_stream`, score first) whenever `SceneHost::music_bank_entry_bytes` is asked for `0x814`, so both play hosts stage it through the path above; `engine-core/tests/credits_two_part_bgm_disc.rs` pins it. One residual is the hosts' SPU layout: the bank's VAG bodies total `0x631B0` bytes, more than the BGM region either host carves below its resident SFX banks (`0x42000`), so the last seven bodies do not upload and three of the score's sixteen programs sound nothing. Retail has no such region - VAB 10 overwrites every resident bank below `0x6C810`.
 
 ## SsAPI sequencer (`0x80061-0x80067` cluster)
 
@@ -1276,16 +1315,20 @@ descriptor word copied into the CD-read staging window):
   descriptor slot, `chan` the CD-XA channel inside that clip's interleave, `dur`
   the physical read span (clamped `<= 0x2A30`). Issues CD command `2`
   (see `ghidra/scripts/funcs/8003d53c.txt`).
-- `FUN_8003EAE4(_, clip_id)` - streaming / loop start for one descriptor slot
-  (CD command `0x15`); its first argument is unused and it takes no channel or
-  duration (see `ghidra/scripts/funcs/8003eae4.txt`). Most callsites pass a
-  compile-time literal `clip_id` - see the streamed-cue census below.
+- `FUN_8003EAE4(_, clip_id)` - **seek-ahead** to one descriptor slot: it
+  issues `CdlSetloc` (`a0 = 2`, the slot's MSF) and then `CdlSeekL` (`li
+  a0,0x15` at `0x8003EB68`), sets the drive-state word `gp+0x908` to `1` and
+  records the slot in `gp+0x890`. It installs no callback and issues no read,
+  so nothing plays: it parks the head on the file a following one-shot will
+  read. `gp+0x890` has no reader on the disc. Its first argument is unused
+  (see `ghidra/scripts/funcs/8003eae4.txt`). Most callsites pass a
+  compile-time literal `clip_id` - see the streamed-cue census below, which is a census of seeks.
 - `FUN_80019794(clip_id)` - SCUS wrapper around `FUN_8003EAE4`: a resumable
   five-state starter SM (state word `0x8007B9C8`, jump table `0x800103E4`) that
   arms the CD-busy byte, stops any in-flight read (`FUN_8003DE7C`), issues
-  `FUN_8003EAE4(0, clip_id)` and finishes via `FUN_8003F2B8(1)`. Returns 1
-  while in progress, 0 when the stream is running. The field overlay is its
-  only caller (both sites below).
+  `FUN_8003EAE4(0, clip_id)` and finishes via the `CdSync`-shaped wait
+  `FUN_8003F2B8(1)`. Returns 1 while in progress, 0 once the seek has
+  settled. The field overlay is its only caller (both sites below).
 
 #### The cast voice in the engine
 
@@ -1409,39 +1452,54 @@ captures; the full per-art table lives in
 
 #### Streamed cue census (`FUN_8003EAE4` / `FUN_80019794`)
 
-Same sweep + dedupe. A streamed cue plays the whole clip (no channel filter).
+Same sweep + dedupe. None of these rows plays audio: each parks the drive on
+the file named, and the voice itself is a later `FUN_8003D53C` one-shot on the
+same slot. The scripted-scene program shows the pairing in two consecutive
+states - `FUN_80019794(0x10)` in state `0x16`, then `FUN_8003D53C(0x10, 7,
+0x135)` in state `0x17` - and the battle selector and the summon modules both
+store `0` into the drive-state word `_DAT_8007BC20` straight after the call,
+so a seek never reads as a clip in flight. An earlier reading of this table
+("a streamed cue plays the whole clip, no channel filter") took command
+`0x15` for a play command; it is `CdlSeekL`.
 The world-map-render (0901) and gameover (0902) raw hits are pure over-read
-aliases - neither overlay starts an XA stream of its own.
+aliases - neither overlay seeks of its own.
 
-| clip | file | context | callsite |
+| clip | file it seeks to | context | callsite |
 |---|---|---|---|
-| `0` (XA1) | slot-machine ambience | casino slot machine entry | 0975 `0x801CF0AC` |
-| `0x1F` (XA32) | Baka Fighter crowd/bed | duel start + round restart | 0976 `0x801CF6CC` / `0x801CFD90` |
-| `0x21` (XA34) | long battle stream | battle actions `0x2E`/`0x2F` | battle 0898 `0x801EBDD4` |
-| `0x800787AF` table (heroes `0x08` = XA9) | battle voice stream | `FUN_801E295C` SM state `0x6E` | battle 0898 `0x801E4F40`; same table in SCUS `FUN_8004DA00` |
-| `(char-1)*2` = `0`/`2`/`4` (XA1/3/5) | per-character long bank | `FUN_8004DA00` battle stream selector | SCUS `0x8004DAFC` |
-| `char + 0x19` = `0x1A`..`0x1C` (XA27..29) | per-character fanfare stream | `FUN_8004DA00` (spell-table class `< 0x14`) | SCUS `0x8004DB70` / `0x8004DBC4` |
-| `7` (XA8) | fallback battle stream | `FUN_8004DA00` (other spell classes) | SCUS `0x8004DB9C` |
-| `0x10` (XA17) | scripted-scene voice stream | field voice player, whole-clip variant | field 0897 `0x801D4FCC` via `FUN_80019794` |
+| `0` (XA1) | slot-machine file | casino slot machine entry | 0975 `0x801CF0AC` |
+| `0x1F` (XA32) | Baka Fighter duel-line file (the `0x801D5CC4` one-shot's) | duel start + round restart | 0976 `0x801CF6CC` / `0x801CFD90` |
+| `0x21` (XA34) | long battle file | battle actions `0x2E`/`0x2F` | battle 0898 `0x801EBDD4` |
+| `0x800787AF` table (heroes `0x08` = XA9) | battle voice file | `FUN_801E295C` SM state `0x6E` | battle 0898 `0x801E4F40`; same table in SCUS `FUN_8004DA00` |
+| `(char-1)*2` = `0`/`2`/`4` (XA1/3/5) | per-character long bank | `FUN_8004DA00` battle seek selector | SCUS `0x8004DAFC` |
+| `char + 0x19` = `0x1A`..`0x1C` (XA27..29) | per-character voice file | `FUN_8004DA00` (spell-table class `< 0x14`) | SCUS `0x8004DB70` / `0x8004DBC4` |
+| `7` (XA8) | fallback battle file | `FUN_8004DA00` (other spell classes) | SCUS `0x8004DB9C` |
+| `0x10` (XA17) | scripted-scene voice file | scripted-scene program state `0x16`, ahead of the state-`0x17` one-shot | field 0897 `0x801D4FCC` via `FUN_80019794` |
 | `op>>3` | MAN-script literal | field-VM XA opcode, `dur == 0` path | field 0897 `0x801E0430` via `FUN_80019794` |
-| `7` (XA8) | Ra-Seru summon stream | summon overlays 0903/0904/0905/0906/0907/0908 | each at its own `0x801F6Cxx`-`0x801F71xx` site (slot-B base `0x801F69D8`) |
-| `6` (XA7) | summon stream | PROT 0909 (outside the static corpus; head decoded from PROT.DAT) | 0909 file `+0x218` |
-| `0x11` (XA18) | attack-art stager stream | stagers 0924/0925/0926 | 0924 `0x801F6C80`; 0925/0926 file `+0x240` |
-| `0xE` (XA15) | high-summon / evil-god stream | summons 0927..0934 | each at its own `0x801F6Cxx`-`0x801F6Dxx` site |
+| `7` (XA8) | Ra-Seru summon file | summon overlays 0903/0904/0905/0906/0907/0908 | each at its own `0x801F6Cxx`-`0x801F71xx` site (slot-B base `0x801F69D8`) |
+| `6` (XA7) | summon file | PROT 0909 (outside the static corpus; head decoded from PROT.DAT) | 0909 file `+0x218` |
+| `0x11` (XA18) | attack-art stager file | stagers 0924/0925/0926 | 0924 `0x801F6C80`; 0925/0926 file `+0x240` |
+| `0xE` (XA15) | high-summon / evil-god file | summons 0927..0934 | each at its own `0x801F6Cxx`-`0x801F6Dxx` site |
 
 The three SCUS rows all belong to one resident selector, and it is not called
 from anywhere: `FUN_8004DA00` is the `+0x08` tick of the
 [static actor template](../reference/functions/runtime-libs.md#static-actor-templates)
 at `0x800767F4`, which the battle scene-loader `FUN_800513F0` spawns into the
-system actor pool as its last act (`0x80051D3C`). So the party voice selector
+system actor pool as its last act (`0x80051D3C`). So the party seek selector
 is a per-frame pass that goes resident when the battle loads and stays up for
-its duration, arming at most one clip per action behind the `_DAT_8007BDB0`
-latch. The port models the choice, not the residency:
-`legaia_engine_audio::battle_voice`.
+its duration, seeking at most once per action behind the `_DAT_8007BDB0`
+latch. Its side-band gate declines while the context's `+0x276` stage byte is
+**non-zero** (`beq v0,zero` at `0x8004DA50` continues on zero), the same
+polarity as `FUN_8004FCC8`. The port keeps the choice
+(`legaia_engine_audio::battle_voice`) as `REPLACED-BY` the pre-decoded clip
+bank: with no drive there is no seek latency to hide.
 
 The field-VM XA opcode thus has **two shapes**: a non-zero third operand plays
-one channel one-shot (`FUN_8003D53C(op>>3, op&7, dur)`); a zero operand streams
-the whole clip (`FUN_80019794(op>>3)`).
+one channel one-shot (`FUN_8003D53C(op>>3, op&7, dur)`); a zero operand seeks
+ahead to the clip (`FUN_80019794(op>>3)`) and plays nothing. The engine queues
+the first shape on the field XA queue both hosts drain in their field SFX
+routing (`World::push_field_xa_cue`, `engine-core::world::field_xa`), the same
+queue the scripted-scene programs' voice state feeds; the seek has no engine
+counterpart.
 
 ## What a normal attack sounds like
 

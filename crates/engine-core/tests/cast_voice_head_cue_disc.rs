@@ -247,3 +247,43 @@ fn without_a_span_table_a_cast_raises_no_clip() {
     assert_eq!(w.audio.battle_xa_busy_frames, 0);
     eprintln!("[ok] disc-free span table -> no request");
 }
+
+/// The round's committed spells list their cast voices ahead of the cast -
+/// the page stages them so the cast's own request finds the clip resident.
+/// A coin-flip module lists both candidates; the list plays nothing.
+#[test]
+fn a_rounds_committed_spells_list_their_cast_voices_ahead() {
+    use legaia_engine_core::battle_round::PendingPartyAction;
+    use legaia_engine_core::target_picker::CursorRow;
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    let mut w = battle_world(&dir);
+    let spell = |spell_id| {
+        Some(PendingPartyAction::Spell {
+            spell_id,
+            target_row: CursorRow::Enemy,
+            target_slot: 3,
+        })
+    };
+    // Gimard (0x81 -> PROT 0903 -> cue 0x134) twice, Vera (0x83 -> 0905).
+    w.battle.round_flow.pending = [spell(0x81), spell(0x81), spell(0x83)];
+    w.list_round_cast_voices();
+    let pre = w.drain_battle_xa_prestage();
+    let triples: Vec<_> = pre
+        .iter()
+        .map(|c| (c.clip, c.channel, c.duration_sectors))
+        .collect();
+    assert_eq!(
+        triples,
+        vec![(6, 4, 686), (6, 1, 568)],
+        "deduplicated, in commit order"
+    );
+    assert!(
+        w.drain_battle_xa_cues().is_empty(),
+        "the list plays nothing"
+    );
+    assert_eq!(w.audio.battle_xa_busy_frames, 0, "and holds no drive");
+    eprintln!("[ok] round prestage lists {triples:?}");
+}

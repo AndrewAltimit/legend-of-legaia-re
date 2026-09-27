@@ -101,8 +101,8 @@ impl World {
         // `ctx+0x291` - the latched formation advantage. A pre-emptive strike
         // sets `roll_p = roll_e` so the `roll_p < roll_e` compare cannot fail.
         // Note this is the *latched* copy: it is only non-`None` because
-        // `World::latch_battle_formation` copied it out of `+0x290` at battle
-        // start, before the seeder's lockout cleared it.
+        // this round's state-`0x00` pass (`World::run_round_state_zero`)
+        // copied it out of `+0x290` - which only round one's pass finds set.
         flags.fold_formation_latch(self.battle_formation_latched());
         for slot in 0..party_n {
             if self.actors[slot].battle.liveness == 0 {

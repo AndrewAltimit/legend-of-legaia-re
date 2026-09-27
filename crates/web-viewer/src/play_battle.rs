@@ -337,9 +337,9 @@ impl LegaiaRuntime {
                 _ => {}
             }
         }
-        // Step the battle camera's idle orbit one sim tick (no-op outside
-        // battle - the render state only exists while one is up).
-        self.tick_battle_camera_web();
+        // The battle camera is stepped inside `World::tick` for every host
+        // (`World::tick_battle_camera`), independent of this page's render
+        // build.
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
@@ -605,6 +605,11 @@ impl LegaiaRuntime {
         let move_name = world.and_then(bh::battle_move_name);
         let message_bar = world.and_then(bh::battle_message_bar);
         let commit_log = world.map(bh::battle_commit_log).unwrap_or_default();
+        // The battle-intro enemy-name banner (retail flow `0x0A`), laid out
+        // with this page's font - the same builder the native window calls.
+        let intro_names = world
+            .map(|w| bh::battle_intro_names(w, font))
+            .unwrap_or_default();
         ui::battle_hud_draws_for(
             font,
             &ui::BattleHudFrame {
@@ -632,7 +637,13 @@ impl LegaiaRuntime {
                 // the native window suppresses on.
                 plaque_seat_taken: self.battle_tutorial_stage_rect(font).is_some()
                     || world
-                        .is_some_and(|w| w.dialog.current.is_some() || w.dialog.inline.is_some()),
+                        .is_some_and(|w| w.dialog.current.is_some() || w.dialog.inline.is_some())
+                    // Koru's timed-fight strip draws over the plaque in
+                    // retail (the native window parks it for the same
+                    // reason: a text run cannot go under the strip's frame
+                    // in either host's layer order).
+                    || world
+                        .is_some_and(|w| legaia_engine_core::timed_fight::timed_fight_strip(w).is_some()),
                 badges: badges.as_ref(),
                 // The same tutorial box that takes the plaque's seat also
                 // sits on a party surface's row; naming its rect is what
@@ -648,6 +659,7 @@ impl LegaiaRuntime {
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: world.and_then(bh::battle_ring_ap_plate_value),
                 commit_log: &commit_log,
+                intro_names: &intro_names,
                 diag: ui::diag_hud_enabled(),
             },
             BATTLE_HUD_PEN,

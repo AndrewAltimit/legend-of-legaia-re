@@ -2672,7 +2672,7 @@ function init() {
       langLiftSaveBtn.dataset.lang = r.language;
       setLangStatus(
         `${r.language.toUpperCase()} text read from ${r.exe} (${r.build}). ` +
-        'Now press "Patch my disc" below - the coverage report will say how much of it fits.',
+        'Now press "Patch & download" below - the coverage report will say how much of it fits.',
         'ok');
       summaryEl.textContent = r.summary || '';
     } catch (e) {

@@ -1000,6 +1000,15 @@ impl World {
     // PORT: FUN_80016444 (frame-pass sequencing; render/flip halves are the
     //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
+        let outcome = self.tick_modes();
+        // The battle camera observes the frame this tick produced, in every
+        // mode (outside battle it drops its state) - once, here, for every
+        // host (`crate::battle_cam_inputs`).
+        self.tick_battle_camera();
+        outcome
+    }
+
+    fn tick_modes(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
         // Does retail run the master frame driver on a frame in this mode?
         //
@@ -1153,6 +1162,9 @@ impl World {
                 self.ambient.pending_game_ticks = (self.ambient.pending_game_ticks + 1).min(600);
             }
         }
+        // The modelled CD drive under a field XA one-shot: one vsync of its
+        // read span elapses per world tick (`World::push_field_xa_cue`).
+        self.tick_field_xa_busy();
         // Retail's frame-begin driver services the timed sound-source
         // auto-release before anything else in the frame (`FUN_800267FC`,
         // called at `0x800169FC`). Its accumulator advances by the frame step,
@@ -2781,7 +2793,7 @@ impl World {
                 self.exit_baka_fighter();
             }
             SceneMode::MuscleDome => {
-                self.exit_muscle_dome();
+                self.leave_muscle_dome();
             }
             SceneMode::Dance => {
                 self.exit_dance();
@@ -3060,10 +3072,14 @@ impl World {
         } else {
             None
         };
+        let held = crate::dev_menu::retail_packed(self.input.pad());
         if let Some(fight) = self.minigames.baka_fighter.as_mut() {
             if let Some(attack) = attack {
                 fight.choose(0, attack);
             }
+            // The held word the round setup reads for the cameo
+            // (`_DAT_8007B850`).
+            fight.set_held_pad(held);
             fight.tick(1);
         }
     }
@@ -3096,6 +3112,35 @@ impl World {
         }
         self.minigames.muscle_dome = Some(session);
         self.mode = SceneMode::MuscleDome;
+    }
+
+    /// Leave the arena **at the player's request** - the escape both hosts
+    /// share (`Start` through [`Self::poll_minigame_escape`], and the native
+    /// window's `M` hotkey).
+    ///
+    /// Leaving is not only [`Self::exit_muscle_dome`]: the leg has to be
+    /// reported to the open contest, or the ladder carries on as if the leg
+    /// never happened. A leg left undecided is the arena's run / give-up path
+    /// ([`crate::muscle_dome::LEG_OUTCOME_RAN`], retail's `_DAT_80084448 = 4`
+    /// arm), which ends the contest and voids the tally; a decided leg
+    /// reports its own result, exactly as the Won / Lost confirm does. A
+    /// contest that has run out then settles on the spot.
+    ///
+    /// Only the native hotkey used to report; the shared escape exited
+    /// without a report, so on the browser play page a left leg kept the
+    /// contest open with its tally intact.
+    pub fn leave_muscle_dome(&mut self) -> Option<crate::muscle_dome::MuscleDomeSession> {
+        use crate::muscle_dome::{LEG_OUTCOME_RAN, LegReport, MusclePhase};
+        let s = self.exit_muscle_dome()?;
+        let phase = s.phase();
+        let decided = matches!(phase, MusclePhase::Won | MusclePhase::Lost);
+        self.report_muscle_leg(LegReport {
+            survived: phase != MusclePhase::Lost,
+            outcome: if decided { 0 } else { LEG_OUTCOME_RAN },
+            turns_taken: s.turn(),
+        });
+        self.settle_muscle_contest();
+        Some(s)
     }
 
     /// Leave the Muscle Dome and restore the interrupted mode.

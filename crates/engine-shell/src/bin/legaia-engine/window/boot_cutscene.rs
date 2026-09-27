@@ -101,10 +101,8 @@ impl PlayWindowApp {
     /// onto the current scene as before.
     fn apply_save_commit(&mut self, commit: legaia_engine_core::save_screen::SaveCommit) -> bool {
         use legaia_engine_core::save_screen::SaveCommitKind;
-        // Port 2 is a mounted memory-card image. Its Load reads the block's
-        // SC bytes; a Save into it is the one half this host still lacks
-        // (writing a block needs the card's own free-block budget, which the
-        // browser rack owns and this one does not).
+        // Port 2 is a mounted memory-card image: its Load reads the block's
+        // SC bytes and its Save writes them through the shared card kernel.
         if commit.port == 1 {
             return self.apply_card_save_commit(commit);
         }
@@ -168,11 +166,14 @@ impl PlayWindowApp {
 
     /// The port-2 half of [`Self::apply_save_commit`]: a Load out of the
     /// mounted memory-card image, resumed into the save's own scene the same
-    /// way a port-1 Load is.
+    /// way a port-1 Load is, or a Save into it.
     ///
-    /// A Save is refused rather than half-performed: writing a block means
-    /// claiming directory frames against the card's own free-block budget,
-    /// and this host has no writer for that.
+    /// A Save goes through the kernel the browser rack writes with
+    /// ([`legaia_engine_core::card_write::write_save_into_card`]) - the block's
+    /// save number, payload, engine ext tail, resume point, identity and
+    /// directory claim are decided there - and the card is then written back
+    /// to the image file `--card` mounted. Either step failing raises the
+    /// shared refusal notice rather than closing on a log line.
     fn apply_card_save_commit(
         &mut self,
         commit: legaia_engine_core::save_screen::SaveCommit,
@@ -180,19 +181,49 @@ impl PlayWindowApp {
         use legaia_engine_core::save_screen::SaveCommitKind;
         let cell = commit.cell;
         use legaia_engine_core::save_screen::SaveRefusal;
-        let Some(card) = self.card.as_ref() else {
+        if self.card.is_none() {
             log::warn!("save screen: port 2 holds no card; nothing read");
             self.save_flow.refuse(SaveRefusal::CardReadFailed);
             return false;
-        };
+        }
         if matches!(commit.kind, SaveCommitKind::Save) {
-            log::warn!("save screen: writing into a mounted card image is not supported");
-            // Refused, and said so: the screen used to close on a log line
-            // the player never sees, so a Save into the mounted card looked
-            // exactly like a Save that worked.
-            self.save_flow.refuse(SaveRefusal::CardWriteUnsupported);
+            let sf = self.session.host.world.save_full();
+            let resume = self.session.current_resume();
+            let index = self.session.host.index.clone();
+            let Some(card) = self.card.as_mut() else {
+                return false;
+            };
+            let block = cell + 1;
+            let wrote = legaia_engine_core::card_write::write_save_into_card(
+                card,
+                block,
+                &sf,
+                &resume,
+                Some(&index),
+            )
+            .map_err(anyhow::Error::msg)
+            .and_then(|w| card.persist().map(|_| w));
+            match wrote {
+                Ok(w) => log::info!(
+                    "save screen: saved card block {block} as save {} (scene '{}'{})",
+                    w.save_slot,
+                    resume.scene,
+                    if w.ext_written {
+                        ""
+                    } else {
+                        ", engine ext withheld"
+                    }
+                ),
+                Err(e) => {
+                    log::warn!("save screen: card save into block {block} failed: {e:#}");
+                    self.save_flow.refuse(SaveRefusal::CardWriteFailed);
+                }
+            }
             return false;
         }
+        let Some(card) = self.card.as_ref() else {
+            return false;
+        };
         let Some((sf, resume)) = card.save_at(cell) else {
             log::warn!("save screen: card block {} holds no save", cell + 1);
             self.save_flow.refuse(SaveRefusal::CardReadFailed);

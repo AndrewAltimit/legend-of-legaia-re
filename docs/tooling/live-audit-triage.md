@@ -1064,9 +1064,11 @@ missing subsystem.
 | `801f90dc` | `acquisition_caption` | `REPLACE` - the routine is `FUN_801D0F1C`; see below |
 
 The painters are the row worth reading twice. They are **not**
-`PTR_FUN_801F33B4` slots; they are the `+0x14` callback of a `0x801F2C0C`
-panel-window record. A disclosure that names the wrong table names the wrong
-blocker.
+`PTR_FUN_801F33B4` slots; they are the `+0x18` callback of a record in the
+`0x801F2B98` panel-window table
+([`script-vm.md`](../subsystems/script-vm.md#the-panel-window-records-and-the-descriptors-that-install-them);
+a reading based four records later, at `0x801F2C0C`, numbered every record
+four low). A disclosure that names the wrong table names the wrong blocker.
 
 `acquisition_caption`'s ownership question is answered by the attribution
 table rather than by a new dump: every dump at `0x801F90DC` is class
@@ -1113,7 +1115,7 @@ old reason got wrong.
 | `motion_pause_kick` (`8003c9ac`) | no view can be projected to gate the sweep | both gates and the default-move table are projectable from the per-slot maps |
 | `state_pick` (`801f1f4c`) | the engine models neither actor `+0x50` nor `+0x54` | `Actor::state_50` and `Actor::state_54`, at those offsets |
 | `field_audio_release_steps` (`801d8450`) | no per-voice stop, no `0x80091508` table | `SustainedSfx::stop_voice` and `SeqResourceTable::release`, the module's own two `REF:` addresses |
-| `submode_panel_rows` (`801e6984`) | the context block `open_submode` cannot reach | `open_submode` is live and seeds `World::field_vm.submode_context`, which is read every frame |
+| `submode_panel_rows` (`801e6984`) | the context block `open_submode` cannot reach | `open_submode` is live and seeds `World::field_vm.submode_context`, which is read every frame; the real blocker is the unported op-`0x49` sub-op-4 handler `FUN_801EF014`, the only installer of panel record 14 |
 | `field_actor_plan` (`8003bc08`) | the engine has no `+0x10` flag word | `move_vm::ActorState::flags` is that word, tested in production on pool actors |
 | `tick_reflection` (`801e5154`) | the actor carries none of the fields this reads | `ActorState` carries all but `+0x64`, at retail offsets |
 | `refresh_object_grid_marks` (`80017bec`) | the engine keeps no `.MAP` image | three of four regions are resident, and the collision grid is mutated live |
@@ -1661,7 +1663,7 @@ backwards in one direction:
 | `vram_rect_copy` | `DISCLOSE` | `engine-render`, which implements no `FieldHost::op43_vram_rect_copy`; the software VRAM it would blit inside already exists |
 | `panel_backread_loader` | `DISCLOSE` | its only retail caller `FUN_80025358` is unported |
 | `mode::mode_init_bare` | `DISCLOSE` | a production owner of `ModeDriver` - `engine-shell`'s `BootSession::tick` handing frame sequencing to the driver |
-| `mode_entry_init::field_bgm_plan` | `DISCLOSE` | the two-part BGM arm has no engine analogue; the slot arithmetic itself is already live in `SceneHost::bgm_seq_bytes` |
+| `mode_entry_init::field_bgm_plan` | `DISCLOSE`, since closed as `WIRE` | the two-part arm is the credits theme; `mode_entry_init::two_part_bgm_stream` stages its score and bank at scene entry, so the plan is live |
 | `mode_entry_init::duel_overlay_init` | `DISCLOSE` | the duel's engine entry is the `baka_fighter` rules engine, which starts from a match state and not an overlay load |
 | `save_subscreen::sub15_*` | `DISCLOSE` | no engine screen offers the per-character list reorder; the backing array is the character record and does permute the Magic screen |
 
@@ -1898,7 +1900,7 @@ not have to re-derive it.
 
 | Anchors | Waiting on |
 |---|---|
-| `effect_ribbon` x3 (`801CFA48`) | an actor render-mode channel carrying the `+0x9E` flag word, and a GPU packet chain for the geometry to fill. `engine-render` has no battle effect pass that asks a kernel for per-frame geometry, so the emitter is pure by design and the consumer does not exist on either host. |
+| `effect_ribbon` x3 (`801CFA48`) | nothing any more: the move-VM store offsets that kept the carriers from arming it were wrong and are fixed, and both battle hosts draw its mesh through `World::active_effect_ribbons`. |
 | `menu_list_rows` x2 (`80030628`) | nothing any more - and the tables they were said to be waiting on were both already installed. See [the two tables that were there all along](#the-two-tables-that-were-there-all-along). |
 | `fade::spawn_fade` / `fade_ramp` x3 | the fade's *lifetime*, not a call: `World::presentation.fade` drops a ramp when `step()` reports it complete, and the retail escape template never reports complete (hold word `-1`). Substituting moves the clear from the world tick to the battle teardown. |
 | `move_vm::spawn` x2 (`80050E74`) | the part-pool pair needs retail's `DAT_801C90F0` seat table. Its engine counterpart is **not** the field-FX list an earlier reading named - the 89 `jal` sites are summon / special-attack stagers, so the population is `World::casting.active_summon`, dropped whole at the end of a cast rather than emptied seat by seat. `spawn_move_actor` left this set: its address already has a live port in `engine-core::world::ambient`. |
@@ -2289,7 +2291,7 @@ structure they blamed and are rewritten; every row stays held.
 | anchor | verdict | the call site, and the structure |
 |---|---|---|
 | `801cf00c` `duel_overlay_init` | held | the mode-24 door warp's `enter_baka_from_overlay` is the overlay-entry host the tag said did not exist; of the seeds only the win target and fighter slots have a consumer (both already the rules engine's constants), and the stage seed, arena camera, `6 x 6` window and the two stream ids have no duel-side counterpart |
-| `801d6704` `field_bgm_plan` | held | the slot arithmetic is live elsewhere (`SceneHost::bgm_seq_bytes`); the two-part arm and its one-shot latch have no scene-entry analogue |
+| `801d6704` `field_bgm_plan` | live | the two-part arm is the credits theme, now staged at scene entry through `mode_entry_init::two_part_bgm_stream`; the one-shot latch's stand-in is the directors' same-track suppression |
 | `801d4a60` `step_scene_program` / `lift_step` / `entry_successor` | wired | the pair it parks on is the side-band **bank** request / acknowledge, live as `World::audio.sound_stream`, not a BGM latch; `World::tick_scene_programs` now steps each resumed program from the handler pass |
 | `801d72a0` `help_panel_layout` | held | every row is the overlay's own string-pointer tables `0x801D8130` / `0x801D8168`, and no fishing help page exists to open |
 | `801d26cc` `bite_pad_nudge` | wired | the play hosts' `PondSession::tick` did run the band; what was off was the count - retail adds one per mask hit on `_DAT_8007B874` (`0x8000`, `0x2000`, and `0xC0` as one mask; the cast press none, `0x801D343C..0x801D3468`), and all three hosts now count through `PondInput::from_engine_pad` |
@@ -2307,4 +2309,4 @@ structure they blamed and are rewritten; every row stays held.
 | `801d25ec` `spawn_arc_with_emitter` | held | op `0x43` sub-`0`/`1`/`0xA`/`0xB` reaches it at `0x801DF5AC`; the engine's arc channel is the player's alone |
 | `801e4470` `sprite_rect` / `attached_sprite_tick` | held | no engine actor kind carries the `+0x90` back-link its one filler (`FUN_801D25EC`'s emitter) sets |
 | `80021248` `normalize_camera_relative_params` | held | the producer is ported; the actor family (`DAT_8007071C`, list `_DAT_8007C34C`) has no engine counterpart |
-| `801ead98` `decode_camera_readout` | held | the "camera word" is the scratchpad region box `0x1F800384..87`, and the world map reads the same box the field publishes - PROT 0901's `0x801F8EE0..0x801F8EF4` is only a save / restore of it and the view-window bytes. What is missing is the developer menu's CAMERA row itself, and a box word handed to the menu each tick |
+| `801ead98` `decode_camera_readout` | wired | the "camera word" is the scratchpad region box `0x1F800384..87`, and the world map reads the same box the field publishes - PROT 0901's `0x801F8EE0..0x801F8EF4` is only a save / restore of it and the view-window bytes. Now wired: the dev menu carries the CAMERA row (`DevMenuRow::Camera`, retail row 3), and `DevMenuSession::tick_host` hands it the box word and the follow switch `0x8007B606` each tick on both hosts |
