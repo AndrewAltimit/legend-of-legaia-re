@@ -1729,7 +1729,7 @@ that same staged byte, and the last writer wins:
 | Action SM, strike loop | attack chain | the strike-script byte (`0x0C..0x0F` swings, art ids) |
 | Damage arm, flinch | `FUN_800402F4` `0x80042124` | `actor[+0x1EF]` (tag-2 entry) |
 | Damage arm, knockdown | `FUN_800402F4` `0x80042118` | `actor[+0x1F1]` (tag-4 entry) |
-| Knockdown → get-up chain | `FUN_8004AD80` `0x8004B690` | `actor[+0x1F2]` (tag-5 entry) |
+| Knockdown → get-up chain | `FUN_8004AD80` `0x8004BEC4..0x8004BECC` (living actor); `0x8004B690` (dead monster, Seru staged) | `actor[+0x1F2]` (tag-5 entry) |
 | Capture-class cast module | slot-B module code ([cast-module.md](cast-module.md)) | caster stage literals / steppers; victim `actor[+0x1F1]` |
 
 The commit `FUN_8004AD80` snaps `+0x1D9 = +0x1DA` and copies `+0x1DB`
@@ -1760,6 +1760,33 @@ dropped on the floor. Regression:
 GPU-free pose oracle in
 `crates/asset/tests/battle_pose_orientation_real.rs` which pins that the
 upright family really is upright and the reaction family really is prone.
+
+### The commit's clip-tag ladder
+
+Every path through the commit `FUN_8004AD80` converges at `0x8004BDD8`: the
+new entry is installed at node `+0x4C`, `+0x1D9 = +0x1DA`, the entry's
+`+0x84` / `+0x87` bytes are folded, and then the routine tests the **new**
+entry's tag byte `+0x00` once per commit (`0x8004BE30..0x8004BF4C`; see
+`ghidra/scripts/funcs/8004ad80.txt`):
+
+| Tag | Condition | Writes | Engine |
+|---|---|---|---|
+| `2` | first monster `0xB3` or `0xB5`, committing actor at HP `0` | the entry's tag byte becomes `4` in place; for `0xB3` also entry `+0x56 += 1` | not modelled |
+| `4` | HP not `0` | `+0x1DA = +0x1F2` (the get-up, staged behind the knockdown), `+0x1DC = 0` | the end-of-clip get-up (`battle_reaction` key `5`) |
+| `4` | HP `0`, party seat | `+0x1DA = 7`, `+0x1DC = 0` | not modelled - the engine holds the downed keyframe |
+| `5` | - | `+0x1DC` bit `0x4` set (idle at the natural end) | the get-up's end resumes idle |
+| `7` | - | `+0x1DA = 8` | not modelled |
+| `8` | - | `+0x1DC` bit `0x8` set (the latch that stops root motion, `0x80047D20`) | not modelled - the engine's latch is "reaction `4` playing" |
+
+So a downed party member's chain is knockdown, then entry `7`, then entry `8`,
+and it is the entry-`8` commit, not the knockdown, that sets the root-motion
+latch; the knockdown's own commit clears `+0x1DC`. The monster-death arm
+earlier in the routine (`0x8004B094..0x8004B6A0`, the committing monster's
+**previous** entry tagged `4` at HP `0`) re-installs that entry held on its last
+frame, runs the death spoils (ported: `battle_steal`), sets `+0x21C = 2` and
+the same bit-`3` latch, and - with a Seru staged in `ctx[+0x269]` - restages the
+get-up `+0x1F2` with `+0x1DC = 4` (`0x8004B688..0x8004B6A0`); the engine ports
+the spoils and not the Seru get-up.
 
 ## Battle action state machine (`FUN_801E295C`)
 
