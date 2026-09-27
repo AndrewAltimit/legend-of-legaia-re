@@ -243,6 +243,7 @@ patching an instruction. Useful Ghidra anchors.
 | `0x8007BBA8` | `gp+0x890` - clip id of the last XA seek, stored by `FUN_8003EAE4`. Written only; no reader in SCUS or any overlay. |
 | `0x8007BDB0` | Latch for the clip the XA drive is parked on, shared by `FUN_8004DA00` and the summon modules' seek-ahead arms. |
 | `0x8007057C` | Second sound-source record, sibling of the field-BGM record `0x8007052C`; op `0x35` sub-op 8 (`FUN_80019898`) replays its sequence. Its id is whichever of 1 / 2 the BGM record does not hold, and every catalogued state holds it unstreamed or inactive. |
+| `0x800917B0` | u16 per VAB id - the fixed SPU address `FUN_8002630C` (`a3 = 0`) opens VAB `vabid` at through `FUN_80068D34` (`0x80026344..0x80026358`); `a3 = 1` sends more of the body instead (`0x80069230`). Entries 10 and 0 both read `0x1010`, so the credits bank lands over the resident SFX banks. |
 
 ## Runtime PROT TOC + asset chain
 

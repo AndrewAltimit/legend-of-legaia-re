@@ -1898,7 +1898,7 @@ not have to re-derive it.
 
 | Anchors | Waiting on |
 |---|---|
-| `effect_ribbon` x3 (`801CFA48`) | an actor render-mode channel carrying the `+0x9E` flag word, and a GPU packet chain for the geometry to fill. `engine-render` has no battle effect pass that asks a kernel for per-frame geometry, so the emitter is pure by design and the consumer does not exist on either host. |
+| `effect_ribbon` x3 (`801CFA48`) | nothing any more: the move-VM store offsets that kept the carriers from arming it were wrong and are fixed, and both battle hosts draw its mesh through `World::active_effect_ribbons`. |
 | `menu_list_rows` x2 (`80030628`) | nothing any more - and the tables they were said to be waiting on were both already installed. See [the two tables that were there all along](#the-two-tables-that-were-there-all-along). |
 | `fade::spawn_fade` / `fade_ramp` x3 | the fade's *lifetime*, not a call: `World::presentation.fade` drops a ramp when `step()` reports it complete, and the retail escape template never reports complete (hold word `-1`). Substituting moves the clear from the world tick to the battle teardown. |
 | `move_vm::spawn` x2 (`80050E74`) | the part-pool pair needs retail's `DAT_801C90F0` seat table. Its engine counterpart is **not** the field-FX list an earlier reading named - the 89 `jal` sites are summon / special-attack stagers, so the population is `World::casting.active_summon`, dropped whole at the end of a cast rather than emptied seat by seat. `spawn_move_actor` left this set: its address already has a live port in `engine-core::world::ambient`. |
