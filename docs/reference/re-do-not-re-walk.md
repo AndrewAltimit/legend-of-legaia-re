@@ -1886,6 +1886,7 @@ image at its mapped base, and only from there.
 | A field dialog box ends after at most three rows, and `ImplicitNextPage` is a pager pause | falsified (the window scrolls; only a control byte ends a page) | Plausible: the box shows three rows and `_DAT_801F2740 = 3`. The pager tests for another line after each row (`0x801D8AB4`) and scrolls a full window in state `0x0C` without a press; a capture sees page 2's fourth line scroll in with the press column at zero. |
 | Pager state `0x0D` advances to a page-full wait `0x0E` | falsified (`0x0D` completes a confirmed page, `0x0E` scrolls overflow, `0x19` waits) | Plausible: the states are consecutive. `0x0D` (`0x801D8C64`) is entered on a confirm, `0x0E` (`0x801D8D28`) scrolls rows through at speed `0x25`, and the wait is `0x19`. |
 | The reading box's frame moves with the row scroll | falsified (only the rows scroll) | Plausible: the draw adds a y term. In `FUN_8002C69C(x, y + d, 0xF4, h - 8)` the `d` / `h` terms come from the collapse ramp `0x274C` (`0x801D9970..0x801D99A0`); the rows alone add `scroll >> 4`, clipped by two draw-area packets on the same ordering-table entry. |
+| The Baka hub's panel-window table starts at `0x801F2C0C` | falsified (it starts at `0x801F2B98`, four records earlier) | Plausible: the records read from there parse cleanly, and two of them cross-checked against known painters - inside the same shifted frame, so the check could not see the shift. `FUN_801E9B3C` forms the base at `0x801E9B70` with stride `0x1C`; name entry is records 13 / 14, not 9 / 10. |
 
 ### The save screen's block grid has a sixteenth Return cell
 
@@ -1972,6 +1973,9 @@ target-side forks at `0x801D18E0` (items) and `0x801D1C50` (spells) in PROT
 | `FUN_801CF754` is a render cull | falsified (it is the field contact broad phase) | Plausible: a `±0x180` window over the actor list reads like visibility. The window is centred on the player, and the table it fills is read only by the contact probe `FUN_801CFC40`; nothing that draws reads it ([`renderer.md`](functions/renderer.md)). |
 | `ctx+0x272` is a battle scene-teardown byte, and `gp+0x9F5` a debug byte | falsified | `FUN_80046A20` raises `ctx+0x272` every frame (`0x80047104`), so the first body drawn runs the frame's global passes; `gp+0x9F5` is `0x8007BD0D`, the formation's second monster id, measured over 25 states ([`battle.md`](../subsystems/battle.md)). |
 | No store writes the render-mode-4 selector bits `+0x9E & 0x6000` | falsified | The census missed the move VM's own stores: op `0x42` ORs `0x2000` (`0x80023FBC`, through `actor + 0x80`) and op `0x23` `0x4000`. Five shipped op-`0x42` programs sit in slot-B images; 60 of 188 live mode-4 nodes over 97 states use `0x4000` ([`effect-vm.md`](../subsystems/effect-vm.md)). |
+| `FUN_801D6910` / `693C` / `6968` / `6994` build a vertex packet | falsified (they fill a camera-glide record) | Plausible: four small setters writing consecutive halfwords. The record is `0x80070764`, and `FUN_80021248` consumes it (`0x801D044C`, `0x801D4738`). |
+| Baka roster record `+0x44` is a spawn Y | falsified (it is the stand-off) | Plausible: it sits among position-shaped fields. The duel init places each fighter at X = -/+(`+0x44` + 200) (`0x801D005C..0x801D00F4`). |
+| Baka state `0x6D` is the match-result state | falsified (it is the secret opponent's tally variant) | Plausible: it follows the duel. The ordinary tally exit is `0x801D0A38`; `0x6D` is its variant gated on `0x801DBF06`, and the win flourish is stored at both (`0x801D0AA4`). |
 
 ## Measurement readings
 

@@ -187,6 +187,10 @@ worth recording so we can recognise them in saves.
 | `0x801D1A78` | Muscle Dome | The contest hub's **arm word**, dispatched by `FUN_801CF870` through the 51-entry table at `0x801CE990`; the re-entry init seeds `0x0A` at `0x801CEE2C`, and a natural second visit reads `0x0A` beside latch `1`. |
 | `0x801D1AE4` | Muscle Dome | Free-running **SFX voice counter**; `FUN_801D1288` round-robins one key-on per frame across voices `0x10..=0x13` on `counter & 3`. Not a brightness cell. |
 | `0x801D078C` `0x801D071C` `0x801D065C` `0x801D06BC` | Field overlay | Walk-through-walls collision-state cells. |
+| `0x80070764` | Baka Fighter | Camera-glide record (ten step / target pairs), filled by `FUN_801D6910` / `693C` / `6968` / `6994`, consumed by `FUN_80021248`. |
+| `0x801D7DC8` | Baka Fighter | Player special-camera table (three `0x20`-byte rows, indexed by actor `+0x5A`). |
+| `0x801DBF06` | Baka Fighter | Gates the secret opponent's tally variant `0x6D` and the `0x33` / `0x34` camera variant. |
+| `0x801F2B98` | Baka Fighter hub | Panel-window table, seventeen `0x1C`-byte records, painter pointer at `+0x18` (base formed at `0x801E9B70`). |
 
 ### Code-patch sites in `SCUS_942.54`
 
