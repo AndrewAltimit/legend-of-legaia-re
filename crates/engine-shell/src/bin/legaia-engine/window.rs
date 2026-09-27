@@ -484,6 +484,9 @@ struct MuscleHubAssets {
     /// sub-palette index is the packet CLUT's `& 0x3F` field, exactly the
     /// mapping the browser dome page uses.
     blocks: Vec<(u8, u8, u32)>,
+    /// The two pages' palette STP classes: whether a semi-transparent hub
+    /// packet blends or draws opaque (`ringside_backdrop::HubPaletteStp`).
+    palette_stp: legaia_engine_render::ringside_backdrop::HubPaletteStp,
     /// Pristine parsed sprite table, cloned per frame - the retail emitters
     /// write their variant back into the shared records.
     table: Vec<legaia_engine_render::other_game_hud::HudSprite>,

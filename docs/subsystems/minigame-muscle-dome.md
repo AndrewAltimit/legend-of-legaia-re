@@ -1415,8 +1415,11 @@ only by arm `0x15`, the opponent-card row. `FUN_801D042C` is six
 corner-anchored draws: the course-name strip (record `5 + course`,
 `*(0x801D1A90)`) as variant 1 at `(8, 0x78)`, variant 2 at the same seat and
 variant 2 again at `(0x10, 0x80)`, then record `8` the same way at
-`(0xB8, 0x7B)` / `(0xC0, 0x83)` - a subtractive shadow, an under-layer and an
-additive face once painted in OT order. Arm `3` also starts the card's level
+`(0xB8, 0x7B)` / `(0xC0, 0x83)` - a shadow, an under-layer and a face once
+painted in OT order. The variant-2 packets are marked ABR 2 but sample
+STP-free palettes, so they draw opaque, and both records sit on the STP-free
+row 503, so the face draws opaque too
+([`ringside-still.md`](../formats/ringside-still.md#which-hub-packets-blend)). Arm `3` also starts the card's level
 climbing (`0x801CFA74`, `+dt*2`) while the title zooms, so the card enters
 arm `4` part-lit. Port: `other_game_hud::course_card_draws`; the first visit
 as a whole is `muscle_ringside::FirstVisitHub`

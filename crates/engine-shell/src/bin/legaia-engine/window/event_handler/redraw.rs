@@ -2105,7 +2105,11 @@ impl PlayWindowApp {
                 // the same `battle_vram` residency, opposite ways.
                 hud.extend(self.battle_value_readout_draws(cam, w, h));
             }
-            let overlay = TextOverlay { atlas, draws: &hud };
+            let overlay = TextOverlay {
+                atlas,
+                draws: &hud,
+                blend: &[],
+            };
 
             // Boot-phase sprite overlay: alternates between the
             // publisher-logos atlas (during PublisherLogos) and
@@ -2121,7 +2125,7 @@ impl PlayWindowApp {
             // score tally), placed by the shared `other_game_hud` emitters.
             // Rides sprite slot 1: the boot-UI overlays that own it are all
             // inactive while a dome leg or its between-legs beat is up.
-            let muscle_hub_draw_vec = self.muscle_hub_sprite_draws(w, h);
+            let (muscle_hub_draw_vec, muscle_hub_blend) = self.muscle_hub_sprite_draws(w, h);
             // Slot-2 chrome samples the resident system-UI atlas.
             // Save-select pills/panel and the field-menu window
             // frame are mutually-exclusive boot states, so both
@@ -2174,22 +2178,27 @@ impl PlayWindowApp {
             let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                 atlas: &p.atlas,
                 draws: &logo_draw_vec,
+                blend: &[],
             });
             let title_overlay = self.title_screen.as_ref().map(|t| TextOverlay {
                 atlas: &t.atlas,
                 draws: &title_draw_vec,
+                blend: &[],
             });
             let menu_glyph_overlay = self.menu_glyphs.as_ref().map(|m| TextOverlay {
                 atlas: &m.atlas,
                 draws: &menu_glyph_draw_vec,
+                blend: &[],
             });
             let save_chrome_overlay = self.save_menu.as_ref().map(|sm| TextOverlay {
                 atlas: &sm.atlas,
                 draws: &save_chrome_draw_vec,
+                blend: &[],
             });
             let muscle_hub_overlay = self.muscle_hub.as_ref().map(|m| TextOverlay {
                 atlas: &m.atlas,
                 draws: &muscle_hub_draw_vec,
+                blend: &muscle_hub_blend,
             });
             // Opening-cutscene "It was the Seru." caption: the opdeene baked TIM
             // (`World::cutscene.caption`) blitted centered and faded
@@ -2227,6 +2236,7 @@ impl PlayWindowApp {
                 .map(|(atlas, _, _)| TextOverlay {
                     atlas,
                     draws: &caption_draw_vec,
+                    blend: &[],
                 });
 
             // The clear colour is the shared engine-ui selector on every

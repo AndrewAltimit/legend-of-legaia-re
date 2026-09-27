@@ -107,6 +107,9 @@ pub struct Renderer {
     /// Text pipeline: 2D textured quads, alpha-blended, no depth. Group 0
     /// binds a sampled font atlas. Used for HUD / debug / dialog overlays.
     pub(super) text_pipeline: wgpu::RenderPipeline,
+    /// The text pipeline's quads through each PSX ABR equation, indexed by
+    /// mode (`OverlayBlendSpan`).
+    pub(super) text_blend_pipelines: [wgpu::RenderPipeline; 4],
     /// Bind-group layout for the font-atlas texture binding (group 0 of
     /// [`Self::text_pipeline`]). Reused when uploading new atlases.
     pub(super) text_atlas_bgl: wgpu::BindGroupLayout,

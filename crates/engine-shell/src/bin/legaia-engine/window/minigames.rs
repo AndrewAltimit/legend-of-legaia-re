@@ -748,6 +748,9 @@ impl PlayWindowApp {
                 );
                 self.muscle_hub = Some(MuscleHubAssets {
                     blocks,
+                    palette_stp: legaia_engine_render::ringside_backdrop::HubPaletteStp::from_tims(
+                        &tim0, &tim1,
+                    ),
                     table,
                     atlas,
                     stills,
@@ -775,18 +778,28 @@ impl PlayWindowApp {
     /// settle into - the same model row set the browser page feeds the same
     /// builder.
     ///
-    /// Two disclosed stand-ins: the packet's vertical two-stop colour
-    /// gradient flattens to the stops' mean (the sprite pipeline is
-    /// one-colour), and semi-transparent packets draw with ordinary alpha
-    /// blending.
+    /// Semi-transparent packets ride the returned [`OverlayBlendSpan`]s: the
+    /// first visit's shade through the subtractive (`ABR 2`) sprite
+    /// pipeline, between the wall tiles and the screens drawn over them, and
+    /// a hub quad through its tpage's ABR wherever its palette carries STP
+    /// (`HubPaletteStp::quad_abr` - an STP-free palette draws opaque, as
+    /// retail's GPU draws it).
+    ///
+    /// One disclosed stand-in: a packet's vertical two-stop colour gradient
+    /// flattens to the stops' mean (the sprite pipeline is one-colour).
+    ///
+    /// [`OverlayBlendSpan`]: legaia_engine_render::OverlayBlendSpan
     pub(super) fn muscle_hub_sprite_draws(
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Vec<legaia_engine_render::SpriteDraw> {
+    ) -> (
+        Vec<legaia_engine_render::SpriteDraw>,
+        Vec<legaia_engine_render::OverlayBlendSpan>,
+    ) {
         use legaia_engine_render::other_game_hud as hud;
         let Some(assets) = self.muscle_hub.as_ref() else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let world = &self.session.host.world;
         let in_dome = world.mode == SceneMode::MuscleDome;
@@ -900,15 +913,28 @@ impl PlayWindowApp {
             }
         }
         if quads.is_empty() && out.is_empty() && front.is_empty() {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         }
         let shade_at = quads.len();
         quads.extend(front);
+        let mut blend = Vec::new();
+        let push_shade =
+            |out: &mut Vec<legaia_engine_render::SpriteDraw>,
+             blend: &mut Vec<legaia_engine_render::OverlayBlendSpan>,
+             sh: &legaia_engine_render::ringside_backdrop::BackdropShade| {
+                let rows = shade_row_draws(sh, assets.white_y);
+                blend.push(legaia_engine_render::OverlayBlendSpan {
+                    start: out.len() as u32,
+                    count: rows.len() as u32,
+                    abr: sh.abr,
+                });
+                out.extend(rows);
+            };
         for (i, q) in quads.iter().enumerate() {
             if i == shade_at
                 && let Some(sh) = shade
             {
-                out.extend(shade_band_draws(&sh, assets.white_y));
+                push_shade(&mut out, &mut blend, &sh);
             }
             let sheet = u8::from(q.tpage & 0x10 != 0);
             let pal = (q.clut & 0x3F) as u8;
@@ -919,6 +945,10 @@ impl PlayWindowApp {
             else {
                 continue;
             };
+            // A semi packet blends only through STP texels: the hub's
+            // variant-2 palettes (and sheet 1's) carry none, so those
+            // packets draw opaque whatever their ABR.
+            let semi_abr = assets.palette_stp.quad_abr(q);
             let dw = (q.xy[1].0 as i32 - q.xy[0].0 as i32 + 1).max(0) as u32;
             let dh = (q.xy[2].1 as i32 - q.xy[0].1 as i32 + 1).max(0) as u32;
             let sw = (q.uv[1].0 as i32 - q.uv[0].0 as i32 + 1).max(0) as u32;
@@ -945,6 +975,13 @@ impl PlayWindowApp {
             let sy = q.uv[0].1 as i64 + (y0 - dy) * sh as i64 / dh as i64;
             let csw = ((x1 - x0) * sw as i64 / dw as i64).max(1) as u32;
             let csh = ((y1 - y0) * sh as i64 / dh as i64).max(1) as u32;
+            if let Some(abr) = semi_abr {
+                blend.push(legaia_engine_render::OverlayBlendSpan {
+                    start: out.len() as u32,
+                    count: 1,
+                    abr,
+                });
+            }
             out.push(legaia_engine_render::SpriteDraw {
                 dst: (x0 as i32, y0 as i32, (x1 - x0) as u32, (y1 - y0) as u32),
                 src: (sx as u32, block_y + sy as u32, csw, csh),
@@ -954,13 +991,13 @@ impl PlayWindowApp {
         if shade_at >= quads.len()
             && let Some(sh) = shade
         {
-            out.extend(shade_band_draws(&sh, assets.white_y));
+            push_shade(&mut out, &mut blend, &sh);
         }
         // The quads sit in the retail 320x240 frame; map them through the
         // same stage transform every minigame chrome layer uses.
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
         legaia_engine_render::scale_stage_text_draws(&mut out, stage_origin, stage_scale);
-        out
+        (out, blend)
     }
 
     /// Load the fishing overlay (PROT 0972) and start a fishing session in the
@@ -1408,44 +1445,35 @@ impl PlayWindowApp {
     }
 }
 
-/// Rows the backdrop shade's vertical Gouraud ramp is cut into for the
-/// sprite pipeline, which carries one colour per draw.
-const SHADE_BANDS: u32 = 16;
-
 /// The first visit's backdrop shade (`FUN_801D1610`, a subtractive `B - F`
 /// Gouraud quad, `0x64` at the top fading to `0` at the bottom) as sprite
-/// draws over the atlas's white block.
+/// draws over the atlas's white block, for the caller to put in an `ABR 2`
+/// [`legaia_engine_render::OverlayBlendSpan`].
 ///
-/// Disclosed stand-in: the sprite pipeline blends with ordinary alpha, so
-/// the ramp is cut into [`SHADE_BANDS`] flat bands of black at alpha
-/// `f / 255` - "scale the background by `1 - f/255`" in place of retail's
-/// "subtract `f`". The window's one ABR-capable 2D pass (the screen-prim
-/// pass, which has the `ReverseSubtract` pipeline) runs *before* the sprite
-/// overlay, so it cannot sit between the wall tiles and the screens drawn
-/// over them. Both browser pages subtract exactly on their 2D layer
-/// (`subtractShade`); this host is the one still on the stand-in.
-fn shade_band_draws(
+/// The sprite pipeline carries one colour per draw, and the quad's colour
+/// only varies with `y`, so one draw per display row reproduces the ramp:
+/// row `y` subtracts `top + (bottom - top) * y / h`, the Gouraud value at
+/// that row. A row that subtracts nothing is skipped.
+fn shade_row_draws(
     sh: &legaia_engine_render::ringside_backdrop::BackdropShade,
     white_y: u32,
 ) -> Vec<legaia_engine_render::SpriteDraw> {
     let (x0, y0) = (i32::from(sh.xy[0].0), i32::from(sh.xy[0].1));
     let w = (i32::from(sh.xy[1].0) - x0).max(0) as u32;
     let h = (i32::from(sh.xy[2].1) - y0).max(0);
-    let top = f32::from(sh.rgb[0][0]);
-    let bottom = f32::from(sh.rgb[2][0]);
+    let top = i32::from(sh.rgb[0][0]);
+    let bottom = i32::from(sh.rgb[2][0]);
     let mut out = Vec::new();
-    for b in 0..SHADE_BANDS as i32 {
-        let by0 = y0 + h * b / SHADE_BANDS as i32;
-        let by1 = y0 + h * (b + 1) / SHADE_BANDS as i32;
-        let t = (b as f32 + 0.5) / SHADE_BANDS as f32;
-        let f = top + (bottom - top) * t;
-        if by1 <= by0 || f <= 0.0 {
+    for row in 0..h {
+        let f = top + (bottom - top) * row / h;
+        if f <= 0 {
             continue;
         }
+        let f = f as f32 / 255.0;
         out.push(legaia_engine_render::SpriteDraw {
-            dst: (x0, by0, w, (by1 - by0) as u32),
+            dst: (x0, y0 + row, w, 1),
             src: (0, white_y, 1, 1),
-            color: [0.0, 0.0, 0.0, f / 255.0],
+            color: [f, f, f, 1.0],
         });
     }
     out

@@ -781,6 +781,22 @@
     S.hubSheets[key] = c;
     return c;
   }
+  /* PSX semi-transparency for a hub quad's `abr` (null = opaque): 0 is
+   * `B/2 + F/2`, 1 `B + F`, 3 `B + F/4` - all three are canvas composites
+   * (a transparent texel has alpha 0 and adds nothing). 2 (`B - F`) has no
+   * composite, and no hub palette that blends is ever drawn with it (only
+   * STP-free palettes reach ABR 2, and those draw opaque), so it takes the
+   * plain draw. */
+  function withAbr(g, abr, draw) {
+    if (abr == null || abr === 2) return draw();
+    g.save();
+    if (abr === 0) g.globalAlpha *= 0.5;
+    else {
+      g.globalCompositeOperation = 'lighter';
+      if (abr === 3) g.globalAlpha *= 0.25;
+    }
+    try { return draw(); } finally { g.restore(); }
+  }
   function drawHubQuads(rt, view) {
     if (typeof rt.play_mg_muscle_hub_quads_json !== 'function') return false;
     const m = parse(() => rt.play_mg_muscle_hub_quads_json());
@@ -815,7 +831,8 @@
       }
       const s = hubSheet(rt, q.sheet, q.pal);
       if (!s) continue;
-      g.drawImage(s, q.u, q.v, q.w, q.h, q.x * sx, q.y * sy, q.dw * sx, q.dh * sy);
+      withAbr(g, q.abr, () =>
+        g.drawImage(s, q.u, q.v, q.w, q.h, q.x * sx, q.y * sy, q.dw * sx, q.dh * sy));
       /* The ringside still is an opaque packet modulated by its fade level
        * (`texel * c / 128`): below neutral that is the image darkened
        * toward black, which a black fill at `1 - c/128` reproduces. */

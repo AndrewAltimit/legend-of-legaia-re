@@ -293,6 +293,58 @@ pub fn first_visit_hub_draw(
     out
 }
 
+/// The STP class of every 16-colour sub-palette of the two hub pages
+/// (extraction 1220's TIMs: CLUT rows 502 and 503), which decides whether a
+/// semi-transparent hub packet blends at all.
+///
+/// A hub emitter sets a record's semi byte and tpage page to the variant it
+/// is called with, so a variant-1 packet carries ABR 1 (`B + F`) and a
+/// variant-2 packet ABR 2 (`B - F`) through `clut + 1`. The GPU applies
+/// that equation only to texels whose CLUT colour has STP set, and the two
+/// pages' palettes are each all-STP or STP-free: row 502 sub-palettes
+/// `0`/`2`/`6`/`8` carry STP on every non-zero colour and every other one
+/// carries none, row 503 carries none at all. So the variant-2 "subtractive
+/// shadow" and every row-503 record (the course names, the title art) draw
+/// **opaque**; only the row-502 records' own palettes blend, additively.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HubPaletteStp {
+    /// `[sheet][sub-palette]`, sheet `0` = tpage bit 4 clear.
+    pages: [Vec<crate::screen_prim::PaletteStp>; 2],
+}
+
+impl HubPaletteStp {
+    /// Classify both pages' sub-palettes.
+    pub fn from_tims(page0: &legaia_tim::Tim, page1: &legaia_tim::Tim) -> Self {
+        let classify = |t: &legaia_tim::Tim| -> Vec<crate::screen_prim::PaletteStp> {
+            (0..t.palette_count())
+                .map(|i| {
+                    t.clut
+                        .as_ref()
+                        .and_then(|c| c.palette(t.mode, i))
+                        .map_or(crate::screen_prim::PaletteStp::None, |p| {
+                            crate::screen_prim::palette_stp(p)
+                        })
+                })
+                .collect()
+        };
+        HubPaletteStp {
+            pages: [classify(page0), classify(page1)],
+        }
+    }
+
+    /// The ABR equation a hub quad's texels go through, or `None` when it
+    /// draws opaque ([`crate::screen_prim::textured_semi_abr`]). A palette
+    /// the pages do not hold classifies as STP-free.
+    pub fn quad_abr(&self, q: &HudQuad) -> Option<u8> {
+        let sheet = usize::from(q.tpage & 0x10 != 0);
+        let stp = self.pages[sheet]
+            .get(usize::from(q.clut & 0x3F))
+            .copied()
+            .unwrap_or(crate::screen_prim::PaletteStp::None);
+        crate::screen_prim::textured_semi_abr(q.semi_transparent, q.tpage, stp)
+    }
+}
+
 /// Whether a hub quad samples a 15-bit direct-colour page (`tp = 2`, tpage
 /// bits 7-8) - which on the hub is only ever the still: every sprite-table
 /// record names a 4bpp page.

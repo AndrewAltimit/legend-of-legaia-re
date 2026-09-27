@@ -69,6 +69,8 @@ pub(crate) struct MuscleUi {
     /// Pristine parse of the PROT 0977 sprite table; the emitters write
     /// variants back, so every frame runs over a copy.
     sprite_table: Option<Vec<HudSprite>>,
+    /// The hub pages' palette STP classes (whether a semi packet blends).
+    palette_stp: legaia_engine_ui::ringside_backdrop::HubPaletteStp,
     prev_phase: Option<MusclePhase>,
     /// Count of turns resolved this leg (the page's clip-trigger edge).
     pub(crate) turns_resolved: u32,
@@ -118,6 +120,10 @@ impl LegaiaRuntime {
             });
         ui.sprite_table = raw.as_deref().map(hud::parse_sprite_table);
         ui.char_slot = 0;
+        if let Some((t0, t1)) = self.muscle_hub_tims() {
+            self.minigame_ui.muscle.palette_stp =
+                legaia_engine_ui::ringside_backdrop::HubPaletteStp::from_tims(&t0, &t1);
+        }
     }
 
     /// Exit: a ladder that has run out settles into the coin bank (a no-op
@@ -263,7 +269,10 @@ impl LegaiaRuntime {
                 card,
             ));
         }
-        let mut rows: Vec<serde_json::Value> = quads.iter().map(hub_quad_json).collect();
+        let mut rows: Vec<serde_json::Value> = quads
+            .iter()
+            .map(|q| hub_quad_json(q, &ui.palette_stp))
+            .collect();
         if let Some((at, row)) = shade_row {
             rows.insert(at.min(rows.len()), row);
         }
@@ -669,7 +678,13 @@ impl LegaiaRuntime {
 
 /// Quad -> the page's blit record (the standalone page's
 /// `muscle_hub_quads_json` row shape, so one JS blitter serves both).
-fn hub_quad_json(q: &HudQuad) -> serde_json::Value {
+///
+/// `abr` is the equation the quad's texels blend with, `null` for a quad
+/// that draws opaque (`HubPaletteStp::quad_abr`).
+fn hub_quad_json(
+    q: &HudQuad,
+    stp: &legaia_engine_ui::ringside_backdrop::HubPaletteStp,
+) -> serde_json::Value {
     serde_json::json!({
         "sheet": if q.tpage & 0x10 != 0 { 5 } else { 4 },
         "pal": q.clut & 0x3F,
@@ -680,6 +695,7 @@ fn hub_quad_json(q: &HudQuad) -> serde_json::Value {
         "dw": q.xy[1].0 as i32 - q.xy[0].0 as i32 + 1,
         "dh": q.xy[2].1 as i32 - q.xy[0].1 as i32 + 1,
         "semi": q.semi_transparent,
+        "abr": stp.quad_abr(q),
     })
 }
 
@@ -687,7 +703,7 @@ fn hub_quad_json(q: &HudQuad) -> serde_json::Value {
 /// `{ shade: true, x, y, dw, dh, top, bottom }` - a vertical ramp the page
 /// applies subtractively (`B - F`, clamped at 0) to the pixels already on its
 /// 2D layer (`subtractShade` in `play-minigames.js`), which is retail's
-/// ABR 2. The native window still draws black bands at alpha `f / 255`.
+/// ABR 2 - the equation the native window's sprite pass runs in hardware.
 fn shade_json(sh: &legaia_engine_ui::ringside_backdrop::BackdropShade) -> serde_json::Value {
     serde_json::json!({
         "shade": true,

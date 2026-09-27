@@ -12,6 +12,7 @@ mod blend;
 mod color_space;
 mod menu_overlays;
 mod screen_overlay_gpu;
+mod sprite_blend;
 mod text_overlay;
 mod title_save_screen;
 mod vram_capture_gpu;

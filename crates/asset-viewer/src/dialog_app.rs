@@ -362,6 +362,7 @@ impl ApplicationHandler for DialogApp {
                     let overlay = TextOverlay {
                         atlas,
                         draws: &draws,
+                        blend: &[],
                     };
                     if let Err(e) = r.render(RenderTarget::TextOnly(&overlay)) {
                         log::error!("render error: {e:#}");

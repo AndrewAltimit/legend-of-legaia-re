@@ -62,6 +62,60 @@ pub use renderer::*;
 pub struct TextOverlay<'a> {
     pub atlas: &'a UploadedFontAtlas,
     pub draws: &'a [TextDraw],
+    /// Runs of [`Self::draws`] that are PSX semi-transparent packets. Every
+    /// draw outside a span goes through the ordinary alpha-blend pipeline;
+    /// a draw inside one goes through the span's ABR equation instead. Empty
+    /// for an overlay with no semi-transparent packets.
+    pub blend: &'a [OverlayBlendSpan],
+}
+
+/// A run of an overlay's draws blended with one PSX semi-transparency
+/// equation (ABR, tpage bits 5..=6) instead of alpha: `0` = `B/2 + F/2`,
+/// `1` = `B + F`, `2` = `B - F`, `3` = `B + F/4`, where `F` is the tinted
+/// texel and `B` the framebuffer ([`psx_blend::blend_state`]). A texel with
+/// atlas alpha `0` is PSX colour `0x0000` and is not drawn; the tint's alpha
+/// is ignored.
+///
+/// Spans are ordered, do not overlap, and index [`TextOverlay::draws`];
+/// draw order is unchanged - the pipeline switches at each span edge, so a
+/// semi packet between two opaque ones stays between them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OverlayBlendSpan {
+    /// Index of the span's first draw.
+    pub start: u32,
+    /// Number of draws in the span.
+    pub count: u32,
+    /// The ABR equation (`0..=3`).
+    pub abr: u8,
+}
+
+impl OverlayBlendSpan {
+    /// Split `count` draws starting at `base` into `(start, count, abr)`
+    /// segments, one per maximal run of a single blend class - `None` for
+    /// the alpha pipeline, `Some(abr)` for a span. Spans past `base + count`
+    /// are clipped; a malformed (overlapping) span list keeps its first
+    /// claim on each draw.
+    pub fn segments(spans: &[Self], count: u32) -> Vec<(u32, u32, Option<u8>)> {
+        let mut out = Vec::new();
+        let mut at = 0u32;
+        for sp in spans {
+            let s = sp.start.max(at).min(count);
+            let e = sp.start.saturating_add(sp.count).min(count);
+            if s > at {
+                out.push((at, s - at, None));
+            }
+            if e > s {
+                out.push((s, e - s, Some(sp.abr & 3)));
+                at = e;
+            } else {
+                at = at.max(s);
+            }
+        }
+        if count > at {
+            out.push((at, count - at, None));
+        }
+        out
+    }
 }
 
 /// GPU-resident aliases of the moved [`SpriteDraw`] / [`TextOverlay`] shapes.

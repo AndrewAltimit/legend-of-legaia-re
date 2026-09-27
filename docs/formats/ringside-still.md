@@ -254,15 +254,29 @@ off the world's leg edges; the standalone minigames page replays the same
 walk through `muscle_first_visit_json` and hands over to its own ROUND banner
 at arm `0x15`.
 
-The shade is subtractive (`B - F`, draw-mode tpage `0x46`). Both browser
-pages apply it as retail does: they read back the pixels their 2D layer
+The shade is subtractive (`B - F`, draw-mode tpage `0x46`), and all three
+hosts subtract it. The browser pages read back the pixels their 2D layer
 already holds and subtract the Gouraud ramp row by row, clamped at zero
 (`subtractShade` in `play-minigames.js` and `minigame-muscle.js`). The native
-window is the one stand-in left: its sprite pass blends with ordinary alpha,
-and its one ABR-capable 2D pass (the screen-prim pass) runs before the sprite
-overlay, so it cannot sit between the wall tiles and the screens over them.
-It draws sixteen horizontal bands of black at alpha `f / 255` instead -
-scaling what is under it by `1 - f/255` where retail subtracts `f`.
+window draws one row per display line through the sprite pass's `ABR 2`
+pipeline (`OverlayBlendSpan` in `legaia-engine-render`), which switches
+equation mid-list, so the shade stays between the wall tiles and the screens
+over them.
+
+### Which hub packets blend
+
+The hub emitters mark every variant packet semi-transparent - variant 1 with
+ABR 1 (`B + F`), variant 2 with ABR 2 (`B - F`) through `clut + 1` - but the
+GPU applies the equation only to texels whose CLUT colour carries STP (bit
+15). The two hub pages' palettes are each all-STP or STP-free: CLUT row 502's
+sub-palettes `0`, `2`, `6` and `8` carry STP on every non-zero colour, its
+others carry none, and row 503 carries none at all. So only the row-502
+records' own palettes (the intro strip, the ROUND banner and digits, the
+tally rows) blend, additively; every variant-2 shadow and every row-503
+packet (the course names, the title art) draws **opaque**. No hub packet
+ever subtracts a texture. `ringside_backdrop::HubPaletteStp` classifies the
+palettes and resolves each quad's equation for all three hosts; the pin is
+`crates/web-viewer/tests/hub_palette_stp_real.rs`.
 
 Two waits in the first visit come from the hub's own sound. Arms `3`, `4`
 and `0x16` hold on `_DAT_8007BC20`, the **CD-XA in-flight** word: the clip
@@ -284,11 +298,14 @@ hold - the port loads synchronously, so that wait is already satisfied.
 Every hub emitter links at slot `3` (`DAT_801D1AA8` is reset to `3` after
 each packet), and the link `FUN_8003D2C4` pushes onto the slot's head, so the
 last packet emitted is the first drawn. The course card, the title art and the
-ROUND banner each draw a variant-2 copy (subtractive; `clut + 1`) and a
-variant-1 copy (additive) of the same record: emitted variant 1 first, they
-paint variant 2 underneath. `other_game_hud::hub_screen_quads` takes draws in
+ROUND banner each draw a variant-2 copy (`clut + 1`, marked ABR 2) and a
+variant-1 copy (marked ABR 1) of the same record: emitted variant 1 first,
+they paint variant 2 underneath. The marks are not what the GPU draws: every
+variant-2 palette is STP-free, so the shadow is an opaque darker copy, and
+the face blends additively only on a row-502 record
+([which hub packets blend](#which-hub-packets-blend)). `other_game_hud::hub_screen_quads` takes draws in
 emit order and returns paint order. Before this, the hosts painted in emit
-order - the subtractive shadow over the additive face - and the title art was
+order - the shadow over the face - and the title art was
 listed shadow-first, which left the face inheriting the shadow's write-back
 into record 4 (`semi = 1`, page `2`); retail clears that byte before each face
 draw (`sb zero,0x176b` at `0x801CFAF8`), and `title_art_quads` does too.

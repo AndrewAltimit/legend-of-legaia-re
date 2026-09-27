@@ -1390,6 +1390,29 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let texel = textureSample(t_atlas, s_atlas, in.uv);
     return vec4<f32>(in.color.rgb * texel.rgb, in.color.a * texel.a);
 }
+
+// PSX semi-transparent quads (`OverlayBlendSpan`): the foreground F is the
+// modulated texel's colour, and the per-ABR fixed-function blend state
+// (`psx_blend::blend_state`) combines it with the framebuffer. A texel whose
+// atlas alpha is zero is PSX colour 0x0000 - never drawn - so it discards.
+// The tint's alpha plays no part: the equation carries the blend.
+fn blend_color(in: VsOut, scale: f32) -> vec4<f32> {
+    let texel = textureSample(t_atlas, s_atlas, in.uv);
+    if (texel.a < 0.5) {
+        discard;
+    }
+    return vec4<f32>(in.color.rgb * texel.rgb * scale, 1.0);
+}
+
+@fragment
+fn fs_blend(in: VsOut) -> @location(0) vec4<f32> {
+    return blend_color(in, 1.0);
+}
+
+@fragment
+fn fs_blend_quarter(in: VsOut) -> @location(0) vec4<f32> {
+    return blend_color(in, 0.25);
+}
 "#;
 
 /// Screen-space 2D overlay shader (see [`crate::screen_overlay`]): PSX

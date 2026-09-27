@@ -505,20 +505,13 @@ impl Renderer {
                         set_full_vp(&mut rp);
                         let ranges = self.scene_quad_ranges.borrow();
                         if !ranges.iter().all(|(_, n)| *n == 0) {
-                            rp.set_pipeline(&self.text_pipeline);
                             let vbuf_borrow = self.text_vbuf.borrow();
                             let ibuf_borrow = self.text_ibuf.borrow();
                             rp.set_vertex_buffer(0, vbuf_borrow.slice(..));
                             rp.set_index_buffer(ibuf_borrow.slice(..), wgpu::IndexFormat::Uint32);
                             for (overlay, (base_quad, count)) in overlays.iter().zip(ranges.iter())
                             {
-                                if *count == 0 {
-                                    continue;
-                                }
-                                rp.set_bind_group(0, &overlay.atlas.bind_group, &[]);
-                                let start = base_quad * 6;
-                                let end = (base_quad + count) * 6;
-                                rp.draw_indexed(start..end, 0, 0..1);
+                                self.draw_quad_overlay(&mut rp, overlay, *base_quad, *count);
                             }
                         }
                     }
@@ -528,15 +521,11 @@ impl Renderer {
                     if let Some(&(base_quad, count)) = ranges.first()
                         && count > 0
                     {
-                        rp.set_pipeline(&self.text_pipeline);
-                        rp.set_bind_group(0, &text.atlas.bind_group, &[]);
                         let vbuf_borrow = self.text_vbuf.borrow();
                         let ibuf_borrow = self.text_ibuf.borrow();
                         rp.set_vertex_buffer(0, vbuf_borrow.slice(..));
                         rp.set_index_buffer(ibuf_borrow.slice(..), wgpu::IndexFormat::Uint32);
-                        let start = base_quad * 6;
-                        let end = (base_quad + count) * 6;
-                        rp.draw_indexed(start..end, 0, 0..1);
+                        self.draw_quad_overlay(&mut rp, text, base_quad, count);
                     }
                 }
                 RenderTarget::ScreenOverlay { vram, .. } => {
@@ -1293,6 +1282,40 @@ impl Renderer {
             bytemuck::cast_slice(&geo.indices),
         );
         Some(c)
+    }
+
+    /// Draw one staged quad overlay (`count` quads from `base_quad` of the
+    /// buffers [`Self::stage_quad_overlays`] filled, already bound): the
+    /// alpha pipeline outside the overlay's [`OverlayBlendSpan`]s, the
+    /// span's ABR pipeline inside one, in draw order.
+    fn draw_quad_overlay(
+        &self,
+        rp: &mut wgpu::RenderPass<'_>,
+        overlay: &TextOverlay<'_>,
+        base_quad: u32,
+        count: u32,
+    ) {
+        if count == 0 {
+            return;
+        }
+        rp.set_bind_group(0, &overlay.atlas.bind_group, &[]);
+        for (start, n, abr) in OverlayBlendSpan::segments(overlay.blend, count) {
+            match abr {
+                None => rp.set_pipeline(&self.text_pipeline),
+                Some(mode) => {
+                    let c = psx_blend::MODE0_BLEND_CONSTANT;
+                    rp.set_blend_constant(wgpu::Color {
+                        r: c,
+                        g: c,
+                        b: c,
+                        a: c,
+                    });
+                    rp.set_pipeline(&self.text_blend_pipelines[mode as usize]);
+                }
+            }
+            let first = (base_quad + start) * 6;
+            rp.draw_indexed(first..first + n * 6, 0, 0..1);
+        }
     }
 
     fn draw_screen_overlay(&self, rp: &mut wgpu::RenderPass<'_>, vram: &UploadedVram) {
