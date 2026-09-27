@@ -9,7 +9,7 @@
   <dl class="kv">
     <dt>What you get</dt><dd>A translated game on your own disc, applied in the <a href="rom-patcher.html">browser patcher</a> or with <code>legaia-patcher translate</code>. Composes with every randomizer option.</dd>
     <dt>Covered</dt><dd>Name tables (items, spells, arts, accessory passives, party names), the whole NPC / cutscene / narration dialogue corpus, pause-menu / shop / battle system labels.</dd>
-    <dt>Not covered</dt><dd>Text baked into textures; accented and non-Latin scripts (the retail font has no glyphs for them).</dd>
+    <dt>Not covered</dt><dd>Text baked into textures; non-Latin scripts. Accented Latin draws with the accent font (<code>accents: font</code>).</dd>
     <dt>The one rule</dt><dd>Every edit is same-size in place unless you opt into the relayout. Each line has a byte <em>budget</em>; a line over budget is reported and left English - except a name, which moves (or, for a monster, grows its record) when there is room.</dd>
     <dt>Sharing</dt><dd>A pack is safe to publish once its <code>source:</code> text is stripped - what remains is your text keyed by disc coordinates.</dd>
     <dt>Code</dt><dd><code>crates/patcher/src/translation/</code>; writes go through <code>DiscPatcher</code> (EDC/ECC re-encoded, no LBA moves).</dd>
@@ -176,7 +176,16 @@ sections:
       <tr><td><code>{xx}</code></td><td>bare byte (<code>{01}</code> item-icon prefix); literal braces are <code>{7b}</code> / <code>{7d}</code></td></tr>
     </tbody>
   </table>
-  <p>Encoding reports <strong>per-character</strong> errors. Smart quotes, dashes, ellipsis and NBSP fold automatically. <strong>Accented Latin, Cyrillic and CJK are not encodable</strong> - the retail font has no such glyphs, so French or Italian must be written unaccented (<code>Epee</code>, not <code>&Eacute;p&eacute;e</code>). Lifting that limit needs a font patch, which is a separate effort.</p>
+  <p>Encoding reports <strong>per-character</strong> errors. Smart quotes, dashes, ellipsis and NBSP fold automatically. The retail font draws plain letters only; the pack's <code>accents:</code> header decides what happens to a typed accent on import:</p>
+  <table>
+    <thead><tr><th><code>accents:</code></th><th>Typed <code>&eacute;</code></th><th>The disc</th></tr></thead>
+    <tbody>
+      <tr><td>empty / <code>strict</code></td><td>encode error, reported per character with its fold and cell</td><td>unchanged</td></tr>
+      <tr><td><code>fold</code></td><td>written as <code>e</code></td><td>unchanged</td></tr>
+      <tr><td><code>font</code></td><td>written as the byte <code>0x82</code></td><td>the accent font is written once: accented glyphs built from the disc's own letters, with a width each</td></tr>
+    </tbody>
+  </table>
+  <p>One table, <code>legaia_font::latin</code>, holds the byte layout (CP437 / CP850, the bytes the PAL discs use) and the folds; the CLI, the ROM patcher and the workbench all read it. <code>translate import --accents</code> overrides the header; <code>stats</code> and <code>space --pack</code> list every character that will not draw as typed, with its key and index. Cyrillic, Greek and CJK have no glyph and no fold. Reference: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/translation/pack-format.md#accents" target="_blank" rel="noopener">pack-format.md &sect; Accents</a>.</p>
 </section>
 
 <section class="doc-section" id="budgets">

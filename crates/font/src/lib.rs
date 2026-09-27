@@ -20,8 +20,10 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
+pub mod accent_font;
 pub mod builtin;
 pub mod glyph_count;
+pub mod latin;
 pub mod limits;
 pub mod measure;
 

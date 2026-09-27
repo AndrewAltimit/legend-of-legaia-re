@@ -7,6 +7,25 @@ use super::*;
 
 /// Live battle session state: per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues and the end-of-battle latches.
 pub struct BattleState {
+    /// The loaded scene's **map id** - retail's `_DAT_80084540`, the scene's
+    /// raw CDNAME `#define` number (`town01` = `3`, `map01` = `0x55`; every
+    /// catalogued save state reads the define of the scene named at
+    /// `0x80084548`). It is the raw-TOC index, **two above** the extraction
+    /// index `crate::scene::Scene::start` carries. Stamped by the scene host
+    /// on every scene load; battle init's map-gated arms key on it (the
+    /// alternate monster seat family, the formation roll's scripted ambush,
+    /// the intro style picker).
+    pub map_id: u32,
+    /// The regular battle's half of the special-battle word `_DAT_8007BAC0`
+    /// (the Muscle Dome session carries its own). Battle init clears a lone
+    /// [`vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN`] and raises it against
+    /// monster `0xAF`; the formation roll raises it for the Rim Elm ambush
+    /// (see [`vm::battle_formulas::battle_init_special_word`] /
+    /// [`vm::battle_formulas::formation_roll_special_word`]). Read by the Ra-Seru
+    /// chip ([`crate::battle_hud::battle_magic_chip`]) and its arm
+    /// (`World::tick_battle_command`). The other readers of the word - the drop,
+    /// steal, capture and spell-XP gates - still read only the dome's word.
+    pub special_word: u32,
     /// Per-slot weapon attack used by [`art_strike::apply_art_strike`] to
     /// compute Tactical-Art damage. Engines populate from the active
     /// character record's weapon power. Default zero - un-populated slots
@@ -495,6 +514,8 @@ pub struct ClipRibbon {
 impl BattleState {
     pub fn new() -> Self {
         Self {
+            map_id: 0,
+            special_word: 0,
             attack: [0; 8],
             equip_atk: [[0; legaia_engine_vm::battle_formulas::EQUIP_SLOTS]; 8],
             magic: [0; 8],

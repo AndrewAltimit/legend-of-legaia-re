@@ -268,10 +268,11 @@
     <tbody>
       <tr><td>FUN_801E76D4</td><td>World-map controller: top-view debug toggle, camera scroll / azimuth / zoom</td></tr>
       <tr><td>FUN_801EAD98</td><td>Developer menu renderer, 24-entry list (display only; port <code>engine_vm::world_map_overlay</code>)</td></tr>
-      <tr><td>FUN_801EE094 / FUN_801EE328 (0897)</td><td>Dev-menu warp appliers ("ON RIREMITO," / "ON RULA,") - the MAP CHANGE half of "jump to beat"</td></tr>
+      <tr><td>FUN_801EE094 / FUN_801EE328 (0897)</td><td>The travel arts Riremito / Rula (subsystem handlers <code>0x29</code> / <code>0x2B</code>): what the Door of Light / Door of Wind items run through the pause-menu session <code>FUN_801ED308</code>; each scans the resident CDNAME define table <code>0x80088758</code> for its destination. The developer menu reaches them too</td></tr>
       <tr><td>FUN_801DBD04 (0897)</td><td>Dev-menu EVENT FLAG editor over ids <code>0..0xFFF</code>; can set any story flag including the spine gates</td></tr>
       <tr><td>FUN_801EF014 (0897)</td><td>Flag-window picker widget (op-<code>0x49</code>-installed); only genuine disc use is the Uru Mais warp-pad memory</td></tr>
-      <tr><td>FUN_801F159C (0897)</td><td>System-actor dispatcher over the 52-entry table <code>PTR_FUN_801F33B4</code></td></tr>
+      <tr><td>FUN_801F159C (0897)</td><td>Subsystem actor handler: <code>jalr</code> by value through the 52-entry id table <code>0x801F33B4</code> - <code>7</code> the state pick <code>FUN_801F1F4C</code>, <code>0x30</code> the pause-menu session, <code>0x29</code> / <code>0x2B</code> the travel arts. Reached by value, so no address reference names a slot</td></tr>
+      <tr><td>FUN_801ED308 (0897)</td><td>Pause-menu session (handler <code>0x30</code>): brightness ramp, menu spawn, parks on the exit code <code>_DAT_8007B43C</code>; its phases 6 / 7 hand a Door of Light / Door of Wind use to Riremito / Rula. Not a fade/flash</td></tr>
       <tr><td>FUN_801D2EBC (0897)</td><td>Timed-flag scheduler consumer (installer op <code>0x4C 0xD3</code>); retail use: <code>chitei2</code> escape timer, flag <code>0x4C7</code></td></tr>
       <tr><td>FUN_801DA51C</td><td>Per-entity tick; 5-state SM on <code>entity[+0x8A]</code></td></tr>
       <tr><td>FUN_801CFC40</td><td>Top-view sprite batcher</td></tr>

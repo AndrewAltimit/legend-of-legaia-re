@@ -231,3 +231,31 @@ fn a_town_opens_the_menu_but_greys_the_save_row() {
         }
     }
 }
+
+/// An open shop or prize counter refuses the pause menu, and so does a
+/// narration crawl / title card. The native window spelled these tests out
+/// beside the predicate while the browser page asked only the predicate, so
+/// on the page Start opened the pause menu over an open shop.
+#[test]
+fn a_shop_or_the_narration_crawl_refuses_the_menu() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    assert!(world.field_menu_open_allowed(), "control: idle field");
+
+    world.shops.shop_open = true;
+    assert!(!world.field_menu_open_allowed(), "an open shop refuses");
+    world.shops.shop_open = false;
+
+    world.shops.prize_exchange_open = true;
+    assert!(
+        !world.field_menu_open_allowed(),
+        "an open prize counter refuses"
+    );
+    world.shops.prize_exchange_open = false;
+
+    world.open_cutscene_narration(vec!["Page".into()]);
+    assert!(
+        !world.field_menu_open_allowed(),
+        "the narration crawl refuses"
+    );
+}

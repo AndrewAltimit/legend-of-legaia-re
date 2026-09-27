@@ -618,15 +618,15 @@ pub struct EnemyMenuRow {
 /// overwrite the last character with a one-byte glyph and keep the label's
 /// length; the `strcat` of a three-byte string falsifies it.
 ///
-/// `projected_x` is each slot's projected screen position (the battle actor's
-/// `+0x34` word); the builder accumulates it per row so
-/// [`layout_enemy_menu_rows`] can average it.
+/// `projected_x` is each slot's battle world X (the monster actor's `+0x34`
+/// halfword, `0x801D9E00` / `0x801D9ED4`); the builder accumulates it per row
+/// so [`layout_enemy_menu_rows`] can average it.
 ///
 /// Wired: both hosts reach this each battle frame through
 /// [`crate::battle_hud::battle_intro_names`] (native `window/hud.rs`,
 /// browser `play_battle.rs`) via [`crate::battle_hud::battle_enemy_target_rows`],
-/// which stands occupancy in for the retail id table and leaves the
-/// projected-X accumulator at `0`.
+/// which stands occupancy in for the retail id table and feeds each slot's
+/// live world X.
 /// `BattleSession::rebuild_enemy_menu_rows` is a second, session-side
 /// caller that remains off every host path - see its own note.
 pub fn enemy_menu_rows(
@@ -712,13 +712,11 @@ pub fn enemy_menu_rows(
 /// shared battle HUD builder (`legaia_engine_ui::ui_overlay`, native
 /// `window/hud.rs`, browser `play_battle.rs`) for the intro timer's span. The
 /// **text measurer** is the `legaia-font` layout advance (the engine's
-/// stand-in for retail's proportional `FUN_80035F04`). The **projected
-/// screen X** each row averages is the battle actor's `+0x34` - a GTE
-/// projection result the renderer owns, which neither host plumbs into the
-/// HUD layer - so the accumulator arrives at `0`, every row centres at
-/// [`MENU_CENTRE_X`], and the relaxation pass spreads them. That is an
-/// approximation of retail's placement (labels cluster around centre
-/// instead of over their monsters); the pass structure itself is exact.
+/// stand-in for retail's proportional `FUN_80035F04`). The X each row
+/// averages is the monster actor's `+0x34`, its battle **world** X - a
+/// simulation value, not a GTE projection - which the builder reads off the
+/// live battle position, so the labels sit over their groups as retail's
+/// do.
 pub fn layout_enemy_menu_rows(
     rows: &mut [EnemyMenuRow],
     mut text_width_of: impl FnMut(&str) -> i16,

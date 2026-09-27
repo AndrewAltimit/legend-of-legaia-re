@@ -362,13 +362,25 @@ A width-4 write watch on `_DAT_8007BDD8` from `s3_rimelm_freeroam` (`town01`, re
 - idle `2` at `0x801D04A4`, walk `1` at `0x801D0498` under a held direction, run `3` at `0x801D0498` under **R1 + direction and under Cross + direction alike**; the player's clip id `+0x5C` reads `1` / `2` / `3` on the same ticks (Vahn leads, so `base + 0 * 7`);
 - a ledge hop at `(5152, 96)` (the tile `engine-core/tests/field_ledge_hop_disc.rs` finds) with Up held: `6` at `0x801D22FC`, `7` at `0x801D237C` seven ticks later, `1` at `0x801D23E0` three ticks after that, all with `ra = 0x801D22C8` inside `FUN_801d2298`; the floor goes `48 -> -128`, the engine test's rise of `-176`.
 
-The same watch finds a writer the list above does not name, and it fires on **every** field tick: `sw v0,-0x4228(v1)` at `0x80039D94` stores `2` (`FUN_80039B7C`, SCUS, the branch taken when the actor's `+0x9C` is `0` and the scene control block's `+0xA` counter is below `2`). Its `a0` is the system channel `0x8007E694`, ticked by `FUN_801DA51C` (`jal 0x80039B7C` at
-`0x801DA7BC`), which runs after the player's tick. A read watch on the base puts its two readers at `0x801D1D8C` and `0x801D1E08`, both inside the settle, so each tick runs pad write -> settle reads -> system-channel reset to `2`. The reset is invisible while the pad controller runs, because the controller rewrites the base before the settle reads it; on a tick the controller
-is skipped the settle reads `2` and the player idles - which is what the [timed warp](#the-timed-kind-0-warp) does.
+The same watch finds a writer the list above does not name: `sw v0,-0x4228(v1)` at `0x80039D94` stores `2` (`FUN_80039B7C`, SCUS). `FUN_80039B7C` is the per-actor interaction stepper, and the store sits in the arm that **starts** an interaction - taken when the actor's `+0x9C` is `0`, and storing only when the scene control block's `+0xA` interaction count is below `2`. The same arm raises the player's movement lock `+0x10 |= 0x80000` and bumps the count; the arm that ends the script drops the count and, at zero, clears the lock.
+
+Its `a0` in the free-roam capture is the system channel `0x8007E694`, ticked by `FUN_801DA51C` (`jal 0x80039B7C` at `0x801DA7BC`) after the player's tick, and there the store lands once per field tick. A read watch on the base puts its two readers at `0x801D1D8C` and `0x801D1E08`, both inside the settle, so each tick runs pad write -> settle reads -> system-channel store of `2`.
+
+#### When the system channel's store reaches the settle
+
+`FUN_801DA51C` calls `FUN_80039B7C` for the system channel only when the channel's own `+0x10 & 0x100` (script running) is up or the **player's** `+0x10 & 0x80000` is clear (`0x801DA78C..0x801DA7AC`), and not at all under the channel's `+0x8A`, its own `0x80000`, or scratchpad `0x1F800394 & 0x8000`. So the store runs on every tick the player is not movement-locked, after the settle has read the base. While the pad controller runs it rewrites the base before the next settle, so the store is invisible; it decides the clip only on a tick the controller skips **without** a lock, and on the tick a lock begins.
+
+Two retail captures ([`autorun_w5b_field_watch.lua`](../../scripts/pcsx-redux/autorun_w5b_field_watch.lua), write watch on `0x8007BDD8`, per-vsync samples of the player's `+0x5C` and of the count `*0x801C6EA4 + 0xA`) pin both halves:
+
+- **A talk opened running** (`s4_rimelm_door_transition`, the player poked to `(3456, 3072)`, Down held, Cross pressed): on the talk's first tick the pad step stores run `3` at `0x801D0498` and the system channel `2` at `0x80039D94`; the player's clip id reads `3` for that tick and `2` for every tick after, the count reads `2`, and no store reaches the base for the rest of the 150-vsync capture, the box open. The player stands idle through the conversation because the store of the tick it opened on is the last one the settle sees.
+- **A base changed under the lock** (`town01_npc16_dialogue_first_page`, Up held, the base poked to walk `1`): the next settle binds clip `1`, and it stays `1` for the rest of the 160-vsync capture - no store arrives to undo it, with the count at `2`..`4`.
+- The ledge hop in the first capture holds the lock through its phases: between the take-off store (`6`, `0x801D22FC`) and the tear-down store (`1`, `0x801D23E0`) there is no store at `0x80039D94`.
+
+A kind-0 warp is the case the store decides: the warp clears the lock when it arms, the pad controller is skipped through the timer and the hold, and every settle reads the `2` the previous tick's store left - which is what the [timed warp](#the-timed-kind-0-warp) shows.
 
 **Engine port.** The pad step writes `World::locomotion.clip_base` through `legaia_engine_vm::field_player_clip::locomotion_clip_base`; the hop tick applies the phase machine's stamps; `World::field_settle_clip_tail` runs `settle_clip_pick` and hands the bank slot to `FieldPlayerAnim::select_retail_slot`. Both play hosts build the player's clips with `FieldPlayerAnim::from_locomotion_bank`, which loads the leader's whole seven-record bank.
 
-The system channel's per-tick store of `2` is `World::field_system_channel_clip_reset`, applied on the ticks a kind-0 warp keeps the pad controller off - the only ticks on which it reaches the settle, since the controller rewrites the base first on every other tick. The other ticks retail skips the controller on (an open conversation, a cutscene timeline, the movement lock) are not routed through it.
+The system channel's store is `World::tick_field_system_channel_clip_reset`, run once per field tick right after the settle, and skipped while `World::field_player_movement_locked` holds: the player's `0x80000` bit, an open dialogue, a cutscene timeline, the tile board, a ledge hop or a scripted arc - the retail holders of the lock the port models. A kind-0 warp is not a lock, so its ticks idle; the tick a conversation opens on stores `2` before the interaction probe opens the box, so the player idles through it.
 
 The script arms that aim a clip at the player write the base the same way: op `0x22` `EXEC_MOVE` (`0x801DE998..0x801DEAB8`) and the player arm of op `4C 51` (`0x801E1954..0x801E1A3C`) each test the context against `_DAT_8007C364`, store their clip operand into `_DAT_8007BDD8`, and run the pick and bind at once, without the settle's bind block. The port routes both through `World::field_player_script_clip`.
 
@@ -385,9 +397,16 @@ both play hosts load it from the scene's own ANM bundle
 (`FieldPlayerAnim::resolve_scene_clip`, beside their scripted-clip cue drain). A scene
 record whose bone count differs from the player's clips is refused and the motion-derived
 pair plays instead. That guard matters for `jagaroom`: its override records belong to the
-mesh the scene's `4C 50` swaps onto the player, and a player-targeted `4C 50` has no
-player-mesh re-bind in the port, so the drawn mesh stays the party model. Whether the
-guard fires there - whether the two skeletons differ - has not been measured.
+mesh the scene's `4C 50` swaps onto the player. A player-targeted `4C 50` (`CC F8 50 lo
+hi`) reaches the port as `World::field_player_set_model` - the party-bank bit it writes
+(raised for `>= 0xF0`, dropped below) and the model id on
+`World::locomotion.player_live_model`. A change raises a rig-change signal
+(`World::take_player_rig_change`) that both play hosts drain each frame, rebuilding the
+rig from `SceneHost::player_rig_mesh`: the lead's field form with no re-stage, the
+player-bank slot `value - 0xF0` at or above `0xF0`, the scene-bank model `value` below
+it. A party-slot mesh takes that slot's locomotion rest pose and bone cap; a scene-bank
+mesh takes neither. Whether the guard fires there - whether the two skeletons differ -
+has not been measured.
 
 A frame that moved the player without the pad step (a script walk) still keeps the motion-derived walk for a party-bank pick; a scene-bank pick binds whoever moved the player, as retail's selector does. A script also writes the bit directly: `B1 F8 18` / `B2 F8 18` are op `0x31` / `0x32` (`CFLAG_SET` / `CFLAG_CLR`) with the extended target `0xF8`, which the prologue resolves through `FUN_8003C83C` to the player object, so the arm's `+0x10` write lands on the player.
 
@@ -623,7 +642,8 @@ A bit-`1` hit posts the touch event (`FUN_801d5b5c` on the `+0x98` partner), tur
 | 6 (`0xC00` = X+) | `(+64, 0)` | 64 ahead in X+ |
 | odd | `(±64, ±64)` | diagonals |
 
-**`FUN_801d5b5c` (the touch event post, decoded from a live overlay image - the static `overlay_0897` copy is garbled in this region)** marks the engagement: player `flags |= 0x80000` (the same bit that suppresses locomotion input at the top of `FUN_801d01b0`), touched actor `flags |= 0x100`, actor touch counter `+0x2a += 1`, field-control event counter `_DAT_801c6ea4+0xA += 1`, the actor's current facing `+0x26` saved into `+0x5A` (restored when the interaction ends), then `FUN_8003c9ac` - which sweeps the scene actor list and reloads every moving-class actor's `+0x5C`/`+0x88` timer from the per-actor byte table at `0x801C6470` (an NPC-motion pause kick while the interaction runs).
+**`FUN_801d5b5c` (the touch event post, decoded from a live overlay image - the static `overlay_0897` copy is garbled in this region)** marks the engagement: player `flags |= 0x80000` (the same bit that suppresses locomotion input at the top of `FUN_801d01b0`), touched actor `flags |= 0x100`, actor touch counter `+0x2a += 1`, field-control event counter `_DAT_801c6ea4+0xA += 1`, the actor's current facing `+0x26` saved into `+0x5A` (restored when the interaction ends),
+then `FUN_8003c9ac` - which sweeps the scene actor list and copies byte `0` of each moving-class actor's `0x801C6470` record (its standing move) into the requested-move pair `+0x5C`/`+0x88`. That is a clip request, not a hold: nothing counts down and the motion VM keeps running ([`motion-vm.md`](motion-vm.md#the-motion-pause-kick)).
 The **teardown** is the dialog SM's exit path (`FUN_80039b7c`): it restores the actor's facing `+0x26` from the `+0x5A` save (moving-class partners), subtracts the actor's `+0x2A` touch counter out of the field-control global `+0xA`, and when the global reaches zero clears the player's `0x80000` engaged flag and `ctrl+0x60` - so overlapping touches keep locomotion suppressed until every one is dismissed.
 (The same grid has a second reader: the walkability probe `FUN_801D56C4` (PROT 0897, `0x801D56C4..0x801D577C`), which the wall-slide resolver `FUN_80046494` calls five times. It indexes `*(_DAT_1f8003ec) + 0x4000` with the same row / column / high-nibble / quadrant-bit shape. An older reading named this sampler `FUN_801d5718`; that VA is the probe's own row-index `sll` at `+0x54`, not an entry, and the routine other images carry at `0x801D5718` - the battle image's placement-table landing copy - is unrelated code at the same address.)
 
@@ -669,7 +689,7 @@ The derivation and the footprint rest positions are pinned by two cheat-free Rim
   `flags & 3` skip. Only the NPC arm is gated, by `World::npcs.solid` / `--no-solid-npcs`.
 - **The button-press interact dispatch is modelled faithfully.** `World::field_interact_probe_slot` ports the `DAT_801f2254` facing probe (the radius-64 compass point, ±72 interact box); a hit opens the NPC's dialogue and turns the player toward it (`World::face_field_npc`, the face-the-NPC step - shape-faithful float `atan2` rather than retail's arctan LUT). The engine's field heading stores `0` = Z+ where retail facing stores `0` = Z− (a Z+ walk writes `0x800` to `+0x26`), so the sector index adds a half-turn before quantising. The captured Tetsu press-rest position talks to him through this probe (`world.rs::tests::interaction_probe_matches_tetsu_capture_geometry`).
 - **Field-NPC motion is modelled through the motion VM.** Each talk NPC's placement script carries its authored walk legs as `0x4C 0x51` NPC move-to-tile ops; `man_field_scripts::placement_motion_route` decodes the local waypoints and `World::tick_field_npc_motions` drives them through the ported motion VM (`FUN_8003774C`), one pursue step per field tick, writing the live position back into `World::npcs.positions` - so the moving NPC's ±40 collision box and its interact box follow it, exactly as retail probes the live `+0x14`/`+0x18`.
-  Autonomous patrol is gated by `World::npcs.animate` (on by default in `play-window` and the browser play page; `play-window --no-live-npcs` parks NPCs at their anchors) and pauses while a dialogue is up (the retail interaction motion-pause kick); an interaction prologue's own `0x4C 0x51` runs the interacted NPC through the same kernel regardless of the flag. See [`motion-vm.md`](motion-vm.md#field-npc-walking). Disc-gated: `engine-core/tests/field_npc_motion_disc.rs` (town01 derives routes for many villagers; the engine walks them off-anchor; the collision box follows).
+  Autonomous patrol is gated by `World::npcs.animate` (on by default in `play-window` and the browser play page; `play-window --no-live-npcs` parks NPCs at their anchors) and pauses while a dialogue is up (an engine choice - retail's motion-pause kick requests standing clips and holds nothing); an interaction prologue's own `0x4C 0x51` runs the interacted NPC through the same kernel regardless of the flag. See [`motion-vm.md`](motion-vm.md#field-npc-walking). Disc-gated: `engine-core/tests/field_npc_motion_disc.rs` (town01 derives routes for many villagers; the engine walks them off-anchor; the collision box follows).
 - **The prop walk-touch event post is modelled for the decoded script classes.**
   `man_field_scripts::placement_walk_touch_event` classifies each non-parked placement's script: a
   genuine `0x3E` door-warp (`Warp`) or a cross-context `0x23` into the player channel `0xF8`
@@ -1885,16 +1905,104 @@ dwell waits on flag `0x0B`, which the opener clears in its state 4 (program 0) o
 third beat (program 1). Rula's phase 2 (`0x801EE400..0x801EE4C4`) re-reads the player's
 live `+0x16` every frame, subtracts the accumulating velocity, raises the player's `+0x10`
 bit 0 and scratchpad `0x1F800394` bit 24, and on crossing `-0x618` clears the post-warp
-pad hold `_DAT_8007B6B4` along with the flash; the world applies each of those to the
-player actor. Riremito's resolve restores the render scale its opener zeroed (`+0x72 =
+pad hold `_DAT_8007B6B4` along with the fade spawn; the world applies each of those to the
+player actor. Riremito clears the same hold at its own fade spawn (`0x801EE168`). The
+"flash" both arms spawn is one stack template handed to `FUN_80024E80(template, 1)`: kind
+`2`, a `0x20`-frame ramp from black to white, hold `-1` - under the kind-`2` `B - F` blend a
+fade to black that holds until the destination loads. Riremito's resolve restores the render scale its opener zeroed (`+0x72 =
 0x1000`) and drops `+0x10 & 0x200000` (`0x801EE268..0x801EE294`). The warp seats the
 player at the stored tile with Y `0` (`*0x80073EFC = 0`) and then runs the MAN loader's
 resume (`World::man_load_resume_programs`) - the engine's warp stays on the loaded map, so
 that stands in for the scene load `FUN_8001FD44` stages, whose MAN init is where retail
-starts the closer. Neither travel art has a retail player-facing installer (both handlers
-are reached only through the dev handler-id table, one word each at `0x801F3458` /
-`0x801F3460`); the engine installs Riremito from the world-map debug sub-list's hand-off
-and Rula from tests only.
+starts the closer.
+
+Both travel arts are player-facing: they are what the **Door of Light** (`0x88`) and
+**Door of Wind** (`0x89`) items run. The handler-id table at `0x801F33B4` (dispatched by
+the op-`0x49` subsystem actor `FUN_801F159C`, `jalr` on `table[+0x50]` at `0x801F1634`)
+holds Riremito at id `0x29` (`0x801F3458`) and Rula at id `0x2B` (`0x801F3460`). No word
+or materialisation pair anywhere on the disc points at either slot, which is what an
+earlier reading took as "dev-table only"; the ids are reached by value instead. The menu
+button in the pad controller (`0x801D0250..0x801D0328`, SFX `0x20`) spawns the subsystem
+actor, whose default handler id `7` (`FUN_801F1F4C`) moves on to id `0x30`, the pause-menu
+session `FUN_801ED308`. The menu overlay's item use consumes `0x88` and returns exit code
+`4` (`FUN_80042310(0x88, 1)` at `0x801D8B24`, store `0x801D8B6C`), or consumes `0x89`,
+stages the destination from the quick-travel records `0x80073A98` into
+`0x80084624..0x8008462C` and returns `5` (`0x801D8CD0`, `0x801D8D3C`); the menu's close adds
+`3` (`0x801DC9E0`). `FUN_801ED308`'s case 4 stores `code - 1` as its next state, and states
+`6` / `7` (`0x801ED530` / `0x801ED554`) store handler id `0x29` / `0x2B`.
+
+The engine runs that chain on both play hosts through the world tick. A host that closes
+its pause menu on a Door use stages the destination (`World::menu.pending_warp` /
+`pending_escape`); `World::drain_staged_menu_warp` hands it to the session
+(`World::begin_pause_session_exit`), seeded at the park phase with the counter the close
+leaves; `World::tick_pause_session` runs `FUN_801ED308`'s ramp-down (`fade_flash_tick`) to
+its phase-6 or phase-7 arm, installs the art that arm's handler id names
+(`TravelArt::for_handler_id`), runs it, spawns its fade into the world's fade seat, and on
+the resolve frame issues the named scene transition the scene host drains. Two things are
+the port's: the menu itself is the hosts' `MenuRuntime`, so the session starts at its
+park phase rather than at phase 0; and a destination that does not resolve drops the use
+before the art is installed, where retail would run the art and park in `UNFIND MAP NUMBER`
+with the opener still holding the player. The world-map debug sub-list's hand-off still
+installs Riremito on the overworld panel host.
+
+The resolve's scan table is the resident CDNAME define table, not a record of visited
+maps: `FUN_80019788` returns `0x80088758`, the count is the halfword at `0x8007B806`, and
+each `0x10`-byte record is a scene name followed at `+0xC` by its `#define` number, which
+`FUN_8003CE9C` reads as an `s16` (a retail `retock` RAM image holds 125 records, `init_data`
+= 0, `gameover_dat` = 1, `town01` = 3). The scan therefore turns the raw TOC index at
+`0x80084628` into a scene name, and `FUN_8001FD44` copies that name into the scene-name
+buffer `0x80084548`. The menu warp resolves the same index through the CDNAME map the scene
+host installs.
+
+The menu button's own hop is ported too. `FUN_801F1278` stores handler id `7` at
+`0x801F140C`, and `FUN_801F1F4C` (`legaia_engine_vm::field_state_pick::state_pick`) picks
+`0x30` unless a debug build holds the packed pad's `0x100` bit with no op-`0x49` park.
+`World::field_menu_button_state` runs it, and `World::field_menu_open_allowed` - the gate
+all three hosts open the pause menu behind - opens only when it picks `0x30`. The debug
+word is the overworld controller's `debug_enabled`; field scenes carry retail's zero.
+
+### A Door use, captured
+
+`scripts/pcsx-redux/autorun_door_item_use.lua` pokes a Door into the bag, walks the pause
+menu (Items, Use, the row, the confirm) and logs, per field tick, the subsystem actor's
+handler id `+0x50`, phase `+0x54` and dwell `+0x9E` at the dispatcher's `jalr`
+(`0x801F1634`, `s0` = the actor), with `_DAT_8007B43C`, `_DAT_8007B440` and every
+`FUN_80024E80` fade spawn. A Door of Light in cave01 (`cave01_attached_light`, frame step 2)
+runs, from the first field tick after the menu overlay swaps back out:
+
+| Ticks | Handler | Phase | What |
+|---|---|---|---|
+| 1 | `0x30` | 2 -> 4 | the counter the close left (`4 + 3`) is past the park; level `0xF2` |
+| 12 | `0x30` | 4 | level `222 .. 2`, `-10` per frame step |
+| 1 | `0x30` | 4 -> 6 | level `0`, counter cleared |
+| 1 | `0x30` -> `0x29` | 6 -> 0 | Riremito installed |
+| 1 | `0x29` | 0 -> 1 | opener effect queued |
+| 47 | `0x29` | 1 | gated on the effect (`FUN_8003CE64(0x0B)`) |
+| 40 | `0x29` | 1 -> 2 | dwell to `0x50`; fade spawn (kind 2, `0x20` frames, hold `-1`), dwell zeroed |
+| 20 | `0x29` | 2 -> 3 | dwell to `0x28`, **not** zeroed (`0x801EE1D4` only bumps the phase) |
+| 1 | `0x29` | 3 -> 4 | `FUN_8001FD44(record, 0x55)`; seat `0x80073EF4` / `F8` |
+
+The scene load itself (game mode `2`) follows 36 ticks later. A Door of Wind on map03
+(`karisto_sol_pre_encounter`, frame step 3) runs the same session with the counter at
+`5 + 3`, phase 7 and handler `0x2B`; Rula's phase 1 waits on its own opener and dwells to
+`0x28`, phase 2 lifts, and the fade spawns on the lift's exit. The session reached the park
+at phase 2, not 3, before the menu opened: phase 2's saturating path (the counter already
+`>= 6`) jumps into phase 3's body, so the two seeds are indistinguishable after one tick.
+
+The Door of Light's destination is **not** where the party last stood on the world map.
+The resolve reads `0x80084628` / `24` / `2C`, and in cave01 those hold `0x55 @ (37, 109)` -
+what cave01's long-layout region record stored (`region[+9..+0xB]`,
+[`script-vm.md`](script-vm.md)) - although the party had entered the cave from `(37, 110)`.
+The menu's installer refreshes that record before the menu opens: `FUN_801F1278` presets the
+player's `+0x8E` / `+0x8F` to `0xFF` and calls `FUN_801D9E1C(player, 0)` at `0x801F12F8`, so
+the capture sees the triple and the Door gates (`0x1F800394`) rewritten on the frame the menu
+button is pressed. The seat lands at `(37 << 7) + 0x40, (109 << 7) + 0x40` on map01.
+
+The engine follows both: `World::drain_staged_menu_warp` refreshes the region setup, reads the
+Door of Light's target off `RegionBattleSetup::world_map_return` and falls back to the
+world-map panel host's last map only when no region has stored a triple, and
+`TravelArtActor::tick` keeps Riremito's dwell across the phase-2 exit.
+`tests/door_item_retail_timeline.rs` pins the session and Riremito shape tick for tick.
 
 The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), the scripted-scene voice file. That call site is program 2's state `0x16`, and it is a seek-ahead (`CdlSeekL`, no read), not a stream: the voice itself is state `0x17`'s `FUN_8003D53C(0x10, 7, 0x135)` one-shot.
 

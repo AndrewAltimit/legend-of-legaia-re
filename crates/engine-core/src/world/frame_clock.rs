@@ -109,6 +109,15 @@ pub struct FrameClock {
     /// marker, not a throttle - a host that re-introduced oversampling would
     /// make it selective again without any of those call sites changing.
     pub display_frame_step: u16,
+    /// Host wall-clock reading (seconds) the play clock measures from, set by
+    /// the first [`crate::world::World::tick_play_clock`] and dropped by
+    /// [`crate::world::World::begin_new_game`]. Only ever used as a delta
+    /// origin, so its epoch is the host's own.
+    pub play_clock_origin: Option<f64>,
+    /// Whole seconds since [`Self::play_clock_origin`] already folded into
+    /// [`Self::play_time_seconds`] - the high-water mark
+    /// [`crate::world::World::tick_play_clock`] deltas against.
+    pub play_clock_high_water: u32,
 }
 
 impl FrameClock {
@@ -128,6 +137,8 @@ impl FrameClock {
             sim_ticks: 0,
             display_frame_step: 0,
             display_frames: 0,
+            play_clock_origin: None,
+            play_clock_high_water: 0,
         }
     }
 }

@@ -639,6 +639,15 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
     let party_count = host.party_count();
     let total = host.slot_count();
 
+    // The per-slot sweep's `+0x8 &= 0x7CFFFFFF` over pool slots `0..=6`
+    // (`0x801E6474..0x801E6508`): the near-camera ghost bits drop at every
+    // action's end.
+    for s in 0..total.min(7) {
+        if let Some(a) = host.actor_mut(s) {
+            a.flag_word &= super::POOL_FLAG_WORD_KEEP;
+        }
+    }
+
     // Wipe scans (retail 0x801E6510..0x801E664C). A combatant counts as
     // standing while alive (`+0x14C != 0`) and not carrying the down-mask
     // bits of `+0x16E`: retail masks both sides with `0x4`

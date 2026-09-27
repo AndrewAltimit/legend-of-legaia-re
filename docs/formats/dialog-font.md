@@ -278,58 +278,39 @@ Save-state parsing locates VRAM by searching for the `&GPURAM[0][0]` variable
 header (mednafen uses a `u8 name_len; bytes name; u32 size; bytes data;`
 record format inside each section); no MDFNSVST section walk is required.
 
-## Accented / non-Latin glyphs (font-patch feasibility)
+## Accented Latin cells
 
-The [translation pipeline](../tooling/translation/pack-format.md#text-markup-and-encoding) writes only bytes the
-retail font can already draw - printable ASCII `0x20..=0x7E` - so the shipped
-Spanish/French/German/Italian/Polish packs are **ASCII-folded** (`e` for `é`,
-`ss` for `ß`, `l` for `ł`). Adding real accented or non-Latin glyphs is a
-**font patch**, not a translation-pack change; this section scopes what it takes.
+The glyph page indexes every byte `0x20..=0xFF`, so the cells above `0x7E` are ordinary glyph cells. What they hold differs per build, and whether a cell *draws* depends on two things at once: ink in the cell, and a non-zero entry in the width table.
 
-The glyph atlas is a fixed-size grid: a 16×14 cell layout over source bytes
-`0x20..=0xFF` (224 cells), 4bpp, uploaded to VRAM at `(896,0)`. Cells are indexed
-directly by byte (the `U/V` formula above), and the per-byte advance comes from
-the 256-entry width table at `0x80073F1C`. So a new glyph needs three things:
+### The retail USA page
 
-1. **A free byte slot.** A candidate byte must be renderable as a single glyph:
-   *not* a 2-byte opcode (`0x5E`, `0xC0..=0xCF`, `0xFF` - the substitution /
-   spacing / color escapes), *not* a terminator (`0x00..=0x1F`), and not already
-   used by a string. Sweeping the exported corpus, **~106 single-byte slots at
-   `0x80..=0xFF` are unused by any string, ~50 of them currently zero-width
-   (blank atlas cells)** - comfortably enough for the accented Latin a
-   Spanish/French/German/Italian/Polish set needs (roughly `á à â ä ç é è ê ë í
-   î ï ñ ó ô ö ù û ü ß` and the Polish `ą ć ę ł ń ó ś ż ź`, ~35 code points).
-2. **A glyph bitmap in that cell.** The 32 KB 4bpp tile-page would gain a 14×15
-   drawing in each chosen cell. The on-disc carrier of the tile-page is still
-   unclassified (see below), so a patch would instead overwrite the cell **in
-   VRAM at upload time** or patch whatever routine does the `LoadImage`.
-3. **A width-table entry.** Set `widths[byte]` for each new glyph so the
-   proportional layout advances correctly - a same-size in-place byte poke into
-   `SCUS_942.54`, exactly the mechanism the translation importer already uses.
+The USA font TIM (`PROT.DAT` `0x7F40`) has ink in 32 of the 128 high cells. They are accented Latin letters in the IBM CP437 positions for `0x80..=0x90` and `0x95..=0x9A` (`Ç ü é â ä à å ç ê ë è ï î ì Ä Å É ò û ù ÿ Ö Ü`), plus `œ` at `0x9C`, `Ÿ` at `0x9F`, and a run one cell below CP437 at `0xA0..=0xAC` (`í ó ú ñ Ñ` at `0xA0..=0xA4`, `¿` at `0xA7`, `¡` at `0xAC`). The width table gives 26 of the 32 a zero advance, so such a glyph draws and the next letter lands one pixel to its right, on top of it. The width table's `0xC0..=0xFF` entries follow an ISO 8859-1 shape (`À..Å` 8, `Æ` 13, `Ì..Ï` 4, `à..å` 7) over cells that carry no ink at all.
 
-What that unblocks and what it doesn't:
+Retail text hardly reaches either half. In the USA text export, high cell bytes occur only in spell-table entries past the named spells (`0x81`, `0xA8..=0xAB`) and in three scene-dialog lines; and `0xC0..=0xCF` are two-byte dialog opcodes, never glyphs. The page is the same byte-for-byte in VRAM `(896, 0)` across five captured mednafen states from different phases, and the in-RAM width table matches `SCUS_942.54`, so what the disc carries is what draws. The counts are pinned by `crates/patcher/tests/translation_accent_font_real.rs`.
 
-- **Accented Latin (es/fr/de/it/pl) is tractable.** It fits the free single-byte
-  slots, needs ~35 new cells, and the pack side is a trivial change - drop the
-  ASCII-fold and emit the chosen bytes (the markup codec already round-trips any
-  byte via `{xx}`). The blocker is purely the glyph bitmaps + the width pokes.
-- **Cyrillic (ru) is tractable but larger** (~66 cells for upper+lower) - still
-  inside the ~106 free slots, same mechanism.
-- **CJK (ja/zh/ko) is *not* reachable this way.** Thousands of glyphs blow past
-  the 224-cell single-page atlas and the byte index space; it needs a second
-  variable-width glyph bank and a multi-byte encoding in the renderer - a
-  substantially bigger engine change, out of scope for a byte-poke font patch.
+### The PAL page
 
-The one genuinely-missing piece for even the tractable cases is **the on-disc
-font-bitmap carrier** (below): until that PROT entry is identified, new glyph
-bitmaps can only be injected at runtime (a VRAM overwrite after the font upload),
-not baked into the disc image the way the width table and the text are. Pinning
-the carrier turns the accented-Latin font patch into a fully static, same-size
-disc edit.
+The official French, German and Italian discs carry the font TIM at the same `PROT.DAT` offset (member 3 of the same boot pack), but it is a different, smaller drawing of every glyph, ASCII included; the three PAL pages differ from each other only in `0x24`. Their high cells follow CP437 for `0x80..=0xA5`, add `ª º ¿ ¡` at `0xA6 0xA7 0xA8 0xAD`, and draw accented capitals and `ß` at `0xB5..=0xB7` (`Á Â À`) and in `0xD3..=0xEB`, mostly at their CP850 positions (`Ë È Í Ì Ó ß Ô Ò Ú Û Ù`); `Ê`, `Î` and `Ï` sit at `0xD5`, `0xDD` and `0xDF` instead. PAL text writes `Î` as `0xD7` and `°` as `0xF8`, both cells the PAL page leaves as a placeholder box; whether the PAL renderer remaps them is not traced.
+
+### The layout
+
+`legaia_font::latin::LATIN_CELLS` is the one byte-to-character table the tools share: the importer's accent fold, the lift's `--fold-accents`, the accent font below, and the translation workbench's palette and fixes all read it. It follows the byte values the PAL discs write - CP437 for the lowercase block and the capitals CP437 has, CP850 for the rest - so text lifted from a PAL disc and text typed by hand land on the same cells. Three cells are the tools' own choice, because the CP850 cell for `ã` / `Ã` sits in the opcode window and CP850 has no `Œ`: `ã` is `0x9B`, `Ã` is `0xD0`, `Œ` is `0x9E`. `œ` and `Ÿ` stay where the USA page already draws them.
+
+## The accent font
+
+The accent font is a patch-time rebuild of every layout cell on the user's own disc, so accented text draws. For each cell with a recipe it copies the base letter out of the same page (`e` for `é`, `A` for `Á`, a dotless `i` for `í`), paints a small diacritic mask above it (below it, for the cedilla) and sets the cell's width-table entry to the base letter's own advance. A capital shifts down as far as the mark needs, the way the retail `É` and `Ä` cells do. Ligatures (`æ Æ œ Œ`) join two base letters with a one-column overlap, `¿ ¡` are `?` and `!` turned half a turn onto the descender line, and `ß` and `°` are drawn from masks.
+
+Every mark pixel is drawn in the page's two ink indices, `15` fill and `14` shadow, with the shadow as the fill dilated one pixel right, down and diagonally - the rule every retail glyph but three follows. The result is a function of the input page alone, so no glyph bytes are committed: the patch ships recipes and masks, and the pixels come from the disc being patched.
+
+It is written as two same-size in-place edits: the rebuilt image rows of the font TIM in `PROT.DAT`, and the 256-byte width table in `SCUS_942.54`. ASCII cells and every other width entry are untouched. A disc carries it when rebuilding the font from its own page reproduces every layout cell and width, which is how an import finds it already present (`legaia_font::accent_font::accent_font_state`).
+
+What it does not reach: Latin letters with no cell in the layout (Polish `ł ą ę`, Czech `č ř`) fold to ASCII, and Cyrillic, Greek and CJK need more cells than the page has - a second glyph bank and a multi-byte encoding in the renderer.
+
+How a pack asks for it, and how the tools report characters that will not draw, is in [`pack-format.md`](../tooling/translation/pack-format.md#accents).
 
 ## See also
 
 - [MES dialog](mes.md) - the dialog containers this font renders.
-- [Translation / language packs](../tooling/translation/index.md) - the ASCII-folded
-  packs this feasibility note is the unblock for.
+- [Translation / language packs](../tooling/translation/index.md) - the pack
+  pipeline that writes the accent font.
 - [`subsystems/renderer.md`](../subsystems/renderer.md) - the renderer that blits the glyph atlas.

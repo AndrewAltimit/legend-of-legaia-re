@@ -83,12 +83,18 @@ impl World {
 
     /// The Y a field NPC draws at, standing at `(x, z)`: the height a
     /// scripted arc left it at while it still stands where the arc put it,
-    /// else the floor under it (`FUN_80019278`). Both play hosts place NPCs
-    /// through this, so an arcing NPC leaves the ground on either.
+    /// else the glide height when its flag word has it on `FUN_8003BC08`'s
+    /// glide arm ([`Self::tick_field_npc_heights`]), else the floor under it
+    /// (`FUN_80019278`) - the snap arm every other placement takes. Both play
+    /// hosts place NPCs through this, so an arcing or gliding NPC leaves the
+    /// ground on either.
     pub fn field_npc_render_y(&self, slot: u8, x: i16, z: i16) -> i32 {
         match self.script_actors.npc_heights.get(&slot) {
             Some(&(hx, hz, y)) if (hx, hz) == (x, z) => i32::from(y),
-            _ => self.sample_field_floor_height(i32::from(x), i32::from(z)),
+            _ => match self.npcs.glide_y.get(&slot) {
+                Some(&y) => i32::from(y),
+                None => self.sample_field_floor_height(i32::from(x), i32::from(z)),
+            },
         }
     }
 

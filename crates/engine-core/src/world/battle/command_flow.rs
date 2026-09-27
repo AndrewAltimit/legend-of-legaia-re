@@ -198,6 +198,12 @@ impl World {
                     self.open_arts_command_input(session.actor);
                 }
             }
+            Some(Resolution::OpenSpellMenu) if crate::battle_hud::battle_raseru_forbidden(self) => {
+                // The special word forbids the Ra-Seru chip: retail's arm
+                // returns without committing (`0x801D1448..0x801D1454`), so
+                // the ring stays up.
+                self.open_battle_command(session.actor);
+            }
             Some(Resolution::OpenSpellMenu) => {
                 // Player picked Magic: hand off to the spell submenu (same
                 // pattern as Item). `tick_battle_spell_menu` drives until the

@@ -245,13 +245,20 @@ impl World {
     /// The retail term is signed (`lh v0,0xc(s3)` at `0x80047D34`):
     /// `bltz` routes a **negative** speed straight to the step
     /// (`0x80047D64`) with no range test, a positive one steps only while
-    /// the range poll still fails. The recover clip (action slot 8) carries
-    /// a negative speed, which is the backstep an attacker takes after its
-    /// last swing; the party arts carry positive ones (a Somersault reads
+    /// the range poll still fails. In the four player files the negative
+    /// speeds sit on the knockdown (entry 4: `-2` to `-12`), the block
+    /// (entry `0x0B`, `-4`) and some flinches - a struck actor slides back
+    /// as it reacts. Entry 8 carries `0`: it is the downed party member's
+    /// kneel, not a recover backstep, and the SM never stages it on a living
+    /// attacker. The party arts carry positive speeds (a Somersault reads
     /// `+4`, a Cyclone `+6`) and drift the attacker into its target as they
     /// play. [`Self::drive_playing_root_motion`] applies that law to every
-    /// actor whose playing clip carries a speed, except a knocked-down one
-    /// (retail's `+0x1DC` bit 3 latch, `0x80047D20`).
+    /// actor whose playing clip carries a speed, except one holding retail's
+    /// `+0x1DC` bit 3 latch (`0x80047D20`). Only two writers raise it: the
+    /// commit of a **tag-8** entry - the last link of a downed party member's
+    /// knockdown -> `7` -> `8` chain - and the monster-death arm
+    /// (`world::battle::clip_ladder`); a living knockdown's own commit clears
+    /// `+0x1DC`, so a knockdown's root speed moves the actor.
     pub(in crate::world) fn tick_battle_locomotion(&mut self) {
         use vm::battle_action::ActionState;
         self.seed_battle_seats();
@@ -282,23 +289,24 @@ impl World {
     /// actor (see [`Self::tick_battle_locomotion`] § The backstep): a
     /// negative speed steps back along the facing unconditionally, a
     /// positive one steps forward only while out of range of the actor's
-    /// target. A knocked-down actor (reaction tag 4, retail's `+0x1DC` bit
-    /// 3) does not move.
+    /// target. An actor holding the `+0x1DC` bit-3 latch does not move.
     // PORT: FUN_80047430 (`0x80047D20..0x80047E18`, the signed root-motion
     // term; the approach half is `drive_attack_approach`)
     fn drive_playing_root_motion(&mut self, slot: usize) {
         let Some((speed, scale)) = self.battle_playing_root_motion(slot) else {
             return;
         };
-        let (facing, target, knocked_down) = {
+        let (facing, target, latched) = {
             let a = &self.actors[slot];
             (
                 a.battle.facing_angle,
                 a.battle.active_target,
-                a.battle_reaction == Some(4),
+                a.battle
+                    .flag_bits
+                    .has(super::clip_ladder::ANIM_FLAG_ROOT_LATCH),
             )
         };
-        if knocked_down {
+        if latched {
             return;
         }
         if speed > 0 && self.battle_range_metric(slot as u8, target) == 0 {

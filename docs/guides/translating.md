@@ -110,12 +110,17 @@ pack, your own `.yaml`, or start fresh. Every line is listed with its English,
 a box for your translation, and live feedback as you type:
 
 - its size in bytes against its room (for a name, also the free bytes it could
-  move into), with any character the game cannot draw highlighted;
+  move into), with any character the game cannot draw highlighted and the
+  reason beside it, plus one-click fixes (fold the accents, or switch the pack
+  to the accent font);
 - its width on screen in the game's own font, against the width its box or
   menu column allows, and a picture of the dialog box as the game draws it;
 - a moment after you stop typing, whether its scene still fits.
 
-A dashboard shows where the room is: per section, per name table, per menu
+An **Accents** panel sets how accented letters reach the disc (see
+[Accents](#accents)), shows how many lines still hold a character the game
+will not draw, and has a character palette per language that types into the
+line you are editing. A dashboard shows where the room is: per section, per name table, per menu
 pool, and every scene from the fullest down. Click a row to list its lines.
 *Check against my disc* runs the full check. Your edits are saved in the
 browser as you type, and the page offers to resume them next time. Download
@@ -271,7 +276,8 @@ for numbers.
 | **Group: monster name longer than 15 bytes** | | |
 | `monster N: name needs N bytes but a monster name holds at most 15 ...` | the game has a 15-byte limit for enemy names | shorten to 15 bytes |
 | **Group: not encodable in the retail glyph set** | | |
-| `translation not encodable: 'é' (U+00E9) is not in the retail glyph set ...` | the game font has no such letter | write it without the accent (`e`) |
+| `translation not encodable: 'é' is not in the retail NTSC font - fold it to 'e', or turn on the accent font ...` | the pack is in the default accent mode | set `accents: font` (the letter draws) or `accents: fold` (it becomes `e`); see [Accents](#accents) |
+| `translation not encodable: 'Ж' (U+0416) is not in the retail glyph set and has no fold ...` | no font here can draw it | write it with Latin letters |
 | `translation not encodable: malformed escape ...` | a `{` does not start a valid token | fix the token, or write a literal brace as `{7b}` |
 | `translation not encodable: stray '}' ...` | a `}` without its `{` | write a literal brace as `{7d}` |
 | `translation not encodable: 0xNN is not a 2-byte opcode ...` | a `{xx:yy}` token with the wrong first byte | copy the token exactly from `source:` |
@@ -308,11 +314,24 @@ working:
 The substituted names come from the tables you are also translating, so write
 sentences that stay grammatical whichever name appears.
 
-**No accents.** The game's font only has the plain English letters, digits and
-common punctuation (printable ASCII). There is no `é`, `ñ`, `ß` or `ç`, and no
-Cyrillic, Greek, Chinese, Japanese or Korean. Write French as `Epee`, not
-`Épée`. Adding letters to the font is a separate, much larger project
-([font-patch scope](../tooling/translation/textures-and-fonts.md#font-patch-scope)).
+### Accents
+
+The game's own font draws plain English letters only. Type accents as you
+normally would and pick, once per pack, what happens to them:
+
+- **Draw them** (`accents: font` in the pack, *Draw them* on the workbench):
+  the patch adds accented letters to the game's font, built from your disc's
+  own letters, and your text shows as typed. It covers the Western European
+  accents (`é è ê ë à â ä á ã å ç ñ í ì î ï ó ò ô ö õ ú ù û ü ÿ ß æ œ ¿ ¡ °`
+  and their capitals).
+- **Fold to plain letters** (`accents: fold`): `Épée` is written `Epee`.
+- **Report them** (the default): every accent is listed until you fold it or
+  switch modes.
+
+Letters outside that set (Polish `ł`, Czech `č`) fold to plain letters in both
+modes. Cyrillic, Greek, Chinese, Japanese and Korean cannot be drawn at all.
+The command-line import takes `--accents font` (or `fold`) to override the
+pack. Details: [accents](../tooling/translation/pack-format.md#accents).
 
 **Automatic folding.** A few typographic characters that word processors and
 AI tools like to insert are replaced for you: curly quotes become `'` and `"`,
@@ -368,9 +387,12 @@ relaid-out disc. Boot the patched disc fresh, or load a memory-card save.
 working pack, a lifted pack, or a patched disc image: they contain the game's
 own text and data.
 
-**Can I translate into Russian, Greek, Japanese, Chinese or Korean?** Not with
-the retail font, which has only plain English letters. It would need a font
-patch, which these tools do not do.
+**Can I use accents?** Yes. Set the pack to *Draw them* (`accents: font`) and
+the patch adds the accented letters to the game's font; see [Accents](#accents).
+
+**Can I translate into Russian, Greek, Japanese, Chinese or Korean?** Not yet.
+Those scripts need far more letters than the game's font page holds, which
+these tools do not attempt.
 
 **Can I start from someone else's translation?** Yes. On the site, choose that
 language (or import their pack) and press *Export a working copy of this pack*.

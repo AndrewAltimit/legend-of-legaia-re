@@ -703,3 +703,46 @@ fn world_maps_decode_world_frame_terrain_placements() {
         );
     }
 }
+
+/// A save written on a kingdom overworld resumes on the overworld. The native
+/// Load path (`enter_field_live_from_save`) used to enter every label through
+/// the field entry, so an `mapNN` save came back as a plain field scene with
+/// no region table and no overworld controller - while the browser page's
+/// card Load routed the same label through the world-map entry.
+#[test]
+fn save_load_on_an_overworld_label_resumes_in_world_map_mode() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+    let cfg = BootConfig {
+        scene: "town01".into(),
+        enable_audio: false,
+    };
+    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let save = session.host.world.save_full();
+    let opts = FieldLiveOpts::default();
+    let mode = session
+        .enter_field_live_from_save("map03", &opts, save)
+        .expect("enter_field_live_from_save");
+    assert_eq!(
+        mode,
+        SceneMode::WorldMap,
+        "an overworld save resumes on the overworld"
+    );
+    assert!(
+        session.host.world.world_map.region_tracker.is_some(),
+        "the overworld's region table is routed"
+    );
+    // A town label still takes the field entry.
+    let save = session.host.world.save_full();
+    let mode = session
+        .enter_field_live_from_save("town01", &opts, save)
+        .expect("enter_field_live_from_save town01");
+    assert_ne!(mode, SceneMode::WorldMap);
+    eprintln!("[ok] map03 save resumes in WorldMap; town01 in {mode:?}");
+}

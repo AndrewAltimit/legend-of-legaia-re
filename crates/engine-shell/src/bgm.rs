@@ -140,6 +140,17 @@ pub struct AudioBgmDirector {
     /// SPU address the shared region starts at: one past the slot-0 system
     /// bank's samples, inside the reserved SFX region.
     shared_region_base: u32,
+    /// The slot-0 system bank's entry bytes (PROT 0868), kept from the boot
+    /// staging ([`Self::stage_resident_slot0`]) so the bank can be re-staged
+    /// after a track that overran the SFX region lets it go.
+    resident_slot0: Option<Vec<u8>>,
+    /// A track bank reaches into the SFX region - the ending theme's, laid
+    /// across it as retail lays VAB 10 over the resident banks
+    /// ([`legaia_engine_audio::spu_layout`]). While set, every resident SFX
+    /// bank is dropped, the shared region does not refill and a cue is
+    /// silent; the next track that fits the BGM region clears it and
+    /// re-stages the resident banks.
+    sfx_evicted: bool,
 }
 
 /// `_DAT_8007B910`'s reference value (`0xD7`, `FUN_8001FFA4`): the un-ducked
@@ -267,6 +278,8 @@ impl AudioBgmDirector {
             bgm_gen: 0,
             shared_region: None,
             shared_region_base: crate::boot::SPU_RAM_BYTES - crate::boot::SFX_BANK_SPU_BYTES,
+            resident_slot0: None,
+            sfx_evicted: false,
         }
     }
 
@@ -531,7 +544,9 @@ impl AudioBgmDirector {
     /// SFX bank staged at all (a disc-free boot) - the scene BGM bank.
     fn sfx_vab_for_cue(&self, id: u8) -> Option<&VabBank> {
         if self.sfx_vabs.is_empty() {
-            return self.bank.as_ref();
+            // Not while a track holds the SFX region: that bank is the
+            // ending theme's, and its programs are not the cue's.
+            return (!self.sfx_evicted).then_some(self.bank.as_ref()).flatten();
         }
         self.sfx_vabs.get(&self.sfx_slot_for_cue(id)?)
     }
@@ -553,7 +568,11 @@ impl AudioBgmDirector {
     /// voice keyed on.
     pub fn key_on_voice_attr(&mut self, attr: legaia_engine_audio::VoiceAttr) -> bool {
         let slot = u8::try_from(attr.vab_id).unwrap_or(0);
-        let Some(vab) = self.sfx_vabs.get(&slot).or(self.bank.as_ref()) else {
+        let Some(vab) = self
+            .sfx_vabs
+            .get(&slot)
+            .or_else(|| self.bank.as_ref().filter(|_| !self.sfx_evicted))
+        else {
             return false;
         };
         self.audio
@@ -728,6 +747,11 @@ impl AudioBgmDirector {
         want: Option<SharedRegionBank>,
         read_entry: impl FnOnce(u32) -> Option<Vec<u8>>,
     ) -> bool {
+        if self.sfx_evicted {
+            // The region holds a track's samples; the refill waits for the
+            // re-stage (`reclaim_sfx_region`), which re-arms this sync.
+            return false;
+        }
         if self.shared_region == want {
             return want.is_none_or(|b| self.sfx_vabs.contains_key(&b.slot));
         }
@@ -759,12 +783,85 @@ impl AudioBgmDirector {
             return false;
         }
         let body = &bytes[vab_off..];
-        let bank = self.audio.with_spu(|spu| {
-            let mut alloc = legaia_engine_audio::SpuAllocator::new(base, room);
-            VabBank::upload(spu, &mut alloc, &report, body)
-        });
+        let bank = match self.sfx_vabs.get(&0) {
+            // Above the resident slot-0 bank, through the kernel the boot
+            // staging and the page share.
+            Some(slot0) => self.audio.with_spu(|spu| {
+                legaia_engine_audio::spu_layout::upload_shared_region(spu, slot0, &report, body)
+            }),
+            None => Some(self.audio.with_spu(|spu| {
+                let mut alloc = legaia_engine_audio::SpuAllocator::new(base, room);
+                VabBank::upload(spu, &mut alloc, &report, body)
+            })),
+        };
+        let Some(bank) = bank else {
+            return false;
+        };
         self.sfx_vabs.insert(want.slot, bank);
         true
+    }
+
+    /// Stage the slot-0 system bank (PROT 0868's entry `bytes`) at the
+    /// bottom of the SFX region through the shared layout kernel
+    /// ([`legaia_engine_audio::spu_layout::upload_resident_sfx`]), and keep
+    /// the bytes so [`Self::reclaim_sfx_region`] can re-stage it. The shared
+    /// region is then filled above it by [`Self::sync_shared_region`].
+    /// Returns `false` when the entry carries no VAB at `+4` or `+0`.
+    // REF: FUN_8001E54C
+    pub fn stage_resident_slot0(&mut self, bytes: Vec<u8>) -> bool {
+        let Some((report, vab_off)) = [4usize, 0]
+            .into_iter()
+            .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
+        else {
+            return false;
+        };
+        let staged = self.audio.with_spu(|spu| {
+            legaia_engine_audio::spu_layout::upload_resident_sfx(
+                spu,
+                (&report, &bytes[vab_off..]),
+                None,
+            )
+        });
+        self.set_shared_region_base(legaia_engine_audio::spu_layout::shared_region_base(
+            &staged.slot0,
+        ));
+        self.sfx_vabs.insert(0, staged.slot0);
+        self.resident_slot0 = Some(bytes);
+        true
+    }
+
+    /// Whether a track bank currently holds the SFX region (the resident
+    /// SFX banks are dropped until it lets go).
+    pub fn sfx_evicted(&self) -> bool {
+        self.sfx_evicted
+    }
+
+    /// Keep the resident SFX banks consistent with the BGM bank just
+    /// staged. A bank reaching into the SFX region (the ending theme's)
+    /// overwrote them: drop every one, so no cue keys a stale address. A
+    /// bank that fits the BGM region after such a track hands the region
+    /// back: re-stage slot 0 from the kept bytes and re-arm the shared
+    /// region, which the next [`Self::sync_shared_region`] refills for the
+    /// current mode.
+    fn reclaim_sfx_region(&mut self) {
+        use legaia_engine_audio::spu_layout::sfx_region_free;
+        if !sfx_region_free(self.bank.as_ref()) {
+            self.sfx_evicted = true;
+            self.sfx_vabs.clear();
+            self.side_band = None;
+            self.shared_region = None;
+            return;
+        }
+        if !self.sfx_evicted {
+            return;
+        }
+        self.sfx_evicted = false;
+        self.shared_region = None;
+        if let Some(bytes) = self.resident_slot0.take()
+            && !self.stage_resident_slot0(bytes)
+        {
+            log::warn!("slot-0 system bank did not re-stage after the SFX region was freed");
+        }
     }
 
     /// Key off SPU voices a field-VM op stopped (`FUN_800653C8`, the side-band
@@ -876,6 +973,7 @@ impl AudioBgmDirector {
         // its tail is gone with it, and so is a side-band bank.
         self.drop_bgm_tail_banks();
         self.bank = Some(bank);
+        self.reclaim_sfx_region();
     }
 
     /// Borrow the active bank - useful for tests / inspection.
@@ -896,11 +994,12 @@ impl AudioBgmDirector {
 
     /// Split a raw `music_01` bank entry (`[chunk][pBAV VAB][pQES SEQ]`),
     /// upload the entry's **own** VAB into the SPU BGM region (capped below
-    /// the resident SFX bank, exactly like `stage_scene_vab`), stash it as the
+    /// the resident SFX region, or across it for a bank too large for the
+    /// BGM region - `legaia_engine_audio::spu_layout`), stash it as the
     /// active bank, and return the SEQ bytes. `None` when the pair is absent
-    /// or the VAB header doesn't parse. This is the global-pool half of BGM
-    /// playback - the track brings its own instruments, unlike the scene-local
-    /// path that reuses the pre-staged scene VAB.
+    /// or the VAB header doesn't parse. Every track the field VM starts comes
+    /// through here - a scene-local id plays retail's fallback track - so
+    /// the track always brings its own instruments.
     fn stage_owned_vab(&mut self, entry_bytes: &[u8]) -> Option<Vec<u8>> {
         // The installer walk's split (type-0 bank, type-2 score), not a
         // magic hunt - see `chunk_install::owned_bank_offsets`.
@@ -913,19 +1012,17 @@ impl AudioBgmDirector {
         let seq_bytes = entry_bytes.get(split.seq..)?;
         Seq::parse(seq_bytes).ok()?;
         let body = &entry_bytes[vab_off..];
-        let bank = self.audio.with_spu(|spu| {
-            let mut alloc = legaia_engine_audio::SpuAllocator::new(
-                crate::boot::SPU_RESERVED_BYTES,
-                crate::boot::SPU_RAM_BYTES
-                    - crate::boot::SPU_RESERVED_BYTES
-                    - crate::boot::SFX_BANK_SPU_BYTES,
-            );
-            VabBank::upload(spu, &mut alloc, &report, body)
-        });
+        // Into the BGM region, or - for a bank that does not fit it, the
+        // ending theme's - from the same base across the SFX region, as
+        // retail opens VAB 10 at slot 0's base (`spu_layout`).
+        let staged = self
+            .audio
+            .with_spu(|spu| legaia_engine_audio::spu_layout::upload_owned_bank(spu, &report, body));
         // A restaged track reclaims the whole BGM region, transient tail
         // included.
         self.drop_bgm_tail_banks();
-        self.bank = Some(bank);
+        self.bank = Some(staged.bank);
+        self.reclaim_sfx_region();
         Some(seq_bytes.to_vec())
     }
 

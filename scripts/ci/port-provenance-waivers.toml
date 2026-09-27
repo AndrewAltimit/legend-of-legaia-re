@@ -325,10 +325,6 @@ touches.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/shop.rs:801d5ae8"
-reason = "Disassembly (overlay_menu_801d5ae8.txt): item table 0x80074368 name/description, price halfword +2 printed halved (sell price), passive chain 0x801D5C5C..0x801D5CC8 into 0x80074F68/0x800752C0/0x8007625C. Exactly the item-detail / sell panel the module claims."
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/slot_machine.rs:801e6f70"
 reason = "Disassembly: eight digit cells at 0x801F35F0 accumulated x10 per cell, cost = coins*100, gold gate 0x8008459C, stock gate 0x8007BB90, both recolouring to ink 9. The coin-exchange counter."
 
@@ -1187,17 +1183,6 @@ the actor pointer, while its module siblings key on the resident trigger tables
 that only ever touches memory off its argument forms no address at all, so it
 cannot share one; the module's cut is already up at 96 because of it. The
 identity is pinned separately in battle-action.md's queue-builder section.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-vm/src/battle_formulas/round.rs:80051d84"
-reason = """
-The arithmetic half of the same routine as the initiative.rs row. Its own bytes
-(the 0x8007BD24 context load, the +0x287 gate and the 0x8007B64A flag at
-0x80051D84..0x80051DC0) are battle-side; the module's siblings 801d88cc,
-801da780, 801f0348 and 801f45a4 are overlay-resident, so no corroboration can
-cross to a SCUS member. Nothing in the module claims a different subsystem for
-it.
 """
 
 [[waiver]]

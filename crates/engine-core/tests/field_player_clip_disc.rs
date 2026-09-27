@@ -82,18 +82,25 @@ fn town01_pad_picks_idle_walk_and_run_from_the_leaders_bank() {
         // this test is about the party bank.
         panic!("town01 unexpectedly carries the MAN[0x01] scene flag");
     }
+    // The base is sampled at the end of a tick, after the system channel's
+    // store of `2` (`0x80039D94`) - so it reads idle whatever the pad wrote,
+    // as retail's does; the clip id `+0x5C` is what the pad's base picked.
     drive(&mut host, 0, 4);
     assert_eq!(host.world.locomotion.clip_base, 2, "idle base");
+    assert_eq!(host.world.locomotion.player_clip, 2, "idle clip id");
     assert_eq!(slot(&host), Some(1), "idle = bank slot 1");
 
     drive(&mut host, PadButton::Up.mask(), 4);
-    assert_eq!(host.world.locomotion.clip_base, 1, "walk base");
+    assert_eq!(host.world.locomotion.player_clip, 1, "walk clip id");
+    assert_eq!(
+        host.world.locomotion.clip_base, 2,
+        "the system channel re-idles the base after the settle"
+    );
     assert_eq!(slot(&host), Some(0), "walk = bank slot 0");
 
     // R1 is in the retail run mask `0x48`; with the Field Move option on
     // Walk it inverts to run.
     drive(&mut host, PadButton::Up.mask() | PadButton::R1.mask(), 4);
-    assert_eq!(host.world.locomotion.clip_base, 3, "run base");
     assert_eq!(slot(&host), Some(2), "run = bank slot 2");
     assert_eq!(
         host.world.locomotion.player_clip, 3,
@@ -161,8 +168,8 @@ fn town01_kind0_exit_lands_after_the_warp_timer() {
     let walk_slot = slot(&host);
     assert_eq!(walk_slot, Some(0), "the crossing frame is a walk frame");
     assert_eq!(
-        host.world.locomotion.clip_base, 1,
-        "walk base on the crossing"
+        host.world.locomotion.player_clip, 1,
+        "walk clip id on the crossing"
     );
     // The warp runs: position held, pad ignored, the idle clip bound.
     let mut landed_after = None;

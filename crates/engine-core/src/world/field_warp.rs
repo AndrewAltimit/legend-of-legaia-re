@@ -186,6 +186,8 @@ impl World {
         self.locomotion.clip_base = vm::field_player_clip::BASE_IDLE;
         self.locomotion.player_party_bank = true;
         self.locomotion.clip_override = 0;
+        self.locomotion.player_live_model = None;
+        self.locomotion.player_rig_dirty = false;
     }
 }
 

@@ -12,6 +12,8 @@
 //!     --output DISC_fr.bin --patch legaia_fr.ppf
 //! ```
 //!
+//! - [`accents`] - typed accents: the pack's accent mode (strict / fold /
+//!   accent font), per-character draw notes, and the accent-font write.
 //! - [`markup`] - the reversible text <-> game-byte codec (retail glyphs are
 //!   printable ASCII; everything else is a `{xx}` / `{xx:yy}` escape).
 //! - [`segments`] - the `0x1F <text> 0x00` dialog-segment scanner shared by
@@ -31,6 +33,7 @@
 //! own disc, and exported packs (which contain game text) must not be
 //! committed - see `docs/tooling/translation/index.md`.
 
+pub mod accents;
 pub mod diff;
 pub mod export;
 pub mod fit;

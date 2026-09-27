@@ -17,7 +17,7 @@ edits all three together. Disc pins in `crates/patcher/tests/place_names_real.rs
 - [Site 2 - the world-map location table](#site-2---the-world-map-location-table)
   - [Record layout](#record-layout) · [The label pass](#the-label-pass)
 - [Site 3 - the scene display name](#site-3---the-scene-display-name)
-  - [How it was pinned](#how-it-was-pinned) · [What else reads it](#what-else-reads-it)
+  - [The latch is the save screen's, not the banner's](#the-latch-is-the-save-screens-not-the-banners) · [How it was pinned](#how-it-was-pinned) · [What else reads it](#what-else-reads-it)
 - [Editing notes](#editing-notes)
 - [Confidence](#confidence)
 
@@ -27,7 +27,7 @@ edits all three together. Disc pins in `crates/patcher/tests/place_names_real.rs
 |---|---|---|---|
 | 1 | the quick-travel / Door-of-Wind destination list | `SCUS_942.54` `0x80073B18` | 16 fixed `0x20`-byte NUL-padded cells ([`worldmap-menu`](#see-also)) |
 | 2 | the labels drawn over the world map at each place's map position | the trailer of every **kingdom** MAN (`map01` / `map02` / `map03`) | `[u8 count][count x 0x20 record]` |
-| 3 | the banner on entering a scene, and the save-screen location row | each scene MAN's **section 2** | bare `strlen + 1` NUL-terminated string |
+| 3 | the banner on entering a scene (a text balloon the MAN loader spawns), and the save-screen location row | each scene MAN's **section 2** | bare `strlen + 1` NUL-terminated string |
 
 Sites 2 and 3 both live in a scene MAN and are reached through the section
 chain [`man_section`](../../crates/asset/src/man_section.rs) already walks - no
@@ -94,29 +94,84 @@ discovered it. `see ghidra/scripts/funcs/overlay_world_map_top_801ce9c4.txt`.
 ## Site 3 - the scene display name
 
 MAN section 2's body is the scene's display name. `FUN_8003AEB0` installs the
-body pointer into `_DAT_801C6EA0`, and the field overlay's scene-entry state
-machines open the banner panel with it:
+body pointer into `_DAT_801C6EA0` and, as the last act of the same load, puts
+the name on screen itself (`0x8003BB40..0x8003BBDC`, `see
+ghidra/scripts/funcs/8003aeb0.txt`):
 
 ```asm
-801EE628  addiu $a0, $a0, 0x32b4      ; the banner panel script
-801EE634  lw    $v1, 0x6ea0($v0)      ; v1 = _DAT_801C6EA0  (the scene name)
-801EE63C  jal   0x801e9b3c            ; panel command-script interpreter
-801EE640  sw    $v1, -0x4bb4($v0)     ; _DAT_8007B44C = the name  (delay slot)
+8003BB44  lw    s1,0x6ea0(v0)          ; s1 = _DAT_801C6EA0 (the name)
+8003BB4C  lbu   v0,0x0(s1)
+8003BB54  beq   v0,zero,0x8003BBC4     ; empty name -> no banner
+8003BB5C  lbu   v0,0x1618(s0)          ; 0x80085758 byte 0
+8003BB64  andi  v0,v0,0x20             ; system flag 2
+8003BB74  beq   v1,zero,0x8003BBC4     ; flag clear -> no banner
+8003BB80  jal   0x80020de0             ; spawn from template 0x8007431C
+8003BB98  sw    a0,0x90(s0)            ; +0x90 = the name
+8003BB9C  sw    zero,0x94(s0)          ; +0x94 = 0 (no parent link)
+          ...                          ; +0x9C = 0x78, x centred, y = 0xB4
+8003BBD4  andi  v1,v1,0xdf             ; clear system flag 2 - on every path
 ```
 
-The same latch happens at `0x801EAC7C` and `0x801EEAE4` (the sibling fade
-state machines).
+So the entry banner is not a panel of its own. It is the ordinary `4C E1`
+text balloon - template `0x8007431C`, whose handler word is `0x801DA7F0` -
+with the spawner `FUN_8003C764` inlined, one difference apart: the parent-link
+word `+0x94` is stored zero. With no link, the balloon's handshake reads a new
+engagement as its cue to end early, so talking to someone during the banner
+dismisses it. See [`cutscene.md`](../subsystems/cutscene.md) and
+`engine-core::text_balloon` for the balloon itself.
+
+The gate is **system flag `2`** (`0x80085758` bit `0x20`), a one-shot the
+loader clears whether or not a banner spawned. Nothing sets it with a literal
+index in the executable or the field overlay; its writers are the generic flag
+helpers, driven by scripts. A disc-wide walk of every scene MAN's partitions
+finds its clean `SET` sites in the three kingdom MANs (`map01` / `map02` /
+`map03`) and in `koroutx2` - leaving the overworld for a place is what
+announces the place.
 
 **The body is not padded**: it is exactly `strlen + 1` bytes, so a longer name
 needs the section resized. See [editing notes](#editing-notes).
 
+The engine port is `engine-core::place_name_banner`, called from
+`SceneHost::load_scene` right after the MAN loader's actor work; both hosts
+draw the result through the shared balloon builders
+(`engine-ui::text_balloon_box`). The engine's overworld entrances do not run
+their records through the field VM - the world-map entity keeps only the
+`0x3F` destination - so the transition drain replays the flag operations that
+open the entrance record (`record_leading_flag_writes`: SETs and CLEARs in
+order, TESTs followed the way the VM's `0x70` arm follows them, stopping at
+the first other instruction). That is what raises flag 2 on the crossing. Disc
+pins: `crates/engine-core/tests/place_name_banner_disc.rs`, including the walk
+from `map01` into Rim Elm.
+
+### The latch is the save screen's, not the banner's
+
+The field overlay's fill-fade actor `FUN_801EE5D4` - and the two sibling
+state machines whose latching stores sit at `0x801EAC7C` / `0x801EEAE4` - also
+read `_DAT_801C6EA0`, and this page used to say they "open the banner panel
+with it". They do not. The panel script they
+run, `0x801F32B4`, is a single `op 5` record (close every panel) followed by
+the terminator, read out of the PROT 0897 image at its `0x801CE818` base. What
+those actors do with the name is copy it into `_DAT_8007B44C`, in the delay
+slot of that script call:
+
+```asm
+801EE620  lui   $a0, 0x801f
+801EE624  addiu $a0, $a0, 0x32b4      ; panel script: close all panels
+801EE62C  lw    $v1, 0x6ea0($v0)      ; v1 = _DAT_801C6EA0
+801EE634  jal   0x801e9b3c            ; panel command-script interpreter
+801EE638  sw    $v1, -0x4bb4($v0)     ; _DAT_8007B44C = the name (delay slot)
+```
+
+and every reader of `_DAT_8007B44C` on the disc is the save screen (below).
+
 ### How it was pinned
 
-Statically the chain ends at a panel script, which is one indirection short of
-proof. It was closed live instead: breaking on the glyph renderer
-`FUN_80036888` across an overworld-into-town transition captures the banner
-draw arriving with `a0 == _DAT_801C6EA0`, spelling the scene's section-2 name.
-Probe: `scripts/pcsx-redux/autorun_location_banner_source.lua`.
+The loader's banner tail is read off its disassembly. The live check predates
+that read: breaking on the glyph renderer `FUN_80036888` across an
+overworld-into-town transition captures the banner draw arriving with
+`a0 == _DAT_801C6EA0`, spelling the scene's section-2 name - the balloon
+handler draws its `+0x90` text through that leaf. Probe:
+`scripts/pcsx-redux/autorun_location_banner_source.lua`.
 
 ### What else reads it
 

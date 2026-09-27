@@ -684,6 +684,17 @@ pub struct Actor {
     /// active.
     pub battle_reaction: Option<u8>,
 
+    /// The action entry committed on the reaction channel (retail `+0x1D9`
+    /// while a reaction plays) - what the tint SM's arm-2 gate compares
+    /// against the knockdown slot `+0x1F1`.
+    pub battle_reaction_entry: Option<u8>,
+
+    /// The entry staged behind the playing reaction (retail `+0x1DA` as the
+    /// commit's clip-tag ladder leaves it): the get-up behind a knockdown,
+    /// entry `7` / `8` of a downed party member's chain. Committed at the
+    /// reaction's natural end (`world::battle::clip_ladder`).
+    pub battle_reaction_next: Option<u8>,
+
     /// Per-character **art-animation bank** clips (the player file's
     /// record[0] `+0x58` bank, each record's keyframe stream resolved
     /// through its `readef.DAT` `"ME"` archive and expanded so channel `i`
@@ -1037,6 +1048,11 @@ pub enum WorldMapEntityConfig {
         /// Arrival facing/depth selector (`& 7` indexes the entry-direction
         /// table).
         dir: u8,
+        /// The partition-2 record the entrance's walk-on trigger names - the
+        /// script retail runs on the crossing. The transition drain replays
+        /// the flag operations that open it
+        /// ([`crate::place_name_banner::record_leading_flag_writes`]).
+        record: u8,
     },
     /// A plain interactable (NPC / signpost). Surfaces a
     /// [`crate::field_events::FieldEvent::FieldInteract`] with `interact_id`.

@@ -11,9 +11,11 @@
 //! | 45 (`0x2D`) | `FUN_801DD028` | the coin-bank counter ([`counter_panel_draws_for`]) |
 //! | 46 (`0x2E`) | `FUN_801D603C` | the Yes/No confirm ([`choice_panel_draws_for`]) |
 //!
-//! Window 44's ink rule is retail's list rule (`FUN_801D5DE0` greys a row the
-//! player cannot take): grey when the coin bank is short of the price or the
-//! held stack is at the 99 cap, white otherwise. The confirm panel (46) draws
+//! Window 44's ink rule is retail's list rule, resolved by the host through
+//! `legaia_engine_core::shop::shop_stock_row_ink` (the port of
+//! `FUN_801D5DE0`'s ink arm) and carried on [`PrizeRow::ink`]: a stack at the
+//! 99 cap greys, a non-zero record marker re-inks to the accent pen, and a
+//! coin bank short of the price greys again - last rule wins. The confirm panel (46) draws
 //! only while the session is in its Yes/No phase, cursor seeded to No -
 //! retail's `DAT_801E46D0 = 1` convention.
 //!
@@ -40,8 +42,12 @@ pub const WIN_PRIZE_LIST: usize = 44;
 pub const WIN_COIN_COUNTER: usize = 45;
 pub const WIN_CONFIRM: usize = 46;
 
-/// The retail per-stack cap the list ink greys at (the shop's `0x63`).
-const HELD_CAP: u8 = 99;
+/// Row ink `0`: the grey pen `FUN_801D5DE0` stages for a row the redeem gate
+/// refuses (short on coins, or a stack at the 99 cap).
+pub const PRIZE_INK_GREY: u8 = 0;
+/// Row ink `6`: the accent pen a non-zero record marker selects - drawn in
+/// [`crate::MENU_TEXT_GOLD`], the CLUT row staging id 6 decodes to.
+pub const PRIZE_INK_MARKED: u8 = 6;
 
 /// Grey ink for a row the redeem gate would refuse.
 pub const PRIZE_TEXT_GREY: [f32; 4] = [0.45, 0.45, 0.45, 1.0];
@@ -56,6 +62,12 @@ pub struct PrizeRow {
     pub price: u32,
     /// Party's held count of the item (the 99-cap ink input).
     pub held: u8,
+    /// Retail row ink: `FUN_801D5DE0`'s last-rule-wins selection, which the
+    /// host resolves with `legaia_engine_core::shop::shop_stock_row_ink`
+    /// (held cap, the record's `+2` marker, the coin bank against the price).
+    /// `0` greys the row, `6` is the marker's accent pen, anything else the
+    /// normal pen.
+    pub ink: u8,
 }
 
 /// The screen's full view state.
@@ -113,11 +125,10 @@ pub fn prize_exchange_draws_for(
         let rect = painter_rect(d);
         for (i, row) in view.rows.iter().enumerate() {
             let y = rect.y + (i as i32) * PAINTER_ROW_PITCH;
-            let refused = view.coins < row.price || row.held >= HELD_CAP;
-            let ink = if refused {
-                PRIZE_TEXT_GREY
-            } else {
-                MENU_TEXT_WHITE
+            let ink = match row.ink {
+                PRIZE_INK_GREY => PRIZE_TEXT_GREY,
+                PRIZE_INK_MARKED => crate::MENU_TEXT_GOLD,
+                _ => MENU_TEXT_WHITE,
             };
             // Cursor marker column, then the name, then the right-ish price.
             if i == view.cursor && view.confirm_cursor.is_none() {

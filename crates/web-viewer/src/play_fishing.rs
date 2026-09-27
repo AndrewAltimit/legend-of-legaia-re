@@ -258,6 +258,9 @@ impl LegaiaRuntime {
         if host.world.exit_fishing().is_none() {
             return -1;
         }
+        // A door-entered pond closes its mode-24 round trip here, as the
+        // Start escape does (a no-op for a button-launched session).
+        host.world.close_minigame_round_trip();
         self.fishing_banners = Default::default();
         self.fishing_banner_draws.clear();
         host.world.minigames.fishing_points

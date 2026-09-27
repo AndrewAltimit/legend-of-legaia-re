@@ -354,11 +354,28 @@ window.MgMuscle = (function () {
     }
 
     /* Blit sheet rect (u,v,w,h) to retail-space (dx,dy), optional dest size. */
-    function blit(src, pal, u, v, w, h, dx, dy, dw, dh) {
+    function blit(src, pal, u, v, w, h, dx, dy, dw, dh, abr) {
       const s = sheet(src, pal);
       if (!s) return false;
-      g.drawImage(s, u, v, w, h, dx * 2, dy * 2, (dw || w) * 2, (dh || h) * 2);
+      withAbr(g, abr, () =>
+        g.drawImage(s, u, v, w, h, dx * 2, dy * 2, (dw || w) * 2, (dh || h) * 2));
       return true;
+    }
+    /* PSX semi-transparency for a hub quad's `abr` (null = opaque): 0 is
+     * `B/2 + F/2`, 1 `B + F`, 3 `B + F/4` - all three are canvas composites
+     * (a transparent texel has alpha 0 and adds nothing). 2 (`B - F`) has no
+     * composite, and no hub palette that blends is ever drawn with it (only
+     * STP-free palettes reach ABR 2, and those draw opaque), so it takes the
+     * plain draw. */
+    function withAbr(g, abr, draw) {
+      if (abr == null || abr === 2) return draw();
+      g.save();
+      if (abr === 0) g.globalAlpha *= 0.5;
+      else {
+        g.globalCompositeOperation = 'lighter';
+        if (abr === 3) g.globalAlpha *= 0.25;
+      }
+      try { return draw(); } finally { g.restore(); }
     }
 
     function hudAdv(ch) {
@@ -480,7 +497,7 @@ window.MgMuscle = (function () {
       if (!m.ok || !m.quads || !m.quads.length) return 0;
       let n = 0;
       for (const q of m.quads) {
-        if (blit(q.sheet, q.pal, q.u, q.v, q.w, q.h, q.x, q.y, q.dw, q.dh)) n++;
+        if (blit(q.sheet, q.pal, q.u, q.v, q.w, q.h, q.x, q.y, q.dw, q.dh, q.abr)) n++;
       }
       return n;
     }
@@ -1571,7 +1588,7 @@ window.MgMuscle = (function () {
           }
           continue;
         }
-        blit(q.sheet, q.pal, q.u, q.v, q.w, q.h, q.x, q.y, q.dw, q.dh);
+        blit(q.sheet, q.pal, q.u, q.v, q.w, q.h, q.x, q.y, q.dw, q.dh, q.abr);
       }
       return m;
     }

@@ -745,6 +745,9 @@ impl World {
         if !self.any_living_initiative_key() {
             self.reseed_initiative();
         }
+        // `FUN_801D388C(0, 0)` (`0x801D0EE4`): the formation squash +
+        // recentre, between the seeder and the DoT tick. RNG-free.
+        self.normalize_battle_formation();
         // The seeder's tail clears the round-skip count `ctx[+0x25]` every
         // round (`sb zero,0x25(v0)` at `0x801DAB84`, the delay slot of the
         // pick's `jal`), keys re-rolled or not.
@@ -1006,12 +1009,15 @@ impl World {
             .map(|a| a.battle.current_anim)
             .unwrap_or(0);
         let mut target = None;
-        for _ in 0..strikes {
+        for n in 0..strikes {
             let Some(t) = self.resolve_attack_target(attacker) else {
                 break;
             };
             target = Some(t);
-            self.land_melee_hit(attacker, t, BASIC_ATTACK_COMMAND, committed, false);
+            // The total lands after the last strike, which is the one hit the
+            // kill check sees.
+            let last = n + 1 == strikes;
+            self.land_melee_hit(attacker, t, BASIC_ATTACK_COMMAND, committed, false, last);
         }
         if let Some(t) = target {
             self.apply_combo_total(t);
@@ -1139,10 +1145,6 @@ impl World {
         let Some(target) = self.resolve_attack_target(attacker) else {
             return;
         };
-        let dmg = self.land_melee_hit(attacker, target, hit.power_byte, committed, art.is_some());
-        if let Some(art) = art {
-            self.apply_art_hit_side_data(attacker, target, art, hit.hit_index, dmg);
-        }
         let cursor_parked =
             self.actors[attacker as usize].battle.strike_index == STRIKE_CURSOR_PARKED;
         let last_of_clip = hit.hit_index >= 3
@@ -1154,13 +1156,31 @@ impl World {
         // last-beat pair above; the early arm lands the total now because
         // nothing left in the action can connect with the target's size
         // class; the carry arm lands nothing at all while the War God Icon's
-        // Attack x2 pair is still running.
+        // Attack x2 pair is still running. It reads the look-ahead and the
+        // cursor, never the hit's damage, so it is taken ahead of the roll:
+        // the kill check that sits between the two needs it.
         let mode = self.hit_apply_mode(attacker, target, &power_run, hit.hit_index);
         let applied = match mode {
             vm::battle_action::APPLY_MODE_CARRY => false,
             vm::battle_action::APPLY_MODE_EARLY => true,
             _ => cursor_parked && last_of_clip,
         };
+        // The kill check's own gates (`0x801EE128..0x801EE1A4`) are the apply
+        // gate's: mode `0xFF` skips it, a non-zero mode on a monster target
+        // takes it, and otherwise it needs the parked cursor
+        // (`ctx[+0x15] == 0xFF`, `0x801EE15C`) and the clip's last beat
+        // (`entry[0x11 + idx] == 0 || idx == 3`, `0x801EE180..0x801EE19C`).
+        let dmg = self.land_melee_hit(
+            attacker,
+            target,
+            hit.power_byte,
+            committed,
+            art.is_some(),
+            applied,
+        );
+        if let Some(art) = art {
+            self.apply_art_hit_side_data(attacker, target, art, hit.hit_index, dmg);
+        }
         if applied {
             self.apply_combo_total(target);
         }
@@ -1337,11 +1357,11 @@ impl World {
         }
         let n = hits.len();
         for (i, power) in hits.into_iter().enumerate() {
-            let dmg = self.land_melee_hit(attacker, target, power, staged, art.is_some());
+            let applied = next_is_end && i + 1 == n;
+            let dmg = self.land_melee_hit(attacker, target, power, staged, art.is_some(), applied);
             if let Some(art) = art {
                 self.apply_art_hit_side_data(attacker, target, art, i as u8, dmg);
             }
-            let applied = next_is_end && i + 1 == n;
             if applied {
                 self.apply_combo_total(target);
             }
@@ -1448,6 +1468,7 @@ impl World {
         power_byte: u8,
         committed: u8,
         _is_art: bool,
+        kill_check: bool,
     ) -> u16 {
         let attacker_i = attacker as usize;
         let target_i = target as usize;
@@ -1528,19 +1549,21 @@ impl World {
         // Accumulate: the combo total and the bar's owed delta, never live HP
         // (`0x801EDB40` / `0x801EDB58`; the bar ramp is what the player sees
         // falling hit by hit).
-        let (was_standing, survives) = {
+        let survives = {
             let t = &mut self.actors[target_i].battle;
-            let was_standing = t.damage_accum < u32::from(t.hp);
             t.damage_accum = t.damage_accum.saturating_add(u32::from(dmg));
             t.arm_hp_bar();
             t.accumulate_hp_bar(i32::from(dmg));
-            (was_standing, t.damage_accum < u32::from(t.hp))
+            t.damage_accum < u32::from(t.hp)
         };
         // The kill check's Seru absorb (`0x801EE1C0..0x801EE2E8`), ahead of
         // the impact tint as in retail - its `rand()` sits between the
-        // damage rolls and the tint. Rolled on the hit that first reaches the
-        // target's HP (see `seru_absorb`'s module note).
-        if was_standing && !survives {
+        // damage rolls and the tint. Retail reaches the kill compare only on
+        // a hit its per-hit gates (`0x801EE134..0x801EE1A4`) pass, which the
+        // caller has decided as `kill_check` (see `seru_absorb`'s module
+        // note); the compare itself is the accumulated total against live
+        // HP (`sltu v0,a0,a2` at `0x801EE1CC`).
+        if kill_check && !survives {
             self.roll_seru_absorb(attacker, target);
         }
         // Surface the strike for HUD damage popups.
@@ -1921,6 +1944,47 @@ mod melee_cue_tests {
         w
     }
 
+    /// A Seru-carrying duel whose monster dies to one basic swing, with a
+    /// certain absorb roll and Vahn's Ra-Seru marker set.
+    fn absorb_duel() -> World {
+        let mut w = duel();
+        w.load_party(legaia_save::Party::zeroed(1));
+        w.party.party_count = 1;
+        let rec = &mut w.party.roster.members[0];
+        let mut eq = rec.equipment();
+        eq.slots[3] = 0x30;
+        rec.set_equipment(eq);
+        let mut def = crate::monster_catalog::MonsterDef::new(0x40, "Seru", 1, 10);
+        def.absorb_seru = 1;
+        def.absorb_chance_pct = 100;
+        w.tables.monster_catalog.insert(def);
+        w.actors[1].battle_monster_id = Some(0x40);
+        w.actors[1].battle.hp = 1;
+        w.battle_ctx.active_actor = 0;
+        w
+    }
+
+    /// Retail's kill compare sits behind the apply gate
+    /// (`0x801EE128..0x801EE1A4`): a hit that empties the target's HP
+    /// mid-chain does not roll the absorb.
+    #[test]
+    fn a_killing_hit_off_the_apply_gate_rolls_no_absorb() {
+        let mut w = absorb_duel();
+        w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, false);
+        assert!(w.actors[1].battle.damage_accum >= 1, "the swing connected");
+        assert_eq!(w.battle_ctx.multi_cast_gate, 0);
+    }
+
+    /// The hit that lands the total takes the compare - the accumulated
+    /// total against live HP, however early in the chain it crossed.
+    #[test]
+    fn the_hit_that_lands_the_total_rolls_the_absorb() {
+        let mut w = absorb_duel();
+        w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, false);
+        w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
+        assert_eq!(w.battle_ctx.multi_cast_gate, 1, "Seru 1 staged");
+    }
+
     /// The `0x800788B8` duration table with the melee entry (`0x0C`) at its
     /// retail value, `373` -> `(373 * 60 + 99) / 100 = 224` sectors.
     fn durations_with_melee_entry() -> Vec<u16> {
@@ -1940,7 +2004,7 @@ mod melee_cue_tests {
         );
         {
             let atk = w.battle_ctx.active_actor;
-            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false, true);
         }
         assert!(
             w.drain_battle_sfx_cues().is_empty(),
@@ -1965,7 +2029,7 @@ mod melee_cue_tests {
         w.battle_ctx.active_actor = 1; // the monster attacks
         {
             let atk = w.battle_ctx.active_actor;
-            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false, true);
         }
         // `sltiu v0,a0,0x3` at `0x801EEA7C` skips the grunt for a monster
         // seat, and the re-read of the zero word at `0x801EEB60` skips the
@@ -1981,7 +2045,7 @@ mod melee_cue_tests {
         // cue arm.
         w.battle.monster_ai_state.flag_bd84 = 1;
         w.battle_ctx.active_actor = 1; // the monster attacks
-        w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false);
+        w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
         let cues = w.drain_battle_sfx_cues();
         assert_eq!(cues.len(), 1, "one swing, one cue: {cues:?}");
         // The funnel's element-tinted high leg: `0x10C + 0x19C`.
@@ -2000,7 +2064,7 @@ mod melee_cue_tests {
         w.battle.monster_ai_state.flag_bd84 = 1;
         w.audio.xa_cue_durations = Some(durations_with_melee_entry());
         w.battle_ctx.active_actor = 0; // the party member attacks
-        w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false);
+        w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
         assert!(
             w.drain_battle_sfx_cues().is_empty(),
             "a party attacker's `0x10C` is a CD-XA voice request, not a ring id"
@@ -2025,7 +2089,7 @@ mod melee_cue_tests {
         w.audio.battle_xa_busy_frames = 5;
         {
             let atk = w.battle_ctx.active_actor;
-            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false, true);
         }
         assert!(w.drain_battle_sfx_cues().is_empty());
         assert!(w.drain_battle_xa_cues().is_empty());
@@ -2039,7 +2103,7 @@ mod melee_cue_tests {
         // Retail gate `0x801EEB88`: the cue is submitted only while the target
         // is playing a plain action-table clip.
         w.actors[0].battle.current_anim = 0x11;
-        w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false);
+        w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
         assert!(w.drain_battle_sfx_cues().is_empty());
     }
 }
@@ -2094,7 +2158,7 @@ mod impact_tint_arm_tests {
         let mut w = duel_with_attacker_clip(0, 1);
         {
             let atk = w.battle_ctx.active_actor;
-            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false, true);
         }
         assert_eq!(w.actors[1].battle.impact_state, 1);
         assert_eq!(
@@ -2114,7 +2178,7 @@ mod impact_tint_arm_tests {
         let mut w = duel_with_attacker_clip(1, 2);
         {
             let atk = w.battle_ctx.active_actor;
-            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false, true);
         }
         assert_eq!(w.actors[0].battle.impact_state, 2);
         assert_eq!(w.actors[0].battle.render_blend, 0x1000);
@@ -2127,7 +2191,7 @@ mod impact_tint_arm_tests {
         for class in [0u8, crate::move_power::IMPACT_CLASS_LIMIT, 0xFF] {
             let mut w = duel_with_attacker_clip(0, class);
             let hp_before = w.actors[1].battle.hp;
-            w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false);
+            w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
             // Hits accumulate; the combo total is the one live-HP write.
             w.apply_combo_total(1);
             assert!(
@@ -2146,7 +2210,7 @@ mod impact_tint_arm_tests {
         w.actors[0].battle_animation = None;
         {
             let atk = w.battle_ctx.active_actor;
-            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false);
+            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false, true);
         }
         assert_eq!(w.actors[1].battle.impact_state, 0);
     }

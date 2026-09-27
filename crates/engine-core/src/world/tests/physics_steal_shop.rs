@@ -243,6 +243,13 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
     prices[0x22] = 50;
     prices[0x34] = 120;
     world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    // A two-id record is all tail: retail's builder offers it only to a party
+    // holding the Platinum Card (`FUN_80042F4C(0xFF)`), so the party gets one.
+    *world
+        .party
+        .inventory
+        .entry(crate::menu_list_rows::SHOP_TAIL_CARD_ID)
+        .or_insert(0) = 1;
 
     let code = shop_op49_script();
     let mut ctx = FieldCtx::default();
@@ -592,30 +599,51 @@ fn field_vm_op49_non_shop_payload_does_not_open_a_shop() {
 
 #[test]
 fn field_vm_op49_trims_unsellable_padding_to_the_sellable_stock() {
-    let mut world = World::new();
-    // 0x22/0x34 priced; 0x03 the trailing unsellable template-id padding the
-    // record `count` over-counts. The shop opens with only the sellable stock.
+    // 0x22/0x34/0x40/0x41 priced; 0x03 the trailing unsellable template-id
+    // padding the record `count` over-counts. Retail's builder
+    // (`FUN_80030628` case 0x0B) walks the last three record entries only for
+    // a Platinum-Card party and hoists them to the top; the padding id never
+    // builds a row either way.
     let mut prices = [0u16; 256];
     prices[0x22] = 50;
     prices[0x34] = 120;
-    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
-    let mut code = vec![0x49, 0x00, 0x00, 0x03, 0x22, 0x34, 0x03];
+    prices[0x40] = 300;
+    prices[0x41] = 400;
+    let mut code = vec![0x49, 0x00, 0x00, 0x05, 0x22, 0x34, 0x40, 0x41, 0x03];
     code.extend_from_slice(b"Shop\0");
-    let mut ctx = FieldCtx::default();
-    {
-        let mut host = FieldHostImpl { world: &mut world };
-        let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
-    }
-    let sess = world
-        .take_pending_field_shop()
-        .expect("the field VM opened the shop (padding doesn't reject it)");
-    let items: Vec<(u8, u32)> = sess
-        .inventory
-        .items
-        .iter()
-        .map(|i| (i.item_id, i.price))
-        .collect();
-    assert_eq!(items, vec![(0x22, 50), (0x34, 120)], "0x03 padding trimmed");
+    let open = |card: bool| {
+        let mut world = World::new();
+        world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+        if card {
+            *world
+                .party
+                .inventory
+                .entry(crate::menu_list_rows::SHOP_TAIL_CARD_ID)
+                .or_insert(0) = 1;
+        }
+        let mut ctx = FieldCtx::default();
+        {
+            let mut host = FieldHostImpl { world: &mut world };
+            let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
+        }
+        world
+            .take_pending_field_shop()
+            .expect("the field VM opened the shop (padding doesn't reject it)")
+            .inventory
+    };
+    let ids = |inv: &crate::shop::ShopInventory| -> Vec<(u8, u32)> {
+        inv.items.iter().map(|i| (i.item_id, i.price)).collect()
+    };
+    let plain = open(false);
+    assert_eq!(ids(&plain), vec![(0x22, 50), (0x34, 120)], "tail dropped");
+    assert_eq!(plain.featured_rows, 0);
+    let card = open(true);
+    assert_eq!(
+        ids(&card),
+        vec![(0x40, 300), (0x41, 400), (0x22, 50), (0x34, 120)],
+        "tail hoisted, 0x03 padding never a row"
+    );
+    assert_eq!(card.featured_rows, 2);
 }
 
 #[test]

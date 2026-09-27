@@ -35,6 +35,7 @@ pub mod sfx;
 pub mod sfx_ring;
 pub mod shout;
 pub mod spu;
+pub mod spu_layout;
 pub mod test_sink;
 pub mod vab_bind;
 #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]

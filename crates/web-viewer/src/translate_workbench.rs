@@ -29,8 +29,11 @@ use std::collections::HashMap;
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
+use legaia_font::accent_font::{AccentFontState, CellDraw};
+use legaia_font::latin;
 use legaia_font::{Font, MeasureOptions, PenItem, TextLimit, limit_for};
 use legaia_patcher::disc::DiscPatcher;
+use legaia_patcher::translation::accents::{self, AccentMode, DiscFont};
 use legaia_patcher::translation::markup::{self, Target};
 use legaia_patcher::translation::space::{
     NameFitter, SpaceOptions, SpaceReport, space_report_with_export, target_for_key,
@@ -40,6 +43,11 @@ use legaia_patcher::translation::{LanguagePack, export_pack};
 fn err(msg: impl AsRef<str>) -> JsValue {
     JsValue::from_str(msg.as_ref())
 }
+
+/// The markup escape delimiters, spelled as code points so a brace-matching
+/// source scanner (the UI host-drift gate) sees balanced braces here.
+const ESCAPE_OPEN: char = '\x7b';
+const ESCAPE_CLOSE: char = '\x7d';
 
 /// Rows the field dialog pager shows per box (`_DAT_801F2740 = 3`).
 pub const ROWS_PER_BOX: u8 = 3;
@@ -160,6 +168,11 @@ pub struct LineCheck {
     pub limit: Option<&'static TextLimit>,
     /// Substitution tokens whose text is unknown here.
     pub unresolved: usize,
+    /// Characters that will not draw as typed, or that fold on import
+    /// ([`accents::analyze`] under the pack's accent mode).
+    pub notes: Vec<accents::CharNote>,
+    /// The pack's accent mode the check ran under.
+    pub mode: AccentMode,
 }
 
 impl LineCheck {
@@ -181,6 +194,16 @@ impl LineCheck {
             "max_px": self.limit.map(|l| l.max_px),
             "over_px": self.over_px(),
             "unresolved": self.unresolved,
+            "notes": self.notes.iter().map(|n| json!({
+                "index": n.index,
+                "char": n.fragment,
+                "kind": n.kind,
+                "fold": n.fold,
+                "cell": n.cell.map(|b| format!("{{{b:02x}}}")),
+                "msg": n.reason,
+                "undrawable": accents::is_undrawable(n, self.mode),
+            })).collect::<Vec<_>>(),
+            "undrawable": self.notes.iter().filter(|n| accents::is_undrawable(n, self.mode)).count(),
         })
     }
 }
@@ -198,6 +221,11 @@ pub struct Core {
     disc_report: SpaceReport,
     names: NameFitter,
     font: Option<Font>,
+    /// The disc's font page + advance table (draw checks for `{xx}` cells).
+    disc_font: Option<DiscFont>,
+    /// The disc's font with the accent font written in, for previews of an
+    /// `accents: font` pack on a disc that does not carry it yet.
+    accent_preview: Option<Font>,
 }
 
 impl Core {
@@ -219,6 +247,11 @@ impl Core {
             )
             .ok()
             .and_then(|tim| Font::from_disc_tim_and_scus(&tim, &scus).ok());
+        let disc_font = DiscFont::read(&patcher).ok();
+        let accent_preview = disc_font
+            .as_ref()
+            .and_then(|f| f.patched().ok())
+            .and_then(|(tim, scus, _)| Font::from_disc_tim_and_scus(&tim, &scus).ok());
         let mut core = Self {
             patcher,
             scus,
@@ -229,6 +262,8 @@ impl Core {
             disc_report,
             names,
             font,
+            disc_font,
+            accent_preview,
         };
         core.build_meta();
         Ok(core)
@@ -333,7 +368,7 @@ impl Core {
     fn name_at(&self, va: u32) -> Option<Vec<u8>> {
         let key = format!("scus:str:0x{va:08x}");
         match self.shown_text(&key) {
-            Some(t) => markup::encode(t, Target::CString).ok(),
+            Some(t) => accents::encode_as_imported(t, Target::CString, self.accent_mode()).ok(),
             None => self.scus_cstr(va, 64),
         }
     }
@@ -348,7 +383,7 @@ impl Core {
         match op {
             0xC1 => {
                 let t = self.shown_text(&format!("scus:party:{arg}"))?;
-                markup::encode(t, Target::CString).ok()
+                accents::encode_as_imported(t, Target::CString, self.accent_mode()).ok()
             }
             0xC2 | 0xC4 => {
                 let va = self.scus_u32(
@@ -370,13 +405,47 @@ impl Core {
         }
     }
 
+    /// The pack's accent mode.
+    pub fn accent_mode(&self) -> AccentMode {
+        AccentMode::of(&self.pack)
+    }
+
+    /// Set the pack's accent mode (`strict` / `fold` / `font`).
+    pub fn set_accent_mode(&mut self, mode: AccentMode) {
+        self.pack.accents = mode.header().to_string();
+    }
+
+    /// The font a line is measured and drawn with: the accent-font preview
+    /// for an `accents: font` pack, else the disc's own font.
+    fn font_for_mode(&self) -> Option<&Font> {
+        match self.accent_mode() {
+            AccentMode::Font => self.accent_preview.as_ref().or(self.font.as_ref()),
+            _ => self.font.as_ref(),
+        }
+    }
+
+    /// How the disc's font draws `byte`.
+    fn disc_draw(&self, byte: u8) -> CellDraw {
+        self.disc_font
+            .as_ref()
+            .map_or(CellDraw::Draws, |f| f.draw(byte))
+    }
+
+    /// The character notes of `text` under the pack's accent mode.
+    pub fn notes(&self, text: &str) -> Vec<accents::CharNote> {
+        let draw = |b: u8| self.disc_draw(b);
+        let lookup: Option<&dyn accents::DrawLookup> = self.disc_font.as_ref().map(|_| &draw as _);
+        accents::analyze(text, self.accent_mode(), lookup)
+    }
+
     /// Encode + measure `text` as key `key`'s line.
     pub fn check(&self, key: &str, text: &str) -> LineCheck {
         let meta = self.meta.get(key);
         let section = meta.map_or("", |m| m.section);
         let limit = meta.and_then(|m| m.limit).and_then(limit_for);
         let target = target_for_key(key);
-        let (bytes, errors) = match markup::encode(text, target) {
+        let mode = self.accent_mode();
+        let (bytes, errors) = match accents::encode_as_imported(text, target, mode) {
             Ok(b) => (Some(b), Vec::new()),
             Err(issues) => (
                 None,
@@ -393,8 +462,14 @@ impl Core {
             lines: 1,
             limit,
             unresolved: 0,
+            notes: if text.is_ascii() && !text.contains(ESCAPE_OPEN) {
+                Vec::new()
+            } else {
+                self.notes(text)
+            },
+            mode,
         };
-        if let (Some(bytes), Some(font)) = (bytes, self.font.as_ref()) {
+        if let (Some(bytes), Some(font)) = (bytes, self.font_for_mode()) {
             let expand = |op: u8, arg: u8| self.resolve(op, arg);
             let opts = MeasureOptions {
                 glyph_pad: glyph_pad_for(section, limit),
@@ -451,6 +526,7 @@ impl Core {
             .clone()
             .into_skeleton(&theirs.language, theirs.contributors.clone());
         pack.notes = theirs.notes.clone();
+        pack.accents = theirs.accents.clone();
         let merged = pack.merge_translations(&theirs);
         self.pack = pack;
         Ok((filled.len(), merged, unknown))
@@ -492,6 +568,7 @@ impl Core {
             "language": self.pack.language,
             "contributors": self.pack.contributors,
             "notes": self.pack.notes,
+            "accents": self.pack.accents,
             "t": t,
         })
         .to_string()
@@ -512,6 +589,7 @@ impl Core {
             })
             .unwrap_or_default();
         self.set_meta(&lang, contributors, v["notes"].as_str().unwrap_or(""));
+        self.pack.accents = v["accents"].as_str().unwrap_or("").to_string();
         let mut n = 0;
         if let Some(t) = v["t"].as_object() {
             for (k, text) in t {
@@ -559,6 +637,8 @@ impl Core {
                     "px": c.as_ref().and_then(|c| c.px),
                     "ovpx": c.as_ref().map_or(0, |c| c.over_px()),
                     "unres": c.as_ref().map_or(0, |c| c.unresolved),
+                    "ud": c.as_ref().map_or(0, |c| c.notes.iter().filter(|n| accents::is_undrawable(n, c.mode)).count()),
+                    "fd": c.as_ref().map_or(0, |c| c.notes.iter().filter(|n| !accents::is_undrawable(n, c.mode)).count()),
                 }));
             }
         }
@@ -566,6 +646,7 @@ impl Core {
             "language": self.pack.language,
             "contributors": self.pack.contributors,
             "notes": self.pack.notes,
+            "accents": self.accent_mode().header(),
             "limits": legaia_font::TEXT_LIMITS.iter().map(|l| json!({
                 "context": l.context, "max_px": l.max_px, "max_lines": l.max_lines,
                 "glyph_pad": l.glyph_pad,
@@ -655,11 +736,83 @@ impl Core {
         }
     }
 
+    /// Pack-level character counts under the pack's accent mode: lines and
+    /// characters that will not draw as typed, lines that fold on import,
+    /// per note kind and per section.
+    pub fn char_stats_json(&self) -> String {
+        let mode = self.accent_mode();
+        let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
+        let mut sections: std::collections::BTreeMap<&str, (usize, usize)> = Default::default();
+        let (mut bad_lines, mut bad_chars, mut fold_lines) = (0usize, 0usize, 0usize);
+        let mut chars: std::collections::BTreeMap<String, usize> = Default::default();
+        for (section, es) in self.pack.sections.iter() {
+            for e in es.iter().filter(|e| e.is_filled()) {
+                if e.translation.is_ascii() && !e.translation.contains(ESCAPE_OPEN) {
+                    continue;
+                }
+                let notes = self.notes(&e.translation);
+                let bad = notes
+                    .iter()
+                    .filter(|n| accents::is_undrawable(n, mode))
+                    .count();
+                if bad > 0 {
+                    bad_lines += 1;
+                    bad_chars += bad;
+                    sections.entry(section).or_default().0 += 1;
+                }
+                if notes.len() > bad {
+                    fold_lines += 1;
+                    sections.entry(section).or_default().1 += 1;
+                }
+                for n in &notes {
+                    let k = serde_json::to_value(n.kind)
+                        .ok()
+                        .and_then(|v| v.as_str().map(str::to_string))
+                        .unwrap_or_default();
+                    *kinds.entry(k).or_default() += 1;
+                    if accents::is_undrawable(n, mode) {
+                        *chars.entry(n.fragment.clone()).or_default() += 1;
+                    }
+                }
+            }
+        }
+        let mut top: Vec<(String, usize)> = chars.into_iter().collect();
+        top.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        top.truncate(24);
+        json!({
+            "mode": mode.header(),
+            "undrawable_lines": bad_lines,
+            "undrawable_chars": bad_chars,
+            "fold_lines": fold_lines,
+            "kinds": kinds,
+            "sections": sections.iter().map(|(s, (b, f))| json!({"section": s, "undrawable": b, "fold": f})).collect::<Vec<_>>(),
+            "top": top.iter().map(|(c, n)| json!({"char": c, "count": n})).collect::<Vec<_>>(),
+        })
+        .to_string()
+    }
+
+    /// The disc's accent-font state and the palette the page offers.
+    pub fn accent_info_json(&self) -> String {
+        let state = self.disc_font.as_ref().map(|f| match f.state() {
+            AccentFontState::Applied => "applied",
+            AccentFontState::Absent => "absent",
+            AccentFontState::Partial => "partial",
+        });
+        json!({
+            "mode": self.accent_mode().header(),
+            "disc_font": state,
+            "preview": self.accent_preview.is_some(),
+            "palette": latin_palette_value(),
+        })
+        .to_string()
+    }
+
     /// Draw `rows` (one string per box row; `|` breaks inside a row) in the
     /// retail font, as key `key`'s surface draws them, at native resolution.
     /// Returns `(w, h, rgba, widest px, unresolved tokens)`.
     pub fn render(&self, key: &str, rows: &[&str]) -> Option<Rendered> {
-        let font = self.font.as_ref()?;
+        let font = self.font_for_mode()?;
+        let mode = self.accent_mode();
         let meta = self.meta.get(key);
         let section = meta.map_or("", |m| m.section);
         let limit = meta.and_then(|m| m.limit).and_then(limit_for);
@@ -675,7 +828,9 @@ impl Core {
         let mut widest = 0u32;
         let mut unresolved = 0usize;
         for row in rows {
-            let bytes = markup::encode(row, target).ok().unwrap_or_default();
+            let bytes = accents::encode_as_imported(row, target, mode)
+                .ok()
+                .unwrap_or_default();
             let (items, m) = font.pen_items(&bytes, &opts);
             widest = widest.max(m.max_px);
             unresolved += m.unresolved.len();
@@ -857,6 +1012,34 @@ impl Workbench {
         self.core.check(key, text).to_json().to_string()
     }
 
+    /// The pack's accent mode: `""` (strict), `"fold"` or `"font"`.
+    pub fn accents(&self) -> String {
+        self.core.accent_mode().header().to_string()
+    }
+
+    /// Set the pack's accent mode (`strict` / `fold` / `font`); writes the
+    /// pack's `accents:` header. `false` for an unknown value.
+    pub fn set_accents(&mut self, mode: &str) -> bool {
+        match AccentMode::parse(mode) {
+            Some(m) => {
+                self.core.set_accent_mode(m);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// `{mode, disc_font: "absent"|"applied"|"partial"|null, preview,
+    /// palette}` - see [`Core::accent_info_json`].
+    pub fn accent_info(&self) -> String {
+        self.core.accent_info_json()
+    }
+
+    /// Pack-level character counts (see [`Core::char_stats_json`]).
+    pub fn char_stats(&self) -> String {
+        self.core.char_stats_json()
+    }
+
     /// Pen width of `text` as key `key`'s surface measures it.
     pub fn measure(&self, key: &str, text: &str) -> Option<u32> {
         self.core.check(key, text).px
@@ -948,6 +1131,72 @@ impl Workbench {
     }
 }
 
+/// The per-language palette, straight from [`legaia_font::latin`]: one row
+/// per language, each character with its fold and (when the accent font
+/// draws it) its cell escape.
+fn latin_palette_value() -> Value {
+    latin::LANGUAGE_SETS
+        .iter()
+        .map(|(code, name, chars)| {
+            json!({
+                "code": code,
+                "name": name,
+                "chars": chars.chars().map(|c| json!({
+                    "ch": c.to_string(),
+                    "fold": latin::fold_for_char(c),
+                    "cell": latin::drawn_byte_for_char(c).map(|b| format!("{{{b:02x}}}")),
+                })).collect::<Vec<_>>(),
+            })
+        })
+        .collect::<Vec<_>>()
+        .into()
+}
+
+/// The per-language character palette as JSON (no disc needed).
+#[wasm_bindgen]
+pub fn latin_palette() -> String {
+    latin_palette_value().to_string()
+}
+
+/// `text` with every accent folded to ASCII - the same fold `--fold-accents`
+/// and `accents: fold` apply (typed letters and `{xx}` cells alike).
+#[wasm_bindgen]
+pub fn fold_line(text: &str) -> String {
+    accents::fold_text(text).0
+}
+
+/// `text` with every typed accent the accent font draws written as its cell
+/// escape (`é` -> `{82}`); Latin letters without a cell fold.
+#[wasm_bindgen]
+pub fn cells_line(text: &str) -> String {
+    accents::cells_text(text).0
+}
+
+/// `text` with every `{xx}` accent-cell escape written back as the letter it
+/// stands for (`{82}` -> `é`), for readability; other escapes stay.
+#[wasm_bindgen]
+pub fn letters_line(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == ESCAPE_OPEN
+            && let [h1, h2, ESCAPE_CLOSE, ..] = &chars[i + 1..]
+            && let (Some(a), Some(b)) = (h1.to_digit(16), h2.to_digit(16))
+            && let Some(ch) = latin::cell_for_byte((a * 16 + b) as u8)
+                .filter(|c| c.recipe.is_some())
+                .and_then(|c| c.ch)
+        {
+            out.push(ch);
+            i += 4;
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
 /// Encoded length of `text` for a key shaped like `key`, or every
 /// character that does not encode: `{bytes, errors:[{index, char, msg}]}`.
 #[wasm_bindgen]
@@ -1022,6 +1271,31 @@ mod tests {
         assert_eq!(glyph_pad_for("items", limit_for("item_list_name")), 0);
         assert_eq!(glyph_pad_for("inline_text", None), 1);
         assert_eq!(glyph_pad_for("ui_menu", None), 0);
+    }
+
+    #[test]
+    fn line_helpers_share_the_latin_table() {
+        assert_eq!(fold_line("\u{c9}p\u{e9}e {82}"), "Epee e");
+        assert_eq!(cells_line("\u{c9}p\u{e9}e"), "{90}p{82}e");
+        assert_eq!(
+            letters_line("{90}p{82}e{c1:00}{01}"),
+            "\u{c9}p\u{e9}e{c1:00}{01}"
+        );
+        let pal: Value = serde_json::from_str(&latin_palette()).unwrap();
+        let pt = pal
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["code"] == "pt")
+            .unwrap();
+        let a_tilde = pt["chars"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["ch"] == "\u{e3}")
+            .unwrap();
+        assert_eq!(a_tilde["fold"], "a");
+        assert_eq!(a_tilde["cell"], "{9b}");
     }
 
     #[test]

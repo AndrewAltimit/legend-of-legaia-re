@@ -102,6 +102,14 @@ pub struct CardMessageRow {
 /// So what must exist first is a parser for that descriptor table plus its
 /// texture page resident in engine VRAM - a disc-derived asset, on the same
 /// footing as the save-icon sheet, rather than a text corpus nobody has.
+/// The six records this routine indexes (`0..=5`) all read tpage `0x0098` and
+/// CLUT `0x7AC0`, i.e. an **8bpp** page at VRAM `(512, 256)` with its palette
+/// at `(0, 491)`; strips `3` / `4` are the two `64x16` choice labels. Nothing
+/// in PROT 0899 carries a TIM for that page (its one TIM header uploads to
+/// `(16, 0)`), so the page is uploaded from another entry, and finding that
+/// upload is the first step. The routine's one caller is the `jal` at
+/// `0x801E0260` (`find-address-word-refs.py 801e0418 --home 0899`: jal 1,
+/// nothing else).
 /// Until then a wired host would emit five correctly-placed quads with no
 /// texels behind them, which is a different (and cheaper) gap than five
 /// rows with no text. The rest of this module - the "Now checking" panel

@@ -4,23 +4,31 @@
 //!
 //! PORT: FUN_80056208
 //!
-//! NOT WIRED here - the intro caption half is wired in `engine-core`: the
+//! NOT WIRED here: the intro caption half is wired in `engine-core` - the
 //! stage-1 phases `0` and `1` (the sparring caption, its hold timer, the
 //! any-press skip, and the `ctx[+0x6B0]` hold on the flow SM's round start)
 //! run live as `World::raise_sparring_caption_if_due` +
-//! `World::tick_battle_tutorial_boxes` (`world/battle/tutorial.rs`), which is
-//! where a wgpu-free model can reach both hosts. What stays unwired is the
-//! rest: the pass is a state machine over the battle context
-//! (`_DAT_8007BD24`) and four global registers, none of which this crate owns.
-//! Its three inputs are the sideband submode byte `DAT_8007B64A`, the phase
-//! counter `ctx[+0x289]` and the frame step `DAT_1F800393`; its outputs are the
-//! camera registers `0x800840BC` / `0x800840C0`, the hold flag `ctx[+0x6B0]`
-//! and three timers. The engine's battle camera is
-//! `legaia_engine_core`'s orbit controller driven from the battle-action SM, and
-//! its pad state is `engine-core`'s `retail_pad` - both outside this lane's file
-//! scope. [`battle_sideband_tick`] is a pure transition function so wiring it is
-//! a matter of the battle host owning a [`BattleSidebandState`] and applying the
-//! returned [`BattleSidebandEffects`]; nothing does today.
+//! `World::tick_battle_tutorial_boxes` (`world/battle/tutorial.rs`). Every arm
+//! left here is the host side of a **stage module** the engine does not run:
+//!
+//! * stage-1 phases `2` / `3` call `0x801F6B70` (`jal` at `0x80056418`) in the
+//!   sparring stage overlay (PROT 0967) and tick its sub-overlay loader
+//!   `FUN_80025358` (`0x80056428`);
+//! * submode `2` calls `FUN_801F69F4` (`0x80056498`), the entry of the Cort
+//!   arrival module (PROT 0968), on every frame the battle-running signal
+//!   `DAT_8007BD71` reads `>= 0x12`; below that - only before the fight is
+//!   running - it clears the pads and walks the camera pair;
+//! * submode `3` calls `FUN_801F69D8` (`0x800565B0`), the Cort form-transition
+//!   module (PROT 0969), once `ctx[+0x6D8]` has run out and the CD is idle.
+//!
+//! Stage ids `2` and `3` are written only for the Cort fight (`FUN_80055B6C`
+//! on formation monster `0xB5`, and the Lost Grail sweep's tail arm), and the
+//! engine resolves the stage id but stages its own presentation instead of
+//! running either module (`docs/subsystems/battle.md`, "What the two
+//! boss-stage modules do"). So this tick has nothing to drive until 0968 /
+//! 0969 are ported; [`battle_sideband_tick`] is a pure transition function,
+//! so wiring it then is a matter of the battle host owning a
+//! [`BattleSidebandState`] and applying the returned [`BattleSidebandEffects`].
 //!
 //! This also settles what the address is: it is **not** libgpu-band vendor
 //! infrastructure despite sitting between the PsyQ veneers. It reads the game's
@@ -54,7 +62,7 @@
 //! Phase 1 decays `ctx[+0x6AE]` by `8 * frame_step` per frame, and any pad edge
 //! (`_DAT_8007B874 | _DAT_8007B938`, masked to 16 bits) zeroes it outright - so
 //! a button press skips the caption. The advance to phase 2 is then further
-//! gated on the effect-VM ready flag reading `0xFF`: while it does not, the
+//! gated on the battle-running signal `DAT_8007BD71` reading `0xFF`: while it does not, the
 //! timer is pinned at `1` and the phase holds.
 //!
 //! # The camera ramp is cadence-invariant
@@ -73,10 +81,14 @@ pub const SUBMODE_IN_BATTLE: u8 = 2;
 /// Sideband submode: the battle outro.
 pub const SUBMODE_OUTRO: u8 = 3;
 
-/// Effect-VM ready flag value that releases the intro's phase-1 gate.
+/// `DAT_8007BD71` while a fight is running - the value that releases the
+/// intro's phase-1 gate. The byte is the battle-running / battle-end signal
+/// (`0xFF` in every running-fight capture, `0xFE` once a wipe or an escape
+/// ends it, `0x00` while the battle is still opening), not an effect-VM flag.
 pub const EFFECT_VM_READY: u8 = 0xFF;
-/// Effect-VM ready threshold above which submode 2 delegates to the overlay
-/// tick instead of running its own ramp.
+/// `DAT_8007BD71` threshold at and above which submode 2 delegates to the
+/// stage module's tick instead of running its own ramp - i.e. once the fight
+/// is running.
 pub const OVERLAY_TICK_FROM: u8 = 0x12;
 
 /// Battle-context phase byte value that arms the intro (`ctx[+6]`).
@@ -139,7 +151,8 @@ pub struct BattleSidebandInputs {
     pub frame_step: u8,
     /// `ctx + 6` - the battle context's own phase byte.
     pub ctx_mode: u8,
-    /// `DAT_8007BD71` - the effect-VM ready flag.
+    /// `DAT_8007BD71` - the battle-running / battle-end signal (see
+    /// [`EFFECT_VM_READY`]; the field keeps its older name).
     pub effect_vm_ready: u8,
     /// `_DAT_8007B874 | _DAT_8007B938` masked to 16 bits - any pad edge.
     pub pad_edge: bool,
@@ -165,10 +178,10 @@ pub enum BattleSidebandEffect {
     /// `FUN_80025358` - tick the gated sub-overlay loader; its return lands in
     /// `ctx[+0xB]`.
     SubOverlayTick,
-    /// `FUN_801F69F4` - in-battle overlay tick (taken instead of the ramp once
-    /// the effect VM is live).
+    /// `FUN_801F69F4` - the Cort arrival module's tick (PROT 0968), taken
+    /// instead of the ramp once the fight is running.
     InBattleOverlayTick,
-    /// `FUN_801F69D8` - outro overlay hook.
+    /// `FUN_801F69D8` - the Cort form-transition module (PROT 0969).
     OutroOverlayHook,
     /// Clear the pad masks and `ctx[+0x884]` - the in-battle input hold.
     ClearPadState,

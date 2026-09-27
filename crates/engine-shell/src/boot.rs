@@ -19,7 +19,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use legaia_engine_audio::{AudioOut, Spu, SpuAllocator, VabBank};
+use legaia_engine_audio::AudioOut;
 use legaia_engine_core::camera::Camera;
 use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuInput, FieldMenuSession};
 use legaia_engine_core::field_menu_dispatch::{
@@ -82,7 +82,7 @@ pub const DEFAULT_BOOT_SCENE: &str = "town01";
 pub(crate) const SPU_RAM_BYTES: u32 = 512 * 1024;
 /// Byte offset reserved for voice-0 / scratchpad - banks are allocated
 /// above this. Mirrors the asset-viewer SEQ playback path.
-pub(crate) const SPU_RESERVED_BYTES: u32 = 0x1000;
+pub(crate) const SPU_RESERVED_BYTES: u32 = legaia_engine_audio::spu_layout::SPU_RESERVED_BYTES;
 /// SPU RAM reserved at the TOP of the map for the resident SFX banks: the
 /// slot-0 system bank, and above it the region VAB slots `2` and `6` share
 /// (one SPU base in retail, refilled per game mode). Carving a dedicated top
@@ -96,7 +96,9 @@ pub(crate) const SPU_RESERVED_BYTES: u32 = 0x1000;
 /// and one step up (`0x3E000`) leaves 266240 - under the two largest scene BGM
 /// VABs on the disc (269632, 268496), i.e. it would start silencing music that
 /// plays today.
-pub const SFX_BANK_SPU_BYTES: u32 = 0x3D000;
+/// One value with the browser host's by construction: both re-export
+/// [`legaia_engine_audio::spu_layout::SFX_REGION_BYTES`].
+pub const SFX_BANK_SPU_BYTES: u32 = legaia_engine_audio::spu_layout::SFX_REGION_BYTES;
 
 /// One-time configuration for [`BootSession::open`].
 #[derive(Debug, Clone)]
@@ -689,13 +691,18 @@ impl BootSession {
         // browser play page's `load_disc` calls too. Best-effort: absent on a
         // disc-free build, where each consumer keeps its default. Persists
         // across New Game.
-        if let Some(scus) = read_scus(&source) {
+        let scus = read_scus(&source);
+        // Both halves of the battle chip / caption labels - the overlay half
+        // (banner sentences, `Spirit`, `Escape`, the Ra-Seru names) and the
+        // SCUS half (`Begin`, `Run`, `Attack`, ... and the sparring fight's
+        // opening caption) - through the one builder the browser runtime's
+        // `load_disc` calls too.
+        host.world.battle.ui_strings = legaia_engine_core::battle_open::battle_ui_strings_for_disc(
+            &host.index,
+            scus.as_deref(),
+        );
+        if let Some(scus) = scus {
             host.world.install_retail_progression_tables(&scus);
-            // The SCUS half of the battle chip / caption labels (`Begin`,
-            // `Run`, `Attack`, ... and the sparring fight's opening caption).
-            // The overlay half merges in when a player battle is requested
-            // (`window/run.rs`); twin of the browser runtime's `load_disc`.
-            host.world.battle.ui_strings.merge_scus(&scus);
             // Pause-menu text: item names + info-window descriptions,
             // spell names / descriptions, accessory passive lines. The
             // Items / Magic pause screens resolve their strings here.
@@ -736,10 +743,11 @@ impl BootSession {
                     // director a refcounted handle.
                     #[allow(clippy::arc_with_non_send_sync)]
                     let audio = Arc::new(audio);
+                    // No scene bank is staged: retail loads a bank only with
+                    // its track, into the one BGM slot, and a scene-local id
+                    // plays a global fallback track
+                    // (`legaia_engine_core::scene::SCENE_LOCAL_BGM_FALLBACK_ID`).
                     let mut director = AudioBgmDirector::new(audio.clone());
-                    if let Err(e) = stage_scene_vab(&mut director, audio.as_ref(), &host) {
-                        log::warn!("BGM bank not staged (scene VAB resolution failed): {e:#}");
-                    }
                     // Decode the static SFX descriptor bank from the same
                     // executable once; it names the program/tone/voice-count
                     // for each cue id, and the VAB slot each cue's category
@@ -753,7 +761,7 @@ impl BootSession {
                     // slot 2 = PROT 0869) into the shared SPU region so a cue
                     // resolves against the bank its own category names, not
                     // whatever BGM VAB is open. Best-effort.
-                    if let Err(e) = stage_sfx_vab(&mut director, audio.as_ref(), &host) {
+                    if let Err(e) = stage_sfx_vab(&mut director, &host) {
                         log::warn!("resident SFX banks not staged: {e:#}");
                     }
                     // Demux + decode the arts-voice shout banks (XA2/XA4/XA6)
@@ -1187,7 +1195,7 @@ impl BootSession {
     }
 
     /// The session-side half of a scene swap under the host: the camera
-    /// globals reset and the scene VAB restage (with the SFX queue dropped).
+    /// globals reset and the SFX queue dropped (no bank is staged).
     /// A door (`SceneTickEvent::SceneEntered`) and the post-FMV hand-off
     /// ([`Self::apply_pending_fmv_handoff`]) both swap the scene, and only the
     /// first used to reach this - so a movie that handed off into a new scene
@@ -1198,19 +1206,13 @@ impl BootSession {
         // eye-space depth or focus into the next one. The sibling reset of
         // the op-0x45 param set lives in `SceneHost`'s scene entry.
         self.camera.reset_globals_for_scene_entry();
-        if let (Some(bgm), Some(audio)) = (self.bgm.as_mut(), self.audio.as_ref()) {
-            // New scene -> upload its VAB bank and drop any SFX cues that
-            // were queued against the previous scene's VAB. Not while a
-            // global-pool track owns the region: a track carried across the
-            // door would play on over the scene bank's samples
-            // (`scene_bank_restage_wanted`, the page's gate too).
+        if let Some(bgm) = self.bgm.as_mut() {
+            // New scene -> drop any SFX cues queued against the previous
+            // one. No bank is staged: retail's field init loads no scene
+            // bank (its only bank loads are slot 6 and the ending arm), and
+            // the BGM slot changes only with the track, so a track carried
+            // across the door keeps its samples.
             bgm.clear_sfx();
-            let live = bgm.is_attached().then_some(bgm.last_started).flatten();
-            if legaia_engine_core::scene::scene_bank_restage_wanted(live)
-                && let Err(e) = stage_scene_vab(bgm, audio.as_ref(), &self.host)
-            {
-                log::warn!("BGM bank not staged after scene enter: {e:#}");
-            }
             // Nothing is flushed here. Op-`0x35` sub-op 9 - the op a cutscene
             // changes music with - is a *start* behind a load barrier, not a
             // queue for the next scene; it plays the moment
@@ -1411,17 +1413,14 @@ impl BootSession {
     /// three moves. A deliberate scene boot restages BGM from scratch: SFX
     /// cues queued against the old scene are dropped, the dedupe latch is
     /// cleared so the scene's own op-`0x35` start is honoured even when it
-    /// names the track already playing, and the new scene's VAB is staged.
+    /// names the track already playing (which re-stages that track's bank).
     /// A door does not come through here; [`Self::after_scene_swap`] keeps
     /// the latch so a carried track keeps its playhead. No-op until audio is
     /// up.
     fn restage_audio_for_direct_entry(&mut self) {
-        if let (Some(bgm), Some(audio)) = (self.bgm.as_mut(), self.audio.as_ref()) {
+        if let Some(bgm) = self.bgm.as_mut() {
             bgm.clear_sfx();
             bgm.last_started = None;
-            if let Err(e) = stage_scene_vab(bgm, audio.as_ref(), &self.host) {
-                log::warn!("BGM bank not staged after direct scene entry: {e:#}");
-            }
         }
     }
 
@@ -1483,10 +1482,34 @@ impl BootSession {
         let mut live_opts = opts.to_live_loop_opts();
         live_opts.live_loop = true;
         world.arm_live_loop(scene, &live_opts);
-        Ok(world.mode)
+        // A direct overworld entry (picker, save load) is a deliberate scene
+        // boot like the field entry above, and gets the same audio restage;
+        // the browser page's `enter_field` makes it for both kinds.
+        self.restage_audio_for_direct_entry();
+        Ok(self.host.world.mode)
     }
 
-    /// Enter a field scene live, then seed the world from a saved game.
+    /// Enter `scene` live through whichever entry the scene's own label
+    /// names: an overworld label ([`legaia_engine_core::scene::is_world_map_scene`])
+    /// through [`Self::enter_world_map_live`], anything else through
+    /// [`Self::enter_field_live`]. The same one-predicate branch the browser
+    /// play page's `enter_field` and the in-world door transition take.
+    pub fn enter_scene_live(&mut self, scene: &str, opts: &FieldLiveOpts) -> Result<SceneMode> {
+        if legaia_engine_core::scene::is_world_map_scene(scene) {
+            self.enter_world_map_live(scene, opts)
+        } else {
+            self.enter_field_live(scene, opts)
+        }
+    }
+
+    /// Enter a scene live, then seed the world from a saved game.
+    ///
+    /// The entry goes through [`Self::enter_scene_live`], so a save written
+    /// on a kingdom overworld (`mapNN` - where most saves are written)
+    /// resumes in world-map mode. It used to call [`Self::enter_field_live`]
+    /// unconditionally, which loaded the overworld as a plain field scene
+    /// with no region table and no overworld controller, while the browser
+    /// page's card Load routed the same label through the world-map entry.
     ///
     /// [`Self::enter_field_live`] cold-boots the scene at record 0 (a fresh
     /// party, no story progress). This variant runs that path and then
@@ -1509,7 +1532,7 @@ impl BootSession {
         opts: &FieldLiveOpts,
         save: legaia_save::SaveFile,
     ) -> Result<SceneMode> {
-        self.enter_field_live(scene, opts)?;
+        self.enter_scene_live(scene, opts)?;
         self.host.world.load_full(save);
         log::info!("seeded world from save ({} party records)", {
             self.host.world.party.party_count
@@ -1559,34 +1582,6 @@ impl Drop for BootSession {
     }
 }
 
-/// Pull the scene's first VAB-bearing entry through the scene host, parse
-/// it, upload its samples into the SPU, and stash the resulting [`VabBank`]
-/// in the director.
-fn stage_scene_vab(
-    director: &mut AudioBgmDirector,
-    audio: &AudioOut,
-    host: &SceneHost,
-) -> Result<()> {
-    let Some((bytes, vab_off)) = host.scene_vab_bytes()? else {
-        return Ok(());
-    };
-    // The entry is a chunk stream, so the bank starts at the offset the
-    // stream reports (`+4` in retail), never at 0 - parsing at 0 errors out
-    // and the scene runs silent.
-    let report = legaia_vab::parse(&bytes, vab_off).context("parse scene VAB header")?;
-    let bank = audio.with_spu(|spu: &mut Spu| {
-        // Cap the BGM region below the resident class-2 SFX bank at the top of
-        // SPU RAM, so a scene-BGM upload never stomps the SFX samples.
-        let mut alloc = SpuAllocator::new(
-            SPU_RESERVED_BYTES,
-            SPU_RAM_BYTES - SPU_RESERVED_BYTES - SFX_BANK_SPU_BYTES,
-        );
-        VabBank::upload(spu, &mut alloc, &report, &bytes)
-    });
-    director.set_bank(bank);
-    Ok(())
-}
-
 /// Stage the reserved SFX region the way retail's SPU map lays it out:
 /// slot `0` = PROT 0868 (the system bank the 16 category-`0` shared UI cues
 /// key) resident from boot at the region's bottom, and above it the region
@@ -1600,35 +1595,20 @@ fn stage_scene_vab(
 ///
 /// Each entry is a scene-VAB-style stream (`[u32 chunk header][VAB]...`), so
 /// the VAB starts at `+4` (with a `+0` fallback for a bare bank).
-fn stage_sfx_vab(
-    director: &mut AudioBgmDirector,
-    audio: &AudioOut,
-    host: &SceneHost,
-) -> Result<()> {
+fn stage_sfx_vab(director: &mut AudioBgmDirector, host: &SceneHost) -> Result<()> {
     use legaia_asset::sfx_table::SLOT0_SYSTEM_BANK_PROT_INDEX;
     use legaia_engine_core::world::SharedRegionBank;
 
-    let region = SPU_RAM_BYTES - SFX_BANK_SPU_BYTES;
     let bytes = host
         .index
         .entry_bytes_extended(SLOT0_SYSTEM_BANK_PROT_INDEX)
         .context("read the slot-0 system bank")?;
-    let (report, vab_off) = [4usize, 0]
-        .into_iter()
-        .find_map(|o| legaia_vab::parse(&bytes, o).ok().map(|r| (r, o)))
-        .ok_or_else(|| anyhow::anyhow!("no VAB header at +4 or +0 in PROT 0868"))?;
-    let mut alloc = SpuAllocator::new(region, SFX_BANK_SPU_BYTES);
-    let bank = audio
-        .with_spu(|spu: &mut Spu| VabBank::upload(spu, &mut alloc, &report, &bytes[vab_off..]));
-    let slot0_end = bank
-        .samples
-        .iter()
-        .flatten()
-        .map(|s| s.addr + s.size)
-        .max()
-        .unwrap_or(region);
-    director.set_sfx_vab(0, bank);
-    director.set_shared_region_base(slot0_end);
+    // At the SFX region's floor, through the layout kernel the page shares;
+    // the director keeps the bytes to re-stage the bank after a track that
+    // overran the region (the ending theme's) lets it go.
+    if !director.stage_resident_slot0(bytes) {
+        anyhow::bail!("no VAB header at +4 or +0 in PROT 0868");
+    }
     if !director.sync_shared_region(Some(SharedRegionBank::CLASS2), |e| {
         host.index.entry_bytes_extended(e).ok()
     }) {

@@ -254,6 +254,59 @@ pub struct FormationInputs {
     pub map_id: u16,
 }
 
+/// Bit `0x200` of the special-battle word `_DAT_8007BAC0`: the Ra-Seru chip
+/// is crossed out and its arm refused. The battle round driver reads it at
+/// `0x801D12DC` (`FUN_801DBC30(0xF8, 0x42)`, the red X over the chip) and
+/// `0x801D1448` (the arm returns without committing), both in `FUN_801D0748`
+/// (PROT 0898).
+pub const SPECIAL_RASERU_FORBIDDEN: u32 = 0x200;
+
+/// Battle init's pass over the special-battle word (`FUN_800513F0`,
+/// `0x800519C0..0x80051A04`):
+///
+/// ```text
+/// if word == 0x200: word = 0          // a lone Ra-Seru bit does not outlive its battle
+/// if DAT_8007BD0C == 0xAF: word |= 0x200
+/// ```
+///
+/// `monster_id` is the formation cell's first monster (`DAT_8007BD0C`). Only
+/// the exact value `0x200` is cleared; a word carrying other bits (an arena
+/// leg's course restrictions) keeps them all.
+///
+/// PORT: FUN_800513F0 (the special-word arms, `0x800519C0..0x80051A04`)
+pub fn battle_init_special_word(word: u32, monster_id: u8) -> u32 {
+    let mut word = if word == SPECIAL_RASERU_FORBIDDEN {
+        0
+    } else {
+        word
+    };
+    if monster_id == 0xAF {
+        word |= SPECIAL_RASERU_FORBIDDEN;
+    }
+    word
+}
+
+/// The formation roll's side-write on the special-battle word
+/// (`FUN_80051D84`, `0x8005200C..0x8005205C`): the Rim Elm ambush - monster
+/// ids `0x3D..=0x3F` on maps `0x0C` / `0x15` - raises
+/// [`SPECIAL_RASERU_FORBIDDEN`].
+///
+/// The test sits at the tail of the back-attack arm (`0x80051FD0`), which
+/// every path into it reaches: the score gate, the map-gated force and the
+/// `0xA7` force. The map-gated force is exactly this condition, so the bit
+/// rises whenever the roll runs on such a formation; a roll the caller skips
+/// (the scripted no-escape flag `ctx+0x287`, or `DAT_8007B64A`) raises
+/// nothing.
+///
+/// PORT: FUN_80051D84 (the `_DAT_8007BAC0 |= 0x200` side-write, `0x8005200C..0x8005205C`)
+pub fn formation_roll_special_word(word: u32, inputs: &FormationInputs) -> u32 {
+    if matches!(inputs.map_id, 0x0C | 0x15) && (0x3D..=0x3F).contains(&inputs.monster_id) {
+        word | SPECIAL_RASERU_FORBIDDEN
+    } else {
+        word
+    }
+}
+
 /// Roll the battle's formation advantage (`FUN_80051D84`).
 ///
 /// Both sides' **average** SPD is compared, each blurred by a random spread, and
@@ -602,3 +655,38 @@ pub fn camera_height_for_frame(
 /// The monster-band base slot the disassembly hardcodes (`sltiu v0,v1,0x3` at
 /// `801f0384` / `801f03cc`). Retail reserves party slots `0..=2` unconditionally.
 pub const RETAIL_MONSTER_SLOT_BASE: u8 = 3;
+
+#[cfg(test)]
+mod special_word_tests {
+    use super::*;
+
+    #[test]
+    fn battle_init_clears_a_lone_raseru_bit_and_raises_it_for_0xaf() {
+        assert_eq!(battle_init_special_word(0x200, 0x10), 0);
+        assert_eq!(battle_init_special_word(0x200, 0xAF), 0x200);
+        assert_eq!(battle_init_special_word(0, 0xAF), 0x200);
+        // A word with other bits keeps them all, the 0x200 included.
+        assert_eq!(battle_init_special_word(0x321, 0x10), 0x321);
+        assert_eq!(battle_init_special_word(0x101, 0xAF), 0x301);
+    }
+
+    #[test]
+    fn the_rim_elm_ambush_raises_the_raseru_bit() {
+        let at = |map_id: u16, monster_id: u8| FormationInputs {
+            ability_bits: 0,
+            monster_id,
+            map_id,
+        };
+        for m in 0x3D..=0x3F {
+            assert_eq!(formation_roll_special_word(0, &at(0x0C, m)), 0x200);
+            assert_eq!(formation_roll_special_word(0, &at(0x15, m)), 0x200);
+        }
+        assert_eq!(formation_roll_special_word(0, &at(0x0C, 0x40)), 0);
+        assert_eq!(formation_roll_special_word(0, &at(0x03, 0x3D)), 0);
+        assert_eq!(
+            formation_roll_special_word(0, &at(0x0C, 0xA7)),
+            0,
+            "the 0xA7 force raises nothing"
+        );
+    }
+}

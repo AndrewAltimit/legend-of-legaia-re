@@ -422,6 +422,27 @@ mod tests {
         assert!(rt3.pending_card_resume.is_none());
     }
 
+    /// A parked resume the page never entered does not survive the next
+    /// frame: the page skips the entry when the save's scene is already open,
+    /// and the park used to wait for the next picker entry to re-apply the
+    /// old save over the live party.
+    #[test]
+    fn an_unconsumed_resume_park_expires_on_the_next_tick() {
+        let resume = SaveResume {
+            scene: "town01".into(),
+            location: "Rim Elm".into(),
+        };
+        let mut rt = roundtrip_runtime();
+        let bytes = rt.world_mut().save_full().write_with_resume(&resume);
+        rt.import_save_core(&bytes).expect("import");
+        assert!(rt.pending_card_resume.is_some());
+        rt.tick_frame().expect("tick");
+        assert!(
+            rt.pending_card_resume.is_none(),
+            "the resume point has passed once the world ticks"
+        );
+    }
+
     #[test]
     fn import_save_rejects_garbage_without_touching_the_world() {
         let mut rt = roundtrip_runtime();

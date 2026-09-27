@@ -1477,6 +1477,15 @@ rolls back its longest lines one at a time), with per-character encodability
 errors for anything outside the retail ASCII glyph set. Untranslated entries
 stay byte-identical.
 
+Typed accents follow the pack's `accents:` header (`translation::accents`):
+`strict` reports each one, `fold` writes its ASCII fold, and `font` encodes it
+into its cell and writes the **accent font** - accented glyphs built at patch
+time from the disc's own letters (`legaia_font::accent_font`) into the dialog
+font TIM and the SCUS width table. `translate import --accents` overrides the
+header; `stats` and `space --pack` list every character that will not draw as
+typed. Disc-gated oracle `tests/translation_accent_font_real.rs`; format page
+[`dialog-font.md`](../../docs/formats/dialog-font.md#the-accent-font).
+
 `translate import --allow-relayout` (for official PAL localizations, whose dialog
 overruns USA's zero-slack sectors) closes the residual: a scene MAN whose
 full-length dialog won't fit its compressed footprint gains `+N` whole sectors via

@@ -923,12 +923,15 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
 /// monsters collapse into one labelled run exactly as retail's identical-id
 /// runs do. Names come from the same live catalog the HUD rows use.
 ///
-/// The projected screen X each row averages is the battle actor's `+0x34` -
-/// a GTE projection result the renderer owns - so the accumulator is left
-/// at `0` here: every row then centres at `MENU_CENTRE_X` and the retail
-/// overlap-relaxation pass in
-/// [`crate::target_picker::layout_enemy_menu_rows`] spreads them. Callers
-/// run that layout with their own text measurer before drawing.
+/// The X each row averages is the monster actor's `+0x34` - its battle
+/// **world** X (`lhu a0,0x34(v0)` at `0x801D9E00` and `0x801D9ED4`, on the
+/// actor `0x801C9370[slot + 3]`), the same halfword the battle setup
+/// `FUN_800513F0` stamps with the stage seat and the round-start squash
+/// recentres - not a GTE projection. The layout maps it to the screen as
+/// `(avg >> 3) - width / 2 + 0xA0`, so a label sits over its group's seat.
+/// It is read here off the live position; callers run
+/// [`crate::target_picker::layout_enemy_menu_rows`] with their own text
+/// measurer before drawing.
 pub fn battle_enemy_target_rows(
     world: &crate::world::World,
 ) -> Vec<crate::target_picker::EnemyMenuRow> {
@@ -979,7 +982,13 @@ pub fn battle_enemy_target_rows(
         let ordinal = twins.iter().position(|&j| j == i).unwrap_or(0) as u8;
         format!("{name} {}", (b'A' + ordinal) as char)
     };
-    enemy_menu_rows(ids, DEDUP_SUFFIX, display, |_| 0)
+    let world_x = |slot: u8| -> i16 {
+        world
+            .actors
+            .get(pc + usize::from(slot))
+            .map_or(0, |a| a.move_state.world_x)
+    };
+    enemy_menu_rows(ids, DEDUP_SUFFIX, display, world_x)
 }
 
 /// The battle-**intro** enemy-name banner this frame: one label per monster
@@ -995,9 +1004,8 @@ pub fn battle_enemy_target_rows(
 /// [`crate::target_picker::MENU_ROW_Y`]'s value, `48`.
 ///
 /// `font` is the width measure retail's `FUN_80035F04` is (the `legaia-font`
-/// layout advance). The projected screen X each group averages is left at
-/// `0` (see [`battle_enemy_target_rows`]), so the groups centre and the
-/// relaxation pass spreads them rather than seating each over its monsters.
+/// layout advance). The X each group averages is its monsters' battle world
+/// X (see [`battle_enemy_target_rows`]), so each label sits over its group.
 pub fn battle_intro_names(
     world: &crate::world::World,
     font: &legaia_font::Font,
@@ -1632,9 +1640,15 @@ pub fn battle_member_has_raseru(world: &crate::world::World, ordinal: u8) -> boo
 /// three (Terra is `char_id` 4) lands on the `-` entry. The label comes off
 /// the disc (`World::battle.ui_strings`) and falls back to the port's own
 /// word only when the overlay strings were not read. `enabled` is the
-/// same gate: retail draws the `-` chip and refuses the arm.
+/// same gate: retail draws the `-` chip and refuses the arm. It is also
+/// cleared while the battle's special word carries
+/// [`legaia_engine_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN`] - retail
+/// keeps the name, crosses the chip out (`FUN_801DBC30(0xF8, 0x42)` at
+/// `0x801D12F0`, [`battle_magic_chip_mark`]) and refuses the arm
+/// (`0x801D1448..0x801D1454`).
 pub fn battle_magic_chip(world: &crate::world::World, ordinal: u8) -> (String, bool) {
     let has_raseru = battle_member_has_raseru(world, ordinal);
+    let forbidden = battle_raseru_forbidden(world);
     let roster = world.party_roster_slot(ordinal as usize);
     let char_id = roster as u8 + 1;
     let idx = if has_raseru && (1..=3).contains(&char_id) {
@@ -1657,7 +1671,23 @@ pub fn battle_magic_chip(world: &crate::world::World, ordinal: u8) -> (String, b
                     .to_string()
             }
         });
-    (label, has_raseru)
+    (label, has_raseru && !forbidden)
+}
+
+/// The special-battle word's Ra-Seru bit is up for this battle (the Rim Elm
+/// ambush, monster `0xAF`; see [`crate::world::BattleState::special_word`]).
+pub fn battle_raseru_forbidden(world: &crate::world::World) -> bool {
+    world.battle.special_word & legaia_engine_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN != 0
+}
+
+/// The mark the Ra-Seru chip wears in a regular battle: the red cross-out
+/// ([`crate::muscle_dome::ChipMark::Forbidden`], `FUN_801DBC30`) while the
+/// special word forbids it, else none. The phase-`0x28` arm draws the mark
+/// before it tests the pad (`0x801D12DC..0x801D12F4`).
+///
+/// PORT: FUN_801D0748 NOT WIRED: the native and browser battle chip passes should place this `etim` quad over the Ra-Seru chip (the regular ring's `0x200` mark test, `0x801D12DC..0x801D12F4`); both grey the chip through [`battle_magic_chip`]'s `enabled` and neither draws a chip mark yet (host-drift.md, "The Ra-Seru chip's cross-out reaches neither host").
+pub fn battle_magic_chip_mark(world: &crate::world::World) -> Option<crate::muscle_dome::ChipMark> {
+    battle_raseru_forbidden(world).then_some(crate::muscle_dome::ChipMark::Forbidden)
 }
 
 /// Which selection surface a chip cluster belongs to - the three clusters
@@ -2894,6 +2924,28 @@ mod tests {
         let (label, enabled) = &chips.chips[2];
         assert_ne!(label, "-");
         assert!(enabled);
+    }
+
+    #[test]
+    fn the_raseru_forbidden_bit_greys_the_chip_and_marks_it() {
+        use crate::battle_input::BattleCommandSession;
+        let mut w = battle_world(1);
+        w.battle.command = Some(BattleCommandSession::new(0, 0));
+        let mut eq = w.party.roster.members[0].equipment();
+        eq.slots[RASERU_EQUIP_SLOT] = 1;
+        w.party.roster.members[0].set_equipment(eq);
+        assert!(battle_command_chips(&w).expect("ring chips").chips[2].1);
+        assert_eq!(battle_magic_chip_mark(&w), None);
+        // The Rim Elm ambush / monster 0xAF: the name stays, the chip greys
+        // and wears the red cross-out.
+        w.battle.special_word = legaia_engine_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN;
+        let (label, enabled) = battle_command_chips(&w).expect("ring chips").chips[2].clone();
+        assert_ne!(label, "-");
+        assert!(!enabled);
+        assert_eq!(
+            battle_magic_chip_mark(&w),
+            Some(crate::muscle_dome::ChipMark::Forbidden)
+        );
     }
 
     #[test]

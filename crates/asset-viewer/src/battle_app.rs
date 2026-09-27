@@ -421,7 +421,11 @@ impl ApplicationHandler for BattleSceneApp {
                         })
                         .collect();
                     let hud = self.build_hud();
-                    let overlay = TextOverlay { atlas, draws: &hud };
+                    let overlay = TextOverlay {
+                        atlas,
+                        draws: &hud,
+                        blend: &[],
+                    };
                     let scene = RenderScene {
                         vram,
                         draws: &draws,

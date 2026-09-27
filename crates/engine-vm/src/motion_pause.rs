@@ -26,43 +26,54 @@
 //! lock-step with every `+0x5C` store. The table record's first byte is the
 //! actor's default move id, seeded/reset to the `0x8C` sentinel by the
 //! motion-VM variant-swap preamble and rewritten by motion op `0x17`; the
-//! kick therefore snaps every wandering NPC back onto its default motion
-//! cycle while the dialog runs.
+//! kick therefore requests every walker's standing move at the moment an
+//! interaction engages.
 //!
 //! Port boundary: `ghidra/scripts/funcs/8003c9ac.txt` is the spec; no
 //! Sony bytes live here. Tests use synthetic actor lists + tables.
 //!
-//! ## NOT WIRED
+//! ## Who carries the gate bit
 //!
-//! The kick has two retail callers, both verified as `jal 0x8003C9AC` in the
-//! bytes: the touch-event post `FUN_801D5B5C` (`0x801D5BF0`, PROT 0897 at
-//! base `0x801CE818`) and SCUS `FUN_8003BDE0` (`0x8003C0D4`). The engine's
-//! analogue of the first is `World::trigger_field_interact`, which the walk
-//! touch and the button interact both reach.
+//! Two writers put `0x20000` into an actor's `+0x10`, both read from the
+//! disassembly and both seen firing in a PCSX-Redux write-watch over the
+//! field actor pool across a `town01` entry
+//! (`scripts/pcsx-redux/autorun_moving_class_writer.lua`):
 //!
-//! The write target is no longer the gap - an earlier version of this note
-//! said field NPCs carry no `+0x5C` / `+0x88`, and they do now: each NPC with
-//! a bound tail-section-1 stream owns a `legaia_engine_vm::ambient_motion::AmbientMotion`
-//! channel whose `requested_move` / `move_pair` are exactly that pair and
-//! whose `default_move` is its `0x801C6470` record. Two things are still
-//! missing, and both would make a wired kick a no-op that only looks live:
+//! - **The MAN placement seater `FUN_8003A1E4`**, unconditionally, for every
+//!   partition-1 placement it seats: `lw v0,0x10(s0); lui v1,0x2; or v0,v0,v1;
+//!   or v0,v0,s3; sw v0,0x10(s0)` at `0x8003A3A4..0x8003A3B4`, where `s3` is
+//!   the party-model bit `0x01000000` for a `>= 0xF0` model byte and `0`
+//!   otherwise. Every placement is moving-class, walker or not.
+//! - **Field-VM op `0x31` with operand `0x11`** (`CFLAG_SET` bit 17, the arm
+//!   at `0x801DED9C..0x801DEDB0` in PROT 0897), which the disc authors only
+//!   in partition-0 object records' spawn prologues - the object spawn
+//!   iterator `FUN_8003A55C` pre-runs them.
 //!
-//! - **The gate bit.** The kick only touches actors with `+0x10 & 0x20000`.
-//!   The channel's `actor_flags` is that word, but nothing seeds it - it
-//!   starts at `0` and only the motion VM's own bit ops write it - so the
-//!   moving-class bit is clear on every channel and the sweep would kick
-//!   nobody. Its retail setter is the spawner, which the port does not model
-//!   per channel.
-//! - **The consumer.** Retail plays `+0x5C` through the move-table consumer
-//!   `FUN_800204F8`, which `FUN_8003BC08` runs whenever `+0x5C > 0`. The
-//!   engine reads `requested_move` only on a frame the channel walked
-//!   (`World::tick_field_npc_ambient` -> `carry_npc_run_anim`), and a
-//!   standing NPC mid-dialogue does not walk, so the reloaded id would not
-//!   change what draws.
+//! Nothing clears it: the disc carries no op `0x32` (`CFLAG_CLEAR`) with
+//! operand `0x11`, and the write-watch saw no clearing store.
 //!
-//! Wiring means seeding the moving-class bit where retail's spawner does and
-//! giving a standing NPC's requested move a consumer - an animation-path
-//! change measured against the field oracles, not a call insertion.
+//! ## Wiring
+//!
+//! The engine's per-placement actor record for this routine is the ambient
+//! channel (`legaia_engine_vm::ambient_motion::AmbientMotion`): its
+//! `actor_flags` is the `+0x10` word, `requested_move` / `move_pair` are the
+//! `+0x5C` / `+0x88` pair, and `default_move` is the `0x801C6470` record. A
+//! channel exists only for a placement whose tail-section-1 stream bound, so
+//! the `+0x80` gate holds for every channel. `World::seed_field_npc_ambient`
+//! seeds [`MOVING_CLASS`] the way `FUN_8003A1E4` does, and
+//! `World::kick_field_npc_motion_pause` projects the channels into
+//! [`PauseKickActor`]s, runs [`motion_pause_kick`] and writes the reloads
+//! back, raising each kicked slot's clip request through the same
+//! `+0x5C`-change consumer the walk ops use. Its callers are the engine
+//! analogues of both retail callers: `World::trigger_field_interact` (the
+//! touch post) and the partition-2 record installs (`FUN_8003BDE0`).
+//!
+//! What the kick does on screen follows from the record layout: byte `0` of
+//! a `0x801C6470` record is the actor's **standing** move and byte `1` its
+//! walking anim (the walk ops' prologue requests byte `1`, their epilogue
+//! byte `0`). So the kick is a clip reset to the standing move, not a halt:
+//! the motion VM keeps running, and a walker still mid-leg requests its walk
+//! clip again on its next step.
 
 /// Moving-class actor bit in the `+0x10` flag word. Only actors with this
 /// bit set are candidates for the pause kick.

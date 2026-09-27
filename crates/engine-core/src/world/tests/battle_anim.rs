@@ -41,35 +41,31 @@ fn pose_test_world() -> World {
 }
 
 #[test]
-fn battle_pose_plays_action_clip_then_restores_idle() {
-    let mut world = pose_test_world();
-    world.apply_battle_pose(0, vm::battle_action::Pose::Recover as u8);
-    assert_eq!(world.actors[0].battle_pose, Some(8));
-    // One-shot: run the 2-frame clip to its end in one tick.
-    world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
-    world.tick_battle_animations();
-    assert!(
-        world.actors[0]
-            .battle_animation
-            .as_ref()
-            .unwrap()
-            .finished(),
-        "recover clip is a one-shot"
-    );
-    // The next tick falls back to the idle loop (slot 0).
-    world.tick_battle_animations();
-    assert_eq!(
-        world.actors[0].battle_pose,
-        Some(vm::battle_action::Pose::Idle as u8)
-    );
-    assert!(
-        !world.actors[0]
-            .battle_animation
-            .as_ref()
-            .unwrap()
-            .finished(),
-        "idle loops"
-    );
+fn ready_and_recover_poses_play_the_idle_loop_not_the_downed_chain() {
+    // Entries 7 / 8 are the downed party member's chain (the clip-tag
+    // ladder's knockdown -> 7 -> 8); the SM's pose 7 / 8 calls are camera
+    // programs, so they leave the actor on its idle loop.
+    for pose in [
+        vm::battle_action::Pose::Ready,
+        vm::battle_action::Pose::Recover,
+    ] {
+        let mut world = pose_test_world();
+        world.apply_battle_pose(0, pose as u8);
+        assert_eq!(
+            world.actors[0].battle_pose,
+            Some(vm::battle_action::Pose::Idle as u8)
+        );
+        world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
+        world.tick_battle_animations();
+        assert!(
+            !world.actors[0]
+                .battle_animation
+                .as_ref()
+                .unwrap()
+                .finished(),
+            "idle loops"
+        );
+    }
 }
 
 #[test]
@@ -97,12 +93,15 @@ fn battle_pose_defeat_holds_final_frame() {
 #[test]
 fn battle_pose_missing_slot_falls_back_to_idle_loop() {
     let mut world = pose_test_world();
-    // Slot 7 (ready) is empty in the installed set: the request binds the
-    // idle loop instead and records the pose so the SM isn't retried.
-    world.apply_battle_pose(0, vm::battle_action::Pose::Ready as u8);
+    // Slot 9 (defeat) is empty in this set: the request binds the idle loop
+    // instead and records the pose so the SM isn't retried.
+    let mut clips = (**world.actors[0].battle_action_clips.as_ref().unwrap()).clone();
+    clips[9] = None;
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.apply_battle_pose(0, vm::battle_action::Pose::Defeat as u8);
     assert_eq!(
         world.actors[0].battle_pose,
-        Some(vm::battle_action::Pose::Ready as u8)
+        Some(vm::battle_action::Pose::Defeat as u8)
     );
     world.tick_battle_animations();
     assert!(

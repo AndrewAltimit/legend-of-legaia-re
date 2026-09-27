@@ -31,21 +31,22 @@ The text-bearing textures on the retail disc:
 
 ## Font-patch scope
 
-The retail font draws printable ASCII only, which is why a pack must be
-written unaccented ([`pack-format.md`](pack-format.md#text-markup-and-encoding)).
+The retail USA font draws plain letters only, so accented Latin needs the
+**accent font**: glyphs for the Western European accents drawn into the
+dialog font's high cells at patch time, built from the user's own disc, with
+a width for each. A pack asks for it with `accents: font`
+([`pack-format.md`](pack-format.md#accents)); how it is built and what it
+writes is in [`dialog-font.md`](../../formats/dialog-font.md#the-accent-font).
 
-A font patch - new glyph tiles + width table in the menu glyph atlas at
-`PROT.DAT` offset `0x11218` (see [`boot.md`](../../subsystems/boot.md) and
-[`dialog-font.md`](../../formats/dialog-font.md)) - is the separate, larger
-effort that would lift the printable-ASCII-only limitation for accented Latin
-and other scripts across *all* text, not just these textures. It is out of
-scope here.
+What it leaves out: Latin letters with no cell in the layout (Polish, Czech,
+Hungarian) fold to ASCII, and Cyrillic, Greek and CJK need more glyphs than
+the page holds - a second glyph bank and a multi-byte encoding in the
+renderer, which no tool here attempts.
 
-The official PAL discs already carry such an atlas. See
+The official PAL discs carry their own accent glyphs. See
 [`pal-localizations.md`](../pal-localizations.md) for:
 
-- the CP437-aligned accent byte→glyph map and the enumerated font-patch cell
-  set;
+- the CP437-aligned accent byte layout the accent font shares;
 - how the official French/German/Italian text aligns id-/order-for-order to
   the USA disc (`legaia-patcher translate diff-disc`);
 - how to lift it onto USA coordinates (`translate lift-official`);

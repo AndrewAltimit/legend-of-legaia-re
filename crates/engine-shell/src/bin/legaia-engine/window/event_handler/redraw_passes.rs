@@ -120,6 +120,25 @@ impl PlayWindowApp {
         legaia_engine_core::overworld_curvature::frame_curve_scale(true, &frame)
     }
 
+    /// Battle body `ai`'s draw plan under the camera the battle actor pass
+    /// projects with - the same call `redraw.rs` makes for the body's cue.
+    fn body_draw_plan(&self, ai: usize) -> Option<legaia_engine_core::world::BattleActorDrawPlan> {
+        let world = &self.session.host.world;
+        if world.mode != SceneMode::Battle {
+            return None;
+        }
+        let pose = self
+            .battle_stage_mesh
+            .is_some()
+            .then(|| world.battle_cam_pose());
+        world.battle_actor_draw_plan(
+            ai,
+            pose.as_ref(),
+            BATTLE_WORLD_SCALE,
+            self.battle_stage_outdoor,
+        )
+    }
+
     pub(super) fn build_posed_actor_overrides(
         &self,
         r: &legaia_engine_render::Renderer,
@@ -191,6 +210,17 @@ impl PlayWindowApp {
                     .host
                     .world
                     .dim_posed_battle_mesh(ai, tmd, raw, &mut vmesh.colors);
+            }
+            // The body's whole-mesh semi-transparency (the near-camera ghost
+            // pass `FUN_8004DC68`, the capture / defeat fade): the colour
+            // word's ABE + ABR onto every prim's TSB, as `FUN_80043390` ORs
+            // them into each packet. The browser play page's twin is
+            // `web-viewer::play_battle_body_blend`.
+            if let Some(plan) = self.body_draw_plan(ai) {
+                legaia_engine_core::battle_body_blend::apply_body_blend(
+                    &mut vmesh.cba_tsb,
+                    legaia_engine_core::battle_body_blend::draw_colour_semi_mode(plan.draw_colour),
+                );
             }
             if std::env::var_os("LEGAIA_DIAG_POSE").is_some() {
                 let (lo, hi) = vmesh.aabb();
@@ -429,11 +459,12 @@ impl PlayWindowApp {
                     Err(e) => log::warn!("summon/move-FX part mesh upload: {e:#}"),
                 }
             }
-            // Effect ribbons (move-VM op `0x42` nodes): transform nodes whose
+            // Draw-kind-4 nodes - effect ribbons (move-VM op `0x42`) and
+            // `0x4000` sprite-arm quads (op `0x23`): transform nodes whose
             // model is the emitter's own per-frame output, composed like a
-            // part. The browser play page draws the same list
-            // (`play_battle_fx.rs`).
-            for rb in self.session.host.world.active_effect_ribbons() {
+            // part, in battle and on the field. The browser play page draws
+            // the same list (`play_battle_fx.rs`, both FX frames).
+            for rb in self.session.host.world.active_effect_kind4_draws() {
                 let v = &rb.mesh;
                 match r.upload_vram_mesh(
                     &v.positions,
@@ -451,7 +482,7 @@ impl PlayWindowApp {
                             * fx_model_flip;
                         summon_part_draws.push((m, model));
                     }
-                    Err(e) => log::warn!("effect ribbon mesh upload: {e:#}"),
+                    Err(e) => log::warn!("draw-kind-4 mesh upload: {e:#}"),
                 }
             }
         }

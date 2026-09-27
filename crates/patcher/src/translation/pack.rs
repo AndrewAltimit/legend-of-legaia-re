@@ -202,6 +202,12 @@ pub struct LanguagePack {
     /// Free-form pack notes.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub notes: String,
+    /// How typed accents reach the disc: empty / `strict` (they are encode
+    /// errors), `fold` (written as their ASCII fold) or `font` (the import
+    /// writes the accent font and encodes them into its cells). See
+    /// [`super::accents::AccentMode`].
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub accents: String,
     pub sections: Sections,
 }
 
@@ -214,6 +220,7 @@ impl LanguagePack {
             game: "Legend of Legaia (USA) SCUS-94254".to_string(),
             contributors: Vec::new(),
             notes: String::new(),
+            accents: String::new(),
             sections: Sections::default(),
         }
     }
@@ -256,6 +263,9 @@ impl LanguagePack {
         }
         if !self.notes.is_empty() {
             out.push_str(&format!("notes: {}\n", q(&self.notes)));
+        }
+        if !self.accents.is_empty() {
+            out.push_str(&format!("accents: {}\n", q(&self.accents)));
         }
         out.push_str("sections:\n");
         for (name, entries) in self.sections.iter() {

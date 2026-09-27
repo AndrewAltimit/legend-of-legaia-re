@@ -453,6 +453,7 @@ impl SceneHost {
         self.world.field_vm.stepping_view.clear();
         self.world.field_vm.channels_man = None;
         self.world.npcs.anim_cues.clear();
+        self.world.npcs.clip_current.clear();
         // An in-flight ledge hop is scene-scoped, and its steering lock is
         // one-way: `start_field_ledge_hop` ORs `0x0008_0000` into the player's
         // `move_state.flags` (retail `0x801D25A8..0x801D25B8` on the player
@@ -1632,6 +1633,7 @@ impl SceneHost {
                         entry_x,
                         entry_z,
                         dir,
+                        record: site.record,
                     },
                     world,
                 ));
@@ -2107,11 +2109,36 @@ impl SceneHost {
                 entry_x,
                 entry_z,
                 dir,
+                record,
                 ..
             }) = self.world.world_map.entity_configs.get(slot as usize)
             {
                 let name = scene_name.clone();
-                let (entry_x, entry_z, dir) = (*entry_x, *entry_z, *dir);
+                let (entry_x, entry_z, dir, record) = (*entry_x, *entry_z, *dir, *record);
+                // Retail runs the entrance's partition-2 record on the
+                // crossing; the entity SM here keeps only its `0x3F`
+                // destination. The flag operations that open the record run
+                // before anything else in it, so replaying them leaves the
+                // bank as the field VM would - and one of them is system
+                // flag 2, which the destination's MAN loader turns into the
+                // place-name banner.
+                if let Some(man) = self.field_man_cache.clone()
+                    && let Ok(mf) = legaia_asset::man_section::parse(&man)
+                {
+                    let writes = crate::place_name_banner::record_leading_flag_writes(
+                        &mf,
+                        &man,
+                        usize::from(record),
+                        |idx| self.world.system_flag_test(idx),
+                    );
+                    for (set, idx) in writes {
+                        if set {
+                            self.world.system_flag_set(idx);
+                        } else {
+                            self.world.system_flag_clear(idx);
+                        }
+                    }
+                }
                 self.set_entry_seat_tile(entry_x, entry_z);
                 if is_world_map_scene(&name) {
                     self.enter_world_map_scene(&name)?;

@@ -450,6 +450,45 @@ impl World {
         }
     }
 
+    /// Whether a host's direct scene entry to `scene` is a **free-roam picker
+    /// visit**, i.e. whether it should run
+    /// [`Self::seed_free_roam_story_baseline`] first. The one rule every host
+    /// asks, so the native `--scene` entry and the browser page's
+    /// `enter_field` cannot stage the same entry differently.
+    ///
+    /// Not a picker visit, so no staging:
+    ///
+    /// - a card / LGSF **resume** (`resuming_save`) - the save's own story
+    ///   flags are the state, and the baseline would clear `0x141` / `0x147`;
+    /// - any entry while the **opening chain** runs, or while a cutscene
+    ///   timeline owns the scene - the authored presentation is the point;
+    /// - the **prologue skip**'s `town01` entry. The skip tears the opening
+    ///   down (`take_prologue_handoff` -> `abandon_opening_chain` clears the
+    ///   chain flag and the timeline) *before* the host enters `town01`, so
+    ///   the two tests above no longer see it; `entering_town01_opening` is
+    ///   the marker it leaves. Staging it would drop town01's scripted
+    ///   entry-window BGM pause (the opening's silent dawn);
+    /// - an **overworld** label - the native entry never staged one, and the
+    ///   baseline's managed flags are town-scene state.
+    pub fn picker_entry_stages_free_roam(&self, scene: &str, resuming_save: bool) -> bool {
+        !resuming_save
+            && !crate::scene::is_world_map_scene(scene)
+            && !self.cutscene.opening_chain_active
+            && !self.cutscene.entering_town01_opening
+            && !self.cutscene_timeline_active()
+    }
+
+    /// Stage `scene` as a free-roam picker visit when
+    /// [`Self::picker_entry_stages_free_roam`] says it is one. Returns whether
+    /// it staged.
+    pub fn stage_picker_entry(&mut self, scene: &str, resuming_save: bool) -> bool {
+        let stage = self.picker_entry_stages_free_roam(scene, resuming_save);
+        if stage {
+            self.seed_free_roam_story_baseline(scene);
+        }
+        stage
+    }
+
     // REF: FUN_80025B64
     // REF: FUN_801D6704
     // REF: FUN_801DD35C
@@ -495,6 +534,10 @@ impl World {
         self.game_over = false;
         self.game_over_hold = false;
         self.clock.play_time_seconds = 0;
+        // The play clock restarts from the New Game: the next
+        // `tick_play_clock` sets a fresh origin and a zero mark.
+        self.clock.play_clock_origin = None;
+        self.clock.play_clock_high_water = 0;
         self.cutscene.timeline = None;
         self.field_vm.helper_contexts.clear();
         self.cutscene.narration = None;

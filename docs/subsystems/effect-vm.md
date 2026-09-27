@@ -149,8 +149,32 @@ live ribbon node's mesh every frame (`legaia_engine_core::effect_ribbon`) and
 the native part pass and the browser play page's FX frame compose it like a
 mesh part. In play that is **Gilium**'s summon (spell `0x95`, PROT 0923); Ozma
 (`0xA0`, PROT 0934) and the two capture-class carriers (PROT 0957, 0964) are
-not staged as scenes by the engine yet. The `0x4000` sprite arm and the default
-`FUN_80028158` arm are still undrawn on both hosts.
+not staged as scenes by the engine yet.
+
+### The sprite arm's draw
+
+The `0x4000` arm (`jal 0x8002A5A4` at `0x8001B0E8`) builds one textured quad
+from the node's `+0x9C` block into the same scratch buffer, and case 4 then
+falls into the ordinary model draw at `0x8001B160` - so the quad is drawn
+like a mesh part: scaled by `+0x72 / 0x1000` when that is not `0x1000`
+(`0x8001B240..0x8001B2C4`), turned by the rotation banks, and handed to the
+prim dispatcher with the colour word `+0x74` and level `+0x78` (ABE and ABR
+ORed into the packet, the colour depth-cued toward the word's far colour).
+Its builder is SCUS code, so unlike the ribbon it draws in every mode.
+
+Both hosts draw it: `engine-core::effect_sprite_arm` turns every live
+sprite-arm node of the summon, move-FX, effect-script and field ambient parts
+into a one-quad mesh, `World::active_effect_kind4_draws` lists them with the
+ribbons, and the native part pass and the browser play page's battle and field
+FX frames compose each like a part. The quad geometry is
+`baka_impact_fx::sprite_arm_quad`, the one Baka Fighter's impact flash draws
+through. `crates/engine-core/tests/effect_sprite_arm_carriers_real.rs` reports
+the slot-B images whose programs reach the arm and pins that each lands on the
+draw list as one quad.
+
+The default `FUN_80028158` arm is still undrawn on both hosts: its geometry
+(a multi-shape procedural builder switched on `(flags >> 3) & 0xF`) is
+unported past the case-0 annulus parameters the battle-entry ring uses.
 
 ## Lifetime + render bridge (engine port)
 

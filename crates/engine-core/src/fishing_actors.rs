@@ -744,13 +744,17 @@ pub struct ClipRect {
 // nor its PSX screen-space primitive set (`screen_prim::ScreenPrim`, which
 // carries a textured and a flat **quad** and nothing two-point) has one.
 //
-// Two things that reason must not be read as. It is *not* "the engine has no
-// screen-space primitive path at all" - `ScreenPrim` + `build_geometry` is one,
-// live on both hosts. And a line kind alone would not wire the slot machine's
+// The endpoints are missing too. The second one (`packet + 0x10`) is copied
+// from `0x801D9194`, which `FUN_8003D368` fills at `0x801D1FB4` by projecting
+// the point at `+0x128` of the record `*s4` names there - the line's non-lure
+// end, so the rod tip (an inference from the packet's other end). The port
+// spawns no angler actor on any host (see `VENUE_ANCHOR`), so it has no such
+// record to project. The first (`packet + 0x08`) is the lure end, the
+// same missing datum `walk_grid_overhead` waits on. The minigames page draws
+// its own curve from a guessed rod tip to the lure instead, which is not this
+// routine's output. And a line kind alone would not wire the slot machine's
 // paylines, whose endpoints are model-space and need a GTE projection pass
-// first (see `crate::slot_machine::payline_prims`). The fishing line is the
-// one two-point draw whose endpoints are already screen-space - and its lure
-// end is the same missing datum `walk_grid_overhead` waits on.
+// first (see `crate::slot_machine::payline_prims`).
 // (`project_segment` above is a different case - retail never calls it at all.)
 /// Clip a 2-D segment in place against [`ClipRect`].
 ///

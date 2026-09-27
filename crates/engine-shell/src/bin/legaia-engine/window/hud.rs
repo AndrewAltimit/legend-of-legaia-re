@@ -1687,12 +1687,16 @@ impl PlayWindowApp {
                                 .inventory
                                 .items
                                 .iter()
-                                .map(|item| {
-                                    let ink = legaia_engine_core::shop::shop_stock_row_ink(
+                                .enumerate()
+                                .map(|(row, item)| {
+                                    // FUN_80032A44's buy-row arm: the hoisted band keeps
+                                    // its featured pen even when dim.
+                                    let ink = legaia_engine_core::shop::shop_buy_row_ink(
+                                        row < shop.inventory.featured_rows,
                                         held_of(item.item_id),
-                                        0,
                                         gold,
                                         item.price as i32,
+                                        false,
                                     );
                                     (item_label(item.item_id), Some(item.price), ink)
                                 })

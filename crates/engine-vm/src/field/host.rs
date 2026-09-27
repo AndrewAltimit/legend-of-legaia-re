@@ -567,6 +567,19 @@ pub trait FieldHost {
         false
     }
 
+    /// Op `4C 50` (the actor model set) aimed at the player channel `0xF8`
+    /// (`CC F8 50 lo hi`): the extended prologue resolves `0xF8` to the
+    /// player object (`FUN_8003C83C`), so the arm's `+0x10` party-bank write
+    /// (`value >= 0xF0` raises `0x01000000`, otherwise clears it) and the
+    /// re-stage `FUN_80024E08` land on the player, not on the caller. Return
+    /// `true` when the host applied it (the VM then advances without
+    /// touching `ctx`); the default `false` keeps the op on the context the
+    /// caller passed.
+    fn player_set_model(&mut self, value: i16) -> bool {
+        let _ = value;
+        false
+    }
+
     /// Op 0x4C sub-3 sub-D - **walk-region attribute refresh** at the
     /// player's tile.
     ///

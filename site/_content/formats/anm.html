@@ -210,15 +210,16 @@
       <table>
         <thead><tr><th><code>+0x5A</code></th><th>Handler block in the actor tick</th><th>Role</th></tr></thead>
         <tbody>
-          <tr><td><code>0x01</code></td><td>-</td><td>Pose-snap only</td></tr>
-          <tr><td><code>0x02</code></td><td>shares with <code>0x06</code> at <code>0x80021E90..</code></td><td>Per-bone keyframe-style</td></tr>
-          <tr><td><code>0x03</code></td><td><code>0x800226DC..</code></td><td>Path / state-write</td></tr>
-          <tr><td><code>0x04</code></td><td><code>0x80022CBC..0x80022EE4</code></td><td>Damp / spring-decay</td></tr>
-          <tr><td><code>0x05</code></td><td><code>0x800228B0..0x80022B80</code></td><td>Path-alt, geometry from <code>actor[+0x80]</code></td></tr>
-          <tr><td><code>0x06</code></td><td><code>0x80021EA0..0x80021FA4</code></td><td>Keyframe interpolation - fully traced and ported</td></tr>
-          <tr><td><code>0x07</code></td><td><code>0x80022C24..0x80022CC0</code></td><td>Spline / curve-driven</td></tr>
+          <tr><td><code>0x01</code></td><td>-</td><td>Common stages only (the ladder never tests <code>1</code>)</td></tr>
+          <tr><td><code>0x02</code></td><td>shares with <code>0x06</code> at <code>0x80021E90..0x80021FA4</code></td><td>Per-bone keyframe-style</td></tr>
+          <tr><td><code>0x03</code></td><td><code>0x800226E8..0x800228A0</code></td><td>CLUT-cell HSV integrate, then <code>FUN_80019D50</code></td></tr>
+          <tr><td><code>0x04</code></td><td><code>0x80022CC8..0x80022EE4</code></td><td>VRAM rect wrap-scroll</td></tr>
+          <tr><td><code>0x05</code></td><td><code>0x80021FB4..0x800226D8</code></td><td>Positional SFX emitter</td></tr>
+          <tr><td><code>0x06</code></td><td><code>0x80021E90..0x80021FA4</code>, <code>0x80022F0C..0x80023040</code></td><td>Keyframe interpolation - fully traced and ported</td></tr>
+          <tr><td><code>0x07</code></td><td><code>0x80022C30..0x80022CB8</code></td><td>Spline / curve-driven</td></tr>
         </tbody>
       </table>
+      <p>The span <code>0x800228B8..0x80022B80</code> once listed as the <code>0x05</code> handler is the default motion block that arms <code>3</code> and <code>5</code> branch past.</p>
       <p><code>engine-vm::DispatchByte</code> exposes the values; the per-arm physics tick is ported in <code>crates/engine-vm/src/actor_tick.rs</code> (see <a href="../subsystems/actor-vm.html#per-arm-physics-tick">the per-arm breakdown</a>). A second, overlay-resident path in the field-VM dispatcher (<code>FUN_801DE840</code>, sub-dispatch table <code>0x801CEF88</code>) gates on <code>actor[+0x5C] &gt; 0</code>, calls the clip driver, then completes frame selection in a 40-byte body at <code>0x801E2630..70</code> that is untraced.</p>
     </div>
   </details>
@@ -234,7 +235,7 @@
           <tr><td><code>+0x234</code></td><td>16</td><td>record pointer queue</td><td>4-deep history of control-struct pointers, back-shifted by <code>FUN_80047430</code> when a new record activates</td></tr>
         </tbody>
       </table>
-      <p>The pointer names a <strong>runtime control struct</strong>, not bytecode. The per-frame consumer <code>FUN_8004AD80</code> dispatches on its first byte: <code>0x02</code> handshake (advance to <code>0x04</code> when the global action byte is <code>-0x4D</code> / <code>-0x4B</code>), <code>0x04</code> action engaged (<code>actor[+0x1DA] = 7</code> or copy of <code>+0x1F2</code>), <code>0x05</code> / <code>0x08</code> OR <code>4</code> / <code>8</code> into <code>actor[+0x1DC]</code>, <code>0x07</code> <code>actor[+0x1DA] = 8</code>, anything else raw playback. The captured somersault record is kind <code>0x18</code>: raw playback.</p>
+      <p>The pointer names a <strong>runtime control struct</strong>, not bytecode. The staged-anim commit <code>FUN_8004AD80</code> tests its first byte - the entry's action tag - once per commit: <code>0x02</code> becomes <code>0x04</code> in place when the battle's first monster is <code>0xB3</code> / <code>0xB5</code> and the actor's HP is <code>0</code>; <code>0x04</code> stages the get-up <code>+0x1F2</code> into <code>actor[+0x1DA]</code> on a living actor, entry <code>7</code> on a dead party member, and clears <code>+0x1DC</code>; <code>0x05</code> / <code>0x08</code> OR <code>4</code> / <code>8</code> into <code>actor[+0x1DC]</code>; <code>0x07</code> stages entry <code>8</code>; anything else raw playback. The captured somersault record is kind <code>0x18</code>: raw playback.</p>
       <table class="layout">
         <thead><tr><th>Offset</th><th>Type</th><th>Field</th><th>Meaning</th></tr></thead>
         <tbody>

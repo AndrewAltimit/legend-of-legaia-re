@@ -139,8 +139,10 @@ stepped over by width. Its two rotate ops both aim at the same eight-point
 compass LUT the walk ops snap to, so every ambient turn ends on a compass
 point. Without it an engine NPC holds one heading forever where a retail one
 slowly looks around. `motion_pause` is the sibling kick (`FUN_8003C9AC`) a
-field interaction tail-calls: it snaps every wandering moving-class NPC back
-onto its default motion cycle while the dialog runs.
+field interaction and a partition-2 record spawn both end with: it rewrites
+every moving-class actor's requested move to its standing move. It is a clip
+request, not a halt - the motion VM keeps running, and a walker its ops send
+on to another step asks for its walk anim again before the request plays.
 
 ## `world_map` - `FUN_801DA51C`
 

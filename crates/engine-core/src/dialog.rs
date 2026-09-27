@@ -308,6 +308,17 @@ pub struct OwnedDialogPanel {
     /// A confirm press the next pager call sees
     /// ([`Self::confirm_while_typing`]).
     press_latch: bool,
+    /// The page ended on a picker open byte and waits in state `0x19` for
+    /// the press that opens the menu ([`Self::advance_page`]). Box path only.
+    menu_pending: bool,
+    /// Open a picker as soon as its prompt's page waits, with no press: the
+    /// simplified `--simple-dialogue` panel's contract
+    /// ([`Self::opening_menu_at_wait`]), whose host commits a choice but never
+    /// turns a page. `false` on every retail-faithful path.
+    menu_opens_at_wait: bool,
+    /// The automatic press `_DAT_80073F00` fired on the last pager call
+    /// ([`Self::tick_at_auto`]); drained by [`Self::take_auto_press`].
+    auto_pressed: bool,
     /// Identity of the [`Self::substitutions`] table [`Self::page_rows`] was
     /// decoded against (hosts install it after construction, so rows are
     /// re-decoded when it changes).
@@ -367,6 +378,9 @@ impl OwnedDialogPanel {
             window: None,
             page_rows: Vec::new(),
             press_latch: false,
+            menu_pending: false,
+            menu_opens_at_wait: false,
+            auto_pressed: false,
             decoded_subs: None,
         }
     }
@@ -417,6 +431,15 @@ impl OwnedDialogPanel {
         Some(panel)
     }
 
+    /// Open a picker the moment its prompt's page waits instead of on the
+    /// press retail waits for. A port-only mode for the simplified dialogue
+    /// panel ([`crate::scene::SceneHost::open_pending_dialog`]), whose host
+    /// has a choice commit but no page-turn press to open the menu with.
+    pub fn opening_menu_at_wait(mut self) -> Self {
+        self.menu_opens_at_wait = true;
+        self
+    }
+
     /// Build a panel that types the `0x1F` text segment whose **lead byte** is
     /// at `seg_lead` (i.e. `bytes[seg_lead] == 0x1F`), attaching any picker that
     /// immediately follows it. Used by the inline-script field-VM runner
@@ -439,6 +462,7 @@ impl OwnedDialogPanel {
     fn seed_box_at_lead(&mut self, lead: usize) {
         self.pending_box_advance = false;
         self.press_latch = false;
+        self.menu_pending = false;
         self.window = None;
         self.page_rows.clear();
         match legaia_mes::pack_page(&self.bytes, lead) {
@@ -717,6 +741,41 @@ impl OwnedDialogPanel {
         self.tick()
     }
 
+    /// [`Self::tick_at`] plus the pager's **automatic press**: while a box
+    /// page waits in state `0x19`, each pager call counts `auto_press`
+    /// (retail's `_DAT_80073F00`, which field-VM op `4C 89` writes) down by
+    /// the frame step once it is positive, and the call that takes it to zero
+    /// or below clears it and presses confirm for the player
+    /// (`0x801D8F4C..0x801D8F88`: the pad word is replaced by the confirm
+    /// binding `0x800846D0`). The host reads the press through
+    /// [`Self::take_auto_press`] and handles it as its own confirm.
+    ///
+    /// A retail capture (`autorun_dialog_picker_open.lua` with
+    /// `LEGAIA_PICKER_AUTO=21` on `retock_innkeeper_talk_open`, frame step 2)
+    /// counts `19, 17, .. 1` on the eleven calls after the page waits and
+    /// leaves `0x19` on the twelfth with no button down.
+    ///
+    /// PORT: FUN_801D84D0 (state `0x19`'s `_DAT_80073F00` countdown, `0x801D8F4C..0x801D8F88`)
+    pub fn tick_at_auto(&mut self, frame_step: u8, auto_press: &mut i16) -> PanelState {
+        let pager_call = self.window.is_some() && self.vsync_phase == 0;
+        let in_wait = self.waiting_for_input && !self.menu_active && !self.done;
+        let st = self.tick_at(frame_step);
+        if pager_call && in_wait && *auto_press > 0 {
+            *auto_press = auto_press.saturating_sub(i16::from(frame_step.max(1)));
+            if *auto_press <= 0 {
+                *auto_press = 0;
+                self.auto_pressed = true;
+            }
+        }
+        st
+    }
+
+    /// Whether the automatic press fired on the last [`Self::tick_at_auto`];
+    /// clears it.
+    pub fn take_auto_press(&mut self) -> bool {
+        std::mem::take(&mut self.auto_pressed)
+    }
+
     /// Advance one frame (one vsync) and return the new state.
     ///
     /// A pager page (every field-pager path: [`Self::from_inline_dialog`] /
@@ -801,7 +860,16 @@ impl OwnedDialogPanel {
             self.pc = bx.dispatch_at;
         }
         if self.picker.is_some() && !self.menu_active {
-            self.menu_active = true;
+            // The prompt's page waits with the advance hand like any other;
+            // the menu opens on the press (`0x801D9040..0x801D909C`: the
+            // `0x2A` / `0x27` / `0x28` / `0x29` open bytes install their
+            // picker states only inside `0x19`'s press arm - no other store
+            // of `0x11` / `0x13` / `0x15` / `0x17` exists in the pager).
+            if self.menu_opens_at_wait {
+                self.menu_active = true;
+            } else {
+                self.menu_pending = true;
+            }
             self.waiting_for_input = true;
             self.state = PanelState::PageBreak;
         } else if self
@@ -962,9 +1030,18 @@ impl OwnedDialogPanel {
     /// beneath the rows already shown, pager state `5`), a `0x48` opens a
     /// fresh box. Retail spends the press call and a load call on the turn,
     /// so the next page's first glyph shows on the second pager call after
-    /// the press. On the plain path the page buffer clears.
+    /// the press. On the plain path the page buffer clears. A box page that
+    /// ends on a picker open byte opens its menu on this press instead, and
+    /// the choice is committed by the next ([`Self::confirm_menu`]).
     pub fn advance_page(&mut self) {
         if !self.waiting_for_input {
+            return;
+        }
+        if std::mem::take(&mut self.menu_pending) {
+            // The press on a prompt that ends on a picker open byte opens the
+            // menu; the choice is the next press.
+            self.menu_active = true;
+            self.state = PanelState::PageBreak;
             return;
         }
         self.waiting_for_input = false;
@@ -1120,8 +1197,13 @@ mod tests {
         // Type the prompt "OK?" then hit the terminator.
         type_until_wait(&mut panel);
         assert_eq!(panel.page_bytes(), vec![b'O', b'K', b'?']);
-        assert!(panel.menu_active(), "menu waits after the prompt");
+        assert!(
+            !panel.menu_active() && panel.is_waiting_for_input(),
+            "the prompt's page waits for the press that opens the menu"
+        );
         assert!(!panel.is_done(), "menu box is not Done");
+        panel.advance_page();
+        assert!(panel.menu_active(), "the press opens the menu");
         let opts = panel.picker().unwrap();
         assert_eq!(opts.options.len(), 2);
         assert_eq!(opts.options[0].label, b"Yes");
@@ -1164,6 +1246,7 @@ mod tests {
         // Choose option 1 ("No") and confirm -> should type the "N!" reply.
         let mut panel = OwnedDialogPanel::from_inline_dialog(&b).unwrap();
         type_until_wait(&mut panel);
+        panel.advance_page();
         assert!(panel.menu_active());
         panel.move_picker_cursor(1);
         assert_eq!(panel.confirm_menu(), Some(1));
@@ -1174,6 +1257,8 @@ mod tests {
         // Option 0 ("Yes") -> "Y!".
         let mut panel = OwnedDialogPanel::from_inline_dialog(&b).unwrap();
         type_until_wait(&mut panel);
+        assert_eq!(panel.confirm_menu(), None, "no menu before the press");
+        panel.advance_page();
         assert_eq!(panel.confirm_menu(), Some(0));
         type_until_wait(&mut panel);
         // The two reply lines are consecutive `0x1F` rows, so they share the
@@ -1269,11 +1354,15 @@ mod tests {
             "picker after the box's LAST row attaches"
         );
         let mut ticks = 0;
-        while !panel.menu_active() && ticks < 64 {
+        while !panel.is_waiting_for_input() && ticks < 64 {
             panel.tick();
             ticks += 1;
         }
-        assert!(panel.menu_active(), "menu waits after the 2-row prompt");
+        panel.advance_page();
+        assert!(
+            panel.menu_active(),
+            "menu opens on the press after the 2-row prompt"
+        );
         assert_eq!(panel.page_bytes(), b"A\x7CB?".to_vec());
     }
 
@@ -1357,5 +1446,58 @@ mod tests {
         // Not at page break - advance_page is idempotent.
         panel.advance_page();
         assert_eq!(panel.page_bytes().len(), 1);
+    }
+
+    /// The automatic press counts down only while the page waits, by the
+    /// frame step once per pager call, and presses on the call that takes
+    /// it to zero or below (`0x801D8F4C..0x801D8F88`).
+    #[test]
+    fn the_automatic_press_counts_down_in_the_wait_and_fires_once() {
+        let inline = vec![0x1F, b'a', 0x00, 0x24, 0x1F, b'b', 0x00, 0x25];
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).unwrap();
+        let mut auto = 21i16;
+        // Typing: the countdown does not move.
+        while !panel.is_waiting_for_input() {
+            panel.tick_at_auto(2, &mut auto);
+            assert_eq!(auto, 21, "no countdown while the page types");
+            assert!(!panel.take_auto_press());
+        }
+        // Waiting: 21 -> 19 -> .. -> 1, then the press (eleven calls, one
+        // every two vsyncs), as the retail capture reads.
+        let mut calls = 0;
+        let mut vsyncs = 0;
+        loop {
+            let before = auto;
+            panel.tick_at_auto(2, &mut auto);
+            vsyncs += 1;
+            if auto != before {
+                calls += 1;
+            }
+            if panel.take_auto_press() {
+                break;
+            }
+            assert!(vsyncs < 64, "the press never fired");
+        }
+        assert_eq!(auto, 0);
+        assert_eq!(calls, 11);
+        // Handled as a confirm: the page turns; nothing fires again.
+        panel.advance_page();
+        for _ in 0..8 {
+            panel.tick_at_auto(2, &mut auto);
+            assert!(!panel.take_auto_press());
+        }
+    }
+
+    /// An idle countdown (`<= 0`) never presses.
+    #[test]
+    fn an_idle_countdown_never_presses() {
+        let inline = vec![0x1F, b'a', 0x00, 0x25];
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).unwrap();
+        let mut auto = 0i16;
+        for _ in 0..64 {
+            panel.tick_at_auto(2, &mut auto);
+            assert!(!panel.take_auto_press());
+        }
+        assert_eq!(auto, 0);
     }
 }

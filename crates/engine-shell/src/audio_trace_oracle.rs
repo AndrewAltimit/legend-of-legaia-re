@@ -286,7 +286,7 @@ impl TraceBgmDirector {
     /// Parse a scene VAB stream's header at `vab_off`, upload its samples
     /// into the private SPU, and make it the active bank.
     ///
-    /// Region math mirrors `boot::stage_scene_vab` exactly - the BGM region
+    /// Region math mirrors the play hosts' BGM region exactly - the BGM region
     /// is capped below the resident SFX bank at the top of SPU RAM - so a
     /// voice's `start_addr` in this trace is the address the windowed host
     /// would program for the same bank.
@@ -353,13 +353,11 @@ impl TraceBgmDirector {
         let vab_off = split.vab;
         let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
         let body = &entry_bytes[vab_off..];
-        let mut alloc = SpuAllocator::new(
-            crate::boot::SPU_RESERVED_BYTES,
-            crate::boot::SPU_RAM_BYTES
-                - crate::boot::SPU_RESERVED_BYTES
-                - crate::boot::SFX_BANK_SPU_BYTES,
-        );
-        self.bank = Some(VabBank::upload(&mut self.spu, &mut alloc, &report, body));
+        // The shared placement kernel, so a bank over the BGM region (the
+        // ending theme's) lands where the live director puts it.
+        let staged =
+            legaia_engine_audio::spu_layout::upload_owned_bank(&mut self.spu, &report, body);
+        self.bank = Some(staged.bank);
         Some(entry_bytes[split.seq..].to_vec())
     }
 
@@ -457,9 +455,9 @@ pub fn build_engine_audio_trace(
     };
     enter_scene_for_trace(&mut session, &opts.scene)?;
 
-    // Stage the scene's VAB bank into the director's private SPU - mirrors
-    // the BootSession's own pre-boot bank staging (boot.rs `stage_scene_vab`)
-    // but without an AudioOut handle. Scenes that carry no VAB entry of their
+    // Stage the scene's VAB bank into the director's private SPU, for this
+    // oracle's own scene-local sweep (the play hosts stage no scene bank:
+    // retail loads a bank only with its track). Scenes that carry no VAB entry of their
     // own leave the bank empty; their music is a global-pool track that
     // brings its own (see `TraceBgmDirector::start_owned_vab`).
     let mut director = TraceBgmDirector::new();

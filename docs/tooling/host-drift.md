@@ -1155,6 +1155,58 @@ inside the *Items* screen's session builder. Sharing a panel between two
 screens surfaces that immediately - the panel wants a description, and there
 was nowhere to get one.
 
+## A rule spelled beside the shared predicate
+
+A second side-by-side pass, with the first pass's rows closed, found a shape
+the first did not name: a host that **calls** the shared predicate and then
+adds its own test next to it. Both hosts reach the same engine function, so
+every tier reads the pair as parity; the difference lives in the extra
+clause, and one host has it while the other does not.
+
+- **The menu-open gate.** The native window asked
+  `World::field_menu_open_allowed` *and* `!menu_runtime.is_open()` *and* its
+  own `narration` local; the page asked only the predicate, and read its
+  pause-menu Start before its shop. So on the page Start opened the pause menu
+  over an open shop. The shop, prize-counter, narration and title-card
+  refusals are inside the predicate now.
+- **The picker staging rule.** Both hosts seeded the free-roam story baseline
+  on a direct scene entry, each with its own test for "is this a picker
+  visit". The page's test (no opening chain, no timeline) is exactly what the
+  prologue skip defeats - the skip tears both down before the host enters
+  `town01` - so on the page the skip staged `town01` as a picker visit and
+  dropped the opening's scripted silent-dawn BGM pause. The page also staged
+  an overworld label, which the native entry never did. Both ask
+  `World::stage_picker_entry` now, which also reads the skip's own marker
+  (`entering_town01_opening`).
+- **The scene-kind branch.** The page's `enter_field` routed an overworld
+  label through the world-map entry; the native save Load did not, so a save
+  written on a kingdom overworld - the only place saving is legal - came back
+  as a plain field scene. `BootSession::enter_scene_live` is the one branch
+  the native Load takes now.
+- **The play clock.** Each host kept its own origin and high-water mark
+  beside the shared `advance_play_time`, and each got a different edge wrong:
+  the native one counted the title screen, the page's froze after a second New
+  Game. The origin and mark are world state now (`World::tick_play_clock`),
+  reset by `begin_new_game`.
+
+The cure each time is to move the extra clause into the kernel, not to copy it
+to the other host: a copy is two spellings again, and the next edge case goes
+wrong on one of them.
+
+The same pass found three host-local defaults that changed the game on one
+host only. The native player-battle mode, on by default, seeded an empty save
+with demo items, saved chains and a fabricated `Art1B` record for every
+character; it is behind `LEGAIA_DEMO_BATTLE_SEED=1` now. The native window
+installed the party cast trigger's anim-pair lists only for player-driven
+battles, where the page installs them for every battle. And the native window
+latched the Field / Battle mode edge once per display frame while the page
+latched it per sim tick - and the battle load behind that edge installs the
+party's clips, art banks and art records, so a catch-up frame ran its first
+battle ticks without them natively. On input, the page let OS key auto-repeat
+into its "just pressed" set, so a held direction scrolled every page menu,
+and the native window had no focus-loss arm, so a key held across an alt-tab
+stayed down.
+
 ## What a waiver may say
 
 Both waiver files are validated for staleness on every run, so they cannot
@@ -1188,6 +1240,41 @@ about these is contested.
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
+| battle body blend modes | Both hosts draw a whole battle body's semi-transparency; three residues differ in scope and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-three-residues). |
+| page resume and New Game flow | The page's scene-level Load / New Game choreography lives in `site/_content/play.html` callbacks, not the engine. See [below](#the-page-owns-its-resume-and-new-game-choreography). |
+| movie audio policy | Which movies pause the BGM, and what a finished movie resumes, is decided per host. See [below](#movie-audio-is-a-per-host-policy). |
+| Ra-Seru chip cross-out | The regular ring's red X over a forbidden Ra-Seru chip, on neither host. See [below](#the-ra-seru-chips-cross-out-reaches-neither-host). |
+
+### The page owns its resume and New Game choreography
+
+The native window resumes a save in one engine call
+(`BootSession::enter_field_live_from_save`: enter the save's scene, then load
+over it) and starts a New Game through `BootSession::begin_new_game`. The page
+splits both across `play.html` callbacks. A card Load re-enters its scene
+even when it is the one already open, and the party-wipe path's New Game
+takes the same `begin_new_game` reset as the boot title; one path still
+differs: a title Continue naming a scene the page does not list falls
+through to New Game over the loaded save (a card import in the same case
+stays in the running scene).
+
+A parked resume the page declines to enter no longer survives the next tick
+(`tick_frame` drops it), which was the part that silently re-applied an old
+save at a later scene pick. Blocking capability: an engine-side resume and
+New Game entry (enter + load, or seed + stop, in one call) that the page's
+callbacks invoke instead of choreographing it.
+
+### Movie audio is a per-host policy
+
+The native window pauses the sequencer only when a movie carries an XA track,
+and resumes it only when it staged movie audio; its BGM director also keeps
+its own pause latch, which the movie path bypasses by writing the output gate
+directly. The page pauses at every movie install, resumes on every finish
+(played or not), and treats the gate itself as the latch. So a script-paused
+track survives an unplayable movie natively and resumes on the page, and a
+sub-op-`0xA` after a movie detaches the track natively and keeps it on the
+page. Blocking capability: one engine-side movie-audio policy (pause iff
+movie audio is present, resume only what the movie paused) that both
+directors consult.
 
 ### Derived scene point lights are native-only
 
@@ -1202,6 +1289,46 @@ export of the picked light set. Both are real work, and neither buys retail
 fidelity: this is the one row here where the *native* host is the one running
 a non-retail path, so the page being without it is a feature gap rather than
 a correctness gap.
+
+### A battle body's blend mode reaches both hosts, with three residues
+
+Two retail writers put a whole battle body into a semi-transparent blend
+mode through the top byte of its tint colour word: the near-camera ghost
+pass `FUN_8004DC68` (mode `3`, a body near the camera or a caster's ally
+during a magic cast) and the capture / defeat fade (mode `1`, additive).
+`FUN_80043390` ORs the word's ABE bit into every packet of the body and its
+ABR mode into the packets' tpage bits, so every prim draws semi-transparent,
+the GPU still honouring each texel's STP bit
+([battle.md](../subsystems/battle.md#the-near-camera-ghost-pass-fun_8004dc68)).
+
+Both hosts reproduce that through one kernel, `engine-core::battle_body_blend`,
+which rewrites a body's TSB words from the draw plan's colour word: the native
+posed-mesh builder applies it before upload
+(`event_handler/redraw_passes.rs`), and the page re-sends the stream on a
+blend-key change (`web-viewer::play_battle_body_blend`, with
+`TmdRenderer::updateSceneMeshCbaTsb` rebuilding the per-ABR semi tail). What
+still differs:
+
+- **native:** only posed bodies (the `pose_frame` path) take the blend; a body
+  drawn unposed keeps its authored TSB words;
+- **native:** the posed override is keyed by TMD index, so two bodies sharing
+  one TMD share one override;
+- **page:** blend-pass ordering is per mesh, not per prim, so a blended body's
+  prims do not interleave with other meshes' semi prims the way one ordering
+  table would.
+
+### The Ra-Seru chip's cross-out reaches neither host
+
+In the Rim Elm ambush and against monster `0xAF` the special-battle word
+carries `0x200`, and retail's command ring crosses the Ra-Seru chip out with
+the red `etim` quad (`FUN_801DBC30(0xF8, 0x42)`) and refuses its arm. Both
+play hosts take the refusal and the greyed chip from the engine
+(`battle_hud::battle_magic_chip`, `World::tick_battle_command`), and
+`battle_hud::battle_magic_chip_mark` answers the mark, but neither host's
+battle chip pass places the quad, so the gap is symmetric and no tier sees
+it. The dome ring draws the same mark ([`muscle_dome::ChipMark`]) on the
+minigames page only. See
+[battle.md](../subsystems/battle.md#the-ra-seru-forbidden-bit-of-the-special-battle-word).
 
 ### The minigame side-channel step is paired; its contents are not
 
@@ -1322,17 +1449,24 @@ The standalone minigames page still poses its own buffers under its fitted
 camera: it holds a `BakaFight` but no surface, the same blocking shape as the
 rest of that page (below).
 
-What stays open was misnamed "sprite effects". None of the three routines
-draws a sprite: the two banks `_DAT_8007B888` / `_DAT_8007B840` are the
+What stays open was misnamed "sprite effects". The afterimage and the cameo
+draw no sprite: the two banks `_DAT_8007B888` / `_DAT_8007B840` are the
 scene's type-`0x05` / `0x0B` ANM clip banks the clip selector `FUN_800204F8`
-resolves, and each routine drives a **model** through them.
+resolves, and each of those routines drives a **model** through them. The
+impact pair is half sprite after all: one of its two templates is a
+draw-kind-4 node on the render dispatcher's `0x4000` sprite arm.
 
 - The special's afterimage (`FUN_801D49E8`) is engine state every host steps,
   and every host now draws it as darkened copies of the thrower's mesh.
-- The impact pair (`FUN_801D4DF8`) spawns `FUN_80021B04` effect templates at
-  the winner's strike offset, and no minigame host runs that effect runtime.
-  The fighter positions it offsets from are engine state now
-  (`BakaFight::fighter_position`); the template runtime is what is missing.
+- The impact pair (`FUN_801D4DF8`) is engine state every host steps too:
+  `BakaFight`'s booking arms spawn its four `FUN_80021B04` templates as
+  `engine-core::baka_impact_fx` parts, run on the duel's tick through the
+  shared move-VM kernels. The two play hosts draw them through the duel
+  surface - the flip-book flash as sprite-arm quads (`FUN_8002A5A4`'s port),
+  the prop flashes as additive copies of stage TMDs `1` / `2` - and the play
+  page re-uploads the mesh attributes when `play_mg_baka_scene_attr_generation`
+  moves. The standalone minigames page steps the same parts and draws none:
+  it has no surface to draw them into.
 - The round-start cameo (`FUN_801D6310`) spawns on a held Triangle: both
   play hosts hand the duel the held word through `World`'s duel tick, and
   the duel surface draws the ring girl camera-relative and applies the wink
@@ -2422,7 +2556,15 @@ under the intro strip, title zoom and course card) is not in that position:
 its clock is `muscle_ringside::FirstVisitHub`, which needs no `World`, so the
 standalone page replays it by tick through `muscle_first_visit_json` and
 draws the frame the play hosts draw, from the same
-`ringside_backdrop::first_visit_hub_draw` kernel.
+`ringside_backdrop::first_visit_hub_draw` kernel. What it does not do is
+sound the two announcer lines the walk starts (`FUN_8003D53C(0x1E, 0xB,
+0xA9)` at arm `0`, `FUN_8003D53C(0x1F, round, 0x54)` at arm `0x15`): the
+native window and the play page hand `HubFrame::xa` to their CD-XA clip path,
+and the standalone page has no XA path at all. The walk still waits the
+lines' modelled span (`FirstVisitHub`'s `_DAT_8007BC20`), so the timing
+matches the play hosts and only the voice is missing. Blocking capability:
+an XA clip decoder on that page (the play page's lives in `play_xa.rs`,
+behind its `World` runtime).
 
 The dome's command ring has the same shape one level down. Its chip marks
 (the red cross-out X is `FUN_801DBC30`, placed by the engine as
@@ -2821,7 +2963,7 @@ meshes, kept its camera shot, and left the trigger scene's VAB bank staged.
 The page, for its part, keyed its camera reset on `SceneEntered` alone and
 carried the trigger scene's shot too. Both now treat the hand-off as the entry
 it is: `BootSession::apply_pending_fmv_handoff` runs the same session-side swap
-a door runs (camera globals reset, SFX queue dropped, VAB restaged) and the
+a door runs (camera globals reset, SFX queue dropped) and the
 window rebuilds on `FmvHandoffOutcome::Entered`; the page resets the camera on
 the hand-off tick
 (`crates/web-viewer/tests/play_fmv_real.rs`,
@@ -2981,10 +3123,9 @@ kernel both hosts call, so the two cannot drift on it again.
   reference every frame on both.
 - **A carried global track.** A door under a `music_01` track restaged the
   scene VAB over the region that track's own samples occupy, while both
-  directors kept the track playing as a duplicate start.
-  `scene::scene_bank_restage_wanted` skips the restage while a global track
-  owns the region; no disc script starts a scene-local id, so nothing reads
-  the skipped bank.
+  directors kept the track playing as a duplicate start. Neither host stages a
+  scene bank any more ([below](#the-spu-map-one-layout-kernel-and-no-scene-bank)),
+  so a door leaves the region to its track.
 - **The reward bank.** The page placed PROT 0889 above the BGM but not above
   a staged side-band bank, and dropped it on every scene change where the
   native director kept it. It now takes the highest tail end, and both keep it
@@ -3016,6 +3157,35 @@ Closed since:
   The native window drains the list and drops it. A monster's cast is picked
   at its own dispatch, so it has no lead time and keeps the page's lazy path.
 
+## The SPU map: one layout kernel, and no scene bank
+
+Both play hosts lay SPU RAM out through `legaia_engine_audio::spu_layout`: the
+region constants they re-export (`SFX_BANK_SPU_BYTES`, `SPU_RESERVED_BYTES`),
+`upload_owned_bank` for every track bank, and `upload_resident_sfx` /
+`upload_shared_region` for the slot-0 system bank and the slot-2 / slot-6
+region above it.
+
+- **The credits bank.** The ending theme's bank (`0x631B0` bytes of bodies)
+  did not fit either host's BGM region, so its last seven bodies were dropped
+  and three of the score's programs sounded nothing on both. `upload_owned_bank`
+  now lays a bank too large for the region across the SFX region, as retail
+  opens VAB 10 at slot 0's base
+  ([`audio.md`](../subsystems/audio.md#where-the-credits-bank-lands-in-spu-ram)).
+  While it is resident both hosts drop their resident SFX banks and key no cue
+  against the credits bank: the native director at the upload
+  (`AudioBgmDirector::reclaim_sfx_region`), the page at the next cue
+  (`LegaiaRuntime::reconcile_sfx_region`, the check the reward bank already
+  used). The next track that fits re-stages them through the same kernel on
+  both.
+- **No scene bank.** Both hosts staged the scene block's first VAB-bearing
+  entry on every scene entry, and skipped it under a carried global track
+  (`scene_bank_restage_wanted`). Retail stages no scene bank: a bank loads only
+  with its track, and a scene-local id plays a global fallback track
+  ([`audio.md`](../subsystems/audio.md#a-scene-local-id-loads-a-fallback-track-not-a-scene-bank)).
+  Neither host stages one now, the gate is gone, and
+  `SceneHost::route_bgm_events` routes a scene-local start through
+  `start_owned_vab` on `SCENE_LOCAL_BGM_FALLBACK_ID`'s entry for both.
+
 ## Battle FX: the effect ribbon and the summon seat order
 
 - **The effect ribbon.** Move-VM op `0x42` nodes (the lightning ribbon
@@ -3031,12 +3201,14 @@ Closed since:
   cast's summon creature before ticking the effect scene graphs, the page
   after; the page now takes the native order (`tick_world_effects`), so a cast
   ticks its creature's first frame on the same tick on both hosts.
-- **The battle label merge order is not a drift.** The native window merges
-  the SCUS labels at boot and the battle overlay's on top at play start; the
-  page reads the overlay's first and merges the SCUS ones on top. The two label
-  sets (`battle_ui_strings::SCUS_LABELS`, `OVERLAY_LABELS`) share no key and
-  only the overlay half carries the Ra-Seru names, so both orders build the same
-  table.
+- **One builder for the battle labels.** The native window used to merge the
+  SCUS labels at boot and the battle overlay's on top only when a player-driven
+  battle was requested; the page read the overlay's first and merged the SCUS
+  ones on top. Both now install `battle_open::battle_ui_strings_for_disc`
+  (overlay half, then SCUS half) at disc load. Retail has no merge at all -
+  each label is a string its drawer addresses in its own image - and the two
+  label sets (`battle_ui_strings::SCUS_LABELS`, `OVERLAY_LABELS`) share no key
+  (`the_two_label_halves_share_no_key`), so the order cannot change a label.
 
 ## Menus, saves and minigame exits: one call per decision
 
@@ -3086,10 +3258,13 @@ had - the deviating host adopting it.
 
 Two rows of the same read were already closed when re-checked: the minigame
 purses in `save_full` and the card-Load order (both in the section above).
-Still open, and on neither host: the scene-entry place-name banner (the
-submode-driver handler table's slot `0x2E`, `0x801EE5D4`, whose body opens the
-panel script `0x801F32B4` at `0x801EE628`) and the
-world-map location labels ([`place-names.md`](../formats/place-names.md)).
+The scene-entry place-name banner is closed on both hosts at once: it is not
+the slot-`0x2E` fill-fade actor this list used to name (that actor's panel
+script `0x801F32B4` only closes every panel), but a text balloon the MAN
+loader spawns, seated by `engine-core::place_name_banner` from
+`SceneHost::load_scene` and drawn by the balloon builders both hosts already
+share. Still open, and on neither host: the world-map location labels
+([`place-names.md`](../formats/place-names.md)).
 
 ## Adding coverage
 

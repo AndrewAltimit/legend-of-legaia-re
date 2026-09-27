@@ -39,7 +39,7 @@ impl World {
     /// REF: FUN_801D0748 (`0x801D11B4..0x801D12B8`, the ring's cancel arm)
     /// REF: FUN_801D388C (case `0x10`, `0x801D4010`)
     pub(in crate::world) fn step_back_battle_command(&mut self, actor: u8) {
-        self.step_member_cursor_back(actor, actor);
+        self.step_member_cursor_back(actor, actor, true);
     }
 
     /// `Reselect` on the commit-confirm screen: step back from **past the
@@ -51,14 +51,20 @@ impl World {
     /// REF: FUN_801D388C (case `0x21`, `0x801D4750`)
     pub(in crate::world) fn reselect_battle_commands(&mut self, actor: u8) {
         let party_count = self.party.party_count.clamp(1, 3);
-        self.step_member_cursor_back(party_count, actor);
+        self.step_member_cursor_back(party_count, actor, false);
     }
 
     /// The shared backward step: scan down from `from` with the
     /// `FUN_801D32BC(1)` kernel, refund the landing member's committed item,
     /// and open its ring - or, with nothing behind the cursor, reopen the
     /// round prompt on `prompt_actor`.
-    fn step_member_cursor_back(&mut self, from: u8, prompt_actor: u8) {
+    ///
+    /// `ring_cancel` is the `0x28` arm: its prompt return is the command
+    /// window's case `2` (`0x801D11D8..0x801D11E0`), which re-runs the
+    /// round-start formation squash - [`World::normalize_battle_formation`].
+    /// The `0x6E` Reselect's empty arm passes case `0x28` instead
+    /// (`0x801D30D0..0x801D30DC`) and does not.
+    fn step_member_cursor_back(&mut self, from: u8, prompt_actor: u8, ring_cancel: bool) {
         use crate::battle_flow::BattleFlowState as Flow;
         use crate::battle_round::PendingPartyAction;
         use vm::battle_cursor_pose::{ActorCursor, CursorActor, CursorStep, step_actor_cursor};
@@ -81,6 +87,9 @@ impl World {
         let prev = cursor.active;
         if prev >= party_count {
             // Counter zero: the first member's cancel reopens the prompt.
+            if ring_cancel {
+                self.normalize_battle_formation();
+            }
             self.set_battle_flow(Flow::TurnPrompt);
             self.open_battle_command(prompt_actor);
             return;

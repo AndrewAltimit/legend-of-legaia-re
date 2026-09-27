@@ -339,14 +339,6 @@ pub struct LegaiaRuntime {
     /// native `persist_and_apply_options` leg for leg: apply the live audio
     /// side effects, then write the state out.
     pub(crate) options_state: legaia_engine_core::options::OptionsState,
-    /// High-water mark of the play clock, in whole seconds since the page's
-    /// wall clock origin. [`Self::tick_play_clock`] deltas against it so a
-    /// loaded save's accumulated total survives - the browser twin of the
-    /// native window's `play_clock_secs`.
-    play_clock_secs: u32,
-    /// Wall-clock origin (ms) the play clock counts from, seeded on the first
-    /// tick. `None` until then.
-    play_clock_origin_ms: Option<f64>,
     /// Scene-local BGM sound bank, staged from the scene's first VAB entry
     /// ([`SceneHost::scene_vab_bytes`]) whenever audio is live. Scene-local BGM
     /// starts (`bgm_id < 2000`, [`WebBgmDirector::start`]) play their SEQ
@@ -450,8 +442,6 @@ impl LegaiaRuntime {
             dev_menu_records: false,
             dev_menu_enabled: false,
             options_state,
-            play_clock_secs: 0,
-            play_clock_origin_ms: None,
             live_battles: true,
             pending_card_resume: None,
             battle_bgm: None,
@@ -670,18 +660,16 @@ impl LegaiaRuntime {
         // per-character Ra-Seru name the command ring's magic arm carries.
         // Twin of the native window's read in `window/run.rs`; without it the
         // browser draws the port's own fallback wording instead.
-        host.world.battle.ui_strings =
-            legaia_engine_core::battle_open::battle_ui_strings_from_prot(&host.index);
+        // Both halves - this overlay read and the SCUS words below - come
+        // through the one builder the native boot calls.
+        host.world.battle.ui_strings = legaia_engine_core::battle_open::battle_ui_strings_for_disc(
+            &host.index,
+            scus.as_deref(),
+        );
         // The party cast trigger's per-spell anim-pair lists, off the same
         // battle-overlay image - twin of the native window's read.
         host.world.battle.spell_anim_pairs =
             legaia_engine_core::battle_open::spell_anim_pairs_from_prot(&host.index);
-        // ... and the SCUS half - the chip words plus the sparring fight's
-        // opening caption (`FUN_80056208` -> `0x80078CB4`), which the tutorial
-        // side-band raises off `battle_ui_strings`.
-        if let Some(s) = scus.as_ref() {
-            host.world.battle.ui_strings.merge_scus(s);
-        }
 
         // Keep the executable bytes for the battle render's per-stage SCUS
         // tables (mirror list / outdoor-cue list). Nothing leaves the browser.
@@ -759,17 +747,12 @@ impl LegaiaRuntime {
         host.world.locomotion.leading_edge_wall_probes = true;
         host.world.npcs.solid = true;
         host.world.npcs.animate = true;
-        // Free-roam story staging for PICKER entries only: the opening
-        // chain's legs re-enter through here too, and their authored
-        // presentation (silent dawn, pre-event scenery) must stay untouched.
-        // A card Load's resume is not a picker visit either - the save's own
-        // story flags are the state (the baseline would clear 0x141 / 0x147).
-        if resumed_save.is_none()
-            && !host.world.cutscene.opening_chain_active
-            && !host.world.cutscene_timeline_active()
-        {
-            host.world.seed_free_roam_story_baseline(name);
-        }
+        // Free-roam story staging for PICKER entries only - the engine's one
+        // rule (`World::stage_picker_entry`), shared with the native
+        // `--scene` entry. The opening chain's legs and the prologue skip's
+        // `town01` re-enter through here too, and a card Load's resume is not
+        // a picker visit either.
+        host.world.stage_picker_entry(name, resumed_save.is_some());
         let world_map = legaia_engine_core::scene::is_world_map_scene(name);
         if world_map {
             host.enter_world_map_scene(name)
@@ -838,17 +821,16 @@ impl LegaiaRuntime {
             host.world.load_full(sf);
         }
         // A deliberate scene boot restages BGM from scratch: clear the dedupe
-        // latch (so the scene's own op-`0x35` start is honoured even if it names
-        // the track that was already playing) and stage the new scene's VAB
-        // bank. Both no-op until audio is live (`audio_init`), which itself
-        // restages the current scene's bank.
+        // latch, so the scene's own op-`0x35` start is honoured (and re-stages
+        // its track's bank) even if it names the track already playing. No
+        // scene bank is staged: retail loads a bank only with its track
+        // (`legaia_engine_core::scene::SCENE_LOCAL_BGM_FALLBACK_ID`).
         // New scene -> drop any SFX cues still queued for the old one (the
         // native boot's `clear_sfx` on scene entry).
         self.on_scene_change_audio();
         #[cfg(target_arch = "wasm32")]
         {
             self.bgm_last_started = None;
-            self.stage_scene_bgm_bank();
         }
         Ok(self.state_json())
     }
@@ -938,7 +920,6 @@ impl LegaiaRuntime {
                 director.stop();
             }
         }
-        self.play_clock_origin_ms = None;
         let Some(host) = self.scene_host.as_mut() else {
             self.world.begin_new_game();
             return;
@@ -986,6 +967,16 @@ impl LegaiaRuntime {
     /// scene the engine just walked into (a door / warp) - the page rebuilds its
     /// render state whenever the return is non-empty.
     pub fn tick_frame(&mut self) -> Result<String, JsValue> {
+        // A card Load / save import parks its save for the scene entry the
+        // page performs in the same turn (`enter_field` consumes it). When
+        // the page declines that entry - the save's scene is the one already
+        // open, or not in its list - nothing consumed it, and the old save
+        // was re-applied over the live party at the NEXT picker entry, however
+        // much later that came. The resume point has passed once the world
+        // ticks, so the park does not outlive this frame. The native Load
+        // enters and loads in one call (`enter_field_live_from_save`) and
+        // parks nothing.
+        self.pending_card_resume = None;
         let Some(host) = self.scene_host.as_mut() else {
             self.world.tick();
             return Ok(String::new());
@@ -1106,8 +1097,6 @@ impl LegaiaRuntime {
         if !fmv_handoff_scene.is_empty() {
             self.rebuild_render_state()?;
             self.on_scene_change_audio();
-            #[cfg(target_arch = "wasm32")]
-            self.stage_scene_bgm_bank();
             return Ok(fmv_handoff_scene);
         }
         if let SceneTickEvent::SceneEntered { name } = event {
@@ -1119,13 +1108,22 @@ impl LegaiaRuntime {
             // taught (a screen armed with nothing to finish it parks the
             // script dead).
             self.rebuild_render_state()?;
+            // A door swapped the scene. No bank is staged and the dedupe
+            // latch is kept, so a track that carries across the transition
+            // keeps its playhead and its samples (the native
+            // `after_scene_swap` does the same).
             self.on_scene_change_audio();
-            // A door swapped the scene: restage its VAB bank (a scene-local
-            // start needs it) without resetting the dedupe latch, so a track
-            // that carries across the transition keeps its playhead.
-            #[cfg(target_arch = "wasm32")]
-            self.stage_scene_bgm_bank();
             return Ok(name);
+        }
+        // A `CC F8 50` re-staged the player's model this tick: rebuild the
+        // rig from the new mesh, the native window's twin
+        // (`rebind_live_npc_models` there drains the same signal).
+        if self
+            .scene_host
+            .as_mut()
+            .is_some_and(|h| h.world.take_player_rig_change())
+        {
+            self.build_player_rig();
         }
         // A field-VM op-0x49 sub-0 merchant armed a shop this tick: hand it to
         // the menu runtime so the page can open the store. The field VM stays
@@ -1291,9 +1289,6 @@ impl LegaiaRuntime {
                 Ok(out) => {
                     out.set_gain(BGM_DEFAULT_GAIN);
                     self.audio_out = Some(out);
-                    // If a scene is already up, stage its VAB now so a
-                    // scene-local BGM start resolves against a live bank.
-                    self.stage_scene_bgm_bank();
                     true
                 }
                 Err(e) => {
@@ -2007,32 +2002,35 @@ impl LegaiaRuntime {
         if !matches!(host.world.mode, SceneMode::Field | SceneMode::WorldMap) {
             return;
         }
-        let lead = host.world.party.active_party.first().copied().unwrap_or(0) as usize;
-        let Some(g) = host
-            .world
-            .global_tmd_pool
-            .get(lead)
-            .and_then(|s| s.as_ref())
-            .map(std::sync::Arc::clone)
-        else {
+        let roster_lead = host.world.party.active_party.first().copied().unwrap_or(0) as usize;
+        // The lead's field form, or the model a `CC F8 50` re-staged the
+        // player onto - one resolution for both hosts
+        // (`SceneHost::player_rig_mesh`).
+        let Some(g) = host.player_rig_mesh() else {
             crate::console_log(&format!(
-                "play: global TMD pool has no field mesh for roster slot {lead}"
+                "play: no rig mesh for roster slot {roster_lead} (model {:?})",
+                host.world.locomotion.player_live_model
             ));
             return;
         };
         // The party locomotion bundle (PROT 0874 §1) banks the Vahn / Noa / Gala
-        // trio only; any other lead renders in its TMD-local rest pose.
-        let locomotion = host
+        // trio only. The bone cap follows the MESH's slot (a scene-bank model
+        // has none); the clip player stays the roster lead's, whose settle
+        // pick binds scene records itself while the party-bank bit is down.
+        let locomotion_bank = host
             .index
             .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
             .ok()
-            .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok())
-            .filter(|_| lead <= 2);
+            .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+        let lead = g.party_slot.unwrap_or(usize::MAX);
         let rec = |slot| legaia_asset::character_pack::locomotion_record_index(lead, slot);
-        let bones = locomotion.as_ref().and_then(|bundle| {
-            let idx = rec(legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT);
-            bundle.record(idx).ok().map(|r| r.bone_count as usize)
-        });
+        let bones = locomotion_bank
+            .as_ref()
+            .filter(|_| lead <= 2)
+            .and_then(|bundle| {
+                let idx = rec(legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT);
+                bundle.record(idx).ok().map(|r| r.bone_count as usize)
+            });
         let mut tmd = g.tmd.clone();
         if let Some(b) = bones {
             tmd.objects.truncate(b);
@@ -2054,9 +2052,15 @@ impl LegaiaRuntime {
         // Live locomotion playback: the leader's whole bank, from which the
         // world's settle tail picks idle / walk / run / hop each field tick
         // and folds the pose into the player actor.
-        let anim = locomotion.as_ref().and_then(|bundle| {
-            legaia_engine_core::field_anim::FieldPlayerAnim::from_locomotion_bank(bundle, lead)
-        });
+        let anim = locomotion_bank
+            .as_ref()
+            .filter(|_| roster_lead <= 2)
+            .and_then(|bundle| {
+                legaia_engine_core::field_anim::FieldPlayerAnim::from_locomotion_bank(
+                    bundle,
+                    roster_lead,
+                )
+            });
         host.world.set_field_player_anim(anim);
     }
 
@@ -2083,60 +2087,6 @@ impl LegaiaRuntime {
         if let Err(e) = host.route_bgm_events(&mut director) {
             crate::console_log(&format!("play BGM: route failed: {e:#}"));
         }
-    }
-
-    /// Stage the current scene's first VAB entry
-    /// ([`SceneHost::scene_vab_bytes`]) into the SPU as the active scene-local
-    /// BGM bank, mirroring the native boot's `stage_scene_vab` (parse at the
-    /// stream's own VAB offset, SPU RAM allocator from `0x1000`). No-op when
-    /// audio isn't up or the scene has no VAB. A subsequent global-pool track
-    /// replaces this bank with its own on start.
-    #[cfg(target_arch = "wasm32")]
-    fn stage_scene_bgm_bank(&mut self) {
-        let out = match self.audio_out.as_ref() {
-            Some(o) => o,
-            None => return,
-        };
-        let host = match self.scene_host.as_ref() {
-            Some(h) => h,
-            None => return,
-        };
-        // A global-pool track carried across the swap owns the region; the
-        // scene bank would overwrite its samples (the native
-        // `after_scene_swap` makes the same call).
-        let live = out
-            .sequencer_progress()
-            .is_some()
-            .then_some(self.bgm_last_started)
-            .flatten();
-        if !legaia_engine_core::scene::scene_bank_restage_wanted(live) {
-            return;
-        }
-        let (vab_bytes, vab_off) = match host.scene_vab_bytes() {
-            Ok(Some(b)) => b,
-            _ => return,
-        };
-        let report = match legaia_vab::parse(&vab_bytes, vab_off) {
-            Ok(r) => r,
-            Err(e) => {
-                crate::console_log(&format!("play BGM: scene VAB parse failed: {e}"));
-                return;
-            }
-        };
-        let bank = out.with_spu(|spu| {
-            // Cap the BGM region below the resident class-2 SFX bank at the
-            // top of SPU RAM, the way the native boot's `stage_scene_vab`
-            // does, so a BGM upload never stomps the SFX samples
-            // ([`crate::play_sfx`]).
-            let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(
-                crate::play_sfx::SPU_RESERVED_BYTES,
-                legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32
-                    - crate::play_sfx::SPU_RESERVED_BYTES
-                    - crate::play_sfx::SFX_BANK_SPU_BYTES,
-            );
-            legaia_engine_audio::VabBank::upload(spu, &mut alloc, &report, &vab_bytes)
-        });
-        self.bgm_bank = Some(bank);
     }
 }
 
@@ -2294,16 +2244,17 @@ impl LegaiaRuntime {
     /// whatever a load put there - so the H:MM:SS box reset on every page
     /// load, ignored a loaded save's hours, and, worse, a save written from
     /// the browser recorded the *loaded* play time rather than the played one.
+    ///
+    /// The origin and high-water mark are the world's
+    /// ([`legaia_engine_core::world::World::tick_play_clock`], the kernel the
+    /// native window calls too), so New Game restarts both. This page used to
+    /// keep them itself and reset only the origin on New Game, which froze
+    /// play time after a second New Game until the wall clock caught up with
+    /// the old mark.
     pub(crate) fn tick_play_clock(&mut self) {
-        let now_ms = wall_clock_ms();
-        let origin = *self.play_clock_origin_ms.get_or_insert(now_ms);
-        let now = ((now_ms - origin) / 1000.0).max(0.0) as u32;
-        if now > self.play_clock_secs {
-            let delta = now - self.play_clock_secs;
-            self.play_clock_secs = now;
-            if let Some(host) = self.scene_host.as_mut() {
-                host.world.advance_play_time(delta);
-            }
+        let now_secs = wall_clock_ms() / 1000.0;
+        if let Some(host) = self.scene_host.as_mut() {
+            host.world.tick_play_clock(now_secs);
         }
     }
 

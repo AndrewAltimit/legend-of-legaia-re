@@ -6,25 +6,38 @@
 //! with different dwell constants and a different pre-warp flourish: a phase
 //! halfword `actor[+0x54]`, a dwell counter `actor[+0x9E]` accumulating
 //! `DAT_1F800393` per frame, and a shared phase that resolves the party's
-//! current world map into a stored **visited-map record** and warps to it.
+//! stored destination scene word into a scene name and warps to it.
 //!
 //! ## The shared resolve-and-warp kernel
 //!
-//! The visited-map table is `count` records of `0x10` bytes, based at the
-//! global buffer `FUN_80019788()` returns. Each record carries its map name
-//! at `+0xC`, and the scan compares `FUN_8003CE9C(record + 0xC)` against the
-//! party's current map id at `0x80084628`. On a miss the actor parks in the
-//! diagnostic phase `0x63`, which prints `"UNFIND MAP NUMBER %d"` and does
-//! nothing else - the travel art simply never fires.
+//! The table the resolve scans is the resident **CDNAME define table**, not a
+//! record of maps the party has visited: `FUN_80019788` returns the constant
+//! `0x80088758`, the count is the halfword at `0x8007B806`, and each `0x10`-byte
+//! record is a scene name (bytes `+0x0..+0xC`) followed at `+0xC` by the
+//! `#define` number, which `FUN_8003CE9C` reads as a little-endian `s16`. A
+//! retail RAM image (`retock_field_card_boot`) holds 125 records there,
+//! `init_data` = 0, `gameover_dat` = 1, `town01` = 3 and on to `other7` =
+//! 1228. The scan compares each number against the word at `0x80084628`, so it
+//! resolves a raw CDNAME TOC index to its scene name. On a miss the actor parks
+//! in the diagnostic phase `0x63`, which prints `"UNFIND MAP NUMBER %d"` and
+//! does nothing else - the travel art simply never fires.
 //!
 //! On a hit the handler installs the destination:
 //!
 //! ```text
-//!   FUN_8001FD44(record, current_map_id)   // stage the scene
+//!   FUN_8001FD44(record, *0x80084628)      // copy the name into the scene-name buffer 0x80084548
 //!   *0x80073EFC = 0
 //!   *0x80073EF4 = (*0x80084624 << 7) + 0x40
 //!   *0x80073EF8 = (*0x8008462C << 7) + 0x40
 //! ```
+//!
+//! The engine's scan table is a stand-in built by its callers: the world-map
+//! panel host records the kingdom map the party stands on
+//! (`legaia_engine_core::world_map_panel_host`), and the pause-menu session
+//! resolves the staged scene word through the CDNAME map the scene host
+//! installs (`legaia_engine_core::world::pause_session`). For a Door of Light
+//! that word is the region record's return triple, which a retail capture
+//! reads as `0x55 @ (37, 109)` in cave01.
 //!
 //! `<< 7` plus a half-tile `0x40` is the 128-unit field tile grid's
 //! tile-index → world-centre conversion, the same law the walk collision
@@ -58,12 +71,49 @@
 //! returning zero, so the dwell does not start until the effect the phase-0
 //! call queued has finished.
 //!
+//! ## The "flash" is a fade to black
+//!
+//! Both arms build the same 13-halfword template on the stack before
+//! `FUN_80024E80(template, 1)` (Riremito `0x801EE160..0x801EE1A0`, Rula
+//! `0x801EE470..0x801EE4B0`): kind `2`, a `0x20`-frame ramp from `(0,0,0)` to
+//! `(0xFF,0xFF,0xFF)`, start delay `0` and hold `-1`. Kind `2` is the `B - F`
+//! blend, so the rising ramp darkens the scene to black and holds it there
+//! until the destination loads - see [`FLASH_FADE_KIND`]. Both arms also
+//! clear the post-warp pad hold `_DAT_8007B6B4` on the same frame
+//! (`sw zero,-0x494c(v0)`: Riremito at `0x801EE168`, Rula at `0x801EE478`).
+//!
+//! ## Who installs them
+//!
+//! The pause-menu session handler `FUN_801ED308` (handler id `0x30`). A
+//! Door of Light use leaves exit code `4` and a Door of Wind use `5`; the
+//! menu's close adds `3`, and the session's ramp-down arm stores
+//! `code - 1` as its next phase, whose two terminal arms hand the actor to
+//! handler id [`HANDLER_RIREMITO`] (phase 6) or [`HANDLER_RULA`] (phase 7).
+//! [`TravelArt::for_handler_id`] is that last step.
+//!
 //! `see ghidra/scripts/funcs/801ee094.txt`,
 //! `see ghidra/scripts/funcs/801ee328.txt`
 
-/// Stride of one visited-map record.
+/// Handler id of the Riremito art in the field overlay's subsystem-handler
+/// table (`FUN_801ED308` phase 6, `addiu v0,zero,0x29` at `0x801ED550`).
+pub const HANDLER_RIREMITO: u16 = 0x29;
+/// Handler id of the Rula art (`FUN_801ED308` phase 7, `0x801ED570`).
+pub const HANDLER_RULA: u16 = 0x2B;
+
+/// Fade kind the phase-exit template carries (`B - F` blend).
+pub const FLASH_FADE_KIND: i16 = 2;
+/// Ramp length of that fade, in frames (`addiu v0,zero,0x20`).
+pub const FLASH_FADE_FRAMES: i16 = 0x20;
+/// End colour of the ramp, per channel (`addiu v0,zero,0xff`).
+pub const FLASH_FADE_END: i16 = 0xFF;
+/// Hold after the ramp: `-1`, hold until the actor is killed.
+pub const FLASH_FADE_HOLD: i16 = -1;
+/// The id `FUN_80024E80` stamps (`addiu a1,zero,1`).
+pub const FLASH_FADE_ID: i16 = 1;
+
+/// Stride of one scan-table record (a CDNAME define record).
 pub const VISITED_RECORD_STRIDE: usize = 0x10;
-/// Offset of the map-name field inside a visited-map record.
+/// Offset of the define-number field inside a scan-table record.
 pub const VISITED_NAME_OFFSET: usize = 0xC;
 /// The diagnostic phase both handlers park in when the scan misses.
 pub const PHASE_UNFOUND: u16 = 0x63;
@@ -94,6 +144,16 @@ pub enum TravelArt {
 }
 
 impl TravelArt {
+    /// The art a subsystem-handler id names: [`HANDLER_RIREMITO`] or
+    /// [`HANDLER_RULA`], the two ids `FUN_801ED308`'s terminal arms install.
+    pub fn for_handler_id(id: u16) -> Option<Self> {
+        match id {
+            HANDLER_RIREMITO => Some(TravelArt::Riremito),
+            HANDLER_RULA => Some(TravelArt::Rula),
+            _ => None,
+        }
+    }
+
     /// The `FUN_801D5A24` argument phase 0 passes.
     pub fn phase0_arg(self) -> u32 {
         match self {
@@ -142,7 +202,7 @@ pub fn tile_centre(tile: i32) -> i32 {
 /// The destination the resolve phase installs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TravelDestination {
-    /// Index of the matched visited-map record.
+    /// Index of the matched scan-table record.
     pub record_index: usize,
     /// World X, `(tile_x << 7) + 0x40`.
     pub x: i32,
@@ -152,9 +212,9 @@ pub struct TravelDestination {
     pub z: i32,
 }
 
-/// Scan the visited-map table for the record whose name field resolves to
-/// `current_map`. `map_id_of` is the caller's binding for `FUN_8003CE9C`
-/// applied to `record + 0xC`.
+/// Scan the define table for the record whose number field equals
+/// `current_map` (retail's `0x80084628` word). `map_id_of` is the caller's
+/// binding for `FUN_8003CE9C` applied to `record + 0xC`.
 ///
 /// Returns `None` for the retail miss, which parks the actor in
 /// [`PHASE_UNFOUND`].
@@ -207,9 +267,9 @@ pub struct TravelArtFrame {
     /// [`RIREMITO_RESTORE_SCALE`] and [`RIREMITO_RESTORE_CLEARED_FLAG`] is
     /// cleared from its `+0x10`.
     pub restore_player: bool,
-    /// Rula's lift ended this frame: the post-warp pad hold `_DAT_8007B6B4`
-    /// is cleared (`sw zero, -0x494c(at)` at `0x801EE478`) along with the
-    /// flash quad.
+    /// The fade phase ended this frame: the post-warp pad hold
+    /// `_DAT_8007B6B4` is cleared along with the fade spawn - Riremito at
+    /// `0x801EE168`, Rula at `0x801EE478`.
     pub clear_warp_hold: bool,
 }
 
@@ -258,11 +318,14 @@ impl TravelArtActor {
     /// PORT: FUN_801ee094
     /// PORT: FUN_801ee328
     ///
-    /// Wired: `PanelActorKind::TravelArt` in
-    /// `legaia_engine_core::world_map_panel_host`. Retail installs the actor
-    /// from the Arts menu, which the engine does not model; the port binds it
-    /// to the world-map sub-list picker's state-3 hand-off instead, and that
-    /// binding is named on `World::tick_world_map_panels`.
+    /// Wired twice in `legaia_engine_core`. Retail's installer is the
+    /// pause-menu session (`FUN_801ED308` phases 6 / 7, after a Door of Light
+    /// or Door of Wind use), and the engine runs the same hand-off in
+    /// `World::tick_pause_session` (`world::pause_session`), which both play
+    /// hosts reach through the world tick. The port also binds the art to the
+    /// world-map sub-list picker's state-3 hand-off (`PanelActorKind::TravelArt`
+    /// in `world_map_panel_host`), a debug-screen binding named on
+    /// `World::tick_world_map_panels`.
     ///
     /// The world applies every output: `effect_busy` is system flag `0x0B`
     /// (set here through [`TravelArtFrame::queue_effect`], cleared by the
@@ -291,6 +354,7 @@ impl TravelArtActor {
                     return out;
                 }
                 out.spawn_flash = self.art.flash_phase() == 1;
+                out.clear_warp_hold = out.spawn_flash;
                 self.dwell = 0;
                 self.phase = 2;
             }
@@ -301,7 +365,11 @@ impl TravelArtActor {
                         return out;
                     }
                     out.spawn_flash = self.art.flash_phase() == 2;
-                    self.dwell = 0;
+                    out.clear_warp_hold = out.spawn_flash;
+                    // No `+0x9E` reset here: Riremito's phase-2 exit
+                    // (`0x801EE1D4` -> `0x801EE1DC`) only bumps the phase,
+                    // unlike phase 1's (`sh zero, 0x9e` at `0x801EE1AC`). A
+                    // retail capture reads `+0x9E = 0x28` through phases 3/4.
                     self.phase = 3;
                 }
                 None => {
@@ -375,8 +443,20 @@ mod tests {
         for _ in 0..TravelArt::Riremito.phase1_dwell() - 1 {
             assert!(!a.tick(false, 1, || None).spawn_flash);
         }
-        assert!(a.tick(false, 1, || None).spawn_flash);
+        let f = a.tick(false, 1, || None);
+        assert!(f.spawn_flash);
+        assert!(
+            f.clear_warp_hold,
+            "0x801EE168 clears the pad hold with the fade"
+        );
         assert_eq!(a.phase, 2);
+    }
+
+    #[test]
+    fn the_session_handler_ids_name_the_two_arts() {
+        assert_eq!(TravelArt::for_handler_id(0x29), Some(TravelArt::Riremito));
+        assert_eq!(TravelArt::for_handler_id(0x2B), Some(TravelArt::Rula));
+        assert_eq!(TravelArt::for_handler_id(0x30), None);
     }
 
     #[test]

@@ -103,3 +103,45 @@ fn route_bgm_events_dispatches_global_start_through_owned_vab() {
     host.route_bgm_events(&mut rec2).expect("route stop");
     assert_eq!(rec2.log, vec!["stop".to_string()]);
 }
+
+/// A scene-local id (`< 2000`) plays retail's fallback track: `FUN_800243F0`
+/// overwrites its load index with `music_01`'s raw define `+ 2`
+/// (`0x800245BC`), so the director is handed global slot 2's whole bank
+/// entry through the owned-VAB hook - never a scene bank through `start`.
+/// The id itself rides along, as retail's change-detection index does.
+#[test]
+fn a_scene_local_start_plays_the_retail_fallback_bank() {
+    let Some(mut host) = host() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    host.load_scene("teien").expect("load teien");
+    let fallback = host
+        .music_bank_entry_bytes(legaia_engine_core::scene::SCENE_LOCAL_BGM_FALLBACK_ID)
+        .expect("read")
+        .expect("the fallback id resolves");
+    assert_eq!(
+        legaia_engine_core::music_labels::prot_entry_for_bgm_id(
+            legaia_engine_core::scene::SCENE_LOCAL_BGM_FALLBACK_ID
+        ),
+        Some(990),
+        "raw 992 = extraction 990"
+    );
+    for id in [0u16, 1, 5] {
+        host.world.pending_field_events.push(FieldEvent::Bgm {
+            text_id: id,
+            sub_op: 1,
+        });
+        let mut rec = RecordingBgm::default();
+        host.route_bgm_events(&mut rec).expect("route");
+        assert_eq!(
+            rec.log,
+            vec![format!("owned({id},{})", fallback.len())],
+            "scene-local id {id}"
+        );
+    }
+    eprintln!(
+        "[ok] scene-local ids 0/1/5 in teien play the fallback entry ({} B)",
+        fallback.len()
+    );
+}

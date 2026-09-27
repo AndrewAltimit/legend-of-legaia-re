@@ -124,6 +124,9 @@ impl SceneHost {
         // `crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET`)
         self.world.reset_scene_control_block();
         let scene = Scene::load(&self.index, name)?;
+        // `_DAT_80084540`: the scene's raw CDNAME define (the `block_range`
+        // start, before the extraction-frame shift `Scene::start` carries).
+        self.world.battle.map_id = self.index.block_range(name).map_or(0, |(raw, _)| raw);
         let assets = crate::scene_assets::SceneAssets::build(&scene);
         self.scene = Some(scene);
         self.assets = Some(assets);
@@ -168,6 +171,17 @@ impl SceneHost {
         // PORT: FUN_801D9C3C, FUN_801DE478 (live wiring; kernels in
         //       `field_submode`)
         self.world.man_load_actor_reset();
+        // The loader's last act: the place-name banner - a `4C E1` text
+        // balloon carrying the MAN's section-2 name, seated when system flag
+        // 2 is armed, and the flag cleared either way.
+        // PORT: FUN_8003AEB0 (live wiring; kernel =
+        //       `crate::place_name_banner::man_load_banner`)
+        let banner_name = self
+            .field_man_cache
+            .as_ref()
+            .map(|man| crate::place_name_banner::man_scene_name_bytes(man))
+            .unwrap_or_default();
+        self.world.man_load_place_name_banner(&banner_name);
         // Scan the cached MAN for scripted gold charges (inn gate + debit
         // pairs) so the inn UI can open with this scene's real cost.
         self.scene_gold_charges = self

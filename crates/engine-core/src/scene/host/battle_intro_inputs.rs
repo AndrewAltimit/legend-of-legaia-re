@@ -60,7 +60,8 @@ impl SceneHost {
     /// row's `record[+0]` is non-zero (`FUN_801DA51C` at
     /// `0x801DA5F8..0x801DA61C`), which is what makes the scripted / boss arm
     /// reachable at all. `scene_index` is `DAT_80084540`, the loaded scene's
-    /// PROT base.
+    /// raw CDNAME define ([`crate::world::BattleState::map_id`]) - not
+    /// `Scene::start`, which is two below it in the extraction frame.
     pub fn battle_intro_style_inputs(&self, formation_id: u16) -> IntroStyleInputs {
         IntroStyleInputs {
             battle_flags: self
@@ -71,7 +72,7 @@ impl SceneHost {
                 .map(|d| d.per_battle_flags())
                 .unwrap_or(0),
             formation_slot0: self.battle_intro_slot0(formation_id),
-            scene_index: self.scene.as_ref().map(|s| s.start).unwrap_or(0),
+            scene_index: self.world.battle.map_id,
         }
     }
 }

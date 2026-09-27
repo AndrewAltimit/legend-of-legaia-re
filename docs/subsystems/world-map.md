@@ -513,7 +513,7 @@ into the completion gate the scene manager polls.
 
 | Actor | Phases | Shape |
 |---|---|---|
-| `FUN_801ED308` | 8, JT `0x801CF4FC` | Brightness fade/flash. |
+| `FUN_801ED308` | 8, JT `0x801CF4FC` | Pause-menu session (handler `0x30`): ramp, menu spawn, park, Door hand-off. |
 | `FUN_801ED590` | 4, if/else ladder | Two-option sub-list. |
 | `FUN_801EDF00` | 4, if/else ladder | Return to title. |
 | `FUN_801EE5D4` | 5, JT `0x801CF5E4` | Screen-fill fade. |
@@ -521,7 +521,7 @@ into the completion gate the scene manager polls.
 | `FUN_801EF014` | 4, if/else ladder | Flag-window picker. |
 | `FUN_801D0D38` | none - an idle timer | Field party HUD. |
 
-Four details are worth stating because they are invisible in the decompiled C
+Five details are worth stating because they are invisible in the decompiled C
 and each one changes behaviour:
 
 - **Fall-through between arms.** `FUN_801ED308`'s case 0 and `FUN_801EE5D4`'s
@@ -539,6 +539,10 @@ and each one changes behaviour:
   `ctx[+0x54] = _DAT_8007BB88 + 2`, so option 0 closes the window (state 2)
   and option 1 takes the `FUN_800266E0` / `FUN_801D84B4` hand-off (state 3);
   cancel goes straight to state 2.
+- **`FUN_801ED308` is the pause-menu session.** The menu button's subsystem
+  actor reaches it from its default handler `7` (`FUN_801F1F4C`), and its two
+  terminal arms are the Door of Light / Door of Wind hand-offs described in
+  [the hand-off section](#the-save-screen-hand-off).
 - **`FUN_801ED308`'s tint capture also spawns an actor.** The arm at
   `0x801ED398..0x801ED3E0` saves the live tint triple `0x8007BF5D..5F` into
   `0x8007B634..636`, zeroes the triple and its `+0xA1..A3` mirror, clears the
@@ -624,7 +628,9 @@ Three inputs it supplies are the **port's**, not retail's:
   fade/flash exits pick `0x29` and `0x2B`, which are not. So `ActorExit::apply`
   makes all four stores and `PanelActorHost::retire` drops the actor,
   recording the handler pair in `PanelFrame::exits` rather than following it.
-  Reading the rest of that table is what would close this.
+  The pause-menu path follows those two ids itself
+  (`World::tick_pause_session`, through `TravelArt::for_handler_id`); the
+  panel host's debug fade/flash does not.
 - **The chords that install an actor.** Retail reaches this band from debug
   branches in the controller. The engine gates it behind the same
   `debug_enabled` flag the top-view toggle uses and binds Square (sub-list),
@@ -778,12 +784,19 @@ only two places - `FUN_801ED308` here and the menu overlay's save/load screens:
 
 `FUN_801DC6B4`'s epilogue returns `counter >= 6` - the same threshold the hold
 phase waits on - and the ramp-down arm reads the counter as `phase = counter - 1`.
-So the seed the completion screen leaves is a **return value**, not a timer:
-`4` (`0x801D8B64`) becomes `7` and selects phase 6 and handler `0x29`, `5`
-(`0x801D8D30`) becomes `8` and selects phase 7 and handler `0x2B`. The engine
-mirrors this in `PanelActorHost::release_flash_with`, which refuses to write
-the counter unless a hand-off is outstanding, because in retail nothing else
-writes it at all.
+So the seed the menu leaves is a **return value**, not a timer. The two seeds
+that reach the terminal arms are the Door items' Use screens, not a save-side
+completion screen as this page used to say: `FUN_801D8A58` consumes a Door of
+Light (`addiu a0,zero,0x88` into `jal 0x80042310` at `0x801D8B20..0x801D8B24`)
+and stores `4` (`0x801D8B6C`), `FUN_801D8B90` consumes a Door of Wind (`0x89`
+at `0x801D8CC8..0x801D8CD0`) and stores `5` (`0x801D8D3C`). The menu's close
+adds `3`, so `7` selects phase 6 and handler `0x29` (Riremito) and `8` selects
+phase 7 and handler `0x2B` (Rula) - see
+[field-locomotion.md](field-locomotion.md) for the arts and the engine's
+`World::tick_pause_session`, which runs this hand-off for the two items on both
+play hosts. The panel host mirrors the counter in
+`PanelActorHost::release_flash_with`, which refuses to write it unless a
+hand-off is outstanding, because in retail nothing but the menu writes it.
 
 **Several of these machines park rather than exit**, and that is the fact a
 host has to know before it installs one. `FUN_801EE90C` entered at phase 0
@@ -853,8 +866,8 @@ world-map overlay data region (`0x801F28F0..0x801F2Fxx`) and the dev context
   `overlay_world_map_walk_801ecd0c.txt`) - a destination / map-list picker
   panel keyed on `ctx[+0x54]` (6-case jump table `0x801CF4E4`), sizing off the
   panel descriptor at `0x801F2B98[+0x5C/+0x5E]`. Case 0 seeds `ctx[+0x94]` from
-  the string list at `0x801F2BEC` (`FUN_80032434`) and reads the visited-map
-  count `_DAT_8007B806`. The list cursor is the same swap-wrap picker
+  the string list at `0x801F2BEC` (`FUN_80032434`) and reads the CDNAME
+  define-table count `_DAT_8007B806`. The list cursor is the same swap-wrap picker
   `FUN_801ECA08` runs; documented-not-ported (interwoven with the panel /
   prompt draw path).
 - **`FUN_801E9F64`** (659 bytes, `overlay_world_map_walk_801e9f64.txt`) - the
@@ -1112,8 +1125,8 @@ not factor into `engine-vm` cleanly:
 |---|---|---|
 | `FUN_801E5338` | `801e5338.txt` | Sparkle emitter: spawns up to 8 `SPRT` particles at `rand()` offsets (`FUN_80056798`) around `ctx[+0x14/+0x16]`, animates each through a 10-frame sprite anim, posts them via `AddPrim` (`FUN_8003D2C4`); phase `2` waits for all to retire, then sets bit `0x8` |
 | `FUN_801EA9B0` | `overlay_cutscene_dialogue_801ea9b0.txt` | Dev-menu row-action dispatcher. Ported - see [the panel window system](#the-panel-window-system---fun_801e9b3c--fun_801e9dc8--fun_801ea9b0) |
-| `FUN_801EE094` | `801ee094.txt` | **Riremito** travel-art actor (string `"ON RIREMITO"`): scans the visited-map table (`_DAT_8007B806` count, records at `+0xC`, `0x10` stride) for the current map `_DAT_80084628`; a miss parks phase `99` and prints `"UNFIND MAP NUMBER %d"` |
-| `FUN_801EE328` | `801ee328.txt` | **Rula** travel-art actor (string `"ON RULA"`): same map-table search; phase 2 raises the halt bit on `_DAT_8007C364[+0x10]`, scrolls `_DAT_8007C364[+0x16]` and spawns a flash quad via `FUN_80024E80` |
+| `FUN_801EE094` | `801ee094.txt` | **Riremito** travel-art actor (string `"ON RIREMITO"`): scans the CDNAME define table (`0x80088758`, `_DAT_8007B806` count, `0x10` stride, `s16` define number at `+0xC`) for the TOC index `_DAT_80084628`; a miss parks phase `99` and prints `"UNFIND MAP NUMBER %d"` |
+| `FUN_801EE328` | `801ee328.txt` | **Rula** travel-art actor (string `"ON RULA"`): same define-table search; phase 2 raises the halt bit on `_DAT_8007C364[+0x10]`, scrolls `_DAT_8007C364[+0x16]` and spawns a hold-at-black fade via `FUN_80024E80` |
 | `FUN_801EF014` | `801ef014.txt` | Destination list-picker actor over the tile descriptor `_DAT_8007B450`: counts selectable cells (`+1`), drives a cursor prompt (`FUN_801E9DC8`), commits the pick into `_DAT_8007BB88`, then exits via `ctx[+0x50] = 0x1A` |
 | `FUN_801E3E00` | `overlay_world_map_walk_801e3e00.txt` | Scripted-move actor tick: dispatches on the opcode at `script[ctx[+0x9e]]` (`script = ctx[+0x94]`); op `0` retires (`ctx[+0x10] |= 8`), op `1` rewinds the cursor `ctx[+0x9e]`, op `2` reads three-byte big-endian operands via `FUN_8003CE9C` into a target block (`ctx[+0x74]` and the screen-scroll fields `ctx[+0x16]/+0x3C/+0x3E`) and advances the cursor. A world-map scripted-camera / actor mover; `j 0x801E4420`/`0x801E444C` are shared-tail exits, not calls |
 
@@ -2967,7 +2980,7 @@ Standard tick functions observed in the world-map render passes:
 | Tick function | Where | Role |
 |---|---|---|
 | `FUN_80021DF4` (SCUS) | per-frame actor tick | Steps the move VM via `FUN_80023070(actor)`. The eight actors in list `_DAT_8007C350` use this tick. |
-| `FUN_8003BC08` (SCUS) | per-actor tick | Calls the motion VM (`FUN_8003774C`), move-buffer setup (`FUN_800204F8`), and overlay helper `FUN_801D79E8`. The fourteen actors in list `_DAT_8007C354` use this tick. |
+| `FUN_8003BC08` (SCUS) | per-actor tick | Calls the motion VM (`FUN_8003774C`), move-buffer setup (`FUN_800204F8`), and the field overlay's visibility cull `FUN_801D79E8` ([motion-vm.md](motion-vm.md)). The fourteen actors in list `_DAT_8007C354` use this tick. |
 | `FUN_801E76D4` (world_map overlay) | top-view debug controller | Top-view toggle + camera scroll/azimuth/zoom + dev-menu render. Returns immediately when top view is off - it is not the overworld walk tick. |
 | `FUN_801DA51C` (world_map overlay) | per-entity tick | 5-state SM on `entity[+0x8A]` (see [actor-vm](actor-vm.md)). |
 | `FUN_801D1344` (world_map overlay) | horizon gate-arm wrapper | See the gate-arm chain below. |

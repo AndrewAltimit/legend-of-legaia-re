@@ -1,19 +1,21 @@
-//! Lane B3: the menu-staged transitions actually drain.
+//! The menu-staged Door uses drain through the travel arts.
 //!
 //! A committed Door of Wind pick stages retail's `0x80084628`/`24`/`2C`
 //! triple on [`crate::world::MenuState::pending_warp`]; a committed Door of Light stages
-//! [`crate::world::MenuState::pending_escape`]. Both were disclosed as undrained. The
-//! world tick's `World::drain_staged_menu_warp` now converts them into the
-//! named scene transition the scene host consumes
+//! [`crate::world::MenuState::pending_escape`]. The world tick's
+//! `World::drain_staged_menu_warp` hands either to the pause-menu session
+//! (`FUN_801ED308`), whose ramp-down installs the travel art its exit code
+//! names - Rula (`FUN_801EE328`) for the Door of Wind's `5 + 3`, Riremito
+//! (`FUN_801EE094`) for the Door of Light's `4 + 3` - and the art's resolve
+//! issues the named scene transition the scene host consumes
 //! ([`World::pending_named_scene_transition`]).
 //!
-//! The id-space grounding (what unblocked the drain): a placement record's
-//! `scene_id` is the destination scene's **raw CDNAME TOC index** - the
-//! on-disc values are `0x55`/`0xF4`/`0x187` (the `map01/02/03` kingdom
-//! bases, the same words `kingdom_index_for_scene_base` maps) plus `0x162`
-//! (`son`, Soren Camp) and `0x215` (`korout`, Sol exterior). The tile pair
-//! seats the party at `(tile << 7) + 0x40`, the world-map arrival kernel's
-//! own conversion (`FUN_801EE328`).
+//! The id-space grounding: a placement record's `scene_id` is the
+//! destination scene's **raw CDNAME TOC index** - the on-disc values are
+//! `0x55`/`0xF4`/`0x187` (the `map01/02/03` kingdom bases, the same words
+//! `kingdom_index_for_scene_base` maps) plus `0x162` (`son`, Soren Camp) and
+//! `0x215` (`korout`, Sol exterior). The tile pair seats the party at
+//! `(tile << 7) + 0x40`, the arts' own conversion.
 //!
 //! The disc-free tests drive the drain over a hand-built TOC map; the
 //! disc-gated one proves the real disc's placement table resolves through
@@ -34,10 +36,33 @@ fn toc_map() -> legaia_prot::cdname::IndexMap {
     map
 }
 
-#[test]
-fn a_staged_door_of_wind_warp_drains_to_a_named_scene_transition() {
+/// A world with a live player actor: the arts' opener program (flag `0x0B`,
+/// cleared by the program's own state 4) steps only while a player is seated.
+fn world_with_player() -> World {
     let mut w = World::new();
     w.install_scene_toc_names(toc_map());
+    w.spawn_actor(0).active = true;
+    w.player_actor_slot = Some(0);
+    w.mode = SceneMode::Field;
+    w
+}
+
+/// Tick until the art issues its transition; the frame count it took.
+fn run_until_transition(w: &mut World, max: usize) -> Option<usize> {
+    for n in 1..=max {
+        let _ = w.tick();
+        if w.pending_named_scene_transition.is_some() {
+            return Some(n);
+        }
+    }
+    None
+}
+
+#[test]
+fn a_staged_door_of_wind_warp_runs_rula_then_transitions() {
+    use legaia_engine_core::world::pause_session::PauseSessionStage;
+    use legaia_engine_vm::travel_art_actor::TravelArt;
+    let mut w = world_with_player();
     w.menu.pending_warp = Some(StagedWarp {
         scene_id: 0x55,
         menu_x: 96,
@@ -45,11 +70,37 @@ fn a_staged_door_of_wind_warp_drains_to_a_named_scene_transition() {
     });
     let _ = w.tick();
     assert!(w.menu.pending_warp.is_none(), "the stage is consumed");
+    assert!(w.pause_session_active(), "the session took it");
+    assert_eq!(
+        w.pending_named_scene_transition, None,
+        "no direct transition: the art runs first"
+    );
+    // The session's ramp-down reaches its phase-7 arm and hands on to 0x2B.
+    let mut art = None;
+    for _ in 0..60 {
+        let _ = w.tick();
+        if let Some(s) = w.menu.pause_session.as_ref()
+            && let PauseSessionStage::Art(a) = &s.stage
+        {
+            art = Some((s.handler_id, a.art));
+            break;
+        }
+    }
+    assert_eq!(art, Some((0x2B, TravelArt::Rula)));
+    let frames = run_until_transition(&mut w, 600).expect("Rula resolves");
+    assert!(frames > 10, "the lift takes time");
     assert_eq!(
         w.pending_named_scene_transition,
         Some(("map01".to_string(), 96, 25, 0)),
         "Rim Elm's record warps onto the Drake kingdom map at its tile"
     );
+    let fade = w
+        .presentation
+        .fade
+        .as_ref()
+        .expect("the phase exit's fade is up");
+    assert_eq!(fade.kind, 2, "the B - F fade to black");
+    assert_eq!(fade.mode[1], -1, "held until the destination loads");
 }
 
 #[test]
@@ -58,14 +109,13 @@ fn a_field_scene_destination_resolves_too() {
     // kingdom overworld - the named-transition drain routes non-`mapNN`
     // names through `enter_field_scene`, so the drain must not special-case
     // the kingdom bases.
-    let mut w = World::new();
-    w.install_scene_toc_names(toc_map());
+    let mut w = world_with_player();
     w.menu.pending_warp = Some(StagedWarp {
         scene_id: 0x162,
         menu_x: 22,
         menu_y: 62,
     });
-    let _ = w.tick();
+    assert!(run_until_transition(&mut w, 600).is_some());
     assert_eq!(
         w.pending_named_scene_transition,
         Some(("son".to_string(), 22, 62, 0))
@@ -75,7 +125,8 @@ fn a_field_scene_destination_resolves_too() {
 #[test]
 fn an_unresolvable_scene_word_is_dropped_not_invented() {
     // Retail's miss arm is the `UNFIND MAP NUMBER %d` park (`FUN_801EE328`
-    // phase 0x63): nothing warps. No TOC map installed = every id misses.
+    // phase 0x63): nothing warps. No TOC map installed = every id misses,
+    // and the engine drops the use before installing an art.
     let mut w = World::new();
     w.menu.pending_warp = Some(StagedWarp {
         scene_id: 0x55,
@@ -84,6 +135,7 @@ fn an_unresolvable_scene_word_is_dropped_not_invented() {
     });
     let _ = w.tick();
     assert!(w.menu.pending_warp.is_none(), "consumed either way");
+    assert!(!w.pause_session_active());
     assert_eq!(
         w.pending_named_scene_transition, None,
         "no invented destination"
@@ -91,8 +143,10 @@ fn an_unresolvable_scene_word_is_dropped_not_invented() {
 }
 
 #[test]
-fn a_staged_escape_returns_to_the_visited_kingdom_tile() {
-    let mut w = World::new();
+fn a_staged_escape_runs_riremito_back_to_the_visited_kingdom_tile() {
+    use legaia_engine_core::world::pause_session::PauseSessionStage;
+    use legaia_engine_vm::travel_art_actor::TravelArt;
+    let mut w = world_with_player();
     w.enter_world_map();
     w.world_map
         .ctrl
@@ -105,6 +159,21 @@ fn a_staged_escape_returns_to_the_visited_kingdom_tile() {
     w.menu.pending_escape = true;
     let _ = w.tick();
     assert!(!w.menu.pending_escape, "the stage is consumed");
+    let mut art = None;
+    for _ in 0..60 {
+        let _ = w.tick();
+        if let Some(s) = w.menu.pause_session.as_ref()
+            && let PauseSessionStage::Art(a) = &s.stage
+        {
+            art = Some((s.handler_id, a.art));
+            break;
+        }
+    }
+    assert_eq!(art, Some((0x29, TravelArt::Riremito)));
+    assert!(
+        run_until_transition(&mut w, 600).is_some(),
+        "Riremito resolves"
+    );
     assert_eq!(
         w.pending_named_scene_transition,
         Some(("map02".to_string(), 40, 50, 0)),
@@ -113,11 +182,30 @@ fn a_staged_escape_returns_to_the_visited_kingdom_tile() {
 }
 
 #[test]
+fn the_arrival_drops_the_held_fade() {
+    let mut w = world_with_player();
+    w.menu.pending_warp = Some(StagedWarp {
+        scene_id: 0x162,
+        menu_x: 22,
+        menu_y: 62,
+    });
+    assert!(run_until_transition(&mut w, 600).is_some());
+    assert!(w.presentation.fade.is_some());
+    // The scene host takes the transition; the next tick clears the fade the
+    // old scene's actor list would have taken with it.
+    w.pending_named_scene_transition = None;
+    let _ = w.tick();
+    assert!(w.presentation.fade.is_none());
+    assert!(!w.pause_session_active());
+}
+
+#[test]
 fn an_escape_with_no_visited_record_is_dropped() {
     let mut w = World::new();
     w.menu.pending_escape = true;
     let _ = w.tick();
     assert!(!w.menu.pending_escape);
+    assert!(!w.pause_session_active());
     assert_eq!(w.pending_named_scene_transition, None);
 }
 

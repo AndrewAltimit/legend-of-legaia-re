@@ -579,6 +579,39 @@ fn prologue_handoff_fires_once_on_confirm_in_the_opening_chain() {
     assert_eq!(world.take_prologue_handoff(true), None);
 }
 
+/// The prologue skip's `town01` entry is not a free-roam picker visit. The
+/// skip clears the chain flag and the timeline before any host enters the
+/// scene, so a host that asked only "is the opening running?" (the browser
+/// page's old test) staged it - and staging drops town01's entry-window BGM
+/// pause, the opening's silent dawn. Both hosts ask
+/// `World::picker_entry_stages_free_roam` now.
+#[test]
+fn prologue_skip_town01_entry_is_not_a_picker_visit() {
+    let town01 = legaia_asset::new_game::OPENING_SCENE;
+    let mut world = World::new();
+    world.set_active_scene_label(legaia_asset::new_game::OPENING_CUTSCENE_SCENE);
+    world.cutscene.opening_chain_active = true;
+    assert!(
+        !world.picker_entry_stages_free_roam(town01, false),
+        "an opening-chain leg is never staged"
+    );
+    world.arm_prologue_handoff();
+    assert_eq!(world.take_prologue_handoff(true), Some(town01));
+    // The skip's own teardown left nothing the chain/timeline tests see.
+    assert!(!world.cutscene.opening_chain_active);
+    assert!(!world.cutscene_timeline_active());
+    assert!(!world.stage_picker_entry(town01, false));
+    assert!(!world.field_vm.free_roam_staging);
+
+    // A plain picker visit stages; a resume and an overworld label do not.
+    let mut picker = World::new();
+    assert!(picker.picker_entry_stages_free_roam("town0c", false));
+    assert!(!picker.picker_entry_stages_free_roam("town0c", true));
+    assert!(!picker.picker_entry_stages_free_roam("map01", false));
+    assert!(picker.stage_picker_entry("town01", false));
+    assert!(picker.field_vm.free_roam_staging);
+}
+
 #[test]
 fn prologue_handoff_only_fires_while_the_opening_chain_plays() {
     let mut world = World::new();

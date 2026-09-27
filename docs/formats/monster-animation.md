@@ -97,10 +97,10 @@ Consumers:
   map - a surviving target with no get-up entry queues `+0x1EF` (light
   flinch, with the exit-to-idle flag), any other hit queues `+0x1F1`
   (knockdown);
-- the anim commit `FUN_8004AD80` chains a finished knockdown (record tag 4)
-  into `+0x1F2` (get-up) while the actor lives, or anim id 7 for a downed
-  party member, and tests the queued id against `+0x1EF/+0x1F0/+0x1F3` for
-  the counter/guard window;
+- the anim commit `FUN_8004AD80` stages behind a committed knockdown
+  (record tag 4) the get-up `+0x1F2` while the actor lives, or anim id 7 for a
+  downed party member (whose own commit stages 8), and tests the queued id
+  against `+0x1EF/+0x1F0/+0x1F3` for the counter/guard window;
 - the battle-action SM (`FUN_801E295C`) resolves monster attack anims by
   **first-byte search** over the entry table (`FUN_80050E2C` with tags
   `0x20`/`1`/`0x21`/`0x22`), staging the returned *index*.
@@ -437,8 +437,14 @@ Three consequences of that commit shape:
   idle at the natural end** (the tick clobbers `+0x1DA` to `0` at
   `0x80047B44` before committing - the exit-to-idle that returns a hit
   reaction to the idle loop, set with bit 0 by the damage primitive
-  `FUN_800402F4`); bit 3 = knockdown latch (set by the commit's tag-4
-  chain; blocks the root-motion drive below). The two commit sites clear
+  `FUN_800402F4`); bit 3 = the root-motion latch (blocks the drive
+  below). Its writers are the commit of a **tag-8** entry
+  (`0x8004BF28..0x8004BF4C`) - the end of a downed party member's
+  knockdown -> `7` -> `8` chain - and the monster-death arm
+  (`0x8004B664..0x8004B674`); the knockdown's own commit clears the whole
+  byte, so a knockdown is never latched. An earlier reading here credited
+  the bit to the tag-4 chain itself (see
+  [battle.md](../subsystems/battle.md#the-commits-clip-tag-ladder)). The two commit sites clear
   the byte **asymmetrically**: the mid-clip event path clears bits 0-1
   only (`andi 0xFC`) while the natural-end path clears bits 0-2
   (`andi 0xF8`) - so a pending bit 2 survives an event-path commit onto

@@ -717,13 +717,10 @@ fn class_counts_matches_entries() {
     assert_eq!(counts.get(&Class::Empty).copied(), Some(1));
 }
 
-/// A global-pool track owns the BGM region: a scene swap under it must not
-/// upload the scene bank over its samples. Nothing playing, or a scene-local
-/// track, restages as before.
+/// A scene-local id loads the `music_01` bank's slot-2 entry in retail
+/// (`FUN_800243F0`, `0x800245BC`: `*(0x8007BC64) + 2`).
 #[test]
-fn scene_bank_restage_skips_under_a_live_global_track() {
-    assert!(scene_bank_restage_wanted(None));
-    assert!(scene_bank_restage_wanted(Some(12)));
-    assert!(!scene_bank_restage_wanted(Some(GLOBAL_BGM_BASE)));
-    assert!(!scene_bank_restage_wanted(Some(2016)));
+fn scene_local_bgm_falls_back_to_global_slot_two() {
+    assert_eq!(SCENE_LOCAL_BGM_FALLBACK_ID, 2002);
+    const { assert!(SCENE_LOCAL_BGM_FALLBACK_ID >= GLOBAL_BGM_BASE) };
 }

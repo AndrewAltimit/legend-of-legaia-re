@@ -841,17 +841,24 @@ impl LegaiaMinigames {
                 let headers = legaia_engine_core::baka_fighter::roster_clip_headers(|i| {
                     self.baka_entry(i).map(<[u8]>::to_vec)
                 });
-                let cameras = overlay_image(
+                let img = overlay_image(
                     &self.prot,
                     &self.entries,
                     legaia_asset::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32,
-                )
-                .map(|img| legaia_engine_core::baka_duel_scene::parse_special_cameras(&img))
-                .unwrap_or_default();
-                self.baka = Some(
-                    f.with_roster_clip_headers(headers)
-                        .with_special_cameras(cameras),
                 );
+                let cameras = img
+                    .as_deref()
+                    .map(legaia_engine_core::baka_duel_scene::parse_special_cameras)
+                    .unwrap_or_default();
+                // The impact pair's four effect templates, so this page's
+                // duel spawns and steps the same parts the play hosts draw.
+                let f = f
+                    .with_roster_clip_headers(headers)
+                    .with_special_cameras(cameras);
+                self.baka = Some(match img.as_deref() {
+                    Some(i) => f.with_impact_overlay(i),
+                    None => f,
+                });
                 true
             }
             None => false,

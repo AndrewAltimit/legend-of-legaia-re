@@ -1377,19 +1377,27 @@ impl World {
             .iter()
             .filter_map(|&o| instr.get(o).copied())
             .collect();
-        let items = stock_ids
-            .iter()
-            .map(|&id| crate::shop::ShopItem {
-                item_id: id,
-                price: data.price(id) as u32,
-            })
-            .collect();
         // Derive the vendor's identity + seru-trade schedule phase from the
         // shop's record (name + stock), so this vendor's trade offers differ
         // from every other trader's at the same play time.
         let vendor_id = legaia_asset::seru_trade::vendor_id_from_shop(&rec.name, &stock_ids);
         let vendor_offset = legaia_asset::seru_trade::vendor_bucket_offset(&rec.name, &stock_ids);
-        let inv = crate::shop::ShopInventory::new(0, items);
+        // The rows themselves come from retail's builder over the record's
+        // own id run (`[count][ids...]`, padding included): the hoisted
+        // band first, and the record's last three entries only for a party
+        // carrying or wearing the Platinum Card.
+        // PORT: FUN_80030628 (live wiring; kernel =
+        //       `crate::menu_list_rows::build_shop_buy_rows`)
+        let count = usize::from(instr[rec.count_off]);
+        let record_ids = instr
+            .get(rec.count_off + 1..rec.count_off + 1 + count)
+            .unwrap_or(&[]);
+        let inv = crate::shop::ShopInventory::from_stock_record(
+            0,
+            record_ids,
+            self.shop_tail_rows_allowed(),
+            |id| data.price(id),
+        );
         let mut session = crate::shop::ShopSession::new(inv);
         session.vendor_id = vendor_id;
         session.vendor_bucket_offset = vendor_offset;
@@ -1397,6 +1405,25 @@ impl World {
         self.shops.shop_armed = true;
         self.shops.shop_open = true;
         true
+    }
+
+    /// The shop buy list's tail probe over the live party: a Platinum Card in
+    /// the bag's active window, or a `0xFF` byte in any present member's
+    /// equipment block.
+    ///
+    /// REF: FUN_80030628 (ported as [`crate::menu_list_rows::shop_tail_rows_allowed`])
+    pub fn shop_tail_rows_allowed(&self) -> bool {
+        let card = crate::menu_list_rows::SHOP_TAIL_CARD_ID;
+        let held = self.party.inventory.get(&card).is_some_and(|&c| c > 0);
+        let members = usize::from(self.party.party_count);
+        let equipment = (0..members).filter_map(|m| {
+            self.party
+                .roster
+                .members
+                .get(self.party_roster_slot(m))
+                .map(|r| r.equipment().slots)
+        });
+        crate::menu_list_rows::shop_tail_rows_allowed(held, equipment)
     }
 
     /// Drain the shop the field VM just opened (see [`Self::try_arm_field_shop`])

@@ -121,12 +121,19 @@ impl World {
                 }
             }
         }
-        let mut cues: Vec<(u8, u8)> = self
-            .npcs
-            .anim_cues
-            .drain()
-            .map(|(slot, (_count, base_id, _frames))| (slot, base_id))
-            .collect();
+        let drained = std::mem::take(&mut self.npcs.anim_cues);
+        let mut cues: Vec<(u8, u8)> = Vec::with_capacity(drained.len());
+        for (slot, (count, base_id, frames)) in drained {
+            // Retail's `+0x5E` latch: a single-move cue is a `+0x5C` write,
+            // and the consumer latches it as the playing move; a sequence
+            // cue is not one move, so nothing is latched for the slot.
+            if count == 1 && frames.is_empty() {
+                self.npcs.clip_current.insert(slot, base_id);
+            } else {
+                self.npcs.clip_current.remove(&slot);
+            }
+            cues.push((slot, base_id));
+        }
         // The cue map is a hash map; apply in slot order so both hosts see
         // the same sequence.
         cues.sort_unstable();

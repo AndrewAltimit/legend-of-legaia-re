@@ -232,7 +232,7 @@ guard over a fill the port does not perform.
 
 # --- native: the window's redraw tick loop ---------------------------------
 #
-# All five arms skip the same sixteen kernels, and for one reason: the arm
+# All five arms skip the same kernels, and for one reason: the arm
 # exists to keep the world frozen while something else owns the frame. What
 # each arm does NOT skip is the interesting half - every one of them steps the
 # field party HUD's decision kernel, because its answer is read back by a draw
@@ -259,6 +259,7 @@ skips = [
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
     "rebind_live_npc_models",
+    "sync_battle_render",
     "sync_dialog_panel",
     "sync_text_balloon",
     "tick_dev_menu",
@@ -287,6 +288,7 @@ skips = [
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
     "rebind_live_npc_models",
+    "sync_battle_render",
     "sync_dialog_panel",
     "sync_text_balloon",
     "tick_dev_menu",
@@ -317,6 +319,7 @@ skips = [
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
     "rebind_live_npc_models",
+    "sync_battle_render",
     "sync_dialog_panel",
     "sync_text_balloon",
     "tick_dev_menu",
@@ -346,6 +349,7 @@ skips = [
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
     "rebind_live_npc_models",
+    "sync_battle_render",
     "sync_dialog_panel",
     "sync_text_balloon",
     "tick_dev_menu",
@@ -548,6 +552,12 @@ reason = "The window has to upload a re-bound mesh before it can draw it, so the
 
 [[frame_kernel]]
 host = "native"
+kernel = "sync_battle_render"
+host_only = true
+reason = "The Field <-> Battle mode-edge latch (battle load / teardown: meshes, VRAM, and the party's clips, art banks and art records). The page latches the same edge as the first step of its `tick_battle_presentation` (play_battle.rs), per sim tick, so it has no separately named step; the window names it because the load also rebuilds wgpu buffers. It is called inside the tick loop right after the scene tick - the display-frame-only call left up to three battle ticks of a catch-up frame without party clips - and once more after the loop, where it is a no-op unless no tick ran."
+
+[[frame_kernel]]
+host = "native"
 kernel = "sync_dialog_panel"
 host_only = true
 reason = "The window's own typed-out dialog panel, used only while `World::toggles.use_vm_dialogue` is off - the pre-field-VM fallback. Both hosts draw the production path from the shared `DialogSnapshot`, which needs no per-frame host step."
@@ -663,8 +673,8 @@ reason = "One kernel with the projection on opposite sides of the wasm boundary.
 native = "tick_minigame_extras"
 web = "tick_minigame_ui"
 native_only = ["glyph_u", "hud_vram_rects", "parse_sprite_table", "stage_dance_hud_vram", "still_sheet_rgba"]
-web_only = ["apply", "course", "drain_minigame_sfx_cues", "enqueue", "exit_dance", "last_result", "opponent_roster", "phase", "play_xa_shout", "read_span_sectors", "round", "settle_muscle_contest", "sync_sfx_residency", "take_cues", "tick_time_meter", "upload", "with_spu"]
-reason = "The sub-step table in docs/tooling/host-drift.md is this row in long form. The fishing VENUE actors are no longer a difference: both hosts' `tick_fishing_actors` is the one engine kernel `fishing_venue::tick_fishing_venue_on_host` plus `VenueCameraWrites::apply` onto that host's camera - `apply` lists as web-only only because the native window has a host fn of its own named `apply` (window/field_render.rs), which the walk excludes by name. Native-only `glyph_u`: the window resolves each Baka chrome glyph draw's stamped cell rect against its parsed widget table and carries it beside the draw; both browser hosts consume the same chrome frame (the play page prints it through the shared label kernel and plays its announcer line in `tick_baka_ui`; the minigames page stamps `glyph_u` in its `baka_chrome_json` export and samples the strip there, outside this kernel). `hud_vram_rects` / `stage_dance_hud_vram` are the window's dance HUD page residency; the page stages the same rects through `sync_dance_hud_residency` and its `play_dance_art` exports. `parse_sprite_table` and `still_sheet_rgba` are the Muscle Dome hub assets and ringside still, which the page loads and bakes in its own `play_mg_muscle_hub_*` exports. The hub's screen timers are one engine kernel on both hosts (`muscle_ringside::HubTimers::tick`), so their leg-edge reads list on neither side; `course` / `round` are the page's staged-opponent read for its dome mesh (`enter_muscle_ui`). `play_xa_shout` / `read_span_sectors` are the page's CD-XA clip path under the Baka chrome's and the dome hub's announcer lines - the window plays the same lines through `AudioBgmDirector::play_xa_clip`, an output this kernel does not name. `phase` / `last_result` are the page's slot payout-edge detector (`tick_slot_ui`) feeding its cabinet marquee's credit caption; the window runs the machine as a text HUD with no marquee. Web-only: the page drain and settle spellings plus the dome time meter, each of which the window steps as its own named kernel, and the SPU pair (upload, with_spu) behind the dome tally voice - the native window reaches the identical key-on through its own AudioBgmDirector, which is an output this kernel does not name. `sync_sfx_residency` is the page's first minigame cue loading its SFX banks, which fills the slot-2 / slot-6 region for the current mode; the window runs the same `World::sync_sfx_residency` every tick in `BootSession::route_field_sfx`, also outside this kernel."
+web_only = ["apply", "course", "drain_minigame_sfx_cues", "enqueue", "exit_dance", "last_result", "opponent_roster", "phase", "play_xa_shout", "read_span_sectors", "round", "settle_muscle_contest", "sfx_region_free", "sync_sfx_residency", "take_cues", "tick_time_meter", "upload_resident_sfx", "with_spu"]
+reason = "The sub-step table in docs/tooling/host-drift.md is this row in long form. The fishing VENUE actors are no longer a difference: both hosts' `tick_fishing_actors` is the one engine kernel `fishing_venue::tick_fishing_venue_on_host` plus `VenueCameraWrites::apply` onto that host's camera - `apply` lists as web-only only because the native window has a host fn of its own named `apply` (window/field_render.rs), which the walk excludes by name. Native-only `glyph_u`: the window resolves each Baka chrome glyph draw's stamped cell rect against its parsed widget table and carries it beside the draw; both browser hosts consume the same chrome frame (the play page prints it through the shared label kernel and plays its announcer line in `tick_baka_ui`; the minigames page stamps `glyph_u` in its `baka_chrome_json` export and samples the strip there, outside this kernel). `hud_vram_rects` / `stage_dance_hud_vram` are the window's dance HUD page residency; the page stages the same rects through `sync_dance_hud_residency` and its `play_dance_art` exports. `parse_sprite_table` and `still_sheet_rgba` are the Muscle Dome hub assets and ringside still, which the page loads and bakes in its own `play_mg_muscle_hub_*` exports. The hub's screen timers are one engine kernel on both hosts (`muscle_ringside::HubTimers::tick`), so their leg-edge reads list on neither side; `course` / `round` are the page's staged-opponent read for its dome mesh (`enter_muscle_ui`). `play_xa_shout` / `read_span_sectors` are the page's CD-XA clip path under the Baka chrome's and the dome hub's announcer lines - the window plays the same lines through `AudioBgmDirector::play_xa_clip`, an output this kernel does not name. `phase` / `last_result` are the page's slot payout-edge detector (`tick_slot_ui`) feeding its cabinet marquee's credit caption; the window runs the machine as a text HUD with no marquee. Web-only: the page drain and settle spellings plus the dome time meter, each of which the window steps as its own named kernel, and the SPU calls (`spu_layout::sfx_region_free` / `upload_resident_sfx`, with_spu) behind the dome tally voice, which stage the resident SFX banks through the layout kernel on the page's first cue - the native window stages them at boot and reaches the identical key-on through its own AudioBgmDirector, an output this kernel does not name. `sync_sfx_residency` is the page's first minigame cue loading its SFX banks, which fills the slot-2 / slot-6 region for the current mode; the window runs the same `World::sync_sfx_residency` every tick in `BootSession::route_field_sfx`, also outside this kernel."
 
 # --- boot installs: a World table the native boot installs (tier 13) ---
 # `[[boot_install]]` rows name a `world.install_*` / `world.set_*` call in

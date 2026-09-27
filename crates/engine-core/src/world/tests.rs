@@ -284,6 +284,7 @@ mod battle_anim;
 mod battle_auto_command;
 mod battle_capture_bgm;
 mod battle_capture_class_disc;
+mod battle_clip_ladder;
 mod battle_effects_ai2;
 mod battle_items_magic;
 mod battle_loot_use_item;
@@ -333,5 +334,6 @@ mod tile_board;
 mod worldmap;
 
 mod battle_auto_attack;
+mod battle_formation_span;
 mod battle_intro_names;
 mod battle_target_ring;

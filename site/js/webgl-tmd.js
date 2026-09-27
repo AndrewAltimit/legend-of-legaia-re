@@ -928,6 +928,28 @@ class TmdRenderer {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : indices, gl.STATIC_DRAW);
 
     m.indexCount = indices.length;
+    /* Kept so a CBA/TSB re-upload can rebuild the semi tail. */
+    m.baseIndices = indices;
+    gl.bindVertexArray(null);
+  }
+
+  /* Re-upload just the per-vertex CBA/TSB words of an already-registered
+   * scene mesh (same vertex count) and rebuild its per-ABR semi tail from
+   * them. A battle body's whole-mesh blend rides this: the engine hands the
+   * TSB stream with the colour word's ABE + ABR ORed in (retail
+   * FUN_80043390 ORs them into every packet) when the body's blend changes.
+   * No-op for an unknown meshId. */
+  updateSceneMeshCbaTsb(meshId, cbaTsb) {
+    const gl = this.gl;
+    const m = this.sceneMeshes.get(meshId);
+    if (!m || !m.baseIndices || !cbaTsb || cbaTsb.length !== m.vertexCount * 2) return;
+    gl.bindVertexArray(m.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, m.ctBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, cbaTsb);
+    const tail = buildSemiTail(m.baseIndices, cbaTsb);
+    m.semiRanges = tail ? tail.ranges : null;
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : m.baseIndices, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
   }
 

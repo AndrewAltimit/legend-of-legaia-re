@@ -1110,7 +1110,14 @@ void main() {
         const table = padTable();
         if (!table || table[e.code] === undefined) return;
         if (window.legaiaPadSwallows(e.code)) e.preventDefault();
-        if (down) { this.held.add(e.code); this.pulse.add(e.code); }
+        /* An OS auto-repeat `keydown` is not a press: the key is already in
+         * `held`. Letting it into `pulse` turned every held key into a stream
+         * of fresh edges at the OS repeat rate for every consumer that reads
+         * `pulse` as "just pressed" - the pause menu, shop, naming prompt,
+         * game-over panel - so holding a direction scrolled a cursor here and
+         * not in the native window, whose menu edges are `pad & !prev_pad`
+         * and never repeat. */
+        if (down) { this.held.add(e.code); if (!e.repeat) this.pulse.add(e.code); }
         else this.held.delete(e.code);
         this._repack();
       };
@@ -2828,6 +2835,17 @@ void main() {
           if (limbKey !== (a.limbKey || 0)) {
             this.renderer.updateSceneMeshFlat(a.meshId, rt.play_battle_actor_limb_rgba(i));
             a.limbKey = limbKey;
+          }
+        }
+        /* Whole-mesh blend (the near-camera ghost pass FUN_8004DC68, the
+         * capture / defeat fade): re-send the actor's TSB stream with the
+         * colour word's ABE + ABR ORed in when the engine's blend changes.
+         * Guarded against a cached WASM without the export. */
+        if (typeof rt.play_battle_actor_blend_key === 'function') {
+          const blendKey = rt.play_battle_actor_blend_key(i);
+          if (blendKey !== (a.blendKey || 0)) {
+            this.renderer.updateSceneMeshCbaTsb(a.meshId, rt.play_battle_actor_blend_cba_tsb(i));
+            a.blendKey = blendKey;
           }
         }
         const c = (cursor && cursor.length >= (i + 1) * 6) ? i * 6 : -1;

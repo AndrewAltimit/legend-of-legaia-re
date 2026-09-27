@@ -1515,6 +1515,7 @@ dependencies = [
  "clap",
  "legaia-art",
  "legaia-asset",
+ "legaia-font",
  "legaia-gamedata",
  "legaia-iso",
  "legaia-lzs",

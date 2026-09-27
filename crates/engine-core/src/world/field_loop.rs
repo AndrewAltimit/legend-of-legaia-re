@@ -268,6 +268,13 @@ impl World {
         // `+0x288`. Retail's own value is `4` (`(DAT_8007BD60 >> 5) & 4`,
         // `FUN_800513F0` `0x80051430`), not `1`.
         self.battle_ctx.scripted_fight = if scripted { 4 } else { 0 };
+        // The same flag picks the monster seat family (`FUN_800513F0`'s row
+        // index adds it), so a scripted fight is seated on rows `5..8`; the
+        // map-gated arm (`0x800517A0..0x800517E0`) adds a second `+4`.
+        let first_id = formation.slots.first().map_or(0, |s| s.monster_id);
+        let map_arm =
+            matches!(self.battle.map_id, 0x0C | 0x15) && (0x3D..=0x3F).contains(&first_id);
+        self.seat_monster_family(monster_count, u8::from(scripted) + u8::from(map_arm));
         let first_monster = party_count;
         for slot in 0..party_count as usize {
             let a = &mut self.actors[slot];
@@ -385,6 +392,16 @@ impl World {
         // `enter_battle` above installs a fresh `battle_ctx`, so `+0x290` /
         // `+0x291` (and the arm's one-shot flag) are already zero - there is
         // one copy of each and it lives there.
+        // Battle init's pass over the special-battle word (`FUN_800513F0`,
+        // `0x800519C0..0x80051A04`), ahead of the roll that may raise the
+        // same bit again.
+        let lead_monster = formation
+            .slots
+            .first()
+            .map(|s| s.monster_id as u8)
+            .unwrap_or(0);
+        self.battle.special_word =
+            vm::battle_formulas::battle_init_special_word(self.battle.special_word, lead_monster);
         if !self.battle.no_escape {
             self.roll_battle_formation(formation);
         }

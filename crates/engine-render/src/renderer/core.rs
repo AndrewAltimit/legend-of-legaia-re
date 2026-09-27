@@ -1138,7 +1138,7 @@ impl Renderer {
             vertex: wgpu::VertexState {
                 module: &text_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[text_vertex_layout],
+                buffers: std::slice::from_ref(&text_vertex_layout),
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -1169,6 +1169,52 @@ impl Renderer {
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
+        });
+        // The same quads through a PSX semi-transparency equation, one
+        // pipeline per ABR mode (`OverlayBlendSpan`). Mode 3's `F/4` is
+        // pre-scaled in `fs_blend_quarter`, mode 0's halves come from the
+        // blend constant the draw binds.
+        let text_blend_pipelines: [wgpu::RenderPipeline; 4] = std::array::from_fn(|m| {
+            let mode = m as u8;
+            let entry = if psx_blend::src_shader_scale(mode) == 1.0 {
+                "fs_blend"
+            } else {
+                "fs_blend_quarter"
+            };
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("legaia text blend pipeline"),
+                layout: Some(&text_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &text_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: std::slice::from_ref(&text_vertex_layout),
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &text_shader,
+                    entry_point: Some(entry),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: view_format,
+                        blend: Some(psx_blend::blend_state(mode)),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: false,
+                    depth_compare: wgpu::CompareFunction::Always,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            })
         });
         let initial_text_quads: u32 = 64;
         let text_vbuf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1346,6 +1392,7 @@ impl Renderer {
             uniform_offset_alignment,
             lines_pipeline,
             text_pipeline,
+            text_blend_pipelines,
             text_atlas_bgl,
             text_sampler,
             text_vbuf: std::cell::RefCell::new(text_vbuf),

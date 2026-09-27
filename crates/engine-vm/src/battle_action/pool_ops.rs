@@ -52,11 +52,15 @@ pub const POOL_FLAG_WORD_KEEP: u32 = 0x7cff_ffff;
 /// reading here attributed it to action-SM state `0x5A`; `FUN_801E295C`
 /// contains no call to it, so that attribution is withdrawn.
 ///
-/// NOT WIRED: the only static caller in the battle overlay is that
-/// `FUN_801D5854` guard, which lives inside the engine's
-/// `BattleActionHost::pose` implementation (`engine-core`'s), and the scrub
-/// needs a `+0x8` actor flag word - `BattleActor` carries `+0x1DC`
-/// `flag_bits` and no `+0x8`. Both have to exist before a caller can.
+/// The bits are the near-camera ghost pass's
+/// ([`camera_ghost_pass`](crate::battle_action::camera_ghost_pass),
+/// `FUN_8004DC68`), carried on
+/// [`BattleActor::flag_word`](crate::battle_action::BattleActor::flag_word);
+/// the engine's pose hook runs the guard. Whether retail ever reaches the
+/// guard is not settled: every `jal 0x801D5854` in the flow and action SMs
+/// passes a slot from `ctx[+0x13]`, `actor[+0x1DD]`, a stack local or `0`, and
+/// the one source that can hold an all-target code `8` / `9` (`+0x1DD`, at
+/// `0x801D43F0`) passes pose `3`, below the `>= 6` test.
 ///
 /// PORT: FUN_801DB9C4
 pub fn clear_pool_flag_words(flag_words: &mut [u32]) {
@@ -92,34 +96,28 @@ pub struct FormationPos {
 /// 3. recompute min/max, then subtract the centroid `((max + min) >>u 1)` from
 ///    every included slot and add it back onto the focus accumulators.
 ///
-/// NOT WIRED: this is cases `0` **and** `2` of the battle **flow** SM
-/// `FUN_801D388C` (both jump-table slots at `0x801CE880` land on the
-/// `jal` at `0x801D3908`, which then poses seat 0 with `FUN_801D5854(0, 9)`),
-/// and the case is the unported part, not the SM. Case `0` is the round
-/// start (`0x801D0EE4`, right after the round reset `FUN_801D88CC` and the
-/// initiative seeder `FUN_801DA780`), case `2` the ring cancelled back to the
-/// round prompt (`0x801D11E0`), so retail re-normalises the formation every
-/// round, not once.
+/// Caller: cases `0` **and** `2` of the battle **flow** SM `FUN_801D388C`
+/// (both jump-table slots at `0x801CE880` land on the `jal` at `0x801D3908`,
+/// which then re-arms the far framing `FUN_801D5854(0, 9)`). Case `0` is the
+/// round start (`0x801D0EE4`, right after the round reset `FUN_801D88CC` and
+/// the initiative seeder `FUN_801DA780`), case `2` the ring cancelled back to
+/// the round prompt (`0x801D11E0`), so retail re-normalises the formation
+/// every round, not once. `engine-core`'s `World::normalize_battle_formation`
+/// runs it at both points (`begin_battle_round` and the ring cancel's prompt
+/// return) over the live battle positions, mapping the engine's compacted
+/// monster slots onto retail's fixed pool slots `3..7`.
 ///
-/// The previous note here read the catalog's live `801d388c` row as "the
-/// Muscle Dome overlay's *different* routine at the same VA", and that is
-/// **false on the bytes**: `0x801D388C` lies past the end of the arena
-/// overlay (PROT 0977 is `0x3800` bytes, ending `0x801D2018`), so no arena
-/// copy exists, and `overlay_muscle_dome_801d388c.txt` is the same 1955
-/// instructions as `overlay_battle_action_801d388c.txt`, byte-for-byte from
-/// its `lui v0,0x8008` prologue on - the prefix names the **capture**, not
-/// the image (`docs/tooling/dump-corpus-integrity.md`). There is one routine,
-/// in PROT 0898, and the Muscle Dome drives the same states, which is what
-/// `engine-core::arts_command_input` says where it ports cases `9` and `0xB`.
+/// `0x801D388C` has one copy, in PROT 0898: it lies past the end of the arena
+/// overlay (PROT 0977 is `0x3800` bytes, ending `0x801D2018`), and
+/// `overlay_muscle_dome_801d388c.txt` is the same routine byte-for-byte - the
+/// prefix names the **capture**, not the image
+/// (`docs/tooling/dump-corpus-integrity.md`).
 ///
-/// So the live row is this SM, correctly. What blocks case `0` is its own
-/// second half and one input: it shifts the camera-focus accumulators
-/// `_DAT_80089118` / `_DAT_80089120` to compensate for the squash, which the
-/// engine's formation-derived camera has no accumulator for, and its "always
-/// included" rule is on the fixed pool slots `0..3` while the engine compacts
-/// monsters down to `party_count` - so for a party of one or two, which
-/// positions retail's two absent party slots contribute to the extents is not
-/// read off any capture yet.
+/// The camera-focus pair `focus_x` / `focus_z` is `_DAT_80089118` /
+/// `_DAT_80089120`, the **negated** camera target, which is why the recentre
+/// adds the centroid to it while subtracting it from the actors: the view
+/// holds still across the shift. The case-9 re-frame that follows rebuilds the
+/// focus from the live actor table, so the engine passes locals.
 ///
 /// PORT: FUN_801DB318
 pub fn normalize_formation_span(

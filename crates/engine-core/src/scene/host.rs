@@ -113,21 +113,27 @@ pub fn bgm_reattach_volume(raw: i32) -> i16 {
 /// scene-local SEQs played over the scene's own bank.
 pub const GLOBAL_BGM_BASE: u16 = 2000;
 
-/// Whether a scene swap should upload the new scene's VAB into the BGM region,
-/// given the track whose sequencer is attached (paused or not).
+/// The global id whose bank a **scene-local** BGM id (`< 2000`) loads in
+/// retail.
 ///
-/// Both hosts upload the scene bank at the bottom of the same SPU region a
-/// global-pool track's own VAB occupies. A global track carried across a door
-/// - the new scene's entry script re-issues the same id, which both directors
-///   suppress as a duplicate so the playhead survives - would keep playing
-///   over samples the scene bank had just overwritten. The scene bank is only
-///   read by a scene-local start (`bgm_id < 2000`), and no disc script issues
-///   one: every op-`0x35` sub-`1` / sub-`9` start in the disc-wide field-op
-///   census names a global-pool id. So the restage is skipped while a global
-///   track owns the region; any later start re-stages its own bank anyway.
-pub fn scene_bank_restage_wanted(live_track: Option<u16>) -> bool {
-    !matches!(live_track, Some(id) if id >= GLOBAL_BGM_BASE)
-}
+/// `FUN_800243F0` forms two indexes for a scene-local id. The one it stores
+/// for change detection (`_DAT_8007BAB8`, `0x80024458`) is the scene's own
+/// `*(0x80084540) + 6 + id`; the one it **loads** is not - the arm at
+/// `0x800245A4..0x800245BC` overwrites the load index with
+/// `*(0x8007BC64) + 2` and parks the id in `gp+0x728`, whose only reader is
+/// the `WARNING BGM NO %d` debug print (`0x800164EC`, format string
+/// `0x8001010C`). `*(0x8007BC64)` is `music_01`'s raw define `990` in every
+/// catalogued state sampled, so the load is raw `992` = extraction `990` =
+/// global slot `2`, into VAB slot 1 like every other track (`a1 = 1` at
+/// `0x8002466C`). The same shape as the side-band resolver's scene-local
+/// arms, which the `vab_01 + 2` overwrite also reduces to a warning.
+///
+/// So retail has no scene-local bank: it plays this id's track, and no
+/// field initialiser stages a scene VAB at scene entry either (the field
+/// init's only bank loads are slot 6 and the ending arm). Every op-`0x35`
+/// start in the disc-wide census names a global id, so the arm is a
+/// fallback no shipped script takes.
+pub const SCENE_LOCAL_BGM_FALLBACK_ID: u16 = GLOBAL_BGM_BASE + 2;
 
 /// Discards every BGM event. Useful for tests + engines that haven't wired
 /// audio yet.
@@ -278,6 +284,8 @@ mod battle_stage;
 mod effects;
 mod lifecycle;
 mod minigame_warp;
+mod player_rig;
+pub use player_rig::{PlayerRigMesh, PlayerRigSource};
 mod scene_entry;
 mod sustained_sfx;
 

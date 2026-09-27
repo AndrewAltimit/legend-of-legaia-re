@@ -38,13 +38,25 @@
 //! capture-spell path (`World::resolve_capture` plus the Seru registry) is a
 //! separate mechanism and is untouched.
 //!
-//! One gate of the resolver's head is not modelled, and the engine bounds
-//! what it would have bounded: retail reaches the kill check only for hits
-//! that pass the per-hit gates at `0x801EE134..0x801EE1A4` (the context's
-//! `+0x15` strike cursor and the committed record's per-hit byte at
-//! `+0x11 + hit`), so it does not re-check on every hit of a combo that has
-//! already killed. The port rolls on the hit whose damage **first** reaches
-//! the target's HP, once per target per combo.
+//! ## Which hits reach the roll
+//!
+//! The kill compare is not on every hit. Retail's per-hit gates
+//! (`0x801EE128..0x801EE1A4`) are the apply gate the same routine uses to
+//! land the combo total (`0x801EE984..0x801EEA40`), fed the same apply mode
+//! `s2` (`0x801EE060..0x801EE128`):
+//!
+//! * mode `0xFF` (the War God Icon carry) - no kill check;
+//! * a non-zero mode on a monster target (nothing left in the action can
+//!   connect) - kill check now;
+//! * otherwise only with the strike cursor parked (`ctx[+0x15] == 0xFF`,
+//!   `0x801EE15C`) on the clip's last beat (`entry[0x11 + idx] == 0` or
+//!   `idx == 3`, `0x801EE180..0x801EE19C`).
+//!
+//! So the roll lands on the hit that lands the total, and asks whether the
+//! **total** (`+0x0`) reaches live HP - not on the first hit whose damage
+//! crosses it. A combo that crosses HP mid-chain rolls once, at its end; the
+//! draw sits after every one of the chain's damage draws rather than among
+//! them. The callers of `land_melee_hit` pass that gate as `kill_check`.
 
 use super::*;
 

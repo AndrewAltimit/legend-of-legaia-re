@@ -781,6 +781,22 @@
     S.hubSheets[key] = c;
     return c;
   }
+  /* PSX semi-transparency for a hub quad's `abr` (null = opaque): 0 is
+   * `B/2 + F/2`, 1 `B + F`, 3 `B + F/4` - all three are canvas composites
+   * (a transparent texel has alpha 0 and adds nothing). 2 (`B - F`) has no
+   * composite, and no hub palette that blends is ever drawn with it (only
+   * STP-free palettes reach ABR 2, and those draw opaque), so it takes the
+   * plain draw. */
+  function withAbr(g, abr, draw) {
+    if (abr == null || abr === 2) return draw();
+    g.save();
+    if (abr === 0) g.globalAlpha *= 0.5;
+    else {
+      g.globalCompositeOperation = 'lighter';
+      if (abr === 3) g.globalAlpha *= 0.25;
+    }
+    try { return draw(); } finally { g.restore(); }
+  }
   function drawHubQuads(rt, view) {
     if (typeof rt.play_mg_muscle_hub_quads_json !== 'function') return false;
     const m = parse(() => rt.play_mg_muscle_hub_quads_json());
@@ -815,7 +831,8 @@
       }
       const s = hubSheet(rt, q.sheet, q.pal);
       if (!s) continue;
-      g.drawImage(s, q.u, q.v, q.w, q.h, q.x * sx, q.y * sy, q.dw * sx, q.dh * sy);
+      withAbr(g, q.abr, () =>
+        g.drawImage(s, q.u, q.v, q.w, q.h, q.x * sx, q.y * sy, q.dw * sx, q.dh * sy));
       /* The ringside still is an opaque packet modulated by its fade level
        * (`texel * c / 128`): below neutral that is the image darkened
        * toward black, which a black fill at `1 - c/128` reproduces. */
@@ -879,7 +896,14 @@
     /* The arena's lamp glow is semi-transparent (ABE) prims: the two-pass
      * draw keeps them from painting opaque. */
     if (!takeRenderer(view, rt.play_mg_baka_scene_vram(), buf, { semiTwoPass: true })) return null;
-    return { kind: 'baka', gen };
+    return { kind: 'baka', gen, attrGen: bakaAttrGen(rt) };
+  }
+
+  /* The scene's attribute generation: the impact effect's flip-book cells
+   * and fades rewrite UVs / CBA-TSB / colours between VRAM generations. */
+  function bakaAttrGen(rt) {
+    return typeof rt.play_mg_baka_scene_attr_generation === 'function'
+      ? rt.play_mg_baka_scene_attr_generation() : 0;
   }
 
   function bakaBuild(rt, view) {
@@ -906,6 +930,14 @@
     if (!S.scene || !r) {
       clearGl(view);
       return;
+    }
+    const ag = bakaAttrGen(rt);
+    if (S.scene.attrGen !== ag) {
+      /* Same buffers, new attributes: re-upload the mesh, keep the VRAM. */
+      r.uploadMesh(rt.play_mg_baka_scene_positions(), rt.play_mg_baka_scene_uvs(),
+        rt.play_mg_baka_scene_cba_tsb(), rt.play_mg_baka_scene_indices(),
+        rt.play_mg_baka_scene_flat_rgba());
+      S.scene.attrGen = ag;
     }
     r.updatePositions(rt.play_mg_baka_scene_positions());
     const c = r.canvas;

@@ -98,7 +98,8 @@ fn gold_shops_decode_from_disc_with_real_prices() {
     // ...and in retail's own ROW order, which is not the record order: this
     // record carries no template padding, so `FUN_80030628` case `0x0B` hoists
     // the three entries at or past `count - 3` to the top of the list (the
-    // "new in this town" band the walkthrough tables mark with `*`).
+    // Platinum Card band the walkthrough tables mark with `*`; a catalog has
+    // no party, so it lists the band as a card holder sees it).
     let row_ids: Vec<u8> = variety.inventory.items.iter().map(|i| i.item_id).collect();
     assert_eq!(
         row_ids, VARIETY_STORE_ROWS,
@@ -130,4 +131,57 @@ fn gold_shops_decode_from_disc_with_real_prices() {
         live.inventory.items.iter().all(|i| i.price > 0),
         "live shop is priced"
     );
+}
+
+/// Without the Platinum Card, every shop loses exactly its hoisted band: the
+/// retail builder's tail probe (`FUN_80030628` case `0x0B`,
+/// `0x80030D54..0x80030DE8`) drops the record's last three entries, and those
+/// are the band plus the template padding. A record padded with three
+/// template ids loses nothing.
+#[test]
+fn without_the_platinum_card_each_shop_loses_its_featured_band() {
+    let Some(path) = disc_path() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let Some(scus) = read_scus(&path) else {
+        eprintln!("[skip] SCUS_942.54 unreadable");
+        return;
+    };
+    let data = ShopItemData::from_scus(&scus).expect("item table");
+    let host = SceneHost::open_disc(&path).expect("open disc");
+    let (mut shops, mut gated, mut gated_rows) = (0usize, 0usize, 0usize);
+    for idx in 0..host.index.entry_count() as u32 {
+        let Ok(bytes) = host.index.entry_bytes_extended(idx) else {
+            continue;
+        };
+        let Some(sc) = legaia_asset::shop_stock::locate(&bytes, Some(&data.sellable_mask())) else {
+            continue;
+        };
+        for rec in &sc.records {
+            let count = usize::from(sc.decoded[rec.count_off]);
+            let ids = &sc.decoded[rec.count_off + 1..rec.count_off + 1 + count];
+            let card =
+                legaia_engine_core::shop::ShopInventory::from_stock_record(0, ids, true, |id| {
+                    data.price(id)
+                });
+            let plain =
+                legaia_engine_core::shop::ShopInventory::from_stock_record(0, ids, false, |id| {
+                    data.price(id)
+                });
+            shops += 1;
+            assert_eq!(plain.featured_rows, 0);
+            assert_eq!(
+                plain.items[..],
+                card.items[card.featured_rows..],
+                "the card-less list is the card list minus its band"
+            );
+            if card.featured_rows > 0 {
+                gated += 1;
+                gated_rows += card.featured_rows;
+            }
+        }
+    }
+    eprintln!("[ok] {shops} shop records; {gated} carry a Platinum Card band ({gated_rows} rows)");
+    assert!(shops > 0 && gated > 0, "non-vacuous");
 }

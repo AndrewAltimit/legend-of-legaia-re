@@ -471,6 +471,19 @@ impl World {
         }
     }
 
+    /// The live ambient parts that are `0x4000` sprite-arm nodes (move-VM
+    /// op `0x23`), each as its one-quad mesh
+    /// ([`crate::effect_sprite_arm::sprite_arm_draw`]). Part of
+    /// [`World::active_effect_kind4_draws`].
+    pub fn ambient_sprite_arm_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
+        self.ambient
+            .fx
+            .iter()
+            .filter(|p| !p.finished)
+            .filter_map(|p| crate::effect_sprite_arm::sprite_arm_draw(&p.state))
+            .collect()
+    }
+
     /// Every live mesh-bearing ambient part with the morph envelope armed
     /// (`+0x10` bit `0x1000`, op `0x0A`) - the retail VDF morph carriers
     /// (town0e's flesh lumps, rikuroa's generator sacs).

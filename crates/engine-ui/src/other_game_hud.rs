@@ -575,8 +575,10 @@ pub const COURSE_NAME_RECORD_BASE: i32 = 5;
 /// (`*(0x801D1A84)`, the hub's arms `4` / `5`).
 ///
 /// Painted back to front (the emit order reversed - they share OT slot 3),
-/// variant 2 is a subtractive drop shadow and an under-layer the additive
-/// variant 1 lands on, the same two-pass lettering the ROUND banner uses.
+/// variant 2 is a drop shadow and an under-layer variant 1 lands on, the
+/// same two-pass lettering the ROUND banner uses. Variant 2 is marked ABR 2
+/// but its palette carries no STP, so the GPU draws it opaque
+/// ([`crate::ringside_backdrop::HubPaletteStp`]).
 ///
 /// PORT: FUN_801d042c (PROT 0977; hub arms 4 and 5 call it, `0x801CFB78`
 /// and `0x801CFBBC`). Drawn by both play hosts through
@@ -829,8 +831,8 @@ pub const SCORE_TALLY_VALUE_PALETTES: [(i16, i16); SCORE_TALLY_ROWS] =
 /// table slot (`DAT_801D1AA8`, reset to `3` after each packet), and the
 /// link `FUN_8003D2C4` pushes onto the slot's head, so the last packet
 /// emitted is the first drawn. That is what puts each variant-2
-/// (subtractive) under-layer beneath the variant-1 (additive) face drawn
-/// over it; a host painting emit order lands the shadow on top.
+/// under-layer beneath the variant-1 face drawn over it; a host painting
+/// emit order lands the shadow on top.
 ///
 /// PORT: FUN_801d15c8 (the [`HubAnchor::RoundDigit`] arm)
 pub fn hub_screen_quads(

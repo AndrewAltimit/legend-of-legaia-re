@@ -640,13 +640,15 @@ pub struct HelpPanelLayout {
     pub frame: (i16, i16, i16, i16),
 }
 
-// NOT WIRED: every line of the panel is a row of the overlay's own
-// string-pointer tables (`0x801D8130` / `0x801D8168`), which are Sony text the
-// port does not read - there is no fishing string-table reader, and no
-// help-screen state on the fishing session for a host to open. A draw wired
-// today would place 14 or 15 empty rows. Wiring it needs the overlay string
-// tables decoded (or a translation-pack source for them) plus a help-page
-// toggle on the session.
+// NOT WIRED: no host owns the screen that opens the panel. Its two call
+// sites are states `0x65` (page 0, `jal` at `0x801CFFA8`) and `0x66` (page 1,
+// `0x801CFFEC`) of the fishing session machine `FUN_801CF3BC`, and the only
+// way into `0x65` is row 1 of the venue's five-row hub menu
+// (`FISHING_MENU_ROW_STATES[1]`, `FishingMenu`), which every host skips by
+// entering the pond directly. The line text is not the blocker: the rows are
+// the overlay's string-pointer tables (`0x801D8130` / `0x801D8168`), which a
+// host can read off the user's disc at runtime the way the prize and menu
+// rows are read. Wiring it starts with the hub menu screen.
 /// PORT: overlay_fishing_801d72a0
 ///
 /// Fishing help-panel layout - the static-extract resolution of the VA

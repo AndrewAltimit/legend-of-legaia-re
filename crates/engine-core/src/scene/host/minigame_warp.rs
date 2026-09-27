@@ -222,7 +222,8 @@ impl SceneHost {
             .with_roster_clip_headers(crate::baka_fighter::roster_clip_headers(|i| {
                 index.entry_bytes(i as u32).ok().map(|b| b.to_vec())
             }))
-            .with_special_cameras(crate::baka_duel_scene::parse_special_cameras(loaded));
+            .with_special_cameras(crate::baka_duel_scene::parse_special_cameras(loaded))
+            .with_impact_overlay(loaded);
         self.world.enter_baka_fighter(fight);
         true
     }

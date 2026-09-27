@@ -18,8 +18,9 @@
 //! - [`build_throw_out_rows`] - content id `0x22`, the Items **Throw Out**
 //!   list;
 //! - [`build_price_gated_rows`] - content id 2, the price-gated bag list;
-//! - [`build_shop_buy_rows`] + [`shop_buy_row_order`] - content id `0x0B`,
-//!   the shop **buy** list (the one family here that is live);
+//! - [`build_shop_buy_rows`] + [`shop_buy_row_order`] +
+//!   [`shop_tail_rows_allowed`] - content id `0x0B`, the shop **buy** list
+//!   (live on both hosts);
 //! - [`row_name_source`] - the per-class row-name resolver `FUN_8002FF8C`;
 //! - [`row_description_source`] - the highlighted-row description
 //!   dispatcher `FUN_80034250`;
@@ -29,10 +30,11 @@
 //! All ports are derived from the SCUS disassembly
 //! (`ghidra/scripts/funcs/<addr>.txt`); provenance notes sit on each item.
 //!
-//! The shop buy-list pair is the exception to everything below: its rows are
-//! keyed by **item id**, not by a bag slot, and its order kernel is live -
-//! `crate::shop_catalog::scene_shops` runs [`shop_buy_row_order`] over every
-//! decoded stock list, so all three hosts draw the retail row order.
+//! The shop buy list is the exception to everything below: its rows are keyed
+//! by **item id**, not by a bag slot, and its builder is live -
+//! `crate::shop::ShopInventory::from_stock_record` runs
+//! [`build_shop_buy_rows`] over the stock record for the field-VM merchant
+//! both play hosts open and for the per-scene catalog.
 //!
 //! Nothing else in the engine speaks retail's row-entry model - but the three
 //! families below are in three *different* positions, and a note that names
@@ -591,16 +593,14 @@ pub fn goods_candidate_accepts(kind: u8, marker: u8) -> bool {
 /// (`0x15`..`0x18`) and the three Goods rows reach **these** - a separate
 /// family with its own filter.
 ///
-/// NOT WIRED: the equip screen is owed this, and the blocker is the row
-/// model rather than the filter. `equip_session::EquipSession` carries typed
-/// [`crate::equip_session::EquipItem`] rows sorted by item id with the Remove
-/// row prepended, not class-tagged entry words over **bag slots**, so it
-/// consults [`goods_candidate_accepts`] (which is live for all three Goods
-/// slots on both hosts) and never forms the words. Adopting these would give
-/// the Goods list retail's own order - bag-slot order, equipped row second -
-/// and is the same change family 3 of the module heading names for the three
-/// bag builders: an ordered slot array reaching the screen, not a call
-/// someone forgot.
+/// Wired: `crate::equip_session::EquipSession::items_for_slot` builds the
+/// three Goods slots' candidate list through this whenever the session
+/// carries disc restrictions (a `GoodsIndexTables` adapter answers the two
+/// questions the filter asks from `DiscEquipInfo::install_goods`), and
+/// `crate::pause_screens` hands those rows to both hosts' equip screen. So
+/// the Goods list is retail's shape - Remove always first, the equipped item
+/// second as a no-commit row, then bag slots in slot order - while the four
+/// armament lists keep the engine's id-sorted rows.
 ///
 /// Row order: the Remove verb ([`CLASS_VERB`], payload 0) always leads; the
 /// currently-equipped id follows as [`CLASS_ITEM_ICON`] when the slot is
@@ -668,8 +668,10 @@ pub const SHOP_TAIL_ROWS: usize = 3;
 /// with `Ra-Seru Meta $N`.
 ///
 /// The hoisted rows are tagged [`CLASS_SHOP_ALT`], which the kind-4 list
-/// kernel stages with ink 5 - the "new in this town" highlight the
-/// walkthrough tables mark with `*`.
+/// kernel stages with ink 5. They are the same three tail slots
+/// [`shop_tail_rows_allowed`] withholds from a party without the Platinum
+/// Card, so the band is the card's exclusive stock, drawn first and in its
+/// own pen. The walkthrough tables' `*` marks line up with it.
 ///
 /// Returns a permutation of `0..walk`.
 pub fn shop_buy_row_order(record_count: usize, walk: usize) -> Vec<usize> {
@@ -681,21 +683,15 @@ pub fn shop_buy_row_order(record_count: usize, walk: usize) -> Vec<usize> {
 
 /// PORT: FUN_80030628 (content-id-`0x0B` case, `0x80030D48..0x80030F98` -
 /// the shop **buy** list; `see ghidra/scripts/funcs/80030628.txt`).
-/// NOT WIRED: the engine's shop session ([`crate::shop`] over
-/// [`crate::shop_catalog`]) builds its rows from typed catalog items and runs
-/// only the order kernel [`shop_buy_row_order`] over them; it never asks for
-/// the class-tagged `[class][dim][id]` row word this builder emits, so the
-/// dim bit is recomputed at draw time by `crate::shop` instead. Two retail
-/// behaviours ride on the word and are therefore absent on both hosts: the
-/// hoisted band's [`CLASS_SHOP_ALT`] ink (the "new in this town" rows draw
-/// in the alternate pen), and the conditional tail - with no empty bag slot
-/// (`FUN_80042F4C(0xFF)` at `0x80030D54`) and no `0xFF` byte in any party
-/// member's equipment block (`0x80030D7C..0x80030DE8`), `n = count - 3` and
-/// the record's last three entries are not offered. The blocker is data,
-/// not a call: `shop_catalog::scene_shops` keeps the permuted, trimmed item
-/// list but drops the record's own count byte and id order, which this
-/// builder needs as input. The owed host is that catalog build keeping the
-/// raw record, then the shop row draw reading the word.
+///
+/// Wired: `crate::shop::ShopInventory::from_stock_record` runs it over the
+/// stock record's own id run, and both builders of a live buy list call that:
+/// `World::try_arm_field_shop` (the field-VM op-`0x49` merchant, which both
+/// play hosts open through `take_pending_field_shop`) with the party's
+/// [`shop_tail_rows_allowed`] probe, and `crate::shop_catalog::scene_shops`
+/// for the per-scene listing. The word's row order, conditional tail and
+/// hoisted-band class reach both hosts' buy list; its class selects the row
+/// ink through `crate::shop::shop_buy_row_ink`.
 ///
 /// This, not [`build_price_gated_rows`], is the shop's buy row layout.
 /// Content id `2` is the price-gated *bag* list (the sell side); the buy
@@ -721,13 +717,14 @@ pub fn shop_buy_row_order(record_count: usize, walk: usize) -> Vec<usize> {
 ///   (`0x80030F68..0x80030F90`). The hoisted group is `3 - padding_len`
 ///   rows wide - empty on a record padded with three template ids, two or
 ///   three rows on the disc's shorter-padded records - and it is the
-///   walkthrough tables' "new in this town" band.
+///   Platinum Card's exclusive stock (next bullet).
 /// * **The tail is conditional.** `tail_rows_allowed` is retail's
-///   `s4 ∈ {0, 3}` probe pair at `0x80030D54..0x80030DE8`: the bag-slot
-///   scan `FUN_80042F4C(0xFF)` and an eight-byte `0xFF` sweep of every
-///   party member's equipment block (`char + 0x196..+0x19D`). Neither
-///   probe touches the stock; both only decide whether the last three
-///   entries are walked at all.
+///   `s4 ∈ {0, 3}` probe pair at `0x80030D54..0x80030DE8`: the held-count
+///   lookup `FUN_80042F4C(0xFF)` and an eight-byte `0xFF` sweep of every
+///   party member's equipment block (`char + 0x196..+0x19D`). Item `0xFF`
+///   is the **Platinum Card** (item table `0x80074368 + 0xFF*12`), so the
+///   last three record entries are offered only to a party carrying or
+///   wearing that card - see [`shop_tail_rows_allowed`].
 ///
 /// `price_of` / `held_of` are the two live reads the dim bit needs: the
 /// item record's `+2` price halfword and the bag count for that id
@@ -776,6 +773,34 @@ pub fn build_shop_buy_rows(
             )
         })
         .collect()
+}
+
+/// The item id both tail probes look for: the **Platinum Card**.
+///
+/// `FUN_80042F4C` returns the count byte of the first bag slot in the active
+/// window whose id equals its argument (`0` when none does), and the bag's
+/// empty sentinel is id `0`, not `0xFF` (`docs/subsystems/inventory.md`) -
+/// so `FUN_80042F4C(0xFF)` is "how many Platinum Cards are held", not a
+/// free-slot test. The item table names id `0xFF` "Platinum Card"; it is a
+/// Goods item, which is why the second probe sweeps the equipment blocks.
+pub const SHOP_TAIL_CARD_ID: u8 = 0xFF;
+
+/// Whether a shop buy list walks its record's last three entries.
+///
+/// `card_held` is `FUN_80042F4C(0xFF) != 0` (the Platinum Card in the bag's
+/// active window); `equipment` yields each present party member's eight
+/// equipment bytes (`0x80084598[i]`, record `+0x196..+0x19D`), walked for a
+/// `0xFF` byte. Either probe answering sets `s4 = 3`, i.e. keeps the tail.
+///
+/// PORT: FUN_80030628 (case `0x0B` tail probes, `0x80030D54..0x80030DE8`)
+pub fn shop_tail_rows_allowed<I>(card_held: bool, equipment: I) -> bool
+where
+    I: IntoIterator<Item = [u8; 8]>,
+{
+    card_held
+        || equipment
+            .into_iter()
+            .any(|slots| slots.contains(&SHOP_TAIL_CARD_ID))
 }
 
 /// One live menu window of the SCUS window list (retail: a 0x34-byte
@@ -1196,8 +1221,8 @@ mod shop_buy_row_tests {
 
     /// Rim Elm's Variety Shop: ten ids, no template padding. Retail hoists
     /// the last three (Hunter Clothes / Scarlet Jewel / Azure Jewel) to the
-    /// top tagged [`CLASS_SHOP_ALT`], which is exactly the order and the
-    /// "new in this town" marking the curated walkthrough table carries.
+    /// top tagged [`CLASS_SHOP_ALT`], which is exactly the order and the `*`
+    /// marking the curated walkthrough table carries.
     #[test]
     fn buy_rows_hoist_the_featured_band() {
         let ids = [0x22, 0x34, 0x59, 0xD6, 0x77, 0x7E, 0x88, 0x43, 0xC7, 0xC8];
@@ -1253,5 +1278,47 @@ mod shop_buy_row_tests {
         let rows = build_shop_buy_rows(&ids, false, 1_000_000, |_| 100, |_| 0);
         let payload: Vec<u8> = rows.iter().map(|w| (w & 0xFF) as u8).collect();
         assert_eq!(payload, vec![0x22, 0x34, 0x59, 0xD6, 0x77, 0x7E, 0x88]);
+    }
+}
+
+#[cfg(test)]
+mod shop_tail_tests {
+    use super::*;
+
+    #[test]
+    fn the_platinum_card_in_bag_or_equipped_keeps_the_tail() {
+        let none = [[0x4B, 0x38, 0x1B, 0x09, 0x5F, 0x75, 0x74, 0x72]];
+        assert!(!shop_tail_rows_allowed(false, none));
+        assert!(shop_tail_rows_allowed(true, none));
+        let worn = [[0x4B, 0x38, 0x1B, 0x09, 0x5F, 0xFF, 0x74, 0x72]];
+        assert!(shop_tail_rows_allowed(false, worn));
+        assert!(!shop_tail_rows_allowed(false, std::iter::empty()));
+    }
+
+    /// Retail capture (`scripts/pcsx-redux/autorun_shop_buy_list.lua`, state
+    /// `retock_field_card_boot`, Retock's "Items Shop", P1[36]): the row words
+    /// the SCUS builder emitted at its exit jump `0x80030F94`, with the
+    /// party's Platinum Card left in the bag and with it cleared. Every stock
+    /// id is held at 99 in that save, so every row carries the dim bit.
+    #[test]
+    fn retock_items_shop_rows_match_the_retail_capture_with_and_without_the_card() {
+        let ids = [
+            0xE8, 0xF5, 0xF6, 0xD2, 0x78, 0x7A, 0x7C, 0x80, 0x88, 0x89, 0xC0, 0xC6, 0xC9,
+        ];
+        let card = build_shop_buy_rows(&ids, true, 0, |_| 1, |_| 99);
+        assert_eq!(
+            card,
+            vec![
+                0xA8C0, 0xA8C6, 0xA8C9, 0x38E8, 0x38F5, 0x38F6, 0x38D2, 0x3878, 0x387A, 0x387C,
+                0x3880, 0x3888, 0x3889,
+            ]
+        );
+        let none = build_shop_buy_rows(&ids, false, 0, |_| 1, |_| 99);
+        assert_eq!(
+            none,
+            vec![
+                0x38E8, 0x38F5, 0x38F6, 0x38D2, 0x3878, 0x387A, 0x387C, 0x3880, 0x3888, 0x3889,
+            ]
+        );
     }
 }

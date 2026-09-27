@@ -38,13 +38,70 @@ pub struct ShopItem {
 pub struct ShopInventory {
     /// Opaque identifier tying this stock list to a CDNAME scene block.
     pub shop_id: u8,
-    /// Items the shop sells.
+    /// Items the shop sells, in the retail **row** order.
     pub items: Vec<ShopItem>,
+    /// How many leading rows of [`Self::items`] are the builder's hoisted
+    /// band - the record's last entries, emitted first and tagged
+    /// [`crate::menu_list_rows::CLASS_SHOP_ALT`], which the list kernel draws
+    /// in ink [`SHOP_INK_FEATURED`] (see [`shop_buy_row_ink`]). `0` for a
+    /// hand-built inventory.
+    pub featured_rows: usize,
 }
 
 impl ShopInventory {
     pub fn new(shop_id: u8, items: Vec<ShopItem>) -> Self {
-        Self { shop_id, items }
+        Self {
+            shop_id,
+            items,
+            featured_rows: 0,
+        }
+    }
+
+    /// Build the buy list the way the list builder does, from the stock
+    /// record's own id run (`[+3 ..]`, padding included, record order).
+    ///
+    /// Runs [`crate::menu_list_rows::build_shop_buy_rows`] for the row order,
+    /// the conditional tail and the hoisted band's class, and prices each row
+    /// from `price_of`. The dim bit the builder also computes is left to the
+    /// draw ([`shop_buy_row_ink`]): it is a function of the live purse and
+    /// held counts, which a buy changes while the list stays open, and retail
+    /// rebuilds the rows on each content refresh.
+    ///
+    /// REF: FUN_80030628 (case `0x0B`; the port is `build_shop_buy_rows`)
+    pub fn from_stock_record(
+        shop_id: u8,
+        record_ids: &[u8],
+        tail_rows_allowed: bool,
+        price_of: impl Fn(u8) -> u16,
+    ) -> Self {
+        let words = crate::menu_list_rows::build_shop_buy_rows(
+            record_ids,
+            tail_rows_allowed,
+            u32::MAX,
+            &price_of,
+            |_| 0,
+        );
+        let featured_rows = words
+            .iter()
+            .take_while(|&&w| {
+                w & crate::menu_list_rows::ROW_CLASS_MASK == crate::menu_list_rows::CLASS_SHOP_ALT
+            })
+            .count();
+        let items = words
+            .iter()
+            .map(|&w| {
+                let item_id = (w & 0xFF) as u8;
+                ShopItem {
+                    item_id,
+                    price: u32::from(price_of(item_id)),
+                }
+            })
+            .collect();
+        Self {
+            shop_id,
+            items,
+            featured_rows,
+        }
     }
 
     /// Find an item by ID.
@@ -1062,6 +1119,41 @@ pub const SHOP_INK_GREY: u8 = 0;
 /// Accent ink a stock row takes when its record carries the non-zero
 /// "already owned / restricted" marker at `+2`.
 pub const SHOP_INK_MARKED: u8 = 6;
+/// Ink the list kernel stages for a [`crate::menu_list_rows::CLASS_SHOP_ALT`]
+/// row - the shop buy list's hoisted band (`li v0,0x5; sw v0,0x13c(gp)` at
+/// `0x8003359C`).
+pub const SHOP_INK_FEATURED: u8 = 5;
+
+/// Row ink the kind-4 list kernel stages for one shop **buy** row.
+///
+/// Read off `FUN_80032A44`'s shared `0x3000` / `0xA000` arm
+/// (`0x80033548..0x800335A0`), which is last-rule-wins like
+/// [`shop_stock_row_ink`] but with a different rule set:
+///
+/// 1. ink starts at `7`;
+/// 2. the row word's dim bit `0x800` -> `0`, **unless** the list is parked
+///    (`_DAT_8007BB94 == 4`, a list left on screen behind a sub-screen),
+///    which skips the test;
+/// 3. class `0xA000` (the hoisted band) -> `5`, **even when dim** - the
+///    class test runs after the dim test and overwrites it.
+///
+/// The dim bit is the builder's OR of `purse < price` and `held >= 99`
+/// ([`crate::menu_list_rows::build_shop_buy_rows`]), recomputed here from
+/// the live values. So an unaffordable hoisted row still draws in the
+/// featured pen; only the confirm buzz (`0x800` again) refuses it.
+///
+/// PORT: FUN_80032A44 (the `0x3000`/`0xA000` row-ink arm, `0x80033548..0x800335A0`)
+pub fn shop_buy_row_ink(featured: bool, held: i16, gold: i32, price: i32, parked: bool) -> u8 {
+    let mut ink = SHOP_INK_NORMAL;
+    let dim = gold < price || held >= SHOP_HELD_CAP as i16;
+    if !parked && dim {
+        ink = SHOP_INK_GREY;
+    }
+    if featured {
+        ink = SHOP_INK_FEATURED;
+    }
+    ink
+}
 
 /// Vertical pitch between shop rows (retail `0xE`).
 pub const SHOP_ROW_PITCH: i16 = 0x0E;
@@ -1166,18 +1258,14 @@ pub fn shop_root_command_rows(
 /// routine was dumped from - that overlay carries menu and casino code too -
 /// and is not evidence about what it does.
 ///
-/// The engine reuses the kernel for shop stock rows because the *shape* matches
-/// (held-cap gate, marker re-ink, affordability gate) and both callers pass the
-/// party purse in `gold` with `marker` fixed at `0`, so only the two outer tests
-/// can fire. That reuse is now **checked** against the shop's own builder,
-/// `FUN_80030628` case `0x0B` (`0x80030D48..0x80030F98`, ported at
-/// [`crate::menu_list_rows::build_shop_buy_rows`]): the builder's dim bit is an
-/// OR of exactly those two tests - `_DAT_8008459C < price` (item record `+2`,
-/// `0x80030EC4`) or a held count that has stopped being `< 0x63`
-/// (`0x80030F0C`) - and it has no marker tier and no `0x400` alt-ink at all. So
-/// with `marker` pinned at `0` the two agree row for row. What the builder
-/// *does* add is an order the ink kernel says nothing about; see
-/// `shop_buy_row_order`.
+/// Wired: its own screen. Both hosts' prize-exchange draw
+/// (`engine-shell`'s `prize_window_draws`, `web-viewer::play_shop`) resolve
+/// each window-44 row's `PrizeRow::ink` through it over the coin bank and the
+/// prize record's `+2` marker. The shop buy list used to borrow it with the
+/// marker pinned at `0`, reasoning that the shop builder had "no `0x400`
+/// alt-ink at all"; the list kernel's class arm does ink the shop rows (the
+/// hoisted band's `5`), so the shop has its own kernel now,
+/// [`shop_buy_row_ink`].
 ///
 /// `held` is the held count of the row's item (retail's bag scan
 /// `FUN_80042F4C`), `marker` the record's `+2` halfword, `gold` the currency the
@@ -1870,5 +1958,52 @@ mod tests {
             assert_eq!(p.passive, None);
             assert_eq!(p.shade_box, ((6, 8 + 0x45), (0x90, 0x28)));
         }
+    }
+}
+
+#[cfg(test)]
+mod buy_row_tests {
+    use super::*;
+
+    fn prices(id: u8) -> u16 {
+        if id < 0x1A { 0 } else { u16::from(id) * 10 }
+    }
+
+    #[test]
+    fn the_hoisted_band_leads_and_is_counted() {
+        // Ten sellable ids, no padding: the last three hoist.
+        let rec: Vec<u8> = (0x30..0x3A).collect();
+        let inv = ShopInventory::from_stock_record(1, &rec, true, prices);
+        let ids: Vec<u8> = inv.items.iter().map(|i| i.item_id).collect();
+        assert_eq!(&ids[..3], &[0x37, 0x38, 0x39]);
+        assert_eq!(&ids[3..], &[0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36]);
+        assert_eq!(inv.featured_rows, 3);
+        assert_eq!(inv.items[0].price, 0x37 * 10);
+    }
+
+    #[test]
+    fn padding_narrows_the_band_and_no_card_drops_it() {
+        // Eight sellable ids plus one template id: band width 2.
+        let mut rec: Vec<u8> = (0x30..0x38).collect();
+        rec.push(0x03);
+        let inv = ShopInventory::from_stock_record(1, &rec, true, prices);
+        assert_eq!(inv.featured_rows, 2);
+        assert_eq!(inv.items.len(), 8);
+        // Without the Platinum Card the last three record entries go.
+        let inv = ShopInventory::from_stock_record(1, &rec, false, prices);
+        assert_eq!(inv.featured_rows, 0);
+        let ids: Vec<u8> = inv.items.iter().map(|i| i.item_id).collect();
+        assert_eq!(ids, (0x30..0x36).collect::<Vec<u8>>());
+    }
+
+    #[test]
+    fn buy_row_ink_is_last_rule_wins() {
+        assert_eq!(shop_buy_row_ink(false, 0, 100, 50, false), SHOP_INK_NORMAL);
+        assert_eq!(shop_buy_row_ink(false, 0, 10, 50, false), SHOP_INK_GREY);
+        assert_eq!(shop_buy_row_ink(false, 99, 100, 50, false), SHOP_INK_GREY);
+        // Featured overwrites the dim verdict.
+        assert_eq!(shop_buy_row_ink(true, 0, 10, 50, false), SHOP_INK_FEATURED);
+        // A parked list skips the dim test.
+        assert_eq!(shop_buy_row_ink(false, 0, 10, 50, true), SHOP_INK_NORMAL);
     }
 }

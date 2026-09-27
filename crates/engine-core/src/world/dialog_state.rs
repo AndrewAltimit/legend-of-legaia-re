@@ -52,6 +52,11 @@ pub struct DialogState {
     /// prologue flag tests, branch flag-sets, and scene changes between text
     /// boxes. See [`crate::inline_dialogue`] and [`crate::world::World::step_inline_dialogue`].
     pub inline: Option<crate::inline_dialogue::InlineDialogue>,
+    /// The pager's automatic-press countdown `_DAT_80073F00`: field-VM op
+    /// `4C 89` writes it, and a box page waiting for confirm counts it down
+    /// by the frame step and presses for the player when it runs out
+    /// ([`crate::dialog::OwnedDialogPanel::tick_at_auto`]). `<= 0` is idle.
+    pub auto_press: i16,
 }
 
 impl DialogState {
@@ -66,6 +71,7 @@ impl DialogState {
             active_inline_slot: None,
             input_consumed: false,
             inline: None,
+            auto_press: 0,
         }
     }
 }

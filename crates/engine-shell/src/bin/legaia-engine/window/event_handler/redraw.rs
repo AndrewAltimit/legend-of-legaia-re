@@ -330,6 +330,16 @@ impl PlayWindowApp {
                 Ok(_) => {}
                 Err(e) => log::error!("session tick: {e:#}"),
             }
+            // The Field <-> Battle mode edge, latched on the tick that
+            // crossed it. The battle load it runs installs gameplay state as
+            // well as meshes - the party's idle / action clips, art banks and
+            // art records - so it cannot wait for the display frame: this call
+            // used to sit only after the tick loop, and the first one to three
+            // battle ticks of a catch-up frame ran without them. The browser
+            // page latches the edge per sim tick too (`tick_battle_presentation`).
+            // Edge-latched, so the call after the loop is a no-op when this one
+            // already fired.
+            self.sync_battle_render();
             // A scripted mesh re-bind this tick (motion-VM op `0x0E`) needs
             // the swapped mesh uploaded; the world holds the new id and the
             // draw holds the old one.
@@ -1992,17 +2002,20 @@ impl PlayWindowApp {
                             // keep their own cue (their retail look is the
                             // same rule; that thread is not this one's).
                             //
-                            // Not modelled: `render_flag == 2` (the capture
-                            // / defeat fade, SM arm 2) also ORs `0x81000000`
-                            // into the node's mode word, so the fading actor
-                            // draws ABE|ABR1 additive and black = gone. The
-                            // renderer has no per-`SceneDraw` blend override,
-                            // so the fade is left un-cued (drawn opaque and
-                            // untinted) rather than as an opaque black
-                            // silhouette; once its lanes reach zero the draw
-                            // plan above skips the body (`FUN_800480D8`'s
-                            // word-zero arm), as it does the summon hide.
-                            // The two cursor flags keep their own cue.
+                            // `render_flag == 2` (the capture / defeat fade,
+                            // SM arm 2) also ORs `0x81000000` into the node's
+                            // mode word, so the fading actor draws ABE|ABR1
+                            // additive and black = gone. The posed-mesh
+                            // builder applies that word's blend to every prim
+                            // (`battle_body_blend`, `redraw_passes.rs`), so
+                            // the fade takes its cue whenever the body is
+                            // posed and its word raises ABE; a body drawn off
+                            // its rest mesh has no blend and stays un-cued
+                            // rather than an opaque black silhouette. Once its
+                            // lanes reach zero the draw plan above skips the
+                            // body (`FUN_800480D8`'s word-zero arm), as it
+                            // does the summon hide. The two cursor flags keep
+                            // their own cue.
                             //
                             // The cue is the whole tint pass, not only its
                             // blend arm: with no blend running retail still
@@ -2012,11 +2025,19 @@ impl PlayWindowApp {
                             // - a darker copy of its colour, or a brighter
                             // one on the outdoor stages - plus the status
                             // colours. `World::battle_actor_draw_plan`.
+                            let blended = battle_plan.is_some_and(|p| {
+                                actor.pose_frame.is_some()
+                                    && legaia_engine_core::battle_body_blend::draw_colour_semi_mode(
+                                        p.draw_colour,
+                                    )
+                                    .is_some()
+                            });
                             if let Some(p) = battle_plan
                                 && !matches!(
                                     b.render_flag,
-                                    ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED | 2
+                                    ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED
                                 )
+                                && (b.render_flag != 2 || blended)
                             {
                                 cue = Some(legaia_engine_render::DrawCue {
                                     far: p.cue_far(),
@@ -2105,7 +2126,11 @@ impl PlayWindowApp {
                 // the same `battle_vram` residency, opposite ways.
                 hud.extend(self.battle_value_readout_draws(cam, w, h));
             }
-            let overlay = TextOverlay { atlas, draws: &hud };
+            let overlay = TextOverlay {
+                atlas,
+                draws: &hud,
+                blend: &[],
+            };
 
             // Boot-phase sprite overlay: alternates between the
             // publisher-logos atlas (during PublisherLogos) and
@@ -2121,7 +2146,7 @@ impl PlayWindowApp {
             // score tally), placed by the shared `other_game_hud` emitters.
             // Rides sprite slot 1: the boot-UI overlays that own it are all
             // inactive while a dome leg or its between-legs beat is up.
-            let muscle_hub_draw_vec = self.muscle_hub_sprite_draws(w, h);
+            let (muscle_hub_draw_vec, muscle_hub_blend) = self.muscle_hub_sprite_draws(w, h);
             // Slot-2 chrome samples the resident system-UI atlas.
             // Save-select pills/panel and the field-menu window
             // frame are mutually-exclusive boot states, so both
@@ -2174,22 +2199,27 @@ impl PlayWindowApp {
             let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                 atlas: &p.atlas,
                 draws: &logo_draw_vec,
+                blend: &[],
             });
             let title_overlay = self.title_screen.as_ref().map(|t| TextOverlay {
                 atlas: &t.atlas,
                 draws: &title_draw_vec,
+                blend: &[],
             });
             let menu_glyph_overlay = self.menu_glyphs.as_ref().map(|m| TextOverlay {
                 atlas: &m.atlas,
                 draws: &menu_glyph_draw_vec,
+                blend: &[],
             });
             let save_chrome_overlay = self.save_menu.as_ref().map(|sm| TextOverlay {
                 atlas: &sm.atlas,
                 draws: &save_chrome_draw_vec,
+                blend: &[],
             });
             let muscle_hub_overlay = self.muscle_hub.as_ref().map(|m| TextOverlay {
                 atlas: &m.atlas,
                 draws: &muscle_hub_draw_vec,
+                blend: &muscle_hub_blend,
             });
             // Opening-cutscene "It was the Seru." caption: the opdeene baked TIM
             // (`World::cutscene.caption`) blitted centered and faded
@@ -2227,6 +2257,7 @@ impl PlayWindowApp {
                 .map(|(atlas, _, _)| TextOverlay {
                     atlas,
                     draws: &caption_draw_vec,
+                    blend: &[],
                 });
 
             // The clear colour is the shared engine-ui selector on every

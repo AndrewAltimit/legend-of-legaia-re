@@ -35,8 +35,13 @@
 //!   cache that loads the assets once, rebuilds the buffers when a rung seats
 //!   a new opponent, and poses them each frame.
 //!
-//! What stays outside: the cameo walk-on and the impact effect pair (see
-//! [`crate::baka_fighter_chrome`]), and the actor drop shadow `FUN_801D6BB8`.
+//! The impact pair's effect parts ([`crate::baka_impact_fx`]) draw into
+//! reserved ranges of the same buffers: the flip-book flash as sprite-arm
+//! quads and the two prop flashes as copies of PROT 1203 stage TMDs `1` / `2`.
+//! Their UVs and colours change frame to frame, which
+//! [`BakaDuelScene::attr_generation`] announces to a host that uploads
+//! attributes only on change. What stays outside: the actor drop shadow
+//! `FUN_801D6BB8`.
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -392,6 +397,9 @@ pub struct BakaDuelAssets {
     pub cameo_bank: Option<legaia_asset::player_anm::PlayerAnmBundle>,
     /// The overlay's two-record blit table (`&DAT_801DBE84`), the wink.
     pub blit_rects: Vec<bo::BakaBlitRect>,
+    /// The stage pack's TMDs `1` and `2` - the impact pair's mesh parts
+    /// ([`crate::baka_impact_fx`] template B), by `model - 1`.
+    pub impact_models: [Option<(legaia_tmd::Tmd, Vec<u8>)>; 2],
 }
 
 impl BakaDuelAssets {
@@ -413,6 +421,7 @@ impl BakaDuelAssets {
                 e,
                 usize::from(crate::baka_fighter_chrome::CAMEO_SCENE_MODEL),
             );
+            out.impact_models = [stage_tmd(e, 1), stage_tmd(e, 2)];
         }
         let party_bank = art_entry.as_deref().and_then(|e| {
             legaia_asset::player_anm::find_in_entry(e, 4)
@@ -587,11 +596,29 @@ pub struct BakaDuelScene {
     pub textured_indices: Vec<u32>,
     /// The untextured triangles only.
     pub untextured_indices: Vec<u32>,
+    /// The build-time `colors` / `flat_rgba` / `cba_tsb`, the depth cue's
+    /// and colour word's source for the impact mesh instances.
+    base_colors: Vec<[u8; 3]>,
+    base_flat: Vec<u8>,
+    base_cba_tsb: Vec<[u16; 2]>,
     fighter: [Range<usize>; 2],
     ghost: [[Range<usize>; 2]; 2],
     cameo: Range<usize>,
     walls: Vec<(Range<usize>, StagePlacement)>,
+    /// Sprite-arm quad instances, four vertices each.
+    impact_sprites: Vec<Range<usize>>,
+    /// Mesh-part instances: `(model, range)`.
+    impact_meshes: Vec<(usize, Range<usize>)>,
+    /// Bumped whenever a pose rewrote `uvs` / `cba_tsb` / `colors` /
+    /// `flat_rgba` (the impact parts animate them).
+    attr_generation: u32,
 }
+
+/// Sprite-arm quad instances the scene reserves. A decided exchange seats
+/// one flash, a draw two, and each lives about thirty ticks.
+pub const IMPACT_SPRITE_SLOTS: usize = 4;
+/// Mesh-part instances reserved per impact model.
+pub const IMPACT_MESH_SLOTS: usize = 2;
 
 impl BakaDuelScene {
     /// Build the buffers for `player` vs `opponent` (roster ids).
@@ -610,10 +637,16 @@ impl BakaDuelScene {
             indices: Vec::new(),
             textured_indices: Vec::new(),
             untextured_indices: Vec::new(),
+            base_colors: Vec::new(),
+            base_flat: Vec::new(),
+            base_cba_tsb: Vec::new(),
             fighter: [0..0, 0..0],
             ghost: [[0..0, 0..0], [0..0, 0..0]],
             cameo: 0..0,
             walls: Vec::new(),
+            impact_sprites: Vec::new(),
+            impact_meshes: Vec::new(),
+            attr_generation: 0,
         };
         s.fighter[0] = s.push_tmd(&p.tmd, &p.raw, 1.0);
         s.fighter[1] = s.push_tmd(&o.tmd, &o.raw, 1.0);
@@ -631,6 +664,22 @@ impl BakaDuelScene {
             s.cameo = s.push_tmd(tmd, raw, 1.0);
         }
         s.push_floor();
+        for _ in 0..IMPACT_SPRITE_SLOTS {
+            let r = s.push_quad();
+            s.impact_sprites.push(r);
+        }
+        for (k, m) in assets.impact_models.iter().enumerate() {
+            let Some((tmd, raw)) = m.as_ref() else {
+                continue;
+            };
+            for _ in 0..IMPACT_MESH_SLOTS {
+                let r = s.push_tmd(tmd, raw, 1.0);
+                s.impact_meshes.push((k + 1, r));
+            }
+        }
+        s.base_colors = s.colors.clone();
+        s.base_flat = s.flat_rgba.clone();
+        s.base_cba_tsb = s.cba_tsb.clone();
         s.positions = s.base.clone();
         Some(s)
     }
@@ -638,6 +687,140 @@ impl BakaDuelScene {
     /// The `(player, opponent)` roster pair the buffers hold.
     pub fn roster(&self) -> [usize; 2] {
         self.roster
+    }
+
+    /// Moves whenever a pose rewrote the per-vertex attributes (`uvs`,
+    /// `cba_tsb`, `colors`, `flat_rgba`) - the impact parts' flip-book cells
+    /// and fades. A host that re-uploads those only on a
+    /// [`BakaDuelSurface::generation`] change re-reads them on this one too.
+    pub fn attr_generation(&self) -> u32 {
+        self.attr_generation
+    }
+
+    /// One textured quad's worth of placeholder vertices (two triangles),
+    /// for an impact sprite instance; [`Self::pose_impact`] fills it.
+    fn push_quad(&mut self) -> Range<usize> {
+        let start = self.base.len();
+        for _ in 0..4 {
+            self.base.push([0.0; 3]);
+            self.object_ids.push(u32::MAX);
+            self.uvs.push([0, 0]);
+            self.cba_tsb.push([0, 0]);
+            self.colors.push([0x80; 3]);
+            self.flat_rgba.extend_from_slice(&[0x80, 0x80, 0x80, 255]);
+        }
+        let b = start as u32;
+        for t in [[b, b + 1, b + 2], [b + 1, b + 3, b + 2]] {
+            self.indices.extend_from_slice(&t);
+            self.textured_indices.extend_from_slice(&t);
+        }
+        start..self.base.len()
+    }
+
+    /// Place this frame's impact parts into their reserved ranges and drop
+    /// the unused ones; bumps [`Self::attr_generation`] when an attribute
+    /// changed.
+    ///
+    /// Each draw sits at the part's position turned by its yaw bank and
+    /// scaled by `+0x72 / 0x1000` - the kind-4 / mesh arm of the render
+    /// dispatcher (`FUN_8001ADA4` `0x8001B240..0x8001B2C4`). The X and Z
+    /// banks are not applied: no duel template writes them. Every prim takes
+    /// the part's colour word the way `FUN_80043390` applies it - the ABE
+    /// bit forced on, the ABR mode ORed into the tpage, and the packet colour
+    /// depth-cued toward the word's far colour
+    /// ([`crate::baka_impact_fx::ColourWord::cue`]).
+    fn pose_impact(&mut self, fight: &BakaFight) {
+        use crate::baka_impact_fx::ImpactDraw;
+        let draws = fight.impact_fx().draws();
+        let mut sprite_used = 0;
+        let mut mesh_used = vec![false; self.impact_meshes.len()];
+        let mut changed = false;
+        for d in draws {
+            match d {
+                ImpactDraw::Sprite {
+                    quad,
+                    pos,
+                    rot,
+                    scale,
+                    colour,
+                } => {
+                    let Some(range) = self.impact_sprites.get(sprite_used).cloned() else {
+                        continue;
+                    };
+                    sprite_used += 1;
+                    let (sy, cy) = angle(i32::from(rot[1])).sin_cos();
+                    let k = f32::from(scale) / 4096.0;
+                    let rgb = colour.cue(quad.rgb);
+                    let tsb = impact_tsb(quad.tpage, colour);
+                    for (j, i) in range.enumerate() {
+                        let v = quad.verts[j].map(|c| f32::from(c) * k);
+                        self.positions[i] = [
+                            v[0] * cy + v[2] * sy + f32::from(pos[0]),
+                            v[1] + f32::from(pos[1]),
+                            -v[0] * sy + v[2] * cy + f32::from(pos[2]),
+                        ];
+                        changed |= set(&mut self.uvs[i], quad.uvs[j]);
+                        changed |= set(&mut self.cba_tsb[i], [quad.clut, tsb]);
+                        changed |= set(&mut self.colors[i], rgb);
+                        let flat = [rgb[0], rgb[1], rgb[2], 255];
+                        let dst: &mut [u8; 4] = (&mut self.flat_rgba[i * 4..i * 4 + 4])
+                            .try_into()
+                            .expect("four bytes");
+                        changed |= set(dst, flat);
+                    }
+                }
+                ImpactDraw::Mesh {
+                    model,
+                    pos,
+                    rot,
+                    scale,
+                    colour,
+                } => {
+                    let Some(slot) = self
+                        .impact_meshes
+                        .iter()
+                        .enumerate()
+                        .position(|(n, (m, _))| *m == model && !mesh_used[n])
+                    else {
+                        continue;
+                    };
+                    mesh_used[slot] = true;
+                    let range = self.impact_meshes[slot].1.clone();
+                    let (sy, cy) = angle(i32::from(rot[1])).sin_cos();
+                    let k = f32::from(scale) / 4096.0;
+                    for i in range {
+                        let v = self.base[i].map(|c| c * k);
+                        self.positions[i] = [
+                            v[0] * cy + v[2] * sy + f32::from(pos[0]),
+                            v[1] + f32::from(pos[1]),
+                            -v[0] * sy + v[2] * cy + f32::from(pos[2]),
+                        ];
+                        let [cba, tsb] = self.base_cba_tsb[i];
+                        changed |= set(&mut self.cba_tsb[i], [cba, impact_tsb(tsb, colour)]);
+                        changed |= set(&mut self.colors[i], colour.cue(self.base_colors[i]));
+                        let b = &self.base_flat[i * 4..i * 4 + 4];
+                        let c = colour.cue([b[0], b[1], b[2]]);
+                        let dst: &mut [u8; 4] = (&mut self.flat_rgba[i * 4..i * 4 + 4])
+                            .try_into()
+                            .expect("four bytes");
+                        changed |= set(dst, [c[0], c[1], c[2], b[3]]);
+                    }
+                }
+            }
+        }
+        for n in sprite_used..self.impact_sprites.len() {
+            let r = self.impact_sprites[n].clone();
+            self.collapse(r);
+        }
+        for (n, used) in mesh_used.iter().enumerate() {
+            if !used {
+                let r = self.impact_meshes[n].1.clone();
+                self.collapse(r);
+            }
+        }
+        if changed {
+            self.attr_generation = self.attr_generation.wrapping_add(1);
+        }
     }
 
     /// Append one TMD's hybrid mesh with its packet colours scaled by `keep`.
@@ -755,6 +938,7 @@ impl BakaDuelScene {
             let (base, out) = (&self.base[range.clone()], &mut self.positions[range]);
             place_stage_model(camera, pos, yaw, base, out);
         }
+        self.pose_impact(fight);
     }
 
     /// Pose the round-start cameo, or drop it when none is on stage. The
@@ -918,6 +1102,25 @@ pub fn place_stage_model(
         ];
     }
     true
+}
+
+/// Store `v` into `dst`, reporting whether it changed.
+fn set<T: PartialEq + Copy>(dst: &mut T, v: T) -> bool {
+    let changed = *dst != v;
+    *dst = v;
+    changed
+}
+
+/// A prim's TSB word under an impact part's colour word: the ABE bit forced
+/// on when the word's bit 31 is set (`FUN_80043390` ORs it into every
+/// packet's code) and the word's ABR mode ORed into the tpage's bits 5..6.
+fn impact_tsb(tsb: u16, colour: crate::baka_impact_fx::ColourWord) -> u16 {
+    let t = tsb | (u16::from(colour.abr) << 5);
+    if colour.semi {
+        legaia_tmd::mesh::pack_tsb_semi(t, true)
+    } else {
+        t
+    }
 }
 
 /// PSX 12-bit angle to radians.

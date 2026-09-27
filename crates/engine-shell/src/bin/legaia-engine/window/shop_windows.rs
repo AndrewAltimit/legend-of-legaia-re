@@ -504,10 +504,20 @@ impl PlayWindowApp {
         let view = px::PrizeExchangeView {
             rows: session
                 .rows()
-                .map(|r| px::PrizeRow {
-                    name: self.shop_item_name(r.item_id),
-                    price: r.price,
-                    held: *world.party.inventory.get(&r.item_id).unwrap_or(&0),
+                .map(|r| {
+                    let held = *world.party.inventory.get(&r.item_id).unwrap_or(&0);
+                    px::PrizeRow {
+                        name: self.shop_item_name(r.item_id),
+                        price: r.price,
+                        held,
+                        // FUN_801D5DE0's ink arm, over the coin bank.
+                        ink: legaia_engine_core::shop::shop_stock_row_ink(
+                            i16::from(held),
+                            r.gate as i16,
+                            world.minigames.casino_coins as i32,
+                            r.price as i32,
+                        ),
+                    }
                 })
                 .collect(),
             cursor: session.cursor(),

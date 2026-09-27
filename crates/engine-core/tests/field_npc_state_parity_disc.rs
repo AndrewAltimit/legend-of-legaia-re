@@ -295,6 +295,16 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
                reloads. A cold entry against the post-CLEAR bank re-runs the spawn \
                section, exactly as retail's own fresh entry would",
     },
+    KnownDivergence {
+        label: "doman_arrival_from_korb2",
+        key: "flag:2",
+        class: "b",
+        note: "pre-load capture by its own catalog entry (about 60 vsyncs before doman \
+               loads, the player still on map03's portal tile): map03's script has raised \
+               system flag 2, the place-name banner's one-shot, and the MAN loader's tail \
+               (FUN_8003AEB0, andi 0xdf at 0x8003BBD4) consumes it on every load - so the \
+               engine's entry clears a flag retail has not reached the clear for yet",
+    },
 ];
 
 fn known(label: &str, key: &str) -> Option<&'static KnownDivergence> {

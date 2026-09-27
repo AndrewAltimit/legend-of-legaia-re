@@ -284,7 +284,7 @@ Per-script state, passed as `ctx_ptr`. Offsets identified so far:
 
 | Offset | Type | Meaning |
 |---|---|---|
-| +0x10 | u32 | Flag word. Bit 0x400 = "halted". Bit 0x100 has special handling in op 0x31 (and is the "touched" mark `FUN_801D5B5C` sets). Bit 0x1000000 toggles op 0x22 behavior. Bit 0x20200 / 0x20000000 gate the Y-collision lookup in op 0x23. Bits 0/1 = **collision/touch exempt** (`FUN_801CF754` / `FUN_801CF9F4` skip `flags & 3` actors - a door's touch pass runs `31 00` as its swing starts). Bits 0x20000 / 0x40000000 = the `FUN_801CFC40` contact class (result bit 1, button-gated - a cupboard's spawn prologue runs `31 1E`); 0x20000 / 0x1000000 also select the moving-arm contact box. See [`field-locomotion.md`](field-locomotion.md#collision---fun_801cfe4c). |
+| +0x10 | u32 | Flag word. Bit 0x400 = "halted". Bit 0x100 has special handling in op 0x31 (and is the "touched" mark `FUN_801D5B5C` sets). Bit 0x1000000 toggles op 0x22 behavior. Bit 0x20200 / 0x20000000 gate the Y-collision lookup in op 0x23. Bits 0/1 = **collision/touch exempt** (`FUN_801CF754` / `FUN_801CF9F4` skip `flags & 3` actors - a door's touch pass runs `31 00` as its swing starts). Bits 0x20000 / 0x40000000 = the `FUN_801CFC40` contact class (result bit 1, button-gated - a cupboard's spawn prologue runs `31 1E`); 0x20000 / 0x1000000 also select the moving-arm contact box. [0x20000 writers](motion-vm.md#the-motion-pause-kick); bit 1: [cull](motion-vm.md#the-driver-fun_8003bc08). See [`field-locomotion.md`](field-locomotion.md#collision---fun_801cfe4c). |
 | +0x14 | u16 | World X (in 0.5-tile units, formula `(b & 0x7F) * 0x80 + 0x40`). |
 | +0x16 | u16 | World Y (computed from collision via `func_0x80019278`). |
 | +0x18 | u16 | World Z. |
@@ -325,7 +325,7 @@ Per-script state, passed as `ctx_ptr`. Offsets identified so far:
 | Op | Mnemonic | Encoding | Effect |
 |---|---|---|---|
 | 0x22 | `EXEC_MOVE` | `[22, move_id]` | Schedule move-table playback on the current ctx. Sets `ctx[+0x5C] = move_id`, `ctx[+0x5E] = 0xFFFE`, then calls `func_0x800204F8(ctx)` - the **move-table consumer** that [`crates/mdt`](../formats/mdt.md) targets. Player path has special cases around `+0x10` bit 0x1000000 (move chaining) and `move_id == 99` (auto-cancel). |
-| 0x23 | `MOVE_TO` | `[23, x_byte, z_byte]` | Teleport ctx to grid position. World coords: `(b & 0x7F) * 0x80 + 0x40`, plus 0x40 if high bit set. Player path also calls `func_0x80017EC8` (camera/scroll). NPC path sets `+0x8C/+0x8D` facing, calls `FUN_801D81E0` and `FUN_801D79E8` (movement init). PC += 3. |
+| 0x23 | `MOVE_TO` | `[23, x_byte, z_byte]` | Teleport ctx to grid position. World coords: `(b & 0x7F) * 0x80 + 0x40`, plus 0x40 if high bit set. Player path also calls `func_0x80017EC8` (camera/scroll). NPC path sets `+0x8C/+0x8D` facing, calls `FUN_801D81E0` and `FUN_801D79E8` (the per-actor visibility cull, [motion-vm.md](motion-vm.md)). PC += 3. |
 | 0x26 | `JMP_REL` | `[26, lo, hi]` | Relative jump: `PC = pc_offset + 1 + (lo + hi*0x100)`. Unconditional. |
 
 ### 0x2B-0x33 (flag manipulation triplets)
@@ -1789,27 +1789,22 @@ flanking the player at `(23,43)`/`(22,42)` around tile `(23,42)`).
 
 ## BGM lookup table
 
-There isn't really a "BGM → file" lookup table - the BGM ID is a PROT-relative offset. From `FUN_800243F0` (the per-frame BGM/asset poller):
+There isn't really a "BGM → file" lookup table - a global BGM id is an offset into one bank. `FUN_800243F0` (the per-frame BGM/asset poller) reads the id at `_DAT_8007BAC8` (set by op `0x35` sub-1) and branches on `slti ... 0x7d0`:
 
-```c
-if (_DAT_8007BAC8 < 2000) {
-    _DAT_8007BAB8 = _DAT_80084540 + 6;          // scene-local: current scene PROT base + 6
-} else {
-    _DAT_8007BAB8 = _DAT_8007BC64 - 2000;        // global pool: separate base
-}
-_DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;   // final PROT index
-```
+| Id | Index stored to `_DAT_8007BAB8` (the change test) | Index the loader reads |
+|---|---|---|
+| `bgm_id >= 2000` (global) | `*(0x8007BC64) + bgm_id - 2000` | the same |
+| `bgm_id < 2000` (scene-local) | `*(0x80084540) + 6 + bgm_id` (`0x80024458`) | `*(0x8007BC64) + 2` - overwritten at `0x800245A4..0x800245BC` |
 
-- `_DAT_8007BAC8` - set by op 0x35 sub-1 (the BGM ID from the script).
-- `_DAT_80084540` - current scene's PROT base index (set by the field loader; offset +6 lands at the per-scene BGM block).
-- `_DAT_8007BC64` - global BGM pool base for IDs ≥ 2000.
-- `_DAT_8007BAB8` - final PROT index, consumed downstream by the asset loader.
+- `_DAT_8007BC64` - the `music_01` bank's raw define (`990` on a running image).
+- `_DAT_80084540` - the loaded scene's raw CDNAME define.
+- `_DAT_8007BAB8` - the index the swap compares against the resident one (`_DAT_8007BA9C`); it decides *whether* the track changes, not what loads.
 
 So:
-- `bgm_id < 2000`: scene-local - lives at PROT `current_scene + 6 + bgm_id`. Different scenes have different BGM at the same script ID. Rare in retail: scenes carry almost no local SEQ data (`teien` is the one scene with a local copy).
-- `bgm_id ≥ 2000`: global - lives at PROT `_DAT_8007BC64 + bgm_id - 2000` (raw pool base `990`). The global pool is the **`music_01` bank**, whose pool order is the **debug sound-test order** - so `2000 + i` plays sound-test track `i` and every global id resolves to a curated human name. Pinned by the per-scene op-`0x35` census joining ids to their scenes' known music (`town01` starts `2016` = "Rim Elm theme"). The physical bank is piecewise in extraction space (a 2-entry gap); the resolver `legaia_engine_core::music_labels::prot_entry_for_bgm_id` owns the id→entry map. See [music-tracks](../reference/music-tracks.md#the-disc-side-join-the-music_01-bank-in-sound-test-order).
+- `bgm_id ≥ 2000`: global - lives at PROT `_DAT_8007BC64 + bgm_id - 2000`. The global pool is the **`music_01` bank**, whose pool order is the **debug sound-test order** - so `2000 + i` plays sound-test track `i` and every global id resolves to a curated human name. Pinned by the per-scene op-`0x35` census joining ids to their scenes' known music (`town01` starts `2016` = "Rim Elm theme"). The physical bank is piecewise in extraction space (a 2-entry gap); the resolver `legaia_engine_core::music_labels::prot_entry_for_bgm_id` owns the id→entry map. See [music-tracks](../reference/music-tracks.md#the-disc-side-join-the-music_01-bank-in-sound-test-order).
+- `bgm_id < 2000`: **not** a scene-block entry. The block index `current_scene + 6 + id` is only the change-test index; the load arm replaces it with `*(0x8007BC64) + 2` - extraction `990`, global slot `2`, the track id `2002` plays - and parks the id in `gp+0x728`, whose only reader is the `WARNING BGM NO %d` debug print. Retail stages no scene bank. Engine: `SCENE_LOCAL_BGM_FALLBACK_ID`. Detail and captures: [`audio.md`](audio.md#a-scene-local-id-loads-a-fallback-track-not-a-scene-bank).
 
-The "table" *is* the [CDNAME.TXT name map](../formats/cdname.md)'s per-scene block layout. There's no separate BGM index in `SCUS_942.54`.
+An older reading had a scene-local id load PROT `current_scene + 6 + id` from the scene's own block; it read the stored index as the loaded one and missed the overwrite. There is no separate BGM index in `SCUS_942.54`.
 
 ## Helper functions
 

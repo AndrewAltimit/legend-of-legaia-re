@@ -37,19 +37,13 @@
 //! a name that appears on one appears on the other.
 //!
 //! Row inks come from the retail kernels
-//! `legaia_engine_core::shop::{shop_root_command_rows, shop_stock_row_ink}`
-//! (`FUN_801D4868` / `FUN_801D5DE0`), so an empty bag greys the Sell row and a
-//! full stack / unaffordable price greys a stock row on this host too.
-//!
-//! Caveat on the second of those: `FUN_801D5DE0` is the **casino prize list's**
-//! row renderer - it indexes the prize table `0x801E4518` and gates on the coin
-//! bank `_DAT_800845A4`, never on the gold purse. Both hosts reuse the kernel
-//! for shop rows with the purse passed in and `marker` fixed at `0`, and the
-//! shop's own retail builder (`FUN_80030628` case `0x0B`) is now read: its dim
-//! bit is an OR of those same two tests with no marker tier, so the reuse
-//! agrees row for row. See `shop_stock_row_ink`'s own docs. The builder's row
-//! **order** is a separate thing this page inherits from the catalog - the
-//! record's last entries are hoisted to the top of the list.
+//! `legaia_engine_core::shop::{shop_root_command_rows, shop_buy_row_ink,
+//! shop_stock_row_ink}` (`FUN_801D4868`; the list kernel `FUN_80032A44`'s
+//! shop-row arm; `FUN_801D5DE0`), so an empty bag greys the Sell row, a full
+//! stack / unaffordable price greys a stock row, and the Platinum Card band a
+//! shop builds (`ShopInventory::featured_rows`) draws in the teal pen on this
+//! host too. `shop_stock_row_ink` is the **casino prize list's** kernel - it
+//! gates on the coin bank - and inks the prize-exchange rows, not the shop's.
 //!
 //! # The retail descriptor windows
 //!
@@ -248,12 +242,16 @@ impl LegaiaRuntime {
                 shop.inventory
                     .items
                     .iter()
-                    .map(|item| {
-                        let ink = legaia_engine_core::shop::shop_stock_row_ink(
+                    .enumerate()
+                    .map(|(row, item)| {
+                        // FUN_80032A44's buy-row arm: the hoisted band keeps
+                        // its featured pen even when dim.
+                        let ink = legaia_engine_core::shop::shop_buy_row_ink(
+                            row < shop.inventory.featured_rows,
                             held_of(item.item_id),
-                            0,
                             gold,
                             item.price as i32,
+                            false,
                         );
                         (self.shop_item_label(item.item_id), Some(item.price), ink)
                     })
@@ -577,10 +575,20 @@ impl LegaiaRuntime {
         let view = px::PrizeExchangeView {
             rows: session
                 .rows()
-                .map(|r| px::PrizeRow {
-                    name: self.shop_item_label(r.item_id),
-                    price: r.price,
-                    held: *world.party.inventory.get(&r.item_id).unwrap_or(&0),
+                .map(|r| {
+                    let held = *world.party.inventory.get(&r.item_id).unwrap_or(&0);
+                    px::PrizeRow {
+                        name: self.shop_item_label(r.item_id),
+                        price: r.price,
+                        held,
+                        // FUN_801D5DE0's ink arm, over the coin bank.
+                        ink: legaia_engine_core::shop::shop_stock_row_ink(
+                            i16::from(held),
+                            r.gate as i16,
+                            world.minigames.casino_coins as i32,
+                            r.price as i32,
+                        ),
+                    }
                 })
                 .collect(),
             cursor: session.cursor(),

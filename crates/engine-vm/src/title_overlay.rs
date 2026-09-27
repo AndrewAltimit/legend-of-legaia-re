@@ -98,10 +98,14 @@
 //! - `0x01` `Idle` - handler PC is the shared epilogue. No per-mode work.
 //!   Nothing in the function ever stores `1` to the selector, so this is
 //!   the out-of-range slot rather than a state the graph enters.
-//! - `0x02` `TextMenu` - a two-row NEW GAME / CONTINUE menu drawn as two
-//!   text lines at y `0x6B` / `0x78` with a cursor sprite, confirming on
-//!   `pad & 0x44` into `0x14` with the picked row in `state[+0x200]`.
-//!   Unreachable on retail for the two reasons above.
+//! - `0x02` `TextMenu` - a two-row menu whose rows are the strings at
+//!   `0x801CEF0C` and `0x801CEF14` (`lui a0,0x801d; addiu a0,a0,-0x10f4`
+//!   / `-0x10ec` at `0x801DDE58` / `0x801DDE80`) - a save row and a load
+//!   row, not NEW GAME / CONTINUE - drawn by `FUN_80036888` as two text
+//!   lines at y `0x6B` / `0x78` with a cursor sprite (`FUN_8002C488`) and
+//!   a `FUN_801E4140` panel, confirming on `pad & 0x44` into `0x14` with
+//!   the picked row in `state[+0x200]`. Unreachable on retail for the two
+//!   reasons above.
 //! - `0x10` `AttractIdle` - the live title menu. Steps the row counter
 //!   `_DAT_8007B820` on `Up | Down` (`0x801DDB9C`), wraps it with
 //!   `andi v1,v1,0x1`, and confirms on `Start | L1 | Cross`

@@ -649,6 +649,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.field_player_cflag(bit, set)
     }
 
+    fn player_set_model(&mut self, value: i16) -> bool {
+        self.world.field_player_set_model(value)
+    }
+
     fn global_flags(&self) -> u32 {
         self.world.flags.story_flags
     }
@@ -2207,9 +2211,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// select is [`crate::model_bank::resolve_model_id`]'s, the `4C 50`
     /// arm's own `0x801E17AC..0x801E1824` select instruction for instruction.
     ///
-    /// Only a placement channel receives it; an op aimed at the player
-    /// (`CC F8 50 ..`, e.g. `jagaroom`'s costume swap) has no player-mesh
-    /// re-bind seat and changes the state words only.
+    /// Only a placement channel receives it here; an op aimed at the player
+    /// (`CC F8 50 ..`, e.g. `jagaroom`'s costume swap) goes to
+    /// [`World::field_player_set_model`] instead, through
+    /// `FieldHost::player_set_model`.
     ///
     /// PORT: FUN_80024E08 (the model re-stage, through the live-model seat)
     fn op4c_n5_sub0_set_actor_model(&mut self, ctx: &mut FieldCtx, value: i16, _high: bool) {
@@ -2315,6 +2320,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// [`crate::world::CameraRig::shake_amplitude`].
     fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
         self.world.camera.shake_amplitude = value;
+    }
+
+    /// `[4C, 0x89, lo, hi]` - the pager's automatic-press countdown
+    /// `_DAT_80073F00`, which a waiting box page counts down and then
+    /// presses through ([`crate::dialog::OwnedDialogPanel::tick_at_auto`]).
+    fn op4c_n8_sub9_set_73f00(&mut self, value: i16) {
+        self.world.dialog.auto_press = value;
     }
 
     fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
@@ -2718,6 +2730,24 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
                 .is_some_and(|a| a.battle.max_hp > 0)
     }
     fn pose(&mut self, actor_id: u8, pose: Pose) {
+        // `FUN_801D5854`'s invalid-slot guard (`0x801D58C8..0x801D58E8`): a
+        // pose `>= 6` for a slot `>= 8` forces pose `9` and scrubs the
+        // ghost bits off pool slots `0..=6` (`FUN_801DB9C4`).
+        let pose = if actor_id >= 8 && pose as u8 >= 6 {
+            let mut words: Vec<u32> = self
+                .world
+                .actors
+                .iter()
+                .map(|a| a.battle.flag_word)
+                .collect();
+            vm::battle_action::clear_pool_flag_words(&mut words);
+            for (a, w) in self.world.actors.iter_mut().zip(words) {
+                a.battle.flag_word = w;
+            }
+            Pose::Defeat
+        } else {
+            pose
+        };
         self.world
             .pending_battle_events
             .push(BattleEvent::Pose { actor_id, pose });

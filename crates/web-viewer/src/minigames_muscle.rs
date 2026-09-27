@@ -2427,6 +2427,10 @@ impl LegaiaMinigames {
             round_card: f.round_card,
         };
         let d = rb::first_visit_hub_draw(&mut table, &levels, course, round);
+        let stp = self
+            .hud_hub_tims()
+            .map(|(t0, t1)| rb::HubPaletteStp::from_tims(&t0, &t1))
+            .unwrap_or_default();
         let quad_row = |q: &hud::HudQuad| {
             serde_json::json!({
                 "sheet": if q.tpage & 0x10 != 0 { 5 } else { 4 },
@@ -2438,6 +2442,7 @@ impl LegaiaMinigames {
                 "dw": q.xy[1].0 as i32 - q.xy[0].0 as i32 + 1,
                 "dh": q.xy[2].1 as i32 - q.xy[0].1 as i32 + 1,
                 "semi": q.semi_transparent,
+                "abr": stp.quad_abr(q),
             })
         };
         let mut rows: Vec<serde_json::Value> = d.tiles.iter().map(quad_row).collect();
@@ -2517,6 +2522,10 @@ impl LegaiaMinigames {
                 )
             }
         };
+        let stp = self
+            .hud_hub_tims()
+            .map(|(t0, t1)| legaia_engine_ui::ringside_backdrop::HubPaletteStp::from_tims(&t0, &t1))
+            .unwrap_or_default();
         let rows: Vec<serde_json::Value> = quads
             .iter()
             .map(|q| {
@@ -2532,6 +2541,7 @@ impl LegaiaMinigames {
                     "dw": q.xy[1].0 as i32 - q.xy[0].0 as i32 + 1,
                     "dh": q.xy[2].1 as i32 - q.xy[0].1 as i32 + 1,
                     "semi": q.semi_transparent,
+                    "abr": stp.quad_abr(q),
                 })
             })
             .collect();

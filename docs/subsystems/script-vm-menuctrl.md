@@ -151,7 +151,7 @@ Large multi-purpose dispatcher (party-slot full heal, conditional jump on `+0x68
 - **Sub-6** (15-byte) is `[4C, 0x86, w0..w5, actor_id]` - it **spawns the reflection controller**, not a transform write; see [below](#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown). PC always += 15 (the `addiu s8,s8,0xf` sits in the resolve's delay slot, so an unresolved actor advances too).
 - **Sub-7** (2-byte) is sub-6's **teardown**: `FUN_8003CF40(_DAT_8007C34C, 0x801E5154)` retires every reflection controller, then PC += 2. Not a registration and not a halt - see [below](#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown).
 - **Sub-4** (3-byte) is `[4C, 0x84, amplitude]` - **the screen-shake amplitude**. The whole arm is five instructions at `0x801E2134` (jump-table slot `0x801CEF58`): `addiu s8,s8,0x3` / `lbu v1,0x1(s6)` / `lui v0,0x8008` / `j 0x801e3624` / `_sw v1,-0x49d0(v0)`, i.e. `_DAT_8007B630 = operand` as a zero-extended word. That global is the only input to the LCG camera jitter `FUN_801D9D30` (`0` = no shake, `1..=0x15` widens the sample window) and this opcode is its only writer, which makes the field script the sole source of a camera shake. Port: [`FieldHost::op4c_n8_sub4_set_b630`]; engine sink `World::camera.shake_amplitude`.
-- **Sub-9** writes `_DAT_80073F00 = i16(operand[1..3])` and advances by 4 (the dump's "FUN_801E3620 dispatch" was Ghidra mis-rendering an internal `goto code_r0x801e3620` label; see the gotcha note below).
+- **Sub-9** writes `_DAT_80073F00 = i16(operand[1..3])` and advances by 4. The word is the dialog pager's **automatic press**: while it is positive each `0x19` call of `FUN_801D84D0` subtracts the frame step, and the call that reaches zero clears it and presses confirm (`0x801D8F4C..0x801D8F88`); this op is its only writer, at 37 sites in 12 scenes. Engine: the seat `DialogState::auto_press`, counted by `OwnedDialogPanel::tick_at_auto`. The dump's "FUN_801E3620 dispatch" was Ghidra mis-rendering an internal `goto code_r0x801e3620` label; see the gotcha note below.
 - **Sub-B** (round 18, 5-byte) is a conditional jump: `[4C, 0x8B, type_byte, target_lo, target_hi]` jumps to absolute u16 if any actor of `type_byte` is active, else PC += 5.
 - **Sub-D** (round 18, 6-byte) is a tristate per-character actor-search: `[4C, 0x8D, char_idx, marker, target_lo, target_hi]` returns one of [`ActorSearchResult::EmptySlot`](../../crates/engine-vm/src/field.rs) (advance 6), `Found` (jump to u16 at +3..=4), or `NoMatch` (halt).
 - **Sub-5/E/F** (5-byte `[4C, op0, p0, p1, p2]`) share the standard halt-acquire idiom: on the predicate ([`FieldHost::field_halt_acquire_predicate`]: `saved_pc != 0` or the target is the player, and not already halted or the scene busy) it writes the target's `+0x94` payload pointer, clears `wait_accum`, sets the halt bit, then **advances the caller past the op** (`iVar24 = 5`, `overlay_0897_801de840.txt:6550` / `overlay_world_map_801de840.txt:7179`); on failure it halts the caller at PC (`LAB_801dee50`). Both operate on the resolved cross-context target - the cutscene timeline uses this to freeze its vignette actors, then pokes them beat by beat.
@@ -700,8 +700,13 @@ one the placement spawner and motion op `0x0E` use. The port hands the raw
 operand to a placement's live model seat (`World::field_npc_live_model`),
 which both play hosts re-bind mid-scene from; the census counts hundreds of
 clean sites across most field scenes. An operand aimed at the player
-(`CC F8 50 ..`) changes the context's state words only - the port has no
-player-mesh re-bind.
+(`CC F8 50 ..`, four disc sites: `jagaroom` twice with `0x26`, `urudre1` with `0x5D`
+and then `0xF0`) resolves the actor through `FUN_8003C83C` to the player object, so
+the party-bank bit and the re-stage land on the player. The VM hands it to the host
+(`FieldHost::player_set_model`), and the port writes the player's party-bank bit and
+parks the id on `World::locomotion.player_live_model`; both play hosts rebuild the
+player's rig from it on the change (`World::take_player_rig_change`,
+`SceneHost::player_rig_mesh`).
 
 #### Sub-2 is TAKE_ITEM, not a menu poll
 

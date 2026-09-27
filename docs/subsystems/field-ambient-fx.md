@@ -853,6 +853,48 @@ What still separates the frames:
   vertex, as retail's do.
 - **The camera** (below).
 
+#### Closing the draw order: flat per-primitive terrain depth
+
+The difference is granularity. Retail compares the fog and the ground once
+per *primitive*, by ordering-table bucket: a continent prim in a nearer
+bucket covers every sheet behind it wherever the two overlap, even where the
+prim's own pixels lie farther than the sheet, and a sheet in a nearer bucket
+lands on a ridge whose far corner reaches past it. The port compares per
+*pixel*, which lets a sheet through wherever the ridge's pixel depth passes
+the sheet's - and a sheet is flat at its particle's depth while a ridge
+slopes toward the camera, so most of the fog survives. The fix gives the
+continent the ordering table's depth instead of its own:
+
+1. **Pin the continent's bucket key.** The overworld mesh leaves (the
+   overlay-replaced per-mode renderers, [`world-map.md`](world-map.md))
+   take the key from `max(SZ) >> shift` or from `AVSZ` / `OTZ` as bit `0x10`
+   of the flags byte at `gp - 0x2D1` selects, with the shift at `gp + 0x90`.
+   Read both off `keikoku_chest_preload` (the state the fog oracle already
+   uses) and re-derive them from the leaf disassembly, so the continent's key
+   and the sheet's `(SZ - 0x10) >> 5` are on one scale.
+2. **Write the key as the continent's depth.** Each prim's vertices carry
+   the prim's model-space reference point (its centroid for `AVSZ`, all
+   corners for `max(SZ)`), the vertex shader projects it through the draw's
+   matrix to the bucket depth, passes it `@interpolate(flat)` and the
+   fragment shader writes it as the fragment depth - quantised to the bucket
+   width, so ties stay ties. Native: a vertex attribute on the scene
+   VRAM-mesh and colour-mesh pipelines, set only for the overworld's
+   continent draw. Browser: the same attribute in `webgl-tmd.js`
+   (`gl_FragDepth`, WebGL2). Everything else keeps per-pixel depth.
+3. **Test the sheet on the same scale.** `FogQuad::depth` becomes the
+   sheet's bucket depth quantised the same way, and an equal bucket resolves
+   by link order: a later `AddPrim` into a bucket draws first, so whichever
+   of the fog emitter and the continent's leaves links *later* in the frame
+   goes under the other. Which runs later is not pinned yet - read it off the
+   frame driver's call order before choosing `<` or `<=`.
+4. **Measure it against the walked table.** The oracle
+   (`fog_sheet_colour_retail_capture_disc.rs`) already rebuilds the 104
+   walked packets; add the continent's walked buckets and assert the port's
+   hidden share of additive light matches the table's opaque-coverage
+   estimate (about a fifth) rather than asserting pixels.
+
+The per-vertex curvature stays as it is: it moves `SY`, not the key.
+
 The render step subtracts the camera vertical offset `_DAT_8007BCAC` from
 every particle height. On `keikoku_chest_preload` it reads 252: the ease
 walks toward `scene_ctrl[+0x4A] - player[+0x16]`, the control word reads

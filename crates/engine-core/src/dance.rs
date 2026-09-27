@@ -1978,14 +1978,23 @@ pub struct DanceSceneEntry {
 ///
 /// PORT: FUN_801CEF54 (`0x801cef54..0x801cf46c`)
 ///
-/// NOT WIRED: the host that should call it is [`crate::world::World`]'s dance
-/// entry, and it cannot: the port enters the dance by **suspending** the
-/// current scene mode rather than loading the venue's own bundle, so there is
-/// no scene-name buffer to fill, no block base to publish and no GPU packet
-/// buffer to size. That is the same reason the teardown
-/// ([`dance_scene_stage`]) is only partly wired, and the two become reachable
-/// together the day the dance is a real scene load. Until then the record is
-/// the retail seed a dance scene host reads, and the fields that already have
+/// NOT WIRED: no one step in the port does this entry's job, and the record
+/// has no reader. Its mode half is [`crate::world::World::enter_dance`]: the
+/// actor it spawns from the template at `0x801D42E4` is the beat clock
+/// (`FUN_801cf470` is that template's tick word), which is
+/// [`DanceGame`] + [`CountIn`] there, together with the song BGM and the
+/// pad-latch clear. Its venue half - the `other7` block at
+/// [`Self::scene_block_base`] - is loaded privately by the browser pages
+/// (`Scene::load` of `legaia_asset::dance_cast::DANCE_SCENE_NAME` in
+/// `web-viewer`'s `minigames_dance.rs`); the native window draws no hall.
+/// What nothing reads is the rest: [`Self::dancer_spawn`],
+/// [`Self::camera_pair`], [`Self::view_window`] and the five
+/// [`Self::face_stamps`] calls ([`dance_face_rig`]). The caller owed is a
+/// World-side dance venue load that every host would draw from - the one the
+/// browser pages each do on their own - and it does not exist because the
+/// port enters the dance by **suspending** the current scene mode instead of
+/// loading the venue bundle. That is also why the teardown
+/// ([`dance_scene_stage`]) is only partly wired. The fields that already have
 /// engine mirrors agree with them: [`Self::scene_block_base`] with
 /// [`DANCE_SCENE_BLOCK_BASE`] and [`Self::cleared_dancer_slots`] with the
 /// qualifier floor's size.

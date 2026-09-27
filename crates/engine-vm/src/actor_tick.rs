@@ -26,7 +26,7 @@
 //! 4. **Path interpolation** (dispatch `3`). Adds `+0x96 / +0x98 / +0x9A`
 //!    velocities into `+0x90 / +0x92 / +0x94`, advances the zoom envelope at
 //!    `+0x68` (clamped at `0x100`).
-//! 5. **Default movement** (every dispatch byte except `5`). Adds
+//! 5. **Default movement** (every dispatch byte except `3` and `5`). Adds
 //!    `+0x80..+0x84` into `+0x24..+0x28`, runs the trig-LUT-driven
 //!    world-position update via [`apply_world_rotation`], and accumulates
 //!    the camera-shake envelopes at `+0x72 / +0x78 / +0x7A`.
@@ -693,13 +693,17 @@ pub fn tick_actor(
         path_alt_update(physics, scalars, listener, &mut out);
     }
 
-    let path_continued = if matches!(dispatch, Some(DispatchByte::Path)) {
-        path_update(physics, scalars)
-    } else {
-        false
-    };
+    if matches!(dispatch, Some(DispatchByte::Path)) {
+        path_update(physics, scalars);
+    }
 
-    if !matches!(dispatch, Some(DispatchByte::PathAlt)) && !path_continued {
+    // Retail branches past the default motion block for dispatch 3 and 5
+    // alike (`beq` to `0x80022B80` at `0x800228A8` / `0x800228B0`); the
+    // `+0x9C` counter `path_update` advances gates nothing here.
+    if !matches!(
+        dispatch,
+        Some(DispatchByte::Path) | Some(DispatchByte::PathAlt)
+    ) {
         default_movement_update(physics, scalars);
     }
 
@@ -921,7 +925,7 @@ pub fn path_update(p: &mut ActorPhysics, s: TickScalars) -> bool {
     }
 }
 
-/// Default-movement arm - dispatch byte ≠ `5`. Folds `accel` * scalar into
+/// Default-movement arm - dispatch byte other than `3` / `5`. Folds `accel` * scalar into
 /// `motion_x..motion_z`, runs the rotation step, and accumulates the
 /// shake / focal envelopes.
 pub fn default_movement_update(p: &mut ActorPhysics, s: TickScalars) {

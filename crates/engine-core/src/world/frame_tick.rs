@@ -18,6 +18,28 @@ impl World {
         self.clock.play_time_seconds = self.clock.play_time_seconds.saturating_add(delta_seconds);
     }
 
+    /// Advance the play clock off a host wall-clock reading `now_secs` (any
+    /// epoch - only deltas are used). Whole seconds only, and by delta
+    /// against a high-water mark rather than absolutely, so a loaded save
+    /// keeps its accumulated total.
+    ///
+    /// The one play-clock law both play hosts call. Each used to keep its own
+    /// origin and high-water mark, and they drifted: the native window
+    /// measured from window creation, so the title screen's time landed in
+    /// the first delta after New Game; the browser page reset its origin on
+    /// New Game but not its high-water mark, so after a second New Game play
+    /// time stood still until the wall clock passed the old mark. The origin
+    /// is set by the first call and dropped by [`Self::begin_new_game`].
+    pub fn tick_play_clock(&mut self, now_secs: f64) {
+        let origin = *self.clock.play_clock_origin.get_or_insert(now_secs);
+        let now = (now_secs - origin).max(0.0) as u32;
+        if now > self.clock.play_clock_high_water {
+            let delta = now - self.clock.play_clock_high_water;
+            self.clock.play_clock_high_water = now;
+            self.advance_play_time(delta);
+        }
+    }
+
     /// Commit a host font measurement of the live `4C E1` balloon's line, so
     /// the record carries the centred `x` retail computes at spawn
     /// (`X = (0x140 - width) >> 1`).
@@ -608,39 +630,49 @@ impl World {
         }
     }
 
-    /// Drain a menu-staged transition into the named scene transition the
-    /// scene host consumes ([`Self::pending_named_scene_transition`]).
+    /// Drain a menu-staged Door use into the pause-menu session's travel-art
+    /// hand-off ([`Self::begin_pause_session_exit`]), which runs the art and
+    /// then issues the named scene transition the scene host consumes
+    /// ([`Self::pending_named_scene_transition`]).
     ///
     /// **Door of Wind** ([`crate::world::MenuState::pending_warp`]): the staged triple is
     /// retail's `0x80084628` scene word + `0x80084624`/`0x8008462C` tile
     /// pair (`FUN_801D8B90` phase 3, from quick-travel placement record
     /// bytes `+2/+4/+5`). The scene word is the destination scene's raw
-    /// CDNAME TOC index ([`crate::world::DiscTables::scene_toc_names`]); the tile pair seats
-    /// the party at `(tile << 7) + 0x40`, the same conversion the world-map
-    /// arrival kernel applies (`FUN_801EE328`: `0x80073EF4/EF8` stores).
-    /// The named-transition drain performs exactly that seat
-    /// (`seat_player_at_tile`), entering the kingdom overworld for the
-    /// three `mapNN` bases and the field scene for the `son` / `korout`
-    /// records. An unresolvable scene word logs retail's
-    /// `UNFIND MAP NUMBER %d` diagnostic (the `FUN_801EE328` phase-`0x63`
-    /// park) and drops the warp.
+    /// CDNAME TOC index ([`crate::world::DiscTables::scene_toc_names`]), the
+    /// same key the art's resolve looks up in the resident define table; the
+    /// tile pair seats the party at `(tile << 7) + 0x40`. Exit code `5`, so
+    /// the session hands on to Rula (`FUN_801EE328`).
     ///
-    /// **Door of Light** ([`crate::world::MenuState::pending_escape`]): retail hands the
-    /// outer menu SM exit code 4 (`FUN_801D8A58`) - the dungeon-escape
-    /// handoff, whose overlay-side consumer is not yet pinned. The engine
-    /// routes it onto the last visited-map record (the return point the
-    /// travel arts warp to): back to that kingdom overworld at the stored
-    /// tile. With no visited record yet (the party has never stood on a
-    /// kingdom map) the escape is dropped with a diagnostic.
+    /// **Door of Light** ([`crate::world::MenuState::pending_escape`]): exit
+    /// code `4` (`FUN_801D8A58`), so the session hands on to Riremito
+    /// (`FUN_801EE094`). The three words then hold what the last long-layout
+    /// region record the player stood in stored (`region[+9..+0xB]`,
+    /// [`crate::region_encounter::WorldMapReturn`]): a retail capture of a
+    /// Door of Light in cave01 reads `0x55 @ (37, 109)` there and seats the
+    /// party at `(37 << 7) + 0x40, (109 << 7) + 0x40` on map01. Only when no
+    /// region has stored a triple yet (an engine-only state: a scene with no
+    /// region table, or a use before the first step) does the drain fall back
+    /// to the world-map panel host's last recorded map.
+    ///
+    /// A target that does not resolve logs retail's `UNFIND MAP NUMBER %d`
+    /// diagnostic and drops the use before anything is installed - see
+    /// [`crate::world::pause_session`] for why that differs from retail.
     ///
     /// REF: FUN_801D8B90 (stage), FUN_801D8A58 (escape exit code),
-    /// FUN_801EE328 (arrival tile math + UNFIND diagnostic)
+    /// FUN_801ED308 (the session), FUN_801EE094 / FUN_801EE328 (the arts)
     pub fn drain_staged_menu_warp(&mut self) {
+        use crate::pause_screens::{MENU_EXIT_CODE_FIELD_ESCAPE, MENU_EXIT_CODE_WORLD_MAP_WARP};
+        use crate::world::pause_session::PauseTravelTarget;
         if let Some(warp) = self.menu.pending_warp.take() {
             match self.tables.scene_toc_names.get(&u32::from(warp.scene_id)) {
                 Some(name) => {
-                    self.pending_named_scene_transition =
-                        Some((name.clone(), warp.menu_x, warp.menu_y, 0));
+                    let target = PauseTravelTarget {
+                        scene: name.clone(),
+                        tile_x: warp.menu_x,
+                        tile_z: warp.menu_y,
+                    };
+                    self.begin_pause_session_exit(MENU_EXIT_CODE_WORLD_MAP_WARP, target);
                 }
                 None => {
                     // Retail's miss arm prints and parks (phase 0x63).
@@ -650,6 +682,36 @@ impl World {
         }
         if self.menu.pending_escape {
             self.menu.pending_escape = false;
+            // The menu's installer refreshes the region setup before the
+            // menu opens (`FUN_801F1278` calls `FUN_801D9E1C(player, 0)` at
+            // `0x801F12F8`, with `+0x8E` / `+0x8F` preset to `0xFF`); the
+            // player cannot move between that open and this drain, so the
+            // refresh here reads the same tile.
+            self.apply_region_battle_setup_at_player();
+            // Retail's resolve reads the triple the last long-layout region
+            // record stored (`FUN_801D9E1C`); the capture has cave01 leave
+            // `0x55 @ (37, 109)` - the tile outside the cave mouth, not the
+            // tile the party entered from - and the art seats the party there.
+            if let Some(ret) = self
+                .encounters
+                .region_setup
+                .and_then(|s| s.world_map_return)
+            {
+                match self.tables.scene_toc_names.get(&u32::from(ret.map_word)) {
+                    Some(name) => {
+                        let target = PauseTravelTarget {
+                            scene: name.clone(),
+                            tile_x: ret.tile_x,
+                            tile_z: ret.tile_z,
+                        };
+                        self.begin_pause_session_exit(MENU_EXIT_CODE_FIELD_ESCAPE, target);
+                    }
+                    None => {
+                        log::warn!("menu escape: UNFIND MAP NUMBER {}", ret.map_word);
+                    }
+                }
+                return;
+            }
             let visited = self
                 .world_map
                 .ctrl
@@ -666,12 +728,12 @@ impl World {
                             return;
                         }
                     };
-                    self.pending_named_scene_transition = Some((
-                        name.to_string(),
-                        v.tile_x.clamp(0, 0xFF) as u8,
-                        v.tile_z.clamp(0, 0xFF) as u8,
-                        0,
-                    ));
+                    let target = PauseTravelTarget {
+                        scene: name.to_string(),
+                        tile_x: v.tile_x.clamp(0, 0xFF) as u8,
+                        tile_z: v.tile_z.clamp(0, 0xFF) as u8,
+                    };
+                    self.begin_pause_session_exit(MENU_EXIT_CODE_FIELD_ESCAPE, target);
                 }
                 None => {
                     log::warn!("menu escape: no visited world-map record to return to");
@@ -1005,6 +1067,9 @@ impl World {
         // mode (outside battle it drops its state) - once, here, for every
         // host (`crate::battle_cam_inputs`).
         self.tick_battle_camera();
+        // The near-camera ghost pass reads the pose this tick settled
+        // (`FUN_80046A20` calls `FUN_8004DC68` after its camera update).
+        self.tick_battle_camera_ghost();
         outcome
     }
 
@@ -1408,10 +1473,14 @@ impl World {
         if runs_master_driver {
             self.tick_three_actor_talk();
         }
-        // Menu-staged transitions (Door of Wind warp / Door of Light
-        // escape): convert the staged record into the named scene
-        // transition the scene host already drains.
+        // Menu-staged Door uses (Door of Wind warp / Door of Light
+        // escape): hand the staged record to the pause-menu session, whose
+        // travel art ends in the named scene transition the scene host
+        // already drains.
         self.drain_staged_menu_warp();
+        // The pause-menu session's post-menu half: the ramp-down to the
+        // travel-art hand-off, then the art itself, on every host.
+        self.tick_pause_session();
         // A minigame the player can enter must be one the player can leave.
         self.poll_minigame_escape();
         // Age the minigame effect-part pool. Here rather than in a host's own
@@ -1561,6 +1630,9 @@ impl World {
                 // REF: FUN_80038158, FUN_80036D80
                 if actor_tick_fired {
                     self.tick_field_npc_ambient();
+                    // The same driver's height arm (`FUN_8003BC08`), after
+                    // the tick moved anyone: the glide-class NPCs' Y.
+                    self.tick_field_npc_heights();
                 }
                 self.tick_tile_board();
                 // Rebuild the tile-actor draw list from the current board +
@@ -1580,6 +1652,10 @@ impl World {
                 if let Some(pslot) = self.player_actor_slot {
                     self.step_field_vertical(pslot as usize);
                 }
+                // The system channel's tick follows the player's: its
+                // per-tick store of the idle clip base lands after the settle
+                // has read the base.
+                self.tick_field_system_channel_clip_reset();
                 // Motion detection: diff every tracked actor's position
                 // against last frame's. Runs after EVERY mover in the frame
                 // (timeline, channels, field VM, NPC motion legs, locomotion)
@@ -1906,17 +1982,9 @@ impl World {
             _ => {}
         }
 
-        // Interpolating toward a committed target tile.
+        // Interpolating toward a committed target tile (state 2).
         if let Some((tx, tz)) = self.board.target {
-            let ms = &mut self.actors[slot].move_state;
-            let nx = step_toward(ms.world_x as i32, tx, TILE_BOARD_SPEED);
-            let nz = step_toward(ms.world_z as i32, tz, TILE_BOARD_SPEED);
-            ms.world_x = nx as i16;
-            ms.world_z = nz as i16;
-            if nx == tx && nz == tz {
-                self.board.target = None;
-                self.tile_board_arrival();
-            }
+            self.tile_board_walk_step(slot, tx, tz);
             return;
         }
 
@@ -1941,8 +2009,60 @@ impl World {
         let Some(dir) = crate::tile_board::step_for_mask(remapped) else {
             return;
         };
-        if let Some((tx, tz)) = self.board.grid.as_mut().and_then(|b| b.try_step(dir)) {
-            self.board.target = Some((tx, tz));
+        match self.board.grid.as_mut().and_then(|b| b.try_step(dir)) {
+            Some((tx, tz)) => {
+                // An accepted step: the step cue through the ring's push
+                // producer (`jal 0x80035B50` with `0x21`, `0x801EF990`), then
+                // the run clip - `_DAT_8007BDD8 = 3`, `+0x5C = leader * 7 +
+                // 3`, bind (`0x801EF998..0x801EF9D0`).
+                self.push_sfx_cue(crate::tile_board::STEP_SFX);
+                self.field_player_strided_clip(vm::field_player_clip::BASE_RUN);
+                self.board.target = Some((tx, tz));
+                // State 4 stores state 2 and falls straight into it
+                // (`sh s3,0x54(s4)` at `0x801EFA84`, then `0x801EFA88`), so
+                // the first step moves on the accepting tick.
+                self.tile_board_walk_step(slot, tx, tz);
+            }
+            None => {
+                // Off the board or into a wall: the bonk through the ring's
+                // overwrite producer (`jal 0x80035BD0` with `0x23`,
+                // `0x801EF980`). Retail re-runs state 4 once per game tick
+                // with the pad held, so the bonk repeats at that rate; the
+                // port's state 4 runs every vsync and fires it on the vsyncs
+                // the actor game tick fired.
+                if self.clock.actor_vsync_accum == 0 {
+                    self.replace_last_sfx_cue(crate::tile_board::BONK_SFX);
+                }
+            }
+        }
+    }
+
+    /// One tick of the walker's state 2 (`0x801EFA88`): step toward the
+    /// committed target, facing the octant of the remaining delta
+    /// (`+0x26 = octant << 9`, `0x801EFB30..0x801EFBCC`); on arrival bind
+    /// the idle clip - `_DAT_8007BDD8 = 2`, `+0x5C = leader * 7 + 2`,
+    /// `FUN_800204F8` (`0x801EFAC0..0x801EFAEC`) - and run the arrival pass.
+    ///
+    /// PORT: FUN_801EF2B0 (state 2)
+    fn tile_board_walk_step(&mut self, slot: usize, tx: i32, tz: i32) {
+        let ms = &mut self.actors[slot].move_state;
+        let (x, z) = (ms.world_x as i32, ms.world_z as i32);
+        if let Some(octant) = crate::tile_board::walker_facing_octant(tx - x, tz - z) {
+            ms.render_26 = crate::tile_board::engine_heading_for_octant(octant);
+        }
+        let nx = step_toward(x, tx, TILE_BOARD_SPEED);
+        let nz = step_toward(z, tz, TILE_BOARD_SPEED);
+        ms.world_x = nx as i16;
+        ms.world_z = nz as i16;
+        // The walk is the pad's, not a script's: the clip player keeps the
+        // bound bank clip instead of the motion-derived pair.
+        if let Some(anim) = &mut self.locomotion.player_anim {
+            anim.pad_drove_this_frame = true;
+        }
+        if nx == tx && nz == tz {
+            self.board.target = None;
+            self.field_player_strided_clip(vm::field_player_clip::BASE_IDLE);
+            self.tile_board_arrival();
         }
     }
 
@@ -2800,8 +2920,22 @@ impl World {
             }
             _ => unreachable!("guarded by in_minigame"),
         }
-        // Close the mode-24 round trip when the entry came through the door
-        // warp (`exit_baka_fighter` already does its own).
+        self.close_minigame_round_trip();
+    }
+
+    /// Close the mode-24 round trip after a minigame exit, when the entry
+    /// came through the door warp (a backed-up scene name is armed):
+    /// [`Self::minigame_return_warp`] restores the departure label, banks the
+    /// session winnings and drops back to the field. A no-op for a session a
+    /// debug launcher opened (nothing armed), and after `exit_baka_fighter`,
+    /// which runs its own return warp.
+    ///
+    /// Every exit path calls it after its `exit_*`: the Start escape here,
+    /// the native window's minigame hotkeys and the browser page's fishing
+    /// button. The hotkeys and the button used to call the bare `exit_*`, so
+    /// leaving a door-entered session that way kept the scene backup armed
+    /// and never banked the winnings - only Start closed the trip.
+    pub fn close_minigame_round_trip(&mut self) {
         if self.minigames.scene_backup.is_some() {
             self.minigame_return_warp();
         }

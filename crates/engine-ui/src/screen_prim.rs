@@ -91,6 +91,52 @@ pub fn abr_mode(tsb: u16) -> u8 {
     ((tsb >> 5) & 0x3) as u8
 }
 
+/// How a CLUT's STP bits (bit 15 of each entry) split its non-zero colours.
+/// Entry `0x0000` is never drawn, so it does not count either way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaletteStp {
+    /// Every non-zero entry has STP set: a semi-transparent packet sampling
+    /// this palette blends every texel it draws.
+    All,
+    /// No entry has STP set: a semi-transparent packet sampling this palette
+    /// draws **opaque** - the packet's ABE bit has no texel to act on.
+    None,
+    /// Some do, some do not: the packet blends per texel.
+    Mixed,
+}
+
+/// Classify a palette's STP bits ([`PaletteStp`]).
+pub fn palette_stp(palette: &[u16]) -> PaletteStp {
+    let mut set = false;
+    let mut clear = false;
+    for &e in palette {
+        if e == 0 {
+            continue;
+        }
+        if e & 0x8000 != 0 {
+            set = true;
+        } else {
+            clear = true;
+        }
+    }
+    match (set, clear) {
+        (true, false) => PaletteStp::All,
+        (true, true) => PaletteStp::Mixed,
+        _ => PaletteStp::None,
+    }
+}
+
+/// The ABR equation a **textured** packet's texels go through, or `None`
+/// when it draws opaque: a semi-transparent packet (`semi`, GP0 bit 1) whose
+/// palette carries STP on its texels blends with the texpage's
+/// [`abr_mode`]; one whose palette carries none draws opaque whatever its
+/// ABE bit says. A [`PaletteStp::Mixed`] palette is treated as fully
+/// blended, the same simplification the module header records for
+/// [`ScreenQuad`].
+pub fn textured_semi_abr(semi: bool, tpage: u16, stp: PaletteStp) -> Option<u8> {
+    (semi && stp != PaletteStp::None).then(|| abr_mode(tpage))
+}
+
 /// One screen-space textured quad (PSX `POLY_FT4`) sampling PSX VRAM.
 ///
 /// `xy` are the four corners in PSX screen pixels in the retail `POLY_FT4`
@@ -812,6 +858,23 @@ pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> Overlay
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn palette_stp_ignores_the_never_drawn_zero_entry() {
+        assert_eq!(palette_stp(&[0, 0x8001, 0xFFFF]), PaletteStp::All);
+        assert_eq!(palette_stp(&[0, 0x0001, 0x7FFF]), PaletteStp::None);
+        assert_eq!(palette_stp(&[0x8000, 0x0001]), PaletteStp::Mixed);
+        assert_eq!(palette_stp(&[0, 0]), PaletteStp::None);
+    }
+
+    #[test]
+    fn textured_semi_abr_draws_an_stp_free_palette_opaque() {
+        // tpage 0x45 = page 5, ABR 2.
+        assert_eq!(textured_semi_abr(true, 0x45, PaletteStp::All), Some(2));
+        assert_eq!(textured_semi_abr(true, 0x45, PaletteStp::Mixed), Some(2));
+        assert_eq!(textured_semi_abr(true, 0x45, PaletteStp::None), None);
+        assert_eq!(textured_semi_abr(false, 0x45, PaletteStp::All), None);
+    }
 
     fn tex(ot: u32) -> ScreenPrim {
         ScreenPrim::Textured(ScreenQuad {

@@ -26,8 +26,9 @@
 //! | 45 | `FUN_801DD028` | second pictogram + 8-digit counter |
 //! | 46 | `FUN_801D603C` | one-line prompt over a two-row choice |
 //!
-//! Plus `FUN_801E4140` ([`guarded_box_rect`]), the bottom-clipped box emit
-//! the block's fills go through.
+//! Plus `FUN_801E4140` ([`guarded_box_rect`]), a bottom-clipped box emit
+//! that sits beside them in the overlay but serves none of them: its one
+//! call is in a title-tick arm retail never enters (see its tag).
 //!
 //! ## What the port keeps and what it drops
 //!
@@ -1243,7 +1244,7 @@ pub const BOX_EMIT_MAX_Y: i32 = 0xF0;
 /// arguments; the disassembly shows `a0` / `a1` untouched between the
 /// prologue and the `jal`, so it in fact receives the caller's first two
 /// arguments - the dropped-register-argument artifact, not a niladic call.
-/// A live menu caller passes `(0x44, 0x02202020, …)`, i.e. a mode selector
+/// Its one caller passes `(0x44, 0x02202020, …)`, i.e. a mode selector
 /// and a packed RGB word, so this pair is a **shaded colour fill**, not the
 /// gold 9-slice window border.
 ///
@@ -1253,32 +1254,19 @@ pub const BOX_EMIT_MAX_Y: i32 = 0xF0;
 /// REF: FUN_8002c69c - the box writer, which inflates its own rect by 8px on
 /// every side. Not ported; the hosts draw their window chrome from the UI
 /// atlas instead.
-/// NOT WIRED: what must exist first is a **caller that can produce an
-/// NOT WIRED: out-of-range `y`**, and none can. [`BOX_EMIT_MAX_Y`] is `0xF0`,
-/// NOT WIRED: which is the 320x240 stage's own height, so every rect in the
-/// NOT WIRED: disc window table passes; and the one rect retail stamps per
-/// NOT WIRED: open - the options value popup, window 47 - is already flipped
-/// NOT WIRED: up by its own rule when its bottom would pass `0xB0`
-/// NOT WIRED: (`engine-core::options::options_popup_content_rect`). A call
-/// NOT WIRED: site here would add a branch nothing can take.
-/// NOT WIRED:
-/// NOT WIRED: This note used to say the hosts draw "at the already-inflated
-/// NOT WIRED: frame rect" while the guard tests the *content* y, so gating
-/// NOT WIRED: them on it would clip on the wrong coordinate. That is not the
-/// NOT WIRED: blocker: both host paths hold the content rect. `pause_menu`'s
-/// NOT WIRED: `frame_around` takes one and applies the same 8px inflation
-/// NOT WIRED: `FUN_8002C69C` does - it is called with
-/// NOT WIRED: `ITEMS_INFO_EXTRA_BOX_RECT`, which *is* that routine's
-/// NOT WIRED: `(WX, WY + 0x38, 0x90, 0x28)` argument for window 17 - and
-/// NOT WIRED: `window_chrome` derives its rect from the descriptor's content
-/// NOT WIRED: rect through `frame_rect`.
-/// NOT WIRED:
-/// NOT WIRED: What is still genuinely unported is the *pair* the guard gates
-/// NOT WIRED: rather than the guard: `FUN_80034B6C`'s mode selector + packed
-/// NOT WIRED: RGB word has no port, so the engine's boxes are UI-atlas
-/// NOT WIRED: sprites whose colour comes from the atlas instead of from the
-/// NOT WIRED: caller's word. Wiring the guard alone would claim a guard over
-/// NOT WIRED: a fill retail colours and the port does not.
+// REPLACED-BY: nothing is owed a port - retail never runs the call either.
+// The routine has exactly one reference on the disc: the `jal` at `0x801DDEE8`
+// in PROT 0899 (`find-address-word-refs.py 801e4140 --prot --home 0899`, 1234
+// images: word 0, jal 1, j 0, branch 0, lui 0; `find-gp-relative-refs.py --va
+// 0x801E4140`: no hits). That call sits in the title tick `FUN_801DD35C`'s
+// sub-mode `0x02` arm (jump table `0x801CF244` slot 2 = `0x801DDDFC`, body
+// through `0x801DDF2C`), which retail never enters: `init.pak` raises the entry
+// word `_DAT_8007BB00` before the hand-off, so `Init` takes its `0x11` arm, and
+// the shared epilogue rewrites a left-over `0x02` to `0x10` (capture-confirmed;
+// see `legaia_engine_vm::title_overlay`). The arm's box - mode `0x44`, RGB word
+// `0x02202020`, rect `(0x7C, 0x6B, 0x3C, 0x1A)` behind its two rows - is behind
+// a constant `y` of `0x6B` besides, so even a host that entered the arm would
+// never see the guard clip.
 pub fn guarded_box_rect(x: i32, y: i32, w: i32, h: i32) -> Option<(i32, i32, i32, i32)> {
     (y <= BOX_EMIT_MAX_Y).then_some((x, y, w, h))
 }
