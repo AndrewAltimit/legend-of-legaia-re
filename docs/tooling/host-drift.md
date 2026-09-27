@@ -1188,6 +1188,7 @@ about these is contested.
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
+| battle body blend modes | Retail semi-transparency on a whole battle body, on neither host. See [below](#a-battle-bodys-blend-mode-reaches-neither-host). |
 
 ### Derived scene point lights are native-only
 
@@ -1202,6 +1203,22 @@ export of the picked light set. Both are real work, and neither buys retail
 fidelity: this is the one row here where the *native* host is the one running
 a non-retail path, so the page being without it is a feature gap rather than
 a correctness gap.
+
+### A battle body's blend mode reaches neither host
+
+Two retail writers put a whole battle body into a semi-transparent blend
+mode through the top byte of its tint colour word: the near-camera ghost
+pass `FUN_8004DC68` (mode `3`, a body near the camera or a caster's ally
+during a magic cast) and the capture / defeat fade (mode `1`, additive). Both
+reach the shared draw plan - `World::battle_actor_draw_plan` carries the byte,
+`BattleActorDrawPlan::semi_mode` reads it - and neither host's battle actor
+pass acts on it, so the gap is symmetric and no tier sees it.
+
+Blocking capability: a per-draw blend override. The wgpu renderer blends only
+the prims a mesh flags semi-transparent (its semi tail); a whole-mesh override
+needs the opaque range re-issued through the per-ABR blend pipelines, and the
+page's WebGL program the same. See
+[battle.md](../subsystems/battle.md#the-near-camera-ghost-pass-fun_8004dc68).
 
 ### The minigame side-channel step is paired; its contents are not
 
