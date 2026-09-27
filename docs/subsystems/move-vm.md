@@ -87,7 +87,7 @@ The move VM rewrites a wide swath of the actor struct:
 | `+0x70` | i16 | **The move-VM PC** (in u16 units). |
 | `+0x74` | u32 | Composite control word (op `0x33` clears bit `0x40000000`). |
 | `+0x80`/`+0x82`/`+0x84` | u16 | Animation slots, `[v << 3]` (op `0x04`). |
-| `+0x90`/`+0x92`/`+0x94` | u16 | Tween source (op `0x35`/`0x37` absolute / increment). |
+| `+0x90`/`+0x92`/`+0x94` | u16 | Per-tick rates of the depth-cue level `+0x78`, the render scale `+0x72` and `+0x7A` in `FUN_80021DF4`'s default motion block (`0x80022B18..0x80022B7C`); under dispatch `3` the same three words are the CLUT-cell HSV channels instead. |
 | `+0x96`/`+0x98`/`+0x9A` | u16 | Tween scale (op `0x2E`, `[v << 3]`). |
 | `+0x9C`/`+0xA0`/`+0xA4`/`+0xA8` | i32 | Word block (op `0x34` stores all four sign-extended; `+0x9E` is the `+0x9C` word's high half). |
 | `+0xAC..+0xCA` | mixed | Per-frame anim slots (key/curve data; op `0x2C` configures, `+0xC0` is the duration). |
@@ -276,11 +276,11 @@ carrying structure are called out below the table.
 | op | size | effect |
 |---|---|---|
 | `0x0C` | 6 | `+0x74 = (v1<<24 \| 0x40000000) + v2 + (v3<<8) + (v4<<16)`; `+0x78 = v5` (composite control word) |
-| `0x0D` | 2 | `+0x90 = v1 << 3` (tween source X) |
+| `0x0D` | 2 | `+0x90 = v1 << 3` (the `+0x78` depth-cue rate) |
 | `0x0E` | 2 | `+0x72 = v1` (scale X) |
-| `0x0F` | 2 | `+0x92 = v1 << 3` (tween source Y) |
+| `0x0F` | 2 | `+0x92 = v1 << 3` (the `+0x72` render-scale rate) |
 | `0x10` | 2 | `+0x42 = v1` |
-| `0x11` | 2 | `+0x94 = v1 << 3` (tween source Z) |
+| `0x11` | 2 | `+0x94 = v1 << 3` (the `+0x7A` rate) |
 | `0x12` | 2 | `+0x7A = v1` (scale Z) |
 | `0x13` | 0x10 | draw-kind-4 node on the default emitter - see [draw-kind-4 setup ops](#draw-kind-4-setup-ops-0x13-0x23-0x42) |
 | `0x14` | 5 | `+0xC0/+0xC2/+0xC4/+0xC6 = v1..v4 << 3` (duration + colour channels) |
@@ -305,7 +305,7 @@ carrying structure are called out below the table.
 | `0x28` | 2 | `+0x9A += v1` (tween scale Z add) |
 | `0x29` | 2 | `+0x96 = v1` (tween scale X, no shift) |
 | `0x2A` | 2 | `+0x9A = v1 << 3` (tween scale Z) |
-| `0x2B` | 4 | `+0x90 = v1; +0x92 = v2; +0x94 = v3` (tween source, absolute) |
+| `0x2B` | 4 | `+0x90 = v1; +0x92 = v2; +0x94 = v3` (the three rates, absolute) |
 | `0x3D` | 3 + 6*count | keyframe-mesh LERP + load - see below |
 | `0x3E` | 2 | `+0x22 = v1` (morph interpolation cursor, 12-bit) |
 | `0x3F` | 2 | `+0xD0 = v1` |

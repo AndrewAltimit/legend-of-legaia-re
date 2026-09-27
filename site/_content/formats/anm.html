@@ -210,15 +210,16 @@
       <table>
         <thead><tr><th><code>+0x5A</code></th><th>Handler block in the actor tick</th><th>Role</th></tr></thead>
         <tbody>
-          <tr><td><code>0x01</code></td><td>-</td><td>Pose-snap only</td></tr>
-          <tr><td><code>0x02</code></td><td>shares with <code>0x06</code> at <code>0x80021E90..</code></td><td>Per-bone keyframe-style</td></tr>
-          <tr><td><code>0x03</code></td><td><code>0x800226DC..</code></td><td>Path / state-write</td></tr>
-          <tr><td><code>0x04</code></td><td><code>0x80022CBC..0x80022EE4</code></td><td>Damp / spring-decay</td></tr>
-          <tr><td><code>0x05</code></td><td><code>0x800228B0..0x80022B80</code></td><td>Path-alt, geometry from <code>actor[+0x80]</code></td></tr>
-          <tr><td><code>0x06</code></td><td><code>0x80021EA0..0x80021FA4</code></td><td>Keyframe interpolation - fully traced and ported</td></tr>
-          <tr><td><code>0x07</code></td><td><code>0x80022C24..0x80022CC0</code></td><td>Spline / curve-driven</td></tr>
+          <tr><td><code>0x01</code></td><td>-</td><td>Common stages only (the ladder never tests <code>1</code>)</td></tr>
+          <tr><td><code>0x02</code></td><td>shares with <code>0x06</code> at <code>0x80021E90..0x80021FA4</code></td><td>Per-bone keyframe-style</td></tr>
+          <tr><td><code>0x03</code></td><td><code>0x800226E8..0x800228A0</code></td><td>CLUT-cell HSV integrate, then <code>FUN_80019D50</code></td></tr>
+          <tr><td><code>0x04</code></td><td><code>0x80022CC8..0x80022EE4</code></td><td>VRAM rect wrap-scroll</td></tr>
+          <tr><td><code>0x05</code></td><td><code>0x80021FB4..0x800226D8</code></td><td>Positional SFX emitter</td></tr>
+          <tr><td><code>0x06</code></td><td><code>0x80021E90..0x80021FA4</code>, <code>0x80022F0C..0x80023040</code></td><td>Keyframe interpolation - fully traced and ported</td></tr>
+          <tr><td><code>0x07</code></td><td><code>0x80022C30..0x80022CB8</code></td><td>Spline / curve-driven</td></tr>
         </tbody>
       </table>
+      <p>The span <code>0x800228B8..0x80022B80</code> once listed as the <code>0x05</code> handler is the default motion block that arms <code>3</code> and <code>5</code> branch past.</p>
       <p><code>engine-vm::DispatchByte</code> exposes the values; the per-arm physics tick is ported in <code>crates/engine-vm/src/actor_tick.rs</code> (see <a href="../subsystems/actor-vm.html#per-arm-physics-tick">the per-arm breakdown</a>). A second, overlay-resident path in the field-VM dispatcher (<code>FUN_801DE840</code>, sub-dispatch table <code>0x801CEF88</code>) gates on <code>actor[+0x5C] &gt; 0</code>, calls the clip driver, then completes frame selection in a 40-byte body at <code>0x801E2630..70</code> that is untraced.</p>
     </div>
   </details>
