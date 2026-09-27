@@ -42,15 +42,31 @@ as `field_actor_plan` in
 [`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs)).
 
 **Height arm** - runs only when the actor is live (`+0x5C >= 0`, which also
-gates the `FUN_801D79E8` pre-update) and not self-frozen (`+0x10 & 2` clear).
+gates the `FUN_801D79E8` pre-update) and not culled (`+0x10 & 2` clear).
 It picks one law for the actor's **Y position** `+0x16` from the flag word
 `+0x10`: bit `0x20000000` writes `-(+0x8E)` outright and skips the rest; else
 if neither a target bit (`0x20200`) nor the ambient enable `_DAT_8007B6A8` is
-set, `+0x16` holds; else bit `0x2000` selects a per-frame clamped step toward
-the sampled ground height (`rate = pad-held * 6`, `rotate_toward_clamped` - a
-raw signed-difference clamp, distinct from the frame-budget ramp
-`rotate_step`), and its absence snaps straight to that sample
-(`FUN_80019278`).
+set, `+0x16` holds; else bit `0x2000` selects a per-tick clamped step toward
+the sampled ground height (`rate = _DAT_1F800393 * 6`, the frame-step scalar
+read at `0x8003BCAC` - `rotate_toward_clamped`, a raw signed-difference clamp
+distinct from the frame-budget ramp `rotate_step`), and its absence snaps
+straight to that sample (`FUN_80019278`).
+
+Bit `1` is not a freeze an actor sets on itself. The pre-update
+`FUN_801D79E8` (PROT 0897) rewrites it on every call: unless
+`_DAT_8007BAF4` forces every actor visible, it tests the actor's tile
+against the region box `0x1F800384..0x1F800387` and against the camera's
+visible tile window `0x1F8003E8..0x1F8003EB` widened by the actor's
+`+0x58` radius, sets bit `1` outside (`0x801D7B08..0x801D7B18`) and clears
+it inside (`0x801D7B1C..0x801D7B30`), then snaps `+0x16` to the floor when
+`+0x52 & 0x40`. It is a visibility cull, and it runs before the arm reads
+the word, so an off-window actor holds its Y. A write-watch over the
+`town01` actor pool sees both stores fire for every placement, through
+both of the routine's callers (`FUN_8003BC08` and the field VM).
+
+Every partition-1 placement passes the `0x20200` test on its own class bit
+`0x20000` (the seater `FUN_8003A1E4` ORs it in at `0x8003A3A4..0x8003A3B4`),
+so retail rewrites every visible placement's Y on every actor tick.
 
 This arm was documented as a **facing** arm, and it is not one.
 `FUN_80019278` is the bilinear ground-height sampler - it reads `+0x14` /
@@ -65,11 +81,17 @@ and the port's `FieldActorFacing` enum inherited the error before it was
 renamed `FieldActorHeight`. The section below settles it from the other side
 too: every heading write in this VM lands at `+0x26`, not `+0x16`.
 
-The three arms line up one-to-one with what the engine runs: the `0x20000000`
-override is `World::locomotion.eased_mirror_y` (an eased move publishes `-Y` into
-`+0x8E` and the arm writes it back), the snap is
+For the player, the three arms line up one-to-one with what the engine runs:
+the `0x20000000` override is `World::locomotion.eased_mirror_y` (an eased
+move publishes `-Y` into `+0x8E` and the arm writes it back), the snap is
 `World::locomotion.follow_terrain_height`, and the clamped step is
-`World::locomotion.vertical_settle`.
+`World::locomotion.vertical_settle`. For a placement NPC the snap is
+`World::field_npc_render_y`, which samples the floor under the NPC each time
+a host places it, and the glide is `World::tick_field_npc_heights`, which
+steps `rotate_toward_clamped` per actor tick for a slot whose flag word
+carries `0x2000` - on the disc that is almost only a partition-2 cutscene's
+cross-context `0x31` poke. The engine does not cull, so no NPC holds on
+bit `1`.
 
 **Dispatch arm** - skipped whole when the global suppress bit
 `_DAT_1F800394 & 0x400` is set. Otherwise four routines fire on their own
@@ -312,7 +334,7 @@ from `seed_field_npc_facings`). Disc + save-library oracle:
 
 `World::tick_field_npc_motions` (`engine-core`) drives MAN-placed field NPCs through the `0x47` `MoveTowardTarget` pursue step, one motion-VM step per field tick, writing the live position back into `World::npcs.positions` so the moving NPC's ±40-unit collision box and its interact box follow it (retail probes the live `+0x14`/`+0x18`, not the spawn anchor). Four start paths feed it:
 
-- **Autonomous patrol routes** (`World::npcs.routes`, gated by `World::npcs.animate` - on by default in `play-window` and the browser play page, `play-window --no-live-npcs` clears it): each placement's own pre-text script bytecode carries `0x4C 0x51` NPC move-to-tile ops; `man_field_scripts::placement_motion_route` decodes the local waypoints (dropping the `(127,127)` park sentinel, cross-context targets, and beyond-locality story-relocation branches) and the engine loops them as a patrol. Autonomous legs pause while a dialogue is up - retail's interaction motion-pause kick (`FUN_8003c9ac` reloading every moving-class actor's pause timer on the touch event post).
+- **Autonomous patrol routes** (`World::npcs.routes`, gated by `World::npcs.animate` - on by default in `play-window` and the browser play page, `play-window --no-live-npcs` clears it): each placement's own pre-text script bytecode carries `0x4C 0x51` NPC move-to-tile ops; `man_field_scripts::placement_motion_route` decodes the local waypoints (dropping the `(127,127)` park sentinel, cross-context targets, and beyond-locality story-relocation branches) and the engine loops them as a patrol. Autonomous legs pause while a dialogue is up. That pause is the engine's own: retail's motion-pause kick (`FUN_8003C9AC`) is a standing-move clip request and holds nothing (see [the motion-pause kick](#the-motion-pause-kick)).
 - **Interaction-prologue runs**: when the opt-in field-VM dialogue runner executes an NPC's record and the prologue hits a `0x4C 0x51` with the NPC arm, the host hook (`vm_hosts::FieldHostImpl::op4c_n5_sub1_npc_run`) starts the interacted actor's walk leg. These run through the dialogue - they are the interaction's choreography.
 - **Actor-VM `start_motion`** (op `0x09` `MotionAt`, retail `FUN_800358c0`): `World::start_actor_motion` records the glide target and steps the actor's sprite position toward it through the same pursue kernel (`World::tick_actor_motions`).
 - **Cutscene-timeline cross-context walks** (`C7 <id> <tx> <tz> <mode>`, the targeted `0x47` yield): a spawned partition-2 record walking a cast member. The timeline arms the leg with the op's own speed (`0x80 >> (2 + (mode & 7))`), PARKS on `CutsceneTimeline::walk_wait`, and resumes past the yield when the leg arrives - the retail shape where the yield-op pointer lands in the target's `+0x94` and the walk kernel moves it in place. The player-anchor form (`C7 F8 …`) steps the player actor directly in the same park. Scripted legs keep stepping while a timeline is active; only the autonomous patrol kicks stand down.
@@ -834,13 +856,59 @@ arc, and the raw out-of-range hold on every wrap-crossing leg.
 `0x8C` is also the "unset" sentinel the variant-swap preamble reseeds a
 record to). The walk/anim ops (`0x02`, `0x03`/`0x19`/`0x20`, `0x18` phase
 1/3) reload the actor's requested-move pair `+0x88`/`+0x5C` from the
-record while it is set, and the interaction motion-pause kick
-`FUN_8003C9AC` (ported at `legaia_engine_vm::motion_pause`) sweeps the same
-table on the touch-event post. The engine statically harvests each
+record while it is set, and the motion-pause kick `FUN_8003C9AC` (ported at
+`legaia_engine_vm::motion_pause`) sweeps the same table - see
+[the motion-pause kick](#the-motion-pause-kick). The engine statically harvests each
 stream's first `0x17` per bound placement
 (`man_field_scripts::motion_default_move_writes` →
 `World::npcs.default_moves`), keyed by placement slot (`actor_id -
 N0`).
+
+### The motion-pause kick
+
+The kick `FUN_8003C9AC` (see `ghidra/scripts/funcs/8003c9ac.txt`) walks the
+scene actor list and, for every actor with
+`+0x10 & 0x20000` and a bound stream (`+0x80 != 0`), copies byte `0` of its
+`0x801C6470` record into both `+0x88` and `+0x5C` unless it is `0x8C`. Two
+routines end with it, both by `jal`: the touch post `FUN_801D5B5C`
+(`0x801D5BF0`, PROT 0897) and the partition-2 record dispatcher
+`FUN_8003BDE0` (`0x8003C0D4`), whose `jal` sites are the walk-on trigger
+`FUN_801D1EC4` (three), the field VM's op `0x44` arm (`0x801DF090`) and one
+more field-overlay site (`0x801D2C78`).
+
+Byte `0` is the standing move and byte `1` the walking anim: the walk ops'
+prologue requests byte `1` and their epilogue byte `0`. So the kick asks
+every walker for its standing clip at the moment an interaction engages. It
+is not a pause and nothing counts down: the motion VM keeps running, and
+the driver `FUN_8003BC08` runs the scripted VM before the move-table
+consumer, so a walker whose ops send it on to another step overwrites the
+request with its walk anim before the consumer reads `+0x5C`. The consumer
+`FUN_800204F8` restarts a clip only when `+0x5C` differs from the playing
+`+0x5E` (`0x80020570..0x800205A8`), so that overwrite leaves the walk cycle
+running; a walker parked in a wait keeps the request and stands.
+
+**The gate bit.** Two writers put `0x20000` into `+0x10`, both read from the
+disassembly and both seen firing in a write-watch over the field actor pool
+across a `town01` entry (`scripts/pcsx-redux/autorun_moving_class_writer.lua`):
+the placement seater `FUN_8003A1E4`, unconditionally for every partition-1
+placement (`0x8003A3A4..0x8003A3B4`, every seat in the capture), and field-VM
+op `0x31` operand `0x11` (`0x801DED9C..0x801DEDB0`), which the disc authors
+only in partition-0 object prologues - `town01` P0[8] is the one the capture
+catches, pre-run through the object spawn iterator `FUN_8003A55C`. The disc
+carries no `0x32` with operand `0x11` and the capture saw no clearing store.
+A `town01` free-roam state shows the bit on every actor whose `+0x50` is a
+placement id (`N0 + index`) and, among the partition-0 objects below `N0`,
+only on P0[8].
+
+The engine seeds the bit on each ambient channel
+(`World::seed_field_npc_ambient`), runs the kick from
+`World::trigger_field_interact` and from the partition-2 record installs,
+and plays the request through `World::tick_field_npc_ambient`, which is the
+move-table consumer for these channels: it raises a clip cue for the
+channel's requested move on every actor tick, and `World::carry_npc_run_anim`
+drops a cue for the move already playing. That test is also what keeps a
+walk cycle running: the walk ops request the walk anim on every step, and a
+cue per step restarted the clip at frame `0` on both hosts.
 
 No op writes `DAT_8007B7FC`-class globals - op-`9` only posts to the 4-slot
 `DAT_8007B6D8` ring, so the battle-id write has no motion-VM analogue.
