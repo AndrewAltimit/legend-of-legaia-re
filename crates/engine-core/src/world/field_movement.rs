@@ -1625,6 +1625,11 @@ impl World {
             let (px, pz) = self.npcs.positions.get(&slot).copied().unwrap_or((0, 0));
             let mut vm = vm::ambient_motion::AmbientMotion::new(u32::from(slot), retail_heading)
                 .with_position(px, pz);
+            // The seater's class bit: `FUN_8003A1E4` ORs `0x20000` into every
+            // partition-1 placement it seats (`0x8003A3A4..0x8003A3B4`), so
+            // the channel's `+0x10` word starts with it - the gate the
+            // motion-pause kick (`Self::kick_field_npc_motion_pause`) tests.
+            vm.actor_flags |= vm::motion_pause::MOVING_CLASS;
             // Per-actor RNG stream: retail draws from one global `rand()`,
             // so identical neighbours never step in lockstep. Deriving the
             // seed from the slot keeps that property and keeps a replay
@@ -1750,6 +1755,7 @@ impl World {
             // ambient channel has a stream bound, so those two inputs are
             // constant here. The ramp pool is its own actor and keeps
             // running either way.
+            let suppressed = globals_in & crate::world::CAMERA_HOLD_FLAG != 0;
             let plan = vm::motion_vm::field_actor_plan(vm::motion_vm::FieldActorInputs {
                 lifetime: vm.move_pair.unwrap_or(0),
                 flags: vm.actor_flags,
@@ -1759,7 +1765,7 @@ impl World {
                 ambient_gate: false,
                 frame_step: speed,
                 scene_guard_clear: true,
-                global_suppress: globals_in & crate::world::CAMERA_HOLD_FLAG != 0,
+                global_suppress: suppressed,
             });
             if plan.dispatch.run_scripted {
                 vm.tick_with(code, speed, &blocking);
@@ -1789,9 +1795,23 @@ impl World {
                 // every downstream probe reads: the NPC's own collision box,
                 // the interact box, and the renderer's placement.
                 self.npcs.positions.insert(slot, (nx, nz));
-                if let Some(id) = anim {
-                    self.carry_npc_run_anim(slot, id);
-                }
+            }
+            // The move-table consumer `FUN_800204F8`, which the same driver
+            // dispatches after the scripted VM whenever `+0x5C > 0` and the
+            // global freeze is down. It restarts the clip only on a changed
+            // request ([`Self::carry_npc_run_anim`]'s `+0x5E` test), so it
+            // runs every tick: a walker requests its walk anim on each step
+            // and its standing move at the leg's end or when a step is
+            // blocked, and a request the motion-pause kick
+            // ([`Self::kick_field_npc_motion_pause`]) left is played unless
+            // this tick's ops overwrote it first - retail's order. Gated with
+            // the walk mirror: with the liveliness off no walk is published,
+            // so no walk cycle may play in place either.
+            if live_walk
+                && !suppressed
+                && let Some(id) = anim
+            {
+                self.carry_npc_run_anim(slot, id);
             }
             if turned {
                 self.npcs.headings.insert(slot, engine_heading as i16);
@@ -2048,9 +2068,16 @@ impl World {
     /// placement slot. A zero id carries no clip (retail's `+0x5C = 0` is the
     /// "no move-anim" sentinel, not clip `-1`).
     ///
+    /// A request for the move the slot is already playing raises nothing:
+    /// the consumer restarts a clip only when `+0x5C` differs from the
+    /// playing `+0x5E` (`0x80020570..0x800205A8`), and a cue here would
+    /// restart it at frame `0` on every host. That matters because the
+    /// ambient walk ops request their walk move on every step, so without
+    /// the test a walker's cycle never got past its first frames.
+    ///
     /// REF: FUN_80024E08, FUN_800204F8 (actor `+0x5C` anim-slot consumer)
     pub(crate) fn carry_npc_run_anim(&mut self, slot: u8, move_id: u8) {
-        if move_id != 0 {
+        if move_id != 0 && self.npcs.clip_current.get(&slot) != Some(&move_id) {
             self.npcs.anim_cues.insert(slot, (1, move_id, Vec::new()));
         }
     }

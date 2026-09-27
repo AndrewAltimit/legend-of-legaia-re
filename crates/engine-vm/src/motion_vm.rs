@@ -672,15 +672,15 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
 ///
 /// PORT: FUN_8003BC08 (the `0x8003BCA8..0x8003BCF4` height-clamp arm)
 ///
-/// NOT WIRED: nothing calls **this function**. The same clamped step is live
-/// for the player - `World::step_field_vertical` runs it against
-/// `World::sample_field_floor_height` (the port of `FUN_80019278`) every
-/// field frame, but that is the field overlay's settle `FUN_801D1BA0`
-/// (`0x801D1C30..0x801D1C68`, rate `scalar * 12`), a different routine with
-/// its own rate. The per-NPC height arm this belongs to is decided by
-/// [`field_actor_plan`] (now live as the ambient VM's gate) and applied to no
-/// NPC: field NPCs have no per-frame Y write, and giving them one changes
-/// where every NPC stands, so it lands with the field oracles.
+/// Wired as the glide arm of the field NPCs' height pass:
+/// `World::tick_field_npc_heights` (from `World::tick`'s field arm, on the
+/// actor tick, both play hosts) steps each glide-class placement's Y with it,
+/// and `World::field_npc_render_y` - which both hosts place NPCs through -
+/// reads the result. The arm is reachable because every placement carries
+/// the seater's `0x20000` (one of the arm's `0x20200` gate bits); the glide
+/// itself needs `0x2000`, which the disc raises almost only as cross-context
+/// `0x31` pokes from partition-2 cutscene records. The player's settle
+/// (`FUN_801D1BA0`, rate `scalar * 12`) is a different routine.
 pub fn rotate_toward_clamped(current: i16, target: i16, rate: i32) -> i16 {
     let mut delta = i32::from(target) - i32::from(current);
     if delta > rate {
@@ -836,11 +836,13 @@ pub struct FieldActorInputs {
 /// plan per ambient channel off the channel's own `+0x10` word
 /// (`AmbientMotion::actor_flags`) and the scratchpad word it carries
 /// (`_DAT_1F800394`), and steps `FUN_80038158`'s op loop only when
-/// [`FieldMotionDispatch::run_scripted`] says so. The other outputs have no
-/// per-NPC consumer yet: field NPCs keep their Y, pursue legs and clips in
-/// typed per-slot maps rather than on an actor record, so the height arm, the
-/// spline / pursue arms and the move-table arm are decided here and not
-/// applied.
+/// [`FieldMotionDispatch::run_scripted`] says so. The height arm is applied
+/// by `World::tick_field_npc_heights` (the snap is the floor sample
+/// `World::field_npc_render_y` takes, the glide [`rotate_toward_clamped`]),
+/// and the move-table arm's clip restart is `World::carry_npc_run_anim`'s
+/// change test. The spline / pursue arms have no per-NPC consumer here:
+/// field NPCs keep their pursue legs in typed per-slot maps rather than on an
+/// actor record.
 ///
 /// REF: FUN_80019278 (the bilinear ground-height sampler both floor arms
 /// write; **not** a bearing-to-target - see [`FieldActorHeight`]),

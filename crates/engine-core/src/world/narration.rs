@@ -434,7 +434,13 @@ impl World {
             }
             None => return false,
         }
-        self.install_cutscene_timeline_record(man_file, man, 2, record_idx, false)
+        let installed = self.install_cutscene_timeline_record(man_file, man, 2, record_idx, false);
+        if installed {
+            // `FUN_8003BDE0` ends a successful spawn with the motion-pause
+            // kick (`jal 0x8003C9AC` at `0x8003C0D4`).
+            self.kick_field_npc_motion_pause();
+        }
+        installed
     }
 
     /// Install a field-VM op-`0x44` SPAWN_RECORD request as a **concurrent
@@ -508,6 +514,9 @@ impl World {
                 body.to_vec(),
                 pc0,
             ));
+        // The same spawn tail as `Self::install_gated_p2_record`: the kick at
+        // `0x8003C0D4`.
+        self.kick_field_npc_motion_pause();
         true
     }
 
@@ -658,6 +667,7 @@ impl World {
             self.field_vm.channels_man = Some(std::sync::Arc::new(man.to_vec()));
         }
         self.npcs.anim_cues.clear();
+        self.npcs.clip_current.clear();
         true
     }
 
@@ -2266,6 +2276,7 @@ impl World {
         // the trigger tables resolve; drop the previous scene's.
         self.field_vm.object_channel_binds.clear();
         self.npcs.anim_cues.clear();
+        self.npcs.clip_current.clear();
     }
 
     /// Append the `.MAP` **object-bind** channels (retail scene-init

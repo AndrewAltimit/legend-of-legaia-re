@@ -178,6 +178,26 @@ pub struct FieldNpcState {
     /// `placement_index -> (count, base_id, keyframe bytes)`. The windowed
     /// host drains these each frame and re-targets the NPC's clip player.
     pub anim_cues: std::collections::HashMap<u8, (u8, u8, Vec<u8>)>,
+    /// The move id each NPC's clip player last took from a single-move cue
+    /// (`(1, id, [])` - a `+0x5C` write), keyed by placement slot: retail's
+    /// `actor+0x5E`, the "clip now playing" half of the move-table
+    /// consumer's change test. `FUN_800204F8` restarts the clip only when
+    /// `+0x5C != +0x5E` (`0x80020570..0x800205A8`: the compare, then
+    /// `+0x5E = +0x5C`, `+0x68 = 0`, `+0x56 = 1` and the new clip pointer), so
+    /// re-requesting the playing move is a no-op, and
+    /// [`crate::world::World::carry_npc_run_anim`] consults this to skip it.
+    /// Written when [`crate::world::World::drain_field_anim_cues`] hands a
+    /// cue to the hosts; an op-`0x4B` sequence cue removes the entry, since
+    /// what then plays is not one move. Cleared with the cue queue.
+    pub clip_current: std::collections::HashMap<u8, u8>,
+    /// The Y of each field NPC on the **glide** height arm, keyed by
+    /// placement slot: retail's `+0x16` while the actor's flag word carries
+    /// `0x2000`, which `FUN_8003BC08` steps toward the floor by at most
+    /// `frame_step * 6` per tick instead of snapping it there. Absent for an
+    /// NPC on the snap arm, whose Y is the floor sample itself.
+    /// Stepped by [`crate::world::World::tick_field_npc_heights`] and read by
+    /// [`crate::world::World::field_npc_render_y`].
+    pub glide_y: std::collections::HashMap<u8, i16>,
 }
 
 impl FieldNpcState {
@@ -199,6 +219,8 @@ impl FieldNpcState {
             ambient: std::collections::BTreeMap::new(),
             animate: false,
             anim_cues: std::collections::HashMap::new(),
+            clip_current: std::collections::HashMap::new(),
+            glide_y: std::collections::HashMap::new(),
         }
     }
 }

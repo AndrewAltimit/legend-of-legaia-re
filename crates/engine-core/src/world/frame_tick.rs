@@ -1561,6 +1561,9 @@ impl World {
                 // REF: FUN_80038158, FUN_80036D80
                 if actor_tick_fired {
                     self.tick_field_npc_ambient();
+                    // The same driver's height arm (`FUN_8003BC08`), after
+                    // the tick moved anyone: the glide-class NPCs' Y.
+                    self.tick_field_npc_heights();
                 }
                 self.tick_tile_board();
                 // Rebuild the tile-actor draw list from the current board +

@@ -119,6 +119,7 @@ impl World {
         self.npcs.dialog.clear();
         self.npcs.dialog_prologue.clear();
         self.npcs.positions.clear();
+        self.npcs.glide_y.clear();
         self.npcs.entry_positions.clear();
         self.npcs.headings.clear();
         // Motion state is per-scene: a snapshot carried across a scene change
@@ -328,6 +329,11 @@ impl World {
     /// scripted-battle install ([`Self::trigger_scripted_battle`]).
     pub fn trigger_field_interact(&mut self, interact_id: u8, slot: u8) {
         self.dialog.last_field_interact = Some((interact_id, slot));
+        // The touch post's tail call (`FUN_801D5B5C` -> `jal 0x8003C9AC` at
+        // `0x801D5BF0`): every moving-class walker is asked for its standing
+        // move as the interaction engages, whatever the interaction is.
+        // REF: FUN_8003C9AC
+        self.kick_field_npc_motion_pause();
         // A boss-stager placement (rikuroa's Caruban stager P1[3]): the
         // approach / interact runs the placement's own partition-1 record
         // through the field VM - the engine mirror of retail's touch
