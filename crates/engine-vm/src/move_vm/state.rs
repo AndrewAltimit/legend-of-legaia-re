@@ -123,11 +123,13 @@ pub struct ActorState {
     pub field_8c: u16,
     /// `+0x8E` - counter for op 0x1A/0x1B.
     pub field_8e: u16,
-    /// `+0x90` - tween source 0 (op 0x37 absolute, 0x35/0x2D add).
+    /// `+0x90` - the per-tick rate the actor tick `FUN_80021DF4` adds to
+    /// the depth cue `+0x78` in its default motion block (op 0x37 absolute,
+    /// 0x35/0x2D add); under anim dispatch 3 it is a CLUT-cell HSV channel.
     pub tween_src_x: i16,
-    /// `+0x92` - tween source 1.
+    /// `+0x92` - the per-tick rate of the render scale `+0x72`.
     pub tween_src_y: i16,
-    /// `+0x94` - tween source 2.
+    /// `+0x94` - the per-tick rate of `+0x7A`.
     pub tween_src_z: i16,
     /// `+0x96` - tween scale 0 (op 0x2E `v << 3`, 0x29 absolute).
     pub tween_scale_x: i16,

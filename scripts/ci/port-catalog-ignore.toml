@@ -289,7 +289,6 @@
 "80028158" = "procedural effect primitive builder (POLY_FT4 packets, sin/cos + RNG), no game-state"
 "80029888" = "TMD mesh renderer GTE RTPT/RTPS + GPU poly emit (FUN_8002735c renderer region)"
 "80029dd8" = "TMD per-primitive GTE transform + light/color + GPU packet emit + OT insert"
-"8002a5a4" = "GPU quad packet builder (POLY_FT4/F4 codes) into caller packet buffer"
 "8002bdc4" = "gradient textured poly-strip emitter (0xc000000 prim) into _DAT_1f8003a0 + OT insert"
 "8001e3b8" = "Primitive-packet buffer + ordering-table allocator (OT = 1<<depth entries, double-buffered packet pool into DISPENV @ 0x8007BF30; malloc via 80017888). engine-render uses a wgpu pipeline with no OT/packet-pool"
 "8001daf8" = "Display-environment + GTE screen setup: builds the double-buffered DISPENV/DRAWENV pair (libgpu 8005731c/8005724c), selects 320x240 / 640x480, primes GTE SetGeomScreen/Offset. Engine sets the viewport via the winit surface + Camera::for_viewport"

@@ -1253,8 +1253,9 @@ over it) and starts a New Game through `BootSession::begin_new_game`. The page
 splits both across `play.html` callbacks. A card Load re-enters its scene
 even when it is the one already open, and the party-wipe path's New Game
 takes the same `begin_new_game` reset as the boot title; one path still
-differs: a Continue or import naming a scene the page does not list falls
-through to New Game over the loaded save.
+differs: a title Continue naming a scene the page does not list falls
+through to New Game over the loaded save (a card import in the same case
+stays in the running scene).
 
 A parked resume the page declines to enter no longer survives the next tick
 (`tick_frame` drops it), which was the part that silently re-applied an old
