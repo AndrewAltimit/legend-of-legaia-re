@@ -1037,6 +1037,11 @@ pub enum WorldMapEntityConfig {
         /// Arrival facing/depth selector (`& 7` indexes the entry-direction
         /// table).
         dir: u8,
+        /// The partition-2 record the entrance's walk-on trigger names - the
+        /// script retail runs on the crossing. The transition drain replays
+        /// the flag operations that open it
+        /// ([`crate::place_name_banner::record_leading_flag_writes`]).
+        record: u8,
     },
     /// A plain interactable (NPC / signpost). Surfaces a
     /// [`crate::field_events::FieldEvent::FieldInteract`] with `interact_id`.

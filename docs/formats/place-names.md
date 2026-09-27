@@ -134,8 +134,14 @@ needs the section resized. See [editing notes](#editing-notes).
 The engine port is `engine-core::place_name_banner`, called from
 `SceneHost::load_scene` right after the MAN loader's actor work; both hosts
 draw the result through the shared balloon builders
-(`engine-ui::text_balloon_box`). Disc pin:
-`crates/engine-core/tests/place_name_banner_disc.rs`.
+(`engine-ui::text_balloon_box`). The engine's overworld entrances do not run
+their records through the field VM - the world-map entity keeps only the
+`0x3F` destination - so the transition drain replays the flag operations that
+open the entrance record (`record_leading_flag_writes`: SETs and CLEARs in
+order, TESTs followed the way the VM's `0x70` arm follows them, stopping at
+the first other instruction). That is what raises flag 2 on the crossing. Disc
+pins: `crates/engine-core/tests/place_name_banner_disc.rs`, including the walk
+from `map01` into Rim Elm.
 
 ### The latch is the save screen's, not the banner's
 

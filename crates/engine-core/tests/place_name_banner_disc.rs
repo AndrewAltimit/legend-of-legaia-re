@@ -13,8 +13,11 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
-use legaia_engine_core::place_name_banner::{PLACE_NAME_BANNER_FLAG, man_scene_name_bytes};
+use legaia_engine_core::place_name_banner::{
+    PLACE_NAME_BANNER_FLAG, man_scene_name_bytes, record_leading_flag_writes,
+};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
+use legaia_engine_core::world::WorldMapEntityConfig;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../extracted", "../../extracted"] {
@@ -112,4 +115,95 @@ fn every_named_scene_announces_itself_when_the_flag_is_armed() {
     host.world.cutscene.text_balloon = None;
     host.load_scene("town01").expect("town01");
     assert!(host.world.cutscene.text_balloon.is_none());
+}
+
+/// Walking off the overworld into Rim Elm announces it: the entrance record's
+/// leading `50 02` is replayed by the transition drain
+/// (`place_name_banner::record_leading_flag_writes`), and the destination's
+/// MAN loader turns the flag into the banner.
+#[test]
+fn walking_into_rim_elm_from_the_overworld_raises_the_banner() {
+    use legaia_engine_core::input::PadButton;
+    use legaia_engine_core::scene::SceneTickEvent;
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    host.enter_world_map_scene("map01").expect("enter map01");
+    for _ in 0..3 {
+        host.tick().expect("tick");
+    }
+    assert!(!host.world.system_flag_test(PLACE_NAME_BANNER_FLAG));
+    host.world.cutscene.text_balloon = None;
+    // How many of map01's installed entrances announce their destination:
+    // the ones whose opening flag operations raise flag 2.
+    {
+        let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+        let man = Scene::load(&index, "map01")
+            .expect("map01")
+            .field_man_payload(&index)
+            .expect("man")
+            .expect("map01 has a MAN");
+        let mf = legaia_asset::man_section::parse(&man).expect("walk map01");
+        let (mut portals, mut announcing) = (0usize, 0usize);
+        for c in &host.world.world_map.entity_configs {
+            if let WorldMapEntityConfig::OverworldPortal { record, .. } = c {
+                portals += 1;
+                let writes = record_leading_flag_writes(&mf, &man, usize::from(*record), |i| {
+                    host.world.system_flag_test(i)
+                });
+                if writes.contains(&(true, PLACE_NAME_BANNER_FLAG)) {
+                    announcing += 1;
+                }
+            }
+        }
+        eprintln!("[ok] map01: {announcing} of {portals} installed entrances raise flag 2");
+        assert!(announcing > 0, "non-vacuous");
+    }
+    // The Rim Elm entrance, one tile Z- of the exit's arrival seat (the same
+    // walk `scene_round_trip_disc` pins the arrival of).
+    let slot = host.world.player_actor_slot.expect("player installed") as usize;
+    host.world.actors[slot].move_state.world_x = 0x60 * 128 + 0x40;
+    host.world.actors[slot].move_state.world_z = 0x19 * 128 + 0x40;
+    for _ in 0..2 {
+        host.tick().expect("tick");
+    }
+    let mut entered = None;
+    for _ in 0..600 {
+        host.world.set_pad(PadButton::Down.mask());
+        if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
+            entered = Some(name);
+            break;
+        }
+    }
+    host.world.set_pad(0);
+    assert_eq!(
+        entered.as_deref(),
+        Some("town0c"),
+        "the walk re-enters Rim Elm"
+    );
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let man = Scene::load(&index, "town0c")
+        .expect("town0c")
+        .field_man_payload(&index)
+        .expect("man")
+        .expect("town0c has a MAN");
+    let name = man_scene_name_bytes(&man);
+    let balloon = host
+        .world
+        .cutscene
+        .text_balloon
+        .as_ref()
+        .expect("the entrance record raised flag 2 and the loader seated the banner");
+    assert_eq!(balloon.text, name);
+    assert!(
+        !host.world.system_flag_test(PLACE_NAME_BANNER_FLAG),
+        "consumed"
+    );
+    eprintln!("[ok] town0c banner: {:?}", String::from_utf8_lossy(&name));
 }

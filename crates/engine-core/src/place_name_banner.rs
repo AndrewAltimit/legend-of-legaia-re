@@ -48,7 +48,11 @@
 //! screen reads.
 //!
 //! Both hosts draw the balloon through the shared `text_balloon_box` builders,
-//! so seating it on the world is the whole wiring.
+//! so seating it on the world is the drawing half of the wiring. The other
+//! half is getting flag 2 raised: the engine's overworld entrances keep only
+//! their record's `0x3F` destination, so the transition drain replays the flag
+//! operations that open the record ([`record_leading_flag_writes`]) before it
+//! loads the destination.
 
 use crate::text_balloon::TextBalloon;
 
@@ -99,6 +103,86 @@ pub fn man_scene_name_bytes(man: &[u8]) -> Vec<u8> {
     };
     let len = body.iter().position(|&b| b == 0).unwrap_or(body.len());
     body[..len].to_vec()
+}
+
+/// The system-flag writes that open partition-2 record `record`, walked the
+/// way the field VM would walk them: every `0x5x` SET and `0x6x` CLEAR is
+/// recorded as `(is_set, flag)` in order, every `0x7x` TEST is resolved
+/// against `flag_set` (plus the writes already made) and followed - taken to
+/// its target when the flag is set, fallen through otherwise, the field VM's
+/// own `0x70` arm - and the walk stops at the first instruction of any other
+/// kind. Empty when the record does not walk.
+///
+/// The overworld entrance records are where this matters: in the three
+/// kingdom MANs every clean SET of [`PLACE_NAME_BANNER_FLAG`] sits in a
+/// record that also carries a `0x3F` scene change, most often as its opening
+/// instruction (`50 02`, then `b1 34`, then the `0x3F`), sometimes behind a
+/// flag test (Rim Elm's `map01` entrance opens `73 ..`). Nothing but flag
+/// operations runs before the stop, so the bank ends up exactly as the field
+/// VM would leave it at that point.
+///
+/// REF: FUN_801DE840 (the field VM's `0x50` / `0x60` / `0x70` arms,
+/// `FUN_8003CE08` / `FUN_8003CE34` / `FUN_8003CE64`)
+pub fn record_leading_flag_writes(
+    man_file: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    record: usize,
+    flag_set: impl Fn(u16) -> bool,
+) -> Vec<(bool, u16)> {
+    use legaia_asset::field_disasm::{FlagKind, InsnInfo, decode};
+    let Some((start, pc0, len)) =
+        crate::man_field_scripts::partition_record_span(man_file, man, 2, record)
+    else {
+        return Vec::new();
+    };
+    let Some(body) = man.get(start..start + len) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(bool, u16)> = Vec::new();
+    let mut pc = pc0;
+    // A flag-only loop cannot make progress past its own writes; bound it.
+    for _ in 0..256 {
+        if pc >= body.len() {
+            break;
+        }
+        let Ok(insn) = decode(body, pc) else {
+            break;
+        };
+        if insn.size == 0 {
+            break;
+        }
+        match insn.info {
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Set,
+                idx,
+                ..
+            } => out.push((true, idx)),
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Clear,
+                idx,
+                ..
+            } => out.push((false, idx)),
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Test,
+                idx,
+                target: Some(target),
+                ..
+            } => {
+                let set = out
+                    .iter()
+                    .rev()
+                    .find(|&&(_, f)| f == idx)
+                    .map_or_else(|| flag_set(idx), |&(s, _)| s);
+                if set {
+                    pc = target;
+                    continue;
+                }
+            }
+            _ => break,
+        }
+        pc += insn.size;
+    }
+    out
 }
 
 impl crate::world::World {
