@@ -344,8 +344,8 @@ blocker is a table is the same error this page records for the panel painters.
 | `800204a4` | `free` | `crates/engine-vm/src/scus_core_helpers.rs:236` | DISCLOSE |
 | `80021b04` | `spawn_move_actor` | `crates/engine-vm/src/move_vm/spawn.rs:136` | REPLACE |
 | `80024e08` | `op4c_n5_sub0_set_actor_model` | `crates/engine-vm/src/field/host.rs:1226` | FALSE INERT |
-| `8003c9ac` | `(module)` | `crates/engine-vm/src/motion_pause.rs:3` | DISCLOSE |
-| `8003c9ac` | `motion_pause_kick` | `crates/engine-vm/src/motion_pause.rs:77` | DISCLOSE |
+| `8003c9ac` | `(module)` | `crates/engine-vm/src/motion_pause.rs:3` | WIRE (wired) |
+| `8003c9ac` | `motion_pause_kick` | `crates/engine-vm/src/motion_pause.rs:120` | WIRE (wired) |
 | `8003fb10` | `validate_action` | `crates/engine-vm/src/battle_action/validator.rs:178` | WIRE |
 | `80046898` | `item_count_gate` | `crates/engine-vm/src/battle_action/validator.rs:160` | WIRE |
 | `801d829c` | `build_camera_angle_tween` | `crates/engine-vm/src/battle_camera.rs` | WIRE |
@@ -360,6 +360,13 @@ blocker is a table is the same error this page records for the panel painters.
 
 The four battle-camera rows were unsettleable while that lane held the files;
 see [the battle-camera rows](#the-battle-camera-rows) for how they resolved.
+
+The two `8003c9ac` anchors are wired: `World::kick_field_npc_motion_pause`
+runs the kick from `trigger_field_interact` and from both partition-2 install
+paths, over ambient channels every placement seats with the `0x20000` bit. The
+DISCLOSE they carried rested on a missing requested-move target; the ambient
+tick is now the per-tick clip consumer, with `clip_current` as the `+0x5E`
+latch ([motion-vm.md](../subsystems/motion-vm.md#the-motion-pause-kick)).
 
 ## The two rows the audit's undisclosed section was last down to
 
@@ -1113,9 +1120,9 @@ old reason got wrong.
 |---|---|---|
 | `post_touch` (`8003d038`) | the collision path posts no touches and cannot identify the actor it hit | `World::field_prop_dir_probe` reports the touched placement; `World::check_field_walk_touch` posts from the locomotion step |
 | `motion_pause_kick` (`8003c9ac`) | no view can be projected to gate the sweep | both gates and the default-move table are projectable from the per-slot maps |
-| `state_pick` (`801f1f4c`) | the engine models neither actor `+0x50` nor `+0x54` | `Actor::state_50` and `Actor::state_54`, at those offsets |
+| `state_pick` (`801f1f4c`) | the engine models neither actor `+0x50` nor `+0x54` | `Actor::state_50` and `Actor::state_54`, at those offsets; since wired - it is the subsystem actor's default handler id `7`, and `World::field_menu_button_state` runs it as every host's menu-open gate |
 | `field_audio_release_steps` (`801d8450`) | no per-voice stop, no `0x80091508` table | `SustainedSfx::stop_voice` and `SeqResourceTable::release`, the module's own two `REF:` addresses |
-| `submode_panel_rows` (`801e6984`) | the context block `open_submode` cannot reach | `open_submode` is live and seeds `World::field_vm.submode_context`, which is read every frame; the real blocker is the unported op-`0x49` sub-op-4 handler `FUN_801EF014`, the only installer of panel record 14 |
+| `submode_panel_rows` (`801e6984`) | the context block `open_submode` cannot reach | `open_submode` is live and seeds `World::field_vm.submode_context`, which is read every frame; the installer `FUN_801EF014` is ported (`flag_window_tick`) but only on the world-map panel host: slot `0x23` in `field_submode_screen` falls to the empty default arm, and the row glyphs need `FUN_8002C488` sprite cells plus a record-14 panel draw |
 | `field_actor_plan` (`8003bc08`) | the engine has no `+0x10` flag word | `move_vm::ActorState::flags` is that word, tested in production on pool actors |
 | `tick_reflection` (`801e5154`) | the actor carries none of the fields this reads | `ActorState` carries all but `+0x64`, at retail offsets |
 | `refresh_object_grid_marks` (`80017bec`) | the engine keeps no `.MAP` image | three of four regions are resident, and the collision grid is mutated live |
@@ -2084,9 +2091,9 @@ checked.
 `80016230`, `800195a8`, `8001d088`, `80020f88`, `8002174c`, `80029724`,
 `8003cb54` (both anchors), `8003cbf8`, `8005126c`
 (both anchors), `80056208`, `80064090`, `801d32bc` (both
-anchors), `801d4df8`, `801d65f8`, `801d820c`, `801d9ae8` (module), `801dcc20`,
+anchors), `801d65f8`, `801d820c`, `801d9ae8` (module), `801dcc20`,
 `801e4140`, `801ddb30`, `801de37c`, `801e2650`, `801f81dc`. (`800480d8` is
-since live, `801cf754` is `REPLACED-BY` the contact probes, and `801e0080`'s
+since live, as is `801d4df8` - the Baka impact pair, now seated and drawn through `engine-core::baka_impact_fx` - `801cf754` is `REPLACED-BY` the contact probes, and `801e0080`'s
 duplicate port is deleted in favour of the live effect-VM walker.)
 
 Two of them are worth singling out. `8005126c` is a documented **negative**, not
@@ -2196,15 +2203,19 @@ delta's sign. A marker saying "a Rust mechanism already does this" would have
 hidden a measurable difference. The wire was to delegate the live model's
 step to the transcription, which removes both the difference and the row.
 
-### And two that stay
+### And two that stayed, then wired
 
-`801db318` / `801db9c4` (`pool_ops`) are the counter-examples, and their
-blockers survive a re-read. The formation squash is case `0` of the battle
-flow SM and its second half shifts camera-focus accumulators the engine's
-per-action camera snap does not have; the pool flag-word scrub needs an
-`actor+0x8` word only it would ever read. Adding either structure for one
-caller is a wire that draws nothing, which is the failure mode the
-`REPLACED-BY` rule exists to keep out of the denominator.
+`801db318` / `801db9c4` (`pool_ops`) were the counter-examples - blockers that
+survived a re-read - and both are wired now, for reasons the old blockers did
+not foresee. The formation squash turned out to be the per-round recentre that
+puts a three-on-one formation `+13` in Z, so `World::normalize_battle_formation`
+runs it from `begin_battle_round` and the ring's first cancel, focus shift
+included ([battle.md](../subsystems/battle.md#stage-seats-fun_800513f0-placement-tables)).
+The pool flag-word scrub waited on the one other writer of `actor+0x8`, the
+near-camera ghost pass `FUN_8004DC68`; with that ported
+(`engine-vm::battle_action::camera_ghost_pass`, run every battle frame) the
+scrub runs from the pose hook's out-of-range guard in `vm_hosts.rs`, and both
+hosts draw the bits through `engine-core::battle_body_blend`.
 
 ## The ringside still: one loader, three verdicts
 
@@ -2279,7 +2290,7 @@ reach the address; the verdict is what the call site supports.
 | `8003cb54` `mes_append_escape` / `mes_string_end_offset` | live | its three sites compose the death-spoils captions; the knockdown-end commit now runs `FUN_8004AD80`'s arm (`engine-core::battle_steal`) and composes them the same way - see [steal-table.md](../formats/steal-table.md#the-steal-attack) |
 | `80050e74` `halt_part_actor` / `flush_part_actor_pool` | `REPLACE` | 89 `jal`s, all in the stager overlays PROT 0911..0969; `World::tick_summon` drops the whole `SummonScene` once it finishes, so no seat outlives the cast |
 | `801d0748` `timed_fight_turns_left` | held | the gate and the draw are one `FUN_8003541C` registration (key `1`, `288 x 12` at `(16, 14)`) plus two digit records; the actor's teardown and its precedence over the plaque on the same seat are not pinned, and no capture holds the Koru fight |
-| `8003bc08` `rotate_toward_clamped` | held | the player's vertical glide runs the same arithmetic, but calling this from it would mark the NPC height arm live while no NPC runs it |
+| `8003bc08` `rotate_toward_clamped` | wired | every placement carries `0x20000`, so `FUN_8003BC08`'s height arm rewrites each visible placement's Y every tick; `World::tick_field_npc_heights` runs the glide arm through it, behind the visibility cull `world::field_npc_cull` (`FUN_801D79E8`) |
 | `8001cf50` / `800461a4` / `8004638c` | `REPLACE` | the hosts compose the same `Rx·Ry·Rz` in `glam` f32 (`camera_view::frame_vp`, the native `psx_camera_mvp`); the q3.12 product differs only by retail's `1/4096` quantisation and no parity oracle shows it on a frame, so the finer product stays the default and these owe no host |
 
 ## The minigame and field-actor remainder, re-read
@@ -2293,19 +2304,20 @@ structure they blamed and are rewritten; every row stays held.
 | `801cf00c` `duel_overlay_init` | held | the mode-24 door warp's `enter_baka_from_overlay` is the overlay-entry host the tag said did not exist; of the seeds only the win target and fighter slots have a consumer (both already the rules engine's constants), and the stage seed, arena camera, `6 x 6` window and the two stream ids have no duel-side counterpart |
 | `801d6704` `field_bgm_plan` | live | the two-part arm is the credits theme, now staged at scene entry through `mode_entry_init::two_part_bgm_stream`; the one-shot latch's stand-in is the directors' same-track suppression |
 | `801d4a60` `step_scene_program` / `lift_step` / `entry_successor` | wired | the pair it parks on is the side-band **bank** request / acknowledge, live as `World::audio.sound_stream`, not a BGM latch; `World::tick_scene_programs` now steps each resumed program from the handler pass |
-| `801d72a0` `help_panel_layout` | held | every row is the overlay's own string-pointer tables `0x801D8130` / `0x801D8168`, and no fishing help page exists to open |
+| `801d72a0` `help_panel_layout` | held | its only callers are states `0x65` (`0x801CFFA8`) and `0x66` (`0x801CFFEC`), and `0x65` is reached only from the venue menu's row 1, which no host owns; the strings are disc text a host could read, so they are not the blocker |
 | `801d26cc` `bite_pad_nudge` | wired | the play hosts' `PondSession::tick` did run the band; what was off was the count - retail adds one per mask hit on `_DAT_8007B874` (`0x8000`, `0x2000`, and `0xC0` as one mask; the cast press none, `0x801D343C..0x801D3468`), and all three hosts now count through `PondInput::from_engine_pad` |
-| `801d56e4` `clip_segment_2d` | held | its one caller clips a GPU line packet (`0x801D3D00`); no screen-space two-point primitive exists on either host |
+| `801d56e4` `clip_segment_2d` | held | its one caller clips the fishing line's GPU packet (`0x801D3D00`); the second endpoint is `0x801D9194`, which `FUN_8003D368` fills at `0x801D1FB4` by projecting `*s4 + 0x128` (the rod tip, by inference), and no host spawns the angler record it projects |
 | `801dc6b4` `CONTEXT_LOCKED_ENTRY_SUBSCREEN` / `801dcd58` `notify_window_operands` | wired | the entry decode (`0x801DC85C..0x801DC8E4`) is ported as `pause_screens::menu_entry_subscreen`, and window 8 is the art-learned notice: its template `0x801E4700` is resident menu data and a Hyper-Art book stages its operands through `FUN_80035C00`, painted on both hosts |
 | `801dd330` `OPTIONS_SUBSCREEN_ROW_SPAN` | wired | its `0x30` is the settings window's id and its `1` the exit sub-screen; the retail display set is sliced from the sub-screen `0x17` row span |
 | `8003053c` `spell_party_broadcast::broadcast` | wired | its three `jal` sites are menu code; the out-of-battle validator host `menu_validator` greys and refuses a Magic row that would affect nobody, on both hosts |
 | `80046870` `top_up_cooldown` | wired | the Incense window: an Incense confirm tops it up, the field region roll skips while it is open, and the Use list greys the row from `0xE0`. The world map runs no walk-regen tick, so its encounters are not gated |
-| `80030628` `build_shop_buy_rows` | held | the hoisted rows' alternate ink and the conditional tail need the shop catalog to keep the record's count byte and id order, which it drops |
+| `80030628` `build_shop_buy_rows` | wired | `ShopInventory::from_stock_record` keeps the record's order, and `World::try_arm_field_shop` - the merchant path both play hosts open through - runs the builder with the live Platinum Card probe (`shop_tail_rows_allowed`); a retail capture pins both row lists |
 | `80017bec` `refresh_object_grid_marks` | wired | retail runs it once at field init (`0x801D6BF8`) over the fresh `.MAP`, which is where the engine's field entry now runs it; the `retona` capture holds a refreshed cell the disc lacks |
-| `801d7b50` `window_rebuild_spawns` | held | no windowed placement actor list exists to rebuild, and the descriptor region it indexes is dropped after scene load |
-| `801cef54` `dance_scene_entry` | held | the dance suspends the current mode instead of loading the venue bundle, so the scene seeds have no seat |
+| `801d7b50` `window_rebuild_spawns` | held | no windowed placement actor list exists to rebuild, and the descriptor region it indexes is dropped after scene load; `parse_map_objects` / `resolve_placed_env_draws` do not model the `template_kind`, `+0x74` or `+0x10 \| 4` descriptor state, so `REPLACED-BY` is not earned |
+| `801d0748` `battle_magic_chip_mark` | held | the ring greys the Ra-Seru chip and refuses its arm on both hosts; the red cross-out `FUN_801DBC30(0xF8, 0x42)` (`0x801D12DC..0x801D12F4`) needs an `etim` quad placed over the chip, which neither battle chip pass draws yet |
+| `801cef54` `dance_scene_entry` | held | the actor it spawns from `0x801D42E4` is the beat clock `World::enter_dance` already covers; what has no reader is the rest - the camera pair, view window, dancer spawn and face-stamp fields - because no World-side dance venue load exists (the browser pages load `other7` privately), so `REPLACED-BY` would overstate it |
 | `801d6e5c` `keyframe_in_range` | wired | the `+0x26` column is parsed, and the combat tick's call at `0x801D4334` is ported as `baka_fighter::StrikeClock`, which books each exchange on the winner's strike keyframe on all three hosts |
-| `8003c9ac` `motion_pause_kick` | held | every input has a home; the requested-move write target (`+0x5C` / `+0x88`) does not |
+| `8003c9ac` `motion_pause_kick` | wired | the requested-move target is the ambient channel's clip request, which the ambient tick now consumes per tick with a `+0x5E` latch; the kick copies the standing move, so it holds nothing |
 | `801d25ec` `spawn_arc_with_emitter` | held | op `0x43` sub-`0`/`1`/`0xA`/`0xB` reaches it at `0x801DF5AC`; the engine's arc channel is the player's alone |
 | `801e4470` `sprite_rect` / `attached_sprite_tick` | held | no engine actor kind carries the `+0x90` back-link its one filler (`FUN_801D25EC`'s emitter) sets |
 | `80021248` `normalize_camera_relative_params` | held | the producer is ported; the actor family (`DAT_8007071C`, list `_DAT_8007C34C`) has no engine counterpart |
