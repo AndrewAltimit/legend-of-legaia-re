@@ -3059,12 +3059,14 @@ region above it.
   cast's summon creature before ticking the effect scene graphs, the page
   after; the page now takes the native order (`tick_world_effects`), so a cast
   ticks its creature's first frame on the same tick on both hosts.
-- **The battle label merge order is not a drift.** The native window merges
-  the SCUS labels at boot and the battle overlay's on top at play start; the
-  page reads the overlay's first and merges the SCUS ones on top. The two label
-  sets (`battle_ui_strings::SCUS_LABELS`, `OVERLAY_LABELS`) share no key and
-  only the overlay half carries the Ra-Seru names, so both orders build the same
-  table.
+- **One builder for the battle labels.** The native window used to merge the
+  SCUS labels at boot and the battle overlay's on top only when a player-driven
+  battle was requested; the page read the overlay's first and merged the SCUS
+  ones on top. Both now install `battle_open::battle_ui_strings_for_disc`
+  (overlay half, then SCUS half) at disc load. Retail has no merge at all -
+  each label is a string its drawer addresses in its own image - and the two
+  label sets (`battle_ui_strings::SCUS_LABELS`, `OVERLAY_LABELS`) share no key
+  (`the_two_label_halves_share_no_key`), so the order cannot change a label.
 
 ## Menus, saves and minigame exits: one call per decision
 
