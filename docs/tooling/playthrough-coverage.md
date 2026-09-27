@@ -592,8 +592,8 @@ belongs to, and that is where the corpus was wrong most often:
 matches resolve to the already-documented per-actor tick path, which is
 positive evidence that the harness reaches the central per-frame actor loop
 rather than a side path. That pass promoted the per-actor dispatcher
-`FUN_8003BC08` into [`functions.md`](../reference/functions.md) and surfaced the
-`FUN_801D79E8` mesh-vs-glyph question, which is still open.
+`FUN_8003BC08` into [`functions.md`](../reference/functions.md) and surfaced
+`FUN_801D79E8`, since identified as the per-actor visibility cull.
 
 **Most always-resident SCUS hits are infrastructure, not game logic** - PsyQ
 libgte / libcd / libc, libgpu prim composers, a dev-profiler HUD, noop stubs,
@@ -673,7 +673,7 @@ The clean field hits (mode `0x03`, `overlay_0897` stem) resolve to the
 **already-documented per-actor tick loop**, which is itself the finding: the
 trace correctly surfaces the central per-frame actor driver. The two hottest
 (`0x801D7A5C` / `0x801D7B40`, ~420 each, both called from `0x8003BC3C`) are
-interior PCs of `FUN_801D79E8`, the field overlay's per-actor draw helper,
+interior PCs of `FUN_801D79E8`, the field overlay's per-actor visibility cull,
 invoked by `FUN_8003BC08` - the per-actor tick for the `_DAT_8007C354` list.
 `FUN_8003BC08` is the unifying driver that runs, per actor, the inline-dialogue
 SM (`FUN_80039B7C`), the motion VM (`FUN_8003774C`), and the move-table VM; it
@@ -681,12 +681,15 @@ was documented only in two subsystem tables, so it is now promoted to the
 canonical [`functions.md`](../reference/functions.md) directory with its full
 verified dispatch list.
 
-Open thread surfaced here: `FUN_801D79E8`'s precise render is unsettled -
-[`field-locomotion.md`](../subsystems/field-locomotion.md) describes the
-static-object actor as drawing its **mesh**, but the (interior-entry, incomplete)
-decomp at `0x801D79E8` emits dialog-font glyph cells (`func_0x8003c1f8` cells
-4/5) + a 3-digit number field (`func_0x80034b78`). A clean re-decompile from the
-true entry is needed to reconcile these; not asserted either way.
+The thread this pass opened - whether `FUN_801D79E8` draws a mesh or dialog-font
+glyph cells - closed as neither. It is the per-actor visibility cull: it tests
+the actor's tile against the region box `0x1F800384..87` and the camera's
+visible tile window `0x1F8003E8..EB`, and sets or clears `+0x10` bit 1
+([motion-vm.md](../subsystems/motion-vm.md)). The glyph reading came from the
+two dumps named after the address, and neither holds this routine:
+`funcs/801d79e8.txt` is `FUN_801D6E18`, and `overlay_0897_801d79e8.txt` starts
+mid-instruction. The real body matches `overlay_cutscene_dialogue_801d79e8.txt`
+and the extracted PROT 0897 image at its base `0x801CE818`.
 
 ### Cataloged-anchor SCUS trace (S1 opening / S2 Rim Elm, mode 0x03)
 
