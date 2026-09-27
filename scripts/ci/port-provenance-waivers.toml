@@ -325,10 +325,6 @@ touches.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/shop.rs:801d5ae8"
-reason = "Disassembly (overlay_menu_801d5ae8.txt): item table 0x80074368 name/description, price halfword +2 printed halved (sell price), passive chain 0x801D5C5C..0x801D5CC8 into 0x80074F68/0x800752C0/0x8007625C. Exactly the item-detail / sell panel the module claims."
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/slot_machine.rs:801e6f70"
 reason = "Disassembly: eight digit cells at 0x801F35F0 accumulated x10 per cell, cost = coins*100, gold gate 0x8008459C, stock gate 0x8007BB90, both recolouring to ink 9. The coin-exchange counter."
 

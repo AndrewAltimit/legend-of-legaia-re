@@ -293,11 +293,14 @@ entry-context record `_DAT_8007B450` **directly** - `[+2]` the id count,
 
 Each row word is `[class nibble][0x800 = dim][item id]`, and the dim bit is a
 plain OR of two tests - `_DAT_8008459C < price` (item record `+2`) or a held
-count that has stopped being `< 0x63`. There is no third tier and no
-`0x400` alt-ink on this list, which is what makes the casino renderer's
-`shop_stock_row_ink` a valid stand-in for it: the shop reuse pins that
-routine's `marker` argument at `0`, and with the marker arm dead the
-remaining two tests are exactly these two.
+count that has stopped being `< 0x63`. The ink is **not** that bit alone: the
+kind-4 list kernel `FUN_80032A44` stages it in its shared `0x3000` / `0xA000`
+arm (`0x80033548..0x800335A0`), last rule wins - ink `7`; the dim bit makes it
+`0` unless the list is parked (`_DAT_8007BB94 == 4`); class `0xA000` then makes
+it `5` **even over a dim row**. Ink `5` is the teal pen (the CLUT row staging
+value 5 selects). An earlier reading said this list had "no `0x400` alt-ink at
+all" and so let the casino renderer's `shop_stock_row_ink` stand in for it;
+that missed the class arm. Port: `engine-core::shop::shop_buy_row_ink`.
 
 #### The last rows come first
 
@@ -305,9 +308,8 @@ The on-screen order is **not** the record order. The builder splits the walked
 rows at `record_count - 3`: rows below the split stage into a scratch array at
 `0x801C6220` tagged `0x3000`, rows at or above it are written straight into
 the row buffer tagged `0xA000`, and the staged group is appended afterwards
-(`0x80030F1C..0x80030F90`). The kind-4 kernel stages `0xA000` with **ink 5**,
-so the hoisted band is a highlighted "new in this town" strip at the top of
-the list.
+(`0x80030F1C..0x80030F90`). The hoisted band is therefore a teal strip at the
+top of the list.
 
 The band's width is `3 - padding_len`, because a second filter decides how far
 the emit loop walks. Ids below `0x1A` are skipped, and the same test first
@@ -319,30 +321,53 @@ builder **depends** on the unsellable ids being a trailing run, since it walks
 a prefix rather than filtering in place.
 
 That closes the loop on the "template padding" the record `count`
-over-counts: the record always reserves three tail slots for the featured
-band and pads the unused ones with `Ra-Seru Meta $N`. On the retail disc the
-padding is 3, 1 or 0 ids, so the highlighted band is 0, 2 or 3 rows wide - and
-the widths line up one-for-one with the `*` "new in this town" markers the
-curated walkthrough tables carry ([gamedata.md](../reference/gamedata.md)).
-Rim Elm's Variety Shop is the worked example: its record decodes ten ids with
-no padding, and hoisting the last three reproduces the walkthrough's order
-(Hunter Clothes / Scarlet Jewel / Azure Jewel first, then Survival Knife
-onward) exactly. `engine-core::shop_catalog::scene_shops` applies the order
-when it builds the priced [`ShopInventory`], so every host draws and indexes
-the retail order without a change of its own.
+over-counts: every record reserves three tail slots and pads the unused ones
+with `Ra-Seru Meta $N`. On the retail disc the padding is 3, 1 or 0 ids, so the
+band is 0, 2 or 3 rows wide, and the widths line up one-for-one with the `*`
+markers the curated walkthrough tables carry
+([gamedata.md](../reference/gamedata.md)). Rim Elm's Variety Shop is the worked
+example: its record decodes ten ids with no padding, and hoisting the last
+three reproduces the walkthrough's order (Hunter Clothes / Scarlet Jewel /
+Azure Jewel first, then Survival Knife onward) exactly - for a party that can
+see those three at all (next section).
 
-#### The three-row tail is conditional
+#### The three-row tail is the Platinum Card's
 
 Whether those last three record entries are walked at all is decided before
-any of it, by two probes at `0x80030D54..0x80030DE8`: the bag scan
-`FUN_80042F4C(0xFF)` (the held-count lookup for the empty-slot marker id) and
-an eight-byte `0xFF` sweep of every party member's equipment block
-(`char + 0x196..+0x19D` - armour, head gear, weapon, the Seru lock byte, leg
-gear and the three accessory slots). Either probe answering non-empty allows
-the tail; both empty subtracts `3` from the walk, dropping the featured band.
-Neither probe touches the stock, and both are all but always satisfied in
-play - the port models the gate as `build_shop_buy_rows`'s
-`tail_rows_allowed` and passes it `true`.
+any of it, by two probes at `0x80030D54..0x80030DE8`: the held-count lookup
+`FUN_80042F4C(0xFF)` and an eight-byte `0xFF` sweep of every present party
+member's equipment block (`char + 0x196..+0x19D` - armour, head gear, weapon,
+the Seru lock byte, leg gear and the three accessory slots). Either probe
+answering non-empty keeps the tail; both empty subtracts `3` from the walk,
+dropping the band.
+
+Item `0xFF` is the **Platinum Card** (the item table at `0x80074368` names it,
+next to the Point Card at `0xFE`), a Goods item - which is why the second probe
+reads the equipment blocks. `FUN_80042F4C` returns the count byte of the first
+bag slot in the active window whose id matches its argument, and the bag's
+empty sentinel is id `0` ([inventory.md](inventory.md)), so the first probe is
+"a Platinum Card is carried", not a free-slot test. The band is therefore the
+card's exclusive stock: a record padded with three template ids loses nothing
+without the card, and a shorter-padded one withholds two or three items. Across
+the disc's shop records, the ones carrying a band are the ones a card-less
+party sees shortened (`crates/engine-core/tests/shop_catalog_disc.rs` pins that
+the card-less list is always the card list minus its band).
+
+This page used to call the probe "the held-count lookup for the empty-slot
+marker id" and to say both probes are "all but always satisfied", with the port
+passing `true`. Both were wrong: `0xFF` is an item, the retail captures in the
+Mednafen save-state library hold no `0xFF` equipment byte in any party, and a party
+without the card fails both probes. The band's reading as "new in this town",
+taken from the walkthroughs' `*`, goes with it; the same `*` item appears in
+more than one town's band.
+
+Port: `engine-core::menu_list_rows::{shop_tail_rows_allowed,
+build_shop_buy_rows}`, reached through `ShopInventory::from_stock_record`.
+The field-VM merchant (`World::try_arm_field_shop`, the path both play hosts
+open through `take_pending_field_shop`) runs the live probe over the party;
+`shop_catalog::scene_shops`, which has no party, lists the band as a card
+holder sees it. Before this, the merchant path built its rows in record order
+with no probe at all, and only the catalog applied the hoist.
 
 ### Row ink is last-rule-wins, not first-match
 

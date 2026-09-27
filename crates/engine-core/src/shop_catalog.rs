@@ -108,36 +108,41 @@ pub fn scene_shops(
     sc.records
         .iter()
         .map(|shop| {
-            let items: Vec<ShopItem> = shop
-                .id_offsets
-                .iter()
-                .map(|&off| {
-                    let id = sc.decoded[off];
-                    let price = item_data.map(|d| d.price(id) as u32).unwrap_or(0);
-                    ShopItem { item_id: id, price }
-                })
-                .collect();
             // Retail's buy-list builder does not draw the record in record
             // order: `FUN_80030628` case `0x0B` hoists the rows at or past
             // `record_count - 3` to the top of the list (and tags them ink
-            // 5 - the walkthroughs' "new in this town" `*`). The record
-            // reserves three tail slots for that band and pads the unused
-            // ones with sub-`0x1A` template ids, so the hoisted width is
-            // `3 - padding_len`. Sorting here means every host - the
-            // play-window shop list, the web play page, the menu runtime -
-            // draws and indexes the retail order without its own change.
+            // 5). The record reserves three tail slots for that band and pads
+            // the unused ones with sub-`0x1A` template ids, so the hoisted
+            // width is `3 - padding_len`. A catalog has no party to probe, so
+            // it lists the tail as a Platinum-Card holder sees it; the live
+            // merchant (`World::try_arm_field_shop`) runs the probe.
             //
-            // PORT: FUN_80030628 (case `0x0B` row order; the order kernel is
-            // `crate::menu_list_rows::shop_buy_row_order`)
+            // PORT: FUN_80030628 (case `0x0B`; the builder is
+            // `crate::menu_list_rows::build_shop_buy_rows`)
             let record_count = usize::from(sc.decoded.get(shop.count_off).copied().unwrap_or(0));
-            let order = crate::menu_list_rows::shop_buy_row_order(record_count, items.len());
-            let items = order
-                .into_iter()
-                .filter_map(|i| items.get(i).cloned())
-                .collect();
+            let start = shop.count_off + 1;
+            let record_ids = sc.decoded.get(start..start + record_count).unwrap_or(&[]);
+            let inventory = match item_data {
+                Some(d) => {
+                    ShopInventory::from_stock_record(entry_idx as u8, record_ids, true, |id| {
+                        d.price(id)
+                    })
+                }
+                // Structural-only: keep the declared stock, unpriced.
+                None => ShopInventory::new(
+                    entry_idx as u8,
+                    shop.id_offsets
+                        .iter()
+                        .map(|&off| ShopItem {
+                            item_id: sc.decoded[off],
+                            price: 0,
+                        })
+                        .collect(),
+                ),
+            };
             SceneShop {
                 name: shop.name.clone(),
-                inventory: ShopInventory::new(entry_idx as u8, items),
+                inventory,
             }
         })
         .collect()

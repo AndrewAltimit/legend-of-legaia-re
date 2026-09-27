@@ -89,9 +89,11 @@ pub struct ShopRow<'a> {
     /// Retail text ink for this row - the value the menu overlay stages into
     /// `_DAT_8007B454` before the string draw. `7` is normal white, `0` the
     /// greyed/unavailable pen and `6` the accent pen a stock row takes from
-    /// its record's "already owned / restricted" marker. Callers derive it
-    /// with `legaia_engine_core::shop::shop_stock_row_ink`; rows with no
-    /// retail ink of their own pass [`SHOP_INK_NORMAL`].
+    /// its record's "already owned / restricted" marker; `5` the buy list's
+    /// hoisted band. Callers derive it with
+    /// `legaia_engine_core::shop::shop_buy_row_ink` (buy list) or
+    /// `shop_stock_row_ink`; rows with no retail ink of their own pass
+    /// [`SHOP_INK_NORMAL`].
     pub ink: u8,
 }
 
@@ -101,6 +103,10 @@ pub const SHOP_INK_NORMAL: u8 = 7;
 pub const SHOP_INK_GREY: u8 = 0;
 /// Accent text ink (retail `_DAT_8007B454 == 6`).
 pub const SHOP_INK_MARKED: u8 = 6;
+/// The shop buy list's hoisted-band ink (retail `_DAT_8007B454 == 5`), which
+/// the list kernel stages for a `0xA000` row; drawn in [`crate::MENU_TEXT_TEAL`],
+/// the CLUT row staging value 5 selects.
+pub const SHOP_INK_FEATURED: u8 = 5;
 
 impl<'a> ShopRow<'a> {
     /// A row at the normal white ink.
@@ -183,9 +189,12 @@ pub fn shop_draws_for<'a>(
         // A retail ink other than the normal pen wins over the affordability
         // derivation: the stock list's `6` accent marks owned / restricted
         // stock the player *can* afford, and its `0` also covers a full stack.
+        // The featured pen (`5`) overwrites the dim verdict in retail's
+        // kernel, so an unaffordable featured row still draws teal.
         let (can_afford, ink_fg) = match row.ink {
             SHOP_INK_GREY => (false, Some(dim)),
             SHOP_INK_MARKED => (can_afford, Some(marked)),
+            SHOP_INK_FEATURED => (can_afford, Some(crate::MENU_TEXT_TEAL)),
             _ => (can_afford, None),
         };
         let fg = ink_fg.unwrap_or(if !can_afford || !selected { dim } else { white });
