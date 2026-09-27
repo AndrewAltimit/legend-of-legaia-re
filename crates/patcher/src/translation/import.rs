@@ -88,6 +88,12 @@ pub struct ImportReport {
     /// carrier - the numbers the space report ([`super::space`]) publishes,
     /// recorded where the importer computes them rather than re-derived.
     pub trace: ImportTrace,
+    /// What the pack's accent mode did to its text before encoding
+    /// ([`super::accents::prepared`]).
+    pub accents: super::accents::AccentStats,
+    /// The accent-font write, for a pack with `accents: font` (the names
+    /// phase does it, once).
+    pub accent_font: Option<super::accents::AccentFontReport>,
 }
 
 /// The class of an [`ImportReport::issues`] diagnostic, for tools that group
@@ -277,6 +283,13 @@ impl ImportReport {
         self.relocated_names += other.relocated_names;
         self.grown_monster_names += other.grown_monster_names;
         self.trace.merge(other.trace);
+        if other.accent_font.is_some() {
+            self.accent_font = other.accent_font;
+        }
+        // Both phases prepare the whole pack; keep one count.
+        if self.accents == Default::default() {
+            self.accents = other.accents;
+        }
     }
 
     /// Fold this report against the pack it came from into per-section
@@ -1299,6 +1312,11 @@ pub fn import_pack_phase(
     allow_relayout: bool,
 ) -> Result<ImportReport> {
     let mut report = ImportReport::default();
+    // Typed accents become cells or folds per the pack's accent mode before
+    // anything is encoded, so every path below sees the same text.
+    let (prepared, accent_stats) = super::accents::prepared(pack);
+    let pack: &LanguagePack = &prepared;
+    report.accents = accent_stats;
     // Scene MAN entries whose full-length dialog overflows their compressed
     // footprint and needs a whole-sector disc relayout. Collected across the MAN
     // loop, then applied in one relayout pass so the PROT index space (and every
@@ -1603,6 +1621,14 @@ pub fn import_pack_phase(
 
     if !mon_work.is_empty() {
         import_monster_names(patcher, &mon_work, &mut report)?;
+    }
+
+    // The accent font rides with the names phase (the executable's advance
+    // table is written there), once per import.
+    if super::accents::AccentMode::of(pack) == super::accents::AccentMode::Font
+        && matches!(phase, ImportPhase::All | ImportPhase::NamesOnly)
+    {
+        report.accent_font = Some(super::accents::apply_accent_font(patcher)?);
     }
 
     Ok(report)

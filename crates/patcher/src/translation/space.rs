@@ -293,6 +293,10 @@ pub struct SpaceReport {
     pub carriers: Vec<CarrierSpace>,
     /// One row per key.
     pub entries: Vec<EntrySpace>,
+    /// Every character of the pack that will not draw as typed under its
+    /// accent mode on this disc (pack only), with its key and index.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub characters: Vec<super::accents::KeyedNote>,
 }
 
 /// Report totals.
@@ -644,6 +648,22 @@ pub fn space_report_with_export(
     pack: Option<&LanguagePack>,
     opts: SpaceOptions,
 ) -> Result<SpaceReport> {
+    let characters = match pack {
+        Some(p) => {
+            let font = super::accents::DiscFont::read(patcher).ok();
+            let mode = super::accents::AccentMode::of(p);
+            super::accents::pack_notes(
+                p,
+                font.as_ref().map(|f| f as &dyn super::accents::DrawLookup),
+            )
+            .into_iter()
+            .filter(|n| super::accents::is_undrawable(&n.note, mode))
+            .collect()
+        }
+        None => Vec::new(),
+    };
+    let prepared = pack.map(super::accents::prepared);
+    let pack = prepared.as_ref().map(|(p, _)| &**p);
     let dry = match pack {
         Some(p) => {
             let mut scratch = DiscPatcher::open(patcher.image().to_vec())
@@ -657,7 +677,9 @@ pub fn space_report_with_export(
         }
         None => None,
     };
-    build_report(patcher, english, pack, dry.as_ref(), opts.relayout)
+    let mut report = build_report(patcher, english, pack, dry.as_ref(), opts.relayout)?;
+    report.characters = characters;
+    Ok(report)
 }
 
 fn build_report(
@@ -1016,6 +1038,7 @@ fn build_report(
         scenes,
         carriers,
         entries,
+        characters: Vec::new(),
     })
 }
 
@@ -1026,6 +1049,7 @@ impl SpaceReport {
     /// byte totals stay whole-disc).
     pub fn retain_section(&mut self, section: &str) {
         self.entries.retain(|e| e.section == section);
+        self.characters.retain(|n| n.section == section);
         let s = &mut self.summary;
         s.entries = self.entries.len();
         s.filled = self
@@ -1084,6 +1108,8 @@ pub fn scene_fit(
     prot: usize,
     relayout: bool,
 ) -> SceneFit {
+    let (prepared, _) = super::accents::prepared(pack);
+    let pack: &LanguagePack = &prepared;
     let mut keyed: Vec<(&str, &Entry)> = Vec::new();
     let mut edits: Vec<(usize, &Entry)> = Vec::new();
     for (section, es) in pack.sections.iter() {
@@ -1197,6 +1223,8 @@ impl NameFitter {
     /// Plan every filled SCUS entry of `pack` exactly as import does, on a
     /// copy of the executable.
     pub fn fit(&self, pack: &LanguagePack) -> NamesFit {
+        let (prepared, _) = super::accents::prepared(pack);
+        let pack: &LanguagePack = &prepared;
         let english = self.pool.layout(&self.scus, &BTreeMap::new());
         let mut work: Vec<&Entry> = Vec::new();
         let mut sections: HashMap<&str, &str> = HashMap::new();

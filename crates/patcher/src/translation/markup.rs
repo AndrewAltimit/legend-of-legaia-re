@@ -17,8 +17,10 @@
 //! [`encode`] is the exact inverse and reports **per-character** errors for
 //! anything outside the retail glyph set (accented Latin, Cyrillic, CJK, ...),
 //! after first folding a small set of typographic lookalikes (smart quotes,
-//! dashes, ellipsis) onto their ASCII glyphs. Full non-Latin support would
-//! need a font patch and is out of scope - see `docs/tooling/translation/textures-and-fonts.md`.
+//! dashes, ellipsis) onto their ASCII glyphs. Typed accents are handled one
+//! step earlier, by the pack's accent mode (`super::accents`: fold to ASCII,
+//! or encode into the accent font's cells); non-Latin scripts need a larger
+//! font change - see `docs/tooling/translation/textures-and-fonts.md`.
 
 use std::fmt;
 
@@ -221,13 +223,28 @@ pub fn encode(markup: &str, target: Target) -> Result<Vec<u8>, Vec<EncodeIssue>>
             i += 1;
             continue;
         }
+        let reason = match (
+            legaia_font::latin::drawn_byte_for_char(c),
+            legaia_font::latin::fold_for_char(c),
+        ) {
+            (Some(b), Some(f)) => format!(
+                "'{c}' is not in the retail NTSC font - fold it to '{f}', or turn on the \
+                 accent font (pack header `accents: font`; it encodes as {{{b:02x}}})"
+            ),
+            (None, Some(f)) => format!(
+                "'{c}' has no glyph, even in the accent font - fold it to '{f}' \
+                 (pack header `accents: fold` does it on import)"
+            ),
+            _ => format!(
+                "'{c}' (U+{cp:04X}) is not in the retail glyph set and has no fold - only \
+                 printable ASCII and the accent font's Latin cells render; non-Latin text \
+                 needs a larger font change"
+            ),
+        };
         issues.push(EncodeIssue {
             position: i,
             fragment: c.to_string(),
-            reason: format!(
-                "'{c}' (U+{cp:04X}) is not in the retail glyph set - only printable ASCII \
-                 0x20..0x7E renders; non-Latin text needs a font patch (out of scope)"
-            ),
+            reason,
         });
         i += 1;
     }
@@ -238,87 +255,28 @@ pub fn encode(markup: &str, target: Target) -> Result<Vec<u8>, Vec<EncodeIssue>>
     }
 }
 
-/// ASCII fold for the accented high-glyph cells of the **PAL** atlas, keyed by
-/// the raw byte the official discs use. The layout is IBM CP437 for the cells
-/// CP437 carries, plus the game-specific capital block around `0xD0..=0xD6`
-/// (see `docs/tooling/pal-localizations.md`).
+/// ASCII fold for an accented high-glyph cell, keyed by the raw byte the
+/// official PAL discs use (IBM CP437 for the cells CP437 carries, CP850 for
+/// the accented capitals). The table is [`legaia_font::latin::LATIN_CELLS`],
+/// the one layout the accent font, the importer and the workbench share - see
+/// `docs/tooling/pal-localizations.md`.
 ///
-/// This exists for the official-localization lift: the NTSC font has no glyph
-/// in those cells, so lifted FR/DE/IT text either needs a font patch or must be
-/// folded onto the plain-ASCII glyphs the USA disc does have.
+/// This exists for the official-localization lift and for `--fold-accents`:
+/// on a disc without the accent font those cells draw blank or overprint, so
+/// lifted FR/DE/IT text either needs the accent font or must be folded onto
+/// the plain-ASCII glyphs the USA disc does have.
 ///
-/// Every fold is one byte in, one byte out except `ss` for `0xE1` (sharp s),
-/// which grows the line by one byte and may therefore push a tight line over
-/// its budget.
+/// Every fold is one byte in, one byte out except `ss` for `0xE1` (sharp s)
+/// and the ligatures (`ae`, `oe`), which grow the line and may therefore push
+/// a tight line over its budget.
 fn high_glyph_fold(b: u8) -> Option<&'static str> {
-    Some(match b {
-        0x80 => "C", // C-cedilla
-        0x81 => "u", // u-diaeresis
-        0x82 => "e", // e-acute
-        0x83 => "a", // a-circumflex
-        0x84 => "a", // a-diaeresis
-        0x85 => "a", // a-grave
-        0x86 => "a", // a-ring
-        0x87 => "c", // c-cedilla
-        0x88 => "e", // e-circumflex
-        0x89 => "e", // e-diaeresis
-        0x8A => "e", // e-grave
-        0x8B => "i", // i-diaeresis
-        0x8C => "i", // i-circumflex
-        0x8D => "i", // i-grave
-        0x8E => "A", // A-diaeresis
-        0x8F => "A", // A-ring
-        0x90 => "E", // E-acute
-        0x91 => "ae",
-        0x92 => "AE",
-        0x93 => "o", // o-circumflex
-        0x94 => "o", // o-diaeresis
-        0x95 => "o", // o-grave
-        0x96 => "u", // u-circumflex
-        0x97 => "u", // u-grave
-        0x98 => "y", // y-diaeresis
-        0x99 => "O", // O-diaeresis
-        0x9A => "U", // U-diaeresis
-        0xA0 => "a", // a-acute
-        0xA1 => "i", // i-acute
-        0xA2 => "o", // o-acute
-        0xA3 => "u", // u-acute
-        0xA4 => "n", // n-tilde
-        0xA5 => "N", // N-tilde
-        // The CP850 cells a Portuguese font patch redraws over CP437's box
-        // drawing block: the ordinal indicators, the inverted punctuation
-        // and the accented capitals a Latin localization needs. Left raw,
-        // each one draws blank on the NTSC atlas - a missing letter, not a
-        // wrong one, which is why they fold rather than stay.
-        0xA6 => "a", // feminine ordinal
-        0xA7 => "o", // masculine ordinal
-        0xA8 => "?", // inverted question mark
-        0xAD => "!", // inverted exclamation mark
-        0xB5 => "A", // A-acute
-        0xB6 => "A", // A-circumflex
-        0xB7 => "A", // A-grave
-        0xD0 => "A", // game-specific capital block
-        0xD1 => "A",
-        0xD2 => "E",
-        0xD3 => "E",
-        0xD4 => "E", // Italian E-grave
-        0xD5 => "I",
-        0xD6 => "I",
-        0xD7 => "I",  // I-circumflex
-        0xD8 => "I",  // I-diaeresis
-        0xDE => "I",  // I-grave
-        0xE0 => "O",  // O-acute
-        0xE1 => "ss", // sharp s - the one fold that grows the line
-        0xE2 => "O",  // O-circumflex
-        0xE3 => "O",  // O-grave
-        0xE4 => "o",  // o-tilde
-        0xE5 => "O",  // O-tilde
-        0xE9 => "U",  // U-acute
-        0xEA => "U",  // U-circumflex
-        0xEB => "U",  // U-grave
-        0xED => "Y",  // Y-acute
-        _ => return None,
-    })
+    legaia_font::latin::fold_for_byte(b)
+}
+
+/// `true` for the typographic lookalikes [`encode`] folds silently (smart
+/// quotes, dashes, ellipsis, NBSP).
+pub fn is_lookalike(c: char) -> bool {
+    fold_lookalike(c).is_some()
 }
 
 /// Outcome of [`fold_high_glyphs`] - counts only, never text.
@@ -481,7 +439,8 @@ mod tests {
         assert_eq!(err.len(), 2);
         assert!(err[0].fragment == "é");
         assert!(err[1].fragment == "ö");
-        assert!(err[0].reason.contains("font patch"));
+        assert!(err[0].reason.contains("accent font"));
+        assert!(err[0].reason.contains("{82}"));
     }
 
     #[test]

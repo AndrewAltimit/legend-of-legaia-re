@@ -8,11 +8,8 @@ use legaia_patcher::disc::DiscPatcher;
 use std::collections::BTreeMap;
 
 use legaia_patcher::translation::{
-    LanguagePack, diff, export_pack, fit,
-    import::WritePath,
-    import_pack, lift,
-    markup::{self, Target},
-    space,
+    LanguagePack, accents, diff, export_pack, fit, import::WritePath, import_pack, lift,
+    markup::Target, space,
 };
 use legaia_patcher::{apply, ppf};
 
@@ -236,7 +233,8 @@ fn offline_check(pack: &LanguagePack) -> Vec<(String, String)> {
             } else {
                 Target::Segment
             };
-            match markup::encode(&e.translation, target) {
+            match accents::encode_as_imported(&e.translation, target, accents::AccentMode::of(pack))
+            {
                 Err(issues) => {
                     let detail: Vec<String> = issues.iter().map(ToString::to_string).collect();
                     problems.push((
@@ -267,12 +265,58 @@ fn offline_check(pack: &LanguagePack) -> Vec<(String, String)> {
     problems
 }
 
+/// Print every character of the pack that will not draw as typed, with its
+/// key and character index, grouped by reason. Returns the line count.
+fn print_char_notes(pack: &LanguagePack, font: Option<&accents::DiscFont>, verbose: bool) -> usize {
+    let mode = accents::AccentMode::of(pack);
+    let notes = accents::pack_notes(pack, font.map(|f| f as &dyn accents::DrawLookup));
+    let bad: Vec<&accents::KeyedNote> = notes
+        .iter()
+        .filter(|n| accents::is_undrawable(&n.note, mode))
+        .collect();
+    let folds = notes.len() - bad.len();
+    let lines: std::collections::BTreeSet<&str> = bad.iter().map(|n| n.key.as_str()).collect();
+    println!(
+        "characters (accents: {}): {} undrawable in {} line(s){}",
+        if mode.header().is_empty() {
+            "strict"
+        } else {
+            mode.header()
+        },
+        bad.len(),
+        lines.len(),
+        if folds > 0 {
+            format!(", {folds} fold to ASCII on import")
+        } else {
+            String::new()
+        }
+    );
+    let shown = if verbose {
+        bad.len()
+    } else {
+        bad.len().min(20)
+    };
+    for n in &bad[..shown] {
+        println!(
+            "  [{}] {} char {} {:?}: {}",
+            n.section, n.key, n.note.index, n.note.fragment, n.note.reason
+        );
+    }
+    if shown < bad.len() {
+        println!("  ... {} more (--verbose)", bad.len() - shown);
+    }
+    lines.len()
+}
+
 pub(crate) fn cmd_stats(pack_path: &Path, input: Option<&Path>, verbose: bool) -> Result<()> {
     let pack = read_pack(pack_path)?;
     print_coverage(&pack);
     let offline_problems = offline_check(&pack);
     print_issues("over-budget", &offline_problems, verbose);
     let mut problems = offline_problems.len();
+    if input.is_none() {
+        print_char_notes(&pack, None, verbose);
+    }
 
     // With a disc: plan every entry exactly as `import` would, in memory. This
     // measures each target's real byte budget on the disc, which is the only
@@ -280,6 +324,8 @@ pub(crate) fn cmd_stats(pack_path: &Path, input: Option<&Path>, verbose: bool) -
     if let Some(disc) = input {
         let image = load_image(disc)?;
         let mut patcher = DiscPatcher::open(image).context("parse disc image")?;
+        let font = accents::DiscFont::read(&patcher).ok();
+        print_char_notes(&pack, font.as_ref(), verbose);
         let report = import_pack(&mut patcher, &pack)?;
         println!(
             "dry run vs {}: {} would apply, {} already applied, {} skipped",
@@ -406,9 +452,14 @@ pub(crate) fn cmd_lift_official(
     if fold_accents {
         let f = lift::fold_pack_accents(&mut pack);
         println!(
-            "accents: {} folded to ASCII, {} high glyph(s) left raw (need a font patch)",
+            "accents: {} folded to ASCII, {} non-accent high glyph(s) left raw",
             f.folded, f.unmapped
         );
+    } else {
+        // The accent bytes sit on the accent font's layout: ask the import to
+        // write that font so they draw.
+        pack.accents = accents::AccentMode::Font.header().to_string();
+        println!("accents: kept as PAL bytes; the pack is stamped `accents: font` so they draw");
     }
     write_pack(&pack, output)?;
 
@@ -569,6 +620,7 @@ pub(crate) fn cmd_import(
     output: Option<&Path>,
     patch: Option<&Path>,
     allow_relayout: bool,
+    accent_mode: Option<&str>,
     verbose: bool,
 ) -> Result<()> {
     if output.is_none() && patch.is_none() {
@@ -579,7 +631,12 @@ pub(crate) fn cmd_import(
         // same-size overlay of the original; the PPF diff model can't express it.
         bail!("--allow-relayout grows the image; write --output <patched.bin>, not --patch");
     }
-    let pack = read_pack(pack_path)?;
+    let mut pack = read_pack(pack_path)?;
+    if let Some(m) = accent_mode {
+        let mode = accents::AccentMode::parse(m)
+            .with_context(|| format!("--accents {m:?}: expected strict, fold or font"))?;
+        pack.accents = mode.header().to_string();
+    }
     let original = load_image(input)?;
     let mut patcher = DiscPatcher::open(original.clone()).context("parse disc image")?;
     let report = if allow_relayout {
@@ -599,6 +656,23 @@ pub(crate) fn cmd_import(
             report.relayout_sectors_added,
             report.relayout_sectors_added as usize * 2352,
         );
+    }
+
+    if report.accents.lines > 0 {
+        println!(
+            "accents: {} encoded into accent-font cells, {} folded to ASCII, in {} line(s)",
+            report.accents.cells, report.accents.folded, report.accents.lines
+        );
+    }
+    if let Some(f) = &report.accent_font {
+        if f.already {
+            println!("accent font: already on this disc ({} cells)", f.cells);
+        } else {
+            println!(
+                "accent font: {} accented glyphs drawn into the dialog font ({} bytes written)",
+                f.cells, f.bytes_written
+            );
+        }
     }
 
     if report.relocated_names + report.grown_monster_names > 0 {
@@ -803,6 +877,24 @@ pub(crate) fn cmd_space(
         return Ok(());
     }
     print_space(&report, verbose);
+    if !report.characters.is_empty() {
+        let lines: std::collections::BTreeSet<&str> =
+            report.characters.iter().map(|n| n.key.as_str()).collect();
+        println!(
+            "\n== characters that will not draw as typed: {} in {} line(s) ==",
+            report.characters.len(),
+            lines.len()
+        );
+        capped(&report.characters, verbose, |n| {
+            println!(
+                "  {:<28} char {:>3} {:<6} {}",
+                n.key,
+                n.note.index,
+                format!("{:?}", n.note.fragment),
+                n.note.reason
+            )
+        });
+    }
     Ok(())
 }
 

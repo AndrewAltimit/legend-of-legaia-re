@@ -221,6 +221,7 @@ fn main() -> Result<()> {
                 output,
                 patch,
                 allow_relayout,
+                accents,
                 verbose,
             } => translate::cmd_import(
                 &input,
@@ -228,6 +229,7 @@ fn main() -> Result<()> {
                 output.as_deref(),
                 patch.as_deref(),
                 allow_relayout,
+                accents.as_deref(),
                 verbose,
             ),
             cli::TranslateCmd::LiftOfficial {

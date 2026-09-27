@@ -749,8 +749,9 @@ pub(crate) enum TranslateCmd {
         #[arg(long, short)]
         output: PathBuf,
         /// ASCII-fold the accented glyphs the NTSC font lacks (`Epee` for
-        /// `Épée`). Without it the lifted text keeps the PAL accent bytes,
-        /// which render blank until the font atlas is patched.
+        /// `Épée`). Without it the lifted text keeps the PAL accent bytes and
+        /// the pack is stamped `accents: font`, so the import draws them with
+        /// the accent font.
         #[arg(long)]
         fold_accents: bool,
         /// Language code to stamp the pack with (`pt-BR`, ...). Defaults to
@@ -802,6 +803,13 @@ pub(crate) enum TranslateCmd {
         /// byte-faithfully instead of being abbreviated. Grows the image.
         #[arg(long)]
         allow_relayout: bool,
+        /// How typed accents reach the disc, overriding the pack's own
+        /// `accents:` header: `strict` (an accent is an error), `fold` (write
+        /// `Epee` for `Épée`) or `font` (also draw the accented letters into
+        /// the dialog font, built from this disc's own glyphs, so accents
+        /// render).
+        #[arg(long)]
+        accents: Option<String>,
         /// Print every skipped entry individually instead of the default
         /// per-reason summary.
         #[arg(long, default_value_t = false)]
