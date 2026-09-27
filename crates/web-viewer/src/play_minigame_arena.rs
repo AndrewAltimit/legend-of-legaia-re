@@ -1005,6 +1005,18 @@ impl LegaiaRuntime {
         }
     }
 
+    /// The scene's attribute generation
+    /// (`BakaDuelScene::attr_generation`): it moves when a pose rewrote the
+    /// UVs, CBA/TSB words or colours - the impact effect's flip-book cells
+    /// and fades - so the page re-reads those without re-uploading the VRAM.
+    /// `-1` with no scene.
+    pub fn play_mg_baka_scene_attr_generation(&self) -> i32 {
+        self.minigame_ui
+            .baka_surface
+            .scene()
+            .map_or(-1, |s| s.attr_generation() as i32)
+    }
+
     /// This frame's posed positions, `[x, y, z]` per vertex, raw retail world
     /// coordinates (Y down).
     pub fn play_mg_baka_scene_positions(&self) -> Vec<f32> {

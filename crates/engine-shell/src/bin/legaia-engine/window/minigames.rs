@@ -1176,7 +1176,8 @@ impl PlayWindowApp {
             }))
             .with_special_cameras(legaia_engine_core::baka_duel_scene::parse_special_cameras(
                 &loaded,
-            ));
+            ))
+            .with_impact_overlay(&loaded);
         log::info!(
             "baka: round 1 vs roster fighter {opponent} (gold prize {})",
             fight.gold_reward()

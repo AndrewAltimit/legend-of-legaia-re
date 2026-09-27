@@ -879,7 +879,14 @@
     /* The arena's lamp glow is semi-transparent (ABE) prims: the two-pass
      * draw keeps them from painting opaque. */
     if (!takeRenderer(view, rt.play_mg_baka_scene_vram(), buf, { semiTwoPass: true })) return null;
-    return { kind: 'baka', gen };
+    return { kind: 'baka', gen, attrGen: bakaAttrGen(rt) };
+  }
+
+  /* The scene's attribute generation: the impact effect's flip-book cells
+   * and fades rewrite UVs / CBA-TSB / colours between VRAM generations. */
+  function bakaAttrGen(rt) {
+    return typeof rt.play_mg_baka_scene_attr_generation === 'function'
+      ? rt.play_mg_baka_scene_attr_generation() : 0;
   }
 
   function bakaBuild(rt, view) {
@@ -906,6 +913,14 @@
     if (!S.scene || !r) {
       clearGl(view);
       return;
+    }
+    const ag = bakaAttrGen(rt);
+    if (S.scene.attrGen !== ag) {
+      /* Same buffers, new attributes: re-upload the mesh, keep the VRAM. */
+      r.uploadMesh(rt.play_mg_baka_scene_positions(), rt.play_mg_baka_scene_uvs(),
+        rt.play_mg_baka_scene_cba_tsb(), rt.play_mg_baka_scene_indices(),
+        rt.play_mg_baka_scene_flat_rgba());
+      S.scene.attrGen = ag;
     }
     r.updatePositions(rt.play_mg_baka_scene_positions());
     const c = r.canvas;
