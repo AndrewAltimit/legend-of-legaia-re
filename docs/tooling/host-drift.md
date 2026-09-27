@@ -2821,7 +2821,7 @@ meshes, kept its camera shot, and left the trigger scene's VAB bank staged.
 The page, for its part, keyed its camera reset on `SceneEntered` alone and
 carried the trigger scene's shot too. Both now treat the hand-off as the entry
 it is: `BootSession::apply_pending_fmv_handoff` runs the same session-side swap
-a door runs (camera globals reset, SFX queue dropped, VAB restaged) and the
+a door runs (camera globals reset, SFX queue dropped) and the
 window rebuilds on `FmvHandoffOutcome::Entered`; the page resets the camera on
 the hand-off tick
 (`crates/web-viewer/tests/play_fmv_real.rs`,
@@ -2981,10 +2981,9 @@ kernel both hosts call, so the two cannot drift on it again.
   reference every frame on both.
 - **A carried global track.** A door under a `music_01` track restaged the
   scene VAB over the region that track's own samples occupy, while both
-  directors kept the track playing as a duplicate start.
-  `scene::scene_bank_restage_wanted` skips the restage while a global track
-  owns the region; no disc script starts a scene-local id, so nothing reads
-  the skipped bank.
+  directors kept the track playing as a duplicate start. Neither host stages a
+  scene bank any more ([below](#the-spu-map-one-layout-kernel-and-no-scene-bank)),
+  so a door leaves the region to its track.
 - **The reward bank.** The page placed PROT 0889 above the BGM but not above
   a staged side-band bank, and dropped it on every scene change where the
   native director kept it. It now takes the highest tail end, and both keep it
@@ -3015,6 +3014,35 @@ Closed since:
   silently (`prestage_xa_clip`), so the cast's own request finds it resident.
   The native window drains the list and drops it. A monster's cast is picked
   at its own dispatch, so it has no lead time and keeps the page's lazy path.
+
+## The SPU map: one layout kernel, and no scene bank
+
+Both play hosts lay SPU RAM out through `legaia_engine_audio::spu_layout`: the
+region constants they re-export (`SFX_BANK_SPU_BYTES`, `SPU_RESERVED_BYTES`),
+`upload_owned_bank` for every track bank, and `upload_resident_sfx` /
+`upload_shared_region` for the slot-0 system bank and the slot-2 / slot-6
+region above it.
+
+- **The credits bank.** The ending theme's bank (`0x631B0` bytes of bodies)
+  did not fit either host's BGM region, so its last seven bodies were dropped
+  and three of the score's programs sounded nothing on both. `upload_owned_bank`
+  now lays a bank too large for the region across the SFX region, as retail
+  opens VAB 10 at slot 0's base
+  ([`audio.md`](../subsystems/audio.md#where-the-credits-bank-lands-in-spu-ram)).
+  While it is resident both hosts drop their resident SFX banks and key no cue
+  against the credits bank: the native director at the upload
+  (`AudioBgmDirector::reclaim_sfx_region`), the page at the next cue
+  (`LegaiaRuntime::reconcile_sfx_region`, the check the reward bank already
+  used). The next track that fits re-stages them through the same kernel on
+  both.
+- **No scene bank.** Both hosts staged the scene block's first VAB-bearing
+  entry on every scene entry, and skipped it under a carried global track
+  (`scene_bank_restage_wanted`). Retail stages no scene bank: a bank loads only
+  with its track, and a scene-local id plays a global fallback track
+  ([`audio.md`](../subsystems/audio.md#a-scene-local-id-loads-a-fallback-track-not-a-scene-bank)).
+  Neither host stages one now, the gate is gone, and
+  `SceneHost::route_bgm_events` routes a scene-local start through
+  `start_owned_vab` on `SCENE_LOCAL_BGM_FALLBACK_ID`'s entry for both.
 
 ## Battle FX: the effect ribbon and the summon seat order
 
