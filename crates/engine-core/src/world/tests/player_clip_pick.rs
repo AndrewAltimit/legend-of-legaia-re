@@ -205,3 +205,33 @@ fn the_reset_runs_through_a_warp_but_not_under_a_lock() {
     assert_eq!(w.locomotion.clip_base, vm::field_player_clip::BASE_IDLE);
 }
 
+/// `CC F8 50 lo hi`: op `4C 50` aimed at the player writes the player's
+/// party-bank bit (`>= 0xF0` raises it) and its live model, not the caller's
+/// context - `jagaroom`'s `CC F8 50 26 00` and `urudre1`'s `CC F8 50 F0 00`.
+#[test]
+fn a_player_targeted_model_set_lands_on_the_player() {
+    let mut w = World::new();
+    let mut ctx = FieldCtx::default();
+    {
+        let mut host = FieldHostImpl { world: &mut w };
+        match vm::field::step(&mut host, &mut ctx, &[0xCC, 0xF8, 0x50, 0x26, 0x00], 0) {
+            FieldStepResult::Advance { next_pc } => assert_eq!(next_pc, 5),
+            other => panic!("CC F8 50 should advance 5 bytes, got {other:?}"),
+        }
+    }
+    assert_eq!(w.locomotion.player_live_model, Some(0x26));
+    assert!(
+        !w.locomotion.player_party_bank,
+        "a scene-bank id drops the bit"
+    );
+    assert_eq!((ctx.model_id, ctx.flags), (0, 0), "the caller is untouched");
+    {
+        let mut host = FieldHostImpl { world: &mut w };
+        let _ = vm::field::step(&mut host, &mut ctx, &[0xCC, 0xF8, 0x50, 0xF0, 0x00], 0);
+    }
+    assert_eq!(w.locomotion.player_live_model, Some(0xF0));
+    assert!(w.locomotion.player_party_bank, "a player-bank id raises it");
+    // Scene entry restores the lead's own mesh.
+    w.reset_field_warp_and_clip();
+    assert_eq!(w.locomotion.player_live_model, None);
+}

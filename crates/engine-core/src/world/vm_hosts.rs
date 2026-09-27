@@ -649,6 +649,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.field_player_cflag(bit, set)
     }
 
+    fn player_set_model(&mut self, value: i16) -> bool {
+        self.world.field_player_set_model(value)
+    }
+
     fn global_flags(&self) -> u32 {
         self.world.flags.story_flags
     }
@@ -2207,9 +2211,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// select is [`crate::model_bank::resolve_model_id`]'s, the `4C 50`
     /// arm's own `0x801E17AC..0x801E1824` select instruction for instruction.
     ///
-    /// Only a placement channel receives it; an op aimed at the player
-    /// (`CC F8 50 ..`, e.g. `jagaroom`'s costume swap) has no player-mesh
-    /// re-bind seat and changes the state words only.
+    /// Only a placement channel receives it here; an op aimed at the player
+    /// (`CC F8 50 ..`, e.g. `jagaroom`'s costume swap) goes to
+    /// [`World::field_player_set_model`] instead, through
+    /// `FieldHost::player_set_model`.
     ///
     /// PORT: FUN_80024E08 (the model re-stage, through the live-model seat)
     fn op4c_n5_sub0_set_actor_model(&mut self, ctx: &mut FieldCtx, value: i16, _high: bool) {
