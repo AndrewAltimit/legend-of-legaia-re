@@ -224,16 +224,16 @@ pub fn equip_screen_draws_for(
         if view.candidates.is_empty() {
             str_at(&mut out, "(no items)", lx + 10, ly, dim);
         }
-        // Row 0 is retail's **Remove** row (class `0x4000`, payload `0`)
-        // exactly when the active slot holds something -
-        // `engine-core::equip_session::EquipSession::items_for_slot` gates
-        // it on the same condition. It carries no item, so the host's
-        // per-id name and owned count are both meaningless there and the
-        // label is drawn from here instead.
-        let remove_row = view
-            .slots
-            .get(view.active_slot as usize)
-            .is_some_and(|s| !s.current_name.is_empty() && s.current_name != "(empty)");
+        // Row 0 is retail's **Remove** row (class `0x4000`, payload `0`) when
+        // `engine-core::equip_session::EquipSession::items_for_slot` put one
+        // there: on an occupied armament slot, and on every Goods slot (the
+        // Goods builder always leads with it). It carries no item, so its bag
+        // count is `0` where every bag row's is at least `1` - that is the
+        // test, and the label is drawn from here instead of the id's name.
+        // A count of `0` further down is the Goods list's **equipped** row
+        // (class `0x7000`, the item already in the slot), which retail draws
+        // without a count column.
+        let remove_row = view.candidates.first().is_some_and(|c| c.count == 0);
         for (i, c) in view.candidates.iter().enumerate() {
             let y = ly + i as i32 * LIST_PITCH;
             let selected = view.phase == EquipDrawPhase::ItemPicker && i as u16 == view.cursor;
@@ -246,8 +246,10 @@ pub fn equip_screen_draws_for(
                 continue;
             }
             str_at(&mut out, c.name, lx + 10, y, color);
-            let count = format!("x{:>2}", c.count);
-            str_at(&mut out, &count, lx + 104, y, color);
+            if c.count > 0 {
+                let count = format!("x{:>2}", c.count);
+                str_at(&mut out, &count, lx + 104, y, color);
+            }
         }
 
         // Confirm prompt at the bottom of the list window.
@@ -435,13 +437,13 @@ mod tests {
         );
     }
 
-    /// The candidate list's row 0 is retail's Remove entry whenever the
-    /// active slot holds something. It carries no item, so its label comes
-    /// from here rather than from the host's per-id name.
+    /// The candidate list's row 0 is retail's Remove entry when the session
+    /// put one there - the one row with no bag count. It carries no item, so
+    /// its label comes from here rather than from the host's per-id name.
     #[test]
-    fn candidate_row_zero_is_the_remove_row_only_on_an_occupied_slot() {
+    fn candidate_row_zero_is_the_remove_row_when_it_has_no_count() {
         let font = legaia_font::synthetic_for_tests();
-        let candidates = [
+        let with_remove_row = [
             EquipCandidateRow {
                 name: "REMOVE-PLACEHOLDER",
                 count: 0,
@@ -451,31 +453,43 @@ mod tests {
                 count: 1,
             },
         ];
-        let occupied = [EquipSlotRow {
-            label: "Weapon",
-            current_name: "Wood Sword",
-        }];
-        let empty = [EquipSlotRow {
+        let without_remove_row = [
+            EquipCandidateRow {
+                name: "REMOVE-PLACEHOLDER",
+                count: 1,
+            },
+            EquipCandidateRow {
+                name: "Iron Sword",
+                count: 1,
+            },
+        ];
+        let slots = [EquipSlotRow {
             label: "Weapon",
             current_name: "",
         }];
 
         let with_remove = equip_screen_draws_for(
             &font,
-            &view(&occupied, &candidates, EquipDrawPhase::ItemPicker, 0, 0),
+            &view(&slots, &with_remove_row, EquipDrawPhase::ItemPicker, 0, 0),
             PARTY,
             LIST,
             MAIN,
         );
         let without = equip_screen_draws_for(
             &font,
-            &view(&empty, &candidates, EquipDrawPhase::ItemPicker, 0, 0),
+            &view(
+                &slots,
+                &without_remove_row,
+                EquipDrawPhase::ItemPicker,
+                0,
+                0,
+            ),
             PARTY,
             LIST,
             MAIN,
         );
         // The Remove row drops the count field the ordinary rows carry, so
-        // an occupied slot emits strictly fewer glyphs on the same list.
+        // it emits strictly fewer glyphs on the same list.
         assert!(
             with_remove.len() < without.len(),
             "the Remove row must replace the host's name + count draws"

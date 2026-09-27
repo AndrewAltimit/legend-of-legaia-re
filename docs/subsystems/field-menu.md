@@ -756,6 +756,18 @@ other restriction in that struct comes from - contains none of them.
 `EquipSession` asks the Goods question for engine slots `Ring1` / `Ring2` /
 `Accessory` and the armament question for the rest.
 
+The Goods slots also take their **row order** from the builder
+(`EquipSession::items_for_slot`): Remove first on every Goods slot, occupied
+or not; the equipped item second; then the accepted bag slots in slot order,
+with a bag copy of the equipped id skipped. Confirming the equipped row
+commits nothing - `FUN_801D9C14`'s confirm arm (`0x801DA0B4..0x801DA1D0`)
+tests only the `0x4000` Remove class and the `0x6000` / `0x9000` bag classes,
+and every other row falls through to the shared tail at `0x801DA1DC`, which
+steps the hand to the next slot row (wrapping at 8) and returns to sub-screen
+`0x13`. The four armament lists keep the engine's id-sorted rows, with Remove
+only on an occupied slot and no equipped row - a divergence from the builder
+table above, which gives both families the same two leading rows.
+
 ### What the candidate step draws, measured
 
 Every library state parked on the Equip screen sits at slot-pick with the

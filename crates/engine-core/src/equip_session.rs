@@ -149,6 +149,45 @@ pub struct EquipItem {
     pub slot: u8,
     /// `true` when the player owns at least one of these.
     pub owned: bool,
+    /// `true` on the Goods list's **equipped** row: the class-`0x7000` entry
+    /// the builder puts second, naming the item already in the slot.
+    /// Confirming it commits nothing - `FUN_801D9C14`'s confirm arm tests
+    /// only the `0x4000` (Remove) and `0x6000` / `0x9000` (bag) classes, so a
+    /// `0x7000` row falls through to the shared tail (`0x801DA1DC`), which
+    /// advances the hand to the next slot row.
+    pub equipped: bool,
+}
+
+/// [`crate::menu_list_rows::ItemRowTables`] over the session's disc-pinned
+/// Goods index, so the Goods candidate builder runs on the same acceptance
+/// set [`DiscEquipInfo::install_goods`] computed from the item-effect table
+/// (class `2`, `+3` byte not `0x41`). Only the two answers the Goods builder
+/// asks are meaningful.
+struct GoodsIndexTables<'a>(&'a DiscEquipInfo);
+
+impl crate::menu_list_rows::ItemRowTables for GoodsIndexTables<'_> {
+    fn kind(&self, id: u8) -> u8 {
+        if self.0.is_goods_candidate(id) { 2 } else { 0 }
+    }
+    fn subtype(&self, id: u8) -> u8 {
+        id
+    }
+    fn price(&self, _id: u8) -> u16 {
+        0
+    }
+    fn effect_flags(&self, _subtype: u8) -> u8 {
+        0
+    }
+    fn effect_marker(&self, subtype: u8) -> u8 {
+        if self.0.is_goods_candidate(subtype) {
+            0
+        } else {
+            crate::menu_list_rows::GOODS_NO_PASSIVE_MARKER
+        }
+    }
+    fn equip_flags(&self, _subtype: u8) -> u8 {
+        0
+    }
 }
 
 /// Phase of the equip session SM.
@@ -418,6 +457,14 @@ impl EquipSession {
     /// arm (empty equip byte on the Remove row) is unreachable from this
     /// list - [`Self::unequip`] keeps the guard anyway.
     pub fn items_for_slot(&self, slot: u8) -> Vec<EquipItem> {
+        if let Some(info) = &self.restrictions
+            && matches!(
+                EquipSlot::from_index(slot),
+                Some(EquipSlot::Ring1 | EquipSlot::Ring2 | EquipSlot::Accessory)
+            )
+        {
+            return self.goods_rows(slot, info);
+        }
         let mut out: Vec<EquipItem> = self
             .inventory
             .iter()
@@ -432,6 +479,7 @@ impl EquipSession {
                     id: *id,
                     slot,
                     owned: *qty > 0,
+                    equipped: false,
                 })
             })
             .collect();
@@ -443,10 +491,64 @@ impl EquipSession {
                     id: REMOVE_ROW_ID,
                     slot,
                     owned: true,
+                    equipped: false,
                 },
             );
         }
         out
+    }
+
+    /// The three **Goods** slots' candidate list, in retail's row order.
+    ///
+    /// Runs [`crate::menu_list_rows::build_goods_candidate_rows`] over the
+    /// bag's active window: the Remove verb always leads (even on an empty
+    /// slot, where confirming it buzzes), the equipped id follows when the
+    /// slot holds one, then every accepted bag slot in **slot** order, the
+    /// equipped id skipped. The armament slots keep the id-sorted list above.
+    ///
+    /// REF: FUN_80030628 (Goods cases `0xE`..`0x10` / `0x1C`..`0x1E`)
+    fn goods_rows(&self, slot: u8, info: &DiscEquipInfo) -> Vec<EquipItem> {
+        let (start, end) = self.inventory.window_bounds();
+        let slots = self.inventory.slots();
+        let window = &slots[start.min(slots.len())..end.min(slots.len())];
+        let ids: Vec<u8> = window.iter().map(|&(id, _)| id).collect();
+        let equipped_id = self.record.equip.get(slot as usize).copied().unwrap_or(0);
+        let words = crate::menu_list_rows::build_goods_candidate_rows(
+            &ids,
+            start as u16,
+            &GoodsIndexTables(info),
+            equipped_id,
+        );
+        let class_mask = crate::menu_list_rows::ROW_CLASS_MASK;
+        words
+            .iter()
+            .filter_map(|&w| {
+                let payload = w & !class_mask;
+                match w & class_mask {
+                    crate::menu_list_rows::CLASS_VERB => Some(EquipItem {
+                        id: REMOVE_ROW_ID,
+                        slot,
+                        owned: true,
+                        equipped: false,
+                    }),
+                    crate::menu_list_rows::CLASS_ITEM_ICON => Some(EquipItem {
+                        id: payload as u8,
+                        slot,
+                        owned: true,
+                        equipped: true,
+                    }),
+                    _ => {
+                        let (id, qty) = *slots.get(payload as usize)?;
+                        Some(EquipItem {
+                            id,
+                            slot,
+                            owned: qty > 0,
+                            equipped: false,
+                        })
+                    }
+                }
+            })
+            .collect()
     }
 
     /// `true` when equip slot `slot` currently holds an item - the condition
@@ -577,6 +679,17 @@ impl EquipSession {
                         if self.unequip(slot).is_none() {
                             self.events.push(EquipEvent::InvalidConfirm);
                         }
+                        return;
+                    }
+                    if item.equipped {
+                        // The Goods list's equipped row: retail commits
+                        // nothing and runs the shared tail, which steps the
+                        // hand to the next slot row (wrapping at 8) and
+                        // returns to the slot picker (`0x801DA1DC..0x801DA254`).
+                        let next = slot + 2;
+                        self.state = EquipState::SlotPicker {
+                            cursor: if next < 8 { next } else { 0 },
+                        };
                         return;
                     }
                     if !item.owned {

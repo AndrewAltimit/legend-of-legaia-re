@@ -110,10 +110,14 @@ fn a_goods_row_lists_accessories_and_an_armament_row_does_not() {
         .with_restrictions(info, 0)
     };
 
-    // Without the Goods index the row is empty - the shape the widening fixes.
+    // Without the Goods index the row offers nothing to equip - only the
+    // Remove verb, which the Goods builder always leads with - the shape the
+    // widening fixes.
     let bare = build(DiscEquipInfo::from_disc(&stats));
     assert!(
-        bare.items_for_slot(EquipSlot::Ring1.as_index()).is_empty(),
+        bare.items_for_slot(EquipSlot::Ring1.as_index())
+            .iter()
+            .all(|r| r.id == legaia_engine_core::equip_session::REMOVE_ROW_ID),
         "an un-widened table offers no Goods candidate"
     );
 
