@@ -17,6 +17,7 @@ mod casting;
 mod command_flow;
 mod commit_log_launch;
 mod effect_route;
+mod formation_span;
 mod initiative;
 mod intro_names;
 mod locomotion;

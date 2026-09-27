@@ -268,6 +268,11 @@ impl World {
         // `+0x288`. Retail's own value is `4` (`(DAT_8007BD60 >> 5) & 4`,
         // `FUN_800513F0` `0x80051430`), not `1`.
         self.battle_ctx.scripted_fight = if scripted { 4 } else { 0 };
+        // The same flag picks the monster seat family (`FUN_800513F0`'s row
+        // index adds it), so a scripted fight is seated on rows `5..8`.
+        if scripted {
+            self.seat_scripted_monster_family(monster_count);
+        }
         let first_monster = party_count;
         for slot in 0..party_count as usize {
             let a = &mut self.actors[slot];

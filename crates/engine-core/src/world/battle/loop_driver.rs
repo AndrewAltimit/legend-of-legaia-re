@@ -745,6 +745,9 @@ impl World {
         if !self.any_living_initiative_key() {
             self.reseed_initiative();
         }
+        // `FUN_801D388C(0, 0)` (`0x801D0EE4`): the formation squash +
+        // recentre, between the seeder and the DoT tick. RNG-free.
+        self.normalize_battle_formation();
         // The seeder's tail clears the round-skip count `ctx[+0x25]` every
         // round (`sb zero,0x25(v0)` at `0x801DAB84`, the delay slot of the
         // pick's `jal`), keys re-rolled or not.
