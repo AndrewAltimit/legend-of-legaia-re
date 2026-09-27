@@ -1388,3 +1388,14 @@ arms. The finding surfaced when the field host gained its FUN_80024E08 tag
 (the op-4C 50 model re-stage), which tipped the file's field majority past the
 orphan test's floor; nothing about FUN_801DBF9C's own evidence changed.
 """
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/menus.md:801e4140:801cef0c+801cef14"
+reason = """
+The two addresses are the caller's, not this routine's: the row cites them as
+the Save / Load strings the one referencing arm draws. In PROT 0899 at base
+0x801CE818 that arm forms them at 0x801DDE58/0x801DDE5C (lui 0x801d; addiu
+-0x10f4 -> 0x801CEF0C) and 0x801DDE80/0x801DDE84 (addiu -0x10ec -> 0x801CEF14),
+each passed to FUN_80036888, before its jal 0x801E4140 at 0x801DDEE8. The
+wrapper's own body forms neither.
+"""
