@@ -60,6 +60,31 @@ pub fn battle_ui_strings_from_prot(index: &crate::scene::ProtIndex) -> BattleUiS
     out
 }
 
+/// Both halves of the battle labels, built the one way every host installs
+/// them: the overlay half off PROT 0898 ([`battle_ui_strings_from_prot`]),
+/// then the SCUS half on top
+/// ([`legaia_asset::battle_ui_strings::BattleUiStrings::merge_scus`]).
+///
+/// Retail has no merge: each label is a string the drawing routine addresses
+/// in its own image, so the only order that could matter is which half wins a
+/// key both carry - and the two label sets share none (`SCUS_LABELS` holds the
+/// chip words, the steal captions and the sparring caption; `OVERLAY_LABELS`
+/// the banner sentences, `Spirit` / `Defense` / `Escape` and the commit-screen
+/// `Begin`; the Ra-Seru names are overlay-only). One builder keeps it that way
+/// on every host rather than relying on it: the native window used to merge
+/// the SCUS half at boot and the overlay half on top only when a player battle
+/// was requested, the page the other way round at disc load.
+pub fn battle_ui_strings_for_disc(
+    index: &crate::scene::ProtIndex,
+    scus: Option<&[u8]>,
+) -> BattleUiStrings {
+    let mut out = battle_ui_strings_from_prot(index);
+    if let Some(scus) = scus {
+        out.merge_scus(scus);
+    }
+    out
+}
+
 /// Read the party cast trigger's per-spell anim-pair lists
 /// (`FUN_801DBF9C`'s `< 0x25` arm) off the user's own `PROT.DAT` - the same
 /// battle-overlay image [`battle_ui_strings_from_prot`] reads. Empty when the
@@ -192,6 +217,19 @@ fn substitute_name_token(template: &str, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The merge order of [`battle_ui_strings_for_disc`] cannot change a
+    /// label: the SCUS and overlay halves key disjoint label sets.
+    #[test]
+    fn the_two_label_halves_share_no_key() {
+        use legaia_asset::battle_ui_strings::{OVERLAY_LABELS, SCUS_LABELS};
+        for (_, scus) in SCUS_LABELS {
+            assert!(
+                !OVERLAY_LABELS.iter().any(|(_, ovl)| *ovl == scus),
+                "{scus:?} is keyed by both halves"
+            );
+        }
+    }
 
     #[test]
     fn an_ordinary_open_raises_no_banner() {
