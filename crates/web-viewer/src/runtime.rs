@@ -339,14 +339,6 @@ pub struct LegaiaRuntime {
     /// native `persist_and_apply_options` leg for leg: apply the live audio
     /// side effects, then write the state out.
     pub(crate) options_state: legaia_engine_core::options::OptionsState,
-    /// High-water mark of the play clock, in whole seconds since the page's
-    /// wall clock origin. [`Self::tick_play_clock`] deltas against it so a
-    /// loaded save's accumulated total survives - the browser twin of the
-    /// native window's `play_clock_secs`.
-    play_clock_secs: u32,
-    /// Wall-clock origin (ms) the play clock counts from, seeded on the first
-    /// tick. `None` until then.
-    play_clock_origin_ms: Option<f64>,
     /// Scene-local BGM sound bank, staged from the scene's first VAB entry
     /// ([`SceneHost::scene_vab_bytes`]) whenever audio is live. Scene-local BGM
     /// starts (`bgm_id < 2000`, [`WebBgmDirector::start`]) play their SEQ
@@ -450,8 +442,6 @@ impl LegaiaRuntime {
             dev_menu_records: false,
             dev_menu_enabled: false,
             options_state,
-            play_clock_secs: 0,
-            play_clock_origin_ms: None,
             live_battles: true,
             pending_card_resume: None,
             battle_bgm: None,
@@ -757,17 +747,12 @@ impl LegaiaRuntime {
         host.world.locomotion.leading_edge_wall_probes = true;
         host.world.npcs.solid = true;
         host.world.npcs.animate = true;
-        // Free-roam story staging for PICKER entries only: the opening
-        // chain's legs re-enter through here too, and their authored
-        // presentation (silent dawn, pre-event scenery) must stay untouched.
-        // A card Load's resume is not a picker visit either - the save's own
-        // story flags are the state (the baseline would clear 0x141 / 0x147).
-        if resumed_save.is_none()
-            && !host.world.cutscene.opening_chain_active
-            && !host.world.cutscene_timeline_active()
-        {
-            host.world.seed_free_roam_story_baseline(name);
-        }
+        // Free-roam story staging for PICKER entries only - the engine's one
+        // rule (`World::stage_picker_entry`), shared with the native
+        // `--scene` entry. The opening chain's legs and the prologue skip's
+        // `town01` re-enter through here too, and a card Load's resume is not
+        // a picker visit either.
+        host.world.stage_picker_entry(name, resumed_save.is_some());
         let world_map = legaia_engine_core::scene::is_world_map_scene(name);
         if world_map {
             host.enter_world_map_scene(name)
@@ -935,7 +920,6 @@ impl LegaiaRuntime {
                 director.stop();
             }
         }
-        self.play_clock_origin_ms = None;
         let Some(host) = self.scene_host.as_mut() else {
             self.world.begin_new_game();
             return;
@@ -983,6 +967,16 @@ impl LegaiaRuntime {
     /// scene the engine just walked into (a door / warp) - the page rebuilds its
     /// render state whenever the return is non-empty.
     pub fn tick_frame(&mut self) -> Result<String, JsValue> {
+        // A card Load / save import parks its save for the scene entry the
+        // page performs in the same turn (`enter_field` consumes it). When
+        // the page declines that entry - the save's scene is the one already
+        // open, or not in its list - nothing consumed it, and the old save
+        // was re-applied over the live party at the NEXT picker entry, however
+        // much later that came. The resume point has passed once the world
+        // ticks, so the park does not outlive this frame. The native Load
+        // enters and loads in one call (`enter_field_live_from_save`) and
+        // parks nothing.
+        self.pending_card_resume = None;
         let Some(host) = self.scene_host.as_mut() else {
             self.world.tick();
             return Ok(String::new());
@@ -2250,16 +2244,17 @@ impl LegaiaRuntime {
     /// whatever a load put there - so the H:MM:SS box reset on every page
     /// load, ignored a loaded save's hours, and, worse, a save written from
     /// the browser recorded the *loaded* play time rather than the played one.
+    ///
+    /// The origin and high-water mark are the world's
+    /// ([`legaia_engine_core::world::World::tick_play_clock`], the kernel the
+    /// native window calls too), so New Game restarts both. This page used to
+    /// keep them itself and reset only the origin on New Game, which froze
+    /// play time after a second New Game until the wall clock caught up with
+    /// the old mark.
     pub(crate) fn tick_play_clock(&mut self) {
-        let now_ms = wall_clock_ms();
-        let origin = *self.play_clock_origin_ms.get_or_insert(now_ms);
-        let now = ((now_ms - origin) / 1000.0).max(0.0) as u32;
-        if now > self.play_clock_secs {
-            let delta = now - self.play_clock_secs;
-            self.play_clock_secs = now;
-            if let Some(host) = self.scene_host.as_mut() {
-                host.world.advance_play_time(delta);
-            }
+        let now_secs = wall_clock_ms() / 1000.0;
+        if let Some(host) = self.scene_host.as_mut() {
+            host.world.tick_play_clock(now_secs);
         }
     }
 
