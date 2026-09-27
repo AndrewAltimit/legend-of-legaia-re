@@ -243,12 +243,16 @@ fn rung2_vendor_plate(rt: &mut LegaiaRuntime) -> Result<(), String> {
     ))
 }
 
+/// Back out of the shop to the field. Triangle is the menu cancel; this used
+/// to press Circle, which the shop ignores, so no rung ever closed its shop
+/// and the pause-menu rungs below ran over a still-open one - which the menu
+/// gate now refuses, as retail's does (the shop owns the screen).
 fn close_shop(rt: &mut LegaiaRuntime) {
     for _ in 0..12 {
         if !rt.play_shop_is_open() {
             return;
         }
-        rt.play_shop_input(PadButton::Circle.mask());
+        rt.play_shop_input(PadButton::Triangle.mask());
     }
 }
 
