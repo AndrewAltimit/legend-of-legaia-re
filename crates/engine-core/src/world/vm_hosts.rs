@@ -2723,6 +2723,24 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
                 .is_some_and(|a| a.battle.max_hp > 0)
     }
     fn pose(&mut self, actor_id: u8, pose: Pose) {
+        // `FUN_801D5854`'s invalid-slot guard (`0x801D58C8..0x801D58E8`): a
+        // pose `>= 6` for a slot `>= 8` forces pose `9` and scrubs the
+        // ghost bits off pool slots `0..=6` (`FUN_801DB9C4`).
+        let pose = if actor_id >= 8 && pose as u8 >= 6 {
+            let mut words: Vec<u32> = self
+                .world
+                .actors
+                .iter()
+                .map(|a| a.battle.flag_word)
+                .collect();
+            vm::battle_action::clear_pool_flag_words(&mut words);
+            for (a, w) in self.world.actors.iter_mut().zip(words) {
+                a.battle.flag_word = w;
+            }
+            Pose::Defeat
+        } else {
+            pose
+        };
         self.world
             .pending_battle_events
             .push(BattleEvent::Pose { actor_id, pose });
