@@ -14,6 +14,7 @@ pub mod arts_command_input;
 pub mod baka_duel_scene;
 pub mod baka_fighter;
 pub mod baka_fighter_chrome;
+pub mod baka_impact_fx;
 pub mod battle_afterimage;
 pub mod battle_anim;
 pub mod battle_arts;

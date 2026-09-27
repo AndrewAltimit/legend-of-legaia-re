@@ -398,6 +398,9 @@ pub struct StrikeTable {
     /// clock steps by the record speed alone, which is exact for every clip
     /// whose record leaves the double-step bit clear.
     pub clips: [Option<ClipHeader>; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
+    /// Per-action strike offsets - each live sub-keyframe's `+0x20 / +0x22 /
+    /// +0x24` TRS, in slot order (the column the impact pair reads).
+    pub offsets: [Vec<[i16; 3]>; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
 }
 
 impl StrikeTable {
@@ -408,10 +411,18 @@ impl StrikeTable {
         for (a, f) in frames.iter_mut().enumerate() {
             *f = actions.strike_frames(a);
         }
+        let offsets = std::array::from_fn(|a| {
+            actions
+                .sub_keyframes
+                .get(a)
+                .map(|k| k.iter().map(|s| s.offset).collect())
+                .unwrap_or_default()
+        });
         StrikeTable {
             speed: actions.speed,
             frames,
             clips: [None; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
+            offsets,
         }
     }
 
@@ -599,6 +610,12 @@ pub struct BakaFight {
     /// The round-start cameo's actor, while it walks: its phase `+0x22` and
     /// the clip cursor `+0x68` its clip selector advances.
     cameo: Option<CameoActor>,
+    /// `DAT_801DBF50` - raised by a special's commit (`0x801D4578`), cleared
+    /// by the round setup (`0x801CFFD8`). The impact pair reads it for its
+    /// Z lift.
+    special_latch: bool,
+    /// The impact pair's effect parts ([`crate::baka_impact_fx`]).
+    impact: crate::baka_impact_fx::ImpactFx,
 }
 
 /// The round-start cameo actor (`FUN_801D6310`'s record): its phase and the
@@ -730,7 +747,67 @@ impl BakaFight {
             held_pad: 0,
             setup_pending: true,
             cameo: None,
+            special_latch: false,
+            impact: crate::baka_impact_fx::ImpactFx::default(),
         }
+    }
+
+    /// Install the impact pair's four spawn templates
+    /// ([`crate::baka_impact_fx::ImpactTemplates::from_overlay`]). Without
+    /// them a decided exchange spawns no effect.
+    pub fn with_impact_templates(mut self, t: crate::baka_impact_fx::ImpactTemplates) -> Self {
+        self.impact = crate::baka_impact_fx::ImpactFx::with_templates(t);
+        self
+    }
+
+    /// [`Self::with_impact_templates`] off the as-loaded PROT 0976 image; a
+    /// no-op when the templates do not read.
+    pub fn with_impact_overlay(self, overlay_0976: &[u8]) -> Self {
+        match crate::baka_impact_fx::ImpactTemplates::from_overlay(overlay_0976) {
+            Some(t) => self.with_impact_templates(t),
+            None => self,
+        }
+    }
+
+    /// The live impact effect parts.
+    pub fn impact_fx(&self) -> &crate::baka_impact_fx::ImpactFx {
+        &self.impact
+    }
+
+    /// `FUN_801D4DF8`'s call on the booking arm for `slot`: the pair spawns
+    /// at the fighter's position offset by the current action's strike TRS -
+    /// the landed sub-keyframe, or slot `0` when `reset_keyframe` (the
+    /// draw's calls). A fight without strike tables has no offsets and
+    /// spawns nothing.
+    fn spawn_impact(&mut self, slot: usize, reset_keyframe: bool) {
+        let Some(st) = self.strike.as_ref() else {
+            return;
+        };
+        let Some(attack) = self.f[slot].chosen else {
+            return;
+        };
+        let action = StrikeTable::action_of(attack);
+        let live = self.f[slot].clock.landed.map_or(-1, |i| i as i32);
+        let k = crate::baka_fighter_chrome::impact_keyframe_index(live, reset_keyframe);
+        let Some(off) = usize::try_from(k)
+            .ok()
+            .and_then(|k| st[slot].offsets.get(action)?.get(k).copied())
+        else {
+            return;
+        };
+        let p = self.fighter_position(slot);
+        let pos = (p[0] as i16, p[1] as i16, p[2] as i16);
+        // The block's facing word `+0x28`: clear for the player's seat, set
+        // for the opponent's (the round setup's `0x801CFFF8` / `0x801CFFFC`).
+        let facing = slot & 1 == 1;
+        let spawns = crate::baka_fighter_chrome::impact_effect_pair(
+            slot,
+            pos,
+            (off[0], off[1], off[2]),
+            facing,
+            self.special_latch,
+        );
+        self.impact.spawn_pair(&spawns);
     }
 
     /// Install both fighters' strike data (action-record speed + strike
@@ -846,6 +923,9 @@ impl BakaFight {
             StrikeTable::action_of(attack),
             attack == BakaAttack::Special,
         );
+        if attack == BakaAttack::Special {
+            self.special_latch = true;
+        }
         if attack == BakaAttack::Special && self.strike.is_some() {
             // The special's camera glide (`0x801D4644..0x801D4740`): the
             // player's row of the per-fighter table, the opponent's fixed
@@ -948,6 +1028,7 @@ impl BakaFight {
         self.setup_pending = true;
         self.round = 0;
         self.rate_divisor = STRIKE_RATE_DIVISOR;
+        self.special_latch = false;
         self.afterimages.clear();
         self.afterimage_frames.clear();
         self.settle_timer = 0;
@@ -1586,6 +1667,7 @@ impl BakaFight {
                 // special lowered (`0x801D01A4`), seeds both clips back to
                 // the idle (`0x801CFFB0` / `0x801CFFC0`) and snaps the camera.
                 self.rate_divisor = STRIKE_RATE_DIVISOR;
+                self.special_latch = false;
                 self.motion = Default::default();
                 self.camera.round_setup();
                 self.setup_pending = true;
@@ -1638,6 +1720,10 @@ impl BakaFight {
             }
         }
         self.tick_afterimages(frame_step);
+        // The impact parts ride the actor-pool walk at the same
+        // `frame step x DAT_1F80037D` factor as every part tick.
+        let delta = (frame_step.max(0) * self.rate_divisor.max(0)).min(i32::from(u16::MAX));
+        self.impact.tick(delta as u16);
 
         let outcome = self.resolve(frame_step);
         // The keyframe gate: the resolution SM books a decided exchange only
@@ -1665,6 +1751,9 @@ impl BakaFight {
                 if self.f[w].chosen.is_none() {
                     return;
                 }
+                // The booking arm's impact pair runs ahead of the damage
+                // kernel (`0x801D36F0` / `0x801D3744`).
+                self.spawn_impact(w, false);
                 let (damage, critical, special_round_win) = self.apply_damage(l);
                 // The damage kernel's clip store on the struck side: the hit
                 // reaction, or the knockdown when the special's last strike
@@ -1722,6 +1811,10 @@ impl BakaFight {
                 }
             }
             ExchangeOutcome::Draw => {
+                // The draw arm spawns both pairs with the keyframe reset
+                // (`0x801D37B4` / `0x801D37C0`), then runs both damage calls.
+                self.spawn_impact(0, true);
+                self.spawn_impact(1, true);
                 // Both take damage, both streaks reset, both roll comebacks.
                 let (d0, c0, _) = self.apply_damage(0);
                 let (d1, c1, _) = self.apply_damage(1);
