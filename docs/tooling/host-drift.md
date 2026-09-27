@@ -1155,6 +1155,58 @@ inside the *Items* screen's session builder. Sharing a panel between two
 screens surfaces that immediately - the panel wants a description, and there
 was nowhere to get one.
 
+## A rule spelled beside the shared predicate
+
+A second side-by-side pass, with the first pass's rows closed, found a shape
+the first did not name: a host that **calls** the shared predicate and then
+adds its own test next to it. Both hosts reach the same engine function, so
+every tier reads the pair as parity; the difference lives in the extra
+clause, and one host has it while the other does not.
+
+- **The menu-open gate.** The native window asked
+  `World::field_menu_open_allowed` *and* `!menu_runtime.is_open()` *and* its
+  own `narration` local; the page asked only the predicate, and read its
+  pause-menu Start before its shop. So on the page Start opened the pause menu
+  over an open shop. The shop, prize-counter, narration and title-card
+  refusals are inside the predicate now.
+- **The picker staging rule.** Both hosts seeded the free-roam story baseline
+  on a direct scene entry, each with its own test for "is this a picker
+  visit". The page's test (no opening chain, no timeline) is exactly what the
+  prologue skip defeats - the skip tears both down before the host enters
+  `town01` - so on the page the skip staged `town01` as a picker visit and
+  dropped the opening's scripted silent-dawn BGM pause. The page also staged
+  an overworld label, which the native entry never did. Both ask
+  `World::stage_picker_entry` now, which also reads the skip's own marker
+  (`entering_town01_opening`).
+- **The scene-kind branch.** The page's `enter_field` routed an overworld
+  label through the world-map entry; the native save Load did not, so a save
+  written on a kingdom overworld - the only place saving is legal - came back
+  as a plain field scene. `BootSession::enter_scene_live` is the one branch
+  the native Load takes now.
+- **The play clock.** Each host kept its own origin and high-water mark
+  beside the shared `advance_play_time`, and each got a different edge wrong:
+  the native one counted the title screen, the page's froze after a second New
+  Game. The origin and mark are world state now (`World::tick_play_clock`),
+  reset by `begin_new_game`.
+
+The cure each time is to move the extra clause into the kernel, not to copy it
+to the other host: a copy is two spellings again, and the next edge case goes
+wrong on one of them.
+
+The same pass found three host-local defaults that changed the game on one
+host only. The native player-battle mode, on by default, seeded an empty save
+with demo items, saved chains and a fabricated `Art1B` record for every
+character; it is behind `LEGAIA_DEMO_BATTLE_SEED=1` now. The native window
+installed the party cast trigger's anim-pair lists only for player-driven
+battles, where the page installs them for every battle. And the native window
+latched the Field / Battle mode edge once per display frame while the page
+latched it per sim tick - and the battle load behind that edge installs the
+party's clips, art banks and art records, so a catch-up frame ran its first
+battle ticks without them natively. On input, the page let OS key auto-repeat
+into its "just pressed" set, so a held direction scrolled every page menu,
+and the native window had no focus-loss arm, so a key held across an alt-tab
+stayed down.
+
 ## What a waiver may say
 
 Both waiver files are validated for staleness on every run, so they cannot
@@ -1189,6 +1241,42 @@ about these is contested.
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
 | battle body blend modes | Retail semi-transparency on a whole battle body, on neither host. See [below](#a-battle-bodys-blend-mode-reaches-neither-host). |
+| page resume and New Game flow | The page's scene-level Load / New Game choreography lives in `site/_content/play.html` callbacks, not the engine. See [below](#the-page-owns-its-resume-and-new-game-choreography). |
+| movie audio policy | Which movies pause the BGM, and what a finished movie resumes, is decided per host. See [below](#movie-audio-is-a-per-host-policy). |
+
+### The page owns its resume and New Game choreography
+
+The native window resumes a save in one engine call
+(`BootSession::enter_field_live_from_save`: enter the save's scene, then load
+over it) and starts a New Game through `BootSession::begin_new_game`. The page
+splits both across `play.html` callbacks, and three of its paths differ:
+
+- a card Load whose scene is the one already open never re-enters it, so the
+  party lands at the current position rather than at the save point;
+- a Continue or import naming a scene the page does not list falls through to
+  New Game over the loaded save;
+- the party-wipe path's title callback enters the opening without
+  `begin_new_game`, so a New Game after a wipe keeps the wiped party, flags,
+  bag and gold, and the title theme is not stopped.
+
+A parked resume the page declines to enter no longer survives the next tick
+(`tick_frame` drops it), which was the part that silently re-applied an old
+save at a later scene pick. Blocking capability: an engine-side resume and
+New Game entry (enter + load, or seed + stop, in one call) that the page's
+callbacks invoke instead of choreographing it.
+
+### Movie audio is a per-host policy
+
+The native window pauses the sequencer only when a movie carries an XA track,
+and resumes it only when it staged movie audio; its BGM director also keeps
+its own pause latch, which the movie path bypasses by writing the output gate
+directly. The page pauses at every movie install, resumes on every finish
+(played or not), and treats the gate itself as the latch. So a script-paused
+track survives an unplayable movie natively and resumes on the page, and a
+sub-op-`0xA` after a movie detaches the track natively and keeps it on the
+page. Blocking capability: one engine-side movie-audio policy (pause iff
+movie audio is present, resume only what the movie paused) that both
+directors consult.
 
 ### Derived scene point lights are native-only
 
