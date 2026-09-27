@@ -1240,7 +1240,7 @@ about these is contested.
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
-| battle body blend modes | Retail semi-transparency on a whole battle body, on neither host. See [below](#a-battle-bodys-blend-mode-reaches-neither-host). |
+| battle body blend modes | Both hosts draw a whole battle body's semi-transparency; three residues differ in scope and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-three-residues). |
 | page resume and New Game flow | The page's scene-level Load / New Game choreography lives in `site/_content/play.html` callbacks, not the engine. See [below](#the-page-owns-its-resume-and-new-game-choreography). |
 | movie audio policy | Which movies pause the BGM, and what a finished movie resumes, is decided per host. See [below](#movie-audio-is-a-per-host-policy). |
 | Ra-Seru chip cross-out | The regular ring's red X over a forbidden Ra-Seru chip, on neither host. See [below](#the-ra-seru-chips-cross-out-reaches-neither-host). |
@@ -1289,21 +1289,32 @@ fidelity: this is the one row here where the *native* host is the one running
 a non-retail path, so the page being without it is a feature gap rather than
 a correctness gap.
 
-### A battle body's blend mode reaches neither host
+### A battle body's blend mode reaches both hosts, with three residues
 
 Two retail writers put a whole battle body into a semi-transparent blend
 mode through the top byte of its tint colour word: the near-camera ghost
 pass `FUN_8004DC68` (mode `3`, a body near the camera or a caster's ally
-during a magic cast) and the capture / defeat fade (mode `1`, additive). Both
-reach the shared draw plan - `World::battle_actor_draw_plan` carries the byte,
-`BattleActorDrawPlan::semi_mode` reads it - and neither host's battle actor
-pass acts on it, so the gap is symmetric and no tier sees it.
+during a magic cast) and the capture / defeat fade (mode `1`, additive).
+`FUN_80043390` ORs the word's ABE bit into every packet of the body and its
+ABR mode into the packets' tpage bits, so every prim draws semi-transparent,
+the GPU still honouring each texel's STP bit
+([battle.md](../subsystems/battle.md#the-near-camera-ghost-pass-fun_8004dc68)).
 
-Blocking capability: a per-draw blend override. The wgpu renderer blends only
-the prims a mesh flags semi-transparent (its semi tail); a whole-mesh override
-needs the opaque range re-issued through the per-ABR blend pipelines, and the
-page's WebGL program the same. See
-[battle.md](../subsystems/battle.md#the-near-camera-ghost-pass-fun_8004dc68).
+Both hosts reproduce that through one kernel, `engine-core::battle_body_blend`,
+which rewrites a body's TSB words from the draw plan's colour word: the native
+posed-mesh builder applies it before upload
+(`event_handler/redraw_passes.rs`), and the page re-sends the stream on a
+blend-key change (`web-viewer::play_battle_body_blend`, with
+`TmdRenderer::updateSceneMeshCbaTsb` rebuilding the per-ABR semi tail). What
+still differs:
+
+- **native:** only posed bodies (the `pose_frame` path) take the blend; a body
+  drawn unposed keeps its authored TSB words;
+- **native:** the posed override is keyed by TMD index, so two bodies sharing
+  one TMD share one override;
+- **page:** blend-pass ordering is per mesh, not per prim, so a blended body's
+  prims do not interleave with other meshes' semi prims the way one ordering
+  table would.
 
 ### The Ra-Seru chip's cross-out reaches neither host
 
