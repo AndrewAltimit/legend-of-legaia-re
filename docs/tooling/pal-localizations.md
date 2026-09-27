@@ -158,23 +158,35 @@ carries:
 | `0x85` | à | | `0x90` | É | | `0x9A` | Ü |
 | `0x87` | ç | | `0x93` | ô | | `0xE1` | ß |
 
-Capital-accented glyphs CP437 lacks occupy a small **game-specific block around
-`0xD0..0xD6`** (e.g. Italian `È` at `0xD4`). None of the accent bytes fall in
+The accented capitals CP437 lacks are written at their **IBM CP850**
+positions: the lifted French and Italian text carries `Â` as `0xB6`, `È` as
+`0xD4`, `Î` as `0xD7`, `Ì` as `0xDE` and `Ô` as `0xE2`. (An earlier reading
+called this a game-specific block around `0xD0..0xD6`; the bytes the text
+uses are CP850's, and the PAL font page draws some of them at other cells -
+[`dialog-font.md`](../formats/dialog-font.md#the-pal-page).) None of the accent bytes fall in
 the `0xC0..0xCF` two-byte-opcode window, so glyph space and control space stay
 disjoint (`ß`=`0xE1` is safely above it). Per-language accent subsets: German
 needs 7 cells (ä ö ü ß Ä Ö Ü), French ~14, Italian ~10; the union is ~40 cells.
 
 ### Font-patch scope for NTSC
 
-The NTSC dialog-font atlas already indexes cells `0x20..=0xFF` (16×14 tile page;
-menu-glyph atlas at `PROT.DAT` offset `0x11218`, plus the VRAM dialog font - see
-[`dialog-font.md`](../formats/dialog-font.md), [`boot.md`](../subsystems/boot.md));
-the high cells simply carry no glyph in the USA build. Rendering official PAL
-text on NTSC therefore needs **no structural change** - only (1) drawing the
-~40-cell accented-glyph union into the existing high cells and (2) setting each
-new cell's width byte in the font width table (`SCUS 0x80074050`). This is the
-concrete form of the "accented scripts need a font patch" caveat in
-[`translation/`](translation/index.md).
+The dialog font is one 4bpp TIM at `PROT.DAT` offset `0x7F40` (member 3 of
+the boot system-UI pack, uploaded to VRAM `(896, 0)`) plus the 256-byte width
+table at `SCUS` `0x80073F1C`; the PAL discs carry theirs at the same offset.
+The retail USA page already has some accented glyphs in the high cells, but
+with a zero width-table entry, so they overprint the next letter
+([`dialog-font.md`](../formats/dialog-font.md#accented-latin-cells)).
+Rendering official PAL text on NTSC therefore needs no structural change -
+only glyphs in the layout's cells and a width for each. The **accent font**
+does exactly that at patch time, from the user's own disc
+([`dialog-font.md`](../formats/dialog-font.md#the-accent-font)); a pack asks
+for it with `accents: font`
+([`pack-format.md`](translation/pack-format.md#accents)).
+
+An earlier version of this section named the width table at `0x80074050`
+(that is the `0xCE` escape table) and the small-caps menu atlas at
+`PROT.DAT` `0x11218` as the font to patch; the dialog font is the `0x7F40`
+TIM and its widths sit at `0x80073F1C`.
 
 ## Lifting an official translation
 
@@ -243,7 +255,9 @@ the importer patches (`legaia_patcher::translation::lift`):
 
 `--fold-accents` additionally rewrites the accent cells onto plain ASCII, so the
 lifted text renders on an unmodified NTSC font (see
-[Accent folding](#accent-folding) below).
+[Accent folding](#accent-folding) below). Without it the pack keeps the accent
+bytes and is stamped `accents: font`, so its import writes the accent font and
+they draw.
 
 It emits a **filled working pack** (source = USA text, translation = official
 localized text, USA byte budgets) - Sony text, kept local, never committed.
@@ -256,19 +270,21 @@ exactly; they still need a font patch to render.
 
 Lifted text keeps the PAL accent bytes verbatim (the markup codec round-trips
 them as `{82}`-style escapes), and they encode onto the USA disc without
-complaint - but the NTSC build has no glyph in those cells, so they draw blank
-until the atlas is patched. `translate lift-official --fold-accents` (and the
-in-browser transfer, where it is the default) folds the accent block onto the
-plain-ASCII glyphs the USA font does have: `é` -> `e`, `ß` -> `ss`, `Ü` -> `U`,
-across the CP437 layout above plus the `0xD0..=0xD6` capitals. Folding is
-one-byte-for-one-byte except `ß`, which grows a line by one byte and can push a
-tight line over budget.
+complaint. On the retail USA font they overprint or draw blank; with the
+accent font on the disc (`accents: font`) they draw as the letters they are,
+because the accent font uses the same byte layout.
+`translate lift-official --fold-accents` (and the in-browser transfer, where it
+is the default) instead folds the accent cells onto plain ASCII: `é` -> `e`,
+`ß` -> `ss`, `Ü` -> `U`. The fold table is `legaia_font::latin`, the same one
+`accents: fold` applies to a pack. Folding is one byte for one byte except
+`ß`, `æ`/`Æ` and `œ`/`Œ`, which grow a line by one byte and can push a tight
+line over budget.
 
-The fold deliberately leaves the **non-accent** high cells alone: the retail
-atlas uses a few symbol cells above `0x7E` (they occur in the USA disc's own
-spell names), so those bytes already render and rewriting them would lose a
-glyph. Both counts are reported - folded and left-raw - so nothing changes
-silently. Implementation: `translation::markup::fold_high_glyphs` /
+The fold deliberately leaves the **non-accent** high cells alone: a few
+symbol cells above `0x7E` occur in the disc's own spell-table entries, and
+rewriting them would lose a byte a table may depend on. Both counts are
+reported - folded and left-raw - so nothing changes silently.
+Implementation: `translation::markup::fold_high_glyphs` /
 `translation::lift::fold_pack_accents`; disc-gated oracle
 `crates/patcher/tests/translate_lift_official_real.rs`.
 

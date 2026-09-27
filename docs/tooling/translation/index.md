@@ -213,7 +213,7 @@ sources and budgets, cleared translations, stamped header. Give it either
 
 | Flag | Meaning |
 |---|---|
-| `--lang <CODE>` | target language code (`fr`, `de`, `es`, `it`, `pt-BR`, ...); non-Latin scripts also need a [font patch](textures-and-fonts.md#font-patch-scope) |
+| `--lang <CODE>` | target language code (`fr`, `de`, `es`, `it`, `pt-BR`, ...); accented Latin draws with the [accent font](pack-format.md#accents), non-Latin scripts are [out of reach](textures-and-fonts.md#font-patch-scope) |
 | `--from <PACK>` | an existing exported pack to derive from |
 | `--input <DISC>` | ...or export straight from a disc image |
 | `--contributor <NAME>` | contributor names for the header (repeatable) |
@@ -240,6 +240,9 @@ encodability and budget checks on every filled entry. Without `--input` it is
 an offline check against the pack's own budgets. With `--input` it is a full
 dry run: every entry is planned exactly as `import` would, in memory, and
 nothing is written. That is the only way to validate a distributable pack.
+Both forms also list every character that will not draw as typed under the
+pack's [accent mode](pack-format.md#accents), with its key and character
+index; with `--input` the check knows which cells the disc's font draws.
 
 | Flag | Meaning |
 |---|---|
@@ -251,7 +254,9 @@ nothing is written. That is the only way to validate a distributable pack.
 
 Room report: how much room every translatable string has, how much English
 uses, and - with `--pack` - how much the pack uses and what `import` does with
-each line (a dry run; nothing is written). Keys and numbers only. See
+each line (a dry run; nothing is written). Keys and numbers only, plus - with
+`--pack` - every character of the pack's own text that will not draw as typed
+(`characters` in the JSON). See
 [seeing your space](space-and-budgets.md#seeing-your-space).
 
 | Flag | Meaning |
@@ -288,6 +293,7 @@ never writes to `--input`.
 | `--output <BIN>` | write the patched image here (contains Sony bytes - local play only) |
 | `--patch <PPF>` | write a portable PPF 3.0 patch here (safe to share) |
 | `--allow-relayout` | let overflowing scene dialog grow its scene by whole sectors ([relayout](dialog-import.md#disc-relayout---allow-relayout)); grows the image, so it needs `--output` and refuses `--patch` |
+| `--accents <MODE>` | override the pack's `accents:` header: `strict`, `fold` (write `Epee` for `Épée`) or `font` (also write the [accent font](pack-format.md#accents) so accents draw) |
 | `--verbose` | print every skipped entry instead of the per-reason summary |
 
 ### `lift-official`
@@ -303,7 +309,7 @@ reference: [`pal-localizations.md`](../pal-localizations.md#lifting-an-official-
 | `--from <DISC>` | the disc to lift from (a PAL SCES build, or a fan-patched disc - USA included) |
 | `--target <DISC>` | the USA disc whose coordinate space the pack is keyed to |
 | `-o, --output <PACK>` | where to write the filled working pack |
-| `--fold-accents` | ASCII-fold the accented glyphs the NTSC font lacks ([accent folding](../pal-localizations.md#accent-folding)) |
+| `--fold-accents` | ASCII-fold the accented glyphs the NTSC font lacks ([accent folding](../pal-localizations.md#accent-folding)); without it the pack keeps them and is stamped `accents: font` |
 | `--language <CODE>` | language code to stamp; defaults to the source build's own, so a fan patch names it here |
 | `--baseline <DISC>` | the retail disc a fan patch was built on; every line that disc also carries is blanked, leaving only the translator's own text |
 

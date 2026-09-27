@@ -15,6 +15,7 @@ language: 'fr'
 game: 'Legend of Legaia (USA) SCUS-94254'
 contributors: ['...']
 notes: '...'
+accents: 'font'        # optional: how typed accents reach the disc (see Accents)
 sections:
   items:               # one list per section, fixed order
   - key: 'scus:str:0x80012260'   # stable provenance key
@@ -133,13 +134,40 @@ and reports **per-character** errors: anything outside printable ASCII is not
 in the retail glyph set. Common typographic lookalikes (smart quotes, en/em
 dashes, ellipsis, NBSP) are folded automatically.
 
-**Accented Latin, Cyrillic and CJK are not encodable** - the retail font
-simply has no such glyphs. A full non-Latin translation needs a font patch
-(new glyph tiles + width table), which this pipeline does not attempt
-([`textures-and-fonts.md`](textures-and-fonts.md#font-patch-scope)).
-French/Italian/etc. must be written unaccented (`Epee` not `Épée`).
+Typed accents are handled one step before `encode`, by the pack's accent mode
+(next section). In the default mode an accented letter is an encode error
+whose message names its ASCII fold and the cell the accent font would give
+it. Cyrillic, Greek and CJK have no glyph and no fold in any mode.
 
-Text lifted off an official PAL disc is the one exception. It arrives as raw
-`{xx}` accent bytes, which *encode* fine but draw blank on the NTSC font, so
-the lift offers the same ASCII fold (`--fold-accents`; see
-[`pal-localizations.md`](../pal-localizations.md#accent-folding)).
+## Accents
+
+The retail USA font draws plain letters only: its page has some accented
+glyphs in the high cells, but the width table gives most of them a zero
+advance, so they overprint the next letter
+([`dialog-font.md`](../../formats/dialog-font.md#accented-latin-cells)). The
+pack's optional `accents:` header decides what happens to an accented letter
+on import:
+
+| `accents:` | Typed `é` | `{82}` in the text | The disc |
+|---|---|---|---|
+| empty / `strict` | encode error, reported per character | written as the byte (it overprints on the retail font) | unchanged |
+| `fold` | written as `e` | written as `e` | unchanged |
+| `font` | written as the byte `0x82` | written as the byte | the [accent font](../../formats/dialog-font.md#the-accent-font) is written once |
+
+The folds and cells come from one table, `legaia_font::latin`, which the CLI,
+the ROM patcher page and the workbench all read. A Latin letter with no cell
+(`ł`, `č`, `ő`) folds in both `fold` and `font` mode. A two-letter fold
+(`ß` to `ss`, `æ` to `ae`) grows the line by a byte, so a line at its budget
+can stop fitting under `fold`; under `font` it stays one byte.
+
+`translate import --accents <strict|fold|font>` overrides the header for one
+run. `translate stats` and `translate space --pack` list every character that
+will not draw as typed under the pack's mode, with its key and character
+index, and `import` reports how many accents it encoded into cells and how
+many it folded. Implementation: `translation::accents`; disc-gated oracle
+`crates/patcher/tests/translation_accent_font_real.rs`.
+
+Text lifted off an official PAL disc arrives as raw `{xx}` accent bytes on the
+same layout, so it draws as-is under `font`, and the lift's `--fold-accents`
+is the same fold `fold` applies
+([`pal-localizations.md`](../pal-localizations.md#accent-folding)).
