@@ -1110,7 +1110,14 @@ void main() {
         const table = padTable();
         if (!table || table[e.code] === undefined) return;
         if (window.legaiaPadSwallows(e.code)) e.preventDefault();
-        if (down) { this.held.add(e.code); this.pulse.add(e.code); }
+        /* An OS auto-repeat `keydown` is not a press: the key is already in
+         * `held`. Letting it into `pulse` turned every held key into a stream
+         * of fresh edges at the OS repeat rate for every consumer that reads
+         * `pulse` as "just pressed" - the pause menu, shop, naming prompt,
+         * game-over panel - so holding a direction scrolled a cursor here and
+         * not in the native window, whose menu edges are `pad & !prev_pad`
+         * and never repeat. */
+        if (down) { this.held.add(e.code); if (!e.repeat) this.pulse.add(e.code); }
         else this.held.delete(e.code);
         this._repack();
       };
