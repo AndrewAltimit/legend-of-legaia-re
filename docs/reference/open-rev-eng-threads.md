@@ -72,35 +72,31 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
-- **A battle drops at most one item.** `FUN_8004E568` rolls `rand() % 100`
-  against every enemy seat's chance, lets the **last** winning seat decide, and
-  then clears the drop on `rand() & 3 != 0` unless a seat is at 100% or a
-  party member carries Items Up; the docs and the port had granted a drop per
-  dead enemy ([falsified](re-do-not-re-walk.md#battle--arts--level-up),
-  [`battle-formulas.md`](../subsystems/battle-formulas.md#the-victory-drop-roll)).
-- **`FUN_801E91E8` is the already-learned-Seru check, and `ctx[+0x269]` is the
-  absorbed Seru.** Neither is a Miracle lookup or a capture cinematic: both
-  belong to the killing-blow Seru absorb, which the engine had never run
+- **A scene-local BGM id never loads the scene's block.** `FUN_800243F0`
+  forms `current_scene + 6 + id` only as its change test and loads global
+  slot 2 instead; retail stages no scene bank at all
+  ([falsified](re-do-not-re-walk.md#audio--sound-driver),
+  [`audio.md`](../subsystems/audio.md#a-scene-local-id-loads-a-fallback-track-not-a-scene-bank)).
+- **The shop's last three rows are Platinum Card stock**, walked only when the
+  bag probe finds item `0xFF` - not an empty-slot test that is almost always
+  satisfied, and not "new in this town"; a capture reads 13 rows with the card
+  and 10 without ([falsified](re-do-not-re-walk.md#menus--ui)).
+- **Rula and Riremito are the Door of Wind and Door of Light.** The subsystem
+  handler table is indexed by value, so the missing address references proved
+  nothing; the travel arts scan the CDNAME define table, not a visited-map
+  table, and `FUN_801ED308` is the pause-menu session, not a fade
+  ([falsified](re-do-not-re-walk.md#field--locomotion)).
+- **`FUN_801D79E8` is the per-actor visibility cull, and the motion-pause kick
+  holds nothing.** Both dumps filed under the cull's address hold other code;
+  the kick is a standing-clip request a walker overwrites before it is read
+  ([falsified](re-do-not-re-walk.md#field--locomotion)).
+- **`FUN_8004DC68` is a near-camera ghost pass, and party entry 8 is the
+  downed kneel** - not a target-highlight dim and not a recover backstep
   ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
-- **Incense suppresses encounters outright.** `FUN_80046870` tops up the
-  walk-tick window `gp+0x2E8` that the region encounter roll skips on; the
-  "brightness ramp" and "frame cooldown" readings of the same word were both
-  wrong ([falsified](re-do-not-re-walk.md#field--locomotion)).
-- **`FUN_8001E54C`'s type-2 chunk is a SEQ install**, carried by every scene
-  stream with a score past offset 0, not a VRAM upload - and it has no LZS arm
-  ([falsified](re-do-not-re-walk.md#audio--sound-driver)).
-- **The Baka Fighter's "sprite" rows drive 3D models.** `_DAT_8007B888` /
-  `_DAT_8007B840` are the scene's ANM clip banks, `FUN_801D49E8` is the
-  special attack's afterimage, and the round-start cameo is scene model 3, the
-  ring girl ([falsified](re-do-not-re-walk.md#battle--arts--level-up)).
-- **`opdeene`'s black plants were a native-only restage**, which gave the
-  prologue's dim ambient to every `0x80`-colour vertex, authored billboard words
-  included - not the sepia law and not retail's rewrite
-  ([falsified](re-do-not-re-walk.md#rendering--camera)).
-- **The field drop shadow is four textured quads over an `RTPT` grid.**
-  `FUN_800460AC` is not an `NCDS` helper and `FUN_8001C394` is not a gouraud
-  grid; the ignore list had filed the pair as replaced by the rasteriser while
-  neither host drew a shadow at all
+- **The USA dialog font already carries accented glyphs** - 32 inked high
+  cells, most with a zero advance ([settled](re-settled-threads.md#text--fonts--dialog)).
+- **No Muscle Dome hub texture subtracts.** The GPU blends only STP texels,
+  so the "subtractive" packets draw opaque
   ([falsified](re-do-not-re-walk.md#rendering--camera)).
 
 ---
@@ -110,7 +106,22 @@ cheapest place to look for a claim that is still wrong.
 | Thread | Status | What would close it |
 |---|---|---|
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready | [details ↓](#region-story-flag-gate-families) |
-| Who sets a field NPC's moving-class bit `+0x10 & 0x20000`? | open - the consumer is pinned, the writer is not | `FUN_8003C9AC` (the motion-pause kick; callers `jal` at `0x801D5BF0` in PROT 0897 and `0x8003C0D4` in SCUS) acts only on an actor carrying the bit, and the engine never seeds it: its actor flags start at zero and only motion ops write them, so `legaia_engine_vm::motion_pause` stays unwired. A write sweep for `0x20000` into actor `+0x10` across SCUS and the field images, or a watch on a walking NPC's flag word, closes it. |
+| Why does the menu button open nothing after a Door of Light arrival on `map01`? | open - seen once, not investigated | A Door of Light capture that lands on `map01` presses the menu button at vsyncs 1300 and 1400 and no pause menu opens. The accept is the pad controller's leg `0x801D0250..0x801D0328`, which spawns the subsystem actor through `FUN_80020DE0(0x8007065C, ...)`; breaking there and on `FUN_801F1278` across the same run shows whether the leg is skipped (a lock left set by the travel art) or the actor spawns and parks. |
+
+**Who sets a field NPC's moving-class bit** closed by disassembly and capture:
+the placement seater `FUN_8003A1E4` ORs `0x20000` into every partition-1
+placement (`0x8003A3A4..0x8003A3B4`, 52 of 52 in a `town01` write-watch), op
+`31 11` sets it at 26 partition-0 spawn prologues, and nothing on the disc
+clears it. Wiring the kick it gates showed the kick is a standing-clip request,
+not a hold, and that every placement's height arm runs each tick behind the
+visibility cull `FUN_801D79E8`, now ported on both hosts
+([settled](re-settled-threads.md#field--locomotion),
+[falsified](re-do-not-re-walk.md#field--locomotion),
+[`motion-vm.md`](../subsystems/motion-vm.md#the-motion-pause-kick)). The Door
+items' route closed with it: the pause-menu session hands a Door of Light /
+Wind use to the Riremito / Rula travel arts, and a capture of both runs
+matches the port phase for phase
+([`field-locomotion.md`](../subsystems/field-locomotion.md#a-door-use-captured)).
 
 Five rows closed here. **What clears the two halt bits an inn acquire sets** is
 the walk kernel `FUN_8003774C`, which `FUN_8003BC08` runs on `+0x10 & 0x400`:
@@ -395,7 +406,20 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Why do the overworld fog sheets read denser and brighter than retail's? | partial - colour, geometry and camera offset match; draw order does not | On `keikoku_chest_preload`'s walked ordering table the port's colour equals all 104 retail fog packets and its view-space billboard puts 103 within a pixel ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-sheet-is-a-view-space-billboard)). Left is order: in retail's one ordering table nearer terrain overdraws about a fifth of the fog's additive light (an opaque-coverage estimate), while the port's per-sheet depth test hides almost none. A depth policy that reproduces the table's order, measured against it, closes it. |
+| Why do the overworld fog sheets read denser and brighter than retail's? | partial - colour, geometry and camera offset match; draw order does not | On `keikoku_chest_preload`'s walked ordering table the port's colour equals all 104 retail fog packets and its view-space billboard puts 103 within a pixel ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-sheet-is-a-view-space-billboard)). Left is order: in retail's one ordering table nearer terrain overdraws about a fifth of the fog's additive light (an opaque-coverage estimate), while the port's per-sheet depth test hides almost none. A depth policy that reproduces the table's order, measured against it, closes it ([plan](../subsystems/field-ambient-fx.md#closing-the-draw-order-flat-per-primitive-terrain-depth)). |
+| Do the map-gated alternate monster seats and the Ra-Seru bit match retail in the Rim Elm ambush? | open - disassembly only | The formation roll seats first monsters `0x3D..0x3F` on map `0x0C` / `0x15` from the alternate seat rows (rows 9..12 of `0x80077608` are zero-filled, so the scripted flag plus the map arm puts every monster at the origin) and raises `_DAT_8007BAC0 \|= 0x200`; battle init raises the same bit against monster `0xAF`. No library state holds either fight. A save state inside the Rim Elm ambush (and one against `0xAF`), read for the monster seats and the word, closes it ([battle.md](../subsystems/battle.md#the-ra-seru-forbidden-bit-of-the-special-battle-word)). |
+
+**Which fights forbid the Ra-Seru chip** closed by disassembly: bit `0x200` of
+`_DAT_8007BAC0` has two raisers - battle init against first monster `0xAF`
+(`0x800519C0..0x80051A04`) and the formation roll in the Rim Elm ambush
+(`0x8005200C..0x8005205C`) - and two readers, the ring's cross-out at
+`0x801D12DC` and its refused arm at `0x801D1448`
+([settled](re-settled-threads.md#battle--arts--level-up)). The engine models
+both raisers and the refusal; the cross-out is drawn on neither host
+([`host-drift.md`](../tooling/host-drift.md#known-gaps-no-gate-fails-on)), and
+the port's other readers of the word are the partial-port residue below.
+**The battle body's blend mode** reaches both hosts now, through one TSB
+rewrite kernel; the residue is host drift, not a retail question.
 
 **Does Koru's timed-fight strip draw over or under the `(16, 14)` tab** closed as over, by disassembly. Both are text actors on the `gp+0x148` list, which `FUN_8003541C` keeps sorted by key (`0x800354FC..0x80035518`); the strip registers key `1` (`0x801D0F98`) and the plaque its record byte `0x23` (`0x801D92E8`). `FUN_80031D00` walks the list head to tail and every packet goes on ordering-table entry `+4` through the head-linking `FUN_8003D2C4`, so the plaque is drawn first and the strip covers it. Both hosts now park the plaque while the strip is up ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-four-turn-strip-belongs-to-koru-not-the-dome)).
 
@@ -663,7 +687,11 @@ track-swap **commit**
 
 ## Title / boot / overlays
 
-No open threads. The last one - **the browser play page holding no mode
+| Thread | Status | What would close it |
+|---|---|---|
+| Which PROT entry uploads the card-message page at VRAM `(512, 256)`? | open - the consumer is pinned, the carrier is not | `FUN_801E0418`'s message records `0..5` all draw from tpage `0x0098` with CLUT `0x7AC0` - an 8bpp page at `(512, 256)`, palette at `(0, 491)` - and PROT 0899's one TIM uploads to `(16, 0)`, so the strips come from another entry. A VRAM write watch over that page in a memory-card-screen state, or a TIM-header sweep of the entries resident beside the menu overlay, closes it; `engine-ui::card_message_rows` stays unwired until then ([`menus.md`](functions/menus.md)). |
+
+The last thread closed here before it - **the browser play page holding no mode
 seat** - closed by being taken: the browser runtime now owns a
 `legaia_engine_core::mode::ModeSeat` and enters MAIN INIT and CARD INIT through
 it, as `BootSession` does natively. The thread had assumed a residency model was
@@ -699,7 +727,11 @@ PCSX-Redux `.sstate` via `pcsxr-state`, dispatched on file extension).
 
 ## Containers / data blobs
 
-No open threads. The last three closed on one mechanism - the packer's buffer.
+| Thread | Status | What would close it |
+|---|---|---|
+| Does the PAL (`SCES`) text renderer remap `0xD7` and `0xF8`? | open - disc bytes only | PAL text writes `Î` as `0xD7` (32 uses in the French script) and `°` as `0xF8` (22 in the Italian), but the PAL font page draws a placeholder box at both cells and draws `Î` at `0xDD`. Either the SCES glyph path remaps those bytes or retail shows boxes; a trace of the PAL glyph renderer on a line carrying `0xD7`, or a screenshot of one, closes it ([`dialog-font.md`](../formats/dialog-font.md#the-pal-page)). |
+
+The last three threads here closed on one mechanism - the packer's buffer.
 
 **Should byte accounting cut an inherited tail the way disc coverage does**
 closed as yes, with **one** rule under both instruments. The packer writes every
@@ -809,7 +841,7 @@ a coincidence of the pad byte plus the mask table's first three entries
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which live ports cover only part of their routine, and which of those differ from retail? | open (narrowed) - listed, not ported | Of the 43 partial ports a tag audit found, the ones that still change behaviour are `FUN_801D1BA0`'s player CFlag and `F8` re-bind legs, the tile board's walk-in and octant save, Rula's and Riremito's missing retail installer, the dome hub's shade and gates, Baka Fighter's impact pair, cameo and clip tail, and a battle and an audio residue - each named with its blocker [details ↓](#which-live-ports-cover-only-part-of-their-routine). Each residue ported, or disclosed where it is blocked, closes it. |
+| Which live ports cover only part of their routine, and which of those differ from retail? | open (narrowed) - listed, not ported | Of the 43 partial ports a tag audit found, the ones that still change behaviour are Baka Fighter's attack-clip tail, a battle residue (the ground shadow's default-arm geometry, the Ra-Seru word's other readers, two inferred ghost-pass inputs), the dialog pager's picker open animation and the anim barrier - each named with its blocker [details ↓](#which-live-ports-cover-only-part-of-their-routine). Each residue ported, or disclosed where it is blocked, closes it. |
 | Which save-state library entries still hold a patched executable? | open (narrowed) - audited and tagged; the rest need human play | A state made on a patched disc keeps that build's `SCUS_942.54` in RAM on every later load. `patch_taint_audit.py states` tags each library state's `resident_patch`; the S1..S5 anchors, `first_town_interactive` and `teien_field_run` are re-shot retail, and every capture-graded claim re-checked against its family stands ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md#patched-disc-taint)). The `rikuroa_*`, `dolk2_market_noa`, `cort_evolved_*`, `minigame_*_pcsx`, `battle_gaza2_*` states and the mednafen `overworld_battle_bg_angle_*` states re-shot on an unpatched image close it. |
 | Which engine draws hand a raw LCG state where retail calls BIOS `rand`? | mostly resolved - every battle draw is shaped | `FUN_80056798` (BIOS `A(2Fh)`) returns `(seed >> 16) & 0x7FFF` and nothing reseeds it ([settled](re-settled-threads.md#measurement--corpus)). Every battle-side port draws through `World::next_rand`, the battle-action and effect-pool hosts included; every routine they port calls `jal 0x80056798`; neither PROT 0898 nor SCUS carries an inline LCG ([`battle-formulas.md`](../subsystems/battle-formulas.md#how-the-port-draws-it)). Left: the field move-VM extension `FUN_801D362C` (sub-ops `0x05` / `0x30`) draws the raw state, and the battle camera script, the camera shake and the Muscle Dome session keep private seeds. Moving those onto the world stream closes it. |
 
@@ -846,41 +878,40 @@ never cleared on the disc and all three callers keep only `& 1` of its result,
 and the `+0x98` link is overwritten before anything reads it. **`FUN_80020F88`**
 is `REPLACED-BY` scene-build mesh binding plus the live model seat.
 
+Closed since, on both play hosts: `FUN_801D1BA0` / `FUN_801D1EC4`'s player
+CFlag bit 24, the player-mesh rebuild for `4C 50` aimed at `F8`, and the system
+channel's clip reset on every unlocked tick; the tile board's step cue, bonk,
+run and idle clips and octant facing (no retail scene installs a board, so
+these rest on disassembly); Rula and Riremito, which the Door of Wind / Door of
+Light now reach through the pause-menu session as retail does; the dome hub's
+subtractive shade on all three hosts, its two waits and first-visit lines;
+Baka Fighter's impact pair, cameo and cell blit; and in battle the commit's
+clip-tag ladder and the Seru absorb's kill-check gate.
+
 What remains, each with where it is recorded:
 
-- **`FUN_801D1BA0` / `FUN_801D1EC4`**: the player's CFlag bit 24 (`B1` / `B2 F8
-  18` apply to the timeline's own context, not the party bank), a player-mesh
-  re-bind for `4C 50` aimed at `F8`, and the system channel's per-tick clip
-  reset to `2`, which the port applies on warp ticks only
-  ([`field-locomotion.md`](../subsystems/field-locomotion.md#the-clip-base-and-the-settle-tail)).
-- **Tile board** (`801EF2B0`): the walk-in from column 4, row 0, and the octant
-  save / restore around the board
-  ([`tile-board.md`](../subsystems/tile-board.md#the-walkers-octant-store)).
-- **Rula / Riremito** (`801EE328` / `801EE094`): the lift, restore and opener
-  run engine-side, but retail has no player-facing installer for either art -
-  one developer-table word each, at `0x801F3458` / `0x801F3460` - so the port
-  reaches Riremito only through the world-map debug sub-list and Rula only from
-  tests
-  ([`field-locomotion.md`](../subsystems/field-locomotion.md#provenance-and-why-the-old-reading-was-wrong)).
-- **The Muscle Dome hub**: `FUN_801D1610` is a subtractive `POLY_G4`
-  (tpage `0x46`, ABR 2) the port approximates with alpha bands; the gates
-  `_DAT_8007BC20` / `0x8007B648` are modelled open; the first-visit SFX
-  `FUN_8003D53C` is not played; the slot machine's spin-up latch `0x801D3790`
-  and Baka Fighter's ladder run are unported.
-- **Baka Fighter's duel**: the impact effect pair `FUN_801D4DF8` needs the
-  `FUN_80021B04` effect-template runtime and the fighters' world positions; the
-  cameo `FUN_801D6310` and the cell blit `FUN_801D65F8` need a held-pad word, a
-  camera-relative model draw and a VRAM edit after upload; and an attack clip
-  stops at the booked exchange instead of playing out its tail
+- **Baka Fighter's duel**: an attack clip stops at the booked exchange instead
+  of playing out its tail
   ([`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#impact-cue-and-afterimage)).
-- **Battle**: `FUN_8004AD80`'s
-  kind ladder; `FUN_80048A08`'s ground shadow, which needs `FUN_80028158`'s
-  case-1 disc geometry (the draw's per-object decisions, Rot limbs included,
-  are ported on both hosts); and the Seru absorb's per-hit kill-check gates
-  (`0x801EE134..0x801EE1A4`) - the port rolls once, on the hit that first empties
-  the target's HP ([`battle.md`](../subsystems/battle.md#the-retail-capture-roll-fun_801ec3e4)).
+- **Battle**: `FUN_80048A08`'s ground shadow, which needs `FUN_80028158`'s
+  case-1 disc geometry - that default render-mode-4 arm, eight shapes switched
+  on `(flags >> 3) & 0xF` through `0x80010BC0`, is unported and undrawn on both
+  hosts ([`effect-vm.md`](../subsystems/effect-vm.md#the-sprite-arms-draw));
+  the special-battle word's other `!= 0` readers (the drop, steal and capture
+  gates, spell XP, the monster flee roll), which still read only the dome's
+  word, so the Rim Elm ambush and fights against `0xAF` pay drops the retail
+  gates withhold ([`battle.md`](../subsystems/battle.md#the-ra-seru-forbidden-bit-of-the-special-battle-word));
+  and two ghost-pass inputs - the command-flow byte `ctx[+6]` and
+  `ctx[+0x26B]` - taken from the engine's own state rather than mirrored, with
+  the driver's `gp+0x330` gate unmodelled
+  ([`battle.md`](../subsystems/battle.md#the-near-camera-ghost-pass-fun_8004dc68)).
   The `0x801F0518` flag write, the ribbon's per-clip caller and the War God
   Icon's per-stage bump are modelled.
+- **Dialog pager** (`FUN_801D84D0`): a picker opens on the press, as retail
+  does, but the box's resize between the press and a usable menu (states
+  `0x13` -> `0x14`, countdown `+0x54 = 0x309`) is not modelled, and no library
+  state sits at a picker prompt to capture it
+  ([`mes.md`](../formats/mes.md#post-page-dispatch-state-0x19)).
 - **Anim**: `800480D8`, blocked on a crate barrier between `engine-core` and
   `engine-render`. The two audio rows that stood beside it left the list without
   a port: `FUN_8004DA00` only seeks the drive and `FUN_80064090` is unreachable
