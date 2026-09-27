@@ -2927,6 +2927,28 @@ mod tests {
     }
 
     #[test]
+    fn the_raseru_forbidden_bit_greys_the_chip_and_marks_it() {
+        use crate::battle_input::BattleCommandSession;
+        let mut w = battle_world(1);
+        w.battle.command = Some(BattleCommandSession::new(0, 0));
+        let mut eq = w.party.roster.members[0].equipment();
+        eq.slots[RASERU_EQUIP_SLOT] = 1;
+        w.party.roster.members[0].set_equipment(eq);
+        assert!(battle_command_chips(&w).expect("ring chips").chips[2].1);
+        assert_eq!(battle_magic_chip_mark(&w), None);
+        // The Rim Elm ambush / monster 0xAF: the name stays, the chip greys
+        // and wears the red cross-out.
+        w.battle.special_word = legaia_engine_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN;
+        let (label, enabled) = battle_command_chips(&w).expect("ring chips").chips[2].clone();
+        assert_ne!(label, "-");
+        assert!(!enabled);
+        assert_eq!(
+            battle_magic_chip_mark(&w),
+            Some(crate::muscle_dome::ChipMark::Forbidden)
+        );
+    }
+
+    #[test]
     fn noa_gate_reads_the_byte_before_everyone_elses() {
         // `FUN_80053CB8`'s `beq v0,a3` arm: character id 2 reads `+0x198`,
         // every other id `+0x199`.
