@@ -143,7 +143,7 @@ The `gp+0x9F4`-keyed bark jukebox inside the same function (ids `0x19F`-`0x1AF` 
 
 ## BGM dispatch
 
-The field VM's opcode `0x35` writes the BGM ID to `_DAT_8007BAC8`. `FUN_800243F0` (the per-frame asset poller) resolves it to a PROT index - `bgm_id < 2000` is scene-local, `bgm_id >= 2000` is a global pool. There's no literal BGM table; the resolution is a PROT-relative offset into the [CDNAME](../formats/cdname.md) per-scene block.
+The field VM's opcode `0x35` writes the BGM ID to `_DAT_8007BAC8`. `FUN_800243F0` (the per-frame asset poller) resolves it to a PROT index - `bgm_id >= 2000` is the global pool, and `bgm_id < 2000` is a scene-local id that retail answers with a fallback track ([below](#a-scene-local-id-loads-a-fallback-track-not-a-scene-bank)). There's no literal BGM table.
 
 See [`subsystems/script-vm.md`](script-vm.md) → "BGM lookup table" for the resolver code. For the human-readable map between each track's debug sound-test ID, the scene it plays in, and its official OST title, see [`reference/music-tracks.md`](../reference/music-tracks.md).
 
@@ -153,7 +153,7 @@ See [`subsystems/script-vm.md`](script-vm.md) → "BGM lookup table" for the res
 
 | Branch | Resolved PROT index | Globals |
 |---|---|---|
-| `bgm_id < 2000` (scene-local) | `*(0x80084540) + 6 + bgm_id` | `0x80084540` = scene block base |
+| `bgm_id < 2000` (scene-local) | stored: `*(0x80084540) + 6 + bgm_id`; loaded: `*(0x8007BC64) + 2` | `0x80084540` = scene block base |
 | `bgm_id >= 2000` (global pool) | `*(0x8007BC64) + (bgm_id - 2000)` | `0x8007BC64` = `music_01` bank base |
 | `bgm_id == 0x1000` | none - the load is suppressed | see below |
 
@@ -166,6 +166,36 @@ so the bank's low range sits at extraction `988`; the engine maps a sound-test
 index to its extraction entry through the piecewise
 `legaia_engine_core::music_labels::prot_entry_for_bgm_id` (a 2-entry gap at
 extraction `1056`/`1057` splits it, see [`../reference/music-tracks.md`](../reference/music-tracks.md)).
+
+#### A scene-local id loads a fallback track, not a scene bank
+
+The scene-local row forms two different indexes. The one stored to
+`_DAT_8007BAB8` (`0x80024458`) is the scene block's `*(0x80084540) + 6 + id`,
+and it only drives the change test. The one handed to the loader is
+overwritten: the arm at `0x800245A4..0x800245BC` (`slti v0,v1,0x7d0` /
+`beq v0,zero,0x800245C0` with `move s1,a0` in the delay slot) sets
+`s1 = *(0x8007BC64) + 2` for an id below 2000 and parks the id in `gp+0x728`,
+whose only reader is the `WARNING BGM NO %d` debug print (`0x800164EC`, format
+string at `0x8001010C`). `s1` is what the stage-1 arm loads into category 1
+(`move a0,s1` / `li a1,0x1` at `0x80024668`). With `0x8007BC64 = 990`
+(twelve of twelve catalogued mednafen states sampled), that is raw `992` =
+extraction `990` = global slot `2` - the track id `2002` plays. The side-band
+resolver's scene-local arms end the same way (`vab_01 + 2`,
+[`sfx-table.md`](../formats/sfx-table.md#the-side-band-bank-a-field-script-selects)).
+
+So retail has no scene-local bank, and no scene bank staging at all: the field
+initialiser's only bank loads are slot 6 (PROT 0876) and the ending arm below,
+and the one BGM slot changes only when the resolved track does. The port's old
+model - stage the scene block's first VAB-bearing entry at scene entry and play
+a scene-local SEQ over it, then skip that restage whenever a global track was
+carried across a door - reproduced neither half. Only `teien` among the field
+scenes has a VAB-bearing entry in its block at all. Both play hosts now stage no
+scene bank, and `SceneHost::route_bgm_events` plays a scene-local id through
+the owned-VAB path on `SCENE_LOCAL_BGM_FALLBACK_ID`'s entry, keeping the id
+itself for the directors' same-track test (as retail's change test keeps its
+own index); `engine-core/tests/global_bgm_owned_vab_disc.rs` pins it. The
+disc-wide op-`0x35` census has no scene-local start, so no shipped script takes
+the arm.
 
 #### `0x1000` is a park sentinel, not a track
 
@@ -400,7 +430,40 @@ So the slot-10 load is not a sound-effect bank: it is the credits music. Raw `0x
 
 The mednafen ending states confirm the staging (`ending_banner_mask_closed`, `ending_vignette_fullscreen`, `ending_panel_corner` in `edteien`; `ending_vignette_biron` in `edbylon`): slot 10's sequence record is open (`+8 = 1`, VAB id `+0xC = 10`) while the BGM record is closed, its sequence buffer holds extraction `1062`'s SEQ chunk byte for byte, VAB 10's SPU base is slot 0's (`0x800917B0[10] == 0x1010`), and the sounding voices start inside the region that bank was sent to. Every program change in the score names a program only `1056` defines. The credits then run on the park sentinel `0x1000`, so the track keeps playing across the vignette scenes.
 
-The engine composes the pair into one owned-VAB stream (`mode_entry_init::two_part_bgm_stream`, score first) whenever `SceneHost::music_bank_entry_bytes` is asked for `0x814`, so both play hosts stage it through the path above; `engine-core/tests/credits_two_part_bgm_disc.rs` pins it. One residual is the hosts' SPU layout: the bank's VAG bodies total `0x631B0` bytes, more than the BGM region either host carves below its resident SFX banks (`0x42000`), so the last seven bodies do not upload and three of the score's sixteen programs sound nothing. Retail has no such region - VAB 10 overwrites every resident bank below `0x6C810`.
+The engine composes the pair into one owned-VAB stream (`mode_entry_init::two_part_bgm_stream`, score first) whenever `SceneHost::music_bank_entry_bytes` is asked for `0x814`, so both play hosts stage it through the path above; `engine-core/tests/credits_two_part_bgm_disc.rs` pins it. Where the bank lands is the next section.
+
+#### Where the credits bank lands in SPU RAM
+
+`FUN_8002630C` with `a3 = 0` opens a bank at its VAB id's fixed base (`jal
+0x80068D34` with `a2 = 0x800917B0[vabid]`, `0x80026344..0x80026358`); with a
+non-zero size it only sends more of the body (`0x80069230`). `FUN_800265E8`
+seeds `0x800917B0[10]` with `0x1010`, slot 0's base (`sw v1,0x28(v0)` at
+`0x80026668`). The ending arm opens the credits bank through the ordinary
+walker as VAB 10 and sends the rest of its body with `FUN_8002630C(.., 10, 1,
+size)` (`0x801D72A8`). So the bank is laid over the resident banks from
+`0x1010` up; by its size (`0x631B0` bytes of bodies) it reaches `0x641C0`,
+over the bases of slots 0, 1, 2 / 6 and 3 but short of slot 4 / 7's `0x65010`.
+Nothing re-stages them inside the session: the latch `0x8007B9B8` keeps
+`FUN_800243F0` off, and the only other store to it in a code image is a clear
+in the debug menu overlay (PROT 0971, `0x801CE9B4`; `find-gp-relative-refs.py`
+over SCUS and every PROT entry), so no BGM bank loads again in that session.
+
+The play hosts split SPU RAM differently - a BGM region `0x1000..0x43000`
+under a resident SFX region at the top - and the credits bank does not fit the
+BGM region. Both hosts stage every track bank through one kernel,
+`legaia_engine_audio::spu_layout::upload_owned_bank`, which places a bank that
+does not fit the BGM region the way retail places VAB 10: from the BGM base
+straight across the SFX region, reporting the eviction. While such a bank is
+resident the hosts drop every resident SFX bank, so a cue is silent rather
+than keyed against the credits samples, and the shared region does not refill.
+The next track that fits hands the region back and the hosts re-stage slot 0
+and the shared region through `spu_layout::upload_resident_sfx`, the same
+kernel their boot staging uses - the port's version of the boot reload, for a
+host that can leave the credits (a save load, a scene jump).
+`engine-audio/tests/credits_bank_spu_layout_disc.rs` is the evidence: all 45
+bodies upload (`0x1000..0x641B0`), the resident banks' bytes are overwritten,
+and the re-staged banks land at the same addresses with the same bytes, the
+menu cursor cue rendering as it did at boot. Nobody has listened to it.
 
 ## SsAPI sequencer (`0x80061-0x80067` cluster)
 
