@@ -505,6 +505,11 @@ pub struct BattleActor {
     /// ([`crate::battle_attack_camera::ART_JUMP_TABLES`]). Nothing else in
     /// the ported state machine reads it.
     pub latched_anim: u8,
+    /// `+0x08` - the pool actor's draw-mode word. The engine carries only
+    /// the bits the near-camera ghost pass `FUN_8004DC68` owns
+    /// ([`GHOST_BITS`](crate::battle_action::GHOST_BITS)); the tint pass
+    /// packs its top byte into the render node's colour word.
+    pub flag_word: u32,
     /// `+0x1DC` - per-actor flag bits. See [`ActorFlags`].
     pub flag_bits: ActorFlags,
     /// `+0x1DD` - active-target slot index (used by Magic / Item to retarget

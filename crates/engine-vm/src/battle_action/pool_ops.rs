@@ -52,20 +52,15 @@ pub const POOL_FLAG_WORD_KEEP: u32 = 0x7cff_ffff;
 /// reading here attributed it to action-SM state `0x5A`; `FUN_801E295C`
 /// contains no call to it, so that attribution is withdrawn.
 ///
-/// NOT WIRED: the scrub clears bits no engine structure carries. The `+0x8`
-/// bits `0x83000000` are the target-highlight draw flags: the setter a scan of
-/// the dump corpus for the `0x8300` / `0x7CFF` masks finds is the
-/// command-selection dimming pass `FUN_8004DC68`, which ORs them onto
-/// out-of-range actors (`lw/or/sw 0x8(s0)` at `0x8004DE18..0x8004DE28`) and
-/// clears them with this same mask on the rest (`0x8004DEBC..0x8004DEC8`), and
-/// the action SM's `0x5A` end-of-action gate clears them inline as well. The
-/// engine ports neither the dimming pass nor a draw-flag word, so there is
-/// nothing for the `FUN_801D5854` guard to clear; it becomes wireable with
-/// `FUN_8004DC68`. Whether retail ever reaches the guard is not settled:
-/// every `jal 0x801D5854` in the flow and action SMs passes a slot from
-/// `ctx[+0x13]`, `actor[+0x1DD]`, a stack local or `0`, and the one source
-/// that can hold an all-target code `8` / `9` (`+0x1DD`, at `0x801D43F0`)
-/// passes pose `3`, below the `>= 6` test.
+/// The bits are the near-camera ghost pass's
+/// ([`camera_ghost_pass`](crate::battle_action::camera_ghost_pass),
+/// `FUN_8004DC68`), carried on
+/// [`BattleActor::flag_word`](crate::battle_action::BattleActor::flag_word);
+/// the engine's pose hook runs the guard. Whether retail ever reaches the
+/// guard is not settled: every `jal 0x801D5854` in the flow and action SMs
+/// passes a slot from `ctx[+0x13]`, `actor[+0x1DD]`, a stack local or `0`, and
+/// the one source that can hold an all-target code `8` / `9` (`+0x1DD`, at
+/// `0x801D43F0`) passes pose `3`, below the `>= 6` test.
 ///
 /// PORT: FUN_801DB9C4
 pub fn clear_pool_flag_words(flag_words: &mut [u32]) {

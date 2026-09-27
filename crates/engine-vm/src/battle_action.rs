@@ -81,6 +81,9 @@ pub use overlay_rng::*;
 mod pool_ops;
 pub use pool_ops::*;
 
+mod camera_ghost;
+pub use camera_ghost::{GHOST_BITS, GhostInputs, GhostSlot, camera_ghost_pass};
+
 mod queue_applier;
 pub use queue_applier::*;
 
