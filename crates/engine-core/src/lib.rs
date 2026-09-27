@@ -129,6 +129,7 @@ pub mod overlay_loader;
 pub mod overworld_curvature;
 pub mod packet_color;
 pub mod pause_screens;
+pub mod place_name_banner;
 pub mod prize_exchange;
 pub mod publisher_logos;
 pub mod ram_map;
