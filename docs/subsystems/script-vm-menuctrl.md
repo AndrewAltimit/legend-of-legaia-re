@@ -700,8 +700,12 @@ one the placement spawner and motion op `0x0E` use. The port hands the raw
 operand to a placement's live model seat (`World::field_npc_live_model`),
 which both play hosts re-bind mid-scene from; the census counts hundreds of
 clean sites across most field scenes. An operand aimed at the player
-(`CC F8 50 ..`) changes the context's state words only - the port has no
-player-mesh re-bind.
+(`CC F8 50 ..`, four disc sites: `jagaroom` twice with `0x26`, `urudre1` with `0x5D`
+and then `0xF0`) resolves the actor through `FUN_8003C83C` to the player object, so
+the party-bank bit and the re-stage land on the player. The VM hands it to the host
+(`FieldHost::player_set_model`), and the port writes the player's party-bank bit and
+parks the id on `World::locomotion.player_live_model`; neither play host re-binds
+the player's mesh from that seat yet.
 
 #### Sub-2 is TAKE_ITEM, not a menu poll
 

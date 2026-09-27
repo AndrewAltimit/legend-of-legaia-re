@@ -192,7 +192,7 @@ The board controller is a state machine keyed on the controller actor's `+0x54` 
 |---|---|---|
 | `0` | `0x801EF310` | init: allocate the cell buffer + tile-actor table, spawn the player + tile actors from header ids, run the procedural fill at `0x801EF334`; its tail clears system flags `A..A+3` (`FUN_8003CE34`, `A` = header `+7`), seats the player cell at column `4`, row `0` with the walk-in target `(hdr[1] * 128 + 0x240, hdr[2] * 128 + 0x40)`, saves the octant `_DAT_8007B5F0` into `DAT_801F35C4` and zeroes `+0x9C` |
 | `1` | `0x801EF680` | fade-in: `+0x9C += (d * 3) << 5` (`d` = `DAT_1F800393`), copied into every tile actor's `+0x72` render scale; at `0x1000` it clamps and goes to `2`, the walk-in |
-| `2` | `0x801EFA88` | interpolate the actor's world position toward the target cell centre (`DAT_801f35d0`/`d4`); on arrival → `3` |
+| `2` | `0x801EFA88` | step the walker toward the target cell centre (`DAT_801f35d0`/`d4`), each axis clamped to `±0x20`, facing the octant of the remaining delta; on arrival bind the idle clip and → `3` - [the walk legs](#the-walk-legs-clip-cue-and-facing) |
 | `3` | `0x801EF6FC` | arrival: cell `7` → state `7`; cells `8..0xA` → state `8`; otherwise every animated cell **on the whole board** steps `0xB → 0xC → 0xD → 0xE → 0xB`, then → `4` |
 | `4` | `0x801EF824` | **read input + collision + commit**: see below |
 | `5` | `0x801EFBD0` | quit prompt (entered on the menu edge `_DAT_8007b874 & 0x10`, Triangle, which also sets `+0x9C = 0x1000` and the cursor `_DAT_8007BB88 = 1`): `FUN_80031D00`, then the two-choice picker `FUN_801E9DC8(0x8007BB88, 2, 1)` - Up/Down wrap (SFX `0x21`), confirm SFX `0x36`, cancel SFX `0x37`; confirm with `*0x8007BB88 == 0` → `6`, confirm on row `1` or cancel back to `4` |
@@ -227,6 +227,17 @@ With `v = cell - 8` and the two header bases read through the sign-extending hal
 5. Otherwise accept: play the step action (`func_0x80035b50(0x21)`), compute the target world position, commit `DAT_801f35c8/cc = candidate`, and go to state `2` to interpolate. The target is the candidate cell's centre `((origin + idx) << 7) + 0x40` per axis, **except onto an event cell** (`8`..`0xA`, the unsigned `cell - 8 < 3` test at `0x801EFA0C`): there it is pulled back by half the step, `centre - (((origin + new) << 7) - ((origin + old) << 7)) * 4 >> 3`, so the walker stops on the edge it shares with the cell it came from (`0x801EFA1C..0x801EFA70`). The player cell is committed to the event cell all the same (`0x801EFA74..0x801EFA80`). Port: `TileBoard::try_step`.
 
 Provenance: `overlay_0897_801ef2b0.txt` case 4; a denser duplicate of this logic also appears inside `overlay_0897_801f7b88.txt`.
+
+### The walk legs: clip, cue and facing
+
+State 4's accept arm and state 2 each drive the walker's clip, and state 2 turns it. Read from the PROT 0897 image at base `0x801CE818`:
+
+- **Accept** (`0x801EF990..0x801EF9D0`): the step cue through the ring's push producer (`FUN_80035B50(0x21)`), then the clip base `_DAT_8007BDD8 = 3` and the walker's clip id `+0x5C = leader * 7 + 3` (`sllv` by 3, minus the leader, plus 3), bound at once through `FUN_800204F8`. The arm stores state `2` at `0x801EFA84` and falls straight into it, so the first step moves on the accepting tick.
+- **Refuse** (`0x801EF980`): the bonk through the overwrite producer (`FUN_80035BD0(0x23)`). State 4 re-reads the held pad every game tick, so a direction held into a wall repeats it at that rate.
+- **Moving** (`0x801EFAFC..0x801EFBCC`): the remaining delta per axis is clamped to `±0x20` and added to `+0x14` / `+0x18`, and `+0x26 = octant << 9` from the delta's signs - `0` for `(0, -)`, `1` `(-, -)`, `2` `(-, 0)`, `3` `(-, +)`, `4` `(0, +)`, `5` `(+, +)`, `6` `(+, 0)`, `7` `(+, -)`.
+- **Arrived** (`0x801EFAC0..0x801EFAF8`, both deltas zero on entry): the base `2` and `+0x5C = leader * 7 + 2`, bound, then state `3`. No facing is written.
+
+The clip id is the leader's stride plus the base, with neither the `4C CE` override nor the `99` sentinel the field settle reads.
 
 ## From-scratch port
 
@@ -285,6 +296,16 @@ decodes one step in retail's priority order (`tile_board::step_for_mask`):
 column `-1`. The port had decoded screen-up as row `-1` under a note that
 called the remap unported; screen-up walks row `+1` - into the board from the
 row-`0` start cell - as `0x1000` walks `Z+` on the field.
+The [walk legs](#the-walk-legs-clip-cue-and-facing) run in
+`World::tile_board_walk_step` and the accept / refuse arms of
+`World::tick_tile_board`: an accepted step pushes cue `0x21`, binds the run clip
+through `World::field_player_strided_clip(3)` and takes its first step at once;
+every moving tick sets the heading from `tile_board::walker_facing_octant`
+(`tile_board::engine_heading_for_octant` shifts retail's `Z-`-at-`0` space onto the
+engine's `Z+`-at-`0` one); the arrival binds idle (`field_player_strided_clip(2)`).
+A refused step writes cue `0x23` over the ring's last slot on the vsyncs the actor
+game tick fires, retail's per-game-tick rate. The step itself moves `0x10` per
+vsync, retail's `0x20` per game tick at the field floor of two vsyncs.
 The header's actor-template ids are kept on `World::board.header` for the
 render consumers.
 
