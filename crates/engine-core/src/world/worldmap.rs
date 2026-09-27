@@ -749,12 +749,14 @@ impl World {
             // Retail's sub-list state 3 hands the actor on through the handler
             // table; the port binds that arm to the Riremito travel art.
             // (Retail's own state 3 is the `FUN_801D84B4` return-to-title
-            // hand-off - see `801ed590.txt` - and neither travel art has a
-            // pinned production installer in the corpus: `FUN_801EE094` /
-            // `FUN_801EE328` are dev-band actor handlers reached through the
-            // dev handler-id table only, so Rula's installer here would be as
-            // synthetic as this Riremito binding already is. One deliberate
-            // binding, disclosed, rather than two.)
+            // hand-off - see `801ed590.txt`. Retail's production installer
+            // of both travel arts is the pause-menu session handler
+            // `FUN_801ED308` (handler id `0x30`): a Door of Light / Door of
+            // Wind use returns exit code `7` / `8`, and its case 4 turns that
+            // into state `6` / `7`, which hand the actor on to handler id
+            // `0x29` (`FUN_801EE094`) / `0x2B` (`FUN_801EE328`). The port's
+            // menu drain takes a direct scene transition for those two items
+            // instead - `World::drain_staged_menu_warp`.)
             if let Some(ctrl) = self.world_map.ctrl.as_mut() {
                 log::info!("world-map: sub-list hand-off -> Riremito travel art");
                 ctrl.panels

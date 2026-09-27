@@ -256,6 +256,13 @@ pub struct FieldLocomotion {
     /// **scene** bank - the two disc users (`jagaroom`, `urudre1`) point the
     /// player's walk / idle / run at scene-bundle records this way.
     pub clip_override: u32,
+    /// The model id a script re-staged the **player** onto: op `4C 50` aimed
+    /// at `0xF8` (`CC F8 50 lo hi`, the `jagaroom` / `urudre1` costume swaps)
+    /// stores its operand here, resolved like any `4C 50` operand - a scene
+    /// bank id below `0xF0`, player bank `value - 0xF0` at or above it
+    /// ([`crate::model_bank::resolve_model_id`]). `None` is the lead's own
+    /// field mesh, which scene entry restores.
+    pub player_live_model: Option<i16>,
     /// The kind-0 warp's globals `_DAT_8007B6B0` (timer), `_DAT_8007B6B4`
     /// (post-warp pad hold) and the destination pair - see
     /// [`legaia_engine_vm::field_warp_tile`].
@@ -295,6 +302,7 @@ impl FieldLocomotion {
             player_clip: legaia_engine_vm::field_player_clip::BASE_IDLE as i16,
             player_party_bank: true,
             clip_override: 0,
+            player_live_model: None,
             warp: legaia_engine_vm::field_warp_tile::WarpTimer::default(),
             warp_fade_in_in: None,
         }

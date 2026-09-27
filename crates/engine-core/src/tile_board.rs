@@ -359,6 +359,43 @@ pub const START_COL: u8 = 4;
 /// See [`START_COL`].
 pub const START_ROW: u8 = 0;
 
+/// The step cue the walker pushes on an accepted step (`jal 0x80035B50` with
+/// `a0 = 0x21` at `0x801EF990`).
+pub const STEP_SFX: i16 = 0x21;
+
+/// The bonk cue the walker writes over the ring's last slot when a step is
+/// refused (`jal 0x80035BD0` with `a0 = 0x23` at `0x801EF980`).
+pub const BONK_SFX: i16 = 0x23;
+
+/// The octant the walker faces while it interpolates toward its target
+/// (state 2, `0x801EFB30..0x801EFB7C`), from the signs of the remaining
+/// per-axis delta `(dx, dz)` (target minus position; retail clamps each to
+/// `+-0x20` first, which keeps the signs). Retail's `+0x26` space puts `0` at
+/// `Z-`: `(0, -)` -> `0`, `(-, -)` -> `1`, `(-, 0)` -> `2`, `(-, +)` -> `3`,
+/// `(0, +)` -> `4`, `(+, +)` -> `5`, `(+, 0)` -> `6`, `(+, -)` -> `7`.
+/// `None` at the target: the arrival arm writes no facing.
+pub fn walker_facing_octant(dx: i32, dz: i32) -> Option<u16> {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    Some(match (dx.cmp(&0), dz.cmp(&0)) {
+        (Equal, Equal) => return None,
+        (Equal, Less) => 0,
+        (Less, Less) => 1,
+        (Less, Equal) => 2,
+        (Less, Greater) => 3,
+        (Equal, Greater) => 4,
+        (Greater, Greater) => 5,
+        (Greater, Equal) => 6,
+        (Greater, Less) => 7,
+    })
+}
+
+/// The engine heading for a walker octant: retail stores `octant << 9` in
+/// `+0x26`, where `0` faces `Z-`; the engine's field heading puts `0` at
+/// `Z+`, half a turn round.
+pub fn engine_heading_for_octant(octant: u16) -> i16 {
+    (((octant << 9) + 0x800) & 0x0FFF) as i16
+}
+
 /// The walker's octant store (`0x801EF8A4..0x801EF8CC`, state `4`, off the
 /// cell under the player): the delay-slot clear always runs, terrain cells
 /// `3..=6` then store `(cell - 3) * 2`, and the animated band `0xB..=0xE`
@@ -745,6 +782,24 @@ mod tests {
         assert!(b.is_blocked(3, 3)); // oob
         assert!(!b.is_blocked(0, 0)); // floor
         assert!(!b.is_blocked(2, 2)); // floor
+    }
+
+    #[test]
+    fn walker_faces_the_octant_of_its_remaining_delta() {
+        assert_eq!(walker_facing_octant(0, 0), None);
+        assert_eq!(walker_facing_octant(0, -5), Some(0));
+        assert_eq!(walker_facing_octant(-5, -5), Some(1));
+        assert_eq!(walker_facing_octant(-0x80, 0), Some(2));
+        assert_eq!(walker_facing_octant(-1, 3), Some(3));
+        assert_eq!(walker_facing_octant(0, 0x40), Some(4));
+        assert_eq!(walker_facing_octant(2, 2), Some(5));
+        assert_eq!(walker_facing_octant(0x80, 0), Some(6));
+        assert_eq!(walker_facing_octant(9, -9), Some(7));
+        // Retail `Z+` (octant 4, `+0x26 = 0x800`) is the engine's heading 0;
+        // `X+` (octant 6) is the engine's quarter turn.
+        assert_eq!(engine_heading_for_octant(4), 0);
+        assert_eq!(engine_heading_for_octant(6), 0x400);
+        assert_eq!(engine_heading_for_octant(0), 0x800);
     }
 
     #[test]

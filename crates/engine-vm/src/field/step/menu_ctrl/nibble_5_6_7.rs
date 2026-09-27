@@ -30,6 +30,16 @@ pub(super) fn op_4c_n5<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             };
             let value = i16::from_le_bytes([lo, hi]);
+            // `CC F8 50 ..`: the target is the player object, which the VM
+            // does not thread through - the host owns the write.
+            if header_size == 2
+                && bytecode.get(pc + 1) == Some(&0xF8)
+                && host.player_set_model(value)
+            {
+                return StepResult::Advance {
+                    next_pc: pc + header_size + 3,
+                };
+            }
             let high = (value as i32) >= 0xF0;
             if high {
                 ctx.flags |= 0x0100_0000;

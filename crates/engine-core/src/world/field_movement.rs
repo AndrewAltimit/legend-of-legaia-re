@@ -2767,15 +2767,11 @@ impl World {
         // A kind-0 warp in flight, and the hold its landing leaves, keep the
         // pad controller off entirely (`0x801D16C8..0x801D16E4`): the player
         // stands through the fade instead of walking out of it - and stands
-        // idle. Retail's system channel stores the idle base `2` into
-        // `_DAT_8007BDD8` on every field tick after the settle has read it
-        // (`sw v0,-0x4228(v1)` at `0x80039D94` in `FUN_80039B7C`, ticked from
-        // `FUN_801DA51C` by `jal 0x80039B7C` at `0x801DA7BC`), so a tick that
-        // skips the controller leaves `2` for the settle to bind. While the
-        // controller runs it overwrites the base first, which is why the
-        // reset is modelled only here.
+        // idle, because the warp is not a movement lock, so the system
+        // channel's per-tick reset of the clip base still runs after each
+        // settle ([`Self::tick_field_system_channel_clip_reset`]) and leaves
+        // the idle base `2` for the next one.
         if vm::field_warp_tile::pad_suppressed(&self.locomotion.warp) {
-            self.field_system_channel_clip_reset();
             return;
         }
 
@@ -3318,17 +3314,77 @@ impl World {
     /// The system channel's per-tick clip-base reset: `FUN_80039B7C` stores
     /// the idle base `2` into `_DAT_8007BDD8` (`0x80039D90..0x80039D94`) on
     /// the arm its actor's `+0x9C == 0` and the scene control block's `+0xA`
-    /// counter `< 2` select, once per field tick after the player's settle
-    /// has read the base. The port applies it on the ticks the pad
-    /// controller is skipped by a kind-0 warp, the ones where it is visible
-    /// (the controller rewrites the base before the settle on every other
-    /// tick). Only the base is written; the party-bank bit is untouched.
+    /// counter `< 2` select. Only the base is written; the party-bank bit is
+    /// untouched.
     ///
     /// REF: FUN_80039B7C (the idle-base store of its `+0x9C == 0` arm, run
     /// for the system channel `0x8007E694`; the rest of the routine is the
     /// per-actor script / dialogue stepper)
     pub(crate) fn field_system_channel_clip_reset(&mut self) {
         self.locomotion.clip_base = vm::field_player_clip::BASE_IDLE;
+    }
+
+    /// Whether the field player is **movement-locked** at the point of the
+    /// tick where retail's system channel runs - the gate its call site
+    /// reads. `FUN_801DA51C` calls `FUN_80039B7C` for the system channel
+    /// (`jal` at `0x801DA7BC`) only when the channel's own `+0x10 & 0x100`
+    /// (script running) is up or the player's `+0x10 & 0x80000` is clear
+    /// (`0x801DA78C..0x801DA7AC`); an interaction that starts raises that bit
+    /// on the player (`0x80039DB8..0x80039DD4`) and holds it for its length.
+    ///
+    /// The port has no single player lock word for every retail holder, so
+    /// the predicate names each one it models: the lock bit itself, an open
+    /// dialogue, a cutscene timeline, the tile board, a ledge hop and a
+    /// scripted arc. A kind-0 warp is not among them - the warp clears the
+    /// lock when it arms.
+    pub(crate) fn field_player_movement_locked(&self) -> bool {
+        let Some(slot) = self.player_actor_slot else {
+            return true;
+        };
+        let Some(actor) = self.actors.get(slot as usize) else {
+            return true;
+        };
+        !actor.active
+            || actor.move_state.flags & 0x0008_0000 != 0
+            || self.dialogue_owns_input()
+            || self.cutscene_timeline_active()
+            || self.board.grid.is_some()
+            || self.locomotion.ledge_hop.is_some()
+            || self.player_script_arc_live()
+    }
+
+    /// One tick of the system channel's clip-base reset, run after the
+    /// player's settle has read the base - the order retail's frame runs
+    /// them in (the settle's reads at `0x801D1D8C` / `0x801D1E08`, then the
+    /// store at `0x80039D94` from `FUN_801DA51C`).
+    ///
+    /// It is skipped while the player is movement-locked
+    /// ([`Self::field_player_movement_locked`]): retail does not call the
+    /// system channel then, and even when the channel's script is running
+    /// the scene control block's `+0xA` interaction count is `2` or more
+    /// through a conversation, which closes the store's own gate. So the
+    /// reset reaches the settle on exactly the ticks the pad controller is
+    /// skipped without a lock - a kind-0 warp - and, one tick earlier, on the
+    /// tick a conversation opens: that tick's store is what the settle binds
+    /// for the whole conversation, so a player who opened it running or
+    /// walking stands idle through it rather than running in place.
+    ///
+    /// Retail capture (`s4_rimelm_door_transition`, Down + Cross into the
+    /// `P1[16]` talk): the pad step stores run `3` at `0x801D0498` and the
+    /// system channel `2` at `0x80039D94` on the talk's first tick; the
+    /// player's clip id reads `3` for that tick and `2` for every later one,
+    /// with no further store to the base while the box is open and the
+    /// count at `2`. On the first page of the same conversation, a poke of
+    /// the base to walk `1` is bound by the next settle and kept - no store
+    /// arrives to undo it.
+    ///
+    /// REF: FUN_801DA51C (the system-channel call and its lock gate),
+    /// FUN_80039B7C (the store)
+    pub(crate) fn tick_field_system_channel_clip_reset(&mut self) {
+        if self.field_player_movement_locked() {
+            return;
+        }
+        self.field_system_channel_clip_reset();
     }
 
     /// The anim-clip tail of the settle (`FUN_801D1BA0` at
@@ -3353,6 +3409,28 @@ impl World {
             self.locomotion.player_party_bank,
             false,
         );
+        self.apply_player_clip_pick(&pick, leader);
+    }
+
+    /// A clip id written straight into the player's `+0x5C` as
+    /// `base + leader * 7`, with the base stored alongside, then bound through
+    /// the selector with whatever party-bank bit the player carries - the
+    /// shape the tile board's walker uses (`0x801EF998..0x801EF9D0` for the
+    /// run base `3` on an accepted step, `0x801EFAC0..0x801EFAEC` for the idle
+    /// base `2` on arrival). Unlike the settle's pick it reads neither the
+    /// `4C CE` override nor the `99` sentinel.
+    ///
+    /// REF: FUN_801EF2B0 (the two walker clip stores), FUN_800204F8
+    pub(crate) fn field_player_strided_clip(&mut self, base: u16) {
+        let leader = self.locomotion.player_anim.as_ref().map_or(0, |a| a.leader);
+        self.locomotion.clip_base = base;
+        let flag = self.locomotion.player_party_bank;
+        let pick = vm::field_player_clip::SettleClipPick {
+            clip: base.wrapping_add(leader.wrapping_mul(vm::field_player_clip::BANK_STRIDE)),
+            party_flag: flag,
+            binds: true,
+            bind_party_flag: flag,
+        };
         self.apply_player_clip_pick(&pick, leader);
     }
 
@@ -3402,6 +3480,31 @@ impl World {
             return false;
         }
         self.locomotion.player_party_bank = set;
+        true
+    }
+
+    /// A script re-staging the **player's** model: op `4C 50` with the
+    /// extended target `0xF8` (`CC F8 50 lo hi`). Retail's arm writes the
+    /// resolved actor, which `0xF8` makes the player object: `value >= 0xF0`
+    /// raises its party-bank bit `+0x10 & 0x01000000`, any other value clears
+    /// it (`0x801E17AC..0x801E1824`), and `FUN_80024E08` zeroes its clip id
+    /// `+0x5C` and re-stages its mesh from pool slot `value`.
+    ///
+    /// The bit is [`crate::world::FieldLocomotion::player_party_bank`], which
+    /// the next settle's pick reads - so `jagaroom`'s `CC F8 50 26 00` drops
+    /// the player off its party bank until the `B1 F8 18` that follows puts
+    /// it back, and `urudre1`'s `CC F8 50 5D 00` leaves it down for the
+    /// scene. The model id lands on
+    /// [`crate::world::FieldLocomotion::player_live_model`] for the hosts'
+    /// player mesh; neither play host re-binds the player's mesh from it yet
+    /// (both build the rig once per scene from the lead's global-pool mesh).
+    ///
+    /// REF: FUN_80024E08 (the re-stage; the port for a placement is
+    /// `FieldHostImpl::op4c_n5_sub0_set_actor_model`), FUN_8003C83C
+    pub fn field_player_set_model(&mut self, value: i16) -> bool {
+        self.locomotion.player_party_bank = i32::from(value) >= 0xF0;
+        self.locomotion.player_clip = 0;
+        self.locomotion.player_live_model = Some(value);
         true
     }
 

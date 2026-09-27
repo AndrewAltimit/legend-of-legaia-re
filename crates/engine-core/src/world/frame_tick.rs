@@ -627,9 +627,13 @@ impl World {
     ///
     /// **Door of Light** ([`crate::world::MenuState::pending_escape`]): retail hands the
     /// outer menu SM exit code 4 (`FUN_801D8A58`) - the dungeon-escape
-    /// handoff, whose overlay-side consumer is not yet pinned. The engine
-    /// routes it onto the last visited-map record (the return point the
-    /// travel arts warp to): back to that kingdom overworld at the stored
+    /// handoff. Its consumer is the field overlay's pause-menu session
+    /// handler `FUN_801ED308`: the menu's close adds `3` (`0x801DC9E0`), and
+    /// case 4 stores `code - 1` as the next state, whose arm hands the actor
+    /// to handler id `0x29` - the Riremito travel art `FUN_801EE094` (Door of
+    /// Wind's `5` -> `8` -> handler `0x2B`, Rula `FUN_801EE328`). The engine
+    /// skips the art and routes the escape onto the last visited-map record
+    /// the art's resolve reads: back to that kingdom overworld at the stored
     /// tile. With no visited record yet (the party has never stood on a
     /// kingdom map) the escape is dropped with a diagnostic.
     ///
@@ -1583,6 +1587,10 @@ impl World {
                 if let Some(pslot) = self.player_actor_slot {
                     self.step_field_vertical(pslot as usize);
                 }
+                // The system channel's tick follows the player's: its
+                // per-tick store of the idle clip base lands after the settle
+                // has read the base.
+                self.tick_field_system_channel_clip_reset();
                 // Motion detection: diff every tracked actor's position
                 // against last frame's. Runs after EVERY mover in the frame
                 // (timeline, channels, field VM, NPC motion legs, locomotion)
@@ -1909,17 +1917,9 @@ impl World {
             _ => {}
         }
 
-        // Interpolating toward a committed target tile.
+        // Interpolating toward a committed target tile (state 2).
         if let Some((tx, tz)) = self.board.target {
-            let ms = &mut self.actors[slot].move_state;
-            let nx = step_toward(ms.world_x as i32, tx, TILE_BOARD_SPEED);
-            let nz = step_toward(ms.world_z as i32, tz, TILE_BOARD_SPEED);
-            ms.world_x = nx as i16;
-            ms.world_z = nz as i16;
-            if nx == tx && nz == tz {
-                self.board.target = None;
-                self.tile_board_arrival();
-            }
+            self.tile_board_walk_step(slot, tx, tz);
             return;
         }
 
@@ -1944,8 +1944,60 @@ impl World {
         let Some(dir) = crate::tile_board::step_for_mask(remapped) else {
             return;
         };
-        if let Some((tx, tz)) = self.board.grid.as_mut().and_then(|b| b.try_step(dir)) {
-            self.board.target = Some((tx, tz));
+        match self.board.grid.as_mut().and_then(|b| b.try_step(dir)) {
+            Some((tx, tz)) => {
+                // An accepted step: the step cue through the ring's push
+                // producer (`jal 0x80035B50` with `0x21`, `0x801EF990`), then
+                // the run clip - `_DAT_8007BDD8 = 3`, `+0x5C = leader * 7 +
+                // 3`, bind (`0x801EF998..0x801EF9D0`).
+                self.push_sfx_cue(crate::tile_board::STEP_SFX);
+                self.field_player_strided_clip(vm::field_player_clip::BASE_RUN);
+                self.board.target = Some((tx, tz));
+                // State 4 stores state 2 and falls straight into it
+                // (`sh s3,0x54(s4)` at `0x801EFA84`, then `0x801EFA88`), so
+                // the first step moves on the accepting tick.
+                self.tile_board_walk_step(slot, tx, tz);
+            }
+            None => {
+                // Off the board or into a wall: the bonk through the ring's
+                // overwrite producer (`jal 0x80035BD0` with `0x23`,
+                // `0x801EF980`). Retail re-runs state 4 once per game tick
+                // with the pad held, so the bonk repeats at that rate; the
+                // port's state 4 runs every vsync and fires it on the vsyncs
+                // the actor game tick fired.
+                if self.clock.actor_vsync_accum == 0 {
+                    self.replace_last_sfx_cue(crate::tile_board::BONK_SFX);
+                }
+            }
+        }
+    }
+
+    /// One tick of the walker's state 2 (`0x801EFA88`): step toward the
+    /// committed target, facing the octant of the remaining delta
+    /// (`+0x26 = octant << 9`, `0x801EFB30..0x801EFBCC`); on arrival bind
+    /// the idle clip - `_DAT_8007BDD8 = 2`, `+0x5C = leader * 7 + 2`,
+    /// `FUN_800204F8` (`0x801EFAC0..0x801EFAEC`) - and run the arrival pass.
+    ///
+    /// PORT: FUN_801EF2B0 (state 2)
+    fn tile_board_walk_step(&mut self, slot: usize, tx: i32, tz: i32) {
+        let ms = &mut self.actors[slot].move_state;
+        let (x, z) = (ms.world_x as i32, ms.world_z as i32);
+        if let Some(octant) = crate::tile_board::walker_facing_octant(tx - x, tz - z) {
+            ms.render_26 = crate::tile_board::engine_heading_for_octant(octant);
+        }
+        let nx = step_toward(x, tx, TILE_BOARD_SPEED);
+        let nz = step_toward(z, tz, TILE_BOARD_SPEED);
+        ms.world_x = nx as i16;
+        ms.world_z = nz as i16;
+        // The walk is the pad's, not a script's: the clip player keeps the
+        // bound bank clip instead of the motion-derived pair.
+        if let Some(anim) = &mut self.locomotion.player_anim {
+            anim.pad_drove_this_frame = true;
+        }
+        if nx == tx && nz == tz {
+            self.board.target = None;
+            self.field_player_strided_clip(vm::field_player_clip::BASE_IDLE);
+            self.tile_board_arrival();
         }
     }
 

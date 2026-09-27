@@ -23,6 +23,38 @@ fn tile_board_holding_right_steps_to_edge() {
     assert_eq!(w.board.target, None);
 }
 
+/// The walker's per-step legs (`FUN_801EF2B0` states 4 and 2): an accepted
+/// step pushes cue `0x21` and binds the run clip (base `3`), every moving
+/// tick faces the octant of the remaining delta, the arrival binds idle
+/// (base `2`), and a refused step writes the bonk `0x23` over the ring's last
+/// slot.
+#[test]
+fn tile_board_step_cues_clips_and_facing() {
+    use crate::world::SfxRingOp;
+    let mut w = tile_board_world();
+    let _ = w.take_sfx_ring_ops();
+    w.set_pad(input::PadButton::Right.mask());
+    let _ = w.tick();
+    assert!(w.take_sfx_ring_ops().contains(&SfxRingOp::Push(0x21)));
+    assert_eq!(w.locomotion.clip_base, vm::field_player_clip::BASE_RUN);
+    assert_eq!(w.locomotion.player_clip, 3, "leader 0: 3 + 0 * 7");
+    // Column + 1 walks X+: retail octant 6, the engine's quarter turn.
+    assert_eq!(w.actors[0].move_state.render_26, 0x400);
+    while w.board.target.is_some() {
+        w.set_pad(0);
+        let _ = w.tick();
+    }
+    assert_eq!(w.locomotion.clip_base, vm::field_player_clip::BASE_IDLE);
+    assert_eq!(w.locomotion.player_clip, 2);
+    // Walk to the east edge and push into it.
+    pad_held(&mut w, input::PadButton::Right.mask(), 20);
+    let _ = w.take_sfx_ring_ops();
+    pad_held(&mut w, input::PadButton::Right.mask(), 4);
+    let ops = w.take_sfx_ring_ops();
+    assert!(ops.contains(&SfxRingOp::ReplaceLast(0x23)), "{ops:?}");
+    assert!(!ops.contains(&SfxRingOp::Push(0x21)));
+}
+
 #[test]
 fn tile_board_takes_multiple_frames_per_tile() {
     let mut w = tile_board_world();

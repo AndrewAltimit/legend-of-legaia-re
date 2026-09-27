@@ -153,3 +153,55 @@ fn a_script_dropped_party_bank_bit_sends_the_next_pick_to_the_scene_bank() {
     w.field_player_script_clip(0x30);
     assert_eq!(scene_record(&w), Some(0x2F));
 }
+
+/// The system channel's per-tick store of the idle base (`0x80039D94`) runs
+/// after the settle and only while the player is not movement-locked. So the
+/// tick a conversation opens on still re-idles the base, and every locked tick
+/// after it binds idle - the player who opened the talk running does not run
+/// in place through it (retail capture: clip id `3` on the talk's first tick,
+/// `2` after, no further base store while the box is open).
+#[test]
+fn the_system_channel_reset_idles_a_player_who_opened_a_talk_running() {
+    let mut w = world_with_anim();
+    // The talk's first tick: the pad step stored run, the settle bound it.
+    w.locomotion.clip_base = vm::field_player_clip::BASE_RUN;
+    w.field_settle_clip_tail();
+    assert_eq!(w.locomotion.player_clip, 3);
+    w.tick_field_system_channel_clip_reset();
+    assert_eq!(w.locomotion.clip_base, vm::field_player_clip::BASE_IDLE);
+    // The box is up from here on: the pad step is skipped and the lock
+    // closes the reset, so the settle binds the base the first tick left.
+    w.dialog.current = Some(DialogRequest {
+        text_id: 0,
+        inline: Vec::new(),
+        world_x: 0,
+        world_z: 0,
+        depth_id: 0,
+    });
+    assert!(w.field_player_movement_locked());
+    w.field_settle_clip_tail();
+    assert_eq!(w.locomotion.player_clip, 2, "idle through the talk");
+    // A base something else writes while the box is up stays put: retail's
+    // reset does not run under the lock (the poked-walk capture).
+    w.locomotion.clip_base = vm::field_player_clip::BASE_WALK;
+    w.tick_field_system_channel_clip_reset();
+    assert_eq!(w.locomotion.clip_base, vm::field_player_clip::BASE_WALK);
+}
+
+/// The movement-lock bit, a ledge hop and the tile board each close the
+/// reset; a kind-0 warp does not (it clears the lock when it arms).
+#[test]
+fn the_reset_runs_through_a_warp_but_not_under_a_lock() {
+    let mut w = world_with_anim();
+    let s = w.player_actor_slot.unwrap() as usize;
+    w.actors[s].move_state.flags |= 0x0008_0000;
+    assert!(w.field_player_movement_locked());
+    w.actors[s].move_state.flags &= !0x0008_0000;
+    assert!(!w.field_player_movement_locked());
+    w.arm_field_warp((10, 10));
+    assert!(!w.field_player_movement_locked(), "a warp is not a lock");
+    w.locomotion.clip_base = vm::field_player_clip::BASE_WALK;
+    w.tick_field_system_channel_clip_reset();
+    assert_eq!(w.locomotion.clip_base, vm::field_player_clip::BASE_IDLE);
+}
+
