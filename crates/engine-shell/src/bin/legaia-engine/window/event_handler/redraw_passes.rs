@@ -459,11 +459,17 @@ impl PlayWindowApp {
                     Err(e) => log::warn!("summon/move-FX part mesh upload: {e:#}"),
                 }
             }
-            // Draw-kind-4 nodes - effect ribbons (move-VM op `0x42`) and
-            // `0x4000` sprite-arm quads (op `0x23`): transform nodes whose
-            // model is the emitter's own per-frame output, composed like a
-            // part, in battle and on the field. The browser play page draws
-            // the same list (`play_battle_fx.rs`, both FX frames).
+        }
+        // Draw-kind-4 nodes - effect ribbons (move-VM op `0x42`) and
+        // `0x4000` sprite-arm quads (op `0x23`): transform nodes whose model
+        // is the emitter's own per-frame output, composed like a part, in
+        // battle, on the field and on the overworld. Retail's per-actor
+        // dispatcher `FUN_8001ADA4` makes no mode test on its case-4 arm
+        // (`0x8001B060..0x8001B160`), and the `map01` overworld state
+        // `keikoku_chest_preload` holds seven live kind-4 sprite-arm nodes
+        // on list `_DAT_8007C350`. The browser play page draws the same list
+        // (`play_battle_fx.rs`, both FX frames).
+        if !self.boot_ui.is_active() {
             for rb in self.session.host.world.active_effect_kind4_draws() {
                 let v = &rb.mesh;
                 match r.upload_vram_mesh(

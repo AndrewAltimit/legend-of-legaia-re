@@ -588,7 +588,8 @@ impl LegaiaRuntime {
     /// the field move-VM stager parts that the native redraw draws on every
     /// field frame (`redraw_passes.rs`: `build_effect_model_draws`,
     /// `build_summon_and_move_fx_part_draws`, `build_field_fx_part_draws`,
-    /// all gated only on `!in_world_map`). The page used to simulate these
+    /// all gated on `!in_world_map` except the draw-kind-4 list, which draws
+    /// on the overworld too). The page used to simulate these
     /// (`tick_world_effects`) and draw none of them, because its only FX
     /// draw call sat inside the battle branch - every field sparkle, steam
     /// vent and creation glow was invisible in the browser.
@@ -609,10 +610,15 @@ impl LegaiaRuntime {
             return;
         };
         let world = &host.world;
-        if matches!(world.mode, SceneMode::Battle | SceneMode::WorldMap) {
+        if world.mode == SceneMode::Battle {
             self.battle_fx = frame;
             return;
         }
+        // On the overworld only the draw-kind-4 list below draws, as on the
+        // native window (`build_summon_and_move_fx_part_draws`): retail's
+        // `FUN_8001ADA4` makes no mode test on its case-4 arm, and `map01`'s
+        // `keikoku_chest_preload` state holds seven live sprite-arm nodes.
+        let overworld = world.mode == SceneMode::WorldMap;
         let Some(inv) = mat4_inverse(&vp) else {
             self.battle_fx = frame;
             return;
@@ -627,7 +633,11 @@ impl LegaiaRuntime {
                 f.cba_tsb.extend_from_slice(&ct);
                 f.flat.extend_from_slice(&flat);
             };
-        for sprite in world.active_effect_sprites() {
+        for sprite in world
+            .active_effect_sprites()
+            .into_iter()
+            .filter(|_| !overworld)
+        {
             let [u0, v0] = sprite.uv;
             let u1 = u0
                 .saturating_add(sprite.uv_size[0].saturating_sub(1))
@@ -726,7 +736,11 @@ impl LegaiaRuntime {
                 ),
             )
         };
-        for em in world.active_effect_models() {
+        for em in world
+            .active_effect_models()
+            .into_iter()
+            .filter(|_| !overworld)
+        {
             if world.global_tmd(em.tmd_index as i16).is_none() {
                 continue;
             }
@@ -739,7 +753,8 @@ impl LegaiaRuntime {
         let parts = world
             .active_summon_part_draws()
             .into_iter()
-            .chain(world.active_move_fx_part_draws());
+            .chain(world.active_move_fx_part_draws())
+            .filter(|_| !overworld);
         for sp in parts {
             if world.global_tmd(sp.model_index as i16).is_none() {
                 continue;
@@ -753,7 +768,11 @@ impl LegaiaRuntime {
         // Field move-VM stager parts resolve against the SCENE's TMD pack
         // (`model_sel` relative to the spawn base = pack slot), not the
         // battle pool - the page holds that pack as its env meshes.
-        for fp in world.active_field_fx_part_draws() {
+        for fp in world
+            .active_field_fx_part_draws()
+            .into_iter()
+            .filter(|_| !overworld)
+        {
             frame.models.push(FxModelDraw {
                 tmd_index: fp.model_index,
                 source: FxModelSource::ScenePack,
@@ -915,7 +934,8 @@ impl LegaiaRuntime {
     /// read the cache; a draw whose
     /// [`Self::play_battle_fx_model_is_scene_pack`] is `true` indexes the
     /// scene's env pack (already uploaded as scene mesh `tmd`) rather than
-    /// the battle FX mesh cache. Empty in battle / on the overworld.
+    /// the battle FX mesh cache. Empty in battle; on the overworld only the
+    /// draw-kind-4 nodes (the sprite-arm quads) draw.
     pub fn play_field_fx_sync(&mut self, vp: &[f32]) -> u32 {
         if vp.len() != 16 {
             self.battle_fx = BattleFxFrame::default();
