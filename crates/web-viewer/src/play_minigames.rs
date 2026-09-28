@@ -549,11 +549,22 @@ impl LegaiaRuntime {
     /// the session that results is the one a casino door installs. Returns
     /// `false` when no scene is loaded. The native window's `O` / `B` / `M`
     /// hotkeys are this affordance's counterpart.
+    ///
+    /// The request lists the dome hub's announcer lines for prestage
+    /// (`World::request_minigame_warp`), and this export stages them **now**:
+    /// the next tick enters the hub and its intro line starts on that same
+    /// tick, so a stage left to that tick's SFX pass would be a stage on
+    /// first use. A walked door gets its lead from the door scene's list
+    /// instead (`field_xa::scene_minigame_door_xa_prestage`).
     pub fn play_mg_debug_warp(&mut self, sub_id: u8) -> bool {
         let Some(host) = self.scene_host.as_mut() else {
             return false;
         };
         host.world.request_minigame_warp(sub_id);
+        let lead = host.world.drain_field_xa_prestage();
+        for xa in &lead {
+            self.prestage_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
+        }
         true
     }
 }
