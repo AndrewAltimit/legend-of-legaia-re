@@ -169,6 +169,21 @@ is reconciled with the word once per frame; the direction that is lossy (five
 minigames share `OTHER MODE`) is closed by staging the warp sub-id beside it.
 See [boot](boot.md#the-ports-seat-at-the-mode-table).
 
+### The frame model
+
+One `World::tick` is one retail vsync, and retail runs one sim step per vsync without ever catching up: a slow frame makes a slow game. The hosts render at the display's refresh instead, so the engine owns the rules that turn display frames into ticks, in `engine-core::frame_step`, and every host calls them rather than spelling them out:
+
+| Rule | Kernel | What it pins |
+|---|---|---|
+| Ticks per display frame | `SimStepper::drain` | Whole 1/60 s ticks with the remainder carried, at most four a frame; a backlog past four is dropped, not carried. |
+| Camera around the world tick | `camera_before_world_tick` / `camera_after_world_tick` | The compass azimuth the d-pad remap reads is published before the tick that reads it; op-`0x45` routing, the globals advance and the scene-entry reset (`FUN_80025C24`) follow it. |
+| Cutscene glide clock | `CutsceneGlide` | The glide advances by the display frames the world ran, so a redraw that ran no tick advances it by nothing, and a scene entry drops it. |
+| Move-VM strips on screen | `MoveVmGlobals::strip_frame` | The latest tick's `0x2C` strips, held across idle redraws and replaced when the next tick starts. |
+
+The pause menu, the name-entry prompt and a movie consume a frame's ticks without ticking the world; under the pause menu that is retail's own shape, since the CARD mode handler runs no master frame driver. Under a shop the page skips the whole tick tail and the native window still runs its world-side tail; see [`host-drift.md`](../tooling/host-drift.md#the-frame-loop-rules-are-engine-side-two-residues-are-not).
+
+Retail's adaptive frame step (`DAT_1F800393`) is a different quantity: the number of vsyncs per *game* tick, which the engine pins per scene. It changes how often the per-actor passes run, never how many vsyncs a second of play contains, so it does not enter the host frame loop.
+
 ## Architectural principles
 
 - **Asset crates stay engine-agnostic.** `crates/tim`, `crates/tmd`, etc. don't depend on wgpu / winit / cpal.
