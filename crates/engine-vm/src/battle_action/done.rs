@@ -677,7 +677,14 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
     // unseeded battle into an instant game over before anything was hit. A
     // wipe requires at least one seated slot with nobody standing in it.
     let party_seated = (0..party_count).filter(|&s| host.slot_seated(s)).count();
-    if party_seated > 0 && party_alive == 0 {
+    // The special-battle rule (`0x801E6578..0x801E65AC`), between the party
+    // scan and the wipe compare: a non-zero special word counts the whole
+    // party down when the leader (slot 0) has all three limbs rotted.
+    let leader_out = crate::battle_formulas::special_battle_wipe(
+        host.special_battle_word(),
+        host.status_word(0),
+    );
+    if party_seated > 0 && (party_alive == 0 || leader_out) {
         host.battle_end(BattleEndCause::PartyWipe);
         return StepOutcome::BattleComplete;
     }

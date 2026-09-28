@@ -60,6 +60,8 @@ struct RecHost {
     /// Per-slot monster action-tag tables (`monster_action_tags`); absent =
     /// the host resolves no record for that slot.
     monster_tags: std::collections::HashMap<u8, Vec<u8>>,
+    /// `_DAT_8007BAC0` as `special_battle_word` reports it.
+    special_word: u32,
 }
 
 impl RecHost {
@@ -114,6 +116,9 @@ impl BattleActionHost for RecHost {
     }
     fn first_monster_id(&self) -> u8 {
         self.first_monster_id
+    }
+    fn special_battle_word(&self) -> u32 {
+        self.special_word
     }
     fn monster_action_tags(&self, slot: u8) -> Option<Vec<u8>> {
         self.monster_tags.get(&slot).cloned()
@@ -1686,6 +1691,36 @@ fn charm_widen_victory_terminates_even_when_no_party_slot_is_eligible() {
     // masks 0x4, so slot 2 (0x400 - targetable) kept the party standing,
     // and the fallback picks the first living slot (1).
     assert!(host.take().contains(&Event::VictoryStage(1)));
+}
+
+#[test]
+fn a_special_battle_wipes_on_a_leader_with_every_limb_rotted() {
+    // `0x801E6578..0x801E65AC`: the party is standing, but the special word
+    // is up and slot 0's `+0x16E` carries all of `0x38` - the wipe fires.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    host.actors[0].field_flags = 0x38;
+    host.special_word = 0x100;
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::BattleComplete);
+    assert!(
+        host.take()
+            .contains(&Event::BattleEnd(BattleEndCause::PartyWipe))
+    );
+
+    // The same leader in an ordinary battle fights on.
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    host.actors[0].field_flags = 0x38;
+    assert_ne!(step(&mut host, &mut ctx), StepOutcome::BattleComplete);
+
+    // Two rotted limbs are not enough, and a rotted non-leader never is.
+    for (slot, flags) in [(0usize, 0x30u16), (1, 0x38)] {
+        let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+        ctx.action_state = ActionState::EndOfAction.as_byte();
+        host.actors[slot].field_flags = flags;
+        host.special_word = 0x100;
+        assert_ne!(step(&mut host, &mut ctx), StepOutcome::BattleComplete);
+    }
 }
 
 #[test]
