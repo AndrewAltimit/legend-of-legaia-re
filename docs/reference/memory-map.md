@@ -480,7 +480,11 @@ The PSX has 1 KB of fast scratchpad RAM mapped here. Legaia uses the high end:
 | `0x1F8003E8..EB` | 4 × i8 | Camera **visible tile window** `[nearX, nearZ, farX, farZ]`, signed tile offsets from the camera tile. Written by `FUN_801DBC20` and field-VM op `0x46`; read by the render library's cell emitters, `FUN_801DAA50`, `FUN_801D6058` and dev-menu rows `0x12..0x15`. Formed as `lui 0x1F80; ori 0x314; lb 0xD4(rX)`, so the word scan never sees it. |
 | `0x801F2778 / 7C / 80 / 84` | 4 × i32 | Write-only mirrors of the window above; no reader on the disc. |
 | `0x1F8003EC` | u8[] | Tile-flag bitmap base used by op 0x4C nibble-7 (rectangle SET/CLEAR over `+0x4000` offset). |
-| `0x1F800398` | u32 | Overworld ground `RGBC` loaded by `FUN_801F89B8` before its depth cue (`0x2C808080` on keikoku). |
+| `0x1F800398` | u32 | Overworld ground `RGBC` loaded by `FUN_801F89B8` before its depth cue (`0x2C808080` on keikoku) - the base colour, not the far colour. `FUN_80026CE4` rewrites it every frame as `0x2C000000 | (0x8007B7B0 & 0xFFFFFF)`. |
+| `0x8007B7B0` | u32 | Ambient base colour: `0x808080` on every overworld state; field-VM `4C 10` writes it, and `FUN_80026CE4` copies it into `0x1F800398`. |
+| `0x8007BB48` | u8[3] | `gp+0x830`: `0xF0F0F0` on the overworld; `FUN_80026CE4` stores it when `_DAT_8007BA90` is set and passes it to `SetFarColor`. The overworld ground's own far colour is the later literal `0x100` per channel. |
+| `0x8007B648` | u8 | `gp+0x330`, the battle-load stage: below `0x80` the loader `FUN_80052770` runs; `0xFF` while the battle runs (`0x80046EEC`). The ghost pass's `lb` at `0x800470EC` reads it negative on every battle state. |
+| `0x80084448` | u32 | Arena leg outcome; `4` = the party ran (flow `0xFE`'s tail, `0x801D328C`). |
 | `0x1F8003F4` | u32 | Ordering-table base pointer the overworld ground emitter `FUN_801F89B8` (`(max corner SZ >> 5) + 14`) and the fog emitter (`(SZ - 0x10) >> 5`) both index. |
 | `0x1F8003F8` / `0x1F8003FA` | i16 | Camera-scroll values used by op 0x23 player path. |
 

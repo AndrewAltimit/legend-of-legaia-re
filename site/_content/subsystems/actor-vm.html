@@ -94,7 +94,7 @@
           <tr><td><code>FUN_801D77F4</code></td><td>writer + one-shot reader</td><td>VDF body (<code>[u32 record_count]</code> then 12-byte records starting <code>[u32 group_idx]</code>); walked at spawn to size the vertex-pool malloc and copy vertices from the indexed TMD groups into <code>actor+0x90</code>.</td></tr>
           <tr><td><code>FUN_80024CFC</code></td><td>writer</td><td>Pose-output buffer bound on animation transition; also seeds the frame counter to 100.</td></tr>
           <tr><td><code>FUN_80021DF4</code> arm <code>0x06</code></td><td>writer</td><td>Per-bone interpolated pose bytes: count at <code>+0</code>, ones at <code>+0x02/+0x06</code>, 8-byte-stride bones from <code>+0x0F</code>.</td></tr>
-          <tr><td><code>FUN_8001BE80</code></td><td>reader</td><td>Second pose snapshot at <code>ptr + bone*8 + 8</code> for per-vertex lerp between keyframes.</td></tr>
+          <tr><td><code>FUN_8001BE80</code></td><td>reader</td><td>The part's frame-0 entry at <code>ptr + bone*8 + 8</code>: the blend target on a looping clip's last frame.</td></tr>
           <tr><td><code>FUN_800495C8</code></td><td>reader</td><td>Per-bone envelope curve walker at <code>ptr + 4</code>.</td></tr>
           <tr><td><code>FUN_8003A1E4</code>, <code>FUN_801DE840</code></td><td>readers</td><td>Animation-period u16 at <code>ptr + 2</code> (modulo target for the frame index).</td></tr>
         </tbody>
