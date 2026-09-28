@@ -378,7 +378,7 @@ render half.
 
 | Routine | Verdict |
 |---|---|
-| `FUN_80028158` | Scope row (`render_pipeline`): procedural POLY_FT4 builder, no game state. |
+| `FUN_80028158` | **Ported and drawn** - `legaia_engine_core::effect_default_arm`: a byte-exact transliteration of the procedural ring / crown / fan builder, decoded into the mesh both hosts draw for every default-arm node and every battle ground shadow. |
 | `FUN_8002A5A4` | Scope row (`render_pipeline`): billboard quad packet builder over a caller buffer. |
 | `FUN_801CFA48` | **Ported and drawn** - `legaia_engine_core::effect_ribbon`: the random-walk geometry and the TMD packet chain it installs as the actor's model; both battle hosts draw it. |
 | `FUN_80019D50` | **Ported** - `legaia_engine_core::clut_cell_fx`, live through `world::ambient`. |
@@ -388,12 +388,13 @@ render half.
 
 - **`FUN_80028158` / `FUN_8002A5A4` / `FUN_801CFA48`** - the three multi-target
   primitive emitters the per-actor RENDER dispatcher `FUN_8001ADA4` case 4 picks
-  on `actor[+0x9e]`. Each is a GPU packet builder over a caller buffer, unpacking
-  a primitive count from the high byte of its packed param (`801CFA48` OR-s the
-  GT4 command base `0x3C000000`). The third of them is the lightning
-  **effect-ribbon** emitter, and its geometry is not a packet layout at all but a
-  random walk - which is why it is ported and its two siblings are not. See
-  [`battle-action.md`](battle-action.md#overlay-local-prng-fun_801d0290).
+  on `actor[+0x9e]`. Each builds the actor's model for the frame into a caller
+  buffer from a packed count argument. `801CFA48` is the lightning
+  **effect-ribbon** random walk ([`battle-action.md`](battle-action.md#overlay-local-prng-fun_801d0290));
+  `8002A5A4` one textured quad; `80028158` a Legaia TMD object of `GT4`
+  packets - a ring, crown or fan by shape
+  ([`effect-vm.md`](effect-vm.md#the-default-arms-draw)). All three are ported
+  and drawn on both hosts.
 - **`FUN_80019D50`** - not a quad emitter. It is the **CLUT-cell HSV cycler**:
   it walks a captured VRAM rect's 15-bit texels through `FUN_8001A78C` /
   `FUN_8001A6C8` (RGB->HSV and back, `jal` at `0x80019E30` / `0x80019F2C`),
@@ -723,16 +724,28 @@ flash also takes the flash, where retail's override replaces it.
 
 Unless `actor+0x6A` is set, the draw ends with a shadow disc under the actor:
 the position is projected with its height `+0x16` zeroed, the procedural
-builder `FUN_80028158` makes a 24-segment disc (case `1`) of radius
-`actor+0x58 * 4 / 10` into `_DAT_8007B85C + 0x62400`, and `FUN_80043390` draws
+builder `FUN_80028158` builds a 24-column ring of inner radius `0` and outer
+radius `actor+0x58 * 4 / 10` into `_DAT_8007B85C + 0x62400` - mode word `1`,
+which is shape `0` laid in the XZ plane, not a separate "disc" shape
+([effect-vm.md](effect-vm.md#the-default-arms-draw)) - and `FUN_80043390` draws
 it with flag word `0x8A000000` - semi-transparent, blend mode 2, i.e.
 subtracted from the frame - only while the actor is neither pitched nor rolled
 (`+0x24 == 0 && +0x28 == 0`). The centre / rim colours are `0x404040` /
 `0x080808`, `0x202020` / `0x040404` when `+0x74 & 0x83000000`, or derived from
 `+0x74` (`>> 1 & 0x3F3F3F`, `>> 5 & 0x070707`) while `+0x16` is non-zero.
-`battle_actor_draw::shadow_plan` models those numbers; neither host draws the
-disc, because `FUN_80028158`'s case-1 geometry is not ported (only its case-0
-annulus parameters are, for the battle-entry ring).
+Every ground-shadow block the save library captured is reproduced byte for
+byte by the port's builder (`effect_default_arm_retail_capture.rs`); the
+party's radius is `256` (`640 * 4 / 10`).
+
+`battle_actor_draw::shadow_plan` models those numbers and
+`engine-core::effect_default_arm::ground_shadow_mesh` builds the disc.
+`World::battle_ground_shadows` lists one per battle body, gated on the same
+draw plan the host's actor pass draws the body with, and both hosts draw that
+list in their battle FX pass (the native part pass, the play page's FX frame).
+The port lays the disc `BATTLE_SHADOW_DEPTH_LIFT` above the floor so a depth
+test draws it over the stage floor it is coplanar with; retail has no depth
+buffer to tie. The skip flag `+0x6A` is not modelled - no engine actor carries
+it - so every drawn body casts one.
 
 ## The field drop shadow (`FUN_8001C394`)
 

@@ -172,9 +172,76 @@ through. `crates/engine-core/tests/effect_sprite_arm_carriers_real.rs` reports
 the slot-B images whose programs reach the arm and pins that each lands on the
 draw list as one quad.
 
-The default `FUN_80028158` arm is still undrawn on both hosts: its geometry
-(a multi-shape procedural builder switched on `(flags >> 3) & 0xF`) is
-unported past the case-0 annulus parameters the battle-entry ring uses.
+### The default arm's draw
+
+With neither bit set, case 4 calls `FUN_80028158(out, +0x9E, (s16)+0x9C +
+(((s16)+0xC8 >> 3) << 8), actor + 0x9C)` (`0x8001B128..0x8001B15C`) and falls
+into the same model draw as the sprite arm. The builder writes a Legaia TMD
+object at `out + 0xC` - no normals, one `GT4` group (`flags 0x26`, `ilen 9`,
+`mode 0x3C`, the ribbon's row) - and closes it with twenty zero words; it never
+clears the scratch block, so the words it does not write are the previous
+draw's. The move VM's op `0x13` is its setup op
+([move-vm.md](move-vm.md#draw-kind-4-setup-ops-0x13-0x23-0x42)); the battle
+ground shadow, the field battle-intro ring and Baka Fighter's floor disc call it
+directly ([renderer.md](renderer.md#the-ground-shadow)).
+
+Its arguments split as `count = packed & 0xFF`, `phase = packed >> 8` (a logical
+shift), and from `src`: the two colour words `+0x04` / `+0x08` (inner / outer),
+a UV rectangle `+0x0C..+0x12`, tpage / CLUT `+0x14` / `+0x16`, the inner / outer
+radius `+0x18` / `+0x1A` (negative clamped to zero), the inner / outer height
+`+0x1C` / `+0x1E`, and two in-plane scales `+0x20` / `+0x22` (`0x1000` = 1). The
+mode word splits three ways:
+
+- `mode & 3` is the **plane** - which vertex component each of the builder's
+  three axes lands in: `0` XY-Z, `1` XZ-Y, `2` ZY-X, `3` ZX-Y
+  (`0x800283D8..0x800284A0`). Mode `1` lays a ring on the ground.
+- `(mode >> 3) & 0xF` is the **shape**, through the jump table at `0x80010BC0`
+  (shapes `0 / 4 / 5 / 6 / 7` share one setup arm, `1 / 3` another, `2` a
+  third). A shape `>= 8` skips the table and reads stack slots no path wrote.
+- `mode >> 8` is the **texture mode**, read only for shape `0`: every other
+  shape masks the mode to its low byte first (`0x800281F0`). Zero samples the
+  ribbon's fixed 2x2 patch (page `0x001F`, CLUT `0x7F84`, UVs
+  `(0..2, 0xF0..0xF2)`); `1..4` subdivide each column's quad four ways along
+  the radius and map `src`'s rectangle onto it (`1` / `4` polar, `2` / `3` the
+  rectangle as-is or turned), interpolating both the UVs and the corner
+  colours across the four. A tpage word carrying `0x4000` selects one of the
+  two 15-bit display pages (`0x100` / `0x110`, picked by the halfword at
+  `0x8007B74C`) - the frame itself as the texture.
+
+| shape | geometry |
+|---|---|
+| `0` | a ring of `count` columns (at least three), an inner and an outer vertex each; an inner radius of zero makes a disc. `phase == 0` turns the ring half a column; `0 < phase < count` draws an open arc of `phase` quads over `count + 1` columns; otherwise the ring closes onto column 0. |
+| `1` | per column three inner / outer pairs at `+0`, `+phase`, `+2 phase`, plus a seventh vertex extrapolated half a step past the middle pair's outer one; three quads a column. |
+| `2` | per column three pairs; vertex 2 is moved to the origin and each column fans one quad to it. |
+| `3` | shape `1`'s vertices with two of its three quads degenerate. |
+| `4` | a ring whose radius each column jitters by `rand()` (`FUN_80056798`, three calls a column). |
+| `5` | as `4`, shifted so the first column's inner vertex sits at the origin, the height ramping from `+0x1C` to `+0x1E` across the columns. |
+| `6` | a ring whose outer vertex keeps the inner one's second coordinate. |
+| `7` | a ring whose inner vertices are offset so the column at angle `-phase - 0x800` pivots at the origin. |
+
+Walking all seven actor-list heads (`0x8007C34C..0x8007C368`) of the 98
+catalogued mednafen states finds 226 live default-arm nodes (and 122 sprite-arm
+nodes, no ribbon). They use modes `0x00`, `0x01`, `0x08`, `0x10`, `0x18` and
+`0x100` - shapes `0..3` and texture mode `1` - and none of shapes `4..7`. On the
+disc side, staging every slot-B image (`0903..0966`) through the port's summon
+spawner puts default-arm nodes in 61 of the 64 - all but PROT 0926, 0939 and
+0952 - with 3 to 42 live at once (42 in PROT 0923), where 15 of the 64 reach the
+sprite arm. This arm, not the sprite arm, is the bulk of the summons'
+procedural geometry (`effect_sprite_arm_carriers_real.rs` reports both).
+
+Port: `engine-core::effect_default_arm`. `build` transliterates the routine
+onto a byte buffer - every word retail stores, at the offset it stores it, with
+a record of which bytes it wrote - and `decode` reads the object back the way
+the TMD renderer reads it. `crates/engine-core/tests/effect_default_arm_retail_capture.rs`
+holds it to the scratch blocks the save library captured: every one of the
+states' ground-shadow builds (`+0x62400`) reproduces byte for byte, whole or up
+to a later overwrite of its last four packets, and the dispatcher's block
+(`+0x5DC00`) reproduces for modes `0x0`, `0x1`, `0x10` and `0x100` from a live
+node's own arguments, and for `0x8` / `0x18` once the radii, heights and phase
+are read off the block itself - the part tick steps those channels after the
+draw, so a captured node has already moved one frame past the build it left. Both hosts draw every live default-arm
+node of the summon, move-FX, effect-script and field ambient parts through
+`World::active_effect_kind4_draws`, beside the ribbons and sprite-arm quads.
 
 ## Lifetime + render bridge (engine port)
 

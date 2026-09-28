@@ -2354,6 +2354,25 @@ is 133 of the 16384 cells, 129 of them the zero word. Each cell's
 texture is selected **per cell** from a **terrain-type-keyed multi-page atlas** -
 grass, mountain, water, and forest cells each sample a different VRAM page.
 
+The cell's packet colour is **depth-cued**: the emitter loads the colour word
+at scratch `0x1F800398` (`0x2C808080` on `keikoku_chest_preload`) into `RGBC`,
+sets `IR0 = max(SZ1 - 0x5000, 0) >> 3` from the second corner's depth, runs
+`DPCS` (`0x801F8D7C..0x801F8DBC`) and stores the result as the packet colour,
+so the ground brightens toward the GTE far colour past `SZ = 0x5000` and reaches
+it at `0xD000`. The emitter writes no far colour of its own - it draws with
+whatever `RFC / GFC / BFC` the frame last loaded. On that state's walked
+ordering table the ground packets on the two grass pages hold `0x808080` in
+every bucket up to 676 (`(0x5000 >> 5) + 14` over the base bucket 22) and climb
+to about `0x9F9F9F` by bucket 950 - a far colour near `0xEF` on every channel,
+fitted from the bucket keys.
+
+The port differs from this in two ways, both recorded rather than changed.
+`legaia_asset::field_objects::build_walk_heightfield` - shared with the field
+view - keeps PROT 0900's `0x1000` gate, so it drops the 133 cells above. And it
+bakes every cell at the neutral `0x808080` with no depth cue on either host, so
+the port's distant continent stays darker than retail's hazed one; pinning the
+far colour's writer is what a fix needs first.
+
 The selector is the cell's object-record `+0x14..+0x18` run (the record reached
 through `cell & 0x1ff` → `×0x20`), byte-verified against the retail prim pool:
 
@@ -3076,6 +3095,20 @@ kind-4 list (`World::active_effect_kind4_draws`) on the overworld too; the
 rest of their FX passes (effect-pool billboards, effect models, summon and
 stager parts) stay off there - a port gate with no retail counterpart in this
 dispatcher, kept until an overworld state carrying one of them is measured.
+
+The seven nodes are one ambient tree. A spawner record re-seats itself at
+`(9152, -320 + rand % 160, 10432)` (ext op `0x2F 0x05` rewrites op `0x07`'s Y
+operand), spawns child `0x26`, waits `24 + rand % 32`, spawns child `0x27`,
+waits 64, and loops for as long as story flag `0x2FA` stays clear
+(`2F 14 02FA`). One child holds at the spawn point; the other sets a Z velocity
+of `-4 << 3` with op `0x00` and drifts down the column. The capture holds four
+of the first (`z = 10432`) and three of the second (`z = 9216 / 9624 / 10068`).
+The port reproduces the population - six to eight live sprite-arm nodes, half
+of them drifting - once the ambient tick runs the part tick's motion block
+(`engine-core::part_motion`, `FUN_80021DF4` `0x800228A0..0x80022B90`); before
+that the drifting half stood still at the spawn point, and a probe that never
+drove the ambient tick saw only the two nodes the scene-entry first run leaves.
+`crates/engine-core/tests/overworld_puff_column_disc.rs` pins both.
 
 ### Gate-arm chain - `FUN_801D1344` -> `FUN_801D8258`
 
