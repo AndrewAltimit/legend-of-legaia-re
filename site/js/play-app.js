@@ -818,8 +818,35 @@ void main() {
         try { this.rt.play_abandon_opening_chain(); } catch (_) {}
       }
       const state = JSON.parse(this.rt.enter_field(label));
+      return this._adopt(state, label);
+    }
+
+    /* Land the save a Load / import parked, through the engine's one resume
+     * entry (`play_resume_save`: the saved scene, else the running scene,
+     * else the opening town - never a New Game; the native window's
+     * `BootSession::resume_save`). Rebuilds only when the landing entered a
+     * scene. Returns the landing JSON (`landing`, `scene`, `entered`,
+     * `state`). */
+    resumeSave() {
+      const r = JSON.parse(this.rt.play_resume_save());
+      if (r.entered) this._adopt(r.state, r.scene);
+      else if (r.scene) this.scene = r.scene;
+      return r;
+    }
+
+    /* Start a New Game through the engine's one entry (`play_new_game`: the
+     * seeded slate, then `opdeene`, else `town01`; the native
+     * `BootSession::start_new_game`). Same return shape as `resumeSave`. */
+    newGame() {
+      const r = JSON.parse(this.rt.play_new_game());
+      this._adopt(r.state, r.scene);
+      return r;
+    }
+
+    /* Rebuild the page-side scene after the engine entered one. */
+    _adopt(state, label) {
       this._rebuild();
-      this.scene = state.scene || label;
+      this.scene = (state && state.scene) || label;
       /* Demo tile board (`?tileboard=1`): the browser's twin of the native
        * window's `LEGAIA_TILE_BOARD_DEMO=1`, which no browser can set. No
        * retail scene installs a board, so without a trigger the per-cell
@@ -1413,13 +1440,13 @@ void main() {
           this.held.clear();
           this._repack();
         }
-        /* An in-canvas Load off a memory card lands the save's party in the
-         * world, but the scene it was written in is the page's to enter
-         * (`enter()` owns scene assembly). The engine parks the label; hand
-         * it over the frame it appears. */
-        let scene = '';
-        try { scene = rt.play_menu_take_load_scene(); } catch (e) {}
-        if (scene) {
+        /* An in-canvas Load off a memory card parks the save in the engine;
+         * the page lands it through the engine's resume entry
+         * (`play_resume_save`, via `onCardLoad`) the frame it appears. A
+         * save naming no scene counts too - it lands on the running scene. */
+        let loaded = false;
+        try { loaded = rt.play_menu_take_load(); } catch (e) {}
+        if (loaded) {
           /* Hand the score from whatever was playing (the title theme, on a
            * load out of the boot chooser) to the save's own op-0x35 track -
            * the native window's `bgm.stop(); restore_field_bgm();` pair. The
@@ -1428,8 +1455,8 @@ void main() {
            * theme simply keeps going under the loaded scene. */
           try { rt.play_bgm_title_handoff(); } catch (e) { /* audio down */ }
         }
-        if (scene && typeof this.opts.onCardLoad === 'function') {
-          this.opts.onCardLoad(scene);
+        if (loaded && typeof this.opts.onCardLoad === 'function') {
+          this.opts.onCardLoad();
         }
       }
       /* The menu owns every edge while it is up - clear them so none leak into
