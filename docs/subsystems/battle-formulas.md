@@ -1691,9 +1691,74 @@ Ra-Seru-forbidden fight pays no gold, no EXP, no drop and no steal, cannot
 absorb or train a Seru, and its monsters cannot flee.
 
 The engine reads the word through `World::special_battle_word` (the arena
-session's word ORed with `BattleState::special_word`) at the gold, EXP, drop,
-steal, absorb, spell-XP and monster-flee sites. The presentation calls, the
-wipe rule and the `0x801D322C` arm are not ported.
+session's word ORed with `BattleState::special_word`) at every site above;
+the details of the four flow readers follow.
+
+##### The flow readers
+
+- **The wipe rule** (`0x801E6578..0x801E65AC`) sits between the party scan
+  and the wipe compare: with the word non-zero and actor-table slot `0`'s
+  `+0x16E & 0x38 == 0x38`, it loads the party count into the compare
+  register, so the battle ends as a party wipe with the party standing. The
+  three bits are the Rot limbs, and the applier ORs one per landed Rot
+  (`0x801E1734..0x801E1740`), so three rolls on the leader end an arena leg.
+  The leader's liveness is not read. Port
+  `battle_formulas::special_battle_wipe`, read by the action SM's
+  end-of-action scan through `BattleActionHost::status_word` (the raw word
+  ORed with the typed tracker's packed bits); the tracker keeps every rolled
+  limb for it.
+- **The run arm** (`0x801D3228..0x801D328C`) is the tail of the round
+  driver's flow state `0xFE`, which the Run commit (`0x801D1148..0x801D1184`)
+  enters after stamping category `5` on all three party actors. With the
+  word non-zero and the leader's category `5`, it overwrites the initiative
+  pick with the leader (`ctx+0x274 = 0`) and stores the leg outcome
+  `_DAT_80084448 = 4` - "ran", the code the arena hub settles on. The four
+  exempt first monsters are exactly the two `0x200` raisers' fights, so the
+  arm is the arena's. Port `battle_formulas::special_battle_run_forfeit`,
+  evaluated in `World::begin_round_execution`; the leader-first dispatch is
+  modelled (the pick's draws are still taken and the winner keeps its key,
+  as the SM's `0x0C` seed spends only the acting slot's key, `0x801E2CDC`).
+  The outcome store has no World-side reader: the engine's arena legs run on
+  the dome session, whose leave path reports the run.
+- **The two window calls** in `FUN_8004E568`. On a win the results frame
+  opens the result window `FUN_801D8DE8(0x41, 0)` (`0x8004F614..0x8004F660`,
+  first storing the pose actor's roster id minus one into `ctx+0xAA` when the
+  party has two or more members); on a wipe the annihilated arm opens the
+  loss window `FUN_801D8DE8(0x42, 0)` (`0x8004F8F0..0x8004F904`). A non-zero
+  word skips both, so a special battle ends on the bare scene. Port
+  `VictorySequence::window_opened`, which gates the spoils panel both hosts
+  draw (`World::battle_spoils_banner`). Neither host draws a loss window.
+- **The `0x100` bit at battle exit** (`FUN_80046A20`, once the results phase
+  reaches `0x43` with `ctx+0xB` clear). `0x80046DF0` / `0x80046E38` pick the
+  next game mode `_DAT_8007B83C`: `0x18` (the arena) with the bit, else `2`
+  when `_DAT_8007B8B8` is set, else `0`. The engine's arena returns through
+  `World::exit_muscle_dome`, so the mode pick has no World-side twin.
+  `0x80046E90` gates the `+0x16E = 0` in the exit's party loop
+  (`0x80046EA0..0x80046EDC`; the loop's 1-HP floor is unconditional). Battle
+  init reloads each party actor's `+0x16E` from the character record's
+  `+0x12E` (`0x80051718..0x80051720`), and the per-frame `FUN_80047430`
+  copies the actor word back (`0x80048040`), so whether a status outlives
+  its battle depends on which of the two writes runs last - not traced. The
+  engine's battle status tracker is never cleared between battles.
+- **The escape roll's `0x100`**: `0x801E7978` folds the bit per living party
+  member into the forced arm (`s1 = 2`, `0x801E7A14`), which wins the roll
+  past even the no-escape flag `ctx+0x287`; `0x801E7B40` skips the lifetime
+  escape counter `_DAT_800846A8` on success. The port folds the bit in
+  `World::roll_battle_escape`; the engine keeps no escape counter.
+
+##### No writer clears the word before the results
+
+The word is stored at eight sites disc-wide (`find-gp-relative-refs.py --va
+0x8007BAC0 --prot`, the `gp+0x7A8`, `lui`+`sw` and base-displacement forms):
+battle init `0x800519D8` / `0x80051A04` and the formation roll `0x8005205C`,
+the boot initialiser `FUN_8001D424` (`0x8001D528`, called once from
+`0x80016024`), the minigame exit `FUN_80026018` (`0x80026098`, `jal`-called
+only from PROT 0972..0980), the field overlay's `0x801E0794` and the arena's
+`0x801D00E4` / `0x801D0FF4`. The field overlay and the arena share slot A
+with the battle overlay, so neither is resident during a battle, and battle
+init runs before the roll. So the word the Rim Elm ambush's roll raises is
+the word `FUN_8004E568` reads: that fight pays nothing and opens no result
+window.
 
 #### The victory drop roll
 

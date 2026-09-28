@@ -3059,9 +3059,22 @@ The action SM's `0x5A` end-of-action sweep clears the bits on every slot
 `FUN_801DB9C4`. Recomputing the pass from RAM over the catalogued battle
 states reproduces the stored bits on 277 of 279 seated slots. The two misses
 are bits set where the pass would clear them (action states `0x1E` and
-`0x35`, flow `0xFF`); the driver skips the call while `gp[+0x330]` is
-non-negative, which would leave a previous frame's bits standing, but that
-cause is not measured.
+`0x35`, flow `0xFF`), and they are not the driver's gate: the driver skips
+the call while `gp[+0x330]` is non-negative (`lb` at `0x800470EC`), and that
+byte - `0x8007B648`, the battle-load stage `FUN_80046A20` hands to the loader
+`FUN_80052770` while it is below `0x80` (`0x80046EEC..0x80046F08`) - reads
+`0xFF` in 59 of the 60 battle-mode (`0x15`) mednafen library states and `0x84` in the other,
+negative in every one, so the pass ran on each of those frames.
+
+`ctx[+0x26B]` is the battle's side-band stream request: `FUN_80055B4C`
+stores `a0 + 1` there (`0x80055B58`) - the victory hook's win-pose archive
+and the summon stagers' streams - and the stream tick `FUN_801F17F8` clears
+it once the stream lands (`0x801F19D8`). The pass reads it only with the
+battle-end signal `0xFE` up, and there the request is the win-pose archive,
+which the results sequencer also waits on (`0x8004E5C0`). It reads `0` on
+the one results-frame state (`noa_levelup_banner`). The command-flow byte
+`ctx[+6]` reads `0x1E`, `0x28` and `0x14` in the library's command-band and
+round-start states, and `0xFF` in every state of a running action.
 
 An earlier reading here and in `port-catalog-ignore.toml` called the routine
 a "target-highlight pass" measuring distance from the **acting actor**. The
@@ -3073,12 +3086,16 @@ not dimming.
 tick (slots converted from the engine's compacted seating to retail's fixed
 pool slots) and keeps the word in `BattleActor::flag_word`, which
 `battle_actor_draw_plan` hands the tint pass as its top byte
-(`BattleActorDrawPlan::semi_mode`). Two inputs have no engine mirror and are
-inferred: `ctx[+6]` reads `0xFF` in every catalogued state of a running
-action and is taken as `0xFF` whenever no command menu is open (`0` while one
-is), and `ctx[+0x26B]` is taken as idle; the driver's `gp[+0x330]` gate is not modelled (the pass runs every battle frame). Neither host draws a body with a
-per-draw blend override yet, so the ghost is carried to the draw plan and
-not rendered - the same gap as the capture / defeat fade above.
+(`BattleActorDrawPlan::semi_mode`). `ctx[+6]` is the engine's flow mirror
+`BattleFlowState` (the selection band byte for byte) while the command band
+runs, `0xFF` while the action SM owns the round and `0x14` before the first
+round executes; retail's one-frame `0xFE` hand-off has no engine frame.
+`ctx[+0x26B]` is taken as raised through the victory sequence's load hold and
+idle from the results frame on - the engine streams nothing, and where the
+archive lands inside that hold is not measured. The `gp[+0x330]` gate has no
+engine twin because the engine has no load stage. Neither host draws a body
+with a per-draw blend override yet, so the ghost is carried to the draw plan
+and not rendered - the same gap as the capture / defeat fade above.
 
 ## Per-frame actor maintenance (`FUN_8004CE2C`)
 

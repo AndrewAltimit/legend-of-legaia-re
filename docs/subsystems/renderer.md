@@ -744,8 +744,17 @@ draw plan the host's actor pass draws the body with, and both hosts draw that
 list in their battle FX pass (the native part pass, the play page's FX frame).
 The port lays the disc `BATTLE_SHADOW_DEPTH_LIFT` above the floor so a depth
 test draws it over the stage floor it is coplanar with; retail has no depth
-buffer to tie. The skip flag `+0x6A` is not modelled - no engine actor carries
-it - so every drawn body casts one.
+buffer to tie.
+
+The skip flag `+0x6A` belongs to the after-image walk. The draw tick
+`FUN_800480D8` raises it to `1` for the call to `FUN_80049348`, which draws
+each motion-trail ghost through this routine (`sh` in the `jal`'s delay slot
+at `0x80048258`), and clears it before the body's own draw unless `+0x5A` is
+the move VM's render mode `7` (`0x80048264..0x80048274`). A battle body's
+`+0x5A` is its pool slot, so its own draw always casts a shadow and its
+ghosts never do. The port states the bracket as
+`battle_actor_draw::body_shadow_skip`, and the after-image pass
+(`battle_afterimage`) draws no shadow.
 
 ## The field drop shadow (`FUN_8001C394`)
 
