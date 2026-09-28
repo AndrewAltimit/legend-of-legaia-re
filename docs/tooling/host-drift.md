@@ -1242,9 +1242,10 @@ about these is contested.
 | derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
 | battle body blend modes | Both hosts draw a whole battle body's semi-transparency; three residues differ in scope and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-three-residues). |
 | save rack port 1 | The native rack's first port is an engine-format save directory; the page's two ports are both memory-card images. See [below](#the-save-racks-first-port-differs-per-host). |
-| frame loop under a shop | The ticks-per-frame, camera-order, glide-clock and strip rules are engine kernels; what a shop and the party readout do to a frame's tail still differs. See [below](#the-frame-loop-rules-are-engine-side-two-residues-are-not). |
+| frame loop under a shop | The ticks-per-frame, camera-order, glide-clock and strip rules are engine kernels; under a shop both hosts now freeze the whole tail. One residue: the SFX scheduler steps under a menu-overlay screen natively and not on the page. See [below](#the-frame-loop-rules-are-engine-side-one-residue-is-not). |
+| minigame launchers, slot and audio tail | The native `O` slot launcher still builds its own session; the two audio directors keep their BGM-tail banks and side-band retry memo differently; the minigame XA lines still stage on first use on the page. See [below](#minigame-launchers-and-the-audio-tail). |
 
-### The frame loop rules are engine-side; two residues are not
+### The frame loop rules are engine-side; one residue is not
 
 Each host owns its display loop (winit's redraw natively, `requestAnimationFrame` on the page), and each used to spell out the rules that turn display frames into ticks. Four of those rules are kernels in `engine-core::frame_step` now, called by both hosts - the frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model):
 
@@ -1257,10 +1258,19 @@ Each host owns its display loop (winit's redraw natively, `requestAnimationFrame
 
 The page also ran its tick tail short on a scene-entry tick (no rig rebuild, merchant poll or NPC clip step) and dropped the frame's remaining ticks after a door; it now runs the tail and keeps ticking, as the native loop does.
 
-Two residues remain host-local:
+Under a shop or the prize exchange both hosts now freeze the whole frame tail, not only the world tick. Retail runs those screens at game mode `0x17` with the field overlay swapped out for the menu overlay, so none of the field code is resident.
 
-- **Under a shop** the page skips the whole tick, tail included; the native window skips the world tick but still runs its tail (ocean shimmer, the effect scene-graphs, CLUT effects, the field-event drain, NPC anim cues, the party readout). Retail swaps the field overlay out for the menu overlay, so the page's freeze is the faithful shape; the native tail also carries the SFX scheduler step the shop's own cues ride, which is why it cannot simply be skipped.
-- **The field party readout's kernel** is stepped under modal overlays natively (so its suppression predicate sees the overlay) and not on the page, which has no early-out to skip it from.
+The native loop runs only the menu session on the tick's edges, the unpark when it closes, and the SFX scheduler step, then skips the ocean and CLUT cyclers, the effect scene-graphs, the event drains, the party readout's kernel and (through a count of ticks that ran the tail) the NPC clip playheads - the page's `tick_frame` skip. The earlier note that the native tail "carries the SFX scheduler step the shop's own cues ride" was a misreading: no shop screen raises a cue on either host, so the step moved to the frozen arm for the same reason the pause-menu arm has it (delayed cues already queued keep ageing).
+
+The field party readout's kernel is not a residue. A suppressed tick of `FieldPartyHud::tick` stores nothing but its cached decision - retail's suppress arm returns before the timer and position stores - and both hosts' draw paths re-ask the suppress gate, so stepping it under an overlay (native) and not stepping it (page) leave the same timer, the same cached position and the same picture. `a_suppressed_tick_changes_no_state` pins that.
+
+One residue remains host-local: the SFX scheduler steps once per tick under the pause menu and a shop natively, and not at all under either on the page (whose menu blips fire as immediate batches). It moves only cues that were already delayed when the screen opened.
+
+### Minigame launchers and the audio tail
+
+- **The slot launcher.** The native `B` and `M` hotkeys arm the mode-24 door warp itself (`World::request_minigame_warp`, the call the page's `play_mg_debug_warp` makes), so they enter the session, the BGM swap and the return warp the casino door does. The `O` slot launcher still builds its own `SlotMachine` with a frame-derived seed, buys coins at the exchange counter or fronts a dev stake, and backs up no scene; the page has no such launcher. Closing it is a delete of that constructor plus an answer for a thin coin bank.
+- **The BGM tail and the side-band memo.** The native director drops the reward and side-band banks and bumps its generation inside every owned-bank upload; the page keeps them until a fire- or sync-time check finds the new bank past their base, and clears its side-band retry memo on every scene change where the native memo keys on the BGM generation. Audibly the same today; one `BgmTail` residency model in `engine-audio` driven by both directors would close it.
+- **Minigame XA lines.** The field's CD-XA one-shots are listed at scene load (`World::drain_field_xa_prestage`, filled by `field_xa::scene_xa_prestage` off the scene MAN's op-`0x36` XA arms) and the page stages them ahead of their ops, as it does a battle round's cast voices. The Baka announcer and the dome hub lines still stage on first use on the page, one request per frame, and sound a frame or more late there; they need the same list from their chrome kernels.
 
 ### The save rack's first port differs per host
 
@@ -3340,6 +3350,25 @@ had - the deviating host adopting it.
 - **Developer menu CAMERA row.** Absent on both; `DevMenuSession::tick_host`
   is the one call both hosts make, and it carries the row
   ([`world-map.md`](../subsystems/world-map.md#the-camera-row)).
+- **The pause-menu stack.** The native window, the headless `BootSession` and
+  the page each carried the whole root-list step, the sub-screen step (with
+  the Status screen's Arts-editor extension) and the outcome match that folds a
+  finished screen into the world; the headless copy had dropped the window-8
+  notice. `field_menu_dispatch::tick_root_list`, `tick_open_subsession` and
+  `finish_subsession` are those three steps, and all three drivers call them;
+  what stays per host is the rack I/O, the key table and the options store
+  (`SubsessionHandoff`).
+- **Four small copies.** The shop's owns-the-pad test (`MenuRuntime::is_open`
+  on both, where the page spelled out two of its terms), the naming prompt's
+  pad decode (`NameEntryInput::from_pad_edge`), the dev menu's EQUIP commit
+  (inside `DevMenuSession::tick_host`), the demo tile board's install
+  (`World::install_demo_tile_board`) and the options' simulation knobs
+  (`OptionsState::apply_to_world`) are one call each now.
+- **Minigame hotkeys.** The native `B` / `M` launchers built their sessions
+  directly, started the track through the director rather than the world's
+  minigame swap, and installed Vahn's arts whoever led; they now arm the door
+  warp ([above](#minigame-launchers-and-the-audio-tail) for the slot
+  residue).
 
 Two rows of the same read were already closed when re-checked: the minigame
 purses in `save_full` and the card-Load order (both in the section above).

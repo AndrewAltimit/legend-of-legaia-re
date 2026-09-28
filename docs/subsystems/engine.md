@@ -180,7 +180,7 @@ One `World::tick` is one retail vsync, and retail runs one sim step per vsync wi
 | Cutscene glide clock | `CutsceneGlide` | The glide advances by the display frames the world ran, so a redraw that ran no tick advances it by nothing, and a scene entry drops it. |
 | Move-VM strips on screen | `MoveVmGlobals::strip_frame` | The latest tick's `0x2C` strips, held across idle redraws and replaced when the next tick starts. |
 
-The pause menu, the name-entry prompt and a movie consume a frame's ticks without ticking the world; under the pause menu that is retail's own shape, since the CARD mode handler runs no master frame driver. Under a shop the page skips the whole tick tail and the native window still runs its world-side tail; see [`host-drift.md`](../tooling/host-drift.md#the-frame-loop-rules-are-engine-side-two-residues-are-not).
+The pause menu, the name-entry prompt and a movie consume a frame's ticks without ticking the world; under the pause menu that is retail's own shape, since the CARD mode handler runs no master frame driver. Under a shop both hosts skip the whole tick tail as well - the field overlay is swapped out in retail - and keep only the menu session and the audio step; see [`host-drift.md`](../tooling/host-drift.md#the-frame-loop-rules-are-engine-side-one-residue-is-not).
 
 Retail's adaptive frame step (`DAT_1F800393`) is a different quantity: the number of vsyncs per *game* tick, which the engine pins per scene. It changes how often the per-actor passes run, never how many vsyncs a second of play contains, so it does not enter the host frame loop.
 
