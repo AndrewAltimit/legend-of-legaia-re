@@ -335,9 +335,34 @@ call; the play loop's only sound calls open and close the SPU CD input
 root-counter callback (the word at `0x8007A910` names `FUN_80062F98`), not
 from the main loop. So a mid-game movie inherits whatever state the script
 left: the nine `0x4C 0xE2` triggers are preceded by their own op-`0x35`
-words - a pause, a commit, a flag set, nothing - scene by scene. Whether a
-track the script left running is audible under the movie's XA has not been
-captured.
+words - a pause, a commit, a flag set, nothing - scene by scene.
+
+A track the script left running stays audible under the movie. The capture
+`scripts/pcsx-redux/autorun_movie_bgm_audibility.lua` makes the trigger op's
+two stores (`sh fmv_id -> 0x8007BA78`, `sh 0x1A -> 0x8007B83C`, handler
+`0x801E30E4..0x801E3104` in PROT 0897) from a field state whose score is
+sounding - `town01_field_card_boot` with `fmv_id 1`, `chitei2_field_card_boot`
+with `fmv_id 3` - and samples the SPU every ten vsyncs while the movie is on
+screen:
+
+| Scene | Samples with a sounding voice | Samples with a fresh key-on (envelope at or above `0x7000`) | Master volume | SPUCNT |
+|---|---|---|---|---|
+| `town01`, `fmv_id 1` | 81 of 84 | 79 of 84 | `0x3FFF` throughout | `0xC081` |
+| `chitei2`, `fmv_id 3` | 83 of 84 | 79 of 84 | `0x3FFF` throughout | `0xC081` |
+
+A sounding voice is one with a non-zero envelope level and a non-zero channel
+volume. The BGM id at `0x8007BAC8` stays the scene's own track throughout, and
+screenshots taken alongside the samples show the movie frames. So the sequencer keeps keying notes
+and the SPU keeps mixing them next to the CD input. The movie plays over the
+score, not instead of it. The poke skips the op-`0x35` words the record runs
+first, and for these scenes those words leave the score sounding: `town01`
+starts and commits a new track (sub-ops 9, `0xA`) and sets flag bit 2 (sub-op
+6), `deroa` and `chitei2` only set bit 2. Bit 2 is the flag the field
+initializer reads to skip its BGM ramp and its key-off of voices `0x10..0x17`,
+which fits a score meant to run through the movie into the next scene. The
+capture does not cover `taiku`, whose record stops the score (sub-op 2) before
+its trigger, the sub-op-5 release deadline `town0d` and `jouine` arm, or
+`garmel`'s sub-op 7.
 
 The title attract is the exception. The attract underflow arm of the title
 tick releases the slot - `FUN_800266E0` + `FUN_80026520` at `0x801DDD7C` /
@@ -355,9 +380,11 @@ browser page both consult:
 
 - The attract stops the score when it is armed and restarts the title theme
   when it ends, played or not - the retail release and `CARD INIT` pair.
-- A movie that stages an XA track ducks the score by closing the sequencer
-  gate, but only if the gate is open. A track the script already paused is
-  not claimed, so the movie's end does not reopen it.
+- A cutscene movie leaves the score alone, as retail does
+  (`MovieScore::new`). The ducking policy (`MovieScore::ducking`) is the
+  enhancement: a movie that stages an XA track ducks the score by closing the
+  sequencer gate, but only if the gate is open. A track the script already
+  paused is not claimed, so the movie's end does not reopen it.
 - A movie with no audio track (an extracted-root boot, a cut slot, a page
   that never installed it) touches nothing.
 - Every way a movie ends - played out, skipped, never installed, dropped -

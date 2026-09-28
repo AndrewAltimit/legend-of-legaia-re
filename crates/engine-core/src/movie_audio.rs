@@ -11,9 +11,17 @@
 //! sequencer ticks from the root-counter callback (the word at `0x8007A910`
 //! names `FUN_80062F98`), so a mid-game movie leaves the score in whatever
 //! state the script put it: the nine field-VM triggers are preceded by their
-//! scripts' own op-`0x35` words, which differ scene to scene. Whether a track
-//! the script left running is *audible* under the movie's XA has not been
-//! captured.
+//! scripts' own op-`0x35` words, which differ scene to scene.
+//!
+//! A track the script left running stays **audible** under the movie's XA. A
+//! PCSX-Redux capture (`scripts/pcsx-redux/autorun_movie_bgm_audibility.lua`)
+//! makes the trigger op's two stores from a sounding field state - `town01`
+//! with `fmv_id 1`, `chitei2` with `fmv_id 3` - and samples the SPU every
+//! ten vsyncs while the movie is on screen. In 81 and 83 of 84 samples a
+//! voice has a non-zero envelope and a non-zero channel volume, in 79 of 84
+//! a voice is at or above envelope `0x7000` (a fresh key-on), the master
+//! volume holds `0x3FFF` and SPUCNT `0xC081` keeps the CD input on beside
+//! them. The movie plays over the score, not instead of it.
 //!
 //! The one movie that does act on the score is the title attract. Its
 //! underflow arm in the title tick releases the BGM slot - `FUN_800266E0` +
@@ -26,15 +34,16 @@
 //!
 //! # The port
 //!
-//! Hosts decode a movie's XA onto the same mixer as the BGM, and do not wait
-//! on a capture to decide whether the two layer. [`MovieScore`] therefore
-//! ducks the score under a movie that stages audio - and only then - and on
-//! the movie's end gives back exactly what it took: a track the script had
-//! already paused stays paused, a movie with no audio track leaves the score
-//! alone, and nothing is reopened twice. The duck is the sequencer gate the
-//! directors already treat as their pause latch, so there is one latch, not
-//! one per host. The attract follows retail: the score is released when the
-//! movie starts and the title theme restarts when it ends.
+//! Hosts decode a movie's XA onto the same mixer as the BGM. [`MovieScore::new`]
+//! is retail: a cutscene movie leaves the score as the script left it, so the
+//! two layer. [`MovieScore::ducking`] is the enhancement one toggle away: it
+//! ducks a sounding score under a cutscene movie that stages audio - and only
+//! then - and on the movie's end gives back exactly what it took: a track the
+//! script had already paused stays paused, a movie with no audio track leaves
+//! the score alone, and nothing is reopened twice. The duck is the sequencer
+//! gate the directors already treat as their pause latch, so there is one
+//! latch, not one per host. The attract is the same in both: the score is
+//! released when the movie starts and the title theme restarts when it ends.
 
 /// Which caller armed the movie. Retail treats the two differently: only the
 /// title attract releases the score.
@@ -65,15 +74,35 @@ pub struct MovieEnd {
 pub struct MovieScore {
     origin: Option<MovieOrigin>,
     ducked: bool,
+    /// Duck a sounding score under a cutscene movie's XA (the enhancement).
+    /// Off in retail, which layers the two.
+    duck_cutscene: bool,
 }
 
 impl MovieScore {
-    /// A fresh policy with no movie in flight.
+    /// A fresh retail policy with no movie in flight: a cutscene movie plays
+    /// over whatever the script left sounding.
     pub const fn new() -> Self {
         Self {
             origin: None,
             ducked: false,
+            duck_cutscene: false,
         }
+    }
+
+    /// A fresh policy that ducks a sounding score under a cutscene movie's
+    /// audio - the enhancement over retail's layering.
+    pub const fn ducking() -> Self {
+        Self {
+            origin: None,
+            ducked: false,
+            duck_cutscene: true,
+        }
+    }
+
+    /// Whether this policy ducks the score under a cutscene movie.
+    pub const fn ducks_cutscenes(&self) -> bool {
+        self.duck_cutscene
     }
 
     /// A movie was armed. Returns `true` when the host has to **stop** the
@@ -91,9 +120,13 @@ impl MovieScore {
     /// The movie's audio track went onto the mixer. `gate_closed` is the
     /// sequencer gate as it stands. Returns `true` when the host has to close
     /// it - only when it is open, so a score the script already paused is
-    /// not claimed by the movie and is not reopened by its end.
+    /// not claimed by the movie and is not reopened by its end. A retail
+    /// policy never closes it for a cutscene movie.
     pub fn on_movie_audio(&mut self, gate_closed: bool) -> bool {
         if self.ducked || gate_closed {
+            return false;
+        }
+        if self.origin != Some(MovieOrigin::Attract) && !self.duck_cutscene {
             return false;
         }
         self.ducked = true;
@@ -109,7 +142,10 @@ impl MovieScore {
             reopen_gate: self.ducked,
             restart_title_theme: self.origin == Some(MovieOrigin::Attract),
         };
-        *self = Self::new();
+        *self = Self {
+            duck_cutscene: self.duck_cutscene,
+            ..Self::new()
+        };
         end
     }
 
@@ -128,11 +164,23 @@ impl MovieScore {
 mod tests {
     use super::*;
 
-    /// A cutscene movie with audio over a playing score: duck, then give it
-    /// back once.
+    /// Retail: a cutscene movie with audio plays over the score (the
+    /// `town01` / `chitei2` capture) - nothing is ducked, nothing reopened.
+    #[test]
+    fn retail_layers_a_cutscene_movie_over_the_score() {
+        let mut m = MovieScore::new();
+        assert!(!m.ducks_cutscenes());
+        assert!(!m.on_movie_start(MovieOrigin::Cutscene));
+        assert!(!m.on_movie_audio(false), "retail keeps the score sounding");
+        assert!(!m.ducked());
+        assert_eq!(m.on_movie_end(), MovieEnd::default());
+    }
+
+    /// The enhancement: a cutscene movie with audio over a playing score
+    /// ducks it, then gives it back once.
     #[test]
     fn a_movie_with_audio_ducks_a_playing_score_and_returns_it_once() {
-        let mut m = MovieScore::new();
+        let mut m = MovieScore::ducking();
         assert!(
             !m.on_movie_start(MovieOrigin::Cutscene),
             "a cutscene keeps the score"
@@ -156,7 +204,7 @@ mod tests {
     /// claim the pause, so its end does not undo it.
     #[test]
     fn a_script_paused_score_stays_paused_across_a_movie() {
-        let mut m = MovieScore::new();
+        let mut m = MovieScore::ducking();
         m.on_movie_start(MovieOrigin::Cutscene);
         assert!(!m.on_movie_audio(true));
         assert!(!m.on_movie_end().reopen_gate);
@@ -193,12 +241,13 @@ mod tests {
     /// one closed, so the gate is still given back exactly once.
     #[test]
     fn a_movie_armed_over_an_unended_one_keeps_its_duck() {
-        let mut m = MovieScore::new();
+        let mut m = MovieScore::ducking();
         m.on_movie_start(MovieOrigin::Cutscene);
         assert!(m.on_movie_audio(false));
         m.on_movie_start(MovieOrigin::Cutscene);
         assert!(m.ducked() && m.in_flight());
         assert!(!m.on_movie_audio(true));
         assert!(m.on_movie_end().reopen_gate);
+        assert!(m.ducks_cutscenes(), "the end keeps the policy's knob");
     }
 }
