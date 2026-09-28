@@ -40,8 +40,8 @@ pub const CLIP_RATE: u16 = 8;
 /// same bit the frame blender tests) takes the **scaled** step
 /// `(rate * 2 + div - 1) / div`, `div` being clip byte `+6`
 /// (`0x800205C8..0x800205E0`); every other clip steps by the rate itself. At
-/// [`CLIP_RATE`] that is `16 / 8 / 6 / 4 / 3` for divisors `1 / 2 / 3 / 4 / 6`
-/// - the divisor-4 clips (the disc's most common gated shape) play at half
+/// [`CLIP_RATE`] that is `16 / 8 / 6 / 4 / 3` for divisors `1 / 2 / 3 / 4 / 6`,
+/// so the divisor-4 clips (the disc's most common gated shape) play at half
 /// the ungated speed, their in-between ticks posed by the blender.
 ///
 /// A gated clip with divisor `0` would divide by zero in retail; no record on
@@ -50,8 +50,8 @@ pub const CLIP_RATE: u16 = 8;
 /// PORT: FUN_800204F8 (the step select at `0x800205B4..0x800205EC`)
 pub fn clip_step(rate: u16, gated: bool, div: u8) -> u16 {
     if gated && div != 0 {
-        let d = u32::from(div);
-        ((u32::from(rate) * 2 + d - 1) / d) as u16
+        // Retail's `(rate * 2 + div - 1) / div`: a ceiling division.
+        (u32::from(rate) * 2).div_ceil(u32::from(div)) as u16
     } else {
         rate
     }
