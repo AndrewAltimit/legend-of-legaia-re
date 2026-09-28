@@ -485,10 +485,20 @@ enum Settle {
 /// choreography was still `MoveTo`-ing the player, and the walk probe then
 /// scored thirty tiles of script-driven motion as locomotion.
 fn settle(host: &mut SceneHost) -> Settle {
-    for _ in 0..SETTLE_TICKS {
-        if !host.world.cutscene_timeline_active()
+    for i in 0..SETTLE_TICKS {
+        // Released = the pad is the player's again: no timeline, no
+        // dialogue, no helper record (retail's engaged bit is raised for
+        // every context the script runner steps, so a first-visit helper
+        // that walks the player refuses the pad until it ends), and no
+        // spawn still queued to start one.
+        // Not before two ticks: the entry script's op-`0x44` spawns queue on
+        // the first and their helpers take their first slice on the second,
+        // so a check on the entry frame sees none of them.
+        if i >= 2
+            && !host.world.cutscene_timeline_active()
             && !host.world.dialogue_owns_input()
             && host.world.field_vm.helper_contexts.is_empty()
+            && host.world.field_vm.pending_record_spawns.is_empty()
         {
             return Settle::Released;
         }

@@ -574,8 +574,9 @@ impl World {
     ///    the controller (`0x801D1694`) and the menu button does nothing.
     ///    A Door of Light that lands on `map01`'s cave-mouth trigger tile
     ///    runs `P2[9]` this way and holds the menu for its whole run. The
-    ///    engine's counterpart is an active
-    ///    [`World::cutscene_timeline_active`](crate::world::World::cutscene_timeline_active).
+    ///    engine's counterpart is
+    ///    [`World::script_context_engages_player`](crate::world::World::script_context_engages_player):
+    ///    the modal timeline or any live concurrent helper record.
     /// 2. The scene mode - [`Self::scene_mode_takes_menu_open`].
     ///
     /// Note this is the *open* gate only. Whether the opened menu's **Save**
@@ -604,7 +605,7 @@ impl World {
     pub fn field_menu_open_allowed(&self) -> bool {
         self.scene_mode_takes_menu_open()
             && !self.dialogue_owns_input()
-            && !self.cutscene_timeline_active()
+            && !self.script_context_engages_player()
             && !self.shops.shop_open
             && !self.shops.prize_exchange_open
             && !self.cutscene_narration_active()

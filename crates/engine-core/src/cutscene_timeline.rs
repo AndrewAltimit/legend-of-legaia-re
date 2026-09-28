@@ -307,6 +307,11 @@ pub struct CutsceneTimeline {
     /// stepped past by this width, when the countdown drains.
     // REF: FUN_800204F8 (the latch), FUN_80039B7C (the per-frame re-entry)
     pub player_clip_wait: Option<usize>,
+    /// `true` once the context has taken its first frame slice. A spawned
+    /// helper holds the pad from then on (retail's engaged bit is raised by
+    /// the script runner's step, not by the spawn); see
+    /// `World::script_context_engages_player`.
+    pub stepped: bool,
 }
 
 /// State of a parked player compass walk (see
@@ -401,6 +406,7 @@ impl CutsceneTimeline {
             player_glide: None,
             player_clip_ticks: 0,
             player_clip_wait: None,
+            stepped: false,
         }
     }
 

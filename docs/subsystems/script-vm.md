@@ -692,8 +692,9 @@ walks the player out of the cave this way; the disassembler prints the op as
 that waits for a player gesture pokes the clip and spins on its end latch
 (`A2 F8 <clip>` / `AC F8 08` / `AD F8 08`), and when the clip binds from the
 scene bank the spin lasts the clip's frames. Engine port:
-`CutsceneTimeline::player_glide` and `player_clip_wait`, on a modal timeline
-only; the length accounting and the helper-context residue are in
+`CutsceneTimeline::player_glide` and `player_clip_wait`, on the modal
+timeline and on concurrent helpers alike (both hold the pad, as retail's
+engaged bit does); the length accounting and the pad rule are in
 [`field-locomotion.md`](field-locomotion.md#where-the-294-vsyncs-go).
 
 #### 0x39 GIVE_ITEM

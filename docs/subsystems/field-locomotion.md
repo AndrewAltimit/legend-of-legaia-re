@@ -2063,12 +2063,20 @@ the poked clip's length runs (`player_clip_ticks`, timed from the scene bundle's
 `SceneHost::load_scene` stores in `FieldLocomotion::scene_clip_frames`). A party-bank clip gets no
 timed latch - the locomotion loops latch every cycle - so a spin after one still steps past.
 
-Both parks are held on a **modal** timeline only. A concurrent helper context is a record retail
-also runs under the engaged bit, with the pad refused, but the port does not refuse the pad for
-helpers; moving the player from one would put the script and the pad on the player at once.
-`korout`'s first-visit record (`P2[3]`, `C1 F8 04 90`: eight tiles along `+Z` over 256 vsyncs) is
-the case that shows it, so a helper still yields past a player walk after one tick until helpers
-hold the pad the way a timeline does.
+Both parks hold on any spawned context, modal or not, because retail has one pad rule for all of
+them. A record `FUN_8003BDE0` spawns gets `+0x10 |= 0x100` and its script pointer
+(`0x8003C088..0x8003C0AC`), so the per-actor tick `FUN_8003BC08` steps it through
+`FUN_80039B7C` every frame (`jal` at `0x8003BD34`; the only other caller is the world-map entity
+SM at `0x801DA7BC`). The runner raises the player's engaged bit on every frame it steps a context
+and clears it only when the running count drains on the context's closing raw `0x21`, which also
+drops the context's `0x100` (`0x80039E68..0x80039F14`). So a concurrent helper record refuses the
+pad - walking, the action button and the menu button - from its first slice to its end, exactly
+as the modal timeline does; "modal" decides only the camera and the opening chain's beat sequencing.
+The engine's predicate is `World::script_context_engages_player` (the modal timeline or any live
+helper), which gates locomotion, the menu open and a prop touch. `korout`'s first-visit record
+(`P2[3]`, `C1 F8 04 90`: eight tiles along `+Z` over 256 vsyncs) is the helper case: it now walks
+the player with the pad refused, where the engine used to yield past the walk after one tick
+because the pad was still live.
 
 The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), the scripted-scene voice file. That call site is program 2's state `0x16`, and it is a seek-ahead (`CdlSeekL`, no read), not a stream: the voice itself is state `0x17`'s `FUN_8003D53C(0x10, 7, 0x135)` one-shot.
 

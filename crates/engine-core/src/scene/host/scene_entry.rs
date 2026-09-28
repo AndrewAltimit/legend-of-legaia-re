@@ -2004,7 +2004,8 @@ impl SceneHost {
         // prologue records - install as THE modal cutscene timeline (cutscene
         // camera + locomotion lock + the chain's beat sequencing); an
         // ordinary scene's mid-play helper spawn installs as a concurrent
-        // helper context that executes without seizing either.
+        // helper context that leaves the camera alone but, like the timeline,
+        // holds the pad while it runs (`World::script_context_engages_player`).
         let pending_spawns = std::mem::take(&mut self.world.field_vm.pending_record_spawns);
         if !pending_spawns.is_empty()
             && let Some(Ok(Some(man_bytes))) = self

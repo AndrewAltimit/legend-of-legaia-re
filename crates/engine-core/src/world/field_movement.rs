@@ -2751,7 +2751,9 @@ impl World {
         // the pad must not also walk the player out from under the cinematic
         // camera. Releases the frame the timeline drops (matches retail, where
         // free-roam control returns only after the opening choreography ends).
-        if self.cutscene_timeline_active() {
+        // A concurrent helper record holds the pad the same way (retail's
+        // engaged bit is raised for every context the script runner steps).
+        if self.script_context_engages_player() {
             return;
         }
         let Some(slot) = self.player_actor_slot else {
@@ -3347,7 +3349,7 @@ impl World {
         !actor.active
             || actor.move_state.flags & 0x0008_0000 != 0
             || self.dialogue_owns_input()
-            || self.cutscene_timeline_active()
+            || self.script_context_engages_player()
             || self.board.grid.is_some()
             || self.locomotion.ledge_hop.is_some()
             || self.player_script_arc_live()

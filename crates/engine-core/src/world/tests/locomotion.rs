@@ -322,10 +322,13 @@ fn cutscene_narration_roller_is_timer_driven_not_confirm_paced() {
 }
 
 #[test]
-fn locomotion_free_while_helper_context_active() {
-    // A concurrent helper context (a mid-play op-0x44 spawned record) is NOT
-    // cutscene-class: it must not lock pad locomotion or read as an active
-    // modal timeline (the camera-seize / NPC-motion stand-down gate).
+fn locomotion_held_while_helper_context_active() {
+    // A concurrent helper context (a mid-play op-0x44 spawned record) is not
+    // cutscene-class - it never reads as the modal timeline, so it leaves the
+    // camera and the NPC motions alone - but retail's script runner raises
+    // the player's engaged bit for every context it steps
+    // (`FUN_80039B7C` `0x80039DB8..0x80039DD4`), so the pad is refused until
+    // the record ends. This test used to assert the opposite.
     use crate::cutscene_timeline::CutsceneTimeline;
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -346,12 +349,24 @@ fn locomotion_free_while_helper_context_active() {
         !world.cutscene_timeline_active(),
         "a helper context never reads as the modal timeline"
     );
+    assert!(world.script_context_engages_player());
+    assert!(world.field_player_movement_locked());
+    assert!(
+        !world.field_menu_open_allowed(),
+        "the menu button is refused too"
+    );
     world.set_pad(input::PadButton::Up.mask());
     world.step_field_locomotion();
     assert_eq!(
-        world.actors[0].move_state.world_z, 208,
-        "pad-driven walk keeps running while a helper context executes"
+        world.actors[0].move_state.world_z, 200,
+        "the pad does not walk the player while a helper context runs"
     );
+    // The record ends: the pad is back on the next step.
+    world.field_vm.helper_contexts.clear();
+    assert!(!world.script_context_engages_player());
+    assert!(world.field_menu_open_allowed(), "and so is the menu button");
+    world.step_field_locomotion();
+    assert_eq!(world.actors[0].move_state.world_z, 208);
 }
 
 #[test]

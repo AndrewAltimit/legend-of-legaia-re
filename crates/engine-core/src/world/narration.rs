@@ -451,10 +451,11 @@ impl World {
     ///
     /// The non-cutscene-class counterpart to [`Self::install_spawned_record`]:
     /// retail runs every spawned record as an independent field-VM context and
-    /// only cutscene-class records seize the camera / lock locomotion, so an
-    /// ordinary scene's mid-play helper spawn goes here - it executes its
-    /// script (flag writes, channel pokes, moves) without the modal-timeline
-    /// attributes.
+    /// only cutscene-class records seize the camera, so an ordinary scene's
+    /// mid-play helper spawn goes here - it executes its script (flag writes,
+    /// channel pokes, moves) without the modal-timeline attributes. It still
+    /// holds the pad while it runs
+    /// ([`Self::script_context_engages_player`]).
     // REF: FUN_8003BDE0
     pub fn install_spawned_helper_record(
         &mut self,
@@ -679,6 +680,39 @@ impl World {
             .timeline
             .as_ref()
             .is_some_and(|t| !t.is_done())
+    }
+
+    /// `true` while a spawned field-VM context holds the player - the
+    /// engine's reading of retail's engaged bit `+0x10 & 0x80000` as the
+    /// script runner raises it.
+    ///
+    /// Retail has one rule for every script context, modal or not. A record
+    /// `FUN_8003BDE0` spawns gets `+0x10 |= 0x100` and a script pointer
+    /// (`0x8003C088..0x8003C0AC`), so the per-actor tick `FUN_8003BC08` steps
+    /// it through `FUN_80039B7C` every frame (`jal` at `0x8003BD34`). That
+    /// runner counts the frame into `*(0x801C6EA4)+0xA` and raises the
+    /// player's `0x80000` on **every** frame it steps a context
+    /// (`0x80039DB8..0x80039DD4`), and clears it only when the count drains
+    /// on the context's closing raw `0x21` (`0x80039EE8..0x80039F14`, which
+    /// also drops the context's `0x100`). The field tick `FUN_801D1344` skips
+    /// the pad controller `FUN_801D01B0` while the bit is up (`0x801D1694`).
+    /// So a concurrent helper record refuses the pad - walking, talking and
+    /// the menu button - from its first slice to its end, exactly like the
+    /// modal timeline; "modal" only decides the camera and the chain's beat
+    /// sequencing. A helper counts from its first slice: one installed this
+    /// tick has raised nothing yet, and one that runs to its end inside a
+    /// slice is dropped before the next pad read, as retail's same-frame
+    /// raise-and-clear leaves the bit down.
+    ///
+    /// REF: FUN_80039B7C (the raise and the clear), FUN_8003BC08 (`0x8003BD34`),
+    /// FUN_8003BDE0 (the `0x100` install), FUN_801D1344 (`0x801D1694`)
+    pub fn script_context_engages_player(&self) -> bool {
+        self.cutscene_timeline_active()
+            || self
+                .field_vm
+                .helper_contexts
+                .iter()
+                .any(|tl| tl.stepped && !tl.is_done())
     }
 
     /// `true` while a dialogue engagement owns the pad and the player.
@@ -910,6 +944,7 @@ impl World {
         modal: bool,
     ) -> bool {
         tl.frames = tl.frames.saturating_add(1);
+        tl.stepped = true;
         // The player's poked scene-bank clip plays one engine tick per
         // slice, parked or not - retail's clip tick runs every frame.
         tl.player_clip_ticks = tl.player_clip_ticks.saturating_sub(1);
@@ -1520,17 +1555,13 @@ impl World {
                     // Compass walk on the player (`B7 F8 b0 b1` / `C1 F8
                     // b0 b1`): park while the walk kernel plays the leg.
                     //
-                    // Modal timelines only. A concurrent helper context is a
-                    // record retail runs under the player's engaged bit - the
-                    // pad refused for its whole span - and the port does not
-                    // hold the pad for helpers, so moving the player from one
-                    // would put the script and the pad on the player at once
-                    // (`korout`'s first-visit walk). Helpers keep the old
-                    // one-tick yield until they hold the pad the way a
-                    // timeline does.
+                    // Modal timelines and concurrent helpers alike: both run
+                    // under the player's engaged bit, so the pad is refused
+                    // while the script walks the player
+                    // (`World::script_context_engages_player`; `korout`'s
+                    // first-visit walk is the helper case).
                     // REF: FUN_8003774C (the 0x37 / 0x41 arm)
-                    if modal
-                        && matches!(op, 0x37 | 0x41)
+                    if matches!(op, 0x37 | 0x41)
                         && let (Some(&body0), Some(&body1)) =
                             (tl.bytecode.get(pc + 2), tl.bytecode.get(pc + 3))
                     {
@@ -1552,10 +1583,7 @@ impl World {
                     }
                     // End-latch spin on the player (`AD F8 08`): park while
                     // the poked scene-bank clip is still playing.
-                    if modal
-                        && op == 0x2D
-                        && tl.bytecode.get(pc + 2) == Some(&8)
-                        && tl.player_clip_ticks > 0
+                    if op == 0x2D && tl.bytecode.get(pc + 2) == Some(&8) && tl.player_clip_ticks > 0
                     {
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;
@@ -1918,7 +1946,8 @@ impl World {
     /// running each through the shared [`Self::run_spawned_record_slice`]
     /// core (`modal = false`). Helper contexts execute alongside the modal
     /// cutscene timeline and the per-actor channels without seizing the
-    /// camera or locking locomotion; a context that completes (wrapped its
+    /// camera, but hold the pad while they run
+    /// ([`Self::script_context_engages_player`]); a context that completes (wrapped its
     /// choreography, ran off its bytecode, or hit the plain
     /// [`CUTSCENE_TIMELINE_MAX_FRAMES`] cap) is dropped from the table.
     // REF: FUN_8003BDE0

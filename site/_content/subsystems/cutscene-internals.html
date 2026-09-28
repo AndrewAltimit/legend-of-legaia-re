@@ -186,7 +186,7 @@
 
   <h3 id="engine-rules">Engine execution rules</h3>
   <ul class="bullets">
-    <li>Only cutscene-class records (the opening chain, gated walk-on beats) install as the modal timeline with camera seize and locomotion lock; an ordinary mid-play op-<code>0x44</code> spawn becomes a concurrent helper context that seizes nothing.</li>
+    <li>Only cutscene-class records (the opening chain, gated walk-on beats) install as the modal timeline with camera seize and locomotion lock; an ordinary mid-play op-<code>0x44</code> spawn becomes a concurrent helper context that leaves the camera alone but still refuses the pad until it ends - retail's script runner raises the player's engaged bit for every context it steps.</li>
     <li>Narration blocks are data, so the stepper installs the pages and advances the PC past the block; it holds only for a scene's last crawl (so the scene change waits) and when a roller is still scrolling.</li>
     <li>Camera beats <strong>merge</strong> into a persistent parameter set - one <code>opdeene</code> beat sets only <code>H</code> - cleared on scene entry.</li>
     <li>Completion is the choreography wrap: a backward jump onto an already-executed PC. Real waits (<code>0x4A</code>, flag handshakes, the <code>0x49</code> name-entry suspend) halt at their own PC.</li>
