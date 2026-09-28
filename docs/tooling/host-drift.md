@@ -2904,9 +2904,9 @@ native window draws them at the dim ambient.
 
 ## Gaps absent from both hosts: overworld curvature, ground shadow
 
-Two retail draws were missing from **both** play hosts, so no tier failed on
-them. Both now draw on both hosts through one kernel each; what is left of
-them, and the third gap still open, sits here in the form a waiver takes.
+Retail draws missing from **both** play hosts fail no tier. The ones below now
+draw on both hosts through one kernel each; what is left of them sits here in
+the form a waiver takes.
 
 **The overworld curvature table on the continent.** `FUN_800271A8` builds a
 depth-indexed screen-Y table every overworld consumer adds to `SY`
@@ -2934,6 +2934,17 @@ the kernel's packets to retail's exactly on three captured frames. The ignore
 list's `render_pipeline` scope row, which read the routine as replaced by the
 rasteriser with no drawing mechanism behind it, is gone, and so is the
 `libgte` row that read `FUN_800460AC`'s `RTPT` (`cop2 0x280030`) as `NCDS`.
+
+**The battle ground shadow and the default draw-kind-4 arm.** Both were
+missing from both hosts for one reason: their geometry is `FUN_80028158`'s,
+which neither host could build. It is ported as `engine-core::effect_default_arm`
+([`effect-vm.md`](../subsystems/effect-vm.md#the-default-arms-draw)), and both
+hosts reach it through lists they already drew or now draw side by side:
+`World::active_effect_kind4_draws` carries every live default-arm node next to
+the ribbons and sprite-arm quads, and `World::battle_ground_shadows` - one disc
+per battle body, judged by the draw plan the host's own actor pass uses - is
+drawn right after it by the native part pass and folded into the play page's
+battle FX frame. The minigames page draws no battle and has neither.
 
 **The `opdeene` plant silhouettes** ([above](#a-prologue-mesh-set-drawn-black-natively))
 were not a gap of this kind: the page drew them right, and the native defect
