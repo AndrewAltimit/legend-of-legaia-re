@@ -2917,6 +2917,16 @@ topics = ["field", "retock", "inn", "dialogue", "picker", "probe state"]
 
 [[scenarios]]
 slot = 255
+label = "town01_tetsu_topic_prompt"
+backup_fingerprint = "652584a3b64ffbefc196965e4a5adcea975c5851e879152ad3cc3eefe75b7478"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town01"
+description = "Rim Elm (town01), the sparring partner Tetsu's topic prompt on screen and waiting: the pager (FUN_801D84D0) is in page wait 0x19 on the page that ends on the 0x29 picker open byte, so one confirm press opens his 4-option list. Retail SCUS: from s4_rimelm_door_transition, autorun_replay_inputs.lua replays the recorded human route to Tetsu (captures/record_inputs inputs.csv) with LEGAIA_CKPT_FRAME=1290, then autorun_dialog_picker_open.lua (LEGAIA_PICKER_WAIT=20, LEGAIA_PICKER_CKPT=1) checkpoints the 0x19 entry that precedes state 0x17. The press drives 0x17 -> 0x18: the 244 x 56 box rises from y 240 to 148 at x 38 over twelve pager calls (frame step 2)."
+topics = ["field", "town01", "Tetsu", "dialogue", "picker", "probe state"]
+
+[[scenarios]]
+slot = 255
 label = "tunnelb_field_card_boot"
 backup_fingerprint = "91070cb51112e90b4a17d4fb9e9c0383cbc1976a0d6cd7ae9c914bca84b9aed9"
 phase = "field"
