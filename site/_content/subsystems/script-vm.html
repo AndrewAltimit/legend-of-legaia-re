@@ -182,7 +182,7 @@
       <tr><td><code>B</code></td><td>Undefined - the default arm halts</td></tr>
       <tr><td><code>C</code></td><td>Slot table writes (<code>CA CB CC</code>), sound trigger, control-word toggle</td></tr>
       <tr><td><code>D</code></td><td>Field SE, synchronous spawn, party search, VRAM STP-bit edits (<code>D4 D5</code>), timed flags (<code>D3</code>)</td></tr>
-      <tr><td><code>E</code></td><td>Text balloon, <strong>FMV trigger</strong> (<code>4C E2 lo hi</code>), camera teleport / zoom, XP add</td></tr>
+      <tr><td><code>E</code></td><td>Text balloon, <strong>FMV trigger</strong> (<code>4C E2 lo hi</code>), camera teleport / zoom, casino coin delta</td></tr>
       <tr><td><code>F</code></td><td>Only <code>FF</code> is valid (pass-through)</td></tr>
     </tbody>
   </table>
@@ -297,7 +297,7 @@
           <tr><td><code>packet_length</code></td><td><code>FUN_8003CA38</code></td><td>Length of one text packet: stop at a byte <code>&le; 0x1E</code>; a <code>0xCx</code> byte consumes its follower</td></tr>
           <tr><td><code>party_flag_test</code></td><td><code>FUN_8003CE64</code></td><td>Bit <code>idx</code> of a packed array, MSB-first; <code>0xFF</code> when set</td></tr>
           <tr><td><code>small_table_search</code></td><td><code>FUN_80042EE0</code></td><td>Find <code>needle</code> in the low byte of <code>table[i*2]</code> over <code>[lo, hi)</code>; <code>0x100</code> on miss</td></tr>
-          <tr><td><code>load_u16/u24/u32_le</code></td><td><code>FUN_8003CE9C / CEB8 / CED8</code></td><td>Little-endian immediates; the 24-bit form pairs with <code>sign_extend_24</code> for XP add</td></tr>
+          <tr><td><code>load_u16/u24/u32_le</code></td><td><code>FUN_8003CE9C / CEB8 / CED8</code></td><td>Little-endian immediates; the 24-bit form pairs with <code>sign_extend_24</code> for the casino coin delta</td></tr>
           <tr><td><code>tile_center</code></td><td>inlined in nine arms</td><td><code>0 &rarr; 0</code>; else <code>(b &amp; 0x7F) &lt;&lt; 7 | 0x40</code>, <code>+0x40</code> if the high bit is set</td></tr>
         </tbody>
       </table>

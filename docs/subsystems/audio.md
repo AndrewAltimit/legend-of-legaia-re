@@ -1484,12 +1484,18 @@ lines feed the same list through `World::queue_xa_prestage`:
   (`0x0A`..`0x0D`) and the round banner's `XA32` line for this round and the
   next (`baka_fighter_chrome::announcer_xa_prestage`). Each round advance lists
   the banner line one round further (`BakaChrome::take_xa_prestage`).
-- **Muscle Dome hub.** Each leg's opening lists the first visit's intro line
-  and its ROUND card (`muscle_ringside::hub_xa_prestage`).
+- **Muscle Dome hub.** The hub starts its first-visit intro line on the same
+  frame the leg opens, and the scene host drains a door warp inside the tick
+  whose field step armed it, so the hub's two lines (the intro and the ROUND
+  card, `muscle_ringside::hub_xa_prestage`) are listed before the door
+  instead: when a scene whose MAN carries a `3E 69` warp loads
+  (`field_xa::scene_minigame_door_xa_prestage` - koin1's course menu), and at
+  a launcher's `World::request_minigame_warp`, whose page export stages the
+  list before the next tick. Each leg's opening lists them again (a no-op
+  once staged).
 
 The native window reads a clip's span synchronously and drains the list
-unread. One line still stages on first use on the page: the dome intro, which
-the hub starts on the same frame the leg opens.
+unread.
 
 ## XA-ADPCM
 

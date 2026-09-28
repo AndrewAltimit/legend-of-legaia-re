@@ -868,9 +868,10 @@ all of it executes under one ladder now.
 | `minigame_floor.rs` | 2 | `801d2a10` `801d6028` | the fishing venue's floor solve |
 | `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | a duel played to a **player win** - a lost match installs no tally and two of the three stay dark |
 | `dance_tutorial.rs` | 1 | `801d0750` | `40:U`, the Disco King how-to |
-| `slot_machine.rs` | 1 | `801e6f70` | `40:O` - the empty coin bank sends the entry through the exchange counter |
 | `fishing.rs` (prize row remainder) | 1 | `801d092c` | a **committed** prize purchase; the panel alone stops one gate short |
 | `bin/.../window/field_render.rs` | 1 | `8001ada4` | any spawned `play-window` frame loop |
+
+**`801e6f70` left this ladder.** It was credited to `40:O`, whose empty-bank path bought coins through the quote; `O` now arms the mode-24 door warp like every other launcher, and the routine is the coin counter's entry panel, which runs only while op-`0x49` sub-op 6 has the counter open (`engine-core::field_submode_screen`). No native ladder rung opens that screen.
 
 **`801d765c` was credited to this ladder and is never entered.** The rung opens
 the fishing minigame and the wander actor runs, but

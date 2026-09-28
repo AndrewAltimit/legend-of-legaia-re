@@ -25,6 +25,8 @@ A disc-wide walk of every scene MAN finds five slot doors: three cabinet placeme
 
 The cabinet doors sit behind an entry gate, and the gate is a **coin-bank compare**, not an item check: the record's `0x4E` is sub-op `9`, whose value loader (`0x801E0B34`) reads the casino coin bank `_DAT_800845A4`, compared `<` against the literal `1`. Taking that branch jumps past the warp to the record's own refusal line; falling through runs the casino-coin debit `0x4C 0xE5` - the sub-op that exists **only** in the two casino scenes' MANs - a white fade, and then the `0x3E`. So a player with no coins never reaches mode 24, and the *first* `0x1F` text segment in a cabinet record is that refusal line, which is why entering the record anywhere but at its [interaction cursor](script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts) reads as "the door is shut".
 
+The debit is a fee, not a stake: one coin at each Baka Fighter cabinet (`4C E5 FF FF FF`, koin1 P1[51..53], before `3E 68`) and nothing at each slot cabinet (`4C E5 00 00 00`, P1[54..56], before `3E 67`), since the machine charges its own bets from the balance it copies in. The arm (`FUN_801DE840`, `0x801E328C..0x801E32E4`) adds the signed 24-bit operand to the bank, caps it at `9999999` with no lower clamp, and sets system flag 8. The engine runs it through `engine-core::casino_coin_bank` (`World::add_script_coins`) on the field VM's host hook; before that port the hook was a no-op on the world, so no script fee or price ever reached the bank.
+
 **Why `FUN_801cf0d8` has no caller.** It is not called; it is the `+0x08` tick word of the static 24-byte actor template at `0x801D3618`. The sub-id-3 init `FUN_801CEC94` materialises that template and spawns an actor from it (`jal FUN_80020DE0` at `0x801CEEA8`), and the per-frame pool walk reaches it through `jalr actor[+0x0C]` in `FUN_8002519C`.
 
 ## Reel state machine
@@ -335,11 +337,8 @@ machine's own marquee.
 
 The credit balance the player accumulates while playing lives in the **overlay-local** word `DAT_801d4114` (capped at `9999999` in the tally path, displayed capped at `99999` by the HUD). It is *not* the casino coin bank. **Confirmed.**
 
-The casino coin bank is the global `_DAT_800845A4` (u32). The slot machine touches it in exactly two places:
+The casino coin bank is the global `_DAT_800845A4` (u32). The slot machine itself touches it in exactly two places - the entry seed (below) and the cash-out commit:
 
-- **Read (exchange counter):** `FUN_801e6f70` (`overlay_slot_machine_801e6f70.txt`) renders the casino's **coin-exchange counter**, where coins are bought with gold. It reads `_DAT_800845A4` (current bank) for the "Your Coins" readout and `_DAT_8008459C` for "Your Gold" - that sibling word is the party's **gold**, not a record/high value. It does not modify either. **Confirmed.**
-
-  The counter's "Coins to Buy" entry field is eight single-digit cells stored least-significant-first; their accumulated value times a flat **100 gold per coin** is the "Total Cost" line. The sale is gated twice - on gold against the total, and on the counter's remaining stock (`_DAT_8007BB90`) against the coin count - and the total is drawn in the alert ink when *either* gate fails. Port: `engine-core::slot_machine::coin_exchange_quote`. **Confirmed.** The port is not wired - the host has no casino exchange screen, so nothing calls the quote outside the crate's tests.
 - **Write (cash-out commit):** state `100` of `FUN_801cf0d8` does `_DAT_800845A4 = DAT_801d4114` once the cash-out fade completes (`overlay_slot_machine_801cf0d8.txt`, the `_DAT_800845a4 = DAT_801d4114` store). So the bank is **assigned the final playing balance on exit**, not debited/credited per spin. **Confirmed.**
 
 This is why the "Infinite Coins" cheat (`0x800845A4 = 0x05F5E0FF`, see [`cheats.md`](../reference/cheats.md)) works at the casino but does **not** make individual spins free: per-spin betting decrements the *overlay-local* `DAT_801d4114` (loaded from the bank when the machine opens). The cheat-database pointer noted "near `0x801d3cac`" lands in this overlay's state block - `DAT_801d3cac` is the **feature mode**, and the surrounding `0x801d3c80..0x801d4134` window holds the RNG seed, reel positions, state word, balance, submenu cursor and payout counters described in the table below. **Confirmed** address window from the disassembly; the specific cheat-pointer semantics are **Inferred**.
@@ -347,6 +346,26 @@ This is why the "Infinite Coins" cheat (`0x800845A4 = 0x05F5E0FF`, see [`cheats.
 Per-spin betting (**Confirmed**, state `1` of `FUN_801cf0d8`): every spin is a **flat charge** - `DAT_801d4114 -= 3` in the normal modes 0..3 (the overlay's "insert 3 coins" instruction text), `-= 1` in the feature modes 4..6 (so a bonus "free spin" actually costs 1 coin). The same branch accrues the net-take counter: `DAT_801d3d40 += 6` per normal spin, `+= 1` per feature spin. The `< 3` not-enough gate runs before the mode check, so even a 1-coin feature spin needs 3 banked. All five paylines play on every spin - the per-reel line masks `DAT_801d3d10/14/18` are match bookkeeping the win eval and the reach scanner fill at stop time, not player bet selections, and `DAT_801d4110` is the cash-out submenu cursor (its only role).
 
 Session entry (**Confirmed**, `FUN_801cec94` - see the init section above): `DAT_801d4114 = _DAT_800845A4`, with the 70-coin dev fallback when the battle-return flag is clear. So the bank round-trips by assignment on both ends: copied in at entry, assigned back at the state-`100` commit.
+
+### The coin-exchange counter is a field-overlay screen
+
+Coins are bought with gold at a counter, not inside the slot overlay. The counter is the field VM's op-`0x49` sub-op 6 (the koin1 / balden counters), which runs submode handler slot `0x25`, `FUN_801F0ADC`, in the **field overlay** (PROT 0897, base `0x801CE818`). The state machine (entry, Yes/No, commit of coins into `_DAT_800845A4` and gold out of `_DAT_8008459C`) is ported as `engine-vm::baka_hub_actors::coin_exchange`.
+
+`FUN_801E6F70` is the counter's **entry panel**. It is not slot-machine code: the extent attribution (`scripts/ghidra-analysis/dump-extent-attribution.csv`) puts its bytes in PROT 0897 and nowhere else, and the `overlay_slot_machine_801e6f70.txt` dump is the same resident field-overlay code seen through a minigame capture. It is the painter word (`+0x18`) of record `10` of the field overlay's panel-window table at `0x801F2B98`, and the counter's idle descriptor `0x801F3340` (`[5, 0] [6, 10] [1, 10]`) is what opens that record. From the image bytes, relative to the window actor's origin `(x, y)` - record 10's geometry, `(0x40, 0x26)`:
+
+| Row | Pen | What it draws |
+|---|---|---|
+| `y + 2` | 7 | label `0x801CF0D4`, then the coin bank as an 8-cell number at `x + 0x78` |
+| `y + 0x12` | 6 | label `0x801CF0E0`, then entry cells `5..=0` one digit each from `x + 0x88`, 8 px apart |
+| `y + 0x1D` | - | system-UI cell `0x67` at `x + 0xB0 - 8 * cursor`, while `cursor < 10` and the play clock `_DAT_80084570 & 0xC` is non-zero |
+| `y + 0x30` | 7 | label `0x801CF0F0`, then party gold, 8 cells at `x + 0x78` |
+| `y + 0x40` | 7, then 5 or 9 | label `0x801CF0FC`, then the total cost, 8 cells at `x + 0x78` |
+
+The entry value is the eight signed cells at `0x801F35F0` accumulated least-significant first (`0x801E6FB8..0x801E6FE4`); only cells `0..=5` are drawn, so the two top cells count toward the total without showing. The total is `entry * 100` (`0x801E7138`), drawn in pen 9 when party gold is below it or when the published ceiling `_DAT_8007BB90` is below the entry (`0x801E7148..0x801E7174`), else pen 5. That ceiling is not a counter stock: the state machine's head writes `min(gold / 100, 9999999 - bank)` there every frame. The epilogue restores pen 7. Port: `engine-core::slot_machine::coin_entry_panel` (with `coin_entry_value` / `coin_exchange_quote`).
+
+The Yes/No confirm opens record `11` (`FUN_801F1890`, the three-line panel) with the descriptor `0x801F3360`, whose program is `[1, 11]` alone. The installer `FUN_801E9B3C` dispatches a descriptor entry's op through the table at `0x801CF25C`, and op `5` is `FUN_80035A4C`, a walk of the live window list that starts the close of every window still opening or open. The confirm program has no op `5`, so the entry panel stays drawn **under** the Yes/No; when the player backs out of it, the state machine re-installs the idle program, whose leading op `5` closes the Yes/No and whose op `1` re-opens the entry panel. A painter's `a0` is the window's actor, which op `1` places at the record's geometry through `FUN_800357FC` (target x / y into the actor's `+0x0A` / `+0x0C`).
+
+Both hosts draw the counter through one builder: `engine-core::field_submode_screen::coin_counter_lines` resolves the entry panel and the confirm's hub-painter draws to positioned, pen-tagged lines with the labels read off the user's disc, and `engine-ui::ui_text_lines::pen_line_draws_for` turns them into text draws on the native window and the play page. The window frames and the two system-UI sprites (the hand cursor, the caret cell) are text stand-ins. Disc-gated `casino_coin_counter_disc` pins the labels off PROT 0897.
 
 ## RAM state
 
@@ -386,7 +405,7 @@ All overlay-local; the block clusters in `0x801d3c80..0x801d4140`. **Confirmed**
 | `DAT_801d4114` | **player credit balance** (seeded from `_DAT_800845A4` at entry, committed back on exit) |
 | `DAT_801d4134` | per-spin landing jitter (`rand%5`) |
 | `_DAT_800845A4` | global casino **coin bank** (written on cash-out; read by the HUD) |
-| `_DAT_8008459C` | coin record / high value (HUD compare) |
+| `_DAT_8008459C` | party **gold** (read by the field overlay's coin counter, not by this overlay) |
 
 HUD-art and payout tables (overlay rodata; **values** decode from the disc, not reproduced here):
 
@@ -429,7 +448,7 @@ The payout table is exactly 10 bytes - one per symbol id, the index range `FUN_8
 | `FUN_800172c0` | the per-frame **scene camera** the machine's 3D emits project through (SCUS) |
 | `FUN_800195a8` | the **billboard projector** (SCUS): view-space centre + half-extent -> projected quad |
 | `FUN_8005bac8` / `FUN_8003d368` | `RotTransPers4` / `RTPS` (SCUS GTE wrappers) |
-| `FUN_801e6f70` | coin-exchange counter: cost at 100 gold/coin + gold/stock gates - `overlay_slot_machine_801e6f70.txt` |
+| `FUN_801e6f70` | **not this overlay's**: the field overlay's coin-counter entry panel (PROT 0897) - see [the coin-exchange counter](#the-coin-exchange-counter-is-a-field-overlay-screen) |
 
 The overlay is **extraction PROT 975** (dev module `other4`), loaded by the **mode-24 minigame
 door-warp** as sub-id 3 (field-VM op `0x3E` with `op0 = 103`; `FUN_80025980` →
@@ -462,7 +481,7 @@ The engine-side reconstructions (each marked at its site): the spin-up pacing co
 
 Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`, which performs the state-100 bank commit into `World::minigames.casino_coins` = `_DAT_800845A4`). The `play-window` viewer's `O` key arms the mode-24 door warp with sub-id 3 (`World::request_minigame_warp`, the call the browser page's `play_mg_debug_warp` makes), so the session is the one a cabinet installs, its balance assigned from the coin bank; Cross spins / stops / collects.
 
-A launcher is the `0x3E` arm, not the cabinet record around it: the coin-bank compare that refuses an empty bank at the door is that record's script, which the field VM runs on a walked door on both hosts, and a bank below three coins that does reach the machine meets its own state-1 gate. The ported coin-exchange counter (`coin_exchange_quote`, `FUN_801E6F70`) is not an entry path. Disc-gated `slot_minigame_real` drives real-table spins through the World pad path.
+A launcher is the `0x3E` arm, not the cabinet record around it: the coin-bank compare that refuses an empty bank at the door is that record's script, which the field VM runs on a walked door on both hosts, and a bank below three coins that does reach the machine meets its own state-1 gate. The coin-exchange counter is not an entry path either; it is its own field-VM screen ([above](#the-coin-exchange-counter-is-a-field-overlay-screen)). Disc-gated `slot_minigame_real` drives real-table spins through the World pad path.
 
 ## Rendering - a 3D scene
 
