@@ -1517,6 +1517,14 @@ impl PlayWindowApp {
     /// shared `engine-ui` builder, so the browser play page draws the exact
     /// same panel from the exact same model.
     pub(super) fn battle_spoils_draws(&self, surface_w: u32, surface_h: u32) -> Vec<TextDraw> {
+        if let Some(defeat) = self.session.host.world.battle_defeat_banner() {
+            let windows = legaia_engine_render::battle_defeat_windows(defeat.line.as_deref());
+            let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+            let mut draws =
+                legaia_engine_render::battle_result_line_draws_for(&self.font, &windows);
+            legaia_engine_render::scale_stage_text_draws(&mut draws, origin, scale);
+            return draws;
+        }
         let Some(banner) = self.session.host.world.battle_spoils_banner() else {
             return Vec::new();
         };
@@ -1556,10 +1564,20 @@ impl PlayWindowApp {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_render::SpriteDraw> {
-        let Some(banner) = self.session.host.world.battle_spoils_banner() else {
+        let Some(rects) = self.save_menu.as_ref().map(|a| &a.rects) else {
             return Vec::new();
         };
-        let Some(rects) = self.save_menu.as_ref().map(|a| &a.rects) else {
+        // The loss window (screen element `0x42`) shares the report frame.
+        if let Some(defeat) = self.session.host.world.battle_defeat_banner() {
+            let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+            return legaia_engine_render::battle_defeat_windows(defeat.line.as_deref())
+                .iter()
+                .flat_map(|w| {
+                    legaia_engine_render::menu_window_chrome_draws_for(rects, w.rect, origin, scale)
+                })
+                .collect();
+        }
+        let Some(banner) = self.session.host.world.battle_spoils_banner() else {
             return Vec::new();
         };
         let leader = self.battle_spoils_leader();
