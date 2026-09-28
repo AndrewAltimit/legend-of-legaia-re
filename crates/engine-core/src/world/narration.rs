@@ -842,8 +842,9 @@ impl World {
             // confirm the player did not make.
             let confirm = confirm || panel.take_auto_press();
             if confirm {
-                if panel.menu_active() && !menu_was_open {
-                    // Opened this frame: nothing to commit yet.
+                if panel.menu_active() && (!menu_was_open || !panel.picker_takes_input()) {
+                    // Opened this frame, or still sliding in (the pager reads the
+                    // choice only once the slide rests): nothing to commit yet.
                 } else if panel.menu_active() {
                     // NB: unlike the inline runner's picker commit, the wrap
                     // map is NOT cleared here. A cutscene record's picker
@@ -2624,8 +2625,9 @@ impl World {
             // confirm the player did not make.
             let confirm = confirm || panel.take_auto_press();
             if confirm {
-                if panel.menu_active() && !menu_was_open {
-                    // The menu opened this frame: show it, commit next frame.
+                if panel.menu_active() && (!menu_was_open || !panel.picker_takes_input()) {
+                    // The menu opened this frame, or still slides in: show it,
+                    // commit once the pager reads the choice (`dialog_picker_slide`).
                 } else if panel.menu_active() {
                     // Commit the choice: apply the option's relative jump and
                     // resume the VM at the branch handler (its flag-sets /

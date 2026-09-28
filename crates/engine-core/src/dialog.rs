@@ -271,6 +271,10 @@ pub struct OwnedDialogPanel {
     /// `true` once the prompt has finished typing and the menu is awaiting a
     /// choice. Only meaningful when [`Self::picker`] is `Some`.
     menu_active: bool,
+    /// The open menu's slide onto the screen ([`crate::dialog_picker_slide`]):
+    /// set by the press that opens it, advanced one step per pager call.
+    /// `None` while no menu is open.
+    picker_slide: Option<crate::dialog_picker_slide::PickerSlide>,
     /// Name-substitution table for the MES `0xC1..0xC7` escapes, keyed by
     /// `(`[`substitute_kind_key`]`, arg)`. Retail resolves these against the
     /// live name tables (`0xC1` = character, `0xC2`/`0xC4` = item, ...); a
@@ -367,6 +371,7 @@ impl OwnedDialogPanel {
             picker: None,
             picker_cursor: 0,
             menu_active: false,
+            picker_slide: None,
             substitutions: None,
             current_box: None,
             pending_box_advance: false,
@@ -673,7 +678,7 @@ impl OwnedDialogPanel {
     /// Returns the chosen option index, or `None` if no menu is active.
     // PORT: FUN_80038050
     pub fn confirm_menu(&mut self) -> Option<usize> {
-        if !self.menu_active {
+        if !self.picker_takes_input() {
             return None;
         }
         let picker = self.picker.as_ref()?;
@@ -686,6 +691,7 @@ impl OwnedDialogPanel {
             .map(|rel| target + rel);
         self.page.clear();
         self.menu_active = false;
+        self.picker_slide = None;
         self.waiting_for_input = false;
         self.picker_cursor = 0;
         match next_lead {
@@ -719,15 +725,62 @@ impl OwnedDialogPanel {
         self.picker_cursor
     }
 
-    /// Move the menu cursor by `delta`, wrapping within `0..n`. No-op when the
-    /// box isn't a menu.
+    /// The open menu's slide state, if a menu is open.
+    pub fn picker_slide(&self) -> Option<&crate::dialog_picker_slide::PickerSlide> {
+        self.picker_slide.as_ref().filter(|_| self.menu_active)
+    }
+
+    /// The picker box's centre rect `(x, y, w, h)` in 320x240 stage pixels
+    /// this frame - somewhere on its slide, or at rest - or `None` when no
+    /// menu is open or the slide has not started (the press's sentinel,
+    /// which retail draws as no box). Both hosts draw the box and its labels
+    /// here; `0x2A` rests at the top right, the N-option lists at the bottom.
+    pub fn picker_rect(&self) -> Option<(i32, i32, i32, i32)> {
+        self.picker_slide()?.rect()
+    }
+
+    /// The option hand is drawn: the slide has come to rest (count 0).
+    pub fn picker_hand_drawn(&self) -> bool {
+        self.picker_slide().is_some_and(|s| s.hand_drawn())
+    }
+
+    /// The open menu takes Up/Down and confirm: the slide came to rest on an
+    /// earlier pager call. `false` while it slides, and when no menu is open.
+    pub fn picker_takes_input(&self) -> bool {
+        self.menu_active && self.picker_slide.as_ref().is_none_or(|s| s.takes_input())
+    }
+
+    /// Move the menu cursor by `delta` - wrapping within `0..n`, or clamping
+    /// at the ends for a `0x2A` menu (the shared cursor handler at
+    /// `0x801D941C` tests for its state `0x12`). No-op when the box isn't a
+    /// menu, and while an open menu still slides in.
     pub fn move_picker_cursor(&mut self, delta: i32) {
+        if self.menu_active && !self.picker_takes_input() {
+            return;
+        }
         if let Some(p) = &self.picker
             && p.n > 0
         {
             let n = p.n as i32;
-            self.picker_cursor = (((self.picker_cursor as i32 + delta) % n + n) % n) as usize;
+            let next = self.picker_cursor as i32 + delta;
+            self.picker_cursor = if legaia_mes::picker_cursor_clamps(p.open_byte) {
+                next.clamp(0, n - 1) as usize
+            } else {
+                ((next % n + n) % n) as usize
+            };
         }
+    }
+
+    /// Open the menu: set it active with its slide state - the press's
+    /// sentinel on the pager path, at rest where no press opens it.
+    fn open_menu(&mut self, pressed: bool) {
+        self.menu_active = true;
+        let open_byte = self.picker.as_ref().map_or(0x27, |p| p.open_byte);
+        self.picker_slide = Some(if pressed && self.window.is_some() {
+            crate::dialog_picker_slide::PickerSlide::pressed(open_byte)
+        } else {
+            crate::dialog_picker_slide::PickerSlide::at_rest(open_byte)
+        });
     }
 
     pub fn set_glyphs_per_frame(&mut self, n: u8) {
@@ -826,6 +879,10 @@ impl OwnedDialogPanel {
             return self.state;
         }
         if self.menu_active {
+            // The open menu's pager call: its slide advances a step.
+            if run && let Some(slide) = self.picker_slide.as_mut() {
+                slide.call(dt);
+            }
             self.state = PanelState::PageBreak;
             return self.state;
         }
@@ -866,7 +923,7 @@ impl OwnedDialogPanel {
             // picker states only inside `0x19`'s press arm - no other store
             // of `0x11` / `0x13` / `0x15` / `0x17` exists in the pager).
             if self.menu_opens_at_wait {
-                self.menu_active = true;
+                self.open_menu(false);
             } else {
                 self.menu_pending = true;
             }
@@ -1014,7 +1071,7 @@ impl OwnedDialogPanel {
         // `FUN_80038050` reads the chosen index here and jumps via the
         // picker's relative-offset table.
         if self.picker.is_some() && !self.menu_active {
-            self.menu_active = true;
+            self.open_menu(false);
             self.waiting_for_input = true;
             self.state = PanelState::PageBreak;
         } else {
@@ -1039,8 +1096,9 @@ impl OwnedDialogPanel {
         }
         if std::mem::take(&mut self.menu_pending) {
             // The press on a prompt that ends on a picker open byte opens the
-            // menu; the choice is the next press.
-            self.menu_active = true;
+            // menu, which slides in before it takes the choice
+            // ([`crate::dialog_picker_slide`]).
+            self.open_menu(true);
             self.state = PanelState::PageBreak;
             return;
         }
@@ -1107,6 +1165,17 @@ mod tests {
             }
         }
         panic!("the panel never stopped typing");
+    }
+
+    /// Tick an open menu until its slide comes to rest and it takes input.
+    fn slide_in(panel: &mut OwnedDialogPanel) {
+        for _ in 0..128 {
+            if panel.picker_takes_input() {
+                return;
+            }
+            panel.tick();
+        }
+        panic!("the menu never came to rest");
     }
 
     /// Minimal Compact-format MES blob: a single message with three glyphs
@@ -1204,6 +1273,7 @@ mod tests {
         assert!(!panel.is_done(), "menu box is not Done");
         panel.advance_page();
         assert!(panel.menu_active(), "the press opens the menu");
+        slide_in(&mut panel);
         let opts = panel.picker().unwrap();
         assert_eq!(opts.options.len(), 2);
         assert_eq!(opts.options[0].label, b"Yes");
@@ -1248,6 +1318,7 @@ mod tests {
         type_until_wait(&mut panel);
         panel.advance_page();
         assert!(panel.menu_active());
+        slide_in(&mut panel);
         panel.move_picker_cursor(1);
         assert_eq!(panel.confirm_menu(), Some(1));
         assert!(!panel.menu_active(), "menu resolved");
@@ -1259,11 +1330,82 @@ mod tests {
         type_until_wait(&mut panel);
         assert_eq!(panel.confirm_menu(), None, "no menu before the press");
         panel.advance_page();
+        assert_eq!(panel.confirm_menu(), None, "the menu is still sliding in");
+        slide_in(&mut panel);
         assert_eq!(panel.confirm_menu(), Some(0));
         type_until_wait(&mut panel);
         // The two reply lines are consecutive `0x1F` rows, so they share the
         // box; the chosen reply is its first row.
         assert!(panel.page_bytes().starts_with(b"Y!"));
+    }
+
+    /// The press opens the menu hidden (sentinel), the box rises from
+    /// `y = 0xF0` to its rest rect over thirteen pager calls at frame step 2,
+    /// and Up/Down + confirm do nothing until the call after it rests - the
+    /// pager's picker slide ([`crate::dialog_picker_slide`]). A `0x2A` menu
+    /// rests at the top right instead, and its cursor clamps.
+    #[test]
+    fn a_menu_slides_in_before_it_takes_input() {
+        let build = |open_byte: u8| {
+            let mut b = vec![0x1F, b'O', b'K', b'?', 0x00];
+            b.push(open_byte);
+            b.extend_from_slice(&0x10i16.to_le_bytes());
+            b.extend_from_slice(&0x20i16.to_le_bytes());
+            b.push(0x24);
+            b.extend_from_slice(&[0x1F, b'Y', b'e', b's', 0x00]);
+            b.extend_from_slice(&[0x1F, b'N', b'o', 0x00]);
+            b.resize(48, 0x21);
+            b
+        };
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&build(0x27)).unwrap();
+        type_until_wait(&mut panel);
+        panel.advance_page();
+        assert!(panel.menu_active());
+        assert_eq!(
+            panel.picker_rect(),
+            None,
+            "the press's sentinel draws no box"
+        );
+        assert!(!panel.picker_takes_input());
+        let mut ys = Vec::new();
+        let mut vsyncs = 0;
+        while !panel.picker_takes_input() {
+            panel.tick_at(2);
+            vsyncs += 1;
+            // Input stays shut while it slides: the cursor and a confirm do
+            // nothing.
+            if !panel.picker_takes_input() {
+                panel.move_picker_cursor(1);
+                assert_eq!(panel.picker_cursor(), 0);
+                assert_eq!(panel.confirm_menu(), None);
+            }
+            if let Some((x, y, w, h)) = panel.picker_rect()
+                && ys.last() != Some(&y)
+            {
+                assert_eq!((x, w, h), (0x26, 0xF4, 0x1A));
+                ys.push(y);
+            }
+            assert!(vsyncs < 64);
+        }
+        assert_eq!(ys.first(), Some(&0xF0));
+        assert_eq!(ys.last(), Some(&0xA3));
+        assert!(panel.picker_hand_drawn());
+        panel.move_picker_cursor(1);
+        assert_eq!(panel.picker_cursor(), 1);
+        assert_eq!(panel.confirm_menu(), Some(1));
+
+        let mut inn = OwnedDialogPanel::from_inline_dialog(&build(0x2A)).unwrap();
+        type_until_wait(&mut inn);
+        inn.advance_page();
+        inn.tick_at(2);
+        assert_eq!(inn.picker_rect(), Some((0x150, 0x4A, 0x58, 0x1A)));
+        slide_in(&mut inn);
+        assert_eq!(inn.picker_rect(), Some((0xD8, 0x4A, 0x58, 0x1A)));
+        inn.move_picker_cursor(-1);
+        assert_eq!(inn.picker_cursor(), 0, "a 0x2A cursor clamps at the top");
+        inn.move_picker_cursor(1);
+        inn.move_picker_cursor(1);
+        assert_eq!(inn.picker_cursor(), 1, "and at the bottom");
     }
 
     /// `confirm_menu` is a no-op (returns `None`) when no menu is active.

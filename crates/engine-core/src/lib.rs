@@ -61,6 +61,7 @@ pub mod dev_menu;
 pub mod dev_menu_host;
 pub mod dialog;
 pub mod dialog_pacing;
+pub mod dialog_picker_slide;
 pub mod dialog_window;
 pub mod drop_shadow;
 pub mod encounter;

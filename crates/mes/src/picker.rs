@@ -11,7 +11,13 @@
 //! | `0x27` | 2 (`Yes`/`No`-style) | `0x13` -> `0x14` |
 //! | `0x28` | 3 | `0x15` -> `0x16` |
 //! | `0x29` | 4 | `0x17` -> `0x18` |
-//! | `0x2A` | 2, box geometry animated first | `0x11` -> `0x12` |
+//! | `0x2A` | 2, top-right box, cursor clamps | `0x11` -> `0x12` |
+//!
+//! Every entry state is a **slide**, not a resize: the box moves from off
+//! screen to its rect over a fixed span and only the active state takes input
+//! (`docs/formats/mes.md`, "The picker slide"). [`picker_box_rect`] and
+//! [`picker_slide_start`] give the two literal geometries the entry arms
+//! write; the slide itself is `legaia_engine_core::dialog_picker_slide`.
 //!
 //! `0x2A`'s arity is not in the post-page dispatch chain (which only names the
 //! entry state) but in the shared cursor handler at `0x801D941C`, whose option
@@ -109,14 +115,67 @@ impl Picker {
 /// Number of options implied by an open byte, or `None` if it isn't one.
 fn option_count(open_byte: u8) -> Option<usize> {
     match open_byte & 0x7f {
-        // `0x2A` is the box-resize sibling of `0x27`: same 2-option wire
+        // `0x2A` is the top-right sibling of `0x27`: same 2-option wire
         // format, different pager entry state (`0x11` -> active `0x12`
-        // instead of `0x13` -> `0x14`), and a cursor that clamps rather than
-        // wraps. See the module docs.
+        // instead of `0x13` -> `0x14`), a fixed small box that slides in from
+        // the right edge, and a cursor that clamps rather than wraps. See the
+        // module docs.
         0x27 | 0x2A => Some(2),
         0x28 => Some(3),
         0x29 => Some(4),
         _ => None,
+    }
+}
+
+/// The picker box's resting rect `(x, y, w, h)` in 320x240 stage pixels for
+/// an open byte, or `None` if it isn't one - the target the entry arm writes
+/// to the pager actor's `+0x14/+0x16` and size `+0x24/+0x26`:
+///
+/// - `0x2A`: the fixed top-right box `(0xD8, 0x4A, 0x58, 0x1A)`
+///   (`0x801D9314..0x801D934C` in the field overlay, PROT 0897);
+/// - `0x27` / `0x28` / `0x29` with `N` = 2 / 3 / 4 options:
+///   `(0x26, 0x94 + ((4-N)*0xF)/2, 0xF4, 0x38 - (4-N)*0xF)`
+///   (`0x801D9398..0x801D93F0`) - a 244-wide box whose height shrinks
+///   15 px per absent option, recentred on the 4-option anchor.
+pub fn picker_box_rect(open_byte: u8) -> Option<(i16, i16, i16, i16)> {
+    match open_byte & 0x7f {
+        0x2A => Some((0xD8, 0x4A, 0x58, 0x1A)),
+        b => {
+            let n = option_count(b)? as i16;
+            let short = (4 - n) * 0xF;
+            Some((0x26, 0x94 + short / 2, 0xF4, 0x38 - short))
+        }
+    }
+}
+
+/// Where the picker box starts its slide `(x, y)` (the entry arm's `+0x3C` /
+/// `+0x3E`): `0x2A` enters from past the right edge at `(0x150, 0x4A)`, the
+/// N-option lists rise from the bottom edge at `(0x26, 0xF0)`.
+pub fn picker_slide_start(open_byte: u8) -> Option<(i16, i16)> {
+    match open_byte & 0x7f {
+        0x2A => Some((0x150, 0x4A)),
+        b => option_count(b).map(|_| (0x26, 0xF0)),
+    }
+}
+
+/// Whether the active state's cursor clamps at the list ends instead of
+/// wrapping: only `0x2A`'s (state `0x12`). The shared cursor handler
+/// (`0x801D941C`) tests the state for `0x12` on both the Up-at-0 and the
+/// Down-at-last arms and stores the end index there, the wrapped one
+/// otherwise.
+pub fn picker_cursor_clamps(open_byte: u8) -> bool {
+    open_byte & 0x7f == 0x2A
+}
+
+impl Picker {
+    /// [`picker_box_rect`] for this picker's open byte.
+    pub fn box_rect(&self) -> (i16, i16, i16, i16) {
+        picker_box_rect(self.open_byte).unwrap_or((0x26, 0x94, 0xF4, 0x38))
+    }
+
+    /// [`picker_slide_start`] for this picker's open byte.
+    pub fn slide_start(&self) -> (i16, i16) {
+        picker_slide_start(self.open_byte).unwrap_or((0x26, 0xF0))
     }
 }
 
@@ -341,5 +400,24 @@ mod tests {
         assert_eq!(p.jump_target(0), Some(open + 1 + 0x10));
         // scan_pickers finds it (the open byte is preceded by the prompt 0x00)
         assert_eq!(scan_pickers(&b).len(), 1);
+    }
+
+    /// The entry arms' literal geometry: `0x2A`'s fixed top-right box, the
+    /// N-option box recentred on the 4-option anchor, and the two starts.
+    #[test]
+    fn box_rect_and_slide_start_follow_the_entry_arms() {
+        assert_eq!(picker_box_rect(0x2A), Some((0xD8, 0x4A, 0x58, 0x1A)));
+        assert_eq!(picker_box_rect(0xAA), Some((0xD8, 0x4A, 0x58, 0x1A)));
+        assert_eq!(picker_box_rect(0x29), Some((0x26, 0x94, 0xF4, 0x38)));
+        assert_eq!(picker_box_rect(0x28), Some((0x26, 0x9B, 0xF4, 0x29)));
+        assert_eq!(picker_box_rect(0x27), Some((0x26, 0xA3, 0xF4, 0x1A)));
+        assert_eq!(picker_box_rect(0x24), None);
+        assert_eq!(picker_slide_start(0x2A), Some((0x150, 0x4A)));
+        for b in [0x27, 0x28, 0x29] {
+            assert_eq!(picker_slide_start(b), Some((0x26, 0xF0)));
+        }
+        assert_eq!(picker_slide_start(0x48), None);
+        assert!(picker_cursor_clamps(0x2A));
+        assert!(!picker_cursor_clamps(0x27));
     }
 }

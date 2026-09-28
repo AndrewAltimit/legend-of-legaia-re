@@ -319,6 +319,12 @@ impl InlineDialogue {
         self.panel.as_ref().and_then(|p| p.picker())
     }
 
+    /// The open menu has slid in and takes Up / Down and confirm
+    /// ([`crate::dialog::OwnedDialogPanel::picker_takes_input`]).
+    pub fn picker_takes_input(&self) -> bool {
+        self.panel.as_ref().is_some_and(|p| p.picker_takes_input())
+    }
+
     /// Highlighted option index of the open menu box.
     pub fn picker_cursor(&self) -> usize {
         self.panel.as_ref().map_or(0, |p| p.picker_cursor())

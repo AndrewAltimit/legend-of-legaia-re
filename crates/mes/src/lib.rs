@@ -54,7 +54,10 @@ pub use interp::{
     DialogPlayer, EventStats, Interpreter, MesEvent, PlayerState, SubstituteKind,
     extract_all_messages, extract_message,
 };
-pub use picker::{Picker, PickerOption, parse_picker_at, scan_pickers};
+pub use picker::{
+    Picker, PickerOption, parse_picker_at, picker_box_rect, picker_cursor_clamps,
+    picker_slide_start, scan_pickers,
+};
 
 use anyhow::{Result, bail};
 use serde::Serialize;
