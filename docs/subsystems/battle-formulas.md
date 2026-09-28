@@ -1452,7 +1452,12 @@ The engine's `legaia_engine_vm::status_effects` byte map follows this table
 the earlier external-notes reading `4` = Sleep / `5` = Confuse is replaced -
 those kinds remain host-drivable with no on-disc byte). The retail limb-bit →
 command-arrow map is now pinned (see
-[arts-command-gauge.md § status limb gating](arts-command-gauge.md#status-limb-gating)),
+[arts-command-gauge.md § status limb gating](arts-command-gauge.md#status-limb-gating))
+and the port gates by it on every path: the arts entry drops a rotted
+direction with cue `0x23` (`arts_command_input::rot_blocks`, read against
+every rolled limb), and the ring refuses Attack at `0x38` and Magic under
+Curse with the same cue (`ring_arm_refused`, `0x801D1434` / `0x801D1560`);
+the crosses retail draws over refused arms are drawn by neither host;
 and bytes `1`/`2` are resolved as purely cosmetic lingering visuals. The **one**
 remaining status-applier gap is the setter for `+0x16E` bit `0x400` - a
 guard-disabling status (read at `801ec3e4:2640` and the AI picker
