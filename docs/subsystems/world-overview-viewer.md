@@ -60,8 +60,8 @@ terrain-type-keyed multi-page atlas. This is the bulk ground (grass /
 mountain / water / forest), distinct from the sparse slot-1 landmark
 meshes layered on top. The heightfield model and per-cell texturing are
 pinned in [`world-map.md`](world-map.md) "Ground texturing"; the surface
-math is `legaia_asset::field_objects::build_walk_heightfield`
-(`FUN_80019278` bilinear floor sampler).
+math is `legaia_asset::field_objects::build_ground_heightfield` with the
+overworld's cell gate (`FUN_80019278` bilinear floor sampler).
 
 The WASM viewer builds the same surface from the raw PROT.DAT it already
 has in hand (`legaia_web_viewer::build_walk_ground`), mirroring
@@ -264,11 +264,11 @@ WebGL port mirrors that split:
   vertex SXY+offset words via `sw s1, 0x8(t1)` / `0xC(t1)` /
   `0x10(t1)`. The visible effect on flat triangles is a per-vertex
   screen-Y nudge proportional to `Z >> 5`.
-- The **haze colour** is set per-kingdom via the GTE `FAR_COLOR`
-  control register (loaded via `ctc2` during world-map enter, not
-  surfaced by the `lwc2 t0, -0x2dc(t2)` load - that field is the
-  `IR0` depth-cue factor, despite earlier doc tables labelling it
-  "fog color").
+- The **haze colour** reaches the GTE `FAR_COLOR` control registers
+  through `ctc2`, not through the `lwc2 t0, -0x2dc(t2)` load - that field
+  is the `IR0` depth-cue factor, despite earlier doc tables labelling it
+  "fog color". The viewer's per-kingdom tint is its own choice (see
+  [below](#per-kingdom-fog-colour)).
 
 The WebGL port runs this in a vertex + fragment shader:
 
@@ -378,47 +378,28 @@ gap stays visible without dropping the placements silently.
 
 ## Per-kingdom fog colour
 
-The atmospheric-tick actor (``actor[+0x0C] == FUN_801E3E00`` at
-``0x801E3E00``) interpolates the per-kingdom haze RGB into its
-``+0x74`` field per frame. That u32 is the input to ``FUN_80043390``'s
-``ctc2`` writers to the GTE ``FAR_COLOR`` control regs (``$21 /
-$22 / $23``):
+The viewer's haze tint is the hand-set `KINGDOM_FOG_TINT` table, and it has no
+retail counterpart to replace it with: the walk-view overworld's far colour is
+not per-kingdom. The continent ground is depth-cued toward the literal
+`SetFarColor(0x100, 0x100, 0x100)` its emitter's caller issues, and the
+decoration cells toward `0xD0D0D0` - both fixed in PROT 0901's code
+([world-map.md](world-map.md#ground-texturing)).
 
-```c
-// FUN_8001ADA4 case 5 (line 861):
-FUN_80043390(puVar12, piVar2[0x1d], *(undefined2 *)(piVar2 + 0x1e));
-//                    ^^^^^^^^^^^^^
-//                    actor[+0x74] = current fog RGB (0x00BBGGRR)
-
-// FUN_80043390 (0x80043498..0x800434D0):
-andi $s6, $a1, 0x00FF      // R from $a1 = actor[+0x74]
-srl  $s5, $a1, 8           // G
-andi $s5, $s5, 0x00FF
-srl  $s4, $a1, 16          // B
-andi $s4, $s4, 0x00FF
-sll  $s6, $s6, 4           // 8-bit -> 12-bit
-sll  $s5, $s5, 4
-sll  $s4, $s4, 4
-ctc2 $s6, $21              // FAR_COLOR.R
-ctc2 $s5, $22              // FAR_COLOR.G
-ctc2 $s4, $23              // FAR_COLOR.B
-```
-
-The script that drives ``actor[+0x74]`` lives in
-``FUN_801E3E00`` (overlay-resident at
-``ghidra/scripts/funcs/overlay_world_map_801e3e00.txt``) and reads
-its R/G/B bytes from ``script[PC + 7 / +8 / +9]``. The script source
-is a per-kingdom blob at ``actor[+0x94]``; the static walker that
-installs it isn't fully reversed yet, so the practical capture path
-is the runtime snapshot.
-
-When ``scripts/mednafen/resolve_bulk_terrain.py`` finds an actor
-with ``tick == 0x801E3E00`` and ``actor[+0x74] != 0``, it surfaces
-the live RGB as ``fog_color: { r, g, b, u24 }`` per kingdom in
-``site/world-overview.json``. The world-overview viewer reads that
-field at priority above the hand-eyeballed ``KINGDOM_FOG_TINT``
-fallback. World-map saves that don't have an active atmospheric tick
-fall back to the hardcoded table.
+This section used to describe an "atmospheric-tick actor" (`actor[+0x0C] ==
+0x801E3E00`) interpolating a per-kingdom haze RGB into its `+0x74` for the GTE
+far-colour registers, and a capture path
+(`scripts/mednafen/resolve_bulk_terrain.py`) that surfaced that word as
+`fog_color` in `site/world-overview.json` ahead of the fallback. Both halves are
+wrong. `FUN_801E3E00` is the keyframe script of the field-VM's attached light,
+called from that light's tick `FUN_801E4470` and never installed as a tick
+itself, and its `+0x74` is the light pool's centre colour
+([world-map.md](world-map.md#the-fog-rgb-script-is-the-attached-lights)). No
+catalogued save state holds `0x801E3E00` as a word anywhere in RAM, so the
+capture path never matched and the fallback is what every kingdom draws. What
+`FUN_8001ADA4`'s case 5 does pass is a *model actor's* own `+0x74` as `a1` and
+its `+0x78` as `a2` (`0x8001B46C..0x8001B474`); `FUN_80043390` loads `a1`'s
+bytes `<< 4` into `RFC` / `GFC` / `BFC` only when `a2` is non-zero
+(`0x80043494..0x800434D0`) - a per-mesh value, not a kingdom haze.
 
 ## Ocean tile - disc-side asset + 13-frame CLUT animation
 

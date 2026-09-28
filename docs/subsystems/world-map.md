@@ -1119,18 +1119,55 @@ lock) and `World::tick`'s world-map arm steps the timeline whenever one is activ
 
 Several more `+0x54`-keyed actor state machines share the world-map / field
 overlay band (all `ctx[+0x54]` = SM phase, `ctx[+0x9e]` = a vsync accumulator,
-`ctx[+0x10] |= 8` = retire). They are dumped but not from-scratch ported - each
-is interwoven with menu-prompt, warp, or GTE-render infrastructure that does
-not factor into `engine-vm` cleanly:
+`ctx[+0x10] |= 8` = retire). Two of the rows are not world-map actors at all
+and are settled below the table; the rest are dumped but not from-scratch ported
+- each is interwoven with menu-prompt, warp, or GTE-render infrastructure that
+does not factor into `engine-vm` cleanly:
 
 | Function | Dump | What it is |
 |---|---|---|
-| `FUN_801E5338` | `801e5338.txt` | Sparkle emitter: spawns up to 8 `SPRT` particles at `rand()` offsets (`FUN_80056798`) around `ctx[+0x14/+0x16]`, animates each through a 10-frame sprite anim, posts them via `AddPrim` (`FUN_8003D2C4`); phase `2` waits for all to retire, then sets bit `0x8` |
+| `FUN_801E5338` | `801e5338.txt` | Sparkle emitter: spawns up to 8 `SPRT` particles at `rand()` offsets (`FUN_80056798`) around `ctx[+0x14/+0x16]`, animates each through a 10-frame sprite anim, posts them via `AddPrim` (`FUN_8003D2C4`); phase `2` waits for all to retire, then sets bit `0x8`. **Retail never runs it** - see [below](#the-sparkle-burst-has-no-spawner) |
 | `FUN_801EA9B0` | `overlay_cutscene_dialogue_801ea9b0.txt` | Dev-menu row-action dispatcher. Ported - see [the panel window system](#the-panel-window-system---fun_801e9b3c--fun_801e9dc8--fun_801ea9b0) |
 | `FUN_801EE094` | `801ee094.txt` | **Riremito** travel-art actor (string `"ON RIREMITO"`): scans the CDNAME define table (`0x80088758`, `_DAT_8007B806` count, `0x10` stride, `s16` define number at `+0xC`) for the TOC index `_DAT_80084628`; a miss parks phase `99` and prints `"UNFIND MAP NUMBER %d"` |
 | `FUN_801EE328` | `801ee328.txt` | **Rula** travel-art actor (string `"ON RULA"`): same define-table search; phase 2 raises the halt bit on `_DAT_8007C364[+0x10]`, scrolls `_DAT_8007C364[+0x16]` and spawns a hold-at-black fade via `FUN_80024E80` |
 | `FUN_801EF014` | `801ef014.txt` | Destination list-picker actor over the tile descriptor `_DAT_8007B450`: counts selectable cells (`+1`), drives a cursor prompt (`FUN_801E9DC8`), commits the pick into `_DAT_8007BB88`, then exits via `ctx[+0x50] = 0x1A` |
-| `FUN_801E3E00` | `overlay_world_map_walk_801e3e00.txt` | Scripted-move actor tick: dispatches on the opcode at `script[ctx[+0x9e]]` (`script = ctx[+0x94]`); op `0` retires (`ctx[+0x10] |= 8`), op `1` rewinds the cursor `ctx[+0x9e]`, op `2` reads three-byte big-endian operands via `FUN_8003CE9C` into a target block (`ctx[+0x74]` and the screen-scroll fields `ctx[+0x16]/+0x3C/+0x3E`) and advances the cursor. A world-map scripted-camera / actor mover; `j 0x801E4420`/`0x801E444C` are shared-tail exits, not calls |
+| `FUN_801E3E00` | `overlay_world_map_walk_801e3e00.txt` | The **attached light's keyframe script** - a subroutine of the light's tick `FUN_801E4470` (its one caller, `jal` at `0x801E450C`), not a world-map actor tick. See [below](#the-fog-rgb-script-is-the-attached-lights) |
+
+#### The fog-RGB script is the attached light's
+
+`FUN_801E3E00` was carried as the world map's "atmospheric fog-RGB" actor tick,
+writing the haze colour at `+0x74` for the GTE far colour. No actor carries it
+as a tick. Its only reference on the disc is `jal 0x801E3E00` at `0x801E450C`
+inside `FUN_801E4470`, taken when `+0x94` is non-null; `FUN_801E4470` is the
+tick the field-VM op `0x34` sub-1 spawner `FUN_801E5668` installs (template
+`0x801F28B8`), and `+0x74` / `+0x88` are that light pool's two colours, drawn
+by `FUN_801E3984` - see
+[script-vm.md](script-vm.md#0x34-sub-1-is-an-attached-light). The script's
+operands are sixteen-bit little-endian (`FUN_8003CE9C`), and its targets are the
+two extents `+0x3C` / `+0x3E`, the two colours and the lift `+0x16`. No
+world-map MAN carries an op `0x34` sub-1 (`asset field-op-census`), and no
+catalogued mednafen state holds the word `0x801E3E00` anywhere in RAM. The
+port runs the script live as
+`legaia_engine_vm::field_actor_billboard::attached_sprite_script_tick` from
+`World::tick_field_attached_lights`; a second, world-map-labelled copy of it is
+removed. What the walk-view ground hazes toward is a literal, not this script -
+see [ground texturing](#ground-texturing).
+
+#### The sparkle burst has no spawner
+
+`FUN_801E5338` is an actor tick reached only as the tick word of the static
+template `0x801F2978` (the word sits at `0x801F2980`; the eight-byte-per-row
+palette table the tick reads sits just below it at `0x801F2960`). The one
+routine that materialises the template is `FUN_801E5834` (`lui`+`addiu` at
+`0x801E5858`, into the allocator `FUN_80020DE0` on list `_DAT_8007C34C`, seeding
+the row `+0x50`, the screen origin `+0x14` / `+0x16` and the spawn frames
+`+0x9C`), and `FUN_801E5834` has no reference of any form on the disc - no
+word, `jal`, `j`, branch, `lui` pair, `gp`-relative access or base-plus-offset
+walk in `SCUS_942.54`, the based overlay images or any PROT entry
+([address-reference-scan.md](../tooling/address-reference-scan.md)). None of the
+catalogued mednafen states holds a live actor ticked by it. It is filed under
+the port catalogue's `unreferenced` rows, the same shape as the template tick
+`80025054`; the transliteration the port carried is removed.
 
 ### `FUN_801D5DE0` is not a world-map routine
 
@@ -2304,8 +2341,9 @@ render-track, documented-not-ported.
 
 **Engine status.** The continent ground now renders as a **heightfield
 surface**: [`Scene::walk_heightfield`] →
-[`legaia_asset::field_objects::build_walk_heightfield`] sweeps the `0x1000`
-cells and emits one quad per cell, each corner's Y taken from the `+0x4000`
+[`legaia_asset::field_objects::build_ground_heightfield`] sweeps the grid
+(on the overworld every textured cell, [below](#ground-texturing); in a
+field scene the `0x1000` cells) and emits one quad per cell, each corner's Y taken from the `+0x4000`
 floor-nibble grid via the floor LUT (the `FUN_80019278` math). The baked
 corner height is `-lut[nibble]` - **already the same world height the
 placement / actor transforms carry in their un-flipped translation** - so
@@ -2351,29 +2389,52 @@ decoration sweep `FUN_801F69D8`. It links each cell at ordering-table bucket
 table the fog sheets link into, which is what decides where the continent
 covers the fog ([`field-ambient-fx.md`](field-ambient-fx.md#closing-the-draw-order-flat-per-primitive-terrain-depth)).
 Unlike PROT 0900's field pair it tests no `0x1000` cell bit: every cell of the
-window draws, its record taken from `cell & 0x1FF`. On `map01` the difference
-is 133 of the 16384 cells, 129 of them the zero word. Each cell's
+window draws, its record taken from `cell & 0x1FF` (`0x801F8BA0`). The port
+builds the overworld ground with that gate
+(`legaia_asset::field_objects::GroundCellGate::TerrainRecord`, chosen by
+`Scene::walk_heightfield` for the three `mapNN` scenes and by the
+world-overview viewer), which adds the cells that lack the bit but whose record
+carries a terrain page - two on `map01`, one each on `map02` and `map03`, holes
+under the field gate. A cell whose record has no terrain page would texture
+from VRAM page `(0, 0)`, the display area, which the port does not hold; those
+are skipped (`map01`'s zero-word border row, and a handful of decoration cells
+per kingdom). Each cell's
 texture is selected **per cell** from a **terrain-type-keyed multi-page atlas** -
 grass, mountain, water, and forest cells each sample a different VRAM page.
 
 The cell's packet colour is **depth-cued**: the emitter loads the colour word
-at scratch `0x1F800398` (`0x2C808080` on `keikoku_chest_preload`) into `RGBC`,
-sets `IR0 = max(SZ1 - 0x5000, 0) >> 3` from the second corner's depth, runs
-`DPCS` (`0x801F8D7C..0x801F8DBC`) and stores the result as the packet colour,
-so the ground brightens toward the GTE far colour past `SZ = 0x5000` and reaches
-it at `0xD000`. The emitter writes no far colour of its own - it draws with
-whatever `RFC / GFC / BFC` the frame last loaded. On that state's walked
-ordering table the ground packets on the two grass pages hold `0x808080` in
-every bucket up to 676 (`(0x5000 >> 5) + 14` over the base bucket 22) and climb
-to about `0x9F9F9F` by bucket 950 - a far colour near `0xEF` on every channel,
-fitted from the bucket keys.
+at scratch `0x1F800398` into `RGBC`, sets `IR0 = max(SZ1 - 0x5000, 0) >> 3` from
+the depth of the corner `(x1, z0)` (the first vertex of the column step's second
+`RTPT`, `0x801F8BA8`), runs `DPCS` (`0x801F8D7C..0x801F8DBC`) and stores the
+result as the packet colour. The emitter writes no far colour of its own; its
+caller `FUN_801F69D8` sets it with `SetFarColor(0x100, 0x100, 0x100)`
+(`FUN_8005B7D8`, `jal` at `0x801F729C`, three `ctc2` of the arguments `<< 4`)
+after the decoration-cell loop and immediately before the `jal 0x801F89B8`.
+So the ground hazes toward a far colour one past white, fixed in code - no
+kingdom, scene or actor supplies it - and the colour is
+`128 + ((SZ1 - 0x5000) >> 8)` on the neutral base, saturating at
+`SZ1 = 0xCF00`. The decoration cells the same routine submits through
+`FUN_80043390` pass `a1 = 0x00D0D0D0` (`0x801F7218..0x801F7254`), so the
+landmarks haze toward `0xD0` instead. The word at `0x1F800398` is rewritten
+every frame by `FUN_80026CE4` from `0x8007B7B0` under command byte `0x2C`
+(`0x80026D38..0x80026D60`); every catalogued overworld state holds `0x808080`
+there, and no scene script carries the field-VM write to it (`4C 10`).
 
-The port differs from this in two ways, both recorded rather than changed.
-`legaia_asset::field_objects::build_walk_heightfield` - shared with the field
-view - keeps PROT 0900's `0x1000` gate, so it drops the 133 cells above. And it
-bakes every cell at the neutral `0x808080` with no depth cue on either host, so
-the port's distant continent stays darker than retail's hazed one; pinning the
-far colour's writer is what a fix needs first.
+A PCSX-Redux capture on `karisto_sol_pre_encounter`
+(`scripts/pcsx-redux/autorun_overworld_ground_far_colour.lua`, exec breakpoints
+on the `SetFarColor` site, the emitter entry and the instruction after the
+`DPCS`) reads `RFC = GFC = BFC = 0x1000` and `RGBC = 0x2C808080` at every hit,
+and the `DPCS` arithmetic reproduces every logged packet colour from its logged
+`SZ1`. On `keikoku_chest_preload`'s walked ordering table the grass-page ground
+packets hold `0x808080` up to bucket 676 and climb to about `0x9F9F9F` by bucket
+950; an earlier fit of those buckets put the far colour near `0xEF`, low because
+a bucket keys the cell's farthest corner while `IR0` reads `(x1, z0)`.
+
+Both play hosts draw the cue: `engine-core::overworld_ground_cue` holds the
+arithmetic and the capture rows, and the mesh vertex stages apply it per cell on
+the overworld from the flat-depth corner references
+(`overworld_ground_cue` in `engine-render`'s VRAM-mesh WGSL, `overworldGroundCue`
+in the play page's GLSL), each vertex of a cell computing the same colour.
 
 The selector is the cell's object-record `+0x14..+0x18` run (the record reached
 through `cell & 0x1ff` → `×0x20`), byte-verified against the retail prim pool:
@@ -2621,7 +2682,7 @@ PROT-index dispatch, not the trap. The walk/overview split is just the scene nam
 → index: `map01 = 85` (walk, entry `0085`) vs `opmap01 = 768` (overview, block
 `0768..0772`). So the walk `.MAP` is the **raw** records+grid region at PROT.DAT
 `0x655800` (`toc[87]`, no compression); the placed-actor mesh resolver (`FUN_80020F88`, at spawn time) is `pool =
-record[+0x10] + prefix`, and the bulk ground is the `0x1000`-gated heightfield
+record[+0x10] + prefix`, and the bulk ground is the heightfield
 (Engine status, above).
 
 #### Rendering the placed entities

@@ -24,11 +24,10 @@ PCSX-Redux version:
   1. Each placement gets a ``kind`` tag (``bulk_terrain`` vs
      ``man_actor``) based on whether the actor's ``actor[+0x90]``
      points into the MAN buffer at ``_DAT_8007B898``.
-  2. Atmospheric actors (``tick == FUN_801E3E00`` at ``0x801E3E00``)
-     surface their live ``actor[+0x74]`` u24 RGB as the kingdom's
-     ``fog_color`` (per-kingdom haze, set by the world-map overlay's
-     atmospheric script). When no atmospheric tick is captured, the
-     viewer falls back to its hardcoded ``KINGDOM_FOG_TINT``.
+  2. Actors whose tick word is ``0x801E3E00`` would surface their
+     ``actor[+0x74]`` as ``fog_color``; none exists (that address is the
+     attached light's keyframe script, not a tick), so the viewer draws its
+     hardcoded ``KINGDOM_FOG_TINT``.
   3. The full MAN buffer pointer ``_DAT_8007B898`` and disc-side
      record count are surfaced so the viewer can cross-reference
      actors to their MAN-record names without re-doing the parse.
@@ -87,9 +86,10 @@ import resolve_actor_tmds  # type: ignore  # noqa: E402
 match_prim_groups_to_disc.RAM_SIZE = PSX_PHYS_RAM_SIZE
 resolve_actor_tmds.RAM_SIZE = PSX_PHYS_RAM_SIZE
 
-# Tick function pointer for the world-map atmosphere actor
-# (FUN_801E3E00 in overlay_world_map_801e3e00.txt). The atmospheric
-# script interpolates fog RGB into actor[+0x74] per frame.
+# The tick word the fog_color capture keys on. It never matches: FUN_801E3E00
+# is the attached light's keyframe script (called from the light's tick
+# FUN_801E4470), not a tick, and actor[+0x74] is the light pool's colour -
+# docs/subsystems/world-overview-viewer.md "Per-kingdom fog colour".
 ATMOSPHERIC_TICK = 0x801E3E00
 
 # Address of the SCUS global pointer holding the decompressed MAN buffer.
