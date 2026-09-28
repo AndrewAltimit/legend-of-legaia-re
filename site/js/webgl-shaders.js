@@ -228,6 +228,24 @@ vec4 overworldFlatDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
   return vec4(clip.x, clip.y, (ab.x + ab.y / repW) * clip.w, clip.w);
 }
 
+/* The continent ground's depth cue - the GLSL twin of engine-render's
+ * overworld_ground_cue (legaia_engine_core::overworld_ground_cue). Retail's
+ * ground emitter (FUN_801F89B8) runs each cell's packet colour through DPCS
+ * with IR0 = max(SZ1 - 0x5000, 0) >> 3, SZ1 the depth of the cell's corner
+ * (x1, z0), toward the far colour 0x1000 its caller sets with the literal
+ * SetFarColor(0x100, 0x100, 0x100). Same gate as overworldFlatDepth; one
+ * value per cell, since every vertex carries the same corners. rgb in 0..1. */
+vec3 overworldGroundCue(vec3 rgb, mat4 m, vec4 fa, vec4 fb) {
+  if (u_curve <= 0.0 || fa.z <= fa.x) return rgb;
+  float w1 = (m * vec4(fa.z, fb.y, fa.y, 1.0)).w;
+  int sz1 = clamp(int(floor(w1 * u_curve + 0.5)), 0, 0xFFFF);
+  int ir0 = max(sz1 - 0x5000, 0) >> 3;
+  ivec3 base = ivec3(floor(rgb * 255.0 + 0.5)) << 16;
+  ivec3 ir = clamp(((ivec3(0x1000) << 12) - base) >> 12, ivec3(-0x8000), ivec3(0x7FFF));
+  ivec3 mac = (base + ir * ir0) >> 12;
+  return vec3(clamp(mac >> 4, ivec3(0), ivec3(255))) / 255.0;
+}
+
 in vec3 a_position;
 in vec2 a_uv_byte;       /* 0..255 each, sent as Uint8x2 normalised=false */
 in uvec2 a_cba_tsb;
@@ -265,7 +283,9 @@ void main() {
   vec4 world_pos = u_model * vec4(a_position, 1.0);
   v_uv = a_uv_byte;
   v_cba_tsb = a_cba_tsb;
-  v_flat_rgba = a_flat_rgba;
+  v_flat_rgba = vec4(overworldGroundCue(a_flat_rgba.rgb, u_mvp * u_model,
+                                        a_ground_ref_xz, a_ground_ref_y),
+                     a_flat_rgba.a);
   /* Mirror the per-vertex Z_far the overlay leaves compute. The retail
    * pipeline pulls Z from the GTE's screen-space pipeline after rtpt;
    * here we approximate using XZ-plane distance to the camera origin
