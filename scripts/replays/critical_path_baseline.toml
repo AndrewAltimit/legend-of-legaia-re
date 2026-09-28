@@ -85,7 +85,8 @@
 # ---------------------------------------------------------------------------
 #
 # Verified when the legs were first walked, and re-confirmed by the run that
-# now completes them:
+# completed them before record 7's pushback was played (see the next section
+# for why rung 5 no longer clears):
 #
 # - map01's wall bits split the kingdom into two walk components (the arrival
 #   `(96, 25)` north, all six `keikoku` mouths south); the crossing is the
@@ -130,6 +131,26 @@
 # live one.
 #
 # ---------------------------------------------------------------------------
+# Why rung 5 does not clear: the inner doorways push the player back
+# ---------------------------------------------------------------------------
+#
+# The completing route above crosses keikoku record 7's inner-doorway band,
+# and that record does not only talk. Its first-visit arm (system flag 0x2BB
+# clear, taken while 0x142 and 0x2BC are clear) ends in `B7 F8 00 C1` at
+# +0x12D: op 0x37 against the player, which the walk kernel FUN_8003774C
+# (arm 0x8003789C) plays as one tile along -Z over 32 vsyncs - back out of the
+# doorway. The 0x2BB-set arm at +0x13B is the repeat visit of the same beat.
+# The port played that op as a one-tick yield that moved nobody, so the pad
+# walked straight through a band retail turns the player round at, and rung 5
+# cleared on that. With the compass walk played
+# (`CutsceneTimeline::player_glide`), the run is shoved back one tile at the
+# band on every approach and stalls at (56, 28), which is what a player at this
+# story state gets. The earlier baseline of 5 was a missing-pushback
+# artifact, not a pad-walk score. Re-opening rung 5 means a
+# route that does not cross an inner doorway, or seeding the flag that opens
+# them, with the reason written here like `GATE_OPEN_FLAGS`'.
+#
+# ---------------------------------------------------------------------------
 # What rung 1 does and does not say
 # ---------------------------------------------------------------------------
 #
@@ -170,7 +191,9 @@
 #
 # Non-vacuity of the rung-5 door clause: `LEGAIA_CPR_RUNG5_BACKOUT=1` re-aims
 # the leg at the arrival record's own band and hazards nothing; under that
-# flag the rung must read `[--]` (it does - score 4). The door clause is
+# flag the rung must read `[--]` (score 4). While rung 5 does not clear by
+# default this control reads the same as the default run, so it only
+# discriminates again once the rung is re-opened. The door clause is
 # exercised on its own by the disc-free
 # `a_door_is_only_different_when_both_ends_are_known`.
 #
@@ -185,4 +208,4 @@
 # The run is deterministic: two consecutive default runs produce byte-identical
 # per-encounter HP trajectories and the same rung details.
 
-reached = 5
+reached = 4
