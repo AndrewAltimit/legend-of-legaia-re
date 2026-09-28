@@ -465,12 +465,17 @@ impl PlayWindowApp {
                 return;
             }
         }
-        // `O`: toggle the casino slot-machine minigame. Loads the slot
-        // overlay (PROT 0975), suspends the current scene, and runs
-        // the reel state machine; Cross spins / stops / collects (a
-        // spin is a flat 3-coin bet across all three paylines).
-        // Pressing O again cashes the balance out into the casino
-        // coin bank and leaves.
+        // `O`: toggle the casino slot-machine minigame. The launch is the
+        // mode-24 door warp itself (`World::request_minigame_warp` with
+        // sub-id 3, drained by the scene host next tick), as `B` / `M` and
+        // the browser page's `play_mg_debug_warp` are: the session is the
+        // one a cabinet installs, its balance assigned from the casino coin
+        // bank (`FUN_801CEC94`). A thin bank is the machine's own state-1
+        // gate (fewer than 3 coins cannot spin); the cabinet record's
+        // coin-bank compare that refuses an empty bank at the door is the
+        // walked door's script, which the field VM runs on both hosts.
+        // Cross spins / stops / collects; pressing O again cashes the
+        // balance out into the coin bank and leaves.
         if matches!(code, KeyCode::KeyO)
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
@@ -484,29 +489,34 @@ impl PlayWindowApp {
                     );
                 }
                 self.session.host.world.close_minigame_round_trip();
-            } else if self.start_slot_minigame() {
+            } else {
+                self.session.host.world.request_minigame_warp(
+                    legaia_engine_core::minigame_entry::MinigameSubId::SlotMachine.sub_id(),
+                );
                 log::info!(
-                    "slots: started - Cross spins/stops/collects (3 coins a spin), O to cash out"
+                    "slots: door warp armed (bank {} coins) - Cross spins/stops/collects, O to cash out",
+                    self.session.host.world.minigames.casino_coins
                 );
             }
             return;
         }
         // `M`: toggle the Muscle Dome contest (an ordinary battle, fought to
-        // a KO - nothing bounds it by turns). Loads the
-        // hand tables from the battle overlay (PROT 0898), suspends
-        // the current scene, and runs the select/commit/resolve loop;
-        // Left/Right/Up/Down enter the four directions, Cross confirms /
-        // continues. Pressing M again aborts (no reward on an abort).
+        // a KO - nothing bounds it by turns); Left/Right/Up/Down enter the
+        // four directions, Cross confirms / continues. Pressing M again
+        // aborts (no reward on an abort).
+        //
+        // The launch is the mode-24 door warp itself
+        // (`World::request_minigame_warp`, drained by the scene host next
+        // tick), so the hotkey enters the session the arena door enters -
+        // the lead's own art catalog, the battle-theme swap through
+        // `swap_to_minigame_bgm`, the return warp on the way out. It used to
+        // build its own session, start the track through the director
+        // directly and install Vahn's arts whoever led.
         if matches!(code, KeyCode::KeyM)
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
         {
             if self.session.host.world.mode == SceneMode::MuscleDome {
-                // A door-entered dome gets its music back from the round
-                // trip's own restore (`close_minigame_round_trip` below);
-                // only an `M`-launched one needs the window's direct restart,
-                // or the door session's field track would start twice.
-                let door_entered = self.session.host.world.minigames.scene_backup.is_some();
                 // `World::leave_muscle_dome` is the escape both hosts share:
                 // it reports the leg (a leg left undecided is the arena's
                 // run / give-up path, retail's `_DAT_80084448 = 4` arm) and
@@ -523,32 +533,31 @@ impl PlayWindowApp {
                             s.hp_left()
                         ),
                     }
-                    if !door_entered {
-                        self.session.restore_field_bgm();
-                    }
                 }
+                // The round trip restores the field's music with the scene.
                 self.session.host.world.close_minigame_round_trip();
-            } else if self.start_muscle_minigame() {
+            } else {
+                self.session.host.world.request_minigame_warp(
+                    legaia_engine_core::minigame_entry::MinigameSubId::MuscleDome.sub_id(),
+                );
                 log::info!(
-                    "muscle: started - fight to a KO, arrows enter directions, Cross confirms, M to leave"
+                    "muscle: door warp armed - fight to a KO, arrows enter directions, Cross confirms, M to leave"
                 );
             }
             return;
         }
-        // `B`: toggle the Baka Fighter duel minigame. Loads the Baka
-        // Fighter overlay (PROT 0976), suspends the current scene,
-        // and runs the best-of-3 duel; Left/Right/Up throw the three
-        // attacks, Down charges the special, Cross leaves a decided
-        // match. Pressing B again aborts (no coins on an abort).
+        // `B`: toggle the Baka Fighter duel minigame - Left/Right/Up throw
+        // the three attacks, Down charges the special, Cross leaves a decided
+        // match. Pressing B again aborts (no coins on an abort). Launched
+        // through the mode-24 door warp like `M` above, so the overture swap
+        // and the return warp are the door's own.
         if matches!(code, KeyCode::KeyB)
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
         {
             if self.session.host.world.mode == SceneMode::BakaFighter {
-                // `exit_baka_fighter` runs the round trip (and its music
-                // restore) itself for a door-entered duel; the window's
-                // direct restart is for a `B`-launched one only.
-                let door_entered = self.session.host.world.minigames.scene_backup.is_some();
+                // `exit_baka_fighter` runs the round trip, and its music
+                // restore, itself.
                 if let Some(f) = self.session.host.world.exit_baka_fighter() {
                     match f.winner() {
                         Some(0) => log::info!(
@@ -559,13 +568,13 @@ impl PlayWindowApp {
                         Some(_) => log::info!("baka: match lost"),
                         None => log::info!("baka: match aborted"),
                     }
-                    if !door_entered {
-                        self.session.restore_field_bgm();
-                    }
                 }
-            } else if self.start_baka_minigame() {
+            } else {
+                self.session.host.world.request_minigame_warp(
+                    legaia_engine_core::minigame_entry::MinigameSubId::BakaFighter.sub_id(),
+                );
                 log::info!(
-                    "baka: started - Square/Circle/Cross attack, Triangle special, B to leave"
+                    "baka: door warp armed - Square/Circle/Cross attack, Triangle special, B to leave"
                 );
             }
             return;

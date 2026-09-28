@@ -993,8 +993,11 @@ disclosures can be right about the wiring and wrong about the bytes.
 
 ### `card_message_rows` named a string table that is a sprite table
 
-`engine-ui`'s `card_message_rows` (`801e0418`) is still `DISCLOSE`, but one
-of its two stated prerequisites was wrong about the mechanism. It read
+This row is closed: the strips are the title TIM's (PROT 0890), and the port
+is live as `engine-ui::title_strip_rows`
+([`save-screen.md`](../subsystems/save-screen.md#the-title-strips-behind-the-load-window)).
+The history below is kept for the mechanism error it records. The disclosure
+was wrong about one of its two stated prerequisites. It read
 "`msg_slot` indexes the slot argument retail's drawer (`FUN_801E2EE4`)
 resolves against the menu overlay's message pointers ... even a wired host
 would have five rows and no text."
@@ -1122,7 +1125,7 @@ old reason got wrong.
 | `motion_pause_kick` (`8003c9ac`) | no view can be projected to gate the sweep | both gates and the default-move table are projectable from the per-slot maps |
 | `state_pick` (`801f1f4c`) | the engine models neither actor `+0x50` nor `+0x54` | `Actor::state_50` and `Actor::state_54`, at those offsets; since wired - it is the subsystem actor's default handler id `7`, and `World::field_menu_button_state` runs it as every host's menu-open gate |
 | `field_audio_release_steps` (`801d8450`) | no per-voice stop, no `0x80091508` table | `SustainedSfx::stop_voice` and `SeqResourceTable::release`, the module's own two `REF:` addresses |
-| `submode_panel_rows` (`801e6984`) | the context block `open_submode` cannot reach | `open_submode` is live and seeds `World::field_vm.submode_context`, which is read every frame; the installer `FUN_801EF014` is ported (`flag_window_tick`) but only on the world-map panel host: slot `0x23` in `field_submode_screen` falls to the empty default arm, and the row glyphs need `FUN_8002C488` sprite cells plus a record-14 panel draw |
+| `submode_panel_rows` (`801e6984`) | the context block `open_submode` cannot reach | `open_submode` is live and seeds `World::field_vm.submode_context`; the installer `FUN_801EF014` is now also hosted on the field path (slot `0x23`, `engine-core::field_submode_flag_window`), which installs record 14 and draws these rows on both hosts, the floor-plate cells as their lettering |
 | `field_actor_plan` (`8003bc08`) | the engine has no `+0x10` flag word | `move_vm::ActorState::flags` is that word, tested in production on pool actors |
 | `tick_reflection` (`801e5154`) | the actor carries none of the fields this reads | `ActorState` carries all but `+0x64`, at retail offsets |
 | `refresh_object_grid_marks` (`80017bec`) | the engine keeps no `.MAP` image | three of four regions are resident, and the collision grid is mutated live |
@@ -1273,15 +1276,13 @@ exercised, so a misreading survives until something calls it.
 The remaining rows are genuine gaps with sharp prerequisites, and they group
 into four:
 
-- **No line primitive.** `clip_segment_2d` and `project_segment` clip
-  two-point draws; neither `engine-ui`'s draw list nor its PSX screen-space
-  primitive set (`screen_prim`, a textured and a flat **quad**) has a line
-  kind. Read the qualifier: there *is* a screen-space primitive path, live on
-  both hosts. `payline_prims` left this group: its endpoints are model-space,
-  and what it needed was a projection pass, not a line kind -
-  `slot_machine::projected_paylines` projects them once for every host, both
-  browser pages draw the result, and the native window appends it to its
-  screen pass (with no cabinet mesh around it).
+- **No line endpoint.** `clip_segment_2d` and `project_segment` clip
+  two-point draws. The line kind exists - `screen_prim::line_quad`, the
+  segment as a one-pixel flat quad, which the paylines already draw through
+  on every host (`slot_machine::projected_paylines` projects their
+  model-space endpoints once; both browser pages and the native screen pass
+  draw the result). What `clip_segment_2d` lacks is its line's rod-tip end,
+  a projected point on an angler model the port does not spawn.
 - **No minigame effect-part pool.** `step_mark_effect_spawn`,
   `good_banner_spawn`, `splash_burst`, `ripple_spawn`,
   `dance_hit_sting_voices`. Closed for the spawn wrappers: the dance's two
@@ -2088,13 +2089,13 @@ Read and confirmed against the source, the crate graph and - where the tag made
 a retail claim - the disassembly. Nothing to paste; the record is that they were
 checked.
 
-`80016230`, `800195a8`, `8001d088`, `80020f88`, `8002174c`, `80029724`,
+`80016230`, `800195a8`, `80020f88`, `8002174c`, `80029724`,
 `8003cb54` (both anchors), `8003cbf8`, `8005126c`
 (both anchors), `80056208`, `80064090`, `801d32bc` (both
 anchors), `801d65f8`, `801d820c`, `801d9ae8` (module), `801dcc20`,
 `801e4140`, `801ddb30`, `801de37c`, `801e2650`, `801f81dc`. (`800480d8` is
 since live, as is `801d4df8` - the Baka impact pair, now seated and drawn through `engine-core::baka_impact_fx` - `801cf754` is `REPLACED-BY` the contact probes, and `801e0080`'s
-duplicate port is deleted in favour of the live effect-VM walker.)
+duplicate port is deleted in favour of the live effect-VM walker; `8001d088` is since live through the two-frame pose sampler `PlayerAnmBundle::sample_bone`.)
 
 Two of them are worth singling out. `8005126c` is a documented **negative**, not
 a gap: the five-form reference sweep found no reference to the on-screen test
@@ -2304,9 +2305,9 @@ structure they blamed and are rewritten; every row stays held.
 | `801cf00c` `duel_overlay_init` | held | the mode-24 door warp's `enter_baka_from_overlay` is the overlay-entry host the tag said did not exist; of the seeds only the win target and fighter slots have a consumer (both already the rules engine's constants), and the stage seed, arena camera, `6 x 6` window and the two stream ids have no duel-side counterpart |
 | `801d6704` `field_bgm_plan` | live | the two-part arm is the credits theme, now staged at scene entry through `mode_entry_init::two_part_bgm_stream`; the one-shot latch's stand-in is the directors' same-track suppression |
 | `801d4a60` `step_scene_program` / `lift_step` / `entry_successor` | wired | the pair it parks on is the side-band **bank** request / acknowledge, live as `World::audio.sound_stream`, not a BGM latch; `World::tick_scene_programs` now steps each resumed program from the handler pass |
-| `801d72a0` `help_panel_layout` | held | its only callers are states `0x65` (`0x801CFFA8`) and `0x66` (`0x801CFFEC`), and `0x65` is reached only from the venue menu's row 1, which no host owns; the strings are disc text a host could read, so they are not the blocker |
+| `801d72a0` `help_panel_layout` | wired | its callers are states `0x65` / `0x66`, reached from the venue menu's row 1; the menu opens from the idle shore on Triangle / Select (state `0x0C`, `& 0x110` at `0x801CF9EC`), which no host had bound. `engine-core::fishing_hub` runs the menu, help pages and tackle list on the shared `PondSession`, with the text read off the disc, on all three hosts |
 | `801d26cc` `bite_pad_nudge` | wired | the play hosts' `PondSession::tick` did run the band; what was off was the count - retail adds one per mask hit on `_DAT_8007B874` (`0x8000`, `0x2000`, and `0xC0` as one mask; the cast press none, `0x801D343C..0x801D3468`), and all three hosts now count through `PondInput::from_engine_pad` |
-| `801d56e4` `clip_segment_2d` | held | its one caller clips the fishing line's GPU packet (`0x801D3D00`); the second endpoint is `0x801D9194`, which `FUN_8003D368` fills at `0x801D1FB4` by projecting `*s4 + 0x128` (the rod tip, by inference), and no host spawns the angler record it projects |
+| `801d56e4` `clip_segment_2d` | held | its one caller clips the fishing line's GPU packet (`0x801D3D00`). The draw kind is not the gap: `screen_prim::line_quad` is the line as a one-pixel quad every host draws for the paylines. The second endpoint is `0x801D9194`, which `FUN_8003D368` fills at `0x801D1FB4` by projecting `*s4 + 0x128` (the rod tip, by inference), and no host spawns the angler record it projects |
 | `801dc6b4` `CONTEXT_LOCKED_ENTRY_SUBSCREEN` / `801dcd58` `notify_window_operands` | wired | the entry decode (`0x801DC85C..0x801DC8E4`) is ported as `pause_screens::menu_entry_subscreen`, and window 8 is the art-learned notice: its template `0x801E4700` is resident menu data and a Hyper-Art book stages its operands through `FUN_80035C00`, painted on both hosts |
 | `801dd330` `OPTIONS_SUBSCREEN_ROW_SPAN` | wired | its `0x30` is the settings window's id and its `1` the exit sub-screen; the retail display set is sliced from the sub-screen `0x17` row span |
 | `8003053c` `spell_party_broadcast::broadcast` | wired | its three `jal` sites are menu code; the out-of-battle validator host `menu_validator` greys and refuses a Magic row that would affect nobody, on both hosts |
@@ -2315,7 +2316,7 @@ structure they blamed and are rewritten; every row stays held.
 | `80017bec` `refresh_object_grid_marks` | wired | retail runs it once at field init (`0x801D6BF8`) over the fresh `.MAP`, which is where the engine's field entry now runs it; the `retona` capture holds a refreshed cell the disc lacks |
 | `801d7b50` `window_rebuild_spawns` | held | no windowed placement actor list exists to rebuild, and the descriptor region it indexes is dropped after scene load; `parse_map_objects` / `resolve_placed_env_draws` do not model the `template_kind`, `+0x74` or `+0x10 \| 4` descriptor state, so `REPLACED-BY` is not earned |
 | `801d0748` `battle_magic_chip_mark` | held | the ring greys the Ra-Seru chip and refuses its arm on both hosts; the red cross-out `FUN_801DBC30(0xF8, 0x42)` (`0x801D12DC..0x801D12F4`) needs an `etim` quad placed over the chip, which neither battle chip pass draws yet |
-| `801cef54` `dance_scene_entry` | held | the actor it spawns from `0x801D42E4` is the beat clock `World::enter_dance` already covers; what has no reader is the rest - the camera pair, view window, dancer spawn and face-stamp fields - because no World-side dance venue load exists (the browser pages load `other7` privately), so `REPLACED-BY` would overstate it |
+| `801cef54` `dance_scene_entry` | held | the actor it spawns from `0x801D42E4` is the beat clock `World::enter_dance` already covers. The venue half has one loader, `LegaiaMinigames::load_dance_bodies`, which both browser hosts draw through and which frames the hall off the overlay's spawn table and an orbit camera; the native window draws the walk-in scene because the dance suspends the scene mode. What the record's spawn, camera pair, view window and face stamps wait on is a scene swap to `other7` with a restore on exit, which the teardown's three unread fields wait on too |
 | `801d6e5c` `keyframe_in_range` | wired | the `+0x26` column is parsed, and the combat tick's call at `0x801D4334` is ported as `baka_fighter::StrikeClock`, which books each exchange on the winner's strike keyframe on all three hosts |
 | `8003c9ac` `motion_pause_kick` | wired | the requested-move target is the ambient channel's clip request, which the ambient tick now consumes per tick with a `+0x5E` latch; the kick copies the standing move, so it holds nothing |
 | `801d25ec` `spawn_arc_with_emitter` | held | op `0x43` sub-`0`/`1`/`0xA`/`0xB` reaches it at `0x801DF5AC`; the engine's arc channel is the player's alone |

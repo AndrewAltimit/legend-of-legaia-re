@@ -21,10 +21,9 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use legaia_engine_audio::AudioOut;
 use legaia_engine_core::camera::Camera;
-use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuInput, FieldMenuSession};
+use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuSession};
 use legaia_engine_core::field_menu_dispatch::{
-    FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome, apply_pause_items_outcome,
-    apply_spell_outcome, try_open_arts_editor,
+    FieldMenuSubsession, SubsessionHandoff, finish_subsession, tick_open_subsession, tick_root_list,
 };
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::magic_xp::SpellLevelNotice;
@@ -251,6 +250,9 @@ pub struct BootSession {
     /// pad until dismissed; headless drivers that don't render it just read
     /// and clear this.
     pub spell_level_notice: Option<SpellLevelNotice>,
+    /// Art-learned notice a Hyper-Art book produced from the Items screen
+    /// (retail's window 8); latched the same way.
+    pub art_learned_notice: Option<legaia_engine_core::pause_screens::ArtLearnedNotice>,
     /// Scene mode the world ran before the pause menu opened, restored by
     /// [`BootSession::close_field_menu`].
     field_menu_resume: SceneMode,
@@ -821,6 +823,7 @@ impl BootSession {
             save_flow: SaveScreenFlow::new(),
             last_save_commit: None,
             spell_level_notice: None,
+            art_learned_notice: None,
             field_menu_resume: SceneMode::Field,
             mode_seat: legaia_engine_core::mode::ModeSeat::new_at_boot(),
         })
@@ -838,12 +841,47 @@ impl BootSession {
     /// seeds the world state. When the SCUS template isn't available the world
     /// keeps its default scaffold party so the slice stays runnable.
     pub fn begin_new_game(&mut self) {
-        self.host.world.begin_new_game();
-        if let Some(starting) = &self.starting_party {
-            self.host.world.seed_starting_party(starting);
+        self.host.world.begin_new_game_seeded(
+            self.starting_party.as_ref(),
+            self.starting_inventory.as_ref(),
+        );
+    }
+
+    /// Start a New Game end to end: the seeded slate
+    /// ([`Self::begin_new_game`]), the title theme stopped so the prologue's
+    /// own BGM (or its scripted silence) owns the audio, then the opening
+    /// scene through the shared order
+    /// ([`legaia_engine_core::resume::enter_new_game`]: the prologue cutscene
+    /// `opdeene`, else `town01`). Returns the scene entered, or `None` when
+    /// neither would enter (the world keeps its seeded slate on whatever
+    /// scene was running).
+    ///
+    /// The browser play page's `play_new_game` is the paired entry: both
+    /// hosts' title New Game and post-wipe New Game go through one of the two.
+    pub fn start_new_game(&mut self, opts: &FieldLiveOpts) -> Option<&'static str> {
+        self.begin_new_game();
+        if let Some(bgm) = self.bgm.as_mut() {
+            bgm.stop();
         }
-        if let Some(inv) = &self.starting_inventory {
-            self.host.world.seed_starting_inventory(inv);
+        legaia_engine_core::resume::enter_new_game(|scene| {
+            self.enter_field_live(scene, opts)?;
+            self.confirm_scene_landed(scene)
+        })
+    }
+
+    /// `Ok` when the host's loaded scene is `scene`. [`Self::enter_field_live`]
+    /// logs a failed scene entry and returns `Ok` anyway (its oracle and
+    /// headless callers keep running on the old scene by design), so the
+    /// resume / New Game fallbacks test the landing itself - without this a
+    /// save naming a scene that would not load "entered" it and skipped the
+    /// fallback to the running scene.
+    fn confirm_scene_landed(&self, scene: &str) -> Result<()> {
+        match self.host.scene.as_ref() {
+            Some(s) if s.name == scene => Ok(()),
+            other => anyhow::bail!(
+                "scene '{scene}' did not load (still on {:?})",
+                other.map(|s| s.name.as_str())
+            ),
         }
     }
 
@@ -984,30 +1022,14 @@ impl BootSession {
         // The edge word every menu surface in this subsystem reads. A held
         // mask is one event: `just_pressed` is `pad & !pad_prev`.
         let pressed = pad.pad() & !pad.pad_prev();
-        let input = FieldMenuInput {
-            up: pad.just_pressed(PadButton::Up),
-            down: pad.just_pressed(PadButton::Down),
-            left: pad.just_pressed(PadButton::Left),
-            right: pad.just_pressed(PadButton::Right),
-            cross: pad.just_pressed(PadButton::Cross),
-            circle: pad.just_pressed(PadButton::Circle),
-            start: pad.just_pressed(PadButton::Start),
-        };
 
         if self.field_menu_sub.is_some() {
             self.tick_field_menu_sub(pressed);
         } else {
             // Root list. A confirm suspends it on the routed row; build that
             // row's sub-session and control moves there next frame.
-            let suspended_row = {
-                let menu = self.field_menu.as_mut().expect("field_menu is Some");
-                let _ = menu.tick(input);
-                match menu.phase() {
-                    legaia_engine_core::field_menu::FieldMenuPhase::Suspended { row } => Some(row),
-                    _ => None,
-                }
-            };
-            if let Some(row) = suspended_row {
+            let menu = self.field_menu.as_mut().expect("field_menu is Some");
+            if let Some(row) = tick_root_list(menu, pressed) {
                 self.save_flow.reset();
                 let world = &self.host.world;
                 let chain_library = world.chain_library();
@@ -1027,36 +1049,29 @@ impl BootSession {
     }
 
     /// Route one pad edge into the open sub-session and, when it finishes,
-    /// drain its outcome into the world before resuming the root list.
+    /// drain its outcome into the world before resuming the root list -
+    /// through the same engine steps both shipped hosts call
+    /// ([`tick_open_subsession`], [`finish_subsession`]).
     fn tick_field_menu_sub(&mut self, pressed: u16) {
         let Some(active) = self.field_menu_sub.as_mut() else {
             return;
         };
-        // Engine extension: Triangle on the Status screen swaps it for the
-        // Tactical Arts chain editor (retail's seven rows carry no Arts row).
-        // The edge is consumed so the same press doesn't also drive the
-        // screen it replaced.
-        let opened_arts = try_open_arts_editor(active, pressed, &self.host.world);
-        if !opened_arts {
-            // The Save / Load rows run under the two-stage card flow: it
-            // pre-empts the grid edges and resolves the card-read beat.
-            if let FieldMenuSubsession::Save(s) = active {
-                if let Some(port) = self.save_flow.pending_read(s) {
-                    let blocks = self
-                        .save_port_blocks
-                        .get(port as usize)
-                        .cloned()
-                        .unwrap_or_default();
-                    self.save_flow.install_blocks(port, blocks);
-                }
-                let edge = self.save_flow.before_tick(s, pressed);
-                s.tick(legaia_engine_core::save_select::SelectInput::from_pad_edge(
-                    edge,
-                ));
-            } else {
-                active.tick_pad_edge(pressed);
+        // The Save / Load rows run under the two-stage card flow: it
+        // pre-empts the grid edges and resolves the card-read beat.
+        let mut edge = pressed;
+        if let FieldMenuSubsession::Save(s) = active {
+            if let Some(port) = self.save_flow.pending_read(s) {
+                let blocks = self
+                    .save_port_blocks
+                    .get(port as usize)
+                    .cloned()
+                    .unwrap_or_default();
+                self.save_flow.install_blocks(port, blocks);
             }
+            edge = self.save_flow.before_tick(s, pressed);
         }
+        // No key table here: a headless driver has no bindings to rebind.
+        let _ = tick_open_subsession(active, edge, None, &self.host.world);
         if !self
             .field_menu_sub
             .as_ref()
@@ -1065,40 +1080,21 @@ impl BootSession {
             return;
         }
         let finished = self.field_menu_sub.take().expect("sub was Some");
-        match finished {
-            FieldMenuSubsession::Items(s) => {
-                let _ = apply_pause_items_outcome(&s, &mut self.host.world);
-            }
-            FieldMenuSubsession::Equip { session, char_slot } => {
-                let _ = apply_equip_outcome(&session, char_slot, &mut self.host.world);
-            }
-            FieldMenuSubsession::Spells(s) => {
-                // A leveled menu cast returns the window-7 notice pair; a
-                // renderer-less driver just latches it.
-                self.spell_level_notice = apply_spell_outcome(&s, &mut self.host.world);
-            }
-            FieldMenuSubsession::Arts(editor) => {
-                let mut library = self.host.world.chain_library();
-                if apply_arts_outcome(editor, &mut library).is_ok() {
-                    self.host.world.store_chain_library(&library);
-                }
-            }
-            FieldMenuSubsession::ListOrder(s) => {
-                let _ = legaia_engine_core::field_menu_dispatch::apply_list_order_outcome(
-                    &s,
-                    &mut self.host.world,
-                );
-            }
-            FieldMenuSubsession::Status(_) => {}
-            FieldMenuSubsession::Save(s) => {
-                // The outcome names the card port, the grid names the block.
-                // Persisting it is the host's: `BootSession` has no save
-                // backend, so the pick is latched for the caller.
-                self.last_save_commit = self.save_flow.commit(&s);
-            }
-            FieldMenuSubsession::Config(o) => {
-                self.options_state = o.state().clone();
-            }
+        let done = finish_subsession(finished, &mut self.host.world);
+        // A renderer-less driver just latches the notices.
+        if done.spell_level_notice.is_some() {
+            self.spell_level_notice = done.spell_level_notice;
+        }
+        if done.art_learned_notice.is_some() {
+            self.art_learned_notice = done.art_learned_notice;
+        }
+        match done.handoff {
+            SubsessionHandoff::Applied => {}
+            // The outcome names the card port, the grid names the block.
+            // Persisting it is the host's: `BootSession` has no save
+            // backend, so the pick is latched for the caller.
+            SubsessionHandoff::Save(s) => self.last_save_commit = self.save_flow.commit(&s),
+            SubsessionHandoff::Options(state) => self.options_state = state,
         }
         if let Some(menu) = self.field_menu.as_mut() {
             let _ = menu.resume(false);
@@ -1152,6 +1148,10 @@ impl BootSession {
         // The field's CD-XA one-shots (op `0x36`'s XA arm, the scripted-scene
         // voice leg) - drained every tick so none outlives its frame.
         let field_xa = self.host.world.drain_field_xa_cues();
+        // The scene's CD-XA prestage list is for a host that decodes clips
+        // asynchronously (the browser page stages it); this director reads a
+        // clip's span synchronously on first use, so the list is dropped.
+        let _ = self.host.world.drain_field_xa_prestage();
         let Some(bgm) = self.bgm.as_mut() else {
             return;
         };
@@ -1172,21 +1172,23 @@ impl BootSession {
         // cadence `frame_step`, which retail applies once per *game tick* of
         // that many vsyncs. The two schedules are the same in wall time.
         bgm.apply_sfx_ring_ops(&ops, world.clock.display_frame_step.clamp(1, 255) as u8);
-        let side_band = matches!(
+        let field_family = matches!(
             world.mode,
             legaia_engine_core::world::SceneMode::Field
                 | legaia_engine_core::world::SceneMode::WorldMap
-        )
-        .then(|| world.side_band_bank())
-        .flatten();
+        );
+        let side_band = field_family.then(|| world.side_band_bank()).flatten();
         let index = &self.host.index;
         // A slot-6 side-band bank is not a tail borrower: retail streams it
         // over the field bank in the shared region, and the residency below
         // carries it.
         let side_band = side_band.filter(|b| b.slot != 6);
-        bgm.sync_field_sfx(&world.props.stager_bytes, side_band, |entry| {
-            index.entry_bytes_extended(entry).ok()
-        });
+        bgm.sync_field_sfx(
+            &world.props.stager_bytes,
+            field_family,
+            side_band,
+            |entry| index.entry_bytes_extended(entry).ok(),
+        );
         // The slot-2 / slot-6 region follows the mode: the field bank in the
         // field, the class-2 bank in battle, a minigame's own in its mode.
         let shared = self.host.world.sync_sfx_residency();
@@ -1201,11 +1203,9 @@ impl BootSession {
     /// first used to reach this - so a movie that handed off into a new scene
     /// kept the trigger scene's camera shot and VAB bank.
     fn after_scene_swap(&mut self) {
-        // Field entry resets the camera globals (`FUN_80025C24`) and kills
-        // any mover in flight, so a departing scene's shot can't leak its
-        // eye-space depth or focus into the next one. The sibling reset of
-        // the op-0x45 param set lives in `SceneHost`'s scene entry.
-        self.camera.reset_globals_for_scene_entry();
+        // The camera globals' reset (`FUN_80025C24`) is not here: a door's
+        // runs inside `frame_step::camera_after_world_tick`, the tick order
+        // both hosts share, and the post-FMV hand-off runs it itself.
         if let Some(bgm) = self.bgm.as_mut() {
             // New scene -> drop any SFX cues queued against the previous
             // one. No bank is staged: retail's field init loads no scene
@@ -1237,6 +1237,10 @@ impl BootSession {
             outcome,
             legaia_engine_core::scene::FmvHandoffOutcome::Entered { .. }
         ) {
+            // Field entry resets the camera globals (`FUN_80025C24`) and
+            // kills any mover in flight, so the movie's trigger scene cannot
+            // leak its shot into the next one - as on a door.
+            self.camera.reset_globals_for_scene_entry();
             self.after_scene_swap();
         }
         Some(outcome)
@@ -1288,32 +1292,34 @@ impl BootSession {
                 self.close_field_menu();
             }
         }
-        // Snap the camera controller back to the follow default whenever the
-        // field is in free-roam. A cutscene's op-0x45 Camera Configure events
-        // leave `self.camera` in Cinematic mode at the shot's yaw, but the
-        // renderer frames free-roam field with the FIXED follow camera (which
-        // never reads `self.camera`), so the stale cinematic yaw would feed
-        // `field_camera_azimuth` below and rotate the d-pad → direction remap
-        // ~180deg off the on-screen camera (the New Game prologue → Rim Elm
-        // hand-off left the controls inverted). See `Camera::reset_for_free_roam`.
-        self.camera.reset_for_free_roam(&self.host.world);
-        // Feed the previous frame's camera azimuth into the world so the
-        // field free-movement controller remaps the d-pad camera-relative
-        // ("screen up" walks away from the camera). The compass sums the
-        // scripted yaw, the user's manual drag-orbit, and the host
-        // renderer's fixed framing bias (`Camera::compass_azimuth_units`);
-        // all three default to 0, which maps straight to world +Z.
-        self.host.world.locomotion.camera_azimuth = self.camera.compass_azimuth_units();
+        // The camera's half before the world tick (shared with the browser
+        // page, `frame_step::camera_before_world_tick`): snap a free-roam
+        // camera back to the follow default - a cutscene's op-0x45 events
+        // leave it Cinematic at the shot's yaw, and the stale yaw would rotate
+        // the d-pad remap ~180deg off the on-screen camera - then publish the
+        // compass azimuth (scripted yaw + the user's drag-orbit + the host
+        // framing bias) the field controller reads THIS tick.
+        legaia_engine_core::frame_step::camera_before_world_tick(
+            &mut self.camera,
+            &mut self.host.world,
+            None,
+        );
         let event = self.host.tick()?;
-        self.camera.route_camera_events(&mut self.host.world);
         if let Some(bgm) = self.bgm.as_mut() {
             // SceneHost::route_bgm_events drains the world's pending BGM
             // events and dispatches into the director.
             let _ = self.host.route_bgm_events(bgm)?;
         }
-        // After events: camera tick + scene-transition BGM rebind.
-        self.camera.tick(&self.host.world);
-        if let SceneTickEvent::SceneEntered { .. } = &event {
+        // The camera's half after it: route this tick's op-0x45 events,
+        // advance the globals, and reset them on a scene entry
+        // (`frame_step::camera_after_world_tick`).
+        let scene_entered = matches!(event, SceneTickEvent::SceneEntered { .. });
+        legaia_engine_core::frame_step::camera_after_world_tick(
+            &mut self.camera,
+            &mut self.host.world,
+            scene_entered,
+        );
+        if scene_entered {
             self.after_scene_swap();
         }
         self.route_field_sfx();
@@ -1538,6 +1544,40 @@ impl BootSession {
             self.host.world.party.party_count
         });
         Ok(self.host.world.mode)
+    }
+
+    /// Resume a loaded save the way both hosts resume one: land it through
+    /// [`legaia_engine_core::resume::land_save`] (the save's own scene, else
+    /// the scene already running, else the opening town - never a New Game),
+    /// entering scenes through [`Self::enter_scene_live`], then hydrate the
+    /// world from `save` over the landing.
+    ///
+    /// `save_scene` is the save's resume label ([`legaia_save::SaveResume::scene`],
+    /// empty for a file that carries none). The caller rebuilds its
+    /// render-side scene state when [`ResumeLanding::entered_scene`] is set.
+    /// The browser play page's `play_resume_save` is the paired entry.
+    ///
+    /// [`ResumeLanding::entered_scene`]: legaia_engine_core::resume::ResumeLanding::entered_scene
+    pub fn resume_save(
+        &mut self,
+        save: legaia_save::SaveFile,
+        save_scene: &str,
+        opts: &FieldLiveOpts,
+    ) -> legaia_engine_core::resume::ResumeLanding {
+        let current = self.host.scene.as_ref().map(|s| s.name.clone());
+        let landing =
+            legaia_engine_core::resume::land_save(save_scene, current.as_deref(), |scene| {
+                self.enter_scene_live(scene, opts)?;
+                self.confirm_scene_landed(scene)
+            });
+        self.host.world.load_full(save);
+        log::info!(
+            "resume: landed {} ({:?}); seeded world from save ({} party records)",
+            landing.kind(),
+            landing.scene(),
+            self.host.world.party.party_count
+        );
+        landing
     }
 
     /// Where a save written now would resume: the loaded scene's CDNAME

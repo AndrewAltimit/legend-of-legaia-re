@@ -389,13 +389,12 @@ pub fn walk_view_camera_mvp(
 /// translation and projects through `H` rather than using an explicit eye
 /// offset), so the orbit radius stays a scene-sized approximation.
 ///
-/// REF: FUN_8001CF50, FUN_800461A4, FUN_8004629C, FUN_8004638C
+/// REF: FUN_800172C0, FUN_80026988
 ///
-/// `FUN_8001CF50` (SCUS) composes the retail view rotation by rotating about
-/// each axis with the three camera-angle globals - `RotMatrixX(pitch)` at
-/// `0x800461A4`, `RotMatrixY(yaw)` at `0x8004629C`, `RotMatrixZ(roll)` at
-/// `0x8004638C` - each masking the 12-bit angle (`4096 = 360 deg`), indexing
-/// the sin/cos LUT at `0x80070A2C`, and composing via GTE `mvmva`. This MVP
+/// `FUN_800172C0` (SCUS) builds the retail view rotation from the three
+/// camera-angle globals through the Euler kernel `FUN_80026988`, which forms
+/// `Rx(pitch) * Ry(yaw) * Rz(roll)` inline from the sin/cos LUT at
+/// `0x80070A2C` (each angle masked to 12 bits, `4096 = 360 deg`). This MVP
 /// folds the pitch + yaw pair into a spherical orbit +
 /// `glam::Mat4::look_at_rh` rather than a literal `RotMatrixX` *
 /// `RotMatrixY` matrix product, then rolls the resulting view frame; the
@@ -449,8 +448,8 @@ pub fn cutscene_camera_mvp(
     let (ps, pc) = pitch.sin_cos();
     let eye = center + Vec3::new(distance * pc * ys, -distance * ps, distance * pc * yc);
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
-    // Retail's third factor. `FUN_8001CF50` post-multiplies `RotMatrixZ(roll)`
-    // onto `Rx * Ry`, i.e. it rotates about the axis the first two already
+    // Retail's third factor. `FUN_80026988` composes `Rz(roll)` after
+    // `Rx * Ry`, i.e. it rotates about the axis the first two already
     // aimed - the view axis - so in this orbit rendition the equivalent is a
     // roll of the view frame, left-multiplied onto the look-at view.
     let view = Mat4::from_rotation_z(roll_radians) * view;

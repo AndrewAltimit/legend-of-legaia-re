@@ -155,10 +155,11 @@ pub fn victory_drop_roll(
 // (`FUN_801dd864` reads the same `+0x161` byte - see [`apply_magic_power`]),
 // so the loop is: cast → XP → level → stronger cast.
 //
-// Unmodelled retail gates (documented, intentionally not reproduced): the
-// per-battle no-reward flag `_DAT_8007BAC0` (scripted fights skip the accrual,
-// same flag battle-formulas.md notes as the unmodelled gold gate) and the
-// unidentified accrual skip `_DAT_8007BDB8`.
+// Gates the kernels leave to the caller: the special-battle word
+// `_DAT_8007BAC0` (any bit skips the accrual, `0x801DE450` - engine-core's
+// `World::accrue_summon_spell_xp` applies it, as `World::apply_battle_loot`
+// applies the same word's gold / EXP / drop gates) and the unidentified
+// accrual skip `_DAT_8007BDB8` (unmodelled).
 
 /// One target's spell-XP gain from a summon hit - PORT: FUN_801ddb30
 /// (spell-XP accrual tail, `attacker_slot == 7` only; decompiled block

@@ -281,6 +281,56 @@ pub struct CutsceneTimeline {
     /// writing the NPC's render heading each frame.
     // REF: FUN_8003774C (case 0x38: rotate-to-angle interpreted in place)
     pub facing_wait: Option<TimelineFacing>,
+    /// `Some` while the timeline is PARKED on a cross-context **compass
+    /// walk** against the player (`B7 F8 <b0> <b1>` / `C1 F8 <b0> <b1>` = op
+    /// `0x37` / `0x41` with the player-anchor target). Retail's dispatcher
+    /// parks the record on the player's `+0x94` and the walk kernel
+    /// (`FUN_8003774C`, arm `0x8003789C..0x800379F8`) translates the player
+    /// along one of eight compass directions for `(b1 & 0x3F) * (4 << sel)`
+    /// speed units, spending `DAT_1F800393` of them per game tick - one per
+    /// vsync. `map01`'s cave-mouth record walks the player out of the cave
+    /// this way (`B7 F8 00 81`: one tile along `-Z` over sixteen vsyncs).
+    // REF: FUN_8003774C (the 0x37 / 0x41 arm interpreted in place)
+    pub player_glide: Option<TimelinePlayerGlide>,
+    /// Ticks left on the **scene-bank** clip the timeline last poked onto the
+    /// player (`A2 F8 <move_id>` with the party-bank bit down): the clip's
+    /// end-latch length at its own step ([`crate::field_anim::clip_end_ticks`]).
+    /// Retail's clip tick `FUN_800204F8` latches the end flag `0x100` into
+    /// the player's `+0x62` when the cursor reaches the last frame
+    /// (`0x800206E4..0x8002072C`), and a record waits for it with
+    /// `AC F8 08` / `AD F8 08`. Counted down once per slice; `0` when no
+    /// clip is in flight or its length is unknown.
+    pub player_clip_ticks: u32,
+    /// `Some(step_past_width)` while the timeline is PARKED on a player
+    /// end-latch spin (`AD F8 08`, op `0x2D` LFLAG_TST bit 8 against the
+    /// player) with [`Self::player_clip_ticks`] still running. Released, and
+    /// stepped past by this width, when the countdown drains.
+    // REF: FUN_800204F8 (the latch), FUN_80039B7C (the per-frame re-entry)
+    pub player_clip_wait: Option<usize>,
+    /// `true` once the context has taken its first frame slice. A spawned
+    /// helper holds the pad from then on (retail's engaged bit is raised by
+    /// the script runner's step, not by the spawn); see
+    /// `World::script_context_engages_player`.
+    pub stepped: bool,
+}
+
+/// State of a parked player compass walk (see
+/// [`CutsceneTimeline::player_glide`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimelinePlayerGlide {
+    /// The walk leg: position seeded from the player, `op_accum` the spent
+    /// units (`+0x54`), `speed` 1 (one unit per engine tick = per vsync).
+    pub state: legaia_engine_vm::motion_vm::MotionState,
+    /// Direction / divisor-selector byte.
+    pub body0: u8,
+    /// Length / divisor-selector byte.
+    pub body1: u8,
+    /// `0x80` for op `0x37`, `0x40` for op `0x41`.
+    pub rate: i32,
+    /// PC to resume at once the leg completes (`yield pc + 4`).
+    pub resume_pc: usize,
+    /// Ticks parked so far, bounded by the walk park timeout.
+    pub frames: u32,
 }
 
 /// State of a parked cross-context rotate yield (see
@@ -353,6 +403,10 @@ impl CutsceneTimeline {
             restore_hidden_on_complete: false,
             walk_wait: None,
             facing_wait: None,
+            player_glide: None,
+            player_clip_ticks: 0,
+            player_clip_wait: None,
+            stepped: false,
         }
     }
 

@@ -235,6 +235,23 @@ pub const FIRST_VISIT_INTRO_XA: HubXaCue = HubXaCue {
 pub const ROUND_CARD_XA_CLIP: u8 = 0x1F;
 /// The ROUND card line's read span.
 pub const ROUND_CARD_XA_DURATION: u16 = 0x54;
+/// The ROUND card line a first visit starts: channel `0`, the round index of
+/// every first-entry word ([`ROUND_CARD_XA_CLIP`]).
+pub const FIRST_VISIT_ROUND_CARD_XA: HubXaCue = HubXaCue {
+    clip: ROUND_CARD_XA_CLIP,
+    channel: 0,
+    duration_sectors: ROUND_CARD_XA_DURATION,
+};
+
+/// Every CD-XA line the hub can start - the first visit's intro line and its
+/// ROUND card - for a host that stages a clip ahead of the request that
+/// plays it (the browser page, which decodes a clip the bank lacks one
+/// request per frame). Queued when a leg opens
+/// ([`crate::world::World::enter_muscle_dome`]); a host that reads the span
+/// synchronously drains and drops it.
+pub fn hub_xa_prestage() -> [HubXaCue; 2] {
+    [FIRST_VISIT_INTRO_XA, FIRST_VISIT_ROUND_CARD_XA]
+}
 
 /// Which arm of `FUN_801CF870` a [`FirstVisitHub`] is in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -451,11 +468,7 @@ impl FirstVisitHub {
             FirstVisitArm::Return => self.arm = FirstVisitArm::RoundIn,
             FirstVisitArm::RoundIn => {
                 if self.card == 0 {
-                    self.start_xa(HubXaCue {
-                        clip: ROUND_CARD_XA_CLIP,
-                        channel: 0,
-                        duration_sectors: ROUND_CARD_XA_DURATION,
-                    });
+                    self.start_xa(FIRST_VISIT_ROUND_CARD_XA);
                 }
                 self.card += dt * HUB_FADE_STEP_SLOW;
                 if self.card > HUB_FADE_FULL {
@@ -756,6 +769,26 @@ mod tests {
         assert_eq!(cues[1].1.clip, ROUND_CARD_XA_CLIP);
         assert_eq!(cues[1].1.channel, 0, "round index 0 on a first visit");
         assert_eq!(cues[1].1.duration_sectors, ROUND_CARD_XA_DURATION);
+    }
+
+    /// Every line a first visit starts is on the list a leg's opening
+    /// queues, so the page has staged it before the arm asks.
+    #[test]
+    fn the_prestage_list_names_every_line_the_hub_starts() {
+        let mut hub = FirstVisitHub::new();
+        let listed = hub_xa_prestage();
+        let mut started = 0;
+        for _ in 0..2000 {
+            hub.tick(1, 0);
+            if let Some(c) = hub.take_xa() {
+                assert!(listed.contains(&c), "{c:?} not prestaged");
+                started += 1;
+            }
+            if hub.done() {
+                break;
+            }
+        }
+        assert_eq!(started, listed.len());
     }
 
     #[test]

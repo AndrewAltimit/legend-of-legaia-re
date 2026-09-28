@@ -215,7 +215,15 @@ pub struct StatusInstance {
     /// arm, 2 = Low attack), the engine's reading of the retail
     /// `1 << (rand % 3 + 3)` bit roll. Zero / meaningless for other kinds;
     /// the applier rolls it via [`StatusEffectTracker::set_rot_limb`].
+    /// The **latest** roll; [`Self::rot_limbs`] holds every limb rolled.
     pub rot_limb: u8,
+    /// For [`StatusKind::Rot`]: every limb a roll has disabled, bit `n` =
+    /// limb `n`. Retail's applier ORs `1 << (rand % 3 + 3)` into `+0x16E`
+    /// (`lhu` / `or` / `sh` at `0x801E1734..0x801E1740`), so a second Rot
+    /// adds a limb rather than replacing the first, and three rolls can rot
+    /// all of `0x38`. Zero until a roll lands (the packed word then reads
+    /// the default limb `0`).
+    pub rot_limbs: u8,
 }
 
 impl StatusInstance {
@@ -224,6 +232,7 @@ impl StatusInstance {
             kind,
             remaining_turns: kind.default_duration(),
             rot_limb: 0,
+            rot_limbs: 0,
         }
     }
 
@@ -232,6 +241,7 @@ impl StatusInstance {
             kind,
             remaining_turns: duration,
             rot_limb: 0,
+            rot_limbs: 0,
         }
     }
 }
@@ -340,12 +350,15 @@ impl StatusEffectTracker {
     /// Returns `true` if the status was present.
     /// Record the rolled Rot limb on the slot's active Rot instance
     /// (0 = Left arm, 1 = Right arm, 2 = Low attack) - the applier's
-    /// `rand % 3` roll. No-op when the slot has no Rot.
+    /// `rand % 3` roll. The limb is **added** to the ones already rotted
+    /// ([`StatusInstance::rot_limbs`]), as retail's `or` into `+0x16E` adds
+    /// its bit. No-op when the slot has no Rot.
     pub fn set_rot_limb(&mut self, slot: u8, limb: u8) {
         if let Some(list) = self.per_actor.get_mut(slot as usize) {
             for inst in list.iter_mut() {
                 if inst.kind == StatusKind::Rot {
                     inst.rot_limb = limb % 3;
+                    inst.rot_limbs |= 1 << (limb % 3);
                 }
             }
         }
@@ -373,6 +386,16 @@ impl StatusEffectTracker {
             });
         }
         cleared
+    }
+
+    /// Forget every status on `slot` without queueing a
+    /// [`StatusEvent::Cleared`] - the slot's combatant is gone (a battle's
+    /// monster seat at the battle's end), so nothing is cured and nothing
+    /// should be announced.
+    pub fn drop_slot(&mut self, slot: u8) {
+        if let Some(list) = self.per_actor.get_mut(slot as usize) {
+            list.clear();
+        }
     }
 
     /// Clear every status kind on an actor (full-cure / revive).
@@ -762,12 +785,17 @@ impl StatusKind {
 
 impl StatusInstance {
     /// The instance's bit(s) in the packed word. Identical to
-    /// [`StatusKind::display_bit`] except for Rot, which contributes only the
-    /// single limb bit the applier rolled ([`Self::rot_limb`]) - retail's
-    /// `1 << (rot_limb + 3)`.
+    /// [`StatusKind::display_bit`] except for Rot, which contributes the limb
+    /// bit of every roll that landed ([`Self::rot_limbs`], retail's
+    /// `1 << (limb + 3)` each), or the default limb `0` before any roll.
     pub fn display_bit(self) -> u16 {
         if self.kind == StatusKind::Rot {
-            display_flags::ROT_LIMBS[(self.rot_limb % 3) as usize]
+            if self.rot_limbs == 0 {
+                return display_flags::ROT_LIMBS[(self.rot_limb % 3) as usize];
+            }
+            (0..3)
+                .filter(|&n| self.rot_limbs & (1 << n) != 0)
+                .fold(0, |w, n| w | display_flags::ROT_LIMBS[n])
         } else {
             self.kind.display_bit()
         }
@@ -779,7 +807,8 @@ impl StatusInstance {
 /// This is the bridge the HUD needs: the engine models a slot's ailments as
 /// a list of [`StatusInstance`]s, retail models them as bits, and
 /// [`status_icon`] selects on the bits. Faint contributes nothing (see
-/// [`StatusKind::display_bit`]); Rot contributes its rolled limb bit only.
+/// [`StatusKind::display_bit`]); Rot contributes the bit of every limb it has
+/// rolled.
 pub fn pack_display_flags<'a>(statuses: impl IntoIterator<Item = &'a StatusInstance>) -> u16 {
     statuses.into_iter().fold(0u16, |w, s| w | s.display_bit())
 }
@@ -957,13 +986,17 @@ mod tests {
     }
 
     #[test]
-    fn rot_packs_only_the_rolled_limb_bit() {
+    fn rot_packs_each_rolled_limb_bit() {
+        // Each roll ORs its limb in (`0x801E1734..0x801E1740`), so the word
+        // grows by one limb bit per roll rather than moving between them.
         let mut t = StatusEffectTracker::new();
         t.apply(1, StatusKind::Rot);
+        let mut expect = 0;
         for limb in 0..3u8 {
             t.set_rot_limb(1, limb);
+            expect |= display_flags::ROT_LIMBS[limb as usize];
             let word = t.display_flags(1);
-            assert_eq!(word, display_flags::ROT_LIMBS[limb as usize]);
+            assert_eq!(word, expect);
             // One limb bit still lands on the group mask the ladder tests.
             assert_ne!(word & display_flags::ROT_MASK, 0);
             assert_eq!(status_icon(word, true), StatusIcon::Sprite(0x1B));
@@ -1068,6 +1101,25 @@ mod tests {
         // Curing clears the limb.
         t.cure(3, StatusKind::Rot);
         assert_eq!(t.rot_limb(3), None);
+    }
+
+    #[test]
+    fn rot_rolls_accumulate_limbs_as_retail_ors_them() {
+        // `0x801E1734..0x801E1740`: `lhu` / `or 1 << (rand % 3 + 3)` / `sh`,
+        // so each landed Rot adds a limb bit to `+0x16E`.
+        let mut t = StatusEffectTracker::new();
+        t.apply(0, StatusKind::Rot);
+        t.set_rot_limb(0, 1);
+        assert_eq!(t.display_flags(0), 0x0010);
+        t.apply(0, StatusKind::Rot);
+        t.set_rot_limb(0, 2);
+        assert_eq!(t.display_flags(0), 0x0030);
+        t.set_rot_limb(0, 0);
+        assert_eq!(t.display_flags(0), 0x0038);
+        // The latest roll is still what `rot_limb` answers.
+        assert_eq!(t.rot_limb(0), Some(0));
+        t.cure(0, StatusKind::Rot);
+        assert_eq!(t.display_flags(0), 0);
     }
 
     #[test]

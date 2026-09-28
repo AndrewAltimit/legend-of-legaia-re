@@ -39,7 +39,7 @@ with the lure gate `select_owned_rod` (`FUN_801d712c`) over the lure cell
 | `0x32` | Sets state to `10` (the run-loop entry). |
 | `10` (`0xa`) | Run-loop init: zeroes the per-cast working set, including tension `DAT_801d9168`, depth/line `DAT_801d9298`, casting-power `DAT_801d9274` (seeded `0x40`) and its direction `DAT_801d9278`, then advances. |
 | `0xb` | Fade-in: ramps the screen-fade level `DAT_801d905c` down to 0, then advances (or jumps to the "no lure" state `0x96` if `FUN_801d712c` reports no lure owned). |
-| `0xc` | Idle / "press to cast": a button edge starts the cast (sets a sound cue and advances) or opens the shop branch (`0x64`). |
+| `0xc` | Idle / "press to cast": the packed pad edge `_DAT_8007B874 & 0xC0` (Cross / Square) starts the cast (sets a sound cue and advances); `& 0x110` (Triangle / Select, `0x801CF9EC`) raises SFX `0x21`, zeroes the menu cursor `0x801D912C` and opens the [hub menu](#the-hub-menu) (`0x64`). |
 | `0xd` | Cast wind-up: advances a small counter, pans the camera, and after ~12 frames jumps to the casting-power state `0x14`. |
 | `0x14` | Casting-power oscillator: bounces `DAT_801d9274` between `0x20` and `0x1000` (direction `DAT_801d9278`); on a button edge it locks the power, spawns the lure / line actors, and computes the line-projection vector from the locked power. |
 | `0x19` | Transient hold state (sets the "allow leave" flag only). |
@@ -47,14 +47,32 @@ with the lure gate `select_owned_rod` (`FUN_801d712c`) over the lure cell
 | `0x20`..`0x22` | Lure-landing / line-sink sequence (camera + line-actor position setup), each advancing to the next. |
 | `0x28` | Auxiliary animation wait keyed on `DAT_801d9164`; returns to `10` when the helper `FUN_801d7528` completes. |
 | `0x2d` | Miss / retry bookkeeping (`DAT_801d9268` countdown via `FUN_801d6f10`), then back to `0x32`. |
-| `0x64`..`0x66` | Shop / point-exchange branch: confirm prompts (`FUN_801d72a0`, but see [VA aliasing](#va-aliasing-in-this-band)) gating the buy / sell helpers `FUN_801d06c8` / `FUN_801d092c` / `FUN_801d0c3c`. |
-| `0x6e`,`0x78`..`0x7a` | Shop sub-flows that call the same buy / sell helpers and the picker `FUN_801d0474` (static extract: the five-row main-menu picker - snap-wrap cursor, confirm jump table to states `0x0A`/`0x65`/`0x6E`/`0x78`/`0xC8`, rows 2/3 snapshot the points bank, row 4 arms the venue exit; port `engine-core::fishing::FishingMenu`). |
+| `0x64`..`0x66` | The [hub menu](#the-hub-menu): `0x64` runs the five-row picker `FUN_801d0474(1)`; `0x65` / `0x66` draw help pages 0 and 1 through `FUN_801d72a0` and turn on any face-button edge (`& 0xF0`). |
+| `0x6e`,`0x78`..`0x7a` | Hub sub-screens, each drawn over the menu run non-interactive: `0x6e` the rod / lure select `FUN_801d0f5c`, `0x78`..`0x7a` the prize list `FUN_801d0c3c`, its quantity picker `FUN_801d092c` and the confirm `FUN_801d06c8`. Both lists hand back to `0x64` on cancel. |
 | `0x96` | "You have lost the lure" / no-rod end screen; a button edge advances to `200`. |
 | `200` (`0xc8`) | Exit / fade-out: ramps a fade value to white and, once full, plays the leaving XA cue and tears the mode down. |
 
 The shared tail also services three auxiliary one-shot animation timers (`DAT_801d9160` / `DAT_801d915c` / `DAT_801d90f0`, each advanced through `FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` - see [HUD and banner animations](#hud-and-banner-animations)), applies the screen fade, draws the persistent HUD (`FUN_801d13f0`) and - while a fish is hooked (`DAT_801d9058`) - the catch HUD (`FUN_801d1580`), and honours a global "confirm-to-leave" edge that returns to state `10`. Each timer is idle at `0`, seeded to `1` by its trigger event, passed to its animator as the frame count, advanced by the frame step `DAT_1f800393` while the animator reports active, and zeroed when it expires; while the `FUN_801d75dc` timer runs, the tail forces the `FUN_801d78ec` timer back to zero.
 
 The reeling / fish-AI tick `FUN_801d4004` and the per-fish actor handler `FUN_801d26cc` run from the actor side of the run loop (`FUN_801d26cc` calls `FUN_801d4004` while the fish is engaged), not directly from the mode switch.
+
+## The hub menu
+
+The pond is entered directly - the venue door and every port host start at the idle shore - and the menu is opened from there, on Triangle or Select. The session machine's jump table (`0x801CEBE0`, indexed by `DAT_801d926c`) gives the screens:
+
+| State | Screen | Hands back to |
+|---|---|---|
+| `0x64` | Five-row picker `FUN_801d0474(1)`: rows at `(0x6C, 0x58 + 0x10*row)`, cursor icon `0x4E` at `x = 0x5B`, frame `FUN_801d74b0(0xA0, 0x50, 0x68, 0x50)` | row 0 or cancel -> `0x0A`; row 1 -> `0x65`; row 2 -> `0x6E`; row 3 -> `0x78`; row 4 -> `0xC8` |
+| `0x65` | Help page 0, `FUN_801d72a0(0x14, 0x10, 0)` | any `& 0xF0` edge -> `0x66`, SFX `0x21` |
+| `0x66` | Help page 1, `FUN_801d72a0(0x14, 0x10, 1)` | any `& 0xF0` edge -> `0x64`, SFX `0x37` |
+| `0x6E` | Rod / lure select `FUN_801d0f5c(1)` | cancel -> `0x64` (`0x801D1088`) |
+| `0x78` | Prize list `FUN_801d0c3c(1)` | cancel -> `0x64` (`0x801D0DB0`) |
+
+The row strings are fixed overlay addresses the picker forms with `lui`/`addiu` pairs (`0x801CEF04` .. `0x801CEF44`); the help pages are the pointer tables at `0x801D8130` / `0x801D8168`. The tackle list names its rows with the `0xC2 id` item-name escape over lure ids `0x9D..0x9F` and rod ids `0xA0..0xA2`, at `x = 0x89` from `y = 0x50` on a 16 px pitch, lure counts at `x = 0xF1`, the equipped row in palette `7`, rods only when owned, cursor at `x = 0x78`.
+
+Rows 2 and 3 copy the persistent lure index `_DAT_80084450` into `0x801D90DC` before switching (`0x801D0680..0x801D0690`). That word is the tackle screen's cursor, so the screen opens on the equipped lure; it is not a snapshot of the points bank `_DAT_8008444C`, which is what the picker's port field `snapshot_points` had described.
+
+Port: `engine-core::fishing_hub` - `FishingHubText` reads the text off the user's disc, `FishingHub` runs the screens over the ported picker (`FishingMenu`), help layout (`help_panel_layout`) and tackle kernel (`RodLureSelect`), and `PondSession::hub_step` opens it from the idle phase. The native window and the browser play page reach it through `World::tick_fishing_hub` / `World::fishing_hub_lines` and draw it with `engine-ui::ui_fishing_hub`; the minigames page steps the same session kernel and draws its `fishing_hub_json` lines. The help footers' `0xCE` button escapes are consumed without a glyph on every host.
 
 ## Tension / reeling mechanic
 
@@ -65,7 +83,9 @@ The hooked-fight is a tug-of-war between the player's reel input and the fish's 
 - **Mirror mode** (`_DAT_8007b850 & 0x2` = **R2**): the reel-direction mirror toggle read alongside the two reel buttons.
 - The gauge is then clamped to `[0, 0x1000]`. (Confirmed: clamp at `0x1000` high, `0` low.)
 
-The reel buttons are pinned from the pad-mask packer `FUN_8001822C` (both its digital and analog paths cross-confirm the map), which builds `_DAT_8007b850` from pad-1's low 16 bits: `0x10` Triangle, `0x20` Circle, `0x40` Cross, `0x80` Square, `0x1000` Up, `0x2000` Right, `0x4000` Down, `0x8000` Left, `0x0001` L2, `0x0002` R2, `0x0004` L1, `0x0008` R1, `0x0100` Select, `0x0200` L3, `0x0400` R3, `0x0800` Start. So reel A = Cross and reel B = **Square** (not Circle); Circle (`0x20`) is instead the cast / hook-state input.
+The reel buttons are pinned from the pad-mask packer `FUN_8001822C` (both its digital and analog paths cross-confirm the map), which builds `_DAT_8007b850` from pad-1's low 16 bits: `0x10` Triangle, `0x20` Circle, `0x40` Cross, `0x80` Square, `0x1000` Up, `0x2000` Right, `0x4000` Down, `0x8000` Left, `0x0001` L2, `0x0002` R2, `0x0004` L1, `0x0008` R1, `0x0100` Select, `0x0200` L3, `0x0400` R3, `0x0800` Start. So reel A = Cross and reel B = **Square** (not Circle).
+
+The same two buttons cast: state `0x0C` starts the cast and state `0x14` locks the power meter on the packed edge `_DAT_8007B874 & 0xC0` (`0x801CF99C`, `0x801CFBA4`). Circle (`0x20`) is not the cast; with L2 it is the shared tail's abandon edge (`& 0x21` at `0x801D0318`, gated on the allow-leave flag `s7`), which drops the session back to `0x0A`. An earlier reading of this section named Circle the cast input; no cast state tests `0x20`.
 
 `_DAT_80084454` is a persistent rod / upgrade stat read from the save block; a higher value softens the per-frame tension change. The fish's own behaviour is a sub-state machine on `DAT_801d910c` (run / dart-left / dart-right / dive, selected pseudo-randomly via the BIOS `rand` `func_0x80056798`), which moves the fish actor and modulates the pull; the timer `DAT_801d9110` counts down each behaviour and re-rolls the next. Per-fish parameters (pull magnitudes, dart push, behaviour-selection cutoffs, scoring value) come from the per-species table documented in [Per-species parameter table](#per-species-parameter-table) below, indexed by `DAT_801d91cc * 0x28` based at `&DAT_801d81a4`.
 
@@ -797,7 +817,9 @@ seeds from the persistent save-block words the world keeps between sessions
 (`SceneHost::fishing_venue_map`), the same bytes the minigames page reads. The
 `play-window` viewer starts it from the `L` key and the browser play page from
 its Fish button; both call `SceneHost::enter_fishing_from_overlay`, the door
-warp's own entry. Circle (`0x20`) casts and locks the power meter, Cross reels
+warp's own entry. Circle (`0x20`) casts and locks the power meter - a port
+binding: retail casts on Cross / Square (see [the reeling
+mechanic](#tension--reeling-mechanic)) - Cross reels
 (reel A, `0x40`), Square reels harder (reel B, `0x80`); each frame's session
 events (`World::minigames.fishing_events`) seed both hosts' banner one-shots
 and queue the hook / celebration cues. `P` opens the [point

@@ -11,6 +11,29 @@ use super::*;
 /// slot's `+0x25F` Miracle marker is armed.
 const NORMAL_ART_MIN_CONSTANT: u8 = 0x1F;
 
+/// Whether the command ring refuses `arm` for an actor whose `+0x16E` word is
+/// `status`. `FUN_801D0748`'s ring state tests the word on the press itself
+/// and answers a refusal with cue `0x23` (`0x801D2968`):
+///
+/// - **Attack** (Left) with all three Rot limbs set, `status & 0x38 == 0x38`
+///   (`0x801D1560..0x801D156C`) - the arts entry would have no direction left;
+/// - **Magic** (Right) under Curse, `status & 0x1000` (`0x801D1434..0x801D1440`).
+///
+/// The same two tests pick the ring's crosses (`FUN_801DBD04(0xA0, 0x42)` at
+/// `0x801D1328`, `FUN_801DBEC4(0xF8, 0x42)` at `0x801D135C`). The Magic arm's
+/// other refusals - no Ra-Seru bound (`ctx[+0x25F + member] == 0`) and the
+/// special word's `0x200` - are not status bits.
+///
+/// PORT: FUN_801D0748 (the ring's status refusals, `0x801D1434..0x801D1440` / `0x801D1560..0x801D156C`)
+pub(crate) fn ring_arm_refused(status: u16, arm: crate::battle_input::BattleCommand) -> bool {
+    use crate::battle_input::BattleCommand;
+    match arm {
+        BattleCommand::Attack => status & 0x38 == 0x38,
+        BattleCommand::Magic => status & 0x1000 != 0,
+        _ => false,
+    }
+}
+
 impl World {
     /// Open the player-driven command menu for party member `actor` and park
     /// the action SM. The action context's `active_actor` is set now; the
@@ -86,7 +109,7 @@ impl World {
         // test - see `super::validator_host`.
         let (party, monsters) = self.battle_target_rows();
 
-        let ev = BattleCommandInput {
+        let mut ev = BattleCommandInput {
             up: self.input.just_pressed(PadButton::Up),
             down: self.input.just_pressed(PadButton::Down),
             left: self.input.just_pressed(PadButton::Left),
@@ -96,6 +119,34 @@ impl World {
             // The ring's Attack arm reads the option word with the pad.
             select_attack: self.toggles.select_attack,
         };
+        // The ring's two status refusals (`ring_arm_refused`): a press on
+        // a refused arm is dropped with the buzz cue, and the ring stays up.
+        if let CommandPhase::Menu { .. } = session.phase {
+            use crate::battle_input::BattleCommand;
+            let status = self.raw_status_word(session.actor);
+            let cursor_arm = session.menu_command();
+            let mut refused = false;
+            for (pressed, arm) in [
+                (&mut ev.left, Some(BattleCommand::Attack)),
+                (&mut ev.right, Some(BattleCommand::Magic)),
+                (&mut ev.cross, cursor_arm),
+            ] {
+                if *pressed && arm.is_some_and(|a| ring_arm_refused(status, a)) {
+                    *pressed = false;
+                    refused = true;
+                }
+            }
+            if refused {
+                self.audio
+                    .battle_sfx_cues
+                    .push(crate::battle_events::BattleSfxCue {
+                        kind: crate::arts_command_input::ROT_REFUSED_CUE,
+                        timing_frames: 0,
+                        actor_slot: session.actor,
+                        target_slot: session.actor,
+                    });
+            }
+        }
         let was_round_prompt = matches!(session.phase, CommandPhase::RoundPrompt { .. });
         let phase_before = session.phase.clone();
         session.input(ev, party, monsters);
@@ -608,7 +659,7 @@ impl World {
             return;
         };
         let (party, monsters) = self.battle_target_rows();
-        let ev = ArtsCommandPad {
+        let mut ev = ArtsCommandPad {
             up: self.input.just_pressed(PadButton::Up),
             down: self.input.just_pressed(PadButton::Down),
             left: self.input.just_pressed(PadButton::Left),
@@ -617,6 +668,36 @@ impl World {
             circle: self.input.just_pressed(PadButton::Circle),
             triangle: self.input.just_pressed(PadButton::Triangle),
         };
+        // A rotted limb's direction is refused during entry, with the buzz
+        // cue (`crate::arts_command_input::rot_blocks`).
+        if matches!(
+            session.phase,
+            crate::arts_command_input::ArtsInputPhase::Entering
+        ) {
+            let status = self.raw_status_word(session.actor);
+            let mut refused = false;
+            for (pressed, cmd) in [
+                (&mut ev.left, legaia_art::Command::Left),
+                (&mut ev.up, legaia_art::Command::Up),
+                (&mut ev.down, legaia_art::Command::Down),
+                (&mut ev.right, legaia_art::Command::Right),
+            ] {
+                if *pressed && crate::arts_command_input::rot_blocks(status, cmd) {
+                    *pressed = false;
+                    refused = true;
+                }
+            }
+            if refused {
+                self.audio
+                    .battle_sfx_cues
+                    .push(crate::battle_events::BattleSfxCue {
+                        kind: crate::arts_command_input::ROT_REFUSED_CUE,
+                        timing_frames: 0,
+                        actor_slot: session.actor,
+                        target_slot: session.actor,
+                    });
+            }
+        }
         session.input(ev, party, monsters);
 
         match session.resolved() {

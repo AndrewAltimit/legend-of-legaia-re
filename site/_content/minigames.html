@@ -3004,13 +3004,25 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       if (st && st.can_stop) { e.preventDefault(); api.slot_stop_reel(reelOf); }
       else if ((b === 'Start' || b === 'Cross') && slotOnScreen()) { e.preventDefault(); slotPress(); }
     } else if (active === 'fishing') {
-      /* Retail pad map: Circle casts, Cross (reel bit 0x40) = reel A, Square
+      /* Pad map: Circle casts (a port binding - retail casts on Cross /
+       * Square and Circle abandons the cast), Cross (reel bit 0x40) = reel A, Square
        * (reel bit 0x80) = reel B. Every FRESH press is ORed into the packed
        * newly-pressed word (retail _DAT_8007B874 layout: 0x8000 Left, 0x2000
        * Right, 0x40 / 0x80 the reels); the engine's bite_pad_nudge counts the
        * strike-credit nudge from it - three masks, the two reels as one, and
        * never the cast press. */
-      if (b === 'Circle') { e.preventDefault(); fishingCastPress(); }
+      /* The venue hub reads the same packed word: Triangle / Select open it
+       * at the shore (retail state 0x0C's `& 0x110`), Up / Down move its
+       * cursor, Cross confirms, Circle backs out. */
+      if (b === 'Circle') { e.preventDefault(); if (!e.repeat) fishPressed |= 0x20; fishingCastPress(); }
+      else if (b === 'Triangle' || b === 'Select') {
+        e.preventDefault();
+        if (!e.repeat) fishPressed |= (b === 'Triangle') ? 0x10 : 0x100;
+      }
+      else if (b === 'Up' || b === 'Down') {
+        e.preventDefault();
+        if (!e.repeat) fishPressed |= (b === 'Up') ? 0x1000 : 0x4000;
+      }
       else if (b === 'Cross') { e.preventDefault(); if (!e.repeat) { fishHold |= 0x40; fishPressed |= 0x40; } }
       else if (b === 'Square') { e.preventDefault(); if (!e.repeat) { fishHold |= 0x80; fishPressed |= 0x80; } }
       else if (b === 'Left' || b === 'Right') {
@@ -3237,6 +3249,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         }
       } else if (e.e === 'snapped') {
         verdict($('fishing-verdict'), `The line snapped! ${keyLabel('Circle')} to cast again.`, 'bad');
+      } else if (e.e === 'hub_leave') {
+        fishLive = false;
+        verdict($('fishing-verdict'), 'You left the venue. Start again to fish.', '');
+      } else if (e.e === 'hub_exchange') {
+        const ex = $('fishing-exchange');
+        if (ex && ex.scrollIntoView) ex.scrollIntoView({ block: 'nearest' });
+        verdict($('fishing-verdict'), 'The prize exchange is the panel beside the pond.', '');
       }
     }
   }

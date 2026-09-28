@@ -11,6 +11,17 @@ fn prompt_waits(world: &World) -> bool {
         .is_some_and(|p| p.is_waiting_for_input() && !p.menu_active())
 }
 
+/// Step an open menu until its slide rests and it takes input
+/// ([`crate::dialog_picker_slide`]): Up / Down and confirm do nothing before.
+fn slide_menu_in(world: &mut World) {
+    let mut guard = 0;
+    while !world.dialog.inline.as_ref().unwrap().picker_takes_input() {
+        world.step_inline_dialogue(false, false, false);
+        guard += 1;
+        assert!(guard < 80, "the menu never came to rest");
+    }
+}
+
 #[test]
 fn inline_dialogue_runs_branch_flag_set_through_field_vm() {
     // A menu box ("Hi" + A/B picker) whose option branches each SET a distinct
@@ -52,6 +63,7 @@ fn inline_dialogue_runs_branch_flag_set_through_field_vm() {
         guard += 1;
         assert!(guard < 50, "menu never became active");
     }
+    slide_menu_in(&mut world);
     // Move the cursor to option B and confirm.
     world.step_inline_dialogue(false, false, true);
     assert_eq!(world.dialog.inline.as_ref().unwrap().last_choice, None);
@@ -248,6 +260,7 @@ fn a_menu_reply_parks_on_its_jump_back_and_the_next_talk_reopens_the_menu() {
         guard += 1;
         assert!(guard < 50, "menu never became active");
     }
+    slide_menu_in(&mut world);
     // Pick option A: reply "a" plays, then the record jumps back to the menu.
     world.step_inline_dialogue(true, false, false);
     let mut guard = 0;
@@ -361,6 +374,19 @@ fn vm_dialogue_tick_executes_branch_through_field_vm() {
         let _ = world.tick();
         guard += 1;
         assert!(guard < 60, "menu never became active through tick");
+    }
+    // The menu slides in before it reads the pad.
+    let mut guard = 0;
+    while !world
+        .dialog
+        .inline
+        .as_ref()
+        .is_some_and(|d| d.picker_takes_input())
+    {
+        world.set_pad(0);
+        let _ = world.tick();
+        guard += 1;
+        assert!(guard < 80, "the menu never came to rest through tick");
     }
     world.set_pad(0);
     let _ = world.tick();

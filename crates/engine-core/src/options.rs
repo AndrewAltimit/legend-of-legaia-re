@@ -228,6 +228,22 @@ impl Default for OptionsState {
 }
 
 impl OptionsState {
+    /// Push the options that are **simulation** knobs onto the world: the
+    /// precise-movement decode, the Field Move default (the run button that
+    /// inverts it is latched by `World::set_pad`), the photosensitivity guard
+    /// over the ambient palette cyclers, and the battle Select Attack word
+    /// (`0x800846C4`). Host policy over world state that a scene change or a
+    /// New Game can reseed, so both hosts call this one push - the native
+    /// window every tick, the browser page whenever the options change or a
+    /// scene is entered. Audio and camera knobs stay with the host that owns
+    /// the device.
+    pub fn apply_to_world(&self, world: &mut crate::world::World) {
+        world.locomotion.precise_movement = self.precise_movement;
+        world.locomotion.run_default = self.field_move == FieldMoveOpt::Run;
+        world.toggles.reduce_flashing = self.reduce_flashing;
+        world.toggles.select_attack = self.battle_select_attack;
+    }
+
     /// Load from a TOML file, falling back to [`Default`] if the file is
     /// absent or unparseable.
     pub fn load_or_default(path: &Path) -> Self {

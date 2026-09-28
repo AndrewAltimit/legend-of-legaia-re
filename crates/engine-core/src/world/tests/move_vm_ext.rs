@@ -255,6 +255,36 @@ fn ext_sub_op_2c_captures_a_strip_request_for_the_draw() {
     assert_eq!(world.move_vm.strip_requests.len(), MOVE_STRIP_REQUEST_CAP);
 }
 
+/// The strip set on screen is one tick's: reading it does not drain it (an
+/// idle redraw draws it again), and the next world tick starts it over.
+#[test]
+fn the_strip_frame_holds_until_the_next_tick() {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    let bc = vec![0x002F, 0x002C, 0, 0, 0, 0, 0];
+    world.set_move_bytecode(0, Some(bc.clone()));
+    let _ = world.step_move_vm(0, &bc);
+    assert_eq!(world.move_vm.strip_frame().len(), 1);
+    assert_eq!(
+        world.move_vm.strip_frame().len(),
+        1,
+        "a read is not a drain"
+    );
+    world.move_vm.begin_strip_tick();
+    assert!(
+        world.move_vm.strip_frame().is_empty(),
+        "a new tick starts over"
+    );
+    let _ = world.step_move_vm(0, &bc);
+    // Park the actor so the tick itself emits nothing.
+    world.actors[0].active = false;
+    world.tick();
+    assert!(
+        world.move_vm.strip_frame().is_empty(),
+        "World::tick begins its own strip set"
+    );
+}
+
 /// Sub-op `0x2F`'s word is the frame-step floor `DAT_8007B9D8`: the resolver
 /// `FUN_80016B6C` raises the cadence to its low byte. With the adaptive arm
 /// off (the engine's), the cadence *is* the floor.

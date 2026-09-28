@@ -171,13 +171,31 @@ impl SceneHost {
 
     /// Drain the world's pending BGM events through `director`, resolving
     /// each `Bgm{text_id, sub_op}` into the right director hook. Mirrors
-    /// the field-VM op `0x35` sub-op table: `1` = start (resolve SEQ
-    /// bytes), `2` = pause, `3` = resume, `4` = stop, `8` = re-attach +
-    /// volume re-apply (`FUN_80019898`), `9` = start behind a load barrier,
-    /// `10` = the unhalt-pause swap-commit
-    /// ([`BgmDirector::unhalt_pause`]). Other sub-ops are passed through
-    /// as no-ops (the host already surfaced them on the world's event
-    /// queue for richer engines to consume).
+    /// the field-VM op `0x35` sub-op table - the arm table at `0x801CEE00`
+    /// in the field overlay, indexed `sub - 1`: `1` = start (resolve SEQ
+    /// bytes), `2` = pause (`0x801E0138`: set pause bit 1,
+    /// `FUN_800266E0`), `3` = pause (`0x801E015C`: set pause bit 1,
+    /// `FUN_80026740`), `4` = resume (`0x801E0180`: clear pause bit 1,
+    /// `FUN_80026478` re-attaches the slot), `8` = re-attach + volume
+    /// re-apply (`FUN_80019898`), `9` = start behind a load barrier, `10` =
+    /// the unhalt-pause swap-commit ([`BgmDirector::unhalt_pause`]), and the
+    /// engine's own [`super::BGM_SUB_OP_ENGINE_STOP`] = stop. Other sub-ops
+    /// are passed through as no-ops (the host already surfaced them on the
+    /// world's event queue for richer engines to consume).
+    ///
+    /// # Sub-ops 3 and 4 are a pause and a resume
+    ///
+    /// This router used to read `3` as a resume and `4` as a stop, the
+    /// legacy labels. The arm bodies say otherwise: `3` sets the pause bit
+    /// and stops the bound sequence's play flag (`FUN_80026740` ->
+    /// `FUN_8006275C` raises channel flag `0x2`, the key-off pause), and `4`
+    /// clears the pause bit and re-attaches the slot. So the most common
+    /// control word in the disc-wide census after the start / commit pair -
+    /// sub-op `4` - silenced the score in the port where retail brought it
+    /// back. What the port does not reproduce is where the re-attach resumes:
+    /// `FUN_80026478` plays through `FUN_800628F0` mode `1`, which rewinds the
+    /// sequence to its start (`+0x4` into the cursor words) before it sets the
+    /// play flag, and the port's gate resumes from the playhead.
     ///
     /// # Sub-op 9 is a start, not a queue
     ///
@@ -231,15 +249,18 @@ impl SceneHost {
                             acted += 1;
                         }
                     }
-                    2 => {
+                    // 2 / 3 both set pause bit 1 (`0x801E0138`,
+                    // `0x801E015C`); 4 clears it and re-attaches the slot
+                    // (`0x801E0180`).
+                    2 | 3 => {
                         director.pause();
                         acted += 1;
                     }
-                    3 => {
+                    4 => {
                         director.resume();
                         acted += 1;
                     }
-                    4 => {
+                    super::BGM_SUB_OP_ENGINE_STOP => {
                         director.stop();
                         acted += 1;
                     }

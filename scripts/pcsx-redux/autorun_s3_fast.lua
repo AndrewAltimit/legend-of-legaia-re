@@ -70,7 +70,7 @@ local function checkpoint(tag)
     local path = OUT_DIR .. "/" .. (tag or LABEL) .. ".rawsstate"
     local ok, err = pcall(function()
         local w = PCSX.createSaveState()
-        local fh = Support.File.open(path, "CREATE")
+        local fh = Support.File.open(path, "TRUNCATE")
         fh:writeMoveSlice(w); fh:close()
     end)
     log(string.format("checkpoint %s ok=%s %s", path, tostring(ok), tostring(err or "")))

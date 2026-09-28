@@ -262,7 +262,7 @@ Diffing the actor pool (`0x801C9594..0x801C9F7F`, 0x60-byte stride per anim slot
 |---|---|
 | `FUN_801D77F4` itself | Walks the VDF body's record table at spawn time to compute the per-actor vertex pool malloc size and to copy per-vertex bytes out of the indexed TMD groups into `actor[+0x90]`. The body is consumed *once at spawn*; the persisted pointer is a retention reference, not actively re-read. |
 | `FUN_80021DF4` case `0x06` (Keyframe arm) | Writes per-bone interpolated pose bytes into the buffer at offsets `+0x00` (count), `+0x02..+0x03` (= 1), `+0x06` (= 1), `+0x0F..` (per-bone 8-byte stride). |
-| `FUN_8001BE80` (per-bone pose interpolator, GTE-side render path) | Reads `*(int *)(actor + 0x4C) + bone_idx * 8 + 8` as a second pose snapshot for per-vertex lerp between two keyframes. Indexed at 8-byte stride starting at offset 8 - matches the case-`0x06` writer's per-bone layout. |
+| `FUN_8001BE80` (per-bone pose interpolator, GTE-side render path) | Reads `*(int *)(actor + 0x4C) + bone_idx * 8 + 8` as the part's frame-0 entry - the blend target only on a clip's last frame when the clamp bit `+0x62 & 8` is clear (the loop wrap); otherwise the target is frame + 1. Indexed at 8-byte stride starting at offset 8 - matches the case-`0x06` writer's per-bone layout. |
 | `FUN_800495C8` (animation envelope sampler) | Reads `*(int *)(actor + 0x4C) + 4` as a per-bone curve walker (4-byte header skip; per-record byte ranges describe interpolation envelopes). |
 | `FUN_8003A1E4` (foreground actor spawner) and `FUN_801DE840` (field VM) | Both read `*(ushort *)(actor[+0x4C] + 2)` as an animation-period u16 (modulo target for the current frame index). Matches the case-`0x06` writer's `puVar15[2..3] = 1`. |
 

@@ -1173,15 +1173,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn bgm(&mut self, text_id: u16, sub_op: u8) {
-        // Sub-ops 1 (start field BGM) and 9 (queue) are the cases that
-        // pin a "currently playing" id. Other sub-ops are control words
-        // (pause / stop / volume / etc.) - we still surface the event so
-        // the engine can route them, just without overwriting current_bgm.
+        // Sub-ops 1 (start) and 9 (start behind a load barrier) are the only
+        // writers of the track id `_DAT_8007BAC8` (`0x801E012C`,
+        // `0x801E0254`). The other sub-ops are control words - pause (2, 3),
+        // re-attach (4, `0x801E0180`), volume, commit - that leave the id
+        // alone, so none of them clears `current_bgm` either.
         if sub_op == 1 || sub_op == 9 {
             self.world.audio.current_bgm = Some(text_id);
-        } else if sub_op == 4 {
-            // 4 = stop.
-            self.world.audio.current_bgm = None;
         } else if sub_op == 5 {
             // Sub-5 is the timed release: retail's handler is
             // `FUN_800267A8(0, s16_operand)` at `0x801E01B4` (the operand is
@@ -2259,6 +2257,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.spawn_clut_blend_fx(bytecode);
     }
 
+    /// Op `0x4C 0xE5` - the casino coin bank's script delta (a cabinet's
+    /// fee, the dome's entry fee, a prize price). The arm and its missing
+    /// lower clamp are documented on [`crate::casino_coin_bank`].
+    fn op4c_n_e_sub_5_add_coins(&mut self, coin_delta: i32) {
+        self.world.add_script_coins(coin_delta);
+    }
+
     /// Op `0x4C 0x60` - literal-operand VRAM `MoveImage`. The six words are
     /// `[src_x, src_y, w, h, dst_x, dst_y]`; retail's handler arm hands them
     /// straight to the libgpu `MoveImage` wrapper. Queued on the world;
@@ -2701,6 +2706,18 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     }
     fn party_count(&self) -> u8 {
         self.world.party.party_count
+    }
+    /// The arena session's word ORed with the battle's own
+    /// ([`World::special_battle_word`]) - what the special-battle wipe rule
+    /// reads.
+    fn special_battle_word(&self) -> u32 {
+        self.world.special_battle_word()
+    }
+    /// The raw `+0x16E` word plus the typed tracker's packed bits
+    /// ([`World::raw_status_word`]), so a Rot the tracker holds reaches the
+    /// wipe rule's `& 0x38` test.
+    fn status_word(&self, slot: u8) -> u16 {
+        self.world.raw_status_word(slot)
     }
     /// Retail's wipe scan iterates the seated-count byte's worth of actor
     /// pointers (`*(0x8007BD24)+0` over `0x801C9370`, `0x801E6510..`), and

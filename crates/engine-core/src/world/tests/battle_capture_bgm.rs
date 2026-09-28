@@ -221,12 +221,18 @@ fn battle_bgm_with_silent_field_stops_on_finish() {
     let _ = world.drain_field_events();
 
     world.finish_battle();
-    // Nothing to resume -> battle music stops (sub-op 4) and id clears.
+    // Nothing to resume -> battle music stops (the engine's own stop word,
+    // not retail's sub-op 4, which re-attaches) and id clears.
     assert_eq!(world.audio.current_bgm, None);
     let evs = world.drain_field_events();
     assert!(
-        evs.iter()
-            .any(|e| matches!(e, FieldEvent::Bgm { sub_op: 4, .. })),
+        evs.iter().any(|e| matches!(
+            e,
+            FieldEvent::Bgm {
+                sub_op: crate::scene::BGM_SUB_OP_ENGINE_STOP,
+                ..
+            }
+        )),
         "BGM stop queued when no field track to resume: {evs:?}"
     );
 }

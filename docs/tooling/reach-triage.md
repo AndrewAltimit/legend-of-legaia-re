@@ -868,9 +868,10 @@ all of it executes under one ladder now.
 | `minigame_floor.rs` | 2 | `801d2a10` `801d6028` | the fishing venue's floor solve |
 | `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | a duel played to a **player win** - a lost match installs no tally and two of the three stay dark |
 | `dance_tutorial.rs` | 1 | `801d0750` | `40:U`, the Disco King how-to |
-| `slot_machine.rs` | 1 | `801e6f70` | `40:O` - the empty coin bank sends the entry through the exchange counter |
 | `fishing.rs` (prize row remainder) | 1 | `801d092c` | a **committed** prize purchase; the panel alone stops one gate short |
 | `bin/.../window/field_render.rs` | 1 | `8001ada4` | any spawned `play-window` frame loop |
+
+**`801e6f70` left this ladder.** It was credited to `40:O`, whose empty-bank path bought coins through the quote; `O` now arms the mode-24 door warp like every other launcher, and the routine is the coin counter's entry panel, which runs only while op-`0x49` sub-op 6 has the counter open (`engine-core::field_submode_screen`). No native ladder rung opens that screen.
 
 **`801d765c` was credited to this ladder and is never entered.** The rung opens
 the fishing minigame and the wander actor runs, but
@@ -1281,9 +1282,7 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `scus_battle_helpers.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
 | `scus_core_helpers.rs` | 4 | (c) | disclosed. Read with the note below: whether these are measured at all moves with the ladder set, so the verdict rests on the caller scan | `800203ec` `80020424` `80020454` `800204a4` |
 | `vram_rect_copy.rs` | 1 | (a) | a scene script issuing op `0x43` sub-`0x12`. `build_packet` is reached from `enqueue`, which `FieldHost::op43_vram_rect_copy` drives on both hosts; the [op census](field-op-census.md) puts a dozen clean carriers across nine scenes, every one of them in the ending band (`edteien`, `edbylon`, `edbalden`, `edretoin`, `edkorout`, `edbubu`, `eddoman`, `edson`, `edstati3`), which no ladder enters | `80057914` |
-| `world_map.rs` | 1 | (c) | undisclosed - the atmospheric fog tick, and no host builds one; see [below](#the-composed-overworld-trio-has-no-constructor-on-any-host) | `801e3e00` |
 | `world_map_clut_fade.rs` | 1 | (c) | undisclosed, same trio - and the coverage side cannot corroborate it, because no binary in the union carries the file (the report's *not observable* set) | `801e4d8c` |
-| `world_map_particle_burst.rs` | 1 | (c) | undisclosed, same trio | `801e5338` |
 
 Seven module rows this table used to carry are closed by ladders that are now
 canonical, and the shape of what closed them is the useful part rather than
@@ -1414,6 +1413,17 @@ its `tick` / `new` through some other type's method of the same name. They owe
 a disclosure naming their own prerequisite - a world-map render pass that
 builds the actor rather than the arithmetic - and until they have one the
 address is invisible to both instruments at once.
+
+Two of the three have since been settled from the bytes, neither by a host.
+`AtmosphericFogTick` was a second port of the attached light's keyframe script:
+`FUN_801E3E00`'s one reference is a `jal` inside the light's tick
+`FUN_801E4470`, and the live port of it runs from
+`World::tick_field_attached_lights`, so the copy is removed and the address is
+reached. `ParticleBurst`'s tick is reached only through a template whose one
+materialising routine has no reference of any form on the disc, so it is filed
+under the ignore list's `unreferenced` rows and the port is removed
+([world-map.md](../subsystems/world-map.md#the-sparkle-burst-has-no-spawner)).
+`ClutBlendFade` is the one left.
 
 #### The cursor-pose module is four leaves with no caller at all
 

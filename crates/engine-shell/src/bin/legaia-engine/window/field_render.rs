@@ -424,7 +424,8 @@ impl PlayWindowApp {
     /// Build this frame's posed-prop draws. A prop resting on frame 0 replays
     /// its baked rest mesh (the cheap path - and where every prop sits until it
     /// is touched); one whose clip has moved is re-posed from the raw TMD at its
-    /// live frame, so the door is drawn mid-swing.
+    /// live cursor, blended between keyframes when its clip carries the blend
+    /// gate, so the door is drawn mid-swing.
     ///
     /// Returns `(baked_vram, baked_color, live_vram, live_color)` as
     /// `(mesh index / uploaded mesh, model)` lists for the caller's draw pass.
@@ -446,15 +447,15 @@ impl PlayWindowApp {
             return (baked_v, baked_c, live_v, live_c);
         };
         for p in &self.field_posed_props {
-            let frame = self
+            let key = self
                 .session
                 .host
                 .world
                 .props
                 .bank
-                .frame(p.anchor)
-                .unwrap_or(0);
-            if frame == 0 {
+                .pose_key(p.anchor)
+                .unwrap_or_default();
+            if key.is_rest() {
                 if let Some(i) = p.baked.vram {
                     baked_v.push((i, p.model));
                 }
@@ -464,23 +465,22 @@ impl PlayWindowApp {
                 continue;
             }
             // Off the rest pose: rebuild. `FUN_8001B964` poses object `b` of the
-            // mesh by bone `b` of the clip at the actor's current frame
-            // (`(i16)(actor+0x68) >> 4`), which is exactly the `R*v + T` builder
-            // the battle / player pose path already uses.
+            // mesh by part `b` of the clip through the frame blender
+            // `FUN_8001BE80` at the actor's live cursor (`actor+0x68`), which is
+            // exactly the `R*v + T` builder the battle / player pose path
+            // already uses. The transforms come from the engine's shared
+            // kernel, the one the page's prop re-pose calls too.
             let Some((tmd, raw)) = p.baked.tmd.and_then(|i| self.field_posed_tmds.get(i)) else {
                 continue;
             };
-            let rec = (p.anim_id - 1) as usize;
-            let bones = tmd.objects.len();
-            let offsets: Vec<([i16; 3], [i16; 3])> = (0..bones)
-                .map(|b| match bundle.bone_transform(rec, frame, b) {
-                    Some(t) => (
-                        [t.t_x as i16, t.t_y as i16, t.t_z as i16],
-                        [t.r_x as i16, t.r_y as i16, t.r_z as i16],
-                    ),
-                    None => ([0; 3], [0; 3]),
-                })
-                .collect();
+            let Some(offsets) = legaia_engine_core::field_env::prop_bone_offsets(
+                bundle,
+                p.anim_id,
+                key,
+                tmd.objects.len(),
+            ) else {
+                continue;
+            };
             if p.baked.vram.is_some() {
                 let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &offsets);
                 if !vmesh.indices.is_empty()
@@ -1175,33 +1175,9 @@ impl PlayWindowApp {
             return;
         }
         let world = &mut self.session.host.world;
-        if world.mode != SceneMode::Field || world.board.grid.is_some() || world.board.armed {
-            return;
-        }
-        let Some(pslot) = world.player_actor_slot else {
-            return;
-        };
-        let (px, pz) = {
-            let a = &world.actors[pslot as usize];
-            (a.move_state.world_x as i32, a.move_state.world_z as i32)
-        };
-        // 7x7 board with the player's tile at its centre.
-        let origin_x = ((px >> 7) - 3).clamp(0, 255) as u8;
-        let origin_z = ((pz >> 7) - 3).clamp(0, 255) as u8;
-        let instr: [u8; 14] = [
-            0x49, 0x05, // op, sub-op
-            origin_x, origin_z, // +1/+2 tile origin
-            7, 7, // +3/+4 width x height
-            5, // +5 draw radius
-            0, // +6 mode flag (full-board draw)
-            0, 0, 0, 0, // +7/+9 event-flag bases (unused by the demo)
-            0, // +0xb player template (character-mesh head)
-            3, // +0xc tile template base (effect-model library)
-        ];
-        if world.try_install_tile_board(&instr) {
+        if world.install_demo_tile_board() {
             log::info!(
-                "play-window: demo tile board installed at tile ({origin_x},{origin_z}) \
-                 ({} draw-list cells)",
+                "play-window: demo tile board installed ({} draw-list cells)",
                 world.board.draw_list.len()
             );
         }
@@ -1236,6 +1212,11 @@ impl PlayWindowApp {
     /// placement draw lists wholesale. Soft-fails (logs, keeps the stale
     /// scene render) so a bad destination never crashes the window loop.
     pub(super) fn rebuild_scene_render_state(&mut self) {
+        // Every caller swapped the scene. Retail's field entry
+        // (`FUN_80025C24`) rewrites the camera globals and kills the mover, so
+        // no glide pose survives the door - the next scene's first scripted
+        // shot snaps in, as on the browser page (`CutsceneGlide::reset`).
+        self.cutscene_glide.reset();
         match build_window_scene_resources(&self.session) {
             Ok(res) => {
                 // Spawn-slot drain state is per-scene (the new scene's field

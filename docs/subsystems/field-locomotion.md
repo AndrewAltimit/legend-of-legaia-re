@@ -86,9 +86,10 @@ or a speed.
 
 `World::tick` is denominated in **retail display frames**: one call advances
 the simulation by exactly one vsync. Both hosts drive it that way and must
-keep doing so - the native window's fixed-timestep accumulator
-(`EngineWindow::drain_ticks`, `TICK_DT = 1.0/60.0`, backlog capped at 4) and
-the browser play page (`site/js/play-app.js`, `TICK_DT = 1000/60`, same cap).
+keep doing so - both drain wall time through one fixed-timestep kernel
+(`engine-core::frame_step::SimStepper`, `TICK_SECS = 1/60`, backlog capped at
+four ticks; the page reaches it through `play_drain_sim_steps`). See
+[`engine.md`](engine.md#the-frame-model).
 `World::clock.display_frame_step` is consequently `1` on every tick and
 `World::clock.display_frames == World::frame`; it survives as a *unit marker* on the
 consumers whose durations are authored in display frames, not as a throttle.
@@ -240,7 +241,8 @@ The callers this protects are the ones whose tile is *derived* rather than autho
 
 ## Per-frame flow
 
-1. **Disabled gate.** If `player.flags & 0x80000` is set, branch out (`0x801D01F0`: `lw v0,0x10(v0)` / `lui v1,0x8` / `and` / `bne 0x801D0334`) - an encounter is queued, a cutscene owns the player, or a talk engagement is live. This is the **first** test in the function, so it skips not only the movement legs but the whole pre-movement header below it: the action-button accept at step 2 and the **menu-open accept** at `0x801D0250..0x801D02DC`. While the bit is raised the pad opens no pause menu at all - not even the `0x23` deny buzz, which belongs to a different refusal (`_DAT_1F800394 & 0x8000000`). The engine's counterpart is `World::dialogue_owns_input`, which both hosts' menu-open paths consult.
+1. **Disabled gate.** If `player.flags & 0x80000` is set, branch out (`0x801D01F0`: `lw v0,0x10(v0)` / `lui v1,0x8` / `and` / `bne 0x801D0334`) - an encounter is queued, a cutscene owns the player, or a talk engagement is live. This is the **first** test in the function, so it skips not only the movement legs but the whole pre-movement header below it: the action-button accept at step 2 and the **menu-open accept** at `0x801D0250..0x801D02DC`. While the bit is raised the pad opens no pause menu at all - not even the `0x23` deny buzz, which belongs to a different refusal (`_DAT_1F800394 & 0x8000000`).
+   The engine's counterparts are `World::dialogue_owns_input` and an active cutscene timeline, which both hosts' menu-open paths consult through `World::field_menu_open_allowed` ([below](#the-menu-after-a-door-of-light-arrival)).
 2. **Action button.** An edge-pad action bit (`_DAT_8007b874 & 4`, gated by `DAT_8007b6a8`) plays the confirm SFX `func_0x80035b50(0x20)` and raises `player.flags |= 0x1000000` (talk / examine), short-circuiting movement that frame.
 3. **Direction decode.** `func_0x800467e8(&_DAT_8007b850)` rewrites the held pad in place into a *camera-relative* mask (so "screen up" maps to the correct world axis regardless of camera azimuth). `FUN_80046494(player)` reads that remapped mask (`gp+0x538`) and returns the movement direction in bits `& 0xf000`, resolving diagonals (`0x9000 / 0xc000 / 0x3000 / 0x6000`). The player heading `+0x26` is set to one of eight angle constants from the same mask.
 
@@ -2003,6 +2005,79 @@ Door of Light's target off `RegionBattleSetup::world_map_return` and falls back 
 world-map panel host's last map only when no region has stored a triple, and
 `TravelArtActor::tick` keeps Riremito's dwell across the phase-2 exit.
 `tests/door_item_retail_timeline.rs` pins the session and Riremito shape tick for tick.
+
+### The menu after a Door of Light arrival
+
+The menu button does nothing for a while after a Door of Light lands on `map01`, and the
+cause is the arrival tile, not the Door. `(37, 109)` is the cave mouth, and it carries a
+gate-1 walk-on trigger: the first field frame after the load spawns `map01` `P2[9]`
+(`FUN_801D1EC4` -> `FUN_8003BDE0`, ra `0x801D218C`). The record waits 40 frames, walks
+the player out of the cave (`A2 F8 01`), applies a camera, and parks on the player's
+move-done flag (`AD F8 08`) for most of its run. It reaches its closing `21` 294 vsyncs
+after the arrival, at frame step 2.
+
+For that whole span the per-actor script runner `FUN_80039B7C` holds the player's engaged
+bit `+0x10 & 0x80000`. It raises the bit on every frame it steps an engaged context
+(`0x80039DB8..0x80039DD4`, counting the context into `_DAT_801C6EA4+0xA`), and clears it
+only when that count drains on a `0x21` yield (`0x80039EE8..0x80039F14`). A context that
+parks mid-script keeps the bit up. The field tick `FUN_801D1344` tests the same bit before
+it calls the pad controller (`0x801D1694`), so `FUN_801D01B0` is not entered at all: no deny
+buzz and no accept. `scripts/pcsx-redux/autorun_door_menu_refusal.lua` (cave01, frame step
+2) reads zero controller entries on every press inside the span. The first press after it
+reaches the accept at `0x801D02E8` and the installer `FUN_801F1278`. So the refusal is
+bounded: it lasts exactly as long as the record. It is not a lock that a travel art leaves
+set.
+
+This holds wherever a spawned record parks mid-script, not only after a Door. The engine
+treats an active cutscene timeline as that state: `World::field_menu_open_allowed` refuses
+while one runs. `tests/door_arrival_menu_refusal_disc.rs` pins the refusal, its release and
+its length on the real `map01` record.
+
+#### Where the 294 vsyncs go
+
+The record parks three times, and each park is a retail mechanism the timeline now holds on:
+
+| Park | Op | Length | Mechanism |
+|---|---|---|---|
+| Frame wait | `4A 28 00` | 40 vsyncs | `WaitFrames 40`. |
+| Walk-out | `B7 F8 00 81` | 16 vsyncs | Op `0x37` against the player: the walk kernel `FUN_8003774C` translates it in place (arm `0x8003789C..0x800379F8`). |
+| Clip end | `AD F8 08` | 240 vsyncs | The spin on the end latch of scene-bank clip 13, 120 frames at two vsyncs a frame. |
+
+The walk-out's operand decodes as direction `b0 & 7 = 0` (`-Z` in the axis table at
+`0x80073F14`), divisor `4 << ((b0 >> 5 & 4) | (b1 >> 6)) = 16`, and a budget of `(b1 & 0x3F) * 16 = 16` speed
+units. The kernel spends `DAT_1F800393` units a game tick and moves `0x80 * spent / 16`, so the leg
+is one vsync per unit and one tile (128 units) in all. It is not the `A2 F8 01` before it: that
+ExecMove only selects the locomotion walk clip (the party-bank bit is up, `B1 F8 18`).
+
+The long wait is the gesture. `B2 F8 18` drops the party-bank bit, so `A2 F8 0D` binds scene-bank
+record 12 of map01's ANM bundle, a 120-frame clip; `AC F8 08` clears the end latch and
+`AD F8 08` spins until `FUN_800204F8` sets it again. That routine advances the cursor `+0x68` by
+`speed * DAT_1F800393` sixteenths of a frame and latches `+0x62 |= 0x100` once the cursor reaches
+`frames * 16 - 1` (`0x800206E4..0x8002072C`). Record 12 carries no blend gate, so it steps the
+plain rate `8` - two vsyncs a clip frame - and the spin is 240 vsyncs (`field_anim::clip_end_ticks`).
+
+The three sum to 296 against the capture's 294 (the capture reads the span off the spawn write and
+the engaged-bit clear, and retail steps the record once per two-vsync game tick). The engine's
+timeline parks on the walk leg (`CutsceneTimeline::player_glide`) and on the latch spin while
+the poked clip's length runs (`player_clip_ticks`, timed from the per-record end-latch lengths that
+`SceneHost::load_scene` stores in `FieldLocomotion::scene_clip_ticks` - each at the record's own
+step, so a gated record's scaled step is included; see [`anm.md`](../formats/anm.md#the-frame-blender-two-entries-one-gate)). A party-bank clip gets no
+timed latch - the locomotion loops latch every cycle - so a spin after one still steps past.
+
+Both parks hold on any spawned context, modal or not, because retail has one pad rule for all of
+them. A record `FUN_8003BDE0` spawns gets `+0x10 |= 0x100` and its script pointer
+(`0x8003C088..0x8003C0AC`), so the per-actor tick `FUN_8003BC08` steps it through
+`FUN_80039B7C` every frame (`jal` at `0x8003BD34`; the only other caller is the world-map entity
+SM at `0x801DA7BC`). The runner raises the player's engaged bit on every frame it steps a context
+and clears it only when the running count drains on the context's closing raw `0x21`, which also
+drops the context's `0x100` (`0x80039E68..0x80039F14`). So a concurrent helper record refuses the
+pad - walking, the action button and the menu button - from its first slice to its end, exactly
+as the modal timeline does; "modal" decides only the camera and the opening chain's beat sequencing.
+The engine's predicate is `World::script_context_engages_player` (the modal timeline or any live
+helper), which gates locomotion, the menu open and a prop touch. `korout`'s first-visit record
+(`P2[3]`, `C1 F8 04 90`: eight tiles along `+Z` over 256 vsyncs) is the helper case: it now walks
+the player with the pad refused, where the engine used to yield past the walk after one tick
+because the pad was still live.
 
 The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), the scripted-scene voice file. That call site is program 2's state `0x16`, and it is a seek-ahead (`CdlSeekL`, no read), not a stream: the voice itself is state `0x17`'s `FUN_8003D53C(0x10, 7, 0x135)` one-shot.
 

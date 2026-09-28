@@ -9,11 +9,30 @@
 //! [`World::battle_actor_draw_plan`] hands the tint pass as the node colour's
 //! top byte - the draw's semi-transparency mode.
 //!
-//! Two of the kernel's inputs have no engine mirror and are read as an
-//! inference: the command-flow byte `ctx[+6]` is `0xFF` in every catalogued
-//! state of a running action and is taken as `0xFF` whenever no command menu
-//! is open, `0` (below the `0x1F` gate) while one is; `ctx[+0x26B]`, the
-//! battle stream-slot request, is taken as idle.
+//! Two of the kernel's inputs are recomposed from engine state rather than
+//! mirrored byte for byte:
+//!
+//! - the command-flow byte `ctx[+6]` is the engine's own flow mirror
+//!   ([`crate::battle_flow::BattleFlowState`], the selection band `0x1E..=0x78`
+//!   byte for byte), `0xFF` while the action SM owns the round (every
+//!   catalogued state of a running action reads `0xFF`), and `0x14` - an
+//!   entry / round-start byte below the `0x1F` gate - before the first round
+//!   executes. Retail's one-frame `0xFE` hand-off has no engine frame.
+//! - `ctx[+0x26B]` is the side-band stream request `FUN_80055B4C` raises
+//!   (`sb a0+1,0x26b` at `0x80055B58`) and the stream tick `FUN_801F17F8`
+//!   clears (`0x801F19D8`); the pass reads it only while the battle-end signal
+//!   is up. At the end of a won battle the request is the win-pose archive
+//!   staged by the victory hook, which holds the results sequencer at its head
+//!   (`0x8004E5C0`) until it lands; it reads `0` on the results frame
+//!   (`noa_levelup_banner`). The engine streams nothing, so it is taken as
+//!   raised through the sequence's load hold and idle from the results frame
+//!   on - the split inside that hold is not measured.
+//!
+//! The driver's `gp[+0x330]` gate (`lb` at `0x800470EC`) is the battle-load
+//! stage byte `0x8007B648`: non-negative while `FUN_80052770` loads, negative
+//! once the battle runs (`0xFF` in 59 of the 60 battle-mode mednafen library
+//! states, `0x84` in the other). The engine has no load stage, so the pass
+//! runs every battle frame.
 
 use super::*;
 
@@ -75,10 +94,12 @@ impl World {
             acting: self.retail_pool_slot(acting_e),
             target: self.retail_pool_slot(target_e),
             category,
-            flow: if self.battle.command.is_some() {
-                0
-            } else {
-                0xFF
+            flow: match self.battle.round_flow.phase {
+                crate::battle_round::RoundPhase::Execute => 0xFF,
+                _ => match self.battle.flow.raw() {
+                    0 => 0x14,
+                    f => f,
+                },
             },
             state: self.battle_ctx.action_state,
             formation: self.battle_ctx.formation_advantage,
@@ -87,7 +108,14 @@ impl World {
             } else {
                 0xFF
             },
-            ctx_26b: 0,
+            ctx_26b: match self.battle.victory {
+                Some(crate::world::VictorySequence {
+                    cause: BattleEndCause::MonsterWipe,
+                    phase: crate::world::VictoryPhase::Loading { .. },
+                    ..
+                }) => 1,
+                _ => 0,
+            },
         };
         let lut = crate::action_effect_script::retail_rotation_lut();
         camera_ghost_pass(

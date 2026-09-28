@@ -327,8 +327,8 @@ impl PlayWindowApp {
     }
 
     /// Shared PSX-projection camera: `screen = H * (R*(v - target) + tr) / Ze`
-    /// with `R = Rx(pitch)·Ry(yaw)·Rz(roll)` (the retail GTE camera-rotation
-    /// build `FUN_8001CF50`), `tr` the post-rotation eye-space translation, `target`
+    /// with `R = Rx(pitch)·Ry(yaw)·Rz(roll)` (the retail camera matrix
+    /// `FUN_800172C0` builds through `FUN_80026988`), `tr` the post-rotation eye-space translation, `target`
     /// the world-space look-at (retail folds it into the GTE translation as
     /// the negated focus trio `_DAT_80089118/1C/20`), and `H` the GTE
     /// projection register (`_DAT_8007B6F4`). The battle camera is this with
@@ -348,9 +348,9 @@ impl PlayWindowApp {
         aspect: f32,
     ) -> Mat4 {
         // Retail's own composition order, `Rx * Ry * Rz` with pitch outermost
-        // (`FUN_8001CF50` post-multiplies each axis factor onto the resident
-        // rotation; `RotMatrixX` at `0x800461A4`, `RotMatrixY` at `0x8004629C`,
-        // `RotMatrixZ` at `0x8004638C`). `glam`'s `from_rotation_*` build the
+        // (the Euler kernel `FUN_80026988` the view build `FUN_800172C0` runs
+        // over the angle globals; `FUN_8001CF50` is the per-node
+        // camera-relative variant, not this). `glam`'s `from_rotation_*` build the
         // same right-handed factors as the crate's own q3.12 rendition
         // `legaia_engine_render::gte::math::camera_view_rotation`, so this is
         // that product in float. Roll (op-`0x45` slot 2, `_DAT_8007B794`) is
@@ -516,24 +516,6 @@ impl PlayWindowApp {
         ];
         let v = camera_view::cutscene_view(&self.session.host.world, scene_center);
         (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye)
-    }
-
-    /// Replay this frame's `apply == 0` Camera Configure beats as snaps onto
-    /// the cutscene camera interp.
-    ///
-    /// The beats come off `Camera::take_camera_snap_beats`, decoded by the
-    /// shared `CutsceneCameraInterp::snap_components_for`, because that is
-    /// where the events are: `Camera::route_camera_events` consumes every
-    /// `FieldEvent::CameraConfigure` off the world queue during the session
-    /// tick and does not restore it, so this window's own later
-    /// `drain_and_route_field_events` never saw one and the arm that watched
-    /// for them there was unreachable. The browser play page drains the same
-    /// bank, so a same-tick snap+glide pair glides from the snapped pose on
-    /// both hosts.
-    pub(super) fn replay_camera_snap_beats(&mut self) {
-        for comps in self.session.camera.take_camera_snap_beats() {
-            self.cutscene_cam_interp.snap_components(&comps);
-        }
     }
 
     pub(super) fn actor_model(&self, slot: usize) -> Mat4 {
@@ -1209,8 +1191,9 @@ mod cutscene_framing_tests {
     /// through the GTE. This pins the two to the same product, roll included,
     /// so a sign or ordering slip in the third factor cannot pass unnoticed:
     /// `psx_camera_mvp`'s `R` must equal
-    /// [`legaia_engine_render::gte::camera_view_rotation`], the q3.12
-    /// port of `FUN_8001CF50` (`Rx * Ry * Rz`, pitch outermost).
+    /// [`legaia_engine_render::gte::camera_view_rotation`] with no skip bit,
+    /// which is the full `Rx * Ry * Rz` product (pitch outermost) retail's
+    /// camera matrix also is.
     #[test]
     fn the_shell_rotation_matches_the_ported_gte_composition_including_roll() {
         use legaia_engine_render::gte::camera_view_rotation;

@@ -520,8 +520,15 @@ impl Scene {
             return Ok(None);
         };
         let bytes = index.entry_bytes_extended(idx)?;
-        Ok(Some(legaia_asset::field_objects::build_walk_heightfield(
-            &bytes, &lut,
+        // A kingdom overworld's ground is `FUN_801F89B8`'s, which tests no
+        // `0x1000` cell bit (`GroundCellGate::TerrainRecord`).
+        let gate = if crate::scene::is_world_map_scene(&self.name) {
+            legaia_asset::field_objects::GroundCellGate::TerrainRecord
+        } else {
+            legaia_asset::field_objects::GroundCellGate::WalkVisible
+        };
+        Ok(Some(legaia_asset::field_objects::build_ground_heightfield(
+            &bytes, &lut, gate,
         )))
     }
 

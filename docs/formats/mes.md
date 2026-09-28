@@ -129,7 +129,7 @@ Where those successors go is what separates teardown from a fresh box:
 
   The draw reads the ramp as a **collapse**, not an open: the box goes out at `y + h*a/0x2000` with height `h*(0x1000 - a)/0x1000` (`0x801D9970..0x801D99A0`), so it shrinks to its centre line. `_DAT_801F273C` then makes each call return before the draw (`0x801D8630..0x801D864C`) until `dt` steps have counted it down - the box is gone for that long before the fresh one opens. The `town01` trace below spends five pager calls in state `0xA` at `dt = 2`, the four `0x400` steps plus the call that sees `0x1000`.
 
-The picker arms write their box rect literally: `x = 0x26`, `y = 0x94 + ((4-N)*0xF)/2`, `w = 0xF4`, `h = 0x38 - (4-N)*0xF` - a 244-wide box whose height shrinks 15 px per absent option, recentred on the 4-option anchor `y = 0x94`. Fields `+0x3C/+0x3E` are the slide-animation start position (the resize state `0x11` uses the same pair).
+The `0x27` / `0x28` / `0x29` picker arms write their box rect literally: `x = 0x26`, `y = 0x94 + ((4-N)*0xF)/2`, `w = 0xF4`, `h = 0x38 - (4-N)*0xF` - a 244-wide box whose height shrinks 15 px per absent option, recentred on the 4-option anchor `y = 0x94`. The `0x2A` arm writes a different, fixed rect: `(0xD8, 0x4A, 0x58, 0x1A)`, a small box at the top right. Fields `+0x3C/+0x3E` are the slide's start position for both - see [The picker slide](#the-picker-slide-states-0x11--0x13--0x15--0x17).
 
 ### Box render
 
@@ -196,10 +196,10 @@ When the page is full and the user presses confirm (`_DAT_800846D0` / `_DAT_8008
 | `0x24` | `3` -> `4` | continue text on the next line, same box (rows preserved) |
 | `0x48` | `9` -> `0xA` | box reset, then the open animation - a fresh box |
 | `0x4C` followed by `0xFF` | `6` -> `7` | box reset, then row buffer cleared (teardown) |
-| `0x2A` | `0x11` -> `0x12` (resize -> 2-option picker) | 2-option menu, box geometry animated first |
-| `0x27` | `0x13` -> `0x14` (init -> 2-option picker) | 2-option `Yes`/`No`-style menu |
-| `0x28` | `0x15` -> `0x16` (init -> 3-option picker) | 3-option menu |
-| `0x29` | `0x17` -> `0x18` (init -> 4-option picker) | 4-option menu |
+| `0x2A` | `0x11` -> `0x12` (slide in from the right -> 2-option picker) | 2-option menu in a small top-right box |
+| `0x27` | `0x13` -> `0x14` (slide up from the bottom -> 2-option picker) | 2-option `Yes`/`No`-style menu |
+| `0x28` | `0x15` -> `0x16` (slide up from the bottom -> 3-option picker) | 3-option menu |
+| `0x29` | `0x17` -> `0x18` (slide up from the bottom -> 4-option picker) | 4-option menu |
 
 **What the pager does and does not decide.** The state numbers above are read straight off the dispatch chain at `0x801D8FDC` and the jump table at `0x801CEBC0`, and the teardown-vs-fresh-box split is settled by the successor handlers. What is *not* in these instructions is the end of the **conversation**: `0x25` and `0x4C 0xFF` clear the row buffer and stop there - the pager neither returns a status nor signals its caller. Whether the dialogue session ends is decided caller-side, in the actor dialog SM `FUN_80039B7C` and the field VM. Treat "end conversation" / "close the dialog" as a reading of the box teardown, not as a property the pager byte carries; the session-level semantics are open.
 
@@ -212,7 +212,7 @@ A retail capture that pokes `21` at a page end on `retock_innkeeper_talk_open` (
 So the picker controls are MES `0x27` / `0x28` / `0x29` **and `0x2A`**:
 
 - The open byte is matched as `byte & 0x7F`, so both the bare `0x27..0x2A` form and the high-bit `0xA7..0xAA` form are accepted; the field corpus stores the bare form.
-- Each picker arm sets the box dimensions from a per-N table (lines 1995-2003 of the dump) and clamps the choice cursor at `*(DAT_801c6ea4 + 0xc)`.
+- Each picker arm computes the box rect from N with immediates (above; there is no per-N table) and clamps the choice cursor at `*(DAT_801c6ea4 + 0xc)`.
 - On confirm in the picker (`case 0x12` / `0x14` / `0x16` / `0x18`), the pager reads the **continuation byte at `pbVar14[N*2 + 1]`** (past the N-option jump table) - same `0x24` / `0x48` / `0x4C 0xFF` jump table as the post-page dispatch - and advances. The chosen index lives in `*(DAT_801c6ea4 + 0xc)`.
 
 **`0x2A` is a fourth open byte, not a bare resize.** Its arity is not in the dispatch chain above, which only names the entry state; it is in the shared picker-cursor handler at `0x801D941C`, which reads the option count off the *active* state - `li t1,0x2` as the fall-through, `0x16` -> 3, `0x18` -> 4. State `0x12` therefore takes the 2 arm, the same count `0x27`'s `0x14` takes.
@@ -220,6 +220,39 @@ So the picker controls are MES `0x27` / `0x28` / `0x29` **and `0x2A`**:
 Two further instructions settle that `0x12` is a live picker state and not a resize that falls through to something else. The same handler's `bne v1,0x12` carve-outs at `0x801D9474` and `0x801D94D0` make its cursor *clamp* at both ends where every other picker wraps. And the inline-script control handler `FUN_80038050` lists `case 0x2a` alongside `0x27`/`0x28`/`0x29` in the arm that applies the chosen option's relative jump - so a `0x2A` region is read as a jump table by the code that branches on it.
 
 The corpus agrees structurally: retail `0x2A` sites carry exactly two jump entries, a valid continuation byte at `O+5`, and two label segments after it. Every inn's `Yes`/`No` offer is one of these (see [`subsystems/inn.md`](../subsystems/inn.md#the-trigger-the-pickers-own-jump-table)), which is why a decoder that stops at `0x29` finds no inn menu at all.
+
+### The picker slide (states `0x11` / `0x13` / `0x15` / `0x17`)
+
+No picker is usable on the press that opens it. The odd picker states are a **slide**: the box moves from off screen to its rect over a fixed span, and only the even state after it takes input. Nothing resizes - width and height are constant from the first drawn frame. The jump table at `0x801CEBC0` sends `0x11` to `0x801D92F4`, and `0x13` / `0x15` / `0x17` to one shared handler at `0x801D9350`; the input states `0x12` / `0x14` / `0x16` / `0x18` all go to `0x801D941C`.
+
+- **The press.** Every confirm in `0x19` stores the sentinel `+0x54 = 0x309` and zeroes `+0x14` / `+0x16` / `+0x18` on the pager actor (`0x801D90A0..0x801D90B8`), whatever state it picked - the stores follow the dispatch, so a page turn leaves the sentinel behind as well.
+- **The first call** in the odd state sees `+0x54 == 0x309` and initialises the slide: span `+0x50 = 0x18`, count `+0x54 = 0x18`, start `(+0x3C, +0x3E)`, target `(+0x14, +0x16)`, size `(+0x24, +0x26)`. For `0x2A` that is start `(0x150, 0x4A)`, target `(0xD8, 0x4A)`, size `(0x58, 0x1A)` (`0x801D9314..0x801D934C`): the box enters from the right edge. For `0x27` / `0x28` / `0x29` it is start `(0x26, 0xF0)` and the N-option rect above (`0x801D9398..0x801D93F0`): the box rises from the bottom edge.
+- **Every later call** subtracts the frame step from the count; the call that takes it to zero or below stores 0 and steps to the even state (`0x801D93F4..0x801D9418`).
+- **The draw** (`0x801D9A08..0x801D9ADC`) skips the picker box while the count is the sentinel, and otherwise places it at `target + (start - target) * count / span` per axis (signed division, truncating), with the labels at `x + 0x10` and a 15-px pitch - the labels travel with the box. The option hand (`FUN_8002B994` kind 0) is drawn only once the count is 0 (`0x801D9BB4..0x801D9BE4`).
+
+A PCSX-Redux capture from `retock_inn_stay_prompt` - the retock innkeeper's stay offer, parked on the `0x19` entry of the page that ends on `0x2A` - runs it at frame step 2 (`autorun_dialog_picker_open.lua`, which logs the pager actor's slide fields and the box origin the draw formula gives them):
+
+| Pager call | State | Count | Box origin |
+|---|---|---|---|
+| the press | `0x19` -> `0x11` | `0x309` | not drawn |
+| 1 | `0x11` | 24 | `(336, 74)` - past the right edge |
+| 2 .. 12 | `0x11` | 22, 20, .. 2 | `(326, 74)`, `(316, 74)`, .. `(226, 74)` - 10 px a call |
+| 13 | `0x12` | 0 | `(216, 74)`, hand drawn; input read from call 14 |
+
+So the menu takes input thirteen pager calls - 26 vsyncs - after the press, and screenshots taken alongside the rows show the box entering from the right. The same capture from `retock_innkeeper_talk_open` (a re-talk after the stay) repeats the sequence call for call. The `0x27` / `0x28` / `0x29` slide has the same count sequence, and a capture of the 4-option case confirms the rise. `town01_tetsu_topic_prompt` parks on the page wait before Tetsu's `0x29` topic list; one press gives:
+
+| Pager call | State | Count | Box origin |
+|---|---|---|---|
+| the press | `0x19` -> `0x17` | `0x309` | not drawn |
+| 1 | `0x17` | 24 | `(38, 240)` - below the bottom edge |
+| 2 .. 12 | `0x17` | 22, 20, .. 2 | y `232, 224, 217, 209, 201, 194, 186, 178, 171, 163, 155` at x 38 |
+| 13 | `0x18` | 0 | `(38, 148)`, hand drawn; input read from call 14 |
+
+The box is the full 244 x 56 four-row rect from the first drawn call, with its labels moving inside it; y falls by 92 x 2/24 a call, truncated, so the steps run 8, 8, 7 px and repeat. The state changes one vsync after the press, the slide's first call follows on the next pager call, and input opens 26 vsyncs after the state change - the same timing as the `0x2A` slide. The 2- and 3-option lists share the start `(0x26, 0xF0)` and the count sequence; only the target rect differs (the formula above), so each rises `0xF0 - y_target` pixels over the same twelve calls. The same run from the re-loaded state repeats the sequence call for call.
+
+The call that takes the count to zero steps to the even state and branches straight to the draw (`j 0x801D95AC` at `0x801D9414`), past the cursor handler, so the first call that can read Up / Down or confirm is the one after it. The option hand is already up on the zeroing call.
+
+The engine runs the slide once, in `engine-core::dialog_picker_slide`: the panel's press stores the sentinel, each pager call it runs while the menu is open advances the count at the frame step, and `OwnedDialogPanel::picker_rect` / `picker_hand_drawn` / `picker_takes_input` expose the box, the hand and the input gate. Both hosts (the native window's `dialog_stage_layout` and the play page's `play_dialog`) draw the box and its labels at that rect and the hand only at rest; the panel ignores Up / Down and confirm until the slide rests, and a `0x2A` cursor clamps. The resting rects come from `legaia_mes::picker_box_rect` and the starts from `picker_slide_start`. The simplified `--simple-dialogue` panel, which opens its menu without a press, opens it at rest.
 
 ### Picker control-region layout
 

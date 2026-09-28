@@ -821,7 +821,7 @@ The world drives the Field → Cutscene → Field flow itself, mirroring the ret
 which returns to the field with the field-VM program counter already past the op. A `fmv_id` whose runtime slot points at a dev/missing path is drained as a no-op (no mode flip).
 The resolver (`fmv_index_to_str_filename`) mirrors the retail nine-slot map - `fmv_id 0..=8`, `MV3.STR` shared by slots `2..=5`, dev slots `9..=22` returning `None` - and its sibling `fmv_post_play_return_scene` carries the master dispatch's post-play return scenes (the `0x801CE8AC` list).
 The disc-parsed `legaia_asset::fmv_dispatch::FmvTable` is the authoritative source (see [`str-fmv-table.md`](../formats/str-fmv-table.md#authoritative-runtime-mapping)). The `legaia-engine play` loop runs this flow headlessly, decoding the resolved STR via MDEC to report its frame count. The windowed `play-window` host plays it **in the engine window**: when a tick flips the world into `SceneMode::Cutscene`, it resolves the `MV*.STR` and decodes it (shared `cutscene_av` module with `play-str`), suspends world ticks, and shows the video one frame per redraw; once the frames drain it calls `finish_cutscene()` and resumes the field.
-When booting from a **disc image** the movie is read straight from the ISO with its interleaved XA audio (the scene BGM sequencer is paused for the duration and the video is paced off the audio cursor); when booting from an **extracted root** it plays video only (the extract truncates the audio). A `fmv_id` whose slot points at a missing path drains as a no-op.
+When booting from a **disc image** the movie is read straight from the ISO with its interleaved XA audio and the video is paced off the audio cursor; when booting from an **extracted root** it plays video only (the extract truncates the audio). A `fmv_id` whose slot points at a missing path drains as a no-op. What the movie does to the BGM - retail's movie path never touches the sequencer, the title attract releases the title theme and `CARD INIT` restarts it - is one engine policy both hosts consult (`legaia_engine_core::movie_audio`), described in [`audio.md`](audio.md#movies-and-the-score).
 
 The trailing 3 bytes of the instruction are reserved by the dispatcher's PC math (the handler's `addiu s8, s8, 6` is fixed, but only bytes `+1..+3` are read). Disassemblers should leave them as opaque padding.
 
@@ -1092,7 +1092,7 @@ whichever build's matrix was live when they were emitted
   frames is not that routine - the per-prim path, not the mesh path. And links
   that land before a vsync's first build still inherit the previous vsync's
   matrix; those are bucketed apart and are 2D in every run but one.
-  The camera-rotation build is pinned: `FUN_8001CF50` composes `R` by rotating about each axis with the angle globals - `RotMatrixX(pitch=_DAT_8007B790)` at `0x800461A4`, `RotMatrixY(yaw=_DAT_8007B792)` at `0x8004629C`, `RotMatrixZ(roll=_DAT_8007B794)` at `0x8004638C` (each masks the angle to 12 bits and indexes the shared sin/cos LUT at `0x80070A2C`, `4096 = 360°`, `+0x800` = the quarter-wave cosine offset; composed via GTE `mvmva`).
+  The camera-rotation build is pinned: the view build `FUN_800172C0` passes the angle globals `0x8007B790` (pitch, yaw, roll) to the Euler kernel `FUN_80026988`, which forms `R = Rx(pitch) * Ry(yaw) * Rz(roll)` inline from the sin LUT at `0x80070A2C` (each angle masked to 12 bits, `4096 = 360°`), and folds the base matrix `_DAT_8007BF10` onto it ([`renderer.md`](renderer.md#the-field-view-matrix-where-tr-comes-from)). An earlier reading gave this job to `FUN_8001CF50`, which calls `RotMatrixX` / `RotMatrixY` / `RotMatrixZ` (`0x800461A4` / `0x8004629C` / `0x8004638C`) over the same globals; that routine is the per-node camera-relative variant, reached only for a node whose `+0x52` carries a bit of `0x780` ([`renderer.md`](renderer.md#camera-relative-nodes-fun_8001cf50)).
   **So param 0 is the camera PITCH, not a "rot/zoom" word** - the zoom is H (a separate projection register). The eye sits *behind* the focus by `tr_eye` (in the 6×-scaled space); it is NOT at the focus.
   The commit's second argument decides between two behaviours, and the third selects the ease curve: the field VM calls `FUN_801DE084(0x801C6EA8, apply, op0 >> 2 & 0xF)`, reading `apply` as the u16 at operand `+2` (`overlay_0897_801de840.txt`, case `0x45` sub-`0x00`).
 
@@ -1136,10 +1136,11 @@ whichever build's matrix was live when they were emitted
 
 #### Camera roll (slot 2)
 
-Retail authors it, and the engine composes it. Slot `2` is the argument
-`FUN_8001CF50` hands to `RotMatrixZ` at `0x8004638C` - the third factor of
-`Rx * Ry * Rz`, applied unless the render node's `+0x52` bit `0x200` is set
-(`0x8001CFD0..0x8001CFE8`). Nothing in the field-camera build path zeroes it:
+Retail authors it, and the engine composes it. Slot `2` is the third angle
+`FUN_80026988` reads when `FUN_800172C0` builds the camera matrix - the third
+factor of `Rx * Ry * Rz`. (The per-node variant `FUN_8001CF50` hands the same
+global to `RotMatrixZ` at `0x8004638C` unless the node's `+0x52` bit `0x200`
+is set, `0x8001CFD0..0x8001CFE8`.) Nothing in the field-camera build path zeroes it:
 `FUN_801DAB90`, `FUN_801DB8EC` and `FUN_801DBE9C` never touch `_DAT_8007B794`,
 and the only write that clears it is the scene-entry reset `FUN_80025C24`.
 (On the world map the same global is the top-view **azimuth**, which is the
@@ -1185,7 +1186,9 @@ The residual errors are **one-sided**: a retail leg span (scene-label flip to sc
 The engine **executes** this timeline as a spawned field-VM context. On entering `opdeene` live, [`World::load_cutscene_timeline_from_man`](../../crates/engine-core/src/world/narration.rs) locates the partition-2 record that issues `GFLAG_SET 26` (via [`man_field_scripts::walk_partition_gflag_sites`](../../crates/engine-core/src/man_field_scripts.rs)), resolves its named-record span, and installs a [`CutsceneTimeline`](../../crates/engine-core/src/cutscene_timeline.rs) - a second `FieldCtx` separate from the scene-entry system script on `World::field_ctx`, seeded on the system channel (`script_id = 0xFB`) so cross-context (`0x80`-bit) ops keep running after the record's first yield sets the context halt bit.
 The `opstati` / `opurud` legs install theirs through the faithful op-`0x44` spawn instead ([`World::install_spawned_record`](../../crates/engine-core/src/world/narration.rs)); `map01` / `town01` through the walk-on tile trigger ([above](#record-spawn-mechanisms-live-probe-pinned)).
 
-Only **cutscene-class** records (the opening chain, and gated walk-on beat records via `install_gated_p2_record`) install as this modal timeline (camera seize + locomotion lock). An ordinary scene's mid-play op-`0x44` spawn installs as a **concurrent helper context** instead - `World::field_vm.helper_contexts` (bounded table mirroring retail's small fixed context set), installed by [`World::install_spawned_helper_record`](../../crates/engine-core/src/world/narration.rs) and stepped by `step_helper_contexts` through the same run-until-yield slice (`run_spawned_record_slice`) - without seizing the camera, locking locomotion, or reading as `cutscene_timeline_active()`. Pending spawns queue (FIFO) rather than dropping while another record executes.
+Only **cutscene-class** records (the opening chain, and gated walk-on beat records via `install_gated_p2_record`) install as this modal timeline (camera seize + locomotion lock). An ordinary scene's mid-play op-`0x44` spawn installs as a **concurrent helper context** instead - `World::field_vm.helper_contexts` (bounded table mirroring retail's small fixed context set), installed by [`World::install_spawned_helper_record`](../../crates/engine-core/src/world/narration.rs) and stepped by `step_helper_contexts` through the same run-until-yield slice (`run_spawned_record_slice`) - without seizing the camera or reading as `cutscene_timeline_active()`.
+
+A helper still holds the pad while it runs (`World::script_context_engages_player`): retail's script runner `FUN_80039B7C` raises the player's engaged bit for every context it steps, modal or not ([`field-locomotion.md`](field-locomotion.md#where-the-294-vsyncs-go)). Pending spawns queue (FIFO) rather than dropping while another record executes.
 
 [`World::step_cutscene_timeline`](../../crates/engine-core/src/world/narration.rs) runs that context through the same `legaia_engine_vm::field::step` each frame, run-until-yield (mirroring retail's per-frame dispatch), bounded by a per-frame step budget and a frame cap. The Camera Configure (`0x45`) and `MoveTo` (`0x23`) ops emit the same [`FieldEvent`](../../crates/engine-core/src/field_events.rs)s the runtime [`Camera`](../../crates/engine-core/src/camera.rs) folds in; the `GFLAG_SET 26` near the record's top arms the **intro skip** through the same host path the main field VM uses; and the record's terminal `0x3F` SceneChange chains the next opening leg - all **by execution**, not by a static MAN-walk derivation.
 The static arm ([`World::arm_prologue_handoff_from_man`](../../crates/engine-core/src/world/narration.rs)) remains as a fallback for a scene whose timeline record can't be resolved, and a safety net arms it if execution can't reach the arming op within the frame cap, so the prologue can never stall.
@@ -1241,6 +1244,16 @@ Disc-gated coverage: `crates/engine-core/tests/opening_full_chain_e2e.rs` drives
 `opdeene_timeline_execution.rs` cold-boots `opdeene`, asserts the timeline installs with the skip bit clear, ticks until it arms by execution, and follows the terminal SceneChange;
 `town01_opening_name_entry_wiring.rs` drives the `town01` opening end to end (install → camera/wait beats → name entry opens at op `0x49` → freeze → commit → resume → drop); `town01_opening_timeline_trace.rs` pins the op-`0x49` site.
 The CI synthetic `cutscene_timeline_synthetic.rs` exercises both paths (GFLAG-by-execution + safety net + idempotent completion; op-`0x49` name-entry open / freeze / resume) without disc data.
+
+#### The ending vignettes refuse the pad
+
+The end-credits scenes (`ed*`) each spawn one long vignette record from their entry script, and retail holds the pad for as long as it runs.
+
+Five mednafen states captured inside the credits (`ending_vignette_rimelm_walkaway` on `map01`, three `edteien` states, `ending_vignette_biron` on `edbylon`) all hold the player's engaged bit (`*(0x8007C364) + 0x10 & 0x80000`) with the running count at `*(0x801C6EA4) + 0xA` between 24 and 476.
+The sixth, `ending_scene_load_gap`, sits in the mode-`0x02` scene init between two vignettes with the bit clear and the count at zero.
+The pad controller `FUN_801D1344` skips locomotion while the bit is up (`0x801D1694..0x801D16A0`, PROT 0897), so no pad direction moves the player in any of them. The engine's helper pad lock reproduces this, and the chapter-1 ladder's ending scenes score no walk rung for that reason.
+
+The last one, `edlast` `P2[1]`, ends on a press, not a timer: `4A 08 00` then `42 01 08` / `42 01 09` (Circle / Cross held, [op `0x42` mode 1](script-vm.md)) and a `26` back to the wait. The timeline's natural-termination rule reads a backward jump onto an executed PC as a wrapped choreography; a loop whose body polls the held pad is exempt (`loop_polls_held_pad` in `narration.rs`), so the record keeps the pad until the press instead of being dropped after its credits. The record needs roughly 14100 vsyncs to reach that poll.
 
 ### Per-actor channels - the vignette actors
 

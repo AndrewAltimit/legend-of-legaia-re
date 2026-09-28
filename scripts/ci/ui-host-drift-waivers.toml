@@ -425,27 +425,38 @@ skips = [
 ]
 
 [[frame_arm]]
-host = "web"
-arm = "!fmv_handoff_scene.is_empty()"
+host = "native"
+arm = "if field_suspended"
 reason = """
-The post-movie hand-off loaded a scene: the arm rebuilds the page's render
-state, restages the scene's audio bank and returns the label so the page
-swaps its geometry. The two skipped steps both key on the scene that is being
-replaced - a merchant armed in the outgoing scene's script is gone with it,
-and the NPC clip players are rebuilt by `build_npc_clips` on the far side of
-the rebuild this arm performs.
+A shop or the casino prize exchange is up. Retail runs both at game mode
+`0x17` with the field overlay swapped out for the menu overlay, so no field
+code is resident under the screen: the world tick and its whole tail stand
+still, which is the page's shape (its guard below skips all of `tick_frame`
+under `shopOpen`). The arm runs only the menu session on the tick's edges, the
+unpark on close, and the SFX scheduler step the pause-menu arm also runs.
+`drain_and_log_battle_events` carries that step on the fall-through path; here
+the world raised nothing this tick, so the drain half has nothing to take.
 """
-skips = ["drive_npc_clips", "poll_field_shop"]
-
-[[frame_arm]]
-host = "web"
-arm = "SceneTickEvent::SceneEntered"
-reason = """
-A door swapped the scene this tick, and the arm does the same rebuild + audio
-restage as the FMV hand-off above, for the same two skipped steps and the same
-reason.
-"""
-skips = ["drive_npc_clips", "poll_field_shop"]
+skips = [
+    "advance_ocean_animation",
+    "apply_world_clut_fx",
+    "check_battle_vram_residency",
+    "drain_and_log_battle_events",
+    "drain_and_route_field_events",
+    "drain_anim_cues",
+    "drain_baka_sfx_cues",
+    "maybe_install_demo_tile_board",
+    "rebind_live_npc_models",
+    "sync_battle_render",
+    "sync_dialog_panel",
+    "sync_text_balloon",
+    "tick_dev_menu",
+    "tick_field_party_hud",
+    "tick_fishing_banners",
+    "tick_minigame_extras",
+    "tick_muscle_time_meter",
+    "tick_play_clock",
+]
 
 # --- page: the browser's OTHER frame path, in JavaScript --------------------
 
@@ -455,7 +466,7 @@ arm = "advance && !menuOpen && !shopOpen && !namingOpen"
 reason = """
 `site/js/play-app.js::_frame` calls `rt.tick_frame()` inside this guard and
 `this._drawOverlay()` outside it, so on a guarded frame the page draws with
-NO kernel having run - all nineteen at once, from whatever answer they last
+NO kernel having run - all twenty at once, from whatever answer they last
 held. Three of the four terms are panels that suspend the field on the engine
 side as well (the pause menu, a field merchant's op-`0x49`, the naming
 prompt); the fourth is the page's own pause / step-one-frame control.
@@ -475,6 +486,7 @@ skips = [
     "poll_field_shop",
     "poll_game_over",
     "route_bgm_wasm",
+    "run_pending_bgm_handoff",
     "service_cutscene_fmv",
     "step_field_vram_fx",
     "tick_battle_intro",
@@ -576,6 +588,12 @@ reason = "The Muscle Dome round timer. The page runs the same `DomeContest::tick
 
 [[frame_kernel]]
 host = "web"
+kernel = "run_pending_bgm_handoff"
+host_only = true
+reason = "The page's title -> load score hand-off is armed by the card-Load poll and run by the scene entry that follows it; this per-tick call only catches an entry the page declined, and is a no-op on every other frame. The native window has no gap to catch: `apply_save_commit` enters, loads and hands the score over in one call."
+
+[[frame_kernel]]
+host = "web"
 kernel = "service_cutscene_fmv"
 host_only = true
 reason = "The page's FMV beat service. The native window runs the same beat above its tick loop, in `handle_redraw` itself (`try_start_windowed_cutscene` + `apply_pending_fmv_handoff`), where it can hold the whole frame for the video."
@@ -645,8 +663,8 @@ reason = "Hands an op-`0x49` merchant to the menu runtime. The native window doe
 native = "drain_and_log_battle_events"
 web = "tick_battle_presentation"
 native_only = []
-web_only = ["action_id", "armed", "battle_monster_slots", "battle_stage_entry", "battle_stage_keeps_object_1", "build_targeted_with_options", "clear_popups", "contains_prot_index", "current_frame", "drain_battle_clut_stages", "duck_target_for_pct", "enqueue", "equipment", "far_colour_for_prot_index", "hybrid", "install_art_bank_records", "party_roster_slot", "play_xa_shout", "read_span_sectors", "release_summon_seat", "reset", "scale", "set_actor_battle_action_clips", "set_actor_battle_animation", "set_actor_battle_art_bank", "shout", "slot", "stage_effect_clut", "system_ui_bundle", "tmd_bytes", "upload", "upload_battle_stage_tims_into_vram", "upload_flame_atlas_into_vram", "with_actors", "with_spu"]
-reason = "The page folds its whole battle presentation frame into this one named step: stage and atlas upload, per-actor clip and art-bank staging, the CLUT stage drain, the shout XA request, and the popup retire. The native window does that same work, but spread across its draw section and window/battle.rs rather than inside the kernel its frame path names, so the difference is where the code sits and not whether the host does it. Checked name by name: thirty-one of the thirty-two have a call site in the native sources (most of them in window/battle.rs). The exception is packet_color::hybrid, which is not presentation work the window skips - it is the CPU-side per-vertex colour stream the page has to hand WebGL, and the wgpu renderer resolves the same packet colour in its fragment shader instead. The empty native-only side is the other half of the check: nothing the window reaches here is missing from the page. `duck_target_for_pct` is the shared duck kernel (`legaia_engine_audio::duck`) the page's `set_duck_pct` reaches inside this step; the native window reaches the same kernel through `AudioBgmDirector::set_duck_pct` in window/battle.rs, an output this kernel does not name."
+web_only = ["action_id", "armed", "bank_used_end", "battle_monster_slots", "battle_stage_entry", "battle_stage_keeps_object_1", "build_party_battle_form", "build_targeted_with_options", "clear_popups", "commit_reward", "contains_prot_index", "current_frame", "drain_battle_clut_stages", "duck_target_for_pct", "enqueue", "far_colour_for_prot_index", "hybrid", "install_monster_battle_form", "install_party_battle_form", "monster_tex_slots_used", "observe_bgm_end", "party_roster_slot", "place_report", "play_xa_shout", "read_span_sectors", "release_summon_seat", "reset", "reward", "scale", "shout", "stage_effect_clut", "system_ui_bundle", "tmd_bytes", "track_end", "upload_at", "upload_battle_stage_tims_into_vram", "upload_flame_atlas_into_vram", "with_actors", "with_spu"]
+reason = "The page folds its whole battle presentation frame into this one named step: stage and atlas upload, the per-actor battle-form build and install, the CLUT stage drain, the shout XA request, and the popup retire. The native window does that same work, but spread across its draw section and window/battle.rs rather than inside the kernel its frame path names, so the difference is where the code sits and not whether the host does it. Checked name by name: every presentation call but one has a call site in the native sources (most of them in window/battle.rs; the party and monster battle-form installs are the one engine kernel `engine-core::battle_party_form` both hosts call). The exception is packet_color::hybrid, which is not presentation work the window skips - it is the CPU-side per-vertex colour stream the page has to hand WebGL, and the wgpu renderer resolves the same packet colour in its fragment shader instead. The empty native-only side is the other half of the check: nothing the window reaches here is missing from the page. `duck_target_for_pct` is the shared duck kernel (`legaia_engine_audio::duck`) the page's `set_duck_pct` reaches inside this step; the native window reaches the same kernel through `AudioBgmDirector::set_duck_pct` in window/battle.rs, an output this kernel does not name. `observe_bgm_end` / `place_report` / `upload_at` / `commit_reward` / `reward` / `track_end` / `bank_used_end` are the level-up jingle's bank staged behind the track through the shared BGM-tail kernel (`legaia_engine_audio::bgm_tail`) inside `stage_transient_reward_bank`; the window reaches the same kernel through `AudioBgmDirector::stage_transient_sfx_vab` in window/battle.rs."
 
 [[frame_content]]
 native = "drain_anim_cues"

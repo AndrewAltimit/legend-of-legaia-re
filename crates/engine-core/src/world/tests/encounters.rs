@@ -742,12 +742,17 @@ fn boss_battle_entry_writes_no_flags() {
     // and the gate flag (0x142) is the post-victory record's `51 42`.
     let mut world = World::new();
     world.set_active_scene_label("rikuroa");
+    // rikuroa row 17 carries header byte 1, like every flagged boss row.
     world
         .tables
         .formation_table
-        .insert(FormationDef::new(17, vec![FormationSlot::new(73)]));
+        .insert(FormationDef::new(17, vec![FormationSlot::new(73)]).with_header_flags(1));
     world.mode = SceneMode::Field;
     assert!(world.trigger_scripted_battle(17));
+    assert!(
+        !world.battle.no_escape,
+        "the op sets no flag; battle entry derives it from the row"
+    );
     // Drain the latch, then clock the intro transition through to the flip.
     for _ in 0..200 {
         if world.mode == SceneMode::Battle {
@@ -756,8 +761,9 @@ fn boss_battle_entry_writes_no_flags() {
         world.tick();
     }
     assert!(matches!(world.mode, SceneMode::Battle));
-    // The scripted fight refuses the Run command (retail `ctx+0x287`).
-    assert!(world.battle.no_escape, "scripted battle sets no-escape");
+    // The flagged row refuses the Run command (retail `ctx+0x287`).
+    assert!(world.battle.no_escape, "a flagged row sets no-escape");
+    assert!(world.battle.scripted_fight);
     assert!(
         !world.system_flag_test(0x289),
         "no engine stamp: the marker comes from the record's bytes"
@@ -769,6 +775,41 @@ fn boss_battle_entry_writes_no_flags() {
     let _ = world.apply_battle_loot(&formation, &cat);
     assert!(!world.system_flag_test(0x289));
     assert!(!world.system_flag_test(0x142));
+}
+
+#[test]
+fn a_zero_header_scripted_row_is_an_escapable_fight() {
+    use crate::monster_catalog::{FormationDef, FormationSlot};
+    // The Rim Elm ambush shape: `3E FF 03` onto a row whose header byte is
+    // `0` (town0c row 3). Retail keeps `ctx+0x287 = 0` for it, so Run stays
+    // open, the formation roll runs, and the map arm alone seats it.
+    let mut world = World::new();
+    world.set_active_scene_label("town0c");
+    world.battle.map_id = 0x15;
+    world.tables.formation_table.insert(FormationDef::new(
+        3,
+        [0x3F, 0x3E, 0x3E, 0x3E]
+            .into_iter()
+            .map(FormationSlot::new)
+            .collect(),
+    ));
+    world.mode = SceneMode::Field;
+    assert!(world.trigger_scripted_battle(3));
+    for _ in 0..200 {
+        if world.mode == SceneMode::Battle {
+            break;
+        }
+        world.tick();
+    }
+    assert!(matches!(world.mode, SceneMode::Battle));
+    assert!(!world.battle.no_escape, "zero header byte: Run stays open");
+    assert!(!world.battle.scripted_fight);
+    assert_eq!(world.battle_ctx.scripted_fight, 0);
+    assert_eq!(
+        world.battle.special_word,
+        legaia_engine_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN,
+        "the formation roll ran and its map-gated arm raised 0x200"
+    );
 }
 
 #[test]

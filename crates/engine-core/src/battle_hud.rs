@@ -1685,9 +1685,28 @@ pub fn battle_raseru_forbidden(world: &crate::world::World) -> bool {
 /// special word forbids it, else none. The phase-`0x28` arm draws the mark
 /// before it tests the pad (`0x801D12DC..0x801D12F4`).
 ///
-/// PORT: FUN_801D0748 NOT WIRED: the native and browser battle chip passes should place this `etim` quad over the Ra-Seru chip (the regular ring's `0x200` mark test, `0x801D12DC..0x801D12F4`); both grey the chip through [`battle_magic_chip`]'s `enabled` and neither draws a chip mark yet (host-drift.md, "The Ra-Seru chip's cross-out reaches neither host").
+/// REF: FUN_801D0748 (the mark test; the draw-side port is
+/// [`battle_raseru_cross_out`])
 pub fn battle_magic_chip_mark(world: &crate::world::World) -> Option<crate::muscle_dome::ChipMark> {
     battle_raseru_forbidden(world).then_some(crate::muscle_dome::ChipMark::Forbidden)
+}
+
+/// Whether this frame draws the red cross-out X over the command ring's
+/// Ra-Seru chip: the ring is up ([`CommandChipPhase::CommandRing`], retail's
+/// phase `0x28`) and the special word forbids the chip
+/// ([`battle_magic_chip_mark`]). Retail's arm tests the bit and calls
+/// `FUN_801DBC30(0xF8, 0x42)` every frame of the phase, before it reads the
+/// pad (`0x801D12DC..0x801D12F4`).
+///
+/// Both play hosts append `engine-ui`'s `battle_command_ui::cross_out_mark_sprite`
+/// at that anchor to the chip sprites when this answers `true` (native
+/// `window/hud.rs`, page `play_battle.rs`), out of the chrome atlas cell
+/// `save_menu_atlas::add_cross_out_mark` bakes from the effect page.
+///
+/// PORT: FUN_801D0748 (phase-`0x28` arm, the `0x200` cross-out at `0x801D12DC..0x801D12F4`)
+pub fn battle_raseru_cross_out(world: &crate::world::World) -> bool {
+    battle_magic_chip_mark(world).is_some()
+        && battle_command_chips(world).is_some_and(|c| c.phase == CommandChipPhase::CommandRing)
 }
 
 /// Which selection surface a chip cluster belongs to - the three clusters
@@ -2946,6 +2965,10 @@ mod tests {
             battle_magic_chip_mark(&w),
             Some(crate::muscle_dome::ChipMark::Forbidden)
         );
+        assert!(battle_raseru_cross_out(&w), "the ring is up: the X draws");
+        // Off the ring (no command session) the arm does not run.
+        w.battle.command = None;
+        assert!(!battle_raseru_cross_out(&w));
     }
 
     #[test]

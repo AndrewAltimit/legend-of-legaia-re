@@ -21,6 +21,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use legaia_asset::sfx_table::FALLBACK_VAB_SLOT;
+use legaia_engine_audio::bgm_tail::{BgmTail, TailBorrow};
 use legaia_engine_audio::{
     ArtsShoutBank, AudioOut, PendingCue, SHOUT_CD_RESPONSE_DELAY, Sequencer, SfxBank, SfxScheduler,
     VabBank, XaClipBank,
@@ -29,17 +30,15 @@ use legaia_engine_core::scene::BgmDirector;
 use legaia_engine_core::world::{SfxRingOp, SharedRegionBank, SideBandBank};
 use legaia_seq::Seq;
 
-/// The pause menu's cursor-step cue: `FUN_80032A44`'s ring write
-/// `_li a2,0x21` at `0x80032b9c` (`ghidra/scripts/funcs/80032a44.txt`). Its
-/// `sfx-table.md` descriptor is category `0`, so the director sounds it out
-/// of the slot-0 system bank (PROT 0868). Provenance `disc`: traced to the
-/// retail ring write, the same three ids the browser play page fires
-/// (`web-viewer::play_sfx`), so the two hosts blip alike.
-pub const RETAIL_MENU_CURSOR_CUE: u16 = 0x21;
-/// The enabled-row confirm cue: `li a1,0x20` at `0x80032d24` in `FUN_80032A44`.
-pub const RETAIL_MENU_CONFIRM_CUE: u16 = 0x20;
-/// The cancel cue: `_li a2,0x37` at `0x80032d74` in `FUN_80032A44`.
-pub const RETAIL_MENU_CANCEL_CUE: u16 = 0x37;
+/// The pause menu's cursor-step cue, re-exported from the one engine-side
+/// table both hosts fire from ([`legaia_engine_core::menu_cues`], provenance
+/// there: `FUN_80032A44`'s ring writes). Category `0`, so the director sounds
+/// it out of the slot-0 system bank (PROT 0868).
+pub const RETAIL_MENU_CURSOR_CUE: u16 = legaia_engine_core::menu_cues::MENU_CURSOR_CUE as u16;
+/// The enabled-row confirm cue ([`legaia_engine_core::menu_cues::MENU_CONFIRM_CUE`]).
+pub const RETAIL_MENU_CONFIRM_CUE: u16 = legaia_engine_core::menu_cues::MENU_CONFIRM_CUE as u16;
+/// The cancel cue ([`legaia_engine_core::menu_cues::MENU_CANCEL_CUE`]).
+pub const RETAIL_MENU_CANCEL_CUE: u16 = legaia_engine_core::menu_cues::MENU_CANCEL_CUE as u16;
 
 /// BGM director that routes [`BgmDirector`] events into a live
 /// [`AudioOut`]. The director holds a clone of the audio handle (cpal stream
@@ -54,9 +53,6 @@ pub struct AudioBgmDirector {
     /// (sequencer reports `finished` when it runs off the end). Most field
     /// BGM loops to 0; cutscene SEQs typically don't.
     pub loop_to: Option<usize>,
-    /// Whether playback is currently paused. `pause` / `resume` toggle
-    /// without detaching the active sequencer.
-    paused: bool,
     /// Last started BGM id, if any. Useful for diagnostics + suppressing
     /// redundant `start(same_id)` calls (the field VM occasionally re-emits
     /// op `0x35` without a state change).
@@ -122,15 +118,11 @@ pub struct AudioBgmDirector {
     /// half (`>= 0x200`) of the SFX descriptor table. Mirrored from the world
     /// by [`Self::sync_field_sfx`].
     runtime_sfx_bundle: Vec<u8>,
-    /// The side-band bank staged behind the BGM, `None` while none is.
-    side_band: Option<SideBandBank>,
-    /// The last `(request, bgm generation)` a side-band stage was attempted
-    /// for, so a bank that does not fit is not re-read every frame; a BGM
-    /// restage (which moves the free tail) makes it worth trying again.
-    side_band_attempt: Option<(i32, u64)>,
-    /// Bumped on every BGM-region restage ([`Self::set_bank`] /
-    /// [`Self::stage_owned_vab`]).
-    bgm_gen: u64,
+    /// The banks borrowing the BGM region's free tail (the reward bank and a
+    /// side-band bank), their residency and the side-band retry memo - the
+    /// kernel the browser page drives too
+    /// ([`legaia_engine_audio::bgm_tail`]).
+    tail: BgmTail<SideBandBank>,
     /// The bank the SPU region VAB slots `2` and `6` share holds - retail's
     /// per-mode refill of one region (`FUN_800265E8` gives both slots
     /// `0x33010`), driven by
@@ -161,7 +153,7 @@ pub const DUCK_LEVEL_REF: u8 = legaia_engine_audio::duck::DUCK_LEVEL_REF;
 /// in - retail streams it at results time (`FUN_8004E568` phase 4,
 /// `FUN_8001E54C(0xB, ...)`), and the port stages it transiently the same
 /// way ([`AudioBgmDirector::stage_transient_sfx_vab`]).
-pub const TRANSIENT_REWARD_SLOT: u8 = 11;
+pub const TRANSIENT_REWARD_SLOT: u8 = legaia_engine_audio::bgm_tail::REWARD_SLOT;
 
 /// One ring cue resolved to what it keys, for [`AudioBgmDirector::tick_sfx_frame`].
 enum RingFire<'a> {
@@ -261,7 +253,6 @@ impl AudioBgmDirector {
             bank: None,
             master_vol: 100,
             loop_to: Some(0),
-            paused: false,
             last_started: None,
             sfx_bank: SfxBank::new(),
             sfx_cue_slots: BTreeMap::new(),
@@ -273,9 +264,7 @@ impl AudioBgmDirector {
             duck_level: DUCK_LEVEL_REF,
             duck_target: DUCK_LEVEL_REF,
             runtime_sfx_bundle: Vec::new(),
-            side_band: None,
-            side_band_attempt: None,
-            bgm_gen: 0,
+            tail: BgmTail::default(),
             shared_region: None,
             shared_region_base: crate::boot::SPU_RAM_BYTES - crate::boot::SFX_BANK_SPU_BYTES,
             resident_slot0: None,
@@ -462,38 +451,39 @@ impl AudioBgmDirector {
     /// load of PROT 0889 into slot 11 (`FUN_8001FC00(0x37B, 0xB, ..)` +
     /// `FUN_8001E54C(0xB, ..)` in `FUN_8004E568` phases 2 / 4). The SFX
     /// region is full (its two pinned banks leave ~2.5 KB), so the reward
-    /// bank borrows BGM room instead, exactly as long as the current track
-    /// leaves any: it is dropped again the moment a track restages
-    /// ([`Self::stage_owned_vab`] / [`Self::set_bank`]). Returns `false` when
-    /// the entry has no VAB header or the tail is too small.
+    /// bank borrows BGM room instead. It stays parked until a track overruns
+    /// its base or the field init closes it - the residency rule of
+    /// [`legaia_engine_audio::bgm_tail`], which the browser page drives too.
+    /// Returns `false` when the entry has no VAB header or the tail is too
+    /// small.
     // REF: FUN_8001E54C, FUN_8004E568
     pub fn stage_transient_sfx_vab(&mut self, slot: u8, entry_bytes: &[u8]) -> bool {
-        let Some((report, vab_off)) = [4usize, 0]
-            .into_iter()
-            .find_map(|o| legaia_vab::parse(entry_bytes, o).ok().map(|r| (r, o)))
-        else {
+        let Some(borrow) = self.park_tail_bank(slot, entry_bytes) else {
             return false;
         };
-        // The BGM region runs from the reserved head up to the SFX region;
-        // the resident bank's samples - and any other bank already borrowing
-        // the tail - end where the free tail begins.
-        let region_end = crate::boot::SPU_RAM_BYTES - crate::boot::SFX_BANK_SPU_BYTES;
-        self.sfx_vabs.remove(&slot);
-        let base = self.bgm_tail_used_end().div_ceil(16) * 16;
-        if base >= region_end {
-            return false;
+        if slot == TRANSIENT_REWARD_SLOT {
+            self.tail.commit_reward(borrow);
         }
-        let body_total: u32 = report.vag_samples.iter().map(|v| v.size as u32).sum();
-        if body_total > region_end - base {
-            return false;
-        }
-        let body = &entry_bytes[vab_off..];
-        let bank = self.audio.with_spu(|spu| {
-            let mut alloc = legaia_engine_audio::SpuAllocator::new(base, region_end - base);
-            VabBank::upload(spu, &mut alloc, &report, body)
-        });
-        self.sfx_vabs.insert(slot, bank);
         true
+    }
+
+    /// Upload `entry_bytes`' VAB into `slot` above the track and every other
+    /// tail borrower ([`BgmTail::place`]). `None` when the entry has no VAB
+    /// header or the tail is too small; the slot is then empty.
+    fn park_tail_bank(&mut self, slot: u8, entry_bytes: &[u8]) -> Option<TailBorrow> {
+        let (report, vab_off) = [4usize, 0]
+            .into_iter()
+            .find_map(|o| legaia_vab::parse(entry_bytes, o).ok().map(|r| (r, o)))?;
+        self.observe_track();
+        self.sfx_vabs.remove(&slot);
+        let base = self.tail.place_report(slot, &report)?;
+        let body = &entry_bytes[vab_off..];
+        let bank = self
+            .audio
+            .with_spu(|spu| legaia_engine_audio::bgm_tail::upload_at(spu, base, &report, body));
+        let end = legaia_engine_audio::spu_layout::bank_used_end(&bank).unwrap_or(base);
+        self.sfx_vabs.insert(slot, bank);
+        Some(TailBorrow { slot, base, end })
     }
 
     /// Install the sound-effect descriptor bank (decoded from the user's
@@ -692,33 +682,14 @@ impl AudioBgmDirector {
         fired
     }
 
-    /// One past the highest sample the BGM region's occupants use: the BGM
-    /// bank itself plus every bank borrowing its tail (the reward bank and a
-    /// side-band bank). An empty region reads as its floor.
-    fn bgm_tail_used_end(&self) -> u32 {
-        let side = self.side_band.map(|b| b.slot);
-        let ends = |b: &VabBank| b.samples.iter().flatten().map(|s| s.addr + s.size).max();
-        let mut end = self
-            .bank
-            .as_ref()
-            .and_then(ends)
-            .unwrap_or(crate::boot::SPU_RESERVED_BYTES);
-        for (slot, bank) in &self.sfx_vabs {
-            if *slot == TRANSIENT_REWARD_SLOT || Some(*slot) == side {
-                end = end.max(ends(bank).unwrap_or(0));
-            }
+    /// Re-check the tail borrowers against the live track's sample end and
+    /// forget the ones it overran ([`BgmTail::observe_bgm_end`]). Runs after
+    /// every track upload; idempotent.
+    fn observe_track(&mut self) {
+        let end = legaia_engine_audio::bgm_tail::track_end(self.bank.as_ref());
+        for slot in self.tail.observe_bgm_end(end) {
+            self.sfx_vabs.remove(&slot);
         }
-        end
-    }
-
-    /// Forget every bank borrowing the BGM region's tail - the region is
-    /// being re-owned.
-    fn drop_bgm_tail_banks(&mut self) {
-        self.sfx_vabs.remove(&TRANSIENT_REWARD_SLOT);
-        if let Some(b) = self.side_band.take() {
-            self.sfx_vabs.remove(&b.slot);
-        }
-        self.bgm_gen = self.bgm_gen.wrapping_add(1);
     }
 
     /// Set where the shared slot-2 / slot-6 region starts - one past the
@@ -848,7 +819,7 @@ impl AudioBgmDirector {
         if !sfx_region_free(self.bank.as_ref()) {
             self.sfx_evicted = true;
             self.sfx_vabs.clear();
-            self.side_band = None;
+            self.tail.clear();
             self.shared_region = None;
             return;
         }
@@ -901,62 +872,72 @@ impl AudioBgmDirector {
     /// Mirror the field-side SFX sources the ring's cues resolve against:
     /// the scene's prescript bundle (the runtime descriptor rows, cue ids
     /// `>= 0x200`) and the side-band bank the scripts' op-`0x36` sub-`1`
-    /// requests hold in VAB slot `3` (or `6`). `side_band` is
+    /// requests hold in VAB slot `3`. `side_band` is
     /// [`legaia_engine_core::world::World::side_band_bank`] in a field-family
     /// mode and `None` elsewhere - retail has slot 3 open only in the field
-    /// (`docs/formats/sfx-table.md`). `read_entry` reads an extraction-frame
-    /// PROT entry. The bank is staged behind the BGM, in the free tail of its
-    /// region, the way the reward bank is.
-    // REF: FUN_800243F0, FUN_8001E54C
+    /// (`docs/formats/sfx-table.md`). `field_family` says the world is in such
+    /// a mode, where the field init `FUN_801D6704` has closed slot `11`
+    /// (`0x801D68B4`), so a parked reward bank is dropped. `read_entry` reads
+    /// an extraction-frame PROT entry. The bank is staged behind the BGM, in
+    /// the free tail of its region, the way the reward bank is; the
+    /// residency rule and the retry memo are [`BgmTail`]'s.
+    // REF: FUN_800243F0, FUN_8001E54C, FUN_801D6704
     pub fn sync_field_sfx(
         &mut self,
         bundle: &[u8],
+        field_family: bool,
         side_band: Option<SideBandBank>,
         read_entry: impl FnOnce(u32) -> Option<Vec<u8>>,
     ) {
         if self.runtime_sfx_bundle.as_slice() != bundle {
             self.runtime_sfx_bundle = bundle.to_vec();
         }
+        if field_family && let Some(slot) = self.tail.drop_reward() {
+            self.sfx_vabs.remove(&slot);
+        }
+        self.observe_track();
         let Some(want) = side_band else {
-            if let Some(b) = self.side_band.take() {
-                self.sfx_vabs.remove(&b.slot);
+            if let Some(slot) = self.tail.drop_side_band() {
+                self.sfx_vabs.remove(&slot);
             }
             return;
         };
-        if self.side_band == Some(want) {
+        if !self.tail.begin_side_band_attempt(want) {
             return;
         }
-        if self.side_band_attempt == Some((want.request, self.bgm_gen)) {
-            return;
-        }
-        self.side_band_attempt = Some((want.request, self.bgm_gen));
-        if let Some(b) = self.side_band.take() {
-            self.sfx_vabs.remove(&b.slot);
+        if let Some(slot) = self.tail.drop_side_band() {
+            self.sfx_vabs.remove(&slot);
         }
         let Some(bytes) = read_entry(want.prot_entry) else {
             log::debug!("side-band bank PROT {} unreadable", want.prot_entry);
             return;
         };
-        if self.stage_transient_sfx_vab(want.slot, &bytes) {
-            self.side_band = Some(want);
-            log::debug!(
-                "side-band bank {} (PROT {}) staged in slot {} behind the BGM",
-                want.request,
-                want.prot_entry,
-                want.slot
-            );
-        } else {
-            log::debug!(
+        match self.park_tail_bank(want.slot, &bytes) {
+            Some(borrow) => {
+                self.tail.commit_side_band(want, borrow);
+                log::debug!(
+                    "side-band bank {} (PROT {}) staged in slot {} behind the BGM",
+                    want.request,
+                    want.prot_entry,
+                    want.slot
+                );
+            }
+            None => log::debug!(
                 "side-band bank {} (PROT {}) does not fit behind the BGM",
                 want.request,
                 want.prot_entry
-            );
+            ),
         }
     }
 
     /// The side-band bank currently staged, if any.
     pub fn side_band(&self) -> Option<SideBandBank> {
-        self.side_band
+        self.tail.side_band().map(|(k, _)| k)
+    }
+
+    /// The tail borrowers' residency model (for tests / traces).
+    pub fn bgm_tail(&self) -> &BgmTail<SideBandBank> {
+        &self.tail
     }
 
     /// Drop every queued SFX cue (scene transition / battle abort).
@@ -969,11 +950,11 @@ impl AudioBgmDirector {
     /// [`legaia_engine_core::scene::SceneHost::scene_vab_bytes`]; the bank
     /// is uploaded into the SPU and stored here for subsequent SEQ starts.
     pub fn set_bank(&mut self, bank: VabBank) {
-        // The BGM region is re-owned wholesale; a transient reward bank in
-        // its tail is gone with it, and so is a side-band bank.
-        self.drop_bgm_tail_banks();
+        // A tail borrower the new bank's samples reach is gone with it; one
+        // above them stays (retail's resolver closes neither slot).
         self.bank = Some(bank);
         self.reclaim_sfx_region();
+        self.observe_track();
     }
 
     /// Borrow the active bank - useful for tests / inspection.
@@ -989,7 +970,7 @@ impl AudioBgmDirector {
 
     /// `true` if a sequencer is currently attached to the audio output.
     pub fn is_playing(&self) -> bool {
-        self.audio.sequencer_progress().is_some() && !self.paused
+        self.audio.sequencer_progress().is_some() && !self.audio.sequencer_paused()
     }
 
     /// Split a raw `music_01` bank entry (`[chunk][pBAV VAB][pQES SEQ]`),
@@ -1018,11 +999,10 @@ impl AudioBgmDirector {
         let staged = self
             .audio
             .with_spu(|spu| legaia_engine_audio::spu_layout::upload_owned_bank(spu, &report, body));
-        // A restaged track reclaims the whole BGM region, transient tail
-        // included.
-        self.drop_bgm_tail_banks();
+        // A tail borrower the new track's samples reach is gone with them.
         self.bank = Some(staged.bank);
         self.reclaim_sfx_region();
+        self.observe_track();
         Some(seq_bytes.to_vec())
     }
 
@@ -1048,7 +1028,7 @@ impl AudioBgmDirector {
         // pop, far too short to hide an intro (the old fade held it silent for
         // 22050 samples = 0.5 s).
         const TRANSITION_FADE_IN_SAMPLES: u32 = 1_470;
-        if self.audio.sequencer_progress().is_some() && !self.paused {
+        if self.audio.sequencer_progress().is_some() && !self.audio.sequencer_paused() {
             self.audio.swap_bgm(sequencer, TRANSITION_FADE_IN_SAMPLES);
         } else {
             self.audio.attach_sequencer(sequencer);
@@ -1059,7 +1039,6 @@ impl AudioBgmDirector {
         // closed gate leaves the new track silent until an explicit
         // resume/unhalt.
         self.audio.set_sequencer_paused(false);
-        self.paused = false;
         self.last_started = Some(bgm_id);
         log::info!("AudioBgmDirector: BGM {bgm_id} started");
         Ok(())
@@ -1072,7 +1051,7 @@ impl BgmDirector for AudioBgmDirector {
         // op 0x35 occasionally re-emits without a state change (we'd lose
         // the playhead by re-attaching).
         if self.last_started == Some(bgm_id)
-            && !self.paused
+            && !self.audio.sequencer_paused()
             && self.audio.sequencer_progress().is_some()
         {
             return;
@@ -1087,7 +1066,7 @@ impl BgmDirector for AudioBgmDirector {
         // occasionally re-fires op 0x35): re-uploading the VAB + restarting
         // would drop the playhead.
         if self.last_started == Some(bgm_id)
-            && !self.paused
+            && !self.audio.sequencer_paused()
             && self.audio.sequencer_progress().is_some()
         {
             return;
@@ -1101,36 +1080,33 @@ impl BgmDirector for AudioBgmDirector {
         }
     }
 
+    /// The pause state is the output's sequencer gate and nothing else - the
+    /// browser twin reads the same bit - so a writer that bypasses the
+    /// director (a movie ducking the score, `legaia_engine_core::movie_audio`)
+    /// cannot leave a second latch disagreeing with it.
     fn pause(&mut self) {
-        self.paused = true;
         self.audio.set_sequencer_paused(true);
     }
 
+    /// Sub-op `4`: retail's re-attach replays the slot's sequence from its
+    /// start (`FUN_800628F0` resets the read cursor before it plays), so the
+    /// track rewinds, then the gate opens.
     fn resume(&mut self) {
-        self.paused = false;
+        self.audio.rewind_sequencer();
         self.audio.set_sequencer_paused(false);
     }
 
-    /// Detach the track **and reopen the gate**.
-    ///
-    /// The pause state is one quantity with two representations here - this
-    /// director's own `paused` latch and the output's `sequencer_paused`
-    /// gate - and every other arm writes both (`pause`, `resume`,
-    /// `unhalt_pause`, `start_inner`). This one wrote only the latch, so a
-    /// stop issued while paused left the two disagreeing: latch clear, gate
-    /// closed. Nothing audible followed, because `start_inner` happens to
-    /// reopen the gate unconditionally - but "the defect is masked by the
-    /// next call" is not a body, and the browser play page's `stop` (which
-    /// documents itself as doing what this one does) always wrote both.
+    /// Detach the track **and reopen the gate**, so a stop issued while
+    /// paused leaves nothing closed behind it (the browser play page's `stop`
+    /// does the same).
     fn stop(&mut self) {
         self.audio.detach_sequencer();
         self.audio.set_sequencer_paused(false);
-        self.paused = false;
         self.last_started = None;
     }
 
     /// Sub-op `0xA` - the unhalt-pause swap-commit (retail `0x801E0264`).
-    /// When the pause latch is still set no start intervened, so the
+    /// When the pause gate is still closed no start intervened, so the
     /// director is holding the track sub-op 2 paused: release it the way
     /// retail's `FUN_800266E0` + `FUN_80026520` pair detaches and closes
     /// the slot. When a start already landed (the paired sub-op 9 precedes
@@ -1141,9 +1117,8 @@ impl BgmDirector for AudioBgmDirector {
     /// while paused attaches its sequencer behind a still-closed gate and
     /// the score stays silent after the cutscene.
     fn unhalt_pause(&mut self) {
-        if self.paused {
+        if self.audio.sequencer_paused() {
             self.audio.detach_sequencer();
-            self.paused = false;
             self.last_started = None;
         }
         self.audio.set_sequencer_paused(false);

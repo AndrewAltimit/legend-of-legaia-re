@@ -104,7 +104,8 @@
 
 <section class="doc-section" id="fog-color">
   <h2>Per-kingdom fog colour</h2>
-  <p>The haze colour is not a constant in the executable. An "atmosphere" actor runs a small per-kingdom script every frame that interpolates the haze RGB into the actor's colour word; the primitive dispatcher then splits that word into bytes, scales 8-bit to 12-bit and writes the three GTE far-colour registers. The capture script surfaces the live RGB of any actor running that tick as <code>fog_color</code> in <code>site/world-overview.json</code>; the viewer prefers it over the hand-tuned <code>KINGDOM_FOG_TINT</code> fallback.</p>
+  <p>The viewer's haze tint is its own hand-set <code>KINGDOM_FOG_TINT</code> table. Retail has no per-kingdom haze to take instead: the walk-view ground is depth-cued toward a far colour fixed in code (<code>SetFarColor(0x100, 0x100, 0x100)</code> just before the ground emitter runs), and the landmark cells toward <code>0xD0D0D0</code>.</p>
+  <p>An earlier reading had an "atmosphere" actor interpolating a per-kingdom haze into its colour word every frame. That routine (<code>FUN_801E3E00</code>) is the keyframe script of the field script's attached light, called from the light's own tick, and its colour word is the light pool's centre colour. No save state holds it as a tick, so the capture path that looked for one never found any, and every kingdom draws the fallback.</p>
 </section>
 
 <section class="doc-section" id="ocean-tile">
@@ -186,7 +187,7 @@
       <tr><td>MAN placement walker</td><td><code>FUN_8003A1E4</code></td><td>The <code>0x7F</code> sentinel and the field-VM prescript loop</td><td><code>8003a1e4.txt</code></td></tr>
       <tr><td>Pure-Y rotation</td><td><code>FUN_80026988</code></td><td>Yaw sense (local <code>+Z</code> to <code>(sin, 0, cos)</code>)</td><td><code>80026988.txt</code></td></tr>
       <tr><td>Fog LUT apply</td><td>overlay <code>0x801F7644..0x801F8690</code></td><td>Per-vertex scalar nudge from the 2048-entry LUT at <code>gp&minus;0x2BC</code></td><td>world-map overlay dump</td></tr>
-      <tr><td>Far colour</td><td><code>FUN_80043390</code> / <code>FUN_801E3E00</code></td><td>Three <code>ctc2</code> writes; the atmosphere actor's per-frame RGB</td><td><code>80043390.txt</code>, <code>overlay_801e3e00.txt</code></td></tr>
+      <tr><td>Far colour</td><td><code>FUN_8005B7D8</code> at <code>0x801F729C</code> / <code>FUN_80043390</code></td><td>The literal <code>SetFarColor(0x100, 0x100, 0x100)</code> the ground is cued toward; a mesh's own colour word as far colour when its depth argument is non-zero</td><td>PROT 0901 disassembly; <code>autorun_overworld_ground_far_colour.lua</code></td></tr>
       <tr><td>Ocean CLUT step</td><td>slot-5 CLUT-walk table</td><td>16 &times; 1 copy onto <code>(0, 506)</code> every 9 vsyncs</td><td><code>legaia_asset::clut_walk</code>; prim-trace <code>clut=0x7E80</code> cluster</td></tr>
       <tr><td>Camera origin</td><td><code>_DAT_80089118</code> / <code>_DAT_80089120</code></td><td>Spawn anchor per kingdom</td><td><code>mednafen-state world-map-camera</code></td></tr>
     </tbody>

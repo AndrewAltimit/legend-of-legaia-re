@@ -217,10 +217,18 @@ impl World {
     /// [`crate::world::SeruState::magic_level_ups`] (the banner the retail check fires as UI
     /// element `0x65`).
     ///
-    /// Unmodelled retail gates (skips the engine doesn't reproduce): the
-    /// per-battle no-reward flag `_DAT_8007BAC0` (scripted fights) and the
-    /// unidentified accrual gate `_DAT_8007BDB8`.
+    /// The special-battle word gates the accrual: the finisher's tail
+    /// returns before it when `_DAT_8007BAC0 != 0` (`0x801DE450`), so an
+    /// arena leg or a Ra-Seru-forbidden fight trains nothing
+    /// ([`Self::special_battle_word`]); the level check after the summon
+    /// still runs, on the unchanged XP. One retail gate stays unmodelled: the
+    /// unidentified accrual skip `_DAT_8007BDB8`.
     pub(in crate::world) fn accrue_summon_spell_xp(&mut self, caster: u8, spell_id: u8, gain: u32) {
+        let gain = if self.special_battle_word() != 0 {
+            0
+        } else {
+            gain
+        };
         // Battle ordinal -> the occupying character's record (the XP holder).
         let char_slot = self.party_roster_slot(caster as usize);
         let thresholds = self.tables.magic_xp_thresholds;

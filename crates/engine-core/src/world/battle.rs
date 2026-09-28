@@ -45,7 +45,7 @@ pub use cast_band::{
 };
 pub use effect_route::RoutedEffectSpawn;
 pub use message_banner::{ABSORB_BANNER_ELEMENT, BattleMessageBanner, MAGIC_LEVEL_BANNER_ELEMENT};
-pub use teardown::BattleSpoilsBanner;
+pub use teardown::{BattleDefeatBanner, BattleSpoilsBanner};
 pub use victory::{
     LEVEL_UP_CUE, VICTORY_EXIT_PHASE, VICTORY_FADE_PHASE_SEED, VICTORY_LOAD_FRAMES,
     VICTORY_RESULTS_HOLD_FRAMES, VictoryPhase, VictorySequence, victory_pose_column,

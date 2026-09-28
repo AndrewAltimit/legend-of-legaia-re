@@ -305,6 +305,23 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
                (FUN_8003AEB0, andi 0xdf at 0x8003BBD4) consumes it on every load - so the \
                engine's entry clears a flag retail has not reached the clear for yet",
     },
+    KnownDivergence {
+        label: "town01_tetsu_topic_prompt",
+        key: "vis:33",
+        class: "b",
+        note: "mid-conversation capture (inference, not traced): the state is replayed \
+               from s4_rimelm_door_transition along a recorded human route and taken with \
+               Tetsu's talk record engaged and his topic prompt open, so beats that ran \
+               after the scene's entry have parked slots 33 / 34 at the (16320, 16320) \
+               park point. A cold entry seats both, as retail's own entry does in every \
+               other town01 state in the library",
+    },
+    KnownDivergence {
+        label: "town01_tetsu_topic_prompt",
+        key: "vis:34",
+        class: "b",
+        note: "same mid-conversation capture context as town01_tetsu_topic_prompt vis:33",
+    },
 ];
 
 fn known(label: &str, key: &str) -> Option<&'static KnownDivergence> {

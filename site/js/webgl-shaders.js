@@ -204,6 +204,48 @@ vec4 overworldCurve(vec4 clip) {
   return vec4(clip.x, clip.y - t * (2.0 / 240.0) * clip.w, clip.z, clip.w);
 }
 
+/* z = a * w + b of m's depth row over its w row, read the way
+ * legaia_engine_core::overworld_draw_order::depth_affine reads it: the column
+ * with the largest w weight gives a, the translation column b. */
+vec2 depthAffine(mat4 m) {
+  vec4 col = m[2];
+  if (abs(m[0].w) > abs(col.w) && abs(m[0].w) >= abs(m[1].w)) col = m[0];
+  else if (abs(m[1].w) > abs(col.w)) col = m[1];
+  float a = abs(col.w) > 1.0e-7 ? col.z / col.w : 0.0;
+  return vec2(a, m[3].z - a * m[3].w);
+}
+
+vec4 overworldFlatDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
+  if (u_curve <= 0.0 || fa.z <= fa.x || clip.w <= 0.0) return clip;
+  float w0 = (m * vec4(fa.x, fb.x, fa.y, 1.0)).w;
+  float w1 = (m * vec4(fa.z, fb.y, fa.y, 1.0)).w;
+  float w2 = (m * vec4(fa.x, fb.z, fa.w, 1.0)).w;
+  float w3 = (m * vec4(fa.z, fb.w, fa.w, 1.0)).w;
+  int sz = clamp(int(floor(max(max(w0, w1), max(w2, w3)) * u_curve + 0.5)), 0, 0xFFFF);
+  int bucket = (sz >> 5) + 14;
+  float repW = (float(bucket) * 32.0 + 32.0) / u_curve;
+  vec2 ab = depthAffine(m);
+  return vec4(clip.x, clip.y, (ab.x + ab.y / repW) * clip.w, clip.w);
+}
+
+/* The continent ground's depth cue - the GLSL twin of engine-render's
+ * overworld_ground_cue (legaia_engine_core::overworld_ground_cue). Retail's
+ * ground emitter (FUN_801F89B8) runs each cell's packet colour through DPCS
+ * with IR0 = max(SZ1 - 0x5000, 0) >> 3, SZ1 the depth of the cell's corner
+ * (x1, z0), toward the far colour 0x1000 its caller sets with the literal
+ * SetFarColor(0x100, 0x100, 0x100). Same gate as overworldFlatDepth; one
+ * value per cell, since every vertex carries the same corners. rgb in 0..1. */
+vec3 overworldGroundCue(vec3 rgb, mat4 m, vec4 fa, vec4 fb) {
+  if (u_curve <= 0.0 || fa.z <= fa.x) return rgb;
+  float w1 = (m * vec4(fa.z, fb.y, fa.y, 1.0)).w;
+  int sz1 = clamp(int(floor(w1 * u_curve + 0.5)), 0, 0xFFFF);
+  int ir0 = max(sz1 - 0x5000, 0) >> 3;
+  ivec3 base = ivec3(floor(rgb * 255.0 + 0.5)) << 16;
+  ivec3 ir = clamp(((ivec3(0x1000) << 12) - base) >> 12, ivec3(-0x8000), ivec3(0x7FFF));
+  ivec3 mac = (base + ir * ir0) >> 12;
+  return vec3(clamp(mac >> 4, ivec3(0), ivec3(255))) / 255.0;
+}
+
 in vec3 a_position;
 in vec2 a_uv_byte;       /* 0..255 each, sent as Uint8x2 normalised=false */
 in uvec2 a_cba_tsb;
@@ -220,6 +262,16 @@ in uvec2 a_cba_tsb;
  * which the renderer sets to the neutral 0x80 triple, so an un-coloured draw
  * is texel * 1.0. u_use_flat_colors gates only the untextured branch. */
 in vec4 a_flat_rgba;
+/* The continent ground's flat bucket-depth reference - the GLSL twin of
+ * engine-render's overworld_flat_depth (legaia_engine_core::
+ * overworld_draw_order). Each ground vertex carries its cell's
+ * [x0, z0, x1, z1] / [y00, y10, y01, y11]; retail links the cell
+ * (FUN_801F89B8) at (max corner SZ >> 5) + 14 of the ordering table the fog
+ * sheets link into, so on the overworld (u_curve > 0) the whole cell draws
+ * at that bucket's depth. Every other mesh leaves both unbound and reads the
+ * generic-attribute default (0, 0, 0, 1): x1 <= x0, per-pixel depth. */
+in vec4 a_ground_ref_xz;
+in vec4 a_ground_ref_y;
 
 out vec2 v_uv;          /* interpolated linearly across the triangle */
 flat out uvec2 v_cba_tsb;
@@ -231,7 +283,9 @@ void main() {
   vec4 world_pos = u_model * vec4(a_position, 1.0);
   v_uv = a_uv_byte;
   v_cba_tsb = a_cba_tsb;
-  v_flat_rgba = a_flat_rgba;
+  v_flat_rgba = vec4(overworldGroundCue(a_flat_rgba.rgb, u_mvp * u_model,
+                                        a_ground_ref_xz, a_ground_ref_y),
+                     a_flat_rgba.a);
   /* Mirror the per-vertex Z_far the overlay leaves compute. The retail
    * pipeline pulls Z from the GTE's screen-space pipeline after rtpt;
    * here we approximate using XZ-plane distance to the camera origin
@@ -249,7 +303,8 @@ void main() {
   } else {
     v_fog_t = 0.0;
   }
-  gl_Position = overworldCurve(u_mvp * world_pos);
+  gl_Position = overworldFlatDepth(overworldCurve(u_mvp * world_pos), u_mvp * u_model,
+                                   a_ground_ref_xz, a_ground_ref_y);
   v_view_z = gl_Position.w;
 }
 `;

@@ -121,15 +121,14 @@ impl BattleSession {
     /// gauge can't cover the cost or the runner refused the input.
     pub fn push_command(&mut self, world: &mut World, cmd: Command) -> bool {
         let active = self.runner.active_party_slot();
-        // Rot refuses the rotted limb's attack command (limb roll 0 = Left
-        // arm, 1 = Right arm, 2 = Low attack) - the engine's reading of the
-        // retail `+0x16E` limb-disable bits (the retail consumer lives in the
-        // undumped command-menu controller; see engine-vm::status_effects).
-        if let Some(limb) = world.battle.status_effects.rot_limb(active) {
-            let blocked = [1u8, 2, 3][limb.min(2) as usize];
-            if cmd.as_byte() == blocked {
-                return false;
-            }
+        // Rot refuses every rotted limb's directions - Left for `0x08`,
+        // Right for `0x10`, Up and Down for `0x20` - the gate the round
+        // driver's arts entry runs (`crate::arts_command_input::rot_blocks`).
+        let status = legaia_engine_vm::status_effects::pack_display_flags(
+            world.battle.status_effects.statuses(active),
+        );
+        if crate::arts_command_input::rot_blocks(status, cmd) {
+            return false;
         }
         let mut ap = world.battle.ap_gauges[active as usize];
         let admit = self.runner.push_command(&mut ap, cmd).is_ok();

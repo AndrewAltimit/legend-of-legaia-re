@@ -99,10 +99,11 @@
 //! lifecycle, not a port waiting on a caller: wiring them would mean adding a
 //! retained text-actor layer the port has deliberately not got.
 //!
-//! **Still open.** The result text itself is the pool's, and the port does
-//! not replay it: the report sentence is built from typed state, so a
-//! translation that lifts the `0898` pool does not reach it, and the defeat
-//! and escape messages have no engine caption at all. The layout arguments
+//! **Still open.** The victory sentence is built from typed state rather than
+//! from the pool, so a translation that lifts the `0898` pool does not reach
+//! it, and the escape messages have no engine caption at all. The defeat
+//! message does come off the pool ([`DefeatText`]): both hosts draw it in the
+//! loss window through `World::battle_defeat_banner`. The layout arguments
 //! `FUN_801DBB8C` passes the register call encode the panel band's
 //! *vertical* placement, which is why `engine-ui`'s panel Y is still an
 //! approximation.
@@ -446,9 +447,116 @@ pub const fn result_subject(slots: [u8; 3]) -> ResultSubject {
     }
 }
 
+/// Screen element the results frame opens on a **win** (`FUN_801D8DE8(0x41, 0)`
+/// at `0x8004F65C`). Its placement record's string word is the victory buffer
+/// `ctx+0xA9` ([`PUBLISHED_BUFFERS`]).
+pub const RESULT_WINDOW_ELEMENT: usize = 0x41;
+/// Screen element the results frame opens on a **wipe** (`FUN_801D8DE8(0x42, 0)`
+/// at `0x8004F900`). Its placement record's string word is the defeat buffer
+/// `ctx+0x129`.
+///
+/// Records `0x41` and `0x42` are byte-identical on the disc: one framed window,
+/// widget pair `(3, 3)` (the corner-framed window), content box `288 x 42` at
+/// `(16, 160)` sliding in from `(16, 236)` - the spawner's default arm reads
+/// both through the same post-switch tail (`0x801D91D4..0x801D93DC`). They
+/// differ only in the buffer `FUN_801D84C0` publishes into each.
+pub const DEFEAT_WINDOW_ELEMENT: usize = 0x42;
+
+/// The battle-action overlay's link base (`VA - file offset`).
+pub const OVERLAY_0898_LINK_BASE: u32 = 0x801C_E818;
+/// The roster arm's whole defeat string (`addiu a1,a1,0x4c78` at `0x801D8644`,
+/// copied into `ctx+0x129`). It opens with the [`NAME_ESCAPE`] pair.
+pub const DEFEAT_TEAM_VA: u32 = 0x801F_4C78;
+/// The solo arm's defeat suffix (`addiu a1,a1,0x4c94` at `0x801D8588`,
+/// appended to the lead's name in `ctx+0x129`).
+pub const DEFEAT_SOLO_SUFFIX_VA: u32 = 0x801F_4C94;
+
+/// The defeat message's two disc pieces, read off the caller's PROT 0898
+/// image. No bytes of the text are carried here.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DefeatText {
+    /// What the solo arm appends to the lead's name.
+    pub solo_suffix: String,
+    /// The roster arm's string after its leading `0xC1 <id>` name escape.
+    pub team_tail: String,
+}
+
+impl DefeatText {
+    /// Read both pieces. `None` when either leaves the image, runs past a
+    /// short string, carries a non-printable byte outside the name escape, or
+    /// the team string does not open with the escape - the shapes of a wrong
+    /// entry or a wrong base.
+    pub fn parse(overlay_0898: &[u8]) -> Option<Self> {
+        const MAX_LEN: usize = 64;
+        let c_bytes = |va: u32| -> Option<&[u8]> {
+            let off = va.checked_sub(OVERLAY_0898_LINK_BASE)? as usize;
+            let tail = overlay_0898.get(off..)?;
+            let end = tail.iter().take(MAX_LEN).position(|&b| b == 0)?;
+            Some(&tail[..end])
+        };
+        let printable = |b: &[u8]| b.iter().all(|&c| (0x20..0x7F).contains(&c));
+        let solo = c_bytes(DEFEAT_SOLO_SUFFIX_VA)?;
+        let team = c_bytes(DEFEAT_TEAM_VA)?;
+        let (&[escape, _operand], tail) = team.split_first_chunk::<2>()?;
+        if escape != NAME_ESCAPE || !printable(solo) || !printable(tail) || tail.is_empty() {
+            return None;
+        }
+        Some(Self {
+            solo_suffix: String::from_utf8_lossy(solo).into_owned(),
+            team_tail: String::from_utf8_lossy(tail).into_owned(),
+        })
+    }
+
+    /// The line the defeat window shows for `subject`, with `lead_name` the
+    /// display name of the character the line names. Both arms name the lead:
+    /// the solo arm copies its name, and the roster arm patches the escape
+    /// operand to the lead's index (`0x801D8724..0x801D8734`). Nothing on the
+    /// loss arm re-points it - `FUN_8004E568`'s `ctx+0xAA` store is on the win
+    /// arm only (`0x8004F658`).
+    pub fn compose(&self, subject: ResultSubject, lead_name: &str) -> String {
+        match subject {
+            ResultSubject::Lead(_) => format!("{lead_name}{}", self.solo_suffix),
+            ResultSubject::LeadsTeam { .. } => format!("{lead_name}{}", self.team_tail),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A synthetic image with both defeat pieces planted at their VAs.
+    /// Placeholder text only.
+    fn defeat_image(team: &[u8], solo: &[u8]) -> Vec<u8> {
+        let mut img = vec![0u8; (DEFEAT_SOLO_SUFFIX_VA - OVERLAY_0898_LINK_BASE) as usize + 0x40];
+        let put = |img: &mut Vec<u8>, va: u32, s: &[u8]| {
+            let o = (va - OVERLAY_0898_LINK_BASE) as usize;
+            img[o..o + s.len()].copy_from_slice(s);
+            img[o + s.len()] = 0;
+        };
+        put(&mut img, DEFEAT_TEAM_VA, team);
+        put(&mut img, DEFEAT_SOLO_SUFFIX_VA, solo);
+        img
+    }
+
+    #[test]
+    fn defeat_text_parses_both_pieces_and_names_the_lead() {
+        let t = DefeatText::parse(&defeat_image(b"\xC1\x01 TEAM", b" SOLO")).expect("parses");
+        assert_eq!(t.team_tail, " TEAM");
+        assert_eq!(t.solo_suffix, " SOLO");
+        assert_eq!(t.compose(ResultSubject::Lead(1), "A"), "A SOLO");
+        assert_eq!(
+            t.compose(ResultSubject::LeadsTeam { escape_operand: 0 }, "A"),
+            "A TEAM"
+        );
+    }
+
+    #[test]
+    fn defeat_text_refuses_a_team_string_without_the_escape() {
+        assert!(DefeatText::parse(&defeat_image(b"xx TEAM", b" SOLO")).is_none());
+        assert!(DefeatText::parse(&defeat_image(b"\xC1\x01 T\x01", b" SOLO")).is_none());
+        assert!(DefeatText::parse(&[0u8; 16]).is_none());
+    }
 
     #[test]
     fn name_pointer_matches_retails_constant() {

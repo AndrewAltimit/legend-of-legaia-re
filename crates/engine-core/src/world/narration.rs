@@ -451,10 +451,11 @@ impl World {
     ///
     /// The non-cutscene-class counterpart to [`Self::install_spawned_record`]:
     /// retail runs every spawned record as an independent field-VM context and
-    /// only cutscene-class records seize the camera / lock locomotion, so an
-    /// ordinary scene's mid-play helper spawn goes here - it executes its
-    /// script (flag writes, channel pokes, moves) without the modal-timeline
-    /// attributes.
+    /// only cutscene-class records seize the camera, so an ordinary scene's
+    /// mid-play helper spawn goes here - it executes its script (flag writes,
+    /// channel pokes, moves) without the modal-timeline attributes. It still
+    /// holds the pad while it runs
+    /// ([`Self::script_context_engages_player`]).
     // REF: FUN_8003BDE0
     pub fn install_spawned_helper_record(
         &mut self,
@@ -681,6 +682,39 @@ impl World {
             .is_some_and(|t| !t.is_done())
     }
 
+    /// `true` while a spawned field-VM context holds the player - the
+    /// engine's reading of retail's engaged bit `+0x10 & 0x80000` as the
+    /// script runner raises it.
+    ///
+    /// Retail has one rule for every script context, modal or not. A record
+    /// `FUN_8003BDE0` spawns gets `+0x10 |= 0x100` and a script pointer
+    /// (`0x8003C088..0x8003C0AC`), so the per-actor tick `FUN_8003BC08` steps
+    /// it through `FUN_80039B7C` every frame (`jal` at `0x8003BD34`). That
+    /// runner counts the frame into `*(0x801C6EA4)+0xA` and raises the
+    /// player's `0x80000` on **every** frame it steps a context
+    /// (`0x80039DB8..0x80039DD4`), and clears it only when the count drains
+    /// on the context's closing raw `0x21` (`0x80039EE8..0x80039F14`, which
+    /// also drops the context's `0x100`). The field tick `FUN_801D1344` skips
+    /// the pad controller `FUN_801D01B0` while the bit is up (`0x801D1694`).
+    /// So a concurrent helper record refuses the pad - walking, talking and
+    /// the menu button - from its first slice to its end, exactly like the
+    /// modal timeline; "modal" only decides the camera and the chain's beat
+    /// sequencing. A helper counts from its first slice: one installed this
+    /// tick has raised nothing yet, and one that runs to its end inside a
+    /// slice is dropped before the next pad read, as retail's same-frame
+    /// raise-and-clear leaves the bit down.
+    ///
+    /// REF: FUN_80039B7C (the raise and the clear), FUN_8003BC08 (`0x8003BD34`),
+    /// FUN_8003BDE0 (the `0x100` install), FUN_801D1344 (`0x801D1694`)
+    pub fn script_context_engages_player(&self) -> bool {
+        self.cutscene_timeline_active()
+            || self
+                .field_vm
+                .helper_contexts
+                .iter()
+                .any(|tl| tl.stepped && !tl.is_done())
+    }
+
     /// `true` while a dialogue engagement owns the pad and the player.
     ///
     /// The engine has **two** dialogue channels and either one can be live on
@@ -808,8 +842,9 @@ impl World {
             // confirm the player did not make.
             let confirm = confirm || panel.take_auto_press();
             if confirm {
-                if panel.menu_active() && !menu_was_open {
-                    // Opened this frame: nothing to commit yet.
+                if panel.menu_active() && (!menu_was_open || !panel.picker_takes_input()) {
+                    // Opened this frame, or still sliding in (the pager reads the
+                    // choice only once the slide rests): nothing to commit yet.
                 } else if panel.menu_active() {
                     // NB: unlike the inline runner's picker commit, the wrap
                     // map is NOT cleared here. A cutscene record's picker
@@ -910,6 +945,10 @@ impl World {
         modal: bool,
     ) -> bool {
         tl.frames = tl.frames.saturating_add(1);
+        tl.stepped = true;
+        // The player's poked scene-bank clip plays one engine tick per
+        // slice, parked or not - retail's clip tick runs every frame.
+        tl.player_clip_ticks = tl.player_clip_ticks.saturating_sub(1);
         self.cutscene.in_timeline = modal;
         self.field_vm.in_spawned_record_slice = true;
         let mut channels = std::mem::take(&mut self.field_vm.channels);
@@ -1065,6 +1104,64 @@ impl World {
                 }
             }
             tl.pc = walk.resume_pc;
+        }
+        // Player compass-walk park (`B7 F8 <b0> <b1>` / `C1 F8 ..`, ops
+        // `0x37` / `0x41` against the player anchor): the walk kernel
+        // translates the player in place, one speed unit per vsync, and the
+        // parked record resumes past the yield when the leg's budget is spent.
+        // REF: FUN_8003774C (the 0x37 / 0x41 arm)
+        if let Some(mut glide) = tl.player_glide.take() {
+            glide.frames += 1;
+            let done = match self.player_actor_slot {
+                Some(p) if (p as usize) < self.actors.len() => {
+                    let ms = &self.actors[p as usize].move_state;
+                    glide.state.world_x = ms.world_x;
+                    glide.state.world_z = ms.world_z;
+                    let done = vm::motion_vm::compass_walk(
+                        &mut glide.state,
+                        glide.body0,
+                        glide.body1,
+                        glide.rate,
+                    );
+                    let (nx, nz) = (glide.state.world_x, glide.state.world_z);
+                    let y = self.sample_field_floor_height(i32::from(nx), i32::from(nz)) as i16;
+                    let ms = &mut self.actors[p as usize].move_state;
+                    ms.world_x = nx;
+                    ms.world_z = nz;
+                    ms.world_y = y;
+                    done
+                }
+                // No player actor to move: nothing plays the leg out.
+                _ => true,
+            };
+            if !done && glide.frames < WALK_PARK_TIMEOUT {
+                tl.player_glide = Some(glide);
+                self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
+                self.cutscene.in_timeline = false;
+                self.field_vm.in_spawned_record_slice = false;
+                // Real playout progress, like the walk park.
+                tl.frames = tl.frames.saturating_sub(1);
+                return false;
+            }
+            tl.pc = glide.resume_pc;
+        }
+        // Player end-latch spin (`AD F8 08`): held while the scene-bank clip
+        // the record poked onto the player is still playing; retail's clip
+        // tick latches `+0x62 & 0x100` on its last frame and the spin falls
+        // through on the next visit.
+        // REF: FUN_800204F8 (0x800206E4..0x8002072C)
+        if let Some(width) = tl.player_clip_wait.take() {
+            if tl.player_clip_ticks > 0 {
+                tl.player_clip_wait = Some(width);
+                self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
+                self.cutscene.in_timeline = false;
+                self.field_vm.in_spawned_record_slice = false;
+                tl.frames = tl.frames.saturating_sub(1);
+                return false;
+            }
+            tl.pc += width;
         }
         // Cross-context rotate park (`B8 <id> <dir|flags> <budget|dir>` = op
         // 0x38 with a non-zero budget against an NPC channel): retail parks
@@ -1427,7 +1524,20 @@ impl World {
                             .push(FieldEvent::ExecMove { move_id });
                         // Retail's player arm of op 0x22: the move id becomes
                         // the clip base and is picked + bound at once.
-                        host.world.field_player_script_clip(move_id);
+                        let pick = host.world.field_player_script_clip(move_id);
+                        // The end latch a following `AD F8 08` waits on lands
+                        // when a scene-bank clip has played its frames; a
+                        // party-bank clip (the locomotion loops) is not timed.
+                        tl.player_clip_ticks = match pick.bound() {
+                            Some((vm::field_player_clip::ClipBank::Scene, record)) => host
+                                .world
+                                .locomotion
+                                .scene_clip_ticks
+                                .get(usize::from(record))
+                                .copied()
+                                .unwrap_or(0),
+                            _ => 0,
+                        };
                         // Cue the scripted player clip: the windowed host
                         // resolves scene-ANM record `move_id - 1` and plays
                         // it once over idle/walk (live-pinned: the town01
@@ -1441,6 +1551,45 @@ impl World {
                         }
                         tl.pc = pc + 3;
                         continue;
+                    }
+                    // Compass walk on the player (`B7 F8 b0 b1` / `C1 F8
+                    // b0 b1`): park while the walk kernel plays the leg.
+                    //
+                    // Modal timelines and concurrent helpers alike: both run
+                    // under the player's engaged bit, so the pad is refused
+                    // while the script walks the player
+                    // (`World::script_context_engages_player`; `korout`'s
+                    // first-visit walk is the helper case).
+                    // REF: FUN_8003774C (the 0x37 / 0x41 arm)
+                    if matches!(op, 0x37 | 0x41)
+                        && let (Some(&body0), Some(&body1)) =
+                            (tl.bytecode.get(pc + 2), tl.bytecode.get(pc + 3))
+                    {
+                        if pc < tl.visited.len() {
+                            tl.visited[pc] = true;
+                        }
+                        tl.player_glide = Some(crate::cutscene_timeline::TimelinePlayerGlide {
+                            state: vm::motion_vm::MotionState {
+                                speed: 1,
+                                ..Default::default()
+                            },
+                            body0,
+                            body1,
+                            rate: if op == 0x37 { 0x80 } else { 0x40 },
+                            resume_pc: pc + 4,
+                            frames: 0,
+                        });
+                        break;
+                    }
+                    // End-latch spin on the player (`AD F8 08`): park while
+                    // the poked scene-bank clip is still playing.
+                    if op == 0x2D && tl.bytecode.get(pc + 2) == Some(&8) && tl.player_clip_ticks > 0
+                    {
+                        if pc < tl.visited.len() {
+                            tl.visited[pc] = true;
+                        }
+                        tl.player_clip_wait = Some(3);
+                        break;
                     }
                     if op == 0x43
                         && let Some(&sub) = tl.bytecode.get(pc + 2)
@@ -1624,9 +1773,17 @@ impl World {
                 if pc < tl.visited.len() {
                     tl.visited[pc] = true;
                 }
+                // One backward jump is NOT a wrap: a loop that polls the held
+                // pad (`42 01 <button>`) is the record waiting for the player.
+                // `edlast`'s ending record closes that way - `4A 08 00` then
+                // `42 01 08` / `42 01 09` (Circle / Cross held) and a `26`
+                // back to the wait - and retail sits in it until the press;
+                // reading it as a wrap dropped the record and handed the
+                // player the pad in the ending's last scene.
                 if matches!(kind, crate::cutscene_timeline::TraceResult::Advance)
                     && next_pc <= pc
                     && tl.visited.get(next_pc).copied().unwrap_or(false)
+                    && !loop_polls_held_pad(&tl.bytecode, next_pc, pc)
                 {
                     // There used to be a carve-out here for a `45 C0 <s16>`
                     // "camera-apply loop-back", on the reading that retail's
@@ -1797,7 +1954,8 @@ impl World {
     /// running each through the shared [`Self::run_spawned_record_slice`]
     /// core (`modal = false`). Helper contexts execute alongside the modal
     /// cutscene timeline and the per-actor channels without seizing the
-    /// camera or locking locomotion; a context that completes (wrapped its
+    /// camera, but hold the pad while they run
+    /// ([`Self::script_context_engages_player`]); a context that completes (wrapped its
     /// choreography, ran off its bytecode, or hit the plain
     /// [`CUTSCENE_TIMELINE_MAX_FRAMES`] cap) is dropped from the table.
     // REF: FUN_8003BDE0
@@ -2474,8 +2632,9 @@ impl World {
             // confirm the player did not make.
             let confirm = confirm || panel.take_auto_press();
             if confirm {
-                if panel.menu_active() && !menu_was_open {
-                    // The menu opened this frame: show it, commit next frame.
+                if panel.menu_active() && (!menu_was_open || !panel.picker_takes_input()) {
+                    // The menu opened this frame, or still slides in: show it,
+                    // commit once the pager reads the choice (`dialog_picker_slide`).
                 } else if panel.menu_active() {
                     // Commit the choice: apply the option's relative jump and
                     // resume the VM at the branch handler (its flag-sets /
@@ -2991,6 +3150,35 @@ fn end_talk_at_post_box_byte(id: &mut crate::inline_dialogue::InlineDialogue) {
         id.parked_pc = Some(pc);
         id.done = true;
     }
+}
+
+/// Whether the loop body `from..=to` (a backward jump's target up to the jump
+/// itself) carries an op-`0x42` mode-1 test - the held-pad poll. Walked on
+/// decoded op boundaries, so a `0x42` byte inside another op's operands does
+/// not count.
+///
+/// Such a loop is a record waiting on the player (retail's `0x42` mode-1 arm
+/// compares the packed held pad `_DAT_8007B850`; see `script-vm.md`), not a
+/// wrapped choreography, so the timeline's natural-termination rule must not
+/// end it.
+fn loop_polls_held_pad(bytecode: &[u8], from: usize, to: usize) -> bool {
+    let mut pc = from;
+    while pc <= to {
+        let Ok(insn) = legaia_asset::field_disasm::decode(bytecode, pc) else {
+            return false;
+        };
+        if insn.size == 0 {
+            return false;
+        }
+        if matches!(
+            insn.info,
+            legaia_asset::field_disasm::InsnInfo::CondJmp { mode: 1, .. }
+        ) {
+            return true;
+        }
+        pc += insn.size;
+    }
+    false
 }
 
 #[cfg(test)]
@@ -3548,5 +3736,136 @@ mod tests {
         assert!(w.cutscene.narration.is_none() && w.cutscene.card.is_none());
         assert!(!w.cutscene.entering_town01_opening);
         assert!(!w.abandon_opening_chain(), "nothing live the second time");
+    }
+
+    /// A timeline carrying map01's cave-mouth walk-out shape: a player
+    /// compass walk (`B7 F8 00 81`), then a scene-bank clip poke with the
+    /// party-bank bit down (`B2 F8 18`, `A2 F8 03`), its end-latch spin
+    /// (`AC F8 08`, `AD F8 08`), and a `WaitFrames` so the timeline stays up.
+    fn timeline_with_player_walk_and_clip_wait(clip_ticks: u32) -> World {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        let mut w = World {
+            mode: crate::world::SceneMode::Field,
+            ..World::default()
+        };
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w.actors[0].move_state.world_x = 0x1040;
+        w.actors[0].move_state.world_z = 0x2040;
+        w.locomotion.scene_clip_ticks = vec![2, 2, clip_ticks];
+        let bc = vec![
+            0xB7, 0xF8, 0x00, 0x81, // compass walk: dir 0 (-Z), 1 x div 16
+            0xB2, 0xF8, 0x18, // party-bank bit down
+            0xA2, 0xF8, 0x03, // ExecMove 3 -> scene record 2
+            0xAC, 0xF8, 0x08, // clear the end latch
+            0xAD, 0xF8, 0x08, // spin on it
+            0x4A, 0xFF, 0x7F, // WaitFrames (keeps the timeline installed)
+        ];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        w
+    }
+
+    /// `B7 F8 00 81` walks the player one tile along `-Z` over sixteen
+    /// ticks - one speed unit per vsync, `FUN_8003774C`'s `0x37` arm - and
+    /// the record resumes past the 4-byte yield only when the leg is spent.
+    #[test]
+    fn cutscene_timeline_player_compass_walk_parks_for_its_budget() {
+        let mut w = timeline_with_player_walk_and_clip_wait(10);
+        w.step_cutscene_timeline(); // arms the walk park
+        let mut ticks = 0;
+        while w
+            .cutscene
+            .timeline
+            .as_ref()
+            .is_some_and(|tl| tl.player_glide.is_some())
+        {
+            w.step_cutscene_timeline();
+            ticks += 1;
+            assert!(ticks < 64, "the walk park releases");
+        }
+        assert_eq!(ticks, 16, "sixteen speed units at one per tick");
+        assert_eq!(w.actors[0].move_state.world_z, 0x2040 - 128);
+        assert_eq!(w.actors[0].move_state.world_x, 0x1040);
+    }
+
+    /// The `AD F8 08` spin after a scene-bank clip poke holds for the clip's
+    /// end-latch length (the `FUN_800204F8` latch): two ticks a frame for an
+    /// ungated record, four for a gated divisor-4 one, then steps past.
+    #[test]
+    fn cutscene_timeline_player_clip_latch_spin_holds_for_the_clip() {
+        use crate::field_anim::{CLIP_RATE, clip_end_ticks, clip_step};
+        let frames = 10u16;
+        for (gated, div, per_frame) in [(false, 0u8, 2usize), (true, 4, 4)] {
+            let ticks = clip_end_ticks(frames, clip_step(CLIP_RATE, gated, div));
+            let mut w = timeline_with_player_walk_and_clip_wait(ticks);
+            let mut spin_ticks = 0;
+            let mut saw_spin = false;
+            for _ in 0..400 {
+                w.step_cutscene_timeline();
+                let tl = w.cutscene.timeline.as_ref().expect("installed");
+                if tl.player_clip_wait.is_some() {
+                    saw_spin = true;
+                    spin_ticks += 1;
+                } else if saw_spin {
+                    break;
+                }
+            }
+            assert!(saw_spin, "the latch spin parks while the clip plays");
+            // The poke and the spin land in one slice; the record then sits on
+            // the spin for the whole latch length, counting that one.
+            assert_eq!(spin_ticks, usize::from(frames) * per_frame, "gated={gated}");
+            let tl = w.cutscene.timeline.as_ref().expect("installed");
+            assert_eq!(tl.pc, 16, "resumed past the 3-byte spin onto the wait");
+        }
+    }
+
+    /// A record that loops on a held-pad poll (`edlast`'s closing
+    /// `4A 08 00` / `42 01 09` / `26` back) is waiting for the player, not
+    /// wrapped: it stays installed under a released pad and moves on the
+    /// press.
+    #[test]
+    fn a_pad_poll_loop_waits_for_the_press() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        let mut w = World {
+            mode: crate::world::SceneMode::Field,
+            ..World::default()
+        };
+        let bc = vec![
+            0x4A, 0x02, 0x00, // WaitFrames 2
+            0x42, 0x01, 0x09, 0x05, 0x00, // Cross held -> +3+5 = 11
+            0x26, 0xF7, 0xFF, // back to 0
+            0x4A, 0xFF, 0x7F, // WaitFrames (keeps the timeline up)
+        ];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.set_pad(0);
+        for _ in 0..60 {
+            w.step_cutscene_timeline();
+        }
+        let tl = w
+            .cutscene
+            .timeline
+            .as_ref()
+            .expect("still waiting on the pad");
+        assert!(tl.pc < 11, "never passed the poll, pc={:#x}", tl.pc);
+        w.set_pad(crate::input::PadButton::Cross.mask());
+        for _ in 0..4 {
+            w.step_cutscene_timeline();
+        }
+        let tl = w.cutscene.timeline.as_ref().expect("installed");
+        assert_eq!(tl.pc, 11, "the press takes the jump");
+    }
+
+    /// A party-bank clip (the locomotion loops) has no timed end latch in
+    /// the port: the spin steps past as before rather than parking forever.
+    #[test]
+    fn cutscene_timeline_party_bank_clip_does_not_park_the_latch_spin() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        let mut w = World::default();
+        let bc = vec![0xA2, 0xF8, 0x01, 0xAD, 0xF8, 0x08, 0x4A, 0xFF, 0x7F];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.step_cutscene_timeline();
+        let tl = w.cutscene.timeline.as_ref().expect("installed");
+        assert!(tl.player_clip_wait.is_none());
+        assert_eq!(tl.pc, 6, "stepped past onto the wait");
     }
 }

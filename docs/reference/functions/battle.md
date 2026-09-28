@@ -1181,11 +1181,11 @@ halved, blend `0xC00`. `+0x10 & 0x00800000` pushes every object `0x50`
 ordering-table buckets deeper, `+0x72` is the render scale, and the leaf is
 `FUN_8002735C` / `FUN_80029888` / `FUN_80043390` by `+0x42` / `+0x7A`. Unless
 `+0x6A` is set the draw ends with a subtractive 24-segment ground-shadow disc
-from `FUN_80028158` case `1`
+from `FUN_80028158` mode `1` (shape 0, XZ plane)
 ([`renderer.md`](../../subsystems/renderer.md#the-battle-per-actor-draw)).
 Ported as `legaia_engine_vm::battle_actor_draw` (`// PORT: FUN_80048A08`;
 `anim_vm.rs` only cross-references it): both hosts apply the Rot limb dim, and
-neither draws the shadow disc, whose case-1 geometry is not ported.
+both draw the shadow disc (`World::battle_ground_shadows`).
 
 **Live trace - player Gimard "Burning Attack" cast (scenarios `gimard_summon_start`/`_visible`/`_burning_attack`, Vahn solo): this is the path that draws the summon - `FUN_80048A08`→`FUN_80043390` runs, while the summon-rotation candidate `FUN_801F7088` fires 0× and the move VM `FUN_80023070` only 2-3× (not a per-part driver). The player summon is posed exactly like a battle monster (per-object rigid TRS keyframes), NOT the move-VM / `FUN_801F7088` camera+local-Euler path. The draw's **rate** is one call per live actor per rendered frame; the "35-64×/frame" figure an earlier revision carried does not reproduce ([falsified](../re-do-not-re-walk.md#the-summon-draw-runs-35-64-times-a-frame)).** `see ghidra/scripts/funcs/80048a08.txt`.
 

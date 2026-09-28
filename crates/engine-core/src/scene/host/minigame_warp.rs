@@ -96,6 +96,7 @@ impl SceneHost {
             if let Some(bgm) = slot.bgm_id() {
                 self.world.swap_to_minigame_bgm(bgm);
             }
+            log::info!("minigame warp: entered {}", slot.label());
             Some(MinigameWarpOutcome::Entered(slot))
         } else {
             self.world.minigame_return_warp();
@@ -142,6 +143,9 @@ impl SceneHost {
             [0usize, 1].map(|v| crate::fishing::PrizeExchange::from_asset(v, &ex.venues[v], names))
         });
         self.world.minigames.fishing_prize_venues = venues;
+        // The hub menu's rows and help pages ride the same image.
+        self.world.minigames.fishing_hub_text =
+            crate::fishing_hub::FishingHubText::from_overlay(loaded);
         true
     }
 

@@ -145,10 +145,12 @@ pub fn battle_spoils_windows(view: &BattleSpoilsView<'_>) -> Vec<SpoilsWindow> {
 /// window-chrome emitter; this is the text that goes in them.
 ///
 /// The arithmetic behind every number is `World::apply_battle_loot` /
-/// `apply_battle_xp` (see `docs/subsystems/level-up.md`). What is *not*
-/// pinned is retail's own emitter - the battle-result overlay is not in the
-/// dumped corpus - so the window rects and the sentence columns here are
-/// read off a retail framebuffer rather than off its code.
+/// `apply_battle_xp` (see `docs/subsystems/level-up.md`). The report window
+/// is screen element `0x41` (`FUN_801D8DE8(0x41, 0)` in the results frame
+/// `FUN_8004E568`), whose placement record agrees with the framebuffer rect;
+/// the sentence columns are still read off the framebuffer rather than off
+/// the two digit registrations (`FUN_8003563C` at `0x8004F690` /
+/// `0x8004F6B4`).
 pub fn battle_spoils_draws_for(
     font: &legaia_font::Font,
     view: &BattleSpoilsView<'_>,
@@ -198,6 +200,46 @@ pub fn battle_spoils_draws_for(
                 continue;
             }
             out.extend(text_draws_for(&font.layout_ascii(line), (pen.0, y), white));
+        }
+    }
+    out
+}
+
+/// The **loss** window retail's results frame opens on a party wipe - screen
+/// element `0x42`, one line in the report window's frame.
+///
+/// Its placement record is byte-identical to the win window's (`0x41`):
+/// content box `288 x 42` at `(16, 160)`, which outset by the frame's six
+/// pixels is exactly the band [`SPOILS_REPORT_RECT`] measures, so the loss
+/// window reuses that rect. `line` is the defeat message
+/// (`legaia_engine_vm::battle_party_panel::DefeatText::compose`); `None` - a
+/// disc-free host - opens the frame empty.
+pub fn battle_defeat_windows(line: Option<&str>) -> Vec<SpoilsWindow> {
+    vec![SpoilsWindow {
+        rect: SPOILS_REPORT_RECT,
+        lines: line.map(|l| vec![l.to_string()]).unwrap_or_default(),
+    }]
+}
+
+/// Text for windows whose lines are plain sentences - the loss window's -
+/// in **stage** pixels, at the report windows' pen and pitch.
+pub fn battle_result_line_draws_for(
+    font: &legaia_font::Font,
+    windows: &[SpoilsWindow],
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    for win in windows {
+        let pen = (
+            win.rect.0 + SPOILS_TEXT_INSET.0,
+            win.rect.1 + SPOILS_TEXT_INSET.1,
+        );
+        for (row, line) in win.lines.iter().enumerate() {
+            let y = pen.1 + row as i32 * SPOILS_LINE_H;
+            out.extend(text_draws_for(
+                &font.layout_ascii(line),
+                (pen.0, y),
+                MENU_TEXT_WHITE,
+            ));
         }
     }
     out
@@ -1442,5 +1484,23 @@ mod spoils_subject_tests {
         let party = opening(result_subject([1, 2, 0]));
         assert!(solo.starts_with("Vahn won"), "{solo}");
         assert!(party.starts_with("Vahn's team won"), "{party}");
+    }
+}
+
+#[cfg(test)]
+mod defeat_window_tests {
+    use super::*;
+
+    /// Screen element `0x42` is the report window's twin: one window at the
+    /// report rect, one line, or an empty frame without the disc text.
+    #[test]
+    fn the_loss_window_takes_the_report_frame() {
+        let w = battle_defeat_windows(Some("A line"));
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0].rect, SPOILS_REPORT_RECT);
+        assert_eq!(w[0].lines, vec!["A line".to_string()]);
+        let empty = battle_defeat_windows(None);
+        assert_eq!(empty[0].rect, SPOILS_REPORT_RECT);
+        assert!(empty[0].lines.is_empty());
     }
 }

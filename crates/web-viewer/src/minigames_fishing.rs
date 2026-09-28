@@ -23,6 +23,10 @@ use legaia_engine_core::fishing::{
 use legaia_engine_ui as ui_fishing;
 use legaia_engine_ui::{BarAxis, CatchHudState, HudCaption, HudDraw};
 
+/// The bag count this page's hub tackle screen sees for every tackle item: it
+/// models no inventory, and 99 is the lure count its HUD already shows.
+const MINIGAMES_TACKLE_HELD: i32 = 99;
+
 /// Packed spread argument the strike splash fans its three parts by - the
 /// same value the other two hosts pass in `World::tick_fishing`.
 const SPLASH_SPREAD: i32 = 0x40;
@@ -353,6 +357,27 @@ impl LegaiaMinigames {
         };
         let edge_bonus = legaia_engine_core::fishing_actors::bite_pad_nudge(pressed_mask);
         self.fx.tick(1);
+        // The venue hub (Triangle / Select on the idle shore): the same
+        // session-side kernel the two world hosts run through
+        // `World::tick_fishing_hub`. This page models no tackle inventory -
+        // lure and rod are start arguments and lures are not consumed - so
+        // the tackle screen sees every tackle item as held
+        // ([`MINIGAMES_TACKLE_HELD`]), the same stand-in the HUD's lure count
+        // uses. Row 3 has no world exchange sub-screen to open here: this
+        // page's prize list is its side panel, so the hub hands straight back
+        // to the menu and the page brings the panel into view.
+        let mut hub_events = Vec::new();
+        let hub = p.hub_step(pressed_mask, |_| MINIGAMES_TACKLE_HELD);
+        match hub.exit {
+            Some(legaia_engine_core::fishing_hub::HubExit::Leave) => {
+                hub_events.push(r#"{"e":"hub_leave"}"#.to_string());
+            }
+            Some(legaia_engine_core::fishing_hub::HubExit::OpenExchange) => {
+                p.hub_exchange_closed();
+                hub_events.push(r#"{"e":"hub_exchange"}"#.to_string());
+            }
+            _ => {}
+        }
         p.tick(
             PondInput {
                 reel_mask,
@@ -363,7 +388,7 @@ impl LegaiaMinigames {
             0x80,
         );
         let events = p.take_events();
-        let mut out = Vec::new();
+        let mut out = hub_events;
         for e in &events {
             match *e {
                 PondEvent::Splash => {
@@ -508,6 +533,51 @@ impl LegaiaMinigames {
             hud_draw_json(d, &mut out);
         }
         format!("[{}]", out.join(","))
+    }
+
+    /// The venue hub's draw lines for this frame, in retail 320x240 space:
+    ///
+    /// ```json
+    /// { "open": true, "lines": [ {"t": "...", "x": 108, "y": 88, "m": false} ] }
+    /// ```
+    ///
+    /// The layout is the engine's (`PondSession::hub_lines`, the one the
+    /// two world hosts draw); the text is the visitor's disc (the fishing
+    /// overlay's own menu rows and help pages), decoded to printable ASCII
+    /// because this page draws with the browser's font rather than the
+    /// dialog atlas. `{"open":false}` while no hub is up.
+    pub fn fishing_hub_json(&self) -> String {
+        let (Some(p), Some(ov)) = (self.fishing_pond.as_ref(), self.fishing_overlay.as_deref())
+        else {
+            return r#"{"open":false}"#.to_string();
+        };
+        if p.hub().is_none() {
+            return r#"{"open":false}"#.to_string();
+        }
+        let Some(text) = legaia_engine_core::fishing_hub::FishingHubText::from_overlay(ov) else {
+            return r#"{"open":false}"#.to_string();
+        };
+        let names = self.item_names.as_ref();
+        let lines: Vec<String> = p
+            .hub_lines(&text, |id| {
+                let name = names
+                    .and_then(|t| t.name(id as u8))
+                    .map(|n| n.as_bytes().to_vec())
+                    .unwrap_or_else(|| format!("item {id:#04x}").into_bytes());
+                (name, MINIGAMES_TACKLE_HELD)
+            })
+            .iter()
+            .map(|l| {
+                format!(
+                    r#"{{"t":{},"x":{},"y":{},"m":{}}}"#,
+                    jstr(&legaia_engine_core::fishing_hub::hub_text_lossy(&l.text)),
+                    l.x,
+                    l.y,
+                    l.marked
+                )
+            })
+            .collect();
+        format!(r#"{{"open":true,"lines":[{}]}}"#, lines.join(","))
     }
 
     /// The venue's species-spawn table, named:

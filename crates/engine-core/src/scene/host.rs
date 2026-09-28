@@ -23,8 +23,10 @@ pub enum SceneTickEvent {
 ///
 /// Sub-op semantics mirror retail field-VM op `0x35` - see
 /// [`docs/subsystems/script-vm.md`] for the full table. The hook only
-/// receives sub-ops that change playback state (1 and 9 = start, 2 = pause,
-/// 3 = resume, 4 = stop, 8 = re-attach, `0xA` = unhalt-pause swap-commit);
+/// receives sub-ops that change playback state (1 and 9 = start, 2 = stop
+/// and rewind, 3 = key-off pause - both routed to [`BgmDirector::pause`] -,
+/// 4 = re-attach from the top, 8 = re-attach, `0xA` = unhalt-pause
+/// swap-commit);
 /// other sub-ops are control words that the host can route without
 /// sequencer state.
 ///
@@ -41,7 +43,13 @@ pub trait BgmDirector {
     fn start(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
         let _ = (bgm_id, seq_bytes);
     }
+    /// Op-`0x35` sub-ops `2` and `3` - both set the pause bit (`0x801E0138`,
+    /// `0x801E015C`). Key off what is sounding and hold the track.
     fn pause(&mut self) {}
+    /// Op-`0x35` sub-op `4` - clear the pause bit and re-attach the slot
+    /// (`0x801E0180`, `FUN_80026478`). Retail's re-attach replays the
+    /// sequence from its **start** (`FUN_800628F0` resets the read cursor
+    /// before it sets the play flag), so a director rewinds before it opens.
     fn resume(&mut self) {}
     fn stop(&mut self) {}
     /// Start a **global-pool** track (`bgm_id >= 2000`) that carries its own
@@ -134,6 +142,16 @@ pub const GLOBAL_BGM_BASE: u16 = 2000;
 /// start in the disc-wide census names a global id, so the arm is a
 /// fallback no shipped script takes.
 pub const SCENE_LOCAL_BGM_FALLBACK_ID: u16 = GLOBAL_BGM_BASE + 2;
+
+/// The `FieldEvent::Bgm` sub-op the **engine** raises to stop the score -
+/// the battle and minigame restores when no field track was playing. It is
+/// not a retail op-`0x35` word: the field overlay's arm table (`0x801CEE00`)
+/// is indexed `sub - 1` behind `sltiu 0xB`, so this value would be a no-op
+/// in retail's dispatcher, and the disc-wide census carries no sub-op outside
+/// `1..=0xA`. Retail's sub-op `4` - which this port once routed as the stop -
+/// is the re-attach (`0x801E0180`: clear pause bit 1, `FUN_80026478` on the
+/// BGM slot).
+pub const BGM_SUB_OP_ENGINE_STOP: u8 = 0xFF;
 
 /// Discards every BGM event. Useful for tests + engines that haven't wired
 /// audio yet.

@@ -24,3 +24,8 @@ pub(crate) use helpers::*;
 pub use render::CaptureImage;
 pub use state::*;
 pub use uploaded::*;
+
+/// Bytes per vertex of a VRAM mesh: position, UV, CBA/TSB, normal, prim
+/// colour, and the two-vec4 flat bucket-depth reference
+/// ([`Renderer::upload_vram_mesh_with_flat_refs`]).
+pub(crate) const VRAM_VERTEX_STRIDE: u64 = 68;

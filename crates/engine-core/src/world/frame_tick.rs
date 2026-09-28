@@ -1062,6 +1062,9 @@ impl World {
     // PORT: FUN_80016444 (frame-pass sequencing; render/flip halves are the
     //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
+        // The move-VM strip set on screen is one tick's
+        // (`MoveVmGlobals::strip_frame`).
+        self.move_vm.begin_strip_tick();
         let outcome = self.tick_modes();
         // The battle camera observes the frame this tick produced, in every
         // mode (outside battle it drops its state) - once, here, for every
@@ -1130,11 +1133,9 @@ impl World {
         // The simulation clock's denomination.
         //
         // **One `World::tick` is exactly one retail display frame (vsync).**
-        // Both hosts already drive it that way and must keep doing so: the
-        // native window's fixed-timestep accumulator (`EngineWindow::
-        // drain_ticks`, `TICK_DT = 1.0/60.0`, backlog capped at 4 ticks) and
-        // the browser play page's (`site/js/play-app.js`, `TICK_DT = 1000/60`,
-        // same cap). So `SIM_HZ == RETAIL_FPS`, the retail-frame sub-clock is
+        // Both hosts drive it that way through one fixed-timestep kernel
+        // (`crate::frame_step::SimStepper`, `TICK_SECS = 1/60`, backlog
+        // capped at four ticks). So `SIM_HZ == RETAIL_FPS`, the retail-frame sub-clock is
         // an identity - `field_frame_step` is `1` on every tick and
         // `field_frames == frame` - and the gates below are statements of
         // which consumers are retail-frame paced rather than rate changes.
@@ -2171,6 +2172,47 @@ impl World {
         self.despawn_tile_actors();
     }
 
+    /// Install the **demo** tile board: a 7x7 board centred on the player's
+    /// tile, through the same op-`0x49` sub-op-5 bytecode a script would hand
+    /// [`Self::try_install_tile_board`]. No retail scene installs a board, so
+    /// this developer trigger is the only way a host reaches the per-cell draw
+    /// pass. Both hosts call it (native under `LEGAIA_TILE_BOARD_DEMO=1`, the
+    /// page from `play_install_demo_tile_board`); they decide only *when*.
+    ///
+    /// Returns `false` off the field, with a board already up or armed, with
+    /// no player actor, or when the install is refused.
+    pub fn install_demo_tile_board(&mut self) -> bool {
+        if self.mode != crate::world::SceneMode::Field
+            || self.board.grid.is_some()
+            || self.board.armed
+        {
+            return false;
+        }
+        let Some(pslot) = self.player_actor_slot else {
+            return false;
+        };
+        let Some(actor) = self.actors.get(pslot as usize) else {
+            return false;
+        };
+        let (px, pz) = (
+            i32::from(actor.move_state.world_x),
+            i32::from(actor.move_state.world_z),
+        );
+        let origin_x = ((px >> 7) - 3).clamp(0, 255) as u8;
+        let origin_z = ((pz >> 7) - 3).clamp(0, 255) as u8;
+        let instr: [u8; 14] = [
+            0x49, 0x05, // op, sub-op
+            origin_x, origin_z, // +1/+2 tile origin
+            7, 7, // +3/+4 width x height
+            5, // +5 draw radius
+            0, // +6 mode flag (full-board draw)
+            0, 0, 0, 0, // +7/+9 event-flag bases (unused by the demo)
+            0, // +0xb player template (character-mesh head)
+            3, // +0xc tile template base (effect-model library)
+        ];
+        self.try_install_tile_board(&instr)
+    }
+
     /// Install a tile board from a field-VM op-0x49 **sub-op 5** instruction
     /// (`instr` = the bytes from the opcode onward, as handed to
     /// `FieldHost::op49_menu_request`). Parses the 13-byte inline header
@@ -2783,6 +2825,12 @@ impl World {
             self.mode = self.minigames.fishing_return_mode;
             return;
         }
+        // The venue's hub menu (Triangle / Select on the idle shore) owns the
+        // frame while it is up, the exchange list it opens included.
+        if self.tick_fishing_hub() {
+            self.minigames.fishing_events.clear();
+            return;
+        }
         // The point-exchange sub-screen owns the pad while it is open, as
         // retail's shop branch owns the mode switch.
         if self.minigames.fishing_exchange.is_some() {
@@ -2957,6 +3005,29 @@ impl World {
         self.minigames.winnings = 0;
     }
 
+    /// Request the mode-24 door-warp into `sub_id` from outside a script -
+    /// the developer launchers (the native window's minigame hotkeys, the
+    /// browser page's `play_mg_debug_warp`). Arms the round trip exactly as
+    /// the op-`0x3E` arm does and leaves the `sub_id` for the scene host's
+    /// next tick to drain (`SceneHost::drain_minigame_warp`), so a launcher
+    /// enters the same session, with the same BGM swap and the same return
+    /// warp, as walking through the casino door.
+    ///
+    /// A launcher into the Muscle Dome also lists the hub's announcer lines
+    /// for the prestage drain here, at the request: a host that drains the
+    /// list before its next tick (the browser page's launcher does) gets the
+    /// lead the door scene's own list gives a walked door
+    /// ([`crate::world::field_xa::scene_minigame_door_xa_prestage`]).
+    pub fn request_minigame_warp(&mut self, sub_id: u8) {
+        self.arm_minigame_warp();
+        self.minigames.pending_warp = Some(sub_id);
+        if crate::minigame_entry::MinigameSubId::from_sub_id(sub_id)
+            == Some(crate::minigame_entry::MinigameSubId::MuscleDome)
+        {
+            self.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
+        }
+    }
+
     /// Mode-24 minigame exit / return-warp: restore the backed-up scene name
     /// into [`Self::active_scene_label`], commit the session winnings into
     /// the casino coin bank (`casino_coins += minigame_winnings`, saturating
@@ -3080,6 +3151,7 @@ impl World {
         }
         self.minigames.baka_fighter = Some(fight);
         self.mode = SceneMode::BakaFighter;
+        self.queue_baka_xa_prestage();
     }
 
     /// Leave the Baka Fighter duel through the mode-24 return warp
@@ -3216,6 +3288,19 @@ impl World {
             fight.set_held_pad(held);
             fight.tick(1);
         }
+        self.queue_baka_xa_prestage();
+    }
+
+    /// The duel chrome's announcer lines not yet listed, onto the prestage
+    /// list both hosts drain ([`Self::queue_xa_prestage`]).
+    fn queue_baka_xa_prestage(&mut self) {
+        let lines = self
+            .minigames
+            .baka_fighter
+            .as_mut()
+            .map(|f| f.take_xa_prestage())
+            .unwrap_or_default();
+        self.queue_xa_prestage(lines);
     }
 
     /// Enter the Muscle Dome contest on `session`, suspending the current
@@ -3246,6 +3331,8 @@ impl World {
         }
         self.minigames.muscle_dome = Some(session);
         self.mode = SceneMode::MuscleDome;
+        // The hub's announcer lines, staged ahead of the first visit's arms.
+        self.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
     }
 
     /// Leave the arena **at the player's request** - the escape both hosts
@@ -3420,6 +3507,36 @@ impl World {
     /// bank for [`crate::muscle_dome::contest_entry_word`], which is the port)
     pub fn dome_special_word(&self) -> u32 {
         crate::muscle_dome::contest_entry_word(&self.muscle_contest_flags())
+    }
+
+    /// The special-battle word `_DAT_8007BAC0` as the battle's `!= 0` readers
+    /// see it: the open arena leg's word ORed with the regular battle's half
+    /// ([`crate::world::BattleState::special_word`], whose `0x200` battle init
+    /// and the formation roll raise for monster `0xAF` and the Rim Elm
+    /// ambush). Retail has one word; the port keeps the two halves apart
+    /// because the arena session owns its own.
+    ///
+    /// Every reader that tests the whole word reads this, and each is a
+    /// "no spoils / no escape hatch" gate - the arena restriction bits and the
+    /// Ra-Seru bit suppress the same things:
+    ///
+    /// | Reader | Site | Suppresses |
+    /// |---|---|---|
+    /// | `FUN_8004E568` | `0x8004F0AC` | the gold award (zeroed after the Golden Book bonus) |
+    /// | `FUN_8004E568` | `0x8004F274` | the per-member EXP (`s6 = 0`) |
+    /// | `FUN_8004E568` | `0x8004F480` | the victory drop roll's seat loop |
+    /// | `FUN_8004AD80` | `0x8004B48C` | the steal attack |
+    /// | `FUN_801E91E8` | `0x801E9224` | the Seru absorb (reports "already known") |
+    /// | `FUN_801DDB30` | `0x801DE450` | the summon spell-XP accrual |
+    /// | `FUN_801E9FD4` | `0x801EA994` | a monster flee the roll granted |
+    ///
+    /// REF: FUN_8004E568, FUN_8004AD80, FUN_801E91E8, FUN_801DDB30, FUN_801E9FD4
+    pub fn special_battle_word(&self) -> u32 {
+        self.minigames
+            .muscle_dome
+            .as_ref()
+            .map_or(0, |s| s.special_word())
+            | self.battle.special_word
     }
 
     /// Settle the open contest: pay the tally into the casino coin bank,

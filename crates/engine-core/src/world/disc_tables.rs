@@ -102,6 +102,10 @@ pub struct DiscTables {
     /// `0x801F4C28`), installed with the move-power table. `None` on a
     /// disc-free host, where the banner shows the Seru's name alone.
     pub absorb_caption: Option<legaia_asset::absorb_caption::AbsorbCaption>,
+    /// The loss window's two text pieces (PROT 0898 `0x801F4C78` /
+    /// `0x801F4C94`), installed with the move-power table. `None` on a
+    /// disc-free host, where the loss window opens empty.
+    pub defeat_text: Option<legaia_engine_vm::battle_party_panel::DefeatText>,
     /// Player Seru spell id (`0x81..=0x8B`) -> the **summon creature's**
     /// record element (`+0x1D`), the byte the side-effect stager switches on
     /// and the affinity scale reads as the attacker element.
@@ -193,6 +197,7 @@ impl DiscTables {
             battle_camera_heights: None,
             seru_side_effects: None,
             absorb_caption: None,
+            defeat_text: None,
             summon_elements: std::collections::HashMap::new(),
             steal_table: None,
             equipment_table: crate::battle_stats::EquipmentTable::new(),

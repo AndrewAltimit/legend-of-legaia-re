@@ -221,23 +221,20 @@ pub struct PanelRow {
 /// `count != 0` test), which is why the frame and labels are emitted separately
 /// from this pass.
 ///
-/// NOT WIRED: the routine's installer is ported, but not on the path that
-/// installs it. This is the painter of panel-window record 14
-/// (`0x801F2B98 + 14 * 0x1C`, `+0x18` = `0x801E6984`), and the only
-/// descriptor naming record 14 is `0x801F3304`, which the flag-window picker
-/// `FUN_801EF014` runs at `0x801EF144` - handler slot `0x23`, the op-`0x49`
-/// sub-op-4 screen (`OP49_SUBOP_SLOTS[4] = 0x23`). That picker has a port,
-/// `legaia_engine_vm::world_map_panel_actors::flag_window_tick`, hosted by
-/// `crate::world_map_panel_host` behind a world-map pad chord. The field
-/// path retail takes - `49 04` in the `kor` / `kor3` / `kor4` scene scripts
-/// (`asset field-op-census --only "49 04"`) through
-/// `crate::field_submode_screen` - falls into that screen's empty default
-/// arm for slot `0x23`, and neither host draws panel-window records of either
-/// host's panel model. Wiring needs slot `0x23` in the field submode screen
-/// driving `flag_window_tick` over the op-`0x49` operand bytes, and a shared
-/// panel draw for record 14 with this layout as its row pass - whose glyph
-/// runs (`entry + 0x4F` / `0x58`, and `+8`) are sprite-cell codes no host
-/// atlas maps yet.
+/// Wired: this is the painter of panel-window record 14
+/// (`0x801F2B98 + 14 * 0x1C`, `+0x18` = `0x801E6984`), and the only descriptor
+/// naming record 14 is `0x801F3304`, which the flag-window picker
+/// `FUN_801EF014` installs at `0x801EF17C` - handler slot `0x23`, the
+/// op-`0x49` sub-op-4 screen (`OP49_SUBOP_SLOTS[4] = 0x23`), which the disc
+/// issues only at the Uru Mais warp pads (`kor` / `kor3` / `kor4`). The field path's slot
+/// `0x23` runs through [`crate::field_submode_flag_window::flag_window_slot`]
+/// (from [`crate::world::World::tick_submode_screen`]), and
+/// [`crate::field_submode_flag_window::flag_window_lines`] calls this for the
+/// row pass; the native window's stage pass and the browser play page's shop
+/// window pass draw it off `SceneHost::flag_window_lines`. The glyph runs are
+/// floor plates in the system-UI sheet (record `0x4F` the basement, `0x50..`
+/// the digits, `+8` the floor suffix); no host has a sprite pass for those
+/// records, so both draw each plate as its lettering.
 ///
 /// An earlier note blamed the context block, and a later one only the missing
 /// host consumer; both skipped the installer. `world-map.md` had also filed

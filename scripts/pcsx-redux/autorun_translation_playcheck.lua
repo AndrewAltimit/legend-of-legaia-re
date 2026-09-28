@@ -87,7 +87,7 @@ end
 local function checkpoint(stem)
     local ok = pcall(function()
         local w = PCSX.createSaveState()
-        local fh = Support.File.open(OUT_DIR .. "/" .. stem .. ".rawsstate", "CREATE")
+        local fh = Support.File.open(OUT_DIR .. "/" .. stem .. ".rawsstate", "TRUNCATE")
         fh:writeMoveSlice(w); fh:close()
     end)
     log(string.format("checkpoint %s %s", stem, tostring(ok)))

@@ -165,6 +165,19 @@ pub struct PlayerAnmRecord {
     pub frame_count: u16,
 }
 
+impl PlayerAnmRecord {
+    /// The clip's sub-frame **blend gate**: bit 0 of `a`'s high byte (clip
+    /// byte `+1`). The frame blender `FUN_8001BE80` interpolates toward the
+    /// next entry only when it is set (`lbu v0,0x1(a2); andi v0,v0,0x1` at
+    /// `0x8001BF70` and again at `0x8001C0EC`, `a2` = the bound clip
+    /// `actor+0x4C`). It is the same bit the clip tick `FUN_800204F8` reads
+    /// to select its scaled step (`lbu v0,0x1(a1)` at `0x800205B4`, `a1` =
+    /// `actor+0x4C` again) - one header bit gates both.
+    pub fn blends(&self) -> bool {
+        (self.a >> 8) & 1 != 0
+    }
+}
+
 /// A single decoded player-ANM bundle (one type-0x05 section's worth of
 /// records).
 #[derive(Debug, Clone, Serialize)]
@@ -339,6 +352,70 @@ impl PlayerAnmBundle {
         Some(BoneTransform::decode(bf))
     }
 
+    /// The transform retail's frame blender poses bone `bone_index` of record
+    /// `record_index` with, for the frame cursor `cursor` (`actor+0x68`, in
+    /// 1/16-frame units).
+    ///
+    /// PORT: FUN_8001BE80 (the two-frame sampler: the next-entry pick at
+    /// `0x8001BEAC..0x8001BF00` plus the blend)
+    ///
+    /// - The current frame is `(i16)cursor >> 4` (`sll 0x10; sra 0x14`).
+    /// - The **next** entry is the same part one frame later while the frame
+    ///   is below `frame_count - 1` (`entry + a2[0]*8`). On the last frame it
+    ///   is the entry itself when `hold_at_end` - the actor's clamp bit
+    ///   `+0x62 & 8` - is set, else the part's frame-0 entry
+    ///   (`*(actor+0x4C) + part*8 + 8`), the loop wrap.
+    /// - When the record's [`PlayerAnmRecord::blends`] gate is clear the
+    ///   current entry is returned as decoded; when set, the two entries go
+    ///   through [`blend_bone_transform`] with `frac = cursor & 0xF`.
+    ///
+    /// Retail reads out of range for a cursor past the clip; the clip tick
+    /// never leaves one there, and this clamps the frame into the clip instead.
+    /// `None` when the record or bone does not resolve.
+    pub fn sample_bone(
+        &self,
+        record_index: usize,
+        cursor: i16,
+        hold_at_end: bool,
+        bone_index: usize,
+    ) -> Option<BoneTransform> {
+        let rec = self.record(record_index).ok()?;
+        let frames = rec.frame_count as usize;
+        if frames == 0 {
+            return None;
+        }
+        let frame = ((cursor >> 4).max(0) as usize).min(frames - 1);
+        let cur = self.bone_transform(record_index, frame, bone_index)?;
+        let frac = (cursor as u16 & 0xF) as i32;
+        if !rec.blends() || frac == 0 {
+            return Some(cur);
+        }
+        let next_frame = if frame < frames - 1 {
+            frame + 1
+        } else if hold_at_end {
+            frame
+        } else {
+            0
+        };
+        let next = self.bone_transform(record_index, next_frame, bone_index)?;
+        Some(blend_bone_transform(cur, next, frac))
+    }
+
+    /// Every bone of record `record_index` through [`Self::sample_bone`] - the
+    /// pose `FUN_8001B964`'s per-part loop builds for one draw. `None` when
+    /// the record does not resolve or any bone fails to.
+    pub fn sample_pose(
+        &self,
+        record_index: usize,
+        cursor: i16,
+        hold_at_end: bool,
+    ) -> Option<Vec<BoneTransform>> {
+        let rec = self.record(record_index).ok()?;
+        (0..rec.bone_count as usize)
+            .map(|b| self.sample_bone(record_index, cursor, hold_at_end, b))
+            .collect()
+    }
+
     /// Adapt record `index` into the battle-side clip type
     /// ([`crate::monster_archive::MonsterAnimation`]) so consumers built on
     /// that shape - the glTF baker `crate::character_gltf::build_character_glb`
@@ -424,10 +501,9 @@ impl BoneTransform {
     // said "high nibble" - the instructions say otherwise, and
     // `bone_transform_decode_signed_12bit` below is what keeps this honest.
     //
-    // Scope limit: retail `FUN_8001BE80` also blends two frames using the
-    // 4-bit sub-frame fraction at `actor+0x68` (gated on `*(a2+1) & 1`,
-    // angles via `FUN_8001D088`). This decodes a single entry and does no
-    // interpolation - see `docs/formats/anm.md`.
+    // This is the entry-decode half. The two-frame half - the next-entry
+    // pick and the sub-frame blend gated on `*(a2+1) & 1` - is
+    // `PlayerAnmBundle::sample_bone` / `blend_bone_transform` below.
     pub fn decode(bytes: &[u8]) -> Self {
         let unpack = |lo: u8, hi4: u8| -> i32 {
             let mut v = (lo as u32) | (((hi4 & 0x0F) as u32) << 8);
@@ -458,22 +534,17 @@ pub const ANGLE_TURN: i32 = 0x1000;
 
 /// Wraparound-aware interpolation between two 12-bit PSX angles.
 ///
-/// PORT: FUN_8001D088
-///
-/// NOT WIRED: no engine animation sampler carries a sub-frame fraction, so
-/// nothing has a `frac` to pass. Every consumer of this bundle - the field
-/// character renderer, the battle pose builder, the web viewer's players -
-/// calls [`PlayerAnmBundle::bone_transform`] at a whole frame index and poses
-/// the mesh from that decode alone. The prerequisite is the `actor+0x68`
-/// blend fraction on the engine's animation state plus a two-frame sampler to
-/// feed it; adding one changes every posed frame, so it is an animation-path
-/// change measured against the pose oracles rather than a call insertion.
+/// PORT: FUN_8001D088 - reached through the two-frame sampler
+/// [`PlayerAnmBundle::sample_pose`] / [`blend_bone_transform`], which both
+/// hosts' field prop pose paths and the NPC / player clip player
+/// (`legaia_engine_core::field_anim::FieldClipPlayer`) call.
 ///
 /// `frac` is the 4-bit sub-frame fraction the frame blender carries at
 /// `actor+0x68` (`0..=15`); the result is
 /// `(to + ((from - to) * frac >> 4)) & 0xFFF`, so `frac == 0` yields `to`
 /// and `frac == 16` would yield `from`. Both inputs are masked to 12 bits
-/// first.
+/// first. The blender passes the **next** frame's angle as `from` and the
+/// current frame's as `to` (`0x8001C108..0x8001C124`).
 ///
 /// The part that is not a plain lerp is the **unwrap**, and it is why the
 /// bone blender cannot use the translation lerp for angles. Retail brings
@@ -493,13 +564,36 @@ pub const ANGLE_TURN: i32 = 0x1000;
 /// exactly half a turn both fire and cancel, leaving the delta at `+0x800`,
 /// so that one input resolves forward rather than backward.
 ///
-/// Two side effects of the retail routine are deliberately not modelled: it
-/// accumulates `|from - to|` into the counter `_DAT_8007BD28` (the two
-/// branches at `0x8001D0DC` add the same magnitude, since `|a-b| == |b-a|`,
-/// so the branch is a wash), and it journals the unwrapped `(from, to)` pair
-/// into the 8-byte-stride slot table at `0x800891A8`. Both are
-/// engine-external bookkeeping over globals this crate does not host.
+/// Retail also accumulates `|from - to|` into `_DAT_8007BD28` and journals
+/// the unwrapped `(from, to)` pair into the 8-byte-stride slot table at
+/// `0x800891A8`. Those are **not** bookkeeping: the blender reads both back
+/// to decide and run its Euler-flip retry (see [`blend_bone_transform`]).
+/// [`lerp_angle_12_journaled`] returns them as values instead of globals.
 pub fn lerp_angle_12(from: i32, to: i32, frac: i32) -> u16 {
+    lerp_angle_12_journaled(from, to, frac).value
+}
+
+/// [`lerp_angle_12`]'s full result: the interpolated angle plus the two side
+/// outputs retail leaves in globals - the unwrapped pair it journals at
+/// `0x800891A8 + slot*8` and the magnitude it adds to `_DAT_8007BD28`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AngleLerp {
+    /// The interpolated 12-bit angle.
+    pub value: u16,
+    /// `from` after the unwrap (`sh a0,0x0(v0)` at `0x8001D124`).
+    pub from_unwrapped: i32,
+    /// `to` after the unwrap (`sh a1,0x2(v0)` at `0x8001D128`).
+    pub to_unwrapped: i32,
+    /// `|from - to|` after the unwrap - what the call adds to the counter.
+    /// The two arms at `0x8001D0DC` add `|a1 - a0|` or `|a0 - a1|`, the same
+    /// magnitude.
+    pub magnitude: i32,
+}
+
+/// [`lerp_angle_12`] returning its journal and counter outputs as values.
+///
+/// PORT: FUN_8001D088
+pub fn lerp_angle_12_journaled(from: i32, to: i32, frac: i32) -> AngleLerp {
     let mut from = from & 0xFFF;
     let mut to = to & 0xFFF;
     if from - to >= ANGLE_TURN / 2 {
@@ -508,7 +602,71 @@ pub fn lerp_angle_12(from: i32, to: i32, frac: i32) -> u16 {
     if to - from >= ANGLE_TURN / 2 {
         from += ANGLE_TURN;
     }
-    (((((from - to) * frac) >> 4) + to) as u16) & 0x0FFF
+    AngleLerp {
+        value: (((((from - to) * frac) >> 4) + to) as u16) & 0x0FFF,
+        from_unwrapped: from,
+        to_unwrapped: to,
+        magnitude: (from - to).abs(),
+    }
+}
+
+/// The counter threshold past which the blender retries the angle blend
+/// against the next frame's equivalent Euler triple (`slti v1,v1,0xc01` at
+/// `0x8001C164`: the retry runs when the summed magnitude is `> 0xC00`).
+pub const EULER_FLIP_THRESHOLD: i32 = 0xC00;
+
+/// Blend two decoded `(bone, frame)` entries the way retail's frame blender
+/// does: `cur` is the entry of the frame the cursor sits on, `next` the entry
+/// the next-entry rule picked (see [`PlayerAnmBundle::sample_bone`]), `frac`
+/// the cursor's low nibble (`actor+0x68 & 0xF`).
+///
+/// PORT: FUN_8001BE80 (the blend arm, `0x8001BF84..0x8001C1D0`)
+///
+/// - **Translations** lerp linearly on the sign-extended 16-bit values:
+///   `cur + (((next - cur) * frac) >> 4)` (`mult` / `sra 4` / `addu`, then
+///   `sh`, so the result is truncated to 16 bits). The shift is arithmetic,
+///   so a negative delta rounds toward minus infinity.
+/// - **Angles** go through [`lerp_angle_12`] with `from = next`, `to = cur`,
+///   after zeroing the counter `_DAT_8007BD28` (`0x8001C11C`). If the three
+///   calls' summed magnitudes exceed [`EULER_FLIP_THRESHOLD`], the blend is
+///   redone against the next frame's **equivalent Euler triple** - `(x +
+///   0x800, -(y + 0x800), z + 0x800)`, each built from the journaled unwrapped
+///   pair (`0x8001C170..0x8001C1CC`). For a Z-Y-X rotation that triple is the
+///   same orientation, so the retry takes the shorter path when the three
+///   short arcs together run long (a pose passing near gimbal lock).
+///
+/// `frac == 0` returns `cur` exactly on every lane - the lerp's `to` term
+/// survives and the retry cannot change that - so integer cursors pose
+/// byte-exactly as [`BoneTransform::decode`] does.
+pub fn blend_bone_transform(cur: BoneTransform, next: BoneTransform, frac: i32) -> BoneTransform {
+    let frac = frac & 0xF;
+    let lerp_t = |a: i32, b: i32| -> i32 {
+        let (a, b) = (a as i16 as i32, b as i16 as i32);
+        (a + (((b - a) * frac) >> 4)) as i16 as i32
+    };
+    let x = lerp_angle_12_journaled(next.r_x, cur.r_x, frac);
+    let y = lerp_angle_12_journaled(next.r_y, cur.r_y, frac);
+    let z = lerp_angle_12_journaled(next.r_z, cur.r_z, frac);
+    let counter = x.magnitude + y.magnitude + z.magnitude;
+    let (r_x, r_y, r_z) = if counter > EULER_FLIP_THRESHOLD {
+        // `lh` of the journaled halfwords, then the per-axis flip. The retry
+        // calls re-journal and re-add to the counter, but nothing reads either
+        // again before the blender returns.
+        let rx = lerp_angle_12(x.from_unwrapped + 0x800, x.to_unwrapped, frac);
+        let ry = lerp_angle_12(-(y.from_unwrapped + 0x800), y.to_unwrapped, frac);
+        let rz = lerp_angle_12(z.from_unwrapped + 0x800, z.to_unwrapped, frac);
+        (rx, ry, rz)
+    } else {
+        (x.value, y.value, z.value)
+    };
+    BoneTransform {
+        t_x: lerp_t(cur.t_x, next.t_x),
+        t_y: lerp_t(cur.t_y, next.t_y),
+        t_z: lerp_t(cur.t_z, next.t_z),
+        r_x: r_x as i32,
+        r_y: r_y as i32,
+        r_z: r_z as i32,
+    }
 }
 
 /// Find every player-ANM-shaped section in a single PROT entry.
@@ -880,5 +1038,146 @@ mod tests {
         // updated `to` (`subu v0,a1,a0` at 0x8001D0A4), which is what makes
         // this fall out; modelling the two as exclusive gets it backwards.
         assert_eq!(lerp_angle_12(0x800, 0x000, 8), 0x400);
+    }
+
+    /// One-record, one-bone bundle whose frames carry the given
+    /// `(translation, rotation-byte)` pairs; `a_high` is `a`'s high byte (bit 0
+    /// = the blend gate).
+    fn one_bone_bundle(a_high: u8, frames: &[([i16; 3], [u8; 3])]) -> PlayerAnmBundle {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&1u32.to_le_bytes());
+        buf.extend_from_slice(&8u32.to_le_bytes());
+        buf.extend_from_slice(&[1, a_high]);
+        buf.extend_from_slice(&(frames.len() as u16).to_le_bytes());
+        buf.extend_from_slice(&ANM_MARKER_1.to_le_bytes());
+        buf.extend_from_slice(&0x0002u16.to_le_bytes());
+        for (t, r) in frames {
+            let (x, y, z) = (t[0] as u16, t[1] as u16, t[2] as u16);
+            buf.extend_from_slice(&[
+                x as u8,
+                y as u8,
+                (((x >> 8) & 0xF) | (((y >> 8) & 0xF) << 4)) as u8,
+                z as u8,
+                ((z >> 8) & 0xF) as u8,
+                r[0],
+                r[1],
+                r[2],
+            ]);
+        }
+        buf.extend_from_slice(&[0u8; 8]);
+        parse(&buf).expect("one-bone bundle")
+    }
+
+    const FRAMES3: [([i16; 3], [u8; 3]); 3] = [
+        ([0, -16, 100], [0x10, 0x00, 0xF0]),
+        ([32, -48, 100], [0x30, 0x20, 0x08]),
+        ([-64, 0, -100], [0x50, 0x40, 0x10]),
+    ];
+
+    #[test]
+    fn sampler_is_the_single_decode_at_integer_cursors() {
+        for gate in [0u8, 1] {
+            let b = one_bone_bundle(gate, &FRAMES3);
+            for f in 0..3 {
+                for hold in [false, true] {
+                    let s = b.sample_bone(0, (f * 16) as i16, hold, 0).unwrap();
+                    assert_eq!(s, b.bone_transform(0, f, 0).unwrap());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sampler_ignores_the_fraction_when_the_gate_is_clear() {
+        let b = one_bone_bundle(0, &FRAMES3);
+        assert!(!b.record(0).unwrap().blends());
+        assert_eq!(
+            b.sample_bone(0, 16 + 9, false, 0),
+            b.bone_transform(0, 1, 0)
+        );
+    }
+
+    #[test]
+    fn sampler_blends_toward_the_next_frame() {
+        let b = one_bone_bundle(1, &FRAMES3);
+        assert!(b.record(0).unwrap().blends());
+        // Frame 0 -> 1 at 8/16: translations halfway, `sra` floors.
+        let s = b.sample_bone(0, 8, false, 0).unwrap();
+        assert_eq!((s.t_x, s.t_y, s.t_z), (16, -32, 100));
+        // Z runs 0xF00 -> 0x080 the short way, across zero.
+        assert_eq!((s.r_x, s.r_y, s.r_z), (0x200, 0x100, 0xFC0));
+        // Frame 1 -> 2 at 3/16: -48 + ((48*3) >> 4) = -39; 100 + (-200*3 >> 4).
+        let s = b.sample_bone(0, 16 + 3, false, 0).unwrap();
+        assert_eq!(
+            (s.t_x, s.t_y, s.t_z),
+            (32 + ((-96 * 3) >> 4), -39, 100 + ((-200 * 3) >> 4))
+        );
+    }
+
+    #[test]
+    fn last_frame_wraps_to_frame_zero_or_holds_on_the_clamp_bit() {
+        let b = one_bone_bundle(1, &FRAMES3);
+        let cursor = 2 * 16 + 8;
+        // Loop: frame 2 blends toward frame 0.
+        let s = b.sample_bone(0, cursor, false, 0).unwrap();
+        assert_eq!(s.t_x, -64 + ((64 * 8) >> 4));
+        // Clamp (`+0x62 & 8`): the next entry is the entry itself.
+        let s = b.sample_bone(0, cursor, true, 0).unwrap();
+        assert_eq!(s, b.bone_transform(0, 2, 0).unwrap());
+    }
+
+    #[test]
+    fn blend_at_zero_fraction_is_the_current_entry_even_on_the_flip_arm() {
+        let cur = BoneTransform {
+            t_x: 5,
+            t_y: -7,
+            t_z: 9,
+            r_x: 0x000,
+            r_y: 0x000,
+            r_z: 0x000,
+        };
+        let next = BoneTransform {
+            t_x: 50,
+            t_y: 70,
+            t_z: -90,
+            r_x: 0x7F0,
+            r_y: 0x7F0,
+            r_z: 0x7F0,
+        };
+        assert_eq!(blend_bone_transform(cur, next, 0), cur);
+    }
+
+    #[test]
+    fn euler_flip_retry_runs_past_the_threshold() {
+        let cur = BoneTransform {
+            t_x: 0,
+            t_y: 0,
+            t_z: 0,
+            r_x: 0x000,
+            r_y: 0x000,
+            r_z: 0x000,
+        };
+        // Summed short arcs 0x7F0 * 3 > 0xC00: retail retries against
+        // (x + 0x800, -(y + 0x800), z + 0x800) = (0xFF0, 0x010, 0xFF0) - the
+        // same orientation, 16 units from `cur` on every axis.
+        let next = BoneTransform {
+            t_x: 0,
+            t_y: 0,
+            t_z: 0,
+            r_x: 0x7F0,
+            r_y: 0x7F0,
+            r_z: 0x7F0,
+        };
+        let s = blend_bone_transform(cur, next, 8);
+        assert_eq!((s.r_x, s.r_y, s.r_z), (0xFF8, 0x008, 0xFF8));
+        // Under the threshold: the plain per-axis blend.
+        let next = BoneTransform {
+            r_x: 0x400,
+            r_y: 0x400,
+            r_z: 0x400,
+            ..next
+        };
+        let s = blend_bone_transform(cur, next, 8);
+        assert_eq!((s.r_x, s.r_y, s.r_z), (0x200, 0x200, 0x200));
     }
 }

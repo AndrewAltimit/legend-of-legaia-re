@@ -2751,7 +2751,9 @@ impl World {
         // the pad must not also walk the player out from under the cinematic
         // camera. Releases the frame the timeline drops (matches retail, where
         // free-roam control returns only after the opening choreography ends).
-        if self.cutscene_timeline_active() {
+        // A concurrent helper record holds the pad the same way (retail's
+        // engaged bit is raised for every context the script runner steps).
+        if self.script_context_engages_player() {
             return;
         }
         let Some(slot) = self.player_actor_slot else {
@@ -3347,7 +3349,7 @@ impl World {
         !actor.active
             || actor.move_state.flags & 0x0008_0000 != 0
             || self.dialogue_owns_input()
-            || self.cutscene_timeline_active()
+            || self.script_context_engages_player()
             || self.board.grid.is_some()
             || self.locomotion.ledge_hop.is_some()
             || self.player_script_arc_live()
@@ -3533,7 +3535,10 @@ impl World {
     ///
     /// REF: FUN_801DE840 (the two player arms; the pick is
     /// [`vm::field_player_clip::settle_clip_pick`])
-    pub fn field_player_script_clip(&mut self, move_id: u8) {
+    pub fn field_player_script_clip(
+        &mut self,
+        move_id: u8,
+    ) -> vm::field_player_clip::SettleClipPick {
         self.locomotion.clip_base = u16::from(move_id);
         let leader = self.locomotion.player_anim.as_ref().map_or(0, |a| a.leader);
         let pick = vm::field_player_clip::settle_clip_pick(
@@ -3544,6 +3549,7 @@ impl World {
             false,
         );
         self.apply_player_clip_pick(&pick, leader);
+        pick
     }
 
     /// Advance actor `slot` by `speed` world units in the direction encoded by

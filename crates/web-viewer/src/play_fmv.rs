@@ -58,6 +58,15 @@
 //! and every mid-game FMV plays out; [`skip_edge_hit`] is that rule over the
 //! standard PSX edge word the page and the world already speak. `see
 //! ghidra/scripts/funcs/str0970_801cf098.txt` (`0x801CF4D4..0x801CF500`).
+//!
+//! ## The score
+//!
+//! What a movie does to the BGM is the engine's
+//! [`legaia_engine_core::movie_audio::MovieScore`], the policy the native
+//! window consults too: arming the title attract releases the score, an
+//! installed movie that carries an XA track ducks it only while it is
+//! sounding, and the end - however the beat ends - gives back exactly what
+//! was taken and brings the title theme back after the attract.
 
 use legaia_asset::fmv_dispatch::{FmvTable, STR_OVERLAY_PROT_INDEX, fmv_segment_window};
 use legaia_engine_core::cutscene::fmv_is_skippable;
@@ -98,12 +107,10 @@ fn skip_edge_from_input(fmv_id: i16, input: &InputState) -> bool {
     fmv_is_skippable(fmv_id) && SKIP_BUTTONS.iter().any(|b| input.just_pressed(*b))
 }
 
-/// Who armed the movie: the field VM's cutscene mode or the title attract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FmvOrigin {
-    Cutscene,
-    Attract,
-}
+/// Who armed the movie: the field VM's cutscene mode or the title attract -
+/// the engine's own [`legaia_engine_core::movie_audio::MovieOrigin`], so the
+/// movie-audio policy reads the same value this lane arms with.
+pub(crate) use legaia_engine_core::movie_audio::MovieOrigin as FmvOrigin;
 
 /// A movie the runtime wants the page to install: the raw-sector window of
 /// the `fmv_id`'s segment on the disc image.
@@ -163,6 +170,8 @@ pub(crate) struct FmvState {
     /// The open movie's track is on the engine mixer's XA lane, so the
     /// finish (or skip) has to take it off again.
     mixer_audio: bool,
+    /// What the movie in flight did to the score (module docs, "The score").
+    score: legaia_engine_core::movie_audio::MovieScore,
 }
 
 impl FmvState {
@@ -194,6 +203,11 @@ impl FmvState {
 
     fn open(&self) -> Option<&OpenFmv> {
         self.slot.as_ref().and_then(|s| s.open.as_ref())
+    }
+
+    /// Whether the open movie carries an XA track.
+    fn open_has_audio(&self) -> bool {
+        self.open().is_some_and(|o| o.audio.is_some())
     }
 
     /// The window still waiting for the page (`None` once installed / never
@@ -375,26 +389,67 @@ impl LegaiaRuntime {
             )),
         }
         self.fmv.arm(fmv_id, origin, wanted);
-    }
-
-    /// Pause the scene sequencer under the movie, the way the native window
-    /// does when it stages the XA track. The cutscene service reopens it when
-    /// the movie ends ([`Self::fmv_resume_sequencer`]), as the native window
-    /// does on its drain - a hand-off that stays in the trigger scene, or a
-    /// new scene that issues no BGM start, otherwise left the page silent.
-    /// The attract resumes explicitly.
-    fn fmv_pause_sequencer(&self) {
-        #[cfg(target_arch = "wasm32")]
-        if let Some(out) = self.audio_out.as_ref() {
-            out.set_sequencer_paused(true);
+        // The title attract releases the score as it starts (retail's
+        // `FUN_800266E0` + `FUN_80026520` pair at `0x801DDD7C`).
+        if self.fmv.score.on_movie_start(origin) {
+            self.fmv_stop_score();
         }
     }
 
-    pub(crate) fn fmv_resume_sequencer(&self) {
+    /// Stop the score through the page's BGM director - the same `stop` the
+    /// native window's director runs for the attract.
+    fn fmv_stop_score(&mut self) {
         #[cfg(target_arch = "wasm32")]
         if let Some(out) = self.audio_out.as_ref() {
-            out.set_sequencer_paused(false);
+            use legaia_engine_core::scene::BgmDirector;
+            let mut director = crate::play_bgm::WebBgmDirector {
+                out,
+                bank: &mut self.bgm_bank,
+                last_started: &mut self.bgm_last_started,
+            };
+            director.stop();
         }
+    }
+
+    /// Duck the score under an installed movie that carries audio - only
+    /// while it is sounding, so a track the script already paused is not
+    /// claimed by the movie (and not reopened by its end).
+    fn fmv_duck_score(&mut self) {
+        #[cfg(target_arch = "wasm32")]
+        let gate_closed = self
+            .audio_out
+            .as_ref()
+            .is_some_and(|out| out.sequencer_paused());
+        #[cfg(not(target_arch = "wasm32"))]
+        let gate_closed = false;
+        if self.fmv.score.on_movie_audio(gate_closed) {
+            #[cfg(target_arch = "wasm32")]
+            if let Some(out) = self.audio_out.as_ref() {
+                out.set_sequencer_paused(true);
+            }
+        }
+    }
+
+    /// End the movie on the audio side, however the beat ended (played out,
+    /// skipped, never installed, dropped): take the XA off the mixer, reopen
+    /// the gate only if this movie closed it, and bring the title theme back
+    /// from its first beat after the attract.
+    pub(crate) fn fmv_end_audio(&mut self) {
+        self.fmv_audio_stop();
+        let end = self.fmv.score.on_movie_end();
+        #[cfg(target_arch = "wasm32")]
+        {
+            if end.reopen_gate
+                && let Some(out) = self.audio_out.as_ref()
+            {
+                out.set_sequencer_paused(false);
+            }
+            if end.restart_title_theme {
+                let _ = self.play_title_bgm();
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = end;
     }
 
     /// Put the open movie's XA track on the engine mixer - the native
@@ -473,6 +528,7 @@ impl LegaiaRuntime {
                 .is_some_and(|(o, _)| o == FmvOrigin::Cutscene)
             {
                 self.fmv.clear();
+                self.fmv_end_audio();
             }
             return fmv_handoff_scene;
         };
@@ -513,12 +569,11 @@ impl LegaiaRuntime {
             }
         }
         if finished {
-            self.fmv_audio_stop();
-            // The native window's movie-end drain reopens the sequencer
-            // (`out.set_sequencer_paused(false)` beside `stop_xa`); this host
-            // only stopped the XA, so a movie that handed back to a scene with
-            // no BGM start of its own kept the score paused.
-            self.fmv_resume_sequencer();
+            // The same end the native window's drain runs: stop the XA and
+            // give back only what the movie took, played or not - so a
+            // movie that never installed does not reopen a track the script
+            // had paused.
+            self.fmv_end_audio();
         }
         fmv_handoff_scene
     }
@@ -564,8 +619,8 @@ impl LegaiaRuntime {
     /// which the beat finishes unplayed on the next tick.
     pub fn play_fmv_install(&mut self, sectors: &[u8]) -> bool {
         let ok = self.fmv.install(sectors);
-        if ok {
-            self.fmv_pause_sequencer();
+        if ok && self.fmv.open_has_audio() {
+            self.fmv_duck_score();
         }
         ok
     }

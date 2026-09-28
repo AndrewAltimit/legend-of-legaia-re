@@ -572,6 +572,7 @@ impl PlayWindowApp {
             }
         }
         let mut bound = 0usize;
+        let mut bound_slots: Vec<u8> = Vec::new();
         // Every actor slot this call registers a battle mesh on. It is the
         // battle's whole display list - see the un-register pass after the
         // party loop for why the complement matters.
@@ -612,31 +613,26 @@ impl PlayWindowApp {
                     self.scene_tmd_data.push((tmd, mesh.tmd_bytes().to_vec()));
                     self.session.host.world.actors[actor_idx].tmd_binding = Some(idx);
                     registered.push(actor_idx);
-                    // Record the texture slot so the posed-animation rebuild can
-                    // re-apply the per-slot CBA/TSB relocation (the raw-TMD posed
-                    // mesh otherwise carries the nominal on-disc addresses and
-                    // samples the wrong VRAM page → untextured/white).
-                    self.session.host.world.actors[actor_idx].battle_tex_slot = Some(slot);
-                    // Attach the monster's idle clip so its limbs move in
-                    // battle. The clip's part count should equal the TMD object
-                    // count (one rigid transform per object); MonsterAnimPlayer
-                    // tolerates a mismatch (extra objects stay at rest).
-                    match legaia_asset::monster_archive::idle_animation(&archive, monster_id) {
-                        Ok(Some(idle)) => {
-                            if let Some(player) =
-                                legaia_engine_core::battle_anim::MonsterAnimPlayer::new(&idle)
-                            {
-                                self.session
-                                    .host
-                                    .world
-                                    .set_actor_battle_animation(actor_idx, player);
+                    // The texture slot (the posed rebuild re-applies its
+                    // CBA/TSB relocation, or the animated monster samples
+                    // the wrong page and renders white) and the idle clip,
+                    // through the install the browser page runs too.
+                    let idle =
+                        match legaia_asset::monster_archive::idle_animation(&archive, monster_id) {
+                            Ok(idle) => idle,
+                            Err(e) => {
+                                log::warn!(
+                                    "play-window: monster {monster_id} idle anim decode: {e:#}"
+                                );
+                                None
                             }
-                        }
-                        Ok(None) => {}
-                        Err(e) => {
-                            log::warn!("play-window: monster {monster_id} idle anim decode: {e:#}")
-                        }
-                    }
+                        };
+                    self.session.host.world.install_monster_battle_form(
+                        actor_idx,
+                        slot,
+                        idle.as_ref(),
+                    );
+                    bound_slots.push(slot);
                     // The archive-order action-clip set (the `+0x4C` tag
                     // table the hit-reaction family and the AI's picked
                     // swings index) is the engine's to install:
@@ -666,242 +662,41 @@ impl PlayWindowApp {
         // rows its mesh CBA samples (= 481 + slot after relocation).
         let mut party_bound = 0usize;
         let party_count = self.session.host.world.party.party_count as usize;
+        // The whole decode - assembly or PROT 1204 fallback, band pixels,
+        // palette, clips, art bank, face tracks - is the engine kernel the
+        // browser play page builds through too
+        // (`engine-core::battle_party_form`); this window adds only the GPU
+        // upload and the rest-pose bake of its static mesh.
         if party_count > 0
-            && let Ok(pack_raw) = self
-                .session
-                .host
-                .index
-                .entry_bytes(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
-            && let Ok(atlas_raw) = self
-                .session
-                .host
-                .index
-                .entry_bytes(legaia_asset::battle_char_pack::ATLAS_PROT_ENTRY_INDEX)
-            && let Ok(pack) = legaia_asset::battle_char_pack::parse(&pack_raw, &atlas_raw)
+            && let Some(sources) = legaia_engine_core::battle_party_form::PartyFormSources::load(
+                &self.session.host.index,
+                &mut vram,
+            )
         {
-            // Upload the 8 character atlases (256x256 4bpp + their CLUT rows)
-            // at their declared authoring rects (the Baka Fighter layout the
-            // fallback meshes sample). They live in PROT 1205, the sibling of
-            // the mesh entry - see `legaia_asset::battle_char_pack`.
-            for atlas in &pack.atlases {
-                if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
-                    vram.upload_tim(&tim);
-                }
-            }
-            // The battle party mesh is a set of object-local TMD pieces (head,
-            // torso, limbs) - NOT pre-assembled. The retail battle sockets the
-            // ASSEMBLED mesh with the character's own idle keyframe stream from
-            // record[0] of the same player file (monster-format `[parts]
-            // [frames][9-byte TRS]`, parts = skeleton bones; equipment extras
-            // ride their attach bone - `assembled_party_battle_mesh` returns it
-            // expanded per object). PROT 1203 is NOT that source: its banks are
-            // authored against PROT 1204's own object order, which differs from
-            // the assembled blob's sorted bone-tag order per character - posing
-            // the assembled mesh from 1203 mis-sockets joints and splits the
-            // duplicate equipment pieces apart. 1203 stays as the rest-pose
-            // source for the 1204 FALLBACK mesh only (banks Vahn 0-8 /
-            // Noa 9-17 / Gala 18-26, idle = each bank's first record; bone i =
-            // 1204 object i).
-            let battle_anm = self
-                .session
-                .host
-                .index
-                .entry_bytes_extended(1203)
-                .ok()
-                .and_then(|raw| {
-                    [6usize, 3, 5, 7].iter().find_map(|&dc| {
-                        legaia_asset::player_anm::find_in_entry(&raw, dc)
-                            .into_iter()
-                            .next()
-                    })
-                });
-            // Per-member: assemble the battle mesh from the occupying
-            // character's player file (fallback: the static PROT 1204 slot),
-            // overlay its battle palette onto the CLUT rows the mesh samples,
-            // upload, bind to the party actor. The retail rule (live-verified
-            // for all four characters, incl. Terra): the CHARACTER picks the
-            // content - player file + palette = extraction PROT `863 +
-            // char_slot` (raw TOC 0x361-0x364; see docs/formats/cdname.md
-            // numbering space) - while the present-party ORDINAL picks the
-            // runtime texture band (`relocate_tsb_cba` x = 0x200 + i*0x80,
-            // CLUT row 481 + i). `World::party.active_party` supplies the mapping;
-            // empty = the identity Vahn/Noa/Gala default.
             for member in 0..party_count.min(3) {
-                let cslot = self.session.host.world.party_roster_slot(member);
-                // (tmd, raw bytes, per-object idle clip). The assembled path
-                // poses from the player file's own idle stream (already
-                // expanded so channel i drives object i, extras included);
-                // the fallback 1204 mesh has no stream (`None`) and poses
-                // from PROT 1203 with the identity object->bone mapping.
-                let mut source: Option<(
-                    legaia_tmd::Tmd,
-                    Vec<u8>,
-                    Option<legaia_asset::monster_archive::MonsterAnimation>,
-                )> = None;
-                let mut tex_uploads: Vec<legaia_asset::battle_char_assembly::TextureUpload> =
-                    Vec::new();
-                let mut action_clips: Option<
-                    Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
-                > = None;
-                let mut art_bank: Option<
-                    Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
-                > = None;
-                let mut face_tracks: Option<Vec<Option<legaia_asset::face_anim::FaceTracks>>> =
-                    None;
-                let mut art_face_tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>> =
-                    Vec::new();
-                let mut art_records: Vec<legaia_asset::battle_char_assembly::ArtAnimRecord> =
-                    Vec::new();
-                if let Some((asm, uploads, idle, clips, bank, faces, art_faces, records)) =
-                    self.assembled_party_battle_mesh(cslot, member)
-                {
-                    tex_uploads = uploads;
-                    action_clips = Some(clips);
-                    art_bank = Some(bank);
-                    art_records = records;
-                    face_tracks = Some(faces);
-                    art_face_tracks = art_faces;
-                    match legaia_tmd::parse(&asm.tmd) {
-                        Ok(tmd) => source = Some((tmd, asm.tmd, Some(idle))),
-                        Err(e) => log::warn!(
-                            "play-window: party {cslot} assembled TMD parse: {e:#} \
-                             (falling back to PROT 1204)"
-                        ),
-                    }
-                }
-                let assembled = source.is_some();
-                if source.is_none()
-                    && let Some(slot) = pack.slot(cslot)
-                    && let Ok(tmd) = legaia_tmd::parse(&slot.tmd_bytes)
-                {
-                    source = Some((tmd, slot.tmd_bytes.clone(), None));
-                }
-                let Some((tmd, tmd_bytes, idle_anim)) = source else {
+                let Some(mut form) = legaia_engine_core::battle_party_form::build_party_battle_form(
+                    &self.session.host.index,
+                    &self.session.host.world,
+                    &sources,
+                    &mut vram,
+                    member,
+                ) else {
                     continue;
                 };
-                // Band pixels for the relocated mesh: the equipped sections'
-                // texture pools + record[0] image blocks at the pinned
-                // FUN_80052FA0 placement; the 1204 atlas pair approximates
-                // the band only when the pool decode failed. Fallback 1204
-                // meshes sample the authoring rects uploaded above instead.
-                if assembled {
-                    if tex_uploads.is_empty() {
-                        // Approximation content = the CHARACTER's atlas pair;
-                        // destination = the MEMBER ordinal's runtime band.
-                        for half in 0..2usize {
-                            if let Some(atlas) = pack.atlases.get(cslot * 2 + half)
-                                && let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes)
-                            {
-                                let img = &tim.image;
-                                vram.write_block(
-                                    512 + (member * 2 + half) as u16 * 64,
-                                    256,
-                                    img.fb_w,
-                                    img.h,
-                                    &img.data,
-                                );
-                            }
-                        }
-                    } else {
-                        for u in &tex_uploads {
-                            vram.write_block(u.fb_x(), u.fb_y(), u.rect.w, u.rect.h, &u.pixels);
-                            if !u.clut.is_empty() {
-                                vram.write_clut_row(u.clut_x, u.clut_row(), &u.clut_bytes());
-                            }
-                        }
-                    }
-                }
                 // Rest pose: frame 0 of the assembled mesh's own idle stream
-                // (the combat stance retail holds at battle start). Fallback
-                // 1204 meshes pose from PROT 1203 instead - banks (per
-                // docs/formats/character-mesh.md): records 0-8 = Vahn
-                // (15-bone), 9-17 = Noa (16), 18-26 = Gala (15); the FIRST
-                // record of each bank is that character's idle rest pose,
-                // bone i driving 1204 object i.
-                let bone_offsets: Vec<([i16; 3], [i16; 3])> = match (&idle_anim, &battle_anm) {
-                    (Some(anim), _) => anim
-                        .frames
-                        .first()
-                        .map(|f0| {
-                            f0.iter()
-                                .map(|p| {
-                                    ([p.tx, p.ty, p.tz], [p.rx as i16, p.ry as i16, p.rz as i16])
-                                })
-                                .collect()
-                        })
-                        .unwrap_or_default(),
-                    (None, Some(b)) => {
-                        // Idle record per 1203 bank. The banks cover the
-                        // Vahn/Noa/Gala trio only - a Terra fallback mesh
-                        // (no bank) renders unposed.
-                        match [0usize, 9, 18].get(cslot) {
-                            Some(&rec) => (0..tmd.objects.len())
-                                .map(|o| match b.bone_transform(rec, 0, o) {
-                                    Some(t) => (
-                                        [t.t_x as i16, t.t_y as i16, t.t_z as i16],
-                                        [t.r_x as i16, t.r_y as i16, t.r_z as i16],
-                                    ),
-                                    None => ([0; 3], [0; 3]),
-                                })
-                                .collect(),
-                            None => Vec::new(),
-                        }
-                    }
-                    (None, None) => Vec::new(),
-                };
-                let vmesh = if bone_offsets.is_empty() {
-                    legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &tmd_bytes)
+                // (the combat stance retail holds at battle start), or the
+                // PROT 1203 bank's idle record for a fallback.
+                let vmesh = if form.rest_pose.is_empty() {
+                    legaia_tmd::mesh::tmd_to_vram_mesh(&form.tmd, &form.tmd_bytes)
                 } else {
-                    legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&tmd, &tmd_bytes, &bone_offsets)
+                    legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
+                        &form.tmd,
+                        &form.tmd_bytes,
+                        &form.rest_pose,
+                    )
                 };
                 if vmesh.indices.is_empty() {
                     continue;
-                }
-                // Rows the mesh CBA samples, and (for collect) the columns.
-                let mut rows: Vec<u16> =
-                    vmesh.cba_tsb.iter().map(|c| (c[0] >> 6) & 0x1FF).collect();
-                rows.sort_unstable();
-                rows.dedup();
-                let mut cols: Vec<u16> = vmesh.cba_tsb.iter().map(|c| (c[0] & 0x3F) * 16).collect();
-                cols.sort_unstable();
-                cols.dedup();
-                // Decode + overlay the battle palette from the character's own
-                // player file. Vahn (863) = byte-exact parse_record; the other
-                // characters (864..866, incl. Terra) = equipment-robust collect.
-                let pal = match cslot {
-                    0 => self
-                        .session
-                        .host
-                        .index
-                        .entry_bytes_extended(863)
-                        .ok()
-                        .and_then(|f| {
-                            let rec0 = legaia_asset::battle_char_palette::find_record0(&f)?;
-                            legaia_asset::battle_char_palette::parse_record(&f, rec0).ok()
-                        }),
-                    1..=3 => self
-                        .session
-                        .host
-                        .index
-                        .entry_bytes_extended(863 + cslot as u32)
-                        .ok()
-                        .and_then(|f| {
-                            legaia_asset::battle_char_palette::collect_palette(&f, 0, &cols).ok()
-                        }),
-                    _ => None,
-                };
-                if let Some(pal) = pal {
-                    // STP-set palette bands onto each row the mesh CBA samples.
-                    for &row in &rows {
-                        for band in &pal.bands {
-                            let bytes: Vec<u8> = band
-                                .vram_words()
-                                .iter()
-                                .flat_map(|w| w.to_le_bytes())
-                                .collect();
-                            vram.write_clut_row(band.base, row, &bytes);
-                        }
-                    }
                 }
                 match r.upload_vram_mesh(
                     &vmesh.positions,
@@ -914,76 +709,30 @@ impl PlayWindowApp {
                     Ok(m) => {
                         let idx = self.meshes.len();
                         self.meshes.push(m);
-                        self.scene_tmd_data.push((tmd, tmd_bytes));
+                        // Idle + action clips + art bank + art records, the
+                        // install the browser page runs off the same form.
+                        self.session.host.world.install_party_battle_form(&mut form);
                         self.session.host.world.actors[member].tmd_binding = Some(idx);
                         registered.push(member);
-                        // Assembled meshes loop their own idle clip, exactly
-                        // like monsters (the per-frame posed path rebuilds
-                        // from the relocated TMD bytes, so texture
-                        // addressing stays in the slot band).
-                        if let Some(anim) = &idle_anim
-                            && let Some(player) =
-                                legaia_engine_core::battle_anim::MonsterAnimPlayer::new(anim)
-                        {
-                            self.session
-                                .host
-                                .world
-                                .set_actor_battle_animation(member, player);
-                        }
-                        // Hand the SM pose hook the full action-clip set
-                        // (record[0] slots + the equipment-spliced swings at
-                        // 0xC..0xF) so ready / recover / defeat AND the
-                        // staged attack-band swings play their real streams.
-                        if let Some(clips) = action_clips.take() {
-                            self.session
-                                .host
-                                .world
-                                .set_actor_battle_action_clips(member, std::sync::Arc::new(clips));
-                        }
-                        // And the art bank, so staged ids >= 0x10 resolve
-                        // through the ME-archive streams (FUN_8004AD80).
-                        if let Some(bank) = art_bank.take().filter(|b| !b.is_empty()) {
-                            self.session
-                                .host
-                                .world
-                                .set_actor_battle_art_bank(member, std::sync::Arc::new(bank));
-                        }
-                        // The bank's records are the arts the queue-builder
-                        // matches: install them so the live arts input
-                        // tokenizes this character's real arts.
-                        if let Some(character) = party_art_character(cslot) {
-                            self.session
-                                .host
-                                .world
-                                .install_art_bank_records(character, &art_records);
-                        }
-                        // Facial animation (FUN_8004C7B4): register the
-                        // member's per-action face tracks so the per-tick
-                        // stamp pass (`tick_battle_face_stamps`) re-stamps
-                        // the current eye/mouth frame onto the band's live
-                        // face rows. Only meaningful when the band holds
-                        // the REAL texture-pool pixels (the face-frame
-                        // strip the stamps copy from); the retail animator
-                        // covers chars 0..2 (Terra is skipped) on bands
-                        // 0..2.
-                        if assembled
-                            && !tex_uploads.is_empty()
-                            && cslot < legaia_asset::face_anim::FACE_CHAR_COUNT
-                            && member < legaia_asset::face_anim::FACE_SLOT_COUNT
-                            && let Some(tracks) = face_tracks.take()
-                        {
+                        // Facial animation (FUN_8004C7B4): the per-tick stamp
+                        // pass (`tick_battle_face_stamps`) re-stamps the
+                        // current eye/mouth frame onto the band's live face
+                        // rows; the form only carries tracks when the band
+                        // holds the real face-frame strip.
+                        if let Some(tracks) = form.face_tracks.take() {
                             self.battle_faces.push(BattleMemberFace {
                                 actor_slot: member,
-                                char_index: cslot,
+                                char_index: form.cslot,
                                 tracks,
-                                art_tracks: std::mem::take(&mut art_face_tracks),
+                                art_tracks: std::mem::take(&mut form.art_face_tracks),
                                 last_stamps: None,
                                 art_counter: None,
                             });
                         }
+                        self.scene_tmd_data.push((form.tmd, form.tmd_bytes));
                         party_bound += 1;
                     }
-                    Err(e) => log::warn!("play-window: party {cslot} mesh upload: {e:#}"),
+                    Err(e) => log::warn!("play-window: party {} mesh upload: {e:#}", form.cslot),
                 }
             }
         }
@@ -1006,7 +755,10 @@ impl PlayWindowApp {
         }
         // Stash the battle VRAM + the monster-slot count so a mid-battle player
         // summon can inject its creature texture into the next free slot.
-        self.battle_tex_slots_used = (bound as u8).min(4);
+        // One past the highest slot bound - repeated species share a slot,
+        // so the bound count over-reads it (the shared kernel the page uses).
+        self.battle_tex_slots_used =
+            legaia_engine_core::battle_party_form::monster_tex_slots_used(bound_slots).min(4);
         self.battle_vram = Some(vram);
         self.log_battle_display_list(&unregistered);
     }
@@ -1070,247 +822,6 @@ impl PlayWindowApp {
                 clip.y / clip.w
             );
         }
-    }
-
-    /// Assemble one party member's battle mesh the way the retail battle
-    /// loader does: read the character's player battle file (extraction PROT
-    /// `863 + cslot`, the `data\battle\PLAYER<n>` files), select its five
-    /// equipment sections by the roster record's equipped item ids
-    /// (`+0x196..+0x19A`), splice them into the merged TMD
-    /// (`legaia_asset::battle_char_assembly`), then apply the
-    /// registration-time TSB/CBA relocation into the present-party
-    /// ORDINAL's runtime VRAM band (`relocate_tsb_cba` over `band`;
-    /// texpages `512 + 128*band` / `+64` at `y = 256`, CLUT row
-    /// `481 + band` - the live-verified retail rule: the band follows the
-    /// party position, the content follows the character). Also decodes
-    /// the matching band
-    /// *pixels* - the equipped sections' texture pools + record[0] image
-    /// blocks at the pinned placement (`character_texture_uploads`; empty
-    /// with a warning when that decode fails, so the caller can fall back
-    /// to the 1204 atlas approximation) - and the character's **idle battle
-    /// animation** from record[0] of the same file
-    /// (`idle_battle_animation`, the retail pose source for the assembled
-    /// mesh), expanded per assembled object (`expand_animation_for_objects`
-    /// over `anm_bones`, so channel `i` drives TMD object `i`, equipment
-    /// extras riding their attach bone). `None` (with a warning) when the
-    /// mesh assembly or the idle-stream decode fails - the caller falls
-    /// back to the slot's static PROT 1204 mesh, whose rest pose
-    /// (PROT 1203, identity object->bone) is known-correct.
-    pub(super) fn assembled_party_battle_mesh(
-        &self,
-        cslot: usize,
-        band: usize,
-    ) -> Option<AssembledPartyMesh> {
-        let prot = 863 + cslot as u32;
-        let raw = match self.session.host.index.entry_bytes_extended(prot) {
-            Ok(raw) => raw,
-            Err(e) => {
-                log::warn!("play-window: party {cslot} player file (PROT {prot}): {e:#}");
-                return None;
-            }
-        };
-        let pack = match legaia_asset::battle_data_pack::parse(&raw) {
-            Ok(pack) => pack,
-            Err(e) => {
-                log::warn!("play-window: party {cslot} player-file pack parse: {e:#}");
-                return None;
-            }
-        };
-        // Equipped item ids from the canonical roster record; an absent or
-        // zeroed record assembles the all-default (unequipped) sections.
-        let equipped: [u8; 5] = self
-            .session
-            .host
-            .world
-            .party
-            .roster
-            .members
-            .get(cslot)
-            .map(|rec| {
-                let slots = rec.equipment().slots;
-                [slots[0], slots[1], slots[2], slots[3], slots[4]]
-            })
-            .unwrap_or_default();
-        let mut asm =
-            match legaia_asset::battle_char_assembly::assemble_character(&raw, &pack, &equipped) {
-                Ok(asm) => asm,
-                Err(e) => {
-                    log::warn!(
-                        "play-window: party {cslot} battle-mesh assembly \
-                         (equipped {equipped:02x?}): {e:#}"
-                    );
-                    return None;
-                }
-            };
-        if let Err(e) =
-            legaia_asset::battle_char_assembly::relocate_tsb_cba(&mut asm.tmd, band as u8)
-        {
-            log::warn!("play-window: party {cslot} TSB/CBA relocation: {e:#}");
-            return None;
-        }
-        // The assembled mesh's pose source: the character's own idle stream
-        // (record[0] action slot 0), expanded so channel i drives object i.
-        let idle = match legaia_asset::battle_char_assembly::idle_battle_animation(&raw) {
-            Ok(Some(anim)) => legaia_asset::battle_char_assembly::expand_animation_for_objects(
-                &anim,
-                &asm.anm_bones,
-            ),
-            Ok(None) => {
-                log::warn!("play-window: party {cslot} player file carries no idle stream");
-                return None;
-            }
-            Err(e) => {
-                log::warn!("play-window: party {cslot} idle-stream decode: {e:#}");
-                return None;
-            }
-        };
-        // Band pixels at the pinned FUN_80052FA0 placement. A failure here
-        // degrades to the 1204 atlas approximation, not to a mesh fallback.
-        let uploads = legaia_asset::battle_char_assembly::character_texture_uploads(
-            &raw, &pack, &equipped, band as u8,
-        )
-        .unwrap_or_else(|e| {
-            log::warn!("play-window: party {cslot} texture-pool decode: {e:#}");
-            Vec::new()
-        });
-        // Every populated action-stream slot, expanded the same way as the
-        // idle: the battle-action SM's pose hook switches between these
-        // (ready / recover / defeat one-shots over the idle loop).
-        let mut clips: Vec<Option<legaia_asset::monster_archive::MonsterAnimation>> =
-            vec![None; legaia_asset::battle_char_assembly::ACTION_SLOT_COUNT];
-        // Per-action facial keyframe tracks (entry +0x8C eyes / +0x98
-        // mouth), keyed like `clips` by the playing clip's action_id; the
-        // per-frame facial animator (`tick_battle_face_stamps`) looks the
-        // playing clip's tracks up here. Record[0] entries first, the
-        // equipment-spliced swing entries' tracks land on slots 0xC..0xF
-        // in the swing loop below.
-        let mut faces: Vec<Option<legaia_asset::face_anim::FaceTracks>> =
-            vec![None; legaia_asset::battle_char_assembly::ACTION_SLOT_COUNT];
-        match legaia_asset::face_anim::battle_face_tracks(&raw) {
-            Ok(t) => faces = t,
-            Err(e) => log::warn!("play-window: party {cslot} face-track decode: {e:#}"),
-        }
-        match legaia_asset::battle_char_assembly::battle_animations(&raw) {
-            Ok(anims) => {
-                for a in &anims {
-                    if let Some(slot) = clips.get_mut(a.action_id as usize) {
-                        *slot = Some(
-                            legaia_asset::battle_char_assembly::expand_animation_for_objects(
-                                a,
-                                &asm.anm_bones,
-                            ),
-                        );
-                    }
-                }
-            }
-            Err(e) => log::warn!("play-window: party {cslot} action-stream decode: {e:#}"),
-        }
-        // The four direction-command weapon swings spliced from the equipped
-        // sections (runtime slots 0xC..0xF) - per-equipment animations the
-        // attack chain stages as anim ids 0x0C..0x0F.
-        match legaia_asset::battle_char_assembly::swing_battle_animations(&raw, &pack, &equipped) {
-            Ok(swings) => {
-                for s in &swings {
-                    if let Some(slot) = clips.get_mut(s.slot as usize) {
-                        *slot = Some(
-                            legaia_asset::battle_char_assembly::expand_animation_for_objects(
-                                &s.anim,
-                                &asm.anm_bones,
-                            ),
-                        );
-                    }
-                    if let Some(face) = faces.get_mut(s.slot as usize) {
-                        *face = s.face;
-                    }
-                }
-            }
-            Err(e) => log::warn!("play-window: party {cslot} swing decode: {e:#}"),
-        }
-        // The art-animation bank (record[0] +0x58): each record's keyframe
-        // stream resolves through the character's readef.DAT "ME" archive
-        // (main slot 3*char+1, base slot 3*char+2 for rate_alt == 0xFF
-        // records). The staged-anim commit materializes bank record
-        // `id - 0x10` into dynamic slot 0x10/0x11 (FUN_8004AD80).
-        let (art_bank, art_faces, art_records) = self.party_art_bank(&raw, cslot, &asm.anm_bones);
-        Some((
-            asm,
-            uploads,
-            idle,
-            clips,
-            art_bank,
-            faces,
-            art_faces,
-            art_records,
-        ))
-    }
-
-    /// Decode one character's art-animation bank into commit-ready clips
-    /// plus the records' embedded-entry face tracks (both indexed by bank
-    /// record). Failures degrade per record (a `None` slot commits as a
-    /// zero-length clip) or to an empty bank with a warning.
-    pub(super) fn party_art_bank(
-        &self,
-        raw: &[u8],
-        cslot: usize,
-        anm_bones: &[u8],
-    ) -> (
-        Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
-        Vec<Option<legaia_asset::face_anim::FaceTracks>>,
-        Vec<legaia_asset::battle_char_assembly::ArtAnimRecord>,
-    ) {
-        let record0 = match legaia_asset::battle_char_assembly::decode_record0(raw) {
-            Ok(r) => r,
-            Err(e) => {
-                log::warn!("play-window: party {cslot} record[0] decode for art bank: {e:#}");
-                return (Vec::new(), Vec::new(), Vec::new());
-            }
-        };
-        let records = match legaia_asset::battle_char_assembly::art_animation_bank(&record0) {
-            Ok(r) => r,
-            Err(e) => {
-                log::warn!("play-window: party {cslot} art-bank parse: {e:#}");
-                return (Vec::new(), Vec::new(), Vec::new());
-            }
-        };
-        // The embedded entries' face tracks (record +0xB0 / +0xBC) come
-        // straight off the bank records - no ME archive involved.
-        let faces: Vec<Option<legaia_asset::face_anim::FaceTracks>> =
-            records.iter().map(|r| r.face).collect();
-        // readef.DAT (extraction PROT 894) - the battle side-band file whose
-        // 0x10800-byte slots carry the per-character "ME" stream archives.
-        let readef = match self.session.host.index.entry_bytes_extended(894) {
-            Ok(b) => b,
-            Err(e) => {
-                log::warn!("play-window: readef.DAT (PROT 894) read: {e:#}");
-                return (Vec::new(), faces, records);
-            }
-        };
-        let main = legaia_asset::battle_char_assembly::art_me_archive(&readef, cslot, false);
-        let base = legaia_asset::battle_char_assembly::art_me_archive(&readef, cslot, true);
-        let mut bank = vec![None; records.len()];
-        for rec in &records {
-            let archive = if rec.uses_base_archive() {
-                &base
-            } else {
-                &main
-            };
-            let Ok(archive) = archive else { continue };
-            match legaia_asset::battle_char_assembly::art_animation(rec, archive) {
-                Ok(anim) => {
-                    bank[rec.index] = Some(
-                        legaia_asset::battle_char_assembly::expand_animation_for_objects(
-                            &anim, anm_bones,
-                        ),
-                    );
-                }
-                Err(e) => log::warn!(
-                    "play-window: party {cslot} art record {} ({}): {e:#}",
-                    rec.index,
-                    rec.name
-                ),
-            }
-        }
-        (bank, faces, records)
     }
 
     /// Spawn the player Seru-magic summon as a battle creature, the faithful
@@ -2006,6 +1517,14 @@ impl PlayWindowApp {
     /// shared `engine-ui` builder, so the browser play page draws the exact
     /// same panel from the exact same model.
     pub(super) fn battle_spoils_draws(&self, surface_w: u32, surface_h: u32) -> Vec<TextDraw> {
+        if let Some(defeat) = self.session.host.world.battle_defeat_banner() {
+            let windows = legaia_engine_render::battle_defeat_windows(defeat.line.as_deref());
+            let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+            let mut draws =
+                legaia_engine_render::battle_result_line_draws_for(&self.font, &windows);
+            legaia_engine_render::scale_stage_text_draws(&mut draws, origin, scale);
+            return draws;
+        }
         let Some(banner) = self.session.host.world.battle_spoils_banner() else {
             return Vec::new();
         };
@@ -2045,10 +1564,20 @@ impl PlayWindowApp {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_render::SpriteDraw> {
-        let Some(banner) = self.session.host.world.battle_spoils_banner() else {
+        let Some(rects) = self.save_menu.as_ref().map(|a| &a.rects) else {
             return Vec::new();
         };
-        let Some(rects) = self.save_menu.as_ref().map(|a| &a.rects) else {
+        // The loss window (screen element `0x42`) shares the report frame.
+        if let Some(defeat) = self.session.host.world.battle_defeat_banner() {
+            let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+            return legaia_engine_render::battle_defeat_windows(defeat.line.as_deref())
+                .iter()
+                .flat_map(|w| {
+                    legaia_engine_render::menu_window_chrome_draws_for(rects, w.rect, origin, scale)
+                })
+                .collect();
+        }
+        let Some(banner) = self.session.host.world.battle_spoils_banner() else {
             return Vec::new();
         };
         let leader = self.battle_spoils_leader();
@@ -2199,16 +1728,6 @@ use legaia_engine_vm::battle_intro_particles::IntroEnv;
 /// The [`legaia_art::Character`] whose art tables a player-file character
 /// slot (`0..=2` = Vahn / Noa / Gala) resolves against; `None` for Terra
 /// (slot `3`), who has no arts catalog.
-fn party_art_character(cslot: usize) -> Option<legaia_art::Character> {
-    [
-        legaia_art::Character::Vahn,
-        legaia_art::Character::Noa,
-        legaia_art::Character::Gala,
-    ]
-    .get(cslot)
-    .copied()
-}
-
 pub(super) fn unregister_non_battle_meshes(
     world: &mut legaia_engine_core::world::World,
     registered: &[usize],

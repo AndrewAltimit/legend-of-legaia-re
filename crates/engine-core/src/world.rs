@@ -163,11 +163,11 @@ mod bag_rows;
 pub use bag_rows::BagRow;
 mod battle;
 pub use battle::{
-    ABSORB_BANNER_ELEMENT, BattleActorDrawPlan, BattleMessageBanner, BattleSpoilsBanner,
-    LEVEL_UP_CUE, MAGIC_LEVEL_BANNER_ELEMENT, PARTY_BODY_RADIUS, PendingCast, RoutedEffectSpawn,
-    SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager, VICTORY_EXIT_PHASE,
-    VICTORY_FADE_PHASE_SEED, VICTORY_LOAD_FRAMES, VICTORY_RESULTS_HOLD_FRAMES, VictoryPhase,
-    VictorySequence, victory_pose_column, victory_pose_id, victory_pose_tier,
+    ABSORB_BANNER_ELEMENT, BattleActorDrawPlan, BattleDefeatBanner, BattleMessageBanner,
+    BattleSpoilsBanner, LEVEL_UP_CUE, MAGIC_LEVEL_BANNER_ELEMENT, PARTY_BODY_RADIUS, PendingCast,
+    RoutedEffectSpawn, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager,
+    VICTORY_EXIT_PHASE, VICTORY_FADE_PHASE_SEED, VICTORY_LOAD_FRAMES, VICTORY_RESULTS_HOLD_FRAMES,
+    VictoryPhase, VictorySequence, victory_pose_column, victory_pose_id, victory_pose_tier,
 };
 pub use battle::{AutoComboInputs, AutoComboState};
 mod effects;
@@ -182,7 +182,7 @@ mod field_frame_tail;
 pub use field_frame_tail::{EFFECT_SCENE_GRAPH_STEP, NpcClipRetarget};
 pub mod field_elevation;
 mod field_hud;
-mod field_xa;
+pub(crate) mod field_xa;
 pub use field_elevation::{CELL_ELEVATION_OVERRIDE, ElevationOverride};
 pub use field_hud::PassiveHudPoints;
 mod field_loop;

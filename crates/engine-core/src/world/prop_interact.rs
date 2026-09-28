@@ -71,7 +71,7 @@ impl World {
     ///
     /// PORT: FUN_801D5B5C (the touch-event post + engaged-flag raise)
     pub fn start_prop_interaction(&mut self, anchor: (u8, u8)) -> bool {
-        if self.dialogue_owns_input() || self.cutscene_timeline_active() {
+        if self.dialogue_owns_input() || self.script_context_engages_player() {
             return false;
         }
         let Some(prop) = self.props.bank.props.get(&anchor) else {
@@ -188,8 +188,9 @@ impl World {
             let confirm = confirm || panel.take_auto_press();
             if confirm {
                 self.dialog.input_consumed = true;
-                if panel.menu_active() && !menu_was_open {
-                    // Opened this frame: nothing to commit yet.
+                if panel.menu_active() && (!menu_was_open || !panel.picker_takes_input()) {
+                    // Opened this frame, or still sliding in (the pager reads the
+                    // choice only once the slide rests): nothing to commit yet.
                 } else if panel.menu_active() {
                     let choice = panel.picker_cursor();
                     let target = panel.picker().and_then(|pk| pk.jump_target(choice));

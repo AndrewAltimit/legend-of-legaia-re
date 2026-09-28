@@ -60,12 +60,14 @@ pub const LIST_HEAD_ADDRS: &[u32] = &[
     0x8007_C36C,
 ];
 
-/// Tick function pointer that identifies the world-map atmospheric
-/// actor (``FUN_801E3E00``, dumped at
-/// ``ghidra/scripts/funcs/overlay_world_map_801e3e00.txt``). The
-/// atmospheric script interpolates fog RGB into the actor's ``+0x74``
-/// field per frame; capturing this u32 surfaces the kingdom's live
-/// haze colour.
+/// The tick word this resolver keys its ``fog_color`` on. It never
+/// matches a live actor: ``FUN_801E3E00`` is not a tick but the keyframe
+/// script of the field-VM attached light, called from that light's tick
+/// ``FUN_801E4470``, and ``+0x74`` is the light pool's centre colour - no
+/// per-kingdom haze exists to capture (the overworld ground is cued toward a
+/// far colour fixed in PROT 0901's code; ``docs/subsystems/world-map.md``
+/// "Ground texturing"). No catalogued save state holds this word, so
+/// ``fog_color_u24`` stays ``None`` and the viewer draws its own tint.
 pub const ATMOSPHERIC_TICK: u32 = 0x801E_3E00;
 
 /// Legaia TMD magic word (little-endian on disc).

@@ -417,13 +417,19 @@ impl Renderer {
             push_constant_ranges: &[],
         });
         // 12 (pos) + 4 (uv as Uint8x4) + 4 (cba/tsb as Uint16x2) + 12
-        // (normal as Float32x3) + 4 (prim colour as Uint8x4) = 36 bytes.
+        // (normal as Float32x3) + 4 (prim colour as Uint8x4) + 32 (the flat
+        // bucket-depth reference as two Float32x4) = 68 bytes.
         //
         // The colour is the TMD prim's baked colour word, kept as raw bytes
         // (never converted): the GPU modulates the texel by it as
         // `texel * colour / 128`, which is retail's whole field lighting model.
+        //
+        // The flat reference is zero on every mesh but the continent ground,
+        // whose vertices carry their cell's four corners so the overworld
+        // draws each cell at its ordering-table bucket's depth
+        // (`legaia_engine_core::overworld_draw_order`).
         let vram_vertex_layout = wgpu::VertexBufferLayout {
-            array_stride: 36,
+            array_stride: crate::renderer::VRAM_VERTEX_STRIDE,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -450,6 +456,16 @@ impl Renderer {
                     offset: 32,
                     shader_location: 4,
                     format: wgpu::VertexFormat::Uint8x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 36,
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 52,
+                    shader_location: 6,
+                    format: wgpu::VertexFormat::Float32x4,
                 },
             ],
         };
@@ -786,7 +802,10 @@ impl Renderer {
                 cache: None,
             })
         };
-        let shadow_vram_pipeline = make_shadow_pipeline("legaia shadow pipeline (vram mesh)", 36);
+        let shadow_vram_pipeline = make_shadow_pipeline(
+            "legaia shadow pipeline (vram mesh)",
+            crate::renderer::VRAM_VERTEX_STRIDE,
+        );
         let shadow_color_pipeline = make_shadow_pipeline("legaia shadow pipeline (color mesh)", 20);
 
         // Scene shader variants: same WGSL bodies as the single-mesh

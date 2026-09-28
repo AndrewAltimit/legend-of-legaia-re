@@ -605,39 +605,22 @@ impl LegaiaRuntime {
         out
     }
 
-    /// The casino **coin counter** (op-0x49 sub-6) off the live submode
-    /// screen's cells, in stage pixels - the digit-entry UI whose frame
-    /// previously ran headless on this host too.
+    /// The casino **coin counter** (op-0x49 sub-6): the field overlay's entry
+    /// panel (record 10, `FUN_801E6F70`) and the confirm's three-line panel
+    /// over it (record 11), laid out by the engine
+    /// (`SceneHost::coin_counter_lines`) and drawn through the pen
+    /// composition the native window shares. Stage pixels.
     fn coin_counter_window_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        let Some(table) = self.menu_assets.as_ref().and_then(|a| a.window_table()) else {
+        let Some(host) = self.scene_host.as_ref() else {
             return Vec::new();
         };
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
-            return Vec::new();
-        };
-        let screen = &world.field_vm.submode_screen;
-        if !screen.is_open()
-            || screen.actor.state != legaia_engine_vm::baka_hub_actors::slot::COIN_COUNTER
-        {
-            return Vec::new();
-        }
-        use legaia_engine_ui::ui_prize_exchange as px;
-        let view = px::CoinCounterView {
-            digits: screen.counter.digits.to_vec(),
-            cursor: screen.counter.cursor,
-            ceiling: screen.counter.ceiling,
-            gold: world.party.money,
-            coins: world.minigames.casino_coins,
-            confirm_cursor: (screen.actor.sub == 2).then_some((screen.counter.yes_no & 1) as u8),
-        };
-        let (mut out, sprites, pict) = px::coin_counter_draws_for(font, table, &view);
-        for s in sprites {
-            out.extend(self.painter_glyph_stand_in(font, ">", (s.x, s.y)));
-        }
-        if let Some(p) = pict {
-            out.extend(self.painter_glyph_stand_in(font, "C", (p.x, p.y)));
-        }
-        out
+        let lines = host.coin_counter_lines();
+        legaia_engine_ui::ui_text_lines::pen_line_draws_for(
+            font,
+            lines
+                .iter()
+                .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.pen)),
+        )
     }
 
     /// The shop's four **retail descriptor windows** for the current phase, in
@@ -1246,8 +1229,13 @@ impl LegaiaRuntime {
     /// `true` while a field-VM merchant shop is up. The page freezes field
     /// input and routes pad edges to [`Self::play_shop_input`] while this
     /// holds, the same way it defers to the pause menu.
+    ///
+    /// The answer is [`legaia_engine_core::menu_runtime::MenuRuntime::is_open`],
+    /// the predicate the native window feeds the field a neutral pad on. The
+    /// page used to spell out `shop_session || prize_session` here, which
+    /// agreed only while no other menu-runtime screen could be up.
     pub fn play_shop_is_open(&self) -> bool {
-        self.menu.shop_session.is_some() || self.menu.prize_session.is_some()
+        self.menu.is_open()
     }
 
     /// Drive the open shop one frame from an edge-triggered PSX pad word
@@ -1259,7 +1247,7 @@ impl LegaiaRuntime {
     /// the merchant op on its next step. Without that call the script would
     /// stay parked forever.
     pub fn play_shop_input(&mut self, edge: u16) {
-        if self.menu.shop_session.is_none() && self.menu.prize_session.is_none() {
+        if !self.menu.is_open() {
             return;
         }
         let input = menu_input(edge);
@@ -1340,6 +1328,23 @@ impl LegaiaRuntime {
         // digit entry, both shared engine-ui compositions.
         windows.extend(self.prize_window_draws(font));
         windows.extend(self.coin_counter_window_draws(font));
+        // The field floor window (op-0x49 sub-op 4, the Uru Mais warp pads), through
+        // the engine layout + shared line composition the native window
+        // draws (`SceneHost::flag_window_lines`).
+        if let Some(host) = self.scene_host.as_ref() {
+            let mut floor = host.flag_window_lines();
+            // The code lock (op-0x49 sub-op 2, slot 0x21), same line
+            // composition as the native window (`SceneHost::code_lock_lines`).
+            floor.extend(host.code_lock_lines());
+            windows.extend(legaia_engine_ui::ui_text_lines::text_line_draws_for(
+                font,
+                floor
+                    .iter()
+                    .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
+                [1.0, 1.0, 1.0, 1.0],
+                legaia_engine_ui::ui_text_lines::FLOOR_WINDOW_MARKED_INK,
+            ));
+        }
         let banners = self.banner_stage_draws(font);
         // In-battle overlay (HUD rows / encounter banner / command menus),
         // already in surface pixels - appended after the stage-space scale

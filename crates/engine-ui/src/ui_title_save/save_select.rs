@@ -456,6 +456,11 @@ pub struct BattleChromeRects {
     /// font glyphs seated on the same 8-px grid, so the layout survives
     /// even without the art.
     pub digits: Option<(u32, u32, u32, u32)>,
+    /// The red **cross-out X** (64x16) retail lays over a forbidden command
+    /// chip (`FUN_801DBC30`), baked out of the battle effect page. `None`
+    /// when the atlas was built without it; the chip then keeps its greyed
+    /// plate and `-` label with no mark.
+    pub cross_out: Option<(u32, u32, u32, u32)>,
 }
 
 /// Width and horizontal pitch of one HUD numeral cell

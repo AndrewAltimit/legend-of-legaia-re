@@ -81,14 +81,11 @@
 # prints in full; they are recorded here so the shortfall between
 # `rung_total` and `scenes * 6` is not mistaken for noise):
 #
-# - The rung-5 shortfall is two scenes. `izumi`'s C1-gated first-visit record
-#   relocates the player about thirty tiles with the pad released, so the
-#   driven run cannot beat its own control (the revisit probe walks four tiles
-#   normally). `korb3` is the one scene the seat fix costs: its object grid has
-#   no `0x1000` cell, so it used to keep the unresolved retail seat and walk
-#   from it, and it now resolves to its main region's centroid, where pad
-#   locomotion does not move. That is a seat-pick question, not a walk one -
-#   the same fix is what makes `kor5` walk and leave.
+# - The rung-5 shortfall is the ending scenes whose vignette record holds the
+#   pad (below). `izumi` clears it now that the settle waits out its
+#   first-visit record. `korb3` stops a rung earlier, at rung 4: its seat
+#   fires a sign-text record that waits on a press (below). It had scored
+#   rung 4 only because the settle returned before the record started.
 #
 # - All five of the late Uru Mais / Drake scenes now leave, and Parts D/E/E2
 #   say exactly how: `uru` -> `map03`, `urudre1` / `urudre3` -> `uru`,
@@ -97,6 +94,47 @@
 #   carries no `0x3F` at all, so the static exit-site join cannot see it and
 #   the scene still stops at rung 6 in the table while Part E drives it out).
 
+#
+# WHY THE NUMBERS WENT DOWN: 432 -> 415, full ladder 64 -> 58
+#
+# Two changes, each a correction of what the ladder was measuring:
+#
+# - Helper records hold the pad. Retail's script runner `FUN_80039B7C`
+#   raises the player's engaged bit for every context it steps and clears it
+#   only on the context's closing raw `0x21`; `FUN_801D1344` skips the pad
+#   controller while the bit is up (`field-locomotion.md`, "Where the 294
+#   vsyncs go"). The engine used to hold the pad for the modal timeline only,
+#   so a concurrent helper and the pad both drove the player. With helpers
+#   holding it from their first slice, eight ending scenes (`edbubu`,
+#   `edbylon`, `eddoman`, `edkorout`, `edretoin`, `edson`, `edstati3`,
+#   `edteien`) stop scoring a walk: each entry spawns a long vignette record
+#   (camera moves, turns, frame waits) and the pad no longer walks the player
+#   under it. Those rungs had been crediting the defect.
+#   `izumi` gains its rung 5 (4 -> 5): the pad now beats the released-pad
+#   control once its first-visit record has run out.
+# - The settle waits for spawns. `settle` used to test "no helper" on the
+#   entry frame, before the entry script's op-`0x44` spawns had queued, so it
+#   returned at once and the walk probe ran under the record. It now ticks
+#   twice first and also waits for the spawn queue. `korout` then scores its
+#   walk (its first-visit record walks the player eight tiles and ends);
+#   `korb3` (4 -> 3) and `edlast` (5 -> 3) show what they had hidden. The
+#   `pc=` in their notes is the scene's OWN entry script (the field VM's
+#   `field_pc`), not the record that holds the pad, so it read as two
+#   stalls. Neither is one, and neither is expected to come back:
+#   - `korb3`: the picker seat lands on tile (37,27), a gate-1 walk-on band
+#     whose `P2[15]` is three pages of sign text; the timeline waits on the
+#     press to dismiss them, as retail's text box does. Seated where retail
+#     arrives from `korb2` (tile (37,39)), the first-visit `P2[1]` fires
+#     instead and waits on its own dialogue. A released-pad settle passes
+#     neither.
+#   - `edlast`: `P2[1]` is the end-credits vignette, about 14100 vsyncs long,
+#     and it closes on a held-pad poll (`4A 08 00` / `42 01 08` / `42 01 09` /
+#     `26` back) that waits for Circle or Cross. Retail holds the pad the
+#     whole time (the ending states hold the engaged bit), so rung 4 never
+#     clears under a released pad. The port used to read that poll loop as a
+#     wrapped choreography and drop the record, which would have released
+#     the pad at about 14113 ticks; it now waits.
+
 scenes = 74
-rung_total = 432
-full_ladder = 64
+rung_total = 415
+full_ladder = 58

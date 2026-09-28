@@ -1082,7 +1082,15 @@ pub(super) fn cmd_play_window_with_record(
                 &pill_bytes,
                 menu_glyph_tim_bytes.as_deref(),
             ) {
-                Ok(a) => {
+                Ok(mut a) => {
+                    // The red cross-out X lives on the battle effect page, not
+                    // the system-UI sheet; bake it into the same atlas so it
+                    // draws in the chip list (the browser page bakes it too).
+                    if let Ok(flame) = session.host.index.entry_bytes_extended(
+                        legaia_engine_core::save_menu_atlas::FLAME_ATLAS_PROT_ENTRY,
+                    ) {
+                        legaia_engine_core::save_menu_atlas::add_cross_out_mark(&mut a, &flame);
+                    }
                     log::info!(
                         "play-window: save-menu atlas built ({}x{}) - 9-slice from PROT.DAT[0x018E0] + pills from PROT 0899",
                         a.width,
@@ -1152,14 +1160,9 @@ pub(super) fn cmd_play_window_with_record(
                 legaia_engine_core::publisher_logos::PublisherLogosSession::new(),
             )
         } else {
-            let snapshots = scan_save_dir(save_dir);
-            let any_present = snapshots.iter().any(|s| s.present)
-                || mounted_card.as_ref().is_some_and(|c| {
-                    legaia_engine_core::save_select::card_block_snapshots(c)
-                        .iter()
-                        .any(|s| s.present)
-                });
-            BootUiState::Title(super::boot_cutscene::title_session(any_present))
+            BootUiState::Title(super::boot_cutscene::title_session(
+                super::boot_cutscene::rack_has_save(save_dir, mounted_card.as_ref()),
+            ))
         }
     } else {
         BootUiState::Inactive
@@ -1276,8 +1279,9 @@ pub(super) fn cmd_play_window_with_record(
         extracted_root: disc.map_or_else(|| Some(extracted_root.to_path_buf()), |_| None),
         disc_path: disc.map(|d| d.to_path_buf()),
         cutscene: None,
-        cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
-        cutscene_cam_frames: 0,
+        movie_score: legaia_engine_core::movie_audio::MovieScore::new(),
+        cutscene_glide: legaia_engine_core::frame_step::CutsceneGlide::new(),
+        sim_stepper: legaia_engine_core::frame_step::SimStepper::new(),
         active_dialog: None,
         seru_names: None,
         dynamic_lighting,

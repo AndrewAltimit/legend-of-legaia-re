@@ -16,34 +16,85 @@
 //! (`FUN_8001BE80`). This module owns the playhead: it pre-decodes every
 //! frame of a clip and emits one [`PoseFrame`] per engine tick, which the
 //! host's posed-mesh rebuild consumes exactly like the battle
-//! [`crate::battle_anim::MonsterAnimPlayer`] output.
+//! [`crate::battle_anim::MonsterAnimPlayer`] output. A clip whose record
+//! carries the blend gate is posed between two keyframes on the ticks that
+//! fall inside a frame, through the same blender
+//! ([`legaia_asset::player_anm::blend_bone_transform`]) the prop path samples
+//! through.
 
 use legaia_anm::PoseFrame;
-use legaia_asset::player_anm::PlayerAnmBundle;
+use legaia_asset::player_anm::{BoneTransform, PlayerAnmBundle, blend_bone_transform};
 
-/// Engine ticks per clip frame. The clip streams carry no rate byte of their
-/// own (unlike the monster-archive `+0x78` rate); retail advances the field
-/// anim on the 30 Hz field tick while the host renders at 60, so two host
-/// ticks per clip frame reproduces the retail cadence (a 15-frame walk loop
-/// ≈ half a second per cycle).
-pub const DEFAULT_TICKS_PER_FRAME: u32 = 2;
+/// The clip rate `actor+0x6A` a field actor plays at: the placed-object
+/// template's `0x10` halved by `FUN_8003A55C`, and the value the player's
+/// pad step stamps every frame it runs (`FUN_801D01B0`). The frame cursor is
+/// in 1/16-frame units, so at this rate an ungated clip advances one frame
+/// every two engine ticks (one tick = one vsync, the frame step `1`).
+pub const CLIP_RATE: u16 = 8;
 
-/// Looping playback over one locomotion clip: all frames pre-decoded to the
-/// `(translation, rotation)` pairs [`PoseFrame`] carries, one frame advance
-/// every [`FieldClipPlayer::ticks_per_frame`] ticks.
+/// The cursor step one retail clip tick adds, in 1/16-frame units, before the
+/// frame-step scalar `DAT_1F800393` multiplies it (the port's tick is one
+/// vsync, so that scalar is `1`).
+///
+/// A clip whose header carries the blend gate (clip byte `+1` bit 0 - the
+/// same bit the frame blender tests) takes the **scaled** step
+/// `(rate * 2 + div - 1) / div`, `div` being clip byte `+6`
+/// (`0x800205C8..0x800205E0`); every other clip steps by the rate itself. At
+/// [`CLIP_RATE`] that is `16 / 8 / 6 / 4 / 3` for divisors `1 / 2 / 3 / 4 / 6`,
+/// so the divisor-4 clips (the disc's most common gated shape) play at half
+/// the ungated speed, their in-between ticks posed by the blender.
+///
+/// A gated clip with divisor `0` would divide by zero in retail; no record on
+/// the disc has one, and the port falls back to the rate.
+///
+/// PORT: FUN_800204F8 (the step select at `0x800205B4..0x800205EC`)
+pub fn clip_step(rate: u16, gated: bool, div: u8) -> u16 {
+    if gated && div != 0 {
+        // Retail's `(rate * 2 + div - 1) / div`: a ceiling division.
+        (u32::from(rate) * 2).div_ceil(u32::from(div)) as u16
+    } else {
+        rate
+    }
+}
+
+/// Ticks from a clip's bind (cursor `0`) to the tick that latches its end
+/// flag `0x100`: the first tick whose cursor reaches `frames * 16 - 1`
+/// (`0x800206E4..0x8002072C`), i.e. `ceil((frames * 16 - 1) / step)`. A
+/// looping clip wraps to `0` on that same tick, so this is also its loop
+/// period. `0` when `frames` is `0` (no clip to time).
+///
+/// REF: FUN_800204F8
+pub fn clip_end_ticks(frames: u16, step: u16) -> u32 {
+    if frames == 0 {
+        return 0;
+    }
+    (u32::from(frames) * 16 - 1).div_ceil(u32::from(step.max(1)))
+}
+
+/// Looping playback over one field clip: all frames pre-decoded to the
+/// `(translation, rotation)` pairs [`PoseFrame`] carries, walked by retail's
+/// frame cursor - `1/16`-frame units, [`Self::step`] of them a tick, wrapping
+/// to `0` on the tick it reaches the clip's last position.
 #[derive(Debug, Clone)]
 pub struct FieldClipPlayer {
     /// Per-frame, per-bone rigid transforms (`bone_outputs` rows).
     frames: Vec<Vec<([i16; 3], [i16; 3])>>,
-    frame: usize,
-    counter: u32,
-    /// Engine ticks between frame advances (min 1).
-    pub ticks_per_frame: u32,
+    /// The frame cursor `actor+0x68`, in 1/16-frame units. Always a multiple
+    /// of [`Self::step`]: a rewind zeroes it and every tick adds one step.
+    cursor: u32,
+    /// Cursor units added per engine tick ([`clip_step`]).
+    step: u32,
+    /// The record's blend gate ([`legaia_asset::player_anm::PlayerAnmRecord::blends`]):
+    /// set, a cursor that falls inside a frame poses between it and the next.
+    blend: bool,
 }
 
 impl FieldClipPlayer {
     /// Pre-decode record `record_index` of a locomotion bundle. `None` when
     /// the record is out of range / malformed or carries no frames.
+    ///
+    /// The step is the record's own: [`clip_step`] at [`CLIP_RATE`] with the
+    /// header's gate and divisor.
     pub fn from_record(bundle: &PlayerAnmBundle, record_index: usize) -> Option<Self> {
         let rec = bundle.record(record_index).ok()?;
         let (bones, frame_count) = (rec.bone_count as usize, rec.frame_count as usize);
@@ -62,11 +113,12 @@ impl FieldClipPlayer {
             }
             frames.push(row);
         }
+        let blend = rec.blends();
         Some(Self {
             frames,
-            frame: 0,
-            counter: 0,
-            ticks_per_frame: DEFAULT_TICKS_PER_FRAME,
+            cursor: 0,
+            step: u32::from(clip_step(CLIP_RATE, blend, (rec.flag & 0xFF) as u8)),
+            blend,
         })
     }
 
@@ -80,20 +132,60 @@ impl FieldClipPlayer {
         self.frames.len()
     }
 
-    /// Index of the frame the *next* [`Self::tick`] will emit. A clip is a
-    /// short loop over a fixed set of poses, so this doubles as a cache key: a
-    /// host that rebuilds a posed mesh per frame can memoise it on
-    /// `(actor, frame())` and skip the rebuild whenever the playhead revisits a
-    /// frame it has already seen.
+    /// Cursor units the playhead advances per engine tick (`16` = one frame a
+    /// tick). See [`clip_step`].
+    pub fn step(&self) -> u32 {
+        self.step
+    }
+
+    /// Replace the per-tick step and restart the clip at frame 0 (the cursor
+    /// must stay a multiple of the step).
+    pub fn set_step(&mut self, step: u32) {
+        self.step = step.max(1);
+        self.rewind();
+    }
+
+    /// Engine ticks one pass of the clip takes: bind to end latch, which is
+    /// also the loop period. See [`clip_end_ticks`].
+    pub fn loop_ticks(&self) -> u32 {
+        let span = self.frames.len() as u32 * 16;
+        if span == 0 {
+            return 0;
+        }
+        (span - 1).div_ceil(self.step.max(1))
+    }
+
+    /// Index of the frame the *next* [`Self::tick`] will emit
+    /// (`cursor >> 4`, the draw walker's `frame`). A clip is a short loop
+    /// over a fixed set of poses, so this doubles as a cache key for a clip
+    /// that does not blend; [`Self::pose_key`] is the key that also covers
+    /// the blended in-between poses.
     pub fn frame(&self) -> usize {
-        self.frame
+        (self.cursor >> 4) as usize
+    }
+
+    /// The sub-frame fraction the playhead sits at, in the blender's 1/16
+    /// units: the cursor's low nibble. `0` when the clip's record does not
+    /// blend - retail's gate discards the low nibble then.
+    pub fn sub_frame(&self) -> u32 {
+        if !self.blend {
+            return 0;
+        }
+        self.cursor & 0xF
+    }
+
+    /// A key that changes exactly when [`Self::current_pose`] can: the frame
+    /// times 16 plus [`Self::sub_frame`]. What a host memoises a posed mesh
+    /// on, since [`Self::frame`] alone would alias the blended in-between
+    /// poses onto their keyframe.
+    pub fn pose_key(&self) -> usize {
+        self.frame() * 16 + self.sub_frame() as usize
     }
 
     /// Restart the clip at frame 0 (called on an idle↔walk switch so the
     /// incoming loop starts at its first keyframe).
     pub fn rewind(&mut self) {
-        self.frame = 0;
-        self.counter = 0;
+        self.cursor = 0;
     }
 
     /// Emit the current frame's pose and advance the playhead (wrapping -
@@ -108,9 +200,33 @@ impl FieldClipPlayer {
     /// render rate is decoupled from the sim rate read the pose here every
     /// redraw and call [`Self::advance`] once per *sim tick*, so the clip
     /// plays at the retail cadence regardless of display refresh rate.
+    ///
+    /// A blend-gated clip between keyframes is posed by retail's frame
+    /// blender: toward the next frame, wrapping to frame 0 after the last (the
+    /// loop arm of the next-entry rule - these clips loop).
+    ///
+    /// REF: FUN_8001BE80
     pub fn current_pose(&self) -> PoseFrame {
+        let frac = self.sub_frame();
+        let frame = self.frame().min(self.frames.len() - 1);
+        let bone_outputs = if frac == 0 {
+            self.frames[frame].clone()
+        } else {
+            let next = &self.frames[(frame + 1) % self.frames.len()];
+            self.frames[frame]
+                .iter()
+                .zip(next)
+                .map(|(c, n)| {
+                    let t = blend_bone_transform(row_bone(c), row_bone(n), frac as i32);
+                    (
+                        [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                        [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                    )
+                })
+                .collect()
+        };
         PoseFrame {
-            bone_outputs: self.frames[self.frame].clone(),
+            bone_outputs,
             factor: 0,
             finished: false,
         }
@@ -118,14 +234,32 @@ impl FieldClipPlayer {
 
     /// Advance the playhead by `n` engine ticks (`0` = hold the frame). O(1)
     /// in `n`; equivalent to `n` post-emit advances of [`Self::tick`].
+    ///
+    /// Each tick adds the step, and the tick that reaches the clip's last
+    /// position (`frames * 16 - 1`) wraps the cursor to `0` rather than
+    /// carrying the overshoot (`FUN_800204F8`'s loop arm stores zero), so the
+    /// cursor walks `0, step, 2*step, ...` with period [`Self::loop_ticks`].
     pub fn advance(&mut self, n: u32) {
         if n == 0 || self.frames.is_empty() {
             return;
         }
-        let tpf = self.ticks_per_frame.max(1);
-        let total = self.counter + n;
-        self.counter = total % tpf;
-        self.frame = (self.frame + (total / tpf) as usize) % self.frames.len();
+        let step = self.step.max(1);
+        let period = u64::from(self.loop_ticks().max(1));
+        let k = (u64::from(self.cursor / step) + u64::from(n)) % period;
+        self.cursor = k as u32 * step;
+    }
+}
+
+/// A pre-decoded `(translation, rotation)` row back as the decoder's type.
+/// Lossless: the row holds the decode's 16-bit values verbatim.
+fn row_bone(r: &([i16; 3], [i16; 3])) -> BoneTransform {
+    BoneTransform {
+        t_x: r.0[0].into(),
+        t_y: r.0[1].into(),
+        t_z: r.0[2].into(),
+        r_x: r.1[0].into(),
+        r_y: r.1[1].into(),
+        r_z: r.1[2].into(),
     }
 }
 
@@ -281,7 +415,8 @@ impl FieldPlayerAnim {
 
     /// Queue a scripted one-shot clip (an `A2 F8` ExecMove resolution). The
     /// clip starts at frame 0 when it reaches the front of the queue and
-    /// plays `frame_count * ticks_per_frame` engine ticks.
+    /// plays [`FieldClipPlayer::loop_ticks`] engine ticks - its own step, so
+    /// a gated clip's pass takes as long as retail's end latch does.
     pub fn push_scripted(&mut self, mut clip: FieldClipPlayer) {
         clip.rewind();
         self.scripted.push_back(clip);
@@ -326,8 +461,7 @@ impl FieldPlayerAnim {
         if let Some(front) = self.scripted.front_mut() {
             if self.scripted_ticks_left == 0 {
                 // Freshly-promoted front clip: arm its full playthrough.
-                self.scripted_ticks_left =
-                    (front.frame_count() as u32) * front.ticks_per_frame.max(1);
+                self.scripted_ticks_left = front.loop_ticks().max(1);
             }
             let pose = front.tick();
             self.scripted_ticks_left = self.scripted_ticks_left.saturating_sub(1);
@@ -459,7 +593,7 @@ mod tests {
     fn clip_player_decodes_and_wraps() {
         let bundle = synth_bundle();
         let mut p = FieldClipPlayer::from_record(&bundle, 0).expect("record 0");
-        p.ticks_per_frame = 1;
+        p.set_step(16);
         assert_eq!(p.bone_count(), 2);
         assert_eq!(p.frame_count(), 3);
         // Frames 0,1,2 then wrap to 0.
@@ -478,20 +612,18 @@ mod tests {
     #[test]
     fn advance_matches_sequential_ticks() {
         let bundle = synth_bundle();
-        for tpf in [1u32, 2, 3] {
-            for n in 0..10u32 {
+        for step in [16u32, 8, 6, 4, 3] {
+            for n in 0..20u32 {
                 let mut seq = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+                seq.set_step(step);
                 let mut jump = seq.clone();
-                seq.ticks_per_frame = tpf;
-                jump.ticks_per_frame = tpf;
                 for _ in 0..n {
                     let _ = seq.tick();
                 }
                 jump.advance(n);
-                assert_eq!(seq.frame, jump.frame, "frame after {n} ticks (tpf={tpf})");
                 assert_eq!(
-                    seq.counter, jump.counter,
-                    "counter after {n} ticks (tpf={tpf})"
+                    seq.cursor, jump.cursor,
+                    "cursor after {n} ticks (step={step})"
                 );
                 assert_eq!(
                     seq.current_pose().bone_outputs,
@@ -507,7 +639,7 @@ mod tests {
     fn current_pose_does_not_advance() {
         let bundle = synth_bundle();
         let mut p = FieldClipPlayer::from_record(&bundle, 0).unwrap();
-        p.ticks_per_frame = 1;
+        p.set_step(16);
         let a = p.current_pose();
         let b = p.current_pose();
         assert_eq!(a.bone_outputs, b.bone_outputs);
@@ -522,10 +654,101 @@ mod tests {
     fn ticks_per_frame_holds_frames() {
         let bundle = synth_bundle();
         let mut p = FieldClipPlayer::from_record(&bundle, 0).unwrap();
-        p.ticks_per_frame = 2;
+        p.set_step(8);
         assert_eq!(p.tick().bone_outputs[0].0[0], 0);
         assert_eq!(p.tick().bone_outputs[0].0[0], 0);
         assert_eq!(p.tick().bone_outputs[0].0[0], 10);
+    }
+
+    #[test]
+    fn a_blend_gated_clip_poses_the_in_between_tick() {
+        let mut bundle = synth_bundle();
+        // Raise record 0's blend gate (clip byte +1 bit 0).
+        bundle.decoded[bundle.record_offsets[0] as usize + 1] |= 1;
+        let mut p = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        p.set_step(8);
+        let mut seen = Vec::new();
+        let mut keys = Vec::new();
+        for _ in 0..6 {
+            keys.push(p.pose_key());
+            seen.push(p.tick().bone_outputs[0].0[0]);
+        }
+        // Keyframes 0 / 10 / 20 exact on the even ticks; half-way between on
+        // the odd ones, the last one wrapping toward frame 0.
+        assert_eq!(seen, vec![0, 5, 10, 15, 20, 10]);
+        assert_eq!(keys, vec![0, 8, 16, 24, 32, 40]);
+        // The ungated record keeps whole frames and frame-only keys.
+        let mut q = FieldClipPlayer::from_record(&bundle, 1).unwrap();
+        q.set_step(8);
+        q.advance(1);
+        assert_eq!(q.pose_key(), 0);
+        assert_eq!(q.current_pose().bone_outputs[0].0[0], 100);
+    }
+
+    /// The step select of `FUN_800204F8` at the template rate: ungated
+    /// clips step by the rate, gated ones by `(rate*2 + div - 1) / div`.
+    #[test]
+    fn clip_step_matches_the_retail_select() {
+        assert_eq!(
+            clip_step(CLIP_RATE, false, 4),
+            8,
+            "ungated ignores the divisor"
+        );
+        let gated: Vec<u16> = [1u8, 2, 3, 4, 6]
+            .iter()
+            .map(|&d| clip_step(CLIP_RATE, true, d))
+            .collect();
+        assert_eq!(gated, vec![16, 8, 6, 4, 3]);
+        assert_eq!(clip_step(CLIP_RATE, true, 0), CLIP_RATE, "div 0 falls back");
+        // A script's `4C 41` rate (`16` = a door's one frame a tick).
+        assert_eq!(clip_step(16, true, 4), 8);
+    }
+
+    /// The end latch lands on the first tick whose cursor reaches the last
+    /// position; at the ungated step that is the old two-ticks-a-frame length,
+    /// at divisor 4 twice it, and the player's loop period agrees.
+    #[test]
+    fn clip_end_ticks_is_the_first_tick_at_the_last_position() {
+        for frames in 1u16..=20 {
+            for step in [16u16, 8, 6, 4, 3] {
+                let last = u32::from(frames) * 16 - 1;
+                let mut cursor = 0u32;
+                let mut ticks = 0u32;
+                loop {
+                    cursor += u32::from(step);
+                    ticks += 1;
+                    if cursor >= last {
+                        break;
+                    }
+                }
+                assert_eq!(
+                    clip_end_ticks(frames, step),
+                    ticks,
+                    "{frames} frames, step {step}"
+                );
+            }
+            assert_eq!(clip_end_ticks(frames, 8), u32::from(frames) * 2);
+            assert_eq!(clip_end_ticks(frames, 4), u32::from(frames) * 4);
+        }
+        assert_eq!(clip_end_ticks(0, 8), 0);
+    }
+
+    /// A gated divisor-4 record plays at half the ungated speed: four ticks a
+    /// frame, the three in-between ticks posed a quarter, a half and three
+    /// quarters of the way to the next frame.
+    #[test]
+    fn a_divisor_four_gated_clip_plays_at_half_speed() {
+        let mut bundle = synth_bundle();
+        let off = bundle.record_offsets[0] as usize;
+        bundle.decoded[off + 1] |= 1; // the gate
+        bundle.decoded[off + 6] = 4; // the divisor
+        let mut p = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        assert_eq!(p.step(), 4);
+        assert_eq!(p.loop_ticks(), 12, "3 frames x 4 ticks");
+        let seen: Vec<i16> = (0..13).map(|_| p.tick().bone_outputs[0].0[0]).collect();
+        // Keyframes 0 / 10 / 20 on every fourth tick; frame 2 blends toward
+        // frame 0 (the loop wrap) before the cursor returns to 0.
+        assert_eq!(seen, vec![0, 2, 5, 7, 10, 12, 15, 17, 20, 15, 10, 5, 0]);
     }
 
     #[test]
@@ -539,8 +762,8 @@ mod tests {
         let bundle = synth_bundle();
         let mut idle = FieldClipPlayer::from_record(&bundle, 1).unwrap();
         let mut walk = FieldClipPlayer::from_record(&bundle, 0).unwrap();
-        idle.ticks_per_frame = 1;
-        walk.ticks_per_frame = 1;
+        idle.set_step(16);
+        walk.set_step(16);
         w.set_field_player_anim(Some(FieldPlayerAnim::new(idle, walk)));
         // Standing frame: idle clip pose lands in the player's pose_frame.
         w.set_pad(0);
@@ -570,15 +793,15 @@ mod tests {
         let bundle = synth_bundle();
         let mut idle = FieldClipPlayer::from_record(&bundle, 1).unwrap();
         let mut walk = FieldClipPlayer::from_record(&bundle, 0).unwrap();
-        idle.ticks_per_frame = 1;
-        walk.ticks_per_frame = 1;
+        idle.set_step(16);
+        walk.set_step(16);
         let mut anim = FieldPlayerAnim::new(idle, walk);
         // Queue the "walk" record (tags 0/10/20) then the "idle" record
         // (tags 100/110) as scripted clips.
         let mut a = FieldClipPlayer::from_record(&bundle, 0).unwrap();
-        a.ticks_per_frame = 1;
+        a.set_step(16);
         let mut b = FieldClipPlayer::from_record(&bundle, 1).unwrap();
-        b.ticks_per_frame = 1;
+        b.set_step(16);
         anim.push_scripted(a);
         anim.push_scripted(b);
         assert!(anim.scripted_active());
@@ -600,8 +823,8 @@ mod tests {
         let bundle = synth_bundle();
         let mut idle = FieldClipPlayer::from_record(&bundle, 1).unwrap();
         let mut walk = FieldClipPlayer::from_record(&bundle, 0).unwrap();
-        idle.ticks_per_frame = 1;
-        walk.ticks_per_frame = 1;
+        idle.set_step(16);
+        walk.set_step(16);
         let mut anim = FieldPlayerAnim::new(idle, walk);
         // Standing: idle record (tag 100+).
         assert_eq!(anim.tick().bone_outputs[0].0[0], 100);

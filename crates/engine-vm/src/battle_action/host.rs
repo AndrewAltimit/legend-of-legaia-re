@@ -548,6 +548,20 @@ pub trait BattleActionHost {
         true
     }
 
+    /// The special-battle word `_DAT_8007BAC0` (see
+    /// [`crate::battle_formulas::special_battle_wipe`]). Default `0` - an
+    /// ordinary battle.
+    fn special_battle_word(&self) -> u32 {
+        0
+    }
+
+    /// Actor `slot`'s retail `+0x16E` status word. The default is the raw
+    /// [`BattleActor::field_flags`]; a host that keeps some ailments in a
+    /// typed tracker ORs their packed bits in.
+    fn status_word(&self, slot: u8) -> u16 {
+        self.actor(slot).map_or(0, |a| a.field_flags)
+    }
+
     /// Iteration helper - total slot count (default `8`).
     fn slot_count(&self) -> u8 {
         ACTOR_SLOTS as u8

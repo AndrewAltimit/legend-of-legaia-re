@@ -119,7 +119,7 @@ local function dump_vram(name)
     -- (its GPU section carries the 1 MiB VRAM; extracted offline).
     local ok2, err2 = pcall(function()
         local w = PCSX.createSaveState()
-        local fh = Support.File.open(probe.out_path(name .. ".rawsstate"), "CREATE")
+        local fh = Support.File.open(probe.out_path(name .. ".rawsstate"), "TRUNCATE")
         fh:writeMoveSlice(w); fh:close()
     end)
     if not ok2 then

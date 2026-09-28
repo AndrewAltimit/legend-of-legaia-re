@@ -23,8 +23,9 @@ pub struct BattleState {
     /// (see [`vm::battle_formulas::battle_init_special_word`] /
     /// [`vm::battle_formulas::formation_roll_special_word`]). Read by the Ra-Seru
     /// chip ([`crate::battle_hud::battle_magic_chip`]) and its arm
-    /// (`World::tick_battle_command`). The other readers of the word - the drop,
-    /// steal, capture and spell-XP gates - still read only the dome's word.
+    /// (`World::tick_battle_command`). Every `!= 0` reader - the gold, EXP,
+    /// drop, steal, capture, spell-XP and monster-flee gates - reads it through
+    /// [`crate::world::World::special_battle_word`], together with the arena's.
     pub special_word: u32,
     /// Per-slot weapon attack used by [`art_strike::apply_art_strike`] to
     /// compute Tactical-Art damage. Engines populate from the active
@@ -429,10 +430,8 @@ pub struct BattleState {
     /// battle loader picks its stat boost profile
     /// ([`crate::monster_catalog::MonsterDef::installed_stats`]), the escape
     /// roll refuses to flee ([`crate::world::BattleState::no_escape`], which
-    /// is the port's older and narrower latch on the same byte - set by the
-    /// field VM's scripted-battle op rather than derived from the formation),
-    /// and the Seru side-effect stager runs its suppression roll and its
-    /// base-vs-record compares.
+    /// battle entry sets to this same value), and the Seru side-effect stager
+    /// runs its suppression roll and its base-vs-record compares.
     ///
     /// Seeded at [`crate::world::World::enter_battle_from_formation`];
     /// cleared by [`crate::world::World::finish_battle`].
@@ -440,13 +439,15 @@ pub struct BattleState {
     /// REF: FUN_800513F0, FUN_801DA51C, FUN_80054CB0, FUN_801F3D3C
     pub scripted_fight: bool,
     /// Scripted "can't run from this battle" flag (retail battle ctx
-    /// `+0x287`, the input `FUN_801E791C`'s escape roll tests). Set when a
-    /// battle enters through the field-VM scripted-battle op
-    /// ([`crate::world::World::trigger_scripted_battle`]) - the boss rows carry a non-zero
-    /// first header byte the retail reader ORs `0x80` into a battle-setup
-    /// flag for - so a staged boss fight refuses the Run command (fleeing
-    /// would leave the stager's marker set and let the post-victory record
-    /// spawn unearned). Cleared by [`crate::world::World::finish_battle`].
+    /// `+0x287`, the input `FUN_801E791C`'s escape roll, the monster flee
+    /// roll and the formation roll all test). Battle entry
+    /// ([`crate::world::World::enter_battle_from_formation`]) sets it to
+    /// [`Self::scripted_fight`], which the formation row's `record[+0]` header
+    /// byte decides - not the way the fight was entered: the field-VM
+    /// scripted-battle op writes no flag, and a `3E FF` row with a zero header
+    /// byte (the Rim Elm ambush) lets the party run. A value raised before
+    /// entry is kept (hosts and tests use it to pin a fight). Cleared by
+    /// [`crate::world::World::finish_battle`].
     pub no_escape: bool,
     /// One-per-pass latch for the monster flee roll (`FUN_801EC0DC`). Retail's
     /// action picker `FUN_801E9FD4` keeps a balance counter (`s8`, cleared at

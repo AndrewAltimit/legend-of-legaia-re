@@ -134,7 +134,7 @@ fn stay_at_the_inn(world: &mut World, slot: u8, option: usize) -> u32 {
             .inline
             .as_ref()
             .and_then(|d| d.panel.as_ref())
-            .is_some_and(|p| p.menu_active());
+            .is_some_and(|p| p.picker_takes_input());
         let waiting = world
             .dialog
             .inline

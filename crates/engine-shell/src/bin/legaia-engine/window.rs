@@ -298,25 +298,6 @@ pub(crate) fn write_capture_png(path: &Path, img: &CaptureImage) -> Result<()> {
     Ok(())
 }
 
-/// One assembled party member ready for the battle render:
-/// `(assembled character, texture uploads, idle clip, per-slot action clips,
-/// art-animation bank, per-slot face tracks, per-art-record face tracks)`.
-/// The action clips cover the record[0] slots plus the equipment-spliced
-/// weapon swings (runtime slots `0xC..0xF`); the bank and its face tracks
-/// are indexed by art record (staged id `- 0x10`) for the `FUN_8004AD80`
-/// commit. Produced by `PlayWindowApp::assembled_party_battle_mesh`.
-type AssembledPartyMesh = (
-    legaia_asset::battle_char_assembly::AssembledCharacter,
-    Vec<legaia_asset::battle_char_assembly::TextureUpload>,
-    legaia_asset::monster_archive::MonsterAnimation,
-    Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
-    Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
-    Vec<Option<legaia_asset::face_anim::FaceTracks>>,
-    Vec<Option<legaia_asset::face_anim::FaceTracks>>,
-    // The art bank's records - the arts the queue-builder matches.
-    Vec<legaia_asset::battle_char_assembly::ArtAnimRecord>,
-);
-
 /// The uploaded mesh slots of one **posed** static-object placement: the
 /// frame-0 rest pose of a multi-object env prop baked into a textured and/or an
 /// untextured mesh. Either half can be absent (a prop with no textured prims,
@@ -1123,14 +1104,19 @@ struct PlayWindowApp {
     /// `Some`, world ticks are suspended and the window shows the video; the
     /// world resumes once the frames drain.
     cutscene: Option<WindowedCutscene>,
+    /// What the movie in flight did to the score - the engine-side policy
+    /// the browser page's FMV lane consults too
+    /// ([`legaia_engine_core::movie_audio::MovieScore`]).
+    movie_score: legaia_engine_core::movie_audio::MovieScore,
     /// Eases the in-engine cutscene camera between Camera Configure beats so
-    /// the opening choreography blends instead of cutting. Reset (snaps) while
-    /// no cutscene timeline is active.
-    cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp,
-    /// `World::clock.display_frames` at the last cutscene-camera glide step. The
-    /// interp advances in retail DISPLAY frames (the op-`0x45` `apply` unit),
-    /// so the step count is this counter's delta, not the sim-tick count.
-    cutscene_cam_frames: u64,
+    /// the opening choreography blends instead of cutting, on the shared
+    /// retail-display-frame clock (`frame_step::CutsceneGlide`, the browser
+    /// page's twin). Reset (snaps) while no cutscene timeline is active and
+    /// on every scene entry.
+    cutscene_glide: legaia_engine_core::frame_step::CutsceneGlide,
+    /// Wall-clock to sim-tick accumulator: the shared frame-step rule
+    /// (`frame_step::SimStepper`) the browser page drains through too.
+    sim_stepper: legaia_engine_core::frame_step::SimStepper,
     /// Active dialog box, mirroring `World::dialog.current`. Opened from the
     /// scene's MES container the frame a dialog request appears (field-VM
     /// op `0x3F` or the overworld talk-to), ticked for its typewriter reveal,

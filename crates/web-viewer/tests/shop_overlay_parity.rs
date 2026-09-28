@@ -101,7 +101,17 @@ fn shop_opens_renders_and_releases_the_field_vm() {
     // `play_shop_input` every frame while the shop is up rather than only on
     // an edge - gating the tick on a keypress would strand the exit here, with
     // the field VM still suspended.
-    rt.play_shop_input(0);
+    //
+    // The Exit row routes through the `ShopExit` teardown screen, which holds
+    // a few frames before the menu reaches `Closed`; the shop owns the pad
+    // until then, on both hosts (`MenuRuntime::is_open`). The page used to
+    // report the shop closed the moment the session dropped, leaving the
+    // runtime parked on `ShopExit` with nothing left to tick it.
+    let mut frames = 0;
+    while rt.play_shop_is_open() && frames < 32 {
+        rt.play_shop_input(0);
+        frames += 1;
+    }
     assert!(!rt.play_shop_is_open(), "Exit closes the shop");
     assert!(
         !rt.debug_field_shop_gate_held(),

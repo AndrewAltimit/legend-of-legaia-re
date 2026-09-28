@@ -599,13 +599,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "are banked by `Camera::route_camera_events`, which is the only thing "
         "that drains `FieldEvent::CameraConfigure` off the world queue - a "
         "host watching its own later event drain for them sees none. Both "
-        "cutscene interps must replay the shared bank",
+        "hosts step the glide through the shared `frame_step::CutsceneGlide`, "
+        "whose `advance` replays the bank before it glides and counts steps "
+        "on the world's display-frame clock (zero on an idle redraw)",
         "sites": {
-            "native": (NATIVE_CAMERA_MOD, "replay_camera_snap_beats"),
+            "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": (WEB_PLAY_CAMERA, "resolve_camera_frame"),
         },
         "mode": "symbols_all",
-        "symbols": ["take_camera_snap_beats"],
+        "symbols": ["cutscene_glide"],
     },
     {
         "what": "save-select phase layout, native vs play page - which pills "
@@ -674,10 +676,38 @@ SIM_PAIRS: list[dict[str, object]] = [
         "direct-entry sites must run `Camera::reset_for_scene_entry`",
         "sites": {
             "native": (NATIVE_BOOT, "enter_field_live"),
-            "web": (WEB_RUNTIME, "enter_field"),
+            "web": (WEB_RUNTIME, "enter_field_core"),
         },
         "mode": "symbols_all",
         "symbols": ["reset_for_scene_entry"],
+    },
+    {
+        "what": "resuming a loaded save, native vs play page - a Load or an "
+        "import lands through ONE landing order (the saved scene, else the "
+        "running scene, else the opening town; never a New Game). The page "
+        "used to choreograph it in play.html callbacks gated on its own "
+        "scene-picker list, and a title Continue naming a scene that list "
+        "did not carry fell through to a New Game over the loaded save. Both "
+        "hosts' resume entries must reach the shared kernel",
+        "sites": {
+            "native": (NATIVE_BOOT, "resume_save"),
+            "web": ("crates/web-viewer/src/resume.rs", "resume_parked_save"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["land_save"],
+    },
+    {
+        "what": "starting a New Game, native vs play page - the seeded slate "
+        "(`begin_new_game_seeded`) and the opening order (opdeene, else "
+        "town01) are one engine entry per host. The page used to seed and "
+        "enter from play.html callbacks, and its post-wipe title skipped "
+        "the seed entirely",
+        "sites": {
+            "native": (NATIVE_BOOT, "start_new_game"),
+            "web": ("crates/web-viewer/src/resume.rs", "start_new_game"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["enter_new_game", "begin_new_game"],
     },
     {
         "what": "coplanar draw lifts, native vs play page - every host that "
@@ -955,7 +985,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "off their world's pad pump, and three pieces are each a silent "
         "cross-wire if one host drops them: the raw-to-packed pad conversion "
         "(`retail_packed` - without it Up arrives as PACK_TRIANGLE and Cross "
-        "as PACK_DOWN), the EQUIP row's bag commit (`commit_equip_row` - "
+        "as PACK_DOWN), the EQUIP row's bag commit (inside `tick_host` - "
         "without it the row steps an id and never equips), and the Square "
         "records-page swap (`RECORDS_TOGGLE`)",
         "sites": {
@@ -963,7 +993,7 @@ SIM_PAIRS: list[dict[str, object]] = [
             "web": (WEB_PLAY_DEV_MENU, "tick_dev_menu"),
         },
         "mode": "symbols_all",
-        "symbols": ["retail_packed", "commit_equip_row", "RECORDS_TOGGLE"],
+        "symbols": ["retail_packed", "tick_host", "RECORDS_TOGGLE"],
     },
     {
         "what": "dev-records model - both hosts assemble the records page "

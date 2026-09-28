@@ -42,6 +42,7 @@ pub mod play_field_fx;
 pub mod play_field_hud;
 pub mod play_fishing;
 pub mod play_fmv;
+pub mod play_frame_step;
 pub mod play_host_parity;
 pub mod play_menu;
 pub mod play_minigame_arena;
@@ -55,6 +56,7 @@ pub mod play_world_map_markers;
 pub mod play_xa;
 pub mod player_anm;
 mod prot_locate;
+pub mod resume;
 pub mod rom_patcher;
 pub mod runtime;
 mod scene_export;
@@ -515,15 +517,20 @@ const WALK_FIELD_MAP_LEN: usize = 0x12000;
 ///   bundle's MAN slot (slot 2), the same bytes `Scene::field_floor_height_lut`
 ///   reads.
 ///
-/// Reuses [`legaia_asset::field_objects::build_walk_heightfield`] for the grid
-/// math. Returns `None` when either source can't be resolved.
+/// Reuses [`legaia_asset::field_objects::build_ground_heightfield`] for the grid
+/// math, with the overworld's cell gate. Returns `None` when either source can't be resolved.
 pub fn build_walk_ground(
     disc: &[u8],
     entries: &[EntryMeta],
     prot_base: u32,
 ) -> Option<legaia_asset::field_objects::WalkHeightfield> {
     let (map_bytes, lut) = resolve_walk_map_and_lut(disc, entries, prot_base)?;
-    let hf = legaia_asset::field_objects::build_walk_heightfield(map_bytes, &lut);
+    // A kingdom's ground is `FUN_801F89B8`'s, which tests no `0x1000` bit.
+    let hf = legaia_asset::field_objects::build_ground_heightfield(
+        map_bytes,
+        &lut,
+        legaia_asset::field_objects::GroundCellGate::TerrainRecord,
+    );
     (!hf.indices.is_empty()).then_some(hf)
 }
 

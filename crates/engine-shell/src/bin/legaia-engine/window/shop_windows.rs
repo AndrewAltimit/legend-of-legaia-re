@@ -534,38 +534,19 @@ impl PlayWindowApp {
         out
     }
 
-    /// Paint the casino **coin counter** (op-`0x49` sub-op 6) off the live
-    /// submode screen's cells - the digit-entry UI whose frame previously
-    /// ran headless (the state machine ticked, nothing drew). Empty without
-    /// the disc window table or while the screen is not the coin slot.
+    /// Paint the casino **coin counter** (op-`0x49` sub-op 6): the field
+    /// overlay's entry panel (record 10, `FUN_801E6F70`) and, during the
+    /// confirm, the three-line panel over it (record 11) - laid out by the
+    /// engine off the live submode screen, labels read off the disc, drawn
+    /// through the pen composition the browser play page shares.
     pub(super) fn coin_counter_window_draws(&self) -> Vec<TextDraw> {
-        let Some(table) = self.menu_window_table.as_ref() else {
-            return Vec::new();
-        };
-        let world = &self.session.host.world;
-        let screen = &world.field_vm.submode_screen;
-        if !screen.is_open()
-            || screen.actor.state != legaia_engine_vm::baka_hub_actors::slot::COIN_COUNTER
-        {
-            return Vec::new();
-        }
-        use legaia_engine_render::ui_prize_exchange as px;
-        let view = px::CoinCounterView {
-            digits: screen.counter.digits.to_vec(),
-            cursor: screen.counter.cursor,
-            ceiling: screen.counter.ceiling,
-            gold: world.party.money,
-            coins: world.minigames.casino_coins,
-            confirm_cursor: (screen.actor.sub == 2).then_some((screen.counter.yes_no & 1) as u8),
-        };
-        let (mut out, sprites, pict) = px::coin_counter_draws_for(&self.font, table, &view);
-        for s in sprites {
-            out.extend(self.painter_cursor_stand_in(s));
-        }
-        if let Some(p) = pict {
-            out.extend(self.painter_pictogram_stand_in(p));
-        }
-        out
+        let lines = self.session.host.coin_counter_lines();
+        legaia_engine_render::ui_text_lines::pen_line_draws_for(
+            &self.font,
+            lines
+                .iter()
+                .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.pen)),
+        )
     }
 
     fn shop_item_name(&self, id: u8) -> String {

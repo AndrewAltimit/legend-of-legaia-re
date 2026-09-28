@@ -69,7 +69,7 @@ local function write_checkpoint()
     local ok = pcall(function()
         local w = PCSX.createSaveState()
         local path = OUT_DIR .. "/" .. CKPT_LABEL .. ".rawsstate"
-        local fh = Support.File.open(path, "CREATE")
+        local fh = Support.File.open(path, "TRUNCATE")
         fh:writeMoveSlice(w); fh:close()
         log("checkpoint written: " .. path)
     end)

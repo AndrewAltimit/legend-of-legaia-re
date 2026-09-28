@@ -142,6 +142,12 @@ impl TestAudioSink {
         self.state.set_sequencer_paused(paused);
     }
 
+    /// Rewind the attached sequencer to its first event (mirror of
+    /// [`crate::AudioOut::rewind_sequencer`]).
+    pub fn rewind_sequencer(&mut self) {
+        self.state.rewind_sequencer();
+    }
+
     /// Whether the sequencer clock is currently gated.
     pub fn sequencer_paused(&self) -> bool {
         self.state.sequencer_paused
@@ -319,6 +325,36 @@ mod tests {
             p.finished,
             "the held note's off event and the end of track were still \
              reachable after the resume"
+        );
+    }
+
+    /// A rewind puts the playhead back on the first event and keys off what
+    /// was sounding, so the track plays again from its top once the gate is
+    /// open - the re-attach of op-`0x35` sub-op `4`.
+    #[test]
+    fn a_rewind_replays_the_track_from_its_first_event() {
+        let mut sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+        let bank = sink.with_spu(held_tone_bank);
+        sink.attach_sequencer(Sequencer::new(held_note_seq(), bank));
+        // Past the note-off at +2400 and the end of the track (2.5 s).
+        let _ = sink.render_frames(crate::SPU_INTERNAL_RATE as usize * 3);
+        let played = sink.sequencer_progress().expect("attached");
+        assert!(
+            played.tick > 0 && played.finished,
+            "the fixture ran out: {played:?}"
+        );
+        sink.set_sequencer_paused(true);
+        sink.rewind_sequencer();
+        let p = sink.sequencer_progress().expect("still attached");
+        assert_eq!(p.tick, 0, "the playhead is back on the first event");
+        assert!(!p.finished, "a rewound track is live again");
+        assert_eq!(p.active_notes, 0, "nothing sounds across the rewind");
+        sink.set_sequencer_paused(false);
+        let _ = sink.render_frames(4_410);
+        assert_eq!(
+            sink.sequencer_progress().expect("attached").active_notes,
+            1,
+            "the opening note keys on again"
         );
     }
 

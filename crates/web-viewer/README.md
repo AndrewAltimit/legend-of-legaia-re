@@ -262,8 +262,10 @@ on the host world at `load_disc` - and render through the exact same
 ports, confirming one plays the "Now checking. Do not remove MEMORY CARD"
 card-read beat, and the card's fifteen blocks then come up as retail's 5x3
 portrait grid with the focused block's info panel sliding up beneath it. Load
-lifts that block into the live world (`play_menu_take_load_scene` hands the page
-the save's scene so it can resume where it was written); Save raises the
+lifts that block into the live world and parks it; the page then lands it with
+one call, `play_resume_save` (`resume.rs`, over the shared
+`engine-core::resume::land_save`: the saved scene, else the running scene,
+else the opening town - never a New Game); Save raises the
 overwrite prompt and writes the session into the card image. The block-grid
 cursor is this crate's, not the session's - `SelectPhase::SlotPreview` ignores
 directions by design (see `docs/subsystems/save-screen.md`).

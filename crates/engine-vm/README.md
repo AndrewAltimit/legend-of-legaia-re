@@ -302,7 +302,7 @@ one framing read five different yaws.
 The projection every camera in the port runs through, held once below both
 hosts. `psx_camera_vp` is retail's
 `screen = H * (R * (v - focus) + tr_eye) / Ez` with `R = Rx * Ry * Rz`
-(`FUN_8001CF50`'s composition order) and the GTE control file's `(OFX, OFY)`,
+(the order `FUN_80026988` composes the camera's Euler angles in) and the GTE control file's `(OFX, OFY)`,
 written as one column-major 4x4; `psx_camera_eye` is its analytic inverse, the
 world-space lens. `battle_vp` above is this kernel with the battle pose's
 constants, so the field camera and the battle camera cannot diverge in their

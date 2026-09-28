@@ -791,10 +791,11 @@ system script the way the field arm does, which is what runs `map01`'s
 `crates/engine-shell/tests/world_map_fog_oracle.rs`.
 
 On the overworld each half-sheet is also depth-tested against the
-continent the frame already drew (`FogQuad::depth`, the particle's depth -
-the billboard's one depth and the one its OT bucket comes from), because retail links
+continent the frame already drew (`FogQuad::depth`), because retail links
 the sheets into the same ordering table as the terrain; the field keeps its
-composite-over-the-frame draw.
+composite-over-the-frame draw. The depth is the sheet's ordering-table
+bucket's, not its particle's - see [closing the draw
+order](#closing-the-draw-order-flat-per-primitive-terrain-depth).
 
 Frame-paired at `keikoku_chest_preload`'s seat, retail's haze shows mostly
 as the white band above the ridges while the port's sheets read denser and
@@ -837,14 +838,11 @@ draw (`crates/engine-core/tests/fog_sheet_colour_retail_capture_disc.rs`, which
 also pins the curvature table entry for entry). The one it misses is a
 borderline NCLIP case on a sheet `363` pixels wide.
 
-What still separates the frames:
+What separated the frames after that, and what still does:
 
-- **Draw order.** Retail links the sheets into the one ordering table with the
-  continent, so terrain in a nearer bucket overdraws the sheets behind it: an
-  opaque-coverage pass over the walked table hides about a fifth of the fog's
-  additive light. The port's overworld sheets are depth-tested per pixel at
-  the particle's depth, which hides almost nothing (the native frame's fog
-  delta moves from `26.7` to `25.3` of `255` with the test off).
+- **Draw order** - closed; see [below](#closing-the-draw-order-flat-per-primitive-terrain-depth).
+  It was never most of the difference: on the walked table the continent
+  covers about one percent of the fog's light.
 - **The curvature is per vertex on the continent, per sheet on the fog.**
   Both hosts' mesh shaders bend the continent by the same table
   ([`renderer.md`](renderer.md#frame-setup--present)), so sheet and ground
@@ -855,45 +853,86 @@ What still separates the frames:
 
 #### Closing the draw order: flat per-primitive terrain depth
 
-The difference is granularity. Retail compares the fog and the ground once
-per *primitive*, by ordering-table bucket: a continent prim in a nearer
-bucket covers every sheet behind it wherever the two overlap, even where the
-prim's own pixels lie farther than the sheet, and a sheet in a nearer bucket
-lands on a ridge whose far corner reaches past it. The port compares per
-*pixel*, which lets a sheet through wherever the ridge's pixel depth passes
-the sheet's - and a sheet is flat at its particle's depth while a ridge
-slopes toward the camera, so most of the fog survives. The fix gives the
-continent the ordering table's depth instead of its own:
+Retail compares the fog and the ground once per *primitive*, by
+ordering-table bucket: a continent cell in a nearer bucket covers every sheet
+linked behind it wherever the two overlap, whatever the per-pixel depths.
 
-1. **Pin the continent's bucket key.** The overworld mesh leaves (the
-   overlay-replaced per-mode renderers, [`world-map.md`](world-map.md))
-   take the key from `max(SZ) >> shift` or from `AVSZ` / `OTZ` as bit `0x10`
-   of the flags byte at `gp - 0x2D1` selects, with the shift at `gp + 0x90`.
-   Read both off `keikoku_chest_preload` (the state the fog oracle already
-   uses) and re-derive them from the leaf disassembly, so the continent's key
-   and the sheet's `(SZ - 0x10) >> 5` are on one scale.
-2. **Write the key as the continent's depth.** Each prim's vertices carry
-   the prim's model-space reference point (its centroid for `AVSZ`, all
-   corners for `max(SZ)`), the vertex shader projects it through the draw's
-   matrix to the bucket depth, passes it `@interpolate(flat)` and the
-   fragment shader writes it as the fragment depth - quantised to the bucket
-   width, so ties stay ties. Native: a vertex attribute on the scene
-   VRAM-mesh and colour-mesh pipelines, set only for the overworld's
-   continent draw. Browser: the same attribute in `webgl-tmd.js`
-   (`gl_FragDepth`, WebGL2). Everything else keeps per-pixel depth.
-3. **Test the sheet on the same scale.** `FogQuad::depth` becomes the
-   sheet's bucket depth quantised the same way, and an equal bucket resolves
-   by link order: a later `AddPrim` into a bucket draws first, so whichever
-   of the fog emitter and the continent's leaves links *later* in the frame
-   goes under the other. Which runs later is not pinned yet - read it off the
-   frame driver's call order before choosing `<` or `<=`.
-4. **Measure it against the walked table.** The oracle
-   (`fog_sheet_colour_retail_capture_disc.rs`) already rebuilds the 104
-   walked packets; add the continent's walked buckets and assert the port's
-   hidden share of additive light matches the table's opaque-coverage
-   estimate (about a fifth) rather than asserting pixels.
+**The continent's key.** The walk-view ground is not drawn through the
+overworld mesh leaves: it is `FUN_801F89B8` (PROT 0901), `jal`'d from
+`0x801F733C` at the end of the decoration sweep `FUN_801F69D8`, one
+`POLY_FT4` per map cell. Each column step `RTPT`s two new corners and keeps
+the previous step's two `SZ` values in the scratchpad, takes the largest of
+the four (`0x801F8DC8..0x801F8E04`), and links the cell at bucket
+`(max(SZ) >> 5) + 2` of `*0x1F8003F4` plus `0x30` bytes
+(`0x801F8E08..0x801F8E20`) - `(max(SZ) >> 5) + 14`, with no `>> shift`: the
+`0x1F8003A4` shift only forms the routine's unused far-bucket pointer
+(`0x801F89E8..0x801F89F8`). The fog links at `(SZ - 0x10) >> 5` of the same
+base pointer, so the two keys are on one scale. The `gp - 0x2D1` bit-`0x10`
+choice between `max(SZ) >> shift` and `AVSZ` that
+[`world-map.md`](world-map.md#per-slot-delta-vs-scus-sibling) records is the
+mesh leaves' (the landmarks'), not the ground's. Emitter disassembly read off
+`extracted/overlays/overlay_world_map_render_0901.bin` at base `0x801F69D8`.
 
-The per-vertex curvature stays as it is: it moves `SY`, not the key.
+**Checked against the walked table.** On `keikoku_chest_preload` the base
+pointer sits at bucket `22` of its table, and every fog half the port's
+render step reproduces (103 of the 104) is at bucket `22 + ((SZ - 0x10) >>
+5)`. Of the opaque `POLY_FT4`s the port's own heightfield reproduces (584 of
+675; the rest are landmark faces), 538 sit at `22 + (max(SZ) >> 5) + 14` of
+the port's projection and 32 one bucket off, where the port's rounded `SZ`
+lands across a bucket edge. Ties: in the eleven buckets holding both a sheet
+and a cell, every sheet precedes every cell in the chain - the fog links
+after the ground, so a cell covers a sheet in its own bucket
+(`crates/engine-core/tests/overworld_draw_order_retail_capture_disc.rs`).
+
+**The port.** Both hosts keep their depth buffer and give each continent cell
+and each sheet a *flat* depth, its bucket's
+(`legaia_engine_core::overworld_draw_order`): the bucket's representative
+`SZ` is `32 k + 32`, taken back to normalised depth through the draw's own
+matrix, and a sheet sits a quarter bucket behind the cells that share its
+bucket so the tie goes the chain's way. Ground vertices carry their cell's
+four corners (`ground_flat_refs`); the vertex shader re-projects them, takes
+the key and writes `z = ndc * w` on every vertex, so the whole cell rasterises
+at one depth (`overworld_flat_depth` in `engine-render`'s `VRAM_MESH_SHADER_SRC`,
+`overworldFlatDepth` in `site/js/webgl-shaders.js`, fed by
+`field_ground_flat_refs`). With depth writes on, the buffer holds per pixel
+the lowest bucket of any cell covering it - the cell retail draws last there.
+It applies only while the frame's curvature scale is non-zero (retail's
+overworld cameras); fields and the debug cameras keep per-pixel depth. A GPU
+test pins the shader against the CPU kernel
+(`crates/engine-render/src/tests/overworld_flat_depth_gpu.rs`).
+
+**The sheets' depth was also on the wrong scale.** The overworld walk frame
+composes the 6x world scale into its matrix (`camera_view::world_map_walk_vp`),
+so its `clip.w` is six times the `1x` field view's the fog projects through.
+The sheet's depth was taken at the field view's `w` and handed to a depth
+buffer written at the walk frame's, which put every sheet six times nearer
+than the ground under it - so it passed everywhere, which is why the
+per-pixel test "hid almost nothing". `World::field_fx_view` now scales the
+depth onto the mesh frame on the overworld; the drop shadows, which take the
+same projection, get the same correction.
+
+**Measured on the same frame** (grey-weighted fog coverage over the 320 x 240
+stage, same test):
+
+| | fog light covered by the continent |
+|---|---|
+| retail's walked table | 1.0 % (88 k of 8.96 M grey-pixels) |
+| port, per-pixel depth as it was (unscaled) | 0.0 % |
+| port, per-pixel depth on the right scale | 3.3 % |
+| port, flat bucket depth | 1.1 % (of 8.91 M) |
+
+Per-pixel depth on the right scale over-hides: a sloping ridge's near pixels
+lie in front of a sheet whose bucket retail draws after the whole cell. The
+flat depth reproduces the table's rule pixel for pixel on the port's own
+geometry; the remaining tenth of a point is most likely the port drawing the
+whole continent where retail draws only the cells in its visible-tile window.
+
+The "about a fifth" an earlier opaque-coverage pass over the same table
+reported is not the terrain: of it, `18.6` points are the two `SPRT`
+families at the top of the frame (CLUTs `0x7F8D`, `0x7FC1`), screen-space
+sprites linked in the nearest buckets, and only `1.4` points (texel-weighted)
+are continent cells. Whatever makes the port's overworld haze read denser
+than retail's is therefore not the draw order.
 
 The render step subtracts the camera vertical offset `_DAT_8007BCAC` from
 every particle height. On `keikoku_chest_preload` it reads 252: the ease

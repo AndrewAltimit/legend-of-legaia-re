@@ -26,7 +26,152 @@
 
 use super::*;
 
+/// Every CD-XA one-shot the field scripts in `man` can start: each op `0x36`
+/// whose first operand has bit 15 clear and a non-zero selector - the arm
+/// that calls `FUN_8003D53C(arg >> 3, arg & 7, sel)` (`0x801E0420`) - over
+/// every record of every partition, deduplicated, in script order.
+///
+/// A linear decode of each record from its first opcode; it stops at a
+/// record's first decode error, so an op past message text the walk cannot
+/// resync over is missed (the clip then stages on first use, as before), and
+/// a hit is a lead rather than a proof - which is all an advisory prestage
+/// list needs. Empty when `man` does not parse.
+pub fn scene_xa_prestage(man: &[u8]) -> Vec<crate::sfx_cue::XaVoiceClip> {
+    use legaia_asset::field_disasm::{DisasmError, InsnInfo, LinearWalker, man_script_spans};
+    let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+        return Vec::new();
+    };
+    let mut out: Vec<crate::sfx_cue::XaVoiceClip> = Vec::new();
+    for (_, _, start, pc0, len) in man_script_spans(&man_file, man) {
+        let Some(body) = man.get(start..start + len) else {
+            continue;
+        };
+        for step in LinearWalker::new(body, pc0) {
+            match step {
+                Ok(insn) => {
+                    let InsnInfo::SceneFade { word0, word1 } = insn.info else {
+                        continue;
+                    };
+                    if word0 & 0x8000 != 0 || word0 == 0 {
+                        continue;
+                    }
+                    let arg = word1 as i16;
+                    let clip = crate::sfx_cue::XaVoiceClip {
+                        clip: u32::from((arg >> 3) as u8),
+                        channel: u32::from((arg & 7) as u8),
+                        duration_sectors: u32::from(word0),
+                    };
+                    if !out.contains(&clip) {
+                        out.push(clip);
+                    }
+                }
+                Err((_, err)) => {
+                    if !matches!(err, DisasmError::EndOfStream { .. }) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The minigame announcer lines a scene's **door** will need: when `man`
+/// carries an op-`0x3E` warp into the Muscle Dome (`3E 69`, sub-id 5 -
+/// koin1's P1[9] has three), the dome hub's two first-visit lines
+/// ([`crate::muscle_ringside::hub_xa_prestage`]).
+///
+/// The hub starts its intro line on the very frame its leg opens, and the
+/// scene host drains the door warp inside the same scene tick as the field
+/// step that armed it, so no queue point after the door gives a host that
+/// decodes clips asynchronously any lead. The scene that carries the door
+/// is the earliest point that knows the line can be asked for; listing it
+/// with the scene's own op-`0x36` clips stages it while the player is still
+/// walking to the attendant. Same linear walk and the same advisory status
+/// as [`scene_xa_prestage`].
+pub fn scene_minigame_door_xa_prestage(man: &[u8]) -> Vec<crate::sfx_cue::XaVoiceClip> {
+    use crate::minigame_entry::MinigameSubId;
+    use legaia_asset::field_disasm::{DisasmError, InsnInfo, LinearWalker, man_script_spans};
+    let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+        return Vec::new();
+    };
+    for (_, _, start, pc0, len) in man_script_spans(&man_file, man) {
+        let Some(body) = man.get(start..start + len) else {
+            continue;
+        };
+        for step in LinearWalker::new(body, pc0) {
+            match step {
+                Ok(insn) => {
+                    if let InsnInfo::WarpOrInteract {
+                        op0, is_warp: true, ..
+                    } = insn.info
+                        && MinigameSubId::from_op0(op0) == Some(MinigameSubId::MuscleDome)
+                    {
+                        return crate::muscle_ringside::hub_xa_prestage()
+                            .into_iter()
+                            .map(Into::into)
+                            .collect();
+                    }
+                }
+                Err((_, err)) => {
+                    if !matches!(err, DisasmError::EndOfStream { .. }) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    Vec::new()
+}
+
+impl From<crate::baka_fighter_chrome::XaCue> for crate::sfx_cue::XaVoiceClip {
+    fn from(c: crate::baka_fighter_chrome::XaCue) -> Self {
+        Self {
+            clip: u32::from(c.clip),
+            channel: u32::from(c.chan),
+            duration_sectors: u32::from(c.dur),
+        }
+    }
+}
+
+impl From<crate::muscle_ringside::HubXaCue> for crate::sfx_cue::XaVoiceClip {
+    fn from(c: crate::muscle_ringside::HubXaCue) -> Self {
+        Self {
+            clip: u32::from(c.clip),
+            channel: u32::from(c.channel),
+            duration_sectors: u32::from(c.duration_sectors),
+        }
+    }
+}
+
 impl World {
+    /// Append a minigame's CD-XA lines to the prestage list both hosts drain
+    /// ([`Self::drain_field_xa_prestage`]): the Baka Fighter chrome's
+    /// announcer lines ([`crate::baka_fighter::BakaFight::take_xa_prestage`])
+    /// and the dome hub's two
+    /// ([`crate::muscle_ringside::hub_xa_prestage`]). Skips a clip already
+    /// listed.
+    pub fn queue_xa_prestage<C: Into<crate::sfx_cue::XaVoiceClip>>(
+        &mut self,
+        clips: impl IntoIterator<Item = C>,
+    ) {
+        for c in clips {
+            let c = c.into();
+            if !self.audio.field_xa_prestage.contains(&c) {
+                self.audio.field_xa_prestage.push(c);
+            }
+        }
+    }
+
+    /// Take the loaded scene's field CD-XA prestage list
+    /// ([`crate::world::AudioState::field_xa_prestage`]). A host that decodes
+    /// clips asynchronously (the browser page) stages each ahead of its op;
+    /// one that reads the disc synchronously (the native window) drains and
+    /// drops it.
+    pub fn drain_field_xa_prestage(&mut self) -> Vec<crate::sfx_cue::XaVoiceClip> {
+        std::mem::take(&mut self.audio.field_xa_prestage)
+    }
+
     /// Queue one field CD-XA clip start and hold the modelled drive busy for
     /// its read span (`dur` vsyncs, the battle leg's convention - see
     /// [`crate::world::AudioState::battle_xa_busy_frames`]).
@@ -67,6 +212,80 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn duel_cfg(roster_id: usize) -> crate::baka_fighter::FighterConfig {
+        crate::baka_fighter::FighterConfig {
+            roster_id,
+            damage_mod: 100,
+            def_tiers: [0, 0, 0],
+            crit_chance: 0,
+            atk_tiers: [0, 0, 0],
+            attack_power: [0, 10, 10, 10, 0],
+            gold_reward: 30,
+            ai_pattern: vec![1, 2, 3],
+        }
+    }
+
+    /// Entering the duel lists the chrome's announcer lines on the prestage
+    /// list both hosts drain, so the page stages them ahead of the frames
+    /// that start them; the list is not re-queued on a quiet tick.
+    #[test]
+    fn entering_the_duel_queues_the_announcer_prestage() {
+        let mut w = World::default();
+        let fight = crate::baka_fighter::BakaFight::new(duel_cfg(0), duel_cfg(1), [2, 2], 1);
+        w.enter_baka_fighter(fight);
+        let listed = w.drain_field_xa_prestage();
+        let want: Vec<crate::sfx_cue::XaVoiceClip> =
+            crate::baka_fighter_chrome::announcer_xa_prestage(0)
+                .into_iter()
+                .map(Into::into)
+                .collect();
+        assert_eq!(listed, want);
+        w.tick();
+        assert!(
+            w.drain_field_xa_prestage().is_empty(),
+            "round 0 already listed"
+        );
+    }
+
+    /// A clip already on the list is not listed again (a second dome leg
+    /// re-queues the hub lines).
+    #[test]
+    fn queued_clips_are_deduplicated() {
+        let mut w = World::default();
+        w.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
+        w.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
+        assert_eq!(w.drain_field_xa_prestage().len(), 2);
+    }
+
+    /// A launcher into the dome lists the hub's lines at the request, a
+    /// tick before the hub can ask for them; a launcher into any other slot
+    /// lists nothing.
+    #[test]
+    fn a_dome_warp_request_lists_the_hub_lines_before_the_hub_opens() {
+        use crate::minigame_entry::MinigameSubId;
+        let mut w = World::default();
+        w.request_minigame_warp(MinigameSubId::MuscleDome.sub_id());
+        let want: Vec<crate::sfx_cue::XaVoiceClip> = crate::muscle_ringside::hub_xa_prestage()
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        assert_eq!(w.drain_field_xa_prestage(), want);
+        assert_eq!(
+            w.minigames.pending_warp,
+            Some(MinigameSubId::MuscleDome.sub_id())
+        );
+
+        let mut w = World::default();
+        w.request_minigame_warp(MinigameSubId::SlotMachine.sub_id());
+        assert!(w.drain_field_xa_prestage().is_empty());
+    }
+
+    /// A MAN that does not parse carries no door.
+    #[test]
+    fn an_unparsed_man_lists_no_door_lines() {
+        assert!(scene_minigame_door_xa_prestage(&[0u8; 16]).is_empty());
+    }
 
     #[test]
     fn a_field_clip_queues_and_holds_the_drive_for_its_span() {

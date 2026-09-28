@@ -1241,40 +1241,56 @@ about these is contested.
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
 | battle body blend modes | Both hosts draw a whole battle body's semi-transparency; three residues differ in scope and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-three-residues). |
-| page resume and New Game flow | The page's scene-level Load / New Game choreography lives in `site/_content/play.html` callbacks, not the engine. See [below](#the-page-owns-its-resume-and-new-game-choreography). |
-| movie audio policy | Which movies pause the BGM, and what a finished movie resumes, is decided per host. See [below](#movie-audio-is-a-per-host-policy). |
-| Ra-Seru chip cross-out | The regular ring's red X over a forbidden Ra-Seru chip, on neither host. See [below](#the-ra-seru-chips-cross-out-reaches-neither-host). |
+| save rack port 1 | The native rack's first port is an engine-format save directory; the page's two ports are both memory-card images. See [below](#the-save-racks-first-port-differs-per-host). |
 
-### The page owns its resume and New Game choreography
+### The frame loop rules are engine-side
 
-The native window resumes a save in one engine call
-(`BootSession::enter_field_live_from_save`: enter the save's scene, then load
-over it) and starts a New Game through `BootSession::begin_new_game`. The page
-splits both across `play.html` callbacks. A card Load re-enters its scene
-even when it is the one already open, and the party-wipe path's New Game
-takes the same `begin_new_game` reset as the boot title; one path still
-differs: a title Continue naming a scene the page does not list falls
-through to New Game over the loaded save (a card import in the same case
-stays in the running scene).
+Each host owns its display loop (winit's redraw natively, `requestAnimationFrame` on the page), and each used to spell out the rules that turn display frames into ticks. Four of those rules are kernels in `engine-core::frame_step` now, called by both hosts - the frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model):
 
-A parked resume the page declines to enter no longer survives the next tick
-(`tick_frame` drops it), which was the part that silently re-applied an old
-save at a later scene pick. Blocking capability: an engine-side resume and
-New Game entry (enter + load, or seed + stop, in one call) that the page's
-callbacks invoke instead of choreographing it.
+| Rule | Was | Kernel |
+|---|---|---|
+| Ticks per display frame | Native carried any backlog past its four-tick cap into the next frame, so sustained slow frames kept running four ticks a frame with the accumulator growing; the page dropped it. | `SimStepper` (the page through `play_drain_sim_steps`). |
+| Camera around the world tick | The page published the compass azimuth after the scene tick, so its d-pad remap read the camera one tick late. | `camera_before_world_tick` / `camera_after_world_tick`. |
+| Cutscene glide clock | Both hosts floored the glide's step count at 1, so every idle redraw advanced it and a glide ran twice as fast at 120 Hz. Native also kept the glide across a door whose destination opened on a timeline; the page reset it. | `CutsceneGlide` (reset on every entry; retail's `FUN_80025C24` kills the mover). |
+| Move-VM strips | Native drained them per redraw (blinking off on idle redraws above 60 Hz, stacking below it); the page cached the last tick's drain (losing the earlier ticks of a catch-up frame). | `MoveVmGlobals::strip_frame`. |
 
-### Movie audio is a per-host policy
+The page also ran its tick tail short on a scene-entry tick (no rig rebuild, merchant poll or NPC clip step) and dropped the frame's remaining ticks after a door; it now runs the tail and keeps ticking, as the native loop does.
 
-The native window pauses the sequencer only when a movie carries an XA track,
-and resumes it only when it staged movie audio; its BGM director also keeps
-its own pause latch, which the movie path bypasses by writing the output gate
-directly. The page pauses at every movie install, resumes on every finish
-(played or not), and treats the gate itself as the latch. So a script-paused
-track survives an unplayable movie natively and resumes on the page, and a
-sub-op-`0xA` after a movie detaches the track natively and keeps it on the
-page. Blocking capability: one engine-side movie-audio policy (pause iff
-movie audio is present, resume only what the movie paused) that both
-directors consult.
+Under a shop or the prize exchange both hosts now freeze the whole frame tail, not only the world tick. Retail runs those screens at game mode `0x17` with the field overlay swapped out for the menu overlay, so none of the field code is resident.
+
+The native loop runs only the menu session on the tick's edges, the unpark when it closes, and the SFX scheduler step, then skips the ocean and CLUT cyclers, the effect scene-graphs, the event drains, the party readout's kernel and (through a count of ticks that ran the tail) the NPC clip playheads - the page's `tick_frame` skip. The earlier note that the native tail "carries the SFX scheduler step the shop's own cues ride" was a misreading: no shop screen raises a cue on either host, so the step moved to the frozen arm for the same reason the pause-menu arm has it (delayed cues already queued keep ageing).
+
+The field party readout's kernel is not a residue. A suppressed tick of `FieldPartyHud::tick` stores nothing but its cached decision - retail's suppress arm returns before the timer and position stores - and both hosts' draw paths re-ask the suppress gate, so stepping it under an overlay (native) and not stepping it (page) leave the same timer, the same cached position and the same picture. `a_suppressed_tick_changes_no_state` pins that.
+
+The SFX scheduler steps once per sim tick under the pause menu and a shop on both hosts: natively in the frozen arms (`tick_menu_sfx`), and on the page through `play_tick_overlay_sfx`, which the frame loop calls while `_updateFieldMenu` or `_updateFieldShop` holds the field. That is retail's shape - mode `0x17`'s per-frame handler `FUN_80025F74` still runs the cue drainer `FUN_80016B6C` ([`audio.md`](../subsystems/audio.md#the-scheduler-under-a-menu-overlay-screen)). The page used to step it under neither, so a cue already delayed when the screen opened waited out the screen and fired late.
+
+### Minigame launchers and the audio tail
+
+- **The slot launcher.** Every native minigame hotkey arms the mode-24 door warp itself (`World::request_minigame_warp`, the call the page's `play_mg_debug_warp` makes): `O` now does too, so the slot session is the one a cabinet installs, with the balance assigned from the coin bank. The private `SlotMachine` with a frame-derived seed, the coin purchase through the counter's quote and the fronted dev stake are gone. A launcher is the `0x3E` arm on both hosts, not the cabinet record around it: an empty bank is refused at the walked door by that record's coin-bank compare (the field VM runs it on both hosts), and a bank below three coins that reaches the machine meets its own state-1 gate.
+- **The BGM tail and the side-band memo.** One kernel, `legaia_engine_audio::bgm_tail::BgmTail`, holds the reward and side-band banks' placement, residency and retry memo, and both directors drive it ([`audio.md`](../subsystems/audio.md#the-banks-that-borrow-the-bgm-regions-tail)). The native director used to drop both banks on every owned-bank upload and the page only when a track overran them; the page also cleared its side-band memo on every scene change, where the native memo keyed on the BGM generation. The shared rule is retail's: a track change closes neither bank, a track that overruns one drops it, and the field init drops the reward bank.
+- **Minigame XA lines.** The Baka announcer lines and the dome hub's two lines join the field's prestage list (`World::queue_xa_prestage`, from `baka_fighter_chrome::announcer_xa_prestage` and `muscle_ringside::hub_xa_prestage`), so the page stages them ahead of use as it stages a scene's op-`0x36` lines.
+  The dome intro line starts on the frame the leg opens, and the scene host drains a door warp in the same tick as the field step that armed it, so a list filled at the hub's entry gave the page no lead. The hub's lines are listed earlier on both paths: when a scene whose MAN carries a `3E 69` door loads (`field_xa::scene_minigame_door_xa_prestage`; koin1), and at a launcher's `World::request_minigame_warp`, which the page's `play_mg_debug_warp` drains on the spot. The native window reads clips synchronously and drops the list.
+- **The coin counter.** Both hosts drew an invented layout for op-`0x49` sub-op 6 (a heading, a caret line and a Yes/No placed on the prize exchange's menu-overlay windows). Both now draw the field overlay's own two panels - the entry panel `FUN_801E6F70` (record 10) and, during the confirm, the three-line panel over it (record 11) - from one engine layout, `field_submode_screen::coin_counter_lines`, through `engine-ui::ui_text_lines::pen_line_draws_for` ([`minigame-slot-machine.md`](../subsystems/minigame-slot-machine.md#the-coin-exchange-counter-is-a-field-overlay-screen)). The window frames and the two sprites are text stand-ins on both.
+
+### The save rack's first port differs per host
+
+Where a Load lands and how a New Game starts are one engine entry per host
+(`engine-core::resume`, reached by native `BootSession::resume_save` /
+`start_new_game` and the page's `play_resume_save` / `play_new_game`; the
+two `check-ui-host-drift.py` pairs on `land_save` and `enter_new_game` pin
+it), and both hosts open every title through `TitleSession::for_front_end`
+with a fresh rack scan - see
+[`save-screen.md`](../subsystems/save-screen.md#where-a-load-lands-and-when-continue-is-live).
+
+What still differs is what backs the rack's ports. The native window mounts
+its `.lgsf` save directory as port 1 and the `--card` image as port 2; the
+page mounts two memory-card images and keeps its `.lgsf` sessions in the save
+bar, where they resume through an import rather than through the Load
+screen. So a native player can Load an engine-format save from the retail
+save-select and a page player cannot, and the page's title Continue is live
+only when a card is inserted. Closing it means giving the page a port backed
+by its stored sessions (the rack snapshot, the block read, the Save write and
+the export path), which is storage work rather than wiring.
 
 ### Derived scene point lights are native-only
 
@@ -1317,17 +1333,26 @@ still differs:
   prims do not interleave with other meshes' semi prims the way one ordering
   table would.
 
-### The Ra-Seru chip's cross-out reaches neither host
+### The Ra-Seru chip's cross-out: one atlas cell, one engine read
 
-In the Rim Elm ambush and against monster `0xAF` the special-battle word
+No longer a gap; kept here because the shape of the fix is host-specific. In the Rim Elm ambush and against monster `0xAF` the special-battle word
 carries `0x200`, and retail's command ring crosses the Ra-Seru chip out with
 the red `etim` quad (`FUN_801DBC30(0xF8, 0x42)`) and refuses its arm. Both
 play hosts take the refusal and the greyed chip from the engine
-(`battle_hud::battle_magic_chip`, `World::tick_battle_command`), and
-`battle_hud::battle_magic_chip_mark` answers the mark, but neither host's
-battle chip pass places the quad, so the gap is symmetric and no tier sees
-it. The dome ring draws the same mark ([`muscle_dome::ChipMark`]) on the
-minigames page only. See
+(`battle_hud::battle_magic_chip`, `World::tick_battle_command`), and both
+draw the X the same way: `battle_hud::battle_raseru_cross_out` answers
+whether the ring is up under the bit, and `engine-ui`'s
+`battle_command_ui::cross_out_mark_sprite` places it at
+`RASERU_MARK_ANCHOR` after the chip plates.
+
+The X is a sprite out of the chrome atlas, not a VRAM screen primitive,
+because the browser page draws the chips on its 2D overlay canvas above the
+GL view - a screen primitive there would sit under the plate it marks. Its
+texels live on the battle effect page (PROT 870, page `(448, 0)`, CLUT
+`(64, 476)`), so each host bakes them into the atlas with
+`save_menu_atlas::add_cross_out_mark` right after `build_atlas`
+(native `window/run.rs`, page `play_menu.rs`), and a host that skips the
+bake gets `BattleChromeRects::cross_out = None` and no mark. See
 [battle.md](../subsystems/battle.md#the-ra-seru-forbidden-bit-of-the-special-battle-word).
 
 ### The minigame side-channel step is paired; its contents are not
@@ -1947,6 +1972,27 @@ Both paths are now the retail law. Neither host applies a light source, and
 the browser has no light uniform left to apply one with - `u_light`,
 `u_normal_sign` and the world-position varying they needed are gone.
 
+The overworld's **vertex** stage is the same shape of pair: the per-vertex
+curvature (`overworld_curve_clip` / `overworldCurve`) and the continent's flat
+bucket depth (`overworld_flat_depth` / `overworldFlatDepth`) are each written
+once in WGSL and once in GLSL, both reading the frame's `clip.w`-to-`SZ`
+factor. The CPU kernels they mirror are pinned against retail
+(`overworld_curvature`, `overworld_draw_order`), and the WGSL flat depth
+against its kernel on a GPU (`engine-render`'s `overworld_flat_depth_gpu`);
+the GLSL twin is compiled but not run by any test, so an edit to one shader
+has to be carried to the other by hand.
+
+The ground's depth cue joins the same pair (`overworld_ground_cue` /
+`overworldGroundCue`, [`overworld_ground_cue`](../../crates/engine-core/src/overworld_ground_cue.rs)):
+each re-projects the cell's `(x1, z0)` corner from the flat-depth references
+and runs retail's `DPCS` arithmetic toward the literal far colour on the packet
+colour. The WGSL cue is GPU-tested in the same file. The GLSL twin has a
+host-free check, `web-viewer`'s `overworld_ground_cue_glsl`: it reads the
+function out of `site/js/webgl-shaders.js`, requires the same corner, lifts the
+literals from each statement of a fixed shape and evaluates that arithmetic
+against `ground_cue_color` over every 16-bit `SZ1`. It does not execute GLSL,
+so a new term fails the shape match rather than being evaluated.
+
 ### What the textured half needed, and why it was not a one-line removal
 
 The Lambert was standing in for something the page did not upload. Retail
@@ -2134,9 +2180,15 @@ attachment bound, and maps the depth through the scene's reversed-Z remap
 (`1 - z`); the page's pass draws into the default framebuffer the 3D pass
 just filled and puts the depth straight into `gl_Position.z`, the value its
 3D shader produces from the same matrix. The overworld fog sheets take the
-same channel (`fog_puff_prim`'s depth, flat at the bottom-right point retail
-sorts the sheet by), since retail links them into the ordering table with the
-continent. Every other primitive keeps the flag clear and sits on the near
+same channel (`fog_puff_prim`'s depth, flat at the sheet's ordering-table
+bucket), since retail links them into the ordering table with the continent;
+the continent's cells draw at their own buckets' depths on both hosts, from
+one kernel (`legaia_engine_core::overworld_draw_order`, see
+[`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#closing-the-draw-order-flat-per-primitive-terrain-depth)).
+A screen-prim depth is only comparable with the mesh pass when both are taken
+at the matrix the meshes draw with: the overworld walk frame composes a 6x
+world scale the field view the fog projects through does not, and the sheets'
+depth sat six times too near until `World::field_fx_view` scaled it. Every other primitive keeps the flag clear and sits on the near
 plane, so it passes against any scene depth as before. Pinned by
 `screen_prim`'s `only_a_depth_carrying_quad_is_depth_tested`,
 `world_map_markers`' `walk_camera_quads_carry_scene_depth` and
@@ -2486,6 +2538,27 @@ each host's own key names. The strike credit's pad nudge is one kernel on all
 three, `fishing_actors::bite_pad_nudge`: `World::tick_fishing` counts it off
 the engine pad and the minigames page's `fishing_pond_tick` off the packed
 pressed word its script assembles.
+
+### The venue hub: one session kernel, three hosts
+
+The venue's five-row menu, its two help pages and the tackle list open from
+the idle shore on Triangle / Select, as retail's state `0x0C` does, and they
+live on the session itself (`PondSession::hub_step`,
+`engine-core::fishing_hub`), so all three hosts reach the same screens by
+stepping the one session they already share. The layout is one kernel
+(`FishingHub::lines`, disc text off the overlay through
+`FishingHubText::from_overlay`) and the draw is one composition
+(`engine-ui::ui_fishing_hub`, over `ui_text_lines`).
+
+What stays per host is what each host owns. The two play hosts run the hub
+through `World::tick_fishing_hub`: the tackle screen counts the live bag,
+row 3 opens the world's exchange sub-screen, row 4 leaves the venue as each
+host's quit key does. The minigames page has no bag and no world exchange: its
+tackle screen sees every tackle item as held (the stand-in its HUD's lure
+count already uses), row 3 hands back to the menu and scrolls the page's own
+prize panel into view, and it draws the `fishing_hub_json` lines with the
+browser's font. On every host the help footers' `0xCE` button escapes draw
+no glyph, and the cursor icon is the `>` stand-in.
 
 ## The Baka cabinet's ladder: one on the field hosts, another on the standalone page
 
@@ -2881,9 +2954,9 @@ native window draws them at the dim ambient.
 
 ## Gaps absent from both hosts: overworld curvature, ground shadow
 
-Two retail draws were missing from **both** play hosts, so no tier failed on
-them. Both now draw on both hosts through one kernel each; what is left of
-them, and the third gap still open, sits here in the form a waiver takes.
+Retail draws missing from **both** play hosts fail no tier. The ones below now
+draw on both hosts through one kernel each; what is left of them sits here in
+the form a waiver takes.
 
 **The overworld curvature table on the continent.** `FUN_800271A8` builds a
 depth-indexed screen-Y table every overworld consumer adds to `SY`
@@ -2911,6 +2984,17 @@ the kernel's packets to retail's exactly on three captured frames. The ignore
 list's `render_pipeline` scope row, which read the routine as replaced by the
 rasteriser with no drawing mechanism behind it, is gone, and so is the
 `libgte` row that read `FUN_800460AC`'s `RTPT` (`cop2 0x280030`) as `NCDS`.
+
+**The battle ground shadow and the default draw-kind-4 arm.** Both were
+missing from both hosts for one reason: their geometry is `FUN_80028158`'s,
+which neither host could build. It is ported as `engine-core::effect_default_arm`
+([`effect-vm.md`](../subsystems/effect-vm.md#the-default-arms-draw)), and both
+hosts reach it through lists they already drew or now draw side by side:
+`World::active_effect_kind4_draws` carries every live default-arm node next to
+the ribbons and sprite-arm quads, and `World::battle_ground_shadows` - one disc
+per battle body, judged by the draw plan the host's own actor pass uses - is
+drawn right after it by the native part pass and folded into the play page's
+battle FX frame. The minigames page draws no battle and has neither.
 
 **The `opdeene` plant silhouettes** ([above](#a-prologue-mesh-set-drawn-black-natively))
 were not a gap of this kind: the page drew them right, and the native defect
@@ -3092,7 +3176,7 @@ The audio rows of the same pass are closed or settled in
   whose picker story baseline cleared system flags `0x141` / `0x147` in every
   resumed save. The runtime now parks the loaded save, skips the baseline for
   that entry and re-applies the save after the swap - the native
-  `enter_field_live_from_save` order
+  `BootSession::resume_save` order
   (`cards.rs`, `a_card_load_keeps_the_saves_story_flags_across_the_scene_entry`).
 - **The op-`0x35` timed release.** Its expiry set a flag no host read. The
   expiry arm is `FUN_800266E0`'s body on the field-BGM slot - sub-op `2`'s
@@ -3136,8 +3220,51 @@ kernel both hosts call, so the two cannot drift on it again.
   dropped no queued cue and kept the dedupe latch; the page's `enter_field`
   did all three. `BootSession::restage_audio_for_direct_entry` makes the same
   three moves.
+- **Movie audio.** Which movies silenced the BGM, and what their end gave
+  back, was decided per host: the native window paused only under a movie
+  with an XA track, the page at every install, and the page reopened the
+  gate on every finish - so a track the script had paused came back after an
+  unplayed movie on the page alone. Both now consult
+  `legaia_engine_core::movie_audio::MovieScore`: the attract releases the
+  score and restarts the title theme (retail's release and `CARD INIT`
+  pair), a movie with audio ducks only a sounding score, and every end
+  reopens only what that movie closed
+  ([`audio.md`](../subsystems/audio.md#movies-and-the-score)).
+- **One pause latch.** The native director kept a `paused` bool beside the
+  output gate it drove, and the movie path wrote the gate around it, so after
+  a movie the two disagreed and sub-op `0xA` detached a track the page kept.
+  The native director now reads the gate (`AudioOut::sequencer_paused`), as
+  the page always did.
+- **Menu blips.** The native window blipped a cancel on any Start in the
+  pause menu, a sub-screen included; the page only where Start closed the
+  menu, and spelled the edge-to-cue rule in its own script. Both now ask
+  `legaia_engine_core::menu_cues::menu_edge_blip` (the page through
+  `play_menu_edge_blip`), and the cue ids live there.
+- **A blip ages nothing.** The page fired a menu blip by enqueueing it and
+  ticking the scheduler, which advanced every other queued cue a frame per
+  blip. It now keys a one-cue batch (`SfxFireBatch::immediate`), leaving the
+  queue's clock to the per-tick drain, as the native window does.
+- **Title to Load.** The page handed the score over before entering the
+  save's scene, off the pre-load world, and the entry then cleared the dedupe
+  latch under it, so the scene's own start restarted the track. The call now
+  arms the hand-off and the page's scene entry performs it after the save
+  lands - the native enter, load, then stop and restore order.
+- **Door-tick order.** The page replayed the new scene's entry ring ops before
+  it cleared the SFX queue (zero-delay entry cues fired, delayed ones were
+  dropped) and routed the BGM last. It now routes the BGM after the scene
+  tick, clears on the swap, and only then replays the ring - the native
+  `BootSession::tick` order.
+- **Late audio.** The page's output exists only after a user gesture, and
+  every start routed before it was dropped; the scene stayed silent until its
+  script started music again. `audio_init` now starts the world's current
+  track.
 
-One row stays open on purpose:
+Two rows stay open on purpose:
+
+- **A late output restarts a paused track.** The engine keeps no copy of the
+  script's pause bit, so a page whose audio comes up after the scene's script
+  paused its track starts that track anyway. The native window has its
+  output from the first frame and never meets the case.
 
 - **Op `0x35` sub-op `8`.** `FUN_80019898` replays the sequence bound to the
   record at `0x8007057C` through `FUN_80026478`. In every captured state that
@@ -3255,6 +3382,24 @@ had - the deviating host adopting it.
 - **Developer menu CAMERA row.** Absent on both; `DevMenuSession::tick_host`
   is the one call both hosts make, and it carries the row
   ([`world-map.md`](../subsystems/world-map.md#the-camera-row)).
+- **The pause-menu stack.** The native window, the headless `BootSession` and
+  the page each carried the whole root-list step, the sub-screen step (with
+  the Status screen's Arts-editor extension) and the outcome match that folds a
+  finished screen into the world; the headless copy had dropped the window-8
+  notice. `field_menu_dispatch::tick_root_list`, `tick_open_subsession` and
+  `finish_subsession` are those three steps, and all three drivers call them;
+  what stays per host is the rack I/O, the key table and the options store
+  (`SubsessionHandoff`).
+- **Four small copies.** The shop's owns-the-pad test (`MenuRuntime::is_open`
+  on both, where the page spelled out two of its terms), the naming prompt's
+  pad decode (`NameEntryInput::from_pad_edge`), the dev menu's EQUIP commit
+  (inside `DevMenuSession::tick_host`), the demo tile board's install
+  (`World::install_demo_tile_board`) and the options' simulation knobs
+  (`OptionsState::apply_to_world`) are one call each now.
+- **Minigame hotkeys.** The native `B` / `M` launchers built their sessions
+  directly, started the track through the director rather than the world's
+  minigame swap, and installed Vahn's arts whoever led; they now arm the door
+  warp, and so does `O` now ([above](#minigame-launchers-and-the-audio-tail)).
 
 Two rows of the same read were already closed when re-checked: the minigame
 purses in `save_full` and the card-Load order (both in the section above).

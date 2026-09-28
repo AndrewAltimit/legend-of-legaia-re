@@ -312,6 +312,10 @@ pub struct RoundFlow {
     /// such case (every key is at least `1`), so the order is the port's own:
     /// party first, then monsters, once per round.
     pub flat_walk_last: Option<u8>,
+    /// The special-battle run arm's `ctx[+0x274] = 0` (`FUN_801D0748`,
+    /// `0x801D3284`): the round's first dispatch goes to the leader instead of
+    /// the initiative pick. Consumed by that dispatch.
+    pub leader_first: bool,
 }
 
 impl RoundFlow {

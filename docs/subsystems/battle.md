@@ -1685,6 +1685,19 @@ A 4th party slot is not rendered: the runtime texture band + CLUT rows cover
 party slots 0..=2 only, so Terra (player file 866, idle stream 17 parts)
 has no relocation target.
 
+Both play hosts decode a member's form through one kernel,
+`engine-core::battle_party_form` (`PartyFormSources::load`, then
+`build_party_battle_form` per member, then `World::install_party_battle_form`
+for the idle, action clips, art bank and art records); a host adds only the
+GPU upload and its own posing. The kernel falls back to PROT 1204 when the
+player file carries no idle stream - an assembled mesh with no pose source
+draws every piece at its object origin - and overlays the battle palette on
+a fallback mesh's rows too. Monsters install their texture slot and idle
+clip through `World::install_monster_battle_form`, and the slot a mid-battle
+summon takes is one past the highest monster slot bound
+(`battle_party_form::monster_tex_slots_used`), since repeated species share
+a slot.
+
 #### The battle display list is the registration set, not `active`
 
 Retail's loader gives the fight its own actor set: `FUN_800513F0` registers
@@ -2096,6 +2109,10 @@ Nothing walks a combatant home after an action (`World::tick_battle_locomotion`)
 
 The engine counts both addends (`World::seat_monster_family`): one selects the alternate family, both select rows `9..12`, which the disc leaves zero-filled.
 
+The Rim Elm ambush reaches row 8 by the map arm alone. Its row (`town0b` / `town0c` formation row 3, `[0x3F, 0x3E, 0x3E, 0x3E]`) carries header byte `0`, and the field VM's `3E FF 03` arm (`0x801E070C..0x801E0788`) writes only the system entity's `+0x8A` / `+0x94`, the step counter and the mode request - so `DAT_8007BD60` bit 7 stays clear and `ctx+0x287` is `0`. A capture of the `rim_elm_queen_bee_battle` state reads exactly that (`DAT_8007BD60 = 0x00100003`), the seat loop fetching row index 8 (`(0,1000) (-600,800) (600,800) (0,600)`), and the formation roll raising `_DAT_8007BAC0` to `0x200`. The ambush is therefore escapable, draws the random-encounter boost profile, and runs the formation roll. No retail fight is known to select rows `9..12`.
+
+Of the disc's `3E FF` sites whose row the bundle MAN carries, two more rows carry header byte `0`: `town01` row 4 (`0x4F`, the Tetsu spar) and `deene` row 11 (`0xA7`). The spar still skips the formation roll, through its other gate: the tutorial arm sets the battle-stage id `DAT_8007B64A` (`0x80051DB8`). The engine derives `ctx+0x287` from the row alone (`World::enter_battle_from_formation`); `World::trigger_scripted_battle` sets no flag. Disc-gated check: `crates/engine-core/tests/rim_elm_ambush_disc.rs`.
+
 The map id is `_DAT_80084540`, the loaded scene's **raw CDNAME define** (`town01` = `3`, `town0b` = `0x0C`, `town0c` = `0x15`, `map01` = `0x55`; every catalogued save state reads the define of the scene named at `0x80084548`), carried as `BattleState::map_id` and also read by the formation roll's scripted-ambush arm and the intro style picker. It is two above the extraction index `Scene::start` holds, which the intro picker had been reading - so its `0x3E` / `0x3F` arm on `3` / `0x0C` / `0x15` could never match.
 
 Engine mirror: [`engine-core::battle_seats`](../../crates/engine-core/src/battle_seats.rs) (consumed by `World::enter_battle`).
@@ -2109,7 +2126,9 @@ The same two map-gated fights also forbid the Ra-Seru chip, through bit `0x200` 
 
 The battle round driver `FUN_801D0748` (PROT 0898) reads the bit twice in the command ring's phase-`0x28` arm: `0x801D12DC..0x801D12F4` draws the red cross-out (`FUN_801DBC30(0xF8, 0x42)`) over the Ra-Seru chip, and `0x801D1448..0x801D1454` returns from the chip's arm without committing. A sweep of SCUS, 0897, 0898 and 0899 for `lw` of `0x8007BAC0` followed by `andi 0x200` finds only those two readers.
 
-Engine: `BattleState::special_word` carries the regular battle's word (the Muscle Dome session keeps its own); the two raisers are `battle_formulas::battle_init_special_word` and `formation_roll_special_word`, run from battle setup. `battle_hud::battle_magic_chip` clears the chip's `enabled` flag and the ring refuses the Magic arm (`World::tick_battle_command`). `battle_hud::battle_magic_chip_mark` answers the cross-out, but neither play host draws the `etim` quad yet. Every other reader of the word - the drop roll, the steal roll, the Seru capture gate, spell XP, the monster flee roll - still reads only the dome's word, so a Rim Elm ambush or a fight against `0xAF` still pays drops and allows steals in the port where retail's `_DAT_8007BAC0 != 0` gates would withhold them.
+Engine: `BattleState::special_word` carries the regular battle's word (the Muscle Dome session keeps its own); the two raisers are `battle_formulas::battle_init_special_word` and `formation_roll_special_word`, run from battle setup. `battle_hud::battle_magic_chip` clears the chip's `enabled` flag and the ring refuses the Magic arm (`World::tick_battle_command`). `battle_hud::battle_raseru_cross_out` answers whether the ring draws the cross-out this frame, and both play hosts draw it as a chrome-atlas sprite over the chip (`engine-ui::battle_command_ui::cross_out_mark_sprite`, anchor `(0xF8, 0x42)`), its texels baked from the effect page by `save_menu_atlas::add_cross_out_mark`.
+
+The word's other readers test it whole (`!= 0`), so the Ra-Seru bit also withholds the gold, EXP, drop and steal, the Seru absorb and spell XP, and a monster's flee - the table is in [battle-formulas.md](battle-formulas.md#the-special-battle-words-readers). The engine reads all of them through `World::special_battle_word`, the arena word ORed with this one.
 
 ## Range / line-of-sight (`FUN_8004E2F0`)
 
@@ -3040,9 +3059,22 @@ The action SM's `0x5A` end-of-action sweep clears the bits on every slot
 `FUN_801DB9C4`. Recomputing the pass from RAM over the catalogued battle
 states reproduces the stored bits on 277 of 279 seated slots. The two misses
 are bits set where the pass would clear them (action states `0x1E` and
-`0x35`, flow `0xFF`); the driver skips the call while `gp[+0x330]` is
-non-negative, which would leave a previous frame's bits standing, but that
-cause is not measured.
+`0x35`, flow `0xFF`), and they are not the driver's gate: the driver skips
+the call while `gp[+0x330]` is non-negative (`lb` at `0x800470EC`), and that
+byte - `0x8007B648`, the battle-load stage `FUN_80046A20` hands to the loader
+`FUN_80052770` while it is below `0x80` (`0x80046EEC..0x80046F08`) - reads
+`0xFF` in 59 of the 60 battle-mode (`0x15`) mednafen library states and `0x84` in the other,
+negative in every one, so the pass ran on each of those frames.
+
+`ctx[+0x26B]` is the battle's side-band stream request: `FUN_80055B4C`
+stores `a0 + 1` there (`0x80055B58`) - the victory hook's win-pose archive
+and the summon stagers' streams - and the stream tick `FUN_801F17F8` clears
+it once the stream lands (`0x801F19D8`). The pass reads it only with the
+battle-end signal `0xFE` up, and there the request is the win-pose archive,
+which the results sequencer also waits on (`0x8004E5C0`). It reads `0` on
+the one results-frame state (`noa_levelup_banner`). The command-flow byte
+`ctx[+6]` reads `0x1E`, `0x28` and `0x14` in the library's command-band and
+round-start states, and `0xFF` in every state of a running action.
 
 An earlier reading here and in `port-catalog-ignore.toml` called the routine
 a "target-highlight pass" measuring distance from the **acting actor**. The
@@ -3054,12 +3086,16 @@ not dimming.
 tick (slots converted from the engine's compacted seating to retail's fixed
 pool slots) and keeps the word in `BattleActor::flag_word`, which
 `battle_actor_draw_plan` hands the tint pass as its top byte
-(`BattleActorDrawPlan::semi_mode`). Two inputs have no engine mirror and are
-inferred: `ctx[+6]` reads `0xFF` in every catalogued state of a running
-action and is taken as `0xFF` whenever no command menu is open (`0` while one
-is), and `ctx[+0x26B]` is taken as idle; the driver's `gp[+0x330]` gate is not modelled (the pass runs every battle frame). Neither host draws a body with a
-per-draw blend override yet, so the ghost is carried to the draw plan and
-not rendered - the same gap as the capture / defeat fade above.
+(`BattleActorDrawPlan::semi_mode`). `ctx[+6]` is the engine's flow mirror
+`BattleFlowState` (the selection band byte for byte) while the command band
+runs, `0xFF` while the action SM owns the round and `0x14` before the first
+round executes; retail's one-frame `0xFE` hand-off has no engine frame.
+`ctx[+0x26B]` is taken as raised through the victory sequence's load hold and
+idle from the results frame on - the engine streams nothing, and where the
+archive lands inside that hold is not measured. The `gp[+0x330]` gate has no
+engine twin because the engine has no load stage. Neither host draws a body
+with a per-draw blend override yet, so the ghost is carried to the draw plan
+and not rendered - the same gap as the capture / defeat fade above.
 
 ## Per-frame actor maintenance (`FUN_8004CE2C`)
 
@@ -5004,6 +5040,23 @@ The `legaia-engine play-window` host ships the loop **on**, matching the browser
 - **Party HP / MP persists.** The battle mutates the `BattleActor` mirrors; `finish_battle` writes them into the roster records (via `World::save_party`) *before* restoring the field actor snapshot, then pushes them back onto the restored party actors (`World::resync_party_actors_from_roster`). Without that step every fight ended at the HP it started with, and losing was indistinguishable from winning.
 - **A wipe raises `World::game_over`**, which both hosts read and route to the **title screen** - retail's destination, pinned to the `game_mode = 0x16` / `_DAT_8007BB00 = 1` store pair (see [§ party wipe](#party-wipe--the-game-over-overlay)). Native pushes `BootUiState::GameOver`, the browser arms the same `GameOverSession`; neither draws anything and neither reads a button, because retail asks the player nothing here.
 - **A victory raises the result screen in battle** (`World::battle_spoils_banner`, up from the results frame of the sequence below through the exit) - retail's two framed windows, described by `engine-ui::battle_spoils_windows` and filled by `battle_spoils_draws_for` on both hosts. Rects and columns are measured off a retail framebuffer; see [level-up](level-up.md#what-the-port-draws-between-the-last-enemy-dying-and-the-field-returning). A direct `finish_battle` (the runner path) still arms the aging `World::SPOILS_BANNER_FRAMES` window instead.
+- **A wipe raises the loss window** (`World::battle_defeat_banner`, same span) - the win window's twin, drawn on the report frame by `engine-ui::battle_defeat_windows` on both hosts; see [below](#the-loss-window-is-the-result-windows-twin). The spoils panel answers only a win: `last_rewards` outlives its battle, and a wipe after a win used to re-show that win's spoils.
+- **The exit's party loop runs on every exit** (`battle_formulas::battle_exit_party_reset`): statuses clear unless the special-battle word carries the arena bit, and a member at 0 HP stands up at 1 - see [battle-formulas.md](battle-formulas.md#the-flow-readers).
+
+### The loss window is the result window's twin
+
+The results frame opens one framed window per outcome through the battle HUD's element spawner `FUN_801D8DE8`: element `0x41` on a win (`0x8004F65C`), `0x42` on a wipe (`0x8004F900`), both skipped while the special-battle word is set. An element id is an index into the SCUS **screen-element placement table** (`0x80076C10 + id * 0x18`, `legaia_asset::screen_elements`), not into the pause menu's window descriptor table. Neither id has a labelled arm in the spawner's jump table (`0x801CEB68`, indexed by `id - 0xA`); both take the default post-switch tail (`0x801D91D4..0x801D93DC`), which registers the record's box through `FUN_8003541C` and slides it with `FUN_801DB7B0`.
+
+Records `0x41` and `0x42` are byte-identical on the disc: widget pair `(3, 3)` (the corner-framed window), content box `288 x 42`, node kind `0x0D` (a kind the layout dispatcher `FUN_80030628` fills with nothing), sliding from `(16, 236)` to `(16, 160)`. Outset by the frame's six pixels that box is the band the report window was measured at off a retail framebuffer, so the two sources agree. What differs is the string word `FUN_801D84C0` publishes into each at battle start (`sw` at `0x801D8500` / `0x801D84F0`):
+
+| Element | Buffer | Solo party | Party of two or more |
+|---|---|---|---|
+| `0x41` | `ctx+0xA9` | lead's name + the victory tail (`0x801F4C38`) | team string (`0x801F4C2C`) + the victory tail |
+| `0x42` | `ctx+0x129` | lead's name + the defeat suffix (`0x801F4C94`) | the defeat team string (`0x801F4C78`) |
+
+A team string opens with the text engine's name escape `0xC1`, whose operand `FUN_801D84C0` patches to the lead's index. On a win the results frame re-patches the victory buffer's operand (`ctx+0xAA`, `0x8004F658`) to the pose actor's index when the party has two or more members; the pose actor is the lead, so the store names the same character. The loss arm stores nothing there.
+
+The port reads the two defeat pieces off PROT 0898 (`battle_party_panel::DefeatText`, installed with the move-power table) and composes the line in `World::battle_defeat_banner`; without the disc pool the window opens empty. The win window's sentence is still built from typed state.
 
 ### Battle end, retail's way - the results sequencer
 

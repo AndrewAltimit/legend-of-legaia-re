@@ -736,25 +736,23 @@ pub struct ClipRect {
     pub y_max: i16,
 }
 
-// NOT WIRED: the consumer is a **screen-space line primitive**, and the port
-// emits none. Retail's one caller (`0x801D3D00`, inside the per-frame fishing
-// tick `FUN_801D26CC`) clips the two endpoint pairs of a GPU line packet in
-// place and links it into the ordering table, which is exactly the draw kind
-// missing here: neither `engine-ui`'s draw list (text + sprite + solid rect)
-// nor its PSX screen-space primitive set (`screen_prim::ScreenPrim`, which
-// carries a textured and a flat **quad** and nothing two-point) has one.
-//
-// The endpoints are missing too. The second one (`packet + 0x10`) is copied
-// from `0x801D9194`, which `FUN_8003D368` fills at `0x801D1FB4` by projecting
-// the point at `+0x128` of the record `*s4` names there - the line's non-lure
-// end, so the rod tip (an inference from the packet's other end). The port
-// spawns no angler actor on any host (see `VENUE_ANCHOR`), so it has no such
-// record to project. The first (`packet + 0x08`) is the lure end, the
-// same missing datum `walk_grid_overhead` waits on. The minigames page draws
-// its own curve from a guessed rod tip to the lure instead, which is not this
-// routine's output. And a line kind alone would not wire the slot machine's
-// paylines, whose endpoints are model-space and need a GTE projection pass
-// first (see `crate::slot_machine::payline_prims`).
+// NOT WIRED: the blocker is the line's **rod-tip endpoint**, not a draw kind.
+// Retail's one caller (`0x801D3D00`, inside the per-frame fishing tick
+// `FUN_801D26CC`) clips the two endpoint pairs of a GPU line packet in
+// place and links it into the ordering table. The line kind exists:
+// `legaia_engine_ui::screen_prim::line_quad` is the two-point line as a
+// one-pixel flat quad, which every host's screen-prim pass already draws for
+// the slot machine's projected paylines. What the port cannot source is one
+// end of this line. The packet's `+0x10` point is copied from `0x801D9194`,
+// which `FUN_8003D368` fills at `0x801D1FB4` by projecting the point at
+// `+0x128` of the record `*s4` names there - the rod tip (an inference from
+// the packet's other end), a point on the angler's posed model. The port
+// spawns no angler actor on any world host (see `VENUE_ANCHOR`), so there is
+// no record to project. The `+0x08` point is the hooked fish's world position
+// (`actor + 0x14..0x1B`, `0x801D3A70`) offset by the shared polar helper
+// `FUN_801D7BB8` and projected, which the session's lure actor could stand in
+// for - but a line with one real end is not this routine's output. The
+// minigames page draws its own curve from a guessed rod tip to the lure.
 // (`project_segment` above is a different case - retail never calls it at all.)
 /// Clip a 2-D segment in place against [`ClipRect`].
 ///

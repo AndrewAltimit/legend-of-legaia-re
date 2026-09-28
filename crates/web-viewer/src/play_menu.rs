@@ -73,11 +73,10 @@ use super::*;
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::equip_session::EquipSession;
 use legaia_engine_core::field_menu::{
-    FieldMenuGate, FieldMenuInput, FieldMenuOutcome, FieldMenuPhase, FieldMenuRow, FieldMenuSession,
+    FieldMenuGate, FieldMenuOutcome, FieldMenuRow, FieldMenuSession,
 };
 use legaia_engine_core::field_menu_dispatch::{
-    self, ArtsEditorPhaseTag, FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome,
-    apply_list_order_outcome, apply_pause_items_outcome, apply_spell_outcome, status_snapshots,
+    self, ArtsEditorPhaseTag, FieldMenuSubsession, status_snapshots,
 };
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::inventory_use::{InventoryUseSession, InventoryUseState};
@@ -453,7 +452,17 @@ impl LegaiaRuntime {
                 let chrome = match (panel, pill) {
                     (Ok(panel_bytes), Ok(pill_bytes)) => {
                         match build_atlas(&panel_bytes, &pill_bytes, glyph_tim.as_deref()) {
-                            Ok(a) => {
+                            Ok(mut a) => {
+                                // The red cross-out X off the battle effect
+                                // page, baked into the same atlas the chips
+                                // draw from (the native window bakes it too).
+                                if let Ok(flame) = idx.entry_bytes_extended(
+                                    legaia_engine_core::save_menu_atlas::FLAME_ATLAS_PROT_ENTRY,
+                                ) {
+                                    legaia_engine_core::save_menu_atlas::add_cross_out_mark(
+                                        &mut a, &flame,
+                                    );
+                                }
                                 let rects = save_menu_rects(&a);
                                 Some((a, rects))
                             }
@@ -851,22 +860,22 @@ impl LegaiaRuntime {
                 if let FieldMenuSubsession::Save(s) = session.as_ref() {
                     edge = m.save_flow.before_tick(s, edge);
                 }
-                // Engine extension: Triangle on the Status screen swaps it
-                // for the Tactical Arts chain editor (retail's seven rows
-                // carry no Arts row). The edge is consumed, so the same
-                // press does not also drive the screen it replaced.
-                let opened_arts = match self.scene_host.as_ref() {
-                    Some(host) => field_menu_dispatch::try_open_arts_editor(
+                // The shared step (with the Status screen's Triangle -> Arts
+                // editor extension); it hands back a committed rebind. A
+                // title-opened Load has no scene yet, and no Status screen
+                // either, so it steps the session alone.
+                rebound = match self.scene_host.as_ref() {
+                    Some(host) => field_menu_dispatch::tick_open_subsession(
                         session.as_mut(),
                         edge,
+                        key.as_deref(),
                         &host.world,
                     ),
-                    None => false,
+                    None => {
+                        session.tick_pad_edge_with_key(edge, key.as_deref());
+                        session.take_rebound_mapping()
+                    }
                 };
-                if !opened_arts {
-                    session.tick_pad_edge_with_key(edge, key.as_deref());
-                }
-                rebound = session.take_rebound_mapping();
                 session_done = session.is_done();
             }
             // A bind committed inside the Options sub-session's Key Config
@@ -889,79 +898,32 @@ impl LegaiaRuntime {
                     .unwrap_or_default();
                 let sub = self.play_menu.as_mut().and_then(|m| m.sub.take());
                 if let Some(PlaySub::Session(session)) = sub {
-                    let session = *session;
-                    match session {
-                        // Load / Save reach the card rack, which needs the
-                        // whole runtime - so it is applied outside the
-                        // scene-host borrow the other rows take.
-                        FieldMenuSubsession::Save(s) => self.apply_card_outcome(&flow, &s),
-                        // Options: value edits commit inside the session's own
-                        // popup (retail writes the config word at popup
-                        // confirm and never reverts), so the closing state is
-                        // the player's. Lift it onto the runtime - the same
-                        // `self.options_state = session.state().clone()` the
-                        // native window does - or the next open rebuilds from
-                        // defaults and the screen forgets every change.
-                        FieldMenuSubsession::Config(o) => {
-                            self.options_state = o.state().clone();
-                            self.persist_and_apply_options();
+                    // Fold the result into the live world through the one
+                    // router every host shares (equip swap / item use /
+                    // spell cast / arts / reorder); only the card rack and
+                    // the options store are this host's.
+                    let handoff = match self.scene_host.as_mut() {
+                        Some(host) => {
+                            let mut done =
+                                field_menu_dispatch::finish_subsession(*session, &mut host.world);
+                            // Windows 7 / 8: the shared runtime holds the beat
+                            // and the pre-empts at the top of this method hold
+                            // the pad.
+                            self.menu.arm_finished_notices(&mut done);
+                            done.handoff
                         }
-                        other => {
-                            if let Some(host) = self.scene_host.as_mut() {
-                                let world = &mut host.world;
-                                match other {
-                                    FieldMenuSubsession::Equip { session, char_slot } => {
-                                        apply_equip_outcome(&session, char_slot, world);
-                                    }
-                                    // The full Items applier, not the inner
-                                    // flow's: it also carries the special
-                                    // Use routes' menu-exit handoff (Door of
-                                    // Light's escape, Door of Wind's staged
-                                    // world-map warp). The bag decrements
-                                    // ride `s.inner` either way.
-                                    FieldMenuSubsession::Items(s) => {
-                                        let _ = apply_pause_items_outcome(&s, world);
-                                        // A Hyper-Art book taught an art:
-                                        // window 8, same as the native window.
-                                        if let Some(notice) = world.menu.pending_art_notice.take() {
-                                            self.menu.arm_art_learned_notice(notice);
-                                        }
-                                    }
-                                    FieldMenuSubsession::Spells(s) => {
-                                        // A leveled menu cast returns the
-                                        // window-7 pair; the shared runtime
-                                        // holds the beat and the pre-empt at
-                                        // the top of this method holds the
-                                        // pad - same shape as the native
-                                        // window.
-                                        if let Some(notice) = apply_spell_outcome(&s, world) {
-                                            self.menu.arm_spell_level_notice(notice);
-                                        }
-                                    }
-                                    // Persist the edited chain back into the
-                                    // world's saved chains so the next
-                                    // battle's Arts rows reflect it - the
-                                    // same chain_library <-> store_chain_library
-                                    // bridge the native window uses.
-                                    FieldMenuSubsession::Arts(editor) => {
-                                        let mut library = world.chain_library();
-                                        if apply_arts_outcome(editor, &mut library).is_ok() {
-                                            world.store_chain_library(&library);
-                                        }
-                                    }
-                                    // The reorder page permuted its own copy;
-                                    // replay its exchanges onto the record
-                                    // through the ported swap, same as the
-                                    // native window.
-                                    FieldMenuSubsession::ListOrder(s) => {
-                                        let _ = apply_list_order_outcome(&s, world);
-                                    }
-                                    // Status carries no world-mutating outcome
-                                    // on close (Options is lifted above, on
-                                    // the runtime rather than the world).
-                                    _ => {}
-                                }
-                            }
+                        None => field_menu_dispatch::SubsessionHandoff::without_world(*session),
+                    };
+                    match handoff {
+                        field_menu_dispatch::SubsessionHandoff::Applied => {}
+                        // Load / Save reach the card rack, which needs the
+                        // whole runtime.
+                        field_menu_dispatch::SubsessionHandoff::Save(s) => {
+                            self.apply_card_outcome(&flow, &s)
+                        }
+                        field_menu_dispatch::SubsessionHandoff::Options(state) => {
+                            self.options_state = state;
+                            self.persist_and_apply_options();
                         }
                     }
                     // Hand control back to the shared picker, which parks the
@@ -990,27 +952,10 @@ impl LegaiaRuntime {
         // cursor. `tick` inks and routes off the same `root_menu_confirm_route`
         // the row renderer draws from, so a row cannot draw white and then
         // open something the gate forbids.
-        let input = FieldMenuInput {
-            up: pressed(edge, PadButton::Up),
-            down: pressed(edge, PadButton::Down),
-            // The kind-0x0D ready check is a horizontal two-row choice, so
-            // the picker needs left / right as well as up / down.
-            left: pressed(edge, PadButton::Left),
-            right: pressed(edge, PadButton::Right),
-            cross: pressed(edge, PadButton::Cross),
-            circle: pressed(edge, PadButton::Circle),
-            start: pressed(edge, PadButton::Start),
-        };
-        let suspended_row = match self.play_menu.as_mut() {
-            Some(m) => {
-                let _ = m.session.tick(input);
-                match m.session.phase() {
-                    FieldMenuPhase::Suspended { row } => Some(row),
-                    _ => None,
-                }
-            }
-            None => None,
-        };
+        let suspended_row = self
+            .play_menu
+            .as_mut()
+            .and_then(|m| field_menu_dispatch::tick_root_list(&mut m.session, edge));
         if let Some(row) = suspended_row {
             // Load / Save browse the console's two memory-card ports, so the
             // rack is `CardPorts` - which is also what puts the session in
@@ -2234,6 +2179,7 @@ fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
             plate_cap_r: a.band_battle_plate_cap_r(),
             separator: a.band_battle_separator(),
             digits: a.band_hud_digits(),
+            cross_out: a.band_cross_out(),
         }),
     }
 }

@@ -431,13 +431,20 @@ impl PlayWindowApp {
                 && !hf.indices.is_empty()
             {
                 let vmesh = heightfield_to_vram_mesh(&hf);
-                match r.upload_vram_mesh(
+                // Each vertex also carries its cell's four corners, so the
+                // overworld draws the cell at its ordering-table bucket's
+                // depth (`overworld_draw_order`; the browser play page
+                // uploads the same refs through `field_ground_flat_refs`).
+                let flat_refs =
+                    legaia_engine_core::overworld_draw_order::ground_flat_refs(&vmesh.positions);
+                match r.upload_vram_mesh_with_flat_refs(
                     &vmesh.positions,
                     &vmesh.uvs,
                     &vmesh.cba_tsb,
                     &vmesh.normals,
                     &vmesh.colors,
                     &vmesh.indices,
+                    &flat_refs,
                 ) {
                     Ok(m) => {
                         log::info!(
@@ -736,6 +743,7 @@ impl PlayWindowApp {
                             plate_cap_r: atlas_data.band_battle_plate_cap_r(),
                             separator: atlas_data.band_battle_separator(),
                             digits: atlas_data.band_hud_digits(),
+                            cross_out: atlas_data.band_cross_out(),
                         }),
                     };
                     // The battle HUD's badge cells: which ones actually

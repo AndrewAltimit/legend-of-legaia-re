@@ -640,15 +640,6 @@ pub struct HelpPanelLayout {
     pub frame: (i16, i16, i16, i16),
 }
 
-// NOT WIRED: no host owns the screen that opens the panel. Its two call
-// sites are states `0x65` (page 0, `jal` at `0x801CFFA8`) and `0x66` (page 1,
-// `0x801CFFEC`) of the fishing session machine `FUN_801CF3BC`, and the only
-// way into `0x65` is row 1 of the venue's five-row hub menu
-// (`FISHING_MENU_ROW_STATES[1]`, `FishingMenu`), which every host skips by
-// entering the pond directly. The line text is not the blocker: the rows are
-// the overlay's string-pointer tables (`0x801D8130` / `0x801D8168`), which a
-// host can read off the user's disc at runtime the way the prize and menu
-// rows are read. Wiring it starts with the hub menu screen.
 /// PORT: overlay_fishing_801d72a0
 ///
 /// Fishing help-panel layout - the static-extract resolution of the VA
@@ -664,6 +655,16 @@ pub struct HelpPanelLayout {
 ///
 /// The line **strings** are overlay bytes (Sony text) and are not
 /// modeled; hosts resolve `string_index` against the user's disc.
+///
+/// Wired: row 1 of the venue hub menu opens it. The hub opens from the idle
+/// shore on Triangle / Select (state `0x0C`'s `& 0x110` test), which is the
+/// entry every host lacked - they enter the pond directly, as retail does,
+/// and then had no key for the menu. [`crate::fishing_hub::FishingHub::lines`]
+/// calls this for [`crate::fishing_hub::HubScreen::Help`] and resolves each
+/// `string_index` against the tables [`crate::fishing_hub::FishingHubText`]
+/// reads off the disc; the native window's HUD and the browser play page
+/// draw it through `World::fishing_hub_lines`, the minigames page through
+/// `fishing_hub_json`.
 pub fn help_panel_layout(x: i16, y: i16, second_page: bool) -> HelpPanelLayout {
     let count = if second_page { 15 } else { 14 };
     let lines = (0..count)
@@ -690,8 +691,10 @@ pub struct FishingMenuTick {
     /// cancel -> `0x0A`; confirm row 0..4 -> `0x0A` / `0x65` / `0x6E` /
     /// `0x78` / `0xC8`.
     pub next_state: Option<u32>,
-    /// Rows 2 / 3 snapshot the fishing-points bank (`_DAT_80084450`)
-    /// into the overlay session global `0x801D90DC` on confirm.
+    /// Rows 2 / 3 copy the persistent **lure index** `_DAT_80084450` into
+    /// `0x801D90DC` on confirm (`0x801D0680..0x801D0690`) - the tackle
+    /// screen's cursor, so that screen opens on the equipped lure. The name is
+    /// historical: the word copied is not the points bank (`_DAT_8008444C`).
     pub snapshot_points: bool,
     /// Row 4 (leave) clears the scene-load flag `_DAT_8007BC20` and sets
     /// the overlay exit latch `0x801D90CC = 1`.
@@ -715,17 +718,16 @@ pub struct FishingMenuTick {
 ///   panel frame via `FUN_801D74B0(0xA0, 0x50, 0x68, 0x50)`.
 /// - Confirm (`& 0x44`, SFX `0x20`): jump table over the cursor row ->
 ///   next SM state (see [`FishingMenuTick::next_state`]); rows 2/3 also
-///   snapshot the points bank, row 4 arms the venue exit.
+///   seed the tackle screen's cursor with the lure index, row 4 arms the venue
+///   exit.
 ///
-/// **No host reaches this, and no ladder can.** Every fishing host enters the
-/// pond directly - the native window's minigame block, the play page's
-/// `play_fishing_start`, the minigames page's `fishing_pond_start` - so the
-/// venue's own five-row hub screen has no owner and this kernel has no
-/// production caller. What is missing is the screen, not a call: a host would
-/// have to own the five rows, route the confirm into the pond / prize / rod
-/// sub-screens the [`FishingMenuTick::next_state`] jump table names, and honour
-/// the row-4 venue exit. Until then no runtime-reach ladder can enter it, which
-/// makes this a host gap rather than a fixture gap.
+/// Wired through [`crate::fishing_hub`]: the pond's idle shore opens the hub on
+/// Triangle / Select (retail state `0x0C`), and the hub runs this kernel for
+/// state `0x64` on every fishing host - `World::tick_fishing_hub` for the
+/// native window and the browser play page, `PondSession::hub_step` directly
+/// on the minigames page. Entering the pond directly (every host's launcher
+/// and the venue door) was never the gap: retail enters it directly too, and
+/// the menu is a key press away from the shore.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FishingMenu {
     /// Cursor row (`0x801D912C`).
@@ -836,17 +838,13 @@ pub struct RodLureSelectTick {
 /// (retail): a cursor past `owned_rods + 2` snaps to `0`, a negative cursor snaps
 /// to `owned_rods + 2` - the `3` lure rows plus the owned-rod rows.
 ///
-/// **No host reaches this, and no ladder can.** No host owns a rod/lure select
-/// screen: the two engine hosts open a session on the persistent rod and lure
-/// the bring-up scans leave (`World::enter_fishing_session`) and the minigames
-/// page takes rod and lure as `fishing_pond_start` arguments, so nothing calls this kernel in
-/// production. Two prerequisites, neither of them a call: a screen to own the
-/// rows, and - on the minigames page specifically - a tackle inventory for the
-/// `count_of` probe, which that page does not model at all (its HUD hard-codes
-/// the lure count because lures are not consumed there). Until both exist this
-/// is a host gap rather than a fixture gap, and it closes the read-only gap
-/// noted on [`select_owned_rod`] only in the sense that the selection half is
-/// now ported.
+/// Wired as the hub's row 2 ([`crate::fishing_hub::HubScreen::Tackle`], retail
+/// state `0x6E`): the two world hosts answer `count_of` off the live bag
+/// (`World::tick_fishing_hub`), and an equip lands in the session's persistent
+/// lure / rod, which `World::exit_fishing` banks. The minigames page models no
+/// tackle inventory - rod and lure are `fishing_pond_start` arguments and its
+/// HUD already shows a fixed lure count - so its `count_of` reports every
+/// tackle item as held, which lets that page's player equip any of the six.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RodLureSelect {
     /// Cursor row (`DAT_801D90DC`); `0..3` = the three lure rows, `3..` = the
@@ -1461,6 +1459,8 @@ pub struct PondSession {
     /// Last frame's lure probe - the water class the strike credit and the
     /// hooked fish's weight come off.
     lure_probe: crate::fishing_actors::LureProbe,
+    /// The venue's hub menu, while it is up ([`crate::fishing_hub`]).
+    pub(crate) hub: Option<crate::fishing_hub::FishingHub>,
 }
 
 /// The venue bytes a host attaches so the cast lure has a world to land in.
@@ -1534,6 +1534,7 @@ impl PondSession {
             venue_map: None,
             lure_actor: None,
             lure_probe: Default::default(),
+            hub: None,
         }
     }
 
@@ -1635,6 +1636,11 @@ impl PondSession {
     /// 60 fps); `cast_step` is the casting-power meter step per frame (the
     /// native driver uses `0x80`).
     pub fn tick(&mut self, input: PondInput, frame_step: i32, cast_step: i32) {
+        // The hub menu owns the frame while it is up: retail's states
+        // `0x64..=0x78` run instead of the pond's (`crate::fishing_hub`).
+        if self.hub.is_some() {
+            return;
+        }
         let fs = frame_step.max(1);
         match self.phase {
             PondPhase::Idle => {

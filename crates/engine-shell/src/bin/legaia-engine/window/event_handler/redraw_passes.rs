@@ -459,11 +459,17 @@ impl PlayWindowApp {
                     Err(e) => log::warn!("summon/move-FX part mesh upload: {e:#}"),
                 }
             }
-            // Draw-kind-4 nodes - effect ribbons (move-VM op `0x42`) and
-            // `0x4000` sprite-arm quads (op `0x23`): transform nodes whose
-            // model is the emitter's own per-frame output, composed like a
-            // part, in battle and on the field. The browser play page draws
-            // the same list (`play_battle_fx.rs`, both FX frames).
+        }
+        // Draw-kind-4 nodes - effect ribbons (move-VM op `0x42`) and
+        // `0x4000` sprite-arm quads (op `0x23`): transform nodes whose model
+        // is the emitter's own per-frame output, composed like a part, in
+        // battle, on the field and on the overworld. Retail's per-actor
+        // dispatcher `FUN_8001ADA4` makes no mode test on its case-4 arm
+        // (`0x8001B060..0x8001B160`), and the `map01` overworld state
+        // `keikoku_chest_preload` holds seven live kind-4 sprite-arm nodes
+        // on list `_DAT_8007C350`. The browser play page draws the same list
+        // (`play_battle_fx.rs`, both FX frames).
+        if !self.boot_ui.is_active() {
             for rb in self.session.host.world.active_effect_kind4_draws() {
                 let v = &rb.mesh;
                 match r.upload_vram_mesh(
@@ -483,6 +489,29 @@ impl PlayWindowApp {
                         summon_part_draws.push((m, model));
                     }
                     Err(e) => log::warn!("draw-kind-4 mesh upload: {e:#}"),
+                }
+            }
+            // Battle ground shadows (`FUN_80048A08`'s disc, built by the same
+            // default-arm builder `FUN_80028158`): one per drawn body, judged
+            // by the plan the battle actor pass draws with. The browser play
+            // page draws the same list (`play_battle_fx.rs`).
+            let world = &self.session.host.world;
+            for rb in world.battle_ground_shadows(|i| self.body_draw_plan(i)) {
+                let v = &rb.mesh;
+                match r.upload_vram_mesh(
+                    &v.positions,
+                    &v.uvs,
+                    &v.cba_tsb,
+                    &v.normals,
+                    &v.colors,
+                    &v.indices,
+                ) {
+                    Ok(m) => {
+                        let model =
+                            Mat4::from_translation(Vec3::from(rb.world_pos)) * fx_model_flip;
+                        summon_part_draws.push((m, model));
+                    }
+                    Err(e) => log::warn!("battle ground shadow upload: {e:#}"),
                 }
             }
         }
@@ -696,17 +725,19 @@ impl PlayWindowApp {
     }
 
     /// This frame's move-VM strip spans: every extension sub-op `0x2C`
-    /// execution the world captured since the last draw (the scanline strip
-    /// emitter `FUN_801D31B0`), projected through the same follow camera as
-    /// the fog sheets by the shared `move_strip_prims` kernel the browser
-    /// play page draws them with. Drained every frame, drawn only in a field
+    /// execution of the most recent tick (the scanline strip emitter
+    /// `FUN_801D31B0`, `MoveVmGlobals::strip_frame`), projected through the
+    /// same follow camera as the fog sheets by the shared `move_strip_prims`
+    /// kernel the browser play page draws them with. Drawn only in a field
     /// scene - the extension dispatcher exists only in the field overlay.
     pub(super) fn take_move_strip_prims(
         &mut self,
     ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
         use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
-        let requests = self.session.host.world.move_vm.take_strip_requests();
         let world = &self.session.host.world;
+        // The latest tick's set, not drained: an idle redraw draws it again
+        // (`MoveVmGlobals::strip_frame`).
+        let requests = world.move_vm.strip_frame();
         if requests.is_empty() || world.mode != SceneMode::Field {
             return Vec::new();
         }
@@ -718,7 +749,7 @@ impl PlayWindowApp {
         let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
             return Vec::new();
         };
-        legaia_engine_render::move_strip::move_strip_prims(&requests, &view)
+        legaia_engine_render::move_strip::move_strip_prims(requests, &view)
     }
 
     /// This frame's attached lights - the field VM's op `0x34` sub-1 light

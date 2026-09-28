@@ -228,6 +228,26 @@ impl TitleSession {
         self.menu.sfx
     }
 
+    /// The title session a shipped host's front end opens: Continue enabled
+    /// exactly when `any_save_present`, and the attract countdown armed.
+    ///
+    /// Both hosts open every title through this - the cold boot, a return
+    /// from Options or a backed-out Continue, and the post-wipe title - and
+    /// each passes a **fresh** scan of its save rack (native: the save
+    /// directory port plus the mounted `--card`; browser: the two card
+    /// ports). The native window used to scan only at cold boot and reopen
+    /// every later title with Continue forced on, so closing Options on a
+    /// rack with no saves turned a greyed Continue live.
+    pub fn for_front_end(any_save_present: bool) -> Self {
+        let mut s = if any_save_present {
+            Self::new()
+        } else {
+            Self::without_save_data()
+        };
+        s.attract_enabled = true;
+        s
+    }
+
     /// Construct a session with `Continue` disabled (no save data).
     pub fn without_save_data() -> Self {
         let mut s = Self::new();
@@ -530,6 +550,14 @@ mod tests {
         let mut s = TitleSession::new();
         s.skip_fade_in();
         assert!(matches!(s.phase(), TitlePhase::PressStart { .. }));
+    }
+
+    #[test]
+    fn front_end_session_follows_the_scan_and_arms_attract() {
+        let with = TitleSession::for_front_end(true);
+        assert!(with.continue_enabled && with.attract_enabled);
+        let without = TitleSession::for_front_end(false);
+        assert!(!without.continue_enabled && without.attract_enabled);
     }
 
     #[test]

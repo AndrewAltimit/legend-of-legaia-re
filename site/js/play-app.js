@@ -818,8 +818,35 @@ void main() {
         try { this.rt.play_abandon_opening_chain(); } catch (_) {}
       }
       const state = JSON.parse(this.rt.enter_field(label));
+      return this._adopt(state, label);
+    }
+
+    /* Land the save a Load / import parked, through the engine's one resume
+     * entry (`play_resume_save`: the saved scene, else the running scene,
+     * else the opening town - never a New Game; the native window's
+     * `BootSession::resume_save`). Rebuilds only when the landing entered a
+     * scene. Returns the landing JSON (`landing`, `scene`, `entered`,
+     * `state`). */
+    resumeSave() {
+      const r = JSON.parse(this.rt.play_resume_save());
+      if (r.entered) this._adopt(r.state, r.scene);
+      else if (r.scene) this.scene = r.scene;
+      return r;
+    }
+
+    /* Start a New Game through the engine's one entry (`play_new_game`: the
+     * seeded slate, then `opdeene`, else `town01`; the native
+     * `BootSession::start_new_game`). Same return shape as `resumeSave`. */
+    newGame() {
+      const r = JSON.parse(this.rt.play_new_game());
+      this._adopt(r.state, r.scene);
+      return r;
+    }
+
+    /* Rebuild the page-side scene after the engine entered one. */
+    _adopt(state, label) {
       this._rebuild();
-      this.scene = state.scene || label;
+      this.scene = (state && state.scene) || label;
       /* Demo tile board (`?tileboard=1`): the browser's twin of the native
        * window's `LEGAIA_TILE_BOARD_DEMO=1`, which no browser can set. No
        * retail scene installs a board, so without a trigger the per-cell
@@ -878,7 +905,9 @@ void main() {
       if (rt.field_ground_quad_count() > 0) {
         this.renderer.uploadGround(
           rt.field_ground_positions(), rt.field_ground_uvs(),
-          rt.field_ground_cba_tsb(), rt.field_ground_indices());
+          rt.field_ground_cba_tsb(), rt.field_ground_indices(),
+          (typeof rt.field_ground_flat_refs === 'function')
+            ? rt.field_ground_flat_refs() : null);
       } else {
         this.renderer.uploadGround(new Float32Array(0), null, null, new Uint32Array(0));
       }
@@ -1253,6 +1282,16 @@ void main() {
       try { return !!this.rt.play_sfx_event(name); } catch (e) { return false; }
     }
 
+    /* The pause menu's blip for this frame's pad edges. Which cue fires - if
+     * any - is the engine's one rule (`play_menu_edge_blip`, engine-core
+     * `menu_cues::menu_edge_blip`), the same function the native window
+     * asks; the page only says whether this frame's Start closed the menu.
+     * Silent against a cached WASM that predates the export. */
+    menuBlip(edge, startCloses) {
+      if (typeof this.rt.play_menu_edge_blip !== 'function') return false;
+      try { return !!this.rt.play_menu_edge_blip(edge, !!startCloses); } catch (e) { return false; }
+    }
+
     /* The SFX channel's state (`{descriptors, bank_prot, vab_staged, fired,
      * last_cue, idle_voices, pending}`), or `null`. */
     sfxState() {
@@ -1353,29 +1392,18 @@ void main() {
       } catch (e) {}
       if (startEdge && !inSubScreen) {
         try { rt.play_menu_close(); } catch (e) {}
-        this.sfxEvent('menu_cancel');
+        this.menuBlip(padMaskOf(p), true);
       } else {
         let edge = 0;
         edge |= padMaskOf(p);
-        /* Cue the engine's own blips off this frame's edges: a direction is a
-         * cursor move, Cross a confirm, Circle a cancel. The cue ids and their
-         * provenance come from the engine (`play_sfx_events_json`) - the page
-         * never hard-codes one.
-         *
-         * These sound again. They were silent for a while by the engine's
-         * choice: retail's three ids are pinned (`FUN_80032A44`), but the port
-         * keyed them an octave below retail, which is why menu navigation
-         * played thuds. That pitch is measured and fixed. The engine still
-         * counts every request (`menu_cue_requests` in `play_sfx_state_json`)
-         * alongside `queued`, so keep firing the events either way - the wiring
-         * is what stays measurable. See `play_sfx::CUE_MENU_CURSOR` for the one
+        /* Cue the engine's own blip off this frame's edges. Which edge fires
+         * which cue (a direction a cursor move, Cross a confirm, Circle a
+         * cancel; Start inside a sub-screen nothing) is the engine's rule, and
+         * so are the ids - the page never spells either. The engine counts
+         * every request (`menu_cue_requests` in `play_sfx_state_json`), so the
+         * wiring stays measurable. See `play_sfx::CUE_MENU_CURSOR` for the one
          * inexactness left, which is a bank choice rather than a pitch. */
-        if (edge) {
-          const DIRS = 0x0010 | 0x0020 | 0x0040 | 0x0080;
-          if (edge & 0x4000) this.sfxEvent('menu_confirm');
-          else if (edge & 0x2000) this.sfxEvent('menu_cancel');
-          else if (edge & DIRS) this.sfxEvent('menu_cursor');
-        }
+        if (edge) this.menuBlip(edge, false);
         /* Tick EVERY frame, edge or not, and tick at 60 Hz.
          *
          * The menu is not purely input-driven: the save screen's "Now
@@ -1413,13 +1441,13 @@ void main() {
           this.held.clear();
           this._repack();
         }
-        /* An in-canvas Load off a memory card lands the save's party in the
-         * world, but the scene it was written in is the page's to enter
-         * (`enter()` owns scene assembly). The engine parks the label; hand
-         * it over the frame it appears. */
-        let scene = '';
-        try { scene = rt.play_menu_take_load_scene(); } catch (e) {}
-        if (scene) {
+        /* An in-canvas Load off a memory card parks the save in the engine;
+         * the page lands it through the engine's resume entry
+         * (`play_resume_save`, via `onCardLoad`) the frame it appears. A
+         * save naming no scene counts too - it lands on the running scene. */
+        let loaded = false;
+        try { loaded = rt.play_menu_take_load(); } catch (e) {}
+        if (loaded) {
           /* Hand the score from whatever was playing (the title theme, on a
            * load out of the boot chooser) to the save's own op-0x35 track -
            * the native window's `bgm.stop(); restore_field_bgm();` pair. The
@@ -1428,8 +1456,8 @@ void main() {
            * theme simply keeps going under the loaded scene. */
           try { rt.play_bgm_title_handoff(); } catch (e) { /* audio down */ }
         }
-        if (scene && typeof this.opts.onCardLoad === 'function') {
-          this.opts.onCardLoad(scene);
+        if (loaded && typeof this.opts.onCardLoad === 'function') {
+          this.opts.onCardLoad();
         }
       }
       /* The menu owns every edge while it is up - clear them so none leak into
@@ -2044,34 +2072,35 @@ void main() {
        *
        * THE DENOMINATION LAW, and it is shared with the native host: one
        * `World::tick` advances the simulation by exactly ONE RETAIL DISPLAY
-       * FRAME. `TICK_DT` is therefore not a tuning knob - it is the retail
-       * vsync period, and `engine-core`'s frame tick assumes it
-       * (`SIM_HZ == RETAIL_FPS`, `field_frame_step == 1` every tick). The
-       * native window states the same constant as `TICK_DT = 1.0/60.0` in
-       * `EngineWindow::drain_ticks`, with the same 4-tick backlog cap below.
-       * Change one and the two hosts run the same engine at different
-       * speeds, which is invisible in a diff - see
+       * FRAME. How many ticks a display frame runs is the engine's rule, not
+       * this page's: `play_drain_sim_steps` is the same kernel the native
+       * redraw drains through (`engine-core::frame_step::SimStepper` - whole
+       * 1/60 s ticks, at most four a frame, and a longer gap dropped rather
+       * than carried). Two local spellings of that rule drifted once already
+       * (the native one carried its backlog, this one dropped it) - see
        * `docs/tooling/host-drift.md` and the units-per-second oracle
        * `crates/engine-core/tests/sim_cadence_wall_speed.rs`
-       * (retail walk = 480 world units/second, run = 720). */
+       * (retail walk = 480 world units/second, run = 720). The JavaScript
+       * accumulator below survives only for a cached wasm bundle that
+       * predates the export. */
       let simSteps = 0;
+      const shared = typeof rt.play_drain_sim_steps === 'function';
       if (advance) {
         const TICK_DT = 1000 / 60;
+        const now = performance.now();
         if (stepping) {
           simSteps = 1;
           this._simAccum = 0;
-          this._simLast = performance.now();
+          if (shared) rt.play_resync_sim_clock();
+        } else if (shared) {
+          simSteps = rt.play_drain_sim_steps(now - this._simLast);
         } else {
-          const now = performance.now();
           this._simAccum += now - this._simLast;
-          this._simLast = now;
-          /* Cap the backlog so a long stall (hidden tab, GC pause) can't
-           * unleash a burst of catch-up ticks - the native window caps at
-           * 4 ticks/frame the same way. */
           if (this._simAccum > TICK_DT * 4) this._simAccum = TICK_DT * 4;
           simSteps = Math.floor(this._simAccum / TICK_DT);
           this._simAccum -= simSteps * TICK_DT;
         }
+        this._simLast = now;
       }
 
       /* Field pause menu (Start): consumes this frame's edges and, while up,
@@ -2084,6 +2113,16 @@ void main() {
        * the script the same way, and is modal over everything else. */
       const namingOpen = (menuOpen || shopOpen) ? false : this._updateNameEntry(simSteps);
 
+      /* Under the pause menu or a shop the field does not tick, but the SFX
+       * scheduler does: retail's mode-0x17 frame handler still runs the cue
+       * drainer, so a cue already delayed when the screen opened keeps
+       * ageing (the native window's `tick_menu_sfx`). */
+      if (advance && (menuOpen || shopOpen)
+          && typeof rt.play_tick_overlay_sfx === 'function') {
+        for (let s = 0; s < simSteps; s++) {
+          try { rt.play_tick_overlay_sfx(); } catch (e) { break; }
+        }
+      }
       if (advance && !menuOpen && !shopOpen && !namingOpen) {
         const steps = simSteps;
         for (let s = 0; s < steps; s++) {
@@ -2196,15 +2235,22 @@ void main() {
               this._onEngineTrap('scene rebuild', e);
               return;
             }
-            /* Don't keep feeding this frame's input into the freshly-loaded
-             * scene - resume ticking it next frame. */
-            break;
+            /* The frame's remaining ticks run on the new scene, as the
+             * native window's loop does after its rebuild: the stepper
+             * already charged their wall time, so breaking here dropped up
+             * to three ticks per door. */
           }
         }
       } else {
         /* Keep the sim clock current while paused so unpausing doesn't dump the
          * accumulated wall-clock gap as a burst of catch-up ticks. */
         this._simLast = performance.now();
+        /* Paused only - a modal overlay above already spent this frame's
+         * drain, and its sub-tick remainder must carry or an overlay stepped
+         * by `simSteps` would never step on a display above 60 Hz. */
+        if (!advance && typeof rt.play_resync_sim_clock === 'function') {
+          rt.play_resync_sim_clock();
+        }
       }
 
       /* The scene's floor-height ladder is script-animated (field-VM op `0x4C`

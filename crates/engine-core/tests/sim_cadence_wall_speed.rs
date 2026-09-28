@@ -1,10 +1,10 @@
 //! The simulation clock's denomination, measured rather than asserted.
 //!
 //! **One `World::tick` is one retail display frame (vsync).** Both hosts drive
-//! it at exactly 60 Hz wall - the native window's fixed-timestep accumulator
-//! (`legaia_engine_render::EngineWindow::drain_ticks`, `TICK_DT = 1.0/60.0`)
-//! and the browser play page (`site/js/play-app.js`, `TICK_DT = 1000/60`) -
-//! so a tick count is a retail frame count and `ticks / 60` is seconds.
+//! it at exactly 60 Hz wall - both drain wall time through the shared
+//! fixed-timestep kernel `legaia_engine_core::frame_step::SimStepper`
+//! (`TICK_SECS = 1/60`; the page through `play_drain_sim_steps`) - so a tick
+//! count is a retail frame count and `ticks / 60` is seconds.
 //!
 //! # The retail number these pin against
 //!

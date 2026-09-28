@@ -286,8 +286,8 @@ fn rung3_the_installed_descriptor_selects_the_painter() {
     );
     assert_eq!(
         w.field_vm.submode_screen.installed_windows,
-        vec![window::THREE_LINE],
-        "the coin confirm installed {:?}",
+        vec![0, 10, 10, window::THREE_LINE],
+        "the coin confirm opens record 11 over the entry panel: {:?}",
         w.field_vm.submode_screen.installed_windows
     );
     assert!(

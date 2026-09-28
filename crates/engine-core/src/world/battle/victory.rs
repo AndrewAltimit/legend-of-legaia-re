@@ -124,6 +124,13 @@ pub struct VictorySequence {
     /// phase 0 has picked it. `None` for a wipe / escape or without the
     /// SCUS table.
     pub pose_id: Option<u8>,
+    /// Whether the results frame opened its window - the result window
+    /// `FUN_801D8DE8(0x41, 0)` on a win (`0x8004F65C`), the loss window
+    /// `FUN_801D8DE8(0x42, 0)` on a wipe (`0x8004F900`). A non-zero
+    /// special-battle word skips both calls (`0x8004F614` / `0x8004F8F0`),
+    /// so an arena leg or a Ra-Seru-forbidden fight ends on the bare scene.
+    /// `false` until the results frame runs.
+    pub window_opened: bool,
 }
 
 impl VictorySequence {
@@ -275,6 +282,7 @@ impl World {
             phase,
             pose_actor: 0,
             pose_id: None,
+            window_opened: false,
         };
         match cause {
             BattleEndCause::MonsterWipe => {
@@ -391,8 +399,19 @@ impl World {
     }
 
     /// The results frame (`ctx[+0x6CE]` `0 -> 1`).
+    ///
+    /// The window each arm opens is gated on the special-battle word
+    /// ([`VictorySequence::window_opened`]); the rewards the win arm credits
+    /// are zeroed by the same word inside [`World::apply_battle_loot`].
+    ///
+    /// PORT: FUN_8004E568 (the two special-word window gates,
+    /// `0x8004F614..0x8004F660` and `0x8004F8F0..0x8004F904`)
     fn open_battle_results_frame(&mut self, seq: &mut VictorySequence) {
         seq.phase = VictoryPhase::Results { hold: 0 };
+        seq.window_opened = matches!(
+            seq.cause,
+            BattleEndCause::MonsterWipe | BattleEndCause::PartyWipe
+        ) && self.special_battle_word() == 0;
         match seq.cause {
             BattleEndCause::MonsterWipe => {
                 // `FUN_8003CE08(0x35)` + the round bump (`0x8004EEE4`).

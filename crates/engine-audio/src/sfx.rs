@@ -442,6 +442,20 @@ impl SfxFireBatch {
     pub fn is_empty(&self) -> bool {
         self.fired.is_empty() && self.ring.is_empty()
     }
+
+    /// A batch holding one cue that fires **now**, built without touching any
+    /// [`SfxScheduler`]. A host that has to sound a UI blip on the frame of
+    /// the press (the browser page's menu cues, which it fires outside its
+    /// sim tick) fires this instead of enqueueing and ticking the scheduler:
+    /// ticking there advances every *other* queued cue a frame per blip, which
+    /// the native window - whose menu cues wait for the one per-frame tick -
+    /// never does.
+    pub fn immediate(id: u16) -> Self {
+        Self {
+            fired: vec![PendingCue::new(id, 0)],
+            ring: Vec::new(),
+        }
+    }
 }
 
 /// Frame-driven scheduler.
@@ -789,6 +803,23 @@ mod tests {
         let batch = s.tick_frame();
         assert_eq!(batch.fired.len(), 1);
         assert_eq!(batch.fired[0].id, 0x1A);
+    }
+
+    /// An immediate batch fires its one cue and leaves the queue's clock
+    /// alone: a delayed cue already waiting still needs its full count of
+    /// ticks afterwards.
+    #[test]
+    fn immediate_batch_does_not_age_the_queue() {
+        let mut s = SfxScheduler::new();
+        s.enqueue(PendingCue::new(0x2E, 2));
+        let blip = SfxFireBatch::immediate(0x21);
+        assert_eq!(blip.fired.len(), 1);
+        assert_eq!(blip.fired[0].id, 0x21);
+        assert!(blip.ring.is_empty());
+        // The waiting cue still takes 2 -> 1 -> 0 -> fire: three ticks.
+        assert!(s.tick_frame().fired.is_empty());
+        assert!(s.tick_frame().fired.is_empty());
+        assert_eq!(s.tick_frame().fired.len(), 1);
     }
 
     #[test]

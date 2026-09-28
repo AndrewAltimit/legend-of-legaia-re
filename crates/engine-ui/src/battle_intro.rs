@@ -669,6 +669,9 @@ pub const SPINUP_RING_RGB: u32 = 0x0030_3030;
 /// blend (drawn here as the half-blend bank's `B/2 + F/2` with the colour
 /// faded toward the staged black ambient as the phase grows - the ring
 /// self-extinguishes as it expands, matching `a2` rising to `0x1000`).
+/// The generator itself is instruction-ported as
+/// `legaia_engine_core::effect_default_arm`, which this leaf crate cannot
+/// reach; its shape-`0` ring over these params is the band modelled here.
 ///
 /// PORT: FUN_801D1CFC
 /// REF: FUN_80028158 (case-0 annulus parameters only - see above)

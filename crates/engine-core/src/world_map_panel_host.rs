@@ -1321,6 +1321,35 @@ mod tests {
         }
     }
 
+    /// A suppressed frame stores nothing but the cached decision: retail's
+    /// suppress arms return before the timer and position stores. So a host
+    /// that steps the kernel under a modal overlay and one that does not
+    /// step it at all leave the same state, and the next unsuppressed frame
+    /// decides the same way on both.
+    #[test]
+    fn a_suppressed_tick_changes_no_state() {
+        let mut stepped = FieldPartyHud::new();
+        // Enter, stand still a few frames (counting down), then open an
+        // overlay.
+        for _ in 0..5 {
+            stepped.tick(false, 0, 0, Some((100, 200)), 1, None);
+        }
+        let mut skipped = stepped.clone();
+        for _ in 0..30 {
+            let d = stepped.tick(true, 0, 0, Some((100, 200)), 1, None);
+            assert!(matches!(d, HudDecision::Suppressed));
+        }
+        assert_eq!(stepped.timer, skipped.timer);
+        assert_eq!(stepped.cached, skipped.cached);
+        // The overlay closes: both hosts' next frame decides identically.
+        for _ in 0..60 {
+            assert_eq!(
+                stepped.tick(false, 0, 0, Some((100, 200)), 1, None),
+                skipped.tick(false, 0, 0, Some((100, 200)), 1, None)
+            );
+        }
+    }
+
     /// The raw-to-packed conversion, on the two fixed points both layouts
     /// document independently.
     #[test]

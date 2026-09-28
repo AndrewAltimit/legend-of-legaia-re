@@ -614,11 +614,6 @@
   /* The scene the disc's new-game table names as the opening (Rim Elm). Kept in
    * sync with `legaia_asset::new_game::OPENING_SCENE`. */
   const OPENING_SCENE = 'town01';
-  /* The prologue cutscene chain's first leg (`OPENING_CUTSCENE_SCENE`): New
-   * Game enters here and the engine's opening timeline walks the remaining
-   * legs (narration crawl over the 3D tableaux; Z/Space skips to Rim Elm -
-   * retail's intro skip). */
-  const OPENING_CUTSCENE_SCENE = 'opdeene';
 
   /* Only categories whose scenes are actually walkable are offered: towns,
    * field areas, and the three kingdom overworlds (the engine's world-map
@@ -675,27 +670,9 @@
        *
        * Continue and Options are live rows: the engine routes them to the
        * retail save-select and options screens (the shared pause-menu rows),
-       * and a Continue that loads a card block hands this callback the scene
-       * the save was written in - retail resumes there. The rows used to be
-       * dead, with every confirmed outcome falling through to New Game on a
-       * host that could already load and persist saves. */
-      runBootTitle((outcome) => {
-        if (outcome && outcome !== 'new_game' && sceneKnown(outcome)) {
-          enter(outcome);
-          saveMsg('Continued from a memory-card save.');
-          return;
-        }
-        /* A fresh slate - flags, gold, bag, clock and the SCUS starting
-         * party - the way the native `BootSession::begin_new_game` does.
-         * Without it a New Game after a Continue / card import / picker
-         * session kept the old roster and story flags. */
-        try { if (typeof runtime.begin_new_game === 'function') runtime.begin_new_game(); }
-        catch (e) { console.warn('begin_new_game', e); }
-        enter(OPENING_CUTSCENE_SCENE);
-        if (active !== OPENING_CUTSCENE_SCENE || !window.__playState) {
-          enter(OPENING_SCENE);
-        }
-      });
+       * and a Continue that loads a card block ends the title with
+       * 'loaded'. What happens next is the engine's (`onTitleOutcome`). */
+      runBootTitle(onTitleOutcome);
     } else {
       /* The scene list lives inside #play-stage, which starts hidden. Reveal
        * the stage so the picker is visible and selectable without first
@@ -799,9 +776,50 @@
   }
   window.__playInstallXaBanks = installXaBanks;
 
+  /* Every way into a scene on this page: a picker pick (`enter`), a resumed
+   * save (`resumeLoadedSave`) and a New Game (`startNewGame`). The last two
+   * are ONE engine call each - `play_resume_save` / `play_new_game`, the
+   * browser twins of the native `BootSession::resume_save` /
+   * `BootSession::start_new_game` - so the landing order and its fallbacks
+   * (saved scene, running scene, opening town; opdeene, then town01) are the
+   * engine's, not this page's. The page's scene list is a picker, never a
+   * resume gate. */
   function enter(label) {
     if (!runtime) return;
     active = label;
+    enterWith(label, (v) => v.enter(label));
+  }
+
+  /* Land the save a Load / import parked in the engine. */
+  function resumeLoadedSave() {
+    if (!runtime) return;
+    enterWith('the saved scene', (v) => {
+      const r = v.resumeSave();
+      if (r.landing === 'nowhere') throw new Error('no scene could be entered for this save');
+      return r.state;
+    });
+  }
+
+  /* A New Game: the engine seeds the slate and enters the opening. */
+  function startNewGame() {
+    if (!runtime) return;
+    enterWith('the opening', (v) => v.newGame().state);
+  }
+
+  /* The boot title's (and the post-wipe title's) outcome: 'loaded' = a
+   * Continue loaded a save (land it), anything else = New Game. A Continue
+   * whose save names a scene this page does not list no longer falls
+   * through to a New Game over the loaded save. */
+  function onTitleOutcome(outcome) {
+    if (outcome === 'loaded') {
+      resumeLoadedSave();
+      saveMsg('Continued from a memory-card save.');
+      return;
+    }
+    startNewGame();
+  }
+
+  function enterWith(label, run) {
     renderList(searchEl.value);
     showStage();
     statusEl.textContent = `Entering ${label}…`;
@@ -819,14 +837,12 @@
           /* The in-game Load screen read a save off an inserted memory card:
            * the party is already in the world, so all that is left is to walk
            * into the scene it was saved in - retail resumes there. */
-          onCardLoad: (scene) => {
+          onCardLoad: () => {
             try { runtime.play_menu_close(); } catch (e) {}
-            saveMsg(`Loaded from memory card${scene ? ` - ${scene}` : ''}.`);
-            /* Re-enter even when the save names the scene already on screen:
-             * the load parks the save until a scene entry applies it, so
-             * skipping the entry left the player where they stood and the
-             * parked save waiting for the next scene pick. */
-            if (sceneKnown(scene)) enter(scene);
+            saveMsg('Loaded from memory card.');
+            /* One engine call lands it (`play_resume_save`), re-entering the
+             * saved scene even when it is the one already on screen. */
+            resumeLoadedSave();
           },
           /* Party wipe -> the title card, which is retail's only answer
            * here: the wipe arm of FUN_8003AEB0 stores game_mode = 0x16
@@ -837,21 +853,10 @@
            * this hook was an engine invention and is gone. */
           onQuit: () => {
             try { view.stop(); } catch (e) {}
-            runBootTitle((outcome) => {
-              if (outcome && outcome !== 'new_game' && sceneKnown(outcome)) {
-                enter(outcome);
-                return;
-              }
-              /* The same fresh slate the boot title's New Game takes - a
-               * party wipe must not carry the wiped run's flags and roster
-               * into the new game. */
-              try { if (typeof runtime.begin_new_game === 'function') runtime.begin_new_game(); }
-              catch (e) { console.warn('begin_new_game', e); }
-              enter(OPENING_CUTSCENE_SCENE);
-              if (active !== OPENING_CUTSCENE_SCENE || !window.__playState) {
-                enter(OPENING_SCENE);
-              }
-            });
+            /* The same title outcome the boot title takes: Continue lands
+             * the loaded save, New Game takes the engine's seeded slate - a
+             * party wipe must not carry the wiped run into the new game. */
+            runBootTitle(onTitleOutcome);
           },
           onError: (msg) => {
             /* A WASM trap poisons the engine instance; rebuild it from the
@@ -872,7 +877,8 @@
          * may have been unchecked before the first scene was entered). */
         if (window.__playApplySeeThrough) window.__playApplySeeThrough();
       }
-      const st = view.enter(label);
+      const st = run(view);
+      if (st && st.scene) { active = st.scene; renderList(searchEl.value); }
       view.start();
       /* Picking a scene is a user gesture: bring up the BGM output now (browser
        * autoplay policy) so the scene's music sounds without waiting for a
@@ -890,7 +896,7 @@
         }
       } catch (e) {}
       statusEl.textContent =
-        `Running ${label}. Click the canvas, then walk with the arrow keys.${hint}`;
+        `Running ${active || label}. Click the canvas, then walk with the arrow keys.${hint}`;
       window.__playState = st;
       canvas.focus();
     } catch (err) {
@@ -1028,10 +1034,10 @@
     };
     /* Non-empty once Continue / Options handed off to a pause-menu row; the
      * loop then drives that menu instead of the title card, and finishes when
-     * it closes. Continue finishes with the loaded save's scene when there is
-     * one, so a Continue lands where the save was written. */
+     * it closes. A Continue that loaded a save finishes with 'loaded' and the
+     * engine lands it (`play_resume_save`). */
     let handoff = '';
-    let loadedScene = '';
+    let loaded = false;
     const frame = () => {
       bootTitleRAF = requestAnimationFrame(frame);
       const edge = padMaskOf(pulse);
@@ -1086,7 +1092,7 @@
         for (let i = 0; i < ticks; i++) {
           try { runtime.play_menu_input(i === 0 ? edge : 0); } catch (e) { return finish('new_game'); }
         }
-        try { loadedScene = runtime.play_menu_take_load_scene() || loadedScene; } catch (e) {}
+        try { loaded = runtime.play_menu_take_load() || loaded; } catch (e) {}
         let md = null;
         try { md = JSON.parse(runtime.play_menu_draws_json(menuCanvas.width, menuCanvas.height)); }
         catch (e) { md = null; }
@@ -1111,9 +1117,9 @@
         }
         let stillOpen = false;
         try { stillOpen = runtime.play_menu_is_open(); } catch (e) {}
-        if (loadedScene) {
+        if (loaded) {
           try { runtime.play_menu_close(); } catch (e) {}
-          return finish(loadedScene);
+          return finish('loaded');
         }
         if (!stillOpen) {
           /* Options closed, or Continue backed out without loading: retail
@@ -1321,16 +1327,6 @@
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
 
-  function sceneKnown(label) {
-    return !!label && scenes.some(s => s.label === label);
-  }
-
-  /* Where an import lands: the save's own scene when this page can walk it,
-   * otherwise stay in the running scene, otherwise the opening town. */
-  function enterAfterImport(scene) {
-    if (sceneKnown(scene)) enter(scene);
-    else if (!active) enter(OPENING_SCENE);
-  }
 
   function exportSession() {
     if (!runtime) return;
@@ -1378,7 +1374,7 @@
         }, bytes);
         const who = sum.party && sum.party.length ? ` - ${sum.party.join(', ')}` : '';
         saveMsg(`Imported engine save${who}.`);
-        enterAfterImport(sum.scene || opts.scene || '');
+        resumeLoadedSave();
         return;
       }
       const listing = JSON.parse(wasm.card_saves_json(bytes));
@@ -1429,7 +1425,7 @@
       /* The card the player just handed us is almost certainly the one they
        * want in a slot - put it in a free port so in-game Save works now. */
       autoInsertCard(cardId);
-      enterAfterImport(sum.scene || '');
+      resumeLoadedSave();
     } catch (err) {
       saveMsg(`Import failed: ${err.message || err}`, true);
       console.warn(err);

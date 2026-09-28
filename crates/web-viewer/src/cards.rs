@@ -29,8 +29,8 @@
 //! Nothing here is uploaded; the bytes live in the tab for the session.
 
 use legaia_engine_core::save_select::SlotSnapshot;
+use legaia_save::SaveResume;
 use legaia_save::emu;
-use legaia_save::{SaveFile, SaveResume};
 use wasm_bindgen::prelude::*;
 
 use crate::runtime::LegaiaRuntime;
@@ -84,7 +84,7 @@ impl LegaiaRuntime {
     /// cells of the retail 5x3 preview grid, in block order (grid cell `i`
     /// = card block `i + 1`).
     ///
-    /// Each present block is lifted through [`SaveFile::from_retail_sc_block`]
+    /// Each present block is lifted through [`legaia_save::SaveFile::from_retail_sc_block`]
     /// so the grid's portraits and the info panel's name / level / HP / MP /
     /// location rows come off the real save, exactly as retail reads them
     /// out of its per-slot buffer at `0x801EF1B8 + N * 0x100`.
@@ -151,32 +151,33 @@ impl LegaiaRuntime {
     }
 
     /// Load `block` of the card in rack slot `slot` into the live session.
+    ///
+    /// The block is read through [`MountedCard::save_at`] - the reader the
+    /// native window's `--card` port loads with - so a block that does not
+    /// open a save chain (a mid-chain continuation) is refused on both hosts
+    /// alike. This used to re-detect the container and slice the SC block by
+    /// hand, without the chain-start test. The save is parked for
+    /// [`Self::play_resume_save`] ([`crate::resume`]); the return is the
+    /// scene it names (empty when none).
     pub(crate) fn load_session_from_card(
         &mut self,
         slot: usize,
         block: u8,
     ) -> Result<String, String> {
-        let card_slot = self
+        let card = self
             .card(slot)
             .ok_or_else(|| format!("no memory card in slot {}", slot + 1))?;
-        let view = emu::detect(&card_slot.bytes).map_err(|e| format!("{e}"))?;
-        let sc = view
-            .sc_block(&card_slot.bytes, block)
-            .ok_or_else(|| format!("card has no block {block}"))?;
-        let sf = SaveFile::from_retail_sc_block(sc, legaia_save::RETAIL_SC_PARTY_RECORDS)
-            .map_err(|e| format!("not a valid retail save: {e}"))?;
+        let cell = block
+            .checked_sub(1)
+            .ok_or_else(|| "block 0 is the card directory, not a save".to_string())?;
+        let (sf, resume) = card
+            .save_at(cell)
+            .ok_or_else(|| format!("card block {block} holds no save"))?;
         if sf.party.members.is_empty() {
             return Err("that block holds no character records".to_string());
         }
-        let scene = SaveResume::from_retail_sc_block(sc).scene;
-        // Land it now (the menu's next frame reads the party) and park it for
-        // the scene entry the page performs next, which re-applies it after
-        // the swap instead of staging the picker's story baseline over it.
-        if !scene.is_empty() {
-            self.pending_card_resume = Some(sf.clone());
-        }
-        self.world_mut().load_full(sf);
-        Ok(scene)
+        self.park_loaded_save(sf, &resume.scene);
+        Ok(resume.scene)
     }
 
     /// Where a save written now would resume: the loaded scene's CDNAME
@@ -626,7 +627,7 @@ mod tests {
     }
 
     /// A card Load resumes the save's own story state. The page lifts the
-    /// block, then enters the scene the save names; that entry used to stage
+    /// block, then lands it in the scene the save names; that entry used to stage
     /// the scene picker's free-roam baseline over the loaded flags, clearing
     /// system flags `0x141` / `0x147` (the Rim Elm south-gate beat) in every
     /// resumed save. Disc-gated: `enter_field` needs the disc.
@@ -657,7 +658,13 @@ mod tests {
         rt.insert_card_core(0, buf, "test card".into()).unwrap();
         let scene = rt.load_session_from_card(0, 1).expect("load");
         assert_eq!(scene, "town01");
-        rt.enter_field(&scene).expect("enter_field");
+        // The page's one resume call (`play_resume_save`).
+        assert_eq!(
+            rt.resume_parked_save(),
+            Some(legaia_engine_core::resume::ResumeLanding::SavedScene(
+                "town01".into()
+            ))
+        );
         let w = rt.world_mut();
         assert!(w.system_flag_test(0x141), "0x141 survived the resume");
         assert!(w.system_flag_test(0x147), "0x147 survived the resume");

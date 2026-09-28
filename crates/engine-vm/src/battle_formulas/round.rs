@@ -286,6 +286,90 @@ pub fn battle_init_special_word(word: u32, monster_id: u8) -> u32 {
     word
 }
 
+/// The three Rot limb bits of `+0x16E` (`0x08` / `0x10` / `0x20`).
+pub const ROT_ALL_LIMBS: u16 = 0x38;
+
+/// Bit `0x100` of the special-battle word: the arena marker. At battle exit it
+/// keeps the party's status words (`0x80046E90..0x80046EA0`) and picks the
+/// arena as the next mode (`0x80046DF0` / `0x80046E38`).
+pub const SPECIAL_ARENA: u32 = 0x100;
+
+/// One party member's pass through the battle exit's party loop
+/// (`FUN_80046A20`, `0x80046E88..0x80046EE4`): unless the special-battle word
+/// carries [`SPECIAL_ARENA`] the actor's `+0x16E` status word is cleared
+/// (`sh zero,0x16e(v0)` at `0x80046EB0`), and a member at `0` HP is raised to
+/// `1` (`0x80046EBC..0x80046ECC`, unconditional). Returns `(status, hp)`.
+///
+/// Every battle exit reaches the loop - win, escape and wipe converge on
+/// `0x80046E64` once the results phase reaches `0x43` - and the controller
+/// runs it before the party's anim ticks in the same frame: the controller
+/// node is spawned first (`FUN_80055B6C`, `0x80055FC0`) and the actor nodes
+/// are appended behind it by battle init, which the controller itself calls
+/// (`0x80046F74`); `FUN_80020454` links at the tail and `FUN_8002519C` walks
+/// from the head. Each party tick then copies the cleared word into the
+/// character record's `+0x12E` (`0x80048040`), and battle init seeds the next
+/// fight's actor word from there (`0x80051718..0x80051720`). So an ordinary
+/// battle's statuses do not outlive it; an arena leg's do.
+///
+/// PORT: FUN_80046A20 (the exit party loop, `0x80046E88..0x80046EE4`)
+pub fn battle_exit_party_reset(word: u32, status: u16, hp: u16) -> (u16, u16) {
+    let status = if word & SPECIAL_ARENA != 0 { status } else { 0 };
+    (status, hp.max(1))
+}
+
+/// The action SM's wipe rule for a special battle (`FUN_801E295C`,
+/// `0x801E6578..0x801E65AC`): after the ordinary party scan (every seated
+/// member dead or Stone), a non-zero special-battle word counts the **whole
+/// party** down when the leader - actor-table slot `0`, `0x801C9370[0]` -
+/// has all three limbs rotted:
+///
+/// ```text
+/// 801e6578  lw   v0,-0x4540(v0)        ; _DAT_8007BAC0
+/// 801e6580  beqz v0,0x801e65b0
+/// 801e6590  lhu  v0,0x16e(leader)
+/// 801e6598  andi v0,v0,0x38
+/// 801e659c  bne  v0,0x38,0x801e65b4
+/// 801e65ac  lbu  s0,0(ctx)             ; s0 = party count -> the wipe compare
+/// ```
+///
+/// A fighter who cannot swing an arm or kick is out of an arena leg (or a
+/// Ra-Seru-forbidden fight) even while standing. The leader's liveness is not
+/// read. Returns `true` when the rule forces the wipe.
+///
+/// PORT: FUN_801E295C (the special-battle wipe rule, `0x801E6578..0x801E65AC`)
+pub fn special_battle_wipe(word: u32, leader_status: u16) -> bool {
+    word != 0 && leader_status & ROT_ALL_LIMBS == ROT_ALL_LIMBS
+}
+
+/// The round driver's run arm for a special battle (`FUN_801D0748` flow state
+/// `0xFE`, `0x801D3228..0x801D328C`): once the Run commit has stamped
+/// category `5` on the party, a non-zero special-battle word whose leader
+/// (`0x801C9370[0]`) carries category `5` hands the round's first turn to
+/// the leader (`ctx[+0x274] = 0`) and records the leg outcome
+/// `_DAT_80084448 = 4` - "ran" - unless the formation's first monster
+/// (`DAT_8007BD0C`) is `0xAF` or `0x3D..=0x3F`:
+///
+/// ```text
+/// 801d322c  lw   v0,-0x4540(v0)        ; _DAT_8007BAC0
+/// 801d3234  beqz v0,exit
+/// 801d3244  lbu  v1,0x1de(leader)
+/// 801d324c  bne  v1,5,exit
+/// 801d3254  lbu  v1,-0x42f4(v0)        ; DAT_8007BD0C
+/// 801d325c  beq  v1,0xAF / 0x3D / 0x3E / 0x3F, exit
+/// 801d3284  sb   zero,0x274(ctx)
+/// 801d328c  sw   4,0x4448(0x80080000)
+/// ```
+///
+/// The four exempt ids are exactly the first monsters of the two fights
+/// whose `0x200` Ra-Seru bit makes the word non-zero outside the arena
+/// ([`battle_init_special_word`], [`formation_roll_special_word`]), so the
+/// arm is the arena's: running from a leg gives the contest up.
+///
+/// PORT: FUN_801D0748 (the special-battle run arm, `0x801D3228..0x801D328C`)
+pub fn special_battle_run_forfeit(word: u32, leader_category: u8, first_monster: u8) -> bool {
+    word != 0 && leader_category == 5 && !matches!(first_monster, 0xAF | 0x3D..=0x3F)
+}
+
 /// The formation roll's side-write on the special-battle word
 /// (`FUN_80051D84`, `0x8005200C..0x8005205C`): the Rim Elm ambush - monster
 /// ids `0x3D..=0x3F` on maps `0x0C` / `0x15` - raises
@@ -659,6 +743,35 @@ pub const RETAIL_MONSTER_SLOT_BASE: u8 = 3;
 #[cfg(test)]
 mod special_word_tests {
     use super::*;
+
+    #[test]
+    fn the_exit_clears_statuses_unless_the_arena_bit_and_floors_hp() {
+        assert_eq!(battle_exit_party_reset(0, 0x38, 0), (0, 1));
+        assert_eq!(battle_exit_party_reset(0x200, 0x1001, 50), (0, 50));
+        assert_eq!(battle_exit_party_reset(0x100, 0x1001, 0), (0x1001, 1));
+    }
+
+    #[test]
+    fn the_special_wipe_needs_the_word_and_all_three_rotted_limbs() {
+        assert!(special_battle_wipe(0x100, 0x38));
+        assert!(special_battle_wipe(0x200, 0x3C));
+        // An ordinary battle never takes the rule.
+        assert!(!special_battle_wipe(0, 0x38));
+        // Two limbs, or the unused 0x40 group bit, are not enough.
+        assert!(!special_battle_wipe(0x100, 0x30));
+        assert!(!special_battle_wipe(0x100, 0x58));
+    }
+
+    #[test]
+    fn the_run_forfeit_skips_the_two_raseru_fights() {
+        assert!(special_battle_run_forfeit(0x100, 5, 0x10));
+        assert!(!special_battle_run_forfeit(0, 5, 0x10));
+        assert!(!special_battle_run_forfeit(0x100, 3, 0x10));
+        for id in [0xAF, 0x3D, 0x3E, 0x3F] {
+            assert!(!special_battle_run_forfeit(0x200, 5, id), "{id:#x}");
+        }
+        assert!(special_battle_run_forfeit(0x200, 5, 0x40));
+    }
 
     #[test]
     fn battle_init_clears_a_lone_raseru_bit_and_raises_it_for_0xaf() {

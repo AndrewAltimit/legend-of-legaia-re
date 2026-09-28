@@ -413,13 +413,20 @@ impl DevMenuSession {
     /// attributes (`0x1F800384..87`) before the tick, and the switch is written
     /// back after it. A switch turned on by this tick also queues the snap the
     /// retail edit arm runs.
+    ///
+    /// It also runs the `EQUIP` row's confirm (Cross while the row is
+    /// hovered) against the engine's own bag through [`WorldEquipHost`], and
+    /// returns that attempt: `None` when no commit was attempted this tick,
+    /// `Some(None)` when the staged item was not in the bag, `Some(Some(c))`
+    /// on a commit. The cues the commit raised join
+    /// [`Self::pending_sfx`]. Both hosts carried this arm verbatim.
     pub fn tick_host(
         &mut self,
         world: &mut crate::world::World,
         camera: &mut crate::camera::Camera,
         pad_edge: u16,
         pad_held: u16,
-    ) {
+    ) -> Option<Option<EquipCommit>> {
         self.camera_follow = camera.zone.follow_enabled;
         self.camera_box_word = u32::from_le_bytes(world.terrain.region_attributes.box_bytes);
         self.camera_snap = false;
@@ -437,6 +444,22 @@ impl DevMenuSession {
         if std::mem::take(&mut self.camera_snap) {
             camera.zone.request_snap();
         }
+        if self.current_row() != DevMenuRow::Equip || pad_edge & PACK_CROSS == 0 {
+            return None;
+        }
+        let character = self.chars.character as usize;
+        let weapon_slots: Vec<i16> = vec![2; world.party.roster.members.len().max(4)];
+        let member = world.party.roster.members.get_mut(character)?;
+        let mut raw = std::mem::take(&mut member.raw);
+        let mut host = WorldEquipHost {
+            inventory: &mut world.party.inventory,
+            sfx: Vec::new(),
+        };
+        let committed = self.commit_equip_row(&mut host, &mut raw, &weapon_slots);
+        let cues = std::mem::take(&mut host.sfx);
+        world.party.roster.members[character].raw = raw;
+        self.pending_sfx.extend(cues);
+        Some(committed)
     }
 
     /// Commit the staged equip onto the selected character.

@@ -895,12 +895,13 @@ impl World {
         // Retail attempts the enemy escape roll exactly once per picker pass,
         // after the current monster's pick (including the scripted switch) has
         // consumed its draws, and a success OVERRIDES the picked category with
-        // 5 (`sb 5, 0x1de(s4)`). The `lw` gate on the battle-flag word
-        // `0x8007BAC0` (roll only when it is zero) passes as unset here, the
-        // same reading `roll_battle_escape` documents for its `forced` bit.
+        // 5 (`sb 5, 0x1de(s4)`). The roll runs first and draws its RNG either
+        // way; the special-battle word is tested after it (`0x801EA994`), so
+        // a granted flee is dropped in an arena leg or a Ra-Seru-forbidden
+        // fight and the monster keeps its pick.
         if !self.battle.monster_flee_attempted {
             self.battle.monster_flee_attempted = true;
-            if self.monster_flee_roll(slot) {
+            if self.monster_flee_roll(slot) && self.special_battle_word() == 0 {
                 if let Some(a) = self.actors.get_mut(slot as usize) {
                     a.battle.action_category = 5;
                 }

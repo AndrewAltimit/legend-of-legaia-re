@@ -22,20 +22,28 @@ enum TitleAttractAction {
     Aborted,
 }
 
-/// Build the window's title session with the attract hand-off armed.
-///
-/// `attract_enabled` is a per-host opt-in because a host with no movie
-/// destination would freeze input for the last sixteen frames of every idle
-/// period and then do nothing. This host has one: the windowed MDEC path
-/// below plays retail's `fmv_id 0` and returns to the menu.
+/// Build the window's title session: [`legaia_engine_core::title::TitleSession::for_front_end`],
+/// the constructor the browser page's title uses too. Continue follows
+/// `continue_enabled`; the attract hand-off is armed (this host plays
+/// retail's `fmv_id 0` through its windowed MDEC path).
 pub(super) fn title_session(continue_enabled: bool) -> legaia_engine_core::title::TitleSession {
-    let mut session = if continue_enabled {
-        legaia_engine_core::title::TitleSession::new()
-    } else {
-        legaia_engine_core::title::TitleSession::without_save_data()
-    };
-    session.attract_enabled = true;
-    session
+    legaia_engine_core::title::TitleSession::for_front_end(continue_enabled)
+}
+
+/// Does any port of this host's save rack hold a save? Port 1 is the save
+/// directory, port 2 the mounted `--card` image. Scanning the directory
+/// alone greys Continue out for a player whose only save is on the card they
+/// mounted, which is the one thing `--card` exists for.
+pub(super) fn rack_has_save(
+    save_dir: &std::path::Path,
+    card: Option<&legaia_save::emu::MountedCard>,
+) -> bool {
+    scan_save_dir(save_dir).iter().any(|s| s.present)
+        || card.is_some_and(|c| {
+            legaia_engine_core::save_select::card_block_snapshots(c)
+                .iter()
+                .any(|s| s.present)
+        })
 }
 
 impl PlayWindowApp {
@@ -91,14 +99,14 @@ impl PlayWindowApp {
     ///
     /// A **Save** records the loaded scene as the file's resume point
     /// ([`legaia_engine_shell::boot::BootSession::current_resume`]). A
-    /// **Load** re-enters that scene - retail resumes a save in the scene it
-    /// was written in, and the browser page does the same through its
-    /// `pending_load_scene` - and only then hydrates the world from the file,
-    /// so the field VM's first tick sees the saved story state in the saved
-    /// scene rather than in whatever `--scene` pre-booted. Returns `true`
-    /// when a scene was re-entered (the caller's screen state is stale then);
-    /// a file with no resume point, or a scene that fails to enter, loads
-    /// onto the current scene as before.
+    /// **Load** resumes through [`legaia_engine_shell::boot::BootSession::resume_save`],
+    /// the landing order the browser page's `play_resume_save` shares
+    /// (`legaia_engine_core::resume::land_save`): the save's own scene - retail
+    /// resumes a save where it was written - else the scene already running,
+    /// never a New Game. The world is hydrated after the entry, so the field
+    /// VM's first tick sees the saved story state in the saved scene. Returns
+    /// `true` when a scene was entered (the caller's screen state is stale
+    /// then).
     fn apply_save_commit(&mut self, commit: legaia_engine_core::save_screen::SaveCommit) -> bool {
         use legaia_engine_core::save_screen::SaveCommitKind;
         // Port 2 is a mounted memory-card image: its Load reads the block's
@@ -117,33 +125,21 @@ impl PlayWindowApp {
         match commit.kind {
             SaveCommitKind::Load => match read_slot_save(&self.save_dir, slot) {
                 Ok((sf, resume)) => {
-                    if !resume.scene.is_empty() {
-                        match self.session.enter_field_live_from_save(
-                            &resume.scene,
-                            &self.field_live_opts,
-                            sf.clone(),
-                        ) {
-                            Ok(mode) => {
-                                log::info!(
-                                    "save screen: loaded slot {slot}, resumed in '{}' (mode={mode:?})",
-                                    resume.scene
-                                );
-                                // The host swapped scenes under the renderer:
-                                // rebuild the render-side scene state so the
-                                // saved scene's geometry replaces the boot
-                                // scene's.
-                                self.rebuild_scene_render_state();
-                                return true;
-                            }
-                            Err(e) => log::warn!(
-                                "save screen: slot {slot} names scene '{}' but entering it failed \
-                                 ({e:#}); loading onto the current scene",
-                                resume.scene
-                            ),
-                        }
+                    let landing =
+                        self.session
+                            .resume_save(sf, &resume.scene, &self.field_live_opts);
+                    log::info!(
+                        "save screen: loaded slot {slot}, landed {} ({:?})",
+                        landing.kind(),
+                        landing.scene()
+                    );
+                    if landing.entered_scene() {
+                        // The host swapped scenes under the renderer: rebuild
+                        // the render-side scene state so the landed scene's
+                        // geometry replaces the old one.
+                        self.rebuild_scene_render_state();
+                        return true;
                     }
-                    self.session.host.world.load_full(sf);
-                    log::info!("save screen: loaded slot {slot} onto the current scene");
                 }
                 Err(e) => log::warn!("save screen: load slot {slot} failed: {e:#}"),
             },
@@ -229,49 +225,34 @@ impl PlayWindowApp {
             self.save_flow.refuse(SaveRefusal::CardReadFailed);
             return false;
         };
-        if !resume.scene.is_empty()
-            && let Ok(mode) = self.session.enter_field_live_from_save(
-                &resume.scene,
-                &self.field_live_opts,
-                sf.clone(),
-            )
-        {
-            log::info!(
-                "save screen: loaded card block {}, resumed in '{}' (mode={mode:?})",
-                cell + 1,
-                resume.scene
-            );
+        let landing = self
+            .session
+            .resume_save(sf, &resume.scene, &self.field_live_opts);
+        log::info!(
+            "save screen: loaded card block {}, landed {} ({:?})",
+            cell + 1,
+            landing.kind(),
+            landing.scene()
+        );
+        if landing.entered_scene() {
             self.rebuild_scene_render_state();
             return true;
         }
-        self.session.host.world.load_full(sf);
-        log::info!(
-            "save screen: loaded card block {} onto the current scene",
-            cell + 1
-        );
         false
     }
 
-    /// Fire the pause menu's own blips for this frame's pad edges - the
-    /// same three retail cues at the same edges the browser play page keys
-    /// (`play-app.js`: Cross = confirm, else Circle = cancel, else a
-    /// direction = cursor). Provenance on the constants in
-    /// [`legaia_engine_shell::bgm`]; every id is `disc`.
-    pub(super) fn fire_menu_cues(&mut self, pressed: u16) {
-        use legaia_engine_shell::bgm::{
-            RETAIL_MENU_CANCEL_CUE, RETAIL_MENU_CONFIRM_CUE, RETAIL_MENU_CURSOR_CUE,
-        };
-        const DIRS: u16 = 0x0010 | 0x0020 | 0x0040 | 0x0080;
-        let cue = if pressed & 0x4000 != 0 {
-            RETAIL_MENU_CONFIRM_CUE
-        } else if pressed & 0x2000 != 0 {
-            RETAIL_MENU_CANCEL_CUE
-        } else if pressed & DIRS != 0 {
-            RETAIL_MENU_CURSOR_CUE
-        } else {
-            return;
-        };
-        self.fire_menu_cue(cue);
+    /// Fire the pause menu's own blip for this frame's pad edges. Which cue,
+    /// if any, is the engine's one rule
+    /// ([`legaia_engine_core::menu_cues::menu_edge_blip`]) - the browser play
+    /// page asks the same function through `play_menu_edge_blip`.
+    /// `start_closes_menu` is whether this frame's Start closes the menu:
+    /// on the root row list it does, inside a sub-screen it does not.
+    pub(super) fn fire_menu_cues(&mut self, pressed: u16, start_closes_menu: bool) {
+        if let Some(blip) =
+            legaia_engine_core::menu_cues::menu_edge_blip(pressed, start_closes_menu)
+        {
+            self.fire_menu_cue(u16::from(blip.cue()));
+        }
     }
 
     /// Queue one menu cue on the director (no-op with audio off).
@@ -348,17 +329,17 @@ impl PlayWindowApp {
         // The player aborted the attract movie this tick; the decoder is torn
         // down below, once the match has released `self.boot_ui`.
         let mut abort_attract = false;
+        // The attract came back to the menu this tick, played or not.
+        let mut attract_finished = false;
         // The pause menu's blips, off the raw edges before any screen
-        // consumes them - the browser page keys the same three the same way
-        // (Start closes the menu, so it blips as a cancel). Ahead of the
+        // consumes them - the browser page asks the same engine rule. Start
+        // blips as a cancel only where it closes the menu: a sub-screen
+        // owns the pad and gets Start as an ordinary edge. Ahead of the
         // match because the match holds `self.boot_ui` for the rest of the
         // tick.
-        if matches!(self.boot_ui, BootUiState::FieldMenu { .. }) {
-            if start {
-                self.fire_menu_cue(legaia_engine_shell::bgm::RETAIL_MENU_CANCEL_CUE);
-            } else {
-                self.fire_menu_cues(pressed);
-            }
+        if let BootUiState::FieldMenu { sub } = &self.boot_ui {
+            let start_closes_menu = sub.is_none();
+            self.fire_menu_cues(pressed, start_closes_menu);
         }
 
         let boot_ui_active = match &mut self.boot_ui {
@@ -380,18 +361,7 @@ impl PlayWindowApp {
                     let next = self.session.mode_seat.boot_handoff();
                     match next {
                         GameMode::CardInit => {
-                            // Continue-enabled per save scan - over **both**
-                            // ports. Scanning the save directory alone greys
-                            // the row out for a player whose only save is on
-                            // the memory-card image they mounted, which is
-                            // the one thing `--card` exists for.
-                            let snapshots = scan_save_dir(&self.save_dir);
-                            let any_present = snapshots.iter().any(|s| s.present)
-                                || self.card.as_ref().is_some_and(|c| {
-                                    legaia_engine_core::save_select::card_block_snapshots(c)
-                                        .iter()
-                                        .any(|s| s.present)
-                                });
+                            let any_present = rack_has_save(&self.save_dir, self.card.as_ref());
                             self.boot_ui = BootUiState::Title(title_session(any_present));
                             self.start_title_bgm();
                         }
@@ -418,6 +388,9 @@ impl PlayWindowApp {
                 }
                 if attract == TitleAttractAction::Aborted {
                     abort_attract = true;
+                }
+                if attract == TitleAttractAction::Finished {
+                    attract_finished = true;
                 }
                 if matches!(
                     attract,
@@ -480,29 +453,19 @@ impl PlayWindowApp {
                             // scene id, verified live), which hands off to the
                             // interactive `town01`. See docs/subsystems/boot.md
                             // "New Game boot chain".
-                            self.session.begin_new_game();
-                            // The title theme hands the score to the field:
-                            // stop it so the prologue's own BGM (or its
-                            // scripted silence) owns the audio from frame 1.
-                            if let Some(bgm) = self.session.bgm.as_mut() {
-                                bgm.stop();
-                            }
-                            let cutscene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
-                            match self
-                                .session
-                                .enter_field_live(cutscene, &self.field_live_opts)
-                            {
-                                Ok(mode) => {
-                                    // The cutscene -> Rim Elm handoff is now armed
-                                    // inside `enter_field_scene` by walking opdeene's
-                                    // MAN cutscene-timeline for the real `GFLAG_SET 26`
-                                    // write (World::arm_prologue_handoff_from_man), so
-                                    // no blind arm is needed here. The confirm-gated
-                                    // transition still fires in the field tick below
-                                    // (World::take_prologue_handoff).
+                            // One call on both hosts: the seeded slate, the
+                            // title theme stopped, and the shared opening
+                            // order (`resume::enter_new_game`: `opdeene`,
+                            // else `town01`). The page's twin is
+                            // `play_new_game`.
+                            match self.session.start_new_game(&self.field_live_opts) {
+                                Some(scene) => {
+                                    // The cutscene -> Rim Elm handoff is armed
+                                    // inside `enter_field_scene` off opdeene's
+                                    // MAN timeline
+                                    // (World::arm_prologue_handoff_from_man).
                                     log::info!(
-                                        "new game: seeded party_count={}, entered opening cutscene \
-                                         '{cutscene}' (mode={mode:?})",
+                                        "new game: seeded party_count={}, entered '{scene}'",
                                         self.session.host.world.party.party_count,
                                     );
                                     // The host swapped to the prologue scene:
@@ -510,9 +473,9 @@ impl PlayWindowApp {
                                     // geometry replaces the boot scene's.
                                     self.rebuild_scene_render_state();
                                 }
-                                Err(e) => log::warn!(
-                                    "new game: enter opening cutscene '{cutscene}' failed ({e:#}); \
-                                     staying on the pre-booted scene"
+                                None => log::warn!(
+                                    "new game: no opening scene would enter; staying on the \
+                                     pre-booted scene"
                                 ),
                             }
                             self.boot_ui = BootUiState::Inactive;
@@ -541,7 +504,10 @@ impl PlayWindowApp {
                             if !self.open_menu_row_from_title(
                                 legaia_engine_core::field_menu::FieldMenuRow::Options,
                             ) {
-                                self.boot_ui = BootUiState::Title(title_session(true));
+                                self.boot_ui = BootUiState::Title(title_session(rack_has_save(
+                                    &self.save_dir,
+                                    self.card.as_ref(),
+                                )));
                                 self.start_title_bgm();
                             }
                         }
@@ -570,7 +536,10 @@ impl PlayWindowApp {
                         SelectOutcome::Cancelled => {
                             // Back to title (the theme is already up; the
                             // director suppresses the same-id restart).
-                            self.boot_ui = BootUiState::Title(title_session(true));
+                            self.boot_ui = BootUiState::Title(title_session(rack_has_save(
+                                &self.save_dir,
+                                self.card.as_ref(),
+                            )));
                             self.start_title_bgm();
                         }
                         _ => {
@@ -594,10 +563,10 @@ impl PlayWindowApp {
                 true
             }
             BootUiState::FieldMenu { sub } => {
-                use legaia_engine_core::field_menu::{FieldMenuInput, FieldMenuOutcome};
+                use legaia_engine_core::field_menu::FieldMenuOutcome;
                 use legaia_engine_core::field_menu_dispatch::{
-                    FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome,
-                    apply_list_order_outcome, apply_pause_items_outcome, apply_spell_outcome,
+                    FieldMenuSubsession, SubsessionHandoff, finish_subsession,
+                    tick_open_subsession, tick_root_list,
                 };
                 // The menu session is hosted by the BootSession (so headless
                 // drivers share it); if it vanished out from under the UI
@@ -631,73 +600,30 @@ impl PlayWindowApp {
                 // `self.boot_ui`.
                 let rebound_in_menu;
                 if let Some(active_sub) = sub.as_mut() {
-                    // Engine extension: Triangle on the Status screen swaps
-                    // it for the Tactical Arts chain editor (retail's seven
-                    // rows carry no Arts row). Consume the edge so the same
-                    // press does not also drive the screen it replaced.
-                    let opened_arts = legaia_engine_core::field_menu_dispatch::try_open_arts_editor(
+                    // A sub-session is open: the shared step (with the
+                    // Status screen's Triangle -> Arts editor extension)
+                    // routes the edge and hands back a committed rebind.
+                    rebound_in_menu = tick_open_subsession(
                         active_sub,
                         pressed,
+                        pending_key,
                         &self.session.host.world,
                     );
-                    // A sub-session is open - route input + check for done.
-                    if !opened_arts {
-                        active_sub.tick_pad_edge_with_key(pressed, pending_key);
-                    }
-                    rebound_in_menu = active_sub.take_rebound_mapping();
                     if active_sub.is_done() {
-                        // Drain into world side-effects + handle save.
+                        // Fold the outcome into the world through the one
+                        // router every host shares; only the save rack and
+                        // the options file are this host's.
                         let finished = sub.take().expect("sub was Some");
-                        match finished {
-                            FieldMenuSubsession::Items(s) => {
-                                let _ = apply_pause_items_outcome(&s, &mut self.session.host.world);
-                                // A Hyper-Art book taught an art: window 8.
-                                if let Some(notice) =
-                                    self.session.host.world.menu.pending_art_notice.take()
-                                {
-                                    self.menu_runtime.arm_art_learned_notice(notice);
-                                }
-                            }
-                            FieldMenuSubsession::Equip { session, char_slot } => {
-                                let _ = apply_equip_outcome(
-                                    &session,
-                                    char_slot,
-                                    &mut self.session.host.world,
-                                );
-                            }
-                            FieldMenuSubsession::Spells(s) => {
-                                // A leveled menu cast returns the window-7
-                                // pair; the runtime holds the beat and this
-                                // arm's pre-empt above holds the pad.
-                                if let Some(notice) =
-                                    apply_spell_outcome(&s, &mut self.session.host.world)
-                                {
-                                    self.menu_runtime.arm_spell_level_notice(notice);
-                                }
-                            }
-                            FieldMenuSubsession::Arts(editor) => {
-                                // Persist the edit back into the world's saved
-                                // chains so the next battle's Arts rows reflect
-                                // it: lift the live library, apply the editor
-                                // outcome, store it back (World::chain_library
-                                // <-> store_chain_library bridge over
-                                // World::saved_chains).
-                                let mut library = self.session.host.world.chain_library();
-                                if apply_arts_outcome(editor, &mut library).is_ok() {
-                                    self.session.host.world.store_chain_library(&library);
-                                }
-                            }
-                            FieldMenuSubsession::ListOrder(s) => {
-                                // Replay the page's exchanges onto the live
-                                // record through the ported swap; the page
-                                // itself permuted only its own copy.
-                                let _ = apply_list_order_outcome(&s, &mut self.session.host.world);
-                            }
-                            FieldMenuSubsession::Status(_) => {}
+                        let mut done = finish_subsession(finished, &mut self.session.host.world);
+                        // Windows 7 / 8: the runtime holds the beat and this
+                        // arm's pre-empts above hold the pad.
+                        self.menu_runtime.arm_finished_notices(&mut done);
+                        match done.handoff {
+                            SubsessionHandoff::Applied => {}
                             // The retail Load / Save rows, committed through
                             // the shared flow: the outcome names the card
                             // port, the grid names the block.
-                            FieldMenuSubsession::Save(s) => {
+                            SubsessionHandoff::Save(s) => {
                                 if let Some(c) = save_flow.commit(&s)
                                     && self.apply_save_commit(c)
                                 {
@@ -714,10 +640,8 @@ impl PlayWindowApp {
                                     return true;
                                 }
                             }
-                            FieldMenuSubsession::Config(o) => {
-                                // Edits committed inside the session's value
-                                // popup (retail semantics); lift + persist.
-                                self.options_state = o.state().clone();
+                            SubsessionHandoff::Options(state) => {
+                                self.options_state = state;
                                 self.persist_and_apply_options();
                             }
                         }
@@ -737,31 +661,13 @@ impl PlayWindowApp {
                     }
                     return true;
                 }
-                let input = FieldMenuInput {
-                    up,
-                    down,
-                    // The kind-0x0D ready check is a horizontal two-row
-                    // choice, so the picker needs left / right too.
-                    left,
-                    right,
-                    cross,
-                    circle,
-                    start,
-                };
                 // After Cross on a row the menu phase becomes Suspended.
                 // Build the matching sub-session and route control there.
-                let suspended_row = match self.session.field_menu.as_mut() {
-                    Some(menu) => {
-                        let _ = menu.tick(input);
-                        match menu.phase() {
-                            legaia_engine_core::field_menu::FieldMenuPhase::Suspended { row } => {
-                                Some(row)
-                            }
-                            _ => None,
-                        }
-                    }
-                    None => None,
-                };
+                let suspended_row = self
+                    .session
+                    .field_menu
+                    .as_mut()
+                    .and_then(|menu| tick_root_list(menu, pressed));
                 if let Some(row) = suspended_row {
                     // The shell's save rack: retail's two card ports, port 1
                     // mounted with `save_dir`. Its kind is what puts a Load /
@@ -802,7 +708,10 @@ impl PlayWindowApp {
                             self.session.close_field_menu();
                             self.boot_ui = BootUiState::Inactive;
                             if std::mem::take(&mut self.menu_from_title) {
-                                self.boot_ui = BootUiState::Title(title_session(true));
+                                self.boot_ui = BootUiState::Title(title_session(rack_has_save(
+                                    &self.save_dir,
+                                    self.card.as_ref(),
+                                )));
                                 self.start_title_bgm();
                             }
                         }
@@ -832,7 +741,10 @@ impl PlayWindowApp {
                     if let Some(bgm) = self.session.bgm.as_mut() {
                         bgm.stop();
                     }
-                    self.boot_ui = BootUiState::Title(title_session(true));
+                    self.boot_ui = BootUiState::Title(title_session(rack_has_save(
+                        &self.save_dir,
+                        self.card.as_ref(),
+                    )));
                     self.start_title_bgm();
                 }
                 true
@@ -849,12 +761,45 @@ impl PlayWindowApp {
         // title the session has already returned to.
         if abort_attract {
             self.cutscene = None;
-            if let Some(out) = self.session.audio.as_ref() {
-                out.stop_xa();
-                out.set_sequencer_paused(false);
-            }
+            self.end_movie_audio();
+        }
+        // An attract that never staged a picture (a cut or undecodable slot)
+        // comes back as `Finished` without the redraw drain having run: end
+        // it here. A drained one already ended, and a second end asks for
+        // nothing.
+        if attract_finished {
+            self.end_movie_audio();
         }
         boot_ui_active
+    }
+
+    /// End the movie in flight on the audio side, however it ended: stop its
+    /// XA, reopen the sequencer gate only if this movie closed it, and bring
+    /// the title theme back from its first beat after the attract - the
+    /// shared [`legaia_engine_core::movie_audio::MovieScore`] decides each.
+    pub(super) fn end_movie_audio(&mut self) {
+        if let Some(out) = self.session.audio.as_ref() {
+            out.stop_xa();
+        }
+        let end = self.movie_score.on_movie_end();
+        if end.reopen_gate
+            && let Some(out) = self.session.audio.as_ref()
+        {
+            out.set_sequencer_paused(false);
+        }
+        if end.restart_title_theme {
+            self.start_title_bgm();
+        }
+    }
+
+    /// Arm the movie-audio policy for a movie this host is about to play,
+    /// and release the score when it says to (the title attract).
+    fn begin_movie_audio(&mut self, origin: legaia_engine_core::movie_audio::MovieOrigin) {
+        if self.movie_score.on_movie_start(origin)
+            && let Some(bgm) = self.session.bgm.as_mut()
+        {
+            bgm.stop();
+        }
     }
 
     /// Write the live binding table back to `legaia-input.toml` - the file
@@ -875,25 +820,23 @@ impl PlayWindowApp {
     /// (`_DAT_8007BA78 = 0` at `0x801DDCE8`, master mode `0x1A` at
     /// `0x801DDCF0`); this decodes that movie through the same kernel the
     /// field-VM cutscene path uses and stages it as the in-window video.
-    /// The title theme pauses with the rest of the sequencer while it runs
-    /// and the redraw handler's drain resumes it.
+    /// Retail releases the title theme as the attract starts and `CARD INIT`
+    /// streams it again on the way back, so the theme is stopped here and
+    /// restarted from its first beat when the movie ends
+    /// ([`legaia_engine_core::movie_audio`]).
     ///
     /// A slot that will not decode leaves `self.cutscene` empty, which the
     /// next `tick_boot_ui` reads as "the movie drained" and returns the
     /// session to the menu - the same place a played-out movie lands.
     // REF: FUN_801DD35C
     fn start_title_attract(&mut self, fmv_id: i16) {
+        self.begin_movie_audio(legaia_engine_core::movie_audio::MovieOrigin::Attract);
         let Some(rel) = legaia_engine_core::cutscene::fmv_index_to_str_filename(fmv_id) else {
             log::info!("title attract: fmv_id={fmv_id} (cut/unmapped slot); skipping");
             return;
         };
         match self.decode_fmv(fmv_id, rel) {
-            Some(decoded) => {
-                if let Some(out) = self.session.audio.as_ref() {
-                    out.set_sequencer_paused(true);
-                }
-                self.stage_windowed_cutscene(decoded);
-            }
+            Some(decoded) => self.stage_windowed_cutscene(decoded),
             None => log::info!("title attract: fmv_id={fmv_id} did not decode; staying on title"),
         }
     }
@@ -1143,7 +1086,7 @@ impl PlayWindowApp {
         // session tick and does not restore it, so an arm here could never
         // fire. The `apply == 0` snap beats are banked on the camera instead
         // (`Camera::take_camera_snap_beats`, replayed by
-        // `replay_camera_snap_beats`).
+        // `frame_step::CutsceneGlide::advance`).
         for ev in events {
             if let FieldEvent::ActorSpawned { slot, .. } = ev {
                 let has_tmd = world
@@ -1353,9 +1296,11 @@ impl PlayWindowApp {
         let Some(fmv_id) = self.session.host.world.active_fmv() else {
             return;
         };
+        self.begin_movie_audio(legaia_engine_core::movie_audio::MovieOrigin::Cutscene);
         let Some(rel) = self.session.host.world.active_fmv_str_filename() else {
             log::info!("cutscene: fmv_id={fmv_id} (cut/unmapped slot); skipping");
             self.session.host.world.finish_cutscene();
+            self.end_movie_audio();
             return;
         };
         match self.decode_fmv(fmv_id, rel) {
@@ -1363,6 +1308,7 @@ impl PlayWindowApp {
             None => {
                 // Drain the trigger so the field resumes next frame.
                 self.session.host.world.finish_cutscene();
+                self.end_movie_audio();
             }
         }
     }
@@ -1382,10 +1328,13 @@ impl PlayWindowApp {
         };
         if let Some(c) = self.cutscene.as_mut() {
             // Stage the interleaved audio on the first render so the audio
-            // cursor (the A/V-sync master clock) starts with the picture. Pause
-            // the scene sequencer so the cutscene track isn't layered over BGM.
+            // cursor (the A/V-sync master clock) starts with the picture, and
+            // duck the score under it - only if it is sounding, so a track
+            // the script paused stays the script's (`movie_audio`).
             if let (Some(out), Some(track)) = (audio_out.as_ref(), c.pending_audio.take()) {
-                out.set_sequencer_paused(true);
+                if self.movie_score.on_movie_audio(out.sequencer_paused()) {
+                    out.set_sequencer_paused(true);
+                }
                 out.play_xa(track.pcm, track.sample_rate, track.channels, false, 0x4000);
                 c.has_audio = true;
             }

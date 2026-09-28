@@ -168,6 +168,8 @@ many it folded. Implementation: `translation::accents`; disc-gated oracle
 `crates/patcher/tests/translation_accent_font_real.rs`.
 
 Text lifted off an official PAL disc arrives as raw `{xx}` accent bytes on the
-same layout, so it draws as-is under `font`, and the lift's `--fold-accents`
-is the same fold `fold` applies
+same layout, so it draws as-is under `font` - `{d7}` (`Î`) and `{f8}` (`°`)
+included, which the PAL disc itself draws as placeholder boxes
+([`dialog-font.md`](../../formats/dialog-font.md#the-pal-renderer)) - and the
+lift's `--fold-accents` is the same fold `fold` applies
 ([`pal-localizations.md`](../pal-localizations.md#accent-folding)).

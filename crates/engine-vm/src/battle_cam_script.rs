@@ -2304,9 +2304,9 @@ pub use crate::psx_camera::mat4_mul as mat_mul;
 /// `battle_vp_matches_the_native_glam_composition` in the engine-shell
 /// camera tests.
 ///
-/// REF: FUN_8001CF50 (retail camera-rotation build), FUN_80026988 /
-/// FUN_80026f50 (the projection), FUN_80048A08 (per-actor world-scale
-/// composition).
+/// REF: FUN_800172C0, FUN_80026988 (the camera matrix build, ported as
+/// `euler_rot_psx`), FUN_80026f50 (the projection), FUN_80048A08 (per-actor
+/// world-scale composition).
 pub fn battle_vp(pose: &BattleCamPose, world_scale: f32, aspect: f32) -> [f32; 16] {
     let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
     // The focus targets the world-scaled actor stage (see the doc above), and

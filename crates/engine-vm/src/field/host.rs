@@ -71,8 +71,12 @@ pub trait FieldHost {
     }
 
     /// Background music dispatch (op 0x35). `text_id` is the 16-bit operand
-    /// (LE). `sub_op` selects the action: 1 = start field BGM, 2 = pause,
-    /// 3 = resume, 4 = stop, 5 = volume, 6 = flag-set (`_DAT_8007b750 |= 4`),
+    /// (LE). `sub_op` selects the action (arm table `0x801CEE00` in PROT
+    /// 0897, indexed `sub_op - 1`): 1 = start field BGM, 2 = stop and rewind
+    /// (raise pause bit 1, `FUN_800266E0`: notes killed, cursor back to the
+    /// sequence start), 3 = key-off pause (raise bit 1, `FUN_80026740`:
+    /// cursor kept), 4 = re-attach (clear bit 1, `FUN_80026478`: replays
+    /// from the top), 5 = volume, 6 = flag-set (`_DAT_8007b750 |= 4`),
     /// 7 = target sound set (`_DAT_8007B880`), 8 = `func_0x80019898`,
     /// 9 = start behind a load barrier (`_DAT_8007bac8 = text_id`), 10 =
     /// unhalt-pause swap-commit (waits on `_DAT_8007B750` bit 3, releases
@@ -2218,11 +2222,14 @@ pub trait FieldHost {
     /// [`field_helpers::load_u24_le`] + [`field_helpers::sign_extend_24`],
     /// adds it to `_DAT_800845A4` (the casino coin bank -
     /// `docs/reference/memory-map.md`; the earlier "party-XP global" label
-    /// was wrong), clamps to `[0, 9999999]`, and calls `func_0x8003CE08(8)`
-    /// (SysFlag.Set idx 8).
+    /// was wrong), caps it at `9999999` (`0x801E32C8`), and calls
+    /// `FUN_8003CE08(8)` (system flag 8 set). There is **no lower clamp** -
+    /// the gold delta beside it floors at zero and this arm does not
+    /// (`0x801E328C..0x801E32E4`).
     ///
     /// `coin_delta` is the sign-extended 24-bit value already prepared by
-    /// the dispatcher. Hosts apply the clamp + flag set; default no-op.
+    /// the dispatcher. Hosts apply the cap + flag set; default no-op (the
+    /// world's host: `legaia_engine_core::casino_coin_bank`).
     ///
     /// [`field_helpers::load_u24_le`]: crate::field_helpers::load_u24_le
     /// [`field_helpers::sign_extend_24`]: crate::field_helpers::sign_extend_24

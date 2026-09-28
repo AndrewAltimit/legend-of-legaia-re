@@ -564,6 +564,19 @@ impl World {
     ///    set, so a talking player's Start opens nothing and does not even
     ///    buzz. The engine's stand-in is
     ///    [`World::dialogue_owns_input`](crate::world::World::dialogue_owns_input).
+    ///    A conversation is only one of the bit's raisers. The per-actor
+    ///    script runner `FUN_80039B7C` raises it too, on every frame it steps
+    ///    an engaged context (`0x80039DB8..0x80039DD4`, with the running
+    ///    count at `_DAT_801C6EA4+0xA`), and clears it only once that count
+    ///    drains on a `0x21` yield (`0x80039EE8..0x80039F14`). So while a
+    ///    spawned record is parked mid-script - a walk-on beat's camera
+    ///    move or `ExecMove` wait - the caller `FUN_801D1344` never calls
+    ///    the controller (`0x801D1694`) and the menu button does nothing.
+    ///    A Door of Light that lands on `map01`'s cave-mouth trigger tile
+    ///    runs `P2[9]` this way and holds the menu for its whole run. The
+    ///    engine's counterpart is
+    ///    [`World::script_context_engages_player`](crate::world::World::script_context_engages_player):
+    ///    the modal timeline or any live concurrent helper record.
     /// 2. The scene mode - [`Self::scene_mode_takes_menu_open`].
     ///
     /// Note this is the *open* gate only. Whether the opened menu's **Save**
@@ -588,9 +601,11 @@ impl World {
     ///    the page Start opened the pause menu over an open shop.
     ///
     /// REF: FUN_801D01B0 (`0x801D01F0` engaged bit, `0x801D0250` accept)
+    /// REF: FUN_80039B7C (the script runner's engaged-bit raise and clear)
     pub fn field_menu_open_allowed(&self) -> bool {
         self.scene_mode_takes_menu_open()
             && !self.dialogue_owns_input()
+            && !self.script_context_engages_player()
             && !self.shops.shop_open
             && !self.shops.prize_exchange_open
             && !self.cutscene_narration_active()

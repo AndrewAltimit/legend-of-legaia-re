@@ -259,25 +259,33 @@ impl StagedCharacterSelector {
     /// `FUN_80035C00(a, b)`.
     ///
     /// PORT: FUN_80035C00
-    /// REF: FUN_800402F4 - the battle action resolver, the only setter.
     ///
-    /// NOT WIRED: the only caller that stores real values is the battle
-    /// action resolver - all three `jal`s to `0x80035C00` on the disc
-    /// (`0x80040884`, `0x80040CC8`, `0x8004208C`) sit inside `FUN_800402F4`,
-    /// each on the arm that has just stored the actor's reaction byte at
-    /// `+0x729`. The menu overlay (PROT 0899) is the consumer, not a second
-    /// setter: it reads the pair at `0x801DCCD8` / `0x801DCCF4` and forms
-    /// `secondary + primary * 0x414` - an offset into the `0x414`-stride
-    /// character records - and it writes both cells straight back to `0xFF`
-    /// through `lui`-pair stores at three site pairs (`0x801D850C` /
-    /// `0x801D8510`, `0x801D93DC` / `0x801D93F8`, `0x801D9748` /
-    /// `0x801D9764`, base `0x801CE818`) - an earlier note here said the
-    /// writer "is not a menu path at all", which holds for this setter and
-    /// not for the cells. So the pair is a battle-to-menu handshake: battle
-    /// stages which record field to show, the menu consumes and clears it.
-    /// The engine's notify path takes the character with the draw instead of
-    /// through a staged cell; wiring this means giving the battle round a
-    /// staged-selector cell for the menu to read, on both sides at once.
+    /// REPLACED-BY: the two notices' own values - `field_menu_dispatch::apply_spell_outcome`
+    /// returns a `magic_xp::SpellLevelNotice`, the Hyper-Art book arm sets
+    /// `MenuState::pending_art_notice`, and both hosts arm the window from those
+    /// (`MenuRuntime::arm_spell_level_notice` / `arm_art_learned_notice`).
+    ///
+    /// REF: FUN_800402F4 - the item / spell effect applier, the only caller.
+    ///
+    /// Retail stages the pair for exactly two menu windows. All three `jal`s
+    /// to `0x80035C00` on the disc sit in the applier `FUN_800402F4`:
+    /// `0x80040884` and `0x80040CC8` follow a menu-cast heal's spell-level
+    /// bump (`sb` of the incremented level byte `+0x729` after the
+    /// `0x8007656C` threshold compare), and `0x8004208C` follows the
+    /// Hyper-Art book's art insert, skipped when the mode word is `0x15`
+    /// (battle). The menu overlay seeds both cells to `0xFF` before the apply,
+    /// opens window 7 (spell level) or window 8 (art learned) when they
+    /// changed, and its renderers read `secondary + primary * 0x414` as a
+    /// record offset (`docs/subsystems/field-menu.md`).
+    ///
+    /// The port carries the same two facts as values instead of two `gp`
+    /// cells: `apply_spell_outcome` returns the level-up as a
+    /// `SpellLevelNotice` (caster slot, spell index), and the book arm stores
+    /// an `ArtLearnedNotice` on `MenuState::pending_art_notice`. The native
+    /// window (`window/boot_cutscene.rs`) and the browser play page
+    /// (`play_menu.rs`) each take those and arm the matching window, so no
+    /// host reads a staged cell and none is owed one. The type stays as the
+    /// documented shape of the pair.
     pub fn set_pair(&mut self, primary: u16, secondary: u16) {
         self.primary = primary;
         self.secondary = secondary;

@@ -113,10 +113,33 @@ impl MoveVmGlobals {
         }
     }
 
-    /// Drain the queued strip requests - what a host's draw path hands the
-    /// shared render step (`legaia_engine_ui::move_strip::move_strip_prims`).
+    /// Drain the queued strip requests.
     pub fn take_strip_requests(&mut self) -> Vec<vm::move_ext_strip::StripRequest> {
         std::mem::take(&mut self.strip_requests)
+    }
+
+    /// The strip requests of the most recent tick - what a host's draw path
+    /// hands the shared render step
+    /// (`legaia_engine_ui::move_strip::move_strip_prims`). Not drained: a
+    /// redraw on which no tick ran draws the same set again.
+    ///
+    /// Retail emits each `0x2C` execution into the primitive buffer of the
+    /// frame that ran it, so a strip is on screen for exactly that frame. The
+    /// hosts' display frames are not retail's: the native window drained the
+    /// queue per redraw (a strip blinked off on every idle redraw above 60 Hz
+    /// and two ticks' strips stacked in one frame below it) and the page
+    /// cached the last tick's drain (the earlier ticks of a catch-up frame
+    /// were lost). Holding the latest tick's set until the next tick starts
+    /// ([`Self::begin_strip_tick`]) is one frame's worth at any refresh.
+    pub fn strip_frame(&self) -> &[vm::move_ext_strip::StripRequest] {
+        &self.strip_requests
+    }
+
+    /// A new tick starts: drop the previous tick's strips. Called at the top
+    /// of [`crate::world::World::tick`], so the requests the tick and the
+    /// host's post-tick effect steps push are what the next redraws show.
+    pub fn begin_strip_tick(&mut self) {
+        self.strip_requests.clear();
     }
 }
 

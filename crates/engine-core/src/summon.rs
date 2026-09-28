@@ -625,6 +625,17 @@ impl SummonScene {
             .collect()
     }
 
+    /// The live default-arm draw-kind-4 nodes (move-VM op `0x13`) this
+    /// scene holds, each as the procedural mesh `FUN_80028158` builds
+    /// ([`crate::effect_default_arm::default_arm_draw`]).
+    pub fn default_arm_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
+        self.parts
+            .iter()
+            .filter(|p| !p.finished)
+            .filter_map(|p| crate::effect_default_arm::default_arm_draw(&p.state))
+            .collect()
+    }
+
     /// Number of mesh-bearing parts (`is_mesh_sel`).
     pub fn mesh_part_count(&self) -> usize {
         self.parts

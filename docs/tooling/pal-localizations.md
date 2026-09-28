@@ -163,7 +163,13 @@ positions: the lifted French and Italian text carries `Â` as `0xB6`, `È` as
 `0xD4`, `Î` as `0xD7`, `Ì` as `0xDE` and `Ô` as `0xE2`. (An earlier reading
 called this a game-specific block around `0xD0..0xD6`; the bytes the text
 uses are CP850's, and the PAL font page draws some of them at other cells -
-[`dialog-font.md`](../formats/dialog-font.md#the-pal-page).) None of the accent bytes fall in
+[`dialog-font.md`](../formats/dialog-font.md#the-pal-page).) Two of those
+bytes draw a placeholder box on the PAL disc itself: the page has no `Î` at
+`0xD7` and no `°` at `0xF8`, and no PAL executable remaps either byte, so retail
+French shows a box for every `Î` and retail Italian one for every `°`
+([`dialog-font.md`](../formats/dialog-font.md#the-pal-renderer)). The French
+executable also folds `oe` / `OE` to its `œ` / `Œ` cells at draw time; the
+French script itself spells both letters. None of the accent bytes fall in
 the `0xC0..0xCF` two-byte-opcode window, so glyph space and control space stay
 disjoint (`ß`=`0xE1` is safely above it). Per-language accent subsets: German
 needs 7 cells (ä ö ü ß Ä Ö Ü), French ~14, Italian ~10; the union is ~40 cells.
@@ -272,7 +278,10 @@ Lifted text keeps the PAL accent bytes verbatim (the markup codec round-trips
 them as `{82}`-style escapes), and they encode onto the USA disc without
 complaint. On the retail USA font they overprint or draw blank; with the
 accent font on the disc (`accents: font`) they draw as the letters they are,
-because the accent font uses the same byte layout.
+because the accent font uses the same byte layout - `0xD7` and `0xF8` included,
+which the PAL disc they came from draws as boxes. A lifted French line keeps
+`oe` as two letters: the ligature the French disc shows is made at draw time by
+its executable, not stored in the text.
 `translate lift-official --fold-accents` (and the in-browser transfer, where it
 is the default) instead folds the accent cells onto plain ASCII: `é` -> `e`,
 `ß` -> `ss`, `Ü` -> `U`. The fold table is `legaia_font::latin`, the same one

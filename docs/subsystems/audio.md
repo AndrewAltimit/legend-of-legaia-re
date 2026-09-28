@@ -263,7 +263,7 @@ writer census (SCUS + every based overlay image; store-offset scan, see
 |---|---|---|---|
 | 0 | script-owned start pending (defer the slot teardown to the script) | sub-op 9 (`0x801E0260`) | poller commit (`0x8002472C` clears 0/3/4), scene entry `FUN_8003AEB0` |
 | 1 | BGM slot paused / detached | sub-op 2 (`0x801E0150`), sub-op 3 (`0x801E0174`), dance overlay `0x801CF328` | sub-op 1, sub-op 4, sub-op `0xA`, scene entry, game-over `FUN_8003C7EC` |
-| 2 | script flag (opaque to the sound side) | sub-op 6 (`0x801E01D8`) | field overlay `0x801D7348` |
+| 2 | keep the audio across the next field init: the per-scene initializer skips its BGM level ramp (`FUN_80062004`, `0x78` ticks, test at `0x801D6A84`) and its key-off of voices `0x10..0x17` (test at `0x801D6B88`) while it is set | sub-op 6 (`0x801E01D8`) | field overlay `0x801D7348` |
 | 3 | **load settled** - payload staged and the settle delay elapsed | the poller, one site only: `0x800246D0` (`\| 8`) | poller commit `0x8002472C` |
 | 4 | **release-ack** - script has released the old slot occupant | sub-op `0xA` (`0x801E02B8`) | poller commit `0x8002472C` |
 
@@ -291,16 +291,140 @@ satisfied on arrival (the same reasoning as sub-op 9's barrier) and
 still set, then clear the latch unconditionally. `see
 ghidra/scripts/funcs/800243f0.txt`, `800266e0.txt`, `80026520.txt`.
 
-**A pause is a key-off, not a freeze.** The sub-op 2 arm reaches
-`FUN_800628F0` in mode `0`, which only raises the slot's flag `0x2`; the next
-per-tick service `FUN_80062F98` routes a flagged slot through `FUN_800638D8`,
-which kills the channel's sounding notes and clears the flag, while the
-sequence cursor stays where it was for the resume. `AudioOut::set_sequencer_paused(true)`
-(and its browser twin) keys off the attached sequencer's active notes as it
-closes the gate. A gate that only stopped the clock held whatever was sounding
-for as long as it stayed shut - the title theme's last note sustaining under
-the whole attract movie, on both hosts. `see ghidra/scripts/funcs/800628f0.txt`,
-`80062f98.txt`, `800638d8.txt`.
+### The control words: stop, pause, replay
+
+The op's arm table is `0x801CEE00` in the field overlay, indexed `sub - 1`
+behind `sltiu 0xB`. The three control arms each set or clear pause bit 1 and
+hand the BGM slot `0x8007052C` to one sound-source primitive, and what each
+does to the sequence is read off the libsnd call under it:
+
+| Sub-op | Arm | Primitive -> libsnd | What the sequence does |
+|---|---|---|---|
+| `2` | `0x801E0138`, sets bit 1 | `FUN_800266E0` -> `FUN_80064370` -> `FUN_800641EC` | **stop**: the channel's notes are killed now (`FUN_800684CC`), the read cursor goes back to the sequence start (`+0x4`), flag `0x4` is raised |
+| `3` | `0x801E015C`, sets bit 1 | `FUN_80026740` -> `FUN_8006282C` -> `FUN_8006275C` | **pause**: flags `0x1` / `0x8` clear and `0x2` raised; the next calc (`FUN_80062F98`) keys the notes off through `FUN_800638D8`, and the cursor is left alone |
+| `4` | `0x801E0180`, clears bit 1 | `FUN_80026478` -> `FUN_80062880(id, 1, 1)` -> `FUN_800628F0` | **replay**: `FUN_800628F0` resets the read cursor to the sequence start for every mode, then mode `1` raises the play flag |
+
+So no script word resumes a track mid-phrase: the re-attach plays it again
+from its first event. The engine's `BgmDirector::pause` (sub-ops `2` and `3`)
+closes the sequencer gate, which keys off the attached sequencer's notes and
+holds the playhead, and `BgmDirector::resume` (sub-op `4`) rewinds before it
+reopens (`AudioOut::rewind_sequencer`, and the browser twin). The held
+playhead is never heard through a script word - every way out of the pause
+either replays from the top or replaces the track. A gate that only stopped
+the clock held whatever was sounding for as long as it stayed shut - the
+title theme's last note sustaining under the whole attract movie. `see
+ghidra/scripts/funcs/800266e0.txt`, `80064370.txt`, `800641ec.txt`,
+`8006282c.txt`, `8006275c.txt`, `80062880.txt`, `800628f0.txt`,
+`80062f98.txt`.
+
+The engine's router once read sub-op `3` as a resume and `4` as a stop -
+the legacy labels - so the census's most common control word after the
+start / commit pair silenced the score where retail brings it back. The
+battle and minigame restores that stop the score when no field track was
+playing raise the engine's own word, `BGM_SUB_OP_ENGINE_STOP`, which retail's
+bounds test would dispatch nowhere.
+
+### Movies and the score
+
+Retail's movie path never touches the sequencer. Master mode `0x1A`'s entry
+`FUN_80025FB4`, the dispatch `FUN_801CEA3C`, the play loop `FUN_801CF098` and
+the main loop's mode-change arm (`FUN_80015E90` at `0x800161B8..0x80016200`,
+with the pass `FUN_80016230` it calls) issue no BGM-slot call and no `SsSeq*`
+call; the play loop's only sound calls open and close the SPU CD input
+(`FUN_800643C4`, `FUN_80062A0C`). The sequencer is clocked from the
+root-counter callback (the word at `0x8007A910` names `FUN_80062F98`), not
+from the main loop. So a mid-game movie inherits whatever state the script
+left: the nine `0x4C 0xE2` triggers are preceded by their own op-`0x35`
+words - a pause, a commit, a flag set, nothing - scene by scene.
+
+A track the script left running stays audible under the movie. The capture
+`scripts/pcsx-redux/autorun_movie_bgm_audibility.lua` makes the trigger op's
+two stores (`sh fmv_id -> 0x8007BA78`, `sh 0x1A -> 0x8007B83C`, handler
+`0x801E30E4..0x801E3104` in PROT 0897) from a field state whose score is
+sounding - `town01_field_card_boot` with `fmv_id 1`, `chitei2_field_card_boot`
+with `fmv_id 3` - and samples the SPU every ten vsyncs while the movie is on
+screen:
+
+| Scene | Samples with a sounding voice | Samples with a fresh key-on (envelope at or above `0x7000`) | Master volume | SPUCNT |
+|---|---|---|---|---|
+| `town01`, `fmv_id 1` | 81 of 84 | 79 of 84 | `0x3FFF` throughout | `0xC081` |
+| `chitei2`, `fmv_id 3` | 83 of 84 | 79 of 84 | `0x3FFF` throughout | `0xC081` |
+
+A sounding voice is one with a non-zero envelope level and a non-zero channel
+volume. The BGM id at `0x8007BAC8` stays the scene's own track throughout, and
+screenshots taken alongside the samples show the movie frames. So the sequencer keeps keying notes
+and the SPU keeps mixing them next to the CD input. The movie plays over the
+score, not instead of it. The poke skips the op-`0x35` words the record runs
+first, and for these scenes those words leave the score sounding: `town01`
+starts and commits a new track (sub-ops 9, `0xA`) and sets flag bit 2 (sub-op
+6), `deroa` and `chitei2` only set bit 2. Bit 2 is the flag the field
+initializer reads to skip its BGM ramp and its key-off of voices `0x10..0x17`,
+which fits a score meant to run through the movie into the next scene.
+
+A score the script has stopped stays silent under the movie. Two more captures
+cover that side:
+
+| Run | Samples with a sounding voice, movie on | Before the movie |
+|---|---|---|
+| `town01`, sub-op 2 emulated, then `fmv_id 1` | 0 of 85 | voices `0..8` sounding until the call, none 10 vsyncs after |
+| `town01`, `fmv_id 1`, same core, no call (control) | 74 of 85 | score voices sounding |
+| `garmel`, organic, `fmv_id 2` | 0 of 90 | no score voice; only voices `0x13` / `0x14` (and briefly `0x16` / `0x17`) |
+
+- **Sub-op 2** (`taiku`'s one word before its trigger) is the arm at
+  `0x801E0138`: it raises `_DAT_8007B750` bit 1 and calls `FUN_800266E0` on
+  the slot `0x8007052C`, whose `FUN_80064370` stops the sequence. The probe
+  runs exactly that - the same flag store and the same call with the same
+  argument, from the field tick (`LEGAIA_CALL`, `LEGAIA_FLAGS_OR`) - then the
+  trigger's two stores. It needs the interpreter core, under which neither
+  this run nor its control had put a movie frame on screen within 840 vsyncs;
+  the pair differs only in the call.
+- **`garmel`** plays its own trigger record from `chapter2_garmel_post_zeto`
+  with `LEGAIA_MASH_EVERY=30` (mode `0x1A` at vsync 2619, `fmv_id 2`). The
+  score was already stopped when the state was taken (`_DAT_8007B750` bit 1
+  set from the first vsync, track id `2043`). What sounds in the field are
+  voices in the `0x10..0x17` band the field initializer keys off, and they end
+  before the switch. Its sub-op 7 (arm `0x801E01DC`) makes no sequencer call:
+  it stores the operand, or `-1` for `0xFF`, to `_DAT_8007B880`. The field
+  initializer (`FUN_801D6704`) reads that word at `0x801D6B48` and, when it is
+  not negative and a track is attached, calls `FUN_80062004` with `0xB4` - a
+  level ramp on the next scene's entry.
+
+So each movie inherits the score's state: running, it plays on; stopped, the
+movie plays over silence. The records `town0d` (sub-ops 9, 5, `0xA`) and
+`jouine` (9, `0xA`, 5, 9, `0xA`) are not captured: sub-op 5 is
+`FUN_800267A8(0, n)` (arm `0x801E01A8`), which arms a timed ramp through
+`FUN_80062004`, and sub-op `0xA` waits on `_DAT_8007B750` bit 3 before it stops
+and releases the slot. Emulating that wait by hand is not the op, and no
+library state sits in either scene.
+
+The title attract is the exception. The attract underflow arm of the title
+tick releases the slot - `FUN_800266E0` + `FUN_80026520` at `0x801DDD7C` /
+`0x801DDD84`, behind the entry word `_DAT_8007BB00 != 0`, which the boot image
+always raises - and the return runs `CARD INIT` (`FUN_8002574C`), which streams
+the title theme again (raw TOC `0x41F` into category 1,
+`0x800258CC..0x80025934`) and re-attaches the slot (`0x80025948`). The theme
+restarts from its first beat. The load route's `LaunchFade` arm releases the
+slot the same way (`0x801DFB74`) before master mode 2 brings the field up.
+
+Both hosts decode a movie's XA onto the mixer the BGM plays through, so the
+port decides the layering itself, in one engine-side policy
+(`legaia_engine_core::movie_audio::MovieScore`) the native window and the
+browser page both consult:
+
+- The attract stops the score when it is armed and restarts the title theme
+  when it ends, played or not - the retail release and `CARD INIT` pair.
+- A cutscene movie leaves the score alone, as retail does
+  (`MovieScore::new`). The ducking policy (`MovieScore::ducking`) is the
+  enhancement: a movie that stages an XA track ducks the score by closing the
+  sequencer gate, but only if the gate is open. A track the script already
+  paused is not claimed, so the movie's end does not reopen it.
+- A movie with no audio track (an extracted-root boot, a cut slot, a page
+  that never installed it) touches nothing.
+- Every way a movie ends - played out, skipped, never installed, dropped -
+  runs the same end, which reopens the gate only if this movie closed it.
+
+The gate is the directors' only pause latch on both hosts, so the duck and
+the op-`0x35` pause arms read and write one bit.
 
 ### Entry-script pauses and free-roam picker staging
 
@@ -363,7 +487,7 @@ arm is `FUN_800266E0`'s body inline - behind the same `_DAT_8007B868` gate,
 `FUN_8002657C(0, slot)`, `FUN_80064370(slot[+0xA])`, then
 `DAT_8007B708 = 0` (`0x80026834..0x8002686C`; see
 `ghidra/scripts/funcs/800267fc.txt`). `FUN_800266E0` is sub-op `2`'s primitive,
-so the expiry is a pause the script scheduled in advance. The port surfaces it
+so the expiry is the stop sub-op `2` issues, scheduled in advance. The port surfaces it
 as exactly that: `World::tick` pushes a sub-op `2` BGM event on the expiry
 frame, and `SceneHost::route_bgm_events` hands it to either host's director.
 The raw expiry flag (`World::take_pending_sound_release`) stays for the mode
@@ -502,11 +626,11 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `FUN_80062340(seq_data, slot_hint)` | `SsSeqOpen` - walks the slot bitmap, marks the first free slot, calls `FUN_80062410`. Returns slot ID or `-1`. |
 | `FUN_80061D18(slot)` | `SsSeqClose` - calls `FUN_80067E9C(slot,0,0,1)` + `FUN_800684CC`, clears bitmap bit, memsets all 16 channel records (size `0xB0`) to defaults (vol=`0x7F`, pan=`0x7F`). |
 | `FUN_80061E94(seq_id)` | `SsSeqClose` short-arg shim - sign-extends, tail-calls `FUN_80061D18`. |
-| `FUN_8006275C(slot,0)` | `SsSeqPlay` - clears flags 0/3 in `+0x98`, sets bit 1. Start-from-beginning. |
-| `FUN_8006282C(slot)` | `SsSeqPlay` 1-arg shim - tail-calls `FUN_8006275C(slot,0)`. |
-| `FUN_80062880(slot, mode, arg)` | Pause/Resume shim - tail-calls `FUN_800628F0(slot,0,mode,arg)`. |
-| `FUN_800628F0(slot,_,mode,_)` | `_SsSeqCtrl` - `mode==1` resets read pointer, sets flag `0x1`, calls `FUN_80067E9C`; `mode==0` sets flag `0x2`; otherwise clears both. The Stop / Pause / Resume state core. |
-| `FUN_800641EC(slot, channel)` | `SsSeqRewind` / `SsSeqReplay` - clears flags `0x1/0x2/0x8/0x400`, sets `0x4`, full slot reset to start. |
+| `FUN_8006275C(slot,0)` | Pause - clears flags `0x1` / `0x8` in `+0x98`, raises `0x2` (the next calc keys the notes off); the read cursor is untouched. |
+| `FUN_8006282C(slot)` | The pause's 1-arg shim - tail-calls `FUN_8006275C(slot,0)`. BGM sub-op `3`'s primitive under `FUN_80026740`. |
+| `FUN_80062880(slot, mode, arg)` | Play shim - tail-calls `FUN_800628F0(slot,0,mode,arg)`. |
+| `FUN_800628F0(slot,_,mode,_)` | Play core - resets the read cursor (`+0x0` / `+0x8` / `+0xC`) to the sequence start `+0x4` for **every** mode, then `mode==1` sets flag `0x1` and calls `FUN_80067E9C`, `mode==0` sets flag `0x2`. BGM sub-op `4` reaches it in mode `1` - a replay from the top. |
+| `FUN_800641EC(slot, channel)` | Stop - clears flags `0x1/0x2/0x8/0x400`, sets `0x4`, kills the channel's notes (`FUN_800684CC`), full slot reset to start. BGM sub-op `2`'s primitive, under `FUN_800266E0` -> `FUN_80064370`. |
 
 ### SEQ internals
 
@@ -1285,6 +1409,93 @@ separately (`slot_open`), so the Baka Fighter state - both open, slot 6 stale
 (`stale_open_slot`) - is represented; the hosts stage only the bank the region
 holds, so a cue on the stale slot is silent rather than played through the wrong
 header. The port's dome mode is a leg and takes the battle arm.
+
+### The banks that borrow the BGM region's tail
+
+The port's SPU map has no room for two of retail's variable banks, so both play
+hosts park them behind the current track, in the BGM region above its samples:
+the reward bank (PROT 0889, slot `11`, staged when the results frame queues cue
+`0x50`) and a script-selected side-band bank (slot `3`, staged while the world
+is in a field-family mode). One kernel, `legaia_engine_audio::bgm_tail::BgmTail`,
+holds their placement, their residency and the side-band retry memo, and both
+directors drive it (`AudioBgmDirector` natively, `LegaiaRuntime`'s SFX channel
+on the browser page).
+
+**Residency follows retail's closes, not the track.** Retail gives both banks
+their own SPU base (slot `3` at `0x60010`, slot `11` at `0x6F010`,
+[`sfx-table.md`](../formats/sfx-table.md#which-prot-entry-reaches-which-slot)),
+and `FUN_800243F0`'s BGM stream arm loads the next track into slot `1`
+(`jal 0x8001FC00` with `a1 = 1` at `0x80024678`, then `FUN_8001E54C(1, ..)` at
+`0x80024780`) with no call to the VAB closer `FUN_8001FF58`. A track change
+therefore leaves both banks open. What closes them is their own close: the
+battle mode init closes slot `3`, and the field init `FUN_801D6704` closes slots
+`7`, `8` and `11` (`jal 0x8001FF58` at `0x801D68A4` / `0x801D68AC` /
+`0x801D68B4`, each `a0` a delay-slot immediate; PROT 0897, read from the
+image's bytes). The kernel's rule is that pair plus the port's own placement: a
+track whose samples end past a borrower's base overwrote it and drops it
+(`observe_bgm_end`); one that ends below keeps it. The side-band bank leaves
+with the field-family mode, and the reward bank is dropped whenever the world
+is in one.
+
+The two directors used to keep two different rules. The native one dropped both
+banks inside every owned-bank upload and bumped a generation, then restaged the
+side-band on the next tick; the page kept them until a fire- or tick-time check
+found the new track past their base. Neither dropped the reward bank at the
+field init, so it outlived its battle whenever the field track was smaller.
+
+**The retry memo keys on the free tail.** A side-band bank that does not fit is
+not re-read every tick: the attempt is remembered against
+`BgmTail::generation`, which moves only when the free tail can have changed - the
+track's sample end moved, or a borrower was dropped. The page used to clear its
+memo on every scene change as well. A door stages no bank, so the free tail is
+unchanged and the retry could never succeed; the memo now survives a door on
+both hosts, as retail's side-band request does.
+
+The native director calls `observe_bgm_end` after its own upload; the page's
+upload site (`WebBgmDirector::stage_owned`) does not see the SFX channel, so the
+page calls it before every read of the tail - each tick, each fire and each
+stage. The call is idempotent, so the two timings reach the same state.
+
+### The scheduler under a menu-overlay screen
+
+Retail runs the pause menu, a shop and the prize exchange at game mode `0x17`,
+with the field overlay swapped out. That mode's per-frame handler `FUN_80025F74`
+still calls the cue drainer `FUN_80016B6C` (`jal` at `0x80025F9C`, after
+`FUN_8001698C` and `FUN_80017978` both return `0`) - the same shape as the
+default handler `FUN_80025EEC`. A cue already delayed when the screen opened
+therefore keeps ageing under it and fires on time.
+
+Both hosts step the scheduler once per sim tick under such a screen: the native
+window's frozen arms call `tick_menu_sfx`, and the page's frame loop, which runs
+no `tick_frame` while the field is frozen, calls the export
+`play_tick_overlay_sfx`, the same scheduler step. Menu blips themselves fire
+immediately on both.
+
+### Minigame announcer lines are listed ahead of use
+
+The field's CD-XA one-shots are listed at scene load
+(`field_xa::scene_xa_prestage` into `World::drain_field_xa_prestage`), so the
+page, which decodes a clip the bank lacks one request per frame, has them
+staged before their ops. The two minigame chromes that start `FUN_8003D53C`
+lines feed the same list through `World::queue_xa_prestage`:
+
+- **Baka Fighter.** Entering the duel lists every line the chrome can start -
+  the intro card's two (`XA33` channels `0x0E` / `0x0F`), the countdown's four
+  (`0x0A`..`0x0D`) and the round banner's `XA32` line for this round and the
+  next (`baka_fighter_chrome::announcer_xa_prestage`). Each round advance lists
+  the banner line one round further (`BakaChrome::take_xa_prestage`).
+- **Muscle Dome hub.** The hub starts its first-visit intro line on the same
+  frame the leg opens, and the scene host drains a door warp inside the tick
+  whose field step armed it, so the hub's two lines (the intro and the ROUND
+  card, `muscle_ringside::hub_xa_prestage`) are listed before the door
+  instead: when a scene whose MAN carries a `3E 69` warp loads
+  (`field_xa::scene_minigame_door_xa_prestage` - koin1's course menu), and at
+  a launcher's `World::request_minigame_warp`, whose page export stages the
+  list before the next tick. Each leg's opening lists them again (a no-op
+  once staged).
+
+The native window reads a clip's span synchronously and drains the list
+unread.
 
 ## XA-ADPCM
 

@@ -50,7 +50,8 @@
 //! the play-window's `J`-key debug exerciser and is not on any retail path.
 //!
 //! PORT: FUN_80021B04 (spawn-time first run + per-tick move-VM drive for
-//! the prescript-record parts)
+//! the prescript-record parts; the per-tick half runs the part tick's
+//! channel and motion blocks around the VM - [`crate::part_motion`])
 //! REF: FUN_800252EC, FUN_80021DF4, FUN_80019D50, FUN_801DE840
 
 pub mod vram_scroll;
@@ -459,8 +460,23 @@ impl World {
             if self.ambient.fx[idx].finished {
                 continue;
             }
-            move_vm::decrement_wait_timer(&mut self.ambient.fx[idx].state, drain);
+            // The rest of the part tick's pre-VM half, in retail order: the
+            // mode-2/6 channel block (`0x80021E78..0x80021FA0`) and the
+            // motion block every mode but 3 / 5 runs (`0x800228A0..
+            // 0x80022B90`) - velocity, rotation, scale and level rates the
+            // move VM only sets. Then the VM, then the level / scale clamps.
+            {
+                let st = &mut self.ambient.fx[idx].state;
+                move_vm::decrement_wait_timer(st, drain);
+                move_vm::integrate_draw_channels(st, drain);
+                if crate::part_motion::runs_motion_block(st) {
+                    crate::part_motion::motion_block(st, drain);
+                }
+            }
             self.tick_ambient_part(idx, 0);
+            if let Some(part) = self.ambient.fx.get_mut(idx) {
+                crate::part_motion::clamp_levels(&mut part.state);
+            }
         }
         // The scene-entry VDF pulse (enhancement - `crate::vdf_pulse`) rides
         // the same ambient game tick.
@@ -481,6 +497,19 @@ impl World {
             .iter()
             .filter(|p| !p.finished)
             .filter_map(|p| crate::effect_sprite_arm::sprite_arm_draw(&p.state))
+            .collect()
+    }
+
+    /// The live ambient parts that are default-arm draw-kind-4 nodes
+    /// (move-VM op `0x13`), each as its procedural mesh
+    /// ([`crate::effect_default_arm::default_arm_draw`]). Part of
+    /// [`World::active_effect_kind4_draws`].
+    pub fn ambient_default_arm_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
+        self.ambient
+            .fx
+            .iter()
+            .filter(|p| !p.finished)
+            .filter_map(|p| crate::effect_default_arm::default_arm_draw(&p.state))
             .collect()
     }
 

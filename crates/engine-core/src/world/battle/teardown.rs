@@ -22,6 +22,13 @@ pub struct BattleSpoilsBanner {
     pub subject: vm::battle_party_panel::ResultSubject,
 }
 
+/// The loss window's content ([`World::battle_defeat_banner`]).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BattleDefeatBanner {
+    /// The one line the window shows, or `None` without the disc pool.
+    pub line: Option<String>,
+}
+
 impl World {
     /// How long the post-battle spoils panel stays up, in sim ticks
     /// (~3 s at the 100 Hz sim clock).
@@ -39,6 +46,19 @@ impl World {
         // sequence runs (retail's windows come down with the battle), and for
         // the aging window a direct `finish_battle` still arms.
         if self.battle.spoils_frames == 0 && !self.battle_result_screen_active() {
+            return None;
+        }
+        // A special battle opens no result window (`FUN_8004E568` skips
+        // `FUN_801D8DE8(0x41)` at `0x8004F614` while `_DAT_8007BAC0 != 0`),
+        // and a wipe opens the loss window instead
+        // ([`Self::battle_defeat_banner`]) - `last_rewards` is never cleared,
+        // so without the cause test a wipe after a win re-showed that win's
+        // spoils over the loss.
+        if self
+            .battle
+            .victory
+            .is_some_and(|v| !v.window_opened || v.cause != BattleEndCause::MonsterWipe)
+        {
             return None;
         }
         let r = self.battle.last_rewards.as_ref()?;
@@ -69,8 +89,48 @@ impl World {
                 format!("{name}\'s level increased!")
             })
             .collect();
-        // Participant ids in panel order, `0` for an empty seat - the
-        // shape of retail's `0x8007BD10` list the build arms key on.
+        Some(BattleSpoilsBanner {
+            xp: r.xp,
+            gold: r.gold,
+            drops,
+            level_ups,
+            subject: self.battle_result_subject(),
+        })
+    }
+
+    /// The battle exit's party loop, run on every exit before the party's
+    /// HP is persisted: the status words clear unless the special-battle word
+    /// carries the arena bit, and a member at 0 HP stands up at 1
+    /// ([`vm::battle_formulas::battle_exit_party_reset`]). The cleared word is
+    /// what reaches the character record, so the party's statuses do not
+    /// outlive an ordinary battle.
+    ///
+    /// The engine keeps no status in the record: an arena leg's statuses
+    /// stay in the tracker instead, which is where the next battle reads
+    /// them from.
+    fn battle_exit_party_reset(&mut self) {
+        let word = self.special_battle_word();
+        let n = usize::from(self.party.party_count).min(self.actors.len());
+        for member in 0..n {
+            // The tracker holds the word; any non-zero stand-in asks the
+            // kernel whether it survives.
+            let hp0 = self.actors[member].battle.hp;
+            let (status, hp) = vm::battle_formulas::battle_exit_party_reset(word, 1, hp0);
+            if status == 0 {
+                self.battle.status_effects.drop_slot(member as u8);
+            }
+            let b = &mut self.actors[member].battle;
+            if hp != b.hp {
+                b.hp = hp;
+                b.liveness = 1;
+            }
+        }
+    }
+
+    /// Who the battle-result messages name: participant ids in panel order,
+    /// `0` for an empty seat - the shape of retail's `0x8007BD10` list the
+    /// two build arms of `FUN_801D84C0` key on.
+    fn battle_result_subject(&self) -> vm::battle_party_panel::ResultSubject {
         let seats: [u8; 3] = std::array::from_fn(|i| {
             if i < usize::from(self.party.party_count) {
                 (self.party_roster_slot(i) as u8).wrapping_add(1)
@@ -78,13 +138,42 @@ impl World {
                 0
             }
         });
-        Some(BattleSpoilsBanner {
-            xp: r.xp,
-            gold: r.gold,
-            drops,
-            level_ups,
-            subject: vm::battle_party_panel::result_subject(seats),
-        })
+        vm::battle_party_panel::result_subject(seats)
+    }
+
+    /// The loss window a host should be drawing this frame, or `None`.
+    ///
+    /// Retail's wipe arm of the results frame opens screen element `0x42`
+    /// (`FUN_801D8DE8(0x42, 0)` at `0x8004F900`) unless the special-battle
+    /// word is set (`0x8004F8F0`) - the same gate as the win arm's result
+    /// window, carried by `VictorySequence::window_opened`. The element's
+    /// placement record is the win window's twin (same frame, same seat), and
+    /// its string is the defeat buffer `FUN_801D84C0` built at battle start:
+    /// the lead's name plus the solo suffix, or the lead's team line.
+    ///
+    /// Up from the results frame through the exit, like the win window. The
+    /// line is `None` on a disc-free host (no PROT 0898 pool), where the
+    /// window opens empty.
+    pub fn battle_defeat_banner(&self) -> Option<BattleDefeatBanner> {
+        let v = self.battle.victory?;
+        if v.cause != BattleEndCause::PartyWipe || !v.window_opened || !v.results_shown() {
+            return None;
+        }
+        let subject = self.battle_result_subject();
+        let lead = self
+            .party
+            .roster
+            .members
+            .get(self.party_roster_slot(0))
+            .map(|m| m.name())
+            .filter(|n| !n.trim().is_empty());
+        let line = self
+            .tables
+            .defeat_text
+            .as_ref()
+            .zip(lead)
+            .map(|(t, lead)| t.compose(subject, &lead));
+        Some(BattleDefeatBanner { line })
     }
     /// Resolve a finished battle and return to the field.
     ///
@@ -138,8 +227,11 @@ impl World {
             self.tables.monster_catalog = catalog;
             self.battle.last_rewards = Some(rewards);
             // Arm the spoils panel. The numbers were always applied; nothing
-            // ever told the player about them.
-            self.battle.spoils_frames = Self::SPOILS_BANNER_FRAMES;
+            // ever told the player about them. A special battle opens no
+            // result window (`0x8004F614`), so it arms none.
+            if self.special_battle_word() == 0 {
+                self.battle.spoils_frames = Self::SPOILS_BANNER_FRAMES;
+            }
         }
         self.battle.victory = None;
         // The fade actor dies with the battle scene: the held black of the
@@ -171,6 +263,14 @@ impl World {
         for a in self.actors.iter_mut() {
             a.battle.seat = None;
         }
+        // The monster seats' ailments die with their combatants: retail builds
+        // each battle's monster actors afresh, and the tracker is indexed by
+        // slot, so a status left here would land on the next battle's monster
+        // in the same slot.
+        for slot in self.party.party_count..vm::battle_action::ACTOR_SLOTS as u8 {
+            self.battle.status_effects.drop_slot(slot);
+        }
+        self.battle_exit_party_reset();
         self.battle.escaped = false;
         self.battle.no_escape = false;
         self.battle.scripted_fight = false;

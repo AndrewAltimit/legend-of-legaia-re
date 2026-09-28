@@ -18,7 +18,10 @@
 -- missed it), settling LEGAIA_SETTLE field-ticks before the checkpoint.
 --
 -- Env: LEGAIA_SSTATE, LEGAIA_INPUTS (CSV path), LEGAIA_OUT_DIR,
---      LEGAIA_CKPT_LABEL, LEGAIA_SETTLE, LEGAIA_MAX_FRAMES, LEGAIA_BOOT_DELAY.
+--      LEGAIA_CKPT_LABEL, LEGAIA_SETTLE, LEGAIA_MAX_FRAMES, LEGAIA_BOOT_DELAY,
+--      LEGAIA_CKPT_FRAME (checkpoint at this field tick instead of at the
+--      battle and quit - a state parked partway along the recorded route,
+--      e.g. on Tetsu's topic prompt one press short of his 4-option list).
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local env    = require("probe.env")
@@ -40,6 +43,7 @@ local CKPT_LABEL = env.getenv("LEGAIA_CKPT_LABEL", "s5_tetsu_battle")
 local SETTLE     = tonumber(env.getenv("LEGAIA_SETTLE", "25")) or 25
 local MAX_FRAMES = tonumber(env.getenv("LEGAIA_MAX_FRAMES", "20000")) or 20000
 local START_DELAY= tonumber(env.getenv("LEGAIA_BOOT_DELAY", "2")) or 2
+local CKPT_FRAME = tonumber(env.getenv("LEGAIA_CKPT_FRAME", "0")) or 0
 
 os.execute(string.format("mkdir -p %q", OUT_DIR))
 local LOG = io.open(OUT_DIR .. "/replay.log", "w")
@@ -92,7 +96,7 @@ local function try_capture(clock)
         elseif clock-cap_since>=SETTLE then
             local ok=pcall(function()
                 local w=PCSX.createSaveState()
-                local fhh=Support.File.open(OUT_DIR.."/"..CKPT_LABEL..".rawsstate","CREATE"); fhh:writeMoveSlice(w); fhh:close()
+                local fhh=Support.File.open(OUT_DIR.."/"..CKPT_LABEL..".rawsstate","TRUNCATE"); fhh:writeMoveSlice(w); fhh:close()
             end)
             log(ok and ("checkpoint written: "..OUT_DIR.."/"..CKPT_LABEL..".rawsstate") or "checkpoint FAILED")
             done=true; if LOG then LOG:close() end; PCSX.quit(0)
@@ -119,6 +123,14 @@ bp.arm(FIELD_BP, "Exec", 4, "field_tick", function()
     if not loaded or done then return end
     frame=frame+1
     if try_capture(frame) then return end   -- in battle: capture, stop driving input
+    if CKPT_FRAME > 0 and frame >= CKPT_FRAME then
+        local ok=pcall(function()
+            local w=PCSX.createSaveState()
+            local fhh=Support.File.open(OUT_DIR.."/"..CKPT_LABEL..".rawsstate","TRUNCATE"); fhh:writeMoveSlice(w); fhh:close()
+        end)
+        log(string.format("[f%d] frame checkpoint %s scene=%q mode=0x%02X", frame, ok and "written" or "FAILED", read_scene(), ru8(GM)))
+        done=true; if LOG then LOG:close() end; PCSX.quit(0); return
+    end
     if frame>=MAX_FRAMES and not battle_seen then log("MAX_FRAMES, no battle scene="..read_scene()); if LOG then LOG:close() end; PCSX.quit(0); return end
     -- advance to the active transition for this frame
     while ti<=#timeline and timeline[ti][1]<=frame do cur_held=timeline[ti][2]; ti=ti+1 end

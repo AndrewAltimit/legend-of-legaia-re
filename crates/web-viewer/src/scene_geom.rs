@@ -64,7 +64,7 @@ impl LegaiaViewer {
         // The native engine's world-map render draws this surface (the slot-1
         // pack is only the sparse landmarks); reproducing it here brings the
         // site viewer to terrain parity. Sources the walk `.MAP` floor grid +
-        // the kingdom MAN's floor-height LUT; reuses `build_walk_heightfield`.
+        // the kingdom MAN's floor-height LUT; reuses `build_ground_heightfield`.
         self.walk_ground = build_walk_ground(&self.disc, &entries, prot_base);
         if let Some(hf) = &self.walk_ground {
             console_log(&format!(

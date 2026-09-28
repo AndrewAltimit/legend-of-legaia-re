@@ -3,8 +3,8 @@
 //!
 //! Retail projects a world point through
 //! `screen = H * (R * (v - focus) + tr_eye) / Ez` with
-//! `R = Rx(pitch) * Ry(yaw) * Rz(roll)` (`FUN_8001CF50` post-multiplies the
-//! three `RotMatrix*` factors in that order) and the GTE control file's screen
+//! `R = Rx(pitch) * Ry(yaw) * Rz(roll)` (the view build `FUN_800172C0` forms
+//! it through the Euler kernel `FUN_80026988`) and the GTE control file's screen
 //! centre `(OFX, OFY)`. [`psx_camera_vp`] is that transform written as one
 //! column-major 4x4, so a host never re-derives it - it feeds the inputs and
 //! uploads the matrix.
@@ -24,7 +24,7 @@
 //! browser play page ease the same shot - a host that reads the staged params
 //! straight out of the world snaps every `apply > 0` beat.
 //!
-//! REF: FUN_8001CF50 (the camera-rotation build), FUN_800172C0 (the view
+//! REF: FUN_80026988 (the camera's Euler kernel), FUN_800172C0 (the view
 //! composition), FUN_801DE084 (the op-`0x45` Configure apply handler).
 
 use crate::battle_cam_script::{GTE_OFY_NDC_BIAS, PSX_NEAR, SCENE_FAR};
@@ -76,8 +76,12 @@ pub const WORLD_FLIP: [f32; 16] = [
 ];
 
 /// The retail camera rotation `R = Rx(pitch) * Ry(yaw) * Rz(roll)`, the
-/// product `FUN_8001CF50` builds by post-multiplying each axis factor onto the
-/// resident rotation. Column-major, rotation-only.
+/// product the Euler kernel `FUN_80026988` forms when `FUN_800172C0` builds
+/// the view. Column-major, rotation-only, in `f32`: retail's q3.12 LUT product
+/// (`battle_intro::euler_rot_psx` in `legaia-engine-ui`) differs from it by at
+/// most about 2.4/4096 per element, which moves a projected point by a
+/// median of under 0.2 px and by up to about 3 px for geometry near the eye
+/// of a long cutscene shot (see `docs/subsystems/renderer.md`).
 pub fn camera_rotation(pitch_rad: f32, yaw_rad: f32, roll_rad: f32) -> [f32; 16] {
     let (sp, cp) = pitch_rad.sin_cos();
     let (sy, cy) = yaw_rad.sin_cos();

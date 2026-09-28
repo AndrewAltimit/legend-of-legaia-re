@@ -269,7 +269,7 @@ impl LegaiaRuntime {
             .map(|v| v / 4096.0 * TAU)
             .unwrap_or_else(|| 0.45f32.atan());
         // Slot 2 = roll (`_DAT_8007B794`, the GTE `RotMatrixZ` angle) - the
-        // third factor `FUN_8001CF50` composes. Retail authors it in eight
+        // third factor the camera's Euler kernel `FUN_80026988` composes. Retail authors it in eight
         // scenes (`engine-core/tests/thread_camera_roll_execution.rs`), so the
         // page gets it alongside pitch and yaw rather than dropping the term.
         let roll = param(2).map(|v| v / 4096.0 * TAU).unwrap_or(0.0);

@@ -55,9 +55,11 @@
 //!
 //! With `actor+0x6A == 0` the draw re-enters the camera matrix, projects the
 //! actor's position with its height `+0x16` zeroed (the point under it), and
-//! has the procedural mesh builder `FUN_80028158` build a **24-segment
-//! disc** (case `1`) into the asset buffer at `_DAT_8007B85C + 0x62400`,
-//! radius `(actor+0x58 * 4) / 10`, x/z scale `0x1000`. It is drawn through
+//! has the procedural mesh builder `FUN_80028158` build a **24-column
+//! disc** - mode word `1`, its shape-`0` ring laid in the XZ plane with inner
+//! radius `0` - into the asset buffer at `_DAT_8007B85C + 0x62400`, radius
+//! `(actor+0x58 * 4) / 10`, x/z scale `0x1000`
+//! (`legaia_engine_core::effect_default_arm::ground_shadow_mesh`). It is drawn through
 //! `FUN_80043390` with flag word `0x8A000000` - semi-transparent, blend mode
 //! `2` (subtractive) - and only while the actor is neither pitched nor
 //! rolled (`actor+0x24 == 0 && actor+0x28 == 0`, `0x80049284..0x8004929C`).
@@ -385,6 +387,32 @@ pub fn shadow_plan(
     })
 }
 
+/// The value of `+0x6A` - [`shadow_plan`]'s skip flag - when the draw tick
+/// `FUN_800480D8` reaches a body's main draw, for a body whose colour word is
+/// live (the only bodies that draw at all, bar the lone-monster grey case):
+///
+/// ```text
+/// 80048250  li   v0,0x1
+/// 80048254  jal  0x80049348             ; the after-image walk ...
+/// 80048258  _sh  v0,0x6a(s0)            ; ... runs with +0x6A = 1
+/// 80048264  lh   v1,0x5a(s0)
+/// 8004826c  beq  v1,7,keep              ; render mode 7 keeps it
+/// 80048274  sh   zero,0x6a(s0)          ; everyone else clears it
+/// 800482e0  jal  0x80048a08             ; the main draw
+/// ```
+///
+/// So the flag exists to keep the after-image ghosts `FUN_80049348` draws
+/// through the same routine from each laying a shadow of its own; the main
+/// draw of a battle body - whose `+0x5A` is its pool slot `0..=6`, never the
+/// move-VM's render mode `7` - always reads `0` and casts one. The after-image
+/// pass is always `1`.
+///
+/// PORT: FUN_800480D8 (the `+0x6A` bracket around the after-image walk,
+/// `0x80048250..0x80048274`)
+pub fn body_shadow_skip(render_slot: i16, after_image: bool) -> i16 {
+    i16::from(after_image || render_slot == 7)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,6 +434,17 @@ mod tests {
         // A bit outside the three (0x40 is inside Rot's guard mask but no
         // range test reads it) dims nothing.
         assert!(!(0..32).any(|o| limb_object_dimmed(ROW, 0x0040, o)));
+    }
+
+    #[test]
+    fn only_the_after_image_and_render_mode_7_skip_the_shadow() {
+        for slot in 0..7 {
+            assert_eq!(body_shadow_skip(slot, false), 0);
+            assert_eq!(body_shadow_skip(slot, true), 1);
+        }
+        assert_eq!(body_shadow_skip(7, false), 1);
+        assert!(shadow_plan(body_shadow_skip(3, false), 0x80_8080, 0, 640, 0, 0).is_some());
+        assert!(shadow_plan(body_shadow_skip(3, true), 0x80_8080, 0, 640, 0, 0).is_none());
     }
 
     #[test]

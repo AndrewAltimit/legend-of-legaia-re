@@ -682,6 +682,21 @@ walk cycle (Mei: clip 61 walking, 60 idle). Engine port:
 NPC anim cue surfaced from `exec_move`. Dropping the walk playout is what left
 Mei out of the conversation frame for the whole beat.
 
+The same park holds for the compass-walk ops against the **player**. `B7 F8 b0 b1`
+(op `0x37`, rate `0x80`; `0x41` is the `0x40` twin) moves the player along the
+direction `b0 & 7` names in the axis table at `0x80073F14`, for
+`(b1 & 0x3F) * (4 << sel)` speed units spent one per vsync, and the record
+resumes past the four-byte op when they are spent. `map01`'s cave-mouth record
+walks the player out of the cave this way; the disassembler prints the op as
+`Yield (Standard)`, which is its dispatch class, not what it does. A record
+that waits for a player gesture pokes the clip and spins on its end latch
+(`A2 F8 <clip>` / `AC F8 08` / `AD F8 08`), and when the clip binds from the
+scene bank the spin lasts the clip's frames. Engine port:
+`CutsceneTimeline::player_glide` and `player_clip_wait`, on the modal
+timeline and on concurrent helpers alike (both hold the pad, as retail's
+engaged bit does); the length accounting and the pad rule are in
+[`field-locomotion.md`](field-locomotion.md#where-the-294-vsyncs-go).
+
 #### 0x39 GIVE_ITEM
 
 `[39, item_id]` - adds one of inline item `item_id` to the inventory: `func_0x8004313C()` (select the active inventory window/page bounds) then `func_0x800421D4(item_id, 1)` (the capacity-checked add-item-by-id primitive). PC advances by 2 (`addiu s8,s8,0x2` at `0x801E044C`; `lbu a0,0(s6)` reads the inline id at `0x801E0450`). This is the **treasure-chest item-give** path - the **granted** item is this single inline operand byte, **not** a per-scene table. `FUN_800421D4` is the inventory adder, so the earlier `PLAY_SFX` label was wrong. (`FUN_801D71F0` is not a second add-item site: that VA is a mis-based print of the equip applier [`FUN_801E5A08`](field-menu.md#manual-equip-applier-fun_801e5a08), whose `FUN_800421D4` call is a refund;
@@ -1330,6 +1345,50 @@ every authored box, and every `CD F8` gate in every scene's per-frame body -
 `0x6DE` here, the camera-parameter gates elsewhere - then answers "outside" for
 the whole visit.
 
+### What arriving in a spoke writes
+
+The region story-flag families are C1/C2 gates on partition-2 records, and a
+family's SETs come from the records a visit plays - walk-on beats, talks - not
+from the scene load. A tile-poke route with the SET / CLEAR helpers under exec
+breakpoints (`scripts/pcsx-redux/autorun_w6c_spoke_walk.lua`, from card-boot
+states) crosses into each spoke and logs every write of the arrival: the scene
+load, the entry script and the first field frames. Each write below is placed
+by its pc offset in the executing record (`s8`) and carries the bank bit as it
+stood before the write. Writes in the ambient one-hot selector band
+`0x19B..0x1AA` and in the `0x526..0x52E` band every entry clears and one exit
+record re-sets are left out; they fire in every scene.
+
+| Route (start state) | Arrival scene | Writes on arrival, in order |
+|---|---|---|
+| `tunnelb` `(12, 105)` (`tunnelb_field_card_boot`) | `rayman` | SET `0x491` at `+0x18` (already set), CLEAR `0x5A8` at `+0x28`, CLEAR `0x57F` at `+0x54` |
+| `retock` -> `map02` -> `ropeway` `(30, 38)` (`retock_field_card_boot`) | `station` | nothing outside the two bands |
+| `chitei2` -> `deroa` -> `map03` `(68, 17)` (`chitei2_field_card_boot`) | `station3` | SET `0x498` at `+0x18` (already set) |
+| `doman` -> `map03` `(92, 52)` (`doman_field_card_boot`) | `bubu2` | SET `0x497` at `+0x36` (already set) |
+| `chitei2` -> `deroa` -> `map03` `(92, 52)` (`chitei2_field_card_boot`) | `bubu1` | SET `0x497` at `+0x1C` (already set), CLEAR `0x57F` at `+0x6C` |
+| `doman` -> `map03` `(66, 114)` (`doman_field_card_boot`) | `deroa` | SET `0x49B` at `+0x18` (**clear before**: the first arrival), CLEAR `0x60E` at `+0x65` |
+| `chitei2` `(50, 18)` (`chitei2_field_card_boot`) | `deroa` | SET `0x49B` at `+0x18` (already set), SET `0x01F` at `+0x46`, CLEAR `0x60E` at `+0x65` |
+
+Three things follow:
+
+- **No gate family fires on arrival.** `rayman`'s `0x201 -> 0x1FB -> 0x200 ->
+  0x1FC` chain, `bubu2`'s requires-all chain, the `station` / `station3` gates on
+  `taiku`'s `0x38F` and `deroa`'s `0x3E1`-gated descent all belong to records a
+  visit has to play. Their SET order needs a human play-forward (or a scripted
+  one that walks each beat's tile and answers its text), which a door poke does
+  not give.
+- **The `0x49x` word at `+0x18` is an arrival latch**, written by each spoke's
+  entry script whether or not it is set: `0x491` (`rayman`, and `ropeway`),
+  `0x492` (`stone`), `0x497` (`bubu1` / `bubu2`), `0x498` (`station3`),
+  `0x49B` (`deroa`) - with `retock`'s `0x493`, `nilboa`'s `0x499` and `doman`'s
+  `0x49C` from the entry families already measured. Only the `doman`-era route
+  into `deroa` finds it clear, so the endgame saves re-assert latches they
+  already carry.
+- **`map03`'s entry keeps a one-hot story-stage word.** From the `doman`-era save
+  it clears `0x570` and sets `0x56D`; from the endgame save it clears `0x56D`
+  and sets `0x56E`. The story state also picks which `bubu` the one door tile
+  `(92, 52)` leads to: the `doman`-era save lands in `bubu2`, the endgame save
+  in `bubu1`.
+
 ### Disc-wide SYSTEM-flag census tooling
 
 An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but the **setter** that opens it (`0x5x` SET / `0x6x` CLEAR) almost always lives in a *different* scene's MAN. To resolve a gate to its writer, `legaia_engine_core::man_field_scripts` walks the flag ops out of the decoded MAN:
@@ -1816,7 +1875,7 @@ A growing set of small leaf helpers in the dispatcher's call graph are pure arit
 | `party_flag_test`       | `FUN_8003CE64`    | `ghidra/scripts/funcs/8003ce64.txt`      | `0x4C nC sub-1` (host-side)                |
 | `small_table_search`    | `FUN_80042EE0`    | `ghidra/scripts/funcs/80042ee0.txt`      | `0x4C nD sub-C/E`                          |
 | `load_u16_le`           | `FUN_8003CE9C`    | `ghidra/scripts/funcs/8003ce9c.txt`      | `0x4C nC sub-5/6`, `nD sub-0/1`, `nE sub-B`, `n8 sub-1/6/B/D`, `nE sub-8` |
-| `load_u24_le`           | `FUN_8003CEB8`    | `ghidra/scripts/funcs/8003ceb8.txt`      | `0x4C nE sub-5` (XP add), `n8 sub-1`, `nE sub-7` |
+| `load_u24_le`           | `FUN_8003CEB8`    | `ghidra/scripts/funcs/8003ceb8.txt`      | `0x4C nE sub-5` (casino coin delta), `n8 sub-1`, `nE sub-7` |
 | `load_u32_le`           | `FUN_8003CED8`    | `ghidra/scripts/funcs/8003ced8.txt`      | 32-bit immediate decoding                  |
 | `tile_center`           | inline (multi-arm) | dispatcher lines 6534, 7202, 7790, …    | `0x4C nE sub-3/4`, MOVE_TO, dialog spawn   |
 
@@ -1913,7 +1972,7 @@ The length is the VM's own bound (op `0x49` rejects `sub_op > 0xD`,
 | sub-op | slot | routine |
 |---|---|---|
 | `0`, `1`, `7`, `0xD` | `-1` | no screen; `+0x50` stays at the spawn value (slot `0`) |
-| `2` | `0x21` | `FUN_801EED58` (the code-lock actor) |
+| `2` | `0x21` | `FUN_801EED58` - the **code lock** (below) |
 | `3` | `0x22` | `FUN_801F03F0` - the **name-entry** screen above |
 | `4` | `0x23` | `FUN_801EF014` |
 | `5` | `0x24` | `FUN_801EF2B0` - the **tile-board** walk SM |
@@ -1938,6 +1997,36 @@ tick the Incense window reaches zero, so the enter half's table read lands on
 this row ([field-menu.md](field-menu.md#command-sub-flows-use--throw-out--arrange)). The "sub-menu"
 name described the state machine's shape, not what it draws. Port: `legaia_engine_vm::baka_hub_actors::OP49_SUBOP_SLOTS`, with
 the disc pin in `crates/engine-core/tests/w1b_hub_tables_disc.rs`.
+
+#### Sub-op `2`: the code lock
+
+`49 02` carries its five-symbol code as the operand bytes after the sub-op,
+and `FUN_801EED58` compares the player's entry against `_DAT_8007B450 +
+1..+5` (`0x801EEF0C..0x801EEF5C`). The disc has one such site, in `doman`'s
+streamed MAN (extraction `0401`, partition 1 record 18, `pc 0x0768`): a line
+of dialogue, then `49 02` and its code, then `70 09` - a system-flag test on
+flag `9`, which is exactly the flag the lock's verdict writes
+(`FUN_8003CE08(9)` on a match at `0x801EEF74`, `FUN_8003CE34(9)` otherwise
+at `0x801EEF8C`). The test jumps to the success path when the flag is set and
+falls through to a jump away otherwise.
+
+Symbols are entered with the face buttons, not the d-pad: bits `0x20` /
+`0x40` / `0x80` / `0x10` of the packed edge word `_DAT_8007B874` store
+symbols `1` / `0` / `2` / `3` (Circle / Cross / Square / Triangle), one per
+edge while the busy gate `_DAT_8007BB80` is clear, with cue `0x36` each.
+After the fifth the actor waits `0x0C` frame-step units, compares (success
+cue `0x25` pushed through `FUN_80035B50`, failure cue `0x23` overwriting the
+last ring slot through `FUN_80035BD0`), waits `0x14` more and hands back to
+the draw tick. Phase 0 installs descriptor `0x801F32F4`, window record `12`
+at `(0x40, 0x90)`, whose painter `FUN_801F17D8` prints the prompt string
+`0x801CF09C` and one system-UI cell `0x37 + symbol` per entered symbol, `0x20`
+apart, `0x10` below and right of the window origin.
+
+Port: `legaia_engine_vm::code_lock_actor` (the state machine),
+`legaia_engine_core::field_submode_code_lock` (the slot on the submode
+driver, the flag write, the window's lines), drawn on both play hosts through
+`SceneHost::code_lock_lines`; the disc-gated `code_lock_doman_disc` runs
+`doman`'s own bytes through the field VM with the right code and a wrong one.
 
 #### The panel-window records and the descriptors that install them
 

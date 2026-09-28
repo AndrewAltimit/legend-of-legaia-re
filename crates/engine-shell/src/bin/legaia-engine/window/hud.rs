@@ -601,7 +601,7 @@ impl PlayWindowApp {
             // hosts print (`PondSession::status_rows`).
             let (line, hint) = s.status_rows("Circle", "Cross", "Square");
             out.extend(self.stage_status_row(&line, (8, 62), white, w, h));
-            let hint = format!("{hint}  (Start = quit, P = prizes)");
+            let hint = format!("{hint}  (Triangle = menu, Start = quit, P = prizes)");
             out.extend(self.stage_status_row(&hint, (8, 80), dim, w, h));
 
             // The overlay's developer readout (FUN_801d2050): the wander
@@ -691,6 +691,25 @@ impl PlayWindowApp {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
             legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
+            // The venue's hub menu / help pages / tackle list (Triangle or
+            // Select on the idle shore), laid out by the engine
+            // (`World::fishing_hub_lines`) and drawn through the one
+            // composition the browser play page uses.
+            let hub = self.session.host.world.fishing_hub_lines();
+            if !hub.is_empty() {
+                let mut hub_draws = legaia_engine_render::ui_fishing_hub::fishing_hub_draws_for(
+                    &self.font,
+                    hub.iter()
+                        .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
+                    white,
+                );
+                legaia_engine_render::scale_stage_text_draws(
+                    &mut hub_draws,
+                    stage_origin,
+                    stage_scale,
+                );
+                out.extend(hub_draws);
+            }
         }
         // Fishing point-exchange list: the venue's prize rows with the retail
         // gating (row 0 hidden until affordable, greyed unavailable rows,
@@ -1609,6 +1628,23 @@ impl PlayWindowApp {
         // screen is open on the coin slot. Not a menu-runtime state - the
         // field VM owns the park.
         stage.extend(self.coin_counter_window_draws());
+        // The field floor window (op-0x49 sub-op 4, handler slot 0x23 - the Uru Mais
+        // warp pads): laid out by the engine off the live picker state, the
+        // legend read off the field overlay, drawn through the shared line
+        // composition the browser play page uses.
+        let mut floor = self.session.host.flag_window_lines();
+        // The code lock (op-0x49 sub-op 2, handler slot 0x21 - doman's
+        // password door): header off the field overlay, one letter per
+        // entered symbol, through the same line composition.
+        floor.extend(self.session.host.code_lock_lines());
+        stage.extend(legaia_engine_render::ui_text_lines::text_line_draws_for(
+            &self.font,
+            floor
+                .iter()
+                .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
+            white,
+            legaia_engine_render::ui_text_lines::FLOOR_WINDOW_MARKED_INK,
+        ));
         // Shop / inn overlay: rendered at the bottom of the screen when the menu
         // runtime is in any shop, inn, or confirmation state.
         if self.menu_runtime.is_open() {
@@ -1919,6 +1955,8 @@ impl PlayWindowApp {
                 box_rows: panel.box_rows(),
                 options,
                 cursor,
+                picker_rect: panel.picker_rect(),
+                picker_hand: panel.picker_hand_drawn(),
                 // The advance hand shows at a page break AND on the final
                 // fully-typed page (retail waits for a confirm on both).
                 waiting: panel.is_waiting_for_input() || panel.is_done(),
@@ -1958,9 +1996,12 @@ impl PlayWindowApp {
     ///   `x 30..289, y 8..65` = this rect inflated by the skin border).
     ///   Retail anchors the reading box at the TOP of the stage - with
     ///   or without an option picker.
-    /// - Picker box: `x = 0x26`, `y = 0x94 + ((4-n)*0xF)/2`,
-    ///   `w = 0xF4`, `h = 0x38 - (4-n)*0xF` (the picker-init arms'
-    ///   literal geometry writes).
+    /// - Picker box: the engine's slide rect
+    ///   ([`legaia_engine_core::dialog::OwnedDialogPanel::picker_rect`]) -
+    ///   the box on its way in from off screen, then at rest: `0x2A` at the
+    ///   top right `(0xD8, 0x4A, 0x58, 0x1A)`, the N-option lists at
+    ///   `(0x26, 0x94 + ((4-n)*0xF)/2, 0xF4, 0x38 - (4-n)*0xF)`. `None`
+    ///   (no box) on the press's sentinel call.
     ///
     /// Rects are the retail centre rects; the border skin the chrome
     /// pass draws extends ~8 px beyond them on every side
@@ -1976,8 +2017,7 @@ impl PlayWindowApp {
         let picker = if snap.options.is_empty() {
             None
         } else {
-            let n = snap.options.len().clamp(2, 4) as i32;
-            Some((0x26, 0x94 + ((4 - n) * 0xF) / 2, 0xF4, 0x38 - (4 - n) * 0xF))
+            snap.picker_rect
         };
         DialogStageLayout {
             main: (0x26, 0x10, main_w, main_h),
@@ -2116,14 +2156,17 @@ impl PlayWindowApp {
                 stage_scale,
             ));
             // Pointing-hand cursor on the selected option row
-            // (FUN_8002B994 kind 0 at box_x-6, box_y + cursor*0xF).
-            out.push(legaia_engine_render::dialog_option_hand_sprite(
-                &assets.rects,
-                (prect.0, prect.1),
-                snap.cursor,
-                stage_origin,
-                stage_scale,
-            ));
+            // (FUN_8002B994 kind 0 at box_x-6, box_y + cursor*0xF), drawn
+            // only once the slide rests (count 0).
+            if snap.picker_hand {
+                out.push(legaia_engine_render::dialog_option_hand_sprite(
+                    &assets.rects,
+                    (prect.0, prect.1),
+                    snap.cursor,
+                    stage_origin,
+                    stage_scale,
+                ));
+            }
         } else if snap.waiting {
             // Page-advance hand at the lower-right rim while the pager
             // waits for confirm (FUN_8002B994 kind 1).
@@ -2285,6 +2328,11 @@ pub(super) struct DialogSnapshot {
     pub options: Vec<String>,
     /// Selected option row.
     pub cursor: usize,
+    /// The picker box's rect this frame, from the engine's slide
+    /// (`OwnedDialogPanel::picker_rect`); `None` before it starts.
+    pub picker_rect: Option<(i32, i32, i32, i32)>,
+    /// The option hand is drawn (the slide rests).
+    pub picker_hand: bool,
     /// The panel is waiting for a confirm press (page fully typed).
     pub waiting: bool,
 }
@@ -2550,6 +2598,19 @@ impl PlayWindowApp {
                 origin,
                 scale,
             ));
+            // The Rim Elm ambush / monster `0xAF`: the red cross-out over the
+            // Ra-Seru chip, after the plates so it lands on top. The browser
+            // page appends the same sprite off the same engine read.
+            if let Some(src) = rects.cross_out
+                && legaia_engine_core::battle_hud::battle_raseru_cross_out(&self.session.host.world)
+            {
+                out.push(bcu::cross_out_mark_sprite(
+                    src,
+                    bcu::RASERU_MARK_ANCHOR,
+                    origin,
+                    scale,
+                ));
+            }
         }
         out
     }
@@ -2716,6 +2777,7 @@ mod battle_hud_wiring_tests {
                 plate_cap_r: (216, 0, 8, 20),
                 separator: (96, 64, 8, 16),
                 digits: Some(BATTLE_MIRROR_DIGITS),
+                cross_out: None,
             }),
             ..blank_rects()
         };

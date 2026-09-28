@@ -11,7 +11,6 @@ use super::*;
 use crate::drop_shadow::{
     DropShadowQuad, SHADOW_NEAR_BIT, ShadowVertex, casts_shadow, drop_shadow,
 };
-use crate::fog_particles::FogView;
 use legaia_engine_vm::psx_camera::FieldCameraView;
 
 /// The OT-resolution byte `DAT_1F8003A4` the port sorts the blobs with.
@@ -74,7 +73,7 @@ impl World {
             return Vec::new();
         }
         let overworld = self.overworld_bit();
-        let proj = FogView::from_field_view(view);
+        let proj = self.field_fx_view(view);
         let project = |p: [i32; 3]| {
             let (sx, sy, sz) = proj.project_gte(p)?;
             let depth = proj.ndc_depth([p[0], p[1] - DROP_SHADOW_DEPTH_LIFT, p[2]]);

@@ -66,6 +66,84 @@ pub struct XaCue {
     pub dur: u16,
 }
 
+/// The intro title card's first announcer line (`XA33` channel `0x0E`),
+/// started once as the logo fades in ([`IntroTitle::frame`]).
+pub const INTRO_LOGO_XA: XaCue = XaCue {
+    clip: 0x20,
+    chan: 0x0E,
+    dur: 0x3F,
+};
+/// The intro title card's second line (`XA33` channel `0x0F`), started once
+/// as the subtitle holds.
+pub const INTRO_SUBTITLE_XA: XaCue = XaCue {
+    clip: 0x20,
+    chan: 0x0F,
+    dur: 0x76,
+};
+/// The countdown's state-`0` line (`XA33` channel `0x0A`,
+/// [`countdown_frame`]).
+pub const COUNTDOWN_ARM_XA: XaCue = XaCue {
+    clip: 0x20,
+    chan: 0x0A,
+    dur: 0x46,
+};
+/// The countdown's state-`1` line, once the scene load has cleared (`XA33`
+/// channel `0x0B`).
+pub const COUNTDOWN_LOADED_XA: XaCue = XaCue {
+    clip: 0x20,
+    chan: 0x0B,
+    dur: 0x4D,
+};
+/// The countdown's timer-expiry line on an ordinary round (`XA33` channel
+/// `0x0C`).
+pub const COUNTDOWN_ROUND_XA: XaCue = XaCue {
+    clip: 0x20,
+    chan: 0x0C,
+    dur: 0x5A,
+};
+/// The countdown's timer-expiry line on the final round
+/// ([`COUNTDOWN_FINAL_ROUND`], `XA33` channel `0x0D`).
+pub const COUNTDOWN_FINAL_XA: XaCue = XaCue {
+    clip: 0x20,
+    chan: 0x0D,
+    dur: 0x66,
+};
+/// Clip slot of the round banner's line (`XA32.XA`).
+pub const ROUND_BANNER_XA_CLIP: u8 = 0x1F;
+/// Read span of the round banner's line.
+pub const ROUND_BANNER_XA_DURATION: u16 = 0x48;
+
+/// The round banner's announcer line for `round` (0-based): `XA32`, and the
+/// channel is the round index itself ([`round_banner_frame`]).
+pub fn round_banner_xa(round: i32) -> XaCue {
+    XaCue {
+        clip: ROUND_BANNER_XA_CLIP,
+        chan: (round & 0xFF) as u8,
+        dur: ROUND_BANNER_XA_DURATION,
+    }
+}
+
+/// Every announcer line the chrome can start from round `round`'s banner on,
+/// for a host that stages a clip ahead of the request that plays it (the
+/// browser page decodes a clip the bank lacks one request per frame, so a
+/// line first asked for at its frame sounds late there): the intro card's
+/// two lines, the countdown's four, and the banner lines for `round` and the
+/// round after it. The round-advance edge lists the next banner line again
+/// ([`crate::baka_fighter::BakaFight::take_xa_prestage`]). Deduplicated,
+/// in the order the chrome starts them.
+pub fn announcer_xa_prestage(round: i32) -> Vec<XaCue> {
+    vec![
+        INTRO_LOGO_XA,
+        INTRO_SUBTITLE_XA,
+        round_banner_xa(round),
+        COUNTDOWN_ARM_XA,
+        COUNTDOWN_LOADED_XA,
+        COUNTDOWN_ROUND_XA,
+        COUNTDOWN_FINAL_XA,
+        round_banner_xa(round + 1),
+    ]
+}
+
 /// Full-screen tint push (`FUN_80024EE4(1, 1, rgb)`), one 8-bit grey level
 /// replicated across the three channels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -207,11 +285,7 @@ impl IntroTitle {
                 .push(ChromeDraw::plain(0x28, 0xA0, 0x80, step * 8, 0x1000));
             if self.announced == 0 {
                 self.announced = 1;
-                out.xa = Some(XaCue {
-                    clip: 0x20,
-                    chan: 0x0E,
-                    dur: 0x3F,
-                });
+                out.xa = Some(INTRO_LOGO_XA);
             }
         }
 
@@ -219,11 +293,7 @@ impl IntroTitle {
             let e = t - INTRO_LOGO_HOLD;
             if self.announced == 1 && e >= 0 {
                 self.announced = 2;
-                out.xa = Some(XaCue {
-                    clip: 0x20,
-                    chan: 0x0F,
-                    dur: 0x76,
-                });
+                out.xa = Some(INTRO_SUBTITLE_XA);
             }
             out.draws
                 .push(ChromeDraw::plain(0x28, 0xA0, 0x80, 0x80, 0x1000));
@@ -328,11 +398,7 @@ pub const BANNER_CENTRE_X: i16 = 0x90;
 pub fn round_banner_frame(t: i32, round: i32) -> ChromeFrame {
     let mut out = ChromeFrame::default();
     if t == 0 {
-        out.xa = Some(XaCue {
-            clip: 0x1F,
-            chan: (round & 0xFF) as u8,
-            dur: 0x48,
-        });
+        out.xa = Some(round_banner_xa(round));
     }
 
     let mut level = 0x80;
@@ -435,21 +501,13 @@ pub fn countdown_frame(
 
     if st.state == 0 {
         st.state = 1;
-        out.xa = Some(XaCue {
-            clip: 0x20,
-            chan: 0x0A,
-            dur: 0x46,
-        });
+        out.xa = Some(COUNTDOWN_ARM_XA);
     }
     if !loading {
         if st.state == 1 {
             st.state = 2;
             st.timer = COUNTDOWN_TIMER;
-            out.xa = Some(XaCue {
-                clip: 0x20,
-                chan: 0x0B,
-                dur: 0x4D,
-            });
+            out.xa = Some(COUNTDOWN_LOADED_XA);
         }
         if st.state == 2 && banner_level >= COUNTDOWN_FADE_GATE {
             st.timer -= frame_step;
@@ -457,17 +515,9 @@ pub fn countdown_frame(
                 st.timer = 0;
                 st.state = 3;
                 out.xa = Some(if final_round {
-                    XaCue {
-                        clip: 0x20,
-                        chan: 0x0D,
-                        dur: 0x66,
-                    }
+                    COUNTDOWN_FINAL_XA
                 } else {
-                    XaCue {
-                        clip: 0x20,
-                        chan: 0x0C,
-                        dur: 0x5A,
-                    }
+                    COUNTDOWN_ROUND_XA
                 });
             }
         }
@@ -883,9 +933,31 @@ pub struct BakaChrome {
     sprites: Vec<ChromeSprite>,
     /// Whether the banner's two sprite-actor visibility flags are up.
     banner_flags: bool,
+    /// The last round whose banner line a prestage list named
+    /// ([`Self::take_xa_prestage`]); `None` before the first list.
+    xa_prestaged_through: Option<i32>,
 }
 
 impl BakaChrome {
+    /// The announcer lines to stage ahead of use at round `round`: the whole
+    /// [`announcer_xa_prestage`] list on the first call, then the next
+    /// round's banner line each time `round` advances, and nothing in
+    /// between. A host that reads a clip's span synchronously (the native
+    /// window) drains and drops it.
+    pub fn take_xa_prestage(&mut self, round: i32) -> Vec<XaCue> {
+        match self.xa_prestaged_through {
+            None => {
+                self.xa_prestaged_through = Some(round + 1);
+                announcer_xa_prestage(round)
+            }
+            Some(through) if round + 1 > through => {
+                self.xa_prestaged_through = Some(round + 1);
+                (through + 1..=round + 1).map(round_banner_xa).collect()
+            }
+            Some(_) => Vec::new(),
+        }
+    }
+
     /// A runner with the intro title card armed (the cabinet's attract
     /// sequence) rather than starting mid-duel.
     pub fn with_intro() -> Self {

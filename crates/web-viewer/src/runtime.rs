@@ -93,11 +93,15 @@ pub struct LegaiaRuntime {
     /// the retail globals, or reset them on scene entry; the page framed a
     /// separate orbit camera beside a world whose camera state never moved.
     pub(crate) camera: legaia_engine_core::camera::Camera,
-    /// The between-beat cutscene glide, the native window's twin. Without it
-    /// every `apply > 0` Camera Configure beat snapped on this host.
-    pub(crate) cutscene_cam: legaia_engine_vm::psx_camera::CutsceneCameraInterp,
-    /// Display-frame high-water mark the glide was last advanced to.
-    pub(crate) cutscene_cam_frames: u64,
+    /// The between-beat cutscene glide and its display-frame clock - the
+    /// shared kernel (`frame_step::CutsceneGlide`) the native window owns
+    /// one of too. Without it every `apply > 0` Camera Configure beat snapped
+    /// on this host.
+    pub(crate) cutscene_glide: legaia_engine_core::frame_step::CutsceneGlide,
+    /// Wall-clock to sim-tick accumulator (`frame_step::SimStepper`), the
+    /// native window's frame-step rule. The page's animation loop asks it
+    /// how many ticks each display frame runs ([`Self::play_drain_sim_steps`]).
+    pub(crate) sim_stepper: legaia_engine_core::frame_step::SimStepper,
     /// This tick's explicit camera-azimuth override (the VR first-person
     /// gaze), drained by the camera tick. `None` = the engine camera's own
     /// compass azimuth drives the d-pad remap, exactly as it does natively.
@@ -232,12 +236,12 @@ pub struct LegaiaRuntime {
     /// window's `--live-loop` / `--player-battle` flags. [`Self::set_live_battles`]
     /// turns it off for walk-only sessions.
     pub(crate) live_battles: bool,
-    /// The save an in-canvas card **Load** lifted, parked until the page
-    /// enters the scene it resumes in (`cards.rs`). `enter_field` takes it:
-    /// the loaded save's flags replace the picker's free-roam story baseline
-    /// and the save is re-applied after the scene swap, the native
-    /// `enter_field_live_from_save` order (enter, then load).
-    pub(crate) pending_card_resume: Option<legaia_save::SaveFile>,
+    /// The save a card **Load** or a save import lifted, parked with its
+    /// resume label until the page lands it through
+    /// [`Self::play_resume_save`] ([`crate::resume`]), which enters the
+    /// saved scene and re-applies the save after the swap - the native
+    /// `BootSession::resume_save` order (enter, then load).
+    pub(crate) pending_card_resume: Option<crate::resume::ParkedResume>,
     /// Battle<->Field BGM swap track override, the browser twin of the native
     /// window's `--battle-bgm <id>`. `None` = no page-side override, so the
     /// shipped default battle theme plays (`LiveLoopOpts::playable`);
@@ -358,6 +362,11 @@ pub struct LegaiaRuntime {
     /// same latch this module's starts do.
     #[cfg(target_arch = "wasm32")]
     pub(crate) bgm_last_started: Option<u16>,
+    /// A title -> load score hand-off the page asked for before entering the
+    /// save's scene ([`crate::play_bgm`]'s `play_bgm_title_handoff`): run by
+    /// the scene entry once the save has landed, or by the next tick when
+    /// the page declined the entry.
+    pub(crate) bgm_handoff_pending: bool,
 }
 
 /// Sentinel [`LegaiaRuntime::set_field_player_screen_y`] reads as "the lead
@@ -403,8 +412,8 @@ impl LegaiaRuntime {
                 c.distance = options_state.camera_distance;
                 c
             },
-            cutscene_cam: Default::default(),
-            cutscene_cam_frames: 0,
+            cutscene_glide: Default::default(),
+            sim_stepper: Default::default(),
             camera_azimuth_override: None,
             scene_aabb: None,
             fmv: Default::default(),
@@ -463,6 +472,7 @@ impl LegaiaRuntime {
             bgm_bank: None,
             #[cfg(target_arch = "wasm32")]
             bgm_last_started: None,
+            bgm_handoff_pending: false,
         }
     }
 
@@ -732,11 +742,24 @@ impl LegaiaRuntime {
     /// Returns the same JSON as [`Self::state_json`]. Throws when the disc isn't
     /// loaded or the label is unknown.
     pub fn enter_field(&mut self, name: &str) -> Result<String, JsValue> {
-        let resumed_save = self.pending_card_resume.take();
+        self.enter_field_core(name, None)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+}
+
+impl LegaiaRuntime {
+    /// JsValue-free body of [`Self::enter_field`]. `resumed_save` is the save
+    /// a resume lands after the entry ([`crate::resume`]); `None` for a
+    /// picker / door / opening-chain entry.
+    pub(crate) fn enter_field_core(
+        &mut self,
+        name: &str,
+        resumed_save: Option<legaia_save::SaveFile>,
+    ) -> Result<String, String> {
         let host = self
             .scene_host
             .as_mut()
-            .ok_or_else(|| JsValue::from_str("enter_field: call load_disc first"))?;
+            .ok_or_else(|| "enter_field: call load_disc first".to_string())?;
         // Faithful-play arming, matching the native play-window's flags:
         // dialogue through the field VM (so branch handlers - flag sets,
         // GIVE_ITEM, scene changes - actually execute), retail's leading-edge
@@ -756,7 +779,7 @@ impl LegaiaRuntime {
         let world_map = legaia_engine_core::scene::is_world_map_scene(name);
         if world_map {
             host.enter_world_map_scene(name)
-                .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;
+                .map_err(|e| format!("enter_field({name}): {e:#}"))?;
             // Start in walk mode with the retail top-view debug camera
             // reachable through its own chord (`_DAT_8007B98C`), exactly as
             // the native window arms it on world-map entry
@@ -769,7 +792,7 @@ impl LegaiaRuntime {
             }
         } else {
             host.enter_field_scene(name, 0)
-                .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;
+                .map_err(|e| format!("enter_field({name}): {e:#}"))?;
         }
         // The scene host cleared the WORLD's camera state (timeline, op-0x45
         // params); this is the engine camera's half, which only an in-world
@@ -779,7 +802,7 @@ impl LegaiaRuntime {
         // `BootSession::enter_field_live` is the paired site; the glide
         // interpolator is this host's own and goes with it.
         self.camera.reset_for_scene_entry();
-        self.cutscene_cam.reset();
+        self.cutscene_glide.reset();
         if !world_map {
             // Retail reaches the field through the mode table, not through a
             // call: whoever wants the field stores `MAIN INIT` (2) and mode
@@ -801,7 +824,7 @@ impl LegaiaRuntime {
         if self.live_battles {
             self.arm_live_battles(name);
         }
-        self.rebuild_render_state()?;
+        self.rebuild_render_state().map_err(js_error_text)?;
         // The seat heuristic is for interactive free-roam entry; the opening
         // chain's cutscene legs stage their own tableau (the timeline owns
         // actor placement) and must not have the anchor relocated under it.
@@ -812,7 +835,7 @@ impl LegaiaRuntime {
             self.seat_player();
         }
         // The card Load's save lands after the scene swap, as the native
-        // window lands it (`BootSession::enter_field_live_from_save`): scene
+        // window lands it (`BootSession::resume_save`): scene
         // entry resets per-scene world state, the save then restores the
         // party, purses, bag and flags over it.
         if let Some(sf) = resumed_save
@@ -832,9 +855,32 @@ impl LegaiaRuntime {
         {
             self.bgm_last_started = None;
         }
+        // A card Load's score hand-off lands here, after the save: the native
+        // order is enter + load, then stop + restore the save's track, so the
+        // scene's own start of that track finds it already sounding.
+        self.run_pending_bgm_handoff();
         Ok(self.state_json())
     }
+}
 
+/// A `JsValue` error as text, without touching the JS runtime off-wasm
+/// (where every `JsValue` accessor panics) - the testable cores return
+/// `String` errors.
+fn js_error_text(e: JsValue) -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        e.as_string()
+            .unwrap_or_else(|| "rebuild_render_state failed".to_string())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = e;
+        "rebuild_render_state failed".to_string()
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaRuntime {
     /// Route this frame's pad word into the engine. Bit layout is the PSX digital
     /// pad ([`legaia_engine_core::input::PadButton`]): `0x0008` Start, `0x0010`
     /// Up, `0x0020` Right, `0x0040` Down, `0x0080` Left, `0x1000` Triangle,
@@ -924,13 +970,11 @@ impl LegaiaRuntime {
             self.world.begin_new_game();
             return;
         };
-        host.world.begin_new_game();
-        if let Some(defaults) = host.new_game_defaults.as_ref() {
-            host.world.seed_starting_party(&defaults.party);
-            if let Some(inv) = defaults.inventory.as_ref() {
-                host.world.seed_starting_inventory(inv);
-            }
-        }
+        let defaults = host.new_game_defaults.as_ref();
+        host.world.begin_new_game_seeded(
+            defaults.map(|d| &d.party),
+            defaults.and_then(|d| d.inventory.as_ref()),
+        );
     }
 
     /// Route this frame's left analog stick into the engine. PSX convention:
@@ -967,16 +1011,17 @@ impl LegaiaRuntime {
     /// scene the engine just walked into (a door / warp) - the page rebuilds its
     /// render state whenever the return is non-empty.
     pub fn tick_frame(&mut self) -> Result<String, JsValue> {
-        // A card Load / save import parks its save for the scene entry the
-        // page performs in the same turn (`enter_field` consumes it). When
-        // the page declines that entry - the save's scene is the one already
-        // open, or not in its list - nothing consumed it, and the old save
-        // was re-applied over the live party at the NEXT picker entry, however
-        // much later that came. The resume point has passed once the world
+        // A card Load / save import parks its save for the resume the page
+        // lands in the same turn (`play_resume_save` consumes it). A park
+        // nothing consumed must not re-apply the old save over the live party
+        // at some later entry: the resume point has passed once the world
         // ticks, so the park does not outlive this frame. The native Load
-        // enters and loads in one call (`enter_field_live_from_save`) and
-        // parks nothing.
+        // lands and loads in one call (`BootSession::resume_save`) and parks
+        // nothing.
         self.pending_card_resume = None;
+        // The same for a score hand-off armed alongside it: with no entry to
+        // run it, it runs now, over the scene still open.
+        self.run_pending_bgm_handoff();
         let Some(host) = self.scene_host.as_mut() else {
             self.world.tick();
             return Ok(String::new());
@@ -992,6 +1037,16 @@ impl LegaiaRuntime {
         let event = if movie_held {
             SceneTickEvent::Stepped
         } else {
+            // The camera's half before the world tick, in the native
+            // session's order (`frame_step::camera_before_world_tick`): the
+            // azimuth this tick's locomotion reads is published before it
+            // runs. This host used to publish it after the tick, so the d-pad
+            // remap ran one tick behind the camera.
+            legaia_engine_core::frame_step::camera_before_world_tick(
+                &mut self.camera,
+                &mut host.world,
+                self.camera_azimuth_override.take(),
+            );
             host.tick()
                 .map_err(|e| JsValue::from_str(&format!("tick: {e:#}")))?
         };
@@ -1009,14 +1064,27 @@ impl LegaiaRuntime {
         if movie_held && fmv_handoff_scene.is_empty() && self.fmv.armed_for().is_some() {
             return Ok(String::new());
         }
+        // Audio in the native session's order (`BootSession::tick`): the
+        // tick's BGM events first, then - on a scene swap, a door or the
+        // post-movie hand-off - the SFX queue dropped, and only then this
+        // tick's ring ops replayed ([`Self::tick_sfx`], below). Clearing
+        // after the replay instead fired the new scene's zero-delay entry
+        // cues and dropped its delayed ones, and routing the BGM last placed
+        // a bank the SFX pass staged against the outgoing track.
+        let scene_swapped =
+            matches!(event, SceneTickEvent::SceneEntered { .. }) || !fmv_handoff_scene.is_empty();
+        #[cfg(target_arch = "wasm32")]
+        self.route_bgm_wasm();
+        if scene_swapped {
+            self.on_scene_change_audio();
+        }
         // Advance the world's play clock off the page's wall clock, the same
         // delta-against-a-high-water-mark the native window runs. The `host`
         // borrow is dead from here, so this can re-borrow.
         self.tick_play_clock();
-        // The engine camera, ticked in the native session's order
-        // (`BootSession::tick`): free-roam reset, compass azimuth into the
-        // world, op-`0x45` event routing, then the per-frame globals advance.
-        // The post-FMV hand-off swaps the scene outside the field VM's
+        // The engine camera's half after the tick, in the native session's
+        // order (`BootSession::tick`): op-`0x45` event routing, then the
+        // per-frame globals advance. The post-FMV hand-off swaps the scene outside the field VM's
         // transition op (no `SceneEntered`), and is a scene entry all the
         // same: the camera globals reset on it too, as on a door.
         self.tick_camera(
@@ -1077,10 +1145,10 @@ impl LegaiaRuntime {
         // where the native window's redraw loop ticks its own, off the same
         // world pad words. A no-op while the opt-in is off.
         self.tick_dev_menu();
-        // Route this tick's field-VM BGM events (op `0x35`) into WebAudioOut -
-        // the scene's music, started/queued/paused/stopped by the same events
-        // the native `AudioBgmDirector` consumes. The `host` borrow above is
-        // dead here (not used past `finish_cutscene`), so this can re-borrow.
+        // Route any BGM event the frame's own steps raised since the routing
+        // pass above (a battle-presentation or minigame swap) - the scene
+        // tick's own events went there. The drain below drops whatever is
+        // left, so a late event routes here rather than being lost.
         #[cfg(target_arch = "wasm32")]
         self.route_bgm_wasm();
         // Drain every field-VM event the BGM router handed back (and, with
@@ -1093,28 +1161,31 @@ impl LegaiaRuntime {
         // The FMV hand-off loaded a scene without going through the field
         // VM's transition op, so it produces no `SceneEntered` event - the
         // page still has to rebuild, or it draws the old scene's meshes over
-        // the new world.
-        if !fmv_handoff_scene.is_empty() {
+        // the new world. (Its SFX queue was already dropped above, before
+        // this tick's ring ops were replayed.)
+        //
+        // A door (`SceneEntered`) rebuilds the same way. `town01` keeps its
+        // establishing-sweep timeline: the page draws the name-entry overlay
+        // its pinned op-0x49 opens (`crate::play_name_entry`), so the
+        // suspended script has a surface to resume from. No bank is staged
+        // and the dedupe latch is kept, so a track that carries across the
+        // transition keeps its playhead and its samples (the native
+        // `after_scene_swap` does the same).
+        let entered = if !fmv_handoff_scene.is_empty() {
+            fmv_handoff_scene
+        } else if let SceneTickEvent::SceneEntered { name } = event {
+            name
+        } else {
+            String::new()
+        };
+        if !entered.is_empty() {
             self.rebuild_render_state()?;
-            self.on_scene_change_audio();
-            return Ok(fmv_handoff_scene);
         }
-        if let SceneTickEvent::SceneEntered { name } = event {
-            // `town01` keeps its establishing-sweep timeline: the page now
-            // draws the name-entry overlay its pinned op-0x49 opens
-            // (`crate::play_name_entry`), so the suspended script has a
-            // surface to resume from. The screen and the state that closes it
-            // land together - the pairing the field shop's op-0x49 gate
-            // taught (a screen armed with nothing to finish it parks the
-            // script dead).
-            self.rebuild_render_state()?;
-            // A door swapped the scene. No bank is staged and the dedupe
-            // latch is kept, so a track that carries across the transition
-            // keeps its playhead and its samples (the native
-            // `after_scene_swap` does the same).
-            self.on_scene_change_audio();
-            return Ok(name);
-        }
+        // The rest of the tick's tail runs on an entry tick too, as it does
+        // in the native window's loop, which rebuilds and carries on. This
+        // host used to return straight after the rebuild, so the entry
+        // tick's rig change, merchant arm and NPC clip step were skipped.
+        //
         // A `CC F8 50` re-staged the player's model this tick: rebuild the
         // rig from the new mesh, the native window's twin
         // (`rebind_live_npc_models` there drains the same signal).
@@ -1131,7 +1202,7 @@ impl LegaiaRuntime {
         // end and calls `finish_field_shop`.
         self.poll_field_shop();
         self.drive_npc_clips();
-        Ok(String::new())
+        Ok(entered)
     }
 
     /// One-line engine state for the HUD:
@@ -1276,12 +1347,13 @@ impl LegaiaRuntime {
     ///
     /// Once up, the scene's BGM plays automatically: every [`Self::tick_frame`]
     /// routes the field VM's op-`0x35` music events through the same port-side
-    /// VAB + SEQ + SPU path the audio audition page uses. This call also stages
-    /// the current scene's VAB bank (so a scene-local track has a bank) and
-    /// parks the default level ([`BGM_DEFAULT_GAIN`] slider units) on the
-    /// output node so the level matches the page's slider. Browsers often open the `AudioContext`
-    /// suspended even inside a
-    /// gesture - call [`Self::audio_resume`] right after this to make it audible.
+    /// VAB + SEQ + SPU path the audio audition page uses. This call also
+    /// starts the track the scene's script last started - that start was
+    /// routed before the output existed and so was dropped - and parks the
+    /// default level ([`BGM_DEFAULT_GAIN`] slider units) on the output node
+    /// so the level matches the page's slider. Browsers often open the
+    /// `AudioContext` suspended even inside a gesture - call
+    /// [`Self::audio_resume`] right after this to make it audible.
     pub fn audio_init(&mut self) -> bool {
         #[cfg(target_arch = "wasm32")]
         {
@@ -1289,6 +1361,9 @@ impl LegaiaRuntime {
                 Ok(out) => {
                     out.set_gain(BGM_DEFAULT_GAIN);
                     self.audio_out = Some(out);
+                    // Every start routed before this was dropped with no
+                    // director to hear it: bring the scene's track up now.
+                    self.start_current_bgm_on_late_audio();
                     true
                 }
                 Err(e) => {
@@ -2291,19 +2366,10 @@ impl LegaiaRuntime {
             audio.set_muted(self.options_state.muted);
         }
         if let Some(host) = self.scene_host.as_mut() {
-            host.world.locomotion.precise_movement = self.options_state.precise_movement;
-            // Field Move (pause-menu Walk / Run). Only the DEFAULT lands
-            // here; the run button that inverts it is latched by
-            // `World::set_pad`, so this page needs no per-frame wiring.
-            host.world.locomotion.run_default =
-                self.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
-            // Photosensitivity guard over the ambient palette cyclers
-            // (default ON; see `OptionsState::reduce_flashing`).
-            host.world.toggles.reduce_flashing = self.options_state.reduce_flashing;
-            // Battle "Select Attack" (config word `0x800846C4`): whether the
-            // ring's Attack arm shows the Auto | Command prompt, goes
-            // straight to the target cursor, or straight to the arts entry.
-            host.world.toggles.select_attack = self.options_state.battle_select_attack;
+            // The simulation knobs (precise movement, Field Move default,
+            // reduce flashing, battle Select Attack) through the one push the
+            // native window re-asserts each tick.
+            self.options_state.apply_to_world(&mut host.world);
         }
         // The follow-camera distance preset, the same host knob the native
         // window re-asserts each tick (`window/event_handler/redraw.rs`).
