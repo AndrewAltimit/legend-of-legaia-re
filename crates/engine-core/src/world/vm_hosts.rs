@@ -2257,6 +2257,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.spawn_clut_blend_fx(bytecode);
     }
 
+    /// Op `0x4C 0xE5` - the casino coin bank's script delta (a cabinet's
+    /// fee, the dome's entry fee, a prize price). The arm and its missing
+    /// lower clamp are documented on [`crate::casino_coin_bank`].
+    fn op4c_n_e_sub_5_add_coins(&mut self, coin_delta: i32) {
+        self.world.add_script_coins(coin_delta);
+    }
+
     /// Op `0x4C 0x60` - literal-operand VRAM `MoveImage`. The six words are
     /// `[src_x, src_y, w, h, dst_x, dst_y]`; retail's handler arm hands them
     /// straight to the libgpu `MoveImage` wrapper. Queued on the world;
