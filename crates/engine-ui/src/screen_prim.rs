@@ -855,6 +855,61 @@ pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> Overlay
     }
 }
 
+/// A two-point screen-space **line** (GP0 `0x40..=0x43`, `LINE_F2`) in the
+/// form every host's quad pass draws: a flat quad one display pixel across,
+/// laid along the segment - the same pixels a PSX line rasterises, give or
+/// take the end caps. `a` / `b` are display-space endpoints (the
+/// `PSX_DISPLAY_W` x `PSX_DISPLAY_H` space every screen primitive is authored
+/// in). A zero-length segment draws nothing.
+///
+/// The prim set has no two-point variant because no renderer needs one: this
+/// constructor is the line kind, and the slot machine's paylines
+/// (`crate::ui_slot_paylines`) are its first consumer.
+pub fn line_quad(
+    a: (f32, f32),
+    b: (f32, f32),
+    color: [u8; 4],
+    semi_transparent: bool,
+    abr_mode: u8,
+    ot_index: u32,
+) -> Option<FlatQuad> {
+    let ((ax, ay), (bx, by)) = (a, b);
+    let (dx, dy) = (bx - ax, by - ay);
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < f32::EPSILON {
+        return None;
+    }
+    // Half-pixel normal: the quad spans one display pixel across.
+    let (nx, ny) = (-dy / len * 0.5, dx / len * 0.5);
+    let p = |x: f32, y: f32| (x.round() as i16, y.round() as i16);
+    // Keep the quad at least one pixel tall/wide after rounding, the way the
+    // PSX rasteriser always lights one pixel per step.
+    let (mut a0, mut a1) = (p(ax + nx, ay + ny), p(ax - nx, ay - ny));
+    let (mut b0, mut b1) = (p(bx + nx, by + ny), p(bx - nx, by - ny));
+    if a0 == a1 {
+        if dx.abs() >= dy.abs() {
+            a1.1 += 1;
+            b1.1 += 1;
+        } else {
+            a1.0 += 1;
+            b1.0 += 1;
+        }
+    }
+    if a0.1 > a1.1 || (a0.1 == a1.1 && a0.0 > a1.0) {
+        std::mem::swap(&mut a0, &mut a1);
+        std::mem::swap(&mut b0, &mut b1);
+    }
+    Some(FlatQuad {
+        xy: [a0, b0, a1, b1],
+        color,
+        gouraud: None,
+        semi_transparent,
+        abr_mode,
+        ot_index,
+        depth: None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1218,5 +1273,14 @@ mod tests {
             marker_v.iter().map(|v| v.depth).collect::<Vec<_>>(),
             vec![0.25, 0.5, 0.75, 1.0]
         );
+    }
+
+    #[test]
+    fn a_line_is_a_one_pixel_quad_along_its_segment() {
+        let q = line_quad((10.0, 20.0), (60.0, 20.0), [1, 2, 3, 255], true, 0, 4).unwrap();
+        let ys: Vec<i16> = q.xy.iter().map(|c| c.1).collect();
+        assert_eq!(ys.iter().max().unwrap() - ys.iter().min().unwrap(), 1);
+        assert_eq!(q.xy.iter().map(|c| c.0).max(), Some(60));
+        assert!(line_quad((5.0, 5.0), (5.0, 5.0), [0; 4], false, 0, 0).is_none());
     }
 }
