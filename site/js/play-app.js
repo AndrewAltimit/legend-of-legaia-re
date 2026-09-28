@@ -1280,6 +1280,16 @@ void main() {
       try { return !!this.rt.play_sfx_event(name); } catch (e) { return false; }
     }
 
+    /* The pause menu's blip for this frame's pad edges. Which cue fires - if
+     * any - is the engine's one rule (`play_menu_edge_blip`, engine-core
+     * `menu_cues::menu_edge_blip`), the same function the native window
+     * asks; the page only says whether this frame's Start closed the menu.
+     * Silent against a cached WASM that predates the export. */
+    menuBlip(edge, startCloses) {
+      if (typeof this.rt.play_menu_edge_blip !== 'function') return false;
+      try { return !!this.rt.play_menu_edge_blip(edge, !!startCloses); } catch (e) { return false; }
+    }
+
     /* The SFX channel's state (`{descriptors, bank_prot, vab_staged, fired,
      * last_cue, idle_voices, pending}`), or `null`. */
     sfxState() {
@@ -1380,29 +1390,18 @@ void main() {
       } catch (e) {}
       if (startEdge && !inSubScreen) {
         try { rt.play_menu_close(); } catch (e) {}
-        this.sfxEvent('menu_cancel');
+        this.menuBlip(padMaskOf(p), true);
       } else {
         let edge = 0;
         edge |= padMaskOf(p);
-        /* Cue the engine's own blips off this frame's edges: a direction is a
-         * cursor move, Cross a confirm, Circle a cancel. The cue ids and their
-         * provenance come from the engine (`play_sfx_events_json`) - the page
-         * never hard-codes one.
-         *
-         * These sound again. They were silent for a while by the engine's
-         * choice: retail's three ids are pinned (`FUN_80032A44`), but the port
-         * keyed them an octave below retail, which is why menu navigation
-         * played thuds. That pitch is measured and fixed. The engine still
-         * counts every request (`menu_cue_requests` in `play_sfx_state_json`)
-         * alongside `queued`, so keep firing the events either way - the wiring
-         * is what stays measurable. See `play_sfx::CUE_MENU_CURSOR` for the one
+        /* Cue the engine's own blip off this frame's edges. Which edge fires
+         * which cue (a direction a cursor move, Cross a confirm, Circle a
+         * cancel; Start inside a sub-screen nothing) is the engine's rule, and
+         * so are the ids - the page never spells either. The engine counts
+         * every request (`menu_cue_requests` in `play_sfx_state_json`), so the
+         * wiring stays measurable. See `play_sfx::CUE_MENU_CURSOR` for the one
          * inexactness left, which is a bank choice rather than a pitch. */
-        if (edge) {
-          const DIRS = 0x0010 | 0x0020 | 0x0040 | 0x0080;
-          if (edge & 0x4000) this.sfxEvent('menu_confirm');
-          else if (edge & 0x2000) this.sfxEvent('menu_cancel');
-          else if (edge & DIRS) this.sfxEvent('menu_cursor');
-        }
+        if (edge) this.menuBlip(edge, false);
         /* Tick EVERY frame, edge or not, and tick at 60 Hz.
          *
          * The menu is not purely input-driven: the save screen's "Now
