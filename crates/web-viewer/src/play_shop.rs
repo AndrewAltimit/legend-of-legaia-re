@@ -1246,8 +1246,13 @@ impl LegaiaRuntime {
     /// `true` while a field-VM merchant shop is up. The page freezes field
     /// input and routes pad edges to [`Self::play_shop_input`] while this
     /// holds, the same way it defers to the pause menu.
+    ///
+    /// The answer is [`legaia_engine_core::menu_runtime::MenuRuntime::is_open`],
+    /// the predicate the native window feeds the field a neutral pad on. The
+    /// page used to spell out `shop_session || prize_session` here, which
+    /// agreed only while no other menu-runtime screen could be up.
     pub fn play_shop_is_open(&self) -> bool {
-        self.menu.shop_session.is_some() || self.menu.prize_session.is_some()
+        self.menu.is_open()
     }
 
     /// Drive the open shop one frame from an edge-triggered PSX pad word
@@ -1259,7 +1264,7 @@ impl LegaiaRuntime {
     /// the merchant op on its next step. Without that call the script would
     /// stay parked forever.
     pub fn play_shop_input(&mut self, edge: u16) {
-        if self.menu.shop_session.is_none() && self.menu.prize_session.is_none() {
+        if !self.menu.is_open() {
             return;
         }
         let input = menu_input(edge);

@@ -131,15 +131,7 @@ impl LegaiaRuntime {
         if !h.world.name_entry_active() {
             return false;
         }
-        let input = NameEntryInput {
-            up: edge & 0x0010 != 0,
-            down: edge & 0x0040 != 0,
-            left: edge & 0x0080 != 0,
-            right: edge & 0x0020 != 0,
-            confirm: edge & 0x4000 != 0, // Cross
-            cancel: edge & 0x1000 != 0,  // Triangle
-        };
-        h.world.step_name_entry(input)
+        h.world.step_name_entry(NameEntryInput::from_pad_edge(edge))
     }
 
     /// Advance the world frame counter `steps` sim ticks while the overlay is

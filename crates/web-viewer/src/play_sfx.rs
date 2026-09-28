@@ -981,6 +981,12 @@ impl LegaiaRuntime {
         // voice leg), played below once the host borrow ends - the twin of
         // the native `route_field_sfx`.
         let field_xa = host.world.drain_field_xa_cues();
+        // The scene's CD-XA prestage list (filled at scene load): staged
+        // ahead of the ops that will ask for them, since this page decodes a
+        // clip the bank lacks one request per frame and a line first asked
+        // for at its op sounded late. The native window reads the span
+        // synchronously and drops the list.
+        let field_xa_prestage = host.world.drain_field_xa_prestage();
         // One `World::tick` is one vsync and this scheduler ticks once per
         // `World::tick`, so the ring ages by the vsyncs a tick spans
         // (`display_frame_step`, always 1), not by the game-tick cadence.
@@ -1022,6 +1028,9 @@ impl LegaiaRuntime {
             if mask != 0 {
                 out.with_spu(|spu| spu.key_off_mask(mask));
             }
+        }
+        for xa in &field_xa_prestage {
+            self.prestage_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
         }
         for xa in &field_xa {
             self.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);

@@ -33,7 +33,7 @@
 //! record-counter reads without the gate failing.
 
 use legaia_engine_core::dev_menu::retail_packed;
-use legaia_engine_core::dev_menu_host::{DevMenuRow, DevMenuSession, DevPage, WorldEquipHost};
+use legaia_engine_core::dev_menu_host::{DevMenuRow, DevMenuSession, DevPage};
 use legaia_engine_ui::{self as ui, RecordsLabels, TextDraw};
 use wasm_bindgen::prelude::*;
 
@@ -93,29 +93,10 @@ impl LegaiaRuntime {
             (now & !prev, now)
         };
 
-        // The shared tick the native window makes: party records, plus the
-        // CAMERA row's follow switch on this page's camera.
-        session.tick_host(world, &mut self.camera, edge, held);
-
-        // The EQUIP row's confirm commits against the engine's own bag,
-        // exactly as the native window's arm does.
-        if session.current_row() == DevMenuRow::Equip
-            && edge & legaia_engine_core::dev_menu::PACK_CROSS != 0
-        {
-            let character = session.chars.character as usize;
-            let weapon_slots: Vec<i16> = vec![2; world.party.roster.members.len().max(4)];
-            if let Some(member) = world.party.roster.members.get_mut(character) {
-                let mut raw = std::mem::take(&mut member.raw);
-                let mut equip_host = WorldEquipHost {
-                    inventory: &mut world.party.inventory,
-                    sfx: Vec::new(),
-                };
-                let _ = session.commit_equip_row(&mut equip_host, &mut raw, &weapon_slots);
-                let cues = std::mem::take(&mut equip_host.sfx);
-                world.party.roster.members[character].raw = raw;
-                session.pending_sfx.extend(cues);
-            }
-        }
+        // The shared tick the native window makes: party records, the
+        // CAMERA row's follow switch on this page's camera, and the EQUIP
+        // row's confirm against the engine's own bag.
+        let _ = session.tick_host(world, &mut self.camera, edge, held);
 
         // The screen's cues ride the world's SFX ring (retail
         // `FUN_80035B50`), which `route_field_sfx` replays - the same call

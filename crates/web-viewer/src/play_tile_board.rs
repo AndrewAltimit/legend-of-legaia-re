@@ -31,7 +31,6 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::tile_board;
-use legaia_engine_core::world::SceneMode;
 use wasm_bindgen::prelude::*;
 
 /// Floats per cell in [`LegaiaRuntime::play_tile_board_transforms`]:
@@ -60,9 +59,11 @@ impl LegaiaRuntime {
     /// module was dead code wearing a "wired" comment.
     /// Install the demo tile board - the browser's twin of the native
     /// window's `LEGAIA_TILE_BOARD_DEMO=1` env trigger, which no browser can
-    /// set. Same 7x7 board centred on the player, installed through the same
-    /// op-`0x49` bytecode (`World::try_install_tile_board`), so the page
-    /// exercises the identical install path rather than a second one.
+    /// set. Both call the one engine install,
+    /// `World::install_demo_tile_board` (a 7x7 board centred on the player,
+    /// through the op-`0x49` bytecode `World::try_install_tile_board`
+    /// parses); the page installs once per picker entry, the native window
+    /// whenever the field has no board.
     ///
     /// Returns `false` off the field, with a board already up, or when the
     /// install is refused. No retail scene installs a board, so this is the
@@ -71,32 +72,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return false;
         };
-        let world = &mut host.world;
-        if world.mode != SceneMode::Field || world.board.grid.is_some() || world.board.armed {
-            return false;
-        }
-        let Some(pslot) = world.player_actor_slot else {
-            return false;
-        };
-        let (px, pz) = {
-            let a = &world.actors[pslot as usize];
-            (a.move_state.world_x as i32, a.move_state.world_z as i32)
-        };
-        // 7x7 board with the player's tile at its centre - byte-identical to
-        // the native window's `maybe_install_demo_tile_board` instruction.
-        let origin_x = ((px >> 7) - 3).clamp(0, 255) as u8;
-        let origin_z = ((pz >> 7) - 3).clamp(0, 255) as u8;
-        let instr: [u8; 14] = [
-            0x49, 0x05, // op, sub-op
-            origin_x, origin_z, // +1/+2 tile origin
-            7, 7, // +3/+4 width x height
-            5, // +5 draw radius
-            0, // +6 mode flag (full-board draw)
-            0, 0, 0, 0, // +7/+9 event-flag bases (unused by the demo)
-            0, // +0xb player template (character-mesh head)
-            3, // +0xc tile template base (effect-model library)
-        ];
-        world.try_install_tile_board(&instr)
+        host.world.install_demo_tile_board()
     }
 
     pub fn play_tile_board_slots(&self) -> Vec<u32> {

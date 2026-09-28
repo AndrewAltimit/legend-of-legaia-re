@@ -553,8 +553,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return false;
         };
-        host.world.arm_minigame_warp();
-        host.world.minigames.pending_warp = Some(sub_id);
+        host.world.request_minigame_warp(sub_id);
         true
     }
 }
