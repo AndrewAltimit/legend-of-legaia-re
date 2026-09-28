@@ -284,11 +284,11 @@ impl LegaiaRuntime {
     /// the save the stop still ran - silence, not a stale theme, which is the
     /// native behaviour too.
     pub(crate) fn run_pending_bgm_handoff(&mut self) {
-        if !std::mem::take(&mut self.bgm_handoff_pending) {
-            return;
-        }
+        let armed = std::mem::take(&mut self.bgm_handoff_pending);
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = armed;
         #[cfg(target_arch = "wasm32")]
-        {
+        if armed {
             use legaia_engine_core::scene::BgmDirector;
             let Some(out) = self.audio_out.as_ref() else {
                 return;
