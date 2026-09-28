@@ -2914,3 +2914,13 @@ expected_game_mode = 0x03
 expected_active_scene = "retock"
 description = "retock inn, the innkeeper's stay offer on screen and waiting: the pager (FUN_801D84D0) has just entered page wait 0x19 on the page that ends on the 0x2A picker open byte, so one confirm press opens the Yes / No menu. Retail SCUS: from retock_innkeeper_talk_open, autorun_dialog_picker_open.lua (LEGAIA_PICKER_WAIT=20, LEGAIA_PICKER_RETALK=400, LEGAIA_PICKER_CKPT=1) runs the first talk's two pages, talks again after the stay, and checkpoints the 0x19 entry that precedes state 0x11. The press drives 0x11 -> 0x12: the 88 x 26 box slides in from x 336 to 216 at y 74 over twelve pager calls (frame step 2)."
 topics = ["field", "retock", "inn", "dialogue", "picker", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "tunnelb_field_card_boot"
+backup_fingerprint = "91070cb51112e90b4a17d4fb9e9c0383cbc1976a0d6cd7ae9c914bca84b9aed9"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "tunnelb"
+description = "tunnelb free field run from the story-ladder card (playthrough-ladder-pro00-14 block 4, restamped to -00 by isolate_card_save.py), cold boot + memory-card load (autorun_boot_continue.lua, the calibrated CONTINUE ladder, LEGAIA_SETTLE=200). Player at world (5286, 11830). The nearest card block to rayman: tunnelb P2[35] (tile (12, 105)) and P2[38] (tile (17, 71)) are its doors into rayman, rayman2 once flag 0x1D5 is set."
+topics = ["field", "tunnelb", "rayman", "story flags", "card boot", "probe state"]

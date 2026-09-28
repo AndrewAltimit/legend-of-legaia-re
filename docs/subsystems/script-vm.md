@@ -1330,6 +1330,50 @@ every authored box, and every `CD F8` gate in every scene's per-frame body -
 `0x6DE` here, the camera-parameter gates elsewhere - then answers "outside" for
 the whole visit.
 
+### What arriving in a spoke writes
+
+The region story-flag families are C1/C2 gates on partition-2 records, and a
+family's SETs come from the records a visit plays - walk-on beats, talks - not
+from the scene load. A tile-poke route with the SET / CLEAR helpers under exec
+breakpoints (`scripts/pcsx-redux/autorun_w6c_spoke_walk.lua`, from card-boot
+states) crosses into each spoke and logs every write of the arrival: the scene
+load, the entry script and the first field frames. Each write below is placed
+by its pc offset in the executing record (`s8`) and carries the bank bit as it
+stood before the write. Writes in the ambient one-hot selector band
+`0x19B..0x1AA` and in the `0x526..0x52E` band every entry clears and one exit
+record re-sets are left out; they fire in every scene.
+
+| Route (start state) | Arrival scene | Writes on arrival, in order |
+|---|---|---|
+| `tunnelb` `(12, 105)` (`tunnelb_field_card_boot`) | `rayman` | SET `0x491` at `+0x18` (already set), CLEAR `0x5A8` at `+0x28`, CLEAR `0x57F` at `+0x54` |
+| `retock` -> `map02` -> `ropeway` `(30, 38)` (`retock_field_card_boot`) | `station` | nothing outside the two bands |
+| `chitei2` -> `deroa` -> `map03` `(68, 17)` (`chitei2_field_card_boot`) | `station3` | SET `0x498` at `+0x18` (already set) |
+| `doman` -> `map03` `(92, 52)` (`doman_field_card_boot`) | `bubu2` | SET `0x497` at `+0x36` (already set) |
+| `chitei2` -> `deroa` -> `map03` `(92, 52)` (`chitei2_field_card_boot`) | `bubu1` | SET `0x497` at `+0x1C` (already set), CLEAR `0x57F` at `+0x6C` |
+| `doman` -> `map03` `(66, 114)` (`doman_field_card_boot`) | `deroa` | SET `0x49B` at `+0x18` (**clear before**: the first arrival), CLEAR `0x60E` at `+0x65` |
+| `chitei2` `(50, 18)` (`chitei2_field_card_boot`) | `deroa` | SET `0x49B` at `+0x18` (already set), SET `0x01F` at `+0x46`, CLEAR `0x60E` at `+0x65` |
+
+Three things follow:
+
+- **No gate family fires on arrival.** `rayman`'s `0x201 -> 0x1FB -> 0x200 ->
+  0x1FC` chain, `bubu2`'s requires-all chain, the `station` / `station3` gates on
+  `taiku`'s `0x38F` and `deroa`'s `0x3E1`-gated descent all belong to records a
+  visit has to play. Their SET order needs a human play-forward (or a scripted
+  one that walks each beat's tile and answers its text), which a door poke does
+  not give.
+- **The `0x49x` word at `+0x18` is an arrival latch**, written by each spoke's
+  entry script whether or not it is set: `0x491` (`rayman`, and `ropeway`),
+  `0x492` (`stone`), `0x497` (`bubu1` / `bubu2`), `0x498` (`station3`),
+  `0x49B` (`deroa`) - with `retock`'s `0x493`, `nilboa`'s `0x499` and `doman`'s
+  `0x49C` from the entry families already measured. Only the `doman`-era route
+  into `deroa` finds it clear, so the endgame saves re-assert latches they
+  already carry.
+- **`map03`'s entry keeps a one-hot story-stage word.** From the `doman`-era save
+  it clears `0x570` and sets `0x56D`; from the endgame save it clears `0x56D`
+  and sets `0x56E`. The story state also picks which `bubu` the one door tile
+  `(92, 52)` leads to: the `doman`-era save lands in `bubu2`, the endgame save
+  in `bubu1`.
+
 ### Disc-wide SYSTEM-flag census tooling
 
 An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but the **setter** that opens it (`0x5x` SET / `0x6x` CLEAR) almost always lives in a *different* scene's MAN. To resolve a gate to its writer, `legaia_engine_core::man_field_scripts` walks the flag ops out of the decoded MAN:
