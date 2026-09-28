@@ -3533,7 +3533,10 @@ impl World {
     ///
     /// REF: FUN_801DE840 (the two player arms; the pick is
     /// [`vm::field_player_clip::settle_clip_pick`])
-    pub fn field_player_script_clip(&mut self, move_id: u8) {
+    pub fn field_player_script_clip(
+        &mut self,
+        move_id: u8,
+    ) -> vm::field_player_clip::SettleClipPick {
         self.locomotion.clip_base = u16::from(move_id);
         let leader = self.locomotion.player_anim.as_ref().map_or(0, |a| a.leader);
         let pick = vm::field_player_clip::settle_clip_pick(
@@ -3544,6 +3547,7 @@ impl World {
             false,
         );
         self.apply_player_clip_pick(&pick, leader);
+        pick
     }
 
     /// Advance actor `slot` by `speed` world units in the direction encoded by

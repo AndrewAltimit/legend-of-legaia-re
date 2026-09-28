@@ -682,6 +682,20 @@ walk cycle (Mei: clip 61 walking, 60 idle). Engine port:
 NPC anim cue surfaced from `exec_move`. Dropping the walk playout is what left
 Mei out of the conversation frame for the whole beat.
 
+The same park holds for the compass-walk ops against the **player**. `B7 F8 b0 b1`
+(op `0x37`, rate `0x80`; `0x41` is the `0x40` twin) moves the player along the
+direction `b0 & 7` names in the axis table at `0x80073F14`, for
+`(b1 & 0x3F) * (4 << sel)` speed units spent one per vsync, and the record
+resumes past the four-byte op when they are spent. `map01`'s cave-mouth record
+walks the player out of the cave this way; the disassembler prints the op as
+`Yield (Standard)`, which is its dispatch class, not what it does. A record
+that waits for a player gesture pokes the clip and spins on its end latch
+(`A2 F8 <clip>` / `AC F8 08` / `AD F8 08`), and when the clip binds from the
+scene bank the spin lasts the clip's frames. Engine port:
+`CutsceneTimeline::player_glide` and `player_clip_wait`, on a modal timeline
+only; the length accounting and the helper-context residue are in
+[`field-locomotion.md`](field-locomotion.md#where-the-294-vsyncs-go).
+
 #### 0x39 GIVE_ITEM
 
 `[39, item_id]` - adds one of inline item `item_id` to the inventory: `func_0x8004313C()` (select the active inventory window/page bounds) then `func_0x800421D4(item_id, 1)` (the capacity-checked add-item-by-id primitive). PC advances by 2 (`addiu s8,s8,0x2` at `0x801E044C`; `lbu a0,0(s6)` reads the inline id at `0x801E0450`). This is the **treasure-chest item-give** path - the **granted** item is this single inline operand byte, **not** a per-scene table. `FUN_800421D4` is the inventory adder, so the earlier `PLAY_SFX` label was wrong. (`FUN_801D71F0` is not a second add-item site: that VA is a mis-based print of the equip applier [`FUN_801E5A08`](field-menu.md#manual-equip-applier-fun_801e5a08), whose `FUN_800421D4` call is a refund;

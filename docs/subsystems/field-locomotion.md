@@ -2029,10 +2029,45 @@ set.
 
 This holds wherever a spawned record parks mid-script, not only after a Door. The engine
 treats an active cutscene timeline as that state: `World::field_menu_open_allowed` refuses
-while one runs. `tests/door_arrival_menu_refusal_disc.rs` pins the refusal and its release
-on the real `map01` record. The engine's run of `P2[9]` is shorter than retail's, because the
-walk-out move and its move-done park do not hold the timeline. The refusal matches retail's
-shape but not its length.
+while one runs. `tests/door_arrival_menu_refusal_disc.rs` pins the refusal, its release and
+its length on the real `map01` record.
+
+#### Where the 294 vsyncs go
+
+The record parks three times, and each park is a retail mechanism the timeline now holds on:
+
+| Park | Op | Length | Mechanism |
+|---|---|---|---|
+| Frame wait | `4A 28 00` | 40 vsyncs | `WaitFrames 40`. |
+| Walk-out | `B7 F8 00 81` | 16 vsyncs | Op `0x37` against the player: the walk kernel `FUN_8003774C` translates it in place (arm `0x8003789C..0x800379F8`). |
+| Clip end | `AD F8 08` | 240 vsyncs | The spin on the end latch of scene-bank clip 13, 120 frames at two vsyncs a frame. |
+
+The walk-out's operand decodes as direction `b0 & 7 = 0` (`-Z` in the axis table at
+`0x80073F14`), divisor `4 << ((b0 >> 5 & 4) | (b1 >> 6)) = 16`, and a budget of `(b1 & 0x3F) * 16 = 16` speed
+units. The kernel spends `DAT_1F800393` units a game tick and moves `0x80 * spent / 16`, so the leg
+is one vsync per unit and one tile (128 units) in all. It is not the `A2 F8 01` before it: that
+ExecMove only selects the locomotion walk clip (the party-bank bit is up, `B1 F8 18`).
+
+The long wait is the gesture. `B2 F8 18` drops the party-bank bit, so `A2 F8 0D` binds scene-bank
+record 12 of map01's ANM bundle, a 120-frame clip; `AC F8 08` clears the end latch and
+`AD F8 08` spins until `FUN_800204F8` sets it again. That routine advances the cursor `+0x68` by
+`speed * DAT_1F800393` sixteenths of a frame and latches `+0x62 |= 0x100` once the cursor reaches
+`frames * 16 - 1` (`0x800206E4..0x8002072C`). At the engine's two vsyncs a clip frame
+(`field_anim::DEFAULT_TICKS_PER_FRAME`) that is 240 vsyncs.
+
+The three sum to 296 against the capture's 294 (the capture reads the span off the spawn write and
+the engaged-bit clear, and retail steps the record once per two-vsync game tick). The engine's
+timeline parks on the walk leg (`CutsceneTimeline::player_glide`) and on the latch spin while
+the poked clip's length runs (`player_clip_ticks`, timed from the scene bundle's frame counts that
+`SceneHost::load_scene` stores in `FieldLocomotion::scene_clip_frames`). A party-bank clip gets no
+timed latch - the locomotion loops latch every cycle - so a spin after one still steps past.
+
+Both parks are held on a **modal** timeline only. A concurrent helper context is a record retail
+also runs under the engaged bit, with the pad refused, but the port does not refuse the pad for
+helpers; moving the player from one would put the script and the pad on the player at once.
+`korout`'s first-visit record (`P2[3]`, `C1 F8 04 90`: eight tiles along `+Z` over 256 vsyncs) is
+the case that shows it, so a helper still yields past a player walk after one tick until helpers
+hold the pad the way a timeline does.
 
 The audio side reached this function independently: [`audio.md`](audio.md#streamed-cue-census-fun_8003eae4--fun_80019794) already lists field 0897 `0x801D4FCC` as clip `0x10` (XA17), the scripted-scene voice file. That call site is program 2's state `0x16`, and it is a seek-ahead (`CdlSeekL`, no read), not a stream: the voice itself is state `0x17`'s `FUN_8003D53C(0x10, 7, 0x135)` one-shot.
 

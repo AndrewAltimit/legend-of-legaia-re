@@ -910,6 +910,9 @@ impl World {
         modal: bool,
     ) -> bool {
         tl.frames = tl.frames.saturating_add(1);
+        // The player's poked scene-bank clip plays one engine tick per
+        // slice, parked or not - retail's clip tick runs every frame.
+        tl.player_clip_ticks = tl.player_clip_ticks.saturating_sub(1);
         self.cutscene.in_timeline = modal;
         self.field_vm.in_spawned_record_slice = true;
         let mut channels = std::mem::take(&mut self.field_vm.channels);
@@ -1065,6 +1068,64 @@ impl World {
                 }
             }
             tl.pc = walk.resume_pc;
+        }
+        // Player compass-walk park (`B7 F8 <b0> <b1>` / `C1 F8 ..`, ops
+        // `0x37` / `0x41` against the player anchor): the walk kernel
+        // translates the player in place, one speed unit per vsync, and the
+        // parked record resumes past the yield when the leg's budget is spent.
+        // REF: FUN_8003774C (the 0x37 / 0x41 arm)
+        if let Some(mut glide) = tl.player_glide.take() {
+            glide.frames += 1;
+            let done = match self.player_actor_slot {
+                Some(p) if (p as usize) < self.actors.len() => {
+                    let ms = &self.actors[p as usize].move_state;
+                    glide.state.world_x = ms.world_x;
+                    glide.state.world_z = ms.world_z;
+                    let done = vm::motion_vm::compass_walk(
+                        &mut glide.state,
+                        glide.body0,
+                        glide.body1,
+                        glide.rate,
+                    );
+                    let (nx, nz) = (glide.state.world_x, glide.state.world_z);
+                    let y = self.sample_field_floor_height(i32::from(nx), i32::from(nz)) as i16;
+                    let ms = &mut self.actors[p as usize].move_state;
+                    ms.world_x = nx;
+                    ms.world_z = nz;
+                    ms.world_y = y;
+                    done
+                }
+                // No player actor to move: nothing plays the leg out.
+                _ => true,
+            };
+            if !done && glide.frames < WALK_PARK_TIMEOUT {
+                tl.player_glide = Some(glide);
+                self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
+                self.cutscene.in_timeline = false;
+                self.field_vm.in_spawned_record_slice = false;
+                // Real playout progress, like the walk park.
+                tl.frames = tl.frames.saturating_sub(1);
+                return false;
+            }
+            tl.pc = glide.resume_pc;
+        }
+        // Player end-latch spin (`AD F8 08`): held while the scene-bank clip
+        // the record poked onto the player is still playing; retail's clip
+        // tick latches `+0x62 & 0x100` on its last frame and the spin falls
+        // through on the next visit.
+        // REF: FUN_800204F8 (0x800206E4..0x8002072C)
+        if let Some(width) = tl.player_clip_wait.take() {
+            if tl.player_clip_ticks > 0 {
+                tl.player_clip_wait = Some(width);
+                self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
+                self.cutscene.in_timeline = false;
+                self.field_vm.in_spawned_record_slice = false;
+                tl.frames = tl.frames.saturating_sub(1);
+                return false;
+            }
+            tl.pc += width;
         }
         // Cross-context rotate park (`B8 <id> <dir|flags> <budget|dir>` = op
         // 0x38 with a non-zero budget against an NPC channel): retail parks
@@ -1427,7 +1488,21 @@ impl World {
                             .push(FieldEvent::ExecMove { move_id });
                         // Retail's player arm of op 0x22: the move id becomes
                         // the clip base and is picked + bound at once.
-                        host.world.field_player_script_clip(move_id);
+                        let pick = host.world.field_player_script_clip(move_id);
+                        // The end latch a following `AD F8 08` waits on lands
+                        // when a scene-bank clip has played its frames; a
+                        // party-bank clip (the locomotion loops) is not timed.
+                        tl.player_clip_ticks = match pick.bound() {
+                            Some((vm::field_player_clip::ClipBank::Scene, record)) => host
+                                .world
+                                .locomotion
+                                .scene_clip_frames
+                                .get(usize::from(record))
+                                .map_or(0, |&f| {
+                                    u32::from(f) * crate::field_anim::DEFAULT_TICKS_PER_FRAME
+                                }),
+                            _ => 0,
+                        };
                         // Cue the scripted player clip: the windowed host
                         // resolves scene-ANM record `move_id - 1` and plays
                         // it once over idle/walk (live-pinned: the town01
@@ -1441,6 +1516,52 @@ impl World {
                         }
                         tl.pc = pc + 3;
                         continue;
+                    }
+                    // Compass walk on the player (`B7 F8 b0 b1` / `C1 F8
+                    // b0 b1`): park while the walk kernel plays the leg.
+                    //
+                    // Modal timelines only. A concurrent helper context is a
+                    // record retail runs under the player's engaged bit - the
+                    // pad refused for its whole span - and the port does not
+                    // hold the pad for helpers, so moving the player from one
+                    // would put the script and the pad on the player at once
+                    // (`korout`'s first-visit walk). Helpers keep the old
+                    // one-tick yield until they hold the pad the way a
+                    // timeline does.
+                    // REF: FUN_8003774C (the 0x37 / 0x41 arm)
+                    if modal
+                        && matches!(op, 0x37 | 0x41)
+                        && let (Some(&body0), Some(&body1)) =
+                            (tl.bytecode.get(pc + 2), tl.bytecode.get(pc + 3))
+                    {
+                        if pc < tl.visited.len() {
+                            tl.visited[pc] = true;
+                        }
+                        tl.player_glide = Some(crate::cutscene_timeline::TimelinePlayerGlide {
+                            state: vm::motion_vm::MotionState {
+                                speed: 1,
+                                ..Default::default()
+                            },
+                            body0,
+                            body1,
+                            rate: if op == 0x37 { 0x80 } else { 0x40 },
+                            resume_pc: pc + 4,
+                            frames: 0,
+                        });
+                        break;
+                    }
+                    // End-latch spin on the player (`AD F8 08`): park while
+                    // the poked scene-bank clip is still playing.
+                    if modal
+                        && op == 0x2D
+                        && tl.bytecode.get(pc + 2) == Some(&8)
+                        && tl.player_clip_ticks > 0
+                    {
+                        if pc < tl.visited.len() {
+                            tl.visited[pc] = true;
+                        }
+                        tl.player_clip_wait = Some(3);
+                        break;
                     }
                     if op == 0x43
                         && let Some(&sub) = tl.bytecode.get(pc + 2)
@@ -3548,5 +3669,99 @@ mod tests {
         assert!(w.cutscene.narration.is_none() && w.cutscene.card.is_none());
         assert!(!w.cutscene.entering_town01_opening);
         assert!(!w.abandon_opening_chain(), "nothing live the second time");
+    }
+
+    /// A timeline carrying map01's cave-mouth walk-out shape: a player
+    /// compass walk (`B7 F8 00 81`), then a scene-bank clip poke with the
+    /// party-bank bit down (`B2 F8 18`, `A2 F8 03`), its end-latch spin
+    /// (`AC F8 08`, `AD F8 08`), and a `WaitFrames` so the timeline stays up.
+    fn timeline_with_player_walk_and_clip_wait(clip_frames: u16) -> World {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        let mut w = World {
+            mode: crate::world::SceneMode::Field,
+            ..World::default()
+        };
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w.actors[0].move_state.world_x = 0x1040;
+        w.actors[0].move_state.world_z = 0x2040;
+        w.locomotion.scene_clip_frames = vec![1, 1, clip_frames];
+        let bc = vec![
+            0xB7, 0xF8, 0x00, 0x81, // compass walk: dir 0 (-Z), 1 x div 16
+            0xB2, 0xF8, 0x18, // party-bank bit down
+            0xA2, 0xF8, 0x03, // ExecMove 3 -> scene record 2
+            0xAC, 0xF8, 0x08, // clear the end latch
+            0xAD, 0xF8, 0x08, // spin on it
+            0x4A, 0xFF, 0x7F, // WaitFrames (keeps the timeline installed)
+        ];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        w
+    }
+
+    /// `B7 F8 00 81` walks the player one tile along `-Z` over sixteen
+    /// ticks - one speed unit per vsync, `FUN_8003774C`'s `0x37` arm - and
+    /// the record resumes past the 4-byte yield only when the leg is spent.
+    #[test]
+    fn cutscene_timeline_player_compass_walk_parks_for_its_budget() {
+        let mut w = timeline_with_player_walk_and_clip_wait(10);
+        w.step_cutscene_timeline(); // arms the walk park
+        let mut ticks = 0;
+        while w
+            .cutscene
+            .timeline
+            .as_ref()
+            .is_some_and(|tl| tl.player_glide.is_some())
+        {
+            w.step_cutscene_timeline();
+            ticks += 1;
+            assert!(ticks < 64, "the walk park releases");
+        }
+        assert_eq!(ticks, 16, "sixteen speed units at one per tick");
+        assert_eq!(w.actors[0].move_state.world_z, 0x2040 - 128);
+        assert_eq!(w.actors[0].move_state.world_x, 0x1040);
+    }
+
+    /// The `AD F8 08` spin after a scene-bank clip poke holds for the clip's
+    /// frames at two ticks a frame (the `FUN_800204F8` end latch), then
+    /// steps past.
+    #[test]
+    fn cutscene_timeline_player_clip_latch_spin_holds_for_the_clip() {
+        let frames = 10u16;
+        let mut w = timeline_with_player_walk_and_clip_wait(frames);
+        let mut spin_ticks = 0;
+        let mut saw_spin = false;
+        for _ in 0..200 {
+            w.step_cutscene_timeline();
+            let tl = w.cutscene.timeline.as_ref().expect("installed");
+            if tl.player_clip_wait.is_some() {
+                saw_spin = true;
+                spin_ticks += 1;
+            } else if saw_spin {
+                break;
+            }
+        }
+        assert!(saw_spin, "the latch spin parks while the clip plays");
+        // The poke and the spin land in one slice; the record then sits on
+        // the spin for `frames * 2` ticks, counting that one.
+        assert_eq!(
+            spin_ticks,
+            usize::from(frames) * crate::field_anim::DEFAULT_TICKS_PER_FRAME as usize
+        );
+        let tl = w.cutscene.timeline.as_ref().expect("installed");
+        assert_eq!(tl.pc, 16, "resumed past the 3-byte spin onto the wait");
+    }
+
+    /// A party-bank clip (the locomotion loops) has no timed end latch in
+    /// the port: the spin steps past as before rather than parking forever.
+    #[test]
+    fn cutscene_timeline_party_bank_clip_does_not_park_the_latch_spin() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        let mut w = World::default();
+        let bc = vec![0xA2, 0xF8, 0x01, 0xAD, 0xF8, 0x08, 0x4A, 0xFF, 0x7F];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.step_cutscene_timeline();
+        let tl = w.cutscene.timeline.as_ref().expect("installed");
+        assert!(tl.player_clip_wait.is_none());
+        assert_eq!(tl.pc, 6, "stepped past onto the wait");
     }
 }

@@ -23,6 +23,14 @@
 //!
 //! The engine's counterpart of "a spawned record is mid-script" is an active
 //! cutscene timeline, and `World::field_menu_open_allowed` refuses on it.
+//!
+//! The record's length is retail's too. Its three waits are a `WaitFrames 40`,
+//! the `B7 F8 00 81` compass walk (op `0x37` on the player: one tile along
+//! `-Z`, sixteen speed units at one per vsync, `FUN_8003774C`'s
+//! `0x8003789C` arm), and the `AD F8 08` spin on scene-bank clip 13 (record 12
+//! of map01's ANM bundle, 120 frames at two vsyncs a frame until
+//! `FUN_800204F8` latches `+0x62 & 0x100`). That sums to 296 vsyncs against the
+//! capture's 294.
 
 use std::path::PathBuf;
 
@@ -37,6 +45,13 @@ fn extracted_dir() -> Option<PathBuf> {
     }
     None
 }
+
+/// Retail's span, spawn to closing `21`, in vsyncs.
+const RETAIL_VSYNCS: usize = 294;
+/// Two game ticks at frame step 2: retail steps the record once per game
+/// tick, so each park's release quantises to 2 vsyncs, and the capture reads
+/// the span off the spawn write and the engaged-bit clear.
+const TOLERANCE: usize = 4;
 
 /// `P2[9]`'s first two ops (`52 FC` SysFlag.Set `0x2FC`, `65 27`
 /// SysFlag.Clear `0x527`) at its `pc0 = 14`.
@@ -58,6 +73,7 @@ fn a_door_of_light_arrival_on_map01_refuses_the_menu_until_its_record_ends() {
     // triple `0x55 @ (37, 109)` (tests/door_item_retail_timeline.rs).
     host.world.pending_named_scene_transition = Some(("map01".to_string(), 37, 109, 0));
     host.tick().expect("arrival tick");
+    let [_, _, arrival_z] = host.world.fog_player_world_pos();
 
     let mut ran = 0usize;
     let mut refused = 0usize;
@@ -90,5 +106,18 @@ fn a_door_of_light_arrival_on_map01_refuses_the_menu_until_its_record_ends() {
         host.world.field_menu_open_allowed(),
         "the first tick after the record opens the menu again - the refusal is bounded"
     );
-    eprintln!("[ok] map01 P2[9] ran {ran} ticks with the menu refused, then released it");
+    assert!(
+        ran.abs_diff(RETAIL_VSYNCS) <= TOLERANCE,
+        "P2[9] runs {ran} ticks; retail's record spans {RETAIL_VSYNCS} vsyncs"
+    );
+    let [_, _, z] = host.world.fog_player_world_pos();
+    assert_eq!(
+        arrival_z - z,
+        128,
+        "the `B7 F8 00 81` walk-out carries the player one tile along -Z"
+    );
+    eprintln!(
+        "[ok] map01 P2[9] ran {ran} ticks (retail {RETAIL_VSYNCS}) with the menu refused, \
+         then released it"
+    );
 }
