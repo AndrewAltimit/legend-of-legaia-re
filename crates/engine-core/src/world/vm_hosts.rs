@@ -1173,15 +1173,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn bgm(&mut self, text_id: u16, sub_op: u8) {
-        // Sub-ops 1 (start field BGM) and 9 (queue) are the cases that
-        // pin a "currently playing" id. Other sub-ops are control words
-        // (pause / stop / volume / etc.) - we still surface the event so
-        // the engine can route them, just without overwriting current_bgm.
+        // Sub-ops 1 (start) and 9 (start behind a load barrier) are the only
+        // writers of the track id `_DAT_8007BAC8` (`0x801E012C`,
+        // `0x801E0254`). The other sub-ops are control words - pause (2, 3),
+        // re-attach (4, `0x801E0180`), volume, commit - that leave the id
+        // alone, so none of them clears `current_bgm` either.
         if sub_op == 1 || sub_op == 9 {
             self.world.audio.current_bgm = Some(text_id);
-        } else if sub_op == 4 {
-            // 4 = stop.
-            self.world.audio.current_bgm = None;
         } else if sub_op == 5 {
             // Sub-5 is the timed release: retail's handler is
             // `FUN_800267A8(0, s16_operand)` at `0x801E01B4` (the operand is
