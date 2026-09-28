@@ -76,6 +76,54 @@ pub fn scene_xa_prestage(man: &[u8]) -> Vec<crate::sfx_cue::XaVoiceClip> {
     out
 }
 
+/// The minigame announcer lines a scene's **door** will need: when `man`
+/// carries an op-`0x3E` warp into the Muscle Dome (`3E 69`, sub-id 5 -
+/// koin1's P1[9] has three), the dome hub's two first-visit lines
+/// ([`crate::muscle_ringside::hub_xa_prestage`]).
+///
+/// The hub starts its intro line on the very frame its leg opens, and the
+/// scene host drains the door warp inside the same scene tick as the field
+/// step that armed it, so no queue point after the door gives a host that
+/// decodes clips asynchronously any lead. The scene that carries the door
+/// is the earliest point that knows the line can be asked for; listing it
+/// with the scene's own op-`0x36` clips stages it while the player is still
+/// walking to the attendant. Same linear walk and the same advisory status
+/// as [`scene_xa_prestage`].
+pub fn scene_minigame_door_xa_prestage(man: &[u8]) -> Vec<crate::sfx_cue::XaVoiceClip> {
+    use crate::minigame_entry::MinigameSubId;
+    use legaia_asset::field_disasm::{DisasmError, InsnInfo, LinearWalker, man_script_spans};
+    let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+        return Vec::new();
+    };
+    for (_, _, start, pc0, len) in man_script_spans(&man_file, man) {
+        let Some(body) = man.get(start..start + len) else {
+            continue;
+        };
+        for step in LinearWalker::new(body, pc0) {
+            match step {
+                Ok(insn) => {
+                    if let InsnInfo::WarpOrInteract {
+                        op0, is_warp: true, ..
+                    } = insn.info
+                        && MinigameSubId::from_op0(op0) == Some(MinigameSubId::MuscleDome)
+                    {
+                        return crate::muscle_ringside::hub_xa_prestage()
+                            .into_iter()
+                            .map(Into::into)
+                            .collect();
+                    }
+                }
+                Err((_, err)) => {
+                    if !matches!(err, DisasmError::EndOfStream { .. }) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    Vec::new()
+}
+
 impl From<crate::baka_fighter_chrome::XaCue> for crate::sfx_cue::XaVoiceClip {
     fn from(c: crate::baka_fighter_chrome::XaCue) -> Self {
         Self {
@@ -208,6 +256,35 @@ mod tests {
         w.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
         w.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
         assert_eq!(w.drain_field_xa_prestage().len(), 2);
+    }
+
+    /// A launcher into the dome lists the hub's lines at the request, a
+    /// tick before the hub can ask for them; a launcher into any other slot
+    /// lists nothing.
+    #[test]
+    fn a_dome_warp_request_lists_the_hub_lines_before_the_hub_opens() {
+        use crate::minigame_entry::MinigameSubId;
+        let mut w = World::default();
+        w.request_minigame_warp(MinigameSubId::MuscleDome.sub_id());
+        let want: Vec<crate::sfx_cue::XaVoiceClip> = crate::muscle_ringside::hub_xa_prestage()
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        assert_eq!(w.drain_field_xa_prestage(), want);
+        assert_eq!(
+            w.minigames.pending_warp,
+            Some(MinigameSubId::MuscleDome.sub_id())
+        );
+
+        let mut w = World::default();
+        w.request_minigame_warp(MinigameSubId::SlotMachine.sub_id());
+        assert!(w.drain_field_xa_prestage().is_empty());
+    }
+
+    /// A MAN that does not parse carries no door.
+    #[test]
+    fn an_unparsed_man_lists_no_door_lines() {
+        assert!(scene_minigame_door_xa_prestage(&[0u8; 16]).is_empty());
     }
 
     #[test]

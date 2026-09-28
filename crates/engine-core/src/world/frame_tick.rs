@@ -3012,9 +3012,20 @@ impl World {
     /// next tick to drain (`SceneHost::drain_minigame_warp`), so a launcher
     /// enters the same session, with the same BGM swap and the same return
     /// warp, as walking through the casino door.
+    ///
+    /// A launcher into the Muscle Dome also lists the hub's announcer lines
+    /// for the prestage drain here, at the request: a host that drains the
+    /// list before its next tick (the browser page's launcher does) gets the
+    /// lead the door scene's own list gives a walked door
+    /// ([`crate::world::field_xa::scene_minigame_door_xa_prestage`]).
     pub fn request_minigame_warp(&mut self, sub_id: u8) {
         self.arm_minigame_warp();
         self.minigames.pending_warp = Some(sub_id);
+        if crate::minigame_entry::MinigameSubId::from_sub_id(sub_id)
+            == Some(crate::minigame_entry::MinigameSubId::MuscleDome)
+        {
+            self.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
+        }
     }
 
     /// Mode-24 minigame exit / return-warp: restore the backed-up scene name

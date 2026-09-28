@@ -199,12 +199,15 @@ impl SceneHost {
             .map(|man| legaia_asset::inn_costs::scan(man))
             .unwrap_or_default();
         // The scene's CD-XA one-shots, for a host that stages clips
-        // asynchronously to have them resident before the op fires.
-        self.world.audio.field_xa_prestage = self
-            .field_man_cache
-            .as_ref()
-            .map(|man| crate::world::field_xa::scene_xa_prestage(man))
-            .unwrap_or_default();
+        // asynchronously to have them resident before the op fires - plus the
+        // announcer lines a minigame door in this scene opens onto.
+        self.world.audio.field_xa_prestage = Vec::new();
+        if let Some(man) = self.field_man_cache.as_ref() {
+            let own = crate::world::field_xa::scene_xa_prestage(man);
+            let door = crate::world::field_xa::scene_minigame_door_xa_prestage(man);
+            self.world.queue_xa_prestage(own);
+            self.world.queue_xa_prestage(door);
+        }
         self.last_trigger_tile = None;
         Ok(self.scene.as_ref().unwrap())
     }
