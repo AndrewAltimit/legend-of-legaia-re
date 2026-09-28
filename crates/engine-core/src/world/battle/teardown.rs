@@ -98,6 +98,35 @@ impl World {
         })
     }
 
+    /// The battle exit's party loop, run on every exit before the party's
+    /// HP is persisted: the status words clear unless the special-battle word
+    /// carries the arena bit, and a member at 0 HP stands up at 1
+    /// ([`vm::battle_formulas::battle_exit_party_reset`]). The cleared word is
+    /// what reaches the character record, so the party's statuses do not
+    /// outlive an ordinary battle.
+    ///
+    /// The engine keeps no status in the record: an arena leg's statuses
+    /// stay in the tracker instead, which is where the next battle reads
+    /// them from.
+    fn battle_exit_party_reset(&mut self) {
+        let word = self.special_battle_word();
+        let n = usize::from(self.party.party_count).min(self.actors.len());
+        for member in 0..n {
+            // The tracker holds the word; any non-zero stand-in asks the
+            // kernel whether it survives.
+            let hp0 = self.actors[member].battle.hp;
+            let (status, hp) = vm::battle_formulas::battle_exit_party_reset(word, 1, hp0);
+            if status == 0 {
+                self.battle.status_effects.drop_slot(member as u8);
+            }
+            let b = &mut self.actors[member].battle;
+            if hp != b.hp {
+                b.hp = hp;
+                b.liveness = 1;
+            }
+        }
+    }
+
     /// Who the battle-result messages name: participant ids in panel order,
     /// `0` for an empty seat - the shape of retail's `0x8007BD10` list the
     /// two build arms of `FUN_801D84C0` key on.
@@ -237,11 +266,11 @@ impl World {
         // The monster seats' ailments die with their combatants: retail builds
         // each battle's monster actors afresh, and the tracker is indexed by
         // slot, so a status left here would land on the next battle's monster
-        // in the same slot. The party's are the record's question
-        // (`battle-formulas.md`, "The flow readers") and stay.
+        // in the same slot.
         for slot in self.party.party_count..vm::battle_action::ACTOR_SLOTS as u8 {
             self.battle.status_effects.drop_slot(slot);
         }
+        self.battle_exit_party_reset();
         self.battle.escaped = false;
         self.battle.no_escape = false;
         self.battle.scripted_fight = false;

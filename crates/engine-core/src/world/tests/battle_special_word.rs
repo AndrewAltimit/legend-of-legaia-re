@@ -140,18 +140,26 @@ fn the_word_s_0x100_bit_forces_the_flee() {
 
 /// A monster seat's ailments end with the battle: retail builds each
 /// battle's monster actors afresh, and the slot-indexed tracker would
-/// otherwise hand a Venom to the next battle's monster in the same seat.
+/// otherwise hand a Venom to the next battle's monster in the same seat. The
+/// party's end too, through the exit's party loop (`0x80046EB0`), unless the
+/// special-battle word carries the arena bit (`0x80046E90`); the loop also
+/// stands a downed member up at 1 HP.
 #[test]
-fn a_monster_seat_s_ailments_end_with_its_battle() {
-    let mut world = special_world(1, 0);
-    world.battle.status_effects.apply(1, StatusKind::Venom);
-    world.battle.status_effects.apply(0, StatusKind::Venom);
-    world.battle.end = Some(BattleEndCause::Escaped);
-    world.finish_battle();
-    assert_eq!(world.battle.status_effects.display_flags(1), 0);
-    assert_ne!(
-        world.battle.status_effects.display_flags(0),
-        0,
-        "the party's are the record's question and stay"
-    );
+fn battle_exit_clears_ailments_unless_the_arena_bit() {
+    let run = |word: u32| {
+        let mut world = special_world(1, word);
+        world.battle.status_effects.apply(1, StatusKind::Venom);
+        world.battle.status_effects.apply(0, StatusKind::Venom);
+        world.actors[0].battle.hp = 0;
+        world.battle.end = Some(BattleEndCause::Escaped);
+        world.finish_battle();
+        assert_eq!(world.battle.status_effects.display_flags(1), 0);
+        (
+            world.battle.status_effects.display_flags(0) != 0,
+            world.actors[0].battle.hp,
+        )
+    };
+    assert_eq!(run(0), (false, 1), "an ordinary exit clears and floors");
+    assert_eq!(run(0x200), (false, 1));
+    assert_eq!(run(0x100), (true, 1), "the arena bit keeps the party's");
 }
