@@ -128,18 +128,27 @@ fn npc_clip_frames_advance_on_sim_ticks_only() {
     let bones0 = rt.play_npc_live_bones(i as u32);
     assert_eq!(bones0.len(), bones * 6, "6 ints per bone");
 
-    // 8 sim ticks at the retail cadence (2 ticks per clip frame) = +4 frames.
+    // 8 sim ticks at the clip's own retail step (`field_anim::clip_step`):
+    // an ungated clip steps 8 sixteenths a tick (two ticks a frame, +4
+    // frames), a gated one `(8*2 + div - 1) / div` with its pose key the raw
+    // cursor. The cursor wraps to 0 on the tick that reaches the last
+    // position, so the loop period is `ceil((frames*16 - 1) / step)` ticks.
     for _ in 0..8 {
         rt.tick_frame().expect("tick");
     }
-    // The state carries the pose key (`frame * 16` + sub-frame); after a
-    // whole number of frames the sub-frame is back where it started.
     let s2 = rt.play_npc_clip_states();
-    assert_eq!(s2[i * 2] & 0xF, f0 & 0xF);
-    assert_eq!(
-        s2[i * 2] >> 4,
-        ((f0 >> 4) + 4).rem_euclid(frames),
-        "8 sim ticks must advance the clip by exactly 4 frames (ticks_per_frame = 2)"
+    let key = s2[i * 2];
+    let ungated = key & 0xF == f0 & 0xF && key >> 4 == ((f0 >> 4) + 4).rem_euclid(frames);
+    let gated = (1..=8u8).any(|div| {
+        use legaia_engine_core::field_anim::{CLIP_RATE, clip_step};
+        let s = i32::from(clip_step(CLIP_RATE, true, div));
+        let period = (frames * 16 - 1 + s - 1) / s;
+        f0 % s == 0 && key == ((f0 / s + 8) % period) * s
+    });
+    assert!(
+        ungated || gated,
+        "8 sim ticks must advance the clip by one of retail's steps (key {f0} -> {key}, \
+         {frames} frames)"
     );
 }
 
