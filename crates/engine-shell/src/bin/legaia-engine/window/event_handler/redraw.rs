@@ -1161,12 +1161,13 @@ impl PlayWindowApp {
                     let Some((tmd, raw)) = srcs.get(slot) else {
                         continue;
                     };
-                    // `frame()` is the frame this redraw shows; take it as the
-                    // cache key and read its pose WITHOUT moving the playhead,
-                    // then advance by the sim ticks this redraw ran (0 on a
-                    // pure-refresh frame, so a 144 Hz display holds each frame
-                    // for the same wall-clock time a 60 Hz one does).
-                    let key = (*slot, player.frame());
+                    // `pose_key()` is the pose this redraw shows (`frame * 16`
+                    // plus the sub-frame a blend-gated clip poses in between);
+                    // take it as the cache key and read its pose WITHOUT moving
+                    // the playhead, then advance by the sim ticks this redraw
+                    // ran (0 on a pure-refresh frame, so a 144 Hz display holds
+                    // each frame for the same wall-clock time a 60 Hz one does).
+                    let key = (*slot, player.pose_key());
                     let pose = player.current_pose();
                     player.advance(field_tail_ticks);
                     npc_frames.push(key);

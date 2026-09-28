@@ -424,7 +424,8 @@ impl PlayWindowApp {
     /// Build this frame's posed-prop draws. A prop resting on frame 0 replays
     /// its baked rest mesh (the cheap path - and where every prop sits until it
     /// is touched); one whose clip has moved is re-posed from the raw TMD at its
-    /// live frame, so the door is drawn mid-swing.
+    /// live cursor, blended between keyframes when its clip carries the blend
+    /// gate, so the door is drawn mid-swing.
     ///
     /// Returns `(baked_vram, baked_color, live_vram, live_color)` as
     /// `(mesh index / uploaded mesh, model)` lists for the caller's draw pass.
@@ -446,15 +447,15 @@ impl PlayWindowApp {
             return (baked_v, baked_c, live_v, live_c);
         };
         for p in &self.field_posed_props {
-            let frame = self
+            let key = self
                 .session
                 .host
                 .world
                 .props
                 .bank
-                .frame(p.anchor)
-                .unwrap_or(0);
-            if frame == 0 {
+                .pose_key(p.anchor)
+                .unwrap_or_default();
+            if key.is_rest() {
                 if let Some(i) = p.baked.vram {
                     baked_v.push((i, p.model));
                 }
@@ -464,23 +465,22 @@ impl PlayWindowApp {
                 continue;
             }
             // Off the rest pose: rebuild. `FUN_8001B964` poses object `b` of the
-            // mesh by bone `b` of the clip at the actor's current frame
-            // (`(i16)(actor+0x68) >> 4`), which is exactly the `R*v + T` builder
-            // the battle / player pose path already uses.
+            // mesh by part `b` of the clip through the frame blender
+            // `FUN_8001BE80` at the actor's live cursor (`actor+0x68`), which is
+            // exactly the `R*v + T` builder the battle / player pose path
+            // already uses. The transforms come from the engine's shared
+            // kernel, the one the page's prop re-pose calls too.
             let Some((tmd, raw)) = p.baked.tmd.and_then(|i| self.field_posed_tmds.get(i)) else {
                 continue;
             };
-            let rec = (p.anim_id - 1) as usize;
-            let bones = tmd.objects.len();
-            let offsets: Vec<([i16; 3], [i16; 3])> = (0..bones)
-                .map(|b| match bundle.bone_transform(rec, frame, b) {
-                    Some(t) => (
-                        [t.t_x as i16, t.t_y as i16, t.t_z as i16],
-                        [t.r_x as i16, t.r_y as i16, t.r_z as i16],
-                    ),
-                    None => ([0; 3], [0; 3]),
-                })
-                .collect();
+            let Some(offsets) = legaia_engine_core::field_env::prop_bone_offsets(
+                bundle,
+                p.anim_id,
+                key,
+                tmd.objects.len(),
+            ) else {
+                continue;
+            };
             if p.baked.vram.is_some() {
                 let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &offsets);
                 if !vmesh.indices.is_empty()
