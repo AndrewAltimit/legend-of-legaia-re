@@ -1349,7 +1349,10 @@ impl LegaiaRuntime {
         // the engine layout + shared line composition the native window
         // draws (`SceneHost::flag_window_lines`).
         if let Some(host) = self.scene_host.as_ref() {
-            let floor = host.flag_window_lines();
+            let mut floor = host.flag_window_lines();
+            // The code lock (op-0x49 sub-op 2, slot 0x21), same line
+            // composition as the native window (`SceneHost::code_lock_lines`).
+            floor.extend(host.code_lock_lines());
             windows.extend(legaia_engine_ui::ui_text_lines::text_line_draws_for(
                 font,
                 floor
