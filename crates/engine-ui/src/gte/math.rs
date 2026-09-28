@@ -95,31 +95,21 @@ impl GteMat3 {
     // (&DAT_80070A2C / &DAT_8007122C) by a 12-bit angle (4096 = 2*PI) and
     // composes via the GTE; this builds the same +Y rotation in q3.12 with a
     // radian input (ROT_ONE = 0x1000 matches the LUT's 1.0).
-    // NOT WIRED: the blocker is one level up, not here. All three axis
-    // builders have a real non-test consumer in this crate -
-    // `camera_view_rotation`, the port of retail's own composition pass
-    // `FUN_8001CF50` - and *it* is the routine with no host. The hosts do
-    // build retail's `Rx * Ry * Rz` product now, roll included, but they build
-    // it with `glam` in f32 - the live one is the play window's
-    // `psx_camera_mvp`, reached from the winit redraw pass; the sibling
-    // `engine_render::window::cutscene_camera_mvp` this note used to name
-    // beside it has no production caller at all any more (see
-    // docs/subsystems/cutscene.md, which records it as a unit-tested
-    // reference no render path uses). They carry neither the node's `+0x52`
-    // skip-flag halfword nor a saved GTE control block. So what has to exist
-    // first is a camera that wants the q3.12 product, not a call to these.
-    // (The GTE register oracle in `gte/tests.rs` also drives them, which is
-    // why they are pinned; that is coverage, not the missing caller.) Note the
-    // radian argument is itself a deviation: retail takes a 12-bit angle and
-    // reads the LUT, which `billboard::rot_z_psx` models for Z.
+    // REPLACED-BY: the hosts' f32 axis factors - the Y factor of
+    // `legaia_engine_vm::psx_camera::camera_rotation` and the
+    // `Mat4::from_rotation_y` of every part / actor model matrix the two play
+    // hosts compose. The one q3.12 consumer, `camera_view_rotation`, carries
+    // its own disclosure; wiring that routine is a question of which draws
+    // take the camera-relative rotation, not of this factor's precision.
+    // The radian argument is itself a deviation: retail takes a 12-bit angle
+    // and reads the LUT, which `billboard::rot_z_psx` models for Z and
+    // `battle_intro::euler_rot_psx` (the `FUN_80026988` port) for all three.
     //
-    // Measurement note, so a reader does not read the audit's silence here as
-    // a wiring: `rot_y` is the one of the three the live audit does *not* list
-    // as inert, and that is a name collision, not a caller. The permissive
-    // call graph resolves by symbol name and `legaia_engine_core`'s
-    // `coplanar_draws::rot_y` is live, so the edge it draws to this `rot_y`
-    // does not exist. `rot_x` and `rot_z` have no such twin and list
-    // correctly. See docs/tooling/port-catalog.md on the two graphs.
+    // Measurement note: `rot_y` is the one of the three the permissive call
+    // graph does not list as inert, and that is a name collision, not a
+    // caller - `legaia_engine_core`'s `coplanar_draws::rot_y` is live, and the
+    // graph resolves by symbol name. See docs/tooling/port-catalog.md on the
+    // two graphs.
     pub fn rot_y(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -132,8 +122,9 @@ impl GteMat3 {
     ///
     // PORT: FUN_800461A4 - retail RotMatrixX (same cos/sin LUT + 12-bit angle
     // as FUN_8004629C, about the +X axis).
-    // REPLACED-BY: the hosts' f32 camera composition - see
-    // `camera_view_rotation`, the one caller, which carries the reason.
+    // REPLACED-BY: the hosts' f32 axis factors (the X factor of
+    // `legaia_engine_vm::psx_camera::camera_rotation`, `Mat4::from_rotation_x`
+    // in the hosts' model matrices) - see `rot_y`.
     pub fn rot_x(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -146,8 +137,9 @@ impl GteMat3 {
     ///
     // PORT: FUN_8004638C - retail RotMatrixZ (same cos/sin LUT + 12-bit angle
     // as FUN_8004629C, about the +Z axis).
-    // REPLACED-BY: the hosts' f32 camera composition - see
-    // `camera_view_rotation`, the one caller, which carries the reason. This
+    // REPLACED-BY: the hosts' f32 axis factors (the Z factor of
+    // `legaia_engine_vm::psx_camera::camera_rotation`, `Mat4::from_rotation_z`
+    // in the hosts' model matrices) - see `rot_y`. This
     // address has a second, more faithful port in `billboard::rot_z_psx`, which takes
     // the retail 12-bit angle and reads the LUT rather than f32 trig; the two
     // are pinned to agree at the cardinals by a unit test there. That one is
@@ -221,38 +213,47 @@ pub mod view_rot_flags {
     pub const USE_SAVED_MATRIX: u16 = 0x0400;
 }
 
-/// Retail's camera / cutscene view-rotation build.
+/// Retail's **camera-relative** rotation for one render node: the partial
+/// camera rotation a node whose `+0x52` carries a skip bit is drawn under,
+/// in place of the full camera matrix.
 ///
 /// PORT: FUN_8001CF50
-/// REF: FUN_8003D178, FUN_800461A4, FUN_8004629C, FUN_8004638C, FUN_8003D1A4
-/// REF: FUN_8005B4E8
+/// NOT WIRED: the owed host is the move-VM part draws. Both play hosts draw
+/// every part (`World::active_effect_kind4_draws`,
+/// `World::active_field_fx_part_draws` and the summon / move-FX parts) under
+/// the full camera rotation, and no draw record carries the part's `+0x52`
+/// word, although the part state does (`move_vm::ActorState::field_52`,
+/// written by move-VM op `0x15`). Wiring means carrying that word on the
+/// draw records and giving each host the current camera angles at its part
+/// draw site, so the model matrix can undo the skipped factors. The one
+/// camera-relative draw the port already makes is the Baka Fighter cameo's
+/// `0x400` arm (`baka_duel_scene`), written as its own placement.
 ///
-/// REPLACED-BY: `legaia_engine_core::camera_view::frame_vp` and the native
-/// window's `psx_camera_mvp`, which compose the same `Rx * Ry * Rz` in `glam`
-/// f32 on both hosts. The q3.12 product differs from it only by retail's
-/// element quantisation (`1/4096`), and no parity oracle in the tree shows
-/// that difference on a frame; the port keeps the finer product as its
-/// default and owes this one no host unless such an oracle does.
+/// **This is not the camera build.** It was long documented as the
+/// cutscene / field view-rotation build and tagged as replaced by the hosts'
+/// camera; the disassembly says otherwise. Its three callers are the
+/// per-node renderers - the render dispatcher `FUN_8001ADA4` (`jal` at
+/// `0x8001B3A0`) and the animated mesh renderer `FUN_8001B964`
+/// (`0x8001BA24`) - plus one in the fishing overlay, and both SCUS callers
+/// reach it only when `node+0x52 & 0x780` is non-zero (`andi v0,v0,0x780` at
+/// `0x8001B374` / `0x8001BA0C`); otherwise they fold
+/// the object matrix into the camera matrix at scratch `0x1F8003C8`. That
+/// camera matrix is built by `FUN_800172C0` through `FUN_80026988` over the
+/// same angle globals - ported retail-exact as
+/// `crate::battle_intro::euler_rot_psx` - and the hosts' f32 rendition of it
+/// is `legaia_engine_vm::psx_camera::camera_rotation`.
 ///
-/// The history of the reason: **all three angle factors reach
-/// the shot**, but the hosts compose them in `glam` floating point rather than
-/// through this q3.12 rendition. The cutscene camera multiplies
-/// `Rx(pitch) * Ry(yaw) * Rz(roll)` in the same order this function does -
-/// live in the play window's `psx_camera_mvp`, which the winit redraw pass
-/// calls every frame - so there is no dropped term left; what is missing is a
-/// caller that wants the *fixed-point* product. (The sibling
-/// `engine_render::window::cutscene_camera_mvp` this note used to name here
-/// as a second host is no longer one: it has no production caller, only unit
-/// tests - `docs/subsystems/cutscene.md` records it as a retained reference.) The earlier note here, that
-/// the roll factor is "decoded, stored, compared by the trace channel, and
-/// then never applied", was true when written and is not any more.
-///
-/// The other two inputs are still absent: the engine's render node carries no
-/// `+0x52` flag halfword for the three per-axis skip bits, and it keeps no
-/// saved GTE control block for bit `0x400` to defer to. Wiring means giving
-/// render nodes that flag word and a saved-matrix slot, then switching the
-/// camera builders from `glam` to this product - a precision change to the
-/// framing, not a call insertion.
+/// Across the 98 catalogued mednafen states, 334 of the 3956 nodes on the
+/// actor lists `0x8007C34C..` carry a bit of `0x780`, all but four of them
+/// ticked by the part tick `FUN_80021DF4` (the four by `0x801D4098`, in the
+/// dance state): `0x380` (every axis skipped - a screen-aligned billboard) on
+/// 118 battle-effect parts, `0x100` / `0x180` on 46 field and overworld
+/// parts, and the `0x400` arm on 170, mostly summon casts. Fifteen states
+/// hold an axis-skipping node whose skipped angle is non-zero, so the port's
+/// full-camera draw of those parts differs from retail on screen. Six of the
+/// seven map01 states are the exception: their camera yaw is `0`, so the
+/// `0x100` nodes there (the kind-4 column) draw the same either way; the
+/// seventh is an ending-vignette shot at yaw `75`.
 ///
 /// Returns the composed rotation, or `None` when the node asks for the saved
 /// camera matrix instead ([`view_rot_flags::USE_SAVED_MATRIX`]).
@@ -262,20 +263,22 @@ pub mod view_rot_flags {
 /// 1. `FUN_8003D178` resets the GTE rotation to identity **and clears
 ///    TRX/TRY/TRZ**, so the build starts from a pure rotation.
 /// 2. Each of `FUN_800461A4` / `FUN_8004629C` / `FUN_8004638C` **post**-multiplies
-///    the current GTE rotation by its axis factor - they save TR, zero it,
-///    push the three columns of the axis matrix through `MVMVA` against the
-///    resident rotation, then write the result back and restore TR. So the
-///    composition order is `Rx * Ry * Rz`, in that order, with pitch outermost.
+///    the current GTE rotation by its axis factor, so the composition order is
+///    `Rx * Ry * Rz`, pitch outermost - the camera's own order, minus the
+///    skipped factors.
 /// 3. Each factor is skipped when its `node+0x52` bit is set (see
-///    [`view_rot_flags`]); the angles come from the three camera globals
+///    [`view_rot_flags`]); the angles are the camera globals
 ///    `_DAT_8007B790` (pitch) / `_DAT_8007B792` (yaw) / `_DAT_8007B794` (roll).
-/// 4. Bit `0x400` short-circuits the whole thing: retail restores the saved
-///    GTE control words from `0x8007BF10` (`FUN_8003D1A4`) rather than
-///    rebuilding, which is what `None` stands for here.
+/// 4. The rotation is read back (`FUN_8003D20C`), the node's own matrix is
+///    scaled by `0x6000` on each axis (`FUN_8005B4E8`, the six-fold world
+///    scale the camera matrix otherwise carries from `_DAT_8007BF10`), and
+///    the two are multiplied (`FUN_8005B3A8`).
+/// 5. Bit `0x400` short-circuits the rotation: retail restores the base
+///    matrix block `0x8007BF10` (`FUN_8003D1A4`), reads it back, and MVMVAs the
+///    node's position `+0x14` through it into `+0x2C` (`FUN_8003D344`) - a
+///    camera-locked placement, which is what `None` stands for here.
 ///
-/// The scale stage the retail function runs after the rotation (`0x6000` into
-/// each of `mat+0x14..0x1C`, then `FUN_8005B4E8` `ScaleMatrix`) is not part of
-/// the rotation and is left to the caller - the engine scales with `glam`.
+/// The scale stage is not part of the rotation and is left to the caller.
 pub fn camera_view_rotation(flags: u16, pitch: f32, yaw: f32, roll: f32) -> Option<GteMat3> {
     if flags & view_rot_flags::USE_SAVED_MATRIX != 0 {
         return None;

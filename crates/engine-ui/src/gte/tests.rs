@@ -1646,7 +1646,7 @@ fn rtpt_matches_recomp_cop2_capture() {
     );
 }
 
-// --- FUN_8001CF50 camera view-rotation build ---------------------------
+// --- FUN_8001CF50 camera-relative node rotation ------------------------
 
 #[test]
 fn camera_view_rotation_bit_0x400_defers_to_the_saved_matrix() {
