@@ -599,13 +599,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "are banked by `Camera::route_camera_events`, which is the only thing "
         "that drains `FieldEvent::CameraConfigure` off the world queue - a "
         "host watching its own later event drain for them sees none. Both "
-        "cutscene interps must replay the shared bank",
+        "hosts step the glide through the shared `frame_step::CutsceneGlide`, "
+        "whose `advance` replays the bank before it glides and counts steps "
+        "on the world's display-frame clock (zero on an idle redraw)",
         "sites": {
-            "native": (NATIVE_CAMERA_MOD, "replay_camera_snap_beats"),
+            "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": (WEB_PLAY_CAMERA, "resolve_camera_frame"),
         },
         "mode": "symbols_all",
-        "symbols": ["take_camera_snap_beats"],
+        "symbols": ["cutscene_glide"],
     },
     {
         "what": "save-select phase layout, native vs play page - which pills "
