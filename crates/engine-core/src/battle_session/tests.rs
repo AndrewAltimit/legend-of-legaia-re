@@ -648,6 +648,29 @@ fn rot_refuses_the_rotted_limbs_command_only() {
     assert!(s.push_command(&mut w, Command::Right));
 }
 
+/// Retail's gate blocks both Up and Down on a rotted leg (`0x20`), and every
+/// rolled limb counts, not only the latest roll.
+#[test]
+fn rot_refuses_every_rolled_limb_and_both_leg_directions() {
+    let mut s = fresh_session();
+    let mut w = fresh_world_with_actors();
+    s.begin_round(&mut w);
+    s.transition(BattlePhase::CommandInput);
+    let active = s.runner.active_party_slot();
+    w.battle
+        .status_effects
+        .apply(active, legaia_engine_vm::status_effects::StatusKind::Rot);
+    w.battle.status_effects.set_rot_limb(active, 2);
+    w.battle.status_effects.set_rot_limb(active, 0);
+    assert!(!s.push_command(&mut w, Command::Up), "leg: Up");
+    assert!(!s.push_command(&mut w, Command::Down), "leg: Down");
+    assert!(
+        !s.push_command(&mut w, Command::Left),
+        "the earlier roll stays"
+    );
+    assert!(s.push_command(&mut w, Command::Right));
+}
+
 #[test]
 fn target_cancelled_drops_pending_command_without_pushing() {
     use crate::target_picker::TargetKind;

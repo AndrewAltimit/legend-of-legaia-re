@@ -74,6 +74,30 @@ use legaia_art::power::PowerByte;
 use legaia_art::queue::Command;
 use legaia_art::{ArtRecord, EnemyEffect};
 
+/// The `+0x16E` Rot limb bit that disables an arts direction.
+///
+/// `FUN_801D0748`'s entry state tests each pressed direction against the
+/// acting actor's status word before it records the pick (`ctx+9`): Left
+/// against `0x08` (`0x801D1E8C`), Up and Down both against `0x20`
+/// (`0x801D1ED4` / `0x801D1F1C`), Right against `0x10` (`0x801D1F64`). A
+/// blocked press records nothing and fires cue [`ROT_REFUSED_CUE`] instead.
+/// The same three bits choose where the entry frame draws its crosses
+/// (`0x801D1DA8..0x801D1E54`: one beside the left label, one beside the right
+/// label, and two - above and below - for `0x20`).
+///
+/// PORT: FUN_801D0748 (the Rot direction gate, `0x801D1E60..0x801D1F7C`)
+pub fn rot_blocks(status: u16, cmd: Command) -> bool {
+    let bit = match cmd {
+        Command::Left => 0x08,
+        Command::Right => 0x10,
+        Command::Up | Command::Down => 0x20,
+    };
+    status & bit != 0
+}
+
+/// The cue a Rot-blocked direction fires (`FUN_8004FCC8(0x23)`).
+pub const ROT_REFUSED_CUE: u16 = 0x23;
+
 /// Base per-press cost of a favored-class direction command (`0x1E`).
 pub const FAVORED_COST: u16 = 0x1E;
 /// Disc-free fallback AP pool - the pinned input bar maps `x 0..128` at a
@@ -508,6 +532,20 @@ pub fn resolve_entered_commands(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rot_blocks_each_limb_s_directions() {
+        assert!(rot_blocks(0x08, Command::Left));
+        assert!(!rot_blocks(0x08, Command::Right));
+        assert!(rot_blocks(0x10, Command::Right));
+        assert!(rot_blocks(0x20, Command::Up) && rot_blocks(0x20, Command::Down));
+        assert!(!rot_blocks(0x20, Command::Left));
+        let all = 0x38;
+        for c in [Command::Left, Command::Right, Command::Up, Command::Down] {
+            assert!(rot_blocks(all, c));
+            assert!(!rot_blocks(0x1007, c), "non-Rot bits gate nothing");
+        }
+    }
     use legaia_art::queue::ActionConstant;
 
     fn alive(present: bool) -> SlotState {
