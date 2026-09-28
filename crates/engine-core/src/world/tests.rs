@@ -290,6 +290,7 @@ mod battle_items_magic;
 mod battle_loot_use_item;
 mod battle_queue_gates;
 mod battle_special_ai;
+mod battle_special_word;
 mod battle_status;
 mod battle_stone_gaze;
 mod battle_turns_items;

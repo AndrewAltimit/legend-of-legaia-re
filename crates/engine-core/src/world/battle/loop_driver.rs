@@ -666,7 +666,12 @@ impl World {
             // the first round start.
             RoundPhase::Open => self.begin_battle_round(),
             RoundPhase::Execute => {
-                if let Some(next) = self.next_combatant_by_initiative() {
+                let pick = if std::mem::take(&mut self.battle.round_flow.leader_first) {
+                    self.leader_first_combatant()
+                } else {
+                    self.next_combatant_by_initiative()
+                };
+                if let Some(next) = pick {
                     self.dispatch_battle_turn(next);
                 } else {
                     self.end_battle_round();
@@ -676,6 +681,39 @@ impl World {
                 }
             }
         }
+    }
+
+    /// The first dispatch of a special battle's Run round: the leader, as the
+    /// `0xFE` arm's `ctx[+0x274] = 0` leaves it (`0x801D3284`).
+    ///
+    /// Retail made the initiative pick at the round start (`0x14`, whose
+    /// seeder ends in `FUN_801DABA4`) and the arm overwrites its result, so
+    /// the pick's draws are still taken and the winner keeps its key - only
+    /// the acting slot's key is spent, at the SM's `0x0C` seed
+    /// (`sh zero,0x16c` at `0x801E2CDC`). A leader who cannot act (dead, or
+    /// already spent) leaves the pick standing.
+    pub(in crate::world) fn leader_first_combatant(&mut self) -> Option<u8> {
+        let keys: Vec<u16> = self.actors.iter().map(|a| a.battle.init_key).collect();
+        let walk = self.battle.round_flow.flat_walk_last;
+        let picked = self.next_combatant_by_initiative()?;
+        let leader_can_act = self
+            .actors
+            .first()
+            .is_some_and(|a| a.battle.liveness != 0 && keys[0] != 0);
+        if picked == 0 || !leader_can_act {
+            return Some(picked);
+        }
+        // Give the pick back the key the engine spent on it (the sweep's
+        // dead-slot zeroing is kept), then spend the leader's.
+        if let (Some(a), Some(&k)) = (
+            self.actors.get_mut(usize::from(picked)),
+            keys.get(usize::from(picked)),
+        ) {
+            a.battle.init_key = k;
+        }
+        self.battle.round_flow.flat_walk_last = walk;
+        self.actors[0].battle.init_key = 0;
+        Some(0)
     }
 
     /// `true` while each side still has a member who is not defeated.
@@ -821,6 +859,30 @@ impl World {
         // The committed spells' cast voices, listed for hosts that decode
         // clips asynchronously - before the first dispatch takes `pending`.
         self.list_round_cast_voices();
+        // `0xFE`'s special-battle run arm (`0x801D3228..0x801D328C`): a Run
+        // round in a special battle hands the leader the first turn. Its
+        // other store, the leg outcome `_DAT_80084448 = 4`, has no reader
+        // here - the arena's legs run on the dome session, whose own leave
+        // path reports the run (`World::leave_muscle_dome`).
+        //
+        // REF: FUN_801D0748 (kernel `battle_formulas::special_battle_run_forfeit`)
+        let first_monster = self
+            .battle
+            .active_formation
+            .as_ref()
+            .and_then(|f| f.slots.first())
+            .map_or(0, |s| s.monster_id as u8);
+        let run_round = self
+            .battle
+            .round_flow
+            .pending
+            .iter()
+            .any(|p| matches!(p, Some(crate::battle_round::PendingPartyAction::Run)));
+        self.battle.round_flow.leader_first = vm::battle_formulas::special_battle_run_forfeit(
+            self.special_battle_word(),
+            if run_round { 5 } else { 0 },
+            first_monster,
+        );
         self.battle.command = None;
         self.set_battle_flow(BattleFlowState::Idle);
         // A round entered without its start (a host or test that opened a

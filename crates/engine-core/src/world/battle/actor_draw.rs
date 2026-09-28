@@ -238,8 +238,17 @@ impl World {
         }
         let actor = self.actors.get(actor_idx)?;
         let m = &actor.move_state;
+        // The main draw's `+0x6A`: the retail pool slot is the body's
+        // `+0x5A`, and the after-image ghosts (`battle_afterimage`) cast none.
+        let pc = usize::from(self.party.party_count.clamp(1, 3));
+        let pool_slot = if actor_idx < pc {
+            actor_idx
+        } else {
+            actor_idx - pc + 3
+        };
+        let skip = legaia_engine_vm::battle_actor_draw::body_shadow_skip(pool_slot as i16, false);
         let shadow = legaia_engine_vm::battle_actor_draw::shadow_plan(
-            0,
+            skip,
             plan.draw_colour,
             m.world_y,
             plan.radius,

@@ -41,6 +41,11 @@ impl World {
         if self.battle.spoils_frames == 0 && !self.battle_result_screen_active() {
             return None;
         }
+        // A special battle opens no result window (`FUN_8004E568` skips
+        // `FUN_801D8DE8(0x41)` at `0x8004F614` while `_DAT_8007BAC0 != 0`).
+        if self.battle.victory.is_some_and(|v| !v.window_opened) {
+            return None;
+        }
         let r = self.battle.last_rewards.as_ref()?;
         let drops = r
             .drops
@@ -138,8 +143,11 @@ impl World {
             self.tables.monster_catalog = catalog;
             self.battle.last_rewards = Some(rewards);
             // Arm the spoils panel. The numbers were always applied; nothing
-            // ever told the player about them.
-            self.battle.spoils_frames = Self::SPOILS_BANNER_FRAMES;
+            // ever told the player about them. A special battle opens no
+            // result window (`0x8004F614`), so it arms none.
+            if self.special_battle_word() == 0 {
+                self.battle.spoils_frames = Self::SPOILS_BANNER_FRAMES;
+            }
         }
         self.battle.victory = None;
         // The fade actor dies with the battle scene: the held black of the
@@ -170,6 +178,14 @@ impl World {
         // (`World::tick_battle_locomotion`).
         for a in self.actors.iter_mut() {
             a.battle.seat = None;
+        }
+        // The monster seats' ailments die with their combatants: retail builds
+        // each battle's monster actors afresh, and the tracker is indexed by
+        // slot, so a status left here would land on the next battle's monster
+        // in the same slot. The party's are the record's question
+        // (`battle-formulas.md`, "The flow readers") and stay.
+        for slot in self.party.party_count..vm::battle_action::ACTOR_SLOTS as u8 {
+            self.battle.status_effects.drop_slot(slot);
         }
         self.battle.escaped = false;
         self.battle.no_escape = false;

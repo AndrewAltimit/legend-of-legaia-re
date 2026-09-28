@@ -75,9 +75,14 @@ impl World {
     /// scripted no-flee battle is caught anyway.
     ///
     /// The scripted no-escape flag (`ctx+0x287`) is the engine's
-    /// [`crate::world::BattleState::no_escape`], set at scripted-battle entry
-    /// ([`World::trigger_scripted_battle`] - the boss fights); the forced
-    /// flee `_DAT_8007bac0 & 0x100` passes as unset.
+    /// [`crate::world::BattleState::no_escape`], set from the formation row's
+    /// header byte at battle entry. The forced flee is bit `0x100` of the
+    /// special-battle word ([`World::special_battle_word`]): retail tests it
+    /// once per living party member (`0x801E7978` / `andi 0x100` / the
+    /// `s1 = 2` store at `0x801E7A14`), and it wins the roll past even the
+    /// no-escape flag. The success path's `0x801E7B40` test of the same bit
+    /// gates the lifetime escape counter `_DAT_800846A8`, which the engine
+    /// does not keep.
     ///
     /// PORT: FUN_801E791C (roll + compare via
     /// `battle_formulas::escape_roll`; the success-side flee staging stays
@@ -98,6 +103,9 @@ impl World {
             no_escape: self.battle.no_escape,
             ..EscapeFlags::default()
         };
+        // The forced arm is folded per living member; Run is only offered to
+        // a standing party, so one living member is all it needs.
+        let forced_word = self.special_battle_word() & 0x100 != 0;
         // `ctx+0x291` - the latched formation advantage. A pre-emptive strike
         // sets `roll_p = roll_e` so the `roll_p < roll_e` compare cannot fail.
         // Note this is the *latched* copy: it is only non-`None` because
@@ -108,6 +116,7 @@ impl World {
             if self.actors[slot].battle.liveness == 0 {
                 continue;
             }
+            flags.forced |= forced_word;
             if let Some(member) = self.party.roster.members.get(self.party_roster_slot(slot)) {
                 let bits = member.ability_bits();
                 flags.fold_ability_word1(u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]));
