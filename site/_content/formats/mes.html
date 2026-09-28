@@ -139,7 +139,7 @@
     </tbody>
   </table>
   <p>The pager decides the box, not the conversation: teardown clears rows and stops. Whether the dialogue session ends is decided by the actor dialog SM and the field VM.</p>
-  <p>No menu takes input on the press that opens it. The box slides from off screen to its place over a span of 24 frame-step units - twelve pager calls at the field's 30 fps, 10 px a call for the inn's top-right box - and the option hand appears, and input starts, on the call where it lands. A capture of an inn's stay offer measures 26 vsyncs from the press to a usable menu. Tetsu's 4-option list in Rim Elm rises the same way from below the screen, y 240 to 148 at 8, 8, 7 px a call, with the same 26 vsyncs to input.</p>
+  <p>No menu takes input on the press that opens it. The box slides from off screen to its place over a span of 24 frame-step units - twelve pager calls at the field's 30 fps, 10 px a call for the inn's top-right box - and the option hand appears on the call where it lands, with input read from the call after. A capture of an inn's stay offer measures 26 vsyncs from the press to a usable menu. Tetsu's 4-option list in Rim Elm rises the same way from below the screen, y 240 to 148 at 8, 8, 7 px a call, with the same 26 vsyncs to input.</p>
   <h3 id="pickers">Choice menus (pickers)</h3>
   <p>Four open bytes - <code>0x27</code>, <code>0x28</code>, <code>0x29</code> and <code>0x2A</code> - open a menu. Relative to the open byte at index <code>O</code>:</p>
 <pre><code>[ .. 0x1F prompt segment .. 0x00 ]   the box text shown above the menu

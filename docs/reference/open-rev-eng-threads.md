@@ -104,6 +104,7 @@ cheapest place to look for a claim that is still wrong.
 
 | Thread | Status | What would close it |
 |---|---|---|
+| Do retail's ending vignettes accept the pad while their entry record runs? | open - inferred no; not captured | Retail's per-actor tick steps every spawned record through `FUN_80039B7C`, which holds the player's engaged bit for as long as the record is stepped, so a helper locks the pad as a cutscene does ([settled](re-settled-threads.md#field--locomotion)). The port now does the same, and eight `ed*` rungs of the chapter-1 ladder stopped crediting a walk under their long vignette records on that inference. A state inside an ending scene, read for `+0x10 & 0x80000` across a held direction, closes it. |
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready | [details ↓](#region-story-flag-gate-families) |
 
 **Who sets a field NPC's moving-class bit** closed by disassembly and capture:
@@ -836,7 +837,7 @@ a coincidence of the pad byte plus the mask table's first three entries
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which live ports cover only part of their routine, and which of those differ from retail? | open (narrowed) - listed, not ported | Of the 43 partial ports a tag audit found, the ones that still change behaviour are Baka Fighter's attack-clip tail, a battle residue (the special-battle word's three unported readers, the shadow's skip flag, two inferred ghost-pass inputs), the dialog pager's picker open animation and the anim barrier - each named with its blocker [details ↓](#which-live-ports-cover-only-part-of-their-routine). Each residue ported, or disclosed where it is blocked, closes it. |
+| Which live ports cover only part of their routine, and which of those differ from retail? | open (narrowed) - listed, not ported | Of the 43 partial ports a tag audit found, the ones that still change behaviour are Baka Fighter's attack-clip tail, a battle residue (the special-battle word's three unported readers, the shadow's skip flag, two inferred ghost-pass inputs) and the anim barrier - each named with its blocker [details ↓](#which-live-ports-cover-only-part-of-their-routine). Each residue ported, or disclosed where it is blocked, closes it. |
 | Which save-state library entries still hold a patched executable? | open (narrowed) - audited and tagged; the rest need human play | A state made on a patched disc keeps that build's `SCUS_942.54` in RAM on every later load. `patch_taint_audit.py states` tags each library state's `resident_patch`; the S1..S5 anchors, `first_town_interactive` and `teien_field_run` are re-shot retail, and every capture-graded claim re-checked against its family stands ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md#patched-disc-taint)). The `rikuroa_*`, `dolk2_market_noa`, `cort_evolved_*`, `minigame_*_pcsx`, `battle_gaza2_*` states and the mednafen `overworld_battle_bg_angle_*` states re-shot on an unpatched image close it. |
 | Which engine draws hand a raw LCG state where retail calls BIOS `rand`? | mostly resolved - every battle draw is shaped | `FUN_80056798` (BIOS `A(2Fh)`) returns `(seed >> 16) & 0x7FFF` and nothing reseeds it ([settled](re-settled-threads.md#measurement--corpus)). Every battle-side port draws through `World::next_rand`, the battle-action and effect-pool hosts included; every routine they port calls `jal 0x80056798`; neither PROT 0898 nor SCUS carries an inline LCG ([`battle-formulas.md`](../subsystems/battle-formulas.md#how-the-port-draws-it)). Left: the field move-VM extension `FUN_801D362C` (sub-ops `0x05` / `0x30`) draws the raw state, and the battle camera script, the camera shake and the Muscle Dome session keep private seeds. Moving those onto the world stream closes it. |
 
@@ -900,11 +901,6 @@ What remains, each with where it is recorded:
   ([`battle.md`](../subsystems/battle.md#the-near-camera-ghost-pass-fun_8004dc68)).
   The `0x801F0518` flag write, the ribbon's per-clip caller and the War God
   Icon's per-stage bump are modelled.
-- **Dialog pager** (`FUN_801D84D0`): a picker opens on the press, as retail
-  does, but the box's resize between the press and a usable menu (states
-  `0x13` -> `0x14`, countdown `+0x54 = 0x309`) is not modelled, and no library
-  state sits at a picker prompt to capture it
-  ([`mes.md`](../formats/mes.md#post-page-dispatch-state-0x19)).
 - **Anim**: `800480D8`, blocked on a crate barrier between `engine-core` and
   `engine-render`. The two audio rows that stood beside it left the list without
   a port: `FUN_8004DA00` only seeks the drive and `FUN_80064090` is unreachable
