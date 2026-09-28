@@ -1242,7 +1242,6 @@ about these is contested.
 | derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
 | battle body blend modes | Both hosts draw a whole battle body's semi-transparency; three residues differ in scope and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-three-residues). |
 | save rack port 1 | The native rack's first port is an engine-format save directory; the page's two ports are both memory-card images. See [below](#the-save-racks-first-port-differs-per-host). |
-| Ra-Seru chip cross-out | The regular ring's red X over a forbidden Ra-Seru chip, on neither host. See [below](#the-ra-seru-chips-cross-out-reaches-neither-host). |
 | frame loop under a shop | The ticks-per-frame, camera-order, glide-clock and strip rules are engine kernels; what a shop and the party readout do to a frame's tail still differs. See [below](#the-frame-loop-rules-are-engine-side-two-residues-are-not). |
 
 ### The frame loop rules are engine-side; two residues are not
@@ -1324,17 +1323,26 @@ still differs:
   prims do not interleave with other meshes' semi prims the way one ordering
   table would.
 
-### The Ra-Seru chip's cross-out reaches neither host
+### The Ra-Seru chip's cross-out: one atlas cell, one engine read
 
-In the Rim Elm ambush and against monster `0xAF` the special-battle word
+No longer a gap; kept here because the shape of the fix is host-specific. In the Rim Elm ambush and against monster `0xAF` the special-battle word
 carries `0x200`, and retail's command ring crosses the Ra-Seru chip out with
 the red `etim` quad (`FUN_801DBC30(0xF8, 0x42)`) and refuses its arm. Both
 play hosts take the refusal and the greyed chip from the engine
-(`battle_hud::battle_magic_chip`, `World::tick_battle_command`), and
-`battle_hud::battle_magic_chip_mark` answers the mark, but neither host's
-battle chip pass places the quad, so the gap is symmetric and no tier sees
-it. The dome ring draws the same mark ([`muscle_dome::ChipMark`]) on the
-minigames page only. See
+(`battle_hud::battle_magic_chip`, `World::tick_battle_command`), and both
+draw the X the same way: `battle_hud::battle_raseru_cross_out` answers
+whether the ring is up under the bit, and `engine-ui`'s
+`battle_command_ui::cross_out_mark_sprite` places it at
+`RASERU_MARK_ANCHOR` after the chip plates.
+
+The X is a sprite out of the chrome atlas, not a VRAM screen primitive,
+because the browser page draws the chips on its 2D overlay canvas above the
+GL view - a screen primitive there would sit under the plate it marks. Its
+texels live on the battle effect page (PROT 870, page `(448, 0)`, CLUT
+`(64, 476)`), so each host bakes them into the atlas with
+`save_menu_atlas::add_cross_out_mark` right after `build_atlas`
+(native `window/run.rs`, page `play_menu.rs`), and a host that skips the
+bake gets `BattleChromeRects::cross_out = None` and no mark. See
 [battle.md](../subsystems/battle.md#the-ra-seru-forbidden-bit-of-the-special-battle-word).
 
 ### The minigame side-channel step is paired; its contents are not
