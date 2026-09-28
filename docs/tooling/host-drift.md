@@ -1242,7 +1242,6 @@ about these is contested.
 | derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
 | battle body blend modes | Both hosts draw a whole battle body's semi-transparency; three residues differ in scope and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-three-residues). |
 | save rack port 1 | The native rack's first port is an engine-format save directory; the page's two ports are both memory-card images. See [below](#the-save-racks-first-port-differs-per-host). |
-| movie audio policy | Which movies pause the BGM, and what a finished movie resumes, is decided per host. See [below](#movie-audio-is-a-per-host-policy). |
 | Ra-Seru chip cross-out | The regular ring's red X over a forbidden Ra-Seru chip, on neither host. See [below](#the-ra-seru-chips-cross-out-reaches-neither-host). |
 
 ### The save rack's first port differs per host
@@ -1264,19 +1263,6 @@ save-select and a page player cannot, and the page's title Continue is live
 only when a card is inserted. Closing it means giving the page a port backed
 by its stored sessions (the rack snapshot, the block read, the Save write and
 the export path), which is storage work rather than wiring.
-
-### Movie audio is a per-host policy
-
-The native window pauses the sequencer only when a movie carries an XA track,
-and resumes it only when it staged movie audio; its BGM director also keeps
-its own pause latch, which the movie path bypasses by writing the output gate
-directly. The page pauses at every movie install, resumes on every finish
-(played or not), and treats the gate itself as the latch. So a script-paused
-track survives an unplayable movie natively and resumes on the page, and a
-sub-op-`0xA` after a movie detaches the track natively and keeps it on the
-page. Blocking capability: one engine-side movie-audio policy (pause iff
-movie audio is present, resume only what the movie paused) that both
-directors consult.
 
 ### Derived scene point lights are native-only
 
@@ -3138,8 +3124,51 @@ kernel both hosts call, so the two cannot drift on it again.
   dropped no queued cue and kept the dedupe latch; the page's `enter_field`
   did all three. `BootSession::restage_audio_for_direct_entry` makes the same
   three moves.
+- **Movie audio.** Which movies silenced the BGM, and what their end gave
+  back, was decided per host: the native window paused only under a movie
+  with an XA track, the page at every install, and the page reopened the
+  gate on every finish - so a track the script had paused came back after an
+  unplayed movie on the page alone. Both now consult
+  `legaia_engine_core::movie_audio::MovieScore`: the attract releases the
+  score and restarts the title theme (retail's release and `CARD INIT`
+  pair), a movie with audio ducks only a sounding score, and every end
+  reopens only what that movie closed
+  ([`audio.md`](../subsystems/audio.md#movies-and-the-score)).
+- **One pause latch.** The native director kept a `paused` bool beside the
+  output gate it drove, and the movie path wrote the gate around it, so after
+  a movie the two disagreed and sub-op `0xA` detached a track the page kept.
+  The native director now reads the gate (`AudioOut::sequencer_paused`), as
+  the page always did.
+- **Menu blips.** The native window blipped a cancel on any Start in the
+  pause menu, a sub-screen included; the page only where Start closed the
+  menu, and spelled the edge-to-cue rule in its own script. Both now ask
+  `legaia_engine_core::menu_cues::menu_edge_blip` (the page through
+  `play_menu_edge_blip`), and the cue ids live there.
+- **A blip ages nothing.** The page fired a menu blip by enqueueing it and
+  ticking the scheduler, which advanced every other queued cue a frame per
+  blip. It now keys a one-cue batch (`SfxFireBatch::immediate`), leaving the
+  queue's clock to the per-tick drain, as the native window does.
+- **Title to Load.** The page handed the score over before entering the
+  save's scene, off the pre-load world, and the entry then cleared the dedupe
+  latch under it, so the scene's own start restarted the track. The call now
+  arms the hand-off and the page's scene entry performs it after the save
+  lands - the native enter, load, then stop and restore order.
+- **Door-tick order.** The page replayed the new scene's entry ring ops before
+  it cleared the SFX queue (zero-delay entry cues fired, delayed ones were
+  dropped) and routed the BGM last. It now routes the BGM after the scene
+  tick, clears on the swap, and only then replays the ring - the native
+  `BootSession::tick` order.
+- **Late audio.** The page's output exists only after a user gesture, and
+  every start routed before it was dropped; the scene stayed silent until its
+  script started music again. `audio_init` now starts the world's current
+  track.
 
-One row stays open on purpose:
+Two rows stay open on purpose:
+
+- **A late output restarts a paused track.** The engine keeps no copy of the
+  script's pause bit, so a page whose audio comes up after the scene's script
+  paused its track starts that track anyway. The native window has its
+  output from the first frame and never meets the case.
 
 - **Op `0x35` sub-op `8`.** `FUN_80019898` replays the sequence bound to the
   record at `0x8007057C` through `FUN_80026478`. In every captured state that
