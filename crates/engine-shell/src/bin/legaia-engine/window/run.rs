@@ -1271,6 +1271,7 @@ pub(super) fn cmd_play_window_with_record(
         extracted_root: disc.map_or_else(|| Some(extracted_root.to_path_buf()), |_| None),
         disc_path: disc.map(|d| d.to_path_buf()),
         cutscene: None,
+        movie_score: legaia_engine_core::movie_audio::MovieScore::new(),
         cutscene_cam_interp: legaia_engine_render::window::CutsceneCameraInterp::new(),
         cutscene_cam_frames: 0,
         active_dialog: None,

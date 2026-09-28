@@ -1123,6 +1123,10 @@ struct PlayWindowApp {
     /// `Some`, world ticks are suspended and the window shows the video; the
     /// world resumes once the frames drain.
     cutscene: Option<WindowedCutscene>,
+    /// What the movie in flight did to the score - the engine-side policy
+    /// the browser page's FMV lane consults too
+    /// ([`legaia_engine_core::movie_audio::MovieScore`]).
+    movie_score: legaia_engine_core::movie_audio::MovieScore,
     /// Eases the in-engine cutscene camera between Camera Configure beats so
     /// the opening choreography blends instead of cutting. Reset (snaps) while
     /// no cutscene timeline is active.

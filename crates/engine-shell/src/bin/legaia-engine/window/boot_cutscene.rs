@@ -241,26 +241,18 @@ impl PlayWindowApp {
         false
     }
 
-    /// Fire the pause menu's own blips for this frame's pad edges - the
-    /// same three retail cues at the same edges the browser play page keys
-    /// (`play-app.js`: Cross = confirm, else Circle = cancel, else a
-    /// direction = cursor). Provenance on the constants in
-    /// [`legaia_engine_shell::bgm`]; every id is `disc`.
-    pub(super) fn fire_menu_cues(&mut self, pressed: u16) {
-        use legaia_engine_shell::bgm::{
-            RETAIL_MENU_CANCEL_CUE, RETAIL_MENU_CONFIRM_CUE, RETAIL_MENU_CURSOR_CUE,
-        };
-        const DIRS: u16 = 0x0010 | 0x0020 | 0x0040 | 0x0080;
-        let cue = if pressed & 0x4000 != 0 {
-            RETAIL_MENU_CONFIRM_CUE
-        } else if pressed & 0x2000 != 0 {
-            RETAIL_MENU_CANCEL_CUE
-        } else if pressed & DIRS != 0 {
-            RETAIL_MENU_CURSOR_CUE
-        } else {
-            return;
-        };
-        self.fire_menu_cue(cue);
+    /// Fire the pause menu's own blip for this frame's pad edges. Which cue,
+    /// if any, is the engine's one rule
+    /// ([`legaia_engine_core::menu_cues::menu_edge_blip`]) - the browser play
+    /// page asks the same function through `play_menu_edge_blip`.
+    /// `start_closes_menu` is whether this frame's Start closes the menu:
+    /// on the root row list it does, inside a sub-screen it does not.
+    pub(super) fn fire_menu_cues(&mut self, pressed: u16, start_closes_menu: bool) {
+        if let Some(blip) =
+            legaia_engine_core::menu_cues::menu_edge_blip(pressed, start_closes_menu)
+        {
+            self.fire_menu_cue(u16::from(blip.cue()));
+        }
     }
 
     /// Queue one menu cue on the director (no-op with audio off).
@@ -337,17 +329,17 @@ impl PlayWindowApp {
         // The player aborted the attract movie this tick; the decoder is torn
         // down below, once the match has released `self.boot_ui`.
         let mut abort_attract = false;
+        // The attract came back to the menu this tick, played or not.
+        let mut attract_finished = false;
         // The pause menu's blips, off the raw edges before any screen
-        // consumes them - the browser page keys the same three the same way
-        // (Start closes the menu, so it blips as a cancel). Ahead of the
+        // consumes them - the browser page asks the same engine rule. Start
+        // blips as a cancel only where it closes the menu: a sub-screen
+        // owns the pad and gets Start as an ordinary edge. Ahead of the
         // match because the match holds `self.boot_ui` for the rest of the
         // tick.
-        if matches!(self.boot_ui, BootUiState::FieldMenu { .. }) {
-            if start {
-                self.fire_menu_cue(legaia_engine_shell::bgm::RETAIL_MENU_CANCEL_CUE);
-            } else {
-                self.fire_menu_cues(pressed);
-            }
+        if let BootUiState::FieldMenu { sub } = &self.boot_ui {
+            let start_closes_menu = sub.is_none();
+            self.fire_menu_cues(pressed, start_closes_menu);
         }
 
         let boot_ui_active = match &mut self.boot_ui {
@@ -396,6 +388,9 @@ impl PlayWindowApp {
                 }
                 if attract == TitleAttractAction::Aborted {
                     abort_attract = true;
+                }
+                if attract == TitleAttractAction::Finished {
+                    attract_finished = true;
                 }
                 if matches!(
                     attract,
@@ -829,12 +824,45 @@ impl PlayWindowApp {
         // title the session has already returned to.
         if abort_attract {
             self.cutscene = None;
-            if let Some(out) = self.session.audio.as_ref() {
-                out.stop_xa();
-                out.set_sequencer_paused(false);
-            }
+            self.end_movie_audio();
+        }
+        // An attract that never staged a picture (a cut or undecodable slot)
+        // comes back as `Finished` without the redraw drain having run: end
+        // it here. A drained one already ended, and a second end asks for
+        // nothing.
+        if attract_finished {
+            self.end_movie_audio();
         }
         boot_ui_active
+    }
+
+    /// End the movie in flight on the audio side, however it ended: stop its
+    /// XA, reopen the sequencer gate only if this movie closed it, and bring
+    /// the title theme back from its first beat after the attract - the
+    /// shared [`legaia_engine_core::movie_audio::MovieScore`] decides each.
+    pub(super) fn end_movie_audio(&mut self) {
+        if let Some(out) = self.session.audio.as_ref() {
+            out.stop_xa();
+        }
+        let end = self.movie_score.on_movie_end();
+        if end.reopen_gate
+            && let Some(out) = self.session.audio.as_ref()
+        {
+            out.set_sequencer_paused(false);
+        }
+        if end.restart_title_theme {
+            self.start_title_bgm();
+        }
+    }
+
+    /// Arm the movie-audio policy for a movie this host is about to play,
+    /// and release the score when it says to (the title attract).
+    fn begin_movie_audio(&mut self, origin: legaia_engine_core::movie_audio::MovieOrigin) {
+        if self.movie_score.on_movie_start(origin)
+            && let Some(bgm) = self.session.bgm.as_mut()
+        {
+            bgm.stop();
+        }
     }
 
     /// Write the live binding table back to `legaia-input.toml` - the file
@@ -855,25 +883,23 @@ impl PlayWindowApp {
     /// (`_DAT_8007BA78 = 0` at `0x801DDCE8`, master mode `0x1A` at
     /// `0x801DDCF0`); this decodes that movie through the same kernel the
     /// field-VM cutscene path uses and stages it as the in-window video.
-    /// The title theme pauses with the rest of the sequencer while it runs
-    /// and the redraw handler's drain resumes it.
+    /// Retail releases the title theme as the attract starts and `CARD INIT`
+    /// streams it again on the way back, so the theme is stopped here and
+    /// restarted from its first beat when the movie ends
+    /// ([`legaia_engine_core::movie_audio`]).
     ///
     /// A slot that will not decode leaves `self.cutscene` empty, which the
     /// next `tick_boot_ui` reads as "the movie drained" and returns the
     /// session to the menu - the same place a played-out movie lands.
     // REF: FUN_801DD35C
     fn start_title_attract(&mut self, fmv_id: i16) {
+        self.begin_movie_audio(legaia_engine_core::movie_audio::MovieOrigin::Attract);
         let Some(rel) = legaia_engine_core::cutscene::fmv_index_to_str_filename(fmv_id) else {
             log::info!("title attract: fmv_id={fmv_id} (cut/unmapped slot); skipping");
             return;
         };
         match self.decode_fmv(fmv_id, rel) {
-            Some(decoded) => {
-                if let Some(out) = self.session.audio.as_ref() {
-                    out.set_sequencer_paused(true);
-                }
-                self.stage_windowed_cutscene(decoded);
-            }
+            Some(decoded) => self.stage_windowed_cutscene(decoded),
             None => log::info!("title attract: fmv_id={fmv_id} did not decode; staying on title"),
         }
     }
@@ -1333,9 +1359,11 @@ impl PlayWindowApp {
         let Some(fmv_id) = self.session.host.world.active_fmv() else {
             return;
         };
+        self.begin_movie_audio(legaia_engine_core::movie_audio::MovieOrigin::Cutscene);
         let Some(rel) = self.session.host.world.active_fmv_str_filename() else {
             log::info!("cutscene: fmv_id={fmv_id} (cut/unmapped slot); skipping");
             self.session.host.world.finish_cutscene();
+            self.end_movie_audio();
             return;
         };
         match self.decode_fmv(fmv_id, rel) {
@@ -1343,6 +1371,7 @@ impl PlayWindowApp {
             None => {
                 // Drain the trigger so the field resumes next frame.
                 self.session.host.world.finish_cutscene();
+                self.end_movie_audio();
             }
         }
     }
@@ -1362,10 +1391,13 @@ impl PlayWindowApp {
         };
         if let Some(c) = self.cutscene.as_mut() {
             // Stage the interleaved audio on the first render so the audio
-            // cursor (the A/V-sync master clock) starts with the picture. Pause
-            // the scene sequencer so the cutscene track isn't layered over BGM.
+            // cursor (the A/V-sync master clock) starts with the picture, and
+            // duck the score under it - only if it is sounding, so a track
+            // the script paused stays the script's (`movie_audio`).
             if let (Some(out), Some(track)) = (audio_out.as_ref(), c.pending_audio.take()) {
-                out.set_sequencer_paused(true);
+                if self.movie_score.on_movie_audio(out.sequencer_paused()) {
+                    out.set_sequencer_paused(true);
+                }
                 out.play_xa(track.pcm, track.sample_rate, track.channels, false, 0x4000);
                 c.has_audio = true;
             }

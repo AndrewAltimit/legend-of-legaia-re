@@ -46,12 +46,9 @@ impl PlayWindowApp {
             .as_ref()
             .is_some_and(|c| c.idx >= c.frames.len())
         {
-            // Stop the cutscene audio and resume the scene sequencer
-            // (BGM was paused while the movie played).
-            if let Some(out) = self.session.audio.as_ref() {
-                out.stop_xa();
-                out.set_sequencer_paused(false);
-            }
+            // Stop the cutscene audio and give the score back whatever the
+            // movie took from it - nothing, when it ducked nothing.
+            self.end_movie_audio();
             self.session.host.world.finish_cutscene();
             // Retail does NOT resume the trigger scene after a mid-game FMV -
             // the master dispatch writes a next-scene CDNAME label

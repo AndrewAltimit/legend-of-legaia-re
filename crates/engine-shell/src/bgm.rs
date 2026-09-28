@@ -29,17 +29,15 @@ use legaia_engine_core::scene::BgmDirector;
 use legaia_engine_core::world::{SfxRingOp, SharedRegionBank, SideBandBank};
 use legaia_seq::Seq;
 
-/// The pause menu's cursor-step cue: `FUN_80032A44`'s ring write
-/// `_li a2,0x21` at `0x80032b9c` (`ghidra/scripts/funcs/80032a44.txt`). Its
-/// `sfx-table.md` descriptor is category `0`, so the director sounds it out
-/// of the slot-0 system bank (PROT 0868). Provenance `disc`: traced to the
-/// retail ring write, the same three ids the browser play page fires
-/// (`web-viewer::play_sfx`), so the two hosts blip alike.
-pub const RETAIL_MENU_CURSOR_CUE: u16 = 0x21;
-/// The enabled-row confirm cue: `li a1,0x20` at `0x80032d24` in `FUN_80032A44`.
-pub const RETAIL_MENU_CONFIRM_CUE: u16 = 0x20;
-/// The cancel cue: `_li a2,0x37` at `0x80032d74` in `FUN_80032A44`.
-pub const RETAIL_MENU_CANCEL_CUE: u16 = 0x37;
+/// The pause menu's cursor-step cue, re-exported from the one engine-side
+/// table both hosts fire from ([`legaia_engine_core::menu_cues`], provenance
+/// there: `FUN_80032A44`'s ring writes). Category `0`, so the director sounds
+/// it out of the slot-0 system bank (PROT 0868).
+pub const RETAIL_MENU_CURSOR_CUE: u16 = legaia_engine_core::menu_cues::MENU_CURSOR_CUE as u16;
+/// The enabled-row confirm cue ([`legaia_engine_core::menu_cues::MENU_CONFIRM_CUE`]).
+pub const RETAIL_MENU_CONFIRM_CUE: u16 = legaia_engine_core::menu_cues::MENU_CONFIRM_CUE as u16;
+/// The cancel cue ([`legaia_engine_core::menu_cues::MENU_CANCEL_CUE`]).
+pub const RETAIL_MENU_CANCEL_CUE: u16 = legaia_engine_core::menu_cues::MENU_CANCEL_CUE as u16;
 
 /// BGM director that routes [`BgmDirector`] events into a live
 /// [`AudioOut`]. The director holds a clone of the audio handle (cpal stream
@@ -54,9 +52,6 @@ pub struct AudioBgmDirector {
     /// (sequencer reports `finished` when it runs off the end). Most field
     /// BGM loops to 0; cutscene SEQs typically don't.
     pub loop_to: Option<usize>,
-    /// Whether playback is currently paused. `pause` / `resume` toggle
-    /// without detaching the active sequencer.
-    paused: bool,
     /// Last started BGM id, if any. Useful for diagnostics + suppressing
     /// redundant `start(same_id)` calls (the field VM occasionally re-emits
     /// op `0x35` without a state change).
@@ -261,7 +256,6 @@ impl AudioBgmDirector {
             bank: None,
             master_vol: 100,
             loop_to: Some(0),
-            paused: false,
             last_started: None,
             sfx_bank: SfxBank::new(),
             sfx_cue_slots: BTreeMap::new(),
@@ -989,7 +983,7 @@ impl AudioBgmDirector {
 
     /// `true` if a sequencer is currently attached to the audio output.
     pub fn is_playing(&self) -> bool {
-        self.audio.sequencer_progress().is_some() && !self.paused
+        self.audio.sequencer_progress().is_some() && !self.audio.sequencer_paused()
     }
 
     /// Split a raw `music_01` bank entry (`[chunk][pBAV VAB][pQES SEQ]`),
@@ -1048,7 +1042,7 @@ impl AudioBgmDirector {
         // pop, far too short to hide an intro (the old fade held it silent for
         // 22050 samples = 0.5 s).
         const TRANSITION_FADE_IN_SAMPLES: u32 = 1_470;
-        if self.audio.sequencer_progress().is_some() && !self.paused {
+        if self.audio.sequencer_progress().is_some() && !self.audio.sequencer_paused() {
             self.audio.swap_bgm(sequencer, TRANSITION_FADE_IN_SAMPLES);
         } else {
             self.audio.attach_sequencer(sequencer);
@@ -1059,7 +1053,6 @@ impl AudioBgmDirector {
         // closed gate leaves the new track silent until an explicit
         // resume/unhalt.
         self.audio.set_sequencer_paused(false);
-        self.paused = false;
         self.last_started = Some(bgm_id);
         log::info!("AudioBgmDirector: BGM {bgm_id} started");
         Ok(())
@@ -1072,7 +1065,7 @@ impl BgmDirector for AudioBgmDirector {
         // op 0x35 occasionally re-emits without a state change (we'd lose
         // the playhead by re-attaching).
         if self.last_started == Some(bgm_id)
-            && !self.paused
+            && !self.audio.sequencer_paused()
             && self.audio.sequencer_progress().is_some()
         {
             return;
@@ -1087,7 +1080,7 @@ impl BgmDirector for AudioBgmDirector {
         // occasionally re-fires op 0x35): re-uploading the VAB + restarting
         // would drop the playhead.
         if self.last_started == Some(bgm_id)
-            && !self.paused
+            && !self.audio.sequencer_paused()
             && self.audio.sequencer_progress().is_some()
         {
             return;
@@ -1101,36 +1094,33 @@ impl BgmDirector for AudioBgmDirector {
         }
     }
 
+    /// The pause state is the output's sequencer gate and nothing else - the
+    /// browser twin reads the same bit - so a writer that bypasses the
+    /// director (a movie ducking the score, `legaia_engine_core::movie_audio`)
+    /// cannot leave a second latch disagreeing with it.
     fn pause(&mut self) {
-        self.paused = true;
         self.audio.set_sequencer_paused(true);
     }
 
+    /// Sub-op `4`: retail's re-attach replays the slot's sequence from its
+    /// start (`FUN_800628F0` resets the read cursor before it plays), so the
+    /// track rewinds, then the gate opens.
     fn resume(&mut self) {
-        self.paused = false;
+        self.audio.rewind_sequencer();
         self.audio.set_sequencer_paused(false);
     }
 
-    /// Detach the track **and reopen the gate**.
-    ///
-    /// The pause state is one quantity with two representations here - this
-    /// director's own `paused` latch and the output's `sequencer_paused`
-    /// gate - and every other arm writes both (`pause`, `resume`,
-    /// `unhalt_pause`, `start_inner`). This one wrote only the latch, so a
-    /// stop issued while paused left the two disagreeing: latch clear, gate
-    /// closed. Nothing audible followed, because `start_inner` happens to
-    /// reopen the gate unconditionally - but "the defect is masked by the
-    /// next call" is not a body, and the browser play page's `stop` (which
-    /// documents itself as doing what this one does) always wrote both.
+    /// Detach the track **and reopen the gate**, so a stop issued while
+    /// paused leaves nothing closed behind it (the browser play page's `stop`
+    /// does the same).
     fn stop(&mut self) {
         self.audio.detach_sequencer();
         self.audio.set_sequencer_paused(false);
-        self.paused = false;
         self.last_started = None;
     }
 
     /// Sub-op `0xA` - the unhalt-pause swap-commit (retail `0x801E0264`).
-    /// When the pause latch is still set no start intervened, so the
+    /// When the pause gate is still closed no start intervened, so the
     /// director is holding the track sub-op 2 paused: release it the way
     /// retail's `FUN_800266E0` + `FUN_80026520` pair detaches and closes
     /// the slot. When a start already landed (the paired sub-op 9 precedes
@@ -1141,9 +1131,8 @@ impl BgmDirector for AudioBgmDirector {
     /// while paused attaches its sequencer behind a still-closed gate and
     /// the score stays silent after the cutscene.
     fn unhalt_pause(&mut self) {
-        if self.paused {
+        if self.audio.sequencer_paused() {
             self.audio.detach_sequencer();
-            self.paused = false;
             self.last_started = None;
         }
         self.audio.set_sequencer_paused(false);
