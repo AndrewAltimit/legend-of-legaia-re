@@ -133,3 +133,98 @@ fn real_monster_idle_animation_drives_a_moving_posed_mesh() {
     );
     eprintln!("[battle-anim] max per-vertex frame-to-frame delta = {max_delta:.2}");
 }
+
+/// Census of `FUN_8004998C`'s Euler-flip retry over the monster archive
+/// (PROT 867): every decodable action clip, every in-clip frame pair
+/// `f -> f + 1`, every non-zero nibble `1..=15`, every part. Counts the part
+/// samples whose summed angle step exceeds `0xC00` (the retry) and those whose
+/// angles the retry actually changes, and proves the whole-frame samples
+/// (nibble `0`, the blend arm skipped) are the plain decode - both through the
+/// kernel and through [`MonsterAnimPlayer`] ticking a whole keyframe at a time.
+#[test]
+fn monster_archive_pose_blend_retry_census() {
+    use legaia_engine_vm::battle_pose_blend::{EULER_FLIP_THRESHOLD, blend_part_pose};
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    let patcher = DiscPatcher::open(disc).expect("open disc");
+    let archive = patcher
+        .read_entry(MONSTER_ARCHIVE_ENTRY)
+        .expect("read monster archive");
+    let records = legaia_asset::monster_archive::records(&archive).expect("decode archive");
+
+    let (mut clips, mut blended, mut retried, mut changed) = (0u64, 0u64, 0u64, 0u64);
+    let (mut whole, mut clips_with_retry) = (0u64, 0u64);
+    for r in &records {
+        let Ok(Some(anims)) = legaia_asset::monster_archive::animations(&archive, r.id) else {
+            continue;
+        };
+        for anim in &anims {
+            clips += 1;
+            let mut any = false;
+            for f in 0..anim.frame_count {
+                for p in 0..anim.part_count {
+                    let cur = anim.frames[f][p];
+                    // Whole-frame sample: the plain decode.
+                    let w = blend_part_pose(cur, cur, 0, 0);
+                    assert_eq!(w.translation, [cur.tx, cur.ty, cur.tz]);
+                    assert_eq!(w.rotation, [cur.rx, cur.ry, cur.rz]);
+                    whole += 1;
+                    if f + 1 >= anim.frame_count {
+                        continue;
+                    }
+                    let next = anim.frames[f + 1][p];
+                    for frac in 1..=15u8 {
+                        let b = blend_part_pose(cur, next, frac, 0);
+                        blended += 1;
+                        if b.retried {
+                            retried += 1;
+                            any = true;
+                            // The no-retry angles, for the "changed" count.
+                            let plain = |n: u16, c: u16| {
+                                legaia_engine_vm::battle_pose_blend::lerp_battle_angle(
+                                    i32::from(n),
+                                    i32::from(c),
+                                    i32::from(frac),
+                                )
+                            };
+                            let (x, y, z) = (
+                                plain(next.rx, cur.rx),
+                                plain(next.ry, cur.ry),
+                                plain(next.rz, cur.rz),
+                            );
+                            assert!(x.magnitude + y.magnitude + z.magnitude > EULER_FLIP_THRESHOLD);
+                            if b.rotation != [x.value, y.value, z.value] {
+                                changed += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            if any {
+                clips_with_retry += 1;
+            }
+            // Through the player: whole-keyframe ticks land on nibble 0 and
+            // pose each frame exactly as decoded.
+            if let Some(mut player) = MonsterAnimPlayer::new(anim) {
+                player.step = 256;
+                for _ in 0..anim.frame_count {
+                    let pose = player.tick();
+                    let f = player.current_frame() as usize;
+                    for (p, (t, rot)) in pose.bone_outputs.iter().enumerate() {
+                        let d = anim.frames[f][p];
+                        assert_eq!(*t, [d.tx, d.ty, d.tz]);
+                        assert_eq!(*rot, [d.rx as i16, d.ry as i16, d.rz as i16]);
+                    }
+                }
+            }
+        }
+    }
+    eprintln!(
+        "[ok] battle pose blend census: {clips} clips; {whole} whole-frame part samples exact; \
+         {retried} of {blended} blended part samples take the retry \
+         ({changed} changed by it) in {clips_with_retry} clips"
+    );
+    assert!(clips > 0 && blended > 0);
+}

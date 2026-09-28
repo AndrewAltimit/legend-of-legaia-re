@@ -15,9 +15,11 @@
 //! [`legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot`] (the rigid `R·v + T`
 //! builder) so the per-object rotations actually turn the limbs.
 //!
-//! Interpolation matches the retail decoder + the visually-validated site
-//! animator (`monsters.html` `_frameTransforms`): translation lerps linearly,
-//! rotation takes the shortest-path 12-bit-angle step. The per-tick phase
+//! Interpolation is the retail decoder's own blend
+//! ([`legaia_engine_vm::battle_pose_blend::blend_part_pose`]): the cursor's
+//! 1/16-keyframe nibble, translations lerped with an arithmetic shift, angles
+//! on the short arc, and the Euler-flip retry when a part's three angle steps
+//! total more than `0xC00`. The per-tick phase
 //! advance is retail-pinned when the clip carries its entry's rate byte:
 //! `FUN_80047430` advances the node's 12.4 cursor by
 //! `(frame_dt * actor[+0x21D] * record[+0x78]) >> 1` per frame (`>> 2` on
@@ -30,6 +32,7 @@
 
 use legaia_anm::PoseFrame;
 use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
+use legaia_engine_vm::battle_pose_blend::blend_part_pose;
 
 /// Fixed-point fractional bits for the frame cursor (8.8): `1 << 8` phase units
 /// per keyframe.
@@ -362,12 +365,16 @@ impl MonsterAnimPlayer {
 
     fn advance(&mut self, step: u32) -> PoseFrame {
         let total = self.frame_count * PHASE_ONE;
-        let (f0, f1);
+        let (f0, mut f1);
         // Window before natural end, exactly like the tick.
         let raw = self.apply_loop_window(self.phase + step);
         if self.looping {
             self.phase = raw % total;
             f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
+            // The last frame blends toward frame 0 of the queued clip; a
+            // looping clip is re-queued at every natural end
+            // (`docs/formats/monster-animation.md` § Playback), so that is
+            // its own frame 0.
             f1 = (f0 + 1) % self.frames.len();
         } else {
             // One-shot: clamp the cursor on the final keyframe.
@@ -377,49 +384,37 @@ impl MonsterAnimPlayer {
             f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
             f1 = (f0 + 1).min(self.frames.len() - 1);
         }
-        let frac = (self.phase & (PHASE_ONE - 1)) as i32; // 0..=255
+        // The loop-window arm of the next-entry rule: on the frame before the
+        // window's end, while cycles remain, the blend target is the window's
+        // start frame (`FUN_8004998C` `0x80049A28..0x80049A78`: frame ==
+        // `+0x86 - 1` and `+0x21B != 0` -> entry `+0x85`).
+        if self.loop_cycles_remaining() != 0 && self.loop_end > 0 {
+            let end_frame = (self.loop_end / PHASE_ONE) as usize;
+            let start_frame = (self.loop_start / PHASE_ONE) as usize;
+            if f0 + 1 == end_frame && start_frame < self.frames.len() {
+                f1 = start_frame;
+            }
+        }
+        // Retail blends on the 12.4 cursor's low nibble (`+0x68 & 0xF`); this
+        // player's phase is 8.8, so the nibble is bits 4..8.
+        let frac16 = ((self.phase >> 4) & 0xF) as u8;
 
         let a = &self.frames[f0];
         let b = &self.frames[f1];
         let bone_outputs = (0..self.part_count)
             .map(|p| {
-                let pa = &a[p];
-                let pb = &b[p];
-                let t = [
-                    lerp_lin(pa.tx, pb.tx, frac),
-                    lerp_lin(pa.ty, pb.ty, frac),
-                    lerp_lin(pa.tz, pb.tz, frac),
-                ];
-                let r = [
-                    lerp_angle(pa.rx, pb.rx, frac),
-                    lerp_angle(pa.ry, pb.ry, frac),
-                    lerp_angle(pa.rz, pb.rz, frac),
-                ];
-                (t, r)
+                let blended = blend_part_pose(a[p], b[p], frac16, 0);
+                let r = blended.rotation.map(|v| v as i16);
+                (blended.translation, r)
             })
             .collect();
 
         PoseFrame {
             bone_outputs,
-            factor: (frac as u8),
+            factor: (self.phase & (PHASE_ONE - 1)) as u8,
             finished: self.finished,
         }
     }
-}
-
-/// Linear translation lerp by `frac/256`, matching the site animator's
-/// `pa + (pb - pa) * frac`.
-fn lerp_lin(a: i16, b: i16, frac: i32) -> i16 {
-    (a as i32 + (b as i32 - a as i32) * frac / PHASE_ONE as i32) as i16
-}
-
-/// Shortest-path 12-bit-angle lerp (`((b - a + 6144) % 4096) - 2048` step),
-/// matching the retail wrap and the site animator. The result stays an `i16`
-/// 12-bit angle (the posed-mesh builder converts it to radians); it may sit
-/// slightly outside `0..4096` mid-step, which is fine for `cos`/`sin`.
-fn lerp_angle(a: u16, b: u16, frac: i32) -> i16 {
-    let step = (b as i32 - a as i32 + 6144).rem_euclid(4096) - 2048;
-    (a as i32 + step * frac / PHASE_ONE as i32) as i16
 }
 
 #[cfg(test)]
@@ -537,8 +532,9 @@ mod tests {
         p.step = PHASE_ONE / 2;
         let (_, r) = p.tick().bone_outputs[0];
         // step = ((256 - 3840 + 6144) % 4096) - 2048 = (2560 % 4096) - 2048 = 512.
-        // halfway: 3840 + 512/2 = 4096.
-        assert_eq!(r[2], 4096);
+        // halfway: (3840 + 512/2) & 0xFFF = 0 - retail masks the blended
+        // angle back to 12 bits.
+        assert_eq!(r[2], 0);
     }
 }
 

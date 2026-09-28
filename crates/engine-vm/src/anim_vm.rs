@@ -7,10 +7,12 @@
 //! REF: FUN_80049348 - the after-image walk, ported as `legaia_engine_core::battle_afterimage`.
 //! REF: FUN_8004E13C - the art-mode latch, ported at its `+0x243` store in `legaia_engine_core::world::actors`.
 //!
-//! `FUN_8004998C`'s 9-byte nibble unpack and 16-step lerp are [`BoneFrame`],
-//! which carries its own scoped tag; the rest of that routine (the
-//! frame-index / loop cursor, the cross-animation blend and the translation
-//! forward term) is not ported.
+//! `FUN_8004998C`'s 9-byte nibble unpack is [`BoneFrame`], which carries its
+//! own scoped tag. Its per-part blend (short-arc angles, the Euler-flip
+//! retry) is `crate::battle_pose_blend`, which the battle pose player
+//! `legaia_engine_core::battle_anim::MonsterAnimPlayer` samples through; the
+//! cross-animation blend into the queued clip and its `+0xE` translation term
+//! are not modelled.
 //!
 //! ## Background
 //!

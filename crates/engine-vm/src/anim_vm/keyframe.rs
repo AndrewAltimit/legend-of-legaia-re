@@ -9,7 +9,7 @@
 /// quat / euler / position delta) is renderer-side; on the data side
 /// they're just two signed-12-bit triplets per bone.
 ///
-/// PORT: FUN_8004998C (the 9-byte nibble unpack + sign-extend at `0x80049C18..` and the `a + ((b - a) * frac >> 4)` lerp only; the frame index `+0x68 >> 4`, the `+0x85`/`+0x86` loop, the cross-animation blend through `0x801C9348`/`0x801C9360` and the `+0xE` translation term are not ported)
+/// PORT: FUN_8004998C (the 9-byte nibble unpack at `0x80049C18..` only; the pose blend - short-arc angles and the Euler-flip retry - is `crate::battle_pose_blend::blend_part_pose`, and [`BoneFrame::lerp16`] is a plain component lerp that no host poses through)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoneFrame {
     /// First 12-bit triplet (`puVar14[0..3]` after sign extension).
