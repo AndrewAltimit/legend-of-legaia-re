@@ -1981,6 +1981,14 @@ against its kernel on a GPU (`engine-render`'s `overworld_flat_depth_gpu`);
 the GLSL twin is compiled but not run by any test, so an edit to one shader
 has to be carried to the other by hand.
 
+The ground's depth cue joins the same pair (`overworld_ground_cue` /
+`overworldGroundCue`, [`overworld_ground_cue`](../../crates/engine-core/src/overworld_ground_cue.rs)):
+each re-projects the cell's `(x1, z0)` corner from the flat-depth references
+and runs retail's `DPCS` arithmetic toward the literal far colour on the packet
+colour. The WGSL cue is GPU-tested in the same file; the GLSL twin is checked
+by hand in headless Chromium, with a throwaway page that links the page's
+vertex shader to a pass-through fragment - no committed test runs it.
+
 ### What the textured half needed, and why it was not a one-line removal
 
 The Lambert was standing in for something the page did not upload. Retail
