@@ -1773,9 +1773,17 @@ impl World {
                 if pc < tl.visited.len() {
                     tl.visited[pc] = true;
                 }
+                // One backward jump is NOT a wrap: a loop that polls the held
+                // pad (`42 01 <button>`) is the record waiting for the player.
+                // `edlast`'s ending record closes that way - `4A 08 00` then
+                // `42 01 08` / `42 01 09` (Circle / Cross held) and a `26`
+                // back to the wait - and retail sits in it until the press;
+                // reading it as a wrap dropped the record and handed the
+                // player the pad in the ending's last scene.
                 if matches!(kind, crate::cutscene_timeline::TraceResult::Advance)
                     && next_pc <= pc
                     && tl.visited.get(next_pc).copied().unwrap_or(false)
+                    && !loop_polls_held_pad(&tl.bytecode, next_pc, pc)
                 {
                     // There used to be a carve-out here for a `45 C0 <s16>`
                     // "camera-apply loop-back", on the reading that retail's
@@ -3144,6 +3152,35 @@ fn end_talk_at_post_box_byte(id: &mut crate::inline_dialogue::InlineDialogue) {
     }
 }
 
+/// Whether the loop body `from..=to` (a backward jump's target up to the jump
+/// itself) carries an op-`0x42` mode-1 test - the held-pad poll. Walked on
+/// decoded op boundaries, so a `0x42` byte inside another op's operands does
+/// not count.
+///
+/// Such a loop is a record waiting on the player (retail's `0x42` mode-1 arm
+/// compares the packed held pad `_DAT_8007B850`; see `script-vm.md`), not a
+/// wrapped choreography, so the timeline's natural-termination rule must not
+/// end it.
+fn loop_polls_held_pad(bytecode: &[u8], from: usize, to: usize) -> bool {
+    let mut pc = from;
+    while pc <= to {
+        let Ok(insn) = legaia_asset::field_disasm::decode(bytecode, pc) else {
+            return false;
+        };
+        if insn.size == 0 {
+            return false;
+        }
+        if matches!(
+            insn.info,
+            legaia_asset::field_disasm::InsnInfo::CondJmp { mode: 1, .. }
+        ) {
+            return true;
+        }
+        pc += insn.size;
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use crate::world::{FIELD_OFFMAP_HIDE_XZ, World};
@@ -3780,6 +3817,42 @@ mod tests {
             let tl = w.cutscene.timeline.as_ref().expect("installed");
             assert_eq!(tl.pc, 16, "resumed past the 3-byte spin onto the wait");
         }
+    }
+
+    /// A record that loops on a held-pad poll (`edlast`'s closing
+    /// `4A 08 00` / `42 01 09` / `26` back) is waiting for the player, not
+    /// wrapped: it stays installed under a released pad and moves on the
+    /// press.
+    #[test]
+    fn a_pad_poll_loop_waits_for_the_press() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        let mut w = World {
+            mode: crate::world::SceneMode::Field,
+            ..World::default()
+        };
+        let bc = vec![
+            0x4A, 0x02, 0x00, // WaitFrames 2
+            0x42, 0x01, 0x09, 0x05, 0x00, // Cross held -> +3+5 = 11
+            0x26, 0xF7, 0xFF, // back to 0
+            0x4A, 0xFF, 0x7F, // WaitFrames (keeps the timeline up)
+        ];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.set_pad(0);
+        for _ in 0..60 {
+            w.step_cutscene_timeline();
+        }
+        let tl = w
+            .cutscene
+            .timeline
+            .as_ref()
+            .expect("still waiting on the pad");
+        assert!(tl.pc < 11, "never passed the poll, pc={:#x}", tl.pc);
+        w.set_pad(crate::input::PadButton::Cross.mask());
+        for _ in 0..4 {
+            w.step_cutscene_timeline();
+        }
+        let tl = w.cutscene.timeline.as_ref().expect("installed");
+        assert_eq!(tl.pc, 11, "the press takes the jump");
     }
 
     /// A party-bank clip (the locomotion loops) has no timed end latch in
