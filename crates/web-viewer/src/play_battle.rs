@@ -425,7 +425,19 @@ impl LegaiaRuntime {
         let Some(w) = self.scene_host.as_ref().map(|h| &h.world) else {
             return Vec::new();
         };
-        let (Some(banner), Some(rects)) = (w.battle_spoils_banner(), assets.chrome_rects()) else {
+        let Some(rects) = assets.chrome_rects() else {
+            return Vec::new();
+        };
+        // The loss window (screen element `0x42`) shares the report frame.
+        if let Some(defeat) = w.battle_defeat_banner() {
+            let (origin, scale) =
+                crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+            return ui::battle_defeat_windows(defeat.line.as_deref())
+                .iter()
+                .flat_map(|win| ui::menu_window_chrome_draws_for(rects, win.rect, origin, scale))
+                .collect();
+        }
+        let Some(banner) = w.battle_spoils_banner() else {
             return Vec::new();
         };
         let leader = battle_spoils_leader(w);
@@ -464,7 +476,14 @@ impl LegaiaRuntime {
             return out;
         }
 
-        if let Some(banner) = w.battle_spoils_banner() {
+        if let Some(defeat) = w.battle_defeat_banner() {
+            let windows = ui::battle_defeat_windows(defeat.line.as_deref());
+            let (origin, scale) =
+                crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+            let mut draws = ui::battle_result_line_draws_for(font, &windows);
+            ui::scale_stage_text_draws(&mut draws, origin, scale);
+            out.extend(draws);
+        } else if let Some(banner) = w.battle_spoils_banner() {
             let leader = battle_spoils_leader(w);
             let view = ui::BattleSpoilsView {
                 xp: banner.xp,
