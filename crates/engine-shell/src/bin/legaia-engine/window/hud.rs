@@ -601,7 +601,7 @@ impl PlayWindowApp {
             // hosts print (`PondSession::status_rows`).
             let (line, hint) = s.status_rows("Circle", "Cross", "Square");
             out.extend(self.stage_status_row(&line, (8, 62), white, w, h));
-            let hint = format!("{hint}  (Start = quit, P = prizes)");
+            let hint = format!("{hint}  (Triangle = menu, Start = quit, P = prizes)");
             out.extend(self.stage_status_row(&hint, (8, 80), dim, w, h));
 
             // The overlay's developer readout (FUN_801d2050): the wander
@@ -691,6 +691,25 @@ impl PlayWindowApp {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
             legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
+            // The venue's hub menu / help pages / tackle list (Triangle or
+            // Select on the idle shore), laid out by the engine
+            // (`World::fishing_hub_lines`) and drawn through the one
+            // composition the browser play page uses.
+            let hub = self.session.host.world.fishing_hub_lines();
+            if !hub.is_empty() {
+                let mut hub_draws = legaia_engine_render::ui_fishing_hub::fishing_hub_draws_for(
+                    &self.font,
+                    hub.iter()
+                        .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
+                    white,
+                );
+                legaia_engine_render::scale_stage_text_draws(
+                    &mut hub_draws,
+                    stage_origin,
+                    stage_scale,
+                );
+                out.extend(hub_draws);
+            }
         }
         // Fishing point-exchange list: the venue's prize rows with the retail
         // gating (row 0 hidden until affordable, greyed unavailable rows,

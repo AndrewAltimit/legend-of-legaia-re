@@ -506,6 +506,25 @@ window.MgFishing = (function () {
       drawWaterOverlay(st);
       if (hud) for (const it of hud) drawHudItem(it);
       drawFxParts(fx);
+      drawHub();
+    }
+
+    /* The venue hub (Triangle / Select at the shore): the engine lays the
+     * menu rows, help pages and tackle list out in retail 320x240 space
+     * (engine-core fishing_hub, the layout the play page and the native
+     * window draw too) and hands back the disc's own text. */
+    function drawHub() {
+      if (!api.fishing_hub_json) return;
+      let hub = null;
+      try { hub = JSON.parse(api.fishing_hub_json()); } catch (_) { hub = null; }
+      if (!hub || !hub.open) return;
+      g.save();
+      g.fillStyle = 'rgba(0,0,0,0.55)';
+      g.fillRect(0, 0, canvas.width, canvas.height);
+      g.restore();
+      for (const l of hub.lines) {
+        hudText(l.t, l.x, l.y + 6, { color: l.m ? '#ffd95a' : undefined });
+      }
     }
 
     return {

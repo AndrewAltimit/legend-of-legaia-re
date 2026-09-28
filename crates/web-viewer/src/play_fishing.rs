@@ -140,9 +140,26 @@ impl LegaiaRuntime {
         let white = [1.0, 1.0, 1.0, 1.0];
         let dim = [0.65, 0.72, 0.8, 1.0];
         let (line, hint) = s.status_rows("X", "Z", "V");
+        let hint = format!("{hint}  (Triangle = menu)");
         let mut out = ui::text_draws_for(&font.layout_ascii(&line), STATUS_PEN, white);
         out.extend(ui::text_draws_for(&font.layout_ascii(&hint), HINT_PEN, dim));
         out
+    }
+
+    /// The venue hub's draws (menu, help pages, tackle list) - empty while no
+    /// hub is up.
+    fn fishing_hub_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
+            return Vec::new();
+        };
+        let lines = world.fishing_hub_lines();
+        ui::ui_fishing_hub::fishing_hub_draws_for(
+            font,
+            lines
+                .iter()
+                .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
+            [1.0, 1.0, 1.0, 1.0],
+        )
     }
 
     /// This frame's retail HUD draw list: the persistent rows
@@ -369,6 +386,10 @@ impl LegaiaRuntime {
         // other. Both now compose it through
         // `legaia_engine_ui::ui_fishing_exchange`.
         texts.extend(self.fishing_exchange_draws(font));
+        // The venue's hub menu / help pages / tackle list, laid out by the
+        // engine (`World::fishing_hub_lines`) and composed by the one
+        // `legaia_engine_ui::ui_fishing_hub` draw the native window uses.
+        texts.extend(self.fishing_hub_draws(font));
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
         ui::scale_stage_text_draws(&mut texts, origin, scale);
         serde_json::json!({
@@ -539,6 +560,28 @@ impl LegaiaRuntime {
             .and_then(|h| h.world.minigames.fishing_exchange.as_ref());
         match ex {
             Some(e) => serde_json::json!({ "open": true, "venue": e.venue, "cursor": e.cursor }),
+            None => serde_json::json!({ "open": false }),
+        }
+        .to_string()
+    }
+
+    /// The venue hub's live state - `{ "open": bool, "screen": "menu" |
+    /// "help0" | "help1" | "tackle" | "exchange" }` - so the page can tell a
+    /// player which keys the canvas is listening to.
+    pub fn play_fishing_hub_state_json(&self) -> String {
+        use legaia_engine_core::fishing_hub::HubScreen;
+        let hub = self.fishing_session().and_then(|s| s.hub());
+        match hub {
+            Some(h) => serde_json::json!({
+                "open": true,
+                "screen": match h.screen {
+                    HubScreen::Menu => "menu",
+                    HubScreen::Help(0) => "help0",
+                    HubScreen::Help(_) => "help1",
+                    HubScreen::Tackle => "tackle",
+                    HubScreen::Exchange => "exchange",
+                },
+            }),
             None => serde_json::json!({ "open": false }),
         }
         .to_string()

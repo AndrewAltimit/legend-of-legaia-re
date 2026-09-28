@@ -72,6 +72,10 @@ pub struct MinigameState {
     /// entry the door warp and both play hosts' launchers share. `None` until
     /// a fishing session has been entered on a disc whose pages decode.
     pub fishing_prize_venues: Option<[crate::fishing::PrizeExchange; 2]>,
+    /// The venue hub's text (menu rows, help pages) off PROT 0972, decoded by
+    /// the same entry as [`Self::fishing_prize_venues`]
+    /// ([`crate::fishing_hub::FishingHubText::from_overlay`]).
+    pub fishing_hub_text: Option<crate::fishing_hub::FishingHubText>,
     /// Slot-machine minigame session. `Some` while
     /// `mode == SceneMode::SlotMachine`; the reel state machine runs each
     /// tick. See [`crate::slot_machine::SlotMachine`] and
@@ -242,6 +246,7 @@ impl MinigameState {
             fishing_events: Vec::new(),
             fishing_exchange: None,
             fishing_prize_venues: None,
+            fishing_hub_text: None,
             slot_machine: None,
             slot_return_mode: SceneMode::Field,
             baka_fighter: None,

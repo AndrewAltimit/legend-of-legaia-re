@@ -143,6 +143,9 @@ impl SceneHost {
             [0usize, 1].map(|v| crate::fishing::PrizeExchange::from_asset(v, &ex.venues[v], names))
         });
         self.world.minigames.fishing_prize_venues = venues;
+        // The hub menu's rows and help pages ride the same image.
+        self.world.minigames.fishing_hub_text =
+            crate::fishing_hub::FishingHubText::from_overlay(loaded);
         true
     }
 
