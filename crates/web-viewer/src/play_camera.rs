@@ -24,30 +24,25 @@ use legaia_engine_core::world::SceneMode;
 use wasm_bindgen::prelude::*;
 
 impl LegaiaRuntime {
-    /// Advance the engine camera one tick, in the native session's order
-    /// (`BootSession::tick`): snap back to the follow default in free-roam,
-    /// publish the compass azimuth the d-pad remap reads, route this tick's
-    /// op-`0x45` events into the controller, then advance the retail globals.
-    /// A scene entry resets the globals so a departing scene's shot cannot
-    /// leak its focus or eye depth into the next one (`FUN_80025C24`).
+    /// The engine camera's half after a world tick, in the native session's
+    /// order (`BootSession::tick`), through the shared kernel
+    /// ([`legaia_engine_core::frame_step::camera_after_world_tick`]): route
+    /// this tick's op-`0x45` events into the controller, advance the retail
+    /// globals, and on a scene entry reset them so a departing scene's shot
+    /// cannot leak its focus or eye depth into the next one (`FUN_80025C24`).
+    /// The half before the tick (free-roam reset + the compass azimuth) runs
+    /// in [`Self::tick_frame`] ahead of the scene tick.
     pub(crate) fn tick_camera(&mut self, scene_entered: bool) {
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
-        self.camera.reset_for_free_roam(&host.world);
-        // The engine camera publishes the azimuth unless the page spoke over
-        // it this tick (VR first-person, where the headset gaze is the
-        // heading).
-        let az = self
-            .camera_azimuth_override
-            .take()
-            .unwrap_or_else(|| self.camera.compass_azimuth_units());
-        host.world.locomotion.camera_azimuth = az % 4096;
-        self.camera.route_camera_events(&mut host.world);
-        self.camera.tick(&host.world);
+        legaia_engine_core::frame_step::camera_after_world_tick(
+            &mut self.camera,
+            &mut host.world,
+            scene_entered,
+        );
         if scene_entered {
-            self.camera.reset_globals_for_scene_entry();
-            self.cutscene_cam.reset();
+            self.cutscene_glide.reset();
         }
     }
 
@@ -122,28 +117,15 @@ impl LegaiaRuntime {
         let world = &host.world;
         let cutscene = if scripted {
             let target = camera_view::cutscene_view(world, centre);
-            let apply = u32::from(world.camera.state.apply_trigger);
-            let mode = world.camera.state.mode;
-            let now = world.clock.display_frames;
-            let steps = u32::try_from(now.saturating_sub(self.cutscene_cam_frames))
-                .unwrap_or(u32::MAX)
-                .max(1);
-            self.cutscene_cam_frames = now;
-            // Retail snaps the live globals to an `apply == 0` beat
-            // immediately, so a snap+glide pair committed in ONE world tick
-            // glides FROM the snapped pose. The beats are banked on the
-            // engine camera (`Camera::take_camera_snap_beats`) because
-            // `route_camera_events` is what consumes them off the world
-            // queue; the native window replays the same bank.
-            for comps in self.camera.take_camera_snap_beats() {
-                self.cutscene_cam.snap_components(&comps);
-            }
-            Some(self.cutscene_cam.glide_view(target, apply, mode, steps))
+            // The shared kernel (`frame_step::CutsceneGlide`, the native
+            // window's twin): replay the banked `apply == 0` snaps, then step
+            // the glide by the display frames the world ran since the last
+            // call - zero on a redraw that ran no tick.
+            Some(self.cutscene_glide.advance(world, &mut self.camera, target))
         } else {
-            self.cutscene_cam.reset();
             // Nothing is interpolating, so a banked snap would move a pose
             // no draw reads.
-            self.camera.clear_camera_snap_beats();
+            self.cutscene_glide.idle(&mut self.camera);
             None
         };
         let world = &self.scene_host.as_ref().expect("checked above").world;

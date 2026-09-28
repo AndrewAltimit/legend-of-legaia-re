@@ -2072,34 +2072,35 @@ void main() {
        *
        * THE DENOMINATION LAW, and it is shared with the native host: one
        * `World::tick` advances the simulation by exactly ONE RETAIL DISPLAY
-       * FRAME. `TICK_DT` is therefore not a tuning knob - it is the retail
-       * vsync period, and `engine-core`'s frame tick assumes it
-       * (`SIM_HZ == RETAIL_FPS`, `field_frame_step == 1` every tick). The
-       * native window states the same constant as `TICK_DT = 1.0/60.0` in
-       * `EngineWindow::drain_ticks`, with the same 4-tick backlog cap below.
-       * Change one and the two hosts run the same engine at different
-       * speeds, which is invisible in a diff - see
+       * FRAME. How many ticks a display frame runs is the engine's rule, not
+       * this page's: `play_drain_sim_steps` is the same kernel the native
+       * redraw drains through (`engine-core::frame_step::SimStepper` - whole
+       * 1/60 s ticks, at most four a frame, and a longer gap dropped rather
+       * than carried). Two local spellings of that rule drifted once already
+       * (the native one carried its backlog, this one dropped it) - see
        * `docs/tooling/host-drift.md` and the units-per-second oracle
        * `crates/engine-core/tests/sim_cadence_wall_speed.rs`
-       * (retail walk = 480 world units/second, run = 720). */
+       * (retail walk = 480 world units/second, run = 720). The JavaScript
+       * accumulator below survives only for a cached wasm bundle that
+       * predates the export. */
       let simSteps = 0;
+      const shared = typeof rt.play_drain_sim_steps === 'function';
       if (advance) {
         const TICK_DT = 1000 / 60;
+        const now = performance.now();
         if (stepping) {
           simSteps = 1;
           this._simAccum = 0;
-          this._simLast = performance.now();
+          if (shared) rt.play_resync_sim_clock();
+        } else if (shared) {
+          simSteps = rt.play_drain_sim_steps(now - this._simLast);
         } else {
-          const now = performance.now();
           this._simAccum += now - this._simLast;
-          this._simLast = now;
-          /* Cap the backlog so a long stall (hidden tab, GC pause) can't
-           * unleash a burst of catch-up ticks - the native window caps at
-           * 4 ticks/frame the same way. */
           if (this._simAccum > TICK_DT * 4) this._simAccum = TICK_DT * 4;
           simSteps = Math.floor(this._simAccum / TICK_DT);
           this._simAccum -= simSteps * TICK_DT;
         }
+        this._simLast = now;
       }
 
       /* Field pause menu (Start): consumes this frame's edges and, while up,
@@ -2224,15 +2225,22 @@ void main() {
               this._onEngineTrap('scene rebuild', e);
               return;
             }
-            /* Don't keep feeding this frame's input into the freshly-loaded
-             * scene - resume ticking it next frame. */
-            break;
+            /* The frame's remaining ticks run on the new scene, as the
+             * native window's loop does after its rebuild: the stepper
+             * already charged their wall time, so breaking here dropped up
+             * to three ticks per door. */
           }
         }
       } else {
         /* Keep the sim clock current while paused so unpausing doesn't dump the
          * accumulated wall-clock gap as a burst of catch-up ticks. */
         this._simLast = performance.now();
+        /* Paused only - a modal overlay above already spent this frame's
+         * drain, and its sub-tick remainder must carry or an overlay stepped
+         * by `simSteps` would never step on a display above 60 Hz. */
+        if (!advance && typeof rt.play_resync_sim_clock === 'function') {
+          rt.play_resync_sim_clock();
+        }
       }
 
       /* The scene's floor-height ladder is script-animated (field-VM op `0x4C`

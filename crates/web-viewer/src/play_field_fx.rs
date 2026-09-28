@@ -118,8 +118,10 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return Vec::new();
         };
-        let world = &mut host.world;
-        let requests = world.move_vm.take_strip_requests();
+        let world = &host.world;
+        // The latest tick's set, the native window's read
+        // (`MoveVmGlobals::strip_frame`).
+        let requests = world.move_vm.strip_frame();
         if requests.is_empty() || world.mode != SceneMode::Field {
             return Vec::new();
         }
@@ -127,7 +129,7 @@ impl LegaiaRuntime {
         let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
             return Vec::new();
         };
-        legaia_engine_ui::move_strip::move_strip_prims(&requests, &view)
+        legaia_engine_ui::move_strip::move_strip_prims(requests, &view)
     }
 
     /// This frame's attached lights (the field VM's op `0x34` sub-1 light
