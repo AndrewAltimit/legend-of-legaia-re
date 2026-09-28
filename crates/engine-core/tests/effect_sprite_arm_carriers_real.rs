@@ -14,7 +14,6 @@
 use std::path::PathBuf;
 
 use legaia_asset::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
-use legaia_engine_core::effect_ribbon::RIBBON_TPAGE;
 use legaia_engine_core::world::{SceneMode, World};
 use legaia_prot::archive::Archive;
 
@@ -55,28 +54,32 @@ fn shipped_sprite_arm_nodes_reach_the_kind4_draw_list() {
         assert_eq!(world.mode, SceneMode::Battle);
         world.spawn_summon(&overlay, &bytes, 0, [0, 0, 0]);
         let mut peak = 0usize;
+        let mut default_peak = 0usize;
         let mut pages = std::collections::BTreeSet::new();
         for _ in 0..600 {
             world.tick_summon(8);
-            let sprites: Vec<_> = world
-                .active_effect_kind4_draws()
-                .into_iter()
-                .filter(|d| {
-                    d.mesh
-                        .cba_tsb
-                        .first()
-                        .is_some_and(|ct| ct[1] != RIBBON_TPAGE)
-                })
-                .collect();
+            let Some(scene) = world.casting.active_summon.as_ref() else {
+                break;
+            };
+            // The scene's own sprite-arm and default-arm nodes, and the one
+            // list both hosts draw, which must carry every one of them.
+            let sprites = scene.sprite_arm_draws();
+            let defaults = scene.default_arm_draws();
+            let listed = world.active_effect_kind4_draws().len();
+            assert!(
+                listed >= sprites.len() + defaults.len(),
+                "PROT {idx:04}: the kind-4 list drops a node"
+            );
             for d in &sprites {
                 assert_eq!(d.mesh.positions.len(), 4, "PROT {idx:04}: one quad");
                 assert_eq!(d.mesh.indices, vec![0, 1, 2, 2, 1, 3]);
                 pages.insert((d.mesh.cba_tsb[0][1] & 0x7F9F, d.mesh.cba_tsb[0][0]));
             }
             peak = peak.max(sprites.len());
-            if world.casting.active_summon.is_none() {
-                break;
-            }
+            default_peak = default_peak.max(defaults.len());
+        }
+        if default_peak > 0 {
+            eprintln!("[ok] PROT {idx:04}: peak {default_peak} default-arm meshes");
         }
         if peak > 0 {
             eprintln!("[ok] PROT {idx:04}: peak {peak} sprite quads, (tpage, clut) {pages:x?}");

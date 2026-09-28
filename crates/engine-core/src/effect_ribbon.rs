@@ -42,8 +42,9 @@
 //! summon (spell `0x95`, PROT 0923, one node); the other carriers are Ozma
 //! (`0xA0`, PROT 0934, two nodes), PROT 0957 (Death Game / Thunder Storm) and
 //! PROT 0964 (Element Change and the Rogue spells), which the engine does not
-//! stage as scenes yet. The other two draw-kind-4 emitters (`0x4000` sprite
-//! arm, default `FUN_80028158`) are still undrawn.
+//! stage as scenes yet. The other two draw-kind-4 emitters are
+//! [`crate::effect_sprite_arm`] (`0x4000`) and [`crate::effect_default_arm`]
+//! (the default `FUN_80028158`), drawn through the same list.
 //!
 //! ## Who selects this arm, and what `src` is
 //!

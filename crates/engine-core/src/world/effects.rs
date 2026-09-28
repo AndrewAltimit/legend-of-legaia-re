@@ -976,11 +976,11 @@ impl World {
 
     /// This frame's draw-kind-4 geometry - every live node whose model is
     /// its emitter's per-frame output, each composed like a mesh part: the
-    /// ribbons ([`Self::active_effect_ribbons`], battle only) and the `0x4000`
-    /// sprite-arm quads of the summon, move-FX, effect-script and field
-    /// ambient parts ([`crate::effect_sprite_arm`]). This is the list both
-    /// hosts' FX passes draw; the default emitter `FUN_80028158` is not in it
-    /// (its geometry is unported).
+    /// ribbons ([`Self::active_effect_ribbons`], battle only), the `0x4000`
+    /// sprite-arm quads ([`crate::effect_sprite_arm`]) and the default arm's
+    /// procedural rings / discs / crowns ([`crate::effect_default_arm`]) of
+    /// the summon, move-FX, effect-script and field ambient parts. This is
+    /// the list both hosts' FX passes draw.
     pub fn active_effect_kind4_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
         let mut out = self.active_effect_ribbons();
         let scenes = self
@@ -991,8 +991,10 @@ impl World {
             .chain(self.casting.active_action_fx.iter());
         for scene in scenes {
             out.extend(scene.sprite_arm_draws());
+            out.extend(scene.default_arm_draws());
         }
         out.extend(self.ambient_sprite_arm_draws());
+        out.extend(self.ambient_default_arm_draws());
         out
     }
 

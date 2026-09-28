@@ -286,7 +286,6 @@
 "8001cd68" = "GPU gouraud quad primitive emitter (0x9000000, 10-word prim) + OT insert"
 "8001d230" = "VRAM framebuffer/handle setup (fb rects, alloc + register into gp+0x6d8..)"
 "8001e1b4" = "per_stage_init asset-buffer alloc + fills 0x80091508 buffer-ptr table + VRAM params"
-"80028158" = "procedural effect primitive builder (POLY_FT4 packets, sin/cos + RNG), no game-state"
 "80029888" = "TMD mesh renderer GTE RTPT/RTPS + GPU poly emit (FUN_8002735c renderer region)"
 "80029dd8" = "TMD per-primitive GTE transform + light/color + GPU packet emit + OT insert"
 "8002bdc4" = "gradient textured poly-strip emitter (0xc000000 prim) into _DAT_1f8003a0 + OT insert"

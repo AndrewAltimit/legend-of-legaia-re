@@ -55,9 +55,11 @@
 //!
 //! With `actor+0x6A == 0` the draw re-enters the camera matrix, projects the
 //! actor's position with its height `+0x16` zeroed (the point under it), and
-//! has the procedural mesh builder `FUN_80028158` build a **24-segment
-//! disc** (case `1`) into the asset buffer at `_DAT_8007B85C + 0x62400`,
-//! radius `(actor+0x58 * 4) / 10`, x/z scale `0x1000`. It is drawn through
+//! has the procedural mesh builder `FUN_80028158` build a **24-column
+//! disc** - mode word `1`, its shape-`0` ring laid in the XZ plane with inner
+//! radius `0` - into the asset buffer at `_DAT_8007B85C + 0x62400`, radius
+//! `(actor+0x58 * 4) / 10`, x/z scale `0x1000`
+//! (`legaia_engine_core::effect_default_arm::ground_shadow_mesh`). It is drawn through
 //! `FUN_80043390` with flag word `0x8A000000` - semi-transparent, blend mode
 //! `2` (subtractive) - and only while the actor is neither pitched nor
 //! rolled (`actor+0x24 == 0 && actor+0x28 == 0`, `0x80049284..0x8004929C`).

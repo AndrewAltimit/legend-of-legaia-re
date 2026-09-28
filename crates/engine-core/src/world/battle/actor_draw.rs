@@ -20,6 +20,12 @@ use legaia_engine_vm::battle_cam_script::BattleCamPose;
 /// seat's is its record size class `<< 5`.
 pub const PARTY_BODY_RADIUS: i16 = 640;
 
+/// How far above the floor (retail units, `-Y`) the port lays the battle
+/// ground shadow, so a host's depth test draws it over the stage floor it is
+/// coplanar with. Retail has no depth buffer to tie; clear of the other
+/// coplanar lifts (the field drop shadow's six units).
+pub const BATTLE_SHADOW_DEPTH_LIFT: f32 = 2.5;
+
 /// One battle body's draw decision for this frame - the retail tint pass
 /// (`FUN_8004A908`) and the draw tick that gates it (`FUN_800480D8`), run
 /// over live world state.
@@ -35,6 +41,10 @@ pub struct BattleActorDrawPlan {
     pub draw_colour: u32,
     /// The view depth the tint was computed at.
     pub view_z: i32,
+    /// The body radius (render node `+0x58`) the tint and the ground shadow
+    /// read - [`PARTY_BODY_RADIUS`] for a party seat, the record size class
+    /// `<< 5` for a monster.
+    pub radius: i16,
 }
 
 impl BattleActorDrawPlan {
@@ -199,7 +209,77 @@ impl World {
             tint: t,
             draw_colour: verdict.colour,
             view_z,
+            radius,
         })
+    }
+
+    /// Battle body `actor_idx`'s **ground shadow** this frame, as a mesh
+    /// composed like an effect part - `None` when the body is not drawn
+    /// (`plan.drawn`), or the shadow gate or its pitch / roll test drops it.
+    ///
+    /// Retail draws it at the end of the per-actor draw `FUN_80048A08`
+    /// (`0x80049034..0x800492BC`): the point under the actor (its height
+    /// `+0x16` zeroed), a 24-column disc of radius `+0x58 * 4 / 10` built by
+    /// `FUN_80028158` in mode `1` ([`crate::effect_default_arm::ground_shadow_mesh`]),
+    /// subtracted from the frame (flag word `0x8A000000`). The colours are
+    /// `legaia_engine_vm::battle_actor_draw::shadow_plan` over the draw
+    /// colour word. The skip flag `+0x6A` is not modelled (no engine actor
+    /// carries it), so every drawn body casts one.
+    ///
+    /// The disc sits [`BATTLE_SHADOW_DEPTH_LIFT`] above the floor so both
+    /// hosts' depth tests draw it over the stage floor it lies on.
+    pub fn battle_ground_shadow(
+        &self,
+        actor_idx: usize,
+        plan: &BattleActorDrawPlan,
+    ) -> Option<crate::effect_ribbon::RibbonDraw> {
+        if self.mode != SceneMode::Battle || !plan.drawn {
+            return None;
+        }
+        let actor = self.actors.get(actor_idx)?;
+        let m = &actor.move_state;
+        let shadow = legaia_engine_vm::battle_actor_draw::shadow_plan(
+            0,
+            plan.draw_colour,
+            m.world_y,
+            plan.radius,
+            m.render_24,
+            m.render_28,
+        )?;
+        if !shadow.drawn {
+            return None;
+        }
+        let mesh = crate::effect_default_arm::ground_shadow_mesh(
+            shadow.inner,
+            shadow.outer,
+            shadow.radius,
+        );
+        Some(crate::effect_ribbon::RibbonDraw {
+            mesh,
+            world_pos: [
+                f32::from(m.world_x),
+                -BATTLE_SHADOW_DEPTH_LIFT,
+                f32::from(m.world_z),
+            ],
+            rot: [0.0; 3],
+        })
+    }
+
+    /// Every battle body's [`Self::battle_ground_shadow`], each judged by the
+    /// host's own draw plan (`plan_of`, the same call its actor pass makes).
+    /// Both hosts' battle FX passes draw this list after the draw-kind-4
+    /// list.
+    pub fn battle_ground_shadows(
+        &self,
+        plan_of: impl Fn(usize) -> Option<BattleActorDrawPlan>,
+    ) -> Vec<crate::effect_ribbon::RibbonDraw> {
+        if self.mode != SceneMode::Battle {
+            return Vec::new();
+        }
+        (0..self.actors.len())
+            .filter(|&i| self.actors[i].active)
+            .filter_map(|i| self.battle_ground_shadow(i, &plan_of(i)?))
+            .collect()
     }
 
     /// Apply [`Self::battle_limb_dim_plan`] to a per-frame posed battle mesh's
@@ -281,6 +361,35 @@ mod tests {
             tr: [0.0, 0.0, tr_z],
             focus: [0.0; 3],
         }
+    }
+
+    /// A drawn party body casts the 24-column subtractive disc of radius
+    /// `640 * 4 / 10`, under it on the floor; a pitched body casts none.
+    #[test]
+    fn a_drawn_party_body_casts_the_ground_shadow_disc() {
+        let mut world = battle_world();
+        world.actors[0].move_state.world_z = 0;
+        world.actors[0].move_state.world_x = 300;
+        let plan = world
+            .battle_actor_draw_plan(0, Some(&pose(4000.0)), 4.0, false)
+            .expect("party seat");
+        assert_eq!(plan.radius, PARTY_BODY_RADIUS);
+        let d = world.battle_ground_shadow(0, &plan).expect("a shadow");
+        assert_eq!(d.world_pos, [300.0, -BATTLE_SHADOW_DEPTH_LIFT, 0.0]);
+        assert_eq!(d.mesh.indices.len(), 24 * 6);
+        let r = d
+            .mesh
+            .positions
+            .iter()
+            .map(|p| p[0].hypot(p[2]))
+            .fold(0.0f32, f32::max);
+        assert!((r - 256.0).abs() < 1.5, "radius {r}");
+        let all = world.battle_ground_shadows(|i| {
+            world.battle_actor_draw_plan(i, Some(&pose(4000.0)), 4.0, false)
+        });
+        assert!(!all.is_empty());
+        world.actors[0].move_state.render_24 = 0x100;
+        assert!(world.battle_ground_shadow(0, &plan).is_none());
     }
 
     #[test]
