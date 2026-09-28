@@ -359,10 +359,43 @@ first, and for these scenes those words leave the score sounding: `town01`
 starts and commits a new track (sub-ops 9, `0xA`) and sets flag bit 2 (sub-op
 6), `deroa` and `chitei2` only set bit 2. Bit 2 is the flag the field
 initializer reads to skip its BGM ramp and its key-off of voices `0x10..0x17`,
-which fits a score meant to run through the movie into the next scene. The
-capture does not cover `taiku`, whose record stops the score (sub-op 2) before
-its trigger, the sub-op-5 release deadline `town0d` and `jouine` arm, or
-`garmel`'s sub-op 7.
+which fits a score meant to run through the movie into the next scene.
+
+A score the script has stopped stays silent under the movie. Two more captures
+cover that side:
+
+| Run | Samples with a sounding voice, movie on | Before the movie |
+|---|---|---|
+| `town01`, sub-op 2 emulated, then `fmv_id 1` | 0 of 85 | voices `0..8` sounding until the call, none 10 vsyncs after |
+| `town01`, `fmv_id 1`, same core, no call (control) | 74 of 85 | score voices sounding |
+| `garmel`, organic, `fmv_id 2` | 0 of 90 | no score voice; only voices `0x13` / `0x14` (and briefly `0x16` / `0x17`) |
+
+- **Sub-op 2** (`taiku`'s one word before its trigger) is the arm at
+  `0x801E0138`: it raises `_DAT_8007B750` bit 1 and calls `FUN_800266E0` on
+  the slot `0x8007052C`, whose `FUN_80064370` stops the sequence. The probe
+  runs exactly that - the same flag store and the same call with the same
+  argument, from the field tick (`LEGAIA_CALL`, `LEGAIA_FLAGS_OR`) - then the
+  trigger's two stores. It needs the interpreter core, under which neither
+  this run nor its control had put a movie frame on screen within 840 vsyncs;
+  the pair differs only in the call.
+- **`garmel`** plays its own trigger record from `chapter2_garmel_post_zeto`
+  with `LEGAIA_MASH_EVERY=30` (mode `0x1A` at vsync 2619, `fmv_id 2`). The
+  score was already stopped when the state was taken (`_DAT_8007B750` bit 1
+  set from the first vsync, track id `2043`). What sounds in the field are
+  voices in the `0x10..0x17` band the field initializer keys off, and they end
+  before the switch. Its sub-op 7 (arm `0x801E01DC`) makes no sequencer call:
+  it stores the operand, or `-1` for `0xFF`, to `_DAT_8007B880`. The field
+  initializer (`FUN_801D6704`) reads that word at `0x801D6B48` and, when it is
+  not negative and a track is attached, calls `FUN_80062004` with `0xB4` - a
+  level ramp on the next scene's entry.
+
+So each movie inherits the score's state: running, it plays on; stopped, the
+movie plays over silence. The records `town0d` (sub-ops 9, 5, `0xA`) and
+`jouine` (9, `0xA`, 5, 9, `0xA`) are not captured: sub-op 5 is
+`FUN_800267A8(0, n)` (arm `0x801E01A8`), which arms a timed ramp through
+`FUN_80062004`, and sub-op `0xA` waits on `_DAT_8007B750` bit 3 before it stops
+and releases the slot. Emulating that wait by hand is not the op, and no
+library state sits in either scene.
 
 The title attract is the exception. The attract underflow arm of the title
 tick releases the slot - `FUN_800266E0` + `FUN_80026520` at `0x801DDD7C` /

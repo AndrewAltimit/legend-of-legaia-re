@@ -23,6 +23,16 @@
 //! volume holds `0x3FFF` and SPUCNT `0xC081` keeps the CD input on beside
 //! them. The movie plays over the score, not instead of it.
 //!
+//! The other side holds too: a score the script stopped stays silent. The
+//! same probe emulates `taiku`'s sub-op 2 (arm `0x801E0138`: raise
+//! `_DAT_8007B750` bit 1, `FUN_800266E0` on `0x8007052C`) from `town01`
+//! before the trigger stores - 0 of 85 movie samples sound, against 74 of
+//! 85 for the same core without the call - and `garmel`'s own trigger
+//! record, played forward from a post-battle state, starts its movie over a
+//! score already stopped (0 of 90). So the default below is confirmed per
+//! sub-op: the movie adds nothing and takes nothing; the silence, when there
+//! is one, is the script's own op-`0x35` word.
+//!
 //! The one movie that does act on the score is the title attract. Its
 //! underflow arm in the title tick releases the BGM slot - `FUN_800266E0` +
 //! `FUN_80026520` on `0x8007052C` at `0x801DDD7C` / `0x801DDD84`, behind the
