@@ -2053,14 +2053,15 @@ The long wait is the gesture. `B2 F8 18` drops the party-bank bit, so `A2 F8 0D`
 record 12 of map01's ANM bundle, a 120-frame clip; `AC F8 08` clears the end latch and
 `AD F8 08` spins until `FUN_800204F8` sets it again. That routine advances the cursor `+0x68` by
 `speed * DAT_1F800393` sixteenths of a frame and latches `+0x62 |= 0x100` once the cursor reaches
-`frames * 16 - 1` (`0x800206E4..0x8002072C`). At the engine's two vsyncs a clip frame
-(`field_anim::DEFAULT_TICKS_PER_FRAME`) that is 240 vsyncs.
+`frames * 16 - 1` (`0x800206E4..0x8002072C`). Record 12 carries no blend gate, so it steps the
+plain rate `8` - two vsyncs a clip frame - and the spin is 240 vsyncs (`field_anim::clip_end_ticks`).
 
 The three sum to 296 against the capture's 294 (the capture reads the span off the spawn write and
 the engaged-bit clear, and retail steps the record once per two-vsync game tick). The engine's
 timeline parks on the walk leg (`CutsceneTimeline::player_glide`) and on the latch spin while
-the poked clip's length runs (`player_clip_ticks`, timed from the scene bundle's frame counts that
-`SceneHost::load_scene` stores in `FieldLocomotion::scene_clip_frames`). A party-bank clip gets no
+the poked clip's length runs (`player_clip_ticks`, timed from the per-record end-latch lengths that
+`SceneHost::load_scene` stores in `FieldLocomotion::scene_clip_ticks` - each at the record's own
+step, so a gated record's scaled step is included; see [`anm.md`](../formats/anm.md#the-frame-blender-two-entries-one-gate)). A party-bank clip gets no
 timed latch - the locomotion loops latch every cycle - so a spin after one still steps past.
 
 Both parks hold on any spawned context, modal or not, because retail has one pad rule for all of

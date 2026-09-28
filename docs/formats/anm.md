@@ -672,13 +672,26 @@ clip player `FieldClipPlayer` blends a gated clip on the ticks that fall inside
 a frame; both hosts memoise a posed mesh on `FieldClipPlayer::pose_key` rather
 than on the frame index.
 
-**Known port gap: gated-clip cadence.** `FieldClipPlayer` plays every clip at
-a fixed two engine ticks per frame. Retail's step for a gated clip is
-`(rate * 2 + div - 1) / div` (`0x800205C8..0x800205E0`), which at the
-template rate `8` is `8` for divisor `2` but `4` for divisor `4` - half the
-speed, with the half-frame poses the blender then fills in. The prop path
-(`PropAnim::tick`) models the scaled step; the clip player does not, so a
-gated divisor-4 NPC clip plays faster in the port than the step rule implies.
+**Cadence: the gate also slows the clip.** The clip tick's step for a gated
+clip is `(rate * 2 + div - 1) / div` (`0x800205C8..0x800205E0`), against the
+plain `rate` for every other clip, and the result is multiplied by the frame
+step `DAT_1F800393` (`0x80020654..0x80020690`). At the field rate `8` that is
+`16 / 8 / 6 / 4 / 3` sixteenths for divisors `1 / 2 / 3 / 4 / 6`, so the
+divisor-4 clips - the common gated shape - run at half the ungated speed, and
+the blender fills the ticks in between. A live capture on the Rim Elm
+free-roam state (`scripts/pcsx-redux/autorun_gated_clip_step.lua`, 600
+vsyncs, 62 actors) matches the rule on every call it could check: 7796 of
+7796 ungated calls, 1690 of 1690 gated divisor-2 calls and 3969 of 3969
+gated divisor-4 calls, all at frame step `2` (calls that rebound the clip,
+held, restarted or ran reversed are left out).
+
+The port's clip player `FieldClipPlayer` walks the same cursor:
+`field_anim::clip_step` picks the step from the record's gate and divisor,
+the cursor wraps to `0` on the tick that reaches `frames * 16 - 1`, and
+`field_anim::clip_end_ticks` is the bind-to-latch length the cutscene
+timeline times a player clip's end-latch spin with (`FieldLocomotion::scene_clip_ticks`).
+The prop path (`PropAnim::tick`) takes its step from the same function.
+An ungated clip keeps the two ticks a frame it always had.
 
 The decoder helper `legaia_asset::player_anm::BoneTransform::decode`
 returns `(t_x, t_y, t_z, r_x, r_y, r_z)` directly; the WASM

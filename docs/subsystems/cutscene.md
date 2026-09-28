@@ -1245,6 +1245,16 @@ Disc-gated coverage: `crates/engine-core/tests/opening_full_chain_e2e.rs` drives
 `town01_opening_name_entry_wiring.rs` drives the `town01` opening end to end (install → camera/wait beats → name entry opens at op `0x49` → freeze → commit → resume → drop); `town01_opening_timeline_trace.rs` pins the op-`0x49` site.
 The CI synthetic `cutscene_timeline_synthetic.rs` exercises both paths (GFLAG-by-execution + safety net + idempotent completion; op-`0x49` name-entry open / freeze / resume) without disc data.
 
+#### The ending vignettes refuse the pad
+
+The end-credits scenes (`ed*`) each spawn one long vignette record from their entry script, and retail holds the pad for as long as it runs.
+
+Five mednafen states captured inside the credits (`ending_vignette_rimelm_walkaway` on `map01`, three `edteien` states, `ending_vignette_biron` on `edbylon`) all hold the player's engaged bit (`*(0x8007C364) + 0x10 & 0x80000`) with the running count at `*(0x801C6EA4) + 0xA` between 24 and 476.
+The sixth, `ending_scene_load_gap`, sits in the mode-`0x02` scene init between two vignettes with the bit clear and the count at zero.
+The pad controller `FUN_801D1344` skips locomotion while the bit is up (`0x801D1694..0x801D16A0`, PROT 0897), so no pad direction moves the player in any of them. The engine's helper pad lock reproduces this, and the chapter-1 ladder's ending scenes score no walk rung for that reason.
+
+The last one, `edlast` `P2[1]`, ends on a press, not a timer: `4A 08 00` then `42 01 08` / `42 01 09` (Circle / Cross held, [op `0x42` mode 1](script-vm.md)) and a `26` back to the wait. The timeline's natural-termination rule reads a backward jump onto an executed PC as a wrapped choreography; a loop whose body polls the held pad is exempt (`loop_polls_held_pad` in `narration.rs`), so the record keeps the pad until the press instead of being dropped after its credits. The record needs roughly 14100 vsyncs to reach that poll.
+
 ### Per-actor channels - the vignette actors
 
 The "characters doing things" during the narration are **per-actor script channels**.
