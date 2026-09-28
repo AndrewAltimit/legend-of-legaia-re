@@ -104,8 +104,8 @@ cheapest place to look for a claim that is still wrong.
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Does the port play gated field clips at retail's cadence? | open - disassembly; the port plays two ticks per frame | Retail's step for a clip with header bit `+1 & 1` is `(rate*2 + div - 1) / div` (`0x800205C8..0x800205E0`); divisor 4 on 1560 records means half speed with blended half-frames between. `FieldClipPlayer` always steps two. Porting the step retimes the clip waits `narration.rs` parks on ([`anm.md`](../formats/anm.md)). |
-| Do retail's ending vignettes accept the pad while their entry record runs? | open - inferred no; not captured | Retail's per-actor tick steps every spawned record through `FUN_80039B7C`, which holds the player's engaged bit for as long as the record is stepped, so a helper locks the pad as a cutscene does ([settled](re-settled-threads.md#field--locomotion)). The port now does the same, and eight `ed*` rungs of the chapter-1 ladder stopped crediting a walk under their long vignette records on that inference. A state inside an ending scene, read for `+0x10 & 0x80000` across a held direction, closes it. |
+| Does a later keikoku variant MAN replace `P2[7]`'s pushback? | open - inference | Every arm of keikoku `P2[7]` walks the player back out of the doorway and the record has no header gate, so neither a route nor a flag seed restores critical-path rung 5 on this MAN. A variant MAN that replaces record 7 is the only way it could clear; nobody has checked. |
+| Does retail step helper contexts while a timeline sits on an open text box? | open - test observation | In korb3 two helper contexts spawned beside the first-visit timeline take no slice while it waits on dialogue (0 frames after 2800 ticks). A capture of retail on that dialogue closes it. |
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready | [details ↓](#region-story-flag-gate-families) |
 
 **Who sets a field NPC's moving-class bit** closed by disassembly and capture:

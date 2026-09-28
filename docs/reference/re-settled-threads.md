@@ -2341,6 +2341,7 @@ produced zero writes. Probe `autorun_w4d_cort_flow_writer.lua`; see
 
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
+| Do retail's ending vignettes accept the pad while their entry record runs? | resolved (no) | `capture` + `disassembly` | All 5 end-credits field-run states hold the player's engaged bit (`+0x10 & 0x80000`) with a running count of 24 to 476; the scene-init gap state has both clear. `FUN_801D1344` skips locomotion on the bit (`0x801D1694..0x801D16A0`); `FUN_80039B7C` raises it on every stepped slice and clears it when the count drains. edlast's `P2[1]` then waits on a held Circle / Cross poll at `+0x2608`, which the port now keeps instead of dropping as a wrapped loop ([`cutscene.md`](../subsystems/cutscene.md)). |
 | Which scene installs the code lock `FUN_801EED58`? | resolved (`doman` only) | `disassembly` + `capture` | Field-VM `49 02` maps to handler slot `0x21`; the census finds one shipped site, `doman` (extraction 0401, record 18, pc `0x0768`), whose next op tests flag 9 - the flag the lock's verdict writes. Phase 0 installs window 12. Port `field_submode_code_lock`, drawn on both hosts; disc test `code_lock_doman_disc`. |
 | What is `FUN_801E6F70`? | resolved (the coin counter's entry panel, field overlay) | `disassembly` | The painter word of panel-window record 10 (PROT 0897, geometry `(0x40, 0x26, 196, 78)`): coin bank, six entry cells, gold and a total drawn in pen 9 when gold or the ceiling `_DAT_8007BB90` falls short. The confirm descriptor `0x801F3360` is `[1,11]`, so the entry panel stays drawn under the Yes/No. Port `slot_machine::coin_entry_panel`, both hosts through one builder. |
 | How is the fishing venue's menu reached? | resolved (from the idle shore, on Triangle / Select) | `disassembly` | State `0x0C` (`0x801CF990`) tests the packed edge `_DAT_8007B874` twice: `& 0xC0` casts, `& 0x110` (`0x801CF9EC`) raises SFX `0x21`, zeroes the hub cursor `0x801D912C` and jumps to `0x64` (`FUN_801D0474(1)`). `0x65` / `0x66` are the help pages (`FUN_801D72A0(0x14, 0x10, page)`, turned on `& 0xF0`), `0x6E` the tackle list (`FUN_801D0F5C(1)`), `0x78..0x7A` the prize chain; both lists cancel to `0x64`. Retail also enters the pond directly - no host had bound the menu. Port: `engine-core::fishing_hub`, on all three hosts. |
@@ -2744,8 +2745,8 @@ record's own flag word, and that a stalled cursor never lets the spin through.
 objects in the port: the player's gesture is played by the host's
 `FieldPlayerAnim` off `World::locomotion.player_move_cues`, an NPC's by the host's
 own clip player, while the latch is timed by the bank's cursor. They are
-rate-matched by construction (`ANIM_SPAWN_RATE` = 8 cursor units against
-`FieldClipPlayer::DEFAULT_TICKS_PER_FRAME` = 2) and sized from the scene ANM
+rate-matched by construction (both take their step from `field_anim::clip_step`
+with the record's gate and divisor) and sized from the scene ANM
 bundle where it resolves the poked id, but a clip the bundle cannot name falls
 back to a stand-in length. Retail has one struct; folding the port's two into
 one is engine work. Separately, no capture has confirmed that *nothing else*
@@ -3410,6 +3411,7 @@ was the superseded over-reading span; the entry is 33 sectors. See
 
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
+| At what cadence does retail step a gated field clip? | resolved (`(rate*2 + div - 1) / div`) | `capture` + `disassembly` | `FUN_800204F8` steps a gated clip `(rate*2 + div - 1) / div` (`0x800205B4..0x800205EC`, `div` = clip byte `+6`) and an ungated one `rate`, each times `DAT_1F800393`, wrapping to 0 or clamping at the end. A Rim Elm capture matched 13455 of 13455 checkable calls. Port `field_anim::clip_step` in `FieldClipPlayer`, shared by both hosts ([`anm.md`](../formats/anm.md)). |
 | Does `FUN_8001BE80`'s blend gate equal the clip tick's scaled-step bit? | resolved (yes - one header bit) | `disassembly` | Both test clip byte `+1` bit 0 through `actor+0x4C`: the blender at `0x8001BF70` / `0x8001C0EC`, the clip tick at `0x800205B4`. |
 | What does the field frame blender interpolate? | resolved (translations linearly, angles through `FUN_8001D088`, with a retry) | `disassembly` | Translations blend as `cur + ((next - cur) * frac >> 4)`; angles go through `FUN_8001D088(next, cur)`. The next entry is frame + 1; on the last frame it is the entry itself under `+0x62 & 8`, else frame 0. The fraction is `+0x68 & 0xF`. Past a summed arc of `0xC00` the angles are re-blended against `(x+0x800, -(y+0x800), z+0x800)` (`0x8001C170..0x8001C1CC`). Port `PlayerAnmBundle::sample_bone`, live on both hosts ([`anm.md`](../formats/anm.md)). |
 | Does `FUN_80021DF4`'s default motion block run for dispatch `3`? | resolved (no - arms 3 and 5 both branch past it) | `disassembly` | `beq` to `0x80022B80` at `0x800228A8` (arm 3) and `0x800228B0` (arm 5) skip the block `0x800228B8..0x80022B80`; the `+0x9C` counter gates only arm 3's `FUN_80019D50` call. The port had run the block for dispatch 3 whenever that counter was zero; `engine-vm::actor_tick::tick_actor` now skips it for both ([actor-vm.md](../subsystems/actor-vm.md#dispatch-byte-values)). |
