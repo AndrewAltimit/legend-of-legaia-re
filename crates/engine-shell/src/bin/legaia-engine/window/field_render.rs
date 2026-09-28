@@ -1236,6 +1236,11 @@ impl PlayWindowApp {
     /// placement draw lists wholesale. Soft-fails (logs, keeps the stale
     /// scene render) so a bad destination never crashes the window loop.
     pub(super) fn rebuild_scene_render_state(&mut self) {
+        // Every caller swapped the scene. Retail's field entry
+        // (`FUN_80025C24`) rewrites the camera globals and kills the mover, so
+        // no glide pose survives the door - the next scene's first scripted
+        // shot snaps in, as on the browser page (`CutsceneGlide::reset`).
+        self.cutscene_glide.reset();
         match build_window_scene_resources(&self.session) {
             Ok(res) => {
                 // Spawn-slot drain state is per-scene (the new scene's field

@@ -518,24 +518,6 @@ impl PlayWindowApp {
         (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye)
     }
 
-    /// Replay this frame's `apply == 0` Camera Configure beats as snaps onto
-    /// the cutscene camera interp.
-    ///
-    /// The beats come off `Camera::take_camera_snap_beats`, decoded by the
-    /// shared `CutsceneCameraInterp::snap_components_for`, because that is
-    /// where the events are: `Camera::route_camera_events` consumes every
-    /// `FieldEvent::CameraConfigure` off the world queue during the session
-    /// tick and does not restore it, so this window's own later
-    /// `drain_and_route_field_events` never saw one and the arm that watched
-    /// for them there was unreachable. The browser play page drains the same
-    /// bank, so a same-tick snap+glide pair glides from the snapped pose on
-    /// both hosts.
-    pub(super) fn replay_camera_snap_beats(&mut self) {
-        for comps in self.session.camera.take_camera_snap_beats() {
-            self.cutscene_cam_interp.snap_components(&comps);
-        }
-    }
-
     pub(super) fn actor_model(&self, slot: usize) -> Mat4 {
         let a = &self.session.host.world.actors[slot];
         let pos = Vec3::new(

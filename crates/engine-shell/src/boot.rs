@@ -1236,11 +1236,9 @@ impl BootSession {
     /// first used to reach this - so a movie that handed off into a new scene
     /// kept the trigger scene's camera shot and VAB bank.
     fn after_scene_swap(&mut self) {
-        // Field entry resets the camera globals (`FUN_80025C24`) and kills
-        // any mover in flight, so a departing scene's shot can't leak its
-        // eye-space depth or focus into the next one. The sibling reset of
-        // the op-0x45 param set lives in `SceneHost`'s scene entry.
-        self.camera.reset_globals_for_scene_entry();
+        // The camera globals' reset (`FUN_80025C24`) is not here: a door's
+        // runs inside `frame_step::camera_after_world_tick`, the tick order
+        // both hosts share, and the post-FMV hand-off runs it itself.
         if let Some(bgm) = self.bgm.as_mut() {
             // New scene -> drop any SFX cues queued against the previous
             // one. No bank is staged: retail's field init loads no scene
@@ -1272,6 +1270,10 @@ impl BootSession {
             outcome,
             legaia_engine_core::scene::FmvHandoffOutcome::Entered { .. }
         ) {
+            // Field entry resets the camera globals (`FUN_80025C24`) and
+            // kills any mover in flight, so the movie's trigger scene cannot
+            // leak its shot into the next one - as on a door.
+            self.camera.reset_globals_for_scene_entry();
             self.after_scene_swap();
         }
         Some(outcome)
@@ -1323,32 +1325,34 @@ impl BootSession {
                 self.close_field_menu();
             }
         }
-        // Snap the camera controller back to the follow default whenever the
-        // field is in free-roam. A cutscene's op-0x45 Camera Configure events
-        // leave `self.camera` in Cinematic mode at the shot's yaw, but the
-        // renderer frames free-roam field with the FIXED follow camera (which
-        // never reads `self.camera`), so the stale cinematic yaw would feed
-        // `field_camera_azimuth` below and rotate the d-pad → direction remap
-        // ~180deg off the on-screen camera (the New Game prologue → Rim Elm
-        // hand-off left the controls inverted). See `Camera::reset_for_free_roam`.
-        self.camera.reset_for_free_roam(&self.host.world);
-        // Feed the previous frame's camera azimuth into the world so the
-        // field free-movement controller remaps the d-pad camera-relative
-        // ("screen up" walks away from the camera). The compass sums the
-        // scripted yaw, the user's manual drag-orbit, and the host
-        // renderer's fixed framing bias (`Camera::compass_azimuth_units`);
-        // all three default to 0, which maps straight to world +Z.
-        self.host.world.locomotion.camera_azimuth = self.camera.compass_azimuth_units();
+        // The camera's half before the world tick (shared with the browser
+        // page, `frame_step::camera_before_world_tick`): snap a free-roam
+        // camera back to the follow default - a cutscene's op-0x45 events
+        // leave it Cinematic at the shot's yaw, and the stale yaw would rotate
+        // the d-pad remap ~180deg off the on-screen camera - then publish the
+        // compass azimuth (scripted yaw + the user's drag-orbit + the host
+        // framing bias) the field controller reads THIS tick.
+        legaia_engine_core::frame_step::camera_before_world_tick(
+            &mut self.camera,
+            &mut self.host.world,
+            None,
+        );
         let event = self.host.tick()?;
-        self.camera.route_camera_events(&mut self.host.world);
         if let Some(bgm) = self.bgm.as_mut() {
             // SceneHost::route_bgm_events drains the world's pending BGM
             // events and dispatches into the director.
             let _ = self.host.route_bgm_events(bgm)?;
         }
-        // After events: camera tick + scene-transition BGM rebind.
-        self.camera.tick(&self.host.world);
-        if let SceneTickEvent::SceneEntered { .. } = &event {
+        // The camera's half after it: route this tick's op-0x45 events,
+        // advance the globals, and reset them on a scene entry
+        // (`frame_step::camera_after_world_tick`).
+        let scene_entered = matches!(event, SceneTickEvent::SceneEntered { .. });
+        legaia_engine_core::frame_step::camera_after_world_tick(
+            &mut self.camera,
+            &mut self.host.world,
+            scene_entered,
+        );
+        if scene_entered {
             self.after_scene_swap();
         }
         self.route_field_sfx();

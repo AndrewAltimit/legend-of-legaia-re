@@ -1149,7 +1149,7 @@ impl PlayWindowApp {
         // session tick and does not restore it, so an arm here could never
         // fire. The `apply == 0` snap beats are banked on the camera instead
         // (`Camera::take_camera_snap_beats`, replayed by
-        // `replay_camera_snap_beats`).
+        // `frame_step::CutsceneGlide::advance`).
         for ev in events {
             if let FieldEvent::ActorSpawned { slot, .. } = ev {
                 let has_tmd = world

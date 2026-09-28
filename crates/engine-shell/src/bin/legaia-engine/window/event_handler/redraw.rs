@@ -34,9 +34,10 @@ impl PlayWindowApp {
         // present.
         legaia_engine_render::profile::begin_frame();
         let dt = self.win.advance_tick(100);
-        // Drain up to 4 ticks per render frame so we never spiral
-        // but can still catch up from minor vsync jitter.
-        let ticks = self.win.drain_ticks(dt, 4);
+        // The shared frame-step rule (`frame_step::SimStepper`): whole 1/60 s
+        // ticks, at most four a frame, and a backlog past four dropped rather
+        // than carried - the browser page drains through the same kernel.
+        let ticks = self.sim_stepper.drain(dt.as_secs_f64());
         // In-flow windowed cutscene: when the field VM's FMV-trigger
         // op flips the world into SceneMode::Cutscene and the STR has
         // decoded, suspend world ticks and play the video in-window.
@@ -652,36 +653,29 @@ impl PlayWindowApp {
             // geometry - the "opening shot buried in a gold wall" report).
             //
             // Advanced in RETAIL DISPLAY-FRAME time, not render-frame or
-            // sim-tick time. Retail's mover (`FUN_801DC0BC`) accumulates the
-            // frame-skip factor `DAT_1F800393` into its progress once per
-            // logic tick, which credits exactly one unit per display frame -
-            // so `apply` is a duration in display frames and the glide must
-            // span that many of them. The sim clock runs at 100 Hz, so
-            // stepping per sim tick ran every glide 1.67x fast; diff the
-            // world's retail-frame counter instead. Min 1 step so an idle
-            // frame still refreshes the held pose.
-            // Snap beats drained this frame commit first (retail order: the
-            // mover snaps to an `apply 0` beat, then glides from there when
-            // a same-tick follow-up beat re-stages - the map01 fly-in pair).
-            self.replay_camera_snap_beats();
-            let apply = self.session.host.world.camera.state.apply_trigger;
-            let mode = self.session.host.world.camera.state.mode;
-            let now = self.session.host.world.clock.display_frames;
-            let steps = u32::try_from(now.saturating_sub(self.cutscene_cam_frames))
-                .unwrap_or(u32::MAX)
-                .max(1);
-            self.cutscene_cam_frames = now;
-            let out = self.cutscene_cam_interp.glide(
+            // sim-tick time, through the shared kernel
+            // (`frame_step::CutsceneGlide`): retail's mover (`FUN_801DC0BC`)
+            // credits one unit per display frame, so `apply` is a duration in
+            // display frames and a redraw on which no tick ran advances the
+            // glide by nothing. The kernel also replays this frame's snap
+            // beats first (retail order: the mover snaps to an `apply 0` beat,
+            // then glides from there when a same-tick follow-up beat
+            // re-stages - the map01 fly-in pair).
+            let target = legaia_engine_vm::psx_camera::FieldCameraView {
                 focus,
                 pitch,
                 yaw,
                 roll,
                 h,
                 tr_eye,
-                u32::from(apply),
-                mode,
-                steps,
+            };
+            let v = self.cutscene_glide.advance(
+                &self.session.host.world,
+                &mut self.session.camera,
+                target,
             );
+            let out = (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye);
+            let apply = self.session.host.world.camera.state.apply_trigger;
             if std::env::var_os("LEGAIA_DIAG_CUTCAM").is_some() {
                 let w = &self.session.host.world;
                 eprintln!(
@@ -693,11 +687,10 @@ impl PlayWindowApp {
             }
             Some(out)
         } else {
-            self.cutscene_cam_interp.reset();
             // Nothing is interpolating this frame, so a banked snap would
             // move a pose no draw reads - drop them rather than let them
             // land on the next shot.
-            self.session.camera.clear_camera_snap_beats();
+            self.cutscene_glide.idle(&mut self.session.camera);
             None
         };
         // VDF vertex morphs (jou's flesh-ground pulse, rikuroa's generator
