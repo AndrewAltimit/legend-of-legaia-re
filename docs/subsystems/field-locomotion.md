@@ -86,9 +86,10 @@ or a speed.
 
 `World::tick` is denominated in **retail display frames**: one call advances
 the simulation by exactly one vsync. Both hosts drive it that way and must
-keep doing so - the native window's fixed-timestep accumulator
-(`EngineWindow::drain_ticks`, `TICK_DT = 1.0/60.0`, backlog capped at 4) and
-the browser play page (`site/js/play-app.js`, `TICK_DT = 1000/60`, same cap).
+keep doing so - both drain wall time through one fixed-timestep kernel
+(`engine-core::frame_step::SimStepper`, `TICK_SECS = 1/60`, backlog capped at
+four ticks; the page reaches it through `play_drain_sim_steps`). See
+[`engine.md`](engine.md#the-frame-model).
 `World::clock.display_frame_step` is consequently `1` on every tick and
 `World::clock.display_frames == World::frame`; it survives as a *unit marker* on the
 consumers whose durations are authored in display frames, not as a throttle.

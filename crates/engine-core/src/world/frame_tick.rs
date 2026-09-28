@@ -1062,6 +1062,9 @@ impl World {
     // PORT: FUN_80016444 (frame-pass sequencing; render/flip halves are the
     //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
+        // The move-VM strip set on screen is one tick's
+        // (`MoveVmGlobals::strip_frame`).
+        self.move_vm.begin_strip_tick();
         let outcome = self.tick_modes();
         // The battle camera observes the frame this tick produced, in every
         // mode (outside battle it drops its state) - once, here, for every
@@ -1130,11 +1133,9 @@ impl World {
         // The simulation clock's denomination.
         //
         // **One `World::tick` is exactly one retail display frame (vsync).**
-        // Both hosts already drive it that way and must keep doing so: the
-        // native window's fixed-timestep accumulator (`EngineWindow::
-        // drain_ticks`, `TICK_DT = 1.0/60.0`, backlog capped at 4 ticks) and
-        // the browser play page's (`site/js/play-app.js`, `TICK_DT = 1000/60`,
-        // same cap). So `SIM_HZ == RETAIL_FPS`, the retail-frame sub-clock is
+        // Both hosts drive it that way through one fixed-timestep kernel
+        // (`crate::frame_step::SimStepper`, `TICK_SECS = 1/60`, backlog
+        // capped at four ticks). So `SIM_HZ == RETAIL_FPS`, the retail-frame sub-clock is
         // an identity - `field_frame_step` is `1` on every tick and
         // `field_frames == frame` - and the gates below are statements of
         // which consumers are retail-frame paced rather than rate changes.

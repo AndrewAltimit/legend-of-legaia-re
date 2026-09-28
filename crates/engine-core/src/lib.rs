@@ -86,6 +86,7 @@ pub mod fishing_chrome;
 pub mod fishing_exchange_input;
 pub mod fishing_venue;
 pub mod fog_particles;
+pub mod frame_step;
 pub mod game_over;
 pub mod glb_export;
 pub mod inline_dialogue;

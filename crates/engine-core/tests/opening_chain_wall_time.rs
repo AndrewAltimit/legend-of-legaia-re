@@ -9,8 +9,8 @@
 //! and every authored duration is a duration in 60 Hz frames.
 //!
 //! The engine's sim clock is denominated in those same display frames - one
-//! `World::tick` is one vsync, on both hosts (`EngineWindow::drain_ticks`
-//! `TICK_DT = 1.0/60.0`; `site/js/play-app.js` `TICK_DT = 1000/60`) - so a
+//! `World::tick` is one vsync, on both hosts (the shared
+//! `frame_step::SimStepper`, `TICK_SECS = 1/60`) - so a
 //! tick count converts to seconds by `SIM_HZ` below and
 //! `World::step_spawned_record_contexts` credits exactly one authored frame
 //! per tick. This test pins the resulting wall-times against a headless retail
