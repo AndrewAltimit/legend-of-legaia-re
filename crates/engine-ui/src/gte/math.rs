@@ -95,21 +95,16 @@ impl GteMat3 {
     // (&DAT_80070A2C / &DAT_8007122C) by a 12-bit angle (4096 = 2*PI) and
     // composes via the GTE; this builds the same +Y rotation in q3.12 with a
     // radian input (ROT_ONE = 0x1000 matches the LUT's 1.0).
-    // REPLACED-BY: the hosts' f32 axis factors - the Y factor of
-    // `legaia_engine_vm::psx_camera::camera_rotation` and the
-    // `Mat4::from_rotation_y` of every part / actor model matrix the two play
-    // hosts compose. The one q3.12 consumer, `camera_view_rotation`, carries
-    // its own disclosure; wiring that routine is a question of which draws
-    // take the camera-relative rotation, not of this factor's precision.
-    // The radian argument is itself a deviation: retail takes a 12-bit angle
-    // and reads the LUT, which `billboard::rot_z_psx` models for Z and
-    // `battle_intro::euler_rot_psx` (the `FUN_80026988` port) for all three.
     //
-    // Measurement note: `rot_y` is the one of the three the permissive call
-    // graph does not list as inert, and that is a name collision, not a
-    // caller - `legaia_engine_core`'s `coplanar_draws::rot_y` is live, and the
-    // graph resolves by symbol name. See docs/tooling/port-catalog.md on the
-    // two graphs.
+    // Live through its one q3.12 consumer, `camera_view_rotation` (the
+    // `FUN_8001CF50` port), which composes the camera-relative rotation a
+    // `+0x52 & 0x780` part is drawn under on both play hosts - the same job
+    // retail's `jal 0x8004629c` at `0x8001CFC0` does. The full camera and
+    // the hosts' model matrices use f32 axis factors instead
+    // (`legaia_engine_vm::psx_camera::camera_rotation`, `Mat4::from_rotation_y`).
+    // The radian argument is a deviation: retail takes a 12-bit angle and
+    // reads the LUT, which `billboard::rot_z_psx` models for Z and
+    // `battle_intro::euler_rot_psx` (the `FUN_80026988` port) for all three.
     pub fn rot_y(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -122,9 +117,8 @@ impl GteMat3 {
     ///
     // PORT: FUN_800461A4 - retail RotMatrixX (same cos/sin LUT + 12-bit angle
     // as FUN_8004629C, about the +X axis).
-    // REPLACED-BY: the hosts' f32 axis factors (the X factor of
-    // `legaia_engine_vm::psx_camera::camera_rotation`, `Mat4::from_rotation_x`
-    // in the hosts' model matrices) - see `rot_y`.
+    // Live through `camera_view_rotation` (retail's `jal 0x800461a4` at
+    // `0x8001CF9C`) - see `rot_y`.
     pub fn rot_x(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -137,13 +131,12 @@ impl GteMat3 {
     ///
     // PORT: FUN_8004638C - retail RotMatrixZ (same cos/sin LUT + 12-bit angle
     // as FUN_8004629C, about the +Z axis).
-    // REPLACED-BY: the hosts' f32 axis factors (the Z factor of
-    // `legaia_engine_vm::psx_camera::camera_rotation`, `Mat4::from_rotation_z`
-    // in the hosts' model matrices) - see `rot_y`. This
+    // Live through `camera_view_rotation` (retail's `jal 0x8004638c` at
+    // `0x8001CFE4`) - see `rot_y`. This
     // address has a second, more faithful port in `billboard::rot_z_psx`, which takes
     // the retail 12-bit angle and reads the LUT rather than f32 trig; the two
     // are pinned to agree at the cardinals by a unit test there. That one is
-    // inert as well, for the separate reason recorded on that module.
+    // inert, for the reason recorded on that module.
     pub fn rot_z(angle: f32) -> Self {
         let c = (angle.cos() * ROT_ONE as f32).round() as i16;
         let s = (angle.sin() * ROT_ONE as f32).round() as i16;
@@ -218,16 +211,14 @@ pub mod view_rot_flags {
 /// in place of the full camera matrix.
 ///
 /// PORT: FUN_8001CF50
-/// NOT WIRED: the owed host is the move-VM part draws. Both play hosts draw
-/// every part (`World::active_effect_kind4_draws`,
-/// `World::active_field_fx_part_draws` and the summon / move-FX parts) under
-/// the full camera rotation, and no draw record carries the part's `+0x52`
-/// word, although the part state does (`move_vm::ActorState::field_52`,
-/// written by move-VM op `0x15`). Wiring means carrying that word on the
-/// draw records and giving each host the current camera angles at its part
-/// draw site, so the model matrix can undo the skipped factors. The one
-/// camera-relative draw the port already makes is the Baka Fighter cameo's
-/// `0x400` arm (`baka_duel_scene`), written as its own placement.
+///
+/// Both play hosts reach it through [`super::camera_relative_model_prefix`]
+/// at their move-VM part draw sites - the summon / move-FX parts, the field
+/// stager parts (`World::active_field_fx_part_draws`) and the draw-kind-4
+/// list (`World::active_effect_kind4_draws`) - which carry the part's `+0x52`
+/// word as `flags_52`. A part with no `0x780` bit keeps the host's
+/// full-camera composition unchanged. The Baka Fighter cameo's `0x400` arm
+/// (`baka_duel_scene`) is its own placement over the same shape.
 ///
 /// **This is not the camera build.** It was long documented as the
 /// cutscene / field view-rotation build and tagged as replaced by the hosts'
@@ -253,7 +244,8 @@ pub mod view_rot_flags {
 /// full-camera draw of those parts differs from retail on screen. Six of the
 /// seven map01 states are the exception: their camera yaw is `0`, so the
 /// `0x100` nodes there (the kind-4 column) draw the same either way; the
-/// seventh is an ending-vignette shot at yaw `75`.
+/// seventh is an ending-vignette shot at yaw `75`. Those are the draws the
+/// host prefix turns.
 ///
 /// Returns the composed rotation, or `None` when the node asks for the saved
 /// camera matrix instead ([`view_rot_flags::USE_SAVED_MATRIX`]).

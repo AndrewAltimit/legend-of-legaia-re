@@ -980,14 +980,40 @@ flags are real and common: across the 98 mednafen states, 334 of the 3956
 nodes on the actor lists carry one, nearly all of them move-VM parts
 (`FUN_80021DF4`, written by move-VM op `0x15`): `0x380` - a screen-aligned
 billboard - on battle-effect parts, `0x100` / `0x180` on field and overworld
-parts, and the `0x400` arm on summon casts. The port ports the composition
-(`engine-ui::gte::camera_view_rotation`) but draws every part under the full
-camera, so a billboard part turns with the world instead of facing the
-screen; the part state carries the word (`move_vm::ActorState::field_52`) and
-no draw record does. The Baka Fighter cameo is the one camera-relative draw
-the port makes, as its own placement ([`minigame-baka-fighter.md`](minigame-baka-fighter.md)).
-On the overworld walk the camera yaw is `0`, so map01's `0x100` kind-4
-column draws the same either way.
+parts, and the `0x400` arm on summon casts. On the overworld walk the camera
+yaw is `0`, so map01's `0x100` kind-4 column draws the same either way.
+
+What each arm leaves in the node's matrix slot (`0x1F8002D4`), read off the
+two routines' disassembly (`FUN_8005B3A8` is `MulMatrix2`, writing `a0 * a1`
+back into `a1`; `FUN_8005B4E8` scales the matrix by a vector):
+
+| `+0x52 & 0x780` | Matrix | Translation `TR` |
+|---|---|---|
+| clear | `S_b * R * N` (camera matrix `0x1F8003C8`, which carries the base) | `+0x2C`, the full-camera view position |
+| skip bits only | `P * 6 * N` - `P` the camera rotation minus the flagged factors; `6` is the literal `0x6000` at `0x8001CFFC`, not the base | `+0x2C`, unchanged |
+| `0x400` | `S_b * N` (`FUN_8003D1A4` loads the base block `0x8007BF10`, zero translation) | `+0x2C = S_b * (+0x14)`, written by `FUN_8003D344` |
+
+`N` is the node's own Euler matrix (`FUN_80026988` over `+0x24`, scaled by
+`+0x72`) and `S_b` the base scale - `6x` in the field and on the overworld,
+`4x` in battle - so a camera-relative part in battle is drawn at one and a
+half times a plain part's size. The `0x400` test runs first (`0x8001CF7C`),
+so it wins over any skip bit.
+
+Both hosts honour it. Every move-VM part draw record carries the node's
+`+0x52` word as `flags_52` (`SummonPartDraw`, `RibbonDraw`), and each host's
+part pass - the native window's `build_summon_and_move_fx_part_draws` /
+`build_field_fx_part_draws` and the browser play page's `build_battle_fx` /
+`build_field_fx` - composes the part with
+`engine-ui::gte::camera_relative_model_prefix` in place of its translation.
+The hosts cannot branch around their view matrix, so the kernel expresses the
+retail result under it: the skip arm is the basis `(6 / S_b) * R^T * P`
+(`P` from the port `camera_view_rotation`), the `0x400` arm is `R^T` at the
+world point the full camera maps onto the locked eye offset. A part with no
+`0x780` bit gets no prefix and draws exactly as before, and so does every part
+drawn through a host's own vantage (the debug orbits, the stage-less battle
+orbit, the overworld top view), where there is no retail rotation to undo. The
+Baka Fighter cameo is the same `0x400` shape written as its own placement
+([`minigame-baka-fighter.md`](minigame-baka-fighter.md)).
 
 ## Frame setup + present
 

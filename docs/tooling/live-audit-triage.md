@@ -1323,9 +1323,15 @@ page exists to name.
 **A disclosure can name the wrong level.** The three `GteMat3::rot_*` builders
 were disclosed as "GTE-oracle-only", i.e. as having no consumer but the tests.
 They have one: `camera_view_rotation`, the port of retail's own composition
-pass `FUN_8001CF50`, which sits three lines below them in the same file and is
-itself inert. Naming the tests as the blocker points a reader at coverage;
-naming the composition pass points at the camera that has to exist first.
+pass `FUN_8001CF50`, which sits three lines below them in the same file.
+Naming the tests as the blocker points a reader at coverage; naming the
+composition pass pointed at the draw record that had to carry the `+0x52`
+word first. It now does (`flags_52`), and both hosts' part passes reach
+`camera_view_rotation` through `camera_relative_model_prefix`
+([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)),
+which makes the three builders live as its factors - the job retail's own
+`jal`s at `0x8001CF9C` / `0x8001CFC0` / `0x8001CFE4` give them - rather than
+replaced by the hosts' f32 factors.
 
 **"Has no source" can mean "has an inert producer".** The afterimage streak's
 half-width was disclosed as a word `engine-core` "does not model". It does:

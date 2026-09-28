@@ -965,6 +965,7 @@ pub fn default_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDr
             (s.y_rot.wrapping_add(s.render_26) as f32) * A,
             (s.render_28 as f32) * A,
         ],
+        flags_52: s.field_52,
     })
 }
 

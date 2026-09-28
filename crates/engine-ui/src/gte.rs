@@ -45,6 +45,9 @@
 mod math;
 pub use math::*;
 
+mod camera_relative;
+pub use camera_relative::*;
+
 mod camera;
 pub use camera::*;
 

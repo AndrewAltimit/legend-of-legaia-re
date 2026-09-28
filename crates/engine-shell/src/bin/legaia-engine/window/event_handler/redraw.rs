@@ -2375,8 +2375,15 @@ impl PlayWindowApp {
             // the part's interpreted transform (world pos + rotation
             // banks). The animation computation is faithful (move VM);
             // the transform composition is the open PROT 0900 piece.
-            let summon_part_draws =
-                self.build_summon_and_move_fx_part_draws(r, fx_model_flip, in_world_map);
+            // The retail camera the parts' `+0x52` camera-relative bits
+            // resolve against (`FUN_8001CF50`); `None` under a host vantage.
+            let part_cam = self.part_camera_pose(in_world_map, cutscene_cam);
+            let summon_part_draws = self.build_summon_and_move_fx_part_draws(
+                r,
+                fx_model_flip,
+                in_world_map,
+                part_cam.as_ref(),
+            );
             for (mesh, model) in &summon_part_draws {
                 draws.push(SceneDraw {
                     mesh,
@@ -2395,7 +2402,8 @@ impl PlayWindowApp {
             // the part's relative `model_sel` (spawn base 0, surfaced as
             // `model_index`) indexes `env_tmds` directly, mirroring how a
             // placement's `pack_index` does.
-            let field_fx_draws = self.build_field_fx_part_draws(r, fx_model_flip, in_world_map);
+            let field_fx_draws =
+                self.build_field_fx_part_draws(r, fx_model_flip, in_world_map, part_cam.as_ref());
             for (mesh, model) in &field_fx_draws {
                 draws.push(SceneDraw {
                     mesh,

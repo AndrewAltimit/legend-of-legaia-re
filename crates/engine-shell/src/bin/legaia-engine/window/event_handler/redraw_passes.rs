@@ -85,6 +85,56 @@ impl PlayWindowApp {
         vp * FIELD_WORLD_FLIP
     }
 
+    /// The retail camera this frame's move-VM part draws resolve their
+    /// `+0x52` camera-relative bits against
+    /// (`legaia_engine_render::gte::camera_relative_model_prefix`, the port of
+    /// `FUN_8001CF50`'s placement), picked by the same selection
+    /// [`Self::compute_scene_camera`] makes: the stage-dome battle camera, or
+    /// the resolver's frame in the field frame. `None` where this host draws
+    /// through a vantage of its own (the stage-less battle orbit, the `F3`
+    /// debug orbit, `HostDebugOrbit`, the overworld top view): with no retail
+    /// rotation there is nothing to undo, and the parts draw as composed.
+    /// The browser play page makes the same selection (`play_battle_fx.rs`).
+    pub(in crate::window) fn part_camera_pose(
+        &self,
+        in_world_map: bool,
+        cutscene_cam: Option<CutsceneCam>,
+    ) -> Option<legaia_engine_render::gte::PartCameraPose> {
+        use legaia_engine_render::gte::PartCameraPose;
+        let world = &self.session.host.world;
+        if cutscene_cam.is_none() && world.mode == SceneMode::Battle {
+            return self
+                .battle_stage_mesh
+                .is_some()
+                .then(|| PartCameraPose::from_battle(&world.battle_cam_pose()));
+        }
+        if cutscene_cam.is_none() && !in_world_map && self.field_debug_camera {
+            return None;
+        }
+        let cutscene = cutscene_cam.map(|(focus, pitch, yaw, roll, h, tr_eye)| {
+            legaia_engine_vm::psx_camera::FieldCameraView {
+                focus,
+                pitch,
+                yaw,
+                roll,
+                h,
+                tr_eye,
+            }
+        });
+        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+            world,
+            &self.session.camera,
+            cutscene,
+            [
+                (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+                (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+            ],
+        );
+        frame
+            .field_view()
+            .map(|v| PartCameraPose::from_field_view(&v))
+    }
+
     /// The overworld curvature's `clip.w`-to-`SZ` factor for this frame's
     /// scene pass (`overworld_curvature::frame_curve_scale`), over the same
     /// frame [`Self::compute_scene_camera`] resolves - `0.0` off the kingdom
@@ -411,8 +461,21 @@ impl PlayWindowApp {
         r: &legaia_engine_render::Renderer,
         fx_model_flip: Mat4,
         in_world_map: bool,
+        part_cam: Option<&legaia_engine_render::gte::PartCameraPose>,
     ) -> Vec<(UploadedVramMesh, Mat4)> {
         let mut summon_part_draws: Vec<(UploadedVramMesh, Mat4)> = Vec::new();
+        // A part's placement: `T(world_pos)`, or - for a `+0x52 & 0x780`
+        // node - the camera-relative prefix `FUN_8001CF50` resolves to under
+        // this host's full-camera view. Battle models carry the per-model
+        // Y-flip, which is the frame flip the prefix conjugates by.
+        let frame_flip = self.session.host.world.mode == SceneMode::Battle;
+        let place = |flags: u16, pos: [f32; 3]| -> Mat4 {
+            legaia_engine_render::gte::camera_relative_model_prefix(
+                flags, pos, part_cam, frame_flip,
+            )
+            .map(|m| Mat4::from_cols_array(&m))
+            .unwrap_or_else(|| Mat4::from_translation(Vec3::from(pos)))
+        };
         if !self.boot_ui.is_active() && !in_world_map {
             // Summon parts and battle move-FX parts render identically
             // (move-VM scene-graph parts resolving into the battle
@@ -449,7 +512,7 @@ impl PlayWindowApp {
                     &vmesh.indices,
                 ) {
                     Ok(m) => {
-                        let model = Mat4::from_translation(Vec3::from(sp.world_pos))
+                        let model = place(sp.flags_52, sp.world_pos)
                             * Mat4::from_rotation_y(sp.rot[1])
                             * Mat4::from_rotation_x(sp.rot[0])
                             * Mat4::from_rotation_z(sp.rot[2])
@@ -481,7 +544,7 @@ impl PlayWindowApp {
                     &v.indices,
                 ) {
                     Ok(m) => {
-                        let model = Mat4::from_translation(Vec3::from(rb.world_pos))
+                        let model = place(rb.flags_52, rb.world_pos)
                             * Mat4::from_rotation_y(rb.rot[1])
                             * Mat4::from_rotation_x(rb.rot[0])
                             * Mat4::from_rotation_z(rb.rot[2])
@@ -523,6 +586,7 @@ impl PlayWindowApp {
         r: &legaia_engine_render::Renderer,
         fx_model_flip: Mat4,
         in_world_map: bool,
+        part_cam: Option<&legaia_engine_render::gte::PartCameraPose>,
     ) -> Vec<(UploadedVramMesh, Mat4)> {
         let mut field_fx_draws: Vec<(UploadedVramMesh, Mat4)> = Vec::new();
         if !self.boot_ui.is_active() && !in_world_map {
@@ -547,7 +611,17 @@ impl PlayWindowApp {
                     &vmesh.indices,
                 ) {
                     Ok(m) => {
-                        let model = Mat4::from_translation(Vec3::from(fp.world_pos))
+                        // Field frame: the models compose on the raw
+                        // retail frame, so no flip to conjugate by.
+                        let place = legaia_engine_render::gte::camera_relative_model_prefix(
+                            fp.flags_52,
+                            fp.world_pos,
+                            part_cam,
+                            false,
+                        )
+                        .map(|m| Mat4::from_cols_array(&m))
+                        .unwrap_or_else(|| Mat4::from_translation(Vec3::from(fp.world_pos)));
+                        let model = place
                             * Mat4::from_rotation_y(fp.rot[1])
                             * Mat4::from_rotation_x(fp.rot[0])
                             * Mat4::from_rotation_z(fp.rot[2])

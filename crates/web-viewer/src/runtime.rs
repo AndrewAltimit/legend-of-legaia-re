@@ -98,6 +98,13 @@ pub struct LegaiaRuntime {
     /// one of too. Without it every `apply > 0` Camera Configure beat snapped
     /// on this host.
     pub(crate) cutscene_glide: legaia_engine_core::frame_step::CutsceneGlide,
+    /// The engine camera [`Self::play_camera_vp`] last handed the page: the
+    /// matrix and the frame it was built from. The field FX pass reads the
+    /// frame back only when the page draws through that exact matrix, so the
+    /// parts' `+0x52` camera-relative bits resolve against the camera on
+    /// screen and never against one the page replaced with its own orbit.
+    pub(crate) engine_camera:
+        Option<([f32; 16], legaia_engine_core::camera_view::FieldCameraFrame)>,
     /// Wall-clock to sim-tick accumulator (`frame_step::SimStepper`), the
     /// native window's frame-step rule. The page's animation loop asks it
     /// how many ticks each display frame runs ([`Self::play_drain_sim_steps`]).
@@ -413,6 +420,7 @@ impl LegaiaRuntime {
                 c
             },
             cutscene_glide: Default::default(),
+            engine_camera: None,
             sim_stepper: Default::default(),
             camera_azimuth_override: None,
             scene_aabb: None,
