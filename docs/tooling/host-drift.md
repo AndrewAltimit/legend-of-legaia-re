@@ -1242,10 +1242,9 @@ about these is contested.
 | derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
 | battle body blend modes | Both hosts draw a whole battle body's semi-transparency; three residues differ in scope and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-three-residues). |
 | save rack port 1 | The native rack's first port is an engine-format save directory; the page's two ports are both memory-card images. See [below](#the-save-racks-first-port-differs-per-host). |
-| frame loop under a shop | The ticks-per-frame, camera-order, glide-clock and strip rules are engine kernels; under a shop both hosts now freeze the whole tail. One residue: the SFX scheduler steps under a menu-overlay screen natively and not on the page. See [below](#the-frame-loop-rules-are-engine-side-one-residue-is-not). |
-| minigame launchers, slot and audio tail | The native `O` slot launcher still builds its own session; the two audio directors keep their BGM-tail banks and side-band retry memo differently; the minigame XA lines still stage on first use on the page. See [below](#minigame-launchers-and-the-audio-tail). |
+| minigame XA, dome intro | Every launcher arms the door warp and the BGM tail is one kernel; one minigame CD-XA line, the dome intro, still stages on first use on the page. See [below](#minigame-launchers-and-the-audio-tail). |
 
-### The frame loop rules are engine-side; one residue is not
+### The frame loop rules are engine-side
 
 Each host owns its display loop (winit's redraw natively, `requestAnimationFrame` on the page), and each used to spell out the rules that turn display frames into ticks. Four of those rules are kernels in `engine-core::frame_step` now, called by both hosts - the frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model):
 
@@ -1264,13 +1263,13 @@ The native loop runs only the menu session on the tick's edges, the unpark when 
 
 The field party readout's kernel is not a residue. A suppressed tick of `FieldPartyHud::tick` stores nothing but its cached decision - retail's suppress arm returns before the timer and position stores - and both hosts' draw paths re-ask the suppress gate, so stepping it under an overlay (native) and not stepping it (page) leave the same timer, the same cached position and the same picture. `a_suppressed_tick_changes_no_state` pins that.
 
-One residue remains host-local: the SFX scheduler steps once per tick under the pause menu and a shop natively, and not at all under either on the page (whose menu blips fire as immediate batches). It moves only cues that were already delayed when the screen opened.
+The SFX scheduler steps once per sim tick under the pause menu and a shop on both hosts: natively in the frozen arms (`tick_menu_sfx`), and on the page through `play_tick_overlay_sfx`, which the frame loop calls while `_updateFieldMenu` or `_updateFieldShop` holds the field. That is retail's shape - mode `0x17`'s per-frame handler `FUN_80025F74` still runs the cue drainer `FUN_80016B6C` ([`audio.md`](../subsystems/audio.md#the-scheduler-under-a-menu-overlay-screen)). The page used to step it under neither, so a cue already delayed when the screen opened waited out the screen and fired late.
 
 ### Minigame launchers and the audio tail
 
-- **The slot launcher.** The native `B` and `M` hotkeys arm the mode-24 door warp itself (`World::request_minigame_warp`, the call the page's `play_mg_debug_warp` makes), so they enter the session, the BGM swap and the return warp the casino door does. The `O` slot launcher still builds its own `SlotMachine` with a frame-derived seed, buys coins at the exchange counter or fronts a dev stake, and backs up no scene; the page has no such launcher. Closing it is a delete of that constructor plus an answer for a thin coin bank.
-- **The BGM tail and the side-band memo.** The native director drops the reward and side-band banks and bumps its generation inside every owned-bank upload; the page keeps them until a fire- or sync-time check finds the new bank past their base, and clears its side-band retry memo on every scene change where the native memo keys on the BGM generation. Audibly the same today; one `BgmTail` residency model in `engine-audio` driven by both directors would close it.
-- **Minigame XA lines.** The field's CD-XA one-shots are listed at scene load (`World::drain_field_xa_prestage`, filled by `field_xa::scene_xa_prestage` off the scene MAN's op-`0x36` XA arms) and the page stages them ahead of their ops, as it does a battle round's cast voices. The Baka announcer and the dome hub lines still stage on first use on the page, one request per frame, and sound a frame or more late there; they need the same list from their chrome kernels.
+- **The slot launcher.** Every native minigame hotkey arms the mode-24 door warp itself (`World::request_minigame_warp`, the call the page's `play_mg_debug_warp` makes): `O` now does too, so the slot session is the one a cabinet installs, with the balance assigned from the coin bank. The private `SlotMachine` with a frame-derived seed, the exchange-counter purchase and the fronted dev stake are gone. A launcher is the `0x3E` arm on both hosts, not the cabinet record around it: an empty bank is refused at the walked door by that record's coin-bank compare (the field VM runs it on both hosts), and a bank below three coins that reaches the machine meets its own state-1 gate.
+- **The BGM tail and the side-band memo.** One kernel, `legaia_engine_audio::bgm_tail::BgmTail`, holds the reward and side-band banks' placement, residency and retry memo, and both directors drive it ([`audio.md`](../subsystems/audio.md#the-banks-that-borrow-the-bgm-regions-tail)). The native director used to drop both banks on every owned-bank upload and the page only when a track overran them; the page also cleared its side-band memo on every scene change, where the native memo keyed on the BGM generation. The shared rule is retail's: a track change closes neither bank, a track that overruns one drops it, and the field init drops the reward bank.
+- **Minigame XA lines.** The Baka announcer lines and the dome hub's two lines join the field's prestage list (`World::queue_xa_prestage`, from `baka_fighter_chrome::announcer_xa_prestage` and `muscle_ringside::hub_xa_prestage`), so the page stages them ahead of use as it stages a scene's op-`0x36` lines. One residue: the dome intro line is started on the frame the leg opens, the same frame its prestage is queued, so the page still asks for it on first use.
 
 ### The save rack's first port differs per host
 
@@ -3388,8 +3387,7 @@ had - the deviating host adopting it.
 - **Minigame hotkeys.** The native `B` / `M` launchers built their sessions
   directly, started the track through the director rather than the world's
   minigame swap, and installed Vahn's arts whoever led; they now arm the door
-  warp ([above](#minigame-launchers-and-the-audio-tail) for the slot
-  residue).
+  warp, and so does `O` now ([above](#minigame-launchers-and-the-audio-tail)).
 
 Two rows of the same read were already closed when re-checked: the minigame
 purses in `save_full` and the card-Load order (both in the section above).
