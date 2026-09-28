@@ -232,12 +232,12 @@ pub struct LegaiaRuntime {
     /// window's `--live-loop` / `--player-battle` flags. [`Self::set_live_battles`]
     /// turns it off for walk-only sessions.
     pub(crate) live_battles: bool,
-    /// The save an in-canvas card **Load** lifted, parked until the page
-    /// enters the scene it resumes in (`cards.rs`). `enter_field` takes it:
-    /// the loaded save's flags replace the picker's free-roam story baseline
-    /// and the save is re-applied after the scene swap, the native
-    /// `enter_field_live_from_save` order (enter, then load).
-    pub(crate) pending_card_resume: Option<legaia_save::SaveFile>,
+    /// The save a card **Load** or a save import lifted, parked with its
+    /// resume label until the page lands it through
+    /// [`Self::play_resume_save`] ([`crate::resume`]), which enters the
+    /// saved scene and re-applies the save after the swap - the native
+    /// `BootSession::resume_save` order (enter, then load).
+    pub(crate) pending_card_resume: Option<crate::resume::ParkedResume>,
     /// Battle<->Field BGM swap track override, the browser twin of the native
     /// window's `--battle-bgm <id>`. `None` = no page-side override, so the
     /// shipped default battle theme plays (`LiveLoopOpts::playable`);
@@ -732,11 +732,24 @@ impl LegaiaRuntime {
     /// Returns the same JSON as [`Self::state_json`]. Throws when the disc isn't
     /// loaded or the label is unknown.
     pub fn enter_field(&mut self, name: &str) -> Result<String, JsValue> {
-        let resumed_save = self.pending_card_resume.take();
+        self.enter_field_core(name, None)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+}
+
+impl LegaiaRuntime {
+    /// JsValue-free body of [`Self::enter_field`]. `resumed_save` is the save
+    /// a resume lands after the entry ([`crate::resume`]); `None` for a
+    /// picker / door / opening-chain entry.
+    pub(crate) fn enter_field_core(
+        &mut self,
+        name: &str,
+        resumed_save: Option<legaia_save::SaveFile>,
+    ) -> Result<String, String> {
         let host = self
             .scene_host
             .as_mut()
-            .ok_or_else(|| JsValue::from_str("enter_field: call load_disc first"))?;
+            .ok_or_else(|| "enter_field: call load_disc first".to_string())?;
         // Faithful-play arming, matching the native play-window's flags:
         // dialogue through the field VM (so branch handlers - flag sets,
         // GIVE_ITEM, scene changes - actually execute), retail's leading-edge
@@ -756,7 +769,7 @@ impl LegaiaRuntime {
         let world_map = legaia_engine_core::scene::is_world_map_scene(name);
         if world_map {
             host.enter_world_map_scene(name)
-                .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;
+                .map_err(|e| format!("enter_field({name}): {e:#}"))?;
             // Start in walk mode with the retail top-view debug camera
             // reachable through its own chord (`_DAT_8007B98C`), exactly as
             // the native window arms it on world-map entry
@@ -769,7 +782,7 @@ impl LegaiaRuntime {
             }
         } else {
             host.enter_field_scene(name, 0)
-                .map_err(|e| JsValue::from_str(&format!("enter_field({name}): {e:#}")))?;
+                .map_err(|e| format!("enter_field({name}): {e:#}"))?;
         }
         // The scene host cleared the WORLD's camera state (timeline, op-0x45
         // params); this is the engine camera's half, which only an in-world
@@ -801,7 +814,7 @@ impl LegaiaRuntime {
         if self.live_battles {
             self.arm_live_battles(name);
         }
-        self.rebuild_render_state()?;
+        self.rebuild_render_state().map_err(js_error_text)?;
         // The seat heuristic is for interactive free-roam entry; the opening
         // chain's cutscene legs stage their own tableau (the timeline owns
         // actor placement) and must not have the anchor relocated under it.
@@ -812,7 +825,7 @@ impl LegaiaRuntime {
             self.seat_player();
         }
         // The card Load's save lands after the scene swap, as the native
-        // window lands it (`BootSession::enter_field_live_from_save`): scene
+        // window lands it (`BootSession::resume_save`): scene
         // entry resets per-scene world state, the save then restores the
         // party, purses, bag and flags over it.
         if let Some(sf) = resumed_save
@@ -834,7 +847,26 @@ impl LegaiaRuntime {
         }
         Ok(self.state_json())
     }
+}
 
+/// A `JsValue` error as text, without touching the JS runtime off-wasm
+/// (where every `JsValue` accessor panics) - the testable cores return
+/// `String` errors.
+fn js_error_text(e: JsValue) -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        e.as_string()
+            .unwrap_or_else(|| "rebuild_render_state failed".to_string())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = e;
+        "rebuild_render_state failed".to_string()
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaRuntime {
     /// Route this frame's pad word into the engine. Bit layout is the PSX digital
     /// pad ([`legaia_engine_core::input::PadButton`]): `0x0008` Start, `0x0010`
     /// Up, `0x0020` Right, `0x0040` Down, `0x0080` Left, `0x1000` Triangle,
@@ -924,13 +956,11 @@ impl LegaiaRuntime {
             self.world.begin_new_game();
             return;
         };
-        host.world.begin_new_game();
-        if let Some(defaults) = host.new_game_defaults.as_ref() {
-            host.world.seed_starting_party(&defaults.party);
-            if let Some(inv) = defaults.inventory.as_ref() {
-                host.world.seed_starting_inventory(inv);
-            }
-        }
+        let defaults = host.new_game_defaults.as_ref();
+        host.world.begin_new_game_seeded(
+            defaults.map(|d| &d.party),
+            defaults.and_then(|d| d.inventory.as_ref()),
+        );
     }
 
     /// Route this frame's left analog stick into the engine. PSX convention:
@@ -967,15 +997,13 @@ impl LegaiaRuntime {
     /// scene the engine just walked into (a door / warp) - the page rebuilds its
     /// render state whenever the return is non-empty.
     pub fn tick_frame(&mut self) -> Result<String, JsValue> {
-        // A card Load / save import parks its save for the scene entry the
-        // page performs in the same turn (`enter_field` consumes it). When
-        // the page declines that entry - the save's scene is the one already
-        // open, or not in its list - nothing consumed it, and the old save
-        // was re-applied over the live party at the NEXT picker entry, however
-        // much later that came. The resume point has passed once the world
+        // A card Load / save import parks its save for the resume the page
+        // lands in the same turn (`play_resume_save` consumes it). A park
+        // nothing consumed must not re-apply the old save over the live party
+        // at some later entry: the resume point has passed once the world
         // ticks, so the park does not outlive this frame. The native Load
-        // enters and loads in one call (`enter_field_live_from_save`) and
-        // parks nothing.
+        // lands and loads in one call (`BootSession::resume_save`) and parks
+        // nothing.
         self.pending_card_resume = None;
         let Some(host) = self.scene_host.as_mut() else {
             self.world.tick();
