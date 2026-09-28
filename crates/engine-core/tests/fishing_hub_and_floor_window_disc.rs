@@ -83,12 +83,20 @@ fn the_venue_hub_reads_the_disc_and_walks_both_help_pages() {
     // Triangle at the shore opens the menu (state 0x0C's `& 0x110`).
     press(world, PadButton::Triangle);
     assert_eq!(screen(world), Some(HubScreen::Menu));
-    assert_eq!(world.fishing_hub_lines().len(), 5 + 1, "five rows and the cursor");
+    assert_eq!(
+        world.fishing_hub_lines().len(),
+        5 + 1,
+        "five rows and the cursor"
+    );
     // Row 1: help page 0, then page 1, then back to the menu.
     press(world, PadButton::Down);
     press(world, PadButton::Cross);
     assert_eq!(screen(world), Some(HubScreen::Help(0)));
-    assert_eq!(world.fishing_hub_lines().len(), 14 + 1, "fourteen lines and the footer");
+    assert_eq!(
+        world.fishing_hub_lines().len(),
+        14 + 1,
+        "fourteen lines and the footer"
+    );
     press(world, PadButton::Cross);
     assert_eq!(screen(world), Some(HubScreen::Help(1)));
     assert_eq!(world.fishing_hub_lines().len(), 15 + 1);
