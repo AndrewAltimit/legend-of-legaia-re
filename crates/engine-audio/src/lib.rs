@@ -24,6 +24,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 pub mod anim_cue;
 pub mod battle_voice;
+pub mod bgm_tail;
 pub mod duck;
 pub mod footstep;
 pub mod note_trace;

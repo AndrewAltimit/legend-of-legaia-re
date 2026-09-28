@@ -1172,21 +1172,23 @@ impl BootSession {
         // cadence `frame_step`, which retail applies once per *game tick* of
         // that many vsyncs. The two schedules are the same in wall time.
         bgm.apply_sfx_ring_ops(&ops, world.clock.display_frame_step.clamp(1, 255) as u8);
-        let side_band = matches!(
+        let field_family = matches!(
             world.mode,
             legaia_engine_core::world::SceneMode::Field
                 | legaia_engine_core::world::SceneMode::WorldMap
-        )
-        .then(|| world.side_band_bank())
-        .flatten();
+        );
+        let side_band = field_family.then(|| world.side_band_bank()).flatten();
         let index = &self.host.index;
         // A slot-6 side-band bank is not a tail borrower: retail streams it
         // over the field bank in the shared region, and the residency below
         // carries it.
         let side_band = side_band.filter(|b| b.slot != 6);
-        bgm.sync_field_sfx(&world.props.stager_bytes, side_band, |entry| {
-            index.entry_bytes_extended(entry).ok()
-        });
+        bgm.sync_field_sfx(
+            &world.props.stager_bytes,
+            field_family,
+            side_band,
+            |entry| index.entry_bytes_extended(entry).ok(),
+        );
         // The slot-2 / slot-6 region follows the mode: the field bank in the
         // field, the class-2 bank in battle, a minigame's own in its mode.
         let shared = self.host.world.sync_sfx_residency();

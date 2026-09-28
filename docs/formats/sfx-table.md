@@ -192,7 +192,9 @@ use only the two global arms: of 275 sub-`1` operands, 248 are `2000..=2999`,
 
 Port: `legaia_engine_core::world::side_band_bank_for_request`; both hosts stage
 the resolved bank behind the BGM, in the free tail of the BGM region the reward
-bank also borrows, while the world is in a field-family mode.
+bank also borrows, while the world is in a field-family mode, through one
+residency kernel both drive (`legaia_engine_audio::bgm_tail`,
+[`audio.md`](../subsystems/audio.md#the-banks-that-borrow-the-bgm-regions-tail)).
 
 ### Voice allocation: one-shots descend from 23, sustained cues ascend from 7
 
@@ -411,8 +413,11 @@ where retail's slot 6 is closed. The single category-`11` cue (`0x50`, the
 level-up jingle) is staged the way retail stages it, at results time:
 `AudioBgmDirector::stage_transient_sfx_vab` (and the browser's
 `stage_transient_reward_bank`) uploads PROT 0889 into the free tail of the BGM
-region behind the battle theme when the results frame queues the cue, and drops
-it again when the next track restages; until then the cue is silent.
+region behind the battle theme when the results frame queues the cue; before
+that the cue is silent. The bank is dropped when a track's samples overrun it or
+the world is back in a field-family mode, whose init closes slot `11` - not on
+every track change, which retail's BGM stream arm makes without closing it
+([`audio.md`](../subsystems/audio.md#the-banks-that-borrow-the-bgm-regions-tail)).
 
 ### The ring value **is** the descriptor index
 

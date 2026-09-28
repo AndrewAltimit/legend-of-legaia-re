@@ -1410,6 +1410,87 @@ separately (`slot_open`), so the Baka Fighter state - both open, slot 6 stale
 holds, so a cue on the stale slot is silent rather than played through the wrong
 header. The port's dome mode is a leg and takes the battle arm.
 
+### The banks that borrow the BGM region's tail
+
+The port's SPU map has no room for two of retail's variable banks, so both play
+hosts park them behind the current track, in the BGM region above its samples:
+the reward bank (PROT 0889, slot `11`, staged when the results frame queues cue
+`0x50`) and a script-selected side-band bank (slot `3`, staged while the world
+is in a field-family mode). One kernel, `legaia_engine_audio::bgm_tail::BgmTail`,
+holds their placement, their residency and the side-band retry memo, and both
+directors drive it (`AudioBgmDirector` natively, `LegaiaRuntime`'s SFX channel
+on the browser page).
+
+**Residency follows retail's closes, not the track.** Retail gives both banks
+their own SPU base (slot `3` at `0x60010`, slot `11` at `0x6F010`,
+[`sfx-table.md`](../formats/sfx-table.md#which-prot-entry-reaches-which-slot)),
+and `FUN_800243F0`'s BGM stream arm loads the next track into slot `1`
+(`jal 0x8001FC00` with `a1 = 1` at `0x80024678`, then `FUN_8001E54C(1, ..)` at
+`0x80024780`) with no call to the VAB closer `FUN_8001FF58`. A track change
+therefore leaves both banks open. What closes them is their own close: the
+battle mode init closes slot `3`, and the field init `FUN_801D6704` closes slots
+`7`, `8` and `11` (`jal 0x8001FF58` at `0x801D68A4` / `0x801D68AC` /
+`0x801D68B4`, each `a0` a delay-slot immediate; PROT 0897, read from the
+image's bytes). The kernel's rule is that pair plus the port's own placement: a
+track whose samples end past a borrower's base overwrote it and drops it
+(`observe_bgm_end`); one that ends below keeps it. The side-band bank leaves
+with the field-family mode, and the reward bank is dropped whenever the world
+is in one.
+
+The two directors used to keep two different rules. The native one dropped both
+banks inside every owned-bank upload and bumped a generation, then restaged the
+side-band on the next tick; the page kept them until a fire- or tick-time check
+found the new track past their base. Neither dropped the reward bank at the
+field init, so it outlived its battle whenever the field track was smaller.
+
+**The retry memo keys on the free tail.** A side-band bank that does not fit is
+not re-read every tick: the attempt is remembered against
+`BgmTail::generation`, which moves only when the free tail can have changed - the
+track's sample end moved, or a borrower was dropped. The page used to clear its
+memo on every scene change as well. A door stages no bank, so the free tail is
+unchanged and the retry could never succeed; the memo now survives a door on
+both hosts, as retail's side-band request does.
+
+The native director calls `observe_bgm_end` after its own upload; the page's
+upload site (`WebBgmDirector::stage_owned`) does not see the SFX channel, so the
+page calls it before every read of the tail - each tick, each fire and each
+stage. The call is idempotent, so the two timings reach the same state.
+
+### The scheduler under a menu-overlay screen
+
+Retail runs the pause menu, a shop and the prize exchange at game mode `0x17`,
+with the field overlay swapped out. That mode's per-frame handler `FUN_80025F74`
+still calls the cue drainer `FUN_80016B6C` (`jal` at `0x80025F9C`, after
+`FUN_8001698C` and `FUN_80017978` both return `0`) - the same shape as the
+default handler `FUN_80025EEC`. A cue already delayed when the screen opened
+therefore keeps ageing under it and fires on time.
+
+Both hosts step the scheduler once per sim tick under such a screen: the native
+window's frozen arms call `tick_menu_sfx`, and the page's frame loop, which runs
+no `tick_frame` while the field is frozen, calls the export
+`play_tick_overlay_sfx`, the same scheduler step. Menu blips themselves fire
+immediately on both.
+
+### Minigame announcer lines are listed ahead of use
+
+The field's CD-XA one-shots are listed at scene load
+(`field_xa::scene_xa_prestage` into `World::drain_field_xa_prestage`), so the
+page, which decodes a clip the bank lacks one request per frame, has them
+staged before their ops. The two minigame chromes that start `FUN_8003D53C`
+lines feed the same list through `World::queue_xa_prestage`:
+
+- **Baka Fighter.** Entering the duel lists every line the chrome can start -
+  the intro card's two (`XA33` channels `0x0E` / `0x0F`), the countdown's four
+  (`0x0A`..`0x0D`) and the round banner's `XA32` line for this round and the
+  next (`baka_fighter_chrome::announcer_xa_prestage`). Each round advance lists
+  the banner line one round further (`BakaChrome::take_xa_prestage`).
+- **Muscle Dome hub.** Each leg's opening lists the first visit's intro line
+  and its ROUND card (`muscle_ringside::hub_xa_prestage`).
+
+The native window reads a clip's span synchronously and drains the list
+unread. One line still stages on first use on the page: the dome intro, which
+the hub starts on the same frame the leg opens.
+
 ## XA-ADPCM
 
 `crates/xa` decodes CD-XA 4-bit ADPCM bit-exactly: on a real cutscene track its per-channel PCM matches an external lossless reference decode sample-for-sample. The on-disc `.XA` / `.STR` audio is standard CD-XA Mode 2 Form 2 - the earlier "non-standard interleave" was Form-1 truncation damage in the old extractor, not a bespoke format. The demuxer (`legaia_xa::demux`) splits raw 2352-byte sectors by `(file_no, ch_no)` and the group decoder reconstructs each channel. See [`formats/xa.md`](../formats/xa.md) for the sound-group decode (parameter/nibble layout, full-precision predictor) and [Cutscene / STR](cutscene.md) for the interleaved A/V path.

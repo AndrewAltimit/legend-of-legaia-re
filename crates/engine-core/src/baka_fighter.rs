@@ -1052,6 +1052,14 @@ impl BakaFight {
         self
     }
 
+    /// The announcer lines to stage ahead of use
+    /// ([`crate::baka_fighter_chrome::BakaChrome::take_xa_prestage`]): the
+    /// chrome's whole list on the first call, the next round's banner line
+    /// on each round advance. Both play hosts drain it every duel tick.
+    pub fn take_xa_prestage(&mut self) -> Vec<crate::baka_fighter_chrome::XaCue> {
+        self.chrome.take_xa_prestage(self.round as i32)
+    }
+
     /// The chrome frame the last tick produced - the round banner, countdown
     /// and title-card draws plus any announcer line they fired.
     pub fn chrome_frame(&self) -> &crate::baka_fighter_chrome::ChromeFrame {
@@ -2828,6 +2836,37 @@ mod tests {
         let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), [2, 2], 1);
         f.ai_controlled = [false, false]; // deterministic: drive both by hand
         f
+    }
+
+    /// Every announcer line the chrome starts over a whole match was on a
+    /// prestage list drained before it - the list the world queues at entry
+    /// and after each tick - so an asynchronous host has it staged in time.
+    #[test]
+    fn every_announcer_line_is_prestaged_before_it_fires() {
+        let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), [2, 2], 1).with_intro_card();
+        f.ai_controlled = [true, true];
+        let mut listed = f.take_xa_prestage();
+        assert!(!listed.is_empty(), "the entry list");
+        let mut fired = 0;
+        let mut rounds = 0;
+        for _ in 0..20_000 {
+            if f.match_over() {
+                break;
+            }
+            f.tick(1);
+            if let Some(c) = f.chrome_frame().xa {
+                assert!(listed.contains(&c), "{c:?} fired before it was listed");
+                fired += 1;
+            }
+            rounds = rounds.max(f.round());
+            listed.extend(f.take_xa_prestage());
+        }
+        assert!(fired > 0, "the chrome started no line");
+        assert!(rounds > 0, "the match never advanced a round");
+        // Nothing is listed twice.
+        let mut dedup = listed.clone();
+        dedup.dedup();
+        assert_eq!(dedup.len(), listed.len());
     }
 
     #[test]

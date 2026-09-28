@@ -62,7 +62,8 @@ use crate::runtime::LegaiaRuntime;
 use legaia_asset::sfx_table::{
     FALLBACK_VAB_SLOT, SLOT0_SYSTEM_BANK_PROT_INDEX, SLOT11_REWARD_BANK_PROT_INDEX,
 };
-use legaia_engine_audio::{CueDispatch, PendingCue, SfxBank, SfxScheduler, VabBank, classify_cue};
+use legaia_engine_audio::bgm_tail::{BgmTail, TailBorrow};
+use legaia_engine_audio::{CueDispatch, PendingCue, SfxBank, SfxScheduler, classify_cue};
 use legaia_engine_core::world::SceneMode;
 use legaia_engine_core::world::SharedRegionBank;
 use std::collections::BTreeMap;
@@ -93,9 +94,9 @@ pub(crate) const DUCK_LEVEL_REF: u8 = legaia_engine_audio::duck::DUCK_LEVEL_REF;
 /// VAB slot the battle-end reward bank (PROT 0889, cue `0x50`) is installed
 /// in - retail streams it at results time (`FUN_8004E568` phase 4,
 /// `FUN_8001E54C(0xB, ...)`), and both hosts stage it transiently the same
-/// way ([`LegaiaRuntime::stage_transient_reward_bank`]). Same value as the
-/// native director's `TRANSIENT_REWARD_SLOT`.
-pub(crate) const TRANSIENT_REWARD_SLOT: u8 = 11;
+/// way ([`LegaiaRuntime::stage_transient_reward_bank`]). The kernel constant
+/// ([`legaia_engine_audio::bgm_tail::REWARD_SLOT`]) the native director reads too.
+pub(crate) const TRANSIENT_REWARD_SLOT: u8 = legaia_engine_audio::bgm_tail::REWARD_SLOT;
 
 /// Cue id **retail's pause menu** fires when the list cursor moves.
 ///
@@ -365,11 +366,12 @@ pub struct PlaySfx {
     /// the arm's clamp. The browser twin of the native director's pair.
     pub duck_level: u8,
     pub duck_target: u8,
-    /// SPU RAM base the transient reward bank (slot 11) was uploaded at,
-    /// `None` while it is not staged. It borrows the free tail of the BGM
-    /// region, so a track restage invalidates it
-    /// ([`LegaiaRuntime::reconcile_reward_bank`]).
-    pub reward_bank_base: Option<u32>,
+    /// The banks borrowing the BGM region's free tail - the transient reward
+    /// bank (slot 11) and the side-band bank (op-`0x36` sub-`1`'s request,
+    /// VAB slot `3`) - their residency and the side-band retry memo. The
+    /// kernel the native director drives too
+    /// ([`legaia_engine_audio::bgm_tail`]).
+    pub tail: BgmTail<legaia_engine_core::world::SideBandBank>,
     /// Queued cues `classify_cue` routed to the CD-XA **voice** leg
     /// (`id >= 0x100`) and this host dropped, because - like the native
     /// window - it stages no bank for the cast-voice clip files. Counted so
@@ -383,12 +385,6 @@ pub struct PlaySfx {
     /// whose record 0 holds the runtime descriptor rows ring cues `>= 0x200`
     /// resolve against. Mirrored from the world each tick.
     pub runtime_bundle: Vec<u8>,
-    /// The side-band bank staged behind the BGM (op-`0x36` sub-`1`'s
-    /// request, VAB slot `3` or `6`), with the SPU base it was placed at.
-    pub side_band: Option<(legaia_engine_core::world::SideBandBank, u32)>,
-    /// The last `(request, BGM sample end)` a side-band stage was attempted
-    /// for, so a bank that does not fit is not re-read every frame.
-    pub side_band_attempt: Option<(i32, Option<u32>)>,
     /// Ring cues (field-VM op `0x36` sub-`0`, ambient motion op `0x09`) that
     /// came due since the page loaded, whether or not a voice keyed - the
     /// producer-side count the off-wasm tests read.
@@ -422,12 +418,10 @@ impl Default for PlaySfx {
             bank_bytes_loaded: false,
             duck_level: DUCK_LEVEL_REF,
             duck_target: DUCK_LEVEL_REF,
-            reward_bank_base: None,
+            tail: BgmTail::default(),
             voice_cues_dropped: 0,
             xa: Default::default(),
             runtime_bundle: Vec::new(),
-            side_band: None,
-            side_band_attempt: None,
             ring_due: 0,
             sfx_evicted: false,
         }
@@ -475,15 +469,6 @@ pub(crate) fn route_cue(id: u16) -> CueRoute {
         // is a no-op in every bank, so the narrowing loses nothing.
         CueDispatch::Ring { .. } => CueRoute::Descriptor(id.min(0xFF) as u8),
     }
-}
-
-/// Sample end of an uploaded bank in SPU RAM - one past the highest
-/// `addr + size` of its VAGs - or `fallback` for an empty / absent bank. The
-/// transient reward bank is placed at the 16-byte-aligned address above this.
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-pub(crate) fn vab_bank_used_end(bank: Option<&VabBank>, fallback: u32) -> u32 {
-    bank.and_then(|b| b.samples.iter().flatten().map(|s| s.addr + s.size).max())
-        .unwrap_or(fallback)
 }
 
 impl PlaySfx {
@@ -541,8 +526,9 @@ impl PlaySfx {
     /// rule as the native `bgm::resolve_sfx_slot`.
     fn resolve_slot(&self, id: u8) -> Option<u8> {
         let slot = self.slot_for_cue(id).unwrap_or(FALLBACK_VAB_SLOT);
-        (self.bank_bytes.contains_key(&slot) || self.side_band.is_some_and(|(b, _)| b.slot == slot))
-            .then_some(slot)
+        (self.bank_bytes.contains_key(&slot)
+            || self.tail.side_band().is_some_and(|(b, _)| b.slot == slot))
+        .then_some(slot)
     }
 }
 
@@ -760,26 +746,50 @@ impl LegaiaRuntime {
     /// edge (`boot.rs`). Cues queued against the departing scene's timing
     /// must not fire into the next one.
     ///
-    /// The transient reward bank is **not** dropped here, which is what the
-    /// native director does too: it lives in the BGM region's tail until a
-    /// BGM restage re-owns that region, and a door stages no bank at all
-    /// (retail loads a bank only with its track). A restage that does grow
-    /// into it is caught at fire time by `reconcile_reward_bank`, the page's
-    /// twin of the native drop inside its upload sites.
+    /// Neither tail borrower is dropped here, and the side-band retry memo is
+    /// kept: a door stages no bank (retail loads a bank only with its track),
+    /// so the free tail is what it was, and the residency rule and the memo
+    /// are the shared [`BgmTail`]'s - keyed on the track, not the scene.
     pub(crate) fn on_scene_change_audio(&mut self) {
         self.sfx.sched.clear();
-        // The side-band request survives a scene change in retail (it is the
-        // scripts' to change), so only the attempt memo is reset: the next
-        // tick re-validates the bank against the new scene's BGM.
-        self.sfx.side_band_attempt = None;
     }
 
-    /// Forget the transient reward bank (slot 11) wherever it is recorded.
-    fn drop_reward_bank(&mut self) {
-        self.sfx.reward_bank_base = None;
-        self.sfx.bank_bytes.remove(&TRANSIENT_REWARD_SLOT);
+    /// Forget a tail borrower's bank wherever this host records it.
+    fn forget_tail_slot(&mut self, slot: u8) {
+        if slot == TRANSIENT_REWARD_SLOT {
+            self.sfx.bank_bytes.remove(&slot);
+        }
         #[cfg(target_arch = "wasm32")]
-        self.sfx_vabs.remove(&TRANSIENT_REWARD_SLOT);
+        self.sfx_vabs.remove(&slot);
+    }
+
+    /// Forget the transient reward bank (slot 11).
+    fn drop_reward_bank(&mut self) {
+        if let Some(slot) = self.sfx.tail.drop_reward() {
+            self.forget_tail_slot(slot);
+        }
+    }
+
+    /// Forget the side-band bank.
+    fn drop_side_band(&mut self) {
+        if let Some(slot) = self.sfx.tail.drop_side_band() {
+            self.forget_tail_slot(slot);
+        }
+    }
+
+    /// Re-check the tail borrowers against the live track's sample end and
+    /// forget the ones it overran ([`BgmTail::observe_bgm_end`]). The upload
+    /// site (`WebBgmDirector::stage_owned`) does not see the SFX channel, so
+    /// this runs before every read of the tail - each tick, each fire and
+    /// each stage; the native director runs the same call after its upload.
+    /// Idempotent, so the two timings reach the same state.
+    fn observe_track(&mut self) {
+        let Some(end) = self.bgm_bank_used_end() else {
+            return;
+        };
+        for slot in self.sfx.tail.observe_bgm_end(end) {
+            self.forget_tail_slot(slot);
+        }
     }
 
     /// Sample end of the staged BGM bank in SPU RAM (`LegaiaRuntime::bgm_bank`,
@@ -791,9 +801,8 @@ impl LegaiaRuntime {
     pub(crate) fn bgm_bank_used_end(&self) -> Option<u32> {
         #[cfg(target_arch = "wasm32")]
         {
-            Some(vab_bank_used_end(
+            Some(legaia_engine_audio::bgm_tail::track_end(
                 self.bgm_bank.as_ref(),
-                SPU_RESERVED_BYTES,
             ))
         }
         #[cfg(not(target_arch = "wasm32"))]
@@ -804,21 +813,7 @@ impl LegaiaRuntime {
 
     /// Whether the reward bank is staged in slot 11.
     pub(crate) fn has_reward_bank(&self) -> bool {
-        self.sfx.reward_bank_base.is_some()
-    }
-
-    /// Drop the reward bank if a BGM restage has since grown into its room.
-    /// The BGM upload site (`WebBgmDirector::stage_owned`) re-owns the
-    /// region wholesale, so the
-    /// bank is stale the moment the live bank's sample end passes its base -
-    /// the native director drops it inside those two sites; this host checks
-    /// at fire time instead, which needs no hook in either.
-    fn reconcile_reward_bank(&mut self) {
-        if let (Some(base), Some(used)) = (self.sfx.reward_bank_base, self.bgm_bank_used_end())
-            && used > base
-        {
-            self.drop_reward_bank();
-        }
+        self.sfx.tail.reward().is_some()
     }
 
     /// Stage the battle-end reward bank (PROT 0889, cue `0x50`, category 11)
@@ -837,25 +832,13 @@ impl LegaiaRuntime {
     /// routing is testable) but nothing is uploaded.
     // REF: FUN_8001E54C, FUN_8004E568
     pub(crate) fn stage_transient_reward_bank(&mut self) -> bool {
-        self.reconcile_reward_bank();
+        self.observe_track();
         if self.has_reward_bank() {
             return true;
         }
-        let Some(used_end) = self.bgm_bank_used_end() else {
+        if self.bgm_bank_used_end().is_none() {
             return false;
-        };
-        // Above a staged side-band bank as well as the BGM: both borrow the
-        // same tail, and the native director's `bgm_tail_used_end` takes the
-        // highest of the three. Placing it at the BGM's end alone uploaded
-        // the reward samples over the side-band's.
-        #[cfg(target_arch = "wasm32")]
-        let used_end = used_end.max(
-            self.sfx
-                .side_band
-                .and_then(|(b, _)| self.sfx_vabs.get(&b.slot))
-                .map(|b| vab_bank_used_end(Some(b), 0))
-                .unwrap_or(0),
-        );
+        }
         let Some(host) = self.scene_host.as_ref() else {
             return false;
         };
@@ -871,27 +854,30 @@ impl LegaiaRuntime {
         else {
             return false;
         };
-        let region_end = legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32 - SFX_BANK_SPU_BYTES;
-        let base = used_end.div_ceil(16) * 16;
-        if base >= region_end {
+        // Above the track and a parked side-band bank alike: the placement
+        // is the shared tail's.
+        let Some(base) = self.sfx.tail.place_report(TRANSIENT_REWARD_SLOT, &report) else {
             return false;
-        }
-        let body_total: u32 = report.vag_samples.iter().map(|v| v.size as u32).sum();
-        if body_total > region_end - base {
-            return false;
-        }
+        };
         #[cfg(target_arch = "wasm32")]
-        {
+        let end = {
             let Some(out) = self.audio_out.as_ref() else {
                 return false;
             };
             let bank = out.with_spu(|spu| {
-                let mut alloc =
-                    legaia_engine_audio::spu::ram::SpuAllocator::new(base, region_end - base);
-                VabBank::upload(spu, &mut alloc, &report, &bytes[vab_offset..])
+                legaia_engine_audio::bgm_tail::upload_at(spu, base, &report, &bytes[vab_offset..])
             });
+            let end = legaia_engine_audio::spu_layout::bank_used_end(&bank).unwrap_or(base);
             self.sfx_vabs.insert(TRANSIENT_REWARD_SLOT, bank);
-        }
+            end
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let end = base;
+        self.sfx.tail.commit_reward(TailBorrow {
+            slot: TRANSIENT_REWARD_SLOT,
+            base,
+            end,
+        });
         self.sfx.bank_bytes.insert(
             TRANSIENT_REWARD_SLOT,
             StagedBankBytes {
@@ -900,7 +886,6 @@ impl LegaiaRuntime {
                 vab_offset,
             },
         );
-        self.sfx.reward_bank_base = Some(base);
         true
     }
 
@@ -1008,11 +993,17 @@ impl LegaiaRuntime {
         // A slot-6 side-band bank is not a tail borrower: retail streams it
         // over the field bank in the shared region, and the residency carries
         // it.
-        let want = matches!(host.world.mode, SceneMode::Field | SceneMode::WorldMap)
+        let field_family = matches!(host.world.mode, SceneMode::Field | SceneMode::WorldMap);
+        let want = field_family
             .then(|| host.world.side_band_bank())
             .flatten()
             .filter(|b| b.slot != 6);
         let _stops = host.world.take_sfx_voice_stops();
+        // The field init `FUN_801D6704` closes slot 11 (`0x801D68B4`): a
+        // parked reward bank does not outlive the battle it was staged for.
+        if field_family {
+            self.drop_reward_bank();
+        }
         self.sync_side_band(want);
         // The slot-2 / slot-6 region follows the mode.
         if self.sfx.bank_bytes_loaded {
@@ -1045,24 +1036,14 @@ impl LegaiaRuntime {
     /// the bank is recorded (so the routing is testable) but not uploaded.
     // REF: FUN_800243F0, FUN_8001E54C
     fn sync_side_band(&mut self, want: Option<legaia_engine_core::world::SideBandBank>) {
-        // Stale when the BGM's samples have grown past its base.
-        if let (Some((_, base)), Some(used)) = (self.sfx.side_band, self.bgm_bank_used_end())
-            && used > base
-        {
-            self.drop_side_band();
-        }
+        self.observe_track();
         let Some(want) = want else {
             self.drop_side_band();
             return;
         };
-        if self.sfx.side_band.is_some_and(|(b, _)| b == want) {
+        if !self.sfx.tail.begin_side_band_attempt(want) {
             return;
         }
-        let key = (want.request, self.bgm_bank_used_end());
-        if self.sfx.side_band_attempt == Some(key) {
-            return;
-        }
-        self.sfx.side_band_attempt = Some(key);
         self.drop_side_band();
         let Some(bytes) = self
             .scene_host
@@ -1082,44 +1063,41 @@ impl LegaiaRuntime {
             // The pinned banks first, so a later lazy stage of the top region
             // does not mistake this slot for "already staged".
             self.stage_sfx_vab();
-            let Some(used_end) = self.bgm_bank_used_end() else {
-                return;
-            };
-            let reward_end = self
-                .sfx_vabs
-                .get(&TRANSIENT_REWARD_SLOT)
-                .map(|b| vab_bank_used_end(Some(b), 0))
-                .unwrap_or(0);
-            let base = used_end.max(reward_end).div_ceil(16) * 16;
-            let region_end =
-                legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32 - SFX_BANK_SPU_BYTES;
-            let body_total: u32 = report.vag_samples.iter().map(|v| v.size as u32).sum();
-            if base >= region_end || body_total > region_end - base {
+            if self.bgm_bank_used_end().is_none() {
                 return;
             }
+            let Some(base) = self.sfx.tail.place_report(want.slot, &report) else {
+                return;
+            };
             let Some(out) = self.audio_out.as_ref() else {
                 return;
             };
             let bank = out.with_spu(|spu| {
-                let mut alloc =
-                    legaia_engine_audio::spu::ram::SpuAllocator::new(base, region_end - base);
-                VabBank::upload(spu, &mut alloc, &report, &bytes[vab_offset..])
+                legaia_engine_audio::bgm_tail::upload_at(spu, base, &report, &bytes[vab_offset..])
             });
+            let end = legaia_engine_audio::spu_layout::bank_used_end(&bank).unwrap_or(base);
             self.sfx_vabs.insert(want.slot, bank);
-            self.sfx.side_band = Some((want, base));
+            self.sfx.tail.commit_side_band(
+                want,
+                TailBorrow {
+                    slot: want.slot,
+                    base,
+                    end,
+                },
+            );
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
+            // No SPU: recorded above any track, so the routing is testable.
             let _ = (report, vab_offset);
-            self.sfx.side_band = Some((want, u32::MAX));
-        }
-    }
-
-    /// Forget the side-band bank wherever it is recorded.
-    fn drop_side_band(&mut self) {
-        if let Some((_b, _)) = self.sfx.side_band.take() {
-            #[cfg(target_arch = "wasm32")]
-            self.sfx_vabs.remove(&_b.slot);
+            self.sfx.tail.commit_side_band(
+                want,
+                TailBorrow {
+                    slot: want.slot,
+                    base: u32::MAX,
+                    end: u32::MAX,
+                },
+            );
         }
     }
 
@@ -1170,8 +1148,8 @@ impl LegaiaRuntime {
             if !staged && (self.sfx.sfx_evicted || self.bgm_bank.is_none()) {
                 return;
             }
-            // A BGM restage since the reward bank staged makes it stale.
-            self.reconcile_reward_bank();
+            // A track restage since a tail bank staged may have overrun it.
+            self.observe_track();
             let Some(out) = self.audio_out.as_ref() else {
                 return;
             };
@@ -1317,8 +1295,9 @@ impl LegaiaRuntime {
             if !self.sfx.sfx_evicted {
                 self.sfx.sfx_evicted = true;
                 self.sfx_vabs.clear();
-                self.sfx.reward_bank_base = None;
-                self.sfx.side_band = None;
+                for slot in self.sfx.tail.clear() {
+                    self.forget_tail_slot(slot);
+                }
             }
             return false;
         }
@@ -1411,6 +1390,22 @@ impl LegaiaRuntime {
         self.sfx.fired > before
     }
 
+    /// One sim tick of the SFX scheduler while a menu-overlay screen (the
+    /// pause menu, a shop, the prize exchange) freezes the field: the page
+    /// does not run `tick_frame` under one, and this is the scheduler step
+    /// its frame loop still owes. Retail runs those screens at game mode
+    /// `0x17`, whose per-frame handler `FUN_80025F74` still calls the cue
+    /// drainer `FUN_80016B6C` (`jal` at `0x80025F9C`) every frame, so a cue
+    /// that was delayed when the screen opened keeps ageing and fires on
+    /// time. The native window's twin is `tick_menu_sfx` in its frozen arms.
+    /// Returns the cues that keyed a voice this step.
+    // REF: FUN_80025F74, FUN_80016B6C
+    pub fn play_tick_overlay_sfx(&mut self) -> u32 {
+        let before = self.sfx.fired;
+        self.fire_matured_sfx();
+        self.sfx.fired - before
+    }
+
     /// Is the SFX channel able to make a sound right now? True once the
     /// descriptor table decoded, the program banks staged into the live SPU,
     /// and audio is up.
@@ -1472,7 +1467,7 @@ impl LegaiaRuntime {
             "voice_cues_dropped": self.sfx.voice_cues_dropped,
             "duck_level": self.sfx.duck_level,
             "duck_target": self.sfx.duck_target,
-            "reward_bank_staged": self.sfx.reward_bank_base.is_some(),
+            "reward_bank_staged": self.sfx.tail.reward().is_some(),
         })
         .to_string()
     }
@@ -1866,7 +1861,7 @@ mod tests {
     /// absent bank puts it at the region floor.
     #[test]
     fn bank_used_end_is_the_highest_vag_end() {
-        use legaia_engine_audio::UploadedVag;
+        use legaia_engine_audio::{UploadedVag, VabBank};
         let bank = VabBank {
             master_vol: 127,
             samples: vec![
@@ -1882,33 +1877,40 @@ mod tests {
             ],
             programs: Vec::new(),
         };
-        assert_eq!(vab_bank_used_end(Some(&bank), SPU_RESERVED_BYTES), 0x4010);
+        assert_eq!(
+            legaia_engine_audio::bgm_tail::track_end(Some(&bank)),
+            0x4010
+        );
         let empty = VabBank {
             master_vol: 127,
             samples: Vec::new(),
             programs: Vec::new(),
         };
         assert_eq!(
-            vab_bank_used_end(Some(&empty), SPU_RESERVED_BYTES),
+            legaia_engine_audio::bgm_tail::track_end(Some(&empty)),
             SPU_RESERVED_BYTES
         );
         assert_eq!(
-            vab_bank_used_end(None, SPU_RESERVED_BYTES),
+            legaia_engine_audio::bgm_tail::track_end(None),
             SPU_RESERVED_BYTES
         );
     }
 
     /// The scene-change clear empties the scheduler but keeps the reward
     /// bank, as the native `clear_sfx` does: the bank lives in the BGM
-    /// region's tail until a BGM restage re-owns it (`reconcile_reward_bank`
-    /// catches that at fire time), and a door under a carried global track
-    /// restages nothing. Dropping it here was one host's rule only.
+    /// region's tail until a track overruns it or the field init closes it
+    /// (the shared `BgmTail` rule), and a door under a carried global track
+    /// restages nothing.
     #[test]
     fn scene_change_clears_the_queue_but_keeps_the_reward_bank() {
         let mut rt = LegaiaRuntime::new();
         rt.enqueue_sfx(0x21u8, 3);
         rt.enqueue_battle_cue(0x118, 5, 0, 3);
-        rt.sfx.reward_bank_base = Some(0x8000);
+        rt.sfx.tail.commit_reward(TailBorrow {
+            slot: TRANSIENT_REWARD_SLOT,
+            base: 0x8000,
+            end: 0x9000,
+        });
         rt.sfx.bank_bytes.insert(
             TRANSIENT_REWARD_SLOT,
             StagedBankBytes {
@@ -1927,6 +1929,42 @@ mod tests {
         // conservative answer, and the one the routing then falls back on.
         rt.drop_reward_bank();
         assert!(!rt.stage_transient_reward_bank());
+    }
+
+    /// Under a menu-overlay screen the page skips `tick_frame`, and the
+    /// scheduler still steps once per sim tick through
+    /// `play_tick_overlay_sfx` - retail's mode-`0x17` handler runs the cue
+    /// drainer - so a cue delayed before the screen opened matures on time.
+    #[test]
+    fn the_overlay_step_ages_a_delayed_cue() {
+        let mut rt = LegaiaRuntime::new();
+        rt.enqueue_sfx(0x21u8, 3);
+        assert_eq!(rt.sfx.sched.pending_count(), 1);
+        rt.play_tick_overlay_sfx();
+        rt.play_tick_overlay_sfx();
+        assert_eq!(rt.sfx.sched.pending_count(), 1, "still delayed");
+        rt.play_tick_overlay_sfx();
+        rt.play_tick_overlay_sfx();
+        assert_eq!(rt.sfx.sched.pending_count(), 0, "matured under the screen");
+    }
+
+    /// The side-band retry memo is the shared tail's: a scene change neither
+    /// clears nor re-arms it (a door stages no bank, so the free tail is
+    /// what it was).
+    #[test]
+    fn a_scene_change_keeps_the_side_band_memo() {
+        let mut rt = LegaiaRuntime::new();
+        let want = legaia_engine_core::world::SideBandBank {
+            request: 2002,
+            slot: 3,
+            prot_entry: 1070,
+        };
+        assert!(rt.sfx.tail.begin_side_band_attempt(want));
+        rt.on_scene_change_audio();
+        assert!(
+            !rt.sfx.tail.begin_side_band_attempt(want),
+            "same tail, same request: not retried"
+        );
     }
 
     /// A voice-leg cue that matures is counted as declined, on every

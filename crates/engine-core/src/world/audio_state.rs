@@ -47,7 +47,9 @@ pub struct AudioState {
     /// listed at scene load so a host whose clip decode is asynchronous can
     /// have them resident before the op fires
     /// ([`crate::world::World::drain_field_xa_prestage`], filled by
-    /// [`crate::world::field_xa::scene_xa_prestage`]). Advisory, like
+    /// [`crate::world::field_xa::scene_xa_prestage`], and extended with a
+    /// minigame chrome's announcer lines by
+    /// [`crate::world::World::queue_xa_prestage`]). Advisory, like
     /// [`Self::battle_xa_prestage`]: the op still raises its clip on
     /// [`Self::field_xa_cues`].
     pub field_xa_prestage: Vec<crate::sfx_cue::XaVoiceClip>,

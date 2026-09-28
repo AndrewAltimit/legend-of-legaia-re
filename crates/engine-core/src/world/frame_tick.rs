@@ -3140,6 +3140,7 @@ impl World {
         }
         self.minigames.baka_fighter = Some(fight);
         self.mode = SceneMode::BakaFighter;
+        self.queue_baka_xa_prestage();
     }
 
     /// Leave the Baka Fighter duel through the mode-24 return warp
@@ -3276,6 +3277,19 @@ impl World {
             fight.set_held_pad(held);
             fight.tick(1);
         }
+        self.queue_baka_xa_prestage();
+    }
+
+    /// The duel chrome's announcer lines not yet listed, onto the prestage
+    /// list both hosts drain ([`Self::queue_xa_prestage`]).
+    fn queue_baka_xa_prestage(&mut self) {
+        let lines = self
+            .minigames
+            .baka_fighter
+            .as_mut()
+            .map(|f| f.take_xa_prestage())
+            .unwrap_or_default();
+        self.queue_xa_prestage(lines);
     }
 
     /// Enter the Muscle Dome contest on `session`, suspending the current
@@ -3306,6 +3320,8 @@ impl World {
         }
         self.minigames.muscle_dome = Some(session);
         self.mode = SceneMode::MuscleDome;
+        // The hub's announcer lines, staged ahead of the first visit's arms.
+        self.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
     }
 
     /// Leave the arena **at the player's request** - the escape both hosts

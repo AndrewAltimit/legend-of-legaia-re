@@ -2113,6 +2113,16 @@ void main() {
        * the script the same way, and is modal over everything else. */
       const namingOpen = (menuOpen || shopOpen) ? false : this._updateNameEntry(simSteps);
 
+      /* Under the pause menu or a shop the field does not tick, but the SFX
+       * scheduler does: retail's mode-0x17 frame handler still runs the cue
+       * drainer, so a cue already delayed when the screen opened keeps
+       * ageing (the native window's `tick_menu_sfx`). */
+      if (advance && (menuOpen || shopOpen)
+          && typeof rt.play_tick_overlay_sfx === 'function') {
+        for (let s = 0; s < simSteps; s++) {
+          try { rt.play_tick_overlay_sfx(); } catch (e) { break; }
+        }
+      }
       if (advance && !menuOpen && !shopOpen && !namingOpen) {
         const steps = simSteps;
         for (let s = 0; s < steps; s++) {

@@ -76,7 +76,45 @@ pub fn scene_xa_prestage(man: &[u8]) -> Vec<crate::sfx_cue::XaVoiceClip> {
     out
 }
 
+impl From<crate::baka_fighter_chrome::XaCue> for crate::sfx_cue::XaVoiceClip {
+    fn from(c: crate::baka_fighter_chrome::XaCue) -> Self {
+        Self {
+            clip: u32::from(c.clip),
+            channel: u32::from(c.chan),
+            duration_sectors: u32::from(c.dur),
+        }
+    }
+}
+
+impl From<crate::muscle_ringside::HubXaCue> for crate::sfx_cue::XaVoiceClip {
+    fn from(c: crate::muscle_ringside::HubXaCue) -> Self {
+        Self {
+            clip: u32::from(c.clip),
+            channel: u32::from(c.channel),
+            duration_sectors: u32::from(c.duration_sectors),
+        }
+    }
+}
+
 impl World {
+    /// Append a minigame's CD-XA lines to the prestage list both hosts drain
+    /// ([`Self::drain_field_xa_prestage`]): the Baka Fighter chrome's
+    /// announcer lines ([`crate::baka_fighter::BakaFight::take_xa_prestage`])
+    /// and the dome hub's two
+    /// ([`crate::muscle_ringside::hub_xa_prestage`]). Skips a clip already
+    /// listed.
+    pub fn queue_xa_prestage<C: Into<crate::sfx_cue::XaVoiceClip>>(
+        &mut self,
+        clips: impl IntoIterator<Item = C>,
+    ) {
+        for c in clips {
+            let c = c.into();
+            if !self.audio.field_xa_prestage.contains(&c) {
+                self.audio.field_xa_prestage.push(c);
+            }
+        }
+    }
+
     /// Take the loaded scene's field CD-XA prestage list
     /// ([`crate::world::AudioState::field_xa_prestage`]). A host that decodes
     /// clips asynchronously (the browser page) stages each ahead of its op;
@@ -126,6 +164,51 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn duel_cfg(roster_id: usize) -> crate::baka_fighter::FighterConfig {
+        crate::baka_fighter::FighterConfig {
+            roster_id,
+            damage_mod: 100,
+            def_tiers: [0, 0, 0],
+            crit_chance: 0,
+            atk_tiers: [0, 0, 0],
+            attack_power: [0, 10, 10, 10, 0],
+            gold_reward: 30,
+            ai_pattern: vec![1, 2, 3],
+        }
+    }
+
+    /// Entering the duel lists the chrome's announcer lines on the prestage
+    /// list both hosts drain, so the page stages them ahead of the frames
+    /// that start them; the list is not re-queued on a quiet tick.
+    #[test]
+    fn entering_the_duel_queues_the_announcer_prestage() {
+        let mut w = World::default();
+        let fight = crate::baka_fighter::BakaFight::new(duel_cfg(0), duel_cfg(1), [2, 2], 1);
+        w.enter_baka_fighter(fight);
+        let listed = w.drain_field_xa_prestage();
+        let want: Vec<crate::sfx_cue::XaVoiceClip> =
+            crate::baka_fighter_chrome::announcer_xa_prestage(0)
+                .into_iter()
+                .map(Into::into)
+                .collect();
+        assert_eq!(listed, want);
+        w.tick();
+        assert!(
+            w.drain_field_xa_prestage().is_empty(),
+            "round 0 already listed"
+        );
+    }
+
+    /// A clip already on the list is not listed again (a second dome leg
+    /// re-queues the hub lines).
+    #[test]
+    fn queued_clips_are_deduplicated() {
+        let mut w = World::default();
+        w.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
+        w.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
+        assert_eq!(w.drain_field_xa_prestage().len(), 2);
+    }
 
     #[test]
     fn a_field_clip_queues_and_holds_the_drive_for_its_span() {
