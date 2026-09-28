@@ -235,13 +235,15 @@ pub struct FieldLocomotion {
     /// use (live-pinned: the `town01` post-naming ExecMove 48/49 land the
     /// retail player anim pointer on scene records 47/48).
     pub player_move_cues: Vec<u8>,
-    /// Frame count of every record of the loaded scene's own ANM bundle
-    /// (retail `*(0x8007B888)`), indexed by record. Seeded by
-    /// [`crate::scene::SceneHost::load_scene`]; read by the cutscene timeline
-    /// to time the end latch of a scene-bank clip it pokes onto the player
-    /// without a host-owned clip player. Empty when the scene carries no
-    /// bundle.
-    pub scene_clip_frames: Vec<u16>,
+    /// End-latch length, in engine ticks, of every record of the loaded
+    /// scene's own ANM bundle (retail `*(0x8007B888)`), indexed by record:
+    /// [`crate::field_anim::clip_end_ticks`] of the record's frame count at
+    /// its own step ([`crate::field_anim::clip_step`] - the gated records
+    /// play slower). Seeded by [`crate::scene::SceneHost::load_scene`]; read
+    /// by the cutscene timeline to time the end latch of a scene-bank clip it
+    /// pokes onto the player without a host-owned clip player. Empty when the
+    /// scene carries no bundle; `0` for a record with no frames.
+    pub scene_clip_ticks: Vec<u32>,
     /// The clip base `_DAT_8007BDD8`: the 1-based slot inside the leader's
     /// seven-record locomotion bank the settle tail strides into the player's
     /// clip id. Written by the pad step (idle `2` / walk `1` / run `3`, or
@@ -310,7 +312,7 @@ impl FieldLocomotion {
             ledge_hop: None,
             eased_mirror_y: None,
             player_move_cues: Vec::new(),
-            scene_clip_frames: Vec::new(),
+            scene_clip_ticks: Vec::new(),
             clip_base: legaia_engine_vm::field_player_clip::BASE_IDLE,
             player_clip: legaia_engine_vm::field_player_clip::BASE_IDLE as i16,
             player_party_bank: true,

@@ -1532,11 +1532,10 @@ impl World {
                             Some((vm::field_player_clip::ClipBank::Scene, record)) => host
                                 .world
                                 .locomotion
-                                .scene_clip_frames
+                                .scene_clip_ticks
                                 .get(usize::from(record))
-                                .map_or(0, |&f| {
-                                    u32::from(f) * crate::field_anim::DEFAULT_TICKS_PER_FRAME
-                                }),
+                                .copied()
+                                .unwrap_or(0),
                             _ => 0,
                         };
                         // Cue the scripted player clip: the windowed host
@@ -3706,7 +3705,7 @@ mod tests {
     /// compass walk (`B7 F8 00 81`), then a scene-bank clip poke with the
     /// party-bank bit down (`B2 F8 18`, `A2 F8 03`), its end-latch spin
     /// (`AC F8 08`, `AD F8 08`), and a `WaitFrames` so the timeline stays up.
-    fn timeline_with_player_walk_and_clip_wait(clip_frames: u16) -> World {
+    fn timeline_with_player_walk_and_clip_wait(clip_ticks: u32) -> World {
         use crate::cutscene_timeline::CutsceneTimeline;
         let mut w = World {
             mode: crate::world::SceneMode::Field,
@@ -3716,7 +3715,7 @@ mod tests {
         w.player_actor_slot = Some(0);
         w.actors[0].move_state.world_x = 0x1040;
         w.actors[0].move_state.world_z = 0x2040;
-        w.locomotion.scene_clip_frames = vec![1, 1, clip_frames];
+        w.locomotion.scene_clip_ticks = vec![2, 2, clip_ticks];
         let bc = vec![
             0xB7, 0xF8, 0x00, 0x81, // compass walk: dir 0 (-Z), 1 x div 16
             0xB2, 0xF8, 0x18, // party-bank bit down
@@ -3753,33 +3752,34 @@ mod tests {
     }
 
     /// The `AD F8 08` spin after a scene-bank clip poke holds for the clip's
-    /// frames at two ticks a frame (the `FUN_800204F8` end latch), then
-    /// steps past.
+    /// end-latch length (the `FUN_800204F8` latch): two ticks a frame for an
+    /// ungated record, four for a gated divisor-4 one, then steps past.
     #[test]
     fn cutscene_timeline_player_clip_latch_spin_holds_for_the_clip() {
+        use crate::field_anim::{CLIP_RATE, clip_end_ticks, clip_step};
         let frames = 10u16;
-        let mut w = timeline_with_player_walk_and_clip_wait(frames);
-        let mut spin_ticks = 0;
-        let mut saw_spin = false;
-        for _ in 0..200 {
-            w.step_cutscene_timeline();
-            let tl = w.cutscene.timeline.as_ref().expect("installed");
-            if tl.player_clip_wait.is_some() {
-                saw_spin = true;
-                spin_ticks += 1;
-            } else if saw_spin {
-                break;
+        for (gated, div, per_frame) in [(false, 0u8, 2usize), (true, 4, 4)] {
+            let ticks = clip_end_ticks(frames, clip_step(CLIP_RATE, gated, div));
+            let mut w = timeline_with_player_walk_and_clip_wait(ticks);
+            let mut spin_ticks = 0;
+            let mut saw_spin = false;
+            for _ in 0..400 {
+                w.step_cutscene_timeline();
+                let tl = w.cutscene.timeline.as_ref().expect("installed");
+                if tl.player_clip_wait.is_some() {
+                    saw_spin = true;
+                    spin_ticks += 1;
+                } else if saw_spin {
+                    break;
+                }
             }
+            assert!(saw_spin, "the latch spin parks while the clip plays");
+            // The poke and the spin land in one slice; the record then sits on
+            // the spin for the whole latch length, counting that one.
+            assert_eq!(spin_ticks, usize::from(frames) * per_frame, "gated={gated}");
+            let tl = w.cutscene.timeline.as_ref().expect("installed");
+            assert_eq!(tl.pc, 16, "resumed past the 3-byte spin onto the wait");
         }
-        assert!(saw_spin, "the latch spin parks while the clip plays");
-        // The poke and the spin land in one slice; the record then sits on
-        // the spin for `frames * 2` ticks, counting that one.
-        assert_eq!(
-            spin_ticks,
-            usize::from(frames) * crate::field_anim::DEFAULT_TICKS_PER_FRAME as usize
-        );
-        let tl = w.cutscene.timeline.as_ref().expect("installed");
-        assert_eq!(tl.pc, 16, "resumed past the 3-byte spin onto the wait");
     }
 
     /// A party-bank clip (the locomotion loops) has no timed end latch in

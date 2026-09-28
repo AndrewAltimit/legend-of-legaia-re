@@ -128,12 +128,22 @@ impl SceneHost {
         // start, before the extraction-frame shift `Scene::start` carries).
         self.world.battle.map_id = self.index.block_range(name).map_or(0, |(raw, _)| raw);
         let assets = crate::scene_assets::SceneAssets::build(&scene);
-        // The scene ANM bundle's per-record frame counts: the length of any
-        // scene-bank clip a cutscene record pokes onto the player.
-        self.world.locomotion.scene_clip_frames = crate::npc_catalog::scene_anm_bundle(&scene)
+        // The scene ANM bundle's per-record end-latch lengths: how long any
+        // scene-bank clip a cutscene record pokes onto the player plays, at
+        // the record's own step (a gated record's scaled step included).
+        self.world.locomotion.scene_clip_ticks = crate::npc_catalog::scene_anm_bundle(&scene)
             .map(|b| {
                 (0..b.record_count as usize)
-                    .map(|i| b.record(i).map_or(0, |r| r.frame_count))
+                    .map(|i| {
+                        b.record(i).map_or(0, |r| {
+                            let step = crate::field_anim::clip_step(
+                                crate::field_anim::CLIP_RATE,
+                                r.blends(),
+                                (r.flag & 0xFF) as u8,
+                            );
+                            crate::field_anim::clip_end_ticks(r.frame_count, step)
+                        })
+                    })
                     .collect()
             })
             .unwrap_or_default();

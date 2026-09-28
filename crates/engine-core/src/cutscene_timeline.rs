@@ -294,7 +294,7 @@ pub struct CutsceneTimeline {
     pub player_glide: Option<TimelinePlayerGlide>,
     /// Ticks left on the **scene-bank** clip the timeline last poked onto the
     /// player (`A2 F8 <move_id>` with the party-bank bit down): the clip's
-    /// frame count times [`crate::field_anim::DEFAULT_TICKS_PER_FRAME`].
+    /// end-latch length at its own step ([`crate::field_anim::clip_end_ticks`]).
     /// Retail's clip tick `FUN_800204F8` latches the end flag `0x100` into
     /// the player's `+0x62` when the cursor reaches the last frame
     /// (`0x800206E4..0x8002072C`), and a record waits for it with

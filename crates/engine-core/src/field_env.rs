@@ -757,12 +757,8 @@ impl PropAnim {
         // prop on this arm is also posed between keyframes. A minority of the
         // disc's posed props take it (`tests/field_prop_pose_sampler_disc.rs`
         // counts them).
-        let step = if self.scaled_step && self.step_div != 0 {
-            let d = self.step_div as i32;
-            ((self.rate as i32 * 2 + d - 1) / d) as i16
-        } else {
-            self.rate
-        };
+        let step =
+            crate::field_anim::clip_step(self.rate as u16, self.scaled_step, self.step_div) as i16;
         if self.flags & ANIM_RESTART != 0 {
             self.flags &= !ANIM_RESTART;
             self.cursor = if self.flags & ANIM_REVERSE == 0 {
