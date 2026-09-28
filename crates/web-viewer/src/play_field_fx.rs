@@ -158,6 +158,25 @@ impl LegaiaRuntime {
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// The walk-ground heightfield's flat bucket-depth references, flattened
+    /// eight floats per drawn vertex (`[x0, z0, x1, z1, y00, y10, y01,
+    /// y11]` of its cell) - the shared
+    /// [`legaia_engine_core::overworld_draw_order::ground_flat_refs`] over
+    /// the same drawn positions `field_ground_positions` returns, so the
+    /// page's ground draws each overworld cell at its ordering-table
+    /// bucket's depth exactly as the native window's does. Empty with no
+    /// ground.
+    pub fn field_ground_flat_refs(&self) -> Vec<f32> {
+        let Some(hf) = self.field.as_ref().and_then(|f| f.ground.as_ref()) else {
+            return Vec::new();
+        };
+        let positions = legaia_engine_core::field_ground::render_positions(hf);
+        legaia_engine_core::overworld_draw_order::ground_flat_refs(&positions)
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
     /// Sheets the fog pool emitted on the last tick (two per drawn
     /// particle), and the pool's live count after it - `[quads, live]`.
     /// A page-side probe for the oracle; the draw itself rides the

@@ -905,7 +905,9 @@ void main() {
       if (rt.field_ground_quad_count() > 0) {
         this.renderer.uploadGround(
           rt.field_ground_positions(), rt.field_ground_uvs(),
-          rt.field_ground_cba_tsb(), rt.field_ground_indices());
+          rt.field_ground_cba_tsb(), rt.field_ground_indices(),
+          (typeof rt.field_ground_flat_refs === 'function')
+            ? rt.field_ground_flat_refs() : null);
       } else {
         this.renderer.uploadGround(new Float32Array(0), null, null, new Uint32Array(0));
       }

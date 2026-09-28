@@ -154,6 +154,11 @@ class TmdRenderer {
     this.locUv      = gl.getAttribLocation(this.program, 'a_uv_byte');
     this.locCbaTsb  = gl.getAttribLocation(this.program, 'a_cba_tsb');
     this.locFlatRgba = gl.getAttribLocation(this.program, 'a_flat_rgba');
+    /* The continent ground's flat bucket-depth reference (see
+     * overworldFlatDepth in webgl-shaders.js); -1 when the driver dropped
+     * the unused attributes. */
+    this.locGroundRefXz = gl.getAttribLocation(this.program, 'a_ground_ref_xz');
+    this.locGroundRefY  = gl.getAttribLocation(this.program, 'a_ground_ref_y');
 
     /* Field-character hybrid mode: when set, draws bind the per-vertex
      * a_flat_rgba colours and the FS uses them for untextured prims. Off for
@@ -1001,8 +1006,14 @@ class TmdRenderer {
   /* Upload the walk-view continent ground heightfield. Attribute layout
    * matches `uploadSceneMesh` (positions f32x3, uvs u8x2, cbaTsb u16x2,
    * indices u32). Idempotent: re-upload overwrites. Pass empty arrays to
-   * clear the ground (e.g. a kingdom with no resolvable walk `.MAP`). */
-  uploadGround(positions, uvs, cbaTsb, indices) {
+   * clear the ground (e.g. a kingdom with no resolvable walk `.MAP`).
+   *
+   * `flatRefs` (optional, f32 x8 per vertex: the cell's [x0, z0, x1, z1,
+   * y00, y10, y01, y11], from `field_ground_flat_refs`) lets the overworld
+   * draw each cell at its ordering-table bucket's depth, which is what keeps
+   * the fog sheets retail's side of the ridges; without it the ground keeps
+   * per-pixel depth. */
+  uploadGround(positions, uvs, cbaTsb, indices, flatRefs) {
     const gl = this.gl;
     if (!positions || positions.length === 0 || !indices || indices.length === 0) {
       this.ground = null;
@@ -1015,6 +1026,7 @@ class TmdRenderer {
         posBuf: gl.createBuffer(),
         uvBuf:  gl.createBuffer(),
         ctBuf:  gl.createBuffer(),
+        refBuf: gl.createBuffer(),
         idxBuf: gl.createBuffer(),
         indexCount: 0,
         aabb: null,
@@ -1038,6 +1050,20 @@ class TmdRenderer {
     gl.bufferData(gl.ARRAY_BUFFER, cbaTsb, gl.STATIC_DRAW);
     gl.enableVertexAttribArray(this.locCbaTsb);
     gl.vertexAttribIPointer(this.locCbaTsb, 2, gl.UNSIGNED_SHORT, 0, 0);
+
+    const haveRefs = !!(flatRefs && flatRefs.length === (positions.length / 3) * 8
+      && this.locGroundRefXz >= 0 && this.locGroundRefY >= 0);
+    if (haveRefs) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.refBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, flatRefs, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(this.locGroundRefXz);
+      gl.vertexAttribPointer(this.locGroundRefXz, 4, gl.FLOAT, false, 32, 0);
+      gl.enableVertexAttribArray(this.locGroundRefY);
+      gl.vertexAttribPointer(this.locGroundRefY, 4, gl.FLOAT, false, 32, 16);
+    } else {
+      if (this.locGroundRefXz >= 0) gl.disableVertexAttribArray(this.locGroundRefXz);
+      if (this.locGroundRefY >= 0) gl.disableVertexAttribArray(this.locGroundRefY);
+    }
 
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.idxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
@@ -1392,6 +1418,7 @@ class TmdRenderer {
       gl.deleteBuffer(this.ground.posBuf);
       gl.deleteBuffer(this.ground.uvBuf);
       gl.deleteBuffer(this.ground.ctBuf);
+      gl.deleteBuffer(this.ground.refBuf);
       gl.deleteBuffer(this.ground.idxBuf);
       this.ground = null;
     }

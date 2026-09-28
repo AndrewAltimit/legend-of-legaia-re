@@ -204,6 +204,30 @@ vec4 overworldCurve(vec4 clip) {
   return vec4(clip.x, clip.y - t * (2.0 / 240.0) * clip.w, clip.z, clip.w);
 }
 
+/* z = a * w + b of m's depth row over its w row, read the way
+ * legaia_engine_core::overworld_draw_order::depth_affine reads it: the column
+ * with the largest w weight gives a, the translation column b. */
+vec2 depthAffine(mat4 m) {
+  vec4 col = m[2];
+  if (abs(m[0].w) > abs(col.w) && abs(m[0].w) >= abs(m[1].w)) col = m[0];
+  else if (abs(m[1].w) > abs(col.w)) col = m[1];
+  float a = abs(col.w) > 1.0e-7 ? col.z / col.w : 0.0;
+  return vec2(a, m[3].z - a * m[3].w);
+}
+
+vec4 overworldFlatDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
+  if (u_curve <= 0.0 || fa.z <= fa.x || clip.w <= 0.0) return clip;
+  float w0 = (m * vec4(fa.x, fb.x, fa.y, 1.0)).w;
+  float w1 = (m * vec4(fa.z, fb.y, fa.y, 1.0)).w;
+  float w2 = (m * vec4(fa.x, fb.z, fa.w, 1.0)).w;
+  float w3 = (m * vec4(fa.z, fb.w, fa.w, 1.0)).w;
+  int sz = clamp(int(floor(max(max(w0, w1), max(w2, w3)) * u_curve + 0.5)), 0, 0xFFFF);
+  int bucket = (sz >> 5) + 14;
+  float repW = (float(bucket) * 32.0 + 32.0) / u_curve;
+  vec2 ab = depthAffine(m);
+  return vec4(clip.x, clip.y, (ab.x + ab.y / repW) * clip.w, clip.w);
+}
+
 in vec3 a_position;
 in vec2 a_uv_byte;       /* 0..255 each, sent as Uint8x2 normalised=false */
 in uvec2 a_cba_tsb;
@@ -220,6 +244,16 @@ in uvec2 a_cba_tsb;
  * which the renderer sets to the neutral 0x80 triple, so an un-coloured draw
  * is texel * 1.0. u_use_flat_colors gates only the untextured branch. */
 in vec4 a_flat_rgba;
+/* The continent ground's flat bucket-depth reference - the GLSL twin of
+ * engine-render's overworld_flat_depth (legaia_engine_core::
+ * overworld_draw_order). Each ground vertex carries its cell's
+ * [x0, z0, x1, z1] / [y00, y10, y01, y11]; retail links the cell
+ * (FUN_801F89B8) at (max corner SZ >> 5) + 14 of the ordering table the fog
+ * sheets link into, so on the overworld (u_curve > 0) the whole cell draws
+ * at that bucket's depth. Every other mesh leaves both unbound and reads the
+ * generic-attribute default (0, 0, 0, 1): x1 <= x0, per-pixel depth. */
+in vec4 a_ground_ref_xz;
+in vec4 a_ground_ref_y;
 
 out vec2 v_uv;          /* interpolated linearly across the triangle */
 flat out uvec2 v_cba_tsb;
@@ -249,7 +283,8 @@ void main() {
   } else {
     v_fog_t = 0.0;
   }
-  gl_Position = overworldCurve(u_mvp * world_pos);
+  gl_Position = overworldFlatDepth(overworldCurve(u_mvp * world_pos), u_mvp * u_model,
+                                   a_ground_ref_xz, a_ground_ref_y);
   v_view_z = gl_Position.w;
 }
 `;
