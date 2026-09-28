@@ -2366,19 +2366,10 @@ impl LegaiaRuntime {
             audio.set_muted(self.options_state.muted);
         }
         if let Some(host) = self.scene_host.as_mut() {
-            host.world.locomotion.precise_movement = self.options_state.precise_movement;
-            // Field Move (pause-menu Walk / Run). Only the DEFAULT lands
-            // here; the run button that inverts it is latched by
-            // `World::set_pad`, so this page needs no per-frame wiring.
-            host.world.locomotion.run_default =
-                self.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
-            // Photosensitivity guard over the ambient palette cyclers
-            // (default ON; see `OptionsState::reduce_flashing`).
-            host.world.toggles.reduce_flashing = self.options_state.reduce_flashing;
-            // Battle "Select Attack" (config word `0x800846C4`): whether the
-            // ring's Attack arm shows the Auto | Command prompt, goes
-            // straight to the target cursor, or straight to the arts entry.
-            host.world.toggles.select_attack = self.options_state.battle_select_attack;
+            // The simulation knobs (precise movement, Field Move default,
+            // reduce flashing, battle Select Attack) through the one push the
+            // native window re-asserts each tick.
+            self.options_state.apply_to_world(&mut host.world);
         }
         // The follow-camera distance preset, the same host knob the native
         // window re-asserts each tick (`window/event_handler/redraw.rs`).
